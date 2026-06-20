@@ -1,0 +1,1 @@
+pyinstaller --name "FastPrompter" --onefile --windowed --clean --icon NONE --paths src src/fastprompter/main.py
