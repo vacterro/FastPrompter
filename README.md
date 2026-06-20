@@ -1,6 +1,7 @@
 <h1 align="center">
   FastPrompter
 </h1>
+<img width="960" height="540" alt="2026-06-20_142312" src="https://github.com/user-attachments/assets/30c2b9b8-5781-494f-a87a-9d5aab716f6c" />
 
 <p align="center">
   <strong>A lightning-fast, highly customizable, and robust snippet management tool.</strong>
@@ -13,6 +14,8 @@
 </p>
 
 ---
+<img width="960" height="540" alt="2026-06-20_142659" src="https://github.com/user-attachments/assets/79bb8cae-f035-4984-aa0c-c5ecd567ddc2" />
+<img width="311" height="197" alt="2026-06-20_142507" src="https://github.com/user-attachments/assets/7eb83707-3fda-433a-86be-bba9d67b465a" />
 
 ## ⚡ Overview
 
@@ -42,7 +45,7 @@ FastPrompter uses [uv](https://github.com/astral-sh/uv) to manage its dependenci
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/fastprompter.git
+   git clone https://github.com/vacterro/FastPrompter
    cd fastprompter
    ```
 
