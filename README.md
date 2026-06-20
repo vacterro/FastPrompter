@@ -14,7 +14,6 @@
 </p>
 
 ---
-<img width="960" height="540" alt="2026-06-20_142659" src="https://github.com/user-attachments/assets/79bb8cae-f035-4984-aa0c-c5ecd567ddc2" />
 <img width="311" height="197" alt="2026-06-20_142507" src="https://github.com/user-attachments/assets/7eb83707-3fda-433a-86be-bba9d67b465a" />
 
 ## ⚡ Overview
@@ -82,5 +81,6 @@ FastPrompter has been refactored into a scalable, modular architecture:
 Contributions, issues, and feature requests are always welcome! Feel free to check the [issues page](https://github.com/yourusername/fastprompter/issues).
 
 ## 📄 License
+<img width="960" height="540" alt="2026-06-20_142659" src="https://github.com/user-attachments/assets/79bb8cae-f035-4984-aa0c-c5ecd567ddc2" />
 
 This project is licensed under the MIT License.
