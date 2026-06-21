@@ -4,11 +4,13 @@ from PyQt6.QtGui import QCursor
 from PyQt6 import sip
 from fastprompter.theme.themes import THEMES
 from fastprompter.core.config import extract_bg, extract_color
+from pynput import keyboard
 
 class QuickListWidget(QWidget):
     def __init__(self, main_win):
         super().__init__(None)
         self.main_win = main_win
+        self.kb_listener = None
         
         self.setWindowFlags(Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
@@ -59,7 +61,7 @@ class QuickListWidget(QWidget):
             btn = QPushButton(cat[:10])
             btn.setFixedSize(52, 20)
             btn_bg = active_bg if cat == self.current_cat else bg
-            btn.setStyleSheet(f"QPushButton {{ background-color: {btn_bg}; color: {fg}; border: 1px solid {border}; border-radius: 2px; font-size: 10px; font-weight: bold; font-family: Verdana; }} QPushButton:hover {{ border: 1px solid {fg}; }}")
+            btn.setStyleSheet(f"QPushButton {{ background-color: {btn_bg}; color: {fg}; border: 1px solid {border}; border-radius: 2px; font-size: 10px; font-weight: bold; }} QPushButton:hover {{ border: 1px solid {fg}; }}")
             btn.clicked.connect(lambda checked, c=cat: self.switch_cat(c))
             self.cat_layout.addWidget(btn)
             
@@ -67,7 +69,7 @@ class QuickListWidget(QWidget):
         for i, snip in enumerate(snippets):
             btn = QPushButton(snip.get("name", "")[:20])
             btn.setFixedSize(160, 26)
-            btn.setStyleSheet(f"QPushButton {{ background-color: {bg}; color: {fg}; border: 1px solid {border}; border-radius: 2px; font-size: 11px; font-weight: bold; font-family: Verdana; text-align: left; padding-left: 6px; }} QPushButton:hover {{ background-color: {hover}; border: 1px solid {fg}; }}")
+            btn.setStyleSheet(f"QPushButton {{ background-color: {bg}; color: {fg}; border: 1px solid {border}; border-radius: 2px; font-size: 11px; font-weight: bold; text-align: left; padding-left: 6px; }} QPushButton:hover {{ background-color: {hover}; border: 1px solid {fg}; }}")
             btn.clicked.connect(lambda checked, c=self.current_cat, idx=i: self.on_click(c, idx))
             self.snip_layout.addWidget(btn)
             
@@ -93,3 +95,26 @@ class QuickListWidget(QWidget):
              
     def focusOutEvent(self, event):
         self.close()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if self.kb_listener is None:
+            self.kb_listener = keyboard.Listener(on_press=self.on_global_key_press)
+            self.kb_listener.start()
+            
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        if self.kb_listener is not None:
+            self.kb_listener.stop()
+            self.kb_listener = None
+            
+    def closeEvent(self, event):
+        super().closeEvent(event)
+        if self.kb_listener is not None:
+            self.kb_listener.stop()
+            self.kb_listener = None
+
+    def on_global_key_press(self, key):
+        if key == keyboard.Key.esc:
+            from PyQt6.QtCore import QMetaObject, Qt
+            QMetaObject.invokeMethod(self, "close", Qt.ConnectionType.QueuedConnection)

@@ -8,6 +8,32 @@ class VaultTextEdit(QTextEdit):
         super().__init__()
         self.main_win = main_win
         self.document().setUndoRedoEnabled(True)
+        self._right_drag_start = None
+        self._dragged = False
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.RightButton:
+            self._right_drag_start = event.globalPosition().toPoint()
+            self._dragged = False
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if event.buttons() & Qt.MouseButton.RightButton and self._right_drag_start is not None:
+            delta = event.globalPosition().toPoint() - self._right_drag_start
+            if not self._dragged and delta.manhattanLength() > 3:
+                self._dragged = True
+            if self._dragged:
+                self.main_win.move(self.main_win.pos() + delta)
+                self._right_drag_start = event.globalPosition().toPoint()
+                return
+        super().mouseMoveEvent(event)
+
+    def contextMenuEvent(self, event):
+        if self._dragged:
+            self._dragged = False
+            event.ignore()
+            return
+        super().contextMenuEvent(event)
 
     def insertFromMimeData(self, source):
         if self.main_win.btn_format.text() == "Plain":

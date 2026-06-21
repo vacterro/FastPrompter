@@ -9,10 +9,9 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
 from PyQt6.QtCore import Qt, QEvent, QTimer, QMimeData, QAbstractNativeEventFilter, QPoint
 from PyQt6.QtGui import (QCursor, QFont, QIcon, QPixmap, QColor,
                          QShortcut, QKeySequence, QTextOption, QDrag, QTextCursor,
-                         QTextCharFormat, QTextDocument, QFontDatabase)
+                         QTextCharFormat, QTextDocument)
 from PyQt6.QtNetwork import QLocalSocket, QLocalServer
 import sqlite3
-from PyQt6 import sip
 
 user32 = ctypes.windll.user32
 user32.RegisterHotKey.argtypes = [ctypes.wintypes.HWND, ctypes.c_int, ctypes.wintypes.UINT, ctypes.wintypes.UINT]
@@ -20,43 +19,418 @@ user32.RegisterHotKey.restype = ctypes.wintypes.BOOL
 user32.UnregisterHotKey.argtypes = [ctypes.wintypes.HWND, ctypes.c_int]
 user32.UnregisterHotKey.restype = ctypes.wintypes.BOOL
 
-from fastprompter.utils.paths import get_db_path, get_resource_path
-from fastprompter.core.state import FastPrompterState
-
+BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR    = os.path.join(BASE_DIR, "FastPrompter_Data")
+os.makedirs(DATA_DIR, exist_ok=True)
+DB_FILE     = os.path.join(DATA_DIR, "local_data_v15.db")
 SERVER_NAME = "FastPrompter_Server_V15"
 
-from fastprompter.theme.themes import THEMES
+THEMES = {
+    "Original Gold": {
+        "stylesheet": """
+QWidget { background-color: #1a1a1a; color: #c4ba9f; font-family: Verdana; font-size: 11px; }
+QMainWindow { background-color: #1a1a1a; border: 1px solid #4a4a4a; }
+QTextEdit { background-color: #0f0f0f; color: #dcd3b6; border: 1px inset #050505; padding: 2px; }
+QPushButton { background-color: #2b2b2b; color: #bfa65e; border: 1px outset #4a4a4a; padding: 2px 4px; }
+QPushButton:pressed, QPushButton:checked { background-color: #1c1c1c; border: 1px inset #050505; color: #d6be76; }
+QTabBar::tab { background: #2b2b2b; border: 1px outset #4a4a4a; padding: 3px 8px; color: #7a7566; }
+QTabBar::tab:selected { background: #1c1c1c; border: 1px inset #050505; font-weight: bold; color: #d6be76; }
+QTabBar::scroller { width: 0px; }
+QMenu { background-color: #1c1c1c; border: 1px outset #4a4a4a; font-family: Verdana; }
+QMenu::item:selected { background-color: #bfa65e; color: #000000; }
+QSpinBox, QComboBox, QLineEdit { background-color: #0f0f0f; color: #c4ba9f; border: 1px inset #050505; padding: 2px; }
+QCheckBox { color: #c4ba9f; }
+QCheckBox::indicator { width: 12px; height: 12px; background: #0f0f0f; border: 1px inset #050505; }
+QCheckBox::indicator:checked { background: #bfa65e; }
+QToolTip { color: #ffffff; background-color: #2b2b2b; border: 1px solid #bfa65e; padding: 2px; }
+QSplitter::handle { background-color: #2b2b2b; }
+#SearchFrame { background-color: #1c1c1c; border: 1px solid #4a4a4a; border-radius: 2px; }
+""",
+        "preset_colors": ["#1e1e1e","#24221c","#1c2420","#241f1c","#1c1c24", "#22241c","#1c2224","#241c22","#24241c","#1a1a1a"],
+        "active_temp_color": "#3a3a2a",
+        "inactive_temp_color": "#1c1c1c",
+        "tray_color": "#8b4513",
+        "btn_new": "background-color: #4a3b1f; color: #ffeb99; font-weight: bold; padding: 4px; border: 1px outset #5a4b2f;",
+        "btn_save": "background-color: #1b2c3b; color: #8acee6; font-weight: bold; padding: 4px; border: 1px outset #2c4257;",
+        "lbl_help": "font-size: 12px; color: #8acee6;",
+        "lbl_title": "font-weight: bold; color: #bfa65e;",
+        "mini_settings": "QFrame { background-color: #2b2b2b; border: 1px solid #4a4a4a; padding: 2px; }"
+    },
+    "Vintage Dark": {
+        "stylesheet": """
+QWidget { background-color: #000000; color: #c0c0c0; font-family: Verdana; font-size: 11px; }
+QMainWindow { background-color: #000000; border: 2px solid #808080; }
+QTextEdit { background-color: #141414; color: #c0c0c0; border: 2px inset #202020; padding: 4px; }
+QPushButton { background-color: #1e1e1e; color: #c0c0c0; border: 2px outset #808080; padding: 3px 6px; }
+QPushButton:pressed, QPushButton:checked { background-color: #141414; border: 2px inset #202020; color: #5a7a96; }
+QTabBar::tab { background: #1e1e1e; border: 2px outset #808080; padding: 4px 10px; color: #969696; }
+QTabBar::tab:selected { background: #141414; border: 2px inset #202020; font-weight: bold; color: #5a7a96; }
+QTabBar::scroller { width: 0px; }
+QMenu { background-color: #1e1e1e; border: 2px outset #808080; font-family: Verdana; }
+QMenu::item:selected { background-color: #5a7a96; color: #000000; }
+QSpinBox, QComboBox, QLineEdit { background-color: #141414; color: #c0c0c0; border: 2px inset #202020; padding: 2px; }
+QCheckBox { color: #c0c0c0; }
+QCheckBox::indicator { width: 12px; height: 12px; background: #141414; border: 2px inset #202020; }
+QCheckBox::indicator:checked { background: #5a7a96; }
+QToolTip { color: #c0c0c0; background-color: #1e1e1e; border: 1px solid #808080; padding: 4px; }
+QSplitter::handle { background-color: #1e1e1e; }
+#SearchFrame { background-color: #141414; border: 1px solid #808080; border-radius: 2px; }
+""",
+        "preset_colors": ["#1e1e1e"] * 10,
+        "active_temp_color": "#364757",
+        "inactive_temp_color": "#141414",
+        "tray_color": "#8b4513",
+        "btn_new": "background-color: #1e1e1e; color: #5a7a96; font-weight: bold; font-size: 12px; padding: 6px; border: 2px outset #808080;",
+        "btn_save": "background-color: #1e1e1e; color: #c0c0c0; font-weight: bold; font-size: 12px; padding: 6px; border: 2px outset #808080;",
+        "lbl_help": "font-size: 14px; color: #5a7a96;",
+        "lbl_title": "font-weight: bold; color: #c0c0c0;",
+        "mini_settings": "QFrame { background-color: #141414; border: 1px solid #808080; padding: 2px; }"
+    },
+    "Vintage Classic": {
+        "stylesheet": """
+QWidget { background-color: #c0c0c0; color: #000000; font-family: "MS Sans Serif"; font-size: 11px; }
+QMainWindow { background-color: #c0c0c0; border: 2px solid #808080; }
+QTextEdit { background-color: #ffffff; color: #000000; border: 2px inset #808080; padding: 4px; }
+QPushButton { background-color: #c0c0c0; color: #000000; border: 2px outset #ffffff; padding: 3px 6px; }
+QPushButton:pressed, QPushButton:checked { background-color: #e6e6e6; border: 2px inset #808080; color: #5e7a7a; }
+QTabBar::tab { background: #c0c0c0; border: 2px outset #ffffff; padding: 4px 10px; color: #202020; }
+QTabBar::tab:selected { background: #e6e6e6; border: 2px inset #808080; font-weight: bold; color: #5e7a7a; }
+QTabBar::scroller { width: 0px; }
+QMenu { background-color: #c0c0c0; border: 2px outset #ffffff; }
+QMenu::item:selected { background-color: #5e7a7a; color: #ffffff; }
+QSpinBox, QComboBox, QLineEdit { background-color: #ffffff; color: #000000; border: 2px inset #808080; padding: 2px; }
+QCheckBox { color: #000000; }
+QCheckBox::indicator { width: 12px; height: 12px; background: #ffffff; border: 2px inset #808080; }
+QCheckBox::indicator:checked { background: #5e7a7a; }
+QToolTip { color: #000000; background-color: #ffffff; border: 1px solid #000000; padding: 4px; }
+QSplitter::handle { background-color: #c0c0c0; }
+#SearchFrame { background-color: #c0c0c0; border: 1px solid #808080; border-radius: 2px; }
+""",
+        "preset_colors": ["#d4d0c8", "#c0c0c0", "#a0a0a0", "#c0c0c0"],
+        "active_temp_color": "#5e7a7a",
+        "inactive_temp_color": "#e6e6e6",
+        "tray_color": "#8b4513",
+        "btn_new": "background-color: #c0c0c0; color: #5e7a7a; font-weight: bold; font-size: 12px; padding: 6px; border: 2px outset #ffffff;",
+        "btn_save": "background-color: #c0c0c0; color: #000000; font-weight: bold; font-size: 12px; padding: 6px; border: 2px outset #ffffff;",
+        "lbl_help": "QLabel { color: #808080; }",
+        "lbl_title": "font-weight: bold; color: #000000;",
+        "mini_settings": "QFrame { background-color: #c0c0c0; border: 2px solid #ffffff; border-bottom-color: #808080; border-right-color: #808080; } QLabel { color: #000000; } QCheckBox { color: #000000; } QComboBox, QSpinBox { background-color: #ffffff; color: #000000; border: 2px solid #808080; border-bottom-color: #ffffff; border-right-color: #ffffff; } QPushButton { background-color: #c0c0c0; color: #000000; border: 2px solid #ffffff; border-bottom-color: #808080; border-right-color: #808080; }"
+    }
+}
 
-from fastprompter.core.config import extract_bg, extract_color, create_tray_icon
-from fastprompter.ui.editor import VaultTextEdit
-from fastprompter.ui.snippet_panel import DraggableButton, SnippetWidget, DropVerticalWidget, DraggableSiloButton, SiloDropWidget
-from fastprompter.core.hotkeys import HotkeyManager
-from fastprompter.ui.settings import HotkeyWidget, HotkeySettingsDialog
-from fastprompter.ui.pie_menu import QuickListWidget
+def extract_bg(style):
+    m = re.search(r"background-color:\s*(#[0-9a-fA-F]+)", style)
+    return m.group(1) if m else None
 
-from fastprompter.core.hotkeys import parse_hotkey
+def extract_color(style):
+    m = re.search(r"color:\s*(#[0-9a-fA-F]+)", style)
+    return m.group(1) if m else None
+
+def create_tray_icon(color="#8b4513"):
+    pix = QPixmap(16,16); pix.fill(QColor(color)); return QIcon(pix)
+
+def parse_hotkey(hotkey_str):
+    parts = hotkey_str.upper().split('+')
+    modifiers, vk = 0, 0
+    for part in parts:
+        part = part.strip()
+        if part == 'CTRL': modifiers |= 0x0002
+        elif part == 'ALT': modifiers |= 0x0001
+        elif part == 'SHIFT': modifiers |= 0x0004
+        elif part == 'WIN': modifiers |= 0x0008
+        elif len(part) == 1 and 'A' <= part <= 'Z': vk = ord(part)
+        elif len(part) == 1 and '0' <= part <= '9': vk = ord(part)
+        elif part.startswith('F') and part[1:].isdigit(): vk = 0x6F + int(part[1:])
+        elif part.startswith('NUMPAD') and part[6:].isdigit() and 0 <= int(part[6:]) <= 9: vk = 0x60 + int(part[6:])
+        elif part == 'SPACE': vk = 0x20
+    return modifiers, vk
 
 def try_connect_to_server(retries=3, delay=0.05):
-    # Read the ephemeral token to securely communicate with the server
-    token_file = os.path.join(os.environ.get("TEMP", ""), "fastprompter_ipc.token")
-    token = ""
-    if os.path.exists(token_file):
-        try:
-            with open(token_file, "r") as f:
-                token = f.read().strip()
-        except Exception:
-            pass
-
     for _ in range(retries):
         sock = QLocalSocket()
         sock.connectToServer(SERVER_NAME)
-        if sock.waitForConnected(100):
-            # Pass token as property to be picked up by main_entry
-            if token:
-                sock.setProperty("ipc_token", token)
-            return sock
+        if sock.waitForConnected(100): return sock
         time.sleep(delay)
     return None
+
+class VaultTextEdit(QTextEdit):
+    def __init__(self, main_win):
+        super().__init__()
+        self.main_win = main_win
+        self.document().setUndoRedoEnabled(True)
+
+    def insertFromMimeData(self, source):
+        if self.main_win.btn_format.text() == "Plain":
+            if source.hasText(): self.insertPlainText(source.text())
+        else:
+            super().insertFromMimeData(source)
+
+    def wheelEvent(self, event):
+        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            delta = event.angleDelta().y()
+            if delta:
+                self.main_win.adjust_font_size(1 if delta > 0 else -1)
+                event.accept()
+                return
+        super().wheelEvent(event)
+
+    def keyPressEvent(self, event):
+        mods = event.modifiers()
+        
+        if mods == Qt.KeyboardModifier.ControlModifier:
+            if event.key() == Qt.Key.Key_Z:
+                self.undo()
+                event.accept()
+                return
+            if event.key() == Qt.Key.Key_Y:
+                self.redo()
+                event.accept()
+                return
+
+        if mods & Qt.KeyboardModifier.ControlModifier and event.key() in (Qt.Key.Key_Home, Qt.Key.Key_End):
+            cursor = self.textCursor()
+            cursor.movePosition(QTextCursor.MoveOperation.Start if event.key() == Qt.Key.Key_Home else QTextCursor.MoveOperation.End)
+            self.setTextCursor(cursor)
+            self.ensureCursorVisible()
+            event.accept()
+            return
+
+        if mods & Qt.KeyboardModifier.ControlModifier and event.key() in (Qt.Key.Key_Plus, Qt.Key.Key_Equal, Qt.Key.Key_Minus, Qt.Key.Key_Underscore):
+            self.main_win.adjust_ui_scale(0.05 if event.key() in (Qt.Key.Key_Plus, Qt.Key.Key_Equal) else -0.05)
+            event.accept()
+            return
+
+        if event.key() == Qt.Key.Key_Home:
+            cursor = self.textCursor()
+            cursor.movePosition(QTextCursor.MoveOperation.Start)
+            self.setTextCursor(cursor)
+            self.ensureCursorVisible()
+            event.accept()
+            return
+
+        if event.key() == Qt.Key.Key_End:
+            cursor = self.textCursor()
+            cursor.movePosition(QTextCursor.MoveOperation.End)
+            self.setTextCursor(cursor)
+            self.ensureCursorVisible()
+            event.accept()
+            return
+
+        if event.key() == Qt.Key.Key_C and mods == Qt.KeyboardModifier.ControlModifier:
+            cursor = self.textCursor()
+            if not cursor.hasSelection():
+                cursor.select(QTextCursor.SelectionType.Document)
+                self.setTextCursor(cursor)
+            super().keyPressEvent(event)
+            if self.main_win.cb_ctrl_c.isChecked():
+                QTimer.singleShot(10, self.main_win.hide_and_save)
+            return
+        super().keyPressEvent(event)
+
+class DraggableButton(QPushButton):
+    def __init__(self, main_win, parent=None):
+        super().__init__("", parent)
+        self.cat, self.global_idx, self.full_text = "", -1, ""
+        self.main_win, self.drag_start, self._dragging = main_win, None, False
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.customContextMenuRequested.connect(self.show_menu)
+
+    def update_data(self, text_label, cat, global_idx, full_text, color, font_family):
+        self.setText(text_label)
+        self.cat, self.global_idx, self.full_text = cat, global_idx, full_text
+        self.setStyleSheet(f"background-color:{color}; font-size:10px; padding:0 4px; font-family:'{font_family}'; text-align:left;")
+        self.show()
+
+    def show_menu(self, pos):
+        menu = QMenu(self)
+        menu.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        menu.setFont(QApplication.font())
+        menu.addAction("Copy", lambda: self.main_win.copy_snippet_to_clipboard(self.full_text))
+        menu.addAction("Rename", lambda: self.main_win.rename_snippet(self.cat, self.global_idx))
+        self.main_win.ignore_focus_loss = True
+        try:
+            menu.exec(self.mapToGlobal(pos))
+        finally:
+            self.main_win.ignore_focus_loss = False
+        self.main_win.activateWindow()
+
+    def mousePressEvent(self, e):
+        if e.button() == Qt.MouseButton.RightButton and e.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            self.main_win.prompt_delete_snippet(self.cat, self.global_idx)
+            e.accept()
+            return
+        if e.button() == Qt.MouseButton.LeftButton:
+            self.drag_start, self._dragging = e.pos(), False
+            e.accept()
+            return
+        super().mousePressEvent(e)
+
+    def mouseMoveEvent(self, e):
+        if getattr(self.main_win, 'is_locked', False) or not (e.buttons() & Qt.MouseButton.LeftButton) or not self.drag_start: return
+        if (e.pos() - self.drag_start).manhattanLength() < QApplication.startDragDistance(): return
+        self._dragging = True
+        drag, mime = QDrag(self), QMimeData()
+        mime.setText(f"{self.cat}:{self.global_idx}")
+        drag.setMimeData(mime)
+        drag.exec(Qt.DropAction.MoveAction)
+
+    def mouseReleaseEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton and not self._dragging:
+            self.main_win.load_snippet_for_edit(self.cat, self.global_idx)
+            e.accept()
+            return
+        super().mouseReleaseEvent(e)
+
+class SnippetWidget(QWidget):
+    def __init__(self, main_win, parent=None):
+        super().__init__(parent)
+        self.main_win = main_win
+        self.layout = QHBoxLayout(self)
+        self.layout.setContentsMargins(0, 0, 0, 0)
+        self.layout.setSpacing(1)
+
+        self.main_btn = DraggableButton(main_win, self)
+        self.main_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        
+        self.btn_top = QPushButton("▲")
+        self.btn_ins = QPushButton("▶")
+        self.btn_bot = QPushButton("▼")
+        
+        self.layout.addWidget(self.main_btn)
+        for btn in (self.btn_top, self.btn_ins, self.btn_bot):
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.clicked.connect(self.on_action_clicked)
+            self.layout.addWidget(btn)
+
+    def update_data(self, text_label, cat, global_idx, full_text, color, font_family, scale):
+        self.main_btn.update_data(text_label, cat, global_idx, full_text, color, font_family)
+        
+        theme_name = self.main_win.data.get("theme", "Original Gold")
+        theme = THEMES.get(theme_name, THEMES["Original Gold"])
+        bg = extract_bg(theme.get('mini_settings', '')) or '#2b2b2b'
+        fg = extract_color(theme.get('lbl_title', '')) or '#bfa65e'
+        border = extract_color(theme.get('btn_save', '')) or '#4a4a4a'
+        
+        btn_size = max(14, int(round(22 * scale)))
+        self.main_btn.setFixedHeight(btn_size)
+        
+        btn_style = f"background-color:{bg}; color:{fg}; border: 1px solid {border}; font-size:{max(8, int(round(9*scale)))}px; font-weight:bold; padding:0;"
+        
+        for btn in (self.btn_top, self.btn_ins, self.btn_bot):
+            btn.setStyleSheet(btn_style)
+            btn.setFixedSize(max(14, int(round(18 * scale))), btn_size)
+        
+        self.show()
+
+    def on_action_clicked(self):
+        sender = self.sender()
+        if sender == self.btn_top: self.main_win.insert_snippet_text(self.main_btn.full_text, "top")
+        elif sender == self.btn_ins: self.main_win.insert_snippet_text(self.main_btn.full_text, "ins")
+        elif sender == self.btn_bot: self.main_win.insert_snippet_text(self.main_btn.full_text, "bot")
+
+class DropVerticalWidget(QWidget):
+    def __init__(self, main_win):
+        super().__init__()
+        self.setAcceptDrops(True)
+        self.main_win = main_win
+        self.layout = QVBoxLayout(self)
+        self.layout.setContentsMargins(0, 0, 0, 0)
+        self.layout.setSpacing(2)
+        self.layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+    def dragEnterEvent(self, e):
+        cat = self.main_win.get_current_category()
+        if e.mimeData().hasText() and e.mimeData().text().startswith(cat + ":"): e.acceptProposedAction()
+
+    def dropEvent(self, e):
+        cat = self.main_win.get_current_category()
+        pos, source_data = e.position().toPoint(), e.mimeData().text().split(':')
+        if len(source_data) != 2 or source_data[0] != cat: e.ignore(); return
+        source_idx, page = int(source_data[1]), self.main_win.current_pages.get(cat, 0)
+        
+        target_view_idx = -1
+        for i in range(self.layout.count()):
+            item = self.layout.itemAt(i).widget()
+            if item and item.isVisible() and item.geometry().contains(pos): target_view_idx = i; break
+        
+        if target_view_idx == -1:
+            visible_count = sum(1 for i in range(self.layout.count()) if self.layout.itemAt(i).widget().isVisible())
+            target_view_idx = 0 if pos.y() < self.height() // 2 else visible_count - 1
+            
+        target_global_idx = page * 10 + max(0, min(9, target_view_idx))
+        self.main_win.move_preset_to_index(cat, source_idx, target_global_idx)
+        e.acceptProposedAction()
+
+class DraggableSiloButton(QPushButton):
+    def __init__(self, main_win, parent=None):
+        super().__init__("", parent)
+        self.global_idx, self.main_win, self.drag_start, self._dragging = -1, main_win, None, False
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.customContextMenuRequested.connect(self.show_menu)
+
+    def update_data(self, text_label, global_idx, bg_color):
+        self.setText(text_label)
+        self.global_idx = global_idx
+        self.setStyleSheet(f"font-size:10px; padding:0 4px; font-family:Verdana; text-align:left; background-color:{bg_color};")
+        self.show()
+
+    def show_menu(self, pos):
+        self.main_win.show_temp_menu(self.global_idx, self.mapToGlobal(pos))
+
+    def mousePressEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton:
+            self.drag_start, self._dragging = e.pos(), False
+            e.accept()
+            return
+        super().mousePressEvent(e)
+
+    def mouseMoveEvent(self, e):
+        if getattr(self.main_win, 'is_locked', False) or not (e.buttons() & Qt.MouseButton.LeftButton) or not self.drag_start: return
+        if (e.pos() - self.drag_start).manhattanLength() < QApplication.startDragDistance(): return
+        self._dragging = True
+        drag, mime = QDrag(self), QMimeData()
+        mime.setText(f"silo:{self.global_idx}")
+        drag.setMimeData(mime)
+        drag.exec(Qt.DropAction.MoveAction)
+
+    def mouseReleaseEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton and not self._dragging:
+            self.main_win._switch_to_slot(self.global_idx)
+            e.accept()
+            return
+        super().mouseReleaseEvent(e)
+
+class SiloDropWidget(QWidget):
+    def __init__(self, main_win):
+        super().__init__()
+        self.setAcceptDrops(True)
+        self.main_win = main_win
+        self.layout = QVBoxLayout(self)
+        self.layout.setContentsMargins(0, 0, 0, 0)
+        self.layout.setSpacing(2)
+        self.layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+    def dragEnterEvent(self, e):
+        if e.mimeData().hasText() and e.mimeData().text().startswith("silo:"): e.acceptProposedAction()
+
+    def dropEvent(self, e):
+        mime = e.mimeData()
+        if not mime.hasText(): return
+        data, pos = mime.text().split(':'), e.position().toPoint()
+        if len(data) != 2 or data[0] != "silo": return
+        
+        start_idx, target_view_idx = self.main_win.silo_page * 10, -1
+        for i in range(self.layout.count()):
+            btn = self.layout.itemAt(i).widget()
+            if btn and btn.isVisible() and btn.geometry().contains(pos): target_view_idx = i; break
+        
+        if target_view_idx == -1:
+            visible_count = sum(1 for i in range(self.layout.count()) if self.layout.itemAt(i).widget().isVisible())
+            target_view_idx = 0 if pos.y() < self.height() // 2 else visible_count - 1
+
+        target_global_idx = start_idx + target_view_idx
+        if int(data[1]) != target_global_idx: self.main_win.swap_temp_slots(int(data[1]), target_global_idx)
+        e.acceptProposedAction()
 
 class HotkeyFilter(QAbstractNativeEventFilter):
     def __init__(self, window):
@@ -73,17 +447,206 @@ class HotkeyFilter(QAbstractNativeEventFilter):
                     elif msg.wParam == 3: self.window.toggle_lock(); return True, 0
                     elif msg.wParam == 4: self.window.toggle_always_on_top(); return True, 0
                     elif 10 <= msg.wParam <= 19: self.window.fire_global_snippet(msg.wParam - 10); return True, 0
-                elif msg.message == 0x0112: # WM_SYSCOMMAND
-                    if msg.wParam & 0xFFF0 == 0xF100: # SC_KEYMENU
-                        return True, 0
         except Exception: pass
         return False, 0
 
+class HotkeyWidget(QWidget):
+    def __init__(self, default_text=""):
+        super().__init__()
+        self.layout = QHBoxLayout(self)
+        self.layout.setContentsMargins(0, 0, 0, 0)
+        self.lbl_key = QLabel(default_text)
+        self.lbl_key.setStyleSheet("font-weight: bold;")
+        self.btn_bind = QPushButton("Bind")
+        self.btn_bind.setFixedWidth(50)
+        self.btn_bind.clicked.connect(self.start_listening)
+        self.layout.addWidget(self.lbl_key)
+        self.layout.addWidget(self.btn_bind)
+        self.is_listening = False
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        
+    def start_listening(self):
+        self.is_listening = True
+        self.btn_bind.setText("...")
+        self.setFocus()
+        
+    def keyPressEvent(self, event):
+        if not self.is_listening:
+            super().keyPressEvent(event); return
+        key = event.key()
+        if key in (Qt.Key.Key_Control, Qt.Key.Key_Shift, Qt.Key.Key_Alt, Qt.Key.Key_Meta): return
+        if key == Qt.Key.Key_Escape:
+            self.btn_bind.setText("Bind"); self.is_listening = False; self.clearFocus(); return
+            
+        modifiers, parts = event.modifiers(), []
+        if modifiers & Qt.KeyboardModifier.ControlModifier: parts.append("Ctrl")
+        if modifiers & Qt.KeyboardModifier.AltModifier: parts.append("Alt")
+        if modifiers & Qt.KeyboardModifier.ShiftModifier: parts.append("Shift")
+        if modifiers & Qt.KeyboardModifier.MetaModifier: parts.append("Win")
+        
+        key_str = QKeySequence(key).toString()
+        if event.modifiers() & Qt.KeyboardModifier.KeypadModifier and Qt.Key.Key_0 <= key <= Qt.Key.Key_9: key_str = f"Numpad{chr(key)}"
+        if key_str:
+            parts.append(key_str)
+            self.setText("+".join(parts))
+        self.is_listening = False
+        self.btn_bind.setText("Bind")
+        self.clearFocus()
+
+    def setText(self, text):
+        self.lbl_key.setText(text)
+        
+    def text(self):
+        return self.lbl_key.text()
+
+class HotkeySettingsDialog(QDialog):
+    def __init__(self, main_win):
+        super().__init__(main_win)
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        self.main_win = main_win
+        self.main_win.unregister_all_hotkeys()
+        self.setWindowTitle("Configure Global Hotkeys")
+        self.setMinimumWidth(400)
+        
+        layout, form_layout = QVBoxLayout(self), QFormLayout()
+        
+        self.le_global = HotkeyWidget(self.main_win.data.get("global_hotkey", "Alt+X"))
+        form_layout.addRow("Toggle UI (Global):", self.le_global)
+        self.le_pie = HotkeyWidget(self.main_win.data.get("pie_menu_hotkey", "Shift+Alt+X"))
+        form_layout.addRow("Summon Quick List:", self.le_pie)
+        self.le_lock = HotkeyWidget(self.main_win.data.get("lock_window_hotkey", "Ctrl+Shift+L"))
+        form_layout.addRow("Toggle Lock Window:", self.le_lock)
+        self.le_top = HotkeyWidget(self.main_win.data.get("always_on_top_hotkey", "Ctrl+Shift+E"))
+        form_layout.addRow("Toggle Always on Top:", self.le_top)
+        
+        self.snippet_inputs = []
+        for i in range(10):
+            le = HotkeyWidget(self.main_win.data.get(f"snippet_{i}_hotkey", f"Ctrl+Shift+Numpad{i+1 if i < 9 else 0}"))
+            self.snippet_inputs.append(le)
+            form_layout.addRow(f"Paste Snippet {i+1}:", le)
+            
+        layout.addLayout(form_layout)
+        
+        btn_layout, btn_reset, btn_save = QHBoxLayout(), QPushButton("Reset Defaults"), QPushButton("Save Hotkeys")
+        btn_reset.clicked.connect(self.reset_defaults)
+        btn_save.clicked.connect(self.save_hotkeys)
+        btn_layout.addWidget(btn_reset); btn_layout.addStretch(); btn_layout.addWidget(btn_save)
+        layout.addLayout(btn_layout)
+        
+    def reset_defaults(self):
+        self.le_global.setText("Alt+X")
+        self.le_pie.setText("Shift+Alt+X")
+        self.le_lock.setText("Ctrl+Shift+L")
+        self.le_top.setText("Ctrl+Shift+E")
+        for i, le in enumerate(self.snippet_inputs): le.setText(f"Ctrl+Shift+Numpad{i+1 if i < 9 else 0}")
+         
+    def save_hotkeys(self):
+        self.main_win.data["global_hotkey"] = self.le_global.text()
+        self.main_win.data["pie_menu_hotkey"] = self.le_pie.text()
+        self.main_win.data["lock_window_hotkey"] = self.le_lock.text()
+        self.main_win.data["always_on_top_hotkey"] = self.le_top.text()
+        for i, le in enumerate(self.snippet_inputs): self.main_win.data[f"snippet_{i}_hotkey"] = le.text()
+        self.main_win.mark_dirty()
+        self.main_win.save_data_to_db(force=True)
+        self.accept()
+        
+    def accept(self):
+        self.main_win.register_all_hotkeys(); super().accept()
+        
+    def reject(self):
+        self.main_win.register_all_hotkeys(); super().reject()
+
+class QuickListWidget(QWidget):
+    def __init__(self, main_win):
+        super().__init__(None)
+        self.main_win = main_win
+        
+        self.setWindowFlags(Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        
+        self.layout = QVBoxLayout(self)
+        self.layout.setContentsMargins(4, 4, 4, 4)
+        self.layout.setSpacing(4)
+        
+        self.cat_layout = QHBoxLayout()
+        self.cat_layout.setSpacing(2)
+        self.layout.addLayout(self.cat_layout)
+        
+        self.snip_layout = QVBoxLayout()
+        self.snip_layout.setSpacing(2)
+        self.layout.addLayout(self.snip_layout)
+        
+        self.cats = self.main_win.data['cats_order'][:3]
+        self.current_cat = self.main_win.get_current_category()
+        if self.current_cat not in self.cats and self.cats:
+            self.current_cat = self.cats[0]
+            
+        self.init_ui()
+        
+    def init_ui(self):
+        while self.cat_layout.count():
+            w = self.cat_layout.takeAt(0).widget()
+            if w: w.deleteLater()
+        while self.snip_layout.count():
+            w = self.snip_layout.takeAt(0).widget()
+            if w: w.deleteLater()
+            
+        if not self.cats: return
+        
+        theme_name = self.main_win.data.get("theme", "Original Gold")
+        theme = THEMES.get(theme_name, THEMES["Original Gold"])
+        
+        bg = extract_bg(theme.get('mini_settings', '')) or '#2b2b2b'
+        fg = extract_color(theme.get('lbl_title', '')) or '#bfa65e'
+        border = extract_color(theme.get('btn_save', '')) or '#4a4a4a'
+        hover = extract_color(theme.get('lbl_help', '')) or '#1c1c1c'
+        active_bg = extract_bg(theme.get('btn_new', '')) or '#4a3b1f'
+        
+        self.setStyleSheet(f"background-color: {hover}; border: 1px solid {border}; border-radius: 4px;")
+        
+        for cat in self.cats:
+            btn = QPushButton(cat[:10])
+            btn.setFixedSize(52, 20)
+            btn_bg = active_bg if cat == self.current_cat else bg
+            btn.setStyleSheet(f"QPushButton {{ background-color: {btn_bg}; color: {fg}; border: 1px solid {border}; border-radius: 2px; font-size: 10px; font-weight: bold; font-family: Verdana; }} QPushButton:hover {{ border: 1px solid {fg}; }}")
+            btn.clicked.connect(lambda checked, c=cat: self.switch_cat(c))
+            self.cat_layout.addWidget(btn)
+            
+        snippets = [s for s in self.main_win.data["categories"].get(self.current_cat, []) if s is not None][:10]
+        for i, snip in enumerate(snippets):
+            btn = QPushButton(snip.get("name", "")[:20])
+            btn.setFixedSize(160, 26)
+            btn.setStyleSheet(f"QPushButton {{ background-color: {bg}; color: {fg}; border: 1px solid {border}; border-radius: 2px; font-size: 11px; font-weight: bold; font-family: Verdana; text-align: left; padding-left: 6px; }} QPushButton:hover {{ background-color: {hover}; border: 1px solid {fg}; }}")
+            btn.clicked.connect(lambda checked, c=self.current_cat, idx=i: self.on_click(c, idx))
+            self.snip_layout.addWidget(btn)
+            
+        QTimer.singleShot(10, self.adjustSize)
+        QTimer.singleShot(15, self.center_on_cursor)
+
+    def center_on_cursor(self):
+        cursor_pos = QCursor.pos()
+        self.move(cursor_pos.x() - self.width() // 2, cursor_pos.y() - self.height() // 2)
+
+    def switch_cat(self, cat):
+        self.current_cat = cat
+        self.init_ui()
+
+    def on_click(self, cat, idx):
+        self.close()
+        QTimer.singleShot(50, lambda: self.main_win.fire_global_snippet_from_cat(cat, idx))
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Escape: self.close()
+        else: super().keyPressEvent(event)
+             
+    def focusOutEvent(self, event):
+        self.close()
 
 class FastPrompter(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setMouseTracking(True)
         self.ignore_focus_loss, self.registered_hotkeys, self._db_dirty = False, [], False
         self.save_timer = QTimer(self)
         self.save_timer.setSingleShot(True)
@@ -100,71 +663,22 @@ class FastPrompter(QMainWindow):
         self._initializing_ui, self._suspend_temp_sync = True, True
 
         self.setup_single_instance_server()
-        self.state = FastPrompterState()
-        self.data = self.state.data
-        self.conn = self.state.conn
-        self.active_temp_slot = self.data.get("active_temp_slot", 0)
-        
+        self.init_db()
         self.init_ui()
         self.init_tray()
         self.setup_global_shortcuts()
-        # Delay global hotkey binding until after UI initialization to prevent race conditions causing silent crashes (Debater Constraint)
-        QTimer.singleShot(100, self.register_all_hotkeys)
+        self.register_all_hotkeys()
         
         self._switch_to_slot(self.active_temp_slot, initial=True)
         self._initializing_ui, self._suspend_temp_sync = False, False
         self.apply_theme()
-        
-        self.topmost_timer = QTimer(self)
-        self.topmost_timer.timeout.connect(self.enforce_topmost)
-        self.topmost_timer.start(2000)
 
     def mark_dirty(self):
-        self.state.mark_dirty()
-
-    def enforce_topmost(self):
-        if self.data.get("always_on_top", "True") == "True" and not self.isHidden():
-            try:
-                import ctypes
-                HWND_TOPMOST = -1
-                SWP_NOSIZE = 1
-                SWP_NOMOVE = 2
-                ctypes.windll.user32.SetWindowPos(int(self.winId()), HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE)
-            except Exception:
-                pass
-
-    def _apply_tooltips(self):
-        h_global = self.data.get("global_hotkey", "Alt+X")
-        h_pie = self.data.get("pie_menu_hotkey", "Shift+Alt+X")
-        h_lock = self.data.get("lock_window_hotkey", "Ctrl+Shift+L")
-        h_aot = self.data.get("always_on_top_hotkey", "Ctrl+Shift+E")
-        
-        if hasattr(self, 'cb_top'): self.cb_top.setToolTip(f"Always on top ({h_aot})")
-        if hasattr(self, 'cb_lock_window'): self.cb_lock_window.setToolTip(f"Lock Window ({h_lock})")
-        
-        shortcuts_info = (
-            f"--- GLOBAL HOTKEYS ---\n"
-            f"Toggle App Visibility: {h_global}\n"
-            f"Pie Menu: {h_pie}\n"
-            f"Lock Window: {h_lock}\n"
-            f"Always On Top: {h_aot}\n\n"
-            f"--- APP HOTKEYS ---\n"
-            f"Ctrl+Q : Cycle Snap Corners (move across screens)\n"
-            f"Ctrl+N : New Empty Snippet\n"
-            f"Ctrl+S : Save Snippet\n"
-            f"Ctrl+Z : Undo Text Change\n"
-            f"Ctrl+D : Toggle Focus Mode\n"
-            f"Ctrl+F : Find Text\n"
-            f"Ctrl+H : Replace Text\n"
-            f"Ctrl+Shift+S : Export/Save Silo to File\n"
-            f"Esc : Hide Window & Auto-save\n"
-            f"F1 - F10 : Execute Snippet 1-10\n"
-            f"Ctrl+Alt+Shift+Q : Quit Application Completely"
-        )
-        if hasattr(self, 'btn_hotkeys'): self.btn_hotkeys.setToolTip(shortcuts_info)
+        self._db_dirty = True
 
     def unregister_all_hotkeys(self):
-        for hk_id in self.registered_hotkeys: ctypes.windll.user32.UnregisterHotKey(None, hk_id)
+        hwnd = self.winId().__int__()
+        for hk_id in self.registered_hotkeys: ctypes.windll.user32.UnregisterHotKey(hwnd, hk_id)
         self.registered_hotkeys.clear()
 
     def register_all_hotkeys(self):
@@ -174,7 +688,6 @@ class FastPrompter(QMainWindow):
         self._register_single(self.data.get("lock_window_hotkey", "Ctrl+Shift+L"), 3)
         self._register_single(self.data.get("always_on_top_hotkey", "Ctrl+Shift+E"), 4)
         for i in range(10): self._register_single(self.data.get(f"snippet_{i}_hotkey", f"Ctrl+Shift+Numpad{i+1 if i < 9 else 0}"), 10 + i)
-        self._apply_tooltips()
             
     def _register_single(self, hotkey_str, hk_id):
         if not hotkey_str: return
@@ -187,93 +700,121 @@ class FastPrompter(QMainWindow):
             if ctypes.windll.user32.RegisterHotKey(hwnd, hk_id, modifiers, vk): self.registered_hotkeys.append(hk_id)
 
     def setup_single_instance_server(self):
-        import uuid
-        # Generate an ephemeral secure token to verify incoming local socket connections
-        self.ipc_token = str(uuid.uuid4())
-        token_file = os.path.join(os.environ.get("TEMP", ""), "fastprompter_ipc.token")
-        try:
-            with open(token_file, "w") as f:
-                f.write(self.ipc_token)
-        except Exception as e:
-            print("Could not write IPC token", e)
-
         self.server = QLocalServer()
         self.server.removeServer(SERVER_NAME)
-        print('About to listen!')
         if not self.server.listen(SERVER_NAME):
-            print('Listen failed:', self.server.serverError())
-            sys.exit(0)
-        print('Listen succeeded!')
+            time.sleep(0.05)
+            self.server.removeServer(SERVER_NAME)
+            self.server.listen(SERVER_NAME)
         self.server.newConnection.connect(self.handle_command)
 
     def handle_command(self):
         sock = self.server.nextPendingConnection()
         if sock.waitForReadyRead(500):
-            data = sock.readAll().data()
-            try:
-                data_str = data.decode('utf-8')
-                # Require token verification before handling commands like SHOW (Debater Constraint)
-                if data_str.startswith("TOKEN:"):
-                    parts = data_str.split("|", 1)
-                    if len(parts) == 2:
-                        recv_token = parts[0][6:]
-                        cmd = parts[1]
-                        if recv_token == getattr(self, "ipc_token", "") and "SHOW" in cmd:
-                            self.show_window()
-            except Exception:
-                pass
+            if b"SHOW" in sock.readAll().data(): self.show_window()
         sock.disconnectFromServer()
 
     def toggle_visibility(self):
-        if self.isHidden() or self.isMinimized() or not self.isVisible() or not self.isActiveWindow():
-            self.show_window()
-        else:
-            self.hide_and_save()
+        if self.isHidden() or self.isMinimized() or not self.isVisible(): self.show_window()
+        else: self.hide_and_save()
 
-    # init_db removed, moved to FastPrompterState
+    def init_db(self):
+        self.conn = sqlite3.connect(DB_FILE, check_same_thread=False)
+        try:
+            with sqlite3.connect(DB_FILE + ".bak") as dest:
+                self.conn.backup(dest)
+        except Exception: pass
+            
+        try:
+            self.conn.execute("PRAGMA journal_mode=WAL")
+            self.conn.execute("PRAGMA synchronous=NORMAL")
+            self.conn.execute("PRAGMA temp_store=MEMORY")
+        except Exception: pass
+            
+        cur = self.conn.cursor()
+        cur.execute("CREATE TABLE IF NOT EXISTS presets (category TEXT, slot INTEGER, name TEXT, content TEXT, PRIMARY KEY (category, slot))")
+        cur.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")
+        cur.execute("CREATE TABLE IF NOT EXISTS temp_presets (slot INTEGER PRIMARY KEY, content TEXT)")
+        self.conn.commit()
+
+        self.data = {
+            "categories": {"Code": [None]*100, "Text": [None]*100, "Misc": [None]*100}, "cats_order": ["Code", "Text", "Misc"],
+            "last_text": "", "last_tab_idx": 0, "last_geometry": "", "temp_presets": [""]*10, "active_temp_slot": 0,
+            "font_size": 11, "preview_mode": "None", "paste_mode": "Plain", "tray_visible": "True", "global_hotkey": "Alt+X",
+            "pie_menu_hotkey": "Shift+Alt+X", "lock_window_hotkey": "Ctrl+Shift+L", "always_on_top_hotkey": "Ctrl+Shift+E",
+            "close_on_focus_loss": "True", "ctrl_c_closes": "True", "theme": "Original Gold", "ui_scale": "1.0", "window_locked": "False",
+            "sidebar_right": "False"
+        }
+        
+        for row in cur.execute('SELECT key, value FROM settings'):
+            if row[0] in ('last_tab_idx', 'active_temp_slot', 'font_size'): self.data[row[0]] = int(row[1])
+            elif row[0] == 'cats_order':
+                try: self.data['cats_order'] = json.loads(row[1])
+                except json.JSONDecodeError: self.data['cats_order'] = ["Code", "Text", "Misc"]
+            elif row[0] in ('ui_scale', 'window_locked', 'sidebar_right'): self.data[row[0]] = row[1]
+            elif row[0] == 'hide_font': continue 
+            else: self.data[row[0]] = row[1]
+                
+        for cat in self.data['cats_order']:
+             if cat not in self.data['categories']: self.data['categories'][cat] = [None]*100
+                
+        for row in cur.execute('SELECT category, slot, name, content FROM presets'):
+            cat, slot, name, content = row
+            if cat in self.data["categories"] and 0 <= slot < 100: self.data["categories"][cat][slot] = {"name": name, "text": content}
+                
+        temps, max_slot = [""]*10, 9
+        for row in cur.execute('SELECT slot, content FROM temp_presets ORDER BY slot ASC'):
+            slot, content = row
+            if slot > max_slot: temps.extend([""] * (slot - max_slot)); max_slot = slot
+            if 0 <= slot < 100: temps[slot] = content
+        self.data["temp_presets"], self.active_temp_slot = temps[:100], self.data.get("active_temp_slot", 0)
+        self._db_dirty = False
 
     def save_data_to_db(self, force=False):
+        if not self._db_dirty and not force: return
         self.save_timer.stop()
+
         current_text = self.text_area.toPlainText() if hasattr(self, "text_area") else self.data.get("last_text", "")
-        
-        last_saved = getattr(self, "_last_saved_text", None)
-        if last_saved is not None and last_saved != current_text:
-            import difflib, json
-            diff = list(difflib.ndiff(last_saved.splitlines(keepends=True), current_text.splitlines(keepends=True)))
-            self.state.push_undo(json.dumps(diff))
-        self._last_saved_text = current_text
-        
         if not getattr(self, "_initializing_ui", False) and not getattr(self, "_suspend_temp_sync", False) and not self.editing_snippet:
-            if 0 <= self.active_temp_slot < len(self.data["temp_presets"]): 
-                self.data["temp_presets"][self.active_temp_slot] = current_text
+            if 0 <= self.active_temp_slot < len(self.data["temp_presets"]): self.data["temp_presets"][self.active_temp_slot] = current_text
 
         self.data["window_locked"] = "True" if getattr(self, "is_locked", False) else "False"
 
-        ui_settings = {
-            'last_tab_idx': str(self.data['last_tab_idx']),
-            'active_temp_slot': str(self.active_temp_slot),
-            'last_geometry': self.data.get("last_geometry", ""),
-            'font_size': str(self.font_spin.value()) if hasattr(self, "font_spin") else str(self.data.get('font_size', 11)),
-            'preview_mode': self.preview_combo.currentText() if hasattr(self, "preview_combo") else self.data.get('preview_mode', 'None'),
-            'paste_mode': self.btn_format.text() if hasattr(self, "btn_format") else self.data.get('paste_mode', 'Plain'),
-            'tray_visible': str(self.cb_tray.isChecked()) if hasattr(self, "cb_tray") else self.data.get('tray_visible', 'True'),
-            'close_on_focus_loss': str(self.cb_focus.isChecked()) if hasattr(self, "cb_focus") else self.data.get('close_on_focus_loss', 'True'),
-            'ctrl_c_closes': str(self.cb_ctrl_c.isChecked()) if hasattr(self, "cb_ctrl_c") else self.data.get('ctrl_c_closes', 'True')
-        }
-        
-        self.state.save_data_to_db(current_text, ui_settings, force=force)
+        try:
+            with self.conn:
+                cur = self.conn.cursor()
+                settings_to_save = [
+                    ('last_text', current_text), ('last_tab_idx', str(self.data['last_tab_idx'])),
+                    ('active_temp_slot', str(self.active_temp_slot)), ('last_geometry', self.data.get("last_geometry", "")),
+                    ('cats_order', json.dumps(self.data['cats_order'])), ('font_size', str(self.font_spin.value())),
+                    ('preview_mode', self.preview_combo.currentText()), ('paste_mode', self.btn_format.text()),
+                    ('tray_visible', str(self.cb_tray.isChecked())), ('close_on_focus_loss', str(self.cb_focus.isChecked())),
+                    ('ctrl_c_closes', str(self.cb_ctrl_c.isChecked())), ('global_hotkey', self.data.get("global_hotkey", "Alt+X")),
+                    ('pie_menu_hotkey', self.data.get("pie_menu_hotkey", "Shift+Alt+X")), ('lock_window_hotkey', self.data.get("lock_window_hotkey", "Ctrl+Shift+L")),
+                    ('always_on_top_hotkey', self.data.get("always_on_top_hotkey", "Ctrl+Shift+E")), ('theme', self.data.get("theme", "Original Gold")),
+                    ('always_on_top', self.data.get("always_on_top", "True")), ('normal_window', self.data.get("normal_window", "False")),
+                    ('lock_to_cursor', self.data.get("lock_to_cursor", "False")), ('hide_shortkeys', self.data.get("hide_shortkeys", "False")), 
+                    ('ui_scale', self.data.get("ui_scale", "1.0")), ('window_locked', self.data.get("window_locked", "False")), 
+                    ('sidebar_right', self.data.get("sidebar_right", "False"))
+                ]
+                cur.executemany('INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)', settings_to_save)
+
+                cur.execute('DELETE FROM presets')
+                presets_to_save = [(cat, i, item["name"], item["text"]) for cat, slots in self.data["categories"].items() for i, item in enumerate(slots) if item]
+                cur.executemany('INSERT INTO presets (category, slot, name, content) VALUES (?,?,?,?)', presets_to_save)
+
+                cur.execute('DELETE FROM temp_presets')
+                cur.executemany('INSERT INTO temp_presets (slot, content) VALUES (?,?)', [(i, content) for i, content in enumerate(self.data["temp_presets"])])
+            self._db_dirty = False
+        except sqlite3.Error: pass
 
     def init_ui(self):
-        flags = Qt.WindowType.Window if self.data.get("normal_window", "False") == "True" else Qt.WindowType.Widget
+        flags = Qt.WindowType.Widget
         if self.data.get("normal_window", "False") != "True": flags |= Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool
         if self.data.get("always_on_top", "True") == "True": flags |= Qt.WindowType.WindowStaysOnTopHint
         self.setWindowFlags(flags)
         self.setWindowTitle("FastPrompter")
         self.setMinimumSize(480, 320)
-        
-        self.auto_save_timer = QTimer(self)
-        self.auto_save_timer.timeout.connect(self.save_data_to_db)
-        self.auto_save_timer.start(5000)
         self.setMouseTracking(True)
         self._initializing_ui, self._suspend_temp_sync = True, True
 
@@ -293,6 +834,7 @@ class FastPrompter(QMainWindow):
         self.btn_sidebar_toggle.clicked.connect(self.toggle_sidebar_visibility)
         self.header_layout.addWidget(self.btn_sidebar_toggle)
 
+        # ---------------- HEADER WIDGETS CREATION ----------------
         self.tab_bar = QTabBar()
         self.tab_bar.setExpanding(False)
         self.tab_bar.setUsesScrollButtons(False)
@@ -308,18 +850,15 @@ class FastPrompter(QMainWindow):
         self.btn_del_tab.clicked.connect(self.del_category)
 
         self.btn_new = QPushButton("NEW")
-        self.btn_new.setToolTip("NEW (Ctrl+N)")
         self.btn_new.setFixedHeight(24)
         self.btn_new.setMinimumWidth(80)
         self.btn_new.clicked.connect(self.select_empty_silo)
 
         self.btn_save = QPushButton("Save")
-        self.btn_save.setToolTip("Save (Ctrl+S)")
         self.btn_save.setFixedHeight(24)
         self.btn_save.clicked.connect(self.save_snippet)
 
         self.btn_home = QPushButton("Home")
-        self.btn_home.setToolTip("Home (Home)")
         self.btn_home.setFixedHeight(24)
         self.btn_home.clicked.connect(self.move_cursor_home)
 
@@ -376,7 +915,6 @@ class FastPrompter(QMainWindow):
         )
 
         self.btn_clear = QPushButton("Clear")
-        self.btn_clear.setToolTip("Clear (Ctrl+Shift+C)")
         self.btn_clear.setFixedHeight(24)
         self.btn_clear.clicked.connect(self.clear_text)
 
@@ -388,6 +926,7 @@ class FastPrompter(QMainWindow):
         self.btn_format.setFixedHeight(24)
         self.btn_format.toggled.connect(self.toggle_paste_mode)
 
+        # ---------------- HEADER WIDGETS ASSEMBLY ----------------
         self.header_layout.addWidget(self.tab_bar)
         self.header_layout.addWidget(self.btn_add_tab)
         self.header_layout.addWidget(self.btn_del_tab)
@@ -423,113 +962,117 @@ class FastPrompter(QMainWindow):
         mini_layout.setContentsMargins(2, 2, 2, 2)
         mini_layout.setSpacing(6)
 
-#         self.cb_tray = QCheckBox("Tray Icon")
-#         self.cb_tray.setChecked(self.data.get("tray_visible", "True") == "True")
-#         self.cb_tray.toggled.connect(self.on_tray_toggled)
-#         mini_layout.addWidget(self.cb_tray, 0, 0)
+        self.cb_tray = QCheckBox("Tray Icon")
+        self.cb_tray.setChecked(self.data.get("tray_visible", "True") == "True")
+        self.cb_tray.toggled.connect(self.on_tray_toggled)
+        mini_layout.addWidget(self.cb_tray, 0, 0)
 
-#         self.cb_focus = QCheckBox("Close when clicked outside")
-#         self.cb_focus.setChecked(self.data.get("close_on_focus_loss", "True") == "True")
-#         self.cb_focus.toggled.connect(self.mark_dirty)
-#         mini_layout.addWidget(self.cb_focus, 0, 1)
+        self.cb_focus = QCheckBox("Close when clicked outside")
+        self.cb_focus.setChecked(self.data.get("close_on_focus_loss", "True") == "True")
+        self.cb_focus.toggled.connect(self.mark_dirty)
+        mini_layout.addWidget(self.cb_focus, 0, 1)
 
-#         self.cb_ctrl_c = QCheckBox("Ctrl+C Closes UI")
-#         self.cb_ctrl_c.setChecked(self.data.get("ctrl_c_closes", "True") == "True")
-#         self.cb_ctrl_c.toggled.connect(self.mark_dirty)
-#         mini_layout.addWidget(self.cb_ctrl_c, 0, 2)
+        self.cb_ctrl_c = QCheckBox("Ctrl+C Closes UI")
+        self.cb_ctrl_c.setChecked(self.data.get("ctrl_c_closes", "True") == "True")
+        self.cb_ctrl_c.toggled.connect(self.mark_dirty)
+        mini_layout.addWidget(self.cb_ctrl_c, 0, 2)
 
-#         self.cb_top = QCheckBox("Always on top")
-#         self.cb_top.setChecked(self.data.get("always_on_top", "True") == "True")
-#         self.cb_top.toggled.connect(self.apply_window_flags)
-#         mini_layout.addWidget(self.cb_top, 0, 3)
+        self.cb_top = QCheckBox("Always on top")
+        self.cb_top.setChecked(self.data.get("always_on_top", "True") == "True")
+        self.cb_top.toggled.connect(self.apply_window_flags)
+        mini_layout.addWidget(self.cb_top, 0, 3)
 
-#         self.cb_lock_window = QCheckBox("Lock Window")
-#         self.cb_lock_window.setChecked(self.data.get("window_locked", "False") == "True")
-#         self.cb_lock_window.toggled.connect(self.set_lock_state)
-#         mini_layout.addWidget(self.cb_lock_window, 0, 4)
+        self.cb_lock_window = QCheckBox("Lock Window")
+        self.cb_lock_window.setChecked(self.data.get("window_locked", "False") == "True")
+        self.cb_lock_window.toggled.connect(self.set_lock_state)
+        mini_layout.addWidget(self.cb_lock_window, 0, 4)
 
-#         self.cb_normal_window = QCheckBox("Act like normal window")
-#         self.cb_normal_window.setChecked(self.data.get("normal_window", "False") == "True")
-#         self.cb_normal_window.toggled.connect(self.apply_window_flags)
-#         mini_layout.addWidget(self.cb_normal_window, 1, 5)
+        self.cb_normal_window = QCheckBox("Act like normal window")
+        self.cb_normal_window.setChecked(self.data.get("normal_window", "False") == "True")
+        self.cb_normal_window.toggled.connect(self.apply_window_flags)
+        mini_layout.addWidget(self.cb_normal_window, 1, 5)
 
-#         self.cb_lock_cursor = QCheckBox("Lock to Cursor")
-#         self.cb_lock_cursor.setChecked(self.data.get("lock_to_cursor", "False") == "True")
-#         self.cb_lock_cursor.toggled.connect(self.on_lock_cursor_toggled)
-#         mini_layout.addWidget(self.cb_lock_cursor, 1, 0)
+        self.cb_lock_cursor = QCheckBox("Lock to Cursor")
+        self.cb_lock_cursor.setChecked(self.data.get("lock_to_cursor", "False") == "True")
+        self.cb_lock_cursor.toggled.connect(self.on_lock_cursor_toggled)
+        mini_layout.addWidget(self.cb_lock_cursor, 1, 0)
 
-#         self.cb_hide_shortkeys = QCheckBox("Hide shortkeys")
-#         self.cb_hide_shortkeys.setChecked(self.data.get("hide_shortkeys", "False") == "True")
-#         self.cb_hide_shortkeys.toggled.connect(self.on_hide_shortkeys_toggled)
-#         mini_layout.addWidget(self.cb_hide_shortkeys, 1, 1)
+        self.cb_hide_shortkeys = QCheckBox("Hide shortkeys")
+        self.cb_hide_shortkeys.setChecked(self.data.get("hide_shortkeys", "False") == "True")
+        self.cb_hide_shortkeys.toggled.connect(self.on_hide_shortkeys_toggled)
+        mini_layout.addWidget(self.cb_hide_shortkeys, 1, 1)
         
-#         self.cb_sidebar = QCheckBox("Sidebar on Right")
-#         self.cb_sidebar.setChecked(self.data.get("sidebar_right", "False") == "True")
-#         self.cb_sidebar.toggled.connect(self.toggle_sidebar_position)
-#         mini_layout.addWidget(self.cb_sidebar, 1, 2)
+        self.cb_sidebar = QCheckBox("Sidebar on Right")
+        self.cb_sidebar.setChecked(self.data.get("sidebar_right", "False") == "True")
+        self.cb_sidebar.toggled.connect(self.toggle_sidebar_position)
+        mini_layout.addWidget(self.cb_sidebar, 1, 2)
         
-#         self.cb_hide_extra = QCheckBox("Hide Extra Layout")
-#         self.cb_hide_extra.setChecked(self.data.get("hide_extra", "False") == "True")
-#         self.cb_hide_extra.toggled.connect(self.on_hide_extra_toggled)
-#         mini_layout.addWidget(self.cb_hide_extra, 2, 5)
+        self.cb_hide_extra = QCheckBox("Hide Extra Layout")
+        self.cb_hide_extra.setChecked(self.data.get("hide_extra", "False") == "True")
+        self.cb_hide_extra.toggled.connect(self.on_hide_extra_toggled)
+        mini_layout.addWidget(self.cb_hide_extra, 2, 5)
 
+        self.font_panel = QWidget()
+        font_layout = QHBoxLayout(self.font_panel)
+        font_layout.setContentsMargins(0, 0, 0, 0)
+        font_layout.addWidget(QLabel("Font:"))
         self.font_combo = QComboBox()
         self.font_combo.addItems(["Verdana", "Tahoma", "Consolas", "Calibri", "Times New Roman", "Arial", "Segoe UI", "Courier New"])
         saved_font = self.data.get("font_family", "Verdana")
         idx = self.font_combo.findText(saved_font)
         if idx >= 0: self.font_combo.setCurrentIndex(idx)
         self.font_combo.currentTextChanged.connect(self.change_font_family)
-        
+        font_layout.addWidget(self.font_combo)
         self.font_spin = QSpinBox()
         self.font_spin.setRange(6, 48)
         self.font_spin.setValue(int(self.data.get("font_size", "10")))
         self.font_spin.valueChanged.connect(self.change_font_size)
-        
+        font_layout.addWidget(self.font_spin)
+        mini_layout.addWidget(self.font_panel, 1, 3, 1, 2)
+
+        self.preview_panel = QWidget()
+        preview_layout = QHBoxLayout(self.preview_panel)
+        preview_layout.setContentsMargins(0, 0, 0, 0)
+        preview_layout.addWidget(QLabel("View:"))
         self.preview_combo = QComboBox()
         self.preview_combo.addItems(["None", "Raw", "Markdown"])
         saved_preview = self.data.get("preview_mode", "None")
         idx = self.preview_combo.findText(saved_preview)
         if idx >= 0: self.preview_combo.setCurrentIndex(idx)
         self.preview_combo.currentIndexChanged.connect(self.change_preview_mode)
-        
+        preview_layout.addWidget(self.preview_combo)
+        mini_layout.addWidget(self.preview_panel, 2, 0)
+
+        self.theme_panel = QWidget()
+        theme_layout = QHBoxLayout(self.theme_panel)
+        theme_layout.setContentsMargins(0, 0, 0, 0)
+        theme_layout.addWidget(QLabel("Theme:"))
         self.cb_theme = QComboBox()
         self.cb_theme.addItems(["Original Gold", "Vintage Dark", "Vintage Classic"])
         saved_theme = self.data.get("theme", "Original Gold")
         idx = self.cb_theme.findText(saved_theme)
         if idx >= 0: self.cb_theme.setCurrentIndex(idx)
         self.cb_theme.currentTextChanged.connect(self.change_theme)
-        
-        def make_action_checkbox(text, callback):
-            cb = QCheckBox(text)
-            def on_toggled(checked):
-                if checked:
-                    callback()
-                    cb.setChecked(False)
-            cb.toggled.connect(on_toggled)
-            return cb
+        theme_layout.addWidget(self.cb_theme)
+        mini_layout.addWidget(self.theme_panel, 2, 1)
 
-        self.btn_hotkeys = make_action_checkbox("Keys", self.open_hotkey_settings)
-        self.btn_backup = make_action_checkbox("BkUp", self.backup_db)
-        self.btn_restore = make_action_checkbox("Rstr", self.restore_db)
+        self.btn_hotkeys = QPushButton("Hotkeys...")
+        self.btn_hotkeys.setFixedHeight(20)
+        self.btn_hotkeys.clicked.connect(self.open_hotkey_settings)
+        mini_layout.addWidget(self.btn_hotkeys, 2, 2)
 
-        # Switch to QHBoxLayout for mini_layout
-        new_mini_layout = QHBoxLayout()
-        new_mini_layout.setContentsMargins(0,0,0,0)
-        new_mini_layout.addStretch(1)
-        new_mini_layout.addWidget(QLabel("Font:"))
-        new_mini_layout.addWidget(self.font_combo)
-        new_mini_layout.addWidget(self.font_spin)
-        new_mini_layout.addWidget(QLabel("View:"))
-        new_mini_layout.addWidget(self.preview_combo)
-        new_mini_layout.addWidget(QLabel("Theme:"))
-        new_mini_layout.addWidget(self.cb_theme)
-        new_mini_layout.addWidget(self.btn_hotkeys)
-        new_mini_layout.addWidget(self.btn_backup)
-        new_mini_layout.addWidget(self.btn_restore)
+        self.btn_backup = QPushButton("Backup DB")
+        self.btn_backup.setFixedHeight(20)
+        self.btn_backup.clicked.connect(self.backup_db)
+        mini_layout.addWidget(self.btn_backup, 2, 3)
+
+        self.btn_restore = QPushButton("Restore DB")
+        self.btn_restore.setFixedHeight(20)
+        self.btn_restore.clicked.connect(self.restore_db)
+        mini_layout.addWidget(self.btn_restore, 2, 4)
         
-        # Reassign layout
-        QWidget().setLayout(self.mini_settings_frame.layout())
-        self.mini_settings_frame.setLayout(new_mini_layout)
+        # Apply initial hide_extra state
+        self.on_hide_extra_toggled(self.cb_hide_extra.isChecked())
         
         self.main_layout.addWidget(self.mini_settings_frame)
 
@@ -542,6 +1085,7 @@ class FastPrompter(QMainWindow):
         self.left_layout.setContentsMargins(0,0,0,0)
         self.left_layout.setSpacing(2)
 
+        # Snippets Section
         self.snippets_section = QWidget()
         self.snippets_section_layout = QVBoxLayout(self.snippets_section)
         self.snippets_section_layout.setContentsMargins(0,0,0,0)
@@ -589,6 +1133,7 @@ class FastPrompter(QMainWindow):
         self.snippets_section_layout.addWidget(self.btn_page_down)
         self.left_layout.addWidget(self.snippets_section)
 
+        # Silos Section
         self.silos_section = QWidget()
         self.silos_section_layout = QVBoxLayout(self.silos_section)
         self.silos_section_layout.setContentsMargins(0,0,0,0)
@@ -635,6 +1180,7 @@ class FastPrompter(QMainWindow):
         self.center_layout.setContentsMargins(0,0,0,0)
         self.center_layout.setSpacing(2)
 
+        # ---------------- SEARCH & REPLACE FRAME ----------------
         self.search_frame = QFrame()
         self.search_frame.setObjectName("SearchFrame")
         self.search_frame.setVisible(False)
@@ -677,10 +1223,9 @@ class FastPrompter(QMainWindow):
         search_layout.addWidget(self.btn_close_search)
         
         self.center_layout.addWidget(self.search_frame)
+        # --------------------------------------------------------
 
         self.text_area = VaultTextEdit(self)
-        self.text_area.installEventFilter(self)
-        self.setMouseTracking(True) # Required for catching mouse hover for resizing cursor
         self.text_area.setPlaceholderText("Vault ready. Execute.")
         self.text_area.setWordWrapMode(QTextOption.WrapMode.WrapAnywhere)
         self.text_area.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
@@ -699,67 +1244,7 @@ class FastPrompter(QMainWindow):
         self.preview_area.setFont(font)
         self.center_layout.addWidget(self.preview_area)
         
-
         self.main_layout.addWidget(self.splitter, 1)
-
-        # --- FOOTER SETTINGS (4 symbols max) ---
-        self.footer_widget = QWidget()
-        self.footer_widget.setFixedHeight(22)
-        self.footer_layout = QHBoxLayout(self.footer_widget)
-        self.footer_layout.setContentsMargins(2, 0, 2, 0)
-        self.footer_layout.setSpacing(4)
-
-        # Helper to create styled 4-symbol checkboxes
-        def create_footer_cb(text, tooltip, is_checked, callback):
-            cb = QCheckBox(text)
-            cb.setToolTip(tooltip)
-            cb.setChecked(is_checked)
-            cb.toggled.connect(callback)
-            cb.setMinimumWidth(40)
-            cb.setStyleSheet("QCheckBox { font-size: 10px; padding: 0px; margin: 0px; } QCheckBox::indicator { width: 10px; height: 10px; }")
-            return cb
-
-        self.cb_tray = create_footer_cb("[TRY]", "Tray Icon", self.data.get("tray_visible", "True") == "True", self.on_tray_toggled)
-        self.footer_layout.addWidget(self.cb_tray)
-
-        self.cb_focus = create_footer_cb("[OUT]", "Close when clicked outside", self.data.get("close_on_focus_loss", "True") == "True", self.mark_dirty)
-        self.footer_layout.addWidget(self.cb_focus)
-
-        self.cb_ctrl_c = create_footer_cb("[CTC]", "Ctrl+C Closes UI", self.data.get("ctrl_c_closes", "True") == "True", self.mark_dirty)
-        self.footer_layout.addWidget(self.cb_ctrl_c)
-
-        self.cb_top = create_footer_cb("[AOT]", "Always on top", self.data.get("always_on_top", "True") == "True", self.toggle_aot)
-        self.footer_layout.addWidget(self.cb_top)
-
-        self.cb_lock_window = create_footer_cb("[LCK]", "Lock Window", self.data.get("window_locked", "False") == "True", self.set_lock_state)
-        self.footer_layout.addWidget(self.cb_lock_window)
-
-        self.cb_normal_window = create_footer_cb("[NRM]", "Act like normal window", self.data.get("normal_window", "False") == "True", self.apply_window_flags)
-        self.footer_layout.addWidget(self.cb_normal_window)
-
-        self.cb_lock_cursor = create_footer_cb("[CUR]", "Lock to Cursor", self.data.get("lock_to_cursor", "False") == "True", self.on_lock_cursor_toggled)
-        self.footer_layout.addWidget(self.cb_lock_cursor)
-
-        self.cb_hide_shortkeys = create_footer_cb("[SHR]", "Hide shortkeys", self.data.get("hide_shortkeys", "False") == "True", self.on_hide_shortkeys_toggled)
-        self.footer_layout.addWidget(self.cb_hide_shortkeys)
-
-        self.cb_sidebar = create_footer_cb("[RBR]", "Sidebar on Right", self.data.get("sidebar_right", "False") == "True", self.toggle_sidebar_position)
-        self.footer_layout.addWidget(self.cb_sidebar)
-
-        self.cb_hide_extra = create_footer_cb("[XTR]", "Hide Extra Layout", self.data.get("hide_extra", "False") == "True", self.on_hide_extra_toggled)
-        self.footer_layout.addWidget(self.cb_hide_extra)
-
-        self.on_hide_extra_toggled(self.cb_hide_extra.isChecked())
-
-        self.footer_layout.addStretch(1)
-        
-        # Add a QSizeGrip specifically here to push it to the far right, avoiding overlap
-        from PyQt6.QtWidgets import QSizeGrip
-        self.size_grip = QSizeGrip(self)
-        self.footer_layout.addWidget(self.size_grip, 0, Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignRight)
-
-        self.main_layout.addWidget(self.footer_widget)
-
         self.apply_sidebar_position()
 
         safe_idx = max(0, min(self.data.get("last_tab_idx", 0), self.tab_bar.count()-1))
@@ -775,6 +1260,7 @@ class FastPrompter(QMainWindow):
         
         self.splitter.splitterMoved.connect(self.on_splitter_moved)
 
+    # ---------------- FIND & REPLACE LOGIC ----------------
     def show_find(self):
         self.search_frame.show()
         self.replace_input.hide()
@@ -833,7 +1319,9 @@ class FastPrompter(QMainWindow):
             count += 1
         cursor.endEditBlock()
         QMessageBox.information(self, "Replace All", f"Replaced {count} occurrences.")
+    # --------------------------------------------------------
 
+    # ---------------- TEXT FORMATTING LOGIC -----------------
     def apply_format(self, fmt_type):
         cursor = self.text_area.textCursor()
         fmt = cursor.charFormat()
@@ -851,6 +1339,7 @@ class FastPrompter(QMainWindow):
         self.text_area.setTextCursor(cursor)
         self.text_area.setFocus()
         self.mark_dirty()
+    # --------------------------------------------------------
 
     def save_silo_to_file(self):
         text = self.text_area.toPlainText()
@@ -965,7 +1454,6 @@ class FastPrompter(QMainWindow):
     def swap_temp_slots(self, idx1, idx2):
         if idx1 == idx2: return
         temps = self.data["temp_presets"]
-        if not (0 <= idx1 < len(temps) and 0 <= idx2 < len(temps)): return
         temps[idx1], temps[idx2] = temps[idx2], temps[idx1]
         self.mark_dirty()
         self.refresh_temp_presets()
@@ -981,36 +1469,22 @@ class FastPrompter(QMainWindow):
     def apply_window_flags(self, _=None):
         self.data["always_on_top"] = "True" if self.cb_top.isChecked() else "False"
         self.data["normal_window"] = "True" if self.cb_normal_window.isChecked() else "False"
-        flags = Qt.WindowType.Window if self.cb_normal_window.isChecked() else Qt.WindowType.Widget
+        flags = Qt.WindowType.Widget
         if not self.cb_normal_window.isChecked(): flags |= Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool
-        # AOT is handled via SetWindowPos now to avoid flickering
-        was_visible = self.isVisible()
+        if self.cb_top.isChecked(): flags |= Qt.WindowType.WindowStaysOnTopHint
         self.setWindowFlags(flags)
-        if was_visible:
-            self.show()
-            self.register_all_hotkeys()
+        if self.isVisible(): self.show()
         self.register_all_hotkeys()
         self.mark_dirty()
-
-    def toggle_aot(self, checked):
-        self.data["always_on_top"] = "True" if checked else "False"
-        self.mark_dirty()
-        try:
-            import ctypes
-            hwnd = int(self.winId())
-            HWND_TOPMOST = -1
-            HWND_NOTOPMOST = -2
-            SWP_NOMOVE = 0x0002
-            SWP_NOSIZE = 0x0001
-            ctypes.windll.user32.SetWindowPos(hwnd, HWND_TOPMOST if checked else HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE)
-        except Exception:
-            pass
 
     def on_hide_extra_toggled(self, checked):
         self.data["hide_extra"] = "True" if checked else "False"
         self.mark_dirty()
         
-        self.mini_settings_frame.setVisible(not checked)
+        # Hide extra layout elements
+        self.font_panel.setVisible(not checked)
+        self.preview_panel.setVisible(not checked)
+        self.theme_panel.setVisible(not checked)
         self.cb_lock_cursor.setVisible(not checked)
         self.cb_hide_shortkeys.setVisible(not checked)
         self.cb_sidebar.setVisible(not checked)
@@ -1023,8 +1497,6 @@ class FastPrompter(QMainWindow):
     def on_lock_cursor_toggled(self, checked):
         self.data["lock_to_cursor"] = "True" if checked else "False"
         self.mark_dirty()
-        if checked:
-            self.place_window()
         self.refresh_snippets_panel()
 
     def backup_db(self):
@@ -1039,28 +1511,34 @@ class FastPrompter(QMainWindow):
                 QMessageBox.critical(self, "Error", f"Failed to save backup:\n{e}")
 
     def restore_db(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Restore Backup", "", "SQLite DB (*.db *.bak);;All Files (*)")
-        if not path: return
-        self.ignore_focus_loss = True
-        try:
-            reply = QMessageBox.question(self, "Confirm", "App will restart. Proceed?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        path, _ = QFileDialog.getOpenFileName(self, "Restore Database", "", "SQLite DB (*.db)")
+        if path:
+            self.ignore_focus_loss = True
+            try:
+                reply = QMessageBox.question(self, "Confirm Restore", "Restoring will overwrite current data. The app will close and must be restarted manually. Continue?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            finally:
+                self.ignore_focus_loss = False
+                
             if reply == QMessageBox.StandardButton.Yes:
-                if getattr(self, "conn", None):
+                try:
+                    # Validate DB file
+                    with sqlite3.connect(path) as test_conn:
+                        test_conn.execute("SELECT 1 FROM sqlite_master LIMIT 1")
+                except Exception:
+                    QMessageBox.critical(self, "Error", "Selected file is not a valid SQLite database.")
+                    return
+                try:
+                    self.auto_save_timer.stop()
                     self.conn.close()
-                    self.conn = None
-                time.sleep(0.1)
-                import shutil
-                shutil.copy2(path, DB_FILE)
-                for ext in ["-wal", "-shm"]:
-                    if os.path.exists(DB_FILE + ext):
-                        try: os.remove(DB_FILE + ext)
-                        except: pass
-                self.quit_app()
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to restore backup:\n{e}")
-            self.init_db()
-        finally:
-            self.ignore_focus_loss = False
+                    time.sleep(0.1)
+                    shutil.copy2(path, DB_FILE)
+                    for ext in ["-wal", "-shm"]:
+                        if os.path.exists(DB_FILE + ext):
+                            os.remove(DB_FILE + ext)
+                    QApplication.quit()
+                except Exception as e:
+                    QMessageBox.critical(self, "Error", f"Failed to restore backup:\n{e}")
+                    self.init_db()
 
     def clear_formatting(self):
         cursor = self.text_area.textCursor()
@@ -1072,40 +1550,24 @@ class FastPrompter(QMainWindow):
         try: scale = float(self.data.get("ui_scale", "1.0"))
         except Exception: scale = 1.0
         font_size = max(8, int(round(base_size * scale)))
+        
         font = QFont(font_name, font_size)
         font.setStyleStrategy(QFont.StyleStrategy(int(QFont.StyleStrategy.NoAntialias.value) | int(QFont.StyleStrategy.NoSubpixelAntialias.value)))
         clean_format.setFont(font)
-        clean_format.setFontWeight(QFont.Weight.Normal)
-        clean_format.setFontItalic(False)
-        clean_format.setFontUnderline(False)
-        clean_format.setFontStrikeOut(False)
         
-        self.text_area.blockSignals(True)
-        try:
-            if cursor.hasSelection():
-                raw_text = cursor.selectedText().replace('\u2029', '\n')
-                cursor.insertText(raw_text, clean_format)
-            else:
-                raw_text = self.text_area.toPlainText()
-                self.text_area.setPlainText(raw_text)
-                cursor = self.text_area.textCursor()
-                cursor.select(QTextCursor.SelectionType.Document)
-                cursor.setCharFormat(clean_format)
-                cursor.clearSelection()
-                self.text_area.setTextCursor(cursor)
-        finally:
-            self.text_area.blockSignals(False)
+        if cursor.hasSelection():
+            raw_text = cursor.selectedText().replace('\u2029', '\n')
+            cursor.insertText(raw_text, clean_format)
+        else:
+            raw_text = self.text_area.toPlainText()
+            cursor.select(QTextCursor.SelectionType.Document)
+            cursor.insertText(raw_text, clean_format)
             
         cursor.endEditBlock()
-        
         self.apply_font()
         self.mark_dirty()
-        self.cache_current_text()
 
     def load_snippet_for_edit(self, cat, global_idx):
-        if self.editing_snippet:
-            self.save_snippet()
-            
         slot_data = self.data["categories"].get(cat, [None] * 100)[global_idx] if cat in self.data["categories"] else None
         if not slot_data: return
         self.mark_dirty()
@@ -1265,176 +1727,70 @@ class FastPrompter(QMainWindow):
     def toggle_always_on_top(self):
         self.cb_top.setChecked(not self.cb_top.isChecked())
 
-    def _update_last_geometry(self):
-        if getattr(self, 'is_locked', False): return
-        if not self.isVisible() or self.isMinimized(): return
-
-        geo = self.geometry()
-        x, y, w, h = geo.x(), geo.y(), geo.width(), geo.height()
-        
-        if hasattr(self, "cb_lock_cursor") and self.cb_lock_cursor.isChecked():
-            old_geo = self.data.get("last_geometry", "")
-            if old_geo:
-                try:
-                    ox, oy, _, _ = map(int, old_geo.split(','))
-                    x, y = ox, oy
-                except Exception:
-                    pass
-                    
-        self.data["last_geometry"] = f"{x},{y},{w},{h}"
-        self.mark_dirty()
-
     def moveEvent(self, event):
-        if getattr(self, 'is_locked', False) and getattr(self, '_locked_geometry', None):
-            if self.geometry() != self._locked_geometry:
-                self.setGeometry(self._locked_geometry)
-                return
-        self._update_last_geometry()
+        if getattr(self, "_is_restoring_geometry", False): return
+        if getattr(self, "is_locked", False) and self._locked_geometry is not None and self.geometry() != self._locked_geometry:
+            self._is_restoring_geometry = True
+            self.setGeometry(self._locked_geometry)
+            self._is_restoring_geometry = False
+            return
+        if self.isVisible(): self.data["last_geometry"] = f"{self.x()},{self.y()},{self.width()},{self.height()}"
         super().moveEvent(event)
 
     def resizeEvent(self, event):
-        if getattr(self, 'is_locked', False) and getattr(self, '_locked_geometry', None):
-            if self.geometry() != self._locked_geometry:
-                self.setGeometry(self._locked_geometry)
-                return
-        self._update_last_geometry()
+        if getattr(self, "_is_restoring_geometry", False): return
+        if getattr(self, "is_locked", False) and self._locked_geometry is not None and self.geometry() != self._locked_geometry:
+            self._is_restoring_geometry = True
+            self.setGeometry(self._locked_geometry)
+            self._is_restoring_geometry = False
+            return
+        if self.isVisible(): self.data["last_geometry"] = f"{self.x()},{self.y()},{self.width()},{self.height()}"
         super().resizeEvent(event)
-
-    # nativeEvent removed for testing to fix access violation
 
     def mousePressEvent(self, event):
         if getattr(self, "is_locked", False):
             event.ignore(); return
         if event.button() == Qt.MouseButton.LeftButton:
-            edges = self._get_resize_edge(event.position())
-            if edges and (not hasattr(self, 'cb_normal_window') or not self.cb_normal_window.isChecked()):
-                self._resize_edges = edges
-                self._resize_start_pos = event.globalPosition().toPoint()
-                self._resize_start_geom = self.geometry()
-            else:
-                self._resize_edges = None
-                self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
             event.accept()
 
     def mouseMoveEvent(self, event):
         if getattr(self, "is_locked", False): return
-        
-        edges = self._get_resize_edge(event.position())
-        if edges in (Qt.Edge.LeftEdge, Qt.Edge.RightEdge): self.setCursor(Qt.CursorShape.SizeHorCursor)
-        elif edges in (Qt.Edge.TopEdge, Qt.Edge.BottomEdge): self.setCursor(Qt.CursorShape.SizeVerCursor)
-        elif edges in (Qt.Edge.TopEdge|Qt.Edge.LeftEdge, Qt.Edge.BottomEdge|Qt.Edge.RightEdge): self.setCursor(Qt.CursorShape.SizeFDiagCursor)
-        elif edges in (Qt.Edge.TopEdge|Qt.Edge.RightEdge, Qt.Edge.BottomEdge|Qt.Edge.LeftEdge): self.setCursor(Qt.CursorShape.SizeBDiagCursor)
-        else: self.setCursor(Qt.CursorShape.ArrowCursor)
-
-        if event.buttons() == Qt.MouseButton.LeftButton:
-            if getattr(self, '_resize_edges', None):
-                dx = event.globalPosition().toPoint().x() - self._resize_start_pos.x()
-                dy = event.globalPosition().toPoint().y() - self._resize_start_pos.y()
-                rect = QRect(self._resize_start_geom)
-                if self._resize_edges & Qt.Edge.LeftEdge: rect.setLeft(rect.left() + dx)
-                if self._resize_edges & Qt.Edge.RightEdge: rect.setRight(rect.right() + dx)
-                if self._resize_edges & Qt.Edge.TopEdge: rect.setTop(rect.top() + dy)
-                if self._resize_edges & Qt.Edge.BottomEdge: rect.setBottom(rect.bottom() + dy)
-                
-                if rect.width() < self.minimumWidth():
-                    if self._resize_edges & Qt.Edge.LeftEdge: rect.setLeft(rect.right() - self.minimumWidth())
-                    else: rect.setRight(rect.left() + self.minimumWidth())
-                if rect.height() < self.minimumHeight():
-                    if self._resize_edges & Qt.Edge.TopEdge: rect.setTop(rect.bottom() - self.minimumHeight())
-                    else: rect.setBottom(rect.top() + self.minimumHeight())
-                
-                self.setGeometry(rect)
-                event.accept()
-            elif hasattr(self, '_drag_pos'):
-                self.move(event.globalPosition().toPoint() - self._drag_pos)
-                event.accept()
-
-    def mouseReleaseEvent(self, event):
-        self._resize_edges = None
-
-    def eventFilter(self, obj, event):
-        if obj == getattr(self, 'text_area', None):
-            if event.type() == QEvent.Type.MouseButtonPress and getattr(event, 'button', lambda: 0)() == Qt.MouseButton.RightButton:
-                if not getattr(self, "is_locked", False):
-                    self._text_drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
-                    return False
-            elif event.type() == QEvent.Type.MouseMove and getattr(event, 'buttons', lambda: 0)() & Qt.MouseButton.RightButton:
-                if not getattr(self, "is_locked", False) and hasattr(self, '_text_drag_pos'):
-                    self.move(event.globalPosition().toPoint() - self._text_drag_pos)
-                    return True
-            elif event.type() == QEvent.Type.MouseButtonRelease and getattr(event, 'button', lambda: 0)() == Qt.MouseButton.RightButton:
-                if hasattr(self, '_text_drag_pos'):
-                    delattr(self, '_text_drag_pos')
-                    return False
-        return super().eventFilter(obj, event)
-
-    def _get_resize_edge(self, pos):
-        margin = 10
-        rect = self.rect()
-        edges = Qt.Edge(0)
-        if pos.x() < margin: edges |= Qt.Edge.LeftEdge
-        if pos.x() > rect.width() - margin: edges |= Qt.Edge.RightEdge
-        if pos.y() < margin: edges |= Qt.Edge.TopEdge
-        if pos.y() > rect.height() - margin: edges |= Qt.Edge.BottomEdge
-        return edges
+        if event.buttons() == Qt.MouseButton.LeftButton and hasattr(self, '_drag_pos'):
+            self.move(event.globalPosition().toPoint() - self._drag_pos)
+            event.accept()
 
     def place_window(self):
-        geo_str = self.data.get("last_geometry", "")
-        
-        # 1. First, restore or calculate the size
-        if geo_str:
-            try:
-                _, _, saved_w, saved_h = map(int, geo_str.split(','))
-                w, h = max(saved_w, self.minimumWidth()), max(saved_h, self.minimumHeight())
-                self.resize(w, h)
-            except Exception:
-                self.adjustSize()
-        else:
-            self.adjustSize()
-
-        QApplication.processEvents()
-        fw = self.frameGeometry().width()
-        fh = self.frameGeometry().height()
-
-        # 2. Then, determine and set the position
+        self.adjustSize()
         if self.cb_lock_cursor.isChecked():
             cp = QCursor.pos()
-            screen = QApplication.screenAt(cp)
-            screen_geom = screen.availableGeometry() if screen else QApplication.primaryScreen().availableGeometry()
-            
-            x = cp.x() - fw // 2
-            y = cp.y() - fh // 2
-            
-            x = max(screen_geom.left(), min(x, screen_geom.right() - fw))
-            y = max(screen_geom.top(), min(y, screen_geom.bottom() - fh))
-            
-            self.move(x, y)
+            self.move(cp.x() - self.width()//2, cp.y() - self.height()//2)
         else:
+            geo_str = self.data.get("last_geometry", "")
             if geo_str:
                 try:
-                    x, y, _, _ = map(int, geo_str.split(','))
+                    x, y, w, h = map(int, geo_str.split(','))
+                    w, h = max(w, self.minimumWidth()), max(h, self.minimumHeight())
                     valid_screen = False
                     for screen in QApplication.screens():
                         if screen.availableGeometry().contains(x, y):
                             valid_screen = True; break
                     if not valid_screen:
                         cp = QCursor.pos()
-                        x, y = cp.x() - fw//2, cp.y() - fh//2
-                    self.move(x, y)
+                        x, y = cp.x() - w//2, cp.y() - h//2
+                    self.setGeometry(x, y, w, h)
                 except Exception:
                     cp = QCursor.pos()
-                    self.move(cp.x() - fw//2, cp.y() - fh//2)
+                    self.move(cp.x() - self.width()//2, cp.y() - self.height()//2)
             else:
                 cp = QCursor.pos()
-                self.move(cp.x() - fw//2, cp.y() - fh//2)
+                self.move(cp.x() - self.width()//2, cp.y() - self.height()//2)
 
     def show_window(self):
-        if self.isMinimized():
-            self.showNormal()
-        self.show()
         self.place_window()
-        self.raise_()
+        self.show()
         self.activateWindow()
+        self.raise_()
         self.text_area.setFocus()
 
     def cancel_editing(self):
@@ -1586,23 +1942,19 @@ class FastPrompter(QMainWindow):
 
     def save_snippet(self):
         text = self.text_area.toPlainText().strip()
+        if not text: return
         cat = self.get_current_category()
+        if not cat: return
+        slots = self.data["categories"][cat]
         
-        if self.editing_snippet:
-            edit_cat, idx = self.editing_snippet
-            if edit_cat in self.data["categories"]:
-                slots = self.data["categories"][edit_cat]
-                if text:
-                    old_name = slots[idx]["name"] if slots[idx] else ""
-                    slots[idx] = {"name": old_name, "text": text}
-                    self.mark_dirty()
-                    self.refresh_snippets_panel()
+        if self.editing_snippet and self.editing_snippet[0] == cat:
+            idx = self.editing_snippet[1]
+            old_name = slots[idx]["name"] if slots[idx] else ""
+            slots[idx] = {"name": old_name, "text": text}
+            self.mark_dirty()
+            self.refresh_snippets_panel()
             self.cancel_editing()
             return
-
-        if not text or not cat: return
-        slots = self.data["categories"][cat]
-
 
         if None not in slots: return
         auto_name = (text.replace('\n',' ')[:22] + "...") if len(text) > 22 else text.replace('\n',' ')
@@ -1714,8 +2066,9 @@ class FastPrompter(QMainWindow):
 
         for i, w in enumerate(self.snippet_buttons):
             if i < len(page_items):
-                global_idx, item = page_items[i]
-                d_idx = i + 1
+                view_idx = len(page_items) - 1 - i
+                global_idx, item = page_items[view_idx]
+                d_idx = start_idx + view_idx + 1
                 key_label = "" if hide_keys else (f"[{d_idx%10 if d_idx%10 != 0 else 0}] " if d_idx <= 10 else f"[{d_idx}] ")
                 disp = item["name"][:22] + "\u2026" if len(item["name"])>22 else item["name"]
                 color = preset_colors[global_idx % len(preset_colors)]
@@ -1775,7 +2128,6 @@ class FastPrompter(QMainWindow):
             self.refresh_temp_presets()
 
     def _switch_to_slot(self, idx, initial=False):
-        self.silo_page = idx // 10
         if not initial:
             if self.editing_snippet:
                 self.save_snippet()
@@ -1876,7 +2228,7 @@ class FastPrompter(QMainWindow):
         if not text.strip(): return
         self.safe_set_clipboard(text)
         self.hide_and_save()
-        QTimer.singleShot(150, lambda: not sip.isdeleted(self) and self.simulate_ctrl_v())
+        QTimer.singleShot(150, self.simulate_ctrl_v)
 
     @staticmethod
     def simulate_ctrl_v():
@@ -1900,6 +2252,7 @@ class FastPrompter(QMainWindow):
         VK_SHIFT, VK_MENU, VK_LWIN, VK_RWIN = 0x10, 0x12, 0x5B, 0x5C
         VK_CTRL, VK_V = 0x11, 0x56
 
+        # Release modifiers logically to prevent Ctrl+Shift+V etc
         for vk in (VK_SHIFT, VK_MENU, VK_LWIN, VK_RWIN): send_key(vk, True)
         
         send_key(VK_CTRL)
@@ -1914,8 +2267,6 @@ class FastPrompter(QMainWindow):
         QShortcut(QKeySequence("Ctrl+Shift+S"), self).activated.connect(self.save_silo_to_file)
         QShortcut(QKeySequence("Esc"), self).activated.connect(self.hide_and_save)
         QShortcut(QKeySequence("Ctrl+S"), self).activated.connect(self.save_snippet)
-        QShortcut(QKeySequence("Ctrl+N"), self, context=Qt.ShortcutContext.ApplicationShortcut).activated.connect(self.select_empty_silo)
-        QShortcut(QKeySequence("Ctrl+Z"), self, context=Qt.ShortcutContext.ApplicationShortcut).activated.connect(self.undo_action)
         for i in range(1, 11): QShortcut(QKeySequence(f"F{i}"), self).activated.connect(lambda i=i: self.fire_shortcut(i))
         QShortcut(QKeySequence("Ctrl+Q"), self).activated.connect(self.cycle_snap_corner)
         QShortcut(QKeySequence("Ctrl+Alt+Shift+Q"), self).activated.connect(self.quit_app)
@@ -1936,7 +2287,8 @@ class FastPrompter(QMainWindow):
         
         i = idx - 1
         if i < len(page_items):
-            global_idx, item = page_items[i]
+            view_idx = len(page_items) - 1 - i
+            global_idx, item = page_items[view_idx]
             self.auto_paste(item["text"])
 
     def fire_global_snippet_from_cat(self, cat, idx):
@@ -1945,56 +2297,31 @@ class FastPrompter(QMainWindow):
         if 0 <= idx < len(active_snippets): self.auto_paste(active_snippets[idx]["text"])
 
     def cycle_snap_corner(self):
-        screen = QApplication.screenAt(QCursor.pos())
-        if screen is None:
-            screen = QApplication.primaryScreen()
-        if screen is None:
-            return
-
-        avail = screen.availableGeometry()
-        
-        # Clamp dimensions to not overflow
-        w = min(960, avail.width())
-        h = min(540, avail.height())
-        self.resize(w, h)
-        
-        if getattr(self, '_snap_first_press', True):
+        self.resize(960, 540)
+        screen = QApplication.primaryScreen().availableGeometry()
+        sw, sh = screen.width(), screen.height()
+        if self._snap_first_press:
             self.snap_index = 0
             self._snap_first_press = False
-            
-        corner_idx = self.snap_index % 4
-        
-        sw, sh = avail.width(), avail.height()
-        QApplication.processEvents()
-        fw = self.frameGeometry().width()
-        fh = self.frameGeometry().height()
-        corners = [(sw - fw, sh - fh), (0, sh - fh), (0, 0), (sw - fw, 0)]
-        x, y = corners[corner_idx]
-        self.move(avail.x() + x, avail.y() + y)
-        
+        corners = [(sw - 960, sh - 540), (0, sh - 540), (0, 0), (sw - 960, 0)]
+        x, y = corners[self.snap_index % 4]
+        self.move(screen.x() + x, screen.y() + y)
         self.snap_index = (self.snap_index + 1) % 4
 
     def cache_current_text(self):
         if getattr(self, "_suspend_cache", False): return
         self.mark_dirty()
-        current_text = self.text_area.toPlainText()
         if not self.editing_snippet:
-            self.data["temp_presets"][self.active_temp_slot] = current_text
+            self.data["temp_presets"][self.active_temp_slot] = self.text_area.toPlainText()
             page_start = self.silo_page * 10
             if page_start <= self.active_temp_slot < page_start + 10:
                 view_idx = self.active_temp_slot - page_start
                 if view_idx < len(self.silo_buttons):
                     btn = self.silo_buttons[view_idx]
-                    t = current_text.replace('\n',' ').strip()
+                    text = self.data["temp_presets"][self.active_temp_slot].replace('\n',' ').strip()
                     display_idx = self.active_temp_slot + 1
-                    label = f"{display_idx}: {t[:22]}\u2026" if len(t)>22 else (f"{display_idx}: {t}" if t else str(display_idx))
+                    label = f"{display_idx}: {text[:22]}\u2026" if len(text)>22 else (f"{display_idx}: {text}" if text else str(display_idx))
                     btn.setText(label)
-        else:
-            cat, idx = self.editing_snippet
-            if cat in self.data["categories"] and self.data["categories"][cat][idx]:
-                self.data["categories"][cat][idx]["text"] = current_text
-                if cat == self.get_current_category():
-                    self.refresh_snippets_panel()
     
     def hide_and_save(self): 
         self.save_data_to_db()
@@ -2007,9 +2334,9 @@ class FastPrompter(QMainWindow):
 
     def changeEvent(self, event):
         if event.type() == QEvent.Type.WindowStateChange and self.isMinimized() and getattr(self, "is_locked", False):
-            QTimer.singleShot(0, lambda: not sip.isdeleted(self) and self.showNormal())
-            QTimer.singleShot(0, lambda: not sip.isdeleted(self) and self.raise_())
-            QTimer.singleShot(0, lambda: not sip.isdeleted(self) and self.activateWindow())
+            QTimer.singleShot(0, self.showNormal)
+            QTimer.singleShot(0, self.raise_)
+            QTimer.singleShot(0, self.activateWindow)
         if event.type() == QEvent.Type.ActivationChange and not self.isActiveWindow() and not self.ignore_focus_loss:
             if self.cb_focus.isChecked() and not self.isMinimized() and not self.cb_normal_window.isChecked():
                 self.hide_and_save()
@@ -2021,14 +2348,10 @@ class FastPrompter(QMainWindow):
 
     def show_quick_list(self):
         if hasattr(self, 'quick_list') and self.quick_list is not None:
-            import sip
-            if not sip.isdeleted(self.quick_list):
-                try: self.quick_list.close()
-                except Exception: pass
-                self.quick_list = None
-                return
-            self.quick_list = None
-            
+            try:
+                self.quick_list.close()
+            except Exception:
+                pass
         self.quick_list = QuickListWidget(self)
         self.quick_list.show()
         self.quick_list.activateWindow()
@@ -2061,25 +2384,6 @@ class FastPrompter(QMainWindow):
         self.show_window()
         if not self.mini_settings_frame.isVisible(): self.toggle_mini_settings()
 
-    def undo_action(self):
-        delta_json = self.state.pop_undo()
-        if delta_json:
-            import json
-            try:
-                diff = json.loads(delta_json)
-                prev_lines = []
-                for line in diff:
-                    if line.startswith('  ') or line.startswith('- '):
-                        prev_lines.append(line[2:])
-                prev_text = "".join(prev_lines)
-                self.text_area.setPlainText(prev_text)
-                self._last_saved_text = prev_text
-            except Exception:
-                self.text_area.undo()
-        else:
-            self.text_area.undo()
-            
-
     def quit_app(self):
         if getattr(self, "is_locked", False):
             self.show()
@@ -2088,15 +2392,6 @@ class FastPrompter(QMainWindow):
             return
         self.save_data_to_db(force=True)
         if hasattr(self, 'tray_icon'): self.tray_icon.hide()
-        
-        # Clean up ephemeral token on graceful exit
-        token_file = os.path.join(os.environ.get("TEMP", ""), "fastprompter_ipc.token")
-        if os.path.exists(token_file):
-            try:
-                os.remove(token_file)
-            except Exception:
-                pass
-                
         QApplication.quit()
 
     def closeEvent(self, event):
@@ -2109,28 +2404,15 @@ class FastPrompter(QMainWindow):
         self.quit_app()
         event.accept()
 
-def main_entry():
-    import sys
-    from PyQt6.QtGui import QGuiApplication
-    from PyQt6.QtCore import Qt
-    QGuiApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.Round)
+if __name__ == "__main__":
     app = QApplication(sys.argv)
-    from PyQt6.QtGui import QFontDatabase
-    font_path = r"V:\___VAC\__K\__CUSTOMIZATION\_FONT\Verdana_m1.ttf"
-    if os.path.exists(font_path):
-        QFontDatabase.addApplicationFont(font_path)
-        
-    app.setWindowIcon(create_tray_icon("#8b4513"))
     font = QFont("Verdana", 11)
-    font.setStyleStrategy(QFont.StyleStrategy.NoAntialias)
+    font.setStyleStrategy(QFont.StyleStrategy.NoAntialias | QFont.StyleStrategy.NoSubpixelAntialias)
     app.setFont(font)
 
     sock = try_connect_to_server(3, 0.05)
     if sock is not None:
-        # Pass the token for secure IPC
-        token = sock.property("ipc_token") or ""
-        payload = f"TOKEN:{token}|SHOW".encode('utf-8')
-        sock.write(payload)
+        sock.write(b"SHOW")
         sock.waitForBytesWritten(500)
         sock.disconnectFromServer()
         sys.exit(0)
@@ -2139,8 +2421,4 @@ def main_entry():
     window = FastPrompter()
     hk_filter = HotkeyFilter(window)
     app.installNativeEventFilter(hk_filter)
-    window.show_window()  # Show the window on startup
     sys.exit(app.exec())
-
-if __name__ == "__main__":
-    main_entry()
