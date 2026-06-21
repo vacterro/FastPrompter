@@ -1,6 +1,11 @@
+## **THIS CONTENT IS AI GENERATED** ##
+
 <h1 align="center">
   FastPrompter
 </h1>
+
+<img width="959" height="539" alt="2026-06-21_230010" src="https://github.com/user-attachments/assets/9f8cc7d5-d4a1-47c6-8209-c0ce624975be" />
+
 
 <p align="center">
   <strong>A lightning-fast, highly customizable, and robust snippet management tool.</strong>
@@ -91,3 +96,6 @@ Contributions, issues, and feature requests are always welcome! Feel free to che
 ## 📄 License
 
 This project is licensed under the MIT License.
+
+<img width="960" height="539" alt="2026-06-21_230028" src="https://github.com/user-attachments/assets/a412bc32-4762-4286-a9ce-c956decd7fc4" />
+
