@@ -682,7 +682,7 @@ class FastPrompter(QMainWindow):
         self.text_area.installEventFilter(self)
         self.setMouseTracking(True) # Required for catching mouse hover for resizing cursor
         self.text_area.setPlaceholderText("Vault ready. Execute.")
-        self.text_area.setWordWrapMode(QTextOption.WrapMode.WrapAnywhere)
+        self.text_area.setWordWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere) # Socratic: Smart visual wrap without corrupting text
         self.text_area.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.text_area.textChanged.connect(self.cache_current_text)
 
@@ -709,14 +709,12 @@ class FastPrompter(QMainWindow):
         self.footer_layout.setContentsMargins(2, 0, 2, 0)
         self.footer_layout.setSpacing(4)
 
-        # Helper to create styled 4-symbol checkboxes
         def create_footer_cb(text, tooltip, is_checked, callback):
             cb = QCheckBox(text)
             cb.setToolTip(tooltip)
             cb.setChecked(is_checked)
             cb.toggled.connect(callback)
-            cb.setMinimumWidth(40)
-            cb.setStyleSheet("QCheckBox { font-size: 10px; padding: 0px; margin: 0px; } QCheckBox::indicator { width: 10px; height: 10px; }")
+            cb.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
             return cb
 
         self.cb_tray = create_footer_cb("[TRY]", "Tray Icon", self.data.get("tray_visible", "True") == "True", self.on_tray_toggled)
@@ -1123,6 +1121,8 @@ class FastPrompter(QMainWindow):
         if theme_name in THEMES:
             base_style = THEMES[theme_name]["btn_save"]
             self.btn_save.setStyleSheet(base_style.replace("background-color:", "background-color: #d35400 !important; /*") + " */ background-color: #d35400; color: #ffffff;")
+        self.refresh_snippets_panel()
+        self.refresh_temp_presets()
         self.text_area.setFocus()
         self.text_area.ensureCursorVisible()
         self.activateWindow()
@@ -1298,6 +1298,19 @@ class FastPrompter(QMainWindow):
                 self.setGeometry(self._locked_geometry)
                 return
         self._update_last_geometry()
+
+        if hasattr(self, 'cb_tray'):
+            use_short = self.width() < 650
+            self.cb_tray.setText("[TRY]" if use_short else "Tray Icon")
+            self.cb_focus.setText("[OUT]" if use_short else "Click Out")
+            self.cb_ctrl_c.setText("[CTC]" if use_short else "Ctrl+C Hide")
+            self.cb_top.setText("[AOT]" if use_short else "Always Top")
+            self.cb_lock_window.setText("[LCK]" if use_short else "Lock Win")
+            self.cb_normal_window.setText("[NRM]" if use_short else "Normal Win")
+            self.cb_lock_cursor.setText("[CUR]" if use_short else "Lock Cursor")
+            if hasattr(self, 'cb_hide_extra'):
+                self.cb_hide_extra.setText("[HID]" if use_short else "Hide Extra")
+
         super().resizeEvent(event)
 
     # nativeEvent removed for testing to fix access violation
@@ -1442,6 +1455,8 @@ class FastPrompter(QMainWindow):
         self.btn_save.setText("Save")
         theme_name = self.data.get("theme", "Original Gold")
         if theme_name in THEMES: self.btn_save.setStyleSheet(THEMES[theme_name]["btn_save"])
+        self.refresh_snippets_panel()
+        self.refresh_temp_presets()
 
     def clear_text(self):
         cursor = self.text_area.textCursor()
@@ -1828,7 +1843,8 @@ class FastPrompter(QMainWindow):
                 text = self.data["temp_presets"][slot_idx].replace('\n',' ').strip()
                 display_idx = slot_idx + 1
                 label = f"{display_idx}: {text[:22]}\u2026" if len(text)>22 else (f"{display_idx}: {text}" if text else str(display_idx))
-                bg_color = active_color if slot_idx == self.active_temp_slot else inactive_color
+                is_active = (slot_idx == self.active_temp_slot) and not getattr(self, 'editing_snippet', None)
+                bg_color = active_color if is_active else inactive_color
                 btn.update_data(label, slot_idx, bg_color)
             else:
                 btn.hide()

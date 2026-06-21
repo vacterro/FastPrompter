@@ -15,7 +15,35 @@ class DraggableButton(QPushButton):
     def update_data(self, text_label, cat, global_idx, full_text, color, font_family):
         self.setText(text_label)
         self.cat, self.global_idx, self.full_text = cat, global_idx, full_text
-        self.setStyleSheet(f"background-color:{color}; font-size:10px; padding:0 4px; font-family:'{font_family}'; text-align:left;")
+        
+        is_editing = getattr(self.main_win, 'editing_snippet', None) == (cat, global_idx)
+        
+        if is_editing:
+            border_norm = "border: 2px solid; border-top-color: #000000; border-left-color: #000000; border-right-color: #808080; border-bottom-color: #808080;"
+            padding_norm = "padding: 3px 3px 1px 5px;"
+        else:
+            border_norm = "border: 2px solid; border-top-color: #808080; border-left-color: #808080; border-right-color: #000000; border-bottom-color: #000000;"
+            padding_norm = "padding: 2px 4px;"
+            
+        border_press = "border: 2px solid; border-top-color: #000000; border-left-color: #000000; border-right-color: #808080; border-bottom-color: #808080;"
+        
+        style = f"""
+        QPushButton {{
+            background-color: {color};
+            font-size: 10px;
+            {padding_norm}
+            font-family: '{font_family}';
+            text-align: left;
+            {border_norm}
+        }}
+        QPushButton:pressed {{
+            background-color: #141414;
+            padding: 3px 3px 1px 5px;
+            color: #5a7a96;
+            {border_press}
+        }}
+        """
+        self.setStyleSheet(style)
         self.show()
 
     def show_menu(self, pos):
@@ -151,7 +179,20 @@ class DraggableSiloButton(QPushButton):
     def update_data(self, text_label, global_idx, bg_color):
         self.setText(text_label)
         self.global_idx = global_idx
-        self.setStyleSheet(f"font-size:10px; padding:0 4px; font-family:Verdana; text-align:left; background-color:{bg_color};")
+        # Active color check logic
+        theme_name = self.main_win.data.get("theme", "Original Gold")
+        theme = THEMES.get(theme_name, THEMES["Original Gold"])
+        active_color = theme.get("active_temp_color", "#364757")
+        
+        # Selected = sunken (inset), Unselected = raised (outset)
+        if bg_color == active_color:
+            border = "border: 2px solid; border-top-color: #000000; border-left-color: #000000; border-right-color: #808080; border-bottom-color: #808080;"
+            padding = "padding:3px 3px 1px 5px;" # shift text right/down for sunken feel
+        else:
+            border = "border: 2px solid; border-top-color: #808080; border-left-color: #808080; border-right-color: #000000; border-bottom-color: #000000;"
+            padding = "padding:2px 4px;"
+            
+        self.setStyleSheet(f"font-size:10px; {padding} font-family:Verdana; text-align:left; background-color:{bg_color}; {border}")
         self.show()
 
     def show_menu(self, pos):
