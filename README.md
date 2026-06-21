@@ -1,8 +1,4 @@
 ## **THIS CONTENT IS AI GENERATED** ##
-
-<img width="959" height="539" alt="2026-06-21_230010" src="https://github.com/user-attachments/assets/244cd48e-dd76-4eae-a050-8a21e8adae37" />
-
-
 <h1 align="center">
   FastPrompter
 </h1>
