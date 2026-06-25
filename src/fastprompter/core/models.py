@@ -14,7 +14,7 @@ class Category(BaseModel):
     snippets: List[Snippet] = Field(default_factory=list)
 
 class Settings(BaseModel):
-    theme: str = "Original Gold"
+    theme: str = "Default"
     font_family: str = "Verdana"
     font_size: int = 11
     ui_scale: str = "1.0"

@@ -1,0 +1,35 @@
+## FastPrompter:
+
+/socratic. Ok, you are the /python-opt who need to add and optimize the code that it works. Compare the current key features, it there it is review it and compare with current functionality and try to improve it if it can be done:
+
+- Please return the Golden Vintage (And golden default also make please) theme that were. Here how it were: `v:\___VAC\_PIC\_PRNTSCREEN\2026-06-21_233458.png`
+- - to • Ctrl + LClick = Toggle state when converts - to • in real time.
+- Avoid makeing the `---` -> `• --` by `- -> •` button please.
+- An ability to actually delete the custom fonts (Delete all custom fonts button).
+- Make the Ctrl + E = Make a line a Header line (add ` # #`) and make the headers actually see.
+- Ctrl + B = Bold selected. If not selecte - Bold whole line.
+- View должен быть toggle а не как отдельное окно, перепиши эту часть. Типо вот как в Obsidian: Reading, Source View, Live Preview(Default), должно реально повторять точно так как там.
+- Еще прикол: Иногда пишу и вдруг какая-то буква может съесться! Исправь пожалуйста, может там на фоне микро статтер какой-то? TextArea должна быть ваще первым наперво по приоритету пожалуйста.
+- Поэтому пусть текст печатается без проблем, быстро и без задержек, а то вдруг там дыры какие-то UIшные? Перепроверь на это. Тоесть да, пишу и вдруг буква ну типо "не регистрируется" в крошечный момент. Не скажу что в этот момент нажимаю хоткеи какие-то.
+- Еще перепроверь логику нормально при перемещении и отпускании Silos и их контент во время перемещения: Иногда будто старый контейнер сохраняется и дублируется на новый и всё рушится, перепроверь надёжно чтобы логика работала нормально а не абы как.
+- Ctrl 1-0 переключает Silo.
+- Ctrl + Shift + 1-0 - Snippets.
+- Пусть умеет линии Ctrl + W (Add line)
+- Пусть будет вариант Vertical buttons для нижнего и верхнего, оба draggable with snap to be acessible.
+- Пусть будет у пользователя контроль над цветами полный, отдельное удобное окошечко с выбором RGB, каждый элемент можно настраивать по цвету отдельно. Пользовтель должен иметь креативность и полный контроль над цветами в программе.
+- Bug(!): Trying to change font crashes soft!
+- Пусть будет еще вариант Dark 2 (Oled) а текущий пусть будет такой же по цвету BG но слегка приглушённый чтобы не было сильного контраста такого, чтобы оно было Eye Comfort.
+BUG! When cleaning \n's button - crash; 
+Tryying drag and drop silo/archive - crash;
+- Ctrl + ALt -> (Backspace) -> Deleting - Crashes.
+- Selected text + action = Crashes.
+- The Pie menu if user clicked outside and there is no way to open it again, repeatable show command does nothing.
+- button scale make 50%75%100%125%150%l, font size accordingly.
+- There is archive must be hidden back.
+- Deleting snippet leaves a ghost button with same context.
+- Let Archive buttons would be bottom side.
+- Let buttons Snippets/Silos temselfs also acts a hidden 2 sided buttons also, distributed exactly same, but half in center, they sided from sides: They both open file as usual, but LEFT hidden buttom side open from Start (Cursor at start), RIGHT button - open the document from END cursor (also scroll to end). Add a toggle in Setting where user can change this behavior, on/off.
+- When the 2 sided buttons off, then there is available button that just have 2 buttons where HOME/END (1 possible toggle only) where the state decides how open the document, from start or from end.
+- Create "Copy" button that copies current whole context. Right click Copies + Closes FastPrompter current UI.
+- Make Silo Context menu option "Replace Silo:..." that can replace silo from available not empty silos.
+- Add sound button1.wav in sounds folder src\fastprompter\sound\ that plays when clicked on snipper or silo. It can be disabled in Settings. Add Volume control aswell.

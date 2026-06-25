@@ -179,7 +179,7 @@ class FastPrompter(QMainWindow):
                 "last_text": "", "last_tab_idx": 0, "last_geometry": "", "temp_presets": [""]*10, "active_temp_slot": 0,
                 "font_size": 11, "preview_mode": "None", "paste_mode": "Plain", "tray_visible": "True", "global_hotkey": "Alt+X",
                 "pie_menu_hotkey": "Shift+Alt+X", "lock_window_hotkey": "Ctrl+Shift+L", "always_on_top_hotkey": "Ctrl+Shift+E",
-                "close_on_focus_loss": "True", "ctrl_c_closes": "True", "theme": "Original Gold", "ui_scale": "1.0", "window_locked": "False",
+                "close_on_focus_loss": "True", "ctrl_c_closes": "True", "theme": "Default", "ui_scale": "1.0", "window_locked": "False",
                 "sidebar_right": "False"
             }
             
@@ -230,7 +230,7 @@ class FastPrompter(QMainWindow):
                     ('tray_visible', str(self.cb_tray.isChecked())), ('close_on_focus_loss', str(self.cb_focus.isChecked())),
                     ('ctrl_c_closes', str(self.cb_ctrl_c.isChecked())), ('global_hotkey', self.data.get("global_hotkey", "Alt+X")),
                     ('pie_menu_hotkey', self.data.get("pie_menu_hotkey", "Shift+Alt+X")), ('lock_window_hotkey', self.data.get("lock_window_hotkey", "Ctrl+Shift+L")),
-                    ('always_on_top_hotkey', self.data.get("always_on_top_hotkey", "Ctrl+Shift+E")), ('theme', self.data.get("theme", "Original Gold")),
+                    ('always_on_top_hotkey', self.data.get("always_on_top_hotkey", "Ctrl+Shift+E")), ('theme', self.data.get("theme", "Default")),
                     ('always_on_top', self.data.get("always_on_top", "True")), ('normal_window', self.data.get("normal_window", "False")),
                     ('lock_to_cursor', self.data.get("lock_to_cursor", "False")), ('hide_shortkeys', self.data.get("hide_shortkeys", "False")), 
                     ('ui_scale', self.data.get("ui_scale", "1.0")), ('window_locked', self.data.get("window_locked", "False")), 
@@ -503,8 +503,8 @@ class FastPrompter(QMainWindow):
         theme_layout.setContentsMargins(0, 0, 0, 0)
         theme_layout.addWidget(QLabel("Theme:"))
         self.cb_theme = QComboBox()
-        self.cb_theme.addItems(["Original Gold", "Vintage Dark", "Vintage Classic"])
-        saved_theme = self.data.get("theme", "Original Gold")
+        self.cb_theme.addItems(["Default", "Default", "Vintage Dark", "Vintage Classic"])
+        saved_theme = self.data.get("theme", "Default")
         idx = self.cb_theme.findText(saved_theme)
         if idx >= 0: self.cb_theme.setCurrentIndex(idx)
         self.cb_theme.currentTextChanged.connect(self.change_theme)
@@ -1087,7 +1087,7 @@ class FastPrompter(QMainWindow):
             self._suspend_cache, self.ignore_focus_loss = False, False
         self.editing_snippet = (cat, global_idx)
         self.btn_save.setText("Update")
-        theme_name = self.data.get("theme", "Original Gold")
+        theme_name = self.data.get("theme", "Default")
         if theme_name in THEMES:
             base_style = THEMES[theme_name]["btn_save"]
             self.btn_save.setStyleSheet(base_style.replace("background-color:", "background-color: #d35400 !important; /*") + " */ background-color: #d35400; color: #ffffff;")
@@ -1341,7 +1341,7 @@ class FastPrompter(QMainWindow):
     def cancel_editing(self):
         self.editing_snippet = None
         self.btn_save.setText("Save")
-        theme_name = self.data.get("theme", "Original Gold")
+        theme_name = self.data.get("theme", "Default")
         if theme_name in THEMES: self.btn_save.setStyleSheet(THEMES[theme_name]["btn_save"])
 
     def clear_text(self):
@@ -1414,8 +1414,8 @@ class FastPrompter(QMainWindow):
         self.apply_theme()
 
     def apply_theme(self):
-        theme_name = self.data.get("theme", "Original Gold")
-        if theme_name not in THEMES: theme_name = "Original Gold"
+        theme_name = self.data.get("theme", "Default")
+        if theme_name not in THEMES: theme_name = "Default"
         theme = THEMES[theme_name]
         
         QApplication.instance().setStyleSheet(theme["stylesheet"])
@@ -1604,8 +1604,8 @@ class FastPrompter(QMainWindow):
         start_idx = page * 10
         page_items = active_items[start_idx:start_idx+10]
         
-        theme_name = self.data.get("theme", "Original Gold")
-        if theme_name not in THEMES: theme_name = "Original Gold"
+        theme_name = self.data.get("theme", "Default")
+        if theme_name not in THEMES: theme_name = "Default"
         preset_colors = THEMES[theme_name]["preset_colors"]
         font_family = self.data.get("font_family", "Verdana")
         hide_keys = self.data.get("hide_shortkeys", "False") == "True"
@@ -1717,8 +1717,8 @@ class FastPrompter(QMainWindow):
         max_page = max(0, math.ceil(total / 10.0) - 1)
         if self.silo_page > max_page: self.silo_page = max_page
         
-        theme_name = self.data.get("theme", "Original Gold")
-        if theme_name not in THEMES: theme_name = "Original Gold"
+        theme_name = self.data.get("theme", "Default")
+        if theme_name not in THEMES: theme_name = "Default"
         active_color = THEMES[theme_name]["active_temp_color"]
         inactive_color = THEMES[theme_name]["inactive_temp_color"]
 
@@ -1922,8 +1922,8 @@ class FastPrompter(QMainWindow):
         self.fire_global_snippet_from_cat(cat, idx)
 
     def init_tray(self):
-        theme_name = self.data.get("theme", "Original Gold")
-        if theme_name not in THEMES: theme_name = "Original Gold"
+        theme_name = self.data.get("theme", "Default")
+        if theme_name not in THEMES: theme_name = "Default"
         color = THEMES[theme_name]["tray_color"]
         self.tray_icon = QSystemTrayIcon(self)
         self.tray_icon.setIcon(create_tray_icon(color))

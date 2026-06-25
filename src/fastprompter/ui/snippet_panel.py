@@ -19,13 +19,13 @@ class DraggableButton(QPushButton):
         is_editing = getattr(self.main_win, 'editing_snippet', None) == (cat, global_idx)
         
         if is_editing:
-            border_norm = "border: 2px solid; border-top-color: #000000; border-left-color: #000000; border-right-color: #808080; border-bottom-color: #808080;"
+            border_norm = "border: 2px solid; border-top-color: #0a0a0a; border-left-color: #0a0a0a; border-right-color: #4d4d4d; border-bottom-color: #4d4d4d;"
             padding_norm = "padding: 3px 3px 1px 5px;"
         else:
-            border_norm = "border: 2px solid; border-top-color: #808080; border-left-color: #808080; border-right-color: #000000; border-bottom-color: #000000;"
+            border_norm = "border: 2px solid; border-top-color: #4d4d4d; border-left-color: #4d4d4d; border-right-color: #0a0a0a; border-bottom-color: #0a0a0a;"
             padding_norm = "padding: 2px 4px;"
             
-        border_press = "border: 2px solid; border-top-color: #000000; border-left-color: #000000; border-right-color: #808080; border-bottom-color: #808080;"
+        border_press = "border: 2px solid; border-top-color: #0a0a0a; border-left-color: #0a0a0a; border-right-color: #4d4d4d; border-bottom-color: #4d4d4d;"
         
         style = f"""
         QPushButton {{
@@ -83,7 +83,17 @@ class DraggableButton(QPushButton):
 
     def mouseReleaseEvent(self, e):
         if e.button() == Qt.MouseButton.LeftButton and not self._dragging:
-            self.main_win.load_snippet_for_edit(self.cat, self.global_idx)
+            # 2-sided button logic: left half = open at start, right half = open at end
+            if self.main_win.data.get("two_sided_buttons", "False") == "True":
+                half = self.width() // 2
+                if e.pos().x() < half:
+                    # LEFT side: open snippet and place cursor at start
+                    self.main_win.load_snippet_for_edit(self.cat, self.global_idx, cursor_pos="start")
+                else:
+                    # RIGHT side: open snippet and place cursor at end
+                    self.main_win.load_snippet_for_edit(self.cat, self.global_idx, cursor_pos="end")
+            else:
+                self.main_win.load_snippet_for_edit(self.cat, self.global_idx)
             e.accept()
             return
         super().mouseReleaseEvent(e)
@@ -113,20 +123,21 @@ class SnippetWidget(QWidget):
     def update_data(self, text_label, cat, global_idx, full_text, color, font_family, scale):
         self.main_btn.update_data(text_label, cat, global_idx, full_text, color, font_family)
         
-        theme_name = self.main_win.data.get("theme", "Original Gold")
-        theme = THEMES.get(theme_name, THEMES["Original Gold"])
+        theme_name = self.main_win.data.get("theme", "Default")
+        theme = THEMES.get(theme_name, THEMES["Default"])
         bg = extract_bg(theme.get('mini_settings', '')) or '#2b2b2b'
         fg = extract_color(theme.get('lbl_title', '')) or '#bfa65e'
         border = extract_color(theme.get('btn_save', '')) or '#4a4a4a'
         
-        btn_size = max(14, int(round(22 * scale)))
+        button_scale = float(self.main_win.data.get("button_scale", "1.0"))
+        btn_size = int(24 * button_scale)
         self.main_btn.setFixedHeight(btn_size)
         
         btn_style = f"background-color:{bg}; color:{fg}; border: 1px solid {border}; font-size:{max(8, int(round(9*scale)))}px; font-weight:bold; padding:0;"
         
         for btn in (self.btn_top, self.btn_ins, self.btn_bot):
             btn.setStyleSheet(btn_style)
-            btn.setFixedSize(max(14, int(round(18 * scale))), btn_size)
+            btn.setFixedSize(int(20 * button_scale), btn_size)
         
         self.show()
 
@@ -137,24 +148,26 @@ class SnippetWidget(QWidget):
         elif sender == self.btn_bot: self.main_win.insert_snippet_text(self.main_btn.full_text, "bot")
 
 class DropVerticalWidget(QWidget):
-    def __init__(self, main_win):
+    def __init__(self, main_win, target_category=None):
         super().__init__()
         self.setAcceptDrops(True)
         self.main_win = main_win
+        self.target_category = target_category
         self.layout = QVBoxLayout(self)
         self.layout.setContentsMargins(0, 0, 0, 0)
         self.layout.setSpacing(2)
         self.layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
     def dragEnterEvent(self, e):
-        cat = self.main_win.get_current_category()
-        if e.mimeData().hasText() and e.mimeData().text().startswith(cat + ":"): e.acceptProposedAction()
+        if e.mimeData().hasText() and ":" in e.mimeData().text(): e.acceptProposedAction()
 
     def dropEvent(self, e):
-        cat = self.main_win.get_current_category()
+        my_cat = self.target_category or self.main_win.get_current_category()
         pos, source_data = e.position().toPoint(), e.mimeData().text().split(':')
-        if len(source_data) != 2 or source_data[0] != cat: e.ignore(); return
-        source_idx, page = int(source_data[1]), self.main_win.current_pages.get(cat, 0)
+        if len(source_data) != 2: e.ignore(); return
+        source_cat, source_idx = source_data[0], int(source_data[1])
+        
+        page = self.main_win.arc_page if my_cat == "__Archive__" else self.main_win.current_pages.get(my_cat, 0)
         
         target_view_idx = -1
         for i in range(self.layout.count()):
@@ -166,12 +179,17 @@ class DropVerticalWidget(QWidget):
             target_view_idx = 0 if pos.y() < self.height() // 2 else visible_count - 1
             
         target_global_idx = page * 10 + max(0, min(9, target_view_idx))
-        self.main_win.move_preset_to_index(cat, source_idx, target_global_idx)
+        
+        if source_cat == my_cat:
+            self.main_win.move_preset_to_index(my_cat, source_idx, target_global_idx)
+        else:
+            self.main_win.move_preset_cross_category(source_cat, source_idx, my_cat, target_global_idx)
         e.acceptProposedAction()
 
 class DraggableSiloButton(QPushButton):
-    def __init__(self, main_win, parent=None):
+    def __init__(self, main_win, parent=None, is_archive=False):
         super().__init__("", parent)
+        self.is_archive = is_archive
         self.global_idx, self.main_win, self.drag_start, self._dragging = -1, main_win, None, False
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self.show_menu)
@@ -180,23 +198,23 @@ class DraggableSiloButton(QPushButton):
         self.setText(text_label)
         self.global_idx = global_idx
         # Active color check logic
-        theme_name = self.main_win.data.get("theme", "Original Gold")
-        theme = THEMES.get(theme_name, THEMES["Original Gold"])
+        theme_name = self.main_win.data.get("theme", "Default")
+        theme = THEMES.get(theme_name, THEMES["Default"])
         active_color = theme.get("active_temp_color", "#364757")
         
         # Selected = sunken (inset), Unselected = raised (outset)
         if bg_color == active_color:
-            border = "border: 2px solid; border-top-color: #000000; border-left-color: #000000; border-right-color: #808080; border-bottom-color: #808080;"
+            border = "border: 2px solid; border-top-color: #0a0a0a; border-left-color: #0a0a0a; border-right-color: #4d4d4d; border-bottom-color: #4d4d4d;"
             padding = "padding:3px 3px 1px 5px;" # shift text right/down for sunken feel
         else:
-            border = "border: 2px solid; border-top-color: #808080; border-left-color: #808080; border-right-color: #000000; border-bottom-color: #000000;"
+            border = "border: 2px solid; border-top-color: #4d4d4d; border-left-color: #4d4d4d; border-right-color: #0a0a0a; border-bottom-color: #0a0a0a;"
             padding = "padding:2px 4px;"
             
         self.setStyleSheet(f"font-size:10px; {padding} font-family:Verdana; text-align:left; background-color:{bg_color}; {border}")
         self.show()
 
     def show_menu(self, pos):
-        self.main_win.show_temp_menu(self.global_idx, self.mapToGlobal(pos))
+        self.main_win.show_temp_menu(self.global_idx, self.mapToGlobal(pos), is_archive=self.is_archive)
 
     def mousePressEvent(self, e):
         if e.button() == Qt.MouseButton.LeftButton:
@@ -210,37 +228,45 @@ class DraggableSiloButton(QPushButton):
         if (e.pos() - self.drag_start).manhattanLength() < QApplication.startDragDistance(): return
         self._dragging = True
         drag, mime = QDrag(self), QMimeData()
-        mime.setText(f"silo:{self.global_idx}")
+        prefix = "arcsilo" if self.is_archive else "silo"
+        mime.setText(f"{prefix}:{self.global_idx}")
         drag.setMimeData(mime)
         drag.exec(Qt.DropAction.MoveAction)
 
     def mouseReleaseEvent(self, e):
         if e.button() == Qt.MouseButton.LeftButton and not self._dragging:
-            self.main_win._switch_to_slot(self.global_idx)
+            if self.is_archive:
+                self.main_win._switch_to_arc_slot(self.global_idx)
+            else:
+                self.main_win._switch_to_slot(self.global_idx)
             e.accept()
             return
         super().mouseReleaseEvent(e)
 
 class SiloDropWidget(QWidget):
-    def __init__(self, main_win):
+    def __init__(self, main_win, is_archive=False):
         super().__init__()
         self.setAcceptDrops(True)
         self.main_win = main_win
+        self.is_archive = is_archive
         self.layout = QVBoxLayout(self)
         self.layout.setContentsMargins(0, 0, 0, 0)
         self.layout.setSpacing(2)
         self.layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
     def dragEnterEvent(self, e):
-        if e.mimeData().hasText() and e.mimeData().text().startswith("silo:"): e.acceptProposedAction()
+        prefix = "arcsilo:" if self.is_archive else "silo:"
+        if e.mimeData().hasText() and e.mimeData().text().startswith(prefix): e.acceptProposedAction()
 
     def dropEvent(self, e):
         mime = e.mimeData()
         if not mime.hasText(): return
         data, pos = mime.text().split(':'), e.position().toPoint()
-        if len(data) != 2 or data[0] != "silo": return
+        expected_prefix = "arcsilo" if self.is_archive else "silo"
+        if len(data) != 2 or data[0] != expected_prefix: return
         
-        start_idx, target_view_idx = self.main_win.silo_page * 10, -1
+        start_idx = (self.main_win.arc_silo_page if self.is_archive else self.main_win.silo_page) * 10
+        target_view_idx = -1
         for i in range(self.layout.count()):
             btn = self.layout.itemAt(i).widget()
             if btn and btn.isVisible() and btn.geometry().contains(pos): target_view_idx = i; break
@@ -250,5 +276,5 @@ class SiloDropWidget(QWidget):
             target_view_idx = 0 if pos.y() < self.height() // 2 else visible_count - 1
 
         target_global_idx = start_idx + target_view_idx
-        if int(data[1]) != target_global_idx: self.main_win.swap_temp_slots(int(data[1]), target_global_idx)
+        if int(data[1]) != target_global_idx: self.main_win.swap_temp_slots(int(data[1]), target_global_idx, is_archive=self.is_archive)
         e.acceptProposedAction()

@@ -12,10 +12,31 @@ class VaultTextEdit(QTextEdit):
         self._dragged = False
 
     def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            # Ctrl+LClick: Toggle the current line's bullet state (- ↔ •)
+            import re
+            super().mousePressEvent(event)  # Move cursor first
+            cursor = self.textCursor()
+            cursor.beginEditBlock()
+            cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
+            cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor)
+            line = cursor.selectedText()
+            if re.match(r'^\s*•\s*', line):
+                new_line = re.sub(r'^(\s*)•\s*', r'\1- ', line)
+            elif re.match(r'^\s*-\s+', line):
+                new_line = re.sub(r'^(\s*)-\s+', r'\1• ', line)
+            else:
+                cursor.endEditBlock()
+                return
+            cursor.insertText(new_line)
+            cursor.endEditBlock()
+            event.accept()
+            return
         if event.button() == Qt.MouseButton.RightButton:
             self._right_drag_start = event.globalPosition().toPoint()
             self._dragged = False
         super().mousePressEvent(event)
+
 
     def mouseMoveEvent(self, event):
         if event.buttons() & Qt.MouseButton.RightButton and self._right_drag_start is not None:
@@ -101,4 +122,26 @@ class VaultTextEdit(QTextEdit):
             if self.main_win.cb_ctrl_c.isChecked():
                 QTimer.singleShot(10, lambda: not sip.isdeleted(self) and not sip.isdeleted(self.main_win) and self.main_win.hide_and_save())
             return
-        super().keyPressEvent(event)
+
+        # Guard: Ctrl+Alt+Backspace (delete word to left) — handle safely
+        if event.key() == Qt.Key.Key_Backspace and (mods & Qt.KeyboardModifier.AltModifier):
+            try:
+                cursor = self.textCursor()
+                if cursor.hasSelection():
+                    cursor.removeSelectedText()
+                else:
+                    cursor.movePosition(
+                        QTextCursor.MoveOperation.PreviousWord,
+                        QTextCursor.MoveMode.KeepAnchor
+                    )
+                    cursor.removeSelectedText()
+                self.setTextCursor(cursor)
+            except Exception:
+                pass
+            event.accept()
+            return
+
+        try:
+            super().keyPressEvent(event)
+        except Exception:
+            event.accept()

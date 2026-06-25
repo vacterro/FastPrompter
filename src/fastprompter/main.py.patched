@@ -96,17 +96,14 @@ class FastPrompter(QMainWindow):
         
         self.snap_index, self._snap_first_press, self._preview_connected = 0, True, False
         self.current_pages, self.silo_page, self.ui_scale = {}, 0, 1.0
-        self.arc_silo_page, self.arc_page, self.is_active_silo_archived = 0, 0, False
         self.is_locked, self._suspend_cache, self._locked_geometry = False, False, None
         self._initializing_ui, self._suspend_temp_sync = True, True
-        self._sound_player = None  # lazy init on first use
 
         self.setup_single_instance_server()
         self.state = FastPrompterState()
         self.data = self.state.data
         self.conn = self.state.conn
-        try: self.active_temp_slot = int(self.data.get("active_temp_slot", 0))
-        except Exception: self.active_temp_slot = 0
+        self.active_temp_slot = self.data.get("active_temp_slot", 0)
         
         self.init_ui()
         self.init_tray()
@@ -266,40 +263,6 @@ class FastPrompter(QMainWindow):
         
         self.state.save_data_to_db(current_text, ui_settings, force=force)
 
-    def apply_button_size(self, widget, base_w, base_h=None):
-        scale = float(self.data.get("button_scale", "1.0"))
-        widget._base_size = (base_w, base_h)
-        if base_h is None:
-            widget.setFixedHeight(int(base_w * scale))
-        else:
-            widget.setFixedSize(int(base_w * scale), int(base_h * scale))
-
-    def refresh_button_scale(self):
-        scale = float(self.data.get("button_scale", "1.0"))
-        for widget in self.findChildren(QPushButton):
-            if hasattr(widget, '_base_size'):
-                base_w, base_h = widget._base_size
-                if base_h is None:
-                    widget.setFixedHeight(int(base_w * scale))
-                else:
-                    widget.setFixedSize(int(base_w * scale), int(base_h * scale))
-
-    def cycle_button_scale(self):
-        scales = [0.5, 0.75, 1.0, 1.25, 1.5]
-        current = float(self.data.get("button_scale", "1.0"))
-        # Find closest match
-        try:
-            idx = min(range(len(scales)), key=lambda i: abs(scales[i] - current))
-            next_idx = (idx + 1) % len(scales)
-        except ValueError:
-            next_idx = 2  # default to 100%
-        new_scale = scales[next_idx]
-        self.data["button_scale"] = str(new_scale)
-        self.save_data_to_db()
-        if hasattr(self, 'btn_button_scale'):
-            self.btn_button_scale.setText(f"Scale: {int(new_scale * 100)}%")
-        self.refresh_button_scale()
-
     def init_ui(self):
         flags = Qt.WindowType.Window if self.data.get("normal_window", "False") == "True" else Qt.WindowType.Widget
         if self.data.get("normal_window", "False") != "True": flags |= Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool
@@ -326,7 +289,7 @@ class FastPrompter(QMainWindow):
         self.header_layout.setSpacing(2)
 
         self.btn_sidebar_toggle = QPushButton("☰")
-        self.apply_button_size(self.btn_sidebar_toggle, 24, 24)
+        self.apply_button_size(btn_sidebar_toggle, 24, 24)
         self.btn_sidebar_toggle.clicked.connect(self.toggle_sidebar_visibility)
         self.header_layout.addWidget(self.btn_sidebar_toggle)
 
@@ -337,72 +300,72 @@ class FastPrompter(QMainWindow):
         self.tab_bar.currentChanged.connect(self.on_tab_changed)
 
         self.btn_add_tab = QPushButton("+")
-        self.apply_button_size(self.btn_add_tab, 24, 24)
+        self.apply_button_size(btn_add_tab, 24, 24)
         self.btn_add_tab.clicked.connect(self.add_category)
 
         self.btn_del_tab = QPushButton("-")
-        self.apply_button_size(self.btn_del_tab, 24, 24)
+        self.apply_button_size(btn_del_tab, 24, 24)
         self.btn_del_tab.clicked.connect(self.del_category)
 
         self.btn_new = QPushButton("NEW")
         self.btn_new.setToolTip("NEW (Ctrl+N)")
-        self.apply_button_size(self.btn_new, 24)
+        self.apply_button_size(btn_new, 24)
         self.btn_new.setMinimumWidth(80)
         self.btn_new.clicked.connect(self.select_empty_silo)
 
         self.btn_save = QPushButton("Save")
         self.btn_save.setToolTip("Save (Ctrl+S)")
-        self.apply_button_size(self.btn_save, 24)
+        self.apply_button_size(btn_save, 24)
         self.btn_save.clicked.connect(self.save_snippet)
 
         self.btn_home = QPushButton("Home")
         self.btn_home.setToolTip("Home (Home)")
-        self.apply_button_size(self.btn_home, 24)
+        self.apply_button_size(btn_home, 24)
         self.btn_home.clicked.connect(self.move_cursor_home)
 
         self.btn_end = QPushButton("End")
-        self.apply_button_size(self.btn_end, 24)
+        self.apply_button_size(btn_end, 24)
         self.btn_end.clicked.connect(self.move_cursor_end)
 
         self.btn_add_line = QPushButton("Line")
-        self.apply_button_size(self.btn_add_line, 24)
+        self.apply_button_size(btn_add_line, 24)
         self.btn_add_line.clicked.connect(self.insert_add_line)
 
         self.btn_bullet_toggle = QPushButton("-→•")
-        self.apply_button_size(self.btn_bullet_toggle, 24)
+        self.apply_button_size(btn_bullet_toggle, 24)
         self.btn_bullet_toggle.clicked.connect(self.toggle_bullet_conversion)
 
         self.btn_bold = QPushButton("B")
-        self.apply_button_size(self.btn_bold, 24, 24)
+        self.apply_button_size(btn_bold, 24, 24)
         self.btn_bold.setStyleSheet("font-weight: bold;")
         self.btn_bold.clicked.connect(lambda: self.apply_format('bold'))
 
         self.btn_italic = QPushButton("I")
-        self.apply_button_size(self.btn_italic, 24, 24)
+        self.apply_button_size(btn_italic, 24, 24)
         self.btn_italic.setStyleSheet("font-style: italic;")
         self.btn_italic.clicked.connect(lambda: self.apply_format('italic'))
 
         self.btn_under = QPushButton("U")
-        self.apply_button_size(self.btn_under, 24, 24)
+        self.apply_button_size(btn_under, 24, 24)
         self.btn_under.setStyleSheet("text-decoration: underline;")
         self.btn_under.clicked.connect(lambda: self.apply_format('underline'))
 
         self.btn_strike = QPushButton("S")
-        self.apply_button_size(self.btn_strike, 24, 24)
+        self.apply_button_size(btn_strike, 24, 24)
         self.btn_strike.setStyleSheet("text-decoration: line-through;")
         self.btn_strike.clicked.connect(lambda: self.apply_format('strike'))
 
         self.btn_clear_fmt = QPushButton("Clear Fmt")
-        self.apply_button_size(self.btn_clear_fmt, 24)
+        self.apply_button_size(btn_clear_fmt, 24)
         self.btn_clear_fmt.clicked.connect(self.clear_formatting)
 
         self.btn_clean_space = QPushButton("Clean \\n")
-        self.apply_button_size(self.btn_clean_space, 24)
+        self.apply_button_size(btn_clean_space, 24)
         self.btn_clean_space.setToolTip("Clean excessive empty lines (keeps lines near '---')")
         self.btn_clean_space.clicked.connect(self.clean_excessive_newlines)
 
         self.btn_settings_toggle = QPushButton("⚙")
-        self.apply_button_size(self.btn_settings_toggle, 24, 24)
+        self.apply_button_size(btn_settings_toggle, 24, 24)
         self.btn_settings_toggle.clicked.connect(self.toggle_mini_settings)
 
         self.btn_help = QLabel(" ❓")
@@ -417,16 +380,9 @@ class FastPrompter(QMainWindow):
             "• <b>F1..F10</b>: Paste Snippet."
         )
 
-        self.btn_copy = QPushButton("Copy")
-        self.btn_copy.setToolTip("Copy all text (Ctrl+C)\nRight-click: Copy + Close FastPrompter")
-        self.apply_button_size(self.btn_copy, 24)
-        self.btn_copy.clicked.connect(self.copy_context_to_clipboard)
-        self.btn_copy.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.btn_copy.customContextMenuRequested.connect(self.copy_context_and_close)
-
         self.btn_clear = QPushButton("Clear")
         self.btn_clear.setToolTip("Clear (Ctrl+Shift+C)")
-        self.apply_button_size(self.btn_clear, 24)
+        self.apply_button_size(btn_clear, 24)
         self.btn_clear.clicked.connect(self.clear_text)
 
         self.btn_format = QPushButton("Plain")
@@ -434,7 +390,7 @@ class FastPrompter(QMainWindow):
         saved_mode = self.data.get("paste_mode", "Plain")
         self.btn_format.setChecked(saved_mode == "Plain")
         self.btn_format.setText(saved_mode)
-        self.apply_button_size(self.btn_format, 24)
+        self.apply_button_size(btn_format, 24)
         self.btn_format.toggled.connect(self.toggle_paste_mode)
 
         self.header_layout.addWidget(self.tab_bar)
@@ -460,7 +416,6 @@ class FastPrompter(QMainWindow):
 
         self.header_layout.addWidget(self.btn_clear_fmt)
         self.header_layout.addWidget(self.btn_clean_space)
-        self.header_layout.addWidget(self.btn_copy)
         self.header_layout.addWidget(self.btn_settings_toggle)
         self.header_layout.addWidget(self.btn_help)
         self.header_layout.addWidget(self.btn_clear)
@@ -537,23 +492,14 @@ class FastPrompter(QMainWindow):
         self.font_spin.valueChanged.connect(self.change_font_size)
         
         self.preview_combo = QComboBox()
-        self.preview_combo.addItems(["Source View", "Live Preview", "Reading"])
-        self.preview_combo.setToolTip(
-            "Source View: Plain text editor\n"
-            "Live Preview: Editor with live markdown highlights (default)\n"
-            "Reading: Read-only rendered markdown view"
-        )
-        # Map old saved values to new
-        _view_map = {"None": "Source View", "Raw": "Source View", "Markdown": "Reading"}
-        saved_preview = self.data.get("preview_mode", "Live Preview")
-        saved_preview = _view_map.get(saved_preview, saved_preview)  # migrate old values
+        self.preview_combo.addItems(["None", "Raw", "Markdown"])
+        saved_preview = self.data.get("preview_mode", "None")
         idx = self.preview_combo.findText(saved_preview)
-        if idx < 0: idx = 1  # default to Live Preview
-        self.preview_combo.setCurrentIndex(idx)
+        if idx >= 0: self.preview_combo.setCurrentIndex(idx)
         self.preview_combo.currentIndexChanged.connect(self.change_preview_mode)
         
         self.cb_theme = QComboBox()
-        self.cb_theme.addItems(["Default", "Golden Vintage", "Golden Default", "Vintage Dark", "Vintage Classic", "Dark 2 (OLED)", "Custom"])
+        self.cb_theme.addItems(["Default", "Original Gold", "Vintage Dark", "Vintage Classic", "Dark 2 (OLED)", "Custom"])
         saved_theme = self.data.get("theme", "Default")
         idx = self.cb_theme.findText(saved_theme)
         if idx >= 0: self.cb_theme.setCurrentIndex(idx)
@@ -572,34 +518,7 @@ class FastPrompter(QMainWindow):
         self.btn_colors = make_action_checkbox("RGB", self.open_color_settings)
         self.btn_backup = make_action_checkbox("BkUp", self.backup_db)
         self.btn_restore = make_action_checkbox("Rstr", self.restore_db)
-        
-        current_b_scale = int(float(self.data.get("button_scale", "1.0")) * 100)
-        self.btn_button_scale = make_action_checkbox(f"Btn Scale: {current_b_scale}%", self.cycle_button_scale)
 
-        # Load custom font button
-        self.btn_load_font = QPushButton("+ Font")
-        self.btn_load_font.setFixedWidth(52)
-        self.btn_load_font.setToolTip("Load a custom .ttf/.otf font file")
-        self.btn_load_font.clicked.connect(self.load_custom_font)
-        
-        self.btn_clear_fonts = QPushButton("× Fonts")
-        self.btn_clear_fonts.setFixedWidth(54)
-        self.btn_clear_fonts.setToolTip("Clear all custom fonts from combo (reset to defaults)")
-        self.btn_clear_fonts.clicked.connect(self.clear_custom_fonts)
-        
-        # Sound controls
-        self.chk_sound = QCheckBox("Sound")
-        self.chk_sound.setChecked(self.data.get("sound_enabled", "True") == "True")
-        self.chk_sound.setToolTip("Enable/disable click sound on snippet/silo buttons")
-        self.chk_sound.toggled.connect(lambda v: (self.data.update({"sound_enabled": "True" if v else "False"}), self.mark_dirty()))
-
-        self.spin_volume = QSpinBox()
-        self.spin_volume.setRange(1, 10)
-        self.spin_volume.setValue(int(self.data.get("sound_volume", "5")))
-        self.spin_volume.setFixedWidth(42)
-        self.spin_volume.setToolTip("Click sound volume (1-10)")
-        self.spin_volume.valueChanged.connect(lambda v: (self.data.update({"sound_volume": str(v)}), self.mark_dirty()))
-        
         # Switch to QHBoxLayout for mini_layout
         new_mini_layout = QHBoxLayout()
         new_mini_layout.setContentsMargins(0,0,0,0)
@@ -607,16 +526,10 @@ class FastPrompter(QMainWindow):
         new_mini_layout.addWidget(QLabel("Font:"))
         new_mini_layout.addWidget(self.font_combo)
         new_mini_layout.addWidget(self.font_spin)
-        new_mini_layout.addWidget(self.btn_load_font)
-        new_mini_layout.addWidget(self.btn_clear_fonts)
         new_mini_layout.addWidget(QLabel("View:"))
         new_mini_layout.addWidget(self.preview_combo)
         new_mini_layout.addWidget(QLabel("Theme:"))
         new_mini_layout.addWidget(self.cb_theme)
-        new_mini_layout.addWidget(self.btn_button_scale)
-        new_mini_layout.addWidget(self.chk_sound)
-        new_mini_layout.addWidget(QLabel("Vol:"))
-        new_mini_layout.addWidget(self.spin_volume)
         new_mini_layout.addWidget(self.btn_hotkeys)
         new_mini_layout.addWidget(self.btn_colors)
         new_mini_layout.addWidget(self.btn_backup)
@@ -649,33 +562,28 @@ class FastPrompter(QMainWindow):
         snip_header.addStretch()
         
         self.btn_toggle_search = QPushButton("⌕")
-        self.apply_button_size(self.btn_toggle_search, 20, 20)
+        self.apply_button_size(btn_toggle_search, 20, 18)
         self.btn_toggle_search.setCheckable(True)
         snip_header.addWidget(self.btn_toggle_search)
 
         self.btn_toggle_archive = QPushButton("📦")
-        self.apply_button_size(self.btn_toggle_archive, 20, 20)
+        self.apply_button_size(btn_toggle_archive, 20, 18)
         self.btn_toggle_archive.setCheckable(True)
         snip_header.addWidget(self.btn_toggle_archive)
         
-        self.btn_arc_snip = QPushButton("📥")
-        self.apply_button_size(self.btn_arc_snip, 20, 20)
-        self.btn_arc_snip.clicked.connect(self.archive_active_snippet)
-        snip_header.addWidget(self.btn_arc_snip)
-        
         self.btn_add_snip = QPushButton("+")
-        self.apply_button_size(self.btn_add_snip, 20, 20)
+        self.apply_button_size(btn_add_snip, 20, 18)
         self.btn_add_snip.clicked.connect(self.save_snippet)
         snip_header.addWidget(self.btn_add_snip)
         self.btn_del_snip = QPushButton("-")
-        self.apply_button_size(self.btn_del_snip, 20, 20)
+        self.apply_button_size(btn_del_snip, 20, 18)
         self.btn_del_snip.clicked.connect(self.del_last_snippet)
         snip_header.addWidget(self.btn_del_snip)
         self.snippets_section_layout.addLayout(snip_header)
 
         self.search_bar = QLineEdit()
         self.search_bar.setPlaceholderText("Search...")
-        self.search_bar.setFixedHeight(20)
+        self.apply_button_size(search_bar, 18)
         
         saved_search_visible = self.data.get("search_visible", "False") == "True"
         self.btn_toggle_search.setChecked(saved_search_visible)
@@ -686,7 +594,7 @@ class FastPrompter(QMainWindow):
         self.snippets_section_layout.addWidget(self.search_bar)
 
         self.btn_page_up = QPushButton("▲")
-        self.apply_button_size(self.btn_page_up, 16)
+        self.apply_button_size(btn_page_up, 14)
         self.btn_page_up.clicked.connect(lambda: self.change_page(-1))
         self.snippets_section_layout.addWidget(self.btn_page_up)
 
@@ -700,7 +608,7 @@ class FastPrompter(QMainWindow):
         self.snippets_section_layout.addWidget(self.snippets_widget)
 
         self.btn_page_down = QPushButton("▼")
-        self.apply_button_size(self.btn_page_down, 16)
+        self.apply_button_size(btn_page_down, 14)
         self.btn_page_down.clicked.connect(lambda: self.change_page(1))
         self.snippets_section_layout.addWidget(self.btn_page_down)
         self.left_panel.addWidget(self.snippets_section)
@@ -718,7 +626,7 @@ class FastPrompter(QMainWindow):
         self.archive_section_layout.addLayout(arc_header)
 
         self.btn_arc_page_up = QPushButton("▲")
-        self.apply_button_size(self.btn_arc_page_up, 16)
+        self.apply_button_size(btn_arc_page_up, 14)
         self.btn_arc_page_up.clicked.connect(lambda: self.change_arc_page(-1))
         self.archive_section_layout.addWidget(self.btn_arc_page_up)
 
@@ -732,7 +640,7 @@ class FastPrompter(QMainWindow):
         self.archive_section_layout.addWidget(self.archive_widget)
 
         self.btn_arc_page_down = QPushButton("▼")
-        self.apply_button_size(self.btn_arc_page_down, 16)
+        self.apply_button_size(btn_arc_page_down, 14)
         self.btn_arc_page_down.clicked.connect(lambda: self.change_arc_page(1))
         self.archive_section_layout.addWidget(self.btn_arc_page_down)
         self.left_panel.addWidget(self.archive_section)
@@ -752,23 +660,18 @@ class FastPrompter(QMainWindow):
         self.silo_label = QLabel("Silos")
         silo_header.addWidget(self.silo_label)
         silo_header.addStretch()
-        self.btn_arc_silo = QPushButton("📥")
-        self.apply_button_size(self.btn_arc_silo, 20, 20)
-        self.btn_arc_silo.clicked.connect(self.archive_active_silo)
-        silo_header.addWidget(self.btn_arc_silo)
-        
         self.btn_add_silo = QPushButton("+")
-        self.apply_button_size(self.btn_add_silo, 20, 20)
+        self.apply_button_size(btn_add_silo, 20, 18)
         self.btn_add_silo.clicked.connect(self.add_silo)
         silo_header.addWidget(self.btn_add_silo)
         self.btn_del_silo = QPushButton("-")
-        self.apply_button_size(self.btn_del_silo, 20, 20)
+        self.apply_button_size(btn_del_silo, 20, 18)
         self.btn_del_silo.clicked.connect(self.del_silo)
         silo_header.addWidget(self.btn_del_silo)
         self.silos_section_layout.addLayout(silo_header)
 
         self.btn_silo_up = QPushButton("▲")
-        self.apply_button_size(self.btn_silo_up, 16)
+        self.apply_button_size(btn_silo_up, 14)
         self.btn_silo_up.clicked.connect(lambda: self.change_silo_page(-1))
         self.silos_section_layout.addWidget(self.btn_silo_up)
 
@@ -776,54 +679,17 @@ class FastPrompter(QMainWindow):
         self.silo_buttons = []
         for _ in range(10):
             btn = DraggableSiloButton(self)
-            self.apply_button_size(btn, 24)
+            btn.setFixedHeight(22)
             btn.hide()
             self.silos_widget.layout.addWidget(btn)
             self.silo_buttons.append(btn)
         self.silos_section_layout.addWidget(self.silos_widget)
 
         self.btn_silo_down = QPushButton("▼")
-        self.apply_button_size(self.btn_silo_down, 16)
+        self.apply_button_size(btn_silo_down, 14)
         self.btn_silo_down.clicked.connect(lambda: self.change_silo_page(1))
         self.silos_section_layout.addWidget(self.btn_silo_down)
         self.left_panel.addWidget(self.silos_section)
-
-        self.archive_silos_section = QWidget()
-        self.archive_silos_section_layout = QVBoxLayout(self.archive_silos_section)
-        self.archive_silos_section_layout.setContentsMargins(0,0,0,0)
-        self.archive_silos_section_layout.setSpacing(1)
-
-        arc_silo_header = QHBoxLayout()
-        arc_silo_header.setContentsMargins(0,0,0,0)
-        arc_silo_label = QLabel("Archive Silos")
-        arc_silo_label.setStyleSheet("color: #aaaaaa; font-style: italic;")
-        arc_silo_header.addWidget(arc_silo_label)
-        arc_silo_header.addStretch()
-        self.archive_silos_section_layout.addLayout(arc_silo_header)
-
-        self.btn_arc_silo_up = QPushButton("▲")
-        self.apply_button_size(self.btn_arc_silo_up, 16)
-        self.btn_arc_silo_up.clicked.connect(lambda: self.change_arc_silo_page(-1))
-        self.archive_silos_section_layout.addWidget(self.btn_arc_silo_up)
-
-        self.archive_silos_widget = SiloDropWidget(self, is_archive=True)
-        self.archive_silo_buttons = []
-        for _ in range(10):
-            btn = DraggableSiloButton(self, is_archive=True)
-            self.apply_button_size(btn, 24)
-            btn.hide()
-            self.archive_silo_buttons.append(btn)
-            self.archive_silos_widget.layout.addWidget(btn)
-        self.archive_silos_section_layout.addWidget(self.archive_silos_widget)
-
-        self.btn_arc_silo_down = QPushButton("▼")
-        self.apply_button_size(self.btn_arc_silo_down, 16)
-        self.btn_arc_silo_down.clicked.connect(lambda: self.change_arc_silo_page(1))
-        self.archive_silos_section_layout.addWidget(self.btn_arc_silo_down)
-        self.left_panel.addWidget(self.archive_silos_section)
-
-        self.silos_section.setVisible(False)
-        self.archive_silos_section.setVisible(False)  # Always hidden by default, shown via archive toggle
 
         self.center_panel = QWidget()
         self.center_layout = QVBoxLayout(self.center_panel)
@@ -844,12 +710,12 @@ class FastPrompter(QMainWindow):
         
         self.btn_find_prev = QPushButton("◄")
         self.btn_find_prev.clicked.connect(self.find_prev)
-        self.apply_button_size(self.btn_find_prev, 24, 24)
+        self.apply_button_size(btn_find_prev, 24, 24)
         search_layout.addWidget(self.btn_find_prev)
         
         self.btn_find_next = QPushButton("►")
         self.btn_find_next.clicked.connect(self.find_next)
-        self.apply_button_size(self.btn_find_next, 24, 24)
+        self.apply_button_size(btn_find_next, 24, 24)
         search_layout.addWidget(self.btn_find_next)
         
         self.replace_input = QLineEdit()
@@ -858,16 +724,16 @@ class FastPrompter(QMainWindow):
         
         self.btn_replace = QPushButton("Replace")
         self.btn_replace.clicked.connect(self.replace_text)
-        self.apply_button_size(self.btn_replace, 24)
+        self.apply_button_size(btn_replace, 24)
         search_layout.addWidget(self.btn_replace)
         
         self.btn_replace_all = QPushButton("Replace All")
         self.btn_replace_all.clicked.connect(self.replace_all)
-        self.apply_button_size(self.btn_replace_all, 24)
+        self.apply_button_size(btn_replace_all, 24)
         search_layout.addWidget(self.btn_replace_all)
         
         self.btn_close_search = QPushButton("✕")
-        self.apply_button_size(self.btn_close_search, 24, 24)
+        self.apply_button_size(btn_close_search, 24, 24)
         self.btn_close_search.clicked.connect(self.close_search)
         search_layout.addWidget(self.btn_close_search)
         
@@ -879,15 +745,9 @@ class FastPrompter(QMainWindow):
         self.text_area.setPlaceholderText("Vault ready. Execute.")
         self.text_area.setWordWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere) # Socratic: Smart visual wrap without corrupting text
         self.text_area.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        # Use a debounce timer to avoid text input stutter from cache sync
-        self._cache_timer = QTimer(self)
-        self._cache_timer.setSingleShot(True)
-        self._cache_timer.setInterval(250)  # 250ms debounce - fast enough to not lose text
-        self._cache_timer.timeout.connect(self.cache_current_text)
-        self.text_area.textChanged.connect(self._cache_timer.start)
+        self.text_area.textChanged.connect(self.cache_current_text)
 
-        try: font_size = int(self.data.get("font_size", 11))
-        except Exception: font_size = 11
+        font_size = self.data.get("font_size", 11)
         font = QFont(self.data.get("font_family", "Verdana"), font_size)
         font.setStyleStrategy(QFont.StyleStrategy.NoAntialias | QFont.StyleStrategy.NoSubpixelAntialias)
         self.text_area.setFont(font)
@@ -896,16 +756,16 @@ class FastPrompter(QMainWindow):
 
         self.preview_area = QTextEdit(readOnly=True)
         self.preview_area.setVisible(False)
+        self.apply_button_size(preview_area, 80)
         self.preview_area.setFont(font)
-        # No fixed height — in Reading mode it should fill the whole center
-        self.center_layout.addWidget(self.preview_area, 1)
+        self.center_layout.addWidget(self.preview_area)
         
 
         self.main_layout.addWidget(self.splitter, 1)
 
         # --- FOOTER SETTINGS (4 symbols max) ---
         self.footer_widget = QWidget()
-        self.footer_widget.setFixedHeight(24)
+        self.apply_button_size(footer_widget, 22)
         self.footer_layout = QHBoxLayout(self.footer_widget)
         self.footer_layout.setContentsMargins(2, 0, 2, 0)
         self.footer_layout.setSpacing(4)
@@ -947,13 +807,6 @@ class FastPrompter(QMainWindow):
 
         self.cb_hide_extra = create_footer_cb("[XTR]", "Hide Extra Layout", self.data.get("hide_extra", "False") == "True", self.on_hide_extra_toggled)
         self.footer_layout.addWidget(self.cb_hide_extra)
-
-        self.cb_two_sided = create_footer_cb(
-            "[2SB]", "Two-Sided Buttons: left=open at Start, right=open at End",
-            self.data.get("two_sided_buttons", "False") == "True",
-            lambda v: (self.data.update({"two_sided_buttons": "True" if v else "False"}), self.mark_dirty())
-        )
-        self.footer_layout.addWidget(self.cb_two_sided)
 
         self.on_hide_extra_toggled(self.cb_hide_extra.isChecked())
 
@@ -1058,52 +911,6 @@ class FastPrompter(QMainWindow):
         self.text_area.setFocus()
         self.mark_dirty()
 
-    def toggle_header_line(self):
-        """Ctrl+E: Toggle current line as header by adding/removing `# ` prefix in plain text."""
-        cursor = self.text_area.textCursor()
-        cursor.beginEditBlock()
-        # Select the current block (line)
-        cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
-        cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor)
-        line_text = cursor.selectedText()
-        
-        if line_text.startswith("# "):
-            # Remove header prefix
-            new_text = line_text[2:]
-        else:
-            # Add header prefix
-            new_text = "# " + line_text
-        
-        cursor.insertText(new_text)
-        # Apply visual bold+large to the line via charformat
-        cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
-        cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor)
-        fmt = cursor.charFormat()
-        if new_text.startswith("# "):
-            try: base_size = int(self.data.get("font_size", 11))
-            except Exception: base_size = 11
-            fmt.setFontWeight(QFont.Weight.Bold)
-            fmt.setFontPointSize(base_size + 4)
-        else:
-            try: base_size = int(self.data.get("font_size", 11))
-            except Exception: base_size = 11
-            fmt.setFontWeight(QFont.Weight.Normal)
-            fmt.setFontPointSize(base_size)
-        cursor.setCharFormat(fmt)
-        cursor.endEditBlock()
-        self.text_area.setFocus()
-        self.mark_dirty()
-
-    def apply_bold_smart(self):
-        """Ctrl+B: Bold selected text. If nothing selected, bold/unbold entire current line."""
-        cursor = self.text_area.textCursor()
-        if not cursor.hasSelection():
-            # Select whole current line
-            cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
-            cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor)
-            self.text_area.setTextCursor(cursor)
-        self.apply_format('bold')
-
     def save_silo_to_file(self):
         text = self.text_area.toPlainText()
         if not text: return
@@ -1113,7 +920,6 @@ class FastPrompter(QMainWindow):
         finally:
             self.ignore_focus_loss = False
         self.activateWindow()
-
         if path:
             try:
                 with open(path, 'w', encoding='utf-8') as f:
@@ -1167,7 +973,6 @@ class FastPrompter(QMainWindow):
 
     def insert_snippet_text(self, text, position):
         if not text: return
-        self.play_click_sound()
         self.mark_dirty()
         cursor = self.text_area.textCursor()
         cursor.beginEditBlock()
@@ -1216,17 +1021,16 @@ class FastPrompter(QMainWindow):
             else:
                 self.splitter.setSizes([130, self.width()-130])
 
-    def swap_temp_slots(self, idx1, idx2, is_archive=False):
+    def swap_temp_slots(self, idx1, idx2):
         if idx1 == idx2: return
-        temps = self.data["archive_temp_presets"] if is_archive else self.data["temp_presets"]
+        temps = self.data["temp_presets"]
         if not (0 <= idx1 < len(temps) and 0 <= idx2 < len(temps)): return
         self._suspend_cache = True
         temps[idx1], temps[idx2] = temps[idx2], temps[idx1]
-        if getattr(self, "is_active_silo_archived", False) == is_archive:
-            if getattr(self, "active_temp_slot", -1) == idx1:
-                self.active_temp_slot = idx2
-            elif getattr(self, "active_temp_slot", -1) == idx2:
-                self.active_temp_slot = idx1
+        if getattr(self, "active_temp_slot", -1) == idx1:
+            self.active_temp_slot = idx2
+        elif getattr(self, "active_temp_slot", -1) == idx2:
+            self.active_temp_slot = idx1
         self._suspend_cache = False
         self.mark_dirty()
         self.refresh_temp_presets()
@@ -1355,58 +1159,50 @@ class FastPrompter(QMainWindow):
 
     def on_archive_toggle(self, checked):
         self.archive_section.setVisible(checked)
-        # Show archive silos section only when archive is visible
-        if hasattr(self, 'archive_silos_section'):
-            self.archive_silos_section.setVisible(checked)
         self.data["archive_visible"] = str(checked)
         self.mark_dirty()
 
     def clean_excessive_newlines(self):
-        try:
-            text = self.text_area.toPlainText()
-            if not text: return
-            import re
-            lines = text.split('\n')
-            is_empty = [bool(not line.strip()) for line in lines]
-            is_dash = [bool(re.match(r'^\s*-{3,}\s*$', line)) for line in lines]
-            
-            out = []
-            i = 0
-            while i < len(lines):
-                if not is_empty[i]:
-                    out.append(lines[i])
-                    i += 1
+        text = self.text_area.toPlainText()
+        import re
+        lines = text.split('\n')
+        is_empty = [bool(not line.strip()) for line in lines]
+        is_dash = [bool(re.match(r'^\s*-{3,}\s*$', line)) for line in lines]
+        
+        out = []
+        i = 0
+        while i < len(lines):
+            if not is_empty[i]:
+                out.append(lines[i])
+                i += 1
+            else:
+                j = i
+                while j < len(lines) and is_empty[j]:
+                    j += 1
+                prev_is_dash = (i > 0 and is_dash[i-1])
+                next_is_dash = (j < len(lines) and is_dash[j])
+                
+                if prev_is_dash or next_is_dash:
+                    out.extend(lines[i:j])
                 else:
-                    j = i
-                    while j < len(lines) and is_empty[j]:
-                        j += 1
-                    prev_is_dash = (i > 0 and is_dash[i-1])
-                    next_is_dash = (j < len(lines) and is_dash[j])
-                    
-                    if prev_is_dash or next_is_dash:
-                        out.extend(lines[i:j])
-                    else:
-                        num_to_keep = min(1, j - i)
-                        out.extend(lines[i:i+num_to_keep])
-                    i = j
-                    
-            cleaned_text = '\n'.join(out)
-            if cleaned_text != text:
-                cursor = self.text_area.textCursor()
-                cursor.beginEditBlock()
-                cursor.select(QTextCursor.SelectionType.Document)
-                cursor.insertText(cleaned_text)
-                cursor.endEditBlock()
-        except Exception as e:
-            pass  # Never crash on newline cleanup
+                    num_to_keep = min(1, j - i)
+                    out.extend(lines[i:i+num_to_keep])
+                i = j
+                
+        cleaned_text = '\n'.join(out)
+        if cleaned_text != text:
+            cursor = self.text_area.textCursor()
+            cursor.beginEditBlock()
+            cursor.select(QTextCursor.SelectionType.Document)
+            cursor.insertText(cleaned_text)
+            cursor.endEditBlock()
 
     def clear_formatting(self):
         cursor = self.text_area.textCursor()
         cursor.beginEditBlock()
         
         clean_format = QTextCharFormat()
-        try: base_size = int(self.data.get("font_size", 11))
-        except Exception: base_size = 11
+        base_size = self.data.get("font_size", 11)
         font_name = self.data.get("font_family", "Verdana")
         try: scale = float(self.data.get("ui_scale", "1.0"))
         except Exception: scale = 1.0
@@ -1441,80 +1237,9 @@ class FastPrompter(QMainWindow):
         self.mark_dirty()
         self.cache_current_text()
 
-    def load_custom_font(self):
-        """Load a custom TTF/OTF font file and add it to the font combobox."""
-        self.ignore_focus_loss = True
-        try:
-            path, _ = QFileDialog.getOpenFileName(
-                self, "Load Font File", "", 
-                "Font Files (*.ttf *.otf *.TTF *.OTF);;All Files (*.*)"
-            )
-        finally:
-            self.ignore_focus_loss = False
-        self.activateWindow()
-        if not path: return
-        
-        font_id = QFontDatabase.addApplicationFont(path)
-        if font_id < 0:
-            QMessageBox.warning(self, "Load Font", f"Failed to load font: {path}")
-            return
-        
-        families = QFontDatabase.applicationFontFamilies(font_id)
-        if not families:
-            QMessageBox.warning(self, "Load Font", "Font loaded but no font families found.")
-            return
-        
-        # Track loaded custom font IDs for cleanup
-        loaded = self.data.get("custom_font_ids", [])
-        if isinstance(loaded, str):
-            import json
-            try: loaded = json.loads(loaded)
-            except: loaded = []
-        loaded.append(font_id)
-        self.data["custom_font_ids"] = loaded
-        
-        for family in families:
-            if self.font_combo.findText(family) < 0:
-                self.font_combo.addItem(family)
-        
-        self.font_combo.setCurrentText(families[0])
-        QMessageBox.information(self, "Font Loaded", f"Loaded: {families[0]}")
-
-    def clear_custom_fonts(self):
-        """Remove all custom fonts from the combobox, reset to built-in list."""
-        self.ignore_focus_loss = True
-        try:
-            reply = QMessageBox.question(
-                self, "Clear Custom Fonts", 
-                "Remove all custom fonts from the font selector?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-            )
-        finally:
-            self.ignore_focus_loss = False
-        self.activateWindow()
-        if reply != QMessageBox.StandardButton.Yes: return
-        
-        default_fonts = ["Verdana", "Tahoma", "Consolas", "Calibri", "Times New Roman", "Arial", "Segoe UI", "Courier New"]
-        self.font_combo.blockSignals(True)
-        self.font_combo.clear()
-        self.font_combo.addItems(default_fonts)
-        self.font_combo.blockSignals(False)
-        
-        # Reset font to Verdana if current was custom
-        if self.data.get("font_family", "Verdana") not in default_fonts:
-            self.font_combo.setCurrentText("Verdana")
-            self.change_font_family("Verdana")
-        else:
-            idx = self.font_combo.findText(self.data.get("font_family", "Verdana"))
-            if idx >= 0: self.font_combo.setCurrentIndex(idx)
-        
-        self.data["custom_font_ids"] = []
-        self.mark_dirty()
-
-    def load_snippet_for_edit(self, cat, global_idx, cursor_pos="end"):
+    def load_snippet_for_edit(self, cat, global_idx):
         if self.editing_snippet:
             self.save_snippet()
-
             
         slot_data = self.data["categories"].get(cat, [None] * 100)[global_idx] if cat in self.data["categories"] else None
         if not slot_data: return
@@ -1523,10 +1248,7 @@ class FastPrompter(QMainWindow):
         try:
             self.text_area.blockSignals(True)
             self.text_area.setPlainText(slot_data["text"])
-            if cursor_pos == "start":
-                self.text_area.moveCursor(QTextCursor.MoveOperation.Start)
-            else:
-                self.text_area.moveCursor(QTextCursor.MoveOperation.End)
+            self.text_area.moveCursor(QTextCursor.MoveOperation.End)
         finally:
             self.text_area.blockSignals(False)
             self._suspend_cache, self.ignore_focus_loss = False, False
@@ -1652,21 +1374,9 @@ class FastPrompter(QMainWindow):
             return
             
         if any(re.match(r'^\s*•\s*', line) for line in lines): 
-            # Convert bullets back to dashes, skip divider lines
-            new_lines = []
-            for line in lines:
-                if re.match(r'^\s*-{3,}\s*$', line):  # Protect --- dividers
-                    new_lines.append(line)
-                else:
-                    new_lines.append(re.sub(r'^(\s*)•\s*', r'\1- ', line))
+            new_lines = [re.sub(r'^(\s*)•\s*', r'\1- ', line) for line in lines]
         else: 
-            # Convert dashes to bullets, skip divider lines (---)
-            new_lines = []
-            for line in lines:
-                if re.match(r'^\s*-{3,}\s*$', line):  # Protect --- dividers from conversion
-                    new_lines.append(line)
-                else:
-                    new_lines.append(re.sub(r'^(\s*)-\s+', r'\1• ', line))
+            new_lines = [re.sub(r'^(\s*)-\s*', r'\1• ', line) for line in lines]
             
         new_text = "\n".join(new_lines)
         cursor.insertText(new_text)
@@ -1894,27 +1604,6 @@ class FastPrompter(QMainWindow):
         self.cancel_editing()
         self.text_area.setFocus()
 
-    def copy_context_to_clipboard(self):
-        """Copy entire text area content to clipboard."""
-        text = self.text_area.toPlainText()
-        QApplication.clipboard().setText(text)
-
-    def copy_context_and_close(self, pos=None):
-        """Copy entire text area content to clipboard and hide FastPrompter."""
-        self.copy_context_to_clipboard()
-        self.hide_and_save()
-
-    def play_click_sound(self):
-        """Play the click sound if sound is enabled in settings."""
-        if self.data.get("sound_enabled", "True") != "True": return
-        try:
-            import winsound, os
-            sound_path = os.path.join(os.path.dirname(__file__), "sound", "button1.wav")
-            if os.path.exists(sound_path):
-                winsound.PlaySound(sound_path, winsound.SND_FILENAME | winsound.SND_ASYNC | winsound.SND_NODEFAULT)
-        except Exception:
-            pass  # Never crash on sound
-
     def add_category(self):
         if len(self.data['cats_order']) >= 100: return
         self.ignore_focus_loss = True
@@ -1962,13 +1651,10 @@ class FastPrompter(QMainWindow):
         return None
 
     def change_font_family(self, font_name):
-        if getattr(self, '_initializing_ui', False): return
         self.data["font_family"] = font_name
         self.apply_font()
-        self.mark_dirty()
 
     def change_font_size(self, size):
-        if getattr(self, '_initializing_ui', False): return
         self.data["font_size"] = size
         self.apply_font()
         self.mark_dirty()
@@ -2015,9 +1701,7 @@ class FastPrompter(QMainWindow):
         self.refresh_temp_presets()
 
     def apply_font(self):
-        if getattr(self, '_initializing_ui', False): return
-        try: base_size = int(self.data.get("font_size", 11))
-        except Exception: base_size = 11
+        base_size = self.data.get("font_size", 11)
         font_name = self.data.get("font_family", "Verdana")
         try: scale = float(self.data.get("ui_scale", "1.0"))
         except Exception: scale = 1.0
@@ -2025,93 +1709,40 @@ class FastPrompter(QMainWindow):
         font = QFont(font_name, font_size)
         font.setStyleStrategy(QFont.StyleStrategy(int(QFont.StyleStrategy.NoAntialias.value) | int(QFont.StyleStrategy.NoSubpixelAntialias.value)))
         
-        try:
-            self.text_area.setFont(font)
-            self.text_area.document().setDefaultFont(font)
-        except Exception: pass
-        try:
-            self.preview_area.setFont(font)
-        except Exception: pass
-        try:
-            self.refresh_snippets_panel()
-        except Exception: pass
+        self.text_area.setFont(font)
+        self.text_area.document().setDefaultFont(font)
+        self.preview_area.setFont(font)
+        self.refresh_snippets_panel()
 
     def change_preview_mode(self, index):
-        """
-        Obsidian-style view modes:
-        - Source View: plain editor only, no preview
-        - Live Preview: editor visible; headers/bold auto-highlighted via charformat (no separate panel)
-        - Reading: read-only rendered HTML preview, editor hidden
-        """
         mode = self.preview_combo.currentText()
-
-        # Disconnect preview update if switching away from a connected mode
-        if self._preview_connected:
-            try: self.text_area.textChanged.disconnect(self.update_preview)
-            except Exception: pass
-            self._preview_connected = False
-
-        if mode == "Source View":
-            self.text_area.setVisible(True)
-            self.text_area.setReadOnly(False)
+        if mode == "None":
             self.preview_area.setVisible(False)
-
-        elif mode == "Live Preview":
-            # Editor stays, preview panel hidden.
-            # Live formatting is applied by the editor's own highlight rules.
-            self.text_area.setVisible(True)
-            self.text_area.setReadOnly(False)
-            self.preview_area.setVisible(False)
-
-        elif mode == "Reading":
-            # Full reading pane — editor hidden, preview fills full height
-            self.text_area.setVisible(False)
+            if self._preview_connected:
+                self.text_area.textChanged.disconnect(self.update_preview)
+                self._preview_connected = False
+        else:
             self.preview_area.setVisible(True)
             if not self._preview_connected:
-                self.text_area.textChanged.connect(self.update_preview)
-                self._preview_connected = True
+                 self.text_area.textChanged.connect(self.update_preview)
+                 self._preview_connected = True
             self.update_preview()
-
         self.mark_dirty()
 
     def update_preview(self):
         text = self.text_area.toPlainText()
         mode = self.preview_combo.currentText()
-        if mode == "Reading":
-            self.preview_area.setHtml(self.simple_markdown_to_html(text))
-
+        if mode == "Raw": self.preview_area.setPlainText(text)
+        elif mode == "Markdown": self.preview_area.setHtml(self.simple_markdown_to_html(text))
 
     @staticmethod
     def simple_markdown_to_html(text):
-        lines = text.split('\n')
-        html_lines = []
-        for line in lines:
-            # Headers
-            if line.startswith('### '):
-                html_lines.append(f"<h3 style='color:#d4a842;margin:4px 0'>{line[4:]}</h3>")
-            elif line.startswith('## '):
-                html_lines.append(f"<h2 style='color:#e0b856;margin:5px 0'>{line[3:]}</h2>")
-            elif line.startswith('# '):
-                html_lines.append(f"<h1 style='color:#f0cc6a;margin:6px 0'>{line[2:]}</h1>")
-            # Horizontal rule
-            elif re.match(r'^\s*-{3,}\s*$', line):
-                html_lines.append("<hr style='border:1px solid #5a4a2a;'>")
-            # Bullet points
-            elif re.match(r'^[\-•]\s', line):
-                content = line[2:]
-                content = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', content)
-                content = re.sub(r'\*(.*?)\*', r'<i>\1</i>', content)
-                content = re.sub(r'`(.*?)`', r'<code style="background:#1a1a1a;padding:0 2px">\1</code>', content)
-                html_lines.append(f"<li style='margin:1px 0'>{content}</li>")
-            else:
-                l = line
-                l = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', l)
-                l = re.sub(r'\*(.*?)\*', r'<i>\1</i>', l)
-                l = re.sub(r'`(.*?)`', r'<code style="background:#1a1a1a;padding:0 2px">\1</code>', l)
-                l = re.sub(r'\[(.*?)\]\((.*?)\)', r'<a href="\2" style="color:#7ab4d4">\1</a>', l)
-                html_lines.append(f"<p style='margin:1px 0'>{l}</p>" if l.strip() else "<br>")
-        body = '\n'.join(html_lines)
-        return f"<html><body style='color:#c4ba9f;background:#0f0f0f;font-family:Verdana,sans-serif;font-size:11px;padding:6px'>{body}</body></html>"
+        text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', text)
+        text = re.sub(r'\*(.*?)\*', r'<i>\1</i>', text)
+        text = re.sub(r'`(.*?)`', r'<code>\1</code>', text)
+        text = re.sub(r'\[(.*?)\]\((.*?)\)', r'<a href="\2">\1</a>', text)
+        text = text.replace('\n', '<br>')
+        return f"<html><body style='color:#c4ba9f; background:#0f0f0f'>{text}</body></html>"
 
     def toggle_paste_mode(self, checked):
         self.btn_format.setText("Plain" if checked else "Formatted")
@@ -2277,51 +1908,17 @@ class FastPrompter(QMainWindow):
         self.btn_page_up.setVisible(page > 0)
         self.btn_page_down.setVisible(page < math.ceil(total_active / 10.0) - 1)
 
-    def refresh_archive_panel(self):
-        active_items = []
-        for i, s in enumerate(self.data["categories"].get("__Archive__", [])):
-            if s is not None:
-                active_items.append((i, s))
-                
-        total_active = len(active_items)
-        max_page = max(0, math.ceil(total_active / 10.0) - 1)
-        self.arc_page = min(getattr(self, 'arc_page', 0), max_page)
-        self.data["arc_page"] = self.arc_page
-        
-        start_idx = self.arc_page * 10
-        page_items = active_items[start_idx:start_idx+10]
-        
-        theme_name = self.data.get("theme", "Default")
-        if theme_name not in THEMES: theme_name = "Default"
-        preset_colors = THEMES[theme_name]["preset_colors"]
-        font_family = self.data.get("font_family", "Verdana")
-        try: scale = float(self.data.get("ui_scale", "1.0"))
-        except Exception: scale = 1.0
-
-        for i, w in enumerate(self.archive_buttons):
-            if i < len(page_items):
-                global_idx, item = page_items[i]
-                d_idx = i + 1
-                disp = item["name"][:22] + "\u2026" if len(item["name"])>22 else item["name"]
-                color = preset_colors[global_idx % len(preset_colors)]
-                w.update_data(f"[{d_idx}] {disp}", "__Archive__", global_idx, item["text"], self.darken_color(color), font_family, scale)
-            else:
-                w.hide()
-                
-        self.btn_arc_page_up.setVisible(self.arc_page > 0)
-        self.btn_arc_page_down.setVisible(self.arc_page < max_page)
-
-    # move_preset_to_index is defined earlier in the class (uses pop+insert with undo)
+    def move_preset_to_index(self, cat, src_idx, tgt_idx):
+        if src_idx == tgt_idx: return
+        slots = self.data["categories"][cat]
+        slots[src_idx], slots[tgt_idx] = slots[tgt_idx], slots[src_idx]
+        self.mark_dirty()
+        self.refresh_snippets_panel()
 
     def delete_preset_by_index(self, cat, global_idx):
-        # If deleting the currently edited snippet, cancel editing first
-        if getattr(self, 'editing_snippet', None) == (cat, global_idx):
-            self.editing_snippet = None
-            self.btn_save.setText("Save")
         self.data["categories"][cat][global_idx] = None
         self.mark_dirty()
         self.refresh_snippets_panel()
-        self.refresh_archive_panel()
 
     def add_silo(self):
         if len(self.data["temp_presets"]) < 100:
@@ -2359,26 +1956,17 @@ class FastPrompter(QMainWindow):
             self.silo_page = new_page
             self.refresh_temp_presets()
 
-    def _switch_to_slot(self, idx, initial=False, is_archive=False):
-        if is_archive:
-            self.arc_silo_page = idx // 10
-        else:
-            self.silo_page = idx // 10
-            
+    def _switch_to_slot(self, idx, initial=False):
+        self.silo_page = idx // 10
         if not initial:
-            self.play_click_sound()
             if self.editing_snippet:
                 self.save_snippet()
             else:
-                if getattr(self, 'is_active_silo_archived', False):
-                    self.data["archive_temp_presets"][self.active_temp_slot] = self.text_area.toPlainText()
-                else:
-                    self.data["temp_presets"][self.active_temp_slot] = self.text_area.toPlainText()
+                self.data["temp_presets"][self.active_temp_slot] = self.text_area.toPlainText()
             
         self.cancel_editing()
         self.active_temp_slot = idx
-        self.is_active_silo_archived = is_archive
-        new_text = self.data["archive_temp_presets"][idx] if is_archive else self.data["temp_presets"][idx]
+        new_text = self.data["temp_presets"][idx]
         self._suspend_cache = True
         
         try:
@@ -2400,22 +1988,11 @@ class FastPrompter(QMainWindow):
         self.text_area.ensureCursorVisible()
         if not initial: self.mark_dirty()
 
-    def _switch_to_arc_slot(self, idx, initial=False):
-        self._switch_to_slot(idx, initial, is_archive=True)
-
-    def change_arc_silo_page(self, delta):
-        arc_total = len(self.data.get("archive_temp_presets", []))
-        max_page = max(0, math.ceil(arc_total / 10.0) - 1)
-        new_page = self.arc_silo_page + delta
-        if 0 <= new_page <= max_page:
-            self.arc_silo_page = new_page
-            self.refresh_temp_presets()
-
     def refresh_temp_presets(self):
         total = len(self.data["temp_presets"])
         if total == 0:
             self.silos_section.setVisible(False)
-            # Do not return here, we still need to refresh arc silos
+            return
             
         self.silos_section.setVisible(True)
         max_page = max(0, math.ceil(total / 10.0) - 1)
@@ -2441,35 +2018,8 @@ class FastPrompter(QMainWindow):
             
         self.btn_silo_up.setVisible(self.silo_page > 0)
         self.btn_silo_down.setVisible(self.silo_page < max_page)
-        
-        # Refresh Archive Silos
-        theme = THEMES.get(theme_name, THEMES["Default"])
-        arc_active_color = theme.get("active_temp_color", "#364757")
-        arc_inactive_color = theme.get("inactive_temp_color", "#1f2a36")
-        
-        arc_start_idx = self.arc_silo_page * 10
-        for i, btn in enumerate(self.archive_silo_buttons):
-            slot_idx = arc_start_idx + i
-            if slot_idx < len(self.data["archive_temp_presets"]):
-                text = self.data["archive_temp_presets"][slot_idx].replace('\n',' ').strip()
-                if not text and not (slot_idx == self.active_temp_slot and getattr(self, 'is_active_silo_archived', False)):
-                    btn.hide()
-                    continue
-                display_idx = slot_idx + 1
-                label = f"{display_idx}: {text[:22]}\u2026" if len(text)>22 else (f"{display_idx}: {text}" if text else str(display_idx))
-                is_active = (slot_idx == self.active_temp_slot) and getattr(self, 'is_active_silo_archived', False) and not getattr(self, 'editing_snippet', None)
-                bg_color = arc_active_color if is_active else arc_inactive_color
-                btn.update_data(label, slot_idx, bg_color)
-            else:
-                btn.hide()
-                
-        # self.archive_silos_section visibility is controlled by toggle_archive, but up/down buttons:
-        arc_total = len(self.data.get("archive_temp_presets", []))
-        arc_max_page = max(0, math.ceil(arc_total / 10.0) - 1)
-        self.btn_arc_silo_up.setVisible(self.arc_silo_page > 0)
-        self.btn_arc_silo_down.setVisible(self.arc_silo_page < arc_max_page)
 
-    def show_temp_menu(self, idx, pos, is_archive=False):
+    def show_temp_menu(self, idx, pos):
         cur = self.text_area.toPlainText().strip()
         menu = QMenu(self)
         menu.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
@@ -2477,31 +2027,9 @@ class FastPrompter(QMainWindow):
         if cur:
             menu.addAction("Save text as Snippet", self.save_snippet)
             menu.addAction("Save as Snippet #...", self.save_snippet_as_number)
-        if (is_archive and self.data["archive_temp_presets"][idx]) or (not is_archive and self.data["temp_presets"][idx]):
-            menu.addAction(f"Clear Silo {idx+1}", lambda: self.clear_temp(idx, is_archive))
-
-        # Replace Silo submenu — shows all non-empty silos to copy text from
-        presets = self.data["archive_temp_presets"] if is_archive else self.data["temp_presets"]
-        replace_menu = menu.addMenu(f"Replace Silo {idx+1} from...")
-        has_source = False
-        for src_i, src_text in enumerate(presets):
-            if src_i == idx or not src_text or not src_text.strip(): continue
-            has_source = True
-            label = src_text.strip().replace('\n', ' ')[:30] + ("…" if len(src_text.strip()) > 30 else "")
-            act_label = f"Silo {src_i+1}: {label}"
-            def make_replace(target_idx=idx, src_idx=src_i, archive=is_archive):
-                def do_replace():
-                    src_presets = self.data["archive_temp_presets"] if archive else self.data["temp_presets"]
-                    src_presets[target_idx] = src_presets[src_idx]
-                    self.mark_dirty()
-                    self.refresh_temp_presets()
-                    if target_idx == self.active_temp_slot:
-                        self.text_area.setPlainText(src_presets[target_idx])
-                return do_replace
-            replace_menu.addAction(act_label, make_replace())
-        if not has_source:
-            replace_menu.setEnabled(False)
-
+        if self.data["temp_presets"][idx]:
+            menu.addAction(f"Clear Silo {idx+1}", lambda: self.clear_temp(idx))
+            
         self.ignore_focus_loss = True
         try:
             menu.exec(pos)
@@ -2509,93 +2037,9 @@ class FastPrompter(QMainWindow):
             self.ignore_focus_loss = False
         self.activateWindow()
 
-    def clear_temp(self, idx, is_archive=False):
-        if is_archive:
-            self.data["archive_temp_presets"][idx] = ""
-            if idx == self.active_temp_slot and getattr(self, 'is_active_silo_archived', False): self.clear_text()
-        else:
-            self.data["temp_presets"][idx] = ""
-            if idx == self.active_temp_slot and not getattr(self, 'is_active_silo_archived', False): self.clear_text()
-        self.mark_dirty()
-        self.refresh_temp_presets()
-
-    def archive_active_snippet(self):
-        cat = self.get_current_category()
-        if not cat: return
-        
-        text = self.text_area.toPlainText().strip()
-        if not text: return
-        
-        is_in_archive = (cat == "__Archive__")
-        source_cat = "__Archive__" if is_in_archive else cat
-        dest_cat = "Default" if is_in_archive else "__Archive__"
-        
-        # We need to find the snippet slot index first, by matching text...
-        # Wait! The current active snippet doesn't have an index saved if we just edited it!
-        # Actually, when editing, we can just save it to dest_cat and clear it from source_cat.
-        
-        # First, ensure we save the current editing state to the current category slot if it exists.
-        if self.editing_snippet:
-            self.save_snippet()
-            
-        # Find exactly the active snippet
-        # If it's a new snippet, it has no index.
-        # It's better to just move the currently active text.
-        slots = self.data["categories"][source_cat]
-        # We find the slot by exact text match because there is no 'active_snippet_idx'
-        found_idx = -1
-        for i, s in enumerate(slots):
-            if s and s["text"] == text:
-                found_idx = i
-                break
-                
-        if found_idx == -1: return
-        
-        # Found it. Move it to dest_cat
-        dest_slots = self.data["categories"][dest_cat]
-        if None not in dest_slots: return # No space
-        
-        empty_dest_idx = dest_slots.index(None)
-        dest_slots[empty_dest_idx] = slots[found_idx]
-        slots[found_idx] = None
-        
-        self.clear_text()
-        self.mark_dirty()
-        self.refresh_snippets_panel()
-        if is_in_archive or getattr(self, 'btn_toggle_archive', None) and self.btn_toggle_archive.isChecked():
-            self.refresh_archive_panel()
-
-    def archive_active_silo(self):
-        idx = self.active_temp_slot
-        is_archive = getattr(self, 'is_active_silo_archived', False)
-        
-        source_list = self.data["archive_temp_presets"] if is_archive else self.data["temp_presets"]
-        dest_list = self.data["temp_presets"] if is_archive else self.data["archive_temp_presets"]
-        
-        text = self.text_area.toPlainText()
-        if not text: return
-        
-        # Save current text to source
-        source_list[idx] = text
-        
-        # Find empty slot in dest
-        empty_idx = -1
-        for i, content in enumerate(dest_list):
-            if not content.strip():
-                empty_idx = i
-                break
-        
-        if empty_idx == -1:
-            if len(dest_list) < 100:
-                empty_idx = len(dest_list)
-                dest_list.append("")
-            else:
-                return # No space
-                
-        dest_list[empty_idx] = source_list[idx]
-        source_list[idx] = ""
-        
-        self.clear_text()
+    def clear_temp(self, idx):
+        self.data["temp_presets"][idx] = ""
+        if idx == self.active_temp_slot: self.clear_text()
         self.mark_dirty()
         self.refresh_temp_presets()
 
@@ -2666,8 +2110,6 @@ class FastPrompter(QMainWindow):
             QShortcut(QKeySequence(f"Ctrl+Shift+{key_num}"), self).activated.connect(lambda i=i: self.fire_shortcut(i))
         QShortcut(QKeySequence("Ctrl+Q"), self).activated.connect(self.cycle_snap_corner)
         QShortcut(QKeySequence("Ctrl+Alt+Shift+Q"), self).activated.connect(self.quit_app)
-        QShortcut(QKeySequence("Ctrl+E"), self).activated.connect(self.toggle_header_line)
-        QShortcut(QKeySequence("Ctrl+B"), self).activated.connect(self.apply_bold_smart)
 
     def fire_shortcut(self, idx):
         cat = self.get_current_category()
@@ -2725,12 +2167,10 @@ class FastPrompter(QMainWindow):
 
     def cache_current_text(self):
         if getattr(self, "_suspend_cache", False): return
-        if getattr(self, "_initializing_ui", False): return
         self.mark_dirty()
         current_text = self.text_area.toPlainText()
         if not self.editing_snippet:
-            if 0 <= self.active_temp_slot < len(self.data["temp_presets"]):
-                self.data["temp_presets"][self.active_temp_slot] = current_text
+            self.data["temp_presets"][self.active_temp_slot] = current_text
             page_start = self.silo_page * 10
             if page_start <= self.active_temp_slot < page_start + 10:
                 view_idx = self.active_temp_slot - page_start
@@ -2748,17 +2188,13 @@ class FastPrompter(QMainWindow):
                     t = current_text.replace('\n', ' ').strip()
                     display_idx = idx + 1
                     label = f"{display_idx}: {t[:22]}\u2026" if len(t) > 22 else (f"{display_idx}: {t}" if t else str(display_idx))
-                    # Use snippets_widget.layout instead of snippets_layout (doesn't exist)
-                    layout = getattr(self, 'snippets_widget', None)
-                    if layout and hasattr(layout, 'layout'):
-                        for i in range(layout.layout.count()):
-                            item = layout.layout.itemAt(i)
-                            if item and item.widget():
-                                widget = item.widget()
-                                main_btn = getattr(widget, 'main_btn', None)
-                                if main_btn and getattr(main_btn, 'cat', None) == cat and getattr(main_btn, 'global_idx', None) == idx:
-                                    main_btn.setText(label)
-                                    break
+                    for i in range(self.snippets_layout.count()):
+                        item = self.snippets_layout.itemAt(i)
+                        if item and item.widget():
+                            btn = item.widget()
+                            if getattr(btn, 'cat', None) == cat and getattr(btn, 'global_idx', None) == idx:
+                                btn.setText(label)
+                                break
     
     def hide_and_save(self): 
         self.save_data_to_db()
@@ -2788,32 +2224,19 @@ class FastPrompter(QMainWindow):
         dlg.exec()
 
     def show_quick_list(self):
-        # Clear any dead reference first (widget was deleted due to WA_DeleteOnClose)
         if hasattr(self, 'quick_list') and self.quick_list is not None:
-            try:
-                if sip.isdeleted(self.quick_list):
-                    self.quick_list = None
-                else:
-                    # Already visible → toggle close
-                    try: self.quick_list.close()
-                    except Exception: pass
-                    self.quick_list = None
-                    return
-            except Exception:
+            import sip
+            if not sip.isdeleted(self.quick_list):
+                try: self.quick_list.close()
+                except Exception: pass
                 self.quick_list = None
-
-        self.ignore_focus_loss = True  # Prevent main window from hiding while pie menu is open
-        self.quick_list = QuickListWidget(self)
-
-        def _on_pie_close():
+                return
             self.quick_list = None
-            self.ignore_focus_loss = False
-
-        self.quick_list.destroyed.connect(lambda: _on_pie_close())
+            
+        self.quick_list = QuickListWidget(self)
         self.quick_list.show()
         self.quick_list.activateWindow()
         self.quick_list.setFocus()
-
 
     def fire_global_snippet(self, idx):
         cat = self.get_current_category()
