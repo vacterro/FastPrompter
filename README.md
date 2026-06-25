@@ -95,3 +95,11 @@ Contributions, issues, and feature requests are always welcome! Feel free to che
 ## 📄 License
 
 This project is licensed under the MIT License.
+
+<img width="960" height="532" alt="2026-06-26_010442" src="https://github.com/user-attachments/assets/729a3dc3-d921-4308-af2f-5e8268e55429" />
+<img width="960" height="540" alt="2026-06-26_011034" src="https://github.com/user-attachments/assets/2c594aa3-e115-48aa-8230-bb5b2a3af231" />
+<img width="960" height="540" alt="2026-06-26_011039" src="https://github.com/user-attachments/assets/aa1a90de-f662-4691-a2ca-7d8351bd4336" />
+<img width="960" height="540" alt="2026-06-26_011043" src="https://github.com/user-attachments/assets/91709f22-b873-4cbb-923c-78a04a314d23" />
+<img width="960" height="540" alt="2026-06-26_011054" src="https://github.com/user-attachments/assets/c13395ac-7daf-4cd5-bcb2-c58dad204946" />
+<img width="960" height="540" alt="2026-06-26_011111" src="https://github.com/user-attachments/assets/63e2d56d-1ce3-4efe-a9dc-c92e930ebd51" />
+
