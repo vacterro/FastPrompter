@@ -1,5 +1,6 @@
 <div align="center">
-  <img src="https://raw.githubusercontent.com/vacterro/FastPrompter/main/_res/fastprompter_logo2.png" alt="FastPrompter Logo" width="120"/>
+<img width="512" height="512" alt="fastprompter_logo1" src="https://github.com/user-attachments/assets/5595e6c6-093c-4fc5-950b-e34007d76e14" />
+<img width="960" height="540" alt="2026-07-01_004138" src="https://github.com/user-attachments/assets/7839fd84-3e3b-4062-bfb4-21729bfc514b" />
   <h1>FastPrompter</h1>
   <p><strong>Lightning-fast snippet management & text expansion for Windows</strong></p>
 
@@ -11,7 +12,6 @@
     <img src="https://img.shields.io/badge/License-MIT-800080?logo=opensourceinitiative&logoColor=fff" alt="MIT">
   </p>
 
-  <img src="https://github.com/user-attachments/assets/c6d6390a-c9ff-4120-9641-6b980c6ca4f1" alt="FastPrompter Demo" width="800"/>
   <br><br>
 </div>
 
@@ -33,6 +33,7 @@ Every keystroke is auto-saved to a local SQLite database. Every crash is caught,
 | **Pixel-perfect vintage** | Frameless window + `Verdana_m1.ttf` + zero anti-aliasing + dark golden 95 aesthetic. |
 
 ---
+<img width="960" height="540" alt="2026-07-01_004134" src="https://github.com/user-attachments/assets/5f964283-8cba-4d68-80a7-9e0658e66f43" />
 
 ## Features
 
@@ -176,9 +177,10 @@ FastPrompter/
 
 ## Screenshots
 
-<img src="https://github.com/user-attachments/assets/729a3dc3-d921-4308-af2f-5e8268e55429" width="800" alt="FastPrompter Main Window"/>
-<img src="https://github.com/user-attachments/assets/2c594aa3-e115-48aa-8230-bb5b2a3af231" width="800" alt="Snippet Management"/>
-<img src="https://github.com/user-attachments/assets/c13395ac-7daf-4cd5-bcb2-c58dad204946" width="800" alt="Theme Gallery"/>
+<img width="960" height="540" alt="2026-07-01_004143" src="https://github.com/user-attachments/assets/d7c5e7d1-72fa-4fd4-a5f4-cd7aa71bc540" />
+<img width="960" height="540" alt="2026-07-01_004154" src="https://github.com/user-attachments/assets/1e06c770-9fd9-4f8a-8358-068fab4aca29" />
+<img width="960" height="540" alt="2026-07-01_004129" src="https://github.com/user-attachments/assets/a10668b7-0c17-4b01-97ed-81276b311c2a" />
+
 
 ---
 
