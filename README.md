@@ -121,6 +121,7 @@ python FastPrompter.pyw
 The entry point `FastPrompter.pyw` adds `src/` to the Python path, routes to `fastprompter.main:main_entry`, and wraps everything with crash-logging + native error dialog.
 
 ---
+<img width="960" height="539" alt="2026-07-01_012158" src="https://github.com/user-attachments/assets/d4d9e0ec-0c84-4a23-8a2d-635ce1079193" />
 
 ## Project Structure
 
@@ -189,7 +190,8 @@ FastPrompter/
 Built with [PyQt6](https://www.riverbankcomputing.com/software/pyqt/), powered by [SQLite](https://www.sqlite.org/), inspired by the golden age of desktop software.
 
 ---
-
+<img width="960" height="540" alt="2026-07-01_012128" src="https://github.com/user-attachments/assets/28375f37-f80c-4817-9bea-03f9901e9ee2" />
 <div align="center">
   <sub>MIT &copy; 2026 <a href="https://github.com/vacterro/FastPrompter">vacterro/FastPrompter</a> — <a href="https://github.com/vacterro/FastPrompter/tree/main">Browse on GitHub</a></sub>
 </div>
+
