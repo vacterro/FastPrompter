@@ -2,10 +2,10 @@
   <img src="https://raw.githubusercontent.com/vacterro/FastPrompter/main/_res/fastprompter_logo1.png" alt="FastPrompter Logo" width="128" height="128"/>
   <h1 align="center">FastPrompter</h1>
   <p align="center">
-    <strong>Blazing-fast portable snippet manager & scratchpad for Windows</strong>
+    <strong>Fast prompt manager, snippet launcher, and AI scratchpad for Windows</strong>
   </p>
   <p align="center">
-    One hotkey. Instant window. Your prompts, snippets, and drafts — always one keystroke away.
+    One hotkey. Instant window. Your prompts, snippets, drafts, and notes are always one keystroke away.
   </p>
   <p align="center">
     <a href="https://github.com/vacterro/FastPrompter/releases">
@@ -21,234 +21,313 @@
     <img src="https://img.shields.io/badge/100%25-Portable-important?style=for-the-badge" alt="Portable"/>
   </p>
   <br>
-<img width="960" height="540" alt="2026-07-09_055207" src="https://github.com/user-attachments/assets/bd219908-5eda-44bc-aa3c-337f0cd485fc" />
-
-
+  <img width="960" height="540" alt="FastPrompter screenshot" src="https://github.com/user-attachments/assets/bd219908-5eda-44bc-aa3c-337f0cd485fc" />
 </div>
 
 ---
 
-## ✨ Features
+## What FastPrompter is
 
-### ⚡ Core
+FastPrompter is a **desktop prompt manager for Windows** built for people who work with AI tools every day.
 
-| | Feature | Details |
-|---|---------|---------|
-| ⚡ | **Instant Access** | Global hotkey (`Alt+X`, alt bind `F15`) — window appears at your cursor |
-| 🗄️ | **Silo System** | Up to 100 persistent scratch slots per project — your always-saved drafts |
-| 📋 | **Snippet Engine** | Named snippets per project tab, `F1`–`F10` instant paste |
-| 🗂️ | **Projects** | Up to 5 project tabs, each with its own snippets, silos, and archive |
-| 📦 | **Archive** | One button archives the current silo *or* snippet — never lose a draft |
-| 💾 | **Auto-Save** | Real-time SQLite persistence — close it, kill it, your text survives |
+Use it as:
 
-### 🖱️ Interaction
+- an **AI prompt launcher**
+- a **snippet manager**
+- a **scratchpad**
+- a **portable notes app**
+- a **markdown editor**
+- a **clipboard-adjacent productivity tool**
+- a **workspace for reusable prompts, drafts, and text fragments**
 
-| | Feature | Details |
-|---|---------|---------|
-| 🖱️ | **Wheel Everything** | Mouse wheel pages silos, snippets, archive; switches tabs; `Ctrl+wheel` zooms |
-| 📌 | **Pin & Archive on Hover** | Hover a silo → 📌 pin-to-top and 📥 archive buttons appear |
-| 🎨 | **Last-Edited Colors** | Silos tint by recency — spot your freshest draft at a glance |
-| 🔢 | **Line Counters** | Per-silo line count at the sidebar edge + live counter in the header |
-| 🤏 | **Smart Drag & Drop** | Drop a silo *between* others to reorder, *onto* one to swap |
-| 📄 | **Drop Any File** | Drag ~50 text-based file types into the editor — loads as pasted text |
-| ⌨️ | **Keyboard Silo Nav** | `Alt+Up` / `Alt+Down` walks the sidebar without touching the mouse |
-| 🔗 | **Clickable Links** | URLs in your text open in the browser |
+If you constantly copy the same prompts into ChatGPT, Claude, Gemini, Cursor, or any other AI chat, FastPrompter gives you a faster way to store, search, and launch them.
 
-### ✍️ Editor
+It is designed for people who want:
+- quick access via global hotkeys,
+- local-only storage,
+- portable deployment,
+- Markdown-friendly editing,
+- reusable text blocks,
+- and no cloud account nonsense.
 
-| | Feature | Details |
-|---|---------|---------|
-| 🔤 | **Markdown Toolbar** | Bold / Italic / Underline / Strike, header + timestamp (`Ctrl+E`) |
-| ➖ | **Smart Dividers** | `Ctrl+W` inserts a spaced `---` rule, rendered as a real line |
-| • | **Auto-Bullet** | `-` + space becomes `•`, Enter continues the list, Enter again ends it |
-| ☑️ | **Checkboxes** | `[ ]` renders as a real clickable checkbox, `Ctrl+Return` toggles |
-| 🦓 | **Zebra Stripes** | Subtle alternating line contrast — toggleable, color & opacity configurable |
-| 📏 | **Line Numbers** | Toggleable gutter with clickable margin marks (🔴 → 🟦 → 🔺 → off) |
-| 🔍 | **Find & Replace** | `Ctrl+F` / `Ctrl+H`, Esc closes search first, hides window second |
-| 👁️ | **Preview Modes** | Source, live markdown highlighting, or rendered reading view |
+## Why this exists
 
-### 🎛️ Window & Polish
+Copying the same text over and over is a waste of human life and wrist joints.
 
-| | Feature | Details |
-|---|---------|---------|
-| 🎨 | **Themes** | 6 vintage-inspired themes + full custom color editor |
-| 🎵 | **Sound FX** | Configurable UI sounds + optional typewriter effect while typing |
-| 🌙 | **Focus Mode** | `Ctrl+D` — minimal zen interface |
-| 🔐 | **Lock Mode** | Lock window position/size; lock-to-cursor summoning |
-| 🎯 | **Snap Corners** | `Ctrl+Q` cycles the window through screen corners |
-| 🪟 | **Edge Resize** | Frameless window, drag any edge or corner |
-| ⌨️ | **Dual Hotkeys** | Every global bind has a primary *and* an alternative slot |
+FastPrompter reduces that friction by keeping your prompts and snippets in a compact window that opens instantly at your cursor. It is meant for AI power users, writers, developers, prompt engineers, editors, and anyone who keeps a private library of reusable text.
 
-## 🚀 Quick Start
+## Core features
 
-### Option 1: Portable EXE (Recommended)
+### Instant access
+- Global hotkey opens the window instantly.
+- Secondary hotkey support for flexible setups.
+- Window can appear at or near the cursor for a low-friction workflow.
 
-1. Grab the latest from **[Releases →](https://github.com/vacterro/FastPrompter/releases)**
-2. Run it — **no installation, no Python, no admin rights**
-3. Press **`Alt+X`**
+### Prompts, snippets, and scratch space
+- Save reusable prompts.
+- Keep draft text in persistent scratch slots.
+- Organize content by project/tab.
+- Archive useful content instead of deleting it.
 
-> 💡 **100% portable:** the database lives in a `data/` folder next to the EXE. Run it from a USB stick, a network share, anywhere — your data travels with the app.
+### Portable local storage
+- Stores data locally.
+- No account required.
+- No cloud sync required.
+- Can run from a portable folder or USB drive.
 
-### Option 2: Run from Source
+### Fast editing workflow
+- Markdown-friendly editor.
+- Auto bullets and dividers.
+- Checkboxes and text formatting tools.
+- Search and replace.
+- Drag and drop support.
+
+### Focused productivity
+- Works as a lightweight text memory tool.
+- Lets you keep AI prompts close at hand.
+- Designed for speed over clutter.
+
+## Who this is for
+
+FastPrompter is a good fit for:
+
+- AI users who repeat prompts often
+- prompt engineers
+- writers and editors
+- developers using ChatGPT, Claude, Gemini, Cursor, and similar tools
+- people who keep templates for replies, code, checklists, or scripts
+- anyone who wants a **Windows prompt manager** or **local snippet library**
+
+## Quick start
+
+### Download the portable release
+1. Open the latest release from the Releases page.
+2. Download the portable build or EXE.
+3. Run it.
+4. Press the hotkey and start storing prompts.
+
+### Run from source
 
 ```powershell
 git clone https://github.com/vacterro/FastPrompter.git
 cd FastPrompter
 
-# with uv (recommended)
+# Recommended
 uv sync
 uv run python FastPrompter.pyw
 
-# or with pip
+# Or with pip
 pip install -r requirements.txt
 python FastPrompter.pyw
 ```
 
-### Build Your Own EXE
+### Build your own EXE
 
 ```powershell
-pip install -e .[build]     # installs Nuitka
-python tools/build.py       # → build/FastPrompter.exe
+pip install -e .[build]
+python tools/build.py
 ```
 
-The build prunes unused Qt plugins and skips QtMultimedia's ~100 MB FFmpeg payload entirely — sounds play through a lightweight native fallback. Install [UPX](https://upx.github.io/) for further compression.
+## Typical use cases
 
-## ⌨️ Key Bindings
+### Prompt library
+Keep reusable prompts for:
+- coding help
+- image generation
+- translation
+- research
+- writing
+- brainstorming
+- summarization
+- content generation
 
-### Global Hotkeys (rebindable, two slots each)
+### Snippet launcher
+Store short text blocks like:
+- email templates
+- boilerplate replies
+- code fragments
+- project notes
+- checklist items
+- recurring instructions
 
+### Scratchpad
+Use it as a fast local pad for:
+- temporary drafts
+- quick notes
+- pasted text you do not want to lose
+- project-specific fragments
+
+### AI workflow hub
+Keep working text ready for:
+- ChatGPT
+- Claude
+- Gemini
+- Cursor
+- local LLM frontends
+- browser-based AI tools
+
+## Key features in detail
+
+### Hotkeys
+FastPrompter is centered around speed. The main workflow is built around one-key access and keyboard-driven navigation.
+
+### Projects
+Separate your material into project tabs so prompts and snippets stay organized.
+
+### Silo system
+Use silo slots for persistent drafts and working notes. These are useful for content you want to revisit later without creating a mess.
+
+### Archive
+Move content out of the way without losing it. Better than deletion, because deletion is how humans discover regret.
+
+### Markdown support
+FastPrompter supports a practical Markdown workflow for:
+- bold
+- italic
+- underline
+- strike-through
+- headers
+- timestamps
+- checkboxes
+- divider lines
+- bullet lists
+
+### Drag and drop
+Move text around with drag and drop. FastPrompter is built to be quick, not ceremonial.
+
+### Portable by design
+Everything stays local. You can keep the app with your files and move it around without needing an installation ritual.
+
+## Hotkeys
+
+### Global hotkeys
 | Key | Action |
 |-----|--------|
-| `Alt+X` / `F15` | Toggle window |
-| `Shift+Alt+X` | Quick List (pie menu) |
+| `Alt+X` / `F15` | Toggle the window |
+| `Shift+Alt+X` | Quick List |
 | `Alt+D` | Toggle sidebar |
 | `Ctrl+Shift+L` | Lock / unlock window |
 | `Ctrl+Shift+E` | Always on top |
 
-### In-App
-
+### In-app hotkeys
 | Key | Action |
 |-----|--------|
-| `Ctrl+N` | New empty silo (capped at 5 blanks — no spam) |
+| `Ctrl+N` | New empty silo |
 | `Alt+Up` / `Alt+Down` | Previous / next silo |
 | `Ctrl+1`–`Ctrl+0` | Jump to silo 1–10 |
 | `F1`–`F10` | Paste snippet 1–10 |
 | `Ctrl+S` | Save / update snippet |
 | `Ctrl+W` | Insert divider line |
-| `Ctrl+E` | Header + timestamp on current line |
-| `Ctrl+Return` | Toggle checkboxes |
-| `Ctrl+B` / `I` / `U` | Bold / Italic / Underline |
-| `Ctrl+F` / `Ctrl+H` | Find / Replace |
-| `Ctrl+Z` / `Ctrl+Shift+Z` | Undo / Redo |
+| `Ctrl+E` | Header + timestamp |
+| `Ctrl+Return` | Toggle checkbox |
+| `Ctrl+B` / `Ctrl+I` / `Ctrl+U` | Bold / italic / underline |
+| `Ctrl+F` / `Ctrl+H` | Find / replace |
+| `Ctrl+Z` / `Ctrl+Shift+Z` | Undo / redo |
 | `Ctrl+Q` | Cycle snap corners |
 | `Ctrl+D` | Focus mode |
 | `Ctrl+Shift+S` | Export silo to file |
-| `Esc` | Close search → hide & save |
+| `Esc` | Close search, then hide and save |
 | `Ctrl+Alt+Shift+Q` | Quit completely |
 
-### Mouse
-
-| Gesture | Action |
-|---------|--------|
-| Wheel over silos / snippets / archive | Flip pages |
-| Wheel over tab bar | Switch project |
-| `Ctrl` + wheel in editor | Zoom font |
-| Middle-click a silo | Clear it (empty silo → delete the slot) |
-| Hover a silo | Reveal 📌 pin / 📥 archive buttons |
-| Right-click a silo | Full menu: transfer to project, replace from, move to bottom… |
-| Left / right half-click a snippet | Open with cursor at start / end |
-
-## 📸 Screenshots
+## Screenshots
 
 <div align="center">
-  <img width="960" height="540" alt="2026-07-09_055107" src="https://github.com/user-attachments/assets/e26fc73d-3992-4caa-acef-c063643e9ba2" />
-<img width="960" height="540" alt="2026-07-09_055116" src="https://github.com/user-attachments/assets/07f535ec-dac6-485f-b563-c6d667b8daf5" />
-<img width="960" height="540" alt="2026-07-09_055154" src="https://github.com/user-attachments/assets/7e2fce00-f84d-415c-b10b-2d63e80ef4c9" />
-<img width="960" height="540" alt="2026-07-09_055200" src="https://github.com/user-attachments/assets/bd468bc4-1e66-4d9b-a620-5a57ad2f0dbc" />
-<img width="960" height="540" alt="2026-07-09_055217" src="https://github.com/user-attachments/assets/b4e2f157-c782-43d4-a89b-a14f4b268ff4" />
-<img width="960" height="540" alt="2026-07-09_055231" src="https://github.com/user-attachments/assets/dba85239-aefd-45b9-8893-877c4d0865cf" />
-
+  <img width="960" height="540" alt="FastPrompter screenshot 1" src="https://github.com/user-attachments/assets/e26fc73d-3992-4caa-acef-c063643e9ba2" />
+  <img width="960" height="540" alt="FastPrompter screenshot 2" src="https://github.com/user-attachments/assets/07f535ec-dac6-485f-b563-c6d667b8daf5" />
+  <img width="960" height="540" alt="FastPrompter screenshot 3" src="https://github.com/user-attachments/assets/7e2fce00-f84d-415c-b10b-2d63e80ef4c9" />
+  <img width="960" height="540" alt="FastPrompter screenshot 4" src="https://github.com/user-attachments/assets/bd468bc4-1e66-4d9b-a620-5a57ad2f0dbc" />
 </div>
 
-## 🎨 Themes
+## Themes
 
-| Theme | Style |
-|-------|-------|
-| **Default** | Dark vintage — warm amber on black |
-| **Golden Vintage** | Rich gold & brown — classic terminal vibes |
-| **Golden Default** | Warm gold tones, balanced contrast |
-| **Vintage Dark** | Deep charcoal with muted accents |
-| **Vintage Classic** | Windows 95 retro — raised 3D bevels |
-| **Dark 2 (OLED)** | Pure black, maximum contrast |
-| **Custom** | Full color picker, including last-edited overlay colors |
+FastPrompter includes vintage-inspired and high-contrast themes.
 
-## 📁 Data & Portability
+- Default
+- Golden Vintage
+- Golden Default
+- Vintage Dark
+- Vintage Classic
+- Dark 2
+- Custom colors
 
-FastPrompter stores everything locally — **no cloud, no telemetry, no accounts**.
+## Data and portability
+
+FastPrompter keeps data local.
 
 | Item | Location |
 |------|----------|
-| **Database** | `data/local_data_v15.db` — next to the EXE, fully portable |
-| **Markdown Backups** | `Documents\.fastprompter\YYYY-MM-DD\` — silos, archive & snippets as structured `.md` files, 7-day rotation (on by default, toggleable) |
-| **Crash Log** | `crash.log` next to the EXE — crashes are loud, never silent |
+| Database | `data/local_data_v15.db` |
+| Markdown backups | `Documents\.fastprompter\YYYY-MM-DD\` |
+| Crash log | `crash.log` |
 
-The backup mirror means your content is always readable as plain Markdown files, even without FastPrompter installed.
+The backup mirror keeps content readable as plain Markdown files even outside the app.
 
-## 🛠️ Tech Stack
+## Tech stack
 
 | Component | Technology |
 |-----------|------------|
 | Language | Python 3.11+ |
-| GUI | PyQt6 6.8+ — frameless, custom-drawn |
-| Storage | SQLite via stdlib `sqlite3`, transactional diff-based saves |
-| Global Hotkeys | Win32 `RegisterHotKey` |
-| Sound | `QSoundEffect` with stdlib `winsound` fallback (keeps builds ~100 MB lighter) |
-| Markdown | Custom `QSyntaxHighlighter` |
-| Packaging | Nuitka single-file EXE, Qt-plugin pruning + optional UPX |
+| GUI | PyQt6 |
+| Storage | SQLite |
+| Hotkeys | Win32 `RegisterHotKey` |
+| Markdown | Custom highlighter |
+| Packaging | Nuitka single-file EXE |
 
-## 🧪 Tests
+## Installation notes
 
-```powershell
-uv run pytest tests/        # 461 unit tests (mocked Qt)
-uv run pytest tests_smoke/  # 20 integration tests — boots the real app offscreen
-uv run ruff check src/ tests/ tests_smoke/
-```
+- Windows is the primary target.
+- The app is portable by design.
+- No cloud login is required.
+- No telemetry is needed for normal use.
 
-The smoke suite constructs the actual `FastPrompter` window against a temp database and drives silo switching, pinning, drag-reorder remapping, auto-bullet, wheel paging, sounds, zebra/line-number painting, and more. Both suites run in CI on every push.
+## FAQ
 
-## 📐 Architecture
+### Is FastPrompter a clipboard manager?
+Not exactly. It is closer to a **prompt manager + snippet launcher + scratchpad** than a full clipboard history tool.
 
-```
+### Does it work offline?
+Yes. The app is local-first and does not need cloud connectivity for its core workflow.
+
+### Is it portable?
+Yes. The goal is that it can be moved between machines without a painful setup process.
+
+### What problem does it solve?
+It reduces repetitive copy-paste work and keeps reusable prompts and snippets one hotkey away.
+
+### Can I use it for AI workflows?
+Yes. That is one of the main use cases. It is especially useful for ChatGPT, Claude, Gemini, Cursor, and similar tools.
+
+## Project structure
+
+```text
 FastPrompter/
-├── FastPrompter.pyw            # Entry point + Nuitka build directives
+├── FastPrompter.pyw
 ├── src/fastprompter/
-│   ├── main.py                 # FastPrompter window — composition root
-│   ├── core/                   # Headless logic
-│   │   ├── state.py            #   SQLite persistence (diff-based writes)
-│   │   ├── sound_manager.py    #   Sound FX with graceful fallback
-│   │   ├── hotkeys.py          #   Win32 hotkey parsing
-│   │   ├── hotkey_filter.py    #   Native event filter (WM_HOTKEY)
-│   │   └── ipc_server.py       #   Single-instance IPC
-│   ├── ui/                     # Widgets + behavior mixins
-│   │   ├── editor.py           #   VaultTextEdit — zebra, checkboxes, gutter
-│   │   ├── snippet_panel.py    #   Silo/snippet buttons, drag & drop, WheelPager
-│   │   ├── *_mixin.py          #   Formatting, theming, scaling, search, tray…
-│   │   └── settings.py         #   Color & hotkey dialogs
-│   ├── theme/                  # Theme definitions + custom theme generator
-│   ├── utils/                  # Portable path resolution, markdown backup
-│   └── sound/                  # WAV sound effects
-├── _res/                       # Icons & branding
-├── tests/                      # Unit suite
-├── tests_smoke/                # Real-PyQt6 integration suite
-└── tools/build.py              # Nuitka build script
+├── _res/
+├── tests/
+├── tests_smoke/
+└── tools/
 ```
 
-## 📜 License
+## Contributing
 
-Distributed under the **MIT License**. See [`LICENSE`](LICENSE).
+Bug reports, feature ideas, and pull requests are welcome.
+
+A few good contribution areas:
+- UX polish
+- hotkey improvements
+- search and navigation
+- performance
+- packaging and distribution
+- documentation
+- additional snippets/workflows for AI users
+
+## License
+
+Distributed under the MIT License. See [`LICENSE`](LICENSE).
 
 ---
 
 <div align="center">
-  <sub>Built with Python, PyQt6, and ❤️ — by <a href="https://github.com/vacterro">vacterro</a></sub>
+  <sub>Built for people who keep the same prompts in ten different places and are finally ready to stop doing that.</sub>
 </div>
