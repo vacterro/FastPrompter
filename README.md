@@ -1,6 +1,5 @@
 <div align="center">
-  <img src="https://raw.githubusercontent.com/vacterro/FastPrompter/main/_res/fastprompter_logo1.png" alt="FastPrompter Logo" width="128" height="128"/><img width="960" height="540" alt="2026-07-09_055207" 
-
+  <img src="https://raw.githubusercontent.com/vacterro/FastPrompter/main/_res/fastprompter_logo1.png" alt="FastPrompter Logo" width="128" height="128"/><img width="960" height="540" 
   <h1 align="center">FastPrompter</h1>
   <p align="center">
     <strong>Blazing-fast portable snippet manager & scratchpad for Windows</strong>
