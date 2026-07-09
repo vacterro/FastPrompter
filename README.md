@@ -456,18 +456,6 @@ A: Currently Windows only. Cross-platform support is on the roadmap.
 
 ---
 
-## Roadmap
-
-- [ ] Plugin API
-- [ ] Additional import/export formats
-- [ ] More themes
-- [ ] More automation features
-- [ ] Better search (full-text, fuzzy)
-- [ ] More keyboard customization
-- [ ] Cross-platform support (macOS, Linux)
-
----
-
 ## Contributing
 
 Issues, ideas, pull requests and feature discussions are welcome.
