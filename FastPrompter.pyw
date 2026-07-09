@@ -1,6 +1,7 @@
 # nuitka-project: --standalone
 # nuitka-project: --onefile
 # nuitka-project: --enable-plugin=pyqt6
+# nuitka-project: --include-package=fastprompter
 # nuitka-project: --windows-console-mode=disable
 # nuitka-project: --windows-icon-from-ico=_res/fastprompter.ico
 # nuitka-project: --product-name=FastPrompter
@@ -23,10 +24,12 @@ import ctypes
 # Add src to Python path so it can find fastprompter
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
-from fastprompter.main import main_entry
-
 if __name__ == "__main__":
     try:
+        # Import inside the guard so a broken bundle/env also produces
+        # a visible error dialog + crash.log instead of dying silently.
+        from fastprompter.main import main_entry
+
         main_entry()
     except BaseException as e:
         if isinstance(e, SystemExit) and e.code == 0:

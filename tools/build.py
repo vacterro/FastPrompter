@@ -41,8 +41,15 @@ def build_with_nuitka():
 
     print("Running:", " ".join(cmd))
 
+    # The fastprompter package lives under src/ (the PEP 660 editable
+    # install uses an import hook Nuitka can't trace), so put src/ on
+    # PYTHONPATH for the compiler — otherwise the app package itself
+    # is silently left out of the EXE.
+    env = dict(os.environ)
+    env["PYTHONPATH"] = os.path.join(project_root, "src") + os.pathsep + env.get("PYTHONPATH", "")
+
     try:
-        subprocess.run(cmd, check=True)
+        subprocess.run(cmd, check=True, env=env)
         print("\n[SUCCESS] Build complete! Executable is in 'build' directory.")
         build_dir = os.path.join(project_root, "build")
         if os.path.exists(build_dir):
