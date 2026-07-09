@@ -220,12 +220,13 @@ AI clients have prompt presets. FastPrompter is **not an AI client** — it is a
 ## Screenshots
 
 <div align="center">
-  <img width="960" height="540" alt="Screenshot 1" src="https://github.com/user-attachments/assets/e26fc73d-3992-4caa-acef-c063643e9ba2">
-  <img width="960" height="540" alt="Screenshot 2" src="https://github.com/user-attachments/assets/07b535ec-dac6-485f-b563-c6d667b8daf5">
-  <img width="960" height="540" alt="Screenshot 3" src="https://github.com/user-attachments/assets/7e2fce00-f84d-415c-b10b-2d63f6b8daf5">
-  <img width="960" height="540" alt="Screenshot 4" src="https://github.com/user-attachments/assets/bd468bc4-1e66-4d9b-a620-5a57ad2f0dbc">
-  <img width="960" height="540" alt="Screenshot 5" src="https://github.com/user-attachments/assets/b4e2f157-c782-43d4-a89b-a14f4b268ff4">
-  <img width="960" height="540" alt="Screenshot 6" src="https://github.com/user-attachments/assets/dba85239-aefd-45b9-8893-877c4d0865cf">
+<img width="960" height="540" alt="2026-07-09_055104" src="https://github.com/user-attachments/assets/8d28f2f8-0811-43e8-b119-0c954c548885" />
+<img width="960" height="540" alt="2026-07-09_055154" src="https://github.com/user-attachments/assets/a053fc06-3b45-4e00-ac95-0a7442b7005a" />
+<img width="960" height="540" alt="2026-07-09_055207" src="https://github.com/user-attachments/assets/8033de34-e58a-4fba-986c-2401b9eb8ec1" />
+<img width="960" height="540" alt="2026-07-09_061317" src="https://github.com/user-attachments/assets/a43127e5-387f-474c-ad63-67905416454c" />
+<img width="960" height="540" alt="2026-07-09_061323" src="https://github.com/user-attachments/assets/8c87ccf6-a192-4f8d-92de-2d2bd6cc9498" />
+<img width="960" height="540" alt="2026-07-09_061354" src="https://github.com/user-attachments/assets/0cafd84c-8f12-40c9-8f66-f6d08914b820" />
+
 </div>
 
 ---
