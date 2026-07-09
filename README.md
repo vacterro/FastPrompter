@@ -1,5 +1,6 @@
 <div align="center">
-  <img src="https://raw.githubusercontent.com/vacterro/FastPrompter/main/_res/fastprompter_logo1.png" alt="FastPrompter Logo" width="128" height="128"/>
+  <img src="https://raw.githubusercontent.com/vacterro/FastPrompter/main/_res/fastprompter_logo1.png" alt="FastPrompter Logo" width="128" height="128"/><img width="960" height="540" alt="2026-07-09_055207" src="https://github.com/user-attachments/assets/ed96e54a-bbe8-4537-ae84-91caad21d586" />
+
   <h1 align="center">FastPrompter</h1>
   <p align="center">
     <strong>Blazing-fast portable snippet manager & scratchpad for Windows</strong>
@@ -21,7 +22,9 @@
     <img src="https://img.shields.io/badge/100%25-Portable-important?style=for-the-badge" alt="Portable"/>
   </p>
   <br>
-  <img width="960" height="540" alt="FastPrompter main window" src="https://github.com/user-attachments/assets/7839fd84-3e3b-4062-bfb4-21729bfc514b" />
+<img width="960" height="540" alt="2026-07-09_055207" src="https://github.com/user-attachments/assets/bd219908-5eda-44bc-aa3c-337f0cd485fc" />
+
+
 </div>
 
 ---
@@ -159,12 +162,13 @@ The build prunes unused Qt plugins and skips QtMultimedia's ~100 MB FFmpeg paylo
 ## 📸 Screenshots
 
 <div align="center">
-  <img width="960" height="540" alt="Editor with sidebar" src="https://github.com/user-attachments/assets/5f964283-8cba-4d68-80a7-9e0658e66f43" />
-  <img width="960" height="540" alt="Snippet management" src="https://github.com/user-attachments/assets/d7c5e7d1-72fa-4fd4-a5f4-cd7aa71bc540" />
-  <img width="960" height="540" alt="Theme gallery" src="https://github.com/user-attachments/assets/1e06c770-9fd9-4f8a-8358-068fab4aca29" />
-  <img width="960" height="540" alt="Settings" src="https://github.com/user-attachments/assets/a10668b7-0c17-4b01-97ed-81276b311c2a" />
-  <img width="960" height="539" alt="Quick list" src="https://github.com/user-attachments/assets/d4d9e0ec-0c84-4a23-8a2d-635ce1079193" />
-  <img width="960" height="540" alt="Focus mode" src="https://github.com/user-attachments/assets/28375f37-f80c-4817-9bea-03f9901e9ee2" />
+  <img width="960" height="540" alt="2026-07-09_055107" src="https://github.com/user-attachments/assets/e26fc73d-3992-4caa-acef-c063643e9ba2" />
+<img width="960" height="540" alt="2026-07-09_055116" src="https://github.com/user-attachments/assets/07f535ec-dac6-485f-b563-c6d667b8daf5" />
+<img width="960" height="540" alt="2026-07-09_055154" src="https://github.com/user-attachments/assets/7e2fce00-f84d-415c-b10b-2d63e80ef4c9" />
+<img width="960" height="540" alt="2026-07-09_055200" src="https://github.com/user-attachments/assets/bd468bc4-1e66-4d9b-a620-5a57ad2f0dbc" />
+<img width="960" height="540" alt="2026-07-09_055217" src="https://github.com/user-attachments/assets/b4e2f157-c782-43d4-a89b-a14f4b268ff4" />
+<img width="960" height="540" alt="2026-07-09_055231" src="https://github.com/user-attachments/assets/dba85239-aefd-45b9-8893-877c4d0865cf" />
+
 </div>
 
 ## 🎨 Themes
