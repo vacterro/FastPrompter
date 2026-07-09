@@ -1594,6 +1594,16 @@ class FastPrompter(
             "editing_snippet": getattr(self, "editing_snippet", None),
         }
 
+    def _smart_undo(self):
+        """Ctrl+Z: data undo (silo clear/delete/move) if newer than the last
+        text edit, otherwise plain text undo."""
+        if getattr(self, "data_undo_stack", None) and getattr(
+            self, "_last_data_action_time", 0
+        ) > getattr(self, "_last_text_edit_time", 0):
+            self.undo_action()
+        else:
+            self.text_area.undo()
+
     def undo_action(self):
         if hasattr(self, "data_undo_stack") and self.data_undo_stack:
             if not hasattr(self, "data_redo_stack"):
@@ -1605,6 +1615,8 @@ class FastPrompter(
             state = self.data_undo_stack.pop()
             self._apply_data_state(state)
             self.play_sound("tick")
+            # Keep data undo "fresh" so repeated Ctrl+Z keeps popping this stack
+            self._last_data_action_time = time.time()
             return
         # Text undo is handled natively by QTextEdit via VaultTextEdit.keyPressEvent
 
@@ -1697,6 +1709,8 @@ class FastPrompter(
         if len(self.data_undo_stack) > 50:
             self.data_undo_stack.pop(0)
         self.data_redo_stack.clear()
+        # Lets Ctrl+Z pick data undo over text undo when this action is newer
+        self._last_data_action_time = time.time()
 
     def build_categories(self):
         """Rebuild the tab bar from cats_order."""
@@ -2844,6 +2858,9 @@ class FastPrompter(
             QKeySequence("Ctrl+W"), self, context=Qt.ShortcutContext.ApplicationShortcut
         ).activated.connect(self.insert_divider_line)
         QShortcut(QKeySequence("Ctrl+Shift+Z"), self).activated.connect(self.redo_action)
+        # Fires when focus is outside the editor (the editor overrides it while
+        # focused and routes through VaultTextEdit.keyPressEvent instead)
+        QShortcut(QKeySequence("Ctrl+Z"), self).activated.connect(self._smart_undo)
         # Keyboard silo navigation in the sidebar
         QShortcut(
             QKeySequence("Alt+Up"), self, context=Qt.ShortcutContext.ApplicationShortcut
@@ -2956,6 +2973,7 @@ class FastPrompter(
         lbl.setText(f"{lines} L" if lines else "")
 
     def _on_text_changed(self):
+        self._last_text_edit_time = time.time()
         self._update_line_count_label()
         doc = self.text_area.document()
         count = doc.characterCount()

@@ -203,6 +203,61 @@ def test_auto_bullet_space_and_enter(win):
     win.data["auto_bullet"] = "False"
 
 
+def test_button_scale_persists_to_db(win):
+    win.data["button_scale"] = "1.0"
+    win.cycle_button_scale()  # 1.0 -> 1.25, saves to DB
+    assert win.data["button_scale"] == "1.25"
+    import fastprompter.core.state as state_mod
+
+    fresh = state_mod.FastPrompterState()
+    try:
+        assert fresh.data.get("button_scale") == "1.25"
+    finally:
+        if fresh.conn:
+            fresh.conn.close()
+    # restore
+    win.data["button_scale"] = "1.0"
+    win.mark_dirty()
+    win.save_data_to_db(force=True)
+
+
+def test_button_scale_steps_are_distinct(win):
+    from PyQt6.QtWidgets import QPushButton
+
+    sizes = {}
+    for scale in ("0.5", "0.75", "1.0"):
+        win.data["button_scale"] = scale
+        btn = QPushButton("Clear Fmt")
+        win.apply_button_size(btn, 24)
+        sizes[scale] = (btn.height(), round(btn.font().pointSizeF(), 1))
+    assert sizes["0.5"][0] < sizes["0.75"][0] < sizes["1.0"][0], sizes
+    # fonts shrink below 100% so text isn't clipped
+    assert sizes["0.5"][1] < sizes["1.0"][1]
+    win.data["button_scale"] = "1.0"
+
+
+def test_middle_click_clear_is_undoable(win):
+    win.data["temp_presets"] = ["keep me", "precious content"]
+    win.data["pinned_silos"] = []
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    win.clear_temp(1)  # middle-click on a non-active silo
+    assert win.data["temp_presets"][1] == ""
+    win._smart_undo()  # Ctrl+Z routes to data undo
+    assert win.data["temp_presets"][1] == "precious content"
+
+
+def test_delete_empty_silo_is_undoable(win):
+    win.data["temp_presets"] = ["a", "", "c"]
+    win.data["pinned_silos"] = []
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    win.clear_temp(1)  # empty silo -> slot deleted
+    assert win.data["temp_presets"] == ["a", "c"]
+    win._smart_undo()
+    assert win.data["temp_presets"] == ["a", "", "c"]
+
+
 def test_ctrl_e_header_timestamp(win):
     import re
 

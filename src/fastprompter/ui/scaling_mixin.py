@@ -67,6 +67,15 @@ class ScalingMixin:
         self._button_scale, self._ui_scale, self.data, self.font_spin
     """
 
+    def _scale_button_font(self, widget, scale):
+        """Shrink a button's font below 100% scale so text isn't clipped."""
+        try:
+            font = widget.font()
+            font.setPointSizeF(max(6.0, 9.0 * min(1.0, scale)))
+            widget.setFont(font)
+        except Exception:
+            logger.debug("Failed to scale font on %s", widget)
+
     def apply_button_size(self, widget, base_w, base_h=None):
         """Set widget size based on button scale."""
         try:
@@ -74,7 +83,7 @@ class ScalingMixin:
         except Exception:
             scale = 1.0
         widget._base_size = (base_w, base_h)
-        min_sz = max(18, int(base_w * scale))
+        min_sz = max(12, int(base_w * scale))
         if base_h is None:
             if getattr(widget, "is_squishable", False):
                 widget.setMaximumHeight(int(base_w * scale))
@@ -82,8 +91,10 @@ class ScalingMixin:
             else:
                 widget.setFixedHeight(min_sz)
         else:
-            sz = max(18, int(base_h * scale))
+            sz = max(12, int(base_h * scale))
             widget.setFixedSize(min_sz, sz)
+        if scale < 1.0:
+            self._scale_button_font(widget, scale)
 
     def refresh_button_scale(self):
         """Re-apply button scale to all children with _base_size."""
@@ -95,7 +106,7 @@ class ScalingMixin:
             if not _is_deleted(widget) and hasattr(widget, "_base_size") and widget._base_size is not None:
                 base_w, base_h = widget._base_size
                 try:
-                    min_sz = max(18, int(base_w * scale))
+                    min_sz = max(12, int(base_w * scale))
                     if base_h is None:
                         if getattr(widget, "is_squishable", False):
                             widget.setMaximumHeight(int(base_w * scale))
@@ -103,8 +114,9 @@ class ScalingMixin:
                         else:
                             widget.setFixedHeight(min_sz)
                     else:
-                        sz = max(18, int(base_h * scale))
+                        sz = max(12, int(base_h * scale))
                         widget.setFixedSize(min_sz, sz)
+                    self._scale_button_font(widget, scale)
                 except Exception:
                     logger.debug("Failed to resize widget: %s", widget)
 
@@ -122,7 +134,10 @@ class ScalingMixin:
             next_idx = 2  # default to 100%
         new_scale = scales[next_idx]
         self.data["button_scale"] = str(new_scale)
-        self.save_data_to_db()
+        # mark_dirty is required — the state layer skips saving when clean,
+        # which silently lost the scale between sessions.
+        self.mark_dirty()
+        self.save_data_to_db(force=True)
         if hasattr(self, "btn_button_scale") and not _is_deleted(self.btn_button_scale):
             self.btn_button_scale.setText(f"Scale: {int(new_scale * 100)}%")
         self._refresh_settings_cache()

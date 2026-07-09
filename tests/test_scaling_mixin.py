@@ -197,6 +197,7 @@ class TestCycleButtonScale:
         m._ui_scale = 1.0
         m.data = {"button_scale": str(current_scale)}
         m.save_data_to_db = MagicMock()
+        m.mark_dirty = MagicMock()
         # Real _refresh_settings_cache updates _button_scale from data
         def _refresh():
             try:
@@ -280,8 +281,9 @@ class TestApplyButtonSize:
         m._button_scale = 0.3
         btn = _MockQPushButton("test_btn")
         m.apply_button_size(btn, 20, 20)
-        # min_w = max(18, 20*0.3) = max(18, 6) = 18
-        assert btn._fixed_size == (18, 18)
+        # min_w = max(12, 20*0.3) = max(12, 6) = 12 — low floor so
+        # 50% and 75% produce visibly different sizes
+        assert btn._fixed_size == (12, 12)
 
     def test_squishable_uses_max_height(self):
         m = ScalingMixin()
