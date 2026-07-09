@@ -24,7 +24,6 @@ from PyQt6.QtGui import (
     QTextDocument,
     QTextOption,
 )
-from PyQt6.QtNetwork import QLocalServer, QLocalSocket
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -59,13 +58,10 @@ user32.RegisterHotKey.restype = ctypes.wintypes.BOOL
 user32.UnregisterHotKey.argtypes = [ctypes.wintypes.HWND, ctypes.c_int]
 user32.UnregisterHotKey.restype = ctypes.wintypes.BOOL
 
-from fastprompter.core.state import FastPrompterState
-from fastprompter.utils.paths import get_data_dir
-
-SERVER_NAME = "FastPrompter_Server_V15"
-
 from fastprompter.core.hotkey_filter import HotkeyFilter
+from fastprompter.core.ipc_server import IpcServer, try_connect_to_server
 from fastprompter.core.sound_manager import SoundManager
+from fastprompter.core.state import FastPrompterState
 from fastprompter.theme.themes import THEMES
 from fastprompter.ui.editor import VaultTextEdit
 from fastprompter.ui.formatting_mixin import FormattingMixin
@@ -87,30 +83,7 @@ from fastprompter.ui.snippet_panel import (
 from fastprompter.ui.theme_mixin import ThemeMixin
 from fastprompter.ui.tray_mixin import TrayMixin
 from fastprompter.ui.window_mixin import WindowMixin
-
-
-def try_connect_to_server(retries=3, delay=0.05):
-    import tempfile
-
-    token_file = os.path.join(tempfile.gettempdir(), "fastprompter_ipc.token")
-    token = ""
-    if os.path.exists(token_file):
-        try:
-            with open(token_file) as f:
-                token = f.read().strip()
-        except Exception:
-            pass
-
-    for _ in range(retries):
-        sock = QLocalSocket()
-        sock.connectToServer(SERVER_NAME)
-        if sock.waitForConnected(100):
-            # Pass token as property to be picked up by main_entry
-            if token:
-                sock.setProperty("ipc_token", token)
-            return sock
-        time.sleep(delay)
-    return None
+from fastprompter.utils.paths import get_data_dir
 
 
 class FastPrompter(
@@ -290,47 +263,8 @@ class FastPrompter(
             self._visible_silos = 10
 
     def setup_single_instance_server(self):
-        import tempfile
-        import uuid
-
-        self.ipc_token = str(uuid.uuid4())
-        token_file = os.path.join(tempfile.gettempdir(), "fastprompter_ipc.token")
-        try:
-            with open(token_file, "w") as f:
-                f.write(self.ipc_token)
-        except Exception as e:
-            print("Could not write IPC token", e)
-
-        self.server = QLocalServer()
-        self.server.removeServer(SERVER_NAME)
-        # print('About to listen!')  # debug
-        if not self.server.listen(SERVER_NAME):
-            # print('Listen failed:', self.server.serverError())  # debug
-            sys.exit(0)
-        # print('Listen succeeded!')  # debug
-        self.server.newConnection.connect(self.handle_command)
-
-    def handle_command(self):
-        sock = self.server.nextPendingConnection()
-        if sock.bytesAvailable() > 0 or sock.waitForReadyRead(500):
-            data = sock.readAll().data()
-            try:
-                data_str = data.decode("utf-8")
-                if data_str.startswith("TOKEN:"):
-                    parts = data_str.split("|", 1)
-                    if len(parts) == 2:
-                        recv_token = parts[0][6:]
-                        cmd = parts[1]
-                        if recv_token == getattr(self, "ipc_token", "") and cmd.strip() == "SHOW":
-                            self.show_window()
-                elif data_str.strip() == "SHOW":
-                    self.show_window()
-            except Exception:
-                import traceback
-
-                traceback.print_exc()
-        sock.disconnectFromServer()
-        sock.deleteLater()
+        self.ipc = IpcServer(self.show_window)
+        self.ipc.setup()
 
     # init_db removed, moved to FastPrompterState
 
@@ -3115,8 +3049,8 @@ class FastPrompter(
     def quit_app(self):
         self.save_data_to_db(force=True)
         try:
-            if hasattr(self, "server") and self.server:
-                self.server.close()
+            if hasattr(self, "ipc"):
+                self.ipc.close()
         except Exception:
             pass
         try:

@@ -1,14 +1,19 @@
 # nuitka-project: --standalone
 # nuitka-project: --onefile
 # nuitka-project: --enable-plugin=pyqt6
-# nuitka-project: --windows-disable-console
-# nuitka-project: --no-docstrings
-# nuitka-project: --no-asserts
-# nuitka-project: --noinclude-custom-import-hooks
+# nuitka-project: --windows-console-mode=disable
+# nuitka-project: --windows-icon-from-ico=_res/fastprompter.ico
+# nuitka-project: --product-name=FastPrompter
+# nuitka-project: --product-version=0.3.0
+# nuitka-project: --file-description=FastPrompter portable snippet manager
+# nuitka-project: --python-flag=no_docstrings
+# nuitka-project: --python-flag=no_asserts
 # nuitka-project: --output-dir=build
+# nuitka-project: --assume-yes-for-downloads
+# nuitka-project: --include-qt-plugins=platforms,styles,imageformats
+# nuitka-project: --nofollow-import-to=PyQt6.QtMultimedia
 # nuitka-project: --include-data-dir=src/fastprompter/sound=sound
 # nuitka-project: --include-data-dir=_res=_res
-# nuitka-project: --include-data-dir=src/fastprompter/resources=resources
 
 import sys
 import os
