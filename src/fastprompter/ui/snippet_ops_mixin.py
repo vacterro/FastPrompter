@@ -495,7 +495,6 @@ class SnippetOpsMixin:
             )
             if 0 <= self.active_temp_slot < len(target):
                 target[self.active_temp_slot] = self.text_area.toPlainText()
-        self.add_data_undo_state("New silo (top)")
 
         presets = (
             self.data["archive_temp_presets"]
@@ -517,6 +516,7 @@ class SnippetOpsMixin:
                     return
             return
 
+        self.add_data_undo_state("New silo (top)")
         if len(presets) >= 100:
             presets.pop()
             if len(docs) >= 100:
@@ -528,13 +528,15 @@ class SnippetOpsMixin:
         doc.setDefaultFont(self.text_area.font())
         docs.insert(0, doc)
 
-        # Shift silo_last_edited down
+        # Shift silo_last_edited and pinned indices down (insert-at-top).
+        # In-place: both containers are aliases into per-category stores.
         if not getattr(self, "active_is_archive", False) and hasattr(self, "silo_last_edited"):
-            new_edited = {}
-            for k, v in self.silo_last_edited.items():
-                if k + 1 < 100:
-                    new_edited[k + 1] = v
-            self.silo_last_edited = new_edited
+            new_edited = {k + 1: v for k, v in self.silo_last_edited.items() if k + 1 < 100}
+            self.silo_last_edited.clear()
+            self.silo_last_edited.update(new_edited)
+            pinned = self.data.get("pinned_silos", [])
+            if isinstance(pinned, list):
+                pinned[:] = [p + 1 for p in pinned if p + 1 < 100]
 
         self.silo_page = 0
         self.active_temp_slot = 0

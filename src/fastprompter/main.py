@@ -175,11 +175,29 @@ class FastPrompter(
             self.active_temp_slot = int(self.data.get("active_temp_slot", 0))
         except Exception:
             self.active_temp_slot = 0
-        try:
-            raw_silo_edited = self.data.get("silo_last_edited", {})
-            self.silo_last_edited = {int(k): int(v) for k, v in raw_silo_edited.items()}
-        except Exception:
-            self.silo_last_edited = {}
+        # Per-category pins/last-edited stores (aliased per tab like
+        # temp_presets_all); migrate the old flat keys into the first tab.
+        first_cat = (self.data.get("cats_order") or ["Code"])[0]
+        pall = self.data.get("pinned_silos_all")
+        if not isinstance(pall, dict):
+            pall = {}
+        if not pall and isinstance(self.data.get("pinned_silos"), list) and self.data["pinned_silos"]:
+            pall[first_cat] = list(self.data["pinned_silos"])
+        self.data["pinned_silos_all"] = pall
+        eall = self.data.get("silo_last_edited_all")
+        if not isinstance(eall, dict):
+            eall = {}
+        if not eall and self.data.get("silo_last_edited"):
+            eall[first_cat] = self.data["silo_last_edited"]
+        norm = {}
+        for c, d in eall.items():
+            try:
+                norm[c] = {int(k): int(v) for k, v in d.items()}
+            except Exception:
+                norm[c] = {}
+        self.data["silo_last_edited_all"] = norm
+        self.silo_last_edited = norm.setdefault(first_cat, {})
+        self.data["pinned_silos"] = pall.setdefault(first_cat, [])
 
         self.init_ui()
         self.init_tray()
@@ -1349,19 +1367,31 @@ class FastPrompter(
         if is_archive:
             self.refresh_archive_panel()
 
-    def _remap_silo_indices(self, remap):
-        """Apply an index remap function to slot-index-keyed silo state (pins, last-edited)."""
-        self.silo_last_edited = {remap(k): v for k, v in self.silo_last_edited.items()}
-        pinned = self.data.get("pinned_silos", [])
-        if isinstance(pinned, str):
-            import ast
+    def _rebind_visible_lists(self, temp=None, archive=None):
+        """Rebind data['temp_presets']/['archive_temp_presets'] AND the
+        per-category backing store together — DB saves and tab switches read
+        from temp_presets_all, so a bare rebind orphans the data."""
+        cat = self.get_current_category()
+        if temp is not None:
+            self.data["temp_presets"] = temp
+            if cat and "temp_presets_all" in self.data:
+                self.data["temp_presets_all"][cat] = temp
+        if archive is not None:
+            self.data["archive_temp_presets"] = archive
+            if cat and "archive_temp_presets_all" in self.data:
+                self.data["archive_temp_presets_all"][cat] = archive
 
-            try:
-                pinned = ast.literal_eval(pinned)
-            except Exception:
-                pinned = []
+    def _remap_silo_indices(self, remap):
+        """Apply an index remap to slot-index-keyed silo state (pins, tints).
+
+        Mutates in place: both containers are aliases into per-category
+        stores; rebinding them would orphan the data."""
+        remapped = {remap(k): v for k, v in self.silo_last_edited.items()}
+        self.silo_last_edited.clear()
+        self.silo_last_edited.update(remapped)
+        pinned = self.data.get("pinned_silos", [])
         if isinstance(pinned, list):
-            self.data["pinned_silos"] = [remap(p) for p in pinned]
+            pinned[:] = [remap(p) for p in pinned]
 
     def move_temp_to_index(self, from_idx, to_idx, is_archive=False):
         """Move a silo to a new position, shifting the others (drop 'between' silos)."""
@@ -1638,12 +1668,18 @@ class FastPrompter(
         if hasattr(self, "data_undo_stack") and self.data_undo_stack:
             if not hasattr(self, "data_redo_stack"):
                 self.data_redo_stack = []
-            # Skip no-op snapshots (defensive: a stray double-snapshot must
-            # not make the user's first Ctrl+Z do nothing)
+            # Skip no-op snapshots, but ONLY within the current tab —
+            # a snapshot from another tab is never comparable to the
+            # currently visible lists and must be restored, not judged
+            cur_cat = self.get_current_category()
             state = self.data_undo_stack.pop()
-            while self.data_undo_stack and self._snapshot_is_noop(state):
+            while (
+                self.data_undo_stack
+                and state.get("category") == cur_cat
+                and self._snapshot_is_noop(state)
+            ):
                 state = self.data_undo_stack.pop()
-            if self._snapshot_is_noop(state):
+            if state.get("category") == cur_cat and self._snapshot_is_noop(state):
                 return
             redo_state = self._snapshot_current()
             self.data_redo_stack.append(redo_state)
@@ -1672,8 +1708,9 @@ class FastPrompter(
         self.data["categories"] = state["categories"]
         if state.get("cats_order"):
             self.data["cats_order"] = list(state["cats_order"])
-        self.data["temp_presets"] = state["temp_presets"]
-        self.data["archive_temp_presets"] = state["archive_temp_presets"]
+        # Rebuild the tab bar FIRST — it resets the current index to 0 and
+        # would otherwise clobber the tab jump and orphan the restored lists
+        self.build_categories()
 
         # The action may have happened on another tab — return to it, and
         # rebind the per-category backing store; DB saves read from
@@ -1685,16 +1722,21 @@ class FastPrompter(
                 self.tab_bar.blockSignals(True)
                 self.tab_bar.setCurrentIndex(idx)
                 self.tab_bar.blockSignals(False)
-                self.data["last_tab_idx"] = idx
-            if "temp_presets_all" in self.data:
-                self.data["temp_presets_all"][snap_cat] = self.data["temp_presets"]
-                self.data["archive_temp_presets_all"][snap_cat] = self.data[
-                    "archive_temp_presets"
-                ]
-        if "pinned_silos" in state:
-            self.data["pinned_silos"] = list(state["pinned_silos"])
-        if "silo_last_edited" in state:
-            self.silo_last_edited = dict(state["silo_last_edited"])
+            self.data["last_tab_idx"] = idx
+
+        self.data["temp_presets"] = state["temp_presets"]
+        self.data["archive_temp_presets"] = state["archive_temp_presets"]
+        if snap_cat and "temp_presets_all" in self.data:
+            self.data["temp_presets_all"][snap_cat] = self.data["temp_presets"]
+            self.data["archive_temp_presets_all"][snap_cat] = self.data["archive_temp_presets"]
+        if snap_cat:
+            plist = self.data.setdefault("pinned_silos_all", {}).setdefault(snap_cat, [])
+            plist[:] = list(state.get("pinned_silos", []))
+            self.data["pinned_silos"] = plist
+            edict = self.data.setdefault("silo_last_edited_all", {}).setdefault(snap_cat, {})
+            edict.clear()
+            edict.update(state.get("silo_last_edited", {}))
+            self.silo_last_edited = edict
         from PyQt6.QtGui import QTextDocument
 
         font = self.text_area.font()
@@ -1720,7 +1762,6 @@ class FastPrompter(
         active_slot = state.get("active_temp_slot", 0)
         editing = state.get("editing_snippet", None)
         self.mark_dirty()
-        self.build_categories()
         if editing:
             self._suspend_cache = True
             self.text_area.blockSignals(True)
@@ -1764,6 +1805,10 @@ class FastPrompter(
         if not hasattr(self, "data_redo_stack"):
             self.data_redo_stack = []
         state = self._snapshot_current()
+        # Never push a snapshot identical to the top — no-op pileups make
+        # the skip logic walk into unrelated (even cross-tab) history
+        if self.data_undo_stack and self.data_undo_stack[-1] == state:
+            return
         self.data_undo_stack.append(state)
         if len(self.data_undo_stack) > 50:
             self.data_undo_stack.pop(0)
@@ -2085,6 +2130,12 @@ class FastPrompter(
                 self.data["archive_temp_presets_all"][cat] = []
             self.data["temp_presets"] = self.data["temp_presets_all"][cat]
             self.data["archive_temp_presets"] = self.data["archive_temp_presets_all"][cat]
+            self.data["pinned_silos"] = self.data.setdefault("pinned_silos_all", {}).setdefault(
+                cat, []
+            )
+            self.silo_last_edited = self.data.setdefault("silo_last_edited_all", {}).setdefault(
+                cat, {}
+            )
 
             # Rebuild document caches for the new silos
             from PyQt6.QtGui import QTextDocument
@@ -2321,7 +2372,7 @@ class FastPrompter(
                     new_docs.append(self.archive_docs[i])
         if len(new_entries) == len(entries):
             return
-        self.data["archive_temp_presets"] = new_entries
+        self._rebind_visible_lists(archive=new_entries)
         if hasattr(self, "archive_docs"):
             self.archive_docs = new_docs
         if getattr(self, "active_is_archive", False):
@@ -2416,12 +2467,12 @@ class FastPrompter(
 
         if not is_archive:
             if "temp_presets" not in self.data or not self.data["temp_presets"]:
-                self.data["temp_presets"] = [""]
+                self._rebind_visible_lists(temp=[""])
             if idx >= len(self.data["temp_presets"]):
                 idx = max(0, len(self.data["temp_presets"]) - 1)
         else:
             if "archive_temp_presets" not in self.data or not self.data["archive_temp_presets"]:
-                self.data["archive_temp_presets"] = [""]
+                self._rebind_visible_lists(archive=[""])
             if idx >= len(self.data["archive_temp_presets"]):
                 idx = max(0, len(self.data["archive_temp_presets"]) - 1)
 
@@ -2467,8 +2518,8 @@ class FastPrompter(
                     doc = self.archive_docs[idx]
                     archive = self.data.get("archive_temp_presets", [])
                     if idx >= len(archive):
-                        archive = [""] * (idx + 1)
-                        self.data["archive_temp_presets"] = archive
+                        archive = archive + [""] * (idx + 1 - len(archive))
+                        self._rebind_visible_lists(archive=archive)
                     new_text = archive[idx]
                 else:
                     if idx >= len(self.silo_docs):
@@ -2723,30 +2774,25 @@ class FastPrompter(
         """Toggle pin/unpin status for a silo."""
         self.add_data_undo_state("Pin silo")
         pinned = self.data.get("pinned_silos", [])
-        if isinstance(pinned, str):
-            import ast
-
-            try:
-                pinned = ast.literal_eval(pinned)
-            except Exception:
-                pinned = []
+        if not isinstance(pinned, list):
+            pinned = []
+            self.data["pinned_silos"] = pinned
         if idx in pinned:
             pinned.remove(idx)
         else:
             pinned.insert(0, idx)
-        self.data["pinned_silos"] = pinned
         self.mark_dirty()
         self.refresh_temp_presets()
 
     def _move_silo_to_bottom(self, idx, is_archive=False):
         """Move a silo to the bottom of the order."""
-        self.add_data_undo_state("Move silo to bottom")
         presets = self.data["archive_temp_presets"] if is_archive else self.data["temp_presets"]
         docs = self.archive_docs if is_archive else self.silo_docs
         if not (0 <= idx < len(presets)):
             return
         if idx == len(presets) - 1:
             return  # already at bottom
+        self.add_data_undo_state("Move silo to bottom")
         text = presets.pop(idx)
         if idx < len(docs):
             doc = docs.pop(idx)

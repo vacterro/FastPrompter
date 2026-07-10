@@ -488,6 +488,91 @@ def test_all_settings_roundtrip_through_db(win):
         win.save_data_to_db(force=True)
 
 
+def test_trim_archive_keeps_backing_store_alias(win):
+    win.tab_bar.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    cat = win.get_current_category()
+    win.data["archive_temp_presets"][:] = ["keep", "", "also keep", ""]
+    win._trim_archive()
+    assert win.data["archive_temp_presets"] == ["keep", "also keep"]
+    # the rebind must reach the backing store or the trim never persists
+    assert win.data["archive_temp_presets_all"][cat] is win.data["archive_temp_presets"]
+
+
+def test_new_silo_at_top_shifts_pins(win):
+    win.tab_bar.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    win.data["temp_presets"][:] = ["a", "b", "c"]
+    win.data["pinned_silos"] = [1]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    win.select_empty_silo()  # inserts at top: every index shifts +1
+    assert win.data["pinned_silos"] == [2]
+    assert win.data["temp_presets"][2] == "b"  # pin still points at 'b'
+
+
+def test_fuzz_random_operations_hold_invariants(win):
+    import random
+
+    rng = random.Random(20260709)
+    win.tab_bar.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    win.data["temp_presets"][:] = [f"content {i}" for i in range(6)]
+    win.data["archive_temp_presets"][:] = []
+    win.data["pinned_silos"][:] = []
+    win.silo_last_edited.clear()
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+
+    def check_invariants(step, op):
+        cat = win.get_current_category()
+        assert cat, f"step {step} ({op}): no current category"
+        assert win.data["temp_presets"] is win.data["temp_presets_all"][cat], (
+            f"step {step} ({op}): temp_presets alias broken"
+        )
+        assert win.data["archive_temp_presets"] is win.data["archive_temp_presets_all"][cat], (
+            f"step {step} ({op}): archive alias broken"
+        )
+        assert win.data["pinned_silos"] is win.data["pinned_silos_all"][cat], (
+            f"step {step} ({op}): pins alias broken"
+        )
+        assert win.silo_last_edited is win.data["silo_last_edited_all"][cat], (
+            f"step {step} ({op}): tints alias broken"
+        )
+        n = len(win.data["temp_presets"])
+        assert n >= 1, f"step {step} ({op}): silo list empty"
+        assert 0 <= win.active_temp_slot < max(
+            n, len(win.data["archive_temp_presets"]), 1
+        ), f"step {step} ({op}): active slot out of range"
+        for p in win.data.get("pinned_silos", []):
+            assert 0 <= p < n, f"step {step} ({op}): pin {p} out of range 0..{n - 1}"
+        for k in win.silo_last_edited:
+            assert 0 <= k < 100, f"step {step} ({op}): last-edited key {k} out of range"
+
+    n_silos = lambda: len(win.data["temp_presets"])  # noqa: E731
+    ops = [
+        ("switch", lambda: win._switch_to_slot(rng.randrange(n_silos()))),
+        ("clear", lambda: win.clear_temp(rng.randrange(n_silos()))),
+        ("delete", lambda: win.del_silo(rng.randrange(n_silos()))),
+        ("new_top", win.select_empty_silo),
+        ("pin", lambda: win._toggle_pin_silo(rng.randrange(n_silos()))),
+        ("move", lambda: win.move_temp_to_index(rng.randrange(n_silos()), rng.randrange(n_silos()))),
+        ("bottom", lambda: win._move_silo_to_bottom(rng.randrange(n_silos()))),
+        ("archive", lambda: win.archive_single_silo(rng.randrange(n_silos()))),
+        ("swap", lambda: win.swap_temp_slots(rng.randrange(n_silos()), rng.randrange(n_silos()))),
+        ("type", lambda: win.text_area.insertPlainText("x")),
+        ("tab", lambda: (win.tab_bar.setCurrentIndex(rng.randrange(win.tab_bar.count())))),
+        ("undo", win._smart_undo),
+        ("redo", win.redo_action),
+        ("divider", win.insert_divider_line),
+        ("header", win.apply_header_timestamp),
+    ]
+    for step in range(300):
+        name, op = rng.choice(ops)
+        op()
+        check_invariants(step, name)
+
+
 def test_ctrl_e_header_timestamp(win):
     import re
 
