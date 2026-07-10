@@ -283,6 +283,10 @@ class SnippetOpsMixin:
 
         if not text or not cat:
             return
+        if silent:
+            # Silent saves only update an existing snippet edit — they must
+            # never pop the name dialog from a background/auto-save path.
+            return
         slots = self.data["categories"][cat]
 
         if None not in slots:

@@ -573,6 +573,133 @@ def test_fuzz_random_operations_hold_invariants(win):
         check_invariants(step, name)
 
 
+def test_fuzz_snippets_and_archive_mode(win):
+    """Fuzz round 2: snippet CRUD, archive-mode ops, cross-category moves,
+    silo<->snippet conversion, undo/redo — with auto-confirmed dialogs."""
+    import random
+    from unittest.mock import patch
+
+    from PyQt6.QtWidgets import QInputDialog, QMessageBox
+
+    rng = random.Random(77)
+    win.tab_bar.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    win.data["temp_presets"][:] = [f"silo {i}" for i in range(4)]
+    win.data["archive_temp_presets"][:] = ["arc one", "arc two"]
+    win.data["pinned_silos"][:] = []
+    win.silo_last_edited.clear()
+    win.silo_docs[:] = []
+    win.archive_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    cats = win.data["cats_order"]
+
+    def any_snippet():
+        pairs = [
+            (c, i)
+            for c in cats
+            for i, s in enumerate(win.data["categories"].get(c, []))
+            if s
+        ]
+        return rng.choice(pairs) if pairs else None
+
+    def check(step, op):
+        cat = win.get_current_category()
+        assert win.data["temp_presets"] is win.data["temp_presets_all"][cat], (
+            f"step {step} ({op}): temp alias broken"
+        )
+        assert win.data["archive_temp_presets"] is win.data["archive_temp_presets_all"][cat], (
+            f"step {step} ({op}): archive alias broken"
+        )
+        es = getattr(win, "editing_snippet", None)
+        if es:
+            c, i = es
+            assert c in win.data["categories"], f"step {step} ({op}): editing dead category"
+            assert 0 <= i < len(win.data["categories"][c]), (
+                f"step {step} ({op}): editing index out of range"
+            )
+        for c in cats:
+            slots = win.data["categories"].get(c, [])
+            assert len(slots) <= 100, f"step {step} ({op}): category {c} grew past 100"
+
+    def op_save_snippet():
+        win.text_area.insertPlainText(f"snippet body {rng.randrange(1000)}")
+        # silent path must never open a dialog; real path auto-accepts below
+        win.save_snippet(silent=True)
+        win.save_snippet()
+
+    def op_load_snippet():
+        p = any_snippet()
+        if p:
+            win.load_snippet_for_edit(p[0], p[1])
+
+    def op_delete_snippet():
+        p = any_snippet()
+        if p:
+            win.delete_preset_by_index(p[0], p[1])
+
+    def op_move_cross():
+        p = any_snippet()
+        if p:
+            win.move_preset_cross_category(p[0], p[1], rng.choice(cats), rng.randrange(10))
+
+    def op_arc_mode():
+        if win.data["archive_temp_presets"]:
+            win._switch_to_arc_slot(rng.randrange(len(win.data["archive_temp_presets"])))
+
+    def op_arc_clear():
+        if win.data["archive_temp_presets"]:
+            win.clear_temp(rng.randrange(len(win.data["archive_temp_presets"])), is_archive=True)
+
+    def op_back_to_silos():
+        win._switch_to_slot(rng.randrange(len(win.data["temp_presets"])))
+
+    ops = [
+        ("save_snip", op_save_snippet),
+        ("load_snip", op_load_snippet),
+        ("del_snip", op_delete_snippet),
+        ("move_cross", op_move_cross),
+        ("convert", win.convert_to_snippet),
+        ("arc_item", win.archive_active_item),
+        ("arc_mode", op_arc_mode),
+        ("arc_clear", op_arc_clear),
+        ("silos", op_back_to_silos),
+        ("cancel", win.cancel_editing),
+        ("type", lambda: win.text_area.insertPlainText("y")),
+        ("tab", lambda: win.tab_bar.setCurrentIndex(rng.randrange(win.tab_bar.count()))),
+        ("undo", win._smart_undo),
+        ("redo", win.redo_action),
+    ]
+    with patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes), \
+         patch.object(QMessageBox, "information"), patch.object(QMessageBox, "warning"), \
+         patch.object(QInputDialog, "getText", return_value=("fuzzed name", True)):
+        for step in range(250):
+            name, op = rng.choice(ops)
+            op()
+            check(step, name)
+
+
+def test_delete_category_is_undoable(win):
+    from unittest.mock import patch
+
+    from PyQt6.QtWidgets import QMessageBox
+
+    win.tab_bar.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    cats_before = list(win.data["cats_order"])
+    if len(cats_before) < 2:
+        pytest.skip("needs two tabs")
+    win.tab_bar.setCurrentIndex(1)
+    victim = win.data["cats_order"][1]
+    win.data["categories"][victim][0] = {"name": "keep", "text": "keep me", "last_edited": 0}
+    with patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes):
+        win.del_category()
+    assert victim not in win.data["cats_order"]
+    win._smart_undo()
+    assert victim in win.data["cats_order"], "deleted tab not restored by undo"
+    assert win.data["categories"][victim][0]["text"] == "keep me"
+    assert win.tab_bar.count() == len(win.data["cats_order"])
+
+
 def test_ctrl_e_header_timestamp(win):
     import re
 
