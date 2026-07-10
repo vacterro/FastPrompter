@@ -1588,6 +1588,8 @@ class FastPrompter(
         pinned = self.data.get("pinned_silos", [])
         return {
             "categories": copy.deepcopy(self.data["categories"]),
+            "cats_order": list(self.data.get("cats_order", [])),
+            "category": self.get_current_category(),
             "temp_presets": copy.deepcopy(self.data["temp_presets"]),
             "archive_temp_presets": copy.deepcopy(self.data["archive_temp_presets"]),
             "active_temp_slot": self.active_temp_slot,
@@ -1605,6 +1607,8 @@ class FastPrompter(
             and state["categories"] == self.data["categories"]
             and state.get("active_temp_slot") == self.active_temp_slot
             and state.get("active_is_archive", False) == getattr(self, "active_is_archive", False)
+            and state.get("pinned_silos", self.data.get("pinned_silos", []))
+            == self.data.get("pinned_silos", [])
         )
 
     def _bump_action_seq(self):
@@ -1666,8 +1670,27 @@ class FastPrompter(
 
     def _apply_data_state(self, state):
         self.data["categories"] = state["categories"]
+        if state.get("cats_order"):
+            self.data["cats_order"] = list(state["cats_order"])
         self.data["temp_presets"] = state["temp_presets"]
         self.data["archive_temp_presets"] = state["archive_temp_presets"]
+
+        # The action may have happened on another tab — return to it, and
+        # rebind the per-category backing store; DB saves read from
+        # temp_presets_all, so without this the restored data is lost.
+        snap_cat = state.get("category")
+        if snap_cat and snap_cat in self.data.get("cats_order", []):
+            idx = self.data["cats_order"].index(snap_cat)
+            if self.tab_bar.currentIndex() != idx:
+                self.tab_bar.blockSignals(True)
+                self.tab_bar.setCurrentIndex(idx)
+                self.tab_bar.blockSignals(False)
+                self.data["last_tab_idx"] = idx
+            if "temp_presets_all" in self.data:
+                self.data["temp_presets_all"][snap_cat] = self.data["temp_presets"]
+                self.data["archive_temp_presets_all"][snap_cat] = self.data[
+                    "archive_temp_presets"
+                ]
         if "pinned_silos" in state:
             self.data["pinned_silos"] = list(state["pinned_silos"])
         if "silo_last_edited" in state:
@@ -2698,6 +2721,7 @@ class FastPrompter(
 
     def _toggle_pin_silo(self, idx):
         """Toggle pin/unpin status for a silo."""
+        self.add_data_undo_state("Pin silo")
         pinned = self.data.get("pinned_silos", [])
         if isinstance(pinned, str):
             import ast
@@ -2716,6 +2740,7 @@ class FastPrompter(
 
     def _move_silo_to_bottom(self, idx, is_archive=False):
         """Move a silo to the bottom of the order."""
+        self.add_data_undo_state("Move silo to bottom")
         presets = self.data["archive_temp_presets"] if is_archive else self.data["temp_presets"]
         docs = self.archive_docs if is_archive else self.silo_docs
         if not (0 <= idx < len(presets)):

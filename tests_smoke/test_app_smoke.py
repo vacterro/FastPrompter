@@ -347,6 +347,147 @@ def test_redo_after_undo(win):
     assert win.data["temp_presets"][1] == ""
 
 
+def test_undo_across_tabs_returns_and_restores(win):
+    cats = win.data["cats_order"]
+    if len(cats) < 2:
+        import pytest as _pytest
+
+        _pytest.skip("needs two tabs")
+    a = cats[0]
+    win.tab_bar.setCurrentIndex(0)
+    win.on_tab_changed(0)  # ensure alias points at tab A
+    win.data["temp_presets"][0] = "tab A treasure"
+    while len(win.data["temp_presets"]) < 2:
+        win.data["temp_presets"].append("")
+    win.data["temp_presets"][1] = "other"
+    win._switch_to_slot(1, initial=True)
+    win.clear_temp(0)  # destroy the treasure on tab A
+    assert win.data["temp_presets_all"][a][0] == ""
+    win.tab_bar.setCurrentIndex(1)  # user wanders to tab B
+    win._smart_undo()  # Ctrl+Z must return to tab A and restore
+    assert win.get_current_category() == a
+    assert win.data["temp_presets"][0] == "tab A treasure"
+    # The alias must be intact — otherwise the restore dies on tab switch
+    assert win.data["temp_presets_all"][a] is win.data["temp_presets"]
+
+
+def test_undone_data_survives_tab_roundtrip_and_db_save(win):
+    cats = win.data["cats_order"]
+    a = cats[0]
+    win.tab_bar.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    win.data["temp_presets"][0] = "must survive"
+    win._switch_to_slot(0, initial=True)
+    win.clear_temp(0)
+    win._smart_undo()
+    assert win.text_area.toPlainText() == "must survive"
+    # tab away and back — restored data must not evaporate
+    win.tab_bar.setCurrentIndex(1)
+    win.tab_bar.setCurrentIndex(0)
+    assert win.data["temp_presets"][0] == "must survive"
+    # and it must actually reach the database
+    win.mark_dirty()
+    win.save_data_to_db(force=True)
+    import fastprompter.core.state as state_mod
+
+    fresh = state_mod.FastPrompterState()
+    try:
+        assert fresh.data["temp_presets_all"][a][0] == "must survive"
+    finally:
+        if fresh.conn:
+            fresh.conn.close()
+
+
+def test_pin_toggle_and_move_to_bottom_are_undoable(win):
+    win.tab_bar.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    win.data["temp_presets"][:] = ["one", "two", "three"]
+    win.data["pinned_silos"] = []
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    win._toggle_pin_silo(2)
+    assert win.data["pinned_silos"] == [2]
+    win._smart_undo()
+    assert win.data["pinned_silos"] == []
+    win._move_silo_to_bottom(0)
+    assert win.data["temp_presets"] == ["two", "three", "one"]
+    win._smart_undo()
+    assert win.data["temp_presets"] == ["one", "two", "three"]
+
+
+def test_undo_depth_multiple_operations(win):
+    win.tab_bar.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    win.data["temp_presets"][:] = ["s1", "s2", "s3", "s4"]
+    win.data["pinned_silos"] = []
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    win.clear_temp(1)
+    win.clear_temp(2)
+    win.clear_temp(3)
+    assert win.data["temp_presets"] == ["s1", "", "", ""]
+    win._smart_undo()
+    assert win.data["temp_presets"] == ["s1", "", "", "s4"]
+    win._smart_undo()
+    assert win.data["temp_presets"] == ["s1", "", "s3", "s4"]
+    win._smart_undo()
+    assert win.data["temp_presets"] == ["s1", "s2", "s3", "s4"]
+
+
+def test_all_settings_roundtrip_through_db(win):
+    sentinels = {
+        "font_family": "Consolas",
+        "ui_scale": "1.35",
+        "button_scale": "0.75",
+        "theme": "Vintage Dark",
+        "zebra_lines": "True",
+        "zebra_opacity": "44",
+        "zebra_stripe_color": "#112233",
+        "sound_ui": "True",
+        "sound_typewriter": "True",
+        "sound_volume": "7",
+        "word_wrap": "False",
+        "show_line_numbers": "True",
+        "sidebar_right": "True",
+        "always_on_top": "False",
+        "normal_window": "True",
+        "lock_to_cursor": "True",
+        "hide_shortkeys": "True",
+        "silo_home": "True",
+        "portable_backup_enabled": "False",
+        "hide_extra": "False",
+        "auto_bullet": "True",
+        "last_geometry": "11,22,640,480",
+    }
+    saved_prior = {k: win.data.get(k) for k in sentinels}
+    win.data.update(sentinels)
+    # widget-driven keys go through their widgets
+    win.font_spin.setValue(17)
+    win.cb_tray.setChecked(False)
+    win.mark_dirty()
+    win.save_data_to_db(force=True)
+
+    import fastprompter.core.state as state_mod
+
+    fresh = state_mod.FastPrompterState()
+    try:
+        mismatches = {
+            k: (v, fresh.data.get(k)) for k, v in sentinels.items() if fresh.data.get(k) != v
+        }
+        assert not mismatches, f"settings lost between sessions: {mismatches}"
+        assert fresh.data.get("font_size") == 17
+        assert fresh.data.get("tray_visible") == "False"
+    finally:
+        if fresh.conn:
+            fresh.conn.close()
+        # restore prior values so later tests aren't affected
+        win.data.update({k: v for k, v in saved_prior.items() if v is not None})
+        win.font_spin.setValue(11)
+        win.cb_tray.setChecked(True)
+        win.mark_dirty()
+        win.save_data_to_db(force=True)
+
+
 def test_ctrl_e_header_timestamp(win):
     import re
 
