@@ -24,7 +24,7 @@ One hotkey. Instant window. Your prompts, notes and drafts — always one keystr
 Press `Alt+X` anywhere — in your browser, IDE, terminal — and FastPrompter pops up at your cursor with everything you keep: auto-saved scratchpads (**silos**), reusable **snippets** on `F1`–`F10`, per-project tabs, and an archive. Press `Esc`, it vanishes. Everything lives in one folder, saved in real time. No cloud, no accounts, no telemetry.
 
 ## ✨ What it does
-<img width="522" height="280" alt="2026-07-10 21-23-02" src="https://github.com/user-attachments/assets/876a23f9-b570-4b3f-b1f6-55dff1528f9a" />
+<img width="960" height="285" alt="2026-07-10 21-23-03" src="https://github.com/user-attachments/assets/629d68f6-effd-4ebe-a06f-0b107e8f7c05" />
 
 | | |
 |---|---|
