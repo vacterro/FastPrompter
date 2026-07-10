@@ -20,6 +20,7 @@ from PyQt6.QtGui import (
     QFont,
     QKeySequence,
     QShortcut,
+    QTextCharFormat,
     QTextCursor,
     QTextDocument,
     QTextOption,
@@ -65,6 +66,7 @@ from fastprompter.core.state import FastPrompterState
 from fastprompter.theme.themes import THEMES
 from fastprompter.ui.editor import VaultTextEdit
 from fastprompter.ui.formatting_mixin import FormattingMixin
+from fastprompter.ui.help_dialog import HelpDialog
 from fastprompter.ui.hotkey_mixin import HotkeyMixin
 from fastprompter.ui.markdown_highlighter import MarkdownHighlighter
 from fastprompter.ui.pie_menu import QuickListWidget
@@ -492,17 +494,11 @@ class FastPrompter(
         )
         self.btn_settings_toggle.clicked.connect(self.toggle_mini_settings)
 
-        self.btn_help = QLabel(" ❓")
-        self.btn_help.setToolTip(
-            "<b>FastPrompter Tips:</b><br>"
-            "• <i>Global Hotkey</i>: Show/Hide UI from anywhere.<br>"
-            "• <b>Ctrl+D</b>: Zen/Focus Mode.<br>"
-            "• <b>Ctrl+F</b>: Find.<br>"
-            "• <b>Ctrl+H</b>: Replace.<br>"
-            "• <b>Ctrl+S</b>: Save Snippet.<br>"
-            "• <b>Ctrl+Shift+S</b>: Export Silo to file.<br>"
-            "• <b>F1..F10</b>: Paste Snippet."
-        )
+        self.btn_help = QPushButton("❓")
+        self.btn_help.setToolTip("Help — every hotkey, gesture and feature (click)")
+        self.btn_help.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.apply_button_size(self.btn_help, 24, 24)
+        self.btn_help.clicked.connect(self.open_help_dialog)
 
         self.btn_copy = QPushButton("Copy")
         self.btn_copy.setToolTip("Copy all text (Ctrl+C)\nRight-click: Copy + Close FastPrompter")
@@ -649,11 +645,15 @@ class FastPrompter(
         self.btn_restore = make_action_checkbox("Rstr", self.restore_db)
 
         try:
-            current_b_scale = int(float(self.data.get("button_scale", "1.0")) * 100)
+            current_scale_pct = int(float(self.data.get("ui_scale", "1.0")) * 100)
         except Exception:
-            current_b_scale = 100
+            current_scale_pct = 100
         self.btn_button_scale = make_action_checkbox(
-            f"Btn Scale: {current_b_scale}%", self.cycle_button_scale
+            f"Scale: {current_scale_pct}%", self.cycle_button_scale
+        )
+        self.btn_button_scale.setToolTip(
+            "Scale the whole program: 50 / 75 / 100 / 125 / 150%\n"
+            "(fine-tune with Ctrl+Plus / Ctrl+Minus)"
         )
 
         # Load custom font button
@@ -1303,24 +1303,30 @@ class FastPrompter(
             ts = datetime.datetime.now().strftime("(%d.%m - %H:%M)")
             cursor.insertText(f" {ts}")
 
-        # Jump two lines below the header, ready to type: header, blank
-        # line, cursor. Reuses existing blank lines instead of stacking
-        # new ones on repeated presses.
+        # Jump two lines below the header onto a fresh bullet, with PLAIN
+        # formatting — the header's bold/underline must not bleed into
+        # what gets typed next. Reuses existing blank lines on repeats.
+        plain = QTextCharFormat()
         cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock)
+        cursor.setCharFormat(plain)
         nxt = cursor.block().next()
         if not nxt.isValid() or nxt.text().strip():
-            cursor.insertText("\n\n")
+            cursor.insertText("\n\n• ", plain)
         else:
             nxt2 = nxt.next()
             if not nxt2.isValid():
                 cursor.setPosition(nxt.position())
                 cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock)
-                cursor.insertText("\n")
+                cursor.insertText("\n• ", plain)
             else:
                 cursor.setPosition(nxt2.position())
+                cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock)
+                if not nxt2.text().strip():
+                    cursor.insertText("• ", plain)
         cursor.endEditBlock()
 
         self.text_area.setTextCursor(cursor)
+        self.text_area.setCurrentCharFormat(plain)
         self.text_area.ensureCursorVisible()
         self.text_area.setFocus()
         self.mark_dirty()
@@ -1625,6 +1631,19 @@ class FastPrompter(
         self.text_area.setLineWrapMode(
             QTextEdit.LineWrapMode.WidgetWidth if wrap else QTextEdit.LineWrapMode.NoWrap
         )
+
+    def open_help_dialog(self):
+        """Open the comprehensive help window (hotkeys, gestures, features)."""
+        self.play_tick_sound()
+        dlg = getattr(self, "_help_dialog", None)
+        if dlg is None or sip.isdeleted(dlg):
+            dlg = HelpDialog(self)
+            self._help_dialog = dlg
+        self.ignore_focus_loss = True
+        dlg.show()
+        dlg.raise_()
+        dlg.activateWindow()
+        QTimer.singleShot(300, lambda: setattr(self, "ignore_focus_loss", False))
 
     def open_hotkey_settings(self):
         dlg = HotkeySettingsDialog(self)
@@ -2025,8 +2044,16 @@ class FastPrompter(
         if event.type() in (QEvent.Type.ActivationChange, QEvent.Type.WindowDeactivate):
             if not self.isActiveWindow() and not self.isMinimized():
                 if getattr(self, "cb_focus", None) and self.cb_focus.isChecked():
-                    if not getattr(self, "ignore_focus_loss", False) and not getattr(
-                        self, "is_locked", False
+                    help_dlg = getattr(self, "_help_dialog", None)
+                    help_open = (
+                        help_dlg is not None
+                        and not sip.isdeleted(help_dlg)
+                        and help_dlg.isVisible()
+                    )
+                    if (
+                        not getattr(self, "ignore_focus_loss", False)
+                        and not getattr(self, "is_locked", False)
+                        and not help_open
                     ):
                         self.hide_and_save()
         super().changeEvent(event)

@@ -68,14 +68,18 @@ class ScalingMixin:
     """
 
     # Text must stay readable at EVERY scale (50-150%): fonts never go
-    # below 8pt and heights never below what an 8pt line needs.
+    # below 8pt and heights never below what an 8pt line + theme borders
+    # need (16px clipped descenders at 50%).
     MIN_FONT_PT = 8.0
-    MIN_BTN_PX = 16
+    MIN_BTN_PX = 20
+    # 12pt at 100% keeps all five steps distinct above the 8pt floor:
+    # 50->8, 75->9, 100->12, 125->15, 150->18
+    BASE_FONT_PT = 12.0
 
     def _effective_scale(self):
-        """Combined widget scale: UI scale x button scale."""
+        """The single unified UI scale."""
         try:
-            return self._ui_scale * self._button_scale
+            return self._ui_scale
         except Exception:
             return 1.0
 
@@ -83,7 +87,7 @@ class ScalingMixin:
         """Scale a button's font with a readable floor."""
         try:
             font = widget.font()
-            font.setPointSizeF(max(self.MIN_FONT_PT, 9.0 * scale))
+            font.setPointSizeF(max(self.MIN_FONT_PT, self.BASE_FONT_PT * scale))
             widget.setFont(font)
         except Exception:
             logger.debug("Failed to scale font on %s", widget)
@@ -126,10 +130,10 @@ class ScalingMixin:
                     logger.debug("Failed to resize widget: %s", widget)
 
     def cycle_button_scale(self):
-        """Cycle through preset button scale values (0.5, 0.75, 1.0, 1.25, 1.5)."""
+        """Cycle the unified Scale through 50/75/100/125/150%."""
         scales = [0.5, 0.75, 1.0, 1.25, 1.5]
         try:
-            current = self._button_scale
+            current = self._ui_scale
         except Exception:
             current = 1.0
         try:
@@ -137,20 +141,25 @@ class ScalingMixin:
             next_idx = (idx + 1) % len(scales)
         except ValueError:
             next_idx = 2  # default to 100%
-        new_scale = scales[next_idx]
-        self.data["button_scale"] = str(new_scale)
-        # mark_dirty is required — the state layer skips saving when clean,
-        # which silently lost the scale between sessions.
-        self.mark_dirty()
+        self._set_unified_scale(scales[next_idx])
         self.save_data_to_db(force=True)
+
+    def _set_unified_scale(self, value):
+        """One knob scales the whole program: app font, editor font,
+        every sized button, sidebar rows, pie menu, window minimum."""
+        value = max(0.5, min(1.75, round(float(value), 2)))
+        self.data["ui_scale"] = f"{value:.2f}"
+        # kept equal for backward compatibility with old data readers
+        self.data["button_scale"] = str(value)
+        self.mark_dirty()
         if hasattr(self, "btn_button_scale") and not _is_deleted(self.btn_button_scale):
-            self.btn_button_scale.setText(f"Scale: {int(new_scale * 100)}%")
+            self.btn_button_scale.setText(f"Scale: {int(value * 100)}%")
         self._refresh_settings_cache()
-        # apply_scaled_ui first (ui-scale pass), then the combined-scale
-        # pass so button scale wins on every sized widget
         self.apply_scaled_ui()
         self.refresh_button_scale()
         self.apply_font()
+        if not getattr(self, "is_locked", False):
+            self.setMinimumSize(max(320, int(480 * value)), max(240, int(320 * value)))
 
     def adjust_font_size(self, step):
         """Adjust font size by step, clamped within font_spin range."""
@@ -160,17 +169,12 @@ class ScalingMixin:
             self.font_spin.setValue(new_size)
 
     def adjust_ui_scale(self, delta):
-        """Adjust UI scale by delta, clamped between 0.75 and 1.75."""
+        """Fine-adjust the unified scale (Ctrl+plus / Ctrl+minus)."""
         try:
             current = self._ui_scale
         except Exception:
             current = 1.0
-        current = max(0.75, min(1.75, round(current + delta, 2)))
-        self.data["ui_scale"] = f"{current:.2f}"
-        self.apply_font()
-        self.apply_scaled_ui()
-        self.refresh_button_scale()
-        self.mark_dirty()
+        self._set_unified_scale(current + delta)
 
     def apply_scaled_ui(self):
         """Apply UI scale to button heights, fonts, and widths."""
@@ -189,7 +193,7 @@ class ScalingMixin:
 
                 try:
                     font = w.font()
-                    font.setPointSizeF(max(self.MIN_FONT_PT, 9.0 * scale))
+                    font.setPointSizeF(max(self.MIN_FONT_PT, self.BASE_FONT_PT * scale))
                     w.setFont(font)
                 except Exception:
                     logger.debug("apply_scaled_ui: failed to set font on %s", name)
@@ -206,7 +210,7 @@ class ScalingMixin:
 
                 try:
                     font = w.font()
-                    font.setPointSizeF(max(self.MIN_FONT_PT, 9.0 * scale))
+                    font.setPointSizeF(max(self.MIN_FONT_PT, self.BASE_FONT_PT * scale))
                     w.setFont(font)
                 except Exception:
                     logger.debug("apply_scaled_ui: failed to set font on %s", btn_name)

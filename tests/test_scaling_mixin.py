@@ -194,7 +194,7 @@ class TestCycleButtonScale:
     def _make_mixin(self, current_scale=1.0):
         m = ScalingMixin()
         m._button_scale = current_scale
-        m._ui_scale = 1.0
+        m._ui_scale = current_scale
         m.data = {"button_scale": str(current_scale)}
         m.save_data_to_db = MagicMock()
         m.mark_dirty = MagicMock()
@@ -202,10 +202,14 @@ class TestCycleButtonScale:
         def _refresh():
             try:
                 m._button_scale = float(m.data.get("button_scale", "1.0"))
+                m._ui_scale = float(m.data.get("ui_scale", "1.0"))
             except (ValueError, TypeError):
                 m._button_scale = 1.0
+                m._ui_scale = 1.0
         m._refresh_settings_cache = MagicMock(wraps=_refresh)
         m.refresh_button_scale = MagicMock()
+        m.apply_scaled_ui = MagicMock()
+        m.setMinimumSize = MagicMock()
         m.apply_font = MagicMock()
         return m
 
@@ -271,7 +275,7 @@ class TestApplyButtonSize:
     def test_scale_applied_to_width_height(self):
         m = ScalingMixin()
         m._button_scale = 1.5
-        m._ui_scale = 1.0
+        m._ui_scale = 1.5
         btn = _MockQPushButton("test_btn")
         m.apply_button_size(btn, 24, 24)
         # min_w = max(18, 24*1.5) = 36
@@ -281,11 +285,11 @@ class TestApplyButtonSize:
     def test_scale_minimum_clamp(self):
         m = ScalingMixin()
         m._button_scale = 0.3
-        m._ui_scale = 1.0
+        m._ui_scale = 0.3
         btn = _MockQPushButton("test_btn")
         m.apply_button_size(btn, 20, 20)
-        # min_w = max(16, 20*0.3) = 16 — floor keeps 8pt text readable
-        assert btn._fixed_size == (16, 16)
+        # min_w = max(20, 20*0.3) = 20 — floor fits 8pt text + borders
+        assert btn._fixed_size == (20, 20)
 
     def test_squishable_uses_max_height(self):
         m = ScalingMixin()
@@ -370,6 +374,8 @@ class TestAdjustUiScale:
         m.apply_scaled_ui = MagicMock()
         m.refresh_button_scale = MagicMock()
         m.mark_dirty = MagicMock()
+        m._refresh_settings_cache = MagicMock()
+        m.setMinimumSize = MagicMock()
         m.adjust_ui_scale(0.1)
         assert m.data["ui_scale"] == "1.10"
         m.apply_font.assert_called_once()
@@ -384,19 +390,23 @@ class TestAdjustUiScale:
         m.apply_scaled_ui = MagicMock()
         m.refresh_button_scale = MagicMock()
         m.mark_dirty = MagicMock()
+        m._refresh_settings_cache = MagicMock()
+        m.setMinimumSize = MagicMock()
         m.adjust_ui_scale(-0.1)
         assert m.data["ui_scale"] == "0.90"
 
     def test_clamps_minimum(self):
         m = ScalingMixin()
-        m._ui_scale = 0.75
+        m._ui_scale = 0.5
         m.data = {}
         m.apply_font = MagicMock()
         m.apply_scaled_ui = MagicMock()
         m.refresh_button_scale = MagicMock()
         m.mark_dirty = MagicMock()
+        m._refresh_settings_cache = MagicMock()
+        m.setMinimumSize = MagicMock()
         m.adjust_ui_scale(-0.1)
-        assert m.data["ui_scale"] == "0.75"
+        assert m.data["ui_scale"] == "0.50"
 
     def test_clamps_maximum(self):
         m = ScalingMixin()
@@ -406,6 +416,8 @@ class TestAdjustUiScale:
         m.apply_scaled_ui = MagicMock()
         m.refresh_button_scale = MagicMock()
         m.mark_dirty = MagicMock()
+        m._refresh_settings_cache = MagicMock()
+        m.setMinimumSize = MagicMock()
         m.adjust_ui_scale(0.1)
         assert m.data["ui_scale"] == "1.75"
 
@@ -417,6 +429,8 @@ class TestAdjustUiScale:
         m.apply_scaled_ui = MagicMock()
         m.refresh_button_scale = MagicMock()
         m.mark_dirty = MagicMock()
+        m._refresh_settings_cache = MagicMock()
+        m.setMinimumSize = MagicMock()
         m.adjust_ui_scale(0.05)
         assert m.data["ui_scale"] == "1.75"  # clamped from 1.79
 
@@ -428,6 +442,8 @@ class TestAdjustUiScale:
         m.apply_scaled_ui = MagicMock()
         m.refresh_button_scale = MagicMock()
         m.mark_dirty = MagicMock()
+        m._refresh_settings_cache = MagicMock()
+        m.setMinimumSize = MagicMock()
         m.adjust_ui_scale(0.1)
         assert "1.10" in m.data["ui_scale"]
 

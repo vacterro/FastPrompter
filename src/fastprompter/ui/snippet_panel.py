@@ -104,8 +104,8 @@ class DraggableButton(QPushButton):
         # Apply font scaling safely
         from PyQt6.QtGui import QFont
         f = QFont(font_family)
-        base_size = 9 # base size in points
-        f.setPointSizeF(max(7.0, base_size * scale))
+        base_size = 10  # base size in points
+        f.setPointSizeF(max(8.0, base_size * scale))
         self.setFont(f)
 
         self._last_width = -1
@@ -268,7 +268,7 @@ class SnippetWidget(QWidget):
 
         from PyQt6.QtGui import QFont
         btn_font = QFont(font_family)
-        btn_font.setPointSizeF(max(7.0, 9.0 * scale))
+        btn_font.setPointSizeF(max(8.0, 9.0 * scale))
         btn_font.setBold(True)
 
         btn_style = f"background-color:{bg}; color:{fg}; border: 1px solid {border}; padding:0;"
@@ -516,8 +516,8 @@ class DraggableSiloButton(QWidget):
         # Apply font scaling safely
         from PyQt6.QtGui import QFont
         f = QFont(font_family)
-        base_size = 9
-        f.setPointSizeF(max(7.0, base_size * scale))
+        base_size = 10
+        f.setPointSizeF(max(8.0, base_size * scale))
         self._lbl_text.setFont(f)
         self._lbl_count.setFont(f)
 

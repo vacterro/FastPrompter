@@ -204,9 +204,11 @@ def test_auto_bullet_space_and_enter(win):
 
 
 def test_button_scale_persists_to_db(win):
+    win.data["ui_scale"] = "1.0"
     win.data["button_scale"] = "1.0"
-    win.cycle_button_scale()  # 1.0 -> 1.25, saves to DB
+    win.cycle_button_scale()  # 1.0 -> 1.25, saves to DB (unified scale)
     assert win.data["button_scale"] == "1.25"
+    assert win.data["ui_scale"] == "1.25"
     import fastprompter.core.state as state_mod
 
     fresh = state_mod.FastPrompterState()
@@ -224,16 +226,21 @@ def test_button_scale_persists_to_db(win):
 def test_button_scale_steps_are_distinct(win):
     from PyQt6.QtWidgets import QPushButton
 
-    win.data["ui_scale"] = "1.0"
     sizes = {}
-    for scale in ("0.5", "0.75", "1.0"):
+    for scale in ("0.5", "0.75", "1.0", "1.5"):
+        win.data["ui_scale"] = scale
         win.data["button_scale"] = scale
         btn = QPushButton("Clear Fmt")
         win.apply_button_size(btn, 24)
         sizes[scale] = (btn.height(), btn.font().pointSizeF())
-    assert sizes["0.5"][0] < sizes["0.75"][0] < sizes["1.0"][0], sizes
-    # fonts never drop below the readable floor at any scale
-    assert all(pt >= 8.0 for _, pt in sizes.values()), sizes
+    # fonts distinct at every step and never below the readable floor
+    fonts = [sizes[k][1] for k in ("0.5", "0.75", "1.0", "1.5")]
+    assert fonts == sorted(fonts) and len(set(fonts)) == 4, sizes
+    assert all(pt >= 8.0 for pt in fonts), sizes
+    # heights monotonically non-decreasing, clearly bigger at 150%
+    heights = [sizes[k][0] for k in ("0.5", "0.75", "1.0", "1.5")]
+    assert heights == sorted(heights) and heights[-1] > heights[0], sizes
+    win.data["ui_scale"] = "1.0"
     win.data["button_scale"] = "1.0"
 
 
@@ -712,10 +719,12 @@ def test_ctrl_e_header_timestamp(win):
     line = text.splitlines()[0]
     assert line.startswith("# My heading")
     assert re.search(r"\(\d{2}\.\d{2} - \d{2}:\d{2}\)$", line), line
-    # Cursor jumped two lines below the header, ready to type
+    # Cursor jumped two lines below onto a fresh plain bullet
     cur = win.text_area.textCursor()
     assert cur.blockNumber() == 2, text
-    assert cur.block().text() == ""
+    assert cur.block().text() == "\u2022 "
+    fmt = win.text_area.currentCharFormat()
+    assert fmt.fontWeight() < 700 and not fmt.fontUnderline()
     # Press again ON the header line: no duplicate header/timestamp,
     # no extra blank lines, cursor jumps below again
     back = win.text_area.textCursor()

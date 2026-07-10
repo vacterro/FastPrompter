@@ -64,11 +64,9 @@ class QuickListWidget(QWidget):
         self.setStyleSheet(f"background-color: {bg}; border: 1px solid {border}; border-radius: 4px;")
 
         # Combined scale with readable floors (fonts >= 8px equivalents)
-        scale = float(self.main_win.data.get("button_scale", "1.0")) * float(
-            self.main_win.data.get("ui_scale", "1.0")
-        )
-        cat_font = max(10, int(10 * scale))
-        snip_font = max(11, int(11 * scale))
+        scale = float(self.main_win.data.get("ui_scale", "1.0"))
+        cat_font = max(11, int(14 * scale))
+        snip_font = max(12, int(15 * scale))
 
         for cat in self.cats:
             btn = QPushButton(cat[:10])
