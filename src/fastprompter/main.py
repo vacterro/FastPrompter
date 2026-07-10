@@ -1585,6 +1585,7 @@ class FastPrompter(
             self.ignore_focus_loss = False
 
     def _snapshot_current(self):
+        pinned = self.data.get("pinned_silos", [])
         return {
             "categories": copy.deepcopy(self.data["categories"]),
             "temp_presets": copy.deepcopy(self.data["temp_presets"]),
@@ -1592,14 +1593,39 @@ class FastPrompter(
             "active_temp_slot": self.active_temp_slot,
             "active_is_archive": getattr(self, "active_is_archive", False),
             "editing_snippet": getattr(self, "editing_snippet", None),
+            "pinned_silos": list(pinned) if isinstance(pinned, list) else [],
+            "silo_last_edited": dict(getattr(self, "silo_last_edited", {})),
         }
 
+    def _snapshot_is_noop(self, state):
+        """True when restoring this snapshot would change no user data."""
+        return (
+            state["temp_presets"] == self.data["temp_presets"]
+            and state["archive_temp_presets"] == self.data["archive_temp_presets"]
+            and state["categories"] == self.data["categories"]
+            and state.get("active_temp_slot") == self.active_temp_slot
+            and state.get("active_is_archive", False) == getattr(self, "active_is_archive", False)
+        )
+
+    def _bump_action_seq(self):
+        """Monotonic ordering for text edits vs data actions — wall-clock
+        time ties on Windows' timer granularity and breaks Ctrl+Z routing."""
+        self._action_seq = getattr(self, "_action_seq", 0) + 1
+        return self._action_seq
+
+    def _undo_prefers_data(self):
+        """Route Ctrl+Z to the data stack when a silo/snippet action is newer
+        than the last text edit, or when text undo has nothing to offer."""
+        if not getattr(self, "data_undo_stack", None):
+            return False
+        if getattr(self, "_last_data_action_time", 0) > getattr(self, "_last_text_edit_time", 0):
+            return True
+        doc = self.text_area.document()
+        return not doc.isUndoAvailable()
+
     def _smart_undo(self):
-        """Ctrl+Z: data undo (silo clear/delete/move) if newer than the last
-        text edit, otherwise plain text undo."""
-        if getattr(self, "data_undo_stack", None) and getattr(
-            self, "_last_data_action_time", 0
-        ) > getattr(self, "_last_text_edit_time", 0):
+        """Ctrl+Z: data undo (silo clear/delete/move) or text undo."""
+        if self._undo_prefers_data():
             self.undo_action()
         else:
             self.text_area.undo()
@@ -1608,15 +1634,21 @@ class FastPrompter(
         if hasattr(self, "data_undo_stack") and self.data_undo_stack:
             if not hasattr(self, "data_redo_stack"):
                 self.data_redo_stack = []
+            # Skip no-op snapshots (defensive: a stray double-snapshot must
+            # not make the user's first Ctrl+Z do nothing)
+            state = self.data_undo_stack.pop()
+            while self.data_undo_stack and self._snapshot_is_noop(state):
+                state = self.data_undo_stack.pop()
+            if self._snapshot_is_noop(state):
+                return
             redo_state = self._snapshot_current()
             self.data_redo_stack.append(redo_state)
             if len(self.data_redo_stack) > 50:
                 self.data_redo_stack.pop(0)
-            state = self.data_undo_stack.pop()
             self._apply_data_state(state)
             self.play_sound("tick")
             # Keep data undo "fresh" so repeated Ctrl+Z keeps popping this stack
-            self._last_data_action_time = time.time()
+            self._last_data_action_time = self._bump_action_seq()
             return
         # Text undo is handled natively by QTextEdit via VaultTextEdit.keyPressEvent
 
@@ -1636,6 +1668,10 @@ class FastPrompter(
         self.data["categories"] = state["categories"]
         self.data["temp_presets"] = state["temp_presets"]
         self.data["archive_temp_presets"] = state["archive_temp_presets"]
+        if "pinned_silos" in state:
+            self.data["pinned_silos"] = list(state["pinned_silos"])
+        if "silo_last_edited" in state:
+            self.silo_last_edited = dict(state["silo_last_edited"])
         from PyQt6.QtGui import QTextDocument
 
         font = self.text_area.font()
@@ -1710,7 +1746,7 @@ class FastPrompter(
             self.data_undo_stack.pop(0)
         self.data_redo_stack.clear()
         # Lets Ctrl+Z pick data undo over text undo when this action is newer
-        self._last_data_action_time = time.time()
+        self._last_data_action_time = self._bump_action_seq()
 
     def build_categories(self):
         """Rebuild the tab bar from cats_order."""
@@ -2654,7 +2690,7 @@ class FastPrompter(
         slots[empty_idx] = {"name": name, "text": text, "last_edited": int(time.time())}
         presets[idx] = ""
         if idx == self.active_temp_slot and not getattr(self, "editing_snippet", None):
-            self.clear_text()
+            self.clear_text(internal=True)
         self.mark_dirty()
         self.refresh_snippets_panel()
         self.refresh_temp_presets()
@@ -2719,13 +2755,13 @@ class FastPrompter(
         if is_archive:
             self.data["archive_temp_presets"][idx] = ""
             if idx == self.active_temp_slot and getattr(self, "active_is_archive", False):
-                self.clear_text()
+                self.clear_text(internal=True)
             self._trim_archive()
             self.refresh_archive_panel()
         else:
             self.data["temp_presets"][idx] = ""
             if idx == self.active_temp_slot and not getattr(self, "active_is_archive", False):
-                self.clear_text()
+                self.clear_text(internal=True)
             self.refresh_temp_presets()
         self.mark_dirty()
 
@@ -2760,7 +2796,7 @@ class FastPrompter(
             self.silo_docs[idx].setPlainText("")
         # If archiving active silo, clear text area
         if idx == self.active_temp_slot and not getattr(self, "active_is_archive", False):
-            self.clear_text()
+            self.clear_text(internal=True)
         self._trim_archive()
         self.mark_dirty()
         self.refresh_temp_presets()
@@ -2973,7 +3009,7 @@ class FastPrompter(
         lbl.setText(f"{lines} L" if lines else "")
 
     def _on_text_changed(self):
-        self._last_text_edit_time = time.time()
+        self._last_text_edit_time = self._bump_action_seq()
         self._update_line_count_label()
         doc = self.text_area.document()
         count = doc.characterCount()

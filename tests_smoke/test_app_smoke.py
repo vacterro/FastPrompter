@@ -258,6 +258,95 @@ def test_delete_empty_silo_is_undoable(win):
     assert win.data["temp_presets"] == ["a", "", "c"]
 
 
+def _press_ctrl_z(win):
+    from PyQt6.QtCore import QEvent, Qt
+    from PyQt6.QtGui import QKeyEvent
+
+    win.text_area.keyPressEvent(
+        QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Z, Qt.KeyboardModifier.ControlModifier, "z")
+    )
+
+
+def test_undo_delete_active_silo(win):
+    win.data["temp_presets"] = ["first", "the active one", "third"]
+    win.data["pinned_silos"] = []
+    win.silo_last_edited = {}
+    win.silo_docs[:] = []
+    win._switch_to_slot(1, initial=True)
+    win.del_silo(1)  # delete the silo currently open in the editor
+    assert win.data["temp_presets"] == ["first", "third"]
+    _press_ctrl_z(win)  # real Ctrl+Z inside the editor
+    assert win.data["temp_presets"] == ["first", "the active one", "third"]
+    assert win.text_area.toPlainText() == "the active one"
+
+
+def test_undo_clear_active_silo(win):
+    win.data["temp_presets"] = ["precious active text", "other"]
+    win.data["pinned_silos"] = []
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    win.clear_temp(0)  # middle-click clear of the ACTIVE silo
+    assert win.data["temp_presets"][0] == ""
+    assert win.text_area.toPlainText() == ""
+    _press_ctrl_z(win)
+    assert win.data["temp_presets"][0] == "precious active text"
+    assert win.text_area.toPlainText() == "precious active text"
+
+
+def test_undo_archive_active_silo(win):
+    win.data["temp_presets"] = ["archive me please", "other"]
+    win.data["archive_temp_presets"] = []
+    win.data["pinned_silos"] = []
+    win.archive_docs[:] = []
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    win.archive_single_silo(0)  # hover-button archive of the active silo
+    assert win.data["temp_presets"][0] == ""
+    assert "archive me please" in win.data["archive_temp_presets"]
+    _press_ctrl_z(win)
+    assert win.data["temp_presets"][0] == "archive me please"
+    assert "archive me please" not in win.data["archive_temp_presets"]
+
+
+def test_undo_after_typing_prefers_text_then_data(win):
+    win.data["temp_presets"] = ["silo A", "silo B"]
+    win.data["pinned_silos"] = []
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    win.text_area.insertPlainText("!!!")  # newest action: text edit
+    win.clear_temp(1)  # then a data action (non-active silo)
+    _press_ctrl_z(win)  # data action is newest -> restores silo B
+    assert win.data["temp_presets"][1] == "silo B"
+    _press_ctrl_z(win)  # next undo goes back to the text edit
+    assert "!!!" not in win.text_area.toPlainText()
+
+
+def test_undo_restores_pins_and_tints(win):
+    win.data["temp_presets"] = ["a", "b", "c"]
+    win.data["pinned_silos"] = [2]
+    win.silo_last_edited = {2: 999}
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    win.del_silo(1)  # shifts pin 2 -> 1 and tint 2 -> 1
+    assert win.data["pinned_silos"] == [1]
+    win._smart_undo()
+    assert win.data["temp_presets"] == ["a", "b", "c"]
+    assert win.data["pinned_silos"] == [2]
+    assert win.silo_last_edited == {2: 999}
+
+
+def test_redo_after_undo(win):
+    win.data["temp_presets"] = ["x", "y"]
+    win.data["pinned_silos"] = []
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    win.clear_temp(1)
+    win._smart_undo()
+    assert win.data["temp_presets"][1] == "y"
+    win.redo_action()
+    assert win.data["temp_presets"][1] == ""
+
+
 def test_ctrl_e_header_timestamp(win):
     import re
 

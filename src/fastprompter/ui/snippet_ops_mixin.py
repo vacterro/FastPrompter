@@ -196,10 +196,16 @@ class SnippetOpsMixin:
             self.refresh_snippets_panel()
             self.refresh_temp_presets()
 
-    def clear_text(self):
-        """Clear all text from the editor and the active silo data."""
-        self.add_data_undo_state("Clear text")
-        self.sound_manager.play("clear")
+    def clear_text(self, internal=False):
+        """Clear all text from the editor and the active silo data.
+
+        internal=True: caller already recorded an undo snapshot — pushing a
+        second, post-mutation snapshot here would make the first Ctrl+Z a
+        no-op (the 'cannot revert deleted silos' bug).
+        """
+        if not internal:
+            self.add_data_undo_state("Clear text")
+            self.sound_manager.play("clear")
 
         # Also clear the underlying silo data so it doesn't persist
         if not getattr(self, "editing_snippet", None):
@@ -212,11 +218,21 @@ class SnippetOpsMixin:
             if 0 <= slot < len(docs):
                 self._set_plain_text_clean(docs[slot], "")
 
-        cursor = self.text_area.textCursor()
-        cursor.beginEditBlock()
-        cursor.select(QTextCursor.SelectionType.Document)
-        cursor.removeSelectedText()
-        cursor.endEditBlock()
+        if internal:
+            # Don't bump the text-edit clock: Ctrl+Z must route to the
+            # caller's data snapshot, which restores the full state.
+            self.text_area.blockSignals(True)
+        try:
+            cursor = self.text_area.textCursor()
+            cursor.beginEditBlock()
+            cursor.select(QTextCursor.SelectionType.Document)
+            cursor.removeSelectedText()
+            cursor.endEditBlock()
+        finally:
+            if internal:
+                self.text_area.blockSignals(False)
+                if hasattr(self, "_update_line_count_label"):
+                    self._update_line_count_label()
         self.cancel_editing()
         self.text_area.setFocus()
 
@@ -658,7 +674,7 @@ class SnippetOpsMixin:
 
         self.data["temp_presets"][idx] = ""
         self._set_plain_text_clean(self.silo_docs[idx], "")
-        self.clear_text()
+        self.clear_text(internal=True)
 
         self._trim_archive()
         self.mark_dirty()
@@ -691,7 +707,7 @@ class SnippetOpsMixin:
         idx = self.active_temp_slot
         if 0 <= idx < len(self.data["temp_presets"]):
             self.data["temp_presets"][idx] = ""
-        self.clear_text()
+        self.clear_text(internal=True)
 
         self.mark_dirty()
         self.refresh_snippets_panel()

@@ -388,15 +388,11 @@ class VaultTextEdit(QTextEdit):
 
         if mods == Qt.KeyboardModifier.ControlModifier and event.key() in (Qt.Key.Key_Z, Qt.Key.Key_Y):
             # Ctrl+Z: route to the data-undo stack (silo clear/delete/move)
-            # when a data action is more recent than the last text edit.
-            if event.key() == Qt.Key.Key_Z:
-                mw = self.main_win
-                if getattr(mw, "data_undo_stack", None) and getattr(
-                    mw, "_last_data_action_time", 0
-                ) > getattr(mw, "_last_text_edit_time", 0):
-                    mw.undo_action()
-                    event.accept()
-                    return
+            # when appropriate; _smart_undo decides.
+            if event.key() == Qt.Key.Key_Z and hasattr(self.main_win, "_smart_undo"):
+                self.main_win._smart_undo()
+                event.accept()
+                return
             super().keyPressEvent(event)
             return
 
