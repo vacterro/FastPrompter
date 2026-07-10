@@ -1273,22 +1273,16 @@ class FastPrompter(
         cursor = self.text_area.textCursor()
         cursor.beginEditBlock()
 
-        pos_in_block = cursor.positionInBlock()
-        block = cursor.block()
-
         # Select entire line
         cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
         cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor)
         sel = cursor.selectedText()
 
         # Add # header prefix if not already present
-        has_hdr = sel.startswith("# ")
-        if not has_hdr:
+        if not sel.startswith("# "):
             new_text = f"# {sel}"
-            offset = 2
         else:
             new_text = sel
-            offset = 0
 
         cursor.insertText(new_text)
 
@@ -1309,14 +1303,25 @@ class FastPrompter(
             ts = datetime.datetime.now().strftime("(%d.%m - %H:%M)")
             cursor.insertText(f" {ts}")
 
+        # Jump two lines below the header, ready to type: header, blank
+        # line, cursor. Reuses existing blank lines instead of stacking
+        # new ones on repeated presses.
+        cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock)
+        nxt = cursor.block().next()
+        if not nxt.isValid() or nxt.text().strip():
+            cursor.insertText("\n\n")
+        else:
+            nxt2 = nxt.next()
+            if not nxt2.isValid():
+                cursor.setPosition(nxt.position())
+                cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock)
+                cursor.insertText("\n")
+            else:
+                cursor.setPosition(nxt2.position())
         cursor.endEditBlock()
 
-        # Position cursor after the header prefix
-        new_pos_in_block = max(0, pos_in_block + offset)
-        new_cursor = self.text_area.textCursor()
-        new_cursor.setPosition(block.position() + new_pos_in_block)
-        self.text_area.setTextCursor(new_cursor)
-
+        self.text_area.setTextCursor(cursor)
+        self.text_area.ensureCursorVisible()
         self.text_area.setFocus()
         self.mark_dirty()
 
@@ -1451,14 +1456,29 @@ class FastPrompter(
         self.data["always_on_top"] = "True" if self.cb_top.isChecked() else "False"
         self.data["normal_window"] = "True" if self.cb_normal_window.isChecked() else "False"
         flags = Qt.WindowType.Window
-        if not self.cb_normal_window.isChecked():
+        normal = self.cb_normal_window.isChecked()
+        if not normal:
             flags |= Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool
-        # AOT is handled via SetWindowPos now to avoid flickering
         self.unregister_all_hotkeys()
         was_visible = self.isVisible()
+        # setWindowFlags recreates the native window; the resulting
+        # activation-change would trigger the click-out auto-hide and make
+        # the toggle look broken. Suppress it until the dust settles.
+        self.ignore_focus_loss = True
         self.setWindowFlags(flags)
         if was_visible:
             self.show()
+            self.raise_()
+            self.activateWindow()
+            # New native handle: re-assert always-on-top on it
+            if self._always_on_top and not normal:
+                try:
+                    ctypes.windll.user32.SetWindowPos(
+                        int(self.winId()), -1, 0, 0, 0, 0, 0x0002 | 0x0001
+                    )
+                except Exception:
+                    pass
+        QTimer.singleShot(300, lambda: setattr(self, "ignore_focus_loss", False))
         self.register_all_hotkeys()
         self.mark_dirty()
 

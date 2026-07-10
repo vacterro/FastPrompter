@@ -67,54 +67,59 @@ class ScalingMixin:
         self._button_scale, self._ui_scale, self.data, self.font_spin
     """
 
+    # Text must stay readable at EVERY scale (50-150%): fonts never go
+    # below 8pt and heights never below what an 8pt line needs.
+    MIN_FONT_PT = 8.0
+    MIN_BTN_PX = 16
+
+    def _effective_scale(self):
+        """Combined widget scale: UI scale x button scale."""
+        try:
+            return self._ui_scale * self._button_scale
+        except Exception:
+            return 1.0
+
     def _scale_button_font(self, widget, scale):
-        """Shrink a button's font below 100% scale so text isn't clipped."""
+        """Scale a button's font with a readable floor."""
         try:
             font = widget.font()
-            font.setPointSizeF(max(6.0, 9.0 * min(1.0, scale)))
+            font.setPointSizeF(max(self.MIN_FONT_PT, 9.0 * scale))
             widget.setFont(font)
         except Exception:
             logger.debug("Failed to scale font on %s", widget)
 
     def apply_button_size(self, widget, base_w, base_h=None):
-        """Set widget size based on button scale."""
-        try:
-            scale = self._button_scale
-        except Exception:
-            scale = 1.0
+        """Set widget size based on the combined UI x button scale."""
+        scale = self._effective_scale()
         widget._base_size = (base_w, base_h)
-        min_sz = max(12, int(base_w * scale))
+        min_sz = max(self.MIN_BTN_PX, int(base_w * scale))
         if base_h is None:
             if getattr(widget, "is_squishable", False):
-                widget.setMaximumHeight(int(base_w * scale))
+                widget.setMaximumHeight(max(self.MIN_BTN_PX, int(base_w * scale)))
                 widget.setMinimumHeight(1)
             else:
                 widget.setFixedHeight(min_sz)
         else:
-            sz = max(12, int(base_h * scale))
+            sz = max(self.MIN_BTN_PX, int(base_h * scale))
             widget.setFixedSize(min_sz, sz)
-        if scale < 1.0:
-            self._scale_button_font(widget, scale)
+        self._scale_button_font(widget, scale)
 
     def refresh_button_scale(self):
-        """Re-apply button scale to all children with _base_size."""
-        try:
-            scale = self._button_scale
-        except Exception:
-            scale = 1.0
+        """Re-apply the combined scale to all children with _base_size."""
+        scale = self._effective_scale()
         for widget in self.findChildren(QPushButton):
             if not _is_deleted(widget) and hasattr(widget, "_base_size") and widget._base_size is not None:
                 base_w, base_h = widget._base_size
                 try:
-                    min_sz = max(12, int(base_w * scale))
+                    min_sz = max(self.MIN_BTN_PX, int(base_w * scale))
                     if base_h is None:
                         if getattr(widget, "is_squishable", False):
-                            widget.setMaximumHeight(int(base_w * scale))
+                            widget.setMaximumHeight(max(self.MIN_BTN_PX, int(base_w * scale)))
                             widget.setMinimumHeight(1)
                         else:
                             widget.setFixedHeight(min_sz)
                     else:
-                        sz = max(12, int(base_h * scale))
+                        sz = max(self.MIN_BTN_PX, int(base_h * scale))
                         widget.setFixedSize(min_sz, sz)
                     self._scale_button_font(widget, scale)
                 except Exception:
@@ -141,6 +146,9 @@ class ScalingMixin:
         if hasattr(self, "btn_button_scale") and not _is_deleted(self.btn_button_scale):
             self.btn_button_scale.setText(f"Scale: {int(new_scale * 100)}%")
         self._refresh_settings_cache()
+        # apply_scaled_ui first (ui-scale pass), then the combined-scale
+        # pass so button scale wins on every sized widget
+        self.apply_scaled_ui()
         self.refresh_button_scale()
         self.apply_font()
 
@@ -161,6 +169,7 @@ class ScalingMixin:
         self.data["ui_scale"] = f"{current:.2f}"
         self.apply_font()
         self.apply_scaled_ui()
+        self.refresh_button_scale()
         self.mark_dirty()
 
     def apply_scaled_ui(self):
@@ -174,30 +183,30 @@ class ScalingMixin:
             w = getattr(self, name, None)
             if w is not None:
                 try:
-                    w.setFixedHeight(max(14, int(round(base * scale))))
+                    w.setFixedHeight(max(self.MIN_BTN_PX, int(round(base * scale))))
                 except Exception:
                     logger.debug("apply_scaled_ui: failed to set height on %s", name)
 
                 try:
                     font = w.font()
-                    font.setPointSizeF(max(7.0, 9.0 * scale))
+                    font.setPointSizeF(max(self.MIN_FONT_PT, 9.0 * scale))
                     w.setFont(font)
                 except Exception:
                     logger.debug("apply_scaled_ui: failed to set font on %s", name)
 
         if hasattr(self, "btn_sidebar_toggle") and not _is_deleted(self.btn_sidebar_toggle):
-            self.btn_sidebar_toggle.setFixedWidth(max(14, int(round(24 * scale))))
+            self.btn_sidebar_toggle.setFixedWidth(max(self.MIN_BTN_PX, int(round(24 * scale))))
         for btn_name in _BTN_WIDTH_SCALE_NAMES:
             w = getattr(self, btn_name, None)
             if w is not None:
                 try:
-                    w.setFixedWidth(max(14, int(round(24 * scale))))
+                    w.setFixedWidth(max(self.MIN_BTN_PX, int(round(24 * scale))))
                 except Exception:
                     logger.debug("apply_scaled_ui: failed to set width on %s", btn_name)
 
                 try:
                     font = w.font()
-                    font.setPointSizeF(max(7.0, 9.0 * scale))
+                    font.setPointSizeF(max(self.MIN_FONT_PT, 9.0 * scale))
                     w.setFont(font)
                 except Exception:
                     logger.debug("apply_scaled_ui: failed to set font on %s", btn_name)

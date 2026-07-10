@@ -54,30 +54,37 @@ class QuickListWidget(QWidget):
         bg = extract_bg(theme.get('mini_settings', '')) or '#2b2b2b'
         fg = extract_color(theme.get('lbl_title', '')) or '#bfa65e'
         border = extract_color(theme.get('btn_save', '')) or '#4a4a4a'
-        hover = extract_color(theme.get('lbl_help', '')) or '#1c1c1c'
         active_bg = extract_bg(theme.get('btn_new', '')) or '#4a3b1f'
+        raw = theme.get("raw_colors", {})
+        # Hover must stay dark with light text — never a light bg under
+        # light text (was unreadable)
+        hover_bg = raw.get("btn_pressed", "#141414")
+        hover_fg = raw.get("accent", fg)
 
-        self.setStyleSheet(f"background-color: {hover}; border: 1px solid {border}; border-radius: 4px;")
+        self.setStyleSheet(f"background-color: {bg}; border: 1px solid {border}; border-radius: 4px;")
 
-        button_scale = float(self.main_win.data.get("button_scale", "1.0"))
+        # Combined scale with readable floors (fonts >= 8px equivalents)
+        scale = float(self.main_win.data.get("button_scale", "1.0")) * float(
+            self.main_win.data.get("ui_scale", "1.0")
+        )
+        cat_font = max(10, int(10 * scale))
+        snip_font = max(11, int(11 * scale))
 
         for cat in self.cats:
             btn = QPushButton(cat[:10])
-            btn.setFixedSize(int(52 * button_scale), int(20 * button_scale))
+            btn.setFixedSize(max(52, int(52 * scale)), max(18, int(20 * scale)))
             btn_bg = active_bg if cat == self.current_cat else bg
-            btn.setStyleSheet(f"QPushButton {{ background-color: {btn_bg}; color: {fg}; border: 1px solid {border}; border-radius: 2px; font-size: {int(10 * button_scale)}px; font-weight: bold; }} QPushButton:hover {{ border: 1px solid {fg}; }}")
+            btn.setStyleSheet(f"QPushButton {{ background-color: {btn_bg}; color: {fg}; border: 1px solid {border}; border-radius: 2px; font-size: {cat_font}px; font-weight: bold; }} QPushButton:hover {{ background-color: {hover_bg}; color: {hover_fg}; border: 1px solid {fg}; }}")
             btn.clicked.connect(lambda checked, c=cat: self.switch_cat(c))
             self.cat_layout.addWidget(btn)
 
         snippets = [s for s in self.main_win.data["categories"].get(self.current_cat, []) if s is not None][:10]
         for i, snip in enumerate(snippets):
             btn = QPushButton(snip.get("name", "")[:20])
-            btn.setFixedSize(int(160 * button_scale), int(24 * button_scale))
-            btn.setStyleSheet(f"QPushButton {{ background-color: {bg}; color: {fg}; border: 1px solid {border}; border-radius: 2px; font-size: {int(11 * button_scale)}px; font-weight: bold; text-align: left; padding-left: 6px; }} QPushButton:hover {{ background-color: {hover}; border: 1px solid {fg}; }}")
+            btn.setFixedSize(max(120, int(160 * scale)), max(20, int(24 * scale)))
+            btn.setStyleSheet(f"QPushButton {{ background-color: {bg}; color: {fg}; border: 1px solid {border}; border-radius: 2px; font-size: {snip_font}px; font-weight: bold; text-align: left; padding-left: 6px; }} QPushButton:hover {{ background-color: {hover_bg}; color: {hover_fg}; border: 1px solid {fg}; }}")
             btn.clicked.connect(lambda checked, c=self.current_cat, idx=i: self.on_click(c, idx))
             self.snip_layout.addWidget(btn)
-
-        self.setStyleSheet(self.main_win.styleSheet())
         QTimer.singleShot(10, lambda: not sip.isdeleted(self) and self.adjustSize())
         QTimer.singleShot(15, lambda: not sip.isdeleted(self) and self.center_on_cursor())
 

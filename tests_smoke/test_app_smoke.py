@@ -224,15 +224,16 @@ def test_button_scale_persists_to_db(win):
 def test_button_scale_steps_are_distinct(win):
     from PyQt6.QtWidgets import QPushButton
 
+    win.data["ui_scale"] = "1.0"
     sizes = {}
     for scale in ("0.5", "0.75", "1.0"):
         win.data["button_scale"] = scale
         btn = QPushButton("Clear Fmt")
         win.apply_button_size(btn, 24)
-        sizes[scale] = (btn.height(), round(btn.font().pointSizeF(), 1))
+        sizes[scale] = (btn.height(), btn.font().pointSizeF())
     assert sizes["0.5"][0] < sizes["0.75"][0] < sizes["1.0"][0], sizes
-    # fonts shrink below 100% so text isn't clipped
-    assert sizes["0.5"][1] < sizes["1.0"][1]
+    # fonts never drop below the readable floor at any scale
+    assert all(pt >= 8.0 for _, pt in sizes.values()), sizes
     win.data["button_scale"] = "1.0"
 
 
@@ -707,13 +708,23 @@ def test_ctrl_e_header_timestamp(win):
     win.silo_docs[:] = []
     win._switch_to_slot(0, initial=True)
     win.apply_header_timestamp()
-    line = win.text_area.toPlainText().splitlines()[0]
+    text = win.text_area.toPlainText()
+    line = text.splitlines()[0]
     assert line.startswith("# My heading")
     assert re.search(r"\(\d{2}\.\d{2} - \d{2}:\d{2}\)$", line), line
-    # Second press must not stack another header or timestamp
+    # Cursor jumped two lines below the header, ready to type
+    cur = win.text_area.textCursor()
+    assert cur.blockNumber() == 2, text
+    assert cur.block().text() == ""
+    # Press again ON the header line: no duplicate header/timestamp,
+    # no extra blank lines, cursor jumps below again
+    back = win.text_area.textCursor()
+    back.setPosition(0)
+    win.text_area.setTextCursor(back)
     win.apply_header_timestamp()
-    line2 = win.text_area.toPlainText().splitlines()[0]
-    assert line2 == line
+    text2 = win.text_area.toPlainText()
+    assert text2 == text
+    assert win.text_area.textCursor().blockNumber() == 2
 
 
 def test_transfer_to_snippet_target_category(win):
