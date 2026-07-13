@@ -25,7 +25,9 @@ Press `Alt+X` anywhere — in your browser, IDE, terminal — and FastPrompter p
 
 ## ✨ What it does
 <img width="960" height="285" alt="2026-07-10 21-23-03" src="https://github.com/user-attachments/assets/629d68f6-effd-4ebe-a06f-0b107e8f7c05" />
+
 [_Cursor_](https://www.deviantart.com/potatoddas/art/Simple-Perfect-Cursors-946177131)
+
 | | |
 |---|---|
 | 🗄️ **Silos** | Up to 100 auto-saved scratch slots per project — kill the app, your text survives |
