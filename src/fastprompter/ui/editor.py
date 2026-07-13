@@ -34,6 +34,9 @@ class LineNumberArea(QWidget):
     def sizeHint(self):
         return QSize(self.editor.line_number_area_width(), 0)
 
+    def mouseReleaseEvent(self, event):
+        super().mouseReleaseEvent(event)
+
     def paintEvent(self, event):
         self.editor.line_number_area_paint_event(event)
 
@@ -207,9 +210,11 @@ class VaultTextEdit(QTextEdit):
             return None
         cur = QTextCursor(block)
         cur.movePosition(QTextCursor.MoveOperation.EndOfBlock)
+        if block.length() > 1:
+            cur.movePosition(QTextCursor.MoveOperation.Left)
         r = self.cursorRect(cur)
-        size = max(14, r.height() - 2)
-        return QRect(r.right() + 6, r.top() + (r.height() - size) // 2, size, size)
+        size = max(16, r.height())
+        return QRect(r.right() + 8, r.top() + (r.height() - size) // 2, size + 2, size)
 
     def _ts_glyph_block_at(self, pos):
         """Return the block whose refresh glyph contains pos, else None."""
@@ -284,7 +289,9 @@ class VaultTextEdit(QTextEdit):
             if event.button() == Qt.MouseButton.LeftButton:
                 ts_block = self._ts_glyph_block_at(event.pos())
                 if ts_block is not None:
-                    self.main_win.refresh_timestamp_in_block(ts_block)
+                    # show the pushed state; the action fires on release
+                    self._ts_pressed_block = ts_block.blockNumber()
+                    self.viewport().update()
                     event.accept()
                     return
                 cb_block = self._checkbox_at_pos(event.pos())
@@ -329,6 +336,18 @@ class VaultTextEdit(QTextEdit):
             self._right_drag_start = event.globalPosition().toPoint()
             self._dragged = False
         super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        pressed = getattr(self, "_ts_pressed_block", None)
+        if pressed is not None and event.button() == Qt.MouseButton.LeftButton:
+            self._ts_pressed_block = None
+            self.viewport().update()
+            block = self._ts_glyph_block_at(event.pos())
+            if block is not None and block.blockNumber() == pressed:
+                self.main_win.refresh_timestamp_in_block(block)
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
 
     def mouseMoveEvent(self, event):
         if sip.isdeleted(self):
@@ -406,7 +425,7 @@ class VaultTextEdit(QTextEdit):
     def keyPressEvent(self, event):
         mods = event.modifiers()
 
-        if mods == Qt.KeyboardModifier.ControlModifier and event.key() == Qt.Key.Key_Return:
+        if mods == Qt.KeyboardModifier.ControlModifier and event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
             self._toggle_checkboxes()
             event.accept()
             return
@@ -515,7 +534,8 @@ class VaultTextEdit(QTextEdit):
                         return
 
         # Auto-bullet continuation: Enter on a bullet line starts the next
-        # line with the same bullet; Enter on an empty bullet removes it.
+        # line with the same bullet (blank line between them if
+        # bullet_double_line is on); Enter on an empty bullet removes it.
         if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter) and mods == Qt.KeyboardModifier.NoModifier:
             if self.main_win.data.get("auto_bullet", "False") == "True":
                 cursor = self.textCursor()
@@ -526,7 +546,9 @@ class VaultTextEdit(QTextEdit):
                     m = re.match(r'^([\u2022\-\*\+])[ \t]+(.*)$', stripped)
                     if m and cursor.positionInBlock() >= len(block_text) - len(m.group(2)):
                         if m.group(2).strip():
-                            cursor.insertText("\n" + indent + m.group(1) + " ")
+                            double = self.main_win.data.get("bullet_double_line", "False") == "True"
+                            sep = "\n\n" if double else "\n"
+                            cursor.insertText(sep + indent + m.group(1) + " ")
                             self.setTextCursor(cursor)
                             self.ensureCursorVisible()
                             event.accept()
@@ -610,16 +632,29 @@ class VaultTextEdit(QTextEdit):
                             line_rect = QRectF(0, br.top(), vp_rect.width(), br.height())
                             painter.fillRect(line_rect, zebra_odd)
 
-                        # Inline refresh glyph after lines ending with a
-                        # Ctrl+E timestamp: click it to re-stamp to now
+                        # Inline refresh button after lines ending with a
+                        # Ctrl+E timestamp: a small 3D box (pushes when
+                        # clicked) that re-stamps the line to now
                         if not is_large and TS_STAMP_LINE_RE.search(text):
                             g = self._ts_glyph_rect(block)
                             if g is not None:
-                                painter.setPen(QColor("#D9B340"))
+                                pressed = getattr(self, "_ts_pressed_block", None) == bnum
+                                bg = QColor("#141414" if pressed else "#3a3a3a")
+                                tl = QColor("#0a0a0a" if pressed else "#555555")
+                                br = QColor("#555555" if pressed else "#0a0a0a")
+                                painter.fillRect(g, bg)
+                                painter.setPen(tl)
+                                painter.drawLine(g.topLeft(), g.topRight())
+                                painter.drawLine(g.topLeft(), g.bottomLeft())
+                                painter.setPen(br)
+                                painter.drawLine(g.bottomLeft(), g.bottomRight())
+                                painter.drawLine(g.topRight(), g.bottomRight())
+                                painter.setPen(QColor("#FFFFFF" if pressed else "#D9B340"))
                                 gf = self.font()
-                                gf.setPointSizeF(max(8.0, gf.pointSizeF() * 0.9))
+                                gf.setPointSizeF(max(8.0, gf.pointSizeF() * 1.1))
                                 painter.setFont(gf)
-                                painter.drawText(g, Qt.AlignmentFlag.AlignCenter, "\u27f3")
+                                tg = g.adjusted(2, 2, 2, 2) if pressed else g
+                                painter.drawText(tg, Qt.AlignmentFlag.AlignCenter, "\u27f3")
                                 painter.setFont(self.font())
 
                         # --- horizontal rule visual line (skip for large docs)
@@ -689,6 +724,12 @@ class VaultTextEdit(QTextEdit):
         while True:
             text = block.text()
             stripped = text.lstrip()
+            if not stripped:
+                # empty lines never become checkboxes
+                if block == end_block:
+                    break
+                block = block.next()
+                continue
             indent = text[:len(text) - len(stripped)]
             if stripped.startswith("[x] ") or stripped.startswith("[X] "):
                 new_text = f"{indent}{stripped[4:]}"

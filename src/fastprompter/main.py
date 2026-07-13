@@ -804,6 +804,16 @@ class FastPrompter(
             self.data.get("hide_shortkeys", "False") == "True",
             self.on_hide_shortkeys_toggled,
         )
+        self.cb_double_line = create_footer_cb(
+            "Double-Space Lists",
+            "With Auto-Bullet on, Enter after a list item adds a blank\n"
+            "line before the next bullet — spaced, easy-to-read lists",
+            self.data.get("bullet_double_line", "False") == "True",
+            lambda checked: (
+                self.data.update({"bullet_double_line": "True" if checked else "False"})
+                or self.mark_dirty()
+            ),
+        )
         self.cb_sound = create_footer_cb(
             "UI Sounds",
             "Play click sounds for buttons and actions",
@@ -862,7 +872,7 @@ class FastPrompter(
         groups_row.addWidget(_vline())
         groups_row.addLayout(_settings_group("Editor", [
             self.cb_wrap, self.cb_line_numbers, self.cb_zebra,
-            self.cb_hide_shortkeys,
+            self.cb_hide_shortkeys, self.cb_double_line,
         ]), 1)
         groups_row.addWidget(_vline())
         groups_row.addLayout(_settings_group("Sound", [
@@ -1279,6 +1289,10 @@ class FastPrompter(
         cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor)
         sel = cursor.selectedText()
 
+        if not sel.strip():
+            cursor.endEditBlock()
+            return
+
         # Add # header prefix if not already present
         if not sel.startswith("# "):
             new_text = f"# {sel}"
@@ -1286,6 +1300,14 @@ class FastPrompter(
             new_text = sel
 
         cursor.insertText(new_text)
+
+        # Apply bold and underline to the text
+        cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
+        cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor)
+        fmt = cursor.charFormat()
+        fmt.setFontWeight(QFont.Weight.Bold)
+        fmt.setFontUnderline(True)
+        cursor.mergeCharFormat(fmt)
 
         # Append (DD.MM - hh:mm) at end of line; if the line already has a
         # stamp, refresh it in place (title untouched)

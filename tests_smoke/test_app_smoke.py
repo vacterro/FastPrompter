@@ -203,6 +203,51 @@ def test_auto_bullet_space_and_enter(win):
     win.data["auto_bullet"] = "False"
 
 
+def test_double_line_bullet_toggle(win):
+    from PyQt6.QtCore import QEvent, Qt
+    from PyQt6.QtGui import QKeyEvent
+
+    win.data["auto_bullet"] = "True"
+    win.data["bullet_double_line"] = "True"
+    win.data["temp_presets"] = [""]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    ta = win.text_area
+    ta.insertPlainText("• item one")
+    ta.keyPressEvent(QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Return,
+                               Qt.KeyboardModifier.NoModifier, "\r"))
+    # blank line inserted before the next bullet
+    assert ta.toPlainText() == "• item one\n\n• "
+    ta.insertPlainText("item two")
+    ta.keyPressEvent(QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Return,
+                               Qt.KeyboardModifier.NoModifier, "\r"))
+    assert ta.toPlainText() == "• item one\n\n• item two\n\n• "
+    # Enter on the empty bullet still just clears the marker (no extra blank line)
+    ta.keyPressEvent(QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Return,
+                               Qt.KeyboardModifier.NoModifier, "\r"))
+    assert ta.toPlainText() == "• item one\n\n• item two\n\n"
+    win.data["auto_bullet"] = "False"
+    win.data["bullet_double_line"] = "False"
+
+
+def test_double_line_setting_roundtrips_through_db(win):
+    win.data["bullet_double_line"] = "True"
+    win.mark_dirty()
+    win.save_data_to_db(force=True)
+
+    import fastprompter.core.state as state_mod
+
+    fresh = state_mod.FastPrompterState()
+    try:
+        assert fresh.data.get("bullet_double_line") == "True"
+    finally:
+        if fresh.conn:
+            fresh.conn.close()
+    win.data["bullet_double_line"] = "False"
+    win.mark_dirty()
+    win.save_data_to_db(force=True)
+
+
 def test_button_scale_persists_to_db(win):
     win.data["ui_scale"] = "1.0"
     win.data["button_scale"] = "1.0"
@@ -897,6 +942,31 @@ def test_markdown_marker_toggles(win):
     assert ta.toPlainText() == "***bold***"
 
 
+def test_ctrl_return_skips_empty_lines(win):
+    from PyQt6.QtGui import QTextCursor
+
+    win.tab_bar.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    win.data["temp_presets"][:] = ["task one\n\ntask two\n\n"]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    ta = win.text_area
+    cur = ta.textCursor()
+    cur.setPosition(0)
+    cur.movePosition(QTextCursor.MoveOperation.End, QTextCursor.MoveMode.KeepAnchor)
+    ta.setTextCursor(cur)
+    ta._toggle_checkboxes()
+    assert ta.toPlainText() == "[ ] task one\n\n[ ] task two\n\n"
+    # single Ctrl+Enter on an empty line does nothing
+    cur = ta.textCursor()
+    cur.setPosition(len("[ ] task one") + 1)  # the blank line
+    cur.clearSelection()
+    ta.setTextCursor(cur)
+    before = ta.toPlainText()
+    ta._toggle_checkboxes()
+    assert ta.toPlainText() == before
+
+
 def test_inline_timestamp_refresh_glyph(win):
     import re as _re
 
@@ -915,14 +985,20 @@ def test_inline_timestamp_refresh_glyph(win):
     assert rect is not None
     # a real click on the glyph re-stamps the line to now
     center = rect.center()
-    ev = QMouseEvent(
-        QEvent.Type.MouseButtonPress,
-        center.toPointF() if hasattr(center, "toPointF") else center,
-        Qt.MouseButton.LeftButton,
-        Qt.MouseButton.LeftButton,
+    pt = center.toPointF() if hasattr(center, "toPointF") else center
+    ta.mousePressEvent(QMouseEvent(
+        QEvent.Type.MouseButtonPress, pt,
+        Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton,
         Qt.KeyboardModifier.NoModifier,
-    )
-    ta.mousePressEvent(ev)
+    ))
+    # button shows the pushed state between press and release
+    assert ta._ts_pressed_block == 0
+    ta.mouseReleaseEvent(QMouseEvent(
+        QEvent.Type.MouseButtonRelease, pt,
+        Qt.MouseButton.LeftButton, Qt.MouseButton.NoButton,
+        Qt.KeyboardModifier.NoModifier,
+    ))
+    assert ta._ts_pressed_block is None
     first = ta.document().firstBlock().text()
     assert "(01.01 - 00:00)" not in first
     assert _re.search(r"\(\d{2}\.\d{2} - \d{2}:\d{2}\)", first)
