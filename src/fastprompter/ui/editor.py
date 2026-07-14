@@ -60,6 +60,7 @@ class VaultTextEdit(QTextEdit):
         self.cursorPositionChanged.connect(self.line_number_area.update)
         self._last_hover_pos = QPoint(-10000, -10000)
         self._doc_has_checkbox = False
+        self._doc_has_code = False
         QTimer.singleShot(0, self._refresh_checkbox_flag)
 
     def _first_visible_block(self):
@@ -82,11 +83,30 @@ class VaultTextEdit(QTextEdit):
             if scan_limit > 2000:
                 # Won't render checkboxes beyond 2000 blocks, so skip deep scan
                 scan_limit = 200
+            has_cb = False
+            has_code = False
             for i in range(scan_limit):
-                if "[" in doc.findBlockByNumber(i).text():
-                    self._doc_has_checkbox = True
-                    return
-            self._doc_has_checkbox = False
+                txt = doc.findBlockByNumber(i).text()
+                if not has_cb and "[" in txt:
+                    has_cb = True
+                if not has_code and txt.lstrip().startswith("```"):
+                    has_code = True
+                if has_cb and has_code:
+                    break
+            self._doc_has_checkbox = has_cb
+            if has_code != self._doc_has_code:
+                self._doc_has_code = has_code
+                # gutter appears/disappears with the code blocks
+                self.update_line_number_area_width()
+
+    def _gutter_active(self):
+        """Line numbers show when the user turned them on OR the document
+        contains fenced code blocks (auto-numbering for code)."""
+        if not hasattr(self, 'main_win'):
+            return False
+        if self.main_win.data.get("show_line_numbers", "False") == "True":
+            return True
+        return self._doc_has_code
 
     def set_active_document(self, doc):
         hl = getattr(self.main_win, 'highlighter', None)
@@ -110,7 +130,7 @@ class VaultTextEdit(QTextEdit):
         self._refresh_checkbox_flag()
 
     def line_number_area_width(self):
-        if not hasattr(self, 'main_win') or self.main_win.data.get("show_line_numbers", "False") != "True":
+        if not self._gutter_active():
             return 0
         digits = 1
         m = max(1, self.document().blockCount())
@@ -130,7 +150,7 @@ class VaultTextEdit(QTextEdit):
         self.line_number_area.setGeometry(QRect(cr.left(), cr.top(), self.line_number_area_width(), cr.height()))
 
     def line_number_area_paint_event(self, event):
-        if not hasattr(self, 'main_win') or self.main_win.data.get("show_line_numbers", "False") != "True":
+        if not self._gutter_active():
             return
         doc = self.document()
         if not doc or sip.isdeleted(doc):
@@ -164,7 +184,7 @@ class VaultTextEdit(QTextEdit):
                 painter.setPen(QColor("#808080"))
                 painter.drawText(0, int(rect.top()), self.line_number_area.width() - 10,
                                  self.fontMetrics().height(), Qt.AlignmentFlag.AlignRight, number)
-                mark = block.userState()
+                mark = max(0, block.userState()) & 0xFF
                 if mark > 0:
                     y_center = int(rect.top() + self.fontMetrics().height() / 2)
                     x_center = self.line_number_area.width() - 5
@@ -196,10 +216,9 @@ class VaultTextEdit(QTextEdit):
             rect = self.cursorRect(cursor)
             block_height = doc.documentLayout().blockBoundingRect(block).height()
             if rect.top() <= event.pos().y() <= rect.top() + block_height:
-                current = block.userState()
-                if current == -1:
-                    current = 0
-                block.setUserState((current + 1) % 4)
+                state = max(0, block.userState())
+                mark = state & 0xFF
+                block.setUserState((state & ~0xFF) | ((mark + 1) % 4))
                 self.line_number_area.update()
                 break
             block = block.next()

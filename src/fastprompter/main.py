@@ -816,6 +816,19 @@ class FastPrompter(
                 or self.mark_dirty()
             ),
         )
+        self.cb_bold_titles = create_footer_cb(
+            "Bold # Titles",
+            "Bold the sidebar title of silos and snippets whose\n"
+            "content starts with a '#' markdown header",
+            self.data.get("bold_hash_titles", "True") == "True",
+            lambda checked: (
+                self.data.update({"bold_hash_titles": "True" if checked else "False"})
+                or self.mark_dirty()
+                or self.refresh_temp_presets()
+                or self.refresh_snippets_panel()
+                or self.refresh_archive_panel()
+            ),
+        )
         self.cb_sound = create_footer_cb(
             "UI Sounds",
             "Play click sounds for buttons and actions",
@@ -874,7 +887,7 @@ class FastPrompter(
         groups_row.addWidget(_vline())
         groups_row.addLayout(_settings_group("Editor", [
             self.cb_wrap, self.cb_line_numbers, self.cb_zebra,
-            self.cb_hide_shortkeys, self.cb_double_line,
+            self.cb_hide_shortkeys, self.cb_double_line, self.cb_bold_titles,
         ]), 1)
         groups_row.addWidget(_vline())
         groups_row.addLayout(_settings_group("Sound", [
@@ -2344,7 +2357,11 @@ class FastPrompter(
                         color = self.blend_colors(base, overlay, 0.15)
 
                 w.update_data(
-                    f"{key_label}{disp}", cat, global_idx, item["text"], color, font_family, scale
+                    f"{key_label}{disp}", cat, global_idx, item["text"], color, font_family, scale,
+                    title_bold=(
+                        self.data.get("bold_hash_titles", "True") == "True"
+                        and item["text"].lstrip().startswith("#")
+                    ),
                 )
                 self._snippet_widget_cache[(cat, global_idx)] = (
                     w.main_btn if hasattr(w, "main_btn") else w
@@ -2424,7 +2441,11 @@ class FastPrompter(
                 and not getattr(self, "editing_snippet", None)
             )
             bg_color = active_color if is_active else inactive_color
-            btn.update_data(label, slot_idx, bg_color, font_family, scale, line_count_str=line_str, is_pushed=is_active)
+            title_bold = (
+                self.data.get("bold_hash_titles", "True") == "True"
+                and raw.lstrip().startswith("#")
+            )
+            btn.update_data(label, slot_idx, bg_color, font_family, scale, line_count_str=line_str, is_pushed=is_active, title_bold=title_bold)
             btn.show()
 
         self.archive_widget.adjustSize()
@@ -2698,7 +2719,11 @@ class FastPrompter(
             bg_color = active_color if is_active else inactive_color
             if text and slot_idx in self.silo_last_edited:
                 bg_color = self._overlay_silo_bg(bg_color, self.silo_last_edited[slot_idx])
-            btn.update_data(label, slot_idx, bg_color, font_family, scale, line_count_str=line_str, is_pushed=is_active)
+            title_bold = (
+                self.data.get("bold_hash_titles", "True") == "True"
+                and raw.lstrip().startswith("#")
+            )
+            btn.update_data(label, slot_idx, bg_color, font_family, scale, line_count_str=line_str, is_pushed=is_active, title_bold=title_bold)
 
     def _overlay_silo_bg(self, bg_color, last_ts):
         diff = time.time() - last_ts

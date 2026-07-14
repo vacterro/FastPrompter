@@ -90,9 +90,11 @@ class DraggableButton(QPushButton):
     def minimumSizeHint(self):
         return self.sizeHint()
 
-    def update_data(self, text_label, cat, global_idx, full_text, color, font_family, scale=1.0):
+    def update_data(self, text_label, cat, global_idx, full_text, color, font_family, scale=1.0,
+                    title_bold=False):
         is_editing = getattr(self.main_win, 'editing_snippet', None) == (cat, global_idx)
-        current_state = (text_label, cat, global_idx, full_text, color, font_family, scale, is_editing)
+        current_state = (text_label, cat, global_idx, full_text, color, font_family, scale,
+                         is_editing, title_bold)
         if getattr(self, '_last_state', None) == current_state:
             self.show()
             return
@@ -106,6 +108,7 @@ class DraggableButton(QPushButton):
         f = QFont(font_family)
         base_size = 10  # base size in points
         f.setPointSizeF(max(8.0, base_size * scale))
+        f.setBold(title_bold)
         self.setFont(f)
 
         self._last_width = -1
@@ -248,8 +251,10 @@ class SnippetWidget(QWidget):
             btn.clicked.connect(self.on_action_clicked)
             self.layout.addWidget(btn)
 
-    def update_data(self, text_label, cat, global_idx, full_text, color, font_family, scale):
-        self.main_btn.update_data(text_label, cat, global_idx, full_text, color, font_family, scale)
+    def update_data(self, text_label, cat, global_idx, full_text, color, font_family, scale,
+                    title_bold=False):
+        self.main_btn.update_data(text_label, cat, global_idx, full_text, color, font_family,
+                                  scale, title_bold=title_bold)
 
         current_state = (text_label, cat, global_idx, full_text, color, font_family, scale, self.main_win.data.get("theme", "Default"), self.main_win.data.get("button_scale", "1.0"))
         if getattr(self, '_last_state', None) == current_state:
@@ -501,9 +506,9 @@ class DraggableSiloButton(QWidget):
         from PyQt6.QtCore import QSize
         return QSize(10, self._lbl_text.fontMetrics().height() + 10)
 
-    def update_data(self, text_label, global_idx, bg_color, font_family="Verdana", scale=1.0, line_count_str="", is_pushed=False):
+    def update_data(self, text_label, global_idx, bg_color, font_family="Verdana", scale=1.0, line_count_str="", is_pushed=False, title_bold=False):
         theme_name = self.main_win.data.get("theme", "Default")
-        current_state = (text_label, global_idx, bg_color, font_family, scale, theme_name, line_count_str, is_pushed)
+        current_state = (text_label, global_idx, bg_color, font_family, scale, theme_name, line_count_str, is_pushed, title_bold)
         if getattr(self, '_last_state', None) == current_state:
             self.show()
             return
@@ -518,8 +523,11 @@ class DraggableSiloButton(QWidget):
         f = QFont(font_family)
         base_size = 10
         f.setPointSizeF(max(8.0, base_size * scale))
+        f.setBold(title_bold)
         self._lbl_text.setFont(f)
-        self._lbl_count.setFont(f)
+        f2 = QFont(f)
+        f2.setBold(False)
+        self._lbl_count.setFont(f2)
 
         self._update_text()
 

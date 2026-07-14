@@ -1042,6 +1042,94 @@ def test_inline_timestamp_refresh_glyph(win):
     assert ta._ts_glyph_rect(ta.document().firstBlock()) is None
 
 
+def test_code_fence_gutter_and_states(win):
+    win.tab_bar.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    win.data["show_line_numbers"] = "False"
+    win.preview_combo.setCurrentIndex(1)  # Live Preview attaches the highlighter
+    code = "intro\n```python\ndef hello():\n    return 42\n```\nafter"
+    win.data["temp_presets"][:] = [code]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    ta = win.text_area
+    ta._refresh_checkbox_flag()
+    # code detected -> gutter auto-appears even with line numbers off
+    assert ta._doc_has_code is True
+    assert ta.line_number_area_width() > 0
+    # highlighter tracked the fence: inner code lines carry the CODE bit
+    from fastprompter.ui.markdown_highlighter import CODE_BIT
+
+    win.highlighter.rehighlight()
+    doc = ta.document()
+    assert max(0, doc.findBlockByNumber(1).userState()) & CODE_BIT  # ```python
+    assert max(0, doc.findBlockByNumber(2).userState()) & CODE_BIT  # def hello():
+    assert not max(0, doc.findBlockByNumber(5).userState()) & CODE_BIT  # after
+    # plain text -> flag clears and the gutter hides again
+    win.data["temp_presets"][:] = ["no code here"]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    ta._refresh_checkbox_flag()
+    assert ta._doc_has_code is False
+    assert ta.line_number_area_width() == 0
+
+
+def test_margin_marks_survive_code_highlighting(win):
+    win.tab_bar.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    win.preview_combo.setCurrentIndex(1)
+    win.data["temp_presets"][:] = ["```\ncode line\n```"]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    ta = win.text_area
+    win.highlighter.rehighlight()
+    from fastprompter.ui.markdown_highlighter import CODE_BIT
+
+    block = ta.document().findBlockByNumber(1)
+    assert max(0, block.userState()) & CODE_BIT
+    # place a margin mark on the code line the same way the gutter click does
+    state = max(0, block.userState())
+    mark = state & 0xFF
+    block.setUserState((state & ~0xFF) | ((mark + 1) % 4))
+    assert max(0, block.userState()) & 0xFF == 1
+    assert max(0, block.userState()) & CODE_BIT  # code bit intact
+    # a rehighlight must NOT wipe the mark
+    win.highlighter.rehighlight()
+    block = ta.document().findBlockByNumber(1)
+    assert max(0, block.userState()) & 0xFF == 1
+    assert max(0, block.userState()) & CODE_BIT
+
+
+def test_bold_hash_titles_toggle(win):
+    win.tab_bar.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    win.data["bold_hash_titles"] = "True"
+    win.data["temp_presets"][:] = ["# Important title\nbody", "plain silo"]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    win.refresh_temp_presets()
+    assert win.silo_buttons[0].global_idx in (0, 1)
+    by_idx = {b.global_idx: b for b in win.silo_buttons[:2]}
+    assert by_idx[0]._lbl_text.font().bold() is True
+    assert by_idx[1]._lbl_text.font().bold() is False
+    # toggle off -> refresh -> no bold
+    win.data["bold_hash_titles"] = "False"
+    win.refresh_temp_presets()
+    by_idx = {b.global_idx: b for b in win.silo_buttons[:2]}
+    assert by_idx[0]._lbl_text.font().bold() is False
+    win.data["bold_hash_titles"] = "True"
+
+    # snippets: a '#'-starting snippet gets a bold sidebar title
+    cat = win.get_current_category()
+    win.data["categories"][cat][0] = {"name": "hdr", "text": "# heading note", "last_edited": 0}
+    win.data["categories"][cat][1] = {"name": "plain", "text": "just text", "last_edited": 0}
+    win.refresh_snippets_panel()
+    assert win.snippet_buttons[0].main_btn.font().bold() is True
+    assert win.snippet_buttons[1].main_btn.font().bold() is False
+    win.data["categories"][cat][0] = None
+    win.data["categories"][cat][1] = None
+    win.refresh_snippets_panel()
+
+
 def test_ctrl_e_header_timestamp(win):
     import re
 

@@ -35,6 +35,9 @@ class _MockQTextCharFormat:
     def setFontStrikeOut(self, v):
         self._font_strikeout = v
 
+    def setFontFixedPitch(self, v):
+        self._font_fixed_pitch = v
+
     def setProperty(self, key, value):
         self._properties[key] = value
 
@@ -110,6 +113,16 @@ class _MockQSyntaxHighlighter:
     def rehighlight(self):
         """Clear format calls to simulate rehighlight."""
         self._format_calls.clear()
+
+    # block-state API used for fenced-code tracking
+    def previousBlockState(self):
+        return getattr(self, "_prev_state", -1)
+
+    def currentBlockState(self):
+        return getattr(self, "_cur_state", -1)
+
+    def setCurrentBlockState(self, state):
+        self._cur_state = state
 
 
 class _MockTextDocument:

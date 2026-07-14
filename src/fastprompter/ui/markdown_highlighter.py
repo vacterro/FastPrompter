@@ -3,6 +3,25 @@ import re
 from PyQt6 import sip
 from PyQt6.QtGui import QColor, QFont, QSyntaxHighlighter, QTextCharFormat, QTextFormat
 
+# Block-state bit layout (block.userState is shared with the editor's
+# margin marks): bits 0-7 = margin mark (0-3), bit 8 = inside code fence.
+CODE_BIT = 1 << 8
+MARK_MASK = 0xFF
+
+# Universal keyword set covering the popular languages (Python, JS/TS,
+# C/C++/C#, Java, Go, Rust, PHP, Ruby, SQL, Bash, PowerShell...)
+_CODE_KEYWORDS = (
+    "def|class|import|from|return|if|elif|else|for|while|try|except|finally|"
+    "with|as|pass|break|continue|lambda|yield|async|await|raise|assert|"
+    "function|var|let|const|new|this|typeof|instanceof|export|default|"
+    "public|private|protected|static|void|int|float|double|bool|boolean|"
+    "string|char|long|short|struct|enum|interface|extends|implements|"
+    "namespace|using|template|typename|virtual|override|switch|case|do|"
+    "goto|sizeof|null|nullptr|None|true|false|True|False|nil|fn|impl|mut|"
+    "match|trait|package|func|go|defer|chan|select|SELECT|FROM|WHERE|"
+    "INSERT|UPDATE|DELETE|JOIN|echo|print|println|printf|console"
+)
+
 
 class MarkdownHighlighter(QSyntaxHighlighter):
     def __init__(self, parent=None, base_font_size=11):
@@ -109,6 +128,24 @@ class MarkdownHighlighter(QSyntaxHighlighter):
         cb_checked.setForeground(QColor(0, 0, 0, 0))
         self._highlighting_rules.append((re.compile(r'^\s*\[[xX]\]\s'), cb_checked))
 
+        # --- Fenced code blocks: monospace + panel background ---
+        def _code_fmt(color):
+            fmt = QTextCharFormat()
+            fmt.setFontFamily("Consolas")
+            fmt.setFontFixedPitch(True)
+            fmt.setBackground(QColor("#161616"))
+            fmt.setForeground(QColor(color))
+            return fmt
+
+        self._code_block_format = _code_fmt("#c8ccd4")
+        self._code_fence_format = _code_fmt("#5f6672")
+        self._code_sub_rules = [
+            (re.compile(r'(#|//).*$'), _code_fmt("#7f848e")),          # comments
+            (re.compile(r'"[^"\n]*"|\'[^\'\n]*\''), _code_fmt("#98c379")),  # strings
+            (re.compile(r'\b\d+(\.\d+)?\b'), _code_fmt("#d19a66")),   # numbers
+            (re.compile(r'\b(?:' + _CODE_KEYWORDS + r')\b'), _code_fmt("#c678dd")),
+        ]
+
         # Lists (Bullets and Numbers)
         list_format = QTextCharFormat()
         list_format.setForeground(QColor("#D9B340"))
@@ -117,6 +154,31 @@ class MarkdownHighlighter(QSyntaxHighlighter):
 
     def highlightBlock(self, text):
         if self._skip_highlighting or sip.isdeleted(self): return
+
+        # Preserve the editor's margin-mark bits while tracking fences
+        prev_in_code = bool(max(0, self.previousBlockState()) & CODE_BIT)
+        mark_bits = max(0, self.currentBlockState()) & MARK_MASK
+        is_fence = text.strip().startswith("```")
+
+        if prev_in_code:
+            if is_fence:
+                # closing fence: code region ends after this line
+                self.setCurrentBlockState(mark_bits)
+                self.setFormat(0, len(text), self._code_fence_format)
+            else:
+                self.setCurrentBlockState(mark_bits | CODE_BIT)
+                self.setFormat(0, len(text), self._code_block_format)
+                for pattern, fmt in self._code_sub_rules:
+                    for match in pattern.finditer(text):
+                        self.setFormat(match.start(), match.end() - match.start(), fmt)
+            return
+        if is_fence:
+            # opening fence (``` or ```lang)
+            self.setCurrentBlockState(mark_bits | CODE_BIT)
+            self.setFormat(0, len(text), self._code_fence_format)
+            return
+        self.setCurrentBlockState(mark_bits)
+
         for pattern, format in self._highlighting_rules:
             for match in pattern.finditer(text):
                 self.setFormat(match.start(), match.end() - match.start(), format)
