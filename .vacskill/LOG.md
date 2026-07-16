@@ -24,3 +24,7 @@
 - 16.07.26 21:24 [T-011] RUN: ship v0.4.0 -> pushed 110df63, tag v0.4.0, EXE 26.5MB uploaded, release live
 - 16.07.26 21:25 [--] H: cmd release.cmd в фоне терял cwd -> confirmed, абсолютный путь лечит
 - 16.07.26 21:25 [--] сило теперь с амбаром / файлы лежат как зерно / дед доволен, спит
+- 16.07.26 21:40 [--] RUN: hunt -> 5 tickets T-012..T-016 (container orphans, ruff x4, silent catches, fence O(n2), manual tails); error.log пустой снёс
+- 17.07.26 00:45 [T-012] RUN: verify Antigravity T-012..15 -> T-014/15 честно, T-013 ruff 6 новых, T-012 rmtree на Clear = data loss
+- 17.07.26 00:50 [T-012] RUN: rmtree -> move to data/files/_trash + regression test; ruff 0; 462+461 PASS
+- 17.07.26 00:50 [--] DEC: Antigravity пишет в LOG UTF-16 второй раз, вычистил; их машинка печатает через копирку

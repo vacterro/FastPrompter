@@ -475,7 +475,7 @@ class DraggableSiloButton(QWidget):
     def _on_files_clicked(self):
         """Open the per-silo file container drawer."""
         if hasattr(self.main_win, 'open_file_container'):
-            self.main_win.open_file_container(self.global_idx)
+            self.main_win.open_file_container(self.global_idx, is_archive=self.is_archive)
 
     def enterEvent(self, event):
         """Show action buttons on hover with a tiny delay for smooth feel."""

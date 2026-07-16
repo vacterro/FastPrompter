@@ -5,6 +5,7 @@ import sqlite3
 import threading
 import time
 
+from fastprompter.core.logging import logger
 from fastprompter.utils.paths import get_db_path
 from fastprompter.utils.portable_backup import run_portable_backup
 
@@ -79,7 +80,7 @@ class FastPrompterState:
                 cur.execute("DROP TABLE archive_temp_presets")
 
             try: cur.execute("ALTER TABLE presets ADD COLUMN last_edited INTEGER")
-            except Exception: pass
+            except Exception as e: logger.warning(f"Error migrating DB schema (ADD COLUMN): {e}")
             self.conn.commit()
 
             for row in cur.execute('SELECT key, value FROM settings'):
@@ -107,7 +108,7 @@ class FastPrompterState:
                     except Exception:
                         import ast
                         try: self.data[row[0]] = ast.literal_eval(row[1])
-                        except Exception: pass
+                        except Exception as e: logger.warning(f"Failed to parse custom_colors using ast: {e}")
                 else: self.data[row[0]] = row[1]
 
             for cat in self.data['cats_order']:
@@ -312,7 +313,7 @@ class FastPrompterState:
                     finally:
                         if dest_conn:
                             try: dest_conn.close()
-                            except Exception: pass
+                            except Exception as e: logger.warning(f"Failed to close dest_conn in backup: {e}")
                         # Portable file backup (throttled internally)
                         if self.data.get("portable_backup_enabled", "True") == "True":
                             run_portable_backup(self.data)

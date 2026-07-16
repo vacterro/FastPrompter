@@ -10,6 +10,8 @@ from PyQt6 import sip
 from PyQt6.QtGui import QTextCursor, QTextDocument
 from PyQt6.QtWidgets import QApplication, QFileDialog, QInputDialog, QMessageBox
 
+from fastprompter.core.logging import logger
+
 _is_deleted = sip.isdeleted
 
 
@@ -409,13 +411,41 @@ class SnippetOpsMixin:
             self.del_silo()
             return
 
-        # Silo is empty, user wants to delete the empty silo count
-        self.del_silo()
+    def _delete_file_container(self, cat, text):
+        """Retire a silo's file folder when the silo is cleared/deleted.
+
+        Never destroys user assets: the folder is MOVED to
+        data/files/_trash/<slug>-<n>/ so it survives an accidental clear
+        (silo text is undoable via Ctrl+Z; files must not be less safe)."""
+        import os
+        import shutil
+        import time
+
+        from fastprompter.ui.file_container import silo_files_dir
+        if not hasattr(self, "_files_root"):
+            return
+        d = silo_files_dir(self._files_root(), cat, text)
+        try:
+            if not os.path.isdir(d) or not os.listdir(d):
+                if os.path.isdir(d):
+                    os.rmdir(d)  # empty folder: no assets to keep
+                return
+            trash = os.path.join(self._files_root(), "_trash")
+            os.makedirs(trash, exist_ok=True)
+            dest = os.path.join(trash, f"{os.path.basename(d)}-{int(time.time())}")
+            n = 2
+            while os.path.exists(dest):
+                dest = os.path.join(trash, f"{os.path.basename(d)}-{int(time.time())}-{n}")
+                n += 1
+            shutil.move(d, dest)
+        except OSError as e:
+            logger.warning(f"Could not retire file container {d}: {e}")
 
     def delete_preset_by_index(self, cat, global_idx):
         """Delete a snippet at the given category and index."""
         if self.data["categories"][cat][global_idx] is not None:
             self.add_data_undo_state("Delete snippet")
+            self._delete_file_container(cat, self.data["categories"][cat][global_idx]["text"])
         if getattr(self, "editing_snippet", None) == (cat, global_idx):
             self.editing_snippet = None
             self.btn_save.setText("Save")
@@ -463,6 +493,10 @@ class SnippetOpsMixin:
             if idx == self.active_temp_slot:
                 presets[idx] = self.text_area.toPlainText()
             self.add_data_undo_state("Delete silo")
+            
+            old_text = presets[idx]
+            self._delete_file_container(self.get_current_category(), old_text)
+            
             presets.pop(idx)
             if idx < len(docs):
                 docs.pop(idx)

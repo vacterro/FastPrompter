@@ -1,7 +1,6 @@
 import os
 import re
 
-import datetime
 from PyQt6 import sip
 from PyQt6.QtCore import QPoint, QRect, QRectF, QSize, Qt, QTimer, QUrl
 from PyQt6.QtGui import (
@@ -258,10 +257,18 @@ class VaultTextEdit(QTextEdit):
         return None
 
     def _fence_is_opener(self, block):
-        """True when this ``` line OPENS a code block (parity from doc
-        start; docs over 2000 blocks skip code niceties anyway)."""
+        """True when this ``` line OPENS a code block (O(1) lookup via highlighter state)."""
         if not block.text().strip().startswith("```"):
             return False
+        prev = block.previous()
+        if not prev.isValid():
+            return True
+            
+        ustate = prev.userState()
+        if ustate != -1:
+            return not (ustate & 256) # CODE_BIT is 1 << 8
+            
+        # Fallback to O(N) if highlighter hasn't parsed the block yet (e.g. in tests)
         opens = True
         b = self.document().firstBlock()
         while b.isValid() and b.blockNumber() < block.blockNumber():

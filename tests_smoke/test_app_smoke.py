@@ -1206,6 +1206,35 @@ def test_file_container_import_export_delete(win):
     panel.close()
 
 
+def test_clear_silo_moves_files_to_trash_not_delete(win):
+    # Regression: clearing a silo must NEVER destroy its container files —
+    # they go to data/files/_trash/ (silo text is undoable; files can't be less safe)
+    root = os.path.join(_tmpdir, "files_root_trash")
+    win._files_root = lambda: root  # keep the test out of the real data dir
+    win.tab_bar.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    win.data["temp_presets"][:] = ["# Trash Test Silo", "other"]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+
+    from fastprompter.ui.file_container import silo_files_dir
+    folder = silo_files_dir(root, win.get_current_category(), "# Trash Test Silo")
+    os.makedirs(folder, exist_ok=True)
+    keep = os.path.join(folder, "precious.txt")
+    with open(keep, "w", encoding="utf-8") as f:
+        f.write("do not lose me")
+
+    win.clear_temp(0)
+    assert not os.path.exists(keep)  # moved away from the silo folder
+    trash = os.path.join(root, "_trash")
+    rescued = []
+    for base, _dirs, files in os.walk(trash):
+        rescued += [os.path.join(base, n) for n in files if n == "precious.txt"]
+    assert rescued, "file must survive in _trash after silo clear"
+    with open(rescued[0], encoding="utf-8") as f:
+        assert f.read() == "do not lose me"
+
+
 def test_file_container_button_wired(win):
     assert win.btn_files is not None
     assert callable(win.open_file_container)

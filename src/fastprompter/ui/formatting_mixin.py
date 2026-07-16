@@ -10,8 +10,6 @@ import re
 import markdown
 from PyQt6.QtGui import QFont, QTextCharFormat, QTextCursor
 
-from fastprompter.core.logging import logger
-
 # Pre-compiled regex patterns for markdown processing
 _RE_DASH_LINE = re.compile(r"^\s*-{3,}\s*$")
 _RE_HEADER_DASH = re.compile(r"^\s*-{3,}\s*$")

@@ -11,7 +11,6 @@ import time
 from PyQt6 import sip
 from PyQt6.QtCore import (
     QEvent,
-    QMimeData,
     Qt,
     QTimer,
 )
@@ -256,12 +255,13 @@ class FastPrompter(
         from fastprompter.utils.paths import get_data_dir
         return os.path.join(get_data_dir(), "files")
 
-    def open_file_container(self, global_idx=None):
+    def open_file_container(self, global_idx=None, is_archive=False):
         """Open the per-silo file drawer (📁 button / silo hover button)."""
         from fastprompter.ui.file_container import FileContainerPanel
         if global_idx is None:
             global_idx = self.active_temp_slot
-        presets = self.data.get("temp_presets", [])
+            is_archive = getattr(self, "active_is_archive", False)
+        presets = self.data.get("archive_temp_presets" if is_archive else "temp_presets", [])
         text = presets[global_idx] if 0 <= global_idx < len(presets) else ""
         if getattr(self, "_file_container", None) is None:
             self._file_container = FileContainerPanel(self)
@@ -2071,13 +2071,29 @@ class FastPrompter(
         if getattr(self, "_initializing_ui", False):
             return
         current_text = self.text_area.toPlainText()
+        cat = self.get_current_category()
+        
+        def _sync_folder(old_text, new_text):
+            from fastprompter.ui.file_container import silo_files_dir, silo_slug
+            if silo_slug(old_text) != silo_slug(new_text):
+                old_dir = silo_files_dir(self._files_root(), cat, old_text)
+                new_dir = silo_files_dir(self._files_root(), cat, new_text)
+                if os.path.exists(old_dir) and not os.path.exists(new_dir):
+                    os.makedirs(os.path.dirname(new_dir), exist_ok=True)
+                    os.rename(old_dir, new_dir)
+
         if not self.editing_snippet:
             if 0 <= self.active_temp_slot < len(self.data["temp_presets"]):
+                old_text = self.data["temp_presets"][self.active_temp_slot]
+                _sync_folder(old_text, current_text)
                 self.data["temp_presets"][self.active_temp_slot] = current_text
         else:
-            cat, idx = self.editing_snippet
-            if cat in self.data["categories"] and self.data["categories"][cat][idx]:
-                self.data["categories"][cat][idx]["text"] = current_text
+            cat_snip, idx = self.editing_snippet
+            if cat_snip in self.data["categories"] and self.data["categories"][cat_snip][idx]:
+                old_text = self.data["categories"][cat_snip][idx]["text"]
+                cat = cat_snip  # for the sync
+                _sync_folder(old_text, current_text)
+                self.data["categories"][cat_snip][idx]["text"] = current_text
 
     def open_color_settings(self):
         dlg = ColorConfigDialog(self)
@@ -2600,6 +2616,11 @@ class FastPrompter(
             display_idx = slot_idx + 1
             line_count = raw.count("\n") + 1 if raw.strip() else 0
             line_str = str(line_count) if line_count > 0 else ""
+            
+            from fastprompter.ui.file_container import silo_file_count
+            fcount = silo_file_count(self._files_root(), self.get_current_category(), raw)
+            if fcount > 0:
+                line_str = f"📁{fcount} " + line_str
             label = f"{display_idx}: {text}" if text else f"{display_idx}"
             is_active = (
                 getattr(self, "active_is_archive", False)
@@ -2897,6 +2918,11 @@ class FastPrompter(
                 
             line_count = raw.count("\n") + 1 if raw.strip() else 0
             line_str = str(line_count) if line_count > 0 else ""
+            
+            from fastprompter.ui.file_container import silo_file_count
+            fcount = silo_file_count(self._files_root(), self.get_current_category(), raw)
+            if fcount > 0:
+                line_str = f"📁{fcount} " + line_str
             pin_str = "📌 " if is_pinned else ""
             label = f"{pin_str}{display_idx}: {text}" if text else f"{pin_str}{display_idx}"
             is_active = (
@@ -3115,6 +3141,12 @@ class FastPrompter(
             return
         self.add_data_undo_state("Clear silo")
         self.play_sound("clear")
+        
+        if 0 <= idx < len(presets):
+            old_text = presets[idx]
+            if hasattr(self, "_delete_file_container"):
+                self._delete_file_container(self.get_current_category(), old_text)
+
         if is_archive:
             self.data["archive_temp_presets"][idx] = ""
             if idx == self.active_temp_slot and getattr(self, "active_is_archive", False):
