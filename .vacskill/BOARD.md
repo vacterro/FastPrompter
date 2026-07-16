@@ -1,20 +1,21 @@
 ## DOING
-- [ ] T-019 Day-part word in date clock (Morning/Day/Evening/Night after time) | files: main.py | verify: pytest tests_smoke/ -q | ui
 
 ## TODO
-- [ ] T-020 Header button (Ctrl+E action) in toolbar button bar | files: main.py | verify: pytest tests_smoke/ -q | ui
-- [ ] T-023 File count on header 📁 btn + rich hover tooltip (per-ext counts, sizes) on all 📁 buttons | files: main.py, snippet_panel.py, file_container.py | verify: pytest tests_smoke/ -q | ui
-- [ ] T-022 File panel view modes: Icons/List/Details cycle like Explorer, persisted | files: file_container.py | verify: pytest tests_smoke/ -q | ui
-- [ ] T-026 Clipboard -> file button in container (text clipboard saved as .txt) | files: file_container.py | verify: pytest tests_smoke/ -q | ui
-- [ ] T-025 File links in container: import-as-link (.lnk via WScript.Shell), open resolves target | files: file_container.py | verify: pytest tests_smoke/ -q + MANUAL | ui
-- [ ] T-024 Drop text-based file on editor -> ask: insert as text / add to silo files | files: editor.py, main.py | verify: pytest tests_smoke/ -q | ui
-- [ ] T-027 Configurable files root: setting + folder picker, _files_root reads data[files_root] | files: main.py, snippet_ops_mixin.py | verify: pytest tests_smoke/ -q | ui
-- [ ] T-021 Collapsible code blocks + # headers (fold via block.setVisible; spike first — QTextEdit layout may ignore hidden blocks) | files: editor.py, markdown_highlighter.py | verify: pytest tests_smoke/ -q | ui
-- [ ] T-028 REVIEW wave + ship v0.5.0 | verify: release URL live | needs: T-019 T-020 T-022 T-023 T-024 T-026 T-027
+- [ ] T-029 MANUAL-VERIFY tails: fold click feel in real GUI, .url double-click opens target, drop-choice dialog, EXE v0.5.0 first launch, container drag-out | verify: user confirms | ui
 
 ## DONE (this wave)
 - [x] T-017 Regression pass prior features (verified: 462 smoke + 461 unit PASS, conf: high)
 - [x] T-018 Backup to N:\__SAVE_N\_SOFT\_FastPrompter (verified: robocopy exit 1 = copied, conf: high)
+- [x] T-019 Day word in date clock + toggle (verified: smoke PASS, conf: high)
+- [x] T-020 H toolbar button = Ctrl+E (verified: smoke PASS, conf: high)
+- [x] T-021 Folding: code fences + # headers, FOLD_BIT, Expand All Folds (verified: test_fold_code_blocks_and_headers PASS, conf: high — GUI feel MANUAL)
+- [x] T-022 View modes Icons/List/Details persisted (verified: smoke PASS, conf: high)
+- [x] T-023 📁 counter + per-type size tooltip, header + hover (verified: smoke PASS, conf: high)
+- [x] T-024 Drop text file asks text/file; binary -> container (verified: compile + smoke, conf: med — dialog MANUAL)
+- [x] T-025 .url links via Alt+drop / menu (verified: smoke PASS, conf: high — open target MANUAL)
+- [x] T-026 Clipboard -> file (verified: smoke PASS, conf: high)
+- [x] T-027 Configurable files root + reset (verified: smoke PASS, conf: high)
+- [x] T-028 REVIEW + ship v0.5.0 (verified: EXE download URL 302->blob live, conf: high; GitHub API flaked 503, released via gh CLI)
 
 ## DONE (archive)
 - [x] T-001..T-011 v0.4.0 wave — see LOG/tags

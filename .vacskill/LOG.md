@@ -34,3 +34,6 @@
 - 17.07.26 01:32 [T-024/27] RUN: drop text file спрашивает text/file, files_root настраиваемый -> 64 PASS
 - 17.07.26 01:50 [T-021] RUN: folding built (FOLD_BIT 1<<9, setVisible, gutter/hit-test skip hidden) -> 65 PASS; QTextEdit прячет строки как дед заначку
 - 17.07.26 02:00 [T-028] DEC: REVIEW -> SHIP; _dir_size без кэпа мог заморозить свитч на гигантской папке, кэп 2000 файлов
+- 17.07.26 02:30 [T-028] RUN: ship v0.5.0 -> tag pushed, EXE 26.6MB via gh CLI (release.py дважды словил Unicorn 503, апи легло — качели)
+- 17.07.26 02:32 [T-028] RUN: curl asset -> 302 blob, релиз живой
+- 17.07.26 02:33 [--] заголовок сложился / код спрятался под стрелкой / дед жмёт и хихикает
