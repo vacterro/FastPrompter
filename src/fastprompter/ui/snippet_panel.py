@@ -511,6 +511,17 @@ class DraggableSiloButton(QWidget):
             self._btn_pin.show()
             self._btn_archive.show()
             self._btn_files.show()
+            try:
+                from fastprompter.ui.file_container import folder_summary
+                presets = self.main_win.data.get("temp_presets", [])
+                text = presets[self.global_idx] if 0 <= self.global_idx < len(presets) else ""
+                self._btn_files.setToolTip(
+                    "Files: drop/drag/preview assets for this silo\n\n"
+                    + folder_summary(self.main_win._files_root(),
+                                     self.main_win.get_current_category(), text)
+                )
+            except Exception:
+                pass  # tooltip is decoration; hover must never break
         else:
             self._btn_pin.hide()
             self._btn_archive.hide()

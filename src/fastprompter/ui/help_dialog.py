@@ -58,6 +58,9 @@ def build_help_html(data) -> str:
         ("Middle-click a silo", "Clear it — middle-click an empty one to delete the slot"),
         ("Hover a silo", "&#128193; files, &#128204; pin and &#128229; archive buttons appear"),
         ("Click &#9112; on a ``` code fence", "Copy that code block to the clipboard"),
+        ("Click &#9662; on a header / fence", "Fold (collapse) the section; right-click editor &rarr; Expand All Folds"),
+        ("Alt+drop files on the Files panel", "Add .url links instead of copies"),
+        ("Drop a text file on the editor", "Choose: insert as text, or store in the silo's Files"),
         ("Right-click a silo", "Transfer to project, replace from, move to bottom&hellip;"),
         ("Drag a silo between others / onto one", "Reorder / swap"),
         ("Left / right half-click a snippet", "Open with the cursor at start / end"),
@@ -76,9 +79,13 @@ def build_help_html(data) -> str:
         "<li><b>Code blocks</b> — ``` fences render monospace with syntax tints, "
         "auto line numbers and a one-click &#9112; copy button on the fence line</li>"
         "<li><b>File container</b> (&#128193;) — per-silo asset drawer: drop ANY "
-        "files in, drag them out, preview images, open, export. Plain folders under "
-        "<code>data/files/&lt;project&gt;/&lt;silo-title&gt;/</code> — fully readable "
-        "outside FastPrompter</li>"
+        "files in, drag them out, preview images, open, export, link (.url), save "
+        "clipboard as file. Explorer-style Icons / List / Details views. Plain folders "
+        "under <code>data/files/&lt;project&gt;/&lt;silo-title&gt;/</code> (location "
+        "configurable in settings) — fully readable outside FastPrompter. The &#128193; "
+        "button shows a live file count; hover for a per-type size breakdown</li>"
+        "<li><b>Folding</b> — collapse code blocks and # header sections with the "
+        "&#9662; box; deleted-anchor escape hatch: right-click &rarr; Expand All Folds</li>"
         "<li><b>Scale</b> — 50&ndash;150% whole-UI scaling with readable minimums</li>"
         "<li><b>Sounds</b> — optional UI clicks and typewriter effect (settings &#9881;)</li>"
         "<li><b>Data</b> — SQLite in <code>data/</code> next to the app; daily Markdown "

@@ -37,8 +37,9 @@ Press `Alt+X` anywhere — in your browser, IDE, terminal — and FastPrompter p
 | 📌 **Pin & tint** | Hover a silo for pin/archive buttons; silos tint by how recently you edited them |
 | 🖱️ **Wheel everything** | Wheel flips pages & switches tabs, `Ctrl+wheel` walks silos or zooms text |
 | ✍️ **Markdown editor** | Live highlighting, real checkboxes, auto-bullets, `---` dividers, `Ctrl+E` headers with timestamp |
-| 💻 **Code blocks** | ``` fences render monospace with syntax tints, auto line numbers and a one-click copy button |
-| 📁 **File container** | Per-silo asset drawer: drop *any* files in, drag them out, preview images — stored as plain folders you can read without the app |
+| 💻 **Code blocks** | ``` fences render monospace with syntax tints, auto line numbers, one-click copy and folding |
+| 📁 **File container** | Per-silo asset drawer: drop *any* files in, drag them out, preview images, link originals, Explorer-style views — plain folders you can read without the app |
+| 🗃️ **Fold sections** | Collapse `#` headers and code blocks like a real Markdown editor |
 | 🦓 **Readability** | Zebra stripes, line numbers with clickable margin marks, word wrap, zen mode |
 | 🎨 **6 vintage themes** | Win95-style bevels, warm amber-on-black, OLED — plus a full custom color editor |
 | 🎵 **Sounds** | Optional UI clicks and a typewriter tick, with volume control |

@@ -1206,6 +1206,120 @@ def test_file_container_import_export_delete(win):
     panel.close()
 
 
+def test_fold_code_blocks_and_headers(win):
+    win.tab_bar.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    win.data["temp_presets"][:] = [
+        "# Title\nbody1\nbody2\n# Next\nother\n```python\ncode1\ncode2\n```\ntail"
+    ]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    ta = win.text_area
+    doc = ta.document()
+
+    # header fold: hides body1+body2, stops before "# Next"
+    header = doc.firstBlock()
+    assert ta._is_fold_anchor(header)
+    first, last = ta._fold_range(header)
+    assert first.text() == "body1" and last.text() == "body2"
+    ta.toggle_fold(header)
+    assert not doc.findBlockByNumber(1).isVisible()
+    assert not doc.findBlockByNumber(2).isVisible()
+    assert doc.findBlockByNumber(3).isVisible()  # "# Next" survives
+    assert max(0, header.userState()) & ta.FOLD_BIT
+    ta.toggle_fold(header)
+    assert doc.findBlockByNumber(1).isVisible()
+    assert not (max(0, header.userState()) & ta.FOLD_BIT)
+
+    # fence fold: hides code lines through the closing fence
+    fence = doc.findBlockByNumber(5)
+    assert ta._is_fold_anchor(fence)
+    ta.toggle_fold(fence)
+    assert not doc.findBlockByNumber(6).isVisible()
+    assert not doc.findBlockByNumber(8).isVisible()  # closing ```
+    assert doc.findBlockByNumber(9).isVisible()      # tail
+
+    # text survives folding intact; unfold_all restores everything
+    assert "code1" in ta.toPlainText()
+    ta.unfold_all()
+    b = doc.firstBlock()
+    while b.isValid():
+        assert b.isVisible()
+        b = b.next()
+
+
+def test_file_container_views_links_clipboard(win):
+    from PyQt6.QtWidgets import QApplication as _QApp
+
+    from fastprompter.ui.file_container import FileContainerPanel
+
+    root = os.path.join(_tmpdir, "files_root_views")
+    panel = FileContainerPanel(win)
+    panel.open_for(root, "Main", "# Views Silo")
+
+    # view cycle: Icons -> List -> Details -> Icons, persisted in data
+    assert panel._view_mode() == "Icons"
+    panel._cycle_view()
+    assert win.data["file_panel_view"] == "List"
+    panel._cycle_view()
+    assert win.data["file_panel_view"] == "Details"
+    panel._cycle_view()
+    assert win.data["file_panel_view"] == "Icons"
+
+    # link import: .url file pointing at the original, no copy
+    target = os.path.join(_tmpdir, "linked_asset.psd")
+    with open(target, "wb") as f:
+        f.write(b"fake")
+    panel.import_links([target])
+    url_path = os.path.join(panel.folder, "linked_asset.psd.url")
+    assert os.path.isfile(url_path)
+    with open(url_path, encoding="utf-8") as f:
+        body = f.read()
+    assert body.startswith("[InternetShortcut]")
+    assert "linked_asset.psd" in body
+    assert not os.path.exists(os.path.join(panel.folder, "linked_asset.psd"))
+
+    # clipboard -> file
+    _QApp.clipboard().setText("clipboard payload")
+    panel.save_clipboard_as_file()
+    clips = [n for n in os.listdir(panel.folder) if n.startswith("clip-") and n.endswith(".txt")]
+    assert len(clips) == 1
+    with open(os.path.join(panel.folder, clips[0]), encoding="utf-8") as f:
+        assert f.read() == "clipboard payload"
+
+    # tooltip summary knows counts and sizes
+    from fastprompter.ui.file_container import folder_summary
+    tip = folder_summary(root, "Main", "# Views Silo")
+    assert "2 item(s)" in tip and ".url" in tip and ".txt" in tip
+    panel.close()
+
+
+def test_files_root_configurable_and_header_counter(win):
+    custom = os.path.join(_tmpdir, "custom_files_root")
+    os.makedirs(custom, exist_ok=True)
+    win.data["files_root"] = custom
+    assert win._files_root() == custom
+    win.data["files_root"] = ""
+    assert win._files_root().endswith(os.path.join("data", "files"))
+    win.data["files_root"] = custom
+
+    win.tab_bar.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    win.data["temp_presets"][:] = ["# Counter Silo"]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    from fastprompter.ui.file_container import silo_files_dir
+    folder = silo_files_dir(custom, win.get_current_category(), "# Counter Silo")
+    os.makedirs(folder, exist_ok=True)
+    with open(os.path.join(folder, "a.txt"), "w", encoding="utf-8") as f:
+        f.write("x")
+    win._update_files_button()
+    assert win.btn_files.text() == "📁1"
+    assert "1 item(s)" in win.btn_files.toolTip()
+    win.data["files_root"] = ""
+    win._update_files_button()
+
+
 def test_clear_silo_moves_files_to_trash_not_delete(win):
     # Regression: clearing a silo must NEVER destroy its container files —
     # they go to data/files/_trash/ (silo text is undoable; files can't be less safe)
@@ -1245,11 +1359,21 @@ def test_date_rectangle_formats_and_toggles(win):
     import re
     win.data["show_date_rect"] = "True"
     win.data["date_seconds"] = "True"
+    win.data["date_daypart"] = "False"
     win._update_date_label()
     assert re.fullmatch(r"\d{2}\.\d{2} - \d{2}:\d{2}:\d{2}", win.lbl_date.text())
     win.data["date_seconds"] = "False"
     win._update_date_label()
     assert re.fullmatch(r"\d{2}\.\d{2} - \d{2}:\d{2}", win.lbl_date.text())
+    win.data["date_daypart"] = "True"
+    win._update_date_label()
+    assert re.fullmatch(
+        r"\d{2}\.\d{2} - \d{2}:\d{2} · (Morning|Day|Evening|Night)",
+        win.lbl_date.text())
+    assert win._day_part(6) == "Morning"
+    assert win._day_part(13) == "Day"
+    assert win._day_part(19) == "Evening"
+    assert win._day_part(2) == "Night"
     win.data["show_date_rect"] = "False"
     win._update_date_label()
     assert win.lbl_date.isVisible() is False

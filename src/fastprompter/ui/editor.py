@@ -180,6 +180,8 @@ class VaultTextEdit(QTextEdit):
                 block = doc.findBlockByNumber(block_number)
                 if not block.isValid():
                     break
+                if not block.isVisible():  # folded away
+                    continue
                 cursor = QTextCursor(block)
                 rect = self.cursorRect(cursor)
                 
@@ -247,6 +249,9 @@ class VaultTextEdit(QTextEdit):
         block = self._first_visible_block()
         vp_h = self.viewport().height()
         while block is not None and block.isValid():
+            if not block.isVisible():
+                block = block.next()
+                continue
             r = self.cursorRect(QTextCursor(block))
             if r.top() > vp_h:
                 break
@@ -277,6 +282,123 @@ class VaultTextEdit(QTextEdit):
             b = b.next()
         return opens
 
+    # ---- folding (code fences + markdown headers) -------------------------
+
+    FOLD_BIT = 1 << 9
+
+    @staticmethod
+    def _header_level(text):
+        """1-6 for '# ...' .. '###### ...' lines, else 0."""
+        stripped = text.lstrip()
+        n = 0
+        while n < len(stripped) and stripped[n] == "#":
+            n += 1
+        return n if 0 < n <= 6 and stripped[n:n + 1] == " " else 0
+
+    def _is_fold_anchor(self, block):
+        text = block.text()
+        if self._header_level(text):
+            return True
+        return text.strip().startswith("```") and self._fence_is_opener(block)
+
+    def _fold_range(self, block):
+        """Blocks hidden when this anchor folds: (first, last) or None."""
+        text = block.text()
+        lvl = self._header_level(text)
+        first = block.next()
+        if not first.isValid():
+            return None
+        if lvl:
+            last = None
+            b = first
+            while b.isValid():
+                other = self._header_level(b.text())
+                if other and other <= lvl:
+                    break
+                last = b
+                b = b.next()
+            return (first, last) if last is not None else None
+        # fence opener: hide through the closing fence
+        b = first
+        last = None
+        while b.isValid():
+            last = b
+            if b.text().strip().startswith("```"):
+                break
+            b = b.next()
+        return (first, last) if last is not None else None
+
+    def _fold_rect(self, block):
+        """Rect of the fold toggle box on an anchor line."""
+        if block.text().strip().startswith("```"):
+            c = self._code_copy_rect(block)
+            return QRect(c.right() + 6, c.top(), c.width(), c.height())
+        ts = self._ts_glyph_rect(block)
+        if ts is not None:
+            size = ts.height()
+            return QRect(ts.right() + 6, ts.top(), size, size)
+        cur = QTextCursor(block)
+        cur.movePosition(QTextCursor.MoveOperation.EndOfBlock)
+        r = self.cursorRect(cur)
+        size = max(14, r.height() - 2)
+        return QRect(r.right() + 6, r.top() + (r.height() - size) // 2, size, size)
+
+    def _fold_block_at(self, pos):
+        if self.document().blockCount() > 2000:
+            return None
+        block = self._first_visible_block()
+        vp_h = self.viewport().height()
+        while block is not None and block.isValid():
+            if block.isVisible():
+                r = self.cursorRect(QTextCursor(block))
+                if r.top() > vp_h:
+                    break
+                if self._is_fold_anchor(block) and self._fold_rect(block).contains(pos):
+                    return block
+            block = block.next()
+        return None
+
+    def toggle_fold(self, anchor):
+        """Collapse/expand the region under a header or code fence."""
+        rng = self._fold_range(anchor)
+        if rng is None:
+            return
+        first, last = rng
+        state = max(0, anchor.userState())
+        collapse = not (state & self.FOLD_BIT)
+        b = first
+        while b.isValid():
+            b.setVisible(not collapse)
+            if b.blockNumber() >= last.blockNumber():
+                break
+            b = b.next()
+        anchor.setUserState(state | self.FOLD_BIT if collapse else state & ~self.FOLD_BIT)
+        doc = self.document()
+        doc.markContentsDirty(anchor.position(),
+                              last.position() + last.length() - anchor.position())
+        self.viewport().update()
+        if hasattr(self, "line_number_area"):
+            self.line_number_area.update()
+
+    def unfold_all(self):
+        """Safety hatch: show every block and clear all fold bits."""
+        doc = self.document()
+        b = doc.firstBlock()
+        changed = False
+        while b.isValid():
+            if not b.isVisible():
+                b.setVisible(True)
+                changed = True
+            state = max(0, b.userState())
+            if state & self.FOLD_BIT:
+                b.setUserState(state & ~self.FOLD_BIT)
+            b = b.next()
+        if changed:
+            doc.markContentsDirty(0, doc.characterCount())
+            self.viewport().update()
+            if hasattr(self, "line_number_area"):
+                self.line_number_area.update()
+
     def _code_copy_rect(self, block):
         """Rect of the inline copy button on an opening fence line."""
         cur = QTextCursor(block)
@@ -292,6 +414,9 @@ class VaultTextEdit(QTextEdit):
         block = self._first_visible_block()
         vp_h = self.viewport().height()
         while block is not None and block.isValid():
+            if not block.isVisible():
+                block = block.next()
+                continue
             r = self.cursorRect(QTextCursor(block))
             if r.top() > vp_h:
                 break
@@ -373,6 +498,12 @@ class VaultTextEdit(QTextEdit):
             return
         try:
             if event.button() == Qt.MouseButton.LeftButton:
+                fold_block = self._fold_block_at(event.pos())
+                if fold_block is not None:
+                    self._fold_pressed_block = fold_block.blockNumber()
+                    self.viewport().update()
+                    event.accept()
+                    return
                 code_block = self._code_copy_block_at(event.pos())
                 if code_block is not None:
                     self._copy_pressed_block = code_block.blockNumber()
@@ -430,6 +561,15 @@ class VaultTextEdit(QTextEdit):
         super().mousePressEvent(event)
 
     def mouseReleaseEvent(self, event):
+        pressed_fold = getattr(self, "_fold_pressed_block", None)
+        if pressed_fold is not None and event.button() == Qt.MouseButton.LeftButton:
+            self._fold_pressed_block = None
+            self.viewport().update()
+            block = self._fold_block_at(event.pos())
+            if block is not None and block.blockNumber() == pressed_fold:
+                self.toggle_fold(block)
+            event.accept()
+            return
         pressed_copy = getattr(self, "_copy_pressed_block", None)
         if pressed_copy is not None and event.button() == Qt.MouseButton.LeftButton:
             self._copy_pressed_block = None
@@ -480,7 +620,29 @@ class VaultTextEdit(QTextEdit):
             self._dragged = False
             event.ignore()
             return
-        super().contextMenuEvent(event)
+        menu = self.createStandardContextMenu()
+        menu.addSeparator()
+        menu.addAction("Expand All Folds", self.unfold_all)
+        menu.exec(event.globalPos())
+
+    def _ask_text_drop_choice(self, name):
+        """Dropped a text-based file: insert as text, or store as a file?
+        Returns 'text', 'file' or 'cancel'."""
+        from PyQt6.QtWidgets import QMessageBox
+        box = QMessageBox(self.main_win)
+        box.setWindowTitle("Add dropped file")
+        box.setText(f"How should '{name}' be added?")
+        btn_text = box.addButton("Insert as Text", QMessageBox.ButtonRole.AcceptRole)
+        btn_file = box.addButton("Add to Silo Files 📁", QMessageBox.ButtonRole.ActionRole)
+        box.addButton(QMessageBox.StandardButton.Cancel)
+        box.setDefaultButton(btn_text)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked is btn_text:
+            return "text"
+        if clicked is btn_file:
+            return "file"
+        return "cancel"
 
     def insertFromMimeData(self, source):
         if source.hasUrls():
@@ -498,15 +660,20 @@ class VaultTextEdit(QTextEdit):
                         ".properties", ".gradle", ".sln", ".csproj", ".vcxproj"
                     }
                     if ext in text_extensions or not ext:
-                        try:
-                            with open(path, encoding="utf-8", errors="replace") as f:
-                                content = f.read()
-                            self.insertPlainText(content)
-                        except Exception:
-                            import traceback
-                            traceback.print_exc()
+                        choice = self._ask_text_drop_choice(os.path.basename(path))
+                        if choice == "file":
+                            self.main_win.add_files_to_active_silo([path])
+                        elif choice == "text":
+                            try:
+                                with open(path, encoding="utf-8", errors="replace") as f:
+                                    content = f.read()
+                                self.insertPlainText(content)
+                            except Exception:
+                                import traceback
+                                traceback.print_exc()
                     else:
-                        self.insertPlainText(f"[Dropped file: {os.path.basename(path)} - unsupported format]\n")
+                        # binary files go into the silo's file container
+                        self.main_win.add_files_to_active_silo([path])
             return
         if source.hasText():
             self.insertPlainText(source.text())
@@ -733,6 +900,9 @@ class VaultTextEdit(QTextEdit):
             block = self._first_visible_block()
             if block:
                 while block.isValid():
+                    if not block.isVisible():  # folded away
+                        block = block.next()
+                        continue
                     # Full block geometry (covers wrapped lines), viewport coords
                     br = doc_layout.blockBoundingRect(block).translated(0, y_off)
                     r = self.cursorRect(QTextCursor(block))
@@ -770,6 +940,35 @@ class VaultTextEdit(QTextEdit):
                             tgc = gc.adjusted(2, 2, 2, 2) if pressed_c else gc
                             painter.drawText(tgc, Qt.AlignmentFlag.AlignCenter, "\u2398")
                             painter.setFont(self.font())
+
+                        # Fold toggle box on headers and code fences:
+                        # ▾ expanded, ▸ collapsed (hides the section)
+                        if not is_large and self._is_fold_anchor(block):
+                            fr = QRectF(self._fold_rect(block))
+                            collapsed = bool(max(0, block.userState()) & self.FOLD_BIT)
+                            pressed_f = getattr(self, "_fold_pressed_block", -1) == bnum
+                            painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+                            painter.fillRect(fr, QColor("#1e1e1e"))
+                            light = QColor("#3a3a3a")
+                            dark = QColor("#0a0a0a")
+                            painter.setPen(dark if pressed_f else light)
+                            painter.drawLine(fr.topLeft(), fr.topRight())
+                            painter.drawLine(fr.topLeft(), fr.bottomLeft())
+                            painter.setPen(light if pressed_f else dark)
+                            painter.drawLine(fr.bottomLeft(), fr.bottomRight())
+                            painter.drawLine(fr.topRight(), fr.bottomRight())
+                            painter.setPen(QColor("#D9B340"))
+                            ff = self.font()
+                            ff.setPointSizeF(max(8.0, ff.pointSizeF() * 0.9))
+                            painter.setFont(ff)
+                            tf = fr.adjusted(2, 2, 2, 2) if pressed_f else fr
+                            painter.drawText(tf, Qt.AlignmentFlag.AlignCenter,
+                                             "▸" if collapsed else "▾")
+                            painter.setFont(self.font())
+                            if collapsed:
+                                painter.setPen(QColor("#808080"))
+                                painter.drawText(
+                                    int(fr.right()) + 6, int(fr.bottom()) - 2, "…")
 
                         # Inline refresh button after lines ending with a
                         # Ctrl+E timestamp: a small 3D box (pushes when

@@ -66,6 +66,63 @@ def silo_file_count(root, category, silo_text):
         return 0
 
 
+def _fmt_size(n):
+    if n < 1024:
+        return f"{n} B"
+    if n < 1024 * 1024:
+        return f"{n / 1024:.1f} KB"
+    if n < 1024 * 1024 * 1024:
+        return f"{n / 1024 / 1024:.1f} MB"
+    return f"{n / 1024 / 1024 / 1024:.2f} GB"
+
+
+def _dir_size(path, _cap=2000):
+    """Recursive size, capped at _cap files so a giant dropped folder
+    can't stall silo switching (tooltip precision isn't worth a freeze)."""
+    total, seen = 0, 0
+    for base, _dirs, files in os.walk(path):
+        for f in files:
+            try:
+                total += os.path.getsize(os.path.join(base, f))
+            except OSError:
+                pass
+            seen += 1
+            if seen >= _cap:
+                return total
+    return total
+
+
+def folder_summary(root, category, silo_text):
+    """Tooltip text: item count + total size + per-extension breakdown."""
+    d = silo_files_dir(root, category, silo_text)
+    try:
+        names = os.listdir(d)
+    except OSError:
+        names = []
+    if not names:
+        return "No files yet"
+    counts, sizes, total = {}, {}, 0
+    for n in names:
+        p = os.path.join(d, n)
+        if os.path.isdir(p):
+            ext, s = "folder", _dir_size(p)
+        else:
+            ext = os.path.splitext(n)[1].lower() or "no ext"
+            try:
+                s = os.path.getsize(p)
+            except OSError:
+                s = 0
+        counts[ext] = counts.get(ext, 0) + 1
+        sizes[ext] = sizes.get(ext, 0) + s
+        total += s
+    lines = [f"{len(names)} item(s) · {_fmt_size(total)}"]
+    for ext in sorted(counts, key=lambda e: -sizes[e]):
+        lines.append(f"  {ext} ×{counts[ext]} · {_fmt_size(sizes[ext])}")
+    if len(lines) > 13:
+        lines = lines[:13] + [f"  … and {len(counts) - 12} more types"]
+    return "\n".join(lines)
+
+
 def _unique_dest(folder, name):
     """foo.txt -> foo (2).txt until the name is free in folder."""
     dest = os.path.join(folder, name)
@@ -135,9 +192,17 @@ class FileContainerPanel(QWidget):
         self.btn_export = QPushButton("Export All…")
         self.btn_export.setToolTip("Copy every file here to a folder you pick")
         self.btn_export.clicked.connect(self._export_all)
+        self.btn_clip = QPushButton("Clip→File")
+        self.btn_clip.setToolTip("Save the clipboard text into this folder as a .txt file")
+        self.btn_clip.clicked.connect(self.save_clipboard_as_file)
+        self.btn_view = QPushButton("")
+        self.btn_view.setToolTip("Cycle view: Icons → List → Details (like Explorer)")
+        self.btn_view.clicked.connect(self._cycle_view)
         bar.addWidget(self.btn_import)
+        bar.addWidget(self.btn_clip)
         bar.addWidget(self.btn_open_folder)
         bar.addWidget(self.btn_export)
+        bar.addWidget(self.btn_view)
         bar.addStretch(1)
         self.lbl_count = QLabel("")
         bar.addWidget(self.lbl_count)
@@ -156,12 +221,47 @@ class FileContainerPanel(QWidget):
         self.lbl_preview.hide()
         layout.addWidget(self.lbl_preview)
 
-        self.lbl_hint = QLabel("Drop files here — they are copied into a plain folder you own.")
+        self.lbl_hint = QLabel(
+            "Drop files here — copied into a plain folder you own. "
+            "Hold Alt while dropping to add links instead of copies.")
         self.lbl_hint.setWordWrap(True)
         layout.addWidget(self.lbl_hint)
 
         self._watcher = QFileSystemWatcher(self)
         self._watcher.directoryChanged.connect(lambda _: self.refresh())
+        self._apply_view_mode()
+
+    # ---- view modes (Explorer-like) ---------------------------------------
+
+    _VIEW_MODES = ("Icons", "List", "Details")
+
+    def _view_mode(self):
+        mode = self.main_win.data.get("file_panel_view", "Icons")
+        return mode if mode in self._VIEW_MODES else "Icons"
+
+    def _cycle_view(self):
+        modes = self._VIEW_MODES
+        nxt = modes[(modes.index(self._view_mode()) + 1) % len(modes)]
+        self.main_win.data["file_panel_view"] = nxt
+        if hasattr(self.main_win, "mark_dirty"):
+            self.main_win.mark_dirty()
+        self._apply_view_mode()
+        self.refresh()
+
+    def _apply_view_mode(self):
+        mode = self._view_mode()
+        self.btn_view.setText(f"View: {mode}")
+        lw = self.file_list
+        if mode == "Icons":
+            lw.setViewMode(QListWidget.ViewMode.IconMode)
+            lw.setIconSize(QSize(48, 48))
+            lw.setGridSize(QSize(84, 76))
+            lw.setWordWrap(True)
+        else:
+            lw.setViewMode(QListWidget.ViewMode.ListMode)
+            lw.setIconSize(QSize(16, 16))
+            lw.setGridSize(QSize())
+            lw.setWordWrap(False)
 
     # ---- lifecycle -------------------------------------------------------
 
@@ -186,14 +286,28 @@ class FileContainerPanel(QWidget):
             names = sorted(os.listdir(self.folder), key=str.lower)
         except OSError:
             names = []
+        details = self._view_mode() == "Details"
         for name in names:
             path = os.path.join(self.folder, name)
-            item = QListWidgetItem(self._icon_for(path), name)
+            label = name
+            if details:
+                try:
+                    size = _dir_size(path) if os.path.isdir(path) else os.path.getsize(path)
+                    import datetime
+                    mtime = datetime.datetime.fromtimestamp(os.path.getmtime(path))
+                    label = f"{name}  —  {_fmt_size(size)}  —  {mtime.strftime('%d.%m.%y %H:%M')}"
+                except OSError:
+                    pass
+            item = QListWidgetItem(self._icon_for(path), label)
             item.setData(Qt.ItemDataRole.UserRole, path)
             item.setToolTip(path)
             self.file_list.addItem(item)
         self.lbl_count.setText(f"{len(names)} file(s)")
         self._update_preview()
+        if hasattr(self.main_win, "_update_files_button"):
+            self.main_win._update_files_button()
+        if hasattr(self.main_win, "refresh_temp_presets"):
+            self.main_win.refresh_temp_presets()  # keep silo 📁N badges live
 
     def selected_paths(self):
         return [i.data(Qt.ItemDataRole.UserRole) for i in self.file_list.selectedItems()]
@@ -227,7 +341,11 @@ class FileContainerPanel(QWidget):
     def dropEvent(self, event):
         paths = [u.toLocalFile() for u in event.mimeData().urls() if u.isLocalFile()]
         if paths:
-            self.import_paths(paths)
+            from PyQt6.QtWidgets import QApplication
+            if QApplication.keyboardModifiers() & Qt.KeyboardModifier.AltModifier:
+                self.import_links(paths)
+            else:
+                self.import_paths(paths)
             event.acceptProposedAction()
 
     def import_paths(self, paths):
@@ -258,6 +376,57 @@ class FileContainerPanel(QWidget):
         paths, _ = QFileDialog.getOpenFileNames(self, "Import files", "", "All files (*.*)")
         if paths:
             self.import_paths(paths)
+
+    def import_links(self, paths):
+        """Add .url shortcuts pointing at the originals (no copy).
+
+        Plain-text InternetShortcut files: double-click opens the target,
+        readable and portable without FastPrompter."""
+        if not self.folder:
+            return
+        made = 0
+        for src in paths:
+            if not os.path.exists(src):
+                continue
+            name = os.path.basename(src.rstrip("\\/")) + ".url"
+            dest = _unique_dest(self.folder, name)
+            url = QUrl.fromLocalFile(os.path.abspath(src)).toString()
+            try:
+                with open(dest, "w", encoding="utf-8") as f:
+                    f.write(f"[InternetShortcut]\nURL={url}\n")
+                made += 1
+            except OSError as e:
+                logger.error(f"File container link failed for {src}: {e}")
+        if made and hasattr(self.main_win, "sound_manager"):
+            self.main_win.sound_manager.play_tick()
+        self.refresh()
+
+    def _pick_link(self):
+        paths, _ = QFileDialog.getOpenFileNames(
+            self, "Link to files (no copy)", "", "All files (*.*)")
+        if paths:
+            self.import_links(paths)
+
+    def save_clipboard_as_file(self):
+        """Save clipboard text into the folder as clip-<stamp>.txt."""
+        if not self.folder:
+            return
+        from PyQt6.QtWidgets import QApplication
+        text = QApplication.clipboard().text()
+        if not text.strip():
+            self.lbl_count.setText("clipboard has no text")
+            return
+        import datetime
+        stamp = datetime.datetime.now().strftime("%d.%m.%y-%H%M%S")
+        dest = _unique_dest(self.folder, f"clip-{stamp}.txt")
+        try:
+            with open(dest, "w", encoding="utf-8") as f:
+                f.write(text)
+            if hasattr(self.main_win, "sound_manager"):
+                self.main_win.sound_manager.play_tick()
+        except OSError as e:
+            logger.error(f"File container clipboard save failed: {e}")
+        self.refresh()
 
     # ---- file verbs ------------------------------------------------------
 
@@ -352,6 +521,8 @@ class FileContainerPanel(QWidget):
             menu.addAction("Delete…", lambda: self._delete(self.selected_paths() or [path]))
         else:
             menu.addAction("Import…", self._pick_import)
+            menu.addAction("Add Link to Files…", self._pick_link)
+            menu.addAction("Clipboard → File", self.save_clipboard_as_file)
             menu.addAction("Open Folder", self._open_folder)
         menu.exec(self.file_list.mapToGlobal(pos))
 

@@ -4,9 +4,12 @@ from PyQt6 import sip
 from PyQt6.QtGui import QColor, QFont, QSyntaxHighlighter, QTextCharFormat, QTextFormat
 
 # Block-state bit layout (block.userState is shared with the editor's
-# margin marks): bits 0-7 = margin mark (0-3), bit 8 = inside code fence.
+# margin marks): bits 0-7 = margin mark (0-3), bit 8 = inside code fence,
+# bit 9 = fold anchor is collapsed (owned by the editor, preserved here).
 CODE_BIT = 1 << 8
+FOLD_BIT = 1 << 9
 MARK_MASK = 0xFF
+_KEEP_MASK = MARK_MASK | FOLD_BIT
 
 # Universal keyword set covering the popular languages (Python, JS/TS,
 # C/C++/C#, Java, Go, Rust, PHP, Ruby, SQL, Bash, PowerShell...)
@@ -157,7 +160,7 @@ class MarkdownHighlighter(QSyntaxHighlighter):
 
         # Preserve the editor's margin-mark bits while tracking fences
         prev_in_code = bool(max(0, self.previousBlockState()) & CODE_BIT)
-        mark_bits = max(0, self.currentBlockState()) & MARK_MASK
+        mark_bits = max(0, self.currentBlockState()) & _KEEP_MASK
         is_fence = text.strip().startswith("```")
 
         if prev_in_code:

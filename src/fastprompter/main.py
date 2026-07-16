@@ -240,6 +240,9 @@ class FastPrompter(
         else:
             dt_str = now.strftime("%d.%m - %H:%M")
             ref_str = "00.00 - 00:00"
+        if self.data.get("date_daypart", "True") == "True":
+            dt_str += f" · {self._day_part(now.hour)}"
+            ref_str += " · Morning"
             
         from PyQt6.QtGui import QFontMetrics
         fm = QFontMetrics(self.lbl_date.font())
@@ -251,9 +254,65 @@ class FastPrompter(
             
         self.lbl_date.setText(dt_str)
 
+    @staticmethod
+    def _day_part(hour):
+        """Word for the time of day shown in the date widget."""
+        if 5 <= hour < 12:
+            return "Morning"
+        if 12 <= hour < 17:
+            return "Day"
+        if 17 <= hour < 23:
+            return "Evening"
+        return "Night"
+
     def _files_root(self):
+        custom = (self.data.get("files_root") or "").strip()
+        if custom and os.path.isdir(custom):
+            return custom
         from fastprompter.utils.paths import get_data_dir
         return os.path.join(get_data_dir(), "files")
+
+    def pick_files_root(self):
+        """Settings: let the user choose where silo file containers live."""
+        from PyQt6.QtWidgets import QFileDialog
+        start = self._files_root()
+        path = QFileDialog.getExistingDirectory(self, "Folder for silo files", start)
+        if path:
+            self.data["files_root"] = path
+            self.mark_dirty()
+            self._update_files_button()
+            self.refresh_temp_presets()
+
+    def reset_files_root(self):
+        self.data["files_root"] = ""
+        self.mark_dirty()
+        self._update_files_button()
+        self.refresh_temp_presets()
+
+    def add_files_to_active_silo(self, paths):
+        """Drop target helper: put files into the active silo's container
+        and show the drawer so the user sees where they landed."""
+        is_archive = getattr(self, "active_is_archive", False)
+        self.open_file_container(is_archive=is_archive)
+        self._file_container.import_paths(paths)
+
+    def _update_files_button(self):
+        """Refresh the header 📁 button: live file count + breakdown tooltip."""
+        if not hasattr(self, "btn_files"):
+            return
+        from fastprompter.ui.file_container import folder_summary, silo_file_count
+        is_archive = getattr(self, "active_is_archive", False)
+        presets = self.data.get("archive_temp_presets" if is_archive else "temp_presets", [])
+        idx = self.active_temp_slot
+        text = presets[idx] if 0 <= idx < len(presets) else ""
+        cat = self.get_current_category()
+        n = silo_file_count(self._files_root(), cat, text)
+        self.btn_files.setText(f"📁{n}" if n else "📁")
+        self.btn_files.setToolTip(
+            "Files — asset drawer for the active silo (drop in / drag out /\n"
+            "preview / export; plain folder in data/files)\n\n"
+            + folder_summary(self._files_root(), cat, text)
+        )
 
     def open_file_container(self, global_idx=None, is_archive=False):
         """Open the per-silo file drawer (📁 button / silo hover button)."""
@@ -529,6 +588,15 @@ class FastPrompter(
         f = QFont(self.btn_strike.font()); f.setStrikeOut(True); self.btn_strike.setFont(f)
         self.btn_strike.clicked.connect(lambda: self.apply_format("strike"))
 
+        self.btn_header = QPushButton("H")
+        self.btn_header.setToolTip(
+            "Header (Ctrl+E)\nTitle the line: # + bold + underline + timestamp,\n"
+            "then land 2 lines below on a fresh bullet."
+        )
+        self.apply_button_size(self.btn_header, 24, 24)
+        f = QFont(self.btn_header.font()); f.setBold(True); f.setUnderline(True); self.btn_header.setFont(f)
+        self.btn_header.clicked.connect(self.apply_header_timestamp)
+
         self.btn_clear_fmt = QPushButton("Clear Fmt")
         self.btn_clear_fmt.setToolTip("Clear Format\nRemove all explicit font styling from text.")
         self.apply_button_size(self.btn_clear_fmt, 24)
@@ -567,7 +635,7 @@ class FastPrompter(
             "drag them out, preview, export. Stored as a plain folder\n"
             "in data/files — readable outside FastPrompter."
         )
-        self.apply_button_size(self.btn_files, 24, 24)
+        self.apply_button_size(self.btn_files, 24)
         self.btn_files.clicked.connect(lambda: self.open_file_container())
 
 
@@ -585,6 +653,7 @@ class FastPrompter(
         self.header_layout.addWidget(self.btn_italic)
         self.header_layout.addWidget(self.btn_under)
         self.header_layout.addWidget(self.btn_strike)
+        self.header_layout.addWidget(self.btn_header)
         self.header_layout.addWidget(self.btn_clear_fmt)
         self.header_layout.addWidget(self.btn_add_line)
         self.header_layout.addWidget(self.btn_bullet_toggle)
@@ -909,6 +978,16 @@ class FastPrompter(
                 or self.mark_dirty()
             ),
         )
+        self.cb_date_daypart = create_footer_cb(
+            "Day Word",
+            "Show the time-of-day word (Morning / Day / Evening / Night)\n"
+            "after the clock in the date widget",
+            self.data.get("date_daypart", "True") == "True",
+            lambda checked: (
+                self.data.update({"date_daypart": "True" if checked else "False"})
+                or self.mark_dirty()
+            ),
+        )
         self.cb_sound = create_footer_cb(
             "UI Sounds",
             "Play click sounds for buttons and actions",
@@ -952,6 +1031,23 @@ class FastPrompter(
         div_row.addWidget(self.spin_div_after)
         div_row.addStretch(1)
 
+        files_row = QHBoxLayout()
+        files_row.setContentsMargins(0, 0, 0, 0)
+        files_row.setSpacing(4)
+        self.btn_files_root = QPushButton("Files Folder…")
+        self.btn_files_root.setToolTip(
+            "Choose where silo file containers are stored.\n"
+            "Default: data/files next to the app."
+        )
+        self.btn_files_root.clicked.connect(self.pick_files_root)
+        files_row.addWidget(self.btn_files_root)
+        btn_files_root_reset = QPushButton("↺")
+        btn_files_root_reset.setToolTip("Reset silo files location to the default data/files")
+        btn_files_root_reset.setFixedWidth(24)
+        btn_files_root_reset.clicked.connect(self.reset_files_root)
+        files_row.addWidget(btn_files_root_reset)
+        files_row.addStretch(1)
+
         vol_row = QHBoxLayout()
         vol_row.setContentsMargins(0, 0, 0, 0)
         vol_row.setSpacing(4)
@@ -987,7 +1083,8 @@ class FastPrompter(
         groups_row.setSpacing(8)
         groups_row.addLayout(_settings_group("Window", [
             self.cb_top, self.cb_lock_window, self.cb_normal_window,
-            self.cb_tray, self.cb_sidebar, self.cb_date_rect, self.cb_date_seconds
+            self.cb_tray, self.cb_sidebar, self.cb_date_rect, self.cb_date_seconds,
+            self.cb_date_daypart,
         ]), 1)
         groups_row.addWidget(_vline())
         groups_row.addLayout(_settings_group("Behavior", [
@@ -998,7 +1095,7 @@ class FastPrompter(
         groups_row.addLayout(_settings_group("Editor", [
             self.cb_wrap, self.cb_line_numbers, self.cb_zebra,
             self.cb_hide_shortkeys, self.cb_double_line, self.cb_bold_titles, self.cb_silo_pinned_gap,
-            div_row,
+            div_row, files_row,
         ]), 1)
         groups_row.addWidget(_vline())
         groups_row.addLayout(_settings_group("Sound", [
@@ -2830,6 +2927,7 @@ class FastPrompter(
             self.refresh_archive_panel()
             self.update_preview()
             self._update_line_count_label()
+            self._update_files_button()
             self.text_area.setFocus()
             self.text_area.ensureCursorVisible()
             if not initial:
