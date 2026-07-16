@@ -90,6 +90,7 @@ from fastprompter.utils.paths import get_data_dir
 
 
 class FastPrompter(
+    QMainWindow,
     FormattingMixin,
     HotkeyMixin,
     ScalingMixin,
@@ -98,7 +99,6 @@ class FastPrompter(
     ThemeMixin,
     TrayMixin,
     WindowMixin,
-    QMainWindow,
 ):
     # Live settings accessors used by the UI mixins.
     @property
@@ -219,7 +219,53 @@ class FastPrompter(
         if self.data.get("always_on_top", "True") == "True":
             self.topmost_timer.start(30000)
 
+        self.date_timer = QTimer(self)
+        self.date_timer.timeout.connect(self._update_date_label)
+        self.date_timer.start(1000)
+        self._update_date_label()
+
         self.place_window()
+
+    def _update_date_label(self):
+        show_date = self.data.get("show_date_rect", "True") == "True"
+        if not show_date:
+            self.lbl_date.setVisible(False)
+            return
+            
+        self.lbl_date.setVisible(True)
+        import datetime
+        now = datetime.datetime.now()
+        if self.data.get("date_seconds", "True") == "True":
+            dt_str = now.strftime("%d.%m - %H:%M:%S")
+            ref_str = "00.00 - 00:00:00"
+        else:
+            dt_str = now.strftime("%d.%m - %H:%M")
+            ref_str = "00.00 - 00:00"
+            
+        from PyQt6.QtGui import QFontMetrics
+        fm = QFontMetrics(self.lbl_date.font())
+        needed_width = fm.horizontalAdvance(ref_str) + 16
+        if self.lbl_date.minimumWidth() != needed_width:
+            self.lbl_date.setMinimumWidth(needed_width)
+            from PyQt6.QtCore import Qt
+            self.lbl_date.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            
+        self.lbl_date.setText(dt_str)
+
+    def _files_root(self):
+        from fastprompter.utils.paths import get_data_dir
+        return os.path.join(get_data_dir(), "files")
+
+    def open_file_container(self, global_idx=None):
+        """Open the per-silo file drawer (📁 button / silo hover button)."""
+        from fastprompter.ui.file_container import FileContainerPanel
+        if global_idx is None:
+            global_idx = self.active_temp_slot
+        presets = self.data.get("temp_presets", [])
+        text = presets[global_idx] if 0 <= global_idx < len(presets) else ""
+        if getattr(self, "_file_container", None) is None:
+            self._file_container = FileContainerPanel(self)
+        self._file_container.open_for(self._files_root(), self.get_current_category(), text)
 
     def _begin_batch_update(self):
         """Suppress paints + snapshot overlay as backup."""
@@ -326,9 +372,7 @@ class FastPrompter(
             "preview_mode": self.preview_combo.currentText()
             if hasattr(self, "preview_combo")
             else self.data.get("preview_mode", "None"),
-            "paste_mode": self.btn_format.text()
-            if hasattr(self, "btn_format")
-            else self.data.get("paste_mode", "Plain"),
+            "paste_mode": self.data.get("paste_mode", "Plain"),
             "tray_visible": str(self.cb_tray.isChecked())
             if hasattr(self, "cb_tray")
             else self.data.get("tray_visible", "True"),
@@ -433,28 +477,33 @@ class FastPrompter(
 
         self.btn_bullet_toggle = QPushButton("-→•")
         self.apply_button_size(self.btn_bullet_toggle, 24)
+        self.btn_bullet_toggle.setCheckable(True)
+        self.btn_bullet_toggle.setChecked(self.data.get("auto_bullet", "False") == "True")
 
         def _bullet_mousePress(event):
-            if (
-                event.modifiers() & Qt.KeyboardModifier.ControlModifier
-                and event.button() == Qt.MouseButton.LeftButton
-            ):
+            if event.button() == Qt.MouseButton.RightButton:
                 curr = self.data.get("auto_bullet", "False") == "True"
-                self.data["auto_bullet"] = "False" if curr else "True"
+                new_state = not curr
+                self.data["auto_bullet"] = "True" if new_state else "False"
+                self.btn_bullet_toggle.setChecked(new_state)
                 self.mark_dirty()
                 self.play_click_sound()
-                state_str = "ON" if not curr else "OFF"
-                self.btn_bullet_toggle.setToolTip(f"Auto-Bullet: {state_str}")
+                state_str = "ON" if new_state else "OFF"
+                self.btn_bullet_toggle.setToolTip(f"Auto-Bullet (Right-Click): {state_str}\nLeft-Click: Convert selected lines between dashes and bullets.")
                 event.accept()
             else:
                 QPushButton.mousePressEvent(self.btn_bullet_toggle, event)
 
         self.btn_bullet_toggle.mousePressEvent = _bullet_mousePress
-        self.btn_bullet_toggle.setToolTip(
-            "Auto-Bullet: " + ("ON" if self.data.get("auto_bullet", "False") == "True" else "OFF")
-        )
+        
+        def _on_bullet_left_click():
+            # Left click naturally toggles the checked state, revert it to actual auto_bullet mode.
+            self.btn_bullet_toggle.setChecked(self.data.get("auto_bullet", "False") == "True")
+            self.toggle_bullet_conversion()
 
-        self.btn_bullet_toggle.clicked.connect(self.toggle_bullet_conversion)
+        state_str = "ON" if self.data.get("auto_bullet", "False") == "True" else "OFF"
+        self.btn_bullet_toggle.setToolTip(f"Auto-Bullet (Right-Click): {state_str}\nLeft-Click: Convert selected lines between dashes and bullets.")
+        self.btn_bullet_toggle.clicked.connect(_on_bullet_left_click)
 
         self.btn_bold = QPushButton("B")
         self.btn_bold.setToolTip("Bold (Ctrl+B)\nMake selected text bold.")
@@ -485,10 +534,7 @@ class FastPrompter(
         self.apply_button_size(self.btn_clear_fmt, 24)
         self.btn_clear_fmt.clicked.connect(self.clear_formatting)
 
-        self.btn_clean_space = QPushButton("Clean")
-        self.apply_button_size(self.btn_clean_space, 24)
-        self.btn_clean_space.setToolTip("Clean excessive empty lines (keeps lines near '---')")
-        self.btn_clean_space.clicked.connect(self.clean_excessive_newlines)
+
 
         self.btn_settings_toggle = QPushButton("⚙")
         self.apply_button_size(self.btn_settings_toggle, 24, 24)
@@ -515,16 +561,16 @@ class FastPrompter(
         self.apply_button_size(self.btn_clear, 24)
         self.btn_clear.clicked.connect(self.clear_text)
 
-        self.btn_format = QPushButton("Plain")
-        self.btn_format.setToolTip(
-            "View Mode Toggle\nSwitch between Plain Text (editing) and Formatted Preview (Markdown rendering)."
+        self.btn_files = QPushButton("📁")
+        self.btn_files.setToolTip(
+            "Files\nAsset drawer for the active silo: drop any files in,\n"
+            "drag them out, preview, export. Stored as a plain folder\n"
+            "in data/files — readable outside FastPrompter."
         )
-        self.btn_format.setCheckable(True)
-        saved_mode = self.data.get("paste_mode", "Plain")
-        self.btn_format.setChecked(saved_mode == "Plain")
-        self.btn_format.setText(saved_mode)
-        self.apply_button_size(self.btn_format, 24)
-        self.btn_format.toggled.connect(self.toggle_paste_mode)
+        self.apply_button_size(self.btn_files, 24, 24)
+        self.btn_files.clicked.connect(lambda: self.open_file_container())
+
+
 
         # Navigation
         self.header_layout.addWidget(self.tab_bar)
@@ -542,13 +588,17 @@ class FastPrompter(
         self.header_layout.addWidget(self.btn_clear_fmt)
         self.header_layout.addWidget(self.btn_add_line)
         self.header_layout.addWidget(self.btn_bullet_toggle)
-        self.header_layout.addWidget(self.btn_clean_space)
         self.header_layout.addWidget(self.btn_copy)
         self.header_layout.addWidget(self.btn_clear)
-        self.header_layout.addWidget(self.btn_format)
+        self.header_layout.addWidget(self.btn_files)
 
         # Cursor nav and settings
         self.header_layout.addStretch(1)
+        self.lbl_date = QLabel("")
+        self.lbl_date.setToolTip("Current Date and Time")
+        self.lbl_date.setStyleSheet("padding: 0 4px;")
+        self.header_layout.addWidget(self.lbl_date)
+
         self.lbl_line_count = QLabel("")
         self.lbl_line_count.setToolTip("Line count of the open silo/snippet")
         self.lbl_line_count.setStyleSheet("padding: 0 4px; font-weight: bold;")
@@ -829,6 +879,36 @@ class FastPrompter(
                 or self.refresh_archive_panel()
             ),
         )
+        self.cb_silo_pinned_gap = create_footer_cb(
+            "Pinned Gap",
+            "Show a visual separator between pinned and unpinned silos",
+            self.data.get("silo_pinned_gap", "True") == "True",
+            lambda checked: (
+                self.data.update({"silo_pinned_gap": "True" if checked else "False"})
+                or self.mark_dirty()
+                or self.refresh_temp_presets()
+                or self.refresh_snippets_panel()
+            ),
+        )
+        self.cb_date_rect = create_footer_cb(
+            "Show Date Widget",
+            "Show a floating date and time rectangle in the top-right\n"
+            "corner of the text editor",
+            self.data.get("show_date_rect", "True") == "True",
+            lambda checked: (
+                self.data.update({"show_date_rect": "True" if checked else "False"})
+                or self.mark_dirty()
+            ),
+        )
+        self.cb_date_seconds = create_footer_cb(
+            "Date Seconds",
+            "Show seconds in the date widget (hh:mm:ss instead of hh:mm)",
+            self.data.get("date_seconds", "True") == "True",
+            lambda checked: (
+                self.data.update({"date_seconds": "True" if checked else "False"})
+                or self.mark_dirty()
+            ),
+        )
         self.cb_sound = create_footer_cb(
             "UI Sounds",
             "Play click sounds for buttons and actions",
@@ -841,6 +921,36 @@ class FastPrompter(
             self.data.get("sound_typewriter", "False") == "True",
             self.on_typewriter_toggled,
         )
+
+        div_row = QHBoxLayout()
+        div_row.setContentsMargins(0, 0, 0, 0)
+        div_row.setSpacing(4)
+        lbl_div = QLabel("Line gaps:")
+        lbl_div.setToolTip("Blank lines the Line/Ctrl+W divider puts before and after ---")
+        div_row.addWidget(lbl_div)
+        self.spin_div_before = QSpinBox()
+        self.spin_div_before.setRange(0, 6)
+        self.spin_div_before.setToolTip("Lines before ---")
+        try:
+            self.spin_div_before.setValue(int(self.data.get("divider_lines_before", 2)))
+        except (TypeError, ValueError):
+            self.spin_div_before.setValue(2)
+        self.spin_div_before.valueChanged.connect(
+            lambda v: (self.data.update({"divider_lines_before": str(v)}), self.mark_dirty())
+        )
+        div_row.addWidget(self.spin_div_before)
+        self.spin_div_after = QSpinBox()
+        self.spin_div_after.setRange(1, 6)
+        self.spin_div_after.setToolTip("Lines after --- (before the fresh bullet)")
+        try:
+            self.spin_div_after.setValue(int(self.data.get("divider_lines_after", 3)))
+        except (TypeError, ValueError):
+            self.spin_div_after.setValue(3)
+        self.spin_div_after.valueChanged.connect(
+            lambda v: (self.data.update({"divider_lines_after": str(v)}), self.mark_dirty())
+        )
+        div_row.addWidget(self.spin_div_after)
+        div_row.addStretch(1)
 
         vol_row = QHBoxLayout()
         vol_row.setContentsMargins(0, 0, 0, 0)
@@ -877,7 +987,7 @@ class FastPrompter(
         groups_row.setSpacing(8)
         groups_row.addLayout(_settings_group("Window", [
             self.cb_top, self.cb_lock_window, self.cb_normal_window,
-            self.cb_tray, self.cb_sidebar,
+            self.cb_tray, self.cb_sidebar, self.cb_date_rect, self.cb_date_seconds
         ]), 1)
         groups_row.addWidget(_vline())
         groups_row.addLayout(_settings_group("Behavior", [
@@ -887,7 +997,8 @@ class FastPrompter(
         groups_row.addWidget(_vline())
         groups_row.addLayout(_settings_group("Editor", [
             self.cb_wrap, self.cb_line_numbers, self.cb_zebra,
-            self.cb_hide_shortkeys, self.cb_double_line, self.cb_bold_titles,
+            self.cb_hide_shortkeys, self.cb_double_line, self.cb_bold_titles, self.cb_silo_pinned_gap,
+            div_row,
         ]), 1)
         groups_row.addWidget(_vline())
         groups_row.addLayout(_settings_group("Sound", [
@@ -1069,6 +1180,13 @@ class FastPrompter(
         self.apply_button_size(self.btn_silo_down, 16)
         self.btn_silo_down.clicked.connect(lambda: self.change_silo_page(1))
         self.silos_section_layout.addWidget(self.btn_silo_down)
+
+        self.sections_gap_widget = QFrame(self)
+        self.sections_gap_widget.setFixedHeight(8)
+        self.sections_gap_widget.setStyleSheet("border-top: 1px solid #5a5a40; border-bottom: 1px solid #1a1a10; margin: 2px 8px; background: transparent;")
+        self.sections_gap_widget.hide()
+        self.left_panel_layout.addWidget(self.sections_gap_widget)
+
         self.left_panel_layout.addWidget(self.silos_section, 1)
 
         # Mouse-wheel paging over the sidebar sections and tabs;
@@ -1439,6 +1557,48 @@ class FastPrompter(
         pinned = self.data.get("pinned_silos", [])
         if isinstance(pinned, list):
             pinned[:] = [remap(p) for p in pinned]
+
+    def handle_pinned_drop(self, source_idx, boundary_idx=None, swap_idx=None):
+        """Handle dragging and dropping silos within or across the pinned section."""
+        pinned = self.data.get("pinned_silos", [])
+        if not isinstance(pinned, list):
+            pinned = []
+            
+        if swap_idx is not None:
+            if source_idx in pinned and swap_idx in pinned:
+                i1, i2 = pinned.index(source_idx), pinned.index(swap_idx)
+                pinned[i1], pinned[i2] = pinned[i2], pinned[i1]
+                self.data["pinned_silos"] = pinned
+                self.mark_dirty()
+                self.refresh_temp_presets()
+                return True
+            return False
+
+        if boundary_idx is not None:
+            if source_idx in pinned and boundary_idx in pinned:
+                pinned.remove(source_idx)
+                pinned.insert(pinned.index(boundary_idx), source_idx)
+                self.data["pinned_silos"] = pinned
+                self.mark_dirty()
+                self.refresh_temp_presets()
+                return True
+            elif source_idx in pinned and boundary_idx not in pinned:
+                pinned.remove(source_idx)
+                self.data["pinned_silos"] = pinned
+                return False
+            elif source_idx not in pinned and boundary_idx in pinned:
+                pinned.insert(pinned.index(boundary_idx), source_idx)
+                self.data["pinned_silos"] = pinned
+                self.mark_dirty()
+                self.refresh_temp_presets()
+                return True
+        else:
+            if source_idx in pinned:
+                pinned.remove(source_idx)
+                self.data["pinned_silos"] = pinned
+                return False
+                
+        return False
 
     def move_temp_to_index(self, from_idx, to_idx, is_archive=False):
         """Move a silo to a new position, shifting the others (drop 'between' silos)."""
@@ -2286,6 +2446,8 @@ class FastPrompter(
         cat = self.get_current_category()
         if not cat:
             self.snippets_section.setVisible(False)
+            if hasattr(self, "sections_gap_widget"):
+                self.sections_gap_widget.setVisible(False)
             self.refresh_archive_panel()
             return
 
@@ -2299,10 +2461,14 @@ class FastPrompter(
         total_active = len(active_items)
         if total_active == 0:
             self.snippets_section.setVisible(False)
+            if hasattr(self, "sections_gap_widget"):
+                self.sections_gap_widget.setVisible(False)
             self.refresh_archive_panel()
             return
 
         self.snippets_section.setVisible(True)
+        if hasattr(self, "sections_gap_widget"):
+            self.sections_gap_widget.setVisible(self.data.get("silo_pinned_gap", "True") == "True")
         page = min(self.current_pages.get(cat, 0), max(0, math.ceil(total_active / 10.0) - 1))
         self.current_pages[cat] = page
 
@@ -2697,6 +2863,19 @@ class FastPrompter(
         # Compute display order: pinned first (preserving pin-list order), then unpinned (by natural index)
         unpinned = [j for j in range(total) if j not in pinned_list]
         display_order = [p for p in pinned_list if p < total] + unpinned
+        if not hasattr(self, "silo_gap_widget"):
+            from PyQt6.QtWidgets import QFrame
+            self.silo_gap_widget = QFrame(self)
+            self.silo_gap_widget.setFixedHeight(8)
+            self.silo_gap_widget.setStyleSheet("border-top: 1px solid #5a5a40; border-bottom: 1px solid #1a1a10; margin: 2px 8px; background: transparent;")
+            self.silos_widget.layout.addWidget(self.silo_gap_widget)
+            
+        self.silos_widget.layout.removeWidget(self.silo_gap_widget)
+        self.silo_gap_widget.hide()
+
+        first_unpinned_ui_index = -1
+        show_gap = self.data.get("silo_pinned_gap", "True") == "True"
+
         for i, btn in enumerate(self.silo_buttons):
             disp_pos = start_idx + i
             if disp_pos >= total or i >= self._visible_silos:
@@ -2705,8 +2884,17 @@ class FastPrompter(
             slot_idx = display_order[disp_pos]
             raw = self.data["temp_presets"][slot_idx]
             is_pinned = slot_idx in pinned_list
+            
+            if not is_pinned and first_unpinned_ui_index == -1 and pinned_list:
+                first_unpinned_ui_index = i
+
             text = (raw[:100] if len(raw) > 100 else raw).replace("\n", " ").strip()
-            display_idx = slot_idx + 1
+            
+            if is_pinned:
+                display_idx = pinned_list.index(slot_idx) + 1
+            else:
+                display_idx = unpinned.index(slot_idx) + 1
+                
             line_count = raw.count("\n") + 1 if raw.strip() else 0
             line_str = str(line_count) if line_count > 0 else ""
             pin_str = "📌 " if is_pinned else ""
@@ -2724,6 +2912,12 @@ class FastPrompter(
                 and raw.lstrip().startswith("#")
             )
             btn.update_data(label, slot_idx, bg_color, font_family, scale, line_count_str=line_str, is_pushed=is_active, title_bold=title_bold)
+
+        if show_gap and first_unpinned_ui_index != -1:
+            # layout contains the buttons, so insertWidget at first_unpinned_ui_index puts it before that button
+            # Note: since we removed it, the buttons are contiguous at indices 0..N
+            self.silos_widget.layout.insertWidget(first_unpinned_ui_index, self.silo_gap_widget)
+            self.silo_gap_widget.show()
 
     def _overlay_silo_bg(self, bg_color, last_ts):
         diff = time.time() - last_ts
@@ -2976,13 +3170,7 @@ class FastPrompter(
             from PyQt6.QtGui import QGuiApplication
 
             clip = QGuiApplication.clipboard()
-            if self.btn_format.text() != "Plain":
-                mime = QMimeData()
-                mime.setText(text)
-                mime.setHtml(self.simple_markdown_to_html(text))
-                clip.setMimeData(mime)
-            else:
-                clip.setText(text)
+            clip.setText(text)
 
     def insert_divider_line(self):
         """Ctrl+W: alias for the toolbar's Insert Line command — single
@@ -3166,6 +3354,15 @@ class FastPrompter(
             return
         doc = self.text_area.document()
         lines = doc.blockCount() if doc.characterCount() > 1 else 0
+        
+        from PyQt6.QtGui import QFontMetrics
+        fm = QFontMetrics(lbl.font())
+        needed_width = fm.horizontalAdvance("0000 L") + 16
+        if lbl.minimumWidth() != needed_width:
+            lbl.setMinimumWidth(needed_width)
+            from PyQt6.QtCore import Qt
+            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            
         lbl.setText(f"{lines} L" if lines else "")
 
     def refresh_timestamp_in_block(self, block):

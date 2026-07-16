@@ -439,8 +439,17 @@ class DraggableSiloButton(QWidget):
         self._btn_archive.setStyleSheet("background: transparent; border: none; padding: 0; font-size: 11px;")
         self._btn_archive.clicked.connect(self._on_archive_clicked)
 
+        self._btn_files = QPushButton("📁")
+        self._btn_files.setFixedSize(16, 16)
+        self._btn_files.setToolTip("Files: drop/drag/preview assets for this silo")
+        self._btn_files.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._btn_files.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
+        self._btn_files.setStyleSheet("background: transparent; border: none; padding: 0; font-size: 11px;")
+        self._btn_files.clicked.connect(self._on_files_clicked)
+
         self._silo_layout.addWidget(self._lbl_text)
         self._silo_layout.addStretch()
+        self._silo_layout.addWidget(self._btn_files)
         self._silo_layout.addWidget(self._btn_pin)
         self._silo_layout.addWidget(self._btn_archive)
         self._silo_layout.addWidget(self._lbl_count)
@@ -448,6 +457,7 @@ class DraggableSiloButton(QWidget):
         # Start with buttons hidden
         self._btn_pin.hide()
         self._btn_archive.hide()
+        self._btn_files.hide()
         # Set mouse tracking so we get hover events
         self.setMouseTracking(True)
         self.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
@@ -461,6 +471,11 @@ class DraggableSiloButton(QWidget):
         """Archive this silo directly."""
         if hasattr(self.main_win, 'archive_single_silo'):
             self.main_win.archive_single_silo(self.global_idx)
+
+    def _on_files_clicked(self):
+        """Open the per-silo file container drawer."""
+        if hasattr(self.main_win, 'open_file_container'):
+            self.main_win.open_file_container(self.global_idx)
 
     def enterEvent(self, event):
         """Show action buttons on hover with a tiny delay for smooth feel."""
@@ -483,6 +498,7 @@ class DraggableSiloButton(QWidget):
             self._hover_timer.stop()
         self._btn_pin.hide()
         self._btn_archive.hide()
+        self._btn_files.hide()
         super().leaveEvent(event)
 
     def setText(self, text):
@@ -494,9 +510,11 @@ class DraggableSiloButton(QWidget):
         if self._hover_showing and not self.is_archive and self.global_idx >= 0:
             self._btn_pin.show()
             self._btn_archive.show()
+            self._btn_files.show()
         else:
             self._btn_pin.hide()
             self._btn_archive.hide()
+            self._btn_files.hide()
 
     def sizeHint(self):
         from PyQt6.QtCore import QSize
@@ -631,7 +649,7 @@ class SiloDropWidget(QWidget):
         out = []
         for i in range(self.layout.count()):
             w = self.layout.itemAt(i).widget()
-            if w and w.isVisible():
+            if w and w.isVisible() and hasattr(w, "global_idx") and type(w).__name__ == "DraggableSiloButton":
                 out.append(w)
         return out
 
@@ -722,6 +740,10 @@ class SiloDropWidget(QWidget):
         if mode == "swap":
             target_global_idx = target.global_idx
             if source_is_archive == self.is_archive:
+                if not self.is_archive and hasattr(self.main_win, "handle_pinned_drop"):
+                    if self.main_win.handle_pinned_drop(source_idx, swap_idx=target_global_idx):
+                        e.acceptProposedAction()
+                        return
                 if source_idx != target_global_idx:
                     self.main_win.swap_temp_slots(source_idx, target_global_idx, is_archive=self.is_archive)
             else:
@@ -740,8 +762,16 @@ class SiloDropWidget(QWidget):
             else:
                 if target < len(btns):
                     boundary_idx = btns[target].global_idx
+                    if not self.is_archive and hasattr(self.main_win, "handle_pinned_drop"):
+                        if self.main_win.handle_pinned_drop(source_idx, boundary_idx=boundary_idx):
+                            e.acceptProposedAction()
+                            return
                     to_idx = boundary_idx - 1 if source_idx < boundary_idx else boundary_idx
                 else:
+                    if not self.is_archive and hasattr(self.main_win, "handle_pinned_drop"):
+                        if self.main_win.handle_pinned_drop(source_idx, boundary_idx=None):
+                            # It unpinned it, we still want it to move to the end!
+                            pass
                     presets = self.main_win.data["archive_temp_presets" if self.is_archive else "temp_presets"]
                     to_idx = len(presets) - 1
                 self.main_win.move_temp_to_index(source_idx, to_idx, is_archive=self.is_archive)

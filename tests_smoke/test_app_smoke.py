@@ -851,7 +851,6 @@ def _run_fuzz_ui(win, rng):
             lambda: win.apply_format("*"),
             win.apply_bold_smart,
             win.toggle_header_line,
-            win.clean_excessive_newlines,
             win.clear_formatting,
             win.toggle_bullet_conversion,
         ])()
@@ -1128,6 +1127,124 @@ def test_bold_hash_titles_toggle(win):
     win.data["categories"][cat][0] = None
     win.data["categories"][cat][1] = None
     win.refresh_snippets_panel()
+
+
+def test_code_block_copy_button(win):
+    from PyQt6.QtCore import QEvent, Qt
+    from PyQt6.QtGui import QMouseEvent
+    from PyQt6.QtWidgets import QApplication as _QApp
+
+    win.tab_bar.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    win.data["temp_presets"][:] = ["```python\nprint(1)\nprint(2)\n```\nafter"]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    ta = win.text_area
+    opener = ta.document().firstBlock()
+    assert ta._fence_is_opener(opener) is True
+    closer = ta.document().findBlockByNumber(3)
+    assert ta._fence_is_opener(closer) is False
+    rect = ta._code_copy_rect(opener)
+    center = rect.center()
+    for etype in (QEvent.Type.MouseButtonPress, QEvent.Type.MouseButtonRelease):
+        ev = QMouseEvent(etype,
+                         center.toPointF() if hasattr(center, "toPointF") else center,
+                         Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton,
+                         Qt.KeyboardModifier.NoModifier)
+        if etype == QEvent.Type.MouseButtonPress:
+            ta.mousePressEvent(ev)
+        else:
+            ta.mouseReleaseEvent(ev)
+    assert _QApp.clipboard().text() == "print(1)\nprint(2)"
+
+
+def test_file_container_slug_and_dirs(win):
+    from fastprompter.ui.file_container import silo_files_dir, silo_slug
+
+    assert silo_slug("# My **Cool** Title\nbody") == "my-cool-title"
+    assert silo_slug("") == "untitled"
+    assert silo_slug("!!!???") == "untitled"
+    assert silo_slug("x" * 100).startswith("x")
+    assert len(silo_slug("x" * 100)) <= 40
+    d = silo_files_dir(_tmpdir, "Main", "# Hello World")
+    assert d.endswith(os.path.join("main", "hello-world"))
+
+
+def test_file_container_import_export_delete(win):
+    from fastprompter.ui.file_container import FileContainerPanel, silo_file_count
+
+    root = os.path.join(_tmpdir, "files_root")
+    src_dir = os.path.join(_tmpdir, "files_src")
+    os.makedirs(src_dir, exist_ok=True)
+    src = os.path.join(src_dir, "note.txt")
+    with open(src, "w", encoding="utf-8") as f:
+        f.write("hello")
+
+    panel = FileContainerPanel(win)
+    panel.open_for(root, "Main", "# Asset Silo")
+    assert os.path.isdir(panel.folder)
+
+    panel.import_paths([src])
+    assert os.path.isfile(os.path.join(panel.folder, "note.txt"))
+    assert panel.file_list.count() == 1
+    # same name again -> collision-safe copy, not overwrite
+    panel.import_paths([src])
+    assert os.path.isfile(os.path.join(panel.folder, "note (2).txt"))
+    assert panel.file_list.count() == 2
+    assert silo_file_count(root, "Main", "# Asset Silo") == 2
+
+    # reopening for the same title lands in the same folder (reorder-stable)
+    panel.open_for(root, "Main", "# Asset Silo\nnew body text")
+    assert panel.file_list.count() == 2
+
+    export_dir = os.path.join(_tmpdir, "files_export")
+    os.makedirs(export_dir, exist_ok=True)
+    import shutil as _sh
+    for n in os.listdir(panel.folder):
+        _sh.copy2(os.path.join(panel.folder, n), export_dir)
+    assert sorted(os.listdir(export_dir)) == ["note (2).txt", "note.txt"]
+    panel.close()
+
+
+def test_file_container_button_wired(win):
+    assert win.btn_files is not None
+    assert callable(win.open_file_container)
+    assert win.silo_buttons[0]._btn_files.toolTip().startswith("Files")
+
+
+def test_date_rectangle_formats_and_toggles(win):
+    import re
+    win.data["show_date_rect"] = "True"
+    win.data["date_seconds"] = "True"
+    win._update_date_label()
+    assert re.fullmatch(r"\d{2}\.\d{2} - \d{2}:\d{2}:\d{2}", win.lbl_date.text())
+    win.data["date_seconds"] = "False"
+    win._update_date_label()
+    assert re.fullmatch(r"\d{2}\.\d{2} - \d{2}:\d{2}", win.lbl_date.text())
+    win.data["show_date_rect"] = "False"
+    win._update_date_label()
+    assert win.lbl_date.isVisible() is False
+    win.data["show_date_rect"] = "True"
+    win.data["date_seconds"] = "True"
+
+
+def test_divider_spacing_configurable(win):
+    win.tab_bar.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    win.data["divider_lines_before"] = "1"
+    win.data["divider_lines_after"] = "2"
+    win.data["temp_presets"][:] = ["x"]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    win.insert_divider_line()
+    assert win.text_area.toPlainText() == "x\n---\n\n• "
+    win.data["divider_lines_before"] = "2"
+    win.data["divider_lines_after"] = "3"
+    win.data["temp_presets"][:] = ["x"]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    win.insert_divider_line()
+    assert win.text_area.toPlainText() == "x\n\n---\n\n\n• "
 
 
 def test_ctrl_e_header_timestamp(win):

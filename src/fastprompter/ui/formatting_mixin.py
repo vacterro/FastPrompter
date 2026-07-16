@@ -211,6 +211,20 @@ class FormattingMixin:
         self.text_area.setFocus()
         self.mark_dirty()
 
+    def divider_counts(self):
+        """User-configured blank-line counts around a --- divider.
+        Single source of truth for every divider entry point (toolbar,
+        Ctrl+W, Enter on a bare --- line)."""
+        try:
+            before = max(0, min(6, int(self.data.get("divider_lines_before", 2))))
+        except (TypeError, ValueError):
+            before = 2
+        try:
+            after = max(1, min(6, int(self.data.get("divider_lines_after", 3))))
+        except (TypeError, ValueError):
+            after = 3
+        return before, after
+
     def insert_add_line(self):
         """Insert a horizontal markdown divider line (---) with smart spacing,
         landing on a fresh bullet ready to type.
@@ -218,12 +232,13 @@ class FormattingMixin:
         If called mid-line or on a non-empty line, jumps to the end first.
         Inserts \\n\\n---\\n\\n\\n•  and positions the cursor right after the bullet.
         """
+        before, after = self.divider_counts()
         cursor = self.text_area.textCursor()
         cursor.beginEditBlock()
         block = cursor.block()
         if cursor.positionInBlock() > 0 or block.text().strip():
             cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock)
-        cursor.insertText("\n\n---\n\n\n• ")
+        cursor.insertText("\n" * before + "---" + "\n" * after + "\u2022 ")
         cursor.endEditBlock()
         self.text_area.setTextCursor(cursor)
         self.text_area.ensureCursorVisible()
@@ -307,47 +322,7 @@ class FormattingMixin:
 
         return f"<html><body style='color:#c4ba9f;background:#0f0f0f;font-family:Verdana,sans-serif;font-size:11px;padding:6px'>{body}</body></html>"
 
-    def clean_excessive_newlines(self):
-        """Remove excessive empty lines, preserving dashes."""
-        self.add_data_undo_state("Clean newlines")
-        self.sound_manager.play("clear")
-        try:
-            text = self.text_area.toPlainText()
-            if not text:
-                return
-            lines = text.split("\n")
-            is_empty = [bool(not line.strip()) for line in lines]
-            is_dash = [bool(_RE_DASH_LINE.match(line)) for line in lines]
 
-            out = []
-            i = 0
-            while i < len(lines):
-                if not is_empty[i]:
-                    out.append(lines[i])
-                    i += 1
-                else:
-                    j = i
-                    while j < len(lines) and is_empty[j]:
-                        j += 1
-                    prev_is_dash = i > 0 and is_dash[i - 1]
-                    next_is_dash = j < len(lines) and is_dash[j]
-
-                    if prev_is_dash or next_is_dash:
-                        out.extend(lines[i:j])
-                    else:
-                        num_to_keep = min(1, j - i)
-                        out.extend(lines[i : i + num_to_keep])
-                    i = j
-
-            cleaned_text = "\n".join(out)
-            if cleaned_text != text:
-                cursor = self.text_area.textCursor()
-                cursor.beginEditBlock()
-                cursor.select(QTextCursor.SelectionType.Document)
-                cursor.insertText(cleaned_text)
-                cursor.endEditBlock()
-        except Exception:
-            logger.exception("Failed to clean excessive newlines")
 
     def clear_formatting(self):
         """Reset text formatting to base font with plain style."""

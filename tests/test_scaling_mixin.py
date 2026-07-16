@@ -103,7 +103,6 @@ class TestButtonBaseHeights:
 
     ESSENTIAL_BUTTONS = [
         "btn_clear",
-        "btn_format",
         "btn_save",
         "btn_new",
         "btn_home",
@@ -141,7 +140,7 @@ class TestButtonBaseHeights:
 
     def test_common_buttons_have_reasonable_heights(self):
         """Common action buttons should be 24px base height."""
-        for name in ["btn_save", "btn_new", "btn_clear", "btn_format"]:
+        for name in ["btn_save", "btn_new", "btn_clear"]:
             assert _BTN_BASE_HEIGHTS.get(name) == 24, f"{name} should have base height 24"
 
     def test_smaller_buttons_have_lower_heights(self):

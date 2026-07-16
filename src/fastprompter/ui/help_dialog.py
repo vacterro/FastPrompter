@@ -56,7 +56,8 @@ def build_help_html(data) -> str:
         ("Wheel over the tab bar", "Switch project"),
         ("Ctrl+Wheel in the editor", "Zoom the editor font"),
         ("Middle-click a silo", "Clear it — middle-click an empty one to delete the slot"),
-        ("Hover a silo", "&#128204; pin and &#128229; archive buttons appear"),
+        ("Hover a silo", "&#128193; files, &#128204; pin and &#128229; archive buttons appear"),
+        ("Click &#9112; on a ``` code fence", "Copy that code block to the clipboard"),
         ("Right-click a silo", "Transfer to project, replace from, move to bottom&hellip;"),
         ("Drag a silo between others / onto one", "Reorder / swap"),
         ("Left / right half-click a snippet", "Open with the cursor at start / end"),
@@ -72,6 +73,12 @@ def build_help_html(data) -> str:
         "<li><b>Markdown</b> — live highlighting, clickable links &amp; checkboxes, "
         "auto-bullets (- + space, Enter continues), zebra stripes, line numbers</li>"
         "<li><b>Drop any file</b> — ~50 text formats load as plain text</li>"
+        "<li><b>Code blocks</b> — ``` fences render monospace with syntax tints, "
+        "auto line numbers and a one-click &#9112; copy button on the fence line</li>"
+        "<li><b>File container</b> (&#128193;) — per-silo asset drawer: drop ANY "
+        "files in, drag them out, preview images, open, export. Plain folders under "
+        "<code>data/files/&lt;project&gt;/&lt;silo-title&gt;/</code> — fully readable "
+        "outside FastPrompter</li>"
         "<li><b>Scale</b> — 50&ndash;150% whole-UI scaling with readable minimums</li>"
         "<li><b>Sounds</b> — optional UI clicks and typewriter effect (settings &#9881;)</li>"
         "<li><b>Data</b> — SQLite in <code>data/</code> next to the app; daily Markdown "

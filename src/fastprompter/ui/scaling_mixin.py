@@ -14,9 +14,8 @@ _is_deleted = sip.isdeleted
 # Static button height / font scale data for apply_scaled_ui
 _BTN_BASE_HEIGHTS = {
     "btn_clear": 24,
-    "btn_format": 24,
     "btn_clear_fmt": 24,
-    "btn_clean_space": 24,
+    "btn_files": 24,
     "btn_add_line": 24,
     "btn_bullet_toggle": 24,
     "btn_save": 24,

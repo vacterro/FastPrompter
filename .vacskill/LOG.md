@@ -1,0 +1,23 @@
+# compacted 15.07.26 (re-encoded from UTF-16)
+- (antigravity) Fixed date/time widget placement (moved from VaultTextEdit paintEvent to main header layout)
+- (antigravity) Added drag-and-drop reordering logic within pinned silos
+- (antigravity) Separated pinned silos numbering (1, 2, 3...) from global unpinned numbering
+- (antigravity) Added toggleable visual gap separator between pinned and unpinned silos
+- (antigravity) Added visual gap between Snippets section and Silos section, respecting Pinned Gap style and toggle
+- (antigravity) Fixed drag-and-drop crash over gap widgets by strictly filtering _visible_buttons in SiloDropWidget
+- (antigravity) Fixed date timer layout cutoff and line count jitter by explicitly reserving width for labels
+- (antigravity) Removed Clean function completely (UI and logic)
+- (antigravity) Removed Formatted/plain function completely (UI and logic)
+- (antigravity) Auto Bullet toggle changed from Ctrl+Click to Right-Click, added checked UI state, updated tooltips
+- (antigravity) Fixed unpinned silo numbering to be sequential
+- 16.07.26 19:57 [--] DEC: .vac -> .vacskill rename; LOG was UTF-16, перекодировал — писали как на пишмашинке через кальку
+- 16.07.26 19:57 [--] RUN: pytest baseline -> 461+55 PASS after dropping btn_format refs (Antigravity удалил Clean/Formatted, тесты не знали)
+- 16.07.26 20:01 [T-007] RUN: copy glyph wired (press/release 3D box, parity opener detect) -> compile PASS
+- 16.07.26 20:28 [T-007] RUN: pytest tests_smoke -> 57 PASS incl copy button; кнопка жмётся, буфер полон
+- 16.07.26 20:28 [T-008] RUN: divider spins wired (0-6/1-6) -> 57+461 PASS; heredoc опять сожрал 
+, чинил руками, урок дважды не впрок
+- 16.07.26 20:36 [T-009] RUN: date rect test added, right-click bullet + pinned gap greped live -> 58 PASS; Antigravity не соврал, редкость
+- 16.07.26 20:54 [T-010] RUN: file_container built (folder=silo title slug, drop/drag/preview/export) -> 61+461 PASS
+- 16.07.26 20:54 [T-010] RUN: MANUAL-VERIFY drag-out to Explorer + os.startfile open; offscreen Qt so mouse untestable
+- 16.07.26 20:54 [T-010] DEC: no DB for files, folder IS the container -> KNOWLEDGE/decisions.md
+- 16.07.26 21:05 [T-011] DEC: REVIEW -> SHIP; P0 fixed: Enter-on--- hardcoded divider diverged from spins, unified via divider_counts()

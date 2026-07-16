@@ -1,6 +1,7 @@
 import os
 import re
 
+import datetime
 from PyQt6 import sip
 from PyQt6.QtCore import QPoint, QRect, QRectF, QSize, Qt, QTimer, QUrl
 from PyQt6.QtGui import (
@@ -12,7 +13,7 @@ from PyQt6.QtGui import (
     QPolygon,
     QTextCursor,
 )
-from PyQt6.QtWidgets import QTextEdit, QWidget
+from PyQt6.QtWidgets import QApplication, QTextEdit, QWidget
 
 TS_STAMP_LINE_RE = re.compile(r"\(\d{2}\.\d{2} - \d{2}:\d{2}\)\s*$")
 
@@ -174,16 +175,23 @@ class VaultTextEdit(QTextEdit):
                 return
             first_number = first.blockNumber()
             last_visible = min(block_count, first_number + 200)
+            show_all = self.main_win.data.get("show_line_numbers", "False") == "True"
+            
             for block_number in range(first_number, last_visible):
                 block = doc.findBlockByNumber(block_number)
                 if not block.isValid():
                     break
                 cursor = QTextCursor(block)
                 rect = self.cursorRect(cursor)
-                number = str(block_number + 1)
-                painter.setPen(QColor("#808080"))
-                painter.drawText(0, int(rect.top()), self.line_number_area.width() - 10,
-                                 self.fontMetrics().height(), Qt.AlignmentFlag.AlignRight, number)
+                
+                is_code = bool(max(0, block.userState()) & (1 << 8))
+                
+                if show_all or is_code:
+                    number = str(block_number + 1)
+                    painter.setPen(QColor("#808080"))
+                    painter.drawText(0, int(rect.top()), self.line_number_area.width() - 10,
+                                     self.fontMetrics().height(), Qt.AlignmentFlag.AlignRight, number)
+                                     
                 mark = max(0, block.userState()) & 0xFF
                 if mark > 0:
                     y_center = int(rect.top() + self.fontMetrics().height() / 2)
@@ -249,6 +257,58 @@ class VaultTextEdit(QTextEdit):
             block = block.next()
         return None
 
+    def _fence_is_opener(self, block):
+        """True when this ``` line OPENS a code block (parity from doc
+        start; docs over 2000 blocks skip code niceties anyway)."""
+        if not block.text().strip().startswith("```"):
+            return False
+        opens = True
+        b = self.document().firstBlock()
+        while b.isValid() and b.blockNumber() < block.blockNumber():
+            if b.text().strip().startswith("```"):
+                opens = not opens
+            b = b.next()
+        return opens
+
+    def _code_copy_rect(self, block):
+        """Rect of the inline copy button on an opening fence line."""
+        cur = QTextCursor(block)
+        cur.movePosition(QTextCursor.MoveOperation.EndOfBlock)
+        r = self.cursorRect(cur)
+        size = max(14, r.height() - 2)
+        return QRect(r.right() + 6, r.top() + (r.height() - size) // 2, size, size)
+
+    def _code_copy_block_at(self, pos):
+        """Return the opening fence block whose copy button contains pos."""
+        if self.document().blockCount() > 2000:
+            return None
+        block = self._first_visible_block()
+        vp_h = self.viewport().height()
+        while block is not None and block.isValid():
+            r = self.cursorRect(QTextCursor(block))
+            if r.top() > vp_h:
+                break
+            if block.text().strip().startswith("```") and self._fence_is_opener(block):
+                if self._code_copy_rect(block).contains(pos):
+                    return block
+            block = block.next()
+        return None
+
+    def copy_code_block(self, opener_block):
+        """Copy the fenced block's content (between the fences) to clipboard."""
+        lines = []
+        b = opener_block.next()
+        while b.isValid():
+            if b.text().strip().startswith("```"):
+                break
+            lines.append(b.text())
+            b = b.next()
+        QApplication.clipboard().setText("\n".join(lines))
+        try:
+            self.main_win.play_tick_sound()
+        except Exception:
+            pass
+
     def _checkbox_at_pos(self, pos):
         try:
             if not self._doc_has_checkbox:
@@ -306,6 +366,12 @@ class VaultTextEdit(QTextEdit):
             return
         try:
             if event.button() == Qt.MouseButton.LeftButton:
+                code_block = self._code_copy_block_at(event.pos())
+                if code_block is not None:
+                    self._copy_pressed_block = code_block.blockNumber()
+                    self.viewport().update()
+                    event.accept()
+                    return
                 ts_block = self._ts_glyph_block_at(event.pos())
                 if ts_block is not None:
                     # show the pushed state; the action fires on release
@@ -357,6 +423,15 @@ class VaultTextEdit(QTextEdit):
         super().mousePressEvent(event)
 
     def mouseReleaseEvent(self, event):
+        pressed_copy = getattr(self, "_copy_pressed_block", None)
+        if pressed_copy is not None and event.button() == Qt.MouseButton.LeftButton:
+            self._copy_pressed_block = None
+            self.viewport().update()
+            block = self._code_copy_block_at(event.pos())
+            if block is not None and block.blockNumber() == pressed_copy:
+                self.copy_code_block(block)
+            event.accept()
+            return
         pressed = getattr(self, "_ts_pressed_block", None)
         if pressed is not None and event.button() == Qt.MouseButton.LeftButton:
             self._ts_pressed_block = None
@@ -426,11 +501,8 @@ class VaultTextEdit(QTextEdit):
                     else:
                         self.insertPlainText(f"[Dropped file: {os.path.basename(path)} - unsupported format]\n")
             return
-        if self.main_win.btn_format.text() == "Plain":
-            if source.hasText():
-                self.insertPlainText(source.text())
-        else:
-            super().insertFromMimeData(source)
+        if source.hasText():
+            self.insertPlainText(source.text())
 
     def wheelEvent(self, event):
         if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
@@ -556,32 +628,50 @@ class VaultTextEdit(QTextEdit):
         # line with the same bullet (blank line between them if
         # bullet_double_line is on); Enter on an empty bullet removes it.
         if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter) and mods == Qt.KeyboardModifier.NoModifier:
-            if self.main_win.data.get("auto_bullet", "False") == "True":
-                cursor = self.textCursor()
-                if not cursor.hasSelection():
-                    block_text = cursor.block().text()
-                    stripped = block_text.lstrip()
-                    indent = block_text[:len(block_text) - len(stripped)]
-                    m = re.match(r'^([\u2022\-\*\+])[ \t]+(.*)$', stripped)
-                    if m and cursor.positionInBlock() >= len(block_text) - len(m.group(2)):
-                        if m.group(2).strip():
-                            double = self.main_win.data.get("bullet_double_line", "False") == "True"
-                            sep = "\n\n" if double else "\n"
-                            cursor.insertText(sep + indent + m.group(1) + " ")
-                            self.setTextCursor(cursor)
-                            self.ensureCursorVisible()
-                            event.accept()
-                            return
-                        # Empty bullet: Enter clears the marker instead of continuing
-                        cursor.beginEditBlock()
-                        cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
-                        cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock,
-                                            QTextCursor.MoveMode.KeepAnchor)
-                        cursor.removeSelectedText()
-                        cursor.endEditBlock()
+            cursor = self.textCursor()
+            if not cursor.hasSelection():
+                block_text = cursor.block().text()
+                stripped = block_text.lstrip()
+                
+                if stripped == "---":
+                    before, after = self.main_win.divider_counts()
+                    cursor.beginEditBlock()
+                    cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
+                    cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor)
+                    cursor.insertText("\n" * before + "---" + "\n" * after + "\u2022 ")
+                    cursor.endEditBlock()
+                    self.setTextCursor(cursor)
+                    self.ensureCursorVisible()
+                    event.accept()
+                    return
+
+                indent = block_text[:len(block_text) - len(stripped)]
+                m = re.match(r'^([\u2022\-\*\+])[ \t]+(.*)$', stripped)
+                
+                # The user requested double line to work independently of the 'auto_bullet' check if toggled,
+                # or just ensure double lines append correctly. We will allow auto-continuation if either
+                # auto_bullet is True OR bullet_double_line is True.
+                wants_auto_bullet = self.main_win.data.get("auto_bullet", "False") == "True"
+                double = self.main_win.data.get("bullet_double_line", "False") == "True"
+                
+                if m and cursor.positionInBlock() >= len(block_text) - len(m.group(2)) and (wants_auto_bullet or double):
+                    if m.group(2).strip():
+                        sep = "\n\n" if double else "\n"
+                        cursor.insertText(sep + indent + m.group(1) + " ")
                         self.setTextCursor(cursor)
+                        self.ensureCursorVisible()
                         event.accept()
                         return
+                    # Empty bullet: Enter clears the marker instead of continuing
+                    cursor.beginEditBlock()
+                    cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
+                    cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock,
+                                        QTextCursor.MoveMode.KeepAnchor)
+                    cursor.removeSelectedText()
+                    cursor.endEditBlock()
+                    self.setTextCursor(cursor)
+                    event.accept()
+                    return
 
         try:
             super().keyPressEvent(event)
@@ -651,24 +741,56 @@ class VaultTextEdit(QTextEdit):
                             line_rect = QRectF(0, br.top(), vp_rect.width(), br.height())
                             painter.fillRect(line_rect, zebra_odd)
 
+                        # Inline copy button on opening code fences:
+                        # click copies the block's content to the clipboard
+                        if not is_large and stripped.startswith("```") and self._fence_is_opener(block):
+                            gc = QRectF(self._code_copy_rect(block))
+                            pressed_c = getattr(self, "_copy_pressed_block", -1) == bnum
+                            painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+                            painter.fillRect(gc, QColor("#1e1e1e"))
+                            light = QColor("#3a3a3a")
+                            dark = QColor("#0a0a0a")
+                            painter.setPen(dark if pressed_c else light)
+                            painter.drawLine(gc.topLeft(), gc.topRight())
+                            painter.drawLine(gc.topLeft(), gc.bottomLeft())
+                            painter.setPen(light if pressed_c else dark)
+                            painter.drawLine(gc.bottomLeft(), gc.bottomRight())
+                            painter.drawLine(gc.topRight(), gc.bottomRight())
+                            painter.setPen(QColor("#D9B340"))
+                            gfc = self.font()
+                            gfc.setPointSizeF(max(8.0, gfc.pointSizeF() * 0.95))
+                            painter.setFont(gfc)
+                            tgc = gc.adjusted(2, 2, 2, 2) if pressed_c else gc
+                            painter.drawText(tgc, Qt.AlignmentFlag.AlignCenter, "\u2398")
+                            painter.setFont(self.font())
+
                         # Inline refresh button after lines ending with a
                         # Ctrl+E timestamp: a small 3D box (pushes when
                         # clicked) that re-stamps the line to now
-                        if not is_large and TS_STAMP_LINE_RE.search(text):
-                            g = self._ts_glyph_rect(block)
-                            if g is not None:
-                                pressed = getattr(self, "_ts_pressed_block", None) == bnum
-                                bg = QColor("#141414" if pressed else "#3a3a3a")
-                                tl = QColor("#0a0a0a" if pressed else "#555555")
-                                br = QColor("#555555" if pressed else "#0a0a0a")
-                                painter.fillRect(g, bg)
-                                painter.setPen(tl)
+                        m_ts = TS_STAMP_LINE_RE.search(text)
+                        if m_ts:
+                            g_rect = self._ts_glyph_rect(block)
+                            if g_rect is not None:
+                                g = QRectF(g_rect)
+                                pressed = getattr(self, "_ts_pressed_block", -1) == bnum
+                                painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+                                
+                                painter.fillRect(g, QColor("#1e1e1e"))
+                                
+                                light = QColor("#3a3a3a")
+                                dark = QColor("#0a0a0a")
+                                top_left = dark if pressed else light
+                                bottom_right = light if pressed else dark
+                                
+                                painter.setPen(top_left)
                                 painter.drawLine(g.topLeft(), g.topRight())
                                 painter.drawLine(g.topLeft(), g.bottomLeft())
-                                painter.setPen(br)
+                                
+                                painter.setPen(bottom_right)
                                 painter.drawLine(g.bottomLeft(), g.bottomRight())
                                 painter.drawLine(g.topRight(), g.bottomRight())
-                                painter.setPen(QColor("#FFFFFF" if pressed else "#D9B340"))
+                                
+                                painter.setPen(QColor("#a0a0a0"))
                                 gf = self.font()
                                 gf.setPointSizeF(max(8.0, gf.pointSizeF() * 1.1))
                                 painter.setFont(gf)
@@ -726,6 +848,7 @@ class VaultTextEdit(QTextEdit):
                                 painter.fillPath(path, QColor("#333333"))
                                 painter.strokePath(path, QColor("#666666"))
                     block = block.next()
+
         finally:
             painter.end()
 

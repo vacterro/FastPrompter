@@ -37,6 +37,8 @@ Press `Alt+X` anywhere — in your browser, IDE, terminal — and FastPrompter p
 | 📌 **Pin & tint** | Hover a silo for pin/archive buttons; silos tint by how recently you edited them |
 | 🖱️ **Wheel everything** | Wheel flips pages & switches tabs, `Ctrl+wheel` walks silos or zooms text |
 | ✍️ **Markdown editor** | Live highlighting, real checkboxes, auto-bullets, `---` dividers, `Ctrl+E` headers with timestamp |
+| 💻 **Code blocks** | ``` fences render monospace with syntax tints, auto line numbers and a one-click copy button |
+| 📁 **File container** | Per-silo asset drawer: drop *any* files in, drag them out, preview images — stored as plain folders you can read without the app |
 | 🦓 **Readability** | Zebra stripes, line numbers with clickable margin marks, word wrap, zen mode |
 | 🎨 **6 vintage themes** | Win95-style bevels, warm amber-on-black, OLED — plus a full custom color editor |
 | 🎵 **Sounds** | Optional UI clicks and a typewriter tick, with volume control |
@@ -127,8 +129,11 @@ python tools/build.py
 Everything is local and yours:
 
 - **Database** — `data/local_data_v15.db` next to the EXE, saved in real time
+- **File containers** — silo assets are plain folders under `data/files/<project>/<silo-title>/`, browsable in Explorer
 - **Markdown mirror** — silos, snippets & archive exported daily as plain `.md` files to `Documents\.fastprompter\` (on by default, toggleable), readable without FastPrompter
 - **Crash log** — written next to the EXE; crashes are loud, never silent
+
+See [`CHANGELOG.md`](CHANGELOG.md) for version history.
 
 ## 🛠️ Under the hood
 
@@ -136,7 +141,7 @@ Python 3.11 + PyQt6, SQLite via the standard library, Win32 `RegisterHotKey` for
 
 ```powershell
 uv run pytest tests/         # 461 unit tests
-uv run pytest tests_smoke/   # 27 integration tests — boots the real app offscreen
+uv run pytest tests_smoke/   # 61 integration tests — boots the real app offscreen
 ```
 
 ## 📜 License

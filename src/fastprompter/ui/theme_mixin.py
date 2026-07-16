@@ -28,7 +28,7 @@ class ThemeMixin:
     QMainWindow instance at runtime:
         self.data, self._theme_cache, self._theme_cache_name,
         self.text_area, self.preview_area, self.highlighter,
-        self.font_combo, self.preview_combo, self.btn_format,
+        self.font_combo, self.preview_combo,
         self.btn_new, self.btn_save, self.btn_help, self.mini_settings_frame,
         self.tray_icon
     """
@@ -321,7 +321,4 @@ class ThemeMixin:
         if mode == "Reading":
             self.preview_area.setHtml(self.simple_markdown_to_html(text))
 
-    def toggle_paste_mode(self, checked):
-        """Toggle between Plain and Formatted paste mode."""
-        self.btn_format.setText("Plain" if checked else "Formatted")
-        self.mark_dirty()
+
