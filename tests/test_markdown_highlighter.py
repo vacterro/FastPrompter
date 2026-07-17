@@ -29,6 +29,9 @@ class _MockQTextCharFormat:
     def setFontWeight(self, w):
         self._font_weight = w
 
+    def setFontStyleStrategy(self, strategy):
+        self._properties["style_strategy"] = strategy
+
     def setFontItalic(self, v):
         self._font_italic = v
 
@@ -79,10 +82,14 @@ class _MockQColor:
 
 
 class _MockQFont:
-    """Stand-in for QFont — holds a Weight namespace."""
+    """Stand-in for QFont — holds Weight and StyleStrategy namespaces."""
 
     class Weight:
         Bold = 75
+
+    class StyleStrategy:
+        NoAntialias = 0x0100
+        NoSubpixelAntialias = 0x0200
 
 
 class _MockQTextFormat:

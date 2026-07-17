@@ -9,12 +9,11 @@ from PyQt6.QtGui import (
     QFont,
     QPainter,
     QPainterPath,
-    QPolygon,
     QTextCursor,
 )
 from PyQt6.QtWidgets import QApplication, QTextEdit, QWidget
 
-TS_STAMP_LINE_RE = re.compile(r"\(\d{2}\.\d{2} - \d{2}:\d{2}\)\s*$")
+TS_STAMP_LINE_RE = re.compile(r"(?:Morning |Day |Evening |Night )?\d{2}\.\d{2} - \d{2}:\d{2}")
 
 
 def _draw_horizontal_rule(painter, hr_color, y_pos, width):
@@ -30,6 +29,8 @@ class LineNumberArea(QWidget):
     def __init__(self, editor):
         super().__init__(editor)
         self.editor = editor
+        self.setMouseTracking(True)
+        self.hover_y = -1
 
     def sizeHint(self):
         return QSize(self.editor.line_number_area_width(), 0)
@@ -42,6 +43,16 @@ class LineNumberArea(QWidget):
 
     def mousePressEvent(self, event):
         self.editor.line_number_area_mouse_press_event(event)
+
+    def mouseMoveEvent(self, event):
+        self.hover_y = event.pos().y()
+        self.update()
+        super().mouseMoveEvent(event)
+
+    def leaveEvent(self, event):
+        self.hover_y = -1
+        self.update()
+        super().leaveEvent(event)
 
 
 class VaultTextEdit(QTextEdit):
@@ -190,28 +201,17 @@ class VaultTextEdit(QTextEdit):
                 if show_all or is_code:
                     number = str(block_number + 1)
                     painter.setPen(QColor("#808080"))
-                    painter.drawText(0, int(rect.top()), self.line_number_area.width() - 10,
+                    painter.drawText(0, int(rect.top()), self.line_number_area.width() - 4,
                                      self.fontMetrics().height(), Qt.AlignmentFlag.AlignRight, number)
                                      
                 mark = max(0, block.userState()) & 0xFF
-                if mark > 0:
-                    y_center = int(rect.top() + self.fontMetrics().height() / 2)
-                    x_center = self.line_number_area.width() - 5
-                    if mark == 1:
-                        painter.setBrush(QColor("red"))
-                        painter.setPen(Qt.PenStyle.NoPen)
-                        painter.drawEllipse(QPoint(x_center, y_center), 3, 3)
-                    elif mark == 2:
-                        painter.setBrush(QColor("cyan"))
-                        painter.setPen(Qt.PenStyle.NoPen)
-                        painter.drawRect(x_center - 3, y_center - 3, 6, 6)
-                    elif mark == 3:
-                        painter.setBrush(QColor("yellow"))
-                        painter.setPen(Qt.PenStyle.NoPen)
-                        poly = QPolygon([QPoint(x_center, y_center - 4),
-                                         QPoint(x_center - 4, y_center + 3),
-                                         QPoint(x_center + 4, y_center + 3)])
-                        painter.drawPolygon(poly)
+                is_hovered = getattr(self.line_number_area, "hover_y", -1) != -1 and rect.top() <= self.line_number_area.hover_y <= rect.bottom()
+                
+                if mark == 1 or (mark == 0 and is_hovered):
+                    painter.setPen(QColor("#a8cc8c") if mark == 1 else QColor(168, 204, 140, 80))
+                    # draw ✅ justified to the left
+                    painter.drawText(2, int(rect.top()), self.line_number_area.width(),
+                                     self.fontMetrics().height(), Qt.AlignmentFlag.AlignLeft, "✅")
         finally:
             painter.end()
 
@@ -227,7 +227,8 @@ class VaultTextEdit(QTextEdit):
             if rect.top() <= event.pos().y() <= rect.top() + block_height:
                 state = max(0, block.userState())
                 mark = state & 0xFF
-                block.setUserState((state & ~0xFF) | ((mark + 1) % 4))
+                new_mark = 1 if mark == 0 else 0
+                block.setUserState((state & ~0xFF) | new_mark)
                 self.line_number_area.update()
                 break
             block = block.next()
@@ -599,7 +600,11 @@ class VaultTextEdit(QTextEdit):
                 if (p - self._last_hover_pos).manhattanLength() > 3:
                     self._last_hover_pos = p
                     over_cb = self._checkbox_at_pos(p)
-                    target = Qt.CursorShape.PointingHandCursor if over_cb else Qt.CursorShape.IBeamCursor
+                    over_ts = self._ts_glyph_block_at(p) is not None
+                    over_fold = self._fold_block_at(p) is not None
+                    over_copy = self._code_copy_block_at(p) is not None
+                    is_link = bool(self.anchorAt(p))
+                    target = Qt.CursorShape.PointingHandCursor if (over_cb or over_ts or over_fold or over_copy or is_link) else Qt.CursorShape.IBeamCursor
                     cur = self.viewport().cursor()
                     if cur.shape() != target:
                         self.viewport().setCursor(target)

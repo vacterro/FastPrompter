@@ -164,6 +164,7 @@ class _FileList(QListWidget):
         drag.exec(Qt.DropAction.CopyAction)
 
 
+
 class FileContainerPanel(QWidget):
     """Non-modal drawer window over one silo's file folder."""
 
@@ -198,6 +199,7 @@ class FileContainerPanel(QWidget):
         self.btn_view = QPushButton("")
         self.btn_view.setToolTip("Cycle view: Icons → List → Details (like Explorer)")
         self.btn_view.clicked.connect(self._cycle_view)
+
         bar.addWidget(self.btn_import)
         bar.addWidget(self.btn_clip)
         bar.addWidget(self.btn_open_folder)
@@ -230,6 +232,7 @@ class FileContainerPanel(QWidget):
         self._watcher = QFileSystemWatcher(self)
         self._watcher.directoryChanged.connect(lambda _: self.refresh())
         self._apply_view_mode()
+
 
     # ---- view modes (Explorer-like) ---------------------------------------
 

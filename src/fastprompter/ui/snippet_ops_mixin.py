@@ -445,7 +445,15 @@ class SnippetOpsMixin:
         """Delete a snippet at the given category and index."""
         if self.data["categories"][cat][global_idx] is not None:
             self.add_data_undo_state("Delete snippet")
-            self._delete_file_container(cat, self.data["categories"][cat][global_idx]["text"])
+            target_item = self.data["categories"][cat][global_idx]
+            if self.data.get("trash_vision", "False") == "True" and cat != "Trash":
+                if "Trash" not in self.data["categories"]:
+                    self.data["categories"]["Trash"] = []
+                if "Trash" not in self.data["cats_order"]:
+                    self.data["cats_order"].append("Trash")
+                self.data["categories"]["Trash"].append(target_item)
+            else:
+                self._delete_file_container(cat, target_item["text"])
         if getattr(self, "editing_snippet", None) == (cat, global_idx):
             self.editing_snippet = None
             self.btn_save.setText("Save")

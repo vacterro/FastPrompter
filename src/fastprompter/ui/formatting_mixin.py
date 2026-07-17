@@ -224,11 +224,23 @@ class FormattingMixin:
         return before, after
 
     def insert_add_line(self):
-        """Insert a horizontal markdown divider line (---) with smart spacing,
-        landing on a fresh bullet ready to type.
+        """Insert a horizontal markdown divider line (---) pushing text down,
+        while returning the cursor to the exact original position.
+        """
+        cursor = self.text_area.textCursor()
+        cursor.beginEditBlock()
+        original_pos = cursor.position()
+        cursor.insertText("\n\n\n\n\n---\n")
+        cursor.setPosition(original_pos)
+        self.text_area.setTextCursor(cursor)
+        cursor.endEditBlock()
+        self.text_area.ensureCursorVisible()
+        self.text_area.setFocus()
+        self.mark_dirty()
 
-        If called mid-line or on a non-empty line, jumps to the end first.
-        Inserts \\n\\n---\\n\\n\\n•  and positions the cursor right after the bullet.
+    def insert_old_add_line(self):
+        """Insert a horizontal markdown divider line (---) with smart spacing,
+        landing on a fresh bullet ready to type. (Old Ctrl+W behavior)
         """
         before, after = self.divider_counts()
         cursor = self.text_area.textCursor()
@@ -329,6 +341,7 @@ class FormattingMixin:
         cursor.beginEditBlock()
 
         clean_format = QTextCharFormat()
+        clean_format.setFontStyleStrategy(QFont.StyleStrategy.NoAntialias | QFont.StyleStrategy.NoSubpixelAntialias)
         try:
             base_size = self._font_size
         except Exception:

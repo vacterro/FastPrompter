@@ -234,25 +234,134 @@ class FastPrompter(
         self.lbl_date.setVisible(True)
         import datetime
         now = datetime.datetime.now()
-        if self.data.get("date_seconds", "True") == "True":
-            dt_str = now.strftime("%d.%m - %H:%M:%S")
-            ref_str = "00.00 - 00:00:00"
+        # Narrow windows (Ctrl+Q quarter snap) degrade gracefully:
+        win_w = self.width()
+        show_secs = self.data.get("date_seconds", "True") == "True" and win_w >= 1000
+        show_word = self.data.get("date_daypart", "True") == "True" and win_w >= 1200
+        text_month = self.data.get("date_text_month", "False") == "True"
+        m_fmt = "%d %b" if text_month else "%d.%m"
+        if show_secs:
+            dt_str = now.strftime(f"{m_fmt} - %H:%M:%S")
+            ref_str = "00 MMM - 00:00:00" if text_month else "00.00 - 00:00:00"
         else:
-            dt_str = now.strftime("%d.%m - %H:%M")
-            ref_str = "00.00 - 00:00"
-        if self.data.get("date_daypart", "True") == "True":
+            dt_str = now.strftime(f"{m_fmt} - %H:%M")
+            ref_str = "00 MMM - 00:00" if text_month else "00.00 - 00:00"
+        if show_word:
             dt_str += f" · {self._day_part(now.hour)}"
             ref_str += " · Morning"
-            
+
         from PyQt6.QtGui import QFontMetrics
         fm = QFontMetrics(self.lbl_date.font())
-        needed_width = fm.horizontalAdvance(ref_str) + 16
+        needed_width = fm.horizontalAdvance(ref_str) + 8
         if self.lbl_date.minimumWidth() != needed_width:
             self.lbl_date.setMinimumWidth(needed_width)
+            self.lbl_date.setMaximumWidth(needed_width + 8)
             from PyQt6.QtCore import Qt
             self.lbl_date.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            
+
         self.lbl_date.setText(dt_str)
+
+    # (button, normal label, dense label) — dense squeezes into a
+    # Ctrl+Q quarter-FullHD window without hiding anything
+    _DENSE_LABELS = (
+        ("btn_new", "NEW", "NEW"),
+        ("btn_save", "Save", "Save"),
+        ("btn_clear_fmt", "Clear Fmt", "CF"),
+        ("btn_add_line", "Line", "Line"),
+        ("btn_copy", "Copy", "Copy"),
+        ("btn_clear", "Clear", "Clear"),
+        ("btn_home", "Home", "⇤"),
+        ("btn_end", "End", "⇥"),
+    )
+
+    def _apply_header_density(self):
+        """Pack the header for small windows (Ctrl+Q quarter-FullHD and
+        below): hard-clamp text-button widths to their label, shorten the
+        widest labels, and let the date clock degrade (day word first,
+        then seconds). Nothing gets hidden — only tightened."""
+        w = self.width()
+        dense = w < 1280
+        flipped = getattr(self, "_header_dense", None) != dense
+        if flipped:
+            self._header_dense = dense
+            self.header_layout.setSpacing(1 if dense else 2)
+
+        def _dense_font(widget):
+            # shrink to 10px while dense; remember the original for restore
+            if dense:
+                if not hasattr(widget, "_pre_dense_font"):
+                    widget._pre_dense_font = QFont(widget.font())
+                f = QFont(widget.font())
+                f.setPixelSize(10)
+                widget.setFont(f)
+            elif flipped and hasattr(widget, "_pre_dense_font"):
+                widget.setFont(widget._pre_dense_font)
+                del widget._pre_dense_font
+
+        # widths recompute every pass while dense — the font can change
+        # after the flag flips (scale/theme), stale metrics overshoot
+        for name, normal, short in self._DENSE_LABELS:
+            btn = getattr(self, name, None)
+            if btn is None or sip.isdeleted(btn):
+                continue
+            if flipped:
+                btn.setText(short if dense else normal)
+            _dense_font(btn)
+            if dense:
+                btn.setFixedWidth(btn.fontMetrics().horizontalAdvance(btn.text()) + 8)
+            elif flipped:
+                btn.setMinimumWidth(0)
+                btn.setMaximumWidth(16777215)
+        for name in ("btn_bullet_toggle", "btn_files"):
+            bt = getattr(self, name, None)
+            if bt is None or sip.isdeleted(bt):
+                continue
+            _dense_font(bt)
+            if dense:
+                bt.setFixedWidth(bt.fontMetrics().horizontalAdvance(bt.text()) + 8)
+            elif flipped:
+                bt.setMinimumWidth(0)
+                bt.setMaximumWidth(16777215)
+        for name in ("lbl_date", "lbl_line_count"):
+            lbl = getattr(self, name, None)
+            if lbl is not None and not sip.isdeleted(lbl):
+                _dense_font(lbl)
+        if flipped:
+            self._update_date_label()
+        import os as _os
+        if _os.environ.get("FP_DENSITY_DEBUG"):
+            print("DENSITY dense=", dense, "flipped=", flipped,
+                  "save px=", self.btn_save.font().pixelSize(),
+                  "save minW=", self.btn_save.minimumWidth())
+        if flipped:
+            # format squares squeeze 24 -> 20 in dense
+            for name in ("btn_bold", "btn_italic", "btn_under", "btn_strike",
+                         "btn_header", "btn_settings_toggle", "btn_help"):
+                btn = getattr(self, name, None)
+                if btn is None or sip.isdeleted(btn):
+                    continue
+                if dense:
+                    btn.setFixedSize(20, 20)
+                else:
+                    self.apply_button_size(btn, 24, 24)
+            # tabs scroll inside a bounded strip when space is tight
+            # (inline QSS re-enables the scroller arrows the theme hides)
+            if hasattr(self, "tab_bar"):
+                if dense:
+                    self.tab_bar.setStyleSheet("QTabBar::scroller { width: 14px; }")
+                    self.tab_bar.setMinimumWidth(90)
+                    self.tab_bar.setMaximumWidth(150)
+                else:
+                    self.tab_bar.setStyleSheet("")
+                    self.tab_bar.setMinimumWidth(0)
+                    self.tab_bar.setMaximumWidth(16777215)
+            if hasattr(self, "lbl_date"):
+                self.lbl_date.setStyleSheet(
+                    "padding: 0 1px;" if dense else "padding: 0 4px;")
+        if flipped or getattr(self, "_last_density_width", None) != w:
+            self._last_density_width = w
+            self._update_date_label()
+            self._update_line_count_label()
 
     @staticmethod
     def _day_part(hour):
@@ -308,6 +417,9 @@ class FastPrompter(
         cat = self.get_current_category()
         n = silo_file_count(self._files_root(), cat, text)
         self.btn_files.setText(f"📁{n}" if n else "📁")
+        if getattr(self, "_header_dense", False):
+            self.btn_files.setFixedWidth(
+                self.btn_files.fontMetrics().horizontalAdvance(self.btn_files.text()) + 8)
         self.btn_files.setToolTip(
             "Files — asset drawer for the active silo (drop in / drag out /\n"
             "preview / export; plain folder in data/files)\n\n"
@@ -491,7 +603,11 @@ class FastPrompter(
 
         self.tab_bar = QTabBar()
         self.tab_bar.setExpanding(False)
-        self.tab_bar.setUsesScrollButtons(False)
+        # Scroll buttons only appear when tabs truly overflow; without them
+        # the tab bar's minimum width is the sum of ALL tabs, which alone
+        # breaks packing into a Ctrl+Q quarter-FullHD window.
+        self.tab_bar.setUsesScrollButtons(True)
+        self.tab_bar.setElideMode(Qt.TextElideMode.ElideRight)
         for cat in self.data["cats_order"]:
             self.tab_bar.addTab(cat)
         self.tab_bar.currentChanged.connect(self.on_tab_changed)
@@ -619,14 +735,14 @@ class FastPrompter(
 
         self.btn_copy = QPushButton("Copy")
         self.btn_copy.setToolTip("Copy all text (Ctrl+C)\nRight-click: Copy + Close FastPrompter")
-        self.apply_button_size(self.btn_copy, 24)
+        self.apply_button_size(self.btn_copy, 26)
         self.btn_copy.clicked.connect(self.copy_context_to_clipboard)
         self.btn_copy.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.btn_copy.customContextMenuRequested.connect(self.copy_context_and_close)
 
         self.btn_clear = QPushButton("Clear")
         self.btn_clear.setToolTip("Clear (Ctrl+Shift+C)")
-        self.apply_button_size(self.btn_clear, 24)
+        self.apply_button_size(self.btn_clear, 26)
         self.btn_clear.clicked.connect(self.clear_text)
 
         self.btn_files = QPushButton("📁")
@@ -988,6 +1104,15 @@ class FastPrompter(
                 or self.mark_dirty()
             ),
         )
+        self.cb_date_text_month = create_footer_cb(
+            "Text Month",
+            "Show month as text instead of numbers (17 Jul instead of 17.07)",
+            self.data.get("date_text_month", "False") == "True",
+            lambda checked: (
+                self.data.update({"date_text_month": "True" if checked else "False"})
+                or self.mark_dirty()
+            ),
+        )
         self.cb_sound = create_footer_cb(
             "UI Sounds",
             "Play click sounds for buttons and actions",
@@ -999,6 +1124,12 @@ class FastPrompter(
             "Play a typewriter tick for every typed character",
             self.data.get("sound_typewriter", "False") == "True",
             self.on_typewriter_toggled,
+        )
+        self.cb_trash_vision = create_footer_cb(
+            "Trash Vision",
+            "Show the Trash category for deleted snippets",
+            self.data.get("trash_vision", "False") == "True",
+            self.toggle_trash_vision,
         )
 
         div_row = QHBoxLayout()
@@ -1055,10 +1186,25 @@ class FastPrompter(
         vol_row.addWidget(self.spin_volume)
         vol_row.addStretch(1)
 
+        hdr_row = QHBoxLayout()
+        hdr_row.setContentsMargins(0, 0, 0, 0)
+        hdr_row.setSpacing(4)
+        lbl_hdr = QLabel("Header Fmt:")
+        lbl_hdr.setToolTip("Format for Ctrl+E. {text} is selected text. {time} is timestamp.")
+        hdr_row.addWidget(lbl_hdr)
+        self.le_hdr_fmt = QLineEdit()
+        self.le_hdr_fmt.setPlaceholderText("**__{text}__** ({time})")
+        self.le_hdr_fmt.setText(self.data.get("ctrl_e_format", "**__{text}__** ({time})"))
+        self.le_hdr_fmt.textChanged.connect(
+            lambda v: (self.data.update({"ctrl_e_format": v}), self.mark_dirty())
+        )
+        hdr_row.addWidget(self.le_hdr_fmt)
+
         def _settings_group(title, items):
             col = QVBoxLayout()
             col.setContentsMargins(0, 0, 0, 0)
             col.setSpacing(1)
+            col.setAlignment(Qt.AlignmentFlag.AlignTop)
             header = QLabel(title)
             header.setStyleSheet("font-weight: bold; padding: 0 0 1px 0;")
             col.addWidget(header)
@@ -1084,22 +1230,18 @@ class FastPrompter(
         groups_row.addLayout(_settings_group("Window", [
             self.cb_top, self.cb_lock_window, self.cb_normal_window,
             self.cb_tray, self.cb_sidebar, self.cb_date_rect, self.cb_date_seconds,
-            self.cb_date_daypart,
-        ]), 1)
-        groups_row.addWidget(_vline())
-        groups_row.addLayout(_settings_group("Behavior", [
-            self.cb_focus, self.cb_ctrl_c, self.cb_lock_cursor,
-            self.cb_silo_home, self.cb_portable_backup,
+            self.cb_date_daypart, self.cb_date_text_month, self.cb_trash_vision
         ]), 1)
         groups_row.addWidget(_vline())
         groups_row.addLayout(_settings_group("Editor", [
-            self.cb_wrap, self.cb_line_numbers, self.cb_zebra,
-            self.cb_hide_shortkeys, self.cb_double_line, self.cb_bold_titles, self.cb_silo_pinned_gap,
-            div_row, files_row,
+            self.cb_focus, self.cb_wrap, self.cb_ctrl_c, self.cb_lock_cursor,
+            self.cb_line_numbers, self.cb_zebra, self.cb_double_line,
         ]), 1)
         groups_row.addWidget(_vline())
-        groups_row.addLayout(_settings_group("Sound", [
-            self.cb_sound, self.cb_typewriter, vol_row,
+        groups_row.addLayout(_settings_group("Data & Appearance", [
+            self.cb_silo_home, self.cb_silo_pinned_gap, self.cb_bold_titles,
+            self.cb_hide_shortkeys, self.cb_portable_backup, self.cb_sound,
+            self.cb_typewriter, vol_row, div_row, hdr_row, files_row
         ]), 1)
 
         hline = QFrame()
@@ -1510,7 +1652,7 @@ class FastPrompter(
         self.mark_dirty()
 
     def apply_header_timestamp(self):
-        """Ctrl+E: Apply header (#), bold, underline, and append timestamp at end of current line."""
+        """Ctrl+E: Apply user-defined header formatting and timestamp at end of current line."""
         cursor = self.text_area.textCursor()
         cursor.beginEditBlock()
 
@@ -1523,36 +1665,45 @@ class FastPrompter(
             cursor.endEditBlock()
             return
 
-        # Add # header prefix if not already present
-        if not sel.startswith("# "):
-            new_text = f"# {sel}"
-        else:
-            new_text = sel
-
-        cursor.insertText(new_text)
-
-        # Apply bold and underline to the text
-        cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
-        cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor)
-        fmt = cursor.charFormat()
-        fmt.setFontWeight(QFont.Weight.Bold)
-        fmt.setFontUnderline(True)
-        cursor.mergeCharFormat(fmt)
-
-        # Append (DD.MM - hh:mm) at end of line; if the line already has a
-        # stamp, refresh it in place (title untouched)
-        cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock)
-        import datetime
-
-        ts = datetime.datetime.now().strftime("(%d.%m - %H:%M)")
-        block = cursor.block()
-        m = re.search(r"\(\d{2}\.\d{2} - \d{2}:\d{2}\)", block.text())
+        template = self.data.get("ctrl_e_format", "**__{text}__** ({time})")
+        full_template = template if template.startswith("# ") else f"# {template}"
+        
+        pattern = re.escape(full_template)
+        pattern = pattern.replace(re.escape("{text}"), r"(.*?)")
+        pattern = pattern.replace(re.escape("{time}"), r".*?")
+        pattern = f"^{pattern}$"
+        
+        m = re.match(pattern, sel)
         if m:
-            cursor.setPosition(block.position() + m.start())
-            cursor.setPosition(block.position() + m.end(), QTextCursor.MoveMode.KeepAnchor)
-            cursor.insertText(ts)
-        else:
-            cursor.insertText(f" {ts}")
+            clean_sel = m.group(1)
+            plain = QTextCharFormat()
+            cursor.insertText(clean_sel, plain)
+            cursor.endEditBlock()
+            self.mark_dirty()
+            return
+
+        import datetime
+        now = datetime.datetime.now()
+        h = now.hour
+        if 5 <= h < 12: daypart = "Morning"
+        elif 12 <= h < 17: daypart = "Day"
+        elif 17 <= h < 22: daypart = "Evening"
+        else: daypart = "Night"
+        
+        text_month = self.data.get("date_text_month", "False") == "True"
+        m_fmt = "%d %b" if text_month else "%d.%m"
+        ts = now.strftime(f"{m_fmt} - %H:%M")
+        
+        time_str = f"{daypart} {ts}" if self.data.get("date_daypart", "True") == "True" else ts
+        
+        # Remove any existing "# " prefix to avoid duplication if running on an existing header
+        clean_sel = sel[2:] if sel.startswith("# ") else sel
+        
+        formatted_text = template.replace("{text}", clean_sel).replace("{time}", time_str)
+        if not formatted_text.startswith("# "):
+            formatted_text = f"# {formatted_text}"
+            
+        cursor.insertText(formatted_text)
 
         # Jump two lines below the header onto a fresh bullet, with PLAIN
         # formatting — the header's bold/underline must not bleed into
@@ -1770,6 +1921,7 @@ class FastPrompter(
         self.setGeometry(geo)
         if was_visible:
             self.show()
+            self.repaint()
             self.raise_()
             self.activateWindow()
             # New native handle: re-assert always-on-top on it
@@ -2134,6 +2286,19 @@ class FastPrompter(
         self.refresh_temp_presets()
         self.refresh_archive_panel()
 
+    def toggle_trash_vision(self, checked):
+        self.data["trash_vision"] = "True" if checked else "False"
+        if checked:
+            if "Trash" not in self.data["categories"]:
+                self.data["categories"]["Trash"] = []
+            if "Trash" not in self.data["cats_order"]:
+                self.data["cats_order"].append("Trash")
+        else:
+            if "Trash" in self.data["cats_order"]:
+                self.data["cats_order"].remove("Trash")
+        self.build_categories()
+        self.mark_dirty()
+
     def add_data_undo_state(self, _action_name=""):
         if not hasattr(self, "data_undo_stack"):
             self.data_undo_stack = []
@@ -2319,6 +2484,7 @@ class FastPrompter(
             for r in self._resizers.values():
                 r.raise_()
 
+        self._apply_header_density()
         super().resizeEvent(event)
 
     # def nativeEvent(self, eventType, message):
@@ -3363,6 +3529,9 @@ class FastPrompter(
         QShortcut(
             QKeySequence("Ctrl+W"), self, context=Qt.ShortcutContext.ApplicationShortcut
         ).activated.connect(self.insert_divider_line)
+        QShortcut(
+            QKeySequence("Alt+W"), self, context=Qt.ShortcutContext.ApplicationShortcut
+        ).activated.connect(self.insert_old_add_line)
         QShortcut(QKeySequence("Ctrl+Shift+Z"), self).activated.connect(self.redo_action)
         # Fires when focus is outside the editor (the editor overrides it while
         # focused and routes through VaultTextEdit.keyPressEvent instead)
@@ -3487,7 +3656,9 @@ class FastPrompter(
         
         from PyQt6.QtGui import QFontMetrics
         fm = QFontMetrics(lbl.font())
-        needed_width = fm.horizontalAdvance("0000 L") + 16
+        # minimum stays tiny so the header can pack into a quarter-FullHD
+        # window; the layout still grants the full sizeHint when there is room
+        needed_width = fm.horizontalAdvance("0 L") + 4
         if lbl.minimumWidth() != needed_width:
             lbl.setMinimumWidth(needed_width)
             from PyQt6.QtCore import Qt
@@ -3500,16 +3671,27 @@ class FastPrompter(
         the inline refresh glyph painted after stamped lines."""
         import datetime
 
-        m = re.search(r"\(\d{2}\.\d{2} - \d{2}:\d{2}\)", block.text())
+        m = re.search(r"(?:Morning |Day |Evening |Night )?\d{2}\.\d{2} - \d{2}:\d{2}", block.text())
         if not m:
             return
-        now = datetime.datetime.now().strftime("(%d.%m - %H:%M)")
+        
+        now = datetime.datetime.now()
+        h = now.hour
+        if 5 <= h < 12: daypart = "Morning"
+        elif 12 <= h < 17: daypart = "Day"
+        elif 17 <= h < 22: daypart = "Evening"
+        else: daypart = "Night"
+        text_month = self.data.get("date_text_month", "False") == "True"
+        m_fmt = "%d %b" if text_month else "%d.%m"
+        ts = now.strftime(f"{m_fmt} - %H:%M")
+        
+        now_str = f"{daypart} {ts}" if self.data.get("date_daypart", "True") == "True" else ts
         doc = self.text_area.document()
         cur = self.text_area.textCursor()
         keep = cur.position()
         cur.setPosition(block.position() + m.start())
         cur.setPosition(block.position() + m.end(), QTextCursor.MoveMode.KeepAnchor)
-        cur.insertText(now)
+        cur.insertText(now_str)
         cur.setPosition(min(keep, doc.characterCount() - 1))
         self.text_area.setTextCursor(cur)
         self.play_tick_sound()

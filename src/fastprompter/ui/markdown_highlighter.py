@@ -155,6 +155,14 @@ class MarkdownHighlighter(QSyntaxHighlighter):
         self._highlighting_rules.append((re.compile(r'^\s*[-*•+]\s+'), list_format))
         self._highlighting_rules.append((re.compile(r'^\s*\d+\.\s+'), list_format))
 
+        strat = QFont.StyleStrategy.NoAntialias | QFont.StyleStrategy.NoSubpixelAntialias
+        for _, fmt in self._highlighting_rules:
+            fmt.setFontStyleStrategy(strat)
+        self._code_block_format.setFontStyleStrategy(strat)
+        self._code_fence_format.setFontStyleStrategy(strat)
+        for _, fmt in self._code_sub_rules:
+            fmt.setFontStyleStrategy(strat)
+
     def highlightBlock(self, text):
         if self._skip_highlighting or sip.isdeleted(self): return
 
