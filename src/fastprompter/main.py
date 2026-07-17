@@ -283,7 +283,9 @@ class FastPrompter(
             ref_str += " · Morning"
 
         from PyQt6.QtGui import QFontMetrics
-        fm = QFontMetrics(self.lbl_date.font())
+        f = QFont(self.lbl_date.font())
+        f.setPixelSize(11)  # the app stylesheet renders 11px regardless of QFont
+        fm = QFontMetrics(f)
         pad = 2 if getattr(self, "_header_dense", False) else 8
         needed_width = fm.horizontalAdvance(ref_str) + pad
         if self.lbl_date.minimumWidth() != needed_width:
@@ -319,17 +321,15 @@ class FastPrompter(
             self._header_dense = dense
             self.header_layout.setSpacing(1 if dense else 2)
 
-        def _dense_font(widget):
-            # shrink to 10px while dense; remember the original for restore
-            if dense:
-                if not hasattr(widget, "_pre_dense_font"):
-                    widget._pre_dense_font = QFont(widget.font())
-                f = QFont(widget.font())
-                f.setPixelSize(10)
-                widget.setFont(f)
-            elif flipped and hasattr(widget, "_pre_dense_font"):
-                widget.setFont(widget._pre_dense_font)
-                del widget._pre_dense_font
+        from PyQt6.QtGui import QFontMetrics
+
+        def _render_metrics(widget):
+            # The app stylesheet forces 11px on every widget and WINS over
+            # any QFont we set — measuring with the QFont undersized the
+            # buttons and clipped their labels. Measure at the real 11px.
+            f = QFont(widget.font())
+            f.setPixelSize(11)
+            return QFontMetrics(f)
 
         # widths recompute every pass while dense — the font can change
         # after the flag flips (scale/theme), stale metrics overshoot
@@ -339,9 +339,8 @@ class FastPrompter(
                 continue
             if flipped:
                 btn.setText(short if dense else normal)
-            _dense_font(btn)
             if dense:
-                btn.setFixedWidth(btn.fontMetrics().horizontalAdvance(btn.text()) + 5)
+                btn.setFixedWidth(_render_metrics(btn).horizontalAdvance(btn.text()) + 6)
             elif flipped:
                 btn.setMinimumWidth(0)
                 btn.setMaximumWidth(16777215)
@@ -349,16 +348,11 @@ class FastPrompter(
             bt = getattr(self, name, None)
             if bt is None or sip.isdeleted(bt):
                 continue
-            _dense_font(bt)
             if dense:
-                bt.setFixedWidth(bt.fontMetrics().horizontalAdvance(bt.text()) + 5)
+                bt.setFixedWidth(_render_metrics(bt).horizontalAdvance(bt.text()) + 6)
             elif flipped:
                 bt.setMinimumWidth(0)
                 bt.setMaximumWidth(16777215)
-        for name in ("lbl_date", "lbl_line_count"):
-            lbl = getattr(self, name, None)
-            if lbl is not None and not sip.isdeleted(lbl):
-                _dense_font(lbl)
         if flipped:
             self._update_date_label()
         import os as _os
@@ -385,7 +379,7 @@ class FastPrompter(
                 if dense:
                     self.tab_bar.setStyleSheet("QTabBar::scroller { width: 14px; }")
                     self.tab_bar.setMinimumWidth(90)
-                    self.tab_bar.setMaximumWidth(100)
+                    self.tab_bar.setMaximumWidth(90)
                 else:
                     self.tab_bar.setStyleSheet("")
                     self.tab_bar.setMinimumWidth(0)
@@ -3293,6 +3287,11 @@ class FastPrompter(
             self.update_preview()
             self._update_line_count_label()
             self._update_files_button()
+            # seed the live folder-sync baseline for the new silo
+            from fastprompter.ui.file_container import silo_slug as _sl2
+            cur_text = self.text_area.toPlainText()
+            self._active_silo_slug = _sl2(
+                cur_text[:cur_text.index("\n")] if "\n" in cur_text else cur_text)
             self.text_area.setFocus()
             self.text_area.ensureCursorVisible()
             if not initial:
@@ -3530,6 +3529,10 @@ class FastPrompter(
                     lambda i=idx, a=is_archive, c=cat_name: self._transfer_to_snippet(i, a, target_cat=c),
                 )
             menu.addAction(
+                "⬆ Move to Top",
+                lambda i=idx, a=is_archive: self._move_silo_to_top(i, a),
+            )
+            menu.addAction(
                 "⬇ Move to Bottom",
                 lambda i=idx, a=is_archive: self._move_silo_to_bottom(i, a),
             )
@@ -3730,30 +3733,17 @@ class FastPrompter(
         self.refresh_temp_presets()
 
     def _move_silo_to_bottom(self, idx, is_archive=False):
-        """Move a silo to the bottom of the order."""
+        """Move a silo to the bottom — via move_temp_to_index so pins,
+        ticks and children indices are remapped with it."""
         presets = self.data["archive_temp_presets"] if is_archive else self.data["temp_presets"]
-        docs = self.archive_docs if is_archive else self.silo_docs
-        if not (0 <= idx < len(presets)):
-            return
-        if idx == len(presets) - 1:
-            return  # already at bottom
-        self.add_data_undo_state("Move silo to bottom")
-        text = presets.pop(idx)
-        if idx < len(docs):
-            doc = docs.pop(idx)
-        else:
-            doc = None
-        presets.append(text)
-        if doc is not None:
-            docs.append(doc)
-        # Adjust active slot if needed
-        if not is_archive:
-            if idx == getattr(self, "active_temp_slot", 0):
-                self.active_temp_slot = len(presets) - 1
-            elif idx < getattr(self, "active_temp_slot", 0):
-                self.active_temp_slot -= 1
-        self.mark_dirty()
-        self.refresh_temp_presets()
+        if 0 <= idx < len(presets) - 1:
+            self.move_temp_to_index(idx, len(presets) - 1, is_archive=is_archive)
+
+    def _move_silo_to_top(self, idx, is_archive=False):
+        """Move a silo to the top of the order (same remap guarantees)."""
+        presets = self.data["archive_temp_presets"] if is_archive else self.data["temp_presets"]
+        if 0 < idx < len(presets):
+            self.move_temp_to_index(idx, 0, is_archive=is_archive)
 
     def clear_temp(self, idx, is_archive=False):
         # Clicking clear on an already-empty silo removes the slot entirely.
@@ -4061,9 +4051,38 @@ class FastPrompter(
         self.play_tick_sound()
         self.mark_dirty()
 
+    def _live_folder_sync(self):
+        """1 silo = 1 folder: retitling the active silo renames its folder
+        IMMEDIATELY, so no path (container open, counters, hover tooltips)
+        can ever spawn a second folder for the same silo."""
+        if getattr(self, "_initializing_ui", False) or getattr(self, "editing_snippet", None):
+            return
+        from fastprompter.ui.file_container import silo_slug
+        first_nl = self.text_area.toPlainText()
+        first = first_nl[:first_nl.index("\n")] if "\n" in first_nl else first_nl
+        new_slug = silo_slug(first)
+        old_slug = getattr(self, "_active_silo_slug", None)
+        if old_slug is None or new_slug == old_slug:
+            self._active_silo_slug = new_slug
+            return
+        cat = self.get_current_category()
+        from fastprompter.ui.file_container import silo_slug as _sl
+        root = self._files_root()
+        old_dir = os.path.join(root, _sl(cat), old_slug)
+        new_dir = os.path.join(root, _sl(cat), new_slug)
+        try:
+            if os.path.isdir(old_dir) and os.listdir(old_dir) and not os.path.exists(new_dir):
+                os.makedirs(os.path.dirname(new_dir), exist_ok=True)
+                os.rename(old_dir, new_dir)
+        except OSError as e:
+            from fastprompter.core.logging import logger
+            logger.warning(f"Live folder sync {old_dir} -> {new_dir} failed: {e}")
+        self._active_silo_slug = new_slug
+
     def _on_text_changed(self):
         self._last_text_edit_time = self._bump_action_seq()
         self._update_line_count_label()
+        self._live_folder_sync()
         doc = self.text_area.document()
         count = doc.characterCount()
         if count > 50000:

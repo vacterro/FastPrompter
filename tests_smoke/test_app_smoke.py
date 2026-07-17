@@ -1325,6 +1325,52 @@ def test_theme_switch_keeps_button_labels(win):
     win.apply_theme()
 
 
+def test_live_retitle_renames_folder_no_duplicates(win):
+    # 1 silo = 1 folder: typing a new title renames the folder at once —
+    # opening the container right after a retitle must find the SAME folder
+    from fastprompter.ui.file_container import silo_files_dir
+
+    root = os.path.join(_tmpdir, "files_root_live")
+    win._files_root = lambda: root
+    win.tab_bar.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    win.data["temp_presets"][:] = ["# Old Title\nbody"]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+
+    folder = silo_files_dir(root, win.get_current_category(), "# Old Title")
+    os.makedirs(folder, exist_ok=True)
+    with open(os.path.join(folder, "asset.bin"), "wb") as f:
+        f.write(b"x")
+
+    # live edit of the first line (textChanged fires the sync)
+    win.text_area.setPlainText("# New Title\nbody")
+    new_folder = silo_files_dir(root, win.get_current_category(), "# New Title")
+    assert os.path.isfile(os.path.join(new_folder, "asset.bin"))
+    assert not os.path.exists(folder)
+    cat_dir = os.path.dirname(new_folder)
+    assert len(os.listdir(cat_dir)) == 1, "exactly one folder per silo"
+    del win.__dict__["_files_root"]
+
+
+def test_move_silo_to_top_and_bottom_remap(win):
+    win.tab_bar.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    win.data["temp_presets"][:] = ["a", "b", "c"]
+    win.data["pinned_silos"][:] = []
+    win.data["silo_ticked"][:] = [2]
+    win.data["silo_children"].clear()
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    win._move_silo_to_top(2)
+    assert win.data["temp_presets"] == ["c", "a", "b"]
+    assert win.data["silo_ticked"] == [0]  # tick followed the silo
+    win._move_silo_to_bottom(0)
+    assert win.data["temp_presets"] == ["a", "b", "c"]
+    assert win.data["silo_ticked"] == [2]
+    win.data["silo_ticked"][:] = []
+
+
 def test_silo_hierarchy_nest_collapse_promote(win):
     from unittest.mock import patch
 
