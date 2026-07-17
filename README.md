@@ -15,7 +15,8 @@ One hotkey. Instant window. Your prompts, notes and drafts — always one keystr
 
 <br>
 
-<img width="960" height="540" alt="clipboard_20260717_042022_67122ba3" src="https://github.com/user-attachments/assets/c76bfa19-d7d7-4575-bdf8-792fa220680b" />
+<img width="959" height="540" alt="clipboard_20260717_080637_7ccad155" src="https://github.com/user-attachments/assets/78b5585f-43e7-466a-a0f8-29caef855d72" />
+
 
 </div>
 
