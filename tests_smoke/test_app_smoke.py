@@ -1233,6 +1233,37 @@ def test_header_fits_quarter_fullhd_with_full_clock(win):
     win._update_date_label()
 
 
+def test_header_ultra_mode_fits_portrait_sliver(win):
+    # 9:16-friendly: below 700px only the essentials remain and the
+    # header still fits; clock shrinks to DD.MM - hh:mm
+    import re as _re
+    win.data["show_date_rect"] = "True"
+    win.data["date_seconds"] = "True"
+    win.data["date_daypart"] = "True"
+    win.resize(500, 900)
+    win._header_dense = None
+    win._header_ultra = None
+    win._apply_header_density()
+    win._update_date_label()
+    assert win._header_ultra is True
+    assert _re.fullmatch(r"\d{2}\.\d{2} - \d{2}:\d{2}", win.lbl_date.text())
+    for name in ("btn_bold", "btn_copy", "btn_clear", "btn_home",
+                 "btn_pin_top", "btn_line_nums", "btn_help"):
+        assert getattr(win, name).isHidden(), name
+    for name in ("btn_new", "btn_save", "btn_settings_toggle"):
+        assert not getattr(win, name).isHidden(), name
+    total = win.header_widget.sizeHint().width()
+    assert total <= 500, f"ultra header wants {total}px"
+    # files button lives in the sidebar now, not the header
+    assert win.btn_files.parent() is not win.header_widget
+    # widen back: everything returns
+    win.resize(1400, 700)
+    win._apply_header_density()
+    win._update_date_label()
+    assert not win.btn_copy.isHidden()
+    assert win._header_ultra is False
+
+
 def test_drop_overlay_zones_and_routing(win):
     from PyQt6.QtCore import QPoint
 

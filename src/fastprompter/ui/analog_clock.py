@@ -24,7 +24,8 @@ class MiniAnalogClock(QWidget):
 
     def sync(self):
         """Called every second by the window's date timer."""
-        visible = self.main_win.data.get("analog_clock", "False") == "True"
+        visible = (self.main_win.data.get("analog_clock", "False") == "True"
+                   and not getattr(self.main_win, "_header_ultra", False))
         if self.isVisible() != visible:
             self.setVisible(visible)
         if not visible:

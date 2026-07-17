@@ -271,6 +271,9 @@ class FastPrompter(
         show_secs = self.data.get("date_seconds", "True") == "True"
         show_word = self.data.get("date_daypart", "True") == "True"
         text_month = self.data.get("date_text_month", "False") == "True"
+        if getattr(self, "_header_ultra", False):
+            # portrait sliver: the clock keeps only DD.MM - hh:mm
+            show_secs = show_word = text_month = False
         m_fmt = "%d %b" if text_month else "%d.%m"
         if show_secs:
             dt_str = now.strftime(f"{m_fmt} - %H:%M:%S")
@@ -320,6 +323,24 @@ class FastPrompter(
         if flipped:
             self._header_dense = dense
             self.header_layout.setSpacing(1 if dense else 2)
+
+        # Ultra tier (portrait / 9:16 slivers): only the essentials survive —
+        # tabs, NEW/Save, a short DD.MM - hh:mm clock, line counter, ⚙.
+        # Formatting stays reachable via hotkeys and the context menu.
+        ultra = w < 700
+        if getattr(self, "_header_ultra", None) != ultra:
+            self._header_ultra = ultra
+            for name in ("btn_bold", "btn_italic", "btn_under", "btn_strike",
+                         "btn_header", "btn_clear_fmt", "btn_add_line",
+                         "btn_bullet_toggle", "btn_copy", "btn_clear",
+                         "btn_home", "btn_end", "btn_pin_top", "btn_line_nums",
+                         "btn_help"):
+                wdg = getattr(self, name, None)
+                if wdg is not None and not sip.isdeleted(wdg):
+                    wdg.setVisible(not ultra)
+            if hasattr(self, "_counter_sep"):
+                self._counter_sep.setVisible(not ultra)
+            self._update_date_label()
 
         from PyQt6.QtGui import QFontMetrics
 
@@ -832,7 +853,7 @@ class FastPrompter(
         self.header_layout.addWidget(self.btn_bullet_toggle)
         self.header_layout.addWidget(self.btn_copy)
         self.header_layout.addWidget(self.btn_clear)
-        self.header_layout.addWidget(self.btn_files)
+        # btn_files lives in the sidebar next to the archive buttons
 
         # Status cluster (right): clock | pins | line counter | settings
         self.header_layout.addStretch(1)
@@ -1413,8 +1434,19 @@ class FastPrompter(
         self.btn_toggle_archive.setCheckable(True)
         snip_header.addWidget(self.btn_toggle_archive)
 
+        # Files drawer sits with the storage buttons (archive group)
+        self.apply_button_size(self.btn_files, 20)
+        snip_header.addWidget(self.btn_files)
+
+        # +/- act on snippets only — separated so that reads clearly
+        snip_sep = QFrame()
+        snip_sep.setFrameShape(QFrame.Shape.VLine)
+        snip_sep.setFixedHeight(14)
+        snip_header.addWidget(snip_sep)
+
         self.btn_add_snip = QPushButton("+")
         self.apply_button_size(self.btn_add_snip, 20, 20)
+        self.btn_add_snip.setToolTip("Save the editor text as a new snippet")
         self.btn_add_snip.clicked.connect(self.save_snippet)
         snip_header.addWidget(self.btn_add_snip)
 
