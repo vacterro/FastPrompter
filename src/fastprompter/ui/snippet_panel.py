@@ -449,6 +449,15 @@ class DraggableSiloButton(QWidget):
         self._btn_files.setStyleSheet("background: transparent; border: none; padding: 0; font-size: 11px;")
         self._btn_files.clicked.connect(self._on_files_clicked)
 
+        self._btn_tick = QPushButton("✅")
+        self._btn_tick.setFixedSize(16, 16)
+        self._btn_tick.setToolTip("Mark this silo as done (click again to unmark)")
+        self._btn_tick.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._btn_tick.setStyleSheet("background: transparent; border: none; padding: 0; font-size: 11px;")
+        self._btn_tick.clicked.connect(self._on_tick_clicked)
+
+        # tick sits leftmost — before the order number in the title
+        self._silo_layout.addWidget(self._btn_tick)
         self._silo_layout.addWidget(self._lbl_text)
         self._silo_layout.addStretch()
         self._silo_layout.addWidget(self._btn_files)
@@ -460,6 +469,7 @@ class DraggableSiloButton(QWidget):
         self._btn_pin.hide()
         self._btn_archive.hide()
         self._btn_files.hide()
+        self._btn_tick.hide()
         # Set mouse tracking so we get hover events
         self.setMouseTracking(True)
         self.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
@@ -478,6 +488,14 @@ class DraggableSiloButton(QWidget):
         """Open the per-silo file container drawer."""
         if hasattr(self.main_win, 'open_file_container'):
             self.main_win.open_file_container(self.global_idx, is_archive=self.is_archive)
+
+    def _is_ticked(self):
+        ticked = self.main_win.data.get("silo_ticked", [])
+        return isinstance(ticked, list) and self.global_idx in ticked
+
+    def _on_tick_clicked(self):
+        if hasattr(self.main_win, '_toggle_tick_silo'):
+            self.main_win._toggle_tick_silo(self.global_idx)
 
     def enterEvent(self, event):
         """Show action buttons on hover with a tiny delay for smooth feel."""
@@ -501,6 +519,7 @@ class DraggableSiloButton(QWidget):
         self._btn_pin.hide()
         self._btn_archive.hide()
         self._btn_files.hide()
+        self._btn_tick.setVisible(self._is_ticked())
         super().leaveEvent(event)
 
     def setText(self, text):
@@ -513,6 +532,8 @@ class DraggableSiloButton(QWidget):
             self._btn_pin.show()
             self._btn_archive.show()
             self._btn_files.show()
+            self._btn_tick.setText("☑" if self._is_ticked() else "✅")
+            self._btn_tick.show()
             try:
                 from fastprompter.ui.file_container import folder_summary
                 presets = self.main_win.data.get("temp_presets", [])
@@ -539,7 +560,9 @@ class DraggableSiloButton(QWidget):
 
     def update_data(self, text_label, global_idx, bg_color, font_family="Verdana", scale=1.0, line_count_str="", is_pushed=False, title_bold=False):
         theme_name = self.main_win.data.get("theme", "Default")
-        current_state = (text_label, global_idx, bg_color, font_family, scale, theme_name, line_count_str, is_pushed, title_bold)
+        ticked_list = self.main_win.data.get("silo_ticked", [])
+        is_ticked = isinstance(ticked_list, list) and global_idx in ticked_list
+        current_state = (text_label, global_idx, bg_color, font_family, scale, theme_name, line_count_str, is_pushed, title_bold, is_ticked)
         if getattr(self, '_last_state', None) == current_state:
             self.show()
             return
@@ -548,6 +571,8 @@ class DraggableSiloButton(QWidget):
         self.full_name = text_label
         self._line_count_str = line_count_str
         self.global_idx = global_idx
+        self._btn_tick.setText("✅")
+        self._btn_tick.setVisible(is_ticked and not self.is_archive)
 
         # Apply font scaling safely
         from PyQt6.QtGui import QFont

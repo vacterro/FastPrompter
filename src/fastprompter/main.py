@@ -200,6 +200,13 @@ class FastPrompter(
         self.data["silo_last_edited_all"] = norm
         self.silo_last_edited = norm.setdefault(first_cat, {})
         self.data["pinned_silos"] = pall.setdefault(first_cat, [])
+        tall = self.data.get("silo_ticked_all")
+        if not isinstance(tall, dict):
+            tall = {}
+        if not tall and isinstance(self.data.get("silo_ticked"), list) and self.data["silo_ticked"]:
+            tall[first_cat] = list(self.data["silo_ticked"])
+        self.data["silo_ticked_all"] = tall
+        self.data["silo_ticked"] = tall.setdefault(first_cat, [])
 
         self.init_ui()
         self.init_tray()
@@ -1886,6 +1893,9 @@ class FastPrompter(
         pinned = self.data.get("pinned_silos", [])
         if isinstance(pinned, list):
             pinned[:] = [remap(p) for p in pinned]
+        ticked = self.data.get("silo_ticked", [])
+        if isinstance(ticked, list):
+            ticked[:] = [remap(t) for t in ticked]
 
     def handle_pinned_drop(self, source_idx, boundary_idx=None, swap_idx=None):
         """Handle dragging and dropping silos within or across the pinned section."""
@@ -2211,6 +2221,7 @@ class FastPrompter(
             "active_is_archive": getattr(self, "active_is_archive", False),
             "editing_snippet": getattr(self, "editing_snippet", None),
             "pinned_silos": list(pinned) if isinstance(pinned, list) else [],
+            "silo_ticked": list(self.data.get("silo_ticked", [])),
             "silo_last_edited": dict(getattr(self, "silo_last_edited", {})),
         }
 
@@ -2318,6 +2329,9 @@ class FastPrompter(
             plist = self.data.setdefault("pinned_silos_all", {}).setdefault(snap_cat, [])
             plist[:] = list(state.get("pinned_silos", []))
             self.data["pinned_silos"] = plist
+            tlist = self.data.setdefault("silo_ticked_all", {}).setdefault(snap_cat, [])
+            tlist[:] = list(state.get("silo_ticked", []))
+            self.data["silo_ticked"] = tlist
             edict = self.data.setdefault("silo_last_edited_all", {}).setdefault(snap_cat, {})
             edict.clear()
             edict.update(state.get("silo_last_edited", {}))
@@ -2761,6 +2775,9 @@ class FastPrompter(
             self.data["temp_presets"] = self.data["temp_presets_all"][cat]
             self.data["archive_temp_presets"] = self.data["archive_temp_presets_all"][cat]
             self.data["pinned_silos"] = self.data.setdefault("pinned_silos_all", {}).setdefault(
+                cat, []
+            )
+            self.data["silo_ticked"] = self.data.setdefault("silo_ticked_all", {}).setdefault(
                 cat, []
             )
             self.silo_last_edited = self.data.setdefault("silo_last_edited_all", {}).setdefault(
@@ -3483,6 +3500,21 @@ class FastPrompter(
         self.refresh_snippets_panel()
         self.refresh_temp_presets()
         self.play_sound("snippet")
+
+    def _toggle_tick_silo(self, idx):
+        """Toggle the ✅ done-mark on a silo (persists per project)."""
+        self.add_data_undo_state("Tick silo")
+        ticked = self.data.get("silo_ticked", [])
+        if not isinstance(ticked, list):
+            ticked = []
+            self.data["silo_ticked"] = ticked
+        if idx in ticked:
+            ticked.remove(idx)
+        else:
+            ticked.append(idx)
+        self.play_tick_sound()
+        self.mark_dirty()
+        self.refresh_temp_presets()
 
     def _toggle_pin_silo(self, idx):
         """Toggle pin/unpin status for a silo."""

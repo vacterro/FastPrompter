@@ -1206,6 +1206,28 @@ def test_file_container_import_export_delete(win):
     panel.close()
 
 
+def test_silo_tick_toggle_persists_and_remaps(win):
+    win.tab_bar.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    win.data["temp_presets"][:] = ["a", "b", "c"]
+    win.data["pinned_silos"][:] = []
+    win.data["silo_ticked"][:] = []
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+
+    win._toggle_tick_silo(2)
+    assert 2 in win.data["silo_ticked"]
+    # alias check: the per-category store sees the same list
+    cat = win.get_current_category()
+    assert win.data["silo_ticked_all"][cat] is win.data["silo_ticked"]
+    # deleting an earlier silo remaps the tick index
+    win.del_silo(0)
+    assert win.data["silo_ticked"] == [1]
+    # toggle off
+    win._toggle_tick_silo(1)
+    assert win.data["silo_ticked"] == []
+
+
 def test_delete_silo_keeps_snippets_visible(win):
     # Regression check for "deleting a silo hides a snippet"
     win.tab_bar.setCurrentIndex(0)

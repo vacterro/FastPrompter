@@ -551,6 +551,9 @@ class SnippetOpsMixin:
                 pinned = self.data.get("pinned_silos", [])
                 if isinstance(pinned, list) and idx in pinned:
                     pinned.remove(idx)
+                ticked = self.data.get("silo_ticked", [])
+                if isinstance(ticked, list) and idx in ticked:
+                    ticked.remove(idx)
                 if hasattr(self, "_remap_silo_indices"):
                     self._remap_silo_indices(lambda i: i - 1 if i > idx else i)
 
