@@ -11,7 +11,7 @@ One hotkey. Instant window. Your prompts, notes and drafts — always one keystr
 <a href="https://github.com/vacterro/FastPrompter/releases"><img src="https://img.shields.io/github/v/release/vacterro/FastPrompter?style=for-the-badge&label=Download&color=brightgreen" alt="Download"></a>
 <a href="LICENSE"><img src="https://img.shields.io/github/license/vacterro/FastPrompter?style=for-the-badge&color=blue" alt="MIT"></a>
 <img src="https://img.shields.io/badge/Windows-0078D6?style=for-the-badge&logoColor=white" alt="Windows">
-<img src="https://img.shields.io/badge/~26_MB-Portable_EXE-important?style=for-the-badge" alt="Portable">
+<img src="https://img.shields.io/badge/~27_MB-Portable_EXE-important?style=for-the-badge" alt="Portable">
 
 <br>
 
@@ -42,11 +42,15 @@ Press `Alt+X` anywhere — in your browser, IDE, terminal — and FastPrompter p
 | 💻 **Code blocks** | ``` fences render monospace with syntax tints, auto line numbers, one-click copy and folding |
 | 📁 **File container** | Per-silo asset drawer: drop *any* files in, drag them out, preview images, link originals, Explorer-style views — plain folders you can read without the app |
 | 🗂️ **Folder Templates** | Build predefined folder structures inside your silo's file container with a single click |
+| 💾 **Silo backup** | `Ctrl+Click` the 📁 button to save the silo text as a file — Copy, Copy + Clear, or Cancel |
 | 🗃️ **Fold sections** | Collapse `#` headers and code blocks like a real Markdown editor |
+| 🔍 **Smart search** | Multi-word AND matching — type `foo bar` to find silos containing both words in any order |
 | 🦓 **Readability** | Zebra stripes, line numbers with clickable margin marks, word wrap, zen mode |
 | 🎨 **6 vintage themes** | Win95-style bevels, warm amber-on-black, OLED — plus a full custom color editor |
 | 🎵 **Sounds** | Optional UI clicks and a typewriter tick, with volume control |
 | 📄 **Drop Zones** | Drag files to the editor to choose from 4 actions: insert text, insert clickable link, copy to silo Files, or create shortcut in silo Files |
+| 🕒 **Analog clock** | Optional mini analog clock in the header bar, next to the date/time widget |
+| ⌨️ **Bindable shortcuts** | Rebind every in-app hotkey from the Settings panel — two slots per action, with dynamic tooltips |
 | 🗑️ **Trash** | Middle-click to trash a silo — text and files are safely moved to `_trash`, never permanently deleted |
 | ↩️ **Undo everything** | `Ctrl+Z` covers text *and* silo operations (clear, trash, move) |
 
@@ -81,7 +85,7 @@ cd FastPrompter
 uv sync && uv run python FastPrompter.pyw    # or: pip install -r requirements.txt
 ```
 
-**Build your own EXE** (~26 MB — unused Qt modules are stripped):
+**Build your own EXE** (~27 MB — unused Qt modules are stripped):
 
 ```powershell
 python tools/build.py
@@ -126,7 +130,8 @@ python tools/build.py
 | `Ctrl+wheel` in editor | Zoom font |
 | Middle-click a silo | Move it to the trash (text + files land in `data/files/_trash/`) |
 | Hover a silo | ✅ tick, 📁 files, 📌 pin and 📥 archive buttons appear |
-| Drag files over editor | Two drop zones: top = insert as text, bottom = into silo's Files |
+| `Ctrl+Click` 📁 button | Save silo text as a backup file (Copy / Copy + Clear / Cancel) |
+| Drag files over editor | Four drop zones: insert as text, insert as link, copy to Files, or create shortcut in Files |
 | Right-click a silo | Transfer to project, replace from, move to bottom… |
 | Drop a silo ONTO another | Nest it as a child (1 level; its files can merge into the parent) |
 | Shift+drop a silo onto another | Swap their places |
@@ -152,7 +157,7 @@ Python 3.11 + PyQt6, SQLite via the standard library, Win32 `RegisterHotKey` for
 
 ```powershell
 uv run pytest tests/         # 461 unit tests
-uv run pytest tests_smoke/   # 61 integration tests — boots the real app offscreen
+uv run pytest tests_smoke/   # 77 integration tests — boots the real app offscreen
 ```
 
 ## 📜 License
