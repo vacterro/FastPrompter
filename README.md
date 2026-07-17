@@ -54,10 +54,10 @@ Press `Alt+X` anywhere — in your browser, IDE, terminal — and FastPrompter p
 | 🗑️ **Trash** | Middle-click to trash a silo — text and files are safely moved to `_trash`, never permanently deleted |
 | ↩️ **Undo everything** | `Ctrl+Z` covers text *and* silo operations (clear, trash, move) |
 
-## 🧓 Grandpa Edition — every feature, explained simply
+## ИНСТРУКЦИЯ / INSTRUCTION
 
 <details>
-<summary><b>🇬🇧 English — "Explain it like I'm your grandpa"</b></summary>
+<summary><b>🇬🇧 English</b></summary>
 
 > Sit down, pour some tea. Here's what this little program actually does, no computer talk.
 
@@ -90,7 +90,7 @@ Press `Alt+X` anywhere — in your browser, IDE, terminal — and FastPrompter p
 </details>
 
 <details>
-<summary><b>🇷🇺 По-русски — «объясни как деду»</b></summary>
+<summary><b>🇷🇺 По-русски»</b></summary>
 
 > Садись, наливай чай. Рассказываю, что эта программка делает, без компьютерной зауми.
 
