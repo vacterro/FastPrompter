@@ -3070,7 +3070,7 @@ class FastPrompter(
             from fastprompter.ui.file_container import silo_file_count
             fcount = silo_file_count(self._files_root(), self.get_current_category(), raw)
             if fcount > 0:
-                line_str = f"📁{fcount} " + line_str
+                line_str = f"📁{fcount} │ " + line_str if line_str else f"📁{fcount}"
             label = f"{display_idx}: {text}" if text else f"{display_idx}"
             is_active = (
                 getattr(self, "active_is_archive", False)
@@ -3407,7 +3407,7 @@ class FastPrompter(
             from fastprompter.ui.file_container import silo_file_count
             fcount = silo_file_count(self._files_root(), self.get_current_category(), raw)
             if fcount > 0:
-                line_str = f"📁{fcount} " + line_str
+                line_str = f"📁{fcount} │ " + line_str if line_str else f"📁{fcount}"
             pin_str = "📌 " if is_pinned else ""
             if kids:
                 pin_str = (f"▸[{len(kids)}] " if slot_idx in collapsed else "▾ ") + pin_str
