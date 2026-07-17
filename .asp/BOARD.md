@@ -4,20 +4,20 @@
 
 | ID | Status | Owner | Needs | Description |
 |---|---|---|---|---|
-| T-101 | TODO | - | - | BUG: Ctrl+E header edit re-slugs title -> new files folder, old buried (data/files/code/) |
-| T-102 | TODO | - | - | BUG: container Delete button dead; + Ctrl+Shift+C copy path, rich shortcuts in panel |
-| T-103 | TODO | - | - | BUG: theme change garbles/truncates toolbar button texts (screens 0420xx) |
-| T-104 | TODO | - | - | BUG: deleting silo can hide snippet (screen 041723) |
-| T-105 | TODO | - | - | BUG: header date refresh glyph may disappear — investigate |
-| T-106 | TODO | - | - | BUG: Normal Window toggle flashbang, no immediate title bar update |
-| T-110 | TODO | - | - | Top bar right: pin (always-on-top), line-numbers toggle, separator files-counter/line-counter |
-| T-111 | TODO | - | - | Layout: Home/End left; settings+files right group; snippet +/- separator; arrows toggleable OFF |
+| T-101 | DONE | claude-fable | - | BUG: Ctrl+E header edit re-slugs title -> new files folder, old buried (data/files/code/) |
+| T-102 | DONE | claude-fable | - | BUG: container Delete button dead; + Ctrl+Shift+C copy path, rich shortcuts in panel |
+| T-103 | DONE | claude-fable | - | BUG: theme change garbles/truncates toolbar button texts (screens 0420xx) |
+| T-104 | DONE | claude-fable | - | BUG: deleting silo can hide snippet (screen 041723) |
+| T-105 | DONE | claude-fable | - | BUG: header date refresh glyph may disappear — investigate |
+| T-106 | DONE | claude-fable | - | BUG: Normal Window toggle flashbang, no immediate title bar update |
+| T-110 | DONE | claude-fable | - | Top bar right: pin (always-on-top), line-numbers toggle, separator files-counter/line-counter |
+| T-111 | DONE | claude-fable | - | Layout: Home/End left; settings+files right group; snippet +/- separator; arrows toggleable OFF |
 | T-112 | TODO | - | - | Silo hover: tickbox toggle left of number |
-| T-113 | TODO | - | - | Silo: middle-click -> trash; context menu Move to Trash |
-| T-114 | TODO | - | T-113 | Context menus rethink + icons (silo, snippet) |
-| T-115 | TODO | - | - | Header format template: {text} {time} {state}, user-editable, no hardcoded bold |
-| T-116 | TODO | - | - | Mini analog clock near date (toggleable, hour+minute hands) |
-| T-117 | TODO | - | - | Hotkeys: defaults Alt+E top / Alt+S lock / Alt+A hideout; all bindable; tooltips show them |
+| T-113 | DONE | claude-fable | - | Silo: middle-click -> trash; context menu Move to Trash |
+| T-114 | DONE | claude-fable | T-113 | Context menus rethink + icons (silo, snippet) |
+| T-115 | DONE | claude-fable | - | Header format template: {text} {time} {state}, user-editable, no hardcoded bold |
+| T-116 | DONE | claude-fable | - | Mini analog clock near date (toggleable, hour+minute hands) |
+| T-117 | DONE | claude-fable | - | Hotkeys: defaults Alt+E top / Alt+S lock / Alt+A hideout; all bindable; tooltips show them |
 | T-118 | TODO | - | T-102 | Container: New Folder, richer shortcuts |
 | T-119 | TODO | - | - | Drop overlay effect for text files (screen 044916); no-text drops -> container auto |
 | T-120 | TODO | - | - | Folder Template editor (ref NEW_PROJ.CMD) — create templated folder trees in container |

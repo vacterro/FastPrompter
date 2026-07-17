@@ -85,7 +85,7 @@ python tools/build.py
 
 ## ⌨️ Shortcuts
 
-**Global** (rebindable, two slots each): `Alt+X` / `F15` toggle window · `Shift+Alt+X` quick list · `Alt+D` sidebar · `Ctrl+Shift+L` lock window · `Ctrl+Shift+E` always on top
+**Global** (rebindable, two slots each): `Alt+X` / `F15` toggle window · `Shift+Alt+X` quick list · `Alt+D` sidebar · `Alt+S` lock window · `Alt+E` always on top · `Alt+A` hide on click-out
 
 <details>
 <summary><b>In-app keys</b></summary>
@@ -120,8 +120,8 @@ python tools/build.py
 | `Ctrl+wheel` over silos | Select previous / next silo |
 | Wheel over tab bar | Switch project |
 | `Ctrl+wheel` in editor | Zoom font |
-| Middle-click a silo | Clear it (already empty → delete the slot) |
-| Hover a silo | 📌 pin / 📥 archive buttons appear |
+| Middle-click a silo | Move it to the trash (text + files land in `data/files/_trash/`) |
+| Hover a silo | 📁 files / 📌 pin / 📥 archive buttons appear |
 | Right-click a silo | Transfer to project, replace from, move to bottom… |
 | Drag a silo *between* others / *onto* one | Reorder / swap |
 
