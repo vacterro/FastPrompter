@@ -15,7 +15,7 @@ One hotkey. Instant window. Your prompts, notes and drafts — always one keystr
 
 <br>
 
-<img width="960" alt="FastPrompter main window" src="https://github.com/user-attachments/assets/bd219908-5eda-44bc-aa3c-337f0cd485fc">
+<img width="960" height="540" alt="clipboard_20260717_042022_67122ba3" src="https://github.com/user-attachments/assets/c76bfa19-d7d7-4575-bdf8-792fa220680b" />
 
 </div>
 
@@ -49,17 +49,19 @@ Press `Alt+X` anywhere — in your browser, IDE, terminal — and FastPrompter p
 ## 📸 Screenshots
 
 <div align="center">
-<img width="960" alt="Editor with sidebar" src="https://github.com/user-attachments/assets/8d28f2f8-0811-43e8-b119-0c954c548885">
-<img width="960" alt="Silos and snippets" src="https://github.com/user-attachments/assets/a053fc06-3b45-4e00-ac95-0a7442b7005a">
+<img width="960" height="540" alt="clipboard_20260717_042040_f5e84a12" src="https://github.com/user-attachments/assets/898662fc-27c6-4b07-b450-b8c8929c0d7f" />
+<img width="960" height="540" alt="clipboard_20260717_042030_1136f6e9" src="https://github.com/user-attachments/assets/b688fce7-e4f9-433f-b6f7-5362a550b3ca" />
 </div>
 
 <details>
 <summary><b>More screenshots</b></summary>
 <div align="center">
-<img width="960" alt="Themes" src="https://github.com/user-attachments/assets/8033de34-e58a-4fba-986c-2401b9eb8ec1">
-<img width="960" alt="Settings panel" src="https://github.com/user-attachments/assets/a43127e5-387f-474c-ad63-67905416454c">
-<img width="960" alt="Markdown editing" src="https://github.com/user-attachments/assets/8c87ccf6-a192-4f8d-92de-2d2bd6cc9498">
-<img width="960" alt="Focus mode" src="https://github.com/user-attachments/assets/0cafd84c-8f12-40c9-8f66-f6d08914b820">
+<img width="960" height="540" alt="clipboard_20260717_031914_9e476bc9" src="https://github.com/user-attachments/assets/62ac5453-c34c-4d6a-93a6-bd12f1bcd240" />
+<img width="960" height="540" alt="clipboard_20260717_031948_d5341624" src="https://github.com/user-attachments/assets/d8b36e68-d549-47b2-bb4f-9bcfc3a8f8e9" />
+<img width="961" height="537" alt="clipboard_20260717_042400_87a93417" src="https://github.com/user-attachments/assets/62b7ced9-85cb-4784-8dea-b9b227bb4fc3" />
+<img width="352" height="271" alt="clipboard_20260717_042103_08712286" src="https://github.com/user-attachments/assets/527405b2-a4cd-4db3-8a3f-8224864b1864" />
+<img width="954" height="656" alt="clipboard_20260717_042051_1220c8f2" src="https://github.com/user-attachments/assets/1350a5ec-c3c6-4205-b6ee-4d8be278e731" />
+
 </div>
 </details>
 
