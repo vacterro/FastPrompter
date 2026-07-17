@@ -96,7 +96,7 @@ class DropOverlay(QWidget):
             top_right = QRect(2 * m + hw, m, hw, hh)
             bot_left = QRect(m, 2 * m + hh, hw, hh)
             bot_right = QRect(2 * m + hw, 2 * m + hh, hw, hh)
-            
+
             self._panel(p, top_left, "📄 Drop as Text", "insert content into silo", self._hot == "text")
             self._panel(p, top_right, "🔗 Link in Text", "insert markdown link at cursor", self._hot == "editor_link")
             self._panel(p, bot_left, "📥 Copy to Files 📁", "store in silo's container", self._hot == "files")
@@ -107,7 +107,7 @@ class DropOverlay(QWidget):
             top = QRect(m, m, self.width() - 2 * m, rh)
             mid = QRect(m, 2 * m + rh, self.width() - 2 * m, rh)
             bot = QRect(m, 3 * m + 2 * rh, self.width() - 2 * m, rh)
-            
+
             self._panel(p, top, "📥 Copy to Files 📁", "store in silo's container", self._hot == "files")
             self._panel(p, mid, "🔗 Link in Files 📁", "add shortcut in container", self._hot == "files_link")
             self._panel(p, bot, "🔗 Link in Text", "insert markdown link at cursor", self._hot == "editor_link")

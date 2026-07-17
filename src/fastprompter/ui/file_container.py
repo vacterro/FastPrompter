@@ -483,7 +483,7 @@ class FileContainerPanel(QWidget):
 
         stamp = datetime.datetime.now().strftime("%d.%m.%y-%H%M%S")
         first_word = ""
-        
+
         try:
             if hasattr(self.main_win, "silo_docs"):
                 idx = getattr(self.main_win, "active_temp_slot", 0)
@@ -500,13 +500,13 @@ class FileContainerPanel(QWidget):
             pass
 
         default_name = f"clip-{first_word}" if first_word else f"clip-{stamp}"
-        
+
         name, ok = QInputDialog.getText(
             self, "Save Clipboard", "Enter filename (without .txt):", text=default_name
         )
         if not ok or not name.strip():
             return
-            
+
         filename = f"{name.strip()}.txt"
         dest = _unique_dest(self.folder, filename)
         try:
@@ -650,7 +650,7 @@ class FileContainerPanel(QWidget):
     def _on_tpl_changed(self, text):
         self.main_win.data["folder_template"] = text
         self.main_win.mark_dirty()
-        
+
     def build_template_folders(self):
         if not self.folder: return
         template = self.main_win.data.get("folder_template", "ae, c4d, _output, _input")

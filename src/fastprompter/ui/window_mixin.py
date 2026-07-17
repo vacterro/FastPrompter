@@ -296,7 +296,7 @@ class WindowMixin:
             sizes = [int(x) for x in raw_sizes]
         except (ValueError, TypeError):
             sizes = [0, 0]
-            
+
         if sum(sizes) == 0:
             if is_right:
                 sizes = [self.width() - 130, 130]

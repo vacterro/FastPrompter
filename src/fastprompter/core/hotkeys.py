@@ -43,7 +43,7 @@ _LAYOUT_DEPENDENT = set("`-=[]\\;',./!@#$%^&*()_+{}|:\"<>?~")
 
 def _resolve_vk(key_name: str) -> int:
     """Resolve a key name to its Windows VK code.
-    
+
     For layout-dependent symbol characters, uses VkKeyScanW to get the
     correct VK code for the current keyboard layout.
     Falls back to the static US-layout mapping if resolution fails.

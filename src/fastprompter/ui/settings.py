@@ -93,10 +93,10 @@ class HotkeySettingsDialog(QDialog):
         layout = QVBoxLayout(self)
         from PyQt6.QtWidgets import QScrollArea, QTabWidget
         self.tabs = QTabWidget()
-        
+
         tab_global = QWidget()
         form_global = QFormLayout(tab_global)
-        
+
         self.le_global = DualHotkeyWidget(self.main_win, "global_hotkey", "Alt+X", "F15")
         form_global.addRow("Toggle UI (Global):", self.le_global)
         self.le_pie = DualHotkeyWidget(self.main_win, "pie_menu_hotkey", "Shift+Alt+X")

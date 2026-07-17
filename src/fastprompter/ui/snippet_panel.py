@@ -598,7 +598,7 @@ class DraggableSiloButton(QWidget):
         self.global_idx = global_idx
         # children sit shifted right under their parent
         self._silo_layout.setContentsMargins(22 if is_child else 4, 2, 4, 2)
-        
+
         if has_children:
             self._btn_collapse.setText("▸" if is_collapsed else "▾")
             self._btn_collapse.show()

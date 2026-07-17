@@ -206,7 +206,7 @@ class VaultTextEdit(QTextEdit):
             first_number = first.blockNumber()
             last_visible = min(block_count, first_number + 200)
             show_all = self.main_win.data.get("show_line_numbers", "False") == "True"
-            
+
             for block_number in range(first_number, last_visible):
                 block = doc.findBlockByNumber(block_number)
                 if not block.isValid():
@@ -215,18 +215,18 @@ class VaultTextEdit(QTextEdit):
                     continue
                 cursor = QTextCursor(block)
                 rect = self.cursorRect(cursor)
-                
+
                 is_code = bool(max(0, block.userState()) & (1 << 8))
-                
+
                 if show_all or is_code:
                     number = str(block_number + 1)
                     painter.setPen(QColor("#808080"))
                     painter.drawText(0, int(rect.top()), self.line_number_area.width() - 4,
                                      self.fontMetrics().height(), Qt.AlignmentFlag.AlignRight, number)
-                                     
+
                 mark = max(0, block.userState()) & 0xFF
                 is_hovered = getattr(self.line_number_area, "hover_y", -1) != -1 and rect.top() <= self.line_number_area.hover_y <= rect.bottom()
-                
+
                 if mark == 1 or (mark == 0 and is_hovered):
                     painter.setPen(QColor("#a8cc8c") if mark == 1 else QColor(168, 204, 140, 80))
                     # draw ✅ justified to the left
@@ -289,11 +289,11 @@ class VaultTextEdit(QTextEdit):
         prev = block.previous()
         if not prev.isValid():
             return True
-            
+
         ustate = prev.userState()
         if ustate != -1:
             return not (ustate & 256) # CODE_BIT is 1 << 8
-            
+
         # Fallback to O(N) if highlighter hasn't parsed the block yet (e.g. in tests)
         opens = True
         b = self.document().firstBlock()
@@ -778,7 +778,7 @@ class VaultTextEdit(QTextEdit):
                 to_links.append(path)
             else:
                 to_files.append(path)
-                
+
         if to_files:
             self.main_win.add_files_to_active_silo(to_files)
         if to_links:
@@ -971,7 +971,7 @@ class VaultTextEdit(QTextEdit):
             if not cursor.hasSelection():
                 block_text = cursor.block().text()
                 stripped = block_text.lstrip()
-                
+
                 if stripped == "---":
                     before, after = self.main_win.divider_counts()
                     cursor.beginEditBlock()
@@ -986,13 +986,13 @@ class VaultTextEdit(QTextEdit):
 
                 indent = block_text[:len(block_text) - len(stripped)]
                 m = re.match(r'^([\u2022\-\*\+])[ \t]+(.*)$', stripped)
-                
+
                 # The user requested double line to work independently of the 'auto_bullet' check if toggled,
                 # or just ensure double lines append correctly. We will allow auto-continuation if either
                 # auto_bullet is True OR bullet_double_line is True.
                 wants_auto_bullet = self.main_win.data.get("auto_bullet", "False") == "True"
                 double = self.main_win.data.get("bullet_double_line", "False") == "True"
-                
+
                 if m and cursor.positionInBlock() >= len(block_text) - len(m.group(2)) and (wants_auto_bullet or double):
                     if m.group(2).strip():
                         sep = "\n\n" if double else "\n"
@@ -1145,22 +1145,22 @@ class VaultTextEdit(QTextEdit):
                                 g = QRectF(g_rect)
                                 pressed = getattr(self, "_ts_pressed_block", -1) == bnum
                                 painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
-                                
+
                                 painter.fillRect(g, QColor("#1e1e1e"))
-                                
+
                                 light = QColor("#3a3a3a")
                                 dark = QColor("#0a0a0a")
                                 top_left = dark if pressed else light
                                 bottom_right = light if pressed else dark
-                                
+
                                 painter.setPen(top_left)
                                 painter.drawLine(g.topLeft(), g.topRight())
                                 painter.drawLine(g.topLeft(), g.bottomLeft())
-                                
+
                                 painter.setPen(bottom_right)
                                 painter.drawLine(g.bottomLeft(), g.bottomRight())
                                 painter.drawLine(g.topRight(), g.bottomRight())
-                                
+
                                 painter.setPen(QColor("#a0a0a0"))
                                 gf = self.font()
                                 gf.setPointSizeF(max(8.0, gf.pointSizeF() * 1.1))

@@ -263,7 +263,7 @@ class FastPrompter(
         if not show_date:
             self.lbl_date.setVisible(False)
             return
-            
+
         self.lbl_date.setVisible(True)
         import datetime
         now = datetime.datetime.now()
@@ -685,19 +685,19 @@ class FastPrompter(
         self.header_layout.addWidget(self.btn_sidebar_toggle)
 
         self.cat_combo = QComboBox()
-        
+
         # Scroll buttons only appear when tabs truly overflow; without them
         # the tab bar's minimum width is the sum of ALL tabs, which alone
         # breaks packing into a Ctrl+Q quarter-FullHD window.
-        
-        
+
+
         for cat in self.data["cats_order"]:
             self.cat_combo.addItem(cat)
         self.cat_combo.currentIndexChanged.connect(self.on_tab_changed)
 
-        
 
-        
+
+
 
         self.btn_new = QPushButton("NEW")
         self.btn_new.setToolTip(f"NEW ({self.data.get('hk_new_snippet', 'Ctrl+N')})")
@@ -747,7 +747,7 @@ class FastPrompter(
                 QPushButton.mousePressEvent(self.btn_bullet_toggle, event)
 
         self.btn_bullet_toggle.mousePressEvent = _bullet_mousePress
-        
+
         def _on_bullet_left_click():
             # Left click naturally toggles the checked state, revert it to actual auto_bullet mode.
             self.btn_bullet_toggle.setChecked(self.data.get("auto_bullet", "False") == "True")
@@ -835,8 +835,8 @@ class FastPrompter(
 
         # Navigation
         self.header_layout.addWidget(self.cat_combo)
-        
-        
+
+
         self.header_layout.addWidget(self.btn_new)
         self.header_layout.addWidget(self.btn_save)
 
@@ -1359,12 +1359,12 @@ class FastPrompter(
             header = QLabel(title)
             header.setStyleSheet("font-weight: bold; padding: 0 0 1px 0;")
             col.addWidget(header)
-            
+
             grid = QGridLayout()
             grid.setContentsMargins(0, 0, 0, 0)
             grid.setSpacing(2)
             grid.setHorizontalSpacing(10)
-            
+
             r, c = 0, 0
             for item in items:
                 if isinstance(item, QHBoxLayout):
@@ -1379,7 +1379,7 @@ class FastPrompter(
                     if c > 1:
                         c = 0
                         r += 1
-            
+
             col.addLayout(grid)
             col.addStretch(1)
             return col
@@ -1449,13 +1449,13 @@ class FastPrompter(
 
         snip_header = QHBoxLayout()
         snip_header.setContentsMargins(0, 0, 0, 0)
-        
+
         self.btn_trash = QPushButton("🗑️")
         self.apply_button_size(self.btn_trash, 20, 20)
         self.btn_trash.setToolTip("Open Trash")
         self.btn_trash.clicked.connect(self.open_trash)
         snip_header.addWidget(self.btn_trash)
-        
+
         snip_header.addStretch()
 
         self.btn_toggle_search = QPushButton("⌕")
@@ -1837,13 +1837,13 @@ class FastPrompter(
 
         template = self.data.get("ctrl_e_format", "**__{text}__** ({time})")
         full_template = template if template.startswith("# ") else f"# {template}"
-        
+
         pattern = re.escape(full_template)
         pattern = pattern.replace(re.escape("{text}"), r"(.*?)")
         pattern = pattern.replace(re.escape("{time}"), r".*?")
         pattern = pattern.replace(re.escape("{state}"), r".*?")
         pattern = f"^{pattern}$"
-        
+
         m = re.match(pattern, sel)
         if m:
             clean_sel = m.group(1)
@@ -1860,11 +1860,11 @@ class FastPrompter(
         elif 12 <= h < 17: daypart = "Day"
         elif 17 <= h < 22: daypart = "Evening"
         else: daypart = "Night"
-        
+
         text_month = self.data.get("date_text_month", "False") == "True"
         m_fmt = "%d %b" if text_month else "%d.%m"
         ts = now.strftime(f"{m_fmt} - %H:%M")
-        
+
         # {state} in the template takes over the day word; otherwise the
         # legacy behavior prefixes it inside {time} when Day Word is on
         if "{state}" in template:
@@ -1880,7 +1880,7 @@ class FastPrompter(
                           .replace("{state}", daypart))
         if not formatted_text.startswith("# "):
             formatted_text = f"# {formatted_text}"
-            
+
         cursor.insertText(formatted_text)
 
         # Jump two lines below the header onto a fresh bullet, with PLAIN
@@ -2002,7 +2002,7 @@ class FastPrompter(
         pinned = self.data.get("pinned_silos", [])
         if not isinstance(pinned, list):
             pinned = []
-            
+
         if swap_idx is not None:
             if source_idx in pinned and swap_idx in pinned:
                 i1, i2 = pinned.index(source_idx), pinned.index(swap_idx)
@@ -2036,7 +2036,7 @@ class FastPrompter(
                 pinned.remove(source_idx)
                 self.data["pinned_silos"] = pinned
                 return False
-                
+
         return False
 
     def move_temp_to_index(self, from_idx, to_idx, is_archive=False):
@@ -3180,7 +3180,7 @@ class FastPrompter(
             display_idx = slot_idx + 1
             line_count = raw.count("\n") + 1 if raw.strip() else 0
             line_str = str(line_count) if line_count > 0 else ""
-            
+
             from fastprompter.ui.file_container import silo_file_count
             fcount = silo_file_count(self._files_root(), self.get_current_category(), raw)
             if fcount > 0:
@@ -3502,7 +3502,7 @@ class FastPrompter(
             self.silo_gap_widget.setFixedHeight(8)
             self.silo_gap_widget.setStyleSheet("border-top: 1px solid #5a5a40; border-bottom: 1px solid #1a1a10; margin: 2px 8px; background: transparent;")
             self.silos_widget.layout.addWidget(self.silo_gap_widget)
-            
+
         self.silos_widget.layout.removeWidget(self.silo_gap_widget)
         self.silo_gap_widget.hide()
 
@@ -3890,7 +3890,7 @@ class FastPrompter(
             return
         self.add_data_undo_state("Clear silo")
         self.play_sound("clear")
-        
+
         if 0 <= idx < len(presets):
             old_text = presets[idx]
             if hasattr(self, "_delete_file_container"):
@@ -4017,7 +4017,7 @@ class FastPrompter(
         add_shortcut("hk_find", "Ctrl+F", self.show_find)
         add_shortcut("hk_replace", "Ctrl+H", self.show_replace)
         add_shortcut("hk_export_silo", "Ctrl+Shift+S", self.save_silo_to_file)
-        
+
         shortcut = QShortcut(QKeySequence("Esc"), self)
         shortcut.activated.connect(self._on_escape)
         self._app_shortcuts.append(shortcut)
@@ -4035,7 +4035,7 @@ class FastPrompter(
             shortcut = QShortcut(QKeySequence(seq_str), self, context=context)
             shortcut.activated.connect(slot)
             self._app_shortcuts.append(shortcut)
-            
+
         add_fixed("Ctrl+Shift+Z", self.redo_action)
         add_fixed("Alt+W", self.insert_old_add_line, Qt.ShortcutContext.ApplicationShortcut)
         add_fixed("Alt+Up", lambda: self.navigate_silo(-1), Qt.ShortcutContext.ApplicationShortcut)
@@ -4138,7 +4138,7 @@ class FastPrompter(
             return
         doc = self.text_area.document()
         lines = doc.blockCount() if doc.characterCount() > 1 else 0
-        
+
         from PyQt6.QtGui import QFontMetrics
         fm = QFontMetrics(lbl.font())
         # minimum stays tiny so the header can pack into a quarter-FullHD
@@ -4148,7 +4148,7 @@ class FastPrompter(
             lbl.setMinimumWidth(needed_width)
             from PyQt6.QtCore import Qt
             lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            
+
         lbl.setText(f"{lines} L" if lines else "")
 
     def refresh_timestamp_in_block(self, block):
@@ -4160,7 +4160,7 @@ class FastPrompter(
         m = TS_STAMP_LINE_RE.search(block.text())
         if not m:
             return
-        
+
         now = datetime.datetime.now()
         h = now.hour
         if 5 <= h < 12: daypart = "Morning"
@@ -4170,7 +4170,7 @@ class FastPrompter(
         text_month = self.data.get("date_text_month", "False") == "True"
         m_fmt = "%d %b" if text_month else "%d.%m"
         ts = now.strftime(f"{m_fmt} - %H:%M")
-        
+
         now_str = f"{daypart} {ts}" if self.data.get("date_daypart", "True") == "True" else ts
         doc = self.text_area.document()
         cur = self.text_area.textCursor()

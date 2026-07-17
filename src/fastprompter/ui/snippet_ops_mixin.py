@@ -95,11 +95,11 @@ class SnippetOpsMixin:
 
         if is_archive:
             return  # No file folder for archives currently
-            
+
         silo_text = self.data["temp_presets"][idx]
         if not silo_text.strip():
             return
-            
+
         from fastprompter.ui.file_container import silo_slug
         safe = silo_slug(silo_text)
         if not safe:
@@ -107,47 +107,47 @@ class SnippetOpsMixin:
         folder = os.path.join(self._files_root(), self.get_current_category(), safe)
         if not folder:
             return
-            
+
         default_name = f"backup_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
-        
+
         self.ignore_focus_loss = True
         try:
             dlg = QDialog(self)
             dlg.setWindowTitle("Backup Silo")
             layout = QVBoxLayout(dlg)
-            
+
             layout.addWidget(QLabel("Save current silo as file in its own folder:"))
             le = QLineEdit(default_name)
             layout.addWidget(le)
-            
+
             btn_layout = QHBoxLayout()
             btn_copy = QPushButton("Copy")
             btn_copy_clear = QPushButton("Copy + Clear current silo")
             btn_cancel = QPushButton("Cancel")
-            
+
             btn_layout.addWidget(btn_copy)
             btn_layout.addWidget(btn_copy_clear)
             btn_layout.addWidget(btn_cancel)
             layout.addLayout(btn_layout)
-            
+
             result = [None]
-            
+
             def on_copy():
                 result[0] = "copy"
                 dlg.accept()
-                
+
             def on_copy_clear():
                 result[0] = "clear"
                 dlg.accept()
-                
+
             btn_copy.clicked.connect(on_copy)
             btn_copy_clear.clicked.connect(on_copy_clear)
             btn_cancel.clicked.connect(dlg.reject)
-            
+
             if dlg.exec():
                 name = le.text().strip()
                 if not name: return
-                
+
                 os.makedirs(folder, exist_ok=True)
                 path = os.path.join(folder, name)
                 try:
@@ -156,7 +156,7 @@ class SnippetOpsMixin:
                 except Exception as e:
                     QMessageBox.warning(self, "Error", f"Failed to save backup:\n{e}")
                     return
-                    
+
                 if result[0] == "clear":
                     if is_archive == getattr(self, "active_is_archive", False) and idx == getattr(self, "active_temp_slot", -1):
                         self.clear_text(internal=False)
@@ -633,10 +633,10 @@ class SnippetOpsMixin:
             if idx == self.active_temp_slot:
                 presets[idx] = self.text_area.toPlainText()
             self.add_data_undo_state("Delete silo")
-            
+
             old_text = presets[idx]
             self._delete_file_container(self.get_current_category(), old_text)
-            
+
             presets.pop(idx)
             if idx < len(docs):
                 docs.pop(idx)
