@@ -2440,6 +2440,7 @@ class FastPrompter(
                 os.makedirs(os.path.dirname(new_dir), exist_ok=True)
                 os.rename(old_dir, new_dir)
         except OSError as e:
+            from fastprompter.core.logging import logger
             logger.warning(f"Silo folder sync {old_dir} -> {new_dir} failed: {e}")
 
     def commit_current_text(self):

@@ -8,7 +8,7 @@ the displayed minute actually changes.
 import datetime
 import math
 
-from PyQt6.QtCore import QPoint, Qt
+from PyQt6.QtCore import QPoint
 from PyQt6.QtGui import QColor, QPainter, QPen
 from PyQt6.QtWidgets import QWidget
 

@@ -4,6 +4,7 @@ Extracted from main.py Phase 2c of the modularization plan.
 Provides SnippetOpsMixin class for use as a mixin with FastPrompter QMainWindow.
 """
 
+import os
 import time
 
 from PyQt6 import sip
