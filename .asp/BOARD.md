@@ -1,40 +1,41 @@
 # ASP Board
 
-## Wave v0.5.3 (17.07.26)
+## Wave v0.6.0 — gaps from the 0.5.3 master list (17.07.26 review)
 
 | ID | Status | Owner | Needs | Description |
 |---|---|---|---|---|
-| T-101 | DONE | claude-fable | - | BUG: Ctrl+E header edit re-slugs title -> new files folder, old buried (data/files/code/) |
-| T-102 | DONE | claude-fable | - | BUG: container Delete button dead; + Ctrl+Shift+C copy path, rich shortcuts in panel |
-| T-103 | DONE | claude-fable | - | BUG: theme change garbles/truncates toolbar button texts (screens 0420xx) |
-| T-104 | DONE | claude-fable | - | BUG: deleting silo can hide snippet (screen 041723) |
-| T-105 | DONE | claude-fable | - | BUG: header date refresh glyph may disappear — investigate |
-| T-106 | DONE | claude-fable | - | BUG: Normal Window toggle flashbang, no immediate title bar update |
-| T-110 | DONE | claude-fable | - | Top bar right: pin (always-on-top), line-numbers toggle, separator files-counter/line-counter |
-| T-111 | DONE | claude-fable | - | Layout: Home/End left; settings+files right group; snippet +/- separator; arrows toggleable OFF |
-| T-112 | DONE | claude-fable | - | Silo hover: tickbox toggle left of number |
-| T-113 | DONE | claude-fable | - | Silo: middle-click -> trash; context menu Move to Trash |
-| T-114 | DONE | claude-fable | T-113 | Context menus rethink + icons (silo, snippet) |
-| T-115 | DONE | claude-fable | - | Header format template: {text} {time} {state}, user-editable, no hardcoded bold |
-| T-116 | DONE | claude-fable | - | Mini analog clock near date (toggleable, hour+minute hands) |
-| T-117 | DONE | claude-fable | - | Hotkeys: defaults Alt+E top / Alt+S lock / Alt+A hideout; all bindable; tooltips show them |
-| T-118 | DONE | claude-fable | T-102 | Container: New Folder, richer shortcuts |
-| T-119 | DONE | claude-fable | - | Drop overlay effect for text files (screen 044916); no-text drops -> container auto |
-| T-120 | TODO | - | - | Folder Template editor (ref NEW_PROJ.CMD) — create templated folder trees in container |
-| T-121 | TODO | - | - | Settings UI compact redesign (screen 044432) |
-| T-122 | PART | claude-fable | - | Search: hidden-bar ghost filter fixed; deep pass -> next wave |
-| T-123 | DONE | claude-fable | - | Silo hierarchy: drop=nest, Shift+drop=swap, collapse, unnest, files merge (verified: smoke) |
-| T-124 | DONE | claude-fable | - | Help + README refresh; dead code sweep |
-| T-125 | DONE | claude-fable | all-bugs | Ship v0.5.3 |
+| T-130 | TODO | - | - | Settings UI: rethink + compact whole panel (screen 044432_24bc2c90) |
+| T-131 | TODO | - | - | Move ⚙ settings btn + 📁 files btn to sidebar right group (Archive/+/-/Search), organized |
+| T-132 | TODO | - | - | Snippet Append/Top/Bot arrow buttons: Settings toggle, default OFF |
+| T-133 | TODO | - | - | Visual separator for snippet +/- buttons (own group in the row) |
+| T-134 | TODO | - | - | Folder Template editor (refs: V:\__SAVE_V\___CONTEXTMENU\_new_project.reg, NEW_PROJ.CMD) — build templated folder trees in container |
+| T-135 | TODO | - | - | ALL in-app shortcuts bindable (Ctrl+E/W/D/Q/…) + tooltips show current binds |
+| T-136 | TODO | - | - | Search deep reliability pass (beyond the ghost-filter fix) |
+| T-137 | TODO | - | - | README + Help refresh (hierarchy, ticks, trash, zones, │ counters); dead-code sweep |
+| T-138 | TODO | - | T-130..T-137 | Backup to N: + REVIEW + ship v0.6.0 |
 
-## DONE (previous waves)
+## DONE — verified against the master list (76 smoke + 461 unit green)
+| item | evidence |
+|---|---|
+| Hierarchy 1-level (nest/collapse/indent/unnest/files merge) | test_silo_hierarchy_nest_collapse_promote |
+| Tick ✅ on silos + Settings toggle | test_silo_tick_toggle_persists_and_remaps |
+| Middle-click -> Trash; menu slimmed + icons | test_trash_silo_writes_md_and_removes_slot |
+| Analog clock; header template {text}{time}{state} | smoke + settings field |
+| Pin 📌 + # line-numbers buttons at line counter + separator | test_hide_on_clickout_toggle_and_header_mirrors |
+| Date glyph disappearing (17 Jul fmt) | TS_STAMP_LINE_RE unified |
+| Container: delete/rename dialogs, Del/F2/Enter/Ctrl+Shift+C/Ctrl+N/Ctrl+V, views, links, clip->file, counters+breakdown | tests |
+| Snippet hidden after silo delete (ghost search filter) | test_delete_silo_keeps_snippets_visible |
+| Theme button garble (10px metrics vs 11px QSS) | test_theme_switch_keeps_button_labels + fit test |
+| Drop zones overlay; binary -> Files auto | test_drop_overlay_zones_and_routing |
+| Header-change buried folder: slug ignores stamps + live rename (1 silo = 1 folder) | test_live_retitle_renames_folder_no_duplicates |
+| Alt+E/S/A defaults, Alt+A new + bindable; Home/End left; Move to Top | test_move_silo_to_top_and_bottom_remap |
+| Normal Window flashbang; full clock fits 960 | test_header_fits_quarter_fullhd_with_full_clock |
+| 📁2 │ 177 counter separator on silo rows | this wave |
+| Backup N: | robocopy 17.07 |
 
-| ID | Status | Owner | Needs | Description |
-|---|---|---|---|---|
-| T-001 | DONE | Antigravity | - | Fix bug: FileContainerPanel._watcher AttributeError |
-| T-002 | DONE | Antigravity | - | Fix bug: text clipping in toolbar buttons |
-| T-003 | DONE | Antigravity | - | Add toggleable date format option (17.07 vs 17 Jul) |
-| T-004 | DONE | Antigravity | - | Fix/Update tests for Ctrl+W divider and Ctrl+E timestamp formatting |
-| T-005 | DONE | Antigravity | T-004 | Compact top bar UI (960px with Seconds + Day Word) |
-| T-006 | DONE | Antigravity | - | Fix test_inline_timestamp_refresh_glyph regex |
-| T-007 | DONE | Antigravity | T-004 | Smoke test stabilization (65 pass) |
+## Previous waves (archive)
+T-001..T-007 (Antigravity asp init), T-101..T-125 (v0.5.3) — all DONE, see git log + tags v0.4.0/v0.5.0/v0.5.3.
+
+## Out of scope note
+PureRef-style free canvas with image RESIZE inside the panel — deliberately not built
+(lightweight constraint); container has image preview pane + Explorer views instead.
