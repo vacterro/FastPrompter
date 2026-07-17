@@ -485,6 +485,42 @@ class SnippetOpsMixin:
         self.refresh_snippets_panel()
         self.refresh_archive_panel()
 
+    def trash_silo(self, idx=None, is_archive=False):
+        """Move a silo to the trash: its text lands as a .md file in
+        data/files/_trash/ (next to any files it owned) and the slot is
+        removed. Nothing is destroyed — the trash folder is a plain dir."""
+        import datetime
+
+        from fastprompter.ui.file_container import silo_slug
+        presets = self.data["archive_temp_presets"] if is_archive else self.data["temp_presets"]
+        if idx is None:
+            idx = self.active_temp_slot
+        if not (0 <= idx < len(presets)):
+            return
+        if idx == self.active_temp_slot and is_archive == getattr(self, "active_is_archive", False):
+            presets[idx] = self.text_area.toPlainText()
+        text = presets[idx]
+        if text.strip():
+            trash = os.path.join(self._files_root(), "_trash")
+            try:
+                os.makedirs(trash, exist_ok=True)
+                stamp = datetime.datetime.now().strftime("%d.%m.%y-%H%M%S")
+                name = f"{silo_slug(text)}-{stamp}.md"
+                with open(os.path.join(trash, name), "w", encoding="utf-8") as f:
+                    f.write(text)
+            except OSError as e:
+                logger.warning(f"Trash write failed, silo NOT deleted: {e}")
+                return
+        self.del_silo(idx)
+
+    def open_trash_folder(self):
+        trash = os.path.join(self._files_root(), "_trash")
+        os.makedirs(trash, exist_ok=True)
+        try:
+            os.startfile(trash)
+        except OSError as e:
+            logger.error(f"Open trash failed: {e}")
+
     def del_silo(self, idx=None):
         """Delete a silo at the given index, or the active one."""
         self.sound_manager.play("delete")

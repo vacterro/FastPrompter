@@ -226,6 +226,8 @@ class FastPrompter(
         self.place_window()
 
     def _update_date_label(self):
+        if hasattr(self, "analog_clock"):
+            self.analog_clock.sync()
         show_date = self.data.get("show_date_rect", "True") == "True"
         if not show_date:
             self.lbl_date.setVisible(False)
@@ -373,6 +375,26 @@ class FastPrompter(
         if 17 <= hour < 23:
             return "Evening"
         return "Night"
+
+    def toggle_hide_on_clickout(self):
+        """Alt+A: flip the Hide on Click-Out behavior from anywhere."""
+        if hasattr(self, "cb_focus"):
+            self.cb_focus.setChecked(not self.cb_focus.isChecked())
+            self.play_tick_sound()
+
+    def _pin_top_toggled(self, checked):
+        """Header 📌 mirrors the Always-on-Top setting checkbox."""
+        if hasattr(self, "cb_top") and self.cb_top.isChecked() != checked:
+            self.cb_top.setChecked(checked)  # cb_top's handler does the work
+        else:
+            self.toggle_aot(checked)
+
+    def _line_nums_btn_toggled(self, checked):
+        """Header # mirrors the Line Numbers setting checkbox."""
+        if hasattr(self, "cb_line_numbers") and self.cb_line_numbers.isChecked() != checked:
+            self.cb_line_numbers.setChecked(checked)
+        else:
+            self.on_line_numbers_toggled(checked)
 
     def _files_root(self):
         custom = (self.data.get("files_root") or "").strip()
@@ -763,6 +785,10 @@ class FastPrompter(
         self.header_layout.addWidget(self.btn_new)
         self.header_layout.addWidget(self.btn_save)
 
+        # Cursor nav sits next to New/Save (used together while writing)
+        self.header_layout.addWidget(self.btn_home)
+        self.header_layout.addWidget(self.btn_end)
+
         # Formatting and editing
         self.header_layout.addStretch(1)
         self.header_layout.addWidget(self.btn_bold)
@@ -777,19 +803,44 @@ class FastPrompter(
         self.header_layout.addWidget(self.btn_clear)
         self.header_layout.addWidget(self.btn_files)
 
-        # Cursor nav and settings
+        # Status cluster (right): clock | pins | line counter | settings
         self.header_layout.addStretch(1)
+        from fastprompter.ui.analog_clock import MiniAnalogClock
+        self.analog_clock = MiniAnalogClock(self)
+        self.analog_clock.setToolTip("Current time (analog)")
+        self.header_layout.addWidget(self.analog_clock)
+
         self.lbl_date = QLabel("")
         self.lbl_date.setToolTip("Current Date and Time")
         self.lbl_date.setStyleSheet("padding: 0 4px;")
         self.header_layout.addWidget(self.lbl_date)
 
+        self.btn_pin_top = QPushButton("📌")
+        self.btn_pin_top.setCheckable(True)
+        self.btn_pin_top.setChecked(self.data.get("always_on_top", "True") == "True")
+        self.btn_pin_top.setToolTip("Always on Top — keep the window above all others")
+        self.apply_button_size(self.btn_pin_top, 20, 20)
+        self.btn_pin_top.toggled.connect(self._pin_top_toggled)
+        self.header_layout.addWidget(self.btn_pin_top)
+
+        self.btn_line_nums = QPushButton("#")
+        self.btn_line_nums.setCheckable(True)
+        self.btn_line_nums.setChecked(self.data.get("show_line_numbers", "False") == "True")
+        self.btn_line_nums.setToolTip(
+            "Show / hide the line-number gutter\n(click the gutter to place colored margin marks)")
+        self.apply_button_size(self.btn_line_nums, 20, 20)
+        self.btn_line_nums.toggled.connect(self._line_nums_btn_toggled)
+        self.header_layout.addWidget(self.btn_line_nums)
+
+        self._counter_sep = QFrame()
+        self._counter_sep.setFrameShape(QFrame.Shape.VLine)
+        self._counter_sep.setFixedHeight(16)
+        self.header_layout.addWidget(self._counter_sep)
+
         self.lbl_line_count = QLabel("")
         self.lbl_line_count.setToolTip("Line count of the open silo/snippet")
         self.lbl_line_count.setStyleSheet("padding: 0 4px; font-weight: bold;")
         self.header_layout.addWidget(self.lbl_line_count)
-        self.header_layout.addWidget(self.btn_home)
-        self.header_layout.addWidget(self.btn_end)
         self.header_layout.addWidget(self.btn_settings_toggle)
         self.header_layout.addWidget(self.btn_help)
         self.main_layout.addWidget(self.header_widget)
@@ -1025,6 +1076,12 @@ class FastPrompter(
             self.data.get("show_line_numbers", "False") == "True",
             self.on_line_numbers_toggled,
         )
+        # keep the header mirror buttons in sync with the checkboxes
+        self.cb_top.toggled.connect(
+            lambda c: hasattr(self, "btn_pin_top") and self.btn_pin_top.setChecked(c))
+        self.cb_line_numbers.toggled.connect(
+            lambda c: hasattr(self, "btn_line_nums") and self.btn_line_nums.setChecked(c))
+
         self.cb_zebra = create_footer_cb(
             "Zebra Stripes",
             "Lightly shade every other line for readability",
@@ -1092,6 +1149,16 @@ class FastPrompter(
             lambda checked: (
                 self.data.update({"date_seconds": "True" if checked else "False"})
                 or self.mark_dirty()
+            ),
+        )
+        self.cb_analog_clock = create_footer_cb(
+            "Analog Clock",
+            "Show a mini analog clock (hour + minute hands)\nnext to the date widget",
+            self.data.get("analog_clock", "False") == "True",
+            lambda checked: (
+                self.data.update({"analog_clock": "True" if checked else "False"})
+                or self.mark_dirty()
+                or self._update_date_label()
             ),
         )
         self.cb_date_daypart = create_footer_cb(
@@ -1235,7 +1302,8 @@ class FastPrompter(
         groups_row.addLayout(_settings_group("Window", [
             self.cb_top, self.cb_lock_window, self.cb_normal_window,
             self.cb_tray, self.cb_sidebar, self.cb_date_rect, self.cb_date_seconds,
-            self.cb_date_daypart, self.cb_date_text_month, self.cb_trash_vision
+            self.cb_date_daypart, self.cb_date_text_month, self.cb_analog_clock,
+            self.cb_trash_vision
         ]), 1)
         groups_row.addWidget(_vline())
         groups_row.addLayout(_settings_group("Editor", [
@@ -1929,14 +1997,31 @@ class FastPrompter(
         # the toggle look broken. Suppress it until the dust settles.
         self.ignore_focus_loss = True
         geo = self.geometry()
+        # Anti-flashbang: the recreated native window first paints with the
+        # default (white) background brush before the stylesheet kicks in.
+        # Paint it in the theme's window color instead.
+        m_bg = re.search(
+            r"QWidget\s*\{[^}]*background-color:\s*(#[0-9a-fA-F]{3,8})",
+            QApplication.instance().styleSheet(),
+        )
+        if m_bg:
+            from PyQt6.QtGui import QPalette
+            pal = self.palette()
+            pal.setColor(QPalette.ColorRole.Window, QColor(m_bg.group(1)))
+            self.setPalette(pal)
+            self.setAutoFillBackground(True)
+        self.setUpdatesEnabled(False)
         self.hide()  # explicit hide forces a clean native-frame rebuild
         self.setWindowFlags(flags)
         self.setGeometry(geo)
         if was_visible:
             self.show()
+            self.setUpdatesEnabled(True)
             self.repaint()
             self.raise_()
             self.activateWindow()
+        else:
+            self.setUpdatesEnabled(True)
             # New native handle: re-assert always-on-top on it
             if self._always_on_top and not normal:
                 try:
@@ -3268,10 +3353,8 @@ class FastPrompter(
         menu = QMenu(self)
         menu.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         menu.setFont(QApplication.font())
-        if cur:
-            menu.addAction("Save text as Snippet", self.save_snippet)
-            menu.addAction("Save as Snippet #...", self.save_snippet_as_number)
-        if (
+
+        has_content = (
             is_archive
             and idx < len(self.data.get("archive_temp_presets", []))
             and self.data["archive_temp_presets"][idx]
@@ -3279,34 +3362,50 @@ class FastPrompter(
             not is_archive
             and idx < len(self.data["temp_presets"])
             and self.data["temp_presets"][idx]
-        ):
-            menu.addAction(f"Clear Silo {idx + 1}", lambda: self.clear_temp(idx, is_archive))
+        )
 
-        # Pin/Unpin silo (only for non-archive)
+        # -- everyday actions ------------------------------------------------
         if not is_archive:
             pinned_list = self.data.get("pinned_silos", [])
             if isinstance(pinned_list, str):
                 import ast
-
                 try:
                     pinned_list = ast.literal_eval(pinned_list)
                 except Exception:
                     pinned_list = []
             if idx in pinned_list:
-                menu.addAction(f"Unpin Silo {idx + 1}", lambda i=idx: self._toggle_pin_silo(i))
+                menu.addAction("📌 Unpin", lambda i=idx: self._toggle_pin_silo(i))
             else:
-                menu.addAction(f"Pin Silo {idx + 1}", lambda i=idx: self._toggle_pin_silo(i))
+                menu.addAction("📌 Pin to Top", lambda i=idx: self._toggle_pin_silo(i))
+            menu.addAction("📥 Archive", lambda i=idx: self.archive_single_silo(i))
+        menu.addAction("📁 Files…", lambda i=idx, a=is_archive: self.open_file_container(i, a))
 
+        # -- save ---------------------------------------------------------------
+        if cur:
+            menu.addSeparator()
+            menu.addAction("💾 Save text as Snippet", self.save_snippet)
+            menu.addAction("💾 Save as Snippet #…", self.save_snippet_as_number)
+
+        # -- destructive (grouped at the bottom of the section) ---------------
+        if has_content:
+            menu.addSeparator()
+            menu.addAction("🧹 Clear (files kept in trash)",
+                           lambda: self.clear_temp(idx, is_archive))
+            menu.addAction("🗑 Move to Trash",
+                           lambda i=idx, a=is_archive: self.trash_silo(i, a))
+            menu.addAction("🗂 Open Trash Folder", self.open_trash_folder)
+
+        menu.addSeparator()
         # Transfer to Snippet
         presets_list = (
             self.data["archive_temp_presets"] if is_archive else self.data["temp_presets"]
         )
         if idx < len(presets_list) and presets_list[idx] and presets_list[idx].strip():
             menu.addAction(
-                f"Transfer Silo {idx + 1} to Snippet",
+                "➡ Transfer to Snippet",
                 lambda i=idx, a=is_archive: self._transfer_to_snippet(i, a),
             )
-            transfer_menu = menu.addMenu("Transfer to Project:")
+            transfer_menu = menu.addMenu("➡ Transfer to Project")
             for cat_name in self.data.get("cats_order", list(self.data["categories"].keys())):
                 if cat_name not in self.data["categories"]:
                     continue
@@ -3315,13 +3414,13 @@ class FastPrompter(
                     lambda i=idx, a=is_archive, c=cat_name: self._transfer_to_snippet(i, a, target_cat=c),
                 )
             menu.addAction(
-                f"Move Silo {idx + 1} to Bottom",
+                "⬇ Move to Bottom",
                 lambda i=idx, a=is_archive: self._move_silo_to_bottom(i, a),
             )
 
         # Replace Silo submenu — shows all non-empty silos to copy text from
         presets = self.data["archive_temp_presets"] if is_archive else self.data["temp_presets"]
-        replace_menu = menu.addMenu(f"Replace Silo {idx + 1} from...")
+        replace_menu = menu.addMenu("🔁 Replace from…")
         has_source = False
         for src_i, src_text in enumerate(presets):
             if src_i == idx or not src_text or not src_text.strip():

@@ -96,12 +96,14 @@ class HotkeySettingsDialog(QDialog):
         form_layout.addRow("Toggle UI (Global):", self.le_global)
         self.le_pie = DualHotkeyWidget(self.main_win, "pie_menu_hotkey", "Shift+Alt+X")
         form_layout.addRow("Summon Quick List:", self.le_pie)
-        self.le_lock = DualHotkeyWidget(self.main_win, "lock_window_hotkey", "Ctrl+Shift+L")
+        self.le_lock = DualHotkeyWidget(self.main_win, "lock_window_hotkey", "Alt+S")
         form_layout.addRow("Toggle Lock Window:", self.le_lock)
-        self.le_top = DualHotkeyWidget(self.main_win, "always_on_top_hotkey", "Ctrl+Shift+E")
+        self.le_top = DualHotkeyWidget(self.main_win, "always_on_top_hotkey", "Alt+E")
         form_layout.addRow("Toggle Always on Top:", self.le_top)
         self.le_sidebar = DualHotkeyWidget(self.main_win, "toggle_sidebar_hotkey", "Alt+D")
         form_layout.addRow("Toggle Sidebar:", self.le_sidebar)
+        self.le_hideout = DualHotkeyWidget(self.main_win, "hide_on_clickout_hotkey", "Alt+A")
+        form_layout.addRow("Toggle Hide on Click-Out:", self.le_hideout)
 
         self.snippet_inputs = []
         for i in range(5):
@@ -151,9 +153,10 @@ class HotkeySettingsDialog(QDialog):
     def reset_defaults(self):
         self.le_global.reset_defaults("Alt+X", "F15")
         self.le_pie.reset_defaults("Shift+Alt+X")
-        self.le_lock.reset_defaults("Ctrl+Shift+L")
-        self.le_top.reset_defaults("Ctrl+Shift+E")
+        self.le_lock.reset_defaults("Alt+S")
+        self.le_top.reset_defaults("Alt+E")
         self.le_sidebar.reset_defaults("Alt+D")
+        self.le_hideout.reset_defaults("Alt+A")
         for i, le in enumerate(self.snippet_inputs): le.reset_defaults(f"Ctrl+Shift+Numpad{i+1}")
         for i, le in enumerate(self.silo_inputs): le.reset_defaults(f"Alt+Shift+Numpad{i+1}")
 
@@ -163,6 +166,7 @@ class HotkeySettingsDialog(QDialog):
         self.le_lock.save_to_data(self.main_win)
         self.le_top.save_to_data(self.main_win)
         self.le_sidebar.save_to_data(self.main_win)
+        self.le_hideout.save_to_data(self.main_win)
         for le in self.snippet_inputs: le.save_to_data(self.main_win)
         for le in self.silo_inputs: le.save_to_data(self.main_win)
         self.main_win.mark_dirty()

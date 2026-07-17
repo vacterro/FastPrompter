@@ -25,8 +25,9 @@ def build_help_html(data) -> str:
          "Show / hide FastPrompter from anywhere"),
         (g("pie_menu_hotkey", "Shift+Alt+X"), "Quick List pie menu at the cursor"),
         (g("toggle_sidebar_hotkey", "Alt+D"), "Show window + toggle the sidebar"),
-        (g("lock_window_hotkey", "Ctrl+Shift+L"), "Lock / unlock window size & position"),
-        (g("always_on_top_hotkey", "Ctrl+Shift+E"), "Toggle always-on-top"),
+        (g("lock_window_hotkey", "Alt+S"), "Lock / unlock window size & position"),
+        (g("always_on_top_hotkey", "Alt+E"), "Toggle always-on-top"),
+        (g("hide_on_clickout_hotkey", "Alt+A"), "Toggle Hide on Click-Out"),
         ("F1&ndash;F10 (global)", "Paste snippet 1&ndash;10 into the active app"),
     ])
     app_rows = _rows([

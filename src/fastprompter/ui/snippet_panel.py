@@ -182,9 +182,11 @@ class DraggableButton(QPushButton):
         menu = QMenu(self)
         menu.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         menu.setFont(QApplication.font())
-        menu.addAction("Copy", lambda: self.main_win.copy_snippet_to_clipboard(self.full_text))
-        menu.addAction("Rename", lambda: self.main_win.rename_snippet(self.cat, self.global_idx))
-        menu.addAction("Delete", lambda: self.main_win.prompt_delete_snippet(self.cat, self.global_idx))
+        menu.addAction("📋 Copy", lambda: self.main_win.copy_snippet_to_clipboard(self.full_text))
+        menu.addAction("✏ Rename", lambda: self.main_win.rename_snippet(self.cat, self.global_idx))
+        menu.addAction("📁 Files…", lambda: self.main_win.open_file_container(self.global_idx))
+        menu.addSeparator()
+        menu.addAction("🗑 Delete", lambda: self.main_win.prompt_delete_snippet(self.cat, self.global_idx))
         self.main_win.ignore_focus_loss = True
         try:
             menu.exec(self.mapToGlobal(pos))
@@ -610,7 +612,9 @@ class DraggableSiloButton(QWidget):
             return
         elif e.button() == Qt.MouseButton.MiddleButton:
             super().mousePressEvent(e)
-            self.main_win.clear_temp(self.global_idx, is_archive=self.is_archive)
+            # middle-click retires the silo into the trash (text + files
+            # both land in data/files/_trash — recoverable, not a wipe)
+            self.main_win.trash_silo(self.global_idx, is_archive=self.is_archive)
             e.accept()
             return
         super().mousePressEvent(e)

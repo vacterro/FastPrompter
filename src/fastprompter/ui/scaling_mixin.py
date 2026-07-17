@@ -17,6 +17,8 @@ _BTN_BASE_HEIGHTS = {
     "btn_clear_fmt": 24,
     "btn_files": 24,
     "btn_header": 24,
+    "btn_pin_top": 20,
+    "btn_line_nums": 20,
     "btn_add_line": 24,
     "btn_bullet_toggle": 24,
     "btn_save": 24,

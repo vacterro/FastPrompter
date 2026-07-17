@@ -53,6 +53,9 @@ class HotkeyFilter(QAbstractNativeEventFilter):
                     elif msg.wParam in (5, 105):
                         self.window.toggle_visibility(force_sidebar=True)
                         return True, 0
+                    elif msg.wParam in (6, 106):
+                        self.window.toggle_hide_on_clickout()
+                        return True, 0
                     elif (10 <= msg.wParam <= 14) or (110 <= msg.wParam <= 114):
                         self.window.fire_global_snippet((msg.wParam % 100) - 10)
                         return True, 0

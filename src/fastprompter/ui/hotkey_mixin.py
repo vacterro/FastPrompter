@@ -26,8 +26,8 @@ class HotkeyMixin:
         """Update tooltip for hotkey-related buttons."""
         h_global = self.data.get("global_hotkey", "Alt+X")
         h_pie = self.data.get("pie_menu_hotkey", "Shift+Alt+X")
-        h_lock = self.data.get("lock_window_hotkey", "Ctrl+Shift+L")
-        h_aot = self.data.get("always_on_top_hotkey", "Ctrl+Shift+E")
+        h_lock = self.data.get("lock_window_hotkey", "Alt+S")
+        h_aot = self.data.get("always_on_top_hotkey", "Alt+E")
 
         if hasattr(self, "cb_top") and not _is_deleted(self.cb_top):
             self.cb_top.setToolTip(f"Always on top ({h_aot})")
@@ -72,12 +72,14 @@ class HotkeyMixin:
         self._register_single(self.data.get("pie_menu_hotkey_alt", ""), 102)
 
         if self.isVisible() and not self.isMinimized():
-            self._register_single(self.data.get("lock_window_hotkey", "Ctrl+Shift+L"), 3)
+            self._register_single(self.data.get("lock_window_hotkey", "Alt+S"), 3)
             self._register_single(self.data.get("lock_window_hotkey_alt", ""), 103)
-            self._register_single(self.data.get("always_on_top_hotkey", "Ctrl+Shift+E"), 4)
+            self._register_single(self.data.get("always_on_top_hotkey", "Alt+E"), 4)
             self._register_single(self.data.get("always_on_top_hotkey_alt", ""), 104)
             self._register_single(self.data.get("toggle_sidebar_hotkey", "Alt+D"), 5)
             self._register_single(self.data.get("toggle_sidebar_hotkey_alt", ""), 105)
+            self._register_single(self.data.get("hide_on_clickout_hotkey", "Alt+A"), 6)
+            self._register_single(self.data.get("hide_on_clickout_hotkey_alt", ""), 106)
 
         for i in range(5):
             self._register_single(
