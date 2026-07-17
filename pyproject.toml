@@ -1,6 +1,6 @@
 [project]
 name = "fastprompter"
-version = "0.5.0"
+version = "0.5.3"
 description = "FastPrompter - A robust snippet management tool"
 requires-python = ">=3.11"
 dependencies = [

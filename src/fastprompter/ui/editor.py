@@ -22,6 +22,17 @@ TS_STAMP_LINE_RE = re.compile(
     r"(?:\d{2}\.\d{2}|\d{1,2} [A-Za-z]{3}) - \d{2}:\d{2}(?::\d{2})?"
 )
 
+# File types the editor can meaningfully load as plain text
+TEXT_EXTENSIONS = {
+    ".txt", ".md", ".py", ".js", ".ts", ".jsx", ".tsx", ".html", ".css",
+    ".json", ".xml", ".yaml", ".yml", ".csv", ".ini", ".cfg", ".conf",
+    ".log", ".bat", ".sh", ".ps1", ".sql", ".rb", ".php", ".java",
+    ".c", ".cpp", ".h", ".hpp", ".cs", ".go", ".rs", ".swift",
+    ".kt", ".scala", ".pl", ".lua", ".r", ".m", ".mm", ".tex",
+    ".rst", ".toml", ".lock", ".env", ".gitignore", ".editorconfig",
+    ".properties", ".gradle", ".sln", ".csproj", ".vcxproj",
+}
+
 
 def _draw_horizontal_rule(painter, hr_color, y_pos, width):
     """Draw a horizontal rule line at the given y position."""
@@ -656,35 +667,91 @@ class VaultTextEdit(QTextEdit):
             return "file"
         return "cancel"
 
+    def _drop_overlay(self):
+        from fastprompter.ui.drop_overlay import DropOverlay
+        if getattr(self, "_overlay", None) is None:
+            self._overlay = DropOverlay(self)
+        return self._overlay
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls() and any(
+            u.isLocalFile() for u in event.mimeData().urls()
+        ):
+            paths = [u.toLocalFile() for u in event.mimeData().urls() if u.isLocalFile()]
+            any_text = any(
+                os.path.splitext(p)[1].lower() in TEXT_EXTENSIONS
+                or not os.path.splitext(p)[1]
+                for p in paths
+            )
+            self._drop_overlay().begin(two_zones=any_text)
+            event.acceptProposedAction()
+            return
+        super().dragEnterEvent(event)
+
+    def dragMoveEvent(self, event):
+        ov = getattr(self, "_overlay", None)
+        if ov is not None and ov.isVisible():
+            ov.track(event.position().toPoint())
+            event.acceptProposedAction()
+            return
+        super().dragMoveEvent(event)
+
+    def dragLeaveEvent(self, event):
+        ov = getattr(self, "_overlay", None)
+        if ov is not None:
+            ov.end()
+        super().dragLeaveEvent(event)
+
+    def dropEvent(self, event):
+        ov = getattr(self, "_overlay", None)
+        if ov is not None and ov.isVisible():
+            zone = ov.zone_at(event.position().toPoint())
+            ov.end()
+            paths = [u.toLocalFile() for u in event.mimeData().urls() if u.isLocalFile()]
+            self._drop_paths(paths, zone)
+            event.acceptProposedAction()
+            return
+        super().dropEvent(event)
+
+    def _drop_paths(self, paths, zone):
+        """Route dropped files: chosen zone for text files; anything that
+        isn't text always lands in the silo's file container."""
+        to_files = []
+        for path in paths:
+            ext = os.path.splitext(path)[1].lower()
+            is_text = ext in TEXT_EXTENSIONS or not ext
+            if zone == "text" and is_text:
+                try:
+                    with open(path, encoding="utf-8", errors="replace") as f:
+                        self.insertPlainText(f.read())
+                except OSError:
+                    import traceback
+                    traceback.print_exc()
+            else:
+                to_files.append(path)
+        if to_files:
+            self.main_win.add_files_to_active_silo(to_files)
+
     def insertFromMimeData(self, source):
         if source.hasUrls():
+            # Paste of copied files (Ctrl+V from Explorer) — no drag overlay,
+            # ask per file like before
             for url in source.urls():
                 if url.isLocalFile():
                     path = url.toLocalFile()
                     ext = os.path.splitext(path)[1].lower()
-                    text_extensions = {
-                        ".txt", ".md", ".py", ".js", ".ts", ".jsx", ".tsx", ".html", ".css",
-                        ".json", ".xml", ".yaml", ".yml", ".csv", ".ini", ".cfg", ".conf",
-                        ".log", ".bat", ".sh", ".ps1", ".sql", ".rb", ".php", ".java",
-                        ".c", ".cpp", ".h", ".hpp", ".cs", ".go", ".rs", ".swift",
-                        ".kt", ".scala", ".pl", ".lua", ".r", ".m", ".mm", ".tex",
-                        ".rst", ".toml", ".lock", ".env", ".gitignore", ".editorconfig",
-                        ".properties", ".gradle", ".sln", ".csproj", ".vcxproj"
-                    }
-                    if ext in text_extensions or not ext:
+                    if ext in TEXT_EXTENSIONS or not ext:
                         choice = self._ask_text_drop_choice(os.path.basename(path))
                         if choice == "file":
                             self.main_win.add_files_to_active_silo([path])
                         elif choice == "text":
                             try:
                                 with open(path, encoding="utf-8", errors="replace") as f:
-                                    content = f.read()
-                                self.insertPlainText(content)
+                                    self.insertPlainText(f.read())
                             except Exception:
                                 import traceback
                                 traceback.print_exc()
                     else:
-                        # binary files go into the silo's file container
                         self.main_win.add_files_to_active_silo([path])
             return
         if source.hasText():

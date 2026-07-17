@@ -56,12 +56,16 @@ def build_help_html(data) -> str:
         ("Ctrl+Wheel over silos", "Select previous / next silo"),
         ("Wheel over the tab bar", "Switch project"),
         ("Ctrl+Wheel in the editor", "Zoom the editor font"),
-        ("Middle-click a silo", "Clear it — middle-click an empty one to delete the slot"),
-        ("Hover a silo", "&#128193; files, &#128204; pin and &#128229; archive buttons appear"),
+        ("Middle-click a silo", "Move it to the trash (text + files land in data/files/_trash)"),
+        ("Hover a silo", "&#9989; tick, &#128193; files, &#128204; pin and &#128229; archive buttons appear"),
+        ("Click &#9989; on a silo", "Mark it done — the tick stays until clicked again"),
         ("Click &#9112; on a ``` code fence", "Copy that code block to the clipboard"),
         ("Click &#9662; on a header / fence", "Fold (collapse) the section; right-click editor &rarr; Expand All Folds"),
         ("Alt+drop files on the Files panel", "Add .url links instead of copies"),
-        ("Drop a text file on the editor", "Choose: insert as text, or store in the silo's Files"),
+        ("Drag files over the editor", "Two drop zones appear: top = insert as text, "
+                                       "bottom = into the silo's Files (binary files always go to Files)"),
+        ("In the Files panel", "Del delete &middot; F2 rename &middot; Enter open &middot; "
+                               "Ctrl+Shift+C copy path &middot; Ctrl+N new folder &middot; Ctrl+V clipboard&rarr;file"),
         ("Right-click a silo", "Transfer to project, replace from, move to bottom&hellip;"),
         ("Drag a silo between others / onto one", "Reorder / swap"),
         ("Left / right half-click a snippet", "Open with the cursor at start / end"),
@@ -87,6 +91,12 @@ def build_help_html(data) -> str:
         "button shows a live file count; hover for a per-type size breakdown</li>"
         "<li><b>Folding</b> — collapse code blocks and # header sections with the "
         "&#9662; box; deleted-anchor escape hatch: right-click &rarr; Expand All Folds</li>"
+        "<li><b>Trash, not delete</b> — clearing or trashing a silo writes its text to "
+        "<code>data/files/_trash/</code> and moves its files there; nothing is destroyed</li>"
+        "<li><b>Header template</b> — Settings &rarr; Header Fmt: {text}, {time}, {state} "
+        "(Morning/Day/Evening/Night) — bold markers are yours to keep or drop</li>"
+        "<li><b>Clock</b> — date + time with seconds, day word and an optional mini "
+        "analog clock, all toggleable</li>"
         "<li><b>Scale</b> — 50&ndash;150% whole-UI scaling with readable minimums</li>"
         "<li><b>Sounds</b> — optional UI clicks and typewriter effect (settings &#9881;)</li>"
         "<li><b>Data</b> — SQLite in <code>data/</code> next to the app; daily Markdown "

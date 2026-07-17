@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.5.3 — 2026-07-17
+- **Bug fixes**: Ctrl+E re-stamps no longer detach a silo from its files folder (timestamps are slug-invisible; retitles rename the folder); container Delete/Rename dialogs no longer hide behind the always-on-top window; theme switches no longer truncate toolbar button labels; a hidden search bar no longer filters snippets away; the timestamp refresh glyph survives the "17 Jul" date format; Normal Window toggles without the white flash.
+- **Trash instead of delete**: middle-click or context menu moves a silo to `data/files/_trash/` (text as .md + its files) — nothing is destroyed.
+- **Silo tick marks** (✅): hover the title, click to mark done; persists per project, survives reorders.
+- **Files panel**: Del / F2 / Enter / Ctrl+Shift+C (copy path) / Ctrl+N (new folder) / Ctrl+V (clipboard → file).
+- **Drop zones**: dragging files over the editor shows Telegram-style zones — insert as text or store in Files.
+- **Header bar**: 📌 always-on-top and # line-number toggles next to the counter; Home/End moved beside Save; mini analog clock (toggleable); day word in the clock.
+- **Header template**: `{text}` `{time}` `{state}` fully user-controlled (Settings → Header Fmt).
+- **Hotkeys**: defaults are now Alt+E (top), Alt+S (lock), Alt+A (hide on click-out, new); all rebindable; context menus reorganized with icons.
+
 ## v0.5.0 — 2026-07-17
 - **Folding**: collapse code blocks and `#` header sections with the ▾ box on the line; right-click → Expand All Folds.
 - **File container grows up**: Explorer-style Icons/List/Details views; live file counter on 📁 buttons with per-type size breakdown on hover; `.url` links to originals (Alt+drop or context menu); Clipboard → File; configurable storage folder (Settings → Files Folder); dropping a text file on the editor now asks "insert as text or add to Files"; binary drops go to Files automatically.

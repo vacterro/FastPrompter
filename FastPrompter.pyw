@@ -5,7 +5,7 @@
 # nuitka-project: --windows-console-mode=disable
 # nuitka-project: --windows-icon-from-ico=_res/fastprompter.ico
 # nuitka-project: --product-name=FastPrompter
-# nuitka-project: --product-version=0.5.0
+# nuitka-project: --product-version=0.5.3
 # nuitka-project: --file-description=FastPrompter portable snippet manager
 # nuitka-project: --python-flag=no_docstrings
 # nuitka-project: --python-flag=no_asserts
