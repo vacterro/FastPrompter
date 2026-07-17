@@ -439,7 +439,7 @@ def test_undo_across_tabs_returns_and_restores(win):
 
         _pytest.skip("needs two tabs")
     a = cats[0]
-    win.tab_bar.setCurrentIndex(0)
+    win.cat_combo.setCurrentIndex(0)
     win.on_tab_changed(0)  # ensure alias points at tab A
     win.data["temp_presets"][0] = "tab A treasure"
     while len(win.data["temp_presets"]) < 2:
@@ -448,7 +448,7 @@ def test_undo_across_tabs_returns_and_restores(win):
     win._switch_to_slot(1, initial=True)
     win.clear_temp(0)  # destroy the treasure on tab A
     assert win.data["temp_presets_all"][a][0] == ""
-    win.tab_bar.setCurrentIndex(1)  # user wanders to tab B
+    win.cat_combo.setCurrentIndex(1)  # user wanders to tab B
     win._smart_undo()  # Ctrl+Z must return to tab A and restore
     assert win.get_current_category() == a
     assert win.data["temp_presets"][0] == "tab A treasure"
@@ -459,7 +459,7 @@ def test_undo_across_tabs_returns_and_restores(win):
 def test_undone_data_survives_tab_roundtrip_and_db_save(win):
     cats = win.data["cats_order"]
     a = cats[0]
-    win.tab_bar.setCurrentIndex(0)
+    win.cat_combo.setCurrentIndex(0)
     win.on_tab_changed(0)
     win.data["temp_presets"][0] = "must survive"
     win._switch_to_slot(0, initial=True)
@@ -467,8 +467,8 @@ def test_undone_data_survives_tab_roundtrip_and_db_save(win):
     win._smart_undo()
     assert win.text_area.toPlainText() == "must survive"
     # tab away and back — restored data must not evaporate
-    win.tab_bar.setCurrentIndex(1)
-    win.tab_bar.setCurrentIndex(0)
+    win.cat_combo.setCurrentIndex(1)
+    win.cat_combo.setCurrentIndex(0)
     assert win.data["temp_presets"][0] == "must survive"
     # and it must actually reach the database
     win.mark_dirty()
@@ -484,7 +484,7 @@ def test_undone_data_survives_tab_roundtrip_and_db_save(win):
 
 
 def test_pin_toggle_and_move_to_bottom_are_undoable(win):
-    win.tab_bar.setCurrentIndex(0)
+    win.cat_combo.setCurrentIndex(0)
     win.on_tab_changed(0)
     win.data["temp_presets"][:] = ["one", "two", "three"]
     win.data["pinned_silos"] = []
@@ -501,7 +501,7 @@ def test_pin_toggle_and_move_to_bottom_are_undoable(win):
 
 
 def test_undo_depth_multiple_operations(win):
-    win.tab_bar.setCurrentIndex(0)
+    win.cat_combo.setCurrentIndex(0)
     win.on_tab_changed(0)
     win.data["temp_presets"][:] = ["s1", "s2", "s3", "s4"]
     win.data["pinned_silos"] = []
@@ -574,7 +574,7 @@ def test_all_settings_roundtrip_through_db(win):
 
 
 def test_trim_archive_keeps_backing_store_alias(win):
-    win.tab_bar.setCurrentIndex(0)
+    win.cat_combo.setCurrentIndex(0)
     win.on_tab_changed(0)
     cat = win.get_current_category()
     win.data["archive_temp_presets"][:] = ["keep", "", "also keep", ""]
@@ -585,7 +585,7 @@ def test_trim_archive_keeps_backing_store_alias(win):
 
 
 def test_new_silo_at_top_shifts_pins(win):
-    win.tab_bar.setCurrentIndex(0)
+    win.cat_combo.setCurrentIndex(0)
     win.on_tab_changed(0)
     win.data["temp_presets"][:] = ["a", "b", "c"]
     win.data["pinned_silos"] = [1]
@@ -600,7 +600,7 @@ def test_fuzz_random_operations_hold_invariants(win):
     import random
 
     rng = random.Random(20260709)
-    win.tab_bar.setCurrentIndex(0)
+    win.cat_combo.setCurrentIndex(0)
     win.on_tab_changed(0)
     win.data["temp_presets"][:] = [f"content {i}" for i in range(6)]
     win.data["archive_temp_presets"][:] = []
@@ -646,7 +646,7 @@ def test_fuzz_random_operations_hold_invariants(win):
         ("archive", lambda: win.archive_single_silo(rng.randrange(n_silos()))),
         ("swap", lambda: win.swap_temp_slots(rng.randrange(n_silos()), rng.randrange(n_silos()))),
         ("type", lambda: win.text_area.insertPlainText("x")),
-        ("tab", lambda: (win.tab_bar.setCurrentIndex(rng.randrange(win.tab_bar.count())))),
+        ("tab", lambda: (win.cat_combo.setCurrentIndex(rng.randrange(win.cat_combo.count())))),
         ("undo", win._smart_undo),
         ("redo", win.redo_action),
         ("divider", win.insert_divider_line),
@@ -667,7 +667,7 @@ def test_fuzz_snippets_and_archive_mode(win):
     from PyQt6.QtWidgets import QInputDialog, QMessageBox
 
     rng = random.Random(77)
-    win.tab_bar.setCurrentIndex(0)
+    win.cat_combo.setCurrentIndex(0)
     win.on_tab_changed(0)
     win.data["temp_presets"][:] = [f"silo {i}" for i in range(4)]
     win.data["archive_temp_presets"][:] = ["arc one", "arc two"]
@@ -750,7 +750,7 @@ def test_fuzz_snippets_and_archive_mode(win):
         ("silos", op_back_to_silos),
         ("cancel", win.cancel_editing),
         ("type", lambda: win.text_area.insertPlainText("y")),
-        ("tab", lambda: win.tab_bar.setCurrentIndex(rng.randrange(win.tab_bar.count()))),
+        ("tab", lambda: win.cat_combo.setCurrentIndex(rng.randrange(win.cat_combo.count()))),
         ("undo", win._smart_undo),
         ("redo", win.redo_action),
     ]
@@ -768,12 +768,12 @@ def test_delete_category_is_undoable(win):
 
     from PyQt6.QtWidgets import QMessageBox
 
-    win.tab_bar.setCurrentIndex(0)
+    win.cat_combo.setCurrentIndex(0)
     win.on_tab_changed(0)
     cats_before = list(win.data["cats_order"])
     if len(cats_before) < 2:
         pytest.skip("needs two tabs")
-    win.tab_bar.setCurrentIndex(1)
+    win.cat_combo.setCurrentIndex(1)
     victim = win.data["cats_order"][1]
     win.data["categories"][victim][0] = {"name": "keep", "text": "keep me", "last_edited": 0}
     with patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes):
@@ -782,7 +782,7 @@ def test_delete_category_is_undoable(win):
     win._smart_undo()
     assert victim in win.data["cats_order"], "deleted tab not restored by undo"
     assert win.data["categories"][victim][0]["text"] == "keep me"
-    assert win.tab_bar.count() == len(win.data["cats_order"])
+    assert win.cat_combo.count() == len(win.data["cats_order"])
 
 
 def test_fuzz_ui_surfaces(win):
@@ -806,7 +806,7 @@ def test_fuzz_ui_surfaces(win):
 
 
 def _run_fuzz_ui(win, rng):
-    win.tab_bar.setCurrentIndex(0)
+    win.cat_combo.setCurrentIndex(0)
     win.on_tab_changed(0)
     win.data["temp_presets"][:] = ["alpha beta gamma\ndelta epsilon\n\nzeta", "line one\nline two"]
     win.data["pinned_silos"][:] = []
@@ -928,7 +928,7 @@ def _run_fuzz_ui(win, rng):
 def test_markdown_marker_toggles(win):
     from PyQt6.QtGui import QTextCursor
 
-    win.tab_bar.setCurrentIndex(0)
+    win.cat_combo.setCurrentIndex(0)
     win.on_tab_changed(0)
     win.data["temp_presets"][:] = ["hello brave world"]
     win.silo_docs[:] = []
@@ -976,7 +976,7 @@ def test_markdown_marker_toggles(win):
 def test_ctrl_return_skips_empty_lines(win):
     from PyQt6.QtGui import QTextCursor
 
-    win.tab_bar.setCurrentIndex(0)
+    win.cat_combo.setCurrentIndex(0)
     win.on_tab_changed(0)
     win.data["temp_presets"][:] = ["task one\n\ntask two\n\n"]
     win.silo_docs[:] = []
@@ -1004,7 +1004,7 @@ def test_inline_timestamp_refresh_glyph(win):
     from PyQt6.QtCore import QEvent, Qt
     from PyQt6.QtGui import QMouseEvent
 
-    win.tab_bar.setCurrentIndex(0)
+    win.cat_combo.setCurrentIndex(0)
     win.on_tab_changed(0)
     win.data["temp_presets"][:] = ["# Log (01.01 - 00:00)\n\nbody"]
     win.silo_docs[:] = []
@@ -1042,7 +1042,7 @@ def test_inline_timestamp_refresh_glyph(win):
 
 
 def test_code_fence_gutter_and_states(win):
-    win.tab_bar.setCurrentIndex(0)
+    win.cat_combo.setCurrentIndex(0)
     win.on_tab_changed(0)
     win.data["show_line_numbers"] = "False"
     win.preview_combo.setCurrentIndex(1)  # Live Preview attaches the highlighter
@@ -1073,7 +1073,7 @@ def test_code_fence_gutter_and_states(win):
 
 
 def test_margin_marks_survive_code_highlighting(win):
-    win.tab_bar.setCurrentIndex(0)
+    win.cat_combo.setCurrentIndex(0)
     win.on_tab_changed(0)
     win.preview_combo.setCurrentIndex(1)
     win.data["temp_presets"][:] = ["```\ncode line\n```"]
@@ -1099,7 +1099,7 @@ def test_margin_marks_survive_code_highlighting(win):
 
 
 def test_bold_hash_titles_toggle(win):
-    win.tab_bar.setCurrentIndex(0)
+    win.cat_combo.setCurrentIndex(0)
     win.on_tab_changed(0)
     win.data["bold_hash_titles"] = "True"
     win.data["temp_presets"][:] = ["# Important title\nbody", "plain silo"]
@@ -1134,7 +1134,7 @@ def test_code_block_copy_button(win):
     from PyQt6.QtGui import QMouseEvent
     from PyQt6.QtWidgets import QApplication as _QApp
 
-    win.tab_bar.setCurrentIndex(0)
+    win.cat_combo.setCurrentIndex(0)
     win.on_tab_changed(0)
     win.data["temp_presets"][:] = ["```python\nprint(1)\nprint(2)\n```\nafter"]
     win.silo_docs[:] = []
@@ -1269,17 +1269,22 @@ def test_drop_overlay_zones_and_routing(win):
 
     ta = win.text_area
     ov = ta._drop_overlay()
-    # two zones for text files: top = text, bottom = files
-    ov.begin(two_zones=True)
+    # 4 zones for text files: top_left=text, bot_left=files, top_right=editor_link, bot_right=files_link
+    ov.begin(has_text_option=True)
     assert not ov.isHidden()
     h = ov.height()
+    w = ov.width()
     assert ov.zone_at(QPoint(10, 5)) == "text"
+    assert ov.zone_at(QPoint(w - 10, 5)) == "editor_link"
     assert ov.zone_at(QPoint(10, h - 5)) == "files"
+    assert ov.zone_at(QPoint(w - 10, h - 5)) == "files_link"
     ov.track(QPoint(10, h - 5))
     assert ov._hot == "files"
-    # single zone for binary-only drags
-    ov.begin(two_zones=False)
+    # 3 zones for binary-only drags
+    ov.begin(has_text_option=False)
     assert ov.zone_at(QPoint(10, 5)) == "files"
+    assert ov.zone_at(QPoint(10, h // 2)) == "files_link"
+    assert ov.zone_at(QPoint(10, h - 5)) == "editor_link"
     ov.end()
     assert ov.isHidden()
 
@@ -1302,7 +1307,7 @@ def test_drop_overlay_zones_and_routing(win):
 def test_trash_silo_writes_md_and_removes_slot(win):
     root = os.path.join(_tmpdir, "files_root_trash2")
     win._files_root = lambda: root
-    win.tab_bar.setCurrentIndex(0)
+    win.cat_combo.setCurrentIndex(0)
     win.on_tab_changed(0)
     win.data["temp_presets"][:] = ["# Doomed Silo\nprecious text", "stays"]
     win.data["pinned_silos"][:] = []
@@ -1363,7 +1368,7 @@ def test_live_retitle_renames_folder_no_duplicates(win):
 
     root = os.path.join(_tmpdir, "files_root_live")
     win._files_root = lambda: root
-    win.tab_bar.setCurrentIndex(0)
+    win.cat_combo.setCurrentIndex(0)
     win.on_tab_changed(0)
     win.data["temp_presets"][:] = ["# Old Title\nbody"]
     win.silo_docs[:] = []
@@ -1385,7 +1390,7 @@ def test_live_retitle_renames_folder_no_duplicates(win):
 
 
 def test_move_silo_to_top_and_bottom_remap(win):
-    win.tab_bar.setCurrentIndex(0)
+    win.cat_combo.setCurrentIndex(0)
     win.on_tab_changed(0)
     win.data["temp_presets"][:] = ["a", "b", "c"]
     win.data["pinned_silos"][:] = []
@@ -1407,7 +1412,7 @@ def test_silo_hierarchy_nest_collapse_promote(win):
 
     from PyQt6.QtWidgets import QMessageBox as _QMB
 
-    win.tab_bar.setCurrentIndex(0)
+    win.cat_combo.setCurrentIndex(0)
     win.on_tab_changed(0)
     win.data["temp_presets"][:] = ["parent", "childA", "loner", "childB"]
     win.data["pinned_silos"][:] = []
@@ -1433,7 +1438,7 @@ def test_silo_hierarchy_nest_collapse_promote(win):
     win.refresh_temp_presets()
     shown = [b.global_idx for b in win.silo_buttons if not b.isHidden()]
     assert shown[:4] == [0, 1, 3, 2]
-    assert win.silo_buttons[0].full_name.startswith("▾")
+    assert win.silo_buttons[0]._btn_collapse.text().startswith("▾")
     assert win.silo_buttons[1].full_name.startswith("↳")
 
     # collapse hides children
@@ -1457,7 +1462,7 @@ def test_silo_hierarchy_nest_collapse_promote(win):
 
 
 def test_silo_tick_toggle_persists_and_remaps(win):
-    win.tab_bar.setCurrentIndex(0)
+    win.cat_combo.setCurrentIndex(0)
     win.on_tab_changed(0)
     win.data["temp_presets"][:] = ["a", "b", "c"]
     win.data["pinned_silos"][:] = []
@@ -1480,7 +1485,7 @@ def test_silo_tick_toggle_persists_and_remaps(win):
 
 def test_delete_silo_keeps_snippets_visible(win):
     # Regression check for "deleting a silo hides a snippet"
-    win.tab_bar.setCurrentIndex(0)
+    win.cat_combo.setCurrentIndex(0)
     win.on_tab_changed(0)
     cat = win.get_current_category()
     win.data["categories"][cat] = [None] * 100
@@ -1511,7 +1516,7 @@ def test_header_restamp_keeps_files_folder(win):
 
     root = os.path.join(_tmpdir, "files_root_restamp")
     win._files_root = lambda: root
-    win.tab_bar.setCurrentIndex(0)
+    win.cat_combo.setCurrentIndex(0)
     win.on_tab_changed(0)
     win.data["temp_presets"][:] = ["# Proj (17.07 - 01:00)\nbody", "other"]
     win.silo_docs[:] = []
@@ -1538,7 +1543,7 @@ def test_header_restamp_keeps_files_folder(win):
 
 
 def test_fold_code_blocks_and_headers(win):
-    win.tab_bar.setCurrentIndex(0)
+    win.cat_combo.setCurrentIndex(0)
     win.on_tab_changed(0)
     win.data["temp_presets"][:] = [
         "# Title\nbody1\nbody2\n# Next\nother\n```python\ncode1\ncode2\n```\ntail"
@@ -1588,14 +1593,14 @@ def test_file_container_views_links_clipboard(win):
     panel = FileContainerPanel(win)
     panel.open_for(root, "Main", "# Views Silo")
 
-    # view cycle: Icons -> List -> Details -> Icons, persisted in data
-    assert panel._view_mode() == "Icons"
+    # view cycle: Details -> Icons -> List -> Details, persisted in data
+    assert panel._view_mode() == "Details"
+    panel._cycle_view()
+    assert win.data["file_panel_view"] == "Icons"
     panel._cycle_view()
     assert win.data["file_panel_view"] == "List"
     panel._cycle_view()
     assert win.data["file_panel_view"] == "Details"
-    panel._cycle_view()
-    assert win.data["file_panel_view"] == "Icons"
 
     # link import: .url file pointing at the original, no copy
     target = os.path.join(_tmpdir, "linked_asset.psd")
@@ -1634,7 +1639,7 @@ def test_files_root_configurable_and_header_counter(win):
     assert win._files_root().endswith(os.path.join("data", "files"))
     win.data["files_root"] = custom
 
-    win.tab_bar.setCurrentIndex(0)
+    win.cat_combo.setCurrentIndex(0)
     win.on_tab_changed(0)
     win.data["temp_presets"][:] = ["# Counter Silo"]
     win.silo_docs[:] = []
@@ -1656,7 +1661,7 @@ def test_clear_silo_moves_files_to_trash_not_delete(win):
     # they go to data/files/_trash/ (silo text is undoable; files can't be less safe)
     root = os.path.join(_tmpdir, "files_root_trash")
     win._files_root = lambda: root  # keep the test out of the real data dir
-    win.tab_bar.setCurrentIndex(0)
+    win.cat_combo.setCurrentIndex(0)
     win.on_tab_changed(0)
     win.data["temp_presets"][:] = ["# Trash Test Silo", "other"]
     win.silo_docs[:] = []
@@ -1714,7 +1719,7 @@ def test_date_rectangle_formats_and_toggles(win):
 
 
 def test_divider_spacing_configurable(win):
-    win.tab_bar.setCurrentIndex(0)
+    win.cat_combo.setCurrentIndex(0)
     win.on_tab_changed(0)
     win.data["divider_lines_before"] = "1"
     win.data["divider_lines_after"] = "2"
@@ -1760,7 +1765,7 @@ def test_ctrl_e_header_timestamp(win):
 
 
 def test_ctrl_e_refreshes_stale_stamp_in_place(win):
-    win.tab_bar.setCurrentIndex(0)
+    win.cat_combo.setCurrentIndex(0)
     win.on_tab_changed(0)
     win.data["temp_presets"][:] = ["# **__Journal__** (01.01 - 00:00)\n\n\u2022 old entry"]
     win.silo_docs[:] = []
@@ -1891,15 +1896,15 @@ def test_no_cyrillic_in_codebase():
 
 
 def test_mouse_wheel_switches_tabs(win):
-    if win.tab_bar.count() < 2:
+    if win.cat_combo.count() < 2:
         import pytest as _pytest
 
         _pytest.skip("needs at least two tabs")
-    win.tab_bar.setCurrentIndex(0)
-    _wheel(win.tab_bar, -120)  # wheel down → next tab
-    assert win.tab_bar.currentIndex() == 1
-    _wheel(win.tab_bar, 120)  # wheel up → previous tab
-    assert win.tab_bar.currentIndex() == 0
+    win.cat_combo.setCurrentIndex(0)
+    _wheel(win.cat_combo, -120)  # wheel down → next tab
+    assert win.cat_combo.currentIndex() == 1
+    _wheel(win.cat_combo, 120)  # wheel up → previous tab
+    assert win.cat_combo.currentIndex() == 0
 
 
 def test_escape_closes_search_before_hiding(win):

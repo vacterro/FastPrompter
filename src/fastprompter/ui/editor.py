@@ -548,11 +548,21 @@ class VaultTextEdit(QTextEdit):
                 if cursor.charFormat().isAnchor():
                     url = QUrl(cursor.charFormat().anchorHref())
                     if url.isValid():
-                        QDesktopServices.openUrl(url)
+                        from PyQt6.QtWidgets import QApplication
+                        if QApplication.keyboardModifiers() & Qt.KeyboardModifier.ControlModifier and url.isLocalFile():
+                            import os
+                            import subprocess
+                            path = os.path.normpath(url.toLocalFile())
+                            if os.name == 'nt':
+                                subprocess.run(["explorer", "/select,", path])
+                            else:
+                                QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.dirname(path)))
+                        else:
+                            QDesktopServices.openUrl(url)
                         event.accept()
                         return
         except Exception as e:
-            logger.debug(f"checkbox mouse error: {e}")
+            logger.debug(f"checkbox/anchor mouse error: {e}")
         if event.button() == Qt.MouseButton.LeftButton and event.modifiers() & Qt.KeyboardModifier.ControlModifier:
             super().mousePressEvent(event)
             cursor = self.textCursor()
@@ -664,21 +674,40 @@ class VaultTextEdit(QTextEdit):
 
     def _ask_text_drop_choice(self, name):
         """Dropped a text-based file: insert as text, or store as a file?
-        Returns 'text', 'file' or 'cancel'."""
+        Returns 'text', 'file', 'files_link', 'editor_link', or 'cancel'."""
         from PyQt6.QtWidgets import QMessageBox
         box = QMessageBox(self.main_win)
         box.setWindowTitle("Add dropped file")
         box.setText(f"How should '{name}' be added?")
-        btn_text = box.addButton("Insert as Text", QMessageBox.ButtonRole.AcceptRole)
-        btn_file = box.addButton("Add to Silo Files 📁", QMessageBox.ButtonRole.ActionRole)
+        btn_text = box.addButton("📄 Insert as Text", QMessageBox.ButtonRole.AcceptRole)
+        btn_editor_link = box.addButton("🔗 Link in Text", QMessageBox.ButtonRole.ActionRole)
+        btn_file = box.addButton("📥 Copy to Silo Files 📁", QMessageBox.ButtonRole.ActionRole)
+        btn_files_link = box.addButton("🔗 Link in Silo Files 📁", QMessageBox.ButtonRole.ActionRole)
         box.addButton(QMessageBox.StandardButton.Cancel)
         box.setDefaultButton(btn_text)
         box.exec()
         clicked = box.clickedButton()
-        if clicked is btn_text:
-            return "text"
-        if clicked is btn_file:
-            return "file"
+        if clicked is btn_text: return "text"
+        if clicked is btn_editor_link: return "editor_link"
+        if clicked is btn_file: return "file"
+        if clicked is btn_files_link: return "files_link"
+        return "cancel"
+
+    def _ask_binary_drop_choice(self, name):
+        from PyQt6.QtWidgets import QMessageBox
+        box = QMessageBox(self.main_win)
+        box.setWindowTitle("Add dropped file")
+        box.setText(f"How should '{name}' be added?")
+        btn_file = box.addButton("📥 Copy to Silo Files 📁", QMessageBox.ButtonRole.AcceptRole)
+        btn_files_link = box.addButton("🔗 Link in Silo Files 📁", QMessageBox.ButtonRole.ActionRole)
+        btn_editor_link = box.addButton("🔗 Link in Text", QMessageBox.ButtonRole.ActionRole)
+        box.addButton(QMessageBox.StandardButton.Cancel)
+        box.setDefaultButton(btn_file)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked is btn_file: return "file"
+        if clicked is btn_files_link: return "files_link"
+        if clicked is btn_editor_link: return "editor_link"
         return "cancel"
 
     def _drop_overlay(self):
@@ -697,7 +726,7 @@ class VaultTextEdit(QTextEdit):
                 or not os.path.splitext(p)[1]
                 for p in paths
             )
-            self._drop_overlay().begin(two_zones=any_text)
+            self._drop_overlay().begin(has_text_option=any_text)
             event.acceptProposedAction()
             return
         super().dragEnterEvent(event)
@@ -728,9 +757,9 @@ class VaultTextEdit(QTextEdit):
         super().dropEvent(event)
 
     def _drop_paths(self, paths, zone):
-        """Route dropped files: chosen zone for text files; anything that
-        isn't text always lands in the silo's file container."""
+        """Route dropped files according to the chosen zone."""
         to_files = []
+        to_links = []
         for path in paths:
             ext = os.path.splitext(path)[1].lower()
             is_text = ext in TEXT_EXTENSIONS or not ext
@@ -741,10 +770,19 @@ class VaultTextEdit(QTextEdit):
                 except OSError:
                     import traceback
                     traceback.print_exc()
+            elif zone == "editor_link":
+                name = os.path.basename(path)
+                clean_path = path.replace("\\", "/")
+                self.insertPlainText(f"[{name}](file:///{clean_path})")
+            elif zone == "files_link":
+                to_links.append(path)
             else:
                 to_files.append(path)
+                
         if to_files:
             self.main_win.add_files_to_active_silo(to_files)
+        if to_links:
+            self.main_win.add_links_to_active_silo(to_links)
 
     def insertFromMimeData(self, source):
         if source.hasUrls():
@@ -765,8 +803,22 @@ class VaultTextEdit(QTextEdit):
                             except Exception:
                                 import traceback
                                 traceback.print_exc()
+                        elif choice == "files_link":
+                            self.main_win.add_links_to_active_silo([path])
+                        elif choice == "editor_link":
+                            name = os.path.basename(path)
+                            clean_path = path.replace("\\", "/")
+                            self.insertPlainText(f"[{name}](file:///{clean_path})")
                     else:
-                        self.main_win.add_files_to_active_silo([path])
+                        choice = self._ask_binary_drop_choice(os.path.basename(path))
+                        if choice == "file":
+                            self.main_win.add_files_to_active_silo([path])
+                        elif choice == "files_link":
+                            self.main_win.add_links_to_active_silo([path])
+                        elif choice == "editor_link":
+                            name = os.path.basename(path)
+                            clean_path = path.replace("\\", "/")
+                            self.insertPlainText(f"[{name}](file:///{clean_path})")
             return
         if source.hasText():
             self.insertPlainText(source.text())
@@ -788,35 +840,55 @@ class VaultTextEdit(QTextEdit):
             event.accept()
             return
 
-        if mods == Qt.KeyboardModifier.ControlModifier and event.key() == Qt.Key.Key_E:
-            # Delegate to main window's combined header+timestamp method
-            self.main_win.apply_header_timestamp()
-            event.accept()
-            return
+        mw = self.main_win
+
+        from PyQt6.QtGui import QKeySequence
+        key_val = event.key()
+        if key_val > 0 and key_val != Qt.Key.Key_unknown:
+            # Need to handle Qt's quirk where Shift+Ctrl+S can parse strangely if we don't use exact match
+            # But QKeySequence(key_val | mods.value) is standard.
+            seq_str = QKeySequence(key_val | mods.value).toString()
+
+            def matches(name, default):
+                return seq_str and seq_str == QKeySequence(mw.data.get(name, default)).toString()
+
+            if matches("hk_header", "Ctrl+E"):
+                mw.apply_header_timestamp(); event.accept(); return
+            if matches("hk_bold", "Ctrl+B"):
+                mw.apply_bold_smart(); event.accept(); return
+            if matches("hk_undo", "Ctrl+Z"):
+                if hasattr(mw, "_smart_undo"): mw._smart_undo()
+                event.accept(); return
+            if matches("hk_new_snippet", "Ctrl+N"):
+                mw.select_empty_silo(); event.accept(); return
+            if matches("hk_save_snippet", "Ctrl+S"):
+                mw.save_snippet(); event.accept(); return
+            if matches("hk_export_silo", "Ctrl+Shift+S"):
+                mw.save_silo_to_file(); event.accept(); return
+            if matches("hk_find", "Ctrl+F"):
+                mw.show_find(); event.accept(); return
+            if matches("hk_replace", "Ctrl+H"):
+                mw.show_replace(); event.accept(); return
+            if matches("hk_focus", "Ctrl+D"):
+                mw.toggle_focus_mode(); event.accept(); return
+            if matches("hk_divider", "Ctrl+W"):
+                mw.insert_divider_line(); event.accept(); return
+            if matches("hk_snap", "Ctrl+Q"):
+                mw.cycle_snap_corner(); event.accept(); return
 
         if mods == Qt.KeyboardModifier.ControlModifier and event.key() in (
             Qt.Key.Key_B, Qt.Key.Key_I, Qt.Key.Key_U, Qt.Key.Key_T
         ):
-            # Markdown marker toggles — must run before QTextEdit's built-in
-            # rich-text shortcuts, whose formatting is lost on save
-            mw = self.main_win
-            key = event.key()
-            if key == Qt.Key.Key_B:
-                mw.apply_bold_smart()
-            else:
-                mw.apply_format({Qt.Key.Key_I: "italic", Qt.Key.Key_U: "underline",
-                                 Qt.Key.Key_T: "strike"}[key])
+            # Markdown marker toggles for non-configurable ones — must run before QTextEdit's built-in
+            if event.key() == Qt.Key.Key_I: mw.apply_format("italic")
+            elif event.key() == Qt.Key.Key_U: mw.apply_format("underline")
+            elif event.key() == Qt.Key.Key_T: mw.apply_format("strike")
             event.accept()
             return
 
         if mods == Qt.KeyboardModifier.ControlModifier and event.key() in (Qt.Key.Key_Z, Qt.Key.Key_Y):
-            # Ctrl+Z: route to the data-undo stack (silo clear/delete/move)
-            # when appropriate; _smart_undo decides.
-            if event.key() == Qt.Key.Key_Z and hasattr(self.main_win, "_smart_undo"):
-                self.main_win._smart_undo()
-                event.accept()
-                return
             super().keyPressEvent(event)
+            return
             return
 
         if mods & Qt.KeyboardModifier.ControlModifier and event.key() in (Qt.Key.Key_Home, Qt.Key.Key_End):

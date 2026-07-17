@@ -10,7 +10,7 @@ rendered pixel size with padding — so labels can never be clipped.
 from PyQt6.QtGui import QFont, QFontMetrics
 
 
-def clip_safe_width(text, base_font, pixel_size=11, pad=12):
+def clip_safe_width(text, base_font, pixel_size=11, pad=16):
     f = QFont(base_font)
     f.setPixelSize(pixel_size)
     f.setBold(True)  # worst case: themes bold some buttons (NEW/Save)

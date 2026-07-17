@@ -31,6 +31,7 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QFileDialog,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QInputDialog,
     QLabel,
@@ -42,7 +43,6 @@ from PyQt6.QtWidgets import (
     QSizePolicy,
     QSpinBox,
     QSplitter,
-    QTabBar,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -170,6 +170,7 @@ class FastPrompter(
         self.state = FastPrompterState()
         self.data = self.state.data
         self.conn = self.state.conn
+        self._load_undo_state()
         self.sound_manager = SoundManager(self, self.data)
         self._theme_cache, self._theme_cache_name = THEMES["Default"], None
         self._custom_colors_cache, self._custom_colors_cache_key = {}, None
@@ -397,15 +398,15 @@ class FastPrompter(
                     self.apply_button_size(btn, 24, 24)
             # tabs scroll inside a bounded strip when space is tight
             # (inline QSS re-enables the scroller arrows the theme hides)
-            if hasattr(self, "tab_bar"):
+            if hasattr(self, "cat_combo"):
                 if dense:
-                    self.tab_bar.setStyleSheet("QTabBar::scroller { width: 14px; }")
-                    self.tab_bar.setMinimumWidth(90)
-                    self.tab_bar.setMaximumWidth(90)
+                    self.cat_combo.setStyleSheet("")
+                    self.cat_combo.setMinimumWidth(0)
+                    self.cat_combo.setMaximumWidth(110)
                 else:
-                    self.tab_bar.setStyleSheet("")
-                    self.tab_bar.setMinimumWidth(0)
-                    self.tab_bar.setMaximumWidth(16777215)
+                    self.cat_combo.setStyleSheet("")
+                    self.cat_combo.setMinimumWidth(0)
+                    self.cat_combo.setMaximumWidth(16777215)
             if hasattr(self, "lbl_date"):
                 self.lbl_date.setStyleSheet(
                     "padding: 0 1px;" if dense else "padding: 0 4px;")
@@ -479,6 +480,13 @@ class FastPrompter(
         is_archive = getattr(self, "active_is_archive", False)
         self.open_file_container(is_archive=is_archive)
         self._file_container.import_paths(paths)
+
+    def add_links_to_active_silo(self, paths):
+        """Drop target helper: put file links into the active silo's container
+        and show the drawer so the user sees where they landed."""
+        is_archive = getattr(self, "active_is_archive", False)
+        self.open_file_container(is_archive=is_archive)
+        self._file_container.import_links(paths)
 
     def _update_files_button(self):
         """Refresh the header 📁 button: live file count + breakdown tooltip."""
@@ -676,35 +684,29 @@ class FastPrompter(
         self.btn_sidebar_toggle.clicked.connect(self.toggle_sidebar_visibility)
         self.header_layout.addWidget(self.btn_sidebar_toggle)
 
-        self.tab_bar = QTabBar()
-        self.tab_bar.setExpanding(False)
+        self.cat_combo = QComboBox()
+        
         # Scroll buttons only appear when tabs truly overflow; without them
         # the tab bar's minimum width is the sum of ALL tabs, which alone
         # breaks packing into a Ctrl+Q quarter-FullHD window.
-        self.tab_bar.setUsesScrollButtons(True)
-        self.tab_bar.setElideMode(Qt.TextElideMode.ElideRight)
+        
+        
         for cat in self.data["cats_order"]:
-            self.tab_bar.addTab(cat)
-        self.tab_bar.currentChanged.connect(self.on_tab_changed)
+            self.cat_combo.addItem(cat)
+        self.cat_combo.currentIndexChanged.connect(self.on_tab_changed)
 
-        self.btn_add_tab = QPushButton("+")
-        self.apply_button_size(self.btn_add_tab, 24)
-        self.btn_add_tab.setToolTip("Add Tab\nCreate a new custom category tab for snippets.")
-        self.btn_add_tab.clicked.connect(self.add_category)
+        
 
-        self.btn_del_tab = QPushButton("-")
-        self.apply_button_size(self.btn_del_tab, 24)
-        self.btn_del_tab.setToolTip("Delete Tab\nRemove the currently active category tab.")
-        self.btn_del_tab.clicked.connect(self.del_category)
+        
 
         self.btn_new = QPushButton("NEW")
-        self.btn_new.setToolTip("NEW (Ctrl+N)")
+        self.btn_new.setToolTip(f"NEW ({self.data.get('hk_new_snippet', 'Ctrl+N')})")
         self.apply_button_size(self.btn_new, 24)
         self.btn_new.setMinimumWidth(80)
         self.btn_new.clicked.connect(self.select_empty_silo)
 
         self.btn_save = QPushButton("Save")
-        self.btn_save.setToolTip("Save (Ctrl+S)")
+        self.btn_save.setToolTip(f"Save ({self.data.get('hk_save_snippet', 'Ctrl+S')})")
         self.apply_button_size(self.btn_save, 24)
         self.btn_save.clicked.connect(self.save_snippet)
 
@@ -756,19 +758,19 @@ class FastPrompter(
         self.btn_bullet_toggle.clicked.connect(_on_bullet_left_click)
 
         self.btn_bold = QPushButton("B")
-        self.btn_bold.setToolTip("Bold (Ctrl+B)\nMake selected text bold.")
+        self.btn_bold.setToolTip(f"Bold ({self.data.get('hk_bold', 'Ctrl+B')})\nMake selected text bold.")
         self.apply_button_size(self.btn_bold, 24, 24)
         f = QFont(self.btn_bold.font()); f.setBold(True); self.btn_bold.setFont(f)
         self.btn_bold.clicked.connect(lambda: self.apply_format("bold"))
 
         self.btn_italic = QPushButton("I")
-        self.btn_italic.setToolTip("Italic (Ctrl+I)\nMake selected text italic.")
+        self.btn_italic.setToolTip(f"Italic ({self.data.get('hk_italic', 'Ctrl+I')})\nMake selected text italic.")
         self.apply_button_size(self.btn_italic, 24, 24)
         f = QFont(self.btn_italic.font()); f.setItalic(True); self.btn_italic.setFont(f)
         self.btn_italic.clicked.connect(lambda: self.apply_format("italic"))
 
         self.btn_under = QPushButton("U")
-        self.btn_under.setToolTip("Underline (Ctrl+U)\nMake selected text underlined.")
+        self.btn_under.setToolTip(f"Underline ({self.data.get('hk_underline', 'Ctrl+U')})\nMake selected text underlined.")
         self.apply_button_size(self.btn_under, 24, 24)
         f = QFont(self.btn_under.font()); f.setUnderline(True); self.btn_under.setFont(f)
         self.btn_under.clicked.connect(lambda: self.apply_format("underline"))
@@ -832,9 +834,9 @@ class FastPrompter(
 
 
         # Navigation
-        self.header_layout.addWidget(self.tab_bar)
-        self.header_layout.addWidget(self.btn_add_tab)
-        self.header_layout.addWidget(self.btn_del_tab)
+        self.header_layout.addWidget(self.cat_combo)
+        
+        
         self.header_layout.addWidget(self.btn_new)
         self.header_layout.addWidget(self.btn_save)
 
@@ -1055,43 +1057,43 @@ class FastPrompter(
             return cb
 
         self.cb_top = create_footer_cb(
-            "Always on Top",
+            "📌 Always on Top",
             "Keep the window above all others",
             self.data.get("always_on_top", "True") == "True",
             self.toggle_aot,
         )
         self.cb_lock_window = create_footer_cb(
-            "Lock Window",
+            "🔒 Lock Window",
             "Freeze the window's position and size",
             self.data.get("window_locked", "False") == "True",
             self.set_lock_state,
         )
         self.cb_normal_window = create_footer_cb(
-            "Normal Window",
+            "🪟 Normal Window",
             "Use a standard OS window frame and taskbar entry",
             self.data.get("normal_window", "False") == "True",
             self.apply_window_flags,
         )
         self.cb_tray = create_footer_cb(
-            "Tray Icon",
+            "📉 Tray Icon",
             "Keep an icon in the system tray",
             self.data.get("tray_visible", "True") == "True",
             self.on_tray_toggled,
         )
         self.cb_sidebar = create_footer_cb(
-            "Sidebar Right",
+            "▶ Sidebar Right",
             "Move the snippet/silo sidebar to the right side",
             self.data.get("sidebar_right", "False") == "True",
             self.toggle_sidebar_position,
         )
         self.cb_focus = create_footer_cb(
-            "Hide on Click-Out",
+            "👁 Hide on Click-Out",
             "Hide the window when you click outside of it\nGlobal toggle: Alt+A",
             self.data.get("close_on_focus_loss", "True") == "True",
             self.mark_dirty,
         )
         self.cb_snippet_arrows = create_footer_cb(
-            "Snippet Arrows",
+            "↕ Snippet Arrows",
             "Show the ▲ ▶ ▼ paste buttons on snippet rows\n"
             "(insert at top / at cursor / at bottom)",
             self.data.get("snippet_arrows", "False") == "True",
@@ -1102,7 +1104,7 @@ class FastPrompter(
             ),
         )
         self.cb_silo_ticks = create_footer_cb(
-            "Silo Ticks",
+            "✅ Silo Ticks",
             "Show the ✅ done-mark button when hovering a silo",
             self.data.get("silo_ticks_enabled", "True") == "True",
             lambda checked: (
@@ -1112,25 +1114,25 @@ class FastPrompter(
             ),
         )
         self.cb_ctrl_c = create_footer_cb(
-            "Ctrl+C Hides",
+            "📋 Ctrl+C Hides",
             "Copying with Ctrl+C also hides the window\n(copy & get back to work in one stroke)",
             self.data.get("ctrl_c_closes", "True") == "True",
             self.mark_dirty,
         )
         self.cb_lock_cursor = create_footer_cb(
-            "Open at Cursor",
+            "🖱 Open at Cursor",
             "The hotkey opens the window at your mouse cursor",
             self.data.get("lock_to_cursor", "False") == "True",
             self.on_lock_cursor_toggled,
         )
         self.cb_silo_home = create_footer_cb(
-            "Silos at Start",
+            "🏠 Silos at Start",
             "Place the cursor at the top of a silo when opening it",
             self.data.get("silo_home", "False") == "True",
             self.on_silo_home_toggled,
         )
         self.cb_portable_backup = create_footer_cb(
-            "Auto Backup (.md)",
+            "💾 Auto Backup (.md)",
             "Mirror silos & snippets as Markdown files to Documents\\.fastprompter\\",
             self.data.get("portable_backup_enabled", "True") == "True",
             lambda checked: (
@@ -1139,13 +1141,13 @@ class FastPrompter(
             ),
         )
         self.cb_wrap = create_footer_cb(
-            "Word Wrap",
+            "↩ Word Wrap",
             "Wrap long lines instead of scrolling horizontally",
             self.data.get("word_wrap", "True") == "True",
             self.on_wrap_toggled,
         )
         self.cb_line_numbers = create_footer_cb(
-            "Line Numbers",
+            "🔢 Line Numbers",
             "Show a line-number gutter\n(click it to place colored margin marks)",
             self.data.get("show_line_numbers", "False") == "True",
             self.on_line_numbers_toggled,
@@ -1157,7 +1159,7 @@ class FastPrompter(
             lambda c: hasattr(self, "btn_line_nums") and self.btn_line_nums.setChecked(c))
 
         self.cb_zebra = create_footer_cb(
-            "Zebra Stripes",
+            "🦓 Zebra Stripes",
             "Lightly shade every other line for readability",
             self.data.get("zebra_lines", "False") == "True",
             lambda checked: (
@@ -1167,13 +1169,13 @@ class FastPrompter(
             ),
         )
         self.cb_hide_shortkeys = create_footer_cb(
-            "Hide Key Hints",
+            "⌨ Hide Key Hints",
             "Hide the F1-F10 shortcut labels on snippet buttons",
             self.data.get("hide_shortkeys", "False") == "True",
             self.on_hide_shortkeys_toggled,
         )
         self.cb_double_line = create_footer_cb(
-            "Double-Space Lists",
+            "⇕ Double-Space Lists",
             "With Auto-Bullet on, Enter after a list item adds a blank\n"
             "line before the next bullet — spaced, easy-to-read lists",
             self.data.get("bullet_double_line", "False") == "True",
@@ -1183,7 +1185,7 @@ class FastPrompter(
             ),
         )
         self.cb_bold_titles = create_footer_cb(
-            "Bold # Titles",
+            "𝗕 Bold # Titles",
             "Bold the sidebar title of silos and snippets whose\n"
             "content starts with a '#' markdown header",
             self.data.get("bold_hash_titles", "True") == "True",
@@ -1196,7 +1198,7 @@ class FastPrompter(
             ),
         )
         self.cb_silo_pinned_gap = create_footer_cb(
-            "Pinned Gap",
+            "➖ Pinned Gap",
             "Show a visual separator between pinned and unpinned silos",
             self.data.get("silo_pinned_gap", "True") == "True",
             lambda checked: (
@@ -1207,7 +1209,7 @@ class FastPrompter(
             ),
         )
         self.cb_date_rect = create_footer_cb(
-            "Show Date Widget",
+            "📅 Show Date Widget",
             "Show a floating date and time rectangle in the top-right\n"
             "corner of the text editor",
             self.data.get("show_date_rect", "True") == "True",
@@ -1217,7 +1219,7 @@ class FastPrompter(
             ),
         )
         self.cb_date_seconds = create_footer_cb(
-            "Date Seconds",
+            "⏱ Date Seconds",
             "Show seconds in the date widget (hh:mm:ss instead of hh:mm)",
             self.data.get("date_seconds", "True") == "True",
             lambda checked: (
@@ -1226,7 +1228,7 @@ class FastPrompter(
             ),
         )
         self.cb_analog_clock = create_footer_cb(
-            "Analog Clock",
+            "🕒 Analog Clock",
             "Show a mini analog clock (hour + minute hands)\nnext to the date widget",
             self.data.get("analog_clock", "False") == "True",
             lambda checked: (
@@ -1236,38 +1238,40 @@ class FastPrompter(
             ),
         )
         self.cb_date_daypart = create_footer_cb(
-            "Day Word",
+            "🌞 Day Word",
             "Show the time-of-day word (Morning / Day / Evening / Night)\n"
             "after the clock in the date widget",
             self.data.get("date_daypart", "True") == "True",
             lambda checked: (
                 self.data.update({"date_daypart": "True" if checked else "False"})
                 or self.mark_dirty()
+                or self._update_date_label()
             ),
         )
         self.cb_date_text_month = create_footer_cb(
-            "Text Month",
+            "🔤 Text Month",
             "Show month as text instead of numbers (17 Jul instead of 17.07)",
             self.data.get("date_text_month", "False") == "True",
             lambda checked: (
                 self.data.update({"date_text_month": "True" if checked else "False"})
                 or self.mark_dirty()
+                or self._update_date_label()
             ),
         )
         self.cb_sound = create_footer_cb(
-            "UI Sounds",
+            "🔊 UI Sounds",
             "Play click sounds for buttons and actions",
             self.data.get("sound_ui", "False") == "True",
             self.on_sound_toggled,
         )
         self.cb_typewriter = create_footer_cb(
-            "Typewriter",
+            "⌨ Typewriter",
             "Play a typewriter tick for every typed character",
             self.data.get("sound_typewriter", "False") == "True",
             self.on_typewriter_toggled,
         )
         self.cb_trash_vision = create_footer_cb(
-            "Trash Vision",
+            "🗑 Trash Vision",
             "Show the Trash category for deleted snippets",
             self.data.get("trash_vision", "False") == "True",
             self.toggle_trash_vision,
@@ -1346,6 +1350,7 @@ class FastPrompter(
         )
         hdr_row.addWidget(self.le_hdr_fmt)
 
+
         def _settings_group(title, items):
             col = QVBoxLayout()
             col.setContentsMargins(0, 0, 0, 0)
@@ -1354,11 +1359,28 @@ class FastPrompter(
             header = QLabel(title)
             header.setStyleSheet("font-weight: bold; padding: 0 0 1px 0;")
             col.addWidget(header)
+            
+            grid = QGridLayout()
+            grid.setContentsMargins(0, 0, 0, 0)
+            grid.setSpacing(2)
+            grid.setHorizontalSpacing(10)
+            
+            r, c = 0, 0
             for item in items:
                 if isinstance(item, QHBoxLayout):
-                    col.addLayout(item)
+                    if c != 0:
+                        r += 1
+                        c = 0
+                    grid.addLayout(item, r, 0, 1, 2)
+                    r += 1
                 else:
-                    col.addWidget(item)
+                    grid.addWidget(item, r, c)
+                    c += 1
+                    if c > 1:
+                        c = 0
+                        r += 1
+            
+            col.addLayout(grid)
             col.addStretch(1)
             return col
 
@@ -1382,14 +1404,15 @@ class FastPrompter(
         groups_row.addWidget(_vline())
         groups_row.addLayout(_settings_group("Editor", [
             self.cb_focus, self.cb_wrap, self.cb_ctrl_c, self.cb_lock_cursor,
-            self.cb_line_numbers, self.cb_zebra, self.cb_double_line,
+            self.cb_line_numbers, self.cb_zebra, self.cb_double_line, self.cb_bold_titles,
+            div_row, hdr_row
         ]), 1)
         groups_row.addWidget(_vline())
         groups_row.addLayout(_settings_group("Data & Appearance", [
             self.cb_silo_home, self.cb_silo_pinned_gap, self.cb_silo_ticks,
-            self.cb_snippet_arrows, self.cb_bold_titles,
-            self.cb_hide_shortkeys, self.cb_portable_backup, self.cb_sound,
-            self.cb_typewriter, vol_row, div_row, hdr_row, files_row
+            self.cb_snippet_arrows, self.cb_hide_shortkeys,
+            self.cb_portable_backup, self.cb_sound, self.cb_typewriter,
+            vol_row, files_row
         ]), 1)
 
         hline = QFrame()
@@ -1426,8 +1449,13 @@ class FastPrompter(
 
         snip_header = QHBoxLayout()
         snip_header.setContentsMargins(0, 0, 0, 0)
-        self.snip_label = QLabel("Snippets")
-        snip_header.addWidget(self.snip_label)
+        
+        self.btn_trash = QPushButton("🗑️")
+        self.apply_button_size(self.btn_trash, 20, 20)
+        self.btn_trash.setToolTip("Open Trash")
+        self.btn_trash.clicked.connect(self.open_trash)
+        snip_header.addWidget(self.btn_trash)
+        
         snip_header.addStretch()
 
         self.btn_toggle_search = QPushButton("⌕")
@@ -1450,23 +1478,6 @@ class FastPrompter(
         # Files drawer sits with the storage buttons (archive group)
         self.apply_button_size(self.btn_files, 20)
         snip_header.addWidget(self.btn_files)
-
-        # +/- act on snippets only — separated so that reads clearly
-        snip_sep = QFrame()
-        snip_sep.setFrameShape(QFrame.Shape.VLine)
-        snip_sep.setFixedHeight(14)
-        snip_header.addWidget(snip_sep)
-
-        self.btn_add_snip = QPushButton("+")
-        self.apply_button_size(self.btn_add_snip, 20, 20)
-        self.btn_add_snip.setToolTip("Save the editor text as a new snippet")
-        self.btn_add_snip.clicked.connect(self.save_snippet)
-        snip_header.addWidget(self.btn_add_snip)
-
-        self.btn_del_snip = QPushButton("-")
-        self.apply_button_size(self.btn_del_snip, 20, 20)
-        self.btn_del_snip.clicked.connect(self.del_last_snippet)
-        snip_header.addWidget(self.btn_del_snip)
 
         self.snippets_section_layout.addLayout(snip_header)
 
@@ -1592,7 +1603,7 @@ class FastPrompter(
         WheelPager(self.silos_section, self.change_silo_page, ctrl_callback=self.navigate_silo)
         WheelPager(self.archive_section, self.change_arc_page, ctrl_callback=self.navigate_silo)
         WheelPager(self.snippets_section, self.change_page)
-        WheelPager(self.tab_bar, self._wheel_switch_tab)
+        WheelPager(self.cat_combo, self._wheel_switch_tab)
         wheel_hint = (
             "\nTip: mouse wheel over the list scrolls pages;"
             "\nCtrl+wheel selects the previous/next silo."
@@ -1603,7 +1614,7 @@ class FastPrompter(
         self.btn_page_down.setToolTip("Next snippet page" + wheel_hint)
         self.btn_arc_page_up.setToolTip("Previous archive page" + wheel_hint)
         self.btn_arc_page_down.setToolTip("Next archive page" + wheel_hint)
-        self.tab_bar.setToolTip("Projects — mouse wheel switches tabs")
+        self.cat_combo.setToolTip("Projects — mouse wheel switches tabs")
 
         self.archive_section.setParent(self.left_panel)
         self.archive_section.raise_()
@@ -1722,9 +1733,9 @@ class FastPrompter(
 
         self.apply_sidebar_position()
 
-        safe_idx = max(0, min(self.data.get("last_tab_idx", 0), self.tab_bar.count() - 1))
-        if self.tab_bar.count() > 0:
-            self.tab_bar.setCurrentIndex(safe_idx)
+        safe_idx = max(0, min(self.data.get("last_tab_idx", 0), self.cat_combo.count() - 1))
+        if self.cat_combo.count() > 0:
+            self.cat_combo.setCurrentIndex(safe_idx)
 
         self._trim_archive()
         self.refresh_snippets_panel()
@@ -1796,7 +1807,7 @@ class FastPrompter(
             if c == "Text":
                 text_idx = i
                 break
-        self.tab_bar.setCurrentIndex(text_idx)
+        self.cat_combo.setCurrentIndex(text_idx)
         self.on_tab_changed(text_idx)
 
     def insert_timestamp_at_end(self):
@@ -1901,6 +1912,7 @@ class FastPrompter(
         self.mark_dirty()
 
     def on_splitter_moved(self, pos, index):
+        self.data["splitter_sizes"] = self.splitter.sizes()
         self.mark_dirty()
 
     def swap_temp_slots(self, idx1, idx2, is_archive=False):
@@ -2375,6 +2387,7 @@ class FastPrompter(
             self.play_sound("tick")
             # Keep data undo "fresh" so repeated Ctrl+Z keeps popping this stack
             self._last_data_action_time = self._bump_action_seq()
+            self._save_undo_state()
             return
         # Text undo is handled natively by QTextEdit via VaultTextEdit.keyPressEvent
 
@@ -2387,6 +2400,7 @@ class FastPrompter(
             state = self.data_redo_stack.pop()
             self._apply_data_state(state)
             self.play_sound("tick")
+            self._save_undo_state()
             return
         # Text redo is handled natively by QTextEdit via VaultTextEdit.keyPressEvent
 
@@ -2404,10 +2418,10 @@ class FastPrompter(
         snap_cat = state.get("category")
         if snap_cat and snap_cat in self.data.get("cats_order", []):
             idx = self.data["cats_order"].index(snap_cat)
-            if self.tab_bar.currentIndex() != idx:
-                self.tab_bar.blockSignals(True)
-                self.tab_bar.setCurrentIndex(idx)
-                self.tab_bar.blockSignals(False)
+            if self.cat_combo.currentIndex() != idx:
+                self.cat_combo.blockSignals(True)
+                self.cat_combo.setCurrentIndex(idx)
+                self.cat_combo.blockSignals(False)
             self.data["last_tab_idx"] = idx
 
         self.data["temp_presets"] = state["temp_presets"]
@@ -2508,6 +2522,45 @@ class FastPrompter(
         self.build_categories()
         self.mark_dirty()
 
+    def _save_undo_state(self):
+        import json
+        import os
+        import threading
+        def save():
+            try:
+                db_path = getattr(self.state, "db_path", "")
+                if not db_path:
+                    return
+                undo_path = os.path.splitext(db_path)[0] + "_undo.json"
+                with open(undo_path, "w", encoding="utf-8") as f:
+                    json.dump({
+                        "undo": getattr(self, "data_undo_stack", []),
+                        "redo": getattr(self, "data_redo_stack", [])
+                    }, f)
+            except Exception as e:
+                from fastprompter.core.logging import logger
+                logger.error(f"Failed to save undo state: {e}")
+        threading.Thread(target=save, daemon=True).start()
+
+    def _load_undo_state(self):
+        import json
+        import os
+        try:
+            db_path = getattr(self.state, "db_path", "")
+            if not db_path:
+                return
+            undo_path = os.path.splitext(db_path)[0] + "_undo.json"
+            if os.path.exists(undo_path):
+                with open(undo_path, encoding="utf-8") as f:
+                    data = json.load(f)
+                    self.data_undo_stack = data.get("undo", [])
+                    self.data_redo_stack = data.get("redo", [])
+        except Exception as e:
+            from fastprompter.core.logging import logger
+            logger.error(f"Failed to load undo state: {e}")
+            self.data_undo_stack = []
+            self.data_redo_stack = []
+
     def add_data_undo_state(self, _action_name=""):
         if not hasattr(self, "data_undo_stack"):
             self.data_undo_stack = []
@@ -2524,17 +2577,18 @@ class FastPrompter(
         self.data_redo_stack.clear()
         # Lets Ctrl+Z pick data undo over text undo when this action is newer
         self._last_data_action_time = self._bump_action_seq()
+        self._save_undo_state()
 
     def build_categories(self):
         """Rebuild the tab bar from cats_order."""
-        self.tab_bar.blockSignals(True)
-        while self.tab_bar.count() > 0:
-            self.tab_bar.removeTab(0)
+        self.cat_combo.blockSignals(True)
+        while self.cat_combo.count() > 0:
+            self.cat_combo.removeItem(0)
         for cat in self.data["cats_order"]:
-            self.tab_bar.addTab(cat)
-        self.tab_bar.blockSignals(False)
-        if self.tab_bar.count() > 0:
-            self.tab_bar.setCurrentIndex(0)
+            self.cat_combo.addItem(cat)
+        self.cat_combo.blockSignals(False)
+        if self.cat_combo.count() > 0:
+            self.cat_combo.setCurrentIndex(0)
         self.refresh_snippets_panel()
 
     def _sync_silo_folder(self, cat, old_text, new_text):
@@ -2547,9 +2601,12 @@ class FastPrompter(
         old_dir = silo_files_dir(self._files_root(), cat, old_text)
         new_dir = silo_files_dir(self._files_root(), cat, new_text)
         try:
-            if os.path.isdir(old_dir) and not os.path.exists(new_dir):
-                os.makedirs(os.path.dirname(new_dir), exist_ok=True)
-                os.rename(old_dir, new_dir)
+            if os.path.isdir(old_dir):
+                if os.path.exists(new_dir) and os.path.isdir(new_dir) and not os.listdir(new_dir):
+                    os.rmdir(new_dir)
+                if not os.path.exists(new_dir):
+                    os.makedirs(os.path.dirname(new_dir), exist_ok=True)
+                    os.rename(old_dir, new_dir)
         except OSError as e:
             from fastprompter.core.logging import logger
             logger.warning(f"Silo folder sync {old_dir} -> {new_dir} failed: {e}")
@@ -2809,15 +2866,15 @@ class FastPrompter(
             name = name.strip()
             self.data["cats_order"].append(name)
             self.data["categories"][name] = [None] * 100
-            self.tab_bar.addTab(name)
-            self.tab_bar.setCurrentIndex(self.tab_bar.count() - 1)
+            self.cat_combo.addItem(name)
+            self.cat_combo.setCurrentIndex(self.cat_combo.count() - 1)
             self.mark_dirty()
 
     def del_category(self):
         self.play_sound("delete")
-        if self.tab_bar.count() <= 1:
+        if self.cat_combo.count() <= 1:
             return
-        idx = self.tab_bar.currentIndex()
+        idx = self.cat_combo.currentIndex()
         cat = self.data["cats_order"][idx]
         self.ignore_focus_loss = True
         try:
@@ -2836,14 +2893,14 @@ class FastPrompter(
             del self.data["categories"][cat]
             if cat in self.current_pages:
                 del self.current_pages[cat]
-            self.tab_bar.removeTab(idx)
+            self.cat_combo.removeItem(idx)
             self.mark_dirty()
 
     def _wheel_switch_tab(self, direction):
         """Mouse wheel over the tab bar switches projects."""
-        idx = self.tab_bar.currentIndex() + direction
-        if 0 <= idx < self.tab_bar.count():
-            self.tab_bar.setCurrentIndex(idx)
+        idx = self.cat_combo.currentIndex() + direction
+        if 0 <= idx < self.cat_combo.count():
+            self.cat_combo.setCurrentIndex(idx)
 
     def _on_escape(self):
         """Esc closes the search bar first; a second Esc hides the window."""
@@ -2951,6 +3008,15 @@ class FastPrompter(
             return ""
         return self.search_bar.text().strip().lower()
 
+    def _match_snippet_query(self, query, s):
+        if not query:
+            return True
+        text = (s.get("name", "") + " " + s.get("text", "")).lower()
+        for term in query.split():
+            if term not in text:
+                return False
+        return True
+
     def refresh_snippets_panel(self):
         if self._suspend_cache or self._initializing_ui:
             return
@@ -2966,18 +3032,21 @@ class FastPrompter(
         active_items = []
         for i, s in enumerate(self.data["categories"][cat]):
             if s is not None:
-                if not query or query in s["name"].lower() or query in s["text"].lower():
+                if self._match_snippet_query(query, s):
                     active_items.append((i, s))
 
         total_active = len(active_items)
         if total_active == 0:
-            self.snippets_section.setVisible(False)
+            self.snippets_widget.setVisible(False)
+            self.btn_page_up.setVisible(False)
+            self.btn_page_down.setVisible(False)
             if hasattr(self, "sections_gap_widget"):
                 self.sections_gap_widget.setVisible(False)
             self.refresh_archive_panel()
             return
 
         self.snippets_section.setVisible(True)
+        self.snippets_widget.setVisible(True)
         if hasattr(self, "sections_gap_widget"):
             self.sections_gap_widget.setVisible(self.data.get("silo_pinned_gap", "True") == "True")
         page = min(self.current_pages.get(cat, 0), max(0, math.ceil(total_active / 10.0) - 1))
@@ -3347,6 +3416,23 @@ class FastPrompter(
     def _switch_to_arc_slot(self, idx):
         self._switch_to_slot(idx, is_archive=True)
 
+    def open_trash(self):
+        if "Trash" not in self.data["categories"]:
+            self.data["categories"]["Trash"] = []
+        if "Trash" not in self.data["cats_order"]:
+            self.data["cats_order"].append("Trash")
+            self.cat_combo.addItem("Trash")
+        idx = self.data["cats_order"].index("Trash")
+        if self.cat_combo.currentIndex() == idx:
+            # We are already in Trash; toggle back
+            prev_idx = getattr(self, "_pre_trash_cat_idx", 0)
+            if prev_idx == idx or prev_idx >= self.cat_combo.count():
+                prev_idx = 0
+            self.cat_combo.setCurrentIndex(prev_idx)
+        else:
+            self._pre_trash_cat_idx = self.cat_combo.currentIndex()
+            self.cat_combo.setCurrentIndex(idx)
+
     def refresh_temp_presets(self):
         total = len(self.data["temp_presets"])
         if total == 0:
@@ -3440,7 +3526,10 @@ class FastPrompter(
             text = (raw[:100] if len(raw) > 100 else raw).replace("\n", " ").strip()
 
             if is_child:
-                display_idx = None
+                parent_idx = child_of[slot_idx]
+                p_disp = pinned_list.index(parent_idx) + 1 if parent_idx in pinned_list else unpinned.index(parent_idx) + 1 if parent_idx in unpinned else 0
+                c_rank = children_map.get(parent_idx, []).index(slot_idx) + 1
+                display_idx = f"{p_disp}.{c_rank}"
             elif is_pinned:
                 display_idx = pinned_list.index(slot_idx) + 1
             else:
@@ -3454,10 +3543,8 @@ class FastPrompter(
             # counter stays lines-only (no duplicated 📁)
             fcount = silo_file_count(self._files_root(), self.get_current_category(), raw)
             pin_str = "📌 " if is_pinned else ""
-            if kids:
-                pin_str = (f"▸[{len(kids)}] " if slot_idx in collapsed else "▾ ") + pin_str
             if is_child:
-                label = f"↳ {text}" if text else "↳"
+                label = f"↳ {display_idx}: {text}" if text else f"↳ {display_idx}"
             else:
                 label = f"{pin_str}{display_idx}: {text}" if text else f"{pin_str}{display_idx}"
             is_active = (
@@ -3472,7 +3559,7 @@ class FastPrompter(
                 self.data.get("bold_hash_titles", "True") == "True"
                 and raw.lstrip().startswith("#")
             )
-            btn.update_data(label, slot_idx, bg_color, font_family, scale, line_count_str=line_str, is_pushed=is_active, title_bold=title_bold, is_child=is_child, fcount=fcount)
+            btn.update_data(label, slot_idx, bg_color, font_family, scale, line_count_str=line_str, is_pushed=is_active, title_bold=title_bold, is_child=is_child, fcount=fcount, has_children=len(kids)>0, is_collapsed=slot_idx in collapsed)
 
         if show_gap and first_unpinned_ui_index != -1:
             # layout contains the buttons, so insertWidget at first_unpinned_ui_index puts it before that button
@@ -3915,53 +4002,53 @@ class FastPrompter(
         send_key(VK_CTRL, True)
 
     def setup_global_shortcuts(self):
-        QShortcut(QKeySequence("Ctrl+D"), self).activated.connect(self.toggle_focus_mode)
-        QShortcut(QKeySequence("Ctrl+F"), self).activated.connect(self.show_find)
-        QShortcut(QKeySequence("Ctrl+H"), self).activated.connect(self.show_replace)
-        QShortcut(QKeySequence("Ctrl+Shift+S"), self).activated.connect(self.save_silo_to_file)
-        QShortcut(QKeySequence("Esc"), self).activated.connect(self._on_escape)
-        QShortcut(QKeySequence("Ctrl+S"), self).activated.connect(self.save_snippet)
-        QShortcut(
-            QKeySequence("Ctrl+N"), self, context=Qt.ShortcutContext.ApplicationShortcut
-        ).activated.connect(self.select_empty_silo)
-        QShortcut(
-            QKeySequence("Ctrl+W"), self, context=Qt.ShortcutContext.ApplicationShortcut
-        ).activated.connect(self.insert_divider_line)
-        QShortcut(
-            QKeySequence("Alt+W"), self, context=Qt.ShortcutContext.ApplicationShortcut
-        ).activated.connect(self.insert_old_add_line)
-        QShortcut(QKeySequence("Ctrl+Shift+Z"), self).activated.connect(self.redo_action)
-        # Fires when focus is outside the editor (the editor overrides it while
-        # focused and routes through VaultTextEdit.keyPressEvent instead)
-        QShortcut(QKeySequence("Ctrl+Z"), self).activated.connect(self._smart_undo)
-        # Keyboard silo navigation in the sidebar
-        QShortcut(
-            QKeySequence("Alt+Up"), self, context=Qt.ShortcutContext.ApplicationShortcut
-        ).activated.connect(lambda: self.navigate_silo(-1))
-        QShortcut(
-            QKeySequence("Alt+Down"), self, context=Qt.ShortcutContext.ApplicationShortcut
-        ).activated.connect(lambda: self.navigate_silo(1))
+        for shortcut in getattr(self, "_app_shortcuts", []):
+            shortcut.deleteLater()
+        self._app_shortcuts = []
+
+        def add_shortcut(key_name, default_seq, slot, context=Qt.ShortcutContext.WindowShortcut):
+            seq_str = self.data.get(key_name, default_seq)
+            if not seq_str: return
+            shortcut = QShortcut(QKeySequence(seq_str), self, context=context)
+            shortcut.activated.connect(slot)
+            self._app_shortcuts.append(shortcut)
+
+        add_shortcut("hk_focus", "Ctrl+D", self.toggle_focus_mode)
+        add_shortcut("hk_find", "Ctrl+F", self.show_find)
+        add_shortcut("hk_replace", "Ctrl+H", self.show_replace)
+        add_shortcut("hk_export_silo", "Ctrl+Shift+S", self.save_silo_to_file)
+        
+        shortcut = QShortcut(QKeySequence("Esc"), self)
+        shortcut.activated.connect(self._on_escape)
+        self._app_shortcuts.append(shortcut)
+
+        add_shortcut("hk_save_snippet", "Ctrl+S", self.save_snippet)
+        add_shortcut("hk_new_snippet", "Ctrl+N", self.select_empty_silo, Qt.ShortcutContext.ApplicationShortcut)
+        add_shortcut("hk_divider", "Ctrl+W", self.insert_divider_line, Qt.ShortcutContext.ApplicationShortcut)
+        add_shortcut("hk_snap", "Ctrl+Q", self.cycle_snap_corner)
+        add_shortcut("hk_quit", "Ctrl+Alt+Shift+Q", self.quit_app)
+        add_shortcut("hk_header", "Ctrl+E", self.apply_header_timestamp)
+        add_shortcut("hk_bold", "Ctrl+B", self.apply_bold_smart)
+        add_shortcut("hk_undo", "Ctrl+Z", self._smart_undo)
+
+        def add_fixed(seq_str, slot, context=Qt.ShortcutContext.WindowShortcut):
+            shortcut = QShortcut(QKeySequence(seq_str), self, context=context)
+            shortcut.activated.connect(slot)
+            self._app_shortcuts.append(shortcut)
+            
+        add_fixed("Ctrl+Shift+Z", self.redo_action)
+        add_fixed("Alt+W", self.insert_old_add_line, Qt.ShortcutContext.ApplicationShortcut)
+        add_fixed("Alt+Up", lambda: self.navigate_silo(-1), Qt.ShortcutContext.ApplicationShortcut)
+        add_fixed("Alt+Down", lambda: self.navigate_silo(1), Qt.ShortcutContext.ApplicationShortcut)
+        add_fixed("Ctrl+I", lambda: self.apply_format("italic"))
+        add_fixed("Ctrl+U", lambda: self.apply_format("underline"))
+        add_fixed("Ctrl+T", lambda: self.apply_format("strike"))
+
         for i in range(1, 11):
             key_num = i % 10
-            QShortcut(QKeySequence(f"F{i}"), self).activated.connect(
-                lambda i=i: self.fire_shortcut(i)
-            )
-            QShortcut(QKeySequence(f"Ctrl+{key_num}"), self).activated.connect(
-                lambda i=i: self._switch_to_slot(i - 1)
-            )
-            QShortcut(QKeySequence(f"Ctrl+Shift+{key_num}"), self).activated.connect(
-                lambda i=i: self.fire_shortcut(i)
-            )
-        QShortcut(QKeySequence("Ctrl+Q"), self).activated.connect(self.cycle_snap_corner)
-        QShortcut(QKeySequence("Ctrl+Alt+Shift+Q"), self).activated.connect(self.quit_app)
-        QShortcut(QKeySequence("Ctrl+E"), self).activated.connect(self.apply_header_timestamp)
-        QShortcut(QKeySequence("Ctrl+B"), self).activated.connect(self.apply_bold_smart)
-        QShortcut(QKeySequence("Ctrl+I"), self).activated.connect(
-            lambda: self.apply_format("italic"))
-        QShortcut(QKeySequence("Ctrl+U"), self).activated.connect(
-            lambda: self.apply_format("underline"))
-        QShortcut(QKeySequence("Ctrl+T"), self).activated.connect(
-            lambda: self.apply_format("strike"))
+            add_fixed(f"F{i}", lambda i=i: self.fire_shortcut(i))
+            add_fixed(f"Ctrl+{key_num}", lambda i=i: self._switch_to_slot(i - 1))
+            add_fixed(f"Ctrl+Shift+{key_num}", lambda i=i: self.fire_shortcut(i))
 
     def fire_shortcut(self, idx):
         self.play_sound("snippet")
@@ -3972,7 +4059,7 @@ class FastPrompter(
         active_items = []
         for i, s in enumerate(self.data["categories"][cat]):
             if s is not None:
-                if not query or query in s["name"].lower() or query in s["text"].lower():
+                if self._match_snippet_query(query, s):
                     active_items.append((i, s))
 
         page = self.current_pages.get(cat, 0)
@@ -4116,9 +4203,12 @@ class FastPrompter(
         old_dir = os.path.join(root, _sl(cat), old_slug)
         new_dir = os.path.join(root, _sl(cat), new_slug)
         try:
-            if os.path.isdir(old_dir) and os.listdir(old_dir) and not os.path.exists(new_dir):
-                os.makedirs(os.path.dirname(new_dir), exist_ok=True)
-                os.rename(old_dir, new_dir)
+            if os.path.isdir(old_dir):
+                if os.path.exists(new_dir) and os.path.isdir(new_dir) and not os.listdir(new_dir):
+                    os.rmdir(new_dir)
+                if not os.path.exists(new_dir):
+                    os.makedirs(os.path.dirname(new_dir), exist_ok=True)
+                    os.rename(old_dir, new_dir)
         except OSError as e:
             from fastprompter.core.logging import logger
             logger.warning(f"Live folder sync {old_dir} -> {new_dir} failed: {e}")

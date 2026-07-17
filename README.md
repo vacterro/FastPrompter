@@ -35,17 +35,20 @@ Press `Alt+X` anywhere — in your browser, IDE, terminal — and FastPrompter p
 | 📋 **Snippets** | Named text blocks, pasted instantly with `F1`–`F10` |
 | 🗂️ **Projects** | 5 independent tabs, each with its own silos, snippets and archive |
 | 📦 **Archive** | One click stores the current silo or snippet out of the way |
-| 📌 **Pin & tint** | Hover a silo for pin/archive buttons; silos tint by how recently you edited them |
+| 📌 **Pin, tick & tint** | Hover a silo for tick/files/pin/archive buttons; silos tint by how recently you edited them. Silo line counters are separated by `│` for quick reading |
+| 🌳 **Hierarchy** | Drag a silo onto another to nest it as a child; right-click to collapse parents |
 | 🖱️ **Wheel everything** | Wheel flips pages & switches tabs, `Ctrl+wheel` walks silos or zooms text |
 | ✍️ **Markdown editor** | Live highlighting, real checkboxes, auto-bullets, `---` dividers, `Ctrl+E` headers with timestamp |
 | 💻 **Code blocks** | ``` fences render monospace with syntax tints, auto line numbers, one-click copy and folding |
 | 📁 **File container** | Per-silo asset drawer: drop *any* files in, drag them out, preview images, link originals, Explorer-style views — plain folders you can read without the app |
+| 🗂️ **Folder Templates** | Build predefined folder structures inside your silo's file container with a single click |
 | 🗃️ **Fold sections** | Collapse `#` headers and code blocks like a real Markdown editor |
 | 🦓 **Readability** | Zebra stripes, line numbers with clickable margin marks, word wrap, zen mode |
 | 🎨 **6 vintage themes** | Win95-style bevels, warm amber-on-black, OLED — plus a full custom color editor |
 | 🎵 **Sounds** | Optional UI clicks and a typewriter tick, with volume control |
-| 📄 **Drop any file** | Drag ~50 text-based file types into the editor — loads as plain text |
-| ↩️ **Undo everything** | `Ctrl+Z` covers text *and* silo operations (clear, delete, move) |
+| 📄 **Drop Zones** | Drag files to the editor to choose from 4 actions: insert text, insert clickable link, copy to silo Files, or create shortcut in silo Files |
+| 🗑️ **Trash** | Middle-click to trash a silo — text and files are safely moved to `_trash`, never permanently deleted |
+| ↩️ **Undo everything** | `Ctrl+Z` covers text *and* silo operations (clear, trash, move) |
 
 ## 📸 Screenshots
 
@@ -89,7 +92,7 @@ python tools/build.py
 **Global** (rebindable, two slots each): `Alt+X` / `F15` toggle window · `Shift+Alt+X` quick list · `Alt+D` sidebar · `Alt+S` lock window · `Alt+E` always on top · `Alt+A` hide on click-out
 
 <details>
-<summary><b>In-app keys</b></summary>
+<summary><b>In-app keys (all customizable via Settings)</b></summary>
 
 | Key | Action |
 |-----|--------|
@@ -122,9 +125,13 @@ python tools/build.py
 | Wheel over tab bar | Switch project |
 | `Ctrl+wheel` in editor | Zoom font |
 | Middle-click a silo | Move it to the trash (text + files land in `data/files/_trash/`) |
-| Hover a silo | 📁 files / 📌 pin / 📥 archive buttons appear |
+| Hover a silo | ✅ tick, 📁 files, 📌 pin and 📥 archive buttons appear |
+| Drag files over editor | Two drop zones: top = insert as text, bottom = into silo's Files |
 | Right-click a silo | Transfer to project, replace from, move to bottom… |
-| Drag a silo *between* others / *onto* one | Reorder / swap |
+| Drop a silo ONTO another | Nest it as a child (1 level; its files can merge into the parent) |
+| Shift+drop a silo onto another | Swap their places |
+| Drag a silo between others | Reorder — dragging a child out promotes it back to top level |
+| Right-click a parent silo | Collapse / expand its children |
 
 </details>
 

@@ -30,26 +30,35 @@ class DropOverlay(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self.hide()
 
-    def begin(self, two_zones):
-        self._two_zones = two_zones
-        self._hot = "text" if two_zones else "files"
+    def begin(self, has_text_option):
+        self._has_text_option = has_text_option
+        self._hot = "text" if has_text_option else "files"
         self.setGeometry(self.editor.viewport().rect())
         self.raise_()
         self.show()
 
     def track(self, pos):
         """Editor dragMove feeds cursor position; highlight follows."""
-        if not self._two_zones:
-            return
-        zone = "text" if pos.y() < self.height() // 2 else "files"
-        if zone != self._hot:
-            self._hot = zone
+        new_hot = self.zone_at(pos)
+        if new_hot != self._hot:
+            self._hot = new_hot
             self.update()
 
     def zone_at(self, pos):
-        if not self._two_zones:
-            return "files"
-        return "text" if pos.y() < self.height() // 2 else "files"
+        w, h = self.width(), self.height()
+        if self._has_text_option:
+            # 2x2 grid
+            col = "left" if pos.x() < w // 2 else "right"
+            row = "top" if pos.y() < h // 2 else "bottom"
+            if row == "top" and col == "left": return "text"
+            if row == "top" and col == "right": return "editor_link"
+            if row == "bottom" and col == "left": return "files"
+            return "files_link"
+        else:
+            # 3 stacked rows
+            if pos.y() < h // 3: return "files"
+            if pos.y() < (h * 2) // 3: return "files_link"
+            return "editor_link"
 
     def end(self):
         self.hide()
@@ -79,18 +88,27 @@ class DropOverlay(QWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing, False)
         p.fillRect(self.rect(), _BG)
         m = 8
-        if self._two_zones:
-            half = (self.height() - 3 * m) // 2
-            top = QRect(m, m, self.width() - 2 * m, half)
-            bot = QRect(m, half + 2 * m, self.width() - 2 * m, half)
-            self._panel(p, top, "Drop as Text",
-                        "insert the file's content into this silo",
-                        self._hot == "text")
-            self._panel(p, bot, "Drop to Files \U0001F4C1",
-                        "store in the silo's file container",
-                        self._hot == "files")
+        if self._has_text_option:
+            # 2x2 grid
+            hw = (self.width() - 3 * m) // 2
+            hh = (self.height() - 3 * m) // 2
+            top_left = QRect(m, m, hw, hh)
+            top_right = QRect(2 * m + hw, m, hw, hh)
+            bot_left = QRect(m, 2 * m + hh, hw, hh)
+            bot_right = QRect(2 * m + hw, 2 * m + hh, hw, hh)
+            
+            self._panel(p, top_left, "📄 Drop as Text", "insert content into silo", self._hot == "text")
+            self._panel(p, top_right, "🔗 Link in Text", "insert markdown link at cursor", self._hot == "editor_link")
+            self._panel(p, bot_left, "📥 Copy to Files 📁", "store in silo's container", self._hot == "files")
+            self._panel(p, bot_right, "🔗 Link in Files 📁", "add shortcut in container", self._hot == "files_link")
         else:
-            full = QRect(m, m, self.width() - 2 * m, self.height() - 2 * m)
-            self._panel(p, full, "Drop to Files \U0001F4C1",
-                        "stored in the silo's file container", True)
+            # 3 stacked rows
+            rh = (self.height() - 4 * m) // 3
+            top = QRect(m, m, self.width() - 2 * m, rh)
+            mid = QRect(m, 2 * m + rh, self.width() - 2 * m, rh)
+            bot = QRect(m, 3 * m + 2 * rh, self.width() - 2 * m, rh)
+            
+            self._panel(p, top, "📥 Copy to Files 📁", "store in silo's container", self._hot == "files")
+            self._panel(p, mid, "🔗 Link in Files 📁", "add shortcut in container", self._hot == "files_link")
+            self._panel(p, bot, "🔗 Link in Text", "insert markdown link at cursor", self._hot == "editor_link")
         p.end()

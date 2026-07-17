@@ -90,59 +90,71 @@ class HotkeySettingsDialog(QDialog):
         self.setWindowTitle("Configure Global Hotkeys")
         self.setMinimumWidth(400)
 
-        layout, form_layout = QVBoxLayout(self), QFormLayout()
-
+        layout = QVBoxLayout(self)
+        from PyQt6.QtWidgets import QScrollArea, QTabWidget
+        self.tabs = QTabWidget()
+        
+        tab_global = QWidget()
+        form_global = QFormLayout(tab_global)
+        
         self.le_global = DualHotkeyWidget(self.main_win, "global_hotkey", "Alt+X", "F15")
-        form_layout.addRow("Toggle UI (Global):", self.le_global)
+        form_global.addRow("Toggle UI (Global):", self.le_global)
         self.le_pie = DualHotkeyWidget(self.main_win, "pie_menu_hotkey", "Shift+Alt+X")
-        form_layout.addRow("Summon Quick List:", self.le_pie)
+        form_global.addRow("Summon Quick List:", self.le_pie)
         self.le_lock = DualHotkeyWidget(self.main_win, "lock_window_hotkey", "Alt+S")
-        form_layout.addRow("Toggle Lock Window:", self.le_lock)
+        form_global.addRow("Toggle Lock Window:", self.le_lock)
         self.le_top = DualHotkeyWidget(self.main_win, "always_on_top_hotkey", "Alt+E")
-        form_layout.addRow("Toggle Always on Top:", self.le_top)
+        form_global.addRow("Toggle Always on Top:", self.le_top)
         self.le_sidebar = DualHotkeyWidget(self.main_win, "toggle_sidebar_hotkey", "Alt+D")
-        form_layout.addRow("Toggle Sidebar:", self.le_sidebar)
+        form_global.addRow("Toggle Sidebar:", self.le_sidebar)
         self.le_hideout = DualHotkeyWidget(self.main_win, "hide_on_clickout_hotkey", "Alt+A")
-        form_layout.addRow("Toggle Hide on Click-Out:", self.le_hideout)
+        form_global.addRow("Toggle Hide on Click-Out:", self.le_hideout)
 
         self.snippet_inputs = []
         for i in range(5):
             le = DualHotkeyWidget(self.main_win, f"snippet_{i}_hotkey", f"Ctrl+Shift+Numpad{i+1}")
             self.snippet_inputs.append(le)
-            form_layout.addRow(f"Paste Snippet {i+1}:", le)
+            form_global.addRow(f"Paste Snippet {i+1}:", le)
 
         self.silo_inputs = []
         for i in range(5):
             le = DualHotkeyWidget(self.main_win, f"silo_{i}_hotkey", f"Alt+Shift+Numpad{i+1}")
             self.silo_inputs.append(le)
-            form_layout.addRow(f"Paste Silo {i+1}:", le)
+            form_global.addRow(f"Paste Silo {i+1}:", le)
 
-        layout.addLayout(form_layout)
+        scroll_global = QScrollArea()
+        scroll_global.setWidgetResizable(True)
+        scroll_global.setWidget(tab_global)
+        self.tabs.addTab(scroll_global, "Global / Actions")
 
-        # MID-7: Full shortcuts list
-        from PyQt6.QtWidgets import QLabel, QScrollArea
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        lbl_info = QLabel(
-            "<b>Hardcoded Shortcuts:</b><br>"
-            "Ctrl+N : New Empty Snippet<br>"
-            "Ctrl+S : Save Snippet<br>"
-            "Ctrl+Shift+S : Export Silo to file<br>"
-            "Ctrl+F : Find Text<br>"
-            "Ctrl+H : Replace Text<br>"
-            "Ctrl+D : Toggle Focus Mode<br>"
-            "Ctrl+E : Header+Bold+Underline+Timestamp<br>"
-            "Ctrl+B : Bold / Unbold Line<br>"
-            "Ctrl+Z : Undo Text Change<br>"
-            "Ctrl+W : Insert Divider Line<br>"
-            "Ctrl+Q : Cycle Snap Corners<br>"
-            "Ctrl+1..0 : Switch to Silo Slot<br>"
-            "Ctrl+Alt+Shift+Q : Quit Application Completely"
-        )
-        lbl_info.setWordWrap(True)
-        lbl_info.setStyleSheet("padding: 5px;")
-        scroll_area.setWidget(lbl_info)
-        layout.addWidget(scroll_area)
+        tab_app = QWidget()
+        form_app = QFormLayout(tab_app)
+        self.app_binds = [
+            ("hk_new_snippet", "Ctrl+N", "New Empty Snippet"),
+            ("hk_save_snippet", "Ctrl+S", "Save Snippet"),
+            ("hk_export_silo", "Ctrl+Shift+S", "Export Silo to file"),
+            ("hk_find", "Ctrl+F", "Find Text"),
+            ("hk_replace", "Ctrl+H", "Replace Text"),
+            ("hk_focus", "Ctrl+D", "Toggle Focus Mode"),
+            ("hk_header", "Ctrl+E", "Header+Bold+Underline+Timestamp"),
+            ("hk_bold", "Ctrl+B", "Bold / Unbold Line"),
+            ("hk_undo", "Ctrl+Z", "Undo Text Change"),
+            ("hk_divider", "Ctrl+W", "Insert Divider Line"),
+            ("hk_snap", "Ctrl+Q", "Cycle Snap Corners"),
+            ("hk_quit", "Ctrl+Alt+Shift+Q", "Quit Application")
+        ]
+        self.app_inputs = {}
+        for key_name, default_hk, label in self.app_binds:
+            le = HotkeyWidget(self.main_win.data.get(key_name, default_hk))
+            self.app_inputs[key_name] = le
+            form_app.addRow(label + ":", le)
+
+        scroll_app = QScrollArea()
+        scroll_app.setWidgetResizable(True)
+        scroll_app.setWidget(tab_app)
+        self.tabs.addTab(scroll_app, "In-App Shortcuts")
+
+        layout.addWidget(self.tabs)
 
         btn_layout, btn_reset, btn_save = QHBoxLayout(), QPushButton("Reset Defaults"), QPushButton("Save Hotkeys")
         btn_reset.clicked.connect(self.reset_defaults)
@@ -159,6 +171,9 @@ class HotkeySettingsDialog(QDialog):
         self.le_hideout.reset_defaults("Alt+A")
         for i, le in enumerate(self.snippet_inputs): le.reset_defaults(f"Ctrl+Shift+Numpad{i+1}")
         for i, le in enumerate(self.silo_inputs): le.reset_defaults(f"Alt+Shift+Numpad{i+1}")
+        for key_name, default_hk, _ in getattr(self, "app_binds", []):
+            if key_name in self.app_inputs:
+                self.app_inputs[key_name].setText(default_hk)
 
     def save_hotkeys(self):
         self.le_global.save_to_data(self.main_win)
@@ -169,6 +184,9 @@ class HotkeySettingsDialog(QDialog):
         self.le_hideout.save_to_data(self.main_win)
         for le in self.snippet_inputs: le.save_to_data(self.main_win)
         for le in self.silo_inputs: le.save_to_data(self.main_win)
+        for key_name, le in getattr(self, "app_inputs", {}).items():
+            self.main_win.data[key_name] = le.text()
+        self.main_win.setup_global_shortcuts()
         self.main_win.mark_dirty()
         self.main_win.save_data_to_db(force=True)
         self.accept()

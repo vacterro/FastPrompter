@@ -226,9 +226,13 @@ class WindowMixin:
         idx = 1 if is_right else 0
 
         if sizes[idx] == 0:
-            sizes[idx] = 130
-            sizes[1 - idx] = self.width() - 130
+            restored = getattr(self, "_saved_sidebar_size", 130)
+            if restored <= 0:
+                restored = 130
+            sizes[idx] = restored
+            sizes[1 - idx] = max(0, self.width() - restored)
         else:
+            self._saved_sidebar_size = sizes[idx]
             sizes[1 - idx] += sizes[idx]
             sizes[idx] = 0
 
@@ -281,12 +285,24 @@ class WindowMixin:
             self.splitter.setCollapsible(0, True)
             self.splitter.setCollapsible(1, False)
 
-        sizes = self.splitter.sizes()
+        raw_sizes = self.data.get("splitter_sizes", self.splitter.sizes())
+        if isinstance(raw_sizes, str):
+            import ast
+            try:
+                raw_sizes = ast.literal_eval(raw_sizes)
+            except Exception:
+                raw_sizes = [0, 0]
+        try:
+            sizes = [int(x) for x in raw_sizes]
+        except (ValueError, TypeError):
+            sizes = [0, 0]
+            
         if sum(sizes) == 0:
             if is_right:
-                self.splitter.setSizes([self.width() - 130, 130])
+                sizes = [self.width() - 130, 130]
             else:
-                self.splitter.setSizes([130, self.width() - 130])
+                sizes = [130, self.width() - 130]
+        self.splitter.setSizes(sizes)
 
     def toggle_mini_settings(self) -> None:
         """Toggle the mini settings footer frame."""

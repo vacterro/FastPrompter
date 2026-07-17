@@ -4,13 +4,13 @@
 
 | ID | Status | Owner | Needs | Description |
 |---|---|---|---|---|
-| T-130 | TODO | - | - | Settings UI: rethink + compact whole panel (screen 044432_24bc2c90) |
+| T-130 | DONE | claude-fable | - | Settings UI: rethink + compact whole panel (screen 044432_24bc2c90) |
 | T-131 | DONE | claude-fable | - | Move ⚙ settings btn + 📁 files btn to sidebar right group (Archive/+/-/Search), organized |
 | T-132 | DONE | claude-fable | - | Snippet Append/Top/Bot arrow buttons: Settings toggle, default OFF |
 | T-133 | DONE | claude-fable | - | Visual separator for snippet +/- buttons (own group in the row) |
-| T-134 | TODO | - | - | Folder Template editor (refs: V:\__SAVE_V\___CONTEXTMENU\_new_project.reg, NEW_PROJ.CMD) — build templated folder trees in container |
-| T-135 | TODO | - | - | ALL in-app shortcuts bindable (Ctrl+E/W/D/Q/…) + tooltips show current binds |
-| T-136 | TODO | - | - | Search deep reliability pass (beyond the ghost-filter fix) |
+| T-134 | DONE | antigravity | - | Folder Template editor (refs: V:\__SAVE_V\___CONTEXTMENU\_new_project.reg, NEW_PROJ.CMD) — build templated folder trees in container |
+| T-135 | DONE | antigravity | - | ALL in-app shortcuts bindable (Ctrl+E/W/D/Q/…) + tooltips show current binds |
+| T-136 | DONE | antigravity | - | Search deep reliability pass (beyond the ghost-filter fix) |
 | T-137 | TODO | - | - | README + Help refresh (hierarchy, ticks, trash, zones, │ counters); dead-code sweep |
 | T-138 | TODO | - | T-130..T-137 | Backup to N: + REVIEW + ship v0.6.0 |
 

@@ -417,6 +417,12 @@ class DraggableSiloButton(QWidget):
         self._silo_layout = QHBoxLayout(self)
         self._silo_layout.setContentsMargins(4, 2, 4, 2)
         self._silo_layout.setSpacing(2)
+        self._btn_collapse = QPushButton("▾")
+        self._btn_collapse.setFixedSize(16, 16)
+        self._btn_collapse.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._btn_collapse.setStyleSheet("background: transparent; border: none; padding: 0;")
+        self._btn_collapse.clicked.connect(self._on_collapse_clicked)
+        self._btn_collapse.hide()
 
         self._lbl_text = QLabel()
         self._lbl_text.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
@@ -460,6 +466,7 @@ class DraggableSiloButton(QWidget):
 
         # tick sits leftmost — before the order number in the title;
         # files button rightmost: with files it doubles as the 📁N counter
+        self._silo_layout.addWidget(self._btn_collapse)
         self._silo_layout.addWidget(self._btn_tick)
         self._silo_layout.addWidget(self._lbl_text)
         self._silo_layout.addStretch()
@@ -477,6 +484,10 @@ class DraggableSiloButton(QWidget):
         self.setMouseTracking(True)
         self.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
 
+    def _on_collapse_clicked(self):
+        if hasattr(self.main_win, 'toggle_silo_collapse'):
+            self.main_win.toggle_silo_collapse(self.global_idx)
+
     def _on_pin_clicked(self):
         """Toggle pin state for this silo."""
         if hasattr(self.main_win, '_toggle_pin_silo'):
@@ -489,6 +500,13 @@ class DraggableSiloButton(QWidget):
 
     def _on_files_clicked(self):
         """Open the per-silo file container drawer."""
+        from PyQt6.QtWidgets import QApplication
+        mods = QApplication.keyboardModifiers()
+        if mods & Qt.KeyboardModifier.ControlModifier:
+            if hasattr(self.main_win, 'backup_silo_to_files'):
+                self.main_win.backup_silo_to_files(self.global_idx, is_archive=self.is_archive)
+            return
+
         if hasattr(self.main_win, 'open_file_container'):
             self.main_win.open_file_container(self.global_idx, is_archive=self.is_archive)
 
@@ -524,6 +542,7 @@ class DraggableSiloButton(QWidget):
         # with files the 📁N doubles as the counter — it never hides
         self._btn_files.setVisible(getattr(self, "_fcount", 0) > 0 and not self.is_archive)
         self._btn_tick.setVisible(self._is_ticked())
+        self._lbl_count.show()
         super().leaveEvent(event)
 
     def setText(self, text):
@@ -539,6 +558,7 @@ class DraggableSiloButton(QWidget):
             if self.main_win.data.get("silo_ticks_enabled", "True") == "True":
                 self._btn_tick.setText("☑" if self._is_ticked() else "✅")
                 self._btn_tick.show()
+            self._lbl_count.hide()
             try:
                 from fastprompter.ui.file_container import folder_summary
                 presets = self.main_win.data.get("temp_presets", [])
@@ -563,11 +583,11 @@ class DraggableSiloButton(QWidget):
         from PyQt6.QtCore import QSize
         return QSize(10, self._lbl_text.fontMetrics().height() + 10)
 
-    def update_data(self, text_label, global_idx, bg_color, font_family="Verdana", scale=1.0, line_count_str="", is_pushed=False, title_bold=False, is_child=False, fcount=0):
+    def update_data(self, text_label, global_idx, bg_color, font_family="Verdana", scale=1.0, line_count_str="", is_pushed=False, title_bold=False, is_child=False, fcount=0, has_children=False, is_collapsed=False):
         theme_name = self.main_win.data.get("theme", "Default")
         ticked_list = self.main_win.data.get("silo_ticked", [])
         is_ticked = isinstance(ticked_list, list) and global_idx in ticked_list
-        current_state = (text_label, global_idx, bg_color, font_family, scale, theme_name, line_count_str, is_pushed, title_bold, is_ticked, is_child, fcount)
+        current_state = (text_label, global_idx, bg_color, font_family, scale, theme_name, line_count_str, is_pushed, title_bold, is_ticked, is_child, fcount, has_children, is_collapsed)
         if getattr(self, '_last_state', None) == current_state:
             self.show()
             return
@@ -578,6 +598,13 @@ class DraggableSiloButton(QWidget):
         self.global_idx = global_idx
         # children sit shifted right under their parent
         self._silo_layout.setContentsMargins(22 if is_child else 4, 2, 4, 2)
+        
+        if has_children:
+            self._btn_collapse.setText("▸" if is_collapsed else "▾")
+            self._btn_collapse.show()
+        else:
+            self._btn_collapse.hide()
+
         self._btn_tick.setText("✅")
         ticks_on = self.main_win.data.get("silo_ticks_enabled", "True") == "True"
         self._btn_tick.setVisible(is_ticked and ticks_on and not self.is_archive)

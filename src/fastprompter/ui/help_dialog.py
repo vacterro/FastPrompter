@@ -62,8 +62,8 @@ def build_help_html(data) -> str:
         ("Click &#9112; on a ``` code fence", "Copy that code block to the clipboard"),
         ("Click &#9662; on a header / fence", "Fold (collapse) the section; right-click editor &rarr; Expand All Folds"),
         ("Alt+drop files on the Files panel", "Add .url links instead of copies"),
-        ("Drag files over the editor", "Two drop zones appear: top = insert as text, "
-                                       "bottom = into the silo's Files (binary files always go to Files)"),
+        ("Drag files over the editor", "A grid of drop zones appear: insert as text, "
+                                       "link in text, copy to silo Files, or link in silo Files"),
         ("In the Files panel", "Del delete &middot; F2 rename &middot; Enter open &middot; "
                                "Ctrl+Shift+C copy path &middot; Ctrl+N new folder &middot; Ctrl+V clipboard&rarr;file"),
         ("Right-click a silo", "Transfer to project, replace from, move to bottom&hellip;"),

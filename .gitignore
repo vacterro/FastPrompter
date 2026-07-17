@@ -19,3 +19,5 @@ STATE.md
 error.log
 .vacskill/tmp/
 .vacskill/history/
+
+src/test_dir/

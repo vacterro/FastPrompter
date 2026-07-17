@@ -25,7 +25,7 @@ class SnippetOpsMixin:
         self.archive_docs, self.snippet_docs, self.editing_snippet,
         self.active_temp_slot, self.btn_save, self._cache_timer,
         self._suspend_cache, self.silo_last_edited, self._visible_silos,
-        self.silo_page, self.tab_bar
+        self.silo_page, self.cat_combo
     """
 
     def insert_snippet_text(self, text, position):
@@ -77,6 +77,101 @@ class SnippetOpsMixin:
                 QMessageBox.information(self, "Saved", f"Silo successfully saved to:\n{path}")
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to save file:\n{e}")
+
+    def backup_silo_to_files(self, idx, is_archive=False):
+        """Save the current silo text as a file in its own file container."""
+        import datetime
+        import os
+
+        from PyQt6.QtWidgets import (
+            QDialog,
+            QHBoxLayout,
+            QLabel,
+            QLineEdit,
+            QMessageBox,
+            QPushButton,
+            QVBoxLayout,
+        )
+
+        if is_archive:
+            return  # No file folder for archives currently
+            
+        silo_text = self.data["temp_presets"][idx]
+        if not silo_text.strip():
+            return
+            
+        from fastprompter.ui.file_container import silo_slug
+        safe = silo_slug(silo_text)
+        if not safe:
+            safe = "_blank"
+        folder = os.path.join(self._files_root(), self.get_current_category(), safe)
+        if not folder:
+            return
+            
+        default_name = f"backup_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+        
+        self.ignore_focus_loss = True
+        try:
+            dlg = QDialog(self)
+            dlg.setWindowTitle("Backup Silo")
+            layout = QVBoxLayout(dlg)
+            
+            layout.addWidget(QLabel("Save current silo as file in its own folder:"))
+            le = QLineEdit(default_name)
+            layout.addWidget(le)
+            
+            btn_layout = QHBoxLayout()
+            btn_copy = QPushButton("Copy")
+            btn_copy_clear = QPushButton("Copy + Clear current silo")
+            btn_cancel = QPushButton("Cancel")
+            
+            btn_layout.addWidget(btn_copy)
+            btn_layout.addWidget(btn_copy_clear)
+            btn_layout.addWidget(btn_cancel)
+            layout.addLayout(btn_layout)
+            
+            result = [None]
+            
+            def on_copy():
+                result[0] = "copy"
+                dlg.accept()
+                
+            def on_copy_clear():
+                result[0] = "clear"
+                dlg.accept()
+                
+            btn_copy.clicked.connect(on_copy)
+            btn_copy_clear.clicked.connect(on_copy_clear)
+            btn_cancel.clicked.connect(dlg.reject)
+            
+            if dlg.exec():
+                name = le.text().strip()
+                if not name: return
+                
+                os.makedirs(folder, exist_ok=True)
+                path = os.path.join(folder, name)
+                try:
+                    with open(path, "w", encoding="utf-8") as f:
+                        f.write(silo_text)
+                except Exception as e:
+                    QMessageBox.warning(self, "Error", f"Failed to save backup:\n{e}")
+                    return
+                    
+                if result[0] == "clear":
+                    if is_archive == getattr(self, "active_is_archive", False) and idx == getattr(self, "active_temp_slot", -1):
+                        self.clear_text(internal=False)
+                    else:
+                        presets = self.data["archive_temp_presets"] if is_archive else self.data["temp_presets"]
+                        docs = self.archive_docs if is_archive else self.silo_docs
+                        if 0 <= idx < len(presets):
+                            presets[idx] = ""
+                        if 0 <= idx < len(docs):
+                            self._set_plain_text_clean(docs[idx], "")
+                        self.sound_manager.play("clear")
+                self.play_tick_sound()
+        finally:
+            self.ignore_focus_loss = False
+            self.activateWindow()
 
     def load_snippet_for_edit(self, cat, global_idx, cursor_pos="end"):
         """Load a snippet into the editor for editing."""
@@ -251,7 +346,7 @@ class SnippetOpsMixin:
 
     def get_current_category(self):
         """Get the category name of the currently selected tab."""
-        idx = self.tab_bar.currentIndex()
+        idx = self.cat_combo.currentIndex()
         if 0 <= idx < len(self.data["cats_order"]):
             return self.data["cats_order"][idx]
         return None
