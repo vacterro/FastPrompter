@@ -86,6 +86,7 @@ from fastprompter.ui.theme_mixin import ThemeMixin
 from fastprompter.ui.tray_mixin import TrayMixin
 from fastprompter.ui.window_mixin import WindowMixin
 from fastprompter.utils.paths import get_data_dir
+from fastprompter.utils.textfit import clip_safe_width
 
 
 class FastPrompter(
@@ -327,12 +328,22 @@ class FastPrompter(
         # Ultra tier (portrait / 9:16 slivers): only the essentials survive —
         # tabs, NEW/Save, a short DD.MM - hh:mm clock, line counter, ⚙.
         # Formatting stays reachable via hotkeys and the context menu.
+        # Dense already hides the rarest buttons — they stay reachable via
+        # the editor's right-click menu (Clear Formatting, Auto-Bullet) and
+        # Ctrl+W (divider)
+        if flipped:
+            for name in ("btn_clear_fmt", "btn_add_line", "btn_bullet_toggle"):
+                wdg = getattr(self, name, None)
+                if wdg is not None and not sip.isdeleted(wdg):
+                    wdg.setVisible(not dense)
+
         ultra = w < 700
         if getattr(self, "_header_ultra", None) != ultra:
             self._header_ultra = ultra
+            # (CF / Line / bullet-toggle are handled by the dense tier —
+            # ultra is always inside dense, so they never re-show here)
             for name in ("btn_bold", "btn_italic", "btn_under", "btn_strike",
-                         "btn_header", "btn_clear_fmt", "btn_add_line",
-                         "btn_bullet_toggle", "btn_copy", "btn_clear",
+                         "btn_header", "btn_copy", "btn_clear",
                          "btn_home", "btn_end", "btn_pin_top", "btn_line_nums",
                          "btn_help"):
                 wdg = getattr(self, name, None)
@@ -341,16 +352,6 @@ class FastPrompter(
             if hasattr(self, "_counter_sep"):
                 self._counter_sep.setVisible(not ultra)
             self._update_date_label()
-
-        from PyQt6.QtGui import QFontMetrics
-
-        def _render_metrics(widget):
-            # The app stylesheet forces 11px on every widget and WINS over
-            # any QFont we set — measuring with the QFont undersized the
-            # buttons and clipped their labels. Measure at the real 11px.
-            f = QFont(widget.font())
-            f.setPixelSize(11)
-            return QFontMetrics(f)
 
         # widths recompute every pass while dense — the font can change
         # after the flag flips (scale/theme), stale metrics overshoot
@@ -361,16 +362,16 @@ class FastPrompter(
             if flipped:
                 btn.setText(short if dense else normal)
             if dense:
-                btn.setFixedWidth(_render_metrics(btn).horizontalAdvance(btn.text()) + 6)
+                btn.setFixedWidth(clip_safe_width(btn.text(), btn.font()))
             elif flipped:
                 btn.setMinimumWidth(0)
                 btn.setMaximumWidth(16777215)
-        for name in ("btn_bullet_toggle", "btn_files"):
+        for name in ("btn_bullet_toggle",):
             bt = getattr(self, name, None)
             if bt is None or sip.isdeleted(bt):
                 continue
             if dense:
-                bt.setFixedWidth(_render_metrics(bt).horizontalAdvance(bt.text()) + 6)
+                bt.setFixedWidth(clip_safe_width(bt.text(), bt.font()))
             elif flipped:
                 bt.setMinimumWidth(0)
                 bt.setMaximumWidth(16777215)

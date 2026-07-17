@@ -648,7 +648,19 @@ class VaultTextEdit(QTextEdit):
         menu = self.createStandardContextMenu()
         menu.addSeparator()
         menu.addAction("Expand All Folds", self.unfold_all)
+        # rare toolbar actions live here too (hidden from narrow headers)
+        menu.addAction("Clear Formatting", self.main_win.clear_formatting)
+        menu.addAction("Insert Divider Line\tCtrl+W", self.main_win.insert_divider_line)
+        state = "ON" if self.main_win.data.get("auto_bullet", "False") == "True" else "OFF"
+        menu.addAction(f"Auto-Bullet: {state}", self._toggle_auto_bullet)
         menu.exec(event.globalPos())
+
+    def _toggle_auto_bullet(self):
+        cur = self.main_win.data.get("auto_bullet", "False") == "True"
+        self.main_win.data["auto_bullet"] = "False" if cur else "True"
+        if hasattr(self.main_win, "btn_bullet_toggle"):
+            self.main_win.btn_bullet_toggle.setChecked(not cur)
+        self.main_win.mark_dirty()
 
     def _ask_text_drop_choice(self, name):
         """Dropped a text-based file: insert as text, or store as a file?

@@ -586,8 +586,10 @@ class DraggableSiloButton(QWidget):
         self._fcount = fcount
         if fcount > 0 and not self.is_archive:
             self._btn_files.setText(f"📁{fcount}")
-            fm = self._btn_files.fontMetrics()
-            self._btn_files.setFixedSize(max(16, fm.horizontalAdvance(self._btn_files.text()) + 4), 16)
+            from fastprompter.utils.textfit import clip_safe_width
+            self._btn_files.setFixedSize(
+                max(20, clip_safe_width(self._btn_files.text(),
+                                        self._btn_files.font(), pad=6)), 16)
             self._btn_files.show()
         else:
             self._btn_files.setText("📁")
