@@ -50,8 +50,77 @@ Press `Alt+X` anywhere — in your browser, IDE, terminal — and FastPrompter p
 | 📄 **Drop Zones** | Drag files to the editor to choose from 4 actions: insert text, insert clickable link, copy to silo Files, or create shortcut in silo Files |
 | 🕒 **Analog clock** | Optional mini analog clock in the header bar, next to the date/time widget |
 | ⌨️ **Bindable shortcuts** | Rebind every in-app hotkey from the Settings panel — two slots per action, with dynamic tooltips |
+| 🌐 **RU / EN interface** | Full Russian and English translations, switchable in Settings |
 | 🗑️ **Trash** | Middle-click to trash a silo — text and files are safely moved to `_trash`, never permanently deleted |
 | ↩️ **Undo everything** | `Ctrl+Z` covers text *and* silo operations (clear, trash, move) |
+
+## 🧓 Grandpa Edition — every feature, explained simply
+
+<details>
+<summary><b>🇬🇧 English — "Explain it like I'm your grandpa"</b></summary>
+
+> Sit down, pour some tea. Here's what this little program actually does, no computer talk.
+
+- **The magic knock (`Alt+X`)** — you press one key combo and the notepad appears right where your mouse is. Press `Esc` — it's gone. Like a cuckoo clock, but useful.
+- **Silos** — imagine a shelf with 100 labeled jars. Every jar holds one piece of text. You never press "save" — the moment you stop typing, it's already in the jar. Power goes out? The jar's still full.
+- **Snippets** — your favorite phrases on speed-dial. Press `F1`–`F10` and the whole text pastes itself wherever you are. Like rubber stamps, but for words.
+- **Projects (tabs)** — five separate shelves. One for work, one for the novel, one for the shopping lists. Each shelf has its own jars, stamps and attic.
+- **Archive** — the attic. One click and a jar goes up there, out of sight but never thrown away.
+- **Pin 📌** — nail a jar to the top of the shelf so it never wanders off.
+- **Tick ✅** — put a "done" sticker on a jar. Click again — sticker's off.
+- **Color tint** — jars you touched recently glow warmer, old ones fade cooler. You see at a glance what's fresh.
+- **Family jars (hierarchy)** — drop one jar onto another and it becomes its child: sits underneath, shifted right. Fold the parent to hide the kids. Drag the kid out — it grows up again.
+- **Trash, not fire** — middle-click a jar and it moves to a trash folder as a plain text file. Nothing in this program ever burns; you can always dig it back out.
+- **The writing desk (editor)** — write with `**bold**`, checkboxes you can click, bullet lists that continue themselves, `---` divider lines, and `Ctrl+E` turns a line into a dated title.
+- **Code blocks** — put \`\`\` around code and it becomes a proper terminal window: typewriter font, line numbers, a copy button, and a fold arrow to tuck it away.
+- **Folding ▾** — big text? Click the arrow next to a title and the whole section hides under it, like folding a map.
+- **The drawer (📁 Files)** — every jar has a real drawer for files. Throw ANY files in — pictures, videos, whatever. It's just a normal folder on your disk; open it in Explorer anytime, the program doesn't hold your stuff hostage. Rename the jar — the drawer follows.
+- **Drop zones** — drag a file onto the desk and four big buttons appear asking what to do: paste the text, paste a link, copy into the drawer, or leave a shortcut. Like a butler asking "where shall I put this, sir?"
+- **Folder templates** — one click builds your usual folder skeleton (IN, OUT, temp...) inside the drawer. For people who start every project the same way.
+- **Search 🔍** — type `red car` and it finds jars containing both "red" AND "car", in any order.
+- **Themes** — six coats of paint, all vintage Windows 95 style: dark gold, amber, pitch black. Or mix your own colors.
+- **Sounds** — optional clicks and a typewriter tick-tick-tick, with a volume knob.
+- **The clock** — date and time in the corner, with seconds, a "Morning/Night" word and even a tiny real analog clock with hands, if you fancy it.
+- **Scale** — one knob makes the WHOLE program bigger or smaller, 50–150%. For young eyes and old.
+- **Shortcuts** — every key combo can be re-taught in Settings. Two slots each, so `Alt+X` and `F15` can do the same thing.
+- **Two languages** — the whole interface speaks English or Russian; switch in Settings.
+- **Undo everything** — `Ctrl+Z` un-does not just typing but silo operations too: cleared a jar by accident? Un-clear it.
+- **Your stuff stays yours** — everything lives in one `data/` folder next to the program. Copy the folder to a USB stick — that's your backup, that's the whole install. No cloud, no accounts, nobody watching.
+
+</details>
+
+<details>
+<summary><b>🇷🇺 По-русски — «объясни как деду»</b></summary>
+
+> Садись, наливай чай. Рассказываю, что эта программка делает, без компьютерной зауми.
+
+- **Волшебный стук (`Alt+X`)** — нажал комбинацию, и блокнот выскочил прямо у мышки. Нажал `Esc` — исчез. Как кукушка из часов, только полезная.
+- **Сило (ячейки)** — полка со ста подписанными банками. В каждой банке — один текст. Кнопку «сохранить» жать не надо: перестал печатать — оно уже в банке. Свет вырубили? Банка целая.
+- **Снипеты** — любимые фразы на быстром наборе. Жмёшь `F1`–`F10` — и весь текст сам вставился, где бы ты ни был. Как печати-штампы, только для слов.
+- **Проекты (вкладки)** — пять отдельных полок. Одна для работы, одна для романа, одна для списков в магазин. У каждой полки свои банки, штампы и чердак.
+- **Архив** — чердак. Один клик — банка уехала наверх: с глаз долой, но не выброшена.
+- **Пин 📌** — прибил банку к верху полки, чтоб не уползала.
+- **Галка ✅** — наклейка «сделано» на банку. Кликнул ещё раз — снял.
+- **Подкраска** — банки, которые трогал недавно, светятся теплее, старые остывают. Сразу видно, где свежее.
+- **Семейные банки (иерархия)** — бросил банку НА другую — стала дочкой: сидит под ней, сдвинута вправо. Родителя можно сложить — дети спрячутся. Вытащил дочку — снова взрослая.
+- **Корзина, не костёр** — средняя кнопка мыши по банке — и она уехала в папку-корзину обычным текстовым файлом. Тут ничего не горит: всегда можно достать обратно.
+- **Письменный стол (редактор)** — пишешь с `**жирным**`, кликабельные чекбоксы, списки сами продолжаются, линии-разделители `---`, а `Ctrl+E` делает из строки заголовок с датой.
+- **Код-блоки** — обернул код в \`\`\` — и он стал как в терминале: машинописный шрифт, номера строк, кнопка «скопировать» и стрелка, чтоб свернуть.
+- **Сворачивание ▾** — текста много? Клик по стрелке у заголовка — вся секция спряталась под него, как карта сложилась.
+- **Ящик (📁 файлы)** — у каждой банки есть настоящий ящик для файлов. Кидай ЧТО угодно: картинки, видео, черновики. Это обычная папка на диске — открывай в проводнике когда хочешь, программа твоё добро в заложниках не держит. Переименовал банку — ящик переехал следом.
+- **Зоны броска** — тащишь файл на стол, и выскакивают четыре больших кнопки: вставить текстом, вставить ссылкой, положить в ящик или оставить ярлык. Как дворецкий: «куда изволите?»
+- **Шаблоны папок** — один клик — и в ящике построился твой привычный скелет папок (IN, OUT, temp...). Для тех, кто каждый проект начинает одинаково.
+- **Поиск 🔍** — набрал `красная машина` — найдёт банки, где есть И «красная», И «машина», в любом порядке.
+- **Темы** — шесть покрасок, все под старый Windows 95: тёмное золото, янтарь, чистый чёрный. Или намешай свои цвета.
+- **Звуки** — по желанию щелчки и печатная машинка тык-тык-тык, с ручкой громкости.
+- **Часы** — дата и время в углу: с секундами, словом «Утро/Ночь» и даже крохотными настоящими стрелочными часами, если захочешь.
+- **Масштаб** — одна ручка делает ВСЮ программу крупнее или мельче, 50–150%. И для молодых глаз, и для наших.
+- **Горячие клавиши** — любую комбинацию можно переучить в настройках. По два слота: пусть `Alt+X` и `F15` делают одно и то же.
+- **Два языка** — весь интерфейс говорит по-русски или по-английски; переключается в настройках.
+- **Отмена всего** — `Ctrl+Z` отменяет не только буквы, но и дела с банками: случайно очистил — верни как было.
+- **Твоё добро — твоё** — всё лежит в одной папке `data/` рядом с программой. Скопировал папку на флешку — вот тебе и бэкап, и вся установка. Без облаков, без аккаунтов, никто не подглядывает.
+
+</details>
 
 ## 📸 Screenshots
 
