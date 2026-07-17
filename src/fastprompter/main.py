@@ -243,10 +243,11 @@ class FastPrompter(
         self.lbl_date.setVisible(True)
         import datetime
         now = datetime.datetime.now()
-        # Narrow windows (Ctrl+Q quarter snap) degrade gracefully:
-        win_w = self.width()
-        show_secs = self.data.get("date_seconds", "True") == "True" and win_w >= 1000
-        show_word = self.data.get("date_daypart", "True") == "True" and win_w >= 1200
+        # The full clock (seconds + day word) must fit even at the Ctrl+Q
+        # quarter-FullHD snap — dense mode wins the pixels from buttons and
+        # paddings, never by silently dropping what the user enabled.
+        show_secs = self.data.get("date_seconds", "True") == "True"
+        show_word = self.data.get("date_daypart", "True") == "True"
         text_month = self.data.get("date_text_month", "False") == "True"
         m_fmt = "%d %b" if text_month else "%d.%m"
         if show_secs:
@@ -261,10 +262,11 @@ class FastPrompter(
 
         from PyQt6.QtGui import QFontMetrics
         fm = QFontMetrics(self.lbl_date.font())
-        needed_width = fm.horizontalAdvance(ref_str) + 8
+        pad = 2 if getattr(self, "_header_dense", False) else 8
+        needed_width = fm.horizontalAdvance(ref_str) + pad
         if self.lbl_date.minimumWidth() != needed_width:
             self.lbl_date.setMinimumWidth(needed_width)
-            self.lbl_date.setMaximumWidth(needed_width + 8)
+            self.lbl_date.setMaximumWidth(needed_width + pad)
             from PyQt6.QtCore import Qt
             self.lbl_date.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
@@ -276,9 +278,9 @@ class FastPrompter(
         ("btn_new", "NEW", "NEW"),
         ("btn_save", "Save", "Save"),
         ("btn_clear_fmt", "Clear Fmt", "CF"),
-        ("btn_add_line", "Line", "Line"),
-        ("btn_copy", "Copy", "Copy"),
-        ("btn_clear", "Clear", "Clear"),
+        ("btn_add_line", "Line", "─"),
+        ("btn_copy", "Copy", "⧉"),
+        ("btn_clear", "Clear", "✕"),
         ("btn_home", "Home", "⇤"),
         ("btn_end", "End", "⇥"),
     )
@@ -317,7 +319,7 @@ class FastPrompter(
                 btn.setText(short if dense else normal)
             _dense_font(btn)
             if dense:
-                btn.setFixedWidth(btn.fontMetrics().horizontalAdvance(btn.text()) + 8)
+                btn.setFixedWidth(btn.fontMetrics().horizontalAdvance(btn.text()) + 5)
             elif flipped:
                 btn.setMinimumWidth(0)
                 btn.setMaximumWidth(16777215)
@@ -327,7 +329,7 @@ class FastPrompter(
                 continue
             _dense_font(bt)
             if dense:
-                bt.setFixedWidth(bt.fontMetrics().horizontalAdvance(bt.text()) + 8)
+                bt.setFixedWidth(bt.fontMetrics().horizontalAdvance(bt.text()) + 5)
             elif flipped:
                 bt.setMinimumWidth(0)
                 bt.setMaximumWidth(16777215)
@@ -345,12 +347,14 @@ class FastPrompter(
         if flipped:
             # format squares squeeze 24 -> 20 in dense
             for name in ("btn_bold", "btn_italic", "btn_under", "btn_strike",
-                         "btn_header", "btn_settings_toggle", "btn_help"):
+                         "btn_header", "btn_settings_toggle", "btn_help",
+                         "btn_pin_top", "btn_line_nums",
+                         "btn_add_tab", "btn_del_tab", "btn_sidebar_toggle"):
                 btn = getattr(self, name, None)
                 if btn is None or sip.isdeleted(btn):
                     continue
                 if dense:
-                    btn.setFixedSize(20, 20)
+                    btn.setFixedSize(18, 18)
                 else:
                     self.apply_button_size(btn, 24, 24)
             # tabs scroll inside a bounded strip when space is tight
@@ -359,7 +363,7 @@ class FastPrompter(
                 if dense:
                     self.tab_bar.setStyleSheet("QTabBar::scroller { width: 14px; }")
                     self.tab_bar.setMinimumWidth(90)
-                    self.tab_bar.setMaximumWidth(150)
+                    self.tab_bar.setMaximumWidth(100)
                 else:
                     self.tab_bar.setStyleSheet("")
                     self.tab_bar.setMinimumWidth(0)
@@ -367,6 +371,10 @@ class FastPrompter(
             if hasattr(self, "lbl_date"):
                 self.lbl_date.setStyleSheet(
                     "padding: 0 1px;" if dense else "padding: 0 4px;")
+            if hasattr(self, "lbl_line_count"):
+                self.lbl_line_count.setStyleSheet(
+                    "padding: 0 1px; font-weight: bold;" if dense
+                    else "padding: 0 4px; font-weight: bold;")
         if flipped or getattr(self, "_last_density_width", None) != w:
             self._last_density_width = w
             self._update_date_label()

@@ -1206,6 +1206,33 @@ def test_file_container_import_export_delete(win):
     panel.close()
 
 
+def test_header_fits_quarter_fullhd_with_full_clock(win):
+    # Ctrl+Q quarter snap (960x540): seconds + day word + text month must
+    # ALL fit — dense mode packs buttons instead of degrading the clock
+    win.data["show_date_rect"] = "True"
+    win.data["date_seconds"] = "True"
+    win.data["date_daypart"] = "True"
+    win.data["date_text_month"] = "True"
+    win.data["analog_clock"] = "True"
+    win.resize(960, 540)
+    win._header_dense = None
+    win._apply_header_density()
+    win._update_date_label()
+    assert win._header_dense is True
+    # full clock string survived (seconds present, day word present)
+    import re as _re
+    assert _re.search(r"\d{2}:\d{2}:\d{2} · (Morning|Day|Evening|Night)",
+                      win.lbl_date.text()), win.lbl_date.text()
+    total = win.header_widget.sizeHint().width()
+    assert total <= 960, f"header wants {total}px at quarter-FullHD"
+    # restore defaults used by other tests
+    win.data["date_text_month"] = "False"
+    win.data["analog_clock"] = "False"
+    win._header_dense = None
+    win._apply_header_density()
+    win._update_date_label()
+
+
 def test_drop_overlay_zones_and_routing(win):
     from PyQt6.QtCore import QPoint
 
@@ -1280,11 +1307,12 @@ def test_hide_on_clickout_toggle_and_header_mirrors(win):
 
 
 def test_theme_switch_keeps_button_labels(win):
+    win.resize(1400, 700)  # non-dense: full labels expected
     win.data["theme"] = "Default"
     win.apply_theme()
     win._header_dense = None
     win._apply_header_density()
-    assert win.btn_copy.text() in ("Copy", "Copy")
+    assert win.btn_copy.text() == "Copy"
     win.data["theme"] = "OLED" if "OLED" in __import__("fastprompter.theme.themes", fromlist=["THEMES"]).THEMES else "Default"
     win.apply_theme()
     win._header_dense = None
