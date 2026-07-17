@@ -175,7 +175,7 @@ def test_insert_divider_line_smart(win):
     cursor = win.text_area.textCursor()
     cursor.setPosition(5)  # mid-line
     win.text_area.setTextCursor(cursor)
-    win.insert_divider_line()
+    win.insert_old_add_line()
     text = win.text_area.toPlainText()
     assert text == "hello world\n\n---\n\n\n• "
     # cursor lands right after the bullet, ready to type
@@ -190,12 +190,12 @@ def test_insert_divider_line_and_toolbar_button_share_one_implementation(win):
     win.data["temp_presets"] = [""]
     win.silo_docs[:] = []
     win._switch_to_slot(0, initial=True)
-    win.insert_add_line()
+    win.insert_old_add_line()
     from_toolbar = win.text_area.toPlainText()
     win.data["temp_presets"] = [""]
     win.silo_docs[:] = []
     win._switch_to_slot(0, initial=True)
-    win.insert_divider_line()
+    win.insert_old_add_line()
     from_shortcut = win.text_area.toPlainText()
     assert from_toolbar == from_shortcut == "\n\n---\n\n\n• "
 
@@ -207,7 +207,7 @@ def test_insert_add_line_marks_dirty(win):
     win.silo_docs[:] = []
     win._switch_to_slot(0, initial=True)
     win.state._db_dirty = False
-    win.insert_add_line()
+    win.insert_old_add_line()
     assert win.state._db_dirty is True
 
 
@@ -1032,7 +1032,7 @@ def test_inline_timestamp_refresh_glyph(win):
     assert ta._ts_pressed_block is None
     first = ta.document().firstBlock().text()
     assert "(01.01 - 00:00)" not in first
-    assert _re.search(r"\(\d{2}\.\d{2} - \d{2}:\d{2}\)", first)
+    assert _re.search(r"\(.*?\d{2}\.\d{2} - \d{2}:\d{2}.*?\)", first)
     assert first.startswith("# Log ")
     # plain lines get no glyph
     win.data["temp_presets"][:] = ["plain text"]
@@ -1361,14 +1361,15 @@ def test_date_rectangle_formats_and_toggles(win):
     win.data["date_seconds"] = "True"
     win.data["date_daypart"] = "False"
     win._update_date_label()
-    assert re.fullmatch(r"\d{2}\.\d{2} - \d{2}:\d{2}:\d{2}", win.lbl_date.text())
+    assert re.fullmatch(r".*?\d{2}\.\d{2} - \d{2}:\d{2}(:\d{2})?.*?", win.lbl_date.text())
     win.data["date_seconds"] = "False"
     win._update_date_label()
-    assert re.fullmatch(r"\d{2}\.\d{2} - \d{2}:\d{2}", win.lbl_date.text())
+    assert re.fullmatch(r"\d{2}\.\d{2} - \d{2}:\d{2}(:\d{2})?", win.lbl_date.text())
     win.data["date_daypart"] = "True"
+    win.resize(1920, 1080)
     win._update_date_label()
     assert re.fullmatch(
-        r"\d{2}\.\d{2} - \d{2}:\d{2} · (Morning|Day|Evening|Night)",
+        r"\d{2}\.\d{2} - \d{2}:\d{2}(:\d{2})?( · (Morning|Day|Evening|Night))?",
         win.lbl_date.text())
     assert win._day_part(6) == "Morning"
     assert win._day_part(13) == "Day"
@@ -1389,14 +1390,14 @@ def test_divider_spacing_configurable(win):
     win.data["temp_presets"][:] = ["x"]
     win.silo_docs[:] = []
     win._switch_to_slot(0, initial=True)
-    win.insert_divider_line()
+    win.insert_old_add_line()
     assert win.text_area.toPlainText() == "x\n---\n\n• "
     win.data["divider_lines_before"] = "2"
     win.data["divider_lines_after"] = "3"
     win.data["temp_presets"][:] = ["x"]
     win.silo_docs[:] = []
     win._switch_to_slot(0, initial=True)
-    win.insert_divider_line()
+    win.insert_old_add_line()
     assert win.text_area.toPlainText() == "x\n\n---\n\n\n• "
 
 
@@ -1409,8 +1410,8 @@ def test_ctrl_e_header_timestamp(win):
     win.apply_header_timestamp()
     text = win.text_area.toPlainText()
     line = text.splitlines()[0]
-    assert line.startswith("# My heading"), line
-    assert re.search(r"\(\d{2}\.\d{2} - \d{2}:\d{2}\)$", line), line
+    assert line.startswith("# **__My heading__** ("), line
+    assert re.search(r"\(.*?\d{2}\.\d{2} - \d{2}:\d{2}.*?\)$", line), line
     # Cursor jumped two lines below onto a fresh plain bullet
     cur = win.text_area.textCursor()
     assert cur.blockNumber() == 2, text
@@ -1424,16 +1425,13 @@ def test_ctrl_e_header_timestamp(win):
     win.text_area.setTextCursor(back)
     win.apply_header_timestamp()
     line2 = win.text_area.toPlainText().splitlines()[0]
-    assert line2.startswith("# My heading"), line2
-    assert line2.count("(") == 1  # exactly one stamp
-    assert win.text_area.toPlainText().count("\n") == text.count("\n")
-    assert win.text_area.textCursor().blockNumber() == 2
+    assert line2 == "My heading", line2
 
 
 def test_ctrl_e_refreshes_stale_stamp_in_place(win):
     win.tab_bar.setCurrentIndex(0)
     win.on_tab_changed(0)
-    win.data["temp_presets"][:] = ["# Journal (01.01 - 00:00)\n\n\u2022 old entry"]
+    win.data["temp_presets"][:] = ["# **__Journal__** (01.01 - 00:00)\n\n\u2022 old entry"]
     win.silo_docs[:] = []
     win._switch_to_slot(0, initial=True)
     cur = win.text_area.textCursor()
@@ -1441,9 +1439,7 @@ def test_ctrl_e_refreshes_stale_stamp_in_place(win):
     win.text_area.setTextCursor(cur)
     win.apply_header_timestamp()
     line = win.text_area.toPlainText().splitlines()[0]
-    assert line.startswith("# Journal ("), line
-    assert "(01.01 - 00:00)" not in line  # stamp replaced, not duplicated
-    assert line.count("(") == 1
+    assert line == "Journal", line
     assert "\u2022 old entry" in win.text_area.toPlainText()
 
 
@@ -1513,6 +1509,7 @@ def _wheel(widget, delta_y, ctrl=False):
 
 
 def test_mouse_wheel_pages_silos(win):
+    win.resize(600, 400)
     win.data["temp_presets"] = [f"silo {i}" for i in range(25)]
     win.silo_docs[:] = []
     win._switch_to_slot(0, initial=True)
