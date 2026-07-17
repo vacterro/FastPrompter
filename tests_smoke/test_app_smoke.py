@@ -1325,6 +1325,60 @@ def test_theme_switch_keeps_button_labels(win):
     win.apply_theme()
 
 
+def test_silo_hierarchy_nest_collapse_promote(win):
+    from unittest.mock import patch
+
+    from PyQt6.QtWidgets import QMessageBox as _QMB
+
+    win.tab_bar.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    win.data["temp_presets"][:] = ["parent", "childA", "loner", "childB"]
+    win.data["pinned_silos"][:] = []
+    win.data["silo_ticked"][:] = []
+    win.data["silo_children"].clear()
+    win.data["silo_collapsed"][:] = []
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+
+    # nest two children under parent (no files -> no dialog)
+    win.make_silo_child(1, 0)
+    win.make_silo_child(3, 0)
+    assert win.data["silo_children"] == {0: [1, 3]}
+    # alias holds
+    cat = win.get_current_category()
+    assert win.data["silo_children_all"][cat] is win.data["silo_children"]
+
+    # no grandchildren: nesting onto a child is refused
+    win.make_silo_child(2, 1)
+    assert win.silo_parent_of(2) is None
+
+    # display order: parent, kids, then loner
+    win.refresh_temp_presets()
+    shown = [b.global_idx for b in win.silo_buttons if not b.isHidden()]
+    assert shown[:4] == [0, 1, 3, 2]
+    assert win.silo_buttons[0].full_name.startswith("▾")
+    assert win.silo_buttons[1].full_name.startswith("↳")
+
+    # collapse hides children
+    win.toggle_silo_collapse(0)
+    shown = [b.global_idx for b in win.silo_buttons if not b.isHidden()]
+    assert shown[:2] == [0, 2] and 1 not in shown and 3 not in shown
+    win.toggle_silo_collapse(0)
+
+    # deleting the parent promotes the children
+    with patch.object(_QMB, "question", return_value=_QMB.StandardButton.Yes):
+        win.del_silo(0)
+    assert win.data["silo_children"] == {}
+    assert win.data["temp_presets"] == ["childA", "loner", "childB"]
+
+    # unnest by hand
+    win.make_silo_child(1, 0)
+    assert win.silo_parent_of(1) == 0
+    win.unnest_silo(1)
+    assert win.silo_parent_of(1) is None
+    win.data["silo_children"].clear()
+
+
 def test_silo_tick_toggle_persists_and_remaps(win):
     win.tab_bar.setCurrentIndex(0)
     win.on_tab_changed(0)

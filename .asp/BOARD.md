@@ -23,7 +23,7 @@
 | T-120 | TODO | - | - | Folder Template editor (ref NEW_PROJ.CMD) — create templated folder trees in container |
 | T-121 | TODO | - | - | Settings UI compact redesign (screen 044432) |
 | T-122 | PART | claude-fable | - | Search: hidden-bar ghost filter fixed; deep pass -> next wave |
-| T-123 | TODO | - | - | Silo hierarchy: 1-level children, indent, collapse, files merge on combine (BIG) |
+| T-123 | DONE | claude-fable | - | Silo hierarchy: drop=nest, Shift+drop=swap, collapse, unnest, files merge (verified: smoke) |
 | T-124 | DONE | claude-fable | - | Help + README refresh; dead code sweep |
 | T-125 | DONE | claude-fable | all-bugs | Ship v0.5.3 |
 

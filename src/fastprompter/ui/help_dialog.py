@@ -67,7 +67,10 @@ def build_help_html(data) -> str:
         ("In the Files panel", "Del delete &middot; F2 rename &middot; Enter open &middot; "
                                "Ctrl+Shift+C copy path &middot; Ctrl+N new folder &middot; Ctrl+V clipboard&rarr;file"),
         ("Right-click a silo", "Transfer to project, replace from, move to bottom&hellip;"),
-        ("Drag a silo between others / onto one", "Reorder / swap"),
+        ("Drop a silo ONTO another", "Nest it as a child (1 level; its files can merge into the parent)"),
+        ("Shift+drop a silo onto another", "Swap their places"),
+        ("Drag a silo between others", "Reorder — dragging a child out promotes it back to top level"),
+        ("Right-click a parent silo", "Collapse / expand its children"),
         ("Left / right half-click a snippet", "Open with the cursor at start / end"),
         ("Click the line-number gutter", "Cycle margin marks: &#128308; &rarr; &#128998; &rarr; &#128312; &rarr; off"),
     ])

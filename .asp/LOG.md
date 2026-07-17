@@ -22,3 +22,5 @@
 - 17.07.26 09:20 [VERIFY] RUN: sweep -> 72+461 PASS, ruff 0, EXE 302 live; +4 теста (overlay зоны/роутинг, trash .md, Alt+A, тема-лейблы)
 - 17.07.26 09:21 [VERIFY] RUN: editor print -> logger.debug x4; мусора в корне нет, дерево чистое
 - 17.07.26 09:50 [T-105b] RUN: часы больше не деградируют; dense ужат (иконки ⧉✕─, табы 100, квадраты 18) -> 73 PASS, шапка 960 ok
+- 17.07.26 10:40 [T-123] RUN: иерархия сило (1 уровень: drop=в дети, Shift+drop=swap, ▾/▸ collapse, unnest на границу, файлы мержатся с вопросом, remap/undo/persist) -> 74+461 PASS
+- 17.07.26 10:41 [T-112b] RUN: Silo Ticks тумблер в Settings; меню корзины ужато (Clear + Open Trash, средняя кнопка = в корзину)

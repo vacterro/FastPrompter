@@ -532,8 +532,9 @@ class DraggableSiloButton(QWidget):
             self._btn_pin.show()
             self._btn_archive.show()
             self._btn_files.show()
-            self._btn_tick.setText("☑" if self._is_ticked() else "✅")
-            self._btn_tick.show()
+            if self.main_win.data.get("silo_ticks_enabled", "True") == "True":
+                self._btn_tick.setText("☑" if self._is_ticked() else "✅")
+                self._btn_tick.show()
             try:
                 from fastprompter.ui.file_container import folder_summary
                 presets = self.main_win.data.get("temp_presets", [])
@@ -558,11 +559,11 @@ class DraggableSiloButton(QWidget):
         from PyQt6.QtCore import QSize
         return QSize(10, self._lbl_text.fontMetrics().height() + 10)
 
-    def update_data(self, text_label, global_idx, bg_color, font_family="Verdana", scale=1.0, line_count_str="", is_pushed=False, title_bold=False):
+    def update_data(self, text_label, global_idx, bg_color, font_family="Verdana", scale=1.0, line_count_str="", is_pushed=False, title_bold=False, is_child=False):
         theme_name = self.main_win.data.get("theme", "Default")
         ticked_list = self.main_win.data.get("silo_ticked", [])
         is_ticked = isinstance(ticked_list, list) and global_idx in ticked_list
-        current_state = (text_label, global_idx, bg_color, font_family, scale, theme_name, line_count_str, is_pushed, title_bold, is_ticked)
+        current_state = (text_label, global_idx, bg_color, font_family, scale, theme_name, line_count_str, is_pushed, title_bold, is_ticked, is_child)
         if getattr(self, '_last_state', None) == current_state:
             self.show()
             return
@@ -571,8 +572,11 @@ class DraggableSiloButton(QWidget):
         self.full_name = text_label
         self._line_count_str = line_count_str
         self.global_idx = global_idx
+        # children sit shifted right under their parent
+        self._silo_layout.setContentsMargins(22 if is_child else 4, 2, 4, 2)
         self._btn_tick.setText("✅")
-        self._btn_tick.setVisible(is_ticked and not self.is_archive)
+        ticks_on = self.main_win.data.get("silo_ticks_enabled", "True") == "True"
+        self._btn_tick.setVisible(is_ticked and ticks_on and not self.is_archive)
 
         # Apply font scaling safely
         from PyQt6.QtGui import QFont
@@ -777,9 +781,19 @@ class SiloDropWidget(QWidget):
         mode, target = self._drop_target_at(pos)
         btns = self._visible_buttons()
 
+        shift_held = bool(QApplication.keyboardModifiers()
+                          & Qt.KeyboardModifier.ShiftModifier)
         if mode == "swap":
             target_global_idx = target.global_idx
             if source_is_archive == self.is_archive:
+                # Plain drop ON a silo nests it as a child;
+                # Shift+drop keeps the old swap behavior
+                if (not self.is_archive and not shift_held
+                        and source_idx != target_global_idx
+                        and hasattr(self.main_win, "make_silo_child")):
+                    self.main_win.make_silo_child(source_idx, target_global_idx)
+                    e.acceptProposedAction()
+                    return
                 if not self.is_archive and hasattr(self.main_win, "handle_pinned_drop"):
                     if self.main_win.handle_pinned_drop(source_idx, swap_idx=target_global_idx):
                         e.acceptProposedAction()
@@ -800,6 +814,9 @@ class SiloDropWidget(QWidget):
                     target_global_idx = max(0, len(presets) - 1)
                 self.main_win.swap_cross_temp_slots(source_idx, target_global_idx, source_is_archive, self.is_archive)
             else:
+                # dragging a child out to a boundary promotes it first
+                if not self.is_archive and hasattr(self.main_win, "unnest_silo"):
+                    self.main_win.unnest_silo(source_idx)
                 if target < len(btns):
                     boundary_idx = btns[target].global_idx
                     if not self.is_archive and hasattr(self.main_win, "handle_pinned_drop"):

@@ -207,6 +207,28 @@ class FastPrompter(
             tall[first_cat] = list(self.data["silo_ticked"])
         self.data["silo_ticked_all"] = tall
         self.data["silo_ticked"] = tall.setdefault(first_cat, [])
+        # Silo hierarchy: {parent: [children]} per category; JSON round-trips
+        # dict keys as strings — normalize everything back to int.
+        call = self.data.get("silo_children_all")
+        if not isinstance(call, dict):
+            call = {}
+        if not call and isinstance(self.data.get("silo_children"), dict) and self.data["silo_children"]:
+            call[first_cat] = self.data["silo_children"]
+        norm_call = {}
+        for c, cmap in call.items():
+            try:
+                norm_call[c] = {int(k): [int(x) for x in v] for k, v in cmap.items()}
+            except Exception:
+                norm_call[c] = {}
+        self.data["silo_children_all"] = norm_call
+        self.data["silo_children"] = norm_call.setdefault(first_cat, {})
+        coll_all = self.data.get("silo_collapsed_all")
+        if not isinstance(coll_all, dict):
+            coll_all = {}
+        if not coll_all and isinstance(self.data.get("silo_collapsed"), list) and self.data["silo_collapsed"]:
+            coll_all[first_cat] = [int(x) for x in self.data["silo_collapsed"]]
+        self.data["silo_collapsed_all"] = coll_all
+        self.data["silo_collapsed"] = coll_all.setdefault(first_cat, [])
 
         self.init_ui()
         self.init_tray()
@@ -1048,9 +1070,19 @@ class FastPrompter(
         )
         self.cb_focus = create_footer_cb(
             "Hide on Click-Out",
-            "Hide the window when you click outside of it",
+            "Hide the window when you click outside of it\nGlobal toggle: Alt+A",
             self.data.get("close_on_focus_loss", "True") == "True",
             self.mark_dirty,
+        )
+        self.cb_silo_ticks = create_footer_cb(
+            "Silo Ticks",
+            "Show the ✅ done-mark button when hovering a silo",
+            self.data.get("silo_ticks_enabled", "True") == "True",
+            lambda checked: (
+                self.data.update({"silo_ticks_enabled": "True" if checked else "False"})
+                or self.mark_dirty()
+                or self.refresh_temp_presets()
+            ),
         )
         self.cb_ctrl_c = create_footer_cb(
             "Ctrl+C Hides",
@@ -1327,7 +1359,7 @@ class FastPrompter(
         ]), 1)
         groups_row.addWidget(_vline())
         groups_row.addLayout(_settings_group("Data & Appearance", [
-            self.cb_silo_home, self.cb_silo_pinned_gap, self.cb_bold_titles,
+            self.cb_silo_home, self.cb_silo_pinned_gap, self.cb_silo_ticks, self.cb_bold_titles,
             self.cb_hide_shortkeys, self.cb_portable_backup, self.cb_sound,
             self.cb_typewriter, vol_row, div_row, hdr_row, files_row
         ]), 1)
@@ -1904,6 +1936,15 @@ class FastPrompter(
         ticked = self.data.get("silo_ticked", [])
         if isinstance(ticked, list):
             ticked[:] = [remap(t) for t in ticked]
+        cmap = self.data.get("silo_children", {})
+        if isinstance(cmap, dict):
+            new_map = {remap(int(p)): [remap(int(k)) for k in kids]
+                       for p, kids in cmap.items()}
+            cmap.clear()
+            cmap.update(new_map)
+        collapsed = self.data.get("silo_collapsed", [])
+        if isinstance(collapsed, list):
+            collapsed[:] = [remap(c) for c in collapsed]
 
     def handle_pinned_drop(self, source_idx, boundary_idx=None, swap_idx=None):
         """Handle dragging and dropping silos within or across the pinned section."""
@@ -2230,6 +2271,8 @@ class FastPrompter(
             "editing_snippet": getattr(self, "editing_snippet", None),
             "pinned_silos": list(pinned) if isinstance(pinned, list) else [],
             "silo_ticked": list(self.data.get("silo_ticked", [])),
+            "silo_children": copy.deepcopy(self.data.get("silo_children", {})),
+            "silo_collapsed": list(self.data.get("silo_collapsed", [])),
             "silo_last_edited": dict(getattr(self, "silo_last_edited", {})),
         }
 
@@ -2340,6 +2383,13 @@ class FastPrompter(
             tlist = self.data.setdefault("silo_ticked_all", {}).setdefault(snap_cat, [])
             tlist[:] = list(state.get("silo_ticked", []))
             self.data["silo_ticked"] = tlist
+            cmap = self.data.setdefault("silo_children_all", {}).setdefault(snap_cat, {})
+            cmap.clear()
+            cmap.update(copy.deepcopy(state.get("silo_children", {})))
+            self.data["silo_children"] = cmap
+            clist = self.data.setdefault("silo_collapsed_all", {}).setdefault(snap_cat, [])
+            clist[:] = list(state.get("silo_collapsed", []))
+            self.data["silo_collapsed"] = clist
             edict = self.data.setdefault("silo_last_edited_all", {}).setdefault(snap_cat, {})
             edict.clear()
             edict.update(state.get("silo_last_edited", {}))
@@ -2786,6 +2836,12 @@ class FastPrompter(
                 cat, []
             )
             self.data["silo_ticked"] = self.data.setdefault("silo_ticked_all", {}).setdefault(
+                cat, []
+            )
+            self.data["silo_children"] = self.data.setdefault("silo_children_all", {}).setdefault(
+                cat, {}
+            )
+            self.data["silo_collapsed"] = self.data.setdefault("silo_collapsed_all", {}).setdefault(
                 cat, []
             )
             self.silo_last_edited = self.data.setdefault("silo_last_edited_all", {}).setdefault(
@@ -3288,9 +3344,28 @@ class FastPrompter(
                 pinned_list = ast.literal_eval(pinned_list)
             except Exception:
                 pinned_list = []
-        # Compute display order: pinned first (preserving pin-list order), then unpinned (by natural index)
-        unpinned = [j for j in range(total) if j not in pinned_list]
-        display_order = [p for p in pinned_list if p < total] + unpinned
+        # Compute display order: pinned first (pin order), then unpinned by
+        # index; children follow their parent (hidden while collapsed)
+        children_map = self._children_map()
+        all_kids = {k for kids in children_map.values() for k in kids}
+        collapsed = set(self.data.get("silo_collapsed", []))
+        unpinned = [j for j in range(total) if j not in pinned_list and j not in all_kids]
+        top_order = [p for p in pinned_list if p < total and p not in all_kids] + unpinned
+        display_order = []
+        child_of = {}
+        for t in top_order:
+            display_order.append(t)
+            if t not in collapsed:
+                for k in children_map.get(t, []):
+                    if 0 <= k < total:
+                        display_order.append(k)
+                        child_of[k] = t
+        # pagination follows what's actually displayed (collapse shrinks it)
+        max_page = max(0, math.ceil(len(display_order) / max(1, self._visible_silos)) - 1)
+        self.silo_page = min(self.silo_page, max_page)
+        self.btn_page_up.setEnabled(self.silo_page > 0)
+        self.btn_page_down.setEnabled(self.silo_page < max_page)
+        start_idx = self.silo_page * self._visible_silos
         if not hasattr(self, "silo_gap_widget"):
             from PyQt6.QtWidgets import QFrame
             self.silo_gap_widget = QFrame(self)
@@ -3306,32 +3381,41 @@ class FastPrompter(
 
         for i, btn in enumerate(self.silo_buttons):
             disp_pos = start_idx + i
-            if disp_pos >= total or i >= self._visible_silos:
+            if disp_pos >= len(display_order) or i >= self._visible_silos:
                 btn.hide()
                 continue
             slot_idx = display_order[disp_pos]
             raw = self.data["temp_presets"][slot_idx]
             is_pinned = slot_idx in pinned_list
-            
-            if not is_pinned and first_unpinned_ui_index == -1 and pinned_list:
+            is_child = slot_idx in child_of
+            kids = children_map.get(slot_idx, [])
+
+            if not is_pinned and not is_child and first_unpinned_ui_index == -1 and pinned_list:
                 first_unpinned_ui_index = i
 
             text = (raw[:100] if len(raw) > 100 else raw).replace("\n", " ").strip()
-            
-            if is_pinned:
+
+            if is_child:
+                display_idx = None
+            elif is_pinned:
                 display_idx = pinned_list.index(slot_idx) + 1
             else:
                 display_idx = unpinned.index(slot_idx) + 1
-                
+
             line_count = raw.count("\n") + 1 if raw.strip() else 0
             line_str = str(line_count) if line_count > 0 else ""
-            
+
             from fastprompter.ui.file_container import silo_file_count
             fcount = silo_file_count(self._files_root(), self.get_current_category(), raw)
             if fcount > 0:
                 line_str = f"📁{fcount} " + line_str
             pin_str = "📌 " if is_pinned else ""
-            label = f"{pin_str}{display_idx}: {text}" if text else f"{pin_str}{display_idx}"
+            if kids:
+                pin_str = (f"▸[{len(kids)}] " if slot_idx in collapsed else "▾ ") + pin_str
+            if is_child:
+                label = f"↳ {text}" if text else "↳"
+            else:
+                label = f"{pin_str}{display_idx}: {text}" if text else f"{pin_str}{display_idx}"
             is_active = (
                 (not getattr(self, "active_is_archive", False))
                 and (slot_idx == self.active_temp_slot)
@@ -3344,7 +3428,7 @@ class FastPrompter(
                 self.data.get("bold_hash_titles", "True") == "True"
                 and raw.lstrip().startswith("#")
             )
-            btn.update_data(label, slot_idx, bg_color, font_family, scale, line_count_str=line_str, is_pushed=is_active, title_bold=title_bold)
+            btn.update_data(label, slot_idx, bg_color, font_family, scale, line_count_str=line_str, is_pushed=is_active, title_bold=title_bold, is_child=is_child)
 
         if show_gap and first_unpinned_ui_index != -1:
             # layout contains the buttons, so insertWidget at first_unpinned_ui_index puts it before that button
@@ -3404,6 +3488,15 @@ class FastPrompter(
             else:
                 menu.addAction("📌 Pin to Top", lambda i=idx: self._toggle_pin_silo(i))
             menu.addAction("📥 Archive", lambda i=idx: self.archive_single_silo(i))
+            kids = self._children_map().get(idx, [])
+            if kids:
+                collapsed_now = idx in self.data.get("silo_collapsed", [])
+                menu.addAction(
+                    "▾ Expand Children" if collapsed_now else f"▸ Collapse Children ({len(kids)})",
+                    lambda i=idx: self.toggle_silo_collapse(i))
+            if self.silo_parent_of(idx) is not None:
+                menu.addAction("⬆ Un-nest from Parent",
+                               lambda i=idx: (self.unnest_silo(i), self.refresh_temp_presets()))
         menu.addAction("📁 Files…", lambda i=idx, a=is_archive: self.open_file_container(i, a))
 
         # -- save ---------------------------------------------------------------
@@ -3412,13 +3505,10 @@ class FastPrompter(
             menu.addAction("💾 Save text as Snippet", self.save_snippet)
             menu.addAction("💾 Save as Snippet #…", self.save_snippet_as_number)
 
-        # -- destructive (grouped at the bottom of the section) ---------------
+        # -- destructive (middle-click already trashes a silo directly) -------
         if has_content:
             menu.addSeparator()
-            menu.addAction("🧹 Clear (files kept in trash)",
-                           lambda: self.clear_temp(idx, is_archive))
-            menu.addAction("🗑 Move to Trash",
-                           lambda i=idx, a=is_archive: self.trash_silo(i, a))
+            menu.addAction("🧹 Clear", lambda: self.clear_temp(idx, is_archive))
             menu.addAction("🗂 Open Trash Folder", self.open_trash_folder)
 
         menu.addSeparator()
@@ -3508,6 +3598,107 @@ class FastPrompter(
         self.refresh_snippets_panel()
         self.refresh_temp_presets()
         self.play_sound("snippet")
+
+    def _children_map(self):
+        cmap = self.data.get("silo_children")
+        return cmap if isinstance(cmap, dict) else {}
+
+    def silo_parent_of(self, idx):
+        for p, kids in self._children_map().items():
+            if idx in kids:
+                return p
+        return None
+
+    def make_silo_child(self, child_idx, parent_idx):
+        """Nest child under parent (1 level). The child's own children are
+        promoted; its files merge into the parent's container on confirm."""
+        if child_idx == parent_idx:
+            return
+        cmap = self.data.setdefault("silo_children", {})
+        if self.silo_parent_of(parent_idx) is not None:
+            return  # target is itself a child — no grandchildren
+        if child_idx in cmap.get(parent_idx, []):
+            return
+        self.add_data_undo_state("Nest silo")
+        cmap.pop(child_idx, None)  # flatten: promoted grandchildren
+        for kids in cmap.values():
+            if child_idx in kids:
+                kids.remove(child_idx)
+        cmap.setdefault(parent_idx, []).append(child_idx)
+        pinned = self.data.get("pinned_silos", [])
+        if isinstance(pinned, list) and child_idx in pinned:
+            pinned.remove(child_idx)  # children live under their parent, not in the pin bar
+        self._merge_child_files(child_idx, parent_idx)
+        self.mark_dirty()
+        self.refresh_temp_presets()
+
+    def unnest_silo(self, idx):
+        """Promote a child back to top level (dragging it out does this)."""
+        changed = False
+        for kids in self._children_map().values():
+            if idx in kids:
+                kids.remove(idx)
+                changed = True
+        if changed:
+            self.mark_dirty()
+        return changed
+
+    def toggle_silo_collapse(self, idx):
+        collapsed = self.data.setdefault("silo_collapsed", [])
+        if idx in collapsed:
+            collapsed.remove(idx)
+        else:
+            collapsed.append(idx)
+        self.mark_dirty()
+        self.refresh_temp_presets()
+
+    def _merge_child_files(self, child_idx, parent_idx):
+        """A nested silo's files can merge into the parent's folder —
+        asked once, moved with collision-safe names, never overwritten."""
+        import shutil
+
+        from fastprompter.ui.file_container import _unique_dest, silo_files_dir
+        presets = self.data.get("temp_presets", [])
+        if not (0 <= child_idx < len(presets) and 0 <= parent_idx < len(presets)):
+            return
+        cat = self.get_current_category()
+        src = silo_files_dir(self._files_root(), cat, presets[child_idx])
+        dst = silo_files_dir(self._files_root(), cat, presets[parent_idx])
+        try:
+            names = os.listdir(src)
+        except OSError:
+            return
+        if not names or os.path.abspath(src) == os.path.abspath(dst):
+            return
+        box = QMessageBox(self)
+        box.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
+        box.setWindowTitle("Merge files")
+        box.setText(
+            f"The nested silo owns {len(names)} file(s).\n"
+            "Merge them into the parent silo's Files?\n"
+            "(collisions get ' (2)' names — nothing is overwritten)")
+        box.setStandardButtons(
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        box.setDefaultButton(QMessageBox.StandardButton.Yes)
+        prev = getattr(self, "ignore_focus_loss", False)
+        self.ignore_focus_loss = True
+        try:
+            ans = box.exec()
+        finally:
+            self.ignore_focus_loss = prev
+        if ans != QMessageBox.StandardButton.Yes:
+            return
+        os.makedirs(dst, exist_ok=True)
+        for n in names:
+            try:
+                shutil.move(os.path.join(src, n), _unique_dest(dst, n))
+            except OSError as e:
+                from fastprompter.core.logging import logger
+                logger.warning(f"Child file merge failed for {n}: {e}")
+        try:
+            os.rmdir(src)
+        except OSError:
+            pass
 
     def _toggle_tick_silo(self, idx):
         """Toggle the ✅ done-mark on a silo (persists per project)."""

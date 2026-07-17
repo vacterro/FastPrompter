@@ -554,6 +554,15 @@ class SnippetOpsMixin:
                 ticked = self.data.get("silo_ticked", [])
                 if isinstance(ticked, list) and idx in ticked:
                     ticked.remove(idx)
+                cmap = self.data.get("silo_children", {})
+                if isinstance(cmap, dict):
+                    cmap.pop(idx, None)  # deleting a parent promotes its children
+                    for kids in cmap.values():
+                        if idx in kids:
+                            kids.remove(idx)
+                collapsed = self.data.get("silo_collapsed", [])
+                if isinstance(collapsed, list) and idx in collapsed:
+                    collapsed.remove(idx)
                 if hasattr(self, "_remap_silo_indices"):
                     self._remap_silo_indices(lambda i: i - 1 if i > idx else i)
 
