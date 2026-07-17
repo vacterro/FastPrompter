@@ -458,14 +458,15 @@ class DraggableSiloButton(QWidget):
         self._btn_tick.setStyleSheet("background: transparent; border: none; padding: 0; font-size: 11px;")
         self._btn_tick.clicked.connect(self._on_tick_clicked)
 
-        # tick sits leftmost — before the order number in the title
+        # tick sits leftmost — before the order number in the title;
+        # files button rightmost: with files it doubles as the 📁N counter
         self._silo_layout.addWidget(self._btn_tick)
         self._silo_layout.addWidget(self._lbl_text)
         self._silo_layout.addStretch()
-        self._silo_layout.addWidget(self._btn_files)
         self._silo_layout.addWidget(self._btn_pin)
         self._silo_layout.addWidget(self._btn_archive)
         self._silo_layout.addWidget(self._lbl_count)
+        self._silo_layout.addWidget(self._btn_files)
 
         # Start with buttons hidden
         self._btn_pin.hide()
@@ -520,7 +521,8 @@ class DraggableSiloButton(QWidget):
             self._hover_timer.stop()
         self._btn_pin.hide()
         self._btn_archive.hide()
-        self._btn_files.hide()
+        # with files the 📁N doubles as the counter — it never hides
+        self._btn_files.setVisible(getattr(self, "_fcount", 0) > 0 and not self.is_archive)
         self._btn_tick.setVisible(self._is_ticked())
         super().leaveEvent(event)
 
@@ -533,7 +535,7 @@ class DraggableSiloButton(QWidget):
         if self._hover_showing and not self.is_archive and self.global_idx >= 0:
             self._btn_pin.show()
             self._btn_archive.show()
-            self._btn_files.show()
+            self._btn_files.show()  # empty silos get the plain 📁 on hover
             if self.main_win.data.get("silo_ticks_enabled", "True") == "True":
                 self._btn_tick.setText("☑" if self._is_ticked() else "✅")
                 self._btn_tick.show()
@@ -561,11 +563,11 @@ class DraggableSiloButton(QWidget):
         from PyQt6.QtCore import QSize
         return QSize(10, self._lbl_text.fontMetrics().height() + 10)
 
-    def update_data(self, text_label, global_idx, bg_color, font_family="Verdana", scale=1.0, line_count_str="", is_pushed=False, title_bold=False, is_child=False):
+    def update_data(self, text_label, global_idx, bg_color, font_family="Verdana", scale=1.0, line_count_str="", is_pushed=False, title_bold=False, is_child=False, fcount=0):
         theme_name = self.main_win.data.get("theme", "Default")
         ticked_list = self.main_win.data.get("silo_ticked", [])
         is_ticked = isinstance(ticked_list, list) and global_idx in ticked_list
-        current_state = (text_label, global_idx, bg_color, font_family, scale, theme_name, line_count_str, is_pushed, title_bold, is_ticked, is_child)
+        current_state = (text_label, global_idx, bg_color, font_family, scale, theme_name, line_count_str, is_pushed, title_bold, is_ticked, is_child, fcount)
         if getattr(self, '_last_state', None) == current_state:
             self.show()
             return
@@ -579,6 +581,18 @@ class DraggableSiloButton(QWidget):
         self._btn_tick.setText("✅")
         ticks_on = self.main_win.data.get("silo_ticks_enabled", "True") == "True"
         self._btn_tick.setVisible(is_ticked and ticks_on and not self.is_archive)
+        # one files control, far right: with files it IS the counter and
+        # stays visible; empty silos only reveal a plain 📁 on hover
+        self._fcount = fcount
+        if fcount > 0 and not self.is_archive:
+            self._btn_files.setText(f"📁{fcount}")
+            fm = self._btn_files.fontMetrics()
+            self._btn_files.setFixedSize(max(16, fm.horizontalAdvance(self._btn_files.text()) + 4), 16)
+            self._btn_files.show()
+        else:
+            self._btn_files.setText("📁")
+            self._btn_files.setFixedSize(16, 16)
+            self._btn_files.hide()
 
         # Apply font scaling safely
         from PyQt6.QtGui import QFont

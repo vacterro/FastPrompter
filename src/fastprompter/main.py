@@ -3449,9 +3449,9 @@ class FastPrompter(
             line_str = str(line_count) if line_count > 0 else ""
 
             from fastprompter.ui.file_container import silo_file_count
+            # the rightmost 📁N button carries the file count — the text
+            # counter stays lines-only (no duplicated 📁)
             fcount = silo_file_count(self._files_root(), self.get_current_category(), raw)
-            if fcount > 0:
-                line_str = f"📁{fcount} │ " + line_str if line_str else f"📁{fcount}"
             pin_str = "📌 " if is_pinned else ""
             if kids:
                 pin_str = (f"▸[{len(kids)}] " if slot_idx in collapsed else "▾ ") + pin_str
@@ -3471,7 +3471,7 @@ class FastPrompter(
                 self.data.get("bold_hash_titles", "True") == "True"
                 and raw.lstrip().startswith("#")
             )
-            btn.update_data(label, slot_idx, bg_color, font_family, scale, line_count_str=line_str, is_pushed=is_active, title_bold=title_bold, is_child=is_child)
+            btn.update_data(label, slot_idx, bg_color, font_family, scale, line_count_str=line_str, is_pushed=is_active, title_bold=title_bold, is_child=is_child, fcount=fcount)
 
         if show_gap and first_unpinned_ui_index != -1:
             # layout contains the buttons, so insertWidget at first_unpinned_ui_index puts it before that button
