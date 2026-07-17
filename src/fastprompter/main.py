@@ -1089,6 +1089,17 @@ class FastPrompter(
             self.data.get("close_on_focus_loss", "True") == "True",
             self.mark_dirty,
         )
+        self.cb_snippet_arrows = create_footer_cb(
+            "Snippet Arrows",
+            "Show the ▲ ▶ ▼ paste buttons on snippet rows\n"
+            "(insert at top / at cursor / at bottom)",
+            self.data.get("snippet_arrows", "False") == "True",
+            lambda checked: (
+                self.data.update({"snippet_arrows": "True" if checked else "False"})
+                or self.mark_dirty()
+                or self.refresh_snippets_panel()
+            ),
+        )
         self.cb_silo_ticks = create_footer_cb(
             "Silo Ticks",
             "Show the ✅ done-mark button when hovering a silo",
@@ -1374,7 +1385,8 @@ class FastPrompter(
         ]), 1)
         groups_row.addWidget(_vline())
         groups_row.addLayout(_settings_group("Data & Appearance", [
-            self.cb_silo_home, self.cb_silo_pinned_gap, self.cb_silo_ticks, self.cb_bold_titles,
+            self.cb_silo_home, self.cb_silo_pinned_gap, self.cb_silo_ticks,
+            self.cb_snippet_arrows, self.cb_bold_titles,
             self.cb_hide_shortkeys, self.cb_portable_backup, self.cb_sound,
             self.cb_typewriter, vol_row, div_row, hdr_row, files_row
         ]), 1)

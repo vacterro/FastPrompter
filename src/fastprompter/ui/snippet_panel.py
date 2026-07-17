@@ -258,7 +258,7 @@ class SnippetWidget(QWidget):
         self.main_btn.update_data(text_label, cat, global_idx, full_text, color, font_family,
                                   scale, title_bold=title_bold)
 
-        current_state = (text_label, cat, global_idx, full_text, color, font_family, scale, self.main_win.data.get("theme", "Default"), self.main_win.data.get("button_scale", "1.0"))
+        current_state = (text_label, cat, global_idx, full_text, color, font_family, scale, self.main_win.data.get("theme", "Default"), self.main_win.data.get("button_scale", "1.0"), self.main_win.data.get("snippet_arrows", "False"))
         if getattr(self, '_last_state', None) == current_state:
             self.show()
             return
@@ -280,7 +280,9 @@ class SnippetWidget(QWidget):
 
         btn_style = f"background-color:{bg}; color:{fg}; border: 1px solid {border}; padding:0;"
 
+        arrows_on = self.main_win.data.get("snippet_arrows", "False") == "True"
         for btn in (self.btn_top, self.btn_ins, self.btn_bot):
+            btn.setVisible(arrows_on)
             btn.setFont(btn_font)
             btn.setStyleSheet(btn_style)
             act_size = max(18, int(20 * button_scale))
