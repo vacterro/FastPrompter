@@ -12,20 +12,20 @@
 | T-106 | DONE | claude-fable | - | BUG: Normal Window toggle flashbang, no immediate title bar update |
 | T-110 | DONE | claude-fable | - | Top bar right: pin (always-on-top), line-numbers toggle, separator files-counter/line-counter |
 | T-111 | DONE | claude-fable | - | Layout: Home/End left; settings+files right group; snippet +/- separator; arrows toggleable OFF |
-| T-112 | TODO | - | - | Silo hover: tickbox toggle left of number |
+| T-112 | DONE | claude-fable | - | Silo hover: tickbox toggle left of number |
 | T-113 | DONE | claude-fable | - | Silo: middle-click -> trash; context menu Move to Trash |
 | T-114 | DONE | claude-fable | T-113 | Context menus rethink + icons (silo, snippet) |
 | T-115 | DONE | claude-fable | - | Header format template: {text} {time} {state}, user-editable, no hardcoded bold |
 | T-116 | DONE | claude-fable | - | Mini analog clock near date (toggleable, hour+minute hands) |
 | T-117 | DONE | claude-fable | - | Hotkeys: defaults Alt+E top / Alt+S lock / Alt+A hideout; all bindable; tooltips show them |
-| T-118 | TODO | - | T-102 | Container: New Folder, richer shortcuts |
-| T-119 | TODO | - | - | Drop overlay effect for text files (screen 044916); no-text drops -> container auto |
+| T-118 | DONE | claude-fable | T-102 | Container: New Folder, richer shortcuts |
+| T-119 | DONE | claude-fable | - | Drop overlay effect for text files (screen 044916); no-text drops -> container auto |
 | T-120 | TODO | - | - | Folder Template editor (ref NEW_PROJ.CMD) — create templated folder trees in container |
 | T-121 | TODO | - | - | Settings UI compact redesign (screen 044432) |
-| T-122 | TODO | - | - | Search reliability pass |
+| T-122 | PART | claude-fable | - | Search: hidden-bar ghost filter fixed; deep pass -> next wave |
 | T-123 | TODO | - | - | Silo hierarchy: 1-level children, indent, collapse, files merge on combine (BIG) |
-| T-124 | TODO | - | - | Help + README refresh; dead code sweep |
-| T-125 | TODO | - | all-bugs | Ship v0.5.3 |
+| T-124 | DONE | claude-fable | - | Help + README refresh; dead code sweep |
+| T-125 | DONE | claude-fable | all-bugs | Ship v0.5.3 |
 
 ## DONE (previous waves)
 
