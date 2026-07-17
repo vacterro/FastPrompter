@@ -1190,7 +1190,12 @@ class FastPrompter(
         hdr_row.setContentsMargins(0, 0, 0, 0)
         hdr_row.setSpacing(4)
         lbl_hdr = QLabel("Header Fmt:")
-        lbl_hdr.setToolTip("Format for Ctrl+E. {text} is selected text. {time} is timestamp.")
+        lbl_hdr.setToolTip(
+            "Template for the Ctrl+E header.\n"
+            "{text} — the line's text\n{time} — timestamp\n"
+            "{state} — Morning / Day / Evening / Night\n"
+            "Markdown markers (** __ etc.) are yours to add or drop."
+        )
         hdr_row.addWidget(lbl_hdr)
         self.le_hdr_fmt = QLineEdit()
         self.le_hdr_fmt.setPlaceholderText("**__{text}__** ({time})")
@@ -1671,6 +1676,7 @@ class FastPrompter(
         pattern = re.escape(full_template)
         pattern = pattern.replace(re.escape("{text}"), r"(.*?)")
         pattern = pattern.replace(re.escape("{time}"), r".*?")
+        pattern = pattern.replace(re.escape("{state}"), r".*?")
         pattern = f"^{pattern}$"
         
         m = re.match(pattern, sel)
@@ -1694,12 +1700,19 @@ class FastPrompter(
         m_fmt = "%d %b" if text_month else "%d.%m"
         ts = now.strftime(f"{m_fmt} - %H:%M")
         
-        time_str = f"{daypart} {ts}" if self.data.get("date_daypart", "True") == "True" else ts
-        
+        # {state} in the template takes over the day word; otherwise the
+        # legacy behavior prefixes it inside {time} when Day Word is on
+        if "{state}" in template:
+            time_str = ts
+        else:
+            time_str = f"{daypart} {ts}" if self.data.get("date_daypart", "True") == "True" else ts
+
         # Remove any existing "# " prefix to avoid duplication if running on an existing header
         clean_sel = sel[2:] if sel.startswith("# ") else sel
-        
-        formatted_text = template.replace("{text}", clean_sel).replace("{time}", time_str)
+
+        formatted_text = (template.replace("{text}", clean_sel)
+                          .replace("{time}", time_str)
+                          .replace("{state}", daypart))
         if not formatted_text.startswith("# "):
             formatted_text = f"# {formatted_text}"
             
@@ -2328,33 +2341,39 @@ class FastPrompter(
             self.tab_bar.setCurrentIndex(0)
         self.refresh_snippets_panel()
 
+    def _sync_silo_folder(self, cat, old_text, new_text):
+        """Retitled silo/snippet: rename its file folder so assets follow.
+        Every path that rewrites a first line must run through here —
+        a missed sync silently detaches the silo from its files."""
+        from fastprompter.ui.file_container import silo_files_dir, silo_slug
+        if silo_slug(old_text) == silo_slug(new_text):
+            return
+        old_dir = silo_files_dir(self._files_root(), cat, old_text)
+        new_dir = silo_files_dir(self._files_root(), cat, new_text)
+        try:
+            if os.path.isdir(old_dir) and not os.path.exists(new_dir):
+                os.makedirs(os.path.dirname(new_dir), exist_ok=True)
+                os.rename(old_dir, new_dir)
+        except OSError as e:
+            logger.warning(f"Silo folder sync {old_dir} -> {new_dir} failed: {e}")
+
     def commit_current_text(self):
         """Commit the current text to the active slot."""
         if getattr(self, "_initializing_ui", False):
             return
         current_text = self.text_area.toPlainText()
         cat = self.get_current_category()
-        
-        def _sync_folder(old_text, new_text):
-            from fastprompter.ui.file_container import silo_files_dir, silo_slug
-            if silo_slug(old_text) != silo_slug(new_text):
-                old_dir = silo_files_dir(self._files_root(), cat, old_text)
-                new_dir = silo_files_dir(self._files_root(), cat, new_text)
-                if os.path.exists(old_dir) and not os.path.exists(new_dir):
-                    os.makedirs(os.path.dirname(new_dir), exist_ok=True)
-                    os.rename(old_dir, new_dir)
 
         if not self.editing_snippet:
             if 0 <= self.active_temp_slot < len(self.data["temp_presets"]):
                 old_text = self.data["temp_presets"][self.active_temp_slot]
-                _sync_folder(old_text, current_text)
+                self._sync_silo_folder(cat, old_text, current_text)
                 self.data["temp_presets"][self.active_temp_slot] = current_text
         else:
             cat_snip, idx = self.editing_snippet
             if cat_snip in self.data["categories"] and self.data["categories"][cat_snip][idx]:
                 old_text = self.data["categories"][cat_snip][idx]["text"]
-                cat = cat_snip  # for the sync
-                _sync_folder(old_text, current_text)
+                self._sync_silo_folder(cat_snip, old_text, current_text)
                 self.data["categories"][cat_snip][idx]["text"] = current_text
 
     def open_color_settings(self):
@@ -2719,6 +2738,13 @@ class FastPrompter(
         r, g, b = int(r * factor), int(g * factor), int(b * factor)
         return f"#{r:02x}{g:02x}{b:02x}"
 
+    def _snippet_query(self):
+        """Active snippet filter. A hidden search bar NEVER filters —
+        stale text in a closed bar used to silently hide snippets."""
+        if self.search_bar.isHidden():
+            return ""
+        return self.search_bar.text().strip().lower()
+
     def refresh_snippets_panel(self):
         if self._suspend_cache or self._initializing_ui:
             return
@@ -2730,7 +2756,7 @@ class FastPrompter(
             self.refresh_archive_panel()
             return
 
-        query = self.search_bar.text().strip().lower()
+        query = self._snippet_query()
         active_items = []
         for i, s in enumerate(self.data["categories"][cat]):
             if s is not None:
@@ -2999,12 +3025,18 @@ class FastPrompter(
                 if new_txt.strip() and 0 <= self.active_temp_slot < len(
                     self.data.get("archive_temp_presets", [])
                 ):
+                    self._sync_silo_folder(
+                        self.get_current_category(),
+                        self.data["archive_temp_presets"][self.active_temp_slot],
+                        new_txt,
+                    )
                     self.data["archive_temp_presets"][self.active_temp_slot] = new_txt
             else:
                 old_slot = self.active_temp_slot
                 new_text = self.text_area.toPlainText()
                 if 0 <= old_slot < len(self.data["temp_presets"]):
                     old_text = self.data["temp_presets"][old_slot]
+                    self._sync_silo_folder(self.get_current_category(), old_text, new_text)
                     self.data["temp_presets"][old_slot] = new_text
                     if new_text != old_text:
                         self.silo_last_edited[old_slot] = int(time.time())
@@ -3570,7 +3602,7 @@ class FastPrompter(
         cat = self.get_current_category()
         if not cat:
             return
-        query = self.search_bar.text().strip().lower()
+        query = self._snippet_query()
         active_items = []
         for i, s in enumerate(self.data["categories"][cat]):
             if s is not None:
@@ -3671,7 +3703,8 @@ class FastPrompter(
         the inline refresh glyph painted after stamped lines."""
         import datetime
 
-        m = re.search(r"(?:Morning |Day |Evening |Night )?\d{2}\.\d{2} - \d{2}:\d{2}", block.text())
+        from fastprompter.ui.editor import TS_STAMP_LINE_RE
+        m = TS_STAMP_LINE_RE.search(block.text())
         if not m:
             return
         

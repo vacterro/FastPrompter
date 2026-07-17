@@ -105,6 +105,12 @@ class ThemeMixin:
             theme = self._theme_cache
 
         QApplication.instance().setStyleSheet(theme["stylesheet"])
+        # Re-pack the dense header AFTER the new stylesheet has re-polished
+        # fonts — packing with pre-theme metrics truncates button labels
+        if hasattr(self, "_apply_header_density"):
+            from PyQt6.QtCore import QTimer
+            self._header_dense = None  # force a full re-pack
+            QTimer.singleShot(0, self._apply_header_density)
         self.btn_new.setStyleSheet(theme["btn_new"])
         self.btn_save.setStyleSheet(theme["btn_save"])
         self.btn_help.setStyleSheet(theme["lbl_help"])

@@ -1206,6 +1206,65 @@ def test_file_container_import_export_delete(win):
     panel.close()
 
 
+def test_delete_silo_keeps_snippets_visible(win):
+    # Regression check for "deleting a silo hides a snippet"
+    win.tab_bar.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    cat = win.get_current_category()
+    win.data["categories"][cat] = [None] * 100
+    for i in range(3):
+        win.data["categories"][cat][i] = {"name": f"snip{i}", "text": f"body{i}"}
+    win.data["temp_presets"][:] = ["one", "two", "three"]
+    win.data["pinned_silos"] = []
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    win.refresh_snippets_panel()
+    visible_before = sum(1 for b in win.snippet_buttons if not b.isHidden())
+    assert visible_before == 3
+    win.del_silo(1)
+    visible_after = sum(1 for b in win.snippet_buttons if not b.isHidden())
+    assert visible_after == 3, "snippet buttons must survive a silo delete"
+    win.data["categories"][cat] = [None] * 100
+    win.refresh_snippets_panel()
+
+
+def test_header_restamp_keeps_files_folder(win):
+    # Regression: Ctrl+E re-stamping the title changed the slug and buried
+    # the silo's files under a fresh folder. Timestamps are slug-invisible
+    # and retitles rename the folder in the switch path.
+    from fastprompter.ui.file_container import silo_files_dir, silo_slug
+
+    assert silo_slug("# CODE (17.07 - 04:19)") == silo_slug("# CODE (18.07 - 09:00:11)")
+    assert silo_slug("# CODE (17 Jul - 04:19)") == "code"
+
+    root = os.path.join(_tmpdir, "files_root_restamp")
+    win._files_root = lambda: root
+    win.tab_bar.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    win.data["temp_presets"][:] = ["# Proj (17.07 - 01:00)\nbody", "other"]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+
+    folder = silo_files_dir(root, win.get_current_category(), "# Proj (17.07 - 01:00)")
+    os.makedirs(folder, exist_ok=True)
+    with open(os.path.join(folder, "asset.txt"), "w", encoding="utf-8") as f:
+        f.write("keep me")
+
+    # re-stamp (same slug) — folder untouched
+    win.text_area.setPlainText("# Proj (18.07 - 02:22)\nbody")
+    win._switch_to_slot(1)
+    assert os.path.isfile(os.path.join(folder, "asset.txt"))
+
+    # real retitle — folder follows
+    win._switch_to_slot(0)
+    win.text_area.setPlainText("# Renamed Proj\nbody")
+    win._switch_to_slot(1)
+    new_folder = silo_files_dir(root, win.get_current_category(), "# Renamed Proj")
+    assert os.path.isfile(os.path.join(new_folder, "asset.txt"))
+    assert not os.path.exists(folder)
+    del win.__dict__["_files_root"]
+
+
 def test_fold_code_blocks_and_headers(win):
     win.tab_bar.setCurrentIndex(0)
     win.on_tab_changed(0)

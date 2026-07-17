@@ -13,7 +13,14 @@ from PyQt6.QtGui import (
 )
 from PyQt6.QtWidgets import QApplication, QTextEdit, QWidget
 
-TS_STAMP_LINE_RE = re.compile(r"(?:Morning |Day |Evening |Night )?\d{2}\.\d{2} - \d{2}:\d{2}")
+# Matches every stamp shape Ctrl+E ever wrote: "17.07 - 04:19",
+# "17 Jul - 04:19", optional seconds, optional day-part word prefix.
+# The refresh glyph lives on this regex — a stamp format added in
+# main.py MUST be reflected here or the glyph silently disappears.
+TS_STAMP_LINE_RE = re.compile(
+    r"(?:Morning |Day |Evening |Night )?"
+    r"(?:\d{2}\.\d{2}|\d{1,2} [A-Za-z]{3}) - \d{2}:\d{2}(?::\d{2})?"
+)
 
 
 def _draw_horizontal_rule(painter, hr_color, y_pos, width):

@@ -43,10 +43,18 @@ _SLUG_BAD = re.compile(
 )
 
 
+# Ctrl+E timestamps — "(17.07 - 04:19)", "(17 Jul - 04:19:33)" etc. They
+# change on every re-stamp, so they must NEVER leak into the folder slug
+# or each refresh would detach the silo from its files.
+_SLUG_TIMESTAMP = re.compile(r"\([^()]*\d{1,2}[:.]\d{2}[^()]*\)")
+
+
 def silo_slug(text):
     """Folder-safe slug from a silo's first line. Keyed by title, not slot
-    index, so the folder follows the silo through reorders."""
+    index, so the folder follows the silo through reorders. Timestamps in
+    the title are ignored (they change on every Ctrl+E refresh)."""
     first = (text or "").strip().splitlines()[0] if (text or "").strip() else ""
+    first = _SLUG_TIMESTAMP.sub("", first)
     first = _SLUG_STRIP.sub("", first).strip().lower()
     first = _SLUG_BAD.sub("", first)
     first = re.sub(r"\s+", "-", first).strip("-")[:40].strip("-")
@@ -149,6 +157,31 @@ class _FileList(QListWidget):
         self.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
         self.setDragEnabled(True)
         self.setAcceptDrops(False)  # drops land on the panel, not the list
+
+    def keyPressEvent(self, event):
+        p = self._panel
+        key, mods = event.key(), event.modifiers()
+        ctrl = mods & Qt.KeyboardModifier.ControlModifier
+        shift = mods & Qt.KeyboardModifier.ShiftModifier
+        if key == Qt.Key.Key_Delete:
+            p._delete(p.selected_paths())
+        elif key == Qt.Key.Key_F2:
+            paths = p.selected_paths()
+            if paths:
+                p._rename(paths[0])
+        elif key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            if self.currentItem():
+                p._open_item(self.currentItem())
+        elif ctrl and shift and key == Qt.Key.Key_C:
+            p.copy_selected_paths()
+        elif ctrl and key == Qt.Key.Key_N:
+            p.new_folder()
+        elif ctrl and key == Qt.Key.Key_V:
+            p.save_clipboard_as_file()
+        else:
+            super().keyPressEvent(event)
+            return
+        event.accept()
 
     def startDrag(self, actions):
         paths = self._panel.selected_paths()
@@ -477,7 +510,11 @@ class FileContainerPanel(QWidget):
     def _rename(self, path):
         from PyQt6.QtWidgets import QInputDialog
         old = os.path.basename(path)
-        new, ok = QInputDialog.getText(self, "Rename", "New name:", text=old)
+        restore = self._modal_guard()
+        try:
+            new, ok = QInputDialog.getText(self, "Rename", "New name:", text=old)
+        finally:
+            restore()
         new = (new or "").strip()
         if not ok or not new or new == old:
             return
@@ -487,17 +524,34 @@ class FileContainerPanel(QWidget):
             logger.error(f"File container rename failed: {e}")
         self.refresh()
 
+    def _modal_guard(self):
+        """The main window is frameless + always-on-top and hides on focus
+        loss — an unguarded dialog opens BEHIND it and looks like a dead
+        button. Returns (restore_fn) after suppressing that behavior."""
+        prev = getattr(self.main_win, "ignore_focus_loss", False)
+        self.main_win.ignore_focus_loss = True
+
+        def restore():
+            self.main_win.ignore_focus_loss = prev
+        return restore
+
     def _delete(self, paths):
         if not paths:
             return
         names = "\n".join(os.path.basename(p) for p in paths[:8])
         more = f"\n… and {len(paths) - 8} more" if len(paths) > 8 else ""
-        ans = QMessageBox.question(
-            self, "Delete files",
-            f"Delete from this silo's folder?\n\n{names}{more}",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
+        box = QMessageBox(self)
+        box.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
+        box.setWindowTitle("Delete files")
+        box.setText(f"Delete from this silo's folder?\n\n{names}{more}")
+        box.setStandardButtons(
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        box.setDefaultButton(QMessageBox.StandardButton.No)
+        restore = self._modal_guard()
+        try:
+            ans = box.exec()
+        finally:
+            restore()
         if ans != QMessageBox.StandardButton.Yes:
             return
         for p in paths:
@@ -510,22 +564,52 @@ class FileContainerPanel(QWidget):
                 logger.error(f"File container delete failed for {p}: {e}")
         self.refresh()
 
+    def copy_selected_paths(self):
+        """Ctrl+Shift+C: full paths of the selection to the clipboard."""
+        from PyQt6.QtWidgets import QApplication
+        paths = self.selected_paths()
+        if paths:
+            QApplication.clipboard().setText("\n".join(paths))
+            self.lbl_count.setText("path copied")
+
+    def new_folder(self):
+        """Create a subfolder in the container (Ctrl+N)."""
+        if not self.folder:
+            return
+        from PyQt6.QtWidgets import QInputDialog
+        restore = self._modal_guard()
+        try:
+            name, ok = QInputDialog.getText(self, "New Folder", "Folder name:",
+                                            text="New Folder")
+        finally:
+            restore()
+        name = (name or "").strip().strip(".")
+        if not ok or not name:
+            return
+        safe = re.sub(r'[<>:"/\\|?*]', "_", name)
+        try:
+            os.makedirs(_unique_dest(self.folder, safe), exist_ok=False)
+        except OSError as e:
+            logger.error(f"File container new folder failed: {e}")
+        self.refresh()
+
     def _show_menu(self, pos):
         item = self.file_list.itemAt(pos)
         menu = QMenu(self)
         if item:
             path = item.data(Qt.ItemDataRole.UserRole)
-            menu.addAction("Open", lambda: self._open_item(item))
+            menu.addAction("Open\tEnter", lambda: self._open_item(item))
             menu.addAction("Show in Explorer", lambda: self._reveal(path))
-            menu.addAction("Copy Path", lambda: self._copy_path(path))
-            menu.addAction("Rename…", lambda: self._rename(path))
+            menu.addAction("Copy Path\tCtrl+Shift+C", lambda: self._copy_path(path))
+            menu.addAction("Rename…\tF2", lambda: self._rename(path))
             menu.addAction("Export to…", self._export_all)
             menu.addSeparator()
-            menu.addAction("Delete…", lambda: self._delete(self.selected_paths() or [path]))
+            menu.addAction("Delete…\tDel", lambda: self._delete(self.selected_paths() or [path]))
         else:
             menu.addAction("Import…", self._pick_import)
+            menu.addAction("New Folder\tCtrl+N", self.new_folder)
             menu.addAction("Add Link to Files…", self._pick_link)
-            menu.addAction("Clipboard → File", self.save_clipboard_as_file)
+            menu.addAction("Clipboard → File\tCtrl+V", self.save_clipboard_as_file)
             menu.addAction("Open Folder", self._open_folder)
         menu.exec(self.file_list.mapToGlobal(pos))
 
