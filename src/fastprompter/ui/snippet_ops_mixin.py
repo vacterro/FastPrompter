@@ -380,7 +380,9 @@ class SnippetOpsMixin:
             self.cancel_editing()
             return
 
-        if not text or not cat:
+        # cat must be a live category — a tab deleted mid-edit would leave a
+        # stale name and KeyError on the slots lookup below.
+        if not text or not cat or cat not in self.data["categories"]:
             return
         if silent:
             # Silent saves only update an existing snippet edit — they must
@@ -414,7 +416,7 @@ class SnippetOpsMixin:
         if not text:
             return
         cat = self.get_current_category()
-        if not cat:
+        if not cat or cat not in self.data["categories"]:
             return
         max_slots = len(self.data["categories"][cat])
 

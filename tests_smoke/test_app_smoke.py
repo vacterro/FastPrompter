@@ -2059,8 +2059,10 @@ def test_no_cyrillic_in_codebase():
         for f in glob.glob(os.path.join(root, pattern), recursive=True):
             if "__pycache__" in f:
                 continue
-            # translation files hold the RU dictionary — Cyrillic is their job
-            if "translations" in f.replace("\\", "/"):
+            # translation dictionaries hold the RU strings — Cyrillic is
+            # their job (package has been named translations/ and i18n/)
+            norm = f.replace("\\", "/")
+            if "/translations/" in norm or "/i18n/" in norm or norm.endswith("translations.py"):
                 continue
             with open(f, encoding="utf-8") as fh:
                 for i, line in enumerate(fh, 1):

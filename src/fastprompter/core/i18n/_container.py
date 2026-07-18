@@ -10,7 +10,6 @@ import importlib
 import json
 import logging
 import os
-import pkgutil
 from pathlib import Path
 from typing import Final
 
@@ -19,6 +18,8 @@ from . import _engine
 log = logging.getLogger(__name__)
 
 EXTERNAL_SLOT: Final[str] = "VANILLA_TRANSLATIONS"
+
+_BUILTIN_LANGS: Final[list[str]] = ["ru", "est", "ukr", "fra", "spa"]
 
 
 class TranslationError(RuntimeError):
@@ -84,20 +85,12 @@ def _load_external_slot() -> dict[str, dict[str, str]]:
 
 
 def initialize(*, load_external: bool = True) -> None:
-    """Load all built-in + external languages. Validates integrity. Freezes.
-
-    Safe to call multiple times — clears registry first.
-    """
+    """Load all built-in + external languages. Validates integrity. Freezes."""
     en_keys = _extract_key_source()
 
     _engine.register_language("EN", {k: k for k in en_keys})
 
-    builtin_codes = []
-    for _, modname, _ in pkgutil.iter_modules(__path__):
-        if modname.startswith("_") or modname in ("en", "en"):
-            continue
-        if modname in ("ru", "est", "ukr", "fra", "spa"):
-            builtin_codes.append(modname)
+    builtin_codes = list(_BUILTIN_LANGS)
 
     loaded: set[str] = set()
 

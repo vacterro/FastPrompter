@@ -265,3 +265,27 @@ PureRef-style free canvas with image RESIZE inside the panel — deliberately no
 | T-218 | TODO | - | Color box on # silos: cycle-click colors, right-click full picker, 7+white/black/grey/remove, templates in settings |
 | T-219 | TODO | - | Separator draggable + gap height controllable in Settings |
 | T-220 | TODO | - | Typewriter tooltips list sound filenames + wav/mp3 hint |
+
+## Audit of antigravity static-analysis TODOs (18.07, claude-opus verdicts)
+Verified each against real code. Result: the static-analysis "# TODO: BUG:" wave was
+overwhelmingly speculative. 1 genuine cheap bug fixed; the rest are hallucinations,
+already-handled, or theoretical (won't-fix without a repro).
+
+| ID | Verdict | Evidence |
+|---|---|---|
+| T-188 | FIXED | Real KeyError: save_snippet/_as_number indexed categories[cat] with only a truthy guard; added `cat not in categories` guard, verified with stale-tab repro |
+| T-170 | HALLUCINATION | `_delete_selected_text_block` does not exist anywhere in editor.py |
+| T-172 | HALLUCINATION | `_on_text_changed` never calls silo_docs[idx].setPlainText() — no recursion path |
+| T-174 | HALLUCINATION | `_fold_block()` does not exist; real toggle_fold/_fold_range guard blocks |
+| T-184 | HALLUCINATION | `_refresh_theme_cache` is a normal ThemeMixin method; not fragile |
+| T-185 | HALLUCINATION | `_apply_data_state` DOES write temp_presets_all + archive_temp_presets_all (lines 2831-2832) |
+| T-186 | HANDLED | `_trim_archive` early-returns on no-change and remaps active index via old_to_new; synchronous, no mid-trim reentry |
+| T-191 | HALLUCINATION | `quit_app` calls save_data_to_db(force=True) BEFORE closing conn |
+| T-196 | INTENTIONAL | `isActiveWindow` in toggle_visibility errs toward SHOW — that's the summon-an-unfocused-window design, not a defect |
+| T-197 | HALLUCINATION | `show_window` DOES restart topmost_timer (window_mixin.py:82) |
+| T-198 | HALLUCINATION | `restore_db` already has `finally: ignore_focus_loss = False` |
+| T-182 | MITIGATED | each _increment pairs its own 300ms _decrement timer — balanced, not stuck |
+| T-168,175,190,199 | WONTFIX-PERF | theoretical perf (undo cap / idle timer / win32 traffic / O(n) hit-test); no repro, fixing risks regressions |
+| T-177,178,180 | WONTFIX-SMELL | bare-except fail-safe guards; acceptable per T-152's own note |
+| T-181,183,187,195 | WONTFIX-THEORY | positioning/timing/layout smells; working in practice, tests green, no user repro |
+| T-173 | WONTFIX | `with self.conn:` commits/rolls back per sqlite3 semantics; no demonstrated failure |

@@ -1,7 +1,4 @@
-"""Українські переклади (Ukrainian translations) — priority language.
-
-~200 core UI keys translated. Missing keys fall back to EN.
-"""
+"""Українські переклади (Ukrainian) — ~200 core UI keys."""
 
 from __future__ import annotations
 
@@ -19,7 +16,6 @@ TRANSLATIONS: dict[str, str] = {
     "Keys": "Клавіші",
     "RGB": "Кольори",
     "Replace All": "Замінити все",
-    "Replaced {} occurrences.": "Замінено {} входжень.",
     "BkUp": "Резерв",
     "Rstr": "Віднов",
     "Scale": "Масштаб",
@@ -106,35 +102,86 @@ TRANSLATIONS: dict[str, str] = {
     "Hide the F1-F10 shortcut labels on snippet buttons":
         "Сховати підписи F1-F10 на кнопках снипетів",
     "⇕ Double-Space Lists": "⇕ Подвійний пробіл у списках",
+    "With Auto-Bullet on, Enter after a list item adds a blank\nline before the next bullet — spaced, easy-to-read lists":
+        "С авто-булітом Enter після елемента списку додає порожній\nрядок перед наступним маркером — списки з повітрям",
     "𝗕 Bold # Titles": "𝗕 Жирні # заголовки",
+    "Bold the sidebar title of silos and snippets whose\ncontent starts with a '#' markdown header":
+        "Жирний заголовок у бічній панелі для сіл/снипетів,\nчий вміст починається з '#' markdown заголовка",
     "➖ Pinned Gap": "➖ Розділювач закріплених",
+    "Show a visual separator between pinned and unpinned silos":
+        "Показувати візуальний розділювач між закріпленими та звичайними силами",
     "📅 Show Date Widget": "📅 Показувати дату",
+    "Show a floating date and time rectangle in the top-right\ncorner of the text editor":
+        "Показувати дату та час у правому верхньому кутку редактора",
     "⏱ Date Seconds": "⏱ Секунди",
+    "Show seconds in the date widget (hh:mm:ss instead of hh:mm)":
+        "Показувати секунди: hh:mm:ss замість hh:mm",
     "🕒 Analog Clock": "🕒 Аналоговий годинник",
+    "Show a mini analog clock (hour + minute hands)\nnext to the date widget":
+        "Показувати міні аналоговий годинник (годинна + хвилинна стрілки)\nпоруч з датою",
     "🌞 Day Word": "🌞 Слово дня",
+    "Show the time-of-day word (Morning / Day / Evening / Night)\nafter the clock in the date widget":
+        "Показувати слово часу доби (Ранок / День / Вечір / Ніч)\nпісля годинника",
     "🔤 Text Month": "🔤 Текстовий місяць",
+    "Show month as text instead of numbers (17 Jul instead of 17.07)":
+        "Показувати місяць текстом (17 Лип замість 17.07)",
     "🔊 UI Sounds": "🔊 Звуки інтерфейсу",
+    "Play click sounds for buttons and actions.\nYou can place your own .wav files in the 'sound' folder to override:\n• newbutton1.wav (New button)\n• savebutton1.wav (Save button)\n• button1.wav (Click/Silo)\n• button2.wav (Snippet)\n• tickbox1.wav (Checkbox)\n• delete1.wav (Delete)\n• clear1.wav (Clear)":
+        "Відтворювати звуки клацання для кнопок і дій.\nВи можете розмістити свої .wav файли в папці 'sound' для заміни:\n• newbutton1.wav (Нова кнопка)\n• savebutton1.wav (Зберегти)\n• button1.wav (Клік/Сайло)\n• button2.wav (Снипет)\n• tickbox1.wav (Прапорець)\n• delete1.wav (Видалити)\n• clear1.wav (Очистити)",
     "⌨ Typewriter": "⌨ Друкарська машинка",
+    "Play a typewriter tick for every typed character.\nPlace 'type1.wav' in the 'sound' folder to use your own typing sound.":
+        "Відтворювати звук друкарської машинки при кожному введенні символу.\nПомістіть 'type1.wav' в папку 'sound' для власного звуку введення.",
     "🗑 Trash Vision": "🗑 Показувати кошик",
     "Show the Trash category for deleted snippets":
         "Показувати категорію Кошик для видалених снипетів",
     "Archive": "Архів",
     "Trash": "Кошик",
     "Search...": "Пошук...",
+    "Toggle Sidebar (Alt+D)\nShow or hide the right/left sidebar containing snippets and silos.":
+        "Перемкнути бічну панель (Alt+D)\nПоказати або сховати панель снипетів і сіл.",
     "Home (Home)": "На початок (Home)",
     "Jump to End\nMove cursor to the bottom of the document.":
         "У кінець\nПеремістити курсор у кінець документа.",
+    "Insert Line (Ctrl+W)\nInsert a spaced --- divider and start a fresh bullet.":
+        "Вставка лінії (Ctrl+W)\nВставити --- розділювач і почати новий маркер.",
+    "Copy all text (Ctrl+C)\nRight-click: Copy + Close FastPrompter":
+        "Копіювати весь текст (Ctrl+C)\nПравий клік: Копіювати + Закрити FastPrompter",
     "Clear (Ctrl+Shift+C)": "Очистити (Ctrl+Shift+C)",
+    "Bold ({})\nMake selected text bold.":
+        "Жирний ({})\nЗробити виділений текст жирним.",
+    "Italic ({})\nMake selected text italic.":
+        "Курсив ({})\nЗробити виділений текст курсивом.",
+    "Underline ({})\nMake selected text underlined.":
+        "Підкреслений ({})\nПідкреслити виділений текст.",
+    "Strikethrough (Ctrl+T)\nCross out selected text.":
+        "Закреслений (Ctrl+T)\nПерекреслити виділений текст.",
+    "Header (Ctrl+E)\nTitle the line: # + bold + underline + timestamp,\nthen land 2 lines below on a fresh bullet.":
+        "Заголовок (Ctrl+E)\nОформити рядок: # + жирний + підкреслений + час,\nпотім перейти на 2 рядки нижче на новий маркер.",
+    "Clear Format\nRemove all explicit font styling from text.":
+        "Очистити формат\nПрибрати все явне форматування шрифту.",
     "Always on Top ({})": "Поверх усіх вікон ({})",
     "Lock Window ({})": "Фіксувати вікно ({})",
     "Current time (analog)": "Поточний час (аналоговий)",
     "Current Date and Time": "Поточна дата та час",
+    "Help — every hotkey, gesture and feature (click)":
+        "Довідка — всі гарячі клавіші, жести та функції (клік)",
     "Line count of the open silo/snippet":
         "Кількість рядків у відкритому силі/снипеті",
     "Open Trash": "Відкрити кошик",
     "Archive Active Snippet or Silo": "Архівувати активний снипет або сило",
     "Toggle Archives": "Перемкнути архів",
     "Search snippets": "Пошук снипетів",
+    "Files\nAsset drawer for the active silo: drop any files in,\ndrag them out, preview, export. Stored as a plain folder\nin data/files — readable outside FastPrompter.":
+        "Файли\nСховище активного сила: кидайте файли,\nперетягуйте назовні, переглядайте, експортуйте.\nЗвичайна папка в data/files — читаєма без FastPrompter.",
+    "Lines before ---": "Рядків до ---",
+    "Lines after --- (before the fresh bullet)":
+        "Рядків після --- (перед новим маркером)",
+    "Previous silo page": "Попередня сторінка сіл",
+    "Next silo page": "Наступна сторінка сіл",
+    "Previous snippet page": "Попередня сторінка снипетів",
+    "Next snippet page": "Наступна сторінка снипетів",
+    "Previous archive page": "Попередня сторінка архіву",
+    "Next archive page": "Наступна сторінка архіву",
     "Projects — mouse wheel switches tabs":
         "Проекти — коліщатко миші перемикає вкладки",
     "Configure Global Hotkeys": "Налаштування глобальних гарячих клавіш",
@@ -168,10 +215,6 @@ TRANSLATIONS: dict[str, str] = {
     "Button Text": "Текст кнопок",
     "Accent Color": "Акцентний колір",
     "Editing Background": "Фон редагування",
-    "Last Edited < 1 min": "Змінено < 1 хв",
-    "Last Edited < 1 hr": "Змінено < 1 год",
-    "Last Edited < 1 day": "Змінено < 1 дня",
-    "Last Edited < 49 days": "Змінено < 49 днів",
     "Pick Color": "Вибрати колір",
     "Save & Apply": "Зберегти та застосувати",
     "Load from Current Theme": "Завантажити з поточної теми",
@@ -200,88 +243,39 @@ TRANSLATIONS: dict[str, str] = {
     "Plain folders under": "Звичайні папки в папці",
     "location configurable in settings": "розташування налаштовується в налаштуваннях",
     "fully readable outside FastPrompter": "повністю читаємі без FastPrompter",
-    "Show / hide FastPrompter from anywhere":
-        "Показати/сховати FastPrompter звідки завгодно",
-    "Quick List pie menu at the cursor":
-        "Швидке меню біля курсора",
-    "Show window + toggle the sidebar":
-        "Показати вікно + перемкнути бічну панель",
-    "Lock / unlock window size & position":
-        "Фіксувати/розблокувати розмір та положення вікна",
-    "Toggle always-on-top":
-        "Перемкнути поверх усіх вікон",
-    "Toggle Hide on Click-Out":
-        "Перемкнути ховання при кліку ззовні",
-    "Paste snippet 1&ndash;10 into the active app":
-        "Вставити снипет 1&ndash;10 в активний додаток",
-    "New empty silo at the top (max 5 blanks)":
-        "Нове порожнє сило зверху (макс 5 порожніх)",
-    "Previous / next silo":
-        "Попереднє / наступне сило",
-    "Jump to silo 1&ndash;10":
-        "Перейти до сила 1&ndash;10",
-    "Paste snippet 1&ndash;10 into the editor":
-        "Вставити снипет 1&ndash;10 в редактор",
-    "Save text as snippet / update the edited snippet":
-        "Зберегти текст як снипет / оновити редагований снипет",
-    "Insert a spaced --- divider and start a fresh bullet":
-        "Вставити --- розділювач і почати новий маркер",
-    "Toggle [ ] checkboxes on the line / selection":
-        "Перемкнути [ ] позначки на рядку / виділенні",
-    "Bold / Italic / Underline":
-        "Жирний / Курсив / Підкреслений",
-    "Find / Find &amp; Replace":
-        "Знайти / Знайти та замінити",
-    "Quit completely":
-        "Повний вихід",
-    "Flip pages": "Перегортати сторінки",
-    "Select previous / next silo":
-        "Вибрати попереднє / наступне сило",
-    "Switch project": "Перемкнути проект",
-    "Zoom the editor font": "Масштабувати шрифт редактора",
+    "NEW": "НОВ",
+    "Save": "Зберегти",
+    "Home": "Додому",
+    "End": "Кінець",
+    "Line": "─",
+    "Copy": "⧉",
+    "Clear": "✕",
+    "Think deeply.": "Думай глибше.",
+    "Show/Hide": "Показати/Сховати",
+    "Quit": "Вихід",
     "📋 Copy": "📋 Копіювати",
     "✏ Rename": "✏ Перейменувати",
     "📁 Files…": "📁 Файли…",
     "🗑 Delete": "🗑 Видалити",
     "Save Silo": "Зберегти сило",
-    "Text Files (*.txt)": "Текстові файли (*.txt)",
-    "Markdown Files (*.md)": "Файли Markdown (*.md)",
-    "All Files (*.*)": "Усі файли (*.*)",
     "Saved": "Збережено",
-    "Silo successfully saved to:\n{}": "Сило успішно збережено в:\n{}",
-    "Failed to save file:\n{}": "Помилка збереження файлу:\n{}",
-    "Snippet Number": "Номер снипета",
-    "Enter snippet number (1-{}):": "Введіть номер снипета (1-{}):",
-    "Overwrite Snippet": "Перезаписати снипет",
-    "Snippet #{} already exists. Overwrite?":
-        "Снипет #{} вже існує. Перезаписати?",
-    "Save Snippet": "Зберегти снипет",
-    "Name:": "Ім'я:",
-    "Delete Snippet": "Видалити снипет",
-    "Delete this snippet?": "Видалити цей снипет?",
-    "Delete Silo": "Видалити сило",
-    "Are you sure you want to delete this silo and its content?":
-        "Ви впевнені, що хочете видалити це сило та його вміст?",
-    "Are you sure you want to delete this snippet?":
-        "Ви впевнені, що хочете видалити цей снипет?",
-    "Rename Snippet": "Перейменувати снипет",
-    "Backup Silo": "Резервна копія сила",
-    "Save current silo as file in its own folder:":
-        "Зберегти поточне сило як файл у його папці:",
-    "Copy + Clear current silo":
-        "Копіювати + Очистити поточне сило",
+    "Rename": "Перейменувати",
+    "New name:": "Нове ім'я:",
+    "New Folder": "Нова папка",
+    "Folder name:": "Ім'я папки:",
+    "Open Folder": "Відкрити папку",
+    "Show in Explorer": "Показати в провіднику",
+    "Import files": "Імпорт файлів",
+    "Import folder": "Імпорт папки",
+    "All files (*.*)": "Усі файли (*.*)",
+    "No files yet": "Поки немає файлів",
     "Cancel": "Скасувати",
-    "📄 Drop as Text": "📄 Кинути як текст",
-    "insert content into silo": "вставити вміст у сило",
-    "📥 Copy to Files 📁": "📥 Копіювати у Файли 📁",
-    "🔗 Link in Files 📁": "🔗 Посилання у Файлах 📁",
-    "🔗 Link in Text": "🔗 Посилання в тексті",
-    "Show/Hide": "Показати/Сховати",
-    "Quit": "Вихід",
-    "Pin/Unpin this silo to top": "Закріпити/відкріпити сило зверху",
-    "Archive this silo": "Архівувати це сило",
-    "Mark this silo as done (click again to unmark)":
-        "Позначити сило як виконане (повторний клік зніме позначку)",
+    "Confirm": "Підтвердження",
+    "Tab Limit": "Ліміт вкладок",
+    "Delete Tab": "Видалити вкладку",
+    "Load Font": "Завантаження шрифту",
+    "Font Loaded": "Шрифт завантажено",
+    "Reset Fonts": "Скинути шрифти",
     "Always On Top": "Поверх усіх вікон",
     "Always on Top": "Поверх усіх вікон",
     "Backup Database": "Резервна копія БД",
@@ -301,21 +295,6 @@ TRANSLATIONS: dict[str, str] = {
     "Find Text": "Знайти текст",
     "Hide Window & Auto-save": "Сховати вікно та автозберегти",
     "Execute Snippet 1-10": "Виконати снипет 1-10",
-    "Tab Limit": "Ліміт вкладок",
-    "Maximum of 5 tabs/projects. Remove one first.":
-        "Максимум 5 вкладок/проектів. Спочатку видаліть одну.",
-    "Confirm": "Підтвердження",
-    "App will restart. Proceed?": "Додаток буде перезапущено. Продовжити?",
-    "Delete Tab": "Видалити вкладку",
-    "Load Font": "Завантаження шрифту",
-    "Failed to load font: {}": "Помилка завантаження шрифту: {}",
-    "Font loaded but no font families found.":
-        "Шрифт завантажено, але сімейства шрифтів не знайдено.",
-    "Font Loaded": "Шрифт завантажено",
-    "Loaded: {}": "Завантажено: {}",
-    "Reset Fonts": "Скинути шрифти",
-    "Clear all custom fonts and reset to defaults?":
-        "Очистити користувацькі шрифти та скинути до стандартних?",
     "Clear Fmt": "Очист фмт",
     "Rpl": "Зам",
     "⬆ Move to Top": "⬆ Вгору",
@@ -326,20 +305,17 @@ TRANSLATIONS: dict[str, str] = {
     "📥 Archive": "📥 В архів",
     "💾 Save text as Snippet": "💾 Зберегти текст як снипет",
     "S": "З",
-    "Always on Top — keep the window above all others":
-        "Поверх усіх вікон — тримати вікно поверх інших",
     "B": "Ж",
+    "U": "П",
+    "H": "З",
     "🧹 Clear": "🧹 Очистити",
     "🗂 Open Trash Folder": "🗂 Відкрити папку кошика",
     "Update": "Оновити",
     "Find...": "Знайти...",
-    "U": "П",
     "⬇ Move to Bottom": "⬇ Вниз",
-    "Replace with...": "Замінити на...",
     "⬆ Un-nest from Parent": "⬆ Відкріпити від батька",
     "📌 Unpin": "📌 Відкріпити",
     "➡ Transfer to Snippet": "➡ Перенести в снипет",
-    "H": "З",
     "💾 Save as Snippet #…": "💾 Зберегти як снипет #…",
     "Insert Table": "Вставити таблицю",
     "Insert Kanban": "Вставити канбан",
@@ -354,25 +330,16 @@ TRANSLATIONS: dict[str, str] = {
     "Top Right:": "Вгорі праворуч:",
     "Bottom Left:": "Внизу ліворуч:",
     "Bottom Right:": "Внизу праворуч:",
-    "Files: drop/drag/preview assets for this silo":
-        "Файли: кидайте/перетягуйте/переглядайте файли для цього сила",
-    "Unpin this silo": "Відкріпити це сило",
-    "Pin this silo to top": "Закріпити це сило зверху",
     "📄 Insert as Text": "📄 Вставити як текст",
     "📥 Copy to Silo Files 📁": "📥 Копіювати у Файли сила 📁",
     "🔗 Link in Silo Files 📁": "🔗 Посилання у Файлах сила 📁",
-    "No files yet": "Поки немає файлів",
-    "Import files": "Імпорт файлів",
-    "Import folder": "Імпорт папки",
-    "All files (*.*)": "Усі файли (*.*)",
-    "Rename": "Перейменувати",
-    "New name:": "Нове ім'я:",
-    "New Folder": "Нова папка",
-    "Folder name:": "Ім'я папки:",
-    "Show in Explorer": "Показати в провіднику",
-    "Export to…": "Експорт у…",
-    "Open Folder": "Відкрити папку",
-    "Line gaps:": "Відступи:",
-    "Never gonna give you up":
-        "Ніколи тебе не покину",
+    "🔗 Link in Text": "🔗 Посилання в тексті",
+    "Pin/Unpin this silo to top": "Закріпити/відкріпити сило зверху",
+    "Archive this silo": "Архівувати це сило",
+    "Files: drop/drag/preview assets for this silo":
+        "Файли: кидайте/перетягуйте/переглядайте файли для цього сила",
+    "Mark this silo as done (click again to unmark)":
+        "Позначити сило як виконане (повторний клік зніме позначку)",
+    "Unpin this silo": "Відкріпити це сило",
+    "Pin this silo to top": "Закріпити це сило зверху",
 }

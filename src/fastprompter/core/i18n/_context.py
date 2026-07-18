@@ -44,10 +44,7 @@ _LANG_NAMES: dict[str, str] = {
 
 
 def scaffold_language(code: str) -> None:
-    """Register an empty secured slot for a language code.
-
-    Does nothing if already registered.
-    """
+    """Register an empty secured slot for a language code."""
     code = code.upper()
     if code in _engine.available_langs():
         return
