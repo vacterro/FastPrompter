@@ -421,10 +421,10 @@ class DraggableSiloButton(QWidget):
 
         # Use QHBoxLayout for left-aligned text + stretch + action buttons + line count
         self._silo_layout = QHBoxLayout(self)
-        self._silo_layout.setContentsMargins(4, 2, 4, 2)
-        self._silo_layout.setSpacing(2)
+        self._silo_layout.setContentsMargins(3, 1, 3, 1)
+        self._silo_layout.setSpacing(1)
         self._btn_collapse = QPushButton("▾")
-        self._btn_collapse.setFixedSize(16, 16)
+        self._btn_collapse.setFixedSize(14, 16)
         self._btn_collapse.setCursor(Qt.CursorShape.PointingHandCursor)
         self._btn_collapse.setStyleSheet("background: transparent; border: none; padding: 0;")
         self._btn_collapse.clicked.connect(self._on_collapse_clicked)
@@ -440,7 +440,7 @@ class DraggableSiloButton(QWidget):
 
         # Hover-only action buttons: pin and archive
         self._btn_pin = QPushButton("📌")
-        self._btn_pin.setFixedSize(16, 16)
+        self._btn_pin.setFixedSize(14, 16)
         self._btn_pin.setToolTip(tr("Pin/Unpin this silo to top", getattr(self.main_win, "_current_lang", "EN")))
         self._btn_pin.setCursor(Qt.CursorShape.PointingHandCursor)
         self._btn_pin.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
@@ -448,7 +448,7 @@ class DraggableSiloButton(QWidget):
         self._btn_pin.clicked.connect(self._on_pin_clicked)
 
         self._btn_archive = QPushButton("📥")
-        self._btn_archive.setFixedSize(16, 16)
+        self._btn_archive.setFixedSize(14, 16)
         self._btn_archive.setToolTip(tr("Archive this silo", getattr(self.main_win, "_current_lang", "EN")))
         self._btn_archive.setCursor(Qt.CursorShape.PointingHandCursor)
         self._btn_archive.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
@@ -464,7 +464,7 @@ class DraggableSiloButton(QWidget):
         self._btn_files.clicked.connect(self._on_files_clicked)
 
         self._btn_tick = QPushButton("✅")
-        self._btn_tick.setFixedSize(16, 16)
+        self._btn_tick.setFixedSize(14, 16)
         self._btn_tick.setToolTip(tr("Mark this silo as done (click again to unmark)", getattr(self.main_win, "_current_lang", "EN")))
         self._btn_tick.setCursor(Qt.CursorShape.PointingHandCursor)
         # Verdana (forced app-wide) has no color emoji — pin the tick to an
@@ -659,7 +659,7 @@ class DraggableSiloButton(QWidget):
         self._line_count_str = line_count_str
         self.global_idx = global_idx
         # children sit shifted right under their parent
-        self._silo_layout.setContentsMargins(22 if is_child else 4, 2, 4, 2)
+        self._silo_layout.setContentsMargins(20 if is_child else 3, 1, 3, 1)
 
         if has_children:
             self._btn_collapse.setText("▸" if is_collapsed else "▾")
