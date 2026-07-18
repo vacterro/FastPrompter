@@ -1364,6 +1364,32 @@ def test_theme_switch_keeps_button_labels(win):
     win.apply_theme()
 
 
+def test_header_format_editor(win):
+    from fastprompter.ui.header_format_dialog import HeaderFormatDialog
+
+    dlg = HeaderFormatDialog(win)
+    assert dlg.preview.text()  # live preview renders
+    # sample honors placeholders
+    s = dlg.sample_line("# {text} {state} {time}")
+    assert "Sample title" in s
+    assert any(w0 in s for w0 in ("Morning", "Day", "Evening", "Night"))
+    # editing + accept saves and syncs the settings field
+    dlg.edit.setText("**{text}** — {state}")
+    dlg._accept()
+    assert win.data["ctrl_e_format"] == "**{text}** — {state}"
+    assert win.le_hdr_fmt.text() == "**{text}** — {state}"
+
+    # Ctrl+E applies the custom template on a real line
+    from PyQt6.QtGui import QTextCursor
+    win.text_area.setPlainText("hello note")
+    c = win.text_area.textCursor(); c.movePosition(QTextCursor.MoveOperation.End)
+    win.text_area.setTextCursor(c)
+    win.apply_header_timestamp()
+    line = win.text_area.toPlainText()
+    assert "hello note" in line and "**" in line
+    win.data["ctrl_e_format"] = "**__{text}__** ({time})"
+
+
 def test_same_title_silos_get_separate_folders(win):
     # Regression: folders were keyed purely by title slug, so two silos with
     # the same title (or two empty ones) shared a folder -> files "jumped" to

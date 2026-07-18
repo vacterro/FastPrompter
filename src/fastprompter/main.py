@@ -1705,6 +1705,11 @@ class FastPrompter(
             lambda v: (self.data.update({"ctrl_e_format": v}), self.mark_dirty())
         )
         hdr_row.addWidget(self.le_hdr_fmt)
+        btn_hdr_edit = QPushButton(tr("Edit…", getattr(self, "_current_lang", "EN")))
+        btn_hdr_edit.setToolTip(tr("Open the header format editor (placeholders, presets, live preview)", getattr(self, "_current_lang", "EN")))
+        btn_hdr_edit.setFixedWidth(44)
+        btn_hdr_edit.clicked.connect(self.open_header_format_editor)
+        hdr_row.addWidget(btn_hdr_edit)
 
 
         def _settings_group(title, items):
@@ -2219,6 +2224,16 @@ class FastPrompter(
         self.text_area.ensureCursorVisible()
         self.text_area.setFocus()
         self.mark_dirty()
+
+    def open_header_format_editor(self):
+        """Open the comprehensive Ctrl+E header template editor."""
+        from fastprompter.ui.header_format_dialog import HeaderFormatDialog
+        prev = getattr(self, "ignore_focus_loss", False)
+        self.ignore_focus_loss = True
+        try:
+            HeaderFormatDialog(self).exec()
+        finally:
+            self.ignore_focus_loss = prev
 
     def apply_header_timestamp(self):
         """Ctrl+E: Apply user-defined header formatting and timestamp at end of current line."""
