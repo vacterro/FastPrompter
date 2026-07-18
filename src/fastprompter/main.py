@@ -279,6 +279,10 @@ class FastPrompter(
         if getattr(self, "_header_ultra", False):
             # portrait sliver: the clock keeps only DD.MM - hh:mm
             show_secs = show_word = text_month = False
+        elif getattr(self, "_header_dense", False):
+            # dense (Ctrl+Q quarter): numeric month is narrower than "MMM",
+            # so the full clock (secs + day word) still fits the 960px snap
+            text_month = False
         m_fmt = "%d %b" if text_month else "%d.%m"
         if show_secs:
             dt_str = now.strftime(f"{m_fmt} - %H:%M:%S")
@@ -409,7 +413,7 @@ class FastPrompter(
                 if dense:
                     self.cat_combo.setStyleSheet("")
                     self.cat_combo.setMinimumWidth(0)
-                    self.cat_combo.setMaximumWidth(110)
+                    self.cat_combo.setMaximumWidth(100)
                 else:
                     self.cat_combo.setStyleSheet("")
                     self.cat_combo.setMinimumWidth(0)
@@ -2841,10 +2845,18 @@ class FastPrompter(
                 self.data_redo_stack.pop(0)
                 
             def _get_size(st):
+                # snapshots store temp_presets/archive as flat LISTS — handle
+                # both shapes so this can never crash the redo push (see the
+                # matching guard in add_data_undo_state)
                 size = 0
-                for d in (st.get("temp_presets", {}), st.get("archive_temp_presets", {})):
-                    for cats in d.values():
-                        size += sum(len(txt) for txt in cats if txt)
+                for key in ("temp_presets", "archive_temp_presets"):
+                    d = st.get(key)
+                    if isinstance(d, dict):
+                        for cats in d.values():
+                            if isinstance(cats, (list, tuple)):
+                                size += sum(len(t) for t in cats if isinstance(t, str))
+                    elif isinstance(d, (list, tuple)):
+                        size += sum(len(t) for t in d if isinstance(t, str))
                 return size
 
             while len(self.data_redo_stack) > 1 and sum(_get_size(s) for s in self.data_redo_stack) > MAX_CHARS:

@@ -1697,6 +1697,22 @@ def test_file_container_button_wired(win):
     assert win.silo_buttons[0]._btn_files.toolTip().startswith("Files")
 
 
+def test_all_source_files_compile():
+    # GUARD: every shipped .py must parse. A dozen i18n translation files
+    # once shipped with unescaped apostrophes ('Pagina's') that crashed on
+    # language load — this catches that whole class before it can ship.
+    import compileall
+    import io
+    import pathlib
+    from contextlib import redirect_stdout
+
+    src = pathlib.Path(__file__).resolve().parents[1] / "src" / "fastprompter"
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        ok = compileall.compile_dir(str(src), quiet=1, force=True)
+    assert ok, f"source files failed to compile:\n{buf.getvalue()}"
+
+
 def test_undo_size_cap_handles_list_snapshots(win):
     # Regression: the undo memory-cap _get_size() called .values() on
     # temp_presets, but snapshots store it as a flat LIST -> AttributeError

@@ -267,7 +267,7 @@ TRANSLATIONS: dict[str, str] = {
     'one click stores the current silo or snippet': 'bir tıkla geçerli silo veya parçacık kaydedilir',
     'Open\tEnter': 'Aç\tEnter',
     'Open Folder': 'Klasörü Aç',
-    "Open Folder\nOpen this silo's folder in Explorer": 'Klasörü Aç\nBu silonun klasörünü Gezgin\'de aç',
+    "Open Folder\nOpen this silo's folder in Explorer": "Klasörü Aç\\nBu silonun klasörünü Gezgin'de aç",
     'Open Trash': 'Çöp Kutusunu Aç',
     'Open with the cursor at start / end': 'İmleç başta / sonda olacak şekilde aç',
     'optional UI clicks and typewriter effect': 'isteğe bağlı arayüz tıklamaları ve daktilo efekti',

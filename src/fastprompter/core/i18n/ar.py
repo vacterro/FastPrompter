@@ -381,7 +381,7 @@ TRANSLATIONS: dict[str, str] = {
     'Text Area Background': 'خلفية منطقة النص',
     'Text Files (*.txt)': 'ملفات نصية (*.txt)',
     'The hotkey opens the window at your mouse cursor': 'الاختصار يفتح النافذة عند مؤشر الفأرة',
-    "The nested silo owns {} file(s).\nMerge them into the parent silo's Files?\n(collisions get ' (2)' names — nothing is overwritten)": 'الصومعة المتداخلة تملك {} ملفًا.\nدمجها في ملفات الصومعة الأم؟\n(التصادمات تحصل على أسماء (2)\' — لا شيء يتم استبداله)',
+    "The nested silo owns {} file(s).\nMerge them into the parent silo's Files?\n(collisions get ' (2)' names — nothing is overwritten)": "الصومعة المتداخلة تملك {} ملفًا.\\nدمجها في ملفات الصومعة الأم؟\\n(التصادمات تحصل على أسماء (2)' — لا شيء يتم استبداله)",
     'Theme:': 'السمة:',
     'Think deeply.': 'فكر بعمق.',
     'Toggle [ ] checkboxes on the line / selection': 'تبديل مربعات الاختيار [ ] في السطر / التحديد',

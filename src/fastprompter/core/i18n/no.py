@@ -185,7 +185,7 @@ TRANSLATIONS: dict[str, str] = {
     'Hide Window & Auto-save': 'Skjul vindu og auto-lagre',
     'Home': 'Hjem',
     'Home (Home)': 'Hjem (Home)',
-    "How should '{}' be added?": 'Hvordan skal '{}' legges til?',
+    "How should '{}' be added?": "Hvordan skal '{}' legges til?",
     'I': 'I',
     'Import files': 'Importer filer',
     "Import Files...\nCopy files into this silo's folder\n(or just drop files anywhere on this window)": 'Importer filer…\nKopier filer til denne siloens mappe\n(eller slipp filer hvor som helst på vinduet)',

@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.6.5a — 2026-07-18
+- **Critical crash fixed**: switching silos (or any undo/redo push) crashed with `'list' object has no attribute 'values'` — the undo/redo memory-cap iterated `temp_presets` as a dict when snapshots store it as a list. Both copies of the size helper now handle either shape.
+- **Critical crash fixed**: twelve translation files (ar, da, fi, it, ko, nl, no, pl, pt, sv, th, tr) shipped with unescaped apostrophes (e.g. `'Pagina's'`) that were syntax errors and crashed the moment that language loaded. All 45 offending strings re-quoted.
+- **Guard added**: a test now compiles every source file, so a syntax-error crash of this class can never ship again.
+- Dense header (Ctrl+Q quarter snap) uses a numeric month so the full clock keeps fitting the 960px width.
+
+
 ## v0.6.5 — 2026-07-17
 - **Bug fixes**: Ctrl+E re-stamps no longer detach a silo from its files folder (timestamps are slug-invisible; retitles rename the folder); container Delete/Rename dialogs no longer hide behind the always-on-top window; theme switches no longer truncate toolbar button labels; a hidden search bar no longer filters snippets away; the timestamp refresh glyph survives the "17 Jul" date format; Normal Window toggles without the white flash.
 - **Trash instead of delete**: middle-click or context menu moves a silo to `data/files/_trash/` (text as .md + its files) — nothing is destroyed.
