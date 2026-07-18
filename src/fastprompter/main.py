@@ -1905,7 +1905,7 @@ class FastPrompter(
 
         self.sections_gap_widget = QFrame(self)
         self.sections_gap_widget.setFixedHeight(8)
-        self.sections_gap_widget.setStyleSheet("border-top: 1px solid #5a5a40; border-bottom: 1px solid #1a1a10; margin: 2px 8px; background: transparent;")
+        self.sections_gap_widget.setStyleSheet("margin: 2px 8px; background: transparent;")
         self.sections_gap_widget.hide()
         self.left_panel_layout.addWidget(self.sections_gap_widget)
 
@@ -3047,10 +3047,18 @@ class FastPrompter(
             self.data_undo_stack.pop(0)
             
         def _get_size(st):
+            # Snapshots store temp_presets/archive as flat LISTS of silo text
+            # (not per-category dicts) — handle both shapes defensively so a
+            # structure change can never crash the undo push again.
             size = 0
-            for d in (st.get("temp_presets", {}), st.get("archive_temp_presets", {})):
-                for cats in d.values():
-                    size += sum(len(txt) for txt in cats if txt)
+            for key in ("temp_presets", "archive_temp_presets"):
+                d = st.get(key)
+                if isinstance(d, dict):
+                    for cats in d.values():
+                        if isinstance(cats, (list, tuple)):
+                            size += sum(len(t) for t in cats if isinstance(t, str))
+                elif isinstance(d, (list, tuple)):
+                    size += sum(len(t) for t in d if isinstance(t, str))
             return size
 
         while len(self.data_undo_stack) > 1 and sum(_get_size(s) for s in self.data_undo_stack) > MAX_CHARS:
@@ -3981,7 +3989,7 @@ class FastPrompter(
             from PyQt6.QtWidgets import QFrame
             self.silo_gap_widget = QFrame(self)
             self.silo_gap_widget.setFixedHeight(8)
-            self.silo_gap_widget.setStyleSheet("border-top: 1px solid #5a5a40; border-bottom: 1px solid #1a1a10; margin: 2px 8px; background: transparent;")
+            self.silo_gap_widget.setStyleSheet("margin: 2px 8px; background: transparent;")
             self.silos_widget.layout.addWidget(self.silo_gap_widget)
 
         self.silos_widget.layout.removeWidget(self.silo_gap_widget)

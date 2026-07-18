@@ -1697,6 +1697,20 @@ def test_file_container_button_wired(win):
     assert win.silo_buttons[0]._btn_files.toolTip().startswith("Files")
 
 
+def test_undo_size_cap_handles_list_snapshots(win):
+    # Regression: the undo memory-cap _get_size() called .values() on
+    # temp_presets, but snapshots store it as a flat LIST -> AttributeError
+    # crashed every silo switch / undo push.
+    win.data["temp_presets"][:] = ["alpha", "beta", "gamma"]
+    win.data["archive_temp_presets"][:] = ["old one"]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    win._switch_to_slot(1)
+    win._switch_to_slot(2)
+    win.add_data_undo_state("Switch silo")  # must not raise
+    assert len(win.data_undo_stack) >= 1
+
+
 def test_sidebar_width_saved_per_side(win):
     # Each side (left/right) remembers its own sidebar width independently —
     # switching sides must not leak one width onto the other.
