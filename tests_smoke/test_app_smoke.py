@@ -1695,6 +1695,19 @@ def test_file_container_button_wired(win):
     assert win.silo_buttons[0]._btn_files.toolTip().startswith("Files")
 
 
+def test_open_file_container_actually_opens(win):
+    # Regression: open_file_container had its FileContainerPanel import at
+    # class-body scope, invisible to the method -> NameError on first open.
+    win.data["temp_presets"][:] = ["# Assets silo", "other"]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    win._file_container = None
+    win.open_file_container(0)  # must not raise
+    from fastprompter.ui.file_container import FileContainerPanel
+    assert isinstance(win._file_container, FileContainerPanel)
+    win._file_container.close()
+
+
 def test_date_rectangle_formats_and_toggles(win):
     import re
     win.data["show_date_rect"] = "True"

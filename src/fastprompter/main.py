@@ -534,9 +534,9 @@ class FastPrompter(
             + folder_summary(self._files_root(), cat, text, lang=lang)
         )
 
-    from fastprompter.ui.file_container import FileContainerPanel, folder_summary, silo_file_count
     def open_file_container(self, global_idx=None, is_archive=False):
         """Open the per-silo file drawer (📁 button / silo hover button)."""
+        from fastprompter.ui.file_container import FileContainerPanel
         if global_idx is None:
             global_idx = self.active_temp_slot
             is_archive = getattr(self, "active_is_archive", False)
