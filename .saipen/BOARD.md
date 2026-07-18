@@ -289,3 +289,10 @@ already-handled, or theoretical (won't-fix without a repro).
 | T-177,178,180 | WONTFIX-SMELL | bare-except fail-safe guards; acceptable per T-152's own note |
 | T-181,183,187,195 | WONTFIX-THEORY | positioning/timing/layout smells; working in practice, tests green, no user repro |
 | T-173 | WONTFIX | `with self.conn:` commits/rolls back per sqlite3 semantics; no demonstrated failure |
+
+## HUNT sweep (18.07, claude-opus) — @824f1aa
+| ID | Verdict | Detail |
+|---|---|---|
+| T-210 | DONE (verified) | Sidebar per-side width already works (antigravity); locked with test_sidebar_width_saved_per_side |
+| T-211 | FIXED | HUNT found 3 real unbalanced endEditBlock() freeze bugs (same class as Ctrl+W): toggle_bullet_conversion (wired button), clear_formatting (wired Clear Fmt), toggle_header_line (dead but latent). Added AST regression test that fails on any unpaired end. |
+| T-212 | DONE | Removed 40 identical noise "# TODO: BUG: Silent blanket exception handler" tags (comments only, 9 files) — false-positive residue of the hallucinated static-analysis wave |

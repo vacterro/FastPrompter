@@ -90,8 +90,6 @@ class HotkeyMixin:
             return
         try:
             modifiers, vk = parse_hotkey(hotkey_str)
-        # TODO: BUG: Silent blanket exception handler swallows errors
-
         except Exception:
             return
         if vk:

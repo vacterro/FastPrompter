@@ -128,8 +128,6 @@ class DraggableButton(QPushButton):
             if isinstance(custom_colors, str):
                 import ast
                 try: custom_colors = ast.literal_eval(custom_colors)
-                # TODO: BUG: Silent blanket exception handler swallows errors
-
                 except Exception: custom_colors = {}
             if isinstance(custom_colors, dict) and "edit_bg" in custom_colors:
                 color = custom_colors["edit_bg"]
@@ -275,8 +273,6 @@ class SnippetWidget(QWidget):
         border = extract_border_color(theme.get('btn_save', '')) or '#4a4a4a'
 
         try: button_scale = float(self.main_win.data.get("button_scale", "1.0"))
-        # TODO: BUG: Silent blanket exception handler swallows errors
-
         except Exception: button_scale = 1.0
 
         from PyQt6.QtGui import QFont

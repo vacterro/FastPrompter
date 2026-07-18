@@ -42,8 +42,6 @@ class ThemeMixin:
             if isinstance(raw, str):
                 try:
                     parsed = ast.literal_eval(raw)
-                # TODO: BUG: Silent blanket exception handler swallows errors
-
                 except Exception:
                     parsed = {}
             else:
@@ -157,15 +155,11 @@ class ThemeMixin:
             return
         try:
             base_size = self._font_size
-        # TODO: BUG: Silent blanket exception handler swallows errors
-
         except Exception:
             base_size = 11
         font_name = self._font_family
         try:
             scale = self._ui_scale
-        # TODO: BUG: Silent blanket exception handler swallows errors
-
         except Exception:
             scale = 1.0
         font_size = max(8, int(round(base_size * scale)))
@@ -223,8 +217,6 @@ class ThemeMixin:
         if isinstance(loaded, str):
             try:
                 loaded = json.loads(loaded)
-            # TODO: BUG: Silent blanket exception handler swallows errors
-
             except Exception:
                 loaded = []
         loaded.append(font_id)

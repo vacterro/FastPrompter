@@ -498,8 +498,6 @@ class FileContainerPanel(QWidget):
                         first_word = clean_line.split()[0]
                         # Remove non-alphanumeric chars
                         first_word = re.sub(r'[^a-zA-Z0-9]', '', first_word)
-        # TODO: BUG: Silent blanket exception handler swallows errors
-
         except Exception:
             pass
 

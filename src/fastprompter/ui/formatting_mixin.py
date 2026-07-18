@@ -112,6 +112,8 @@ class FormattingMixin:
     def toggle_header_line(self):
         """Ctrl+E: Toggle `# ` header + `**` bold markers (persists across sessions)."""
         cursor = self.text_area.textCursor()
+        # balance the endEditBlock() below (was unbalanced — freeze risk)
+        cursor.beginEditBlock()
 
         pos_in_block = cursor.positionInBlock()
         block = cursor.block()
@@ -171,6 +173,9 @@ class FormattingMixin:
     def toggle_bullet_conversion(self):
         """Toggle between bullet (•) and dash (-) list markers on selected text."""
         cursor = self.text_area.textCursor()
+        # beginEditBlock MUST balance every endEditBlock below — an unbalanced
+        # end corrupts the doc edit-block counter and freezes rendering
+        cursor.beginEditBlock()
         if cursor.hasSelection():
             text = cursor.selectedText().replace("\u2029", "\n")
         else:
@@ -340,15 +345,11 @@ class FormattingMixin:
         clean_format.setFontStyleStrategy(QFont.StyleStrategy.NoAntialias | QFont.StyleStrategy.NoSubpixelAntialias)
         try:
             base_size = self._font_size
-        # TODO: BUG: Silent blanket exception handler swallows errors
-
         except Exception:
             base_size = 11
         font_name = self._font_family
         try:
             scale = self._ui_scale
-        # TODO: BUG: Silent blanket exception handler swallows errors
-
         except Exception:
             scale = 1.0
         font_size = max(8, int(round(base_size * scale)))
@@ -366,6 +367,7 @@ class FormattingMixin:
         clean_format.setFontStrikeOut(False)
 
         self.text_area.blockSignals(True)
+        cursor.beginEditBlock()  # balance the endEditBlock() in finally
         try:
             if cursor.hasSelection():
                 raw_text = cursor.selectedText().replace("\u2029", "\n")

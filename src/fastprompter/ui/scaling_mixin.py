@@ -136,8 +136,6 @@ class ScalingMixin:
         scales = [0.5, 0.75, 1.0, 1.25, 1.5]
         try:
             current = self._ui_scale
-        # TODO: BUG: Silent blanket exception handler swallows errors
-
         except Exception:
             current = 1.0
         try:
@@ -176,8 +174,6 @@ class ScalingMixin:
         """Fine-adjust the unified scale (Ctrl+plus / Ctrl+minus)."""
         try:
             current = self._ui_scale
-        # TODO: BUG: Silent blanket exception handler swallows errors
-
         except Exception:
             current = 1.0
         self._set_unified_scale(current + delta)
@@ -186,8 +182,6 @@ class ScalingMixin:
         """Apply UI scale to button heights, fonts, and widths."""
         try:
             scale = self._ui_scale
-        # TODO: BUG: Silent blanket exception handler swallows errors
-
         except Exception:
             scale = 1.0
 

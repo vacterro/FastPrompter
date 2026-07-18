@@ -180,8 +180,6 @@ class FastPrompter(
         self._font_cache_key, self._cached_main_font = None, None
         try:
             self.active_temp_slot = int(self.data.get("active_temp_slot", 0))
-        # TODO: BUG: Silent blanket exception handler swallows errors
-
         except Exception:
             self.active_temp_slot = 0
         # Per-category pins/last-edited stores (aliased per tab like
@@ -202,8 +200,6 @@ class FastPrompter(
         for c, d in eall.items():
             try:
                 norm[c] = {int(k): int(v) for k, v in d.items()}
-            # TODO: BUG: Silent blanket exception handler swallows errors
-
             except Exception:
                 norm[c] = {}
         self.data["silo_last_edited_all"] = norm
@@ -227,8 +223,6 @@ class FastPrompter(
         for c, cmap in call.items():
             try:
                 norm_call[c] = {int(k): [int(x) for x in v] for k, v in cmap.items()}
-            # TODO: BUG: Silent blanket exception handler swallows errors
-
             except Exception:
                 norm_call[c] = {}
         self.data["silo_children_all"] = norm_call
@@ -1146,8 +1140,6 @@ class FastPrompter(
 
         try:
             current_scale_pct = int(float(self.data.get("ui_scale", "1.0")) * 100)
-        # TODO: BUG: Silent blanket exception handler swallows errors
-
         except Exception:
             current_scale_pct = 100
         self.btn_button_scale = make_action_checkbox(
@@ -1944,8 +1936,6 @@ class FastPrompter(
 
         try:
             font_size = int(self.data.get("font_size", 11))
-        # TODO: BUG: Silent blanket exception handler swallows errors
-
         except Exception:
             font_size = 11
         font = QFont(self.data.get("font_family", "Verdana"), font_size)
@@ -2052,8 +2042,6 @@ class FastPrompter(
         # Switch to first silo
         try:
             slot_val = int(self.data.get("active_temp_slot", 0))
-        # TODO: BUG: Silent blanket exception handler swallows errors
-
         except Exception:
             slot_val = 0
         self.active_temp_slot = max(0, min(slot_val, len(self.data["temp_presets"]) - 1))
@@ -2218,8 +2206,6 @@ class FastPrompter(
         if hasattr(self, "btn_button_scale") and not sip.isdeleted(self.btn_button_scale):
             try:
                 pct = int(float(self.data.get("ui_scale", "1.0")) * 100)
-            # TODO: BUG: Silent blanket exception handler swallows errors
-
             except Exception:
                 pct = 100
             self.btn_button_scale.setText(f"{tr('Scale', lang)}: {pct}%")
@@ -2494,8 +2480,6 @@ class FastPrompter(
                     ctypes.windll.user32.SetWindowPos(
                         int(self.winId()), -1, 0, 0, 0, 0, 0x0002 | 0x0001
                     )
-                # TODO: BUG: Silent blanket exception handler swallows errors
-
                 except Exception:
                     pass
             return
@@ -2537,8 +2521,6 @@ class FastPrompter(
                     ctypes.windll.user32.SetWindowPos(
                         int(self.winId()), -1, 0, 0, 0, 0, 0x0002 | 0x0001
                     )
-                # TODO: BUG: Silent blanket exception handler swallows errors
-
                 except Exception:
                     pass
         QTimer.singleShot(300, self._decrement_focus_lock)
@@ -3467,8 +3449,6 @@ class FastPrompter(
 
         try:
             scale = float(self.data.get("ui_scale", "1.0"))
-        # TODO: BUG: Silent blanket exception handler swallows errors
-
         except Exception:
             scale = 1.0
 
@@ -3569,8 +3549,6 @@ class FastPrompter(
 
         try:
             scale = float(self.data.get("ui_scale", "1.0"))
-        # TODO: BUG: Silent blanket exception handler swallows errors
-
         except Exception:
             scale = 1.0
         font_family = self.data.get("font_family", "Verdana")
@@ -3674,8 +3652,6 @@ class FastPrompter(
 
                 try:
                     pinned = ast.literal_eval(pinned)
-                # TODO: BUG: Silent blanket exception handler swallows errors
-
                 except Exception:
                     pinned = []
             total = len(presets)
@@ -3869,8 +3845,6 @@ class FastPrompter(
 
         try:
             scale = float(self.data.get("ui_scale", "1.0"))
-        # TODO: BUG: Silent blanket exception handler swallows errors
-
         except Exception:
             scale = 1.0
         font_family = self.data.get("font_family", "Verdana")
@@ -3883,8 +3857,6 @@ class FastPrompter(
 
             try:
                 pinned_list = ast.literal_eval(pinned_list)
-            # TODO: BUG: Silent blanket exception handler swallows errors
-
             except Exception:
                 pinned_list = []
         # Compute display order: pinned first (pin order), then unpinned by
@@ -4033,8 +4005,6 @@ class FastPrompter(
                 import ast
                 try:
                     pinned_list = ast.literal_eval(pinned_list)
-                # TODO: BUG: Silent blanket exception handler swallows errors
-
                 except Exception:
                     pinned_list = []
             if idx in pinned_list:
@@ -4752,15 +4722,11 @@ class FastPrompter(
         try:
             if hasattr(self, "ipc"):
                 self.ipc.close()
-        # TODO: BUG: Silent blanket exception handler swallows errors
-
         except Exception:
             pass
         try:
             if hasattr(self, "conn") and self.conn:
                 self.conn.close()
-        # TODO: BUG: Silent blanket exception handler swallows errors
-
         except Exception:
             pass
         # Null out every reference so the closeEvent save triggered by
@@ -4771,8 +4737,6 @@ class FastPrompter(
         try:
             if hasattr(self, "tray_icon"):
                 self.tray_icon.hide()
-        # TODO: BUG: Silent blanket exception handler swallows errors
-
         except Exception:
             pass
         QApplication.quit()
@@ -4790,8 +4754,6 @@ def setup_exception_hook():
         try:
             with open(crash_log, "a") as f:
                 f.write(error_msg + chr(10))
-        # TODO: BUG: Silent blanket exception handler swallows errors
-
         except Exception:
             pass
         ctypes.windll.user32.MessageBoxW(

@@ -1695,6 +1695,79 @@ def test_file_container_button_wired(win):
     assert win.silo_buttons[0]._btn_files.toolTip().startswith("Files")
 
 
+def test_sidebar_width_saved_per_side(win):
+    # Each side (left/right) remembers its own sidebar width independently —
+    # switching sides must not leak one width onto the other.
+    win.resize(1000, 600)
+    win.data["sidebar_right"] = "False"
+    win.apply_sidebar_position()
+    win.splitter.setSizes([260, 740])
+    win.on_splitter_moved(0, 0)
+    left_saved = list(win.data["splitter_sizes_left"])
+
+    win.data["sidebar_right"] = "True"
+    win.apply_sidebar_position()
+    win.splitter.setSizes([800, 200])
+    win.on_splitter_moved(0, 0)
+    right_saved = list(win.data["splitter_sizes_right"])
+
+    # the two sides store to separate keys and don't overwrite each other
+    assert win.data["splitter_sizes_left"] == left_saved
+    assert win.data["splitter_sizes_right"] == right_saved
+    assert left_saved != right_saved
+
+    # toggling back restores each side from its OWN key
+    win.data["sidebar_right"] = "False"
+    win.apply_sidebar_position()
+    assert list(win.splitter.sizes()) == left_saved
+    win.data["sidebar_right"] = "True"
+    win.apply_sidebar_position()
+    assert list(win.splitter.sizes()) == right_saved
+
+
+def test_editor_commands_have_balanced_edit_blocks():
+    # HUNT regression: several wired editor commands called endEditBlock()
+    # with no matching beginEditBlock(), corrupting the doc counter and
+    # freezing rendering. Statically assert no method has an unpaired end.
+    import ast
+    import pathlib
+
+    src = pathlib.Path(__file__).resolve().parents[1] / "src" / "fastprompter"
+    offenders = []
+    for p in src.rglob("*.py"):
+        tree = ast.parse(p.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef):
+                calls = [n.func.attr for n in ast.walk(node)
+                         if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)]
+                begins = calls.count("beginEditBlock")
+                ends = calls.count("endEditBlock")
+                if ends > 0 and begins == 0:
+                    offenders.append(f"{p.name}::{node.name}")
+    assert not offenders, f"endEditBlock with no beginEditBlock: {offenders}"
+
+
+def test_bullet_and_clear_format_dont_freeze(win):
+    from PyQt6.QtGui import QTextCursor
+
+    ta = win.text_area
+    doc = ta.document()
+    # bullet toggle (wired button) — one undo step, rendering stays live
+    ta.setPlainText("- a\n- b")
+    c = ta.textCursor(); c.select(QTextCursor.SelectionType.Document); ta.setTextCursor(c)
+    win.toggle_bullet_conversion()
+    assert "•" in ta.toPlainText()
+    doc.undo()
+    assert ta.toPlainText() == "- a\n- b"
+    # clear formatting (wired button)
+    ta.setPlainText("text")
+    c = ta.textCursor(); c.select(QTextCursor.SelectionType.Document); ta.setTextCursor(c)
+    win.clear_formatting()  # must not raise / freeze
+    ta.setPlainText("```py\nx=1\n```")
+    ta._refresh_checkbox_flag()
+    assert ta.line_number_area_width() > 0  # rendering still live
+
+
 def test_divider_commands_balanced_edit_blocks(win):
     # Regression: Ctrl+W / Alt+W called endEditBlock() with no matching
     # beginEditBlock(), corrupting the doc counter and freezing rendering.

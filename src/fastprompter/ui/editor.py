@@ -149,8 +149,6 @@ class VaultTextEdit(QTextEdit):
         if cur_doc and not sip.isdeleted(cur_doc):
             try:
                 cur_doc.documentLayout().documentSizeChanged.disconnect(self.update_line_number_area_width)
-            # TODO: BUG: Silent blanket exception handler swallows errors
-
             except Exception:
                 pass
         self.setDocument(doc)
@@ -498,8 +496,6 @@ class VaultTextEdit(QTextEdit):
         QApplication.clipboard().setText("\n".join(lines))
         try:
             self.main_win.play_tick_sound()
-        # TODO: BUG: Silent blanket exception handler swallows errors
-
         except Exception:
             pass
 
@@ -1122,8 +1118,6 @@ class VaultTextEdit(QTextEdit):
                     cursor.movePosition(QTextCursor.MoveOperation.PreviousWord, QTextCursor.MoveMode.KeepAnchor)
                     cursor.removeSelectedText()
                 self.setTextCursor(cursor)
-            # TODO: BUG: Silent blanket exception handler swallows errors
-
             except Exception:
                 pass
             event.accept()
@@ -1209,8 +1203,6 @@ class VaultTextEdit(QTextEdit):
         ):
             try:
                 self.main_win.play_sound("type")
-            # TODO: BUG: Silent blanket exception handler swallows errors
-
             except Exception:
                 pass
 
@@ -1228,8 +1220,6 @@ class VaultTextEdit(QTextEdit):
             zebra_enabled = not is_large and self.main_win.data.get("zebra_lines", "False") == "True"
             try:
                 zebra_alpha = min(90, max(2, int(self.main_win.data.get("zebra_opacity", "32"))))
-            # TODO: BUG: Silent blanket exception handler swallows errors
-
             except Exception:
                 zebra_alpha = 32
             zebra_odd = QColor(self.main_win.data.get("zebra_stripe_color", "#000000"))
@@ -1240,8 +1230,6 @@ class VaultTextEdit(QTextEdit):
             # --- visual lines color
             try:
                 hr_color = QColor(self.main_win.data.get("zebra_color", "#5a4a2a"))
-            # TODO: BUG: Silent blanket exception handler swallows errors
-
             except Exception:
                 hr_color = QColor("#5a4a2a")
             hr_drawn = set()
