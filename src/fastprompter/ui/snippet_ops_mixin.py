@@ -523,7 +523,10 @@ class SnippetOpsMixin:
         from fastprompter.ui.file_container import silo_files_dir
         if not hasattr(self, "_files_root"):
             return
-        d = silo_files_dir(self._files_root(), cat, text)
+        # `text` may be an already-resolved folder path (silos, via the
+        # per-slot map) or a silo/snippet title (fallback, title-slug).
+        d = text if (isinstance(text, str) and os.path.isabs(text)) \
+            else silo_files_dir(self._files_root(), cat, text)
         try:
             if not os.path.isdir(d) or not os.listdir(d):
                 if os.path.isdir(d):
@@ -637,8 +640,12 @@ class SnippetOpsMixin:
                 presets[idx] = self.text_area.toPlainText()
             self.add_data_undo_state("Delete silo")
 
-            old_text = presets[idx]
-            self._delete_file_container(self.get_current_category(), old_text)
+            # resolve the folder via the per-slot map (unique per silo), then
+            # drop its map entry so the freed slot doesn't inherit it
+            folder = self._silo_folder_dir(idx, is_archive=is_arc)
+            self._delete_file_container(self.get_current_category(), folder)
+            if not is_arc:
+                self.data.get("silo_folders", {}).pop(str(idx), None)
 
             presets.pop(idx)
             if idx < len(docs):

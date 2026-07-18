@@ -212,6 +212,14 @@ class FastPrompter(
             tall[first_cat] = list(self.data["silo_ticked"])
         self.data["silo_ticked_all"] = tall
         self.data["silo_ticked"] = tall.setdefault(first_cat, [])
+        # Per-slot unique file-folder names {slot: name} per category
+        fdall = self.data.get("silo_folders_all")
+        if not isinstance(fdall, dict):
+            fdall = {}
+        if not fdall and isinstance(self.data.get("silo_folders"), dict) and self.data["silo_folders"]:
+            fdall[first_cat] = self.data["silo_folders"]
+        self.data["silo_folders_all"] = fdall
+        self.data["silo_folders"] = fdall.setdefault(first_cat, {})
         # Silo hierarchy: {parent: [children]} per category; JSON round-trips
         # dict keys as strings — normalize everything back to int.
         call = self.data.get("silo_children_all")
@@ -654,6 +662,75 @@ class FastPrompter(
         from fastprompter.utils.paths import get_data_dir
         return os.path.join(get_data_dir(), "files")
 
+    def _silo_folder_name(self, slot_idx, is_archive=False):
+        """Stable, UNIQUE folder name for a silo's files. Keyed by slot (not
+        title) so two silos that share a title — or two empty ones — never
+        collide into the same folder (which made files 'jump' to a neighbor).
+        Names stay readable (title slug), disambiguated with -2/-3 on clash,
+        and are remembered per slot so a retitle doesn't strand the files.
+        Archive silos keep the plain title scheme (static, low-risk)."""
+        from fastprompter.ui.file_container import silo_slug
+        presets = self.data.get("archive_temp_presets" if is_archive else "temp_presets", [])
+        text = presets[slot_idx] if 0 <= slot_idx < len(presets) else ""
+        base = silo_slug(text)
+        if is_archive:
+            return base
+        cat = self.get_current_category()
+        fmap = self.data.setdefault("silo_folders", {})
+        key = str(slot_idx)
+        if key in fmap and fmap[key]:
+            # keep the assigned name, but follow a genuine retitle when the
+            # new title's slug is free (readability) — otherwise stay put
+            cur = fmap[key]
+            cur_base = cur.rsplit("-", 1)[0] if cur[-1:].isdigit() and "-" in cur else cur
+            if base != cur_base:
+                taken = {v for k, v in fmap.items() if k != key}
+                if base not in taken and not self._folder_on_disk(cat, base):
+                    self._rename_silo_folder(cat, cur, base)
+                    fmap[key] = base
+            return fmap[key]
+        # first assignment: adopt an existing on-disk folder if it's unclaimed,
+        # else pick a unique name
+        taken = set(fmap.values())
+        if base not in taken and self._folder_on_disk(cat, base):
+            fmap[key] = base
+            self.mark_dirty()
+            return base
+        name, n = base, 2
+        while name in taken:
+            name = f"{base}-{n}"
+            n += 1
+        fmap[key] = name
+        self.mark_dirty()
+        return name
+
+    def _folder_on_disk(self, cat, name):
+        from fastprompter.ui.file_container import silo_slug
+        return os.path.isdir(os.path.join(self._files_root(), silo_slug(cat), name))
+
+    def _rename_silo_folder(self, cat, old_name, new_name):
+        from fastprompter.ui.file_container import silo_slug
+        base = os.path.join(self._files_root(), silo_slug(cat))
+        old_dir, new_dir = os.path.join(base, old_name), os.path.join(base, new_name)
+        try:
+            if os.path.isdir(old_dir) and not os.path.exists(new_dir):
+                os.rename(old_dir, new_dir)
+        except OSError as e:
+            from fastprompter.core.logging import logger
+            logger.warning(f"Silo folder rename {old_dir} -> {new_dir} failed: {e}")
+
+    def _silo_folder_dir(self, slot_idx, is_archive=False):
+        """Absolute path to a silo's files folder (unique per slot)."""
+        from fastprompter.ui.file_container import silo_slug
+        return os.path.join(self._files_root(), silo_slug(self.get_current_category()),
+                            self._silo_folder_name(slot_idx, is_archive))
+
+    def _silo_file_count(self, slot_idx, is_archive=False):
+        try:
+            return len(os.listdir(self._silo_folder_dir(slot_idx, is_archive)))
+        except OSError:
+            return 0
+
     def pick_files_root(self):
         """Settings: let the user choose where silo file containers live."""
         from PyQt6.QtWidgets import QFileDialog
@@ -690,12 +767,10 @@ class FastPrompter(
         if not hasattr(self, "btn_files"):
             return
         is_archive = getattr(self, "active_is_archive", False)
-        presets = self.data.get("archive_temp_presets" if is_archive else "temp_presets", [])
         idx = self.active_temp_slot
-        text = presets[idx] if 0 <= idx < len(presets) else ""
-        cat = self.get_current_category()
-        from fastprompter.ui.file_container import silo_file_count, folder_summary
-        n = silo_file_count(self._files_root(), cat, text)
+        from fastprompter.ui.file_container import folder_summary
+        folder = self._silo_folder_dir(idx, is_archive)
+        n = self._silo_file_count(idx, is_archive)
         self.btn_files.setText(f"📁{n}" if n else "📁")
         if getattr(self, "_header_dense", False):
             self.btn_files.setFixedWidth(
@@ -703,12 +778,12 @@ class FastPrompter(
         lang = getattr(self, '_current_lang', 'EN')
         self.btn_files.setToolTip(
             tr("Files—asset drawer for the active silo (drop in / drag out /\npreview / export; plain folder in data/files)\n\n", lang)
-            + folder_summary(self._files_root(), cat, text, lang=lang)
+            + folder_summary(folder, lang=lang)
         )
 
     def open_file_container(self, global_idx=None, is_archive=False):
         """Open the per-silo file drawer (📁 button / silo hover button)."""
-        from fastprompter.ui.file_container import FileContainerPanel
+        from fastprompter.ui.file_container import FileContainerPanel, silo_slug
         if global_idx is None:
             global_idx = self.active_temp_slot
             is_archive = getattr(self, "active_is_archive", False)
@@ -716,7 +791,8 @@ class FastPrompter(
         text = presets[global_idx] if 0 <= global_idx < len(presets) else ""
         if getattr(self, "_file_container", None) is None:
             self._file_container = FileContainerPanel(self)
-        self._file_container.open_for(self._files_root(), self.get_current_category(), text)
+        self._file_container.open_for(
+            self._silo_folder_dir(global_idx, is_archive), title=silo_slug(text))
 
     def _begin_batch_update(self):
         """Suppress paints + snapshot overlay as backup."""
@@ -1084,9 +1160,11 @@ class FastPrompter(
         self.btn_line_nums.toggled.connect(self._line_nums_btn_toggled)
         self.header_layout.addWidget(self.btn_line_nums)
 
+        # Kept as a tiny invisible spacer so the toolbar-order "<sep>" token
+        # still resolves; the visible divider line was removed per request.
         self._counter_sep = QFrame()
-        self._counter_sep.setFrameShape(QFrame.Shape.VLine)
-        self._counter_sep.setFixedHeight(16)
+        self._counter_sep.setFrameShape(QFrame.Shape.NoFrame)
+        self._counter_sep.setFixedSize(3, 16)
         self.header_layout.addWidget(self._counter_sep)
 
         self.lbl_line_count = QLabel("")
@@ -2440,6 +2518,17 @@ class FastPrompter(
         collapsed = self.data.get("silo_collapsed", [])
         if isinstance(collapsed, list):
             collapsed[:] = [remap(c) for c in collapsed]
+        # folder names are keyed by slot -> remap so a moved silo keeps its files
+        fmap = self.data.get("silo_folders", {})
+        if isinstance(fmap, dict):
+            new_fmap = {}
+            for k, v in fmap.items():
+                try:
+                    new_fmap[str(remap(int(k)))] = v
+                except (ValueError, TypeError):
+                    new_fmap[k] = v
+            fmap.clear()
+            fmap.update(new_fmap)
 
     def handle_pinned_drop(self, source_idx, boundary_idx=None, swap_idx=None):
         """Handle dragging and dropping silos within or across the pinned section."""
@@ -2782,6 +2871,7 @@ class FastPrompter(
             "silo_ticked": list(self.data.get("silo_ticked", [])),
             "silo_children": copy.deepcopy(self.data.get("silo_children", {})),
             "silo_collapsed": list(self.data.get("silo_collapsed", [])),
+            "silo_folders": dict(self.data.get("silo_folders", {})),
             "silo_last_edited": dict(getattr(self, "silo_last_edited", {})),
         }
 
@@ -2921,6 +3011,10 @@ class FastPrompter(
             clist = self.data.setdefault("silo_collapsed_all", {}).setdefault(snap_cat, [])
             clist[:] = list(state.get("silo_collapsed", []))
             self.data["silo_collapsed"] = clist
+            fdict = self.data.setdefault("silo_folders_all", {}).setdefault(snap_cat, {})
+            fdict.clear()
+            fdict.update(dict(state.get("silo_folders", {})))
+            self.data["silo_folders"] = fdict
             edict = self.data.setdefault("silo_last_edited_all", {}).setdefault(snap_cat, {})
             edict.clear()
             edict.update(state.get("silo_last_edited", {}))
@@ -3093,10 +3187,11 @@ class FastPrompter(
         self.refresh_snippets_panel()
 
     def _sync_silo_folder(self, cat, old_text, new_text):
-        """Retitled silo/snippet: rename its file folder so assets follow.
-        Every path that rewrites a first line must run through here —
-        a missed sync silently detaches the silo from its files."""
-        from fastprompter.ui.file_container import silo_files_dir, silo_slug
+        """Deprecated: folder identity is now the per-slot silo_folders map
+        (see _silo_folder_name), which follows retitles itself. This
+        title-based rename would fight the map, so it is a no-op."""
+        return
+        from fastprompter.ui.file_container import silo_files_dir, silo_slug  # noqa
         if silo_slug(old_text) == silo_slug(new_text):
             return
         old_dir = silo_files_dir(self._files_root(), cat, old_text)
@@ -3441,6 +3536,9 @@ class FastPrompter(
             self.data["silo_collapsed"] = self.data.setdefault("silo_collapsed_all", {}).setdefault(
                 cat, []
             )
+            self.data["silo_folders"] = self.data.setdefault("silo_folders_all", {}).setdefault(
+                cat, {}
+            )
             self.silo_last_edited = self.data.setdefault("silo_last_edited_all", {}).setdefault(
                 cat, {}
             )
@@ -3682,10 +3780,9 @@ class FastPrompter(
             line_count = raw.count("\n") + 1 if raw.strip() else 0
             line_str = str(line_count) if line_count > 0 else ""
 
-            from fastprompter.ui.file_container import silo_file_count
-            fcount = silo_file_count(self._files_root(), self.get_current_category(), raw)
+            fcount = self._silo_file_count(slot_idx, is_archive=True)
             if fcount > 0:
-                line_str = f"📁{fcount} │ " + line_str if line_str else f"📁{fcount}"
+                line_str = f"📁{fcount} " + line_str if line_str else f"📁{fcount}"
             label = f"{display_idx}: {text}" if text else f"{display_idx}"
             is_active = (
                 getattr(self, "active_is_archive", False)
@@ -4041,10 +4138,9 @@ class FastPrompter(
             line_count = raw.count("\n") + 1 if raw.strip() else 0
             line_str = str(line_count) if line_count > 0 else ""
 
-            from fastprompter.ui.file_container import silo_file_count
             # the rightmost 📁N button carries the file count — the text
             # counter stays lines-only (no duplicated 📁)
-            fcount = silo_file_count(self._files_root(), self.get_current_category(), raw)
+            fcount = self._silo_file_count(slot_idx)
             # No "📌 " text prefix — the pin button itself is the indicator
             # and its click unpins (see DraggableSiloButton.update_data)
             if is_child:
@@ -4301,13 +4397,12 @@ class FastPrompter(
         asked once, moved with collision-safe names, never overwritten."""
         import shutil
 
-        from fastprompter.ui.file_container import _unique_dest, silo_files_dir
+        from fastprompter.ui.file_container import _unique_dest
         presets = self.data.get("temp_presets", [])
         if not (0 <= child_idx < len(presets) and 0 <= parent_idx < len(presets)):
             return
-        cat = self.get_current_category()
-        src = silo_files_dir(self._files_root(), cat, presets[child_idx])
-        dst = silo_files_dir(self._files_root(), cat, presets[parent_idx])
+        src = self._silo_folder_dir(child_idx)
+        dst = self._silo_folder_dir(parent_idx)
         try:
             names = os.listdir(src)
         except OSError:
@@ -4399,9 +4494,11 @@ class FastPrompter(
         self.play_sound("clear")
 
         if 0 <= idx < len(presets):
-            old_text = presets[idx]
             if hasattr(self, "_delete_file_container"):
-                self._delete_file_container(self.get_current_category(), old_text)
+                folder = self._silo_folder_dir(idx, is_archive=is_archive)
+                self._delete_file_container(self.get_current_category(), folder)
+                if not is_archive:
+                    self.data.get("silo_folders", {}).pop(str(idx), None)
 
         if is_archive:
             self.data["archive_temp_presets"][idx] = ""
@@ -4705,12 +4802,11 @@ class FastPrompter(
         self.mark_dirty()
 
     def _live_folder_sync(self):
-        """1 silo = 1 folder: retitling the active silo renames its folder
-        IMMEDIATELY, so no path (container open, counters, hover tooltips)
-        can ever spawn a second folder for the same silo."""
-        if getattr(self, "_initializing_ui", False) or getattr(self, "editing_snippet", None):
-            return
-        from fastprompter.ui.file_container import silo_slug
+        """Deprecated: the per-slot silo_folders map (see _silo_folder_name)
+        owns folder identity and follows retitles on its own. This live
+        title-rename would fight the map, so it is a no-op."""
+        return
+        from fastprompter.ui.file_container import silo_slug  # noqa
         doc = self.text_area.document()
         first = doc.firstBlock().text() if doc.blockCount() > 0 else ""
         new_slug = silo_slug(first)

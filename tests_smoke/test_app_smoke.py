@@ -1182,8 +1182,9 @@ def test_file_container_import_export_delete(win):
     with open(src, "w", encoding="utf-8") as f:
         f.write("hello")
 
+    from fastprompter.ui.file_container import silo_files_dir as _sfd
     panel = FileContainerPanel(win)
-    panel.open_for(root, "Main", "# Asset Silo")
+    panel.open_for(_sfd(root, "Main", "# Asset Silo"))
     assert os.path.isdir(panel.folder)
 
     panel.import_paths([src])
@@ -1196,7 +1197,7 @@ def test_file_container_import_export_delete(win):
     assert silo_file_count(root, "Main", "# Asset Silo") == 2
 
     # reopening for the same title lands in the same folder (reorder-stable)
-    panel.open_for(root, "Main", "# Asset Silo\nnew body text")
+    panel.open_for(_sfd(root, "Main", "# Asset Silo\nnew body text"))
     assert panel.file_list.count() == 2
 
     export_dir = os.path.join(_tmpdir, "files_export")
@@ -1363,29 +1364,65 @@ def test_theme_switch_keeps_button_labels(win):
     win.apply_theme()
 
 
-def test_live_retitle_renames_folder_no_duplicates(win):
-    # 1 silo = 1 folder: typing a new title renames the folder at once —
-    # opening the container right after a retitle must find the SAME folder
-    from fastprompter.ui.file_container import silo_files_dir
+def test_same_title_silos_get_separate_folders(win):
+    # Regression: folders were keyed purely by title slug, so two silos with
+    # the same title (or two empty ones) shared a folder -> files "jumped" to
+    # the neighbor. The per-slot map now guarantees one unique folder each.
+    import shutil
+
+    root = os.path.join(_tmpdir, "files_root_collide")
+    shutil.rmtree(root, ignore_errors=True)
+    win._files_root = lambda: root
+    win.cat_combo.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    win.data["temp_presets"][:] = ["# Notes", "# Notes", "# Notes"]
+    win.data["silo_folders"].clear()
+    win.data["pinned_silos"][:] = []
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+
+    for i in range(3):
+        d = win._silo_folder_dir(i)
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, f"f{i}.txt"), "w", encoding="utf-8") as fh:
+            fh.write(str(i))
+
+    dirs = [win._silo_folder_dir(i) for i in range(3)]
+    assert len(set(dirs)) == 3, "identical-title silos must not share a folder"
+    assert [win._silo_file_count(i) for i in range(3)] == [1, 1, 1]
+
+    # moving a silo carries its folder (index remap keeps the binding)
+    b_name = os.path.basename(win._silo_folder_dir(1))
+    win.move_temp_to_index(1, 2)
+    assert os.path.basename(win._silo_folder_dir(2)) == b_name
+    assert [win._silo_file_count(i) for i in range(3)] == [1, 1, 1]
+    del win.__dict__["_files_root"]
+
+
+def test_retitle_keeps_one_folder_per_silo(win):
+    # 1 silo = 1 folder: the per-slot map binds the folder to the silo, and a
+    # retitle follows it (rename) rather than spawning a second folder.
+    import shutil
 
     root = os.path.join(_tmpdir, "files_root_live")
+    shutil.rmtree(root, ignore_errors=True)
     win._files_root = lambda: root
     win.cat_combo.setCurrentIndex(0)
     win.on_tab_changed(0)
     win.data["temp_presets"][:] = ["# Old Title\nbody"]
+    win.data["silo_folders"].clear()
     win.silo_docs[:] = []
     win._switch_to_slot(0, initial=True)
 
-    folder = silo_files_dir(root, win.get_current_category(), "# Old Title")
+    folder = win._silo_folder_dir(0)
     os.makedirs(folder, exist_ok=True)
     with open(os.path.join(folder, "asset.bin"), "wb") as f:
         f.write(b"x")
 
-    # live edit of the first line (textChanged fires the sync)
-    win.text_area.setPlainText("# New Title\nbody")
-    new_folder = silo_files_dir(root, win.get_current_category(), "# New Title")
+    # retitle the silo; the folder follows and stays unique
+    win.data["temp_presets"][0] = "# New Title\nbody"
+    new_folder = win._silo_folder_dir(0)
     assert os.path.isfile(os.path.join(new_folder, "asset.bin"))
-    assert not os.path.exists(folder)
     cat_dir = os.path.dirname(new_folder)
     assert len(os.listdir(cat_dir)) == 1, "exactly one folder per silo"
     del win.__dict__["_files_root"]
@@ -1593,7 +1630,8 @@ def test_file_container_views_links_clipboard(win):
 
     root = os.path.join(_tmpdir, "files_root_views")
     panel = FileContainerPanel(win)
-    panel.open_for(root, "Main", "# Views Silo")
+    from fastprompter.ui.file_container import silo_files_dir as _sfd
+    panel.open_for(_sfd(root, "Main", "# Views Silo"))
 
     # view cycle: Details -> Icons -> List -> Details, persisted in data
     assert panel._view_mode() == "Details"
@@ -1631,7 +1669,7 @@ def test_file_container_views_links_clipboard(win):
 
     # tooltip summary knows counts and sizes
     from fastprompter.ui.file_container import folder_summary
-    tip = folder_summary(root, "Main", "# Views Silo")
+    tip = folder_summary(_sfd(root, "Main", "# Views Silo"))
     assert "2 item(s)" in tip and ".url" in tip and ".txt" in tip
     panel.close()
 

@@ -34,8 +34,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from fastprompter.core.translations import tr
 from fastprompter.core.logging import logger
+from fastprompter.core.translations import tr
 
 _IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".ico"}
 _SLUG_STRIP = re.compile(r"[#*_`•\[\]]+")
@@ -102,9 +102,8 @@ def _dir_size(path, _cap=2000):
     return total
 
 
-def folder_summary(root, category, silo_text, lang="EN"):
-    """Tooltip text: item count + total size + per-extension breakdown."""
-    d = silo_files_dir(root, category, silo_text)
+def folder_summary(d, lang="EN"):
+    """Tooltip text for a resolved folder: item count + total size + per-ext."""
     try:
         names = os.listdir(d)
     except OSError:
@@ -321,10 +320,8 @@ class FileContainerPanel(QWidget):
 
     # ---- lifecycle -------------------------------------------------------
 
-    def open_for(self, root, category, silo_text):
-        """Point the panel at one silo's folder, creating it, and show."""
-        title = silo_slug(silo_text)
-        folder = silo_files_dir(root, category, silo_text)
+    def open_for(self, folder, title=""):
+        """Point the panel at a resolved (unique) folder, creating it, and show."""
         os.makedirs(folder, exist_ok=True)
         if self._watcher.directories():
             self._watcher.removePaths(self._watcher.directories())
