@@ -338,11 +338,11 @@ class FastPrompter(
         # Ultra tier (portrait / 9:16 slivers): only the essentials survive —
         # tabs, NEW/Save, a short DD.MM - hh:mm clock, line counter, ⚙.
         # Formatting stays reachable via hotkeys and the context menu.
-        # Dense already hides the rarest buttons — they stay reachable via
-        # the editor's right-click menu (Clear Formatting, Auto-Bullet) and
-        # Ctrl+W (divider)
+        # Dense hides only the two rarest text buttons (Clear Fmt, Line) —
+        # both reachable via the editor's right-click menu and Ctrl+W. The
+        # bullet-toggle (-→•) stays visible; it only drops in ultra.
         if flipped:
-            for name in ("btn_clear_fmt", "btn_add_line", "btn_bullet_toggle"):
+            for name in ("btn_clear_fmt", "btn_add_line"):
                 wdg = getattr(self, name, None)
                 if wdg is not None and not sip.isdeleted(wdg):
                     wdg.setVisible(not dense)
@@ -350,10 +350,9 @@ class FastPrompter(
         ultra = w < 700
         if getattr(self, "_header_ultra", None) != ultra:
             self._header_ultra = ultra
-            # (CF / Line / bullet-toggle are handled by the dense tier —
-            # ultra is always inside dense, so they never re-show here)
+            # bullet-toggle survives dense but hides in the portrait sliver
             for name in ("btn_bold", "btn_italic", "btn_under", "btn_strike",
-                         "btn_header", "btn_copy", "btn_clear",
+                         "btn_header", "btn_copy", "btn_clear", "btn_bullet_toggle",
                          "btn_home", "btn_end", "btn_pin_top", "btn_line_nums",
                          "btn_help"):
                 wdg = getattr(self, name, None)
