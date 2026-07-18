@@ -468,6 +468,128 @@ class FastPrompter(
         else:
             self.toggle_aot(checked)
 
+    def _toolbar_tokens(self):
+        """Movable header items, one entry per token/attr. _counter_sep and
+        the two spacers are represented by sentinel tokens."""
+        from fastprompter.ui.toolbar_reorder import DEFAULT_TOOLBAR_ORDER
+        return DEFAULT_TOOLBAR_ORDER
+
+    def _toolbar_order_list(self):
+        """Saved order, validated + self-healed against the default so a
+        stale/partial value can never drop or duplicate a button."""
+        default = self._toolbar_tokens()
+        raw = (self.data.get("toolbar_order") or "").strip()
+        saved = [t for t in raw.split(",") if t]
+        valid, seen = [], set()
+        # keep saved tokens that are still real; drop unknowns/dupes
+        for t in saved:
+            if t == "<stretch>":
+                valid.append(t)
+            elif (t == "<sep>" or getattr(self, t, None) is not None) and t not in seen:
+                valid.append(t)
+                seen.add(t)
+        # append any default tokens missing from the saved order
+        stretch_needed = default.count("<stretch>") - valid.count("<stretch>")
+        for t in default:
+            if t == "<stretch>":
+                if stretch_needed > 0:
+                    valid.append(t)
+                    stretch_needed -= 1
+            elif t not in seen:
+                valid.append(t)
+                seen.add(t)
+        return valid
+
+    def _toolbar_widget_for(self, token):
+        if token == "<sep>":
+            return getattr(self, "_counter_sep", None)
+        return getattr(self, token, None)
+
+    def toolbar_token_of(self, widget):
+        """Reverse map a widget back to its token (drag source id)."""
+        for t in self._toolbar_tokens():
+            if t not in ("<stretch>",) and self._toolbar_widget_for(t) is widget:
+                return t
+        return None
+
+    def apply_toolbar_order(self, save=False):
+        """Rebuild the header layout from the saved token order. Index 0
+        (sidebar toggle) is the fixed anchor and is never moved."""
+        lay = self.header_layout
+        while lay.count() > 1:  # detach everything after the sidebar anchor
+            item = lay.takeAt(1)
+            w = item.widget()
+            if w is not None:
+                w.setParent(self.header_widget)
+        order = self._toolbar_order_list()
+        for tok in order:
+            if tok == "<stretch>":
+                lay.addStretch(1)
+                continue
+            w = self._toolbar_widget_for(tok)
+            if w is not None:
+                lay.addWidget(w)
+        if save:
+            self.data["toolbar_order"] = ",".join(order)
+            self.mark_dirty()
+        # widths/visibility depend on width tier — re-pack after reorder
+        # (skipped during initial header build, before the editor exists)
+        if hasattr(self, "text_area"):
+            self._header_dense = None
+            self._apply_header_density()
+
+    def reorder_toolbar_token(self, token, drop_x):
+        """Move `token` to wherever `drop_x` (header-local px) points, then
+        persist + rebuild. Spacers/sep stay put so zones survive."""
+        order = self._toolbar_order_list()
+        if token not in order:
+            return
+        # current on-screen centre-x of each non-dragged movable widget
+        target = None
+        for i in range(1, self.header_layout.count()):
+            w = self.header_layout.itemAt(i).widget()
+            if w is None:
+                continue
+            tok = self.toolbar_token_of(w)
+            if tok is None or tok == token:
+                continue
+            if drop_x < w.x() + w.width() / 2:
+                target = tok
+                break
+        order.remove(token)
+        if target is not None and target in order:
+            order.insert(order.index(target), token)
+        else:
+            order.append(token)
+        self.data["toolbar_order"] = ",".join(order)
+        self.apply_toolbar_order()
+        self.mark_dirty()
+
+    def on_customize_toolbar_toggled(self, checked):
+        self.data["customize_toolbar"] = "True" if checked else "False"
+        self.mark_dirty()
+        self.refresh_toolbar_customize_state()
+
+    def refresh_toolbar_customize_state(self):
+        """Install/refresh drag filters + cursors for the customize toggle."""
+        on = self.data.get("customize_toolbar", "False") == "True"
+        flt = getattr(self, "_toolbar_reorder_filter", None)
+        for tok in self._toolbar_tokens():
+            if tok in ("<stretch>", "<sep>"):
+                continue
+            w = self._toolbar_widget_for(tok)
+            if w is None:
+                continue
+            if flt is not None:
+                w.removeEventFilter(flt)
+                if on:
+                    w.installEventFilter(flt)
+            w.setCursor(Qt.CursorShape.SizeAllCursor if on else Qt.CursorShape.ArrowCursor)
+
+    def reset_toolbar_order(self):
+        self.data["toolbar_order"] = ""
+        self.apply_toolbar_order(save=True)
+
     def set_line_numbers(self, enabled):
         """Single source of truth for the line-number gutter. Applies the
         render, then force-syncs BOTH the header # button and the settings
@@ -929,6 +1051,11 @@ class FastPrompter(
         self.header_layout.addWidget(self.btn_help)
         self.main_layout.addWidget(self.header_widget)
 
+        # Apply any saved custom toolbar order, then arm drag-reorder
+        from fastprompter.ui.toolbar_reorder import install_toolbar_reorder
+        self.apply_toolbar_order()
+        install_toolbar_reorder(self)
+
         self.mini_settings_frame = QFrame(self)
         self.mini_settings_frame.setVisible(False)
 
@@ -1173,6 +1300,16 @@ class FastPrompter(
             self.data.get("lock_to_cursor", "False") == "True",
             self.on_lock_cursor_toggled,
         )
+        self.cb_customize_toolbar = create_footer_cb(
+            "🧩 Customize Toolbar",
+            "Drag the top-bar buttons to reorder them.\n"
+            "Right-click this text to reset to the default order.",
+            self.data.get("customize_toolbar", "False") == "True",
+            self.on_customize_toolbar_toggled,
+        )
+        self.cb_customize_toolbar.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.cb_customize_toolbar.customContextMenuRequested.connect(
+            lambda _p: self.reset_toolbar_order())
         self.cb_silo_home = create_footer_cb(
             "🏠 Silos at Start",
             "Place the cursor at the top of a silo when opening it",
@@ -1473,7 +1610,7 @@ class FastPrompter(
             self.cb_top, self.cb_lock_window, self.cb_normal_window,
             self.cb_tray, self.cb_sidebar, self.cb_date_rect, self.cb_date_seconds,
             self.cb_date_daypart, self.cb_date_emoji, self.cb_date_text_month, self.cb_analog_clock,
-            self.cb_trash_vision
+            self.cb_trash_vision, self.cb_customize_toolbar
         ]), 1)
         groups_row.addWidget(_vline())
         groups_row.addLayout(_settings_group("Editor", [

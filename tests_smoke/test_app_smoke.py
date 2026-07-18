@@ -1695,6 +1695,53 @@ def test_file_container_button_wired(win):
     assert win.silo_buttons[0]._btn_files.toolTip().startswith("Files")
 
 
+def test_toolbar_reorder_persists_and_self_heals(win):
+    def layout_tokens():
+        out = []
+        for i in range(win.header_layout.count()):
+            w = win.header_layout.itemAt(i).widget()
+            if w is None:
+                out.append("<stretch>")
+            else:
+                out.append(win.toolbar_token_of(w) or ("<sep>" if w is win._counter_sep else "_"))
+        return out
+
+    win.reset_toolbar_order()
+    base = layout_tokens()
+    assert "btn_help" in base and "btn_new" in base
+
+    # move btn_help to the front of the movable region (next to sidebar)
+    win.reorder_toolbar_token("btn_help", 0)
+    moved = layout_tokens()
+    assert moved.index("btn_help") == 1  # right after the fixed sidebar anchor
+    assert win.data["toolbar_order"].split(",")[0] == "btn_help"
+
+    # order survives a full rebuild
+    win.apply_toolbar_order()
+    assert layout_tokens().index("btn_help") == 1
+
+    # self-heal: a stale/partial saved order still yields every button
+    win.data["toolbar_order"] = "btn_help,btn_new,bogus_token"
+    win.apply_toolbar_order()
+    healed = layout_tokens()
+    for tok in ("btn_bold", "btn_save", "btn_settings_toggle", "cat_combo"):
+        assert tok in healed, tok
+    assert "bogus_token" not in healed
+    assert healed.count("btn_help") == 1  # no duplication
+
+    win.reset_toolbar_order()
+
+
+def test_customize_toolbar_toggle(win):
+    win.on_customize_toolbar_toggled(True)
+    assert win.data["customize_toolbar"] == "True"
+    from PyQt6.QtCore import Qt
+    assert win.btn_help.cursor().shape() == Qt.CursorShape.SizeAllCursor
+    win.on_customize_toolbar_toggled(False)
+    assert win.data["customize_toolbar"] == "False"
+    assert win.btn_help.cursor().shape() == Qt.CursorShape.ArrowCursor
+
+
 def test_pinned_silo_shows_unpin_button_no_prefix(win):
     win.data["temp_presets"][:] = ["# one", "# two", "# three"]
     win.data["pinned_silos"][:] = []
