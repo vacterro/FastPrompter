@@ -15,10 +15,7 @@ One hotkey. Instant window. Your prompts, notes and drafts — always one keystr
 
 <br>
 
-### 📖 New here? Start with the ELI5 guide — [English](GUIDE_EN.md) · [Русский](GUIDE_RU.md)
-
-<sub>Grandpa-voiced, two minutes, tells you what this thing actually does.</sub>
-
+[English](GUIDE_EN.md) · [Русский](GUIDE_RU.md)
 <img width="960" height="540" alt="clipboard_20260717_085614_38a3b3de" src="https://github.com/user-attachments/assets/728fb3ec-a5e5-44bf-b8b4-3ec9b4cee74a" />
 
 </div>
