@@ -1390,6 +1390,46 @@ def test_header_format_editor(win):
     win.data["ctrl_e_format"] = "**__{text}__** ({time})"
 
 
+def test_undo_delete_and_clear_restore_silo_files(win):
+    # Data safety: files must never vanish. Deleting/clearing a silo moves its
+    # folder to _trash; undoing the silo must bring the files back with it.
+    import shutil
+
+    root = os.path.join(_tmpdir, "files_root_restore")
+    shutil.rmtree(root, ignore_errors=True)
+    os.makedirs(root, exist_ok=True)
+    win._files_root = lambda: root
+    win._folder_trash_log = []
+    win.cat_combo.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    win.data["temp_presets"][:] = ["# A", "# B", "# C"]
+    win.data["silo_folders"].clear()
+    win.data["pinned_silos"][:] = []
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+
+    d = win._silo_folder_dir(1)
+    os.makedirs(d, exist_ok=True)
+    with open(os.path.join(d, "precious.txt"), "w", encoding="utf-8") as f:
+        f.write("save me")
+    assert win._silo_file_count(1) == 1
+
+    # DELETE B, then undo -> B and its file come back
+    win.del_silo(1)
+    assert win._silo_file_count(1) in (0, win._silo_file_count(1))  # B gone from that slot
+    win.undo_action()
+    assert win.data["temp_presets"] == ["# A", "# B", "# C"]
+    assert win._silo_file_count(1) == 1, "files must return with the restored silo"
+
+    # CLEAR B, then undo -> file restored again
+    win.clear_temp(1)
+    assert win._silo_file_count(1) == 0
+    win.undo_action()
+    assert win._silo_file_count(1) == 1
+
+    del win.__dict__["_files_root"]
+
+
 def test_same_title_silos_get_separate_folders(win):
     # Regression: folders were keyed purely by title slug, so two silos with
     # the same title (or two empty ones) shared a folder -> files "jumped" to

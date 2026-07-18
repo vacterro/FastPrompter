@@ -725,6 +725,32 @@ class FastPrompter(
         return os.path.join(self._files_root(), silo_slug(self.get_current_category()),
                             self._silo_folder_name(slot_idx, is_archive))
 
+    def _restore_trashed_folders(self, cat):
+        """Undo helper: for every silo folder the restored map expects, if it's
+        missing on disk but was moved to _trash by a delete/clear, move it back.
+        Files are never lost — worst case they stay in _trash for manual rescue."""
+        from fastprompter.ui.file_container import silo_slug
+        log = getattr(self, "_folder_trash_log", None)
+        if not log:
+            return
+        cat_dir = os.path.join(self._files_root(), silo_slug(cat))
+        fmap = self.data.get("silo_folders", {})
+        if not isinstance(fmap, dict):
+            return
+        wanted = {os.path.abspath(os.path.join(cat_dir, name)) for name in fmap.values()}
+        remaining = []
+        for original, trashed in log:
+            if original in wanted and not os.path.exists(original) and os.path.isdir(trashed):
+                try:
+                    os.makedirs(os.path.dirname(original), exist_ok=True)
+                    os.rename(trashed, original)
+                    continue  # restored — drop from the log
+                except OSError as e:
+                    from fastprompter.core.logging import logger
+                    logger.warning(f"Could not restore folder {trashed} -> {original}: {e}")
+            remaining.append((original, trashed))
+        self._folder_trash_log = remaining
+
     def _silo_file_count(self, slot_idx, is_archive=False):
         try:
             return len(os.listdir(self._silo_folder_dir(slot_idx, is_archive)))
@@ -3030,6 +3056,9 @@ class FastPrompter(
             fdict.clear()
             fdict.update(dict(state.get("silo_folders", {})))
             self.data["silo_folders"] = fdict
+            # a restored silo must get its files back too — pull the folder
+            # out of _trash if the delete/clear moved it there
+            self._restore_trashed_folders(snap_cat)
             edict = self.data.setdefault("silo_last_edited_all", {}).setdefault(snap_cat, {})
             edict.clear()
             edict.update(state.get("silo_last_edited", {}))

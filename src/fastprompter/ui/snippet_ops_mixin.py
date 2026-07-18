@@ -540,6 +540,14 @@ class SnippetOpsMixin:
                 dest = os.path.join(trash, f"{os.path.basename(d)}-{int(time.time())}-{n}")
                 n += 1
             shutil.move(d, dest)
+            # remember original->trash so undoing the delete/clear can bring
+            # the files back to where they belong (files never vanish: they're
+            # in _trash even if the restore ever misses)
+            log = getattr(self, "_folder_trash_log", None)
+            if log is None:
+                log = self._folder_trash_log = []
+            log.append((os.path.abspath(d), os.path.abspath(dest)))
+            del log[:-500]  # keep the log bounded
         except OSError as e:
             logger.warning(f"Could not retire file container {d}: {e}")
 
