@@ -393,7 +393,7 @@ class FastPrompter(
         if flipped:
             # format squares squeeze 24 -> 20 in dense
             for name in ("btn_bold", "btn_italic", "btn_under", "btn_strike",
-                         "btn_header", "btn_settings_toggle", "btn_help",
+                         "btn_header", "btn_settings_toggle", "btn_settings_toggle_right", "btn_help",
                          "btn_pin_top", "btn_line_nums",
                          "btn_add_tab", "btn_del_tab", "btn_sidebar_toggle"):
                 btn = getattr(self, name, None)
@@ -992,6 +992,11 @@ class FastPrompter(
         self.btn_settings_toggle.setToolTip(tr(
             "Settings\nConfigure hotkeys, theme, fonts, and UI scaling.", getattr(self, "_current_lang", "EN")))
         self.btn_settings_toggle.clicked.connect(self.toggle_mini_settings)
+
+        self.btn_settings_toggle_right = QPushButton("⚙")
+        self.apply_button_size(self.btn_settings_toggle_right, 24, 24)
+        self.btn_settings_toggle_right.setToolTip(self.btn_settings_toggle.toolTip())
+        self.btn_settings_toggle_right.clicked.connect(self.toggle_mini_settings)
 
         self.btn_help = QPushButton("❓")
         self.btn_help.setToolTip(tr("Help — every hotkey, gesture and feature (click)", getattr(self, "_current_lang", "EN")))

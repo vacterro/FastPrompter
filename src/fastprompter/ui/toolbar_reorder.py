@@ -14,13 +14,14 @@ from PyQt6.QtWidgets import QApplication, QPushButton
 
 # Default header order AFTER the fixed sidebar-toggle anchor (index 0).
 DEFAULT_TOOLBAR_ORDER = [
+    "btn_settings_toggle", "btn_pin_top", "btn_line_nums",
     "cat_combo", "btn_new", "btn_save", "btn_home", "btn_end",
     "<stretch>",
     "btn_bold", "btn_italic", "btn_under", "btn_strike", "btn_header",
     "btn_clear_fmt", "btn_add_line", "btn_bullet_toggle", "btn_copy", "btn_clear",
     "<stretch>",
-    "analog_clock", "lbl_date", "btn_pin_top", "btn_line_nums",
-    "<sep>", "lbl_line_count", "btn_settings_toggle", "btn_help",
+    "analog_clock", "lbl_date",
+    "<sep>", "lbl_line_count", "btn_settings_toggle_right", "btn_help",
 ]
 
 _MIME = "application/x-fastprompter-toolbar-token"
