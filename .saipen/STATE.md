@@ -1,12 +1,12 @@
 ---
 phase: DONE
-task: "Fix Ctrl+E header formatting trapping bullet points in markdown (F-001)"
+task: "Fix header buttons overlapping timestamp text (F-002)"
 next_action: "Wait for further instructions or continue hunting."
 blocker: ""
 agent: antigravity
 mode: full
 requires: [filesystem, python, shell, git]
-updated: 2026-07-18T22:08:00
+updated: 2026-07-18T22:48:00
 ---
 ## Handoff (for the next agent)
 main HEAD 4be576f, pushed + tagged v0.6.6, release live:

@@ -105,7 +105,13 @@ class ThemeMixin:
             self._refresh_theme_cache()
             theme = self._theme_cache
 
-        QApplication.instance().setStyleSheet(theme["stylesheet"])
+        # Suppress the native dotted focus-rect Qt draws on buttons after a
+        # click — every theme is a solid chrome-less skin, so that rectangle
+        # just looks like a rendering glitch, not a focus indicator.
+        no_focus_rect_qss = (
+            "\nQPushButton:focus, QToolButton:focus, QCheckBox:focus { outline: none; }\n"
+        )
+        QApplication.instance().setStyleSheet(theme["stylesheet"] + no_focus_rect_qss)
         # Re-pack the dense header AFTER the new stylesheet has re-polished
         # fonts — packing with pre-theme metrics truncates button labels
         if hasattr(self, "_apply_header_density"):
