@@ -1,6 +1,7 @@
 import os
 
 from PyQt6.QtCore import Qt
+from fastprompter.core.translations import tr
 from PyQt6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -19,47 +20,48 @@ class BackupDialog(QDialog):
         super().__init__(main_win)
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.main_win = main_win
-        self.setWindowTitle("Backup & Export Settings")
+        self.lang = getattr(self.main_win, "_current_lang", "EN")
+        self.setWindowTitle(tr("Backup & Export Settings", self.lang))
         self.setMinimumWidth(350)
 
         layout = QVBoxLayout(self)
 
         # Backup Database Group
-        db_group = QGroupBox("Backup Full Database")
+        db_group = QGroupBox(tr("Backup Full Database", self.lang))
         db_layout = QVBoxLayout(db_group)
-        lbl_db = QLabel("Creates an exact copy of the local_data_v15.db file containing all settings, silos, and snippets.")
+        lbl_db = QLabel(tr("Creates an exact copy of the local_data_v15.db file containing all settings, silos, and snippets.", self.lang))
         lbl_db.setWordWrap(True)
         db_layout.addWidget(lbl_db)
 
-        btn_backup_db = QPushButton("Backup Database (.db)")
+        btn_backup_db = QPushButton(tr("Backup Database (.db)", self.lang))
         btn_backup_db.clicked.connect(self.backup_database)
         db_layout.addWidget(btn_backup_db)
         layout.addWidget(db_group)
 
         # Export Silos Group
-        export_group = QGroupBox("Export Silos & Text")
+        export_group = QGroupBox(tr("Export Silos & Text", self.lang))
         export_layout = QVBoxLayout(export_group)
 
-        lbl_export = QLabel("Export all Silo contents to readable text formats.")
+        lbl_export = QLabel(tr("Export all Silo contents to readable text formats.", self.lang))
         lbl_export.setWordWrap(True)
         export_layout.addWidget(lbl_export)
 
         format_layout = QHBoxLayout()
-        format_layout.addWidget(QLabel("Format:"))
+        format_layout.addWidget(QLabel(tr("Format:", self.lang)))
         self.combo_format = QComboBox()
         self.combo_format.addItems([".txt", ".md"])
         format_layout.addWidget(self.combo_format)
         format_layout.addStretch()
         export_layout.addLayout(format_layout)
 
-        btn_export = QPushButton("Export All Silos")
+        btn_export = QPushButton(tr("Export All Silos", self.lang))
         btn_export.clicked.connect(self.export_silos)
         export_layout.addWidget(btn_export)
 
         layout.addWidget(export_group)
 
         # Close button
-        btn_close = QPushButton("Close")
+        btn_close = QPushButton(tr("Close", self.lang))
         btn_close.clicked.connect(self.close)
         layout.addWidget(btn_close)
 
@@ -68,7 +70,7 @@ class BackupDialog(QDialog):
 
     def backup_database(self):
         self.main_win.save_data_to_db(force=True)
-        path, _ = QFileDialog.getSaveFileName(self, "Backup Database", "prompts_backup.db", "SQLite DB (*.db)")
+        path, _ = QFileDialog.getSaveFileName(self, tr("Backup Database", self.lang), "prompts_backup.db", "SQLite DB (*.db)")
         if path:
             try:
                 import sqlite3
@@ -77,13 +79,13 @@ class BackupDialog(QDialog):
                 source_conn.backup(dest_conn)
                 dest_conn.close()
                 source_conn.close()
-                QMessageBox.information(self, "Success", f"Database backed up to:\\n{path}")
+                QMessageBox.information(self, tr("Success", self.lang), tr("Database backed up to:\n{}", self.lang).format(path))
             except Exception as e:
-                QMessageBox.critical(self, "Error", f"Failed to backup:\\n{e!s}")
+                QMessageBox.critical(self, tr("Error", self.lang), tr("Failed to backup:\n{}", self.lang).format(e))
 
     def export_silos(self):
         fmt = self.combo_format.currentText()
-        path = QFileDialog.getExistingDirectory(self, "Select Export Directory")
+        path = QFileDialog.getExistingDirectory(self, tr("Select Export Directory", self.lang))
         if not path:
             return
 
@@ -104,6 +106,6 @@ class BackupDialog(QDialog):
                     with open(filename, 'w', encoding='utf-8') as f:
                         f.write(text)
 
-            QMessageBox.information(self, "Success", f"Silos exported to:\\n{path}")
+            QMessageBox.information(self, tr("Success", self.lang), tr("Silos exported to:\n{}", self.lang).format(path))
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to export:\\n{e!s}")
+            QMessageBox.critical(self, tr("Error", self.lang), tr("Failed to export:\n{}", self.lang).format(e))

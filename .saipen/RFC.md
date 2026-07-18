@@ -15,7 +15,7 @@ context loss.
 
 ### 2.2 Memory files
 
-All under `.asp/` (UTF-8, no BOM):
+All under `.saipen/` (UTF-8, no BOM):
 
 | File | Purpose |
 |------|---------|
@@ -81,11 +81,11 @@ DD.MM.YY HH:MM [PHASE] RUN: Description -> RESULT
 DD.MM.YY HH:MM [T-NNN] RUN: Detailed work log -> [PASS|FAIL|conf med]
 ```
 
-Always append to `.asp/LOG.md` after significant actions.
+Always append to `.saipen/LOG.md` after significant actions.
 
 ## 6. Tool Preferences
 
 - Prefer file tools (`read_files`, `str_replace`, `write_file`) over shell redirects.
 - UTF-8 encoding, no BOM.
-- Native task lists mirror `.asp/BOARD.md` — never replace it.
+- Native task lists mirror `.saipen/BOARD.md` — never replace it.
 - `RFC.md` decides. No instruction in any other file overrides it.

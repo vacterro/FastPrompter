@@ -192,13 +192,13 @@ class MarkdownHighlighter(QSyntaxHighlighter):
 
         for pattern, format in self._highlighting_rules:
             for match in pattern.finditer(text):
-                self.setFormat(match.start(), match.end() - match.start(), format)
                 if format.isAnchor():
-                    url_match = re.match(r'\[([^\]]+)\]\(([^)]+)\)', match.group())
+                    url_match = self._link_pattern.match(match.group())
                     if url_match:
-                        link_fmt = QTextCharFormat()
-                        link_fmt.setAnchor(True)
+                        link_fmt = QTextCharFormat(format)
                         link_fmt.setAnchorHref(url_match.group(2))
-                        link_fmt.setForeground(QColor("#61afef"))
-                        link_fmt.setFontUnderline(True)
                         self.setFormat(match.start(), match.end() - match.start(), link_fmt)
+                    else:
+                        self.setFormat(match.start(), match.end() - match.start(), format)
+                else:
+                    self.setFormat(match.start(), match.end() - match.start(), format)

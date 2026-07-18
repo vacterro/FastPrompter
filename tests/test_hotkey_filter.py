@@ -127,89 +127,79 @@ class TestWMHotkeyDispatch:
         assert result == (True, 0)
         win.show_quick_list.assert_called_once()
 
-    def test_wparam_3_toggles_lock(self):
-        """wParam=3 (lock_window_hotkey) -> calls window.toggle_lock()."""
+    # Non-global hotkeys (lock/AOT/sidebar/snippet/silo) are handled by
+    # window-local QShortcuts, NOT the global native filter. The filter must
+    # NOT consume them — otherwise Alt+D & co. react system-wide (that was
+    # the bug). It returns (False, 0) so Qt routes them locally.
+    def test_wparam_3_lock_not_handled_globally(self):
         result, win = self._filter_event(3)
-        assert result == (True, 0)
-        win.toggle_lock.assert_called_once()
+        assert result == (False, 0)
+        win.toggle_lock.assert_not_called()
 
-    def test_wparam_103_toggles_lock_alt(self):
-        """wParam=103 (lock_window_hotkey_alt) -> calls window.toggle_lock()."""
+    def test_wparam_103_lock_alt_not_handled_globally(self):
         result, win = self._filter_event(103)
-        assert result == (True, 0)
-        win.toggle_lock.assert_called_once()
+        assert result == (False, 0)
+        win.toggle_lock.assert_not_called()
 
-    def test_wparam_4_toggles_always_on_top(self):
-        """wParam=4 (always_on_top_hotkey) -> calls window.toggle_always_on_top()."""
+    def test_wparam_4_aot_not_handled_globally(self):
         result, win = self._filter_event(4)
-        assert result == (True, 0)
-        win.toggle_always_on_top.assert_called_once()
+        assert result == (False, 0)
+        win.toggle_always_on_top.assert_not_called()
 
-    def test_wparam_104_toggles_always_on_top_alt(self):
-        """wParam=104 (always_on_top_hotkey_alt) -> calls window.toggle_always_on_top()."""
+    def test_wparam_104_aot_alt_not_handled_globally(self):
         result, win = self._filter_event(104)
-        assert result == (True, 0)
-        win.toggle_always_on_top.assert_called_once()
+        assert result == (False, 0)
+        win.toggle_always_on_top.assert_not_called()
 
-    def test_wparam_5_toggles_visibility_with_sidebar(self):
-        """wParam=5 (toggle_sidebar_hotkey) -> calls window.toggle_visibility(force_sidebar=True)."""
+    def test_wparam_5_sidebar_not_handled_globally(self):
         result, win = self._filter_event(5)
-        assert result == (True, 0)
-        win.toggle_visibility.assert_called_once_with(force_sidebar=True)
+        assert result == (False, 0)
+        win.toggle_visibility.assert_not_called()
 
-    def test_wparam_105_toggles_visibility_with_sidebar_alt(self):
-        """wParam=105 (toggle_sidebar_hotkey_alt) -> calls window.toggle_visibility(force_sidebar=True)."""
+    def test_wparam_105_sidebar_alt_not_handled_globally(self):
         result, win = self._filter_event(105)
-        assert result == (True, 0)
-        win.toggle_visibility.assert_called_once_with(force_sidebar=True)
+        assert result == (False, 0)
+        win.toggle_visibility.assert_not_called()
 
-    def test_wparam_10_fires_global_snippet_0(self):
-        """wParam=10 (snippet 0) -> calls window.fire_global_snippet(0)."""
+    def test_wparam_10_snippet_not_handled_globally(self):
         result, win = self._filter_event(10)
-        assert result == (True, 0)
-        win.fire_global_snippet.assert_called_once_with(0)
+        assert result == (False, 0)
+        win.fire_global_snippet.assert_not_called()
 
-    def test_wparam_14_fires_global_snippet_4(self):
-        """wParam=14 (snippet 4) -> calls window.fire_global_snippet(4)."""
+    def test_wparam_14_snippet_not_handled_globally(self):
         result, win = self._filter_event(14)
-        assert result == (True, 0)
-        win.fire_global_snippet.assert_called_once_with(4)
+        assert result == (False, 0)
+        win.fire_global_snippet.assert_not_called()
 
-    def test_wparam_110_fires_global_snippet_0_alt(self):
-        """wParam=110 (snippet 0 alt) -> calls window.fire_global_snippet(0)."""
+    def test_wparam_110_snippet_alt_not_handled_globally(self):
         result, win = self._filter_event(110)
-        assert result == (True, 0)
-        win.fire_global_snippet.assert_called_once_with(0)
+        assert result == (False, 0)
+        win.fire_global_snippet.assert_not_called()
 
-    def test_wparam_114_fires_global_snippet_4_alt(self):
-        """wParam=114 (snippet 4 alt) -> calls window.fire_global_snippet(4)."""
+    def test_wparam_114_snippet_alt_not_handled_globally(self):
         result, win = self._filter_event(114)
-        assert result == (True, 0)
-        win.fire_global_snippet.assert_called_once_with(4)
+        assert result == (False, 0)
+        win.fire_global_snippet.assert_not_called()
 
-    def test_wparam_20_fires_global_silo_0(self):
-        """wParam=20 (silo 0) -> calls window.fire_global_silo(0)."""
+    def test_wparam_20_silo_not_handled_globally(self):
         result, win = self._filter_event(20)
-        assert result == (True, 0)
-        win.fire_global_silo.assert_called_once_with(0)
+        assert result == (False, 0)
+        win.fire_global_silo.assert_not_called()
 
-    def test_wparam_24_fires_global_silo_4(self):
-        """wParam=24 (silo 4) -> calls window.fire_global_silo(4)."""
+    def test_wparam_24_silo_not_handled_globally(self):
         result, win = self._filter_event(24)
-        assert result == (True, 0)
-        win.fire_global_silo.assert_called_once_with(4)
+        assert result == (False, 0)
+        win.fire_global_silo.assert_not_called()
 
-    def test_wparam_120_fires_global_silo_0_alt(self):
-        """wParam=120 (silo 0 alt) -> calls window.fire_global_silo(0)."""
+    def test_wparam_120_silo_alt_not_handled_globally(self):
         result, win = self._filter_event(120)
-        assert result == (True, 0)
-        win.fire_global_silo.assert_called_once_with(0)
+        assert result == (False, 0)
+        win.fire_global_silo.assert_not_called()
 
-    def test_wparam_124_fires_global_silo_4_alt(self):
-        """wParam=124 (silo 4 alt) -> calls window.fire_global_silo(4)."""
+    def test_wparam_124_silo_alt_not_handled_globally(self):
         result, win = self._filter_event(124)
-        assert result == (True, 0)
-        win.fire_global_silo.assert_called_once_with(4)
+        assert result == (False, 0)
+        win.fire_global_silo.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

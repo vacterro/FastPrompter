@@ -2,6 +2,7 @@ from PyQt6.QtCore import QEvent, QMimeData, QObject, Qt, QTimer
 from PyQt6.QtGui import QDrag, QFontMetrics
 from PyQt6.QtWidgets import QApplication, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
+from fastprompter.core.translations import tr
 from fastprompter.core.config import extract_bg, extract_border_color, extract_color
 from fastprompter.theme.themes import THEMES
 
@@ -127,6 +128,8 @@ class DraggableButton(QPushButton):
             if isinstance(custom_colors, str):
                 import ast
                 try: custom_colors = ast.literal_eval(custom_colors)
+                # TODO: BUG: Silent blanket exception handler swallows errors
+
                 except Exception: custom_colors = {}
             if isinstance(custom_colors, dict) and "edit_bg" in custom_colors:
                 color = custom_colors["edit_bg"]
@@ -182,11 +185,12 @@ class DraggableButton(QPushButton):
         menu = QMenu(self)
         menu.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         menu.setFont(QApplication.font())
-        menu.addAction("📋 Copy", lambda: self.main_win.copy_snippet_to_clipboard(self.full_text))
-        menu.addAction("✏ Rename", lambda: self.main_win.rename_snippet(self.cat, self.global_idx))
-        menu.addAction("📁 Files…", lambda: self.main_win.open_file_container(self.global_idx))
+        le = getattr(self.main_win, "_current_lang", "EN")
+        menu.addAction(tr("📋 Copy", le), lambda: self.main_win.copy_snippet_to_clipboard(self.full_text))
+        menu.addAction(tr("✏ Rename", le), lambda: self.main_win.rename_snippet(self.cat, self.global_idx))
+        menu.addAction(tr("📁 Files…", le), lambda: self.main_win.open_file_container(self.global_idx))
         menu.addSeparator()
-        menu.addAction("🗑 Delete", lambda: self.main_win.prompt_delete_snippet(self.cat, self.global_idx))
+        menu.addAction(tr("🗑 Delete", le), lambda: self.main_win.prompt_delete_snippet(self.cat, self.global_idx))
         self.main_win.ignore_focus_loss = True
         try:
             menu.exec(self.mapToGlobal(pos))
@@ -271,6 +275,8 @@ class SnippetWidget(QWidget):
         border = extract_border_color(theme.get('btn_save', '')) or '#4a4a4a'
 
         try: button_scale = float(self.main_win.data.get("button_scale", "1.0"))
+        # TODO: BUG: Silent blanket exception handler swallows errors
+
         except Exception: button_scale = 1.0
 
         from PyQt6.QtGui import QFont
@@ -435,7 +441,7 @@ class DraggableSiloButton(QWidget):
         # Hover-only action buttons: pin and archive
         self._btn_pin = QPushButton("📌")
         self._btn_pin.setFixedSize(16, 16)
-        self._btn_pin.setToolTip("Pin/Unpin this silo to top")
+        self._btn_pin.setToolTip(tr("Pin/Unpin this silo to top", getattr(self.main_win, "_current_lang", "EN")))
         self._btn_pin.setCursor(Qt.CursorShape.PointingHandCursor)
         self._btn_pin.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
         self._btn_pin.setStyleSheet("background: transparent; border: none; padding: 0; font-size: 11px;")
@@ -443,7 +449,7 @@ class DraggableSiloButton(QWidget):
 
         self._btn_archive = QPushButton("📥")
         self._btn_archive.setFixedSize(16, 16)
-        self._btn_archive.setToolTip("Archive this silo")
+        self._btn_archive.setToolTip(tr("Archive this silo", getattr(self.main_win, "_current_lang", "EN")))
         self._btn_archive.setCursor(Qt.CursorShape.PointingHandCursor)
         self._btn_archive.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
         self._btn_archive.setStyleSheet("background: transparent; border: none; padding: 0; font-size: 11px;")
@@ -451,7 +457,7 @@ class DraggableSiloButton(QWidget):
 
         self._btn_files = QPushButton("📁")
         self._btn_files.setFixedSize(16, 16)
-        self._btn_files.setToolTip("Files: drop/drag/preview assets for this silo")
+        self._btn_files.setToolTip(tr("Files: drop/drag/preview assets for this silo", getattr(self.main_win, "_current_lang", "EN")))
         self._btn_files.setCursor(Qt.CursorShape.PointingHandCursor)
         self._btn_files.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
         self._btn_files.setStyleSheet("background: transparent; border: none; padding: 0; font-size: 11px;")
@@ -459,15 +465,34 @@ class DraggableSiloButton(QWidget):
 
         self._btn_tick = QPushButton("✅")
         self._btn_tick.setFixedSize(16, 16)
-        self._btn_tick.setToolTip("Mark this silo as done (click again to unmark)")
+        self._btn_tick.setToolTip(tr("Mark this silo as done (click again to unmark)", getattr(self.main_win, "_current_lang", "EN")))
         self._btn_tick.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._btn_tick.setStyleSheet("background: transparent; border: none; padding: 0; font-size: 11px;")
+        # Verdana (forced app-wide) has no color emoji — pin the tick to an
+        # emoji font so ✅ stays green instead of a monochrome fallback,
+        # including while the row is hovered.
+        from PyQt6.QtGui import QFont
+        _emoji_font = QFont("Segoe UI Emoji")
+        _emoji_font.setPointSize(9)
+        self._btn_tick.setFont(_emoji_font)
+        self._btn_tick.setStyleSheet(
+            "background: transparent; border: none; padding: 0;"
+            " font-family: 'Segoe UI Emoji';")
         self._btn_tick.clicked.connect(self._on_tick_clicked)
+        
+        self._btn_color_box = QPushButton()
+        self._btn_color_box.setFixedSize(12, 12)
+        self._btn_color_box.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._btn_color_box.setStyleSheet("background: transparent; border: 1px inset #555; border-radius: 2px;")
+        self._btn_color_box.clicked.connect(self._cycle_color)
+        self._btn_color_box.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._btn_color_box.customContextMenuRequested.connect(self._show_color_menu)
+        self._btn_color_box.hide()
 
         # tick sits leftmost — before the order number in the title;
         # files button rightmost: with files it doubles as the 📁N counter
         self._silo_layout.addWidget(self._btn_collapse)
         self._silo_layout.addWidget(self._btn_tick)
+        self._silo_layout.addWidget(self._btn_color_box)
         self._silo_layout.addWidget(self._lbl_text)
         self._silo_layout.addStretch()
         self._silo_layout.addWidget(self._btn_pin)
@@ -487,6 +512,51 @@ class DraggableSiloButton(QWidget):
     def _on_collapse_clicked(self):
         if hasattr(self.main_win, 'toggle_silo_collapse'):
             self.main_win.toggle_silo_collapse(self.global_idx)
+
+    def _cycle_color(self):
+        if not hasattr(self.main_win, "data"): return
+        colors = self.main_win.data.get("silo_color_palette", ["#ff4444", "#ffaa00", "#ffff00", "#00ff00", "#00ffff", "#0000ff", "#ff00ff", "#ffffff", "#000000", "#808080", ""])
+        colors = [c for c in colors if c] + [""]
+        current = self.main_win.data.get("silo_colors", {}).get(str(self.global_idx), "")
+        try:
+            idx = colors.index(current)
+            next_color = colors[(idx + 1) % len(colors)]
+        except ValueError:
+            next_color = colors[0]
+            
+        colors_dict = self.main_win.data.get("silo_colors", {})
+        colors_dict[str(self.global_idx)] = next_color
+        self.main_win.data["silo_colors"] = colors_dict
+        self.main_win.mark_dirty()
+        if hasattr(self.main_win, "refresh_temp_presets"):
+            self.main_win.refresh_temp_presets()
+
+    def _show_color_menu(self, pos):
+        if not hasattr(self.main_win, "data"): return
+        from PyQt6.QtWidgets import QMenu
+        from PyQt6.QtGui import QIcon, QPixmap, QColor
+        menu = QMenu(self)
+        colors = self.main_win.data.get("silo_color_palette", ["#ff4444", "#ffaa00", "#ffff00", "#00ff00", "#00ffff", "#0000ff", "#ff00ff", "#ffffff", "#000000", "#808080"])
+        
+        def _set_color(c):
+            colors_dict = self.main_win.data.get("silo_colors", {})
+            colors_dict[str(self.global_idx)] = c
+            self.main_win.data["silo_colors"] = colors_dict
+            self.main_win.mark_dirty()
+            if hasattr(self.main_win, "refresh_temp_presets"):
+                self.main_win.refresh_temp_presets()
+
+        for c in colors:
+            if not c: continue
+            pix = QPixmap(16, 16)
+            pix.fill(QColor(c))
+            act = menu.addAction(QIcon(pix), c)
+            act.triggered.connect(lambda checked, col=c: _set_color(col))
+            
+        act_none = menu.addAction("Remove Color")
+        act_none.triggered.connect(lambda checked: _set_color(""))
+        
+        menu.exec(self._btn_color_box.mapToGlobal(pos))
 
     def _on_pin_clicked(self):
         """Toggle pin state for this silo."""
@@ -556,20 +626,10 @@ class DraggableSiloButton(QWidget):
             self._btn_archive.show()
             self._btn_files.show()  # empty silos get the plain 📁 on hover
             if self.main_win.data.get("silo_ticks_enabled", "True") == "True":
-                self._btn_tick.setText("☑" if self._is_ticked() else "✅")
+                self._btn_tick.setText("✅")
                 self._btn_tick.show()
             self._lbl_count.hide()
-            try:
-                from fastprompter.ui.file_container import folder_summary
-                presets = self.main_win.data.get("temp_presets", [])
-                text = presets[self.global_idx] if 0 <= self.global_idx < len(presets) else ""
-                self._btn_files.setToolTip(
-                    "Files: drop/drag/preview assets for this silo\n\n"
-                    + folder_summary(self.main_win._files_root(),
-                                     self.main_win.get_current_category(), text)
-                )
-            except Exception:
-                pass  # tooltip is decoration; hover must never break
+            self._btn_files.setToolTip(tr("Files: drop/drag/preview assets for this silo", getattr(self.main_win, "_current_lang", "EN")))
         else:
             self._btn_pin.hide()
             self._btn_archive.hide()
@@ -583,11 +643,11 @@ class DraggableSiloButton(QWidget):
         from PyQt6.QtCore import QSize
         return QSize(10, self._lbl_text.fontMetrics().height() + 10)
 
-    def update_data(self, text_label, global_idx, bg_color, font_family="Verdana", scale=1.0, line_count_str="", is_pushed=False, title_bold=False, is_child=False, fcount=0, has_children=False, is_collapsed=False):
+    def update_data(self, text_label, global_idx, bg_color, font_family="Verdana", scale=1.0, line_count_str="", is_pushed=False, title_bold=False, is_child=False, fcount=0, has_children=False, is_collapsed=False, has_hash=False, color_hex=""):
         theme_name = self.main_win.data.get("theme", "Default")
         ticked_list = self.main_win.data.get("silo_ticked", [])
         is_ticked = isinstance(ticked_list, list) and global_idx in ticked_list
-        current_state = (text_label, global_idx, bg_color, font_family, scale, theme_name, line_count_str, is_pushed, title_bold, is_ticked, is_child, fcount, has_children, is_collapsed)
+        current_state = (text_label, global_idx, bg_color, font_family, scale, theme_name, line_count_str, is_pushed, title_bold, is_ticked, is_child, fcount, has_children, is_collapsed, has_hash, color_hex)
         if getattr(self, '_last_state', None) == current_state:
             self.show()
             return
@@ -608,6 +668,16 @@ class DraggableSiloButton(QWidget):
         self._btn_tick.setText("✅")
         ticks_on = self.main_win.data.get("silo_ticks_enabled", "True") == "True"
         self._btn_tick.setVisible(is_ticked and ticks_on and not self.is_archive)
+        
+        if has_hash:
+            if color_hex:
+                self._btn_color_box.setStyleSheet(f"background: {color_hex}; border: 1px solid #777; border-radius: 2px;")
+            else:
+                self._btn_color_box.setStyleSheet("background: transparent; border: 1px dashed #777; border-radius: 2px;")
+            self._btn_color_box.show()
+        else:
+            self._btn_color_box.hide()
+            
         # one files control, far right: with files it IS the counter and
         # stays visible; empty silos only reveal a plain 📁 on hover
         self._fcount = fcount

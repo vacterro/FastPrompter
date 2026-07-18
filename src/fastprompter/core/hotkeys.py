@@ -57,7 +57,7 @@ def _resolve_vk(key_name: str) -> int:
                 vk = result & 0xFF
                 if vk > 0:
                     return vk
-        except Exception:
+        except (OSError, AttributeError):
             pass
     # Fall back to static mapping
     return _STATIC_VK.get(key_name, 0)

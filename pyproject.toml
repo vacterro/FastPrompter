@@ -30,3 +30,10 @@ select = ["E", "F", "I", "W", "UP"]
 # Legacy compact style: long lines, one-line statements, and late imports
 # are pervasive in this codebase. Re-tighten once it gets reformatted.
 ignore = ["E402", "E501", "E701", "E702", "W293"]
+
+[dependency-groups]
+dev = [
+    "bandit>=1.9.4",
+    "mypy>=2.3.0",
+    "pyright>=1.1.411",
+]

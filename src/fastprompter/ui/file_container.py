@@ -34,6 +34,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from fastprompter.core.translations import tr
 from fastprompter.core.logging import logger
 
 _IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".ico"}
@@ -101,7 +102,7 @@ def _dir_size(path, _cap=2000):
     return total
 
 
-def folder_summary(root, category, silo_text):
+def folder_summary(root, category, silo_text, lang="EN"):
     """Tooltip text: item count + total size + per-extension breakdown."""
     d = silo_files_dir(root, category, silo_text)
     try:
@@ -109,7 +110,7 @@ def folder_summary(root, category, silo_text):
     except OSError:
         names = []
     if not names:
-        return "No files yet"
+        return tr("No files yet", lang)
     counts, sizes, total = {}, {}, 0
     for n in names:
         p = os.path.join(d, n)
@@ -205,6 +206,7 @@ class FileContainerPanel(QWidget):
     def __init__(self, main_win):
         super().__init__(main_win, Qt.WindowType.Tool)
         self.main_win = main_win
+        self.lang = getattr(main_win, "_current_lang", "EN")
         self.folder = ""
         self._icon_provider = QFileIconProvider()
         self._thumb_cache = {}  # path -> (mtime, QIcon)
@@ -219,22 +221,22 @@ class FileContainerPanel(QWidget):
         bar = QHBoxLayout()
         bar.setSpacing(4)
         self.btn_import = QPushButton("📄+")
-        self.btn_import.setToolTip("Import Files...\nCopy files into this silo's folder\n(or just drop files anywhere on this window)")
+        self.btn_import.setToolTip(tr("Import Files...\nCopy files into this silo's folder\n(or just drop files anywhere on this window)", self.lang))
         self.btn_import.clicked.connect(self._pick_import)
         self.btn_import_folder = QPushButton("📁+")
-        self.btn_import_folder.setToolTip("Import Folder...\nCopy an entire folder into this silo's folder")
+        self.btn_import_folder.setToolTip(tr("Import Folder...\nCopy an entire folder into this silo's folder", self.lang))
         self.btn_import_folder.clicked.connect(self._pick_import_folder)
         self.btn_open_folder = QPushButton("📂")
-        self.btn_open_folder.setToolTip("Open Folder\nOpen this silo's folder in Explorer")
+        self.btn_open_folder.setToolTip(tr("Open Folder\nOpen this silo's folder in Explorer", self.lang))
         self.btn_open_folder.clicked.connect(self._open_folder)
         self.btn_export = QPushButton("📤")
-        self.btn_export.setToolTip("Export All...\nCopy every file here to a folder you pick")
+        self.btn_export.setToolTip(tr("Export All...\nCopy every file here to a folder you pick", self.lang))
         self.btn_export.clicked.connect(self._export_all)
         self.btn_clip = QPushButton("📋→📄")
-        self.btn_clip.setToolTip("Clip→File\nSave the clipboard text into this folder as a .txt file")
+        self.btn_clip.setToolTip(tr("Clip→File\nSave the clipboard text into this folder as a .txt file", self.lang))
         self.btn_clip.clicked.connect(self.save_clipboard_as_file)
         self.btn_view = QPushButton("👁️")
-        self.btn_view.setToolTip("View\nCycle view: Icons → List → Details (like Explorer)")
+        self.btn_view.setToolTip(tr("View\nCycle view: Icons → List → Details (like Explorer)", self.lang))
         self.btn_view.clicked.connect(self._cycle_view)
 
         bar.addWidget(self.btn_import)
@@ -264,26 +266,25 @@ class FileContainerPanel(QWidget):
         tpl_layout = QHBoxLayout()
         tpl_layout.setContentsMargins(0, 0, 0, 0)
         self.le_tpl = QLineEdit(self.main_win.data.get("folder_template", "ae, c4d, _output, _input"))
-        self.le_tpl.setPlaceholderText("Folder template (e.g. src, docs, assets)")
+        self.le_tpl.setPlaceholderText(tr("Folder template (e.g. src, docs, assets)", self.lang))
         self.le_tpl.textChanged.connect(self._on_tpl_changed)
-        self.btn_build_tpl = QPushButton("Build Template")
-        self.btn_build_tpl.setToolTip("Create these folders in the current silo")
+        self.btn_build_tpl = QPushButton(tr("Build Template", self.lang))
+        self.btn_build_tpl.setToolTip(tr("Create these folders in the current silo", self.lang))
         self.btn_build_tpl.clicked.connect(self.build_template_folders)
-        tpl_layout.addWidget(QLabel("Folder Tpl:"))
+        tpl_layout.addWidget(QLabel(tr("Folder Tpl:", self.lang)))
         tpl_layout.addWidget(self.le_tpl)
         tpl_layout.addWidget(self.btn_build_tpl)
         layout.addLayout(tpl_layout)
 
         self.lbl_hint = QLabel(
-            "Drop files here — copied into a plain folder you own. "
-            "Hold Alt while dropping to add links instead of copies.")
+            tr("Drop files here — copied into a plain folder you own. "
+               "Hold Alt while dropping to add links instead of copies.", self.lang))
         self.lbl_hint.setWordWrap(True)
         layout.addWidget(self.lbl_hint)
 
         self._watcher = QFileSystemWatcher(self)
         self._watcher.directoryChanged.connect(lambda _: self.refresh())
         self._apply_view_mode()
-
 
     # ---- view modes (Explorer-like) ---------------------------------------
 
@@ -305,7 +306,7 @@ class FileContainerPanel(QWidget):
     def _apply_view_mode(self):
         mode = self._view_mode()
         self.btn_view.setText("👁️")
-        self.btn_view.setToolTip(f"View ({mode})\nCycle view: Icons → List → Details (like Explorer)")
+        self.btn_view.setToolTip(tr("View ({})\nCycle view: Icons → List → Details (like Explorer)", self.lang).format(mode))
         lw = self.file_list
         if mode == "Icons":
             lw.setViewMode(QListWidget.ViewMode.IconMode)
@@ -329,7 +330,7 @@ class FileContainerPanel(QWidget):
             self._watcher.removePaths(self._watcher.directories())
         self._watcher.addPath(folder)
         self.folder = folder
-        self.setWindowTitle(f"Files — {title}")
+        self.setWindowTitle(tr("Files — {}", self.lang).format(title))
         self.refresh()
         self.show()
         self.raise_()
@@ -357,7 +358,7 @@ class FileContainerPanel(QWidget):
             item.setData(Qt.ItemDataRole.UserRole, path)
             item.setToolTip(path)
             self.file_list.addItem(item)
-        self.lbl_count.setText(f"{len(names)} file(s)")
+        self.lbl_count.setText(tr("{} file(s)", self.lang).format(len(names)))
         self._update_preview()
         if hasattr(self.main_win, "_update_files_button"):
             self.main_win._update_files_button()
@@ -380,6 +381,7 @@ class FileContainerPanel(QWidget):
                     icon = QIcon(pix.scaled(
                         48, 48, Qt.AspectRatioMode.KeepAspectRatio,
                         Qt.TransformationMode.SmoothTransformation))
+                    if len(self._thumb_cache) > 200: self._thumb_cache.clear()
                     self._thumb_cache[path] = (mtime, icon)
                     return icon
             except OSError:
@@ -428,12 +430,12 @@ class FileContainerPanel(QWidget):
         self.refresh()
 
     def _pick_import(self):
-        paths, _ = QFileDialog.getOpenFileNames(self, "Import files", "", "All files (*.*)")
+        paths, _ = QFileDialog.getOpenFileNames(self, tr("Import files", self.lang), "", tr("All files (*.*)", self.lang))
         if paths:
             self.import_paths(paths)
 
     def _pick_import_folder(self):
-        path = QFileDialog.getExistingDirectory(self, "Import folder")
+        path = QFileDialog.getExistingDirectory(self, tr("Import folder", self.lang))
         if path:
             self.import_paths([path])
 
@@ -463,7 +465,7 @@ class FileContainerPanel(QWidget):
 
     def _pick_link(self):
         paths, _ = QFileDialog.getOpenFileNames(
-            self, "Link to files (no copy)", "", "All files (*.*)")
+            self, tr("Link to files (no copy)", self.lang), "", tr("All files (*.*)", self.lang))
         if paths:
             self.import_links(paths)
 
@@ -478,7 +480,7 @@ class FileContainerPanel(QWidget):
 
         text = QApplication.clipboard().text()
         if not text.strip():
-            self.lbl_count.setText("clipboard has no text")
+            self.lbl_count.setText(tr("clipboard has no text", self.lang))
             return
 
         stamp = datetime.datetime.now().strftime("%d.%m.%y-%H%M%S")
@@ -496,13 +498,15 @@ class FileContainerPanel(QWidget):
                         first_word = clean_line.split()[0]
                         # Remove non-alphanumeric chars
                         first_word = re.sub(r'[^a-zA-Z0-9]', '', first_word)
+        # TODO: BUG: Silent blanket exception handler swallows errors
+
         except Exception:
             pass
 
         default_name = f"clip-{first_word}" if first_word else f"clip-{stamp}"
 
         name, ok = QInputDialog.getText(
-            self, "Save Clipboard", "Enter filename (without .txt):", text=default_name
+            self, tr("Save Clipboard", self.lang), tr("Enter filename (without .txt):", self.lang), text=default_name
         )
         if not ok or not name.strip():
             return
@@ -542,7 +546,7 @@ class FileContainerPanel(QWidget):
             self._open_folder()
 
     def _export_all(self):
-        target = QFileDialog.getExistingDirectory(self, "Export all files to…")
+        target = QFileDialog.getExistingDirectory(self, tr("Export all files to…", self.lang))
         if not target:
             return
         try:
@@ -566,7 +570,7 @@ class FileContainerPanel(QWidget):
         old = os.path.basename(path)
         restore = self._modal_guard()
         try:
-            new, ok = QInputDialog.getText(self, "Rename", "New name:", text=old)
+            new, ok = QInputDialog.getText(self, tr("Rename", self.lang), tr("New name:", self.lang), text=old)
         finally:
             restore()
         new = (new or "").strip()
@@ -596,8 +600,8 @@ class FileContainerPanel(QWidget):
         more = f"\n… and {len(paths) - 8} more" if len(paths) > 8 else ""
         box = QMessageBox(self)
         box.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
-        box.setWindowTitle("Delete files")
-        box.setText(f"Delete from this silo's folder?\n\n{names}{more}")
+        box.setWindowTitle(tr("Delete files", self.lang))
+        box.setText(tr("Delete from this silo's folder?\n\n{}\n", self.lang).format(names + more))
         box.setStandardButtons(
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         box.setDefaultButton(QMessageBox.StandardButton.No)
@@ -624,7 +628,7 @@ class FileContainerPanel(QWidget):
         paths = self.selected_paths()
         if paths:
             QApplication.clipboard().setText("\n".join(paths))
-            self.lbl_count.setText("path copied")
+            self.lbl_count.setText(tr("path copied", self.lang))
 
     def new_folder(self):
         """Create a subfolder in the container (Ctrl+N)."""
@@ -633,8 +637,8 @@ class FileContainerPanel(QWidget):
         from PyQt6.QtWidgets import QInputDialog
         restore = self._modal_guard()
         try:
-            name, ok = QInputDialog.getText(self, "New Folder", "Folder name:",
-                                            text="New Folder")
+            name, ok = QInputDialog.getText(self, tr("New Folder", self.lang), tr("Folder name:", self.lang),
+                                            text=tr("New Folder", self.lang))
         finally:
             restore()
         name = (name or "").strip().strip(".")
@@ -664,21 +668,21 @@ class FileContainerPanel(QWidget):
         menu = QMenu(self)
         if item:
             path = item.data(Qt.ItemDataRole.UserRole)
-            menu.addAction("Open\tEnter", lambda: self._open_item(item))
-            menu.addAction("Show in Explorer", lambda: self._reveal(path))
-            menu.addAction("Copy Path\tCtrl+Shift+C", lambda: self._copy_path(path))
-            menu.addAction("Rename…\tF2", lambda: self._rename(path))
-            menu.addAction("Export to…", self._export_all)
+            menu.addAction(tr("Open\tEnter", self.lang), lambda: self._open_item(item))
+            menu.addAction(tr("Show in Explorer", self.lang), lambda: self._reveal(path))
+            menu.addAction(tr("Copy Path\tCtrl+Shift+C", self.lang), lambda: self._copy_path(path))
+            menu.addAction(tr("Rename…\tF2", self.lang), lambda: self._rename(path))
+            menu.addAction(tr("Export to…", self.lang), self._export_all)
             menu.addSeparator()
-            menu.addAction("Delete…\tDel", lambda: self._delete(self.selected_paths() or [path]))
+            menu.addAction(tr("Delete…\tDel", self.lang), lambda: self._delete(self.selected_paths() or [path]))
         else:
-            menu.addAction("Import Files…", self._pick_import)
-            menu.addAction("Import Folder…", self._pick_import_folder)
-            menu.addAction("New Folder\tCtrl+N", self.new_folder)
-            menu.addAction("Build Template Folders", self.build_template_folders)
-            menu.addAction("Add Link to Files…", self._pick_link)
-            menu.addAction("Clipboard → File\tCtrl+V", self.save_clipboard_as_file)
-            menu.addAction("Open Folder", self._open_folder)
+            menu.addAction(tr("Import Files…", self.lang), self._pick_import)
+            menu.addAction(tr("Import Folder…", self.lang), self._pick_import_folder)
+            menu.addAction(tr("New Folder\tCtrl+N", self.lang), self.new_folder)
+            menu.addAction(tr("Build Template Folders", self.lang), self.build_template_folders)
+            menu.addAction(tr("Add Link to Files…", self.lang), self._pick_link)
+            menu.addAction(tr("Clipboard → File\tCtrl+V", self.lang), self.save_clipboard_as_file)
+            menu.addAction(tr("Open Folder", self.lang), self._open_folder)
         menu.exec(self.file_list.mapToGlobal(pos))
 
     def _copy_path(self, path):

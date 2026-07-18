@@ -10,6 +10,7 @@ from PyQt6 import sip
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QMenu, QSystemTrayIcon
 
+from fastprompter.core.translations import tr
 from fastprompter.core.config import create_tray_icon
 from fastprompter.utils.paths import get_resource_path
 
@@ -32,10 +33,11 @@ class TrayMixin:
         self.tray_icon = QSystemTrayIcon(icon, self)
         tray_menu = QMenu(self)
 
-        show_action = tray_menu.addAction("Show/Hide")
+        lang = getattr(self, "_current_lang", "EN")
+        show_action = tray_menu.addAction(tr("Show/Hide", lang))
         show_action.triggered.connect(self.toggle_visibility)
         tray_menu.addSeparator()
-        quit_action = tray_menu.addAction("Quit")
+        quit_action = tray_menu.addAction(tr("Quit", lang))
         quit_action.triggered.connect(self.quit_app)
 
         self.tray_icon.setContextMenu(tray_menu)

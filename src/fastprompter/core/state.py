@@ -34,8 +34,8 @@ class FastPrompterState:
             "last_text": "", "last_tab_idx": 0, "last_geometry": "", "active_temp_slot": 0,
             "font_size": 11, "preview_mode": "None", "paste_mode": "Plain", "tray_visible": "True", "global_hotkey": "Alt+X",
             "pie_menu_hotkey": "Shift+Alt+X", "lock_window_hotkey": "Alt+S", "always_on_top_hotkey": "Alt+E",
-            "close_on_focus_loss": "True", "ctrl_c_closes": "True", "theme": "Default", "ui_scale": "1.0", "button_scale": "1.0", "window_locked": "False", "silo_last_edited": {}, "pinned_silos": [], "silo_last_edited_all": {}, "pinned_silos_all": {}, "silo_ticked": [], "silo_ticked_all": {}, "silo_children": {}, "silo_children_all": {}, "silo_collapsed": [], "silo_collapsed_all": {},
-            "sidebar_right": "False", "sound_ui": "False", "sound_typewriter": "False", "sound_volume": "5", "portable_backup_enabled": "True"
+            "close_on_focus_loss": "True", "ctrl_c_closes": "True", "theme": "Default", "ui_scale": "1.0", "button_scale": "1.0", "window_locked": "False", "silo_last_edited": {}, "pinned_silos": [], "silo_last_edited_all": {}, "pinned_silos_all": {}, "silo_ticked": [], "silo_ticked_all": {}, "silo_children": {}, "silo_children_all": {}, "silo_collapsed": [], "silo_collapsed_all": {}, "silo_colors": {}, "silo_colors_all": {},
+            "sidebar_right": "False", "sound_ui": "False", "sound_typewriter": "False", "sound_volume": "5", "portable_backup_enabled": "True", "language": "EN"
         }
 
     def switch_profile(self, new_profile_id):
@@ -53,9 +53,14 @@ class FastPrompterState:
             # Backup existing DB before connecting — prevents empty/new DB from destroying backup
             if os.path.exists(self.db_path) and os.path.getsize(self.db_path) > 24576:
                 try:
-                    with sqlite3.connect(self.db_path) as src:
-                        with sqlite3.connect(self.db_path + ".bak") as dest:
+                    src = sqlite3.connect(self.db_path)
+                    dest = sqlite3.connect(self.db_path + ".bak")
+                    try:
+                        with dest:
                             src.backup(dest)
+                    finally:
+                        src.close()
+                        dest.close()
                 except Exception:
                     import traceback
                     traceback.print_exc()
@@ -94,21 +99,25 @@ class FastPrompterState:
                     except json.JSONDecodeError: self.data['cats_order'] = ["Code", "Text", "Misc"]
                 elif row[0] in ('ui_scale', 'window_locked', 'sidebar_right'): self.data[row[0]] = row[1]
                 elif row[0] == 'hide_font': continue
-                elif row[0] in ('silo_last_edited_all', 'pinned_silos_all', 'silo_ticked_all', 'silo_children', 'silo_children_all', 'silo_collapsed_all'):
+                elif row[0] in ('silo_last_edited_all', 'pinned_silos_all', 'silo_ticked_all', 'silo_children', 'silo_children_all', 'silo_collapsed_all', 'silo_colors', 'silo_colors_all'):
                     try: self.data[row[0]] = json.loads(row[1])
-                    except Exception: self.data[row[0]] = {}
+                    except Exception as e: logger.warning(f"Failed to parse {row[0]}: {e}"); self.data[row[0]] = {}
                 elif row[0] == 'silo_last_edited':
                     try: self.data[row[0]] = json.loads(row[1])
-                    except Exception: self.data[row[0]] = {}
+                    except Exception as e: logger.warning(f"Failed to parse {row[0]}: {e}"); self.data[row[0]] = {}
                 elif row[0] in ('pinned_silos', 'silo_ticked', 'silo_collapsed'):
                     try: self.data[row[0]] = json.loads(row[1])
-                    except Exception: self.data[row[0]] = []
+                    except Exception as e: logger.warning(f"Failed to parse {row[0]}: {e}"); self.data[row[0]] = []
                 elif row[0] == 'custom_colors':
-                    try: self.data[row[0]] = json.loads(row[1])
-                    except Exception:
+                    try:
+                        self.data[row[0]] = json.loads(row[1])
+                    except (json.JSONDecodeError, SyntaxError) as e:
+                        logger.warning(f"Failed to parse custom_colors via json: {e}")
                         import ast
-                        try: self.data[row[0]] = ast.literal_eval(row[1])
-                        except Exception as e: logger.warning(f"Failed to parse custom_colors using ast: {e}")
+                        try:
+                            self.data[row[0]] = ast.literal_eval(row[1])
+                        except Exception as e2:
+                            logger.warning(f"Failed to parse custom_colors using ast: {e2}")
                 else: self.data[row[0]] = row[1]
 
             for cat in self.data['cats_order']:
@@ -142,7 +151,7 @@ class FastPrompterState:
             self.data["archive_temp_presets_all"] = {k: [t for t in v if t.strip()] for k, v in arc_temps.items()}
 
             # Setup current tab proxies
-            active_cat = self.data["cats_order"][self.data.get("last_tab_idx", 0)] if self.data["cats_order"] else "Code"
+            active_cat = self.data["cats_order"][min(self.data.get("last_tab_idx", 0), len(self.data["cats_order"])-1)] if self.data["cats_order"] else "Code"
             if active_cat not in self.data["temp_presets_all"]: self.data["temp_presets_all"][active_cat] = [""]*10
             if active_cat not in self.data["archive_temp_presets_all"]: self.data["archive_temp_presets_all"][active_cat] = []
             self.data["temp_presets"] = self.data["temp_presets_all"][active_cat]
@@ -160,7 +169,7 @@ class FastPrompterState:
         self._last_saved_presets = {(cat, i, item["name"], item["text"], item.get("last_edited", 0)) for cat, slots in self.data["categories"].items() for i, item in enumerate(slots) if item}
         self._last_saved_temp = {(cat, i, content) for cat, slots in self.data["temp_presets_all"].items() for i, content in enumerate(slots) if content}
         self._last_saved_arc = {(cat, i, content) for cat, slots in self.data["archive_temp_presets_all"].items() for i, content in enumerate(slots) if content}
-        self._last_saved_settings = {k: (json.dumps(v) if k in ("cats_order", "custom_colors", "silo_last_edited", "pinned_silos", "silo_last_edited_all", "pinned_silos_all", "silo_ticked", "silo_ticked_all", "silo_children", "silo_children_all", "silo_collapsed", "silo_collapsed_all") else str(v)) for k, v in self.data.items() if k not in ("categories", "temp_presets_all", "archive_temp_presets_all", "temp_presets", "archive_temp_presets")}
+        self._last_saved_settings = {k: (json.dumps(v) if k in ("cats_order", "custom_colors", "silo_last_edited", "pinned_silos", "silo_last_edited_all", "pinned_silos_all", "silo_ticked", "silo_ticked_all", "silo_children", "silo_children_all", "silo_collapsed", "silo_collapsed_all", "silo_colors", "silo_colors_all") else str(v)) for k, v in self.data.items() if k not in ("categories", "temp_presets_all", "archive_temp_presets_all", "temp_presets", "archive_temp_presets")}
 
     def mark_dirty(self):
         self._db_dirty = True
@@ -252,7 +261,7 @@ class FastPrompterState:
 
         try:
             # Compute snapshots BEFORE tx; assign _last_saved_* AFTER tx commits
-            current_settings = {k: (json.dumps(v) if k in ("cats_order", "custom_colors", "silo_last_edited", "pinned_silos", "silo_last_edited_all", "pinned_silos_all", "silo_ticked", "silo_ticked_all", "silo_children", "silo_children_all", "silo_collapsed", "silo_collapsed_all") else str(v)) for k, v in self.data.items() if k not in ("categories", "temp_presets_all", "archive_temp_presets_all", "temp_presets", "archive_temp_presets")}
+            current_settings = {k: (json.dumps(v) if k in ("cats_order", "custom_colors", "silo_last_edited", "pinned_silos", "silo_last_edited_all", "pinned_silos_all", "silo_ticked", "silo_ticked_all", "silo_children", "silo_children_all", "silo_collapsed", "silo_collapsed_all", "silo_colors", "silo_colors_all") else str(v)) for k, v in self.data.items() if k not in ("categories", "temp_presets_all", "archive_temp_presets_all", "temp_presets", "archive_temp_presets")}
             settings_to_save = [(k, v) for k, v in current_settings.items() if k not in self._last_saved_settings or self._last_saved_settings[k] != v]
 
             current_presets = {(cat, i, item["name"], item["text"], item.get("last_edited", 0)) for cat, slots in self.data["categories"].items() for i, item in enumerate(slots) if item}

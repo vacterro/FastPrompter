@@ -11,6 +11,7 @@ from PyQt6 import sip
 from PyQt6.QtGui import QTextCursor, QTextDocument
 from PyQt6.QtWidgets import QApplication, QFileDialog, QInputDialog, QMessageBox
 
+from fastprompter.core.translations import tr
 from fastprompter.core.logging import logger
 
 _is_deleted = sip.isdeleted
@@ -64,7 +65,7 @@ class SnippetOpsMixin:
         self.ignore_focus_loss = True
         try:
             path, _ = QFileDialog.getSaveFileName(
-                self, "Save Silo", "", "Text Files (*.txt);;Markdown Files (*.md);;All Files (*.*)"
+                self, tr("Save Silo", getattr(self, "_current_lang", "EN")), "", tr("Text Files (*.txt)", getattr(self, "_current_lang", "EN")) + ";;" + tr("Markdown Files (*.md)", getattr(self, "_current_lang", "EN")) + ";;" + tr("All Files (*.*)", getattr(self, "_current_lang", "EN"))
             )
         finally:
             self.ignore_focus_loss = False
@@ -74,9 +75,9 @@ class SnippetOpsMixin:
             try:
                 with open(path, "w", encoding="utf-8") as f:
                     f.write(text)
-                QMessageBox.information(self, "Saved", f"Silo successfully saved to:\n{path}")
+                QMessageBox.information(self, tr("Saved", getattr(self, "_current_lang", "EN")), tr("Silo successfully saved to:\n{}", getattr(self, "_current_lang", "EN")).format(path))
             except Exception as e:
-                QMessageBox.critical(self, "Error", f"Failed to save file:\n{e}")
+                QMessageBox.critical(self, tr("Error", getattr(self, "_current_lang", "EN")), tr("Failed to save file:\n{}", getattr(self, "_current_lang", "EN")).format(e))
 
     def backup_silo_to_files(self, idx, is_archive=False):
         """Save the current silo text as a file in its own file container."""
@@ -113,17 +114,17 @@ class SnippetOpsMixin:
         self.ignore_focus_loss = True
         try:
             dlg = QDialog(self)
-            dlg.setWindowTitle("Backup Silo")
+            dlg.setWindowTitle(tr("Backup Silo", getattr(self, "_current_lang", "EN")))
             layout = QVBoxLayout(dlg)
 
-            layout.addWidget(QLabel("Save current silo as file in its own folder:"))
+            layout.addWidget(QLabel(tr("Save current silo as file in its own folder:", getattr(self, "_current_lang", "EN"))))
             le = QLineEdit(default_name)
             layout.addWidget(le)
 
             btn_layout = QHBoxLayout()
-            btn_copy = QPushButton("Copy")
-            btn_copy_clear = QPushButton("Copy + Clear current silo")
-            btn_cancel = QPushButton("Cancel")
+            btn_copy = QPushButton(tr("Copy", getattr(self, "_current_lang", "EN")))
+            btn_copy_clear = QPushButton(tr("Copy + Clear current silo", getattr(self, "_current_lang", "EN")))
+            btn_cancel = QPushButton(tr("Cancel", getattr(self, "_current_lang", "EN")))
 
             btn_layout.addWidget(btn_copy)
             btn_layout.addWidget(btn_copy_clear)
@@ -154,7 +155,7 @@ class SnippetOpsMixin:
                     with open(path, "w", encoding="utf-8") as f:
                         f.write(silo_text)
                 except Exception as e:
-                    QMessageBox.warning(self, "Error", f"Failed to save backup:\n{e}")
+                    QMessageBox.warning(self, tr("Error", getattr(self, "_current_lang", "EN")), tr("Failed to save backup:\n{}", getattr(self, "_current_lang", "EN")).format(e))
                     return
 
                 if result[0] == "clear":
@@ -217,7 +218,7 @@ class SnippetOpsMixin:
                 self.text_area.blockSignals(False)
                 self._suspend_cache, self.ignore_focus_loss = False, False
             self.editing_snippet = (cat, global_idx)
-            self.btn_save.setText("Update")
+            self.btn_save.setText(tr("Update", getattr(self, "_current_lang", "EN")))
             theme_name = self.data.get("theme", "Default")
 
             edit_color = "#363b40"
@@ -252,8 +253,8 @@ class SnippetOpsMixin:
         try:
             reply = QMessageBox.question(
                 self,
-                "Delete Snippet",
-                "Delete this snippet?",
+                tr("Delete Snippet", getattr(self, "_current_lang", "EN")),
+                tr("Delete this snippet?", getattr(self, "_current_lang", "EN")),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
         finally:
@@ -270,7 +271,7 @@ class SnippetOpsMixin:
         old_name = slots[global_idx]["name"]
         self.ignore_focus_loss = True
         try:
-            new_name, ok = QInputDialog.getText(self, "Rename Snippet", "New name:", text=old_name)
+            new_name, ok = QInputDialog.getText(self, tr("Rename Snippet", getattr(self, "_current_lang", "EN")), tr("New name:", getattr(self, "_current_lang", "EN")), text=old_name)
         finally:
             self.ignore_focus_loss = False
         self.activateWindow()
@@ -287,7 +288,7 @@ class SnippetOpsMixin:
     def cancel_editing(self, silent=False):
         """Cancel snippet editing mode and restore button state."""
         self.editing_snippet = None
-        self.btn_save.setText("Save")
+        self.btn_save.setText(tr("Save", getattr(self, "_current_lang", "EN")))
         self._refresh_theme_cache()
         self.btn_save.setStyleSheet(self._theme_cache.get("btn_save", ""))
         if not silent:
@@ -394,7 +395,7 @@ class SnippetOpsMixin:
         )
         self.ignore_focus_loss = True
         try:
-            name, ok = QInputDialog.getText(self, "Save Preset", "Name:", text=auto_name)
+            name, ok = QInputDialog.getText(self, tr("Save Snippet", getattr(self, "_current_lang", "EN")), tr("Name:", getattr(self, "_current_lang", "EN")), text=auto_name)
         finally:
             self.ignore_focus_loss = False
         self.activateWindow()
@@ -420,7 +421,7 @@ class SnippetOpsMixin:
         self.ignore_focus_loss = True
         try:
             num, ok = QInputDialog.getInt(
-                self, "Snippet Number", f"Enter snippet number (1-{max_slots}):", 1, 1, max_slots
+                self, tr("Snippet Number", getattr(self, "_current_lang", "EN")), tr("Enter snippet number (1-{}):", getattr(self, "_current_lang", "EN")).format(max_slots), 1, 1, max_slots
             )
         finally:
             self.ignore_focus_loss = False
@@ -436,8 +437,8 @@ class SnippetOpsMixin:
             try:
                 reply = QMessageBox.question(
                     self,
-                    "Overwrite Snippet",
-                    f"Snippet #{num} already exists. Overwrite?",
+                    tr("Overwrite Snippet", getattr(self, "_current_lang", "EN")),
+                    tr("Snippet #{} already exists. Overwrite?", getattr(self, "_current_lang", "EN")).format(num),
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 )
             finally:
@@ -451,7 +452,7 @@ class SnippetOpsMixin:
         )
         self.ignore_focus_loss = True
         try:
-            name, ok = QInputDialog.getText(self, "Save Snippet", "Name:", text=auto_name)
+            name, ok = QInputDialog.getText(self, tr("Save Snippet", getattr(self, "_current_lang", "EN")), tr("Name:", getattr(self, "_current_lang", "EN")), text=auto_name)
         finally:
             self.ignore_focus_loss = False
         self.activateWindow()
@@ -474,8 +475,8 @@ class SnippetOpsMixin:
                 try:
                     reply = QMessageBox.question(
                         self,
-                        "Delete Snippet",
-                        "Are you sure you want to delete this snippet?",
+                        tr("Delete Snippet", getattr(self, "_current_lang", "EN")),
+                        tr("Are you sure you want to delete this snippet?", getattr(self, "_current_lang", "EN")),
                         QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                     )
                 finally:
@@ -493,8 +494,8 @@ class SnippetOpsMixin:
             try:
                 reply = QMessageBox.question(
                     self,
-                    "Delete Silo",
-                    "Are you sure you want to delete this silo and its content?",
+                    tr("Delete Silo", getattr(self, "_current_lang", "EN")),
+                    tr("Are you sure you want to delete this silo and its content?", getattr(self, "_current_lang", "EN")),
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 )
             finally:
@@ -552,7 +553,7 @@ class SnippetOpsMixin:
                 self._delete_file_container(cat, target_item["text"])
         if getattr(self, "editing_snippet", None) == (cat, global_idx):
             self.editing_snippet = None
-            self.btn_save.setText("Save")
+            self.btn_save.setText(tr("Save", getattr(self, "_current_lang", "EN")))
             self._refresh_theme_cache()
             self.btn_save.setStyleSheet(self._theme_cache.get("btn_save", ""))
             # Stop the debounce timer before touching the editor to prevent it from

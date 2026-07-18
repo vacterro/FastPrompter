@@ -38,29 +38,12 @@ class HotkeyFilter(QAbstractNativeEventFilter):
             if eventType in (b"windows_generic_MSG", b"windows_dispatcher_MSG"):
                 msg = ctypes.wintypes.MSG.from_address(message.__int__())
                 if msg.message == 0x0312:  # WM_HOTKEY
+                    # Only handle global hotkeys: toggle_visibility (1, 101) and pie_menu (2, 102)
                     if msg.wParam in (1, 101):
                         self.window.toggle_visibility()
                         return True, 0
                     elif msg.wParam in (2, 102):
                         self.window.show_quick_list()
-                        return True, 0
-                    elif msg.wParam in (3, 103):
-                        self.window.toggle_lock()
-                        return True, 0
-                    elif msg.wParam in (4, 104):
-                        self.window.toggle_always_on_top()
-                        return True, 0
-                    elif msg.wParam in (5, 105):
-                        self.window.toggle_visibility(force_sidebar=True)
-                        return True, 0
-                    elif msg.wParam in (6, 106):
-                        self.window.toggle_hide_on_clickout()
-                        return True, 0
-                    elif (10 <= msg.wParam <= 14) or (110 <= msg.wParam <= 114):
-                        self.window.fire_global_snippet((msg.wParam % 100) - 10)
-                        return True, 0
-                    elif (20 <= msg.wParam <= 24) or (120 <= msg.wParam <= 124):
-                        self.window.fire_global_silo((msg.wParam % 100) - 20)
                         return True, 0
                 elif msg.message == 0x0112:  # WM_SYSCOMMAND
                     if (msg.wParam & 0xFFF0) == 0xF100:  # SC_KEYMENU

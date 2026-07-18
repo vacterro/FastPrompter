@@ -84,6 +84,8 @@ def _do_export(data: dict) -> None:
                 "archive_count": sum(1 for p in arc_presets if p.strip()),
                 "snippet_count": sum(1 for cat in cats for s in categories.get(cat, []) if s and s.get("text", "").strip())
             }, f, indent=2)
+    # TODO: BUG: Silent blanket exception handler swallows errors
+
     except Exception:
         pass
 
@@ -123,5 +125,7 @@ def _cleanup_old_backups(backup_dir: str, max_days: int = 7) -> None:
                         shutil.rmtree(entry_path, ignore_errors=True)
                 except (ValueError, OSError):
                     pass
+    # TODO: BUG: Silent blanket exception handler swallows errors
+
     except Exception:
         pass

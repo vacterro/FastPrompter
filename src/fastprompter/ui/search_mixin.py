@@ -7,6 +7,8 @@ Provides SearchMixin class for use as a mixin with FastPrompter QMainWindow.
 from PyQt6.QtGui import QTextCursor, QTextDocument
 from PyQt6.QtWidgets import QMessageBox
 
+from fastprompter.core.translations import tr
+
 
 class SearchMixin:
     """Mixin providing find/replace UI and logic.
@@ -104,7 +106,8 @@ class SearchMixin:
             # next search starts after it — no re-match, guaranteed progress
             count += 1
         edit_cursor.endEditBlock()
-        QMessageBox.information(self, "Replace All", f"Replaced {count} occurrences.")
+        lang = getattr(self, '_current_lang', 'EN')
+        QMessageBox.information(self, tr("Replace All", lang), tr("Replaced {} occurrences.", lang).format(count))
 
     def on_search_toggle(self, checked):
         """Toggle the sidebar search bar visibility."""

@@ -21,3 +21,8 @@ error.log
 .vacskill/history/
 
 src/test_dir/
+
+# large local archives — never commit
+*.rar
+*.7z
+*.zip

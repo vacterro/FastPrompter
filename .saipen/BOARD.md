@@ -39,26 +39,26 @@
 ## Wave v0.6.6 — fresh deep audit bugs (T-160..T-180)
 | ID | Status | Owner | Needs | Description |
 |---|---|---|---|---|
-| T-160 | TODO | antigravity | - | CRITICAL: `folder_summary()` in `file_container.py` uses `self.lang` but has no `self` (module-level fn) — runtime crash when "No files yet" branch is hit on RU lang |
-| T-161 | TODO | antigravity | - | `print()` left in production code in `main.py:392-395` — `_apply_header_density()` prints debug to stdout on every resize if FP_DENSITY_DEBUG set |
-| T-162 | TODO | antigravity | - | 26 untranslated tooltips in `main.py`: `btn_sidebar_toggle`, `btn_end`, `btn_strike`, `btn_clear_fmt`, `btn_copy`, `btn_bullet_toggle` (dynamic), `btn_files`, `btn_settings_toggle`, `btn_silo_up/down`, `btn_page_up/down`, `btn_arc_page_up/down`, `btn_find_prev/next`, `btn_close_search` |
-| T-163 | TODO | antigravity | - | `main.py` `insert_timestamp_at_end()` uses `__import__('datetime')` instead of top-level `import datetime` — code smell, hides import at point-of-use |
-| T-164 | TODO | antigravity | - | Thread-safety data race in `_save_undo_state()`: serializes `data_undo_stack` in a daemon thread while main thread could be mutating it |
-| T-165 | TODO | antigravity | - | `state.py` backup block: `dest_conn` created outside `with` block, could leak connection if backup fails before `dest_conn.close()` |
-| T-166 | TODO | antigravity | - | `main.py` `hide_and_save()` does full `save_data_to_db(force=True)` synchronously — slow I/O blocks the hide animation |
-| T-167 | TODO | antigravity | - | `_update_visible_silo_count()` uses first visible button height — if all buttons hidden during init, estimate defaults to 24px which may be wrong |
+| T-160 | DONE | antigravity 2026-07-17T23:42:56.757254+00:00 | - | CRITICAL: `folder_summary()` in `file_container.py` uses `self.lang` but has no `self` (module-level fn) — runtime crash when "No files yet" branch is hit on RU lang |
+| T-161 | DONE | antigravity | - | `print()` left in production code in `main.py:392-395` — `_apply_header_density()` prints debug to stdout on every resize if FP_DENSITY_DEBUG set |
+| T-162 | DONE | antigravity | - | 26 untranslated tooltips in `main.py`: `btn_sidebar_toggle`, `btn_end`, `btn_strike`, `btn_clear_fmt`, `btn_copy`, `btn_bullet_toggle` (dynamic), `btn_files`, `btn_settings_toggle`, `btn_silo_up/down`, `btn_page_up/down`, `btn_arc_page_up/down`, `btn_find_prev/next`, `btn_close_search` |
+| T-163 | DONE | antigravity | - | `main.py` `insert_timestamp_at_end()` uses `__import__('datetime')` instead of top-level `import datetime` — code smell, hides import at point-of-use |
+| T-164 | DONE | antigravity | - | Thread-safety data race in `_save_undo_state()`: serializes `data_undo_stack` in a daemon thread while main thread could be mutating it |
+| T-165 | DONE | antigravity | - | `state.py` backup block: `dest_conn` created outside `with` block, could leak connection if backup fails before `dest_conn.close()` |
+| T-166 | DONE | antigravity | - | `main.py` `hide_and_save()` does full `save_data_to_db(force=True)` synchronously — slow I/O blocks the hide animation |
+| T-167 | DONE | antigravity | - | `_update_visible_silo_count()` uses first visible button height — if all buttons hidden during init, estimate defaults to 24px which may be wrong |
 | T-168 | TODO | antigravity | - | `data_undo_stack` has no memory cap: undo entries grow unbounded, large silo texts could cause OOM over long sessions |
-| T-169 | TODO | antigravity | - | `main.py` `btn_bullet_toggle.setToolTip(...)` hardcodes `ON`/`OFF` state without tr() wrapper — untranslated when lang=RU |
+| T-169 | DONE | antigravity | - | `main.py` `btn_bullet_toggle.setToolTip(...)` hardcodes `ON`/`OFF` state without tr() wrapper — untranslated when lang=RU |
 | T-170 | TODO | antigravity | - | `editor.py` `VaultTextEdit.keyPressEvent` handles Ctrl+C/Ctrl+V with potential nested `setTextCursor` mismatch after `_delete_selected_text_block()` |
-| T-171 | TODO | antigravity | - | `file_container.py` `_cache` (thumb_cache) grows unbounded — no cleanup when silo changes, stale entries accumulate |
+| T-171 | DONE | antigravity | - | `file_container.py` `_cache` (thumb_cache) grows unbounded — no cleanup when silo changes, stale entries accumulate |
 | T-172 | TODO | antigravity | - | `main.py` `_on_text_changed` might trigger `silo_docs[idx].setPlainText()` while text_area is still being edited — potential infinite recursion |
 | T-173 | TODO | antigravity | - | `state.py` `save_data_to_db()` uses `with self.conn:` context manager — exceptions inside don't roll back in all cases |
 | T-174 | TODO | antigravity | - | `editor.py` `_fold_block()` could throw if fold state gets out of sync with actual document blocks |
 | T-175 | TODO | antigravity | - | `snippet_panel.py` `_hover_timer` runs continuously (80ms interval) even when mouse is idle — unnecessary CPU wakeups |
-| T-176 | TODO | antigravity | - | `hotkey_mixin.py` `_apply_tooltips()` still uses `getattr(self, '_current_lang', 'EN')` instead of cached `self._current_lang` — minor redundancy |
+| T-176 | DONE | antigravity | - | `hotkey_mixin.py` `_apply_tooltips()` still uses `getattr(self, '_current_lang', 'EN')` instead of cached `self._current_lang` — minor redundancy |
 | T-177 | TODO | antigravity | - | `window_mixin.py` `place_window()` catches bare Exception and calls `QCursor.pos()` which can throw on disconnected screens — nested bare except hides real failures |
 | T-178 | TODO | antigravity | - | `scaling_mixin.py` `apply_scaled_ui()` loops through all children with bare except — any child error silently skips entire rest of loop body |
-| T-179 | TODO | antigravity | - | `main.py` `open_file_container()` imports `FileContainerPanel` inside function body instead of top-level — minor but wastes re-import on every open |
+| T-179 | DONE | antigravity | - | `main.py` `open_file_container()` imports `FileContainerPanel` inside function body instead of top-level — minor but wastes re-import on every open |
 | T-180 | TODO | antigravity | - | `formatting_mixin.py` `apply_format()` catches bare Exception that could suppress tab-stops/selection errors — formatting failures invisible |
 | T-181 | TODO | antigravity | - | `_position_archive_overlay()` uses `sizeHint().height()` which may not match actual visible content — archive can overlap silo buttons |
 | T-182 | TODO | antigravity | - | `_focus_lock_count` race: 2 modal dialogs in quick succession → timer fires once, counter stuck → `ignore_focus_loss=True` permanently |
@@ -68,12 +68,12 @@
 | T-186 | TODO | antigravity | - | `_trim_archive()` replaces `self.archive_docs` list ref while `active_is_archive=True` — index mismatch if refresh fires mid-trim |
 | T-187 | TODO | antigravity | - | `silo_gap_widget` removed/re-inserted in layout on EVERY `refresh_temp_presets()` — layout thrashing + visible flicker with pinned silos |
 | T-188 | TODO | antigravity | - | `save_snippet()` accesses `self.data["categories"][cat]` without checking `cat` exists — KeyError if tab deleted mid-edit |
-| T-189 | TODO | antigravity | - | `change_profile()` doesn't clear text_area undo history — Ctrl+Z could undo text in wrong profile after switch |
+| T-189 | DONE | antigravity | - | `change_profile()` doesn't clear text_area undo history — Ctrl+Z could undo text in wrong profile after switch |
 | T-190 | TODO | antigravity | - | `enforce_topmost()` calls `SetWindowPos(HWND_TOPMOST)` every 30s unconditionally — unnecessary Win32 traffic even when already topmost |
 | T-191 | TODO | antigravity | - | `quit_app()` sets `self.conn = None` before `QApplication.quit()` — closeEvent DB save silently fails; docs say null refs to prevent touch but order is wrong |
-| T-192 | TODO | antigravity | - | `_live_folder_sync()` reads `toPlainText()` twice (slug check + cache) — on 500K+ docs this doubles work per keystroke |
-| T-193 | TODO | antigravity | - | `_update_files_button()` imports `folder_summary`/`silo_file_count` inside function body — re-imported on every call |
-| T-194 | TODO | antigravity | - | `change_profile()` hardcodes `"Text"` as default tab — if profile has no "Text" tab, loop falls to index 0 but `toggle_sidebar_visibility` may be called |
+| T-192 | DONE | antigravity | - | `_live_folder_sync()` reads `toPlainText()` twice (slug check + cache) — on 500K+ docs this doubles work per keystroke |
+| T-193 | DONE | antigravity | - | `_update_files_button()` imports `folder_summary`/`silo_file_count` inside function body — re-imported on every call |
+| T-194 | DONE | antigravity | - | `change_profile()` hardcodes `"Text"` as default tab — if profile has no "Text" tab, loop falls to index 0 but `toggle_sidebar_visibility` may be called |
 | T-195 | TODO | antigravity | - | `archive_section` is child of `left_panel` (setParent at line 1645) — circular size dependency: archive affects left_panel size affects archive position |
 | T-196 | TODO | antigravity | - | `toggle_visibility()` uses `isActiveWindow()` for frameless Tool windows — returns False on some Win32 configs → global hotkey can't show window |
 | T-197 | TODO | antigravity | - | `topmost_timer` stopped in `toggle_visibility` (hide) but NOT restarted in `show_window` — timer only restarted in `apply_window_flags` / init |
@@ -88,7 +88,7 @@
 | T-206 | TODO | antigravity | - | `formatting_mixin.py` `clear_formatting()` calls `cache_current_text()` which re-reads entire document — stalls UI thread on large docs |
 | T-207 | TODO | antigravity | - | `formatting_mixin.py` `insert_add_line()` calls `endEditBlock` without matching `beginEditBlock` — undo grouping broken for divider insertion |
 | T-208 | TODO | antigravity | - | `formatting_mixin.py` `toggle_bullet_conversion()` missing `beginEditBlock`/`endEditBlock` — no atomic undo for bullet conversion |
-| T-209 | TODO | antigravity | - | `snippet_panel.py` `_update_hover_buttons()` calls `folder_summary()` (filesystem I/O) on every hover enter — 80ms timer + slow network FS = UI freeze |
+| T-209 | DONE | antigravity | - | `snippet_panel.py` `_update_hover_buttons()` calls `folder_summary()` (filesystem I/O) on every hover enter — 80ms timer + slow network FS = UI freeze |
 | T-210 | TODO | antigravity | - | `editor.py` `wheelEvent` uses `angleDelta().y()` which returns 0 on some trackpads — Ctrl+wheel zoom silently fails |
 | T-211 | TODO | antigravity | - | `pie_menu.py` QuickListWidget uses `pynput.keyboard.Listener` global hook — escape key works across apps while pie menu is open |
 | T-212 | TODO | antigravity | - | `editor.py` `_toggle_checkboxes()` creates separate QTextCursor objects inside beginEditBlock — per-block cursors bypass atomic undo grouping |
@@ -189,7 +189,7 @@
 | T-307 | TODO | antigravity | - | `state.py` `switch_profile()` closes old DB connection without calling `save_data_to_db()` — if old profile had unsaved changes (`_db_dirty=True`), data silently lost on profile switch |
 | T-308 | TODO | antigravity | - | `state.py` `_export_md_backup()` uses `os.path.expanduser("~/.fastprompter")` unconditionally — in portable mode, backups go to user home instead of app-relative data directory |
 | T-309 | TODO | antigravity | - | `CHANGELOG.md` only documents up to v0.5.3 — all v0.6.0/v0.6.5/v0.6.6 features and 309 bug tickets are undocumented; changelog is 7 versions behind development |
-| T-310 | TODO | antigravity | - | `main.py` `change_profile()` doesn't rebind `self.silo_last_edited` on FastPrompter instance — `self.data = self.state.data` re-assigns data dict, but `self.silo_last_edited` still points to old profile's dict; stale reads until next tab switch |
+| T-310 | DONE | antigravity | - | `main.py` `change_profile()` doesn't rebind `self.silo_last_edited` on FastPrompter instance — `self.data = self.state.data` re-assigns data dict, but `self.silo_last_edited` still points to old profile's dict; stale reads until next tab switch |
 | T-311 | TODO | antigravity | - | `backup_dialog.py` `export_silos()` exports only the CURRENT tab's silos (`self.main_win.data.get("temp_presets", [])`) — UI says "Export All Silos" but only one category's data is saved; all other tabs' content silently dropped |
 | T-312 | TODO | antigravity | - | `hotkey_mixin.py` `_register_single()` catches ALL exceptions silently — if user enters invalid hotkey string, no feedback anywhere; hotkey appears saved in settings but never registers |
 | T-313 | TODO | antigravity | - | `main.py` `change_profile()` rebuilds `silo_docs` only for the active category — other categories keep OLD QTextDocuments with stale text from previous profile until user switches to them |
@@ -246,3 +246,22 @@ T-001..T-007 (Antigravity asp init), T-101..T-125 (v0.5.3) — all DONE, see git
 ## Out of scope note
 PureRef-style free canvas with image RESIZE inside the panel — deliberately not built
 (lightweight constraint); container has image preview pane + Explorer views instead.
+
+## Wave v0.6.2 — user request list (18.07, boarded by claude-opus)
+| ID | Status | Owner | Description |
+|---|---|---|---|
+| T-200 | DONE | claude-opus | P0: boot crash silo_colors str.get -> wired state + defensive read |
+| T-201 | DONE | claude-opus | Tick ✅ stays green on hover (Segoe UI Emoji font) |
+| T-202 | DONE | claude-opus | Line-number cycle checkbox→red dot→yellow rhombus→blue square (verify: already impl) |
+| T-203 | DONE | devin/antigravity | Alt+D no longer global (local QShortcut); filter tests realigned |
+| T-210 | TODO | - | BUG: sidebar must save each side (L/R) width individually — one narrow, one huge |
+| T-211 | TODO | - | Ctrl+V pastes file-in-clipboard as link |
+| T-212 | TODO | - | Links clickable: left-click opens file, right-click menu Open Folder |
+| T-213 | TODO | - | Cursor at line end: Ctrl+C copies just that line |
+| T-214 | VERIFY | - | Tab shifts selection not erase; Tab on bullet shifts cursor+• (antigravity touched Key_Tab) |
+| T-215 | VERIFY | - | 4 drop blocks reorderable by user (DropZonesDialog exists) |
+| T-216 | VERIFY | - | Day-state emoji on silo title toggleable (antigravity added day_emoji) |
+| T-217 | VERIFY | - | Tables + Kanban builders (antigravity added to editor) |
+| T-218 | TODO | - | Color box on # silos: cycle-click colors, right-click full picker, 7+white/black/grey/remove, templates in settings |
+| T-219 | TODO | - | Separator draggable + gap height controllable in Settings |
+| T-220 | TODO | - | Typewriter tooltips list sound filenames + wav/mp3 hint |

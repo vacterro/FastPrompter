@@ -10,6 +10,7 @@ import ctypes.wintypes
 from PyQt6 import sip
 
 from fastprompter.core.hotkeys import parse_hotkey
+from fastprompter.core.translations import tr
 
 _is_deleted = sip.isdeleted
 
@@ -28,30 +29,36 @@ class HotkeyMixin:
         h_pie = self.data.get("pie_menu_hotkey", "Shift+Alt+X")
         h_lock = self.data.get("lock_window_hotkey", "Alt+S")
         h_aot = self.data.get("always_on_top_hotkey", "Alt+E")
+        h_sidebar = self.data.get("toggle_sidebar_hotkey", "Alt+D")
+        h_clickout = self.data.get("hide_on_clickout_hotkey", "Alt+A")
 
+        lang = self._current_lang
         if hasattr(self, "cb_top") and not _is_deleted(self.cb_top):
-            self.cb_top.setToolTip(f"Always on top ({h_aot})")
+            self.cb_top.setToolTip(f"{tr('Always on Top', lang)} ({h_aot})")
         if hasattr(self, "cb_lock_window") and not _is_deleted(self.cb_lock_window):
-            self.cb_lock_window.setToolTip(f"Lock Window ({h_lock})")
+            self.cb_lock_window.setToolTip(f"{tr('Lock Window', lang)} ({h_lock})")
 
+        lang = self._current_lang
         shortcuts_info = (
-            f"--- GLOBAL HOTKEYS ---\n"
-            f"Toggle App Visibility: {h_global}\n"
-            f"Pie Menu: {h_pie}\n"
-            f"Lock Window: {h_lock}\n"
-            f"Always On Top: {h_aot}\n\n"
-            f"--- APP HOTKEYS ---\n"
-            f"Ctrl+Q : Cycle Snap Corners (move across screens)\n"
-            f"Ctrl+N : New Empty Snippet\n"
-            f"Ctrl+S : Save Snippet\n"
-            f"Ctrl+Z : Undo Text Change\n"
-            f"Ctrl+D : Toggle Focus Mode\n"
-            f"Ctrl+F : Find Text\n"
-            f"Ctrl+H : Replace Text\n"
-            f"Ctrl+Shift+S : Export/Save Silo to File\n"
-            f"Esc : Hide Window & Auto-save\n"
-            f"F1 - F10 : Execute Snippet 1-10\n"
-            f"Ctrl+Alt+Shift+Q : Quit Application Completely"
+            f"{tr('--- GLOBAL HOTKEYS (work anywhere) ---', lang)}\n"
+            f"{tr('Toggle App Visibility', lang)}: {h_global}\n"
+            f"{tr('Pie Menu', lang)}: {h_pie}\n\n"
+            f"{tr('--- APP HOTKEYS (only when window active) ---', lang)}\n"
+            f"{tr('Lock Window', lang)}: {h_lock}\n"
+            f"{tr('Always On Top', lang)}: {h_aot}\n"
+            f"{tr('Toggle Sidebar', lang)}: {h_sidebar}\n"
+            f"{tr('Toggle Hide-on-Clickout', lang)}: {h_clickout}\n"
+            f"Ctrl+Q : {tr('Cycle Snap Corners (move across screens)', lang)}\n"
+            f"Ctrl+N : {tr('New Empty Snippet', lang)}\n"
+            f"Ctrl+S : {tr('Save Snippet', lang)}\n"
+            f"Ctrl+Z : {tr('Undo Text Change', lang)}\n"
+            f"Ctrl+D : {tr('Toggle Focus Mode', lang)}\n"
+            f"Ctrl+F : {tr('Find Text', lang)}\n"
+            f"Ctrl+H : {tr('Replace Text', lang)}\n"
+            f"Ctrl+Shift+S : {tr('Export/Save Silo to File', lang)}\n"
+            f"Esc : {tr('Hide Window & Auto-save', lang)}\n"
+            f"F1 - F10 : {tr('Execute Snippet 1-10', lang)}\n"
+            f"Ctrl+Alt+Shift+Q : {tr('Quit Application Completely', lang)}"
         )
         if hasattr(self, "btn_hotkeys") and not _is_deleted(self.btn_hotkeys):
             self.btn_hotkeys.setToolTip(shortcuts_info)
@@ -64,31 +71,17 @@ class HotkeyMixin:
         self.registered_hotkeys.clear()
 
     def register_all_hotkeys(self):
-        """Register all global hotkeys from config."""
+        """Register all global hotkeys from config.
+        
+        Only toggle_visibility and pie_menu are global. All other hotkeys
+        are handled as QShortcut (local to app window) to avoid conflicts.
+        """
         self.unregister_all_hotkeys()
+        # Global hotkeys only
         self._register_single(self.data.get("global_hotkey", "Alt+X"), 1)
         self._register_single(self.data.get("global_hotkey_alt", "F15"), 101)
         self._register_single(self.data.get("pie_menu_hotkey", "Shift+Alt+X"), 2)
         self._register_single(self.data.get("pie_menu_hotkey_alt", ""), 102)
-
-        self._register_single(self.data.get("lock_window_hotkey", "Alt+S"), 3)
-        self._register_single(self.data.get("lock_window_hotkey_alt", ""), 103)
-        self._register_single(self.data.get("always_on_top_hotkey", "Alt+E"), 4)
-        self._register_single(self.data.get("always_on_top_hotkey_alt", ""), 104)
-        self._register_single(self.data.get("toggle_sidebar_hotkey", "Alt+D"), 5)
-        self._register_single(self.data.get("toggle_sidebar_hotkey_alt", ""), 105)
-        self._register_single(self.data.get("hide_on_clickout_hotkey", "Alt+A"), 6)
-        self._register_single(self.data.get("hide_on_clickout_hotkey_alt", ""), 106)
-
-        for i in range(5):
-            self._register_single(
-                self.data.get(f"snippet_{i}_hotkey", f"Ctrl+Shift+Numpad{i + 1}"), 10 + i
-            )
-            self._register_single(self.data.get(f"snippet_{i}_hotkey_alt", ""), 110 + i)
-            self._register_single(
-                self.data.get(f"silo_{i}_hotkey", f"Alt+Shift+Numpad{i + 1}"), 20 + i
-            )
-            self._register_single(self.data.get(f"silo_{i}_hotkey_alt", ""), 120 + i)
         self._apply_tooltips()
 
     def _register_single(self, hotkey_str, hk_id):
@@ -97,6 +90,8 @@ class HotkeyMixin:
             return
         try:
             modifiers, vk = parse_hotkey(hotkey_str)
+        # TODO: BUG: Silent blanket exception handler swallows errors
+
         except Exception:
             return
         if vk:

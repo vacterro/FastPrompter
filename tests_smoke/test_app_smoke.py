@@ -1615,9 +1615,13 @@ def test_file_container_views_links_clipboard(win):
     assert "linked_asset.psd" in body
     assert not os.path.exists(os.path.join(panel.folder, "linked_asset.psd"))
 
-    # clipboard -> file
+    # clipboard -> file (prompts for a name; mock the dialog)
+    from unittest.mock import patch
+
+    from PyQt6.QtWidgets import QInputDialog
     _QApp.clipboard().setText("clipboard payload")
-    panel.save_clipboard_as_file()
+    with patch.object(QInputDialog, "getText", return_value=("clip-test", True)):
+        panel.save_clipboard_as_file()
     clips = [n for n in os.listdir(panel.folder) if n.startswith("clip-") and n.endswith(".txt")]
     assert len(clips) == 1
     with open(os.path.join(panel.folder, clips[0]), encoding="utf-8") as f:
@@ -1875,6 +1879,23 @@ def test_ctrl_wheel_selects_silos(win):
     assert win.active_temp_slot == 1
 
 
+def test_line_number_margin_marks_paint(win):
+    # Regression: QPen was used unimported in line_number_area_paint_event —
+    # crashed the moment any margin mark was drawn. Exercise all 4 marks.
+    from PyQt6.QtCore import QRect
+    from PyQt6.QtGui import QPaintEvent
+
+    win.data["line_marks"] = "True"
+    ta = win.text_area
+    ta.setPlainText("alpha\nbeta")
+    blk = ta.document().firstBlock()
+    ev = QPaintEvent(QRect(0, 0, 40, 60))
+    for mark in (1, 2, 3, 4):  # checkbox, red dot, yellow rhombus, blue square
+        blk.setUserState(mark)
+        ta.line_number_area_paint_event(ev)  # must not raise
+    win.data["line_marks"] = "False"
+
+
 def test_no_cyrillic_in_codebase():
     import glob
     import re
@@ -1887,6 +1908,9 @@ def test_no_cyrillic_in_codebase():
     for pattern in ("src/**/*.py", "tests/**/*.py", "tests_smoke/*.py", "tools/*.py"):
         for f in glob.glob(os.path.join(root, pattern), recursive=True):
             if "__pycache__" in f:
+                continue
+            # translations.py is the RU/EN dictionary — Cyrillic is its job
+            if os.path.basename(f) == "translations.py":
                 continue
             with open(f, encoding="utf-8") as fh:
                 for i, line in enumerate(fh, 1):

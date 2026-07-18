@@ -9,11 +9,13 @@ from PyQt6.QtGui import (
     QFont,
     QPainter,
     QPainterPath,
+    QPen,
     QTextCursor,
 )
 from PyQt6.QtWidgets import QApplication, QTextEdit, QWidget
 
 from fastprompter.core.logging import logger
+from fastprompter.core.translations import tr
 
 # Matches every stamp shape Ctrl+E ever wrote: "17.07 - 04:19",
 # "17 Jul - 04:19", optional seconds, optional day-part word prefix.
@@ -147,6 +149,8 @@ class VaultTextEdit(QTextEdit):
         if cur_doc and not sip.isdeleted(cur_doc):
             try:
                 cur_doc.documentLayout().documentSizeChanged.disconnect(self.update_line_number_area_width)
+            # TODO: BUG: Silent blanket exception handler swallows errors
+
             except Exception:
                 pass
         self.setDocument(doc)
@@ -179,7 +183,6 @@ class VaultTextEdit(QTextEdit):
         super().resizeEvent(event)
         cr = self.contentsRect()
         self.line_number_area.setGeometry(QRect(cr.left(), cr.top(), self.line_number_area_width(), cr.height()))
-
     def line_number_area_paint_event(self, event):
         if not self._gutter_active():
             return
@@ -191,10 +194,16 @@ class VaultTextEdit(QTextEdit):
             return
         painter = QPainter(self.line_number_area)
         try:
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
             painter.setFont(self.font())
             theme_name = self.main_win.data.get("theme", "Default")
             bg = self.palette().window().color()
-            if theme_name in ("Default",) and bg.lightness() > 128:
+            text_color = QColor("#808080")
+            
+            if "vintage" in theme_name.lower():
+                bg = QColor("#2A1C0A")
+                text_color = QColor("#D4B87A")
+            elif theme_name in ("Default",) and bg.lightness() > 128:
                 bg = QColor("#e0e0e0")
             elif bg.lightness() < 30:
                 bg = QColor("#1e1e1e")
@@ -205,7 +214,6 @@ class VaultTextEdit(QTextEdit):
                 return
             first_number = first.blockNumber()
             last_visible = min(block_count, first_number + 200)
-            show_all = self.main_win.data.get("show_line_numbers", "False") == "True"
 
             for block_number in range(first_number, last_visible):
                 block = doc.findBlockByNumber(block_number)
@@ -216,26 +224,57 @@ class VaultTextEdit(QTextEdit):
                 cursor = QTextCursor(block)
                 rect = self.cursorRect(cursor)
 
-                is_code = bool(max(0, block.userState()) & (1 << 8))
-
-                if show_all or is_code:
-                    number = str(block_number + 1)
-                    painter.setPen(QColor("#808080"))
-                    painter.drawText(0, int(rect.top()), self.line_number_area.width() - 4,
-                                     self.fontMetrics().height(), Qt.AlignmentFlag.AlignRight, number)
+                number = str(block_number + 1)
+                painter.setPen(text_color)
+                painter.drawText(0, int(rect.top()), self.line_number_area.width() - 4,
+                                 self.fontMetrics().height(), Qt.AlignmentFlag.AlignRight, number)
 
                 mark = max(0, block.userState()) & 0xFF
                 is_hovered = getattr(self.line_number_area, "hover_y", -1) != -1 and rect.top() <= self.line_number_area.hover_y <= rect.bottom()
+                
+                marks_enabled = self.main_win.data.get("line_marks", "False") == "True"
 
-                if mark == 1 or (mark == 0 and is_hovered):
-                    painter.setPen(QColor("#a8cc8c") if mark == 1 else QColor(168, 204, 140, 80))
-                    # draw ✅ justified to the left
-                    painter.drawText(2, int(rect.top()), self.line_number_area.width(),
-                                     self.fontMetrics().height(), Qt.AlignmentFlag.AlignLeft, "✅")
+                if marks_enabled and (mark > 0 or is_hovered):
+                    h = self.fontMetrics().height()
+                    cx = 8
+                    cy = int(rect.top()) + h // 2
+                    size = min(h - 4, 10)
+                    
+                    if mark == 1 or (mark == 0 and is_hovered):
+                        # Checked Box
+                        box_color = QColor("#44AA44") if mark == 1 else QColor(68, 170, 68, 120)
+                        painter.setPen(QPen(box_color, 1))
+                        if mark == 1:
+                            painter.setBrush(QColor("#2A1C0A") if "vintage" in theme_name.lower() else QColor("#FFFFFF"))
+                        else:
+                            painter.setBrush(Qt.BrushStyle.NoBrush)
+                        painter.drawRect(cx - size//2, cy - size//2, size, size)
+                        if mark == 1:
+                            painter.setPen(QPen(QColor("#44AA44"), 2))
+                            painter.drawLine(cx - size//2 + 2, cy, cx - 1, cy + size//2 - 2)
+                            painter.drawLine(cx - 1, cy + size//2 - 2, cx + size//2 - 1, cy - size//2 + 1)
+                    elif mark == 2:
+                        # Red Dot
+                        painter.setPen(Qt.PenStyle.NoPen)
+                        painter.setBrush(QColor("#FF4444"))
+                        painter.drawEllipse(cx - size//2, cy - size//2, size, size)
+                    elif mark == 3:
+                        # Yellow Rhombus
+                        painter.setPen(Qt.PenStyle.NoPen)
+                        painter.setBrush(QColor("#FFDD44"))
+                        poly = [QPoint(cx, cy - size//2), QPoint(cx + size//2, cy), QPoint(cx, cy + size//2), QPoint(cx - size//2, cy)]
+                        painter.drawPolygon(poly)
+                    elif mark == 4:
+                        # Blue Square
+                        painter.setPen(Qt.PenStyle.NoPen)
+                        painter.setBrush(QColor("#4488FF"))
+                        painter.drawRect(cx - size//2, cy - size//2, size, size)
         finally:
             painter.end()
 
     def line_number_area_mouse_press_event(self, event):
+        if self.main_win.data.get("line_marks", "False") != "True":
+            return
         doc = self.document()
         if doc.blockCount() > 2000:
             return
@@ -247,7 +286,7 @@ class VaultTextEdit(QTextEdit):
             if rect.top() <= event.pos().y() <= rect.top() + block_height:
                 state = max(0, block.userState())
                 mark = state & 0xFF
-                new_mark = 1 if mark == 0 else 0
+                new_mark = (mark + 1) % 5
                 block.setUserState((state & ~0xFF) | new_mark)
                 self.line_number_area.update()
                 break
@@ -459,6 +498,8 @@ class VaultTextEdit(QTextEdit):
         QApplication.clipboard().setText("\n".join(lines))
         try:
             self.main_win.play_tick_sound()
+        # TODO: BUG: Silent blanket exception handler swallows errors
+
         except Exception:
             pass
 
@@ -548,17 +589,7 @@ class VaultTextEdit(QTextEdit):
                 if cursor.charFormat().isAnchor():
                     url = QUrl(cursor.charFormat().anchorHref())
                     if url.isValid():
-                        from PyQt6.QtWidgets import QApplication
-                        if QApplication.keyboardModifiers() & Qt.KeyboardModifier.ControlModifier and url.isLocalFile():
-                            import os
-                            import subprocess
-                            path = os.path.normpath(url.toLocalFile())
-                            if os.name == 'nt':
-                                subprocess.run(["explorer", "/select,", path])
-                            else:
-                                QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.dirname(path)))
-                        else:
-                            QDesktopServices.openUrl(url)
+                        QDesktopServices.openUrl(url)
                         event.accept()
                         return
         except Exception as e:
@@ -657,13 +688,93 @@ class VaultTextEdit(QTextEdit):
             return
         menu = self.createStandardContextMenu()
         menu.addSeparator()
-        menu.addAction("Expand All Folds", self.unfold_all)
+
+        # Handle "Open Folder" for local file links
+        cursor = self.cursorForPosition(event.pos())
+        if cursor.charFormat().isAnchor():
+            url = QUrl(cursor.charFormat().anchorHref())
+            if url.isValid() and url.isLocalFile():
+                import os
+                import subprocess
+                path = os.path.normpath(url.toLocalFile())
+                def _open_folder():
+                    if os.name == 'nt':
+                        subprocess.run(["explorer", "/select,", path])
+                    else:
+                        QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.dirname(path)))
+                open_folder_action = menu.addAction(f"Open folder containing {os.path.basename(path)}")
+                open_folder_action.triggered.connect(_open_folder)
+                menu.addSeparator()
+
+        lang = getattr(self.main_win, '_current_lang', 'EN')
+        menu.addAction(tr("Expand All Folds", lang), self.unfold_all)
         # rare toolbar actions live here too (hidden from narrow headers)
-        menu.addAction("Clear Formatting", self.main_win.clear_formatting)
-        menu.addAction("Insert Divider Line\tCtrl+W", self.main_win.insert_divider_line)
-        state = "ON" if self.main_win.data.get("auto_bullet", "False") == "True" else "OFF"
-        menu.addAction(f"Auto-Bullet: {state}", self._toggle_auto_bullet)
+        menu.addAction(tr("Clear Formatting", lang), self.main_win.clear_formatting)
+        menu.addAction(tr("Insert Divider Line\tCtrl+W", lang), self.main_win.insert_divider_line)
+        menu.addAction(tr("Insert Table", lang), self._insert_table)
+        menu.addAction(tr("Insert Kanban", lang), self._insert_kanban)
+        state = tr("ON", lang) if self.main_win.data.get("auto_bullet", "False") == "True" else tr("OFF", lang)
+        menu.addAction(f"{tr('Auto-Bullet:', lang)} {state}", self._toggle_auto_bullet)
         menu.exec(event.globalPos())
+
+    def _insert_table(self):
+        from PyQt6.QtWidgets import (
+            QDialog,
+            QGridLayout,
+            QHBoxLayout,
+            QLabel,
+            QPushButton,
+            QSpinBox,
+            QVBoxLayout,
+        )
+        
+        dlg = QDialog(self)
+        dlg.setWindowTitle(tr("Insert Table", getattr(self.main_win, "_current_lang", "EN")))
+        dlg.setStyleSheet(self.main_win.styleSheet())
+        layout = QVBoxLayout(dlg)
+        
+        grid = QGridLayout()
+        grid.addWidget(QLabel(tr("Rows:", getattr(self.main_win, "_current_lang", "EN"))), 0, 0)
+        spin_rows = QSpinBox()
+        spin_rows.setRange(1, 100)
+        spin_rows.setValue(3)
+        grid.addWidget(spin_rows, 0, 1)
+        
+        grid.addWidget(QLabel(tr("Columns:", getattr(self.main_win, "_current_lang", "EN"))), 1, 0)
+        spin_cols = QSpinBox()
+        spin_cols.setRange(1, 100)
+        spin_cols.setValue(3)
+        grid.addWidget(spin_cols, 1, 1)
+        
+        layout.addLayout(grid)
+        
+        btn_layout = QHBoxLayout()
+        btn_ok = QPushButton("OK")
+        btn_ok.clicked.connect(dlg.accept)
+        btn_cancel = QPushButton("Cancel")
+        btn_cancel.clicked.connect(dlg.reject)
+        btn_layout.addWidget(btn_ok)
+        btn_layout.addWidget(btn_cancel)
+        layout.addLayout(btn_layout)
+        
+        if dlg.exec():
+            r = spin_rows.value()
+            c = spin_cols.value()
+            
+            headers = "| " + " | ".join([f"Column {i+1}" for i in range(c)]) + " |\n"
+            sep = "| " + " | ".join([":---" for i in range(c)]) + " |\n"
+            
+            rows = ""
+            for i in range(r):
+                rows += "| " + " | ".join([f"Row {i+1}" for j in range(c)]) + " |\n"
+                
+            cursor = self.textCursor()
+            cursor.insertText(headers + sep + rows)
+
+    def _insert_kanban(self):
+        cursor = self.textCursor()
+        kanban = "## Kanban Board\n\n| To Do | In Progress | Done |\n| :--- | :--- | :--- |\n| [ ] Task 1 | [ ] Task 2 | [x] Task 3 |\n| [ ] Task 4 | | |\n"
+        cursor.insertText(kanban)
 
     def _toggle_auto_bullet(self):
         cur = self.main_win.data.get("auto_bullet", "False") == "True"
@@ -677,12 +788,13 @@ class VaultTextEdit(QTextEdit):
         Returns 'text', 'file', 'files_link', 'editor_link', or 'cancel'."""
         from PyQt6.QtWidgets import QMessageBox
         box = QMessageBox(self.main_win)
-        box.setWindowTitle("Add dropped file")
-        box.setText(f"How should '{name}' be added?")
-        btn_text = box.addButton("📄 Insert as Text", QMessageBox.ButtonRole.AcceptRole)
-        btn_editor_link = box.addButton("🔗 Link in Text", QMessageBox.ButtonRole.ActionRole)
-        btn_file = box.addButton("📥 Copy to Silo Files 📁", QMessageBox.ButtonRole.ActionRole)
-        btn_files_link = box.addButton("🔗 Link in Silo Files 📁", QMessageBox.ButtonRole.ActionRole)
+        lang = getattr(self.main_win, '_current_lang', 'EN')
+        box.setWindowTitle(tr("Add dropped file", lang))
+        box.setText(tr("How should '{}' be added?", lang).format(name))
+        btn_text = box.addButton(tr("📄 Insert as Text", lang), QMessageBox.ButtonRole.AcceptRole)
+        btn_editor_link = box.addButton(tr("🔗 Link in Text", lang), QMessageBox.ButtonRole.ActionRole)
+        btn_file = box.addButton(tr("📥 Copy to Silo Files 📁", lang), QMessageBox.ButtonRole.ActionRole)
+        btn_files_link = box.addButton(tr("🔗 Link in Silo Files 📁", lang), QMessageBox.ButtonRole.ActionRole)
         box.addButton(QMessageBox.StandardButton.Cancel)
         box.setDefaultButton(btn_text)
         box.exec()
@@ -696,11 +808,12 @@ class VaultTextEdit(QTextEdit):
     def _ask_binary_drop_choice(self, name):
         from PyQt6.QtWidgets import QMessageBox
         box = QMessageBox(self.main_win)
-        box.setWindowTitle("Add dropped file")
-        box.setText(f"How should '{name}' be added?")
-        btn_file = box.addButton("📥 Copy to Silo Files 📁", QMessageBox.ButtonRole.AcceptRole)
-        btn_files_link = box.addButton("🔗 Link in Silo Files 📁", QMessageBox.ButtonRole.ActionRole)
-        btn_editor_link = box.addButton("🔗 Link in Text", QMessageBox.ButtonRole.ActionRole)
+        lang = getattr(self.main_win, '_current_lang', 'EN')
+        box.setWindowTitle(tr("Add dropped file", lang))
+        box.setText(tr("How should '{}' be added?", lang).format(name))
+        btn_file = box.addButton(tr("📥 Copy to Silo Files 📁", lang), QMessageBox.ButtonRole.AcceptRole)
+        btn_files_link = box.addButton(tr("🔗 Link in Silo Files 📁", lang), QMessageBox.ButtonRole.ActionRole)
+        btn_editor_link = box.addButton(tr("🔗 Link in Text", lang), QMessageBox.ButtonRole.ActionRole)
         box.addButton(QMessageBox.StandardButton.Cancel)
         box.setDefaultButton(btn_file)
         box.exec()
@@ -889,7 +1002,6 @@ class VaultTextEdit(QTextEdit):
         if mods == Qt.KeyboardModifier.ControlModifier and event.key() in (Qt.Key.Key_Z, Qt.Key.Key_Y):
             super().keyPressEvent(event)
             return
-            return
 
         if mods & Qt.KeyboardModifier.ControlModifier and event.key() in (Qt.Key.Key_Home, Qt.Key.Key_End):
             cursor = self.textCursor()
@@ -924,13 +1036,82 @@ class VaultTextEdit(QTextEdit):
         if event.key() == Qt.Key.Key_C and mods == Qt.KeyboardModifier.ControlModifier:
             cursor = self.textCursor()
             if not cursor.hasSelection():
-                cursor.select(QTextCursor.SelectionType.Document)
+                if cursor.atBlockEnd() and cursor.block().length() > 1:
+                    cursor.select(QTextCursor.SelectionType.BlockUnderCursor)
+                else:
+                    cursor.select(QTextCursor.SelectionType.Document)
                 self.setTextCursor(cursor)
             super().keyPressEvent(event)
             if self.main_win.cb_ctrl_c.isChecked():
                 QTimer.singleShot(10, lambda: not sip.isdeleted(self) and not sip.isdeleted(
                     self.main_win) and self.main_win.hide_and_save())
             return
+
+        if event.key() == Qt.Key.Key_V and mods == Qt.KeyboardModifier.ControlModifier:
+            clipboard = QApplication.clipboard()
+            if clipboard.mimeData().hasUrls():
+                urls = [u for u in clipboard.mimeData().urls() if u.isLocalFile()]
+                if urls:
+                    links = []
+                    for u in urls:
+                        path = u.toLocalFile()
+                        name = os.path.basename(path)
+                        # Ensure forward slashes for Markdown links
+                        links.append(f"[{name}](file:///{path.replace(os.sep, '/')})")
+                    self.textCursor().insertText("\n".join(links))
+                    event.accept()
+                    return
+
+        if event.key() in (Qt.Key.Key_Tab, Qt.Key.Key_Backtab) and mods in (Qt.KeyboardModifier.NoModifier, Qt.KeyboardModifier.ShiftModifier):
+            cursor = self.textCursor()
+            if cursor.hasSelection():
+                # Block indentation
+                start_block = self.document().findBlock(cursor.selectionStart()).blockNumber()
+                end_block = self.document().findBlock(cursor.selectionEnd()).blockNumber()
+                
+                # if selection ends exactly at the start of a block, don't indent that block
+                if cursor.selectionEnd() == self.document().findBlockByNumber(end_block).position() and end_block > start_block:
+                    end_block -= 1
+                
+                edit_cursor = QTextCursor(self.document())
+                edit_cursor.beginEditBlock()
+                for b in range(start_block, end_block + 1):
+                    edit_cursor.setPosition(self.document().findBlockByNumber(b).position())
+                    if event.key() == Qt.Key.Key_Tab and mods == Qt.KeyboardModifier.NoModifier:
+                        edit_cursor.insertText("    ")
+                    elif event.key() == Qt.Key.Key_Backtab or mods == Qt.KeyboardModifier.ShiftModifier:
+                        edit_cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor)
+                        text = edit_cursor.selectedText()
+                        if text.startswith("    "):
+                            edit_cursor.insertText(text[4:])
+                        elif text.startswith("\t"):
+                            edit_cursor.insertText(text[1:])
+                edit_cursor.endEditBlock()
+                event.accept()
+                return
+            else:
+                # Single line Tab handling: "shift the cursor with the • accordingly"
+                block = cursor.block()
+                text = block.text()
+                pos = cursor.positionInBlock()
+                if text.lstrip().startswith("• "):
+                    indent = len(text) - len(text.lstrip())
+                    if pos <= indent + 2:
+                        edit_cursor = QTextCursor(self.document())
+                        edit_cursor.beginEditBlock()
+                        edit_cursor.setPosition(block.position())
+                        if event.key() == Qt.Key.Key_Tab and mods == Qt.KeyboardModifier.NoModifier:
+                            edit_cursor.insertText("    ")
+                        elif event.key() == Qt.Key.Key_Backtab or mods == Qt.KeyboardModifier.ShiftModifier:
+                            if text.startswith("    "):
+                                edit_cursor.movePosition(QTextCursor.MoveOperation.Right, QTextCursor.MoveMode.KeepAnchor, 4)
+                                edit_cursor.removeSelectedText()
+                            elif text.startswith("\t"):
+                                edit_cursor.movePosition(QTextCursor.MoveOperation.Right, QTextCursor.MoveMode.KeepAnchor, 1)
+                                edit_cursor.removeSelectedText()
+                        edit_cursor.endEditBlock()
+                        event.accept()
+                        return
 
         if event.key() == Qt.Key.Key_Backspace and (mods & Qt.KeyboardModifier.AltModifier):
             try:
@@ -941,6 +1122,8 @@ class VaultTextEdit(QTextEdit):
                     cursor.movePosition(QTextCursor.MoveOperation.PreviousWord, QTextCursor.MoveMode.KeepAnchor)
                     cursor.removeSelectedText()
                 self.setTextCursor(cursor)
+            # TODO: BUG: Silent blanket exception handler swallows errors
+
             except Exception:
                 pass
             event.accept()
@@ -1026,6 +1209,8 @@ class VaultTextEdit(QTextEdit):
         ):
             try:
                 self.main_win.play_sound("type")
+            # TODO: BUG: Silent blanket exception handler swallows errors
+
             except Exception:
                 pass
 
@@ -1043,6 +1228,8 @@ class VaultTextEdit(QTextEdit):
             zebra_enabled = not is_large and self.main_win.data.get("zebra_lines", "False") == "True"
             try:
                 zebra_alpha = min(90, max(2, int(self.main_win.data.get("zebra_opacity", "32"))))
+            # TODO: BUG: Silent blanket exception handler swallows errors
+
             except Exception:
                 zebra_alpha = 32
             zebra_odd = QColor(self.main_win.data.get("zebra_stripe_color", "#000000"))
@@ -1053,6 +1240,8 @@ class VaultTextEdit(QTextEdit):
             # --- visual lines color
             try:
                 hr_color = QColor(self.main_win.data.get("zebra_color", "#5a4a2a"))
+            # TODO: BUG: Silent blanket exception handler swallows errors
+
             except Exception:
                 hr_color = QColor("#5a4a2a")
             hr_drawn = set()

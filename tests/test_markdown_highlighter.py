@@ -15,7 +15,20 @@ from unittest.mock import MagicMock
 class _MockQTextCharFormat:
     """Stand-in for QTextCharFormat — tracks formatting properties."""
 
-    def __init__(self):
+    def __init__(self, source=None):
+        # QTextCharFormat(other) copy-constructs; mirror that so highlighter
+        # code that clones a base format (e.g. links) works under the mock.
+        if source is not None:
+            self._properties = dict(getattr(source, "_properties", {}))
+            self._font_family = getattr(source, "_font_family", None)
+            self._foreground = getattr(source, "_foreground", None)
+            self._background = getattr(source, "_background", None)
+            self._font_underline = getattr(source, "_font_underline", False)
+            self._font_weight = getattr(source, "_font_weight", None)
+            self._font_italic = getattr(source, "_font_italic", False)
+            self._anchor = getattr(source, "_anchor", False)
+            self._anchor_href = getattr(source, "_anchor_href", None)
+            return
         self._properties = {}
         self._font_family = None
         self._foreground = None

@@ -1,0 +1,783 @@
+"""Full EN/RU translation dictionaries for FastPrompter Settings UI.
+
+Usage:
+    from fastprompter.core.translations import tr, current_lang, set_language
+
+    btn.setText(tr("Always on Top", lang))
+    btn.setToolTip(tr("Keep the window above all others", lang))
+"""
+
+# ---------------------------------------------------------------------------
+# Translation dictionaries — English is the key (fallback).
+# Russian translations use the same keys.
+# ---------------------------------------------------------------------------
+
+_DATA = {
+    # ---- Settings panel group headers ----
+    "Window": "Окно",
+    "Editor": "Редактор",
+    "Data && Appearance": "Данные && Внешний вид",
+    "Data & Appearance": "Данные и внешний вид",
+
+    # ---- Appearance row labels ----
+    "Font:": "Шрифт:",
+    "Theme:": "Тема:",
+    "View:": "Вид:",
+    "Volume:": "Громкость:",
+    "Line gaps:": "Отступы:",
+    "Header Fmt:": "Формат заголовка:",
+
+    # ---- Settings action buttons ----
+    "Keys": "Клавиши",
+    "RGB": "Цвета",
+    "Replace All": "Заменить все",
+    "Replaced {} occurrences.": "Заменено {} вхождений.",
+    "BkUp": "Резерв",
+    "Rstr": "Восст",
+    "Scale": "Масштаб",
+    "+ Font": "+ Шрифт",
+    "× Fonts": "× Шрифты",
+    "Files Folder…": "Папка файлов…",
+    "Language": "Язык",
+
+    # ---- Settings toggle button ----
+    "Settings\nConfigure hotkeys, theme, fonts, and UI scaling.":
+        "Настройки\nГорячие клавиши, тема, шрифты и масштаб.",
+
+    # ---- Tooltips for action buttons ----
+    "Configure Global Hotkeys (Settings Cog)":
+        "Настройка глобальных горячих клавиш",
+    "Custom Theme Colors (Color Palette)":
+        "Пользовательские цвета темы (палитра)",
+    "Backup database": "Резервное копирование БД",
+    "Restore database from backup": "Восстановить БД из резервной копии",
+    "Scale the whole program: 50 / 75 / 100 / 125 / 150%\n(fine-tune with Ctrl+Plus / Ctrl+Minus)":
+        "Масштаб программы: 50 / 75 / 100 / 125 / 150%\n(точная настройка: Ctrl+Plus / Ctrl+Minus)",
+    "Load a custom .ttf/.otf font file":
+        "Загрузить пользовательский .ttf/.otf шрифт",
+    "Clear all custom fonts from combo (reset to defaults)":
+        "Очистить пользовательские шрифты (сброс к стандартным)",
+    "Choose where silo file containers are stored.\nDefault: data/files next to the app.":
+        "Выберите папку для файлов сил.\nПо умолчанию: data/files рядом с приложением.",
+    "Reset silo files location to the default data/files":
+        "Сбросить расположение файлов сил на data/files",
+    "Blank lines the Line/Ctrl+W divider puts before and after ---":
+        "Пустые строки, которые разделитель Line/Ctrl+W ставит до и после ---",
+
+    # ---- Preview combo items ----
+    "Source View": "Исходный код",
+    "Live Preview": "Живой предпросмотр",
+    "Reading": "Чтение",
+
+    # ---- Day part words ----
+    "Morning": "Утро",
+    "Day": "День",
+    "Evening": "Вечер",
+    "Night": "Ночь",
+
+    # ---- QCheckBox labels + tooltips ----
+    "📌 Always on Top": "📌 Поверх всех окон",
+    "Keep the window above all others":
+        "Держать окно поверх всех其余",
+
+    "🔒 Lock Window": "🔒 Зафиксировать окно",
+    "Freeze the window's position and size":
+        "Заблокировать положение и размер окна",
+
+    "🪟 Normal Window": "🪟 Обычное окно",
+    "Use a standard OS window frame and taskbar entry":
+        "Использовать стандартную рамку окна и значок на панели задач",
+
+    "📉 Tray Icon": "📉 Значок в трее",
+    "Keep an icon in the system tray":
+        "Показывать значок в системном трее",
+
+    "▶ Sidebar Right": "▶ Боковая панель справа",
+    "Move the snippet/silo sidebar to the right side":
+        "Переместить боковую панель сниппетов/сил в правую сторону",
+
+    "👁 Hide on Click-Out": "👁 Скрывать при клике вне",
+    "Hide the window when you click outside of it\nGlobal toggle: Alt+A":
+        "Скрывать окно при клике вне него\nГлобальное переключение: Alt+A",
+
+    "↕ Snippet Arrows": "↕ Стрелки сниппетов",
+    "Show the ▲ ▶ ▼ paste buttons on snippet rows\n(insert at top / at cursor / at bottom)":
+        "Показывать кнопки ▲ ▶ ▼ на строках сниппетов\n(вставить сверху / у курсора / снизу)",
+
+    "✅ Silo Ticks": "✅ Галочки сил",
+    "Show the ✅ done-mark button when hovering a silo":
+        "Показывать кнопку ✅ отметки при наведении на сило",
+
+    "📋 Ctrl+C Hides": "📋 Ctrl+C скрывает",
+    "Copying with Ctrl+C also hides the window\n(copy & get back to work in one stroke)":
+        "Копирование Ctrl+C также скрывает окно\n(копируй и продолжай работу одним движением)",
+
+    "🖱 Open at Cursor": "🖱 Открывать у курсора",
+    "The hotkey opens the window at your mouse cursor":
+        "Горячая клавиша открывает окно у курсора мыши",
+
+    "🏠 Silos at Start": "🏠 Силы в начало",
+    "Place the cursor at the top of a silo when opening it":
+        "Ставить курсор в начало сила при открытии",
+
+    "💾 Auto Backup (.md)": "💾 Авторезерв (.md)",
+    "Mirror silos & snippets as Markdown files to Documents\\.fastprompter\\":
+        "Зеркалировать силы и сниппеты как Markdown файлы в Documents\\.fastprompter\\",
+
+    "↩ Word Wrap": "↩ Перенос строк",
+    "Wrap long lines instead of scrolling horizontally":
+        "Переносить длинные строки вместо горизонтальной прокрутки",
+
+    "🔢 Line Numbers": "🔢 Номера строк",
+    "Show a line-number gutter\n(click it to place colored margin marks)":
+        "Показывать нумерацию строк\n(кликните для цветных меток на полях)",
+
+    "🔴 Line Marks": "🔴 Маркеры строк",
+    "Enable click-to-mark in line numbers (Red dot, Yellow Rhombus, Blue square)":
+        "Включить маркировку по клику (Красная точка, Желтый ромб, Синий квадрат)",
+
+    "🦓 Zebra Stripes": "🦓 Зебра",
+    "Lightly shade every other line for readability":
+        "Слегка затемнять каждую вторую строку для читаемости",
+
+    "⌨ Hide Key Hints": "⌨ Скрыть подсказки клавиш",
+    "Hide the F1-F10 shortcut labels on snippet buttons":
+        "Скрыть подписи F1-F10 на кнопках сниппетов",
+
+    "⇕ Double-Space Lists": "⇕ Двойной пробел в списках",
+    "With Auto-Bullet on, Enter after a list item adds a blank\nline before the next bullet — spaced, easy-to-read lists":
+        "С авто-буллитом Enter после элемента списка добавляет пустую\nстроку перед следующим маркером — списки с воздухом",
+
+    "𝗕 Bold # Titles": "𝗕 Жирные # заголовки",
+    "Bold the sidebar title of silos and snippets whose\ncontent starts with a '#' markdown header":
+        "Жирный заголовок в боковой панели для сил/сниппетов,\nчей контент начинается с '#' markdown заголовка",
+
+    "➖ Pinned Gap": "➖ Разделитель закреплённых",
+    "Show a visual separator between pinned and unpinned silos":
+        "Показывать визуальный разделитель между закреплёнными и обычными силами",
+
+    "📅 Show Date Widget": "📅 Показывать дату",
+    "Show a floating date and time rectangle in the top-right\ncorner of the text editor":
+        "Показывать дату и время в правом верхнем углу редактора",
+
+    "⏱ Date Seconds": "⏱ Секунды",
+    "Show seconds in the date widget (hh:mm:ss instead of hh:mm)":
+        "Показывать секунды: hh:mm:ss вместо hh:mm",
+
+    "🕒 Analog Clock": "🕒 Аналоговые часы",
+    "Show a mini analog clock (hour + minute hands)\nnext to the date widget":
+        "Показывать мини аналоговые часы (часовая + минутная стрелки)\nрядом с датой",
+
+    "🌞 Day Word": "🌞 Слово дня",
+    "Show the time-of-day word (Morning / Day / Evening / Night)\nafter the clock in the date widget":
+        "Показывать слово времени суток (Утро / День / Вечер / Ночь)\nпосле часов",
+
+    "🔤 Text Month": "🔤 Текстовый месяц",
+    "Show month as text instead of numbers (17 Jul instead of 17.07)":
+        "Показывать месяц текстом (17 Июл вместо 17.07)",
+
+    "🔊 UI Sounds": "🔊 Звуки интерфейса",
+    "Play click sounds for buttons and actions.\n"
+    "You can place your own .wav files in the 'sound' folder to override:\n"
+    "• newbutton1.wav (New button)\n"
+    "• savebutton1.wav (Save button)\n"
+    "• button1.wav (Click/Silo)\n"
+    "• button2.wav (Snippet)\n"
+    "• tickbox1.wav (Checkbox)\n"
+    "• delete1.wav (Delete)\n"
+    "• clear1.wav (Clear)":
+        "Воспроизводить звуки щелчка для кнопок и действий.\n"
+        "Вы можете поместить свои .wav файлы в папку 'sound' для замены:\n"
+        "• newbutton1.wav (Новая кнопка)\n"
+        "• savebutton1.wav (Сохранить)\n"
+        "• button1.wav (Клик/Сайло)\n"
+        "• button2.wav (Сниппет)\n"
+        "• tickbox1.wav (Флажок)\n"
+        "• delete1.wav (Удалить)\n"
+        "• clear1.wav (Очистить)",
+
+    "⌨ Typewriter": "⌨ Пишущая машинка",
+    "Play a typewriter tick for every typed character.\n"
+    "Place 'type1.wav' in the 'sound' folder to use your own typing sound.":
+        "Воспроизводить звук печатной машинки при каждом вводе символа.\n"
+        "Поместите 'type1.wav' в папку 'sound', чтобы использовать свой звук ввода.",
+
+    "🗑 Trash Vision": "🗑 Показывать корзину",
+    "Show the Trash category for deleted snippets":
+        "Показывать категорию Корзина для удалённых сниппетов",
+
+    # ---- Sidebar section labels ----
+    "Archive": "Архив",
+    "Trash": "Корзина",
+    "Search...": "Поиск...",
+
+    # ---- Header button tooltips ----
+    "Toggle Sidebar (Alt+D)\nShow or hide the right/left sidebar containing snippets and silos.":
+        "Переключить боковую панель (Alt+D)\nПоказать или скрыть панель сниппетов и сил.",
+    "Settings\nConfigure hotkeys, theme, fonts, and UI scaling.":
+        "Настройки\nГорячие клавиши, тема, шрифты и масштаб.",
+    "Home (Home)": "В начало (Home)",
+    "Jump to End\nMove cursor to the bottom of the document.":
+        "В конец\nПереместить курсор в конец документа.",
+    "Insert Line (Ctrl+W)\nInsert a spaced --- divider and start a fresh bullet.":
+        "Вставка линии (Ctrl+W)\nВставить --- разделитель и начать новый маркер.",
+    "Copy all text (Ctrl+C)\nRight-click: Copy + Close FastPrompter":
+        "Копировать весь текст (Ctrl+C)\nПравый клик: Копировать + Закрыть FastPrompter",
+    "Clear (Ctrl+Shift+C)": "Очистить (Ctrl+Shift+C)",
+    "Bold ({})\nMake selected text bold.":
+        "Жирный ({})\nСделать выделенный текст жирным.",
+    "Italic ({})\nMake selected text italic.":
+        "Курсив ({})\nСделать выделенный текст курсивом.",
+    "Underline ({})\nMake selected text underlined.":
+        "Подчёркнутый ({})\nПодчеркнуть выделенный текст.",
+    "Strikethrough (Ctrl+T)\nCross out selected text.":
+        "Зачёркнутый (Ctrl+T)\nПеречеркнуть выделенный текст.",
+    "Header (Ctrl+E)\nTitle the line: # + bold + underline + timestamp,\nthen land 2 lines below on a fresh bullet.":
+        "Заголовок (Ctrl+E)\nОформить строку: # + жирный + подчёркнутый + время,\nзатем перейти на 2 строки ниже на новый маркер.",
+    "Clear Format\nRemove all explicit font styling from text.":
+        "Очистить формат\nУбрать всё явное форматирование шрифта.",
+    "Auto-Bullet (Right-Click): {}\nLeft-Click: Convert selected lines between dashes and bullets.":
+        "Авто-буллит (правый клик): {}\nЛевый клик: Конвертировать выделенные строки между тире и маркерами.",
+    "Always on Top ({})": "Поверх всех окон ({})",
+    "Lock Window ({})": "Зафиксировать окно ({})",
+    "Current time (analog)": "Текущее время (аналоговые)",
+    "Current Date and Time": "Текущая дата и время",
+    "Show / hide the line-number gutter\n(click the gutter to place colored margin marks)":
+        "Показать/скрыть нумерацию строк\n(кликните на поля для цветных меток)",
+    "Help — every hotkey, gesture and feature (click)":
+        "Помощь — все горячие клавиши, жесты и функции (клик)",
+    "Line count of the open silo/snippet":
+        "Количество строк в открытом силе/сниппете",
+
+    # ---- Sidebar buttons ----
+    "Open Trash": "Открыть корзину",
+    "Archive Active Snippet or Silo": "Архивировать активный сниппет или сило",
+    "Toggle Archives": "Переключить архив",
+    "Search snippets": "Поиск сниппетов",
+    "Files\nAsset drawer for the active silo: drop any files in,\ndrag them out, preview, export. Stored as a plain folder\nin data/files — readable outside FastPrompter.":
+        "Файлы\nХранилище активного сила: бросайте файлы,\nперетаскивайте наружу, просматривайте, экспортируйте.\nОбычная папка в data/files — читаема без FastPrompter.",
+    "Line gaps:": "Отступы:",
+    "Lines before ---": "Строк до ---",
+    "Lines after --- (before the fresh bullet)":
+        "Строк после --- (перед новым маркером)",
+
+    # ---- Header template tooltip ----
+    "Template for the Ctrl+E header.\n{text} — the line's text\n{time} — timestamp\n{state} — Morning / Day / Evening / Night\nMarkdown markers (** __ etc.) are yours to add or drop.":
+        "Шаблон заголовка Ctrl+E.\n{text} — текст строки\n{time} — метка времени\n{state} — Утро / День / Вечер / Ночь\nMarkdown разметку (** __ и т.д.) добавляйте или убирайте сами.",
+    "**__{text}__** ({time})": "**__{text}__** ({time})",
+
+    # ---- Silo row tooltips ----
+    "Previous silo page": "Предыдущая страница сил",
+    "Next silo page": "Следующая страница сил",
+    "Previous snippet page": "Предыдущая страница сниппетов",
+    "Next snippet page": "Следующая страница сниппетов",
+    "Previous archive page": "Предыдущая страница архива",
+    "Next archive page": "Следующая страница архива",
+    "Projects — mouse wheel switches tabs":
+        "Проекты — колёсико мыши переключает вкладки",
+
+    # ---- Hotkey settings dialog ----
+    "Configure Global Hotkeys": "Настройка горячих клавиш",
+    "Toggle UI (Global):": "Показать/скрыть (глобально):",
+    "Summon Quick List:": "Вызвать быстрый список:",
+    "Toggle Lock Window:": "Зафиксировать окно:",
+    "Toggle Always on Top:": "Поверх всех окон:",
+    "Toggle Sidebar:": "Боковая панель:",
+    "Toggle Hide on Click-Out:": "Скрывать при клике вне:",
+    "Paste Snippet {}:": "Вставить сниппет {}:",
+    "Paste Silo {}:": "Вставить сило {}:",
+    "Global / Actions": "Глобальные",
+    "In-App Shortcuts": "Внутренние",
+    "Reset Defaults": "Сбросить",
+    "Save Hotkeys": "Сохранить",
+    "Bind": "Назначить",
+
+    # ---- Hotkey tooltips (hotkey_mixin.py) ----
+    "--- GLOBAL HOTKEYS (work anywhere) ---":
+        "--- ГЛОБАЛЬНЫЕ КЛАВИШИ (работают везде) ---",
+    "--- APP HOTKEYS (only when window active) ---":
+        "--- КЛАВИШИ ПРИЛОЖЕНИЯ (только в окне) ---",
+    "Toggle App Visibility: {}": "Показать/скрыть: {}",
+    "Pie Menu: {}": "Пирог-меню: {}",
+    "Lock Window: {}": "Зафиксировать окно: {}",
+    "Always On Top: {}": "Поверх всех окон: {}",
+    "Toggle Sidebar: Alt+D": "Боковая панель: Alt+D",
+    "Toggle Hide-on-Clickout: Alt+A": "Скрывать при клике вне: Alt+A",
+    "Ctrl+Q : Cycle Snap Corners (move across screens)":
+        "Ctrl+Q : Цикл углов экрана (перемещение между экранами)",
+    "Ctrl+N : New Empty Snippet": "Ctrl+N : Новый пустой сниппет",
+    "Ctrl+S : Save Snippet": "Ctrl+S : Сохранить сниппет",
+    "Ctrl+Z : Undo Text Change": "Ctrl+Z : Отменить изменение",
+    "Ctrl+D : Toggle Focus Mode": "Ctrl+D : Режим фокуса",
+    "Ctrl+F : Find Text": "Ctrl+F : Поиск",
+    "Ctrl+H : Replace Text": "Ctrl+H : Замена",
+    "Ctrl+Shift+S : Export/Save Silo to File":
+        "Ctrl+Shift+S : Экспорт сила в файл",
+    "Esc : Hide Window & Auto-save": "Esc : Скрыть окно и автосохранить",
+    "F1 - F10 : Execute Snippet 1-10": "F1 - F10 : Выполнить сниппет 1-10",
+    "Ctrl+Alt+Shift+Q : Quit Application Completely":
+        "Ctrl+Alt+Shift+Q : Полный выход из приложения",
+
+    # ---- Hotkey settings dialog ----
+    "Custom Theme Colors (RGB)": "Пользовательские цвета темы (RGB)",
+    "Main Background": "Основной фон",
+    "Text Area Background": "Фон текстовой области",
+    "Main Text Color": "Цвет основного текста",
+    "Border (Light edge)": "Граница (светлая сторона)",
+    "Border (Dark edge)": "Граница (тёмная сторона)",
+    "Button Background": "Фон кнопок",
+    "Button Pressed": "Нажатая кнопка",
+    "Button Text": "Текст кнопок",
+    "Accent Color": "Акцентный цвет",
+    "Editing Background": "Фон редактирования",
+    "Last Edited < 1 min": "Изменено < 1 мин",
+    "Last Edited < 1 hr": "Изменено < 1 часа",
+    "Last Edited < 1 day": "Изменено < 1 дня",
+    "Last Edited < 49 days": "Изменено < 49 дней",
+    "Pick Color": "Выбрать цвет",
+    "Save && Apply": "Сохранить && Применить",
+    "Save & Apply": "Сохранить и применить",
+    "Load from Current Theme": "Загрузить из текущей темы",
+    "Reset": "Сброс",
+
+    # ---- Help dialog ----
+    "FastPrompter Help": "Справка FastPrompter",
+    "FastPrompter — Help": "FastPrompter — Справка",
+    "Close": "Закрыть",
+    "Global hotkeys": "Глобальные клавиши",
+    "In the app": "В приложении",
+    "Mouse": "Мышь",
+    "What everything does": "Что всё делает",
+    "rebindable in Settings": "перенастраивается в настройках",
+    "two slots each": "два слота каждый",
+    "Silos": "Силы",
+    "Snippets": "Сниппеты",
+    "Projects": "Проекты",
+    "Markdown": "Markdown",
+    "Drop any file": "Бросайте файлы",
+    "Code blocks": "Блоки кода",
+    "File container": "Контейнер файлов",
+    "Folding": "Сворачивание",
+    "Trash, not delete": "Корзина, не удаление",
+    "Header template": "Шаблон заголовка",
+    "Clock": "Часы",
+    "Data": "Данные",
+    "Plain folders under": "Обычные папки в папке",
+    "location configurable in settings": "расположение настраивается в настройках",
+    "fully readable outside FastPrompter": "полностью читаемы без FastPrompter",
+    "Show / hide FastPrompter from anywhere":
+        "Показать/скрыть FastPrompter откуда угодно",
+    "Quick List pie menu at the cursor":
+        "Быстрое меню у курсора",
+    "Show window + toggle the sidebar":
+        "Показать окно + переключить боковую панель",
+    "Lock / unlock window size & position":
+        "Зафиксировать/разблокировать размер и положение окна",
+    "Toggle always-on-top":
+        "Переключить поверх всех окон",
+    "Toggle Hide on Click-Out":
+        "Переключить скрытие при клике вне",
+    "Paste snippet 1&ndash;10 into the active app":
+        "Вставить сниппет 1&ndash;10 в активное приложение",
+    "New empty silo at the top (max 5 blanks)":
+        "Новое пустое сило сверху (макс 5 пустых)",
+    "Previous / next silo":
+        "Предыдущее / следующее сило",
+    "Jump to silo 1&ndash;10":
+        "Перейти к силу 1&ndash;10",
+    "Paste snippet 1&ndash;10 into the editor":
+        "Вставить сниппет 1&ndash;10 в редактор",
+    "Save text as snippet / update the edited snippet":
+        "Сохранить текст как сниппет / обновить редактируемый сниппет",
+    "Insert a spaced --- divider and start a fresh bullet":
+        "Вставить --- разделитель и начать новый маркер",
+    "Header the line: # + bold + underline + timestamp, then jump 2 lines down onto a fresh &bull; bullet":
+        "Оформить строку: # + жирный + подчёркнутый + время, затем перейти на 2 строки вниз на новый &bull; маркер",
+    "Toggle [ ] checkboxes on the line / selection":
+        "Переключить [ ] чекбоксы на строке / выделении",
+    "Bold / Italic / Underline":
+        "Жирный / Курсив / Подчёркнутый",
+    "Find / Find &amp; Replace":
+        "Найти / Найти &amp; Заменить",
+    "Undo / redo — text <i>and</i> silo actions (clear, delete, move, pin, archive, tabs)":
+        "Отменить / повторить — текст <i>и</i> действия с силами (очистка, удаление, перемещение, закрепление, архив, вкладки)",
+    "Snap the window through screen corners":
+        "Привязать окно к углам экрана",
+    "Zen / focus mode (hide all chrome)":
+        "Режим фокуса (скрыть всё, кроме текста)",
+    "Export the current silo to a .txt/.md file":
+        "Экспортировать текущее сило в .txt/.md файл",
+    "Fine-tune the UI scale":
+        "Точная настройка масштаба интерфейса",
+    "Close search bar; press again to hide &amp; save":
+        "Закрыть поиск; повторное нажатие скрывает &amp; сохраняет",
+    "Quit completely":
+        "Полный выход",
+    "Flip pages": "Перелистывать страницы",
+    "Select previous / next silo":
+        "Выбрать предыдущее / следующее сило",
+    "Switch project": "Переключить проект",
+    "Zoom the editor font": "Масштабировать шрифт редактора",
+    "Move it to the trash (text + files land in data/files/_trash)":
+        "Переместить в корзину (текст + файлы в data/files/_trash)",
+    "Mark it done — the tick stays until clicked again":
+        "Отметить как готовое — галочка остаётся до следующего клика",
+    "Copy that code block to the clipboard":
+        "Скопировать блок кода в буфер обмена",
+    "Fold (collapse) the section; right-click editor &rarr; Expand All Folds":
+        "Свернуть секцию; правый клик &rarr; развернуть всё",
+    "Add .url links instead of copies":
+        "Добавить .url ссылки вместо копирования",
+    "A grid of drop zones appear: insert as text, link in text, copy to silo Files, or link in silo Files":
+        "Появляется сетка зон: вставить как текст, ссылку, копировать в Файлы или создать ссылку в Файлах",
+    "Transfer to project, replace from, move to bottom&hellip;":
+        "Перенести в проект, заменить из, переместить вниз&hellip;",
+    "Nest it as a child (1 level; its files can merge into the parent)":
+        "Вложить как дочернее (1 уровень; файлы могут объединиться)",
+    "Swap their places": "Поменять местами",
+    "Reorder — dragging a child out promotes it back to top level":
+        "Переупорядочить — перетаскивание дочернего возвращает его на верхний уровень",
+    "Collapse / expand its children":
+        "Свернуть / развернуть дочерние",
+    "Open with the cursor at start / end":
+        "Открыть с курсором в начале / конце",
+    "up to 100 auto-saved scratchpads per project; pins, recency color tints, line counters, drag to reorder":
+        "до 100 автосохраняемых блокнотов на проект; закрепление, цвет по давности, счётчики строк, перетаскивание",
+    "named text blocks per project tab; instant paste":
+        "именованные блоки текста на вкладку проекта; мгновенная вставка",
+    "up to 5 tabs, each with its own silos, snippets, archive":
+        "до 5 вкладок, каждая со своими силами, сниппетами и архивом",
+    "one click stores the current silo or snippet":
+        "один клик сохраняет текущее сило или сниппет",
+    "live highlighting, clickable links &amp; checkboxes, auto-bullets (- + space, Enter continues), zebra stripes, line numbers":
+        "живая подсветка, кликабельные ссылки и чекбоксы, авто-буллиты (- + пробел), зебра, номера строк",
+    "~50 text formats load as plain text":
+        "~50 текстовых форматов загружаются как обычный текст",
+    "``` fences render monospace with syntax tints, auto line numbers and a one-click copy button on the fence line":
+        "``` fences рендерятся моноширинно с подсветкой синтаксиса, номерами строк и кнопкой копирования",
+    "per-silo asset drawer: drop ANY files in, drag them out, preview images, open, export, link (.url), save clipboard as file. Explorer-style Icons / List / Details views":
+        "хранилище файлов на сило: бросайте любые файлы, перетаскивайте наружу, просматривайте, открывайте, экспортируйте. Виды: Значки / Список / Детали",
+    "collapse code blocks and # header sections with the fold box; right-click &rarr; Expand All Folds":
+        "сворачивайте блоки кода и # секции; правый клик &rarr; развернуть всё",
+    "clearing or trashing a silo writes its text to data/files/_trash/ and moves its files there; nothing is destroyed":
+        "очистка или удаление сила сохраняет текст в data/files/_trash/; ничего не уничтожается",
+    "Settings &rarr; Header Fmt: {text}, {time}, {state} (Morning/Day/Evening/Night) — bold markers are yours to keep or drop":
+        "Настройки &rarr; Формат заголовка: {text}, {time}, {state} (Утро/День/Вечер/Ночь) — разметку добавляйте или убирайте сами",
+    "date + time with seconds, day word and an optional mini analog clock, all toggleable":
+        "дата + время с секундами, словом дня и опциональными аналоговыми часами, всё настраивается",
+    "50&ndash;150% whole-UI scaling with readable minimums":
+        "50&ndash;150% масштаб всего интерфейса с читаемыми минимумами",
+    "optional UI clicks and typewriter effect":
+        "опциональные звуки кликов и печатной машинки",
+    "SQLite next to the app; daily Markdown backups in Documents; crash log next to the EXE":
+        "SQLite рядом с приложением; ежедневные Markdown резервные копии; лог ошибок рядом с EXE",
+
+    # ---- File container ----
+    "NEW": "НОВ",
+    "Save": "Save",
+    "Home": "Home",
+    "End": "End",
+    "Line": "─",
+    "Copy": "⧉",
+    "Clear": "✕",
+
+    # ---- Placeholder ----
+    "Think deeply.": "Думай глубже.",
+
+    # ---- Preview tooltips ----
+    "Source View: Plain text editor\nLive Preview: Editor with live markdown highlights (default)\nReading: Read-only rendered markdown view":
+        "Исходный код: Обычный текстовый редактор\nЖивой предпросмотр: Редактор с подсветкой markdown\nЧтение: Только чтение, markdown как HTML",
+
+    # ---- Backup dialog ----
+    "Backup & Export Settings": "Резервное копирование && Экспорт",
+    "Backup Full Database": "Полная копия БД",
+    "Creates an exact copy of the local_data_v15.db file containing all settings, silos, and snippets.":
+        "Создаёт точную копию файла local_data_v15.db со всеми настройками, силами и сниппетами.",
+    "Backup Database (.db)": "Копировать БД (.db)",
+    "Export Silos & Text": "Экспорт сил && текста",
+    "Export all Silo contents to readable text formats.":
+        "Экспортировать все силы в читаемые текстовые форматы.",
+    "Format:": "Формат:",
+    "Export All Silos": "Экспорт всех сил",
+    "Success": "Успех",
+    "Database backed up to:\n{}": "База сохранена в:\n{}",
+    "Error": "Ошибка",
+    "Failed to save backup:\n{}": "Ошибка сохранения резервной копии:\n{}",
+    "Failed to backup:\n{}": "Ошибка копирования:\n{}",
+    "Select Export Directory": "Выберите папку для экспорта",
+    "Silos exported to:\n{}": "Силы экспортированы в:\n{}",
+    "Failed to export:\n{}": "Ошибка экспорта:\n{}",
+
+    # ---- Editor context menu ----
+    "Expand All Folds": "Развернуть всё",
+    "Clear Formatting": "Очистить формат",
+    "Insert Divider Line\tCtrl+W": "Вставить разделитель\tCtrl+W",
+    "Auto-Bullet:": "Авто-буллит:",
+    "ON": "ВКЛ",
+    "OFF": "ВЫКЛ",
+
+    # ---- Editor drop dialog ----
+    "Add dropped file": "Добавить файл",
+    "How should '{}' be added?": "Как добавить '{}'?",
+    "📄 Insert as Text": "📄 Вставить как текст",
+    "📥 Copy to Silo Files 📁": "📥 Копировать в Файлы сила 📁",
+    "🔗 Link in Silo Files 📁": "🔗 Ссылка в Файлах сила 📁",
+    "🔗 Link in Text": "🔗 Ссылка в тексте",
+
+    # ---- File container ----
+    "Import Files...\nCopy files into this silo's folder\n(or just drop files anywhere on this window)":
+        "Импорт файлов...\nКопировать файлы в папку этого сила\n(или просто бросьте файлы на окно)",
+    "Import Folder...\nCopy an entire folder into this silo's folder":
+        "Импорт папки...\nКопировать целую папку в папку этого сила",
+    "Open Folder\nOpen this silo's folder in Explorer":
+        "Открыть папку\nОткрыть папку этого сила в проводнике",
+    "Export All...\nCopy every file here to a folder you pick":
+        "Экспорт всего...\nСкопировать все файлы в выбранную папку",
+    "Clip→File\nSave the clipboard text into this folder as a .txt file":
+        "Буфер→Файл\nСохранить текст из буфера обмена в .txt файл",
+    "View\nCycle view: Icons → List → Details (like Explorer)":
+        "Вид\nЦикл: Значки → Список → Детали",
+    "Folder template (e.g. src, docs, assets)":
+        "Шаблон папок (напр. src, docs, assets)",
+    "Create these folders in the current silo":
+        "Создать эти папки в текущем силе",
+    "Folder Tpl:": "Шаблон:",
+    "Build Template": "Собрать шаблон",
+    "Drop files here — copied into a plain folder you own. "
+    "Hold Alt while dropping to add links instead of copies.":
+        "Бросайте файлы сюда — копируются в обычную папку. "
+        "Удерживайте Alt для создания ссылок вместо копирования.",
+    "View ({})": "Вид ({})",
+    "{} file(s)": "{} файл(ов)",
+    "No files yet": "Пока нет файлов",
+    "Import files": "Импорт файлов",
+    "Import folder": "Импорт папки",
+    "All files (*.*)": "Все файлы (*.*)",
+    "Link to files (no copy)": "Ссылка на файлы (без копирования)",
+    "Export all files to…": "Экспорт всех файлов в…",
+    "clipboard has no text": "буфер обмена пуст",
+    "Save Clipboard": "Сохранить буфер",
+    "Enter filename (without .txt):": "Введите имя файла (без .txt):",
+    "Rename": "Переименовать",
+    "New name:": "Новое имя:",
+    "Delete files": "Удаление файлов",
+    "Delete from this silo's folder?\n\n{}\n": "Удалить из папки этого сила?\n\n{}\n",
+    "path copied": "путь скопирован",
+    "New Folder": "Новая папка",
+    "Folder name:": "Имя папки:",
+
+    # ---- File container context menu ----
+    "Open\tEnter": "Открыть\tEnter",
+    "Show in Explorer": "Показать в проводнике",
+    "Copy Path\tCtrl+Shift+C": "Копировать путь\tCtrl+Shift+C",
+    "Rename…\tF2": "Переименовать…\tF2",
+    "Export to…": "Экспорт в…",
+    "Delete…\tDel": "Удалить…\tDel",
+    "Import Files…": "Импорт файлов…",
+    "Import Folder…": "Импорт папки…",
+    "New Folder\tCtrl+N": "Новая папка\tCtrl+N",
+    "Build Template Folders": "Собрать папки шаблона",
+    "Add Link to Files…": "Добавить ссылку…",
+    "Clipboard → File\tCtrl+V": "Буфер → Файл\tCtrl+V",
+    "Open Folder": "Открыть папку",
+
+    # ---- Tray menu ----
+    "Show/Hide": "Показать/Скрыть",
+    "Quit": "Выход",
+
+    # ---- Snippet panel tooltips ----
+    "Pin/Unpin this silo to top": "Закрепить/открепить сило сверху",
+    "Archive this silo": "Архивировать это сило",
+    "Files: drop/drag/preview assets for this silo":
+        "Файлы: бросайте/перетаскивайте/просматривайте файлы для этого сила",
+    "Mark this silo as done (click again to unmark)":
+        "Отметить сило как готовое (повторный клик снимет отметку)",
+    "Files: drop/drag/preview assets for this silo\n\n{}":
+        "Файлы: бросайте/перетаскивайте/просматривайте файлы\n\n{}",
+
+    # ---- Snippet context menu ----
+    "📋 Copy": "📋 Копировать",
+    "✏ Rename": "✏ Переименовать",
+    "📁 Files…": "📁 Файлы…",
+    "🗑 Delete": "🗑 Удалить",
+
+    # ---- Snippet ops dialogs ----
+    "Save Silo": "Сохранить сило",
+    "Text Files (*.txt)": "Текстовые файлы (*.txt)",
+    "Markdown Files (*.md)": "Файлы Markdown (*.md)",
+    "All Files (*.*)": "Все файлы (*.*)",
+    "Saved": "Сохранено",
+    "Silo successfully saved to:\n{}": "Сило успешно сохранено в:\n{}",
+    "Failed to save file:\n{}": "Ошибка сохранения файла:\n{}",
+    "Snippet Number": "Номер сниппета",
+    "Enter snippet number (1-{}):": "Введите номер сниппета (1-{}):",
+    "Overwrite Snippet": "Перезаписать сниппет",
+    "Snippet #{} already exists. Overwrite?": "Сниппет #{} уже существует. Перезаписать?",
+    "Save Snippet": "Сохранить сниппет",
+    "Name:": "Имя:",
+    "Delete Snippet": "Удалить сниппет",
+    "Delete this snippet?": "Удалить этот сниппет?",
+    "Delete Silo": "Удалить сило",
+    "Are you sure you want to delete this silo and its content?":
+        "Вы уверены, что хотите удалить это сило и его содержимое?",
+    "Are you sure you want to delete this snippet?":
+        "Вы уверены, что хотите удалить этот сниппет?",
+    "Rename Snippet": "Переименовать сниппет",
+    "Backup Silo": "Резервная копия сила",
+    "Save current silo as file in its own folder:":
+        "Сохранить текущее сило как файл в его папке:",
+    "Copy + Clear current silo":
+        "Копировать + Очистить текущее сило",
+    "Cancel": "Отмена",
+
+    # ---- Drop overlay zone labels ----
+    "📄 Drop as Text": "📄 Бросить как текст",
+    "insert content into silo": "вставить содержимое в сило",
+    "🔗 Link in Text": "🔗 Ссылка в тексте",
+    "insert markdown link at cursor": "вставить markdown-ссылку у курсора",
+    "📥 Copy to Files 📁": "📥 Копировать в Файлы 📁",
+    "store in silo's container": "сохранить в контейнере сила",
+    "🔗 Link in Files 📁": "🔗 Ссылка в Файлах 📁",
+    "add shortcut in container": "добавить ярлык в контейнер",
+
+    # ---- Silo files window title ----
+    "Files—asset drawer for the active silo (drop in / drag out /\npreview / export; plain folder in data/files)\n\n": "Файлы—хранилище активного сила (бросайте / перетаскивайте /\nпросматривайте / экспортируйте; обычная папка в data/files)\n\n",
+    "Files — {}": "Файлы — {}",
+
+    # ---- Silo tick tooltip (dynamic) ----
+    "📁{}": "📁{}",
+
+    # ---- _delete_file_container tooltip ----
+    "{} item(s) · {}": "{} элемент(ов) · {}",
+
+    # ---- New additions ----
+    'Always On Top': 'Поверх всех окон',
+    'Always on Top': 'Поверх всех окон',
+    'Backup Database': 'Резервная копия БД',
+    'Bold ({})\nMake selected text bold.': 'Жирный ({})\nСделать выделенный текст жирным.',
+    'Choose where silo file containers are stored.\nDefault: data/files next to the app.': 'Выберите папку для файлов сил.\nПо умолчанию: data/files рядом с приложением.',
+    'Click sound volume (1-10)': 'Громкость звука клика (1-10)',
+    'Clipboard → File\tCtrl+V': 'Буфер → Файл\tCtrl+V',
+    'Clip→File\nSave the clipboard text into this folder as a .txt file': 'Буфер→Файл\nСохранить текст из буфера обмена в .txt файл',
+    'Copy Path\tCtrl+Shift+C': 'Копировать путь\tCtrl+Shift+C',
+    'Cycle Snap Corners (move across screens)': 'Перемещение по углам (между экранами)',
+    'Database backed up to:\n{}': 'База сохранена в:\n{}',
+    "Delete from this silo's folder?\n\n{}\n": 'Удалить из папки этого сила?\n\n{}\n',
+    'Delete…\tDel': 'Удалить…\tDel',
+    'Drop files here — copied into a plain folder you own. ': 'Бросайте файлы сюда — копируются в обычную папку. ',
+    'Execute Snippet 1-10': 'Выполнить сниппет 1-10',
+    'Export All...\nCopy every file here to a folder you pick': 'Экспорт всего...\nСкопировать все файлы в выбранную папку',
+    'Export/Save Silo to File': 'Экспорт/Сохранение сила в файл',
+    'Failed to backup:\n{}': 'Ошибка резервного копирования:\n{}',
+    'Failed to export:\n{}': 'Ошибка экспорта:\n{}',
+    'Failed to save backup:\n{}': 'Ошибка сохранения резервной копии:\n{}',
+    'Failed to save file:\n{}': 'Ошибка сохранения файла:\n{}',
+    'Files Folder...': 'Папка файлов...',
+    'Files: drop/drag/preview assets for this silo\n\n{}': 'Файлы: бросайте/перетаскивайте/просматривайте файлы\n\n{}',
+    'Files—asset drawer for the active silo (drop in / drag out /\npreview / export; plain folder in data/files)\n\n': 'Файлы—хранилище активного сила (бросайте / перетаскивайте /\nпросматривайте / экспортируйте; обычная папка в data/files)\n\n',
+    'Find Text': 'Поиск',
+    'Hide Window & Auto-save': 'Скрыть окно и автосохранить',
+    "Import Files...\nCopy files into this silo's folder\n(or just drop files anywhere on this window)": 'Импорт файлов...\nКопировать файлы в папку этого сила\n(или просто бросьте файлы на окно)',
+    "Import Folder...\nCopy an entire folder into this silo's folder": 'Импорт папки...\nКопировать целую папку в папку этого сила',
+    'Insert Divider Line\tCtrl+W': 'Вставить разделитель\tCtrl+W',
+    'Italic ({})\nMake selected text italic.': 'Курсив ({})\nСделать выделенный текст курсивом.',
+    'Lock Window': 'Зафиксировать окно',
+    'NEW ({})': 'НОВ ({})',
+    'New Empty Snippet': 'Новый пустой сниппет',
+    'New Folder\tCtrl+N': 'Новая папка\tCtrl+N',
+    "Open Folder\nOpen this silo's folder in Explorer": 'Открыть папку\nОткрыть папку этого сила в проводнике',
+    'Open\tEnter': 'Открыть\tEnter',
+    'Pie Menu': 'Пирог-меню',
+    'Quit Application Completely': 'Полный выход из приложения',
+    'Rename…\tF2': 'Переименовать…\tF2',
+    'Replace Text': 'Заменить текст',
+    'Save ({})': 'Сохранить ({})',
+    'Settings &rarr; Header Fmt: {{text}}, {{time}}, {{state}} (Morning/Day/Evening/Night) — bold markers are yours to keep or drop': 'Настройки &rarr; Формат заголовка: {{text}}, {{time}}, {{state}} (Утро/День/Вечер/Ночь) — разметку добавляйте или убирайте сами',
+    'Silo successfully saved to:\n{}': 'Сило успешно сохранено в:\n{}',
+    'Silos exported to:\n{}': 'Силы экспортированы в:\n{}',
+    'Sounds': 'Звуки',
+    'Source View: Plain text editor\nLive Preview: Editor with live markdown highlights (default)\nReading: Read-only rendered markdown view': 'Исходный код: Обычный текстовый редактор\nЖивой предпросмотр: Редактор с подсветкой markdown\nЧтение: Только чтение, markdown как HTML',
+    'Toggle App Visibility': 'Показать/скрыть',
+    'Toggle Focus Mode': 'Режим фокуса',
+    'Toggle Hide-on-Clickout': 'Скрывать при клике вне',
+    'Toggle Sidebar': 'Боковая панель',
+    'Underline ({})\nMake selected text underlined.': 'Подчёркнутый ({})\nПодчеркнуть выделенный текст.',
+    'Undo Text Change': 'Отменить изменение',
+    'View ({})\nCycle view: Icons → List → Details (like Explorer)': 'Вид ({})\nЦикл: Значки → Список → Детали',
+    'View\nCycle view: Icons → List → Details (like Explorer)': 'Вид\nЦикл: Значки → Список → Детали',
+
+    # ---- Missing message boxes ----
+    'Source and destination are the same file.': 'Исходный файл и файл назначения совпадают.',
+    'Failed to restore backup:\n{}': 'Ошибка восстановления резервной копии:\n{}',
+    'Tab Limit': 'Лимит вкладок',
+    'Maximum of 5 tabs/projects. Remove one first.': 'Максимум 5 вкладок/проектов. Сначала удалите одну.',
+    'Confirm': 'Подтверждение',
+    'App will restart. Proceed?': 'Приложение будет перезапущено. Продолжить?',
+    'Delete Tab': 'Удаление вкладки',
+    "Nuke '{}' and all snippets?": "Уничтожить вкладку '{}' и все сниппеты?",
+    'Merge files': 'Объединение файлов',
+    "The nested silo owns {} file(s).\nMerge them into the parent silo's Files?\n(collisions get ' (2)' names — nothing is overwritten)": "Вложенное сило содержит {} файл(ов).\nОбъединить их с файлами родительского сила?\n(при совпадении имён добавится ' (2)' — файлы не перезапишутся)",
+    'Load Font': 'Загрузка шрифта',
+    'Failed to load font: {}': 'Ошибка загрузки шрифта: {}',
+    'Font loaded but no font families found.': 'Шрифт загружен, но семейства шрифтов не найдены.',
+    'Font Loaded': 'Шрифт загружен',
+    'Loaded: {}': 'Загружено: {}',
+    'Reset Fonts': 'Сброс шрифтов',
+    'Clear all custom fonts and reset to defaults?': 'Очистить пользовательские шрифты и сбросить по умолчанию?',
+
+    # ---- Missing UI strings ----
+    'Clear Fmt': 'Очист фмт',
+    'Rpl': 'Зам',
+    '⬆ Move to Top': '⬆ Вверх',
+    'Language:': 'Язык:',
+    '📌 Pin to Top': '📌 Закрепить сверху',
+    'I': 'К',
+    'Rpl All': 'Зам все',
+    '📥 Archive': '📥 В архив',
+    '💾 Save text as Snippet': '💾 Сохранить текст как сниппет',
+    'S': 'З',
+    'Always on Top — keep the window above all others': 'Поверх всех окон — держать окно поверх остальных',
+    'B': 'Ж',
+    '🧹 Clear': '🧹 Очистить',
+    '🗂 Open Trash Folder': '🗂 Открыть папку корзины',
+    'Update': 'Обновить',
+    'Find...': 'Найти...',
+    'U': 'Ч',
+    '⬇ Move to Bottom': '⬇ Вниз',
+    'Remove all custom fonts from the font selector?': 'Удалить все пользовательские шрифты из списка?',
+    'Replace with...': 'Заменить на...',
+    '⬆ Un-nest from Parent': '⬆ Открепить от родителя',
+    '📌 Unpin': '📌 Открепить',
+    '➡ Transfer to Snippet': '➡ Перенести в сниппет',
+    'H': 'З',
+    '💾 Save as Snippet #…': '💾 Сохранить как сниппет #…',
+}
+
+# ---------------------------------------------------------------------------
+# Hotkey tooltip template patterns (contain dynamic hotkey insertions).
+# These are matched by checking if the key ENDS with the pattern suffix,
+# or we use a special lookup.
+# ---------------------------------------------------------------------------
+
+
+
+def tr(text: str, lang: str = "EN") -> str:
+    """Translate a string to the given language.
+
+    If the language is 'EN' or no translation exists, returns the original.
+    """
+    if lang == "EN" or not text:
+        return text
+    return _DATA.get(text, text)
+
+
+
+
+def set_language(state_data: dict, lang: str):
+    """Persist the language choice."""
+    state_data["language"] = lang
+
+
+def get_language(state_data: dict, default: str = "EN") -> str:
+    """Read the persisted language, default EN."""
+    return state_data.get("language", default)

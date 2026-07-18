@@ -10,15 +10,18 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from fastprompter.core.translations import tr
+
 
 class HotkeyWidget(QWidget):
-    def __init__(self, default_text=""):
+    def __init__(self, default_text="", lang="EN"):
         super().__init__()
+        self.lang = lang
         self.layout = QHBoxLayout(self)
         self.layout.setContentsMargins(0, 0, 0, 0)
         self.lbl_key = QLabel(default_text if default_text is not None else "")
         self.lbl_key.setStyleSheet("font-weight: bold;")
-        self.btn_bind = QPushButton("Bind")
+        self.btn_bind = QPushButton(tr("Bind", self.lang))
         self.btn_bind.setFixedWidth(50)
         self.btn_bind.clicked.connect(self.start_listening)
         self.layout.addWidget(self.lbl_key)
@@ -37,7 +40,7 @@ class HotkeyWidget(QWidget):
         key = event.key()
         if key in (Qt.Key.Key_Control, Qt.Key.Key_Shift, Qt.Key.Key_Alt, Qt.Key.Key_Meta): return
         if key == Qt.Key.Key_Escape:
-            self.btn_bind.setText("Bind"); self.is_listening = False; self.clearFocus(); return
+            self.btn_bind.setText(tr("Bind", self.lang)); self.is_listening = False; self.clearFocus(); return
 
         modifiers, parts = event.modifiers(), []
         if modifiers & Qt.KeyboardModifier.ControlModifier: parts.append("Ctrl")
@@ -51,7 +54,7 @@ class HotkeyWidget(QWidget):
             parts.append(key_str)
             self.setText("+".join(parts))
         self.is_listening = False
-        self.btn_bind.setText("Bind")
+        self.btn_bind.setText(tr("Bind", self.lang))
         self.clearFocus()
 
     def setText(self, text):
@@ -67,8 +70,9 @@ class DualHotkeyWidget(QWidget):
         self.layout = QHBoxLayout(self)
         self.layout.setContentsMargins(0, 0, 0, 0)
         self.key_name = key_name
-        self.hw1 = HotkeyWidget(main_win.data.get(key_name, default1))
-        self.hw2 = HotkeyWidget(main_win.data.get(f"{key_name}_alt", default2))
+        lang = getattr(main_win, "_current_lang", "EN")
+        self.hw1 = HotkeyWidget(main_win.data.get(key_name, default1), lang=lang)
+        self.hw2 = HotkeyWidget(main_win.data.get(f"{key_name}_alt", default2), lang=lang)
 
         self.layout.addWidget(self.hw1)
         self.layout.addWidget(QLabel(" / "))
@@ -86,8 +90,9 @@ class HotkeySettingsDialog(QDialog):
     def __init__(self, main_win):
         super().__init__(main_win)
         self.main_win = main_win
+        self.lang = getattr(main_win, '_current_lang', 'EN')
         self.main_win.unregister_all_hotkeys()
-        self.setWindowTitle("Configure Global Hotkeys")
+        self.setWindowTitle(tr("Configure Global Hotkeys", self.lang))
         self.setMinimumWidth(400)
 
         layout = QVBoxLayout(self)
@@ -98,34 +103,34 @@ class HotkeySettingsDialog(QDialog):
         form_global = QFormLayout(tab_global)
 
         self.le_global = DualHotkeyWidget(self.main_win, "global_hotkey", "Alt+X", "F15")
-        form_global.addRow("Toggle UI (Global):", self.le_global)
+        form_global.addRow(tr("Toggle UI (Global):", self.lang), self.le_global)
         self.le_pie = DualHotkeyWidget(self.main_win, "pie_menu_hotkey", "Shift+Alt+X")
-        form_global.addRow("Summon Quick List:", self.le_pie)
+        form_global.addRow(tr("Summon Quick List:", self.lang), self.le_pie)
         self.le_lock = DualHotkeyWidget(self.main_win, "lock_window_hotkey", "Alt+S")
-        form_global.addRow("Toggle Lock Window:", self.le_lock)
+        form_global.addRow(tr("Toggle Lock Window:", self.lang), self.le_lock)
         self.le_top = DualHotkeyWidget(self.main_win, "always_on_top_hotkey", "Alt+E")
-        form_global.addRow("Toggle Always on Top:", self.le_top)
+        form_global.addRow(tr("Toggle Always on Top:", self.lang), self.le_top)
         self.le_sidebar = DualHotkeyWidget(self.main_win, "toggle_sidebar_hotkey", "Alt+D")
-        form_global.addRow("Toggle Sidebar:", self.le_sidebar)
+        form_global.addRow(tr("Toggle Sidebar:", self.lang), self.le_sidebar)
         self.le_hideout = DualHotkeyWidget(self.main_win, "hide_on_clickout_hotkey", "Alt+A")
-        form_global.addRow("Toggle Hide on Click-Out:", self.le_hideout)
+        form_global.addRow(tr("Toggle Hide on Click-Out:", self.lang), self.le_hideout)
 
         self.snippet_inputs = []
         for i in range(5):
             le = DualHotkeyWidget(self.main_win, f"snippet_{i}_hotkey", f"Ctrl+Shift+Numpad{i+1}")
             self.snippet_inputs.append(le)
-            form_global.addRow(f"Paste Snippet {i+1}:", le)
+            form_global.addRow(tr("Paste Snippet {}:", self.lang).format(i+1), le)
 
         self.silo_inputs = []
         for i in range(5):
             le = DualHotkeyWidget(self.main_win, f"silo_{i}_hotkey", f"Alt+Shift+Numpad{i+1}")
             self.silo_inputs.append(le)
-            form_global.addRow(f"Paste Silo {i+1}:", le)
+            form_global.addRow(tr("Paste Silo {}:", self.lang).format(i+1), le)
 
         scroll_global = QScrollArea()
         scroll_global.setWidgetResizable(True)
         scroll_global.setWidget(tab_global)
-        self.tabs.addTab(scroll_global, "Global / Actions")
+        self.tabs.addTab(scroll_global, tr("Global / Actions", self.lang))
 
         tab_app = QWidget()
         form_app = QFormLayout(tab_app)
@@ -145,18 +150,47 @@ class HotkeySettingsDialog(QDialog):
         ]
         self.app_inputs = {}
         for key_name, default_hk, label in self.app_binds:
-            le = HotkeyWidget(self.main_win.data.get(key_name, default_hk))
+            le = HotkeyWidget(self.main_win.data.get(key_name, default_hk), lang=self.lang)
             self.app_inputs[key_name] = le
             form_app.addRow(label + ":", le)
 
         scroll_app = QScrollArea()
         scroll_app.setWidgetResizable(True)
         scroll_app.setWidget(tab_app)
-        self.tabs.addTab(scroll_app, "In-App Shortcuts")
+        self.tabs.addTab(scroll_app, tr("In-App Shortcuts", self.lang))
+
+        tab_drop = QWidget()
+        form_drop = QFormLayout(tab_drop)
+        from PyQt6.QtWidgets import QComboBox
+        self.drop_combos = {}
+        drop_options = [
+            ("text", tr("📝 Drop as Text", self.lang)),
+            ("editor_link", tr("🔗 Link in Text", self.lang)),
+            ("files", tr("📥 Copy to Files 📁", self.lang)),
+            ("files_link", tr("🔗 Link in Files 📁", self.lang))
+        ]
+        default_map = {"drop_top_left": "text", "drop_top_right": "editor_link", "drop_bot_left": "files", "drop_bot_right": "files_link"}
+        for key, label in [
+            ("drop_top_left", tr("Top Left Zone", self.lang)),
+            ("drop_top_right", tr("Top Right Zone", self.lang)),
+            ("drop_bot_left", tr("Bottom Left Zone", self.lang)),
+            ("drop_bot_right", tr("Bottom Right Zone", self.lang))
+        ]:
+            cb = QComboBox()
+            for val, text in drop_options: cb.addItem(text, val)
+            idx = cb.findData(self.main_win.data.get(key, default_map[key]))
+            if idx >= 0: cb.setCurrentIndex(idx)
+            self.drop_combos[key] = cb
+            form_drop.addRow(label + ":", cb)
+            
+        scroll_drop = QScrollArea()
+        scroll_drop.setWidgetResizable(True)
+        scroll_drop.setWidget(tab_drop)
+        self.tabs.addTab(scroll_drop, tr("Drop Zones", self.lang))
 
         layout.addWidget(self.tabs)
 
-        btn_layout, btn_reset, btn_save = QHBoxLayout(), QPushButton("Reset Defaults"), QPushButton("Save Hotkeys")
+        btn_layout, btn_reset, btn_save = QHBoxLayout(), QPushButton(tr("Reset Defaults", self.lang)), QPushButton(tr("Save Hotkeys", self.lang))
         btn_reset.clicked.connect(self.reset_defaults)
         btn_save.clicked.connect(self.save_hotkeys)
         btn_layout.addWidget(btn_reset); btn_layout.addStretch(); btn_layout.addWidget(btn_save)
@@ -186,6 +220,8 @@ class HotkeySettingsDialog(QDialog):
         for le in self.silo_inputs: le.save_to_data(self.main_win)
         for key_name, le in getattr(self, "app_inputs", {}).items():
             self.main_win.data[key_name] = le.text()
+        for key_name, cb in getattr(self, "drop_combos", {}).items():
+            self.main_win.data[key_name] = cb.currentData()
         self.main_win.setup_global_shortcuts()
         self.main_win.mark_dirty()
         self.main_win.save_data_to_db(force=True)
@@ -204,7 +240,8 @@ class ColorConfigDialog(QDialog):
     def __init__(self, main_win):
         super().__init__(main_win)
         self.main_win = main_win
-        self.setWindowTitle("Custom Theme Colors (RGB)")
+        self.lang = getattr(main_win, '_current_lang', 'EN')
+        self.setWindowTitle(tr("Custom Theme Colors (RGB)", self.lang))
         self.setMinimumWidth(350)
 
         layout = QVBoxLayout(self)
@@ -222,7 +259,9 @@ class ColorConfigDialog(QDialog):
         if isinstance(cc, str):
             import ast
             try: cc = ast.literal_eval(cc)
-            except Exception: pass
+            except Exception as e:
+                from fastprompter.core.logging import logger
+                logger.debug(f"Failed to parse custom_colors: {e}")
         if not isinstance(cc, dict):
             cc = {"bg_main": "#1a1a1a", "bg_text": "#000000", "text_main": "#c0c0c0", "border_light": "#4d4d4d", "border_dark": "#0a0a0a", "btn_bg": "#2b2b2b", "btn_pressed": "#141414", "btn_text": "#c0c0c0", "accent": "#5a7a96", "edit_bg": "#2a3330", "overlay_new": "#6a5555", "overlay_recent": "#6a5a40", "overlay_day": "#5a5a30", "overlay_old": "#40506a"}
 
@@ -235,13 +274,20 @@ class ColorConfigDialog(QDialog):
 
         self.color_buttons = {}
         labels = {
-            "bg_main": "Main Background", "bg_text": "Text Area Background",
-            "text_main": "Main Text Color", "border_light": "Border (Light edge)",
-            "border_dark": "Border (Dark edge)", "btn_bg": "Button Background",
-            "btn_pressed": "Button Pressed", "btn_text": "Button Text",
-            "accent": "Accent Color", "edit_bg": "Editing Background",
-            "overlay_new": "Last Edited < 1 min", "overlay_recent": "Last Edited < 1 hr",
-            "overlay_day": "Last Edited < 1 day", "overlay_old": "Last Edited < 49 days"
+            "bg_main": tr("Main Background", self.lang),
+            "bg_text": tr("Text Area Background", self.lang),
+            "text_main": tr("Main Text Color", self.lang),
+            "border_light": tr("Border (Light edge)", self.lang),
+            "border_dark": tr("Border (Dark edge)", self.lang),
+            "btn_bg": tr("Button Background", self.lang),
+            "btn_pressed": tr("Button Pressed", self.lang),
+            "btn_text": tr("Button Text", self.lang),
+            "accent": tr("Accent Color", self.lang),
+            "edit_bg": tr("Editing Background", self.lang),
+            "overlay_new": tr("Last Edited < 1 min", self.lang),
+            "overlay_recent": tr("Last Edited < 1 hr", self.lang),
+            "overlay_day": tr("Last Edited < 1 day", self.lang),
+            "overlay_old": tr("Last Edited < 49 days", self.lang),
         }
 
         for key, name in labels.items():
@@ -253,9 +299,9 @@ class ColorConfigDialog(QDialog):
 
         layout.addLayout(self.form_layout)
         btn_layout = QHBoxLayout()
-        btn_reset = QPushButton("Reset")
-        btn_load_theme = QPushButton("Load from Current Theme")
-        btn_save = QPushButton("Save & Apply")
+        btn_reset = QPushButton(tr("Reset", self.lang))
+        btn_load_theme = QPushButton(tr("Load from Current Theme", self.lang))
+        btn_save = QPushButton(tr("Save & Apply", self.lang))
 
         btn_reset.clicked.connect(self.reset_colors)
         btn_load_theme.clicked.connect(self.load_from_theme)
@@ -269,7 +315,7 @@ class ColorConfigDialog(QDialog):
     def pick_color(self, key):
         from PyQt6.QtGui import QColor
         current_color = self.custom_colors.get(key, "#000000")
-        color = QColorDialog.getColor(QColor(current_color), self, "Pick Color")
+        color = QColorDialog.getColor(QColor(current_color), self, tr("Pick Color", self.lang))
         if color.isValid():
             hex_c = color.name()
             self.custom_colors[key] = hex_c

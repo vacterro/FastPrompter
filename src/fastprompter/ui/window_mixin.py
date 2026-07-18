@@ -57,6 +57,8 @@ class WindowMixin:
         elif force_sidebar:
             self.toggle_sidebar_visibility()
         else:
+            if hasattr(self, "topmost_timer") and not _is_deleted(self.topmost_timer):
+                self.topmost_timer.stop()
             self.hide_and_save()
 
     def show_window(self, by_hotkey: bool = False) -> None:
@@ -248,21 +250,25 @@ class WindowMixin:
             self._pre_focus_mini = self.mini_settings_frame.isVisible()
             self._pre_focus_sizes = self.splitter.sizes()
             self._pre_focus_search = self.search_frame.isVisible()
+            self._pre_focus_sidebar = getattr(self, "sidebar_visible", True)
 
-            self.header_widget.hide()
-            self.mini_settings_frame.hide()
-            self.search_frame.hide()
-
-            is_right = self._sidebar_right
-            idx = 1 if is_right else 0
-            sizes = self.splitter.sizes()
-            sizes[1 - idx] += sizes[idx]
-            sizes[idx] = 0
-            self.splitter.setSizes(sizes)
+            self.header_widget.setVisible(False)
+            self.mini_settings_frame.setVisible(False)
+            self.search_frame.setVisible(False)
+            if self._sidebar_right:
+                self.splitter.setSizes([self.width(), 0])
+            else:
+                self.splitter.setSizes([0, self.width()])
+            self.sidebar_visible = False
+            self.btn_sidebar_toggle.setChecked(False)
+            if hasattr(self, "btn_focus_toggle"):
+                self.btn_focus_toggle.setChecked(True)
         else:
             self.header_widget.setVisible(self._pre_focus_header)
             self.mini_settings_frame.setVisible(self._pre_focus_mini)
             self.search_frame.setVisible(self._pre_focus_search)
+            self.sidebar_visible = getattr(self, "_pre_focus_sidebar", True)
+            self.btn_sidebar_toggle.setChecked(self.sidebar_visible)
             self.splitter.setSizes(self._pre_focus_sizes)
 
     def toggle_sidebar_position(self, checked: bool) -> None:
@@ -285,15 +291,23 @@ class WindowMixin:
             self.splitter.setCollapsible(0, True)
             self.splitter.setCollapsible(1, False)
 
-        raw_sizes = self.data.get("splitter_sizes", self.splitter.sizes())
+        key = "splitter_sizes_right" if is_right else "splitter_sizes_left"
+        raw_sizes = self.data.get(key)
         if isinstance(raw_sizes, str):
             import ast
             try:
                 raw_sizes = ast.literal_eval(raw_sizes)
             except Exception:
                 raw_sizes = [0, 0]
+        
         try:
-            sizes = [int(x) for x in raw_sizes]
+            sizes = [int(x) for x in raw_sizes] if raw_sizes else [0, 0]
+            if sum(sizes) > 0:
+                sidebar_idx = 1 if is_right else 0
+                center_idx = 0 if is_right else 1
+                # If sidebar somehow captured >80% of space and center is tiny, reset to prevent getting stuck
+                if sizes[sidebar_idx] > self.width() * 0.8 and sizes[center_idx] < 200:
+                    sizes = [0, 0]
         except (ValueError, TypeError):
             sizes = [0, 0]
 

@@ -3,6 +3,7 @@ import ctypes
 import ctypes.wintypes
 import math
 import os
+import datetime
 import re
 import shutil
 import sys
@@ -86,6 +87,7 @@ from fastprompter.ui.theme_mixin import ThemeMixin
 from fastprompter.ui.tray_mixin import TrayMixin
 from fastprompter.ui.window_mixin import WindowMixin
 from fastprompter.utils.paths import get_data_dir
+from fastprompter.core.translations import tr, set_language, get_language
 from fastprompter.utils.textfit import clip_safe_width
 
 
@@ -150,6 +152,7 @@ class FastPrompter(
         self.setMouseTracking(True)
         # QApplication.instance().installEventFilter(self)
         self.ignore_focus_loss, self.registered_hotkeys, self._db_dirty = False, [], False
+        self._focus_lock_count = 0
 
         self.editing_snippet = None
         self.auto_save_timer = QTimer(self)
@@ -177,6 +180,8 @@ class FastPrompter(
         self._font_cache_key, self._cached_main_font = None, None
         try:
             self.active_temp_slot = int(self.data.get("active_temp_slot", 0))
+        # TODO: BUG: Silent blanket exception handler swallows errors
+
         except Exception:
             self.active_temp_slot = 0
         # Per-category pins/last-edited stores (aliased per tab like
@@ -197,6 +202,8 @@ class FastPrompter(
         for c, d in eall.items():
             try:
                 norm[c] = {int(k): int(v) for k, v in d.items()}
+            # TODO: BUG: Silent blanket exception handler swallows errors
+
             except Exception:
                 norm[c] = {}
         self.data["silo_last_edited_all"] = norm
@@ -220,6 +227,8 @@ class FastPrompter(
         for c, cmap in call.items():
             try:
                 norm_call[c] = {int(k): [int(x) for x in v] for k, v in cmap.items()}
+            # TODO: BUG: Silent blanket exception handler swallows errors
+
             except Exception:
                 norm_call[c] = {}
         self.data["silo_children_all"] = norm_call
@@ -232,6 +241,7 @@ class FastPrompter(
         self.data["silo_collapsed_all"] = coll_all
         self.data["silo_collapsed"] = coll_all.setdefault(first_cat, [])
 
+        self._current_lang = get_language(self.data)
         self.init_ui()
         self.init_tray()
         self.setup_global_shortcuts()
@@ -265,7 +275,6 @@ class FastPrompter(
             return
 
         self.lbl_date.setVisible(True)
-        import datetime
         now = datetime.datetime.now()
         # The full clock (seconds + day word) must fit even at the Ctrl+Q
         # quarter-FullHD snap — dense mode wins the pixels from buttons and
@@ -284,8 +293,14 @@ class FastPrompter(
             dt_str = now.strftime(f"{m_fmt} - %H:%M")
             ref_str = "00 MMM - 00:00" if text_month else "00.00 - 00:00"
         if show_word:
-            dt_str += f" · {self._day_part(now.hour)}"
-            ref_str += " · Morning"
+            use_emoji = self.data.get("date_emoji", "False") == "True"
+            if use_emoji:
+                emoji = {"Morning": "🌅", "Day": "☀️", "Evening": "🌇", "Night": "🌙"}.get(self._day_part(now.hour), "")
+                dt_str += f" {emoji}"
+                ref_str += " ☀️"
+            else:
+                dt_str += f" · {tr(self._day_part(now.hour), self._current_lang)}"
+                ref_str += " · Morning"
 
         from PyQt6.QtGui import QFontMetrics
         f = QFont(self.lbl_date.font())
@@ -380,9 +395,8 @@ class FastPrompter(
             self._update_date_label()
         import os as _os
         if _os.environ.get("FP_DENSITY_DEBUG"):
-            print("DENSITY dense=", dense, "flipped=", flipped,
-                  "save px=", self.btn_save.font().pixelSize(),
-                  "save minW=", self.btn_save.minimumWidth())
+            from fastprompter.core.logging import logger
+            logger.debug(f"DENSITY dense={dense} flipped={flipped} save px={self.btn_save.font().pixelSize()} save minW={self.btn_save.minimumWidth()}")
         if flipped:
             # format squares squeeze 24 -> 20 in dense
             for name in ("btn_bold", "btn_italic", "btn_under", "btn_strike",
@@ -435,6 +449,17 @@ class FastPrompter(
         if hasattr(self, "cb_focus"):
             self.cb_focus.setChecked(not self.cb_focus.isChecked())
             self.play_tick_sound()
+
+    def _increment_focus_lock(self):
+        """Counted ignore_focus_loss: overlapping dialogs each take a lock;
+        the flag drops only when the LAST 300ms release fires (no race)."""
+        self._focus_lock_count = getattr(self, "_focus_lock_count", 0) + 1
+        self.ignore_focus_loss = True
+
+    def _decrement_focus_lock(self):
+        self._focus_lock_count = max(0, getattr(self, "_focus_lock_count", 0) - 1)
+        if self._focus_lock_count == 0:
+            self.ignore_focus_loss = False
 
     def _pin_top_toggled(self, checked):
         """Header 📌 mirrors the Always-on-Top setting checkbox."""
@@ -492,26 +517,26 @@ class FastPrompter(
         """Refresh the header 📁 button: live file count + breakdown tooltip."""
         if not hasattr(self, "btn_files"):
             return
-        from fastprompter.ui.file_container import folder_summary, silo_file_count
         is_archive = getattr(self, "active_is_archive", False)
         presets = self.data.get("archive_temp_presets" if is_archive else "temp_presets", [])
         idx = self.active_temp_slot
         text = presets[idx] if 0 <= idx < len(presets) else ""
         cat = self.get_current_category()
+        from fastprompter.ui.file_container import silo_file_count, folder_summary
         n = silo_file_count(self._files_root(), cat, text)
         self.btn_files.setText(f"📁{n}" if n else "📁")
         if getattr(self, "_header_dense", False):
             self.btn_files.setFixedWidth(
                 self.btn_files.fontMetrics().horizontalAdvance(self.btn_files.text()) + 8)
+        lang = getattr(self, '_current_lang', 'EN')
         self.btn_files.setToolTip(
-            "Files — asset drawer for the active silo (drop in / drag out /\n"
-            "preview / export; plain folder in data/files)\n\n"
-            + folder_summary(self._files_root(), cat, text)
+            tr("Files—asset drawer for the active silo (drop in / drag out /\npreview / export; plain folder in data/files)\n\n", lang)
+            + folder_summary(self._files_root(), cat, text, lang=lang)
         )
 
+    from fastprompter.ui.file_container import FileContainerPanel, folder_summary, silo_file_count
     def open_file_container(self, global_idx=None, is_archive=False):
         """Open the per-silo file drawer (📁 button / silo hover button)."""
-        from fastprompter.ui.file_container import FileContainerPanel
         if global_idx is None:
             global_idx = self.active_temp_slot
             is_archive = getattr(self, "active_is_archive", False)
@@ -568,13 +593,11 @@ class FastPrompter(
 
     def _update_visible_silo_count(self):
         if hasattr(self, "silos_widget") and self.silos_widget.height() > 0:
-            # Estimate button height from the first visible button, fallback to 24*scale
-            estimate = 24
+            estimate = int(24 * getattr(self, "_ui_scale", 1.0))
             for btn in getattr(self, "silo_buttons", []):
-                if btn.isVisible():
-                    bh = btn.height()
-                    if bh > 0:
-                        estimate = bh
+                bh = btn.height() if btn.isVisible() else btn.sizeHint().height()
+                if bh > 0:
+                    estimate = bh
                     break
             spacing = 2
             self._visible_silos = max(
@@ -678,9 +701,9 @@ class FastPrompter(
 
         self.btn_sidebar_toggle = QPushButton("☰")
         self.apply_button_size(self.btn_sidebar_toggle, 24, 24)
-        self.btn_sidebar_toggle.setToolTip(
-            "Toggle Sidebar (Alt+D)\nShow or hide the right/left sidebar containing snippets and silos."
-        )
+        self.btn_sidebar_toggle.setToolTip(tr(
+            "Toggle Sidebar (Alt+D)\nShow or hide the right/left sidebar containing snippets and silos.",
+            getattr(self, "_current_lang", "EN")))
         self.btn_sidebar_toggle.clicked.connect(self.toggle_sidebar_visibility)
         self.header_layout.addWidget(self.btn_sidebar_toggle)
 
@@ -699,31 +722,31 @@ class FastPrompter(
 
 
 
-        self.btn_new = QPushButton("NEW")
-        self.btn_new.setToolTip(f"NEW ({self.data.get('hk_new_snippet', 'Ctrl+N')})")
+        self.btn_new = QPushButton(tr("NEW", getattr(self, "_current_lang", "EN")))
+        self.btn_new.setToolTip(tr("NEW ({})", self._current_lang).format(self.data.get('hk_new_snippet', 'Ctrl+N')))
         self.apply_button_size(self.btn_new, 24)
         self.btn_new.setMinimumWidth(80)
         self.btn_new.clicked.connect(self.select_empty_silo)
 
-        self.btn_save = QPushButton("Save")
-        self.btn_save.setToolTip(f"Save ({self.data.get('hk_save_snippet', 'Ctrl+S')})")
+        self.btn_save = QPushButton(tr("Save", getattr(self, "_current_lang", "EN")))
+        self.btn_save.setToolTip(tr("Save ({})", self._current_lang).format(self.data.get('hk_save_snippet', 'Ctrl+S')))
         self.apply_button_size(self.btn_save, 24)
         self.btn_save.clicked.connect(self.save_snippet)
 
-        self.btn_home = QPushButton("Home")
-        self.btn_home.setToolTip("Home (Home)")
+        self.btn_home = QPushButton(tr("Home", getattr(self, "_current_lang", "EN")))
+        self.btn_home.setToolTip(tr("Home (Home)", getattr(self, "_current_lang", "EN")))
         self.apply_button_size(self.btn_home, 24)
         self.btn_home.clicked.connect(self.move_cursor_home)
 
-        self.btn_end = QPushButton("End")
-        self.btn_end.setToolTip("Jump to End\nMove cursor to the bottom of the document.")
+        self.btn_end = QPushButton(tr("End", getattr(self, "_current_lang", "EN")))
+        self.btn_end.setToolTip(tr("Jump to End\nMove cursor to the bottom of the document.", getattr(self, "_current_lang", "EN")))
         self.apply_button_size(self.btn_end, 24)
         self.btn_end.clicked.connect(self.move_cursor_end)
 
-        self.btn_add_line = QPushButton("Line")
-        self.btn_add_line.setToolTip(
-            "Insert Line (Ctrl+W)\nInsert a spaced --- divider and start a fresh bullet."
-        )
+        self.btn_add_line = QPushButton(tr("Line", getattr(self, "_current_lang", "EN")))
+        self.btn_add_line.setToolTip(tr(
+            "Insert Line (Ctrl+W)\nInsert a spaced --- divider and start a fresh bullet.",
+            getattr(self, "_current_lang", "EN")))
         self.apply_button_size(self.btn_add_line, 24)
         self.btn_add_line.clicked.connect(self.insert_add_line)
 
@@ -757,41 +780,40 @@ class FastPrompter(
         self.btn_bullet_toggle.setToolTip(f"Auto-Bullet (Right-Click): {state_str}\nLeft-Click: Convert selected lines between dashes and bullets.")
         self.btn_bullet_toggle.clicked.connect(_on_bullet_left_click)
 
-        self.btn_bold = QPushButton("B")
-        self.btn_bold.setToolTip(f"Bold ({self.data.get('hk_bold', 'Ctrl+B')})\nMake selected text bold.")
+        self.btn_bold = QPushButton(tr("B", getattr(self, "_current_lang", "EN")))
+        self.btn_bold.setToolTip(tr("Bold ({})\nMake selected text bold.", self._current_lang).format(self.data.get('hk_bold', 'Ctrl+B')))
         self.apply_button_size(self.btn_bold, 24, 24)
         f = QFont(self.btn_bold.font()); f.setBold(True); self.btn_bold.setFont(f)
         self.btn_bold.clicked.connect(lambda: self.apply_format("bold"))
 
-        self.btn_italic = QPushButton("I")
-        self.btn_italic.setToolTip(f"Italic ({self.data.get('hk_italic', 'Ctrl+I')})\nMake selected text italic.")
+        self.btn_italic = QPushButton(tr("I", getattr(self, "_current_lang", "EN")))
+        self.btn_italic.setToolTip(tr("Italic ({})\nMake selected text italic.", self._current_lang).format(self.data.get('hk_italic', 'Ctrl+I')))
         self.apply_button_size(self.btn_italic, 24, 24)
         f = QFont(self.btn_italic.font()); f.setItalic(True); self.btn_italic.setFont(f)
         self.btn_italic.clicked.connect(lambda: self.apply_format("italic"))
 
-        self.btn_under = QPushButton("U")
-        self.btn_under.setToolTip(f"Underline ({self.data.get('hk_underline', 'Ctrl+U')})\nMake selected text underlined.")
+        self.btn_under = QPushButton(tr("U", getattr(self, "_current_lang", "EN")))
+        self.btn_under.setToolTip(tr("Underline ({})\nMake selected text underlined.", self._current_lang).format(self.data.get('hk_underline', 'Ctrl+U')))
         self.apply_button_size(self.btn_under, 24, 24)
         f = QFont(self.btn_under.font()); f.setUnderline(True); self.btn_under.setFont(f)
         self.btn_under.clicked.connect(lambda: self.apply_format("underline"))
 
-        self.btn_strike = QPushButton("S")
-        self.btn_strike.setToolTip("Strikethrough (Ctrl+T)\nCross out selected text.")
+        self.btn_strike = QPushButton(tr("S", getattr(self, "_current_lang", "EN")))
+        self.btn_strike.setToolTip(tr("Strikethrough (Ctrl+T)\nCross out selected text.", getattr(self, "_current_lang", "EN")))
         self.apply_button_size(self.btn_strike, 24, 24)
         f = QFont(self.btn_strike.font()); f.setStrikeOut(True); self.btn_strike.setFont(f)
         self.btn_strike.clicked.connect(lambda: self.apply_format("strike"))
 
-        self.btn_header = QPushButton("H")
-        self.btn_header.setToolTip(
+        self.btn_header = QPushButton(tr("H", getattr(self, "_current_lang", "EN")))
+        self.btn_header.setToolTip(tr(
             "Header (Ctrl+E)\nTitle the line: # + bold + underline + timestamp,\n"
-            "then land 2 lines below on a fresh bullet."
-        )
+            "then land 2 lines below on a fresh bullet.", getattr(self, "_current_lang", "EN")))
         self.apply_button_size(self.btn_header, 24, 24)
         f = QFont(self.btn_header.font()); f.setBold(True); f.setUnderline(True); self.btn_header.setFont(f)
         self.btn_header.clicked.connect(self.apply_header_timestamp)
 
-        self.btn_clear_fmt = QPushButton("Clear Fmt")
-        self.btn_clear_fmt.setToolTip("Clear Format\nRemove all explicit font styling from text.")
+        self.btn_clear_fmt = QPushButton(tr("Clear Fmt", getattr(self, "_current_lang", "EN")))
+        self.btn_clear_fmt.setToolTip(tr("Clear Format\nRemove all explicit font styling from text.", getattr(self, "_current_lang", "EN")))
         self.apply_button_size(self.btn_clear_fmt, 24)
         self.btn_clear_fmt.clicked.connect(self.clear_formatting)
 
@@ -799,35 +821,33 @@ class FastPrompter(
 
         self.btn_settings_toggle = QPushButton("⚙")
         self.apply_button_size(self.btn_settings_toggle, 24, 24)
-        self.btn_settings_toggle.setToolTip(
-            "Settings\nConfigure hotkeys, theme, fonts, and UI scaling."
-        )
+        self.btn_settings_toggle.setToolTip(tr(
+            "Settings\nConfigure hotkeys, theme, fonts, and UI scaling.", getattr(self, "_current_lang", "EN")))
         self.btn_settings_toggle.clicked.connect(self.toggle_mini_settings)
 
         self.btn_help = QPushButton("❓")
-        self.btn_help.setToolTip("Help — every hotkey, gesture and feature (click)")
+        self.btn_help.setToolTip(tr("Help — every hotkey, gesture and feature (click)", getattr(self, "_current_lang", "EN")))
         self.btn_help.setCursor(Qt.CursorShape.PointingHandCursor)
         self.apply_button_size(self.btn_help, 24, 24)
         self.btn_help.clicked.connect(self.open_help_dialog)
 
-        self.btn_copy = QPushButton("Copy")
-        self.btn_copy.setToolTip("Copy all text (Ctrl+C)\nRight-click: Copy + Close FastPrompter")
+        self.btn_copy = QPushButton(tr("Copy", getattr(self, "_current_lang", "EN")))
+        self.btn_copy.setToolTip(tr("Copy all text (Ctrl+C)\nRight-click: Copy + Close FastPrompter", getattr(self, "_current_lang", "EN")))
         self.apply_button_size(self.btn_copy, 26)
         self.btn_copy.clicked.connect(self.copy_context_to_clipboard)
         self.btn_copy.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.btn_copy.customContextMenuRequested.connect(self.copy_context_and_close)
 
-        self.btn_clear = QPushButton("Clear")
-        self.btn_clear.setToolTip("Clear (Ctrl+Shift+C)")
+        self.btn_clear = QPushButton(tr("Clear", getattr(self, "_current_lang", "EN")))
+        self.btn_clear.setToolTip(tr("Clear (Ctrl+Shift+C)", getattr(self, "_current_lang", "EN")))
         self.apply_button_size(self.btn_clear, 26)
         self.btn_clear.clicked.connect(self.clear_text)
 
         self.btn_files = QPushButton("📁")
-        self.btn_files.setToolTip(
+        self.btn_files.setToolTip(tr(
             "Files\nAsset drawer for the active silo: drop any files in,\n"
             "drag them out, preview, export. Stored as a plain folder\n"
-            "in data/files — readable outside FastPrompter."
-        )
+            "in data/files — readable outside FastPrompter.", getattr(self, "_current_lang", "EN")))
         self.apply_button_size(self.btn_files, 24)
         self.btn_files.clicked.connect(lambda: self.open_file_container())
 
@@ -862,18 +882,18 @@ class FastPrompter(
         self.header_layout.addStretch(1)
         from fastprompter.ui.analog_clock import MiniAnalogClock
         self.analog_clock = MiniAnalogClock(self)
-        self.analog_clock.setToolTip("Current time (analog)")
+        self.analog_clock.setToolTip(tr("Current time (analog)", getattr(self, "_current_lang", "EN")))
         self.header_layout.addWidget(self.analog_clock)
 
         self.lbl_date = QLabel("")
-        self.lbl_date.setToolTip("Current Date and Time")
+        self.lbl_date.setToolTip(tr("Current Date and Time", getattr(self, "_current_lang", "EN")))
         self.lbl_date.setStyleSheet("padding: 0 4px;")
         self.header_layout.addWidget(self.lbl_date)
 
         self.btn_pin_top = QPushButton("📌")
         self.btn_pin_top.setCheckable(True)
         self.btn_pin_top.setChecked(self.data.get("always_on_top", "True") == "True")
-        self.btn_pin_top.setToolTip("Always on Top — keep the window above all others")
+        self.btn_pin_top.setToolTip(tr("Always on Top — keep the window above all others", getattr(self, "_current_lang", "EN")))
         self.apply_button_size(self.btn_pin_top, 20, 20)
         self.btn_pin_top.toggled.connect(self._pin_top_toggled)
         self.header_layout.addWidget(self.btn_pin_top)
@@ -881,8 +901,8 @@ class FastPrompter(
         self.btn_line_nums = QPushButton("#")
         self.btn_line_nums.setCheckable(True)
         self.btn_line_nums.setChecked(self.data.get("show_line_numbers", "False") == "True")
-        self.btn_line_nums.setToolTip(
-            "Show / hide the line-number gutter\n(click the gutter to place colored margin marks)")
+        self.btn_line_nums.setToolTip(tr(
+            "Show / hide the line-number gutter\n(click the gutter to place colored margin marks)", getattr(self, "_current_lang", "EN")))
         self.apply_button_size(self.btn_line_nums, 20, 20)
         self.btn_line_nums.toggled.connect(self._line_nums_btn_toggled)
         self.header_layout.addWidget(self.btn_line_nums)
@@ -893,7 +913,7 @@ class FastPrompter(
         self.header_layout.addWidget(self._counter_sep)
 
         self.lbl_line_count = QLabel("")
-        self.lbl_line_count.setToolTip("Line count of the open silo/snippet")
+        self.lbl_line_count.setToolTip(tr("Line count of the open silo/snippet", getattr(self, "_current_lang", "EN")))
         self.lbl_line_count.setStyleSheet("padding: 0 4px; font-weight: bold;")
         self.header_layout.addWidget(self.lbl_line_count)
         self.header_layout.addWidget(self.btn_settings_toggle)
@@ -932,11 +952,10 @@ class FastPrompter(
 
         self.preview_combo = QComboBox()
         self.preview_combo.addItems(["Source View", "Live Preview", "Reading"])
-        self.preview_combo.setToolTip(
+        self.preview_combo.setToolTip(tr(
             "Source View: Plain text editor\n"
             "Live Preview: Editor with live markdown highlights (default)\n"
-            "Reading: Read-only rendered markdown view"
-        )
+            "Reading: Read-only rendered markdown view", getattr(self, "_current_lang", "EN")))
         # Map old saved values to new
         _view_map = {"None": "Source View", "Raw": "Source View", "Markdown": "Reading"}
         saved_preview = self.data.get("preview_mode", "Live Preview")
@@ -979,36 +998,39 @@ class FastPrompter(
                     cb.blockSignals(False)
 
             cb.toggled.connect(on_toggled)
+            cb._en_text = text
             return cb
 
         self.btn_hotkeys = make_action_checkbox("Keys", self.open_hotkey_settings)
-        self.btn_hotkeys.setToolTip("Configure Global Hotkeys (Settings Cog)")
+        self.btn_hotkeys.setToolTip(tr("Configure Global Hotkeys (Settings Cog)", getattr(self, "_current_lang", "EN")))
         self.btn_colors = make_action_checkbox("RGB", self.open_color_settings)
-        self.btn_colors.setToolTip("Custom Theme Colors (Color Palette)")
+        self.btn_colors.setToolTip(tr("Custom Theme Colors (Color Palette)", getattr(self, "_current_lang", "EN")))
         self.btn_backup = make_action_checkbox("BkUp", self.backup_db)
         self.btn_restore = make_action_checkbox("Rstr", self.restore_db)
 
         try:
             current_scale_pct = int(float(self.data.get("ui_scale", "1.0")) * 100)
+        # TODO: BUG: Silent blanket exception handler swallows errors
+
         except Exception:
             current_scale_pct = 100
         self.btn_button_scale = make_action_checkbox(
             f"Scale: {current_scale_pct}%", self.cycle_button_scale
         )
-        self.btn_button_scale.setToolTip(
+        self.btn_button_scale.setToolTip(tr(
             "Scale the whole program: 50 / 75 / 100 / 125 / 150%\n"
-            "(fine-tune with Ctrl+Plus / Ctrl+Minus)"
+            "(fine-tune with Ctrl+Plus / Ctrl+Minus)", getattr(self, "_current_lang", "EN"))
         )
 
         # Load custom font button
-        self.btn_load_font = QPushButton("+ Font")
+        self.btn_load_font = QPushButton(tr("+ Font", getattr(self, "_current_lang", "EN")))
         self.btn_load_font.setFixedWidth(52)
-        self.btn_load_font.setToolTip("Load a custom .ttf/.otf font file")
+        self.btn_load_font.setToolTip(tr("Load a custom .ttf/.otf font file", getattr(self, "_current_lang", "EN")))
         self.btn_load_font.clicked.connect(self.load_custom_font)
 
-        self.btn_clear_fonts = QPushButton("× Fonts")
+        self.btn_clear_fonts = QPushButton(tr("× Fonts", getattr(self, "_current_lang", "EN")))
         self.btn_clear_fonts.setFixedWidth(54)
-        self.btn_clear_fonts.setToolTip("Clear all custom fonts from combo (reset to defaults)")
+        self.btn_clear_fonts.setToolTip(tr("Clear all custom fonts from combo (reset to defaults)", getattr(self, "_current_lang", "EN")))
         self.btn_clear_fonts.clicked.connect(self.clear_custom_fonts)
 
         # Volume control
@@ -1019,7 +1041,7 @@ class FastPrompter(
         except Exception:
             self.spin_volume.setValue(5)
         self.spin_volume.setFixedWidth(42)
-        self.spin_volume.setToolTip("Click sound volume (1-10)")
+        self.spin_volume.setToolTip(tr("Click sound volume (1-10)", getattr(self, "_current_lang", "EN")))
         self.spin_volume.valueChanged.connect(
             lambda v: (self.data.update({"sound_volume": str(v)}), self.mark_dirty())
         )
@@ -1029,19 +1051,33 @@ class FastPrompter(
         appearance_row = QHBoxLayout()
         appearance_row.setContentsMargins(0, 0, 0, 0)
         appearance_row.setSpacing(4)
-        appearance_row.addWidget(QLabel("Font:"))
+        appearance_row.addWidget(QLabel(tr("Font:", getattr(self, "_current_lang", "EN"))))
         appearance_row.addWidget(self.font_combo)
         appearance_row.addWidget(self.font_spin)
         appearance_row.addWidget(self.btn_load_font)
         appearance_row.addWidget(self.btn_clear_fonts)
         appearance_row.addSpacing(8)
-        appearance_row.addWidget(QLabel("Theme:"))
+        appearance_row.addWidget(QLabel(tr("Theme:", getattr(self, "_current_lang", "EN"))))
         appearance_row.addWidget(self.cb_theme)
         appearance_row.addWidget(self.btn_colors)
+        
+        self.btn_drop_zones = make_action_checkbox("Drop Zones", self.open_drop_zones_settings)
+        self.btn_drop_zones.setToolTip(tr("Customize Drop Zones", getattr(self, "_current_lang", "EN")))
+        appearance_row.addWidget(self.btn_drop_zones)
         appearance_row.addSpacing(8)
-        appearance_row.addWidget(QLabel("View:"))
+        appearance_row.addWidget(QLabel(tr("View:", getattr(self, "_current_lang", "EN"))))
         appearance_row.addWidget(self.preview_combo)
         appearance_row.addWidget(self.btn_button_scale)
+        appearance_row.addSpacing(8)
+        appearance_row.addWidget(QLabel(tr("Language:", getattr(self, "_current_lang", "EN"))))
+        self.cb_language = QComboBox()
+        self.cb_language.addItems(["EN", "RU"])
+        saved_lang = self.data.get("language", "EN")
+        idx = self.cb_language.findText(saved_lang)
+        if idx >= 0:
+            self.cb_language.setCurrentIndex(idx)
+        self.cb_language.currentTextChanged.connect(self._on_language_changed)
+        appearance_row.addWidget(self.cb_language)
         appearance_row.addStretch(1)
         appearance_row.addWidget(self.btn_hotkeys)
         appearance_row.addWidget(self.btn_backup)
@@ -1054,6 +1090,8 @@ class FastPrompter(
             if callback:
                 cb.toggled.connect(lambda _: self.play_tick_sound())
                 cb.toggled.connect(callback)
+            cb._en_text = text
+            cb._en_tooltip = tooltip
             return cb
 
         self.cb_top = create_footer_cb(
@@ -1158,6 +1196,15 @@ class FastPrompter(
         self.cb_line_numbers.toggled.connect(
             lambda c: hasattr(self, "btn_line_nums") and self.btn_line_nums.setChecked(c))
 
+        self.cb_line_marks = create_footer_cb(
+            "🔴 Line Marks",
+            "Enable click-to-mark in line numbers (Red dot, Yellow Rhombus, Blue square)",
+            self.data.get("line_marks", "False") == "True",
+            lambda checked: self.data.update({"line_marks": "True" if checked else "False"})
+                            or self.mark_dirty()
+                            or (self.text_area.line_number_area.update() if hasattr(self, "text_area") and hasattr(self.text_area, "line_number_area") else None)
+        )
+
         self.cb_zebra = create_footer_cb(
             "🦓 Zebra Stripes",
             "Lightly shade every other line for readability",
@@ -1248,6 +1295,16 @@ class FastPrompter(
                 or self._update_date_label()
             ),
         )
+        self.cb_date_emoji = create_footer_cb(
+            "🎭 Emoji Day State",
+            "Show an emoji (🌅/☀️/🌇/🌙) instead of the time-of-day word",
+            self.data.get("date_emoji", "False") == "True",
+            lambda checked: (
+                self.data.update({"date_emoji": "True" if checked else "False"})
+                or self.mark_dirty()
+                or self._update_date_label()
+            ),
+        )
         self.cb_date_text_month = create_footer_cb(
             "🔤 Text Month",
             "Show month as text instead of numbers (17 Jul instead of 17.07)",
@@ -1260,13 +1317,22 @@ class FastPrompter(
         )
         self.cb_sound = create_footer_cb(
             "🔊 UI Sounds",
-            "Play click sounds for buttons and actions",
+            "Play click sounds for buttons and actions.\n"
+            "You can place your own .wav files in the 'sound' folder to override:\n"
+            "• newbutton1.wav (New button)\n"
+            "• savebutton1.wav (Save button)\n"
+            "• button1.wav (Click/Silo)\n"
+            "• button2.wav (Snippet)\n"
+            "• tickbox1.wav (Checkbox)\n"
+            "• delete1.wav (Delete)\n"
+            "• clear1.wav (Clear)",
             self.data.get("sound_ui", "False") == "True",
             self.on_sound_toggled,
         )
         self.cb_typewriter = create_footer_cb(
             "⌨ Typewriter",
-            "Play a typewriter tick for every typed character",
+            "Play a typewriter tick for every typed character.\n"
+            "Place 'type1.wav' in the 'sound' folder to use your own typing sound.",
             self.data.get("sound_typewriter", "False") == "True",
             self.on_typewriter_toggled,
         )
@@ -1280,12 +1346,12 @@ class FastPrompter(
         div_row = QHBoxLayout()
         div_row.setContentsMargins(0, 0, 0, 0)
         div_row.setSpacing(4)
-        lbl_div = QLabel("Line gaps:")
-        lbl_div.setToolTip("Blank lines the Line/Ctrl+W divider puts before and after ---")
+        lbl_div = QLabel(tr("Line gaps:", getattr(self, "_current_lang", "EN")))
+        lbl_div.setToolTip(tr("Blank lines the Line/Ctrl+W divider puts before and after ---", getattr(self, "_current_lang", "EN")))
         div_row.addWidget(lbl_div)
         self.spin_div_before = QSpinBox()
         self.spin_div_before.setRange(0, 6)
-        self.spin_div_before.setToolTip("Lines before ---")
+        self.spin_div_before.setToolTip(tr("Lines before ---", getattr(self, "_current_lang", "EN")))
         try:
             self.spin_div_before.setValue(int(self.data.get("divider_lines_before", 2)))
         except (TypeError, ValueError):
@@ -1296,7 +1362,7 @@ class FastPrompter(
         div_row.addWidget(self.spin_div_before)
         self.spin_div_after = QSpinBox()
         self.spin_div_after.setRange(1, 6)
-        self.spin_div_after.setToolTip("Lines after --- (before the fresh bullet)")
+        self.spin_div_after.setToolTip(tr("Lines after --- (before the fresh bullet)", getattr(self, "_current_lang", "EN")))
         try:
             self.spin_div_after.setValue(int(self.data.get("divider_lines_after", 3)))
         except (TypeError, ValueError):
@@ -1310,15 +1376,15 @@ class FastPrompter(
         files_row = QHBoxLayout()
         files_row.setContentsMargins(0, 0, 0, 0)
         files_row.setSpacing(4)
-        self.btn_files_root = QPushButton("Files Folder…")
-        self.btn_files_root.setToolTip(
+        self.btn_files_root = QPushButton(tr("Files Folder…", getattr(self, "_current_lang", "EN")))
+        self.btn_files_root.setToolTip(tr(
             "Choose where silo file containers are stored.\n"
-            "Default: data/files next to the app."
-        )
+            "Default: data/files next to the app.",
+            getattr(self, "_current_lang", "EN")))
         self.btn_files_root.clicked.connect(self.pick_files_root)
         files_row.addWidget(self.btn_files_root)
         btn_files_root_reset = QPushButton("↺")
-        btn_files_root_reset.setToolTip("Reset silo files location to the default data/files")
+        btn_files_root_reset.setToolTip(tr("Reset silo files location to the default data/files", getattr(self, "_current_lang", "EN")))
         btn_files_root_reset.setFixedWidth(24)
         btn_files_root_reset.clicked.connect(self.reset_files_root)
         files_row.addWidget(btn_files_root_reset)
@@ -1327,23 +1393,23 @@ class FastPrompter(
         vol_row = QHBoxLayout()
         vol_row.setContentsMargins(0, 0, 0, 0)
         vol_row.setSpacing(4)
-        vol_row.addWidget(QLabel("Volume:"))
+        vol_row.addWidget(QLabel(tr("Volume:", getattr(self, "_current_lang", "EN"))))
         vol_row.addWidget(self.spin_volume)
         vol_row.addStretch(1)
 
         hdr_row = QHBoxLayout()
         hdr_row.setContentsMargins(0, 0, 0, 0)
         hdr_row.setSpacing(4)
-        lbl_hdr = QLabel("Header Fmt:")
-        lbl_hdr.setToolTip(
+        lbl_hdr = QLabel(tr("Header Fmt:", getattr(self, "_current_lang", "EN")))
+        lbl_hdr.setToolTip(tr(
             "Template for the Ctrl+E header.\n"
             "{text} — the line's text\n{time} — timestamp\n"
             "{state} — Morning / Day / Evening / Night\n"
-            "Markdown markers (** __ etc.) are yours to add or drop."
-        )
+            "Markdown markers (** __ etc.) are yours to add or drop.",
+            getattr(self, "_current_lang", "EN")))
         hdr_row.addWidget(lbl_hdr)
         self.le_hdr_fmt = QLineEdit()
-        self.le_hdr_fmt.setPlaceholderText("**__{text}__** ({time})")
+        self.le_hdr_fmt.setPlaceholderText(tr("**__{text}__** ({time})", getattr(self, "_current_lang", "EN")))
         self.le_hdr_fmt.setText(self.data.get("ctrl_e_format", "**__{text}__** ({time})"))
         self.le_hdr_fmt.textChanged.connect(
             lambda v: (self.data.update({"ctrl_e_format": v}), self.mark_dirty())
@@ -1356,7 +1422,7 @@ class FastPrompter(
             col.setContentsMargins(0, 0, 0, 0)
             col.setSpacing(1)
             col.setAlignment(Qt.AlignmentFlag.AlignTop)
-            header = QLabel(title)
+            header = QLabel(tr(title, self._current_lang))
             header.setStyleSheet("font-weight: bold; padding: 0 0 1px 0;")
             col.addWidget(header)
 
@@ -1398,21 +1464,57 @@ class FastPrompter(
         groups_row.addLayout(_settings_group("Window", [
             self.cb_top, self.cb_lock_window, self.cb_normal_window,
             self.cb_tray, self.cb_sidebar, self.cb_date_rect, self.cb_date_seconds,
-            self.cb_date_daypart, self.cb_date_text_month, self.cb_analog_clock,
+            self.cb_date_daypart, self.cb_date_emoji, self.cb_date_text_month, self.cb_analog_clock,
             self.cb_trash_vision
         ]), 1)
         groups_row.addWidget(_vline())
         groups_row.addLayout(_settings_group("Editor", [
             self.cb_focus, self.cb_wrap, self.cb_ctrl_c, self.cb_lock_cursor,
-            self.cb_line_numbers, self.cb_zebra, self.cb_double_line, self.cb_bold_titles,
+            self.cb_line_numbers, self.cb_line_marks, self.cb_zebra, self.cb_double_line, self.cb_bold_titles,
             div_row, hdr_row
         ]), 1)
         groups_row.addWidget(_vline())
+        gap_row = QHBoxLayout()
+        gap_row.setContentsMargins(0, 0, 0, 0)
+        gap_row.setSpacing(4)
+        lbl_gap = QLabel(tr("UI Gaps:", getattr(self, "_current_lang", "EN")))
+        lbl_gap.setStyleSheet("color: #808080;")
+        gap_row.addWidget(lbl_gap)
+        self.spin_silo_gap = QSpinBox()
+        self.spin_silo_gap.setRange(0, 50)
+        self.spin_silo_gap.setToolTip(tr("Silo Gap Height", getattr(self, "_current_lang", "EN")))
+        try:
+            self.spin_silo_gap.setValue(int(self.data.get("silo_gap_height", 8)))
+        except:
+            self.spin_silo_gap.setValue(8)
+        def _update_gap(v):
+            self.data.update({"silo_gap_height": str(v)})
+            if hasattr(self, "silo_gap_widget"): self.silo_gap_widget.setFixedHeight(v)
+            if hasattr(self, "sections_gap_widget"): self.sections_gap_widget.setFixedHeight(v)
+            self.mark_dirty()
+        self.spin_silo_gap.valueChanged.connect(_update_gap)
+        gap_row.addWidget(self.spin_silo_gap)
+
+        self.spin_drag_width = QSpinBox()
+        self.spin_drag_width.setRange(1, 50)
+        self.spin_drag_width.setToolTip(tr("Splitter Handle Width", getattr(self, "_current_lang", "EN")))
+        try:
+            self.spin_drag_width.setValue(int(self.data.get("splitter_width", 1)))
+        except:
+            self.spin_drag_width.setValue(1)
+        def _update_drag(v):
+            self.data.update({"splitter_width": str(v)})
+            if hasattr(self, "splitter"): self.splitter.setHandleWidth(v)
+            self.mark_dirty()
+        self.spin_drag_width.valueChanged.connect(_update_drag)
+        gap_row.addWidget(self.spin_drag_width)
+        gap_row.addStretch(1)
+
         groups_row.addLayout(_settings_group("Data & Appearance", [
             self.cb_silo_home, self.cb_silo_pinned_gap, self.cb_silo_ticks,
             self.cb_snippet_arrows, self.cb_hide_shortkeys,
             self.cb_portable_backup, self.cb_sound, self.cb_typewriter,
-            vol_row, files_row
+            vol_row, files_row, gap_row
         ]), 1)
 
         hline = QFrame()
@@ -1435,7 +1537,10 @@ class FastPrompter(
         self.splitter.setChildrenCollapsible(True)
         self.main_layout.addWidget(self.splitter)
         self.splitter.setOpaqueResize(True)
-        self.splitter.setHandleWidth(1)
+        try:
+            self.splitter.setHandleWidth(int(self.data.get("splitter_width", 1)))
+        except:
+            self.splitter.setHandleWidth(1)
 
         self.left_panel = QWidget()
         self.left_panel_layout = QVBoxLayout(self.left_panel)
@@ -1452,7 +1557,7 @@ class FastPrompter(
 
         self.btn_trash = QPushButton("🗑️")
         self.apply_button_size(self.btn_trash, 20, 20)
-        self.btn_trash.setToolTip("Open Trash")
+        self.btn_trash.setToolTip(tr("Open Trash", getattr(self, "_current_lang", "EN")))
         self.btn_trash.clicked.connect(self.open_trash)
         snip_header.addWidget(self.btn_trash)
 
@@ -1465,13 +1570,13 @@ class FastPrompter(
 
         self.btn_arc_snip = QPushButton("📥")
         self.apply_button_size(self.btn_arc_snip, 20, 20)
-        self.btn_arc_snip.setToolTip("Archive Active Snippet or Silo")
+        self.btn_arc_snip.setToolTip(tr("Archive Active Snippet or Silo", getattr(self, "_current_lang", "EN")))
         self.btn_arc_snip.clicked.connect(self.archive_active_item)
         snip_header.addWidget(self.btn_arc_snip)
 
         self.btn_toggle_archive = QPushButton("📦")
         self.apply_button_size(self.btn_toggle_archive, 20, 20)
-        self.btn_toggle_archive.setToolTip("Toggle Archives")
+        self.btn_toggle_archive.setToolTip(tr("Toggle Archives", getattr(self, "_current_lang", "EN")))
         self.btn_toggle_archive.setCheckable(True)
         snip_header.addWidget(self.btn_toggle_archive)
 
@@ -1482,8 +1587,8 @@ class FastPrompter(
         self.snippets_section_layout.addLayout(snip_header)
 
         self.search_bar = QLineEdit()
-        self.search_bar.setToolTip("Search snippets")
-        self.search_bar.setPlaceholderText("Search...")
+        self.search_bar.setToolTip(tr("Search snippets", getattr(self, "_current_lang", "EN")))
+        self.search_bar.setPlaceholderText(tr("Search...", getattr(self, "_current_lang", "EN")))
         self.search_bar.setFixedHeight(20)
 
         saved_search_visible = self.data.get("search_visible", "False") == "True"
@@ -1530,7 +1635,7 @@ class FastPrompter(
 
         arc_header = QHBoxLayout()
         arc_header.setContentsMargins(0, 0, 0, 0)
-        self.arc_label = QLabel("Archive")
+        self.arc_label = QLabel(tr("Archive", getattr(self, "_current_lang", "EN")))
         arc_header.addWidget(self.arc_label)
         arc_header.addStretch()
         self.archive_section_layout.addLayout(arc_header)
@@ -1614,7 +1719,7 @@ class FastPrompter(
         self.btn_page_down.setToolTip("Next snippet page" + wheel_hint)
         self.btn_arc_page_up.setToolTip("Previous archive page" + wheel_hint)
         self.btn_arc_page_down.setToolTip("Next archive page" + wheel_hint)
-        self.cat_combo.setToolTip("Projects — mouse wheel switches tabs")
+        self.cat_combo.setToolTip(tr("Projects — mouse wheel switches tabs", getattr(self, "_current_lang", "EN")))
 
         self.archive_section.setParent(self.left_panel)
         self.archive_section.raise_()
@@ -1633,7 +1738,7 @@ class FastPrompter(
         search_layout.setSpacing(6)
 
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("Find...")
+        self.search_input.setPlaceholderText(tr("Find...", getattr(self, "_current_lang", "EN")))
         self.search_input.returnPressed.connect(self.find_next)
         search_layout.addWidget(self.search_input)
 
@@ -1648,15 +1753,15 @@ class FastPrompter(
         search_layout.addWidget(self.btn_find_next)
 
         self.replace_input = QLineEdit()
-        self.replace_input.setPlaceholderText("Replace with...")
+        self.replace_input.setPlaceholderText(tr("Replace with...", getattr(self, "_current_lang", "EN")))
         search_layout.addWidget(self.replace_input)
 
-        self.btn_replace = QPushButton("Rpl")
+        self.btn_replace = QPushButton(tr("Rpl", getattr(self, "_current_lang", "EN")))
         self.btn_replace.clicked.connect(self.replace_text)
         self.apply_button_size(self.btn_replace, 24)
         search_layout.addWidget(self.btn_replace)
 
-        self.btn_replace_all = QPushButton("Rpl All")
+        self.btn_replace_all = QPushButton(tr("Rpl All", getattr(self, "_current_lang", "EN")))
         self.btn_replace_all.clicked.connect(self.replace_all)
         self.apply_button_size(self.btn_replace_all, 24)
         search_layout.addWidget(self.btn_replace_all)
@@ -1675,8 +1780,9 @@ class FastPrompter(
         self.highlighter = MarkdownHighlighter(base_font_size=11)
         self.highlighter.setDocument(self.text_area.document())
         self.highlighter.set_skip_large(True)
+        self._current_lang = get_language(self.data)
         self.apply_wrap_mode()
-        self.text_area.setPlaceholderText("Think deeply.")
+        self.text_area.setPlaceholderText(tr("Think deeply.", getattr(self, "_current_lang", "EN")))
         self.text_area.setWordWrapMode(
             QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere
         )  # Socratic: Smart visual wrap without corrupting text
@@ -1693,6 +1799,8 @@ class FastPrompter(
 
         try:
             font_size = int(self.data.get("font_size", 11))
+        # TODO: BUG: Silent blanket exception handler swallows errors
+
         except Exception:
             font_size = 11
         font = QFont(self.data.get("font_family", "Verdana"), font_size)
@@ -1764,6 +1872,8 @@ class FastPrompter(
         self.data_redo_stack = []
         self.state.switch_profile(idx + 1)
         self.data = self.state.data
+        cat = self.data["cats_order"][0] if self.data.get("cats_order") else "Text"
+        self.silo_last_edited = self.data.setdefault("silo_last_edited_all", {}).setdefault(cat, {})
 
         # Rebuild document caches for the new profile
         from PyQt6.QtGui import QTextDocument
@@ -1792,10 +1902,13 @@ class FastPrompter(
         self.btn_toggle_archive.setChecked(False)
         self.refresh_temp_presets()
         self.build_categories()
+        self.text_area.document().clearUndoRedoStacks()
 
         # Switch to first silo
         try:
             slot_val = int(self.data.get("active_temp_slot", 0))
+        # TODO: BUG: Silent blanket exception handler swallows errors
+
         except Exception:
             slot_val = 0
         self.active_temp_slot = max(0, min(slot_val, len(self.data["temp_presets"]) - 1))
@@ -1804,7 +1917,7 @@ class FastPrompter(
         # Switch to Text category
         text_idx = 0
         for i, c in enumerate(self.data["cats_order"]):
-            if c == "Text":
+            if c in ("Text", self.data["cats_order"][0] if self.data.get("cats_order") else "Text"):
                 text_idx = i
                 break
         self.cat_combo.setCurrentIndex(text_idx)
@@ -1813,7 +1926,7 @@ class FastPrompter(
     def insert_timestamp_at_end(self):
         cursor = self.text_area.textCursor()
         cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock)
-        ts = __import__('datetime').datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         prefix = " " if cursor.block().text().strip() else ""
         cursor.insertText(f"{prefix}{ts}")
         self.text_area.setTextCursor(cursor)
@@ -1853,7 +1966,6 @@ class FastPrompter(
             self.mark_dirty()
             return
 
-        import datetime
         now = datetime.datetime.now()
         h = now.hour
         if 5 <= h < 12: daypart = "Morning"
@@ -1911,9 +2023,135 @@ class FastPrompter(
         self.text_area.setFocus()
         self.mark_dirty()
 
-    def on_splitter_moved(self, pos, index):
-        self.data["splitter_sizes"] = self.splitter.sizes()
+    def _on_language_changed(self, lang):
+        """Handle language combo change: persist and refresh UI text."""
+        if lang == self._current_lang:
+            return
+        self._current_lang = lang
+        self.data["language"] = lang
         self.mark_dirty()
+        self._apply_settings_language()
+
+    def _apply_settings_language(self):
+        """Re-apply translations to all settings widgets."""
+        lang = self._current_lang
+        # Translate _settings_group headers — find the header QLabels in mini_settings_frame
+        for child in self.mini_settings_frame.findChildren(QLabel):
+            en = getattr(child, "_en_text", None) or child.text()
+            # Only translate known labels (those that are group headers or static labels)
+            translated = tr(en, lang)
+            if translated != en:
+                child.setText(translated)
+
+        # Translate all checkboxes in the settings panel
+        for cb_name in ("cb_top", "cb_lock_window", "cb_normal_window", "cb_tray",
+                        "cb_sidebar", "cb_focus", "cb_snippet_arrows", "cb_silo_ticks",
+                        "cb_ctrl_c", "cb_lock_cursor", "cb_silo_home", "cb_portable_backup",
+                        "cb_wrap", "cb_line_numbers", "cb_line_marks", "cb_zebra", "cb_hide_shortkeys",
+                        "cb_double_line", "cb_bold_titles", "cb_silo_pinned_gap",
+                        "cb_date_rect", "cb_date_seconds", "cb_analog_clock",
+                        "cb_date_daypart", "cb_date_emoji", "cb_date_text_month", "cb_sound",
+                        "cb_typewriter", "cb_trash_vision"):
+            cb = getattr(self, cb_name, None)
+            if cb is not None and not sip.isdeleted(cb):
+                en_text = getattr(cb, "_en_text", None)
+                if en_text:
+                    cb.setText(tr(en_text, lang))
+                en_tip = getattr(cb, "_en_tooltip", None)
+                if en_tip:
+                    cb.setToolTip(tr(en_tip, lang))
+
+        # Translate action checkboxes
+        for ac_name in ("btn_hotkeys", "btn_colors", "btn_backup", "btn_restore"):
+            ac = getattr(self, ac_name, None)
+            if ac is not None and not sip.isdeleted(ac):
+                en_text = getattr(ac, "_en_text", None)
+                if en_text:
+                    ac.setText(tr(en_text, lang))
+
+        # Translate button_scale text (has dynamic percentage)
+        if hasattr(self, "btn_button_scale") and not sip.isdeleted(self.btn_button_scale):
+            try:
+                pct = int(float(self.data.get("ui_scale", "1.0")) * 100)
+            # TODO: BUG: Silent blanket exception handler swallows errors
+
+            except Exception:
+                pct = 100
+            self.btn_button_scale.setText(f"{tr('Scale', lang)}: {pct}%")
+
+        # Translate static labels
+        static_labels = [
+            "Font:", "Theme:", "View:",
+            "Language:", "Volume:", "Line gaps:",
+            "Header Fmt:",
+            "Window", "Editor",
+            "Data && Appearance", "Data & Appearance"
+        ]
+        from fastprompter.core.translations import _DATA
+        rev_data = {v: k for k, v in _DATA.items()}
+        for child in self.mini_settings_frame.findChildren(QLabel):
+            txt = child.text()
+            en_txt = rev_data.get(txt, txt)
+            if en_txt in static_labels:
+                child.setText(tr(en_txt, lang))
+
+        # Translate spinbox tooltips
+        if hasattr(self, "spin_div_before") and not sip.isdeleted(self.spin_div_before):
+            self.spin_div_before.setToolTip(tr("Lines before ---", lang))
+        if hasattr(self, "spin_div_after") and not sip.isdeleted(self.spin_div_after):
+            self.spin_div_after.setToolTip(tr("Lines after --- (before the fresh bullet)", lang))
+        if hasattr(self, "spin_volume") and not sip.isdeleted(self.spin_volume):
+            self.spin_volume.setToolTip(tr("Click sound volume (1-10)", lang))
+
+        # Translate files_row buttons
+        if hasattr(self, "btn_files_root") and not sip.isdeleted(self.btn_files_root):
+            self.btn_files_root.setText(tr("Files Folder...", lang))
+            self.btn_files_root.setToolTip(
+                tr("Choose where silo file containers are stored.\nDefault: data/files next to the app.", lang))
+
+        # Translate preview combo items
+        if hasattr(self, "preview_combo") and not sip.isdeleted(self.preview_combo):
+            for i in range(self.preview_combo.count()):
+                item_text = self.preview_combo.itemText(i)
+                translated = tr(item_text, lang)
+                if translated != item_text:
+                    self.preview_combo.setItemText(i, translated)
+            self.preview_combo.setToolTip(
+                tr("Source View: Plain text editor\nLive Preview: Editor with live markdown highlights (default)\nReading: Read-only rendered markdown view", lang))
+
+        # Translate _day_part used in _update_date_label
+        self._update_date_label()
+
+        # Translate sidebar tooltips
+        for attr_name, en_val, tip_attr in (
+            ("btn_trash", "Open Trash", "toolTip"),
+            ("btn_arc_snip", "Archive Active Snippet or Silo", "toolTip"),
+            ("btn_toggle_archive", "Toggle Archives", "toolTip"),
+            ("search_bar", "Search snippets", "toolTip"),
+            ("search_bar", "Search...", "placeholderText"),
+        ):
+            wdg = getattr(self, attr_name, None)
+            if wdg is not None and not sip.isdeleted(wdg):
+                if tip_attr == "toolTip":
+                    wdg.setToolTip(tr(en_val, lang))
+                elif tip_attr == "placeholderText":
+                    wdg.setPlaceholderText(tr(en_val, lang))
+
+        # Re-apply hotkey tooltips (cheat sheet on Keys button)
+        if hasattr(self, '_apply_tooltips'):
+            self._apply_tooltips()
+
+    def on_splitter_moved(self, pos, index):
+        is_right = getattr(self, "_sidebar_right", False)
+        self.data["splitter_sizes_right" if is_right else "splitter_sizes_left"] = self.splitter.sizes()
+        self.mark_dirty()
+
+    def open_drop_zones_settings(self):
+        from fastprompter.ui.drop_overlay import DropZonesDialog
+        dlg = DropZonesDialog(self)
+        dlg.exec()
+        if hasattr(self, "btn_drop_zones"):
+            self.btn_drop_zones.setChecked(False)
 
     def swap_temp_slots(self, idx1, idx2, is_archive=False):
         if idx1 == idx2:
@@ -2100,12 +2338,28 @@ class FastPrompter(
         normal = self.cb_normal_window.isChecked()
         if not normal:
             flags |= Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool
+        # Skip HWND recreation if flags haven't actually changed
+        current = self.windowFlags()
+        # Strip WindowStaysOnTopHint from comparison — AOT handled separately via SetWindowPos
+        current_stripped = current & ~Qt.WindowType.WindowStaysOnTopHint
+        if current_stripped == flags:
+            # Only AOT state may differ — handle via SetWindowPos
+            if self._always_on_top:
+                try:
+                    ctypes.windll.user32.SetWindowPos(
+                        int(self.winId()), -1, 0, 0, 0, 0, 0x0002 | 0x0001
+                    )
+                # TODO: BUG: Silent blanket exception handler swallows errors
+
+                except Exception:
+                    pass
+            return
         self.unregister_all_hotkeys()
         was_visible = self.isVisible()
         # setWindowFlags recreates the native window; the resulting
         # activation-change would trigger the click-out auto-hide and make
         # the toggle look broken. Suppress it until the dust settles.
-        self.ignore_focus_loss = True
+        self._increment_focus_lock()
         geo = self.geometry()
         # Anti-flashbang: the recreated native window first paints with the
         # default (white) background brush before the stylesheet kicks in.
@@ -2138,9 +2392,11 @@ class FastPrompter(
                     ctypes.windll.user32.SetWindowPos(
                         int(self.winId()), -1, 0, 0, 0, 0, 0x0002 | 0x0001
                     )
+                # TODO: BUG: Silent blanket exception handler swallows errors
+
                 except Exception:
                     pass
-        QTimer.singleShot(300, lambda: setattr(self, "ignore_focus_loss", False))
+        QTimer.singleShot(300, self._decrement_focus_lock)
         self.register_all_hotkeys()
         self.mark_dirty()
 
@@ -2295,11 +2551,11 @@ class FastPrompter(
         if dlg is None or sip.isdeleted(dlg):
             dlg = HelpDialog(self)
             self._help_dialog = dlg
-        self.ignore_focus_loss = True
+        self._increment_focus_lock()
         dlg.show()
         dlg.raise_()
         dlg.activateWindow()
-        QTimer.singleShot(300, lambda: setattr(self, "ignore_focus_loss", False))
+        QTimer.singleShot(300, self._decrement_focus_lock)
 
     def open_hotkey_settings(self):
         dlg = HotkeySettingsDialog(self)
@@ -2491,7 +2747,7 @@ class FastPrompter(
                 self.text_area.set_active_document(doc)
             self.text_area.blockSignals(False)
             self.editing_snippet = editing
-            self.btn_save.setText("Save Snippet")
+            self.btn_save.setText(tr("Save Snippet", getattr(self, "_current_lang", "EN")))
             theme_name = self.data.get("theme", "Default")
             if theme_name in THEMES:
                 self.btn_save.setStyleSheet(THEMES[theme_name].get("btn_save_snippet", ""))
@@ -2526,7 +2782,9 @@ class FastPrompter(
         import json
         import os
         import threading
-        def save():
+        u_copy = list(getattr(self, "data_undo_stack", []))
+        r_copy = list(getattr(self, "data_redo_stack", []))
+        def save(undo_data, redo_data):
             try:
                 db_path = getattr(self.state, "db_path", "")
                 if not db_path:
@@ -2534,13 +2792,13 @@ class FastPrompter(
                 undo_path = os.path.splitext(db_path)[0] + "_undo.json"
                 with open(undo_path, "w", encoding="utf-8") as f:
                     json.dump({
-                        "undo": getattr(self, "data_undo_stack", []),
-                        "redo": getattr(self, "data_redo_stack", [])
+                        "undo": undo_data,
+                        "redo": redo_data
                     }, f)
             except Exception as e:
                 from fastprompter.core.logging import logger
                 logger.error(f"Failed to save undo state: {e}")
-        threading.Thread(target=save, daemon=True).start()
+        threading.Thread(target=save, args=(u_copy, r_copy), daemon=True).start()
 
     def _load_undo_state(self):
         import json
@@ -2654,14 +2912,14 @@ class FastPrompter(
         try:
             reply = QMessageBox.question(
                 self,
-                "Confirm",
-                "App will restart. Proceed?",
+                tr("Confirm", self._current_lang),
+                tr("App will restart. Proceed?", self._current_lang),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
             if reply == QMessageBox.StandardButton.Yes:
                 db_path = self.state.db_path
                 if os.path.abspath(path) == os.path.abspath(db_path):
-                    QMessageBox.warning(self, "Error", "Source and destination are the same file.")
+                    QMessageBox.warning(self, tr("Error", self._current_lang), tr("Source and destination are the same file.", self._current_lang))
                     return
                 if self.state.conn:
                     self.state.conn.close()
@@ -2679,7 +2937,7 @@ class FastPrompter(
                             traceback.print_exc()
                 self.quit_app()
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to restore backup:\n{e}")
+            QMessageBox.critical(self, tr("Error", self._current_lang), tr("Failed to restore backup:\n{}", self._current_lang).format(e))
             self.state.init_db()
             self.conn = self.state.conn
         finally:
@@ -2852,7 +3110,7 @@ class FastPrompter(
         self.play_sound("new")
         if len(self.data["cats_order"]) >= 5:
             QMessageBox.information(
-                self, "Tab Limit", "Maximum of 5 tabs/projects. Remove one first."
+                self, tr("Tab Limit", self._current_lang), tr("Maximum of 5 tabs/projects. Remove one first.", self._current_lang)
             )
             return
         self.ignore_focus_loss = True
@@ -2880,8 +3138,8 @@ class FastPrompter(
         try:
             reply = QMessageBox.question(
                 self,
-                "Delete Tab",
-                f"Nuke '{cat}' and all snippets?",
+                tr("Delete Tab", self._current_lang),
+                tr("Nuke '{}' and all snippets?", self._current_lang).format(cat),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
         finally:
@@ -3064,6 +3322,8 @@ class FastPrompter(
 
         try:
             scale = float(self.data.get("ui_scale", "1.0"))
+        # TODO: BUG: Silent blanket exception handler swallows errors
+
         except Exception:
             scale = 1.0
 
@@ -3164,6 +3424,8 @@ class FastPrompter(
 
         try:
             scale = float(self.data.get("ui_scale", "1.0"))
+        # TODO: BUG: Silent blanket exception handler swallows errors
+
         except Exception:
             scale = 1.0
         font_family = self.data.get("font_family", "Verdana")
@@ -3267,6 +3529,8 @@ class FastPrompter(
 
                 try:
                     pinned = ast.literal_eval(pinned)
+                # TODO: BUG: Silent blanket exception handler swallows errors
+
                 except Exception:
                     pinned = []
             total = len(presets)
@@ -3460,6 +3724,8 @@ class FastPrompter(
 
         try:
             scale = float(self.data.get("ui_scale", "1.0"))
+        # TODO: BUG: Silent blanket exception handler swallows errors
+
         except Exception:
             scale = 1.0
         font_family = self.data.get("font_family", "Verdana")
@@ -3472,6 +3738,8 @@ class FastPrompter(
 
             try:
                 pinned_list = ast.literal_eval(pinned_list)
+            # TODO: BUG: Silent blanket exception handler swallows errors
+
             except Exception:
                 pinned_list = []
         # Compute display order: pinned first (pin order), then unpinned by
@@ -3524,6 +3792,8 @@ class FastPrompter(
                 first_unpinned_ui_index = i
 
             text = (raw[:100] if len(raw) > 100 else raw).replace("\n", " ").strip()
+            if text.startswith("#"):
+                text = text[1:].lstrip()
 
             if is_child:
                 parent_idx = child_of[slot_idx]
@@ -3559,7 +3829,12 @@ class FastPrompter(
                 self.data.get("bold_hash_titles", "True") == "True"
                 and raw.lstrip().startswith("#")
             )
-            btn.update_data(label, slot_idx, bg_color, font_family, scale, line_count_str=line_str, is_pushed=is_active, title_bold=title_bold, is_child=is_child, fcount=fcount, has_children=len(kids)>0, is_collapsed=slot_idx in collapsed)
+            has_hash = raw.lstrip().startswith("#")
+            silo_colors = self.data.get("silo_colors", {})
+            if not isinstance(silo_colors, dict):
+                silo_colors = {}
+            color_hex = silo_colors.get(str(slot_idx), "") if has_hash else ""
+            btn.update_data(label, slot_idx, bg_color, font_family, scale, line_count_str=line_str, is_pushed=is_active, title_bold=title_bold, is_child=is_child, fcount=fcount, has_children=len(kids)>0, is_collapsed=slot_idx in collapsed, has_hash=has_hash, color_hex=color_hex)
 
         if show_gap and first_unpinned_ui_index != -1:
             # layout contains the buttons, so insertWidget at first_unpinned_ui_index puts it before that button
@@ -3612,13 +3887,15 @@ class FastPrompter(
                 import ast
                 try:
                     pinned_list = ast.literal_eval(pinned_list)
+                # TODO: BUG: Silent blanket exception handler swallows errors
+
                 except Exception:
                     pinned_list = []
             if idx in pinned_list:
-                menu.addAction("📌 Unpin", lambda i=idx: self._toggle_pin_silo(i))
+                menu.addAction(tr("📌 Unpin", getattr(self, "_current_lang", "EN")), lambda i=idx: self._toggle_pin_silo(i))
             else:
-                menu.addAction("📌 Pin to Top", lambda i=idx: self._toggle_pin_silo(i))
-            menu.addAction("📥 Archive", lambda i=idx: self.archive_single_silo(i))
+                menu.addAction(tr("📌 Pin to Top", getattr(self, "_current_lang", "EN")), lambda i=idx: self._toggle_pin_silo(i))
+            menu.addAction(tr("📥 Archive", getattr(self, "_current_lang", "EN")), lambda i=idx: self.archive_single_silo(i))
             kids = self._children_map().get(idx, [])
             if kids:
                 collapsed_now = idx in self.data.get("silo_collapsed", [])
@@ -3626,21 +3903,21 @@ class FastPrompter(
                     "▾ Expand Children" if collapsed_now else f"▸ Collapse Children ({len(kids)})",
                     lambda i=idx: self.toggle_silo_collapse(i))
             if self.silo_parent_of(idx) is not None:
-                menu.addAction("⬆ Un-nest from Parent",
+                menu.addAction(tr("⬆ Un-nest from Parent", getattr(self, "_current_lang", "EN")),
                                lambda i=idx: (self.unnest_silo(i), self.refresh_temp_presets()))
-        menu.addAction("📁 Files…", lambda i=idx, a=is_archive: self.open_file_container(i, a))
+        menu.addAction(tr("📁 Files…", getattr(self, "_current_lang", "EN")), lambda i=idx, a=is_archive: self.open_file_container(i, a))
 
         # -- save ---------------------------------------------------------------
         if cur:
             menu.addSeparator()
-            menu.addAction("💾 Save text as Snippet", self.save_snippet)
-            menu.addAction("💾 Save as Snippet #…", self.save_snippet_as_number)
+            menu.addAction(tr("💾 Save text as Snippet", getattr(self, "_current_lang", "EN")), self.save_snippet)
+            menu.addAction(tr("💾 Save as Snippet #…", getattr(self, "_current_lang", "EN")), self.save_snippet_as_number)
 
         # -- destructive (middle-click already trashes a silo directly) -------
         if has_content:
             menu.addSeparator()
-            menu.addAction("🧹 Clear", lambda: self.clear_temp(idx, is_archive))
-            menu.addAction("🗂 Open Trash Folder", self.open_trash_folder)
+            menu.addAction(tr("🧹 Clear", getattr(self, "_current_lang", "EN")), lambda: self.clear_temp(idx, is_archive))
+            menu.addAction(tr("🗂 Open Trash Folder", getattr(self, "_current_lang", "EN")), self.open_trash_folder)
 
         menu.addSeparator()
         # Transfer to Snippet
@@ -3649,7 +3926,7 @@ class FastPrompter(
         )
         if idx < len(presets_list) and presets_list[idx] and presets_list[idx].strip():
             menu.addAction(
-                "➡ Transfer to Snippet",
+                tr("➡ Transfer to Snippet", getattr(self, "_current_lang", "EN")),
                 lambda i=idx, a=is_archive: self._transfer_to_snippet(i, a),
             )
             transfer_menu = menu.addMenu("➡ Transfer to Project")
@@ -3661,11 +3938,11 @@ class FastPrompter(
                     lambda i=idx, a=is_archive, c=cat_name: self._transfer_to_snippet(i, a, target_cat=c),
                 )
             menu.addAction(
-                "⬆ Move to Top",
+                tr("⬆ Move to Top", getattr(self, "_current_lang", "EN")),
                 lambda i=idx, a=is_archive: self._move_silo_to_top(i, a),
             )
             menu.addAction(
-                "⬇ Move to Bottom",
+                tr("⬇ Move to Bottom", getattr(self, "_current_lang", "EN")),
                 lambda i=idx, a=is_archive: self._move_silo_to_bottom(i, a),
             )
 
@@ -3807,11 +4084,9 @@ class FastPrompter(
             return
         box = QMessageBox(self)
         box.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
-        box.setWindowTitle("Merge files")
+        box.setWindowTitle(tr("Merge files", self._current_lang))
         box.setText(
-            f"The nested silo owns {len(names)} file(s).\n"
-            "Merge them into the parent silo's Files?\n"
-            "(collisions get ' (2)' names — nothing is overwritten)")
+            tr("The nested silo owns {} file(s).\nMerge them into the parent silo's Files?\n(collisions get ' (2)' names — nothing is overwritten)", self._current_lang).format(len(names)))
         box.setStandardButtons(
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         box.setDefaultButton(QMessageBox.StandardButton.Yes)
@@ -4017,6 +4292,12 @@ class FastPrompter(
         add_shortcut("hk_find", "Ctrl+F", self.show_find)
         add_shortcut("hk_replace", "Ctrl+H", self.show_replace)
         add_shortcut("hk_export_silo", "Ctrl+Shift+S", self.save_silo_to_file)
+        
+        # Previously global hotkeys, now local to app window
+        add_shortcut("lock_window_hotkey", "Alt+S", self.toggle_lock)
+        add_shortcut("always_on_top_hotkey", "Alt+E", self.toggle_always_on_top)
+        add_shortcut("toggle_sidebar_hotkey", "Alt+D", lambda: self.toggle_visibility(force_sidebar=True))
+        add_shortcut("hide_on_clickout_hotkey", "Alt+A", self.toggle_hide_on_clickout)
 
         shortcut = QShortcut(QKeySequence("Esc"), self)
         shortcut.activated.connect(self._on_escape)
@@ -4049,6 +4330,15 @@ class FastPrompter(
             add_fixed(f"F{i}", lambda i=i: self.fire_shortcut(i))
             add_fixed(f"Ctrl+{key_num}", lambda i=i: self._switch_to_slot(i - 1))
             add_fixed(f"Ctrl+Shift+{key_num}", lambda i=i: self.fire_shortcut(i))
+        
+        # Previously global snippet/silo hotkeys, now local to app window
+        for i in range(5):
+            seq_str = self.data.get(f"snippet_{i}_hotkey", f"Ctrl+Shift+Numpad{i + 1}")
+            if seq_str:
+                add_fixed(seq_str, lambda i=i: self.fire_global_snippet(i))
+            seq_str = self.data.get(f"silo_{i}_hotkey", f"Alt+Shift+Numpad{i + 1}")
+            if seq_str:
+                add_fixed(seq_str, lambda i=i: self.fire_global_silo(i))
 
     def fire_shortcut(self, idx):
         self.play_sound("snippet")
@@ -4154,7 +4444,6 @@ class FastPrompter(
     def refresh_timestamp_in_block(self, block):
         """Replace a line's (DD.MM - hh:mm) stamp with right now — used by
         the inline refresh glyph painted after stamped lines."""
-        import datetime
 
         from fastprompter.ui.editor import TS_STAMP_LINE_RE
         m = TS_STAMP_LINE_RE.search(block.text())
@@ -4190,8 +4479,8 @@ class FastPrompter(
         if getattr(self, "_initializing_ui", False) or getattr(self, "editing_snippet", None):
             return
         from fastprompter.ui.file_container import silo_slug
-        first_nl = self.text_area.toPlainText()
-        first = first_nl[:first_nl.index("\n")] if "\n" in first_nl else first_nl
+        doc = self.text_area.document()
+        first = doc.firstBlock().text() if doc.blockCount() > 0 else ""
         new_slug = silo_slug(first)
         old_slug = getattr(self, "_active_silo_slug", None)
         if old_slug is None or new_slug == old_slug:
@@ -4317,11 +4606,15 @@ class FastPrompter(
         try:
             if hasattr(self, "ipc"):
                 self.ipc.close()
+        # TODO: BUG: Silent blanket exception handler swallows errors
+
         except Exception:
             pass
         try:
             if hasattr(self, "conn") and self.conn:
                 self.conn.close()
+        # TODO: BUG: Silent blanket exception handler swallows errors
+
         except Exception:
             pass
         # Null out every reference so the closeEvent save triggered by
@@ -4332,6 +4625,8 @@ class FastPrompter(
         try:
             if hasattr(self, "tray_icon"):
                 self.tray_icon.hide()
+        # TODO: BUG: Silent blanket exception handler swallows errors
+
         except Exception:
             pass
         QApplication.quit()
@@ -4349,6 +4644,8 @@ def setup_exception_hook():
         try:
             with open(crash_log, "a") as f:
                 f.write(error_msg + chr(10))
+        # TODO: BUG: Silent blanket exception handler swallows errors
+
         except Exception:
             pass
         ctypes.windll.user32.MessageBoxW(

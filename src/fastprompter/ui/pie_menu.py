@@ -76,8 +76,9 @@ class QuickListWidget(QWidget):
             btn.clicked.connect(lambda checked, c=cat: self.switch_cat(c))
             self.cat_layout.addWidget(btn)
 
-        snippets = [s for s in self.main_win.data["categories"].get(self.current_cat, []) if s is not None][:10]
-        for i, snip in enumerate(snippets):
+        snippets = [(i, s) for i, s in enumerate(self.main_win.data["categories"].get(self.current_cat, [])) if s is not None][:10]
+        for idx, snip in snippets:
+            i = idx
             btn = QPushButton(snip.get("name", "")[:20])
             btn.setFixedSize(max(120, int(160 * scale)), max(20, int(24 * scale)))
             btn.setStyleSheet(f"QPushButton {{ background-color: {bg}; color: {fg}; border: 1px solid {border}; border-radius: 2px; font-size: {snip_font}px; font-weight: bold; text-align: left; padding-left: 6px; }} QPushButton:hover {{ background-color: {hover_bg}; color: {hover_fg}; border: 1px solid {fg}; }}")
@@ -96,7 +97,8 @@ class QuickListWidget(QWidget):
 
     def on_click(self, cat, idx):
         self.close()
-        QTimer.singleShot(50, lambda: not sip.isdeleted(self.main_win) and self.main_win.fire_global_snippet_from_cat(cat, idx))
+        main_win = self.main_win
+        QTimer.singleShot(50, lambda: not sip.isdeleted(main_win) and main_win.fire_global_snippet_from_cat(cat, idx))
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Escape: self.close()

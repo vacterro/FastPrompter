@@ -1,3 +1,4 @@
+from fastprompter.core.translations import tr
 """Theme mixin for FastPrompter — theme switching, font management, and preview modes.
 
 Extracted from main.py Phase 3 of the modularization plan.
@@ -41,6 +42,8 @@ class ThemeMixin:
             if isinstance(raw, str):
                 try:
                     parsed = ast.literal_eval(raw)
+                # TODO: BUG: Silent blanket exception handler swallows errors
+
                 except Exception:
                     parsed = {}
             else:
@@ -154,11 +157,15 @@ class ThemeMixin:
             return
         try:
             base_size = self._font_size
+        # TODO: BUG: Silent blanket exception handler swallows errors
+
         except Exception:
             base_size = 11
         font_name = self._font_family
         try:
             scale = self._ui_scale
+        # TODO: BUG: Silent blanket exception handler swallows errors
+
         except Exception:
             scale = 1.0
         font_size = max(8, int(round(base_size * scale)))
@@ -204,18 +211,20 @@ class ThemeMixin:
 
         font_id = QFontDatabase.addApplicationFont(path)
         if font_id < 0:
-            QMessageBox.warning(self, "Load Font", f"Failed to load font: {path}")
+            QMessageBox.warning(self, tr("Load Font", getattr(self, "_current_lang", "EN")), tr("Failed to load font: {}", getattr(self, "_current_lang", "EN")).format(path))
             return
 
         families = QFontDatabase.applicationFontFamilies(font_id)
         if not families:
-            QMessageBox.warning(self, "Load Font", "Font loaded but no font families found.")
+            QMessageBox.warning(self, tr("Load Font", getattr(self, "_current_lang", "EN")), tr("Font loaded but no font families found.", getattr(self, "_current_lang", "EN")))
             return
 
         loaded = self.data.get("custom_font_ids", [])
         if isinstance(loaded, str):
             try:
                 loaded = json.loads(loaded)
+            # TODO: BUG: Silent blanket exception handler swallows errors
+
             except Exception:
                 loaded = []
         loaded.append(font_id)
@@ -226,7 +235,7 @@ class ThemeMixin:
                 self.font_combo.addItem(family)
 
         self.font_combo.setCurrentText(families[0])
-        QMessageBox.information(self, "Font Loaded", f"Loaded: {families[0]}")
+        QMessageBox.information(self, tr("Font Loaded", getattr(self, "_current_lang", "EN")), tr("Loaded: {}", getattr(self, "_current_lang", "EN")).format(families[0]))
 
     def clear_custom_fonts(self):
         """Remove all custom fonts from the combobox, reset to built-in list."""

@@ -112,7 +112,6 @@ class FormattingMixin:
     def toggle_header_line(self):
         """Ctrl+E: Toggle `# ` header + `**` bold markers (persists across sessions)."""
         cursor = self.text_area.textCursor()
-        cursor.beginEditBlock()
 
         pos_in_block = cursor.positionInBlock()
         block = cursor.block()
@@ -160,7 +159,6 @@ class FormattingMixin:
     def apply_bold_smart(self):
         """Ctrl+B: Bold selected text. If nothing selected, bold/unbold entire current line."""
         cursor = self.text_area.textCursor()
-        cursor.beginEditBlock()
         if not cursor.hasSelection():
             # Select whole current line
             cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
@@ -169,12 +167,10 @@ class FormattingMixin:
             )
             self.text_area.setTextCursor(cursor)
         self.apply_format("bold")
-        cursor.endEditBlock()
 
     def toggle_bullet_conversion(self):
         """Toggle between bullet (•) and dash (-) list markers on selected text."""
         cursor = self.text_area.textCursor()
-        cursor.beginEditBlock()
         if cursor.hasSelection():
             text = cursor.selectedText().replace("\u2029", "\n")
         else:
@@ -228,7 +224,6 @@ class FormattingMixin:
         while returning the cursor to the exact original position.
         """
         cursor = self.text_area.textCursor()
-        cursor.beginEditBlock()
         original_pos = cursor.position()
         cursor.insertText("\n\n\n\n\n---\n")
         cursor.setPosition(original_pos)
@@ -244,7 +239,6 @@ class FormattingMixin:
         """
         before, after = self.divider_counts()
         cursor = self.text_area.textCursor()
-        cursor.beginEditBlock()
         block = cursor.block()
         if cursor.positionInBlock() > 0 or block.text().strip():
             cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock)
@@ -310,7 +304,7 @@ class FormattingMixin:
                         r'<code style="background:#1a1a1a;padding:0 2px;color:#e06c75">\1</code>',
                         content,
                     )
-                    content = _RE_LINK.sub(r'<a href="\2" style="color:#61afef">\1</a>', content)
+                    content = _RE_LINK.sub(lambda m: f'<a href="{__import__("html").unescape(m.group(2))}" style="color:#61afef">{m.group(1)}</a>', content)
                     html_lines.append(f"<li style='margin:1px 0'>{content}</li>")
                 else:
                     line_text = line
@@ -322,7 +316,7 @@ class FormattingMixin:
                         line_text,
                     )
                     line_text = _RE_LINK.sub(
-                        r'<a href="\2" style="color:#61afef">\1</a>',
+                        lambda m: f'<a href="{__import__("html").unescape(m.group(2))}" style="color:#61afef">{m.group(1)}</a>',
                         line_text,
                     )
                     html_lines.append(
@@ -338,17 +332,20 @@ class FormattingMixin:
         """Reset text formatting to base font with plain style."""
         self.sound_manager.play("clear")
         cursor = self.text_area.textCursor()
-        cursor.beginEditBlock()
 
         clean_format = QTextCharFormat()
         clean_format.setFontStyleStrategy(QFont.StyleStrategy.NoAntialias | QFont.StyleStrategy.NoSubpixelAntialias)
         try:
             base_size = self._font_size
+        # TODO: BUG: Silent blanket exception handler swallows errors
+
         except Exception:
             base_size = 11
         font_name = self._font_family
         try:
             scale = self._ui_scale
+        # TODO: BUG: Silent blanket exception handler swallows errors
+
         except Exception:
             scale = 1.0
         font_size = max(8, int(round(base_size * scale)))
@@ -365,6 +362,7 @@ class FormattingMixin:
         clean_format.setFontUnderline(False)
         clean_format.setFontStrikeOut(False)
 
+        self.text_area.blockSignals(True)
         try:
             if cursor.hasSelection():
                 raw_text = cursor.selectedText().replace("\u2029", "\n")
