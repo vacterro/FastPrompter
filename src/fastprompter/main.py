@@ -506,6 +506,32 @@ class FastPrompter(
                 return t
         return None
 
+    def _toolbar_gap(self, i):
+        """Reusable expanding gap widget for the i-th <stretch>. Real widget
+        (not a bare spacer) so it's a visible, droppable zone in customize
+        mode — the user can see exactly where the flexible fill lives."""
+        gaps = getattr(self, "_toolbar_gaps", None)
+        if gaps is None:
+            gaps = self._toolbar_gaps = []
+        while len(gaps) <= i:
+            g = QWidget(self.header_widget)
+            g.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+            g.setMinimumWidth(6)
+            g._is_toolbar_gap = True
+            gaps.append(g)
+        return gaps[i]
+
+    def _style_toolbar_gaps(self, on):
+        for g in getattr(self, "_toolbar_gaps", []):
+            if on:
+                g.setStyleSheet(
+                    "border: 1px dashed #C0A060; border-radius: 0; margin: 3px 2px;")
+                g.setToolTip(tr("Flexible gap — drop buttons on either side to "
+                                "change which zone they sit in", getattr(self, "_current_lang", "EN")))
+            else:
+                g.setStyleSheet("")
+                g.setToolTip("")
+
     def apply_toolbar_order(self, save=False):
         """Rebuild the header layout from the saved token order. Index 0
         (sidebar toggle) is the fixed anchor and is never moved."""
@@ -516,13 +542,19 @@ class FastPrompter(
             if w is not None:
                 w.setParent(self.header_widget)
         order = self._toolbar_order_list()
+        stretch_i = 0
         for tok in order:
             if tok == "<stretch>":
-                lay.addStretch(1)
+                lay.addWidget(self._toolbar_gap(stretch_i))
+                stretch_i += 1
                 continue
             w = self._toolbar_widget_for(tok)
             if w is not None:
                 lay.addWidget(w)
+        # reset button is a fixed trailing control, never part of the order
+        if hasattr(self, "btn_toolbar_reset"):
+            lay.addWidget(self.btn_toolbar_reset)
+        self._style_toolbar_gaps(self.data.get("customize_toolbar", "False") == "True")
         if save:
             self.data["toolbar_order"] = ",".join(order)
             self.mark_dirty()
@@ -532,30 +564,38 @@ class FastPrompter(
             self._header_dense = None
             self._apply_header_density()
 
+    def _toolbar_seq_token(self, w):
+        """Token for any header widget: button id, '<sep>', or '<stretch>'."""
+        if getattr(w, "_is_toolbar_gap", False):
+            return "<stretch>"
+        if w is getattr(self, "_counter_sep", None):
+            return "<sep>"
+        return self.toolbar_token_of(w)
+
     def reorder_toolbar_token(self, token, drop_x):
-        """Move `token` to wherever `drop_x` (header-local px) points, then
-        persist + rebuild. Spacers/sep stay put so zones survive."""
-        order = self._toolbar_order_list()
-        if token not in order:
-            return
-        # current on-screen centre-x of each non-dragged movable widget
-        target = None
+        """Rebuild the whole order from the current left-to-right layout with
+        `token` reinserted at drop_x. Because gaps are real widgets now, the
+        visual sequence IS the order — unambiguous even with two stretches."""
+        seq = []
         for i in range(1, self.header_layout.count()):
             w = self.header_layout.itemAt(i).widget()
             if w is None:
                 continue
-            tok = self.toolbar_token_of(w)
-            if tok is None or tok == token:
+            t = self._toolbar_seq_token(w)
+            if t is None:
                 continue
-            if drop_x < w.x() + w.width() / 2:
-                target = tok
+            cx = w.x() + w.width() / 2
+            if self.toolbar_token_of(w) == token:  # the dragged widget — skip
+                continue
+            seq.append((t, cx))
+        insert_at = len(seq)
+        for idx, (_t, cx) in enumerate(seq):
+            if drop_x < cx:
+                insert_at = idx
                 break
-        order.remove(token)
-        if target is not None and target in order:
-            order.insert(order.index(target), token)
-        else:
-            order.append(token)
-        self.data["toolbar_order"] = ",".join(order)
+        tokens = [t for t, _ in seq]
+        tokens.insert(insert_at, token)
+        self.data["toolbar_order"] = ",".join(tokens)
         self.apply_toolbar_order()
         self.mark_dirty()
 
@@ -565,7 +605,8 @@ class FastPrompter(
         self.refresh_toolbar_customize_state()
 
     def refresh_toolbar_customize_state(self):
-        """Install/refresh drag filters + cursors for the customize toggle."""
+        """Install/refresh drag filters + cursors for the customize toggle,
+        and show/hide the in-header Reset button + visible gaps."""
         on = self.data.get("customize_toolbar", "False") == "True"
         flt = getattr(self, "_toolbar_reorder_filter", None)
         for tok in self._toolbar_tokens():
@@ -579,6 +620,9 @@ class FastPrompter(
                 if on:
                     w.installEventFilter(flt)
             w.setCursor(Qt.CursorShape.SizeAllCursor if on else Qt.CursorShape.ArrowCursor)
+        self._style_toolbar_gaps(on)
+        if hasattr(self, "btn_toolbar_reset"):
+            self.btn_toolbar_reset.setVisible(on)
 
     def reset_toolbar_order(self):
         self.data["toolbar_order"] = ""
@@ -1043,6 +1087,15 @@ class FastPrompter(
         self.header_layout.addWidget(self.lbl_line_count)
         self.header_layout.addWidget(self.btn_settings_toggle)
         self.header_layout.addWidget(self.btn_help)
+
+        # Reset-layout button — a fixed trailing control, shown only while
+        # Customize Toolbar is on (re-added by apply_toolbar_order each rebuild)
+        self.btn_toolbar_reset = QPushButton("↺")
+        self.btn_toolbar_reset.setToolTip(tr("Reset the toolbar to its default order", getattr(self, "_current_lang", "EN")))
+        self.apply_button_size(self.btn_toolbar_reset, 20, 20)
+        self.btn_toolbar_reset.clicked.connect(self.reset_toolbar_order)
+        self.btn_toolbar_reset.setVisible(False)
+        self.header_layout.addWidget(self.btn_toolbar_reset)
         self.main_layout.addWidget(self.header_widget)
 
         # Apply any saved custom toolbar order, then arm drag-reorder
@@ -1294,8 +1347,10 @@ class FastPrompter(
         )
         self.cb_customize_toolbar = create_footer_cb(
             "🧩 Customize Toolbar",
-            "Drag the top-bar buttons to reorder them.\n"
-            "Right-click this text to reset to the default order.",
+            "Drag the top-bar buttons to reorder them. Dashed boxes are\n"
+            "flexible gaps — drop a button on either side to move it between\n"
+            "the left / centre / right zones. Use the ↺ button (or right-click\n"
+            "this text) to reset to the default order.",
             self.data.get("customize_toolbar", "False") == "True",
             self.on_customize_toolbar_toggled,
         )

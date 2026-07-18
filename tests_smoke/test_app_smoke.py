@@ -1835,9 +1835,47 @@ def test_customize_toolbar_toggle(win):
     assert win.data["customize_toolbar"] == "True"
     from PyQt6.QtCore import Qt
     assert win.btn_help.cursor().shape() == Qt.CursorShape.SizeAllCursor
+    # visible reset button + dashed gaps appear in customize mode
+    assert not win.btn_toolbar_reset.isHidden()
+    assert "dashed" in win._toolbar_gaps[0].styleSheet()
     win.on_customize_toolbar_toggled(False)
     assert win.data["customize_toolbar"] == "False"
     assert win.btn_help.cursor().shape() == Qt.CursorShape.ArrowCursor
+    assert win.btn_toolbar_reset.isHidden()
+    assert win._toolbar_gaps[0].styleSheet() == ""
+
+
+def test_toolbar_button_can_move_back_across_gaps(win):
+    def seq():
+        out = []
+        for i in range(1, win.header_layout.count()):
+            w = win.header_layout.itemAt(i).widget()
+            if w is None:
+                continue
+            t = win._toolbar_seq_token(w)
+            if t:
+                out.append(t)
+        return out
+
+    win.resize(1400, 600)
+    win.reset_toolbar_order()
+    base = seq()
+    assert base.count("<stretch>") == 2  # two visible flexible gaps
+
+    # drag a status-zone button into the far-left cluster (near NEW/Save)
+    win.reorder_toolbar_token("btn_help", 5)
+    s = seq()
+    assert s.index("btn_help") < s.index("<stretch>")  # left of the first gap
+
+    # …and bring it back to the centre zone (between the two gaps)
+    win.reorder_toolbar_token("btn_help", win.header_widget.width() // 2)
+    s = seq()
+    st = [i for i, t in enumerate(s) if t == "<stretch>"]
+    assert st[0] < s.index("btn_help") < st[1]  # now between the gaps
+
+    # the visible reset restores the default
+    win.reset_toolbar_order()
+    assert seq().index("btn_help") > 15
 
 
 def test_pinned_silo_shows_unpin_button_no_prefix(win):
