@@ -301,8 +301,6 @@ class VaultTextEdit(QTextEdit):
             return None
         cur = QTextCursor(block)
         cur.movePosition(QTextCursor.MoveOperation.EndOfBlock)
-        if block.length() > 1:
-            cur.movePosition(QTextCursor.MoveOperation.Left)
         r = self.cursorRect(cur)
         size = max(16, r.height())
         return QRect(r.right() + 8, r.top() + (r.height() - size) // 2, size + 2, size)
