@@ -2835,7 +2835,19 @@ class FastPrompter(
                 return
             redo_state = self._snapshot_current()
             self.data_redo_stack.append(redo_state)
-            if len(self.data_redo_stack) > 50:
+            
+            MAX_CHARS = 20_000_000
+            while len(self.data_redo_stack) > 50:
+                self.data_redo_stack.pop(0)
+                
+            def _get_size(st):
+                size = 0
+                for d in (st.get("temp_presets", {}), st.get("archive_temp_presets", {})):
+                    for cats in d.values():
+                        size += sum(len(txt) for txt in cats if txt)
+                return size
+
+            while len(self.data_redo_stack) > 1 and sum(_get_size(s) for s in self.data_redo_stack) > MAX_CHARS:
                 self.data_redo_stack.pop(0)
             self._apply_data_state(state)
             self.play_sound("tick")
@@ -3028,7 +3040,20 @@ class FastPrompter(
         if self.data_undo_stack and self.data_undo_stack[-1] == state:
             return
         self.data_undo_stack.append(state)
-        if len(self.data_undo_stack) > 50:
+        
+        # Enforce caps (50 items max, ~20MB max)
+        MAX_CHARS = 20_000_000
+        while len(self.data_undo_stack) > 50:
+            self.data_undo_stack.pop(0)
+            
+        def _get_size(st):
+            size = 0
+            for d in (st.get("temp_presets", {}), st.get("archive_temp_presets", {})):
+                for cats in d.values():
+                    size += sum(len(txt) for txt in cats if txt)
+            return size
+
+        while len(self.data_undo_stack) > 1 and sum(_get_size(s) for s in self.data_undo_stack) > MAX_CHARS:
             self.data_undo_stack.pop(0)
         self.data_redo_stack.clear()
         # Lets Ctrl+Z pick data undo over text undo when this action is newer

@@ -47,7 +47,7 @@
 | T-165 | DONE | antigravity | - | `state.py` backup block: `dest_conn` created outside `with` block, could leak connection if backup fails before `dest_conn.close()` |
 | T-166 | DONE | antigravity | - | `main.py` `hide_and_save()` does full `save_data_to_db(force=True)` synchronously — slow I/O blocks the hide animation |
 | T-167 | DONE | antigravity | - | `_update_visible_silo_count()` uses first visible button height — if all buttons hidden during init, estimate defaults to 24px which may be wrong |
-| T-168 | TODO | antigravity | - | `data_undo_stack` has no memory cap: undo entries grow unbounded, large silo texts could cause OOM over long sessions |
+| T-168 | DONE | antigravity | - | `data_undo_stack` has no memory cap: undo entries grow unbounded, large silo texts could cause OOM over long sessions |
 | T-169 | DONE | antigravity | - | `main.py` `btn_bullet_toggle.setToolTip(...)` hardcodes `ON`/`OFF` state without tr() wrapper — untranslated when lang=RU |
 | T-170 | TODO | antigravity | - | `editor.py` `VaultTextEdit.keyPressEvent` handles Ctrl+C/Ctrl+V with potential nested `setTextCursor` mismatch after `_delete_selected_text_block()` |
 | T-171 | DONE | antigravity | - | `file_container.py` `_cache` (thumb_cache) grows unbounded — no cleanup when silo changes, stale entries accumulate |
