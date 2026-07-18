@@ -143,7 +143,8 @@ class HeaderFormatDialog(QDialog):
                  else "Evening" if 17 <= h < 22 else "Night")
         d = self.main_win.data
         m_fmt = "%d %b" if d.get("date_text_month", "False") == "True" else "%d.%m"
-        ts = now.strftime(f"{m_fmt} - %H:%M")
+        t_fmt = self.main_win._clock_time_fmt()
+        ts = now.strftime(f"{m_fmt} - {t_fmt}")
         if "{state}" in template:
             time_str = ts
         else:

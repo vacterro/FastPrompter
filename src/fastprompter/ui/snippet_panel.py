@@ -453,7 +453,7 @@ class DraggableSiloButton(QWidget):
 
         self._btn_files = QPushButton("📁")
         self._btn_files.setFixedSize(16, 16)
-        self._btn_files.setToolTip(tr("Files: drop/drag/preview assets for this silo", getattr(self.main_win, "_current_lang", "EN")))
+        self._btn_files.setToolTip(tr("Files: drop/drag/preview assets for this silo\n(Shift+Click: Project Config)", getattr(self.main_win, "_current_lang", "EN")))
         self._btn_files.setCursor(Qt.CursorShape.PointingHandCursor)
         self._btn_files.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
         self._btn_files.setStyleSheet("background: transparent; border: none; padding: 0; font-size: 11px;")
@@ -565,12 +565,17 @@ class DraggableSiloButton(QWidget):
             self.main_win.archive_single_silo(self.global_idx)
 
     def _on_files_clicked(self):
-        """Open the per-silo file container drawer."""
+        """Open the per-silo file container drawer or settings."""
         from PyQt6.QtWidgets import QApplication
+        from PyQt6.QtCore import Qt
         mods = QApplication.keyboardModifiers()
         if mods & Qt.KeyboardModifier.ControlModifier:
             if hasattr(self.main_win, 'backup_silo_to_files'):
                 self.main_win.backup_silo_to_files(self.global_idx, is_archive=self.is_archive)
+            return
+        if mods & Qt.KeyboardModifier.ShiftModifier:
+            if hasattr(self.main_win, 'open_silo_settings'):
+                self.main_win.open_silo_settings(self.global_idx)
             return
 
         if hasattr(self.main_win, 'open_file_container'):
@@ -627,7 +632,7 @@ class DraggableSiloButton(QWidget):
                 self._btn_tick.setText("✅")
                 self._btn_tick.show()
             self._lbl_count.hide()
-            self._btn_files.setToolTip(tr("Files: drop/drag/preview assets for this silo", getattr(self.main_win, "_current_lang", "EN")))
+            self._btn_files.setToolTip(tr("Files: drop/drag/preview assets for this silo\n(Shift+Click: Project Config)", getattr(self.main_win, "_current_lang", "EN")))
         else:
             self._btn_pin.hide()
             self._btn_archive.hide()

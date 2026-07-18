@@ -173,6 +173,8 @@ class FastPrompter(
         self.state = FastPrompterState()
         self.data = self.state.data
         self.conn = self.state.conn
+        import threading
+        self._undo_save_lock = threading.Lock()
         self._load_undo_state()
         self.sound_manager = SoundManager(self, self.data)
         self._theme_cache, self._theme_cache_name = THEMES["Default"], None
@@ -242,6 +244,25 @@ class FastPrompter(
             coll_all[first_cat] = [int(x) for x in self.data["silo_collapsed"]]
         self.data["silo_collapsed_all"] = coll_all
         self.data["silo_collapsed"] = coll_all.setdefault(first_cat, [])
+        # Per-slot project folder/executable links per category. This alias
+        # was missing at boot (only wired in on_tab_changed), so on any
+        # session where the user never switched tabs, saved paths lived in
+        # the flat key only; the moment a tab switch DID happen it got
+        # clobbered by the still-empty _all store -> "unreliable" paths.
+        ppall = self.data.get("silo_project_paths_all")
+        if not isinstance(ppall, dict):
+            ppall = {}
+        if not ppall and isinstance(self.data.get("silo_project_paths"), dict) and self.data["silo_project_paths"]:
+            ppall[first_cat] = self.data["silo_project_paths"]
+        self.data["silo_project_paths_all"] = ppall
+        self.data["silo_project_paths"] = ppall.setdefault(first_cat, {})
+        apall = self.data.get("archive_project_paths_all")
+        if not isinstance(apall, dict):
+            apall = {}
+        if not apall and isinstance(self.data.get("archive_project_paths"), dict) and self.data["archive_project_paths"]:
+            apall[first_cat] = self.data["archive_project_paths"]
+        self.data["archive_project_paths_all"] = apall
+        self.data["archive_project_paths"] = apall.setdefault(first_cat, {})
 
         self._current_lang = get_language(self.data)
         self.init_ui()
@@ -268,6 +289,13 @@ class FastPrompter(
 
         self.place_window()
 
+    def _clock_time_fmt(self, show_secs=False):
+        """strftime format for hh:mm[:ss], honoring the 12h/AM-PM setting."""
+        ampm = self.data.get("date_ampm", "False") == "True"
+        if ampm:
+            return "%I:%M:%S %p" if show_secs else "%I:%M %p"
+        return "%H:%M:%S" if show_secs else "%H:%M"
+
     def _update_date_label(self):
         if hasattr(self, "analog_clock"):
             self.analog_clock.sync()
@@ -284,20 +312,18 @@ class FastPrompter(
         show_secs = self.data.get("date_seconds", "True") == "True"
         show_word = self.data.get("date_daypart", "True") == "True"
         text_month = self.data.get("date_text_month", "False") == "True"
+        ampm = self.data.get("date_ampm", "False") == "True"
         if getattr(self, "_header_ultra", False):
             # portrait sliver: the clock keeps only DD.MM - hh:mm
             show_secs = show_word = text_month = False
-        elif getattr(self, "_header_dense", False):
-            # dense (Ctrl+Q quarter): numeric month is narrower than "MMM",
-            # so the full clock (secs + day word) still fits the 960px snap
-            text_month = False
         m_fmt = "%d %b" if text_month else "%d.%m"
+        t_fmt = self._clock_time_fmt(show_secs)
+        dt_str = now.strftime(f"{m_fmt} - {t_fmt}")
+        ampm_ref = " PM" if ampm else ""
         if show_secs:
-            dt_str = now.strftime(f"{m_fmt} - %H:%M:%S")
-            ref_str = "00 MMM - 00:00:00" if text_month else "00.00 - 00:00:00"
+            ref_str = ("00 MMM - 00:00:00" if text_month else "00.00 - 00:00:00") + ampm_ref
         else:
-            dt_str = now.strftime(f"{m_fmt} - %H:%M")
-            ref_str = "00 MMM - 00:00" if text_month else "00.00 - 00:00"
+            ref_str = ("00 MMM - 00:00" if text_month else "00.00 - 00:00") + ampm_ref
         if show_word:
             use_emoji = self.data.get("date_emoji", "False") == "True"
             if use_emoji:
@@ -312,7 +338,7 @@ class FastPrompter(
         f = QFont(self.lbl_date.font())
         f.setPixelSize(11)  # the app stylesheet renders 11px regardless of QFont
         fm = QFontMetrics(f)
-        pad = 2 if getattr(self, "_header_dense", False) else 8
+        pad = 0 if getattr(self, "_header_dense", False) else 8
         needed_width = fm.horizontalAdvance(ref_str) + pad
         if self.lbl_date.minimumWidth() != needed_width:
             self.lbl_date.setMinimumWidth(needed_width)
@@ -433,6 +459,9 @@ class FastPrompter(
                 self.lbl_line_count.setStyleSheet(
                     "padding: 0 1px; font-weight: bold;" if dense
                     else "padding: 0 4px; font-weight: bold;")
+            if hasattr(self, "_counter_sep"):
+                # a couple spare px for the date widget's text-month growth
+                self._counter_sep.setFixedSize(1 if dense else 3, 16)
         if flipped or getattr(self, "_last_density_width", None) != w:
             self._last_density_width = w
             self._update_date_label()
@@ -484,6 +513,9 @@ class FastPrompter(
         stale/partial value can never drop or duplicate a button."""
         default = self._toolbar_tokens()
         raw = (self.data.get("toolbar_order") or "").strip()
+        # Migrate old btn_launcher by removing it
+        if "btn_launcher" in raw:
+            raw = raw.replace("btn_launcher", "")
         saved = [t for t in raw.split(",") if t]
         valid, seen = [], set()
         # keep saved tokens that are still real; drop unknowns/dupes
@@ -673,10 +705,11 @@ class FastPrompter(
         presets = self.data.get("archive_temp_presets" if is_archive else "temp_presets", [])
         text = presets[slot_idx] if 0 <= slot_idx < len(presets) else ""
         base = silo_slug(text)
-        if is_archive:
-            return base
         cat = self.get_current_category()
-        fmap = self.data.setdefault("silo_folders", {})
+        if is_archive:
+            fmap = self.data.setdefault("archive_silo_folders", {})
+        else:
+            fmap = self.data.setdefault("silo_folders", {})
         key = str(slot_idx)
         if key in fmap and fmap[key]:
             # keep the assigned name, but follow a genuine retitle when the
@@ -730,7 +763,7 @@ class FastPrompter(
         missing on disk but was moved to _trash by a delete/clear, move it back.
         Files are never lost — worst case they stay in _trash for manual rescue."""
         from fastprompter.ui.file_container import silo_slug
-        log = getattr(self, "_folder_trash_log", None)
+        log = self.data.get("folder_trash_log", [])
         if not log:
             return
         cat_dir = os.path.join(self._files_root(), silo_slug(cat))
@@ -749,7 +782,8 @@ class FastPrompter(
                     from fastprompter.core.logging import logger
                     logger.warning(f"Could not restore folder {trashed} -> {original}: {e}")
             remaining.append((original, trashed))
-        self._folder_trash_log = remaining
+        self.data["folder_trash_log"] = remaining
+        self.mark_dirty()
 
     def _silo_file_count(self, slot_idx, is_archive=False):
         try:
@@ -788,6 +822,17 @@ class FastPrompter(
         self.open_file_container(is_archive=is_archive)
         self._file_container.import_links(paths)
 
+    def _update_project_buttons(self):
+        paths = self.data.get("silo_project_paths", {}).get(str(self.active_temp_slot), {})
+        
+        has_folder = bool(paths.get("folder"))
+        has_exe = bool(paths.get("executable"))
+        
+        if hasattr(self, "btn_project_folder"):
+            self.btn_project_folder.setVisible(has_folder)
+        if hasattr(self, "btn_project_run"):
+            self.btn_project_run.setVisible(has_exe)
+
     def _update_files_button(self):
         """Refresh the header 📁 button: live file count + breakdown tooltip."""
         if not hasattr(self, "btn_files"):
@@ -807,8 +852,47 @@ class FastPrompter(
             + folder_summary(folder, lang=lang)
         )
 
+    def _launch_silo_executable(self):
+        import os
+        from fastprompter.core.logging import logger
+        paths = self.data.get("silo_project_paths", {}).get(str(self.active_temp_slot), {})
+        exe = paths.get("executable")
+        if not exe or not os.path.exists(exe):
+            logger.info("No executable configured or file does not exist.")
+            return
+
+        try:
+            # Setting working directory to the directory of the executable
+            exe_dir = os.path.dirname(exe)
+            os.startfile(exe, cwd=exe_dir)
+        except OSError as e:
+            logger.error(f"Failed to launch executable: {e}")
+
+    def _open_silo_project_folder(self):
+        import os
+        from fastprompter.core.logging import logger
+        paths = self.data.get("silo_project_paths", {}).get(str(self.active_temp_slot), {})
+        folder = paths.get("folder")
+        if not folder or not os.path.isdir(folder):
+            logger.info("No project folder configured or directory does not exist.")
+            return
+                
+        try:
+            os.startfile(folder)
+        except OSError as e:
+            logger.error(f"Failed to open project folder: {e}")
+
+    def open_silo_settings(self, global_idx=None):
+        if global_idx is None:
+            global_idx = self.active_temp_slot
+        from fastprompter.ui.silo_settings_dialog import SiloSettingsDialog
+        dlg = SiloSettingsDialog(self, global_idx)
+        if dlg.exec():
+            # Trigger refresh to show/hide the buttons
+            if global_idx == self.active_temp_slot:
+                self._update_project_buttons()
+
     def open_file_container(self, global_idx=None, is_archive=False):
-        """Open the per-silo file drawer (📁 button / silo hover button)."""
         from fastprompter.ui.file_container import FileContainerPanel, silo_slug
         if global_idx is None:
             global_idx = self.active_temp_slot
@@ -1130,6 +1214,17 @@ class FastPrompter(
         self.apply_button_size(self.btn_files, 24)
         self.btn_files.clicked.connect(lambda: self.open_file_container())
 
+        self.btn_project_run = QPushButton("▶️")
+        self.btn_project_run.setToolTip(tr("Run Executable", getattr(self, "_current_lang", "EN")))
+        self.apply_button_size(self.btn_project_run, 20)
+        self.btn_project_run.clicked.connect(self._launch_silo_executable)
+        self.btn_project_run.hide()
+
+        self.btn_project_folder = QPushButton("📂")
+        self.btn_project_folder.setToolTip(tr("Open Project Folder", getattr(self, "_current_lang", "EN")))
+        self.apply_button_size(self.btn_project_folder, 20)
+        self.btn_project_folder.clicked.connect(self._open_silo_project_folder)
+        self.btn_project_folder.hide()
 
 
         # Navigation
@@ -1631,6 +1726,17 @@ class FastPrompter(
                 or self._update_date_label()
             ),
         )
+        self.cb_date_ampm = create_footer_cb(
+            "🕐 12-Hour Clock",
+            "Show time as 09:05 PM instead of 21:05 — applies to the date\n"
+            "widget, Ctrl+E headers and the end-of-line timestamp",
+            self.data.get("date_ampm", "False") == "True",
+            lambda checked: (
+                self.data.update({"date_ampm": "True" if checked else "False"})
+                or self.mark_dirty()
+                or self._update_date_label()
+            ),
+        )
         self.cb_sound = create_footer_cb(
             "🔊 UI Sounds",
             "Play click sounds for buttons and actions.\n"
@@ -1657,6 +1763,17 @@ class FastPrompter(
             "Show the Trash category for deleted snippets",
             self.data.get("trash_vision", "False") == "True",
             self.toggle_trash_vision,
+        )
+        self.cb_silo_color_box = create_footer_cb(
+            "🎨 Silo Color Box",
+            "Show the little clickable color box on '#' silos\n"
+            "(click to cycle colors, right-click for the full picker)",
+            self.data.get("silo_color_box", "True") == "True",
+            lambda checked: (
+                self.data.update({"silo_color_box": "True" if checked else "False"})
+                or self.mark_dirty()
+                or self.refresh_temp_presets()
+            ),
         )
 
         div_row = QHBoxLayout()
@@ -1785,8 +1902,8 @@ class FastPrompter(
         groups_row.addLayout(_settings_group("Window", [
             self.cb_top, self.cb_lock_window, self.cb_normal_window,
             self.cb_tray, self.cb_sidebar, self.cb_date_rect, self.cb_date_seconds,
-            self.cb_date_daypart, self.cb_date_emoji, self.cb_date_text_month, self.cb_analog_clock,
-            self.cb_trash_vision, self.cb_customize_toolbar
+            self.cb_date_daypart, self.cb_date_emoji, self.cb_date_text_month, self.cb_date_ampm,
+            self.cb_analog_clock, self.cb_trash_vision, self.cb_silo_color_box, self.cb_customize_toolbar
         ]), 1)
         groups_row.addWidget(_vline())
         groups_row.addLayout(_settings_group("Editor", [
@@ -1903,6 +2020,8 @@ class FastPrompter(
 
         # Files drawer sits with the storage buttons (archive group)
         self.apply_button_size(self.btn_files, 20)
+        snip_header.addWidget(self.btn_project_folder)
+        snip_header.addWidget(self.btn_project_run)
         snip_header.addWidget(self.btn_files)
 
         self.snippets_section_layout.addLayout(snip_header)
@@ -2302,7 +2421,7 @@ class FastPrompter(
 
         text_month = self.data.get("date_text_month", "False") == "True"
         m_fmt = "%d %b" if text_month else "%d.%m"
-        ts = now.strftime(f"{m_fmt} - %H:%M")
+        ts = now.strftime(f"{m_fmt} - {self._clock_time_fmt()}")
 
         # {state} in the template takes over the day word; otherwise the
         # legacy behavior prefixes it inside {time} when Day Word is on
@@ -2377,8 +2496,8 @@ class FastPrompter(
                         "cb_wrap", "cb_line_numbers", "cb_line_marks", "cb_zebra", "cb_hide_shortkeys",
                         "cb_double_line", "cb_bold_titles", "cb_silo_pinned_gap",
                         "cb_date_rect", "cb_date_seconds", "cb_analog_clock",
-                        "cb_date_daypart", "cb_date_emoji", "cb_date_text_month", "cb_sound",
-                        "cb_typewriter", "cb_trash_vision"):
+                        "cb_date_daypart", "cb_date_emoji", "cb_date_text_month", "cb_date_ampm", "cb_sound",
+                        "cb_typewriter", "cb_trash_vision", "cb_silo_color_box"):
             cb = getattr(self, cb_name, None)
             if cb is not None and not sip.isdeleted(cb):
                 en_text = getattr(cb, "_en_text", None)
@@ -2570,6 +2689,16 @@ class FastPrompter(
                     new_fmap[k] = v
             fmap.clear()
             fmap.update(new_fmap)
+        pmap = self.data.get("silo_project_paths", {})
+        if isinstance(pmap, dict):
+            new_pmap = {}
+            for k, v in pmap.items():
+                try:
+                    new_pmap[str(remap(int(k)))] = v
+                except (ValueError, TypeError):
+                    new_pmap[k] = v
+            pmap.clear()
+            pmap.update(new_pmap)
 
     def handle_pinned_drop(self, source_idx, boundary_idx=None, swap_idx=None):
         """Handle dragging and dropping silos within or across the pinned section."""
@@ -3146,15 +3275,24 @@ class FastPrompter(
         r_copy = list(getattr(self, "data_redo_stack", []))
         def save(undo_data, redo_data):
             try:
+                # Cap the persisted snapshots to prevent bloat (H-302)
+                undo_data = undo_data[-10:]
+                redo_data = redo_data[-10:]
+                
                 db_path = getattr(self.state, "db_path", "")
                 if not db_path:
                     return
                 undo_path = os.path.splitext(db_path)[0] + "_undo.json"
-                with open(undo_path, "w", encoding="utf-8") as f:
-                    json.dump({
-                        "undo": undo_data,
-                        "redo": redo_data
-                    }, f)
+                tmp_path = undo_path + ".tmp"
+                
+                # Serialize the save and make it atomic (H-301)
+                with getattr(self, "_undo_save_lock", threading.Lock()):
+                    with open(tmp_path, "w", encoding="utf-8") as f:
+                        json.dump({
+                            "undo": undo_data,
+                            "redo": redo_data
+                        }, f)
+                    os.replace(tmp_path, undo_path)
             except Exception as e:
                 from fastprompter.core.logging import logger
                 logger.error(f"Failed to save undo state: {e}")
@@ -3529,8 +3667,38 @@ class FastPrompter(
         self.activateWindow()
         if reply == QMessageBox.StandardButton.Yes:
             self.add_data_undo_state("Delete category")
+            
+            # 1. Trash all physical file containers for this category
+            from fastprompter.ui.file_container import silo_slug
+            trash_targets = []
+            fmap = self.data.get("silo_folders_all", {}).get(cat, {})
+            trash_targets.extend(fmap.values())
+            amap = self.data.get("archive_silo_folders_all", {}).get(cat, {})
+            trash_targets.extend(amap.values())
+            
+            # Archive silos without explicit folder mappings use their title slug
+            for text in self.data.get("archive_temp_presets_all", {}).get(cat, []):
+                trash_targets.append(silo_slug(text))
+                
+            for folder_name in set(trash_targets):
+                if folder_name:
+                    d = os.path.join(self._files_root(), folder_name)
+                    if os.path.exists(d):
+                        self._delete_file_container(d)
+                        
+            # 2. Cleanup all category state from DB
             self.data["cats_order"].pop(idx)
-            del self.data["categories"][cat]
+            self.data.get("categories", {}).pop(cat, None)
+            
+            _all_keys = [
+                "temp_presets_all", "archive_temp_presets_all", "pinned_silos_all",
+                "silo_ticked_all", "silo_children_all", "silo_collapsed_all",
+                "silo_colors_all", "silo_folders_all", "archive_silo_folders_all",
+                "silo_last_edited_all", "silo_project_paths_all", "archive_project_paths_all"
+            ]
+            for key in _all_keys:
+                self.data.get(key, {}).pop(cat, None)
+
             if cat in self.current_pages:
                 del self.current_pages[cat]
             self.cat_combo.removeItem(idx)
@@ -3581,6 +3749,15 @@ class FastPrompter(
                 cat, []
             )
             self.data["silo_folders"] = self.data.setdefault("silo_folders_all", {}).setdefault(
+                cat, {}
+            )
+            self.data["archive_silo_folders"] = self.data.setdefault("archive_silo_folders_all", {}).setdefault(
+                cat, {}
+            )
+            self.data["silo_project_paths"] = self.data.setdefault("silo_project_paths_all", {}).setdefault(
+                cat, {}
+            )
+            self.data["archive_project_paths"] = self.data.setdefault("archive_project_paths_all", {}).setdefault(
                 cat, {}
             )
             self.silo_last_edited = self.data.setdefault("silo_last_edited_all", {}).setdefault(
@@ -3724,7 +3901,9 @@ class FastPrompter(
                         else f"[{d_idx}] "
                     )
                 )
-                disp = item["name"]
+                # tolerate old/foreign entries (e.g. a pre-fix Trash-category
+                # item saved with "title" instead of "name") instead of crashing
+                disp = item.get("name") or item.get("title") or "Untitled"
                 color = preset_colors[global_idx % len(preset_colors)]
                 is_editing = self.editing_snippet and self.editing_snippet == (cat, global_idx)
                 last_ts = item.get("last_edited", 0)
@@ -4043,6 +4222,7 @@ class FastPrompter(
             self.update_preview()
             self._update_line_count_label()
             self._update_files_button()
+            self._update_project_buttons()
             # seed the live folder-sync baseline for the new silo
             from fastprompter.ui.file_container import silo_slug as _sl2
             cur_text = self.text_area.toPlainText()
@@ -4203,7 +4383,10 @@ class FastPrompter(
                 self.data.get("bold_hash_titles", "True") == "True"
                 and raw.lstrip().startswith("#")
             )
-            has_hash = raw.lstrip().startswith("#")
+            has_hash = (
+                raw.lstrip().startswith("#")
+                and self.data.get("silo_color_box", "True") == "True"
+            )
             silo_colors = self.data.get("silo_colors", {})
             if not isinstance(silo_colors, dict):
                 silo_colors = {}
@@ -4278,6 +4461,7 @@ class FastPrompter(
                 menu.addAction(tr("⬆ Un-nest from Parent", getattr(self, "_current_lang", "EN")),
                                lambda i=idx: (self.unnest_silo(i), self.refresh_temp_presets()))
         menu.addAction(tr("📁 Files…", getattr(self, "_current_lang", "EN")), lambda i=idx, a=is_archive: self.open_file_container(i, a))
+        menu.addAction(tr("⚙ Configure Project Paths...", getattr(self, "_current_lang", "EN")), lambda i=idx: self.open_silo_settings(i))
 
         # -- save ---------------------------------------------------------------
         if cur:
@@ -4288,8 +4472,8 @@ class FastPrompter(
         # -- destructive (middle-click already trashes a silo directly) -------
         if has_content:
             menu.addSeparator()
-            menu.addAction(tr("🧹 Clear", getattr(self, "_current_lang", "EN")), lambda: self.clear_temp(idx, is_archive))
-            menu.addAction(tr("🗂 Open Trash Folder", getattr(self, "_current_lang", "EN")), self.open_trash_folder)
+            menu.addAction(tr("🗑 Delete to Trash", getattr(self, "_current_lang", "EN")), lambda: self.trash_silo(idx, is_archive))
+            menu.addAction(tr("♻ Manage Trash", getattr(self, "_current_lang", "EN")), self.open_trash_folder)
 
         menu.addSeparator()
         # Transfer to Snippet
@@ -4538,11 +4722,16 @@ class FastPrompter(
         self.play_sound("clear")
 
         if 0 <= idx < len(presets):
+            self._trash_silo_content(presets[idx])
             if hasattr(self, "_delete_file_container"):
                 folder = self._silo_folder_dir(idx, is_archive=is_archive)
                 self._delete_file_container(self.get_current_category(), folder)
                 if not is_archive:
                     self.data.get("silo_folders", {}).pop(str(idx), None)
+                    self.data.get("silo_project_paths", {}).pop(str(idx), None)
+                else:
+                    self.data.get("archive_silo_folders", {}).pop(str(idx), None)
+                    self.data.get("archive_project_paths", {}).pop(str(idx), None)
 
         if is_archive:
             self.data["archive_temp_presets"][idx] = ""
@@ -4575,8 +4764,16 @@ class FastPrompter(
         # Move to archive
         if "archive_temp_presets" not in self.data:
             self.data["archive_temp_presets"] = []
+        new_idx = len(self.data["archive_temp_presets"])
         self.data["archive_temp_presets"].append(self.data["temp_presets"][idx])
         self.data["temp_presets"][idx] = ""
+        
+        old_k = str(idx)
+        new_k = str(new_idx)
+        if old_k in self.data.get("silo_folders", {}):
+            self.data.setdefault("archive_silo_folders", {})[new_k] = self.data["silo_folders"].pop(old_k)
+        if old_k in self.data.get("silo_project_paths", {}):
+            self.data.setdefault("archive_project_paths", {})[new_k] = self.data["silo_project_paths"].pop(old_k)
         # Sync docs
         from PyQt6.QtGui import QTextDocument
         font = self.text_area.font()
@@ -4831,7 +5028,7 @@ class FastPrompter(
         else: daypart = "Night"
         text_month = self.data.get("date_text_month", "False") == "True"
         m_fmt = "%d %b" if text_month else "%d.%m"
-        ts = now.strftime(f"{m_fmt} - %H:%M")
+        ts = now.strftime(f"{m_fmt} - {self._clock_time_fmt()}")
 
         now_str = f"{daypart} {ts}" if self.data.get("date_daypart", "True") == "True" else ts
         doc = self.text_area.document()

@@ -543,11 +543,10 @@ class SnippetOpsMixin:
             # remember original->trash so undoing the delete/clear can bring
             # the files back to where they belong (files never vanish: they're
             # in _trash even if the restore ever misses)
-            log = getattr(self, "_folder_trash_log", None)
-            if log is None:
-                log = self._folder_trash_log = []
+            log = self.data.setdefault("folder_trash_log", [])
             log.append((os.path.abspath(d), os.path.abspath(dest)))
             del log[:-500]  # keep the log bounded
+            self.mark_dirty()
         except OSError as e:
             logger.warning(f"Could not retire file container {d}: {e}")
 
@@ -596,40 +595,56 @@ class SnippetOpsMixin:
         self.refresh_archive_panel()
 
     def trash_silo(self, idx=None, is_archive=False):
-        """Move a silo to the trash: its text lands as a .md file in
-        data/files/_trash/ (next to any files it owned) and the slot is
-        removed. Nothing is destroyed — the trash folder is a plain dir."""
-        import datetime
-
-        from fastprompter.ui.file_container import silo_slug
-        presets = self.data["archive_temp_presets"] if is_archive else self.data["temp_presets"]
-        if idx is None:
-            idx = self.active_temp_slot
-        if not (0 <= idx < len(presets)):
-            return
-        if idx == self.active_temp_slot and is_archive == getattr(self, "active_is_archive", False):
-            presets[idx] = self.text_area.toPlainText()
-        text = presets[idx]
-        if text.strip():
-            trash = os.path.join(self._files_root(), "_trash")
-            try:
-                os.makedirs(trash, exist_ok=True)
-                stamp = datetime.datetime.now().strftime("%d.%m.%y-%H%M%S")
-                name = f"{silo_slug(text)}-{stamp}.md"
-                with open(os.path.join(trash, name), "w", encoding="utf-8") as f:
-                    f.write(text)
-            except OSError as e:
-                logger.warning(f"Trash write failed, silo NOT deleted: {e}")
-                return
+        """Move a silo to the trash (called from context menu).
+        Just calls del_silo which now handles the trashing of text."""
         self.del_silo(idx)
+
+    def _trash_silo_content(self, text):
+        """Write text to _trash folder and to Trash category if enabled."""
+        if not text.strip():
+            return
+            
+        import datetime
+        from fastprompter.ui.file_container import silo_slug
+        trash = os.path.join(self._files_root(), "_trash")
+        try:
+            os.makedirs(trash, exist_ok=True)
+            stamp = datetime.datetime.now().strftime("%d.%m.%y-%H%M%S")
+            name = f"{silo_slug(text)}-{stamp}.md"
+            with open(os.path.join(trash, name), "w", encoding="utf-8") as f:
+                f.write(text)
+        except OSError as e:
+            logger.warning(f"Trash write failed: {e}")
+            
+        if self.data.get("trash_vision", "False") == "True":
+            if "Trash" not in self.data.get("categories", {}):
+                self.data.setdefault("categories", {})["Trash"] = []
+            if "Trash" not in self.data.get("cats_order", []):
+                self.data.setdefault("cats_order", []).append("Trash")
+                
+            title = text.strip().split('\n')[0][:40].strip()
+            if not title:
+                title = "Untitled"
+            # Must match the snippet schema (name/text/last_edited) — this
+            # list is rendered by the normal snippet panel, which crashes
+            # with KeyError: 'name' on any other shape.
+            self.data["categories"]["Trash"].append({
+                "name": title,
+                "text": text,
+                "last_edited": int(time.time()),
+            })
+            if hasattr(self, "get_current_category") and self.get_current_category() == "Trash":
+                self.refresh_snippets_panel()
 
     def open_trash_folder(self):
         trash = os.path.join(self._files_root(), "_trash")
         os.makedirs(trash, exist_ok=True)
         try:
-            os.startfile(trash)
-        except OSError as e:
-            logger.error(f"Open trash failed: {e}")
+            from fastprompter.ui.trash_dialog import TrashDialog
+            dialog = TrashDialog(self, trash)
+            dialog.exec()
+        except Exception as e:
+            logger.error(f"Open trash dialog failed: {e}")
 
     def del_silo(self, idx=None):
         """Delete a silo at the given index, or the active one."""
@@ -647,6 +662,8 @@ class SnippetOpsMixin:
             if idx == self.active_temp_slot:
                 presets[idx] = self.text_area.toPlainText()
             self.add_data_undo_state("Delete silo")
+            
+            self._trash_silo_content(presets[idx])
 
             # resolve the folder via the per-slot map (unique per silo), then
             # drop its map entry so the freed slot doesn't inherit it
@@ -654,6 +671,10 @@ class SnippetOpsMixin:
             self._delete_file_container(self.get_current_category(), folder)
             if not is_arc:
                 self.data.get("silo_folders", {}).pop(str(idx), None)
+                self.data.get("silo_project_paths", {}).pop(str(idx), None)
+            else:
+                self.data.get("archive_silo_folders", {}).pop(str(idx), None)
+                self.data.get("archive_project_paths", {}).pop(str(idx), None)
 
             presets.pop(idx)
             if idx < len(docs):

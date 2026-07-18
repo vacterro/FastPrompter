@@ -23,7 +23,7 @@ from fastprompter.core.translations import tr
 # main.py MUST be reflected here or the glyph silently disappears.
 TS_STAMP_LINE_RE = re.compile(
     r"(?:Morning |Day |Evening |Night )?"
-    r"(?:\d{2}\.\d{2}|\d{1,2} [A-Za-z]{3}) - \d{2}:\d{2}(?::\d{2})?"
+    r"(?:\d{2}\.\d{2}|\d{1,2} [A-Za-z]{3}) - \d{2}:\d{2}(?::\d{2})?(?: [AP]M)?"
 )
 
 # File types the editor can meaningfully load as plain text
@@ -953,8 +953,24 @@ class VaultTextEdit(QTextEdit):
             self._toggle_checkboxes()
             event.accept()
             return
-
+            
         mw = self.main_win
+        
+        if mods == Qt.KeyboardModifier.NoModifier and event.key() == Qt.Key.Key_Delete:
+            if not self.toPlainText().strip():
+                from PyQt6.QtWidgets import QMessageBox
+                reply = QMessageBox.question(
+                    self,
+                    tr("Trash, not delete", getattr(mw, "_current_lang", "EN")),
+                    tr("Delete this silo and move it to trash?", getattr(mw, "_current_lang", "EN")),
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No
+                )
+                if reply == QMessageBox.StandardButton.Yes:
+                    is_archive = getattr(mw, "active_is_archive", False)
+                    mw.trash_silo(mw.active_temp_slot, is_archive)
+                event.accept()
+                return
 
         from PyQt6.QtGui import QKeySequence
         key_val = event.key()

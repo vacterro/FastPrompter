@@ -49,36 +49,13 @@
 | T-167 | DONE | antigravity | - | `_update_visible_silo_count()` uses first visible button height — if all buttons hidden during init, estimate defaults to 24px which may be wrong |
 | T-168 | DONE | antigravity | - | `data_undo_stack` has no memory cap: undo entries grow unbounded, large silo texts could cause OOM over long sessions |
 | T-169 | DONE | antigravity | - | `main.py` `btn_bullet_toggle.setToolTip(...)` hardcodes `ON`/`OFF` state without tr() wrapper — untranslated when lang=RU |
-| T-170 | TODO | antigravity | - | `editor.py` `VaultTextEdit.keyPressEvent` handles Ctrl+C/Ctrl+V with potential nested `setTextCursor` mismatch after `_delete_selected_text_block()` |
 | T-171 | DONE | antigravity | - | `file_container.py` `_cache` (thumb_cache) grows unbounded — no cleanup when silo changes, stale entries accumulate |
-| T-172 | TODO | antigravity | - | `main.py` `_on_text_changed` might trigger `silo_docs[idx].setPlainText()` while text_area is still being edited — potential infinite recursion |
-| T-173 | TODO | antigravity | - | `state.py` `save_data_to_db()` uses `with self.conn:` context manager — exceptions inside don't roll back in all cases |
-| T-174 | TODO | antigravity | - | `editor.py` `_fold_block()` could throw if fold state gets out of sync with actual document blocks |
-| T-175 | TODO | antigravity | - | `snippet_panel.py` `_hover_timer` runs continuously (80ms interval) even when mouse is idle — unnecessary CPU wakeups |
 | T-176 | DONE | antigravity | - | `hotkey_mixin.py` `_apply_tooltips()` still uses `getattr(self, '_current_lang', 'EN')` instead of cached `self._current_lang` — minor redundancy |
-| T-177 | TODO | antigravity | - | `window_mixin.py` `place_window()` catches bare Exception and calls `QCursor.pos()` which can throw on disconnected screens — nested bare except hides real failures |
-| T-178 | TODO | antigravity | - | `scaling_mixin.py` `apply_scaled_ui()` loops through all children with bare except — any child error silently skips entire rest of loop body |
 | T-179 | DONE | antigravity | - | `main.py` `open_file_container()` imports `FileContainerPanel` inside function body instead of top-level — minor but wastes re-import on every open |
-| T-180 | TODO | antigravity | - | `formatting_mixin.py` `apply_format()` catches bare Exception that could suppress tab-stops/selection errors — formatting failures invisible |
-| T-181 | TODO | antigravity | - | `_position_archive_overlay()` uses `sizeHint().height()` which may not match actual visible content — archive can overlap silo buttons |
-| T-182 | TODO | antigravity | - | `_focus_lock_count` race: 2 modal dialogs in quick succession → timer fires once, counter stuck → `ignore_focus_loss=True` permanently |
-| T-183 | TODO | antigravity | - | `simulate_ctrl_v()` sends global `SendInput` — 150ms timer race with user focus switch could paste into wrong window |
-| T-184 | TODO | antigravity | - | `cancel_editing()` in `snippet_ops_mixin.py` calls `self._refresh_theme_cache()` — fragile mixin dependency, crashes if ThemeMixin removed/renamed |
-| T-185 | TODO | antigravity | - | `_apply_data_state()` restores `temp_presets` but NOT `temp_presets_all` — timing window where per-category data is stale after undo |
-| T-186 | TODO | antigravity | - | `_trim_archive()` replaces `self.archive_docs` list ref while `active_is_archive=True` — index mismatch if refresh fires mid-trim |
-| T-187 | TODO | antigravity | - | `silo_gap_widget` removed/re-inserted in layout on EVERY `refresh_temp_presets()` — layout thrashing + visible flicker with pinned silos |
-| T-188 | TODO | antigravity | - | `save_snippet()` accesses `self.data["categories"][cat]` without checking `cat` exists — KeyError if tab deleted mid-edit |
 | T-189 | DONE | antigravity | - | `change_profile()` doesn't clear text_area undo history — Ctrl+Z could undo text in wrong profile after switch |
-| T-190 | TODO | antigravity | - | `enforce_topmost()` calls `SetWindowPos(HWND_TOPMOST)` every 30s unconditionally — unnecessary Win32 traffic even when already topmost |
-| T-191 | TODO | antigravity | - | `quit_app()` sets `self.conn = None` before `QApplication.quit()` — closeEvent DB save silently fails; docs say null refs to prevent touch but order is wrong |
 | T-192 | DONE | antigravity | - | `_live_folder_sync()` reads `toPlainText()` twice (slug check + cache) — on 500K+ docs this doubles work per keystroke |
 | T-193 | DONE | antigravity | - | `_update_files_button()` imports `folder_summary`/`silo_file_count` inside function body — re-imported on every call |
 | T-194 | DONE | antigravity | - | `change_profile()` hardcodes `"Text"` as default tab — if profile has no "Text" tab, loop falls to index 0 but `toggle_sidebar_visibility` may be called |
-| T-195 | TODO | antigravity | - | `archive_section` is child of `left_panel` (setParent at line 1645) — circular size dependency: archive affects left_panel size affects archive position |
-| T-196 | TODO | antigravity | - | `toggle_visibility()` uses `isActiveWindow()` for frameless Tool windows — returns False on some Win32 configs → global hotkey can't show window |
-| T-197 | TODO | antigravity | - | `topmost_timer` stopped in `toggle_visibility` (hide) but NOT restarted in `show_window` — timer only restarted in `apply_window_flags` / init |
-| T-198 | TODO | antigravity | - | `restore_db()` (main.py:2820) sets `ignore_focus_loss = True` before dialog `exec()` — no `finally` block: if exception in exec, lock stays True |
-| T-199 | TODO | antigravity | - | `editor.py` `_ts_glyph_block_at()` iterates ALL visible blocks (up to 2000) on every mouse move — O(n) per mouse event for timestamp glyph hit-test |
 | T-200 | TODO | antigravity | - | `editor.py` `_checkbox_at_pos()` catches all `Exception` — blocks event propagation, buggy coordinate math silently skips checkboxes |
 | T-201 | TODO | antigravity | - | `editor.py` `mousePressEvent` Ctrl+bullet conversion calls `beginEditBlock` but NOT `endEditBlock` on early Ctrl+None match |
 | T-202 | TODO | antigravity | - | `editor.py` `keyPressEvent` QKeySequence comparison may fail on non-US keyboard layouts — shortcut strings differ from expected |
@@ -273,22 +250,9 @@ already-handled, or theoretical (won't-fix without a repro).
 
 | ID | Verdict | Evidence |
 |---|---|---|
-| T-188 | FIXED | Real KeyError: save_snippet/_as_number indexed categories[cat] with only a truthy guard; added `cat not in categories` guard, verified with stale-tab repro |
-| T-170 | HALLUCINATION | `_delete_selected_text_block` does not exist anywhere in editor.py |
-| T-172 | HALLUCINATION | `_on_text_changed` never calls silo_docs[idx].setPlainText() — no recursion path |
-| T-174 | HALLUCINATION | `_fold_block()` does not exist; real toggle_fold/_fold_range guard blocks |
-| T-184 | HALLUCINATION | `_refresh_theme_cache` is a normal ThemeMixin method; not fragile |
-| T-185 | HALLUCINATION | `_apply_data_state` DOES write temp_presets_all + archive_temp_presets_all (lines 2831-2832) |
-| T-186 | HANDLED | `_trim_archive` early-returns on no-change and remaps active index via old_to_new; synchronous, no mid-trim reentry |
-| T-191 | HALLUCINATION | `quit_app` calls save_data_to_db(force=True) BEFORE closing conn |
-| T-196 | INTENTIONAL | `isActiveWindow` in toggle_visibility errs toward SHOW — that's the summon-an-unfocused-window design, not a defect |
-| T-197 | HALLUCINATION | `show_window` DOES restart topmost_timer (window_mixin.py:82) |
-| T-198 | HALLUCINATION | `restore_db` already has `finally: ignore_focus_loss = False` |
-| T-182 | MITIGATED | each _increment pairs its own 300ms _decrement timer — balanced, not stuck |
 | T-168,175,190,199 | WONTFIX-PERF | theoretical perf (undo cap / idle timer / win32 traffic / O(n) hit-test); no repro, fixing risks regressions |
 | T-177,178,180 | WONTFIX-SMELL | bare-except fail-safe guards; acceptable per T-152's own note |
 | T-181,183,187,195 | WONTFIX-THEORY | positioning/timing/layout smells; working in practice, tests green, no user repro |
-| T-173 | WONTFIX | `with self.conn:` commits/rolls back per sqlite3 semantics; no demonstrated failure |
 
 ## HUNT sweep (18.07, claude-opus) — @824f1aa
 | ID | Verdict | Detail |
@@ -302,8 +266,22 @@ Signal order walked; each confirmed by code-read or observed error. No fixes app
 
 | ID | Sev | Status | Finding (evidence) |
 |---|---|---|---|
-| H-301 | P2 | TODO | Undo-state file corrupts under concurrent writes. `_save_undo_state` spawns a daemon thread PER push that writes `<db>_undo.json` non-atomically (direct open+json.dump, no temp+rename, no lock). Rapid pushes interleave -> corrupt file. OBSERVED: "Failed to load undo state: Extra data: line 1 column 12158234". Fix: single serialized writer + atomic temp-file rename. |
-| H-302 | P3 | TODO | Undo-state file bloat. Each push serializes deepcopies of ALL categories + presets; persisted history has no size cap. OBSERVED: data/local_data_v15_undo.json = 12.3 MB. Slow async I/O + compounds H-301. Fix: cap persisted entries / store lighter snapshots. |
-| H-303 | P3 | TODO | del_category leaks per-category state. main.py:3513 removes only cats_order / categories[cat] / current_pages[cat]. Orphans forever: temp_presets_all, archive_temp_presets_all, pinned_silos_all, silo_ticked_all, silo_children_all, silo_collapsed_all, silo_colors_all, silo_folders_all, silo_last_edited_all[cat] AND that category's on-disk file folders (not trashed). |
-| H-304 | P3 | TODO | Archive silo file-container collision. `_silo_folder_name` returns the plain title slug when is_archive=True (main.py ~677), so two archived silos with the same title still share one folder. The per-slot map fix (active silos) does not cover archive. |
-| H-305 | P3 | TODO | Cross-restart undo file-restore gap. `_folder_trash_log` is an in-memory instance attr (not persisted). If the app restarts between a silo delete/clear and the undo, the original->trash mapping is lost, so files won't auto-restore (they remain in _trash for manual rescue). Fix: persist the trash log or scan _trash by name on restore. |
+| H-301 | P2 | DONE | Undo-state file corrupts under concurrent writes. `_save_undo_state` spawns a daemon thread PER push that writes `<db>_undo.json` non-atomically (direct open+json.dump, no temp+rename, no lock). Rapid pushes interleave -> corrupt file. OBSERVED: "Failed to load undo state: Extra data: line 1 column 12158234". Fix: single serialized writer + atomic temp-file rename. |
+| H-302 | P3 | DONE | Undo-state file bloat. Each push serializes deepcopies of ALL categories + presets; persisted history has no size cap. OBSERVED: data/local_data_v15_undo.json = 12.3 MB. Slow async I/O + compounds H-301. Fix: cap persisted entries / store lighter snapshots. |
+| H-303 | P3 | DONE | del_category leaks per-category state. main.py:3513 removes only cats_order / categories[cat] / current_pages[cat]. Orphans forever: temp_presets_all, archive_temp_presets_all, pinned_silos_all, silo_ticked_all, silo_children_all, silo_collapsed_all, silo_colors_all, silo_folders_all, silo_last_edited_all[cat] AND that category's on-disk file folders (not trashed). |
+| H-304 | P3 | DONE | Archive silo file-container collision. `_silo_folder_name` returns the plain title slug when is_archive=True (main.py ~677), so two archived silos with the same title still share one folder. The per-slot map fix (active silos) does not cover archive. |
+| H-305 | P3 | DONE | Cross-restart undo file-restore gap. `_folder_trash_log` is an in-memory instance attr (not persisted). If the app restarts between a silo delete/clear and the undo, the original->trash mapping is lost, so files won't auto-restore (they remain in _trash for manual rescue). Fix: persist the trash log or scan _trash by name on restore. |
+| H-306 | P3 | DONE | Added `archive_project_paths` / `archive_silo_folders_all`, and cleaned up memory leaks / mismatches during deletion & archiving. |
+
+## H-301..H-306 — all FIXED
+See LOG.md 18.07.26T19:06:58Z / T19:36:00Z (antigravity) for the fix commits;
+the old "fix-ready detail" section (per-ticket how-to for a cold agent) is
+removed as stale now that the work is actually done -- git log has the diffs.
+Also landed alongside: trash context menu, Delete-key trashing, a Trash
+dialog for restoring/emptying, and an executable launcher button.
+
+## CLEAN sweep (18.07, claude-opus) — needs: human review
+| ID | Status | Description |
+|---|---|---|
+| C-001 | TODO — human review | `i18n_build_scripts/` (113 untracked one-off `gen_*`/`check_*`/`fix_*` scripts) — zero references from `src/` or `tests/`, looks like scratch tooling used to hand-generate the `core/i18n/*.py` language files. Ambiguous whether it's throwaway or a kept toolkit — per CLEAN protocol not deleted unilaterally. Confirm with whoever owns it (antigravity's parallel session), then either delete or move under `tools/i18n/`. |
+| C-002 | TODO — human review | `.saipen_backup/` at repo root (untracked, snapshot dated 18.07 16:23) — a full copy of BOARD/LOG/STATE/RFC/STYLE/UI.md + `phases/`. Also breaks RFC.md §9 (protocol files must not be copied into the project). Looks like a manual safety snapshot from the concurrent agent, not part of the live protocol — not deleted unilaterally, confirm ownership first. |

@@ -300,6 +300,60 @@ def test_button_scale_persists_to_db(win):
     win.save_data_to_db(force=True)
 
 
+def test_silo_project_launcher_buttons_no_crash(win):
+    # Regression: _launch_silo_executable / _open_silo_project_folder called
+    # logger.info/logger.error without importing logger first (every other
+    # function in main.py does a local `from fastprompter.core.logging
+    # import logger`) -> NameError the instant a user clicked the project
+    # folder/exe buttons on a silo with no path configured (the default,
+    # common case).
+    win.data.setdefault("silo_project_paths", {}).pop(str(win.active_temp_slot), None)
+    win._launch_silo_executable()  # must not raise NameError: logger
+    win._open_silo_project_folder()  # must not raise NameError: logger
+    win._update_project_buttons()
+
+
+def test_silo_project_paths_survive_a_restart(win):
+    # Regression: silo_project_paths_all was never migrated/aliased at boot
+    # (only inside on_tab_changed), so a path saved in a session where the
+    # user never switched tabs lived only in the flat "silo_project_paths"
+    # key; a full FastPrompter() re-init loaded that flat key back but the
+    # _all store stayed empty, so switching tabs even once after "restart"
+    # would clobber it with {} -- "unreliable between sessions".
+    win.cat_combo.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    cat = win.data["cats_order"][0]
+    win.data["temp_presets"][:] = ["x"]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+
+    win.data.setdefault("silo_project_paths", {})["0"] = {
+        "folder": "C:\\some\\project", "executable": "C:\\some\\project\\run.exe"
+    }
+    win.mark_dirty()
+    win.save_data_to_db(force=True)
+
+    fresh = FastPrompter()  # simulates a full app restart against the same DB
+    try:
+        saved = fresh.data["silo_project_paths_all"].get(cat, {}).get("0", {})
+        assert saved.get("folder") == "C:\\some\\project"
+        # the alias must already point at the same per-category dict at boot,
+        # not a stale flat copy that a later tab switch would wipe
+        assert fresh.data["silo_project_paths"].get("0", {}).get("folder") == "C:\\some\\project"
+        assert fresh.data["silo_project_paths"] is fresh.data["silo_project_paths_all"][cat]
+    finally:
+        fresh.auto_save_timer.stop()
+        fresh.topmost_timer.stop()
+        fresh._cache_timer.stop()
+        fresh.state.conn = None
+        fresh.conn = None
+        fresh.close()
+
+    win.data["silo_project_paths"].pop("0", None)
+    win.mark_dirty()
+    win.save_data_to_db(force=True)
+
+
 def test_button_scale_steps_are_distinct(win):
     from PyQt6.QtWidgets import QPushButton
 
@@ -1801,6 +1855,26 @@ def test_file_container_button_wired(win):
     assert win.silo_buttons[0]._btn_files.toolTip().startswith("Files")
 
 
+def test_silo_color_box_toggle(win):
+    win.cat_combo.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    win.data["temp_presets"][:] = ["# Hashed title"]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+
+    win.data["silo_color_box"] = "True"
+    win.refresh_temp_presets()
+    assert win.silo_buttons[0]._btn_color_box.isHidden() is False
+
+    win.data["silo_color_box"] = "False"
+    win.refresh_temp_presets()
+    assert win.silo_buttons[0]._btn_color_box.isHidden() is True
+
+    win.data["silo_color_box"] = "True"
+    win.data["temp_presets"][:] = ["x"]
+    win.refresh_temp_presets()
+
+
 def test_all_source_files_compile():
     # GUARD: every shipped .py must parse. A dozen i18n translation files
     # once shipped with unescaped apostrophes ('Pagina's') that crashed on
@@ -2139,6 +2213,75 @@ def test_date_rectangle_formats_and_toggles(win):
     win._update_date_label()
     assert win.lbl_date.isVisible() is False
     win.data["show_date_rect"] = "True"
+    win.data["date_seconds"] = "True"
+
+
+def test_trash_vision_snippet_schema_no_crash(win):
+    # Regression: clearing a silo with Trash Vision on used to append a
+    # {"title": ...} dict into categories["Trash"], but that list is rendered
+    # by the normal snippet panel, which indexes item["name"] -> KeyError('name')
+    # the moment the user switched to (or back onto) the Trash tab.
+    win.cat_combo.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    win.data["trash_vision"] = "True"
+    win.data.setdefault("categories", {}).setdefault("Trash", [])[:] = []
+    win.data["temp_presets"][:] = ["silo text headed for the trash"]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    win.clear_temp(0)
+
+    trashed = win.data["categories"]["Trash"]
+    assert trashed and trashed[-1]["name"]
+
+    # a pre-fix legacy entry (old schema) must degrade gracefully, not crash
+    trashed.append({"title": "legacy pre-fix entry", "text": "y"})
+
+    # exact call chain from the reported crash: switching tabs while the
+    # Trash category is active -> cancel_editing() -> refresh_snippets_panel()
+    orig_get_cat = win.get_current_category
+    win.get_current_category = lambda: "Trash"
+    try:
+        win.cancel_editing()  # must not raise KeyError('name')
+    finally:
+        win.get_current_category = orig_get_cat
+
+    win.data["categories"]["Trash"][:] = []
+    win.data["trash_vision"] = "False"
+    win.data["temp_presets"][:] = ["x"]
+
+
+def test_ampm_clock_toggle(win):
+    import re
+    from fastprompter.ui.editor import TS_STAMP_LINE_RE
+
+    win.data["show_date_rect"] = "True"
+    win.data["date_seconds"] = "False"
+    win.data["date_ampm"] = "True"
+    win._update_date_label()
+    assert re.search(r"\b(0[1-9]|1[0-2]):\d{2} [AP]M\b", win.lbl_date.text())
+
+    win.cat_combo.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    win.data["temp_presets"][:] = ["hello"]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    win.text_area.setPlainText("hello")
+    cursor = win.text_area.textCursor()
+    cursor.movePosition(cursor.MoveOperation.End)
+    win.text_area.setTextCursor(cursor)
+    win.apply_header_timestamp()
+    stamped = win.text_area.toPlainText()
+    assert re.search(r"(0[1-9]|1[0-2]):\d{2} [AP]M\)", stamped)
+    m = TS_STAMP_LINE_RE.search(stamped)
+    assert m and m.group().endswith(("AM", "PM"))
+
+    from fastprompter.ui.header_format_dialog import HeaderFormatDialog
+    dlg = HeaderFormatDialog(win)
+    sample = dlg.sample_line("{text} ({time})")
+    assert re.search(r"(0[1-9]|1[0-2]):\d{2} [AP]M\)", sample)
+    dlg.close()
+
+    win.data["date_ampm"] = "False"
     win.data["date_seconds"] = "True"
 
 

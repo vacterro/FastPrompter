@@ -176,6 +176,18 @@ _DATA = {
     "Show month as text instead of numbers (17 Jul instead of 17.07)":
         "Показывать месяц текстом (17 Июл вместо 17.07)",
 
+    "🕐 12-Hour Clock": "🕐 12-часовой формат",
+    "Show time as 09:05 PM instead of 21:05 — applies to the date\n"
+    "widget, Ctrl+E headers and the end-of-line timestamp":
+        "Показывать время как 09:05 PM вместо 21:05 — влияет на виджет\n"
+        "даты, заголовки Ctrl+E и штамп времени в конце строки",
+
+    "🎨 Silo Color Box": "🎨 Цветной квадратик сило",
+    "Show the little clickable color box on '#' silos\n"
+    "(click to cycle colors, right-click for the full picker)":
+        "Показывать кликабельный цветной квадратик на '#'-сило\n"
+        "(клик — сменить цвет по кругу, правый клик — полная палитра)",
+
     "🔊 UI Sounds": "🔊 Звуки интерфейса",
     "Play click sounds for buttons and actions.\n"
     "You can place your own .wav files in the 'sound' folder to override:\n"
@@ -588,8 +600,8 @@ _DATA = {
     # ---- Snippet panel tooltips ----
     "Pin/Unpin this silo to top": "Закрепить/открепить сило сверху",
     "Archive this silo": "Архивировать это сило",
-    "Files: drop/drag/preview assets for this silo":
-        "Файлы: бросайте/перетаскивайте/просматривайте файлы для этого сила",
+    "Files: drop/drag/preview assets for this silo\n(Shift+Click: Project Config)":
+        "Файлы: бросайте/перетаскивайте/просматривайте файлы для этого сила\n(Shift+Click: Настройки Проекта)",
     "Mark this silo as done (click again to unmark)":
         "Отметить сило как готовое (повторный клик снимет отметку)",
     "Files: drop/drag/preview assets for this silo\n\n{}":

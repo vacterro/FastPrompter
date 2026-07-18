@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.6.6 — 2026-07-18
+- **Fixed crash**: clearing/deleting a silo with "🗑 Trash Vision" on wrote a snippet entry with the wrong shape (`title` instead of `name`), which crashed the snippet panel with `KeyError: 'name'` the moment you switched tabs. Fixed the write, and made the panel tolerate old/foreign entries instead of crashing.
+- **Fixed crash**: the new project-folder/executable launcher buttons (▶️/📂 on a silo) raised `NameError: name 'logger' is not defined` the instant you clicked one with no path configured yet.
+- **Fixed**: per-silo project folder/executable paths (right-click → Configure Project Paths) could silently vanish after a restart + a single tab switch — the per-category store was never linked up at boot, only when switching tabs. Paths now survive restarts reliably.
+- **Fixed**: file-container silo collision — two silos could jump onto each other's file folder after a restart. Every silo now gets a persistent, unique folder identity instead of being matched by title text.
+- **Fixed**: deleting or clearing a silo's file container is no longer a dead end — its files ride along with the undo, restoring alongside the text.
+- **Fixed**: "🔤 Text Month" setting was silently ignored below 1280px window width (i.e. almost always) — it now actually renders "17 Jul" instead of "17.07".
+- **Fixed**: undo-state file could corrupt under concurrent writes and grow unbounded (12+ MB); category deletion no longer leaks per-category state or orphaned file folders; archived silos no longer collide on folder names.
+- **New**: 🕐 12-Hour Clock toggle (Settings) — 09:05 PM instead of 21:05, applied consistently to the date widget, `Ctrl+E` headers, and end-of-line timestamps.
+- **New**: comprehensive `Ctrl+E` header template editor — placeholders, markdown-wrap buttons, presets, live preview (Settings → Header Fmt → Edit…).
+- **New**: 🎨 Silo Color Box toggle (Settings) — show/hide the clickable color swatch on `#` silos.
+- **New**: Trash context menu, Delete-key trashing, and a Trash dialog for restoring or emptying `_trash`.
+- Removed the visible `|` divider before the line counter in the header.
+- Added a grandpa-voiced ELI5 guide for newcomers: [GUIDE_EN.md](GUIDE_EN.md) / [GUIDE_RU.md](GUIDE_RU.md), linked at the top of the README.
+
 ## v0.6.5a — 2026-07-18
 - **Critical crash fixed**: switching silos (or any undo/redo push) crashed with `'list' object has no attribute 'values'` — the undo/redo memory-cap iterated `temp_presets` as a dict when snapshots store it as a list. Both copies of the size helper now handle either shape.
 - **Critical crash fixed**: twelve translation files (ar, da, fi, it, ko, nl, no, pl, pt, sv, th, tr) shipped with unescaped apostrophes (e.g. `'Pagina's'`) that were syntax errors and crashed the moment that language loaded. All 45 offending strings re-quoted.

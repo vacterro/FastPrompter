@@ -13,12 +13,7 @@ fastprompter_ipc.token
 data/
 build/
 nuitka-crash-report.xml
-.auditor/
-.planning/
-STATE.md
 error.log
-.vacskill/tmp/
-.vacskill/history/
 
 src/test_dir/
 
