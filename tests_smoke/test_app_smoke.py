@@ -1695,6 +1695,47 @@ def test_file_container_button_wired(win):
     assert win.silo_buttons[0]._btn_files.toolTip().startswith("Files")
 
 
+def test_pinned_silo_shows_unpin_button_no_prefix(win):
+    win.data["temp_presets"][:] = ["# one", "# two", "# three"]
+    win.data["pinned_silos"][:] = []
+    win.data["silo_children"].clear()
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    win._toggle_pin_silo(1)
+    win.refresh_temp_presets()
+    b = [x for x in win.silo_buttons if getattr(x, "global_idx", -1) == 1][0]
+    # pin button stays visible (no hover) as the unpin control
+    assert not b._btn_pin.isHidden()
+    assert "npin" in b._btn_pin.toolTip()  # "Unpin"
+    # label no longer duplicates the pin with a 📌 text prefix
+    assert not b.full_name.startswith("\U0001F4CC")
+    win._toggle_pin_silo(1)
+
+
+def test_ctrl_shift_click_toggles_tick_when_disabled(win):
+    from PyQt6.QtCore import QEvent, QPoint, Qt
+    from PyQt6.QtGui import QMouseEvent
+
+    win.data["temp_presets"][:] = ["# a", "# b"]
+    win.data["silo_ticked"][:] = []
+    win.data["silo_ticks_enabled"] = "False"  # disabled
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    win.refresh_temp_presets()
+    b = [x for x in win.silo_buttons if getattr(x, "global_idx", -1) == 0][0]
+    ev = QMouseEvent(
+        QEvent.Type.MouseButtonPress, QPoint(5, 5).toPointF(),
+        Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier)
+    b.mousePressEvent(ev)
+    assert 0 in win.data["silo_ticked"]
+    win.refresh_temp_presets()
+    b = [x for x in win.silo_buttons if getattr(x, "global_idx", -1) == 0][0]
+    assert not b._btn_tick.isHidden()  # mark shows even though ticks disabled
+    b.mousePressEvent(ev)
+    assert 0 not in win.data["silo_ticked"]
+
+
 def test_header_line_number_button_fast_toggles(win):
     # The header # button must reliably flip the line-number gutter and stay
     # in sync with the settings checkbox (no dead first click from drift).

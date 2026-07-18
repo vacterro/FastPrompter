@@ -1152,8 +1152,9 @@ class FastPrompter(
         )
         self.cb_silo_ticks = create_footer_cb(
             "✅ Silo Ticks",
-            "Show the ✅ done-mark button when hovering a silo",
-            self.data.get("silo_ticks_enabled", "True") == "True",
+            "Show the ✅ done-mark button when hovering a silo.\n"
+            "Off by default — Ctrl+Shift+click a silo toggles its tick either way.",
+            self.data.get("silo_ticks_enabled", "False") == "True",
             lambda checked: (
                 self.data.update({"silo_ticks_enabled": "True" if checked else "False"})
                 or self.mark_dirty()
@@ -3819,11 +3820,12 @@ class FastPrompter(
             # the rightmost 📁N button carries the file count — the text
             # counter stays lines-only (no duplicated 📁)
             fcount = silo_file_count(self._files_root(), self.get_current_category(), raw)
-            pin_str = "📌 " if is_pinned else ""
+            # No "📌 " text prefix — the pin button itself is the indicator
+            # and its click unpins (see DraggableSiloButton.update_data)
             if is_child:
                 label = f"↳ {display_idx}: {text}" if text else f"↳ {display_idx}"
             else:
-                label = f"{pin_str}{display_idx}: {text}" if text else f"{pin_str}{display_idx}"
+                label = f"{display_idx}: {text}" if text else f"{display_idx}"
             is_active = (
                 (not getattr(self, "active_is_archive", False))
                 and (slot_idx == self.active_temp_slot)
@@ -3841,7 +3843,7 @@ class FastPrompter(
             if not isinstance(silo_colors, dict):
                 silo_colors = {}
             color_hex = silo_colors.get(str(slot_idx), "") if has_hash else ""
-            btn.update_data(label, slot_idx, bg_color, font_family, scale, line_count_str=line_str, is_pushed=is_active, title_bold=title_bold, is_child=is_child, fcount=fcount, has_children=len(kids)>0, is_collapsed=slot_idx in collapsed, has_hash=has_hash, color_hex=color_hex)
+            btn.update_data(label, slot_idx, bg_color, font_family, scale, line_count_str=line_str, is_pushed=is_active, title_bold=title_bold, is_child=is_child, fcount=fcount, has_children=len(kids)>0, is_collapsed=slot_idx in collapsed, has_hash=has_hash, color_hex=color_hex, is_pinned=is_pinned)
 
         if show_gap and first_unpinned_ui_index != -1:
             # layout contains the buttons, so insertWidget at first_unpinned_ui_index puts it before that button

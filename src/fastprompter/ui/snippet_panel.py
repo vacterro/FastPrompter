@@ -607,11 +607,13 @@ class DraggableSiloButton(QWidget):
         self._hover_showing = False
         if self._hover_timer:
             self._hover_timer.stop()
-        self._btn_pin.hide()
+        # pinned silos keep 📌 visible (it's the unpin control)
+        self._btn_pin.setVisible(getattr(self, "_is_pinned", False) and not self.is_archive)
         self._btn_archive.hide()
         # with files the 📁N doubles as the counter — it never hides
         self._btn_files.setVisible(getattr(self, "_fcount", 0) > 0 and not self.is_archive)
-        self._btn_tick.setVisible(self._is_ticked())
+        # ticked silos always show the mark; setting only gates the hover btn
+        self._btn_tick.setVisible(self._is_ticked() and not self.is_archive)
         self._lbl_count.show()
         super().leaveEvent(event)
 
@@ -625,7 +627,7 @@ class DraggableSiloButton(QWidget):
             self._btn_pin.show()
             self._btn_archive.show()
             self._btn_files.show()  # empty silos get the plain 📁 on hover
-            if self.main_win.data.get("silo_ticks_enabled", "True") == "True":
+            if self.main_win.data.get("silo_ticks_enabled", "False") == "True":
                 self._btn_tick.setText("✅")
                 self._btn_tick.show()
             self._lbl_count.hide()
@@ -643,11 +645,11 @@ class DraggableSiloButton(QWidget):
         from PyQt6.QtCore import QSize
         return QSize(10, self._lbl_text.fontMetrics().height() + 10)
 
-    def update_data(self, text_label, global_idx, bg_color, font_family="Verdana", scale=1.0, line_count_str="", is_pushed=False, title_bold=False, is_child=False, fcount=0, has_children=False, is_collapsed=False, has_hash=False, color_hex=""):
+    def update_data(self, text_label, global_idx, bg_color, font_family="Verdana", scale=1.0, line_count_str="", is_pushed=False, title_bold=False, is_child=False, fcount=0, has_children=False, is_collapsed=False, has_hash=False, color_hex="", is_pinned=False):
         theme_name = self.main_win.data.get("theme", "Default")
         ticked_list = self.main_win.data.get("silo_ticked", [])
         is_ticked = isinstance(ticked_list, list) and global_idx in ticked_list
-        current_state = (text_label, global_idx, bg_color, font_family, scale, theme_name, line_count_str, is_pushed, title_bold, is_ticked, is_child, fcount, has_children, is_collapsed, has_hash, color_hex)
+        current_state = (text_label, global_idx, bg_color, font_family, scale, theme_name, line_count_str, is_pushed, title_bold, is_ticked, is_child, fcount, has_children, is_collapsed, has_hash, color_hex, is_pinned)
         if getattr(self, '_last_state', None) == current_state:
             self.show()
             return
@@ -665,9 +667,21 @@ class DraggableSiloButton(QWidget):
         else:
             self._btn_collapse.hide()
 
+        # A ticked silo ALWAYS shows its ✅ mark (even with ticks disabled —
+        # Ctrl+Shift+click can still set it). The setting only controls the
+        # convenience hover button, handled in _update_hover_buttons.
         self._btn_tick.setText("✅")
-        ticks_on = self.main_win.data.get("silo_ticks_enabled", "True") == "True"
-        self._btn_tick.setVisible(is_ticked and ticks_on and not self.is_archive)
+        self._btn_tick.setVisible(is_ticked and not self.is_archive)
+
+        # Pinned silos keep the 📌 button visible as the UNPIN control
+        # (clicking it unpins). Unpinned silos only reveal it on hover to pin.
+        self._is_pinned = is_pinned
+        if is_pinned and not self.is_archive:
+            self._btn_pin.setToolTip(tr("Unpin this silo", getattr(self.main_win, "_current_lang", "EN")))
+            self._btn_pin.show()
+        else:
+            self._btn_pin.setToolTip(tr("Pin this silo to top", getattr(self.main_win, "_current_lang", "EN")))
+            self._btn_pin.hide()
         
         if has_hash:
             if color_hex:
@@ -750,6 +764,16 @@ class DraggableSiloButton(QWidget):
 
     def mousePressEvent(self, e):
         if e.button() == Qt.MouseButton.LeftButton:
+            # Ctrl+Shift+click toggles the done-tick — works even when the
+            # ✅ hover button is disabled in Settings (ticks off by default)
+            mods = e.modifiers()
+            if (mods & Qt.KeyboardModifier.ControlModifier
+                    and mods & Qt.KeyboardModifier.ShiftModifier
+                    and not self.is_archive):
+                if hasattr(self.main_win, "_toggle_tick_silo"):
+                    self.main_win._toggle_tick_silo(self.global_idx)
+                e.accept()
+                return
             super().mousePressEvent(e)
             self.drag_start, self._dragging = e.pos(), False
             e.accept()
