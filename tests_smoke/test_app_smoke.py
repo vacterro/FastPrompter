@@ -1695,6 +1695,30 @@ def test_file_container_button_wired(win):
     assert win.silo_buttons[0]._btn_files.toolTip().startswith("Files")
 
 
+def test_header_line_number_button_fast_toggles(win):
+    # The header # button must reliably flip the line-number gutter and stay
+    # in sync with the settings checkbox (no dead first click from drift).
+    win.text_area.setPlainText("a\nb\nc")
+    win.set_line_numbers(False)
+    assert win.text_area.line_number_area_width() == 0
+    assert not win.btn_line_nums.isChecked()
+    assert not win.cb_line_numbers.isChecked()
+
+    win.btn_line_nums.click()  # one click enables
+    assert win.data["show_line_numbers"] == "True"
+    assert win.text_area.line_number_area_width() > 0
+    assert win.btn_line_nums.isChecked() and win.cb_line_numbers.isChecked()
+
+    win.btn_line_nums.click()  # one click disables
+    assert win.data["show_line_numbers"] == "False"
+    assert win.text_area.line_number_area_width() == 0
+
+    # settings checkbox mirrors back to the header button
+    win.cb_line_numbers.click()
+    assert win.btn_line_nums.isChecked() is True
+    win.set_line_numbers(False)
+
+
 def test_open_file_container_actually_opens(win):
     # Regression: open_file_container had its FileContainerPanel import at
     # class-body scope, invisible to the method -> NameError on first open.

@@ -468,12 +468,21 @@ class FastPrompter(
         else:
             self.toggle_aot(checked)
 
+    def set_line_numbers(self, enabled):
+        """Single source of truth for the line-number gutter. Applies the
+        render, then force-syncs BOTH the header # button and the settings
+        checkbox (signals blocked) so they can never drift out of step —
+        that drift used to make the first # click a silent no-op."""
+        self.on_line_numbers_toggled(enabled)
+        for w in (getattr(self, "btn_line_nums", None), getattr(self, "cb_line_numbers", None)):
+            if w is not None and not sip.isdeleted(w) and w.isChecked() != enabled:
+                w.blockSignals(True)
+                w.setChecked(enabled)
+                w.blockSignals(False)
+
     def _line_nums_btn_toggled(self, checked):
-        """Header # mirrors the Line Numbers setting checkbox."""
-        if hasattr(self, "cb_line_numbers") and self.cb_line_numbers.isChecked() != checked:
-            self.cb_line_numbers.setChecked(checked)
-        else:
-            self.on_line_numbers_toggled(checked)
+        """Header # button: fast toggle for the line-number gutter."""
+        self.set_line_numbers(checked)
 
     def _files_root(self):
         custom = (self.data.get("files_root") or "").strip()
@@ -1188,13 +1197,11 @@ class FastPrompter(
             "🔢 Line Numbers",
             "Show a line-number gutter\n(click it to place colored margin marks)",
             self.data.get("show_line_numbers", "False") == "True",
-            self.on_line_numbers_toggled,
+            self.set_line_numbers,  # routes through the single source of truth
         )
-        # keep the header mirror buttons in sync with the checkboxes
+        # keep the header pin button in sync with the always-on-top checkbox
         self.cb_top.toggled.connect(
             lambda c: hasattr(self, "btn_pin_top") and self.btn_pin_top.setChecked(c))
-        self.cb_line_numbers.toggled.connect(
-            lambda c: hasattr(self, "btn_line_nums") and self.btn_line_nums.setChecked(c))
 
         self.cb_line_marks = create_footer_cb(
             "🔴 Line Marks",
