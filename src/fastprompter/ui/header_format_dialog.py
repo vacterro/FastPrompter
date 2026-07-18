@@ -10,7 +10,10 @@ verbatim, so the user has full control over the look.
 """
 
 import datetime
+import html
+import re
 
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QDialog,
     QHBoxLayout,
@@ -22,15 +25,28 @@ from PyQt6.QtWidgets import (
 
 from fastprompter.core.translations import tr
 
-DEFAULT_TEMPLATE = "**__{text}__** ({time})"
+DEFAULT_TEMPLATE = "{text} ({time})"
 
+# A Ctrl+E line always starts with "# ", which the editor already renders
+# bold + gold + larger. Wrapping the title in **__ __** on top of that only
+# prints literal ** __ markers over an already-bold header — pure clutter.
+# So every preset is markerless: the header IS the bold.
 _PRESETS = [
-    ("Bold + time", "**__{text}__** ({time})"),
-    ("Bold, day + time", "**{text}** — {state} {time}"),
-    ("Plain title + time", "{text}  ·  {time}"),
-    ("Underline only", "__{text}__ ({time})"),
+    ("Title + time", "{text} ({time})"),
+    ("Day + time", "{text} — {state} {time}"),
+    ("Dotted", "{text}  ·  {time}"),
+    ("Dash + time", "{text} — {time}"),
     ("Title only", "{text}"),
 ]
+
+# Old marker-heavy templates -> their clean equivalents; used to migrate a
+# format the user saved before this cleanup so their asterisks disappear too.
+LEGACY_TEMPLATE_MIGRATION = {
+    "**__{text}__** ({time})": "{text} ({time})",
+    "**{text}** — {state} {time}": "{text} — {state} {time}",
+    "__{text}__ ({time})": "{text} ({time})",
+    "**{text}** ({time})": "{text} ({time})",
+}
 
 
 class HeaderFormatDialog(QDialog):
@@ -55,7 +71,13 @@ class HeaderFormatDialog(QDialog):
             self._lang)))
 
         # template field
-        self.edit = QLineEdit(self.main_win.data.get("ctrl_e_format", DEFAULT_TEMPLATE))
+        template = self.main_win.data.get("ctrl_e_format", DEFAULT_TEMPLATE)
+        if template in LEGACY_TEMPLATE_MIGRATION:
+            template = LEGACY_TEMPLATE_MIGRATION[template]
+            self.main_win.data["ctrl_e_format"] = template
+            self.main_win.mark_dirty()
+            
+        self.edit = QLineEdit(template)
         self.edit.textChanged.connect(self._update_preview)
         root.addWidget(self.edit)
 
@@ -99,6 +121,7 @@ class HeaderFormatDialog(QDialog):
         # live preview
         root.addWidget(QLabel(tr("Preview:", self._lang)))
         self.preview = QLabel("")
+        self.preview.setTextFormat(Qt.TextFormat.RichText)
         self.preview.setWordWrap(True)
         self.preview.setStyleSheet(
             "background:#1A0F05; color:#D4B87A; border:1px solid #4A3820; padding:6px;")
@@ -153,8 +176,21 @@ class HeaderFormatDialog(QDialog):
                 .replace("{time}", time_str).replace("{state}", state))
         return line if line.startswith("# ") else f"# {line}"
 
+    def _preview_html(self, line):
+        """Style the sample line the way the editor's own highlighter would:
+        bold/underline/italic/strike applied IN PLACE over the markers (they
+        stay visible, same as markdown_highlighter.py never hides them), plus
+        the header line itself is always bold (Ctrl+E lines start with '# ',
+        which the highlighter's H1 rule always bolds)."""
+        text = html.escape(line)
+        text = re.sub(r"(~~[^~\n]+~~)", r"<s>\1</s>", text)
+        text = re.sub(r"(__[^_\n]+__)", r"<u>\1</u>", text)
+        text = re.sub(r"(\*\*.*?\*\*)", r"<b>\1</b>", text)
+        text = re.sub(r"(\*(?!\*).*?\*(?!\*))", r"<i>\1</i>", text)
+        return f"<b>{text}</b>"
+
     def _update_preview(self):
-        self.preview.setText(self.sample_line(self.edit.text()))
+        self.preview.setText(self._preview_html(self.sample_line(self.edit.text())))
 
     def _accept(self):
         self.main_win.data["ctrl_e_format"] = self.edit.text()

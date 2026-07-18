@@ -280,6 +280,11 @@ removed as stale now that the work is actually done -- git log has the diffs.
 Also landed alongside: trash context menu, Delete-key trashing, a Trash
 dialog for restoring/emptying, and an executable launcher button.
 
+## Recent Ad-Hoc Fixes (18.07)
+| ID | Status | Owner | Description |
+|---|---|---|---|
+| F-001 | DONE | antigravity | Ctrl+E Header format trapped bullet points inside `**` and failed to migrate old `**` templates; fixed regex stripping and added legacy template migration on dialog init / header application. |
+
 ## CLEAN sweep (18.07, claude-opus) — needs: human review
 | ID | Status | Description |
 |---|---|---|

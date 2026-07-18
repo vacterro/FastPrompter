@@ -1418,11 +1418,31 @@ def test_theme_switch_keeps_button_labels(win):
     win.apply_theme()
 
 
+def test_no_dotted_focus_rect_on_buttons(win):
+    # A clicked QPushButton keeps keyboard focus, and Qt draws its native
+    # dotted focus-rect on top of the theme's flat chrome -- looks like a
+    # rendering glitch on a skinned button. Every theme must suppress it.
+    from PyQt6.QtWidgets import QApplication
+    win.data["theme"] = "Default"
+    win.apply_theme()
+    qss = QApplication.instance().styleSheet()
+    assert "QPushButton:focus" in qss and "outline: none" in qss
+
+
 def test_header_format_editor(win):
-    from fastprompter.ui.header_format_dialog import HeaderFormatDialog
+    from fastprompter.ui.header_format_dialog import DEFAULT_TEMPLATE, HeaderFormatDialog
 
     dlg = HeaderFormatDialog(win)
     assert dlg.preview.text()  # live preview renders
+    # preview must actually render markdown (bold/underline/etc), matching
+    # what the editor's own highlighter shows -- not raw "**" asterisks
+    from PyQt6.QtCore import Qt
+    assert dlg.preview.textFormat() == Qt.TextFormat.RichText
+    dlg.edit.setText("**{text}**")
+    assert "<b>" in dlg.preview.text() and "**" in dlg.preview.text()
+    dlg.edit.setText("__{text}__")
+    assert "<u>" in dlg.preview.text()
+    dlg.edit.setText(DEFAULT_TEMPLATE)
     # sample honors placeholders
     s = dlg.sample_line("# {text} {state} {time}")
     assert "Sample title" in s
@@ -2313,7 +2333,7 @@ def test_ctrl_e_header_timestamp(win):
     win.apply_header_timestamp()
     text = win.text_area.toPlainText()
     line = text.splitlines()[0]
-    assert line.startswith("# **__My heading__** ("), line
+    assert line.startswith("# My heading ("), line
     assert re.search(r"\(.*?\d{2}\.\d{2} - \d{2}:\d{2}.*?\)$", line), line
     # Cursor jumped two lines below onto a fresh plain bullet
     cur = win.text_area.textCursor()
@@ -2334,7 +2354,7 @@ def test_ctrl_e_header_timestamp(win):
 def test_ctrl_e_refreshes_stale_stamp_in_place(win):
     win.cat_combo.setCurrentIndex(0)
     win.on_tab_changed(0)
-    win.data["temp_presets"][:] = ["# **__Journal__** (01.01 - 00:00)\n\n\u2022 old entry"]
+    win.data["temp_presets"][:] = ["# Journal (01.01 - 00:00)\n\n\u2022 old entry"]
     win.silo_docs[:] = []
     win._switch_to_slot(0, initial=True)
     cur = win.text_area.textCursor()

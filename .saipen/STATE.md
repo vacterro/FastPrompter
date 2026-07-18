@@ -1,12 +1,12 @@
 ---
 phase: DONE
-task: "Shipped v0.6.6 -- live on GitHub, EXE verified"
-next_action: "Nothing queued. On next saipen call with an empty board: HUNT."
+task: "Fix Ctrl+E header formatting trapping bullet points in markdown (F-001)"
+next_action: "Wait for further instructions or continue hunting."
 blocker: ""
-agent: claude-opus
+agent: antigravity
 mode: full
 requires: [filesystem, python, shell, git]
-updated: 2026-07-18T21:45:00
+updated: 2026-07-18T22:08:00
 ---
 ## Handoff (for the next agent)
 main HEAD 4be576f, pushed + tagged v0.6.6, release live:

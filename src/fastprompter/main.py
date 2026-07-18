@@ -1842,8 +1842,8 @@ class FastPrompter(
             getattr(self, "_current_lang", "EN")))
         hdr_row.addWidget(lbl_hdr)
         self.le_hdr_fmt = QLineEdit()
-        self.le_hdr_fmt.setPlaceholderText(tr("**__{text}__** ({time})", getattr(self, "_current_lang", "EN")))
-        self.le_hdr_fmt.setText(self.data.get("ctrl_e_format", "**__{text}__** ({time})"))
+        self.le_hdr_fmt.setPlaceholderText("{text} ({time})")
+        self.le_hdr_fmt.setText(self.data.get("ctrl_e_format", "{text} ({time})"))
         self.le_hdr_fmt.textChanged.connect(
             lambda v: (self.data.update({"ctrl_e_format": v}), self.mark_dirty())
         )
@@ -2394,7 +2394,17 @@ class FastPrompter(
             cursor.endEditBlock()
             return
 
-        template = self.data.get("ctrl_e_format", "**__{text}__** ({time})")
+        template = self.data.get("ctrl_e_format", "{text} ({time})")
+        
+        try:
+            from fastprompter.ui.header_format_dialog import LEGACY_TEMPLATE_MIGRATION
+            if template in LEGACY_TEMPLATE_MIGRATION:
+                template = LEGACY_TEMPLATE_MIGRATION[template]
+                self.data["ctrl_e_format"] = template
+                self.mark_dirty()
+        except ImportError:
+            pass
+            
         full_template = template if template.startswith("# ") else f"# {template}"
 
         pattern = re.escape(full_template)
@@ -2430,8 +2440,10 @@ class FastPrompter(
         else:
             time_str = f"{daypart} {ts}" if self.data.get("date_daypart", "True") == "True" else ts
 
-        # Remove any existing "# " prefix to avoid duplication if running on an existing header
-        clean_sel = sel[2:] if sel.startswith("# ") else sel
+        # Strip any existing header hashes or list bullets so they don't get trapped
+        clean_sel = re.sub(r'^(?:#+\s*|[-*•●+]\s+)+', '', sel).strip()
+        if not clean_sel:
+            clean_sel = sel.strip()
 
         formatted_text = (template.replace("{text}", clean_sel)
                           .replace("{time}", time_str)
