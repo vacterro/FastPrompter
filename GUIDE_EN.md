@@ -53,6 +53,7 @@ entire install, in one move.
 - `Ctrl+Q` — snap window to corners.
 - Middle-click a silo — sends it to the trash (not gone for good).
 - Hover a silo — buttons appear: tick ✅, files 📁, pin 📌, archive 📥.
+- Right-click the project dropdown — add, rename, or delete project tabs.
 
 The full feature list, screenshots and a walkthrough of every button
 live in [README.md](README.md#инструкция--instruction) — a whole

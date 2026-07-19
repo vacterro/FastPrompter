@@ -1080,10 +1080,9 @@ class FastPrompter(
             self.cat_combo.addItem(cat)
         self.cat_combo.currentIndexChanged.connect(self.on_tab_changed)
 
-
-
-
-
+        self.cat_combo.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.cat_combo.customContextMenuRequested.connect(self.show_cat_context_menu)
+        
         self.btn_new = QPushButton(tr("NEW", getattr(self, "_current_lang", "EN")))
         self.btn_new.setToolTip(tr("NEW ({})", self._current_lang).format(self.data.get('hk_new_snippet', 'Ctrl+N')))
         self.apply_button_size(self.btn_new, 24)
@@ -3712,6 +3711,59 @@ class FastPrompter(
                 delattr(self, "_text_drag_pos")
                 return False
         return super().eventFilter(obj, event)
+
+    def show_cat_context_menu(self, pos):
+        if not hasattr(self, "cat_combo"): return
+        idx = self.cat_combo.currentIndex()
+        if idx >= len(self.data.get("cats_order", [])):
+            return
+            
+        from PyQt6.QtWidgets import QMenu
+        menu = QMenu(self)
+        menu.setFont(QApplication.font())
+        menu.addAction(tr("➕ Add New Project Tab", getattr(self, "_current_lang", "EN")), self.add_category)
+        menu.addAction(tr("✏️ Rename Project Tab", getattr(self, "_current_lang", "EN")), self.rename_category)
+        menu.addAction(tr("❌ Delete Project Tab", getattr(self, "_current_lang", "EN")), self.del_category)
+        menu.exec(self.cat_combo.mapToGlobal(pos))
+
+    def rename_category(self):
+        if self.cat_combo.count() == 0:
+            return
+        idx = self.cat_combo.currentIndex()
+        if idx >= len(self.data.get("cats_order", [])):
+            return
+        old_cat = self.data["cats_order"][idx]
+        
+        self.ignore_focus_loss = True
+        try:
+            name, ok = QInputDialog.getText(self, "Rename Tab", "Enter new tab name:", text=old_cat)
+        finally:
+            self.ignore_focus_loss = False
+        self.activateWindow()
+        if ok and name and name.strip() and name.strip() != old_cat:
+            new_cat = name.strip()
+            if new_cat in self.data["cats_order"]:
+                QMessageBox.information(self, tr("Error", self._current_lang), tr("A tab with this name already exists.", self._current_lang))
+                return
+            
+            self.add_data_undo_state("Rename category")
+            self.data["cats_order"][idx] = new_cat
+            
+            _all_keys = [
+                "categories", "temp_presets_all", "archive_temp_presets_all", "pinned_silos_all",
+                "silo_ticked_all", "silo_children_all", "silo_collapsed_all",
+                "silo_colors_all", "silo_folders_all", "archive_silo_folders_all",
+                "silo_last_edited_all", "silo_project_paths_all", "archive_project_paths_all"
+            ]
+            for key in _all_keys:
+                if key in self.data and old_cat in self.data[key]:
+                    self.data[key][new_cat] = self.data[key].pop(old_cat)
+                    
+            if old_cat in self.current_pages:
+                self.current_pages[new_cat] = self.current_pages.pop(old_cat)
+                
+            self.cat_combo.setItemText(idx, new_cat)
+            self.mark_dirty()
 
     def add_category(self):
         self.play_sound("new")
