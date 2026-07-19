@@ -2926,6 +2926,7 @@ class FastPrompter(
         self.setUpdatesEnabled(False)
         self.hide()  # explicit hide forces a clean native-frame rebuild
         self.setWindowFlags(flags)
+        self.setWindowTitle("FastPrompter")
         self.setGeometry(geo)
         if was_visible:
             self.show()

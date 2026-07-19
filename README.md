@@ -220,6 +220,8 @@ python tools/build.py
 
 | Gesture | Action |
 |---------|--------|
+| Drag any empty space / header | Move the window |
+| Drag the bottom-right corner | Resize the window |
 | Wheel over silos / snippets / archive | Flip pages |
 | `Ctrl+wheel` over silos | Select previous / next silo |
 | Wheel over tab bar | Switch project |
