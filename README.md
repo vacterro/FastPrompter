@@ -17,7 +17,7 @@ One hotkey. Instant window. Your prompts, notes and drafts — always one keystr
 
 [English](GUIDE_EN.md) · [Русский](GUIDE_RU.md)
 <img alt="Main interface" src="docs/images/2026-07-19_054929.png" />
-<br><em>Main window. Shows the golden vintage theme, hierarchical silos on the left, and the Markdown editor on the right with real checkboxes and folding headers. Solves the problem of scattered notes by keeping everything in one instantly accessible place.</em>
+<br><em>The main workspace. Your hierarchical notes on the left, a full Markdown editor on the right. Everything is saved instantly and stays exactly where you left it.</em>
 
 </div>
 
@@ -27,7 +27,7 @@ Press `Alt+X` anywhere — in your browser, IDE, terminal — and FastPrompter p
 
 ## ✨ What it does
 <img alt="What it does preview" src="docs/images/2026-07-19_054806.png" />
-<br><em>The editor in action: syntax highlighting, clickable checkboxes, and clear visual hierarchy. Solves the need for a lightweight, instantly available markdown scratchpad.</em>
+<br><em>Writing in action. Enjoy real checkboxes, code highlighting, and clean visual structure in a lightweight, instant scratchpad.</em>
 
 [_Cursor_](https://www.deviantart.com/potatoddas/art/Simple-Perfect-Cursors-946177131)
 
@@ -129,10 +129,10 @@ Press `Alt+X` anywhere — in your browser, IDE, terminal — and FastPrompter p
 
 <div align="center">
 <img alt="Screenshot 1" src="docs/images/2026-07-19_054758.png" />
-<br><em>A clean, distraction-free text area with pinned silos in the sidebar. Keeps your most important notes always at the top.</em><br><br>
+<br><em>A distraction-free text area with red pins to keep your most important notes glued to the top of the list.</em><br><br>
 
 <img alt="Screenshot 2" src="docs/images/2026-07-19_054734.png" />
-<br><em>Smart Drop Zones. When dragging a file into the app, it asks exactly what to do: insert text, create a link, or copy the file into the silo's dedicated storage folder. Solves file management without forcing a single default action.</em><br><br>
+<br><em>Smart Drop Zones. Drag a file in and choose exactly what happens next: embed it, link it, or safely tuck it away in the note's dedicated folder.</em><br><br>
 </div>
 
 <details>
@@ -140,31 +140,31 @@ Press `Alt+X` anywhere — in your browser, IDE, terminal — and FastPrompter p
 <div align="center">
 
 <img alt="Little window 1" src="docs/images/2026-07-19_054908.png" />
-<br><em>Backup & Export Settings. Safely export your entire database or convert silos to readable `.txt` files. Solves data lock-in and provides peace of mind.</em><br><br>
+<br><em>No data lock-in. Export your entire database for safekeeping or convert your notes to readable `.txt` files with one click.</em><br><br>
 
 <img alt="Little window 2" src="docs/images/2026-07-19_054903.png" />
-<br><em>Global Hotkeys Configuration. Rebind any in-app action or global toggle to fit your exact workflow, avoiding conflicts with other software.</em><br><br>
+<br><em>Global Hotkeys. Rebind any action to fit your exact workflow and avoid clashes with other software.</em><br><br>
 
 <img alt="Little window 3" src="docs/images/2026-07-19_054854.png" />
-<br><em>Custom Header Format. Define exactly how the `Ctrl+E` timestamp shortcut behaves. Perfect for uniform journaling and logging.</em><br><br>
+<br><em>Custom Timestamps. Tell the `Ctrl+E` shortcut exactly how to format your dates. Perfect for uniform journaling.</em><br><br>
 
 <img alt="Little window 4" src="docs/images/2026-07-19_054846.png" />
-<br><em>Project Paths. Link an external folder and executable to a specific project tab. Solves context switching by letting you launch your main working environment directly from the notes.</em><br><br>
+<br><em>Project Bridges. Link a project tab directly to its real-world folder and executable so you can launch your work right from your notes.</em><br><br>
 
 <img alt="Screenshot 3" src="docs/images/2026-07-19_054658.png" />
-<br><em>OLED Black Theme. Shows the flexibility of the theming engine for users who prefer pure black backgrounds to reduce eye strain.</em><br><br>
+<br><em>Pure OLED Black. One of six vintage themes, designed to completely eliminate eye strain in the dark.</em><br><br>
 
 <img alt="Screenshot 4" src="docs/images/2026-07-19_054643.png" />
-<br><em>The comprehensive Settings panel. Toggle almost every UI element on or off—from line numbers to the analog clock. Solves interface clutter by letting you hide what you don't use.</em><br><br>
+<br><em>The Settings panel. Build the exact interface you want by toggling everything from line numbers to the tiny analog clock.</em><br><br>
 
 <img alt="Screenshot 5" src="docs/images/2026-07-19_054617.png" />
-<br><em>Extensive note-taking with bullet lists and dividers. The app gracefully handles dense text without slowing down.</em><br><br>
+<br><em>Built for heavy lifting. The app effortlessly handles huge walls of dense text without ever slowing you down.</em><br><br>
 
 <img alt="Screenshot 6" src="docs/images/2026-07-19_055445.png" />
-<br><em>Global Settings unrolled over the editor. Change themes, scale the entire UI from 50% to 150%, and switch languages instantly. Solves accessibility and localization needs in one click.</em><br><br>
+<br><em>Instant tweaks. Switch languages, swap themes, or scale the entire UI up to 150% right from the top bar.</em><br><br>
 
 <img alt="Screenshot 7" src="docs/images/2026-07-19_055431.png" />
-<br><em>Zen Mode / Focused writing. With the settings and sidebars collapsed, you get a pure, distraction-free writing environment for long-form drafting.</em><br><br>
+<br><em>Zen Mode. Hide the sidebars and settings to get a pure, focused canvas for long-form writing.</em><br><br>
 
 </div>
 </details>
