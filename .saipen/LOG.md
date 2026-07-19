@@ -95,3 +95,4 @@
 
 - 19.07.26 05:00 [UI/BUG] RUN: Moved sidebar buttons into header (left-aligned) per T-340; fixed silo color mapping bug on insert/delete per T-341; fixed unit test layout flakiness; fixed syntax error in nl.py. -> 461+104 PASS. All clean.
 - 19.07.26 05:15 [ANALYZE] RUN: Verified remaining 106 untranslated keys are intentional (68: emoji/hotkeys/abbrev + 38: loanwords). Translation pack is effectively complete: 530 auto-translated across 3 passes, 106 confirmed non-gaps. 461/461 PASS. (codebuff)
+- Injection complete: Cleaned syntax errors from the auto-translate pass, fully enabling all 21 languages without test failures.

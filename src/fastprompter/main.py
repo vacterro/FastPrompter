@@ -2618,6 +2618,49 @@ class FastPrompter(
         if hasattr(self, '_apply_tooltips'):
             self._apply_tooltips()
 
+        # T-404: Live FULL-UI retranslation for header buttons
+        btn_configs = [
+            ("btn_sidebar_toggle", None, "Toggle Sidebar (Alt+D)\nShow or hide the right/left sidebar containing snippets and silos.", None),
+            ("btn_new", "NEW", "NEW ({})", "hk_new_snippet"),
+            ("btn_save", "Save", "Save ({})", "hk_save_snippet"),
+            ("btn_home", "Home", "Home (Home)", None),
+            ("btn_end", "End", "Jump to End\nMove cursor to the bottom of the document.", None),
+            ("btn_add_line", "Line", "Insert Line (Ctrl+W)\nInsert a spaced --- divider and start a fresh bullet.", None),
+            ("btn_bold", "B", "Bold ({})\nMake selected text bold.", "hk_bold"),
+            ("btn_italic", "I", "Italic ({})\nMake selected text italic.", "hk_italic"),
+            ("btn_under", "U", "Underline ({})\nMake selected text underlined.", "hk_underline"),
+            ("btn_strike", "S", "Strikethrough (Ctrl+T)\nCross out selected text.", None),
+            ("btn_header", "H", "Header (Ctrl+E)\nTitle the line: # + bold + underline + timestamp,\nthen land 2 lines below on a fresh bullet.", None),
+            ("btn_clear_fmt", "Clear Fmt", "Clear Format\nRemove all explicit font styling from text.", None),
+            ("btn_settings_toggle", None, "Settings\nConfigure hotkeys, theme, fonts, and UI scaling.", None),
+            ("btn_settings_toggle_right", None, "Settings\nConfigure hotkeys, theme, fonts, and UI scaling.", None),
+            ("btn_help", None, "Help — every hotkey, gesture and feature (click)", None),
+            ("btn_copy", "Copy", "Copy all text (Ctrl+C)\nRight-click: Copy + Close FastPrompter", None),
+            ("btn_clear", "Clear", "Clear (Ctrl+Shift+C)", None),
+            ("btn_files", None, "Files\nAsset drawer for the active silo: drop any files in,\ndrag them out, preview, export. Stored as a plain folder\nin data/files — readable outside FastPrompter.", None),
+            ("btn_project_run", None, "Run Executable", None),
+            ("btn_project_folder", None, "Open Project Folder", None),
+            ("btn_trash", None, "Open Trash", None),
+            ("btn_arc_snip", None, "Archive Active Snippet or Silo", None),
+            ("btn_toggle_archive", None, "Toggle Archives", None),
+        ]
+
+        for attr_name, text_base, tip_base, hk_key in btn_configs:
+            btn = getattr(self, attr_name, None)
+            if btn is not None and not sip.isdeleted(btn):
+                if text_base:
+                    btn.setText(tr(text_base, lang))
+                if tip_base:
+                    if hk_key:
+                        btn.setToolTip(tr(tip_base, lang).format(self.data.get(hk_key, "")))
+                    else:
+                        btn.setToolTip(tr(tip_base, lang))
+
+        if hasattr(self, "btn_bullet_toggle") and not sip.isdeleted(self.btn_bullet_toggle):
+            state_str = tr("ON", lang) if self.data.get("auto_bullet", "False") == "True" else tr("OFF", lang)
+            tt = tr("Auto-Bullet (Right-Click): {}\nLeft-Click: Convert selected lines between dashes and bullets.", lang)
+            self.btn_bullet_toggle.setToolTip(tt.format(state_str))
+
     def on_splitter_moved(self, pos, index):
         is_right = getattr(self, "_sidebar_right", False)
         self.data["splitter_sizes_right" if is_right else "splitter_sizes_left"] = self.splitter.sizes()
