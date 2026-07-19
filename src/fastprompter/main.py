@@ -381,7 +381,8 @@ class FastPrompter(
         # both reachable via the editor's right-click menu and Ctrl+W. The
         # bullet-toggle (-→•) stays visible; it only drops in ultra.
         if flipped:
-            for name in ("btn_clear_fmt", "btn_add_line"):
+            for name in ("btn_clear_fmt", "btn_add_line", "btn_home", "btn_end",
+                         "btn_under", "btn_strike", "btn_copy"):
                 wdg = getattr(self, name, None)
                 if wdg is not None and not sip.isdeleted(wdg):
                     wdg.setVisible(not dense)
@@ -393,7 +394,9 @@ class FastPrompter(
             for name in ("btn_bold", "btn_italic", "btn_under", "btn_strike",
                          "btn_header", "btn_copy", "btn_clear", "btn_bullet_toggle",
                          "btn_home", "btn_end", "btn_pin_top", "btn_line_nums",
-                         "btn_help"):
+                         "btn_help", "btn_trash", "btn_toggle_search",
+                         "btn_arc_snip", "btn_toggle_archive", "btn_project_folder",
+                         "btn_project_run", "btn_files"):
                 wdg = getattr(self, name, None)
                 if wdg is not None and not sip.isdeleted(wdg):
                     wdg.setVisible(not ultra)
@@ -1227,7 +1230,24 @@ class FastPrompter(
         self.btn_project_folder.clicked.connect(self._open_silo_project_folder)
         self.btn_project_folder.hide()
 
+        self.btn_trash = QPushButton("🗑️")
+        self.apply_button_size(self.btn_trash, 20, 20)
+        self.btn_trash.setToolTip(tr("Open Trash", getattr(self, "_current_lang", "EN")))
+        self.btn_trash.clicked.connect(self.open_trash)
 
+        self.btn_toggle_search = QPushButton("⌕")
+        self.apply_button_size(self.btn_toggle_search, 20, 20)
+        self.btn_toggle_search.setCheckable(True)
+
+        self.btn_arc_snip = QPushButton("📥")
+        self.apply_button_size(self.btn_arc_snip, 20, 20)
+        self.btn_arc_snip.setToolTip(tr("Archive Active Snippet or Silo", getattr(self, "_current_lang", "EN")))
+        self.btn_arc_snip.clicked.connect(self.archive_active_item)
+
+        self.btn_toggle_archive = QPushButton("📦")
+        self.apply_button_size(self.btn_toggle_archive, 20, 20)
+        self.btn_toggle_archive.setToolTip(tr("Toggle Archives", getattr(self, "_current_lang", "EN")))
+        self.btn_toggle_archive.setCheckable(True)
         # Navigation
         self.header_layout.addWidget(self.cat_combo)
 
@@ -2013,41 +2033,6 @@ class FastPrompter(
         self.snippets_section_layout.setContentsMargins(0, 0, 0, 0)
         self.snippets_section_layout.setSpacing(1)
 
-        snip_header = QHBoxLayout()
-        snip_header.setContentsMargins(0, 0, 0, 0)
-
-        self.btn_trash = QPushButton("🗑️")
-        self.apply_button_size(self.btn_trash, 20, 20)
-        self.btn_trash.setToolTip(tr("Open Trash", getattr(self, "_current_lang", "EN")))
-        self.btn_trash.clicked.connect(self.open_trash)
-        snip_header.addWidget(self.btn_trash)
-
-        snip_header.addStretch()
-
-        self.btn_toggle_search = QPushButton("⌕")
-        self.apply_button_size(self.btn_toggle_search, 20, 20)
-        self.btn_toggle_search.setCheckable(True)
-        snip_header.addWidget(self.btn_toggle_search)
-
-        self.btn_arc_snip = QPushButton("📥")
-        self.apply_button_size(self.btn_arc_snip, 20, 20)
-        self.btn_arc_snip.setToolTip(tr("Archive Active Snippet or Silo", getattr(self, "_current_lang", "EN")))
-        self.btn_arc_snip.clicked.connect(self.archive_active_item)
-        snip_header.addWidget(self.btn_arc_snip)
-
-        self.btn_toggle_archive = QPushButton("📦")
-        self.apply_button_size(self.btn_toggle_archive, 20, 20)
-        self.btn_toggle_archive.setToolTip(tr("Toggle Archives", getattr(self, "_current_lang", "EN")))
-        self.btn_toggle_archive.setCheckable(True)
-        snip_header.addWidget(self.btn_toggle_archive)
-
-        # Files drawer sits with the storage buttons (archive group)
-        self.apply_button_size(self.btn_files, 20)
-        snip_header.addWidget(self.btn_project_folder)
-        snip_header.addWidget(self.btn_project_run)
-        snip_header.addWidget(self.btn_files)
-
-        self.snippets_section_layout.addLayout(snip_header)
 
         self.search_bar = QLineEdit()
         self.search_bar.setToolTip(tr("Search snippets", getattr(self, "_current_lang", "EN")))

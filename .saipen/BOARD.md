@@ -304,6 +304,7 @@ dialog for restoring/emptying, and an executable launcher button.
 |---|---|---|---|
 | F-001 | DONE | antigravity | Ctrl+E Header format trapped bullet points inside `**` and failed to migrate old `**` templates; fixed regex stripping and added legacy template migration on dialog init / header application. |
 | F-002 | DONE | antigravity | Fixed visual bug where the inline refresh and fold buttons overlapped the final character of header timestamps (removed erroneous `MoveOperation.Left` shift). |
+| F-003 | DONE | antigravity | Moved sidebar action buttons (Trash, Search, Archive, Toggle-Archive, Project-Folder, Project-Run, Files) up into the top toolbar per user request. Buttons integrated into drag-to-reorder system and auto-packing widths. |
 
 ## CLEAN sweep (18.07, claude-opus) — needs: human review
 | ID | Status | Description |

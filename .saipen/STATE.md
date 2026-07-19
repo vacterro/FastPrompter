@@ -1,12 +1,12 @@
 ---
 phase: DONE
-task: "Shipped v0.7.0 (22 langs + Дед + flags) — code only, no EXE build per user"
-next_action: "Committed + pushed + tagged v0.7.0. No EXE built/uploaded (user said ship without building exe); run release.cmd later to attach the EXE to a GitHub release. T-404/T-405 remain TODO."
+task: "Moved sidebar buttons to top bar (F-003)"
+next_action: "Wait for further instructions or continue hunting."
 blocker: ""
-agent: claude-opus
+agent: antigravity
 mode: full
 requires: [filesystem, python, shell, git]
-updated: 2026-07-19T01:00:00
+updated: 2026-07-19T04:33:00
 ---
 ## Handoff (for the next agent)
 Translation pack is LIVE (uncommitted on main, 461 unit + 103 smoke green).

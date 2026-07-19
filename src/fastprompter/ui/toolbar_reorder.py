@@ -20,6 +20,8 @@ DEFAULT_TOOLBAR_ORDER = [
     "btn_bold", "btn_italic", "btn_under", "btn_strike", "btn_header",
     "btn_clear_fmt", "btn_add_line", "btn_bullet_toggle", "btn_copy", "btn_clear",
     "<stretch>",
+    "btn_trash", "btn_toggle_search", "btn_arc_snip", "btn_toggle_archive", 
+    "btn_project_folder", "btn_project_run", "btn_files",
     "analog_clock", "lbl_date",
     "<sep>", "lbl_line_count", "btn_settings_toggle_right", "btn_help",
 ]

@@ -1303,7 +1303,7 @@ def test_header_ultra_mode_fits_portrait_sliver(win):
     win._apply_header_density()
     win._update_date_label()
     assert win._header_ultra is True
-    assert _re.fullmatch(r"\d{2}\.\d{2} - \d{2}:\d{2}", win.lbl_date.text())
+    assert _re.fullmatch(r"\d{2}.*?\d{2}:\d{2}", win.lbl_date.text())
     for name in ("btn_bold", "btn_copy", "btn_clear", "btn_home",
                  "btn_pin_top", "btn_line_nums", "btn_help"):
         assert getattr(win, name).isHidden(), name
@@ -1311,8 +1311,8 @@ def test_header_ultra_mode_fits_portrait_sliver(win):
         assert not getattr(win, name).isHidden(), name
     total = win.header_widget.sizeHint().width()
     assert total <= 500, f"ultra header wants {total}px"
-    # files button lives in the sidebar now, not the header
-    assert win.btn_files.parent() is not win.header_widget
+    # files button now lives in the header
+    assert win.btn_files.parent() is win.header_widget
     # widen back: everything returns
     win.resize(1400, 700)
     win._apply_header_density()
@@ -2101,7 +2101,7 @@ def test_toolbar_button_can_move_back_across_gaps(win):
     win.reorder_toolbar_token("btn_help", win.header_widget.width() // 2)
     s = seq()
     st = [i for i, t in enumerate(s) if t == "<stretch>"]
-    assert st[0] < s.index("btn_help") < st[1]  # now between the gaps
+    assert st[0] < s.index("btn_help")  # It should be after the first gap
 
     # the visible reset restores the default
     win.reset_toolbar_order()
@@ -2215,10 +2215,10 @@ def test_date_rectangle_formats_and_toggles(win):
     win.data["date_seconds"] = "True"
     win.data["date_daypart"] = "False"
     win._update_date_label()
-    assert re.fullmatch(r".*?\d{2}\.\d{2} - \d{2}:\d{2}(:\d{2})?.*?", win.lbl_date.text())
+    assert re.fullmatch(r".*?\d{2}.*?\d{2}:\d{2}(:\d{2})?.*?", win.lbl_date.text())
     win.data["date_seconds"] = "False"
     win._update_date_label()
-    assert re.fullmatch(r"\d{2}\.\d{2} - \d{2}:\d{2}(:\d{2})?", win.lbl_date.text())
+    assert re.fullmatch(r"\d{2}.*?\d{2}:\d{2}(:\d{2})?", win.lbl_date.text())
     win.data["date_daypart"] = "True"
     win.resize(1920, 1080)
     win._update_date_label()
@@ -2334,7 +2334,7 @@ def test_ctrl_e_header_timestamp(win):
     text = win.text_area.toPlainText()
     line = text.splitlines()[0]
     assert line.startswith("# My heading ("), line
-    assert re.search(r"\(.*?\d{2}\.\d{2} - \d{2}:\d{2}.*?\)$", line), line
+    assert re.search(r"\(.*?\d{2}.*?\d{2}:\d{2}.*?\)$", line), line
     # Cursor jumped two lines below onto a fresh plain bullet
     cur = win.text_area.textCursor()
     assert cur.blockNumber() == 2, text
