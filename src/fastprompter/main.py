@@ -2711,6 +2711,16 @@ class FastPrompter(
         collapsed = self.data.get("silo_collapsed", [])
         if isinstance(collapsed, list):
             collapsed[:] = [remap(c) for c in collapsed]
+        cmap2 = self.data.get("silo_colors", {})
+        if isinstance(cmap2, dict):
+            new_cmap2 = {}
+            for k, v in cmap2.items():
+                try:
+                    new_cmap2[str(remap(int(k)))] = v
+                except (ValueError, TypeError):
+                    new_cmap2[k] = v
+            cmap2.clear()
+            cmap2.update(new_cmap2)
         # folder names are keyed by slot -> remap so a moved silo keeps its files
         fmap = self.data.get("silo_folders", {})
         if isinstance(fmap, dict):

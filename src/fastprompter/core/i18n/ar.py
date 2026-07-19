@@ -237,7 +237,7 @@ TRANSLATIONS: dict[str, str] = {
     'Main Text Color': 'لون النص الرئيسي',
     'Mark it done — the tick stays until clicked again': 'وضع علامة كمكتمل — تبقى العلامة حتى النقر مجددًا',
     'Mark this silo as done (click again to unmark)': 'تحديد هذه الصومعة كمكتملة (نقر مرة أخرى لإلغاء التحديد)',
-    'Markdown': 'Markdown',
+    'Markdown': 'تخفيض السعر',
     'Markdown Files (*.md)': 'ملفات Markdown (*.md)',
     'Maximum of 5 tabs/projects. Remove one first.': 'الحد الأقصى 5 علامات تبويب/مشاريع. قم بإزالة واحد أولاً.',
     'Merge files': 'دمج الملفات',

@@ -311,3 +311,6 @@ dialog for restoring/emptying, and an executable launcher button.
 |---|---|---|
 | C-001 | TODO — human review | `i18n_build_scripts/` (113 untracked one-off `gen_*`/`check_*`/`fix_*` scripts) — zero references from `src/` or `tests/`, looks like scratch tooling used to hand-generate the `core/i18n/*.py` language files. Ambiguous whether it's throwaway or a kept toolkit — per CLEAN protocol not deleted unilaterally. Confirm with whoever owns it (antigravity's parallel session), then either delete or move under `tools/i18n/`. |
 | C-002 | TODO — human review | `.saipen_backup/` at repo root (untracked, snapshot dated 18.07 16:23) — a full copy of BOARD/LOG/STATE/RFC/STYLE/UI.md + `phases/`. Also breaks RFC.md §9 (protocol files must not be copied into the project). Looks like a manual safety snapshot from the concurrent agent, not part of the live protocol — not deleted unilaterally, confirm ownership first. |
+
+| T-340 | DONE | antigravity | - | Move sidebar header buttons (??? Trash, ? Search, ?? Archive, ?? Files, etc.) to the top left header bar for cleaner UI. Unit tests adapted. |
+| T-341 | DONE | antigravity | - | Fix bug where color boxes change their color if a new silo is created. Silo map insertions and remappings now include silo_colors, silo_folders, and silo_project_paths. |

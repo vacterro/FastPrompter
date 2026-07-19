@@ -237,7 +237,7 @@ TRANSLATIONS: dict[str, str] = {
     'Main Text Color': 'Колір основного тексту',
     'Mark it done — the tick stays until clicked again': 'Позначити виконаним — позначка до повторного кліку',
     'Mark this silo as done (click again to unmark)': 'Позначити сило як виконане (повторний клік зніме позначку)',
-    'Markdown': 'Markdown',
+    'Markdown': 'Уцінка',
     'Markdown Files (*.md)': 'Markdown файли (*.md)',
     'Maximum of 5 tabs/projects. Remove one first.': 'Максимум 5 вкладок/проектів. Видаліть одну.',
     'Merge files': "Об'єднати файли",

@@ -186,7 +186,7 @@ TRANSLATIONS: dict[str, str] = {
     'Home': 'Koti',
     'Home (Home)': 'Koti (Home)',
     "How should '{}' be added?": "Miten '{}' lisätään?",
-    'I': 'I',
+    'I': 'minä',
     'Import files': 'Tuo tiedostoja',
     "Import Files...\nCopy files into this silo's folder\n(or just drop files anywhere on this window)": 'Tuo tiedostoja…\nKopioi tiedostot tämän silon kansioon\n(tai pudota tiedostoja minne tahansa ikkunaan)',
     'Import Files…': 'Tuo tiedostoja…',

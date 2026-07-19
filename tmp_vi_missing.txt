@@ -1,0 +1,36 @@
+Bold the sidebar title of silos and snippets whose
+content starts with a '#' markdown header
+Delete from this silo's folder?
+
+{}
+
+Freeze the window's position and size
+How should '{}' be added?
+Import Files...
+Copy files into this silo's folder
+(or just drop files anywhere on this window)
+Import Folder...
+Copy an entire folder into this silo's folder
+Nuke '{}' and all snippets?
+Open Folder
+Open this silo's folder in Explorer
+Play a typewriter tick for every typed character.
+Place 'type1.wav' in the 'sound' folder to use your own typing sound.
+Play click sounds for buttons and actions.
+You can place your own .wav files in the 'sound' folder to override:
+• newbutton1.wav (New button)
+• savebutton1.wav (Save button)
+• button1.wav (Click/Silo)
+• button2.wav (Snippet)
+• tickbox1.wav (Checkbox)
+• delete1.wav (Delete)
+• clear1.wav (Clear)
+Template for the Ctrl+E header.
+{text} — the line's text
+{time} — timestamp
+{state} — Morning / Day / Evening / Night
+Markdown markers (** __ etc.) are yours to add or drop.
+The nested silo owns {} file(s).
+Merge them into the parent silo's Files?
+(collisions get ' (2)' names — nothing is overwritten)
+store in silo's container

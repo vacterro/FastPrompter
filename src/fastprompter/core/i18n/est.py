@@ -226,7 +226,7 @@ TRANSLATIONS: dict[str, str] = {
     "Main Text Color": "Peamine tekstivärv",
     "Mark it done — the tick stays until clicked again": "Märgi tehtuks — linnuke jääb kuni uuesti klõpsamiseni",
     "Mark this silo as done (click again to unmark)": "Märgi see silo tehtuks (klõpsa uuesti märgi eemaldamiseks)",
-    "Markdown": "Markdown",
+    "Markdown": "Allahindlus",
     "Markdown Files (*.md)": "Markdowni failid (*.md)",
     "Maximum of 5 tabs/projects. Remove one first.": "Maksimum 5 sakki/projekti. Eemalda enne üks.",
     "Merge files": "Ühenda failid",

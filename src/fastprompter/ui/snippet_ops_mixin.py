@@ -766,6 +766,38 @@ class SnippetOpsMixin:
             pinned = self.data.get("pinned_silos", [])
             if isinstance(pinned, list):
                 pinned[:] = [p + 1 for p in pinned if p + 1 < 100]
+            ticked = self.data.get("silo_ticked", [])
+            if isinstance(ticked, list):
+                ticked[:] = [p + 1 for p in ticked if p + 1 < 100]
+            collapsed = self.data.get("silo_collapsed", [])
+            if isinstance(collapsed, list):
+                collapsed[:] = [p + 1 for p in collapsed if p + 1 < 100]
+            
+            for dict_name in ("silo_colors", "silo_folders", "silo_project_paths"):
+                d = self.data.get(dict_name, {})
+                if isinstance(d, dict):
+                    new_d = {}
+                    for k, v in d.items():
+                        try:
+                            if int(k) + 1 < 100:
+                                new_d[str(int(k) + 1)] = v
+                        except (ValueError, TypeError):
+                            new_d[k] = v
+                    d.clear()
+                    d.update(new_d)
+                    
+            cmap = self.data.get("silo_children", {})
+            if isinstance(cmap, dict):
+                new_cmap = {}
+                for p, kids in cmap.items():
+                    try:
+                        np = int(p) + 1
+                        if np < 100:
+                            new_cmap[str(np)] = [k + 1 for k in kids if k + 1 < 100]
+                    except (ValueError, TypeError):
+                        pass
+                cmap.clear()
+                cmap.update(new_cmap)
 
         self.silo_page = 0
         self.active_temp_slot = 0
