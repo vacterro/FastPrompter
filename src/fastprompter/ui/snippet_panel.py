@@ -184,11 +184,16 @@ class DraggableButton(QPushButton):
         menu.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         menu.setFont(QApplication.font())
         le = getattr(self.main_win, "_current_lang", "EN")
-        menu.addAction(tr("📋 Copy", le), lambda: self.main_win.copy_snippet_to_clipboard(self.full_text))
-        menu.addAction(tr("✏ Rename", le), lambda: self.main_win.rename_snippet(self.cat, self.global_idx))
-        menu.addAction(tr("📁 Files…", le), lambda: self.main_win.open_file_container(self.global_idx))
-        menu.addSeparator()
-        menu.addAction(tr("🗑 Delete", le), lambda: self.main_win.prompt_delete_snippet(self.cat, self.global_idx))
+        if self.cat == "Trash":
+            menu.addAction(tr("♻ Restore", le), lambda: self.main_win.restore_snippet(self.global_idx))
+            menu.addSeparator()
+            menu.addAction(tr("🗑 Delete Permanently", le), lambda: self.main_win.prompt_delete_snippet(self.cat, self.global_idx))
+        else:
+            menu.addAction(tr("📋 Copy", le), lambda: self.main_win.copy_snippet_to_clipboard(self.full_text))
+            menu.addAction(tr("✏ Rename", le), lambda: self.main_win.rename_snippet(self.cat, self.global_idx))
+            menu.addAction(tr("📁 Files…", le), lambda: self.main_win.open_file_container(self.global_idx))
+            menu.addSeparator()
+            menu.addAction(tr("🗑 Delete", le), lambda: self.main_win.prompt_delete_snippet(self.cat, self.global_idx))
         self.main_win.ignore_focus_loss = True
         try:
             menu.exec(self.mapToGlobal(pos))

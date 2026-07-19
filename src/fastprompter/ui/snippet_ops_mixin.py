@@ -250,11 +250,12 @@ class SnippetOpsMixin:
         """Prompt the user to confirm and delete a snippet."""
         self.sound_manager.play("delete")
         self.ignore_focus_loss = True
+        le = getattr(self, "_current_lang", "EN")
         try:
+            title = tr("Delete Snippet", le) if cat != "Trash" else tr("Delete Permanently", le)
+            msg = tr("Delete this snippet?", le) if cat != "Trash" else tr("Delete this snippet permanently?", le)
             reply = QMessageBox.question(
-                self,
-                tr("Delete Snippet", getattr(self, "_current_lang", "EN")),
-                tr("Delete this snippet?", getattr(self, "_current_lang", "EN")),
+                self, title, msg,
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
         finally:
@@ -262,6 +263,32 @@ class SnippetOpsMixin:
         self.activateWindow()
         if reply == QMessageBox.StandardButton.Yes:
             self.delete_preset_by_index(cat, global_idx)
+
+    def restore_snippet(self, global_idx):
+        if "Trash" not in self.data.get("categories", {}):
+            return
+        item = self.data["categories"]["Trash"][global_idx]
+        if not item:
+            return
+            
+        self.add_data_undo_state("Restore snippet")
+        
+        target_cat = "Default"
+        for c in self.data.get("cats_order", []):
+            if c != "Trash":
+                target_cat = c
+                break
+                
+        if target_cat not in self.data["categories"]:
+            self.data["categories"][target_cat] = []
+            if target_cat not in self.data.get("cats_order", []):
+                self.data.setdefault("cats_order", []).insert(0, target_cat)
+                
+        self.data["categories"][target_cat].append(item)
+        self.data["categories"]["Trash"][global_idx] = None
+        
+        self.mark_dirty()
+        self.refresh_snippets_panel()
 
     def rename_snippet(self, cat, global_idx):
         """Rename a snippet via input dialog."""
