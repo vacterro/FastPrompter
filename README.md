@@ -143,6 +143,9 @@ Press `Alt+X` anywhere — in your browser, IDE, terminal — and FastPrompter p
 <img alt="Screenshot 4" src="docs/images/2026-07-19_054643.png" />
 <img alt="Screenshot 5" src="docs/images/2026-07-19_054617.png" />
 
+<img alt="Screenshot 6" src="docs/images/2026-07-19_055445.png" />
+<img alt="Screenshot 7" src="docs/images/2026-07-19_055431.png" />
+
 </div>
 </details>
 
