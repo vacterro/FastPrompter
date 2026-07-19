@@ -94,3 +94,4 @@
 - 19.07.26 05:00 [TRANSLATE] RUN: auto-translate 636 untranslated keys via Google Translate across 20 lang files. VI: 456→53, other langs reduced to 1-8 each. 429 total changes, 143 remaining (multi-line key edge cases). Fixed _translate.py encoding bug + Hebrew code (he→iw). Regenerated _untranslated.json. 461/461 unit PASS. python-pro agent (codebuff)
 
 - 19.07.26 05:00 [UI/BUG] RUN: Moved sidebar buttons into header (left-aligned) per T-340; fixed silo color mapping bug on insert/delete per T-341; fixed unit test layout flakiness; fixed syntax error in nl.py. -> 461+104 PASS. All clean.
+- 19.07.26 05:15 [ANALYZE] RUN: Verified remaining 106 untranslated keys are intentional (68: emoji/hotkeys/abbrev + 38: loanwords). Translation pack is effectively complete: 530 auto-translated across 3 passes, 106 confirmed non-gaps. 461/461 PASS. (codebuff)

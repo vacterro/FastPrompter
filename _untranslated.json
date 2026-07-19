@@ -3,119 +3,119 @@
     "📁{}"
   ],
   "DA": [
-    "S",
-    "B",
     "Data",
-    "📁{}",
     "Markdown",
-    "Format:",
     "H",
-    "U"
+    "B",
+    "U",
+    "Format:",
+    "S",
+    "📁{}"
   ],
   "DE": [
-    "S",
-    "Name:",
     "Editor",
-    "📁{}",
-    "Format:",
+    "Silos",
     "H",
+    "Name:",
     "U",
-    "Silos"
+    "Format:",
+    "S",
+    "📁{}"
   ],
   "EST": [
-    "S",
-    "📁{}",
     "+ Font",
-    "Font:"
+    "S",
+    "Font:",
+    "📁{}"
   ],
   "FI": [
-    "S",
-    "B",
-    "📁{}",
     "Markdown",
     "H",
-    "U"
+    "B",
+    "U",
+    "S",
+    "📁{}"
   ],
   "FRA": [
-    "S",
-    "📁{}",
+    "Silos",
     "Archive",
-    "Silos"
+    "S",
+    "📁{}"
   ],
   "HE": [
-    "📁{}",
-    "Markdown"
+    "Markdown",
+    "📁{}"
   ],
   "IT": [
-    "S",
-    "📁{}",
     "Volume:",
+    "Silos",
     "H",
-    "Silos"
+    "S",
+    "📁{}"
   ],
   "JA": [
-    "S",
-    "B",
-    "📁{}",
     "H",
-    "U"
+    "B",
+    "U",
+    "S",
+    "📁{}"
   ],
   "KO": [
     "📁{}"
   ],
   "NL": [
-    "S",
-    "B",
-    "I",
-    "📁{}",
     "Volume:",
     "H",
-    "U"
+    "B",
+    "U",
+    "S",
+    "I",
+    "📁{}"
   ],
   "NO": [
-    "S",
-    "B",
     "Data",
-    "📁{}",
     "Markdown",
-    "Format:",
     "H",
-    "U"
+    "B",
+    "U",
+    "Format:",
+    "S",
+    "📁{}"
   ],
   "PL": [
-    "S",
-    "B",
-    "I",
-    "📁{}",
-    "Format:",
     "H",
-    "U"
+    "B",
+    "U",
+    "Format:",
+    "S",
+    "I",
+    "📁{}"
   ],
   "PT": [
-    "S",
-    "Editor",
-    "📁{}",
     "Volume:",
+    "Editor",
+    "Silos",
     "H",
-    "Silos"
+    "S",
+    "📁{}"
   ],
   "RU": [
     "📁{}"
   ],
   "SPA": [
     "Editor",
-    "📁{}",
+    "Silos",
     "Error",
-    "Silos"
+    "📁{}"
   ],
   "SV": [
-    "S",
-    "B",
     "Data",
-    "📁{}",
+    "Silos",
     "H",
+    "B",
     "U",
-    "Silos"
+    "S",
+    "📁{}"
   ],
   "TH": [
     "📁{}"
@@ -124,64 +124,27 @@
     "📁{}"
   ],
   "VI": [
-    "Failed to save backup:\n{}",
-    "Copy all text (Ctrl+C)\nRight-click: Copy + Close FastPrompter",
-    "S",
-    "Italic ({})\nMake selected text italic.",
-    "B",
-    "Bold ({})\nMake selected text bold.",
-    "Insert Divider Line\tCtrl+W",
-    "Files: drop/drag/preview assets for this silo\n\n{}",
-    "Failed to export:\n{}",
-    "Clear Format\nRemove all explicit font styling from text.",
-    "Strikethrough (Ctrl+T)\nCross out selected text.",
-    "Header (Ctrl+E)\nTitle the line: # + bold + underline + timestamp,\nthen land 2 lines below on a fresh bullet.",
-    "Copying with Ctrl+C also hides the window\n(copy & get back to work in one stroke)",
-    "Show / hide the line-number gutter\n(click the gutter to place colored margin marks)",
-    "Hide the window when you click outside of it\nGlobal toggle: Alt+A",
-    "📁{}",
-    "Underline ({})\nMake selected text underlined.",
-    "Files—asset drawer for the active silo (drop in / drag out /\npreview / export; plain folder in data/files)\n\n",
-    "Export All...\nCopy every file here to a folder you pick",
-    "Database backed up to:\n{}",
-    "Failed to save file:\n{}",
-    "Rename…\tF2",
-    "Failed to restore backup:\n{}",
-    "Settings\nConfigure hotkeys, theme, fonts, and UI scaling.",
-    "Scale the whole program: 50 / 75 / 100 / 125 / 150%\n(fine-tune with Ctrl+Plus / Ctrl+Minus)",
-    "Choose where silo file containers are stored.\nDefault: data/files next to the app.",
-    "Silos exported to:\n{}",
-    "View\nCycle view: Icons → List → Details (like Explorer)",
-    "Clipboard → File\tCtrl+V",
-    "Mirror silos & snippets as Markdown files to Documents\\.fastprompter\\",
-    "Show the time-of-day word (Morning / Day / Evening / Night)\nafter the clock in the date widget",
-    "Rpl",
-    "Files\nAsset drawer for the active silo: drop any files in,\ndrag them out, preview, export. Stored as a plain folder\nin data/files — readable outside FastPrompter.",
     "Delete…\tDel",
-    "Toggle Sidebar (Alt+D)\nShow or hide the right/left sidebar containing snippets and silos.",
-    "Insert Line (Ctrl+W)\nInsert a spaced --- divider and start a fresh bullet.",
-    "Source View: Plain text editor\nLive Preview: Editor with live markdown highlights (default)\nReading: Read-only rendered markdown view",
-    "Failed to backup:\n{}",
-    "Copy Path\tCtrl+Shift+C",
-    "Show the ▲ ▶ ▼ paste buttons on snippet rows\n(insert at top / at cursor / at bottom)",
-    "Show a floating date and time rectangle in the top-right\ncorner of the text editor",
-    "New Folder\tCtrl+N",
-    "Jump to End\nMove cursor to the bottom of the document.",
-    "Silo successfully saved to:\n{}",
-    "H",
-    "Auto-Bullet (Right-Click): {}\nLeft-Click: Convert selected lines between dashes and bullets.",
-    "Clip→File\nSave the clipboard text into this folder as a .txt file",
-    "Show a mini analog clock (hour + minute hands)\nnext to the date widget",
-    "Show a line-number gutter\n(click it to place colored margin marks)",
-    "View ({})\nCycle view: Icons → List → Details (like Explorer)",
+    "View\nCycle view: Icons → List → Details (like Explorer)",
     "BkUp",
-    "Open\tEnter",
-    "With Auto-Bullet on, Enter after a list item adds a blank\nline before the next bullet — spaced, easy-to-read lists"
+    "Rename…\tF2",
+    "H",
+    "With Auto-Bullet on, Enter after a list item adds a blank\nline before the next bullet — spaced, easy-to-read lists",
+    "B",
+    "View ({})\nCycle view: Icons → List → Details (like Explorer)",
+    "Clipboard → File\tCtrl+V",
+    "Rpl",
+    "Files—asset drawer for the active silo (drop in / drag out /\npreview / export; plain folder in data/files)\n\n",
+    "Files\nAsset drawer for the active silo: drop any files in,\ndrag them out, preview, export. Stored as a plain folder\nin data/files — readable outside FastPrompter.",
+    "S",
+    "Show the ▲ ▶ ▼ paste buttons on snippet rows\n(insert at top / at cursor / at bottom)",
+    "Clip→File\nSave the clipboard text into this folder as a .txt file",
+    "📁{}"
   ],
   "ZH": [
-    "S",
-    "📁{}",
     "H",
-    "U"
+    "U",
+    "S",
+    "📁{}"
   ]
 }
