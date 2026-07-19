@@ -176,7 +176,15 @@ class DraggableButton(QPushButton):
         needed_height = bounding.height() + 8
         self.setText(wrapped)
         min_h = fm.height() + 8
-        self.setFixedHeight(max(min_h, needed_height))
+        new_height = max(min_h, needed_height)
+        if self.height() != new_height or self.minimumHeight() != new_height:
+            self.setFixedHeight(new_height)
+            self.updateGeometry()
+            p = self.parentWidget()
+            if p:
+                p.updateGeometry()
+                if p.parentWidget():
+                    p.parentWidget().updateGeometry()
 
     def show_menu(self, pos):
         from PyQt6.QtWidgets import QMenu
@@ -763,7 +771,15 @@ class DraggableSiloButton(QWidget):
 
         self._lbl_text.setText(self.full_name)
         self._lbl_count.setText(self._line_count_str)
-        self.setFixedHeight(self._lbl_text.fontMetrics().height() + 10)
+        new_height = self._lbl_text.fontMetrics().height() + 10
+        if self.height() != new_height or self.minimumHeight() != new_height:
+            self.setFixedHeight(new_height)
+            self.updateGeometry()
+            p = self.parentWidget()
+            if p:
+                p.updateGeometry()
+                if p.parentWidget():
+                    p.parentWidget().updateGeometry()
 
     def show_menu(self, pos):
         self.main_win.show_temp_menu(self.global_idx, self.mapToGlobal(pos), is_archive=self.is_archive)

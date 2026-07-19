@@ -37,13 +37,16 @@ def build_help_html(data, lang="EN") -> str:
         ("Ctrl+N", "New empty silo at the top (max 5 blanks)"),
         ("Alt+Up / Alt+Down", "Previous / next silo"),
         ("Ctrl+1&ndash;Ctrl+0", "Jump to silo 1&ndash;10"),
-        ("F1&ndash;F10", "Paste snippet 1&ndash;10 into the editor"),
+        ("F1&ndash;F10 / Ctrl+Shift+1&ndash;9", "Paste snippet 1&ndash;10 into the editor"),
         ("Ctrl+S", "Save text as snippet / update the edited snippet"),
-        ("Ctrl+W", "Insert a spaced --- divider and start a fresh bullet"),
+        ("Ctrl+W", "Insert a spaced --- divider (toolbar Line command)"),
+        ("Alt+W", "Insert a spaced --- divider and start a fresh &bull; bullet (old behavior)"),
         ("Ctrl+E", "Header the line: # + bold + underline + timestamp, "
                    "then jump 2 lines down onto a fresh &bull; bullet"),
         ("Ctrl+Return", "Toggle [ ] checkboxes on the line / selection"),
         ("Ctrl+B / Ctrl+I / Ctrl+U", "Bold / Italic / Underline"),
+        ("Ctrl+T", "Strikethrough text"),
+        ("Alt+Backspace", "Delete the previous word or selected text"),
         ("Ctrl+F / Ctrl+H", "Find / Find &amp; Replace"),
         ("Ctrl+Z / Ctrl+Shift+Z", "Undo / redo — text <i>and</i> silo actions "
                                   "(clear, delete, move, pin, archive, tabs)"),

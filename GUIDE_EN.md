@@ -39,8 +39,18 @@ entire install, in one move.
 ## How to actually use it (short version)
 
 - `Alt+X` — summon/hide the window from anywhere.
-- `F1`–`F10` — paste whatever snippet lives there.
+- `F1`–`F10` / `Ctrl+Shift+1`–`9` — paste snippet 1-10.
+- `Ctrl+1`–`Ctrl+0` — jump to silo 1-10.
 - `Ctrl+N` — a fresh empty silo; `Alt+Up`/`Alt+Down` — walk between them.
+- `Ctrl+W` — insert a spaced --- divider.
+- `Alt+W` — insert a spaced --- divider and start a fresh bullet.
+- `Ctrl+E` — header the line: # + bold + underline + timestamp.
+- `Ctrl+Return` — toggle [ ] checkboxes.
+- `Ctrl+B` / `Ctrl+I` / `Ctrl+U` / `Ctrl+T` — bold, italic, underline, strikethrough.
+- `Alt+Backspace` — delete the previous word.
+- `Ctrl+S` — save snippet.
+- `Ctrl+D` — zen mode.
+- `Ctrl+Q` — snap window to corners.
 - Middle-click a silo — sends it to the trash (not gone for good).
 - Hover a silo — buttons appear: tick ✅, files 📁, pin 📌, archive 📥.
 
