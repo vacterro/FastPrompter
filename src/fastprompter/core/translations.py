@@ -1,15 +1,25 @@
-"""Full EN/RU translation dictionaries for FastPrompter Settings UI.
+"""Translation front-end for the FastPrompter UI.
 
-Usage:
-    from fastprompter.core.translations import tr, current_lang, set_language
+This module is the name every UI file imports (`from ...translations import
+tr`). It now DELEGATES to the full `core.i18n` translation pack (21 languages)
+while keeping the legacy Russian dictionary `_DATA` below as an overlay:
 
-    btn.setText(tr("Always on Top", lang))
-    btn.setToolTip(tr("Keep the window above all others", lang))
+  * EN  -> the key itself (English is the source text).
+  * RU  -> `_DATA` wins (the proven, hand-checked Russian that ships today),
+           and the pack fills any key `_DATA` doesn't have. RU can only get
+           MORE complete, never regress.
+  * any other language (DE, JA, ZH, FR, ...) -> served by the i18n pack.
+
+`_DATA` stays public because main.py imports it directly to build a reverse
+EN<-RU map for its no-Cyrillic guard.
 """
 
+from fastprompter.core import i18n as _i18n
+
+current_lang = "EN"  # legacy module attribute; kept for import compatibility
+
 # ---------------------------------------------------------------------------
-# Translation dictionaries — English is the key (fallback).
-# Russian translations use the same keys.
+# Legacy Russian dictionary — English is the key (fallback).
 # ---------------------------------------------------------------------------
 
 _DATA = {
@@ -776,20 +786,60 @@ _DATA = {
 def tr(text: str, lang: str = "EN") -> str:
     """Translate a string to the given language.
 
-    If the language is 'EN' or no translation exists, returns the original.
+    EN (or empty) returns the source text unchanged. RU prefers the legacy
+    `_DATA` and falls back to the i18n pack. Every other language is served
+    entirely by the pack. Unknown keys fall back to the English source.
     """
-    if lang == "EN" or not text:
+    if not text:
         return text
-    return _DATA.get(text, text)
+    target = (lang or "EN").upper()
+    if target == "EN":
+        return text
 
+    _i18n.ensure_initialized()
 
+    if target == "DED":
+        # Дед is a partial overlay: speak grandpa where ded.py has a line,
+        # otherwise fall through to full Russian so the UI stays coherent.
+        ded = _i18n.tr(text, lang="DED")
+        if ded != text:
+            return ded
+        return tr(text, "RU")
+
+    if target == "RU":
+        # RU = the UNION of the legacy dict and the pack, taking whichever
+        # source actually translated the key (a value equal to the key is an
+        # untranslated placeholder, not a translation). Legacy wins ties so a
+        # shipping RU string never changes under us; the pack then fills the
+        # ~26 keys legacy left in English. Net: RU only ever gets MORE complete.
+        legacy = _DATA.get(text)
+        if legacy is not None and legacy != text:
+            return legacy
+        packed = _i18n.tr(text, lang="RU")
+        if packed != text:
+            return packed
+        return legacy if legacy is not None else text
+
+    return _i18n.tr(text, lang=target)
 
 
 def set_language(state_data: dict, lang: str):
-    """Persist the language choice."""
+    """Persist the language choice and point the engine at it."""
+    global current_lang
+    current_lang = lang
     state_data["language"] = lang
+    _i18n.ensure_initialized()
+    _i18n.set_language(state_data, lang)
 
 
 def get_language(state_data: dict, default: str = "EN") -> str:
     """Read the persisted language, default EN."""
     return state_data.get("language", default)
+
+
+def available_languages() -> list[str]:
+    """All language codes the pack can serve, EN first, then the rest sorted."""
+    _i18n.ensure_initialized()
+    langs = _i18n.available_langs()  # includes 'EN'
+    rest = sorted(c for c in langs if c != "EN")
+    return ["EN", *rest]

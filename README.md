@@ -51,7 +51,7 @@ Press `Alt+X` anywhere — in your browser, IDE, terminal — and FastPrompter p
 | 📄 **Drop Zones** | Drag files to the editor to choose from 4 actions: insert text, insert clickable link, copy to silo Files, or create shortcut in silo Files |
 | 🕒 **Analog clock** | Optional mini analog clock in the header bar, next to the date/time widget |
 | ⌨️ **Bindable shortcuts** | Rebind every in-app hotkey from the Settings panel — two slots per action, with dynamic tooltips |
-| 🌐 **RU / EN interface** | Full Russian and English translations, switchable in Settings |
+| 🌍 **22 languages + flags** | English, Russian, Ukrainian, German, French, Spanish, Italian, Portuguese, Dutch, Polish, Swedish, Danish, Finnish, Norwegian, Japanese, Chinese, Korean, Thai, Vietnamese, Arabic, Hebrew, Estonian — each with a drawn flag icon, switchable live in Settings. Plus a bonus **«Дед»** angry-grandpa voice 👴 |
 | 🗑️ **Trash** | Middle-click to trash a silo — text and files are safely moved to `_trash`, never permanently deleted |
 | ↩️ **Undo everything** | `Ctrl+Z` covers text *and* silo operations (clear, trash, move) |
 
@@ -227,7 +227,7 @@ Python 3.11 + PyQt6, SQLite via the standard library, Win32 `RegisterHotKey` for
 
 ```powershell
 uv run pytest tests/         # 461 unit tests
-uv run pytest tests_smoke/   # 100 integration tests — boots the real app offscreen
+uv run pytest tests_smoke/   # 104 integration tests — boots the real app offscreen
 ```
 
 ## 📜 License

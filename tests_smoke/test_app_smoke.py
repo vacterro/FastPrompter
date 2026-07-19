@@ -2479,6 +2479,95 @@ def test_line_number_margin_marks_paint(win):
     win.data["line_marks"] = "False"
 
 
+def test_translation_pack_injected():
+    # The i18n pack (21 langs) must be live through the translations front-end:
+    # EN passes through, RU never regresses + gains pack-only keys, and the
+    # new languages actually translate. Asserted WITHOUT Cyrillic literals so
+    # this file stays clean for test_no_cyrillic_in_codebase.
+    from fastprompter.core.translations import tr, available_languages
+
+    langs = available_languages()
+    assert langs[0] == "EN"
+    assert len(langs) >= 22
+    for code in ("RU", "DE", "JA", "ZH", "FRA", "UKR"):
+        assert code in langs, f"{code} missing from pack"
+
+    # EN is the source text — unchanged.
+    assert tr("Save", "EN") == "Save"
+
+    def _non_ascii(s):
+        return any(ord(ch) > 0x7F for ch in s)
+
+    # RU: a key that ships translated today must stay translated (no regression).
+    assert tr("Update", "RU") != "Update" and _non_ascii(tr("Update", "RU"))
+    # RU gain: "Columns:" was English in the legacy dict, the pack fills it.
+    assert tr("Columns:", "RU") != "Columns:" and _non_ascii(tr("Columns:", "RU"))
+
+    # New languages are served entirely by the pack and are distinct.
+    assert tr("Save", "DE") == "Speichern"
+    assert _non_ascii(tr("Save", "JA")) and _non_ascii(tr("Save", "ZH"))
+    assert tr("Save", "DE") != tr("Save", "FRA") != tr("Save", "JA")
+
+    # Unknown key falls back to the English source in any language.
+    assert tr("zzz-not-a-real-key", "RU") == "zzz-not-a-real-key"
+
+    # DED (grandpa-voice) is a selectable overlay language: it speaks its own
+    # lines where written, and falls back to full Russian everywhere else.
+    assert "DED" in langs
+    assert _non_ascii(tr("Think deeply.", "DED"))              # ded's own line
+    unwritten = "Nest it as a child (1 level; its files can merge into the parent)"
+    ded_fallback = tr(unwritten, "DED")
+    assert ded_fallback != unwritten and _non_ascii(ded_fallback)  # -> Russian
+    assert tr("Save", "RU") == tr("Save", "RU")  # ded must not disturb RU/EN
+    assert tr("Save", "EN") == "Save"
+
+
+def test_view_combo_survives_language_switches(win):
+    # Regression: the View combo (Source View / Live Preview / Reading) used to
+    # retranslate from its own already-translated display text and read modes
+    # via currentText(), so once switched to a script it couldn't reverse-map
+    # (e.g. Arabic) it got stuck and preview-mode switching silently broke.
+    # itemData must stay English through every language.
+    combo = win.preview_combo
+    base = [combo.itemData(i) for i in range(combo.count())]
+    assert base == ["Source View", "Live Preview", "Reading"]
+
+    for code in ("AR", "DED", "RU", "JA", "EN"):
+        win.cb_language.setCurrentIndex(win.cb_language.findData(code))
+        assert [combo.itemData(i) for i in range(combo.count())] == base, \
+            f"itemData drifted under {code}"
+
+    # Picking a mode under a non-English language still resolves to English.
+    win.cb_language.setCurrentIndex(win.cb_language.findData("AR"))
+    combo.setCurrentIndex(0)
+    assert combo.currentData() == "Source View"
+    win.cb_language.setCurrentIndex(win.cb_language.findData("EN"))
+    combo.setCurrentIndex(1)
+
+
+def test_language_selector_lists_all_and_switches(win):
+    from fastprompter.core.translations import available_languages
+
+    combo = win.cb_language
+    assert combo.count() == len(available_languages())
+    # codes are stored as itemData, not the display text
+    assert combo.findData("EN") >= 0
+    assert combo.findData("DE") >= 0
+    assert combo.findData("JA") >= 0
+
+    # every language carries a drawn flag icon (emoji flags don't render on
+    # Windows, so they're painted QIcons — every item must have a non-null one)
+    assert all(not combo.itemIcon(i).isNull() for i in range(combo.count()))
+
+    prev = win._current_lang
+    de_idx = combo.findData("DE")
+    combo.setCurrentIndex(de_idx)  # fires currentIndexChanged -> _on_language_changed
+    assert win._current_lang == "DE"
+    assert win.data["language"] == "DE"
+    # restore
+    combo.setCurrentIndex(combo.findData(prev if prev else "EN"))
+
+
 def test_no_cyrillic_in_codebase():
     import glob
     import re

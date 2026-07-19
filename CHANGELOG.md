@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.7.0 — 2026-07-19
+- **22 languages** (was Russian/English only): English, Russian, Ukrainian, German, French, Spanish, Italian, Portuguese, Dutch, Polish, Swedish, Danish, Finnish, Norwegian, Japanese, Chinese, Korean, Thai, Vietnamese, Arabic, Hebrew, Estonian — pick any of them live in Settings → Language. Russian coverage also grew (the picker fills gaps the old dictionary left in English), and English is unchanged.
+- **Flag icons** in the language selector — drawn as crisp little pictures (emoji flags don't render on Windows), so every language has a recognisable flag.
+- **Bonus «Дед» language** 👴 — the whole UI in an angry-90s-grandpa voice, as an overlay on Russian (concentrated in tooltips, dialogs and menus).
+- **Fixed**: switching languages could leave the View combo (Source / Live Preview / Reading) stuck showing a foreign script, and silently broke preview-mode switching in every non-English language. It now localizes cleanly and always resolves the mode correctly.
+- **Ctrl+E headers no longer print literal `**` `__` asterisks** — a `#` header is already bold, so the template is markerless by default; old star-heavy templates are migrated automatically, and the header-format editor's preview now renders real bold/italic instead of raw markers.
+- **Removed the dotted focus rectangle** that appeared over buttons after clicking them.
+- Header buttons no longer overlap the last character of a timestamp.
+
 ## v0.6.6 — 2026-07-18
 - **Fixed crash**: clearing/deleting a silo with "🗑 Trash Vision" on wrote a snippet entry with the wrong shape (`title` instead of `name`), which crashed the snippet panel with `KeyError: 'name'` the moment you switched tabs. Fixed the write, and made the panel tolerate old/foreign entries instead of crashing.
 - **Fixed crash**: the new project-folder/executable launcher buttons (▶️/📂 on a silo) raised `NameError: name 'logger' is not defined` the instant you clicked one with no path configured yet.

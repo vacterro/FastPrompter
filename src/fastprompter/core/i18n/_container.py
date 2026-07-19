@@ -19,7 +19,14 @@ log = logging.getLogger(__name__)
 
 EXTERNAL_SLOT: Final[str] = "VANILLA_TRANSLATIONS"
 
-_BUILTIN_LANGS: Final[list[str]] = ["ru", "est", "ukr", "fra", "spa", "ko", "pt", "it"]
+# Every shipped language module. Kept as an explicit list (not a directory
+# glob) so it resolves identically from source and from the frozen Nuitka
+# onefile EXE, where the package's .py files are compiled in and not on disk.
+_BUILTIN_LANGS: Final[list[str]] = [
+    "ru", "est", "ukr", "fra", "spa", "ko", "pt", "it",
+    "de", "ja", "zh", "nl", "pl", "sv", "da", "fi", "no", "th", "vi", "ar", "he",
+    "ded",  # angry-90s-grandpa voice; a partial overlay on Russian
+]
 
 
 class TranslationError(RuntimeError):
@@ -95,11 +102,18 @@ def initialize(*, load_external: bool = True) -> None:
     loaded: set[str] = set()
 
     for code in builtin_codes:
-        data = _load_lang_module(code)
-        if data is not None:
-            _validate_translations(code, data, en_keys)
-            _engine.register_language(code.upper(), data)
-            loaded.add(code.upper())
+        # Resilient per-language load: a single broken/ drifted module must
+        # never take down startup — the app has to boot even if one language
+        # pack is malformed. Validate NON-strict (drop unknown keys, log)
+        # rather than raising, and swallow any unexpected load error.
+        try:
+            data = _load_lang_module(code)
+            if data is not None:
+                _validate_translations(code, data, en_keys, strict=False)
+                _engine.register_language(code.upper(), data)
+                loaded.add(code.upper())
+        except Exception as exc:  # noqa: BLE001 — startup must survive any lang
+            log.error("Skipping language %s (load failed): %s", code, exc)
 
     if load_external:
         external = _load_external_slot()

@@ -277,7 +277,9 @@ class ThemeMixin:
 
     def change_preview_mode(self, index):
         """Switch between Source View, Live Preview, and Reading modes."""
-        mode = self.preview_combo.currentText()
+        # Read the English mode key from itemData — currentText() is localized
+        # and would never match the English "Source View"/"Reading" checks.
+        mode = self.preview_combo.currentData() or self.preview_combo.currentText()
 
         if self._preview_connected and hasattr(self, "_preview_timer"):
             try:
@@ -329,7 +331,7 @@ class ThemeMixin:
     def update_preview(self):
         """Update the preview area when in Reading mode."""
         text = self.text_area.toPlainText()
-        mode = self.preview_combo.currentText()
+        mode = self.preview_combo.currentData() or self.preview_combo.currentText()
 
         if mode == "Reading":
             self.preview_area.setHtml(self.simple_markdown_to_html(text))

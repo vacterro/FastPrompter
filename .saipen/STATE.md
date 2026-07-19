@@ -1,26 +1,24 @@
 ---
 phase: DONE
-task: "Fix header buttons overlapping timestamp text (F-002)"
-next_action: "Wait for further instructions or continue hunting."
+task: "Shipped v0.7.0 (22 langs + Дед + flags) — code only, no EXE build per user"
+next_action: "Committed + pushed + tagged v0.7.0. No EXE built/uploaded (user said ship without building exe); run release.cmd later to attach the EXE to a GitHub release. T-404/T-405 remain TODO."
 blocker: ""
-agent: antigravity
+agent: claude-opus
 mode: full
 requires: [filesystem, python, shell, git]
-updated: 2026-07-18T22:48:00
+updated: 2026-07-19T01:00:00
 ---
 ## Handoff (for the next agent)
-main HEAD 4be576f, pushed + tagged v0.6.6, release live:
-https://github.com/vacterro/FastPrompter/releases/tag/v0.6.6 (EXE 27.1MB,
-download link verified 302). 461 unit + 100 smoke green. This wave fixed:
-Trash-Vision KeyError('name') crash, launcher-button NameError('logger')
-crash, silo_project_paths not surviving a restart (missing __init__ alias
-migration — same class of bug as H-30x), Text Month setting forced off below
-1280px (i.e. almost always). Added: 12-Hour Clock toggle, Silo Color Box
-toggle, GUIDE_EN/RU.md (pure FastPrompter ELI5, no saipen content per user
-correction).
-Still open (BOARD.md): C-001 i18n_build_scripts/ delete-vs-keep needs a human
-call; a spawned background task exists for silo_colors not being aliased
-per-category (same missing-init-migration bug class as the paths bug just
-fixed, but for colors — lower priority, not user-reported).
-WARNING: a second agent (antigravity) edits this repo in parallel — verify
-main compiles (guard test) and re-run both suites before trusting any state.
+Translation pack is LIVE (uncommitted on main, 461 unit + 103 smoke green).
+The dormant core/i18n/ pack (21 langs) now backs the whole UI:
+- i18n/__init__.py: ensure_initialized() (once-guard) + NATIVE_NAMES map.
+- i18n/_container.py: loads all 21 langs (was 8), resilient/non-strict.
+- core/translations.py: now a PROXY to the pack. EN=source; RU = union of
+  legacy _DATA (wins ties) + pack (fills 26 keys) → 0 regressions; every other
+  lang served by the pack. _DATA kept (overlay + main.py reverse-map guard).
+- main.py: selector lists all 22 langs (native names, code in itemData);
+  _on_language_changed reads itemData.
+Cyrillic native names live in i18n/ (source guard exempts that dir).
+Remaining: T-404 live full-UI retranslate (header/menus refresh only on reopen —
+pre-existing), T-405 slim _DATA. Not shipped (no ship signal).
+WARNING: antigravity edits this repo in parallel — re-verify before trusting.

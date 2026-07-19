@@ -87,7 +87,8 @@ from fastprompter.ui.theme_mixin import ThemeMixin
 from fastprompter.ui.tray_mixin import TrayMixin
 from fastprompter.ui.window_mixin import WindowMixin
 from fastprompter.utils.paths import get_data_dir
-from fastprompter.core.translations import tr, set_language, get_language
+from fastprompter.core.translations import tr, set_language, get_language, available_languages
+from fastprompter.core.i18n import NATIVE_NAMES as _LANG_NATIVE_NAMES
 from fastprompter.utils.textfit import clip_safe_width
 
 
@@ -1004,7 +1005,7 @@ class FastPrompter(
             "font_size": str(self.font_spin.value())
             if hasattr(self, "font_spin")
             else str(self.data.get("font_size", 11)),
-            "preview_mode": self.preview_combo.currentText()
+            "preview_mode": (self.preview_combo.currentData() or self.preview_combo.currentText())
             if hasattr(self, "preview_combo")
             else self.data.get("preview_mode", "None"),
             "paste_mode": self.data.get("paste_mode", "Plain"),
@@ -1341,7 +1342,14 @@ class FastPrompter(
         self.font_spin.valueChanged.connect(self.change_font_size)
 
         self.preview_combo = QComboBox()
-        self.preview_combo.addItems(["Source View", "Live Preview", "Reading"])
+        # The English mode name is stored as itemData and is the SINGLE source
+        # of truth: the display text is translated per-language, but every
+        # lookup (change_preview_mode, saved-value match) reads itemData so a
+        # translated combo never breaks the mode logic or gets stuck in a
+        # foreign language.
+        for _mode in ("Source View", "Live Preview", "Reading"):
+            self.preview_combo.addItem(_mode, _mode)
+        self._retranslate_preview_combo(getattr(self, "_current_lang", "EN"))
         self.preview_combo.setToolTip(tr(
             "Source View: Plain text editor\n"
             "Live Preview: Editor with live markdown highlights (default)\n"
@@ -1350,7 +1358,7 @@ class FastPrompter(
         _view_map = {"None": "Source View", "Raw": "Source View", "Markdown": "Reading"}
         saved_preview = self.data.get("preview_mode", "Live Preview")
         saved_preview = _view_map.get(saved_preview, saved_preview)  # migrate old values
-        idx = self.preview_combo.findText(saved_preview)
+        idx = self.preview_combo.findData(saved_preview)
         if idx < 0:
             idx = 1  # default to Live Preview
         self.preview_combo.setCurrentIndex(idx)
@@ -1459,12 +1467,27 @@ class FastPrompter(
         appearance_row.addSpacing(8)
         appearance_row.addWidget(QLabel(tr("Language:", getattr(self, "_current_lang", "EN"))))
         self.cb_language = QComboBox()
-        self.cb_language.addItems(["EN", "RU"])
+        # Every language the i18n pack can serve, shown by its native name +
+        # a drawn flag icon, keyed on the code (stored as itemData so the
+        # display text is free to be localized without breaking the lookup).
+        from fastprompter.ui.flags import flag_icon
+        from PyQt6.QtCore import QSize
+        self.cb_language.setIconSize(QSize(18, 12))
+        for code in available_languages():
+            native = _LANG_NATIVE_NAMES.get(code, code)
+            label = native if code in ("EN",) else f"{native} ({code})"
+            ic = flag_icon(code)
+            if ic is not None:
+                self.cb_language.addItem(ic, label, code)
+            else:
+                self.cb_language.addItem(label, code)
         saved_lang = self.data.get("language", "EN")
-        idx = self.cb_language.findText(saved_lang)
-        if idx >= 0:
-            self.cb_language.setCurrentIndex(idx)
-        self.cb_language.currentTextChanged.connect(self._on_language_changed)
+        saved_idx = self.cb_language.findData(saved_lang)
+        if saved_idx >= 0:
+            self.cb_language.setCurrentIndex(saved_idx)
+        self.cb_language.currentIndexChanged.connect(
+            lambda i: self._on_language_changed(self.cb_language.itemData(i) or "EN")
+        )
         appearance_row.addWidget(self.cb_language)
         appearance_row.addStretch(1)
         appearance_row.addWidget(self.btn_hotkeys)
@@ -2481,6 +2504,22 @@ class FastPrompter(
         self.text_area.setFocus()
         self.mark_dirty()
 
+    def _retranslate_preview_combo(self, lang):
+        """Set each View-combo item's display text from its English itemData.
+
+        itemData stays English (the lookup key); only the visible label is
+        localized. Translating from the base — not the current display text —
+        is what lets the combo recover when you switch away from a language
+        whose script it can't reverse-map (e.g. Arabic -> grandpa/RU)."""
+        combo = getattr(self, "preview_combo", None)
+        if combo is None or sip.isdeleted(combo):
+            return
+        combo.blockSignals(True)
+        for i in range(combo.count()):
+            base = combo.itemData(i) or combo.itemText(i)
+            combo.setItemText(i, tr(base, lang))
+        combo.blockSignals(False)
+
     def _on_language_changed(self, lang):
         """Handle language combo change: persist and refresh UI text."""
         if lang == self._current_lang:
@@ -2565,13 +2604,10 @@ class FastPrompter(
             self.btn_files_root.setToolTip(
                 tr("Choose where silo file containers are stored.\nDefault: data/files next to the app.", lang))
 
-        # Translate preview combo items
+        # Translate preview combo items from their English base (itemData),
+        # never from the current — possibly already-translated — display text.
         if hasattr(self, "preview_combo") and not sip.isdeleted(self.preview_combo):
-            for i in range(self.preview_combo.count()):
-                item_text = self.preview_combo.itemText(i)
-                translated = tr(item_text, lang)
-                if translated != item_text:
-                    self.preview_combo.setItemText(i, translated)
+            self._retranslate_preview_combo(lang)
             self.preview_combo.setToolTip(
                 tr("Source View: Plain text editor\nLive Preview: Editor with live markdown highlights (default)\nReading: Read-only rendered markdown view", lang))
 
