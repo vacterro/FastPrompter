@@ -618,25 +618,64 @@ class FastPrompter(
             self._notify_timer(t)
 
     def _notify_timer(self, timer):
+        """Sound + an actionable popup. Never steals focus mid-typing."""
+        self._play_timer_sound(timer)
+        from fastprompter.ui.timer_toast import show_toast
+        toast = show_toast(self, timer, on_snooze=self._snooze_timer)
+        if toast is None:
+            # popup unavailable (no screen / teardown) — fall back to the tray
+            try:
+                if hasattr(self, "tray_icon") and not sip.isdeleted(self.tray_icon):
+                    lang = getattr(self, "_current_lang", "EN")
+                    self.tray_icon.showMessage(
+                        tr("Timer", lang), timer.summary(),
+                        self.tray_icon.icon(), 10000)
+            except Exception:
+                from fastprompter.core.logging import logger
+                logger.debug("timer tray notification failed")
+
+    def _play_timer_sound(self, timer):
+        """Play at the timer's own volume, then restore the user's setting."""
+        prev_vol = self.data.get("sound_volume", "5")
+        prev_ui = self.data.get("sound_ui", "False")
         try:
-            prev = self.data.get("sound_volume", "5")
             self.data["sound_volume"] = str(timer.volume)
-            self.data["sound_ui"] = "True"
+            self.data["sound_ui"] = "True"   # an alarm must be audible
             self.play_sound(timer.sound)
-            self.data["sound_volume"] = prev
         except Exception:
             from fastprompter.core.logging import logger
             logger.debug("timer sound failed")
-        try:
-            if hasattr(self, "tray_icon") and not sip.isdeleted(self.tray_icon):
-                lang = getattr(self, "_current_lang", "EN")
-                self.tray_icon.showMessage(
-                    tr("Timer", lang), timer.name, self.tray_icon.icon(), 10000)
-                return
-        except Exception:
-            pass
-        self.show_window()
-        self.raise_()
+        finally:
+            self.data["sound_volume"] = prev_vol
+            self.data["sound_ui"] = prev_ui
+
+    def _snooze_timer(self, timer, minutes):
+        timer.snooze(minutes)
+        self.save_timers_to_data()
+        self._update_date_label()
+
+    def test_timer_notification(self, timer, delay_seconds=5):
+        """Fire a throwaway copy shortly, so the user can check sound and
+        popup before trusting a real timer to it."""
+        import datetime
+
+        from fastprompter.core.timers import Timer
+
+        lang = getattr(self, "_current_lang", "EN")
+        probe = Timer(
+            name=timer.name or tr("Test", lang),
+            description=timer.description or tr("Test notification", lang),
+            target=datetime.datetime.now() + datetime.timedelta(seconds=delay_seconds),
+            sound=timer.sound,
+            volume=timer.volume,
+            color_mode=timer.color_mode,
+            color=timer.color,
+        )
+        # deliberately NOT added to self.timers — a test must not survive a
+        # restart or show up in the countdown beside the clock
+        QTimer.singleShot(max(0, int(delay_seconds * 1000)),
+                          lambda: self._notify_timer(probe))
+        return probe
 
     def _sync_snippets_toggle_button(self):
         btn = getattr(self, "btn_toggle_snippets", None)

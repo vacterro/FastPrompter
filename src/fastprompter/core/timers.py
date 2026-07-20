@@ -81,14 +81,15 @@ def temperature_color(remaining_seconds: float) -> str:
 class Timer:
     """One countdown. `target` is always an absolute local datetime."""
 
-    __slots__ = ("id", "name", "target", "repeat", "sound", "volume",
-                 "color_mode", "color", "enabled", "fired")
+    __slots__ = ("id", "name", "description", "target", "repeat", "sound",
+                 "volume", "color_mode", "color", "enabled", "fired")
 
     def __init__(self, name, target, repeat=REPEAT_NONE, sound="tick",
                  volume=5, color_mode=COLOR_TEMPERATURE, color=DEFAULT_COLOR,
-                 enabled=True, id=None, fired=False):
+                 enabled=True, id=None, fired=False, description=""):
         self.id = id or uuid.uuid4().hex[:12]
         self.name = (name or "Timer").strip() or "Timer"
+        self.description = (description or "").strip()
         self.target = target
         self.repeat = repeat if repeat in REPEAT_CHOICES else REPEAT_NONE
         self.sound = sound or "tick"
@@ -106,6 +107,7 @@ class Timer:
         return {
             "id": self.id,
             "name": self.name,
+            "description": self.description,
             "target": self.target.isoformat(timespec="seconds"),
             "repeat": self.repeat,
             "sound": self.sound,
@@ -128,6 +130,7 @@ class Timer:
             return None
         return cls(
             name=d.get("name", "Timer"),
+            description=d.get("description", ""),
             target=target,
             repeat=d.get("repeat", REPEAT_NONE),
             sound=d.get("sound", "tick"),
@@ -151,6 +154,34 @@ class Timer:
         if self.color_mode == COLOR_STATIC:
             return self.color
         return temperature_color(self.remaining(now))
+
+    def snooze(self, minutes=10, now=None):
+        """Push the timer back — always LATER, never closer.
+
+        For an alarm that already went off this means "remind me again in N
+        minutes". For one still counting down it adds N minutes to the
+        existing target; resetting that to now+N would drag a timer due in
+        two hours forward to ten minutes away, which is the opposite of
+        what pressing snooze should ever do.
+        """
+        now = now or datetime.datetime.now()
+        try:
+            minutes = max(1, int(minutes))
+        except (TypeError, ValueError):
+            minutes = 10
+        step = datetime.timedelta(minutes=minutes)
+        base = self.target if self.target > now else now
+        self.target = base + step
+        self.fired = False
+        self.enabled = True
+        return self.target
+
+    def summary(self):
+        """One line for tooltips and list rows."""
+        bits = [self.name]
+        if self.description:
+            bits.append(self.description)
+        return " - ".join(bits)
 
     def advance(self, now=None):
         """Roll a repeating timer to its next occurrence.

@@ -125,3 +125,37 @@ class TestColour:
         hot = t.display_color(NOW)
         cool = t.display_color(NOW - datetime.timedelta(days=3))
         assert hot != cool
+
+
+class TestSnooze:
+    def test_fired_alarm_is_pushed_from_now(self):
+        t = Timer("late", NOW - datetime.timedelta(minutes=5))
+        t.fired = True
+        t.snooze(10, NOW)
+        assert t.target == NOW + datetime.timedelta(minutes=10)
+        assert t.fired is False and t.enabled is True
+
+    def test_pending_timer_moves_LATER_never_closer(self):
+        # snoozing a timer due in 2h must not drag it to 10 minutes away
+        t = mk(minutes=120)
+        original = t.target
+        t.snooze(10, NOW)
+        assert t.target == original + datetime.timedelta(minutes=10)
+        assert t.target > NOW + datetime.timedelta(minutes=100)
+
+    def test_bad_input_falls_back(self):
+        t = mk(minutes=-1)
+        t.snooze("abc", NOW)
+        assert t.target > NOW
+        t2 = mk(minutes=-1)
+        t2.snooze(0, NOW)
+        assert t2.target > NOW
+
+    def test_summary_includes_description(self):
+        assert Timer("N", NOW, description="D").summary() == "N - D"
+        assert Timer("N", NOW).summary() == "N"
+
+    def test_description_round_trips(self):
+        t = Timer("n", NOW, description="  spaced  ")
+        assert t.description == "spaced"
+        assert load_timers(save_timers([t]))[0].description == "spaced"

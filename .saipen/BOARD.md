@@ -483,3 +483,17 @@ NOT DONE this pass — the other half of the request:
 **Settings UI is still messy and needs the compaction/tabs rework** so it
 stays usable at very small window sizes. Deliberately not started rather
 than rushed on top of a large feature.
+
+## Timer system, round 2 — comprehensive (21.07, claude-opus)
+| ID | Status | Description |
+|---|---|---|
+| TM-05 | DONE | **Description field** per timer, persisted, shown in the list tooltip and in the notification popup. `summary()` renders "Name - description". |
+| TM-06 | DONE | **Notification popup** (`ui/timer_toast.py`) replaces the easy-to-miss tray balloon: frameless panel bottom-right of the timer's own screen, timer name in its urgency colour, description, and Snooze +5/+10/+30 / Dismiss buttons. Uses `WA_ShowWithoutActivating` so an alarm never yanks the caret out of what the user is typing. Multiple simultaneous alarms stack upward. Auto-closes after 30s. Tray remains the fallback when the popup can't be shown. |
+| TM-07 | DONE | **Test button**: fires a throwaway copy of the current form in 5 seconds, so sound/volume/popup can be checked without waiting four days. The probe is deliberately NOT appended to `self.timers` — it must not persist or appear in the countdown. Test-asserted. |
+| TM-08 | DONE | **Editing existing timers**: double-click or Edit loads the row into the form, the button becomes Save, and committing updates in place (same id, re-armed) instead of creating a duplicate. Plus Pause/Resume, per-row +10m snooze, and a live 1s countdown refresh while the dialog is open. Tooltips on every control. |
+| TM-09 | FIXED (found by its own test) | `snooze()` reset the target to `now + minutes`, which dragged a timer due in two hours FORWARD to ten minutes away — the opposite of snoozing. Now it adds to the existing target when the timer is still pending, and only uses `now` as the base for an alarm that has already fired. |
+| TM-10 | DONE | `_play_timer_sound` force-enables sound and applies the timer's own volume, then restores BOTH user settings in a `finally` — an alarm can't leave the user's volume or sound toggle changed. Test-asserted. |
+
+Verified: 503 unit + 148 smoke green, plus an end-to-end run in a real
+window (add with description -> list tooltip -> test fire -> toast ->
+snooze -> edit in place).

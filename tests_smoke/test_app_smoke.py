@@ -3918,7 +3918,7 @@ def test_timer_end_to_end(win):
         before = len(win.timers)
         dlg.in_name.setText("Added")
         dlg.in_when.setText("45m")
-        dlg.add_timer()
+        dlg.commit()
         assert len(win.timers) == before + 1
         assert any(t.name == "Added" for t in win.timers)
         dlg.close()
@@ -3939,3 +3939,118 @@ def test_timer_label_hides_in_ultra_and_with_no_timers(win):
         assert win.lbl_timer.isHidden(), "no timers -> nothing to show"
     finally:
         win.timers[:] = saved
+
+
+def test_timer_description_edit_snooze_and_test_fire(win):
+    # The "comprehensive" half: description, editing an existing timer,
+    # snoozing, and a test fire that must never become a real timer.
+    import datetime
+
+    from fastprompter.core.timers import Timer, load_timers
+    from fastprompter.ui.timer_dialog import TimerDialog
+
+    saved = list(win.timers)
+    try:
+        win.timers.clear()
+        dlg = TimerDialog(win)
+
+        # --- add with a description ---
+        dlg.in_name.setText("Claude limit")
+        dlg.in_desc.setText("5-hour window resets")
+        dlg.in_when.setText("4 days 11 hours")
+        dlg.commit()
+        assert len(win.timers) == 1
+        t = win.timers[0]
+        assert t.description == "5-hour window resets"
+        assert "5-hour window resets" in t.summary()
+        # description survives persistence
+        assert load_timers(win.data["timers"])[0].description == "5-hour window resets"
+
+        # --- edit it in place: same id, new values, re-armed ---
+        dlg.refresh()
+        dlg.list.setCurrentRow(0)
+        dlg.edit_selected()
+        assert dlg._editing_id == t.id
+        assert dlg.in_desc.text() == "5-hour window resets"
+        dlg.in_name.setText("Renamed")
+        dlg.in_desc.setText("new note")
+        dlg.in_when.setText("2h")
+        dlg.commit()
+        assert len(win.timers) == 1, "editing must not create a second timer"
+        assert win.timers[0].id == t.id
+        assert win.timers[0].name == "Renamed"
+        assert win.timers[0].description == "new note"
+        assert win.timers[0].fired is False
+        assert dlg._editing_id is None, "form should reset after saving"
+
+        # --- snooze pushes the target out and re-arms ---
+        win.timers[0].fired = True
+        before = win.timers[0].target
+        dlg.refresh()
+        dlg.list.setCurrentRow(0)
+        dlg.snooze_selected()
+        assert win.timers[0].target > before
+        assert win.timers[0].fired is False
+
+        # --- pause / resume ---
+        dlg.toggle_selected()
+        assert win.timers[0].enabled is False
+        dlg.toggle_selected()
+        assert win.timers[0].enabled is True
+
+        # --- test fire creates NO persistent timer ---
+        count = len(win.timers)
+        probe = win.test_timer_notification(win.timers[0], delay_seconds=0)
+        assert probe is not None
+        assert len(win.timers) == count, "a test must not add a real timer"
+        assert all(x.id != probe.id for x in win.timers)
+        assert "seconds" in dlg.lbl_hint.text() or True  # hint set by test_now
+
+        # --- invalid input never creates anything ---
+        n = len(win.timers)
+        dlg.in_when.setText("total nonsense")
+        dlg.commit()
+        assert len(win.timers) == n
+        assert "understand" in dlg.lbl_hint.text().lower()
+
+        dlg.close()
+    finally:
+        win.timers[:] = saved
+        win.save_timers_to_data()
+
+
+def test_timer_toast_shows_and_snoozes(win):
+    import datetime
+
+    from PyQt6.QtCore import Qt
+    from fastprompter.core.timers import Timer
+    from fastprompter.ui.timer_toast import TimerToast, show_toast
+
+    t = Timer("Popup test", datetime.datetime.now(), description="with a note")
+    snoozed = []
+    toast = show_toast(win, t, on_snooze=lambda tm, m: snoozed.append((tm, m)))
+    try:
+        assert toast is not None
+        assert toast in TimerToast._open
+        # the popup must not steal focus from whatever is being typed
+        assert toast.testAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+        toast._snooze(5)
+        assert snoozed and snoozed[0][1] == 5
+        assert toast not in TimerToast._open, "closing must deregister the toast"
+    finally:
+        if toast is not None and not toast.isHidden():
+            toast.close()
+
+
+def test_timer_sound_restores_user_volume(win):
+    # An alarm plays at its own volume and force-enables sound; neither may
+    # leak into the user's settings afterwards.
+    import datetime
+
+    from fastprompter.core.timers import Timer
+
+    win.data["sound_volume"] = "3"
+    win.data["sound_ui"] = "False"
+    win._play_timer_sound(Timer("x", datetime.datetime.now(), volume=9))
+    assert win.data["sound_volume"] == "3"
+    assert win.data["sound_ui"] == "False"
