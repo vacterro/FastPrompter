@@ -346,3 +346,24 @@ Additional finding: fancy_zones.py freshly created — may have import-sorting v
 | T-359 | P5 | TODO | **Ambiguous `l` variable** in `drop_overlay.py:112,136` (ruff E741). Single-letter `l` confusable with `1`. Rename to `lang`. |
 | T-360 | P5 | TODO | **Trailing whitespace** in `toolbar_reorder.py:19` and `trash_dialog.py:2,92,93` (ruff W291) — cosmetic but flags linter CI. |
 | T-361 | P5 | TODO | **Unnecessary `'r'` mode** in `_fix_tooltip.py:4` and `trash_dialog.py:69` (ruff UP015) — `open(f, 'r')` defaults to 'r'. |
+
+## RECOVERY + HUNT (21.07, claude-opus) — after the .git loss
+Working dir had been rolled back and `.git/` deleted; 7 local-only commits
+from the 19.07 session were unrecoverable. Rebuilt from the conversation
+transcript. New repo re-inited at `d53b9d7` (restore point = tree as found).
+
+| ID | Status | Description |
+|---|---|---|
+| R-01 | DONE (465 unit + 116 smoke PASS) | Restored P0s: code-block text hidden behind an opaque fillRect drawn AFTER the text (-> setExtraSelections); Ctrl+click on a dash line crashing the app via a `\u` escape in an re.sub *replacement template*. |
+| R-02 | DONE | Restored theme wave: drop_overlay / analog_clock / markdown_highlighter now read the active theme's raw_colors instead of a hardcoded dark-golden palette; highlighter's update_theme() stored the theme but _setup_rules() never read it; analog clock repainted once a minute so theme switches looked frozen; per-theme #HeaderBar tint (needs WA_StyledBackground); thin toggleable scrollbars; blend_hex/hex_to_rgba/scrollbar_qss helpers; Dracula/Nord/Solarized Dark. |
+| R-03 | DONE | Restored markdown code-span double-escape fix, Ctrl+V-wraps-selection-as-hyperlink, trackpad pixelDelta wheel zoom. |
+| R-04 | DONE | Restored line-blocking drag (Ctrl+Shift+LMB whole-line swap, 50% hover box), collapsible quote (btn_quote + Ctrl+Shift+Q + fold-engine blockquote support), header priority-fit guard. |
+| R-05 | DONE | generate_custom_theme() no longer setdefault()s into the caller's dict (was silently mutating shared config). |
+
+## CRITICAL — for the next agent
+| ID | Sev | Description |
+|---|---|---|
+| T-520 | P1 | **tests_smoke shares ONE module-scoped `win` fixture across 100+ tests and they leak state into each other.** Confirmed concrete leaks: `test_add_category_capped_at_five` left `cats_order` pointing at 5 categories absent from `data["categories"]`, killing every later test at main.py `data["categories"][cat]` (KeyError) — fixed with a try/finally, but that is one instance of a systemic problem. Others still leak `ui_scale` / `font_size` / `is_locked` / window geometry, which is why `test_header_priority_fit_never_hides_clock_or_date` cannot assert its real pixel budget in a full-suite run (holds standalone: 449 <= 529). Fix: function-scoped fixture, or an autouse fixture that snapshots and restores `win.data` + geometry + lock state. Supersedes the older T-226/227/282/283/284/295 cluster. |
+| T-521 | P1 | **`.git` was deleted and the tree rolled back by a concurrent agent** (see LOG INCIDENT 20.07 15:25). Nothing here was pushed, so recovery came from the chat transcript only. Before any further multi-agent work: push to a remote so local-only commits stop being a single point of failure, and find out what removed `.git` (suspect `deploy.ps1` / `release.cmd` — T-285 already flags `deploy.ps1` for a `--force-with-lease` push after a rebase-conflict fallback). |
+| T-522 | P2 | `isVisible()` vs `isHidden()` trap, hit twice now: `isVisible()` is False whenever ANY ancestor is hidden (window in tray), so visibility guards written with it silently no-op. `_enforce_header_priority_fit` was fixed to use `isHidden()`; audit other visibility checks for the same mistake. |
+| T-523 | P2 | 3 bare `except:` in main.py (~2048, ~2062, ~2135 pre-restore) swallow everything while parsing spin-box ints. Narrow to (TypeError, ValueError). |
