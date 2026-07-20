@@ -161,8 +161,8 @@ class FastPrompter(
         self.auto_save_timer.timeout.connect(self._auto_save_tick)
         self.auto_save_timer.start(10000)
 
-        self.snap_index, self._snap_first_press, self._preview_connected = 0, True, False
-        self._fancy_zones = FancyZoneOverlay()
+        self._preview_connected = False
+        self._fancy_zones = FancyZoneOverlay(self)
         self.current_pages, self.silo_page, self.ui_scale = {}, 0, 1.0
         self.arc_silo_page, self.arc_page = 0, 0
         self.is_locked, self._suspend_cache, self._locked_geometry = False, False, None
@@ -2056,11 +2056,44 @@ class FastPrompter(
         gap_row.addWidget(self.spin_drag_width)
         gap_row.addStretch(1)
 
+        # --- FancyZones custom grid (Ctrl+Q picker's "Custom" layout) ---
+        zones_row = QHBoxLayout()
+        zones_row.setContentsMargins(0, 0, 0, 0)
+        zones_row.setSpacing(4)
+        lbl_zones = QLabel(tr("Snap Grid:", getattr(self, "_current_lang", "EN")))
+        lbl_zones.setStyleSheet("color: #808080;")
+        zones_row.addWidget(lbl_zones)
+
+        def _zone_spin(key, default, tip):
+            spin = QSpinBox()
+            spin.setRange(1, 6)
+            spin.setToolTip(tr(tip, getattr(self, "_current_lang", "EN")))
+            try:
+                spin.setValue(int(self.data.get(key, default)))
+            except (TypeError, ValueError):
+                spin.setValue(default)
+
+            def _upd(v):
+                self.data.update({key: str(v)})
+                self.mark_dirty()
+
+            spin.valueChanged.connect(_upd)
+            zones_row.addWidget(spin)
+            return spin
+
+        self.spin_zone_rows = _zone_spin(
+            "fancyzones_rows", 2,
+            "Rows in the Ctrl+Q custom snap grid")
+        self.spin_zone_cols = _zone_spin(
+            "fancyzones_cols", 3,
+            "Columns in the Ctrl+Q custom snap grid")
+        zones_row.addStretch(1)
+
         groups_row.addLayout(_settings_group("Data & Appearance", [
             self.cb_silo_home, self.cb_silo_pinned_gap, self.cb_silo_ticks,
             self.cb_snippet_arrows, self.cb_hide_shortkeys,
             self.cb_portable_backup, self.cb_sound, self.cb_typewriter,
-            vol_row, files_row, gap_row
+            vol_row, files_row, gap_row, zones_row
         ]), 1)
 
         hline = QFrame()
@@ -5168,35 +5201,12 @@ class FastPrompter(
             self.auto_paste(active_snippets[idx]["text"])
 
     def cycle_snap_corner(self):
-        screen = QApplication.screenAt(QCursor.pos())
-        if screen is None:
-            screen = QApplication.primaryScreen()
-        if screen is None:
-            return
+        """Ctrl+Q: open the FancyZones picker on the monitor under the cursor.
 
-        avail = screen.availableGeometry()
-
-        w = min(960, avail.width())
-        h = min(540, avail.height())
-        self.resize(w, h)
-
-        if getattr(self, "_snap_first_press", True):
-            self.snap_index = 0
-            self._snap_first_press = False
-
-        corner_idx = self.snap_index % 4
-
-        self._fancy_zones.show_zones(corner_idx)
-
-        sw, sh = avail.width(), avail.height()
-        QApplication.processEvents()
-        fw = self.frameGeometry().width()
-        fh = self.frameGeometry().height()
-        corners = [(sw - fw, sh - fh), (0, sh - fh), (0, 0), (sw - fw, 0)]
-        x, y = corners[corner_idx]
-        self.move(avail.x() + x, avail.y() + y)
-
-        self.snap_index = (self.snap_index + 1) % 4
+        (Kept under the old name so the existing hk_snap binding, tooltips
+        and any saved user hotkey keep working.)
+        """
+        self._fancy_zones.open_for(self)
 
     _TS_RE = None  # compiled lazily below
 

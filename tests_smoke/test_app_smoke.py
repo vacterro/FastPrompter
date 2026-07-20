@@ -3059,3 +3059,108 @@ def test_no_undefined_names_in_package():
         cwd=root, capture_output=True, text=True,
     )
     assert "F821" not in res.stdout, f"undefined names found:\n{res.stdout}"
+
+
+def test_fancyzones_layouts_are_well_formed():
+    from fastprompter.ui.fancy_zones import BUILTIN_LAYOUTS, custom_layout, layouts_for
+
+    for name, zones in BUILTIN_LAYOUTS:
+        assert zones, f"{name} has no zones"
+        assert len(zones) <= 9, f"{name} has more zones than digit keys"
+        for x, y, w, h in zones:
+            assert 0.0 <= x < 1.0 and 0.0 <= y < 1.0, f"{name} origin off-screen"
+            assert w > 0 and h > 0, f"{name} has a zero-size zone"
+            assert x + w <= 1.0001 and y + h <= 1.0001, f"{name} overflows the screen"
+
+    # custom grid: right count, clamped, and it tiles the screen exactly
+    assert len(custom_layout(2, 3)) == 6
+    assert len(custom_layout(0, 0)) == 1        # clamped up
+    assert len(custom_layout(99, 99)) == 36     # clamped down to 6x6
+    area = sum(w * h for _, _, w, h in custom_layout(3, 3))
+    assert abs(area - 1.0) < 1e-9
+
+    # the user's grid shows up as the trailing "Custom" entry
+    names = [n for n, _ in layouts_for({"fancyzones_rows": "2", "fancyzones_cols": "4"})]
+    assert names[-1] == "Custom 2x4"
+    # and junk in settings falls back instead of raising
+    assert layouts_for({"fancyzones_rows": "abc"})[-1][0] == "Custom 2x3"
+
+
+def test_fancyzones_picker_snaps_window_and_remembers_layout(win):
+    from PyQt6.QtCore import QRect, Qt
+    from PyQt6.QtGui import QKeyEvent
+    from PyQt6.QtWidgets import QApplication
+
+    win.is_locked = False
+    win._locked_geometry = None
+    ov = win._fancy_zones
+
+    assert ov.open_for(win) is True
+    assert ov._zones, "picker opened with no zones"
+
+    # Tab cycles layouts and the zone rects are rebuilt
+    first_name = ov._layouts[ov._layout_idx][0]
+    before = list(ov._zones)
+    ov.keyPressEvent(QKeyEvent(QKeyEvent.Type.KeyPress, Qt.Key.Key_Tab,
+                               Qt.KeyboardModifier.NoModifier))
+    assert ov._layouts[ov._layout_idx][0] != first_name
+    assert ov._zones != before
+
+    # digit key snaps the window into that zone. A zone can be narrower than
+    # the window's minimum size (minimumSize silently wins over setGeometry),
+    # so the contract is: origin matches, size is the zone grown to the
+    # window's minimum, and the result stays inside the screen.
+    target = QRect(ov._zones[0])
+    avail = QRect(ov._avail)
+    ov.keyPressEvent(QKeyEvent(QKeyEvent.Type.KeyPress, Qt.Key.Key_1,
+                               Qt.KeyboardModifier.NoModifier))
+    QApplication.processEvents()
+    got = win.geometry()
+    assert got.width() == max(target.width(), win.minimumWidth())
+    assert got.height() == max(target.height(), win.minimumHeight())
+    assert got.x() == target.x() and got.y() == target.y()
+    assert avail.contains(got) or got.width() >= avail.width()
+    assert ov.isHidden()
+    # and the layout it snapped with is remembered for next time
+    assert win.data.get("fancyzones_layout") == ov._layouts[ov._layout_idx][0]
+
+    # reopening restores that layout rather than starting from the top
+    assert ov.open_for(win) is True
+    assert ov._layouts[ov._layout_idx][0] == win.data["fancyzones_layout"]
+
+    # Esc cancels without moving the window
+    geo = win.geometry()
+    ov.keyPressEvent(QKeyEvent(QKeyEvent.Type.KeyPress, Qt.Key.Key_Escape,
+                               Qt.KeyboardModifier.NoModifier))
+    assert ov.isHidden()
+    assert win.geometry() == geo
+
+
+def test_fancyzones_respects_locked_window(win):
+    from PyQt6.QtWidgets import QApplication
+
+    ov = win._fancy_zones
+    win.is_locked = False
+    win._locked_geometry = None
+    ov.open_for(win)
+    geo = win.geometry()
+    try:
+        win.is_locked = True
+        assert ov.apply_zone(0) is False, "a locked window must not be moved"
+        QApplication.processEvents()
+        assert win.geometry() == geo
+    finally:
+        win.is_locked = False
+        ov.close()
+
+
+def test_fancyzones_settings_spins_drive_the_custom_grid(win):
+    from fastprompter.ui.fancy_zones import layouts_for
+
+    win.spin_zone_rows.setValue(3)
+    win.spin_zone_cols.setValue(2)
+    assert win.data["fancyzones_rows"] == "3"
+    assert win.data["fancyzones_cols"] == "2"
+    name, zones = layouts_for(win.data)[-1]
+    assert name == "Custom 3x2"
+    assert len(zones) == 6

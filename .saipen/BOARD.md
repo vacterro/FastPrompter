@@ -385,3 +385,16 @@ Remaining ruff noise is cosmetic only (I001 import order, W291 trailing
 whitespace, E741 `l` as a name in drop_overlay) — not ticketed.
 
 Verified after the sweep: 465 unit + 118 smoke PASS.
+
+## Feature: FancyZones (21.07, claude-opus)
+| ID | Status | Description |
+|---|---|---|
+| F-01 | DONE (465 unit + 122 smoke PASS) | Rewrote `ui/fancy_zones.py` from a passive 800ms preview that cycled 4 fixed corners into a real interactive picker. Ctrl+Q (unchanged `hk_snap` binding, method kept as `cycle_snap_corner` so saved user hotkeys and tooltips still resolve) opens a full-screen overlay on the monitor under the cursor. 7 layouts: Halves / Thirds / Priority / Quarters / Focus / Sidebar + a user-defined grid. Zones are stored as FRACTIONS of `availableGeometry()`, so they're resolution-independent and taskbar-aware. Input: digits 1-9 snap, click snaps, hover highlights, Tab / arrows cycle layouts, Esc or click-outside or focus-loss cancels. Chosen layout persists to `data["fancyzones_layout"]` and is preselected next time. Colors follow the active theme's accent, like every other painted widget. Settings gained a "Snap Grid:" rows x cols pair (`fancyzones_rows` / `fancyzones_cols`, clamped 1-6) driving the Custom layout. |
+
+Two real behaviours worth remembering, both covered by tests:
+- `minimumSize` silently overrides `setGeometry`, so a zone narrower than
+  the window's minimum can't be honored — `apply_zone` grows to the minimum
+  and pulls the result back inside the screen instead of leaving the window
+  hanging off the edge.
+- A locked window (`is_locked`) refuses geometry changes; `apply_zone`
+  returns False and closes rather than pretending it snapped.
