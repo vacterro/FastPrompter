@@ -177,7 +177,25 @@ class FormattingMixin:
         """Wrap/unwrap the selected lines (or the current line) as a '> '
         quote block. A quote of 2+ lines becomes foldable — see editor.py
         _is_quote_start/_fold_range — collapsing down to its first line."""
-        cursor = self.text_area.textCursor()
+        ta = self.text_area
+        cursor = ta.textCursor()
+
+        # Expand anything collapsed in the affected range FIRST. Unquoting a
+        # collapsed quote removes its fold anchor, and the hidden lines would
+        # stay hidden with nothing left to re-expand them — the text looks
+        # destroyed even though it's all still there.
+        try:
+            doc = ta.document()
+            if cursor.hasSelection():
+                first = doc.findBlock(cursor.selectionStart()).blockNumber()
+                last = doc.findBlock(cursor.selectionEnd()).blockNumber()
+            else:
+                first = last = cursor.block().blockNumber()
+            for n in range(max(0, first - 1), last + 1):
+                ta.expand_fold_at(doc.findBlockByNumber(n))
+        except Exception:
+            pass
+
         cursor.beginEditBlock()
         try:
             if cursor.hasSelection():
@@ -197,7 +215,12 @@ class FormattingMixin:
             cursor.insertText("\n".join(new_lines))
         finally:
             cursor.endEditBlock()
-        self.text_area.setFocus()
+        # belt and braces: nothing may be left hidden without an anchor
+        try:
+            ta.rescue_orphan_folds()
+        except Exception:
+            pass
+        ta.setFocus()
         self.mark_dirty()
 
     def toggle_bullet_conversion(self):

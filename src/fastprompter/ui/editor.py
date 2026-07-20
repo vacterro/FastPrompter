@@ -93,6 +93,7 @@ class VaultTextEdit(QTextEdit):
         self.textChanged.connect(self.line_number_area.update)
         self.cursorPositionChanged.connect(self.line_number_area.update)
         self._last_hover_pos = QPoint(-10000, -10000)
+        self._hover_block = None
         self._doc_has_checkbox = False
         self._doc_has_code = False
         QTimer.singleShot(0, self._refresh_checkbox_flag)
@@ -395,15 +396,15 @@ class VaultTextEdit(QTextEdit):
         return text.lstrip().startswith(">")
 
     def _is_quote_start(self, block):
-        """A '>' line anchors a fold only when it opens a 2+ line quote —
-        i.e. the previous line isn't quoted and the next one is."""
+        """First line of a quote run — that line carries the fold toggle.
+
+        A one-line quote counts too: it still gets the toggle, it just has
+        nothing to hide, so it stays a single wrapped line on screen.
+        """
         if not self._is_quote_line(block.text()):
             return False
         prev = block.previous()
-        if prev.isValid() and self._is_quote_line(prev.text()):
-            return False
-        nxt = block.next()
-        return nxt.isValid() and self._is_quote_line(nxt.text())
+        return not (prev.isValid() and self._is_quote_line(prev.text()))
 
     def _is_fold_anchor(self, block):
         text = block.text()
@@ -500,6 +501,54 @@ class VaultTextEdit(QTextEdit):
         self.viewport().update()
         if hasattr(self, "line_number_area"):
             self.line_number_area.update()
+
+    def expand_fold_at(self, block):
+        """Expand the region under `block` if it is a collapsed anchor.
+
+        Call this BEFORE any edit that could stop a line from being a fold
+        anchor — otherwise the hidden lines stay hidden with nothing left to
+        re-expand them, and the text looks destroyed even though it is all
+        still in the document.
+        """
+        if not block.isValid():
+            return False
+        if not (max(0, block.userState()) & self.FOLD_BIT):
+            return False
+        self.toggle_fold(block)
+        return True
+
+    def rescue_orphan_folds(self):
+        """Un-hide blocks whose collapsed anchor no longer exists.
+
+        A last-resort net: any edit that removes a fold anchor while its
+        region is collapsed would otherwise strand those lines invisible
+        forever (no anchor left to click).
+        """
+        doc = self.document()
+        anchors = []
+        b = doc.firstBlock()
+        while b.isValid():
+            if self._is_fold_anchor(b) and (max(0, b.userState()) & self.FOLD_BIT):
+                rng = self._fold_range(b)
+                if rng is not None:
+                    anchors.append((rng[0].blockNumber(), rng[1].blockNumber()))
+            b = b.next()
+
+        changed = False
+        b = doc.firstBlock()
+        while b.isValid():
+            if not b.isVisible():
+                n = b.blockNumber()
+                if not any(first <= n <= last for first, last in anchors):
+                    b.setVisible(True)
+                    changed = True
+            b = b.next()
+        if changed:
+            doc.markContentsDirty(0, doc.characterCount())
+            self.viewport().update()
+            if hasattr(self, "line_number_area"):
+                self.line_number_area.update()
+        return changed
 
     def unfold_all(self):
         """Safety hatch: show every block and clear all fold bits."""
@@ -815,6 +864,13 @@ class VaultTextEdit(QTextEdit):
             return
         super().mouseReleaseEvent(event)
 
+    def leaveEvent(self, event):
+        # otherwise the wash stays stuck on whatever line the mouse left from
+        if getattr(self, "_hover_block", None) is not None:
+            self._hover_block = None
+            self.viewport().update()
+        super().leaveEvent(event)
+
     def mouseMoveEvent(self, event):
         if sip.isdeleted(self):
             return
@@ -837,6 +893,12 @@ class VaultTextEdit(QTextEdit):
                 p = event.pos()
                 if (p - self._last_hover_pos).manhattanLength() > 3:
                     self._last_hover_pos = p
+                    if self.main_win.data.get("hover_line", "True") == "True":
+                        blk = self.cursorForPosition(p).block()
+                        new_hover = blk.blockNumber() if blk.isValid() else None
+                        if new_hover != getattr(self, "_hover_block", None):
+                            self._hover_block = new_hover
+                            self.viewport().update()
                     over_cb = self._checkbox_at_pos(p)
                     over_ts = self._ts_glyph_block_at(p) is not None
                     over_fold = self._fold_block_at(p) is not None
@@ -1434,6 +1496,35 @@ class VaultTextEdit(QTextEdit):
             except Exception:
                 pass
 
+    def _hover_line_selection(self, doc):
+        """A faint wash over the line under the mouse.
+
+        Just enough to say "this is the line you're pointing at" without
+        competing with the caret's own line or the text itself.
+        """
+        if self.main_win.data.get("hover_line", "True") != "True":
+            return []
+        num = getattr(self, "_hover_block", None)
+        if num is None:
+            return []
+        block = doc.findBlockByNumber(num)
+        if not block.isValid() or not block.isVisible():
+            return []
+        try:
+            pct = int(self.main_win.data.get("hover_line_opacity", "10"))
+        except (TypeError, ValueError):
+            pct = 10
+        pct = max(1, min(60, pct))
+        color = QColor(self.main_win.data.get("hover_line_color", "#6aa9ff"))
+        if not color.isValid():
+            color = QColor("#6aa9ff")
+        color.setAlpha(round(255 * pct / 100))
+        sel = QTextEdit.ExtraSelection()
+        sel.format.setBackground(color)
+        sel.format.setProperty(QTextFormat.Property.FullWidthSelection, True)
+        sel.cursor = QTextCursor(block)
+        return [sel]
+
     def _code_block_selections(self, doc):
         """Full-width backgrounds for code fence/content lines, drawn behind
         the text by Qt itself (a manual fillRect in paintEvent would land
@@ -1455,7 +1546,8 @@ class VaultTextEdit(QTextEdit):
     def paintEvent(self, event):
         doc = self.document()
         if doc and doc.blockCount() <= 2000:
-            self.setExtraSelections(self._code_block_selections(doc))
+            self.setExtraSelections(
+                self._code_block_selections(doc) + self._hover_line_selection(doc))
         super().paintEvent(event)
         if not doc:
             return

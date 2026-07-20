@@ -2963,12 +2963,14 @@ def test_collapsible_quote_wrap_and_fold(win):
     win.toggle_quote_conversion()
     assert ta.toPlainText() == "alpha\nbeta\ngamma"
 
-    # a single '>' line is NOT a fold anchor (nothing to collapse)
+    # A one-line quote is still an anchor: it gets the toggle like any other
+    # quote, it just has nothing to hide (stays one wrapped line on screen).
     win.data["temp_presets"][:] = ["> lonely\nplain"]
     win.silo_docs[:] = []
     win._switch_to_slot(0, initial=True)
     ta = win.text_area
-    assert ta._is_quote_start(ta.document().findBlockByNumber(0)) is False
+    assert ta._is_quote_start(ta.document().findBlockByNumber(0)) is True
+    assert ta._is_quote_start(ta.document().findBlockByNumber(1)) is False
 
 
 def test_quote_button_and_hotkey_wired(win):
@@ -3418,3 +3420,114 @@ def test_overflow_menu_labels_are_short(win):
     for name, _lbl in win._OVERFLOW_LABELS:
         if name:
             assert getattr(win, name, None) is not None, f"{name} missing"
+
+
+def test_unquoting_a_collapsed_quote_does_not_lose_lines(win):
+    # CRITICAL regression: un-quoting while collapsed removed the fold anchor
+    # and left the hidden lines invisible with nothing left to expand them —
+    # the text was all still in the document but gone from the user's view.
+    win.cat_combo.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    win.data["temp_presets"][:] = ["alpha\nbeta\ngamma"]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    ta = win.text_area
+    doc = ta.document()
+
+    cur = ta.textCursor()
+    cur.setPosition(0)
+    cur.setPosition(len("alpha\nbeta\ngamma"), cur.MoveMode.KeepAnchor)
+    ta.setTextCursor(cur)
+    win.toggle_quote_conversion()
+    assert ta.toPlainText() == "> alpha\n> beta\n> gamma"
+
+    ta.toggle_fold(doc.findBlockByNumber(0))
+    assert [doc.findBlockByNumber(i).isVisible() for i in range(3)] == [True, False, False]
+
+    cur = ta.textCursor()
+    cur.setPosition(0)
+    ta.setTextCursor(cur)
+    win.toggle_quote_conversion()   # unquote while collapsed
+
+    assert [doc.findBlockByNumber(i).isVisible() for i in range(3)] == [True, True, True]
+    assert doc.blockCount() == 3
+    assert "beta" in ta.toPlainText() and "gamma" in ta.toPlainText()
+
+
+def test_rescue_orphan_folds_restores_stranded_lines(win):
+    # The generic net: any edit that strands hidden blocks must be recoverable.
+    win.data["temp_presets"][:] = ["> a\n> b\n> c"]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    ta = win.text_area
+    doc = ta.document()
+    ta.toggle_fold(doc.findBlockByNumber(0))
+    assert not doc.findBlockByNumber(1).isVisible()
+
+    # rip out the anchor behind the fold engine's back
+    cur = ta.textCursor()
+    cur.setPosition(0)
+    cur.movePosition(cur.MoveOperation.EndOfBlock, cur.MoveMode.KeepAnchor)
+    cur.insertText("plain")
+    assert ta.rescue_orphan_folds() is True
+    assert all(doc.findBlockByNumber(i).isVisible() for i in range(3))
+
+
+def test_hover_line_wash_follows_the_cursor(win):
+    from PyQt6.QtGui import QTextFormat
+
+    win.data["temp_presets"][:] = ["one\ntwo\nthree"]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    ta = win.text_area
+    doc = ta.document()
+    try:
+        win.data["hover_line"] = "True"
+        ta._hover_block = 1
+        sels = ta._hover_line_selection(doc)
+        assert len(sels) == 1
+        fmt = sels[0].format
+        assert fmt.property(QTextFormat.Property.FullWidthSelection) is True
+        # default: faint (10%) and blueish, not a solid slab
+        assert 0 < fmt.background().color().alpha() <= 40
+        assert fmt.background().color().blue() > fmt.background().color().red()
+        assert sels[0].cursor.blockNumber() == 1
+
+        # opacity is user-controlled and clamped
+        win.data["hover_line_opacity"] = "50"
+        assert ta._hover_line_selection(doc)[0].format.background().color().alpha() > 100
+        win.data["hover_line_opacity"] = "nonsense"
+        assert ta._hover_line_selection(doc)  # falls back instead of raising
+
+        # leaving the editor clears it
+        ta._hover_block = None
+        assert ta._hover_line_selection(doc) == []
+
+        # and the whole thing is switchable off
+        ta._hover_block = 1
+        win.data["hover_line"] = "False"
+        assert ta._hover_line_selection(doc) == []
+    finally:
+        win.data["hover_line"] = "True"
+        win.data["hover_line_opacity"] = "10"
+        ta._hover_block = None
+
+
+def test_shortcuts_match_physical_key_regardless_of_layout():
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtGui import QKeySequence
+    from fastprompter.ui.layout_shortcuts import LayoutIndependentShortcuts, split_sequence
+
+    key, mods = split_sequence(QKeySequence("Alt+Z"))
+    assert key == Qt.Key.Key_Z
+    assert mods == Qt.KeyboardModifier.AltModifier
+
+    key, mods = split_sequence(QKeySequence("Alt+`"))
+    assert key == Qt.Key.Key_QuoteLeft
+
+    flt = LayoutIndependentShortcuts()
+    fired = []
+    assert flt.register(QKeySequence("Alt+Z"), lambda: fired.append("z")) is True
+    # keys that are already layout-independent aren't registered
+    assert flt.register(QKeySequence("F5"), lambda: fired.append("f5")) is False
+    assert flt.register(QKeySequence("Ctrl+Alt+Shift+Q"), lambda: None) is True

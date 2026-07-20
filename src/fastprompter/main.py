@@ -1920,6 +1920,16 @@ class FastPrompter(
             self.data.get("word_wrap", "True") == "True",
             self.on_wrap_toggled,
         )
+        self.cb_hover_line = create_footer_cb(
+            "🖱 Hover Line",
+            "Faintly brighten the line under the mouse cursor",
+            self.data.get("hover_line", "True") == "True",
+            lambda checked: (
+                self.data.update({"hover_line": "True" if checked else "False"})
+                or self.mark_dirty()
+                or self.text_area.viewport().update()
+            ),
+        )
         self.cb_code_monospace = create_footer_cb(
             "⌨ Monospace Code",
             "Render `code` and ``` blocks in Consolas.\n"
@@ -2254,7 +2264,7 @@ class FastPrompter(
         groups_row.addWidget(_vline())
         groups_row.addLayout(_settings_group("Editor", [
             self.cb_focus, self.cb_wrap, self.cb_ctrl_c, self.cb_lock_cursor,
-            self.cb_line_numbers, self.cb_code_gutter, self.cb_code_monospace, self.cb_line_marks, self.cb_zebra, self.cb_double_line, self.cb_bold_titles,
+            self.cb_line_numbers, self.cb_code_gutter, self.cb_code_monospace, self.cb_hover_line, self.cb_line_marks, self.cb_zebra, self.cb_double_line, self.cb_bold_titles,
             div_row, hdr_row
         ]), 1)
         groups_row.addWidget(_vline())
@@ -5353,12 +5363,25 @@ class FastPrompter(
             shortcut.deleteLater()
         self._app_shortcuts = []
 
+        # Physical-key fallback so every shortcut below keeps working on a
+        # non-Latin keyboard layout (Qt matches the character, not the key).
+        from fastprompter.ui.layout_shortcuts import LayoutIndependentShortcuts
+
+        flt = getattr(self, "_layout_shortcuts", None)
+        if flt is None:
+            flt = LayoutIndependentShortcuts(self)
+            self._layout_shortcuts = flt
+            QApplication.instance().installEventFilter(flt)
+        flt.clear()
+
         def add_shortcut(key_name, default_seq, slot, context=Qt.ShortcutContext.WindowShortcut):
             seq_str = self.data.get(key_name, default_seq)
             if not seq_str: return
-            shortcut = QShortcut(QKeySequence(seq_str), self, context=context)
+            seq = QKeySequence(seq_str)
+            shortcut = QShortcut(seq, self, context=context)
             shortcut.activated.connect(slot)
             self._app_shortcuts.append(shortcut)
+            flt.register(seq, slot)
 
         add_shortcut("hk_focus", "Ctrl+D", self.toggle_focus_mode)
         add_shortcut("hk_find", "Ctrl+F", self.show_find)
