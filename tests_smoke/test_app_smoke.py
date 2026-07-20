@@ -2779,3 +2779,72 @@ def test_every_theme_applies_cleanly(win):
     assert win.cb_theme.findText("Custom") >= 0
     win.cb_theme.setCurrentText("Default")
     win.apply_theme()
+
+
+def test_markdown_code_spans_dont_double_escape(win):
+    # Regression: html.escape() ran on the WHOLE text before
+    # markdown.markdown(); markdown's own code-span escaping isn't
+    # entity-aware, so code content came out double-escaped.
+    # This suite uses the REAL markdown lib (tests/test_formatting_mixin.py
+    # forces the fallback renderer), so it's the only place the primary
+    # code path is actually exercised.
+    out = win.simple_markdown_to_html("```\nif (a < b) { x = a & b; }\n```")
+    assert "if (a &lt; b) { x = a &amp; b; }" in out
+    assert "&amp;lt;" not in out and "&amp;amp;" not in out
+
+    out = win.simple_markdown_to_html("Inline `a < b & c` here")
+    assert "a &lt; b &amp; c" in out and "&amp;lt;" not in out
+
+    # the raw-HTML escape must still hold outside code spans
+    out = win.simple_markdown_to_html("<script>alert(1)</script> and `a < b`")
+    assert "<script>" not in out
+    assert "&lt;script&gt;" in out
+    assert "a &lt; b" in out
+
+
+def test_ctrl_v_wraps_selection_as_hyperlink(win):
+    from PyQt6.QtCore import QMimeData
+
+    win.cat_combo.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    win.data["temp_presets"][:] = ["click here for docs"]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    ta = win.text_area
+
+    cur = ta.textCursor()
+    cur.setPosition(0)
+    cur.setPosition(len("click here"), cur.MoveMode.KeepAnchor)
+    ta.setTextCursor(cur)
+
+    mime = QMimeData()
+    mime.setText("https://example.com/docs")
+    ta.insertFromMimeData(mime)
+    assert ta.toPlainText() == "[click here](https://example.com/docs) for docs"
+
+    # no selection -> ordinary paste, unchanged
+    win.data["temp_presets"][:] = [""]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    ta = win.text_area
+    mime2 = QMimeData()
+    mime2.setText("https://example.com/docs")
+    ta.insertFromMimeData(mime2)
+    assert ta.toPlainText() == "https://example.com/docs"
+
+
+def test_ctrl_wheel_zoom_falls_back_to_pixel_delta(win):
+    # Regression: only angleDelta() was read, which stays 0 on trackpads that
+    # report pixelDelta — Ctrl+wheel zoom silently did nothing there.
+    from PyQt6.QtCore import QPoint, QPointF, Qt as _Qt
+    from PyQt6.QtGui import QWheelEvent
+
+    before = win.data.get("font_size")
+    ev = QWheelEvent(
+        QPointF(10, 10), QPointF(10, 10),
+        QPoint(0, 120), QPoint(0, 0),  # pixelDelta set, angleDelta zeroed
+        _Qt.MouseButton.NoButton, _Qt.KeyboardModifier.ControlModifier,
+        _Qt.ScrollPhase.NoScrollPhase, False,
+    )
+    win.text_area.wheelEvent(ev)
+    assert win.data.get("font_size") != before

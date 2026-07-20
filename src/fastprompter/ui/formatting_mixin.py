@@ -20,6 +20,9 @@ _RE_ITALIC = re.compile(r"\*(?!\*)(.*?)\*")
 _RE_INLINE_CODE = re.compile(r"`([^`]+)`")
 _RE_LINK = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
 _RE_BULLET = re.compile(r"^\s*•")
+# Fenced/inline code spans, split out so simple_markdown_to_html can skip
+# escaping them (markdown escapes code content itself — see its docstring)
+_RE_CODE_SPAN = re.compile(r"(```[\s\S]*?```|`[^`\n]*`)")
 
 
 class FormattingMixin:
@@ -263,8 +266,18 @@ class FormattingMixin:
 
 
         try:
+            # html.escape() runs on the prose so raw HTML (e.g. a pasted
+            # <script> tag) can't render as live markup — but code spans and
+            # fences are skipped: markdown does its own <, >, & escaping for
+            # those, and that pass isn't entity-aware, so pre-escaping them
+            # here double-escaped the content ("a < b" came out as the
+            # literal text "a &amp;lt; b").
+            parts = _RE_CODE_SPAN.split(text)
+            escaped = "".join(
+                part if part.startswith("`") else html.escape(part) for part in parts
+            )
             # Full markdown renderer using standard Python markdown library if available
-            body = markdown.markdown(html.escape(text), extensions=["fenced_code", "tables"])
+            body = markdown.markdown(escaped, extensions=["fenced_code", "tables"])
         except Exception:
             # Fallback to simple regex renderer if markdown library not available
             lines = text.split("\n")
@@ -282,7 +295,9 @@ class FormattingMixin:
                         in_code_block = True
                     continue
                 if in_code_block:
-                    html_lines.append(line.replace("<", "&lt;").replace(">", "&gt;"))
+                    html_lines.append(
+                        line.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                    )
                     continue
 
                 if line.startswith("### "):

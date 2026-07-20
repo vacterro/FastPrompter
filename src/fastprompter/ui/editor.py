@@ -956,6 +956,15 @@ class VaultTextEdit(QTextEdit):
             return
         if source.hasText():
             text = source.text().strip().strip('\"')
+            # Selected text + a URL on the clipboard -> wrap the selection as
+            # a markdown link instead of replacing it with the raw URL
+            cursor = self.textCursor()
+            if cursor.hasSelection() and text and "\n" not in text:
+                url = QUrl(text)
+                if url.isValid() and url.scheme() in ("http", "https", "ftp", "file"):
+                    selected = cursor.selectedText().replace(" ", "\n")
+                    cursor.insertText(f"[{selected}]({text})")
+                    return
             # Plain text file path — insert as markdown link
             if text and len(text) < 260 and "\n" not in text:
                 normalized = os.path.normpath(text)
@@ -968,7 +977,9 @@ class VaultTextEdit(QTextEdit):
 
     def wheelEvent(self, event):
         if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
-            delta = event.angleDelta().y()
+            # Some trackpads report only pixelDelta (angleDelta stays 0),
+            # which made Ctrl+wheel zoom silently do nothing on them
+            delta = event.angleDelta().y() or event.pixelDelta().y()
             if delta:
                 self.main_win.adjust_font_size(1 if delta > 0 else -1)
                 event.accept()
