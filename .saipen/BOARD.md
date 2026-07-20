@@ -363,7 +363,7 @@ transcript. New repo re-inited at `d53b9d7` (restore point = tree as found).
 ## CRITICAL — for the next agent
 | ID | Sev | Description |
 |---|---|---|
-| T-520 | P1 | **tests_smoke shares ONE module-scoped `win` fixture across 100+ tests and they leak state into each other.** Confirmed concrete leaks: `test_add_category_capped_at_five` left `cats_order` pointing at 5 categories absent from `data["categories"]`, killing every later test at main.py `data["categories"][cat]` (KeyError) — fixed with a try/finally, but that is one instance of a systemic problem. Others still leak `ui_scale` / `font_size` / `is_locked` / window geometry, which is why `test_header_priority_fit_never_hides_clock_or_date` cannot assert its real pixel budget in a full-suite run (holds standalone: 449 <= 529). Fix: function-scoped fixture, or an autouse fixture that snapshots and restores `win.data` + geometry + lock state. Supersedes the older T-226/227/282/283/284/295 cluster. |
+| T-520 | P1 — ROOT CAUSE FOUND & FIXED 21.07, downgrade to P3 | **tests_smoke shares ONE module-scoped `win` fixture across 100+ tests and they leak state into each other.** Confirmed concrete leaks: `test_add_category_capped_at_five` left `cats_order` pointing at 5 categories absent from `data["categories"]`, killing every later test at main.py `data["categories"][cat]` (KeyError) — fixed with a try/finally, but that is one instance of a systemic problem. Others still leak `ui_scale` / `font_size` / `is_locked` / window geometry, which is why `test_header_priority_fit_never_hides_clock_or_date` cannot assert its real pixel budget in a full-suite run (holds standalone: 449 <= 529). Fix: function-scoped fixture, or an autouse fixture that snapshots and restores `win.data` + geometry + lock state. Supersedes the older T-226/227/282/283/284/295 cluster. |
 | T-521 | P1 | **`.git` was deleted and the tree rolled back by a concurrent agent** (see LOG INCIDENT 20.07 15:25). Nothing here was pushed, so recovery came from the chat transcript only. Before any further multi-agent work: push to a remote so local-only commits stop being a single point of failure, and find out what removed `.git` (suspect `deploy.ps1` / `release.cmd` — T-285 already flags `deploy.ps1` for a `--force-with-lease` push after a rebase-conflict fallback). |
 | T-522 | P2 | `isVisible()` vs `isHidden()` trap, hit twice now: `isVisible()` is False whenever ANY ancestor is hidden (window in tray), so visibility guards written with it silently no-op. `_enforce_header_priority_fit` was fixed to use `isHidden()`; audit other visibility checks for the same mistake. |
 | T-523 | P2 | 3 bare `except:` in main.py (~2048, ~2062, ~2135 pre-restore) swallow everything while parsing spin-box ints. Narrow to (TypeError, ValueError). |
@@ -398,3 +398,18 @@ Two real behaviours worth remembering, both covered by tests:
   hanging off the edge.
 - A locked window (`is_locked`) refuses geometry changes; `apply_zone`
   returns False and closes rather than pretending it snapped.
+
+## Wishlist round 3 (21.07, claude-opus) — from the Evening 19.07 note
+Re-read the list against real code first; theme-refresh, Ctrl+V hyperlink,
+collapsible quote and line-drag were already restored earlier today.
+
+| ID | Status | Description |
+|---|---|---|
+| W-01 | DONE | **Header overflow menu.** At the reported 636px the density tiers drop ~20 buttons and they were simply unreachable unless you knew the hotkey. Added `btn_overflow` ("»") that appears only while something is hidden and pops a menu of every dropped button, labelled from the first line of its tooltip and wired to the real button's `click()`. Hide-lists were extracted to `_DENSE_HIDDEN` / `_ULTRA_HIDDEN` so the menu and the tiers can't drift apart. |
+| W-02 | DONE | **MONOSPACE -> user font.** Code spans and fenced blocks hardcoded Consolas. `MarkdownHighlighter.update_code_font()` + `main._apply_code_font()` + a "⌨ Monospace Code" toggle (default on). Off = code renders in the editor's own font, and `setFontFixedPitch` is dropped so a proportional font isn't forced to fake monospace. Follows the editor font live via `apply_font()`. |
+| T-520 | FIXED (was P1) | **Root cause of the smoke-suite cross-test rot found.** `test_toolbar_button_can_move_back_across_gaps` did `win._apply_header_density = lambda: None` on the SHARED module-scoped fixture and never restored it — so from that test onward the density engine was dead for every later test: nothing re-hid at narrow widths and `_header_ultra` never flipped again. That is what made `test_header_priority_fit_never_hides_clock_or_date` unassertable in a full run (and I had weakened it, with a note, rather than chase it). Now restored via try/finally, and the strict `header.sizeHint() <= header.width()` assertion is BACK and green in the full suite at both 1.0x/640px and 1.5x/300px. Remaining fixture-isolation cleanup (ui_scale / geometry / is_locked leaks) is real but now only P3 tidiness. |
+
+Still open from the note: "Remember selectable state each silo individually"
+(needs a spec — cursor position? selection? scroll? all three?), and the
+italic/regular toggle *next to the collapse button* rather than the global
+Settings toggle that ships today.

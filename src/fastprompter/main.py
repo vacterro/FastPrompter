@@ -17,7 +17,6 @@ from PyQt6.QtCore import (
 )
 from PyQt6.QtGui import (
     QColor,
-    QCursor,
     QFont,
     QKeySequence,
     QShortcut,
@@ -383,8 +382,7 @@ class FastPrompter(
         # both reachable via the editor's right-click menu and Ctrl+W. The
         # bullet-toggle (-→•) stays visible; it only drops in ultra.
         if flipped:
-            for name in ("btn_clear_fmt", "btn_add_line", "btn_home", "btn_end",
-                         "btn_under", "btn_strike", "btn_copy"):
+            for name in self._DENSE_HIDDEN:
                 wdg = getattr(self, name, None)
                 if wdg is not None and not sip.isdeleted(wdg):
                     wdg.setVisible(not dense)
@@ -393,12 +391,7 @@ class FastPrompter(
         if getattr(self, "_header_ultra", None) != ultra:
             self._header_ultra = ultra
             # bullet-toggle survives dense but hides in the portrait sliver
-            for name in ("btn_bold", "btn_italic", "btn_under", "btn_strike",
-                         "btn_header", "btn_quote", "btn_copy", "btn_clear", "btn_bullet_toggle",
-                         "btn_home", "btn_end", "btn_pin_top", "btn_line_nums",
-                         "btn_help", "btn_trash", "btn_toggle_search",
-                         "btn_arc_snip", "btn_toggle_archive", "btn_project_folder",
-                         "btn_project_run", "btn_files"):
+            for name in self._ULTRA_HIDDEN:
                 wdg = getattr(self, name, None)
                 if wdg is not None and not sip.isdeleted(wdg):
                     wdg.setVisible(not ultra)
@@ -474,6 +467,72 @@ class FastPrompter(
             self._update_line_count_label()
 
         self._enforce_header_priority_fit()
+        self._refresh_overflow_button()
+
+    # Buttons the density tiers pull out of the header. They stay reachable
+    # through the "»" overflow menu — see _refresh_overflow_button.
+    _DENSE_HIDDEN = ("btn_clear_fmt", "btn_add_line", "btn_home", "btn_end",
+                     "btn_under", "btn_strike", "btn_copy")
+    _ULTRA_HIDDEN = ("btn_bold", "btn_italic", "btn_under", "btn_strike",
+                     "btn_header", "btn_quote", "btn_copy", "btn_clear",
+                     "btn_bullet_toggle", "btn_home", "btn_end", "btn_pin_top",
+                     "btn_line_nums", "btn_help", "btn_trash", "btn_toggle_search",
+                     "btn_arc_snip", "btn_toggle_archive", "btn_project_folder",
+                     "btn_project_run", "btn_files")
+
+    def _apply_code_font(self):
+        """Code blocks default to Consolas; opt out to use the editor font.
+
+        Forced monospace looks wrong next to Verdana body text, so
+        `code_monospace = False` renders code in whatever font the user
+        actually picked.
+        """
+        hl = getattr(self, "highlighter", None)
+        if hl is None or sip.isdeleted(hl):
+            return
+        mono = self.data.get("code_monospace", "True") == "True"
+        hl.update_code_font(None if mono else self._font_family)
+
+    def _overflow_hidden_buttons(self):
+        """Header buttons currently pulled out by the density tiers."""
+        out = []
+        for name in dict.fromkeys(self._ULTRA_HIDDEN + self._DENSE_HIDDEN):
+            btn = getattr(self, name, None)
+            if btn is None or sip.isdeleted(btn) or not btn.isHidden():
+                continue
+            if not btn.isEnabled():
+                continue
+            out.append((name, btn))
+        return out
+
+    def _refresh_overflow_button(self):
+        """Show '»' only while something is actually hidden."""
+        btn = getattr(self, "btn_overflow", None)
+        if btn is None or sip.isdeleted(btn):
+            return
+        btn.setVisible(bool(self._overflow_hidden_buttons()))
+
+    def _show_overflow_menu(self):
+        """Every button the narrow header dropped, in one popup.
+
+        Without this the formatting/navigation buttons are simply gone below
+        700px — reachable only if you happen to know the hotkey.
+        """
+        from PyQt6.QtWidgets import QMenu
+
+        hidden = self._overflow_hidden_buttons()
+        if not hidden:
+            return
+        menu = QMenu(self)
+        for _name, btn in hidden:
+            # tooltip first line reads better than the 1-glyph button text
+            tip = (btn.toolTip() or "").split("\n")[0].strip()
+            label = tip or btn.text().strip() or _name.replace("btn_", "")
+            act = menu.addAction(label)
+            act.setEnabled(btn.isEnabled())
+            act.triggered.connect(btn.click)
+        menu.exec(self.btn_overflow.mapToGlobal(
+            self.btn_overflow.rect().bottomLeft()))
 
     def _enforce_header_priority_fit(self):
         """Last-resort guard so the clock and date always survive.
@@ -1328,6 +1387,17 @@ class FastPrompter(
         self.header_layout.addWidget(self.btn_strike)
         self.header_layout.addWidget(self.btn_header)
         self.header_layout.addWidget(self.btn_quote)
+
+        # Overflow: at narrow widths the density tiers drop most of the
+        # header, so surface everything they dropped in one menu.
+        self.btn_overflow = QPushButton("»")
+        self.btn_overflow.setToolTip(tr(
+            "More\nButtons hidden because the window is narrow.",
+            getattr(self, "_current_lang", "EN")))
+        self.apply_button_size(self.btn_overflow, 24, 24)
+        self.btn_overflow.clicked.connect(self._show_overflow_menu)
+        self.btn_overflow.setVisible(False)
+        self.header_layout.addWidget(self.btn_overflow)
         self.header_layout.addWidget(self.btn_clear_fmt)
         self.header_layout.addWidget(self.btn_add_line)
         self.header_layout.addWidget(self.btn_bullet_toggle)
@@ -1693,6 +1763,17 @@ class FastPrompter(
             self.data.get("word_wrap", "True") == "True",
             self.on_wrap_toggled,
         )
+        self.cb_code_monospace = create_footer_cb(
+            "⌨ Monospace Code",
+            "Render `code` and ``` blocks in Consolas.\n"
+            "Off: use the editor's own font instead.",
+            self.data.get("code_monospace", "True") == "True",
+            lambda checked: (
+                self.data.update({"code_monospace": "True" if checked else "False"})
+                or self.mark_dirty()
+                or self._apply_code_font()
+            ),
+        )
         self.cb_line_numbers = create_footer_cb(
             "🔢 Line Numbers",
             "Show a line-number gutter\n(click it to place colored margin marks)",
@@ -2016,7 +2097,7 @@ class FastPrompter(
         groups_row.addWidget(_vline())
         groups_row.addLayout(_settings_group("Editor", [
             self.cb_focus, self.cb_wrap, self.cb_ctrl_c, self.cb_lock_cursor,
-            self.cb_line_numbers, self.cb_code_gutter, self.cb_line_marks, self.cb_zebra, self.cb_double_line, self.cb_bold_titles,
+            self.cb_line_numbers, self.cb_code_gutter, self.cb_code_monospace, self.cb_line_marks, self.cb_zebra, self.cb_double_line, self.cb_bold_titles,
             div_row, hdr_row
         ]), 1)
         groups_row.addWidget(_vline())
@@ -2326,6 +2407,7 @@ class FastPrompter(
         self.highlighter = MarkdownHighlighter(base_font_size=11)
         self.highlighter.setDocument(self.text_area.document())
         self.highlighter.set_skip_large(True)
+        self._apply_code_font()
         self._current_lang = get_language(self.data)
         self.apply_wrap_mode()
         self.text_area.setPlaceholderText(tr("Think deeply.", getattr(self, "_current_lang", "EN")))

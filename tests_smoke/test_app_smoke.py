@@ -2076,7 +2076,21 @@ def test_customize_toolbar_toggle(win):
 
 
 def test_toolbar_button_can_move_back_across_gaps(win):
-    win._apply_header_density = lambda: None  # Prevent headless screen limits from hiding the middle group
+    # Stub out density packing: headless screen limits would otherwise hide
+    # the middle group. MUST be restored — this is a module-scoped `win`
+    # shared by every other test, and leaving the stub in place silently
+    # kills the density engine for all of them (nothing re-hides at narrow
+    # widths, and _header_ultra never flips again).
+    _real_density = win._apply_header_density
+    win._apply_header_density = lambda: None
+    try:
+        _run_toolbar_move_back_checks(win)
+    finally:
+        del win._apply_header_density  # drop the instance shim, restore the class method
+        assert win._apply_header_density.__func__ is _real_density.__func__
+
+
+def _run_toolbar_move_back_checks(win):
     def seq():
         out = []
         for i in range(1, win.header_layout.count()):
@@ -2999,29 +3013,21 @@ def test_header_priority_fit_never_hides_clock_or_date(win):
         _repack(640, 900)
         assert not win.lbl_date.isHidden()
         assert not win.analog_clock.isHidden()
-        # NOTE: the strict "header sizeHint <= header width" check is
-        # deliberately NOT asserted here. It holds when this module is run
-        # alone (measured 449 <= 529), but this suite shares ONE module-scoped
-        # `win` fixture across 100+ tests, and earlier tests leave the window
-        # in states the density tier can't recover from — so the absolute
-        # pixel budget is not deterministic in a full-suite run. See BOARD.md
-        # T-520 for the fixture-isolation cleanup that would let this be
-        # asserted properly. What IS deterministic, and is what the user
-        # actually asked for, is checked above and below: the clock and date
-        # are never the widgets sacrificed.
+        assert win.header_widget.sizeHint().width() <= win.header_widget.width(), (
+            f"header overflows: wants {win.header_widget.sizeHint().width()}px, "
+            f"has {win.header_widget.width()}px")
 
-        # Extreme scale: below some floor nothing can make the header fit,
-        # but the clock and date must STILL never be the things sacrificed.
+        # Extreme scale on a sliver of a window — still must fit, and the
+        # clock and date must still never be what gets sacrificed.
         win.data["ui_scale"] = "1.5"
         win.data["font_size"] = "16"
         win.apply_theme()
         _repack(300, 900)
         assert not win.lbl_date.isHidden()
         assert not win.analog_clock.isHidden()
-        # Under this much pressure the low-priority widgets must be gone —
-        # whether the density tier or the priority-fit guard dropped them is
-        # an implementation detail, but the clock and date outrank them.
-        assert win.lbl_line_count.isHidden() or win.btn_settings_toggle_right.isHidden()
+        assert win.header_widget.sizeHint().width() <= win.header_widget.width(), (
+            f"header overflows at 1.5x: wants {win.header_widget.sizeHint().width()}px, "
+            f"has {win.header_widget.width()}px")
     finally:
         win.data["ui_scale"] = "1.0"
         win.data["font_size"] = "11"
@@ -3164,3 +3170,85 @@ def test_fancyzones_settings_spins_drive_the_custom_grid(win):
     name, zones = layouts_for(win.data)[-1]
     assert name == "Custom 3x2"
     assert len(zones) == 6
+
+
+def test_overflow_menu_exposes_buttons_hidden_by_narrow_header(win):
+    # At the width from the user's screenshot the density tiers drop most of
+    # the header. Those buttons must stay reachable through the "»" menu
+    # instead of simply vanishing for anyone who doesn't know the hotkey.
+    win.is_locked = False
+    win._locked_geometry = None
+    try:
+        win.apply_scaled_ui()
+        win._header_dense = None
+        win._header_ultra = None
+        win.resize(636, 800)          # the reported resolution
+        win._apply_header_density()
+
+        assert win._header_ultra is True, (
+            f"ultra never engaged: win.width()={win.width()} "
+            f"minW={win.minimumWidth()} hidden={win.isHidden()} "
+            f"locked={getattr(win, 'is_locked', None)}")
+        hidden = win._overflow_hidden_buttons()
+        assert hidden, "ultra hid nothing — the tier stopped working"
+        names = {n for n, _ in hidden}
+        for expected in ("btn_bold", "btn_italic", "btn_trash", "btn_files"):
+            assert expected in names, f"{expected} unreachable at 636px"
+        assert not win.btn_overflow.isHidden(), "» must appear when things are hidden"
+
+        # the menu actually fires the real button: Bold via the menu must
+        # produce the same edit as clicking the (hidden) toolbar button
+        win.data["temp_presets"][:] = ["hello"]
+        win.silo_docs[:] = []
+        win._switch_to_slot(0, initial=True)
+        cur = win.text_area.textCursor()
+        cur.setPosition(0)
+        cur.setPosition(5, cur.MoveMode.KeepAnchor)
+        win.text_area.setTextCursor(cur)
+        dict(hidden)["btn_bold"].click()
+        assert "**hello**" in win.text_area.toPlainText()
+
+        # widen again: nothing hidden -> the » button gets out of the way
+        win._header_dense = None
+        win._header_ultra = None
+        win.resize(1400, 800)
+        win._apply_header_density()
+        assert win._overflow_hidden_buttons() == []
+        assert win.btn_overflow.isHidden()
+    finally:
+        win._header_dense = None
+        win._header_ultra = None
+        win.resize(1400, 700)
+        win._apply_header_density()
+
+
+def test_code_font_follows_monospace_toggle(win):
+    # "MONOSPACE -> VERDANA (or user preferred font)": code spans forced
+    # Consolas regardless of the editor font.
+    hl = win.highlighter
+    try:
+        win.data["code_monospace"] = "True"
+        win._apply_code_font()
+        assert hl.code_font_family is None  # None means Consolas
+
+        win.data["font_family"] = "Verdana"
+        win.data["code_monospace"] = "False"
+        win._apply_code_font()
+        assert hl.code_font_family == "Verdana"
+
+        # the inline-code rule really carries that family, and drops the
+        # fixed-pitch flag so a proportional font isn't forced to fake it
+        fmt = next(f for pat, f in hl._highlighting_rules
+                   if pat.pattern == r'`[^`]+`')
+        assert fmt.fontFamily() == "Verdana"
+        assert fmt.fontFixedPitch() is False
+
+        # changing the editor font carries through while monospace is off
+        win.data["font_family"] = "Tahoma"
+        win.apply_font()
+        assert hl.code_font_family == "Tahoma"
+    finally:
+        win.data["code_monospace"] = "True"
+        win.data["font_family"] = "Verdana"
+        win.apply_font()
+        win._apply_code_font()

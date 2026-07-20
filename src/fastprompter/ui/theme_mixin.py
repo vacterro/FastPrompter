@@ -210,6 +210,9 @@ class ThemeMixin:
             self.text_area.setFont(font)
             self.text_area.document().setDefaultFont(font)
             self.highlighter.update_base_size(font_size)
+            # code spans follow the editor font when monospace is off
+            if hasattr(self, "_apply_code_font"):
+                self._apply_code_font()
         except Exception:
             logger.debug("apply_font: failed to set font on text_area")
         try:

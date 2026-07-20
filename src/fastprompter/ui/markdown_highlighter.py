@@ -33,6 +33,10 @@ class MarkdownHighlighter(QSyntaxHighlighter):
         super().__init__(parent)
         self.base_font_size = base_font_size
         self.theme = None
+        # None = use Consolas for code. Set to a family name to render code
+        # in the editor's own font instead (user asked for Verdana-or-their
+        # own font rather than forced monospace).
+        self.code_font_family = None
         self._highlighting_rules = []
         self._skip_highlighting = False
 
@@ -45,6 +49,12 @@ class MarkdownHighlighter(QSyntaxHighlighter):
 
     def update_theme(self, theme):
         self.theme = theme
+        self._setup_rules()
+        self.rehighlight()
+
+    def update_code_font(self, family):
+        """Font for inline code and fenced blocks. None/'' -> Consolas."""
+        self.code_font_family = family or None
         self._setup_rules()
         self.rehighlight()
 
@@ -72,6 +82,7 @@ class MarkdownHighlighter(QSyntaxHighlighter):
         text_main = self._theme_color("text_main", "#c0c0c0")
         bg_text = self._theme_color("bg_text", "#2c2c2c")
         quote_color = blend_hex(text_main, bg_text, 0.45)
+        code_family = self.code_font_family or "Consolas"
 
         # Bold: **text**
         bold_format = QTextCharFormat()
@@ -117,7 +128,7 @@ class MarkdownHighlighter(QSyntaxHighlighter):
 
         # Inline Code: `text`
         code_format = QTextCharFormat()
-        code_format.setFontFamily("Consolas")
+        code_format.setFontFamily(code_family)
         code_format.setBackground(QColor("#1a1a1a"))
         code_format.setForeground(QColor("#e06c75"))
         self._highlighting_rules.append((re.compile(r'`[^`]+`'), code_format))
@@ -155,8 +166,8 @@ class MarkdownHighlighter(QSyntaxHighlighter):
         # --- Fenced code blocks: monospace + panel background ---
         def _code_fmt(color):
             fmt = QTextCharFormat()
-            fmt.setFontFamily("Consolas")
-            fmt.setFontFixedPitch(True)
+            fmt.setFontFamily(code_family)
+            fmt.setFontFixedPitch(self.code_font_family is None)
             fmt.setBackground(QColor("#161616"))
             fmt.setForeground(QColor(color))
             return fmt
