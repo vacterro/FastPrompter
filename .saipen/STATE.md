@@ -1,12 +1,12 @@
 ---
 phase: DONE
-task: "Recovery after .git loss + rollback: restored all lost work, re-inited repo, hunted"
-next_action: "Push to a remote FIRST (T-521) — everything here is local-only commits again, which is exactly how the last 7 got lost. Then T-520 (smoke fixture isolation) is the highest-value cleanup."
+task: "Settings UI compaction (tabs + reflow) - the last standing pending item"
+next_action: "PUSH TO A REMOTE (T-521). 19 commits are local-only; that is exactly how 7 commits were lost on 20.07. Then: remaining wishlist items are the line-temperature system, 4-side toolbar docking, silo-drop-onto-child re-parenting, and the italic toggle next to the quote collapse button."
 blocker: ""
 agent: claude-opus
 mode: full
 requires: [filesystem, python, shell, git]
-updated: 2026-07-21T00:55:00
+updated: 2026-07-21T03:10:00
 ---
 ## Handoff (for the next agent)
 A concurrent agent deleted `.git/` and rolled the working tree back to its
