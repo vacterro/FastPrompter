@@ -2055,6 +2055,17 @@ class FastPrompter(
             self.data.get("word_wrap", "True") == "True",
             self.on_wrap_toggled,
         )
+        self.cb_line_heat = create_footer_cb(
+            "🌡 Line Heat",
+            "Tint lines you edited recently, cooling as they age.\n"
+            "Shows at a glance where you have just been working.",
+            self.data.get("line_heat", "False") == "True",
+            lambda checked: (
+                self.data.update({"line_heat": "True" if checked else "False"})
+                or self.mark_dirty()
+                or self.text_area.viewport().update()
+            ),
+        )
         self.cb_hover_line = create_footer_cb(
             "🖱 Hover Line",
             "Faintly brighten the line under the mouse cursor",
@@ -2484,7 +2495,7 @@ class FastPrompter(
         self.settings_tabs.addTab(_tab([
             self.cb_focus, self.cb_wrap, self.cb_ctrl_c, self.cb_lock_cursor,
             self.cb_line_numbers, self.cb_code_gutter, self.cb_code_monospace,
-            self.cb_hover_line, self.cb_line_marks, self.cb_zebra,
+            self.cb_hover_line, self.cb_line_heat, self.cb_line_marks, self.cb_zebra,
             self.cb_double_line, self.cb_bold_titles, div_row, hdr_row,
         ]), tr("Editor", self._current_lang))
 

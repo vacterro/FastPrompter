@@ -10,6 +10,7 @@ from PyQt6.QtGui import (
     QPainter,
     QPainterPath,
     QPen,
+    QTextBlockUserData,
     QTextCursor,
     QTextFormat,
 )
@@ -79,6 +80,22 @@ class LineNumberArea(QWidget):
         super().leaveEvent(event)
 
 
+class _LineHeat(QTextBlockUserData):
+    """Edit timestamp carried BY the block itself.
+
+    Storing heat against line NUMBERS would smear it across the wrong lines
+    the moment anything is inserted or deleted above. Qt moves a block's
+    userData with the block, so the mark stays on the text the user actually
+    touched.
+    """
+
+    __slots__ = ("ts",)
+
+    def __init__(self, ts):
+        super().__init__()
+        self.ts = ts
+
+
 class VaultTextEdit(QTextEdit):
     def __init__(self, main_win):
         super().__init__()
@@ -90,6 +107,7 @@ class VaultTextEdit(QTextEdit):
         self.line_number_area = LineNumberArea(self)
         self.document().documentLayout().documentSizeChanged.connect(self.update_line_number_area_width)
         self.verticalScrollBar().valueChanged.connect(self.line_number_area.update)
+        self.document().contentsChange.connect(self._stamp_edited_blocks)
         self.textChanged.connect(self._refresh_checkbox_flag)
         self.textChanged.connect(self.line_number_area.update)
         self.cursorPositionChanged.connect(self.line_number_area.update)
@@ -159,8 +177,16 @@ class VaultTextEdit(QTextEdit):
                 cur_doc.documentLayout().documentSizeChanged.disconnect(self.update_line_number_area_width)
             except Exception:
                 pass
+            try:
+                cur_doc.contentsChange.disconnect(self._stamp_edited_blocks)
+            except Exception:
+                pass
         self.setDocument(doc)
         self.document().setUndoRedoEnabled(True)
+        # Each silo is its own QTextDocument, so the heat hook has to follow
+        # the swap — connecting once in __init__ only ever stamped the very
+        # first document.
+        self.document().contentsChange.connect(self._stamp_edited_blocks)
         self.document().documentLayout().documentSizeChanged.connect(self.update_line_number_area_width)
         self.update_line_number_area_width()
         font = self.font()
@@ -1508,6 +1534,92 @@ class VaultTextEdit(QTextEdit):
             except Exception:
                 pass
 
+    # ---- line temperature: show where you have recently been -----------
+    def _heat_enabled(self):
+        try:
+            return self.main_win.data.get("line_heat", "False") == "True"
+        except Exception:
+            return False
+
+    def _stamp_edited_blocks(self, position, removed, added):
+        """Timestamp every block the change touched."""
+        if not self._heat_enabled():
+            return
+        doc = self.document()
+        if doc.blockCount() > 2000:      # same ceiling as the other per-block work
+            return
+        import time as _t
+
+        now = _t.time()
+        try:
+            first = doc.findBlock(position)
+            last = doc.findBlock(max(position, position + added))
+            block = first
+            while block.isValid():
+                block.setUserData(_LineHeat(now))
+                if block.blockNumber() >= last.blockNumber():
+                    break
+                block = block.next()
+        except Exception:
+            logger.debug("line heat stamp failed")
+
+    # age -> (settings key, fallback colour). Same buckets and the same
+    # custom-colour keys the silo recency tint uses, so the two read as one
+    # system rather than two unrelated colour schemes.
+    _HEAT_BUCKETS = (
+        (60, "overlay_new", "#6a5555"),
+        (3600, "overlay_recent", "#6a5a40"),
+        (86400, "overlay_day", "#5a5a30"),
+    )
+
+    def _line_heat_selections(self, doc):
+        if not self._heat_enabled():
+            return []
+        import time as _t
+
+        now = _t.time()
+        try:
+            strength = int(self.main_win.data.get("line_heat_strength", "18"))
+        except (TypeError, ValueError):
+            strength = 18
+        strength = max(2, min(60, strength))
+
+        try:
+            custom = self.main_win._get_custom_colors()
+        except Exception:
+            custom = {}
+
+        out = []
+        block = self._first_visible_block() or doc.firstBlock()
+        vp_bottom = self.viewport().height()
+        doc_layout = doc.documentLayout()
+        y_off = -self.verticalScrollBar().value()
+        while block.isValid():
+            # only paint what's on screen; heat is decoration, not data
+            top = doc_layout.blockBoundingRect(block).translated(0, y_off).top()
+            if top > vp_bottom:
+                break
+            data = block.userData()
+            ts = getattr(data, "ts", None)
+            if ts is not None:
+                age = now - ts
+                for limit, key, fallback in self._HEAT_BUCKETS:
+                    if age < limit:
+                        colour = QColor(custom.get(key, fallback))
+                        if colour.isValid():
+                            # fade within the bucket so it cools gradually
+                            fade = 1.0 - (age / limit) * 0.6
+                            colour.setAlpha(round(255 * strength / 100 * fade))
+                            sel = QTextEdit.ExtraSelection()
+                            sel.format.setBackground(colour)
+                            sel.format.setProperty(
+                                QTextFormat.Property.FullWidthSelection, True)
+                            sel.cursor = QTextCursor(block)
+                            out.append(sel)
+                        break
+            block = block.next()
+        return out
+
     def _hover_line_selection(self, doc):
         """A faint wash over the line under the mouse.
 
@@ -1559,7 +1671,9 @@ class VaultTextEdit(QTextEdit):
         doc = self.document()
         if doc and doc.blockCount() <= 2000:
             self.setExtraSelections(
-                self._code_block_selections(doc) + self._hover_line_selection(doc))
+                self._line_heat_selections(doc)
+                + self._code_block_selections(doc)
+                + self._hover_line_selection(doc))
         super().paintEvent(event)
         if not doc:
             return

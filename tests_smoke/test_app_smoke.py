@@ -4119,3 +4119,97 @@ def test_settings_flow_layout_reflows_instead_of_clipping():
     h = solo.layout().heightForWidth(40)     # must return, not hang
     assert h >= wide_item.sizeHint().height()
     assert solo.layout().count() == 1
+
+
+def test_line_heat_follows_the_text_not_the_line_number(win):
+    # The whole feature hinges on this: heat is carried by the block, so
+    # inserting above must NOT smear it onto a different line.
+    import time
+
+    from fastprompter.ui.editor import _LineHeat
+
+    win.cat_combo.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    win.data["temp_presets"][:] = ["alpha\nbeta\ngamma\ndelta"]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    ta = win.text_area
+    doc = ta.document()
+
+    try:
+        # default OFF — the user asked for it to stay out of the way
+        assert win.data.get("line_heat", "False") == "False"
+        assert ta._line_heat_selections(doc) == []
+
+        win.data["line_heat"] = "True"
+        cur = ta.textCursor()
+        cur.setPosition(doc.findBlockByNumber(2).position())
+        ta.setTextCursor(cur)
+        ta.insertPlainText("X")
+        heated = {s.cursor.blockNumber() for s in ta._line_heat_selections(doc)}
+        assert 2 in heated, "the edited line was not marked"
+
+        # push everything down one line
+        cur.setPosition(0)
+        ta.setTextCursor(cur)
+        ta.insertPlainText("NEWTOP\n")
+        moved = [i for i in range(doc.blockCount())
+                 if doc.findBlockByNumber(i).text().startswith("Xgamma")]
+        assert moved, "test text went missing"
+        heated = {s.cursor.blockNumber() for s in ta._line_heat_selections(doc)}
+        assert moved[0] in heated, (
+            "heat did not follow the text when lines shifted - it is tracking "
+            "line numbers instead of blocks")
+
+        # older edits fade
+        blk = doc.findBlockByNumber(0)
+        blk.setUserData(_LineHeat(time.time() - 30))
+        fresh = [s for s in ta._line_heat_selections(doc) if s.cursor.blockNumber() == 0]
+        blk.setUserData(_LineHeat(time.time() - 3000))
+        aged = [s for s in ta._line_heat_selections(doc) if s.cursor.blockNumber() == 0]
+        assert fresh and aged
+        assert (fresh[0].format.background().color().alpha()
+                > aged[0].format.background().color().alpha()), "heat does not cool"
+
+        # beyond the last bucket it stops rendering entirely
+        blk.setUserData(_LineHeat(time.time() - 90000))
+        assert not [s for s in ta._line_heat_selections(doc)
+                    if s.cursor.blockNumber() == 0]
+
+        # strength is user-controlled and clamped, not trusted blindly
+        blk.setUserData(_LineHeat(time.time()))
+        win.data["line_heat_strength"] = "60"
+        strong = ta._line_heat_selections(doc)[0].format.background().color().alpha()
+        win.data["line_heat_strength"] = "5"
+        weak = ta._line_heat_selections(doc)[0].format.background().color().alpha()
+        assert strong > weak
+        win.data["line_heat_strength"] = "nonsense"
+        assert ta._line_heat_selections(doc)      # falls back instead of raising
+
+        # switching it off clears it immediately
+        win.data["line_heat"] = "False"
+        assert ta._line_heat_selections(doc) == []
+    finally:
+        win.data["line_heat"] = "False"
+        win.data["line_heat_strength"] = "18"
+
+
+def test_line_heat_hook_survives_silo_switches(win):
+    # Each silo is a separate QTextDocument; the stamp hook must be
+    # reconnected on every swap or only the first silo would ever heat.
+    win.data["temp_presets"][:] = ["one", "two"]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    try:
+        win.data["line_heat"] = "True"
+        win._switch_to_slot(1)
+        ta = win.text_area
+        cur = ta.textCursor()
+        cur.movePosition(cur.MoveOperation.End)
+        ta.setTextCursor(cur)
+        ta.insertPlainText("!")
+        assert ta._line_heat_selections(ta.document()), (
+            "second silo never got heat - the contentsChange hook did not "
+            "follow the document swap")
+    finally:
+        win.data["line_heat"] = "False"

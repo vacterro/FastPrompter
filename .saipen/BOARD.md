@@ -515,3 +515,16 @@ of them would be invisible forever after a regroup); the spin controls
 survived the move; and FlowLayout reflows rather than clips.
 
 Verified: 503 unit + 150 smoke green.
+
+## Line temperature system (21.07, claude-opus) — resumed via bare `/saipen`
+| ID | Status | Description |
+|---|---|---|
+| LH-01 | DONE | Recently edited lines get a fading tint, so you can see at a glance where you have just been working. Default **OFF** as requested; toggle "🌡 Line Heat" in the Editor tab, strength user-settable (`line_heat_strength`, clamped 2-60). |
+| LH-02 | DONE (the design decision that matters) | Heat is carried by `QTextBlockUserData`, NOT by line number. Storing it against line indices would smear it onto the wrong lines the moment anything is inserted or deleted above — worse than useless. Qt moves a block's userData with the block, so the mark stays on the text the user actually touched. Regression-tested by inserting a line above and asserting the heat moved with the text. |
+| LH-03 | FIXED during the build | The `contentsChange` hook was connected once in `__init__`, but each silo is its OWN QTextDocument — so only the very first silo ever got stamped. Now reconnected in `set_active_document` (and disconnected from the outgoing doc). Found by probing rather than by assuming, and locked with a test that edits a *second* silo. |
+| LH-04 | DONE | Uses the same time buckets and the same `overlay_*` custom-colour keys as the existing silo recency tint, so the two read as one system. Fades continuously inside each bucket and stops rendering past a day. Only visible blocks are considered, and the whole thing is skipped above 2000 blocks — the same ceiling the other per-block work uses. |
+
+Verified: 503 unit + 152 smoke green.
+
+Remaining wishlist: 4-side toolbar docking, silo-drop-onto-child
+re-parenting, italic toggle beside the quote collapse button.
