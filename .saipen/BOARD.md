@@ -367,3 +367,21 @@ transcript. New repo re-inited at `d53b9d7` (restore point = tree as found).
 | T-521 | P1 | **`.git` was deleted and the tree rolled back by a concurrent agent** (see LOG INCIDENT 20.07 15:25). Nothing here was pushed, so recovery came from the chat transcript only. Before any further multi-agent work: push to a remote so local-only commits stop being a single point of failure, and find out what removed `.git` (suspect `deploy.ps1` / `release.cmd` — T-285 already flags `deploy.ps1` for a `--force-with-lease` push after a rebase-conflict fallback). |
 | T-522 | P2 | `isVisible()` vs `isHidden()` trap, hit twice now: `isVisible()` is False whenever ANY ancestor is hidden (window in tray), so visibility guards written with it silently no-op. `_enforce_header_priority_fit` was fixed to use `isHidden()`; audit other visibility checks for the same mistake. |
 | T-523 | P2 | 3 bare `except:` in main.py (~2048, ~2062, ~2135 pre-restore) swallow everything while parsing spin-box ints. Narrow to (TypeError, ValueError). |
+
+## HUNT sweep (21.07, claude-opus) — before adding new features
+Ran ruff across src/tests, then verified each signal against real code.
+
+| ID | Status | Finding |
+|---|---|---|
+| H-01 | FIXED (P0) | `fancy_zones.py:54` called `QCursor.pos()` with no `QCursor` import -> `NameError` crash on the FIRST Ctrl+Q press. Wired live at main.py `cycle_snap_corner`. Same bug class as the earlier logger-unimported crash: unreachable by import checks, only fires when the branch runs. Fixed + added `test_ctrl_q_snap_and_fancy_zones_overlay` (drives the real path) AND `test_no_undefined_names_in_package` (ruff F821 gate over src/) so the class can't return. |
+| H-02 | FIXED | `src/fastprompter/_fix_tooltip.py` — a one-off dev script that rewrites `main.py` by HARDCODED line number (`lines[733] = ...; del lines[734]`), sitting inside the shipped package. Destructive if ever run, and it would be packaged into builds. Deleted. Also removed the stray `nul` shell-redirect artifact. |
+| H-03 | FIXED | 3 bare `except:` around `int()` parsing of spin-box settings (main.py ~2034/2049/2088) narrowed to `(TypeError, ValueError)`. |
+| H-04 | FIXED | Unused/duplicate imports across src (F401/F811), incl. a 5-name import block in drop_overlay.py immediately re-imported on the next line. |
+| H-05 | FIXED | `translations.py` had 31 duplicate `_DATA` keys. Audited by AST: 30 were byte-identical (harmless clutter), 1 genuinely conflicted — `'Failed to backup:\n{}'` defined twice with different Russian, so the earlier one was dead. Removed the dead entry; 0 conflicting duplicates remain. (Closes the old T-286.) |
+
+Clean on the remaining signals: no TODO/FIXME/HACK markers left in src/,
+no failing tests, no orphan modules besides the one deleted above.
+Remaining ruff noise is cosmetic only (I001 import order, W291 trailing
+whitespace, E741 `l` as a name in drop_overlay) — not ticketed.
+
+Verified after the sweep: 465 unit + 118 smoke PASS.

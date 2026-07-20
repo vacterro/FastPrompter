@@ -525,7 +525,6 @@ _DATA = {
     "Database backed up to:\n{}": "База сохранена в:\n{}",
     "Error": "Ошибка",
     "Failed to save backup:\n{}": "Ошибка сохранения резервной копии:\n{}",
-    "Failed to backup:\n{}": "Ошибка копирования:\n{}",
     "Select Export Directory": "Выберите папку для экспорта",
     "Silos exported to:\n{}": "Силы экспортированы в:\n{}",
     "Failed to export:\n{}": "Ошибка экспорта:\n{}",
