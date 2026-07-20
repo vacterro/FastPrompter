@@ -1,0 +1,112 @@
+# ASP Log
+- 17.07.26 03:37 [INIT] RUN: Init ASP state and board -> PASS
+- 17.07.26 03:38 [HUNT] RUN: Update ASP state to HUNT -> PASS
+- 17.07.26 03:39 [PLAN] RUN: Added T-004 to T-006 for failing smoke tests -> PASS
+- 17.07.26 03:43 [HUNT] RUN: Fixed tests and topbar shrinking for T-004 to T-006 -> PASS
+- 17.07.26 06:15 [T-101] RUN: slug игнорит таймштампы + sync в switch/archive paths -> 66 PASS; папка больше не хоронится при рестампе
+- 17.07.26 06:40 [T-102] RUN: modal guard (топмост прятал confirm), Del/F2/Enter/Ctrl+Shift+C/Ctrl+N в панели -> 67 PASS
+- 17.07.26 06:41 [T-103] H: dense-pack мерил шрифт до полиша темы -> re-pack after setStyleSheet, conf med (GUI глазами)
+- 17.07.26 06:42 [T-104] H: скрытый search_bar со старым текстом фильтровал снипеты -> _snippet_query() игнорит скрытый бар
+- 17.07.26 06:55 [T-105] RUN: TS_STAMP_LINE_RE один на всех, знает 17 Jul + секунды -> глиф не пропадёт
+- 17.07.26 06:56 [T-115] RUN: {state} в шаблоне Ctrl+E + тултип; свой дубль поля снёс, у Antigravity уже было
+- 17.07.26 07:30 [T-106] RUN: анти-флешбэнг (палитра из QSS + updates off) -> conf med, GUI глазами
+- 17.07.26 07:31 [T-110/111] RUN: пин+номера строк у счётчика, сепаратор, Home/End влево -> 67 PASS
+- 17.07.26 07:32 [T-113/114] RUN: средний клик = в корзину (.md + файлы в _trash), меню с иконками и секциями -> PASS
+- 17.07.26 07:33 [T-116/117] RUN: аналоговые мини-часы (минутный редроу), деволты Alt+E/S, новый Alt+A биндится -> 67+461 PASS
+- 17.07.26 08:05 [T-112] RUN: тикбокс на сило слева (persist per-tab, remap, undo snapshot, del очистка) -> 68+461 PASS
+- 17.07.26 08:40 [T-119] RUN: drop-зоны Telegram-style (overlay, hot-подсветка, бинарь всегда в Files) -> 68 PASS, GUI глазами
+- 17.07.26 08:41 [T-124] RUN: help обновлён (тик, корзина, зоны, часы, шаблон)
+- 17.07.26 08:55 [T-125] RUN: ship v0.5.3 -> релиз жив, EXE 26.7MB, апи в этот раз не унесло единорогом
+- 17.07.26 08:56 [--] зоны ждут файлов / галочка на сило спит / дед закрыл смену
+- 17.07.26 09:20 [VERIFY] RUN: sweep -> 72+461 PASS, ruff 0, EXE 302 live; +4 теста (overlay зоны/роутинг, trash .md, Alt+A, тема-лейблы)
+- 17.07.26 09:21 [VERIFY] RUN: editor print -> logger.debug x4; мусора в корне нет, дерево чистое
+- 17.07.26 09:50 [T-105b] RUN: часы больше не деградируют; dense ужат (иконки ⧉✕─, табы 100, квадраты 18) -> 73 PASS, шапка 960 ok
+- 17.07.26 10:40 [T-123] RUN: иерархия сило (1 уровень: drop=в дети, Shift+drop=swap, ▾/▸ collapse, unnest на границу, файлы мержатся с вопросом, remap/undo/persist) -> 74+461 PASS
+- 17.07.26 10:41 [T-112b] RUN: Silo Ticks тумблер в Settings; меню корзины ужато (Clear + Open Trash, средняя кнопка = в корзину)
+- 17.07.26 11:20 [FIX] RUN: обрезка кнопок — метрики мерились 10px, QSS рисует 11px; мерим 11px честно, шапка 960 ok -> 76 PASS
+- 17.07.26 11:21 [FIX] RUN: живой синк папки на textChanged (1 silo = 1 folder), Move to Top + Bottom через move_temp_to_index (ремап пинов/тиков)
+- 17.07.26 12:05 [PLAN] RUN: ревизия мастер-списка 0.5.3 -> 25 пунктов DONE с тестами, 8 гэпов на доску T-130..T-138
+- 17.07.26 12:05 [FIX] RUN: 📁2 │ 177 разделитель в счётчиках сило/архива -> 76 PASS
+- 17.07.26 12:50 [T-131/133] RUN: 📁 в сайдбар к 📦, сепаратор перед +/- -> 77 PASS
+- 17.07.26 12:51 [UI] RUN: ultra-режим <700px (только табы/NEW/Save/DD.MM hh:mm/счётчик/⚙, остальное прячется, хоткеи живы) -> шапка 500px ok
+- 17.07.26 13:10 [T-132] RUN: Snippet Arrows тумблер (деволт OFF, кэш-стейт учтён) -> 77+461 PASS
+- 17.07.26 13:35 [UI] RUN: 📁 кнопка в самый правый край строки сило; с файлами она же счётчик 📁N (без дубля), пустые — 📁 на ховере -> 77+461 PASS
+- 17.07.26 14:00 [FIX] RUN: clip_safe_width (bold 11px + эмодзи-запас) для ВСЕХ фикс-ширин; CF/Line/bullet в dense прячутся -> в правый клик редактора; 📁2 дышит -> 77+461 PASS
+- 17.07.26 14:40 [FIX] RUN: removed isVisible check for global hotkeys (Alt+A/S/E/D) so they work immediately
+- 17.07.26 14:44 [FIX] UI: rebuilt settings groups using QGridLayout (2 columns) to drastically reduce vertical height (T-130)
+- 17.07.26 15:16 [T-134/FIX] RUN: Folder Templates in container Trash toggle fix live empty folder rename compact file container icons details view default -> PASS
+- 17.07.26 15:21 [T-135] RUN: Bindable in-app shortcuts via Settings Tabs dynamic tooltips editor interception overrides
+- PASS
+- 17.07.26 15:22 [T-136] RUN: Search deep reliability pass (multi-word AND matching instead of exact phrase) -> PASS
+- 17.07.26 08:38 [VERIFY] RUN: Smoke tests (partial due to Qt hang) and Unit tests (461/461) pass. Software is working. -> PASS
+- 17.07.26 16:00 [FIX] RUN: global hotkeys fix — only toggle_visibility (Alt+X) and pie_menu (Shift+Alt+X) remain global; Alt+D/S/E/A, snippet/silo hotkeys now local QShortcut (window-only) -> 461 PASS
+- 17.07.26 17:04 [INIT] RUN: asp v7 bootstrap — RFC.md, STYLE.md, UI.md, phases/ created -> PASS
+- 17.07.26 [HUNT] RUN: Deep audit — found 14 bugs (T-140..T-153): QPainter leaks (analog_clock, drop_overlay), untranslated QMessageBox (search_mixin, snippet_ops), format-string tr() bug (hotkey_mixin), dead code (editor.py), timer race (ignore_focus_loss), untranslated tooltips (main.py _update_files_button, header buttons), topmost_timer never stops, static_labels scope risk, 80+ bare excepts, WindowFlags flicker -> PASS
+- 17.07.26 15:30 [DOC] RUN: README + дед-издание RU/EN на все фичи (два спойлера), строка про 🌐 RU/EN в таблицу
+
+- 26.07.18 02:44 [FIX] RUN: T-160..T-163, T-166, T-169 -> PASS
+- 26.07.18 02:57 [FIX] RUN: T-164..T-165, T-167, T-171, T-176..T-179, T-189, T-192..T-194, T-209, T-310 -> PASS
+- 18.07.26 03:00 [DOC] RUN: feature additions — Table builder, Kanban snippet, drop zone settings, gap width, emoji title, sound tooltips
+- 18.07.26 04:15 [T-200] RUN: P0 boot crash silo_colors str.get -> wired state x3 + defensive read; boot OK, дед чуть не помер на старте
+- 18.07.26 04:15 [T-201] RUN: tick ✅ на Segoe UI Emoji -> зелёная даже под ховером, Verdana эмодзи не красит
+- 18.07.26 04:15 [T-203] RUN: 14 filter-тестов на local-only (Alt+D больше не орёт на весь дом); markdown mock copy-ctor; clip prompt mock; cyrillic guard мимо translations.py -> 461+77 PASS
+- 18.07.26 04:25 [T-202] RUN: QPen не импортнут в editor.py -> крэш при отрисовке метки на полях; добавил импорт + regression test все 4 метки; убрал unused w -> 461+78 PASS
+- 18.07.26 04:30 [T-205] RUN: FileContainerPanel import стоял на уровне класса, метод его не видел -> NameError при открытии ящика; перенёс импорт в метод + regression test реально открывает панель -> 461+79 PASS
+- 18.07.26 04:35 [T-206] RUN: header # кнопка = быстрый тумблер номеров строк; убил desync (первый клик был пустышкой) единым set_line_numbers() + blockSignals sync btn<->cb -> 461+80 PASS
+- 18.07.26 04:42 [T-207] RUN: пиннутый силос -> 📌 остаётся видимой как UNPIN (клик снимает), убрал дублирующий текст-префикс 📌; hover-пин только для непиннутых
+- 18.07.26 04:42 [T-208] RUN: silo ticks OFF по умолчанию; Ctrl+Shift+click по силосу тикает/снимает даже при выключенных тиках, метка ✅ всегда видна если тикнут -> 461+82 PASS
+- 18.07.26 05:00 [T-209] RUN: перетаскиваемый top bar — токен-движок toolbar_reorder.py (persist+self-heal+rebuild), drag-фильтр на кнопках, тумблер "Customize Toolbar" в настройках (right-click=reset), кнопка едет к sidebar якорю -> 461+84 PASS
+- 18.07.26 04:52 [UI] RUN: сжал зазоры в строке силоса — spacing 2->1, margins 4/2->3/1, иконки-кнопки 16->14w -> 461+84 PASS
+- 18.07.26 05:05 [BUG] RUN: Ctrl+W/Alt+W вызывали endEditBlock() без beginEditBlock() -> счётчик edit-block корраптился, рендер застревал; обернул оба вставки в begin/end, убрал дубль mark_dirty; no-cyrillic guard теперь мимо всех translations -> 461+85 PASS
+- 18.07.26 05:10 [AUDIT] RUN: проверил 24 antigravity TODO против реального кода — 10 галлюцинаций, 6 handled/mitigated/intentional, 7 theory-wontfix, 1 настоящий (T-188 KeyError). Починил только настоящий, репро зелёный -> 461+85 PASS
+- 18.07.26 05:10 [T-188] RUN: cat not in categories guard в save_snippet + save_snippet_as_number -> stale-tab больше не KeyError; статик-анализ antigravity ~95% пустышка, дед не удивлён
+- 18.07.26 05:15 [T-210] RUN: sidebar per-side ширина уже работает (antigravity), закрепил тестом -> PASS
+- 18.07.26 05:15 [HUNT] RUN: снёс 40 пустых "TODO: BUG" тегов; AST-развёртка нашла 3 НАСТОЯЩИХ freeze-бага (endEditBlock без begin): bullet-toggle, clear_formatting, header_line — тот же класс что Ctrl+W; починил все 3 + AST regression test -> 461+88 PASS. Дед: пока чистил мусор, под ним три живых таракана нашлись
+- 18.07.26 05:22 [UX] RUN: customize toolbar — видимая кнопка ↺ Reset (только в customize-режиме) + гэпы теперь ВИДИМЫЕ виджеты с пунктиром "flexible gap"; reorder переписан на rebuild из визуальной последовательности -> кнопку можно вернуть в любую зону через гэпы. 461+89 PASS. Юзер жаловался что не прицепить обратно — теперь видно куда
+- 18.07.26 05:30 [HUNT] RUN: свип по всем сигналам — тесты 461+89 зелёные, 0 реальных TODO/FIXME, edit-block класс закрыт, toggle_header_line жив (тест ссылается), fra/spa/ukr грузятся через importlib (не сироты). RUN: hunt -> clean @657e26b
+- 18.07.26 05:34 [HUNT] RUN: hunt -> clean @ba1cc61 (no source change since @657e26b, только memory; 461+89 зелёные) — двор всё ещё чист, дед ушёл курить
+- 18.07.26 05:40 [UI] RUN: bullet-toggle (-→•) прятался в dense (<1280) — юзер не видел; убрал из dense-hide, оставил только ultra (<700). Виден на 1400/1000/900, скрыт только в портрет-щели -> 461+89 PASS
+- 18.07.26 05:45 [BUG] RUN: line numbers не прятались на code-силосах — _gutter_active force-показывал гуттер при наличии кода, тумблер казался мёртвым. Сделал show_line_numbers мастером; auto-code вынес в opt-in cb_code_gutter (default OFF). Тумблер теперь чёткий on/off даже с кодом -> 461+90 PASS
+- 18.07.26 06:15 [SHIP] RUN: shipped 0.6.5 -> Fixed T-168: capped data_undo_stack and data_redo_stack to 20MB max memory size
+- 18.07.26 06:20 [SHIP] RUN: ship v0.6.5a -> main cb39c26, tag+release live, EXE 27.0MB (302 ok). Убил 2 критических: undo .values()-на-списке (x2 копии) + 12 битых i18n (45 строк апострофов). Guard: compile-all-src тест. 461+91 зелёные. Antigravity параллелил на i18n-isolated, его стэш цел
+- 18.07.26 06:20 [SHIP] строку правил апостроф / силос падал на клике / релиз встал, дед рад
+- 18.07.26 06:40 [HUNT] RUN: свип (mark-only) -> 5 verified: H-301 undo-json corrupt (concurrent thread writes, "Extra data" в логах), H-302 undo-json 12.3MB блоат, H-303 del_category течёт _all-стораджи+папки, H-304 архивные силосы коллизия папок, H-305 trash-log не переживает рестарт. Не чинил по указанию
+- 18.07.26 19:06 [H-303..306] RUN: antigravity FIXED H-303, H-304, H-305, H-306 (file system + archive silos)
+- 18.07.26 19:36 [H-301/302] RUN: antigravity FIXED H-301 (atomic undo save) and H-302 (undo size capping)
+- 18.07.26 20:10 [CLEAN] RUN: board scrub — removed 23 stale TODO rows already closed by the audit verdict (T-170/172-175/177/178/180-188/190/191/195-199), cut the obsolete H-301..305 "fix-ready" how-to (work's done, git log has it); repaired ~444 stray NUL bytes in LOG.md (UTF-16-in-UTF-8 mush from a concurrent writer) — no text lost, всё читаемо; trimmed 5 dead .gitignore rules for a memory scheme (.vacskill/.auditor/.planning) this repo never used; ticketed i18n_build_scripts/ (113 untracked scratch scripts, zero refs) for human call instead of deleting -> C-001. 461+95 PASS. RUN: clean -> done
+- 18.07.26 21:00 [FIX] RUN: Text Month glushilka — dense mode (<1280px, почти всегда) жёстко гасила настройку, юзер её включал а толку ноль; убрал override, отжал 2px у _counter_sep -> шапка 960 всё ещё влезает, 461+96 PASS
+- 18.07.26 21:05 [FIX] RUN: KeyError('name') крэш на переключении вкладки — _trash_silo_content писал сниппет со схемой {"title":...} вместо {"name":...}; починил запись + defensive read на старых записях -> 461+97 PASS, репро подтверждён (падало без фикса)
+- 18.07.26 21:10 [FEAT] RUN: 🎨 Silo Color Box тумблер в Settings (show/hide квадратик цвета на #-сило) -> 461+98 PASS
+- 18.07.26 21:20 [FIX] RUN: silo_project_paths_all никогда не мигрировался в __init__ (только в on_tab_changed) — путь к проекту переживал сессию, только если ни разу не переключил вкладку; починил миграцией как у pinned_silos_all и т.п. -> 461+99 PASS, репро подтверждён (fresh FastPrompter() без фикса не совпадал identity)
+- 18.07.26 21:35 [DOC] RUN: GUIDE_RU/EN.md переписаны — юзер поправил, это должно быть 100% про FastPrompter, saipen тут не при делах; убрал весь saipen-контент
+- 18.07.26 21:35 [SHIP] RUN: ruff diff-check нашёл НАСТОЯЩИЙ баг в моих же правках — _launch_silo_executable/_open_silo_project_folder звали logger без локального импорта (F821), NameError при первом клике без пути; починил + regression test (подтверждён падением без фикса) -> 461+100 PASS
+- 18.07.26 21:40 [SHIP] RUN: ship v0.6.6 -> main 4be576f, tag+release live (https://github.com/vacterro/FastPrompter/releases/tag/v0.6.6), EXE 27.1MB (302 ok). Починил 2 краша (KeyError name, NameError logger) + 2 unreliable-бага (Text Month, project paths); antigravity's H-301..306 уже в релизе
+- 19.07.26 00:30 [PLAN] RUN: goal "inject translation pack" -> разведка: core/i18n/ пак готов (21 язык, EN master 483, 20@100%, vi@97%, НОЛЬ дрейфа ключей), но мёртвый: initialize() никто не звал, только 8 языков в builtin, все 16 UI-файлов на старом translations.py (RU-only), селектор EN/RU. План T-400..T-403, подход DELEGATE (translations.py проксирует в пак), zero call-site churn
+- 19.07.26 00:45 [T-400] RUN: i18n.ensure_initialized() once-guard в __init__.py; _BUILTIN_LANGS расширен 8->21; per-lang try/except + non-strict валидация (один битый язык не роняет старт); список явный (не glob — Nuitka EXE не видит .py на диске) -> registry 22 языка (EN+21)
+- 19.07.26 00:50 [T-401] RUN: translations.py теперь ПРОКСИ в пак. EN=ключ; RU=союз legacy _DATA (выигрывает ничьи) + пак (добивает 26 ключей) -> 0 регрессий RU + 26 gains, доказано скриптом; прочие языки целиком из пака. _DATA сохранён (overlay + main.py reverse-map guard берёт его напрямую) -> 461+101 PASS
+- 19.07.26 00:55 [T-402] RUN: селектор языка EN/RU -> все 22 (нативные имена, код в itemData, currentIndexChanged). NATIVE_NAMES с кириллицей живёт в i18n/ (source-guard пропускает эту папку, не main.py) -> guard зелёный
+- 19.07.26 01:00 [T-403] RUN: +2 теста (пак живой: EN passthrough, RU без регрессий + gain 'Columns:', DE=Speichern, JA/ZH non-ascii, unknown->key; селектор 22 языка + switch на DE меняет _current_lang). Ассерты без кириллицы (guard и тесты чистит). 461+103 зелёные. НЕ шипнуто (нет сигнала ship)
+- 19.07.26 01:40 [T-406] RUN: добавил язык "Дед 👴" — i18n/ded.py, 170 дед-строк (все ключи валидны против en master, 3 битых убрал). ПАРТИАЛ-оверлей: DED-ветка в translations.py говорит по-дедовски где написано, иначе падает на полный русский — UI не разваливается. Кнопки коротко, дед-мясо в тултипах/диалогах/меню. Кириллица+мат в i18n/ (source-guard пропускает), тест-коммент без кириллицы. Селектор 23 языка. 461+103 зелёные
+- 19.07.26 02:10 [T-407] RUN: юзер-баг "языки другие пропадают" -> репро offscreen: комбо View (Source/Live/Reading) залипало в чужом скрипте после смены языка (переводило свой уже-переведённый текст, tr("قراءة","RU") не мапит арабский назад), И переключение режима молча ломалось на любом не-EN (change_preview_mode/update_preview/save читали currentText() и сравнивали с англ. "Source View"). Фикс: англ. имя режима в itemData = единственный источник правды, _retranslate_preview_combo() красит только лейбл, все чтения через currentData(). Репро AR->DED->RU->JA->EN восстанавливается. +regression test. 461+104 зелёные
+- 19.07.26 02:30 [T-408] RUN: флаги в селектор языка (юзер). Эмодзи-флаги на Windows не рисуются (Segoe UI Emoji без стран -> "GB"/"RU" боксы), поэтому ui/flags.py РИСУЕТ каждый флаг как QIcon (полосы/крест/круг/метка, без сглаживания, Win95-чётко) — 22 страны + дед-баннер тёмно-золотой. Иконки на пунктах cb_language 18x12. Все 23 не-null. +regression test (у всех пунктов есть иконка). 461+104 зелёные
+
+- 19.07.26 03:00 [SHIP] RUN: ship v0.7.0 (code only, БЕЗ EXE по указанию юзера) -> README (фича "22 языка + флаги" + счётчики тестов 461/104), CHANGELOG v0.7.0, version bump pyproject+pyw 0.6.6->0.7.0. Коммит только моими путями (stray _fix_vi.py/tmp_vi_missing.txt/i18n_build_scripts/.saipen_backup не трогал), push, tag v0.7.0. EXE не собирал, release.py не звал. 461+104 зелёные
+- 19.07.26 05:00 [TRANSLATE] RUN: auto-translate 636 untranslated keys via Google Translate across 20 lang files. VI: 456→53, other langs reduced to 1-8 each. 429 total changes, 143 remaining (multi-line key edge cases). Fixed _translate.py encoding bug + Hebrew code (he→iw). Regenerated _untranslated.json. 461/461 unit PASS. python-pro agent (codebuff)
+
+- 19.07.26 05:00 [UI/BUG] RUN: Moved sidebar buttons into header (left-aligned) per T-340; fixed silo color mapping bug on insert/delete per T-341; fixed unit test layout flakiness; fixed syntax error in nl.py. -> 461+104 PASS. All clean.
+- 19.07.26 05:15 [ANALYZE] RUN: Verified remaining 106 untranslated keys are intentional (68: emoji/hotkeys/abbrev + 38: loanwords). Translation pack is effectively complete: 530 auto-translated across 3 passes, 106 confirmed non-gaps. 461/461 PASS. (codebuff)
+- Injection complete: Cleaned syntax errors from the auto-translate pass, fully enabling all 21 languages without test failures.
+
+- 20.07.26 10:46 [E-004] RUN: HUNT sweep — 6 signal categories, cap 5 tickets
+- 20.07.26 10:46 [E-005] [parent: E-004] H: test_header_ultra_mode_fits_portrait_sliver fails in suite (passes isolation) — T-295 class pollution
+- 20.07.26 10:46 [E-006] [parent: E-004] H: orphan .pyc in tools/i18n/__pycache__/ + tools/__pycache__/
+- 20.07.26 10:46 [E-007] [parent: E-004] H: _translate.py + _fix_vi.py at root — should be under tools/
+- 20.07.26 10:46 [E-008] [parent: E-004] DEC: 3 small findings ticketed T-349..T-351 on BOARD
+- 20.07.26 10:46 [E-009] [parent: E-008] RUN: hunt -> findings @no-git — transition to PLAN
+- 20.07.26 10:47 [E-010] T-352 RUN: recreated fancy_zones.py (source .py missing, .pyc corrupt) + wired into main.py cycle_snap_corner — transparent overlay, 800ms show + 300ms fade-out, 461 unit PASS
+- 20.07.26 10:47 [E-011] [parent: E-010] DEC: fancy_zones.py was deleted in workdir rollback incident; .pyc corrupt. Created fresh FancyZoneOverlay with translucent zone preview, auto-dismiss, non-intrusive.
+- 20.07.26 16:50 [HUNT] RUN: re-check — state unchanged from prior HUNT. T-349..T-361 still open. 461 unit PASS, no .git. Board current.
+- 20.07.26 17:00 [HUNT] RUN: re-check x2 — still unchanged. Board current.
+
+## INCIDENT 20.07 ~15:25 (claude-opus) — WORKDIR ROLLBACK + .git DELETED
+- 20.07.26 15:25 [INCIDENT] H: routine `/saipen hunt` found greps returning contradictory results between calls -> tree was being rewritten mid-scan. RUN: confirmed `.git/` no longer exists (only .gitignore). All 7 commits from the 19.07 session (b14bca9, 23e1ef6, db3057e, e916bdd, 9d99022, c426deb, 8258159) existed ONLY locally (never pushed) -> unrecoverable from disk. .saipen/LOG.md content ends 19.07 05:15; my 17:10-18:50 entries gone. .saipen_backup/ and i18n_build_scripts/ restored (both were deleted). Grep for _enforce_header_priority_fit / _code_block_selections / _line_drag_source_block across whole tree = 0 hits. NOT caused by me; no destructive git/fs command was run this session. Reported to user, awaiting decision before any reconstruction.

@@ -1,0 +1,23 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.db
+local_data_v15.db
+crash.log
+*.bat
+nul
+*.token
+*.bak
+fastprompter_ipc.token
+data/
+build/
+nuitka-crash-report.xml
+error.log
+
+src/test_dir/
+
+# large local archives — never commit
+*.rar
+*.7z
+*.zip

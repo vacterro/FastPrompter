@@ -1,0 +1,39 @@
+[project]
+name = "fastprompter"
+version = "0.7.0a"
+description = "FastPrompter - A robust snippet management tool"
+requires-python = ">=3.11"
+dependencies = [
+    "PyQt6>=6.8.0",
+    "pynput>=1.7.6",
+]
+
+[project.optional-dependencies]
+build = ["nuitka>=4.1.2"]
+
+[project.scripts]
+fastprompter = "fastprompter.main:main_entry"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/fastprompter"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP"]
+# Legacy compact style: long lines, one-line statements, and late imports
+# are pervasive in this codebase. Re-tighten once it gets reformatted.
+ignore = ["E402", "E501", "E701", "E702", "W293"]
+
+[dependency-groups]
+dev = [
+    "bandit>=1.9.4",
+    "mypy>=2.3.0",
+    "pyright>=1.1.411",
+]
