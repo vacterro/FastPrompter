@@ -431,3 +431,24 @@ scope (main.py imports logger locally at each use site, not module-level).
 
 Still open: italic/regular toggle *next to the collapse button* rather than
 the global Settings toggle that ships today.
+
+## Wishlist round 5 (21.07, claude-opus)
+| ID | Status | Description |
+|---|---|---|
+| W-10 | DONE (P0 data loss) | **Un-quoting a collapsed quote stranded its lines.** Repro'd: text stayed in the document but blocks 1..n kept `isVisible()==False` while the `>` anchor was gone, so nothing could re-expand them — indistinguishable from deletion. `toggle_quote_conversion` now expands any collapsed region in range BEFORE editing (`expand_fold_at`), plus `rescue_orphan_folds()` as a general net that un-hides any block with no surviving collapsed anchor. Both regression-tested. |
+| W-11 | DONE | **Hotkeys are layout-independent.** Qt matches the character a key produces, so on a Cyrillic layout Z emits a Cyrillic letter and Alt+Z never fired. New `ui/layout_shortcuts.py` matches the PHYSICAL key via the Windows scan code (`MapVirtualKeyW`, VSC->VK), registered alongside every `add_shortcut`. Fires ONLY when the produced key differs from the physical one, so on a Latin layout the normal QShortcut still handles it and nothing double-fires. Non-letter keys (F-keys, Esc) are rejected at registration since they're already layout-stable. |
+| W-12 | DONE | One-line quotes are fold anchors too — they get the toggle, just nothing to hide. (Updated the older test that asserted the opposite.) |
+| W-13 | DONE | **Hover line wash**: faint blueish highlight on the line under the mouse. 10% opacity and `#6aa9ff` by default, both user-settable (`hover_line_opacity`, `hover_line_color`), toggle in Settings, cleared on `leaveEvent` so it can't stick. |
+| W-14 | DONE | **Ctrl+E stamps only the FIRST header** in a silo; later headers get a plain `# `. `_has_header_above()` walks back for an existing `#` line. |
+
+NOT STARTED (told the user; each needs its own pass):
+- **Timer / "limit reset" system** — clickable clock opening a manager for
+  per-platform reset timers, with sound/volume/repeat presets and a static
+  or "temperature" colour that warms as the time approaches. This is the
+  big one: new dialog, persistence, a scheduler, notification plumbing.
+- **Toolbar dockable to all 4 sides** (settings-driven) — the header is a
+  QHBoxLayout throughout; vertical docking means a real layout rework.
+- **Line temperature system** — recent-edit heat colouring per line/block,
+  like the existing silo recency colours. Default OFF.
+- **Silo drop onto a child re-parents into that hierarchy** rather than
+  requiring an exact drop on the parent.

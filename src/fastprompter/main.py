@@ -2735,6 +2735,16 @@ class FastPrompter(
         finally:
             self.ignore_focus_loss = prev
 
+    @staticmethod
+    def _has_header_above(block):
+        """True if any earlier line in this silo is already a '# ' header."""
+        b = block.previous()
+        while b.isValid():
+            if b.text().lstrip().startswith("#"):
+                return True
+            b = b.previous()
+        return False
+
     def apply_header_timestamp(self):
         """Ctrl+E: Apply user-defined header formatting and timestamp at end of current line."""
         cursor = self.text_area.textCursor()
@@ -2800,11 +2810,17 @@ class FastPrompter(
         if not clean_sel:
             clean_sel = sel.strip()
 
-        formatted_text = (template.replace("{text}", clean_sel)
-                          .replace("{time}", time_str)
-                          .replace("{state}", daypart))
-        if not formatted_text.startswith("# "):
-            formatted_text = f"# {formatted_text}"
+        # Only the FIRST header in a silo carries the timestamp — it dates the
+        # note. Every later header is just a section marker, so it gets a plain
+        # "# " and stays readable instead of repeating the same stamp.
+        if self._has_header_above(cursor.block()):
+            formatted_text = f"# {clean_sel}"
+        else:
+            formatted_text = (template.replace("{text}", clean_sel)
+                              .replace("{time}", time_str)
+                              .replace("{state}", daypart))
+            if not formatted_text.startswith("# "):
+                formatted_text = f"# {formatted_text}"
 
         cursor.insertText(formatted_text)
 

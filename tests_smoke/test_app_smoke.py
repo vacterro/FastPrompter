@@ -3531,3 +3531,50 @@ def test_shortcuts_match_physical_key_regardless_of_layout():
     # keys that are already layout-independent aren't registered
     assert flt.register(QKeySequence("F5"), lambda: fired.append("f5")) is False
     assert flt.register(QKeySequence("Ctrl+Alt+Shift+Q"), lambda: None) is True
+
+
+def test_only_first_header_gets_a_timestamp(win):
+    # The first header dates the note; later ones are section markers and
+    # would just repeat the same stamp, so they get a plain "# ".
+    import re as _re
+
+    win.cat_combo.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    win.data["temp_presets"][:] = ["intro line\nbody\nsecond section\nmore"]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    ta = win.text_area
+
+    def block_containing(needle):
+        doc = ta.document()
+        for i in range(doc.blockCount()):
+            if needle in doc.findBlockByNumber(i).text():
+                return i
+        raise AssertionError(f"{needle!r} not found in {ta.toPlainText()!r}")
+
+    def header_line(needle):
+        # Ctrl+E also opens a fresh bullet below, so block numbers shift —
+        # always re-find the line by content.
+        n = block_containing(needle)
+        cur = ta.textCursor()
+        cur.setPosition(ta.document().findBlockByNumber(n).position())
+        ta.setTextCursor(cur)
+        win.apply_header_timestamp()
+        return ta.document().findBlockByNumber(block_containing(needle)).text()
+
+    first = header_line("intro line")
+    assert first.startswith("# ")
+    assert _re.search(r"\d{2}[.\s]\w*\d*\s*-\s*\d{2}:\d{2}", first), first
+
+    later = header_line("second section")
+    assert later.startswith("# ")
+    assert "second section" in later
+    assert not _re.search(r"\d{2}:\d{2}", later), f"later header got a stamp: {later}"
+
+    # Ctrl+E again on the first header still un-headers it (round trip intact)
+    n = block_containing("intro line")
+    cur = ta.textCursor()
+    cur.setPosition(ta.document().findBlockByNumber(n).position())
+    ta.setTextCursor(cur)
+    win.apply_header_timestamp()
+    assert ta.document().findBlockByNumber(n).text().strip() == "intro line"
