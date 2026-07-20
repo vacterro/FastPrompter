@@ -479,10 +479,7 @@ reports 7. It is useless as an assertion; the tests assert behaviour
 Verified: 498 unit + 145 smoke green, and exercised end-to-end in a real
 window (parse -> add -> persist -> display -> fire -> dialog validation).
 
-NOT DONE this pass — the other half of the request:
-**Settings UI is still messy and needs the compaction/tabs rework** so it
-stays usable at very small window sizes. Deliberately not started rather
-than rushed on top of a large feature.
+(Settings UI rework: DONE 21.07 — see "Settings UI compaction" below.)
 
 ## Timer system, round 2 — comprehensive (21.07, claude-opus)
 | ID | Status | Description |
@@ -497,3 +494,24 @@ than rushed on top of a large feature.
 Verified: 503 unit + 148 smoke green, plus an end-to-end run in a real
 window (add with description -> list tooltip -> test fire -> toast ->
 snooze -> edit in place).
+
+## Settings UI compaction (21.07, claude-opus) — resumed via bare `/saipen`
+The standing pending item: the panel was "messy" and unusable in a small
+window. Measured before touching anything: the settings frame demanded
+**1848px** of width before it was readable — three groups side by side plus
+a single rigid 17-control appearance row.
+
+| ID | Status | Description |
+|---|---|---|
+| S-01 | DONE | `ui/flow_layout.py` — a real wrapping QLayout (heightForWidth + setGeometry). A QGridLayout keeps a fixed column count, so squeezing the window CLIPPED the right-hand column; this reflows to as many items per row as fit, down to one. Never wraps the first item on a line, so an over-wide control can't loop forever. |
+| S-02 | DONE | Three side-by-side groups replaced by a `QTabWidget`: **Window / Editor / Clock / Data**. One tab at a time needs a fraction of the width. |
+| S-03 | DONE | **Clock settings got their own tab.** Seven date/clock checkboxes were buried inside "Window" — that alone is what made that group unreadable. This is the "messy placement" part of the request, not just compaction. |
+| S-04 | DONE | The appearance row (Font/Theme/View/Language + 6 buttons, 17 controls) was a rigid QHBoxLayout and the single biggest width driver. Flattened to a list and run through the same FlowLayout. |
+| S-05 | DONE | Result measured the same way: **1848px -> 287px** minimum width, a 6.4x cut, comfortably inside the 640x480 UI.md mandates. Verified reflow really happens (Editor tab: 73px tall at 900px wide, 213px at 260px — wrapping, not clipping). |
+
+Locked by tests: tab names and order; panel minimum width <= 560px; **every
+settings checkbox is reachable in some tab** (a widget stranded outside all
+of them would be invisible forever after a regroup); the spin controls
+survived the move; and FlowLayout reflows rather than clips.
+
+Verified: 503 unit + 150 smoke green.

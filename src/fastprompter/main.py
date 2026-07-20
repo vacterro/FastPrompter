@@ -43,6 +43,7 @@ from PyQt6.QtWidgets import (
     QSizePolicy,
     QSpinBox,
     QSplitter,
+    QTabWidget,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -1888,28 +1889,30 @@ class FastPrompter(
 
         # --- Settings panel: hidden by default, toggled by the gear button. ---
         # Top row: appearance & actions. Below: toggles grouped by purpose.
-        appearance_row = QHBoxLayout()
-        appearance_row.setContentsMargins(0, 0, 0, 0)
-        appearance_row.setSpacing(4)
-        appearance_row.addWidget(QLabel(tr("Font:", getattr(self, "_current_lang", "EN"))))
-        appearance_row.addWidget(self.font_combo)
-        appearance_row.addWidget(self.font_spin)
-        appearance_row.addWidget(self.btn_load_font)
-        appearance_row.addWidget(self.btn_clear_fonts)
-        appearance_row.addSpacing(8)
-        appearance_row.addWidget(QLabel(tr("Theme:", getattr(self, "_current_lang", "EN"))))
-        appearance_row.addWidget(self.cb_theme)
-        appearance_row.addWidget(self.btn_colors)
+        # Gathered as a flat list, not a fixed QHBoxLayout: 17 controls in
+        # one rigid row is what forced the whole panel to ~1800px wide.
+        # FlowLayout wraps them instead (see below).
+        self._appearance_items = []
+        appearance_row = self._appearance_items
+        appearance_row.append(QLabel(tr("Font:", getattr(self, "_current_lang", "EN"))))
+        appearance_row.append(self.font_combo)
+        appearance_row.append(self.font_spin)
+        appearance_row.append(self.btn_load_font)
+        appearance_row.append(self.btn_clear_fonts)
+        pass  # spacing handled by the flow layout
+        appearance_row.append(QLabel(tr("Theme:", getattr(self, "_current_lang", "EN"))))
+        appearance_row.append(self.cb_theme)
+        appearance_row.append(self.btn_colors)
         
         self.btn_drop_zones = make_action_checkbox("Drop Zones", self.open_drop_zones_settings)
         self.btn_drop_zones.setToolTip(tr("Customize Drop Zones", getattr(self, "_current_lang", "EN")))
-        appearance_row.addWidget(self.btn_drop_zones)
-        appearance_row.addSpacing(8)
-        appearance_row.addWidget(QLabel(tr("View:", getattr(self, "_current_lang", "EN"))))
-        appearance_row.addWidget(self.preview_combo)
-        appearance_row.addWidget(self.btn_button_scale)
-        appearance_row.addSpacing(8)
-        appearance_row.addWidget(QLabel(tr("Language:", getattr(self, "_current_lang", "EN"))))
+        appearance_row.append(self.btn_drop_zones)
+        pass  # spacing handled by the flow layout
+        appearance_row.append(QLabel(tr("View:", getattr(self, "_current_lang", "EN"))))
+        appearance_row.append(self.preview_combo)
+        appearance_row.append(self.btn_button_scale)
+        pass  # spacing handled by the flow layout
+        appearance_row.append(QLabel(tr("Language:", getattr(self, "_current_lang", "EN"))))
         self.cb_language = QComboBox()
         # Every language the i18n pack can serve, shown by its native name +
         # a drawn flag icon, keyed on the code (stored as itemData so the
@@ -1932,11 +1935,11 @@ class FastPrompter(
         self.cb_language.currentIndexChanged.connect(
             lambda i: self._on_language_changed(self.cb_language.itemData(i) or "EN")
         )
-        appearance_row.addWidget(self.cb_language)
-        appearance_row.addStretch(1)
-        appearance_row.addWidget(self.btn_hotkeys)
-        appearance_row.addWidget(self.btn_backup)
-        appearance_row.addWidget(self.btn_restore)
+        appearance_row.append(self.cb_language)
+        pass  # stretch handled by the flow layout
+        appearance_row.append(self.btn_hotkeys)
+        appearance_row.append(self.btn_backup)
+        appearance_row.append(self.btn_restore)
 
         def create_footer_cb(text, tooltip, checked, callback):
             cb = QCheckBox(text)
@@ -2376,78 +2379,63 @@ class FastPrompter(
             col.addStretch(1)
             return col
 
-        def _vline():
-            line = QFrame()
-            line.setFrameShape(QFrame.Shape.VLine)
-            line.setFrameShadow(QFrame.Shadow.Sunken)
-            return line
-
-        # Equal stretch on every column so the groups spread across the
-        # full panel width instead of bunching up on the left.
-        groups_row = QHBoxLayout()
-        groups_row.setContentsMargins(2, 0, 2, 0)
-        groups_row.setSpacing(8)
-        groups_row.addLayout(_settings_group("Window", [
-            self.cb_top, self.cb_lock_window, self.cb_normal_window,
-            self.cb_tray, self.cb_sidebar, self.cb_date_rect, self.cb_date_seconds,
-            self.cb_date_daypart, self.cb_date_emoji, self.cb_date_text_month, self.cb_date_ampm,
-            self.cb_analog_clock, self.cb_trash_vision, self.cb_silo_color_box, self.cb_customize_toolbar
-        ]), 1)
-        groups_row.addWidget(_vline())
-        groups_row.addLayout(_settings_group("Editor", [
-            self.cb_focus, self.cb_wrap, self.cb_ctrl_c, self.cb_lock_cursor,
-            self.cb_line_numbers, self.cb_code_gutter, self.cb_code_monospace, self.cb_hover_line, self.cb_line_marks, self.cb_zebra, self.cb_double_line, self.cb_bold_titles,
-            div_row, hdr_row
-        ]), 1)
-        groups_row.addWidget(_vline())
+        # --- UI gaps: silo spacing + splitter handle width ---
         gap_row = QHBoxLayout()
         gap_row.setContentsMargins(0, 0, 0, 0)
         gap_row.setSpacing(4)
-        lbl_gap = QLabel(tr("UI Gaps:", getattr(self, "_current_lang", "EN")))
+        lbl_gap = QLabel(tr("UI Gaps:", self._current_lang))
         lbl_gap.setStyleSheet("color: #808080;")
         gap_row.addWidget(lbl_gap)
+
         self.spin_silo_gap = QSpinBox()
         self.spin_silo_gap.setRange(0, 50)
-        self.spin_silo_gap.setToolTip(tr("Silo Gap Height", getattr(self, "_current_lang", "EN")))
+        self.spin_silo_gap.setToolTip(tr("Silo Gap Height", self._current_lang))
         try:
             self.spin_silo_gap.setValue(int(self.data.get("silo_gap_height", 8)))
         except (TypeError, ValueError):
             self.spin_silo_gap.setValue(8)
+
         def _update_gap(v):
             self.data.update({"silo_gap_height": str(v)})
-            if hasattr(self, "silo_gap_widget"): self.silo_gap_widget.setFixedHeight(v)
-            if hasattr(self, "sections_gap_widget"): self.sections_gap_widget.setFixedHeight(v)
+            if hasattr(self, "silo_gap_widget"):
+                self.silo_gap_widget.setFixedHeight(v)
+            if hasattr(self, "sections_gap_widget"):
+                self.sections_gap_widget.setFixedHeight(v)
             self.mark_dirty()
+
         self.spin_silo_gap.valueChanged.connect(_update_gap)
         gap_row.addWidget(self.spin_silo_gap)
 
         self.spin_drag_width = QSpinBox()
         self.spin_drag_width.setRange(1, 50)
-        self.spin_drag_width.setToolTip(tr("Splitter Handle Width", getattr(self, "_current_lang", "EN")))
+        self.spin_drag_width.setToolTip(tr("Splitter Handle Width", self._current_lang))
         try:
             self.spin_drag_width.setValue(int(self.data.get("splitter_width", 1)))
         except (TypeError, ValueError):
             self.spin_drag_width.setValue(1)
+
         def _update_drag(v):
             self.data.update({"splitter_width": str(v)})
-            if hasattr(self, "splitter"): self.splitter.setHandleWidth(v)
+            if hasattr(self, "splitter"):
+                self.splitter.setHandleWidth(v)
             self.mark_dirty()
+
         self.spin_drag_width.valueChanged.connect(_update_drag)
         gap_row.addWidget(self.spin_drag_width)
         gap_row.addStretch(1)
 
-        # --- FancyZones custom grid (Ctrl+Q picker's "Custom" layout) ---
+        # --- FancyZones custom grid (the Ctrl+Q picker's "Custom" layout) ---
         zones_row = QHBoxLayout()
         zones_row.setContentsMargins(0, 0, 0, 0)
         zones_row.setSpacing(4)
-        lbl_zones = QLabel(tr("Snap Grid:", getattr(self, "_current_lang", "EN")))
+        lbl_zones = QLabel(tr("Snap Grid:", self._current_lang))
         lbl_zones.setStyleSheet("color: #808080;")
         zones_row.addWidget(lbl_zones)
 
         def _zone_spin(key, default, tip):
             spin = QSpinBox()
             spin.setRange(1, 6)
-            spin.setToolTip(tr(tip, getattr(self, "_current_lang", "EN")))
+            spin.setToolTip(tr(tip, self._current_lang))
             try:
                 spin.setValue(int(self.data.get(key, default)))
             except (TypeError, ValueError):
@@ -2462,19 +2450,58 @@ class FastPrompter(
             return spin
 
         self.spin_zone_rows = _zone_spin(
-            "fancyzones_rows", 2,
-            "Rows in the Ctrl+Q custom snap grid")
+            "fancyzones_rows", 2, "Rows in the Ctrl+Q custom snap grid")
         self.spin_zone_cols = _zone_spin(
-            "fancyzones_cols", 3,
-            "Columns in the Ctrl+Q custom snap grid")
+            "fancyzones_cols", 3, "Columns in the Ctrl+Q custom snap grid")
         zones_row.addStretch(1)
 
-        groups_row.addLayout(_settings_group("Data & Appearance", [
+        # Tabs instead of three side-by-side columns. Three columns need the
+        # full panel width to be readable at all; one tab at a time stays
+        # legible in a narrow window, and FlowLayout reflows each tab down to
+        # a single column rather than clipping the right-hand side.
+        from fastprompter.ui.flow_layout import flow_widget
+
+        def _tab(items):
+            host = QWidget()
+            outer = QVBoxLayout(host)
+            outer.setContentsMargins(4, 4, 4, 4)
+            outer.setSpacing(3)
+            outer.addWidget(flow_widget(items))
+            outer.addStretch(1)
+            return host
+
+        self.settings_tabs = QTabWidget()
+        self.settings_tabs.setDocumentMode(True)
+        # (attribute, english title) — kept for retranslation
+        self._settings_tab_titles = ("Window", "Editor", "Clock", "Data")
+
+        self.settings_tabs.addTab(_tab([
+            self.cb_top, self.cb_lock_window, self.cb_normal_window,
+            self.cb_tray, self.cb_sidebar, self.cb_trash_vision,
+            self.cb_silo_color_box, self.cb_customize_toolbar, zones_row,
+        ]), tr("Window", self._current_lang))
+
+        self.settings_tabs.addTab(_tab([
+            self.cb_focus, self.cb_wrap, self.cb_ctrl_c, self.cb_lock_cursor,
+            self.cb_line_numbers, self.cb_code_gutter, self.cb_code_monospace,
+            self.cb_hover_line, self.cb_line_marks, self.cb_zebra,
+            self.cb_double_line, self.cb_bold_titles, div_row, hdr_row,
+        ]), tr("Editor", self._current_lang))
+
+        # Clock/date settings used to be buried in "Window" — seven of them,
+        # which is what made that group unreadable.
+        self.settings_tabs.addTab(_tab([
+            self.cb_date_rect, self.cb_date_seconds, self.cb_date_daypart,
+            self.cb_date_emoji, self.cb_date_text_month, self.cb_date_ampm,
+            self.cb_analog_clock,
+        ]), tr("Clock", self._current_lang))
+
+        self.settings_tabs.addTab(_tab([
             self.cb_silo_home, self.cb_silo_pinned_gap, self.cb_silo_ticks,
             self.cb_snippet_arrows, self.cb_hide_shortkeys,
             self.cb_portable_backup, self.cb_sound, self.cb_typewriter,
-            vol_row, files_row, gap_row, zones_row
-        ]), 1)
+            vol_row, files_row, gap_row,
+        ]), tr("Data", self._current_lang))
 
         hline = QFrame()
         hline.setFrameShape(QFrame.Shape.HLine)
@@ -2483,9 +2510,9 @@ class FastPrompter(
         v_layout = QVBoxLayout(self.mini_settings_frame)
         v_layout.setContentsMargins(4, 2, 4, 3)
         v_layout.setSpacing(3)
-        v_layout.addLayout(appearance_row)
+        v_layout.addWidget(flow_widget(appearance_row, h_spacing=4))
         v_layout.addWidget(hline)
-        v_layout.addLayout(groups_row)
+        v_layout.addWidget(self.settings_tabs)
 
         # Hidden by default — the gear button reveals it
         self.mini_settings_frame.setVisible(self.data.get("hide_extra", "True") != "True")

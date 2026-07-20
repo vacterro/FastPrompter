@@ -4054,3 +4054,68 @@ def test_timer_sound_restores_user_volume(win):
     win._play_timer_sound(Timer("x", datetime.datetime.now(), volume=9))
     assert win.data["sound_volume"] == "3"
     assert win.data["sound_ui"] == "False"
+
+
+def test_settings_panel_is_tabbed_and_fits_a_small_window(win):
+    # It used to be three columns side by side plus a 17-control row, so the
+    # panel demanded ~1800px before anything was readable. Tabs + FlowLayout
+    # must bring that inside the 640x480 the UI spec requires.
+    from PyQt6.QtWidgets import QCheckBox
+
+    tabs = win.settings_tabs
+    assert [tabs.tabText(i) for i in range(tabs.count())] == [
+        "Window", "Editor", "Clock", "Data"]
+
+    need = win.mini_settings_frame.sizeHint().width()
+    assert need <= 560, f"settings panel still needs {need}px of width"
+
+    # EVERY settings checkbox must live in some tab — moving widgets between
+    # groups could otherwise strand one where the user can never reach it
+    in_tabs = set()
+    for i in range(tabs.count()):
+        for cb in tabs.widget(i).findChildren(QCheckBox):
+            in_tabs.add(id(cb))
+    expected = [
+        "cb_top", "cb_lock_window", "cb_normal_window", "cb_tray", "cb_sidebar",
+        "cb_trash_vision", "cb_silo_color_box", "cb_customize_toolbar",
+        "cb_focus", "cb_wrap", "cb_ctrl_c", "cb_lock_cursor", "cb_line_numbers",
+        "cb_code_gutter", "cb_code_monospace", "cb_hover_line", "cb_line_marks",
+        "cb_zebra", "cb_double_line", "cb_bold_titles",
+        "cb_date_rect", "cb_date_seconds", "cb_date_daypart", "cb_date_emoji",
+        "cb_date_text_month", "cb_date_ampm", "cb_analog_clock",
+        "cb_silo_home", "cb_silo_pinned_gap", "cb_silo_ticks",
+        "cb_snippet_arrows", "cb_hide_shortkeys", "cb_portable_backup",
+        "cb_sound", "cb_typewriter",
+    ]
+    missing = [n for n in expected
+               if getattr(win, n, None) is not None and id(getattr(win, n)) not in in_tabs]
+    assert not missing, f"settings stranded outside every tab: {missing}"
+
+    # the spin controls that live in rows must have survived the move too
+    for name in ("spin_silo_gap", "spin_drag_width",
+                 "spin_zone_rows", "spin_zone_cols"):
+        assert getattr(win, name, None) is not None, f"{name} lost in the rework"
+
+
+def test_settings_flow_layout_reflows_instead_of_clipping():
+    # The whole point: narrower panel -> more rows, never cut-off controls.
+    from PyQt6.QtWidgets import QCheckBox
+
+    from fastprompter.ui.flow_layout import FlowLayout, flow_widget
+
+    host = flow_widget([QCheckBox(f"option {i}") for i in range(12)])
+    flow = host.layout()
+    assert isinstance(flow, FlowLayout)
+    assert flow.count() == 12
+
+    wide = flow.heightForWidth(1200)
+    narrow = flow.heightForWidth(200)
+    assert narrow > wide, "layout did not reflow when squeezed"
+
+    # an item wider than the panel must not loop forever or be dropped:
+    # the layout never wraps the FIRST item on a line for exactly this reason
+    wide_item = QCheckBox("a label far wider than the panel it has to fit in")
+    solo = flow_widget([wide_item])
+    h = solo.layout().heightForWidth(40)     # must return, not hang
+    assert h >= wide_item.sizeHint().height()
+    assert solo.layout().count() == 1
