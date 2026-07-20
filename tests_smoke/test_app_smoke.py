@@ -2639,3 +2639,66 @@ def test_add_category_capped_at_five(win):
     with patch("fastprompter.main.QMessageBox"):  # suppress blocking info dialog
         win.add_category()
     assert win.data["cats_order"] == before
+
+
+def test_code_block_background_does_not_hide_text(win):
+    # Regression: the code-fence panel background was filled with an opaque
+    # QColor AFTER QTextEdit had already drawn the text, painting over it and
+    # making every code block render as a blank black rectangle. It must ride
+    # on setExtraSelections() so Qt draws it BEHIND the text.
+    from PyQt6.QtCore import QRect
+    from PyQt6.QtGui import QPaintEvent, QTextFormat
+
+    win.cat_combo.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    win.preview_combo.setCurrentIndex(1)
+    code = "intro\n```python\ndef hello():\n    return 42\n```\nafter"
+    win.data["temp_presets"][:] = [code]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    ta = win.text_area
+    win.highlighter.rehighlight()
+
+    ta.paintEvent(QPaintEvent(QRect(0, 0, ta.width(), ta.height())))
+
+    assert ta.toPlainText() == code  # painting must never mutate the document
+
+    sels = ta._code_block_selections(ta.document())
+    assert sels, "code fence lines should get a background selection"
+    for sel in sels:
+        assert sel.format.property(QTextFormat.Property.FullWidthSelection) is True
+        assert sel.format.background().color().name() == "#161616"
+    covered = {s.cursor.blockNumber() for s in sels}
+    assert 1 in covered and 2 in covered  # ```python + def hello():
+    assert 5 not in covered              # "after" is outside the fence
+    applied = {s.cursor.blockNumber() for s in ta.extraSelections()}
+    assert covered <= applied
+
+
+def test_ctrl_click_dash_to_bullet_does_not_crash(win):
+    # Regression (user-reported live crash): the re.sub replacement template
+    # was the raw string r'\1<bullet> ' using a \u escape — valid in a regex
+    # pattern, NOT in a replacement template — so Python raised
+    # "re.error: bad escape \u" and took the whole app down on every
+    # Ctrl+click on a "- " line.
+    from PyQt6.QtCore import QEvent, Qt
+    from PyQt6.QtGui import QMouseEvent
+
+    def _click(text, mods):
+        win.cat_combo.setCurrentIndex(0)
+        win.on_tab_changed(0)
+        win.data["temp_presets"][:] = [text]
+        win.silo_docs[:] = []
+        win._switch_to_slot(0, initial=True)
+        ta = win.text_area
+        p = ta.cursorRect(ta.textCursor()).center()
+        p = p.toPointF() if hasattr(p, "toPointF") else p
+        ta.mousePressEvent(QMouseEvent(
+            QEvent.Type.MouseButtonPress, p,
+            Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton, mods,
+        ))
+        return ta.toPlainText()
+
+    ctrl = Qt.KeyboardModifier.ControlModifier
+    assert _click("- some item", ctrl) == "• some item"
+    assert _click("• some item", ctrl) == "- some item"

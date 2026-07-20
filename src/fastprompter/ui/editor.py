@@ -11,6 +11,7 @@ from PyQt6.QtGui import (
     QPainterPath,
     QPen,
     QTextCursor,
+    QTextFormat,
 )
 from PyQt6.QtWidgets import QApplication, QTextEdit, QWidget
 
@@ -621,7 +622,10 @@ class VaultTextEdit(QTextEdit):
             if re.match(r'^\s*\u2022\s*', line):
                 new_line = re.sub(r'^(\s*)\u2022\s*', r'\1- ', line)
             elif re.match(r'^\s*-\s+', line):
-                new_line = re.sub(r'^(\s*)-\s+', r'\1\u2022 ', line)
+                # NB: non-raw string \u2014 \u escapes are valid in a regex
+                # *pattern* but not in an re.sub *replacement template*,
+                # where they raise "bad escape \u" and crash the app.
+                new_line = re.sub(r'^(\s*)-\s+', '\\1\u2022 ', line)
             else:
                 cursor.endEditBlock()
                 return
@@ -1263,9 +1267,29 @@ class VaultTextEdit(QTextEdit):
             except Exception:
                 pass
 
+    def _code_block_selections(self, doc):
+        """Full-width backgrounds for code fence/content lines, drawn behind
+        the text by Qt itself (a manual fillRect in paintEvent would land
+        after the text is drawn and hide it)."""
+        selections = []
+        block = doc.firstBlock()
+        while block.isValid():
+            stripped = block.text().lstrip()
+            is_code = (max(0, block.userState()) & 256) or stripped.startswith("```")
+            if is_code:
+                sel = QTextEdit.ExtraSelection()
+                sel.format.setBackground(QColor("#161616"))
+                sel.format.setProperty(QTextFormat.Property.FullWidthSelection, True)
+                sel.cursor = QTextCursor(block)
+                selections.append(sel)
+            block = block.next()
+        return selections
+
     def paintEvent(self, event):
-        super().paintEvent(event)
         doc = self.document()
+        if doc and doc.blockCount() <= 2000:
+            self.setExtraSelections(self._code_block_selections(doc))
+        super().paintEvent(event)
         if not doc:
             return
         block_count = doc.blockCount()
@@ -1312,14 +1336,14 @@ class VaultTextEdit(QTextEdit):
                         text = block.text()
                         stripped = text.lstrip()
 
-                        # Full-width dark panel background for code fences + code content
+                        # Code fence / code content background is drawn behind the
+                        # text via setExtraSelections() in paintEvent (a fillRect
+                        # here lands AFTER super().paintEvent() has already drawn
+                        # the text, hiding it completely).
                         is_code_block = not is_large and (
                             (max(0, block.userState()) & 256)  # CODE_BIT = 1 << 8
                             or stripped.startswith("```")
                         )
-                        if is_code_block:
-                            code_line_rect = QRectF(0, br.top(), vp_rect.width(), br.height())
-                            painter.fillRect(code_line_rect, QColor("#161616"))
 
                         # Zebra background — skip for code blocks (have own bg)
                         if zebra_enabled and bnum % 2 == 1 and not is_code_block:

@@ -120,7 +120,65 @@ class TestTryConnectToServer:
         result = try_connect_to_server(retries=1, delay=0.01)
         assert result is not None
         mock_sock.connectToServer.assert_called_once_with(SERVER_NAME)
-        mock_sock.setProperty.assert_called_once()
+
+    @patch("fastprompter.core.ipc_server.QLocalSocket")
+    def test_attaches_token_when_token_file_exists(self, mock_socket_cls):
+        """A token on disk is attached to the socket as the ipc_token property.
+
+        The token is optional — try_connect_to_server only calls setProperty
+        when the token file exists and is non-empty. Asserting that
+        unconditionally made this test pass or fail depending on whether a
+        stray token happened to be left in %TEMP% by a real app run.
+        """
+        import tempfile
+
+        mock_sock = MagicMock()
+        mock_sock.waitForConnected.return_value = True
+        mock_socket_cls.return_value = mock_sock
+
+        token_file = os.path.join(tempfile.gettempdir(), "fastprompter_ipc.token")
+        had_token = os.path.exists(token_file)
+        prior = None
+        if had_token:
+            with open(token_file) as f:
+                prior = f.read()
+        try:
+            with open(token_file, "w") as f:
+                f.write("deadbeef")
+            result = try_connect_to_server(retries=1, delay=0.01)
+            assert result is not None
+            mock_sock.setProperty.assert_called_once_with("ipc_token", "deadbeef")
+        finally:
+            if had_token:
+                with open(token_file, "w") as f:
+                    f.write(prior)
+            elif os.path.exists(token_file):
+                os.remove(token_file)
+
+    @patch("fastprompter.core.ipc_server.QLocalSocket")
+    def test_no_token_property_when_token_file_absent(self, mock_socket_cls):
+        """No token on disk -> no ipc_token property set (the flaky case)."""
+        import tempfile
+
+        mock_sock = MagicMock()
+        mock_sock.waitForConnected.return_value = True
+        mock_socket_cls.return_value = mock_sock
+
+        token_file = os.path.join(tempfile.gettempdir(), "fastprompter_ipc.token")
+        had_token = os.path.exists(token_file)
+        prior = None
+        if had_token:
+            with open(token_file) as f:
+                prior = f.read()
+            os.remove(token_file)
+        try:
+            result = try_connect_to_server(retries=1, delay=0.01)
+            assert result is not None
+            mock_sock.setProperty.assert_not_called()
+        finally:
+            if had_token:
+                with open(token_file, "w") as f:
+                    f.write(prior)
 
     @patch("fastprompter.core.ipc_server.QLocalSocket")
     def test_retries_on_failure(self, mock_socket_cls):
