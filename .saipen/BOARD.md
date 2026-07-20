@@ -413,3 +413,21 @@ Still open from the note: "Remember selectable state each silo individually"
 (needs a spec — cursor position? selection? scroll? all three?), and the
 italic/regular toggle *next to the collapse button* rather than the global
 Settings toggle that ships today.
+
+## Wishlist round 4 (21.07, claude-opus)
+| ID | Status | Description |
+|---|---|---|
+| W-03 | DONE | Overflow "»" menu labels were taken from tooltip first lines, so it read like documentation ("Files—asset drawer for the active silo (drop in / drag out /…"). Replaced with a curated `_OVERFLOW_LABELS` table: two-word labels, grouped with separators (format / edit / navigate / archive / window). Unknown buttons still appear, title-cased, so nothing can silently vanish from the menu. Locked by a test asserting every label is <=20 chars with no newlines/parens/em-dashes. |
+| W-04 | DONE | `Alt+Z` toggles line numbers, `Alt+\`` toggles the settings panel. Both via `add_shortcut`, so they're user-rebindable like the rest. |
+| W-05 | DONE | Line-number margin marks: right-click now cycles BACKWARDS (overshooting by one no longer costs four more clicks), and marks persist per silo and across sessions. |
+| W-06 | DONE | **Per-silo view state.** New `silo_view_state_all` map (persisted as JSON in the settings table) stores cursor position, selection anchor, scroll offset and margin marks per category+slot, captured on silo switch and on close/hide, restored on switch back. A remembered cursor beats the blanket silo_home Start/End rule. |
+| W-07 | DONE | **Middle-click a line cycles it**: plain -> `[x] ~~struck~~` -> `[ ] plain` -> plain. Previously middle-click in the editor cleared the ENTIRE silo, which was a lot of destruction for a stray wheel press — that's now gone. |
+| W-08 | DONE | **`~~` can no longer accumulate.** `strip_strike()` peels every nested layer, `wrap_strike()` always strips before wrapping, so toggling is idempotent. Handles the cases the old guard got wrong: `~~~~x~~~~` (over-wrapped, old code left it), `a~~` (old code produced `~~a~~~~`), `~~a~~ and ~~b~~` (two spans — must NOT be unwrapped), and empty lines (never become bare `~~~~`). Ctrl+Enter uses the same helpers. |
+| W-09 | DONE | Snippets panel toggle in the toolbar (`btn_toggle_snippets`, checkable). "Must be reliable" was the real requirement: `refresh_snippets_panel()` now honours `snippets_hidden` FIRST, before any other visibility logic, so silo switches / searches / edits can't bring the panel back. |
+
+Note: the F821 guard test added in the last HUNT immediately earned its keep —
+it caught two `logger` uses in code added this round that had no import in
+scope (main.py imports logger locally at each use site, not module-level).
+
+Still open: italic/regular toggle *next to the collapse button* rather than
+the global Settings toggle that ships today.

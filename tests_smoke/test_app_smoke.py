@@ -3252,3 +3252,169 @@ def test_code_font_follows_monospace_toggle(win):
         win.data["font_family"] = "Verdana"
         win.apply_font()
         win._apply_code_font()
+
+
+def test_strikethrough_never_accumulates_tildes(win):
+    # The explicit worry: "~~" multiplying forever. Toggling must be
+    # idempotent no matter how many times it runs, and must cope with text
+    # that already contains tildes.
+    ta = win.text_area
+    assert ta.wrap_strike("done") == "~~done~~"
+    assert ta.wrap_strike("~~done~~") == "~~done~~"          # already struck
+    assert ta.wrap_strike("~~~~done~~~~") == "~~done~~"      # over-wrapped
+    assert ta.strip_strike("~~~~~~done~~~~~~") == "done"     # deeply nested
+    assert ta.strip_strike("plain") == "plain"
+    # two separate spans are NOT one wrapper — must not be mangled
+    assert ta.strip_strike("~~a~~ and ~~b~~") == "~~a~~ and ~~b~~"
+    assert ta.wrap_strike("~~a~~ and ~~b~~") == "~~a~~ and ~~b~~"
+    # an unbalanced tail would fuse into "~~~~" if wrapped blindly
+    assert "~~~~" not in ta.wrap_strike("a~~")
+    # never strike an empty line into bare "~~~~"
+    assert ta.wrap_strike("   ") == "   "
+
+
+def test_middle_click_cycles_line_checkbox(win):
+    # MButton on a line: plain -> checked+struck -> unchecked -> plain,
+    # and cycling forever must not grow tildes.
+    from PyQt6.QtCore import QEvent, Qt
+    from PyQt6.QtGui import QMouseEvent
+
+    win.cat_combo.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    win.data["temp_presets"][:] = ["buy milk"]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    ta = win.text_area
+
+    def middle_click():
+        p = ta.cursorRect(ta.textCursor()).center()
+        p = p.toPointF() if hasattr(p, "toPointF") else p
+        ta.mousePressEvent(QMouseEvent(
+            QEvent.Type.MouseButtonPress, p,
+            Qt.MouseButton.MiddleButton, Qt.MouseButton.MiddleButton,
+            Qt.KeyboardModifier.NoModifier))
+        return ta.toPlainText()
+
+    assert middle_click() == "[x] ~~buy milk~~"   # 1st: checked AND struck
+    assert middle_click() == "[ ] buy milk"       # 2nd: unchecked, strike gone
+    assert middle_click() == "buy milk"           # 3rd: back to plain
+
+    # ten more laps must land on exactly the same three strings
+    for _ in range(3):
+        assert middle_click() == "[x] ~~buy milk~~"
+        assert middle_click() == "[ ] buy milk"
+        assert middle_click() == "buy milk"
+    assert "~~~~" not in ta.toPlainText()
+
+
+def test_line_marks_cycle_both_ways_and_persist_per_silo(win):
+    from PyQt6.QtCore import QEvent, QPointF, Qt
+    from PyQt6.QtGui import QMouseEvent, QTextCursor
+
+    win.cat_combo.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    win.data["line_marks"] = "True"
+    win.data["temp_presets"][:] = ["alpha\nbeta", "other silo"]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    ta = win.text_area
+
+    def click_gutter(block_num, button):
+        blk = ta.document().findBlockByNumber(block_num)
+        y = ta.cursorRect(QTextCursor(blk)).top() + 2
+        ta.line_number_area_mouse_press_event(QMouseEvent(
+            QEvent.Type.MouseButtonPress, QPointF(4, y),
+            button, button, Qt.KeyboardModifier.NoModifier))
+        return max(0, ta.document().findBlockByNumber(block_num).userState()) & 0xFF
+
+    assert click_gutter(0, Qt.MouseButton.LeftButton) == 1     # forward
+    assert click_gutter(0, Qt.MouseButton.LeftButton) == 2
+    assert click_gutter(0, Qt.MouseButton.RightButton) == 1    # backward
+    assert click_gutter(0, Qt.MouseButton.RightButton) == 0
+    assert click_gutter(0, Qt.MouseButton.RightButton) == 4    # wraps around
+
+    # marks are stored per silo and come back after switching away
+    saved = ta.collect_line_marks()
+    assert saved.get(0) == 4
+    win._switch_to_slot(1)
+    assert ta.collect_line_marks().get(0) is None   # other silo is clean
+    win._switch_to_slot(0)
+    assert ta.collect_line_marks().get(0) == 4      # restored
+
+    win.data["line_marks"] = "False"
+
+
+def test_selection_state_is_remembered_per_silo(win):
+    win.cat_combo.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    win.data["temp_presets"][:] = ["first silo text", "second silo text"]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    ta = win.text_area
+
+    cur = ta.textCursor()
+    cur.setPosition(0)
+    cur.setPosition(5, cur.MoveMode.KeepAnchor)   # select "first"
+    ta.setTextCursor(cur)
+
+    win._switch_to_slot(1)
+    cur2 = ta.textCursor()
+    cur2.setPosition(7)                            # caret only, no selection
+    ta.setTextCursor(cur2)
+
+    win._switch_to_slot(0)
+    back = ta.textCursor()
+    assert back.hasSelection()
+    assert back.selectedText() == "first"
+
+    win._switch_to_slot(1)
+    back2 = ta.textCursor()
+    assert not back2.hasSelection()
+    assert back2.position() == 7
+
+
+def test_snippets_toggle_survives_refreshes(win):
+    # "must be reliable": the panel used to come back on the next refresh
+    try:
+        win.data["snippets_hidden"] = "False"
+        win.refresh_snippets_panel()
+
+        win.toggle_snippets_panel()
+        assert win.data["snippets_hidden"] == "True"
+        assert win.snippets_section.isHidden()
+        assert win.btn_toggle_snippets.isChecked()
+
+        # every one of these used to re-show the panel
+        win.refresh_snippets_panel()
+        win._switch_to_slot(0)
+        win.refresh_temp_presets()
+        assert win.snippets_section.isHidden(), "panel came back on refresh"
+
+        win.toggle_snippets_panel()
+        assert win.data["snippets_hidden"] == "False"
+        assert not win.btn_toggle_snippets.isChecked()
+    finally:
+        win.data["snippets_hidden"] = "False"
+        win.refresh_snippets_panel()
+
+
+def test_alt_hotkeys_registered(win):
+    from PyQt6.QtGui import QKeySequence
+
+    keys = {sc.key().toString() for sc in win._app_shortcuts}
+    assert QKeySequence("Alt+Z").toString() in keys      # line numbers
+    assert QKeySequence("Alt+`").toString() in keys      # settings panel
+
+
+def test_overflow_menu_labels_are_short(win):
+    # The menu used to take its labels from tooltip first lines, which read
+    # like documentation ("Files—asset drawer for the active silo (drop in…").
+    labels = [lbl for name, lbl in win._OVERFLOW_LABELS if name]
+    assert labels, "no overflow labels defined"
+    for lbl in labels:
+        assert len(lbl) <= 20, f"overflow label too long: {lbl!r}"
+        assert "\n" not in lbl and "(" not in lbl and "—" not in lbl
+    # and every label maps to a button that actually exists
+    for name, _lbl in win._OVERFLOW_LABELS:
+        if name:
+            assert getattr(win, name, None) is not None, f"{name} missing"

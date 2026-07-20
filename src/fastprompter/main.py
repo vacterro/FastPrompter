@@ -477,8 +477,109 @@ class FastPrompter(
                      "btn_header", "btn_quote", "btn_copy", "btn_clear",
                      "btn_bullet_toggle", "btn_home", "btn_end", "btn_pin_top",
                      "btn_line_nums", "btn_help", "btn_trash", "btn_toggle_search",
-                     "btn_arc_snip", "btn_toggle_archive", "btn_project_folder",
+                     "btn_arc_snip", "btn_toggle_archive", "btn_toggle_snippets", "btn_project_folder",
                      "btn_project_run", "btn_files")
+
+    # ---- per-silo view state (cursor, selection, scroll, margin marks) ----
+    def _silo_state_key(self, slot=None, is_archive=None):
+        cat = self.get_current_category() or ""
+        if slot is None:
+            slot = getattr(self, "active_temp_slot", 0)
+        if is_archive is None:
+            is_archive = getattr(self, "active_is_archive", False)
+        return cat, f"{'a' if is_archive else 's'}{slot}"
+
+    def _silo_state_map(self):
+        m = self.data.get("silo_view_state_all")
+        if not isinstance(m, dict):
+            m = {}
+            self.data["silo_view_state_all"] = m
+        return m
+
+    def capture_silo_state(self, slot=None, is_archive=None):
+        """Remember where the user was in this silo, so coming back lands
+        exactly where they left instead of jumping to the top or bottom."""
+        ta = getattr(self, "text_area", None)
+        if ta is None or sip.isdeleted(ta):
+            return
+        cat, key = self._silo_state_key(slot, is_archive)
+        if not cat:
+            return
+        cur = ta.textCursor()
+        try:
+            marks = ta.collect_line_marks()
+        except Exception:
+            marks = {}
+        entry = {
+            "anchor": cur.anchor(),
+            "pos": cur.position(),
+            "scroll": ta.verticalScrollBar().value(),
+        }
+        if marks:
+            entry["marks"] = {str(k): v for k, v in marks.items()}
+        m = self._silo_state_map()
+        m.setdefault(cat, {})[key] = entry
+
+    def restore_silo_state(self, slot=None, is_archive=None):
+        """Put the cursor, selection, scroll and margin marks back."""
+        ta = getattr(self, "text_area", None)
+        if ta is None or sip.isdeleted(ta):
+            return False
+        cat, key = self._silo_state_key(slot, is_archive)
+        entry = (self._silo_state_map().get(cat) or {}).get(key)
+        if not isinstance(entry, dict):
+            return False
+
+        try:
+            ta.apply_line_marks({int(k): v for k, v in (entry.get("marks") or {}).items()})
+        except Exception:
+            pass
+
+        doc_len = ta.document().characterCount() - 1
+        try:
+            anchor = max(0, min(int(entry.get("anchor", 0)), doc_len))
+            pos = max(0, min(int(entry.get("pos", 0)), doc_len))
+        except (TypeError, ValueError):
+            return False
+        if pos == 0 and anchor == 0:
+            return False  # nothing meaningful saved; let the caller decide
+
+        cur = ta.textCursor()
+        cur.setPosition(anchor)
+        if pos != anchor:  # a real selection, not just a caret
+            cur.setPosition(pos, QTextCursor.MoveMode.KeepAnchor)
+        else:
+            cur.setPosition(pos)
+        ta.setTextCursor(cur)
+        try:
+            ta.verticalScrollBar().setValue(int(entry.get("scroll", 0)))
+        except (TypeError, ValueError):
+            pass
+        return True
+
+    def _sync_snippets_toggle_button(self):
+        btn = getattr(self, "btn_toggle_snippets", None)
+        if btn is None or sip.isdeleted(btn):
+            return
+        hidden = self.data.get("snippets_hidden", "False") == "True"
+        if btn.isChecked() != hidden:
+            btn.blockSignals(True)
+            btn.setChecked(hidden)
+            btn.blockSignals(False)
+
+    def toggle_snippets_panel(self):
+        """Hide/show the snippets panel and make it stick across refreshes."""
+        hidden = self.data.get("snippets_hidden", "False") != "True"
+        self.data["snippets_hidden"] = "True" if hidden else "False"
+        self.play_tick_sound()
+        self.mark_dirty()
+        self.refresh_snippets_panel()
+        self._sync_snippets_toggle_button()
+
+    def save_line_marks(self):
+        """Called by the editor whenever a margin mark changes."""
+        self.capture_silo_state()
+        self.mark_dirty()
 
     def _apply_code_font(self):
         """Code blocks default to Consolas; opt out to use the editor font.
@@ -512,6 +613,41 @@ class FastPrompter(
             return
         btn.setVisible(bool(self._overflow_hidden_buttons()))
 
+    # Short menu labels. Tooltips are written to explain a button to someone
+    # who has never seen it ("Files—asset drawer for the active silo (drop in
+    # / drag out /…"), which reads like a wall of text in a menu — these are
+    # the two-word versions, grouped so related actions sit together.
+    _OVERFLOW_LABELS = (
+        ("btn_bold", "Bold"),
+        ("btn_italic", "Italic"),
+        ("btn_under", "Underline"),
+        ("btn_strike", "Strikethrough"),
+        ("btn_header", "Header"),
+        ("btn_quote", "Quote"),
+        ("btn_bullet_toggle", "Bullets"),
+        ("btn_clear_fmt", "Clear formatting"),
+        ("btn_add_line", "Insert divider"),
+        (None, None),  # separator
+        ("btn_copy", "Copy all"),
+        ("btn_clear", "Clear text"),
+        ("btn_home", "Go to start"),
+        ("btn_end", "Go to end"),
+        (None, None),
+        ("btn_toggle_search", "Search"),
+        ("btn_files", "Files"),
+        ("btn_project_folder", "Project folder"),
+        ("btn_project_run", "Run project"),
+        (None, None),
+        ("btn_toggle_snippets", "Show snippets"),
+        ("btn_arc_snip", "Archive this"),
+        ("btn_toggle_archive", "Show archive"),
+        ("btn_trash", "Trash"),
+        (None, None),
+        ("btn_pin_top", "Always on top"),
+        ("btn_line_nums", "Line numbers"),
+        ("btn_help", "Help"),
+    )
+
     def _show_overflow_menu(self):
         """Every button the narrow header dropped, in one popup.
 
@@ -520,17 +656,31 @@ class FastPrompter(
         """
         from PyQt6.QtWidgets import QMenu
 
-        hidden = self._overflow_hidden_buttons()
+        hidden = dict(self._overflow_hidden_buttons())
         if not hidden:
             return
+        lang = getattr(self, "_current_lang", "EN")
         menu = QMenu(self)
-        for _name, btn in hidden:
-            # tooltip first line reads better than the 1-glyph button text
-            tip = (btn.toolTip() or "").split("\n")[0].strip()
-            label = tip or btn.text().strip() or _name.replace("btn_", "")
-            act = menu.addAction(label)
+        pending_sep = False
+        for name, label in self._OVERFLOW_LABELS:
+            if name is None:
+                pending_sep = bool(menu.actions())
+                continue
+            btn = hidden.pop(name, None)
+            if btn is None:
+                continue
+            if pending_sep:
+                menu.addSeparator()
+                pending_sep = False
+            act = menu.addAction(tr(label, lang))
             act.setEnabled(btn.isEnabled())
             act.triggered.connect(btn.click)
+        # anything not in the table above still shows up, just unlabelled-ish
+        for name, btn in hidden.items():
+            act = menu.addAction(name.replace("btn_", "").replace("_", " ").title())
+            act.triggered.connect(btn.click)
+        if not menu.actions():
+            return
         menu.exec(self.btn_overflow.mapToGlobal(
             self.btn_overflow.rect().bottomLeft()))
 
@@ -1363,6 +1513,13 @@ class FastPrompter(
         self.apply_button_size(self.btn_arc_snip, 20, 20)
         self.btn_arc_snip.setToolTip(tr("Archive Active Snippet or Silo", getattr(self, "_current_lang", "EN")))
         self.btn_arc_snip.clicked.connect(self.archive_active_item)
+
+        self.btn_toggle_snippets = QPushButton("🗒")
+        self.apply_button_size(self.btn_toggle_snippets, 20, 20)
+        self.btn_toggle_snippets.setCheckable(True)
+        self.btn_toggle_snippets.setToolTip(tr(
+            "Show / hide the snippets panel", getattr(self, "_current_lang", "EN")))
+        self.btn_toggle_snippets.clicked.connect(self.toggle_snippets_panel)
 
         self.btn_toggle_archive = QPushButton("📦")
         self.apply_button_size(self.btn_toggle_archive, 20, 20)
@@ -3777,6 +3934,13 @@ class FastPrompter(
         super().moveEvent(event)
 
     def closeEvent(self, event):
+        # capture cursor/selection/marks for the silo that is open right now,
+        # otherwise the current one is the only silo that forgets
+        try:
+            self.capture_silo_state()
+        except Exception:
+            from fastprompter.core.logging import logger
+            logger.debug("closeEvent: failed to capture silo view state")
         self.save_data_to_db(force=True)
         super().closeEvent(event)
 
@@ -4160,6 +4324,16 @@ class FastPrompter(
     def refresh_snippets_panel(self):
         if self._suspend_cache or self._initializing_ui:
             return
+        # User-hidden wins over everything below. Without this the panel
+        # reappears on the next refresh (silo switch, search, edit...), which
+        # is what made an earlier version of this toggle unreliable.
+        if self.data.get("snippets_hidden", "False") == "True":
+            self.snippets_section.setVisible(False)
+            if hasattr(self, "sections_gap_widget"):
+                self.sections_gap_widget.setVisible(False)
+            self._sync_snippets_toggle_button()
+            self.refresh_archive_panel()
+            return
         cat = self.get_current_category()
         if not cat:
             self.snippets_section.setVisible(False)
@@ -4187,6 +4361,7 @@ class FastPrompter(
 
         self.snippets_section.setVisible(True)
         self.snippets_widget.setVisible(True)
+        self._sync_snippets_toggle_button()
         if hasattr(self, "sections_gap_widget"):
             self.sections_gap_widget.setVisible(self.data.get("silo_pinned_gap", "True") == "True")
         page = min(self.current_pages.get(cat, 0), max(0, math.ceil(total_active / 10.0) - 1))
@@ -4431,6 +4606,10 @@ class FastPrompter(
         was_editing_snippet = bool(getattr(self, "editing_snippet", None))
         was_archive = getattr(self, "active_is_archive", False)
 
+        # remember where we were before the document underneath us changes
+        if not initial and not was_editing_snippet:
+            self.capture_silo_state(self.active_temp_slot, was_archive)
+
         if not initial:
             self.play_click_sound()
             self._cache_timer.stop()
@@ -4529,10 +4708,13 @@ class FastPrompter(
 
                 self.text_area.set_active_document(doc)
 
-                if self.data.get("silo_home", "False") == "True":
-                    self.text_area.moveCursor(QTextCursor.MoveOperation.Start)
-                else:
-                    self.text_area.moveCursor(QTextCursor.MoveOperation.End)
+                # A remembered cursor/selection for this silo wins over the
+                # blanket Start/End rule — that's the whole point of it.
+                if not self.restore_silo_state(idx, is_archive):
+                    if self.data.get("silo_home", "False") == "True":
+                        self.text_area.moveCursor(QTextCursor.MoveOperation.Start)
+                    else:
+                        self.text_area.moveCursor(QTextCursor.MoveOperation.End)
             finally:
                 self.text_area.blockSignals(False)
                 self._suspend_cache = False
@@ -5200,6 +5382,10 @@ class FastPrompter(
         add_shortcut("hk_quit", "Ctrl+Alt+Shift+Q", self.quit_app)
         add_shortcut("hk_header", "Ctrl+E", self.apply_header_timestamp)
         add_shortcut("hk_quote", "Ctrl+Shift+Q", self.toggle_quote_conversion)
+        add_shortcut("hk_line_nums", "Alt+Z",
+                     lambda: self.set_line_numbers(
+                         self.data.get("show_line_numbers", "False") != "True"))
+        add_shortcut("hk_settings", "Alt+`", self.toggle_mini_settings)
         add_shortcut("hk_bold", "Ctrl+B", self.apply_bold_smart)
         add_shortcut("hk_undo", "Ctrl+Z", self._smart_undo)
 
@@ -5462,6 +5648,11 @@ class FastPrompter(
             doc.setUndoRedoEnabled(True)
 
     def hide_and_save(self):
+        try:
+            self.capture_silo_state()
+        except Exception:
+            from fastprompter.core.logging import logger
+            logger.debug("hide_and_save: failed to capture silo view state")
         self.save_data_to_db(force=True)
         if getattr(self, "is_locked", False):
             self.show()

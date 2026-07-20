@@ -282,6 +282,9 @@ class VaultTextEdit(QTextEdit):
         doc = self.document()
         if doc.blockCount() > 2000:
             return
+        # right-click walks the cycle backwards, so overshooting by one
+        # doesn't mean clicking four more times to get back
+        step = -1 if event.button() == Qt.MouseButton.RightButton else 1
         block = doc.begin()
         while block.isValid():
             cursor = QTextCursor(block)
@@ -290,11 +293,41 @@ class VaultTextEdit(QTextEdit):
             if rect.top() <= event.pos().y() <= rect.top() + block_height:
                 state = max(0, block.userState())
                 mark = state & 0xFF
-                new_mark = (mark + 1) % 5
+                new_mark = (mark + step) % 5
                 block.setUserState((state & ~0xFF) | new_mark)
                 self.line_number_area.update()
+                self.main_win.save_line_marks()
                 break
             block = block.next()
+
+    # ---- margin marks: persistence ------------------------------------
+    def collect_line_marks(self):
+        """{block number: mark} for every marked line, for saving."""
+        marks = {}
+        doc = self.document()
+        block = doc.begin()
+        while block.isValid():
+            mark = max(0, block.userState()) & 0xFF
+            if mark:
+                marks[block.blockNumber()] = mark
+            block = block.next()
+        return marks
+
+    def apply_line_marks(self, marks):
+        """Restore saved marks, preserving the code/fold bits already set."""
+        if not marks:
+            return
+        doc = self.document()
+        for num, mark in marks.items():
+            try:
+                num, mark = int(num), int(mark) & 0xFF
+            except (TypeError, ValueError):
+                continue
+            block = doc.findBlockByNumber(num)
+            if block.isValid():
+                state = max(0, block.userState())
+                block.setUserState((state & ~0xFF) | mark)
+        self.line_number_area.update()
 
     def _ts_glyph_rect(self, block):
         """Rect of the inline timestamp-refresh glyph for a stamped line."""
@@ -563,23 +596,54 @@ class VaultTextEdit(QTextEdit):
             logger.debug(f"checkbox hit test error: {e}")
         return None
 
+    @staticmethod
+    def strip_strike(text):
+        """Remove every layer of ~~…~~ wrapping.
+
+        Loops instead of stripping once: a naive wrap/unwrap pair can leave
+        text like ``~~~~done~~~~`` behind, and one pass would only peel the
+        outer layer, so the tildes accumulate a little more each toggle.
+        """
+        s = text
+        while len(s) >= 4 and s.startswith("~~") and s.endswith("~~"):
+            inner = s[2:-2]
+            # Peel only when what's left is either clean, or itself a
+            # well-formed wrapper (the "~~~~x~~~~" over-wrap case). Bail on
+            # stray tildes — "~~a~~ and ~~b~~" is two spans, not one wrap,
+            # and unwrapping it would corrupt the line.
+            if "~~" in inner and not (
+                len(inner) >= 4 and inner.startswith("~~") and inner.endswith("~~")
+            ):
+                break
+            s = inner
+        return s
+
+    @classmethod
+    def wrap_strike(cls, text):
+        """Wrap in ~~…~~ exactly once, whatever state it starts in."""
+        inner = cls.strip_strike(text)
+        if not inner.strip():
+            return inner  # never strike an empty line into "~~~~"
+        # a stray unbalanced "~~" would fuse with ours into "~~~~"
+        if "~~" in inner:
+            return inner
+        return f"~~{inner}~~"
+
     def _toggle_single_line(self, block):
+        """Cycle one line: plain -> checked+struck -> unchecked -> plain."""
         try:
             text = block.text()
             stripped = text.lstrip()
             indent = text[:len(text) - len(stripped)]
             if stripped.startswith("[x] ") or stripped.startswith("[X] "):
-                content = stripped[4:]
-                # Strip ~~strikethrough~~ when unchecking
-                if content.startswith("~~") and content.endswith("~~") and len(content) >= 4:
-                    content = content[2:-2]
-                new_text = f"{indent}[ ] {content}"
+                # checked -> unchecked, drop the strikethrough
+                new_text = f"{indent}[ ] {self.strip_strike(stripped[4:])}"
             elif stripped.startswith("[ ] "):
-                content = stripped[4:]
-                # Wrap in ~~strikethrough~~ when checking as done
-                if content and not (content.startswith("~~") and content.endswith("~~")):
-                    content = f"~~{content}~~"
-                new_text = f"{indent}[x] {content}"
+                # unchecked -> no checkbox at all (3rd click returns to plain)
+                new_text = f"{indent}{self.strip_strike(stripped[4:])}"
+            elif stripped:
+                # plain -> checked AND struck in one go
+                new_text = f"{indent}[x] {self.wrap_strike(stripped)}"
             else:
                 return
             bcursor = QTextCursor(block)
@@ -675,8 +739,13 @@ class VaultTextEdit(QTextEdit):
             event.accept()
             return
         if event.button() == Qt.MouseButton.MiddleButton:
-            self.main_win.clear_temp(self.main_win.active_temp_slot,
-                                     is_archive=getattr(self.main_win, 'active_is_archive', False))
+            # Middle-click a line cycles it: plain -> checked+struck ->
+            # unchecked -> plain. (This used to clear the whole silo, which
+            # was a lot of destruction for a stray scroll-wheel press.)
+            block = self.cursorForPosition(event.pos()).block()
+            if block.isValid() and block.text().strip():
+                self._toggle_single_line(block)
+                self.main_win.mark_dirty()
             event.accept()
             return
         if event.button() == Qt.MouseButton.RightButton:
@@ -1629,17 +1698,9 @@ class VaultTextEdit(QTextEdit):
                 continue
             indent = text[:len(text) - len(stripped)]
             if stripped.startswith("[x] ") or stripped.startswith("[X] "):
-                content = stripped[4:]
-                # Strip ~~strikethrough~~ when unchecking or removing checkbox
-                if content.startswith("~~") and content.endswith("~~") and len(content) >= 4:
-                    content = content[2:-2]
-                new_text = f"{indent}{content}"
+                new_text = f"{indent}{self.strip_strike(stripped[4:])}"
             elif stripped.startswith("[ ] "):
-                content = stripped[4:]
-                # Wrap in ~~strikethrough~~ when checking as done
-                if content and not (content.startswith("~~") and content.endswith("~~")):
-                    content = f"~~{content}~~"
-                new_text = f"{indent}[x] {content}"
+                new_text = f"{indent}[x] {self.wrap_strike(stripped[4:])}"
             else:
                 new_text = f"{indent}[ ] {stripped}"
             if new_text != text:
