@@ -3578,3 +3578,270 @@ def test_only_first_header_gets_a_timestamp(win):
     ta.setTextCursor(cur)
     win.apply_header_timestamp()
     assert ta.document().findBlockByNumber(n).text().strip() == "intro line"
+
+
+# ---------------------------------------------------------------------------
+# Undo / redo integrity
+# ---------------------------------------------------------------------------
+
+def _fresh_doc(win, text):
+    win.cat_combo.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    win.data["temp_presets"][:] = [text]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    return win.text_area
+
+
+def _type(ta, text):
+    """Type through the real key path, as a user does.
+
+    Programmatic insertPlainText() bypasses keyPressEvent, and therefore
+    bypasses the undo-boundary logic that lives there.
+    """
+    from PyQt6.QtCore import Qt as _Qt
+    from PyQt6.QtGui import QKeyEvent as _QKeyEvent
+
+    for ch in text:
+        ta.keyPressEvent(_QKeyEvent(_QKeyEvent.Type.KeyPress, _Qt.Key.Key_A,
+                                    _Qt.KeyboardModifier.NoModifier, ch))
+
+
+def _select(ta, start, end):
+    cur = ta.textCursor()
+    cur.setPosition(start)
+    cur.setPosition(end, cur.MoveMode.KeepAnchor)
+    ta.setTextCursor(cur)
+    return cur
+
+
+def test_every_edit_op_is_exactly_one_undo_step(win):
+    """The core guarantee: one user action == one Ctrl+Z.
+
+    NB: QTextDocument.availableUndoSteps() counts internal edit operations,
+    not user-visible steps, so it is useless as a metric here. What matters
+    is behaviour: a single undo() must restore the pre-operation text, and a
+    later unrelated edit must undo INDEPENDENTLY — if an operation leaked an
+    open edit block, one undo would swallow both.
+    """
+    ops = [
+        ("quote", "alpha\nbeta", lambda ta: (_select(ta, 0, 10), win.toggle_quote_conversion())),
+        ("bullets", "- one\n- two", lambda ta: (_select(ta, 0, 11), win.toggle_bullet_conversion())),
+        ("header", "title\nbody", lambda ta: (_select(ta, 0, 0), win.apply_header_timestamp())),
+        ("bold", "make me bold", lambda ta: (_select(ta, 0, 4), win.apply_format("bold"))),
+        ("checkbox", "task line", lambda ta: ta._toggle_checkboxes()),
+        ("swap", "one\ntwo\nthree", lambda ta: ta._swap_lines(0, 2)),
+    ]
+    for name, start_text, run in ops:
+        ta = _fresh_doc(win, start_text)
+        before_text = ta.toPlainText()
+
+        run(ta)
+        after_op = ta.toPlainText()
+        assert after_op != before_text, f"{name}: made no change"
+
+        # a following unrelated edit must stay its own step
+        cur = ta.textCursor()
+        cur.movePosition(cur.MoveOperation.End)
+        ta.setTextCursor(cur)
+        _type(ta, "ZZ")
+        assert ta.toPlainText() == after_op + "ZZ"
+
+        ta.undo()
+        assert ta.toPlainText() == after_op, (
+            f"{name}: one undo swallowed both the trailing edit AND the "
+            f"operation - the document was left inside an edit block")
+
+        ta.undo()
+        assert ta.toPlainText() == before_text, f"{name}: undo did not restore original"
+
+        ta.redo()
+        assert ta.toPlainText() == after_op, f"{name}: redo did not reapply the operation"
+
+
+def test_long_undo_redo_chain_returns_to_the_exact_original(win):
+    # Heavy scenario: a long mixed chain, unwound completely and replayed.
+    ta = _fresh_doc(win, "line0")
+    doc = ta.document()
+    original = ta.toPlainText()
+
+    snapshots = [original]
+    for i in range(1, 41):
+        cur = ta.textCursor()
+        cur.movePosition(cur.MoveOperation.End)
+        ta.setTextCursor(cur)
+        if i % 5 == 0:
+            _select(ta, 0, min(5, len(ta.toPlainText())))
+            win.toggle_quote_conversion()
+        elif i % 3 == 0:
+            ta.insertPlainText(f"\nbullet {i}")
+            _select(ta, 0, len(ta.toPlainText()))
+            win.toggle_bullet_conversion()
+        else:
+            ta.insertPlainText(f"\nline{i}")
+        snapshots.append(ta.toPlainText())
+
+    # rewind everything
+    for _ in range(len(snapshots) * 3):
+        if not doc.availableUndoSteps():
+            break
+        ta.undo()
+    assert ta.toPlainText() == original, "full undo did not reach the original text"
+
+    # and roll all the way forward again
+    while doc.availableRedoSteps():
+        ta.redo()
+    assert ta.toPlainText() == snapshots[-1], "full redo did not reach the final text"
+
+
+def test_new_edit_after_undo_discards_redo_branch(win):
+    # Standard editor contract: editing after undo drops the redo branch and
+    # must never resurrect the discarded text later.
+    ta = _fresh_doc(win, "base")
+    _select(ta, 0, 4)
+    win.apply_format("bold")
+    bolded = ta.toPlainText()
+    assert bolded != "base"
+
+    ta.undo()
+    assert ta.toPlainText() == "base"
+    assert ta.document().availableRedoSteps() > 0
+
+    cur = ta.textCursor()
+    cur.movePosition(cur.MoveOperation.End)
+    ta.setTextCursor(cur)
+    _type(ta, " NEW")
+    assert ta.toPlainText() == "base NEW"
+    assert ta.document().availableRedoSteps() == 0, "redo branch survived a new edit"
+
+    ta.undo()
+    assert ta.toPlainText() == "base"
+    ta.redo()
+    assert ta.toPlainText() == "base NEW", "redo brought back the discarded branch"
+
+
+def test_undo_is_intact_after_an_operation_raises(win):
+    # "Unexpected scenario": if an edit throws mid-way, the document must not
+    # be left inside an edit block — that is what historically froze the app
+    # and silently glued every later edit into one undo step.
+    from fastprompter.ui.edit_guard import edit_block
+
+    ta = _fresh_doc(win, "safe text")
+    before = ta.toPlainText()
+
+    with pytest.raises(RuntimeError):
+        with edit_block(ta.textCursor()) as cur:
+            cur.insertText("partial")
+            raise RuntimeError("boom")
+
+    # the document must still be usable and its history must still separate
+    partial = ta.toPlainText()
+    assert partial != before, "the partial edit vanished entirely"
+    cur = ta.textCursor()
+    cur.movePosition(cur.MoveOperation.End)
+    ta.setTextCursor(cur)
+    _type(ta, "!")
+
+    ta.undo()
+    assert ta.toPlainText() == partial, (
+        "document was left inside an edit block after an exception - "
+        "one undo swallowed two separate edits")
+    ta.undo()
+    assert ta.toPlainText() == before
+
+
+def test_undo_survives_folded_regions_and_silo_switches(win):
+    # Folding hides blocks; undo must not resurrect them half-hidden, and
+    # each silo keeps its own independent history.
+    ta = _fresh_doc(win, "> a\n> b\n> c")
+    doc = ta.document()
+    ta.toggle_fold(doc.findBlockByNumber(0))
+    assert not doc.findBlockByNumber(1).isVisible()
+
+    _select(ta, 0, len(ta.toPlainText()))
+    win.toggle_quote_conversion()          # unquote while folded
+    unquoted = ta.toPlainText()
+    ta.undo()
+    assert ta.toPlainText() == "> a\n> b\n> c"
+    assert all(doc.findBlockByNumber(i).isVisible() for i in range(3)), (
+        "undo left blocks stranded invisible")
+    ta.redo()
+    assert ta.toPlainText() == unquoted
+
+    # independent per-silo history
+    win.data["temp_presets"][:] = ["first", "second"]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    # clear any restored per-silo selection first, or the insert REPLACES it
+    _cur = win.text_area.textCursor()
+    _cur.movePosition(_cur.MoveOperation.End)
+    win.text_area.setTextCursor(_cur)
+    win.text_area.insertPlainText(" EDITED")
+    assert win.text_area.toPlainText() == "first EDITED"
+    win._switch_to_slot(1)
+    win.text_area.undo()                    # must not touch silo 0
+    win._switch_to_slot(0)
+    assert win.text_area.toPlainText() == "first EDITED", (
+        "undo in one silo modified another")
+
+
+def test_app_level_undo_stack_is_capped(win):
+    # Heavy use must not grow the snapshot stack without bound (it used to
+    # reach 12MB on disk and slow every action down).
+    for i in range(80):
+        win.data["temp_presets"][:] = [f"text {i}"]
+        win.add_data_undo_state(f"op {i}")
+    assert len(win.data_undo_stack) <= 50, (
+        f"undo stack grew to {len(win.data_undo_stack)}")
+
+
+def test_no_unguarded_edit_blocks_in_new_code():
+    """Every beginEditBlock must be exception-safe.
+
+    An edit that raises between begin and end leaves QTextDocument's counter
+    stuck: undo grouping breaks and rendering can stall. The fix is the
+    edit_block() context manager or an explicit try/finally.
+
+    Existing call sites that predate the guard are listed below. The list may
+    SHRINK, never grow — a new raw beginEditBlock fails this test.
+    """
+    import ast
+    import pathlib
+
+    known_unguarded = {
+        ("editor.py", "keyPressEvent"),
+        ("formatting_mixin.py", "apply_format"),
+        ("formatting_mixin.py", "toggle_header_line"),
+        ("formatting_mixin.py", "toggle_bullet_conversion"),
+        ("formatting_mixin.py", "insert_add_line"),
+        ("formatting_mixin.py", "insert_old_add_line"),
+        ("formatting_mixin.py", "toggle_quote_conversion"),
+        ("formatting_mixin.py", "clear_formatting"),
+        ("search_mixin.py", "replace_all"),
+        ("snippet_ops_mixin.py", "backup_silo_to_files"),
+        ("snippet_ops_mixin.py", "clear_text"),
+        ("snippet_ops_mixin.py", "insert_snippet_text"),
+    }
+
+    root = pathlib.Path(__file__).resolve().parents[1] / "src" / "fastprompter"
+    found = set()
+    for path in sorted(root.rglob("*.py")):
+        if path.name == "edit_guard.py":
+            continue  # this IS the guard
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for fn in ast.walk(tree):
+            if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            raw = [
+                n for n in ast.walk(fn)
+                if isinstance(n, ast.Call)
+                and isinstance(n.func, ast.Attribute)
+                and n.func.attr == "beginEditBlock"
+            ]
+            if raw:
+                found.add((path.name, fn.name))
+
+    new = found - known_unguarded
+    assert not new, (
+        "new raw beginEditBlock() call(s) - wrap them in edit_block() so an "
+        f"exception cannot strand the document mid-edit: {sorted(new)}")

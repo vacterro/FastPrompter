@@ -64,6 +64,7 @@ from fastprompter.core.ipc_server import IpcServer, try_connect_to_server
 from fastprompter.core.sound_manager import SoundManager
 from fastprompter.core.state import FastPrompterState
 from fastprompter.theme.themes import THEMES
+from fastprompter.ui.edit_guard import edit_block
 from fastprompter.ui.editor import VaultTextEdit
 from fastprompter.ui.fancy_zones import FancyZoneOverlay
 from fastprompter.ui.formatting_mixin import FormattingMixin
@@ -2748,15 +2749,17 @@ class FastPrompter(
     def apply_header_timestamp(self):
         """Ctrl+E: Apply user-defined header formatting and timestamp at end of current line."""
         cursor = self.text_area.textCursor()
-        cursor.beginEditBlock()
+        with edit_block(cursor, self.text_area):
+            self._apply_header_timestamp_locked(cursor)
 
+    def _apply_header_timestamp_locked(self, cursor):
+        """Body of apply_header_timestamp, run inside one undo step."""
         # Select entire line
         cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
         cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor)
         sel = cursor.selectedText()
 
         if not sel.strip():
-            cursor.endEditBlock()
             return
 
         template = self.data.get("ctrl_e_format", "{text} ({time})")
@@ -2783,7 +2786,6 @@ class FastPrompter(
             clean_sel = m.group(1)
             plain = QTextCharFormat()
             cursor.insertText(clean_sel, plain)
-            cursor.endEditBlock()
             self.mark_dirty()
             return
 
@@ -2844,7 +2846,6 @@ class FastPrompter(
                 cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock)
                 if not nxt2.text().strip():
                     cursor.insertText("• ", plain)
-        cursor.endEditBlock()
 
         self.text_area.setTextCursor(cursor)
         self.text_area.setCurrentCharFormat(plain)

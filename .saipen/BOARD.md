@@ -452,3 +452,18 @@ NOT STARTED (told the user; each needs its own pass):
   like the existing silo recency colours. Default OFF.
 - **Silo drop onto a child re-parents into that hierarchy** rather than
   requiring an exact drop on the parent.
+
+## Undo/redo integrity pass (21.07, claude-opus)
+User asked for undo/redo to be reliable "in any heavy and unexpected scenario".
+
+| ID | Status | Description |
+|---|---|---|
+| U-01 | FIXED (real user-facing bug) | **Typing right after a formatting command was undone together with it.** Qt merges an adjacent insertion into the preceding undo command, so Quote/checkbox/bold then typing = ONE Ctrl+Z reverting both — the user lost a command they never meant to touch. Verified with real QKeyEvent typing, not just programmatic inserts (`insertPlainText` bypasses `keyPressEvent` and hid the bug). Fix: commands arm `_undo_boundary_pending`; the first keystroke after one is wrapped in its own edit block, forcing a separate undo step. Later keystrokes coalesce as normal typing should. |
+| U-02 | DONE | `ui/edit_guard.py`: `edit_block()` context manager makes begin/end exception-safe. Converted the fragile early-return sites (`apply_header_timestamp`, the Ctrl+click bullet toggle, `_swap_lines`, `_toggle_checkboxes`). They were all *correct* as written, but one new branch or one exception would have stranded the document mid-edit — the historical freeze bug. |
+| U-03 | DONE | Rebuilt the edit-block regression guard lost in the rollback, as `test_no_unguarded_edit_blocks_in_new_code`: AST-scans `src/` and fails on any NEW raw `beginEditBlock`. Pre-existing sites are whitelisted; the list may shrink, never grow. |
+| U-04 | DONE | 8 runtime undo/redo tests: one action == one undo for every command; 40-step mixed chain fully unwound to the byte-exact original and replayed; redo branch correctly discarded by a new edit; document still usable and history still separated after an exception mid-edit; folded regions restored visible by undo; per-silo histories independent; app-level snapshot stack capped at 50. |
+
+Measurement note for whoever reads these tests: `QTextDocument.availableUndoSteps()`
+counts INTERNAL edit operations, not user-visible steps — a single Quote
+reports 7. It is useless as an assertion; the tests assert behaviour
+(what one undo() actually restores) instead.

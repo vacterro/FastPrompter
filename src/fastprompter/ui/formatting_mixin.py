@@ -105,6 +105,7 @@ class FormattingMixin:
             cursor.insertText(f"{marker}{sel}{marker}")
             new_start, new_end = start + m, start + m + len(sel)
         cursor.endEditBlock()
+        ta._undo_boundary_pending = True
 
         cursor.setPosition(new_start)
         cursor.setPosition(new_end, QTextCursor.MoveMode.KeepAnchor)
@@ -215,6 +216,7 @@ class FormattingMixin:
             cursor.insertText("\n".join(new_lines))
         finally:
             cursor.endEditBlock()
+            ta._undo_boundary_pending = True
         # belt and braces: nothing may be left hidden without an anchor
         try:
             ta.rescue_orphan_folds()

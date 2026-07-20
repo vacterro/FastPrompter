@@ -16,6 +16,7 @@ from PyQt6.QtGui import (
 from PyQt6.QtWidgets import QApplication, QTextEdit, QWidget
 
 from fastprompter.core.logging import logger
+from fastprompter.ui.edit_guard import edit_block
 from fastprompter.core.translations import tr
 
 # Matches every stamp shape Ctrl+E ever wrote: "17.07 - 04:19",
@@ -769,22 +770,21 @@ class VaultTextEdit(QTextEdit):
         if event.button() == Qt.MouseButton.LeftButton and event.modifiers() == Qt.KeyboardModifier.ControlModifier:
             super().mousePressEvent(event)
             cursor = self.textCursor()
-            cursor.beginEditBlock()
-            cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
-            cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor)
-            line = cursor.selectedText()
-            if re.match(r'^\s*\u2022\s*', line):
-                new_line = re.sub(r'^(\s*)\u2022\s*', r'\1- ', line)
-            elif re.match(r'^\s*-\s+', line):
-                # NB: non-raw string \u2014 \u escapes are valid in a regex
-                # *pattern* but not in an re.sub *replacement template*,
-                # where they raise "bad escape \u" and crash the app.
-                new_line = re.sub(r'^(\s*)-\s+', '\\1\u2022 ', line)
-            else:
-                cursor.endEditBlock()
-                return
-            cursor.insertText(new_line)
-            cursor.endEditBlock()
+            with edit_block(cursor, self):
+                cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
+                cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor)
+                line = cursor.selectedText()
+                if re.match(r'^\s*\u2022\s*', line):
+                    new_line = re.sub(r'^(\s*)\u2022\s*', r'\1- ', line)
+                elif re.match(r'^\s*-\s+', line):
+                    # NB: non-raw string \u2014 \u escapes are valid in a regex
+                    # *pattern* but not in an re.sub *replacement template*,
+                    # where they raise "bad escape \u" and crash the app.
+                    new_line = re.sub(r'^(\s*)-\s+', '\\1\u2022 ', line)
+                else:
+                    new_line = None
+                if new_line is not None:
+                    cursor.insertText(new_line)
             event.accept()
             return
         if event.button() == Qt.MouseButton.MiddleButton:
@@ -812,15 +812,13 @@ class VaultTextEdit(QTextEdit):
         text_a, text_b = block_a.text(), block_b.text()
         if text_a == text_b:
             return
-        cursor = self.textCursor()
-        cursor.beginEditBlock()
-        for block, new_text in ((block_a, text_b), (block_b, text_a)):
-            c = QTextCursor(block)
-            c.movePosition(QTextCursor.MoveOperation.StartOfBlock)
-            c.movePosition(QTextCursor.MoveOperation.EndOfBlock,
-                           QTextCursor.MoveMode.KeepAnchor)
-            c.insertText(new_text)
-        cursor.endEditBlock()
+        with edit_block(self.textCursor(), self):
+            for block, new_text in ((block_a, text_b), (block_b, text_a)):
+                c = QTextCursor(block)
+                c.movePosition(QTextCursor.MoveOperation.StartOfBlock)
+                c.movePosition(QTextCursor.MoveOperation.EndOfBlock,
+                               QTextCursor.MoveMode.KeepAnchor)
+                c.insertText(new_text)
 
     def mouseReleaseEvent(self, event):
         line_drag_source = getattr(self, "_line_drag_source_block", None)
@@ -1480,7 +1478,21 @@ class VaultTextEdit(QTextEdit):
                     return
 
         try:
-            super().keyPressEvent(event)
+            if getattr(self, "_undo_boundary_pending", False) and event.text():
+                # First keystroke after a formatting command. Qt would merge
+                # this insertion into that command's undo entry, so one
+                # Ctrl+Z would revert BOTH — wrap it in its own edit block to
+                # force a separate undo step. Only the first keystroke needs
+                # it; the rest coalesce into normal typing as usual.
+                self._undo_boundary_pending = False
+                guard = self.textCursor()
+                guard.beginEditBlock()
+                try:
+                    super().keyPressEvent(event)
+                finally:
+                    guard.endEditBlock()
+            else:
+                super().keyPressEvent(event)
         except Exception:
             event.accept()
             return
@@ -1778,7 +1790,10 @@ class VaultTextEdit(QTextEdit):
         else:
             start_block = end_block = cursor.block()
         block = start_block
-        cursor.beginEditBlock()
+        with edit_block(cursor, self):
+            self._toggle_checkbox_run(block, end_block)
+
+    def _toggle_checkbox_run(self, block, end_block):
         while True:
             text = block.text()
             stripped = text.lstrip()
@@ -1803,4 +1818,3 @@ class VaultTextEdit(QTextEdit):
             if block == end_block:
                 break
             block = block.next()
-        cursor.endEditBlock()
