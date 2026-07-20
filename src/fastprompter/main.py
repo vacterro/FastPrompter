@@ -394,7 +394,7 @@ class FastPrompter(
             self._header_ultra = ultra
             # bullet-toggle survives dense but hides in the portrait sliver
             for name in ("btn_bold", "btn_italic", "btn_under", "btn_strike",
-                         "btn_header", "btn_copy", "btn_clear", "btn_bullet_toggle",
+                         "btn_header", "btn_quote", "btn_copy", "btn_clear", "btn_bullet_toggle",
                          "btn_home", "btn_end", "btn_pin_top", "btn_line_nums",
                          "btn_help", "btn_trash", "btn_toggle_search",
                          "btn_arc_snip", "btn_toggle_archive", "btn_project_folder",
@@ -472,6 +472,54 @@ class FastPrompter(
             self._last_density_width = w
             self._update_date_label()
             self._update_line_count_label()
+
+        self._enforce_header_priority_fit()
+
+    def _enforce_header_priority_fit(self):
+        """Last-resort guard so the clock and date always survive.
+
+        The dense/ultra tiers hide widgets at FIXED px thresholds, which
+        assume particular font metrics — on a machine with different DPI or
+        font scaling the header can still overflow past the window edge even
+        after the ultra hide-list has run, silently pushing the clock and
+        date off-screen (they aren't 'hidden', just laid out past the right
+        border). If the header still doesn't fit, shed low-priority widgets
+        one at a time until it does. The clock and date are never in that
+        list — the user asked for them to have absolute priority.
+        """
+        header = getattr(self, "header_widget", None)
+        if header is None or sip.isdeleted(header):
+            return
+        drop_order = ("btn_settings_toggle_right", "_counter_sep", "lbl_line_count")
+        widgets = [getattr(self, name, None) for name in drop_order]
+        if any(w is None or sip.isdeleted(w) for w in widgets):
+            return
+        available = header.width()
+        if available <= 0:
+            return
+        # Restore only what THIS guard hid on a previous pass — never
+        # un-hide what the dense/ultra tier deliberately hid, or the two
+        # fight each other.
+        previously_hidden = getattr(self, "_priority_fit_hidden", ())
+        for name in previously_hidden:
+            w = getattr(self, name, None)
+            if w is not None and not sip.isdeleted(w):
+                w.setVisible(True)
+        self.header_layout.activate()
+
+        now_hidden = []
+        for name, w in zip(drop_order, widgets):
+            if header.sizeHint().width() <= available:
+                break
+            # isHidden(), not isVisible(): isVisible() is False whenever any
+            # ancestor is hidden (e.g. the whole window is tucked away in the
+            # tray), which would make this guard silently do nothing.
+            if w.isHidden():
+                continue  # already hidden by the tier — leave it alone
+            w.setVisible(False)
+            now_hidden.append(name)
+            self.header_layout.activate()
+        self._priority_fit_hidden = tuple(now_hidden)
 
     @staticmethod
     def _day_part(hour):
@@ -1179,6 +1227,14 @@ class FastPrompter(
         f = QFont(self.btn_header.font()); f.setBold(True); f.setUnderline(True); self.btn_header.setFont(f)
         self.btn_header.clicked.connect(self.apply_header_timestamp)
 
+        self.btn_quote = QPushButton("❞")
+        self.btn_quote.setToolTip(tr(
+            "Quote (Ctrl+Shift+Q)\nWrap the selected lines as a '> ' quote block.\n"
+            "A quote of 2+ lines collapses to one line like a footnote.",
+            getattr(self, "_current_lang", "EN")))
+        self.apply_button_size(self.btn_quote, 24, 24)
+        self.btn_quote.clicked.connect(self.toggle_quote_conversion)
+
         self.btn_clear_fmt = QPushButton(tr("Clear Fmt", getattr(self, "_current_lang", "EN")))
         self.btn_clear_fmt.setToolTip(tr("Clear Format\nRemove all explicit font styling from text.", getattr(self, "_current_lang", "EN")))
         self.apply_button_size(self.btn_clear_fmt, 24)
@@ -1271,6 +1327,7 @@ class FastPrompter(
         self.header_layout.addWidget(self.btn_under)
         self.header_layout.addWidget(self.btn_strike)
         self.header_layout.addWidget(self.btn_header)
+        self.header_layout.addWidget(self.btn_quote)
         self.header_layout.addWidget(self.btn_clear_fmt)
         self.header_layout.addWidget(self.btn_add_line)
         self.header_layout.addWidget(self.btn_bullet_toggle)
@@ -5027,6 +5084,7 @@ class FastPrompter(
         add_shortcut("hk_snap", "Ctrl+Q", self.cycle_snap_corner)
         add_shortcut("hk_quit", "Ctrl+Alt+Shift+Q", self.quit_app)
         add_shortcut("hk_header", "Ctrl+E", self.apply_header_timestamp)
+        add_shortcut("hk_quote", "Ctrl+Shift+Q", self.toggle_quote_conversion)
         add_shortcut("hk_bold", "Ctrl+B", self.apply_bold_smart)
         add_shortcut("hk_undo", "Ctrl+Z", self._smart_undo)
 

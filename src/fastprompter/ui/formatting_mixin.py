@@ -173,6 +173,33 @@ class FormattingMixin:
             self.text_area.setTextCursor(cursor)
         self.apply_format("bold")
 
+    def toggle_quote_conversion(self):
+        """Wrap/unwrap the selected lines (or the current line) as a '> '
+        quote block. A quote of 2+ lines becomes foldable — see editor.py
+        _is_quote_start/_fold_range — collapsing down to its first line."""
+        cursor = self.text_area.textCursor()
+        cursor.beginEditBlock()
+        try:
+            if cursor.hasSelection():
+                text = cursor.selectedText().replace(" ", "\n")
+            else:
+                cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
+                cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock,
+                                    QTextCursor.MoveMode.KeepAnchor)
+                text = cursor.selectedText()
+
+            lines = text.split("\n") or [""]
+            non_empty = [ln for ln in lines if ln.strip()]
+            if non_empty and all(ln.lstrip().startswith(">") for ln in non_empty):
+                new_lines = [re.sub(r"^(\s*)>\s?", r"\1", ln) for ln in lines]
+            else:
+                new_lines = [ln if not ln.strip() else f"> {ln.lstrip()}" for ln in lines]
+            cursor.insertText("\n".join(new_lines))
+        finally:
+            cursor.endEditBlock()
+        self.text_area.setFocus()
+        self.mark_dirty()
+
     def toggle_bullet_conversion(self):
         """Toggle between bullet (•) and dash (-) list markers on selected text."""
         cursor = self.text_area.textCursor()

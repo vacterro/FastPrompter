@@ -357,9 +357,26 @@ class VaultTextEdit(QTextEdit):
             n += 1
         return n if 0 < n <= 6 and stripped[n:n + 1] == " " else 0
 
+    @staticmethod
+    def _is_quote_line(text):
+        return text.lstrip().startswith(">")
+
+    def _is_quote_start(self, block):
+        """A '>' line anchors a fold only when it opens a 2+ line quote —
+        i.e. the previous line isn't quoted and the next one is."""
+        if not self._is_quote_line(block.text()):
+            return False
+        prev = block.previous()
+        if prev.isValid() and self._is_quote_line(prev.text()):
+            return False
+        nxt = block.next()
+        return nxt.isValid() and self._is_quote_line(nxt.text())
+
     def _is_fold_anchor(self, block):
         text = block.text()
         if self._header_level(text):
+            return True
+        if self._is_quote_start(block):
             return True
         return text.strip().startswith("```") and self._fence_is_opener(block)
 
@@ -370,6 +387,15 @@ class VaultTextEdit(QTextEdit):
         first = block.next()
         if not first.isValid():
             return None
+        if self._is_quote_start(block):
+            # collapse through the last consecutive '>' line, leaving the
+            # quote showing as its own first line (like a footnote)
+            last = None
+            b = first
+            while b.isValid() and self._is_quote_line(b.text()):
+                last = b
+                b = b.next()
+            return (first, last) if last is not None else None
         if lvl:
             last = None
             b = first
@@ -612,7 +638,22 @@ class VaultTextEdit(QTextEdit):
                             return
         except Exception as e:
             logger.debug(f"checkbox/anchor mouse error: {e}")
-        if event.button() == Qt.MouseButton.LeftButton and event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+        # Line-blocking drag: Ctrl+Shift+hold picks up the whole line under
+        # the cursor; a real drag (past the OS threshold) swaps it with the
+        # line it's dropped on, PureRef-style. A click with no movement is a
+        # no-op — see mouseReleaseEvent.
+        _line_drag_mods = (Qt.KeyboardModifier.ControlModifier
+                           | Qt.KeyboardModifier.ShiftModifier)
+        if (event.button() == Qt.MouseButton.LeftButton
+                and (event.modifiers() & _line_drag_mods) == _line_drag_mods):
+            self._line_drag_source_block = self.cursorForPosition(event.pos()).block().blockNumber()
+            self._line_drag_press_pos = event.pos()
+            self._line_drag_active = False
+            self._line_drag_hover_block = None
+            event.accept()
+            return
+        # exact match, so Ctrl+Shift doesn't also fire the bullet toggle
+        if event.button() == Qt.MouseButton.LeftButton and event.modifiers() == Qt.KeyboardModifier.ControlModifier:
             super().mousePressEvent(event)
             cursor = self.textCursor()
             cursor.beginEditBlock()
@@ -643,7 +684,39 @@ class VaultTextEdit(QTextEdit):
             self._dragged = False
         super().mousePressEvent(event)
 
+    def _swap_lines(self, block_num_a, block_num_b):
+        """Line-blocking drop: swap two whole lines in one undo step."""
+        doc = self.document()
+        block_a = doc.findBlockByNumber(block_num_a)
+        block_b = doc.findBlockByNumber(block_num_b)
+        if not block_a.isValid() or not block_b.isValid():
+            return
+        text_a, text_b = block_a.text(), block_b.text()
+        if text_a == text_b:
+            return
+        cursor = self.textCursor()
+        cursor.beginEditBlock()
+        for block, new_text in ((block_a, text_b), (block_b, text_a)):
+            c = QTextCursor(block)
+            c.movePosition(QTextCursor.MoveOperation.StartOfBlock)
+            c.movePosition(QTextCursor.MoveOperation.EndOfBlock,
+                           QTextCursor.MoveMode.KeepAnchor)
+            c.insertText(new_text)
+        cursor.endEditBlock()
+
     def mouseReleaseEvent(self, event):
+        line_drag_source = getattr(self, "_line_drag_source_block", None)
+        if line_drag_source is not None and event.button() == Qt.MouseButton.LeftButton:
+            was_active = getattr(self, "_line_drag_active", False)
+            hover = getattr(self, "_line_drag_hover_block", None)
+            self._line_drag_source_block = None
+            self._line_drag_active = False
+            self._line_drag_hover_block = None
+            self.viewport().update()
+            if was_active and hover is not None and hover != line_drag_source:
+                self._swap_lines(line_drag_source, hover)
+            event.accept()
+            return
         pressed_fold = getattr(self, "_fold_pressed_block", None)
         if pressed_fold is not None and event.button() == Qt.MouseButton.LeftButton:
             self._fold_pressed_block = None
@@ -676,6 +749,20 @@ class VaultTextEdit(QTextEdit):
     def mouseMoveEvent(self, event):
         if sip.isdeleted(self):
             return
+        if (getattr(self, "_line_drag_source_block", None) is not None
+                and (event.buttons() & Qt.MouseButton.LeftButton)):
+            if not self._line_drag_active:
+                delta = event.pos() - self._line_drag_press_pos
+                if delta.manhattanLength() >= QApplication.startDragDistance():
+                    self._line_drag_active = True
+            if self._line_drag_active:
+                block = self.cursorForPosition(event.pos()).block()
+                new_hover = block.blockNumber() if block.isValid() else None
+                if new_hover != getattr(self, "_line_drag_hover_block", None):
+                    self._line_drag_hover_block = new_hover
+                    self.viewport().update()
+                event.accept()
+                return
         try:
             if not event.buttons():
                 p = event.pos()
@@ -1497,6 +1584,25 @@ class VaultTextEdit(QTextEdit):
                                 painter.fillPath(path, QColor("#333333"))
                                 painter.strokePath(path, QColor("#666666"))
                     block = block.next()
+
+            # Line-blocking drag: translucent box over the candidate drop
+            # target so the interaction reads as interactive (PureRef-style).
+            hover_num = getattr(self, "_line_drag_hover_block", None)
+            if hover_num is not None:
+                hover_block = doc.findBlockByNumber(hover_num)
+                if hover_block.isValid():
+                    hbr = doc_layout.blockBoundingRect(hover_block).translated(0, y_off)
+                    accent = "#D9B340"
+                    try:
+                        cached = getattr(self.main_win, "_theme_cache", None)
+                        if cached and cached.get("raw_colors"):
+                            accent = cached["raw_colors"].get("accent", accent)
+                    except Exception:
+                        pass
+                    hover_color = QColor(accent)
+                    hover_color.setAlpha(128)  # 50% — translucent, never hides text
+                    painter.fillRect(
+                        QRectF(0, hbr.top(), vp_rect.width(), hbr.height()), hover_color)
 
         finally:
             painter.end()
