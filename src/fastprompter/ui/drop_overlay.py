@@ -13,13 +13,41 @@ from PyQt6.QtGui import QColor, QFont, QPainter, QPen
 from fastprompter.core.translations import tr
 from PyQt6.QtWidgets import QWidget
 
-_BG = QColor("#1A0F05")
-_PANEL = QColor("#2A1C0A")
-_PANEL_HOT = QColor("#362812")
-_BORDER = QColor("#4A3820")
-_BORDER_HOT = QColor("#C0A060")
-_TEXT = QColor("#D4B87A")
-_TEXT_DIM = QColor("#7A6838")
+from fastprompter.theme.themes import blend_hex
+
+# Used only when the theme cache isn't reachable yet (very early paint).
+_FALLBACK = {
+    "bg_main": "#1A0F05", "bg_text": "#2A1C0A", "text_main": "#D4B87A",
+    "border_light": "#4A3820", "accent": "#C0A060",
+}
+
+
+def _theme_palette(main_win):
+    """Overlay colors derived from the ACTIVE theme's raw_colors.
+
+    These were hardcoded to one dark-golden palette, so the drop zones
+    looked wrong on every other theme.
+    """
+    raw = _FALLBACK
+    try:
+        cached = getattr(main_win, "_theme_cache", None)
+        if cached and cached.get("raw_colors"):
+            raw = cached["raw_colors"]
+    except Exception:
+        pass
+    bg = raw.get("bg_main", _FALLBACK["bg_main"])
+    panel = raw.get("bg_text", _FALLBACK["bg_text"])
+    accent = raw.get("accent", _FALLBACK["accent"])
+    text = raw.get("text_main", _FALLBACK["text_main"])
+    return {
+        "bg": QColor(bg),
+        "panel": QColor(panel),
+        "panel_hot": QColor(blend_hex(panel, accent, 0.22)),
+        "border": QColor(raw.get("border_light", _FALLBACK["border_light"])),
+        "border_hot": QColor(accent),
+        "text": QColor(text),
+        "text_dim": QColor(blend_hex(text, panel, 0.45)),
+    }
 
 
 class DropOverlay(QWidget):
@@ -38,6 +66,8 @@ class DropOverlay(QWidget):
     def begin(self, has_text_option):
         self._has_text_option = has_text_option
         self._hot = "text" if has_text_option else "files"
+        # resolve once per drag — the theme can't change mid-drop
+        self._colors = _theme_palette(getattr(self.editor, "main_win", None))
         self.setGeometry(self.editor.viewport().rect())
         self.raise_()
         self.show()
@@ -76,15 +106,17 @@ class DropOverlay(QWidget):
         self.hide()
 
     def _panel(self, p, rect, title, sub, hot):
-        p.fillRect(rect, _PANEL_HOT if hot else _PANEL)
-        border = _BORDER_HOT if hot else _BORDER
+        c = getattr(self, "_colors", None) or _theme_palette(
+            getattr(self.editor, "main_win", None))
+        p.fillRect(rect, c["panel_hot"] if hot else c["panel"])
+        border = c["border_hot"] if hot else c["border"]
         p.setPen(QPen(border, 2))
         p.drawRect(rect.adjusted(1, 1, -2, -2))
         f = QFont(self.font())
         f.setPointSizeF(max(11.0, f.pointSizeF() * 1.6))
         f.setBold(True)
         p.setFont(f)
-        p.setPen(_TEXT if hot else _TEXT_DIM)
+        p.setPen(c["text"] if hot else c["text_dim"])
         title_rect = QRect(rect.x(), rect.y(), rect.width(),
                            rect.height() // 2 + 10)
         p.drawText(title_rect, Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignBottom, title)
@@ -99,7 +131,9 @@ class DropOverlay(QWidget):
         p = QPainter(self)
         try:
             p.setRenderHint(QPainter.RenderHint.Antialiasing, False)
-            p.fillRect(self.rect(), _BG)
+            c = getattr(self, "_colors", None) or _theme_palette(
+                getattr(self.editor, "main_win", None))
+            p.fillRect(self.rect(), c["bg"])
             m = 8
             if self._has_text_option:
                 # 2x2 grid

@@ -16,7 +16,12 @@ from PyQt6.QtWidgets import QApplication, QFileDialog, QMessageBox
 
 from fastprompter.core.config import create_tray_icon, extract_bg
 from fastprompter.core.logging import logger
-from fastprompter.theme.themes import THEMES, generate_custom_theme
+from fastprompter.theme.themes import (
+    THEMES,
+    blend_hex,
+    generate_custom_theme,
+    scrollbar_qss,
+)
 from fastprompter.utils.paths import get_resource_path
 
 _is_deleted = sip.isdeleted
@@ -111,7 +116,29 @@ class ThemeMixin:
         no_focus_rect_qss = (
             "\nQPushButton:focus, QToolButton:focus, QCheckBox:focus { outline: none; }\n"
         )
-        QApplication.instance().setStyleSheet(theme["stylesheet"] + no_focus_rect_qss)
+        raw = theme.get("raw_colors") or {}
+        extra_qss = no_focus_rect_qss
+        # Thin ghost-until-hovered scrollbars (toggleable). Rebuilt on every
+        # apply_theme, so turning it off cleanly restores the OS default.
+        if self.data.get("thin_scrollbars", "True") == "True":
+            extra_qss += scrollbar_qss(raw)
+        QApplication.instance().setStyleSheet(theme["stylesheet"] + extra_qss)
+
+        # Header/toolbar bar gets its own per-theme tint instead of blending
+        # flat into the window. NOTE: a plain QWidget needs
+        # WA_StyledBackground (set in main.py) or this is a silent no-op.
+        header = getattr(self, "header_widget", None)
+        if header is not None and not _is_deleted(header):
+            header_bg = blend_hex(raw.get("bg_main", "#1a1a1a"),
+                                  raw.get("accent", "#bfa65e"), 0.16)
+            header.setStyleSheet(f"#HeaderBar {{ background-color: {header_bg}; }}")
+
+        # The clock repaints itself only once a minute off its own timer —
+        # without this nudge a theme switch left it showing stale colors for
+        # up to 59 seconds ("themes don't refresh instantly").
+        clock = getattr(self, "analog_clock", None)
+        if clock is not None and not _is_deleted(clock):
+            clock.update()
         # Re-pack the dense header AFTER the new stylesheet has re-polished
         # fonts — packing with pre-theme metrics truncates button labels
         if hasattr(self, "_apply_header_density"):

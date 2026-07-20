@@ -1,4 +1,67 @@
+def _clamp_byte(v):
+    return max(0, min(255, int(round(v))))
+
+
+def _hex_to_rgb(h):
+    """#rgb or #rrggbb -> (r, g, b). Invalid input falls back to mid grey."""
+    h = (h or "").strip().lstrip("#")
+    if len(h) == 3:
+        h = "".join(ch * 2 for ch in h)
+    if len(h) != 6:
+        return (128, 128, 128)
+    try:
+        return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+    except ValueError:
+        return (128, 128, 128)
+
+
+def blend_hex(c1, c2, t):
+    """Blend two hex colors: t=0 -> c1, t=1 -> c2.
+
+    Shared by every widget that has to derive a theme-aware shade from the
+    active theme's raw_colors (drop overlay, analog clock, markdown
+    highlighter, header bar) — previously each kept its own private copy.
+    """
+    t = max(0.0, min(1.0, float(t)))
+    r1, g1, b1 = _hex_to_rgb(c1)
+    r2, g2, b2 = _hex_to_rgb(c2)
+    return "#{:02x}{:02x}{:02x}".format(
+        _clamp_byte(r1 + (r2 - r1) * t),
+        _clamp_byte(g1 + (g2 - g1) * t),
+        _clamp_byte(b1 + (b2 - b1) * t),
+    )
+
+
+def hex_to_rgba(h, alpha):
+    """Hex color -> 'rgba(r, g, b, a)' for QSS. alpha is 0.0-1.0."""
+    r, g, b = _hex_to_rgb(h)
+    return f"rgba({r}, {g}, {b}, {max(0.0, min(1.0, float(alpha))):.2f})"
+
+
+def scrollbar_qss(raw_colors):
+    """Thin, ghost-until-hovered scrollbars tinted from the active theme.
+
+    Native scrollbars dominate the window visually; this keeps them 7px,
+    trackless and near-invisible at rest, fading up on hover.
+    """
+    accent = raw_colors.get("accent", "#bfa65e")
+    return f"""
+QScrollBar:vertical {{ background: transparent; width: 7px; margin: 0px; }}
+QScrollBar:horizontal {{ background: transparent; height: 7px; margin: 0px; }}
+QScrollBar::handle:vertical, QScrollBar::handle:horizontal {{
+    background: {hex_to_rgba(accent, 0.28)}; border: none; border-radius: 0px; min-height: 24px; min-width: 24px;
+}}
+QScrollBar::handle:vertical:hover, QScrollBar::handle:horizontal:hover {{ background: {hex_to_rgba(accent, 0.85)}; }}
+QScrollBar::handle:vertical:pressed, QScrollBar::handle:horizontal:pressed {{ background: {accent}; }}
+QScrollBar::add-line, QScrollBar::sub-line {{ height: 0px; width: 0px; border: none; background: none; }}
+QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
+"""
+
+
 def generate_custom_theme(c):
+    # copy first: this used to c.setdefault() straight into the caller's dict,
+    # silently mutating shared config references
+    c = dict(c or {})
     _defaults = {"bg_main":"#1a1a1a","bg_text":"#2c2c2c","text_main":"#c0c0c0","border_light":"#4d4d4d","border_dark":"#0a0a0a","btn_bg":"#3a3a3a","btn_text":"#d0d0d0","btn_pressed":"#4a4a4a","accent":"#bfa65e"}
     for k, v in _defaults.items():
         c.setdefault(k, v)
@@ -239,5 +302,26 @@ QDockWidget::title { padding: 1px; border: 1px solid #1a1a1a; background-color: 
             "btn_bg": "#0a0a0a", "btn_pressed": "#141414", "btn_text": "#a0a0a0",
             "accent": "#ffffff"
         }
-    }
+    },
+    # Popular community palettes. Built through generate_custom_theme() so
+    # they carry the same 9-key raw_colors schema every theme-aware widget
+    # reads — no extra wiring needed for any of them.
+    "Dracula": generate_custom_theme({
+        "bg_main": "#282a36", "bg_text": "#21222c", "text_main": "#f8f8f2",
+        "border_light": "#6272a4", "border_dark": "#191a21",
+        "btn_bg": "#44475a", "btn_pressed": "#565a72", "btn_text": "#f8f8f2",
+        "accent": "#bd93f9",
+    }),
+    "Nord": generate_custom_theme({
+        "bg_main": "#2e3440", "bg_text": "#272c36", "text_main": "#d8dee9",
+        "border_light": "#4c566a", "border_dark": "#232831",
+        "btn_bg": "#3b4252", "btn_pressed": "#4c566a", "btn_text": "#eceff4",
+        "accent": "#88c0d0",
+    }),
+    "Solarized Dark": generate_custom_theme({
+        "bg_main": "#002b36", "bg_text": "#073642", "text_main": "#93a1a1",
+        "border_light": "#586e75", "border_dark": "#001f27",
+        "btn_bg": "#073642", "btn_pressed": "#0a4655", "btn_text": "#eee8d5",
+        "accent": "#268bd2",
+    }),
 }

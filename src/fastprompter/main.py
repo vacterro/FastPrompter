@@ -1059,6 +1059,10 @@ class FastPrompter(
         self.main_layout.setSpacing(2)
 
         self.header_widget = QWidget()
+        # A plain QWidget ignores a stylesheet background unless this is set —
+        # without it apply_theme()'s #HeaderBar tint is a silent no-op.
+        self.header_widget.setObjectName("HeaderBar")
+        self.header_widget.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.header_layout = QHBoxLayout(self.header_widget)
         self.header_layout.setContentsMargins(0, 0, 0, 0)
         self.header_layout.setSpacing(2)
@@ -1394,6 +1398,9 @@ class FastPrompter(
                 "Vintage Dark",
                 "Vintage Classic",
                 "Dark 2 (OLED)",
+                "Dracula",
+                "Nord",
+                "Solarized Dark",
                 "Custom",
             ]
         )

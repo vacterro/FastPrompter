@@ -2634,11 +2634,19 @@ def test_escape_closes_search_before_hiding(win):
 def test_add_category_capped_at_five(win):
     from unittest.mock import patch
 
-    win.data["cats_order"] = ["A", "B", "C", "D", "E"]
-    before = list(win.data["cats_order"])
-    with patch("fastprompter.main.QMessageBox"):  # suppress blocking info dialog
-        win.add_category()
-    assert win.data["cats_order"] == before
+    # These 5 names deliberately don't exist in data["categories"], so the
+    # window is in an invalid state for the duration of this test — restore
+    # cats_order afterwards or every later test that touches the category
+    # machinery dies on data["categories"][cat] (KeyError, main.py:4001).
+    saved_order = list(win.data.get("cats_order", []))
+    try:
+        win.data["cats_order"] = ["A", "B", "C", "D", "E"]
+        before = list(win.data["cats_order"])
+        with patch("fastprompter.main.QMessageBox"):  # suppress blocking info dialog
+            win.add_category()
+        assert win.data["cats_order"] == before
+    finally:
+        win.data["cats_order"] = saved_order
 
 
 def test_code_block_background_does_not_hide_text(win):
@@ -2702,3 +2710,72 @@ def test_ctrl_click_dash_to_bullet_does_not_crash(win):
     ctrl = Qt.KeyboardModifier.ControlModifier
     assert _click("- some item", ctrl) == "• some item"
     assert _click("• some item", ctrl) == "- some item"
+
+
+def test_custom_painted_widgets_follow_active_theme(win):
+    # Regression: the drop overlay, analog clock and markdown highlighter each
+    # hardcoded one dark-golden palette and ignored the active theme — that
+    # single bug class was the whole "themes don't fit" complaint.
+    from fastprompter.ui.analog_clock import _theme_palette as clock_palette
+    from fastprompter.ui.drop_overlay import _theme_palette as overlay_palette
+
+    seen_overlay, seen_clock, seen_h1 = {}, {}, {}
+    for name in ("Default", "Vintage Classic", "Dracula", "Nord"):
+        win.cb_theme.setCurrentText(name)
+        win.apply_theme()
+        seen_overlay[name] = overlay_palette(win)["bg"].name()
+        seen_clock[name] = clock_palette(win)["hands"].name()
+        # rule index 5 is H1 (bold=0, underline=1, strike=2, italic x2=3-4)
+        seen_h1[name] = win.highlighter._highlighting_rules[5][1].foreground().color().name()
+
+    # each of the three must actually differ across themes, not stay fixed
+    for label, seen in (("overlay", seen_overlay), ("clock", seen_clock), ("h1", seen_h1)):
+        assert len(set(seen.values())) > 1, f"{label} is theme-blind: {seen}"
+
+    assert seen_clock["Dracula"].lower() == "#bd93f9"
+    assert seen_h1["Nord"].lower() == "#88c0d0"
+
+    win.cb_theme.setCurrentText("Default")
+    win.apply_theme()
+
+
+def test_header_bar_and_scrollbars_track_theme(win):
+    try:
+        win.data["thin_scrollbars"] = "True"
+        headers = {}
+        for name in ("Default", "Dracula", "Solarized Dark"):
+            win.cb_theme.setCurrentText(name)
+            win.apply_theme()
+            headers[name] = win.header_widget.styleSheet()
+            assert "#HeaderBar" in headers[name]
+        assert len(set(headers.values())) == 3, "header tint is not per-theme"
+
+        # thin scrollbars are opt-out and re-tint with the theme
+        win.cb_theme.setCurrentText("Dracula")
+        win.apply_theme()
+        qss = win.styleSheet() or __import__(
+            "PyQt6.QtWidgets", fromlist=["QApplication"]
+        ).QApplication.instance().styleSheet()
+        assert "QScrollBar" in qss and "width: 7px" in qss
+        win.data["thin_scrollbars"] = "False"
+        win.apply_theme()
+        qss_off = __import__(
+            "PyQt6.QtWidgets", fromlist=["QApplication"]
+        ).QApplication.instance().styleSheet()
+        assert "width: 7px" not in qss_off
+    finally:
+        win.data["thin_scrollbars"] = "True"
+        win.cb_theme.setCurrentText("Default")
+        win.apply_theme()
+
+
+def test_every_theme_applies_cleanly(win):
+    from fastprompter.theme.themes import THEMES
+
+    for name in THEMES:
+        win.cb_theme.setCurrentText(name)
+        win.apply_theme()  # must not raise
+        assert win._theme_cache.get("raw_colors")
+    assert win.cb_theme.findText("Custom") >= 0
+    win.cb_theme.setCurrentText("Default")
+    win.apply_theme()

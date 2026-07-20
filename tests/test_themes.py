@@ -132,7 +132,7 @@ class TestGenerateCustomTheme:
 
 class TestThemesDict:
     def test_has_all_expected_themes(self):
-        """THEMES should contain all 6 built-in themes."""
+        """THEMES should contain all 9 built-in themes."""
         expected = {
             "Default",
             "Golden Vintage",
@@ -140,8 +140,24 @@ class TestThemesDict:
             "Vintage Dark",
             "Vintage Classic",
             "Dark 2 (OLED)",
+            "Dracula",
+            "Nord",
+            "Solarized Dark",
         }
         assert set(THEMES.keys()) == expected
+
+    def test_popular_themes_carry_their_signature_accent(self):
+        assert THEMES["Dracula"]["raw_colors"]["accent"] == "#bd93f9"
+        assert THEMES["Nord"]["raw_colors"]["accent"] == "#88c0d0"
+        assert THEMES["Solarized Dark"]["raw_colors"]["accent"] == "#268bd2"
+
+    def test_generate_custom_theme_does_not_mutate_caller_dict(self):
+        """It used to c.setdefault() straight into the caller's dict."""
+        from fastprompter.theme.themes import generate_custom_theme
+
+        src = {"accent": "#ff00aa"}
+        generate_custom_theme(src)
+        assert src == {"accent": "#ff00aa"}
 
     def test_each_theme_has_stylesheet(self):
         """Every theme should have a non-empty stylesheet string."""

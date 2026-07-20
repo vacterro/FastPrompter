@@ -13,6 +13,27 @@ from PyQt6.QtGui import QColor, QPainter, QPen
 from PyQt6.QtWidgets import QWidget
 
 
+# Used only when the theme cache isn't reachable yet.
+_FALLBACK = {"bg_text": "#1e1e1e", "border_light": "#5a4a2a", "accent": "#D9B340"}
+
+
+def _theme_palette(main_win):
+    """Face/rim/hands from the ACTIVE theme — these were hardcoded to one
+    dark-golden palette and ignored the theme entirely."""
+    raw = _FALLBACK
+    try:
+        cached = getattr(main_win, "_theme_cache", None)
+        if cached and cached.get("raw_colors"):
+            raw = cached["raw_colors"]
+    except Exception:
+        pass
+    return {
+        "face": QColor(raw.get("bg_text", _FALLBACK["bg_text"])),
+        "rim": QColor(raw.get("border_light", _FALLBACK["border_light"])),
+        "hands": QColor(raw.get("accent", _FALLBACK["accent"])),
+    }
+
+
 class MiniAnalogClock(QWidget):
     SIZE = 18
 
@@ -43,9 +64,8 @@ class MiniAnalogClock(QWidget):
             c = self.rect().center()
             r = self.SIZE // 2 - 1
 
-            face = QColor("#1e1e1e")
-            rim = QColor("#5a4a2a")
-            hands = QColor("#D9B340")
+            colors = _theme_palette(self.main_win)
+            face, rim, hands = colors["face"], colors["rim"], colors["hands"]
             p.setPen(QPen(rim, 1))
             p.setBrush(face)
             p.drawEllipse(c, r, r)

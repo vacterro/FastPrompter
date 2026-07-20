@@ -3,6 +3,8 @@ import re
 from PyQt6 import sip
 from PyQt6.QtGui import QColor, QFont, QSyntaxHighlighter, QTextCharFormat, QTextFormat
 
+from fastprompter.theme.themes import blend_hex
+
 # Block-state bit layout (block.userState is shared with the editor's
 # margin marks): bits 0-7 = margin mark (0-3), bit 8 = inside code fence,
 # bit 9 = fold anchor is collapsed (owned by the editor, preserved here).
@@ -49,8 +51,27 @@ class MarkdownHighlighter(QSyntaxHighlighter):
     def set_skip_large(self, skip):
         self._skip_highlighting = skip
 
+    def _theme_color(self, key, fallback):
+        """Read one key out of the active theme's raw_colors.
+
+        update_theme() used to store the theme and _setup_rules() never read
+        it back, so headers/links/bullets rendered fixed gold on every theme.
+        """
+        try:
+            raw = (self.theme or {}).get("raw_colors") or {}
+            val = raw.get(key)
+            if isinstance(val, str) and val.strip():
+                return val
+        except Exception:
+            pass
+        return fallback
+
     def _setup_rules(self):
         self._highlighting_rules.clear()
+        accent = self._theme_color("accent", "#D9B340")
+        text_main = self._theme_color("text_main", "#c0c0c0")
+        bg_text = self._theme_color("bg_text", "#2c2c2c")
+        quote_color = blend_hex(text_main, bg_text, 0.45)
 
         # Bold: **text**
         bold_format = QTextCharFormat()
@@ -77,21 +98,21 @@ class MarkdownHighlighter(QSyntaxHighlighter):
         h1_format = QTextCharFormat()
         h1_format.setFontWeight(QFont.Weight.Bold)
         h1_format.setProperty(QTextFormat.Property.FontPointSize, self.base_font_size * 1.5)
-        h1_format.setForeground(QColor("#D9B340")) # Using the gold color
+        h1_format.setForeground(QColor(accent))
         self._highlighting_rules.append((re.compile(r'^#\s+.*'), h1_format))
 
         # Header 2: ## Text
         h2_format = QTextCharFormat()
         h2_format.setFontWeight(QFont.Weight.Bold)
         h2_format.setProperty(QTextFormat.Property.FontPointSize, self.base_font_size * 1.3)
-        h2_format.setForeground(QColor("#D9B340"))
+        h2_format.setForeground(QColor(accent))
         self._highlighting_rules.append((re.compile(r'^##\s+.*'), h2_format))
 
         # Header 3: ### Text
         h3_format = QTextCharFormat()
         h3_format.setFontWeight(QFont.Weight.Bold)
         h3_format.setProperty(QTextFormat.Property.FontPointSize, self.base_font_size * 1.1)
-        h3_format.setForeground(QColor("#D9B340"))
+        h3_format.setForeground(QColor(accent))
         self._highlighting_rules.append((re.compile(r'^###\s+.*'), h3_format))
 
         # Inline Code: `text`
@@ -103,7 +124,7 @@ class MarkdownHighlighter(QSyntaxHighlighter):
 
         # Blockquote: > text
         quote_format = QTextCharFormat()
-        quote_format.setForeground(QColor("#7f848e"))
+        quote_format.setForeground(QColor(quote_color))
         quote_format.setFontItalic(True)
         self._highlighting_rules.append((re.compile(r'^>\s+.*'), quote_format))
 
@@ -117,7 +138,7 @@ class MarkdownHighlighter(QSyntaxHighlighter):
 
         # Horizontal Rule: ---
         hr_format = QTextCharFormat()
-        hr_format.setForeground(QColor("#5a4a2a"))
+        hr_format.setForeground(QColor(self._theme_color("border_light", "#5a4a2a")))
         hr_format.setFontWeight(QFont.Weight.Bold)
         self._highlighting_rules.append((re.compile(r'^\s*[-*_]{3,}\s*$'), hr_format))
 
@@ -151,7 +172,7 @@ class MarkdownHighlighter(QSyntaxHighlighter):
 
         # Lists (Bullets and Numbers)
         list_format = QTextCharFormat()
-        list_format.setForeground(QColor("#D9B340"))
+        list_format.setForeground(QColor(accent))
         self._highlighting_rules.append((re.compile(r'^\s*[-*•+]\s+'), list_format))
         self._highlighting_rules.append((re.compile(r'^\s*\d+\.\s+'), list_format))
 
