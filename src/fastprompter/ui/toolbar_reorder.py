@@ -22,7 +22,7 @@ DEFAULT_TOOLBAR_ORDER = [
     "btn_bold", "btn_italic", "btn_under", "btn_strike", "btn_header", "btn_quote", "btn_overflow",
     "btn_clear_fmt", "btn_add_line", "btn_bullet_toggle", "btn_copy", "btn_clear",
     "<stretch>",
-    "analog_clock", "lbl_date",
+    "analog_clock", "lbl_date", "lbl_timer",
     "<sep>", "lbl_line_count", "btn_settings_toggle_right", "btn_help",
 ]
 

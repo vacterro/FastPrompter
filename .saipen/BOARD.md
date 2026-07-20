@@ -467,3 +467,19 @@ Measurement note for whoever reads these tests: `QTextDocument.availableUndoStep
 counts INTERNAL edit operations, not user-visible steps — a single Quote
 reports 7. It is useless as an assertion; the tests assert behaviour
 (what one undo() actually restores) instead.
+
+## Timer / limit-reset system (21.07, claude-opus)
+| ID | Status | Description |
+|---|---|---|
+| TM-01 | DONE | `core/duration.py` — parses what people actually type: "4 days 11 hours", "4d 11h", "90m", "1h30", "1.5h", plus Russian ("4 дня 11 часов", "45 мин", "2 недели") and clock times ("18:30", "tomorrow 9:00"). Refuses anything ambiguous rather than guessing — a timer that fires at the wrong moment is worse than one that won't be created. 18 unit tests including a garbage-rejection battery. |
+| TM-02 | DONE | `core/timers.py` — Qt-free model: name, absolute target, repeat (once/daily/weekly), sound, volume, colour. Temperature colour blends cold->hot as the deadline nears. `advance()` LOOPS past now, so a daily timer after a week offline lands in the future and fires once instead of once per missed day. Corrupt entries are skipped, never fatal. 15 unit tests. |
+| TM-03 | DONE | `ui/timer_dialog.py` — the clock in the top bar is now clickable and opens the manager. Common case is one field: name + "4 days 11 hours" + Add, with a preset dropdown for people who'd rather not type, and a live preview line showing the resolved moment and countdown before committing. Toggle/remove per timer. |
+| TM-04 | DONE | Top bar shows the SOONEST live timer next to the clock, coloured by urgency (or a static colour). Hidden in ultra tier and when no timers exist. Due timers fire off the existing 1s clock tick: sound at the timer's own volume, then a tray notification (falling back to raising the window). Timers persist as JSON in the settings table. |
+
+Verified: 498 unit + 145 smoke green, and exercised end-to-end in a real
+window (parse -> add -> persist -> display -> fire -> dialog validation).
+
+NOT DONE this pass — the other half of the request:
+**Settings UI is still messy and needs the compaction/tabs rework** so it
+stays usable at very small window sizes. Deliberately not started rather
+than rushed on top of a large feature.

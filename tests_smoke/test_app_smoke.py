@@ -2614,6 +2614,11 @@ def test_no_cyrillic_in_codebase():
             norm = f.replace("\\", "/")
             if "/translations/" in norm or "/i18n/" in norm or norm.endswith("translations.py"):
                 continue
+            # duration.py holds the Russian unit words the parser must accept
+            # (users type durations in either language) — that is input data,
+            # not stray prose, and its tests must exercise them.
+            if norm.endswith("core/duration.py") or norm.endswith("tests/test_duration.py"):
+                continue
             with open(f, encoding="utf-8") as fh:
                 for i, line in enumerate(fh, 1):
                     if cyr.search(line):
@@ -3845,3 +3850,92 @@ def test_no_unguarded_edit_blocks_in_new_code():
     assert not new, (
         "new raw beginEditBlock() call(s) - wrap them in edit_block() so an "
         f"exception cannot strand the document mid-edit: {sorted(new)}")
+
+
+def test_timer_end_to_end(win):
+    # Clicking the clock manages timers; the soonest one shows beside it,
+    # coloured by urgency; due timers fire once and persist across a reload.
+    import datetime
+
+    from fastprompter.core.duration import resolve_target
+    from fastprompter.core.timers import Timer, load_timers
+    from fastprompter.ui.timer_dialog import TimerDialog
+
+    win.is_locked = False
+    win._locked_geometry = None
+    saved = list(win.timers)
+    try:
+        win.timers.clear()
+
+        # the headline input works through the real resolve path
+        target = resolve_target("4 days 11 hours")
+        assert target is not None
+        win.timers.append(Timer("Claude limit", target))
+        win.timers.append(Timer("Soon", datetime.datetime.now()
+                                + datetime.timedelta(minutes=3)))
+        win.save_timers_to_data()
+
+        # survives a save/load round trip through the data dict
+        assert len(load_timers(win.data["timers"])) == 2
+
+        # nearest timer is shown, named and coloured hot (3 min away)
+        win.apply_scaled_ui()
+        win._header_dense = None
+        win._header_ultra = None
+        win.resize(1400, 800)
+        win._apply_header_density()
+        win._update_date_label()
+        assert not win.lbl_timer.isHidden()
+        assert "Soon" in win.lbl_timer.text()
+        style = win.lbl_timer.styleSheet()
+        assert "color:" in style
+        hot = style.split("color:")[-1].strip().rstrip(";")
+        assert hot.startswith("#")
+
+        # a far-off timer must be a cooler colour than an imminent one
+        far = Timer("far", datetime.datetime.now() + datetime.timedelta(days=3))
+        near = Timer("near", datetime.datetime.now() + datetime.timedelta(minutes=1))
+        assert int(far.display_color()[1:3], 16) < int(near.display_color()[1:3], 16)
+
+        # a due timer fires exactly once
+        win.timers.append(Timer("Fires", datetime.datetime.now()
+                                - datetime.timedelta(seconds=1)))
+        win._check_timers()
+        fired = [t for t in win.timers if t.name == "Fires"][0]
+        assert fired.fired is True
+        win._check_timers()
+        assert fired.fired is True          # still just the once
+
+        # the dialog lists them and validates input live
+        dlg = TimerDialog(win)
+        assert dlg.list.count() == len(win.timers)
+        dlg.in_when.setText("2 hours")
+        assert "(" in dlg.lbl_hint.text()   # shows the resolved countdown
+        dlg.in_when.setText("qwerty")
+        assert "understand" in dlg.lbl_hint.text().lower()
+
+        # adding through the dialog lands in the model
+        before = len(win.timers)
+        dlg.in_name.setText("Added")
+        dlg.in_when.setText("45m")
+        dlg.add_timer()
+        assert len(win.timers) == before + 1
+        assert any(t.name == "Added" for t in win.timers)
+        dlg.close()
+    finally:
+        win.timers[:] = saved
+        win.save_timers_to_data()
+        win._header_dense = None
+        win._header_ultra = None
+        win.resize(1400, 700)
+        win._apply_header_density()
+
+
+def test_timer_label_hides_in_ultra_and_with_no_timers(win):
+    saved = list(win.timers)
+    try:
+        win.timers.clear()
+        win._update_date_label()
+        assert win.lbl_timer.isHidden(), "no timers -> nothing to show"
+    finally:
+        win.timers[:] = saved

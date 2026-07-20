@@ -163,6 +163,7 @@ class FastPrompter(
 
         self._preview_connected = False
         self._fancy_zones = FancyZoneOverlay(self)
+        self.timers = []
         self.current_pages, self.silo_page, self.ui_scale = {}, 0, 1.0
         self.arc_silo_page, self.arc_page = 0, 0
         self.is_locked, self._suspend_cache, self._locked_geometry = False, False, None
@@ -175,6 +176,8 @@ class FastPrompter(
         self.setup_single_instance_server()
         self.state = FastPrompterState()
         self.data = self.state.data
+        from fastprompter.core.timers import load_timers
+        self.timers = load_timers(self.data.get("timers"))
         self.conn = self.state.conn
         import threading
         self._undo_save_lock = threading.Lock()
@@ -287,6 +290,7 @@ class FastPrompter(
 
         self.date_timer = QTimer(self)
         self.date_timer.timeout.connect(self._update_date_label)
+        self.date_timer.timeout.connect(self._check_timers)
         self.date_timer.start(1000)
         self._update_date_label()
 
@@ -350,6 +354,33 @@ class FastPrompter(
             self.lbl_date.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self.lbl_date.setText(dt_str)
+        self._update_timer_label()
+
+    def _update_timer_label(self):
+        """Show the soonest timer beside the clock, coloured by urgency."""
+        lbl = getattr(self, "lbl_timer", None)
+        if lbl is None or sip.isdeleted(lbl):
+            return
+        from fastprompter.core.duration import format_remaining
+        from fastprompter.core.timers import next_due
+
+        nxt = next_due(getattr(self, "timers", []))
+        if nxt is None or getattr(self, "_header_ultra", False):
+            lbl.setVisible(False)
+            return
+        rem = nxt.remaining()
+        short = getattr(self, "_header_dense", False)
+        text = format_remaining(rem, short=short)
+        if not short:
+            name = nxt.name if len(nxt.name) <= 14 else nxt.name[:13] + "…"
+            text = f"{name} {text}"
+        lbl.setText(text)
+        lbl.setToolTip(
+            f"{nxt.name}\n{nxt.target.strftime('%d.%m %H:%M')}\n"
+            + tr("Click to manage timers", getattr(self, "_current_lang", "EN")))
+        lbl.setStyleSheet(
+            f"padding: 0 4px; font-weight: bold; color: {nxt.display_color()};")
+        lbl.setVisible(True)
 
     # (button, normal label, dense label) — dense squeezes into a
     # Ctrl+Q quarter-FullHD window without hiding anything
@@ -557,6 +588,55 @@ class FastPrompter(
         except (TypeError, ValueError):
             pass
         return True
+
+    # ---- timers / limit resets ---------------------------------------
+    def save_timers_to_data(self):
+        from fastprompter.core.timers import save_timers
+        self.data["timers"] = save_timers(self.timers)
+        self.mark_dirty()
+
+    def open_timer_dialog(self):
+        from fastprompter.ui.timer_dialog import TimerDialog
+        self._increment_focus_lock()
+        try:
+            TimerDialog(self).exec()
+        finally:
+            QTimer.singleShot(300, self._decrement_focus_lock)
+        self.save_timers_to_data()
+        self._update_date_label()
+
+    def _check_timers(self):
+        """Fire anything due. Called from the same 1s tick as the clock."""
+        from fastprompter.core.timers import collect_due
+        if not getattr(self, "timers", None):
+            return
+        due = collect_due(self.timers)
+        if not due:
+            return
+        self.save_timers_to_data()
+        for t in due:
+            self._notify_timer(t)
+
+    def _notify_timer(self, timer):
+        try:
+            prev = self.data.get("sound_volume", "5")
+            self.data["sound_volume"] = str(timer.volume)
+            self.data["sound_ui"] = "True"
+            self.play_sound(timer.sound)
+            self.data["sound_volume"] = prev
+        except Exception:
+            from fastprompter.core.logging import logger
+            logger.debug("timer sound failed")
+        try:
+            if hasattr(self, "tray_icon") and not sip.isdeleted(self.tray_icon):
+                lang = getattr(self, "_current_lang", "EN")
+                self.tray_icon.showMessage(
+                    tr("Timer", lang), timer.name, self.tray_icon.icon(), 10000)
+                return
+        except Exception:
+            pass
+        self.show_window()
+        self.raise_()
 
     def _sync_snippets_toggle_button(self):
         btn = getattr(self, "btn_toggle_snippets", None)
@@ -1571,9 +1651,21 @@ class FastPrompter(
         self.header_layout.addWidget(self.analog_clock)
 
         self.lbl_date = QLabel("")
-        self.lbl_date.setToolTip(tr("Current Date and Time", getattr(self, "_current_lang", "EN")))
+        self.lbl_date.setToolTip(tr(
+            "Current date and time\nClick to manage timers and limit resets",
+            getattr(self, "_current_lang", "EN")))
         self.lbl_date.setStyleSheet("padding: 0 4px;")
+        self.lbl_date.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.lbl_date.mousePressEvent = lambda _e: self.open_timer_dialog()
         self.header_layout.addWidget(self.lbl_date)
+
+        # nearest live timer, right beside the clock
+        self.lbl_timer = QLabel("")
+        self.lbl_timer.setStyleSheet("padding: 0 4px; font-weight: bold;")
+        self.lbl_timer.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.lbl_timer.mousePressEvent = lambda _e: self.open_timer_dialog()
+        self.lbl_timer.setVisible(False)
+        self.header_layout.addWidget(self.lbl_timer)
 
         self.btn_pin_top = QPushButton("📌")
         self.btn_pin_top.setCheckable(True)

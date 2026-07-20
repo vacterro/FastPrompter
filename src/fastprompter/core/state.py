@@ -103,6 +103,11 @@ class FastPrompterState:
                 elif row[0] in ('silo_last_edited_all', 'pinned_silos_all', 'silo_ticked_all', 'silo_children', 'silo_children_all', 'silo_collapsed_all', 'silo_colors', 'silo_colors_all', 'silo_folders', 'silo_folders_all', 'archive_silo_folders', 'archive_silo_folders_all', 'silo_project_paths', 'silo_project_paths_all', 'archive_project_paths', 'archive_project_paths_all', 'folder_trash_log', 'silo_view_state_all'):
                     try: self.data[row[0]] = json.loads(row[1])
                     except Exception as e: logger.warning(f"Failed to parse {row[0]}: {e}"); self.data[row[0]] = {}
+                elif row[0] == 'timers':
+                    # a LIST of timer dicts — falling back to {} would make
+                    # load_timers see a mapping and silently drop them all
+                    try: self.data[row[0]] = json.loads(row[1])
+                    except Exception as e: logger.warning(f"Failed to parse {row[0]}: {e}"); self.data[row[0]] = []
                 elif row[0] == 'silo_last_edited':
                     try: self.data[row[0]] = json.loads(row[1])
                     except Exception as e: logger.warning(f"Failed to parse {row[0]}: {e}"); self.data[row[0]] = {}
@@ -170,7 +175,7 @@ class FastPrompterState:
         self._last_saved_presets = {(cat, i, item["name"], item["text"], item.get("last_edited", 0)) for cat, slots in self.data["categories"].items() for i, item in enumerate(slots) if item}
         self._last_saved_temp = {(cat, i, content) for cat, slots in self.data["temp_presets_all"].items() for i, content in enumerate(slots) if content}
         self._last_saved_arc = {(cat, i, content) for cat, slots in self.data["archive_temp_presets_all"].items() for i, content in enumerate(slots) if content}
-        self._last_saved_settings = {k: (json.dumps(v) if k in ("cats_order", "custom_colors", "silo_last_edited", "pinned_silos", "silo_last_edited_all", "pinned_silos_all", "silo_ticked", "silo_ticked_all", "silo_children", "silo_children_all", "silo_collapsed", "silo_collapsed_all", "silo_colors", "silo_colors_all", "silo_folders", "silo_folders_all", "archive_silo_folders", "archive_silo_folders_all", "silo_project_paths", "silo_project_paths_all", "archive_project_paths", "archive_project_paths_all", "folder_trash_log", "silo_view_state_all") else str(v)) for k, v in self.data.items() if k not in ("categories", "temp_presets_all", "archive_temp_presets_all", "temp_presets", "archive_temp_presets")}
+        self._last_saved_settings = {k: (json.dumps(v) if k in ("cats_order", "custom_colors", "silo_last_edited", "pinned_silos", "silo_last_edited_all", "pinned_silos_all", "silo_ticked", "silo_ticked_all", "silo_children", "silo_children_all", "silo_collapsed", "silo_collapsed_all", "silo_colors", "silo_colors_all", "silo_folders", "silo_folders_all", "archive_silo_folders", "archive_silo_folders_all", "silo_project_paths", "silo_project_paths_all", "archive_project_paths", "archive_project_paths_all", "folder_trash_log", "silo_view_state_all", "timers") else str(v)) for k, v in self.data.items() if k not in ("categories", "temp_presets_all", "archive_temp_presets_all", "temp_presets", "archive_temp_presets")}
 
     def mark_dirty(self):
         self._db_dirty = True
@@ -262,7 +267,7 @@ class FastPrompterState:
 
         try:
             # Compute snapshots BEFORE tx; assign _last_saved_* AFTER tx commits
-            current_settings = {k: (json.dumps(v) if k in ("cats_order", "custom_colors", "silo_last_edited", "pinned_silos", "silo_last_edited_all", "pinned_silos_all", "silo_ticked", "silo_ticked_all", "silo_children", "silo_children_all", "silo_collapsed", "silo_collapsed_all", "silo_colors", "silo_colors_all", "silo_folders", "silo_folders_all", "archive_silo_folders", "archive_silo_folders_all", "silo_project_paths", "silo_project_paths_all", "archive_project_paths", "archive_project_paths_all", "folder_trash_log", "silo_view_state_all") else str(v)) for k, v in self.data.items() if k not in ("categories", "temp_presets_all", "archive_temp_presets_all", "temp_presets", "archive_temp_presets")}
+            current_settings = {k: (json.dumps(v) if k in ("cats_order", "custom_colors", "silo_last_edited", "pinned_silos", "silo_last_edited_all", "pinned_silos_all", "silo_ticked", "silo_ticked_all", "silo_children", "silo_children_all", "silo_collapsed", "silo_collapsed_all", "silo_colors", "silo_colors_all", "silo_folders", "silo_folders_all", "archive_silo_folders", "archive_silo_folders_all", "silo_project_paths", "silo_project_paths_all", "archive_project_paths", "archive_project_paths_all", "folder_trash_log", "silo_view_state_all", "timers") else str(v)) for k, v in self.data.items() if k not in ("categories", "temp_presets_all", "archive_temp_presets_all", "temp_presets", "archive_temp_presets")}
             settings_to_save = [(k, v) for k, v in current_settings.items() if k not in self._last_saved_settings or self._last_saved_settings[k] != v]
 
             current_presets = {(cat, i, item["name"], item["text"], item.get("last_edited", 0)) for cat, slots in self.data["categories"].items() for i, item in enumerate(slots) if item}

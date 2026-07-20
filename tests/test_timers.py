@@ -1,0 +1,127 @@
+"""Tests for fastprompter.core.timers — the limit-reset timer model."""
+
+import datetime
+import os
+import sys
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
+
+from fastprompter.core.timers import (  # noqa: E402
+    COLOR_STATIC,
+    COLOR_TEMPERATURE,
+    REPEAT_DAILY,
+    REPEAT_NONE,
+    REPEAT_WEEKLY,
+    Timer,
+    collect_due,
+    load_timers,
+    next_due,
+    save_timers,
+    temperature_color,
+)
+
+NOW = datetime.datetime(2026, 7, 21, 12, 0, 0)
+
+
+def mk(name="t", minutes=60, **kw):
+    return Timer(name=name, target=NOW + datetime.timedelta(minutes=minutes), **kw)
+
+
+class TestRoundTrip:
+    def test_survives_save_and_load(self):
+        t = mk("Claude limit", 90, repeat=REPEAT_DAILY, volume=7,
+               color_mode=COLOR_STATIC, color="#ff8800")
+        back = load_timers(save_timers([t]))
+        assert len(back) == 1
+        b = back[0]
+        assert (b.name, b.repeat, b.volume) == ("Claude limit", REPEAT_DAILY, 7)
+        assert (b.color_mode, b.color) == (COLOR_STATIC, "#ff8800")
+        assert b.target == t.target
+        assert b.id == t.id
+
+    def test_corrupt_entries_are_skipped_not_fatal(self):
+        good = save_timers([mk()])
+        assert load_timers(good + [{"name": "no target"}, None, "junk", 42]) != []
+        assert len(load_timers(good + [{"name": "x"}])) == 1
+        assert load_timers("not a list") == []
+        assert load_timers(None) == []
+
+    def test_bad_volume_is_clamped_not_crashing(self):
+        assert Timer("t", NOW, volume=99).volume == 10
+        assert Timer("t", NOW, volume=-4).volume == 0
+        assert Timer("t", NOW, volume="abc").volume == 5
+
+    def test_blank_name_gets_a_fallback(self):
+        assert Timer("   ", NOW).name == "Timer"
+
+
+class TestDueLogic:
+    def test_remaining_and_is_due(self):
+        t = mk(minutes=30)
+        assert round(t.remaining(NOW)) == 1800
+        assert not t.is_due(NOW)
+        assert t.is_due(NOW + datetime.timedelta(minutes=31))
+
+    def test_disabled_timers_never_fire(self):
+        t = mk(minutes=-10, enabled=False)
+        assert not t.is_due(NOW)
+
+    def test_next_due_picks_the_soonest_live_one(self):
+        a, b, c = mk("a", 120), mk("b", 30), mk("c", 5, enabled=False)
+        assert next_due([a, b, c], NOW).name == "b"
+        assert next_due([c], NOW) is None
+        assert next_due([], NOW) is None
+
+    def test_one_shot_fires_once(self):
+        t = mk(minutes=-1, repeat=REPEAT_NONE)
+        assert [x.name for x in collect_due([t], NOW)] == ["t"]
+        assert t.fired is True
+        assert collect_due([t], NOW) == []          # not again
+
+    def test_repeating_timer_rolls_forward(self):
+        t = mk(minutes=-1, repeat=REPEAT_DAILY)
+        assert collect_due([t], NOW) != []
+        assert t.target > NOW
+        assert t.fired is False                      # armed for next time
+
+    def test_long_absence_does_not_fire_once_per_missed_day(self):
+        # app closed for a week: a daily timer must land in the future and
+        # fire ONCE, not spam a week's worth of alarms
+        t = Timer("daily", NOW - datetime.timedelta(days=7), repeat=REPEAT_DAILY)
+        fired = collect_due([t], NOW)
+        assert len(fired) == 1
+        assert t.target > NOW
+        assert (t.target - NOW).total_seconds() <= 24 * 3600
+
+    def test_weekly_rolls_by_a_week(self):
+        t = Timer("w", NOW - datetime.timedelta(days=1), repeat=REPEAT_WEEKLY)
+        collect_due([t], NOW)
+        assert t.target > NOW
+
+
+class TestColour:
+    def test_static_mode_never_changes(self):
+        t = mk(minutes=1, color_mode=COLOR_STATIC, color="#abcdef")
+        assert t.display_color(NOW) == "#abcdef"
+        assert t.display_color(NOW + datetime.timedelta(days=5)) == "#abcdef"
+
+    def test_temperature_warms_as_the_deadline_closes(self):
+        far = temperature_color(48 * 3600)
+        mid = temperature_color(4 * 3600)
+        near = temperature_color(60)
+
+        def red(c):
+            return int(c[1:3], 16)
+
+        assert red(far) < red(mid) < red(near), (far, mid, near)
+
+    def test_temperature_is_defined_at_every_distance(self):
+        for secs in (0, 1, 60, 1800, 7200, 24 * 3600, 10 ** 7, -50):
+            c = temperature_color(secs)
+            assert c.startswith("#") and len(c) == 7, (secs, c)
+
+    def test_temperature_mode_tracks_remaining_time(self):
+        t = mk(minutes=5, color_mode=COLOR_TEMPERATURE)
+        hot = t.display_color(NOW)
+        cool = t.display_color(NOW - datetime.timedelta(days=3))
+        assert hot != cool
