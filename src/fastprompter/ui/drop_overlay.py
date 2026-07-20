@@ -178,7 +178,7 @@ from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox
 
 class DropZonesDialog(QDialog):
     def __init__(self, main_win):
-        from PyQt6.QtWidgets import QVBoxLayout, QGridLayout, QLabel, QComboBox, QPushButton, QHBoxLayout
+        from PyQt6.QtWidgets import QGridLayout
         super().__init__(main_win, Qt.WindowType.Dialog)
         self.main_win = main_win
         self.setWindowTitle(tr("Drop Zones Configuration", getattr(main_win, "_current_lang", "EN")))

@@ -88,7 +88,7 @@ from fastprompter.ui.theme_mixin import ThemeMixin
 from fastprompter.ui.tray_mixin import TrayMixin
 from fastprompter.ui.window_mixin import WindowMixin
 from fastprompter.utils.paths import get_data_dir
-from fastprompter.core.translations import tr, set_language, get_language, available_languages
+from fastprompter.core.translations import tr, get_language, available_languages
 from fastprompter.core.i18n import NATIVE_NAMES as _LANG_NATIVE_NAMES
 from fastprompter.utils.textfit import clip_safe_width
 
@@ -2031,7 +2031,7 @@ class FastPrompter(
         self.spin_silo_gap.setToolTip(tr("Silo Gap Height", getattr(self, "_current_lang", "EN")))
         try:
             self.spin_silo_gap.setValue(int(self.data.get("silo_gap_height", 8)))
-        except:
+        except (TypeError, ValueError):
             self.spin_silo_gap.setValue(8)
         def _update_gap(v):
             self.data.update({"silo_gap_height": str(v)})
@@ -2046,7 +2046,7 @@ class FastPrompter(
         self.spin_drag_width.setToolTip(tr("Splitter Handle Width", getattr(self, "_current_lang", "EN")))
         try:
             self.spin_drag_width.setValue(int(self.data.get("splitter_width", 1)))
-        except:
+        except (TypeError, ValueError):
             self.spin_drag_width.setValue(1)
         def _update_drag(v):
             self.data.update({"splitter_width": str(v)})
@@ -2085,7 +2085,7 @@ class FastPrompter(
         self.splitter.setOpaqueResize(True)
         try:
             self.splitter.setHandleWidth(int(self.data.get("splitter_width", 1)))
-        except:
+        except (TypeError, ValueError):
             self.splitter.setHandleWidth(1)
 
         self.left_panel = QWidget()

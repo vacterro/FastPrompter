@@ -8,7 +8,7 @@ zone, then auto-fades. Non-intrusive — clicks pass through, timer dismisses.
 from __future__ import annotations
 
 from PyQt6.QtCore import QPropertyAnimation, QRect, Qt, QTimer, pyqtProperty
-from PyQt6.QtGui import QBrush, QColor, QPainter, QPen
+from PyQt6.QtGui import QColor, QCursor, QPainter, QPen
 from PyQt6.QtWidgets import QApplication, QWidget
 
 

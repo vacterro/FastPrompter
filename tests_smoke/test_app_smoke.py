@@ -3031,3 +3031,31 @@ def test_header_priority_fit_never_hides_clock_or_date(win):
         win._header_ultra = None
         win._apply_header_density()
         win._update_date_label()
+
+
+def test_ctrl_q_snap_and_fancy_zones_overlay(win):
+    # Regression: fancy_zones.py called QCursor.pos() without importing
+    # QCursor, so Ctrl+Q raised NameError and crashed the app on first use.
+    # Same class as the logger-unimported bug: only reachable by actually
+    # running the path, invisible to import-time checks.
+    win.is_locked = False
+    win._locked_geometry = None
+    before = win.geometry()
+    for _ in range(5):  # cycle right through all 4 corners and wrap
+        win.cycle_snap_corner()  # must not raise
+    assert win._fancy_zones is not None
+    win.setGeometry(before)
+
+
+def test_no_undefined_names_in_package():
+    # Guard the whole package against F821 (undefined name) — the bug class
+    # that has now bitten twice (logger, QCursor): a name only referenced on
+    # a rarely-taken branch crashes the app the first time a user hits it.
+    import subprocess
+
+    root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    res = subprocess.run(
+        ["uv", "run", "ruff", "check", "--select", "F821", "--output-format", "concise", "src/"],
+        cwd=root, capture_output=True, text=True,
+    )
+    assert "F821" not in res.stdout, f"undefined names found:\n{res.stdout}"

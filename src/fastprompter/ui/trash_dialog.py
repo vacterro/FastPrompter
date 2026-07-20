@@ -5,7 +5,6 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 import os
 import shutil
-import time
 
 class TrashDialog(QDialog):
     def __init__(self, main_win, trash_dir):
