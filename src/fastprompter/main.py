@@ -3264,60 +3264,121 @@ class FastPrompter(
             if cat and "archive_temp_presets_all" in self.data:
                 self.data["archive_temp_presets_all"][cat] = archive
 
-    def _remap_silo_indices(self, remap):
-        """Apply an index remap to slot-index-keyed silo state (pins, tints).
+    # Every piece of state keyed by SILO SLOT INDEX, and how it is shaped.
+    # A silo has no stable id — it is identified purely by its position — so
+    # any reorder/insert/delete has to rewrite ALL of these in lockstep.
+    # Miss one and a silo silently inherits another's colour, pin, files or
+    # cursor. Keeping the list here (and asserting it in a test) is what
+    # stops the next map from being forgotten.
+    #   int_list   : [3, 7]                 -> values are indices
+    #   int_dict   : {3: v}                 -> int keys
+    #   str_dict   : {"3": v}               -> stringified int keys
+    #   parent_map : {"3": [4, 5]}          -> both key and values are indices
+    _SILO_INDEX_STATE = (
+        ("silo_last_edited", "int_dict"),
+        ("pinned_silos", "int_list"),
+        ("silo_ticked", "int_list"),
+        ("silo_collapsed", "int_list"),
+        ("silo_children", "parent_map"),
+        ("silo_colors", "str_dict"),
+        ("silo_folders", "str_dict"),
+        ("silo_project_paths", "str_dict"),
+    )
 
-        Mutates in place: both containers are aliases into per-category
-        stores; rebinding them would orphan the data."""
-        remapped = {remap(k): v for k, v in self.silo_last_edited.items()}
-        self.silo_last_edited.clear()
-        self.silo_last_edited.update(remapped)
-        pinned = self.data.get("pinned_silos", [])
-        if isinstance(pinned, list):
-            pinned[:] = [remap(p) for p in pinned]
-        ticked = self.data.get("silo_ticked", [])
-        if isinstance(ticked, list):
-            ticked[:] = [remap(t) for t in ticked]
-        cmap = self.data.get("silo_children", {})
-        if isinstance(cmap, dict):
-            new_map = {remap(int(p)): [remap(int(k)) for k in kids]
-                       for p, kids in cmap.items()}
-            cmap.clear()
-            cmap.update(new_map)
-        collapsed = self.data.get("silo_collapsed", [])
-        if isinstance(collapsed, list):
-            collapsed[:] = [remap(c) for c in collapsed]
-        cmap2 = self.data.get("silo_colors", {})
-        if isinstance(cmap2, dict):
-            new_cmap2 = {}
-            for k, v in cmap2.items():
+    # The archive is its own index space with its own slot-keyed stores.
+    # Reordering archived silos used to move only the TEXT, leaving these
+    # behind — an archived silo would inherit another one's files folder.
+    _ARCHIVE_INDEX_STATE = (
+        ("archive_silo_folders", "str_dict"),
+        ("archive_project_paths", "str_dict"),
+    )
+
+    def _remap_silo_indices(self, remap, is_archive=False):
+        """Apply an index remap to every slot-index-keyed store.
+
+        Mutates in place: these containers are aliases into per-category
+        stores, so rebinding them would orphan the data."""
+        table = self._ARCHIVE_INDEX_STATE if is_archive else self._SILO_INDEX_STATE
+        for key, kind in table:
+            # `silo_last_edited` is also exposed as an attribute, and callers
+            # (including tests) sometimes REBIND that attribute rather than
+            # mutating it — at which point it is no longer the same object as
+            # data[...]. The attribute is what the app actually reads, so it
+            # wins; see the temp_presets aliasing trap for the same hazard.
+            container = getattr(self, key, None) if key == "silo_last_edited" else None
+            if not isinstance(container, dict):
+                container = self.data.get(key)
+            if container is None:
+                continue
+            try:
+                if kind == "int_list":
+                    if isinstance(container, list):
+                        container[:] = [remap(i) for i in container]
+                elif kind == "int_dict":
+                    if isinstance(container, dict):
+                        moved = {remap(k): v for k, v in container.items()}
+                        container.clear()
+                        container.update(moved)
+                elif kind == "str_dict":
+                    if isinstance(container, dict):
+                        moved = {}
+                        for k, v in container.items():
+                            try:
+                                moved[str(remap(int(k)))] = v
+                            except (TypeError, ValueError):
+                                moved[k] = v   # unparseable key: leave as-is
+                        container.clear()
+                        container.update(moved)
+                elif kind == "parent_map":
+                    if isinstance(container, dict):
+                        moved = {}
+                        for parent, kids in container.items():
+                            try:
+                                new_parent = remap(int(parent))
+                            except (TypeError, ValueError):
+                                new_parent = parent
+                            moved[new_parent] = [remap(int(k)) for k in kids]
+                        container.clear()
+                        container.update(moved)
+            except Exception:
+                from fastprompter.core.logging import logger
+                logger.warning("failed to remap silo state %r", key)
+
+        # keep data in step when the attribute is a separate object
+        if not is_archive:
+            attr = getattr(self, "silo_last_edited", None)
+            stored = self.data.get("silo_last_edited")
+            if isinstance(attr, dict) and isinstance(stored, dict) and attr is not stored:
+                stored.clear()
+                stored.update(attr)
+
+        self._remap_silo_view_state(remap, is_archive=is_archive)
+
+    def _remap_silo_view_state(self, remap, is_archive=False):
+        """View state has its own shape: per category, keys like 's3'/'a3'.
+
+        Only the half being reordered moves — shuffling active silos must
+        not disturb the archive's saved cursors, and vice versa.
+        """
+        store = self.data.get("silo_view_state_all")
+        if not isinstance(store, dict):
+            return
+        cat = self.get_current_category()
+        entries = store.get(cat)
+        if not isinstance(entries, dict):
+            return
+        prefix = "a" if is_archive else "s"
+        moved = {}
+        for key, value in entries.items():
+            if isinstance(key, str) and key[:1] == prefix and key[1:].isdigit():
                 try:
-                    new_cmap2[str(remap(int(k)))] = v
-                except (ValueError, TypeError):
-                    new_cmap2[k] = v
-            cmap2.clear()
-            cmap2.update(new_cmap2)
-        # folder names are keyed by slot -> remap so a moved silo keeps its files
-        fmap = self.data.get("silo_folders", {})
-        if isinstance(fmap, dict):
-            new_fmap = {}
-            for k, v in fmap.items():
-                try:
-                    new_fmap[str(remap(int(k)))] = v
-                except (ValueError, TypeError):
-                    new_fmap[k] = v
-            fmap.clear()
-            fmap.update(new_fmap)
-        pmap = self.data.get("silo_project_paths", {})
-        if isinstance(pmap, dict):
-            new_pmap = {}
-            for k, v in pmap.items():
-                try:
-                    new_pmap[str(remap(int(k)))] = v
-                except (ValueError, TypeError):
-                    new_pmap[k] = v
-            pmap.clear()
-            pmap.update(new_pmap)
+                    moved[f"{prefix}{remap(int(key[1:]))}"] = value
+                    continue
+                except (TypeError, ValueError):
+                    pass
+            moved[key] = value
+        entries.clear()
+        entries.update(moved)
 
     def handle_pinned_drop(self, source_idx, boundary_idx=None, swap_idx=None):
         """Handle dragging and dropping silos within or across the pinned section."""
@@ -3407,8 +3468,7 @@ class FastPrompter(
 
         if getattr(self, "active_is_archive", False) == is_archive:
             self.active_temp_slot = remap(getattr(self, "active_temp_slot", 0))
-        if not is_archive:
-            self._remap_silo_indices(remap)
+        self._remap_silo_indices(remap, is_archive=is_archive)
         self._suspend_cache = False
         self.mark_dirty()
         self.refresh_temp_presets()

@@ -528,3 +528,28 @@ Verified: 503 unit + 152 smoke green.
 
 Remaining wishlist: 4-side toolbar docking, silo-drop-onto-child
 re-parenting, italic toggle beside the quote collapse button.
+
+## Silo identity & ordering integrity (21.07, claude-opus)
+User asked to dig into silo ordering and independent per-silo persistence
+"so nothing gets lost or confused".
+
+Root of the whole class: **a silo has no id — it IS its slot index.** Eight
+separate stores are keyed by that index (colours, pins, ticks, children,
+collapsed, folders, project paths, edit times), plus view state. Every
+reorder/insert/delete must rewrite all of them in lockstep; miss one and a
+silo silently inherits another's settings. T-341 was already one instance
+of this.
+
+| ID | Status | Description |
+|---|---|---|
+| SI-01 | FIXED (mine) | `silo_view_state_all` — the per-silo cursor/selection/line-marks map I added earlier — was never wired into `_remap_silo_indices`. Reordering silos left the saved cursor behind, so a silo picked up whichever cursor/selection belonged to its new slot number. Proven with a probe before fixing: AAA moved 0->2 and kept colour #ff0000 but inherited position 3 instead of its own 1. |
+| SI-02 | FIXED (pre-existing) | `move_temp_to_index` skipped remapping **entirely** for archived silos (`if not is_archive`). Archive text moved, but `archive_silo_folders` / `archive_project_paths` stayed put — an archived silo inherited another one's files folder and project path. Added `_ARCHIVE_INDEX_STATE` and an archive branch; view state now moves only the half being reordered ('s' vs 'a' keys). |
+| SI-03 | DONE (the durable part) | Replaced eight hand-written remap blocks with a declared registry `_SILO_INDEX_STATE` (+ `_ARCHIVE_INDEX_STATE`) describing each store's shape, and one loop that walks it. Adding a map is now one line instead of a fresh block that can be forgotten. |
+| SI-04 | DONE | Guard test `test_every_slot_keyed_store_is_registered_for_remapping` scans `data` for stores that LOOK slot-keyed (int keys / list of ints — by shape, not by name, so plain settings like `silo_home` aren't false positives) and fails if any isn't registered or explicitly exempted with a reason. This is what stops the next map from being forgotten. |
+| SI-05 | FIXED (regression I introduced) | The registry read from `data[...]`, but `silo_last_edited` is also exposed as an ATTRIBUTE, and callers sometimes rebind it rather than mutating — at which point the two are different objects and my version wiped the live one. Same aliasing trap as `temp_presets`. The attribute now wins, with data synced after. |
+
+Also covered: reorder/delete/clear keep colour, project path, tick, pin and
+cursor attached to the right silo; corrupt slot keys ("not-a-number", "")
+survive a reorder instead of throwing.
+
+Verified: 503 unit + 157 smoke green.

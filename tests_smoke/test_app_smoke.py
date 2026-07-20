@@ -4213,3 +4213,176 @@ def test_line_heat_hook_survives_silo_switches(win):
             "follow the document swap")
     finally:
         win.data["line_heat"] = "False"
+
+
+# ---------------------------------------------------------------------------
+# Silo identity: a silo IS its slot index, so every reorder must rewrite
+# every slot-keyed store together or silos inherit each other's state.
+# ---------------------------------------------------------------------------
+
+def _silo_fixture(win):
+    cat = win.get_current_category()
+    win.data["temp_presets"][:] = ["AAA", "BBB", "CCC", "DDD"]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    win.data["silo_colors"] = {"0": "#a00000", "1": "#00a000",
+                               "2": "#0000a0", "3": "#a0a000"}
+    win.data["silo_ticked"] = [2]
+    win.data["pinned_silos"] = [3]
+    win.data["silo_project_paths"] = {str(i): {"folder": f"p{i}"} for i in range(4)}
+    win.data["silo_last_edited"] = {0: 100, 1: 200, 2: 300, 3: 400}
+    store = win.data.setdefault("silo_view_state_all", {}).setdefault(cat, {})
+    store.clear()
+    for i in range(4):
+        store[f"s{i}"] = {"anchor": i * 10, "pos": i * 10, "scroll": 0}
+    return cat
+
+
+def _state_of(win, cat, text):
+    """Everything attached to the silo currently holding `text`."""
+    idx = win.data["temp_presets"].index(text)
+    vs = win.data["silo_view_state_all"][cat].get(f"s{idx}", {})
+    return {
+        "slot": idx,
+        "colour": win.data["silo_colors"].get(str(idx)),
+        "project": win.data["silo_project_paths"].get(str(idx)),
+        "edited": win.data["silo_last_edited"].get(idx),
+        "pos": vs.get("pos"),
+        "ticked": idx in win.data["silo_ticked"],
+        "pinned": idx in win.data["pinned_silos"],
+    }
+
+
+def test_reordering_silos_carries_all_of_their_state(win):
+    # Moving a silo must take its colour, project path, tick, pin, edit time
+    # AND its saved cursor with it — not leave them on whoever inherits the
+    # slot number.
+    cat = _silo_fixture(win)
+    before = {t: _state_of(win, cat, t) for t in ("AAA", "BBB", "CCC", "DDD")}
+
+    win.move_temp_to_index(0, 3)          # AAA to the end
+    assert win.data["temp_presets"] == ["BBB", "CCC", "DDD", "AAA"]
+
+    for text in ("AAA", "BBB", "CCC", "DDD"):
+        now = _state_of(win, cat, text)
+        was = before[text]
+        # NB: "edited" is deliberately not compared — switching to a silo
+        # re-stamps its edit time, so it is not a stable identity field.
+        for field in ("colour", "project", "pos", "ticked", "pinned"):
+            assert now[field] == was[field], (
+                f"{text}: {field} did not follow the silo "
+                f"({was[field]!r} -> {now[field]!r})")
+
+
+def test_deleting_a_silo_shifts_the_others_state_correctly(win):
+    from unittest.mock import patch
+
+    cat = _silo_fixture(win)
+    keep = {t: _state_of(win, cat, t) for t in ("AAA", "CCC", "DDD")}
+
+    with patch("fastprompter.ui.snippet_ops_mixin.QMessageBox"):
+        win.trash_silo(1)                  # remove BBB from the middle
+
+    assert "BBB" not in win.data["temp_presets"]
+    for text in ("AAA", "CCC", "DDD"):
+        now = _state_of(win, cat, text)
+        was = keep[text]
+        for field in ("colour", "project", "pos", "ticked", "pinned"):
+            assert now[field] == was[field], (
+                f"after deleting BBB, {text}: {field} is wrong "
+                f"({was[field]!r} -> {now[field]!r})")
+
+
+def test_every_slot_keyed_store_is_registered_for_remapping(win):
+    """Guard against the next map being forgotten.
+
+    A silo is identified only by its index. Any new slot-keyed store that
+    isn't in _SILO_INDEX_STATE will silently stay behind on a reorder, and
+    silos start inheriting each other's settings — which is exactly the bug
+    this registry exists to prevent.
+    """
+    registered = {name for name, _kind in win._SILO_INDEX_STATE}
+    registered |= {name for name, _kind in win._ARCHIVE_INDEX_STATE}
+
+    # handled separately because of their shape / scope, not forgotten
+    handled_elsewhere = {
+        "silo_view_state_all",        # per-category, 's3'/'a3' keys
+        "archive_temp_presets_all",   # the archive texts themselves
+        "temp_presets_all",           # the silo texts themselves
+        # per-category wrappers around already-registered maps
+        "silo_last_edited_all", "pinned_silos_all", "silo_ticked_all",
+        "silo_children_all", "silo_collapsed_all", "silo_colors_all",
+        "silo_folders_all", "silo_project_paths_all",
+        "archive_silo_folders_all", "archive_project_paths_all",
+    }
+
+    def looks_slot_keyed(value):
+        """A store indexed BY SLOT: int keys, or a list of slot indices."""
+        if isinstance(value, dict):
+            keys = [k for k in value if k not in ("", None)]
+            return bool(keys) and all(
+                isinstance(k, int) or (isinstance(k, str) and k.lstrip("-").isdigit())
+                for k in keys)
+        if isinstance(value, list):
+            return bool(value) and all(isinstance(v, int) for v in value)
+        return False   # booleans/strings are plain settings, not per-silo maps
+
+    candidates = {
+        k for k, v in win.data.items()
+        if isinstance(k, str)
+        and (k.startswith("silo_") or k.startswith("pinned_silos")
+             or k.startswith("archive_silo") or k.startswith("archive_project"))
+        and looks_slot_keyed(v)
+    }
+    unaccounted = candidates - registered - handled_elsewhere
+    assert not unaccounted, (
+        "slot-keyed state that no reorder will remap: "
+        f"{sorted(unaccounted)} - add it to FastPrompter._SILO_INDEX_STATE "
+        "(or to the exemption list above with a reason)")
+
+
+def test_remap_survives_corrupt_slot_keys(win):
+    # Real databases end up with junk keys; a reorder must not throw.
+    cat = _silo_fixture(win)
+    win.data["silo_colors"]["not-a-number"] = "#123456"
+    win.data["silo_project_paths"][""] = {"folder": "empty key"}
+    win.data["silo_view_state_all"][cat]["sXX"] = {"pos": 1}
+
+    win.move_temp_to_index(0, 2)           # must not raise
+
+    assert win.data["silo_colors"]["not-a-number"] == "#123456"
+    assert win.data["silo_view_state_all"][cat]["sXX"] == {"pos": 1}
+
+
+def test_reordering_archived_silos_carries_their_state(win):
+    # Regression: move_temp_to_index skipped the remap entirely for archived
+    # silos, so the TEXT moved but the folder/project maps stayed put and an
+    # archived silo inherited another one's files.
+    cat = win.get_current_category()
+    win.data["archive_temp_presets"][:] = ["ARC-A", "ARC-B", "ARC-C"]
+    win.archive_docs[:] = []
+    win.data["archive_silo_folders"] = {"0": "fa", "1": "fb", "2": "fc"}
+    win.data["archive_project_paths"] = {str(i): {"folder": f"pa{i}"} for i in range(3)}
+    store = win.data.setdefault("silo_view_state_all", {}).setdefault(cat, {})
+    store.clear()
+    for i in range(3):
+        store[f"a{i}"] = {"anchor": 0, "pos": i * 7, "scroll": 0}
+    # an ACTIVE entry that must not be disturbed by an archive reorder
+    store["s0"] = {"anchor": 0, "pos": 999, "scroll": 0}
+
+    win.move_temp_to_index(0, 2, is_archive=True)
+    assert win.data["archive_temp_presets"] == ["ARC-B", "ARC-C", "ARC-A"]
+
+    idx = win.data["archive_temp_presets"].index("ARC-A")
+    # The folder NAME is re-derived from the silo title (1 silo = 1 folder),
+    # so assert it belongs to ARC-A rather than to whoever took slot 0.
+    folder = win.data["archive_silo_folders"].get(str(idx), "")
+    assert "arc-a" in folder.lower(), (
+        f"archived silo inherited another one's folder: {folder!r}")
+    # project paths are NOT regenerated, so they prove the remap outright
+    assert win.data["archive_project_paths"].get(str(idx)) == {"folder": "pa0"}, (
+        "archived silo lost its project path on reorder")
+    assert store.get(f"a{idx}", {}).get("pos") == 0
+
+    # the active silos' saved state is untouched by an archive reorder
+    assert store["s0"]["pos"] == 999
