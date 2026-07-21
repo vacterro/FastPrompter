@@ -145,8 +145,10 @@ class ThemeMixin:
             from PyQt6.QtCore import QTimer
             self._header_dense = None  # force a full re-pack
             QTimer.singleShot(0, self._apply_header_density)
-        self.btn_new.setStyleSheet(theme["btn_new"])
-        self.btn_save.setStyleSheet(theme["btn_save"])
+        # through scale_button_qss: the fixed px font/padding in these
+        # strings is what crushed the labels at small UI scales
+        self.btn_new.setStyleSheet(self.scale_button_qss(theme["btn_new"]))
+        self.btn_save.setStyleSheet(self.scale_button_qss(theme["btn_save"]))
         self.btn_help.setStyleSheet(theme["lbl_help"])
         self.mini_settings_frame.setStyleSheet(theme["mini_settings"])
 

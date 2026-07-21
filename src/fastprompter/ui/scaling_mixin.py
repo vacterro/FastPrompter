@@ -94,6 +94,36 @@ class ScalingMixin:
         except Exception:
             logger.debug("Failed to scale font on %s", widget)
 
+    def scale_button_qss(self, qss):
+        """Scale the px lengths inside a per-button stylesheet.
+
+        The theme hands out strings like "font-size: 11px; padding: 4px;
+        border: 1px". Those never scaled, while apply_button_size shrank the
+        BOX - so at 50% the box floors at 20px while the stylesheet still
+        wants 11 + 4*2 + 1*2 = 21px of height, and Qt squashes the label to
+        fit. That is the "chewed up" text, and it showed on a theme change
+        because that is when these strings are re-applied.
+        """
+        import re
+
+        scale = self._effective_scale()
+        # Only ever shrink. These strings are authored for 100%, and the
+        # button WIDTHS do not scale - growing the font at 150% made "Save"
+        # ask for 64px inside a 60px box, i.e. trading one clipping bug for
+        # another. Shrinking has no such risk.
+        if scale >= 0.99:
+            return qss
+
+        def shrink(match):
+            prop, value = match.group(1), int(match.group(2))
+            if prop == "border":
+                return match.group(0)          # hairlines stay hairlines
+            floor = 7 if prop == "font-size" else 0
+            return f"{prop}: {max(floor, int(round(value * scale)))}px"
+
+        return re.sub(r"(font-size|padding|margin)\s*:\s*(\d+)px",
+                      shrink, qss)
+
     def apply_button_size(self, widget, base_w, base_h=None):
         """Set widget size based on the combined UI x button scale."""
         scale = self._effective_scale()
@@ -209,10 +239,30 @@ class ScalingMixin:
                     w.setFixedWidth(max(self.MIN_BTN_PX, int(round(24 * scale))))
                 except Exception:
                     logger.debug("apply_scaled_ui: failed to set width on %s", btn_name)
-
                 try:
                     font = w.font()
                     font.setPointSizeF(max(self.MIN_FONT_PT, self.BASE_FONT_PT * scale))
                     w.setFont(font)
                 except Exception:
                     logger.debug("apply_scaled_ui: failed to set font on %s", btn_name)
+
+        self.refresh_scaled_button_qss()
+
+    def refresh_scaled_button_qss(self):
+        """Re-apply the themed button stylesheets at the current scale.
+
+        Changing the scale resizes the boxes but does not re-run apply_theme,
+        so without this the fixed px font and padding in those strings stayed
+        at their 100% values while the box shrank.
+        """
+        theme = getattr(self, "_theme_cache", None)
+        if not theme:
+            return
+        for name, key in (("btn_new", "btn_new"), ("btn_save", "btn_save")):
+            btn = getattr(self, name, None)
+            if btn is None or _is_deleted(btn) or key not in theme:
+                continue
+            try:
+                btn.setStyleSheet(self.scale_button_qss(theme[key]))
+            except Exception:
+                logger.debug("failed to rescale the stylesheet on %s", name)
