@@ -56,6 +56,11 @@ submit     = "enter"
 multiline  = "join"
 skill_format = "/{skill} {text}"
 
+# Proven 21.07 after relaunching with --remote-debugging-port=9334. Pinned
+# for the same reason as CodeNomad: the port was chosen, not assigned.
+transport = "cdp"
+cdp_port  = 9334
+
   [[agent.probe]]
   kind     = "sqlite"
   path     = "{project}/.freebuff/desktop.db"
@@ -83,12 +88,23 @@ multiline = "join"
 # TODO: confirm this agent's skill syntax, or delete the key if it has none
 skill_format = "/{skill} {text}"
 
-# Its API on :4096 answers 401 - the token is generated at runtime and
-# passed as a session cookie by CodeNomad, so there is nothing stable to put
-# here. The clean route is to add --remote-debugging-port=NNNN to how the
-# app is launched and switch this to transport = "cdp", the same one proven
-# on antigravity. Until then it can be watched but not driven.
-transport = "post"
+# Driven through CodeNomad, the desktop app that runs `opencode serve` as a
+# child - one store, two faces. Proven 21.07 after relaunching it with
+# --remote-debugging-port=9333.
+#
+# The port is pinned rather than read from a file because it was chosen on
+# the command line: an explicit port stays put, unlike Antigravity's, which
+# is assigned per launch.
+#
+# Its own API on :4096 answers 401 and the token is generated at runtime and
+# passed as a session cookie, so there was nothing stable to configure there.
+transport = "cdp"
+cdp_port  = 9333
+# Measured: this page has THREE text fields and the composer is the third.
+# The first two are "Search models..." and a settings box, both <input>, so
+# the default selector deliberately excludes plain inputs and takes the
+# lowest visible match. A first-match selector typed into the model search.
+cdp_selector = "textarea"
 
   [[agent.probe]]
   kind     = "sqlite"

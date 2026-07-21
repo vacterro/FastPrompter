@@ -248,24 +248,43 @@ class CdpSender:
     dry = False
     silent = True
 
-    # Finds the composer. Ordered widest-first: a chat UI is usually one
-    # contenteditable, but some use a plain textarea.
-    FIELD_JS = (
-        "(() => { const e = document.querySelector("
-        "'[contenteditable=\"true\"], textarea, input[type=text]');"
-        " return e ? String(e.value ?? e.textContent ?? '') : null; })()")
+    # Plain <input> is deliberately NOT in the default. Measured on
+    # CodeNomad: the page has three text fields and the composer is the
+    # third - the first two are "Search models..." and a settings box, both
+    # <input>. A first-match selector would have typed the queued prompt
+    # into a model search.
+    DEFAULT_SELECTOR = '[contenteditable="true"], textarea'
 
-    FOCUS_JS = (
-        "(() => { const e = document.querySelector("
-        "'[contenteditable=\"true\"], textarea, input[type=text]');"
-        " if (!e) return false; e.focus(); return true; })()")
+    # Among what matches, take the LOWEST visible one. A chat composer sits
+    # at the bottom; anything else that matches is above it.
+    _RESOLVE = """
+      const els = [...document.querySelectorAll(SELECTOR)]
+        .filter(e => e.offsetWidth || e.offsetHeight);
+      if (!els.length) return null;
+      els.sort((a, b) => a.getBoundingClientRect().top
+                       - b.getBoundingClientRect().top);
+      const el = els[els.length - 1];
+    """
 
     def __init__(self, connect=None, submit="enter", multiline="join",
-                 timeout=DEFAULT_TIMEOUT):
+                 selector="", timeout=DEFAULT_TIMEOUT):
         self._connect = connect or (lambda url: WebSocket(url, timeout))
         self.submit = submit or "enter"
         self.multiline = multiline or "join"
+        self.selector = selector or self.DEFAULT_SELECTOR
         self.timeout = timeout
+
+    def _js(self, body):
+        resolve = self._RESOLVE.replace("SELECTOR", json.dumps(self.selector))
+        return f"(() => {{{resolve}{body}}})()"
+
+    @property
+    def FIELD_JS(self):
+        return self._js(" return String(el.value ?? el.textContent ?? '');")
+
+    @property
+    def FOCUS_JS(self):
+        return self._js(" el.focus(); return true;")
 
     # ---- helpers -------------------------------------------------------
     def _read_field(self, ws):

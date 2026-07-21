@@ -313,3 +313,35 @@ def test_a_cdp_error_reply_is_raised_not_returned_as_a_result():
         assert "Cannot find context" in str(exc)
     else:
         raise AssertionError("an error reply must not read as success")
+
+
+# ------------------------------------------------------------- the field
+
+def test_plain_inputs_are_not_composers_by_default():
+    """Measured on CodeNomad: the page has three text fields and the
+    composer is the third. The first two are a model search and a settings
+    box, both <input> - a selector that matched them would have typed the
+    queued prompt into a search."""
+    assert "input" not in CdpSender.DEFAULT_SELECTOR
+    assert "textarea" in CdpSender.DEFAULT_SELECTOR
+    assert "contenteditable" in CdpSender.DEFAULT_SELECTOR
+
+
+def test_the_lowest_visible_field_is_the_one_used():
+    """A chat composer sits at the bottom; anything else is above it."""
+    js = CdpSender().FIELD_JS
+    assert "offsetWidth" in js, "invisible fields are filtered out"
+    assert "getBoundingClientRect" in js and "els.length - 1" in js
+
+
+def test_an_adapter_can_name_its_own_field():
+    js = CdpSender(selector="#composer textarea").FIELD_JS
+    assert "#composer textarea" in js
+
+
+def test_the_selector_is_escaped_into_the_script():
+    """A quote in a selector would otherwise end the JS string early and
+    turn a config typo into a syntax error at send time."""
+    js = CdpSender(selector='[data-x="y"]').FIELD_JS
+    assert '\\"y\\"' in js or '[data-x=\\"y\\"]' in js.replace("'", '"')
+

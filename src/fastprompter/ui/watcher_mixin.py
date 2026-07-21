@@ -143,7 +143,8 @@ class WatcherMixin:
 
         if getattr(adapter, "transport", "post") == "cdp":
             from fastprompter.core.watcher.cdp import CdpSender
-            return CdpSender(submit=submit, multiline=multiline)
+            return CdpSender(submit=submit, multiline=multiline,
+                             selector=getattr(adapter, "cdp_selector", ""))
         if not win32.available():
             return build_sender()
         return PostMessageSender(win32.PostLayer(), submit=submit,

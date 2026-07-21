@@ -35,7 +35,7 @@ class Adapter:
                  submit="enter", multiline="join",
                  skill_format="/{skill} {text}", blocker_pattern="",
                  transport="", cdp_port=0, cdp_title="",
-                 cdp_port_file="", problems=()):
+                 cdp_port_file="", cdp_selector="", problems=()):
         self.name = name or "unnamed"
         self.probes = list(probes)
         self.enabled = bool(enabled)
@@ -62,6 +62,10 @@ class Adapter:
         # works until the app restarts. The port file is where it records
         # the live one.
         self.cdp_port_file = cdp_port_file or ""
+        # Which field on the page is the composer. Left empty the
+        # sender uses its own default; named when a page has
+        # several and the guess would pick the wrong one.
+        self.cdp_selector = cdp_selector or ""
         if self.transport == "cdp" and not (self.cdp_port or self.cdp_port_file):
             problems = list(problems) + [
                 "cdp transport needs a cdp_port or a cdp_port_file"]
@@ -157,6 +161,7 @@ def _adapter_from(entry, project=None):
         cdp_port=entry.get("cdp_port", 0),
         cdp_title=entry.get("cdp_title", ""),
         cdp_port_file=entry.get("cdp_port_file", ""),
+        cdp_selector=entry.get("cdp_selector", ""),
         problems=problems,
     )
 
