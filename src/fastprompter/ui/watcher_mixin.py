@@ -96,15 +96,22 @@ class WatcherMixin:
 
     # ---- arming -------------------------------------------------------
     def watcher_arm(self, hwnd, adapter, live=False):
-        """Bind to one window and this silo's queue. Returns (ok, reason)."""
+        """Bind to one target and this silo's queue. Returns (ok, reason)."""
         self._watcher_init()
-        info = win32.window_info(hwnd)
-        if info is None:
-            return False, "that window is gone"
-
         ok, reason = adapter.supported() if adapter else (False, "no agent chosen")
         if not ok:
             return False, reason
+
+        # Only a window-driven transport needs a window. A cdp adapter is
+        # bound to a debuggable PAGE, and demanding a handle for it made
+        # arming fail with "that window is gone" against a perfectly healthy
+        # agent - the branch below existed, but this check above it did not
+        # know about it.
+        info = None
+        if getattr(adapter, "transport", "post") != "cdp":
+            info = win32.window_info(hwnd)
+            if info is None:
+                return False, "that window is gone"
 
         self._watcher_adapter = adapter
         self._watcher_target = self._build_target(adapter, hwnd, info)

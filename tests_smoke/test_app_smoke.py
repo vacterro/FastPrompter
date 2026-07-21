@@ -6857,3 +6857,40 @@ def test_the_dialog_offers_watching_and_says_it_sends_nothing(win):
         assert dlg.btn_watch.isEnabled() is True
     finally:
         dlg.close()
+
+
+def test_a_cdp_agent_arms_without_a_window_handle(win, monkeypatch):
+    """A cdp adapter is bound to a debuggable PAGE, not a window.
+
+    Demanding a handle for it made arming fail with "that window is gone"
+    against a perfectly healthy agent: the branch that builds a CdpTarget
+    existed, but the window check above it did not know about it. Only a
+    live run found that - every piece was tested, the seam was not.
+    """
+    from fastprompter.core.watcher import win32 as win32_mod
+    from fastprompter.core.watcher.adapter import Adapter
+    from fastprompter.core.watcher.probes import Probe
+
+    class Steady(Probe):
+        kind = "steady"
+
+        def _read(self):
+            return "unchanging"
+
+    page = {"id": "P1", "type": "page", "title": "CHAT",
+            "webSocketDebuggerUrl": "ws://127.0.0.1:1/devtools/page/P1"}
+    monkeypatch.setattr("fastprompter.core.watcher.cdp.discover",
+                        lambda port, **kw: [page])
+    # no window layer at all: it must not be consulted for a cdp adapter
+    monkeypatch.setattr(win32_mod, "window_info",
+                        lambda hwnd, api=None: None)
+
+    adapter = Adapter("cdp-agent", probes=[Steady()], transport="cdp",
+                      cdp_port=9333, settle_ms=0)
+    ok, reason = win.watcher_arm(0, adapter, live=False)
+    try:
+        assert ok is True, reason
+        assert win._watcher_target.target_id == "P1"
+    finally:
+        win.watcher_disarm("test done")
+
