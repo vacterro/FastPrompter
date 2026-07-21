@@ -25,3 +25,6 @@ src/test_dir/
 # scratch artifacts from other tools - not part of the project
 .freebuff/
 src/fastprompter/_extract.txt
+
+# saipen working memory — local only, not part of the shipped project
+.saipen/
