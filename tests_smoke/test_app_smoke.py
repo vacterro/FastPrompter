@@ -1609,8 +1609,13 @@ def test_silo_hierarchy_nest_collapse_promote(win):
     cat = win.get_current_category()
     assert win.data["silo_children_all"][cat] is win.data["silo_children"]
 
-    # no grandchildren: nesting onto a child is refused
+    # Grandchildren ARE allowed now (1 -> 1.1 -> 1.1.1); this used to assert
+    # the old 1-level rule. The third-level refusal is covered separately by
+    # test_silo_nesting_allows_two_levels_and_renders_grandchildren.
     win.make_silo_child(2, 1)
+    assert win.silo_parent_of(2) == 1
+    assert win.silo_depth(2) == 2
+    win.unnest_silo(2)          # back to a flat tree for the checks below
     assert win.silo_parent_of(2) is None
 
     # display order: parent, kids, then loner
@@ -4792,3 +4797,75 @@ def test_line_heat_survives_a_reload(win):
         assert abs(restored[1] - stamp) < 2
     finally:
         win.data["line_heat"] = "False"
+
+
+def test_silo_nesting_allows_two_levels_and_renders_grandchildren(win):
+    """1 -> 1.1 -> 1.1.1, and no deeper.
+
+    Grandchildren were excluded from the top level (they are in all_kids)
+    but the render loop only ever emitted DIRECT children, so a silo nested
+    two deep existed in the data and appeared nowhere on screen.
+    """
+    from unittest.mock import patch
+
+    from fastprompter.main import MAX_SILO_DEPTH
+
+    win.cat_combo.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    win.data["temp_presets"][:] = ["Root", "Kid", "Grandkid", "GreatGrand", "Other"]
+    win.silo_docs[:] = []
+    win.data["silo_children"] = {}
+    win.data["pinned_silos"] = []
+    win.data["silo_collapsed"] = []
+    win._switch_to_slot(0, initial=True)
+
+    # nesting can ask to merge the child's files into the parent; with no
+    # one to answer, that dialog would block the suite forever
+    with patch("fastprompter.main.QMessageBox"):
+        win.make_silo_child(1, 0)     # Kid under Root
+        win.make_silo_child(2, 1)     # Grandkid under Kid - now allowed
+        win.make_silo_child(3, 2)     # GreatGrand - one level too deep
+
+    assert win.silo_depth(0) == 0
+    assert win.silo_depth(1) == 1
+    assert win.silo_depth(2) == MAX_SILO_DEPTH
+    assert win.silo_parent_of(3) is None, "a third level must be refused"
+
+    win.refresh_temp_presets()
+    QApplication.processEvents()
+    labels = [str(getattr(b, "full_name", "")) for b in win.silo_buttons
+              if not b.isHidden() and getattr(b, "full_name", "")]
+    joined = " | ".join(labels)
+    assert "1: Root" in joined
+    assert "1.1: Kid" in joined
+    assert "1.1.1: Grandkid" in joined, f"grandchild never rendered: {joined}"
+
+    # the new-child action must respect the same ceiling rather than making
+    # a silo that cannot be displayed
+    before = len(win.data["temp_presets"])
+    win.new_child_silo(2)                     # on the grandchild
+    assert len(win.data["temp_presets"]) == before, (
+        "created a silo one level deeper than can ever be rendered")
+    win.new_child_silo(0)                     # on the root is fine
+    assert len(win.data["temp_presets"]) == before + 1
+
+
+def test_nesting_helpers_refuse_cycles(win):
+    # A corrupt map must not hang the app or let a silo become its own
+    # ancestor via drag-and-drop.
+    win.data["temp_presets"][:] = ["A", "B", "C"]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+
+    win.data["silo_children"] = {0: [1], 1: [0]}      # a cycle
+    assert win.silo_depth(0) <= 4, "cycle guard did not stop the walk"
+    assert win.silo_depth(1) <= 4
+
+    win.data["silo_children"] = {0: [1]}
+    assert win._is_descendant(1, 0) is True
+    assert win._is_descendant(0, 1) is False
+    from unittest.mock import patch
+    with patch("fastprompter.main.QMessageBox"):
+        win.make_silo_child(0, 1)                      # parent under its child
+    assert 0 not in win.data["silo_children"].get(1, []), (
+        "a silo was nested under its own descendant")

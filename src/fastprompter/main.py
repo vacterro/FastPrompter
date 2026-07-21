@@ -49,6 +49,9 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+# How deep silos may nest: 0 = top level, so 2 allows 1 -> 1.1 -> 1.1.1.
+MAX_SILO_DEPTH = 2
+
 user32 = ctypes.windll.user32
 user32.RegisterHotKey.argtypes = [
     ctypes.wintypes.HWND,
@@ -5244,13 +5247,25 @@ class FastPrompter(
         top_order = [p for p in pinned_list if p < total and p not in all_kids] + unpinned
         display_order = []
         child_of = {}
-        for t in top_order:
-            display_order.append(t)
-            if t not in collapsed:
-                for k in children_map.get(t, []):
-                    if 0 <= k < total:
-                        display_order.append(k)
-                        child_of[k] = t
+        label_of = {}
+        # Two levels of nesting: 1 -> 1.1 -> 1.1.1. The old loop only ever
+        # appended direct children, so a grandchild was excluded from the top
+        # level (it is in all_kids) and never rendered anywhere — it simply
+        # vanished from the sidebar.
+        def _emit(idx, label, depth):
+            if not (0 <= idx < total):
+                return
+            display_order.append(idx)
+            label_of[idx] = label
+            if idx in collapsed or depth >= MAX_SILO_DEPTH:
+                return
+            for rank, kid in enumerate(children_map.get(idx, []), start=1):
+                if 0 <= kid < total and kid != idx:
+                    child_of[kid] = idx
+                    _emit(kid, f"{label}.{rank}", depth + 1)
+
+        for pos, t in enumerate(top_order, start=1):
+            _emit(t, str(pos), 0)
         # pagination follows what's actually displayed (collapse shrinks it)
         max_page = max(0, math.ceil(len(display_order) / max(1, self._visible_silos)) - 1)
         self.silo_page = min(self.silo_page, max_page)
@@ -5288,15 +5303,13 @@ class FastPrompter(
             if text.startswith("#"):
                 text = text[1:].lstrip()
 
-            if is_child:
-                parent_idx = child_of[slot_idx]
-                p_disp = pinned_list.index(parent_idx) + 1 if parent_idx in pinned_list else unpinned.index(parent_idx) + 1 if parent_idx in unpinned else 0
-                c_rank = children_map.get(parent_idx, []).index(slot_idx) + 1
-                display_idx = f"{p_disp}.{c_rank}"
-            elif is_pinned:
-                display_idx = pinned_list.index(slot_idx) + 1
-            else:
-                display_idx = unpinned.index(slot_idx) + 1
+            # labels were built by the hierarchy walk above, so a
+            # grandchild reads 1.1.1 rather than being mislabelled 1.1
+            display_idx = label_of.get(slot_idx)
+            if display_idx is None:
+                display_idx = (pinned_list.index(slot_idx) + 1 if is_pinned
+                               else unpinned.index(slot_idx) + 1
+                               if slot_idx in unpinned else slot_idx + 1)
 
             line_count = raw.count("\n") + 1 if raw.strip() else 0
             line_str = str(line_count) if line_count > 0 else ""
@@ -5432,6 +5445,10 @@ class FastPrompter(
         """Create an empty silo directly under `idx` and nest it there."""
         presets = self.data.get("archive_temp_presets" if is_archive else "temp_presets", [])
         if is_archive or not (0 <= idx < len(presets)):
+            return
+        if self.silo_depth(idx) >= MAX_SILO_DEPTH:
+            # a third level would be created but never rendered — refuse
+            # instead of silently making a silo that cannot be seen
             return
         new_idx = self._insert_silo_at(idx + 1, "")
 
@@ -5604,7 +5621,43 @@ class FastPrompter(
 
     def _children_map(self):
         cmap = self.data.get("silo_children")
-        return cmap if isinstance(cmap, dict) else {}
+        if not isinstance(cmap, dict):
+            return {}
+        # Drop parents whose last child went away. An empty list means
+        # nothing, but it lingers in the saved data and makes equality
+        # checks (and eyeballing the map) needlessly confusing.
+        empty = [k for k, v in cmap.items() if not v]
+        for k in empty:
+            cmap.pop(k, None)
+        return cmap
+
+    def silo_depth(self, idx, _seen=None):
+        """0 for a top-level silo, 1 for a child, 2 for a grandchild."""
+        depth = 0
+        seen = set()
+        cur = idx
+        while True:
+            parent = self.silo_parent_of(cur)
+            if parent is None or parent in seen:
+                return depth
+            seen.add(parent)
+            depth += 1
+            cur = parent
+            if depth > MAX_SILO_DEPTH + 1:
+                return depth        # cycle guard
+
+    def _is_descendant(self, candidate, ancestor):
+        """Is `candidate` somewhere below `ancestor`?"""
+        seen = set()
+        cur = candidate
+        while True:
+            parent = self.silo_parent_of(cur)
+            if parent is None or parent in seen:
+                return False
+            if parent == ancestor:
+                return True
+            seen.add(parent)
+            cur = parent
 
     def silo_parent_of(self, idx):
         for p, kids in self._children_map().items():
@@ -5618,12 +5671,17 @@ class FastPrompter(
         if child_idx == parent_idx:
             return
         cmap = self.data.setdefault("silo_children", {})
-        if self.silo_parent_of(parent_idx) is not None:
-            return  # target is itself a child — no grandchildren
+        if self.silo_depth(parent_idx) >= MAX_SILO_DEPTH:
+            return  # would exceed 1 -> 1.1 -> 1.1.1
+        if self._is_descendant(parent_idx, child_idx):
+            return  # refuse to nest a silo under its own descendant
         if child_idx in cmap.get(parent_idx, []):
             return
         self.add_data_undo_state("Nest silo")
-        cmap.pop(child_idx, None)  # flatten: promoted grandchildren
+        # keep the moved silo's own children ONLY if they still fit within
+        # the depth limit at the new position; otherwise promote them
+        if self.silo_depth(parent_idx) + 1 >= MAX_SILO_DEPTH:
+            cmap.pop(child_idx, None)
         for kids in cmap.values():
             if child_idx in kids:
                 kids.remove(child_idx)

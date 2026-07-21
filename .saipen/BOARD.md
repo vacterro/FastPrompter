@@ -633,3 +633,5 @@ escaping the parent; settings UI reorganisation; Reset UI Layout button;
 settings buttons on both edges; hamburger following the sidebar side; timer
 fired-state colouring / enable-disable / hover popup / my_timer2 parity;
 autobullet reliability; Ctrl+click link opening.
+| T-540 | DONE | - | Max 2 levels of silo nesting (1 -> 1.1 -> 1.1.1); child-of-a-child no longer vanishes from the sidebar. files: main.py (MAX_SILO_DEPTH, silo_depth, _is_descendant, recursive _emit render walk, _children_map pruning), tests_smoke/test_app_smoke.py. (verified: 503 unit + 170 smoke PASS, conf: high) |
+
