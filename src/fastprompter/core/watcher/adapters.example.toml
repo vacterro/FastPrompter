@@ -91,15 +91,23 @@ skill_format = "/{skill} {text}"
   # elsewhere also moves it, and the turn boundary is not yet verified
   quiet_ms = 4000
 
-# antigravity - one WAL-mode SQLite db PER CONVERSATION, nine of them at the
-# time of the scan, under ~/.gemini (it is Google's, so it does not live in
-# ~/.antigravity - that holds only argv.json and extensions).
-# Last active ~64h before the scan.
+# antigravity - one SQLite db PER CONVERSATION under ~/.gemini (it is
+# Google's, so it does not live in ~/.antigravity - that holds only
+# argv.json and extensions).
+#
+# Observed live 21.07 with the app running: the store went 0 -> 925KB when a
+# conversation opened, DROPPED to 107KB on a WAL checkpoint, then grew to
+# 1.2MB. Change is the signal; size is not monotonic and must not be treated
+# as if it were.
+#
+# The glob is `*.db*`, NOT `*.db-wal`. Watching the -wal alone was the first
+# guess and it was wrong: with no conversation open every -wal file is zero
+# bytes and stale, so the probe would have read a freshly launched
+# Antigravity as idle forever. Matching .db, .db-wal and .db-shm together
+# catches the store wherever the writes currently land.
 #
 # Deliberately a `file` probe rather than `sqlite`: SqliteProbe takes one
 # fixed path, and the interesting db is whichever conversation is current.
-# Pointing a file probe at the -wal files with newest = true is the same
-# signal, and it follows the user from conversation to conversation.
 [[agent]]
 name      = "antigravity"
 enabled   = true
@@ -111,7 +119,7 @@ skill_format = "/{skill} {text}"
 
   [[agent.probe]]
   kind     = "file"
-  glob     = "~/.gemini/antigravity/conversations/*.db-wal"
+  glob     = "~/.gemini/antigravity/conversations/*.db*"
   newest   = true
   quiet_ms = 4000
 
