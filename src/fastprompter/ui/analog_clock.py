@@ -10,7 +10,7 @@ import math
 
 from PyQt6.QtCore import QPoint, Qt
 from PyQt6.QtGui import QColor, QPainter, QPen
-from PyQt6.QtWidgets import QWidget
+from PyQt6.QtWidgets import QSizePolicy, QWidget
 
 
 # Used only when the theme cache isn't reachable yet.
@@ -44,7 +44,15 @@ class MiniAnalogClock(QWidget):
     def __init__(self, main_win):
         super().__init__(main_win)
         self.main_win = main_win
-        self.setFixedSize(self.SIZE, self.SIZE)
+        # Fixed WIDTH, stretching height. At a fixed 18x18 the widget was
+        # shorter than the labels beside it, so four rows of the header bar's
+        # own (lighter) tint stayed visible above and below - a box drawn
+        # around the clock. Filling the widget could never hide that, because
+        # the box is outside the widget. Covering the full row height does.
+        self.setFixedWidth(self.SIZE)
+        self.setSizePolicy(QSizePolicy.Policy.Fixed,
+                           QSizePolicy.Policy.Expanding)
+        self.setMinimumHeight(self.SIZE)
         self._shown_minute = -1
         # Painting its own background (below) rather than inheriting one:
         # a transparent child kept whatever was behind it when it was built,
@@ -70,7 +78,8 @@ class MiniAnalogClock(QWidget):
         try:
             p.setRenderHint(QPainter.RenderHint.Antialiasing, False)
             c = self.rect().center()
-            r = self.SIZE // 2 - 1
+            # the dial keeps its size while the widget may be taller
+            r = min(self.SIZE, self.height()) // 2 - 1
 
             colors = _theme_palette(self.main_win)
             face, rim, hands = colors["face"], colors["rim"], colors["hands"]
