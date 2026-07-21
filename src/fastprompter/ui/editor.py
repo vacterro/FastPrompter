@@ -449,6 +449,26 @@ class VaultTextEdit(QTextEdit):
                         painter.setPen(Qt.PenStyle.NoPen)
                         painter.setBrush(QColor("#4488FF"))
                         painter.drawRect(cx - size//2, cy - size//2, size, size)
+
+                # Queue state, drawn as a stripe down the gutter's right edge
+                # rather than a glyph beside the user's mark. Two reasons: it
+                # cannot collide with a mark or a digit however wide the
+                # gutter gets, and it does not read as a fifth kind of user
+                # mark - these are the watcher's, not the user's.
+                #
+                # Deliberately NOT gated on marks_enabled: that setting is
+                # about the user's own margin marks. Hiding queue state with
+                # it would leave a silo whose lines are queued looking
+                # identical to one that is not.
+                queue_state = max(0, block.userState()) & (QUEUED_BIT | SENT_BIT)
+                if queue_state:
+                    stripe = QColor("#46b98a") if queue_state & SENT_BIT \
+                        else QColor("#6aa9ff")
+                    h = self.fontMetrics().height()
+                    width = self.line_number_area.width()
+                    painter.setPen(Qt.PenStyle.NoPen)
+                    painter.setBrush(stripe)
+                    painter.drawRect(width - 3, int(rect.top()) + 1, 2, h - 2)
         finally:
             painter.end()
 

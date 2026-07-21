@@ -6894,3 +6894,151 @@ def test_a_cdp_agent_arms_without_a_window_handle(win, monkeypatch):
     finally:
         win.watcher_disarm("test done")
 
+
+# ------------------------------ W-2b: queue marks in the gutter ------------
+
+def _queue_first_line(win, text="a line worth queueing"):
+    from fastprompter.core.watcher.queue import queue_for
+
+    queue_for(win.prompt_queues, win._queue_slot_key()).items.clear()
+    win.text_area.setPlainText(text)
+    cur = win.text_area.textCursor()
+    cur.movePosition(cur.MoveOperation.Start)
+    win.text_area.setTextCursor(cur)
+    item = win.queue_current_line()
+    return item, win.text_area.document().findBlockByNumber(0)
+
+
+def test_a_line_can_be_user_marked_and_queued_without_either_clobbering(win):
+    """Different bit ranges, one userState. A queue mark that used the low
+    byte would overwrite whatever the user had ticked there."""
+    from fastprompter.ui.markdown_highlighter import QUEUED_BIT, SENT_BIT
+
+    _item, block = _queue_first_line(win)
+    block.setUserState(max(0, block.userState()) | 1)      # user tick
+
+    state = max(0, block.userState())
+    assert state & 0xFF == 1, "the user's mark survived"
+    assert state & QUEUED_BIT, "and so did the queue bit"
+    assert not state & SENT_BIT
+
+
+def test_marking_it_sent_keeps_the_user_mark(win):
+    from fastprompter.ui.markdown_highlighter import QUEUED_BIT, SENT_BIT
+
+    item, block = _queue_first_line(win)
+    block.setUserState(max(0, block.userState()) | 3)      # user rhombus
+    win.text_area.mark_queue_sent(item.id)
+
+    state = max(0, block.userState())
+    assert state & 0xFF == 3, "user mark untouched"
+    assert state & SENT_BIT and not state & QUEUED_BIT, "queued -> sent"
+
+
+def test_saving_the_user_marks_does_not_carry_the_queue_bits(win):
+    """collect_line_marks is the USER's marks. The queue has its own pair,
+    and mixing them would restore a tick on a line nobody ticked."""
+    _item, block = _queue_first_line(win)
+    block.setUserState(max(0, block.userState()) | 2)
+
+    marks = win.text_area.collect_line_marks()
+    assert marks.get(0) == 2, "only the low byte"
+    assert all(v <= 0xFF for v in marks.values())
+
+
+def test_restoring_user_marks_leaves_the_queue_bits_alone(win):
+    from fastprompter.ui.markdown_highlighter import QUEUED_BIT
+
+    _item, block = _queue_first_line(win)
+    win.text_area.apply_line_marks({0: 4})
+
+    state = max(0, block.userState())
+    assert state & 0xFF == 4
+    assert state & QUEUED_BIT, "applying user marks must not wipe the queue"
+
+
+def test_the_queue_stripe_is_drawn_even_with_user_marks_switched_off(win):
+    """line_marks governs the USER's margin marks. Hiding queue state with
+    it would make a silo full of queued lines look like an empty one."""
+    import inspect
+
+    src = inspect.getsource(type(win.text_area).line_number_area_paint_event)
+    body = src[src.index("queue_state ="):]
+    assert "marks_enabled" not in body, "the stripe must not be gated on it"
+    assert "SENT_BIT" in body and "QUEUED_BIT" in body
+
+
+def test_the_gutter_survives_a_repaint_with_a_queued_line(win):
+    """The paint path runs for real - a bad QColor or rect raises here."""
+    from PyQt6.QtCore import QRect
+    from PyQt6.QtGui import QPaintEvent
+
+    _item, _block = _queue_first_line(win)
+    area = win.text_area.line_number_area
+    win.text_area.line_number_area_paint_event(
+        QPaintEvent(QRect(0, 0, area.width(), area.height())))
+
+
+def test_the_queue_stripe_actually_reaches_the_pixels(win):
+    """Counts painted pixels, not code paths.
+
+    The structural tests above only prove the branch exists and the paint
+    call does not raise - the same class of evidence as an API returning
+    success while nothing arrives. This renders the gutter and counts the
+    stripe colours.
+
+    Sizes only the gutter widget, never the main window: the shared fixture
+    is the one T-295 warns about, and resizing it is what the header-density
+    tests were flaky about.
+    """
+    from fastprompter.core.watcher.queue import queue_for
+
+    ta = win.text_area
+    area = ta.line_number_area
+    PENDING, SENT = (0x6a, 0xa9, 0xff), (0x46, 0xb9, 0x8a)
+
+    def counts():
+        area.repaint()
+        img = area.grab().toImage()
+        blue = green = 0
+        for x in range(img.width()):
+            for y in range(img.height()):
+                c = img.pixelColor(x, y)
+                rgb = (c.red(), c.green(), c.blue())
+                if rgb == PENDING:
+                    blue += 1
+                elif rgb == SENT:
+                    green += 1
+        return blue, green
+
+    saved_geo = area.geometry()
+    saved_numbers = win.data.get("show_line_numbers", "False")
+    saved_text = ta.toPlainText()
+    queue = queue_for(win.prompt_queues, win._queue_slot_key())
+    saved_items = queue.to_list()
+    try:
+        win.data["show_line_numbers"] = "True"
+        area.resize(24, 120)
+        queue.items.clear()
+        ta.setPlainText("one\ntwo")
+        cur = ta.textCursor()
+        cur.movePosition(cur.MoveOperation.Start)
+        ta.setTextCursor(cur)
+
+        assert counts() == (0, 0), "nothing queued, nothing striped"
+
+        item = win.queue_current_line()
+        blue, green = counts()
+        assert blue > 0 and green == 0, "queued paints the pending stripe"
+
+        ta.mark_queue_sent(item.id)
+        blue, green = counts()
+        assert green > 0 and blue == 0, "sent replaces it, never doubles up"
+    finally:
+        win.data["show_line_numbers"] = saved_numbers
+        area.setGeometry(saved_geo)
+        ta.setPlainText(saved_text)
+        from fastprompter.core.watcher.queue import QueueItem
+        queue.items.clear()
+        queue.items.extend(QueueItem.from_dict(raw) for raw in saved_items)
+
