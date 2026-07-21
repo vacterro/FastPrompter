@@ -5,6 +5,10 @@ zone is numbered: click it, or press its digit, and the window snaps there.
 Tab / arrow keys cycle layouts, Esc cancels. The chosen layout is
 remembered, so the next Ctrl+Q comes up on the one you actually use.
 
+Layouts: Quarters (the classic 4-corner snap), Left 640 (a 640 px-wide
+strip on the left), Mid 800 (an 800 px strip centred), Right 640
+(a 640 px strip on the right).
+
 Zones are stored as FRACTIONS of the screen's available area (0..1), not
 pixels, so a layout behaves the same on a 1080p laptop panel and a 4K
 monitor, and automatically avoids the taskbar.
@@ -21,33 +25,23 @@ from PyQt6.QtWidgets import QApplication, QWidget
 
 # (name, [(x, y, w, h), ...]) with every value a fraction of the available
 # screen area. Ordered roughly by how often people reach for them.
+# On a 1920 px-wide screen these map to: Left 640 = 640 px, Mid 800 =
+# 800 px centred, Right 640 = 640 px.  The fractions scale to any screen.
 BUILTIN_LAYOUTS: list[tuple[str, list[tuple[float, float, float, float]]]] = [
-    ("Halves", [
-        (0.0, 0.0, 0.5, 1.0),
-        (0.5, 0.0, 0.5, 1.0),
-    ]),
-    ("Thirds", [
-        (0.0, 0.0, 1 / 3, 1.0),
-        (1 / 3, 0.0, 1 / 3, 1.0),
-        (2 / 3, 0.0, 1 / 3, 1.0),
-    ]),
-    ("Priority", [  # wide middle, narrow sides — the classic writing setup
-        (0.0, 0.0, 0.25, 1.0),
-        (0.25, 0.0, 0.50, 1.0),
-        (0.75, 0.0, 0.25, 1.0),
-    ]),
     ("Quarters", [
         (0.0, 0.0, 0.5, 0.5),
         (0.5, 0.0, 0.5, 0.5),
         (0.0, 0.5, 0.5, 0.5),
         (0.5, 0.5, 0.5, 0.5),
     ]),
-    ("Focus", [  # one centred window, the rest of the screen left alone
-        (0.15, 0.10, 0.70, 0.80),
+    ("Left 640", [
+        (0.0, 0.0, 1 / 3, 1.0),
     ]),
-    ("Sidebar", [  # tall narrow strip + the remainder
-        (0.0, 0.0, 0.28, 1.0),
-        (0.28, 0.0, 0.72, 1.0),
+    ("Mid 800", [
+        (7 / 24, 0.0, 5 / 12, 1.0),
+    ]),
+    ("Right 640", [
+        (2 / 3, 0.0, 1 / 3, 1.0),
     ]),
 ]
 

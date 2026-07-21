@@ -160,6 +160,7 @@ class VaultTextEdit(QTextEdit):
     def __init__(self, main_win):
         super().__init__()
         self.main_win = main_win
+        self.setTabChangesFocus(False)
         self.document().setUndoRedoEnabled(True)
         self._right_drag_start = None
         self._dragged = False

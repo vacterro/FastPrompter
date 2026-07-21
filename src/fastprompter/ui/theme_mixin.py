@@ -183,7 +183,7 @@ class ThemeMixin:
             self._end_batch_update()
 
     def apply_font(self):
-        """Apply the configured font to the UI."""
+        """Apply the configured font to the UI. Defaults to Verdana."""
         if getattr(self, "_initializing_ui", False):
             return
         try:
@@ -213,6 +213,9 @@ class ThemeMixin:
             # code spans follow the editor font when monospace is off
             if hasattr(self, "_apply_code_font"):
                 self._apply_code_font()
+            # text alignment follows the saved setting
+            if hasattr(self, "_apply_text_alignment"):
+                self._apply_text_alignment()
         except Exception:
             logger.debug("apply_font: failed to set font on text_area")
         try:

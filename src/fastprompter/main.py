@@ -22,6 +22,7 @@ from PyQt6.QtGui import (
     QFont,
     QKeySequence,
     QShortcut,
+    QTextBlockFormat,
     QTextCharFormat,
     QTextCursor,
     QTextDocument,
@@ -2451,6 +2452,13 @@ class FastPrompter(
                             or (self.text_area.line_number_area.update() if hasattr(self, "text_area") and hasattr(self.text_area, "line_number_area") else None)
         )
 
+        self.cb_ctrl_e_center = create_footer_cb(
+            "\u2192 Ctrl+E Center",
+            "Center-align header lines created with Ctrl+E",
+            self.data.get("ctrl_e_center", "True") == "True",
+            self._on_ctrl_e_center_toggled,
+        )
+
         self.cb_zebra = create_footer_cb(
             "🦓 Zebra Stripes",
             "Lightly shade every other line for readability",
@@ -2467,6 +2475,18 @@ class FastPrompter(
             self.data.get("hide_shortkeys", "False") == "True",
             self.on_hide_shortkeys_toggled,
         )
+        # Text alignment combo
+        self.lbl_align = QLabel(tr("Align:", self._current_lang))
+        self.cb_align_combo = QComboBox()
+        self.cb_align_combo.addItem(tr("Left", self._current_lang), "left")
+        self.cb_align_combo.addItem(tr("Center", self._current_lang), "center")
+        self.cb_align_combo.addItem(tr("Right", self._current_lang), "right")
+        saved_align = self.data.get("text_align", "left")
+        idx = self.cb_align_combo.findData(saved_align)
+        if idx >= 0:
+            self.cb_align_combo.setCurrentIndex(idx)
+        self.cb_align_combo.currentIndexChanged.connect(self._on_align_changed)
+
         self.cb_double_line = create_footer_cb(
             "⇕ Double-Space Lists",
             "With Auto-Bullet on, Enter after a list item adds a blank\n"
@@ -2948,6 +2968,8 @@ class FastPrompter(
             self.spin_heat_minutes, self.cb_heat_palette, self.btn_hover_colour,
             self.cb_line_marks, self.cb_zebra,
             self.cb_double_line, self.cb_bold_titles, div_row, hdr_row,
+            self.lbl_align, self.cb_align_combo,
+            self.cb_ctrl_e_center,
         ]), tr("Editor", self._current_lang))
 
         # Clock/date settings used to be buried in "Window" — seven of them,
@@ -3420,6 +3442,10 @@ class FastPrompter(
             clean_sel = m.group(1)
             plain = QTextCharFormat()
             cursor.insertText(clean_sel, plain)
+            # Clear any center alignment from the block when reverting
+            plain_block = QTextBlockFormat()
+            plain_block.setAlignment(Qt.AlignmentFlag.AlignLeft)
+            cursor.mergeBlockFormat(plain_block)
             self.mark_dirty()
             return
 
@@ -3459,6 +3485,16 @@ class FastPrompter(
                 formatted_text = f"# {formatted_text}"
 
         cursor.insertText(formatted_text)
+
+        # Center-align the header line when the setting is on — purely
+        # visual; the markdown text itself is untouched, so save/reload
+        # are unchanged and the alignment resets the moment you start
+        # typing over the header (the default block format takes over).
+        if self.data.get("ctrl_e_center", "True") == "True":
+            bfmt = QTextBlockFormat()
+            bfmt.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            blk_cursor = QTextCursor(cursor.block())
+            blk_cursor.mergeBlockFormat(bfmt)
 
         # Jump two lines below the header onto a fresh bullet, with PLAIN
         # formatting — the header's bold/underline must not bleed into
@@ -4143,6 +4179,36 @@ class FastPrompter(
         self.mark_dirty()
         self.refresh_temp_presets()
         self.refresh_archive_panel()
+
+    def _on_align_changed(self, idx):
+        align = self.cb_align_combo.itemData(idx) or "left"
+        self.data["text_align"] = align
+        self._apply_text_alignment()
+        self.mark_dirty()
+
+    def _on_ctrl_e_center_toggled(self, checked):
+        self.data["ctrl_e_center"] = "True" if checked else "False"
+        self.mark_dirty()
+
+    def _apply_text_alignment(self):
+        """Apply the saved text alignment to the active QTextDocument."""
+        ta = getattr(self, "text_area", None)
+        if ta is None or sip.isdeleted(ta):
+            return
+        doc = ta.document()
+        if doc is None or sip.isdeleted(doc):
+            return
+        align_val = self.data.get("text_align", "left")
+        if align_val == "center":
+            opt = QTextOption(Qt.AlignmentFlag.AlignCenter)
+        elif align_val == "right":
+            opt = QTextOption(Qt.AlignmentFlag.AlignRight)
+        else:
+            opt = QTextOption(Qt.AlignmentFlag.AlignLeft)
+        # Preserve the word wrap mode from the existing doc option
+        old = doc.defaultTextOption()
+        opt.setWrapMode(old.wrapMode())
+        doc.setDefaultTextOption(opt)
 
     def on_wrap_toggled(self, checked):
         self.data["word_wrap"] = "True" if checked else "False"
@@ -5442,6 +5508,8 @@ class FastPrompter(
                     self._set_plain_text_clean(doc, new_text)
 
                 self.text_area.set_active_document(doc)
+                # Text alignment must be re-applied per-document
+                self._apply_text_alignment()
 
                 # A remembered cursor/selection for this silo wins over the
                 # blanket Start/End rule — that's the whole point of it.
@@ -5564,6 +5632,10 @@ class FastPrompter(
         # pagination follows what's actually displayed (collapse shrinks it)
         max_page = max(0, math.ceil(len(display_order) / max(1, self._visible_silos)) - 1)
         self.silo_page = min(self.silo_page, max_page)
+        self.btn_silo_up.setVisible(max_page > 0)
+        self.btn_silo_down.setVisible(max_page > 0)
+        self.btn_silo_up.setEnabled(self.silo_page > 0)
+        self.btn_silo_down.setEnabled(self.silo_page < max_page)
         self.btn_page_up.setEnabled(self.silo_page > 0)
         self.btn_page_down.setEnabled(self.silo_page < max_page)
         start_idx = self.silo_page * self._visible_silos

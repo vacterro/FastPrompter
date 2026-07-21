@@ -404,9 +404,16 @@ class WindowMixin:
 
     def toggle_mini_settings(self) -> None:
         """Toggle the mini settings footer frame."""
-        is_hidden = self.mini_settings_frame.isVisible()
-        self.mini_settings_frame.setVisible(not is_hidden)
-        self.data["hide_extra"] = "True" if is_hidden else "False"
+        was_visible = self.mini_settings_frame.isVisible()
+        self.mini_settings_frame.setVisible(not was_visible)
+        if not was_visible:
+            # The frame just became visible — clamp its height to the
+            # current tab's actual content instead of leaving the default
+            # max height which creates empty space below settings.
+            # _fit_settings_tabs is normally only called on tab switch.
+            if hasattr(self, "_fit_settings_tabs"):
+                self._fit_settings_tabs()
+        self.data["hide_extra"] = "True" if was_visible else "False"
         self.mark_dirty()
 
     # --- Simple toggle callbacks ---
