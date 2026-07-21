@@ -601,3 +601,17 @@ tab stays under 320px, that a short tab is genuinely shorter than the
 busiest one, and that the visible page is never clipped.
 
 Verified: 503 unit + 162 smoke green.
+
+## Crash reports (21.07, claude-opus)
+| ID | Status | Description |
+|---|---|---|
+| C-10 | FIXED | **Reported crash**: `ValueError: 10 is not in list` from `handle_pinned_drop`. Dropping a pinned silo onto ITSELF removed it from the list and then called `pinned.index(boundary_idx)` on the value just removed — the `boundary_idx in pinned` guard was checked BEFORE the mutation that invalidated it. Rewritten to compute the target position before mutating, adjust for the shift, and no-op on self-drops. Every degenerate combination (self, unpinned source, unpinned boundary, neither, empty list, no boundary) is now covered by a test. |
+| C-11 | DONE | **"Crashes without any messages"** — the app could die leaving nothing behind. `sys.excepthook` only covers the MAIN thread, so a failure in the background undo-save thread was silent, and Qt's own fatal messages bypass Python entirely. Added `threading.excepthook` and a Qt message handler, both writing to the same timestamped `crash.log`. Verified by making a worker thread throw and emitting a Qt critical, then asserting both land in the log. This does not fix an unknown crash — it guarantees the next one leaves evidence. |
+| C-12 | INVESTIGATED, NOT REPRODUCED | Stress-tested the heavy-document paths at 500 / 2k / 5k / 20k lines: load 57ms, paint 5ms, capture state 13ms, code-block selections 29ms, undo snapshot 0.3ms, save 9ms. Nothing pathological. Markdown preview is the slow one (428ms at 488KB) but it is already debounced to 500ms in Reading mode. No crash reproduced. |
+| C-13 | FIXED (my own test) | While writing the heavy-document test I hit a genuine **access violation** — but the cause was the TEST calling `paintEvent()` directly, outside Qt's paint cycle. Harmless on the tiny documents other tests use, fatal at 20k blocks. The test now repaints through the widget. Worth remembering: direct `paintEvent()` calls in this suite are a hack that does not scale. |
+
+The heavy-document crash the user reports is still unexplained. With C-11
+in place the next occurrence should leave a traceback in crash.log — ask
+for that file rather than guessing further.
+
+Verified: 503 unit + 165 smoke green.

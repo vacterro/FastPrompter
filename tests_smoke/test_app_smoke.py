@@ -4533,3 +4533,137 @@ def test_settings_panel_hugs_its_content_vertically(win):
     finally:
         win.mini_settings_frame.setVisible(was_visible)
         win.resize(1400, 700)
+
+
+def test_pinned_drop_survives_every_degenerate_case(win):
+    # Reported crash: dropping a pinned silo onto ITSELF removed it and then
+    # looked it up again -> ValueError straight out of the drop event.
+    win.cat_combo.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    win.data["temp_presets"][:] = [f"S{i}" for i in range(12)]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+
+    cases = [
+        ("onto itself", dict(source_idx=10, boundary_idx=10), [10, 3, 7]),
+        ("boundary not pinned", dict(source_idx=3, boundary_idx=99), [10, 3, 7]),
+        ("source not pinned", dict(source_idx=99, boundary_idx=3), [10, 3, 7]),
+        ("neither pinned", dict(source_idx=88, boundary_idx=99), [10, 3, 7]),
+        ("swap onto itself", dict(source_idx=3, swap_idx=3), [10, 3, 7]),
+        ("swap with unpinned", dict(source_idx=3, swap_idx=99), [10, 3, 7]),
+        ("empty list", dict(source_idx=1, boundary_idx=2), []),
+        ("no boundary at all", dict(source_idx=3), [10, 3, 7]),
+    ]
+    for label, kwargs, start in cases:
+        win.data["pinned_silos"] = list(start)
+        win.handle_pinned_drop(**kwargs)     # must never raise
+
+    # and the legitimate reorders still do the right thing
+    win.data["pinned_silos"] = [10, 3, 7]
+    assert win.handle_pinned_drop(source_idx=7, boundary_idx=10) is True
+    assert win.data["pinned_silos"] == [7, 10, 3]
+
+    win.data["pinned_silos"] = [10, 3, 7]
+    assert win.handle_pinned_drop(source_idx=5, boundary_idx=3) is True
+    assert win.data["pinned_silos"] == [10, 5, 3, 7]
+
+    win.data["pinned_silos"] = [10, 3, 7]
+    assert win.handle_pinned_drop(source_idx=3, swap_idx=7) is True
+    assert win.data["pinned_silos"] == [10, 7, 3]
+
+
+def test_thread_and_qt_failures_reach_the_crash_log(tmp_path, monkeypatch):
+    """A crash the user never sees is a crash that never gets fixed.
+
+    sys.excepthook only covers the main thread, and Qt's own fatal messages
+    bypass Python entirely — so a worker-thread failure or a Qt abort took
+    the app down with no log and no dialog.
+    """
+    import threading
+
+    import fastprompter.main as main_mod
+
+    monkeypatch.setattr(main_mod, "get_data_dir", lambda: str(tmp_path))
+    # never pop a real modal dialog during the test
+    monkeypatch.setattr(
+        main_mod.ctypes, "windll",
+        type("W", (), {"user32": type("U", (), {
+            "MessageBoxW": staticmethod(lambda *a: 0)})()})())
+
+    prev_sys, prev_thread = sys.excepthook, threading.excepthook
+    prev_qt = None
+    try:
+        prev_qt = main_mod.setup_exception_hook()
+
+        def boom():
+            raise ValueError("worker thread failure")
+
+        t = threading.Thread(target=boom, name="undo-saver", daemon=True)
+        t.start()
+        t.join()
+
+        from PyQt6.QtCore import qCritical
+        qCritical(b"simulated Qt critical")
+        QApplication.processEvents()
+
+        log = tmp_path / "crash.log"
+        assert log.exists(), "nothing was logged at all"
+        text = log.read_text(encoding="utf-8", errors="replace")
+        assert "worker thread failure" in text, "thread exception was swallowed"
+        assert "undo-saver" in text, "thread name not recorded"
+        assert "Qt QtCriticalMsg" in text, "Qt message was swallowed"
+    finally:
+        sys.excepthook = prev_sys
+        threading.excepthook = prev_thread
+        # MUST restore, or Qt keeps calling this test's handler after
+        # teardown and the process dies with an access violation
+        from PyQt6.QtCore import qInstallMessageHandler
+        qInstallMessageHandler(prev_qt)
+
+
+def test_heavy_document_operations_stay_responsive(win):
+    # Long documents must not take pathologically long in the per-block
+    # paths, which is where a heavy-document freeze would come from.
+    import time
+
+    from PyQt6.QtCore import QRect
+    from PyQt6.QtGui import QPaintEvent
+
+    text = "\n".join(
+        (f"# Header {i}" if i % 50 == 0 else f"line {i} of a long document")
+        for i in range(20000))
+    win.cat_combo.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    win.data["temp_presets"][:] = [text]
+    win.silo_docs[:] = []
+    win.data["line_heat"] = "True"
+    try:
+        t0 = time.perf_counter()
+        win._switch_to_slot(0, initial=True)
+        load_ms = (time.perf_counter() - t0) * 1000
+        assert load_ms < 3000, f"loading 20k lines took {load_ms:.0f}ms"
+
+        ta = win.text_area
+        # NB: do NOT call paintEvent() directly here. Other tests get away
+        # with it on tiny documents, but invoking it outside Qt's own paint
+        # cycle on a 20k-block document faults inside QTextEdit.paintEvent.
+        # Repaint through the widget instead, and measure the per-block
+        # helpers — which is where a heavy-document freeze would come from.
+        t0 = time.perf_counter()
+        ta.viewport().repaint()
+        paint_ms = (time.perf_counter() - t0) * 1000
+        assert paint_ms < 2000, f"painting 20k lines took {paint_ms:.0f}ms"
+
+        t0 = time.perf_counter()
+        heat = ta._line_heat_selections(ta.document())
+        assert (time.perf_counter() - t0) * 1000 < 500
+        # only VISIBLE lines may be considered, or this grows without bound
+        assert len(heat) < 500, f"{len(heat)} heat selections on one screen"
+        t0 = time.perf_counter()
+        win.capture_silo_state()
+        assert (time.perf_counter() - t0) * 1000 < 1000
+    finally:
+        win.data["line_heat"] = "False"
+        win.data["temp_presets"][:] = ["small"]
+        win.silo_docs[:] = []
+        win._switch_to_slot(0, initial=True)

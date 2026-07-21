@@ -3536,45 +3536,56 @@ class FastPrompter(
         entries.update(moved)
 
     def handle_pinned_drop(self, source_idx, boundary_idx=None, swap_idx=None):
-        """Handle dragging and dropping silos within or across the pinned section."""
+        """Reorder the pinned section by drag and drop.
+
+        Every index is looked up defensively: this runs from a drop event,
+        where the payload can name a silo that was pinned when the drag
+        started but isn't any more, or the silo itself. Dropping something
+        onto itself used to remove it and then look it up again, which threw
+        ValueError straight out of the event handler and killed the app.
+        """
         pinned = self.data.get("pinned_silos", [])
         if not isinstance(pinned, list):
             pinned = []
 
+        def commit(changed):
+            self.data["pinned_silos"] = pinned
+            if changed:
+                self.mark_dirty()
+                self.refresh_temp_presets()
+            return changed
+
         if swap_idx is not None:
+            if source_idx == swap_idx:
+                return False                     # onto itself: nothing to do
             if source_idx in pinned and swap_idx in pinned:
                 i1, i2 = pinned.index(source_idx), pinned.index(swap_idx)
                 pinned[i1], pinned[i2] = pinned[i2], pinned[i1]
-                self.data["pinned_silos"] = pinned
-                self.mark_dirty()
-                self.refresh_temp_presets()
-                return True
+                return commit(True)
             return False
 
         if boundary_idx is not None:
-            if source_idx in pinned and boundary_idx in pinned:
-                pinned.remove(source_idx)
-                pinned.insert(pinned.index(boundary_idx), source_idx)
-                self.data["pinned_silos"] = pinned
-                self.mark_dirty()
-                self.refresh_temp_presets()
-                return True
-            elif source_idx in pinned and boundary_idx not in pinned:
-                pinned.remove(source_idx)
-                self.data["pinned_silos"] = pinned
-                return False
-            elif source_idx not in pinned and boundary_idx in pinned:
-                pinned.insert(pinned.index(boundary_idx), source_idx)
-                self.data["pinned_silos"] = pinned
-                self.mark_dirty()
-                self.refresh_temp_presets()
-                return True
-        else:
+            if source_idx == boundary_idx:
+                return False                     # onto itself: nothing to do
+            if boundary_idx in pinned:
+                # work out WHERE before mutating, or removing the source can
+                # invalidate the boundary we are about to look up
+                target = pinned.index(boundary_idx)
+                if source_idx in pinned:
+                    current = pinned.index(source_idx)
+                    pinned.pop(current)
+                    if current < target:
+                        target -= 1              # list shifted under us
+                pinned.insert(min(target, len(pinned)), source_idx)
+                return commit(True)
             if source_idx in pinned:
-                pinned.remove(source_idx)
-                self.data["pinned_silos"] = pinned
-                return False
+                pinned.remove(source_idx)        # dropped outside the section
+                return commit(False)
+            return False
 
+        if source_idx in pinned:
+            pinned.remove(source_idx)
+            return commit(False)
         return False
 
     def move_temp_to_index(self, from_idx, to_idx, is_archive=False):
@@ -6209,27 +6220,89 @@ class FastPrompter(
         QApplication.quit()
 
 
+_QT_MESSAGE_HANDLER = None
+
+
 def setup_exception_hook():
-    """Ensure unhandled exceptions are visible (written to crash.log and shown as MessageBox)."""
+    """Make every crash leave a trace.
+
+    sys.excepthook only covers uncaught exceptions on the MAIN thread. A
+    failure in a worker thread, or a fatal message from Qt itself, produced
+    no crash.log entry and no dialog — the app simply vanished, which is
+    exactly the "crashes without any messages" report. All three routes now
+    end up in the same log.
+    """
+    import threading
     import traceback
 
     old_hook = sys.excepthook
+    crash_log = os.path.join(get_data_dir(), "crash.log")
 
-    def hook(typ, val, tb):
-        error_msg = "".join(traceback.format_exception(typ, val, tb))
-        crash_log = os.path.join(get_data_dir(), "crash.log")
+    def _record(text, show_dialog=True):
         try:
-            with open(crash_log, "a") as f:
-                f.write(error_msg + chr(10))
+            with open(crash_log, "a", encoding="utf-8", errors="replace") as f:
+                import datetime as _dt
+                stamp = _dt.datetime.now().isoformat(timespec="seconds")
+                f.write("--- " + stamp + " ---" + chr(10))
+                f.write(text + chr(10))
         except Exception:
             pass
-        ctypes.windll.user32.MessageBoxW(
-            0, "FastPrompter Error:" + chr(10) * 2 + f"{error_msg}", "FastPrompter Error", 0x10
-        )
+        if show_dialog:
+            try:
+                ctypes.windll.user32.MessageBoxW(
+                    0, "FastPrompter Error:" + chr(10) * 2 + text,
+                    "FastPrompter Error", 0x10)
+            except Exception:
+                pass
+
+    def hook(typ, val, tb):
+        _record("".join(traceback.format_exception(typ, val, tb)))
         if old_hook:
             old_hook(typ, val, tb)
 
     sys.excepthook = hook
+
+    def thread_hook(args):
+        # Worker-thread failures were completely silent before this.
+        detail = "".join(traceback.format_exception(
+            args.exc_type, args.exc_value, args.exc_traceback))
+        name = getattr(args.thread, "name", "?")
+        _record("Exception in thread " + str(name) + chr(10) + detail,
+                show_dialog=False)
+
+    try:
+        threading.excepthook = thread_hook
+    except Exception:
+        pass
+
+    # Qt's own fatal messages never reach Python's hooks; without this a Qt
+    # abort (deleted object, failed assertion) takes the process down mute.
+    try:
+        from PyQt6.QtCore import QtMsgType, qInstallMessageHandler
+
+        def qt_handler(mode, context, message):
+            if mode in (QtMsgType.QtFatalMsg, QtMsgType.QtCriticalMsg):
+                where = ""
+                if context is not None and context.file:
+                    where = f" ({context.file}:{context.line})"
+                _record(f"Qt {mode.name}{where}: {message}",
+                        show_dialog=(mode == QtMsgType.QtFatalMsg))
+            elif mode == QtMsgType.QtWarningMsg:
+                try:
+                    from fastprompter.core.logging import logger
+                    logger.debug("Qt warning: %s", message)
+                except Exception:
+                    pass
+
+        # keep a module-level reference: qInstallMessageHandler stores the
+        # callable on the C++ side, and if Python garbage-collects it the
+        # next Qt message dereferences freed memory (access violation).
+        global _QT_MESSAGE_HANDLER
+        _QT_MESSAGE_HANDLER = qt_handler
+        return qInstallMessageHandler(qt_handler)
+    except Exception:
+        pass
+    return None
 
 
 def main_entry():
