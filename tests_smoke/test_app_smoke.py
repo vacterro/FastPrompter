@@ -4925,3 +4925,53 @@ def test_hamburger_follows_the_sidebar_side(win):
         assert not win.btn_sidebar_toggle.isHidden()
     finally:
         win.toggle_sidebar_position(was_right == "True")
+
+def test_reset_ui_layout_restores_every_layout_choice(win):
+    """Toolbar order had its own reset; splitter widths, sidebar side, window
+    size and scale had none, so a window dragged somewhere unusable could only
+    be fixed by deleting the database."""
+    before_text = win.text_area.toPlainText()
+    silos_before = list(win.data["temp_presets"])
+
+    # scramble every layout choice
+    win.data["toolbar_order"] = "btn_help,btn_save"
+    win.data["last_geometry"] = "10,10,4000,4000"
+    win.data["splitter_sizes_left"] = [999, 1]
+    win.data["splitter_sizes_right"] = [1, 999]
+    win.data["ui_scale"] = "2.5"
+    win.data["button_scale"] = "2.5"
+    win.data["sidebar_right"] = "True"
+    win.apply_sidebar_position()
+
+    assert win.reset_ui_layout(confirm=False) is True
+
+    assert win.data["toolbar_order"] == ""
+    # resizing re-records the geometry immediately, so it is not empty for
+    # long — what matters is that the scrambled size is gone
+    assert win.data["last_geometry"] != "10,10,4000,4000"
+    assert win.data["splitter_sizes_left"] == ""
+    assert win.data["splitter_sizes_right"] == ""
+    assert win.data["sidebar_right"] == "False"
+    assert win.data["ui_scale"] == "1.0"
+    assert win.data["button_scale"] == "1.0"
+
+    # the sidebar is back on the left, so the hamburger is back at the left edge
+    lay = win.header_layout
+    assert lay.itemAt(0).widget() is win.btn_sidebar_toggle
+
+    # a layout reset must not touch content
+    assert win.text_area.toPlainText() == before_text
+    assert list(win.data["temp_presets"]) == silos_before
+
+
+def test_reset_ui_layout_can_be_declined(win):
+    from unittest.mock import patch
+    from PyQt6.QtWidgets import QMessageBox as _QMB
+
+    win.data["toolbar_order"] = "btn_help,btn_save"
+    with patch.object(_QMB, "question",
+                      return_value=_QMB.StandardButton.No):
+        assert win.reset_ui_layout() is False
+    assert win.data["toolbar_order"] == "btn_help,btn_save", "declining must change nothing"
+    win.data["toolbar_order"] = ""
+    win.apply_toolbar_order()

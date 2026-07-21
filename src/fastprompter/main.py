@@ -2651,10 +2651,20 @@ class FastPrompter(
         # (attribute, english title) — kept for retranslation
         self._settings_tab_titles = ("Window", "Editor", "Clock", "Data")
 
+        # Toolbar order had its own reset; splitter widths, sidebar side and
+        # window size had none, so a window dragged somewhere unusable could
+        # only be fixed by deleting the database.
+        self.btn_reset_layout = QPushButton(tr("Reset UI Layout", self._current_lang))
+        self.btn_reset_layout.setToolTip(tr(
+            "Put the toolbar, sidebar and window size back to defaults.\n"
+            "Text, snippets and silos are not touched.", self._current_lang))
+        self.btn_reset_layout.clicked.connect(self.reset_ui_layout)
+
         self.settings_tabs.addTab(_tab([
             self.cb_top, self.cb_lock_window, self.cb_normal_window,
             self.cb_tray, self.cb_sidebar, self.cb_trash_vision,
             self.cb_silo_color_box, self.cb_customize_toolbar, zones_row,
+            self.btn_reset_layout,
         ]), tr("Window", self._current_lang))
 
         self.settings_tabs.addTab(_tab([

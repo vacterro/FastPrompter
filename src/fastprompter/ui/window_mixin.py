@@ -13,6 +13,7 @@ from PyQt6.QtGui import QCursor
 from PyQt6.QtWidgets import QApplication
 
 from fastprompter.core.logging import logger
+from fastprompter.core.translations import tr
 
 _is_deleted = sip.isdeleted
 
@@ -276,6 +277,46 @@ class WindowMixin:
         self.data["sidebar_right"] = "True" if checked else "False"
         self.apply_sidebar_position()
         self.mark_dirty()
+
+    def reset_ui_layout(self, confirm=True):
+        """Put every layout choice back to its default.
+
+        Toolbar order already had its own reset, but the splitter widths,
+        the sidebar side and the window size had no way back short of
+        deleting the database — a window dragged somewhere unusable stayed
+        that way.
+        """
+        if confirm:
+            from PyQt6.QtWidgets import QMessageBox
+            answer = QMessageBox.question(
+                self, tr("Reset UI Layout", getattr(self, "_current_lang", "EN")),
+                tr("Reset the toolbar, sidebar and window size to defaults?\n"
+                   "Your text, snippets and silos are not touched.",
+                   getattr(self, "_current_lang", "EN")),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No)
+            if answer != QMessageBox.StandardButton.Yes:
+                return False
+
+        for key in ("toolbar_order", "last_geometry",
+                    "splitter_sizes_left", "splitter_sizes_right"):
+            self.data[key] = ""
+        self.data["sidebar_right"] = "False"
+        self.data["ui_scale"] = "1.0"
+        self.data["button_scale"] = "1.0"
+
+        self.sidebar_visible = True
+        if hasattr(self, "btn_sidebar_toggle"):
+            self.btn_sidebar_toggle.setChecked(True)
+        if hasattr(self, "apply_toolbar_order"):
+            self.apply_toolbar_order()
+        self.apply_sidebar_position()
+        if hasattr(self, "apply_scaled_ui"):
+            self.apply_scaled_ui()
+        if not self.isMaximized():
+            self.adjustSize()
+        self.mark_dirty()
+        return True
 
     def _place_sidebar_toggle(self, is_right: bool) -> None:
         """Keep the hamburger on the same side as the sidebar it opens.
