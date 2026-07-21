@@ -640,4 +640,5 @@ autobullet reliability; Ctrl+click link opening.
 | T-544 | DONE | - | Settings buttons on both header edges — verified already present (btn_settings_toggle at index 1, btn_settings_toggle_right near the end). No change needed. |
 | T-545 | DONE | - | Auto-bullet: one owner for the setting (set_auto_bullet), so the context-menu toggle is saved and the toolbar tooltip stops lying. Typing conversion itself verified correct via QTest, unchanged. files: main.py, ui/editor.py, tests_smoke. (verified: 503 unit + 176 smoke PASS, conf: high) |
 | T-546 | DONE | - | 5-hour limit catcher: interval repeat anchored at the moment the window opened, plain-words describe(), dedicated dialog row with live preview. files: core/timers.py, core/duration.py (prefer_past), ui/timer_dialog.py, main.py (tooltip), tests + tests_smoke. (verified: 513 unit + 177 smoke PASS, conf: high) |
+| T-547 | DONE | - | Word-style line-number margin: mirrored arrow cursor, click selects the whole line, drag sweeps lines; left 16px still cycle marks when marks are on. files: ui/editor.py, tests_smoke. (verified: 513 unit + 178 smoke PASS, conf: high) |
 

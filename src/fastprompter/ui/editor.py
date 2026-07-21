@@ -5,11 +5,13 @@ from PyQt6 import sip
 from PyQt6.QtCore import QPoint, QRect, QRectF, QSize, Qt, QTimer, QUrl
 from PyQt6.QtGui import (
     QColor,
+    QCursor,
     QDesktopServices,
     QFont,
     QPainter,
     QPainterPath,
     QPen,
+    QPixmap,
     QTextBlockUserData,
     QTextCursor,
     QTextFormat,
@@ -50,6 +52,46 @@ def _draw_horizontal_rule(painter, hr_color, y_pos, width):
     painter.drawLine(margin, y_pos + 2, width - margin, y_pos + 2)
 
 
+# How much of the gutter belongs to the mark widget. Left of this a click
+# cycles the line mark; right of it the margin behaves like Word's, where
+# the cursor mirrors and a click takes the whole line.
+MARK_ZONE_PX = 16
+
+_MARGIN_CURSOR = None
+
+
+def margin_cursor():
+    """Word's mirrored margin arrow, painted rather than shipped as a file.
+
+    Qt has no stock cursor that points up and to the right, and the whole
+    point of the shape is that it is the ordinary arrow flipped: that is the
+    signal people already read as "click here takes the entire line".
+    """
+    global _MARGIN_CURSOR
+    if _MARGIN_CURSOR is not None:
+        return _MARGIN_CURSOR
+
+    w = h = 20
+    pix = QPixmap(w, h)
+    pix.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pix)
+    try:
+        # no antialiasing: UI.md wants crisp Win95 edges everywhere
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+        body = [
+            QPoint(18, 2), QPoint(18, 14), QPoint(14, 11), QPoint(11, 17),
+            QPoint(7, 15), QPoint(10, 9), QPoint(5, 8),
+        ]
+        painter.setPen(QPen(QColor("#000000"), 1))
+        painter.setBrush(QColor("#ffffff"))
+        painter.drawPolygon(body)
+    finally:
+        painter.end()
+    # hot spot at the tip, so the click lands on the line being pointed at
+    _MARGIN_CURSOR = QCursor(pix, 18, 2)
+    return _MARGIN_CURSOR
+
+
 class LineNumberArea(QWidget):
     def __init__(self, editor):
         super().__init__(editor)
@@ -60,17 +102,34 @@ class LineNumberArea(QWidget):
     def sizeHint(self):
         return QSize(self.editor.line_number_area_width(), 0)
 
+    def _in_margin(self, x):
+        """Marks own the left strip only while marks are actually on."""
+        if self.editor.main_win.data.get("line_marks", "False") != "True":
+            return True
+        return x >= MARK_ZONE_PX
+
     def mouseReleaseEvent(self, event):
+        self.editor._gutter_anchor_block = None
         super().mouseReleaseEvent(event)
 
     def paintEvent(self, event):
         self.editor.line_number_area_paint_event(event)
 
     def mousePressEvent(self, event):
+        if (self._in_margin(event.pos().x())
+                and event.button() == Qt.MouseButton.LeftButton):
+            self.editor.margin_select_line(event.pos().y(), extend=False)
+            return
         self.editor.line_number_area_mouse_press_event(event)
 
     def mouseMoveEvent(self, event):
         self.hover_y = event.pos().y()
+        self.setCursor(margin_cursor() if self._in_margin(event.pos().x())
+                       else Qt.CursorShape.ArrowCursor)
+        # dragging down the margin sweeps whole lines, as in Word
+        if event.buttons() & Qt.MouseButton.LeftButton:
+            if self.editor._gutter_anchor_block is not None:
+                self.editor.margin_select_line(event.pos().y(), extend=True)
         self.update()
         super().mouseMoveEvent(event)
 
@@ -114,6 +173,7 @@ class VaultTextEdit(QTextEdit):
         self.cursorPositionChanged.connect(self.line_number_area.update)
         self._last_hover_pos = QPoint(-10000, -10000)
         self._hover_block = None
+        self._gutter_anchor_block = None
         self._doc_has_checkbox = False
         self._doc_has_code = False
         QTimer.singleShot(0, self._refresh_checkbox_flag)
@@ -208,7 +268,12 @@ class VaultTextEdit(QTextEdit):
         while m >= 10:
             m /= 10
             digits += 1
-        return 3 + self.fontMetrics().horizontalAdvance('9') * digits + 10
+        width = 3 + self.fontMetrics().horizontalAdvance('9') * digits + 10
+        if self.main_win.data.get("line_marks", "False") == "True":
+            # the mark widget owns the left strip; without this the margin
+            # left for Word-style whole-line clicks is only a few pixels
+            width = max(width, MARK_ZONE_PX + 14)
+        return width
 
     def update_line_number_area_width(self):
         self.setViewportMargins(self.line_number_area_width(), 0, 0, 0)
@@ -307,6 +372,53 @@ class VaultTextEdit(QTextEdit):
                         painter.drawRect(cx - size//2, cy - size//2, size, size)
         finally:
             painter.end()
+
+    def _block_at_y(self, y):
+        """Which block is under this gutter y, or None past the last one."""
+        doc = self.document()
+        block = doc.begin()
+        while block.isValid():
+            if block.isVisible():
+                rect = self.cursorRect(QTextCursor(block))
+                height = doc.documentLayout().blockBoundingRect(block).height()
+                if rect.top() <= y <= rect.top() + height:
+                    return block
+            block = block.next()
+        return None
+
+    def margin_select_line(self, y, extend=False):
+        """Select whole lines from the margin, Word-style.
+
+        A plain click takes the line under the pointer; dragging sweeps from
+        wherever the drag started, in either direction.
+        """
+        block = self._block_at_y(y)
+        if block is None or not block.isValid():
+            return False
+
+        if not extend or self._gutter_anchor_block is None:
+            self._gutter_anchor_block = block.blockNumber()
+
+        doc = self.document()
+        anchor = doc.findBlockByNumber(self._gutter_anchor_block)
+        if not anchor.isValid():
+            anchor = block
+
+        first, last = (anchor, block)
+        if block.blockNumber() < anchor.blockNumber():
+            first, last = (block, anchor)
+
+        cursor = QTextCursor(doc)
+        cursor.setPosition(first.position())
+        end = last.position() + last.length() - 1
+        # include the newline so a swept range reads as whole lines, the way
+        # dragging the margin does in a word processor
+        if last.next().isValid():
+            end += 1
+        cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
+        self.setTextCursor(cursor)
+        self.setFocus()
+        return True
 
     def line_number_area_mouse_press_event(self, event):
         if self.main_win.data.get("line_marks", "False") != "True":

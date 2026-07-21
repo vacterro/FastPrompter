@@ -5081,3 +5081,63 @@ def test_limit_window_catcher_builds_a_rolling_timer(win):
     finally:
         win.timers[:] = kept
         win.save_timers_to_data()
+
+def test_margin_selects_whole_lines_like_word(win):
+    """Clicking the line-number margin takes the whole line and dragging
+    sweeps them, with the mirrored arrow cursor that signals it."""
+    from PyQt6.QtGui import QTextCursor
+    from fastprompter.ui.editor import MARK_ZONE_PX, margin_cursor
+
+    ed = win.text_area
+    kept_numbers = win.data.get("show_line_numbers", "False")
+    kept_marks = win.data.get("line_marks", "False")
+    try:
+        win.data["show_line_numbers"] = "True"
+        ed.update_line_number_area_width()
+        ed.setPlainText("alpha\nbravo\ncharlie\ndelta\necho")
+
+        def y_of(n):
+            r = ed.cursorRect(QTextCursor(ed.document().findBlockByNumber(n)))
+            return r.top() + r.height() // 2
+
+        def selected():
+            return ed.textCursor().selectedText()
+
+        # the cursor exists and is a real painted shape, not a null pixmap
+        assert not margin_cursor().pixmap().isNull()
+
+        ed.margin_select_line(y_of(2), extend=False)
+        assert selected() == "charlie\u2029"
+
+        # dragging sweeps whole lines, in either direction
+        ed.margin_select_line(y_of(1), extend=False)
+        ed.margin_select_line(y_of(3), extend=True)
+        assert selected() == "bravo\u2029charlie\u2029delta\u2029"
+        ed.margin_select_line(y_of(3), extend=False)
+        ed.margin_select_line(y_of(1), extend=True)
+        assert selected() == "bravo\u2029charlie\u2029delta\u2029"
+
+        # the last line has no trailing newline to swallow
+        ed.margin_select_line(y_of(4), extend=False)
+        assert selected() == "echo"
+
+        # below the last line is a no-op, not a crash
+        assert ed.margin_select_line(999999, extend=False) is False
+
+        # with marks on, the left strip still belongs to the mark widget
+        win.data["line_marks"] = "True"
+        gutter = ed.line_number_area
+        assert gutter._in_margin(4) is False
+        assert gutter._in_margin(MARK_ZONE_PX + 4) is True
+        # and the gutter is wide enough that both zones are clickable
+        ed.update_line_number_area_width()
+        assert ed.line_number_area_width() > MARK_ZONE_PX + 4
+
+        # with marks off the whole gutter is margin
+        win.data["line_marks"] = "False"
+        assert gutter._in_margin(4) is True
+    finally:
+        win.data["show_line_numbers"] = kept_numbers
+        win.data["line_marks"] = kept_marks
+        ed.update_line_number_area_width()
+        ed.clear()
