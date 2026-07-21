@@ -14,6 +14,7 @@ from fastprompter.core.watcher.engine import SendIntent  # noqa: E402
 from fastprompter.core.watcher.sender import (  # noqa: E402
     ClipboardSender,
     DryRunSender,
+    PostMessageSender,
     SendLog,
     Target,
     build_sender,
@@ -72,16 +73,29 @@ def test_the_default_sender_is_dry():
     """A missing argument upstream must not silently start typing into a
     real window."""
     assert isinstance(build_sender(), DryRunSender)
-    assert isinstance(build_sender(FakeClipboard(), FakeKeys()), DryRunSender)
+    assert isinstance(
+        build_sender(clipboard=FakeClipboard(), keys=FakeKeys()), DryRunSender)
     assert build_sender().dry is True
 
 
-def test_live_needs_everything_present_and_asked_for():
-    assert isinstance(build_sender(FakeClipboard(), FakeKeys(), live=True),
-                      ClipboardSender)
-    # asked for live but missing a piece: still dry, never a half-built sender
-    assert isinstance(build_sender(None, FakeKeys(), live=True), DryRunSender)
-    assert isinstance(build_sender(FakeClipboard(), None, live=True), DryRunSender)
+def test_the_pieces_must_be_named():
+    """The first positional used to be the clipboard and is now the post
+    layer. Keyword-only means a stale call fails loudly instead of quietly
+    wrapping the wrong object."""
+    import pytest
+
+    with pytest.raises(TypeError):
+        build_sender(FakeClipboard(), FakeKeys(), live=True)
+
+
+def test_live_but_half_supplied_stays_dry():
+    """Never a half-built sender."""
+    assert isinstance(
+        build_sender(clipboard=None, keys=FakeKeys(), live=True,
+                     allow_focus_steal=True), DryRunSender)
+    assert isinstance(
+        build_sender(clipboard=FakeClipboard(), keys=None, live=True,
+                     allow_focus_steal=True), DryRunSender)
 
 
 def test_a_dry_run_records_and_sends_nothing():
@@ -250,3 +264,90 @@ def test_the_log_is_bounded():
         log.record(sent, sender.send(sent, make_target()))
     assert len(log.entries) == 3
     assert log.entries[-1]["text"] == "prompt 9"
+
+
+class FakePost:
+    """Records posted input. Touches neither focus nor the clipboard."""
+
+    def __init__(self, accepts=True):
+        self.accepts = accepts
+        self.actions = []
+
+    def type_text(self, hwnd, text):
+        self.actions.append(("type", hwnd, text))
+        return self.accepts
+
+    def press(self, hwnd, key):
+        self.actions.append(("press", hwnd, key))
+        return True
+
+
+# ---------------------------------------------------------------- silence
+
+def test_the_default_live_sender_is_the_silent_one():
+    """The feature exists so the queue drains while the user works
+    elsewhere. Pulling the foreground window away defeats it."""
+    sender = build_sender(post=FakePost(), live=True)
+    assert isinstance(sender, PostMessageSender)
+    assert sender.silent is True
+
+
+def test_focus_stealing_is_never_reached_by_default():
+    """Even with a clipboard and keys supplied, and live asked for."""
+    sender = build_sender(clipboard=FakeClipboard(), keys=FakeKeys(), live=True)
+    assert not isinstance(sender, ClipboardSender)
+    assert sender.dry is True, "it falls back to dry rather than grabbing focus"
+
+
+def test_focus_stealing_needs_to_be_asked_for_explicitly():
+    sender = build_sender(clipboard=FakeClipboard(), keys=FakeKeys(),
+                          live=True, allow_focus_steal=True)
+    assert isinstance(sender, ClipboardSender)
+    assert sender.silent is False
+
+
+def test_the_silent_path_touches_no_focus_and_no_clipboard():
+    post = FakePost()
+    clip = FakeClipboard("what the user copied")
+    keys = FakeKeys()
+    sender = PostMessageSender(post)
+
+    result = sender.send(intent(), make_target())
+    assert result.ok and "silently" in result.reason
+    assert post.actions == [
+        ("type", 1234, "/saipen continue"),
+        ("press", 1234, "enter"),
+    ]
+    assert keys.actions == [], "no focus change"
+    assert clip.text == "what the user copied", "the clipboard was left alone"
+
+
+def test_the_silent_path_still_checks_identity_first():
+    post = FakePost()
+    sender = PostMessageSender(post)
+    target = Target(1234, "Agent", "Console", probe=lambda h: None)
+
+    result = sender.send(intent(), target)
+    assert result.ok is False
+    assert post.actions == [], "nothing posted after a failed check"
+
+
+def test_a_target_that_ignores_posted_input_says_so():
+    """Consoles read through their own path. That is a fact for the
+    adapter, not a licence to start stealing focus."""
+    sender = PostMessageSender(FakePost(accepts=False))
+    result = sender.send(intent(), make_target())
+    assert result.ok is False
+    assert "WriteConsoleInput" in result.reason
+
+
+def test_the_silent_path_joins_multiline_too():
+    post = FakePost()
+    PostMessageSender(post).send(intent("one\ntwo"), make_target())
+    assert post.actions[0] == ("type", 1234, "one two")
+
+
+def test_the_silent_submit_key_is_per_target():
+    post = FakePost()
+    PostMessageSender(post, submit="ctrl+enter").send(intent(), make_target())
+    assert ("press", 1234, "ctrl+enter") in post.actions

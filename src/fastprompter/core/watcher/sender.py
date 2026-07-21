@@ -5,8 +5,13 @@ keystrokes are objects passed in, never built here. A test drives a recorder
 and therefore can never point real keystrokes at a real window, which is the
 one accident this module must be incapable of.
 
-Three rules:
+Four rules:
 
+* **Silent by default.** The whole point is that it works while the user is
+  doing something else. A sender that pulls the foreground window away
+  mid-keystroke is worse than no sender, so the default strategy posts input
+  straight at the target and never touches focus or the clipboard.
+  Focus-stealing exists, but only when explicitly allowed.
 * **Dry run is the default.** `build_sender()` returns a recorder unless the
   caller explicitly asks for a live one.
 * **Identity is rechecked at the moment of sending**, not at arming. A window
@@ -79,6 +84,7 @@ class DryRunSender:
     """Records what it would have done. The default, and what tests use."""
 
     dry = True
+    silent = True
 
     def __init__(self):
         self.log = []
@@ -93,6 +99,68 @@ class DryRunSender:
         return SendResult(True, f"dry run: {reason}", intent.text, dry=True)
 
 
+def _flatten(text, multiline):
+    """Multi-line prompts, where Enter is also the submit key.
+
+    `join` is the default because it is the only option that cannot send
+    half a prompt: a newline in the middle would submit the first line and
+    leave the rest sitting in the box.
+    """
+    if "\n" not in text:
+        return text, ""
+    if multiline == "refuse":
+        return None, "the prompt has several lines and this target refuses them"
+    if multiline == "bracketed":
+        return text, ""
+    return " ".join(part.strip() for part in text.splitlines() if part.strip()), ""
+
+
+class PostMessageSender:
+    """Post the text straight at the target window. The silent path.
+
+    No focus change and no clipboard, so the user can carry on typing in
+    another window while this happens — which is the entire point.
+
+    Honest limitation: posted messages reach ordinary Win32 input queues,
+    but a console host (conhost, Windows Terminal) reads through its own
+    path and may ignore them. For those the silent route is
+    WriteConsoleInput against the agent's console, which has to be tried
+    against each CLI (W-09). A target that turns out not to accept posted
+    input is a fact to record in its adapter — never a reason to start
+    stealing focus behind the user's back.
+    """
+
+    dry = False
+    silent = True
+
+    def __init__(self, post, submit="enter", multiline="join"):
+        self.post = post          # injected win32 layer; never built here
+        self.submit = submit or "enter"
+        self.multiline = multiline or "join"
+
+    def send(self, intent, target):
+        if target is None:
+            return SendResult(False, "no target")
+        ok, reason = target.matches()
+        if not ok:
+            return SendResult(False, reason, intent.text)
+
+        text, why = _flatten(intent.text, self.multiline)
+        if text is None:
+            return SendResult(False, why, intent.text)
+
+        try:
+            if not self.post.type_text(target.hwnd, text):
+                return SendResult(
+                    False,
+                    "the target did not accept posted input "
+                    "(a console may need WriteConsoleInput)", text)
+            self.post.press(target.hwnd, self.submit)
+        except Exception as exc:
+            return SendResult(False, f"send failed: {exc}", text)
+        return SendResult(True, "sent silently", text)
+
+
 class ClipboardSender:
     """Paste the text into the target and press its submit key.
 
@@ -103,6 +171,7 @@ class ClipboardSender:
     """
 
     dry = False
+    silent = False        # it takes the foreground, so it is opt-in only
 
     def __init__(self, clipboard, keys, submit="enter", restore_ms=400,
                  multiline="join"):
@@ -113,19 +182,7 @@ class ClipboardSender:
         self.multiline = multiline or "join"
 
     def _prepare(self, text):
-        """Multi-line prompts, where Enter is also the submit key.
-
-        `join` is the default because it is the only option that cannot send
-        half a prompt: a newline in the middle would submit the first line
-        and leave the rest sitting in the box.
-        """
-        if "\n" not in text:
-            return text, ""
-        if self.multiline == "refuse":
-            return None, "the prompt has several lines and this target refuses them"
-        if self.multiline == "bracketed":
-            return text, ""
-        return " ".join(part.strip() for part in text.splitlines() if part.strip()), ""
+        return _flatten(text, self.multiline)
 
     def send(self, intent, target):
         if target is None:
@@ -162,15 +219,27 @@ class ClipboardSender:
         return SendResult(True, "sent", text)
 
 
-def build_sender(clipboard=None, keys=None, live=False, **kw):
-    """A sender. Dry unless `live` is explicitly asked for.
+def build_sender(*, post=None, clipboard=None, keys=None, live=False,
+                 allow_focus_steal=False, **kw):
+    """A sender: dry unless `live` is asked for, silent unless it cannot be.
 
-    Defaulting to live would mean a missing argument somewhere upstream
-    silently starts typing into a real window.
+    Keyword-only on purpose: the first positional used to be the clipboard
+    and is now the post layer, so a stale positional call would quietly wrap
+    the wrong object and fail at send time.
+
+    Order matters. The silent strategy is tried first, and the
+    focus-stealing one is only reached when the caller has explicitly
+    allowed it AND supplied the pieces. Either default the other way and a
+    missing argument upstream starts yanking the foreground window away from
+    whatever the user is doing.
     """
-    if not live or clipboard is None or keys is None:
+    if not live:
         return DryRunSender()
-    return ClipboardSender(clipboard, keys, **kw)
+    if post is not None:
+        return PostMessageSender(post, **kw)
+    if allow_focus_steal and clipboard is not None and keys is not None:
+        return ClipboardSender(clipboard, keys, **kw)
+    return DryRunSender()
 
 
 class SendLog:
