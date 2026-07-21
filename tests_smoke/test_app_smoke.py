@@ -7422,3 +7422,144 @@ def test_a_degenerate_box_width_still_takes_a_click(win, monkeypatch):
     r = points[0][1]
     hit = ta._checkbox_at_pos(QPoint(int(r.x()) + 2, int(r.top()) + 2))
     assert hit is not None, "a negative width must fall back, not go dead"
+
+
+# -------------------- T-201: edit blocks stay balanced ---------------------
+
+
+def test_an_edit_block_closes_even_when_the_body_raises(win):
+    """An unbalanced beginEditBlock corrupts the document's edit-block
+    counter and freezes rendering. edit_block is a context manager, so the
+    end runs from a finally - this pins that, since a plain begin/end pair
+    would silently regress it."""
+    import pytest as _pytest
+
+    from fastprompter.ui.edit_guard import edit_block
+
+    ta = win.text_area
+    ta.setPlainText("one\ntwo")
+    before = ta.toPlainText()
+    cursor = ta.textCursor()
+
+    with _pytest.raises(RuntimeError):
+        with edit_block(cursor, ta):
+            cursor.insertText("wrecked")
+            raise RuntimeError("boom mid-edit")
+
+    # if the block were still open, this insert would be swallowed into it
+    # and undo would not restore the document in one step
+    ta.undo()
+    assert ta.toPlainText() == before, "the edit undid as a single step"
+
+
+def test_ctrl_click_bullet_toggle_undoes_as_one_step(win):
+    """The path T-201 named. It runs inside edit_block now, so the whole
+    conversion is one undo entry rather than a half-open block."""
+    from PyQt6.QtCore import QPointF
+    from PyQt6.QtCore import Qt as _Qt
+    from PyQt6.QtGui import QMouseEvent, QTextCursor
+    from PyQt6.QtWidgets import QApplication as _App
+
+    ta = win.text_area
+    ta.setPlainText("\u2022 a bullet line")
+    _App.processEvents()
+    before = ta.toPlainText()
+
+    rect = ta.cursorRect(QTextCursor(ta.document().firstBlock()))
+    pos = QPointF(rect.x() + 30, rect.center().y())
+    ev = QMouseEvent(QMouseEvent.Type.MouseButtonPress, pos,
+                     ta.viewport().mapToGlobal(pos.toPoint()).toPointF(),
+                     _Qt.MouseButton.LeftButton, _Qt.MouseButton.LeftButton,
+                     _Qt.KeyboardModifier.ControlModifier)
+    _App.sendEvent(ta.viewport(), ev)
+    _App.processEvents()
+
+    after = ta.toPlainText()
+    if after == before:
+        import pytest
+        pytest.skip("the click did not land on the bullet line")
+
+    assert after.startswith("- "), f"bullet became dash, got {after!r}"
+    ta.undo()
+    assert ta.toPlainText() == before, "one Ctrl+Z restores the bullet"
+
+
+def test_the_editors_mouse_press_opens_no_raw_edit_block(win):
+    """T-201's original complaint. Any begin/end pair added back by hand
+    here is a regression - the guard belongs in edit_block."""
+    import inspect
+    import re as _re
+
+    src = inspect.getsource(type(win.text_area).mousePressEvent)
+    assert "beginEditBlock" not in src
+    assert _re.search(r"with edit_block\(", src), "it uses the guard"
+
+
+# ------------- T-202: shortcuts follow the physical key, not the layout ----
+
+SCAN = {"B": 0x30, "I": 0x17, "S": 0x1F, "E": 0x12}
+
+
+def _press_shortcut(win, reported_key, scan, text=""):
+    """Send Ctrl+<key> and report which command it dispatched to."""
+    from PyQt6.QtCore import Qt as _Qt
+    from PyQt6.QtGui import QKeyEvent
+
+    fired = []
+    ta = win.text_area
+    saved = (win.apply_bold_smart, win.apply_format, win.apply_header_timestamp)
+    win.apply_bold_smart = lambda *a, **k: fired.append("bold")
+    win.apply_format = lambda kind, *a, **k: fired.append(f"format:{kind}")
+    win.apply_header_timestamp = lambda *a, **k: fired.append("header")
+    try:
+        ta.keyPressEvent(QKeyEvent(
+            QKeyEvent.Type.KeyPress, reported_key,
+            _Qt.KeyboardModifier.ControlModifier, scan, 0, 0, text))
+    finally:
+        (win.apply_bold_smart, win.apply_format,
+         win.apply_header_timestamp) = saved
+    return fired
+
+
+def test_ctrl_b_bolds_on_a_russian_layout_too(win):
+    """QKeyEvent.key() follows the ACTIVE layout: on a Russian keyboard the
+    physical B reports Key_I, so Ctrl+B fired italic. Not a miss - the wrong
+    command, silently. The scan code is the physical position and does not
+    move with the layout."""
+    from PyQt6.QtCore import Qt as _Qt
+
+    us = _press_shortcut(win, _Qt.Key.Key_B, SCAN["B"], "b")
+    ru = _press_shortcut(win, _Qt.Key.Key_I, SCAN["B"], "\u0438")
+
+    assert us == ["bold"], f"US layout: {us}"
+    assert ru == ["bold"], f"RU layout dispatched {ru}, expected bold"
+
+
+def test_the_italic_key_still_means_italic(win):
+    """The fix must not simply redirect everything to the first branch."""
+    from PyQt6.QtCore import Qt as _Qt
+
+    assert _press_shortcut(win, _Qt.Key.Key_I, SCAN["I"], "i") == ["format:italic"]
+
+
+def test_an_unmapped_scan_code_falls_back_to_what_qt_reported(win):
+    """Only the letter and digit rows are mapped; everything else must keep
+    working off event.key() rather than going dead."""
+    from PyQt6.QtCore import Qt as _Qt
+
+    fired = _press_shortcut(win, _Qt.Key.Key_E, 0xFFFF, "e")
+    assert fired == ["header"], f"got {fired}"
+
+
+def test_the_scan_map_is_windows_only(win):
+    """X11 keycodes are offset by 8, so the same numbers would mis-map a
+    physical key on Linux. Better empty than wrong."""
+    import sys as _sys
+
+    from fastprompter.ui.editor import _SCAN_TO_KEY
+
+    if _sys.platform == "win32":
+        assert _SCAN_TO_KEY[0x30] is not None
+        assert len(_SCAN_TO_KEY) == 36, "26 letters + 10 digits"
+    else:
+        assert _SCAN_TO_KEY == {}

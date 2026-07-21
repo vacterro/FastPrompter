@@ -1,6 +1,7 @@
 import os
 import re
 import subprocess
+import sys
 
 from PyQt6 import sip
 from PyQt6.QtCore import QPoint, QRect, QRectF, QSize, Qt, QTimer, QUrl
@@ -166,6 +167,31 @@ class _BlockData(QTextBlockUserData):
 
 # Kept so existing callers and tests can still say _LineHeat(ts).
 _LineHeat = _BlockData
+
+
+# Windows set-1 scan codes for the letter and digit rows. A scan code is the
+# PHYSICAL key: it does not change with the keyboard layout, while
+# QKeyEvent.key() does. Without this, Ctrl+B on a Russian layout reports
+# Key_I and fired italic instead of bold - the wrong command, with nothing
+# logged. Only these two rows are mapped because only they carry shortcuts;
+# anything else falls back to whatever Qt reported.
+_SCAN_TO_KEY = {}
+if sys.platform == "win32":
+    _SCAN_TO_KEY = {
+        0x1E: Qt.Key.Key_A, 0x30: Qt.Key.Key_B, 0x2E: Qt.Key.Key_C,
+        0x20: Qt.Key.Key_D, 0x12: Qt.Key.Key_E, 0x21: Qt.Key.Key_F,
+        0x22: Qt.Key.Key_G, 0x23: Qt.Key.Key_H, 0x17: Qt.Key.Key_I,
+        0x24: Qt.Key.Key_J, 0x25: Qt.Key.Key_K, 0x26: Qt.Key.Key_L,
+        0x32: Qt.Key.Key_M, 0x31: Qt.Key.Key_N, 0x18: Qt.Key.Key_O,
+        0x19: Qt.Key.Key_P, 0x10: Qt.Key.Key_Q, 0x13: Qt.Key.Key_R,
+        0x1F: Qt.Key.Key_S, 0x14: Qt.Key.Key_T, 0x16: Qt.Key.Key_U,
+        0x2F: Qt.Key.Key_V, 0x11: Qt.Key.Key_W, 0x2D: Qt.Key.Key_X,
+        0x15: Qt.Key.Key_Y, 0x2C: Qt.Key.Key_Z,
+        0x02: Qt.Key.Key_1, 0x03: Qt.Key.Key_2, 0x04: Qt.Key.Key_3,
+        0x05: Qt.Key.Key_4, 0x06: Qt.Key.Key_5, 0x07: Qt.Key.Key_6,
+        0x08: Qt.Key.Key_7, 0x09: Qt.Key.Key_8, 0x0A: Qt.Key.Key_9,
+        0x0B: Qt.Key.Key_0,
+    }
 
 
 def block_data(block, create=False):
@@ -1818,6 +1844,14 @@ class VaultTextEdit(QTextEdit):
 
         from PyQt6.QtGui import QKeySequence
         key_val = event.key()
+        # event.key() follows the ACTIVE LAYOUT, so on a Russian keyboard the
+        # physical B key reports Key_I - and Ctrl+B fired italic instead of
+        # bold. Not a miss: the wrong command, silently. The scan code is the
+        # physical position and does not move with the layout, so it decides
+        # when it is one we know.
+        physical = _SCAN_TO_KEY.get(event.nativeScanCode())
+        if physical is not None:
+            key_val = physical
         if key_val > 0 and key_val != Qt.Key.Key_unknown:
             # Need to handle Qt's quirk where Shift+Ctrl+S can parse strangely if we don't use exact match
             # But QKeySequence(key_val | mods.value) is standard.
