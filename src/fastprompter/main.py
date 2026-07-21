@@ -1,6 +1,7 @@
 import copy
 import ctypes
 import ctypes.wintypes
+import json
 import math
 import os
 import datetime
@@ -453,22 +454,32 @@ class FastPrompter(
         # Dense hides only the two rarest text buttons (Clear Fmt, Line) —
         # both reachable via the editor's right-click menu and Ctrl+W. The
         # bullet-toggle (-→•) stays visible; it only drops in ultra.
-        if flipped:
-            for name in self._DENSE_HIDDEN:
-                wdg = getattr(self, name, None)
-                if wdg is not None and not sip.isdeleted(wdg):
-                    wdg.setVisible(not dense)
-
         ultra = w < 700
-        if getattr(self, "_header_ultra", None) != ultra:
-            self._header_ultra = ultra
-            # bullet-toggle survives dense but hides in the portrait sliver
-            for name in self._ULTRA_HIDDEN:
-                wdg = getattr(self, name, None)
-                if wdg is not None and not sip.isdeleted(wdg):
-                    wdg.setVisible(not ultra)
-            if hasattr(self, "_counter_sep"):
-                self._counter_sep.setVisible(not ultra)
+        ultra_flipped = getattr(self, "_header_ultra", None) != ultra
+        self._header_ultra = ultra
+
+        # Visibility is derived from the CURRENT tier on every pass, and in
+        # ONE decision per widget. Gated on a tier flip it depended on the
+        # history of flips instead of the width, so a theme change (which
+        # resets the cached tier) made buttons vanish that had been visible
+        # at that same width. Two loops would not do either: the lists
+        # overlap, and "hide for dense" then "show for not-ultra" cancel out.
+        # Sizes and labels are deliberately NOT touched here - those still
+        # follow `flipped`, because re-applying them every pass resets the
+        # button fonts the theme just set.
+        if ultra:
+            hidden_now = set(self._ULTRA_HIDDEN) | set(self._DENSE_HIDDEN)
+        elif dense:
+            hidden_now = set(self._DENSE_HIDDEN)
+        else:
+            hidden_now = set()
+        for name in dict.fromkeys(self._DENSE_HIDDEN + self._ULTRA_HIDDEN):
+            wdg = getattr(self, name, None)
+            if wdg is not None and not sip.isdeleted(wdg):
+                wdg.setVisible(name not in hidden_now)
+        if hasattr(self, "_counter_sep"):
+            self._counter_sep.setVisible(not ultra)
+        if ultra_flipped:
             self._update_date_label()
 
         # widths recompute every pass while dense — the font can change
@@ -509,7 +520,15 @@ class FastPrompter(
                 if btn is None or sip.isdeleted(btn):
                     continue
                 if dense:
-                    btn.setFixedSize(18, 18)
+                    # 18 was hard-coded, which ignored the UI scale AND the
+                    # app's own MIN_BTN_PX floor. At 50% the buttons are
+                    # already floored to 20, so squeezing them to 18 put an
+                    # 11px glyph in an 18px box with borders - the reported
+                    # "chewed up" icons. Scale it, and never go under the
+                    # floor that exists to keep glyphs legible.
+                    squeezed = max(self.MIN_BTN_PX,
+                                   int(round(18 * self._effective_scale())))
+                    btn.setFixedSize(squeezed, squeezed)
                 else:
                     self.apply_button_size(btn, 24, 24)
             # tabs scroll inside a bounded strip when space is tight
@@ -544,9 +563,12 @@ class FastPrompter(
     # Buttons the density tiers pull out of the header. They stay reachable
     # through the "»" overflow menu — see _refresh_overflow_button.
     _DENSE_HIDDEN = ("btn_clear_fmt", "btn_add_line", "btn_home", "btn_end",
-                     "btn_under", "btn_strike", "btn_copy")
+                     "btn_under", "btn_strike", "btn_copy",
+                     "btn_align_left", "btn_align_center", "btn_align_right")
     _ULTRA_HIDDEN = ("btn_bold", "btn_italic", "btn_under", "btn_strike",
-                     "btn_header", "btn_quote", "btn_copy", "btn_clear",
+                     "btn_header", "btn_quote",
+                     "btn_align_left", "btn_align_center", "btn_align_right",
+                     "btn_copy", "btn_clear",
                      "btn_bullet_toggle", "btn_home", "btn_end", "btn_pin_top",
                      "btn_line_nums", "btn_help", "btn_trash", "btn_toggle_search",
                      "btn_arc_snip", "btn_toggle_archive", "btn_toggle_snippets", "btn_project_folder",
@@ -1041,6 +1063,9 @@ class FastPrompter(
         ("btn_strike", "Strikethrough"),
         ("btn_header", "Header"),
         ("btn_quote", "Quote"),
+        ("btn_align_left", "Align left"),
+        ("btn_align_center", "Align center"),
+        ("btn_align_right", "Align right"),
         ("btn_bullet_toggle", "Bullets"),
         ("btn_clear_fmt", "Clear formatting"),
         ("btn_add_line", "Insert divider"),
@@ -1895,6 +1920,27 @@ class FastPrompter(
         self.apply_button_size(self.btn_quote, 24, 24)
         self.btn_quote.clicked.connect(self.toggle_quote_conversion)
 
+        self.btn_align_left = QPushButton(tr("L", getattr(self, "_current_lang", "EN")))
+        self.btn_align_left.setToolTip(tr(
+            "Align Left\nAlign selected blocks to the left.",
+            getattr(self, "_current_lang", "EN")))
+        self.apply_button_size(self.btn_align_left, 24, 24)
+        self.btn_align_left.clicked.connect(lambda: self._on_selection_align("left"))
+
+        self.btn_align_center = QPushButton(tr("C", getattr(self, "_current_lang", "EN")))
+        self.btn_align_center.setToolTip(tr(
+            "Align Center\nCenter the selected blocks.",
+            getattr(self, "_current_lang", "EN")))
+        self.apply_button_size(self.btn_align_center, 24, 24)
+        self.btn_align_center.clicked.connect(lambda: self._on_selection_align("center"))
+
+        self.btn_align_right = QPushButton(tr("R", getattr(self, "_current_lang", "EN")))
+        self.btn_align_right.setToolTip(tr(
+            "Align Right\nAlign selected blocks to the right.",
+            getattr(self, "_current_lang", "EN")))
+        self.apply_button_size(self.btn_align_right, 24, 24)
+        self.btn_align_right.clicked.connect(lambda: self._on_selection_align("right"))
+
         self.btn_clear_fmt = QPushButton(tr("Clear Fmt", getattr(self, "_current_lang", "EN")))
         self.btn_clear_fmt.setToolTip(tr("Clear Format\nRemove all explicit font styling from text.", getattr(self, "_current_lang", "EN")))
         self.apply_button_size(self.btn_clear_fmt, 24)
@@ -1995,6 +2041,9 @@ class FastPrompter(
         self.header_layout.addWidget(self.btn_strike)
         self.header_layout.addWidget(self.btn_header)
         self.header_layout.addWidget(self.btn_quote)
+        self.header_layout.addWidget(self.btn_align_left)
+        self.header_layout.addWidget(self.btn_align_center)
+        self.header_layout.addWidget(self.btn_align_right)
 
         # Overflow: at narrow widths the density tiers drop most of the
         # header, so surface everything they dropped in one menu.
@@ -2459,8 +2508,7 @@ class FastPrompter(
         self.cb_ctrl_e_center = create_footer_cb(
             "\u2192 Ctrl+E Center",
             "Center-align header lines created with Ctrl+E.\n"
-            "Visual only - the centring is not saved, so it is gone\n"
-            "after a reload.",
+            "Centering persists across sessions.",
             self.data.get("ctrl_e_center", "False") == "True",
             self._on_ctrl_e_center_toggled,
         )
@@ -3400,6 +3448,17 @@ class FastPrompter(
         body = _re.sub(r"\s*" + TS_STAMP_LINE_RE.pattern + r"\s*$", "", body)
         body = body.strip()
 
+        # Remove from centered_blocks tracking so reload doesn't re-center
+        old_block_text = cursor.block().text()
+        if old_block_text:
+            try:
+                centered = json.loads(self.data.get("centered_blocks", "[]"))
+                if old_block_text in centered:
+                    centered.remove(old_block_text)
+                    self.data["centered_blocks"] = json.dumps(centered)
+            except (json.JSONDecodeError, ValueError):
+                self.data["centered_blocks"] = "[]"
+
         cursor.insertText(body)
         plain = QTextBlockFormat()
         plain.setAlignment(Qt.AlignmentFlag.AlignLeft)
@@ -3507,15 +3566,15 @@ class FastPrompter(
 
         cursor.insertText(formatted_text)
 
-        # Center-align the header line when the setting is on — purely
-        # visual; the markdown text itself is untouched, so save/reload
-        # are unchanged and the alignment resets the moment you start
-        # typing over the header (the default block format takes over).
-        if self.data.get("ctrl_e_center", "False") == "True":
-            bfmt = QTextBlockFormat()
-            bfmt.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            blk_cursor = QTextCursor(cursor.block())
-            blk_cursor.mergeBlockFormat(bfmt)
+        # Save header info for centering and persistence. Centering must
+        # happen AFTER the bullet insert below — QTextCursor.insertText()
+        # inherits the current block's QTextBlockFormat into any new block
+        # it creates via \n, so centering before the bullet would leak
+        # center alignment onto the empty lines and the bullet point.
+        want_center = self.data.get("ctrl_e_center", "False") == "True"
+        if want_center:
+            hdr_block_number = cursor.block().blockNumber()
+            hdr_text = cursor.block().text()
 
         # Jump two lines below the header onto a fresh bullet, with PLAIN
         # formatting — the header's bold/underline must not bleed into
@@ -3537,6 +3596,24 @@ class FastPrompter(
                 cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock)
                 if not nxt2.text().strip():
                     cursor.insertText("• ", plain)
+
+        # Center the header block now — after the bullet is placed, so new
+        # blocks from \n never inherit the center alignment.
+        if want_center:
+            doc = self.text_area.document()
+            hb = doc.findBlockByNumber(hdr_block_number)
+            if hb.isValid():
+                bfmt = QTextBlockFormat()
+                bfmt.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                QTextCursor(hb).mergeBlockFormat(bfmt)
+                # Persist the block text so centering survives save/reload.
+                try:
+                    centered = json.loads(self.data.get("centered_blocks", "[]"))
+                    if hdr_text and hdr_text not in centered:
+                        centered.append(hdr_text)
+                        self.data["centered_blocks"] = json.dumps(centered)
+                except (json.JSONDecodeError, ValueError):
+                    self.data["centered_blocks"] = "[]"
 
         self.text_area.setTextCursor(cursor)
         self.text_area.setCurrentCharFormat(plain)
@@ -4201,6 +4278,97 @@ class FastPrompter(
         self.refresh_temp_presets()
         self.refresh_archive_panel()
 
+    def _on_selection_align(self, align):
+        """Apply block alignment to all blocks spanned by the selection."""
+        ta = getattr(self, "text_area", None)
+        if ta is None or sip.isdeleted(ta):
+            return
+        cursor = ta.textCursor()
+        if not cursor.hasSelection():
+            return
+        doc = ta.document()
+        if doc is None or sip.isdeleted(doc):
+            return
+        al = {"left": Qt.AlignmentFlag.AlignLeft,
+              "center": Qt.AlignmentFlag.AlignCenter,
+              "right": Qt.AlignmentFlag.AlignRight}.get(align)
+        if al is None:
+            return
+
+        start = cursor.selectionStart()
+        end = cursor.selectionEnd()
+        block = doc.findBlock(start)
+        last = doc.findBlock(end)
+        updates = {}
+        while block.isValid():
+            bfmt = QTextBlockFormat()
+            bfmt.setAlignment(al)
+            QTextCursor(block).mergeBlockFormat(bfmt)
+            bt = block.text()
+            if bt:
+                updates[bt] = align
+            if block == last:
+                break
+            block = block.next()
+
+        self._save_aligned_blocks(updates)
+        # If user left-aligned a center-tagged header, clean centered_blocks
+        if align == "left":
+            self._clean_centered_blocks(updates)
+        self.mark_dirty()
+
+    def _save_aligned_blocks(self, updates):
+        """Merge new alignments into data['aligned_blocks'] dict."""
+        try:
+            store = json.loads(self.data.get("aligned_blocks", "{}"))
+        except (json.JSONDecodeError, ValueError):
+            store = {}
+        for k, v in updates.items():
+            if v == "left":
+                store.pop(k, None)
+            else:
+                store[k] = v
+        self.data["aligned_blocks"] = json.dumps(store)
+
+    def _clean_centered_blocks(self, updates):
+        """Remove blocks from centered_blocks when user left-aligns them."""
+        try:
+            c = json.loads(self.data.get("centered_blocks", "[]"))
+        except (json.JSONDecodeError, ValueError):
+            return
+        before = len(c)
+        c = [t for t in c if t not in updates]
+        if len(c) != before:
+            self.data["centered_blocks"] = json.dumps(c)
+
+    def _restore_aligned_blocks(self):
+        """Re-apply saved per-block alignment after document load."""
+        try:
+            store = json.loads(self.data.get("aligned_blocks", "{}"))
+        except (json.JSONDecodeError, ValueError):
+            return
+        if not store:
+            return
+        ta = getattr(self, "text_area", None)
+        if ta is None or sip.isdeleted(ta):
+            return
+        doc = ta.document()
+        if doc is None or sip.isdeleted(doc):
+            return
+        al_map = {"center": Qt.AlignmentFlag.AlignCenter,
+                  "right": Qt.AlignmentFlag.AlignRight,
+                  "left": Qt.AlignmentFlag.AlignLeft}
+        block = doc.begin()
+        while block.isValid():
+            align = store.get(block.text())
+            if align:
+                qa = al_map.get(align)
+                if qa:
+                    bfmt = QTextBlockFormat()
+                    bfmt.setAlignment(qa)
+                    QTextCursor(block).mergeBlockFormat(bfmt)
+            block = block.next()
+
     def _on_align_changed(self, idx):
         align = self.cb_align_combo.itemData(idx) or "left"
         self.data["text_align"] = align
@@ -4210,6 +4378,28 @@ class FastPrompter(
     def _on_ctrl_e_center_toggled(self, checked):
         self.data["ctrl_e_center"] = "True" if checked else "False"
         self.mark_dirty()
+
+    def _restore_centered_blocks(self):
+        """Re-apply center alignment to blocks tracked in centered_blocks."""
+        try:
+            centered = json.loads(self.data.get("centered_blocks", "[]"))
+        except (json.JSONDecodeError, ValueError):
+            centered = []
+        if not centered:
+            return
+        ta = getattr(self, "text_area", None)
+        if ta is None or sip.isdeleted(ta):
+            return
+        doc = ta.document()
+        if doc is None or sip.isdeleted(doc):
+            return
+        block = doc.begin()
+        while block.isValid():
+            if block.text() in centered:
+                bfmt = QTextBlockFormat()
+                bfmt.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                QTextCursor(block).mergeBlockFormat(bfmt)
+            block = block.next()
 
     def _apply_text_alignment(self):
         """Apply the saved text alignment to the active QTextDocument."""
@@ -4478,6 +4668,8 @@ class FastPrompter(
                     doc.setPlainText(slot.get("text", ""))
                 self.text_area.set_active_document(doc)
             self.text_area.blockSignals(False)
+            self._restore_centered_blocks()
+            self._restore_aligned_blocks()
             self.editing_snippet = editing
             self.btn_save.setText(tr("Save Snippet", getattr(self, "_current_lang", "EN")))
             theme_name = self.data.get("theme", "Default")
@@ -5531,6 +5723,8 @@ class FastPrompter(
                 self.text_area.set_active_document(doc)
                 # Text alignment must be re-applied per-document
                 self._apply_text_alignment()
+                self._restore_centered_blocks()
+                self._restore_aligned_blocks()
 
                 # A remembered cursor/selection for this silo wins over the
                 # blanket Start/End rule — that's the whole point of it.
