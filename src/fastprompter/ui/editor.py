@@ -975,6 +975,13 @@ class VaultTextEdit(QTextEdit):
             # OUTSIDE the left-button branch above on purpose - nested in it,
             # a right-click could never reach it.
             mods = event.modifiers()
+            if (mods & Qt.KeyboardModifier.ControlModifier
+                    and event.button() == Qt.MouseButton.LeftButton):
+                tag = self.hashtag_at(event.pos())
+                if tag:
+                    self.main_win.open_hashtag_dialog(tag)
+                    event.accept()
+                    return
             if mods & Qt.KeyboardModifier.ControlModifier:
                 url = self.anchor_url_at(event.pos())
                 if url is not None:
@@ -1109,6 +1116,16 @@ class VaultTextEdit(QTextEdit):
             self.viewport().update()
         super().leaveEvent(event)
 
+    def hashtag_at(self, pos):
+        """The #tag under a viewport point, or None."""
+        from fastprompter.core.hashtags import tag_at
+        try:
+            cursor = self.cursorForPosition(pos)
+            return tag_at(cursor.block().text(), cursor.positionInBlock())
+        except Exception:
+            logger.debug("hashtag lookup failed", exc_info=True)
+            return None
+
     def anchor_url_at(self, pos):
         """The link under this viewport point, or None."""
         try:
@@ -1206,7 +1223,7 @@ class VaultTextEdit(QTextEdit):
                     over_ts = self._ts_glyph_block_at(p) is not None
                     over_fold = self._fold_block_at(p) is not None
                     over_copy = self._code_copy_block_at(p) is not None
-                    is_link = bool(self.anchorAt(p))
+                    is_link = bool(self.anchorAt(p)) or bool(self.hashtag_at(p))
                     target = Qt.CursorShape.PointingHandCursor if (over_cb or over_ts or over_fold or over_copy or is_link) else Qt.CursorShape.IBeamCursor
                     cur = self.viewport().cursor()
                     if cur.shape() != target:

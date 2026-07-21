@@ -200,9 +200,10 @@ class TestInit:
 
     def test_rules_populated_after_init(self):
         h = make_highlighter()
-        assert len(h._highlighting_rules) == 16, (
-            f"Expected 16 rules (underline, strike, bold, italic x2, h1-h3, code, quote, link, "
-            f"hr, cb_unchecked, cb_checked, bullet list, numbered list), got {len(h._highlighting_rules)}"
+        assert len(h._highlighting_rules) == 17, (
+            f"Expected 17 rules (underline, strike, bold, italic x2, h1-h3, hashtag, "
+            f"code, quote, link, hr, cb_unchecked, cb_checked, bullet list, "
+            f"numbered list), got {len(h._highlighting_rules)}"
         )
 
     def test_each_rule_is_pattern_format_tuple(self):

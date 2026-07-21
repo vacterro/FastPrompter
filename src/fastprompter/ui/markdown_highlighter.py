@@ -126,6 +126,16 @@ class MarkdownHighlighter(QSyntaxHighlighter):
         h3_format.setForeground(QColor(accent))
         self._highlighting_rules.append((re.compile(r'^###\s+.*'), h3_format))
 
+        # Hashtags: #tag (never "# Header" - that needs a space after the
+        # hash, which is exactly what tells the two apart). Rendered as a
+        # quiet link rather than a loud badge: it is part of the sentence.
+        from fastprompter.core.hashtags import TAG_RE
+
+        tag_format = QTextCharFormat()
+        tag_format.setForeground(QColor(blend_hex(accent, text_main, 0.25)))
+        tag_format.setFontUnderline(True)
+        self._highlighting_rules.append((TAG_RE, tag_format))
+
         # Inline Code: `text`
         code_format = QTextCharFormat()
         code_format.setFontFamily(code_family)

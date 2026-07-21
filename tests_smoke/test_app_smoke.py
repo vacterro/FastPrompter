@@ -2629,6 +2629,10 @@ def test_no_cyrillic_in_codebase():
             # not stray prose, and its tests must exercise them.
             if norm.endswith("core/duration.py") or norm.endswith("tests/test_duration.py"):
                 continue
+            # same case: tags are matched with \\w, so a Russian tag has to be
+            # exercised with a real Russian tag. Input data, not prose.
+            if norm.endswith("tests/test_hashtags.py"):
+                continue
             with open(f, encoding="utf-8") as fh:
                 for i, line in enumerate(fh, 1):
                     if cyr.search(line):
@@ -5430,3 +5434,69 @@ def test_gutter_colours_come_from_the_theme(win):
         win.data["theme"] = kept_theme
         win.data["show_line_numbers"] = kept_nums
         win._theme_cache = THEMES.get(kept_theme, THEMES["Default"])
+
+def test_hashtags_are_clickable_and_findable_across_silos(win):
+    """Tags live in the text, so Ctrl+click finds every silo carrying one."""
+    from PyQt6.QtCore import QEvent, QPointF, Qt
+    from PyQt6.QtGui import QMouseEvent, QTextCursor
+    from fastprompter.ui.hashtag_dialog import HashtagDialog
+
+    ed = win.text_area
+    kept = list(win.data["temp_presets"])
+    real_open = win.open_hashtag_dialog
+    try:
+        win.data["temp_presets"][:] = [
+            "Home notes\nmilk #todo\nbread",
+            "# Notes header\nnothing here",
+            "Work\ncall bank #todo #urgent\nlater #todo",
+        ]
+        win.silo_docs[:] = []
+        win._switch_to_slot(0, initial=True)
+        ed.setPlainText("milk #todo now\n# Header with #tag\nplain")
+
+        def point(block, col):
+            c = QTextCursor(ed.document().findBlockByNumber(block))
+            c.setPosition(c.block().position() + col)
+            return ed.cursorRect(c).center()
+
+        assert ed.hashtag_at(point(0, 7)) == "todo"
+        assert ed.hashtag_at(point(0, 2)) is None
+        # a header line is a header, even with a hash-word on it
+        assert ed.hashtag_at(point(1, 15)) is None
+
+        opened = []
+        win.open_hashtag_dialog = lambda tag=None: opened.append(tag)
+        ed.mousePressEvent(QMouseEvent(
+            QEvent.Type.MouseButtonPress, QPointF(point(0, 7)),
+            Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.ControlModifier))
+        assert opened == ["todo"], "Ctrl+click on a tag must open the finder"
+        win.open_hashtag_dialog = real_open
+
+        # the finder lists tags by how many lines carry them
+        win._switch_to_slot(0, initial=True)
+        ed.setPlainText(win.data["temp_presets"][0])
+        dlg = HashtagDialog(win, "todo")
+        labels = [dlg.tag_list.item(i).text()
+                  for i in range(dlg.tag_list.count())]
+        assert labels == ["#todo  (3)", "#urgent  (1)"]
+        assert dlg.tag_list.currentItem().data(
+            Qt.ItemDataRole.UserRole) == "todo", "the clicked tag is preselected"
+        assert dlg.hit_list.count() == 3
+
+        # and a hit opens the silo it lives in, on the right line
+        hit = dlg.hit_list.item(2).data(Qt.ItemDataRole.UserRole)
+        assert (hit["silo"], hit["line"]) == (2, 3)
+        assert win.jump_to_silo_line(hit["silo"], hit["line"]) is True
+        assert win.active_temp_slot == 2
+        assert ed.textCursor().blockNumber() + 1 == 3
+        dlg.close()
+
+        # out-of-range jumps are refused rather than crashing
+        assert win.jump_to_silo_line(999, 1) is False
+    finally:
+        win.open_hashtag_dialog = real_open
+        win.data["temp_presets"][:] = kept
+        win.silo_docs[:] = []
+        win._switch_to_slot(0, initial=True)
+        ed.clear()

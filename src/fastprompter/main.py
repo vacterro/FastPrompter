@@ -690,6 +690,31 @@ class FastPrompter(
             from fastprompter.core.logging import logger
             logger.debug("productivity notification failed")
 
+    # ---- hashtags -----------------------------------------------------
+    def open_hashtag_dialog(self, tag=None):
+        from fastprompter.ui.hashtag_dialog import HashtagDialog
+        self._increment_focus_lock()
+        try:
+            HashtagDialog(self, tag).exec()
+        finally:
+            QTimer.singleShot(300, self._decrement_focus_lock)
+
+    def jump_to_silo_line(self, silo_idx, line_no):
+        """Open a silo and put the caret on a 1-based line."""
+        presets = self.data.get("temp_presets") or []
+        if not (0 <= silo_idx < len(presets)):
+            return False
+        if silo_idx != getattr(self, "active_temp_slot", -1):
+            self._switch_to_slot(silo_idx)
+        block = self.text_area.document().findBlockByNumber(max(0, line_no - 1))
+        if not block.isValid():
+            return False
+        cursor = QTextCursor(block)
+        self.text_area.setTextCursor(cursor)
+        self.text_area.ensureCursorVisible()
+        self.text_area.setFocus()
+        return True
+
     def open_timer_dialog(self):
         from fastprompter.ui.timer_dialog import TimerDialog
         self._increment_focus_lock()
