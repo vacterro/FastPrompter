@@ -1031,14 +1031,20 @@ class FastPrompter(
                 g.setToolTip("")
 
     def apply_toolbar_order(self, save=False):
-        """Rebuild the header layout from the saved token order. Index 0
-        (sidebar toggle) is the fixed anchor and is never moved."""
+        """Rebuild the header layout from the saved token order.
+
+        The sidebar toggle is not part of the order: it is an edge control
+        that sits on whichever side the sidebar is on, so it is detached
+        with everything else and re-placed at the end.
+        """
         lay = self.header_layout
-        while lay.count() > 1:  # detach everything after the sidebar anchor
-            item = lay.takeAt(1)
+        while lay.count():  # detach everything, edge controls included
+            item = lay.takeAt(0)
             w = item.widget()
             if w is not None:
                 w.setParent(self.header_widget)
+        if not self._sidebar_right:
+            self._place_sidebar_toggle(False)
         order = self._toolbar_order_list()
         stretch_i = 0
         for tok in order:
@@ -1052,6 +1058,8 @@ class FastPrompter(
         # reset button is a fixed trailing control, never part of the order
         if hasattr(self, "btn_toolbar_reset"):
             lay.addWidget(self.btn_toolbar_reset)
+        if self._sidebar_right:
+            self._place_sidebar_toggle(True)
         self._style_toolbar_gaps(self.data.get("customize_toolbar", "False") == "True")
         if save:
             self.data["toolbar_order"] = ",".join(order)

@@ -277,9 +277,27 @@ class WindowMixin:
         self.apply_sidebar_position()
         self.mark_dirty()
 
+    def _place_sidebar_toggle(self, is_right: bool) -> None:
+        """Keep the hamburger on the same side as the sidebar it opens.
+
+        It used to be pinned to the far left of the header, so with the
+        sidebar on the right the button sat at the opposite edge from the
+        thing it toggles.
+        """
+        btn = getattr(self, "btn_sidebar_toggle", None)
+        layout = getattr(self, "header_layout", None)
+        if btn is None or layout is None:
+            return
+        layout.removeWidget(btn)
+        if is_right:
+            layout.addWidget(btn)
+        else:
+            layout.insertWidget(0, btn)
+
     def apply_sidebar_position(self) -> None:
         """Layout sidebar on the left or right based on _sidebar_right."""
         is_right = self._sidebar_right
+        self._place_sidebar_toggle(is_right)
         if is_right:
             self.splitter.insertWidget(0, self.center_panel)
             self.splitter.insertWidget(1, self.left_panel)

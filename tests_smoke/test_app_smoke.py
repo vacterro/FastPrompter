@@ -1959,6 +1959,11 @@ def test_sidebar_width_saved_per_side(win):
     win.apply_sidebar_position()
     assert list(win.splitter.sizes()) == right_saved
 
+    # the fixture is shared: leaving the sidebar on the right leaked into
+    # every later test (it moves the hamburger to the other header edge)
+    win.data["sidebar_right"] = "False"
+    win.apply_sidebar_position()
+
 
 def test_editor_commands_have_balanced_edit_blocks():
     # HUNT regression: several wired editor commands called endEditBlock()
@@ -4897,3 +4902,26 @@ def test_reordering_a_child_keeps_it_inside_its_parent(win):
 
     # a silo with no parent is not a sibling of anything
     assert win.reorder_sibling(4, before_idx=1) is False
+
+def test_hamburger_follows_the_sidebar_side(win):
+    """The toggle used to be pinned to the far left of the header, so with
+    the sidebar on the right it sat at the opposite edge from what it opens."""
+    def slot():
+        lay = win.header_layout
+        for i in range(lay.count()):
+            if lay.itemAt(i).widget() is win.btn_sidebar_toggle:
+                return i, lay.count()
+        return None, lay.count()
+
+    # the fixture is shared, so put back exactly what was there before
+    was_right = win.data.get("sidebar_right")
+    try:
+        win.toggle_sidebar_position(False)
+        assert slot()[0] == 0, "sidebar on the left -> hamburger leftmost"
+
+        win.toggle_sidebar_position(True)
+        pos, count = slot()
+        assert pos == count - 1, "sidebar on the right -> hamburger rightmost"
+        assert not win.btn_sidebar_toggle.isHidden()
+    finally:
+        win.toggle_sidebar_position(was_right == "True")
