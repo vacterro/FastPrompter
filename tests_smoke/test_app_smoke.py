@@ -5141,3 +5141,49 @@ def test_margin_selects_whole_lines_like_word(win):
         win.data["line_marks"] = kept_marks
         ed.update_line_number_area_width()
         ed.clear()
+
+def test_hover_line_follows_the_pointer_when_the_text_scrolls(win):
+    """Reported: the hover wash stops sitting under the cursor. Hover was
+    only recomputed from mouseMoveEvent, so scrolling under a stationary
+    mouse left it on the block number it started on."""
+    from PyQt6.QtGui import QCursor
+    from PyQt6.QtCore import QPoint
+
+    ed = win.text_area
+    kept = win.data.get("hover_line", "True")
+    try:
+        win.data["hover_line"] = "True"
+        ed.setPlainText("\n".join(f"line {i:03d}" for i in range(200)))
+
+        point = QPoint(60, 120)
+        QCursor.setPos(ed.viewport().mapToGlobal(point))
+
+        def under_pointer():
+            return ed.cursorForPosition(point).block().blockNumber()
+
+        ed.rehover_from_pointer(point)
+        assert ed._hover_block == under_pointer()
+
+        # scrolling alone must move the wash - no mouse movement involved
+        sb = ed.verticalScrollBar()
+        sb.setValue(sb.value() + 40)
+        assert ed._hover_block == under_pointer(), \
+            "the wash stayed on the line the pointer used to be over"
+
+        sb.setValue(sb.value() + 33)
+        assert ed._hover_block == under_pointer()
+
+        # switched off, it stays off
+        win.data["hover_line"] = "False"
+        ed._hover_block = None
+        sb.setValue(sb.value() + 20)
+        assert ed.rehover_from_pointer(point) is False
+        assert ed._hover_block is None
+
+        # a point outside the viewport is not a hover
+        win.data["hover_line"] = "True"
+        assert ed.rehover_from_pointer(QPoint(-50, -50)) is False
+    finally:
+        win.data["hover_line"] = kept
+        ed._hover_block = None
+        ed.clear()

@@ -166,6 +166,10 @@ class VaultTextEdit(QTextEdit):
         self.line_number_area = LineNumberArea(self)
         self.document().documentLayout().documentSizeChanged.connect(self.update_line_number_area_width)
         self.verticalScrollBar().valueChanged.connect(self.line_number_area.update)
+        # the text moves under a stationary mouse, so the hovered line has to
+        # be re-derived on scroll as well as on mouse move
+        self.verticalScrollBar().valueChanged.connect(
+            lambda _v: self.rehover_from_pointer())
         self.document().contentsChange.connect(self._stamp_edited_blocks)
         self.textChanged.connect(self.refresh_extra_selections)
         self.textChanged.connect(self._refresh_checkbox_flag)
@@ -1066,6 +1070,31 @@ class VaultTextEdit(QTextEdit):
             self._hover_block = None
             self.refresh_extra_selections()
         super().leaveEvent(event)
+
+    def rehover_from_pointer(self, point=None):
+        """Re-derive the hovered line without the mouse having moved.
+
+        Hover was only ever recomputed from mouseMoveEvent, so scrolling
+        under a stationary pointer left the wash on the block number it
+        started on while a different line sat under the cursor.
+        """
+        if self.main_win.data.get("hover_line", "True") != "True":
+            return False
+        if point is None:
+            if not self.underMouse():
+                return False
+            point = self.viewport().mapFromGlobal(QCursor.pos())
+        if not self.viewport().rect().contains(point):
+            return False
+        blk = self.cursorForPosition(point).block()
+        new_hover = blk.blockNumber() if blk.isValid() else None
+        if new_hover == getattr(self, "_hover_block", None):
+            return False
+        self._hover_block = new_hover
+        self._last_hover_pos = point
+        self.refresh_extra_selections()
+        self.viewport().update()
+        return True
 
     def mouseMoveEvent(self, event):
         if sip.isdeleted(self):
