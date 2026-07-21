@@ -27,6 +27,7 @@ from PyQt6.QtWidgets import (
 )
 
 from fastprompter.core.translations import tr
+from fastprompter.core.watcher import skills as skills_mod
 from fastprompter.core.watcher.queue import (
     DETACHED,
     FAILED,
@@ -89,6 +90,30 @@ class QueueDialog(QDialog):
         self.lbl_head = QLabel("")
         root.addWidget(self.lbl_head)
 
+        # ---- skills palette ----
+        chips = QHBoxLayout()
+        chips.setSpacing(3)
+        chips.addWidget(QLabel(tr("Skill:", self.lang)))
+        self.chip_box = QHBoxLayout()
+        self.chip_box.setSpacing(3)
+        chips.addLayout(self.chip_box, 1)
+
+        self.btn_add_skill = QPushButton("+")
+        self.btn_add_skill.setFixedWidth(24)
+        self.btn_add_skill.setToolTip(tr(
+            "Add a skill this machine cannot discover.\n"
+            "Hand-added chips survive a rescan.", self.lang))
+        self.btn_add_skill.clicked.connect(self.add_skill_chip)
+        chips.addWidget(self.btn_add_skill)
+
+        self.btn_drop_skill = QPushButton("\u2715")
+        self.btn_drop_skill.setFixedWidth(24)
+        self.btn_drop_skill.setToolTip(tr(
+            "Hide the selected skill from the palette", self.lang))
+        self.btn_drop_skill.clicked.connect(self.hide_current_skill)
+        chips.addWidget(self.btn_drop_skill)
+        root.addLayout(chips)
+
         self.list = QListWidget()
         self.list.setSelectionMode(
             QAbstractItemView.SelectionMode.SingleSelection)
@@ -146,6 +171,83 @@ class QueueDialog(QDialog):
         self._build_master_tab()
         self.refresh()
         self.tabs.currentChanged.connect(lambda _i: self.refresh())
+
+    # ---- skills -------------------------------------------------------
+    def current_skill(self):
+        return (self.main_win.data.get("watcher_skill", "") or "").strip()
+
+    def set_current_skill(self, name):
+        """Which skill Alt+C stamps onto the next prompt."""
+        self.main_win.data["watcher_skill"] = (name or "").lstrip("/").strip()
+        self.main_win.mark_dirty()
+        self.refresh_chips()
+
+    def palette(self):
+        project = ""
+        try:
+            project = self.main_win.data.get("last_project_dir", "") or ""
+        except Exception:
+            project = ""
+        return skills_mod.load_palette(self.main_win.data, project=project or None)
+
+    def refresh_chips(self):
+        """Rebuild the palette row. A `none` chip is always first: a prompt
+        with no skill is a legitimate choice, not the absence of one."""
+        while self.chip_box.count():
+            item = self.chip_box.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.setParent(None)
+
+        current = self.current_skill()
+        entries = [("", tr("none", self.lang), tr("Send the prompt as it is", self.lang))]
+        for skill in self.palette():
+            entries.append((skill.name, f"/{skill.name}",
+                            skill.description or skill.name))
+
+        for name, label, hint in entries:
+            chip = QPushButton(label)
+            chip.setCheckable(True)
+            chip.setChecked(name == current)
+            chip.setToolTip(hint)
+            chip.clicked.connect(
+                lambda _checked=False, n=name: self.set_current_skill(n))
+            self.chip_box.addWidget(chip)
+        self.chip_box.addStretch(1)
+
+    def add_skill_chip(self):
+        name, ok = QInputDialog.getText(
+            self, tr("Add skill", self.lang),
+            tr("Skill name (without the slash):", self.lang))
+        if not ok:
+            return
+        name = (name or "").lstrip("/").strip()
+        if not name:
+            return
+        palette = self.palette()
+        if all(s.name != name for s in palette):
+            palette.append(skills_mod.Skill(name, source="manual"))
+            skills_mod.save_palette(self.main_win.data, palette)
+        # un-hide it, in case this is the same name that was dismissed before
+        hidden = [h for h in (self.main_win.data.get("watcher_skills_hidden") or [])
+                  if (h or "").lstrip("/").strip() != name]
+        self.main_win.data["watcher_skills_hidden"] = hidden
+        self.set_current_skill(name)
+
+    def hide_current_skill(self):
+        """Drop a chip from the palette without touching the skill itself."""
+        name = self.current_skill()
+        if not name:
+            return
+        hidden = list(self.main_win.data.get("watcher_skills_hidden") or [])
+        if name not in hidden:
+            hidden.append(name)
+        self.main_win.data["watcher_skills_hidden"] = hidden
+        # a hand-added chip is also dropped from `extra`, or it would come
+        # straight back on the next load and look like the hide did nothing
+        palette = [s for s in self.palette() if s.name != name]
+        skills_mod.save_palette(self.main_win.data, palette)
+        self.set_current_skill("")
 
     # ------------------------------------------------------------------
     def _build_master_tab(self):
@@ -325,6 +427,8 @@ class QueueDialog(QDialog):
                 item.reason = ""
 
     def refresh(self):
+        if getattr(self, "chip_box", None) is not None:
+            self.refresh_chips()
         if getattr(self, "master_list", None) is not None:
             self.refresh_master()
         self.refresh_from_document()

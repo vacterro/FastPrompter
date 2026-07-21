@@ -6397,3 +6397,91 @@ def test_opening_the_dialog_does_not_die_on_the_first_tab_signal(win):
     finally:
         win.prompt_queues.clear()
         win.prompt_queues.update(kept)
+
+def _chips(dlg):
+    out = []
+    for i in range(dlg.chip_box.count()):
+        w = dlg.chip_box.itemAt(i).widget()
+        if w is not None:
+            out.append((w.text(), w.isChecked()))
+    return out
+
+
+def test_the_skill_chip_stamps_the_next_queued_prompt(win):
+    """The skill is stored beside the text and composed at send time, so the
+    row preview is what would actually go out."""
+    from fastprompter.ui.queue_panel import QueueDialog
+
+    ed = win.text_area
+    kept = dict(win.prompt_queues)
+    kept_skill = win.data.get("watcher_skill", "")
+    try:
+        win.prompt_queues.clear()
+        dlg = QueueDialog(win)
+
+        # "none" is a real choice and comes first
+        assert _chips(dlg)[0][0] == "none"
+        assert dlg.current_skill() == ""
+
+        dlg.set_current_skill("saipen")
+        assert dlg.current_skill() == "saipen"
+        assert ("/saipen", True) in _chips(dlg)
+
+        ed.setPlainText("continue please")
+        c = ed.textCursor()
+        c.setPosition(0)
+        ed.setTextCursor(c)
+        item = win.queue_current_line()
+
+        assert item.skill == "saipen"
+        assert item.compose() == "/saipen continue please"
+        # a target that cannot invoke skills gets None, not a stripped prompt
+        assert item.compose(skill_format=None) is None
+
+        dlg.refresh()
+        assert "/saipen continue please" in dlg.list.item(0).text()
+        dlg.close()
+    finally:
+        win.prompt_queues.clear()
+        win.prompt_queues.update(kept)
+        win.data["watcher_skill"] = kept_skill
+        ed.clear()
+
+
+def test_a_hand_added_chip_survives_a_rescan_and_can_be_hidden(win):
+    """Discovery only sees what is installed locally, so curation is the
+    feature, not the fallback."""
+    from fastprompter.core.watcher import skills as sk
+    from fastprompter.ui.queue_panel import QueueDialog
+
+    kept_extra = list(win.data.get("watcher_skills_extra") or [])
+    kept_hidden = list(win.data.get("watcher_skills_hidden") or [])
+    kept_skill = win.data.get("watcher_skill", "")
+    try:
+        win.data["watcher_skills_extra"] = []
+        win.data["watcher_skills_hidden"] = []
+        dlg = QueueDialog(win)
+
+        palette = sk.load_palette(win.data)
+        palette.append(sk.Skill("cavecrew", source="manual"))
+        sk.save_palette(win.data, palette)
+        dlg.refresh_chips()
+        assert "/cavecrew" in [c[0] for c in _chips(dlg)]
+
+        # only the hand-added one is stored; the discovered ones are rescanned
+        stored = [e["name"] for e in win.data["watcher_skills_extra"]]
+        assert stored == ["cavecrew"]
+
+        dlg.set_current_skill("cavecrew")
+        dlg.hide_current_skill()
+        assert "/cavecrew" not in [c[0] for c in _chips(dlg)]
+        assert "cavecrew" in win.data["watcher_skills_hidden"]
+        # and it does not come straight back from `extra` on the next load
+        assert "cavecrew" not in [
+            e["name"] for e in win.data.get("watcher_skills_extra") or []]
+        assert dlg.current_skill() == ""
+        dlg.close()
+    finally:
+        win.data["watcher_skills_extra"] = kept_extra
+        win.data["watcher_skills_hidden"] = kept_hidden
+        win.data["watcher_skill"] = kept_skill
