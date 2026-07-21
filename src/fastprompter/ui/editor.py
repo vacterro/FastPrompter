@@ -1100,10 +1100,10 @@ class VaultTextEdit(QTextEdit):
         cursor.insertText(kanban)
 
     def _toggle_auto_bullet(self):
+        # goes through the main window so the change is saved and the
+        # toolbar button/tooltip stay in step with it
         cur = self.main_win.data.get("auto_bullet", "False") == "True"
-        self.main_win.data["auto_bullet"] = "False" if cur else "True"
-        if hasattr(self.main_win, "btn_bullet_toggle"):
-            self.main_win.btn_bullet_toggle.setChecked(not cur)
+        self.main_win.set_auto_bullet(not cur)
         self.main_win.mark_dirty()
 
     def _ask_text_drop_choice(self, name):

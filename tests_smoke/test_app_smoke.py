@@ -4975,3 +4975,60 @@ def test_reset_ui_layout_can_be_declined(win):
     assert win.data["toolbar_order"] == "btn_help,btn_save", "declining must change nothing"
     win.data["toolbar_order"] = ""
     win.apply_toolbar_order()
+
+def test_auto_bullet_setting_has_one_owner(win):
+    """The context menu flipped data["auto_bullet"] itself and never called
+    mark_dirty(), so turning auto-bullet on from there survived until the next
+    restart and left the toolbar tooltip claiming the opposite."""
+    before = win.data.get("auto_bullet", "False")
+    try:
+        win.set_auto_bullet(False)
+        win.state._db_dirty = False
+
+        win.text_area._toggle_auto_bullet()
+        assert win.data["auto_bullet"] == "True"
+        assert win.btn_bullet_toggle.isChecked() is True
+        assert "ON" in win.btn_bullet_toggle.toolTip()
+        assert win.state._db_dirty, "a toggle not marked dirty is never saved"
+
+        win.text_area._toggle_auto_bullet()
+        assert win.data["auto_bullet"] == "False"
+        assert win.btn_bullet_toggle.isChecked() is False
+        assert "OFF" in win.btn_bullet_toggle.toolTip()
+    finally:
+        win.set_auto_bullet(before == "True")
+
+
+def test_auto_bullet_converts_while_typing(win):
+    from PyQt6.QtTest import QTest
+    from PyQt6.QtCore import Qt
+
+    before = win.data.get("auto_bullet", "False")
+    ed = win.text_area
+    try:
+        win.set_auto_bullet(True)
+
+        def typed(keys):
+            ed.clear()
+            for ch in keys:
+                if ch == " ":
+                    QTest.keyClick(ed, Qt.Key.Key_Space)
+                elif ch == "\n":
+                    QTest.keyClick(ed, Qt.Key.Key_Return)
+                else:
+                    QTest.keyClicks(ed, ch)
+            return ed.toPlainText()
+
+        assert typed("- x") == "\u2022 x"
+        assert typed("* x") == "\u2022 x"
+        assert typed("+ x") == "\u2022 x"
+        assert typed("  - x") == "  \u2022 x"
+        assert typed("a\n- x") == "a\n\u2022 x"
+        # a dash inside a sentence is just a dash
+        assert typed("word - x") == "word - x"
+
+        win.set_auto_bullet(False)
+        assert typed("- x") == "- x", "off means off"
+    finally:
+        ed.clear()
+        win.set_auto_bullet(before == "True")

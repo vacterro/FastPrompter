@@ -963,6 +963,30 @@ class FastPrompter(
         from fastprompter.ui.toolbar_reorder import DEFAULT_TOOLBAR_ORDER
         return DEFAULT_TOOLBAR_ORDER
 
+    def set_auto_bullet(self, enabled):
+        """Single owner of the auto-bullet mode.
+
+        The toolbar button and the editor's context menu each used to flip
+        `data["auto_bullet"]` themselves, and only the button called
+        mark_dirty() — so switching it on from the context menu worked until
+        the next restart and left the button's tooltip lying.
+        """
+        enabled = bool(enabled)
+        self.data["auto_bullet"] = "True" if enabled else "False"
+        self._refresh_bullet_toggle()
+        self.mark_dirty()
+        return enabled
+
+    def _refresh_bullet_toggle(self):
+        btn = getattr(self, "btn_bullet_toggle", None)
+        if btn is None or sip.isdeleted(btn):
+            return
+        on = self.data.get("auto_bullet", "False") == "True"
+        btn.setChecked(on)
+        btn.setToolTip(
+            f"Auto-Bullet (Right-Click): {'ON' if on else 'OFF'}\n"
+            "Left-Click: Convert selected lines between dashes and bullets.")
+
     def _toolbar_order_list(self):
         """Saved order, validated + self-healed against the default so a
         stale/partial value can never drop or duplicate a button."""
@@ -1589,14 +1613,9 @@ class FastPrompter(
 
         def _bullet_mousePress(event):
             if event.button() == Qt.MouseButton.RightButton:
-                curr = self.data.get("auto_bullet", "False") == "True"
-                new_state = not curr
-                self.data["auto_bullet"] = "True" if new_state else "False"
-                self.btn_bullet_toggle.setChecked(new_state)
-                self.mark_dirty()
+                self.set_auto_bullet(
+                    self.data.get("auto_bullet", "False") != "True")
                 self.play_click_sound()
-                state_str = "ON" if new_state else "OFF"
-                self.btn_bullet_toggle.setToolTip(f"Auto-Bullet (Right-Click): {state_str}\nLeft-Click: Convert selected lines between dashes and bullets.")
                 event.accept()
             else:
                 QPushButton.mousePressEvent(self.btn_bullet_toggle, event)
@@ -1608,8 +1627,7 @@ class FastPrompter(
             self.btn_bullet_toggle.setChecked(self.data.get("auto_bullet", "False") == "True")
             self.toggle_bullet_conversion()
 
-        state_str = "ON" if self.data.get("auto_bullet", "False") == "True" else "OFF"
-        self.btn_bullet_toggle.setToolTip(f"Auto-Bullet (Right-Click): {state_str}\nLeft-Click: Convert selected lines between dashes and bullets.")
+        self._refresh_bullet_toggle()
         self.btn_bullet_toggle.clicked.connect(_on_bullet_left_click)
 
         self.btn_bold = QPushButton(tr("B", getattr(self, "_current_lang", "EN")))
