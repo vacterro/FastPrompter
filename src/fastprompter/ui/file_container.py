@@ -322,6 +322,9 @@ class FileContainerPanel(QWidget):
 
     def open_for(self, folder, title=""):
         """Point the panel at a resolved (unique) folder, creating it, and show."""
+        # tidy the folder we're leaving if nothing was ever put in it —
+        # closeEvent isn't guaranteed to have fired (hidden window, reuse)
+        self._discard_if_empty()
         os.makedirs(folder, exist_ok=True)
         if self._watcher.directories():
             self._watcher.removePaths(self._watcher.directories())
@@ -332,6 +335,47 @@ class FileContainerPanel(QWidget):
         self.show()
         self.raise_()
         self.activateWindow()
+
+    def _discard_if_empty(self):
+        """Remove the current folder if it is still completely empty."""
+        folder = getattr(self, "folder", None)
+        if not folder or not os.path.isdir(folder):
+            return False
+        try:
+            if os.listdir(folder):
+                return False          # never touch a folder with content
+        except OSError:
+            return False
+        # On Windows the file-system watcher holds an open handle to the
+        # directory, so it cannot be removed until Qt has actually released
+        # it — drop the paths, let the event loop run, then retry once.
+        try:
+            if self._watcher.directories():
+                self._watcher.removePaths(self._watcher.directories())
+        except Exception:
+            pass
+        for attempt in range(2):
+            try:
+                os.rmdir(folder)
+                return True
+            except OSError:
+                if attempt == 0:
+                    from PyQt6.QtWidgets import QApplication
+                    QApplication.processEvents()
+                    continue
+                return False          # still held: leaving it is harmless
+        return False
+
+    def closeEvent(self, event):
+        """Don't leave an empty folder behind just for looking.
+
+        open_for() creates the directory so the panel has somewhere to watch
+        and drop into. If the user added nothing, that directory is litter
+        that accumulates one-per-silo forever, so remove it again — but only
+        when it is genuinely empty, never when it holds anything.
+        """
+        self._discard_if_empty()
+        super().closeEvent(event)
 
     def refresh(self):
         self.file_list.clear()

@@ -1534,6 +1534,16 @@ class VaultTextEdit(QTextEdit):
             except Exception:
                 pass
 
+    def _theme_accent(self, fallback):
+        """Accent colour of the active theme, for 'auto' colour settings."""
+        try:
+            cache = getattr(self.main_win, "_theme_cache", None)
+            if cache and cache.get("raw_colors"):
+                return cache["raw_colors"].get("accent", fallback)
+        except Exception:
+            pass
+        return fallback
+
     # ---- line temperature: show where you have recently been -----------
     def _heat_enabled(self):
         try:
@@ -1572,6 +1582,34 @@ class VaultTextEdit(QTextEdit):
         (86400, "overlay_day", "#5a5a30"),
     )
 
+    def _heat_window(self):
+        """How long a line stays warm, in minutes (user-settable)."""
+        try:
+            minutes = int(self.main_win.data.get("line_heat_minutes", "1440"))
+        except (TypeError, ValueError):
+            minutes = 1440
+        return max(1, min(60 * 24 * 30, minutes)) * 60
+
+    def _heat_colour_for(self, age, span, custom):
+        """Colour for a line of this age, over the user's chosen window.
+
+        Rescales the shared overlay palette onto whatever window length the
+        user picked, so a 10-minute window still runs the full spectrum
+        rather than sitting on one colour.
+        """
+        ratio = max(0.0, min(1.0, age / span if span else 1.0))
+        mode = (self.main_win.data.get("line_heat_palette", "warm") or "warm").lower()
+        if mode == "accent":
+            return QColor(self._theme_accent("#6a5555"))
+        stops = [custom.get(key, fallback) for _lim, key, fallback in self._HEAT_BUCKETS]
+        if mode == "cool":
+            stops = list(reversed(stops))
+        pos = ratio * (len(stops) - 1)
+        low = int(pos)
+        high = min(low + 1, len(stops) - 1)
+        from fastprompter.theme.themes import blend_hex
+        return QColor(blend_hex(stops[low], stops[high], pos - low))
+
     def _line_heat_selections(self, doc):
         if not self._heat_enabled():
             return []
@@ -1603,20 +1641,19 @@ class VaultTextEdit(QTextEdit):
             ts = getattr(data, "ts", None)
             if ts is not None:
                 age = now - ts
-                for limit, key, fallback in self._HEAT_BUCKETS:
-                    if age < limit:
-                        colour = QColor(custom.get(key, fallback))
-                        if colour.isValid():
-                            # fade within the bucket so it cools gradually
-                            fade = 1.0 - (age / limit) * 0.6
-                            colour.setAlpha(round(255 * strength / 100 * fade))
-                            sel = QTextEdit.ExtraSelection()
-                            sel.format.setBackground(colour)
-                            sel.format.setProperty(
-                                QTextFormat.Property.FullWidthSelection, True)
-                            sel.cursor = QTextCursor(block)
-                            out.append(sel)
-                        break
+                span = self._heat_window()
+                if age < span:
+                    colour = self._heat_colour_for(age, span, custom)
+                    if colour.isValid():
+                        # fade across the whole window so it cools gradually
+                        fade = 1.0 - (age / span) * 0.75
+                        colour.setAlpha(round(255 * strength / 100 * fade))
+                        sel = QTextEdit.ExtraSelection()
+                        sel.format.setBackground(colour)
+                        sel.format.setProperty(
+                            QTextFormat.Property.FullWidthSelection, True)
+                        sel.cursor = QTextCursor(block)
+                        out.append(sel)
             block = block.next()
         return out
 
@@ -1639,9 +1676,15 @@ class VaultTextEdit(QTextEdit):
         except (TypeError, ValueError):
             pct = 10
         pct = max(1, min(60, pct))
-        color = QColor(self.main_win.data.get("hover_line_color", "#6aa9ff"))
+        # "auto" (the default) tracks the active theme's accent, so the
+        # highlight belongs to whatever skin the user is on; an explicit
+        # colour overrides it.
+        chosen = (self.main_win.data.get("hover_line_color", "auto") or "auto").strip()
+        if chosen.lower() in ("", "auto", "theme"):
+            chosen = self._theme_accent("#6aa9ff")
+        color = QColor(chosen)
         if not color.isValid():
-            color = QColor("#6aa9ff")
+            color = QColor(self._theme_accent("#6aa9ff"))
         color.setAlpha(round(255 * pct / 100))
         sel = QTextEdit.ExtraSelection()
         sel.format.setBackground(color)

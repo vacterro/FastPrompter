@@ -553,3 +553,26 @@ cursor attached to the right silo; corrupt slot keys ("not-a-number", "")
 survive a reorder instead of throwing.
 
 Verified: 503 unit + 157 smoke green.
+
+## Files, silo duplication, tint controls (21.07, claude-opus)
+| ID | Status | Description |
+|---|---|---|
+| F-10 | FIXED | **Empty folder left behind for every silo you merely looked at.** `open_for()` creates the directory so the panel has somewhere to watch and drop into; nothing removed it again. Now discarded when empty, on close AND on the next open (closeEvent isn't guaranteed to fire for a hidden window). On Windows the QFileSystemWatcher holds the directory handle, so paths are dropped and the event loop pumped before retrying the rmdir. A folder with ANY content is never touched. |
+| F-11 | FIXED | **Folder map filled with phantom entries** (`untitled-4`..`untitled-10`) for slots holding no silo — the panel asks for a name for every visible row (tooltips, counters, empty rows) and `_silo_folder_name` recorded every answer. It now answers without recording until the silo is real (has text, or already owns a folder on disk). |
+| F-12 | VERIFIED CLEAN | Renaming a silo moves its folder rather than duplicating it, and after the previous round's index fix the files stay with their silo across a reorder. Checked on real disk, not just in theory. |
+| SD-01 | DONE | **Duplicate Silo (with files)** in the context menu: inserts a copy in the next slot, carries the colour and project paths, and copies the files into the duplicate's OWN uniquely-named folder (verified the two are independent — editing one file doesn't touch the other). Deliberately does NOT inherit pin/tick: a copy shouldn't arrive already flagged. |
+| SD-02 | DONE | **New Child Silo** in the context menu: inserts an empty silo directly below and nests it under the parent. Both go through `_insert_silo_at`, which shifts every slot-keyed store via the registry from the previous round, so nothing detaches. |
+| HT-01 | DONE | Hover line and Line Heat are now tunable in Settings: opacity, heat strength, **heat window in minutes**, and a **palette** (Warm / Cool / Auto). Colours default to `auto`, meaning they follow the ACTIVE THEME's accent instead of a fixed blue; an explicit colour can be picked with the button (right-click resets to auto). The heat spectrum rescales onto whatever window length is chosen, so a 10-minute window still runs the full range. |
+
+Two regressions caught by my own tests while doing this: the new tuning
+controls pushed the settings panel back to 705px (the width budget test
+fired) — fixed by feeding them to the FlowLayout individually instead of as
+a rigid row; and the folder test was not hermetic, inheriting a file an
+earlier test wrote.
+
+Verified: 503 unit + 161 smoke green.
+
+STILL UNCLEAR — not attempted: the "huge empty space that doesn't resize".
+No screenshot came with this round and I could not identify it confidently
+from the code; guessing would mean rearranging a layout that might be fine.
+Needs a screenshot or a pointer to which panel.

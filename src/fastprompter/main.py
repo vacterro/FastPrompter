@@ -678,6 +678,28 @@ class FastPrompter(
                           lambda: self._notify_timer(probe))
         return probe
 
+    def pick_hover_colour(self):
+        from PyQt6.QtWidgets import QColorDialog
+
+        current = self.data.get("hover_line_color", "auto")
+        start = QColor(current) if QColor(current).isValid() else QColor("#6aa9ff")
+        self._increment_focus_lock()
+        try:
+            chosen = QColorDialog.getColor(start, self, tr(
+                "Hover line colour", getattr(self, "_current_lang", "EN")))
+        finally:
+            QTimer.singleShot(300, self._decrement_focus_lock)
+        if chosen.isValid():
+            self.data["hover_line_color"] = chosen.name()
+            self.mark_dirty()
+            self.text_area.viewport().update()
+
+    def reset_hover_colour(self):
+        """Back to following the theme accent."""
+        self.data["hover_line_color"] = "auto"
+        self.mark_dirty()
+        self.text_area.viewport().update()
+
     def _sync_snippets_toggle_button(self):
         btn = getattr(self, "btn_toggle_snippets", None)
         if btn is None or sip.isdeleted(btn):
@@ -1087,7 +1109,8 @@ class FastPrompter(
         Archive silos keep the plain title scheme (static, low-risk)."""
         from fastprompter.ui.file_container import silo_slug
         presets = self.data.get("archive_temp_presets" if is_archive else "temp_presets", [])
-        text = presets[slot_idx] if 0 <= slot_idx < len(presets) else ""
+        in_range = 0 <= slot_idx < len(presets)
+        text = presets[slot_idx] if in_range else ""
         base = silo_slug(text)
         cat = self.get_current_category()
         if is_archive:
@@ -1117,6 +1140,13 @@ class FastPrompter(
         while name in taken:
             name = f"{base}-{n}"
             n += 1
+        # Only COMMIT a name once the silo is real: it has text, or it
+        # already owns a folder on disk. The panel asks for a name for every
+        # visible slot (tooltips, file counters, empty rows), and recording
+        # those filled the map with untitled-4..untitled-10 for silos that
+        # do not exist yet. Answer the question, just don't write it down.
+        if not in_range or not (text.strip() or self._folder_on_disk(cat, name)):
+            return name
         fmap[key] = name
         self.mark_dirty()
         return name
@@ -2435,6 +2465,78 @@ class FastPrompter(
         gap_row.addWidget(self.spin_drag_width)
         gap_row.addStretch(1)
 
+        # --- hover line + line heat tuning ---
+        lbl_heat = QLabel(tr("Line tint:", self._current_lang))
+        lbl_heat.setStyleSheet("color: #808080;")
+
+        def _pct_spin(key, default, tip, suffix="%"):
+            spin = QSpinBox()
+            spin.setRange(1, 60)
+            spin.setSuffix(suffix)
+            spin.setToolTip(tr(tip, self._current_lang))
+            try:
+                spin.setValue(int(self.data.get(key, default)))
+            except (TypeError, ValueError):
+                spin.setValue(default)
+
+            def _upd(v):
+                self.data.update({key: str(v)})
+                self.mark_dirty()
+                self.text_area.viewport().update()
+
+            spin.valueChanged.connect(_upd)
+            return spin
+
+        self.spin_hover_opacity = _pct_spin(
+            "hover_line_opacity", 10, "Hover line opacity")
+        self.spin_heat_strength = _pct_spin(
+            "line_heat_strength", 18, "Line heat strength")
+
+        self.spin_heat_minutes = QSpinBox()
+        self.spin_heat_minutes.setRange(1, 43200)
+        self.spin_heat_minutes.setSuffix(tr(" min", self._current_lang))
+        self.spin_heat_minutes.setToolTip(tr(
+            "How long a line stays tinted after you edit it", self._current_lang))
+        try:
+            self.spin_heat_minutes.setValue(int(self.data.get("line_heat_minutes", 1440)))
+        except (TypeError, ValueError):
+            self.spin_heat_minutes.setValue(1440)
+
+        def _upd_minutes(v):
+            self.data.update({"line_heat_minutes": str(v)})
+            self.mark_dirty()
+            self.text_area.viewport().update()
+
+        self.spin_heat_minutes.valueChanged.connect(_upd_minutes)
+
+        self.cb_heat_palette = QComboBox()
+        self.cb_heat_palette.setToolTip(tr(
+            "Colour spectrum for edited lines.\nAuto follows the theme accent.",
+            self._current_lang))
+        for label, val in (("Warm", "warm"), ("Cool", "cool"), ("Auto", "accent")):
+            self.cb_heat_palette.addItem(tr(label, self._current_lang), val)
+        cur_pal = self.data.get("line_heat_palette", "warm")
+        pal_idx = self.cb_heat_palette.findData(cur_pal)
+        if pal_idx >= 0:
+            self.cb_heat_palette.setCurrentIndex(pal_idx)
+
+        def _upd_pal(i):
+            self.data.update({"line_heat_palette": self.cb_heat_palette.itemData(i)})
+            self.mark_dirty()
+            self.text_area.viewport().update()
+
+        self.cb_heat_palette.currentIndexChanged.connect(_upd_pal)
+
+        self.btn_hover_colour = QPushButton(tr("Hover colour", self._current_lang))
+        self.btn_hover_colour.setToolTip(tr(
+            "Pick the hover highlight colour.\n"
+            "Right-click to go back to following the theme.",
+            self._current_lang))
+        self.btn_hover_colour.clicked.connect(self.pick_hover_colour)
+        self.btn_hover_colour.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.btn_hover_colour.customContextMenuRequested.connect(
+            lambda _p: self.reset_hover_colour())
+
         # --- FancyZones custom grid (the Ctrl+Q picker's "Custom" layout) ---
         zones_row = QHBoxLayout()
         zones_row.setContentsMargins(0, 0, 0, 0)
@@ -2495,7 +2597,10 @@ class FastPrompter(
         self.settings_tabs.addTab(_tab([
             self.cb_focus, self.cb_wrap, self.cb_ctrl_c, self.cb_lock_cursor,
             self.cb_line_numbers, self.cb_code_gutter, self.cb_code_monospace,
-            self.cb_hover_line, self.cb_line_heat, self.cb_line_marks, self.cb_zebra,
+            self.cb_hover_line, self.cb_line_heat,
+            lbl_heat, self.spin_hover_opacity, self.spin_heat_strength,
+            self.spin_heat_minutes, self.cb_heat_palette, self.btn_hover_colour,
+            self.cb_line_marks, self.cb_zebra,
             self.cb_double_line, self.cb_bold_titles, div_row, hdr_row,
         ]), tr("Editor", self._current_lang))
 
@@ -5179,6 +5284,94 @@ class FastPrompter(
     def blend_colors(c1, c2, ratio):
         return f"#{int(c1.red() * (1 - ratio) + c2.red() * ratio):02x}{int(c1.green() * (1 - ratio) + c2.green() * ratio):02x}{int(c1.blue() * (1 - ratio) + c2.blue() * ratio):02x}"
 
+    def _insert_silo_at(self, pos, text=""):
+        """Insert a silo at `pos`, shifting everything below it down.
+
+        Goes through _remap_silo_indices so colours, pins, ticks, children,
+        folders, project paths and saved cursors all move with their silos
+        instead of being left on the slot numbers they used to occupy.
+        """
+        from PyQt6.QtGui import QTextDocument
+
+        presets = self.data["temp_presets"]
+        pos = max(0, min(pos, len(presets)))
+
+        self.capture_silo_state()
+        self.add_data_undo_state("Insert silo")
+
+        # shift every index at or after pos BEFORE the new slot exists
+        self._remap_silo_indices(lambda i: i + 1 if i >= pos else i)
+
+        presets.insert(pos, text)
+        doc = QTextDocument()
+        doc.setDefaultFont(self.text_area.font())
+        self._set_plain_text_clean(doc, text)
+        while len(self.silo_docs) < pos:
+            spare = QTextDocument()
+            spare.setDefaultFont(self.text_area.font())
+            self.silo_docs.append(spare)
+        self.silo_docs.insert(pos, doc)
+
+        if getattr(self, "active_temp_slot", 0) >= pos:
+            self.active_temp_slot += 1
+        self.mark_dirty()
+        return pos
+
+    def duplicate_silo(self, idx, is_archive=False):
+        """Copy a silo, its text and its files, into the next slot."""
+        presets = self.data.get("archive_temp_presets" if is_archive else "temp_presets", [])
+        if not (0 <= idx < len(presets)):
+            return
+        if is_archive:      # archive has no insert path; keep it simple
+            return
+
+        src_dir = self._silo_folder_dir(idx)
+        text = presets[idx]
+        new_idx = self._insert_silo_at(idx + 1, text)
+
+        # carry the visual identity across, but NOT the pin/tick state —
+        # a copy shouldn't silently inherit "pinned" or "done"
+        colours = self.data.get("silo_colors", {})
+        if isinstance(colours, dict) and str(idx) in colours:
+            colours[str(new_idx)] = colours[str(idx)]
+        paths = self.data.get("silo_project_paths", {})
+        if isinstance(paths, dict) and isinstance(paths.get(str(idx)), dict):
+            paths[str(new_idx)] = dict(paths[str(idx)])
+
+        # copy the files folder too, into the copy's OWN uniquely named dir
+        try:
+            if os.path.isdir(src_dir) and os.listdir(src_dir):
+                dst_dir = self._silo_folder_dir(new_idx)
+                if os.path.abspath(dst_dir) != os.path.abspath(src_dir):
+                    import shutil
+                    shutil.copytree(src_dir, dst_dir, dirs_exist_ok=True)
+        except OSError as e:
+            from fastprompter.core.logging import logger
+            logger.warning("duplicate_silo: copying files failed: %s", e)
+
+        self.refresh_temp_presets()
+        self._switch_to_slot(new_idx)
+
+    def new_child_silo(self, idx, is_archive=False):
+        """Create an empty silo directly under `idx` and nest it there."""
+        presets = self.data.get("archive_temp_presets" if is_archive else "temp_presets", [])
+        if is_archive or not (0 <= idx < len(presets)):
+            return
+        new_idx = self._insert_silo_at(idx + 1, "")
+
+        cmap = self.data.setdefault("silo_children", {})
+        if isinstance(cmap, dict):
+            # the map is keyed inconsistently (int vs str) across the app,
+            # so find whichever form this parent already uses
+            key = next((k for k in cmap if str(k) == str(idx)), idx)
+            kids = cmap.setdefault(key, [])
+            if isinstance(kids, list) and new_idx not in kids:
+                kids.append(new_idx)
+
+        self.mark_dirty()
+        self.refresh_temp_presets()
+        self._switch_to_slot(new_idx)
+
     def show_temp_menu(self, idx, pos, is_archive=False):
         cur = self.text_area.toPlainText().strip()
         menu = QMenu(self)
@@ -5218,6 +5411,14 @@ class FastPrompter(
             if self.silo_parent_of(idx) is not None:
                 menu.addAction(tr("⬆ Un-nest from Parent", getattr(self, "_current_lang", "EN")),
                                lambda i=idx: (self.unnest_silo(i), self.refresh_temp_presets()))
+        if not is_archive:
+            menu.addAction(
+                tr("⧉ Duplicate Silo (with files)", getattr(self, "_current_lang", "EN")),
+                lambda i=idx: self.duplicate_silo(i))
+            menu.addAction(
+                tr("↳ New Child Silo", getattr(self, "_current_lang", "EN")),
+                lambda i=idx: self.new_child_silo(i))
+            menu.addSeparator()
         menu.addAction(tr("📁 Files…", getattr(self, "_current_lang", "EN")), lambda i=idx, a=is_archive: self.open_file_container(i, a))
         menu.addAction(tr("⚙ Configure Project Paths...", getattr(self, "_current_lang", "EN")), lambda i=idx: self.open_silo_settings(i))
 

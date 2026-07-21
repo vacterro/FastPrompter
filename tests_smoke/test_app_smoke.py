@@ -4386,3 +4386,113 @@ def test_reordering_archived_silos_carries_their_state(win):
 
     # the active silos' saved state is untouched by an archive reorder
     assert store["s0"]["pos"] == 999
+
+
+def test_duplicate_silo_copies_text_colour_and_files(win, tmp_path):
+    win.data["files_root"] = str(tmp_path)
+    win.cat_combo.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    win.data["temp_presets"][:] = ["Alpha", "Beta", "Gamma"]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    win.data["silo_colors"] = {"0": "#ff0000", "2": "#0000ff"}
+    win.data["pinned_silos"] = [2]
+    win.data["silo_ticked"] = [2]
+
+    src = win._silo_folder_dir(0)
+    os.makedirs(src, exist_ok=True)
+    with open(os.path.join(src, "note.txt"), "w") as fh:
+        fh.write("hello")
+
+    win.duplicate_silo(0)
+
+    assert win.data["temp_presets"][:4] == ["Alpha", "Alpha", "Beta", "Gamma"]
+    # the copy takes the colour...
+    assert win.data["silo_colors"].get("1") == "#ff0000"
+    # ...but NOT the pin or tick — a copy shouldn't arrive already flagged
+    assert 1 not in win.data["pinned_silos"]
+    assert 1 not in win.data["silo_ticked"]
+    # and everything below shifted with its own state intact
+    assert win.data["silo_colors"].get("3") == "#0000ff"
+    assert win.data["pinned_silos"] == [3]
+
+    # files are COPIED into the duplicate's own folder, not shared
+    dup = win._silo_folder_dir(1)
+    assert os.path.abspath(dup) != os.path.abspath(win._silo_folder_dir(0))
+    assert os.path.exists(os.path.join(dup, "note.txt"))
+    assert os.path.exists(os.path.join(win._silo_folder_dir(0), "note.txt"))
+    # editing the copy's file must not touch the original
+    with open(os.path.join(dup, "note.txt"), "w") as fh:
+        fh.write("changed")
+    with open(os.path.join(win._silo_folder_dir(0), "note.txt")) as fh:
+        assert fh.read() == "hello"
+
+
+def test_new_child_silo_nests_under_its_parent(win):
+    win.cat_combo.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    win.data["temp_presets"][:] = ["Parent", "Other"]
+    win.silo_docs[:] = []
+    win.data["silo_children"] = {}
+    win._switch_to_slot(0, initial=True)
+
+    win.new_child_silo(0)
+
+    assert win.data["temp_presets"][:3] == ["Parent", "", "Other"]
+    kids = win.data["silo_children"]
+    key = next(k for k in kids if str(k) == "0")
+    assert 1 in kids[key], f"child not nested under its parent: {dict(kids)}"
+    assert win.active_temp_slot == 1, "should land on the new child"
+
+
+def test_files_folder_is_not_created_just_by_looking(win, tmp_path):
+    # Opening the Files panel used to leave an empty directory behind for
+    # every silo the user merely glanced at.
+    win.data["files_root"] = str(tmp_path)
+    win.cat_combo.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    # fully hermetic: fresh root AND a fresh folder map, or this silo
+    # inherits a folder an earlier test already put files in
+    win.data["silo_folders"] = {}
+    win.data["temp_presets"][:] = ["PeekOnly"]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+
+    win.open_file_container()
+    folder = win._file_container.folder
+    assert os.path.isdir(folder), "panel should have a folder while open"
+    assert os.listdir(folder) == [], "fixture is not clean"
+    win._file_container.close()
+    assert not os.path.isdir(folder), "empty folder left behind after closing"
+
+    # but a folder with content is never removed
+    win.open_file_container()
+    folder = win._file_container.folder
+    assert os.path.isdir(folder)
+    with open(os.path.join(folder, "keep.txt"), "w") as fh:
+        fh.write("x")
+    win._file_container.close()
+    assert os.path.isdir(folder)
+    assert os.path.exists(os.path.join(folder, "keep.txt"))
+
+
+def test_folder_map_only_records_real_silos(win, tmp_path):
+    # The map used to gain untitled-4..untitled-10 entries for slots that
+    # held no silo, just because the panel asked for their names.
+    win.data["files_root"] = str(tmp_path)
+    win.cat_combo.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    win.data["temp_presets"][:] = ["Real one", "Real two"]
+    win.silo_docs[:] = []
+    win.data["silo_folders"] = {}
+    win._switch_to_slot(0, initial=True)
+
+    win.refresh_temp_presets()
+    win._update_files_button()
+    # asking about empty slots must not register them
+    for empty_slot in (5, 7, 9):
+        win._silo_folder_name(empty_slot)
+
+    recorded = {int(k) for k in win.data["silo_folders"]}
+    assert recorded <= {0, 1}, (
+        f"folder names recorded for silos that don't exist: {sorted(recorded)}")
