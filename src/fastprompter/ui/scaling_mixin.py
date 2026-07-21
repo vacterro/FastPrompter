@@ -74,6 +74,9 @@ class ScalingMixin:
     # need (16px clipped descenders at 50%).
     MIN_FONT_PT = 8.0
     MIN_BTN_PX = 20
+    # A label below this is mush rather than small text - measured at 7px on
+    # Vintage Classic, where "NEW" came out three pixels tall.
+    MIN_LABEL_PX = 9
     # 12pt at 100% keeps all five steps distinct above the 8pt floor:
     # 50->8, 75->9, 100->12, 125->15, 150->18
     BASE_FONT_PT = 12.0
@@ -107,22 +110,39 @@ class ScalingMixin:
         import re
 
         scale = self._effective_scale()
-        # Only ever shrink. These strings are authored for 100%, and the
-        # button WIDTHS do not scale - growing the font at 150% made "Save"
-        # ask for 64px inside a 60px box, i.e. trading one clipping bug for
-        # another. Shrinking has no such risk.
-        if scale >= 0.99:
-            return qss
 
-        def shrink(match):
+        # Budget the box rather than scaling everything blindly. Scaling the
+        # font down with the rest made it 7px on Vintage Classic - a label
+        # three pixels tall, unreadable mush. The font gets a legibility
+        # floor and the PADDING gives way instead, since padding is the part
+        # nobody misses at 50%.
+        border = 0
+        m = re.search(r"border\s*:\s*(\d+)px", qss)
+        if m:
+            border = int(m.group(1))
+        box = max(self.MIN_BTN_PX, int(round(24 * scale)))
+
+        def font_px(value):
+            # never GROWN: the button widths do not scale, and enlarging the
+            # font at 150% made "Save" ask for 64px inside a 60px box
+            return max(self.MIN_LABEL_PX, min(value, int(round(value * scale))))
+
+        sized = re.search(r"font-size\s*:\s*(\d+)px", qss)
+        font = font_px(int(sized.group(1))) if sized else self.MIN_LABEL_PX
+        # what is left of the height once the font and both borders are in
+        room = box - font - 2 * border
+        pad = max(1, room // 2)
+
+        def rewrite(match):
             prop, value = match.group(1), int(match.group(2))
-            if prop == "border":
-                return match.group(0)          # hairlines stay hairlines
-            floor = 7 if prop == "font-size" else 0
-            return f"{prop}: {max(floor, int(round(value * scale)))}px"
+            if prop == "font-size":
+                return f"font-size: {font_px(value)}px"
+            # padding gives way only when the box cannot hold it; at a
+            # comfortable size the theme's own value is kept
+            return f"{prop}: {min(value, pad)}px"
 
         return re.sub(r"(font-size|padding|margin)\s*:\s*(\d+)px",
-                      shrink, qss)
+                      rewrite, qss)
 
     def apply_button_size(self, widget, base_w, base_h=None):
         """Set widget size based on the combined UI x button scale."""
