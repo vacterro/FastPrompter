@@ -25,6 +25,7 @@ from PyQt6.QtWidgets import (
     QDialog,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QListWidget,
     QListWidgetItem,
     QPushButton,
@@ -61,6 +62,16 @@ class WatcherDialog(QDialog):
         self.lbl_state = QLabel()
         self.lbl_state.setWordWrap(True)
         root.addWidget(self.lbl_state)
+
+        proj = QHBoxLayout()
+        proj.addWidget(QLabel(tr("Project folder", self.lang)))
+        self.ed_project = QLineEdit(
+            getattr(main_win, "data", {}).get("watcher_project", ""))
+        self.ed_project.setPlaceholderText(
+            tr("what {project} means in an agent's paths", self.lang))
+        self.ed_project.editingFinished.connect(self.save_project)
+        proj.addWidget(self.ed_project, 1)
+        root.addLayout(proj)
 
         root.addWidget(QLabel(tr("Agent", self.lang)))
         self.cmb_agent = QComboBox()
@@ -222,6 +233,23 @@ class WatcherDialog(QDialog):
 
     def panic(self):
         self.main_win.watcher_panic()
+        self.refresh()
+
+    def save_project(self):
+        """Store it and reload, so an adapter that was refusing can recover.
+
+        Reloading matters: the probes were BUILT with the old value, and an
+        adapter that reported "no project folder" keeps reporting it until
+        something rebuilds them.
+        """
+        text = self.ed_project.text().strip()
+        if text == self.main_win.data.get("watcher_project", ""):
+            return
+        self.main_win.data["watcher_project"] = text
+        self.main_win.mark_dirty()
+        self._adapters, self._limits, self._errors = \
+            self.main_win.watcher_adapters()
+        self.refresh_agents()
         self.refresh()
 
     def toggle_watch(self):

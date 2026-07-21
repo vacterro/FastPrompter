@@ -4,7 +4,6 @@ The clock is an argument everywhere, so a quiet window is tested by moving
 `now` rather than by sleeping.
 """
 
-import io
 import json
 import os
 import sqlite3
@@ -332,3 +331,46 @@ def test_build_carries_the_claude_settings_through():
     assert probe.quiet_ms == 2000
     assert probe.last_line_json == {"type": "assistant"}
     assert "mode" in probe.ignore_types
+
+
+# ------------------------------------------------- {project}, added in W-09
+
+def test_an_unset_project_is_a_misconfiguration_not_a_missing_file():
+    """Substituting an empty string turned "{project}/.freebuff/x.db" into
+    "/.freebuff/x.db", which never exists - so the probe read as busy
+    forever while the adapter reported itself READY and could never fire.
+    A wrong path that fails loudly beats one that waits quietly."""
+    probe = build({"kind": "sqlite", "path": "{project}/.freebuff/x.db"},
+                  project="")
+    ok, reason = probe.supported()
+    assert ok is False
+    assert "project folder" in reason
+
+
+def test_the_same_holds_for_a_file_glob():
+    probe = build({"kind": "file", "glob": "{project}/.agent/*.jsonl"},
+                  project=None)
+    assert probe.supported()[0] is False
+
+
+def test_a_project_that_is_set_builds_a_real_probe():
+    probe = build({"kind": "sqlite", "path": "{project}/.freebuff/x.db"},
+                  project="C:/work/thing")
+    assert probe.supported()[0] is True
+    assert "{project}" not in probe.path
+    assert "C:/work/thing" in probe.path
+
+
+def test_a_path_without_the_placeholder_never_needs_a_project():
+    probe = build({"kind": "file", "glob": "~/.claude/projects/*/*.jsonl"},
+                  project="")
+    assert probe.supported()[0] is True
+
+
+def test_a_file_that_does_not_exist_yet_is_still_supported():
+    """Different thing entirely: the agent may not have started."""
+    probe = build({"kind": "file", "glob": "/nowhere/at/all/*.jsonl"},
+                  project="anything")
+    assert probe.supported()[0] is True, "absent is not misconfigured"
+    assert probe.poll(0.0)[0] == BUSY, "but it certainly is not idle"
+

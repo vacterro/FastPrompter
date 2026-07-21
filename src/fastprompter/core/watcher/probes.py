@@ -266,12 +266,32 @@ def process_probe(cpu_below=5.0, **kw):
     return _OptionalProbe("process", "psutil")        # reader not built yet
 
 
+def _needs_project(raw, project):
+    """A path that still wants {project} when none is set is misconfigured.
+
+    Substituting an empty string instead turns "{project}/.freebuff/x.db"
+    into "/.freebuff/x.db", which simply never exists - so the probe reads
+    as busy forever and the adapter reports itself READY while being
+    incapable of ever firing. A wrong path that fails loudly beats a wrong
+    path that waits quietly.
+
+    A file that does not exist YET is a different matter and stays fine: the
+    agent may not have started.
+    """
+    return "{project}" in (raw or "") and not project
+
+
 def build(spec, project=None):
     """One probe from a config entry. Unknown kinds are unsupported."""
     if not isinstance(spec, dict):
         return _OptionalProbe("unknown", "a valid config entry")
     kind = spec.get("kind")
     quiet = spec.get("quiet_ms", 2000)
+
+    raw = spec.get("glob") if kind == "file" else spec.get("path")
+    if _needs_project(raw, project):
+        return _OptionalProbe(
+            str(kind), "a project folder, which is not set in the settings")
 
     if kind == "file":
         pattern = (spec.get("glob") or "").replace("{project}", project or "")
