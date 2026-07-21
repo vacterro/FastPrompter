@@ -1,4 +1,5 @@
 import os
+import subprocess
 import re
 
 from PyQt6 import sip
@@ -934,24 +935,26 @@ class VaultTextEdit(QTextEdit):
                     self._toggle_single_line(cb_block)
                     event.accept()
                     return
-                # Handle anchor/link clicks — Ctrl+click opens, Ctrl+Shift+click opens folder
-                mods = event.modifiers()
-                if mods & Qt.KeyboardModifier.ControlModifier:
-                    cursor = self.cursorForPosition(event.pos())
-                    if cursor.charFormat().isAnchor():
-                        url = QUrl(cursor.charFormat().anchorHref())
-                        if url.isValid():
-                            if mods & Qt.KeyboardModifier.ShiftModifier and url.isLocalFile():
-                                import subprocess
-                                path = os.path.normpath(url.toLocalFile())
-                                if os.name == 'nt':
-                                    subprocess.run(["explorer", "/select,", path])
-                                else:
-                                    QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.dirname(path)))
-                            else:
-                                QDesktopServices.openUrl(url)
-                            event.accept()
-                            return
+            # Ctrl+left-click opens the link; Ctrl+right-click (and the older
+            # Ctrl+Shift+click) reveals a local file in its folder. This sits
+            # OUTSIDE the left-button branch above on purpose - nested in it,
+            # a right-click could never reach it.
+            mods = event.modifiers()
+            if mods & Qt.KeyboardModifier.ControlModifier:
+                url = self.anchor_url_at(event.pos())
+                if url is not None:
+                    wants_folder = (
+                        event.button() == Qt.MouseButton.RightButton
+                        or bool(mods & Qt.KeyboardModifier.ShiftModifier))
+                    if wants_folder and url.isLocalFile():
+                        self.open_containing_folder(url)
+                        self._suppress_context_menu = True
+                    elif event.button() == Qt.MouseButton.LeftButton:
+                        QDesktopServices.openUrl(url)
+                    else:
+                        return      # Ctrl+right on a web link: let the menu open
+                    event.accept()
+                    return
         except Exception as e:
             logger.debug(f"checkbox/anchor mouse error: {e}")
         # Line-blocking drag: Ctrl+Shift+hold picks up the whole line under
@@ -1071,6 +1074,41 @@ class VaultTextEdit(QTextEdit):
             self.refresh_extra_selections()
         super().leaveEvent(event)
 
+    def anchor_url_at(self, pos):
+        """The link under this viewport point, or None."""
+        try:
+            fmt = self.cursorForPosition(pos).charFormat()
+            if not fmt.isAnchor():
+                return None
+            url = QUrl(fmt.anchorHref())
+            return url if url.isValid() else None
+        except Exception:
+            logger.debug("anchor lookup failed", exc_info=True)
+            return None
+
+    def open_containing_folder(self, url):
+        """Reveal a local file in the file manager.
+
+        Was copy-pasted in three places (Ctrl+Shift+click, the context menu,
+        and now Ctrl+right-click), which is two places too many for logic
+        that shells out.
+        """
+        if url is None or not url.isLocalFile():
+            return False
+        path = os.path.normpath(url.toLocalFile())
+        try:
+            if os.name == "nt":
+                # /select, needs the path as its own argument, and the comma
+                # belongs to the switch - explorer is fussy about both
+                subprocess.run(["explorer", "/select,", path])
+            else:
+                QDesktopServices.openUrl(
+                    QUrl.fromLocalFile(os.path.dirname(path)))
+        except Exception:
+            logger.debug("could not reveal %s", path, exc_info=True)
+            return False
+        return True
+
     def rehover_from_pointer(self, point=None):
         """Re-derive the hovered line without the mouse having moved.
 
@@ -1150,25 +1188,24 @@ class VaultTextEdit(QTextEdit):
             self._dragged = False
             event.ignore()
             return
+        # Ctrl+right-click already revealed the folder on press; without this
+        # the menu would still pop up over the file manager it just opened
+        if getattr(self, "_suppress_context_menu", False):
+            self._suppress_context_menu = False
+            event.ignore()
+            return
         menu = self.createStandardContextMenu()
         menu.addSeparator()
 
         # Handle "Open Folder" for local file links
-        cursor = self.cursorForPosition(event.pos())
-        if cursor.charFormat().isAnchor():
-            url = QUrl(cursor.charFormat().anchorHref())
-            if url.isValid() and url.isLocalFile():
-                import os
-                import subprocess
-                path = os.path.normpath(url.toLocalFile())
-                def _open_folder():
-                    if os.name == 'nt':
-                        subprocess.run(["explorer", "/select,", path])
-                    else:
-                        QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.dirname(path)))
-                open_folder_action = menu.addAction(f"Open folder containing {os.path.basename(path)}")
-                open_folder_action.triggered.connect(_open_folder)
-                menu.addSeparator()
+        url = self.anchor_url_at(event.pos())
+        if url is not None and url.isLocalFile():
+            path = os.path.normpath(url.toLocalFile())
+            action = menu.addAction(
+                f"Open folder containing {os.path.basename(path)}\tCtrl+RClick")
+            action.triggered.connect(
+                lambda _checked=False, u=url: self.open_containing_folder(u))
+            menu.addSeparator()
 
         lang = getattr(self.main_win, '_current_lang', 'EN')
         menu.addAction(tr("Expand All Folds", lang), self.unfold_all)

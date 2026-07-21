@@ -5198,3 +5198,95 @@ def test_hover_line_follows_the_pointer_when_the_text_scrolls(win):
         win.data["hover_line"] = kept
         ed._hover_block = None
         ed.clear()
+
+def test_ctrl_e_reverses_any_header_level(win):
+    """Ctrl+E only recognised "# ", so on "## Sub" it failed to see a header
+    and prepended another marker, producing "# ## Sub"."""
+    from PyQt6.QtGui import QTextCursor
+
+    ed = win.text_area
+    try:
+        def press(text):
+            ed.setPlainText(text)
+            c = ed.textCursor()
+            c.movePosition(QTextCursor.MoveOperation.End)
+            ed.setTextCursor(c)
+            win.toggle_header_line()
+            return ed.toPlainText()
+
+        assert press("plain text") == "# plain text"
+        assert press("# Header one") == "Header one"
+        assert press("## Sub header") == "Sub header"
+        assert press("### Third level") == "Third level"
+        assert press("#### Fourth") == "Fourth"
+
+        # a bare hash with no space is not a header in markdown
+        assert press("#no space") == "# #no space"
+
+        # off then on again lands on a plain level-one header
+        assert press("## Sub header") == "Sub header"
+        win.toggle_header_line()
+        assert ed.toPlainText() == "# Sub header"
+    finally:
+        ed.clear()
+
+
+def test_ctrl_click_opens_links_and_ctrl_right_click_reveals_the_folder(win):
+    """Ctrl+LClick opens the link, Ctrl+RClick shows the file in its folder."""
+    import os
+    import tempfile
+    from PyQt6.QtCore import QEvent, QPointF, QUrl, Qt
+    from PyQt6.QtGui import QDesktopServices, QMouseEvent, QTextCursor
+    import fastprompter.ui.editor as editor_mod
+
+    ed = win.text_area
+    tmp = tempfile.mkdtemp()
+    target = os.path.join(tmp, "note.txt")
+    with open(target, "w") as fh:
+        fh.write("hi")
+
+    opened, revealed = [], []
+    real_open = QDesktopServices.openUrl
+    real_run = editor_mod.subprocess.run
+    try:
+        ed.clear()
+        c = ed.textCursor()
+        c.insertHtml(f'<a href="{QUrl.fromLocalFile(target).toString()}">file</a>')
+        c.insertText("\n")
+        c.insertHtml('<a href="https://example.com">web</a>')
+
+        QDesktopServices.openUrl = staticmethod(
+            lambda u: opened.append(u.toString()))
+        editor_mod.subprocess.run = lambda *a, **k: revealed.append(a[0])
+
+        def click(block, button, mods):
+            r = ed.cursorRect(QTextCursor(ed.document().findBlockByNumber(block)))
+            pos = QPointF(r.left() + 12, r.top() + r.height() // 2)
+            ed.mousePressEvent(QMouseEvent(
+                QEvent.Type.MouseButtonPress, pos, button, button, mods))
+
+        ctrl = Qt.KeyboardModifier.ControlModifier
+        click(0, Qt.MouseButton.LeftButton, ctrl)
+        assert opened and opened[-1].endswith("note.txt")
+
+        opened.clear()
+        click(0, Qt.MouseButton.RightButton, ctrl)
+        assert revealed, "Ctrl+RClick must reveal the file"
+        assert os.path.normpath(target) in revealed[-1]
+        assert not opened, "revealing must not also open the file"
+        assert ed._suppress_context_menu, "the menu must not pop over the folder"
+
+        # a web link has no folder to show, so the menu is left to open
+        revealed.clear()
+        click(1, Qt.MouseButton.RightButton, ctrl)
+        assert not revealed
+
+        # without Ctrl nothing is launched at all
+        opened.clear()
+        click(0, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
+        assert not opened and not revealed
+    finally:
+        QDesktopServices.openUrl = real_open
+        editor_mod.subprocess.run = real_run
+        ed._suppress_context_menu = False
+        ed.clear()

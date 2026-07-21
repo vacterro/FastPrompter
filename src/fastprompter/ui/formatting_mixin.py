@@ -130,10 +130,21 @@ class FormattingMixin:
         if sel.startswith("**") and sel.endswith("**") and len(sel) >= 4:
             sel = sel[2:-2]
 
-        has_hdr = sel.startswith("# ")
+        # Any header level reverses back to plain text, not just "# ".
+        # Matching only "# " meant Ctrl+E on "## Sub" failed to recognise it
+        # as a header and prepended another marker, giving "# ## Sub".
+        marker = 0
+        while marker < len(sel) and sel[marker] == "#":
+            marker += 1
+        if marker and marker < len(sel) and sel[marker] == " ":
+            marker += 1
+        else:
+            marker = 0
+
+        has_hdr = marker > 0
         if has_hdr:
-            new_text = sel[2:]
-            offset = -2
+            new_text = sel[marker:]
+            offset = -marker
         else:
             new_text = f"# {sel}"
             offset = 2
