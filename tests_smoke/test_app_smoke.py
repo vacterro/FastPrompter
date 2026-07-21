@@ -7335,3 +7335,90 @@ def test_an_empty_flow_still_measures(win):
     from fastprompter.ui.flow_layout import flow_widget
 
     assert flow_widget([]).totalHeightForWidth(300) == 0
+
+
+# ---------------------- T-200: checkbox hit testing ------------------------
+
+
+def _checkbox_doc(win):
+    from PyQt6.QtGui import QTextCursor
+
+    win.text_area.setPlainText("[ ] first\n[x] second\n[ ] third")
+    win.text_area._doc_has_checkbox = True
+    QApplication.processEvents()
+    doc = win.text_area.document()
+    points = []
+    for i in range(doc.blockCount()):
+        r = win.text_area.cursorRect(QTextCursor(doc.findBlockByNumber(i)))
+        points.append((i, r))
+    return doc, points
+
+
+def test_every_checkbox_answers_a_click(win):
+    from PyQt6.QtCore import QPoint
+
+    doc, points = _checkbox_doc(win)
+    for i, r in points:
+        hit = win.text_area._checkbox_at_pos(QPoint(int(r.x()) + 4,
+                                                     int(r.top()) + 4))
+        assert hit is not None and hit.blockNumber() == i, f"block {i}"
+
+
+def test_one_bad_block_does_not_kill_the_checkbox_scan(win, monkeypatch):
+    """The guard used to wrap the whole walk, so a single block that upset
+    the layout maths aborted the scan and every checkbox below it became
+    unclickable. Measured before the fix: the third of three stopped
+    responding."""
+    from PyQt6.QtCore import QPoint
+
+    doc, points = _checkbox_doc(win)
+    ta = win.text_area
+    original = ta.cursorRect
+    calls = {"n": 0}
+
+    def flaky(cursor):
+        calls["n"] += 1
+        if calls["n"] == 3:
+            raise RuntimeError("synthetic layout failure on one block")
+        return original(cursor)
+
+    target = points[2][1]
+    monkeypatch.setattr(ta, "cursorRect", flaky)
+    hit = ta._checkbox_at_pos(QPoint(int(target.x()) + 4,
+                                     int(target.top()) + 4))
+    assert hit is not None, "a later checkbox must still answer"
+
+
+def test_a_click_away_from_any_checkbox_finds_nothing(win):
+    from PyQt6.QtCore import QPoint
+
+    _doc, points = _checkbox_doc(win)
+    r = points[0][1]
+    assert win.text_area._checkbox_at_pos(
+        QPoint(int(r.x()) + 400, int(r.top()) + 4)) is None
+
+
+def test_a_degenerate_box_width_still_takes_a_click(win, monkeypatch):
+    """A wrapped line can put the closing bracket on the next visual row,
+    which makes the width negative - QRect.contains() is then false for
+    every point and the checkbox silently stops responding."""
+    from PyQt6.QtCore import QPoint
+
+    _doc, points = _checkbox_doc(win)
+    ta = win.text_area
+    original = ta.cursorRect
+    seen = {"n": 0}
+
+    def collapsed(cursor):
+        # every second call is the "end of the box" probe; put it left of
+        # the start so the computed width goes negative
+        rect = original(cursor)
+        seen["n"] += 1
+        if seen["n"] % 2 == 0:
+            rect.moveLeft(rect.left() - 40)
+        return rect
+
+    monkeypatch.setattr(ta, "cursorRect", collapsed)
+    r = points[0][1]
+    hit = ta._checkbox_at_pos(QPoint(int(r.x()) + 2, int(r.top()) + 2))
+    assert hit is not None, "a negative width must fall back, not go dead"

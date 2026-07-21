@@ -1061,17 +1061,31 @@ class VaultTextEdit(QTextEdit):
             pass
 
     def _checkbox_at_pos(self, pos):
+        """Which checkbox, if any, is under this viewport point.
+
+        The guard is PER BLOCK, not around the whole walk. It used to wrap
+        the entire loop, so one block that upset the layout maths aborted
+        the scan and every checkbox below it became unclickable - measured:
+        a single raising block made the third checkbox in a three-line
+        document impossible to hit. A bad block is skipped now; the ones
+        after it still answer.
+        """
+        if not self._doc_has_checkbox:
+            return None
+        doc = self.document()
+        if not doc:
+            return None
         try:
-            if not self._doc_has_checkbox:
-                return None
-            doc = self.document()
-            if not doc:
-                return None
             vp_h = self.viewport().height()
             block = self._first_visible_block()
-            if not block:
-                return None
-            while block.isValid():
+        except Exception as exc:
+            logger.debug("checkbox hit test could not start: %s", exc)
+            return None
+        if not block:
+            return None
+
+        while block.isValid():
+            try:
                 r = self.cursorRect(QTextCursor(block))
                 if r.top() > vp_h:
                     break
@@ -1079,19 +1093,31 @@ class VaultTextEdit(QTextEdit):
                     text = block.text()
                     stripped = text.lstrip()
                     indent = len(text) - len(stripped)
-                    if stripped.startswith("[ ] ") or stripped.startswith("[x] ") or stripped.startswith("[X] "):
+                    if stripped.startswith(("[ ] ", "[x] ", "[X] ")):
                         cursor = QTextCursor(block)
                         cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
-                        cursor.movePosition(QTextCursor.MoveOperation.Right, QTextCursor.MoveMode.MoveAnchor, indent)
+                        cursor.movePosition(QTextCursor.MoveOperation.Right,
+                                            QTextCursor.MoveMode.MoveAnchor, indent)
                         r_start = self.cursorRect(cursor)
-                        cursor.movePosition(QTextCursor.MoveOperation.Right, QTextCursor.MoveMode.MoveAnchor, 4)
+                        cursor.movePosition(QTextCursor.MoveOperation.Right,
+                                            QTextCursor.MoveMode.MoveAnchor, 4)
                         r_end = self.cursorRect(cursor)
                         b_w = int(r_end.x() - r_start.x())
-                        if QRect(int(r_start.x()), int(r_start.top()), b_w, int(r_start.height())).contains(pos):
+                        # A wrapped line can put the closing bracket on the
+                        # next visual row, which makes the width negative and
+                        # QRect.contains() false for every point - the
+                        # checkbox would simply stop responding. Fall back to
+                        # the line height, which is close enough to the glyph
+                        # box to stay clickable.
+                        if b_w <= 0:
+                            b_w = int(r_start.height())
+                        if QRect(int(r_start.x()), int(r_start.top()),
+                                 b_w, int(r_start.height())).contains(pos):
                             return block
-                block = block.next()
-        except Exception as e:
-            logger.debug(f"checkbox hit test error: {e}")
+            except Exception as exc:
+                logger.debug("checkbox hit test skipped block %s: %s",
+                             block.blockNumber(), exc)
+            block = block.next()
         return None
 
     @staticmethod
