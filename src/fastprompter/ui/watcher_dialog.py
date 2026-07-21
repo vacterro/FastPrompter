@@ -96,6 +96,19 @@ class WatcherDialog(QDialog):
         row.addWidget(self.btn_panic)
         root.addLayout(row)
 
+        # Watching is not arming with sending switched off: it builds no
+        # target and no sender, so there is nothing in that mode that could
+        # send. Safe to point at an agent mid-turn to learn its signal.
+        self.btn_watch = QPushButton()
+        self.btn_watch.clicked.connect(self.toggle_watch)
+        root.addWidget(self.btn_watch)
+
+        self.lst_trace = QListWidget()
+        self.lst_trace.setMinimumHeight(96)
+        self.lst_trace.setToolTip(tr(
+            "Live signal from the agent. Only changes are listed.", self.lang))
+        root.addWidget(self.lst_trace)
+
         root.addWidget(QLabel(tr("What has gone out", self.lang)))
         self.lst_log = QListWidget()
         self.lst_log.setMinimumHeight(110)
@@ -211,6 +224,15 @@ class WatcherDialog(QDialog):
         self.main_win.watcher_panic()
         self.refresh()
 
+    def toggle_watch(self):
+        if self.main_win.watcher_observing:
+            self.main_win.watcher_stop_observing()
+            return
+        ok, reason = self.main_win.watcher_observe(self.current_adapter())
+        if not ok:
+            self.lbl_state.setText(reason)
+        self.refresh()
+
     # ---- the live view ------------------------------------------------
     def refresh(self):
         engine = self.main_win.watcher_engine()
@@ -237,6 +259,25 @@ class WatcherDialog(QDialog):
         self.lst_windows.setEnabled(not armed)
         self.cmb_agent.setEnabled(not armed)
         self.chk_live.setEnabled(not armed)
+
+        watching = self.main_win.watcher_observing
+        self.btn_watch.setText(
+            tr("Stop watching", self.lang) if watching
+            else tr("Watch the agent (sends nothing)", self.lang))
+        self.btn_watch.setEnabled(not armed)
+
+        self.lst_trace.clear()
+        for row in reversed(self.main_win.watcher_trace()[-30:]):
+            grew = f"  +{row['delta']:,}b" if row["delta"] > 0 else ""
+            mark = "▶" if row["state"] == "busy" else "■"
+            note = ""
+            if row["would_send"]:
+                mark = "→"
+                note = "   " + tr("a prompt would go out here", self.lang)
+            item = QListWidgetItem(
+                f"{mark}  {row['at']:6.1f}s  {row['state']}{grew}{note}")
+            item.setToolTip(row["reason"])
+            self.lst_trace.addItem(item)
 
         self.lst_log.clear()
         for entry in reversed(self.main_win.watcher_log().to_list()[-40:]):

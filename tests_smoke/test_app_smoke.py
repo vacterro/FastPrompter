@@ -6745,3 +6745,115 @@ def test_the_panic_hotkey_is_registered_globally():
         HotkeyMixin.register_all_hotkeys)
     assert "watcher_panic" in inspect.getsource(
         HotkeyFilter.nativeEventFilter)
+
+
+# ---------------------------- observe mode ---------------------------------
+#
+# The safety property is structural, not a flag: observe mode builds no
+# target and no sender, so there is nothing in it that COULD send. That is
+# what makes it safe to point at an agent mid-turn to learn its signal.
+
+
+def test_watching_builds_no_target_and_no_live_sender(win):
+    ok, reason = win.watcher_observe(_fake_adapter())
+    try:
+        assert ok is True and "watching" in reason
+        assert win.watcher_observing is True
+        assert win._watcher_target is None, "no target means nothing to send to"
+        assert win._watcher_sender.dry is True
+        assert win.watcher_engine().armed is False, "watching is not arming"
+    finally:
+        win.watcher_stop_observing()
+    assert win.watcher_observing is False
+
+
+def test_watching_never_sends_however_long_it_runs(win):
+    win.watcher_observe(_fake_adapter())
+    try:
+        for _ in range(8):
+            win._observe_tick()
+        assert win.watcher_engine().sent_count == 0
+        assert win.watcher_log().to_list() == []
+    finally:
+        win.watcher_stop_observing()
+
+
+def test_watching_an_agent_it_cannot_read_is_refused(win):
+    from fastprompter.core.watcher.adapter import Adapter
+
+    ok, reason = win.watcher_observe(Adapter("blind"))
+    assert ok is False and "no probes" in reason
+    assert win.watcher_observing is False
+
+
+def test_the_trace_records_transitions_not_every_poll(win):
+    """Twice a second, a row per poll would bury the two moments that matter
+    under hundreds of identical lines."""
+    win.watcher_observe(_fake_adapter())
+    try:
+        for _ in range(10):
+            win._observe_tick()
+        trace = win.watcher_trace()
+        assert 1 <= len(trace) <= 3, f"expected transitions only, got {len(trace)}"
+        states = [row["state"] for row in trace]
+        assert states == list(dict.fromkeys(states)), "no repeated states"
+    finally:
+        win.watcher_stop_observing()
+
+
+def test_the_trace_marks_where_a_prompt_would_have_gone(win):
+    """The point of watching: see the moment without living through it."""
+    win.watcher_observe(_fake_adapter())
+    try:
+        for _ in range(6):
+            win._observe_tick()
+        marked = [row for row in win.watcher_trace() if row["would_send"]]
+        assert marked, "the busy -> idle transition must be called out"
+        assert marked[0]["state"] == "idle"
+    finally:
+        win.watcher_stop_observing()
+
+
+def test_a_broken_observation_stops_instead_of_killing_the_app(win, monkeypatch):
+    """Same rule as the send tick: an exception in a Qt slot takes the
+    process down with no traceback."""
+    win.watcher_observe(_fake_adapter())
+
+    def boom():
+        raise RuntimeError("the observer is broken")
+
+    monkeypatch.setattr(win, "_observe_tick_inner", boom)
+    win._observe_tick()              # must not raise
+    assert win.watcher_observing is False
+
+
+def test_watching_is_refused_while_a_run_is_armed(win, monkeypatch):
+    """Both loops would poll the SAME probe objects at different rates, each
+    stamping the other's quiet window."""
+    _arm_on_fake(win, monkeypatch)
+    try:
+        ok, reason = win.watcher_observe(_fake_adapter())
+        assert ok is False and "disarm first" in reason
+        assert win.watcher_observing is False
+    finally:
+        win.watcher_disarm("test done")
+
+
+def test_disarming_lets_go_of_the_target(win, monkeypatch):
+    """A target outliving its run is how "it sent to the wrong window" starts."""
+    _arm_on_fake(win, monkeypatch)
+    assert win._watcher_target is not None
+    win.watcher_disarm("test done")
+    assert win._watcher_target is None
+    assert win._watcher_sender.dry is True
+
+
+def test_the_dialog_offers_watching_and_says_it_sends_nothing(win):
+    from fastprompter.ui.watcher_dialog import WatcherDialog
+
+    dlg = WatcherDialog(win)
+    try:
+        assert "nothing" in dlg.btn_watch.text().lower()
+        assert dlg.btn_watch.isEnabled() is True
+    finally:
+        dlg.close()

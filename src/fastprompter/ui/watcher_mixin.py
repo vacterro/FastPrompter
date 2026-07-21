@@ -25,6 +25,7 @@ from fastprompter.core.logging import logger
 from fastprompter.core.watcher import win32
 from fastprompter.core.watcher.adapter import load_adapters
 from fastprompter.core.watcher.engine import Engine
+from fastprompter.core.watcher.probes import combine
 from fastprompter.core.watcher.queue import queue_for
 from fastprompter.core.watcher.sender import (
     PostMessageSender,
@@ -50,6 +51,13 @@ class WatcherMixin:
         self._watcher_adapter = None
         self._watcher_timer = None
         self._watcher_listeners = []
+        # observe mode: its own state, so it can never reach the sender
+        self._observe_adapter = None
+        self._observe_timer = None
+        self._observe_trace = []
+        self._observe_last = None
+        self._observe_bytes = 0
+        self._observe_started = 0.0
 
     def watcher_engine(self):
         self._watcher_init()
@@ -128,6 +136,11 @@ class WatcherMixin:
         self._watcher_init()
         self._watcher_engine.disarm(reason)
         self._watcher_stop_timer()
+        # A target exists only while armed. Leaving the old one behind is how
+        # "it sent to the wrong window" bugs start: the next thing to consult
+        # it would find a handle nobody chose for this run.
+        self._watcher_target = None
+        self._watcher_sender = build_sender()
         self._watcher_notify()
 
     def watcher_panic(self):
@@ -248,6 +261,110 @@ class WatcherMixin:
             self.text_area.mark_queue_sent(item.id)
         except Exception:
             pass
+
+    # ---- observing ----------------------------------------------------
+    #
+    # A separate loop, deliberately. Observe mode is not "arm with a flag
+    # that says do not send" - it never builds a target and never builds a
+    # sender, so there is nothing here that COULD send. That is what makes
+    # it safe to point at an agent mid-turn to learn its signal (W-09).
+
+    def watcher_observe(self, adapter):
+        """Watch an agent's signal without arming anything. (ok, reason)."""
+        self._watcher_init()
+        if self._watcher_engine.armed:
+            # Both loops would poll the SAME probe objects at different
+            # rates, each stamping the other's quiet window. One owner of the
+            # probes at a time.
+            return False, "already armed - disarm first to just watch"
+        ok, reason = adapter.supported() if adapter else (False, "no agent chosen")
+        if not ok:
+            return False, reason
+
+        self._observe_adapter = adapter
+        self._observe_trace = []
+        self._observe_last = None
+        self._observe_started = time.monotonic()
+        for probe in adapter.probes:
+            probe.reset()
+        if self._observe_timer is None:
+            self._observe_timer = QTimer(self)
+            self._observe_timer.setInterval(500)
+            self._observe_timer.timeout.connect(self._observe_tick)
+        self._observe_timer.start()
+        self._watcher_notify()
+        return True, f"watching {adapter.name}"
+
+    def watcher_stop_observing(self):
+        self._watcher_init()
+        if self._observe_timer is not None:
+            self._observe_timer.stop()
+        self._observe_adapter = None
+        self._watcher_notify()
+
+    @property
+    def watcher_observing(self):
+        return getattr(self, "_observe_adapter", None) is not None
+
+    def watcher_trace(self):
+        self._watcher_init()
+        return list(self._observe_trace)
+
+    def _observe_tick(self):
+        """Record what the probes say. Catches everything, like the send tick."""
+        try:
+            self._observe_tick_inner()
+        except Exception:
+            logger.exception("watcher observation failed")
+            try:
+                self.watcher_stop_observing()
+            except Exception:
+                pass
+
+    def _observe_tick_inner(self):
+        adapter = getattr(self, "_observe_adapter", None)
+        if adapter is None:
+            if self._observe_timer is not None:
+                self._observe_timer.stop()
+            return
+
+        now = time.monotonic()
+        idle, reasons = combine(adapter.probes, now)
+        size = self._observe_size(adapter)
+
+        # Only transitions are recorded. Polling twice a second, a line per
+        # poll would bury the two moments that matter - when it started
+        # working and when it stopped - under hundreds of identical rows.
+        state = "idle" if idle else "busy"
+        if state != self._observe_last:
+            delta = size - (self._observe_bytes or size)
+            self._observe_trace.append({
+                "at": now - self._observe_started,
+                "state": state,
+                "reason": "; ".join(reasons)[:120],
+                "bytes": size,
+                "delta": delta,
+                # In a real run this is the moment the queue would release a
+                # prompt. Saying so without doing it is the whole point.
+                "would_send": state == "idle" and self._observe_last == "busy",
+            })
+            del self._observe_trace[:-200]
+            self._observe_last = state
+            self._observe_bytes = size
+        self._watcher_notify()
+
+    def _observe_size(self, adapter):
+        """Total bytes across the probes' stores — the response arriving."""
+        total = 0
+        for probe in adapter.probes:
+            token = getattr(probe, "_last_token", None)
+            if isinstance(token, tuple):
+                total += sum(p for p in token if isinstance(p, int))
+            elif isinstance(token, (list, tuple)):
+                for part in token:
+                    if isinstance(part, tuple):
+                        total += sum(p for p in part if isinstance(p, int))
+        return total
 
     # ---- listeners ----------------------------------------------------
     def watcher_listen(self, fn):
