@@ -237,6 +237,15 @@ def all_items(queues, labels=None):
     return rows
 
 
+def find_item(queues, item_id):
+    """(slot, item) for an id anywhere in the store, or (None, None)."""
+    for slot, queue in (queues or {}).items():
+        item = queue.find(item_id)
+        if item is not None:
+            return slot, item
+    return None, None
+
+
 def move_between(queues, item_id, from_slot, to_slot, index=None):
     """Drag an item from one silo's queue into another's."""
     src = queues.get(str(from_slot))

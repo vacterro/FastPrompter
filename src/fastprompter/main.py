@@ -188,6 +188,8 @@ class FastPrompter(
         self.timers = load_timers(self.data.get("timers"))
         from fastprompter.core.watcher.queue import load_queues
         self.prompt_queues = load_queues(self.data.get("watcher_queues"))
+        # on_tab_changed rebinds this to the active category as soon as the
+        # UI is up; this is only the pre-UI starting point
         from fastprompter.core.pomodoro import ProductivityTimer
         self.productivity_timer = ProductivityTimer.from_dict(
             self.data.get("productivity_timer"))
@@ -850,8 +852,17 @@ class FastPrompter(
 
     # ---- prompt queue -------------------------------------------------
     def save_prompt_queues(self):
+        """Write the queues back, per category.
+
+        Every other slot-keyed map is stored as `<key>_all[category]` and
+        rebound on a tab change; a queue that skipped that would follow the
+        user across categories and show another tab's backlog.
+        """
         from fastprompter.core.watcher.queue import save_queues
-        self.data["watcher_queues"] = save_queues(self.prompt_queues)
+        raw = save_queues(self.prompt_queues)
+        self.data["watcher_queues"] = raw
+        cat = self.get_current_category() or ""
+        self.data.setdefault("watcher_queues_all", {})[cat] = raw
         self.mark_dirty()
 
     def _queue_slot_key(self):
@@ -880,6 +891,55 @@ class FastPrompter(
         self.save_prompt_queues()
         self.play_click_sound()
         return item
+
+    def silo_queue_label(self, slot):
+        """A silo's name for the master view: its first non-empty line.
+
+        The text comes from `temp_presets` rather than from a document,
+        because silo_docs are created lazily and most silos have none.
+        """
+        presets = self.data.get(
+            "archive_temp_presets" if str(slot).startswith("a") else "temp_presets") or []
+        index = int(str(slot).lstrip("a") or 0)
+        if not (0 <= index < len(presets)):
+            return f"Silo {index + 1}"
+        raw = presets[index] or ""
+        first = next((ln.strip() for ln in raw.splitlines() if ln.strip()), "")
+        if first.startswith("#"):
+            first = first.lstrip("#").lstrip()
+        return first[:48] or f"Silo {index + 1}"
+
+    def silo_queue_labels(self):
+        return {slot: self.silo_queue_label(slot) for slot in self.prompt_queues}
+
+    def queue_item_live_text(self, slot, item):
+        """The text this item would send right now.
+
+        Three cases, and the plan calls all three out:
+          * the silo is open   - read the block the item is anchored to;
+          * the silo is closed - read its line from `temp_presets`, which is
+            safe because a closed silo cannot be edited: editing opens it;
+          * the line is gone   - keep the last text we saw, and say so.
+        """
+        active = (str(slot) == self._queue_slot_key())
+        if active:
+            block = self.text_area.block_for_queue_item(item.id)
+            if block is not None:
+                text = block.text().strip()
+                return text or item.text, False
+            return item.text, True
+
+        presets = self.data.get(
+            "archive_temp_presets" if str(slot).startswith("a") else "temp_presets") or []
+        index = int(str(slot).lstrip("a") or 0)
+        if 0 <= index < len(presets) and item.line:
+            lines = (presets[index] or "").splitlines()
+            if 0 < item.line <= len(lines):
+                text = lines[item.line - 1].strip()
+                if text:
+                    return text, False
+        # nothing to read it from: fall back rather than invent
+        return item.text, False
 
     def open_queue_dialog(self):
         from fastprompter.ui.queue_panel import QueueDialog
@@ -5175,7 +5235,8 @@ class FastPrompter(
                 "categories", "temp_presets_all", "archive_temp_presets_all", "pinned_silos_all",
                 "silo_ticked_all", "silo_children_all", "silo_collapsed_all",
                 "silo_colors_all", "silo_folders_all", "archive_silo_folders_all",
-                "silo_last_edited_all", "silo_project_paths_all", "archive_project_paths_all"
+                "silo_last_edited_all", "silo_project_paths_all", "archive_project_paths_all",
+                "watcher_queues_all",
             ]
             for key in _all_keys:
                 if key in self.data and old_cat in self.data[key]:
@@ -5255,7 +5316,8 @@ class FastPrompter(
                 "temp_presets_all", "archive_temp_presets_all", "pinned_silos_all",
                 "silo_ticked_all", "silo_children_all", "silo_collapsed_all",
                 "silo_colors_all", "silo_folders_all", "archive_silo_folders_all",
-                "silo_last_edited_all", "silo_project_paths_all", "archive_project_paths_all"
+                "silo_last_edited_all", "silo_project_paths_all", "archive_project_paths_all",
+                "watcher_queues_all",
             ]
             for key in _all_keys:
                 self.data.get(key, {}).pop(cat, None)
@@ -5318,6 +5380,10 @@ class FastPrompter(
             self.data["silo_project_paths"] = self.data.setdefault("silo_project_paths_all", {}).setdefault(
                 cat, {}
             )
+            self.data["watcher_queues"] = self.data.setdefault(
+                "watcher_queues_all", {}).setdefault(cat, {})
+            from fastprompter.core.watcher.queue import load_queues
+            self.prompt_queues = load_queues(self.data["watcher_queues"])
             self.data["archive_project_paths"] = self.data.setdefault("archive_project_paths_all", {}).setdefault(
                 cat, {}
             )

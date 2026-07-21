@@ -6235,3 +6235,165 @@ def test_a_drag_reorder_is_written_back_to_the_queue(win):
         win.prompt_queues.clear()
         win.prompt_queues.update(kept)
         win.text_area.clear()
+
+def _two_silos_with_queues(win):
+    """Alpha (slot 0) gets two prompts, Beta (slot 1) one. Beta stays open."""
+    from fastprompter.ui.queue_panel import QueueDialog
+
+    ed = win.text_area
+    win.data["temp_presets"][:] = [
+        "# Alpha project\nfirst from alpha\nsecond from alpha",
+        "# Beta notes\nonly from beta",
+        "",
+    ]
+    win.silo_docs[:] = []
+    for slot in (0, 1):
+        win._switch_to_slot(slot, initial=True)
+        doc = ed.document()
+        for n in range(1, doc.blockCount()):
+            if doc.findBlockByNumber(n).text().strip():
+                c = ed.textCursor()
+                c.setPosition(doc.findBlockByNumber(n).position())
+                ed.setTextCursor(c)
+                win.queue_current_line()
+    return QueueDialog(win)
+
+
+def test_master_view_shows_every_silo_and_names_the_source(win):
+    kept = dict(win.prompt_queues)
+    kept_presets = list(win.data["temp_presets"])
+    try:
+        win.prompt_queues.clear()
+        dlg = _two_silos_with_queues(win)
+
+        assert [dlg.tabs.tabText(i) for i in range(dlg.tabs.count())] == [
+            "This silo", "All silos"]
+        assert dlg.master_list.count() == 3
+
+        rows = [dlg.master_list.item(i).text() for i in range(3)]
+        # the label is the silo's FIRST LINE with the leading # stripped
+        assert "[Alpha project]" in rows[0]
+        assert "[Beta notes]" in rows[2]
+        assert "3" in dlg.lbl_master.text() and "2" in dlg.lbl_master.text()
+        dlg.close()
+    finally:
+        win.prompt_queues.clear()
+        win.prompt_queues.update(kept)
+        win.data["temp_presets"][:] = kept_presets
+        win.silo_docs[:] = []
+        win._switch_to_slot(0, initial=True)
+        win.text_area.clear()
+
+
+def test_master_view_reads_a_closed_silo_from_its_stored_text(win):
+    """silo_docs are lazy, so most silos have no document. Their text has to
+    come from temp_presets - which is safe because a closed silo cannot be
+    edited: editing it opens it."""
+    kept = dict(win.prompt_queues)
+    kept_presets = list(win.data["temp_presets"])
+    try:
+        win.prompt_queues.clear()
+        dlg = _two_silos_with_queues(win)
+
+        assert win._queue_slot_key() == "1", "Beta is the open one"
+        alpha_rows = [dlg.master_list.item(i).text()
+                      for i in range(dlg.master_list.count())
+                      if "[Alpha project]" in dlg.master_list.item(i).text()]
+        assert len(alpha_rows) == 2
+        assert any("first from alpha" in r for r in alpha_rows), \
+            "the closed silo showed a placeholder instead of its text"
+        dlg.close()
+    finally:
+        win.prompt_queues.clear()
+        win.prompt_queues.update(kept)
+        win.data["temp_presets"][:] = kept_presets
+        win.silo_docs[:] = []
+        win._switch_to_slot(0, initial=True)
+        win.text_area.clear()
+
+
+def test_master_view_moves_an_item_between_silos(win):
+    kept = dict(win.prompt_queues)
+    kept_presets = list(win.data["temp_presets"])
+    try:
+        win.prompt_queues.clear()
+        dlg = _two_silos_with_queues(win)
+
+        dlg.master_list.setCurrentRow(0)
+        slot, item = dlg._master_selected()
+        assert slot == "0"
+
+        target = next(dlg.cb_target.itemData(i)
+                      for i in range(dlg.cb_target.count())
+                      if dlg.cb_target.itemData(i) != slot)
+        dlg.cb_target.setCurrentIndex(
+            [dlg.cb_target.itemData(i) for i in range(dlg.cb_target.count())].index(target))
+        dlg.move_selected_to_target()
+
+        assert item.text in [i.text for i in win.prompt_queues[target]]
+        assert item.text not in [i.text for i in win.prompt_queues["0"]]
+        dlg.close()
+    finally:
+        win.prompt_queues.clear()
+        win.prompt_queues.update(kept)
+        win.data["temp_presets"][:] = kept_presets
+        win.silo_docs[:] = []
+        win._switch_to_slot(0, initial=True)
+        win.text_area.clear()
+
+
+def test_queues_are_separate_per_category(win):
+    """Every other slot-keyed map is stored per category and rebound on a tab
+    change; a queue that skipped that would follow the user across tabs."""
+    if win.cat_combo.count() < 2:
+        import pytest
+        pytest.skip("needs at least two categories")
+
+    kept = dict(win.prompt_queues)
+    kept_index = win.cat_combo.currentIndex()
+    ed = win.text_area
+    try:
+        win.cat_combo.setCurrentIndex(0)
+        win.on_tab_changed(0)
+        win.prompt_queues.clear()
+        ed.setPlainText("prompt in the first category")
+        c = ed.textCursor()
+        c.setPosition(0)
+        ed.setTextCursor(c)
+        win.queue_current_line()
+        first_cat = win.get_current_category()
+
+        win.cat_combo.setCurrentIndex(1)
+        win.on_tab_changed(1)
+        assert not win.prompt_queues, "another category's queue leaked in"
+
+        win.cat_combo.setCurrentIndex(0)
+        win.on_tab_changed(0)
+        assert [i.text for i in win.prompt_queues.get("0", [])] == [
+            "prompt in the first category"]
+        assert first_cat in win.data.get("watcher_queues_all", {})
+    finally:
+        win.cat_combo.setCurrentIndex(kept_index)
+        win.on_tab_changed(kept_index)
+        win.prompt_queues.clear()
+        win.prompt_queues.update(kept)
+        ed.clear()
+
+
+def test_opening_the_dialog_does_not_die_on_the_first_tab_signal(win):
+    """currentChanged fires while the first tab is being added. Connecting it
+    before the widgets exist raised inside a Qt slot, which takes the process
+    down with no traceback - it must be connected last."""
+    from fastprompter.ui.queue_panel import QueueDialog
+
+    kept = dict(win.prompt_queues)
+    try:
+        win.prompt_queues.clear()
+        dlg = QueueDialog(win)          # empty queue: the harder case
+        assert dlg.tabs.count() == 2
+        dlg.tabs.setCurrentIndex(1)     # and switching must be safe too
+        dlg.tabs.setCurrentIndex(0)
+        dlg.close()
+    finally:
+        win.prompt_queues.clear()
+        win.prompt_queues.update(kept)

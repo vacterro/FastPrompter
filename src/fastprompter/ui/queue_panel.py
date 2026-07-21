@@ -13,6 +13,7 @@ from __future__ import annotations
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QAbstractItemView,
+    QComboBox,
     QDialog,
     QHBoxLayout,
     QInputDialog,
@@ -20,7 +21,9 @@ from PyQt6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QPushButton,
+    QTabWidget,
     QVBoxLayout,
+    QWidget,
 )
 
 from fastprompter.core.translations import tr
@@ -30,6 +33,8 @@ from fastprompter.core.watcher.queue import (
     PENDING,
     SENT,
     SKIPPED,
+    all_items,
+    move_between,
     queue_for,
 )
 
@@ -64,9 +69,22 @@ class QueueDialog(QDialog):
         except Exception:
             pass
 
-        root = QVBoxLayout(self)
-        root.setContentsMargins(8, 8, 8, 8)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(6, 6, 6, 6)
+        outer.setSpacing(4)
+        self.tabs = QTabWidget()
+        self.tabs.setDocumentMode(True)
+        outer.addWidget(self.tabs)
+        # currentChanged is connected at the END of __init__: adding the very
+        # first tab fires it, and a refresh() that early reaches for widgets
+        # this constructor has not built yet. The exception lands inside a Qt
+        # slot, which takes the process down without a traceback.
+
+        page = QWidget()
+        root = QVBoxLayout(page)
+        root.setContentsMargins(4, 4, 4, 4)
         root.setSpacing(6)
+        self.tabs.addTab(page, tr("This silo", self.lang))
 
         self.lbl_head = QLabel("")
         root.addWidget(self.lbl_head)
@@ -125,6 +143,147 @@ class QueueDialog(QDialog):
         row.addWidget(btn_close)
         root.addLayout(row)
 
+        self._build_master_tab()
+        self.refresh()
+        self.tabs.currentChanged.connect(lambda _i: self.refresh())
+
+    # ------------------------------------------------------------------
+    def _build_master_tab(self):
+        """Every queue in the category at once, and a way to move items."""
+        page = QWidget()
+        lay = QVBoxLayout(page)
+        lay.setContentsMargins(4, 4, 4, 4)
+        lay.setSpacing(6)
+
+        self.lbl_master = QLabel("")
+        lay.addWidget(self.lbl_master)
+
+        self.master_list = QListWidget()
+        self.master_list.setSelectionMode(
+            QAbstractItemView.SelectionMode.SingleSelection)
+        self.master_list.setToolTip(tr(
+            "Every silo's queue in this category. The silo each prompt came\n"
+            "from is named on the left.", self.lang))
+        lay.addWidget(self.master_list, 1)
+
+        row = QHBoxLayout()
+        row.setSpacing(4)
+        row.addWidget(QLabel(tr("Move to:", self.lang)))
+        self.cb_target = QComboBox()
+        self.cb_target.setToolTip(tr("Which silo's queue to move it into", self.lang))
+        row.addWidget(self.cb_target, 1)
+
+        self.btn_move = QPushButton(tr("Move", self.lang))
+        self.btn_move.clicked.connect(self.move_selected_to_target)
+        row.addWidget(self.btn_move)
+
+        self.btn_master_front = QPushButton(tr("Send next", self.lang))
+        self.btn_master_front.setToolTip(tr(
+            "Move to the front of its own queue. Still waits for the agent.",
+            self.lang))
+        self.btn_master_front.clicked.connect(self.master_to_front)
+        row.addWidget(self.btn_master_front)
+
+        self.btn_master_remove = QPushButton(tr("Remove", self.lang))
+        self.btn_master_remove.clicked.connect(self.master_remove)
+        row.addWidget(self.btn_master_remove)
+        row.addStretch(1)
+        lay.addLayout(row)
+
+        self.tabs.addTab(page, tr("All silos", self.lang))
+
+    # ---- master view --------------------------------------------------
+    def _master_selected(self):
+        row = self.master_list.currentItem()
+        if row is None:
+            return None, None
+        slot, item_id = row.data(Qt.ItemDataRole.UserRole)
+        queue = self.main_win.prompt_queues.get(slot)
+        return slot, (queue.find(item_id) if queue else None)
+
+    def refresh_master(self):
+        queues = self.main_win.prompt_queues
+        labels = self.main_win.silo_queue_labels()
+
+        keep = None
+        current = self.master_list.currentItem()
+        if current is not None:
+            keep = current.data(Qt.ItemDataRole.UserRole)
+
+        self.master_list.clear()
+        total = 0
+        for slot, label, item in all_items(queues, labels):
+            text, detached = self.main_win.queue_item_live_text(slot, item)
+            if detached and item.state == PENDING:
+                item.mark_detached()
+            elif not detached and item.state == DETACHED:
+                item.state, item.reason = PENDING, ""
+            if text and text != item.text and item.state not in (SENT, FAILED, SKIPPED):
+                item.text = text
+
+            lamp, hint = _LAMPS.get(item.state, ("?", item.state))
+            skill = f"/{item.skill} " if item.skill else ""
+            row = QListWidgetItem(f"{lamp}  [{label}]  {skill}{item.text}")
+            row.setData(Qt.ItemDataRole.UserRole, (slot, item.id))
+            tip = [hint]
+            if item.reason:
+                tip.append(item.reason)
+            row.setToolTip("\n".join(tip))
+            from PyQt6.QtGui import QColor
+            row.setForeground(QColor(_LAMP_COLORS.get(item.state, "#c0c0c0")))
+            self.master_list.addItem(row)
+            if keep == (slot, item.id):
+                self.master_list.setCurrentItem(row)
+            total += 1
+
+        self.lbl_master.setText(
+            f"{total} " + tr("prompts across", self.lang)
+            + f" {len(queues)} " + tr("silos", self.lang))
+
+        self.cb_target.clear()
+        presets = self.main_win.data.get("temp_presets") or []
+        for index in range(len(presets)):
+            slot = str(index)
+            self.cb_target.addItem(
+                f"{index + 1}: {self.main_win.silo_queue_label(slot)}", slot)
+
+        for btn in (self.btn_move, self.btn_master_front, self.btn_master_remove):
+            btn.setEnabled(total > 0)
+
+    def move_selected_to_target(self):
+        slot, item = self._master_selected()
+        if item is None:
+            return
+        target = self.cb_target.currentData()
+        if target is None or str(target) == str(slot):
+            return
+        # the anchor belongs to the old silo's document; moving the item to
+        # another silo leaves it pointing at a line that is not there, so the
+        # mark goes and the item carries its text from here on
+        editor = getattr(self.main_win, "text_area", None)
+        if editor is not None and str(slot) == self.main_win._queue_slot_key():
+            editor.clear_queue_marks(item.id)
+        move_between(self.main_win.prompt_queues, item.id, slot, target)
+        self.main_win.save_prompt_queues()
+        self.refresh()
+
+    def master_to_front(self):
+        slot, item = self._master_selected()
+        if item is None:
+            return
+        self.main_win.prompt_queues[slot].to_front(item.id)
+        self.main_win.save_prompt_queues()
+        self.refresh()
+
+    def master_remove(self):
+        slot, item = self._master_selected()
+        if item is None:
+            return
+        editor = getattr(self.main_win, "text_area", None)
+        if editor is not None and str(slot) == self.main_win._queue_slot_key():
+            editor.clear_queue_marks(item.id)
+        self.main_win.prompt_queues[slot].remove(item.id)
+        self.main_win.save_prompt_queues()
         self.refresh()
 
     # ------------------------------------------------------------------
@@ -166,6 +325,8 @@ class QueueDialog(QDialog):
                 item.reason = ""
 
     def refresh(self):
+        if getattr(self, "master_list", None) is not None:
+            self.refresh_master()
         self.refresh_from_document()
         queue = self._queue()
         selected = self.list.currentItem()
