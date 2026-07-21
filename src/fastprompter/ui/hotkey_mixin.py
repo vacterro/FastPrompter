@@ -42,7 +42,9 @@ class HotkeyMixin:
         shortcuts_info = (
             f"{tr('--- GLOBAL HOTKEYS (work anywhere) ---', lang)}\n"
             f"{tr('Toggle App Visibility', lang)}: {h_global}\n"
-            f"{tr('Pie Menu', lang)}: {h_pie}\n\n"
+            f"{tr('Pie Menu', lang)}: {h_pie}\n"
+            f"{tr('Stop the Watcher', lang)}: "
+            f"{self.data.get('watcher_panic_hotkey', 'Ctrl+Alt+Shift+P')}\n\n"
             f"{tr('--- APP HOTKEYS (only when window active) ---', lang)}\n"
             f"{tr('Lock Window', lang)}: {h_lock}\n"
             f"{tr('Always On Top', lang)}: {h_aot}\n"
@@ -82,6 +84,15 @@ class HotkeyMixin:
         self._register_single(self.data.get("global_hotkey_alt", "F15"), 101)
         self._register_single(self.data.get("pie_menu_hotkey", "Shift+Alt+X"), 2)
         self._register_single(self.data.get("pie_menu_hotkey_alt", ""), 102)
+        # The watcher types into another application, so its stop key is
+        # global: it has to work from whatever window the user is in when
+        # they decide it is going wrong, not only from FastPrompter.
+        # id 300, well clear of the 1-5/10-24 scheme and its +100 alternates.
+        # Ids 3 and 103 are lock, and a test pins them as NOT globally
+        # handled - taking one would have re-created the bug where a
+        # window-local key fired system-wide.
+        self._register_single(
+            self.data.get("watcher_panic_hotkey", "Ctrl+Alt+Shift+P"), 300)
         self._apply_tooltips()
 
     def _register_single(self, hotkey_str, hk_id):

@@ -94,6 +94,7 @@ from fastprompter.ui.snippet_panel import (
 )
 from fastprompter.ui.theme_mixin import ThemeMixin
 from fastprompter.ui.tray_mixin import TrayMixin
+from fastprompter.ui.watcher_mixin import WatcherMixin
 from fastprompter.ui.window_mixin import WindowMixin
 from fastprompter.utils.paths import get_data_dir
 from fastprompter.core.translations import tr, get_language, available_languages
@@ -110,6 +111,7 @@ class FastPrompter(
     SnippetOpsMixin,
     ThemeMixin,
     TrayMixin,
+    WatcherMixin,
     WindowMixin,
 ):
     # Live settings accessors used by the UI mixins.

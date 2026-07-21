@@ -45,6 +45,14 @@ class HotkeyFilter(QAbstractNativeEventFilter):
                     elif msg.wParam in (2, 102):
                         self.window.show_quick_list()
                         return True, 0
+                    elif msg.wParam == 300:
+                        # Swallowed only when it actually stopped a run, so
+                        # the key stays usable elsewhere while nothing is
+                        # armed. Compared against True rather than tested for
+                        # truthiness: any object at all is truthy, and this
+                        # decides whether another application sees the key.
+                        if self.window.watcher_panic() is True:
+                            return True, 0
                 elif msg.message == 0x0112:  # WM_SYSCOMMAND
                     if (msg.wParam & 0xFFF0) == 0xF100:  # SC_KEYMENU
                         return True, 0

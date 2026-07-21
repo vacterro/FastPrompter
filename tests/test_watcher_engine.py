@@ -45,14 +45,20 @@ def make(items=("first", "second"), **kw):
 
 
 def run_to_intent(engine, probe, queue, start=0.0):
-    """Busy, then idle long enough to settle.
+    """Baseline, then busy, then idle long enough to settle.
+
+    TWO busy ticks, not one. The first tick after arming only establishes a
+    baseline - a probe's first read always reports busy because a new token
+    cannot match a previous one - so it is not evidence that the agent is
+    working, and the engine will not release a prompt on the strength of it.
 
     Returns the FIRST intent produced: with settle_ms=0 it arrives on the
     tick right after the agent goes quiet, and a helper that only looked at
     the last tick would throw it away and report None.
     """
     probe.set(False)
-    engine.tick(start, queue)
+    engine.tick(start, queue)          # baseline
+    engine.tick(start + 0.1, queue)    # the agent is genuinely working
     probe.set(True)
     for offset in (1.0, 3.0):
         intent = engine.tick(start + offset, queue)
@@ -100,7 +106,8 @@ def test_idle_from_the_start_does_not_fire():
 def test_busy_then_idle_fires_after_the_settle_window():
     engine, probe, queue = make()
     probe.set(False)
-    assert engine.tick(0.0, queue) is None
+    assert engine.tick(0.0, queue) is None, "tick one is only a baseline"
+    assert engine.tick(0.1, queue) is None, "now it has been seen working"
     assert engine.state == WATCHING
 
     probe.set(True)
@@ -191,7 +198,8 @@ def test_the_rate_limit_holds_a_prompt_back():
     engine.report_sent(queue.find(first.item_id), now=3.0)
 
     probe.set(False)
-    engine.tick(4.0, queue)
+    engine.tick(4.0, queue)            # baseline again after the send
+    engine.tick(4.1, queue)            # genuinely working
     probe.set(True)
     assert engine.tick(5.0, queue) is None, "only 2s since the last send"
     assert engine.reason == "rate limited"
@@ -355,3 +363,76 @@ def test_status_reports_what_the_ui_needs():
     assert status["target"] == "hwnd-1"
     assert status["queue"] == "0"
     assert status["sent"] == 0
+
+
+# --------------------------------------------- the baseline, added in W-07
+
+def test_a_first_reading_is_a_baseline_not_the_agent_working():
+    """The seen-busy guard was vacuous until W-07.
+
+    A probe's first read always reports busy - a new token cannot match a
+    previous one - so `_seen_busy` flipped true on tick one every single
+    time, and the rule that a watcher must observe real work before it may
+    fire never actually blocked anything. Arm beside an agent that is
+    already sitting idle and it would send into whatever was on screen.
+    """
+    engine = Engine(settle_ms=0, min_gap_ms=0)
+    probe = FakeProbe(idle=True)
+    queue = SiloQueue([QueueItem("only line")])
+    engine.arm("hwnd", "0", [probe])
+
+    for step in range(6):
+        assert engine.tick(float(step), queue) is None
+    assert engine._seen_busy is False, "a first reading is not evidence of work"
+    assert "not been seen working" in engine.reason
+    assert queue.next_pending() is not None, "the prompt is still waiting"
+
+
+def test_a_probe_that_reports_busy_on_the_first_tick_is_not_believed_either():
+    """The same hole from the other side: the very first poll of a REAL probe
+    reports busy, so a watcher armed next to an idle agent must still refuse."""
+    engine = Engine(settle_ms=0, min_gap_ms=0)
+    probe = FakeProbe(idle=False)
+    queue = SiloQueue([QueueItem("only line")])
+    engine.arm("hwnd", "0", [probe])
+
+    engine.tick(0.0, queue)            # the one busy reading it ever gets
+    assert engine._seen_busy is False
+
+    probe.set(True)
+    for step in range(1, 6):
+        assert engine.tick(float(step), queue) is None
+
+
+def test_work_seen_after_the_baseline_does_release_the_queue():
+    """The other half: a real transition still lets the prompt out."""
+    engine = Engine(settle_ms=0, min_gap_ms=0)
+    probe = FakeProbe(idle=False)
+    queue = SiloQueue([QueueItem("only line")])
+    engine.arm("hwnd", "0", [probe])
+
+    engine.tick(0.0, queue)            # baseline
+    engine.tick(1.0, queue)            # genuinely working
+    assert engine._seen_busy is True
+
+    probe.set(True)
+    intent = None
+    for step in range(2, 8):
+        intent = intent or engine.tick(float(step), queue)
+    assert intent is not None, "once it has been seen working, it may send"
+    assert intent.text == "only line"
+
+
+def test_every_send_re_baselines_so_the_next_one_waits_for_real_work_too():
+    """Otherwise the whole backlog would empty into one idle moment."""
+    engine, probe, queue = make()
+    first = run_to_intent(engine, probe, queue)
+    assert first is not None
+    engine.report_sent(queue.find(first.item_id), now=4.0)
+
+    assert engine._seen_busy is False, "it must see the agent work again"
+    probe.set(True)
+    for step in range(5, 11):
+        assert engine.tick(float(step), queue) is None, (
+            "the second prompt must not go out on the same idle stretch")
+

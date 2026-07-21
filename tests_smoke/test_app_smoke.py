@@ -6485,3 +6485,263 @@ def test_a_hand_added_chip_survives_a_rescan_and_can_be_hidden(win):
         win.data["watcher_skills_extra"] = kept_extra
         win.data["watcher_skills_hidden"] = kept_hidden
         win.data["watcher_skill"] = kept_skill
+
+
+# ============================ W-07: arming the watcher =====================
+#
+# Nothing here arms against a real window with live sending. The target is a
+# fake handle and the sender stays dry, so no test can put a keystroke into a
+# running application.
+
+
+class _FakeWin32:
+    """A desktop of one window, standing in for the ctypes layer."""
+
+    def __init__(self, hwnd=4242, title="Agent", cls="ConsoleWindowClass"):
+        self.hwnd, self.title, self.cls = hwnd, title, cls
+        self.alive = True
+
+    def info(self, hwnd):
+        if hwnd != self.hwnd or not self.alive:
+            return None
+        return {"title": self.title, "cls": self.cls, "pid": 999}
+
+
+def _fake_adapter(name="test-agent", quiet_ms=0, settle_ms=0):
+    from fastprompter.core.watcher.adapter import Adapter
+    from fastprompter.core.watcher.probes import Probe
+
+    class Steady(Probe):
+        kind = "steady"
+
+        def _read(self):
+            return "unchanging"
+
+    return Adapter(name, probes=[Steady(quiet_ms=quiet_ms)],
+                   settle_ms=settle_ms)
+
+
+def _arm_on_fake(win, monkeypatch, live=False, adapter=None):
+    """Arm against a fake window. Returns (ok, reason, fake)."""
+    from fastprompter.core.watcher import win32 as win32_mod
+
+    fake = _FakeWin32()
+    monkeypatch.setattr(win32_mod, "window_info",
+                        lambda hwnd, api=None: fake.info(hwnd))
+    monkeypatch.setattr(win32_mod, "probe_for",
+                        lambda api=None: (lambda h: fake.info(h)))
+    ok, reason = win.watcher_arm(fake.hwnd, adapter or _fake_adapter(), live=live)
+    return ok, reason, fake
+
+
+def test_the_watcher_mixin_is_on_the_window(win):
+    from fastprompter.ui.watcher_mixin import WatcherMixin
+    assert isinstance(win, WatcherMixin)
+    assert win.watcher_engine().state == "disarmed"
+
+
+def test_arming_a_window_that_is_gone_is_refused(win, monkeypatch):
+    from fastprompter.core.watcher import win32 as win32_mod
+
+    monkeypatch.setattr(win32_mod, "window_info", lambda hwnd, api=None: None)
+    ok, reason = win.watcher_arm(1234, _fake_adapter())
+    assert ok is False and "gone" in reason
+    assert win.watcher_engine().armed is False
+
+
+def test_arming_without_a_usable_agent_is_refused(win, monkeypatch):
+    from fastprompter.core.watcher.adapter import Adapter
+
+    ok, reason, _fake = _arm_on_fake(win, monkeypatch, adapter=Adapter("blind"))
+    assert ok is False and "no probes" in reason
+
+
+def test_arming_pins_the_queue_and_starts_the_timer(win, monkeypatch):
+    ok, reason, _fake = _arm_on_fake(win, monkeypatch)
+    assert ok is True and "dry run" in reason
+
+    engine = win.watcher_engine()
+    assert engine.armed is True
+    assert engine.queue_key == win._queue_slot_key()
+    assert win._watcher_timer is not None and win._watcher_timer.isActive()
+
+    win.watcher_disarm("test done")
+    assert win._watcher_timer.isActive() is False
+
+
+def test_a_dry_run_never_marks_anything_live(win, monkeypatch):
+    """The default must record rather than send, even armed."""
+    _arm_on_fake(win, monkeypatch, live=False)
+    assert win._watcher_sender.dry is True
+    win.watcher_disarm("test done")
+
+
+def test_going_live_picks_the_silent_sender_never_the_loud_one(win, monkeypatch):
+    """The UI has no route to the focus-stealing path at all."""
+    from fastprompter.core.watcher import win32 as win32_mod
+    from fastprompter.core.watcher.sender import ClipboardSender, PostMessageSender
+
+    monkeypatch.setattr(win32_mod, "available", lambda: True)
+    _arm_on_fake(win, monkeypatch, live=True)
+
+    assert isinstance(win._watcher_sender, PostMessageSender)
+    assert not isinstance(win._watcher_sender, ClipboardSender)
+    assert win._watcher_sender.silent is True
+    win.watcher_disarm("test done")
+
+
+def test_panic_stops_a_run_and_drops_what_was_in_flight(win, monkeypatch):
+    _arm_on_fake(win, monkeypatch)
+    win.watcher_engine().state = "sending"
+    win.watcher_engine().pending = object()
+
+    assert win.watcher_panic() is True
+    assert win.watcher_engine().armed is False
+    assert win.watcher_engine().pending is None
+    assert win._watcher_timer.isActive() is False
+
+
+def test_panic_with_nothing_armed_says_so(win):
+    """The hotkey filter only swallows the key when this returns True, so a
+    stray press stays usable in whatever app the user is in."""
+    win.watcher_disarm("idle")
+    assert win.watcher_panic() is False
+
+
+def test_a_tick_that_explodes_disarms_instead_of_killing_the_app(win, monkeypatch):
+    """An exception in a Qt slot takes the process down with no traceback.
+    A watcher whose own loop is broken must stop, not keep firing."""
+    _arm_on_fake(win, monkeypatch)
+
+    def boom():
+        raise RuntimeError("the tick is broken")
+
+    monkeypatch.setattr(win, "_watcher_tick_inner", boom)
+    win._watcher_tick()              # must not raise
+
+    assert win.watcher_engine().armed is False
+    assert "error" in win.watcher_engine().reason
+    assert win._watcher_timer.isActive() is False
+
+
+def test_the_target_vanishing_mid_run_disarms(win, monkeypatch):
+    _ok, _reason, fake = _arm_on_fake(win, monkeypatch)
+    fake.alive = False
+    win._watcher_tick()
+    assert win.watcher_engine().armed is False
+    assert "gone" in win.watcher_engine().reason
+
+
+def test_a_freshly_armed_watcher_does_not_fire_into_what_is_on_screen(
+        win, monkeypatch):
+    """A probe's first reading is a baseline, not the agent working."""
+    _arm_on_fake(win, monkeypatch)
+    for _ in range(4):
+        win._watcher_tick()
+
+    assert win.watcher_engine().sent_count == 0
+    assert win.watcher_engine()._seen_busy is False
+    win.watcher_disarm("test done")
+
+
+def test_armed_state_is_never_written_to_the_database(win, monkeypatch):
+    """It belongs to a live session with a live window; restoring it would
+    point a watcher at a handle that now belongs to someone else's app."""
+    _arm_on_fake(win, monkeypatch)
+    win.save_prompt_queues()
+
+    keys = [k for k in win.data if "watcher" in k]
+    assert "watcher_armed" not in keys
+    assert not any("target" in k or "hwnd" in k for k in keys)
+    win.watcher_disarm("test done")
+
+
+def test_the_watcher_dialog_opens_and_lists_its_agents(win):
+    from fastprompter.ui.watcher_dialog import WatcherDialog
+
+    dlg = WatcherDialog(win)
+    try:
+        assert dlg.cmb_agent.count() >= 1, "the shipped example describes agents"
+        assert dlg.btn_arm.text()
+    finally:
+        dlg.close()
+
+
+def test_closing_the_dialog_leaves_a_run_going(win, monkeypatch):
+    """A run outlives the window that started it - that is what a watcher is."""
+    from fastprompter.ui.watcher_dialog import WatcherDialog
+
+    _arm_on_fake(win, monkeypatch)
+    dlg = WatcherDialog(win)
+    dlg.close()
+
+    assert win.watcher_engine().armed is True, "closing must not disarm"
+    assert dlg.refresh not in win._watcher_listeners, "but it must unsubscribe"
+    win.watcher_disarm("test done")
+
+
+def test_a_dead_dialog_cannot_take_a_run_down_with_it(win, monkeypatch):
+    """The listener list outlives dialogs; a broken one is dropped, not raised."""
+    _arm_on_fake(win, monkeypatch)
+
+    def broken():
+        raise RuntimeError("wrapped C/C++ object has been deleted")
+
+    win.watcher_listen(broken)
+    win._watcher_notify()
+
+    assert broken not in win._watcher_listeners
+    assert win.watcher_engine().armed is True
+    win.watcher_disarm("test done")
+
+
+def test_the_dialog_locks_the_target_while_armed(win, monkeypatch):
+    """Both are pinned at arming; a movable picker would show a target the
+    run is not actually using."""
+    from fastprompter.ui.watcher_dialog import WatcherDialog
+
+    _arm_on_fake(win, monkeypatch)
+    dlg = WatcherDialog(win)
+    try:
+        assert dlg.lst_windows.isEnabled() is False
+        assert dlg.cmb_agent.isEnabled() is False
+        assert dlg.chk_live.isEnabled() is False
+        assert dlg.btn_panic.isEnabled() is True
+    finally:
+        dlg.close()
+        win.watcher_disarm("test done")
+
+
+def test_arming_from_the_dialog_needs_something_queued(win):
+    """Arming an empty queue would sit watching forever with nothing to say."""
+    from fastprompter.core.watcher.queue import queue_for
+    from fastprompter.ui.watcher_dialog import WatcherDialog
+
+    queue = queue_for(win.prompt_queues, win._queue_slot_key())
+    saved = queue.to_list()
+    queue.items.clear()
+
+    dlg = WatcherDialog(win)
+    try:
+        if dlg.lst_windows.count():
+            dlg.lst_windows.setCurrentRow(0)
+        dlg.toggle_arm()
+        assert win.watcher_engine().armed is False
+        assert "Alt+C" in dlg.lbl_state.text()
+    finally:
+        dlg.close()
+        queue.items.extend(saved)
+
+
+def test_the_panic_hotkey_is_registered_globally():
+    """It must work from whatever window the user is in when they decide it
+    is going wrong, not only from FastPrompter."""
+    import inspect
+
+    from fastprompter.core.hotkey_filter import HotkeyFilter
+    from fastprompter.ui.hotkey_mixin import HotkeyMixin
+
+    assert "watcher_panic_hotkey" in inspect.getsource(
+        HotkeyMixin.register_all_hotkeys)
+    assert "watcher_panic" in inspect.getsource(
+        HotkeyFilter.nativeEventFilter)

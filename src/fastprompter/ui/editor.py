@@ -1484,6 +1484,7 @@ class VaultTextEdit(QTextEdit):
             self.main_win.open_queue_dialog)
         menu.addAction(tr("Queue This Line	Alt+C", lang),
                        self.main_win.queue_current_line)
+        menu.addAction(tr("Watcher…", lang), self.main_win.open_watcher_dialog)
         menu.addSeparator()
         menu.addAction(tr("Expand All Folds", lang), self.unfold_all)
         # rare toolbar actions live here too (hidden from narrow headers)

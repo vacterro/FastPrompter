@@ -60,6 +60,7 @@ class Engine:
         self._idle_since = None
         self._last_sent_at = None
         self._seen_busy = False
+        self._ticks = 0
 
     # ---- arming -------------------------------------------------------
     def arm(self, target, queue_key, probes, skill_format="/{skill} {text}",
@@ -84,6 +85,7 @@ class Engine:
         self._idle_since = None
         self._last_sent_at = None
         self._seen_busy = False
+        self._ticks = 0
         for probe in self.probes:
             probe.reset()
         return self.state
@@ -132,6 +134,19 @@ class Engine:
             self.reason = "waiting for the send to be reported"
             return None
 
+        # The first tick after arming is a BASELINE, not evidence of work.
+        # A probe's first read always reports busy - a new token cannot match
+        # a previous one - so without this the seen-busy guard below is
+        # vacuous, satisfied on tick one every single time, and arming beside
+        # an already-idle agent would fire into whatever is on screen.
+        #
+        # Counted here rather than asked of the probes: a subclass that
+        # overrides poll() never runs the base class's bookkeeping, so
+        # trusting a probe to report its own priming makes the guard depend
+        # on which probe happens to be configured.
+        baseline = self._ticks == 0
+        self._ticks += 1
+
         idle, reasons = combine(self.probes, now)
         if blocked:
             idle = False
@@ -139,7 +154,8 @@ class Engine:
 
         if not idle:
             self._idle_since = None
-            self._seen_busy = True
+            if not baseline:
+                self._seen_busy = True
             self.state = WATCHING
             self.reason = "; ".join(reasons)
             return None
@@ -207,6 +223,7 @@ class Engine:
         self.pending = None
         self._idle_since = None
         self._seen_busy = False   # wait to see it work before sending again
+        self._ticks = 0           # and re-baseline, for the same reason
         self.state = ARMED
         self.reason = "sent"
         return True
@@ -227,6 +244,7 @@ class Engine:
         self.pending = None
         self._idle_since = None
         self._seen_busy = False
+        self._ticks = 0
         if self.consecutive_failures >= self.max_failures:
             self._disarm(
                 f"{self.consecutive_failures} failures in a row: {reason}")

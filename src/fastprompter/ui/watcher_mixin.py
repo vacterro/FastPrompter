@@ -1,0 +1,279 @@
+"""The watcher runtime: the timer that turns decisions into sends.
+
+Everything that decides is in `core/watcher` and is Qt-free. This mixin only
+supplies reality — the clock, the queue, the window layer — and carries the
+engine's answers out to the sender.
+
+Two rules shape the whole file:
+
+* **The tick can never raise.** An exception inside a Qt slot takes the
+  process down with no traceback, which is the most likely shape of the
+  crash T-570 chased. So the tick catches everything and disarms: a watcher
+  whose own loop is broken must not stay armed and keep firing.
+* **Armed state is never persisted.** It belongs to a live session with a
+  live window. Restoring it at startup would point a watcher at a handle
+  that now belongs to somebody else's application.
+"""
+
+from __future__ import annotations
+
+import time
+
+from PyQt6.QtCore import QTimer
+
+from fastprompter.core.logging import logger
+from fastprompter.core.watcher import win32
+from fastprompter.core.watcher.adapter import load_adapters
+from fastprompter.core.watcher.engine import Engine
+from fastprompter.core.watcher.queue import queue_for
+from fastprompter.core.watcher.sender import (
+    PostMessageSender,
+    SendLog,
+    Target,
+    build_sender,
+)
+
+TICK_MS = 900
+
+
+class WatcherMixin:
+    """Arm/disarm, the tick loop, the panic key, and the send log."""
+
+    # ---- lazy state ---------------------------------------------------
+    def _watcher_init(self):
+        if getattr(self, "_watcher_engine", None) is not None:
+            return
+        self._watcher_engine = Engine()
+        self._watcher_log = SendLog()
+        self._watcher_sender = build_sender()      # dry until armed live
+        self._watcher_target = None
+        self._watcher_adapter = None
+        self._watcher_timer = None
+        self._watcher_listeners = []
+
+    def watcher_engine(self):
+        self._watcher_init()
+        return self._watcher_engine
+
+    def watcher_log(self):
+        self._watcher_init()
+        return self._watcher_log
+
+    def watcher_adapters(self):
+        """The configured agents, reloaded each time the dialog opens.
+
+        Not cached: the user edits adapters.toml precisely when something is
+        wrong, and a cache would hide the fix until a restart.
+        """
+        import os
+
+        from fastprompter.utils.paths import get_data_dir
+
+        try:
+            user = os.path.join(get_data_dir(), "adapters.toml")
+        except Exception:
+            user = None
+        here = os.path.dirname(os.path.dirname(os.path.dirname(
+            os.path.dirname(os.path.abspath(__file__)))))
+        example = os.path.join(
+            here, ".saipen", "fastprompterwatcher", "adapters.example.toml")
+        return load_adapters(path=user, fallback=example,
+                             project=self._watcher_project())
+
+    def _watcher_project(self):
+        """What `{project}` expands to in a probe path."""
+        return self.data.get("watcher_project", "") or ""
+
+    # ---- arming -------------------------------------------------------
+    def watcher_arm(self, hwnd, adapter, live=False):
+        """Bind to one window and this silo's queue. Returns (ok, reason)."""
+        self._watcher_init()
+        info = win32.window_info(hwnd)
+        if info is None:
+            return False, "that window is gone"
+
+        ok, reason = adapter.supported() if adapter else (False, "no agent chosen")
+        if not ok:
+            return False, reason
+
+        self._watcher_adapter = adapter
+        self._watcher_target = Target(hwnd, info["title"], info["cls"],
+                                      probe=win32.probe_for())
+        self._watcher_sender = self._build_sender(live)
+        self._watcher_engine.settle_ms = adapter.settle_ms
+        self._watcher_engine.arm(
+            self._watcher_target, self._queue_slot_key(), adapter.probes,
+            adapter.skill_format or "", now=time.monotonic())
+        self._watcher_start_timer()
+        self._watcher_notify()
+        return True, ("armed, live" if live else "armed, dry run")
+
+    def _build_sender(self, live):
+        """Silent or nothing. The focus-stealing path is not reachable here.
+
+        `build_sender` can still produce it, but only for a caller that has
+        set allow_focus_steal, and nothing in the UI does. Interrupting the
+        user is the one thing this feature exists to avoid.
+        """
+        if not live or not win32.available():
+            return build_sender()
+        submit = getattr(self._watcher_adapter, "submit", "enter")
+        multiline = getattr(self._watcher_adapter, "multiline", "join")
+        return PostMessageSender(win32.PostLayer(), submit=submit,
+                                 multiline=multiline)
+
+    def watcher_disarm(self, reason="disarmed"):
+        self._watcher_init()
+        self._watcher_engine.disarm(reason)
+        self._watcher_stop_timer()
+        self._watcher_notify()
+
+    def watcher_panic(self):
+        """Stop everything, now. Bound to a global key so it works anywhere.
+
+        Deliberately does more than disarm: it also drops whatever was in
+        flight, so a report arriving afterwards cannot be counted against a
+        run the user has already ended.
+        """
+        self._watcher_init()
+        if not self._watcher_engine.armed:
+            return False
+        self._watcher_engine.panic()
+        self._watcher_stop_timer()
+        self._watcher_notify()
+        self._watcher_announce("Watcher stopped",
+                               "The queue will not send anything else.")
+        return True
+
+    def _watcher_announce(self, title, body):
+        """Say it through the tray, the way the productivity timer does.
+
+        The panic key works with the window hidden, so a dialog label alone
+        would leave the user with no confirmation that anything happened.
+        """
+        try:
+            from PyQt6 import sip
+            if hasattr(self, "tray_icon") and not sip.isdeleted(self.tray_icon):
+                self.tray_icon.showMessage(
+                    title, body, self.tray_icon.icon(), 4000)
+        except Exception:
+            logger.debug("watcher notification failed")
+
+    # ---- the loop -----------------------------------------------------
+    def _watcher_start_timer(self):
+        if self._watcher_timer is None:
+            self._watcher_timer = QTimer(self)
+            self._watcher_timer.setInterval(TICK_MS)
+            self._watcher_timer.timeout.connect(self._watcher_tick)
+        self._watcher_timer.start()
+
+    def _watcher_stop_timer(self):
+        if self._watcher_timer is not None:
+            self._watcher_timer.stop()
+
+    def _watcher_tick(self):
+        """One decision. Catches everything, on purpose — see the module docstring."""
+        try:
+            self._watcher_tick_inner()
+        except Exception:
+            logger.exception("watcher tick failed")
+            try:
+                self._watcher_engine.disarm("the watcher hit an error and stopped")
+                self._watcher_stop_timer()
+                self._watcher_notify()
+            except Exception:
+                pass
+
+    def _watcher_tick_inner(self):
+        engine = self._watcher_engine
+        if not engine.armed:
+            self._watcher_stop_timer()
+            return
+
+        now = time.monotonic()
+        queue = queue_for(self.prompt_queues, engine.queue_key)
+        self._watcher_refresh_texts(engine.queue_key, queue)
+
+        target_ok = True
+        if self._watcher_target is not None:
+            target_ok = self._watcher_target.matches()[0]
+
+        intent = engine.tick(now, queue, blocked=False, target_ok=target_ok)
+        if intent is None:
+            self._watcher_notify()
+            if not engine.armed:
+                self._watcher_stop_timer()
+            return
+
+        item = queue.find(intent.item_id)
+        result = self._watcher_sender.send(intent, self._watcher_target)
+        self._watcher_log.record(intent, result, self._watcher_target)
+        if result.ok:
+            engine.report_sent(item, now=now)
+            if item is not None:
+                self._watcher_mark_sent(engine.queue_key, item)
+        else:
+            engine.report_failed(item, result.reason, now=now)
+
+        self.save_prompt_queues()
+        self._watcher_notify()
+        if not engine.armed:
+            self._watcher_stop_timer()
+
+    def _watcher_refresh_texts(self, slot, queue):
+        """Re-read each pending item from the line it is anchored to.
+
+        An item follows its source line rather than copying it, so the
+        wording can change right up to the instant it goes. Reading here is
+        what makes the send, and therefore the log, the truth rather than a
+        snapshot from whenever Alt+C was pressed.
+        """
+        for item in queue.pending():
+            try:
+                text, detached = self.queue_item_live_text(slot, item)
+            except Exception:
+                continue
+            if detached:
+                item.mark_detached()
+            elif text:
+                item.text = text
+
+    def _watcher_mark_sent(self, slot, item):
+        """Tick the line in the gutter, when its silo is the open one."""
+        if str(slot) != self._queue_slot_key():
+            return
+        try:
+            self.text_area.mark_queue_sent(item.id)
+        except Exception:
+            pass
+
+    # ---- listeners ----------------------------------------------------
+    def watcher_listen(self, fn):
+        """The dialog subscribes so it can follow a run it did not start."""
+        self._watcher_init()
+        if fn not in self._watcher_listeners:
+            self._watcher_listeners.append(fn)
+
+    def watcher_unlisten(self, fn):
+        self._watcher_init()
+        if fn in self._watcher_listeners:
+            self._watcher_listeners.remove(fn)
+
+    def _watcher_notify(self):
+        for fn in list(self._watcher_listeners):
+            try:
+                fn()
+            except Exception:
+                # a dead dialog must not take the run down with it
+                logger.exception("watcher listener failed")
+                self._watcher_listeners.remove(fn)
+
+    # ---- the dialog ---------------------------------------------------
+    def open_watcher_dialog(self):
+        from fastprompter.ui.watcher_dialog import WatcherDialog
+        self._watcher_init()
+        self._increment_focus_lock()
+        try:
+            WatcherDialog(self).exec()
+        finally:
+            QTimer.singleShot(300, self._decrement_focus_lock)

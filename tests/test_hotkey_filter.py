@@ -136,6 +136,30 @@ class TestWMHotkeyDispatch:
         assert result == (False, 0)
         win.toggle_lock.assert_not_called()
 
+    def test_wparam_300_stops_the_watcher(self):
+        """The watcher types into ANOTHER application, so its stop key has to
+        work from whatever window the user is in when they decide it is going
+        wrong - not only from FastPrompter."""
+        window = MagicMock()
+        window.watcher_panic.return_value = True
+        result, win = self._filter_event(300, window=window)
+        win.watcher_panic.assert_called_once()
+        assert result == (True, 0)
+
+    def test_wparam_300_is_passed_on_when_nothing_was_armed(self):
+        """A stray press must stay usable in whatever app the user is in."""
+        window = MagicMock()
+        window.watcher_panic.return_value = False
+        result, _win = self._filter_event(300, window=window)
+        assert result == (False, 0)
+
+    def test_a_watcher_that_returns_something_odd_does_not_eat_the_key(self):
+        """The mock default is a MagicMock, which is truthy. Swallowing on
+        truthiness would take the key away from another application on the
+        strength of any object at all."""
+        result, _win = self._filter_event(300)
+        assert result == (False, 0)
+
     def test_wparam_103_lock_alt_not_handled_globally(self):
         result, win = self._filter_event(103)
         assert result == (False, 0)

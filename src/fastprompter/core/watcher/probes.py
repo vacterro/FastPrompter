@@ -38,6 +38,10 @@ class Probe:
         self._last_token = None
         self._changed_at = None
         self.reason = ""
+        # False until the first successful read. A first read always looks
+        # like a change - there is nothing to compare against - and that is
+        # a baseline being established, not the agent doing work.
+        self.primed = False
 
     # ---- readiness ------------------------------------------------------
     def supported(self):
@@ -76,9 +80,11 @@ class Probe:
             return BUSY, self.reason
 
         if token != self._last_token:
+            first = not self.primed
             self._last_token = token
             self._changed_at = now
-            self.reason = f"{self.kind}: changed"
+            self.primed = True
+            self.reason = f"{self.kind}: {'first reading' if first else 'changed'}"
             return BUSY, self.reason
 
         quiet_for = (now - (self._changed_at if self._changed_at is not None else now))
@@ -94,6 +100,7 @@ class Probe:
     def reset(self):
         self._last_token = None
         self._changed_at = None
+        self.primed = False
 
 
 class FileProbe(Probe):
