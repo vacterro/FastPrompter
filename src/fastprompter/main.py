@@ -2454,8 +2454,10 @@ class FastPrompter(
 
         self.cb_ctrl_e_center = create_footer_cb(
             "\u2192 Ctrl+E Center",
-            "Center-align header lines created with Ctrl+E",
-            self.data.get("ctrl_e_center", "True") == "True",
+            "Center-align header lines created with Ctrl+E.\n"
+            "Visual only - the centring is not saved, so it is gone\n"
+            "after a reload.",
+            self.data.get("ctrl_e_center", "False") == "True",
             self._on_ctrl_e_center_toggled,
         )
 
@@ -3372,6 +3374,44 @@ class FastPrompter(
             b = b.previous()
         return False
 
+    def _strip_header_line(self, cursor, sel):
+        """Turn a header line back into plain text. True if it did.
+
+        Removes the hashes, the trailing timestamp the header was stamped
+        with, and any centring, so the line is genuinely plain again rather
+        than plain-looking but still centred.
+        """
+        import re as _re
+
+        from fastprompter.ui.editor import TS_STAMP_LINE_RE
+
+        stripped = sel.strip()
+        marker = _re.match(r"^(#{1,6})\s+", stripped)
+        if not marker:
+            return False
+
+        body = stripped[marker.end():]
+        # the stamp this feature appends, with or without its brackets
+        body = _re.sub(r"\s*\(" + TS_STAMP_LINE_RE.pattern + r"\)\s*$", "", body)
+        body = _re.sub(r"\s*" + TS_STAMP_LINE_RE.pattern + r"\s*$", "", body)
+        body = body.strip()
+
+        cursor.insertText(body)
+        plain = QTextBlockFormat()
+        plain.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        QTextCursor(cursor.block()).mergeBlockFormat(plain)
+
+        fmt = QTextCharFormat()
+        fmt.setFontWeight(QFont.Weight.Normal)
+        fmt.setFontUnderline(False)
+        line = QTextCursor(cursor.block())
+        line.movePosition(QTextCursor.MoveOperation.StartOfBlock)
+        line.movePosition(QTextCursor.MoveOperation.EndOfBlock,
+                          QTextCursor.MoveMode.KeepAnchor)
+        line.mergeCharFormat(fmt)
+        self.mark_dirty()
+        return True
+
     def apply_header_timestamp(self):
         """Ctrl+E: Apply user-defined header formatting and timestamp at end of current line."""
         cursor = self.text_area.textCursor()
@@ -3384,6 +3424,13 @@ class FastPrompter(
         cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
         cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor)
         sel = cursor.selectedText()
+
+        # Pressing Ctrl+E on a line that is ALREADY a header takes the header
+        # off again, at any level. It used to re-stamp instead, so "## Sub"
+        # became "# Sub (Morning 21.07 - 11:05)" and there was no way back
+        # from the keyboard at all.
+        if self._strip_header_line(cursor, sel):
+            return
 
         if not sel.strip():
             return
@@ -3460,7 +3507,7 @@ class FastPrompter(
         # visual; the markdown text itself is untouched, so save/reload
         # are unchanged and the alignment resets the moment you start
         # typing over the header (the default block format takes over).
-        if self.data.get("ctrl_e_center", "True") == "True":
+        if self.data.get("ctrl_e_center", "False") == "True":
             bfmt = QTextBlockFormat()
             bfmt.setAlignment(Qt.AlignmentFlag.AlignCenter)
             blk_cursor = QTextCursor(cursor.block())

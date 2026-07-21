@@ -86,28 +86,12 @@ class FlowLayout(QLayout):
                 i += 1
             lines.append((line_start, i - line_start, line_h))
 
-        # Apply geometry (second pass), distributing extra space evenly
+        # Apply geometry (second pass). Items are packed from the left and
+        # NOT justified across the width: spreading them measured a 724px
+        # gap between two checkboxes on the Clock tab, which is exactly the
+        # "huge empty space" the settings panel was compacted to remove.
         y = top
         for start, count, line_h in lines:
-            if apply and count > 1:
-                total_w = sum(
-                    self._items[j].sizeHint().width()
-                    for j in range(start, start + count)
-                )
-                gaps = self._h_space * (count - 1)
-                free = (right - left) - total_w - gaps
-                if free > 0:
-                    extra = free // (count - 1)
-                    x = left
-                    for j in range(start, start + count):
-                        item = self._items[j]
-                        w = item.sizeHint().width()
-                        h = item.sizeHint().height()
-                        item.setGeometry(QRect(QPoint(x, y), QSize(w, h)))
-                        x += w + self._h_space + extra
-                    y += line_h + self._v_space
-                    continue
-            # fallback: left-align (single item, no free space, or height calc)
             x = left
             for j in range(start, start + count):
                 item = self._items[j]

@@ -5666,3 +5666,131 @@ def test_snapping_does_not_hide_a_window_set_to_hide_on_click_out(win):
     finally:
         win.data["close_on_focus_loss"] = kept_focus
         win.data["fancyzones_layout"] = kept_layout
+
+def test_real_ctrl_e_reverses_a_header(win):
+    """The earlier "Ctrl+E reverses any header" fix was applied to
+    toggle_header_line, which nothing in the app calls - both Ctrl+E and the
+    H button go to apply_header_timestamp, and that only ever re-stamped.
+    So "## Sub" became "# Sub (Morning 21.07 - 11:05)" with no way back."""
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtGui import QFont, QTextCursor
+    from PyQt6.QtTest import QTest
+
+    ed = win.text_area
+    kept = win.data.get("ctrl_e_center", "False")
+    try:
+        def ctrl_e():
+            QTest.keyClick(ed, Qt.Key.Key_E, Qt.KeyboardModifier.ControlModifier)
+
+        def to_end():
+            c = ed.textCursor()
+            c.movePosition(QTextCursor.MoveOperation.End)
+            ed.setTextCursor(c)
+
+        # a header at ANY level comes off
+        for header in ("# Header one", "## Sub header", "### Third level"):
+            ed.setPlainText(header)
+            to_end()
+            ctrl_e()
+            assert ed.toPlainText() == header.split(" ", 1)[1], header
+
+        # plain text still gets stamped, and pressing again gives it back
+        ed.setPlainText("my note")
+        to_end()
+        ctrl_e()
+        stamped = ed.toPlainText()
+        assert stamped.startswith("# my note ("), stamped
+
+        # stamping parks the caret two lines below on a fresh bullet, so
+        # reversing means putting the caret back ON the header first - which
+        # is what a person does by clicking it
+        c = ed.textCursor()
+        c.setPosition(ed.document().findBlockByNumber(0).position())
+        ed.setTextCursor(c)
+        ctrl_e()
+        assert ed.toPlainText().splitlines()[0] == "my note",             "the timestamp must come off too"
+
+        # and the line is genuinely plain again, not just plain-looking
+        blk = ed.document().findBlockByNumber(0)
+        cur = QTextCursor(blk)
+        cur.movePosition(QTextCursor.MoveOperation.EndOfBlock,
+                         QTextCursor.MoveMode.KeepAnchor)
+        assert cur.charFormat().fontWeight() == QFont.Weight.Normal
+        assert not cur.charFormat().fontUnderline()
+    finally:
+        win.data["ctrl_e_center"] = kept
+        ed.clear()
+
+
+def test_ctrl_e_centering_is_off_by_default_and_reversible(win):
+    """It shipped defaulting to ON, which silently changed Ctrl+E for
+    everyone, and the centring is not saved - so it vanished on reload."""
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtGui import QTextCursor
+    from PyQt6.QtTest import QTest
+
+    ed = win.text_area
+    kept = win.data.get("ctrl_e_center", "False")
+    try:
+        assert win.data.get("ctrl_e_center", "False") != "True", \
+            "must not change Ctrl+E for existing users without being asked"
+
+        def ctrl_e():
+            c = ed.textCursor()
+            c.movePosition(QTextCursor.MoveOperation.End)
+            ed.setTextCursor(c)
+            QTest.keyClick(ed, Qt.Key.Key_E, Qt.KeyboardModifier.ControlModifier)
+
+        def centred():
+            a = ed.document().findBlockByNumber(0).blockFormat().alignment()
+            return bool(a & Qt.AlignmentFlag.AlignCenter)
+
+        win.cb_ctrl_e_center.setChecked(False)
+        ed.setPlainText("title")
+        ctrl_e()
+        assert not centred(), "off means off"
+
+        win.cb_ctrl_e_center.setChecked(True)
+        ed.setPlainText("title")
+        ctrl_e()
+        assert centred()
+
+        # taking the header off must take the centring with it
+        c = ed.textCursor()
+        c.setPosition(ed.document().findBlockByNumber(0).position())
+        ed.setTextCursor(c)
+        QTest.keyClick(ed, Qt.Key.Key_E, Qt.KeyboardModifier.ControlModifier)
+        assert not centred(), "a plain line must not stay centred"
+    finally:
+        win.cb_ctrl_e_center.setChecked(kept == "True")
+        win.data["ctrl_e_center"] = kept
+        ed.clear()
+
+
+def test_settings_controls_are_packed_not_spread_across_the_panel(win):
+    """Justifying each line flung controls to opposite edges - measured a
+    724px gap between two checkboxes on the Clock tab, which is the very
+    "huge empty space" the panel was compacted to get rid of."""
+    from PyQt6.QtWidgets import QCheckBox
+
+    win.mini_settings_frame.setVisible(True)
+    tabs = win.settings_tabs
+    kept_tab = tabs.currentIndex()
+    try:
+        worst = 0
+        for i in range(tabs.count()):
+            tabs.setCurrentIndex(i)
+            page = tabs.widget(i)
+            rows = {}
+            for w in page.findChildren(QCheckBox):
+                if not w.isVisibleTo(page):
+                    continue
+                g = w.geometry()
+                rows.setdefault(g.y(), []).append((g.x(), g.x() + g.width()))
+            for items in rows.values():
+                items.sort()
+                for a, b in zip(items, items[1:]):
+                    worst = max(worst, b[0] - a[1])
+        assert worst <= 40, f"controls spread apart by {worst}px"
+    finally:
+        tabs.setCurrentIndex(kept_tab)
