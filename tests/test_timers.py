@@ -6,6 +6,7 @@ import sys
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
+from fastprompter.core import timers  # noqa: E402
 from fastprompter.core.timers import (  # noqa: E402
     COLOR_STATIC,
     COLOR_TEMPERATURE,
@@ -159,3 +160,95 @@ class TestSnooze:
         t = Timer("n", NOW, description="  spaced  ")
         assert t.description == "spaced"
         assert load_timers(save_timers([t]))[0].description == "spaced"
+
+# ---------------------------------------------------------------- interval
+
+def test_interval_repeat_rolls_by_its_own_period():
+    now = datetime.datetime(2026, 7, 21, 9, 0, 0)
+    t = timers.Timer("limit", now + datetime.timedelta(minutes=5),
+                     repeat=timers.REPEAT_INTERVAL, interval_minutes=300)
+    t.advance(now + datetime.timedelta(minutes=6))
+    assert t.target == now + datetime.timedelta(minutes=305)
+
+
+def test_interval_never_lands_in_the_past_after_a_long_sleep():
+    """The laptop was shut for two days: the timer must name the NEXT window,
+    not replay every window that was missed."""
+    start = datetime.datetime(2026, 7, 21, 9, 0, 0)
+    t = timers.Timer("limit", start, repeat=timers.REPEAT_INTERVAL,
+                     interval_minutes=300)
+    much_later = start + datetime.timedelta(days=2)
+    t.advance(much_later)
+    assert t.target > much_later
+    # and it is still on the 5-hour grid the anchor established
+    assert (t.target - start).total_seconds() % (300 * 60) == 0
+
+
+def test_interval_period_cannot_be_zero():
+    """A zero period would make advance() loop forever."""
+    t = timers.Timer("x", datetime.datetime(2026, 7, 21, 9, 0),
+                     repeat=timers.REPEAT_INTERVAL, interval_minutes=0)
+    assert t.interval_minutes >= 1
+    t.advance(datetime.datetime(2026, 7, 21, 10, 0))   # must return at all
+    assert t.target > datetime.datetime(2026, 7, 21, 10, 0)
+
+
+def test_interval_survives_a_save_load_round_trip():
+    t = timers.Timer("limit", datetime.datetime(2026, 7, 21, 9, 0),
+                     repeat=timers.REPEAT_INTERVAL, interval_minutes=300)
+    back = timers.load_timers(timers.save_timers([t]))[0]
+    assert back.repeat == timers.REPEAT_INTERVAL
+    assert back.interval_minutes == 300
+
+
+def test_timers_saved_before_intervals_existed_still_load():
+    old_entry = {"name": "old", "target": "2026-07-21T09:00:00",
+                 "repeat": "daily"}
+    back = timers.load_timers([old_entry])[0]
+    assert back.interval_minutes == timers.DEFAULT_INTERVAL_MINUTES
+
+
+# ------------------------------------------------------------ limit window
+
+def test_limit_window_counts_from_the_anchor():
+    now = datetime.datetime(2026, 7, 21, 12, 0, 0)
+    anchor = datetime.datetime(2026, 7, 21, 11, 30, 0)
+    t = timers.limit_window("Claude", hours=5, anchor=anchor, now=now)
+    assert t.target == anchor + datetime.timedelta(hours=5)
+    assert t.repeat == timers.REPEAT_INTERVAL
+    assert t.interval_minutes == 300
+
+
+def test_limit_window_anchored_in_the_past_rolls_to_the_next_one():
+    """'my window opened at 06:00' said at 14:00 must point at the next
+    reset, not at one that already passed."""
+    now = datetime.datetime(2026, 7, 21, 14, 0, 0)
+    anchor = datetime.datetime(2026, 7, 21, 6, 0, 0)
+    t = timers.limit_window("Claude", hours=5, anchor=anchor, now=now)
+    assert t.target > now
+    assert t.target == datetime.datetime(2026, 7, 21, 16, 0, 0)
+
+
+def test_limit_window_defaults_to_starting_now():
+    now = datetime.datetime(2026, 7, 21, 12, 0, 0)
+    t = timers.limit_window("x", hours=5, now=now)
+    assert t.target == now + datetime.timedelta(hours=5)
+
+
+def test_describe_spells_out_the_window_in_words():
+    now = datetime.datetime(2026, 7, 21, 12, 0, 0)
+    t = timers.limit_window("Claude limit", hours=5,
+                            anchor=datetime.datetime(2026, 7, 21, 11, 0),
+                            now=now)
+    text = timers.describe(t, now)
+    assert "Claude limit" in text
+    assert "16:00" in text, "the actual reset time must be visible"
+    assert "in 4h" in text
+    assert "every 5h" in text, "a rolling window must say that it rolls"
+
+
+def test_describe_marks_a_paused_timer():
+    now = datetime.datetime(2026, 7, 21, 12, 0, 0)
+    t = timers.limit_window("x", hours=5, now=now)
+    t.enabled = False
+    assert "paused" in timers.describe(t, now)

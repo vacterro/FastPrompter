@@ -149,15 +149,23 @@ def parse_when(text: str, now: datetime.datetime | None = None) -> datetime.date
     return target
 
 
-def resolve_target(text: str, now: datetime.datetime | None = None) -> datetime.datetime | None:
-    """Turn whatever the user typed into an absolute moment."""
+def resolve_target(text: str, now: datetime.datetime | None = None,
+                   prefer_past: bool = False) -> datetime.datetime | None:
+    """Turn whatever the user typed into an absolute moment.
+
+    `prefer_past` is for anchors rather than deadlines: when someone says a
+    usage window "started at 09:20" they mean the 09:20 that has already
+    happened, and "5h" means five hours ago, not five hours from now.
+    """
     now = now or datetime.datetime.now()
     when = parse_when(text, now)
     if when is not None:
+        if prefer_past and when > now:
+            when -= datetime.timedelta(days=1)
         return when
     delta = parse_duration(text)
     if delta is not None:
-        return now + delta
+        return now - delta if prefer_past else now + delta
     return None
 
 

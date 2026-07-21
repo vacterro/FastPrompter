@@ -19,7 +19,13 @@ import uuid
 REPEAT_NONE = "once"
 REPEAT_DAILY = "daily"
 REPEAT_WEEKLY = "weekly"
-REPEAT_CHOICES = (REPEAT_NONE, REPEAT_DAILY, REPEAT_WEEKLY)
+REPEAT_INTERVAL = "interval"
+REPEAT_CHOICES = (REPEAT_NONE, REPEAT_INTERVAL, REPEAT_DAILY, REPEAT_WEEKLY)
+
+# The case this was built for: an agent platform hands out a fresh quota
+# every N hours from the moment the window opened, so the anchor matters as
+# much as the period. Five hours is the common one, hence the default.
+DEFAULT_INTERVAL_MINUTES = 5 * 60
 
 DEFAULT_COLOR = "#6aa9ff"
 COLOR_STATIC = "static"
@@ -82,11 +88,13 @@ class Timer:
     """One countdown. `target` is always an absolute local datetime."""
 
     __slots__ = ("id", "name", "description", "target", "repeat", "sound",
-                 "volume", "color_mode", "color", "enabled", "fired")
+                 "volume", "color_mode", "color", "enabled", "fired",
+                 "interval_minutes")
 
     def __init__(self, name, target, repeat=REPEAT_NONE, sound="tick",
                  volume=5, color_mode=COLOR_TEMPERATURE, color=DEFAULT_COLOR,
-                 enabled=True, id=None, fired=False, description=""):
+                 enabled=True, id=None, fired=False, description="",
+                 interval_minutes=DEFAULT_INTERVAL_MINUTES):
         self.id = id or uuid.uuid4().hex[:12]
         self.name = (name or "Timer").strip() or "Timer"
         self.description = (description or "").strip()
@@ -101,6 +109,11 @@ class Timer:
         self.color = color or DEFAULT_COLOR
         self.enabled = bool(enabled)
         self.fired = bool(fired)
+        try:
+            # a zero or negative period would make advance() spin forever
+            self.interval_minutes = max(1, int(interval_minutes))
+        except (TypeError, ValueError):
+            self.interval_minutes = DEFAULT_INTERVAL_MINUTES
 
     # ---- serialisation ------------------------------------------------
     def to_dict(self):
@@ -116,6 +129,7 @@ class Timer:
             "color": self.color,
             "enabled": self.enabled,
             "fired": self.fired,
+            "interval_minutes": self.interval_minutes,
         }
 
     @classmethod
@@ -140,6 +154,7 @@ class Timer:
             enabled=d.get("enabled", True),
             id=d.get("id"),
             fired=d.get("fired", False),
+            interval_minutes=d.get("interval_minutes", DEFAULT_INTERVAL_MINUTES),
         )
 
     # ---- state --------------------------------------------------------
@@ -191,7 +206,9 @@ class Timer:
         yesterday, and must not fire once per missed day.
         """
         now = now or datetime.datetime.now()
-        if self.repeat == REPEAT_DAILY:
+        if self.repeat == REPEAT_INTERVAL:
+            step = datetime.timedelta(minutes=max(1, self.interval_minutes))
+        elif self.repeat == REPEAT_DAILY:
             step = datetime.timedelta(days=1)
         elif self.repeat == REPEAT_WEEKLY:
             step = datetime.timedelta(weeks=1)
@@ -202,6 +219,58 @@ class Timer:
             self.target += step
         self.fired = False
         return True
+
+
+def limit_window(name, hours=5, anchor=None, now=None, **kw):
+    """A rolling usage window: it opened at `anchor` and rolls every `hours`.
+
+    Written for "my 5-hour agent limit started at 09:20": the first target is
+    anchor + 5h, and it keeps rolling from there, so after a laptop has been
+    shut for two days the timer still names the NEXT reset rather than a
+    string of missed ones.
+    """
+    now = now or datetime.datetime.now()
+    anchor = anchor or now
+    minutes = max(1, int(round(float(hours) * 60)))
+    target = anchor + datetime.timedelta(minutes=minutes)
+    timer = Timer(name=name, target=target, repeat=REPEAT_INTERVAL,
+                  interval_minutes=minutes, **kw)
+    # anchored in the past (the window opened this morning) -> roll forward
+    if timer.target <= now:
+        timer.advance(now)
+    return timer
+
+
+def describe(timer, now=None):
+    """Plain words for the row/tooltip: what it is and when it lands.
+
+    A bare countdown is not enough for a rolling window - "in 12m" leaves
+    you guessing whether that is the reset or the next one.
+    """
+    now = now or datetime.datetime.now()
+    rem = timer.remaining(now)
+    if rem <= 0:
+        when = "now"
+    else:
+        mins = int(rem // 60)
+        if mins < 60:
+            when = f"in {mins}m"
+        else:
+            hours, mins = divmod(mins, 60)
+            when = f"in {hours}h" if not mins else f"in {hours}h {mins:02d}m"
+    at = timer.target.strftime("%H:%M")
+    bits = [f"{timer.name} - {when} (at {at})"]
+    if timer.repeat == REPEAT_INTERVAL:
+        every = timer.interval_minutes
+        if every % 60 == 0:
+            bits.append(f"every {every // 60}h")
+        else:
+            bits.append(f"every {every}m")
+    elif timer.repeat != REPEAT_NONE:
+        bits.append(timer.repeat)
+    if not timer.enabled:
+        bits.append("paused")
+    return " - ".join(bits)
 
 
 def load_timers(raw):

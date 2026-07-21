@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
     QComboBox,
+    QDoubleSpinBox,
     QDialog,
     QHBoxLayout,
     QLabel,
@@ -32,6 +33,9 @@ from fastprompter.core.timers import (
     COLOR_STATIC,
     COLOR_TEMPERATURE,
     REPEAT_CHOICES,
+    REPEAT_INTERVAL,
+    describe,
+    limit_window,
     Timer,
 )
 from fastprompter.core.translations import tr
@@ -94,6 +98,55 @@ class TimerDialog(QDialog):
         self.cb_preset.currentIndexChanged.connect(self._preset_picked)
         row.addWidget(self.cb_preset, 1)
         root.addLayout(row)
+
+        # ---- the 5-hour limit catcher ----
+        # An agent quota is a rolling window, not a one-off alarm: it opened
+        # at some moment and comes back every N hours from THAT moment. The
+        # generic "when" box can express the first reset but not the roll,
+        # and getting the anchor right by hand is exactly the fiddly part.
+        limit = QHBoxLayout()
+        limit.setSpacing(4)
+
+        self.lbl_limit = QLabel(tr("Limit window:", self.lang))
+        limit.addWidget(self.lbl_limit)
+
+        self.spin_limit_hours = QDoubleSpinBox()
+        self.spin_limit_hours.setRange(0.25, 72.0)
+        self.spin_limit_hours.setSingleStep(0.5)
+        self.spin_limit_hours.setDecimals(2)
+        self.spin_limit_hours.setValue(5.0)
+        self.spin_limit_hours.setSuffix(tr(" h", self.lang))
+        self.spin_limit_hours.setToolTip(tr(
+            "How long the window lasts. 5 hours is the usual agent quota.",
+            self.lang))
+        limit.addWidget(self.spin_limit_hours)
+
+        self.in_limit_start = QLineEdit()
+        self.in_limit_start.setPlaceholderText(tr("started (blank = now)", self.lang))
+        self.in_limit_start.setToolTip(tr(
+            "When the window OPENED, e.g. 09:20 - the countdown is that\n"
+            "moment plus the hours on the left. Leave empty to start now.\n"
+            "A start already in the past rolls forward to the next reset.",
+            self.lang))
+        self.in_limit_start.returnPressed.connect(self.add_limit_window)
+        limit.addWidget(self.in_limit_start, 1)
+
+        self.btn_limit = QPushButton(tr("Catch limit", self.lang))
+        self.btn_limit.setToolTip(tr(
+            "Add a repeating timer for a rolling usage window.\n"
+            "It re-arms itself every period, so it keeps telling you\n"
+            "when the NEXT reset lands - even after days offline.",
+            self.lang))
+        self.btn_limit.clicked.connect(self.add_limit_window)
+        limit.addWidget(self.btn_limit)
+        root.addLayout(limit)
+
+        self.lbl_limit_hint = QLabel("")
+        self.lbl_limit_hint.setWordWrap(True)
+        root.addWidget(self.lbl_limit_hint)
+        self.in_limit_start.textChanged.connect(self._preview_limit)
+        self.spin_limit_hours.valueChanged.connect(
+            lambda _v: self._preview_limit(self.in_limit_start.text()))
 
         # ---- description ----
         self.in_desc = QLineEdit()
@@ -219,7 +272,52 @@ class TimerDialog(QDialog):
             sound=self.cb_sound.currentText(),
             volume=self.spin_vol.value(),
             color_mode=COLOR_TEMPERATURE if self.cb_temp.isChecked() else COLOR_STATIC,
+            interval_minutes=self._interval_minutes(),
         )
+
+    def _interval_minutes(self):
+        return max(1, int(round(self.spin_limit_hours.value() * 60)))
+
+    def _limit_anchor(self):
+        """Resolve the 'started at' box. Returns (anchor, ok)."""
+        text = self.in_limit_start.text().strip()
+        if not text:
+            return datetime.datetime.now(), True
+        anchor = resolve_target(text, prefer_past=True)
+        return anchor, anchor is not None
+
+    def _preview_limit(self, _text=None):
+        """Spell out the next reset before the user commits to it."""
+        anchor, ok = self._limit_anchor()
+        if not ok:
+            self.lbl_limit_hint.setText(tr("Not a time I understand", self.lang))
+            return
+        preview = limit_window(
+            self.in_name.text().strip() or tr("Limit", self.lang),
+            hours=self.spin_limit_hours.value(), anchor=anchor)
+        self.lbl_limit_hint.setText(describe(preview))
+
+    def add_limit_window(self):
+        anchor, ok = self._limit_anchor()
+        if not ok:
+            self.lbl_limit_hint.setText(tr("Not a time I understand", self.lang))
+            self.in_limit_start.setFocus()
+            return
+        timer = limit_window(
+            self.in_name.text().strip() or tr("Limit", self.lang),
+            hours=self.spin_limit_hours.value(),
+            anchor=anchor,
+            description=self.in_desc.text().strip(),
+            sound=self.cb_sound.currentText(),
+            volume=self.spin_vol.value(),
+            color_mode=COLOR_TEMPERATURE if self.cb_temp.isChecked() else COLOR_STATIC,
+        )
+        self.main_win.timers.append(timer)
+        self.main_win.save_timers_to_data()
+        self.clear_form()
+        self.refresh()
+        self.lbl_limit_hint.setText(describe(timer))
+        return timer
 
     def test_now(self):
         """Fire a throwaway copy in 5s — sound and popup, nothing saved."""
@@ -248,6 +346,7 @@ class TimerDialog(QDialog):
                 existing.sound = form.sound
                 existing.volume = form.volume
                 existing.color_mode = form.color_mode
+                existing.interval_minutes = form.interval_minutes
                 existing.fired = False        # re-arm after an edit
         else:
             self.main_win.timers.append(self._form_timer(target))

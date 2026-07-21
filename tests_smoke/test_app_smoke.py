@@ -5032,3 +5032,52 @@ def test_auto_bullet_converts_while_typing(win):
     finally:
         ed.clear()
         win.set_auto_bullet(before == "True")
+
+def test_limit_window_catcher_builds_a_rolling_timer(win):
+    """The 5-hour agent quota is a rolling window anchored at the moment it
+    opened, which the generic "when" box cannot express."""
+    import datetime
+    from fastprompter.ui.timer_dialog import TimerDialog
+    from fastprompter.core import timers as T
+
+    kept = list(win.timers)
+    try:
+        win.timers.clear()
+        dlg = TimerDialog(win)
+        now = datetime.datetime.now()
+
+        # blank start = the window opens now
+        dlg.in_name.setText("Claude limit")
+        dlg.spin_limit_hours.setValue(5.0)
+        dlg.in_limit_start.setText("")
+        t = dlg.add_limit_window()
+        assert t.repeat == T.REPEAT_INTERVAL
+        assert t.interval_minutes == 300
+        assert 4.9 < t.remaining() / 3600 < 5.01
+
+        # an explicit start two hours ago leaves three hours on the clock
+        dlg.in_name.setText("Anchored")
+        dlg.in_limit_start.setText(
+            (now - datetime.timedelta(hours=2)).strftime("%H:%M"))
+        t2 = dlg.add_limit_window()
+        assert 2.9 < t2.remaining() / 3600 < 3.05
+
+        # the words say what it is, including that it rolls
+        text = T.describe(t2)
+        assert "every 5h" in text and t2.target.strftime("%H:%M") in text
+
+        # garbage adds nothing and says so
+        before = len(win.timers)
+        dlg.in_limit_start.setText("banana")
+        dlg.add_limit_window()
+        assert len(win.timers) == before
+        assert dlg.lbl_limit_hint.text()
+
+        # and it survives being saved and read back
+        back = T.load_timers(T.save_timers(win.timers))
+        assert [x.interval_minutes for x in back] == [300, 300]
+        assert all(x.repeat == T.REPEAT_INTERVAL for x in back)
+        dlg.close()
+    finally:
+        win.timers[:] = kept
+        win.save_timers_to_data()

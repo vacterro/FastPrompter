@@ -379,9 +379,15 @@ class FastPrompter(
             name = nxt.name if len(nxt.name) <= 14 else nxt.name[:13] + "…"
             text = f"{name} {text}"
         lbl.setText(text)
-        lbl.setToolTip(
-            f"{nxt.name}\n{nxt.target.strftime('%d.%m %H:%M')}\n"
-            + tr("Click to manage timers", getattr(self, "_current_lang", "EN")))
+        # A rolling window needs to say that it rolls: "in 12m" alone leaves
+        # you guessing whether that is the reset or the one after it.
+        from fastprompter.core.timers import describe
+        tip = [describe(nxt), nxt.target.strftime("%d.%m %H:%M")]
+        if nxt.description:
+            tip.append(nxt.description)
+        tip.append(tr("Click to manage timers",
+                      getattr(self, "_current_lang", "EN")))
+        lbl.setToolTip("\n".join(tip))
         lbl.setStyleSheet(
             f"padding: 0 4px; font-weight: bold; color: {nxt.display_color()};")
         lbl.setVisible(True)
