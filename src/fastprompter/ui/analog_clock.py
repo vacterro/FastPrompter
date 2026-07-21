@@ -40,6 +40,7 @@ def _theme_palette(main_win):
 
 class MiniAnalogClock(QWidget):
     SIZE = 18
+    PAD = 2
 
     def __init__(self, main_win):
         super().__init__(main_win)
@@ -49,7 +50,13 @@ class MiniAnalogClock(QWidget):
         # own (lighter) tint stayed visible above and below - a box drawn
         # around the clock. Filling the widget could never hide that, because
         # the box is outside the widget. Covering the full row height does.
-        self.setFixedWidth(self.SIZE)
+        # A couple of pixels wider than the dial. The layout leaves a 1px gap
+        # on each side where the bar's lighter tint shows through; with the
+        # dial filling the widget edge to edge those gaps sat right against
+        # the circle and read as a frame around it. The padding puts the
+        # widget's own background between the two, so they become ordinary
+        # toolbar spacing instead of an outline.
+        self.setFixedWidth(self.SIZE + 2 * self.PAD)
         self.setSizePolicy(QSizePolicy.Policy.Fixed,
                            QSizePolicy.Policy.Expanding)
         self.setMinimumHeight(self.SIZE)
