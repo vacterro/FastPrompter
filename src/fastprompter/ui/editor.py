@@ -108,6 +108,7 @@ class VaultTextEdit(QTextEdit):
         self.document().documentLayout().documentSizeChanged.connect(self.update_line_number_area_width)
         self.verticalScrollBar().valueChanged.connect(self.line_number_area.update)
         self.document().contentsChange.connect(self._stamp_edited_blocks)
+        self.textChanged.connect(self.refresh_extra_selections)
         self.textChanged.connect(self._refresh_checkbox_flag)
         self.textChanged.connect(self.line_number_area.update)
         self.cursorPositionChanged.connect(self.line_number_area.update)
@@ -187,6 +188,9 @@ class VaultTextEdit(QTextEdit):
         # the swap — connecting once in __init__ only ever stamped the very
         # first document.
         self.document().contentsChange.connect(self._stamp_edited_blocks)
+        self.document().contentsChange.connect(
+            lambda *_a: self.refresh_extra_selections())
+        self.refresh_extra_selections()
         self.document().documentLayout().documentSizeChanged.connect(self.update_line_number_area_width)
         self.update_line_number_area_width()
         font = self.font()
@@ -341,6 +345,45 @@ class VaultTextEdit(QTextEdit):
             block = block.next()
         return marks
 
+    def collect_line_heat(self):
+        """{block number: timestamp} for lines still within the heat window.
+
+        Block user data lives only in memory — a reload rebuilds the document
+        from plain text and every mark is gone. Persisting the timestamps is
+        what makes "where was I working" survive a restart.
+        """
+        import time as _t
+
+        out = {}
+        try:
+            span = self._heat_window()
+        except Exception:
+            span = 24 * 3600
+        now = _t.time()
+        doc = self.document()
+        block = doc.firstBlock()
+        while block.isValid():
+            ts = getattr(block.userData(), "ts", None)
+            if ts is not None and (now - ts) < span:
+                out[block.blockNumber()] = round(float(ts), 1)
+            block = block.next()
+        return out
+
+    def apply_line_heat(self, heat):
+        """Restore saved edit timestamps onto their blocks."""
+        if not heat:
+            return
+        doc = self.document()
+        for num, ts in heat.items():
+            try:
+                num, ts = int(num), float(ts)
+            except (TypeError, ValueError):
+                continue
+            block = doc.findBlockByNumber(num)
+            if block.isValid():
+                block.setUserData(_LineHeat(ts))
+        self.viewport().update()
+
     def apply_line_marks(self, marks):
         """Restore saved marks, preserving the code/fold bits already set."""
         if not marks:
@@ -419,6 +462,18 @@ class VaultTextEdit(QTextEdit):
         return n if 0 < n <= 6 and stripped[n:n + 1] == " " else 0
 
     @staticmethod
+    def _is_divider_line(text):
+        """A '---' / '***' / '___' horizontal rule: 3+ of one character.
+
+        Deliberately not a regex: the backreference form of this pattern
+        keeps getting mangled when the file is edited by a script, and it
+        failed silently (matching a control character instead).
+        """
+        stripped = text.strip()
+        if len(stripped) < 3 or stripped[0] not in "-*_":
+            return False
+        return set(stripped) == {stripped[0]}
+    @staticmethod
     def _is_quote_line(text):
         return text.lstrip().startswith(">")
 
@@ -463,6 +518,11 @@ class VaultTextEdit(QTextEdit):
             while b.isValid():
                 other = self._header_level(b.text())
                 if other and other <= lvl:
+                    break
+                # a horizontal rule closes the section too — people use it as
+                # an explicit "this part ends here" marker, and without it a
+                # header swallowed everything up to the NEXT header
+                if self._is_divider_line(b.text()):
                     break
                 last = b
                 b = b.next()
@@ -892,7 +952,7 @@ class VaultTextEdit(QTextEdit):
         # otherwise the wash stays stuck on whatever line the mouse left from
         if getattr(self, "_hover_block", None) is not None:
             self._hover_block = None
-            self.viewport().update()
+            self.refresh_extra_selections()
         super().leaveEvent(event)
 
     def mouseMoveEvent(self, event):
@@ -922,7 +982,7 @@ class VaultTextEdit(QTextEdit):
                         new_hover = blk.blockNumber() if blk.isValid() else None
                         if new_hover != getattr(self, "_hover_block", None):
                             self._hover_block = new_hover
-                            self.viewport().update()
+                            self.refresh_extra_selections()
                     over_cb = self._checkbox_at_pos(p)
                     over_ts = self._ts_glyph_block_at(p) is not None
                     over_fold = self._fold_block_at(p) is not None
@@ -1534,6 +1594,17 @@ class VaultTextEdit(QTextEdit):
             except Exception:
                 pass
 
+    @staticmethod
+    def _whole_block_cursor(block):
+        """Cursor spanning the ENTIRE block, wrapped lines included.
+
+        A bare caret plus FullWidthSelection only tints the visual line the
+        caret sits on, so a long wrapped paragraph got one stripe and the
+        continuation lines stayed untinted. Selecting the block makes the
+        tint cover every visual row it occupies.
+        """
+        return QTextCursor(block)
+
     def _theme_accent(self, fallback):
         """Accent colour of the active theme, for 'auto' colour settings."""
         try:
@@ -1652,7 +1723,7 @@ class VaultTextEdit(QTextEdit):
                         sel.format.setBackground(colour)
                         sel.format.setProperty(
                             QTextFormat.Property.FullWidthSelection, True)
-                        sel.cursor = QTextCursor(block)
+                        sel.cursor = self._whole_block_cursor(block)
                         out.append(sel)
             block = block.next()
         return out
@@ -1689,7 +1760,7 @@ class VaultTextEdit(QTextEdit):
         sel = QTextEdit.ExtraSelection()
         sel.format.setBackground(color)
         sel.format.setProperty(QTextFormat.Property.FullWidthSelection, True)
-        sel.cursor = QTextCursor(block)
+        sel.cursor = self._whole_block_cursor(block)
         return [sel]
 
     def _code_block_selections(self, doc):
@@ -1705,18 +1776,110 @@ class VaultTextEdit(QTextEdit):
                 sel = QTextEdit.ExtraSelection()
                 sel.format.setBackground(QColor("#161616"))
                 sel.format.setProperty(QTextFormat.Property.FullWidthSelection, True)
-                sel.cursor = QTextCursor(block)
+                sel.cursor = self._whole_block_cursor(block)
                 selections.append(sel)
             block = block.next()
         return selections
 
+    def _paint_line_tints(self, painter, doc, doc_layout, y_off, vp_rect):
+        """Hover highlight and edit-heat, drawn over whole block rectangles.
+
+        blockBoundingRect covers every visual row a wrapped paragraph
+        occupies, so the tint no longer stops after the first line. Drawn
+        translucent (like the zebra stripes) so the text stays readable even
+        though this lands after the text is painted.
+        """
+        import time as _t
+
+        heat_on = self._heat_enabled()
+        hover_on = self.main_win.data.get("hover_line", "True") == "True"
+        hover_block = getattr(self, "_hover_block", None)
+        if not heat_on and not (hover_on and hover_block is not None):
+            return
+
+        now = _t.time()
+        span = self._heat_window() if heat_on else 0
+        try:
+            heat_pct = int(self.main_win.data.get("line_heat_strength", "18"))
+        except (TypeError, ValueError):
+            heat_pct = 18
+        heat_pct = max(2, min(60, heat_pct))
+        try:
+            custom = self.main_win._get_custom_colors()
+        except Exception:
+            custom = {}
+
+        hover_colour = None
+        if hover_on and hover_block is not None:
+            try:
+                pct = int(self.main_win.data.get("hover_line_opacity", "10"))
+            except (TypeError, ValueError):
+                pct = 10
+            chosen = (self.main_win.data.get("hover_line_color", "auto") or "auto").strip()
+            if chosen.lower() in ("", "auto", "theme"):
+                chosen = self._theme_accent("#6aa9ff")
+            hover_colour = QColor(chosen)
+            if not hover_colour.isValid():
+                hover_colour = QColor(self._theme_accent("#6aa9ff"))
+            hover_colour.setAlpha(round(255 * max(1, min(60, pct)) / 100))
+
+        block = self._first_visible_block() or doc.firstBlock()
+        while block.isValid():
+            rect = doc_layout.blockBoundingRect(block).translated(0, y_off)
+            if rect.top() > vp_rect.height():
+                break
+            if rect.bottom() >= 0 and block.isVisible():
+                full = QRectF(0, rect.top(), vp_rect.width(), rect.height())
+                if heat_on:
+                    ts = getattr(block.userData(), "ts", None)
+                    if ts is not None:
+                        age = now - ts
+                        if age < span:
+                            colour = self._heat_colour_for(age, span, custom)
+                            if colour.isValid():
+                                fade = 1.0 - (age / span) * 0.75
+                                colour.setAlpha(round(255 * heat_pct / 100 * fade))
+                                painter.fillRect(full, colour)
+                if hover_colour is not None and block.blockNumber() == hover_block:
+                    painter.fillRect(full, hover_colour)
+            block = block.next()
+
+    def refresh_extra_selections(self):
+        """Ask for the background tints (code panels, heat, hover) to be rebuilt.
+
+        Always DEFERRED to the event loop, never run inline, because
+        setExtraSelections() schedules a layout pass and a repaint. Running
+        that while Qt is mid-paint or mid-document-swap is re-entrant and
+        faults inside Qt — an access violation with no Python traceback,
+        and the bigger the document the likelier it is. Deferring also
+        coalesces the burst of calls a single edit produces.
+        """
+        if sip.isdeleted(self):
+            return
+        if getattr(self, "_sel_refresh_pending", False):
+            return
+        self._sel_refresh_pending = True
+        QTimer.singleShot(0, self._apply_extra_selections)
+
+    def _apply_extra_selections(self):
+        self._sel_refresh_pending = False
+        if sip.isdeleted(self):
+            return
+        doc = self.document()
+        if doc is None or sip.isdeleted(doc) or doc.blockCount() > 2000:
+            return
+        try:
+            # ONLY code-block panels go through extra selections. Hover and
+            # heat are painted directly (see _paint_line_tints): a selection
+            # cursor per tinted line makes Qt fault on setExtraSelections,
+            # and a bare caret only ever tints one visual row of a wrapped
+            # block, which is the bug this whole path had.
+            self.setExtraSelections(self._code_block_selections(doc))
+        except Exception:
+            logger.debug("failed to refresh extra selections")
+
     def paintEvent(self, event):
         doc = self.document()
-        if doc and doc.blockCount() <= 2000:
-            self.setExtraSelections(
-                self._line_heat_selections(doc)
-                + self._code_block_selections(doc)
-                + self._hover_line_selection(doc))
         super().paintEvent(event)
         if not doc:
             return
@@ -1914,6 +2077,8 @@ class VaultTextEdit(QTextEdit):
                                 painter.fillPath(path, QColor("#333333"))
                                 painter.strokePath(path, QColor("#666666"))
                     block = block.next()
+
+            self._paint_line_tints(painter, doc, doc_layout, y_off, vp_rect)
 
             # Line-blocking drag: translucent box over the candidate drop
             # target so the interaction reads as interactive (PureRef-style).

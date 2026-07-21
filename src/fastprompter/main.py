@@ -543,6 +543,10 @@ class FastPrompter(
             marks = ta.collect_line_marks()
         except Exception:
             marks = {}
+        try:
+            heat = ta.collect_line_heat()
+        except Exception:
+            heat = {}
         entry = {
             "anchor": cur.anchor(),
             "pos": cur.position(),
@@ -550,6 +554,8 @@ class FastPrompter(
         }
         if marks:
             entry["marks"] = {str(k): v for k, v in marks.items()}
+        if heat:
+            entry["heat"] = {str(k): v for k, v in heat.items()}
         m = self._silo_state_map()
         m.setdefault(cat, {})[key] = entry
 
@@ -567,6 +573,10 @@ class FastPrompter(
             ta.apply_line_marks({int(k): v for k, v in (entry.get("marks") or {}).items()})
         except Exception:
             pass
+        try:
+            ta.apply_line_heat({int(k): v for k, v in (entry.get("heat") or {}).items()})
+        except Exception:
+            pass
 
         doc_len = ta.document().characterCount() - 1
         try:
@@ -575,7 +585,9 @@ class FastPrompter(
         except (TypeError, ValueError):
             return False
         if pos == 0 and anchor == 0:
-            return False  # nothing meaningful saved; let the caller decide
+            # marks and heat are already restored above; only the cursor is
+            # unset, so let the caller apply its own Start/End rule
+            return False
 
         cur = ta.textCursor()
         cur.setPosition(anchor)

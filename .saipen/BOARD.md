@@ -615,3 +615,21 @@ in place the next occurrence should leave a traceback in crash.log — ask
 for that file rather than guessing further.
 
 Verified: 503 unit + 165 smoke green.
+
+## Batch: tints, folds, heat persistence + THE heavy-document crash (21.07)
+| ID | Status | Description |
+|---|---|---|
+| X-01 | **FIXED — likely the reported heavy-document crash** | `setExtraSelections()` was being called from inside `paintEvent`. It schedules a layout pass and a repaint, so running it mid-paint is re-entrant and faults inside Qt: an access violation with NO Python traceback, and likelier the bigger the document — which matches "long and heavy documents just crash without any messages" exactly. Reproduced in the suite at 20k lines. Selections are now rebuilt from state changes (edits, hover, folds, document swap), deferred to the event loop and coalesced. |
+| X-02 | FIXED (found while fixing X-01) | Giving each tint a real selection cursor ALSO faults in `setExtraSelections`. Proven by experiment: reverting to caret cursors made the crash vanish. So hover and heat left the extra-selection path entirely and are painted over `blockBoundingRect` instead — which is what fixes the wrapped-line bug properly. |
+| X-03 | FIXED | **Wrapped lines were untinted.** A bare caret plus FullWidthSelection only colours the visual row the caret is on, so a long paragraph got one stripe. Now painted over the whole block rect. Asserted on RENDERED PIXELS at three heights down a wrapped block, since that is the only thing that proves what the user sees. |
+| X-04 | FIXED | `---` / `***` / `___` now ends a `#` header fold. Previously a header swallowed everything up to the NEXT header, ignoring an explicit section break. Written without a regex on purpose: the backreference form was silently mangled into a control character by a script edit and matched nothing. |
+| X-05 | FIXED | Line heat now survives a restart. Block user data is memory-only, so a reload rebuilt the document and lost every mark; the timestamps are persisted per silo alongside the existing line marks and cursor state. |
+
+Verified: 503 unit + 168 smoke green, no access violations.
+
+NOT STARTED from this round's list (told the user):
+max-2-level child silos + child-of-child not appearing; reordering children
+escaping the parent; settings UI reorganisation; Reset UI Layout button;
+settings buttons on both edges; hamburger following the sidebar side; timer
+fired-state colouring / enable-disable / hover popup / my_timer2 parity;
+autobullet reliability; Ctrl+click link opening.

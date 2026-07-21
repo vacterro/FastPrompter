@@ -2686,7 +2686,10 @@ def test_code_block_background_does_not_hide_text(win):
     ta = win.text_area
     win.highlighter.rehighlight()
 
-    ta.paintEvent(QPaintEvent(QRect(0, 0, ta.width(), ta.height())))
+    # extra selections are applied on a deferred timer now (doing it inside
+    # paintEvent faulted inside Qt), so let the event loop run
+    ta.refresh_extra_selections()
+    QApplication.processEvents()
 
     assert ta.toPlainText() == code  # painting must never mutate the document
 
@@ -4667,3 +4670,125 @@ def test_heavy_document_operations_stay_responsive(win):
         win.data["temp_presets"][:] = ["small"]
         win.silo_docs[:] = []
         win._switch_to_slot(0, initial=True)
+
+
+def test_tint_covers_word_wrapped_continuation_lines(win):
+    """A wrapped paragraph must be tinted over ALL its visual rows.
+
+    The tints used to ride on extra selections: a bare caret only coloured
+    the row the caret sat on, and giving each one a real selection made Qt
+    fault outright. They are painted over blockBoundingRect instead, which
+    spans the whole wrapped block. Asserted on rendered pixels, because that
+    is the only thing that proves what the user actually sees.
+    """
+    from PyQt6.QtGui import QImage
+
+    win.is_locked = False
+    win._locked_geometry = None
+    win.resize(700, 600)
+    win.show()
+    win.cat_combo.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    win.data["word_wrap"] = "True"
+    win.data["temp_presets"][:] = ["short\n" + ("word " * 80) + "\nshort2"]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    QApplication.processEvents()
+
+    ta = win.text_area
+    doc = ta.document()
+    blk = doc.findBlockByNumber(1)
+    assert blk.layout().lineCount() > 3, "test text did not wrap"
+
+    try:
+        win.data["hover_line"] = "True"
+        win.data["hover_line_opacity"] = "40"      # unmistakable in a sample
+        ta._hover_block = 1
+        ta.viewport().repaint()
+        QApplication.processEvents()
+
+        img = QImage(ta.viewport().size(), QImage.Format.Format_ARGB32)
+        ta.viewport().render(img)
+        rect = doc.documentLayout().blockBoundingRect(blk)
+        top = int(rect.top() - ta.verticalScrollBar().value())
+        height = int(rect.height())
+        assert height > 3 * ta.fontMetrics().height(), "block is not multi-row"
+
+        outside = img.pixelColor(5, max(0, top - 6)).name()
+        rows = [img.pixelColor(5, top + off).name()
+                for off in (2, height // 2, height - 4)
+                if 0 <= top + off < img.height()]
+        assert len(rows) == 3
+        for i, colour in enumerate(rows):
+            assert colour != outside, (
+                f"row {i} of the wrapped block is untinted ({colour} == {outside})")
+        assert rows[0] == rows[-1], "tint is uneven down the wrapped block"
+    finally:
+        win.data["hover_line_opacity"] = "10"
+        ta._hover_block = None
+
+
+def test_divider_ends_a_header_fold(win):
+    # A '---' rule is an explicit "section ends here" marker; folding a
+    # header used to swallow everything up to the NEXT header instead.
+    win.cat_combo.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    text = "# First\nbody A\nbody B\n---\nafter divider\n# Second\nbody C"
+    win.data["temp_presets"][:] = [text]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    ta = win.text_area
+    doc = ta.document()
+
+    assert ta._is_divider_line("---") is True
+    assert ta._is_divider_line("***") is True
+    assert ta._is_divider_line("___") is True
+    assert ta._is_divider_line("--") is False        # too short
+    assert ta._is_divider_line("- - -") is False     # spaced, not a rule
+    assert ta._is_divider_line("-*-") is False       # mixed characters
+
+    rng = ta._fold_range(doc.findBlockByNumber(0))
+    assert rng is not None
+    assert (rng[0].blockNumber(), rng[1].blockNumber()) == (1, 2), (
+        "header fold ran past the divider")
+
+    ta.toggle_fold(doc.findBlockByNumber(0))
+    visible = [doc.findBlockByNumber(i).isVisible() for i in range(7)]
+    assert visible == [True, False, False, True, True, True, True]
+
+
+def test_line_heat_survives_a_reload(win):
+    # Block user data is memory-only; a reload rebuilds the document from
+    # plain text, so the timestamps have to be persisted separately.
+    import time
+
+    from fastprompter.ui.editor import _LineHeat
+
+    win.cat_combo.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    win.data["temp_presets"][:] = ["alpha\nbeta\ngamma", "other"]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    try:
+        win.data["line_heat"] = "True"
+        ta = win.text_area
+        stamp = time.time() - 60
+        ta.document().findBlockByNumber(1).setUserData(_LineHeat(stamp))
+
+        saved = ta.collect_line_heat()
+        assert saved.get(1) is not None, "heat was not collected for saving"
+
+        win.capture_silo_state()
+        entry = win.data["silo_view_state_all"][win.get_current_category()]["s0"]
+        assert "heat" in entry, "heat never reached the persisted state"
+
+        # simulate a restart: throw the documents away and switch back
+        win._switch_to_slot(1)
+        win.silo_docs[:] = []
+        win._switch_to_slot(0, initial=True)
+
+        restored = win.text_area.collect_line_heat()
+        assert restored.get(1) is not None, "heat did not survive the reload"
+        assert abs(restored[1] - stamp) < 2
+    finally:
+        win.data["line_heat"] = "False"
