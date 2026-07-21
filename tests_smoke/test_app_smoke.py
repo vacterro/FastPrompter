@@ -4869,3 +4869,31 @@ def test_nesting_helpers_refuse_cycles(win):
         win.make_silo_child(0, 1)                      # parent under its child
     assert 0 not in win.data["silo_children"].get(1, []), (
         "a silo was nested under its own descendant")
+
+def test_reordering_a_child_keeps_it_inside_its_parent(win):
+    """A gap drop used to call unnest_silo() unconditionally, so merely
+    moving a child up or down among its siblings threw it out of the parent."""
+    win.data["temp_presets"][:] = ["Parent", "KidA", "KidB", "KidC", "Outsider"]
+    win.silo_docs[:] = []
+    win.data["silo_children"] = {0: [1, 2, 3]}
+    win.data["pinned_silos"] = []
+    win._switch_to_slot(0, initial=True)
+    win.refresh_temp_presets()
+
+    names = win.data["temp_presets"]
+
+    def kids():
+        return [names[k] for k in (win.data["silo_children"] or {}).get(0, [])]
+
+    # reorder among siblings: parentage and membership survive
+    assert win.reorder_sibling(3, before_idx=1) is True
+    assert kids() == ["KidC", "KidA", "KidB"]
+    assert win.silo_parent_of(3) == 0
+
+    # dropped past the last sibling -> last, still a child
+    assert win.reorder_sibling(3, before_idx=None) is True
+    assert kids() == ["KidA", "KidB", "KidC"]
+    assert win.silo_parent_of(3) == 0
+
+    # a silo with no parent is not a sibling of anything
+    assert win.reorder_sibling(4, before_idx=1) is False

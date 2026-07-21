@@ -5693,6 +5693,32 @@ class FastPrompter(
         self.mark_dirty()
         self.refresh_temp_presets()
 
+    def reorder_sibling(self, idx, before_idx=None):
+        """Move a child to another position among its OWN siblings.
+
+        Children are rendered in the order of the parent's child list, not
+        in slot order, so reordering them means editing that list. Dropping
+        a child in a gap used to call unnest_silo() unconditionally, which
+        threw it out of the parent every time someone merely reordered it.
+        """
+        parent = self.silo_parent_of(idx)
+        if parent is None:
+            return False
+        kids = self._children_map().get(parent) or []
+        if idx not in kids:
+            return False
+        rest = [k for k in kids if k != idx]
+        if before_idx is not None and before_idx in rest:
+            rest.insert(rest.index(before_idx), idx)
+        else:
+            rest.append(idx)                    # dropped past the last sibling
+        if rest == kids:
+            return False
+        kids[:] = rest
+        self.mark_dirty()
+        self.refresh_temp_presets()
+        return True
+
     def unnest_silo(self, idx):
         """Promote a child back to top level (dragging it out does this)."""
         changed = False

@@ -990,8 +990,31 @@ class SiloDropWidget(QWidget):
                     target_global_idx = max(0, len(presets) - 1)
                 self.main_win.swap_cross_temp_slots(source_idx, target_global_idx, source_is_archive, self.is_archive)
             else:
-                # dragging a child out to a boundary promotes it first
-                if not self.is_archive and hasattr(self.main_win, "unnest_silo"):
+                # A gap drop used to promote the dragged silo unconditionally,
+                # so simply reordering two children threw them out of their
+                # parent. Only leaving the parent's own run of children counts
+                # as dragging it out; inside that run it is a sibling reorder.
+                parent = (None if self.is_archive
+                          else self.main_win.silo_parent_of(source_idx))
+                if parent is not None:
+                    # The parent's run on screen: the parent button itself,
+                    # then its children. Gaps strictly inside that run (and the
+                    # one right after the last child) reorder the siblings;
+                    # anywhere else really is dragging the child out.
+                    rows = [b.global_idx for b in btns]
+                    parent_row = rows.index(parent) if parent in rows else -1
+                    last_child_row = parent_row
+                    for row in range(parent_row + 1, len(rows)):
+                        if self.main_win.silo_parent_of(rows[row]) != parent:
+                            break
+                        last_child_row = row
+                    if parent_row >= 0 and parent_row < target <= last_child_row + 1:
+                        before = (rows[target]
+                                  if target <= last_child_row
+                                  else None)      # dropped past the last sibling
+                        self.main_win.reorder_sibling(source_idx, before)
+                        e.acceptProposedAction()
+                        return
                     self.main_win.unnest_silo(source_idx)
                 if target < len(btns):
                     boundary_idx = btns[target].global_idx
