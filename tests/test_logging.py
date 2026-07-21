@@ -216,8 +216,16 @@ class TestLogFileConstant:
     def test_is_string(self):
         assert isinstance(_LOG_FILE, str)
 
-    def test_ends_with_fastprompter_log(self):
-        assert _LOG_FILE.endswith("fastprompter.log")
+    def test_ends_with_a_fastprompter_log(self):
+        # under pytest the path moves aside on purpose: the suite raises
+        # real exceptions, and writing them to the file the installed app
+        # uses buried a user's crash evidence and rotated it away
+        assert _LOG_FILE.endswith("fastprompter-tests.log")
+
+    def test_the_app_path_is_not_the_test_path(self):
+        from fastprompter.core.logging import _default_log_file
+        assert _default_log_file().endswith("fastprompter-tests.log")
+        assert "fastprompter.log" not in os.path.basename(_LOG_FILE)
 
     def test_is_absolute_path(self):
         assert os.path.isabs(_LOG_FILE)

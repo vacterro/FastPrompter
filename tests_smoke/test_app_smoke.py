@@ -5500,3 +5500,35 @@ def test_hashtags_are_clickable_and_findable_across_silos(win):
         win.silo_docs[:] = []
         win._switch_to_slot(0, initial=True)
         ed.clear()
+
+def test_custom_cursors_toggle(win):
+    """Off by default; on, every shape that Qt can load comes from the
+    user's own Windows scheme."""
+    from PyQt6.QtCore import Qt
+
+    kept = win.data.get("custom_cursors", "False")
+    try:
+        win.data["custom_cursors"] = "False"
+        win.apply_custom_cursors()
+        assert win.themed_cursor(Qt.CursorShape.ArrowCursor) == \
+            Qt.CursorShape.ArrowCursor, "off means stock shapes"
+
+        win.cb_custom_cursors.setChecked(True)
+        assert win.data["custom_cursors"] == "True"
+
+        arrow = win.themed_cursor(Qt.CursorShape.ArrowCursor)
+        if arrow != Qt.CursorShape.ArrowCursor:
+            # a real scheme was found on this machine
+            assert not arrow.pixmap().isNull()
+            assert win.themed_cursor(Qt.CursorShape.IBeamCursor) is not None
+
+        win.cb_custom_cursors.setChecked(False)
+        assert win.data["custom_cursors"] == "False"
+        assert win.themed_cursor(Qt.CursorShape.ArrowCursor) == \
+            Qt.CursorShape.ArrowCursor, "turning it off must restore stock"
+
+        # the right-click hint has to be discoverable
+        assert "Right-click" in win.btn_install_cursors.toolTip()
+    finally:
+        win.data["custom_cursors"] = kept
+        win.apply_custom_cursors()

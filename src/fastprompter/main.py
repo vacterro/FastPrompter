@@ -14,9 +14,11 @@ from PyQt6.QtCore import (
     QEvent,
     Qt,
     QTimer,
+    QUrl,
 )
 from PyQt6.QtGui import (
     QColor,
+    QDesktopServices,
     QFont,
     QKeySequence,
     QShortcut,
@@ -689,6 +691,80 @@ class FastPrompter(
         except Exception:
             from fastprompter.core.logging import logger
             logger.debug("productivity notification failed")
+
+    # ---- cursors ------------------------------------------------------
+    def themed_cursor(self, shape):
+        """The user's own cursor for a shape, or the stock shape.
+
+        Everything that sets a cursor goes through here, so the toggle is a
+        single switch rather than a hunt through every setCursor call.
+        """
+        if self.data.get("custom_cursors", "False") != "True":
+            return shape
+        cache = getattr(self, "_cursor_map", None)
+        if cache is None:
+            cache = self._cursor_map = self._build_cursor_map()
+        return cache.get(shape, shape)
+
+    def _build_cursor_map(self):
+        from fastprompter.ui.cursor_theme import build_cursor_map
+        try:
+            return build_cursor_map()
+        except Exception:
+            from fastprompter.core.logging import logger
+            logger.exception("could not read the cursor scheme")
+            return {}
+
+    def apply_custom_cursors(self):
+        """Apply (or drop) the user's cursor set across the window."""
+        on = self.data.get("custom_cursors", "False") == "True"
+        self._cursor_map = self._build_cursor_map() if on else {}
+        arrow = self.themed_cursor(Qt.CursorShape.ArrowCursor)
+        beam = self.themed_cursor(Qt.CursorShape.IBeamCursor)
+        try:
+            if on:
+                self.setCursor(arrow)
+                self.text_area.viewport().setCursor(beam)
+            else:
+                # unsetCursor, not setCursor(ArrowCursor): children must go
+                # back to inheriting rather than being pinned to an arrow
+                self.unsetCursor()
+                self.text_area.viewport().setCursor(
+                    Qt.CursorShape.IBeamCursor)
+        except Exception:
+            from fastprompter.core.logging import logger
+            logger.exception("could not apply cursors")
+        return on
+
+    def toggle_custom_cursors(self, checked):
+        self.data["custom_cursors"] = "True" if checked else "False"
+        self.mark_dirty()
+        self.apply_custom_cursors()
+
+    def install_cursors_to_system(self):
+        """Explicit button: make this set the live Windows scheme."""
+        from fastprompter.ui.cursor_theme import install_to_system, read_scheme
+        lang = getattr(self, "_current_lang", "EN")
+        name, paths = read_scheme()
+        if not paths:
+            QMessageBox.information(
+                self, tr("Cursors", lang),
+                tr("No cursor files found to install.", lang))
+            return False
+        answer = QMessageBox.question(
+            self, tr("Cursors", lang),
+            tr("Set this cursor scheme as the Windows default?\n"
+               "It changes the cursor everywhere, not just here.", lang),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No)
+        if answer != QMessageBox.StandardButton.Yes:
+            return False
+        ok = install_to_system(paths)
+        if not ok:
+            QMessageBox.warning(
+                self, tr("Cursors", lang),
+                tr("Could not write the cursor scheme.", lang))
+        return ok
 
     # ---- hashtags -----------------------------------------------------
     def open_hashtag_dialog(self, tag=None):
@@ -2193,6 +2269,13 @@ class FastPrompter(
             self.data.get("sidebar_right", "False") == "True",
             self.toggle_sidebar_position,
         )
+        self.cb_custom_cursors = create_footer_cb(
+            "\u2196 My Cursors",
+            "Use your own Windows cursor set inside this program.\n"
+            "Animated cursors keep their default shape - Qt cannot read them.",
+            self.data.get("custom_cursors", "False") == "True",
+            self.toggle_custom_cursors,
+        )
         self.cb_focus = create_footer_cb(
             "👁 Hide on Click-Out",
             "Hide the window when you click outside of it\nGlobal toggle: Alt+A",
@@ -2778,6 +2861,23 @@ class FastPrompter(
         # Toolbar order had its own reset; splitter widths, sidebar side and
         # window size had none, so a window dragged somewhere unusable could
         # only be fixed by deleting the database.
+        self.btn_install_cursors = QPushButton(tr("Set in system", self._current_lang))
+        self.btn_install_cursors.setToolTip(tr(
+            "Make this cursor scheme the Windows default (asks first).\n"
+            "Right-click: open the full cursor set in your browser.",
+            self._current_lang))
+        self.btn_install_cursors.clicked.connect(self.install_cursors_to_system)
+
+        def _cursor_btn_mouse(event):
+            if event.button() == Qt.MouseButton.RightButton:
+                from fastprompter.ui.cursor_theme import DEVIANTART_URL
+                QDesktopServices.openUrl(QUrl(DEVIANTART_URL))
+                event.accept()
+                return
+            QPushButton.mousePressEvent(self.btn_install_cursors, event)
+
+        self.btn_install_cursors.mousePressEvent = _cursor_btn_mouse
+
         self.btn_reset_layout = QPushButton(tr("Reset UI Layout", self._current_lang))
         self.btn_reset_layout.setToolTip(tr(
             "Put the toolbar, sidebar and window size back to defaults.\n"
@@ -2788,6 +2888,7 @@ class FastPrompter(
             self.cb_top, self.cb_lock_window, self.cb_normal_window,
             self.cb_tray, self.cb_sidebar, self.cb_trash_vision,
             self.cb_silo_color_box, self.cb_customize_toolbar, zones_row,
+            self.cb_custom_cursors, self.btn_install_cursors,
             self.btn_reset_layout,
         ]), tr("Window", self._current_lang))
 

@@ -167,6 +167,8 @@ class VaultTextEdit(QTextEdit):
         self.line_number_area = LineNumberArea(self)
         self.document().documentLayout().documentSizeChanged.connect(self.update_line_number_area_width)
         self.verticalScrollBar().valueChanged.connect(self.line_number_area.update)
+        self._last_scroll_value = 0
+        self.verticalScrollBar().valueChanged.connect(self._watch_scroll_reset)
         # the text moves under a stationary mouse, so the hovered line has to
         # be re-derived on scroll as well as on mouse move
         self.verticalScrollBar().valueChanged.connect(
@@ -997,8 +999,12 @@ class VaultTextEdit(QTextEdit):
                         return      # Ctrl+right on a web link: let the menu open
                     event.accept()
                     return
-        except Exception as e:
-            logger.debug(f"checkbox/anchor mouse error: {e}")
+        except Exception:
+            # was logger.debug with just str(e): a click handler that threw
+            # left no stack and no level anyone would look at, which is
+            # exactly the case being chased for the "view jumps on click"
+            # report. Full traceback, at a level that shows up.
+            logger.exception("mouse press handling failed at %s", event.pos())
         # Line-blocking drag: Ctrl+Shift+hold picks up the whole line under
         # the cursor; a real drag (past the OS threshold) swaps it with the
         # line it's dropped on, PureRef-style. A click with no movement is a
@@ -1161,6 +1167,22 @@ class VaultTextEdit(QTextEdit):
             return False
         return True
 
+    def _watch_scroll_reset(self, value):
+        """Record who threw the view back to the top.
+
+        Reported symptom: clicking to type sometimes snaps the document to
+        the very beginning. It has not been reproducible on demand, so this
+        catches the moment it happens and writes the call stack to the log
+        rather than guessing at a fix. Only fires on a real slam to zero
+        from far down, so it cannot spam an ordinary scroll.
+        """
+        previous, self._last_scroll_value = self._last_scroll_value, value
+        if value == 0 and previous > 200:
+            import traceback
+            logger.warning(
+                "view jumped to the top from %s\n%s",
+                previous, "".join(traceback.format_stack(limit=12)))
+
     def rehover_from_pointer(self, point=None):
         """Re-derive the hovered line without the mouse having moved.
 
@@ -1227,7 +1249,10 @@ class VaultTextEdit(QTextEdit):
                     target = Qt.CursorShape.PointingHandCursor if (over_cb or over_ts or over_fold or over_copy or is_link) else Qt.CursorShape.IBeamCursor
                     cur = self.viewport().cursor()
                     if cur.shape() != target:
-                        self.viewport().setCursor(target)
+                        # through the main window so the user's own cursor
+                        # set is honoured when that toggle is on
+                        self.viewport().setCursor(
+                            self.main_win.themed_cursor(target))
         except Exception as e:
             logger.debug(f"checkbox cursor error: {e}")
         if event.buttons() & Qt.MouseButton.RightButton and self._right_drag_start is not None:

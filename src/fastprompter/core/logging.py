@@ -20,7 +20,21 @@ import tempfile
 import traceback
 from logging.handlers import RotatingFileHandler
 
-_LOG_FILE: str = os.path.join(tempfile.gettempdir(), "fastprompter.log")
+def _default_log_file() -> str:
+    """Where the log lives.
+
+    Under pytest it moves aside: the suite raises real exceptions on
+    purpose, and writing those to the file the installed app uses buried
+    a user's actual crash evidence under test tracebacks and eventually
+    rotated it away entirely.
+    """
+    name = "fastprompter.log"
+    if os.environ.get("PYTEST_CURRENT_TEST") or "pytest" in sys.modules:
+        name = "fastprompter-tests.log"
+    return os.path.join(tempfile.gettempdir(), name)
+
+
+_LOG_FILE: str = _default_log_file()
 
 
 def _setup_logger() -> logging.Logger:
