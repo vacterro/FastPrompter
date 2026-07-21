@@ -881,6 +881,15 @@ class FastPrompter(
         self.play_click_sound()
         return item
 
+    def open_queue_dialog(self):
+        from fastprompter.ui.queue_panel import QueueDialog
+        self._increment_focus_lock()
+        try:
+            QueueDialog(self).exec()
+        finally:
+            QTimer.singleShot(300, self._decrement_focus_lock)
+        self.save_prompt_queues()
+
     # ---- hashtags -----------------------------------------------------
     def open_hashtag_dialog(self, tag=None):
         from fastprompter.ui.hashtag_dialog import HashtagDialog

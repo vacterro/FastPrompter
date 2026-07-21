@@ -1478,6 +1478,13 @@ class VaultTextEdit(QTextEdit):
             menu.addSeparator()
 
         lang = getattr(self.main_win, '_current_lang', 'EN')
+        queue = self.main_win.prompt_queues.get(self.main_win._queue_slot_key())
+        menu.addAction(
+            tr("Prompt Queue", lang) + (f"  ({len(queue)})" if queue else ""),
+            self.main_win.open_queue_dialog)
+        menu.addAction(tr("Queue This Line	Alt+C", lang),
+                       self.main_win.queue_current_line)
+        menu.addSeparator()
         menu.addAction(tr("Expand All Folds", lang), self.unfold_all)
         # rare toolbar actions live here too (hidden from narrow headers)
         menu.addAction(tr("Clear Formatting", lang), self.main_win.clear_formatting)

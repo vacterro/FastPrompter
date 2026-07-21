@@ -6063,3 +6063,175 @@ def test_queues_are_per_silo_and_persist(win):
         win.silo_docs[:] = []
         win._switch_to_slot(0, initial=True)
         ed.clear()
+
+def _queue_three(win, header="# Project notes"):
+    """Three queued lines under a titled note. Returns the dialog."""
+    from fastprompter.ui.queue_panel import QueueDialog
+
+    ed = win.text_area
+    ed.setPlainText(f"{header}\nfirst prompt\nsecond prompt\nthird prompt")
+    for n in (1, 2, 3):
+        c = ed.textCursor()
+        c.setPosition(ed.document().findBlockByNumber(n).position())
+        ed.setTextCursor(c)
+        win.queue_current_line()
+    return QueueDialog(win)
+
+
+def test_queue_panel_lists_the_silo_queue(win):
+    kept = dict(win.prompt_queues)
+    try:
+        win.prompt_queues.clear()
+        dlg = _queue_three(win)
+        assert dlg.list.count() == 3
+        assert "first prompt" in dlg.list.item(0).text()
+        # the header names the silo by its FIRST LINE, not a flattened blob
+        assert dlg.lbl_head.text().startswith("Project notes")
+        assert "3/3" in dlg.lbl_head.text()
+        dlg.close()
+    finally:
+        win.prompt_queues.clear()
+        win.prompt_queues.update(kept)
+        win.text_area.clear()
+
+
+def test_send_next_reorders_and_never_sends(win):
+    """The only thing this dialog may do is change the order."""
+    kept = dict(win.prompt_queues)
+    try:
+        win.prompt_queues.clear()
+        dlg = _queue_three(win)
+        dlg.list.setCurrentRow(2)
+        before = dlg._selected().state
+
+        dlg.to_front_selected()
+        assert [i.text for i in dlg._queue()] == [
+            "third prompt", "first prompt", "second prompt"]
+        assert dlg._queue().items[0].state == before, "jumping must not send"
+        dlg.close()
+    finally:
+        win.prompt_queues.clear()
+        win.prompt_queues.update(kept)
+        win.text_area.clear()
+
+
+def test_rows_follow_edits_made_in_the_note(win):
+    """Items are references: editing the line changes what would be sent,
+    and the row has to say so."""
+    from PyQt6.QtGui import QTextCursor
+
+    kept = dict(win.prompt_queues)
+    try:
+        win.prompt_queues.clear()
+        dlg = _queue_three(win)
+        item = dlg._queue().items[1]
+
+        block = win.text_area.block_for_queue_item(item.id)
+        edit = QTextCursor(block)
+        edit.movePosition(QTextCursor.MoveOperation.EndOfBlock)
+        edit.insertText(" EDITED")
+
+        dlg.refresh()
+        assert "second prompt EDITED" in dlg.list.item(1).text()
+        assert item.text == "second prompt EDITED"
+        dlg.close()
+    finally:
+        win.prompt_queues.clear()
+        win.prompt_queues.update(kept)
+        win.text_area.clear()
+
+
+def test_deleting_the_line_detaches_but_keeps_the_text(win):
+    from PyQt6.QtGui import QTextCursor
+    from fastprompter.core.watcher.queue import DETACHED
+
+    kept = dict(win.prompt_queues)
+    try:
+        win.prompt_queues.clear()
+        dlg = _queue_three(win)
+        item = dlg._queue().items[1]
+
+        block = win.text_area.block_for_queue_item(item.id)
+        cut = QTextCursor(block)
+        cut.select(QTextCursor.SelectionType.BlockUnderCursor)
+        cut.removeSelectedText()
+
+        dlg.refresh()
+        assert item.state == DETACHED
+        assert item.text == "second prompt", "the last known text must survive"
+        assert item.reason
+        dlg.close()
+    finally:
+        win.prompt_queues.clear()
+        win.prompt_queues.update(kept)
+        win.text_area.clear()
+
+
+def test_removing_an_item_clears_its_line_mark(win):
+    """Otherwise the note keeps a mark pointing at a queue entry that is
+    gone, and the gutter lies."""
+    from fastprompter.ui.markdown_highlighter import QUEUED_BIT
+
+    kept = dict(win.prompt_queues)
+    try:
+        win.prompt_queues.clear()
+        dlg = _queue_three(win)
+        item = dlg._queue().items[0]
+        block = win.text_area.block_for_queue_item(item.id)
+        assert max(0, block.userState()) & QUEUED_BIT
+
+        dlg.list.setCurrentRow(0)
+        dlg.remove_selected()
+
+        assert win.text_area.block_for_queue_item(item.id) is None
+        assert len(dlg._queue()) == 2
+        for n in range(win.text_area.document().blockCount()):
+            state = max(0, win.text_area.document().findBlockByNumber(n).userState())
+            if state & QUEUED_BIT:
+                blk = win.text_area.document().findBlockByNumber(n)
+                assert blk.text().strip() != "first prompt"
+        dlg.close()
+    finally:
+        win.prompt_queues.clear()
+        win.prompt_queues.update(kept)
+        win.text_area.clear()
+
+
+def test_clear_finished_leaves_the_waiting_ones(win):
+    kept = dict(win.prompt_queues)
+    try:
+        win.prompt_queues.clear()
+        dlg = _queue_three(win)
+        queue = dlg._queue()
+        queue.items[0].mark_sent()
+        queue.items[1].mark_failed("nope")
+
+        dlg.clear_finished()
+        assert [i.text for i in dlg._queue()] == ["third prompt"]
+        dlg.close()
+    finally:
+        win.prompt_queues.clear()
+        win.prompt_queues.update(kept)
+        win.text_area.clear()
+
+
+def test_a_drag_reorder_is_written_back_to_the_queue(win):
+    """The list order IS the sending order, so a drop that only moved rows
+    on screen would be a lie."""
+    kept = dict(win.prompt_queues)
+    try:
+        win.prompt_queues.clear()
+        dlg = _queue_three(win)
+
+        # simulate what a drop leaves behind: rows in a new order
+        row = dlg.list.takeItem(2)
+        dlg.list.insertItem(0, row)
+        dlg._apply_row_order()
+
+        assert [i.text for i in dlg._queue()] == [
+            "third prompt", "first prompt", "second prompt"]
+        dlg.close()
+    finally:
+        win.prompt_queues.clear()
+        win.prompt_queues.update(kept)
+        win.text_area.clear()
