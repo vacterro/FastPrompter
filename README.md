@@ -16,7 +16,7 @@ One hotkey. Instant window. Your prompts, notes and drafts — always one keystr
 <br>
 
 [English](GUIDE_EN.md) · [Русский](GUIDE_RU.md)
-<img alt="Main interface" src="docs/images/2026-07-19_054929.png" />
+<img alt="Main interface" src="docs/images/141228_main.png" />
 <br><em>The main workspace. Your hierarchical notes on the left, a full Markdown editor on the right. Everything is saved instantly and stays exactly where you left it.</em>
 
 </div>
@@ -26,7 +26,7 @@ One hotkey. Instant window. Your prompts, notes and drafts — always one keystr
 Press `Alt+X` anywhere — in your browser, IDE, terminal — and FastPrompter pops up at your cursor with everything you keep: auto-saved scratchpads (**silos**), reusable **snippets** on `F1`–`F10`, per-project tabs, and an archive. Press `Esc`, it vanishes. Everything lives in one folder, saved in real time. No cloud, no accounts, no telemetry.
 
 ## ✨ What it does
-<img alt="What it does preview" src="docs/images/2026-07-19_054806.png" />
+<img alt="What it does preview" src="docs/images/141255_second.png" />
 <br><em>Writing in action. Enjoy real checkboxes, code highlighting, and clean visual structure in a lightweight, instant scratchpad.</em>
 
 [_Cursor_](https://www.deviantart.com/potatoddas/art/Simple-Perfect-Cursors-946177131)
@@ -138,6 +138,18 @@ Press `Alt+X` anywhere — in your browser, IDE, terminal — and FastPrompter p
 <details>
 <summary><b>More screenshots</b></summary>
 <div align="center">
+
+<img alt="Old Main interface" src="docs/images/2026-07-19_054929.png" />
+<br><em>Old main interface.</em><br><br>
+
+<img alt="Old What it does preview" src="docs/images/2026-07-19_054806.png" />
+<br><em>Old what it does preview.</em><br><br>
+
+<img alt="Additional screenshot 1" src="docs/images/141423_more1.png" />
+<br><em>Additional view.</em><br><br>
+
+<img alt="Additional screenshot 2" src="docs/images/133015_more2.png" />
+<br><em>Additional view.</em><br><br>
 
 <img alt="Little window 1" src="docs/images/2026-07-19_054908.png" />
 <br><em>No data lock-in. Export your entire database for safekeeping or convert your notes to readable `.txt` files with one click.</em><br><br>
