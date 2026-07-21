@@ -437,8 +437,23 @@ class FastPrompter(
         below): hard-clamp text-button widths to their label, shorten the
         widest labels, and let the date clock degrade (day word first,
         then seconds). Nothing gets hidden — only tightened."""
+        # Compare against the width the header EFFECTIVELY has: at 150% every
+        # widget is half again as big, so a 960px window has as much usable
+        # room as a 640px one at 100%. Measuring raw pixels kept it in the
+        # dense tier there, the header asked for 1085px inside 956, and Qt
+        # squeezed the labels - the clipped "NEW" and "21.0" in the report.
         w = self.width()
-        dense = w < 1280
+        try:
+            scale = self._effective_scale()
+        except Exception:
+            scale = 1.0
+        # Only correct UPWARDS. Above 100% the widgets really do grow, so a
+        # 960px window has the usable room of 640px and must drop a tier.
+        # Below 100% they stop shrinking at MIN_BTN_PX and the fixed label
+        # widths, so dividing there would claim room that does not exist -
+        # measured: at 50% it left the header asking for 1381px inside 956.
+        effective = w / scale if scale > 1.0 else w
+        dense = effective < 1280
         flipped = getattr(self, "_header_dense", None) != dense
         if flipped:
             self._header_dense = dense
@@ -454,7 +469,7 @@ class FastPrompter(
         # Dense hides only the two rarest text buttons (Clear Fmt, Line) —
         # both reachable via the editor's right-click menu and Ctrl+W. The
         # bullet-toggle (-→•) stays visible; it only drops in ultra.
-        ultra = w < 700
+        ultra = effective < 700
         ultra_flipped = getattr(self, "_header_ultra", None) != ultra
         self._header_ultra = ultra
 
