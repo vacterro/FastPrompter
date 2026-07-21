@@ -73,10 +73,12 @@ class WatcherMixin:
             user = os.path.join(get_data_dir(), "adapters.toml")
         except Exception:
             user = None
-        here = os.path.dirname(os.path.dirname(os.path.dirname(
-            os.path.dirname(os.path.abspath(__file__)))))
+        # Beside the code, so it ships with the package. It lived under
+        # .saipen at first, which is gitignored - a fresh clone had no
+        # adapters at all and the dialog listed nothing.
         example = os.path.join(
-            here, ".saipen", "fastprompterwatcher", "adapters.example.toml")
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "core", "watcher", "adapters.example.toml")
         return load_adapters(path=user, fallback=example,
                              project=self._watcher_project())
 

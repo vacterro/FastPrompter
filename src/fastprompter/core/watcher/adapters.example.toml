@@ -1,0 +1,180 @@
+# FastPrompter Watcher — agent adapters
+#
+# One [[agent]] block per CLI. Nothing here is code: adding an agent means
+# adding a block. An entry that fails to parse, or needs an optional
+# dependency that is missing, is reported as unsupported and skipped - it
+# never breaks the others.
+#
+# Probe kinds:
+#   file    newest path matching `glob`; idle while size+mtime hold still
+#   sqlite  a table's max(rowid), or the -wal mtime; idle while stable
+#   window  UI Automation text matched against patterns  (needs uiautomation)
+#   process CPU below `cpu_below`                        (needs psutil)
+
+# --------------------------------------------------------------- Claude Code
+# Verified 21.07: the session file is appended live while the turn runs.
+# Its tail can be metadata (custom-title / ai-title / mode), so requiring
+# "the last line is an assistant message" would misfire - look at the last
+# line that carries content instead.
+[[agent]]
+name        = "Claude Code"
+enabled     = true
+settle_ms   = 2500
+submit      = "enter"
+multiline   = "join"
+# How a skill is prepended. Composed at SEND time, never baked into the
+# queued text - that is what lets the skill be changed without retyping.
+# Omit this key to declare that the agent has no skills: the chips are then
+# disabled for it, with the reason shown. Dropping the skill silently would
+# send something other than what was queued.
+skill_format = "/{skill} {text}"
+# a permission prompt is silent, which is exactly when a send does damage
+blocker_pattern = "(?i)(do you want to proceed|allow this|\\[y/n\\])"
+
+  [[agent.probe]]
+  kind     = "file"
+  glob     = "~/.claude/projects/*/*.jsonl"
+  newest   = true
+  quiet_ms = 2000
+  # the last content-bearing line must be a finished assistant turn
+  last_line_json = { type = "assistant" }
+  # Measured on a real 2157-line session, 21.07: the content types are
+  # assistant/user/attachment/system, and everything below is session
+  # metadata that gets appended AFTER a turn - so "the last line" is the
+  # wrong thing to look at, and last-prompt/queue-operation were not in the
+  # first guess at this list.
+  ignore_types   = ["custom-title", "ai-title", "mode", "last-prompt",
+                    "queue-operation", "summary"]
+
+# ------------------------------------------------------------------ freebuff
+# Verified 21.07: writes a WAL-mode SQLite db inside the project.
+[[agent]]
+name       = "freebuff"
+enabled    = true
+settle_ms  = 3000
+submit     = "enter"
+multiline  = "join"
+skill_format = "/{skill} {text}"
+
+  [[agent.probe]]
+  kind     = "sqlite"
+  path     = "{project}/.freebuff/desktop.db"
+  watch    = "wal_mtime"
+  quiet_ms = 2500
+
+# --------------------------------------------------- detected on this machine
+# Found 21.07 by scanning for installed agents and their data stores. Each
+# probe below was run once and confirmed to READ a real token and to settle.
+#
+# What that does NOT prove: that the store goes quiet exactly when a TURN
+# ends. A store can also pause mid tool-call, which looks identical from
+# outside. Claude Code has `last_line_json` precisely because of that, and
+# the three below have no equivalent yet - so their quiet windows are set
+# deliberately long, and W-09 still needs one live run each to close the gap.
+
+# opencode - a single 905MB WAL-mode SQLite store, shared by all sessions.
+# Last active 3.5h before the scan.
+[[agent]]
+name      = "opencode"
+enabled   = true
+settle_ms = 4000
+submit    = "enter"
+multiline = "join"
+# TODO: confirm this agent's skill syntax, or delete the key if it has none
+skill_format = "/{skill} {text}"
+
+  [[agent.probe]]
+  kind     = "sqlite"
+  path     = "~/.local/share/opencode/opencode.db"
+  watch    = "wal_mtime"
+  # long on purpose: the store is global, so another opencode window working
+  # elsewhere also moves it, and the turn boundary is not yet verified
+  quiet_ms = 4000
+
+# antigravity - one WAL-mode SQLite db PER CONVERSATION, nine of them at the
+# time of the scan, under ~/.gemini (it is Google's, so it does not live in
+# ~/.antigravity - that holds only argv.json and extensions).
+# Last active ~64h before the scan.
+#
+# Deliberately a `file` probe rather than `sqlite`: SqliteProbe takes one
+# fixed path, and the interesting db is whichever conversation is current.
+# Pointing a file probe at the -wal files with newest = true is the same
+# signal, and it follows the user from conversation to conversation.
+[[agent]]
+name      = "antigravity"
+enabled   = true
+settle_ms = 4000
+submit    = "enter"
+multiline = "join"
+# TODO: confirm this agent's skill syntax, or delete the key if it has none
+skill_format = "/{skill} {text}"
+
+  [[agent.probe]]
+  kind     = "file"
+  glob     = "~/.gemini/antigravity/conversations/*.db-wal"
+  newest   = true
+  quiet_ms = 4000
+
+# codex - rollout transcripts per day, plus several WAL stores in ~/.codex.
+# Installed but dormant: last active 49 DAYS before the scan, so nothing
+# here has been seen moving. Enabled anyway because a stale store simply
+# reads as idle forever, and the engine refuses to send until it has watched
+# the agent actually work - a dormant adapter therefore costs nothing.
+[[agent]]
+name      = "codex"
+enabled   = true
+settle_ms = 4000
+submit    = "enter"
+multiline = "join"
+# TODO: confirm this agent's skill syntax, or delete the key if it has none
+skill_format = "/{skill} {text}"
+
+  [[agent.probe]]
+  kind     = "file"
+  glob     = "~/.codex/sessions/*/*/*/rollout-*.jsonl"
+  newest   = true
+  quiet_ms = 4000
+
+# gemini-cli - installed (~/.gemini with GEMINI.md, settings, history), but
+# the scan found no per-session store that moves while it works. Left
+# disabled with no probe: an adapter that cannot tell busy from idle reports
+# itself unusable, which is the honest answer until somebody finds the file.
+[[agent]]
+name      = "gemini-cli"
+enabled   = false
+settle_ms = 4000
+submit    = "enter"
+multiline = "join"
+
+# ------------------------------------------------------------------ defaults
+# ------------------------------------------------------------------- skills
+# Discovered from ~/.claude/skills/*/SKILL.md and <project>/.claude/skills/,
+# reading `name` and `description` out of the frontmatter. Verified 21.07:
+# that is where they live and there is no ~/.claude/plugins to scan.
+# Anything a scan cannot see is added by hand and is never removed by a
+# later rescan.
+[skills]
+discover_paths = [
+  "~/.claude/skills/*/SKILL.md",
+  "{project}/.claude/skills/*/SKILL.md",
+]
+# chips the user pinned by hand; survive rescans
+extra   = []
+hidden  = []
+default = ""        # stamped onto new queue items; "" means no skill
+
+[limits]
+# a detection bug should cost one wrong prompt, not the whole queue
+min_gap_ms       = 4000
+max_sends        = 25
+dry_run_new      = true     # a newly added adapter starts in dry run
+
+# The feature exists so the queue drains while the user is doing something
+# else. Anything that interrupts them defeats it, so:
+confirm_first     = false   # no prompt before the first send
+allow_focus_steal = false   # never pull the foreground window away; the
+                            # silent strategy posts input at the target
+                            # instead, and a target that will not accept
+                            # posted input is a fact for its adapter, not a
+                            # reason to grab focus behind the user's back
+restore_clipboard_ms = 400  # only used by the focus-stealing fallback

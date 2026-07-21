@@ -8,8 +8,6 @@ cost that entry and nothing else.
 import os
 import sys
 
-import pytest
-
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
 from fastprompter.core.watcher.adapter import (  # noqa: E402
@@ -21,6 +19,22 @@ from fastprompter.core.watcher.adapter import (  # noqa: E402
     usable_adapters,
 )
 from fastprompter.core.watcher.probes import IDLE, Probe, _OptionalProbe  # noqa: E402
+
+
+def _shipped_example():
+    """The example config, as an installed copy would see it.
+
+    Deliberately NOT skipped when absent. It started life under .saipen,
+    which is gitignored, so these tests silently skipped in every clean
+    checkout - guarding the shipped defaults exactly nowhere. Missing is now
+    a failure, because missing is the bug.
+    """
+    path = os.path.join(os.path.dirname(__file__), "..", "src", "fastprompter",
+                        "core", "watcher", "adapters.example.toml")
+    assert os.path.isfile(path), (
+        "the example config must ship beside the code, not in an ignored dir")
+    return path
+
 
 GOOD = """
 [[agent]]
@@ -273,11 +287,7 @@ def test_no_config_at_all_is_reported_not_crashed():
 
 def test_the_shipped_example_actually_parses():
     """It is the file every user copies. A broken one teaches broken syntax."""
-    here = os.path.dirname(__file__)
-    example = os.path.join(
-        here, "..", ".saipen", "fastprompterwatcher", "adapters.example.toml")
-    if not os.path.isfile(example):
-        pytest.skip("the example config is not in this checkout")
+    example = _shipped_example()
     with open(example, encoding="utf-8") as fh:
         adapters, _limits, errors = parse_adapters(fh.read(), project="proj")
     assert errors == [], f"the shipped example does not parse cleanly: {errors}"
@@ -287,11 +297,7 @@ def test_the_shipped_example_actually_parses():
 def test_the_shipped_example_does_not_interrupt_the_user():
     """Config that ships with confirm_first on would undo the silent default
     for everyone who copies it."""
-    here = os.path.dirname(__file__)
-    example = os.path.join(
-        here, "..", ".saipen", "fastprompterwatcher", "adapters.example.toml")
-    if not os.path.isfile(example):
-        pytest.skip("the example config is not in this checkout")
+    example = _shipped_example()
     with open(example, encoding="utf-8") as fh:
         _adapters, limits, _errors = parse_adapters(fh.read())
     assert limits["confirm_first"] is False
