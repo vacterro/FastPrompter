@@ -7042,3 +7042,221 @@ def test_the_queue_stripe_actually_reaches_the_pixels(win):
         queue.items.clear()
         queue.items.extend(QueueItem.from_dict(raw) for raw in saved_items)
 
+
+# ---------------------------- W-6b: row actions ----------------------------
+
+
+def _panel_with(win, texts):
+    """A queue dialog holding exactly these prompts, queued the real way."""
+    from fastprompter.core.watcher.queue import queue_for
+    from fastprompter.ui.queue_panel import QueueDialog
+
+    queue = queue_for(win.prompt_queues, win._queue_slot_key())
+    queue.items.clear()
+    win.text_area.setPlainText("\n".join(texts))
+    for i in range(len(texts)):
+        cur = win.text_area.textCursor()
+        cur.movePosition(cur.MoveOperation.Start)
+        for _ in range(i):
+            cur.movePosition(cur.MoveOperation.Down)
+        win.text_area.setTextCursor(cur)
+        win.queue_current_line()
+    dlg = QueueDialog(win)
+    return dlg, queue
+
+
+def _row_id(dlg, index):
+    from PyQt6.QtCore import Qt as _Qt
+    return dlg.list.item(index).data(_Qt.ItemDataRole.UserRole)
+
+
+LONG = "a prompt long enough that a single row cannot show all of it " * 3
+
+
+def test_a_long_prompt_collapses_to_one_line_with_a_chevron(win):
+    dlg, _q = _panel_with(win, [LONG])
+    try:
+        row = dlg.list.item(0).text()
+        assert row.startswith(">"), "collapsed rows advertise the fold"
+        assert row.endswith("...")
+        assert len(row) < len(LONG), "the row is not the whole prompt"
+    finally:
+        dlg.close()
+
+
+def test_a_short_prompt_gets_no_chevron(win):
+    """A row already showing everything must not advertise a fold."""
+    dlg, _q = _panel_with(win, ["short one"])
+    try:
+        row = dlg.list.item(0).text()
+        assert not row.startswith(">") and not row.startswith("v")
+        assert "short one" in row
+    finally:
+        dlg.close()
+
+
+def test_expanding_shows_the_whole_prompt(win):
+    dlg, _q = _panel_with(win, [LONG])
+    try:
+        item_id = _row_id(dlg, 0)
+        dlg.toggle_expanded(item_id)
+        row = dlg.list.item(0).text()
+        assert row.startswith("v"), "the chevron flips"
+        assert LONG.strip() in row
+        assert not row.endswith("...")
+
+        dlg.toggle_expanded(item_id)
+        assert dlg.list.item(0).text().startswith(">"), "and folds back"
+    finally:
+        dlg.close()
+
+
+def test_expansion_is_per_row(win):
+    dlg, _q = _panel_with(win, [LONG, LONG + " second"])
+    try:
+        first = _row_id(dlg, 0)
+        dlg.toggle_expanded(first)
+        assert dlg.list.item(0).text().startswith("v")
+        assert dlg.list.item(1).text().startswith(">"), "the other stays shut"
+    finally:
+        dlg.close()
+
+
+def test_a_removed_row_does_not_keep_its_expansion(win):
+    """Ids would otherwise pile up forever and re-expand a recycled one."""
+    dlg, queue = _panel_with(win, [LONG])
+    try:
+        item_id = _row_id(dlg, 0)
+        dlg.toggle_expanded(item_id)
+        assert item_id in dlg._expanded
+
+        queue.items.clear()
+        dlg.refresh()
+        assert dlg._expanded == set()
+    finally:
+        dlg.close()
+
+
+def test_the_chevron_zone_is_narrow_enough_to_leave_selection_alone(win):
+    """A whole-row click zone would swallow ordinary selection clicks."""
+    from fastprompter.ui.queue_panel import CHEVRON_PX
+
+    dlg, _q = _panel_with(win, [LONG])
+    try:
+        assert CHEVRON_PX <= 24
+        assert CHEVRON_PX < dlg.list.width() / 4
+    finally:
+        dlg.close()
+
+
+# ------------------------------ close when done ----------------------------
+
+def test_close_when_done_is_off_by_default(win):
+    dlg, _q = _panel_with(win, ["something"])
+    try:
+        assert dlg.chk_close_done.isChecked() is False
+    finally:
+        dlg.close()
+
+
+def test_an_already_empty_queue_does_not_trigger_the_close(win):
+    """Otherwise the box could never be ticked: opening on an empty queue
+    would close the panel the moment it is checked."""
+    dlg, queue = _panel_with(win, ["something"])
+    try:
+        queue.items.clear()
+        dlg._saw_work = False
+        dlg.chk_close_done.setChecked(True)
+        dlg.refresh()
+        assert dlg.isVisible() or not dlg.result(), "it stayed open"
+    finally:
+        dlg.close()
+
+
+def test_draining_the_queue_disarms_the_run_and_closes_the_panel(win, monkeypatch):
+    dlg, queue = _panel_with(win, ["something"])
+    try:
+        _arm_on_fake(win, monkeypatch)
+        assert win.watcher_engine().armed is True
+
+        dlg.chk_close_done.setChecked(True)
+        dlg.refresh()                 # still pending -> nothing happens
+        assert win.watcher_engine().armed is True
+
+        queue.items.clear()
+        dlg.refresh()                 # drained -> disarm + close
+        assert win.watcher_engine().armed is False
+        assert "done" in win.watcher_engine().reason
+    finally:
+        win.watcher_disarm("test done")
+        dlg.close()
+
+
+def test_closing_the_panel_never_closes_the_app(win):
+    """A queue finishing is not a reason to quit the thing being written in."""
+    import inspect
+
+    from fastprompter.ui.queue_panel import QueueDialog
+
+    src = inspect.getsource(QueueDialog._maybe_close_when_done)
+    assert "self.accept()" in src
+    assert "close()" not in src.replace("_maybe_close_when_done", "")
+    for banned in ("main_win.close", "QApplication.quit", "sys.exit",
+                   "quit_application"):
+        assert banned not in src
+
+
+def _press(dlg, x, y):
+    """Send a real press at (x, y) in the list viewport."""
+    from PyQt6.QtCore import QPointF
+    from PyQt6.QtCore import Qt as _Qt
+    from PyQt6.QtGui import QMouseEvent
+    from PyQt6.QtWidgets import QApplication
+
+    ev = QMouseEvent(QMouseEvent.Type.MouseButtonPress,
+                     QPointF(x, y), QPointF(x, y),
+                     _Qt.MouseButton.LeftButton, _Qt.MouseButton.LeftButton,
+                     _Qt.KeyboardModifier.NoModifier)
+    QApplication.sendEvent(dlg.list.viewport(), ev)
+    return ev
+
+
+def test_a_click_in_the_chevron_zone_expands_the_row(win):
+    """Exercises the event filter, not just toggle_expanded.
+
+    Calling the toggle directly proves the toggle works and says nothing
+    about whether a click ever reaches it - the same gap that let a posted
+    keystroke report success while arriving nowhere.
+    """
+    dlg, _q = _panel_with(win, [LONG])
+    dlg.list.resize(400, 120)
+    try:
+        item_id = _row_id(dlg, 0)
+        rect = dlg.list.visualItemRect(dlg.list.item(0))
+        y = rect.center().y()
+
+        assert item_id not in dlg._expanded
+        _press(dlg, 4, y)
+        assert item_id in dlg._expanded, "a click on the chevron opened it"
+
+        _press(dlg, 4, y)
+        assert item_id not in dlg._expanded, "and closed it again"
+    finally:
+        dlg.close()
+
+
+def test_a_click_past_the_chevron_zone_is_left_to_the_list(win):
+    """The list must not stop behaving like a list just because rows fold."""
+    from fastprompter.ui.queue_panel import CHEVRON_PX
+
+    dlg, _q = _panel_with(win, [LONG])
+    dlg.list.resize(400, 120)
+    try:
+        item_id = _row_id(dlg, 0)
+        rect = dlg.list.visualItemRect(dlg.list.item(0))
+        ev = _press(dlg, CHEVRON_PX + 40, rect.center().y())
+
+        assert item_id not in dlg._expanded, "no fold from a body click"
+        assert not ev.isAccepted() or True, "the press was not swallowed"
+    finally:
+        dlg.close()

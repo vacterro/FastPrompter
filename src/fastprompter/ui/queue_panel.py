@@ -10,9 +10,10 @@ is listed is what would actually be sent.
 
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QEvent, QObject, Qt
 from PyQt6.QtWidgets import (
     QAbstractItemView,
+    QCheckBox,
     QComboBox,
     QDialog,
     QHBoxLayout,
@@ -48,6 +49,36 @@ _LAMPS = {
     SKIPPED: ("–", "skipped"),
     DETACHED: ("⚠", "its line was deleted"),
 }
+# How wide the click zone for the expand chevron is. A row's whole width
+# would swallow ordinary selection clicks, so it is deliberately narrow and
+# sits left of the lamp.
+CHEVRON_PX = 18
+
+
+class _ChevronFilter(QObject):
+    """Turns a click in the row's left strip into an expand/collapse.
+
+    A QListWidget hands out itemClicked without an x, so the zone has to be
+    read off the raw press. Anything outside the strip falls straight
+    through to normal selection - the list must not stop behaving like a
+    list just because rows can be expanded.
+    """
+
+    def __init__(self, dialog):
+        super().__init__(dialog)
+        self.dialog = dialog
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Type.MouseButtonPress:
+            if event.position().x() <= CHEVRON_PX:
+                row = self.dialog.list.itemAt(event.position().toPoint())
+                if row is not None:
+                    self.dialog.toggle_expanded(
+                        row.data(Qt.ItemDataRole.UserRole))
+                    return True
+        return False
+
+
 _LAMP_COLORS = {
     PENDING: "#6aa9ff",
     SENT: "#46b98a",
@@ -115,6 +146,11 @@ class QueueDialog(QDialog):
         root.addLayout(chips)
 
         self.list = QListWidget()
+        # Rows that are showing their whole prompt rather than one line.
+        self._expanded = set()
+        self._saw_work = False
+        self._chevrons = _ChevronFilter(self)
+        self.list.viewport().installEventFilter(self._chevrons)
         self.list.setSelectionMode(
             QAbstractItemView.SelectionMode.SingleSelection)
         # dragging is the natural way to reorder, and the order IS the
@@ -166,6 +202,16 @@ class QueueDialog(QDialog):
         btn_close = QPushButton(tr("Close", self.lang))
         btn_close.clicked.connect(self.accept)
         row.addWidget(btn_close)
+
+        # Closes THIS panel when the queue drains, and disarms the run with
+        # it. Never touches the application - a queue finishing is not a
+        # reason to quit the thing the user is writing in.
+        self.chk_close_done = QCheckBox(
+            tr("Close this panel when the queue is done", self.lang))
+        self.chk_close_done.setToolTip(tr(
+            "Disarms the watcher and closes the panel. Leaves the app running.",
+            self.lang))
+        root.addWidget(self.chk_close_done)
         root.addLayout(row)
 
         self._build_master_tab()
@@ -173,6 +219,16 @@ class QueueDialog(QDialog):
         self.tabs.currentChanged.connect(lambda _i: self.refresh())
 
     # ---- skills -------------------------------------------------------
+    def toggle_expanded(self, item_id):
+        """Show the whole prompt, or just its first line again."""
+        if not item_id:
+            return
+        if item_id in self._expanded:
+            self._expanded.discard(item_id)
+        else:
+            self._expanded.add(item_id)
+        self.refresh()
+
     def current_skill(self):
         return (self.main_win.data.get("watcher_skill", "") or "").strip()
 
@@ -441,7 +497,16 @@ class QueueDialog(QDialog):
         for item in queue:
             lamp, hint = _LAMPS.get(item.state, ("?", item.state))
             skill = f"/{item.skill} " if item.skill else ""
-            row = QListWidgetItem(f"{lamp}  {skill}{item.text}")
+            body = f"{skill}{item.text}"
+            first = body.splitlines()[0] if body else ""
+            has_more = len(body) > 72 or "\n" in body
+            expanded = item.id in self._expanded
+            # A chevron only where there is something behind it; a row that
+            # is already showing everything must not advertise a fold.
+            chev = ("v " if expanded else "> ") if has_more else "  "
+            shown = body if expanded else (
+                first[:72] + ("..." if has_more else ""))
+            row = QListWidgetItem(f"{chev}{lamp}  {shown}")
             row.setData(Qt.ItemDataRole.UserRole, item.id)
             tip = [hint]
             if item.reason:
@@ -458,6 +523,11 @@ class QueueDialog(QDialog):
                 self.list.setCurrentItem(row)
         self.list.blockSignals(False)
 
+        # Ids that are no longer in the queue would otherwise accumulate
+        # forever and re-expand a recycled id.
+        live = {item.id for item in queue}
+        self._expanded &= live
+
         pending = len(queue.pending())
         self.lbl_head.setText(
             f"{self._silo_label()} — {pending}/{len(queue)} "
@@ -465,6 +535,31 @@ class QueueDialog(QDialog):
         for btn in (self.btn_next, self.btn_up, self.btn_down,
                     self.btn_edit, self.btn_remove):
             btn.setEnabled(bool(len(queue)))
+
+        self._maybe_close_when_done(queue)
+
+    def _maybe_close_when_done(self, queue):
+        """Drain, disarm, collapse - in that order, and only that far.
+
+        Guarded on the queue having held something: an empty queue at the
+        moment the panel opens is not a run that finished, and closing on it
+        would make the checkbox impossible to tick.
+        """
+        if not getattr(self, "chk_close_done", None):
+            return
+        if not self.chk_close_done.isChecked():
+            return
+        if queue.pending():
+            self._saw_work = True
+            return
+        if not getattr(self, "_saw_work", False):
+            return
+        try:
+            if self.main_win.watcher_engine().armed:
+                self.main_win.watcher_disarm(tr("the queue is done", self.lang))
+        except Exception:
+            pass
+        self.accept()
 
     def _silo_label(self):
         """The silo's name: its first non-empty line, minus a leading `#`.
