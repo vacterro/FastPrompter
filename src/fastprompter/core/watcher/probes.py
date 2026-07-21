@@ -39,6 +39,17 @@ class Probe:
         self._changed_at = None
         self.reason = ""
 
+    # ---- readiness ------------------------------------------------------
+    def supported(self):
+        """(ok, reason) — can this probe run at all?
+
+        Deliberately not answered by polling. `poll` stamps the quiet window,
+        so asking it a readiness question at a made-up clock would leave
+        `_changed_at` in the past and the very next real poll would report
+        idle immediately — releasing a prompt into a running agent.
+        """
+        return True, ""
+
     # ---- to implement --------------------------------------------------
     def _read(self):
         """A token that changes whenever the target is doing something.
@@ -221,6 +232,9 @@ class _OptionalProbe(Probe):
 
     def _read(self):
         return None
+
+    def supported(self):
+        return False, f"{self.kind}: needs {self.missing}, which is not installed"
 
     def poll(self, now):
         self.reason = f"{self.kind}: needs {self.missing}, which is not installed"
