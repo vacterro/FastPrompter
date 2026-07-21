@@ -311,12 +311,37 @@ class WindowMixin:
         if hasattr(self, "apply_toolbar_order"):
             self.apply_toolbar_order()
         self.apply_sidebar_position()
+        self._sync_layout_controls()
         if hasattr(self, "apply_scaled_ui"):
             self.apply_scaled_ui()
         if not self.isMaximized():
             self.adjustSize()
         self.mark_dirty()
         return True
+
+    def _sync_layout_controls(self) -> None:
+        """Make the Settings controls agree with the layout data.
+
+        Resetting the layout changed `data` and re-laid the window, but the
+        checkboxes still showed the old choice - so "Sidebar Right" stayed
+        ticked next to a sidebar that had moved left, and the next click on
+        it toggled from the wrong state. Signals are blocked because these
+        controls write back to the same keys when they change.
+        """
+        cb = getattr(self, "cb_sidebar", None)
+        if cb is not None and not sip.isdeleted(cb):
+            cb.blockSignals(True)
+            cb.setChecked(self.data.get("sidebar_right", "False") == "True")
+            cb.blockSignals(False)
+
+        btn = getattr(self, "btn_button_scale", None)
+        if btn is not None and not sip.isdeleted(btn):
+            try:
+                pct = int(float(self.data.get("ui_scale", "1.0")) * 100)
+            except (TypeError, ValueError):
+                pct = 100
+            btn.setText(
+                f"{tr('Scale', getattr(self, '_current_lang', 'EN'))}: {pct}%")
 
     def _place_sidebar_toggle(self, is_right: bool) -> None:
         """Keep the hamburger on the same side as the sidebar it opens.

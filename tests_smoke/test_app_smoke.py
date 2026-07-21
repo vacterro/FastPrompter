@@ -4959,6 +4959,17 @@ def test_reset_ui_layout_restores_every_layout_choice(win):
     lay = win.header_layout
     assert lay.itemAt(0).widget() is win.btn_sidebar_toggle
 
+    # the Settings controls must agree with the data they display, or the
+    # next click on them toggles from the state the user can no longer see
+    assert win.cb_sidebar.isChecked() is False
+    assert "100%" in win.btn_button_scale.text()
+
+    # and the checkbox still works afterwards, from the correct state
+    win.cb_sidebar.setChecked(True)
+    assert win.data["sidebar_right"] == "True"
+    assert lay.itemAt(lay.count() - 1).widget() is win.btn_sidebar_toggle
+    win.cb_sidebar.setChecked(False)
+
     # a layout reset must not touch content
     assert win.text_area.toPlainText() == before_text
     assert list(win.data["temp_presets"]) == silos_before
