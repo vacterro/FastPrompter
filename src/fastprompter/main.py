@@ -2860,36 +2860,6 @@ class FastPrompter(
         self.btn_hover_colour.customContextMenuRequested.connect(
             lambda _p: self.reset_hover_colour())
 
-        # --- FancyZones custom grid (the Ctrl+Q picker's "Custom" layout) ---
-        zones_row = QHBoxLayout()
-        zones_row.setContentsMargins(0, 0, 0, 0)
-        zones_row.setSpacing(4)
-        lbl_zones = QLabel(tr("Snap Grid:", self._current_lang))
-        lbl_zones.setStyleSheet("color: #808080;")
-        zones_row.addWidget(lbl_zones)
-
-        def _zone_spin(key, default, tip):
-            spin = QSpinBox()
-            spin.setRange(1, 6)
-            spin.setToolTip(tr(tip, self._current_lang))
-            try:
-                spin.setValue(int(self.data.get(key, default)))
-            except (TypeError, ValueError):
-                spin.setValue(default)
-
-            def _upd(v):
-                self.data.update({key: str(v)})
-                self.mark_dirty()
-
-            spin.valueChanged.connect(_upd)
-            zones_row.addWidget(spin)
-            return spin
-
-        self.spin_zone_rows = _zone_spin(
-            "fancyzones_rows", 2, "Rows in the Ctrl+Q custom snap grid")
-        self.spin_zone_cols = _zone_spin(
-            "fancyzones_cols", 3, "Columns in the Ctrl+Q custom snap grid")
-        zones_row.addStretch(1)
 
         # Tabs instead of three side-by-side columns. Three columns need the
         # full panel width to be readable at all; one tab at a time stays
@@ -2954,7 +2924,7 @@ class FastPrompter(
         self.settings_tabs.addTab(_tab([
             self.cb_top, self.cb_lock_window, self.cb_normal_window,
             self.cb_tray, self.cb_sidebar, self.cb_trash_vision,
-            self.cb_silo_color_box, self.cb_customize_toolbar, zones_row,
+            self.cb_silo_color_box, self.cb_customize_toolbar,
             self.cb_custom_cursors, self.btn_copy_cursors,
             self.btn_install_cursors,
             self.btn_reset_layout,

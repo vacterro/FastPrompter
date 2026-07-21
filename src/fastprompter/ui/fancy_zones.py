@@ -1,32 +1,30 @@
-"""FancyZones — interactive window snapping with switchable zone layouts.
+"""Ctrl+Q zone picker — a small map that pops up under the cursor.
 
-Ctrl+Q opens a full-screen picker over the monitor the cursor is on. Every
-zone is numbered: click it, or press its digit, and the window snaps there.
-Tab / arrow keys cycle layouts, Esc cancels. The chosen layout is
-remembered, so the next Ctrl+Q comes up on the one you actually use.
+It used to cover the whole monitor, which meant a full-screen repaint and a
+lot of mouse travel to hit a corner. Now it is a compact map of the screen
+that appears where the pointer already is: the zones sit millimetres apart,
+so picking one is a flick rather than a journey.
 
-Layouts: Quarters (the classic 4-corner snap), Left 640 (a 640 px-wide
-strip on the left), Mid 800 (an 800 px strip centred), Right 640
-(a 640 px strip on the right).
+Two pages, Tab switches between them and the last one is remembered:
+
+  Quarters  the classic four-corner snap
+  Columns   Left 640 / Mid 800 / Right 640, as fractions so the proportions
+            hold on any panel (those pixel figures are for a 1920 screen)
 
 Zones are stored as FRACTIONS of the screen's available area (0..1), not
 pixels, so a layout behaves the same on a 1080p laptop panel and a 4K
 monitor, and automatically avoids the taskbar.
-
-Users can define their own grid via Settings (rows x columns) — that shows
-up as the "Custom" layout at the end of the list.
 """
 
 from __future__ import annotations
 
-from PyQt6.QtCore import QRect, Qt
+from PyQt6.QtCore import QPoint, QRect, QRectF, Qt
 from PyQt6.QtGui import QColor, QCursor, QFont, QPainter, QPen
 from PyQt6.QtWidgets import QApplication, QWidget
 
 # (name, [(x, y, w, h), ...]) with every value a fraction of the available
-# screen area. Ordered roughly by how often people reach for them.
-# On a 1920 px-wide screen these map to: Left 640 = 640 px, Mid 800 =
-# 800 px centred, Right 640 = 640 px.  The fractions scale to any screen.
+# screen area. Exactly two pages: more would make Tab a menu to read rather
+# than a switch to flick.
 BUILTIN_LAYOUTS: list[tuple[str, list[tuple[float, float, float, float]]]] = [
     ("Quarters", [
         (0.0, 0.0, 0.5, 0.5),
@@ -34,76 +32,74 @@ BUILTIN_LAYOUTS: list[tuple[str, list[tuple[float, float, float, float]]]] = [
         (0.0, 0.5, 0.5, 0.5),
         (0.5, 0.5, 0.5, 0.5),
     ]),
-    ("Left 640", [
+    # On a 1920-wide screen: 640 / 800 centred / 640.
+    ("Columns", [
         (0.0, 0.0, 1 / 3, 1.0),
-    ]),
-    ("Mid 800", [
         (7 / 24, 0.0, 5 / 12, 1.0),
-    ]),
-    ("Right 640", [
         (2 / 3, 0.0, 1 / 3, 1.0),
     ]),
 ]
 
-_MAX_CUSTOM = 6  # rows/cols cap — beyond this the digit keys run out anyway
+# Popup size at 1.0 UI scale. Big enough that a quarter is a comfortable
+# click target, small enough to stay a HUD rather than a window.
+_BASE_W, _BASE_H = 250, 168
+_HEADER_H = 20          # room for the page name above the map
+_PAD = 6
 
 
-def custom_layout(rows: int, cols: int):
-    """An evenly divided rows x cols grid, left-to-right then top-to-bottom."""
-    rows = max(1, min(_MAX_CUSTOM, int(rows)))
-    cols = max(1, min(_MAX_CUSTOM, int(cols)))
-    w, h = 1.0 / cols, 1.0 / rows
-    return [(c * w, r * h, w, h) for r in range(rows) for c in range(cols)]
-
-
-def layouts_for(data) -> list[tuple[str, list]]:
-    """Built-ins plus the user's own grid, read from settings."""
-    out = list(BUILTIN_LAYOUTS)
-    try:
-        rows = int(data.get("fancyzones_rows", 2))
-        cols = int(data.get("fancyzones_cols", 3))
-    except (TypeError, ValueError):
-        rows, cols = 2, 3
-    out.append((f"Custom {rows}x{cols}", custom_layout(rows, cols)))
-    return out
+def layouts_for(_data=None) -> list[tuple[str, list]]:
+    """The pages. Takes the settings dict for call-site compatibility."""
+    return list(BUILTIN_LAYOUTS)
 
 
 class FancyZoneOverlay(QWidget):
-    """Full-screen, interactive zone picker."""
+    """Compact zone picker, drawn as a map of the screen."""
 
     def __init__(self, main_win=None):
         super().__init__()
         self.main_win = main_win
-        self._zones: list[QRect] = []
+        self._zones: list[QRect] = []        # real screen rectangles
+        self._cells: list[QRect] = []        # their miniatures, popup-local
         self._layouts: list[tuple[str, list]] = list(BUILTIN_LAYOUTS)
         self._layout_idx = 0
         self._hot = -1
         self._avail = QRect()
+        self._focus_locked = False
 
         self.setWindowFlags(
             Qt.WindowType.WindowStaysOnTopHint
             | Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.Tool
         )
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setMouseTracking(True)
 
     # ---- colors -------------------------------------------------------
     def _accent(self) -> QColor:
         """Follow the active theme, like every other painted widget here."""
-        accent = "#C0A060"
         try:
             cache = getattr(self.main_win, "_theme_cache", None)
             if cache and cache.get("raw_colors"):
-                accent = cache["raw_colors"].get("accent", accent)
+                return QColor(cache["raw_colors"].get("accent", "#6aa9ff"))
         except Exception:
             pass
-        c = QColor(accent)
-        return c if c.isValid() else QColor("#C0A060")
+        return QColor("#6aa9ff")
+
+    def _colors(self):
+        raw = {}
+        try:
+            cache = getattr(self.main_win, "_theme_cache", None)
+            if cache:
+                raw = cache.get("raw_colors") or {}
+        except Exception:
+            raw = {}
+        return (QColor(raw.get("bg_main", "#1b1b1b")),
+                QColor(raw.get("text_main", "#c0c0c0")),
+                self._accent())
 
     # ---- geometry -----------------------------------------------------
     def _rebuild_zones(self):
+        """Real screen rects, and the miniature of each inside the popup."""
         a = self._avail
         self._zones = [
             QRect(a.x() + round(fx * a.width()),
@@ -113,8 +109,27 @@ class FancyZoneOverlay(QWidget):
             for fx, fy, fw, fh in self._layouts[self._layout_idx][1]
         ]
 
+        # The map keeps the screen's aspect ratio, so a quarter looks like a
+        # quarter — a stretched map would make the columns page misleading.
+        box = QRect(_PAD, _HEADER_H, self.width() - 2 * _PAD,
+                    self.height() - _HEADER_H - _PAD)
+        if a.isValid() and a.height():
+            ratio = a.width() / a.height()
+            w = min(box.width(), int(box.height() * ratio))
+            h = min(box.height(), int(w / ratio) if ratio else box.height())
+            box = QRect(box.x() + (box.width() - w) // 2,
+                        box.y() + (box.height() - h) // 2, w, h)
+        self._map = box
+        self._cells = [
+            QRect(box.x() + round(fx * box.width()),
+                  box.y() + round(fy * box.height()),
+                  max(2, round(fw * box.width())),
+                  max(2, round(fh * box.height())))
+            for fx, fy, fw, fh in self._layouts[self._layout_idx][1]
+        ]
+
     def open_for(self, main_win):
-        """Show the picker on whichever monitor the cursor is on."""
+        """Show the picker under the cursor, on that cursor's monitor."""
         self.main_win = main_win
         screen = QApplication.screenAt(QCursor.pos()) or QApplication.primaryScreen()
         if screen is None:
@@ -127,9 +142,24 @@ class FancyZoneOverlay(QWidget):
             (i for i, (name, _) in enumerate(self._layouts) if name == saved), 0)
 
         self._avail = screen.availableGeometry()
+
+        try:
+            scale = float(data.get("ui_scale", "1.0"))
+        except (TypeError, ValueError):
+            scale = 1.0
+        scale = max(0.75, min(2.0, scale))
+        w, h = int(_BASE_W * scale), int(_BASE_H * scale)
+
+        # Under the pointer, nudged so the whole popup stays on screen.
+        pos = QCursor.pos()
+        sg = screen.geometry()
+        x = min(max(sg.left(), pos.x() - w // 2), sg.right() - w + 1)
+        y = min(max(sg.top(), pos.y() - h // 2), sg.bottom() - h + 1)
+        self.setGeometry(QRect(x, y, w, h))
+
         self._rebuild_zones()
         self._hot = -1
-        self.setGeometry(screen.geometry())
+        self._lock_focus(True)
         self.show()
         self.raise_()
         self.activateWindow()
@@ -137,15 +167,44 @@ class FancyZoneOverlay(QWidget):
         self.update()
         return True
 
+    # ---- keeping the main window alive --------------------------------
+    def _lock_focus(self, on):
+        """Hold off "hide on click-out" while the picker is up.
+
+        Opening the picker takes focus away from the main window, so with
+        that setting on the window hid itself the moment Ctrl+Q was pressed
+        - and stayed hidden after snapping, which made the whole feature
+        look broken. This is the same lock the dialogs use.
+        """
+        mw = self.main_win
+        if mw is None:
+            return
+        if on and not self._focus_locked:
+            if hasattr(mw, "_increment_focus_lock"):
+                mw._increment_focus_lock()
+                self._focus_locked = True
+        elif not on and self._focus_locked:
+            self._focus_locked = False
+            if hasattr(mw, "_decrement_focus_lock"):
+                # deferred: the main window regains focus a beat after the
+                # picker goes away, and releasing early re-arms the hide
+                from PyQt6.QtCore import QTimer
+                QTimer.singleShot(300, mw._decrement_focus_lock)
+
+    def closeEvent(self, event):
+        self._lock_focus(False)
+        super().closeEvent(event)
+
+    # ---- picking ------------------------------------------------------
     def _zone_at(self, pos) -> int:
-        gp = self.mapToGlobal(pos)
-        for i, z in enumerate(self._zones):
-            if z.contains(gp):
+        """Index of the zone whose miniature is under a popup-local point."""
+        for i, cell in enumerate(self._cells):
+            if cell.contains(pos):
                 return i
         return -1
 
     def apply_zone(self, idx: int) -> bool:
-        """Snap the window into zone `idx` and remember the layout."""
+        """Snap the window into zone `idx` and remember the page."""
         if not (0 <= idx < len(self._zones)) or self.main_win is None:
             return False
         z = self._zones[idx]
@@ -182,9 +241,12 @@ class FancyZoneOverlay(QWidget):
         # setGeometry targets the CLIENT area; on a frameless tool window
         # that is what the user sees, so no frame compensation is needed.
         mw.setGeometry(QRect(x, y, w, h))
+        self.close()
+        # after the picker is gone, so the window ends up in front
+        if not mw.isVisible():
+            mw.show()
         mw.raise_()
         mw.activateWindow()
-        self.close()
         return True
 
     def cycle_layout(self, step: int = 1):
@@ -234,57 +296,43 @@ class FancyZoneOverlay(QWidget):
 
     # ---- paint --------------------------------------------------------
     def paintEvent(self, _event):
-        if not self._zones:
+        if not self._cells:
             return
+        bg, text, accent = self._colors()
         p = QPainter(self)
         try:
             p.setRenderHint(QPainter.RenderHint.Antialiasing, False)
-            accent = self._accent()
-            origin = self.geometry().topLeft()
 
-            p.fillRect(self.rect(), QColor(0, 0, 0, 110))  # dim the desktop
+            p.fillRect(self.rect(), bg)
+            p.setPen(QPen(accent, 1))
+            p.drawRect(self.rect().adjusted(0, 0, -1, -1))
 
-            for i, zone in enumerate(self._zones):
-                r = zone.translated(-origin.x(), -origin.y()).adjusted(6, 6, -6, -6)
-                hot = i == self._hot
+            font = QFont(self.font())
+            font.setPointSizeF(max(7.0, font.pointSizeF()))
+            font.setBold(True)
+            p.setFont(font)
+            p.setPen(text)
+            name = self._layouts[self._layout_idx][0]
+            p.drawText(QRect(_PAD, 2, self.width() - 2 * _PAD, _HEADER_H - 2),
+                       Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                       name)
+            p.drawText(QRect(_PAD, 2, self.width() - 2 * _PAD, _HEADER_H - 2),
+                       Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+                       "Tab")
 
-                fill = QColor(accent)
-                fill.setAlpha(90 if hot else 38)
-                p.fillRect(r, fill)
+            fill = QColor(accent)
+            fill.setAlpha(40)
+            hot_fill = QColor(accent)
+            hot_fill.setAlpha(120)
 
-                border = QColor(accent)
-                border.setAlpha(255 if hot else 120)
-                p.setPen(QPen(border, 3 if hot else 2))
-                p.drawRect(r.adjusted(1, 1, -2, -2))
+            for i, cell in enumerate(self._cells):
+                inner = cell.adjusted(1, 1, -1, -1)
+                p.fillRect(inner, hot_fill if i == self._hot else fill)
+                p.setPen(QPen(accent, 2 if i == self._hot else 1))
+                p.drawRect(inner)
 
-                label = QColor(accent)
-                label.setAlpha(255 if hot else 190)
-                p.setPen(label)
-                f = QFont(self.font())
-                f.setPointSize(28 if hot else 22)
-                f.setBold(True)
-                p.setFont(f)
-                p.drawText(r, Qt.AlignmentFlag.AlignCenter, str(i + 1))
-
-            self._paint_hint(p, accent)
+                p.setPen(text if i != self._hot else accent.lighter(150))
+                p.drawText(QRectF(inner), Qt.AlignmentFlag.AlignCenter,
+                           str(i + 1))
         finally:
             p.end()
-
-    def _paint_hint(self, p, accent):
-        name = self._layouts[self._layout_idx][0]
-        text = f"{name}   —   1-9 snap · Tab layout · Esc cancel"
-        f = QFont(self.font())
-        f.setPointSize(11)
-        f.setBold(True)
-        p.setFont(f)
-        fm = p.fontMetrics()
-        w = fm.horizontalAdvance(text) + 24
-        h = fm.height() + 14
-        box = QRect((self.width() - w) // 2, self.height() - h - 28, w, h)
-        p.fillRect(box, QColor(0, 0, 0, 190))
-        border = QColor(accent)
-        border.setAlpha(160)
-        p.setPen(QPen(border, 2))
-        p.drawRect(box.adjusted(1, 1, -2, -2))
-        p.setPen(accent)
-        p.drawText(box, Qt.AlignmentFlag.AlignCenter, text)

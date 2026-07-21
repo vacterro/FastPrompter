@@ -3092,7 +3092,7 @@ def test_no_undefined_names_in_package():
 
 
 def test_fancyzones_layouts_are_well_formed():
-    from fastprompter.ui.fancy_zones import BUILTIN_LAYOUTS, custom_layout, layouts_for
+    from fastprompter.ui.fancy_zones import BUILTIN_LAYOUTS, layouts_for
 
     for name, zones in BUILTIN_LAYOUTS:
         assert zones, f"{name} has no zones"
@@ -3102,18 +3102,25 @@ def test_fancyzones_layouts_are_well_formed():
             assert w > 0 and h > 0, f"{name} has a zero-size zone"
             assert x + w <= 1.0001 and y + h <= 1.0001, f"{name} overflows the screen"
 
-    # custom grid: right count, clamped, and it tiles the screen exactly
-    assert len(custom_layout(2, 3)) == 6
-    assert len(custom_layout(0, 0)) == 1        # clamped up
-    assert len(custom_layout(99, 99)) == 36     # clamped down to 6x6
-    area = sum(w * h for _, _, w, h in custom_layout(3, 3))
-    assert abs(area - 1.0) < 1e-9
+    # exactly two pages: Tab is a switch to flick, not a menu to read
+    names = [n for n, _ in layouts_for({})]
+    assert names == ["Quarters", "Columns"]
 
-    # the user's grid shows up as the trailing "Custom" entry
-    names = [n for n, _ in layouts_for({"fancyzones_rows": "2", "fancyzones_cols": "4"})]
-    assert names[-1] == "Custom 2x4"
-    # and junk in settings falls back instead of raising
-    assert layouts_for({"fancyzones_rows": "abc"})[-1][0] == "Custom 2x3"
+    quarters = dict(BUILTIN_LAYOUTS)["Quarters"]
+    assert len(quarters) == 4
+    assert abs(sum(w * h for _, _, w, h in quarters) - 1.0) < 1e-9, \
+        "the quarters must tile the screen exactly"
+
+    columns = dict(BUILTIN_LAYOUTS)["Columns"]
+    assert len(columns) == 3
+    # 640 / 800 / 640 on a 1920-wide screen, and the middle one is centred
+    widths = [round(w * 1920) for _, _, w, _h in columns]
+    assert widths == [640, 800, 640]
+    left, mid, right = columns
+    assert round(left[0] * 1920) == 0
+    assert round(mid[0] * 1920) == 560 and round((mid[0] + mid[2]) * 1920) == 1360
+    assert round((right[0] + right[2]) * 1920) == 1920
+    assert all(h == 1.0 for _x, _y, _w, h in columns), "columns are full height"
 
 
 def test_fancyzones_picker_snaps_window_and_remembers_layout(win):
@@ -3184,16 +3191,11 @@ def test_fancyzones_respects_locked_window(win):
         ov.close()
 
 
-def test_fancyzones_settings_spins_drive_the_custom_grid(win):
-    from fastprompter.ui.fancy_zones import layouts_for
-
-    win.spin_zone_rows.setValue(3)
-    win.spin_zone_cols.setValue(2)
-    assert win.data["fancyzones_rows"] == "3"
-    assert win.data["fancyzones_cols"] == "2"
-    name, zones = layouts_for(win.data)[-1]
-    assert name == "Custom 3x2"
-    assert len(zones) == 6
+def test_fancyzones_has_no_orphaned_grid_settings(win):
+    """The custom NxM grid was dropped when the picker went to two fixed
+    pages; its Settings spin boxes would otherwise sit there doing nothing."""
+    assert not hasattr(win, "spin_zone_rows")
+    assert not hasattr(win, "spin_zone_cols")
 
 
 def test_overflow_menu_exposes_buttons_hidden_by_narrow_header(win):
@@ -4108,9 +4110,10 @@ def test_settings_panel_is_tabbed_and_fits_a_small_window(win):
                if getattr(win, n, None) is not None and id(getattr(win, n)) not in in_tabs]
     assert not missing, f"settings stranded outside every tab: {missing}"
 
-    # the spin controls that live in rows must have survived the move too
-    for name in ("spin_silo_gap", "spin_drag_width",
-                 "spin_zone_rows", "spin_zone_cols"):
+    # the spin controls that live in rows must have survived the move too.
+    # spin_zone_rows/cols are deliberately absent: the Ctrl+Q picker went to
+    # two fixed pages, so the custom NxM grid they drove no longer exists.
+    for name in ("spin_silo_gap", "spin_drag_width"):
         assert getattr(win, name, None) is not None, f"{name} lost in the rework"
 
 
@@ -5573,3 +5576,93 @@ def test_custom_cursors_survive_a_restart(win):
         win.apply_custom_cursors()
         win.mark_dirty()
         win.save_data_to_db(force=True)
+
+def test_zone_picker_is_compact_and_opens_under_the_cursor(win):
+    """It used to cover the whole monitor, which meant a full-screen repaint
+    and a long mouse trip to reach a corner."""
+    from PyQt6.QtGui import QCursor
+    from PyQt6.QtWidgets import QApplication
+    from fastprompter.ui.fancy_zones import FancyZoneOverlay
+
+    screen = QApplication.primaryScreen()
+    ov = FancyZoneOverlay()
+    try:
+        QCursor.setPos(screen.geometry().center())
+        assert ov.open_for(win) is True
+
+        g = ov.geometry()
+        assert g.width() < screen.geometry().width(), "must not be full screen"
+        assert g.width() <= 520 and g.height() <= 360, "must stay a small HUD"
+        assert screen.geometry().contains(g), "must be nudged fully on screen"
+        assert abs(g.center().x() - QCursor.pos().x()) < 60, "must be near the pointer"
+
+        # the map keeps one clickable cell per zone
+        assert len(ov._cells) == len(ov._zones)
+        assert ov._zone_at(ov._cells[1].center()) == 1
+        assert ov._zone_at(g.topLeft() - g.topLeft()) in (-1, 0)
+    finally:
+        ov.close()
+
+
+def test_zone_picker_has_two_pages_and_remembers_the_last(win):
+    from PyQt6.QtGui import QCursor
+    from PyQt6.QtWidgets import QApplication
+    from fastprompter.ui.fancy_zones import FancyZoneOverlay
+
+    kept = win.data.get("fancyzones_layout", "")
+    try:
+        QCursor.setPos(QApplication.primaryScreen().geometry().center())
+        win.data["fancyzones_layout"] = "Quarters"   # start from a known page
+        ov = FancyZoneOverlay()
+        ov.open_for(win)
+        assert len(ov._layouts) == 2, "Tab must switch between exactly two pages"
+        assert ov._layouts[ov._layout_idx][0] == "Quarters"
+        assert len(ov._zones) == 4
+
+        ov.cycle_layout(1)
+        assert ov._layouts[ov._layout_idx][0] == "Columns"
+        assert len(ov._zones) == 3
+
+        ov.cycle_layout(1)
+        assert ov._layouts[ov._layout_idx][0] == "Quarters", "two pages wrap"
+
+        # applying stores the page...
+        ov.cycle_layout(1)
+        ov.apply_zone(0)
+        assert win.data["fancyzones_layout"] == "Columns"
+
+        # ...and the next open comes up on it
+        ov2 = FancyZoneOverlay()
+        ov2.open_for(win)
+        assert ov2._layouts[ov2._layout_idx][0] == "Columns"
+        assert len(ov2._zones) == 3
+        ov2.close()
+    finally:
+        win.data["fancyzones_layout"] = kept
+
+
+def test_snapping_does_not_hide_a_window_set_to_hide_on_click_out(win):
+    """Opening the picker takes focus off the main window, so with hide-on-
+    click-out enabled the window vanished the moment Ctrl+Q was pressed and
+    stayed gone after snapping."""
+    from PyQt6.QtGui import QCursor
+    from PyQt6.QtWidgets import QApplication
+    from fastprompter.ui.fancy_zones import FancyZoneOverlay
+
+    kept_focus = win.data.get("close_on_focus_loss", "True")
+    kept_layout = win.data.get("fancyzones_layout", "")
+    try:
+        win.data["close_on_focus_loss"] = "True"
+        win.show()
+        QCursor.setPos(QApplication.primaryScreen().geometry().center())
+
+        ov = FancyZoneOverlay()
+        ov.open_for(win)
+        assert ov._focus_locked, "the hide must be held off while the picker is up"
+
+        assert ov.apply_zone(0) is True
+        assert not win.isHidden(), "the window must survive the snap"
+        assert ov._focus_locked is False, "and the hold must be released after"
+    finally:
+        win.data["close_on_focus_loss"] = kept_focus
+        win.data["fancyzones_layout"] = kept_layout
