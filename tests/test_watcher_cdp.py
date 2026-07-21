@@ -173,9 +173,38 @@ def test_a_field_the_user_is_typing_in_is_left_alone():
     ws = FakeWs(field="what I was in the middle of")
     result = sender(ws).send(intent(), target())
 
-    assert result.ok is False and "already has text" in result.reason
+    assert result.ok is False
     assert "Input.insertText" not in ws.methods()
     assert ws.field == "what I was in the middle of", "untouched"
+
+
+def test_a_busy_field_is_a_hold_and_not_a_failure():
+    """The difference matters more than it looks.
+
+    A failure marks the queue item FAILED, and next_pending only ever looks
+    at pending ones - so one stray character in the composer would silently
+    drop the prompt from the run. Three of them in a row would end it. The
+    user is mid-thought, not broken: wait.
+    """
+    ws = FakeWs(field="half a sentence")
+    result = sender(ws).send(intent(), target())
+
+    assert result.hold is True, "not now, rather than it failed"
+    assert result.ok is False
+    assert "waiting" in result.reason
+
+
+def test_a_real_failure_is_not_a_hold():
+    """Only the wait-and-retry case is; a gone page is a genuine failure."""
+    ws = FakeWs(insert_works=False)
+    assert sender(ws).send(intent(), target()).hold is False
+
+    dead = CdpTarget(1, "P1", discover_fn=lambda port: [])
+    assert sender(FakeWs()).send(intent(), dead).hold is False
+
+
+def test_the_ordinary_result_is_not_a_hold():
+    assert sender(FakeWs()).send(intent(), target()).hold is False
 
 
 def test_whitespace_in_the_field_is_not_treated_as_the_user_typing():

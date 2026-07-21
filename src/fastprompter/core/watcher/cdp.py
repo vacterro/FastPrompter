@@ -329,9 +329,13 @@ class CdpSender:
                     False, "no text field on that page", text)
             if before.strip():
                 # Typing after what the user has half-written would send a
-                # sentence neither of them wrote.
+                # sentence neither of them wrote. A HOLD, not a failure: they
+                # are mid-thought and will finish. Treating it as a failure
+                # marks the prompt failed, and next_pending never looks at it
+                # again - one stray character would silently drop it.
                 return SendResult(
-                    False, "the field already has text in it", text)
+                    False, "waiting: there is text in the field already",
+                    text, hold=True)
 
             ws.call("Runtime.evaluate",
                     {"expression": self.FOCUS_JS, "returnByValue": True})

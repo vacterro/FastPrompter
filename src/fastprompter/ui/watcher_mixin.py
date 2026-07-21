@@ -245,6 +245,9 @@ class WatcherMixin:
             engine.report_sent(item, now=now)
             if item is not None:
                 self._watcher_mark_sent(engine.queue_key, item)
+        elif getattr(result, "hold", False):
+            # not a failure: the item stays pending and nothing is counted
+            engine.report_held(result.reason, now=now)
         else:
             engine.report_failed(item, result.reason, now=now)
 

@@ -436,3 +436,41 @@ def test_every_send_re_baselines_so_the_next_one_waits_for_real_work_too():
         assert engine.tick(float(step), queue) is None, (
             "the second prompt must not go out on the same idle stretch")
 
+
+# ------------------------------------------------- holding, added in W-7c
+
+def test_a_hold_leaves_the_prompt_exactly_where_it_was():
+    """The bug this closes: a transient refusal marked the item FAILED, and
+    next_pending never looks at a failed item again - so a single character
+    left in the agent's input box silently dropped the prompt."""
+    engine, probe, queue = make()
+    intent = run_to_intent(engine, probe, queue)
+    assert intent is not None
+    item = queue.find(intent.item_id)
+
+    assert engine.report_held("waiting: there is text in the field") is True
+
+    assert item.state == "pending", "still queued"
+    assert queue.next_pending() is item, "and still first in line"
+    assert engine.consecutive_failures == 0, "nothing was counted against it"
+    assert engine.sent_count == 0
+    assert engine.state == ARMED
+
+
+def test_holds_never_end_a_run_however_many_there_are():
+    """Three failures disarm. Three holds must not: the user typing in the
+    window for a while is not a broken target."""
+    engine, probe, queue = make()
+    for _ in range(6):
+        engine.state = SENDING
+        engine.report_held("waiting")
+    assert engine.armed is True
+    assert engine.consecutive_failures == 0
+
+
+def test_a_hold_outside_a_send_is_refused():
+    """Same rule as the other reports: a panic already ended this run."""
+    engine, _probe, _queue = make()
+    engine.panic()
+    assert engine.report_held("waiting") is False
+

@@ -28,15 +28,22 @@ import datetime
 
 
 class SendResult:
-    """What happened. `ok` false always carries a reason."""
+    """What happened. `ok` false always carries a reason.
 
-    __slots__ = ("ok", "reason", "text", "dry", "at")
+    `hold` marks the difference between "not now" and "it failed". A window
+    the user is currently typing in is a moment to wait for, not a broken
+    target: counting it as a failure burns the prompt and, three of them in
+    a row, ends the whole run.
+    """
 
-    def __init__(self, ok, reason="", text="", dry=False, at=None):
+    __slots__ = ("ok", "reason", "text", "dry", "at", "hold")
+
+    def __init__(self, ok, reason="", text="", dry=False, at=None, hold=False):
         self.ok = bool(ok)
         self.reason = reason or ""
         self.text = text or ""
         self.dry = bool(dry)
+        self.hold = bool(hold)
         self.at = at or datetime.datetime.now().isoformat(timespec="seconds")
 
     def __repr__(self):

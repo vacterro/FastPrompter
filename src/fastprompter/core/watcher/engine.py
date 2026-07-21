@@ -228,6 +228,20 @@ class Engine:
         self.reason = "sent"
         return True
 
+    def report_held(self, reason="", now=None):
+        """The send did not happen and nothing is wrong.
+
+        The item is left exactly as it was - still pending, still first in
+        line - and no counter moves. The next tick will try again.
+        """
+        if self.state != SENDING:
+            return False
+        self.pending = None
+        self._idle_since = None
+        self.state = ARMED
+        self.reason = reason or "waiting"
+        return True
+
     def report_failed(self, item=None, reason="", now=None):
         """It did not go. The queue carries on - up to a point.
 
