@@ -678,6 +678,40 @@ class FastPrompter(
                           lambda: self._notify_timer(probe))
         return probe
 
+    def _fit_settings_tabs(self, index=None):
+        """Size the settings tabs to the page actually on screen."""
+        tabs = getattr(self, "settings_tabs", None)
+        if tabs is None or sip.isdeleted(tabs):
+            return
+        if index is None:
+            index = tabs.currentIndex()
+        for i in range(tabs.count()):
+            page = tabs.widget(i)
+            if page is None:
+                continue
+            if i == index:
+                policy = QSizePolicy(QSizePolicy.Policy.Preferred,
+                                     QSizePolicy.Policy.Maximum)
+                policy.setHeightForWidth(True)
+                page.setSizePolicy(policy)
+            else:
+                page.setSizePolicy(QSizePolicy.Policy.Ignored,
+                                   QSizePolicy.Policy.Ignored)
+        # sizeHint() can't know the width, and a wrapping layout's height
+        # depends entirely on it — so measure the visible page at the width
+        # it actually has and cap the tabs there.
+        page = tabs.currentWidget()
+        if page is not None and page.layout() is not None:
+            inner = page.layout()
+            avail = max(120, tabs.width() - 12)
+            try:
+                needed = inner.totalHeightForWidth(avail)
+            except (AttributeError, TypeError):
+                needed = page.sizeHint().height()
+            bar = tabs.tabBar().sizeHint().height() if tabs.tabBar() else 24
+            tabs.setMaximumHeight(max(60, needed + bar + 10))
+        tabs.updateGeometry()
+
     def pick_hover_colour(self):
         from PyQt6.QtWidgets import QColorDialog
 
@@ -2576,15 +2610,21 @@ class FastPrompter(
 
         def _tab(items):
             host = QWidget()
+            host.setSizePolicy(QSizePolicy.Policy.Preferred,
+                               QSizePolicy.Policy.Maximum)
             outer = QVBoxLayout(host)
             outer.setContentsMargins(4, 4, 4, 4)
             outer.setSpacing(3)
             outer.addWidget(flow_widget(items))
-            outer.addStretch(1)
             return host
 
         self.settings_tabs = QTabWidget()
         self.settings_tabs.setDocumentMode(True)
+        # Never taller than the tab actually needs. QTabWidget expands
+        # vertically by default, so in a QVBoxLayout it happily swallowed
+        # hundreds of pixels of empty panel below a single row of checkboxes.
+        self.settings_tabs.setSizePolicy(QSizePolicy.Policy.Preferred,
+                                         QSizePolicy.Policy.Maximum)
         # (attribute, english title) — kept for retranslation
         self._settings_tab_titles = ("Window", "Editor", "Clock", "Data")
 
@@ -2619,6 +2659,12 @@ class FastPrompter(
             vol_row, files_row, gap_row,
         ]), tr("Data", self._current_lang))
 
+        # A QTabWidget reserves room for its TALLEST page on every tab, so a
+        # one-row tab still showed a screenful of nothing. Let only the
+        # visible page claim space and re-fit on each switch.
+        self.settings_tabs.currentChanged.connect(self._fit_settings_tabs)
+        self._fit_settings_tabs(self.settings_tabs.currentIndex())
+
         hline = QFrame()
         hline.setFrameShape(QFrame.Shape.HLine)
         hline.setFrameShadow(QFrame.Shadow.Sunken)
@@ -2633,11 +2679,15 @@ class FastPrompter(
         # Hidden by default — the gear button reveals it
         self.mini_settings_frame.setVisible(self.data.get("hide_extra", "True") != "True")
 
+        # Hug the content: spare vertical space belongs to the editor below,
+        # not to a settings panel showing one row of checkboxes.
+        self.mini_settings_frame.setSizePolicy(QSizePolicy.Policy.Preferred,
+                                               QSizePolicy.Policy.Maximum)
         self.main_layout.addWidget(self.mini_settings_frame)
         # self.main_layout.addWidget(self.left_panel)
         self.splitter = QSplitter(Qt.Orientation.Horizontal)
         self.splitter.setChildrenCollapsible(True)
-        self.main_layout.addWidget(self.splitter)
+        self.main_layout.addWidget(self.splitter, 1)   # takes all spare height
         self.splitter.setOpaqueResize(True)
         try:
             self.splitter.setHandleWidth(int(self.data.get("splitter_width", 1)))
@@ -4328,6 +4378,9 @@ class FastPrompter(
                 r.raise_()
 
         self._apply_header_density()
+        # a wrapping settings panel changes height when the window changes width
+        if getattr(self, "mini_settings_frame", None) is not None and                 not sip.isdeleted(self.mini_settings_frame) and                 self.mini_settings_frame.isVisible():
+            self._fit_settings_tabs()
         super().resizeEvent(event)
 
     # def nativeEvent(self, eventType, message):

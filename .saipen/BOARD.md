@@ -572,7 +572,32 @@ earlier test wrote.
 
 Verified: 503 unit + 161 smoke green.
 
-STILL UNCLEAR — not attempted: the "huge empty space that doesn't resize".
-No screenshot came with this round and I could not identify it confidently
-from the code; guessing would mean rearranging a layout that might be fine.
-Needs a screenshot or a pointer to which panel.
+(The "huge empty space" was the settings panel — screenshot arrived, fixed
+below in "Settings panel vertical space".)
+
+## Settings panel vertical space (21.07, claude-opus)
+Screenshot showed the Window tab: one row of checkboxes, then ~200px of
+dead panel before the editor. Measured it rather than guessing.
+
+Three separate causes, all real:
+
+| ID | Status | Description |
+|---|---|---|
+| SP-01 | FIXED | `QVBoxLayout` hands spare height to whatever can expand, and `QTabWidget` expands vertically by default — so the settings panel grew to fill the window. Gave the frame and the tabs `Maximum` vertical policy, and put the stretch factor on the SPLITTER instead, so spare height goes to the editor where it belongs. |
+| SP-02 | FIXED | A QTabWidget reserves room for its TALLEST page on every tab, so the one-row Clock tab was as tall as the crowded Editor tab. `_fit_settings_tabs` now gives only the visible page a real size policy (the rest get `Ignored`) and re-fits on tab change. |
+| SP-03 | FIXED | The remaining height came from `sizeHint()`, which cannot know the width — and a wrapping layout's height depends entirely on it (Editor tab measured 285px at 300px wide vs 98px at 900px). The tabs are now capped using `totalHeightForWidth()` at the width the page actually has, recomputed on window resize. Also set `heightForWidth` on the flow host's size policy, without which Qt never consults it at all. |
+
+Measured, same window (905x965):
+
+| tab | before | after |
+|---|---|---|
+| Window | 415 | **205** |
+| Editor | 415 | **210** |
+| Clock  | 415 | **146** |
+| Data   | 415 | **182** |
+
+Editor area gained 233px (516 -> 749). Locked by a test that asserts each
+tab stays under 320px, that a short tab is genuinely shorter than the
+busiest one, and that the visible page is never clipped.
+
+Verified: 503 unit + 162 smoke green.

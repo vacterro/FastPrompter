@@ -4496,3 +4496,40 @@ def test_folder_map_only_records_real_silos(win, tmp_path):
     recorded = {int(k) for k in win.data["silo_folders"]}
     assert recorded <= {0, 1}, (
         f"folder names recorded for silos that don't exist: {sorted(recorded)}")
+
+
+def test_settings_panel_hugs_its_content_vertically(win):
+    # The panel used to reserve room for its TALLEST tab and then take all
+    # the spare height in the window on top of that, leaving hundreds of
+    # pixels of nothing under a single row of checkboxes.
+    win.is_locked = False
+    win._locked_geometry = None
+    was_visible = win.mini_settings_frame.isVisible()
+    try:
+        win.mini_settings_frame.setVisible(True)
+        win.resize(905, 965)
+        win.show()
+        QApplication.processEvents()
+
+        tabs = win.settings_tabs
+        heights = {}
+        for i in range(tabs.count()):
+            tabs.setCurrentIndex(i)
+            win._fit_settings_tabs(i)
+            QApplication.processEvents()
+            heights[tabs.tabText(i)] = win.mini_settings_frame.height()
+
+        for name, h in heights.items():
+            assert h <= 320, f"{name} tab leaves a huge empty panel ({h}px)"
+
+        # a short tab must be visibly shorter than the busiest one — proof the
+        # panel follows the CURRENT page rather than the tallest
+        assert heights["Clock"] < heights["Editor"], heights
+
+        # and nothing may be clipped: the visible page still fits
+        page = tabs.currentWidget()
+        needed = page.layout().totalHeightForWidth(max(120, tabs.width() - 12))
+        assert tabs.height() >= needed, "tab content is being cut off"
+    finally:
+        win.mini_settings_frame.setVisible(was_visible)
+        win.resize(1400, 700)

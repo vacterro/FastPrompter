@@ -92,7 +92,11 @@ def flow_widget(items, margin=0, h_spacing=8, v_spacing=2):
     from PyQt6.QtWidgets import QWidget
 
     host = QWidget()
-    host.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+    policy = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+    # without this Qt asks for sizeHint() only and never consults
+    # heightForWidth, so the host is sized as if nothing ever wrapped
+    policy.setHeightForWidth(True)
+    host.setSizePolicy(policy)
     layout = FlowLayout(host, margin=margin, h_spacing=h_spacing, v_spacing=v_spacing)
     for item in items:
         if isinstance(item, QLayout):
