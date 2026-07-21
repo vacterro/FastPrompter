@@ -5848,3 +5848,218 @@ def test_header_tint_has_a_single_owner():
     assert callable(header_tint)
     assert "header_tint" in inspect.getsource(theme_mixin.ThemeMixin.apply_theme)
     assert "bg_main" in inspect.getsource(analog_clock._theme_palette)
+
+def test_alt_c_queues_the_current_line(win):
+    """Alt+C is FastPrompter's own queue command: the line goes in, the
+    caret moves on, and the line is marked."""
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtGui import QTextCursor
+    from PyQt6.QtTest import QTest
+    from fastprompter.ui.markdown_highlighter import QUEUED_BIT
+
+    ed = win.text_area
+    kept = dict(win.prompt_queues)
+    try:
+        win.prompt_queues.clear()
+        ed.setPlainText("first prompt\nsecond prompt\n\nthird prompt")
+        c = ed.textCursor()
+        c.setPosition(0)
+        ed.setTextCursor(c)
+
+        QTest.keyClick(ed, Qt.Key.Key_C, Qt.KeyboardModifier.AltModifier)
+        QTest.keyClick(ed, Qt.Key.Key_C, Qt.KeyboardModifier.AltModifier)
+
+        queue = win.prompt_queues[win._queue_slot_key()]
+        assert [i.text for i in queue] == ["first prompt", "second prompt"]
+
+        # the caret advanced, and the marks landed on the right blocks
+        assert ed.textCursor().blockNumber() == 2
+        for n, expected in ((0, True), (1, True), (3, False)):
+            state = max(0, ed.document().findBlockByNumber(n).userState())
+            assert bool(state & QUEUED_BIT) is expected, f"line {n + 1}"
+
+        # an empty line is not a prompt
+        QTest.keyClick(ed, Qt.Key.Key_C, Qt.KeyboardModifier.AltModifier)
+        assert len(queue) == 2
+    finally:
+        win.prompt_queues.clear()
+        win.prompt_queues.update(kept)
+        ed.clear()
+
+
+def test_a_queued_item_follows_its_line(win):
+    """The anchor is the block, not the line number: inserting above must
+    not point the queue at different text, and editing the line changes
+    what would be sent."""
+    from PyQt6.QtGui import QTextCursor
+
+    ed = win.text_area
+    kept = dict(win.prompt_queues)
+    try:
+        win.prompt_queues.clear()
+        ed.setPlainText("alpha\nbravo\ncharlie")
+        c = ed.textCursor()
+        c.setPosition(ed.document().findBlockByNumber(1).position())
+        ed.setTextCursor(c)
+        item = win.queue_current_line()
+        assert item is not None and item.text == "bravo"
+
+        # insert two lines above it
+        top = ed.textCursor()
+        top.setPosition(0)
+        ed.setTextCursor(top)
+        top.insertText("new one\nnew two\n")
+
+        block = ed.block_for_queue_item(item.id)
+        assert block is not None
+        assert block.text() == "bravo", "the anchor followed the wrong line"
+        assert block.blockNumber() == 3, "and it really did move"
+
+        # editing the line edits what will be sent
+        edit = QTextCursor(block)
+        edit.movePosition(QTextCursor.MoveOperation.EndOfBlock)
+        edit.insertText(" EDITED")
+        assert ed.block_for_queue_item(item.id).text() == "bravo EDITED"
+    finally:
+        win.prompt_queues.clear()
+        win.prompt_queues.update(kept)
+        ed.clear()
+
+
+def test_deleting_the_line_detaches_and_leaves_no_stale_tick(win):
+    """Qt merges blocks on delete and the survivor can inherit the state
+    bits without the anchor - which would paint a tick beside a line that
+    was never sent."""
+    from PyQt6.QtGui import QTextCursor
+    from fastprompter.ui.markdown_highlighter import QUEUED_BIT, SENT_BIT
+
+    ed = win.text_area
+    kept = dict(win.prompt_queues)
+    try:
+        win.prompt_queues.clear()
+        ed.setPlainText("alpha\nbravo\ncharlie")
+        c = ed.textCursor()
+        c.setPosition(ed.document().findBlockByNumber(1).position())
+        ed.setTextCursor(c)
+        item = win.queue_current_line()
+
+        assert ed.mark_queue_sent(item.id) is True
+        block = ed.block_for_queue_item(item.id)
+        state = max(0, block.userState())
+        assert state & SENT_BIT and not state & QUEUED_BIT
+
+        cut = QTextCursor(block)
+        cut.select(QTextCursor.SelectionType.BlockUnderCursor)
+        cut.removeSelectedText()
+
+        assert ed.block_for_queue_item(item.id) is None, "anchor must be gone"
+        ed.prune_queue_marks()
+        for n in range(ed.document().blockCount()):
+            state = max(0, ed.document().findBlockByNumber(n).userState())
+            assert not state & (QUEUED_BIT | SENT_BIT), f"stale tick on line {n + 1}"
+        assert ed.collect_queue_marks() == {}
+    finally:
+        win.prompt_queues.clear()
+        win.prompt_queues.update(kept)
+        ed.clear()
+
+
+def test_queue_marks_and_edit_heat_share_the_block_without_clobbering(win):
+    """A block has one userData slot. Heat was there first; the queue anchor
+    joined it, and neither may erase the other."""
+    import time
+
+    from fastprompter.ui.editor import block_data, stamp_heat
+
+    ed = win.text_area
+    kept = dict(win.prompt_queues)
+    try:
+        win.prompt_queues.clear()
+        ed.setPlainText("only line")
+        c = ed.textCursor()
+        c.setPosition(0)
+        ed.setTextCursor(c)
+        item = win.queue_current_line()
+
+        block = ed.document().findBlockByNumber(0)
+        stamp_heat(block, time.time())
+        assert block_data(block).queue_id == item.id, "heat erased the anchor"
+
+        ed.set_queue_anchor(block, item.id)
+        assert block_data(block).ts is not None, "the anchor erased the heat"
+    finally:
+        win.prompt_queues.clear()
+        win.prompt_queues.update(kept)
+        ed.clear()
+
+
+def test_the_queue_bits_survive_a_rehighlight(win):
+    """_KEEP_MASK is what survives a rehighlight pass. A bit missing from it
+    is wiped at random, which looks like the queue losing its own state."""
+    from fastprompter.ui.markdown_highlighter import (
+        QUEUED_BIT,
+        SENT_BIT,
+        _KEEP_MASK,
+    )
+
+    assert _KEEP_MASK & QUEUED_BIT, "QUEUED_BIT would be wiped"
+    assert _KEEP_MASK & SENT_BIT, "SENT_BIT would be wiped"
+
+    ed = win.text_area
+    kept = dict(win.prompt_queues)
+    try:
+        win.prompt_queues.clear()
+        ed.setPlainText("a prompt line")
+        c = ed.textCursor()
+        c.setPosition(0)
+        ed.setTextCursor(c)
+        item = win.queue_current_line()
+
+        if getattr(win, "highlighter", None) is not None:
+            win.highlighter.rehighlight()
+        state = max(0, ed.document().findBlockByNumber(0).userState())
+        assert state & QUEUED_BIT, "the bit did not survive the highlighter"
+        assert ed.block_for_queue_item(item.id) is not None
+    finally:
+        win.prompt_queues.clear()
+        win.prompt_queues.update(kept)
+        ed.clear()
+
+
+def test_queues_are_per_silo_and_persist(win):
+    ed = win.text_area
+    kept = dict(win.prompt_queues)
+    kept_presets = list(win.data["temp_presets"])
+    try:
+        win.prompt_queues.clear()
+        win.data["temp_presets"][:] = ["silo one", "silo two"]
+        win.silo_docs[:] = []
+        win._switch_to_slot(0, initial=True)
+        ed.setPlainText("from the first silo")
+        c = ed.textCursor()
+        c.setPosition(0)
+        ed.setTextCursor(c)
+        win.queue_current_line()
+
+        win._switch_to_slot(1, initial=True)
+        ed.setPlainText("from the second silo")
+        c = ed.textCursor()
+        c.setPosition(0)
+        ed.setTextCursor(c)
+        win.queue_current_line()
+
+        assert sorted(win.prompt_queues) == ["0", "1"]
+        assert [i.text for i in win.prompt_queues["0"]] == ["from the first silo"]
+        assert [i.text for i in win.prompt_queues["1"]] == ["from the second silo"]
+
+        # and it round-trips through the saved data
+        from fastprompter.core.watcher.queue import load_queues
+        back = load_queues(win.data["watcher_queues"])
+        assert sorted(back) == ["0", "1"]
+    finally:
+        win.prompt_queues.clear()
+        win.prompt_queues.update(kept)
+        win.data["temp_presets"][:] = kept_presets
+        win.silo_docs[:] = []
+        win._switch_to_slot(0, initial=True)
+        ed.clear()

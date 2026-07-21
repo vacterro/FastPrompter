@@ -186,6 +186,8 @@ class FastPrompter(
         self.data = self.state.data
         from fastprompter.core.timers import load_timers
         self.timers = load_timers(self.data.get("timers"))
+        from fastprompter.core.watcher.queue import load_queues
+        self.prompt_queues = load_queues(self.data.get("watcher_queues"))
         from fastprompter.core.pomodoro import ProductivityTimer
         self.productivity_timer = ProductivityTimer.from_dict(
             self.data.get("productivity_timer"))
@@ -845,6 +847,39 @@ class FastPrompter(
                 self, tr("Cursors", lang),
                 tr("Could not write the cursor scheme.", lang))
         return ok
+
+    # ---- prompt queue -------------------------------------------------
+    def save_prompt_queues(self):
+        from fastprompter.core.watcher.queue import save_queues
+        self.data["watcher_queues"] = save_queues(self.prompt_queues)
+        self.mark_dirty()
+
+    def _queue_slot_key(self):
+        """Which silo's queue Alt+C fills. Archive silos keep their own."""
+        slot = getattr(self, "active_temp_slot", 0)
+        prefix = "a" if getattr(self, "active_is_archive", False) else ""
+        return f"{prefix}{slot}"
+
+    def queue_current_line(self):
+        """Alt+C: put the line under the caret into this silo's queue.
+
+        The item is anchored to the BLOCK, not to a line number, so editing
+        the note above it does not point the queue at the wrong text.
+        """
+        from fastprompter.core.watcher.queue import QueueItem, queue_for
+
+        text, block = self.text_area.queue_current_line()
+        if not text:
+            return None
+
+        item = QueueItem(text,
+                         skill=self.data.get("watcher_skill", ""),
+                         line=block.blockNumber() + 1)
+        queue_for(self.prompt_queues, self._queue_slot_key()).append(item)
+        self.text_area.set_queue_anchor(block, item.id)
+        self.save_prompt_queues()
+        self.play_click_sound()
+        return item
 
     # ---- hashtags -----------------------------------------------------
     def open_hashtag_dialog(self, tag=None):
@@ -3889,6 +3924,10 @@ class FastPrompter(
     #   str_dict   : {"3": v}               -> stringified int keys
     #   parent_map : {"3": [4, 5]}          -> both key and values are indices
     _SILO_INDEX_STATE = (
+        # {slot: [item, ...]} on purpose - the same shape as silo_colors, so
+        # reordering or deleting silos remaps the queues through the existing
+        # str_dict handling instead of needing code of its own.
+        ("watcher_queues", "str_dict"),
         ("silo_last_edited", "int_dict"),
         ("pinned_silos", "int_list"),
         ("silo_ticked", "int_list"),

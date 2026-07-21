@@ -1,6 +1,6 @@
 import os
-import subprocess
 import re
+import subprocess
 
 from PyQt6 import sip
 from PyQt6.QtCore import QPoint, QRect, QRectF, QSize, Qt, QTimer, QUrl
@@ -20,8 +20,9 @@ from PyQt6.QtGui import (
 from PyQt6.QtWidgets import QApplication, QTextEdit, QWidget
 
 from fastprompter.core.logging import logger
-from fastprompter.ui.edit_guard import edit_block
 from fastprompter.core.translations import tr
+from fastprompter.ui.edit_guard import edit_block
+from fastprompter.ui.markdown_highlighter import QUEUED_BIT, SENT_BIT
 
 # Matches every stamp shape Ctrl+E ever wrote: "17.07 - 04:19",
 # "17 Jul - 04:19", optional seconds, optional day-part word prefix.
@@ -140,20 +141,55 @@ class LineNumberArea(QWidget):
         super().leaveEvent(event)
 
 
-class _LineHeat(QTextBlockUserData):
-    """Edit timestamp carried BY the block itself.
+class _BlockData(QTextBlockUserData):
+    """Everything carried BY a block rather than by its line number.
 
-    Storing heat against line NUMBERS would smear it across the wrong lines
+    Storing this against line NUMBERS would smear it across the wrong lines
     the moment anything is inserted or deleted above. Qt moves a block's
-    userData with the block, so the mark stays on the text the user actually
+    userData with the block, so a mark stays on the text the user actually
     touched.
+
+    A block has exactly ONE userData slot, so everything that wants to ride
+    along has to share this object. Edit heat was here first; the watcher
+    queue anchor joined it. Replacing the object wholesale - which is what
+    `setUserData(_LineHeat(ts))` used to do - would silently drop whichever
+    field the caller did not know about.
     """
 
-    __slots__ = ("ts",)
+    __slots__ = ("ts", "queue_id")
 
-    def __init__(self, ts):
+    def __init__(self, ts=None, queue_id=""):
         super().__init__()
         self.ts = ts
+        self.queue_id = queue_id
+
+
+# Kept so existing callers and tests can still say _LineHeat(ts).
+_LineHeat = _BlockData
+
+
+def block_data(block, create=False):
+    """The block's payload, optionally creating it.
+
+    Always go through this rather than setUserData(): it preserves the
+    fields the caller is not interested in.
+    """
+    data = block.userData()
+    if isinstance(data, _BlockData):
+        return data
+    if not create:
+        return None
+    data = _BlockData()
+    block.setUserData(data)
+    return data
+
+
+def stamp_heat(block, ts):
+    """Set the edit timestamp without disturbing the queue anchor."""
+    data = block_data(block, create=True)
+    if data is not None:
+        data.ts = ts
+    return data
 
 
 class VaultTextEdit(QTextEdit):
@@ -536,7 +572,7 @@ class VaultTextEdit(QTextEdit):
                 continue
             block = doc.findBlockByNumber(num)
             if block.isValid():
-                block.setUserData(_LineHeat(ts))
+                stamp_heat(block, ts)
         self.viewport().update()
 
     def apply_line_marks(self, marks):
@@ -602,6 +638,157 @@ class VaultTextEdit(QTextEdit):
                 opens = not opens
             b = b.next()
         return opens
+
+    # ---- prompt queue (Alt+C) ---------------------------------------------
+
+    def queue_current_line(self):
+        """Alt+C: hand the current line (or the selection) to the queue.
+
+        Returns (text, block) for the caller to enqueue, or (None, None) when
+        there is nothing worth queuing. The block is what the queue anchors
+        to - see block_data(): line NUMBERS shift under any edit above, so
+        they cannot be the anchor.
+        """
+        cursor = self.textCursor()
+        if cursor.hasSelection():
+            text = cursor.selectedText().replace("\u2029", " ").strip()
+            block = self.document().findBlock(cursor.selectionStart())
+        else:
+            block = cursor.block()
+            text = block.text().strip()
+
+        if not text:
+            return None, None            # an empty line is not a prompt
+
+        # the payload itself is created by set_queue_anchor once the caller
+        # has an item id to put in it
+        state = max(0, block.userState())
+        block.setUserState(state | QUEUED_BIT)
+
+        # to the next line, so ten follow-ups are ten keystrokes
+        move = QTextCursor(block)
+        move.movePosition(QTextCursor.MoveOperation.EndOfBlock)
+        if block.next().isValid():
+            move = QTextCursor(block.next())
+        else:
+            move.movePosition(QTextCursor.MoveOperation.EndOfBlock)
+        self.setTextCursor(move)
+        self.line_number_area.update()
+        return text, block
+
+    def set_queue_anchor(self, block, item_id):
+        """Tie a queued item to the block it came from."""
+        data = block_data(block, create=True)
+        if data is not None:
+            data.queue_id = item_id or ""
+        return data
+
+    def block_for_queue_item(self, item_id):
+        """The block still carrying this item's anchor, or None if the line
+        was deleted - which is what makes an item `detached`."""
+        if not item_id:
+            return None
+        doc = self.document()
+        block = doc.begin()
+        while block.isValid():
+            data = block.userData()
+            if getattr(data, "queue_id", "") == item_id:
+                return block
+            block = block.next()
+        return None
+
+    def mark_queue_sent(self, item_id):
+        """Tick the gutter for a line whose prompt has gone out."""
+        block = self.block_for_queue_item(item_id)
+        if block is None:
+            return False
+        state = max(0, block.userState())
+        block.setUserState((state | SENT_BIT) & ~QUEUED_BIT)
+        self.line_number_area.update()
+        return True
+
+    def clear_queue_marks(self, item_id=None):
+        """Drop the queue bits, for one item or for the whole document."""
+        doc = self.document()
+        block = doc.begin()
+        cleared = 0
+        while block.isValid():
+            data = block.userData()
+            if item_id is None or getattr(data, "queue_id", "") == item_id:
+                state = max(0, block.userState())
+                if state & (QUEUED_BIT | SENT_BIT):
+                    block.setUserState(state & ~(QUEUED_BIT | SENT_BIT))
+                    cleared += 1
+                if data is not None and hasattr(data, "queue_id"):
+                    data.queue_id = ""
+            block = block.next()
+        if cleared:
+            self.line_number_area.update()
+        return cleared
+
+    def prune_queue_marks(self):
+        """Drop queue bits from blocks that carry no anchor.
+
+        Deleting a line makes Qt merge blocks, and the surviving block can
+        inherit the userState bits while the userData does NOT come with
+        them - measured. The anchor is the truth and the bits are a cache,
+        so a bit without an anchor is stale and would otherwise paint a tick
+        beside a line that was never sent.
+        """
+        doc = self.document()
+        block = doc.begin()
+        pruned = 0
+        while block.isValid():
+            state = max(0, block.userState())
+            if (state & (QUEUED_BIT | SENT_BIT)
+                    and not getattr(block.userData(), "queue_id", "")):
+                block.setUserState(state & ~(QUEUED_BIT | SENT_BIT))
+                pruned += 1
+            block = block.next()
+        if pruned:
+            self.line_number_area.update()
+        return pruned
+
+    def collect_queue_marks(self):
+        """{block number: (bits, item id)} for saving. Block user data is
+        memory-only; a reload rebuilds the document and every anchor is gone
+        unless it was written down."""
+        self.prune_queue_marks()
+        out = {}
+        doc = self.document()
+        block = doc.begin()
+        while block.isValid():
+            state = max(0, block.userState()) & (QUEUED_BIT | SENT_BIT)
+            item_id = getattr(block.userData(), "queue_id", "")
+            if state and item_id:
+                out[block.blockNumber()] = (state, item_id)
+            block = block.next()
+        return out
+
+    def apply_queue_marks(self, marks):
+        """Restore anchors saved by collect_queue_marks()."""
+        if not isinstance(marks, dict):
+            return 0
+        doc = self.document()
+        restored = 0
+        for number, payload in marks.items():
+            try:
+                block = doc.findBlockByNumber(int(number))
+            except (TypeError, ValueError):
+                continue
+            if not block.isValid():
+                continue
+            try:
+                state, item_id = payload
+            except (TypeError, ValueError):
+                continue
+            block.setUserState(max(0, block.userState())
+                               | (int(state) & (QUEUED_BIT | SENT_BIT)))
+            self.set_queue_anchor(block, item_id)
+            restored += 1
+        if restored:
+            self.line_number_area.update()
+        return restored
 
     # ---- folding (code fences + markdown headers) -------------------------
 
@@ -1744,6 +1931,13 @@ class VaultTextEdit(QTextEdit):
                         event.accept()
                         return
 
+        # Alt+C is FastPrompter's own queue command, not a pass-through
+        if (event.key() == Qt.Key.Key_C
+                and mods == Qt.KeyboardModifier.AltModifier):
+            self.main_win.queue_current_line()
+            event.accept()
+            return
+
         if event.key() == Qt.Key.Key_Backspace and (mods & Qt.KeyboardModifier.AltModifier):
             try:
                 cursor = self.textCursor()
@@ -1898,7 +2092,7 @@ class VaultTextEdit(QTextEdit):
             last = doc.findBlock(max(position, position + added))
             block = first
             while block.isValid():
-                block.setUserData(_LineHeat(now))
+                stamp_heat(block, now)
                 if block.blockNumber() >= last.blockNumber():
                     break
                 block = block.next()

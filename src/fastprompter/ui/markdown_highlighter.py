@@ -7,11 +7,16 @@ from fastprompter.theme.themes import blend_hex
 
 # Block-state bit layout (block.userState is shared with the editor's
 # margin marks): bits 0-7 = margin mark (0-3), bit 8 = inside code fence,
-# bit 9 = fold anchor is collapsed (owned by the editor, preserved here).
+# bit 9 = fold anchor is collapsed, bits 10-11 = watcher queue state.
+# Everything but the code-fence bit is owned by the editor and preserved
+# here - a bit missing from _KEEP_MASK is silently wiped on the next
+# rehighlight, which looks like the feature losing its own state at random.
 CODE_BIT = 1 << 8
 FOLD_BIT = 1 << 9
+QUEUED_BIT = 1 << 10       # this line is sitting in a prompt queue
+SENT_BIT = 1 << 11         # ...and it has been sent
 MARK_MASK = 0xFF
-_KEEP_MASK = MARK_MASK | FOLD_BIT
+_KEEP_MASK = MARK_MASK | FOLD_BIT | QUEUED_BIT | SENT_BIT
 
 # Universal keyword set covering the popular languages (Python, JS/TS,
 # C/C++/C#, Java, Go, Rust, PHP, Ruby, SQL, Bash, PowerShell...)

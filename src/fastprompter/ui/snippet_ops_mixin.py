@@ -209,6 +209,8 @@ class SnippetOpsMixin:
                     self._set_plain_text_clean(doc, slot_data["text"])
 
                 self.text_area.set_active_document(doc)
+                self._restore_centered_blocks()
+                self._restore_aligned_blocks()
 
                 if cursor_pos == "start":
                     self.text_area.moveCursor(QTextCursor.MoveOperation.Start)
@@ -610,6 +612,8 @@ class SnippetOpsMixin:
                     slot = self.active_temp_slot
                     if 0 <= slot < len(self.archive_docs):
                         self.text_area.set_active_document(self.archive_docs[slot])
+                self._restore_centered_blocks()
+                self._restore_aligned_blocks()
             finally:
                 self.text_area.blockSignals(False)
                 self._suspend_cache = False
