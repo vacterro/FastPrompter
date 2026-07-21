@@ -27,11 +27,12 @@ def _theme_palette(main_win):
             raw = cached["raw_colors"]
     except Exception:
         pass
-    from fastprompter.theme.themes import header_tint
-
     return {
-        # the toolbar's own colour, so the clock cannot read as a patch on it
-        "face": QColor(header_tint(raw)),
+        # What the widgets NEXT TO the clock actually paint. The header bar
+        # itself is tinted lighter, but the labels sitting on it render
+        # bg_main - so filling with the bar's tint left the clock as a pale
+        # square among dark neighbours, which is the reported artefact.
+        "face": QColor(raw.get("bg_main", _FALLBACK["bg_text"])),
         "rim": QColor(raw.get("border_light", _FALLBACK["border_light"])),
         "hands": QColor(raw.get("accent", _FALLBACK["accent"])),
     }

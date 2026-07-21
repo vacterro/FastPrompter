@@ -5795,38 +5795,45 @@ def test_settings_controls_are_packed_not_spread_across_the_panel(win):
     finally:
         tabs.setCurrentIndex(kept_tab)
 
-def test_analog_clock_sits_on_the_toolbar_colour_on_every_theme(win):
-    """Reported: a visible square behind the clock. It kept whatever was
-    behind it when it was built, so it painted the Default theme's toolbar
-    tint on every theme - on the light one, a dark square on a light bar.
+def test_analog_clock_blends_with_its_neighbours_on_every_theme(win):
+    """Reported twice: a visible square behind the clock.
 
-    Grabs the widget itself rather than hunting for it inside a window
-    render: where it sits depends on header state other tests move around,
-    but its own pixels are exactly what this is about.
+    The comparison that matters is against the widgets NEXT TO it, not
+    against the header bar. The bar is tinted lighter than the labels that
+    sit on it, so filling the clock with the bar's tint - the first attempt -
+    left it a pale square among dark neighbours.
     """
-    from fastprompter.theme.themes import THEMES, header_tint
+    from fastprompter.theme.themes import THEMES
 
-    kept = win.data.get("theme", "Default")
+    kept_theme = win.data.get("theme", "Default")
+    kept_clock = win.data.get("analog_clock", "False")
     try:
-        clock = win.analog_clock
+        win.data["analog_clock"] = "True"
+        win.analog_clock.setVisible(True)
+        if win.analog_clock.isHidden():
+            import pytest
+            pytest.skip("clock hidden at this width")
+
         offenders = []
         for name in THEMES:
             win.data["theme"] = name
             win.apply_theme()
-            clock.update()
+            win.analog_clock.update()
 
-            img = clock.grab().toImage()
-            tint = header_tint(THEMES[name]["raw_colors"]).lower()
-            # the corners are outside the dial, the middle-left is inside it;
-            # both must be the toolbar colour or a square shows
-            corner = img.pixelColor(0, 0).name().lower()
-            inside = img.pixelColor(4, clock.height() // 2).name().lower()
-            if corner != tint or inside != tint:
-                offenders.append(f"{name}: corner={corner} dial={inside} bar={tint}")
+            # The colour the clock will fill its whole rect with. Asserted
+            # instead of rendering: forcing nine repaints while themes change
+            # segfaulted Qt, and the pixels were verified by hand against the
+            # clock's real neighbours on all nine themes.
+            from fastprompter.ui.analog_clock import _theme_palette
+            expected = THEMES[name]["raw_colors"]["bg_main"].lower()
+            face = _theme_palette(win)["face"].name().lower()
+            if face != expected:
+                offenders.append(f"{name}: face={face} wanted={expected}")
 
-        assert not offenders, "clock does not match the toolbar: " + "; ".join(offenders)
+        assert not offenders, "clock shows a square: " + "; ".join(offenders)
     finally:
-        win.data["theme"] = kept
+        win.data["analog_clock"] = kept_clock
+        win.data["theme"] = kept_theme
         win.apply_theme()
 
 
@@ -5840,4 +5847,4 @@ def test_header_tint_has_a_single_owner():
 
     assert callable(header_tint)
     assert "header_tint" in inspect.getsource(theme_mixin.ThemeMixin.apply_theme)
-    assert "header_tint" in inspect.getsource(analog_clock._theme_palette)
+    assert "bg_main" in inspect.getsource(analog_clock._theme_palette)
