@@ -864,7 +864,16 @@ class FastPrompter(
         raw = save_queues(self.prompt_queues)
         self.data["watcher_queues"] = raw
         cat = self.get_current_category() or ""
-        self.data.setdefault("watcher_queues_all", {})[cat] = raw
+        # Must be a dict to index into. An older build wrote this key as
+        # str(dict) (it was missing from state.py's json save list), so a DB
+        # from then reloads it as a STRING and one Alt+C died here with
+        # "'str' object does not support item assignment". Heal it in place
+        # rather than trusting the load path alone.
+        bucket = self.data.get("watcher_queues_all")
+        if not isinstance(bucket, dict):
+            bucket = {}
+            self.data["watcher_queues_all"] = bucket
+        bucket[cat] = raw
         self.mark_dirty()
 
     def _queue_slot_key(self):
@@ -5382,8 +5391,13 @@ class FastPrompter(
             self.data["silo_project_paths"] = self.data.setdefault("silo_project_paths_all", {}).setdefault(
                 cat, {}
             )
-            self.data["watcher_queues"] = self.data.setdefault(
-                "watcher_queues_all", {}).setdefault(cat, {})
+            # same str(dict)-from-an-old-DB guard as save_prompt_queues: a
+            # string here would blow up on .setdefault a tab-switch later
+            wq_all = self.data.get("watcher_queues_all")
+            if not isinstance(wq_all, dict):
+                wq_all = {}
+                self.data["watcher_queues_all"] = wq_all
+            self.data["watcher_queues"] = wq_all.setdefault(cat, {})
             from fastprompter.core.watcher.queue import load_queues
             self.prompt_queues = load_queues(self.data["watcher_queues"])
             self.data["archive_project_paths"] = self.data.setdefault("archive_project_paths_all", {}).setdefault(

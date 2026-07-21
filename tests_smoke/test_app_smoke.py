@@ -7563,3 +7563,80 @@ def test_the_scan_map_is_windows_only(win):
         assert len(_SCAN_TO_KEY) == 36, "26 letters + 10 digits"
     else:
         assert _SCAN_TO_KEY == {}
+
+
+# ---- watcher_queues persistence: the Alt+C TypeError crash ----------------
+
+
+def test_alt_c_survives_a_string_typed_watcher_queues_all(win):
+    """Live crash: data['watcher_queues_all'] came back from the DB as a
+    STRING (it was absent from the json save list, so it was written as
+    str(dict) and reloaded as text), and save_prompt_queues did
+    setdefault(...)[cat] = raw -> TypeError: 'str' object does not support
+    item assignment. One Alt+C took the whole app down."""
+    win.data["watcher_queues_all"] = "{'Code': {}}"   # the corrupted shape
+    # must not raise
+    win.save_prompt_queues()
+    assert isinstance(win.data["watcher_queues_all"], dict), (
+        "the corrupted string must be healed into a dict, not left to crash")
+
+
+def test_a_queue_survives_a_real_db_round_trip(tmp_path):
+    """The actual regression: queue in, close DB, reopen, queue still there
+    and a dict - not a str(dict) that reloads as text."""
+    import json
+
+    import fastprompter.core.state as state_mod
+    from fastprompter.core.watcher.queue import QueueItem, queue_for, save_queues
+
+    dbfile = str(tmp_path / "roundtrip.db")
+    state_mod_get = state_mod.get_db_path
+    try:
+        state_mod.get_db_path = lambda profile_id=1: dbfile
+
+        st = state_mod.FastPrompterState(profile_id=1)
+        queues = {}
+        queue_for(queues, "0").append(QueueItem("remember this", line=1))
+        st.data["watcher_queues_all"] = {"Code": save_queues(queues)}
+        st.data["watcher_queues"] = save_queues(queues)
+        st.save_data_to_db("", force=True)
+        st.conn.close()
+
+        st2 = state_mod.FastPrompterState(profile_id=1)
+        wq = st2.data.get("watcher_queues_all")
+        assert isinstance(wq, dict), f"reloaded as {type(wq).__name__}, not dict"
+        assert "Code" in wq
+        # and it is real json, not a python repr
+        json.dumps(wq)
+        st2.conn.close()
+    finally:
+        state_mod.get_db_path = state_mod_get
+
+
+def test_an_old_str_dict_value_is_recovered_not_dropped(tmp_path):
+    """Users already have the single-quoted str(dict) in their DB. It must
+    reload as the dict it represents, via ast, rather than falling to {}."""
+    import sqlite3
+
+    import fastprompter.core.state as state_mod
+
+    dbfile = str(tmp_path / "legacy.db")
+    getter = state_mod.get_db_path
+    try:
+        state_mod.get_db_path = lambda profile_id=1: dbfile
+        st = state_mod.FastPrompterState(profile_id=1)
+        st.conn.close()
+        # write the legacy corruption directly
+        conn = sqlite3.connect(dbfile)
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+            ("watcher_queues_all", "{'Code': {'0': []}}"))
+        conn.commit()
+        conn.close()
+
+        st2 = state_mod.FastPrompterState(profile_id=1)
+        wq = st2.data["watcher_queues_all"]
+        assert isinstance(wq, dict) and "Code" in wq, f"got {wq!r}"
+        st2.conn.close()
+    finally:
+        state_mod.get_db_path = getter
