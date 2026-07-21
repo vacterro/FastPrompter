@@ -289,6 +289,48 @@ class VaultTextEdit(QTextEdit):
         super().resizeEvent(event)
         cr = self.contentsRect()
         self.line_number_area.setGeometry(QRect(cr.left(), cr.top(), self.line_number_area_width(), cr.height()))
+    def _gutter_colors(self):
+        """Gutter background and number colour, taken from the theme.
+
+        These used to be hardcoded per theme NAME, and the test was
+        `"vintage" in name` - so "Vintage Dark", whose editor background is
+        #181818, got the golden-vintage brown #2A1C0A with gold numbers. Any
+        theme not named in the chain fell back to a flat grey. Deriving both
+        from the active palette means new themes are handled for free.
+        """
+        from fastprompter.theme.themes import blend_hex
+
+        raw = {}
+        try:
+            cache = getattr(self.main_win, "_theme_cache", None)
+            if cache:
+                raw = cache.get("raw_colors") or {}
+            custom = self.main_win._get_custom_colors()
+            if isinstance(custom, dict):
+                raw = {**raw, **custom}
+        except Exception:
+            logger.debug("gutter colours: theme lookup failed", exc_info=True)
+
+        editor_bg = raw.get("bg_text") or raw.get("bg_main")
+        text_main = raw.get("text_main")
+        if not editor_bg:
+            base = self.palette().base().color()
+            editor_bg = base.name()
+        if not text_main:
+            text_main = self.palette().text().color().name()
+
+        # the gutter sits just off the page: a touch lighter on dark themes,
+        # a touch darker on light ones, so it reads as a margin either way
+        toward = "#ffffff" if QColor(editor_bg).lightness() < 128 else "#000000"
+        bg = QColor(blend_hex(editor_bg, toward, 0.08))
+        # numbers are deliberately quieter than body text
+        numbers = QColor(blend_hex(text_main, editor_bg, 0.45))
+        if not bg.isValid():
+            bg = self.palette().base().color()
+        if not numbers.isValid():
+            numbers = QColor("#808080")
+        return bg, numbers
+
     def line_number_area_paint_event(self, event):
         if not self._gutter_active():
             return
@@ -302,17 +344,7 @@ class VaultTextEdit(QTextEdit):
         try:
             painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
             painter.setFont(self.font())
-            theme_name = self.main_win.data.get("theme", "Default")
-            bg = self.palette().window().color()
-            text_color = QColor("#808080")
-            
-            if "vintage" in theme_name.lower():
-                bg = QColor("#2A1C0A")
-                text_color = QColor("#D4B87A")
-            elif theme_name in ("Default",) and bg.lightness() > 128:
-                bg = QColor("#e0e0e0")
-            elif bg.lightness() < 30:
-                bg = QColor("#1e1e1e")
+            bg, text_color = self._gutter_colors()
             painter.fillRect(event.rect(), bg)
 
             first = self._first_visible_block()
@@ -351,7 +383,10 @@ class VaultTextEdit(QTextEdit):
                         box_color = QColor("#44AA44") if mark == 1 else QColor(68, 170, 68, 120)
                         painter.setPen(QPen(box_color, 1))
                         if mark == 1:
-                            painter.setBrush(QColor("#2A1C0A") if "vintage" in theme_name.lower() else QColor("#FFFFFF"))
+                            # fill from the gutter's own background, so a
+                            # ticked box never lands as a white hole in a
+                            # dark theme (or vice versa)
+                            painter.setBrush(bg)
                         else:
                             painter.setBrush(Qt.BrushStyle.NoBrush)
                         painter.drawRect(cx - size//2, cy - size//2, size, size)
@@ -1071,7 +1106,7 @@ class VaultTextEdit(QTextEdit):
         # otherwise the wash stays stuck on whatever line the mouse left from
         if getattr(self, "_hover_block", None) is not None:
             self._hover_block = None
-            self.refresh_extra_selections()
+            self.viewport().update()
         super().leaveEvent(event)
 
     def anchor_url_at(self, pos):
@@ -1130,7 +1165,6 @@ class VaultTextEdit(QTextEdit):
             return False
         self._hover_block = new_hover
         self._last_hover_pos = point
-        self.refresh_extra_selections()
         self.viewport().update()
         return True
 
@@ -1161,7 +1195,13 @@ class VaultTextEdit(QTextEdit):
                         new_hover = blk.blockNumber() if blk.isValid() else None
                         if new_hover != getattr(self, "_hover_block", None):
                             self._hover_block = new_hover
-                            self.refresh_extra_selections()
+                            # The wash is painted in paintEvent, NOT through
+                            # extra selections, so asking for those to be
+                            # rebuilt repainted nothing: the hover appeared
+                            # to stick until some other event forced a paint
+                            # (and over 2000 blocks that path bails out
+                            # entirely, so it never repainted at all).
+                            self.viewport().update()
                     over_cb = self._checkbox_at_pos(p)
                     over_ts = self._ts_glyph_block_at(p) is not None
                     over_fold = self._fold_block_at(p) is not None

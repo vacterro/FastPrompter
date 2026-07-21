@@ -5354,3 +5354,79 @@ def test_productivity_timer_tab_drives_the_model(win):
     finally:
         win.productivity_timer = P.ProductivityTimer.from_dict(saved_state)
         win.data["productivity_timer"] = kept if kept is not None else saved_state
+
+def test_hover_repaints_on_every_move(win):
+    """Reported: the hover wash sticks. It is painted in paintEvent, but the
+    mouse handler only asked for extra selections to be rebuilt - which
+    repaints nothing, and over 2000 blocks bails out entirely."""
+    from PyQt6.QtCore import QEvent, QPointF, Qt
+    from PyQt6.QtGui import QMouseEvent, QTextCursor
+
+    ed = win.text_area
+    kept = win.data.get("hover_line", "True")
+    painted = []
+    real_paint = ed.paintEvent
+    try:
+        win.data["hover_line"] = "True"
+        ed.setPlainText("\n".join(f"line {i:03d}" for i in range(60)))
+
+        ed.paintEvent = lambda ev: (painted.append(1), real_paint(ev))[1]
+
+        def move_to(n):
+            r = ed.cursorRect(QTextCursor(ed.document().findBlockByNumber(n)))
+            ed._last_hover_pos = ed._last_hover_pos.__class__(-10000, -10000)
+            ed.mouseMoveEvent(QMouseEvent(
+                QEvent.Type.MouseMove,
+                QPointF(200, r.top() + r.height() // 2),
+                Qt.MouseButton.NoButton, Qt.MouseButton.NoButton,
+                Qt.KeyboardModifier.NoModifier))
+
+        for n in (2, 5, 8):
+            painted.clear()
+            move_to(n)
+            assert ed._hover_block == n
+            ed.viewport().grab()          # force the pending paint
+            assert painted, f"moving to line {n + 1} repainted nothing"
+    finally:
+        ed.paintEvent = real_paint
+        win.data["hover_line"] = kept
+        ed._hover_block = None
+        ed.clear()
+
+
+def test_gutter_colours_come_from_the_theme(win):
+    """They were hardcoded per theme NAME, tested with `"vintage" in name` -
+    so "Vintage Dark" (editor background #181818) got golden-vintage brown."""
+    from PyQt6.QtGui import QColor
+    from fastprompter.theme.themes import THEMES
+
+    ed = win.text_area
+    kept_theme = win.data.get("theme", "Default")
+    kept_nums = win.data.get("show_line_numbers", "False")
+    try:
+        win.data["show_line_numbers"] = "True"
+        for name in THEMES:
+            win.data["theme"] = name
+            win._theme_cache = THEMES[name]
+            bg, numbers = ed._gutter_colors()
+
+            editor_bg = QColor(THEMES[name]["raw_colors"]["bg_text"])
+            assert bg.isValid() and numbers.isValid()
+            # the gutter must read as a margin: close to the page but not
+            # identical, and never the same colour as the numbers on it
+            delta = abs(bg.lightness() - editor_bg.lightness())
+            assert 4 <= delta <= 60, f"{name}: gutter/page delta {delta}"
+            assert numbers.name() != bg.name(), f"{name}: numbers invisible"
+
+        # a light theme darkens the gutter, a dark one lightens it
+        win._theme_cache = THEMES["Vintage Classic"]        # white page
+        light_bg, _ = ed._gutter_colors()
+        assert light_bg.lightness() < QColor("#ffffff").lightness()
+
+        win._theme_cache = THEMES["Vintage Dark"]
+        dark_bg, _ = ed._gutter_colors()
+        assert dark_bg.lightness() > QColor("#181818").lightness()
+    finally:
+        win.data["theme"] = kept_theme
+        win.data["show_line_numbers"] = kept_nums
+        win._theme_cache = THEMES.get(kept_theme, THEMES["Default"])
