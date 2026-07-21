@@ -182,6 +182,10 @@ class FastPrompter(
         self.data = self.state.data
         from fastprompter.core.timers import load_timers
         self.timers = load_timers(self.data.get("timers"))
+        from fastprompter.core.pomodoro import ProductivityTimer
+        self.productivity_timer = ProductivityTimer.from_dict(
+            self.data.get("productivity_timer"))
+        self._pomo_last_tick = None
         self.conn = self.state.conn
         import threading
         self._undo_save_lock = threading.Lock()
@@ -367,6 +371,25 @@ class FastPrompter(
             return
         from fastprompter.core.duration import format_remaining
         from fastprompter.core.timers import next_due
+
+        # a running work/break phase outranks a distant alarm: it is the one
+        # counting down right now, and it is the one being watched
+        pomo = getattr(self, "productivity_timer", None)
+        if (pomo is not None and pomo.state != "idle"
+                and not getattr(self, "_header_ultra", False)):
+            from fastprompter.core.pomodoro import PHASE_BREAK, format_clock
+            lbl.setText(format_clock(pomo.remaining))
+            lbl.setToolTip(pomo.describe() + "\n" + tr(
+                "Click to manage timers", getattr(self, "_current_lang", "EN")))
+            colour = "#e0a03c" if pomo.phase == PHASE_BREAK else "#6aa9ff"
+            if pomo.alarm_pending:
+                colour = "#e05555"
+            elif not pomo.running:
+                colour = "#888888"
+            lbl.setStyleSheet(
+                f"padding: 0 4px; font-weight: bold; color: {colour};")
+            lbl.setVisible(True)
+            return
 
         nxt = next_due(getattr(self, "timers", []))
         if nxt is None or getattr(self, "_header_ultra", False):
@@ -617,6 +640,56 @@ class FastPrompter(
         self.data["timers"] = save_timers(self.timers)
         self.mark_dirty()
 
+    def save_productivity_timer(self):
+        self.data["productivity_timer"] = self.productivity_timer.to_dict()
+        self.mark_dirty()
+
+    def on_productivity_changed(self):
+        """Anything that starts, pauses or resets it lands here."""
+        self._pomo_last_tick = None      # don't bill the user for idle time
+        self.save_productivity_timer()
+        self._update_timer_label()
+
+    def _tick_productivity(self):
+        """Advance the work/break timer from the same 1s tick as the clock.
+
+        Fed real elapsed time rather than a flat second: if the app stalls or
+        the machine sleeps, the countdown must still be right afterwards.
+        """
+        timer = getattr(self, "productivity_timer", None)
+        if timer is None:
+            return
+        import time as _t
+        now = _t.monotonic()
+        last, self._pomo_last_tick = self._pomo_last_tick, now
+        if not timer.running:
+            return
+        if last is None:
+            return                        # first tick after starting
+        for phase in timer.tick(now - last):
+            self._notify_productivity(phase)
+        self.save_productivity_timer()
+
+    def _notify_productivity(self, phase):
+        """Sound + popup when a work or break phase ends."""
+        from fastprompter.core.pomodoro import PHASE_WORK
+        lang = getattr(self, "_current_lang", "EN")
+        title = (tr("Work phase over", lang) if phase == PHASE_WORK
+                 else tr("Break over", lang))
+        try:
+            self.play_sound("clear")
+        except Exception:
+            from fastprompter.core.logging import logger
+            logger.debug("productivity sound failed")
+        try:
+            if hasattr(self, "tray_icon") and not sip.isdeleted(self.tray_icon):
+                self.tray_icon.showMessage(
+                    title, self.productivity_timer.describe(),
+                    self.tray_icon.icon(), 10000)
+        except Exception:
+            from fastprompter.core.logging import logger
+            logger.debug("productivity notification failed")
+
     def open_timer_dialog(self):
         from fastprompter.ui.timer_dialog import TimerDialog
         self._increment_focus_lock()
@@ -625,9 +698,11 @@ class FastPrompter(
         finally:
             QTimer.singleShot(300, self._decrement_focus_lock)
         self.save_timers_to_data()
+        self.save_productivity_timer()
         self._update_date_label()
 
     def _check_timers(self):
+        self._tick_productivity()
         """Fire anything due. Called from the same 1s tick as the clock."""
         from fastprompter.core.timers import collect_due
         if not getattr(self, "timers", None):

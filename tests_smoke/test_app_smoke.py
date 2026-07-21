@@ -5290,3 +5290,67 @@ def test_ctrl_click_opens_links_and_ctrl_right_click_reveals_the_folder(win):
         editor_mod.subprocess.run = real_run
         ed._suppress_context_menu = False
         ed.clear()
+
+def test_productivity_timer_tab_drives_the_model(win):
+    """The my_timer2 work/break timer as a first-class feature: the form
+    edits the model, the buttons drive it, and it survives a restart."""
+    from fastprompter.ui.timer_dialog import TimerDialog
+    from fastprompter.core import pomodoro as P
+
+    kept = win.data.get("productivity_timer")
+    saved_state = win.productivity_timer.to_dict()
+    try:
+        dlg = TimerDialog(win)
+        assert [dlg.tabs.tabText(i) for i in range(dlg.tabs.count())] == [
+            "Alarms", "Productivity"]
+
+        t = win.productivity_timer
+        dlg.spin_work_min.setValue(0)
+        dlg.spin_work_sec.setValue(3)
+        dlg.spin_break_min.setValue(0)
+        dlg.spin_break_sec.setValue(2)
+        assert (t.work_seconds, t.break_seconds) == (3, 2)
+        assert win.data["productivity_timer"]["work_seconds"] == 3
+
+        # start -> pause -> resume through the one action button
+        dlg._pomo_toggle()
+        assert t.running and dlg.btn_pomo_action.text() == "Pause"
+        dlg._pomo_toggle()
+        assert not t.running and dlg.btn_pomo_action.text() == "Resume"
+        dlg._pomo_toggle()
+
+        # the work phase hands off to the break and leaves the alarm ringing
+        assert t.tick(3) == [P.PHASE_WORK]
+        assert t.phase == P.PHASE_BREAK
+        assert t.alarm_pending is True
+        assert t.completed_cycles == 1
+        dlg._refresh_pomo()
+        assert dlg.lbl_pomo_clock.text() == "00:02"
+        assert "alarm ringing" in dlg.lbl_pomo_state.text()
+
+        # a running phase takes the header badge
+        win.resize(1400, 700)
+        win._apply_header_density()
+        win._update_timer_label()
+        if not getattr(win, "_header_ultra", False):
+            assert win.lbl_timer.text() == "00:02"
+            # isHidden(), not isVisible(): the latter is False whenever any
+            # ancestor is hidden, which is the shared fixture's normal state
+            assert not win.lbl_timer.isHidden()
+
+        dlg._pomo_skip()
+        assert t.phase == P.PHASE_WORK
+
+        dlg._pomo_reset()
+        assert t.state == P.STATE_IDLE
+        assert dlg.btn_pomo_action.text() == "Start"
+
+        # settings persist, the run state deliberately does not
+        win.save_productivity_timer()
+        back = P.ProductivityTimer.from_dict(win.data["productivity_timer"])
+        assert (back.work_seconds, back.break_seconds) == (3, 2)
+        assert back.state == P.STATE_IDLE
+        dlg.close()
+    finally:
+        win.productivity_timer = P.ProductivityTimer.from_dict(saved_state)
+        win.data["productivity_timer"] = kept if kept is not None else saved_state

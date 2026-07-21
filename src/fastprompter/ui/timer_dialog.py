@@ -16,8 +16,9 @@ from PyQt6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
     QComboBox,
-    QDoubleSpinBox,
     QDialog,
+    QDoubleSpinBox,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -25,7 +26,9 @@ from PyQt6.QtWidgets import (
     QListWidgetItem,
     QPushButton,
     QSpinBox,
+    QTabWidget,
     QVBoxLayout,
+    QWidget,
 )
 
 from fastprompter.core.duration import PRESETS, format_remaining, resolve_target
@@ -38,6 +41,7 @@ from fastprompter.core.timers import (
     limit_window,
     Timer,
 )
+from fastprompter.core import pomodoro
 from fastprompter.core.translations import tr
 
 _SOUNDS = ("tick", "click", "new", "save", "delete", "clear", "silo", "snippet")
@@ -58,9 +62,18 @@ class TimerDialog(QDialog):
         except Exception:
             pass
 
-        root = QVBoxLayout(self)
-        root.setContentsMargins(8, 8, 8, 8)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(6, 6, 6, 6)
+        outer.setSpacing(4)
+        self.tabs = QTabWidget()
+        self.tabs.setDocumentMode(True)
+        outer.addWidget(self.tabs)
+
+        alarms_page = QWidget()
+        root = QVBoxLayout(alarms_page)
+        root.setContentsMargins(4, 4, 4, 4)
         root.setSpacing(6)
+        self.tabs.addTab(alarms_page, tr("Alarms", self.lang))
 
         # ---- existing timers ----
         self.list = QListWidget()
@@ -236,12 +249,168 @@ class TimerDialog(QDialog):
         actions.addWidget(btn_close)
         root.addLayout(actions)
 
+        self._build_productivity_tab()
+
         # keep the countdown column honest while the dialog is open
         self._tick = QTimer(self)
         self._tick.timeout.connect(self.refresh)
         self._tick.start(1000)
 
         self.refresh()
+
+    # ------------------------------------------------------------------
+    def _build_productivity_tab(self):
+        """Work/break timer, the my_timer2 model as a first-class feature.
+
+        Separate from the alarms tab because it is a different kind of
+        thing: alarms are deadlines that arrive on their own, this is a
+        stopwatch the user drives and can pause for as long as they like.
+        """
+        page = QWidget()
+        lay = QVBoxLayout(page)
+        lay.setContentsMargins(6, 6, 6, 6)
+        lay.setSpacing(6)
+
+        self.lbl_pomo_clock = QLabel("")
+        self.lbl_pomo_clock.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_pomo_clock.setStyleSheet("font-size: 26px; font-weight: bold;")
+        lay.addWidget(self.lbl_pomo_clock)
+
+        self.lbl_pomo_state = QLabel("")
+        self.lbl_pomo_state.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lay.addWidget(self.lbl_pomo_state)
+
+        grid = QGridLayout()
+        grid.setSpacing(4)
+        grid.addWidget(QLabel(tr("Work", self.lang)), 0, 0)
+        self.spin_work_min = QSpinBox()
+        self.spin_work_min.setRange(0, 600)
+        self.spin_work_min.setSuffix(tr(" min", self.lang))
+        grid.addWidget(self.spin_work_min, 0, 1)
+        self.spin_work_sec = QSpinBox()
+        self.spin_work_sec.setRange(0, 59)
+        self.spin_work_sec.setSuffix(tr(" sec", self.lang))
+        grid.addWidget(self.spin_work_sec, 0, 2)
+
+        grid.addWidget(QLabel(tr("Break", self.lang)), 1, 0)
+        self.spin_break_min = QSpinBox()
+        self.spin_break_min.setRange(0, 600)
+        self.spin_break_min.setSuffix(tr(" min", self.lang))
+        grid.addWidget(self.spin_break_min, 1, 1)
+        self.spin_break_sec = QSpinBox()
+        self.spin_break_sec.setRange(0, 59)
+        self.spin_break_sec.setSuffix(tr(" sec", self.lang))
+        grid.addWidget(self.spin_break_sec, 1, 2)
+        lay.addLayout(grid)
+
+        for spin in (self.spin_work_min, self.spin_work_sec,
+                     self.spin_break_min, self.spin_break_sec):
+            spin.valueChanged.connect(lambda _v: self._pomo_durations_changed())
+
+        opts = QHBoxLayout()
+        opts.setSpacing(4)
+        self.cb_pomo_breaks = QCheckBox(tr("Take breaks", self.lang))
+        self.cb_pomo_breaks.setToolTip(tr(
+            "Off: the timer stops when the work phase ends\n"
+            "instead of starting a break.", self.lang))
+        self.cb_pomo_breaks.toggled.connect(self._pomo_options_changed)
+        opts.addWidget(self.cb_pomo_breaks)
+
+        self.cb_pomo_repeat = QCheckBox(tr("Keep ringing", self.lang))
+        self.cb_pomo_repeat.setToolTip(tr(
+            "The alarm keeps sounding until you acknowledge it,\n"
+            "so it still catches you if you left the desk.", self.lang))
+        self.cb_pomo_repeat.toggled.connect(self._pomo_options_changed)
+        opts.addWidget(self.cb_pomo_repeat)
+        opts.addStretch(1)
+        lay.addLayout(opts)
+
+        buttons = QHBoxLayout()
+        buttons.setSpacing(4)
+        self.btn_pomo_action = QPushButton(tr("Start", self.lang))
+        self.btn_pomo_action.clicked.connect(self._pomo_toggle)
+        buttons.addWidget(self.btn_pomo_action)
+
+        self.btn_pomo_skip = QPushButton(tr("Skip phase", self.lang))
+        self.btn_pomo_skip.setToolTip(tr(
+            "Jump straight to the other phase", self.lang))
+        self.btn_pomo_skip.clicked.connect(self._pomo_skip)
+        buttons.addWidget(self.btn_pomo_skip)
+
+        self.btn_pomo_reset = QPushButton(tr("Reset", self.lang))
+        self.btn_pomo_reset.clicked.connect(self._pomo_reset)
+        buttons.addWidget(self.btn_pomo_reset)
+        buttons.addStretch(1)
+        lay.addLayout(buttons)
+        lay.addStretch(1)
+
+        self.tabs.addTab(page, tr("Productivity", self.lang))
+        self._load_pomo_into_form()
+
+    def _pomo(self):
+        return self.main_win.productivity_timer
+
+    def _load_pomo_into_form(self):
+        """Fill the form from the model without echoing back into it."""
+        t = self._pomo()
+        widgets = (self.spin_work_min, self.spin_work_sec,
+                   self.spin_break_min, self.spin_break_sec,
+                   self.cb_pomo_breaks, self.cb_pomo_repeat)
+        for w in widgets:
+            w.blockSignals(True)
+        self.spin_work_min.setValue(t.work_seconds // 60)
+        self.spin_work_sec.setValue(t.work_seconds % 60)
+        self.spin_break_min.setValue(t.break_seconds // 60)
+        self.spin_break_sec.setValue(t.break_seconds % 60)
+        self.cb_pomo_breaks.setChecked(t.breaks_enabled)
+        self.cb_pomo_repeat.setChecked(t.repeat_alarm)
+        for w in widgets:
+            w.blockSignals(False)
+        self._refresh_pomo()
+
+    def _pomo_durations_changed(self):
+        self._pomo().apply_durations(
+            work_seconds=self.spin_work_min.value() * 60 + self.spin_work_sec.value(),
+            break_seconds=self.spin_break_min.value() * 60 + self.spin_break_sec.value(),
+        )
+        self.main_win.save_productivity_timer()
+        self._refresh_pomo()
+
+    def _pomo_options_changed(self, _checked=False):
+        t = self._pomo()
+        t.breaks_enabled = self.cb_pomo_breaks.isChecked()
+        t.repeat_alarm = self.cb_pomo_repeat.isChecked()
+        self.main_win.save_productivity_timer()
+        self._refresh_pomo()
+
+    def _pomo_toggle(self):
+        self._pomo().toggle()
+        self.main_win.on_productivity_changed()
+        self._refresh_pomo()
+
+    def _pomo_skip(self):
+        self._pomo().skip_phase()
+        self.main_win.on_productivity_changed()
+        self._refresh_pomo()
+
+    def _pomo_reset(self):
+        self._pomo().reset()
+        self.main_win.on_productivity_changed()
+        self._refresh_pomo()
+
+    def _refresh_pomo(self):
+        t = self._pomo()
+        self.lbl_pomo_clock.setText(pomodoro.format_clock(t.remaining))
+        self.lbl_pomo_state.setText(t.describe())
+        self.btn_pomo_action.setText(
+            tr("Pause", self.lang) if t.running
+            else tr("Start", self.lang) if t.state == pomodoro.STATE_IDLE
+            else tr("Resume", self.lang))
+        colour = "#e0a03c" if t.phase == pomodoro.PHASE_BREAK else "#6aa9ff"
+        if t.alarm_pending:
+            colour = "#e05555"
+        self.lbl_pomo_clock.setStyleSheet(
+            f"font-size: 26px; font-weight: bold; color: {colour};")
 
     # ------------------------------------------------------------------
     def _preset_picked(self, idx):
@@ -429,6 +598,8 @@ class TimerDialog(QDialog):
                 tr("Resume", self.lang) if not t.enabled else tr("Pause", self.lang))
 
     def refresh(self):
+        if hasattr(self, "lbl_pomo_clock"):
+            self._refresh_pomo()
         from PyQt6.QtGui import QColor
 
         keep = self.list.currentItem()
