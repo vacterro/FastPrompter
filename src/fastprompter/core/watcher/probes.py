@@ -282,7 +282,13 @@ def combine(probes, now):
         return False, ["no probes configured"]
     all_idle = True
     for probe in probes:
-        state, reason = probe.poll(now)
+        try:
+            state, reason = probe.poll(now)
+        except Exception as exc:
+            # Probe.poll already guards its own _read, but a subclass can
+            # override poll itself. One misbehaving probe must not take the
+            # watcher down - and it certainly must not read as idle.
+            state, reason = BUSY, f"{getattr(probe, 'kind', 'probe')} raised: {exc}"
         reasons.append(reason)
         if state != IDLE:
             all_idle = False
