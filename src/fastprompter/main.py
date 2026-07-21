@@ -3264,6 +3264,10 @@ class FastPrompter(
         # Edge resizers
 
         self.apply_sidebar_position()
+        # The checkbox is built pre-ticked from saved data, which does not
+        # fire its callback, so a restart left the cursors stock until the
+        # toggle was flipped by hand.
+        self.apply_custom_cursors()
 
         safe_idx = max(0, min(self.data.get("last_tab_idx", 0), self.cat_combo.count() - 1))
         if self.cat_combo.count() > 0:

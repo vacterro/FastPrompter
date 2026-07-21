@@ -5532,3 +5532,44 @@ def test_custom_cursors_toggle(win):
     finally:
         win.data["custom_cursors"] = kept
         win.apply_custom_cursors()
+
+def test_custom_cursors_survive_a_restart(win):
+    """Reported: after restarting with the toggle already on, cursors stayed
+    stock until it was flipped by hand. The checkbox is built pre-ticked from
+    saved data, which does not fire its callback, and nothing else applied
+    them at startup."""
+    from PyQt6.QtCore import Qt
+    from fastprompter.ui.cursor_theme import capture_current_scheme, load_bundle
+
+    kept = win.data.get("custom_cursors", "False")
+    try:
+        if not load_bundle()[1] and not capture_current_scheme()[1]:
+            import pytest
+            pytest.skip("no cursor scheme available on this machine")
+
+        win.data["custom_cursors"] = "True"
+        win.mark_dirty()
+        win.save_data_to_db(force=True)
+
+        fresh = FastPrompter()   # simulates a full app restart, same DB
+        try:
+            assert fresh.data.get("custom_cursors") == "True"
+            assert fresh.cb_custom_cursors.isChecked()
+            # the point of the bug: nothing is touched after construction
+            arrow = fresh.themed_cursor(Qt.CursorShape.ArrowCursor)
+            assert arrow != Qt.CursorShape.ArrowCursor, \
+                "the saved toggle must be applied at startup"
+            assert not arrow.pixmap().isNull()
+            assert not fresh.cursor().pixmap().isNull()
+        finally:
+            fresh.auto_save_timer.stop()
+            fresh.topmost_timer.stop()
+            fresh._cache_timer.stop()
+            fresh.state.conn = None
+            fresh.conn = None
+            fresh.close()
+    finally:
+        win.data["custom_cursors"] = kept
+        win.apply_custom_cursors()
+        win.mark_dirty()
+        win.save_data_to_db(force=True)
