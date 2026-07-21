@@ -1,42 +1,33 @@
 ---
-phase: DONE
-task: "Settings UI compaction (tabs + reflow) - the last standing pending item"
-next_action: "PUSH TO A REMOTE (T-521). 19 commits are local-only; that is exactly how 7 commits were lost on 20.07. Then: remaining wishlist items are the line-temperature system, 4-side toolbar docking, silo-drop-onto-child re-parenting, and the italic toggle next to the quote collapse button."
+phase: BUILD
+task: "User's 14-item list: silo nesting/layout batch done, timer batch next"
+next_action: "PUSH TO A REMOTE (T-521) — 24 commits are local-only, which is exactly how 7 commits were lost on 20.07; ask the user first, it has never been pushed. Then continue the 14-item list with the timer batch: fired-state colouring, enable/disable per timer, hover popup on the clock showing the approaching timer, and my_timer2 parity (work/break phases, pause/resume, repeating alarm until acknowledged). See core/timers.py + ui/timer_dialog.py."
 blocker: ""
 agent: claude-opus
 mode: full
 requires: [filesystem, python, shell, git]
-updated: 2026-07-21T03:10:00
+updated: 2026-07-21T08:05:00
 ---
 ## Handoff (for the next agent)
-A concurrent agent deleted `.git/` and rolled the working tree back to its
-own 20.07 15:36 state. Seven commits from the 19.07 session existed only
-locally and were gone for good; `.saipen/` had also been overwritten with a
-divergent lineage ending 19.07 05:15. Rebuilt everything from the chat
-transcript, re-inited the repo (`d53b9d7` = restore point, tree exactly as
-found), then re-applied the lost work in 4 commits — see BOARD.md
-"RECOVERY + HUNT (21.07)" for the per-item table.
+Working through the user's 14-item list. Done this run (T-540..T-545, each
+with a test, both suites green at 503 unit + 176 smoke): two-level silo
+nesting, children no longer escaping their parent on reorder, hamburger
+following the sidebar side, Reset UI Layout, auto-bullet single-owner fix.
+T-544 needed no change — the settings buttons were already on both edges.
 
-Restored and verified (465 unit + 116 smoke green): both P0s (code blocks
-rendering as blank black rectangles; Ctrl+click on a dash line crashing the
-app), the whole theme wave (theme-aware drop overlay / analog clock /
-markdown highlighter, per-theme header tint, thin scrollbars,
-Dracula/Nord/Solarized Dark), markdown code-span double-escape, Ctrl+V
-selection->hyperlink, trackpad wheel zoom, line-blocking whole-line drag,
-collapsible quote, header priority-fit guard.
+Two traps worth knowing. `apply_toolbar_order` used to treat header index 0
+as a fixed anchor and detach only what followed it, so any edge control
+moved to the right end silently fell out of the header — edge controls now
+live outside the saved token order. And the smoke suite still shares one
+`win` fixture across 170+ tests (T-520): `test_splitter_sizes_per_side` was
+leaking `sidebar_right=True` into every later test, which only became
+visible once the hamburger started moving with it. Expect more of these.
 
-Genuinely NEW bugs found while restoring (not just re-applied work):
-a flaky IPC unit test that passed or failed on stray %TEMP% state; the
-cats_order cross-test leak; generate_custom_theme mutating its caller's
-dict; and an isVisible()/isHidden() mistake that made the priority-fit
-guard a silent no-op whenever the window was in the tray.
+Still open from the list: Settings UI row-mess reorganisation, the timer
+batch (above), heat/hover coverage on word-wrapped lines, Ctrl+LClick to
+open a link and Ctrl+RClick to open the containing folder, and `----` as a
+header fold boundary.
 
-Read BOARD.md "CRITICAL — for the next agent" before starting: T-521
-(push to a remote — local-only commits are how the work was lost, twice)
-and T-520 (smoke suite shares one `win` fixture across 100+ tests and they
-leak into each other) are the two that matter.
-
-Still unbuilt from the user's wishlist: Ctrl+Q FancyZones-style templates
-(codebuff added a `ui/fancy_zones.py` + `cycle_snap_corner` on Ctrl+Q that
-survived the rollback — review it before rebuilding). The hashtag system
-was only ever an opinion question, never a ticket.
+Heredocs mangle backslash escapes in this environment — four separate
+syntax errors this run from `\n` inside a bash heredoc. Write the patch
+script to a file and run it, or use Edit.
