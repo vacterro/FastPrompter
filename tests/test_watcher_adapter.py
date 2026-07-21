@@ -302,3 +302,47 @@ def test_the_shipped_example_does_not_interrupt_the_user():
         _adapters, limits, _errors = parse_adapters(fh.read())
     assert limits["confirm_first"] is False
     assert limits["allow_focus_steal"] is False
+
+
+# --------------------------------------------------------------- transport
+
+def test_the_default_transport_is_posting():
+    assert Adapter("x").transport == "post"
+
+
+def test_a_cdp_adapter_needs_a_port_or_it_says_so():
+    """Better to refuse at load than to arm against nothing."""
+    ok, reason = Adapter("x", probes=[Always()], transport="cdp").supported()
+    assert ok is False and "cdp_port" in reason
+
+
+def test_a_cdp_adapter_with_a_port_is_usable():
+    ok, _reason = Adapter("x", probes=[Always()], transport="cdp",
+                          cdp_port=9222).supported()
+    assert ok is True
+
+
+def test_the_port_file_beats_a_pinned_port(tmp_path):
+    """Chromium assigns a fresh port each launch; the file holds the live
+    one, so a stale pinned port must never win over it."""
+    portfile = tmp_path / "DevToolsActivePort"
+    portfile.write_text("51999\n/devtools/browser/abc\n", encoding="utf-8")
+    adapter = Adapter("x", transport="cdp", cdp_port=9222,
+                      cdp_port_file=str(portfile))
+    assert adapter.live_cdp_port() == 51999
+
+
+def test_a_missing_port_file_falls_back_to_the_pinned_port():
+    adapter = Adapter("x", transport="cdp", cdp_port=9222,
+                      cdp_port_file="/nowhere/DevToolsActivePort")
+    assert adapter.live_cdp_port() == 9222
+
+
+def test_the_shipped_antigravity_entry_uses_the_proven_transport():
+    """Posting was measured to do nothing to a Chromium window."""
+    with open(_shipped_example(), encoding="utf-8") as fh:
+        adapters, _limits, _errors = parse_adapters(fh.read())
+    ag = next(a for a in adapters if a.name == "antigravity")
+    assert ag.transport == "cdp"
+    assert ag.cdp_port_file, "the port must be discovered, not pinned"
+

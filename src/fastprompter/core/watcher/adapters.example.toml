@@ -83,6 +83,13 @@ multiline = "join"
 # TODO: confirm this agent's skill syntax, or delete the key if it has none
 skill_format = "/{skill} {text}"
 
+# Its API on :4096 answers 401 - the token is generated at runtime and
+# passed as a session cookie by CodeNomad, so there is nothing stable to put
+# here. The clean route is to add --remote-debugging-port=NNNN to how the
+# app is launched and switch this to transport = "cdp", the same one proven
+# on antigravity. Until then it can be watched but not driven.
+transport = "post"
+
   [[agent.probe]]
   kind     = "sqlite"
   path     = "~/.local/share/opencode/opencode.db"
@@ -116,6 +123,17 @@ submit    = "enter"
 multiline = "join"
 # TODO: confirm this agent's skill syntax, or delete the key if it has none
 skill_format = "/{skill} {text}"
+
+# Proven 21.07 against the running app. Posting Win32 messages at an
+# Electron window does NOTHING - a marker string was posted into two of
+# these and PostMessageW reported success for every character while nothing
+# arrived. The debugger is the channel that reaches them.
+transport  = "cdp"
+cdp_title  = "chat"
+# Chromium assigns a fresh debug port every launch, so the port is read from
+# the file it writes rather than pinned. A hard-coded port works exactly
+# until the app restarts.
+cdp_port_file = "~/AppData/Roaming/Antigravity/DevToolsActivePort"
 
   [[agent.probe]]
   kind     = "file"

@@ -107,8 +107,10 @@ class WatcherMixin:
             return False, reason
 
         self._watcher_adapter = adapter
-        self._watcher_target = Target(hwnd, info["title"], info["cls"],
-                                      probe=win32.probe_for())
+        self._watcher_target = self._build_target(adapter, hwnd, info)
+        if self._watcher_target is None:
+            return False, ("that agent is not listening on its debug port - "
+                           "launch it with --remote-debugging-port")
         self._watcher_sender = self._build_sender(live)
         self._watcher_engine.settle_ms = adapter.settle_ms
         self._watcher_engine.arm(
@@ -118,17 +120,32 @@ class WatcherMixin:
         self._watcher_notify()
         return True, ("armed, live" if live else "armed, dry run")
 
-    def _build_sender(self, live):
-        """Silent or nothing. The focus-stealing path is not reachable here.
+    def _build_target(self, adapter, hwnd, info):
+        """What the run is bound to: a debuggable page, or a window handle."""
+        if getattr(adapter, "transport", "post") == "cdp":
+            from fastprompter.core.watcher.cdp import CdpTarget
+            return CdpTarget.from_port(adapter.live_cdp_port(),
+                                       adapter.cdp_title)
+        return Target(hwnd, info["title"], info["cls"], probe=win32.probe_for())
 
-        `build_sender` can still produce it, but only for a caller that has
-        set allow_focus_steal, and nothing in the UI does. Interrupting the
-        user is the one thing this feature exists to avoid.
+    def _build_sender(self, live):
+        """The transport the adapter asks for. Silent or nothing.
+
+        `build_sender` can still produce the focus-stealing one, but only
+        for a caller that sets allow_focus_steal, and nothing in the UI
+        does. Interrupting the user is what this feature exists to avoid.
         """
-        if not live or not win32.available():
+        adapter = self._watcher_adapter
+        if not live:
             return build_sender()
-        submit = getattr(self._watcher_adapter, "submit", "enter")
-        multiline = getattr(self._watcher_adapter, "multiline", "join")
+        submit = getattr(adapter, "submit", "enter")
+        multiline = getattr(adapter, "multiline", "join")
+
+        if getattr(adapter, "transport", "post") == "cdp":
+            from fastprompter.core.watcher.cdp import CdpSender
+            return CdpSender(submit=submit, multiline=multiline)
+        if not win32.available():
+            return build_sender()
         return PostMessageSender(win32.PostLayer(), submit=submit,
                                  multiline=multiline)
 

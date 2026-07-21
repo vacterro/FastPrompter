@@ -34,7 +34,8 @@ class Adapter:
     def __init__(self, name, probes=(), enabled=True, settle_ms=2500,
                  submit="enter", multiline="join",
                  skill_format="/{skill} {text}", blocker_pattern="",
-                 problems=()):
+                 transport="", cdp_port=0, cdp_title="",
+                 cdp_port_file="", problems=()):
         self.name = name or "unnamed"
         self.probes = list(probes)
         self.enabled = bool(enabled)
@@ -48,6 +49,22 @@ class Adapter:
         # them for it, and an item carrying one is skipped rather than sent
         # stripped of it
         self.skill_format = skill_format or None
+        # How to talk to it. Posting Win32 messages does nothing to a
+        # Chromium window, so this is per agent rather than one mechanism
+        # for all of them - see PLAN.md section 10b.
+        self.transport = (transport or "post").lower()
+        try:
+            self.cdp_port = int(cdp_port or 0)
+        except (TypeError, ValueError):
+            self.cdp_port = 0
+        self.cdp_title = cdp_title or ""
+        # Chromium picks a fresh debug port every launch, so a fixed one
+        # works until the app restarts. The port file is where it records
+        # the live one.
+        self.cdp_port_file = cdp_port_file or ""
+        if self.transport == "cdp" and not (self.cdp_port or self.cdp_port_file):
+            problems = list(problems) + [
+                "cdp transport needs a cdp_port or a cdp_port_file"]
         self.problems = list(problems)
 
         self._blocker = None
@@ -93,6 +110,11 @@ class Adapter:
             return False, "; ".join(self.problems)
         return True, "ready"
 
+    def live_cdp_port(self):
+        """The port right now: the file wins, because the file is current."""
+        from fastprompter.core.watcher.cdp import port_from_file
+        return port_from_file(self.cdp_port_file) or self.cdp_port
+
     def blocked(self, text):
         """Does the target's visible text say now is a bad moment?
 
@@ -131,6 +153,10 @@ def _adapter_from(entry, project=None):
         multiline=entry.get("multiline", "join"),
         skill_format=entry.get("skill_format"),
         blocker_pattern=entry.get("blocker_pattern", ""),
+        transport=entry.get("transport", ""),
+        cdp_port=entry.get("cdp_port", 0),
+        cdp_title=entry.get("cdp_title", ""),
+        cdp_port_file=entry.get("cdp_port_file", ""),
         problems=problems,
     )
 
