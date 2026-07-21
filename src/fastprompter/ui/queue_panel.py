@@ -89,10 +89,11 @@ _LAMP_COLORS = {
 
 
 class QueueDialog(QDialog):
-    def __init__(self, main_win):
+    def __init__(self, main_win, start_tab=0):
         super().__init__(main_win)
         self.main_win = main_win
         self.lang = getattr(main_win, "_current_lang", "EN")
+        self._start_tab = start_tab
 
         self.setWindowTitle(tr("Prompt queue", self.lang))
         self.setMinimumSize(520, 380)
@@ -215,6 +216,11 @@ class QueueDialog(QDialog):
         root.addLayout(row)
 
         self._build_master_tab()
+        # Select the requested tab BEFORE wiring currentChanged: both tabs
+        # exist by now, and setting it after the connect would fire an extra
+        # refresh into a half-set-up state.
+        if 0 <= self._start_tab < self.tabs.count():
+            self.tabs.setCurrentIndex(self._start_tab)
         self.refresh()
         self.tabs.currentChanged.connect(lambda _i: self.refresh())
 

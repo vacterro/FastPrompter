@@ -952,14 +952,24 @@ class FastPrompter(
         # nothing to read it from: fall back rather than invent
         return item.text, False
 
-    def open_queue_dialog(self):
+    def open_queue_dialog(self, master=False):
+        """Open the prompt-queue panel.
+
+        `master=True` lands on the "All silos" tab — the cross-silo view that
+        is otherwise buried behind two clicks and a tab nobody finds. Bound
+        to Alt+Shift+C and the editor's right-click menu.
+        """
         from fastprompter.ui.queue_panel import QueueDialog
         self._increment_focus_lock()
         try:
-            QueueDialog(self).exec()
+            QueueDialog(self, start_tab=1 if master else 0).exec()
         finally:
             QTimer.singleShot(300, self._decrement_focus_lock)
         self.save_prompt_queues()
+
+    def open_queue_master(self):
+        """Alt+Shift+C: jump straight to the all-silos queue view."""
+        self.open_queue_dialog(master=True)
 
     # ---- hashtags -----------------------------------------------------
     def open_hashtag_dialog(self, tag=None):
@@ -6745,6 +6755,10 @@ class FastPrompter(
         add_shortcut("hk_settings", "Alt+`", self.toggle_mini_settings)
         add_shortcut("hk_bold", "Ctrl+B", self.apply_bold_smart)
         add_shortcut("hk_undo", "Ctrl+Z", self._smart_undo)
+        # Alt+C queues the current line; Alt+Shift+C opens the master view of
+        # every silo's queue. The two sit next to each other on purpose.
+        add_shortcut("hk_queue_master", "Alt+Shift+C", self.open_queue_master,
+                     Qt.ShortcutContext.ApplicationShortcut)
 
         def add_fixed(seq_str, slot, context=Qt.ShortcutContext.WindowShortcut):
             shortcut = QShortcut(QKeySequence(seq_str), self, context=context)

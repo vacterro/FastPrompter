@@ -7640,3 +7640,86 @@ def test_an_old_str_dict_value_is_recovered_not_dropped(tmp_path):
         st2.conn.close()
     finally:
         state_mod.get_db_path = getter
+
+
+# ---- T-582: Ctrl+W divider ends on a dash bullet --------------------------
+
+
+def test_ctrl_w_lands_on_a_fresh_dash_bullet(win):
+    """Ctrl+W / insert_add_line now appends a dash bullet after the divider
+    and leaves the cursor on it, ready to type - it used to return the
+    cursor to where it started."""
+    win.data["temp_presets"] = ["head"]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    cur = win.text_area.textCursor()
+    cur.movePosition(cur.MoveOperation.End)
+    win.text_area.setTextCursor(cur)
+
+    win.insert_add_line()
+    text = win.text_area.toPlainText()
+
+    assert text.endswith("---\n- "), f"got {text!r}"
+    c = win.text_area.textCursor()
+    assert not c.hasSelection()
+    assert c.position() == len(text), "cursor sits on the new bullet"
+    assert text[c.position() - 2:c.position()] == "- "
+
+
+def test_ctrl_w_goes_through_insert_add_line(win):
+    """insert_divider_line is a thin alias, so the Ctrl+W entry point gets
+    the bullet too - the two must not diverge."""
+    import inspect
+    src = inspect.getsource(type(win).insert_divider_line)
+    assert "insert_add_line" in src
+
+
+# ---- T-581: a findable entry to the master queue view ---------------------
+
+
+def test_the_dialog_can_open_straight_on_the_master_tab(win):
+    from fastprompter.ui.queue_panel import QueueDialog
+
+    d = QueueDialog(win, start_tab=1)
+    try:
+        assert d.tabs.tabText(d.tabs.currentIndex()) == "All silos"
+    finally:
+        d.close()
+    d0 = QueueDialog(win, start_tab=0)
+    try:
+        assert d0.tabs.tabText(d0.tabs.currentIndex()) == "This silo"
+    finally:
+        d0.close()
+
+
+def test_open_queue_master_routes_to_the_all_silos_tab(win, monkeypatch):
+    seen = {}
+    from fastprompter.ui import queue_panel
+
+    class FakeDialog:
+        def __init__(self, main_win, start_tab=0):
+            seen["start_tab"] = start_tab
+        def exec(self):
+            return 0
+
+    monkeypatch.setattr(queue_panel, "QueueDialog", FakeDialog)
+    win.open_queue_master()
+    assert seen["start_tab"] == 1, "master must land on tab 1"
+
+
+def test_master_queue_view_has_a_visible_entry(win):
+    """The whole complaint: Alt+C queues but the master view was unfindable.
+    Now there is a shortcut AND a right-click menu entry. (A toolbar button
+    was tried but the header budget at 960px is full - see T-568/header
+    density.)"""
+    import inspect
+
+    from fastprompter import main as main_mod
+
+    whole = inspect.getsource(main_mod)
+    assert "hk_queue_master" in whole and "Alt+Shift+C" in whole
+    assert "open_queue_master" in whole
+
+    # the right-click menu offers the all-silos entry by name
+    from fastprompter.ui import editor as editor_mod
+    assert "all silos" in inspect.getsource(editor_mod).lower()

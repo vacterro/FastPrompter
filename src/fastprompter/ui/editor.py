@@ -1551,11 +1551,15 @@ class VaultTextEdit(QTextEdit):
 
         lang = getattr(self.main_win, '_current_lang', 'EN')
         queue = self.main_win.prompt_queues.get(self.main_win._queue_slot_key())
-        menu.addAction(
-            tr("Prompt Queue", lang) + (f"  ({len(queue)})" if queue else ""),
-            self.main_win.open_queue_dialog)
         menu.addAction(tr("Queue This Line	Alt+C", lang),
                        self.main_win.queue_current_line)
+        menu.addAction(
+            tr("Prompt Queue — this silo", lang)
+            + (f"  ({len(queue)})" if queue else ""),
+            self.main_win.open_queue_dialog)
+        menu.addAction(
+            tr("Prompt Queue — all silos	Alt+Shift+C", lang),
+            self.main_win.open_queue_master)
         menu.addAction(tr("Watcher…", lang), self.main_win.open_watcher_dialog)
         menu.addSeparator()
         menu.addAction(tr("Expand All Folds", lang), self.unfold_all)

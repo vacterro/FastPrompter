@@ -291,17 +291,22 @@ class FormattingMixin:
         return before, after
 
     def insert_add_line(self):
-        """Insert a horizontal markdown divider line (---) pushing text down,
-        while returning the cursor to the exact original position.
+        """Insert a horizontal markdown divider (---) and land on a fresh
+        dash bullet below it, ready to type.
+
+        The cursor used to return to its original spot (the divider just
+        pushed the text down). Now it follows the new "- " so the divider is
+        immediately usable as a section break you start writing under.
         """
         cursor = self.text_area.textCursor()
-        original_pos = cursor.position()
         # beginEditBlock MUST balance endEditBlock — an unbalanced end
         # corrupts the document's edit-block counter and freezes rendering
         cursor.beginEditBlock()
-        cursor.insertText("\n\n\n\n\n---\n")
+        cursor.insertText("\n\n\n\n\n---\n- ")
         cursor.endEditBlock()
-        cursor.setPosition(original_pos)
+        # insertText leaves the cursor at the end of what it wrote, i.e. just
+        # after "- " — exactly where the next character should go, so no
+        # setPosition is needed.
         self.text_area.setTextCursor(cursor)
         self.text_area.ensureCursorVisible()
         self.text_area.setFocus()
