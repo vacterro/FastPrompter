@@ -81,3 +81,125 @@ def test_the_full_set_url_is_the_users_own():
     from fastprompter.ui.cursor_theme import DEVIANTART_URL
 
     assert DEVIANTART_URL.startswith("https://www.deviantart.com/potatoddas/")
+
+# --------------------------------------------------- the program's own copy
+
+def test_scheme_order_matches_what_windows_writes():
+    """A saved scheme is one comma-separated string with no role names in
+    it, so this order IS the schema. Getting it wrong would silently map
+    the wrong file to every role."""
+    from fastprompter.ui.cursor_theme import _SCHEME_ORDER
+
+    assert _SCHEME_ORDER[:6] == (
+        "Arrow", "Help", "AppStarting", "Wait", "Crosshair", "IBeam")
+    assert len(_SCHEME_ORDER) == 17
+    assert len(set(_SCHEME_ORDER)) == 17
+
+
+def test_capture_copies_the_files_rather_than_pointing_at_them(monkeypatch):
+    """The whole reason this exists: the set must keep working after the
+    system scheme is switched to something else."""
+    import fastprompter.ui.cursor_theme as ct
+
+    source = tempfile.mkdtemp()
+    store = tempfile.mkdtemp()
+    arrow = os.path.join(source, "arrow.cur")
+    _write_cur(arrow, 0, 0)
+
+    monkeypatch.setattr(ct, "bundle_dir", lambda: os.path.join(store, "cursors"))
+    monkeypatch.setattr(ct, "_manifest_path",
+                        lambda: os.path.join(store, "cursors", "scheme.json"))
+    monkeypatch.setattr(ct, "best_available_scheme",
+                        lambda: ("MySet", {"Arrow": arrow}))
+
+    name, paths = ct.capture_current_scheme()
+    assert name == "MySet"
+    copied = paths["Arrow"]
+    assert os.path.isfile(copied)
+    assert os.path.dirname(copied) != source, "it must be a copy, not a link"
+
+    # the source disappearing must not matter any more
+    os.remove(arrow)
+    back_name, back = ct.load_bundle()
+    assert back_name == "MySet"
+    assert os.path.isfile(back["Arrow"])
+
+
+def test_load_bundle_without_a_copy_is_empty(monkeypatch):
+    import fastprompter.ui.cursor_theme as ct
+
+    empty = tempfile.mkdtemp()
+    monkeypatch.setattr(ct, "bundle_dir", lambda: empty)
+    monkeypatch.setattr(ct, "_manifest_path",
+                        lambda: os.path.join(empty, "scheme.json"))
+    assert ct.load_bundle() == ("", {})
+
+
+def test_a_corrupt_manifest_does_not_raise(monkeypatch):
+    import fastprompter.ui.cursor_theme as ct
+
+    folder = tempfile.mkdtemp()
+    manifest = os.path.join(folder, "scheme.json")
+    with open(manifest, "w", encoding="utf-8") as fh:
+        fh.write("{not json at all")
+    monkeypatch.setattr(ct, "bundle_dir", lambda: folder)
+    monkeypatch.setattr(ct, "_manifest_path", lambda: manifest)
+    assert ct.load_bundle() == ("", {})
+
+
+def test_a_manifest_naming_missing_files_yields_nothing(monkeypatch):
+    import json
+
+    import fastprompter.ui.cursor_theme as ct
+
+    folder = tempfile.mkdtemp()
+    manifest = os.path.join(folder, "scheme.json")
+    with open(manifest, "w", encoding="utf-8") as fh:
+        json.dump({"name": "Gone", "files": {"Arrow": "arrow.cur"}}, fh)
+    monkeypatch.setattr(ct, "bundle_dir", lambda: folder)
+    monkeypatch.setattr(ct, "_manifest_path", lambda: manifest)
+    name, paths = ct.load_bundle()
+    assert name == "Gone" and paths == {}
+
+
+def test_best_available_prefers_the_applied_scheme(monkeypatch):
+    import fastprompter.ui.cursor_theme as ct
+
+    monkeypatch.setattr(ct, "read_scheme", lambda: ("Live", {"Arrow": "a.cur"}))
+    monkeypatch.setattr(ct, "read_named_schemes",
+                        lambda: {"___CURRENT___": {"Arrow": "b.cur"}})
+    assert ct.best_available_scheme() == ("Live", {"Arrow": "a.cur"})
+
+
+def test_best_available_falls_back_to_the_users_own_saved_scheme(monkeypatch):
+    """Switching Windows back to stock empties the applied values while the
+    user's scheme stays saved - which is exactly when they want to grab it."""
+    import fastprompter.ui.cursor_theme as ct
+
+    monkeypatch.setattr(ct, "read_scheme", lambda: ("", {}))
+    monkeypatch.setattr(ct, "read_named_schemes", lambda: {
+        "Some Other": {"Arrow": "x.cur"},
+        "___CURRENT___": {"Arrow": "mine.cur", "IBeam": "beam.cur"},
+    })
+    name, paths = ct.best_available_scheme()
+    assert name == "___CURRENT___"
+    assert paths["Arrow"] == "mine.cur"
+
+
+def test_with_no_obvious_set_the_richest_one_wins(monkeypatch):
+    import fastprompter.ui.cursor_theme as ct
+
+    monkeypatch.setattr(ct, "read_scheme", lambda: ("", {}))
+    monkeypatch.setattr(ct, "read_named_schemes", lambda: {
+        "small": {"Arrow": "a.cur"},
+        "big": {"Arrow": "a.cur", "IBeam": "b.cur", "Hand": "c.cur"},
+    })
+    assert ct.best_available_scheme()[0] == "big"
+
+
+def test_nothing_saved_and_nothing_applied(monkeypatch):
+    import fastprompter.ui.cursor_theme as ct
+
+    monkeypatch.setattr(ct, "read_scheme", lambda: ("", {}))
+    monkeypatch.setattr(ct, "read_named_schemes", lambda: {})
+    assert ct.best_available_scheme() == ("", {})

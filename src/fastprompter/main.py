@@ -737,19 +737,57 @@ class FastPrompter(
         return on
 
     def toggle_custom_cursors(self, checked):
+        # Turning it on with nothing copied yet would be a no-op, so grab
+        # the set now: the program is meant to carry its OWN copy, not to
+        # mirror whatever Windows happens to be drawing at the moment.
+        if checked:
+            from fastprompter.ui.cursor_theme import load_bundle
+            if not load_bundle()[1] and not self.capture_cursor_set(quiet=True):
+                self.cb_custom_cursors.blockSignals(True)
+                self.cb_custom_cursors.setChecked(False)
+                self.cb_custom_cursors.blockSignals(False)
+                lang = getattr(self, "_current_lang", "EN")
+                QMessageBox.information(
+                    self, tr("Cursors", lang),
+                    tr("No cursor files could be copied from your system.",
+                       lang))
+                return
         self.data["custom_cursors"] = "True" if checked else "False"
         self.mark_dirty()
         self.apply_custom_cursors()
 
+    def capture_cursor_set(self, quiet=False):
+        """Copy the live Windows cursor set into the program."""
+        from fastprompter.ui.cursor_theme import capture_current_scheme
+        lang = getattr(self, "_current_lang", "EN")
+        name, paths = capture_current_scheme()
+        if not paths:
+            if not quiet:
+                QMessageBox.information(
+                    self, tr("Cursors", lang),
+                    tr("No cursor files could be copied from your system.",
+                       lang))
+            return False
+        self._cursor_map = None          # force a rebuild from the new copy
+        if self.data.get("custom_cursors", "False") == "True":
+            self.apply_custom_cursors()
+        if not quiet:
+            QMessageBox.information(
+                self, tr("Cursors", lang),
+                tr("Copied {} cursors into the program.", lang).format(len(paths))
+                if "{}" in tr("Copied {} cursors into the program.", lang)
+                else f"{len(paths)} cursors copied.")
+        return True
+
     def install_cursors_to_system(self):
         """Explicit button: make this set the live Windows scheme."""
-        from fastprompter.ui.cursor_theme import install_to_system, read_scheme
+        from fastprompter.ui.cursor_theme import install_to_system, load_bundle
         lang = getattr(self, "_current_lang", "EN")
-        name, paths = read_scheme()
+        name, paths = load_bundle()
         if not paths:
             QMessageBox.information(
                 self, tr("Cursors", lang),
-                tr("No cursor files found to install.", lang))
+                tr("Copy a cursor set into the program first.", lang))
             return False
         answer = QMessageBox.question(
             self, tr("Cursors", lang),
@@ -2271,7 +2309,8 @@ class FastPrompter(
         )
         self.cb_custom_cursors = create_footer_cb(
             "\u2196 My Cursors",
-            "Use your own Windows cursor set inside this program.\n"
+            "Use the cursor set the program has copied.\n"
+            "First time on, it copies your current Windows set.\n"
             "Animated cursors keep their default shape - Qt cannot read them.",
             self.data.get("custom_cursors", "False") == "True",
             self.toggle_custom_cursors,
@@ -2861,10 +2900,18 @@ class FastPrompter(
         # Toolbar order had its own reset; splitter widths, sidebar side and
         # window size had none, so a window dragged somewhere unusable could
         # only be fixed by deleting the database.
+        self.btn_copy_cursors = QPushButton(tr("Copy my set", self._current_lang))
+        self.btn_copy_cursors.setToolTip(tr(
+            "Copy your current Windows cursors INTO the program.\n"
+            "The program then keeps using them even if you change\n"
+            "the system scheme later. Press again to re-copy.",
+            self._current_lang))
+        self.btn_copy_cursors.clicked.connect(lambda: self.capture_cursor_set())
+
         self.btn_install_cursors = QPushButton(tr("Set in system", self._current_lang))
         self.btn_install_cursors.setToolTip(tr(
-            "Make this cursor scheme the Windows default (asks first).\n"
-            "Right-click: open the full cursor set in your browser.",
+            "Install the program's copied set as the Windows default\n"
+            "(asks first). Right-click: open the full cursor set online.",
             self._current_lang))
         self.btn_install_cursors.clicked.connect(self.install_cursors_to_system)
 
@@ -2888,7 +2935,8 @@ class FastPrompter(
             self.cb_top, self.cb_lock_window, self.cb_normal_window,
             self.cb_tray, self.cb_sidebar, self.cb_trash_vision,
             self.cb_silo_color_box, self.cb_customize_toolbar, zones_row,
-            self.cb_custom_cursors, self.btn_install_cursors,
+            self.cb_custom_cursors, self.btn_copy_cursors,
+            self.btn_install_cursors,
             self.btn_reset_layout,
         ]), tr("Window", self._current_lang))
 

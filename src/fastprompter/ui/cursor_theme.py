@@ -1,18 +1,23 @@
-"""Use the user's own Windows cursor set inside the program.
+"""Carry a cursor set inside the program.
 
-Windows applies a cursor scheme system-wide, but a Qt app asks for stock
-*shapes* and gets whatever the platform draws for them - which on some
-setups is not the scheme the user actually installed. This reads the
-scheme straight out of the registry and hands back real QCursors.
+The point is that the program keeps its OWN copy. Reading the live registry
+scheme would just mirror whatever Windows is already drawing, so the toggle
+would do nothing visible and there would be nothing to offer the "set it in
+the system" button. Instead the current scheme is COPIED into the app's data
+folder once, and from then on the program uses its own files no matter what
+the system scheme becomes later.
 
 Qt reads `.cur` natively. Animated `.ani` files it cannot read at all, so
-those roles (the busy/working cursors) keep their stock shape rather than
-silently vanishing.
+those roles keep their stock shape in-app rather than silently vanishing -
+but the files are still copied, because installing the set back into Windows
+needs them.
 """
 
 from __future__ import annotations
 
+import json
 import os
+import shutil
 import struct
 import sys
 
@@ -106,6 +111,164 @@ def read_scheme():
     return name, paths
 
 
+# Windows stores a saved scheme as one comma-separated string in this exact
+# role order. There is no key naming them, so the order IS the schema.
+_SCHEME_ORDER = (
+    "Arrow", "Help", "AppStarting", "Wait", "Crosshair", "IBeam", "NWPen",
+    "No", "SizeNS", "SizeWE", "SizeNWSE", "SizeNESW", "SizeAll", "UpArrow",
+    "Hand", "Pin", "Person",
+)
+
+
+def read_named_schemes():
+    """{scheme name: {role: path}} for every scheme saved on this machine.
+
+    The applied scheme is only half the story: switching Windows back to the
+    default empties every value under Control Panel\\Cursors while the user's
+    own scheme stays listed here, files and all. Reading only the applied one
+    meant "copy my set" found nothing the moment the user was on stock
+    cursors - which is exactly when they would want to grab their set.
+    """
+    if sys.platform != "win32":
+        return {}
+    try:
+        import winreg
+    except ImportError:
+        return {}
+
+    schemes = {}
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                            r"Control Panel\Cursors\Schemes") as key:
+            index = 0
+            while True:
+                try:
+                    name, value, _kind = winreg.EnumValue(key, index)
+                except OSError:
+                    break
+                index += 1
+                if not name or not isinstance(value, str):
+                    continue
+                roles = {}
+                for role, item in zip(_SCHEME_ORDER, value.split(",")):
+                    item = item.strip()
+                    if not item:
+                        continue
+                    full = os.path.expandvars(item)
+                    if os.path.isfile(full):
+                        roles[role] = full
+                if roles:
+                    schemes[name] = roles
+    except OSError:
+        logger.debug("saved cursor schemes unreadable", exc_info=True)
+    return schemes
+
+
+def best_available_scheme():
+    """The set to copy: the applied one, else the user's own saved one.
+
+    Returns (name, {role: path}). Prefers whatever Windows is actually
+    using; when that is the bare default it falls back to a saved scheme,
+    newest-looking custom one first, so there is still something to take.
+    """
+    name, paths = read_scheme()
+    if paths:
+        return name or "applied", paths
+
+    saved = read_named_schemes()
+    if not saved:
+        return "", {}
+    for candidate in ("___CURRENT___", "__CURRENT__", "CURRENT"):
+        if candidate in saved:
+            return candidate, saved[candidate]
+    # no obvious "mine": take the richest set rather than guessing by name
+    pick = max(saved.items(), key=lambda kv: len(kv[1]))
+    return pick[0], pick[1]
+
+
+def bundle_dir():
+    """Where the program keeps its own copy of the set."""
+    from fastprompter.utils.paths import get_data_dir
+    return os.path.join(get_data_dir(), "cursors")
+
+
+def _manifest_path():
+    return os.path.join(bundle_dir(), "scheme.json")
+
+
+def load_bundle():
+    """(name, {role: path}) of the copy the program owns, or ("", {})."""
+    manifest = _manifest_path()
+    if not os.path.isfile(manifest):
+        return "", {}
+    try:
+        with open(manifest, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        logger.debug("cursor bundle manifest unreadable", exc_info=True)
+        return "", {}
+    if not isinstance(data, dict):
+        return "", {}
+    folder = bundle_dir()
+    paths = {}
+    for role, filename in (data.get("files") or {}).items():
+        full = os.path.join(folder, str(filename))
+        if os.path.isfile(full):
+            paths[role] = full
+    return str(data.get("name") or ""), paths
+
+
+def capture_current_scheme():
+    """Copy the live Windows scheme into the program. Returns (name, paths).
+
+    Copied rather than referenced so the set keeps working after Windows is
+    switched to something else - which is the whole reason this exists.
+    """
+    name, source = best_available_scheme()
+    if not source:
+        return "", {}
+    folder = bundle_dir()
+    try:
+        os.makedirs(folder, exist_ok=True)
+    except OSError:
+        logger.exception("could not create the cursor folder")
+        return "", {}
+
+    files, paths = {}, {}
+    for role, src in source.items():
+        target_name = f"{role}{os.path.splitext(src)[1].lower()}"
+        target = os.path.join(folder, target_name)
+        try:
+            shutil.copyfile(src, target)
+        except OSError:
+            logger.debug("could not copy %s", src, exc_info=True)
+            continue
+        files[role] = target_name
+        paths[role] = target
+
+    if not files:
+        return "", {}
+    try:
+        with open(_manifest_path(), "w", encoding="utf-8") as fh:
+            json.dump({"name": name, "files": files}, fh, indent=1)
+    except OSError:
+        logger.exception("could not write the cursor manifest")
+    return name, paths
+
+
+def clear_bundle():
+    """Forget the copy, so the program falls back to stock shapes."""
+    folder = bundle_dir()
+    if not os.path.isdir(folder):
+        return False
+    try:
+        shutil.rmtree(folder)
+        return True
+    except OSError:
+        logger.exception("could not remove the cursor folder")
+        return False
+
+
 def build_cursor_map(paths=None):
     """{Qt.CursorShape: QCursor} for every role Qt can actually load.
 
@@ -113,7 +276,7 @@ def build_cursor_map(paths=None):
     the caller falls back to the stock shape instead of showing nothing.
     """
     if paths is None:
-        _name, paths = read_scheme()
+        _name, paths = load_bundle()
     cursors = {}
     for role, shape in _ROLE_TO_SHAPE.items():
         path = paths.get(role)
@@ -133,13 +296,15 @@ def build_cursor_map(paths=None):
     return cursors
 
 
-def install_to_system(paths):
-    """Make this set the live Windows cursor scheme.
+def install_to_system(paths=None):
+    """Point Windows at the set the program is carrying.
 
     Only ever called from an explicit button press. It writes the same
     registry values Windows itself uses and then asks the system to reload
     them, so nothing is left needing a logout.
     """
+    if paths is None:
+        _name, paths = load_bundle()
     if sys.platform != "win32" or not paths:
         return False
     try:
