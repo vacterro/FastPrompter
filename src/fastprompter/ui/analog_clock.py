@@ -8,7 +8,7 @@ the displayed minute actually changes.
 import datetime
 import math
 
-from PyQt6.QtCore import QPoint
+from PyQt6.QtCore import QPoint, Qt
 from PyQt6.QtGui import QColor, QPainter, QPen
 from PyQt6.QtWidgets import QWidget
 
@@ -27,8 +27,11 @@ def _theme_palette(main_win):
             raw = cached["raw_colors"]
     except Exception:
         pass
+    from fastprompter.theme.themes import header_tint
+
     return {
-        "face": QColor(raw.get("bg_text", _FALLBACK["bg_text"])),
+        # the toolbar's own colour, so the clock cannot read as a patch on it
+        "face": QColor(header_tint(raw)),
         "rim": QColor(raw.get("border_light", _FALLBACK["border_light"])),
         "hands": QColor(raw.get("accent", _FALLBACK["accent"])),
     }
@@ -42,6 +45,10 @@ class MiniAnalogClock(QWidget):
         self.main_win = main_win
         self.setFixedSize(self.SIZE, self.SIZE)
         self._shown_minute = -1
+        # Painting its own background (below) rather than inheriting one:
+        # a transparent child kept whatever was behind it when it was built,
+        # so it showed the Default theme's toolbar tint on every theme.
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, False)
 
     def sync(self):
         """Called every second by the window's date timer."""
@@ -66,6 +73,10 @@ class MiniAnalogClock(QWidget):
 
             colors = _theme_palette(self.main_win)
             face, rim, hands = colors["face"], colors["rim"], colors["hands"]
+            # Fill the whole widget with the toolbar's colour first: that is
+            # what removes the square, since the rectangle now matches what
+            # surrounds it on every theme instead of on one.
+            p.fillRect(self.rect(), face)
             p.setPen(QPen(rim, 1))
             p.setBrush(face)
             p.drawEllipse(c, r, r)

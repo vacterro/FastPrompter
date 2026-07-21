@@ -129,8 +129,8 @@ class ThemeMixin:
         # WA_StyledBackground (set in main.py) or this is a silent no-op.
         header = getattr(self, "header_widget", None)
         if header is not None and not _is_deleted(header):
-            header_bg = blend_hex(raw.get("bg_main", "#1a1a1a"),
-                                  raw.get("accent", "#bfa65e"), 0.16)
+            from fastprompter.theme.themes import header_tint
+            header_bg = header_tint(raw)
             header.setStyleSheet(f"#HeaderBar {{ background-color: {header_bg}; }}")
 
         # The clock repaints itself only once a minute off its own timer —

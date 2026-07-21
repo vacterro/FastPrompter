@@ -32,6 +32,19 @@ def blend_hex(c1, c2, t):
     )
 
 
+def header_tint(raw):
+    """Background of the header/toolbar bar for a theme's raw colours.
+
+    Lives here because two places need the identical value: theme_mixin
+    paints the bar with it, and the mini clock fills its own rectangle with
+    it. When only theme_mixin knew the formula, the clock kept whatever was
+    behind it when it was built and showed the Default theme's tint on every
+    other theme - a visible square that never followed the theme.
+    """
+    return blend_hex(raw.get("bg_main", "#1a1a1a"),
+                     raw.get("accent", "#bfa65e"), 0.16)
+
+
 def hex_to_rgba(h, alpha):
     """Hex color -> 'rgba(r, g, b, a)' for QSS. alpha is 0.0-1.0."""
     r, g, b = _hex_to_rgb(h)

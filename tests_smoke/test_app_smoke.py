@@ -5794,3 +5794,50 @@ def test_settings_controls_are_packed_not_spread_across_the_panel(win):
         assert worst <= 40, f"controls spread apart by {worst}px"
     finally:
         tabs.setCurrentIndex(kept_tab)
+
+def test_analog_clock_sits_on_the_toolbar_colour_on_every_theme(win):
+    """Reported: a visible square behind the clock. It kept whatever was
+    behind it when it was built, so it painted the Default theme's toolbar
+    tint on every theme - on the light one, a dark square on a light bar.
+
+    Grabs the widget itself rather than hunting for it inside a window
+    render: where it sits depends on header state other tests move around,
+    but its own pixels are exactly what this is about.
+    """
+    from fastprompter.theme.themes import THEMES, header_tint
+
+    kept = win.data.get("theme", "Default")
+    try:
+        clock = win.analog_clock
+        offenders = []
+        for name in THEMES:
+            win.data["theme"] = name
+            win.apply_theme()
+            clock.update()
+
+            img = clock.grab().toImage()
+            tint = header_tint(THEMES[name]["raw_colors"]).lower()
+            # the corners are outside the dial, the middle-left is inside it;
+            # both must be the toolbar colour or a square shows
+            corner = img.pixelColor(0, 0).name().lower()
+            inside = img.pixelColor(4, clock.height() // 2).name().lower()
+            if corner != tint or inside != tint:
+                offenders.append(f"{name}: corner={corner} dial={inside} bar={tint}")
+
+        assert not offenders, "clock does not match the toolbar: " + "; ".join(offenders)
+    finally:
+        win.data["theme"] = kept
+        win.apply_theme()
+
+
+def test_header_tint_has_a_single_owner():
+    """theme_mixin and the clock must agree on the bar colour; when only
+    theme_mixin knew the formula, the clock drifted onto its own value."""
+    import inspect
+
+    from fastprompter.theme.themes import header_tint
+    from fastprompter.ui import analog_clock, theme_mixin
+
+    assert callable(header_tint)
+    assert "header_tint" in inspect.getsource(theme_mixin.ThemeMixin.apply_theme)
+    assert "header_tint" in inspect.getsource(analog_clock._theme_palette)
