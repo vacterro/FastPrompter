@@ -441,7 +441,11 @@ class FastPrompter(
         flipped = getattr(self, "_header_dense", None) != dense
         if flipped:
             self._header_dense = dense
-            self.header_layout.setSpacing(1 if dense else 2)
+            # Zero: the bar is tinted lighter than the widgets on it, so any
+            # spacing showed as a 1px line of tint in EVERY gap - 31 of them,
+            # measured. Buttons carry their own borders, so flush is the
+            # classic toolbar look rather than a crowded one.
+            self.header_layout.setSpacing(0)
 
         # Ultra tier (portrait / 9:16 slivers): only the essentials survive —
         # tabs, NEW/Save, a short DD.MM - hh:mm clock, line counter, ⚙.
@@ -1775,7 +1779,7 @@ class FastPrompter(
         self.header_widget.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.header_layout = QHBoxLayout(self.header_widget)
         self.header_layout.setContentsMargins(0, 0, 0, 0)
-        self.header_layout.setSpacing(2)
+        self.header_layout.setSpacing(0)   # see _apply_header_density
 
         self.btn_sidebar_toggle = QPushButton("☰")
         self.apply_button_size(self.btn_sidebar_toggle, 24, 24)
