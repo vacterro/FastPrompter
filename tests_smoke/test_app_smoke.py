@@ -7260,3 +7260,78 @@ def test_a_click_past_the_chevron_zone_is_left_to_the_list(win):
         assert not ev.isAccepted() or True, "the press was not swallowed"
     finally:
         dlg.close()
+
+
+# ----------------------- T-562: FlowLayout with hidden items ---------------
+
+
+def _flow_row(count=4, width=500):
+    from PyQt6.QtWidgets import QPushButton
+
+    from fastprompter.ui.flow_layout import flow_widget
+
+    buttons = [QPushButton(f"button {i}") for i in range(count)]
+    for b in buttons:
+        b.setFixedSize(100, 24)
+    row = flow_widget(buttons)
+    row.resize(width, 100)
+    row.show()
+    QApplication.processEvents()
+    return row, buttons
+
+
+def _relayout(row, width=500):
+    row._flow.invalidate()
+    row.resize(width, 100)
+    QApplication.processEvents()
+
+
+def test_a_hidden_widget_costs_a_flow_row_nothing(win):
+    """Qt gives a hidden QWidgetItem a zero sizeHint, so it leaves no hole -
+    but the layout still added its spacing, so every hidden widget shifted
+    the row along by h_space. Two of them pushed the first visible button
+    from x=0 to x=16."""
+    row, buttons = _flow_row()
+    try:
+        buttons[0].hide()
+        buttons[1].hide()
+        _relayout(row)
+
+        xs = [b.geometry().x() for b in buttons[2:]]
+        assert xs[0] == 0, f"the row must still start at the left, got {xs[0]}"
+        assert xs[1] - xs[0] == 108, "and keep its ordinary 100+8 step"
+    finally:
+        row.close()
+
+
+def test_hiding_one_in_the_middle_closes_the_gap_exactly(win):
+    row, buttons = _flow_row()
+    try:
+        before = [b.geometry().x() for b in buttons]
+        buttons[1].hide()
+        _relayout(row)
+        after = [b.geometry().x() for b in buttons]
+
+        assert before == [0, 108, 216, 324]
+        assert after[2] == 108 and after[3] == 216, f"got {after}"
+    finally:
+        row.close()
+
+
+def test_a_row_of_only_hidden_widgets_has_no_height(win):
+    """The empty-line path: `lines` is empty, which used to be tested as
+    `not self._items` - true only when nothing was ever added."""
+    row, buttons = _flow_row(count=3)
+    try:
+        for b in buttons:
+            b.hide()
+        _relayout(row)
+        assert row.totalHeightForWidth(300) == 0
+    finally:
+        row.close()
+
+
+def test_an_empty_flow_still_measures(win):
+    from fastprompter.ui.flow_layout import flow_widget
+
+    assert flow_widget([]).totalHeightForWidth(300) == 0

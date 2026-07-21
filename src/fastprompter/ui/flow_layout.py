@@ -69,15 +69,22 @@ class FlowLayout(QLayout):
         top = rect.y() + margins.top()
         right = rect.right() - margins.right()
 
+        # Hidden widgets are skipped outright. Qt already gives a hidden
+        # QWidgetItem a zero sizeHint, so they do not leave a hole - but the
+        # loop below adds h_space per item regardless, so each one still cost
+        # a phantom gap. Measured: two hidden widgets pushed the first
+        # visible one from x=0 to x=16 and spread the rest to match.
+        items = [it for it in self._items if not it.isEmpty()]
+
         # Group items into lines (first pass)
         lines = []
         i = 0
-        while i < len(self._items):
+        while i < len(items):
             x = left
             line_h = 0
             line_start = i
-            while i < len(self._items):
-                hint = self._items[i].sizeHint()
+            while i < len(items):
+                hint = items[i].sizeHint()
                 w, h = hint.width(), hint.height()
                 if line_h > 0 and x + w > right:
                     break
@@ -94,14 +101,14 @@ class FlowLayout(QLayout):
         for start, count, line_h in lines:
             x = left
             for j in range(start, start + count):
-                item = self._items[j]
+                item = items[j]
                 w, h = item.sizeHint().width(), item.sizeHint().height()
                 if apply:
                     item.setGeometry(QRect(QPoint(x, y), QSize(w, h)))
                 x += w + self._h_space
             y += line_h + self._v_space
 
-        if not self._items:
+        if not lines:
             return margins.top() + margins.bottom()
         return y - self._v_space - rect.y() + margins.bottom()
 
