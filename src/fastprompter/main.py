@@ -99,6 +99,9 @@ from fastprompter.utils.paths import get_data_dir
 from fastprompter.core.translations import tr, get_language, available_languages
 from fastprompter.core.i18n import NATIVE_NAMES as _LANG_NATIVE_NAMES
 from fastprompter.utils.textfit import clip_safe_width
+from fastprompter.core.prompt_queue import QueueManager
+from fastprompter.ui.prompt_queue_panel import PromptQueuePanel
+from fastprompter.ui.prompt_queue_indicator import PromptQueueIndicator
 
 
 class FastPrompter(
@@ -283,6 +286,9 @@ class FastPrompter(
         self.data["archive_project_paths"] = apall.setdefault(first_cat, {})
 
         self._current_lang = get_language(self.data)
+
+        self.queue_manager = QueueManager(self.data)
+
         self.init_ui()
         self.init_tray()
         self.setup_global_shortcuts()
@@ -1689,6 +1695,10 @@ class FastPrompter(
     def _auto_save_tick(self):
         if not getattr(self.state, "_db_dirty", False):
             return
+        # Persist prompt queue state before the general save
+        qm = getattr(self, "queue_manager", None)
+        if qm is not None:
+            qm.save_to_data(self.data)
         self.save_data_to_db()
 
     def play_sound(self, name):
@@ -2100,6 +2110,11 @@ class FastPrompter(
         self.lbl_timer.mousePressEvent = lambda _e: self.open_timer_dialog()
         self.lbl_timer.setVisible(False)
         self.header_layout.addWidget(self.lbl_timer)
+
+        # ---- prompt queue indicator ----
+        self.queue_indicator = PromptQueueIndicator(self)
+        self.apply_button_size(self.queue_indicator, 20, 20)
+        self.header_layout.addWidget(self.queue_indicator)
 
         self.btn_pin_top = QPushButton("📌")
         self.btn_pin_top.setCheckable(True)
@@ -3071,6 +3086,9 @@ class FastPrompter(
         self.snippets_section_layout.setContentsMargins(0, 0, 0, 0)
         self.snippets_section_layout.setSpacing(1)
 
+        # ---- prompt queue panel (hidden by default) ----
+        self.queue_panel = PromptQueuePanel(self, self.queue_manager)
+        self.queue_panel.setVisible(False)
 
         self.search_bar = QLineEdit()
         self.search_bar.setToolTip(tr("Search snippets", getattr(self, "_current_lang", "EN")))
@@ -3188,6 +3206,7 @@ class FastPrompter(
         self.left_panel_layout.addWidget(self.sections_gap_widget)
 
         self.left_panel_layout.addWidget(self.silos_section, 1)
+        self.left_panel_layout.addWidget(self.queue_panel)
 
         # Mouse-wheel paging over the sidebar sections and tabs;
         # Ctrl+wheel walks the silo selection one by one.
@@ -5223,6 +5242,43 @@ class FastPrompter(
         if 0 <= idx < self.cat_combo.count():
             self.cat_combo.setCurrentIndex(idx)
 
+    def _queue_current_line(self):
+        """Capture the current editor line as a queued prompt.
+
+        Bound to Ctrl+Shift+X.  Captures the full current line (or
+        the selection, if text is selected).
+        """
+        ta = getattr(self, "text_area", None)
+        if ta is None:
+            return
+        cursor = ta.textCursor()
+        if cursor.hasSelection():
+            text = cursor.selectedText().replace("\u2029", "\n")
+        else:
+            block = cursor.block()
+            text = block.text() if block.isValid() else ""
+        if not text.strip():
+            return
+        from fastprompter.core.prompt_queue import PromptEntry
+        entry = PromptEntry(
+            text=text.strip(),
+            silo_index=getattr(self, "active_temp_slot", 0),
+            line_number=cursor.blockNumber() + 1,
+        )
+        qm = getattr(self, "queue_manager", None)
+        if qm is None:
+            return
+        qm.append(entry)
+        self.play_tick_sound()
+        # Auto-show the queue panel on first capture
+        if len(qm) == 1 and hasattr(self, "queue_panel"):
+            self.queue_panel.setVisible(True)
+            self.queue_panel.refresh()
+        ind = getattr(self, "queue_indicator", None)
+        if ind is not None:
+            ind.refresh()
+        self.mark_dirty()
+
     def _on_escape(self):
         """Esc closes the search bar first; a second Esc hides the window."""
         if hasattr(self, "search_frame") and self.search_frame.isVisible():
@@ -6623,6 +6679,7 @@ class FastPrompter(
 
         add_fixed("Ctrl+Shift+Z", self.redo_action)
         add_fixed("Ctrl+Shift+C", self.clear_text)
+        add_fixed("Ctrl+Shift+X", self._queue_current_line, Qt.ShortcutContext.ApplicationShortcut)
         add_fixed("Alt+W", self.insert_old_add_line, Qt.ShortcutContext.ApplicationShortcut)
         add_fixed("Alt+Up", lambda: self.navigate_silo(-1), Qt.ShortcutContext.ApplicationShortcut)
         add_fixed("Alt+Down", lambda: self.navigate_silo(1), Qt.ShortcutContext.ApplicationShortcut)
