@@ -7723,3 +7723,66 @@ def test_master_queue_view_has_a_visible_entry(win):
     # the right-click menu offers the all-silos entry by name
     from fastprompter.ui import editor as editor_mod
     assert "all silos" in inspect.getsource(editor_mod).lower()
+
+
+# ---- fonts: software non-AA everywhere + the _m1 alias --------------------
+
+
+def test_the_app_font_carries_no_antialias(win):
+    """The global application font sets the crisp strategy, so every widget
+    that copies it inherits non-AA. The leak was widgets that built a fresh
+    QFont(family) instead of copying."""
+    from PyQt6.QtGui import QFont
+    from PyQt6.QtWidgets import QApplication
+
+    strat = QApplication.instance().font().styleStrategy()
+    assert strat & QFont.StyleStrategy.NoAntialias
+    assert strat & QFont.StyleStrategy.NoSubpixelAntialias
+
+
+def test_the_editor_font_is_non_antialiased(win):
+    from PyQt6.QtGui import QFont
+
+    strat = win.text_area.font().styleStrategy()
+    assert strat & QFont.StyleStrategy.NoAntialias
+
+
+def test_silo_buttons_do_not_leak_an_antialiased_font():
+    """snippet_panel built QFont(family) without the strategy, so the silo
+    buttons rendered antialiased while everything around them was crisp.
+
+    Checked at the source, not via btn.font().styleStrategy(): a widget that
+    never calls setFont inherits the crisp application font at RENDER time,
+    but its .font() still reports the default strategy - so a runtime check
+    flags 40 innocent inherited-font buttons. The real fix is that every
+    fresh QFont(family) in this module is wrapped in no_aa()."""
+    import inspect
+    import re
+
+    from fastprompter.ui import snippet_panel
+
+    src = inspect.getsource(snippet_panel)
+    bare = re.findall(r"(?<!no_aa\()QFont\(font_family", src)
+    assert bare == [], f"{len(bare)} QFont(font_family) not wrapped in no_aa"
+    assert "no_aa(QFont(font_family))" in src
+
+
+def test_font_family_property_resolves_m1_when_present(win, monkeypatch):
+    """Stored 'Verdana' renders as 'Verdana_m1' when that build is installed,
+    while the saved value stays plain."""
+    import fastprompter.utils.fonts as fonts_mod
+
+    monkeypatch.setattr(fonts_mod, "QFontDatabase", type(
+        "FDB", (), {"families": staticmethod(lambda: {"Verdana", "Verdana_m1"})}))
+    win.data["font_family"] = "Verdana"
+    assert win._font_family == "Verdana_m1"
+    assert win.data["font_family"] == "Verdana", "saved value stays plain"
+
+
+def test_font_family_falls_back_when_no_m1(win, monkeypatch):
+    import fastprompter.utils.fonts as fonts_mod
+
+    monkeypatch.setattr(fonts_mod, "QFontDatabase", type(
+        "FDB", (), {"families": staticmethod(lambda: {"Verdana", "Tahoma"})}))
+    win.data["font_family"] = "Tahoma"
+    assert win._font_family == "Tahoma"

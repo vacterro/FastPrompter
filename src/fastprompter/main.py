@@ -124,7 +124,15 @@ class FastPrompter(
 
     @property
     def _font_family(self):
-        return self.data.get("font_family", "Verdana")
+        """The family to RENDER with.
+
+        Stored value is the plain name the user picked ("Verdana"); this
+        resolves it to their crisp "<name>_m1" bitmap build when one is
+        installed, so picking Verdana actually paints Verdana_m1. The combo
+        box and saved settings keep the plain name — only rendering swaps.
+        """
+        from fastprompter.utils.fonts import resolve_family
+        return resolve_family(self.data.get("font_family", "Verdana"))
 
     @property
     def _ui_scale(self):
@@ -3413,10 +3421,9 @@ class FastPrompter(
             font_size = int(self.data.get("font_size", 11))
         except Exception:
             font_size = 11
-        font = QFont(self.data.get("font_family", "Verdana"), font_size)
-        font.setStyleStrategy(
-            QFont.StyleStrategy.NoAntialias | QFont.StyleStrategy.NoSubpixelAntialias
-        )
+        from fastprompter.utils.fonts import no_aa, resolve_family
+        font = no_aa(QFont(
+            resolve_family(self.data.get("font_family", "Verdana")), font_size))
         self.text_area.setFont(font)
 
         self.silo_docs = []
@@ -5543,7 +5550,7 @@ class FastPrompter(
         if theme_name not in THEMES:
             theme_name = "Default"
         preset_colors = THEMES[theme_name]["preset_colors"]
-        font_family = self.data.get("font_family", "Verdana")
+        font_family = self._font_family
         hide_keys = self.data.get("hide_shortkeys", "False") == "True"
 
         try:
@@ -5652,7 +5659,7 @@ class FastPrompter(
             scale = float(self.data.get("ui_scale", "1.0"))
         except Exception:
             scale = 1.0
-        font_family = self.data.get("font_family", "Verdana")
+        font_family = self._font_family
 
         start_idx = self.arc_silo_page * visible_count
 
@@ -5959,7 +5966,7 @@ class FastPrompter(
             scale = float(self.data.get("ui_scale", "1.0"))
         except Exception:
             scale = 1.0
-        font_family = self.data.get("font_family", "Verdana")
+        font_family = self._font_family
 
         start_idx = self.silo_page * self._visible_silos
         # Build sorted display order: pinned first in pin order, then unpinned by index
@@ -7156,10 +7163,8 @@ def main_entry():
     setup_exception_hook()
 
     app = QApplication(sys.argv)
-    global_font = QFont("Verdana", 10)
-    global_font.setStyleStrategy(
-        QFont.StyleStrategy.NoAntialias | QFont.StyleStrategy.NoSubpixelAntialias
-    )
+    from fastprompter.utils.fonts import no_aa, resolve_family
+    global_font = no_aa(QFont(resolve_family("Verdana"), 10))
     app.setFont(global_font)
     app.setQuitOnLastWindowClosed(False)
 

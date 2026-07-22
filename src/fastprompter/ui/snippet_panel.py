@@ -3,6 +3,7 @@ from PyQt6.QtGui import QDrag, QFontMetrics
 from PyQt6.QtWidgets import QApplication, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from fastprompter.core.translations import tr
+from fastprompter.utils.fonts import no_aa
 from fastprompter.core.config import extract_bg, extract_border_color, extract_color
 from fastprompter.theme.themes import THEMES
 
@@ -106,7 +107,7 @@ class DraggableButton(QPushButton):
 
         # Apply font scaling safely
         from PyQt6.QtGui import QFont
-        f = QFont(font_family)
+        f = no_aa(QFont(font_family))
         base_size = 10  # base size in points
         f.setPointSizeF(max(8.0, base_size * scale))
         f.setBold(title_bold)
@@ -289,7 +290,7 @@ class SnippetWidget(QWidget):
         except Exception: button_scale = 1.0
 
         from PyQt6.QtGui import QFont
-        btn_font = QFont(font_family)
+        btn_font = no_aa(QFont(font_family))
         btn_font.setPointSizeF(max(8.0, 9.0 * scale))
         btn_font.setBold(True)
 
@@ -736,7 +737,7 @@ class DraggableSiloButton(QWidget):
 
         # Apply font scaling safely
         from PyQt6.QtGui import QFont
-        f = QFont(font_family)
+        f = no_aa(QFont(font_family))
         base_size = 10
         f.setPointSizeF(max(8.0, base_size * scale))
         f.setBold(title_bold)
