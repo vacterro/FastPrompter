@@ -2015,8 +2015,8 @@ def test_divider_commands_balanced_edit_blocks(win):
     doc = ta.document()
 
     ta.setPlainText("hello")
-    win.insert_divider_line()  # Ctrl+W — blank run + a ready bullet, no ---
-    assert ta.toPlainText().endswith("• ")
+    win.insert_divider_line()  # Ctrl+W — bullet on top, old text pushed down
+    assert ta.toPlainText().startswith("• ")
     doc.undo()  # a balanced edit block undoes in exactly one step
     assert ta.toPlainText() == "hello"
 
@@ -7652,9 +7652,9 @@ def test_an_old_str_dict_value_is_recovered_not_dropped(tmp_path):
 # ---- T-582: Ctrl+W divider ends on a dash bullet --------------------------
 
 
-def test_ctrl_w_lands_on_a_fresh_bullet(win):
-    """Ctrl+W / insert_add_line pushes the text down and leaves the cursor
-    on a ready-to-type bullet. No --- rule: the blank run is the break."""
+def test_ctrl_w_starts_a_bullet_above_and_pushes_the_text_down(win):
+    """Ctrl+W writes the bullet at the TOP and shoves what was there down,
+    so the caret starts a fresh line above the old content."""
     win.data["temp_presets"] = ["head"]
     win.silo_docs[:] = []
     win._switch_to_slot(0, initial=True)
@@ -7665,12 +7665,27 @@ def test_ctrl_w_lands_on_a_fresh_bullet(win):
     win.insert_add_line()
     text = win.text_area.toPlainText()
 
-    assert text.endswith("• "), f"got {text!r}"
+    assert text.startswith("• "), f"got {text!r}"
+    assert text.endswith("head"), "the old line was pushed down, not cut"
     assert "---" not in text, "no divider rule any more"
     c = win.text_area.textCursor()
     assert not c.hasSelection()
-    assert c.position() == len(text), "cursor sits on the new bullet"
-    assert text[c.position() - 2:c.position()] == "• "
+    assert c.position() == 2, "caret sits on the bullet it just wrote"
+
+
+def test_ctrl_w_never_splits_the_line_the_caret_was_in(win):
+    """Mid-line the old build glued the tail onto the bullet ("• hello")."""
+    ta = win.text_area
+    ta.setPlainText("one two three")
+    cur = ta.textCursor()
+    cur.setPosition(4)          # mid-word
+    ta.setTextCursor(cur)
+
+    win.insert_add_line()
+    text = ta.toPlainText()
+
+    assert text.startswith("• "), f"got {text!r}"
+    assert text.endswith("one two three"), "the line stayed whole"
 
 
 def test_ctrl_w_goes_through_insert_add_line(win):

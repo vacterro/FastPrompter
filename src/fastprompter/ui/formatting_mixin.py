@@ -300,15 +300,16 @@ class FormattingMixin:
         # beginEditBlock MUST balance endEditBlock — an unbalanced end
         # corrupts the document's edit-block counter and freezes rendering
         cursor.beginEditBlock()
-        # Drop to the end of the current line first. Inserting straight at
-        # the caret would split whatever line it sits in and leave the tail
-        # stuck to the new bullet ("• hello"), which is never what the user
-        # meant by "start a fresh one below".
-        block = cursor.block()
-        if cursor.positionInBlock() > 0 or block.text().strip():
-            cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock)
-        cursor.insertText("\n\n\n\n\n• ")
+        # The bullet goes ABOVE: jump to the start of the current line, write
+        # the bullet and the blank run after it, so everything that was there
+        # is pushed down and the caret starts a fresh line at the top.
+        cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
+        start = cursor.position()
+        cursor.insertText("• \n\n\n\n\n")
         cursor.endEditBlock()
+        # insertText leaves the caret past the blank run; put it back on the
+        # bullet it just wrote, which is where the user types.
+        cursor.setPosition(start + 2)
         # insertText leaves the cursor at the end of what it wrote, i.e. just
         # after "• " — exactly where the next character should go, so no
         # setPosition is needed.
