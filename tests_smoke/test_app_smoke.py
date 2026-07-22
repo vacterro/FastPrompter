@@ -2015,8 +2015,8 @@ def test_divider_commands_balanced_edit_blocks(win):
     doc = ta.document()
 
     ta.setPlainText("hello")
-    win.insert_divider_line()  # Ctrl+W
-    assert "---" in ta.toPlainText()
+    win.insert_divider_line()  # Ctrl+W — blank run + a ready bullet, no ---
+    assert ta.toPlainText().endswith("• ")
     doc.undo()  # a balanced edit block undoes in exactly one step
     assert ta.toPlainText() == "hello"
 
@@ -4707,6 +4707,13 @@ def test_tint_covers_word_wrapped_continuation_lines(win):
     win.cat_combo.setCurrentIndex(0)
     win.on_tab_changed(0)
     win.data["word_wrap"] = "True"
+    # Setting the flag is not enough: the widget only picks it up through
+    # apply_wrap_mode(), and the fuzz tests earlier in this module toggle
+    # both wrap and the UI scale on the shared fixture. Without pinning them
+    # here this test inherits whatever the RNG happened to leave, and the
+    # paragraph silently stops wrapping.
+    win.data["ui_scale"] = "1.0"
+    win.apply_wrap_mode()
     win.data["temp_presets"][:] = ["short\n" + ("word " * 80) + "\nshort2"]
     win.silo_docs[:] = []
     win._switch_to_slot(0, initial=True)
@@ -7645,10 +7652,9 @@ def test_an_old_str_dict_value_is_recovered_not_dropped(tmp_path):
 # ---- T-582: Ctrl+W divider ends on a dash bullet --------------------------
 
 
-def test_ctrl_w_lands_on_a_fresh_dash_bullet(win):
-    """Ctrl+W / insert_add_line now appends a dash bullet after the divider
-    and leaves the cursor on it, ready to type - it used to return the
-    cursor to where it started."""
+def test_ctrl_w_lands_on_a_fresh_bullet(win):
+    """Ctrl+W / insert_add_line pushes the text down and leaves the cursor
+    on a ready-to-type bullet. No --- rule: the blank run is the break."""
     win.data["temp_presets"] = ["head"]
     win.silo_docs[:] = []
     win._switch_to_slot(0, initial=True)
@@ -7659,11 +7665,12 @@ def test_ctrl_w_lands_on_a_fresh_dash_bullet(win):
     win.insert_add_line()
     text = win.text_area.toPlainText()
 
-    assert text.endswith("---\n- "), f"got {text!r}"
+    assert text.endswith("• "), f"got {text!r}"
+    assert "---" not in text, "no divider rule any more"
     c = win.text_area.textCursor()
     assert not c.hasSelection()
     assert c.position() == len(text), "cursor sits on the new bullet"
-    assert text[c.position() - 2:c.position()] == "- "
+    assert text[c.position() - 2:c.position()] == "• "
 
 
 def test_ctrl_w_goes_through_insert_add_line(win):

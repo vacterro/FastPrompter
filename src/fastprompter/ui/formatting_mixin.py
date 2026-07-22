@@ -291,21 +291,26 @@ class FormattingMixin:
         return before, after
 
     def insert_add_line(self):
-        """Insert a horizontal markdown divider (---) and land on a fresh
-        dash bullet below it, ready to type.
+        """Push the text down and land on a fresh bullet, ready to type.
 
-        The cursor used to return to its original spot (the divider just
-        pushed the text down). Now it follows the new "- " so the divider is
-        immediately usable as a section break you start writing under.
+        No `---` rule: the blank run is the separation, and what the user
+        wants at the end of it is a bullet they can type into straight away.
         """
         cursor = self.text_area.textCursor()
         # beginEditBlock MUST balance endEditBlock — an unbalanced end
         # corrupts the document's edit-block counter and freezes rendering
         cursor.beginEditBlock()
-        cursor.insertText("\n\n\n\n\n---\n- ")
+        # Drop to the end of the current line first. Inserting straight at
+        # the caret would split whatever line it sits in and leave the tail
+        # stuck to the new bullet ("• hello"), which is never what the user
+        # meant by "start a fresh one below".
+        block = cursor.block()
+        if cursor.positionInBlock() > 0 or block.text().strip():
+            cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock)
+        cursor.insertText("\n\n\n\n\n• ")
         cursor.endEditBlock()
         # insertText leaves the cursor at the end of what it wrote, i.e. just
-        # after "- " — exactly where the next character should go, so no
+        # after "• " — exactly where the next character should go, so no
         # setPosition is needed.
         self.text_area.setTextCursor(cursor)
         self.text_area.ensureCursorVisible()
