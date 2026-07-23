@@ -2643,7 +2643,12 @@ class VaultTextEdit(QTextEdit):
                         continue
                     # Full block geometry (covers wrapped lines), viewport coords
                     br = doc_layout.blockBoundingRect(block).translated(0, y_off)
-                    r = self.cursorRect(QTextCursor(block))
+                    block_layout = block.layout()
+                    if block_layout.lineCount() > 0:
+                        first_line = block_layout.lineAt(0)
+                        r = first_line.rect().translated(br.topLeft())
+                    else:
+                        r = br
                     if br.top() > vp_rect.height():
                         break
                     if br.bottom() >= 0:
@@ -2763,10 +2768,15 @@ class VaultTextEdit(QTextEdit):
                             for m_img in MD_IMAGE_RE.finditer(text):
                                 start_idx = m_img.start()
                                 img_path = m_img.group(1)
-                                cursor = QTextCursor(block)
-                                cursor.setPosition(block.position() + start_idx)
-                                img_rect = self.cursorRect(cursor)
                                 
+                                block_layout = block.layout()
+                                line = block_layout.lineForTextPosition(start_idx)
+                                if line.isValid():
+                                    x_ret = line.cursorToX(start_idx)
+                                    x = x_ret[0] if isinstance(x_ret, tuple) else x_ret
+                                    img_rect = QRectF(x, line.y(), 0, line.height()).translated(br.topLeft())
+                                else:
+                                    img_rect = r
                                 # Draw the pill
                                 btn_h = max(18, img_rect.height())
                                 btn_w = 150 # fixed width for stub
