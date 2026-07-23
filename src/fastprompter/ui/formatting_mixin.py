@@ -10,6 +10,8 @@ import re
 import markdown
 from PyQt6.QtGui import QFont, QTextBlockFormat, QTextCharFormat, QTextCursor
 
+from fastprompter.core.ctrlw import build_template
+
 # Pre-compiled regex patterns for markdown processing
 _RE_DASH_LINE = re.compile(r"^\s*-{3,}\s*$")
 _RE_HEADER_DASH = re.compile(r"^\s*-{3,}\s*$")
@@ -438,18 +440,10 @@ class FormattingMixin:
             use_bul = self._scenario_bool(sid, "bullet")
             bf, af = self._scenario_blanks(sid)
 
-            parts = []
-            if use_div:
-                if sid == "s2":
-                    parts.append("---")
-                else:
-                    parts.append("\n" * bf)
-                    parts.append("---")
-            if use_bul or (use_div and not use_bul and sid == "s3"):
-                parts.append("\n" * af)
-            if use_bul:
-                parts.append(bullet_char + " ")
-            template = "".join(parts)
+            # built in core/ctrlw.py so the settings preview shows the very
+            # string that lands here - the old preview was a fixed table and
+            # kept claiming "\n\n---" after the count had been changed
+            template = build_template(sid, use_div, use_bul, bf, af, bullet_char)
 
             # ── Insert structure per scenario ──
             rest = ""
