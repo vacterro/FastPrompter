@@ -1646,6 +1646,11 @@ class VaultTextEdit(QTextEdit):
             menu.addSeparator()
 
         lang = getattr(self.main_win, '_current_lang', 'EN')
+        # first, because it acts on what the user has just selected - the
+        # reason they right-clicked - and it is disabled when nothing is
+        # selected rather than hidden, so its existence is discoverable
+        self.main_win.build_send_selection_menu(menu)
+        menu.addSeparator()
         queue = self.main_win.prompt_queues.get(self.main_win._queue_slot_key())
         menu.addAction(tr("Queue This Line	Alt+C", lang),
                        self.main_win.queue_current_line)

@@ -93,6 +93,7 @@ from fastprompter.ui.resizers import EdgeResizer
 from fastprompter.ui.scaling_mixin import ScalingMixin
 from fastprompter.ui.search_mixin import SearchMixin
 from fastprompter.ui.settings import ColorConfigDialog, HotkeySettingsDialog
+from fastprompter.ui.send_selection_mixin import SendSelectionMixin
 from fastprompter.ui.snippet_ops_mixin import SnippetOpsMixin
 from fastprompter.ui.snippet_panel import (
     DraggableSiloButton,
@@ -117,6 +118,7 @@ class FastPrompter(
     HotkeyMixin,
     ScalingMixin,
     SearchMixin,
+    SendSelectionMixin,
     SnippetOpsMixin,
     ThemeMixin,
     TrayMixin,
