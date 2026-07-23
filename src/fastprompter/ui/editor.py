@@ -63,15 +63,38 @@ MARK_ZONE_PX = 16
 _MARGIN_CURSOR = None
 
 
-def margin_cursor():
-    """Word's mirrored margin arrow, painted rather than shipped as a file.
+def reset_margin_cursor():
+    """Drop the cached shape, so a changed cursor set is picked up."""
+    global _MARGIN_CURSOR
+    _MARGIN_CURSOR = None
 
-    Qt has no stock cursor that points up and to the right, and the whole
-    point of the shape is that it is the ordinary arrow flipped: that is the
-    signal people already read as "click here takes the entire line".
+
+def margin_cursor():
+    """Word's mirrored margin arrow.
+
+    The whole point of the shape is that it is the ordinary arrow flipped -
+    that is the signal people already read as "click here takes the entire
+    line" - so it is the user's OWN arrow, mirrored, whenever the cursor set
+    can supply one. Drawing a polygon instead put a heavier, differently
+    shaped arrow next to theirs, which read as a foreign cursor rather than
+    a reversed one.
+
+    The hand-drawn shape is only the fallback for when there is no set to
+    borrow from: Qt has no stock cursor pointing up and to the right.
     """
     global _MARGIN_CURSOR
     if _MARGIN_CURSOR is not None:
+        return _MARGIN_CURSOR
+
+    try:
+        from fastprompter.ui.cursor_theme import mirrored_arrow
+        borrowed = mirrored_arrow()
+    except Exception:
+        from fastprompter.core.logging import logger
+        logger.debug("could not mirror the set's arrow", exc_info=True)
+        borrowed = None
+    if borrowed is not None:
+        _MARGIN_CURSOR = borrowed
         return _MARGIN_CURSOR
 
     w = h = 20

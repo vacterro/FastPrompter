@@ -22,7 +22,7 @@ import struct
 import sys
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QCursor, QPixmap
+from PyQt6.QtGui import QCursor, QPixmap, QTransform
 
 from fastprompter.core.logging import logger
 
@@ -294,6 +294,34 @@ def build_cursor_map(paths=None):
             y = min(max(0, y), max(0, pixmap.height() - 1))
             cursors[shape] = QCursor(pixmap, x, y)
     return cursors
+
+
+def mirrored_arrow(paths=None):
+    """The set's own Arrow, flipped left-to-right. None if it cannot load.
+
+    The margin cursor used to be a polygon drawn by hand, which meant it
+    looked nothing like the arrow beside it - heavier, and a different
+    shape entirely. The point of that cursor is that it IS the ordinary
+    arrow reversed, so it has to come from the same file the ordinary one
+    does.
+
+    The hot spot mirrors with the image: a tip 4px from the left edge of a
+    32px cursor is 4px from the right edge once flipped, or the click lands
+    beside the line being pointed at.
+    """
+    if paths is None:
+        _name, paths = load_bundle()
+    path = paths.get("Arrow") if paths else None
+    if not path or not os.path.exists(path):
+        return None
+    pixmap = QPixmap(path)
+    if pixmap.isNull():
+        return None             # animated .ani - nothing to flip
+    flipped = pixmap.transformed(QTransform().scale(-1, 1))
+    spot = _cur_hotspot(path) or (0, 0)
+    x = flipped.width() - 1 - min(max(0, spot[0]), max(0, pixmap.width() - 1))
+    y = min(max(0, spot[1]), max(0, flipped.height() - 1))
+    return QCursor(flipped, x, y)
 
 
 def install_to_system(paths=None):

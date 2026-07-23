@@ -838,6 +838,10 @@ class FastPrompter(
         """Apply (or drop) the user's cursor set across the window."""
         on = self.data.get("custom_cursors", "False") == "True"
         self._cursor_map = self._build_cursor_map() if on else {}
+        # the margin arrow is the set's own arrow mirrored, so it goes stale
+        # the moment the set changes - or the old one is drawn forever
+        from fastprompter.ui.editor import reset_margin_cursor
+        reset_margin_cursor()
         arrow = self.themed_cursor(Qt.CursorShape.ArrowCursor)
         beam = self.themed_cursor(Qt.CursorShape.IBeamCursor)
         try:
