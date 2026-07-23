@@ -12,7 +12,7 @@ import os
 from PyQt6 import sip
 from PyQt6.QtCore import QTimer
 from PyQt6.QtGui import QFont, QFontDatabase, QIcon
-from PyQt6.QtWidgets import QApplication, QFileDialog, QMessageBox
+from PyQt6.QtWidgets import QApplication, QFileDialog, QMessageBox, QWidget
 
 from fastprompter.core.config import create_tray_icon, extract_bg
 from fastprompter.core.logging import logger
@@ -177,6 +177,17 @@ class ThemeMixin:
         except RuntimeError:
             pass
 
+        # Re-apply the font LAST. Setting an application stylesheet makes Qt
+        # re-polish every widget, and a widget whose font was set explicitly
+        # comes back on the class default - measured: with "Courier New"
+        # chosen, the editor and its document both read "Verdana" again the
+        # moment a theme was applied, while data and the app font still said
+        # Courier New. That is the "theme change loses my font" report.
+        try:
+            self.apply_font()
+        except Exception:
+            logger.debug("apply_theme: could not re-apply the font")
+
         self._begin_batch_update()
         try:
             self.refresh_snippets_panel()
@@ -207,6 +218,18 @@ class ThemeMixin:
             )
         font = self._cached_main_font
         QApplication.setFont(font)
+        # QApplication.setFont alone does not reach a widget whose look is
+        # driven by its own stylesheet: those keep resolving their family
+        # from the app font as it was when the style last ran. Measured with
+        # "Courier New" picked - the toolbar buttons stayed Verdana until a
+        # theme change happened to re-polish them. Re-polishing here is what
+        # makes the font switch land everywhere at once.
+        style = QApplication.style()
+        if style is not None:
+            for widget in self.findChildren(QWidget):
+                if widget.styleSheet():
+                    style.unpolish(widget)
+                    style.polish(widget)
 
         try:
             self.text_area.setFont(font)

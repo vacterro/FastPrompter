@@ -16,7 +16,24 @@ from fastprompter.core.limits import LimitState, scan_text
 
 # innerText, not textContent: it skips hidden nodes, so an old limit banner
 # the app has already collapsed does not read as current.
-_TEXT_JS = "document.body ? document.body.innerText : ''"
+_TEXT_JS = """
+(function() {
+    function getAllText(node) {
+        if (!node) return '';
+        let text = '';
+        if (node.nodeType === 3) {
+            text += node.textContent + ' ';
+        } else {
+            if (node.shadowRoot) text += getAllText(node.shadowRoot) + ' ';
+            if (node.childNodes) {
+                for (let child of node.childNodes) text += getAllText(child);
+            }
+        }
+        return text;
+    }
+    return (document.body ? document.body.innerText + ' ' : '') + getAllText(document.body);
+})()
+"""
 
 
 class AgentLimit:

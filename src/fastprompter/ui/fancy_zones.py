@@ -144,7 +144,7 @@ class FancyZoneOverlay(QWidget):
         self._avail = screen.availableGeometry()
 
         try:
-            scale = float(data.get("ui_scale", "1.0"))
+            scale = float(data.get("ui_scale", "0.5"))
         except (TypeError, ValueError):
             scale = 1.0
         scale = max(0.75, min(2.0, scale))

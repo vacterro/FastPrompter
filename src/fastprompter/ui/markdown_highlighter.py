@@ -162,6 +162,14 @@ class MarkdownHighlighter(QSyntaxHighlighter):
         self._link_pattern = re.compile(r'\[([^\]]+)\]\(([^)]+)\)')
         self._highlighting_rules.append((self._link_pattern, link_format))
 
+        # Markdown Images: ![alt](url) — visually collapse to a tiny invisible dot
+        img_format = QTextCharFormat()
+        img_format.setForeground(QColor(0, 0, 0, 0))
+        img_format.setFontPointSize(1)
+        # Prevent it from being treated as a clickable link by our anchor logic:
+        # We don't setAnchor(True) here.
+        self._highlighting_rules.append((re.compile(r'!\[.*?\]\((.*?)\)'), img_format))
+
         # Horizontal Rule: ---
         hr_format = QTextCharFormat()
         hr_format.setForeground(QColor(self._theme_color("border_light", "#5a4a2a")))

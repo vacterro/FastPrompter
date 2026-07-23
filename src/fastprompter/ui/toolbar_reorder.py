@@ -17,7 +17,7 @@ DEFAULT_TOOLBAR_ORDER = [
     "btn_settings_toggle", "btn_pin_top", "btn_line_nums",
     "cat_combo", "btn_new", "btn_save", "btn_home", "btn_end",
     "btn_trash", "btn_toggle_search", "btn_toggle_snippets", "btn_arc_snip", "btn_toggle_archive", 
-    "btn_project_folder", "btn_project_run", "btn_files",
+    "btn_project_folder", "btn_saipen_log", "btn_saipen_board", "btn_saipen_state", "btn_project_run", "btn_files",
     "<stretch>",
     "btn_bold", "btn_italic", "btn_under", "btn_strike", "btn_header", "btn_quote",
     "btn_align_left", "btn_align_center", "btn_align_right", "btn_overflow",

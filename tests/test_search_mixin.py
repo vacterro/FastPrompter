@@ -42,6 +42,18 @@ class _MockQTextDocument:
     def toPlainText(self):
         return self._text
 
+    def find(self, text, cursor=None, options=0):
+        if hasattr(self, '_parent'):
+            if self._parent._find_idx < len(self._parent._find_results):
+                result = self._parent._find_results[self._parent._find_idx]
+                self._parent._find_idx += 1
+                c = _MockQTextCursor(self)
+                c._is_null = not result
+                return c
+        c = _MockQTextCursor(self)
+        c._is_null = True
+        return c
+
 
 class _MockQTextCursor:
     class MoveOperation:
@@ -60,6 +72,10 @@ class _MockQTextCursor:
         self._text = ""
         self._selection = ""
         self._block = MagicMock()
+        self._is_null = False
+
+    def isNull(self):
+        return self._is_null
 
     def positionInBlock(self):
         return 0
@@ -113,6 +129,7 @@ class _MockQPlainTextEdit:
 
     def __init__(self, text=""):
         self._doc = _MockQTextDocument(text)
+        self._doc._parent = self
         self._cursor = _MockQTextCursor()
         self._cursor._text = text
         self._focus_count = 0

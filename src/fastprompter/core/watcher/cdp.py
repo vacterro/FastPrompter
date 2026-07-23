@@ -64,10 +64,14 @@ def find_page(targets, title_match=""):
     visible, so pages only.
     """
     pages = [t for t in targets if t.get("type") == "page"]
+    if not pages:
+        return None
     if title_match:
         needle = title_match.lower()
-        pages = [t for t in pages if needle in str(t.get("title", "")).lower()]
-    return pages[0] if pages else None
+        matched = [t for t in pages if needle in str(t.get("title", "")).lower()]
+        if matched:
+            return matched[0]
+    return pages[0]
 
 
 def port_from_file(path):

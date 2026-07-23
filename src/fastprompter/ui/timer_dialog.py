@@ -535,7 +535,7 @@ class TimerDialog(QDialog):
             self.btn_scan.setEnabled(True)
             self.btn_scan.setText(tr("Scan agents", self.lang))
 
-        hit = [r for r in results if r.reachable and r.state.reached]
+        hit = [r for r in results if r.reachable]
         made = []
         for res in hit:
             assumed = res.state.resets_at is None
@@ -546,9 +546,10 @@ class TimerDialog(QDialog):
             existing = next(
                 (t for t in self.main_win.timers if t.name == name), None)
             if existing is not None:
-                existing.target = target
-                existing.enabled = True
-                made.append(existing)
+                if res.state.resets_at:
+                    existing.target = res.state.resets_at
+                    existing.enabled = True
+                    made.append(existing)
                 continue
             timer = limit_window(
                 name,
@@ -621,6 +622,7 @@ class TimerDialog(QDialog):
                 existing.volume = form.volume
                 existing.color_mode = form.color_mode
                 existing.interval_minutes = form.interval_minutes
+                existing.advance()
                 existing.fired = False        # re-arm after an edit
         else:
             self.main_win.timers.append(self._form_timer(target))
@@ -652,7 +654,11 @@ class TimerDialog(QDialog):
         self._editing_id = t.id
         self.in_name.setText(t.name)
         self.in_desc.setText(t.description)
-        self.in_when.setText(t.target.strftime("%H:%M"))
+        if t.repeat == REPEAT_INTERVAL and getattr(t, "interval_minutes", 0):
+            start_time = t.target - datetime.timedelta(minutes=t.interval_minutes)
+            self.in_when.setText(start_time.strftime("%H:%M"))
+        else:
+            self.in_when.setText(t.target.strftime("%H:%M"))
         idx = self.cb_repeat.findData(t.repeat)
         if idx >= 0:
             self.cb_repeat.setCurrentIndex(idx)

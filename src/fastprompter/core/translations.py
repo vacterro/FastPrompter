@@ -23,6 +23,11 @@ current_lang = "EN"  # legacy module attribute; kept for import compatibility
 # ---------------------------------------------------------------------------
 
 _DATA = {
+    'Panic stop the AI typing watcher': 'Экстренная остановка ИИ-печатальщика',
+    'Clock &amp; Timer': 'Часы и таймер',
+    'date + time with seconds, day word, optional mini analog clock, and a Pomodoro-style timer with snooze': 'дата + время с секундами, словом дня, опциональными мини-часами и таймером помодоро с кнопками',
+    'SAIPEN Integration': 'Интеграция SAIPEN',
+    'Auto-detects .saipen folders in projects to display STATE, BOARD, and LOG in a compact viewer': 'Авто-обнаружение папок .saipen в проектах с кнопками для компактного просмотра STATE, BOARD и LOG',
     # ---- Settings panel group headers ----
     "Window": "Окно",
     "Editor": "Редактор",

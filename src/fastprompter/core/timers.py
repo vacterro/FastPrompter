@@ -191,6 +191,17 @@ class Timer:
         self.enabled = True
         return self.target
 
+    def shift(self, minutes=0):
+        """Shift the existing target forward or backward, regardless of now."""
+        try:
+            minutes = int(minutes)
+        except (TypeError, ValueError):
+            minutes = 0
+        self.target += datetime.timedelta(minutes=minutes)
+        if self.target > datetime.datetime.now():
+            self.fired = False
+        return self.target
+
     def summary(self):
         """One line for tooltips and list rows."""
         bits = [self.name]

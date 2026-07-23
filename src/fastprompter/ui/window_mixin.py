@@ -96,9 +96,9 @@ class WindowMixin:
                 w, h = max(saved_w, self.minimumWidth()), max(saved_h, self.minimumHeight())
                 self.resize(w, h)
             except Exception:
-                self.adjustSize()
+                self.resize(960, 600)
         else:
-            self.adjustSize()
+            self.resize(960, 600)
 
         QApplication.processEvents()
         fw = self.frameGeometry().width()
@@ -302,7 +302,7 @@ class WindowMixin:
                     "splitter_sizes_left", "splitter_sizes_right"):
             self.data[key] = ""
         self.data["sidebar_right"] = "False"
-        self.data["ui_scale"] = "1.0"
+        self.data["ui_scale"] = "0.5"
         self.data["button_scale"] = "1.0"
 
         self.sidebar_visible = True
@@ -337,7 +337,7 @@ class WindowMixin:
         btn = getattr(self, "btn_button_scale", None)
         if btn is not None and not sip.isdeleted(btn):
             try:
-                pct = int(float(self.data.get("ui_scale", "1.0")) * 100)
+                pct = int(float(self.data.get("ui_scale", "0.5")) * 100)
             except (TypeError, ValueError):
                 pct = 100
             btn.setText(

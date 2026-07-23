@@ -29,7 +29,7 @@ import re
 _HIT = (
     r"limit\s+reached",
     r"reached\s+your\s+(?:usage\s+)?limit",
-    r"you'?ve\s+(?:hit|reached)\s+(?:the|your)\s+\w*\s*limit",
+    r"you(?:\s+have|'?ve)\s+(?:hit|reached)\s+(?:the|your)\s+(?:[\w-]+\s+)*limit",
     r"out\s+of\s+(?:free\s+)?(?:messages|credits|usage)",
     r"quota\s+(?:exceeded|exhausted)",
     r"rate\s*limit(?:ed|\s+exceeded)",
@@ -59,7 +59,7 @@ _AT_RE = re.compile(
     re.I)
 # "resets in 2h 15m", "try again in 45 minutes", "in 3 hours"
 _IN_RE = re.compile(
-    r"\bin\s+(?:(\d+)\s*h(?:ours?|rs?)?)?\s*(?:(\d+)\s*m(?:in(?:ute)?s?)?)?",
+    r"\bin\s+(?:(\d+)\s*d(?:ays?)?[,\s]*)?(?:(\d+)\s*h(?:ours?|rs?)?[,\s]*)?(?:(\d+)\s*m(?:in(?:ute)?s?)?)?",
     re.I)
 
 
@@ -109,17 +109,18 @@ def _parse_at(text, now):
 
 
 def _parse_in(text, now):
-    """A relative "in 2h 15m" -> a datetime."""
+    """A relative "in 2h 15m" or "in 1 day, 2 hours" -> soonest datetime."""
+    results = []
     for m in _IN_RE.finditer(text):
-        hours, mins = m.group(1), m.group(2)
-        if not hours and not mins:
+        d, h, mi = m.group(1), m.group(2), m.group(3)
+        if not d and not h and not mi:
             continue                       # bare "in", e.g. "in the chat"
-        delta = datetime.timedelta(hours=int(hours or 0),
-                                   minutes=int(mins or 0))
-        if delta.total_seconds() <= 0:
-            continue
-        return now + delta
-    return None
+        delta = datetime.timedelta(days=int(d or 0),
+                                   hours=int(h or 0),
+                                   minutes=int(mi or 0))
+        if delta.total_seconds() > 0:
+            results.append(now + delta)
+    return min(results) if results else None
 
 
 def scan_text(text, now=None):
@@ -135,7 +136,12 @@ def scan_text(text, now=None):
 
     hit = _HIT_RE.search(tail)
     if not hit:
-        return LimitState(False, source=tail[-200:])
+        refresh_match = re.search(r"(?:refresh(?:es)?|reset(?:s)?)\b[^.\n]{0,50}\b(?:at|in)\b", tail, re.I)
+        resets = None
+        if refresh_match:
+            after = tail[refresh_match.start():refresh_match.start() + 300]
+            resets = _parse_at(after, now) or _parse_in(after, now)
+        return LimitState(False, resets_at=resets, source=tail[-200:])
 
     # a negation anywhere near the hit disqualifies it
     window = tail[max(0, hit.start() - 60):hit.end() + 60]

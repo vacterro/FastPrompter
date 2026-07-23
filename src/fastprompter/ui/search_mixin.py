@@ -59,23 +59,22 @@ class SearchMixin:
         if backward:
             options |= QTextDocument.FindFlag.FindBackward
 
-        original_cursor = self.text_area.textCursor()
         found = self.text_area.find(text, options)
 
         if not found:
-            cursor = self.text_area.textCursor()
-            cursor.movePosition(
+            doc = self.text_area.document()
+            search_cursor = QTextCursor(doc)
+            search_cursor.movePosition(
                 QTextCursor.MoveOperation.End if backward else QTextCursor.MoveOperation.Start
             )
-            self.text_area.setTextCursor(cursor)
-            found_again = self.text_area.find(text, options)
-            if not found_again:
-                self.text_area.setTextCursor(original_cursor)
+            found_cursor = doc.find(text, search_cursor, options)
+            if not found_cursor.isNull():
+                self.text_area.setTextCursor(found_cursor)
 
     def replace_text(self):
         """Replace the current selection with replace text, then find next."""
         cursor = self.text_area.textCursor()
-        if cursor.hasSelection() and cursor.selectedText() == self.search_input.text():
+        if cursor.hasSelection() and cursor.selectedText().replace('\u2029', '\n') == self.search_input.text():
             cursor.insertText(self.replace_input.text())
         self.find_next()
 

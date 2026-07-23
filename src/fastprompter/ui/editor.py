@@ -33,6 +33,7 @@ TS_STAMP_LINE_RE = re.compile(
     r"(?:Morning |Day |Evening |Night )?"
     r"(?:\d{2}\.\d{2}|\d{1,2} [A-Za-z]{3}) - \d{2}:\d{2}(?::\d{2})?(?: [AP]M)?"
 )
+MD_IMAGE_RE = re.compile(r'!\[.*?\]\((.*?)\)')
 
 # File types the editor can meaningfully load as plain text
 TEXT_EXTENSIONS = {
@@ -1340,11 +1341,29 @@ class VaultTextEdit(QTextEdit):
                     self._toggle_single_line(cb_block)
                     event.accept()
                     return
-            # Ctrl+left-click opens the link; Ctrl+right-click (and the older
-            # Ctrl+Shift+click) reveals a local file in its folder. This sits
-            # OUTSIDE the left-button branch above on purpose - nested in it,
-            # a right-click could never reach it.
+            
             mods = event.modifiers()
+            
+            # Check for image stub clicks
+            if mods & Qt.KeyboardModifier.ControlModifier:
+                img_path = None
+                for rect, path in getattr(self, "_rendered_images", []):
+                    if rect.contains(QPointF(event.pos())):
+                        img_path = path
+                        break
+                
+                if img_path:
+                    url = QUrl(img_path) if img_path.startswith("http") else QUrl.fromLocalFile(img_path.replace("file:///", ""))
+                    wants_folder = (event.button() == Qt.MouseButton.RightButton or bool(mods & Qt.KeyboardModifier.ShiftModifier))
+                    if wants_folder and url.isLocalFile():
+                        self.open_containing_folder(url)
+                        self._suppress_context_menu = True
+                    elif event.button() == Qt.MouseButton.LeftButton:
+                        QDesktopServices.openUrl(url)
+                    else:
+                        return
+                    event.accept()
+                    return
             if (mods & Qt.KeyboardModifier.ControlModifier
                     and event.button() == Qt.MouseButton.LeftButton):
                 tag = self.hashtag_at(event.pos())
@@ -1924,8 +1943,11 @@ class VaultTextEdit(QTextEdit):
                     stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
                     name = _unique_dest(folder, f"paste-{stamp}.png")
                     if image.save(name, "PNG"):
+                        cursor = self.textCursor()
+                        block = cursor.block()
+                        prefix = "" if (cursor.positionInBlock() == 0 and not block.text().strip()) else "\n"
                         self.insertPlainText(
-                            f"![]({QUrl.fromLocalFile(name).toString()})")
+                            f"{prefix}![]({QUrl.fromLocalFile(name).toString()})\n")
                         # Refresh file container if open
                         try:
                             fc = getattr(self.main_win, "_file_container", None)
@@ -2607,6 +2629,7 @@ class VaultTextEdit(QTextEdit):
 
             doc_layout = doc.documentLayout()
             y_off = -self.verticalScrollBar().value()
+            self._rendered_images = []
             block = self._first_visible_block()
             if block:
                 while block.isValid():
@@ -2729,6 +2752,48 @@ class VaultTextEdit(QTextEdit):
                             if mid_y not in hr_drawn:
                                 hr_drawn.add(mid_y)
                                 _draw_horizontal_rule(painter, hr_color, mid_y, vp_rect.width())
+
+                        # Render collapsed markdown image stubs
+                        if not is_large:
+                            for m_img in MD_IMAGE_RE.finditer(text):
+                                start_idx = m_img.start()
+                                img_path = m_img.group(1)
+                                cursor = QTextCursor(block)
+                                cursor.setPosition(block.position() + start_idx)
+                                img_rect = self.cursorRect(cursor)
+                                
+                                # Draw the pill
+                                btn_h = max(18, img_rect.height())
+                                btn_w = 150 # fixed width for stub
+                                
+                                # Make sure it doesn't draw at exactly y=0 if the line is tall, center it
+                                mid_y = img_rect.top() + img_rect.height() // 2
+                                btn_rect = QRectF(img_rect.left(), mid_y - btn_h // 2, btn_w, btn_h)
+                                
+                                painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+                                painter.setBrush(QColor("#1e1e1e"))
+                                painter.setPen(QColor("#5a4a2a"))
+                                painter.drawRoundedRect(btn_rect, 4, 4)
+                                
+                                # Draw icon and text
+                                painter.setPen(QColor("#D9B340"))
+                                btn_text_rect = btn_rect.adjusted(4, 0, -4, 0)
+                                painter.setFont(self.font())
+                                
+                                # Get the basename or fallback
+                                display_name = os.path.basename(img_path)
+                                if not display_name:
+                                    display_name = img_path
+                                # if file:/// protocol, decode it for display
+                                if display_name.startswith("file:///"):
+                                    display_name = display_name[8:]
+                                
+                                fm = painter.fontMetrics()
+                                elided = fm.elidedText("🖼️ " + display_name, Qt.TextElideMode.ElideRight, int(btn_text_rect.width()))
+                                painter.drawText(btn_text_rect, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, elided)
+                                painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+                                
+                                self._rendered_images.append((btn_rect, img_path))
 
                         # Checkbox rendering (skip for large docs, >2000 blocks)
                         if self._doc_has_checkbox and not is_large:

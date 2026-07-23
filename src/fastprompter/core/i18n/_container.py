@@ -23,9 +23,38 @@ EXTERNAL_SLOT: Final[str] = "VANILLA_TRANSLATIONS"
 # glob) so it resolves identically from source and from the frozen Nuitka
 # onefile EXE, where the package's .py files are compiled in and not on disk.
 _BUILTIN_LANGS: Final[list[str]] = [
-    "ru", "est", "ukr", "fra", "spa", "ko", "pt", "it",
-    "de", "ja", "zh", "nl", "pl", "sv", "da", "fi", "no", "th", "vi", "ar", "he",
-    "ded",  # angry-90s-grandpa voice; a partial overlay on Russian
+    "ar",
+    "bg",
+    "cs",
+    "da",
+    "de",
+    "ded",
+    "el",
+    "est",
+    "fi",
+    "fra",
+    "he",
+    "hi",
+    "hr",
+    "hu",
+    "id",
+    "it",
+    "ja",
+    "ko",
+    "nl",
+    "no",
+    "pl",
+    "pt",
+    "ro",
+    "ru",
+    "sk",
+    "spa",
+    "sv",
+    "th",
+    "tur",
+    "ukr",
+    "vi",
+    "zh",
 ]
 
 
