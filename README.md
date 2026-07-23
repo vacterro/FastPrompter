@@ -142,36 +142,6 @@ Press `Alt+X` anywhere — in your browser, IDE, terminal — and FastPrompter p
 <summary><b>More screenshots</b></summary>
 <div align="center">
 
-<img alt="Screenshot" src="docs/images/2026-07-23_105047.png" />
-<br><br>
-
-<img alt="Screenshot" src="docs/images/2026-07-23_104847.png" />
-<br><br>
-
-<img alt="Screenshot" src="docs/images/2026-07-23_104656.png" />
-<br><br>
-
-<img alt="Screenshot" src="docs/images/2026-07-23_104648.png" />
-<br><br>
-
-<img alt="Screenshot" src="docs/images/2026-07-23_104633.png" />
-<br><br>
-
-<img alt="Screenshot" src="docs/images/2026-07-23_104611.png" />
-<br><br>
-
-<img alt="Screenshot" src="docs/images/2026-07-23_104603.png" />
-<br><br>
-
-<img alt="Screenshot" src="docs/images/2026-07-23_104549.png" />
-<br><br>
-
-<img alt="Screenshot" src="docs/images/2026-07-23_104523.png" />
-<br><br>
-
-<img alt="Screenshot" src="docs/images/2026-07-23_104501.png" />
-<br><br>
-
 <img alt="Old Main interface" src="docs/images/2026-07-19_054929.png" />
 <br><em>Old main interface.</em><br><br>
 
@@ -210,6 +180,36 @@ Press `Alt+X` anywhere — in your browser, IDE, terminal — and FastPrompter p
 
 <img alt="Screenshot 7" src="docs/images/2026-07-19_055431.png" />
 <br><em>Zen Mode. Hide the sidebars and settings to get a pure, focused canvas for long-form writing.</em><br><br>
+
+<img alt="Screenshot 8" src="docs/images/2026-07-23_105047.png" />
+<br><em>Additional view.</em><br><br>
+
+<img alt="Screenshot 9" src="docs/images/2026-07-23_104847.png" />
+<br><em>Additional view.</em><br><br>
+
+<img alt="Screenshot 10" src="docs/images/2026-07-23_104656.png" />
+<br><em>Additional view.</em><br><br>
+
+<img alt="Screenshot 11" src="docs/images/2026-07-23_104648.png" />
+<br><em>Additional view.</em><br><br>
+
+<img alt="Screenshot 12" src="docs/images/2026-07-23_104633.png" />
+<br><em>Additional view.</em><br><br>
+
+<img alt="Screenshot 13" src="docs/images/2026-07-23_104611.png" />
+<br><em>Additional view.</em><br><br>
+
+<img alt="Screenshot 14" src="docs/images/2026-07-23_104603.png" />
+<br><em>Additional view.</em><br><br>
+
+<img alt="Screenshot 15" src="docs/images/2026-07-23_104549.png" />
+<br><em>Additional view.</em><br><br>
+
+<img alt="Screenshot 16" src="docs/images/2026-07-23_104523.png" />
+<br><em>Additional view.</em><br><br>
+
+<img alt="Screenshot 17" src="docs/images/2026-07-23_104501.png" />
+<br><em>Additional view.</em><br><br>
 
 </div>
 </details>
