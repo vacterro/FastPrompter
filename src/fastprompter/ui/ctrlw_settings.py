@@ -34,7 +34,14 @@ _PREVIEW_CSS = (
 _DIM = "color:#888;font-size:11px;"
 
 
-def _default(key):
+def _default(key, prefix="ctrlw"):
+    """The shipped value for a settings key, under either key set.
+
+    Alt+W keeps its own copy of every value (prefix "altw"), so the two
+    directions can be tuned apart; the defaults are identical because the
+    block is the same block, only turned around.
+    """
+    key = key.replace(prefix + "_", "ctrlw_", 1)
     vals = {
         "ctrlw_bullet_char": "•",
         "ctrlw_blanks_before": "2",
@@ -55,11 +62,22 @@ def _default(key):
 
 
 class CtrlWSettingsDialog(QDialog):
-    def __init__(self, main_win):
+    """The settings page for Ctrl+W, and for Alt+W with `upward=True`.
+
+    One class, two key sets. Alt+W is the same block turned around, so it
+    wants the same controls and the same live before/after - duplicating the
+    page would have meant fixing every later bug twice.
+    """
+
+    def __init__(self, main_win, prefix="ctrlw", upward=False):
         super().__init__(main_win)
         self.main_win = main_win
+        self.prefix = prefix
+        self.upward = upward
         self.lang = getattr(main_win, "_current_lang", "EN")
-        self.setWindowTitle(tr("Ctrl+W — Smart Line", self.lang))
+        self.setWindowTitle(tr(
+            "Alt+W — Smart Line (upward)" if upward else "Ctrl+W — Smart Line",
+            self.lang))
         self.setMinimumSize(640, 560)
         self._loading = False
 
@@ -91,7 +109,7 @@ class CtrlWSettingsDialog(QDialog):
         for ch in ("•", "-", "*", "+", "▸", "◦", "→"):
             self.cb_bullet.addItem(ch, ch)
         self.cb_bullet.setCurrentText(
-            str(self.main_win.data.get("ctrlw_bullet_char", "•")))
+            str(self.main_win.data.get(f"{prefix}_bullet_char", "•")))
         self.cb_bullet.currentTextChanged.connect(self._refresh)
         global_row.addWidget(self.cb_bullet)
         global_row.addSpacing(12)
@@ -101,7 +119,7 @@ class CtrlWSettingsDialog(QDialog):
             "Newlines inserted before the divider. 2 leaves one empty line "
             "visible above it; 0 puts it straight under the text.", self.lang))
         global_row.addWidget(lbl_bf)
-        self.sb_before = self._spin_from("ctrlw_blanks_before", 0, 6, 2)
+        self.sb_before = self._spin_from(f"{prefix}_blanks_before", 0, 6, 2)
         self.sb_before.setToolTip(lbl_bf.toolTip())
         global_row.addWidget(self.sb_before)
 
@@ -111,7 +129,7 @@ class CtrlWSettingsDialog(QDialog):
             "consecutive lines; 3 leaves two empty lines to write in.",
             self.lang))
         global_row.addWidget(lbl_af)
-        self.sb_after = self._spin_from("ctrlw_blanks_after", 1, 6, 3)
+        self.sb_after = self._spin_from(f"{prefix}_blanks_after", 1, 6, 3)
         self.sb_after.setToolTip(lbl_af.toolTip())
         global_row.addWidget(self.sb_after)
         global_row.addStretch(1)
@@ -179,7 +197,7 @@ class CtrlWSettingsDialog(QDialog):
         return s
 
     def _scene_val(self, sid, k, default=""):
-        return self.main_win.data.get(f"ctrlw_{sid}_{k}", default)
+        return self.main_win.data.get(f"{self.prefix}_{sid}_{k}", default)
 
     def _build_scene_card(self, sid):
         """One scenario: a title, its switches, and its live before/after."""
@@ -226,14 +244,14 @@ class CtrlWSettingsDialog(QDialog):
         self._scene_widgets[f"{sid}_ovr"] = cb_ovr
         row.addWidget(cb_ovr)
 
-        sb_bf = self._spin_from(f"ctrlw_{sid}_before", 0, 6, 2)
+        sb_bf = self._spin_from(f"{self.prefix}_{sid}_before", 0, 6, 2)
         sb_bf.setToolTip(tr("Newlines above the divider, this scenario only.", self.lang))
         sb_bf.setMaximumWidth(44)
         sb_bf.setEnabled(has_ovr)
         self._scene_widgets[f"{sid}_bf"] = sb_bf
         row.addWidget(sb_bf)
 
-        sb_af = self._spin_from(f"ctrlw_{sid}_after", 1, 6, 3)
+        sb_af = self._spin_from(f"{self.prefix}_{sid}_after", 1, 6, 3)
         sb_af.setToolTip(tr("Newlines below the divider, this scenario only.", self.lang))
         sb_af.setMaximumWidth(44)
         sb_af.setEnabled(has_ovr)
@@ -303,7 +321,7 @@ class CtrlWSettingsDialog(QDialog):
         self.cb_s6_action.addItem(tr("keep it, add a point below", self.lang), "bullet")
         self.cb_s6_action.addItem(tr("do nothing", self.lang), "skip")
         idx = self.cb_s6_action.findData(
-            self.main_win.data.get("ctrlw_s6_action", "remove"))
+            self.main_win.data.get(f"{self.prefix}_s6_action", "remove"))
         if idx >= 0:
             self.cb_s6_action.setCurrentIndex(idx)
         self.cb_s6_action.currentIndexChanged.connect(self._refresh)
@@ -361,7 +379,7 @@ class CtrlWSettingsDialog(QDialog):
                 sid,
                 self._scene_widgets[f"{sid}_div"].isChecked(),
                 self._scene_widgets[f"{sid}_bul"].isChecked(),
-                bf, af, bullet,
+                bf, af, bullet, self.upward,
             )
             self._scene_widgets[f"{sid}_pv_b"].setText(render_preview(before))
             self._scene_widgets[f"{sid}_pv_a"].setText(render_preview(after))
@@ -381,12 +399,12 @@ class CtrlWSettingsDialog(QDialog):
         self._scene_widgets["s6_pv_a"].setText(render_preview(out))
 
     def _reset_defaults(self):
-        for key, (_, default) in KEYS.items():
-            self.main_win.data[key] = default
+        for _short, (key, default) in KEYS.items():
+            self.main_win.data[key.replace("ctrlw_", self.prefix + "_", 1)] = default
         for sid, _t, _w in SCENES:
             for k in SCENE_KEYS:
-                self.main_win.data[f"ctrlw_{sid}_{k}"] = _default(f"ctrlw_{sid}_{k}")
-        self.main_win.data["ctrlw_s6_action"] = "remove"
+                self.main_win.data[f"{self.prefix}_{sid}_{k}"] = _default(f"ctrlw_{sid}_{k}")
+        self.main_win.data[f"{self.prefix}_s6_action"] = "remove"
         self.main_win.mark_dirty()
         self._reload_from_data()
 
@@ -396,16 +414,16 @@ class CtrlWSettingsDialog(QDialog):
         # repaint of every preview; refresh once at the end instead
         self._loading = True
         try:
-            self.cb_bullet.setCurrentText(str(d.get("ctrlw_bullet_char", "•")))
-            self.sb_before.setValue(int(d.get("ctrlw_blanks_before", 2)))
-            self.sb_after.setValue(int(d.get("ctrlw_blanks_after", 3)))
+            self.cb_bullet.setCurrentText(str(d.get(f"{self.prefix}_bullet_char", "•")))
+            self.sb_before.setValue(int(d.get(f"{self.prefix}_blanks_before", 2)))
+            self.sb_after.setValue(int(d.get(f"{self.prefix}_blanks_after", 3)))
             for sid, _t, _w in SCENES:
                 self._scene_widgets[f"{sid}_div"].setChecked(
-                    d.get(f"ctrlw_{sid}_divider", "True") == "True")
+                    d.get(f"{self.prefix}_{sid}_divider", "True") == "True")
                 self._scene_widgets[f"{sid}_bul"].setChecked(
-                    d.get(f"ctrlw_{sid}_bullet", "True") == "True")
-                b_s = d.get(f"ctrlw_{sid}_before", "")
-                a_s = d.get(f"ctrlw_{sid}_after", "")
+                    d.get(f"{self.prefix}_{sid}_bullet", "True") == "True")
+                b_s = d.get(f"{self.prefix}_{sid}_before", "")
+                a_s = d.get(f"{self.prefix}_{sid}_after", "")
                 has_ovr = b_s != "" or a_s != ""
                 self._scene_widgets[f"{sid}_ovr"].setChecked(has_ovr)
                 try:
@@ -418,7 +436,7 @@ class CtrlWSettingsDialog(QDialog):
                     self._scene_widgets[f"{sid}_af"].setValue(3)
                 self._scene_widgets[f"{sid}_bf"].setEnabled(has_ovr)
                 self._scene_widgets[f"{sid}_af"].setEnabled(has_ovr)
-            idx = self.cb_s6_action.findData(d.get("ctrlw_s6_action", "remove"))
+            idx = self.cb_s6_action.findData(d.get(f"{self.prefix}_s6_action", "remove"))
             if idx >= 0:
                 self.cb_s6_action.setCurrentIndex(idx)
         finally:
@@ -427,18 +445,18 @@ class CtrlWSettingsDialog(QDialog):
 
     def accept(self):
         d = self.main_win.data
-        d["ctrlw_bullet_char"] = self._bullet_char()
-        d["ctrlw_blanks_before"] = str(self.sb_before.value())
-        d["ctrlw_blanks_after"] = str(self.sb_after.value())
+        d[f"{self.prefix}_bullet_char"] = self._bullet_char()
+        d[f"{self.prefix}_blanks_before"] = str(self.sb_before.value())
+        d[f"{self.prefix}_blanks_after"] = str(self.sb_after.value())
         for sid, _t, _w in SCENES:
-            d[f"ctrlw_{sid}_divider"] = "True" if self._scene_widgets[f"{sid}_div"].isChecked() else "False"
-            d[f"ctrlw_{sid}_bullet"] = "True" if self._scene_widgets[f"{sid}_bul"].isChecked() else "False"
+            d[f"{self.prefix}_{sid}_divider"] = "True" if self._scene_widgets[f"{sid}_div"].isChecked() else "False"
+            d[f"{self.prefix}_{sid}_bullet"] = "True" if self._scene_widgets[f"{sid}_bul"].isChecked() else "False"
             if self._scene_widgets[f"{sid}_ovr"].isChecked():
-                d[f"ctrlw_{sid}_before"] = str(self._scene_widgets[f"{sid}_bf"].value())
-                d[f"ctrlw_{sid}_after"] = str(self._scene_widgets[f"{sid}_af"].value())
+                d[f"{self.prefix}_{sid}_before"] = str(self._scene_widgets[f"{sid}_bf"].value())
+                d[f"{self.prefix}_{sid}_after"] = str(self._scene_widgets[f"{sid}_af"].value())
             else:
-                d[f"ctrlw_{sid}_before"] = ""
-                d[f"ctrlw_{sid}_after"] = ""
-        d["ctrlw_s6_action"] = self.cb_s6_action.currentData() or "remove"
+                d[f"{self.prefix}_{sid}_before"] = ""
+                d[f"{self.prefix}_{sid}_after"] = ""
+        d[f"{self.prefix}_s6_action"] = self.cb_s6_action.currentData() or "remove"
         self.main_win.mark_dirty()
         super().accept()

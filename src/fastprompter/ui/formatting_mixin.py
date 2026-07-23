@@ -395,14 +395,20 @@ class FormattingMixin:
             return "s1"
         return "s4"
 
-    def _scenario_bool(self, sid, key, default=True):
-        return self.data.get(f"ctrlw_{sid}_{key}", str(default)) == "True"
+    def _scenario_bool(self, sid, key, default=True, prefix="ctrlw"):
+        """One scenario switch. `prefix` picks the key set: Ctrl+W or Alt+W.
 
-    def _scenario_blanks(self, sid):
-        gb = int(self.data.get("ctrlw_blanks_before", "2"))
-        ga = int(self.data.get("ctrlw_blanks_after", "3"))
-        sb = self.data.get(f"ctrlw_{sid}_before", "")
-        sa = self.data.get(f"ctrlw_{sid}_after", "")
+        Alt+W is the same page of settings turned around, so it reads the
+        same shapes under `altw_` rather than sharing Ctrl+W's - two keys
+        pointing at one setting would mean neither could be tuned alone.
+        """
+        return self.data.get(f"{prefix}_{sid}_{key}", str(default)) == "True"
+
+    def _scenario_blanks(self, sid, prefix="ctrlw"):
+        gb = int(self.data.get(f"{prefix}_blanks_before", "2"))
+        ga = int(self.data.get(f"{prefix}_blanks_after", "3"))
+        sb = self.data.get(f"{prefix}_{sid}_before", "")
+        sa = self.data.get(f"{prefix}_{sid}_after", "")
         try:
             b = int(sb) if sb else gb
         except (TypeError, ValueError):
@@ -503,6 +509,72 @@ class FormattingMixin:
             self.mark_dirty()
         finally:
             cursor.endEditBlock()
+
+    def insert_add_line_up(self):
+        """Alt+W: Ctrl+W turned around — the new point goes ABOVE.
+
+        Ctrl+W closes the line you are on and opens a fresh one below it.
+        Alt+W opens the fresh one above and pushes the existing text down,
+        with the divider between them. Scenario detection is shared; only
+        the settings prefix and the order of the parts differ.
+        """
+        from fastprompter.ui.edit_guard import edit_block
+
+        bullet_char = self.data.get("altw_bullet_char", "•")
+        cursor = self.text_area.textCursor()
+        with edit_block(cursor, self.text_area):
+            stripped = cursor.block().text().strip()
+
+            # ── on a divider ──
+            if self._is_divider_line(stripped):
+                action = self.data.get("altw_s6_action", "remove")
+                if action == "skip":
+                    self.text_area.setTextCursor(cursor)
+                    self.text_area.setFocus()
+                    return
+                if action == "bullet":
+                    # mirrored: the point goes above the rule, not below it
+                    _, after = self._scenario_blanks("s6", "altw")
+                    c = QTextCursor(cursor)
+                    c.movePosition(QTextCursor.MoveOperation.StartOfBlock)
+                    start = c.position()
+                    c.insertText(bullet_char + " " + "\n" * after)
+                    c.setPosition(start + len(bullet_char) + 1)
+                    self.text_area.setTextCursor(c)
+                    self.text_area.ensureCursorVisible()
+                    self.text_area.setFocus()
+                    self.mark_dirty()
+                    return
+                sel = QTextCursor(cursor)
+                sel.movePosition(QTextCursor.MoveOperation.StartOfBlock)
+                sel.movePosition(QTextCursor.MoveOperation.EndOfBlock,
+                                 QTextCursor.MoveMode.KeepAnchor)
+                sel.removeSelectedText()
+                sel.deleteChar()
+                self.text_area.setTextCursor(sel)
+                self.text_area.setFocus()
+                self.mark_dirty()
+                return
+
+            sid = self.ctrlw_scenario(cursor)
+            use_div = self._scenario_bool(sid, "divider", prefix="altw")
+            use_bul = self._scenario_bool(sid, "bullet", prefix="altw")
+            bf, af = self._scenario_blanks(sid, "altw")
+            template = build_template(sid, use_div, use_bul, bf, af,
+                                      bullet_char, upward=True)
+
+            # Always at the START of the caret's line: that is what makes the
+            # existing text move down instead of being written over.
+            cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
+            start = cursor.position()
+            cursor.insertText(template)
+            # land on the new point; with no bullet there is nothing to land
+            # on, so stay at the top of what was inserted
+            cursor.setPosition(start + (len(bullet_char) + 1 if use_bul else 0))
+            self.text_area.setTextCursor(cursor)
+            self.text_area.ensureCursorVisible()
+            self.text_area.setFocus()
+            self.mark_dirty()
 
     def insert_old_add_line(self):
         before, after = self.divider_counts()

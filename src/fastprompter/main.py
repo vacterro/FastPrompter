@@ -2950,6 +2950,15 @@ class FastPrompter(
             getattr(self, "_current_lang", "EN")))
         self.btn_ctrlw_settings.clicked.connect(self.open_ctrlw_settings)
         ctrlw_btn_row.addWidget(self.btn_ctrlw_settings)
+        self.btn_altw_settings = QPushButton(tr("Alt+W…", getattr(self, "_current_lang", "EN")))
+        self.btn_altw_settings.setToolTip(tr(
+            "Alt+W is Ctrl+W turned around: the new point goes ABOVE the\n"
+            "line you are on and the existing text moves down.\n"
+            "Same settings, kept separately so the two directions can be\n"
+            "tuned apart.",
+            getattr(self, "_current_lang", "EN")))
+        self.btn_altw_settings.clicked.connect(self.open_altw_settings)
+        ctrlw_btn_row.addWidget(self.btn_altw_settings)
         ctrlw_btn_row.addStretch(1)
 
         files_row = QHBoxLayout()
@@ -3651,15 +3660,24 @@ class FastPrompter(
         finally:
             self.ignore_focus_loss = prev
 
-    def open_ctrlw_settings(self):
-        """Open the per-scenario Ctrl+W behavior dialog."""
+    def open_ctrlw_settings(self, upward=False):
+        """Open the per-scenario Smart Line dialog.
+
+        `upward` is Alt+W: the same page against its own key set, because
+        the two directions are tuned apart.
+        """
         from fastprompter.ui.ctrlw_settings import CtrlWSettingsDialog
         prev = getattr(self, "ignore_focus_loss", False)
         self.ignore_focus_loss = True
         try:
-            CtrlWSettingsDialog(self).exec()
+            CtrlWSettingsDialog(
+                self, prefix="altw" if upward else "ctrlw", upward=upward).exec()
         finally:
             self.ignore_focus_loss = prev
+
+    def open_altw_settings(self):
+        """Open the Alt+W (upward Smart Line) dialog."""
+        self.open_ctrlw_settings(upward=True)
 
     @staticmethod
     def _has_header_above(block):
@@ -6986,7 +7004,10 @@ class FastPrompter(
 
         add_fixed("Ctrl+Shift+Z", self.redo_action)
         add_fixed("Ctrl+Shift+C", self.clear_text)
-        add_fixed("Alt+W", self.insert_old_add_line, Qt.ShortcutContext.ApplicationShortcut)
+        # Alt+W is Ctrl+W turned around: the new point goes ABOVE and the
+        # existing text moves down. It used to insert the plain toolbar
+        # divider, which had no settings of its own at all.
+        add_fixed("Alt+W", self.insert_add_line_up, Qt.ShortcutContext.ApplicationShortcut)
         add_fixed("Alt+Up", lambda: self.navigate_silo(-1), Qt.ShortcutContext.ApplicationShortcut)
         add_fixed("Alt+Down", lambda: self.navigate_silo(1), Qt.ShortcutContext.ApplicationShortcut)
         add_shortcut("hk_italic", "Ctrl+I", lambda: self.apply_format("italic"))

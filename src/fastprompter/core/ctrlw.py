@@ -55,13 +55,31 @@ SAMPLE = {
 }
 
 
-def build_template(sid, use_div, use_bul, before, after, bullet_char):
+def build_template(sid, use_div, use_bul, before, after, bullet_char,
+                   upward=False):
     """The exact text Ctrl+W inserts for one scenario.
 
     ``before``/``after`` are counts of newlines, not of blank lines: 2 before
     means one visibly empty line above the divider. s2 skips the leading
     newlines because there is nothing above to be separated from.
+
+    ``upward`` is Alt+W: the same block turned around, so the new point
+    lands ABOVE the line the caret was on and the divider sits between the
+    two. The parts are the same and only their order changes - which is the
+    point, since both keys read the same kind of settings.
     """
+    if upward:
+        parts = []
+        if use_bul:
+            parts.append(bullet_char + " ")
+        if use_bul or (use_div and sid == "s3"):
+            parts.append("\n" * after)
+        if use_div:
+            parts.append("---")
+            if sid != "s2":
+                parts.append("\n" * before)
+        return "".join(parts)
+
     parts = []
     if use_div:
         if sid != "s2":
@@ -76,7 +94,7 @@ def build_template(sid, use_div, use_bul, before, after, bullet_char):
     return "".join(parts)
 
 
-def simulate(sid, use_div, use_bul, before, after, bullet_char):
+def simulate(sid, use_div, use_bul, before, after, bullet_char, upward=False):
     """(before_text, after_text) for the preview, caret included.
 
     Mirrors where ``insert_add_line`` lands the template. It is a copy of
@@ -84,8 +102,18 @@ def simulate(sid, use_div, use_bul, before, after, bullet_char):
     QTextCursor - so the scenario tests pin them together.
     """
     src = SAMPLE.get(sid, CURSOR)
-    template = build_template(sid, use_div, use_bul, before, after, bullet_char)
+    template = build_template(sid, use_div, use_bul, before, after,
+                              bullet_char, upward)
     head, _, tail = src.partition(CURSOR)
+
+    if upward:
+        # goes in at the START of the caret's line, and the caret follows
+        # the new point up rather than staying on the old text
+        line_start = head.rfind("\n") + 1
+        above, rest = head[:line_start], head[line_start:]
+        caret_at = len(bullet_char) + 1 if use_bul else 0
+        placed = template[:caret_at] + CURSOR + template[caret_at:]
+        return src, above + placed + rest + tail
 
     if sid == "s3":
         # inserted at the START of the blank line; with no bullet the caret
