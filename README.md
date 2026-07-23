@@ -51,7 +51,8 @@ Press `Alt+X` anywhere — in your browser, IDE, terminal — and FastPrompter p
 | 🎨 **6 vintage themes** | Win95-style bevels, warm amber-on-black, OLED — plus a full custom color editor |
 | 🎵 **Sounds** | Optional UI clicks and a typewriter tick, with volume control |
 | 📄 **Drop Zones** | Drag files to the editor to choose from 4 actions: insert text, insert clickable link, copy to silo Files, or create shortcut in silo Files |
-| 🕒 **Analog clock** | Optional mini analog clock in the header bar, next to the date/time widget |
+| 🕒 **Clock & Timer** | Optional mini analog clock, date/time widget, and a built-in Pomodoro-style timer with snooze and adjustment controls |
+| 🧠 **[SAIPEN](https://github.com/vacterro/saipen) Integration** | Auto-detects `.saipen` folders in your projects and adds a compact toolbar viewer for STATE, BOARD, and LOG |
 | ⌨️ **Bindable shortcuts** | Rebind every in-app hotkey from the Settings panel — two slots per action, with dynamic tooltips |
 | 🌍 **22 languages + flags** | English, Russian, Ukrainian, German, French, Spanish, Italian, Portuguese, Dutch, Polish, Swedish, Danish, Finnish, Norwegian, Japanese, Chinese, Korean, Thai, Vietnamese, Arabic, Hebrew, Estonian — each with a drawn flag icon, switchable live in Settings. Plus a bonus **«Дед»** angry-grandpa voice 👴 |
 | 🗑️ **Trash** | Middle-click to trash a silo — text and files are safely moved to `_trash`, never permanently deleted |
@@ -83,7 +84,8 @@ Press `Alt+X` anywhere — in your browser, IDE, terminal — and FastPrompter p
 - **Search 🔍** — type `red car` and it finds jars containing both "red" AND "car", in any order.
 - **Themes** — six coats of paint, all vintage Windows 95 style: dark gold, amber, pitch black. Or mix your own colors.
 - **Sounds** — optional clicks and a typewriter tick-tick-tick, with a volume knob.
-- **The clock** — date and time in the corner, with seconds, a "Morning/Night" word and even a tiny real analog clock with hands, if you fancy it.
+- **The clock & timer** — date and time in the corner, with seconds, a "Morning/Night" word, a tiny real analog clock, and a built-in Pomodoro-style timer with snooze controls.
+- **[SAIPEN](https://github.com/vacterro/saipen) Integration** — automatically detects `.saipen` tracking folders in your projects and gives you instant read-only access to STATE, BOARD, and LOG files right from the toolbar.
 - **Scale** — one knob makes the WHOLE program bigger or smaller, 50–150%. For young eyes and old.
 - **Shortcuts** — every key combo can be re-taught in Settings. Two slots each, so `Alt+X` and `F15` can do the same thing.
 - **Two languages** — the whole interface speaks English or Russian; switch in Settings.
@@ -116,7 +118,8 @@ Press `Alt+X` anywhere — in your browser, IDE, terminal — and FastPrompter p
 - **Поиск 🔍** — набрал `красная машина` — найдёт банки, где есть И «красная», И «машина», в любом порядке.
 - **Темы** — шесть покрасок, все под старый Windows 95: тёмное золото, янтарь, чистый чёрный. Или намешай свои цвета.
 - **Звуки** — по желанию щелчки и печатная машинка тык-тык-тык, с ручкой громкости.
-- **Часы** — дата и время в углу: с секундами, словом «Утро/Ночь» и даже крохотными настоящими стрелочными часами, если захочешь.
+- **Часы и таймер** — дата и время в углу: с секундами, словом «Утро/Ночь», крохотными стрелочными часами и встроенным помодоро-таймером.
+- **Интеграция [SAIPEN](https://github.com/vacterro/saipen)** — сама находит папки `.saipen` в проекте и выводит кнопки STATE, BOARD и LOG для быстрого просмотра прямо на панель.
 - **Масштаб** — одна ручка делает ВСЮ программу крупнее или мельче, 50–150%. И для молодых глаз, и для наших.
 - **Горячие клавиши** — любую комбинацию можно переучить в настройках. По два слота: пусть `Alt+X` и `F15` делают одно и то же.
 - **Два языка** — весь интерфейс говорит по-русски или по-английски; переключается в настройках.
@@ -138,6 +141,36 @@ Press `Alt+X` anywhere — in your browser, IDE, terminal — and FastPrompter p
 <details>
 <summary><b>More screenshots</b></summary>
 <div align="center">
+
+<img alt="Screenshot" src="docs/images/2026-07-23_105047.png" />
+<br><br>
+
+<img alt="Screenshot" src="docs/images/2026-07-23_104847.png" />
+<br><br>
+
+<img alt="Screenshot" src="docs/images/2026-07-23_104656.png" />
+<br><br>
+
+<img alt="Screenshot" src="docs/images/2026-07-23_104648.png" />
+<br><br>
+
+<img alt="Screenshot" src="docs/images/2026-07-23_104633.png" />
+<br><br>
+
+<img alt="Screenshot" src="docs/images/2026-07-23_104611.png" />
+<br><br>
+
+<img alt="Screenshot" src="docs/images/2026-07-23_104603.png" />
+<br><br>
+
+<img alt="Screenshot" src="docs/images/2026-07-23_104549.png" />
+<br><br>
+
+<img alt="Screenshot" src="docs/images/2026-07-23_104523.png" />
+<br><br>
+
+<img alt="Screenshot" src="docs/images/2026-07-23_104501.png" />
+<br><br>
 
 <img alt="Old Main interface" src="docs/images/2026-07-19_054929.png" />
 <br><em>Old main interface.</em><br><br>
