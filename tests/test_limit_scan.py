@@ -90,10 +90,12 @@ def test_a_socket_that_refuses_is_an_answer_not_a_crash():
 
 
 def test_an_agent_that_is_not_listening_says_so():
+    """With no store to fall back to, a shut agent is 'no answer' - and the
+    reason names it, so the UI never has to show a blank."""
     result = scan_agent(FakeAdapter(), connect=lambda url: FakeWs(),
                         target_fn=lambda port, title: None, now=NOW)
     assert result.reachable is False
-    assert "not listening" in result.error
+    assert "not running" in result.error
 
 
 def test_a_non_cdp_agent_is_skipped_with_a_reason():
@@ -158,3 +160,123 @@ def test_limited_filters_to_the_ones_actually_capped():
     hit, _ws = scan("daily free limit reached. come back after the daily reset")
     results.append(hit)
     assert [r.name for r in limited(results)] == [hit.name]
+
+
+# ------------------------------------------------- reading the store on disk
+
+
+def _store(tmp_path, rows):
+    """A sqlite store shaped like freebuff's: text plus a unix timestamp."""
+    import sqlite3
+
+    db = tmp_path / "agent.db"
+    conn = sqlite3.connect(db)
+    conn.execute("CREATE TABLE messages(seq INTEGER, role TEXT, "
+                 "text TEXT, ts INTEGER)")
+    for i, (text, stamp) in enumerate(rows):
+        conn.execute("INSERT INTO messages VALUES (?,?,?,?)",
+                     (i, "assistant", text, int(stamp)))
+    conn.commit()
+    conn.close()
+    return str(db)
+
+
+def _disk_adapter(db):
+    from fastprompter.core.watcher.adapter import Adapter
+    from fastprompter.core.watcher.probes import SqliteProbe
+
+    return Adapter("shutdown-agent", probes=[SqliteProbe(db)], transport="post")
+
+
+LIMIT = ("⚠️ Daily free limit reached for deepseek/deepseek-v4-flash. "
+         "Come back after the daily reset.")
+
+
+def test_a_fresh_limit_in_the_store_is_found_with_the_app_shut(tmp_path):
+    """The point of reading the store: waiting for a reset is exactly when
+    the agent is NOT running."""
+    import time
+
+    now = time.time()
+    rows = [(f"msg {i} working fine", now - 3600 + i) for i in range(200)]
+    rows.append((LIMIT, now - 60))
+    result = scan_agent(_disk_adapter(_store(tmp_path, rows)))
+
+    assert result.reachable is True
+    assert result.state.reached is True
+    assert "store on disk" in result.state.source
+
+
+def test_a_stale_limit_is_not_reported_as_current(tmp_path):
+    """freebuff's real one was 28 hours old and its daily window had already
+    reset - announcing it would name a limit that no longer exists."""
+    import time
+
+    now = time.time()
+    rows = [(LIMIT, now - 28 * 3600), ("back to normal", now - 27 * 3600)]
+    result = scan_agent(_disk_adapter(_store(tmp_path, rows)))
+
+    assert result.state.reached is False
+
+
+def test_rows_with_no_readable_time_are_dropped(tmp_path):
+    """An unknown age is not evidence of being recent."""
+    import sqlite3
+
+    db = tmp_path / "notime.db"
+    conn = sqlite3.connect(db)
+    conn.execute("CREATE TABLE messages(text TEXT)")
+    conn.execute("INSERT INTO messages VALUES (?)", (LIMIT,))
+    conn.commit()
+    conn.close()
+
+    result = scan_agent(_disk_adapter(str(db)))
+    assert result.state.reached is False
+    assert result.reachable is False, "nothing recent to read is 'no answer'"
+
+
+def test_milliseconds_timestamps_are_understood(tmp_path):
+    """Some stores write ms, some seconds; the value says which."""
+    import time
+
+    now = time.time()
+    rows = [(LIMIT, int(now * 1000) - 60_000)]
+    result = scan_agent(_disk_adapter(_store(tmp_path, rows)))
+    assert result.state.reached is True
+
+
+def test_the_live_page_is_preferred_over_the_store(tmp_path):
+    """What the user is looking at wins; the store is the fallback."""
+    import time
+
+    now = time.time()
+    db = _store(tmp_path, [(LIMIT, now - 60)])
+
+    from fastprompter.core.watcher.adapter import Adapter
+    from fastprompter.core.watcher.probes import SqliteProbe
+
+    adapter = Adapter("live-one", probes=[SqliteProbe(db)], transport="cdp",
+                      cdp_port=9333)
+    result = scan_agent(adapter, connect=lambda url: FakeWs("all good here"),
+                        target_fn=lambda port, title: FakeTarget(), now=NOW)
+
+    assert result.state.reached is False, "the live page said it was fine"
+    assert "store on disk" not in (result.state.source or "")
+
+
+def test_a_shut_agent_falls_back_to_its_store(tmp_path):
+    import time
+
+    now = time.time()
+    db = _store(tmp_path, [(LIMIT, now - 60)])
+
+    from fastprompter.core.watcher.adapter import Adapter
+    from fastprompter.core.watcher.probes import SqliteProbe
+
+    adapter = Adapter("shut-one", probes=[SqliteProbe(db)], transport="cdp",
+                      cdp_port=9333)
+    result = scan_agent(adapter, connect=lambda url: FakeWs(""),
+                        target_fn=lambda port, title: None)
+
+    assert result.state.reached is True
+    assert "store on disk" in result.state.source
