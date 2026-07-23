@@ -227,10 +227,13 @@ class DraggableButton(QPushButton):
         if getattr(self.main_win, 'is_locked', False) or not (e.buttons() & Qt.MouseButton.LeftButton) or not self.drag_start: return
         if (e.pos() - self.drag_start).manhattanLength() < QApplication.startDragDistance(): return
         self._dragging = True
-        drag, mime = QDrag(self), QMimeData()
-        mime.setText(f"{self.cat}:{self.global_idx}")
-        drag.setMimeData(mime)
-        drag.exec(Qt.DropAction.MoveAction)
+        try:
+            drag, mime = QDrag(self), QMimeData()
+            mime.setText(f"{self.cat}:{self.global_idx}")
+            drag.setMimeData(mime)
+            drag.exec(Qt.DropAction.MoveAction)
+        finally:
+            self._dragging = False
 
     def mouseReleaseEvent(self, e):
         if e.button() == Qt.MouseButton.LeftButton and not self._dragging:
@@ -831,11 +834,14 @@ class DraggableSiloButton(QWidget):
         if getattr(self.main_win, 'is_locked', False) or not (e.buttons() & Qt.MouseButton.LeftButton) or not self.drag_start: return
         if (e.pos() - self.drag_start).manhattanLength() < QApplication.startDragDistance(): return
         self._dragging = True
-        drag, mime = QDrag(self), QMimeData()
-        prefix = "arcsilo" if self.is_archive else "silo"
-        mime.setText(f"{prefix}:{self.global_idx}")
-        drag.setMimeData(mime)
-        drag.exec(Qt.DropAction.MoveAction)
+        try:
+            drag, mime = QDrag(self), QMimeData()
+            prefix = "arcsilo" if self.is_archive else "silo"
+            mime.setText(f"{prefix}:{self.global_idx}")
+            drag.setMimeData(mime)
+            drag.exec(Qt.DropAction.MoveAction)
+        finally:
+            self._dragging = False
 
     def mouseReleaseEvent(self, e):
         if e.button() == Qt.MouseButton.LeftButton and not self._dragging:

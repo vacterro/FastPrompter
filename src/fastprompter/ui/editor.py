@@ -1387,10 +1387,9 @@ class VaultTextEdit(QTextEdit):
                     event.accept()
                     return
         except Exception:
-            # was logger.debug with just str(e): a click handler that threw
-            # left no stack and no level anyone would look at, which is
-            # exactly the case being chased for the "view jumps on click"
-            # report. Full traceback, at a level that shows up.
+            self._fold_pressed_block = None
+            self._copy_pressed_block = None
+            self._ts_pressed_block = None
             logger.exception("mouse press handling failed at %s", event.pos())
         # Line-blocking drag: Ctrl+Shift+hold picks up the whole line under
         # the cursor; a real drag (past the OS threshold) swaps it with the
@@ -2298,6 +2297,7 @@ class VaultTextEdit(QTextEdit):
             else:
                 super().keyPressEvent(event)
         except Exception:
+            logger.exception("keyPressEvent handling failed")
             event.accept()
             return
 

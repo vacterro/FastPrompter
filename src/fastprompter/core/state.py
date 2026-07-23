@@ -269,8 +269,13 @@ class FastPrompterState:
                     self._safe_write(os.path.join(arc_dir, fname), text)
 
     def save_data_to_db(self, current_text, ui_settings=None, force=False):
+        run_pb = False
         with self._lock:
-            self._save_data_to_db_locked(current_text, ui_settings, force)
+            run_pb = self._save_data_to_db_locked(current_text, ui_settings, force)
+            
+        if run_pb:
+            from fastprompter.utils.portable_backup import run_portable_backup
+            run_portable_backup(self.data)
 
     def _save_data_to_db_locked(self, current_text, ui_settings=None, force=False):
         if not self.conn: return
@@ -345,9 +350,11 @@ class FastPrompterState:
                         if dest_conn:
                             try: dest_conn.close()
                             except Exception as e: logger.warning(f"Failed to close dest_conn in backup: {e}")
+                        
                         # Portable file backup (throttled internally)
                         if self.data.get("portable_backup_enabled", "True") == "True":
-                            run_portable_backup(self.data)
+                            return True
+            return False
         except sqlite3.Error:
             import traceback
             traceback.print_exc()

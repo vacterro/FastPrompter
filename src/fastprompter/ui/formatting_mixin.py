@@ -106,12 +106,14 @@ class FormattingMixin:
             cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
             cursor.insertText(f"{marker}{sel}{marker}")
             new_start, new_end = start + m, start + m + len(sel)
-        cursor.endEditBlock()
-        ta._undo_boundary_pending = True
 
         cursor.setPosition(new_start)
         cursor.setPosition(new_end, QTextCursor.MoveMode.KeepAnchor)
         ta.setTextCursor(cursor)
+        
+        cursor.endEditBlock()
+        ta._undo_boundary_pending = True
+
         ta.setFocus()
         self.mark_dirty()
 
