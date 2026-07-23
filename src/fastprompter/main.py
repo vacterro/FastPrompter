@@ -2718,14 +2718,13 @@ class FastPrompter(
                             or (self.text_area.line_number_area.update() if hasattr(self, "text_area") and hasattr(self.text_area, "line_number_area") else None)
         )
 
-        self.cb_ctrl_e_center = create_footer_cb(
-            "\u2192 Ctrl+E Center",
-            "Center-align header lines created with Ctrl+E.\n"
-            "Centering persists across sessions.",
-            self.data.get("ctrl_e_center", "False") == "True",
-            self._on_ctrl_e_center_toggled,
-        )
-
+        # "\u2192 Ctrl+E Center" used to live here. It was the two-state face of
+        # an alignment that is now chosen per line - title, rule and bullet
+        # each on their own - in the Ctrl+E\u2026 dialog, and a checkbox has
+        # nowhere to put right or justified. Two controls for one setting,
+        # one of which could only ever tell half the truth. The ctrl_e_center
+        # KEY is still read (see core/header.read_settings) so a profile
+        # saved with it keeps its centring.
         self.cb_zebra = create_footer_cb(
             "🦓 Zebra Stripes",
             "Lightly shade every other line for readability",
@@ -3225,7 +3224,6 @@ class FastPrompter(
             self.cb_line_marks, self.cb_zebra,
             self.cb_double_line, self.cb_bold_titles, div_row, ctrlw_btn_row, hdr_row,
             self.lbl_align, self.cb_align_combo,
-            self.cb_ctrl_e_center,
         ]), tr("Editor", self._current_lang))
 
         # Clock/date settings used to be buried in "Window" — seven of them,
@@ -4685,13 +4683,14 @@ class FastPrompter(
         self.mark_dirty()
 
     def _on_ctrl_e_center_toggled(self, checked):
-        """The footer checkbox is the two-state face of ctrl_e_align.
+        """Centre the Ctrl+E title, as the removed footer checkbox did.
 
-        It has to write the alignment too: read_settings prefers ctrl_e_align
-        once the header dialog has stored one, so a checkbox that only set
-        the old boolean would go dead the first time that dialog was used.
-        Unticking returns to left - the checkbox has nowhere to record that
-        the user had picked right or justified.
+        The checkbox is gone - alignment is per line in the Ctrl+E… dialog
+        now - but this stays as the single-switch entry point: it is what a
+        hotkey or a restored profile would call, and it has to write BOTH
+        keys, because read_settings prefers ctrl_e_align once one exists.
+        Unticking returns to left; a checkbox has nowhere to record that the
+        user had picked right or justified.
         """
         self.data["ctrl_e_center"] = "True" if checked else "False"
         self.data["ctrl_e_align"] = "center" if checked else "left"

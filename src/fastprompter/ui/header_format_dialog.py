@@ -449,11 +449,4 @@ class HeaderFormatDialog(QDialog):
         self.main_win.mark_dirty()
         if hasattr(self.main_win, "le_hdr_fmt"):
             self.main_win.le_hdr_fmt.setText(cfg["format"])
-        cb = getattr(self.main_win, "cb_ctrl_e_center", None)
-        if cb is not None:
-            try:
-                cb.blockSignals(True)
-                cb.setChecked(cfg["align"] == "center")
-            finally:
-                cb.blockSignals(False)
         self.accept()

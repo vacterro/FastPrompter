@@ -5767,12 +5767,14 @@ def test_ctrl_e_centering_is_off_by_default_and_reversible(win):
             a = ed.document().findBlockByNumber(0).blockFormat().alignment()
             return bool(a & Qt.AlignmentFlag.AlignCenter)
 
-        win.cb_ctrl_e_center.setChecked(False)
+        # the footer checkbox is gone - alignment lives in the Ctrl+E dialog
+        # now - so this drives the same entry point it used to call
+        win._on_ctrl_e_center_toggled(False)
         ed.setPlainText("title")
         ctrl_e()
         assert not centred(), "off means off"
 
-        win.cb_ctrl_e_center.setChecked(True)
+        win._on_ctrl_e_center_toggled(True)
         ed.setPlainText("title")
         ctrl_e()
         assert centred()
@@ -5784,7 +5786,7 @@ def test_ctrl_e_centering_is_off_by_default_and_reversible(win):
         QTest.keyClick(ed, Qt.Key.Key_E, Qt.KeyboardModifier.ControlModifier)
         assert not centred(), "a plain line must not stay centred"
     finally:
-        win.cb_ctrl_e_center.setChecked(kept == "True")
+        win._on_ctrl_e_center_toggled(kept == "True")
         win.data["ctrl_e_center"] = kept
         ed.clear()
 
