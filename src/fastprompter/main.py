@@ -2901,8 +2901,12 @@ class FastPrompter(
         div_row = QHBoxLayout()
         div_row.setContentsMargins(0, 0, 0, 0)
         div_row.setSpacing(4)
-        lbl_div = QLabel(tr("Line gaps:", getattr(self, "_current_lang", "EN")))
-        lbl_div.setToolTip(tr("Blank lines the Line/Ctrl+W divider puts before and after ---", getattr(self, "_current_lang", "EN")))
+        lbl_div = QLabel(tr("Line button gaps:", getattr(self, "_current_lang", "EN")))
+        lbl_div.setToolTip(tr(
+            "Blank lines the Line button and the toolbar divider put around ---.\n"
+            "Ctrl+W does NOT read these - it has its own per-scenario spacing in\n"
+            "the Ctrl+W... dialog, which is why changing these here did nothing.",
+            getattr(self, "_current_lang", "EN")))
         div_row.addWidget(lbl_div)
         self.spin_div_before = QSpinBox()
         self.spin_div_before.setRange(0, 6)

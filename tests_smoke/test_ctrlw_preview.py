@@ -90,6 +90,32 @@ def test_preview_follows_changed_spacing(win, sid):
     assert actual == expected
 
 
+@pytest.mark.parametrize("doc,expected", [
+    # the caret is written as | and removed before typing
+    ("a thought|", "s1"),
+    ("|", "s2"),
+    ("first\n|\nsecond", "s3"),
+    ("one two| three", "s4"),
+    ("---\n|", "s5"),
+    ("# T\n---\n\n|", "s5"),
+    # ── the reported bug: everything below used to come out s5 ──
+    # After one Ctrl+W the document IS "---, blanks, bullet", so every line
+    # the user then typed on had a rule somewhere above it. s5 swallowed
+    # them all and every setting on s1 looked like it did nothing.
+    ("---\n\n\n- |", "s1"),
+    ("- a\n\n---\n\n\n- b|", "s1"),
+    ("# T\n---\n\n- one\n\n---\n\n\n- two|", "s1"),
+    ("---\nlast point|", "s1"),
+])
+def test_the_scenario_follows_the_caret_not_the_history(win, doc, expected):
+    head, _, _tail = doc.partition("|")
+    win.text_area.setPlainText(doc.replace("|", ""))
+    cur = win.text_area.textCursor()
+    cur.setPosition(len(head))
+    win.text_area.setTextCursor(cur)
+    assert win.ctrlw_scenario(cur) == expected, doc
+
+
 def test_editor_and_preview_share_one_template():
     """Not two implementations that happen to agree today."""
     import inspect

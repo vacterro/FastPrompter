@@ -365,6 +365,36 @@ class FormattingMixin:
             return "TEXT"
         return "NONE"
 
+    def ctrlw_scenario(self, cursor):
+        """Which of the five Ctrl+W scenarios the caret is in.
+
+        Pulled out of insert_add_line so it can be asserted directly: the
+        user reported "the settings never apply, it is always the same
+        scenario", and there was no way to see which one was being picked
+        without stepping through the insert.
+        """
+        top_type = self._scan_above(cursor)
+        bottom_type = self._scan_below(cursor)
+        stripped = cursor.block().text().strip()
+        on_blank = stripped == ""
+        at_end = cursor.positionInBlock() >= len(cursor.block().text().rstrip("\n"))
+
+        if on_blank and top_type == "TEXT" and bottom_type == "TEXT":
+            return "s3"
+        # s5 means "the caret is in the empty space directly under a rule,
+        # a second one would be pointless". It used to fire whenever a ---
+        # was anywhere above with only blanks in between - which, after one
+        # Ctrl+W, describes every line the user then types on. So typing a
+        # point and pressing Ctrl+W hit s5 forever, and every setting on s1
+        # looked dead. A line with text on it is s1/s4, whatever is above.
+        if top_type == "DIVIDER" and on_blank:
+            return "s5"
+        if on_blank and top_type == "NONE":
+            return "s2"
+        if at_end or on_blank:
+            return "s1"
+        return "s4"
+
     def _scenario_bool(self, sid, key, default=True):
         return self.data.get(f"ctrlw_{sid}_{key}", str(default)) == "True"
 
@@ -418,22 +448,8 @@ class FormattingMixin:
                 self.mark_dirty()
                 return
 
-            # ── Determine scenario (S1-S5) ──
-            top_type = self._scan_above(cursor)
-            bottom_type = self._scan_below(cursor)
+            sid = self.ctrlw_scenario(cursor)
             on_blank = stripped == ""
-            at_end = cursor.positionInBlock() >= len(cursor.block().text().rstrip("\n"))
-
-            if on_blank and top_type == "TEXT" and bottom_type == "TEXT":
-                sid = "s3"
-            elif top_type == "DIVIDER":
-                sid = "s5"
-            elif on_blank and top_type == "NONE":
-                sid = "s2"
-            elif at_end or on_blank:
-                sid = "s1"
-            else:
-                sid = "s4"
 
             # ── Build structure template ──
             use_div = self._scenario_bool(sid, "divider")

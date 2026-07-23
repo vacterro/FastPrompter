@@ -21,7 +21,7 @@ SCENES = [
     ("s2", "Empty document", "nothing above the caret"),
     ("s3", "Between two blocks", "blank line with text above and below"),
     ("s4", "Middle of a word", "caret inside text - the line is split"),
-    ("s5", "Divider above", "the nearest thing above is already ---"),
+    ("s5", "Under a divider", "on an empty line with --- straight above"),
 ]
 
 SCENE_TITLES = {sid: title for sid, title, _ in SCENES}
@@ -34,7 +34,7 @@ SCENE_HELP = {
     "s2": "Starts an empty note off with its first point.",
     "s3": "Cuts an existing note in two without touching either half.",
     "s4": "Splits mid-sentence: the tail moves down under the new point.",
-    "s5": "Adds a point under a divider instead of stacking a second one.",
+    "s5": "Fills the empty space under a rule without stacking a second one.",
 }
 
 S6_HELP = (
@@ -49,7 +49,9 @@ SAMPLE = {
     "s2": CURSOR,
     "s3": "first note\n" + CURSOR + "\nsecond note",
     "s4": "one two" + CURSOR + " three",
-    "s5": "---\nlast point" + CURSOR,
+    # an EMPTY line under the rule. With text on it the caret is in s1 -
+    # s5 used to swallow that case and every s1 setting looked dead.
+    "s5": "---\n" + CURSOR,
 }
 
 
