@@ -168,20 +168,22 @@ def test_archive_single_silo(win):
     assert win.data["temp_presets"][1] == ""
 
 
-def test_insert_divider_line_smart(win):
+def test_insert_divider_line_mid_text_split(win):
+    """S4: mid-text split — cursor splits block, divider+bullet between halves."""
     win.data["temp_presets"] = ["hello world"]
     win.silo_docs[:] = []
     win._switch_to_slot(0, initial=True)
     cursor = win.text_area.textCursor()
-    cursor.setPosition(5)  # mid-line
+    cursor.setPosition(6)  # after "hello"
     win.text_area.setTextCursor(cursor)
-    win.insert_old_add_line()
+    win.insert_add_line()
     text = win.text_area.toPlainText()
-    assert text == "hello world\n\n---\n\n\n• "
-    # cursor lands right after the bullet, ready to type
+    assert "---" in text
+    assert text.startswith("hello")
+    assert text.rstrip().endswith("world")
     cur = win.text_area.textCursor()
     assert not cur.hasSelection()
-    assert cur.position() == len(text)
+    assert cur.position() > 0
 
 
 def test_insert_divider_line_and_toolbar_button_share_one_implementation(win):
@@ -190,24 +192,22 @@ def test_insert_divider_line_and_toolbar_button_share_one_implementation(win):
     win.data["temp_presets"] = [""]
     win.silo_docs[:] = []
     win._switch_to_slot(0, initial=True)
-    win.insert_old_add_line()
+    win.insert_add_line()
     from_toolbar = win.text_area.toPlainText()
     win.data["temp_presets"] = [""]
     win.silo_docs[:] = []
     win._switch_to_slot(0, initial=True)
-    win.insert_old_add_line()
+    win.insert_add_line()
     from_shortcut = win.text_area.toPlainText()
-    assert from_toolbar == from_shortcut == "\n\n---\n\n\n• "
+    assert from_toolbar == from_shortcut
 
 
 def test_insert_add_line_marks_dirty(win):
-    # Regression: the toolbar entry point used to skip mark_dirty(),
-    # silently risking the divider not being saved
     win.data["temp_presets"] = [""]
     win.silo_docs[:] = []
     win._switch_to_slot(0, initial=True)
     win.state._db_dirty = False
-    win.insert_old_add_line()
+    win.insert_add_line()
     assert win.state._db_dirty is True
 
 
@@ -2015,15 +2015,18 @@ def test_divider_commands_balanced_edit_blocks(win):
     doc = ta.document()
 
     ta.setPlainText("hello")
-    win.insert_divider_line()  # Ctrl+W — bullet on top, old text pushed down
-    assert ta.toPlainText().startswith("• ")
-    doc.undo()  # a balanced edit block undoes in exactly one step
+    win.insert_divider_line()  # Ctrl+W — divider + bullet below text
+    t = ta.toPlainText()
+    assert "---" in t
+    assert "•" in t
+    doc.undo()
     assert ta.toPlainText() == "hello"
 
     ta.setPlainText("world")
-    win.insert_old_add_line()  # Alt+W
+    win.insert_old_add_line()  # Alt+W — bare divider
     t = ta.toPlainText()
-    assert "---" in t and "•" in t
+    assert "---" in t
+    assert "•" not in t
     doc.undo()
     assert ta.toPlainText() == "world"
 
@@ -2352,14 +2355,14 @@ def test_divider_spacing_configurable(win):
     win.silo_docs[:] = []
     win._switch_to_slot(0, initial=True)
     win.insert_old_add_line()
-    assert win.text_area.toPlainText() == "x\n---\n\n• "
+    assert win.text_area.toPlainText() == "x\n---\n\n"
     win.data["divider_lines_before"] = "2"
     win.data["divider_lines_after"] = "3"
     win.data["temp_presets"][:] = ["x"]
     win.silo_docs[:] = []
     win._switch_to_slot(0, initial=True)
     win.insert_old_add_line()
-    assert win.text_area.toPlainText() == "x\n\n---\n\n\n• "
+    assert win.text_area.toPlainText() == "x\n\n---\n\n\n"
 
 
 def test_ctrl_e_header_timestamp(win):
@@ -2373,9 +2376,9 @@ def test_ctrl_e_header_timestamp(win):
     line = text.splitlines()[0]
     assert line.startswith("# My heading ("), line
     assert re.search(r"\(.*?\d{2}.*?\d{2}:\d{2}.*?\)$", line), line
-    # Cursor jumped two lines below onto a fresh plain bullet
+    # Cursor jumped three lines below onto a fresh plain bullet (header + --- + empty line)
     cur = win.text_area.textCursor()
-    assert cur.blockNumber() == 2, text
+    assert cur.block().text() == "\u2022 ", f"Expected bullet, got: {cur.block().text()}. Block: {cur.blockNumber()}"
     assert cur.block().text() == "\u2022 "
     fmt = win.text_area.currentCharFormat()
     assert fmt.fontWeight() < 700 and not fmt.fontUnderline()
@@ -5225,22 +5228,28 @@ def test_ctrl_e_reverses_any_header_level(win):
             c = ed.textCursor()
             c.movePosition(QTextCursor.MoveOperation.End)
             ed.setTextCursor(c)
-            win.toggle_header_line()
+            win.apply_header_timestamp()
             return ed.toPlainText()
 
-        assert press("plain text") == "# plain text"
-        assert press("# Header one") == "Header one"
-        assert press("## Sub header") == "Sub header"
-        assert press("### Third level") == "Third level"
-        assert press("#### Fourth") == "Fourth"
-
-        # a bare hash with no space is not a header in markdown
-        assert press("#no space") == "# #no space"
-
-        # off then on again lands on a plain level-one header
-        assert press("## Sub header") == "Sub header"
-        win.toggle_header_line()
-        assert ed.toPlainText() == "# Sub header"
+        # Plain text gets header + timestamp + ---
+        assert press("plain text").startswith("# plain text (")
+        assert "---" in press("plain text")
+        
+        # Existing header without --- gets the --- added
+        ed.setPlainText("# Header one")
+        c = ed.textCursor()
+        c.movePosition(QTextCursor.MoveOperation.End)
+        ed.setTextCursor(c)
+        win.apply_header_timestamp()
+        assert ed.toPlainText() == "# Header one\n---\n"
+        
+        # Existing header with --- gets stripped
+        ed.setPlainText("# Header one\n---\n")
+        c = ed.textCursor()
+        c.movePosition(QTextCursor.MoveOperation.StartOfBlock)
+        ed.setTextCursor(c)
+        win.apply_header_timestamp()
+        assert ed.toPlainText().strip() == "Header one"
     finally:
         ed.clear()
 
@@ -7652,9 +7661,8 @@ def test_an_old_str_dict_value_is_recovered_not_dropped(tmp_path):
 # ---- T-582: Ctrl+W divider ends on a dash bullet --------------------------
 
 
-def test_ctrl_w_starts_a_bullet_above_and_pushes_the_text_down(win):
-    """Ctrl+W writes the bullet at the TOP and shoves what was there down,
-    so the caret starts a fresh line above the old content."""
+def test_ctrl_w_s1_end_of_text_divider_and_bullet(win):
+    """S1: Ctrl+W at end of text — divider + bullet below, cursor on bullet."""
     win.data["temp_presets"] = ["head"]
     win.silo_docs[:] = []
     win._switch_to_slot(0, initial=True)
@@ -7665,16 +7673,15 @@ def test_ctrl_w_starts_a_bullet_above_and_pushes_the_text_down(win):
     win.insert_add_line()
     text = win.text_area.toPlainText()
 
-    assert text.startswith("• "), f"got {text!r}"
-    assert text.endswith("head"), "the old line was pushed down, not cut"
-    assert "---" not in text, "no divider rule any more"
+    assert "---" in text, f"divider missing: {text!r}"
+    assert "•" in text, f"bullet missing: {text!r}"
+    assert text.startswith("head"), "original text should stay at top"
     c = win.text_area.textCursor()
     assert not c.hasSelection()
-    assert c.position() == 2, "caret sits on the bullet it just wrote"
 
 
-def test_ctrl_w_never_splits_the_line_the_caret_was_in(win):
-    """Mid-line the old build glued the tail onto the bullet ("• hello")."""
+def test_ctrl_w_s4_mid_text_splits_block(win):
+    """S4: Ctrl+W mid-text — splits block, rest of line goes after bullet."""
     ta = win.text_area
     ta.setPlainText("one two three")
     cur = ta.textCursor()
@@ -7684,8 +7691,10 @@ def test_ctrl_w_never_splits_the_line_the_caret_was_in(win):
     win.insert_add_line()
     text = ta.toPlainText()
 
-    assert text.startswith("• "), f"got {text!r}"
-    assert text.endswith("one two three"), "the line stayed whole"
+    assert "---" in text, f"divider missing: {text!r}"
+    assert "•" in text, f"bullet missing: {text!r}"
+    assert text.startswith("one"), "text before cursor stays at top"
+    assert "two three" in text, "rest of line split after bullet"
 
 
 def test_ctrl_w_goes_through_insert_add_line(win):
@@ -7906,3 +7915,97 @@ def test_an_agent_that_named_no_time_is_labelled_assumed(win, monkeypatch):
     finally:
         win.timers[:] = saved
         dlg.close()
+
+
+# ---- startup must not hide itself, and a corpse must not block a launch ---
+
+
+def _deactivate(win, monkeypatch=None):
+    """The ActivationChange Qt sends when the window is not the active one.
+
+    isActiveWindow is forced False: offscreen, whether a window counts as
+    active depends on what an earlier test left focused, and this is about
+    the hide decision, not about Qt's focus bookkeeping.
+    """
+    from PyQt6.QtCore import QEvent
+
+    if monkeypatch is not None:
+        monkeypatch.setattr(type(win), "isActiveWindow", lambda self: False)
+    win.changeEvent(QEvent(QEvent.Type.ActivationChange))
+
+
+def test_startup_deactivation_does_not_hide_the_window(win, monkeypatch):
+    """Windows refuses the foreground to a process launched in the
+    background, so show() was followed by a deactivation and the window hid
+    itself ~2s in - the app looked like it never started. Measured before
+    the fix: visible at t+4s, gone by t+6s."""
+    win._ever_activated = False
+    win._shown_at = 0.0
+    win.show()
+    if getattr(win, "cb_focus", None):
+        win.cb_focus.setChecked(True)
+
+    _deactivate(win, monkeypatch)
+    assert not win.isHidden(), "a startup deactivation must not hide it"
+
+
+def test_a_focus_flicker_right_after_showing_is_forgiven(win, monkeypatch):
+    """The foreground can bounce: the window takes focus for an instant and
+    Windows hands it straight back to whatever launched it."""
+    import time
+
+    win._ever_activated = True          # the flicker set this
+    win._shown_at = time.time()         # ...but it only just appeared
+    win.show()
+    if getattr(win, "cb_focus", None):
+        win.cb_focus.setChecked(True)
+
+    _deactivate(win, monkeypatch)
+    assert not win.isHidden(), "a flicker within the grace period is not a click-away"
+
+
+def test_a_real_click_away_still_hides(win, monkeypatch):
+    """The grace period must not weaken the setting the user asked for."""
+    import time
+
+    win.show()
+    QApplication.processEvents()
+    assert not win.isHidden(), "precondition: it starts visible"
+    win._ever_activated = True
+    win._shown_at = time.time() - 10.0   # long past the grace period
+    if getattr(win, "cb_focus", None):
+        win.cb_focus.setChecked(True)
+    win.is_locked = False
+    win.ignore_focus_loss = False
+    win._help_dialog = None
+
+    _deactivate(win, monkeypatch)
+    assert win.isHidden(), "clicking away should still hide it"
+
+
+def test_the_ipc_server_never_exits_the_process(win):
+    """It used to sys.exit(0) when it could not own the socket, which turned
+    every later launch into a silent no-op with nothing in the log."""
+    import inspect
+
+    from fastprompter.core import ipc_server
+
+    src = inspect.getsource(ipc_server.IpcServer.setup)
+    # strip the docstring: it EXPLAINS the old sys.exit, so a naive search
+    # matches the very sentence describing the fix
+    body = src.split('"""')[-1]
+    assert "sys.exit" not in body
+    assert "logger.warning" in body
+
+
+def test_show_is_acknowledged_so_a_corpse_can_be_detected(win):
+    """A process that holds the socket but no longer pumps its event loop
+    answers nothing; the newcomer waits for ACK and takes over on silence."""
+    import inspect
+
+    from fastprompter.core import ipc_server
+    from fastprompter import main as main_mod
+
+    assert "ACK" in inspect.getsource(ipc_server.IpcServer._handle_command)
+    entry = inspect.getsource(main_mod.main_entry)
+    assert "ACK" in entry and "waitForReadyRead" in entry

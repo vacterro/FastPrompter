@@ -157,11 +157,19 @@ cdp_port_file = "~/AppData/Roaming/Antigravity/DevToolsActivePort"
   newest   = true
   quiet_ms = 4000
 
-# codex - rollout transcripts per day, plus several WAL stores in ~/.codex.
-# Installed but dormant: last active 49 DAYS before the scan, so nothing
-# here has been seen moving. Enabled anyway because a stale store simply
-# reads as idle forever, and the engine refuses to send until it has watched
-# the agent actually work - a dormant adapter therefore costs nothing.
+# codex - NOT INSTALLED on this machine any more (the user removed it,
+# 23.07). Kept on purpose as a worked example and for when it comes back:
+# the paths below were read off a real ~/.codex before it went, so this is
+# a record rather than a guess.
+#
+# It costs nothing while absent. The probe finds no files, the adapter
+# reports itself unusable with that reason, and the limit sweep says "no
+# answer" rather than "clear" - none of which can start a send.
+#
+# When it returns: check whether it still writes rollout-*.jsonl per day,
+# and give it transport = "cdp" only if it is launched with
+# --remote-debugging-port; otherwise it stays watch-only like Claude Code.
+# Its store was last active 49 days before the 21.07 scan even then.
 [[agent]]
 name      = "codex"
 enabled   = true

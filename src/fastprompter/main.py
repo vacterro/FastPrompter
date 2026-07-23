@@ -137,7 +137,7 @@ class FastPrompter(
     @property
     def _ui_scale(self):
         try:
-            return float(self.data.get("ui_scale", 1.0))
+            return float(self.data.get("ui_scale", 0.5))
         except Exception:
             return 1.0
 
@@ -173,6 +173,9 @@ class FastPrompter(
         # QApplication.instance().installEventFilter(self)
         self.ignore_focus_loss, self.registered_hotkeys, self._db_dirty = False, [], False
         self._focus_lock_count = 0
+        # False until the window has genuinely been in front once;
+        # see changeEvent - startup deactivation must not hide it.
+        self._ever_activated = False
 
         self.editing_snippet = None
         self.auto_save_timer = QTimer(self)
@@ -182,7 +185,7 @@ class FastPrompter(
         self._preview_connected = False
         self._fancy_zones = FancyZoneOverlay(self)
         self.timers = []
-        self.current_pages, self.silo_page, self.ui_scale = {}, 0, 1.0
+        self.current_pages, self.silo_page, self.ui_scale = {}, 0, 0.5
         self.arc_silo_page, self.arc_page = 0, 0
         self.is_locked, self._suspend_cache, self._locked_geometry = False, False, None
         self._initializing_ui, self._suspend_temp_sync = True, True
@@ -646,6 +649,23 @@ class FastPrompter(
             entry["marks"] = {str(k): v for k, v in marks.items()}
         if heat:
             entry["heat"] = {str(k): v for k, v in heat.items()}
+        # Collect fold state: text of each collapsed anchor block so folds
+        # survive restart. Block text is stable across document reloads.
+        try:
+            folded = []
+            doc = ta.document()
+            if doc and not sip.isdeleted(doc):
+                b = doc.begin()
+                while b.isValid():
+                    if max(0, b.userState()) & ta.FOLD_BIT:
+                        text = b.text().strip()
+                        if text:
+                            folded.append(text)
+                    b = b.next()
+            if folded:
+                entry["folded"] = folded
+        except Exception:
+            pass
         m = self._silo_state_map()
         m.setdefault(cat, {})[key] = entry
 
@@ -665,6 +685,20 @@ class FastPrompter(
             pass
         try:
             ta.apply_line_heat({int(k): v for k, v in (entry.get("heat") or {}).items()})
+        except Exception:
+            pass
+
+        # Restore fold state: collapse anchors whose text matches saved list.
+        try:
+            folded = entry.get("folded")
+            if folded and isinstance(folded, list):
+                doc = ta.document()
+                if doc and not sip.isdeleted(doc):
+                    b = doc.begin()
+                    while b.isValid():
+                        if b.text().strip() in folded and not (max(0, b.userState()) & ta.FOLD_BIT):
+                            ta.toggle_fold(b)
+                        b = b.next()
         except Exception:
             pass
 
@@ -963,9 +997,8 @@ class FastPrompter(
     def open_queue_dialog(self, master=False):
         """Open the prompt-queue panel.
 
-        `master=True` lands on the "All silos" tab — the cross-silo view that
-        is otherwise buried behind two clicks and a tab nobody finds. Bound
-        to Alt+Shift+C and the editor's right-click menu.
+        `master=True` lands on the "All silos" tab — the cross-silo view
+        reachable from inside the dialog.
         """
         from fastprompter.ui.queue_panel import QueueDialog
         self._increment_focus_lock()
@@ -976,7 +1009,7 @@ class FastPrompter(
         self.save_prompt_queues()
 
     def open_queue_master(self):
-        """Alt+Shift+C: jump straight to the all-silos queue view."""
+        """Alt+Shift+C: open the prompt queue on the All Silos tab."""
         self.open_queue_dialog(master=True)
 
     # ---- hashtags -----------------------------------------------------
@@ -1844,7 +1877,7 @@ class FastPrompter(
 
     def _update_visible_silo_count(self):
         if hasattr(self, "silos_widget") and self.silos_widget.height() > 0:
-            estimate = int(24 * getattr(self, "_ui_scale", 1.0))
+            estimate = int(24 * getattr(self, "_ui_scale", 0.5))
             for btn in getattr(self, "silo_buttons", []):
                 bh = btn.height() if btn.isVisible() else btn.sizeHint().height()
                 if bh > 0:
@@ -1871,6 +1904,11 @@ class FastPrompter(
             return f"silo:{self.active_temp_slot}"
 
     def save_data_to_db(self, force=False):
+        # Capture the current silo's view state so the saved position,
+        # cursor, and scroll survive restart.
+        if not getattr(self, "_suspend_cache", False) and hasattr(self, "text_area"):
+            self.capture_silo_state(self.active_temp_slot,
+                                    getattr(self, "active_is_archive", False))
         if hasattr(self, "text_area"):
             cached = getattr(self, "_last_cached_text", None)
             current_text = self.text_area.toPlainText() if cached is None else cached
@@ -2379,7 +2417,7 @@ class FastPrompter(
         self.btn_restore = make_action_checkbox("Rstr", self.restore_db)
 
         try:
-            current_scale_pct = int(float(self.data.get("ui_scale", "1.0")) * 100)
+            current_scale_pct = int(float(self.data.get("ui_scale", "0.5")) * 100)
         except Exception:
             current_scale_pct = 100
         self.btn_button_scale = make_action_checkbox(
@@ -2863,6 +2901,21 @@ class FastPrompter(
         div_row.addWidget(self.spin_div_after)
         div_row.addStretch(1)
 
+        # ── Smart Ctrl+W — open full dialog ──
+        ctrlw_btn_row = QHBoxLayout()
+        ctrlw_btn_row.setContentsMargins(0, 0, 0, 0)
+        ctrlw_btn_row.setSpacing(4)
+        self.btn_ctrlw_settings = QPushButton(tr("Ctrl+W…", getattr(self, "_current_lang", "EN")))
+        self.btn_ctrlw_settings.setToolTip(tr(
+            "Configure Smart Ctrl+W behavior per context scenario:\n"
+            "• Divider insertion and bullet\n"
+            "• Blank-line spacing (global or per scenario)\n"
+            "• Action when pressing on an existing divider",
+            getattr(self, "_current_lang", "EN")))
+        self.btn_ctrlw_settings.clicked.connect(self.open_ctrlw_settings)
+        ctrlw_btn_row.addWidget(self.btn_ctrlw_settings)
+        ctrlw_btn_row.addStretch(1)
+
         files_row = QHBoxLayout()
         files_row.setContentsMargins(0, 0, 0, 0)
         files_row.setSpacing(4)
@@ -3139,7 +3192,7 @@ class FastPrompter(
             lbl_heat, self.spin_hover_opacity, self.spin_heat_strength,
             self.spin_heat_minutes, self.cb_heat_palette, self.btn_hover_colour,
             self.cb_line_marks, self.cb_zebra,
-            self.cb_double_line, self.cb_bold_titles, div_row, hdr_row,
+            self.cb_double_line, self.cb_bold_titles, div_row, ctrlw_btn_row, hdr_row,
             self.lbl_align, self.cb_align_combo,
             self.cb_ctrl_e_center,
         ]), tr("Editor", self._current_lang))
@@ -3563,6 +3616,16 @@ class FastPrompter(
         finally:
             self.ignore_focus_loss = prev
 
+    def open_ctrlw_settings(self):
+        """Open the per-scenario Ctrl+W behavior dialog."""
+        from fastprompter.ui.ctrlw_settings import CtrlWSettingsDialog
+        prev = getattr(self, "ignore_focus_loss", False)
+        self.ignore_focus_loss = True
+        try:
+            CtrlWSettingsDialog(self).exec()
+        finally:
+            self.ignore_focus_loss = prev
+
     @staticmethod
     def _has_header_above(block):
         """True if any earlier line in this silo is already a '# ' header."""
@@ -3625,8 +3688,17 @@ class FastPrompter(
     def apply_header_timestamp(self):
         """Ctrl+E: Apply user-defined header formatting and timestamp at end of current line."""
         cursor = self.text_area.textCursor()
+        # Save scroll position — the edit block's endEditBlock can trigger a
+        # document reflow that resets the view to the top.
+        sb = self.text_area.verticalScrollBar()
+        scroll_save = sb.value()
         with edit_block(cursor, self.text_area):
             self._apply_header_timestamp_locked(cursor)
+        # Restore scroll unless the cursor genuinely moved out of view
+        # (header at the very bottom). Checking value == 0 catches the
+        # common "jump to start" symptom without suppressing a real scroll.
+        if scroll_save > 0 and self.text_area.verticalScrollBar().value() == 0:
+            self.text_area.verticalScrollBar().setValue(scroll_save)
 
     def _apply_header_timestamp_locked(self, cursor):
         """Body of apply_header_timestamp, run inside one undo step."""
@@ -3634,13 +3706,6 @@ class FastPrompter(
         cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
         cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor)
         sel = cursor.selectedText()
-
-        # Pressing Ctrl+E on a line that is ALREADY a header takes the header
-        # off again, at any level. It used to re-stamp instead, so "## Sub"
-        # became "# Sub (Morning 21.07 - 11:05)" and there was no way back
-        # from the keyboard at all.
-        if self._strip_header_line(cursor, sel):
-            return
 
         if not sel.strip():
             return
@@ -3658,6 +3723,60 @@ class FastPrompter(
             
         full_template = template if template.startswith("# ") else f"# {template}"
 
+        # Pressing Ctrl+E on a line that is ALREADY a header strips it back to plain
+        import re as _hdr_re
+        _stripped = sel.strip()
+        if _hdr_re.match(r"^(#{1,6})\s+", _stripped):
+            # Check if there's already a --- line below this header
+            _next_block = cursor.block().next()
+            _has_rule = _next_block.isValid() and re.match(r"^\s*-{3,}\s*$", _next_block.text())
+            
+            # If no rule exists, add it instead of stripping the header
+            if not _has_rule:
+                cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock)
+                cursor.insertText("\n---\n")
+                self.mark_dirty()
+                return
+            
+            # Otherwise strip the header as before
+            # Try to match the stamped format first to extract just the text
+            stamped_pattern = re.escape(full_template)
+            stamped_pattern = stamped_pattern.replace(re.escape("{text}"), r"(.*?)")
+            stamped_pattern = stamped_pattern.replace(re.escape("{time}"), r".*?")
+            stamped_pattern = stamped_pattern.replace(re.escape("{state}"), r".*?")
+            stamped_pattern = f"^{stamped_pattern}$"
+            stamped_match = re.match(stamped_pattern, _stripped)
+            if stamped_match:
+                _clean_sel = stamped_match.group(1)
+            else:
+                # Fallback: extract text before timestamp pattern " (..."
+                fallback_match = re.match(r"^#\s*(.+?)\s+\(.*?\)$", _stripped)
+                if fallback_match:
+                    _clean_sel = fallback_match.group(1).strip()
+                else:
+                    # Last resort: just strip the header marker
+                    _clean_sel = _hdr_re.sub(r"^(#{1,6})\s+", "", _stripped, count=1).strip()
+            plain = QTextCharFormat()
+            cursor.insertText(_clean_sel, plain)
+            # Clear any center alignment from the block when reverting
+            plain_block = QTextBlockFormat()
+            plain_block.setAlignment(Qt.AlignmentFlag.AlignLeft)
+            cursor.mergeBlockFormat(plain_block)
+            # Remove horizontal rule if it exists on the next line
+            if _next_block.isValid() and re.match(r"^\s*-{3,}\s*$", _next_block.text()):
+                cursor.setPosition(_next_block.position())
+                cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor)
+                cursor.removeSelectedText()
+                cursor.deleteChar()
+                # Also remove the second newline if it exists
+                _after_rule = cursor.block().next()
+                if _after_rule.isValid() and not _after_rule.text().strip():
+                    cursor.setPosition(_after_rule.position())
+                    cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor)
+                    cursor.removeSelectedText()
+            self.mark_dirty()
+            return
+
         pattern = re.escape(full_template)
         pattern = pattern.replace(re.escape("{text}"), r"(.*?)")
         pattern = pattern.replace(re.escape("{time}"), r".*?")
@@ -3673,8 +3792,18 @@ class FastPrompter(
             plain_block = QTextBlockFormat()
             plain_block.setAlignment(Qt.AlignmentFlag.AlignLeft)
             cursor.mergeBlockFormat(plain_block)
+            # Remove horizontal rule if it exists on the next line
+            _next_block = cursor.block().next()
+            if _next_block.isValid() and re.match(r"^\s*-{3,}\s*$", _next_block.text()):
+                cursor.setPosition(_next_block.position())
+                cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor)
+                cursor.removeSelectedText()
+                # Remove the extra newline that remains
+                cursor.deleteChar()
             self.mark_dirty()
             return
+
+
 
         now = datetime.datetime.now()
         h = now.hour
@@ -3713,6 +3842,10 @@ class FastPrompter(
 
         cursor.insertText(formatted_text)
 
+        # Add horizontal rule below header when creating it
+        cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock)
+        cursor.insertText("\n---\n")
+
         # Save header info for centering and persistence. Centering must
         # happen AFTER the bullet insert below — QTextCursor.insertText()
         # inherits the current block's QTextBlockFormat into any new block
@@ -3723,26 +3856,33 @@ class FastPrompter(
             hdr_block_number = cursor.block().blockNumber()
             hdr_text = cursor.block().text()
 
-        # Jump two lines below the header onto a fresh bullet, with PLAIN
+        # Jump three lines below the header onto a fresh bullet, with PLAIN
         # formatting — the header's bold/underline must not bleed into
         # what gets typed next. Reuses existing blank lines on repeats.
+        # Structure: header + --- + empty line + bullet
         plain = QTextCharFormat()
         cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock)
         cursor.setCharFormat(plain)
         nxt = cursor.block().next()
         if not nxt.isValid() or nxt.text().strip():
-            cursor.insertText("\n\n• ", plain)
+            cursor.insertText("\n\n\n• ", plain)
         else:
             nxt2 = nxt.next()
             if not nxt2.isValid():
                 cursor.setPosition(nxt.position())
                 cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock)
-                cursor.insertText("\n• ", plain)
+                cursor.insertText("\n\n• ", plain)
             else:
-                cursor.setPosition(nxt2.position())
-                cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock)
-                if not nxt2.text().strip():
-                    cursor.insertText("• ", plain)
+                nxt3 = nxt2.next()
+                if not nxt3.isValid():
+                    cursor.setPosition(nxt2.position())
+                    cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock)
+                    cursor.insertText("\n• ", plain)
+                else:
+                    cursor.setPosition(nxt3.position())
+                    cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock)
+                    if not nxt3.text().strip():
+                        cursor.insertText("• ", plain)
 
         # Center the header block now — after the bullet is placed, so new
         # blocks from \n never inherit the center alignment.
@@ -3833,7 +3973,7 @@ class FastPrompter(
         # Translate button_scale text (has dynamic percentage)
         if hasattr(self, "btn_button_scale") and not sip.isdeleted(self.btn_button_scale):
             try:
-                pct = int(float(self.data.get("ui_scale", "1.0")) * 100)
+                pct = int(float(self.data.get("ui_scale", "0.5")) * 100)
             except Exception:
                 pct = 100
             self.btn_button_scale.setText(f"{tr('Scale', lang)}: {pct}%")
@@ -3859,6 +3999,13 @@ class FastPrompter(
             self.spin_div_before.setToolTip(tr("Lines before ---", lang))
         if hasattr(self, "spin_div_after") and not sip.isdeleted(self.spin_div_after):
             self.spin_div_after.setToolTip(tr("Lines after --- (before the fresh bullet)", lang))
+        if hasattr(self, "btn_ctrlw_settings") and not sip.isdeleted(self.btn_ctrlw_settings):
+            self.btn_ctrlw_settings.setText(tr("Ctrl+W…", lang))
+            self.btn_ctrlw_settings.setToolTip(tr(
+                "Configure Smart Ctrl+W behavior per context scenario:\n"
+                "• Divider insertion and bullet\n"
+                "• Blank-line spacing (global or per scenario)\n"
+                "• Action when pressing on an existing divider", lang))
         if hasattr(self, "spin_volume") and not sip.isdeleted(self.spin_volume):
             self.spin_volume.setToolTip(tr("Click sound volume (1-10)", lang))
 
@@ -5165,9 +5312,38 @@ class FastPrompter(
             del self._drag_pos
             event.accept()
 
+    def showEvent(self, event):
+        """Stamp when the window became visible.
+
+        changeEvent uses it as a grace period: a foreground flicker right
+        after launch must not count as the user clicking away.
+        """
+        self._shown_at = time.time()
+        super().showEvent(event)
+
     def changeEvent(self, event):
         if event.type() in (QEvent.Type.ActivationChange, QEvent.Type.WindowDeactivate):
+            if self.isActiveWindow():
+                # The user has it in front now; from here a deactivation is a
+                # real "clicked away" and hide-on-focus-loss means something.
+                self._ever_activated = True
             if not self.isActiveWindow() and not self.isMinimized():
+                # Startup is NOT a focus loss. Windows refuses the foreground
+                # to a process launched in the background, so show() was
+                # followed straight away by a deactivation and the window hid
+                # itself about two seconds in - the app looked like it never
+                # started. Measured: visible at t+4s, gone by t+6s.
+                if not getattr(self, "_ever_activated", False):
+                    return super().changeEvent(event)
+                # The foreground can also flicker: the window takes focus for
+                # an instant at launch and Windows hands it straight back to
+                # whatever started it. That set _ever_activated and the next
+                # deactivation hid the window anyway, so a grace period after
+                # it is shown covers the flicker without weakening the real
+                # click-away behaviour.
+                shown_at = getattr(self, "_shown_at", 0.0)
+                if shown_at and (time.time() - shown_at) < 2.0:
+                    return super().changeEvent(event)
                 if getattr(self, "cb_focus", None) and self.cb_focus.isChecked():
                     help_dlg = getattr(self, "_help_dialog", None)
                     help_open = (
@@ -5554,7 +5730,7 @@ class FastPrompter(
         hide_keys = self.data.get("hide_shortkeys", "False") == "True"
 
         try:
-            scale = float(self.data.get("ui_scale", "1.0"))
+            scale = float(self.data.get("ui_scale", "0.5"))
         except Exception:
             scale = 1.0
 
@@ -5656,7 +5832,7 @@ class FastPrompter(
             active_color = custom_colors["edit_bg"]
 
         try:
-            scale = float(self.data.get("ui_scale", "1.0"))
+            scale = float(self.data.get("ui_scale", "0.5"))
         except Exception:
             scale = 1.0
         font_family = self._font_family
@@ -5963,7 +6139,7 @@ class FastPrompter(
         inactive_color = THEMES[theme_name]["inactive_temp_color"]
 
         try:
-            scale = float(self.data.get("ui_scale", "1.0"))
+            scale = float(self.data.get("ui_scale", "0.5"))
         except Exception:
             scale = 1.0
         font_family = self._font_family
@@ -6762,8 +6938,7 @@ class FastPrompter(
         add_shortcut("hk_settings", "Alt+`", self.toggle_mini_settings)
         add_shortcut("hk_bold", "Ctrl+B", self.apply_bold_smart)
         add_shortcut("hk_undo", "Ctrl+Z", self._smart_undo)
-        # Alt+C queues the current line; Alt+Shift+C opens the master view of
-        # every silo's queue. The two sit next to each other on purpose.
+        # Alt+C queues the current line; Alt+Shift+C opens the this-silo queue.
         add_shortcut("hk_queue_master", "Alt+Shift+C", self.open_queue_master,
                      Qt.ShortcutContext.ApplicationShortcut)
 
@@ -7157,8 +7332,19 @@ def main_entry():
         cmd = f"TOKEN:{token}|SHOW" if token else "SHOW"
         sock.write(cmd.encode())
         sock.flush()
+        sock.waitForBytesWritten(500)
+        # Wait for the running instance to confirm it showed itself. A
+        # process that still owns the socket but has stopped pumping its
+        # event loop - a "corpse" - answers nothing, and exiting here left
+        # the user with no window, the global hotkey held by the dead one,
+        # and no way in short of Task Manager. Silence means take over.
+        acknowledged = sock.waitForReadyRead(1500) and b"ACK" in sock.readAll().data()
         sock.disconnectFromServer()
-        return
+        if acknowledged:
+            return
+        from fastprompter.core.logging import logger as _log
+        _log.warning("an instance holds the IPC socket but did not answer "
+                     "SHOW; taking over")
 
     setup_exception_hook()
 
@@ -7171,6 +7357,8 @@ def main_entry():
     # Create and show window
     window = FastPrompter()
     window.show()
+    window.raise_()
+    window.activateWindow()
 
     # Install hotkey filter for global hotkeys
     filter_obj = HotkeyFilter(window)

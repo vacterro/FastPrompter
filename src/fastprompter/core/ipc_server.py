@@ -6,7 +6,6 @@ SHOW command to the existing instance and then exits.
 """
 
 import os
-import sys
 import tempfile
 import time
 import uuid
@@ -79,10 +78,24 @@ class IpcServer:
         return self._token
 
     def setup(self) -> None:
-        """Start listening for IPC connections from sibling instances."""
+        """Start listening for IPC connections from sibling instances.
+
+        Never exits the process. It used to `sys.exit(0)` when listen()
+        failed, which is how a stuck instance turned every later launch into
+        a silent no-op: the user double-clicked, nothing appeared, and there
+        was nothing in the log to say why. Being unable to own the socket
+        costs single-instance behaviour, not the application - so it is
+        reported and the window still opens.
+        """
+        # removeServer clears a name left behind by a process that died
+        # without closing it, which is what lets a launch recover from a
+        # corpse rather than inheriting its silence.
         self._server.removeServer(SERVER_NAME)
         if not self._server.listen(SERVER_NAME):
-            sys.exit(0)
+            logger.warning(
+                "IPC: could not own %s (%s); running without single-instance "
+                "handover", SERVER_NAME, self._server.errorString())
+            return
         self._server.newConnection.connect(self._handle_command)
 
     def close(self) -> None:
@@ -90,8 +103,15 @@ class IpcServer:
         self._server.close()
 
     def _handle_command(self) -> None:
-        """Process an incoming IPC command from a sibling instance."""
+        """Process an incoming IPC command from a sibling instance.
+
+        Answers ACK once the window has actually been asked to show. The
+        sibling waits for that byte: a process that holds the socket but no
+        longer pumps its event loop never sends it, and the newcomer then
+        takes the socket over instead of exiting into nothing.
+        """
         sock = self._server.nextPendingConnection()
+        handled = False
         if sock.bytesAvailable() > 0 or sock.waitForReadyRead(500):
             data = sock.readAll().data()
             try:
@@ -103,9 +123,18 @@ class IpcServer:
                         cmd = parts[1]
                         if recv_token == self._token and cmd.strip() == "SHOW":
                             self._show_window()
+                            handled = True
                 elif data_str.strip() == "SHOW":
                     self._show_window()
+                    handled = True
             except Exception:
                 logger.exception("Failed to handle IPC command")
+        if handled:
+            try:
+                sock.write(b"ACK")
+                sock.flush()
+                sock.waitForBytesWritten(300)
+            except Exception:
+                logger.debug("IPC: could not acknowledge SHOW")
         sock.disconnectFromServer()
         sock.deleteLater()

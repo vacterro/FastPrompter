@@ -224,18 +224,29 @@ class TestIpcServerSetup:
         server._server.newConnection.connect.assert_called_once()
 
     @patch.object(sys, "exit")
-    def test_setup_exits_on_fail(self, mock_exit):
-        """If listen() fails, sys.exit(0) is called."""
+    def test_setup_never_kills_the_process_when_it_cannot_listen(self, mock_exit):
+        """It used to sys.exit(0) here.
+
+        That is how one stuck instance turned every later launch into a
+        silent no-op: the user double-clicked, no window appeared, and the
+        log said nothing. Losing the socket costs single-instance handover,
+        not the application - so setup returns and the window still opens.
+        """
         server = IpcServer(MagicMock())
 
-        # Make listen fail
         class _FailingServer(_MockQLocalServer):
             def listen(self, name):
                 return False
 
+            def errorString(self):
+                # the real QLocalServer has this; setup logs it to say WHY
+                return "address in use"
+
         server._server = _FailingServer()
         server.setup()
-        mock_exit.assert_called_once_with(0)
+
+        mock_exit.assert_not_called()
+        server._server.newConnection.connect.assert_not_called()
 
 
 class TestIpcServerHandleCommand:
