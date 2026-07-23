@@ -534,9 +534,12 @@ class DraggableSiloButton(QWidget):
         except ValueError:
             next_color = colors[0]
             
-        colors_dict = self.main_win.data.get("silo_colors", {})
+        # setdefault, not get({}): data["silo_colors"] is an alias into
+        # silo_colors_all[tab], so a fresh dict written back over it would
+        # detach the tab's colours - the colour showed until the next tab
+        # switch and then vanished. Same trap as temp_presets.
+        colors_dict = self.main_win.data.setdefault("silo_colors", {})
         colors_dict[str(self.global_idx)] = next_color
-        self.main_win.data["silo_colors"] = colors_dict
         self.main_win.mark_dirty()
         if hasattr(self.main_win, "refresh_temp_presets"):
             self.main_win.refresh_temp_presets()
@@ -549,9 +552,8 @@ class DraggableSiloButton(QWidget):
         colors = self.main_win.data.get("silo_color_palette", ["#ff4444", "#ffaa00", "#ffff00", "#00ff00", "#00ffff", "#0000ff", "#ff00ff", "#ffffff", "#000000", "#808080"])
         
         def _set_color(c):
-            colors_dict = self.main_win.data.get("silo_colors", {})
+            colors_dict = self.main_win.data.setdefault("silo_colors", {})
             colors_dict[str(self.global_idx)] = c
-            self.main_win.data["silo_colors"] = colors_dict
             self.main_win.mark_dirty()
             if hasattr(self.main_win, "refresh_temp_presets"):
                 self.main_win.refresh_temp_presets()

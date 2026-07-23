@@ -291,6 +291,24 @@ class FastPrompter(
             ppall[first_cat] = self.data["silo_project_paths"]
         self.data["silo_project_paths_all"] = ppall
         self.data["silo_project_paths"] = ppall.setdefault(first_cat, {})
+        # Per-slot silo colours per category. `silo_colors_all` has been in
+        # the schema (and in the rename/delete remaps) all along, but nothing
+        # ever wrote to it and nothing aliased it: the colours lived in the
+        # flat key alone, shared by every tab. A silo is identified by its
+        # SLOT INDEX, so slot 3's colour followed the user from one tab to
+        # the next and landed on whatever silo happened to sit at 3 there -
+        # "duplicated into a completely different place", and gone again the
+        # moment the other tab's slot 3 was recoloured.
+        call_c = self.data.get("silo_colors_all")
+        if not isinstance(call_c, dict):
+            call_c = {}
+        if not call_c and isinstance(self.data.get("silo_colors"), dict) and self.data["silo_colors"]:
+            # the existing flat colours were set while looking at some tab;
+            # first_cat is the only honest guess, and losing them silently
+            # would be worse than putting them on one tab
+            call_c[first_cat] = dict(self.data["silo_colors"])
+        self.data["silo_colors_all"] = call_c
+        self.data["silo_colors"] = call_c.setdefault(first_cat, {})
         apall = self.data.get("archive_project_paths_all")
         if not isinstance(apall, dict):
             apall = {}
@@ -5576,6 +5594,9 @@ class FastPrompter(
                 cat, []
             )
             self.data["silo_folders"] = self.data.setdefault("silo_folders_all", {}).setdefault(
+                cat, {}
+            )
+            self.data["silo_colors"] = self.data.setdefault("silo_colors_all", {}).setdefault(
                 cat, {}
             )
             self.data["archive_silo_folders"] = self.data.setdefault("archive_silo_folders_all", {}).setdefault(
