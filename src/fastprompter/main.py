@@ -3010,38 +3010,40 @@ class FastPrompter(
         hdr_row.addWidget(btn_hdr_edit)
 
 
-        def _settings_group(title, items):
-            col = QVBoxLayout()
-            col.setContentsMargins(0, 0, 0, 0)
-            col.setSpacing(1)
-            col.setAlignment(Qt.AlignmentFlag.AlignTop)
+        def _settings_group(title, items, min_width=0):
+            """A titled box of related controls, wrapping inside itself.
+
+            The tabs used to be one flat flow of every control they owned, so
+            "Always on Top" sat beside "Silo Color Box" and the cursor buttons,
+            and a row that did not divide evenly left a stripe of dead panel on
+            the right. Grouping gives the eye somewhere to land and lets the
+            groups themselves flow into the space instead of the gaps.
+            """
+            box = QWidget()
+            box.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+            box.setObjectName("SettingsGroup")
+            # Theme-neutral on purpose: a translucent wash reads as a panel
+            # on every one of the shipped skins, where a fixed colour would
+            # have to be re-picked for each and would go wrong on the next.
+            box.setStyleSheet(
+                "#SettingsGroup { background: rgba(255,255,255,0.035);"
+                " border: 1px solid rgba(255,255,255,0.07); }")
+            col = QVBoxLayout(box)
+            col.setContentsMargins(6, 3, 6, 4)
+            col.setSpacing(2)
             header = QLabel(tr(title, self._current_lang))
-            header.setStyleSheet("font-weight: bold; padding: 0 0 1px 0;")
+            header._en_text = title
+            header.setStyleSheet(
+                "font-weight: bold; color: #9a8b5f; padding: 0;")
             col.addWidget(header)
-
-            grid = QGridLayout()
-            grid.setContentsMargins(0, 0, 0, 0)
-            grid.setSpacing(2)
-            grid.setHorizontalSpacing(10)
-
-            r, c = 0, 0
-            for item in items:
-                if isinstance(item, QHBoxLayout):
-                    if c != 0:
-                        r += 1
-                        c = 0
-                    grid.addLayout(item, r, 0, 1, 2)
-                    r += 1
-                else:
-                    grid.addWidget(item, r, c)
-                    c += 1
-                    if c > 1:
-                        c = 0
-                        r += 1
-
-            col.addLayout(grid)
-            col.addStretch(1)
-            return col
+            inner = flow_widget(items, h_spacing=10, v_spacing=3)
+            if min_width:
+                inner.setMinimumWidth(min_width)
+            col.addWidget(inner)
+            box.setSizePolicy(QSizePolicy.Policy.Preferred,
+                              QSizePolicy.Policy.Maximum)
+            box._weight = len(items)
+            return box
 
         # --- UI gaps: silo spacing + splitter handle width ---
         gap_row = QHBoxLayout()
@@ -3167,14 +3169,36 @@ class FastPrompter(
         # a single column rather than clipping the right-hand side.
         from fastprompter.ui.flow_layout import flow_widget
 
-        def _tab(items):
+        def _tab(items, columns=4):
+            """One settings tab: its groups spread across equal columns.
+
+            A flow left the right-hand third of the panel empty on every tab
+            (measured: the Clock tab used 449px of 956), because a flow packs
+            to content width and stops. Equal stretched columns use the whole
+            width, and groups are dealt to the shortest column so the columns
+            end up roughly level instead of one tall stack beside a stub.
+            """
             host = QWidget()
             host.setSizePolicy(QSizePolicy.Policy.Preferred,
                                QSizePolicy.Policy.Maximum)
-            outer = QVBoxLayout(host)
+            outer = QHBoxLayout(host)
             outer.setContentsMargins(4, 4, 4, 4)
-            outer.setSpacing(3)
-            outer.addWidget(flow_widget(items))
+            outer.setSpacing(6)
+            cols, loads = [], []
+            for _ in range(max(1, min(columns, len(items)))):
+                col = QVBoxLayout()
+                col.setContentsMargins(0, 0, 0, 0)
+                col.setSpacing(4)
+                col.setAlignment(Qt.AlignmentFlag.AlignTop)
+                outer.addLayout(col, 1)
+                cols.append(col)
+                loads.append(0)
+            for item in items:
+                i = loads.index(min(loads))
+                cols[i].addWidget(item)
+                loads[i] += getattr(item, "_weight", 1) + 2  # +2 for the title
+            for col in cols:
+                col.addStretch(1)
             return host
 
         self.settings_tabs = QTabWidget()
@@ -3221,39 +3245,80 @@ class FastPrompter(
             "Text, snippets and silos are not touched.", self._current_lang))
         self.btn_reset_layout.clicked.connect(self.reset_ui_layout)
 
+        # Grouped by what the control DOES, not by the order it happened to
+        # be written in. Before this, Window held window behaviour, silo
+        # colours, the toolbar switch and the cursor buttons in one
+        # undifferentiated row.
         self.settings_tabs.addTab(_tab([
-            self.cb_top, self.cb_lock_window, self.cb_normal_window,
-            self.cb_tray, self.cb_sidebar, self.cb_trash_vision,
-            self.cb_silo_color_box, self.cb_customize_toolbar,
-            self.cb_custom_cursors, self.btn_copy_cursors,
-            self.btn_install_cursors,
-            self.btn_reset_layout,
+            _settings_group("Window behaviour", [
+                self.cb_top, self.cb_lock_window, self.cb_normal_window,
+                self.cb_tray,
+            ]),
+            _settings_group("Layout", [
+                self.cb_sidebar, self.cb_customize_toolbar,
+                self.btn_reset_layout,
+            ]),
+            _settings_group("Silo look", [
+                self.cb_silo_color_box, self.cb_trash_vision,
+            ]),
+            _settings_group("Mouse cursors", [
+                self.cb_custom_cursors, self.btn_copy_cursors,
+                self.btn_install_cursors,
+            ]),
         ]), tr("Window", self._current_lang))
 
         self.settings_tabs.addTab(_tab([
-            self.cb_focus, self.cb_wrap, self.cb_ctrl_c, self.cb_lock_cursor,
-            self.cb_line_numbers, self.cb_code_gutter, self.cb_code_monospace,
-            self.cb_hover_line, self.cb_line_heat,
-            lbl_heat, self.spin_hover_opacity, self.spin_heat_strength,
-            self.spin_heat_minutes, self.cb_heat_palette, self.btn_hover_colour,
-            self.cb_line_marks, self.cb_zebra,
-            self.cb_double_line, self.cb_bold_titles, div_row, ctrlw_btn_row, hdr_row,
-            self.lbl_align, self.cb_align_combo,
+            _settings_group("Typing", [
+                self.cb_focus, self.cb_wrap, self.cb_ctrl_c,
+                self.cb_lock_cursor, self.cb_double_line,
+            ]),
+            _settings_group("Lines", [
+                self.cb_line_numbers, self.cb_line_marks, self.cb_zebra,
+                self.cb_bold_titles, self.lbl_align, self.cb_align_combo,
+            ]),
+            _settings_group("Code blocks", [
+                self.cb_code_gutter, self.cb_code_monospace,
+            ]),
+            # split in two: eight controls in one group stretched to 186px
+            # tall beside 49px neighbours, which is the ragged look the panel
+            # was reported for
+            _settings_group("Hover line", [
+                self.cb_hover_line, self.spin_hover_opacity,
+                self.btn_hover_colour,
+            ]),
+            _settings_group("Line heat", [
+                self.cb_line_heat, lbl_heat, self.spin_heat_strength,
+                self.spin_heat_minutes, self.cb_heat_palette,
+            ]),
+            _settings_group("Dividers & headers", [
+                div_row, ctrlw_btn_row, hdr_row,
+            ]),
         ]), tr("Editor", self._current_lang))
 
         # Clock/date settings used to be buried in "Window" — seven of them,
         # which is what made that group unreadable.
         self.settings_tabs.addTab(_tab([
-            self.cb_date_rect, self.cb_date_seconds, self.cb_date_daypart,
-            self.cb_date_emoji, self.cb_date_text_month, self.cb_date_ampm,
-            self.cb_analog_clock,
+            _settings_group("Clock", [
+                self.cb_analog_clock, self.cb_date_rect, self.cb_date_seconds,
+                self.cb_date_ampm,
+            ]),
+            _settings_group("Date", [
+                self.cb_date_daypart, self.cb_date_emoji,
+                self.cb_date_text_month,
+            ]),
         ]), tr("Clock", self._current_lang))
 
         self.settings_tabs.addTab(_tab([
-            self.cb_silo_home, self.cb_silo_pinned_gap, self.cb_silo_ticks,
-            self.cb_snippet_arrows, self.cb_hide_shortkeys,
-            self.cb_portable_backup, self.cb_sound, self.cb_typewriter,
-            vol_row, files_row, gap_row,
+            _settings_group("Silo list", [
+                self.cb_silo_home, self.cb_silo_pinned_gap, self.cb_silo_ticks,
+                self.cb_snippet_arrows, self.cb_hide_shortkeys, gap_row,
+            ]),
+            _settings_group("Sound", [
+                self.cb_sound, self.cb_typewriter, vol_row,
+            ]),
+            _settings_group("Files & backup", [
+                self.cb_portable_backup, files_row,
+            ]),
         ]), tr("Data", self._current_lang))
 
         # A QTabWidget reserves room for its TALLEST page on every tab, so a
