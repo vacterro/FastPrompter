@@ -18,6 +18,7 @@ Everything else is kept verbatim.
 """
 
 import datetime
+import html
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
@@ -197,26 +198,60 @@ class HeaderFormatDialog(QDialog):
         row.addStretch(1)
         root.addLayout(row)
 
-        row2 = QHBoxLayout()
-        row2.setSpacing(6)
-        lbl_align = QLabel(tr("Align title:", self._lang))
+        # Alignment per line of the block: the user asked to say which lines
+        # are centred and which stay left, rather than one setting for all.
+        row2 = FlowLayout(margin=0, h_spacing=6, v_spacing=4)
+        lbl_align = QLabel(tr("Align:", self._lang))
         lbl_align.setToolTip(tr(
-            "Where the title sits in the width of the editor. Only the title "
-            "line moves - the rule, the gap and the bullet stay put.\n"
-            "Centred titles are remembered across a reload; the other "
-            "directions are applied as the header is written.", self._lang))
+            "Each line of the block is placed on its own. Centred titles "
+            "are remembered across a reload; the other directions are "
+            "applied as the header is written.\n"
+            "Empty gap lines are never aligned - an alignment there would "
+            "leak into whatever you type next.", self._lang))
         row2.addWidget(lbl_align)
+
         self.cb_align = QComboBox()
-        self.cb_align.setToolTip(lbl_align.toolTip())
+        self.cb_align.setToolTip(tr("Where the title line sits.", self._lang))
         for name, val in _ALIGN_ITEMS:
             self.cb_align.addItem(tr(name, self._lang), val)
         idx = self.cb_align.findData(cfg["align"])
         if idx >= 0:
             self.cb_align.setCurrentIndex(idx)
         self.cb_align.currentIndexChanged.connect(self._refresh)
+        row2.addWidget(QLabel(tr("title", self._lang)))
         row2.addWidget(self.cb_align)
 
-        row2.addSpacing(12)
+        self.cb_align_rule = QComboBox()
+        self.cb_align_rule.setToolTip(tr(
+            "Where the --- line sits. \"same as title\" is the default, so "
+            "a centred title carries its rule with it.", self._lang))
+        self.cb_align_rule.addItem(tr("same as title", self._lang), "")
+        for name, val in _ALIGN_ITEMS:
+            self.cb_align_rule.addItem(tr(name, self._lang), val)
+        idx = self.cb_align_rule.findData(cfg["align_rule"])
+        if idx >= 0:
+            self.cb_align_rule.setCurrentIndex(idx)
+        self.cb_align_rule.currentIndexChanged.connect(self._refresh)
+        row2.addWidget(QLabel(tr("rule", self._lang)))
+        row2.addWidget(self.cb_align_rule)
+
+        self.cb_align_bullet = QComboBox()
+        self.cb_align_bullet.setToolTip(tr(
+            "Where the bullet - and everything you then type on that line - "
+            "sits. Left is almost always what you want here.", self._lang))
+        self.cb_align_bullet.addItem(tr("same as title", self._lang), "")
+        for name, val in _ALIGN_ITEMS:
+            self.cb_align_bullet.addItem(tr(name, self._lang), val)
+        idx = self.cb_align_bullet.findData(cfg["align_bullet"])
+        if idx >= 0:
+            self.cb_align_bullet.setCurrentIndex(idx)
+        self.cb_align_bullet.currentIndexChanged.connect(self._refresh)
+        row2.addWidget(QLabel(tr("bullet", self._lang)))
+        row2.addWidget(self.cb_align_bullet)
+        root.addLayout(row2)
+
+        row3 = QHBoxLayout()
+        row3.setSpacing(6)
         self.cb_stamp_every = QCheckBox(tr("stamp every header", self._lang))
         self.cb_stamp_every.setToolTip(tr(
             "Off (default): only the first header in a silo carries the "
@@ -225,9 +260,9 @@ class HeaderFormatDialog(QDialog):
             self._lang))
         self.cb_stamp_every.setChecked(cfg["stamp_every"])
         self.cb_stamp_every.toggled.connect(self._refresh)
-        row2.addWidget(self.cb_stamp_every)
-        row2.addStretch(1)
-        root.addLayout(row2)
+        row3.addWidget(self.cb_stamp_every)
+        row3.addStretch(1)
+        root.addLayout(row3)
 
         # ── before / after ──
         hint = QLabel(tr(
@@ -313,6 +348,8 @@ class HeaderFormatDialog(QDialog):
             "bullet": self.cb_bullet.isChecked(),
             "bullet_char": bullet_char if bullet_char.strip() else "•",
             "align": self.cb_align.currentData() or "left",
+            "align_rule": self.cb_align_rule.currentData() or "",
+            "align_bullet": self.cb_align_bullet.currentData() or "",
             "stamp_every": self.cb_stamp_every.isChecked(),
         }
 
@@ -351,15 +388,32 @@ class HeaderFormatDialog(QDialog):
             time_str=time_str, state=state)
         self.pv_before.setText(header_core.render_preview(before))
         self.pv_after.setText(header_core.render_preview(after))
-        # the alignment cannot be shown in a monospace box, so say it
-        align = cfg["align"]
-        self.pv_after.setAlignment(
-            Qt.AlignmentFlag.AlignTop | {
-                "left": Qt.AlignmentFlag.AlignLeft,
-                "center": Qt.AlignmentFlag.AlignHCenter,
-                "right": Qt.AlignmentFlag.AlignRight,
-                "justify": Qt.AlignmentFlag.AlignLeft,
-            }[align])
+        self._paint_alignment(cfg, time_str, state)
+
+    def _paint_alignment(self, cfg, time_str, state):
+        """Redraw the after-pane with each line where it will actually sit.
+
+        A monospace label cannot show a centred line, and "which lines are
+        centred" is the thing being chosen — so the pane is rebuilt as one
+        div per line carrying that line's own text-align. Markers stay
+        literal: the text is escaped, never rendered as markdown.
+        """
+        roles = header_core.build_block_roles(
+            cfg, header_core.header_line(
+                cfg["format"], tr("Sample title", self._lang), time_str, state))
+        if header_core.SAMPLE_TAIL:
+            roles = roles + [(header_core.SAMPLE_TAIL, "gap")]
+        caret = header_core.caret_line(cfg)
+        rows = []
+        for i, (line, role) in enumerate(roles):
+            shown = line + (header_core.CURSOR if i == caret else "")
+            if not shown.strip():
+                shown = "·"
+            rows.append(
+                f'<div style="text-align:{header_core.align_of(cfg, role)};'
+                f'white-space:pre">{html.escape(shown)}</div>')
+        self.pv_after.setTextFormat(Qt.TextFormat.RichText)
+        self.pv_after.setText("".join(rows))
 
     def _reset(self):
         d = header_core.DEFAULTS
@@ -368,9 +422,12 @@ class HeaderFormatDialog(QDialog):
         self.sb_gap.setValue(int(d["ctrl_e_gap_after"]))
         self.cb_bullet.setChecked(d["ctrl_e_bullet"] == "True")
         self.cb_bullet_char.setCurrentText(d["ctrl_e_bullet_char"])
-        idx = self.cb_align.findData(d["ctrl_e_align"])
-        if idx >= 0:
-            self.cb_align.setCurrentIndex(idx)
+        for combo, key in ((self.cb_align, "ctrl_e_align"),
+                           (self.cb_align_rule, "ctrl_e_align_rule"),
+                           (self.cb_align_bullet, "ctrl_e_align_bullet")):
+            idx = combo.findData(d[key])
+            if idx >= 0:
+                combo.setCurrentIndex(idx)
         self.cb_stamp_every.setChecked(d["ctrl_e_stamp_every"] == "True")
         self._refresh()
 
@@ -383,6 +440,8 @@ class HeaderFormatDialog(QDialog):
         d["ctrl_e_bullet"] = "True" if cfg["bullet"] else "False"
         d["ctrl_e_bullet_char"] = cfg["bullet_char"]
         d["ctrl_e_align"] = cfg["align"]
+        d["ctrl_e_align_rule"] = cfg["align_rule"]
+        d["ctrl_e_align_bullet"] = cfg["align_bullet"]
         d["ctrl_e_stamp_every"] = "True" if cfg["stamp_every"] else "False"
         # the old boolean is what the settings checkbox still shows; keep it
         # agreeing with the alignment instead of letting the two contradict

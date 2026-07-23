@@ -120,6 +120,56 @@ def test_alignment_reaches_the_title_block(win):
     _set(win, align="left")
 
 
+def _align_of_block(win, n):
+    return win.text_area.document().findBlockByNumber(n).blockFormat().alignment()
+
+
+def test_each_line_of_the_block_is_aligned_on_its_own(win):
+    """Title centred, rule centred with it, bullet left - the ask."""
+    _set(win, align="center", align_rule="", align_bullet="left",
+         rule="True", gap_after="2", bullet="True", bullet_char="•")
+    _press(win)
+    assert _align_of_block(win, 0) & Qt.AlignmentFlag.AlignCenter   # title
+    assert _align_of_block(win, 1) & Qt.AlignmentFlag.AlignCenter   # rule
+    bullet_row = 2 + 2
+    assert not (_align_of_block(win, bullet_row) & Qt.AlignmentFlag.AlignCenter)
+
+
+def test_the_rule_can_go_its_own_way(win):
+    _set(win, align="left", align_rule="center", align_bullet="left",
+         rule="True", gap_after="1", bullet="True", bullet_char="•")
+    _press(win)
+    assert not (_align_of_block(win, 0) & Qt.AlignmentFlag.AlignCenter)
+    assert _align_of_block(win, 1) & Qt.AlignmentFlag.AlignCenter
+
+
+def test_the_bullet_can_be_centred_too(win):
+    _set(win, align="left", align_rule="", align_bullet="center",
+         rule="True", gap_after="1", bullet="True", bullet_char="•")
+    _press(win)
+    assert _align_of_block(win, 3) & Qt.AlignmentFlag.AlignCenter
+    _set(win, align_bullet="left")
+
+
+def test_gap_lines_are_never_aligned(win):
+    """An alignment there would leak into whatever gets typed next."""
+    _set(win, align="center", align_rule="", align_bullet="center",
+         rule="True", gap_after="2", bullet="True", bullet_char="•")
+    _press(win)
+    for row in (2, 3):
+        assert not (_align_of_block(win, row) & Qt.AlignmentFlag.AlignCenter), row
+    _set(win, align="left", align_bullet="left")
+
+
+def test_an_unset_role_follows_the_title(win):
+    cfg = header_core.read_settings({"ctrl_e_align": "right"})
+    assert header_core.align_of(cfg, "rule") == "right"
+    assert header_core.align_of(cfg, "gap") == "left"
+    cfg = header_core.read_settings({"ctrl_e_align": "right",
+                                     "ctrl_e_align_rule": "left"})
+    assert header_core.align_of(cfg, "rule") == "left"
+
+
 def test_the_footer_checkbox_still_drives_the_alignment(win):
     """It writes only the old boolean; read_settings prefers ctrl_e_align."""
     win._on_ctrl_e_center_toggled(True)

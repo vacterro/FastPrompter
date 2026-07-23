@@ -3878,22 +3878,29 @@ class FastPrompter(
         # to be a hardcoded "\n---\n" plus a four-way search for blank lines
         # to reuse; the reuse made the result depend on what happened to sit
         # below the cursor, which is exactly why the shape was unpredictable.
-        below = header_core.build_block(cfg, "")[1:]
+        roles = header_core.build_block_roles(cfg, "")
+        below = [line for line, _r in roles[1:]]
         plain = QTextCharFormat()
         cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock)
         cursor.setCharFormat(plain)
         if below:
             cursor.insertText("\n" + "\n".join(below), plain)
 
-        # Align the header block now — after the lines below are placed, so
-        # blocks created by \n never inherit the header's alignment.
-        if cfg["align"] != "left":
-            doc = self.text_area.document()
-            hb = doc.findBlockByNumber(hdr_block_number)
-            if hb.isValid():
+        # Align each line of the block by what it IS — title, rule or bullet
+        # — now that they all exist. Done afterwards on purpose: a block
+        # created by \n inherits the previous block's QTextBlockFormat, so
+        # aligning as we go would smear the title's alignment down the gap
+        # and onto whatever the user types next.
+        doc = self.text_area.document()
+        for offset, (_line, role) in enumerate(roles):
+            align = header_core.align_of(cfg, role)
+            if align == "left":
+                continue
+            blk = doc.findBlockByNumber(hdr_block_number + offset)
+            if blk.isValid():
                 bfmt = QTextBlockFormat()
-                bfmt.setAlignment(_ALIGN_FLAGS[cfg["align"]])
-                QTextCursor(hb).mergeBlockFormat(bfmt)
+                bfmt.setAlignment(_ALIGN_FLAGS[align])
+                QTextCursor(blk).mergeBlockFormat(bfmt)
         # Only centring is persisted: centered_blocks is a list of block
         # texts the loader re-centres, and it has no room for a direction.
         if want_center:

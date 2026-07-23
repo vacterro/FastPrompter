@@ -23,8 +23,15 @@ DEFAULTS = {
     "ctrl_e_bullet": "True",
     "ctrl_e_bullet_char": "•",
     "ctrl_e_align": "left",
+    # Per-role alignment. Empty means "same as the title", which is what
+    # keeps a settings file written before this existed behaving as it did.
+    "ctrl_e_align_rule": "",
+    "ctrl_e_align_bullet": "left",
     "ctrl_e_stamp_every": "False",
 }
+
+# Which lines of the block can be aligned on their own, in block order.
+ALIGNABLE_ROLES = ("title", "rule", "bullet")
 
 # The sample the preview presses Ctrl+E on.
 SAMPLE_TITLE = "Design notes"
@@ -50,7 +57,15 @@ def read_settings(data):
     except (TypeError, ValueError):
         gap = 2
     bullet_char = _s("ctrl_e_bullet_char")
+    def _role_align(key):
+        # "" is meaningful: it means "follow the title", so an unset value
+        # cannot be defaulted to a direction here
+        v = str(data.get(key, DEFAULTS[key]) or "")
+        return v if v in ALIGNMENTS else ""
+
     return {
+        "align_rule": _role_align("ctrl_e_align_rule"),
+        "align_bullet": _role_align("ctrl_e_align_bullet"),
         "format": _s("ctrl_e_format") or DEFAULTS["ctrl_e_format"],
         "rule": _s("ctrl_e_rule") == "True",
         "gap_after": gap,
@@ -81,13 +96,35 @@ def build_block(cfg, title_line):
     belongs on the last line when a bullet was asked for, and on the title
     otherwise (there is nothing below worth landing on).
     """
-    lines = [title_line]
+    return [line for line, _role in build_block_roles(cfg, title_line)]
+
+
+def build_block_roles(cfg, title_line):
+    """The same lines, each paired with what it is: title / rule / gap /
+    bullet.
+
+    Alignment is chosen per role - the user asked to say which lines are
+    centred and which stay left - so the writer needs to know which block is
+    which without re-parsing the text it just wrote.
+    """
+    out = [(title_line, "title")]
     if cfg["rule"]:
-        lines.append("---")
-    lines.extend([""] * cfg["gap_after"])
+        out.append(("---", "rule"))
+    out.extend([("", "gap")] * cfg["gap_after"])
     if cfg["bullet"]:
-        lines.append(cfg["bullet_char"] + " ")
-    return lines
+        out.append((cfg["bullet_char"] + " ", "bullet"))
+    return out
+
+
+def align_of(cfg, role):
+    """The alignment stored for one role, falling back to the title's.
+
+    A gap line is never aligned: it holds no text, and giving it an
+    alignment only leaks that alignment into whatever gets typed there.
+    """
+    if role == "gap":
+        return "left"
+    return cfg.get(f"align_{role}") or cfg["align"]
 
 
 def caret_line(cfg):
