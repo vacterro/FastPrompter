@@ -67,7 +67,16 @@ user32.RegisterHotKey.restype = ctypes.wintypes.BOOL
 user32.UnregisterHotKey.argtypes = [ctypes.wintypes.HWND, ctypes.c_int]
 user32.UnregisterHotKey.restype = ctypes.wintypes.BOOL
 
+from fastprompter.core import header as header_core
 from fastprompter.core.hotkey_filter import HotkeyFilter
+
+# Qt alignment flags keyed by the word stored in ctrl_e_align.
+_ALIGN_FLAGS = {
+    "left": Qt.AlignmentFlag.AlignLeft,
+    "center": Qt.AlignmentFlag.AlignCenter,
+    "right": Qt.AlignmentFlag.AlignRight,
+    "justify": Qt.AlignmentFlag.AlignJustify,
+}
 from fastprompter.core.ipc_server import IpcServer, try_connect_to_server
 from fastprompter.core.sound_manager import SoundManager
 from fastprompter.core.state import FastPrompterState
@@ -3745,18 +3754,11 @@ class FastPrompter(
         import re as _hdr_re
         _stripped = sel.strip()
         if _hdr_re.match(r"^(#{1,6})\s+", _stripped):
-            # Check if there's already a --- line below this header
             _next_block = cursor.block().next()
-            _has_rule = _next_block.isValid() and re.match(r"^\s*-{3,}\s*$", _next_block.text())
-            
-            # If no rule exists, add it instead of stripping the header
-            if not _has_rule:
-                cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock)
-                cursor.insertText("\n---\n")
-                self.mark_dirty()
-                return
-            
-            # Otherwise strip the header as before
+            # Ctrl+E on a header takes the header off, whatever is below it.
+            # It used to add a --- instead when there was none, which broke
+            # the toggle: with the rule switched off in settings, the key
+            # could no longer undo its own work.
             # Try to match the stamped format first to extract just the text
             stamped_pattern = re.escape(full_template)
             stamped_pattern = stamped_pattern.replace(re.escape("{text}"), r"(.*?)")
@@ -3846,72 +3848,52 @@ class FastPrompter(
         if not clean_sel:
             clean_sel = sel.strip()
 
-        # Only the FIRST header in a silo carries the timestamp — it dates the
-        # note. Every later header is just a section marker, so it gets a plain
-        # "# " and stays readable instead of repeating the same stamp.
-        if self._has_header_above(cursor.block()):
+        # By default only the FIRST header in a silo carries the timestamp —
+        # it dates the note, and every later header is just a section marker.
+        # "Stamp every header" in the settings turns that off.
+        cfg = header_core.read_settings(self.data)
+        if self._has_header_above(cursor.block()) and not cfg["stamp_every"]:
             formatted_text = f"# {clean_sel}"
         else:
-            formatted_text = (template.replace("{text}", clean_sel)
-                              .replace("{time}", time_str)
-                              .replace("{state}", daypart))
-            if not formatted_text.startswith("# "):
-                formatted_text = f"# {formatted_text}"
+            formatted_text = header_core.header_line(
+                template, clean_sel, time_str, daypart)
 
         cursor.insertText(formatted_text)
-
-        # Add horizontal rule below header when creating it
-        cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock)
-        cursor.insertText("\n---\n")
 
         # Save header info for centering and persistence. Centering must
         # happen AFTER the bullet insert below — QTextCursor.insertText()
         # inherits the current block's QTextBlockFormat into any new block
         # it creates via \n, so centering before the bullet would leak
         # center alignment onto the empty lines and the bullet point.
-        want_center = self.data.get("ctrl_e_center", "False") == "True"
-        if want_center:
-            hdr_block_number = cursor.block().blockNumber()
-            hdr_text = cursor.block().text()
+        want_center = cfg["align"] == "center"
+        hdr_block_number = cursor.block().blockNumber()
+        hdr_text = cursor.block().text()
 
-        # Jump three lines below the header onto a fresh bullet, with PLAIN
-        # formatting — the header's bold/underline must not bleed into
-        # what gets typed next. Reuses existing blank lines on repeats.
-        # Structure: header + --- + empty line + bullet
+        # Everything under the title comes from core/header.build_block, so
+        # the settings preview and this insert cannot drift apart. It used
+        # to be a hardcoded "\n---\n" plus a four-way search for blank lines
+        # to reuse; the reuse made the result depend on what happened to sit
+        # below the cursor, which is exactly why the shape was unpredictable.
+        below = header_core.build_block(cfg, "")[1:]
         plain = QTextCharFormat()
         cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock)
         cursor.setCharFormat(plain)
-        nxt = cursor.block().next()
-        if not nxt.isValid() or nxt.text().strip():
-            cursor.insertText("\n\n\n• ", plain)
-        else:
-            nxt2 = nxt.next()
-            if not nxt2.isValid():
-                cursor.setPosition(nxt.position())
-                cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock)
-                cursor.insertText("\n\n• ", plain)
-            else:
-                nxt3 = nxt2.next()
-                if not nxt3.isValid():
-                    cursor.setPosition(nxt2.position())
-                    cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock)
-                    cursor.insertText("\n• ", plain)
-                else:
-                    cursor.setPosition(nxt3.position())
-                    cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock)
-                    if not nxt3.text().strip():
-                        cursor.insertText("• ", plain)
+        if below:
+            cursor.insertText("\n" + "\n".join(below), plain)
 
-        # Center the header block now — after the bullet is placed, so new
-        # blocks from \n never inherit the center alignment.
-        if want_center:
+        # Align the header block now — after the lines below are placed, so
+        # blocks created by \n never inherit the header's alignment.
+        if cfg["align"] != "left":
             doc = self.text_area.document()
             hb = doc.findBlockByNumber(hdr_block_number)
             if hb.isValid():
                 bfmt = QTextBlockFormat()
-                bfmt.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                bfmt.setAlignment(_ALIGN_FLAGS[cfg["align"]])
                 QTextCursor(hb).mergeBlockFormat(bfmt)
-                # Persist the block text so centering survives save/reload.
+        # Only centring is persisted: centered_blocks is a list of block
+        # texts the loader re-centres, and it has no room for a direction.
+        if want_center:
+            if hdr_text:
                 try:
                     centered = json.loads(self.data.get("centered_blocks", "[]"))
                     if hdr_text and hdr_text not in centered:
@@ -4692,7 +4674,16 @@ class FastPrompter(
         self.mark_dirty()
 
     def _on_ctrl_e_center_toggled(self, checked):
+        """The footer checkbox is the two-state face of ctrl_e_align.
+
+        It has to write the alignment too: read_settings prefers ctrl_e_align
+        once the header dialog has stored one, so a checkbox that only set
+        the old boolean would go dead the first time that dialog was used.
+        Unticking returns to left - the checkbox has nowhere to record that
+        the user had picked right or justified.
+        """
         self.data["ctrl_e_center"] = "True" if checked else "False"
+        self.data["ctrl_e_align"] = "center" if checked else "left"
         self.mark_dirty()
 
     def _restore_centered_blocks(self):

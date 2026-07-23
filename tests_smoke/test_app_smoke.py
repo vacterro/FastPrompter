@@ -1434,15 +1434,17 @@ def test_header_format_editor(win):
 
     dlg = HeaderFormatDialog(win)
     assert dlg.preview.text()  # live preview renders
-    # preview must actually render markdown (bold/underline/etc), matching
-    # what the editor's own highlighter shows -- not raw "**" asterisks
-    from PyQt6.QtCore import Qt
-    assert dlg.preview.textFormat() == Qt.TextFormat.RichText
+    # The preview is the literal text Ctrl+E writes, in a monospace box - it
+    # used to be styled HTML, which could not show the one thing this page
+    # is now for: how many blank lines and where the caret lands. Markers
+    # stay visible as themselves.
     dlg.edit.setText("**{text}**")
-    assert "<b>" in dlg.preview.text() and "**" in dlg.preview.text()
+    assert "**" in dlg.preview.text() and "<b>" not in dlg.preview.text()
     dlg.edit.setText("__{text}__")
-    assert "<u>" in dlg.preview.text()
+    assert "__" in dlg.preview.text()
     dlg.edit.setText(DEFAULT_TEMPLATE)
+    # both panes are live
+    assert dlg.pv_before.text() and dlg.pv_after.text()
     # sample honors placeholders
     s = dlg.sample_line("# {text} {state} {time}")
     assert "Sample title" in s
@@ -5235,14 +5237,18 @@ def test_ctrl_e_reverses_any_header_level(win):
         assert press("plain text").startswith("# plain text (")
         assert "---" in press("plain text")
         
-        # Existing header without --- gets the --- added
+        # Existing header WITHOUT a rule is still reversed, not decorated.
+        # This used to assert that Ctrl+E added the --- instead, which broke
+        # the toggle the rest of this test (and its name) relies on: with
+        # the rule switched off in settings the key could never undo itself.
         ed.setPlainText("# Header one")
         c = ed.textCursor()
         c.movePosition(QTextCursor.MoveOperation.End)
         ed.setTextCursor(c)
         win.apply_header_timestamp()
-        assert ed.toPlainText() == "# Header one\n---\n"
-        
+        assert ed.toPlainText().strip() == "Header one"
+
+
         # Existing header with --- gets stripped
         ed.setPlainText("# Header one\n---\n")
         c = ed.textCursor()
