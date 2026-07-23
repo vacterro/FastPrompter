@@ -184,13 +184,6 @@ Press `Alt+X` anywhere — in your browser, IDE, terminal — and FastPrompter p
 <img alt="Screenshot 8" src="docs/images/2026-07-23_105047.png" />
 <br><em>Additional view.</em><br><br>
 
-<img alt="Screenshot 9" src="docs/images/2026-07-23_104847.png" />
-<br><em>Additional view.</em><br><br>
-
-
-<img alt="Screenshot 11" src="docs/images/2026-07-23_104648.png" />
-<br><em>Additional view.</em><br><br>
-
 <img alt="Screenshot 12" src="docs/images/2026-07-23_104633.png" />
 <br><em>Additional view.</em><br><br>
 
@@ -200,14 +193,9 @@ Press `Alt+X` anywhere — in your browser, IDE, terminal — and FastPrompter p
 <img alt="Screenshot 14" src="docs/images/2026-07-23_104603.png" />
 <br><em>Additional view.</em><br><br>
 
-<img alt="Screenshot 15" src="docs/images/2026-07-23_104549.png" />
-<br><em>Additional view.</em><br><br>
-
 <img alt="Screenshot 16" src="docs/images/2026-07-23_104523.png" />
 <br><em>Additional view.</em><br><br>
 
-<img alt="Screenshot 17" src="docs/images/2026-07-23_104501.png" />
-<br><em>Additional view.</em><br><br>
 
 </div>
 </details>
