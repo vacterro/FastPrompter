@@ -14,9 +14,11 @@ from PyQt6.QtWidgets import QLayout, QSizePolicy, QWidget
 
 
 class FlowLayout(QLayout):
-    def __init__(self, parent=None, margin=0, h_spacing=8, v_spacing=2):
+    def __init__(self, parent=None, margin=0, h_spacing=8, v_spacing=2,
+                 stretch_items=False):
         super().__init__(parent)
         self._items = []
+        self._stretch = stretch_items
         self._h_space = h_spacing
         self._v_space = v_spacing
         self.setContentsMargins(margin, margin, margin, margin)
@@ -97,12 +99,43 @@ class FlowLayout(QLayout):
         # NOT justified across the width: spreading them measured a 724px
         # gap between two checkboxes on the Clock tab, which is exactly the
         # "huge empty space" the settings panel was compacted to remove.
+        #
+        # `stretch_items` is the opposite trade, and only makes sense for
+        # items that are containers: the leftover width is added TO them
+        # rather than put between them, so a row of settings groups fills
+        # the panel and their contents still sit left-aligned inside. Used
+        # for the settings tabs, where a flow of groups otherwise stopped at
+        # 449px of 956 and left a dead stripe down the right.
         y = top
         for start, count, line_h in lines:
             x = left
+            spare = 0
+            if self._stretch and count:
+                used = sum(items[j].sizeHint().width()
+                           for j in range(start, start + count))
+                used += self._h_space * (count - 1)
+                spare = max(0, (right - left) - used) // count
+            placed = []
             for j in range(start, start + count):
                 item = items[j]
                 w, h = item.sizeHint().width(), item.sizeHint().height()
+                w += spare
+                # A widened container has to re-flow its own contents, or it
+                # keeps the tall narrow shape it had at hint width and the
+                # extra room buys nothing. Measured on the Editor tab: 351px
+                # of panel before asking, 272 after.
+                if spare and item.hasHeightForWidth():
+                    # NOT max(minimumSize().height(), ...): a layout with
+                    # height-for-width reports its minimum height at its
+                    # MINIMUM width, i.e. the tallest it can ever be, which
+                    # pinned one group at 122px when 70 was the truth.
+                    h = item.heightForWidth(w)
+                placed.append((item, w, h))
+                x += w + self._h_space
+            if placed:
+                line_h = max(line_h if not spare else 0, max(h for _i, _w, h in placed))
+            x = left
+            for item, w, h in placed:
                 if apply:
                     item.setGeometry(QRect(QPoint(x, y), QSize(w, h)))
                 x += w + self._h_space
@@ -120,14 +153,16 @@ class FlowWidget(QWidget):
     exact height at the actual tab width instead of relying on
     QLayout.totalHeightForWidth — which may not exist in PyQt6.
     """
-    def __init__(self, items, margin=0, h_spacing=8, v_spacing=2):
+    def __init__(self, items, margin=0, h_spacing=8, v_spacing=2,
+                 stretch_items=False):
         super().__init__()
         policy = QSizePolicy(QSizePolicy.Policy.Preferred,
                              QSizePolicy.Policy.Minimum)
         policy.setHeightForWidth(True)
         self.setSizePolicy(policy)
         self._flow = FlowLayout(self, margin=margin,
-                                 h_spacing=h_spacing, v_spacing=v_spacing)
+                                 h_spacing=h_spacing, v_spacing=v_spacing,
+                                 stretch_items=stretch_items)
         for item in items:
             if isinstance(item, QLayout):
                 sub = QWidget()
@@ -146,7 +181,7 @@ class FlowWidget(QWidget):
         return self._flow.heightForWidth(width)
 
 
-def flow_widget(items, margin=0, h_spacing=8, v_spacing=2):
+def flow_widget(items, margin=0, h_spacing=8, v_spacing=2, stretch_items=False):
     """Wrap widgets/layouts in a FlowWidget using a FlowLayout."""
     return FlowWidget(items, margin=margin, h_spacing=h_spacing,
-                      v_spacing=v_spacing)
+                      v_spacing=v_spacing, stretch_items=stretch_items)

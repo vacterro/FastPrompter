@@ -112,6 +112,28 @@ from fastprompter.core.i18n import NATIVE_NAMES as _LANG_NATIVE_NAMES
 from fastprompter.utils.textfit import clip_safe_width
 
 
+class _SettingsGroupBox(QWidget):
+    """A settings group that can say how tall it is at a given width.
+
+    A plain QWidget reports one height, so a group handed extra width by the
+    flow kept the tall narrow shape it was measured at and the room bought
+    nothing - the Editor tab stayed 351px when it could be 272.
+    """
+
+    _inner = None
+    _chrome_h = 0
+
+    def hasHeightForWidth(self):
+        return self._inner is not None
+
+    def heightForWidth(self, width):
+        if self._inner is None:
+            return super().heightForWidth(width)
+        margins = self.layout().contentsMargins() if self.layout() else None
+        pad = (margins.left() + margins.right()) if margins else 0
+        return self._chrome_h + self._inner.totalHeightForWidth(max(1, width - pad))
+
+
 class FastPrompter(
     QMainWindow,
     FormattingMixin,
@@ -3019,7 +3041,7 @@ class FastPrompter(
             the right. Grouping gives the eye somewhere to land and lets the
             groups themselves flow into the space instead of the gaps.
             """
-            box = QWidget()
+            box = _SettingsGroupBox()
             box.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
             box.setObjectName("SettingsGroup")
             # Theme-neutral on purpose: a translucent wash reads as a panel
@@ -3029,8 +3051,8 @@ class FastPrompter(
                 "#SettingsGroup { background: rgba(255,255,255,0.035);"
                 " border: 1px solid rgba(255,255,255,0.07); }")
             col = QVBoxLayout(box)
-            col.setContentsMargins(6, 3, 6, 4)
-            col.setSpacing(2)
+            col.setContentsMargins(5, 2, 5, 3)
+            col.setSpacing(1)
             header = QLabel(tr(title, self._current_lang))
             header._en_text = title
             header.setStyleSheet(
@@ -3040,6 +3062,10 @@ class FastPrompter(
             if min_width:
                 inner.setMinimumWidth(min_width)
             col.addWidget(inner)
+            # so a widened group re-flows its contents into fewer rows
+            # instead of keeping the tall narrow shape it had at hint width
+            box._inner = inner
+            box._chrome_h = header.sizeHint().height() + 3 + 2 + 4
             box.setSizePolicy(QSizePolicy.Policy.Preferred,
                               QSizePolicy.Policy.Maximum)
             box._weight = len(items)
@@ -3169,36 +3195,24 @@ class FastPrompter(
         # a single column rather than clipping the right-hand side.
         from fastprompter.ui.flow_layout import flow_widget
 
-        def _tab(items, columns=4):
-            """One settings tab: its groups spread across equal columns.
+        def _tab(items):
+            """One settings tab: its groups, wrapping and filling the width.
 
-            A flow left the right-hand third of the panel empty on every tab
-            (measured: the Clock tab used 449px of 956), because a flow packs
-            to content width and stops. Equal stretched columns use the whole
-            width, and groups are dealt to the shortest column so the columns
-            end up roughly level instead of one tall stack beside a stub.
+            A plain flow left the right-hand third of the panel empty on
+            every tab (measured: the Clock tab used 449px of 956) because a
+            flow packs to content width and stops. Fixed columns fixed that
+            but demanded 1037px of window - the panel has to survive a narrow
+            window too. So the groups wrap like anything else, and the
+            leftover width of each row is handed TO the groups on it.
             """
             host = QWidget()
             host.setSizePolicy(QSizePolicy.Policy.Preferred,
                                QSizePolicy.Policy.Maximum)
-            outer = QHBoxLayout(host)
+            outer = QVBoxLayout(host)
             outer.setContentsMargins(4, 4, 4, 4)
-            outer.setSpacing(6)
-            cols, loads = [], []
-            for _ in range(max(1, min(columns, len(items)))):
-                col = QVBoxLayout()
-                col.setContentsMargins(0, 0, 0, 0)
-                col.setSpacing(4)
-                col.setAlignment(Qt.AlignmentFlag.AlignTop)
-                outer.addLayout(col, 1)
-                cols.append(col)
-                loads.append(0)
-            for item in items:
-                i = loads.index(min(loads))
-                cols[i].addWidget(item)
-                loads[i] += getattr(item, "_weight", 1) + 2  # +2 for the title
-            for col in cols:
-                col.addStretch(1)
+            outer.setSpacing(3)
+            outer.addWidget(flow_widget(items, h_spacing=6, v_spacing=4,
+                                        stretch_items=True))
             return host
 
         self.settings_tabs = QTabWidget()
@@ -3268,6 +3282,9 @@ class FastPrompter(
         ]), tr("Window", self._current_lang))
 
         self.settings_tabs.addTab(_tab([
+            _settings_group("Dividers & headers", [
+                div_row, ctrlw_btn_row, hdr_row,
+            ]),
             _settings_group("Typing", [
                 self.cb_focus, self.cb_wrap, self.cb_ctrl_c,
                 self.cb_lock_cursor, self.cb_double_line,
@@ -3276,22 +3293,19 @@ class FastPrompter(
                 self.cb_line_numbers, self.cb_line_marks, self.cb_zebra,
                 self.cb_bold_titles, self.lbl_align, self.cb_align_combo,
             ]),
-            _settings_group("Code blocks", [
-                self.cb_code_gutter, self.cb_code_monospace,
-            ]),
             # split in two: eight controls in one group stretched to 186px
             # tall beside 49px neighbours, which is the ragged look the panel
             # was reported for
-            _settings_group("Hover line", [
-                self.cb_hover_line, self.spin_hover_opacity,
-                self.btn_hover_colour,
-            ]),
             _settings_group("Line heat", [
                 self.cb_line_heat, lbl_heat, self.spin_heat_strength,
                 self.spin_heat_minutes, self.cb_heat_palette,
             ]),
-            _settings_group("Dividers & headers", [
-                div_row, ctrlw_btn_row, hdr_row,
+            _settings_group("Hover line", [
+                self.cb_hover_line, self.spin_hover_opacity,
+                self.btn_hover_colour,
+            ]),
+            _settings_group("Code blocks", [
+                self.cb_code_gutter, self.cb_code_monospace,
             ]),
         ]), tr("Editor", self._current_lang))
 
