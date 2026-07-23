@@ -187,8 +187,6 @@ Press `Alt+X` anywhere — in your browser, IDE, terminal — and FastPrompter p
 <img alt="Screenshot 9" src="docs/images/2026-07-23_104847.png" />
 <br><em>Additional view.</em><br><br>
 
-<img alt="Screenshot 10" src="docs/images/2026-07-23_104656.png" />
-<br><em>Additional view.</em><br><br>
 
 <img alt="Screenshot 11" src="docs/images/2026-07-23_104648.png" />
 <br><em>Additional view.</em><br><br>
