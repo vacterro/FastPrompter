@@ -93,18 +93,26 @@ class BackupDialog(QDialog):
             self.main_win.save_data_to_db(force=True)
 
             # Export Temp Presets (Silos)
-            for i, text in enumerate(self.main_win.data.get("temp_presets", [])):
-                if text.strip():
-                    filename = os.path.join(path, f"Silo_{i+1}{fmt}")
-                    with open(filename, 'w', encoding='utf-8') as f:
-                        f.write(text)
+            for cat, slots in self.main_win.data.get("temp_presets_all", {}).items():
+                safe_cat = self.main_win.state._sanitize_cat_name(cat)
+                cat_dir = os.path.join(path, safe_cat)
+                os.makedirs(cat_dir, exist_ok=True)
+                for i, text in enumerate(slots):
+                    if text.strip():
+                        filename = os.path.join(cat_dir, f"Silo_{i+1}{fmt}")
+                        with open(filename, 'w', encoding='utf-8') as f:
+                            f.write(text)
 
             # Export Archive Temp Presets
-            for i, text in enumerate(self.main_win.data.get("archive_temp_presets", [])):
-                if text.strip():
-                    filename = os.path.join(path, f"Archive_Silo_{i+1}{fmt}")
-                    with open(filename, 'w', encoding='utf-8') as f:
-                        f.write(text)
+            for cat, slots in self.main_win.data.get("archive_temp_presets_all", {}).items():
+                safe_cat = self.main_win.state._sanitize_cat_name(cat)
+                cat_dir = os.path.join(path, safe_cat)
+                os.makedirs(cat_dir, exist_ok=True)
+                for i, text in enumerate(slots):
+                    if text.strip():
+                        filename = os.path.join(cat_dir, f"Archive_Silo_{i+1}{fmt}")
+                        with open(filename, 'w', encoding='utf-8') as f:
+                            f.write(text)
 
             QMessageBox.information(self, tr("Success", self.lang), tr("Silos exported to:\n{}", self.lang).format(path))
         except Exception as e:

@@ -493,7 +493,6 @@ class SnippetOpsMixin:
             slots[slot] = {"name": name, "text": text, "last_edited": int(time.time())}
             self.mark_dirty()
             self.refresh_snippets_panel()
-            self.cancel_editing()
 
     def del_last_snippet(self):
         """Delete the last snippet or current silo."""

@@ -50,7 +50,6 @@ class WindowMixin:
             self.isHidden()
             or self.isMinimized()
             or not self.isVisible()
-            or not self.isActiveWindow()
         ):
             if force_sidebar and not self.snippets_section.isVisible():
                 self.toggle_sidebar_visibility()

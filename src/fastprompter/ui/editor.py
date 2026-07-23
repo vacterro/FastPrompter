@@ -2281,6 +2281,11 @@ class VaultTextEdit(QTextEdit):
                     return
 
         try:
+            # Swallow native Ctrl+B/I/U so user rebinding works fully
+            if mods == Qt.KeyboardModifier.ControlModifier and event.key() in (Qt.Key.Key_B, Qt.Key.Key_I, Qt.Key.Key_U):
+                event.accept()
+                return
+
             if getattr(self, "_undo_boundary_pending", False) and event.text():
                 # First keystroke after a formatting command. Qt would merge
                 # this insertion into that command's undo entry, so one

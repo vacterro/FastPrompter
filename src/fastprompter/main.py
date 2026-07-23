@@ -197,8 +197,6 @@ class FastPrompter(
     def _tray_visible(self):
         return self.data.get("tray_visible", "True") == "True"
 
-    def _refresh_settings_cache(self):
-        """Settings are read live from self.data via properties; nothing to refresh."""
 
     def __init__(self):
         super().__init__()
@@ -1887,6 +1885,7 @@ class FastPrompter(
 
     def _begin_batch_update(self):
         """Suppress paints + snapshot overlay as backup."""
+        if not hasattr(self, "left_panel"): return
         self.setUpdatesEnabled(False)
         snap = self.left_panel.grab()
         self._sidebar_snap = QLabel(self.left_panel)
@@ -1898,6 +1897,7 @@ class FastPrompter(
 
     def _end_batch_update(self):
         """Re-enable paints — naturally batched by Qt's backing store."""
+        if not hasattr(self, "left_panel"): return
         if hasattr(self, "_sidebar_snap") and self._sidebar_snap is not None:
             self._sidebar_snap.hide()
             self._sidebar_snap.deleteLater()

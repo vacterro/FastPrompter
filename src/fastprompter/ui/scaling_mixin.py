@@ -206,7 +206,6 @@ class ScalingMixin:
         self.mark_dirty()
         if hasattr(self, "btn_button_scale") and not _is_deleted(self.btn_button_scale):
             self.btn_button_scale.setText(f"Scale: {int(value * 100)}%")
-        self._refresh_settings_cache()
         self.apply_scaled_ui()
         self.refresh_button_scale()
         self.apply_font()

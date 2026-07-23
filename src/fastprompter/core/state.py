@@ -41,6 +41,7 @@ class FastPrompterState:
 
     def switch_profile(self, new_profile_id):
         if self.conn:
+            self.save_data_to_db(self.data.get("last_text", ""), force=True)
             self.conn.close()
             self.conn = None
         self.profile_id = new_profile_id
