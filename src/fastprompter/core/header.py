@@ -22,6 +22,10 @@ DEFAULTS = {
     "ctrl_e_gap_after": "2",
     "ctrl_e_bullet": "True",
     "ctrl_e_bullet_char": "•",
+    # Below the caret: room to keep writing, then an optional closing rule.
+    "ctrl_e_gap_below": "0",
+    "ctrl_e_rule_below": "False",
+    "ctrl_e_gap_bottom": "0",
     "ctrl_e_align": "left",
     # Per-role alignment. Empty means "same as the title", which is what
     # keeps a settings file written before this existed behaving as it did.
@@ -52,10 +56,13 @@ def read_settings(data):
     align = str(data.get("ctrl_e_align", "") or "")
     if align not in ALIGNMENTS:
         align = "center" if str(data.get("ctrl_e_center", "False")) == "True" else "left"
-    try:
-        gap = max(0, min(6, int(_s("ctrl_e_gap_after"))))
-    except (TypeError, ValueError):
-        gap = 2
+    def _count(key, default):
+        try:
+            return max(0, min(6, int(_s(key))))
+        except (TypeError, ValueError):
+            return default
+
+    gap = _count("ctrl_e_gap_after", 2)
     bullet_char = _s("ctrl_e_bullet_char")
     def _role_align(key):
         # "" is meaningful: it means "follow the title", so an unset value
@@ -69,6 +76,9 @@ def read_settings(data):
         "format": _s("ctrl_e_format") or DEFAULTS["ctrl_e_format"],
         "rule": _s("ctrl_e_rule") == "True",
         "gap_after": gap,
+        "gap_below": _count("ctrl_e_gap_below", 0),
+        "rule_below": _s("ctrl_e_rule_below") == "True",
+        "gap_bottom": _count("ctrl_e_gap_bottom", 0),
         "bullet": _s("ctrl_e_bullet") == "True",
         "bullet_char": bullet_char if bullet_char.strip() else "•",
         "align": align,
@@ -113,6 +123,12 @@ def build_block_roles(cfg, title_line):
     out.extend([("", "gap")] * cfg["gap_after"])
     if cfg["bullet"]:
         out.append((cfg["bullet_char"] + " ", "bullet"))
+    # Everything below the caret: room to keep writing, and an optional
+    # closing rule that shuts the section off from whatever follows.
+    out.extend([("", "gap")] * cfg["gap_below"])
+    if cfg["rule_below"]:
+        out.append(("---", "rule"))
+        out.extend([("", "gap")] * cfg["gap_bottom"])
     return out
 
 
@@ -128,8 +144,18 @@ def align_of(cfg, role):
 
 
 def caret_line(cfg):
-    """Index into build_block's list where the caret ends up."""
-    return len(build_block(cfg, "x")) - 1 if cfg["bullet"] else 0
+    """Index into build_block's list where the caret ends up.
+
+    The bullet is no longer the last line — anything configured below it
+    (gap, closing rule) comes after — so this finds the bullet rather than
+    assuming the end of the list.
+    """
+    if not cfg["bullet"]:
+        return 0
+    for i, (_line, role) in enumerate(build_block_roles(cfg, "x")):
+        if role == "bullet":
+            return i
+    return 0
 
 
 def simulate(cfg, title=SAMPLE_TITLE, tail=SAMPLE_TAIL, time_str="23.07 - 14:05",

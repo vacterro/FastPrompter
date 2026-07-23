@@ -120,6 +120,48 @@ def test_alignment_reaches_the_title_block(win):
     _set(win, align="left")
 
 
+def test_a_gap_can_be_left_under_the_caret(win):
+    _set(win, rule="True", gap_after="1", bullet="True", bullet_char="•",
+         gap_below="2", rule_below="False", gap_bottom="0")
+    lines = _shape(_press(win))
+    assert lines == ["# TITLE", "---", "", "• ", "", ""]
+
+
+def test_a_closing_rule_shuts_the_section_off(win):
+    _set(win, rule="True", gap_after="1", bullet="True", bullet_char="•",
+         gap_below="1", rule_below="True", gap_bottom="2")
+    lines = _shape(_press(win))
+    assert lines == ["# TITLE", "---", "", "• ", "", "---", "", ""]
+
+
+def test_the_caret_stays_on_the_bullet_with_a_tail_below(win):
+    """The bullet used to be the last line, so the insert landed there by
+    itself; with a tail configured the caret was stranded at the bottom."""
+    _set(win, rule="True", gap_after="2", bullet="True", bullet_char="•",
+         gap_below="2", rule_below="True", gap_bottom="1")
+    _press(win)
+    cur = win.text_area.textCursor()
+    assert cur.block().text() == "• "
+    assert cur.atBlockEnd()
+
+
+def test_the_tail_is_off_by_default(win):
+    """Nothing below the bullet unless it was asked for."""
+    cfg = header_core.read_settings({})
+    assert cfg["gap_below"] == 0 and cfg["rule_below"] is False
+    assert header_core.build_block(cfg, "# T")[-1] == "• "
+
+
+def test_the_closing_rule_is_aligned_like_the_other_one(win):
+    _set(win, align="left", align_rule="center", align_bullet="left",
+         rule="True", gap_after="1", bullet="True", bullet_char="•",
+         gap_below="1", rule_below="True", gap_bottom="0")
+    _press(win)
+    assert _align_of_block(win, 1) & Qt.AlignmentFlag.AlignCenter
+    assert _align_of_block(win, 5) & Qt.AlignmentFlag.AlignCenter
+    _set(win, align_rule="", gap_below="0", rule_below="False", gap_bottom="0")
+
+
 def _align_of_block(win, n):
     return win.text_area.document().findBlockByNumber(n).blockFormat().alignment()
 

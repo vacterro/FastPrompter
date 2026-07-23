@@ -3901,6 +3901,15 @@ class FastPrompter(
                 bfmt = QTextBlockFormat()
                 bfmt.setAlignment(_ALIGN_FLAGS[align])
                 QTextCursor(blk).mergeBlockFormat(bfmt)
+
+        # Land on the bullet. It used to be the last line written, so the
+        # insert left the caret there by itself; with a gap or a closing
+        # rule configured below it, the caret would be stranded at the
+        # bottom of the block instead of on the line to type on.
+        caret_blk = doc.findBlockByNumber(
+            hdr_block_number + header_core.caret_line(cfg))
+        if caret_blk.isValid():
+            cursor.setPosition(caret_blk.position() + len(caret_blk.text()))
         # Only centring is persisted: centered_blocks is a list of block
         # texts the loader re-centres, and it has no room for a direction.
         if want_center:

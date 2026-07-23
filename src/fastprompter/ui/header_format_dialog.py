@@ -198,6 +198,55 @@ class HeaderFormatDialog(QDialog):
         row.addStretch(1)
         root.addLayout(row)
 
+        # ── below the caret ──
+        rowb = QHBoxLayout()
+        rowb.setSpacing(6)
+        lbl_below = QLabel(tr("Below the caret:", self._lang))
+        lbl_below.setToolTip(tr(
+            "Ctrl+E can leave room under the line you land on, and close the "
+            "section off with a second --- so the next note starts clean.\n"
+            "All zero and off means the block ends at the bullet, as before.",
+            self._lang))
+        rowb.addWidget(lbl_below)
+
+        lbl_gb = QLabel(tr("gap:", self._lang))
+        lbl_gb.setToolTip(tr(
+            "Empty lines left under the bullet - room to keep writing "
+            "without pushing the text below you around.", self._lang))
+        rowb.addWidget(lbl_gb)
+        self.sb_gap_below = QSpinBox()
+        self.sb_gap_below.setRange(0, 6)
+        self.sb_gap_below.setMaximumWidth(48)
+        self.sb_gap_below.setToolTip(lbl_gb.toolTip())
+        self.sb_gap_below.setValue(cfg["gap_below"])
+        self.sb_gap_below.valueChanged.connect(self._refresh)
+        rowb.addWidget(self.sb_gap_below)
+
+        rowb.addSpacing(8)
+        self.cb_rule_below = QCheckBox(tr("closing rule ———", self._lang))
+        self.cb_rule_below.setToolTip(tr(
+            "A second --- at the bottom, shutting this section off from "
+            "whatever comes after it.", self._lang))
+        self.cb_rule_below.setChecked(cfg["rule_below"])
+        self.cb_rule_below.toggled.connect(self._on_rule_below_toggled)
+        rowb.addWidget(self.cb_rule_below)
+
+        lbl_gbot = QLabel(tr("then:", self._lang))
+        lbl_gbot.setToolTip(tr(
+            "Empty lines under the closing rule, before whatever follows.",
+            self._lang))
+        rowb.addWidget(lbl_gbot)
+        self.sb_gap_bottom = QSpinBox()
+        self.sb_gap_bottom.setRange(0, 6)
+        self.sb_gap_bottom.setMaximumWidth(48)
+        self.sb_gap_bottom.setToolTip(lbl_gbot.toolTip())
+        self.sb_gap_bottom.setValue(cfg["gap_bottom"])
+        self.sb_gap_bottom.setEnabled(cfg["rule_below"])
+        self.sb_gap_bottom.valueChanged.connect(self._refresh)
+        rowb.addWidget(self.sb_gap_bottom)
+        rowb.addStretch(1)
+        root.addLayout(rowb)
+
         # Alignment per line of the block: the user asked to say which lines
         # are centred and which stay left, rather than one setting for all.
         row2 = FlowLayout(margin=0, h_spacing=6, v_spacing=4)
@@ -333,6 +382,11 @@ class HeaderFormatDialog(QDialog):
             self.edit.insert(marker + marker)
         self.edit.setFocus()
 
+    def _on_rule_below_toggled(self, checked):
+        # the bottom gap only means anything when there is a rule to sit under
+        self.sb_gap_bottom.setEnabled(checked)
+        self._refresh()
+
     def _on_bullet_toggled(self, checked):
         self.cb_bullet_char.setEnabled(checked)
         self._refresh()
@@ -345,6 +399,9 @@ class HeaderFormatDialog(QDialog):
             "format": self.edit.text() or DEFAULT_TEMPLATE,
             "rule": self.cb_rule.isChecked(),
             "gap_after": self.sb_gap.value(),
+            "gap_below": self.sb_gap_below.value(),
+            "rule_below": self.cb_rule_below.isChecked(),
+            "gap_bottom": self.sb_gap_bottom.value(),
             "bullet": self.cb_bullet.isChecked(),
             "bullet_char": bullet_char if bullet_char.strip() else "•",
             "align": self.cb_align.currentData() or "left",
@@ -420,6 +477,9 @@ class HeaderFormatDialog(QDialog):
         self.edit.setText(d["ctrl_e_format"])
         self.cb_rule.setChecked(d["ctrl_e_rule"] == "True")
         self.sb_gap.setValue(int(d["ctrl_e_gap_after"]))
+        self.sb_gap_below.setValue(int(d["ctrl_e_gap_below"]))
+        self.cb_rule_below.setChecked(d["ctrl_e_rule_below"] == "True")
+        self.sb_gap_bottom.setValue(int(d["ctrl_e_gap_bottom"]))
         self.cb_bullet.setChecked(d["ctrl_e_bullet"] == "True")
         self.cb_bullet_char.setCurrentText(d["ctrl_e_bullet_char"])
         for combo, key in ((self.cb_align, "ctrl_e_align"),
@@ -437,6 +497,9 @@ class HeaderFormatDialog(QDialog):
         d["ctrl_e_format"] = cfg["format"]
         d["ctrl_e_rule"] = "True" if cfg["rule"] else "False"
         d["ctrl_e_gap_after"] = str(cfg["gap_after"])
+        d["ctrl_e_gap_below"] = str(cfg["gap_below"])
+        d["ctrl_e_rule_below"] = "True" if cfg["rule_below"] else "False"
+        d["ctrl_e_gap_bottom"] = str(cfg["gap_bottom"])
         d["ctrl_e_bullet"] = "True" if cfg["bullet"] else "False"
         d["ctrl_e_bullet_char"] = cfg["bullet_char"]
         d["ctrl_e_align"] = cfg["align"]
