@@ -157,12 +157,13 @@ class _BlockData(QTextBlockUserData):
     field the caller did not know about.
     """
 
-    __slots__ = ("ts", "queue_id")
+    __slots__ = ("ts", "queue_id", "fold_count")
 
     def __init__(self, ts=None, queue_id=""):
         super().__init__()
         self.ts = ts
         self.queue_id = queue_id
+        self.fold_count = 0
 
 
 # Kept so existing callers and tests can still say _LineHeat(ts).
@@ -246,7 +247,18 @@ class VaultTextEdit(QTextEdit):
         self._gutter_anchor_block = None
         self._doc_has_checkbox = False
         self._doc_has_code = False
+        self._opener_cache = None  # set of opener block numbers, invalidated on text change
+        self.textChanged.connect(self._invalidate_opener_cache)
         QTimer.singleShot(0, self._refresh_checkbox_flag)
+
+        # Debounced state capture: scroll-only browsing (no typing) also
+        # persists the view position, cursor, and marks. Fires 2 s after
+        # the last scroll or resize event.
+        self._idle_timer = QTimer(self)
+        self._idle_timer.setSingleShot(True)
+        self._idle_timer.setInterval(2000)
+        self._idle_timer.timeout.connect(self._on_idle_timeout)
+        self.verticalScrollBar().valueChanged.connect(self._kick_idle_timer)
 
     def _first_visible_block(self):
         doc = self.document()
@@ -259,30 +271,49 @@ class VaultTextEdit(QTextEdit):
         return blk if blk.isValid() else None
 
     def _refresh_checkbox_flag(self):
+        """Update checkbox/code flags. Early-exit when both already True.
+
+        These flags control gutter auto-show for code blocks. Once a
+        document has a checkbox or code fence there is nothing new to discover — the
+        flags stay True. Deleting the last such line leaves the gutter
+        marginally wider than needed until reload, which is invisible in
+        practice and saves scanning ~200 blocks on every keystroke for the
+        lifetime of the edit session.
+        """
         doc = self.document()
-        if doc and not sip.isdeleted(doc):
-            # Full scan up to paintEvent threshold (2000 blocks) to avoid blind spot.
-            # For very large docs (>2000 blocks), limit scan to first 200 blocks
-            # since paintEvent skips checkbox rendering beyond 2000 anyway.
-            scan_limit = doc.blockCount()
-            if scan_limit > 2000:
-                # Won't render checkboxes beyond 2000 blocks, so skip deep scan
-                scan_limit = 200
-            has_cb = False
-            has_code = False
-            for i in range(scan_limit):
-                txt = doc.findBlockByNumber(i).text()
-                if not has_cb and "[" in txt:
-                    has_cb = True
-                if not has_code and txt.lstrip().startswith("```"):
-                    has_code = True
-                if has_cb and has_code:
-                    break
+        if not doc or sip.isdeleted(doc):
+            return
+
+        # Both flags already set — nothing to find. This is the steady-state
+        # for any document that contains a checkbox or code fence.
+        if self._doc_has_checkbox and self._doc_has_code:
+            return
+
+        scan_limit = doc.blockCount()
+        if scan_limit > 2000:
+            scan_limit = 200
+
+        has_cb = self._doc_has_checkbox  # continue from current state
+        has_code = self._doc_has_code
+
+        for i in range(scan_limit):
+            txt = doc.findBlockByNumber(i).text()
+            if not has_cb and "[" in txt:
+                has_cb = True
+            if not has_code and txt.lstrip().startswith("```"):
+                has_code = True
+            if has_cb and has_code:
+                break
+
+        changed = False
+        if has_cb != self._doc_has_checkbox:
             self._doc_has_checkbox = has_cb
-            if has_code != self._doc_has_code:
-                self._doc_has_code = has_code
-                # gutter appears/disappears with the code blocks
-                self.update_line_number_area_width()
+            changed = True
+        if has_code != self._doc_has_code:
+            self._doc_has_code = has_code
+            changed = True
+        if changed:
+            self.update_line_number_area_width()
 
     def _gutter_active(self):
         """The line-number gutter follows the user's toggle alone — a reliable
@@ -328,6 +359,7 @@ class VaultTextEdit(QTextEdit):
         self.document().setDefaultFont(font)
         if hl and not sip.isdeleted(hl) and hl.document() != doc:
             hl.setDocument(doc)
+        self._opener_cache = None
         self._refresh_checkbox_flag()
 
     def line_number_area_width(self):
@@ -354,6 +386,8 @@ class VaultTextEdit(QTextEdit):
         super().resizeEvent(event)
         cr = self.contentsRect()
         self.line_number_area.setGeometry(QRect(cr.left(), cr.top(), self.line_number_area_width(), cr.height()))
+        self._kick_idle_timer()
+
     def _gutter_colors(self):
         """Gutter background and number colour, taken from the theme.
 
@@ -427,14 +461,33 @@ class VaultTextEdit(QTextEdit):
                 cursor = QTextCursor(block)
                 rect = self.cursorRect(cursor)
 
-                number = str(block_number + 1)
-                painter.setPen(text_color)
-                painter.drawText(0, int(rect.top()), self.line_number_area.width() - 4,
-                                 self.fontMetrics().height(), Qt.AlignmentFlag.AlignRight, number)
-
                 mark = max(0, block.userState()) & 0xFF
                 is_hovered = getattr(self.line_number_area, "hover_y", -1) != -1 and rect.top() <= self.line_number_area.hover_y <= rect.bottom()
-                
+
+                # Fold count badge: when a header is folded, replace the line
+                # number with the hidden line count — more useful at a glance.
+                fold_bit = max(0, block.userState()) & self.FOLD_BIT
+                fc_data = block_data(block) if fold_bit else None
+                fold_count = fc_data.fold_count if fc_data else 0
+                if fold_count > 0:
+                    label = f"{fold_count}L"
+                    old_font = painter.font()
+                    smaller = QFont(old_font)
+                    smaller.setPixelSize(max(7, old_font.pixelSize() - 3))
+                    painter.setFont(smaller)
+                    painter.setPen(text_color)
+                    painter.drawText(
+                        2, int(rect.top()), self.line_number_area.width() - 4,
+                        self.fontMetrics().height(),
+                        Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+                        label)
+                    painter.setFont(old_font)
+                else:
+                    painter.setPen(text_color)
+                    painter.drawText(0, int(rect.top()), self.line_number_area.width() - 4,
+                                     self.fontMetrics().height(), Qt.AlignmentFlag.AlignRight,
+                                     str(block_number + 1))
+
                 marks_enabled = self.main_win.data.get("line_marks", "False") == "True"
 
                 if marks_enabled and (mark > 0 or is_hovered):
@@ -495,6 +548,7 @@ class VaultTextEdit(QTextEdit):
                     painter.setPen(Qt.PenStyle.NoPen)
                     painter.setBrush(stripe)
                     painter.drawRect(width - 3, int(rect.top()) + 1, 2, h - 2)
+
         finally:
             painter.end()
 
@@ -664,26 +718,47 @@ class VaultTextEdit(QTextEdit):
             block = block.next()
         return None
 
+    def _invalidate_opener_cache(self):
+        """Drop the fence-opener cache on any text change — lazy rebuild on next access."""
+        self._opener_cache = None
+
+    def _rebuild_opener_cache(self):
+        """Scan all blocks and cache which ``` lines open a code block.
+
+        Called lazily on first _fence_is_opener call after an edit. The
+        cache is then O(1) for every subsequent call until the next edit.
+        """
+        doc = self.document()
+        if not doc or sip.isdeleted(doc):
+            self._opener_cache = set()
+            return
+        cache = set()
+        opens = True
+        b = doc.firstBlock()
+        while b.isValid():
+            if b.text().strip().startswith("```"):
+                if opens:
+                    cache.add(b.blockNumber())
+                opens = not opens
+            b = b.next()
+        self._opener_cache = cache
+
     def _fence_is_opener(self, block):
-        """True when this ``` line OPENS a code block (O(1) lookup via highlighter state)."""
+        """True when this ``` line OPENS a code block (cached, O(1) after first call).
+
+        Uses a lazily-built cache: on first call after any edit, scans the
+        whole document once and caches opener block numbers. Subsequent calls
+        are a set lookup. Avoids stale highlighter state AND repeated O(N)
+        scans on every mouse move over ``` lines.
+        """
         if not block.text().strip().startswith("```"):
             return False
         prev = block.previous()
         if not prev.isValid():
             return True
-
-        ustate = prev.userState()
-        if ustate != -1:
-            return not (ustate & 256) # CODE_BIT is 1 << 8
-
-        # Fallback to O(N) if highlighter hasn't parsed the block yet (e.g. in tests)
-        opens = True
-        b = self.document().firstBlock()
-        while b.isValid() and b.blockNumber() < block.blockNumber():
-            if b.text().strip().startswith("```"):
-                opens = not opens
-            b = b.next()
-        return opens
+        if self._opener_cache is None:
+            self._rebuild_opener_cache()
+        return block.blockNumber() in self._opener_cache
 
     # ---- prompt queue (Alt+C) ---------------------------------------------
 
@@ -903,6 +978,12 @@ class VaultTextEdit(QTextEdit):
         if lvl:
             last = None
             b = first
+            # If --- sits directly below the header, skip it — treat it
+            # as header decoration, not a section boundary. The fold
+            # still hides the --- line; it just looks past it for the
+            # next real boundary.
+            if self._is_divider_line(b.text()):
+                b = b.next()
             while b.isValid():
                 other = self._header_level(b.text())
                 if other and other <= lvl:
@@ -970,6 +1051,10 @@ class VaultTextEdit(QTextEdit):
                 break
             b = b.next()
         anchor.setUserState(state | self.FOLD_BIT if collapse else state & ~self.FOLD_BIT)
+        # Store hidden line count on the anchor block for the gutter badge
+        data = block_data(anchor, create=True)
+        if data is not None:
+            data.fold_count = (last.blockNumber() - first.blockNumber() + 1) if collapse else 0
         doc = self.document()
         doc.markContentsDirty(anchor.position(),
                               last.position() + last.length() - anchor.position())
@@ -1443,6 +1528,17 @@ class VaultTextEdit(QTextEdit):
                 "view jumped to the top from %s\n%s",
                 previous, "".join(traceback.format_stack(limit=12)))
 
+    def _kick_idle_timer(self):
+        """Restart the 2 s idle timer — called on every scroll event."""
+        self._idle_timer.start()
+
+    def _on_idle_timeout(self):
+        """Capture silo state after 2 s of inactivity (scroll-only browsing)."""
+        mw = getattr(self, "main_win", None)
+        if mw is not None:
+            mw.capture_silo_state()
+            mw.mark_dirty()
+
     def rehover_from_pointer(self, point=None):
         """Re-derive the hovered line without the mouse having moved.
 
@@ -1554,11 +1650,8 @@ class VaultTextEdit(QTextEdit):
         menu.addAction(tr("Queue This Line	Alt+C", lang),
                        self.main_win.queue_current_line)
         menu.addAction(
-            tr("Prompt Queue — this silo", lang)
+            tr("Prompt Queue (All Silos)	Alt+Shift+C", lang)
             + (f"  ({len(queue)})" if queue else ""),
-            self.main_win.open_queue_dialog)
-        menu.addAction(
-            tr("Prompt Queue — all silos	Alt+Shift+C", lang),
             self.main_win.open_queue_master)
         menu.addAction(tr("Watcher…", lang), self.main_win.open_watcher_dialog)
         menu.addSeparator()
@@ -1787,6 +1880,34 @@ class VaultTextEdit(QTextEdit):
                             name = os.path.basename(path)
                             clean_path = path.replace("\\", "/")
                             self.insertPlainText(f"[{name}](file:///{clean_path})")
+            return
+        if source.hasImage():
+            # Paste image from clipboard (FastCapture, screenshot, etc.)
+            # Save to the silo's file folder and insert a markdown image ref
+            image = source.imageData()
+            if image is not None and not image.isNull():
+                import datetime
+                from fastprompter.ui.file_container import _unique_dest
+                try:
+                    folder = self.main_win._silo_folder_dir(
+                        getattr(self.main_win, "active_temp_slot", 0),
+                        getattr(self.main_win, "active_is_archive", False))
+                    os.makedirs(folder, exist_ok=True)
+                    stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                    name = _unique_dest(folder, f"paste-{stamp}.png")
+                    if image.save(name, "PNG"):
+                        self.insertPlainText(
+                            f"![]({QUrl.fromLocalFile(name).toString()})")
+                        # Refresh file container if open
+                        try:
+                            fc = getattr(self.main_win, "_file_container", None)
+                            if fc is not None:
+                                fc.refresh()
+                        except Exception:
+                            pass
+                except Exception:
+                    from fastprompter.core.logging import logger
+                    logger.exception("paste image failed")
             return
         if source.hasText():
             text = source.text().strip().strip('\"')

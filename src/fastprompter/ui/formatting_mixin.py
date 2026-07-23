@@ -8,7 +8,7 @@ import html
 import re
 
 import markdown
-from PyQt6.QtGui import QFont, QTextCharFormat, QTextCursor
+from PyQt6.QtGui import QFont, QTextBlockFormat, QTextCharFormat, QTextCursor
 
 # Pre-compiled regex patterns for markdown processing
 _RE_DASH_LINE = re.compile(r"^\s*-{3,}\s*$")
@@ -114,9 +114,9 @@ class FormattingMixin:
         self.mark_dirty()
 
     def toggle_header_line(self):
-        """Ctrl+E: Toggle `# ` header + `**` bold markers (persists across sessions)."""
+        """Ctrl+E: Toggle `# ` header + --- rule + bullet below (• ready to type)."""
         cursor = self.text_area.textCursor()
-        # balance the endEditBlock() below (was unbalanced — freeze risk)
+        bullet_char = self.data.get("ctrlw_bullet_char", "\u2022")
         cursor.beginEditBlock()
 
         pos_in_block = cursor.positionInBlock()
@@ -130,9 +130,7 @@ class FormattingMixin:
         if sel.startswith("**") and sel.endswith("**") and len(sel) >= 4:
             sel = sel[2:-2]
 
-        # Any header level reverses back to plain text, not just "# ".
-        # Matching only "# " meant Ctrl+E on "## Sub" failed to recognise it
-        # as a header and prepended another marker, giving "# ## Sub".
+        # Detect header markers (handles # ## ### etc.)
         marker = 0
         while marker < len(sel) and sel[marker] == "#":
             marker += 1
@@ -142,33 +140,78 @@ class FormattingMixin:
             marker = 0
 
         has_hdr = marker > 0
-        if has_hdr:
+
+        # Check if there's already a --- line below this header
+        next_block = block.next()
+        has_rule = next_block.isValid() and _RE_DASH_LINE.match(next_block.text())
+
+        if has_hdr and has_rule:
+            # ── Toggle off: strip header marker + rule + bullet line ──
             new_text = sel[marker:]
-            offset = -marker
-        else:
-            new_text = f"# {sel}"
-            offset = 2
+            cursor.insertText(new_text)
 
-        cursor.insertText(new_text)
-
-        # Apply visual format
-        cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
-        cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor)
-        fmt = cursor.charFormat()
-        if has_hdr:
+            # Remove bold/underline visual format
+            cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
+            cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor)
+            fmt = cursor.charFormat()
             fmt.setFontWeight(QFont.Weight.Normal)
             fmt.setFontUnderline(False)
+            cursor.mergeCharFormat(fmt)
+
+            # Remove rule block
+            rblock = block.next()
+            if rblock.isValid() and _RE_DASH_LINE.match(rblock.text()):
+                cursor.setPosition(rblock.position())
+                cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor)
+                cursor.removeSelectedText()
+                cursor.deleteChar()  # remove trailing newline
+                # Remove block after rule (holds bullet). Text may be just
+                # "• ", which .strip() keeps as "•" (truthy), so check for
+                # empty/whitespace-only or just the bullet char.
+                after = cursor.block()
+                if after.isValid():
+                    atxt = after.text().strip()
+                    if not atxt or atxt == bullet_char:
+                        cursor.setPosition(after.position())
+                        cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor)
+                        cursor.removeSelectedText()
+                        cursor.deleteChar()
+
+            new_pos = max(0, pos_in_block - marker)
+            cursor.endEditBlock()
+            new_cursor = self.text_area.textCursor()
+            new_cursor.setPosition(block.position() + new_pos)
+            self.text_area.setTextCursor(new_cursor)
+
+        elif has_hdr and not has_rule:
+            # ── Header exists but no rule — append rule + bullet below ──
+            cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock)
+            cursor.insertText(f"\n---\n{bullet_char} ")
+            cursor.endEditBlock()
+            # Cursor already sits after bullet — use it
+            new_cursor = self.text_area.textCursor()
+            self.text_area.setTextCursor(new_cursor)
+
         else:
+            # ── Create header: # text + rule + bullet ──
+            new_text = f"# {sel}"
+            cursor.insertText(new_text)
+
+            # Apply bold + underline visual format
+            cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
+            cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor)
+            fmt = cursor.charFormat()
             fmt.setFontWeight(QFont.Weight.Bold)
             fmt.setFontUnderline(True)
-        cursor.mergeCharFormat(fmt)
+            cursor.mergeCharFormat(fmt)
 
-        cursor.endEditBlock()
-
-        new_pos_in_block = max(0, pos_in_block + offset)
-        new_cursor = self.text_area.textCursor()
-        new_cursor.setPosition(block.position() + new_pos_in_block)
-        self.text_area.setTextCursor(new_cursor)
+            # Add rule + bullet below
+            cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock)
+            cursor.insertText(f"\n---\n{bullet_char} ")
+            cursor.endEditBlock()
+            # Cursor sits after bullet — use it
+            new_cursor = self.text_area.textCursor()
+            self.text_area.setTextCursor(new_cursor)
 
         self.text_area.setFocus()
         self.mark_dirty()
@@ -242,37 +285,38 @@ class FormattingMixin:
         # beginEditBlock MUST balance every endEditBlock below — an unbalanced
         # end corrupts the doc edit-block counter and freezes rendering
         cursor.beginEditBlock()
-        if cursor.hasSelection():
-            text = cursor.selectedText().replace("\u2029", "\n")
-        else:
-            text = self.text_area.toPlainText()
-            cursor.select(QTextCursor.SelectionType.Document)
+        try:
+            if cursor.hasSelection():
+                text = cursor.selectedText().replace("\u2029", "\n")
+            else:
+                text = self.text_area.toPlainText()
+                cursor.select(QTextCursor.SelectionType.Document)
 
-        lines = text.splitlines()
-        if not lines:
+            lines = text.splitlines()
+            if not lines:
+                return
+
+            if any(_RE_BULLET.match(line) for line in lines):
+                # Convert bullets back to dashes, skip divider lines
+                new_lines = []
+                for line in lines:
+                    if _RE_DASH_LINE.match(line):  # Protect --- dividers
+                        new_lines.append(line)
+                    else:
+                        new_lines.append(re.sub(r"^(\s*)•\s*", r"\1- ", line))
+            else:
+                # Convert dashes to bullets, skip divider lines (---)
+                new_lines = []
+                for line in lines:
+                    if _RE_DASH_LINE.match(line):  # Protect --- dividers from conversion
+                        new_lines.append(line)
+                    else:
+                        new_lines.append(re.sub(r"^(\s*)-\s+", r"\1• ", line))
+
+            new_text = "\n".join(new_lines)
+            cursor.insertText(new_text)
+        finally:
             cursor.endEditBlock()
-            return
-
-        if any(_RE_BULLET.match(line) for line in lines):
-            # Convert bullets back to dashes, skip divider lines
-            new_lines = []
-            for line in lines:
-                if _RE_DASH_LINE.match(line):  # Protect --- dividers
-                    new_lines.append(line)
-                else:
-                    new_lines.append(re.sub(r"^(\s*)•\s*", r"\1- ", line))
-        else:
-            # Convert dashes to bullets, skip divider lines (---)
-            new_lines = []
-            for line in lines:
-                if _RE_DASH_LINE.match(line):  # Protect --- dividers from conversion
-                    new_lines.append(line)
-                else:
-                    new_lines.append(re.sub(r"^(\s*)-\s+", r"\1• ", line))
-
-        new_text = "\n".join(new_lines)
-        cursor.insertText(new_text)
-        cursor.endEditBlock()
         self.text_area.setFocus()
         self.mark_dirty()
 
@@ -290,45 +334,174 @@ class FormattingMixin:
             after = 3
         return before, after
 
-    def insert_add_line(self):
-        """Push the text down and land on a fresh bullet, ready to type.
+    @staticmethod
+    def _is_divider_line(text):
+        stripped = text.strip() if isinstance(text, str) else text
+        if len(stripped) < 3 or stripped[0] not in "-*_":
+            return False
+        return set(stripped) == {stripped[0]}
 
-        No `---` rule: the blank run is the separation, and what the user
-        wants at the end of it is a bullet they can type into straight away.
-        """
+    def _scan_above(self, cursor):
+        c = QTextCursor(cursor)
+        while c.movePosition(QTextCursor.MoveOperation.PreviousBlock):
+            txt = c.block().text().strip()
+            if not txt:
+                continue
+            if txt == "---":
+                return "DIVIDER"
+            return "TEXT"
+        return "NONE"
+
+    def _scan_below(self, cursor):
+        c = QTextCursor(cursor)
+        while c.movePosition(QTextCursor.MoveOperation.NextBlock):
+            txt = c.block().text().strip()
+            if not txt:
+                continue
+            if txt == "---":
+                return "DIVIDER"
+            return "TEXT"
+        return "NONE"
+
+    def _scenario_bool(self, sid, key, default=True):
+        return self.data.get(f"ctrlw_{sid}_{key}", str(default)) == "True"
+
+    def _scenario_blanks(self, sid):
+        gb = int(self.data.get("ctrlw_blanks_before", "2"))
+        ga = int(self.data.get("ctrlw_blanks_after", "3"))
+        sb = self.data.get(f"ctrlw_{sid}_before", "")
+        sa = self.data.get(f"ctrlw_{sid}_after", "")
+        try:
+            b = int(sb) if sb else gb
+        except (TypeError, ValueError):
+            b = gb
+        try:
+            a = int(sa) if sa else ga
+        except (TypeError, ValueError):
+            a = ga
+        return b, a
+
+    def insert_add_line(self):
+        bullet_char = self.data.get("ctrlw_bullet_char", "\u2022")
         cursor = self.text_area.textCursor()
-        # beginEditBlock MUST balance endEditBlock — an unbalanced end
-        # corrupts the document's edit-block counter and freezes rendering
         cursor.beginEditBlock()
-        # The bullet goes ABOVE: jump to the start of the current line, write
-        # the bullet and the blank run after it, so everything that was there
-        # is pushed down and the caret starts a fresh line at the top.
-        cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
-        start = cursor.position()
-        cursor.insertText("• \n\n\n\n\n")
-        cursor.endEditBlock()
-        # insertText leaves the caret past the blank run; put it back on the
-        # bullet it just wrote, which is where the user types.
-        cursor.setPosition(start + 2)
-        # insertText leaves the cursor at the end of what it wrote, i.e. just
-        # after "• " — exactly where the next character should go, so no
-        # setPosition is needed.
-        self.text_area.setTextCursor(cursor)
-        self.text_area.ensureCursorVisible()
-        self.text_area.setFocus()
-        self.mark_dirty()
+        try:
+            stripped = cursor.block().text().strip()
+
+            # ── S6: on divider ──
+            if self._is_divider_line(stripped):
+                action = self.data.get("ctrlw_s6_action", "remove")
+                if action == "skip":
+                    self.text_area.setTextCursor(cursor)
+                    self.text_area.setFocus()
+                    return
+                if action == "bullet":
+                    _, after = self._scenario_blanks("s6")
+                    c = QTextCursor(cursor)
+                    c.movePosition(QTextCursor.MoveOperation.EndOfBlock)
+                    c.insertText("\n" * after + bullet_char + " ")
+                    self.text_area.setTextCursor(c)
+                    self.text_area.ensureCursorVisible()
+                    self.text_area.setFocus()
+                    self.mark_dirty()
+                    return
+                # "remove"
+                sel = QTextCursor(cursor)
+                sel.movePosition(QTextCursor.MoveOperation.StartOfBlock)
+                sel.movePosition(QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor)
+                sel.removeSelectedText()
+                sel.deleteChar()
+                self.text_area.setTextCursor(sel)
+                self.text_area.setFocus()
+                self.mark_dirty()
+                return
+
+            # ── Determine scenario (S1-S5) ──
+            top_type = self._scan_above(cursor)
+            bottom_type = self._scan_below(cursor)
+            on_blank = stripped == ""
+            at_end = cursor.positionInBlock() >= len(cursor.block().text().rstrip("\n"))
+
+            if on_blank and top_type == "TEXT" and bottom_type == "TEXT":
+                sid = "s3"
+            elif top_type == "DIVIDER":
+                sid = "s5"
+            elif on_blank and top_type == "NONE":
+                sid = "s2"
+            elif at_end or on_blank:
+                sid = "s1"
+            else:
+                sid = "s4"
+
+            # ── Build structure template ──
+            use_div = self._scenario_bool(sid, "divider")
+            use_bul = self._scenario_bool(sid, "bullet")
+            bf, af = self._scenario_blanks(sid)
+
+            parts = []
+            if use_div:
+                if sid == "s2":
+                    parts.append("---")
+                else:
+                    parts.append("\n" * bf)
+                    parts.append("---")
+            if use_bul or (use_div and not use_bul and sid == "s3"):
+                parts.append("\n" * af)
+            if use_bul:
+                parts.append(bullet_char + " ")
+            template = "".join(parts)
+
+            # ── Insert structure per scenario ──
+            rest = ""
+            if sid == "s3":
+                cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
+                cursor.insertText(template)
+                if use_bul:
+                    self.text_area.setTextCursor(cursor)
+                    self.text_area.ensureCursorVisible()
+                    self.text_area.setFocus()
+                    self.mark_dirty()
+                    return
+                c = QTextCursor(cursor)
+                c.movePosition(QTextCursor.MoveOperation.NextBlock)
+                while c.block().text().strip() == "":
+                    if not c.movePosition(QTextCursor.MoveOperation.NextBlock):
+                        break
+                c.movePosition(QTextCursor.MoveOperation.StartOfBlock)
+                self.text_area.setTextCursor(c)
+                self.text_area.ensureCursorVisible()
+                self.text_area.setFocus()
+                self.mark_dirty()
+                return
+            elif sid == "s4":
+                rest = cursor.block().text()[cursor.positionInBlock():].rstrip("\n")
+                c = QTextCursor(cursor)
+                c.movePosition(QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor)
+                c.removeSelectedText()
+                cursor.insertText(template + rest)
+            else:
+                if on_blank:
+                    cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
+                cursor.insertText(template)
+
+            final = QTextCursor(cursor)
+            if rest:
+                final.setPosition(cursor.position() - len(rest))
+            self.text_area.setTextCursor(final)
+            self.text_area.ensureCursorVisible()
+            self.text_area.setFocus()
+            self.mark_dirty()
+        finally:
+            cursor.endEditBlock()
 
     def insert_old_add_line(self):
-        """Insert a horizontal markdown divider line (---) with smart spacing,
-        landing on a fresh bullet ready to type. (Old Ctrl+W behavior)
-        """
         before, after = self.divider_counts()
         cursor = self.text_area.textCursor()
         cursor.beginEditBlock()
         block = cursor.block()
         if cursor.positionInBlock() > 0 or block.text().strip():
             cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock)
-        cursor.insertText("\n" * before + "---" + "\n" * after + "\u2022 ")
+        cursor.insertText("\n" * before + "---" + "\n" * after)
         cursor.endEditBlock()
         self.text_area.setTextCursor(cursor)
         self.text_area.ensureCursorVisible()
@@ -455,24 +628,20 @@ class FormattingMixin:
         clean_format.setFontUnderline(False)
         clean_format.setFontStrikeOut(False)
 
-        self.text_area.blockSignals(True)
-        cursor.beginEditBlock()  # balance the endEditBlock() in finally
+        cursor.beginEditBlock()
         try:
-            if cursor.hasSelection():
-                raw_text = cursor.selectedText().replace("\u2029", "\n")
-                cursor.insertText(raw_text, clean_format)
-            else:
-                raw_text = self.text_area.toPlainText()
-                self._set_plain_text_clean(self.text_area, raw_text)
-                cursor = self.text_area.textCursor()
+            if not cursor.hasSelection():
                 cursor.select(QTextCursor.SelectionType.Document)
-                cursor.setCharFormat(clean_format)
+            cursor.setCharFormat(clean_format)
+            
+            # Reset block format (alignment) to default
+            block_format = QTextBlockFormat()
+            cursor.setBlockFormat(block_format)
+            
+            if not cursor.hasSelection():
                 cursor.clearSelection()
-                self.text_area.setTextCursor(cursor)
         finally:
             cursor.endEditBlock()
-            self.text_area.blockSignals(False)
 
         self.apply_font()
         self.mark_dirty()
-        self.cache_current_text()
