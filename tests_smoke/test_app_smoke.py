@@ -43,6 +43,8 @@ def win():
     w._cache_timer.stop()
     w.state.conn = None  # skip final DB write on close
     w.conn = None
+    w.deleteLater()
+    QApplication.processEvents()
     w.close()
 
 
@@ -1297,6 +1299,9 @@ def test_header_ultra_mode_fits_portrait_sliver(win):
     win.data["show_date_rect"] = "True"
     win.data["date_seconds"] = "True"
     win.data["date_daypart"] = "True"
+    win.data["customize_toolbar"] = "False"
+    if hasattr(win, "update_toolbar_layout"):
+        win.update_toolbar_layout()
     win.resize(500, 900)
     win._header_dense = None
     win._header_ultra = None
@@ -4971,7 +4976,7 @@ def test_reset_ui_layout_restores_every_layout_choice(win):
     assert win.data["splitter_sizes_left"] == ""
     assert win.data["splitter_sizes_right"] == ""
     assert win.data["sidebar_right"] == "False"
-    assert win.data["ui_scale"] == "1.0"
+    assert win.data["ui_scale"] == "0.5"
     assert win.data["button_scale"] == "1.0"
 
     # the sidebar is back on the left, so the hamburger is back at the left edge

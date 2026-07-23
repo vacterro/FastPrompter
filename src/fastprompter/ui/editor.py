@@ -4,7 +4,7 @@ import subprocess
 import sys
 
 from PyQt6 import sip
-from PyQt6.QtCore import QPoint, QRect, QRectF, QSize, Qt, QTimer, QUrl
+from PyQt6.QtCore import QPoint, QPointF, QRect, QRectF, QSize, Qt, QTimer, QUrl
 from PyQt6.QtGui import (
     QColor,
     QCursor,
@@ -1933,6 +1933,7 @@ class VaultTextEdit(QTextEdit):
             image = source.imageData()
             if image is not None and not image.isNull():
                 import datetime
+
                 from fastprompter.ui.file_container import _unique_dest
                 try:
                     folder = self.main_win._silo_folder_dir(
@@ -2758,7 +2759,7 @@ class VaultTextEdit(QTextEdit):
 
                         # --- horizontal rule visual line (skip for large docs)
                         if not is_large and re.match(r'^[-*_]{3,}$', text.strip()):
-                            mid_y = r.top() + r.height() // 2
+                            mid_y = int(r.top() + r.height() // 2)
                             if mid_y not in hr_drawn:
                                 hr_drawn.add(mid_y)
                                 _draw_horizontal_rule(painter, hr_color, mid_y, vp_rect.width())

@@ -1,5 +1,5 @@
 from PyQt6 import sip
-from PyQt6.QtCore import QMetaObject, Qt, QTimer
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QCursor
 from PyQt6.QtWidgets import QHBoxLayout, QPushButton, QVBoxLayout, QWidget
 
@@ -97,13 +97,6 @@ class QuickListWidget(QWidget):
         self.close()
         main_win = self.main_win
         QTimer.singleShot(50, lambda: not sip.isdeleted(main_win) and main_win.fire_global_snippet_from_cat(cat, idx))
-
-    def keyPressEvent(self, event):
-        if event.key() == Qt.Key.Key_Escape: self.close()
-        else: super().keyPressEvent(event)
-
-    def focusOutEvent(self, event):
-        self.close()
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Escape:

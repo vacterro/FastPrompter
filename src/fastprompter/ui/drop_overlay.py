@@ -10,9 +10,9 @@ Solid Win95-dark panels, 2px bevels, no transparency effects.
 
 from PyQt6.QtCore import QRect, Qt
 from PyQt6.QtGui import QColor, QFont, QPainter, QPen
-from fastprompter.core.translations import tr
 from PyQt6.QtWidgets import QWidget
 
+from fastprompter.core.translations import tr
 from fastprompter.theme.themes import blend_hex
 
 # Used only when the theme cache isn't reachable yet (very early paint).
@@ -143,13 +143,12 @@ class DropOverlay(QWidget):
                 top_right = QRect(2 * m + hw, m, hw, hh)
                 bot_left = QRect(m, 2 * m + hh, hw, hh)
                 bot_right = QRect(2 * m + hw, 2 * m + hh, hw, hh)
-                l = self._lang
                 
                 info = {
-                    "text": (tr("📝 Drop as Text", l), tr("insert content into silo", l)),
-                    "editor_link": (tr("🔗 Link in Text", l), tr("insert markdown link at cursor", l)),
-                    "files": (tr("📥 Copy to Files 📁", l), tr("store in silo's container", l)),
-                    "files_link": (tr("🔗 Link in Files 📁", l), tr("add shortcut in container", l))
+                    "text": (tr("📝 Drop as Text", lang), tr("insert content into silo", lang)),
+                    "editor_link": (tr("🔗 Link in Text", lang), tr("insert markdown link at cursor", lang)),
+                    "files": (tr("📥 Copy to Files 📁", lang), tr("store in silo's container", lang)),
+                    "files_link": (tr("🔗 Link in Files 📁", lang), tr("add shortcut in container", lang))
                 }
                 mw = getattr(self.editor, 'main_win', None)
                 tl_id = mw.data.get("drop_top_left", "text") if mw else "text"
@@ -167,14 +166,14 @@ class DropOverlay(QWidget):
                 top = QRect(m, m, self.width() - 2 * m, rh)
                 mid = QRect(m, 2 * m + rh, self.width() - 2 * m, rh)
                 bot = QRect(m, 3 * m + 2 * rh, self.width() - 2 * m, rh)
-                l = self._lang
                 self._panel(p, top, "📥 Copy to Files 📁", "store in silo's container", self._hot == "files")
                 self._panel(p, mid, "🔗 Link in Files 📁", "add shortcut in container", self._hot == "files_link")
                 self._panel(p, bot, "🔗 Link in Text", "insert markdown link at cursor", self._hot == "editor_link")
         finally:
             p.end()
 
-from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QPushButton
+from PyQt6.QtWidgets import QComboBox, QDialog, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
+
 
 class DropZonesDialog(QDialog):
     def __init__(self, main_win):
