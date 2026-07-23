@@ -7808,3 +7808,101 @@ def test_font_family_falls_back_when_no_m1(win, monkeypatch):
         "FDB", (), {"families": staticmethod(lambda: {"Verdana", "Tahoma"})}))
     win.data["font_family"] = "Tahoma"
     assert win._font_family == "Tahoma"
+
+
+# ---- limit scanner button in the timer dialog -----------------------------
+
+
+def _timer_dialog(win):
+    from fastprompter.ui.timer_dialog import TimerDialog
+    return TimerDialog(win)
+
+
+def test_the_timer_dialog_offers_a_limit_scan(win):
+    dlg = _timer_dialog(win)
+    try:
+        assert hasattr(dlg, "btn_scan")
+        assert dlg.btn_scan.toolTip(), "the button explains what it reads"
+    finally:
+        dlg.close()
+
+
+def test_scanning_with_no_agents_reachable_says_so_and_makes_nothing(win, monkeypatch):
+    """Every agent offline must not silently look like 'no limits'."""
+    from fastprompter.core.watcher import limit_scan
+
+    dlg = _timer_dialog(win)
+    before = len(win.timers)
+    try:
+        monkeypatch.setattr(limit_scan, "scan_all", lambda *a, **k: [])
+        made = dlg.scan_agent_limits()
+        assert made == []
+        assert len(win.timers) == before, "no timer invented"
+        assert dlg.lbl_limit_hint.text(), "it reports something"
+    finally:
+        dlg.close()
+
+
+def test_a_limited_agent_becomes_a_timer(win, monkeypatch):
+    import datetime
+
+    from fastprompter.core.limits import LimitState
+    from fastprompter.core.watcher import limit_scan
+    from fastprompter.core.watcher.limit_scan import AgentLimit
+
+    resets = datetime.datetime.now() + datetime.timedelta(hours=2)
+    fake = AgentLimit("freebuff", LimitState(True, resets, "limit reached"))
+
+    dlg = _timer_dialog(win)
+    saved = list(win.timers)
+    try:
+        monkeypatch.setattr(limit_scan, "scan_all", lambda *a, **k: [fake])
+        made = dlg.scan_agent_limits()
+        assert len(made) == 1
+        assert "freebuff" in made[0].name
+        assert any("freebuff" in t.name for t in win.timers)
+    finally:
+        win.timers[:] = saved
+        dlg.close()
+
+
+def test_scanning_twice_updates_instead_of_duplicating(win, monkeypatch):
+    """Two countdowns for one reset is worse than none."""
+    import datetime
+
+    from fastprompter.core.limits import LimitState
+    from fastprompter.core.watcher import limit_scan
+    from fastprompter.core.watcher.limit_scan import AgentLimit
+
+    resets = datetime.datetime.now() + datetime.timedelta(hours=3)
+    fake = AgentLimit("codenomad", LimitState(True, resets, "limit reached"))
+
+    dlg = _timer_dialog(win)
+    saved = list(win.timers)
+    try:
+        monkeypatch.setattr(limit_scan, "scan_all", lambda *a, **k: [fake])
+        dlg.scan_agent_limits()
+        dlg.scan_agent_limits()
+        named = [t for t in win.timers if "codenomad" in t.name]
+        assert len(named) == 1, f"got {len(named)} timers for one agent"
+    finally:
+        win.timers[:] = saved
+        dlg.close()
+
+
+def test_an_agent_that_named_no_time_is_labelled_assumed(win, monkeypatch):
+    """The guess must be visible, not buried in a countdown that looks read."""
+    from fastprompter.core.limits import LimitState
+    from fastprompter.core.watcher import limit_scan
+    from fastprompter.core.watcher.limit_scan import AgentLimit
+
+    fake = AgentLimit("agent", LimitState(True, None, "daily limit reached"))
+    dlg = _timer_dialog(win)
+    saved = list(win.timers)
+    try:
+        monkeypatch.setattr(limit_scan, "scan_all", lambda *a, **k: [fake])
+        made = dlg.scan_agent_limits()
+        assert made and "assumed" in made[0].description.lower()
+    finally:
+        win.timers[:] = saved
+        dlg.close()

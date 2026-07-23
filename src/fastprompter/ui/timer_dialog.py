@@ -24,6 +24,7 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
+    QApplication,
     QPushButton,
     QSpinBox,
     QTabWidget,
@@ -152,6 +153,18 @@ class TimerDialog(QDialog):
             self.lang))
         self.btn_limit.clicked.connect(self.add_limit_window)
         limit.addWidget(self.btn_limit)
+
+        # Ask the agents instead of watching for the banner by hand. Reads
+        # their chat text over the debugger and fills the form from whatever
+        # they actually say - it types nothing, so it is safe mid-work.
+        self.btn_scan = QPushButton(tr("Scan agents", self.lang))
+        self.btn_scan.setToolTip(tr(
+            "Read every debuggable agent and see which are rate-limited.\n"
+            "A reset time in their own words fills the form; when they name\n"
+            "none, the window length above is used and labelled assumed.",
+            self.lang))
+        self.btn_scan.clicked.connect(self.scan_agent_limits)
+        limit.addWidget(self.btn_scan)
         root.addLayout(limit)
 
         self.lbl_limit_hint = QLabel("")
@@ -224,8 +237,8 @@ class TimerDialog(QDialog):
         self.btn_edit.clicked.connect(self.edit_selected)
         actions.addWidget(self.btn_edit)
 
-        self.btn_toggle = QPushButton(tr("Pause", self.lang))
-        self.btn_toggle.setToolTip(tr("Pause or resume the selected timer", self.lang))
+        self.btn_toggle = QPushButton(tr("Disable", self.lang))
+        self.btn_toggle.setToolTip(tr("Disable or enable the selected timer", self.lang))
         self.btn_toggle.clicked.connect(self.toggle_selected)
         actions.addWidget(self.btn_toggle)
 
@@ -233,6 +246,11 @@ class TimerDialog(QDialog):
         self.btn_snooze.setToolTip(tr("Push the selected timer back 10 minutes", self.lang))
         self.btn_snooze.clicked.connect(self.snooze_selected)
         actions.addWidget(self.btn_snooze)
+
+        self.btn_subtract = QPushButton(tr("-10m", self.lang))
+        self.btn_subtract.setToolTip(tr("Pull the selected timer forward 10 minutes", self.lang))
+        self.btn_subtract.clicked.connect(self.subtract_selected)
+        actions.addWidget(self.btn_subtract)
 
         self.btn_remove = QPushButton(tr("Remove", self.lang))
         self.btn_remove.clicked.connect(self.remove_selected)
@@ -488,6 +506,93 @@ class TimerDialog(QDialog):
         self.lbl_limit_hint.setText(describe(timer))
         return timer
 
+    def scan_agent_limits(self):
+        """Sweep the configured agents and turn what they say into timers.
+
+        One timer per limited agent, named after it. An agent that already
+        has a limit timer is UPDATED rather than duplicated - scanning twice
+        must not leave two countdowns for the same reset.
+        """
+        from fastprompter.core.limits import assume_window
+        from fastprompter.core.watcher.limit_scan import scan_all
+
+        try:
+            adapters, _limits, _errors = self.main_win.watcher_adapters()
+        except Exception as exc:
+            self.lbl_limit_hint.setText(
+                tr("Could not read the agent config: {}", self.lang).format(exc))
+            return []
+
+        self.btn_scan.setEnabled(False)
+        self.btn_scan.setText(tr("Scanning…", self.lang))
+        QApplication.processEvents()
+        try:
+            results = scan_all(adapters)
+        except Exception as exc:
+            self.lbl_limit_hint.setText(str(exc)[:120])
+            return []
+        finally:
+            self.btn_scan.setEnabled(True)
+            self.btn_scan.setText(tr("Scan agents", self.lang))
+
+        hit = [r for r in results if r.reachable and r.state.reached]
+        made = []
+        for res in hit:
+            assumed = res.state.resets_at is None
+            target = res.state.resets_at or assume_window(
+                hours=self.spin_limit_hours.value())
+            name = tr("{} limit", self.lang).format(res.name) \
+                if "{}" in tr("{} limit", self.lang) else f"{res.name} limit"
+            existing = next(
+                (t for t in self.main_win.timers if t.name == name), None)
+            if existing is not None:
+                existing.target = target
+                existing.enabled = True
+                made.append(existing)
+                continue
+            timer = limit_window(
+                name,
+                hours=self.spin_limit_hours.value(),
+                anchor=target - datetime.timedelta(
+                    hours=self.spin_limit_hours.value()),
+                description=(tr("assumed window", self.lang) if assumed
+                             else res.state.matched[:60]),
+                sound=self.cb_sound.currentText(),
+                volume=self.spin_vol.value(),
+                color_mode=COLOR_TEMPERATURE if self.cb_temp.isChecked()
+                else COLOR_STATIC,
+            )
+            self.main_win.timers.append(timer)
+            made.append(timer)
+
+        if made:
+            self.main_win.save_timers_to_data()
+            self.refresh()
+
+        self.lbl_limit_hint.setText(self._scan_summary(results, made))
+        return made
+
+    def _scan_summary(self, results, made):
+        """One line the user can act on: who is capped, who could not answer."""
+        if not results:
+            return tr("No agents configured for the debugger.", self.lang)
+        capped = [r for r in results if r.reachable and r.state.reached]
+        clear = [r for r in results if r.reachable and not r.state.reached]
+        unreachable = [r for r in results if not r.reachable]
+        bits = []
+        if capped:
+            bits.append(tr("limited: {}", self.lang).format(
+                ", ".join(r.name for r in capped))
+                if "{}" in tr("limited: {}", self.lang)
+                else "limited: " + ", ".join(r.name for r in capped))
+        if clear:
+            bits.append(f"clear: {len(clear)}")
+        if unreachable:
+            bits.append(f"no answer: {len(unreachable)}")
+        if made:
+            bits.append(f"{len(made)} timer(s) set")
+        return " · ".join(bits) or tr("Nothing to report.", self.lang)
+
     def test_now(self):
         """Fire a throwaway copy in 5s — sound and popup, nothing saved."""
         self.main_win.test_timer_notification(self._form_timer(), _TEST_DELAY_S)
@@ -578,6 +683,14 @@ class TimerDialog(QDialog):
         self.main_win.save_timers_to_data()
         self.refresh()
 
+    def subtract_selected(self):
+        t = self._selected()
+        if t is None:
+            return
+        t.shift(-10)
+        self.main_win.save_timers_to_data()
+        self.refresh()
+
     def remove_selected(self):
         t = self._selected()
         if t is None:
@@ -591,11 +704,11 @@ class TimerDialog(QDialog):
     def _update_buttons(self):
         t = self._selected()
         has = t is not None
-        for b in (self.btn_edit, self.btn_toggle, self.btn_snooze, self.btn_remove):
+        for b in (self.btn_edit, self.btn_toggle, self.btn_snooze, self.btn_subtract, self.btn_remove):
             b.setEnabled(has)
         if has:
             self.btn_toggle.setText(
-                tr("Resume", self.lang) if not t.enabled else tr("Pause", self.lang))
+                tr("Enable", self.lang) if not t.enabled else tr("Disable", self.lang))
 
     def refresh(self):
         if hasattr(self, "lbl_pomo_clock"):
