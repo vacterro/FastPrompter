@@ -1,96 +1,66 @@
 # Plugin, Skill & Extension Development Guide
 
 ## Overview
-FastPrompter provides an extensible ecosystem that allows developers to add custom skills, integrate Model Context Protocol (MCP) sidecars, construct SAIPEN subagents, and design custom UI themes.
+FastPrompter provides an extensible ecosystem for custom skills, SAIPEN subagents, custom UI themes, and cursor themes.
 
 ---
 
-## 1. Custom Skill Development (`skills.py` & TOML Adapters)
+## 1. Custom Skill Development (`skills.py`)
 
-Skills are macro prompt transformations and command formats applied when sending items via the Watcher Engine or Snippet Manager.
+Skills are macro prompt transformations applied when sending items via the Watcher Engine.
 
-### Skill Definition & Structure
-Skills are managed via `src/fastprompter/core/watcher/skills.py` and configured in `adapters.example.toml` (or user `adapters.toml`).
+### Skill Definition
+Skills are managed via `src/fastprompter/core/watcher/skills.py`.
 
-```toml
-# Example adapters.toml configuration
-[skills.code_review]
-name = "Code Review"
-prefix = "/review"
-template = "Please review the following code for security, performance, and style:\n\n{text}"
-description = "Applies standard code review prompt wrapper"
-
-[skills.refactor]
-name = "Refactor Function"
-prefix = "/refactor"
-template = "Refactor the following code to improve readability and type safety:\n\n{text}"
-```
-
-### Skill Format String Handling
-When an item is processed through `Engine` with a skill assigned:
-1. `skill_format` evaluates to `/{skill} {text}` or the skill's defined `template`.
-2. Variables such as `{text}`, `{timestamp}`, and `{project}` are substituted dynamically before dispatching to the target application.
-
----
-
-## 2. Model Context Protocol (MCP) Sidecar Integration
-
-FastPrompter supports MCP sidecar extensions to interface with local AI models, LLM agents, and context providers.
-
-### Architecture
-* **Transport**: Stdio or local TCP WebSocket JSON-RPC.
-* **Sidecar Lifecycle**: Executable sidecars specified in configuration are spawned on FastPrompter startup and managed via subprocess pipes.
-* **Exposed Context**: FastPrompter exposes active Silo text, Snippets, and File Container paths to MCP sidecars as readable resources.
-
-### Example MCP Sidecar Manifest (`mcp_sidecar.json`)
-```json
+```python
+# Example skill entry
 {
-  "name": "fastprompter-mcp-bridge",
-  "version": "1.0.0",
-  "command": "python",
-  "args": ["-m", "fastprompter_mcp_sidecar"],
-  "env": {
-    "FASTPROMPTER_DB": "data/local_data_v15.db"
-  }
+    "name": "Code Review",
+    "prefix": "/review",
+    "template": "Please review the following code:\n\n{text}",
+    "description": "Standard code review prompt wrapper"
 }
 ```
 
+### Skill Format String Handling
+When an item is processed through Engine with a skill assigned:
+1. `skill_format` evaluates to `/{skill} {text}` or the skill's defined `template`.
+2. Variables `{text}`, `{timestamp}`, `{project}` are substituted before dispatch.
+
 ---
 
-## 3. SAIPEN Protocol & SubSaipen Agent Architecture
+## 2. SAIPEN Protocol & SubSaipen Agent Architecture
 
-FastPrompter natively integrates with the **SAIPEN v7 Protocol** for multi-agent autonomous engineering.
+FastPrompter integrates with the **SAIPEN v7 Protocol** for multi-agent autonomous engineering.
 
 ### SubSaipen Directory Structure
-When a subagent (such as `saiwiki`) is spawned, it operates within an isolated directory under `subs/<agent_name>/`:
+Subagents operate within `.saipen/extensions/subs/<name>/` (not `subs/` at project root):
 
 ```
-subs/<agent_name>/
+.saipen/extensions/subs/<name>/
 ├── STATE.md            # Machine-readable phase state (BUILD, VERIFY, DONE)
-├── BOARD.md            # Kanban board with task tickets (T-001..T-999)
+├── BOARD.md            # Kanban board with task tickets
 ├── LOG.md              # Timestamped execution audit log
-├── kitchen/
-│   ├── OUTBOX.md       # Status handoff and results output file
-│   └── INBOX.md        # Incoming instructions from orchestrator
-└── wiki/               # Agent-specific generated documentation
+└── kitchen/
+    ├── OUTBOX.md       # Status handoff and results output
+    └── (scratch files)
 ```
 
-### Handoff Protocol (`OUTBOX.md`)
-Upon task completion, the subagent writes final results and marks `status: ready` in `kitchen/OUTBOX.md`:
-
+### Handoff Protocol (OUTBOX.md)
 ```markdown
----
-status: ready
-updated: 2026-07-23T05:14:00Z
-summary: "Wave 4: Deep Wiki Expansion completed cleanly."
----
+# OUTBOX
+
+## WIKI-001: ...
+- **status:** ready
+- **summary:** ...
+- **critical:** true | false
 ```
 
 ---
 
-## 4. Custom Theme Development (`custom_theme.json`)
+## 3. Custom Theme Development (`custom_theme.json`)
 
-FastPrompter features a flexible QSS (Qt Style Sheets) theme engine controlled via `data/custom_theme.json`.
+Flexible QSS theme engine controlled via `data/custom_theme.json`.
 
 ### Theme Schema Example
 ```json
@@ -107,15 +77,41 @@ FastPrompter features a flexible QSS (Qt Style Sheets) theme engine controlled v
   },
   "fonts": {
     "editor_font": "Consolas",
-    "ui_font": "Segoe UI",
+    "ui_font": "Verdana",
     "font_size_pt": 10
-  },
-  "custom_qss": "QPlainTextEdit { line-height: 1.4; }"
+  }
 }
 ```
 
 ### Applying Themes
-Custom themes can be edited directly in `data/custom_theme.json` or switched via the Mini Settings overlay (**Alt+`**). Changes take effect instantly without restarting FastPrompter.
+Custom themes edited in `data/custom_theme.json` or switched via Mini Settings overlay (**Alt+`**). Changes take effect instantly without restart.
 
 ---
+
+## 4. Cursor Theme Development (`cursor_theme.py`)
+
+FastPrompter supports custom mouse cursor sets for a retro computing feel.
+
+- `capture_current_scheme()`: Copies live Windows cursor set into the program.
+- `load_bundle()`: Returns installed cursor set.
+- `install_to_system(paths)`: Installs the cursor set as Windows default.
+- Toggle in Settings → Cursors tab.
+
+---
+
+## 5. Watcher Engine Integration
+
+The Watcher Engine (`src/fastprompter/core/watcher/`) supports custom probes and senders:
+
+| Module | Extensibility Point |
+|---|---|
+| `adapter.py` | Implement `ProbeAdapter` for custom target detection |
+| `cdp.py` | Custom CDP commands for Electron apps |
+| `win32.py` | Win32 window probe customization |
+| `skills.py` | Add custom prompt skill templates |
+| `limit_scan.py` | Custom cross-agent limit scanner logic |
+| `sender.py` | Custom text injection strategies |
+
+---
+
 *FastPrompter Wiki — Built with [SAIPEN Protocol](SAIPEN-Protocol) | [GitHub Repository](https://github.com/vacterro/FastPrompter)*

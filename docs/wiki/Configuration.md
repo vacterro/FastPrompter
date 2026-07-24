@@ -1,61 +1,86 @@
 # FastPrompter Configuration & Settings Reference
 
 ## Database Settings Schema
-Settings are stored in the SQLite database (`data/fastprompter.db` or `data/fastprompter_p<ID>.db`) within the `settings` table as key-value text pairs.
+Settings stored in SQLite database (`data/fastprompter.db` or `data/fastprompter_p<ID>.db`) within the `settings` table as key-value text pairs.
 
 ### Settings Keys Reference
 
 | Setting Key | Type | Default | Description |
 |---|---|---|---|
-| `theme` | string | `"Default"` | Active visual theme (`"Default"`, `"Amber"`, `"OLED"`, `"Win95"`, `"Rose"`, `"Custom"`) |
-| `font_size` | integer | `11` | Primary editor font size in points |
-| `ui_scale` | float | `"1.0"` | Overall UI scaling factor (0.5 to 1.5) |
+| `theme` | string | `"Default"` | Active theme (`Default`, `Amber`, `OLED`, `Win95`, `Rose`, `Custom`) |
+| `font_family` | string | `"Verdana"` | Editor font family (resolves to `_m1` bitmap variant if installed) |
+| `font_size` | integer | `11` | Editor font size in points |
+| `ui_scale` | float | `"0.5"` | Overall UI scaling (0.5 to 1.5) |
 | `button_scale` | float | `"1.0"` | Silo & toolbar button size multiplier |
-| `global_hotkey` | string | `"Alt+X"` | Primary hotkey to show/hide application window |
-| `pie_menu_hotkey` | string | `"Shift+Alt+X"` | Hotkey to trigger radial pie menu |
-| `lock_window_hotkey` | string | `"Alt+S"` | Hotkey to toggle window position lock |
-| `always_on_top_hotkey` | string | `"Alt+E"` | Hotkey to toggle Always-On-Top window mode |
-| `close_on_focus_loss` | boolean | `"True"` | Automatically hide window when focus is lost |
-| `ctrl_c_closes` | boolean | `"True"` | Close/hide window after pressing `Ctrl+C` in snippet mode |
-| `sound_ui` | boolean | `"False"` | Enable UI button click sound effects |
-| `sound_typewriter` | boolean | `"False"` | Enable typewriter key sound effects |
-| `sound_volume` | integer | `"5"` | Sound volume level (0 to 10) |
-| `portable_backup_enabled` | boolean | `"True"` | Automatic creation of `.bak` database file on startup |
-| `language` | string | `"EN"` | Interface language (`EN`, `RU`, `UK`, `DE`, `FR`, `ES`, `IT`, `PT`, `NL`, `PL`, `SV`, `DA`, `FI`, `NO`, `JA`, `ZH`, `KO`, `TH`, `VI`, `AR`, `HE`, `ET`, `DED`) |
-| `sidebar_right` | boolean | `"False"` | Position silo sidebar on right side of editor |
-| `code_auto_gutter` | boolean | `"False"` | Automatically display line numbers in editor code blocks |
-| `cats_order` | JSON list | `["Code","Text","Misc"]` | Custom order of project category tabs |
+| `global_hotkey` | string | `"Alt+X"` | Show/hide window hotkey |
+| `pie_menu_hotkey` | string | `"Shift+Alt+X"` | Pie menu hotkey |
+| `lock_window_hotkey` | string | `"Alt+S"` | Window position lock toggle |
+| `always_on_top_hotkey` | string | `"Alt+E"` | Always-on-Top toggle |
+| `close_on_focus_loss` | boolean | `"True"` | Auto-hide on focus loss |
+| `sound_ui` | boolean | `"False"` | UI click sound effects |
+| `sound_typewriter` | boolean | `"False"` | Typewriter key sounds |
+| `sound_volume` | integer | `"5"` | Sound volume (0 to 10) |
+| `portable_backup_enabled` | boolean | `"True"` | Auto .bak on startup |
+| `language` | string | `"EN"` | Interface language (23 options) |
+| `sidebar_right` | boolean | `"False"` | Sidebar on right side |
+| `code_auto_gutter` | boolean | `"False"` | Auto line numbers in code blocks |
+| `code_monospace` | boolean | `"True"` | Monospace font in code blocks (False = use editor font) |
+| `hr_line` | boolean | `"False"` | Render `---` as visual line instead of text |
+| `ctrl_e_center` | boolean | `"False"` | Center-align headers (Ctrl+E) |
+| `auto_bullet` | boolean | `"False"` | Auto-convert dashes to bullets |
+| `custom_cursors` | boolean | `"False"` | Retro cursor theme overlay |
+| `hover_line_color` | string | `"auto"` | Line highlight color (auto = theme accent) |
+| `watcher_skill` | string | `""` | Default skill for watcher queue items |
+| `cats_order` | JSON list | `["Code","Text","Misc"]` | Category tab order |
+| `timers` | JSON | `[]` | Saved countdown/timer definitions |
+| `productivity_timer` | JSON | — | Pomodoro timer state |
+| `watcher_queues` | JSON | `{}` | Per-silo watcher prompt queues |
+| `toolbar_order` | string | — | Custom toolbar button order tokens |
+| `snippets_hidden` | boolean | `"False"` | Snippets panel visibility |
+| `date_seconds` | boolean | `"True"` | Show seconds in clock |
+| `date_daypart` | boolean | `"True"` | Show Morning/Day/Evening/Night |
+| `date_text_month` | boolean | `"False"` | Use text month (Jan/Feb) |
+| `date_ampm` | boolean | `"False"` | 12h AM/PM format |
+| `date_emoji` | boolean | `"False"` | Emoji daypart (🌅/☀️/🌇/🌙) |
 
 ---
 
 ## File System & Storage Directory Structure
 
-FastPrompter stores all user data in a self-contained `data/` directory adjacent to the executable, ensuring 100% portable execution.
+All user data is stored in a self-contained `data/` directory adjacent to the executable:
 
 ```
 data/
-├── fastprompter.db             # Main SQLite database (Default profile)
-├── fastprompter.db.bak         # Startup backup SQLite database
-├── fastprompter_p2.db          # Profile 2 SQLite database
+├── fastprompter.db             # Main SQLite database (default profile)
+├── fastprompter.db.bak         # Startup backup snapshot
+├── fastprompter_p2.db          # Profile 2 database
+├── fastprompter_p2.db.bak      # Profile 2 backup
 ├── silo_files/                 # File Container attachments
 │   ├── Code/                   # Category folder
-│   │   ├── 0/                  # Silo slot 0 attachment directory
-│   │   └── 1/                  # Silo slot 1 attachment directory
+│   │   ├── 0/                  # Silo slot 0 directory
+│   │   └── 1/                  # Silo slot 1 directory
 │   └── Text/
 ├── _trash/                     # Soft-deleted silos and files
-│   └── 2026-07-22_153022_Silo0/# Timestamped trash archive
-└── custom_theme.json           # User-defined custom color palette (if enabled)
+│   └── 2026-07-22_153022_Silo0/# Timestamped trash
+└── custom_theme.json           # User-defined color palette
 ```
+
+Daily Markdown Mirror: `%USERPROFILE%\Documents\.fastprompter\`
 
 ---
 
 ## Custom Themes & Color Editing
-When `theme` is set to `"Custom"`, FastPrompter reads color preferences from `custom_theme.json` or state overrides.
 
-### Supported Theme Color Tokens
-- `bg_main`: Primary window and panel background color
-- `bg_editor`: Editor canvas background color
+When `theme` is set to `"Custom"`, colors are read from `custom_theme.json` or state overrides.
+
+### Supported Color Tokens
+- `bg_main`: Primary window background
+- `bg_editor`: Editor canvas background
 - `fg_text`: Primary text color
-- `border`: Window border and divider line color
-- `accent`: Active selection, focus ring, and pin highlight color
-- `header_bg`: Header bar and title background color
+- `border`: Window border and divider lines
+- `accent`: Active selection, focus ring, pin highlight
+- `header_bg`: Header bar background
+
+---
+
+*FastPrompter Wiki — Built with [SAIPEN Protocol](SAIPEN-Protocol) | [GitHub Repository](https://github.com/vacterro/FastPrompter)*
