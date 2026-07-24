@@ -37,6 +37,8 @@ TRANSLATIONS: dict[str, str] = {
     'All Files (*.*)': 'Minden fájl (*.*)',
     'All files (*.*)': 'Minden fájl (*.*)',
     'All silos': 'Minden siló',
+    'Alt+W — Smart Line (upward)': 'Alt+W – Intelligens vonal (felfelé)”, ha felfelé, akkor „Ctrl+W – Intelligens vonal',
+    'Alt+W…': 'Alt+W…',
     'Always On Top': 'Mindig a tetején',
     'Always On Top: {}': 'Mindig fent: {}',
     'Always on Top': 'Mindig a tetején',

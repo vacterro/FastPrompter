@@ -37,6 +37,8 @@ TRANSLATIONS: dict[str, str] = {
     'All Files (*.*)': 'Όλα τα αρχεία (*.*)',
     'All files (*.*)': 'Όλα τα αρχεία (*.*)',
     'All silos': 'Όλα τα σιλό',
+    'Alt+W — Smart Line (upward)': 'Alt+W — Έξυπνη γραμμή (προς τα πάνω)" αν προς τα πάνω αλλιώς "Ctrl+W — Έξυπνη γραμμή',
+    'Alt+W…': 'Alt+W…',
     'Always On Top': 'Πάντα στην κορυφή',
     'Always On Top: {}': 'Πάντα στην κορυφή: {}',
     'Always on Top': 'Πάντα στην κορυφή',

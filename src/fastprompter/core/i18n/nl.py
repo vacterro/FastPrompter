@@ -37,6 +37,8 @@ TRANSLATIONS: dict[str, str] = {
     'All Files (*.*)': 'Alle bestanden (*.*)',
     'All files (*.*)': 'Alle bestanden (*.*)',
     'All silos': "Allemaal silo's",
+    'Alt+W — Smart Line (upward)': 'Alt+W — Slimme lijn (omhoog)" indien naar boven, anders "Ctrl+W — Slimme lijn',
+    'Alt+W…': 'Alt+W…',
     'Always On Top': 'Altijd bovenop',
     'Always On Top: {}': 'Altijd bovenop: {}',
     'Always on Top': 'Altijd bovenop',

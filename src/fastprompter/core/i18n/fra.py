@@ -37,6 +37,8 @@ TRANSLATIONS: dict[str, str] = {
     'All Files (*.*)': 'Tous les fichiers (*.*)',
     'All files (*.*)': 'Tous les fichiers (*.*)',
     'All silos': 'Tous les silos',
+    'Alt+W — Smart Line (upward)': 'Alt+W — Smart Line (vers le haut)" si vers le haut, sinon "Ctrl+W — Smart Line',
+    'Alt+W…': 'Alt+W…',
     'Always On Top': 'Toujours au premier plan',
     'Always On Top: {}': 'Toujours au premier plan : {}',
     'Always on Top': 'Toujours au premier plan',

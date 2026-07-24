@@ -35,6 +35,8 @@ TRANSLATIONS: dict[str, str] = {
     'All Files (*.*)': 'Tüm Dosyalar (*.*)',
     'All files (*.*)': 'Tüm dosyalar (*.*)',
     'All silos': 'Tüm silolar',
+    'Alt+W — Smart Line (upward)': 'Alt+W — Akıllı Hat (yukarı)", yukarı değilse "Ctrl+W — Akıllı Hat',
+    'Alt+W…': 'Alt+W…',
     'Always On Top': 'Daima Zirvede',
     'Always On Top: {}': 'Her Zaman Zirvede: {}',
     'Always on Top': 'Her Zaman Zirvede',

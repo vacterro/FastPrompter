@@ -37,6 +37,8 @@ TRANSLATIONS: dict[str, str] = {
     'All Files (*.*)': 'Všetky súbory (*.*)',
     'All files (*.*)': 'Všetky súbory (*.*)',
     'All silos': 'Všetky silá',
+    'Alt+W — Smart Line (upward)': 'Alt+W — Inteligentná čiara (nahor)“, ak ide nahor, inak „Ctrl+W — Inteligentná čiara',
+    'Alt+W…': 'Alt+W…',
     'Always On Top': 'Vždy na vrchole',
     'Always On Top: {}': 'Vždy navrchu: {}',
     'Always on Top': 'Vždy na vrchole',
