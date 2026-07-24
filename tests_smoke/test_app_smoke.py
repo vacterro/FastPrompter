@@ -8066,3 +8066,71 @@ def test_smart_delete_is_single_undo(win):
     assert ta.toPlainText() == "1. one\n2. three"
     ta.undo()
     assert ta.toPlainText() == before
+
+
+# ---------------------------------------------------------------------------
+# T-589: multi-select silos + batch save/delete.
+# ---------------------------------------------------------------------------
+
+
+def test_silo_toggle_selection(win):
+    win.clear_silo_selection()
+    win.toggle_silo_selection(2)
+    win.toggle_silo_selection(5)
+    assert win._silo_sel() == {2, 5}
+    win.toggle_silo_selection(2)  # toggle off
+    assert win._silo_sel() == {5}
+
+
+def test_silo_range_select_from_anchor(win):
+    win.clear_silo_selection()
+    if len(win.data["temp_presets"]) < 5:
+        win.data["temp_presets"].extend([""] * (5 - len(win.data["temp_presets"])))
+    win.toggle_silo_selection(1)   # anchor = 1
+    win.range_select_silos(4)
+    assert win._silo_sel() == {1, 2, 3, 4}
+
+
+def test_silo_clear_selection(win):
+    win.toggle_silo_selection(0)
+    win.clear_silo_selection()
+    assert win._silo_sel() == set()
+
+
+def test_batch_delete_declined_keeps_selection(win, monkeypatch):
+    from fastprompter import main as main_mod
+    win.clear_silo_selection()
+    win.toggle_silo_selection(0)
+    win.toggle_silo_selection(1)
+    calls = []
+    monkeypatch.setattr(win, "trash_silo", lambda i, is_archive=False: calls.append(i))
+    monkeypatch.setattr(main_mod.QMessageBox, "question",
+                        lambda *a, **k: main_mod.QMessageBox.StandardButton.No)
+    win.batch_delete_selected_silos()
+    assert calls == []                 # nothing trashed
+    assert win._silo_sel() == {0, 1}   # selection intact
+
+
+def test_batch_delete_confirmed_trashes_high_index_first(win, monkeypatch):
+    from fastprompter import main as main_mod
+    win.clear_silo_selection()
+    for i in (0, 2, 5):
+        win.toggle_silo_selection(i)
+    calls = []
+    monkeypatch.setattr(win, "trash_silo", lambda i, is_archive=False: calls.append(i))
+    monkeypatch.setattr(main_mod.QMessageBox, "question",
+                        lambda *a, **k: main_mod.QMessageBox.StandardButton.Yes)
+    win.batch_delete_selected_silos()
+    assert calls == [5, 2, 0]          # descending so indices stay valid
+    assert win._silo_sel() == set()    # cleared after a real delete
+
+
+def test_batch_save_exports_each_selected(win, monkeypatch):
+    win.clear_silo_selection()
+    for i in (3, 1):
+        win.toggle_silo_selection(i)
+    saved = []
+    monkeypatch.setattr(win, "backup_silo_to_files", lambda i, is_archive=False: saved.append(i))
+    win.batch_save_selected_silos()
+    assert sorted(saved) == [1, 3]
+    win.clear_silo_selection()

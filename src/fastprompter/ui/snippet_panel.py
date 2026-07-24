@@ -682,7 +682,9 @@ class DraggableSiloButton(QWidget):
         theme_name = self.main_win.data.get("theme", "Default")
         ticked_list = self.main_win.data.get("silo_ticked", [])
         is_ticked = isinstance(ticked_list, list) and global_idx in ticked_list
-        current_state = (text_label, global_idx, bg_color, font_family, scale, theme_name, line_count_str, is_pushed, title_bold, is_ticked, is_child, fcount, has_children, is_collapsed, has_hash, color_hex, is_pinned)
+        sel = getattr(self.main_win, "_silo_selection", None)
+        is_selected = bool(sel) and global_idx in sel and not self.is_archive
+        current_state = (text_label, global_idx, bg_color, font_family, scale, theme_name, line_count_str, is_pushed, title_bold, is_ticked, is_child, fcount, has_children, is_collapsed, has_hash, color_hex, is_pinned, is_selected)
         if getattr(self, '_last_state', None) == current_state:
             self.show()
             return
@@ -763,7 +765,11 @@ class DraggableSiloButton(QWidget):
 
         # Win95 3D bevel: raised = top/left light, bottom/right dark
         #               sunken = top/left dark, bottom/right light (pushed)
-        if is_pushed:
+        if is_selected:
+            # multi-selected: a flat golden outline overrides the 3D bevel so
+            # the batch set reads at a glance
+            border = "border: 3px solid #ffd54a;"
+        elif is_pushed:
             border = f"border: 3px solid; border-top-color: {bd}; border-left-color: {bd}; border-right-color: {bl}; border-bottom-color: {bl};"
         else:
             border = f"border: 3px solid; border-top-color: {bl}; border-left-color: {bl}; border-right-color: {bd}; border-bottom-color: {bd};"
@@ -845,10 +851,26 @@ class DraggableSiloButton(QWidget):
 
     def mouseReleaseEvent(self, e):
         if e.button() == Qt.MouseButton.LeftButton and not self._dragging:
-            if self.is_archive:
-                self.main_win._switch_to_arc_slot(self.global_idx)
-            else:
+            mods = e.modifiers()
+            shift = bool(mods & Qt.KeyboardModifier.ShiftModifier)
+            ctrl = bool(mods & Qt.KeyboardModifier.ControlModifier)
+            # Multi-select (silos only): Shift = contiguous range, Ctrl =
+            # toggle one. Ctrl+Shift stays the done-tick, so require exactly
+            # one of the two modifiers here.
+            if not self.is_archive and shift != ctrl:
+                if shift:
+                    self.main_win.range_select_silos(self.global_idx)
+                else:
+                    self.main_win.toggle_silo_selection(self.global_idx)
+                super().mouseReleaseEvent(e)
+                e.accept()
+                return
+            # Plain click drops any selection and switches to the silo.
+            if not self.is_archive:
+                self.main_win.clear_silo_selection()
                 self.main_win._switch_to_slot(self.global_idx)
+            else:
+                self.main_win._switch_to_arc_slot(self.global_idx)
             super().mouseReleaseEvent(e)
             e.accept()
             return

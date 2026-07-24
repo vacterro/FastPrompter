@@ -6533,6 +6533,66 @@ class FastPrompter(
         self.refresh_temp_presets()
         self._switch_to_slot(new_idx)
 
+    # -- T-589: multi-select silos + batch ops --------------------------------
+    def _silo_sel(self):
+        """The set of currently multi-selected silo global indices (lazy)."""
+        if not isinstance(getattr(self, "_silo_selection", None), set):
+            self._silo_selection = set()
+        return self._silo_selection
+
+    def toggle_silo_selection(self, idx):
+        """Ctrl+click: add/remove one silo from the selection."""
+        sel = self._silo_sel()
+        sel.discard(idx) if idx in sel else sel.add(idx)
+        self._silo_sel_anchor = idx
+        self.refresh_temp_presets()
+
+    def range_select_silos(self, idx):
+        """Shift+click: select the contiguous range anchor..idx (inclusive)."""
+        sel = self._silo_sel()
+        anchor = getattr(self, "_silo_sel_anchor", idx)
+        lo, hi = sorted((anchor, idx))
+        n = len(self.data.get("temp_presets", []))
+        sel.update(i for i in range(lo, hi + 1) if 0 <= i < n)
+        self.refresh_temp_presets()
+
+    def clear_silo_selection(self):
+        """Plain click elsewhere drops the multi-selection."""
+        if getattr(self, "_silo_selection", None):
+            self._silo_selection = set()
+            self.refresh_temp_presets()
+
+    def batch_save_selected_silos(self):
+        """Export each selected silo to its files folder (batch 'save')."""
+        from fastprompter.core.logging import logger
+        for i in sorted(self._silo_sel()):
+            try:
+                self.backup_silo_to_files(i, is_archive=False)
+            except Exception:
+                logger.debug("batch save failed for silo %s", i)
+
+    def batch_delete_selected_silos(self):
+        """Trash every selected silo (recoverable). Deletes high index first
+        so the earlier indices stay valid as the list shrinks."""
+        from fastprompter.core.logging import logger
+        sel = sorted(self._silo_sel(), reverse=True)
+        if not sel:
+            return
+        le = getattr(self, "_current_lang", "EN")
+        resp = QMessageBox.question(
+            self, tr("Delete selected silos", le),
+            tr("Move the selected silos to Trash?", le) + f" ({len(sel)})",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if resp != QMessageBox.StandardButton.Yes:
+            return
+        for i in sel:
+            try:
+                self.trash_silo(i, is_archive=False)
+            except Exception:
+                logger.debug("batch delete failed for silo %s", i)
+        self._silo_selection = set()
+        self.refresh_temp_presets()
+
     def show_temp_menu(self, idx, pos, is_archive=False):
         cur = self.text_area.toPlainText().strip()
         menu = QMenu(self)
@@ -6548,6 +6608,19 @@ class FastPrompter(
             and idx < len(self.data["temp_presets"])
             and self.data["temp_presets"][idx]
         )
+
+        # -- batch actions (only when a multi-selection is active) -----------
+        sel = getattr(self, "_silo_selection", None)
+        if not is_archive and sel:
+            n = len(sel)
+            le = getattr(self, "_current_lang", "EN")
+            menu.addAction(tr("💾 Save selected", le) + f" ({n})",
+                           lambda: self.batch_save_selected_silos())
+            menu.addAction(tr("🗑 Delete selected", le) + f" ({n})",
+                           lambda: self.batch_delete_selected_silos())
+            menu.addAction(tr("✖ Clear selection", le),
+                           lambda: self.clear_silo_selection())
+            menu.addSeparator()
 
         # -- everyday actions ------------------------------------------------
         if not is_archive:
