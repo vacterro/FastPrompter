@@ -8021,3 +8021,48 @@ def test_show_is_acknowledged_so_a_corpse_can_be_detected(win):
     assert "ACK" in inspect.getsource(ipc_server.IpcServer._handle_command)
     entry = inspect.getsource(main_mod.main_entry)
     assert "ACK" in entry and "waitForReadyRead" in entry
+
+
+# ---------------------------------------------------------------------------
+# T-592: Ctrl+MiddleButton deletes the line under the cursor, keeping an
+# ordered list sequential around the gap.
+# ---------------------------------------------------------------------------
+
+
+def _load_editor_text(win, text):
+    ta = win.text_area
+    ta.document().setPlainText(text)
+    return ta
+
+
+def test_smart_delete_removes_line_without_blank_gap(win):
+    ta = _load_editor_text(win, "alpha\nbeta\ngamma")
+    ta._delete_line_smart(ta.document().findBlockByNumber(1))  # beta
+    assert ta.toPlainText() == "alpha\ngamma"
+
+
+def test_smart_delete_renumbers_ordered_list(win):
+    ta = _load_editor_text(win, "1. one\n2. two\n3. three\n4. four")
+    ta._delete_line_smart(ta.document().findBlockByNumber(1))  # "2. two"
+    assert ta.toPlainText() == "1. one\n2. three\n3. four"
+
+
+def test_smart_delete_renumbers_when_first_item_goes(win):
+    ta = _load_editor_text(win, "1. one\n2. two\n3. three")
+    ta._delete_line_smart(ta.document().findBlockByNumber(0))  # "1. one"
+    assert ta.toPlainText() == "1. two\n2. three"
+
+
+def test_smart_delete_bullet_list_needs_no_renumber(win):
+    ta = _load_editor_text(win, "- a\n- b\n- c")
+    ta._delete_line_smart(ta.document().findBlockByNumber(1))  # "- b"
+    assert ta.toPlainText() == "- a\n- c"
+
+
+def test_smart_delete_is_single_undo(win):
+    ta = _load_editor_text(win, "1. one\n2. two\n3. three")
+    before = ta.toPlainText()
+    ta._delete_line_smart(ta.document().findBlockByNumber(1))
+    assert ta.toPlainText() == "1. one\n2. three"
+    ta.undo()
+    assert ta.toPlainText() == before

@@ -1328,6 +1328,68 @@ class VaultTextEdit(QTextEdit):
         except Exception as e:
             logger.debug(f"checkbox toggle error: {e}")
 
+    _RE_ORDERED = re.compile(r"^(\s*)(\d+)\.(\s)")
+
+    def _delete_line_smart(self, block):
+        """Delete the line under the cursor, then keep any surrounding
+        ordered list sequential. Bullet/checkbox lists need no renumber, so
+        the plain block removal already leaves them well-formed."""
+        try:
+            doc = self.document()
+            was_ordered = self._RE_ORDERED.match(block.text())
+            # Anchor the renumber to the previous block: it survives the
+            # deletion and its next sibling becomes the new run head.
+            prev_no = block.previous().blockNumber() if block.previous().isValid() else -1
+            start_pos = block.position()
+            end_pos = start_pos + len(block.text())
+            nxt, prev = block.next(), block.previous()
+            cursor = QTextCursor(doc)
+            with edit_block(cursor, self):
+                # Take exactly one paragraph separator with the line so no
+                # blank gap survives: the trailing one when a block follows,
+                # otherwise the leading one (last block).
+                if nxt.isValid():
+                    cursor.setPosition(start_pos)
+                    cursor.setPosition(nxt.position(), QTextCursor.MoveMode.KeepAnchor)
+                elif prev.isValid():
+                    cursor.setPosition(start_pos - 1)
+                    cursor.setPosition(end_pos, QTextCursor.MoveMode.KeepAnchor)
+                else:
+                    cursor.setPosition(start_pos)
+                    cursor.setPosition(end_pos, QTextCursor.MoveMode.KeepAnchor)
+                cursor.removeSelectedText()
+                if was_ordered:
+                    start = doc.findBlockByNumber(prev_no + 1) if prev_no >= 0 else doc.firstBlock()
+                    self._renumber_ordered_run(start)
+        except Exception as e:
+            logger.debug(f"smart line delete error: {e}")
+
+    def _renumber_ordered_run(self, start_block):
+        """Rewrite the contiguous ordered-list run containing ``start_block``
+        as 1., 2., 3., ... at each item's own indent. Walks back to the true
+        head first so a mid-run start still fixes the whole run."""
+        block = start_block
+        if not block.isValid() or not self._RE_ORDERED.match(block.text()):
+            return
+        # rewind to the first item of the run
+        while block.previous().isValid() and self._RE_ORDERED.match(block.previous().text()):
+            block = block.previous()
+        n = 1
+        while block.isValid():
+            m = self._RE_ORDERED.match(block.text())
+            if not m:
+                break
+            want = f"{m.group(1)}{n}.{m.group(3)}"
+            have = block.text()[:m.end()]
+            if want != have:
+                bc = QTextCursor(block)
+                bc.movePosition(QTextCursor.MoveOperation.StartOfBlock)
+                bc.setPosition(block.position() + m.end(),
+                               QTextCursor.MoveMode.KeepAnchor)
+                bc.insertText(want)
+            n += 1
+            block = block.next()
+
     def mousePressEvent(self, event):
         if sip.isdeleted(self):
             return
@@ -1443,10 +1505,19 @@ class VaultTextEdit(QTextEdit):
             event.accept()
             return
         if event.button() == Qt.MouseButton.MiddleButton:
-            # Middle-click a line cycles it: plain -> checked+struck ->
+            block = self.cursorForPosition(event.pos()).block()
+            if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+                # Ctrl+Middle-click deletes the whole line under the cursor,
+                # renumbering an ordered list around the gap so it stays
+                # sequential.
+                if block.isValid():
+                    self._delete_line_smart(block)
+                    self.main_win.mark_dirty()
+                event.accept()
+                return
+            # Plain middle-click a line cycles it: plain -> checked+struck ->
             # unchecked -> plain. (This used to clear the whole silo, which
             # was a lot of destruction for a stray scroll-wheel press.)
-            block = self.cursorForPosition(event.pos()).block()
             if block.isValid() and block.text().strip():
                 self._toggle_single_line(block)
                 self.main_win.mark_dirty()
