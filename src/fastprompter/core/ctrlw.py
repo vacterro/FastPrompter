@@ -118,7 +118,6 @@ def simulate(sid, use_div, use_bul, before, after, bullet_char, upward=False):
     if sid == "s3":
         # inserted at the START of the blank line; with no bullet the caret
         # moves on down to the block below
-        out = head + template + tail
         if use_bul:
             return src, _place_caret(head + template, tail)
         return src, _caret_before_next_text(head + template, tail)

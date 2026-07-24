@@ -1,4 +1,5 @@
 from fastprompter.core.translations import tr
+
 """Theme mixin for FastPrompter — theme switching, font management, and preview modes.
 
 Extracted from main.py Phase 3 of the modularization plan.
@@ -18,7 +19,6 @@ from fastprompter.core.config import create_tray_icon, extract_bg
 from fastprompter.core.logging import logger
 from fastprompter.theme.themes import (
     THEMES,
-    blend_hex,
     generate_custom_theme,
     scrollbar_qss,
 )

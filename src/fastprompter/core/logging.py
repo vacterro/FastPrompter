@@ -20,6 +20,7 @@ import tempfile
 import traceback
 from logging.handlers import RotatingFileHandler
 
+
 def _default_log_file() -> str:
     """Where the log lives.
 

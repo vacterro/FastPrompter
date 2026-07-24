@@ -1,5 +1,15 @@
-from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QFileDialog
+from PyQt6.QtWidgets import (
+    QDialog,
+    QFileDialog,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QVBoxLayout,
+)
+
 from fastprompter.core.translations import tr
+
 
 class SiloSettingsDialog(QDialog):
     def __init__(self, main_win, global_idx):

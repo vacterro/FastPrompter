@@ -14,6 +14,7 @@ import datetime
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QCheckBox,
     QComboBox,
     QDialog,
@@ -24,7 +25,6 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
-    QApplication,
     QPushButton,
     QSpinBox,
     QTabWidget,
@@ -32,17 +32,17 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from fastprompter.core import pomodoro
 from fastprompter.core.duration import PRESETS, format_remaining, resolve_target
 from fastprompter.core.timers import (
     COLOR_STATIC,
     COLOR_TEMPERATURE,
     REPEAT_CHOICES,
     REPEAT_INTERVAL,
+    Timer,
     describe,
     limit_window,
-    Timer,
 )
-from fastprompter.core import pomodoro
 from fastprompter.core.translations import tr
 
 _SOUNDS = ("tick", "click", "new", "save", "delete", "clear", "silo", "snippet")

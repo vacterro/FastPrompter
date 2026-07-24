@@ -1,7 +1,6 @@
 import os
 
 from PyQt6.QtCore import Qt
-from fastprompter.core.translations import tr
 from PyQt6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -13,6 +12,8 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QVBoxLayout,
 )
+
+from fastprompter.core.translations import tr
 
 
 class BackupDialog(QDialog):

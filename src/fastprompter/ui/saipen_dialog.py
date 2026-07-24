@@ -1,8 +1,10 @@
 import os
-from PyQt6.QtWidgets import QDialog, QVBoxLayout, QTabWidget, QTextEdit, QPushButton, QHBoxLayout
+
 from PyQt6.QtGui import QFont
-from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QDialog, QHBoxLayout, QPushButton, QTabWidget, QTextEdit, QVBoxLayout
+
 from fastprompter.core.translations import tr
+
 
 class SaipenViewerDialog(QDialog):
     def __init__(self, main_win, saipen_dir, initial_tab="STATE"):
@@ -43,7 +45,7 @@ class SaipenViewerDialog(QDialog):
         font_size = max(8, int(round(base_size * scale)))
         
         try:
-            from fastprompter.utils.fonts import resolve_family, no_aa
+            from fastprompter.utils.fonts import no_aa, resolve_family
             font = no_aa(QFont(resolve_family(family), font_size))
         except ImportError:
             font = QFont(family, font_size)
@@ -86,7 +88,7 @@ class SaipenViewerDialog(QDialog):
             path = os.path.join(self.saipen_dir, filename)
             if os.path.exists(path):
                 try:
-                    with open(path, "r", encoding="utf-8") as f:
+                    with open(path, encoding="utf-8") as f:
                         text = f.read()
                         editor.setPlainText(text)
                         if filename == "LOG.md":

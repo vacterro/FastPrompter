@@ -11,8 +11,8 @@ from PyQt6 import sip
 from PyQt6.QtGui import QTextCursor, QTextDocument
 from PyQt6.QtWidgets import QApplication, QFileDialog, QInputDialog, QMessageBox
 
-from fastprompter.core.translations import tr
 from fastprompter.core.logging import logger
+from fastprompter.core.translations import tr
 
 _is_deleted = sip.isdeleted
 
@@ -635,6 +635,7 @@ class SnippetOpsMixin:
             return
             
         import datetime
+
         from fastprompter.ui.file_container import silo_slug
         trash = os.path.join(self._files_root(), "_trash")
         try:

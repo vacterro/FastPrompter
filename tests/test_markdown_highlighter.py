@@ -38,6 +38,14 @@ class _MockQTextCharFormat:
         self._font_italic = False
         self._anchor = False
         self._anchor_href = None
+        self._font_point_size = None
+        self._font_strike_out = False
+
+    def setFontStrikeOut(self, enabled):
+        self._font_strike_out = enabled
+
+    def setFontPointSize(self, size):
+        self._font_point_size = size
 
     def setFontWeight(self, w):
         self._font_weight = w
@@ -200,7 +208,7 @@ class TestInit:
 
     def test_rules_populated_after_init(self):
         h = make_highlighter()
-        assert len(h._highlighting_rules) == 17, (
+        assert len(h._highlighting_rules) == 18, (
             f"Expected 17 rules (underline, strike, bold, italic x2, h1-h3, hashtag, "
             f"code, quote, link, hr, cb_unchecked, cb_checked, bullet list, "
             f"numbered list), got {len(h._highlighting_rules)}"

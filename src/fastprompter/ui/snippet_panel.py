@@ -2,10 +2,10 @@ from PyQt6.QtCore import QEvent, QMimeData, QObject, Qt, QTimer
 from PyQt6.QtGui import QDrag, QFontMetrics
 from PyQt6.QtWidgets import QApplication, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
-from fastprompter.core.translations import tr
-from fastprompter.utils.fonts import no_aa
 from fastprompter.core.config import extract_bg, extract_border_color, extract_color
+from fastprompter.core.translations import tr
 from fastprompter.theme.themes import THEMES
+from fastprompter.utils.fonts import no_aa
 
 
 class WheelPager(QObject):
@@ -549,8 +549,8 @@ class DraggableSiloButton(QWidget):
 
     def _show_color_menu(self, pos):
         if not hasattr(self.main_win, "data"): return
+        from PyQt6.QtGui import QColor, QIcon, QPixmap
         from PyQt6.QtWidgets import QMenu
-        from PyQt6.QtGui import QIcon, QPixmap, QColor
         menu = QMenu(self)
         colors = self.main_win.data.get("silo_color_palette", ["#ff4444", "#ffaa00", "#ffff00", "#00ff00", "#00ffff", "#0000ff", "#ff00ff", "#ffffff", "#000000", "#808080"])
         
@@ -585,8 +585,8 @@ class DraggableSiloButton(QWidget):
 
     def _on_files_clicked(self):
         """Open the per-silo file container drawer or settings."""
-        from PyQt6.QtWidgets import QApplication
         from PyQt6.QtCore import Qt
+        from PyQt6.QtWidgets import QApplication
         mods = QApplication.keyboardModifiers()
         if mods & Qt.KeyboardModifier.ControlModifier:
             if hasattr(self.main_win, 'backup_silo_to_files'):

@@ -22,13 +22,22 @@ import html
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
-    QCheckBox, QComboBox, QDialog, QFrame, QGridLayout, QHBoxLayout, QLabel,
-    QLineEdit, QPushButton, QSpinBox, QVBoxLayout,
+    QCheckBox,
+    QComboBox,
+    QDialog,
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QSpinBox,
+    QVBoxLayout,
 )
 
 from fastprompter.core import header as header_core
-from fastprompter.ui.flow_layout import FlowLayout
 from fastprompter.core.translations import tr
+from fastprompter.ui.flow_layout import FlowLayout
 
 DEFAULT_TEMPLATE = header_core.DEFAULTS["ctrl_e_format"]
 

@@ -144,13 +144,14 @@ class DropOverlay(QWidget):
                 bot_left = QRect(m, 2 * m + hh, hw, hh)
                 bot_right = QRect(2 * m + hw, 2 * m + hh, hw, hh)
                 
+                mw = getattr(self.editor, 'main_win', None)
+                lang = mw.data.get("language", "EN") if mw else "EN"
                 info = {
                     "text": (tr("📝 Drop as Text", lang), tr("insert content into silo", lang)),
                     "editor_link": (tr("🔗 Link in Text", lang), tr("insert markdown link at cursor", lang)),
                     "files": (tr("📥 Copy to Files 📁", lang), tr("store in silo's container", lang)),
                     "files_link": (tr("🔗 Link in Files 📁", lang), tr("add shortcut in container", lang))
                 }
-                mw = getattr(self.editor, 'main_win', None)
                 tl_id = mw.data.get("drop_top_left", "text") if mw else "text"
                 tr_id = mw.data.get("drop_top_right", "editor_link") if mw else "editor_link"
                 bl_id = mw.data.get("drop_bot_left", "files") if mw else "files"

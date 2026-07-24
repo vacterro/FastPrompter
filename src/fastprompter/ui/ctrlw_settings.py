@@ -10,13 +10,28 @@ touched, and the sentences it replaced live in tooltips.
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
-    QCheckBox, QComboBox, QDialog, QGridLayout, QHBoxLayout, QLabel,
-    QPushButton, QScrollArea, QSpinBox, QVBoxLayout, QWidget, QFrame,
+    QCheckBox,
+    QComboBox,
+    QDialog,
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QScrollArea,
+    QSpinBox,
+    QVBoxLayout,
+    QWidget,
 )
 
 from fastprompter.core.ctrlw import (
-    SCENES, SCENE_HELP, SCENE_TITLES, SCENE_TRIGGERS, S6_HELP,
-    render_preview, simulate,
+    S6_HELP,
+    SCENE_HELP,
+    SCENE_TITLES,
+    SCENE_TRIGGERS,
+    SCENES,
+    render_preview,
+    simulate,
 )
 from fastprompter.core.translations import tr
 

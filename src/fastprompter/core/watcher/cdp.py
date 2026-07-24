@@ -71,6 +71,7 @@ def find_page(targets, title_match=""):
         matched = [t for t in pages if needle in str(t.get("title", "")).lower()]
         if matched:
             return matched[0]
+        return None
     return pages[0]
 
 

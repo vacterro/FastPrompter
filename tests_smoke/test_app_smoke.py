@@ -972,7 +972,6 @@ def _run_fuzz_ui(win, rng):
     win.change_theme("Default")
     win.data["ui_scale"] = "1.0"
     win.data["button_scale"] = "1.0"
-    win._refresh_settings_cache()
     win.preview_combo.setCurrentIndex(1)
     win.data["word_wrap"] = "True"
     win.data["zebra_lines"] = "False"
@@ -4986,7 +4985,7 @@ def test_reset_ui_layout_restores_every_layout_choice(win):
     # the Settings controls must agree with the data they display, or the
     # next click on them toggles from the state the user can no longer see
     assert win.cb_sidebar.isChecked() is False
-    assert "100%" in win.btn_button_scale.text()
+    assert "50%" in win.btn_button_scale.text()
 
     # and the checkbox still works afterwards, from the correct state
     win.cb_sidebar.setChecked(True)

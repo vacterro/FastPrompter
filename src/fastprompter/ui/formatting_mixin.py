@@ -493,6 +493,12 @@ class FormattingMixin:
                 return
             elif sid == "s4":
                 rest = cursor.block().text()[cursor.positionInBlock():].rstrip("\n")
+                if use_bul:
+                    r_l = rest.lstrip()
+                    for b in ("* ", "- ", "• ", "\u2022 ", bullet_char + " "):
+                        if r_l.startswith(b):
+                            rest = r_l[len(b):]
+                            break
                 c = QTextCursor(cursor)
                 c.movePosition(QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor)
                 c.removeSelectedText()

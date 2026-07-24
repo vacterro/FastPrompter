@@ -384,6 +384,10 @@ class VaultTextEdit(QTextEdit):
         if hl and not sip.isdeleted(hl) and hl.document() != doc:
             hl.setDocument(doc)
         self._opener_cache = None
+        # sticky-True flags are only valid for the document they were found
+        # on — a fresh document needs a fresh scan, not the old one's state.
+        self._doc_has_checkbox = False
+        self._doc_has_code = False
         self._refresh_checkbox_flag()
 
     def line_number_area_width(self):
@@ -751,19 +755,30 @@ class VaultTextEdit(QTextEdit):
 
         Called lazily on first _fence_is_opener call after an edit. The
         cache is then O(1) for every subsequent call until the next edit.
+
+        A closing fence is bare ``` (no info string after the backticks).
+        A ```lang line can only OPEN a block, never close one.  The old
+        code toggled on any ``` line, so a nested ```python inside a
+        block would flip the state and desync every fence after it.
         """
         doc = self.document()
         if not doc or sip.isdeleted(doc):
             self._opener_cache = set()
             return
         cache = set()
-        opens = True
+        in_code = False
         b = doc.firstBlock()
         while b.isValid():
-            if b.text().strip().startswith("```"):
-                if opens:
+            stripped = b.text().strip()
+            if stripped.startswith("```"):
+                if not in_code:
+                    # any ``` line outside code opens a block
                     cache.add(b.blockNumber())
-                opens = not opens
+                    in_code = True
+                elif stripped.rstrip("`") == "":
+                    # bare ``` inside code closes it
+                    in_code = False
+                # else: ```lang inside code — ignore (stays in code)
             b = b.next()
         self._opener_cache = cache
 
@@ -1020,12 +1035,13 @@ class VaultTextEdit(QTextEdit):
                 last = b
                 b = b.next()
             return (first, last) if last is not None else None
-        # fence opener: hide through the closing fence
+        # fence opener: hide through the closing fence (bare ``` only)
         b = first
         last = None
         while b.isValid():
             last = b
-            if b.text().strip().startswith("```"):
+            s = b.text().strip()
+            if s.startswith("```") and s.rstrip("`") == "":
                 break
             b = b.next()
         return (first, last) if last is not None else None
@@ -2758,7 +2774,8 @@ class VaultTextEdit(QTextEdit):
                                 painter.setFont(self.font())
 
                         # --- horizontal rule visual line (skip for large docs)
-                        if not is_large and re.match(r'^[-*_]{3,}$', text.strip()):
+                        hr_visual = getattr(self.main_win, "data", {}).get("hr_visual_line", "True") == "True"
+                        if not is_large and hr_visual and re.match(r'^[-*_]{3,}$', text.strip()):
                             mid_y = int(r.top() + r.height() // 2)
                             if mid_y not in hr_drawn:
                                 hr_drawn.add(mid_y)

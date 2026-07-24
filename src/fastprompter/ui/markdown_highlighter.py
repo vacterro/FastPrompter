@@ -44,6 +44,7 @@ class MarkdownHighlighter(QSyntaxHighlighter):
         self.code_font_family = None
         self._highlighting_rules = []
         self._skip_highlighting = False
+        self.hr_as_line = False   # when True, --- text is hidden (painted as a visual line)
 
         self._setup_rules()
 
@@ -60,6 +61,11 @@ class MarkdownHighlighter(QSyntaxHighlighter):
     def update_code_font(self, family):
         """Font for inline code and fenced blocks. None/'' -> Consolas."""
         self.code_font_family = family or None
+        self._setup_rules()
+        self.rehighlight()
+
+    def update_hr_as_line(self, enable):
+        self.hr_as_line = enable
         self._setup_rules()
         self.rehighlight()
 
@@ -172,8 +178,13 @@ class MarkdownHighlighter(QSyntaxHighlighter):
 
         # Horizontal Rule: ---
         hr_format = QTextCharFormat()
-        hr_format.setForeground(QColor(self._theme_color("border_light", "#5a4a2a")))
-        hr_format.setFontWeight(QFont.Weight.Bold)
+        if self.hr_as_line:
+            # editor paints the line; hide the raw --- text
+            hr_format.setForeground(QColor(0, 0, 0, 0))
+            hr_format.setFontPointSize(1)
+        else:
+            hr_format.setForeground(QColor(self._theme_color("border_light", "#5a4a2a")))
+            hr_format.setFontWeight(QFont.Weight.Bold)
         self._highlighting_rules.append((re.compile(r'^\s*[-*_]{3,}\s*$'), hr_format))
 
         # Checkbox unchecked: [ ] — make invisible (painted by editor)
@@ -224,19 +235,31 @@ class MarkdownHighlighter(QSyntaxHighlighter):
         # Preserve the editor's margin-mark bits while tracking fences
         prev_in_code = bool(max(0, self.previousBlockState()) & CODE_BIT)
         mark_bits = max(0, self.currentBlockState()) & _KEEP_MASK
-        is_fence = text.strip().startswith("```")
+        stripped = text.strip()
+        is_fence = stripped.startswith("```")
+        # A closing fence is ``` with optional whitespace only (no info
+        # string).  An opening fence may carry a language tag after ```.
+        # Treating ```python as a closer was the root cause of state leaks:
+        # the code region would end prematurely, and every block after it
+        # inherited the wrong state.
+        is_closer = is_fence and stripped.rstrip("`") == ""
 
         if prev_in_code:
-            if is_fence:
+            if is_closer:
                 # closing fence: code region ends after this line
                 self.setCurrentBlockState(mark_bits)
                 self.setFormat(0, len(text), self._code_fence_format)
             else:
                 self.setCurrentBlockState(mark_bits | CODE_BIT)
-                self.setFormat(0, len(text), self._code_block_format)
-                for pattern, fmt in self._code_sub_rules:
-                    for match in pattern.finditer(text):
-                        self.setFormat(match.start(), match.end() - match.start(), fmt)
+                if is_fence:
+                    # nested ``` with info string inside code — format as
+                    # fence but stay in code
+                    self.setFormat(0, len(text), self._code_fence_format)
+                else:
+                    self.setFormat(0, len(text), self._code_block_format)
+                    for pattern, fmt in self._code_sub_rules:
+                        for match in pattern.finditer(text):
+                            self.setFormat(match.start(), match.end() - match.start(), fmt)
             return
         if is_fence:
             # opening fence (``` or ```lang)

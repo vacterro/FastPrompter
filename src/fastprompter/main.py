@@ -1,10 +1,10 @@
 import copy
 import ctypes
 import ctypes.wintypes
+import datetime
 import json
 import math
 import os
-import datetime
 import re
 import shutil
 import sys
@@ -35,7 +35,6 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QFileDialog,
     QFrame,
-    QGridLayout,
     QHBoxLayout,
     QInputDialog,
     QLabel,
@@ -77,9 +76,11 @@ _ALIGN_FLAGS = {
     "right": Qt.AlignmentFlag.AlignRight,
     "justify": Qt.AlignmentFlag.AlignJustify,
 }
+from fastprompter.core.i18n import NATIVE_NAMES as _LANG_NATIVE_NAMES
 from fastprompter.core.ipc_server import IpcServer, try_connect_to_server
 from fastprompter.core.sound_manager import SoundManager
 from fastprompter.core.state import FastPrompterState
+from fastprompter.core.translations import available_languages, get_language, tr
 from fastprompter.theme.themes import THEMES
 from fastprompter.ui.edit_guard import edit_block
 from fastprompter.ui.editor import VaultTextEdit
@@ -92,8 +93,8 @@ from fastprompter.ui.pie_menu import QuickListWidget
 from fastprompter.ui.resizers import EdgeResizer
 from fastprompter.ui.scaling_mixin import ScalingMixin
 from fastprompter.ui.search_mixin import SearchMixin
-from fastprompter.ui.settings import ColorConfigDialog, HotkeySettingsDialog
 from fastprompter.ui.send_selection_mixin import SendSelectionMixin
+from fastprompter.ui.settings import ColorConfigDialog, HotkeySettingsDialog
 from fastprompter.ui.snippet_ops_mixin import SnippetOpsMixin
 from fastprompter.ui.snippet_panel import (
     DraggableSiloButton,
@@ -107,8 +108,6 @@ from fastprompter.ui.tray_mixin import TrayMixin
 from fastprompter.ui.watcher_mixin import WatcherMixin
 from fastprompter.ui.window_mixin import WindowMixin
 from fastprompter.utils.paths import get_data_dir
-from fastprompter.core.translations import tr, get_language, available_languages
-from fastprompter.core.i18n import NATIVE_NAMES as _LANG_NATIVE_NAMES
 from fastprompter.utils.textfit import clip_safe_width
 
 
@@ -1833,6 +1832,7 @@ class FastPrompter(
 
     def _launch_silo_executable(self):
         import os
+
         from fastprompter.core.logging import logger
         paths = self.data.get("silo_project_paths", {}).get(str(self.active_temp_slot), {})
         exe = paths.get("executable")
@@ -1849,6 +1849,7 @@ class FastPrompter(
 
     def _open_silo_project_folder(self):
         import os
+
         from fastprompter.core.logging import logger
         paths = self.data.get("silo_project_paths", {}).get(str(self.active_temp_slot), {})
         folder = paths.get("folder")
@@ -2537,8 +2538,9 @@ class FastPrompter(
         # Every language the i18n pack can serve, shown by its native name +
         # a drawn flag icon, keyed on the code (stored as itemData so the
         # display text is free to be localized without breaking the lookup).
-        from fastprompter.ui.flags import flag_icon
         from PyQt6.QtCore import QSize
+
+        from fastprompter.ui.flags import flag_icon
         self.cb_language.setIconSize(QSize(18, 12))
         for code in available_languages():
             native = _LANG_NATIVE_NAMES.get(code, code)
@@ -2813,6 +2815,17 @@ class FastPrompter(
                 or self.mark_dirty()
                 or self.refresh_temp_presets()
                 or self.refresh_snippets_panel()
+            ),
+        )
+        self.cb_hr_visual = create_footer_cb(
+            "➖ Render HR Lines",
+            "Render ---/***/___ dividers as crisp visual lines instead of raw text",
+            self.data.get("hr_visual_line", "True") == "True",
+            lambda checked: (
+                self.data.update({"hr_visual_line": "True" if checked else "False"})
+                or self.mark_dirty()
+                or (getattr(self, "highlighter", None) and self.highlighter.update_hr_as_line(checked))
+                or (hasattr(self, "text_area") and hasattr(self.text_area, "viewport") and self.text_area.viewport().update())
             ),
         )
         self.cb_date_rect = create_footer_cb(
@@ -3283,7 +3296,7 @@ class FastPrompter(
 
         self.settings_tabs.addTab(_tab([
             _settings_group("Dividers & headers", [
-                div_row, ctrlw_btn_row, hdr_row,
+                div_row, ctrlw_btn_row, hdr_row, self.cb_hr_visual,
             ]),
             _settings_group("Typing", [
                 self.cb_focus, self.cb_wrap, self.cb_ctrl_c,
@@ -3575,6 +3588,7 @@ class FastPrompter(
         self.highlighter = MarkdownHighlighter(base_font_size=11)
         self.highlighter.setDocument(self.text_area.document())
         self.highlighter.set_skip_large(True)
+        self.highlighter.update_hr_as_line(self.data.get("hr_visual_line", "True") == "True")
         self._apply_code_font()
         self._current_lang = get_language(self.data)
         self.apply_wrap_mode()

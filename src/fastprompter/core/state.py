@@ -7,7 +7,6 @@ import time
 
 from fastprompter.core.logging import logger
 from fastprompter.utils.paths import get_db_path
-from fastprompter.utils.portable_backup import run_portable_backup
 
 
 class FastPrompterState:

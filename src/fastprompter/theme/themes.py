@@ -25,11 +25,7 @@ def blend_hex(c1, c2, t):
     t = max(0.0, min(1.0, float(t)))
     r1, g1, b1 = _hex_to_rgb(c1)
     r2, g2, b2 = _hex_to_rgb(c2)
-    return "#{:02x}{:02x}{:02x}".format(
-        _clamp_byte(r1 + (r2 - r1) * t),
-        _clamp_byte(g1 + (g2 - g1) * t),
-        _clamp_byte(b1 + (b2 - b1) * t),
-    )
+    return f"#{_clamp_byte(r1 + (r2 - r1) * t):02x}{_clamp_byte(g1 + (g2 - g1) * t):02x}{_clamp_byte(b1 + (b2 - b1) * t):02x}"
 
 
 def header_tint(raw):

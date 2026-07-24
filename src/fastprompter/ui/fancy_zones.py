@@ -18,7 +18,7 @@ monitor, and automatically avoids the taskbar.
 
 from __future__ import annotations
 
-from PyQt6.QtCore import QPoint, QRect, QRectF, Qt
+from PyQt6.QtCore import QRect, QRectF, Qt
 from PyQt6.QtGui import QColor, QCursor, QFont, QPainter, QPen
 from PyQt6.QtWidgets import QApplication, QWidget
 

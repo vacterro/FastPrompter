@@ -192,20 +192,10 @@ class TestCycleButtonScale:
 
     def _make_mixin(self, current_scale=1.0):
         m = ScalingMixin()
-        m._button_scale = current_scale
         m._ui_scale = current_scale
-        m.data = {"button_scale": str(current_scale)}
+        m.data = {"button_scale": str(current_scale), "ui_scale": f"{current_scale:.2f}"}
         m.save_data_to_db = MagicMock()
         m.mark_dirty = MagicMock()
-        # Real _refresh_settings_cache updates _button_scale from data
-        def _refresh():
-            try:
-                m._button_scale = float(m.data.get("button_scale", "1.0"))
-                m._ui_scale = float(m.data.get("ui_scale", "1.0"))
-            except (ValueError, TypeError):
-                m._button_scale = 1.0
-                m._ui_scale = 1.0
-        m._refresh_settings_cache = MagicMock(wraps=_refresh)
         m.refresh_button_scale = MagicMock()
         m.apply_scaled_ui = MagicMock()
         m.setMinimumSize = MagicMock()
@@ -217,14 +207,14 @@ class TestCycleButtonScale:
         # Call cycle_button_scale — needs btn_button_scale
         m.btn_button_scale = _MockQPushButton("btn_button_scale")
         m.cycle_button_scale()
-        assert m._button_scale == 1.25
+        assert m.data["ui_scale"] == "1.25"
         assert m.data["button_scale"] == "1.25"
 
     def test_cycles_wraps_around(self):
         m = self._make_mixin(1.5)
         m.btn_button_scale = _MockQPushButton("btn_button_scale")
         m.cycle_button_scale()
-        assert m._button_scale == 0.5
+        assert m.data["ui_scale"] == "0.50"
         assert m.data["button_scale"] == "0.5"
 
     def test_unknown_scale_defaults_to_1_0(self):
@@ -232,14 +222,13 @@ class TestCycleButtonScale:
         m.btn_button_scale = _MockQPushButton("btn_button_scale")
         m.cycle_button_scale()
         # 0.0 is closest to 0.5 (idx 0), next cycle is idx 1 = 0.75
-        assert m._button_scale == 0.75
+        assert m.data["ui_scale"] == "0.75"
 
     def test_persistence_called(self):
         m = self._make_mixin(1.0)
         m.btn_button_scale = _MockQPushButton("btn_button_scale")
         m.cycle_button_scale()
         m.save_data_to_db.assert_called_once()
-        m._refresh_settings_cache.assert_called_once()
         m.refresh_button_scale.assert_called_once()
 
     def test_button_text_updated(self):
@@ -254,7 +243,7 @@ class TestCycleButtonScale:
         m = self._make_mixin(0.75)
         m.btn_button_scale = _MockQPushButton("btn_button_scale")
         m.cycle_button_scale()
-        assert m._button_scale == 1.0
+        assert m.data["ui_scale"] == "1.00"
 
 
 # ---------------------------------------------------------------------------
@@ -265,7 +254,7 @@ class TestCycleButtonScale:
 class TestApplyButtonSize:
     def test_base_size_stored(self):
         m = ScalingMixin()
-        m._button_scale = 1.0
+        m._ui_scale = 1.0
         m._ui_scale = 1.0
         btn = _MockQPushButton("test_btn")
         m.apply_button_size(btn, 24, 24)
@@ -273,7 +262,7 @@ class TestApplyButtonSize:
 
     def test_scale_applied_to_width_height(self):
         m = ScalingMixin()
-        m._button_scale = 1.5
+        m._ui_scale = 1.5
         m._ui_scale = 1.5
         btn = _MockQPushButton("test_btn")
         m.apply_button_size(btn, 24, 24)
@@ -283,7 +272,7 @@ class TestApplyButtonSize:
 
     def test_scale_minimum_clamp(self):
         m = ScalingMixin()
-        m._button_scale = 0.3
+        m._ui_scale = 0.3
         m._ui_scale = 0.3
         btn = _MockQPushButton("test_btn")
         m.apply_button_size(btn, 20, 20)
@@ -292,7 +281,7 @@ class TestApplyButtonSize:
 
     def test_squishable_uses_max_height(self):
         m = ScalingMixin()
-        m._button_scale = 1.0
+        m._ui_scale = 1.0
         m._ui_scale = 1.0
         btn = _MockQPushButton("test_btn")
         btn.is_squishable = True
@@ -477,7 +466,7 @@ class TestApplyScaledUi:
 class TestRefreshButtonScale:
     def test_no_children_does_not_crash(self):
         m = ScalingMixin()
-        m._button_scale = 1.0
+        m._ui_scale = 1.0
         m._ui_scale = 1.0
         m.findChildren = MagicMock(return_value=[])
         m.refresh_button_scale()
@@ -485,7 +474,7 @@ class TestRefreshButtonScale:
 
     def test_children_without_base_size_skipped(self):
         m = ScalingMixin()
-        m._button_scale = 1.0
+        m._ui_scale = 1.0
         m._ui_scale = 1.0
         btn = _MockQPushButton("test")
         m.findChildren = MagicMock(return_value=[btn])

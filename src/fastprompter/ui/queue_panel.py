@@ -39,6 +39,12 @@ from fastprompter.core.watcher.queue import (
     move_between,
     queue_for,
 )
+from fastprompter.core.watcher.engine import (
+    DISARMED,
+    ARMED,
+    WATCHING,
+    SENDING,
+)
 
 # state -> (lamp, tooltip). The lamp is text, not an icon, so it survives
 # every theme without a second asset to keep in step.
@@ -105,6 +111,29 @@ class QueueDialog(QDialog):
         outer = QVBoxLayout(self)
         outer.setContentsMargins(6, 6, 6, 6)
         outer.setSpacing(4)
+        
+        # ---- watcher status ----
+        watcher_box = QHBoxLayout()
+        watcher_box.setContentsMargins(4, 4, 4, 4)
+        watcher_box.setSpacing(8)
+        
+        self.lbl_watcher = QLabel(tr("Watcher:", self.lang))
+        watcher_box.addWidget(self.lbl_watcher)
+        
+        self.lbl_watcher_status = QLabel("")
+        self.lbl_watcher_status.setStyleSheet("font-weight: bold;")
+        watcher_box.addWidget(self.lbl_watcher_status)
+        
+        self.lbl_watcher_target = QLabel("")
+        watcher_box.addWidget(self.lbl_watcher_target, 1)
+        
+        self.btn_arm_watcher = QPushButton(tr("Arm Watcher...", self.lang))
+        self.btn_arm_watcher.setToolTip(tr("Configure which agent to send prompts to", self.lang))
+        self.btn_arm_watcher.clicked.connect(self.open_watcher_dialog)
+        watcher_box.addWidget(self.btn_arm_watcher)
+        
+        outer.addLayout(watcher_box)
+
         self.tabs = QTabWidget()
         self.tabs.setDocumentMode(True)
         outer.addWidget(self.tabs)
@@ -223,6 +252,51 @@ class QueueDialog(QDialog):
             self.tabs.setCurrentIndex(self._start_tab)
         self.refresh()
         self.tabs.currentChanged.connect(lambda _i: self.refresh())
+        
+        self.refresh_watcher_status()
+        try:
+            self.main_win.watcher_listen(self.refresh_watcher_status)
+        except Exception:
+            pass
+
+    def open_watcher_dialog(self):
+        from fastprompter.ui.watcher_dialog import WatcherDialog
+        WatcherDialog(self.main_win).show()
+
+    def refresh_watcher_status(self):
+        try:
+            engine = self.main_win.watcher_engine()
+            state = engine.state
+            target = engine.target.name if engine.target else ""
+        except Exception:
+            state = DISARMED
+            target = ""
+            
+        colors = {
+            DISARMED: "#888888",
+            ARMED: "#6aa9ff",
+            WATCHING: "#e0a03c",
+            SENDING: "#46b98a",
+        }
+        color = colors.get(state, "#888888")
+        self.lbl_watcher_status.setText(tr(state.upper(), self.lang))
+        self.lbl_watcher_status.setStyleSheet(f"font-weight: bold; color: {color};")
+        
+        if state == DISARMED:
+            self.lbl_watcher_target.setText(tr("Prompts are queued. Arm the Watcher to automatically send them to your AI agent.", self.lang))
+            self.lbl_watcher_target.setStyleSheet("color: #a0a0a0; font-style: italic;")
+            self.btn_arm_watcher.setText(tr("Arm Watcher...", self.lang))
+        else:
+            self.lbl_watcher_target.setText(f"[{target}]")
+            self.lbl_watcher_target.setStyleSheet("")
+            self.btn_arm_watcher.setText(tr("Watcher Settings...", self.lang))
+
+    def closeEvent(self, event):
+        try:
+            self.main_win.watcher_unlisten(self.refresh_watcher_status)
+        except Exception:
+            pass
+        super().closeEvent(event)
 
     # ---- skills -------------------------------------------------------
     def toggle_expanded(self, item_id):

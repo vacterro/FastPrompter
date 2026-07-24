@@ -10,8 +10,8 @@ from PyQt6 import sip
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QMenu, QSystemTrayIcon
 
-from fastprompter.core.translations import tr
 from fastprompter.core.config import create_tray_icon
+from fastprompter.core.translations import tr
 from fastprompter.utils.paths import get_resource_path
 
 _is_deleted = sip.isdeleted

@@ -1,10 +1,18 @@
-from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QListWidget, QPushButton, 
-    QLabel, QMessageBox, QListWidgetItem
-)
-from PyQt6.QtCore import Qt
 import os
 import shutil
+
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import (
+    QDialog,
+    QHBoxLayout,
+    QLabel,
+    QListWidget,
+    QListWidgetItem,
+    QMessageBox,
+    QPushButton,
+    QVBoxLayout,
+)
+
 
 class TrashDialog(QDialog):
     def __init__(self, main_win, trash_dir):
@@ -65,7 +73,7 @@ class TrashDialog(QDialog):
         filepath = item.data(Qt.ItemDataRole.UserRole)
         
         try:
-            with open(filepath, "r", encoding="utf-8") as f:
+            with open(filepath, encoding="utf-8") as f:
                 text = f.read()
                 
             # Create a new silo with this text
@@ -88,8 +96,8 @@ class TrashDialog(QDialog):
 
     def _empty_trash(self):
         reply = QMessageBox.question(
-            self, 
-            self.tr("Empty Trash"), 
+            self,
+            self.tr("Empty Trash"),
             self.tr("Do you want to delete ALL trash?\n\nYes: Delete text and files.\nNo: Delete text only, keep files."),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel
         )
