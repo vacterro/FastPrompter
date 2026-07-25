@@ -41,6 +41,23 @@ class _MockQTextCharFormat:
         self._font_point_size = None
         self._font_strike_out = False
 
+    def merge(self, other):
+        """Real QTextCharFormat.merge() copies over only the properties the
+        other format actually set. The highlighter relies on it so rules
+        compose (bold inside a heading) instead of the last one winning."""
+        if other is None:
+            return
+        for attr, unset in (("_font_family", None), ("_foreground", None),
+                            ("_background", None), ("_font_weight", None),
+                            ("_font_point_size", None), ("_anchor_href", None)):
+            val = getattr(other, attr, unset)
+            if val != unset:
+                setattr(self, attr, val)
+        for attr in ("_font_underline", "_font_italic", "_anchor", "_font_strike_out"):
+            if getattr(other, attr, False):
+                setattr(self, attr, True)
+        self._properties.update(getattr(other, "_properties", {}))
+
     def setFontStrikeOut(self, enabled):
         self._font_strike_out = enabled
 
@@ -137,6 +154,17 @@ class _MockQSyntaxHighlighter:
 
     def setFormat(self, start, length, fmt):
         self._format_calls.append((start, length, fmt))
+
+    def format(self, pos):
+        """Real QSyntaxHighlighter exposes this; the highlighter reads it to
+        MERGE a rule onto whatever is already applied instead of replacing
+        it (otherwise the last rule wins and bold renders as italic).
+        Returns the most recent format covering `pos`, else a blank one."""
+        for start, length, fmt in reversed(self._format_calls):
+            if start <= pos < start + length:
+                return fmt
+        from PyQt6.QtGui import QTextCharFormat
+        return QTextCharFormat()
 
     def rehighlight(self):
         """Clear format calls to simulate rehighlight."""

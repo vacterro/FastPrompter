@@ -113,7 +113,12 @@ class MarkdownHighlighter(QSyntaxHighlighter):
         # Italic: *text* or _text_ (single markers only)
         italic_format = QTextCharFormat()
         italic_format.setFontItalic(True)
-        self._highlighting_rules.append((re.compile(r'\*(?!\*).*?\*(?!\*)'), italic_format))
+        # The content must not contain the marker itself, and the opening
+        # marker must not sit next to a twin. The old `\*(?!\*).*?\*(?!\*)`
+        # matched INSIDE **bold**: it started on the second star and let
+        # `.*?` run to `bold*`, so the italic rule (applied later) replaced
+        # the bold weight and bold rendered as italic.
+        self._highlighting_rules.append((re.compile(r'(?<!\*)\*(?!\*)[^*\n]+\*(?!\*)'), italic_format))
         self._highlighting_rules.append((re.compile(r'(?<!_)_(?!_)[^_\n]+(?<!_)_(?!_)'), italic_format))
 
         # Header 1: # Text
@@ -270,13 +275,25 @@ class MarkdownHighlighter(QSyntaxHighlighter):
 
         for pattern, format in self._highlighting_rules:
             for match in pattern.finditer(text):
+                start, length = match.start(), match.end() - match.start()
                 if format.isAnchor():
                     url_match = self._link_pattern.match(match.group())
                     if url_match:
                         link_fmt = QTextCharFormat(format)
                         link_fmt.setAnchorHref(url_match.group(2))
-                        self.setFormat(match.start(), match.end() - match.start(), link_fmt)
+                        self._apply(start, length, link_fmt)
                     else:
-                        self.setFormat(match.start(), match.end() - match.start(), format)
+                        self._apply(start, length, format)
                 else:
-                    self.setFormat(match.start(), match.end() - match.start(), format)
+                    self._apply(start, length, format)
+
+    def _apply(self, start, length, fmt):
+        """Merge a rule's format onto what is already there.
+
+        setFormat() REPLACES the char format outright, so whichever rule ran
+        last won and everything it did not set was dropped — bold inside a
+        heading lost the heading, bold+italic lost the bold. Merging keeps
+        the properties each rule actually cares about."""
+        merged = QTextCharFormat(self.format(start))
+        merged.merge(fmt)
+        self.setFormat(start, length, merged)

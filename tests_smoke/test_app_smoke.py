@@ -8352,3 +8352,154 @@ def test_gap_bar_ignores_plain_click_without_ctrl(win):
     # no Ctrl press recorded -> release must not attempt a move
     bar._press_pos = None
     assert bar._press_pos is None
+
+
+# ---------------------------------------------------------------------------
+# T-594: gaps must survive a real DB round-trip.
+# ---------------------------------------------------------------------------
+
+
+def test_gaps_survive_a_real_db_round_trip(tmp_path):
+    import fastprompter.core.state as sm
+    db = tmp_path / "gaps.db"
+    orig = sm.get_db_path
+    sm.get_db_path = lambda profile_id=1: str(db)
+    try:
+        st = sm.FastPrompterState()
+        st.data["silo_gaps_all"] = {"Code": [1, 4], "Text": [2]}
+        st.data["silo_gaps"] = st.data["silo_gaps_all"]["Code"]
+        st.save_data_to_db("body", force=True)
+        st.conn.close()
+
+        st2 = sm.FastPrompterState()
+        assert st2.data["silo_gaps_all"] == {"Code": [1, 4], "Text": [2]}
+        st2.conn.close()
+    finally:
+        sm.get_db_path = orig
+
+
+def test_legacy_python_repr_gaps_are_recovered(tmp_path):
+    import sqlite3
+    import fastprompter.core.state as sm
+    db = tmp_path / "legacy.db"
+    orig = sm.get_db_path
+    sm.get_db_path = lambda profile_id=1: str(db)
+    try:
+        st = sm.FastPrompterState()
+        st.save_data_to_db("body", force=True)
+        st.conn.close()
+        # simulate what the buggy build wrote: python repr, not JSON
+        con = sqlite3.connect(db)
+        con.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+                    ("silo_gaps_all", "{'Code': [3, 7]}"))
+        con.commit()
+        con.close()
+
+        st2 = sm.FastPrompterState()
+        assert st2.data["silo_gaps_all"] == {"Code": [3, 7]}   # ast rescued it
+        st2.conn.close()
+    finally:
+        sm.get_db_path = orig
+
+
+# ---------------------------------------------------------------------------
+# T-595: Transfer to Project must move silo -> silo, not silo -> snippet.
+# ---------------------------------------------------------------------------
+
+
+def _two_projects(win):
+    cats = win.data["categories"]
+    names = list(win.data.get("cats_order") or cats.keys())
+    src, dst = names[0], names[1]
+    win.data["last_tab_idx"] = 0
+    win.on_tab_changed(0)
+    return src, dst
+
+
+def test_transfer_lands_in_destination_silos_not_snippets(win):
+    src, dst = _two_projects(win)
+    win.data["temp_presets"][0] = "# SAIPENVIEW payload"
+    snips_before = [s for s in win.data["categories"][dst] if s]
+    assert win.transfer_silo_to_project(0, dst) is True
+    dest_silos = win.data["temp_presets_all"][dst]
+    assert "# SAIPENVIEW payload" in dest_silos          # visible as a SILO
+    snips_after = [s for s in win.data["categories"][dst] if s]
+    assert len(snips_after) == len(snips_before)          # did NOT become a snippet
+    assert win.data["temp_presets"][0] == ""              # source row emptied
+
+
+def test_transfer_carries_the_colour_box(win):
+    src, dst = _two_projects(win)
+    win.data["temp_presets"][0] = "# coloured silo"
+    win.data["silo_colors"]["0"] = "#ff4444"
+    assert win.transfer_silo_to_project(0, dst) is True
+    dest_silos = win.data["temp_presets_all"][dst]
+    slot = dest_silos.index("# coloured silo")
+    assert win.data["silo_colors_all"][dst][str(slot)] == "#ff4444"
+    assert "0" not in win.data["silo_colors"]             # not left on the empty row
+
+
+def test_transfer_refuses_empty_and_same_project(win):
+    src, dst = _two_projects(win)
+    win.data["temp_presets"][1] = ""
+    assert win.transfer_silo_to_project(1, dst) is False   # empty silo
+    win.data["temp_presets"][1] = "# something"
+    assert win.transfer_silo_to_project(1, src) is False   # same project
+    assert win.transfer_silo_to_project(1, "NoSuchProject") is False
+    assert win.data["temp_presets"][1] == "# something"    # untouched
+
+
+def test_transfer_appends_when_destination_has_no_blank_row(win):
+    src, dst = _two_projects(win)
+    dest = win.data.setdefault("temp_presets_all", {}).setdefault(dst, [])
+    dest[:] = ["# full a", "# full b"]
+    win.data["temp_presets"][0] = "# overflow"
+    assert win.transfer_silo_to_project(0, dst) is True
+    assert dest[-1] == "# overflow"                        # grew, did not drop it
+
+
+# ---------------------------------------------------------------------------
+# T-596: bold must render bold, not get clobbered by the italic rule.
+# ---------------------------------------------------------------------------
+
+
+def _fmt_at(win, text, needle):
+    """Char format Qt actually applied to the first char of `needle`."""
+    from PyQt6.QtWidgets import QApplication
+    ta = win.text_area
+    win.preview_combo.setCurrentIndex(1)          # Live Preview attaches the highlighter
+    ta.document().setPlainText(text)
+    win.highlighter.rehighlight()
+    QApplication.processEvents()
+    pos = text.index(needle)
+    block = ta.document().findBlock(pos)
+    for r in block.layout().formats():
+        if r.start <= (pos - block.position()) < r.start + r.length:
+            return r.format
+    return None
+
+
+def test_bold_renders_bold_not_italic(win):
+    from PyQt6.QtGui import QFont
+    f = _fmt_at(win, "plain **loud** plain", "loud")
+    assert f is not None
+    assert f.fontWeight() == QFont.Weight.Bold
+    assert f.fontItalic() is False        # the old bug: bold showed as italic
+
+
+def test_italic_still_renders_italic(win):
+    f = _fmt_at(win, "plain *lean* plain", "lean")
+    assert f is not None and f.fontItalic() is True
+
+
+def test_bold_inside_a_heading_keeps_both(win):
+    from PyQt6.QtGui import QFont
+    f = _fmt_at(win, "# head **loud** rest", "loud")
+    assert f is not None and f.fontWeight() == QFont.Weight.Bold
+
+
+def test_strikethrough_and_underline_still_apply(win):
+    fs = _fmt_at(win, "a ~~gone~~ b", "gone")
+    assert fs is not None and fs.fontStrikeOut() is True
+    fu = _fmt_at(win, "a __under__ b", "under")
+    assert fu is not None and fu.fontUnderline() is True

@@ -6915,13 +6915,17 @@ class FastPrompter(
                 lambda i=idx, a=is_archive: self._transfer_to_snippet(i, a),
             )
             transfer_menu = menu.addMenu("➡ Transfer to Project")
+            _here = self.get_current_category() or ""
             for cat_name in self.data.get("cats_order", list(self.data["categories"].keys())):
                 if cat_name not in self.data["categories"]:
                     continue
+                if cat_name == _here and not is_archive:
+                    continue          # transferring into the current project is a no-op
                 transfer_menu.addAction(
                     cat_name,
-                    lambda i=idx, a=is_archive, c=cat_name: self._transfer_to_snippet(i, a, target_cat=c),
+                    lambda i=idx, a=is_archive, c=cat_name: self.transfer_silo_to_project(i, c, a),
                 )
+            transfer_menu.setEnabled(not transfer_menu.isEmpty())
             menu.addAction(
                 tr("⬆ Move to Top", getattr(self, "_current_lang", "EN")),
                 lambda i=idx, a=is_archive: self._move_silo_to_top(i, a),
@@ -6969,6 +6973,69 @@ class FastPrompter(
         self.activateWindow()
 
 
+
+    def transfer_silo_to_project(self, idx, target_cat, is_archive=False):
+        """Move a silo into another project's SILO list (T-595).
+
+        The old 'Transfer to Project' menu entry called _transfer_to_snippet,
+        so the silo landed in the target project's SNIPPETS instead: it
+        vanished from the silo list and looked deleted. This moves silo to
+        silo, and carries the colour/tick across so the destination looks
+        like the source did."""
+        presets = self.data["archive_temp_presets"] if is_archive else self.data["temp_presets"]
+        if not (0 <= idx < len(presets)) or not str(presets[idx]).strip():
+            return False
+        if target_cat not in self.data.get("categories", {}):
+            return False
+        cur_cat = self.get_current_category() or ""
+        if target_cat == cur_cat and not is_archive:
+            return False                      # already there
+
+        dest = self.data.setdefault("temp_presets_all", {}).setdefault(target_cat, [])
+        if not isinstance(dest, list):
+            return False
+        text = presets[idx]
+        self.add_data_undo_state("Transfer silo to project")
+        # reuse a blank row if there is one, otherwise grow the list
+        try:
+            dslot = dest.index("")
+        except ValueError:
+            dest.append("")
+            dslot = len(dest) - 1
+        dest[dslot] = text
+
+        # carry the colour box over, and take it off the row being emptied —
+        # leaving it behind is what made colours "disappear" on transfer
+        if not is_archive:
+            src_colors = self.data.get("silo_colors")
+            if isinstance(src_colors, dict):
+                moved = src_colors.pop(str(idx), "")
+                if moved:
+                    dst_colors = self.data.setdefault("silo_colors_all", {}).setdefault(target_cat, {})
+                    if isinstance(dst_colors, dict):
+                        dst_colors[str(dslot)] = moved
+            ticked = self.data.get("silo_ticked")
+            if isinstance(ticked, list) and idx in ticked:
+                ticked.remove(idx)
+                dst_t = self.data.setdefault("silo_ticked_all", {}).setdefault(target_cat, [])
+                if isinstance(dst_t, list) and dslot not in dst_t:
+                    dst_t.append(dslot)
+
+        presets[idx] = ""
+        # the emptied row must not keep pointing at anything
+        for key in ("pinned_silos", "silo_collapsed"):
+            lst = self.data.get(key)
+            if isinstance(lst, list) and idx in lst:
+                lst.remove(idx)
+        if not is_archive:
+            self.unnest_silo(idx) if hasattr(self, "unnest_silo") else None
+
+        if idx == self.active_temp_slot and not getattr(self, "editing_snippet", None):
+            self.clear_text(internal=True)
+        self.mark_dirty()
+        self.refresh_temp_presets()
+        self.play_sound("snippet")
+        return True
 
     def _transfer_to_snippet(self, idx, is_archive, target_cat=None):
         """Transfer silo content to a new snippet in the current (or given) category."""
