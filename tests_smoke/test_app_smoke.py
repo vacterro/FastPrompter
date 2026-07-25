@@ -8134,3 +8134,58 @@ def test_batch_save_exports_each_selected(win, monkeypatch):
     win.batch_save_selected_silos()
     assert sorted(saved) == [1, 3]
     win.clear_silo_selection()
+
+
+# ---------------------------------------------------------------------------
+# T-590: user-defined sidebar gaps (per-category, survive reorder).
+# ---------------------------------------------------------------------------
+
+
+def test_silo_gap_toggle_adds_and_removes(win):
+    win.data["silo_gaps"] = []
+    win.toggle_silo_gap(2)
+    assert 2 in win.data["silo_gaps"]
+    win.toggle_silo_gap(2)
+    assert 2 not in win.data["silo_gaps"]
+
+
+def test_silo_gap_is_aliased_into_per_category_store(win):
+    win.data["silo_gaps"] = []
+    cat = win.get_current_category() or ""
+    win.data.setdefault("silo_gaps_all", {})[cat] = win.data["silo_gaps"]
+    win.toggle_silo_gap(1)
+    # mutating the active alias is visible through the per-category store
+    assert 1 in win.data["silo_gaps_all"][cat]
+
+
+def test_silo_gap_survives_reorder_remap(win):
+    win.data["silo_gaps"] = [3]
+    win._remap_silo_indices(lambda i: 5 if i == 3 else i)
+    assert win.data["silo_gaps"] == [5]
+
+
+def test_refresh_with_a_gap_does_not_crash(win):
+    if len(win.data["temp_presets"]) < 2:
+        win.data["temp_presets"].extend([""] * (2 - len(win.data["temp_presets"])))
+    win.data["silo_gaps"] = [0]
+    win.refresh_temp_presets()  # must not raise
+    win.data["silo_gaps"] = []
+    win.refresh_temp_presets()
+
+
+def test_user_gap_widget_uses_configured_height(win):
+    if len(win.data["temp_presets"]) < 2:
+        win.data["temp_presets"].extend([""] * (2 - len(win.data["temp_presets"])))
+    win.data["silo_gap_height"] = "20"
+    win.data["silo_gaps"] = [0]
+    win.refresh_temp_presets()
+    # the window is never shown offscreen, so isVisible() is False for every
+    # widget (buttons included) — isHidden() is what tracks the explicit
+    # show/hide this code does.
+    pool = [g for g in getattr(win, "_user_gap_widgets", []) if not g.isHidden()]
+    assert pool, "expected a shown user gap widget"
+    assert pool[0].height() == 20
+    assert win.silos_widget.layout.indexOf(pool[0]) != -1
+    win.data["silo_gaps"] = []
+    win.refresh_temp_presets()
+    assert not [g for g in win._user_gap_widgets if not g.isHidden()]

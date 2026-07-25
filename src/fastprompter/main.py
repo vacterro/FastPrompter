@@ -339,6 +339,16 @@ class FastPrompter(
             call_c[first_cat] = dict(self.data["silo_colors"])
         self.data["silo_colors_all"] = call_c
         self.data["silo_colors"] = call_c.setdefault(first_cat, {})
+
+        # Per-category user-defined sidebar gaps (T-590): a gap renders below
+        # the silo whose slot index is listed. Slot-keyed exactly like
+        # silo_colors, so the existing reorder/delete remap keeps a gap
+        # attached to its position without any code of its own.
+        gaps_all = self.data.get("silo_gaps_all")
+        if not isinstance(gaps_all, dict):
+            gaps_all = {}
+        self.data["silo_gaps_all"] = gaps_all
+        self.data["silo_gaps"] = gaps_all.setdefault(first_cat, [])
         apall = self.data.get("archive_project_paths_all")
         if not isinstance(apall, dict):
             apall = {}
@@ -3107,6 +3117,9 @@ class FastPrompter(
             if hasattr(self, "sections_gap_widget"):
                 self.sections_gap_widget.setFixedHeight(v)
             self.mark_dirty()
+            # user-defined gaps (T-590) share this height, so repaint them too
+            if self.data.get("silo_gaps"):
+                self.refresh_temp_presets()
 
         self.spin_silo_gap.valueChanged.connect(_update_gap)
         gap_row.addWidget(self.spin_silo_gap)
@@ -4315,6 +4328,9 @@ class FastPrompter(
         ("silo_colors", "str_dict"),
         ("silo_folders", "str_dict"),
         ("silo_project_paths", "str_dict"),
+        # user-defined sidebar gaps (T-590): gap-below-this-slot, so an int
+        # list remaps for free when silos reorder/delete like the rest.
+        ("silo_gaps", "int_list"),
     )
 
     # The archive is its own index space with its own slot-keyed stores.
@@ -5585,7 +5601,7 @@ class FastPrompter(
                 "silo_ticked_all", "silo_children_all", "silo_collapsed_all",
                 "silo_colors_all", "silo_folders_all", "archive_silo_folders_all",
                 "silo_last_edited_all", "silo_project_paths_all", "archive_project_paths_all",
-                "watcher_queues_all",
+                "watcher_queues_all", "silo_gaps_all",
             ]
             for key in _all_keys:
                 if key in self.data and old_cat in self.data[key]:
@@ -5666,7 +5682,7 @@ class FastPrompter(
                 "silo_ticked_all", "silo_children_all", "silo_collapsed_all",
                 "silo_colors_all", "silo_folders_all", "archive_silo_folders_all",
                 "silo_last_edited_all", "silo_project_paths_all", "archive_project_paths_all",
-                "watcher_queues_all",
+                "watcher_queues_all", "silo_gaps_all",
             ]
             for key in _all_keys:
                 self.data.get(key, {}).pop(cat, None)
@@ -5725,6 +5741,9 @@ class FastPrompter(
             )
             self.data["silo_colors"] = self.data.setdefault("silo_colors_all", {}).setdefault(
                 cat, {}
+            )
+            self.data["silo_gaps"] = self.data.setdefault("silo_gaps_all", {}).setdefault(
+                cat, []
             )
             self.data["archive_silo_folders"] = self.data.setdefault("archive_silo_folders_all", {}).setdefault(
                 cat, {}
@@ -6419,6 +6438,43 @@ class FastPrompter(
             self.silos_widget.layout.insertWidget(first_unpinned_ui_index, self.silo_gap_widget)
             self.silo_gap_widget.show()
 
+        # -- user-defined gaps (T-590) --------------------------------------
+        # A spacer below each visible silo whose slot is in silo_gaps. Pooled
+        # frames, re-placed by live layout index each refresh so they coexist
+        # with the pinned/unpinned divider above.
+        gaps = self.data.get("silo_gaps") or []
+        pool = getattr(self, "_user_gap_widgets", None)
+        if pool is None:
+            pool = self._user_gap_widgets = []
+        for gw in pool:
+            self.silos_widget.layout.removeWidget(gw)
+            gw.hide()
+        if gaps:
+            try:
+                gap_h = int(self.data.get("silo_gap_height", 8))
+            except (TypeError, ValueError):
+                gap_h = 8
+            gap_h = max(2, min(80, gap_h))
+            from PyQt6.QtWidgets import QFrame
+            need = 0
+            for i, btn in enumerate(self.silo_buttons):
+                disp_pos = start_idx + i
+                if disp_pos >= len(display_order) or i >= self._visible_silos:
+                    continue
+                if display_order[disp_pos] not in gaps:
+                    continue
+                while len(pool) <= need:
+                    f = QFrame(self)
+                    f.setObjectName("SiloUserGap")
+                    f.setStyleSheet("margin: 0px 8px; background: transparent;")
+                    pool.append(f)
+                gw = pool[need]
+                need += 1
+                gw.setFixedHeight(gap_h)
+                self.silos_widget.layout.insertWidget(
+                    self.silos_widget.layout.indexOf(btn) + 1, gw)
+                gw.show()
+
     def _overlay_silo_bg(self, bg_color, last_ts):
         diff = time.time() - last_ts
         custom = self._get_custom_colors()
@@ -6593,6 +6649,19 @@ class FastPrompter(
         self._silo_selection = set()
         self.refresh_temp_presets()
 
+    def toggle_silo_gap(self, idx):
+        """T-590: add/remove a user gap rendered below the silo at ``idx``."""
+        gaps = self.data.get("silo_gaps")
+        if not isinstance(gaps, list):
+            gaps = self.data["silo_gaps"] = []
+            self.data.setdefault("silo_gaps_all", {})[self.get_current_category() or ""] = gaps
+        if idx in gaps:
+            gaps.remove(idx)
+        else:
+            gaps.append(idx)
+        self.mark_dirty()
+        self.refresh_temp_presets()
+
     def show_temp_menu(self, idx, pos, is_archive=False):
         cur = self.text_area.toPlainText().strip()
         menu = QMenu(self)
@@ -6652,6 +6721,12 @@ class FastPrompter(
             menu.addAction(
                 tr("↳ New Child Silo", getattr(self, "_current_lang", "EN")),
                 lambda i=idx: self.new_child_silo(i))
+            gaps_now = self.data.get("silo_gaps") or []
+            menu.addAction(
+                tr("␣ Remove gap below", getattr(self, "_current_lang", "EN"))
+                if idx in gaps_now else
+                tr("␣ Insert gap below", getattr(self, "_current_lang", "EN")),
+                lambda i=idx: self.toggle_silo_gap(i))
             menu.addSeparator()
         menu.addAction(tr("📁 Files…", getattr(self, "_current_lang", "EN")), lambda i=idx, a=is_archive: self.open_file_container(i, a))
         menu.addAction(tr("⚙ Configure Project Paths...", getattr(self, "_current_lang", "EN")), lambda i=idx: self.open_silo_settings(i))
