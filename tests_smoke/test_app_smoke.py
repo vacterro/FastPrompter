@@ -8714,3 +8714,43 @@ def test_insert_at_top_shifts_every_slot_keyed_store(win):
     win.data["silo_children"], win.data["silo_gaps"] = {}, []
     win.data["watcher_queues"], win.data["silo_colors"] = {}, {}
     win.data["silo_ticked"], win.data["pinned_silos"] = [], []
+
+
+# ---------------------------------------------------------------------------
+# Hidden bug: int-keyed maps arrive stringified after a profile switch.
+# ---------------------------------------------------------------------------
+
+
+def test_normalise_int_keys_fixes_a_stringified_map_in_place(win):
+    win.data["silo_last_edited_all"] = {"Code": {"1": 1700000000, "2": 1700000001}}
+    inner = win.data["silo_last_edited_all"]["Code"]
+    win._normalise_int_keys("silo_last_edited_all")
+    assert set(inner) == {1, 2}                     # same object, coerced
+    assert win.data["silo_last_edited_all"]["Code"] is inner
+    win.data["silo_last_edited_all"] = {}
+
+
+def test_normalise_int_keys_survives_junk(win):
+    win.data["silo_last_edited_all"] = {"Code": {"x": 1, "3": 2}, "Text": "not-a-dict"}
+    win._normalise_int_keys("silo_last_edited_all")
+    assert set(win.data["silo_last_edited_all"]["Code"]) == {3}   # junk key dropped
+    win.data["silo_last_edited_all"] = {}
+
+
+def test_int_keys_do_not_survive_json_unaided(tmp_path):
+    """Pins the reason the normaliser exists: the DB really does hand back
+    string keys, so any path that skips normalising is broken."""
+    import fastprompter.core.state as sm
+    orig = sm.get_db_path
+    sm.get_db_path = lambda profile_id=1: str(tmp_path / "k.db")
+    try:
+        st = sm.FastPrompterState()
+        st.data["silo_last_edited_all"] = {"Code": {1: 1700000000}}
+        st.save_data_to_db("x", force=True)
+        st.conn.close()
+        st2 = sm.FastPrompterState()
+        keys = list(st2.data["silo_last_edited_all"]["Code"])
+        assert keys == ["1"] and isinstance(keys[0], str)
+        st2.conn.close()
+    finally:
+        sm.get_db_path = orig

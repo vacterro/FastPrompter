@@ -3821,6 +3821,10 @@ class FastPrompter(
         self.state.switch_profile(idx + 1)
         self.data = self.state.data
         cat = self.data["cats_order"][0] if self.data.get("cats_order") else "Text"
+        # the new profile's data came straight from JSON, so int-keyed maps
+        # arrive stringified — normalise before anything indexes them
+        self._normalise_int_keys("silo_last_edited_all")
+        self._normalise_int_keys("silo_children_all")
         self.silo_last_edited = self.data.setdefault("silo_last_edited_all", {}).setdefault(cat, {})
 
         # Rebuild document caches for the new profile
@@ -6815,6 +6819,30 @@ class FastPrompter(
             end = j
             j += 1
         return end
+
+    def _normalise_int_keys(self, all_key):
+        """Coerce every category map under ``data[all_key]`` to int keys.
+
+        JSON has no int keys, so a save/load round-trip returns {"1": ...}
+        while every reader indexes with an int. Boot normalises these once,
+        but a PROFILE SWITCH swaps in a freshly loaded dict and skipped it —
+        so switching profiles flattened the silo hierarchy and killed the
+        recency colours until the app was restarted. Mutates in place: these
+        maps are aliased, rebinding them would orphan the alias."""
+        store = self.data.get(all_key)
+        if not isinstance(store, dict):
+            return
+        for cmap in store.values():
+            if not isinstance(cmap, dict) or all(isinstance(k, int) for k in cmap):
+                continue
+            fixed = {}
+            for k, v in cmap.items():
+                try:
+                    fixed[int(k)] = v
+                except (TypeError, ValueError):
+                    continue
+            cmap.clear()
+            cmap.update(fixed)
 
     def _slot_list(self, key):
         """The active category's slot-index list for ``key``, always aliased.
