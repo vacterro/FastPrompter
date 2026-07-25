@@ -503,9 +503,18 @@ class DraggableSiloButton(QWidget):
 
         # tick sits leftmost — before the order number in the title;
         # files button rightmost: with files it doubles as the 📁N counter
+        # The colour box owns the leftmost column and never moves: it used to
+        # sit after the collapse/tick buttons (each shown conditionally) and
+        # inside the row's child indent, so its x drifted per row and the
+        # boxes zig-zagged down the sidebar. Indent now comes from a spacer
+        # AFTER the box, so nesting shifts the text and not the swatch.
+        self._silo_layout.addWidget(self._btn_color_box)
+        self._indent = QWidget()
+        self._indent.setFixedWidth(0)
+        self._indent.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self._silo_layout.addWidget(self._indent)
         self._silo_layout.addWidget(self._btn_collapse)
         self._silo_layout.addWidget(self._btn_tick)
-        self._silo_layout.addWidget(self._btn_color_box)
         self._silo_layout.addWidget(self._lbl_text)
         self._silo_layout.addStretch()
         self._silo_layout.addWidget(self._btn_pin)
@@ -693,8 +702,10 @@ class DraggableSiloButton(QWidget):
         self.full_name = text_label
         self._line_count_str = line_count_str
         self.global_idx = global_idx
-        # children sit shifted right under their parent
-        self._silo_layout.setContentsMargins(20 if is_child else 3, 1, 3, 1)
+        # constant left margin so the colour column is identical on every row;
+        # children get their shift from the spacer after the swatch instead
+        self._silo_layout.setContentsMargins(3, 1, 3, 1)
+        self._indent.setFixedWidth(17 if is_child else 0)
 
         if has_children:
             self._btn_collapse.setText("▸" if is_collapsed else "▾")
@@ -718,14 +729,26 @@ class DraggableSiloButton(QWidget):
             self._btn_pin.setToolTip(tr("Pin this silo to top", getattr(self.main_win, "_current_lang", "EN")))
             self._btn_pin.hide()
         
+        # While the feature is ON the swatch column is reserved on EVERY row,
+        # even where there is nothing to show: hiding the button collapsed its
+        # width and shunted that row's title left, so titles never lined up
+        # down the list. A colourless row gets an invisible, click-dead
+        # placeholder. Turning the feature off reclaims the column entirely.
+        if self.main_win.data.get("silo_color_box", "True") != "True":
+            self._btn_color_box.hide()
+        else:
+            self._btn_color_box.show()
         if has_hash:
             if color_hex:
                 self._btn_color_box.setStyleSheet(f"background: {color_hex}; border: 1px solid #777; border-radius: 2px;")
             else:
                 self._btn_color_box.setStyleSheet("background: transparent; border: 1px dashed #777; border-radius: 2px;")
-            self._btn_color_box.show()
+            self._btn_color_box.setEnabled(True)
+            self._btn_color_box.setCursor(Qt.CursorShape.PointingHandCursor)
         else:
-            self._btn_color_box.hide()
+            self._btn_color_box.setStyleSheet("background: transparent; border: none;")
+            self._btn_color_box.setEnabled(False)
+            self._btn_color_box.setCursor(Qt.CursorShape.ArrowCursor)
             
         # one files control, far right: with files it IS the counter and
         # stays visible; empty silos only reveal a plain 📁 on hover

@@ -2154,10 +2154,16 @@ class FastPrompter(
         self.cat_combo.customContextMenuRequested.connect(self.show_cat_context_menu)
         
         self.btn_new = QPushButton(tr("NEW", getattr(self, "_current_lang", "EN")))
-        self.btn_new.setToolTip(tr("NEW ({})", self._current_lang).format(self.data.get('hk_new_snippet', 'Ctrl+N')))
+        self.btn_new.setToolTip(
+            tr("NEW ({})", self._current_lang).format(self.data.get('hk_new_snippet', 'Ctrl+N'))
+            + "\n" + tr("Right-click: new silo at the bottom", self._current_lang))
         self.apply_button_size(self.btn_new, 24)
         self.btn_new.setMinimumWidth(80)
         self.btn_new.clicked.connect(self.select_empty_silo)
+        # right-click creates from the BOTTOM instead of the top (T-598)
+        self.btn_new.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.btn_new.customContextMenuRequested.connect(
+            lambda *_a: self.append_empty_silo())
 
         self.btn_save = QPushButton(tr("Save", getattr(self, "_current_lang", "EN")))
         self.btn_save.setToolTip(tr("Save ({})", self._current_lang).format(self.data.get('hk_save_snippet', 'Ctrl+S')))
@@ -4559,12 +4565,9 @@ class FastPrompter(
         onto itself used to remove it and then look it up again, which threw
         ValueError straight out of the event handler and killed the app.
         """
-        pinned = self.data.get("pinned_silos", [])
-        if not isinstance(pinned, list):
-            pinned = []
+        pinned = self._slot_list("pinned_silos")
 
         def commit(changed):
-            self.data["pinned_silos"] = pinned
             if changed:
                 self.mark_dirty()
                 self.refresh_temp_presets()
@@ -6813,13 +6816,24 @@ class FastPrompter(
             j += 1
         return end
 
+    def _slot_list(self, key):
+        """The active category's slot-index list for ``key``, always aliased.
+
+        Several callers used to do `lst = data.get(k, [])` and, when the value
+        was missing or corrupt, rebind `data[k] = []`. That silently ORPHANS
+        the alias into `<key>_all[category]`, so the value stopped being
+        per-project and never reached the DB. Creating it here keeps both
+        sides pointing at the same list."""
+        lst = self.data.get(key)
+        if not isinstance(lst, list):
+            lst = []
+            self.data[key] = lst
+            self.data.setdefault(f"{key}_all", {})[self.get_current_category() or ""] = lst
+        return lst
+
     def _silo_gaps_list(self):
         """The active category's gap list, created and aliased if missing."""
-        gaps = self.data.get("silo_gaps")
-        if not isinstance(gaps, list):
-            gaps = self.data["silo_gaps"] = []
-            self.data.setdefault("silo_gaps_all", {})[self.get_current_category() or ""] = gaps
-        return gaps
+        return self._slot_list("silo_gaps")
 
     def toggle_silo_gap(self, idx):
         """T-590: add/remove a user gap rendered below the silo at ``idx``."""
@@ -7111,6 +7125,20 @@ class FastPrompter(
         empty = [k for k, v in cmap.items() if not v]
         for k in empty:
             cmap.pop(k, None)
+        # Every caller looks these up with an INT slot index. A str key makes
+        # the lookup miss, which does not merely drop the indent: the child is
+        # still counted as somebody's kid, so it is excluded from the top
+        # level and then never emitted under its parent — the silo disappears
+        # from the sidebar. Normalise in place, at the single read point.
+        if any(not isinstance(k, int) for k in cmap):
+            fixed = {}
+            for k, v in cmap.items():
+                try:
+                    fixed[int(k)] = [int(x) for x in v]
+                except (TypeError, ValueError):
+                    continue
+            cmap.clear()
+            cmap.update(fixed)
         return cmap
 
     def silo_depth(self, idx, _seen=None):
@@ -7269,10 +7297,7 @@ class FastPrompter(
     def _toggle_tick_silo(self, idx):
         """Toggle the ✅ done-mark on a silo (persists per project)."""
         self.add_data_undo_state("Tick silo")
-        ticked = self.data.get("silo_ticked", [])
-        if not isinstance(ticked, list):
-            ticked = []
-            self.data["silo_ticked"] = ticked
+        ticked = self._slot_list("silo_ticked")
         if idx in ticked:
             ticked.remove(idx)
         else:
@@ -7284,10 +7309,7 @@ class FastPrompter(
     def _toggle_pin_silo(self, idx):
         """Toggle pin/unpin status for a silo."""
         self.add_data_undo_state("Pin silo")
-        pinned = self.data.get("pinned_silos", [])
-        if not isinstance(pinned, list):
-            pinned = []
-            self.data["pinned_silos"] = pinned
+        pinned = self._slot_list("pinned_silos")
         if idx in pinned:
             pinned.remove(idx)
         else:

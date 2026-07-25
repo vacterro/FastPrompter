@@ -788,47 +788,16 @@ class SnippetOpsMixin:
         doc.setDefaultFont(self.text_area.font())
         docs.insert(0, doc)
 
-        # Shift silo_last_edited and pinned indices down (insert-at-top).
-        # In-place: both containers are aliases into per-category stores.
-        if not getattr(self, "active_is_archive", False) and hasattr(self, "silo_last_edited"):
-            new_edited = {k + 1: v for k, v in self.silo_last_edited.items() if k + 1 < 100}
-            self.silo_last_edited.clear()
-            self.silo_last_edited.update(new_edited)
-            pinned = self.data.get("pinned_silos", [])
-            if isinstance(pinned, list):
-                pinned[:] = [p + 1 for p in pinned if p + 1 < 100]
-            ticked = self.data.get("silo_ticked", [])
-            if isinstance(ticked, list):
-                ticked[:] = [p + 1 for p in ticked if p + 1 < 100]
-            collapsed = self.data.get("silo_collapsed", [])
-            if isinstance(collapsed, list):
-                collapsed[:] = [p + 1 for p in collapsed if p + 1 < 100]
-            
-            for dict_name in ("silo_colors", "silo_folders", "silo_project_paths"):
-                d = self.data.get(dict_name, {})
-                if isinstance(d, dict):
-                    new_d = {}
-                    for k, v in d.items():
-                        try:
-                            if int(k) + 1 < 100:
-                                new_d[str(int(k) + 1)] = v
-                        except (ValueError, TypeError):
-                            new_d[k] = v
-                    d.clear()
-                    d.update(new_d)
-                    
-            cmap = self.data.get("silo_children", {})
-            if isinstance(cmap, dict):
-                new_cmap = {}
-                for p, kids in cmap.items():
-                    try:
-                        np = int(p) + 1
-                        if np < 100:
-                            new_cmap[str(np)] = [k + 1 for k in kids if k + 1 < 100]
-                    except (ValueError, TypeError):
-                        pass
-                cmap.clear()
-                cmap.update(new_cmap)
+        # Insert-at-top shifts every slot index down by one. This used to be
+        # a hand-rolled copy of that shift, which drifted from the canonical
+        # table twice: it wrote str() children keys (orphaning whole subtrees,
+        # so a child silo vanished from the sidebar) and it never shifted
+        # watcher_queues at all (every queue moved to the wrong silo). One
+        # remap through _SILO_INDEX_STATE keeps all nine stores in step.
+        # silo_gaps is intentionally NOT in that table: gaps are positional
+        # and must stay on the row the user parked them on.
+        if not getattr(self, "active_is_archive", False) and hasattr(self, "_remap_silo_indices"):
+            self._remap_silo_indices(lambda i: i + 1)
 
         self.silo_page = 0
         self.active_temp_slot = 0

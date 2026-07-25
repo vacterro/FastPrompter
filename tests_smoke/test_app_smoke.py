@@ -8573,3 +8573,144 @@ def test_subtree_end_is_cycle_safe(win):
     # a corrupt parent map must not hang the render
     child_of = {1: 2, 2: 1}
     assert win._subtree_end(0, [0, 1, 2], child_of) == 0
+
+
+# ---------------------------------------------------------------------------
+# T-597: the colour swatch owns a fixed left column on every row.
+# ---------------------------------------------------------------------------
+
+
+def test_colour_box_column_is_identical_on_every_row(win):
+    from PyQt6.QtWidgets import QApplication
+    p = win.data["temp_presets"]
+    while len(p) < 5:
+        p.append("")
+    p[0], p[1], p[2] = "# parent hash", "# child hash", "plain no hash"
+    p[3], p[4] = "# third", "# fourth"
+    win.data["silo_children"] = {0: [1]}
+    win.data["silo_collapsed"] = []
+    win.data["silo_colors"] = {"0": "#ff4444"}
+    win.data["silo_color_box"] = "True"
+    win.refresh_temp_presets()
+    QApplication.processEvents()
+    xs = {b._btn_color_box.x() for b in win.silo_buttons[:5] if not b.isHidden()}
+    assert len(xs) == 1, f"swatch drifts between rows: {xs}"
+    win.data["silo_children"] = {}
+
+
+def test_colour_box_keeps_its_slot_when_row_has_no_colour(win):
+    from PyQt6.QtWidgets import QApplication
+    p = win.data["temp_presets"]
+    while len(p) < 2:
+        p.append("")
+    p[0], p[1] = "# has hash", "plain text"
+    win.data["silo_children"] = {}
+    win.data["silo_colors"] = {}
+    win.data["silo_color_box"] = "True"
+    win.refresh_temp_presets()
+    QApplication.processEvents()
+    b0, b1 = win.silo_buttons[0], win.silo_buttons[1]
+    # both reserve the column; the colourless one is present but click-dead
+    assert not b0._btn_color_box.isHidden() and not b1._btn_color_box.isHidden()
+    assert b1._btn_color_box.isEnabled() is False
+    assert b0._btn_color_box.width() == b1._btn_color_box.width()
+
+
+# ---------------------------------------------------------------------------
+# T-598 / hidden bug: NEW from bottom, and insert-at-top must not orphan kids.
+# ---------------------------------------------------------------------------
+
+
+def test_right_click_new_appends_at_the_bottom(win):
+    from PyQt6.QtCore import QPoint
+    p = win.data["temp_presets"]
+    for i in range(len(p)):
+        p[i] = f"# filled {i}"
+    # creation flushes the editor into the active slot first, so keep them in
+    # sync or that row is blanked and mistaken for a top insert
+    win.active_temp_slot = 0
+    win.text_area.document().setPlainText(p[0])
+    before = len(p)
+    win.btn_new.customContextMenuRequested.emit(QPoint(1, 1))
+    after = win.data["temp_presets"]
+    assert len(after) == before + 1
+    assert after[-1] == ""              # new row is at the END
+    assert after[0] == "# filled 0"     # top untouched
+
+
+def test_insert_at_top_keeps_children_int_keyed_and_visible(win):
+    from PyQt6.QtWidgets import QApplication
+    p = win.data["temp_presets"]
+    for i in range(len(p)):
+        p[i] = f"# silo {i}"
+    win.data["silo_children"] = {0: [1]}
+    win.data["silo_collapsed"] = []
+    win.refresh_temp_presets()
+    QApplication.processEvents()
+    win.select_empty_silo()
+    QApplication.processEvents()
+    cmap = win.data["silo_children"]
+    # shifted down by one, and still INT-keyed: a str key made the child both
+    # un-indented AND absent from the sidebar entirely
+    assert cmap == {1: [2]}
+    assert all(isinstance(k, int) for k in cmap)
+    shown = {b.global_idx for b in win.silo_buttons if not b.isHidden()}
+    assert 2 in shown
+    indents = {b.global_idx: b._indent.width() for b in win.silo_buttons if not b.isHidden()}
+    assert indents.get(2, 0) > 0          # renders as a child again
+    win.data["silo_children"] = {}
+
+
+def test_children_map_normalises_string_keys(win):
+    win.data["silo_children"] = {"3": ["4"]}
+    assert win._children_map() == {3: [4]}
+    assert all(isinstance(k, int) for k in win.data["silo_children"])
+    win.data["silo_children"] = {}
+
+
+def test_insert_at_top_shifts_watcher_queues(win):
+    p = win.data["temp_presets"]
+    for i in range(len(p)):
+        p[i] = f"# silo {i}"
+    win.data["watcher_queues"] = {"0": ["job-a"]}
+    win.select_empty_silo()
+    assert win.data["watcher_queues"].get("1") == ["job-a"]   # followed its silo
+    win.data["watcher_queues"] = {}
+
+
+def test_slot_list_keeps_the_per_category_alias(win):
+    # a corrupt value used to be replaced with a fresh list and rebound,
+    # orphaning <key>_all[category] so ticks/pins stopped being per-project
+    cat = win.get_current_category() or ""
+    win.data["silo_ticked"] = "corrupt-not-a-list"
+    lst = win._slot_list("silo_ticked")
+    lst.append(7)
+    assert win.data["silo_ticked_all"][cat] is lst
+    assert 7 in win.data["silo_ticked_all"][cat]
+    win.data["silo_ticked"] = []
+    win.data["silo_ticked_all"][cat] = win.data["silo_ticked"]
+
+
+def test_insert_at_top_shifts_every_slot_keyed_store(win):
+    p = win.data["temp_presets"]
+    for i in range(len(p)):
+        p[i] = f"# silo {i}"
+    win.active_temp_slot = 0
+    win.text_area.document().setPlainText(p[0])
+    win.data["silo_ticked"] = [0]
+    win.data["pinned_silos"] = [1]
+    win.data["silo_colors"] = {"0": "#abcdef"}
+    win.data["watcher_queues"] = {"0": ["q"]}
+    win.data["silo_children"] = {2: [3]}
+    win.data["silo_gaps"] = [0]
+    win.select_empty_silo()
+    assert win.data["silo_ticked"] == [1]
+    assert win.data["pinned_silos"] == [2]
+    assert win.data["silo_colors"].get("1") == "#abcdef"
+    assert win.data["watcher_queues"].get("1") == ["q"]
+    assert win.data["silo_children"] == {3: [4]}
+    # gaps are positional on purpose — they must NOT ride along
+    assert win.data["silo_gaps"] == [0]
+    win.data["silo_children"], win.data["silo_gaps"] = {}, []
+    win.data["watcher_queues"], win.data["silo_colors"] = {}, {}
+    win.data["silo_ticked"], win.data["pinned_silos"] = [], []
