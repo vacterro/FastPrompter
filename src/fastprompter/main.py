@@ -2018,6 +2018,79 @@ class FastPrompter(
         }
 
         self.state.save_data_to_db(current_text, ui_settings, force=force)
+        self.sync_to_disk()
+
+    # -- T-591: one-way mirror of silo text onto disk -------------------------
+    def _sync_name_for(self, idx, presets):
+        from fastprompter.ui.file_container import silo_slug
+        raw = presets[idx] if 0 <= idx < len(presets) else ""
+        return f"{idx + 1:02d}_{silo_slug(raw) or 'blank'}"
+
+    def _sync_rel_paths(self):
+        """{slot: relative path} for the active category. Children nest under
+        their parent's folder; a broken parent chain falls back to flat."""
+        presets = self.data.get("temp_presets", [])
+        # silo_children keys are ints in memory but strings once the map has
+        # been through a JSON round-trip, so coerce both ends.
+        parent_of = {}
+        for parent, kids in (self._children_map() or {}).items():
+            try:
+                p = int(parent)
+            except (TypeError, ValueError):
+                continue
+            for k in kids or ():
+                try:
+                    parent_of[int(k)] = p
+                except (TypeError, ValueError):
+                    continue
+        out = {}
+        for i in range(len(presets)):
+            parts, cur, seen = [self._sync_name_for(i, presets)], i, {i}
+            while cur in parent_of:
+                cur = parent_of[cur]
+                if cur in seen or not (0 <= cur < len(presets)):
+                    break          # cycle or dangling parent: stop climbing
+                seen.add(cur)
+                parts.append(self._sync_name_for(cur, presets))
+            out[i] = os.path.join(*reversed(parts))
+        return out
+
+    def sync_to_disk(self, force=False):
+        """Mirror the current silo (or the whole hierarchy) to sync_path.
+
+        One-way, app -> disk. Never reads back, never deletes: a stale file
+        from a renamed silo is left alone rather than risking user data."""
+        mode = self.data.get("sync_mode", "Off")
+        root = str(self.data.get("sync_path", "") or "").strip()
+        if mode not in ("Silo", "Hierarchy") or not root:
+            return
+        presets = self.data.get("temp_presets", [])
+        if mode == "Silo":
+            slots = [self.active_temp_slot]
+        else:
+            slots = [i for i in range(len(presets)) if presets[i].strip()]
+        rels = self._sync_rel_paths()
+        cache = getattr(self, "_sync_written", None)
+        if cache is None:
+            cache = self._sync_written = {}
+        cat = self.get_current_category() or ""
+        from fastprompter.core.logging import logger
+        for i in slots:
+            if not (0 <= i < len(presets)):
+                continue
+            text = presets[i]
+            if mode == "Hierarchy" and not text.strip():
+                continue
+            dest = os.path.join(root, cat, rels.get(i, self._sync_name_for(i, presets)) + ".md")
+            if not force and cache.get(dest) == text:
+                continue           # unchanged since the last mirror
+            try:
+                os.makedirs(os.path.dirname(dest), exist_ok=True)
+                with open(dest, "w", encoding="utf-8") as fh:
+                    fh.write(text)
+                cache[dest] = text
+            except OSError as e:
+                logger.warning("sync_to_disk failed for %s: %s", dest, e)
 
     def init_ui(self):
         flags = Qt.WindowType.Window
@@ -3142,6 +3215,51 @@ class FastPrompter(
         gap_row.addWidget(self.spin_drag_width)
         gap_row.addStretch(1)
 
+        # --- T-591: mirror silo text onto disk ---
+        sync_row = QHBoxLayout()
+        sync_row.setSpacing(4)
+        lbl_sync = QLabel(tr("Sync to disk:", self._current_lang))
+        lbl_sync.setStyleSheet("color: #808080;")
+        sync_row.addWidget(lbl_sync)
+
+        self.combo_sync_mode = QComboBox()
+        self.combo_sync_mode.addItems(["Off", "Silo", "Hierarchy"])
+        self.combo_sync_mode.setToolTip(tr(
+            "Off: no mirror.\n"
+            "Silo: keep a copy of the current silo on disk.\n"
+            "Hierarchy: mirror every silo, children in subfolders.\n"
+            "One-way (app to disk) — files are never read back or deleted.",
+            self._current_lang))
+        mode_now = self.data.get("sync_mode", "Off")
+        if mode_now not in ("Off", "Silo", "Hierarchy"):
+            mode_now = "Off"
+        self.combo_sync_mode.setCurrentText(mode_now)
+        self.combo_sync_mode.currentTextChanged.connect(
+            lambda m: (self.data.update({"sync_mode": m}), self.mark_dirty(),
+                       self.sync_to_disk(force=True)))
+        sync_row.addWidget(self.combo_sync_mode)
+
+        self.btn_sync_path = QPushButton(tr("Folder…", self._current_lang))
+        self.btn_sync_path.setToolTip(self.data.get("sync_path", "") or tr("No folder chosen", self._current_lang))
+
+        def _pick_sync_path():
+            self.ignore_focus_loss = True
+            try:
+                d = QFileDialog.getExistingDirectory(
+                    self, tr("Choose sync folder", self._current_lang),
+                    self.data.get("sync_path", "") or "")
+            finally:
+                self.ignore_focus_loss = False
+            if d:
+                self.data.update({"sync_path": d})
+                self.btn_sync_path.setToolTip(d)
+                self.mark_dirty()
+                self.sync_to_disk(force=True)
+
+        self.btn_sync_path.clicked.connect(_pick_sync_path)
+        sync_row.addWidget(self.btn_sync_path)
+        sync_row.addStretch(1)
+
         # --- hover line + line heat tuning ---
         lbl_heat = QLabel(tr("Line tint:", self._current_lang))
         lbl_heat.setStyleSheet("color: #808080;")
@@ -3357,7 +3475,7 @@ class FastPrompter(
                 self.cb_sound, self.cb_typewriter, vol_row,
             ]),
             _settings_group("Files & backup", [
-                self.cb_portable_backup, files_row,
+                self.cb_portable_backup, files_row, sync_row,
             ]),
         ]), tr("Data", self._current_lang))
 

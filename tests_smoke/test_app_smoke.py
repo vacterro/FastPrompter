@@ -8189,3 +8189,88 @@ def test_user_gap_widget_uses_configured_height(win):
     win.data["silo_gaps"] = []
     win.refresh_temp_presets()
     assert not [g for g in win._user_gap_widgets if not g.isHidden()]
+
+
+# ---------------------------------------------------------------------------
+# T-591: one-way sync of silo text onto disk.
+# ---------------------------------------------------------------------------
+
+
+def _sync_setup(win, tmp_path, mode):
+    win.data["sync_path"] = str(tmp_path)
+    win.data["sync_mode"] = mode
+    win._sync_written = {}
+    return tmp_path
+
+
+def test_sync_off_writes_nothing(win, tmp_path):
+    _sync_setup(win, tmp_path, "Off")
+    win.sync_to_disk(force=True)
+    assert list(tmp_path.rglob("*.md")) == []
+
+
+def test_sync_without_path_writes_nothing(win, tmp_path):
+    win.data["sync_path"] = ""
+    win.data["sync_mode"] = "Hierarchy"
+    win.sync_to_disk(force=True)   # must not raise
+    assert list(tmp_path.rglob("*.md")) == []
+
+
+def test_sync_silo_mode_mirrors_active_slot(win, tmp_path):
+    _sync_setup(win, tmp_path, "Silo")
+    win.data["temp_presets"][0] = "# hello sync\nbody line"
+    win.active_temp_slot = 0
+    win.sync_to_disk(force=True)
+    files = list(tmp_path.rglob("*.md"))
+    assert len(files) == 1
+    assert files[0].read_text(encoding="utf-8") == "# hello sync\nbody line"
+
+
+def test_sync_hierarchy_mirrors_every_nonempty_silo(win, tmp_path):
+    _sync_setup(win, tmp_path, "Hierarchy")
+    presets = win.data["temp_presets"]
+    while len(presets) < 3:
+        presets.append("")
+    presets[0], presets[1], presets[2] = "# one", "# two", ""
+    win.sync_to_disk(force=True)
+    files = list(tmp_path.rglob("*.md"))
+    assert len(files) == 2          # the empty silo is skipped
+    assert {f.read_text(encoding="utf-8") for f in files} == {"# one", "# two"}
+
+
+def test_sync_skips_unchanged_text(win, tmp_path):
+    _sync_setup(win, tmp_path, "Silo")
+    # keep the FIRST line fixed: the filename is slugged from the title, so
+    # editing the title is a new file (rename never deletes the old one)
+    win.data["temp_presets"][0] = "# stable\nbody v1"
+    win.active_temp_slot = 0
+    win.sync_to_disk(force=True)
+    target = list(tmp_path.rglob("*.md"))[0]
+    target.write_text("TOUCHED", encoding="utf-8")
+    win.sync_to_disk()              # unchanged -> must not rewrite
+    assert target.read_text(encoding="utf-8") == "TOUCHED"
+    win.data["temp_presets"][0] = "# stable\nbody v2"
+    win.sync_to_disk()              # body changed -> same file, rewritten
+    assert target.read_text(encoding="utf-8") == "# stable\nbody v2"
+    assert len(list(tmp_path.rglob("*.md"))) == 1
+
+
+def test_sync_child_nests_under_parent_folder(win, tmp_path):
+    _sync_setup(win, tmp_path, "Hierarchy")
+    presets = win.data["temp_presets"]
+    while len(presets) < 2:
+        presets.append("")
+    presets[0], presets[1] = "# parent", "# child"
+    win.data["silo_children"] = {"0": [1]}
+    rels = win._sync_rel_paths()
+    assert rels[0] in rels[1] and rels[1] != rels[0]
+    win.data["silo_children"] = {}
+
+
+def test_sync_survives_a_parent_cycle(win):
+    presets = win.data["temp_presets"]
+    while len(presets) < 2:
+        presets.append("")
+    win.data["silo_children"] = {"0": [1], "1": [0]}
+    win._sync_rel_paths()          # must terminate, not hang or recurse away
+    win.data["silo_children"] = {}
