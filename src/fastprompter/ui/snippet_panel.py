@@ -1,6 +1,6 @@
 from PyQt6.QtCore import QEvent, QMimeData, QObject, Qt, QTimer
 from PyQt6.QtGui import QDrag, QFontMetrics
-from PyQt6.QtWidgets import QApplication, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QApplication, QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from fastprompter.core.config import extract_bg, extract_border_color, extract_color
 from fastprompter.core.translations import tr
@@ -875,6 +875,62 @@ class DraggableSiloButton(QWidget):
             e.accept()
             return
         super().mouseReleaseEvent(e)
+
+
+class SiloGapBar(QFrame):
+    """A user-placed separator in the silo list (T-590), draggable with
+    Ctrl+LeftButton to re-park it under a different row (T-593).
+
+    Ctrl is required so a stray click on a thin 8px strip cannot move the
+    layout by accident. The bar owns no silo: it is a position, so dragging
+    it rewrites its anchor slot and nothing about the silos themselves."""
+
+    GRAB_PX = 3
+
+    def __init__(self, main_win, parent=None):
+        super().__init__(parent)
+        self.main_win = main_win
+        self.slot_idx = -1
+        self._press_pos = None
+        self.setCursor(Qt.CursorShape.SizeVerCursor)
+        self.setToolTip(tr("Ctrl+drag to move this gap",
+                           getattr(main_win, "_current_lang", "EN")))
+
+    def mousePressEvent(self, e):
+        if (e.button() == Qt.MouseButton.LeftButton
+                and e.modifiers() & Qt.KeyboardModifier.ControlModifier):
+            self._press_pos = e.globalPosition().toPoint()
+            e.accept()
+            return
+        super().mousePressEvent(e)
+
+    def mouseReleaseEvent(self, e):
+        if self._press_pos is None:
+            super().mouseReleaseEvent(e)
+            return
+        start, self._press_pos = self._press_pos, None
+        drop = e.globalPosition().toPoint()
+        if (drop - start).manhattanLength() < self.GRAB_PX:
+            e.accept()
+            return                      # a click, not a drag
+        target = self._slot_under(drop)
+        if target is not None:
+            self.main_win.move_silo_gap(self.slot_idx, target)
+        e.accept()
+
+    def _slot_under(self, global_pos):
+        """Slot index of the silo button the cursor was released over."""
+        best = None
+        for btn in getattr(self.main_win, "silo_buttons", []):
+            if btn.isHidden() or getattr(btn, "global_idx", -1) < 0:
+                continue
+            top = btn.mapToGlobal(btn.rect().topLeft()).y()
+            if global_pos.y() >= top:
+                # keep the lowest row whose top edge is above the cursor, so
+                # the gap lands UNDER the row it was dropped on
+                if best is None or top > best[0]:
+                    best = (top, btn.global_idx)
+        return None if best is None else best[1]
 
 
 class SiloDropWidget(QWidget):

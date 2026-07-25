@@ -4446,10 +4446,14 @@ class FastPrompter(
         ("silo_colors", "str_dict"),
         ("silo_folders", "str_dict"),
         ("silo_project_paths", "str_dict"),
-        # user-defined sidebar gaps (T-590): gap-below-this-slot, so an int
-        # list remaps for free when silos reorder/delete like the rest.
-        ("silo_gaps", "int_list"),
     )
+    # NOTE: silo_gaps is deliberately NOT in the table above. A gap is a
+    # POSITION in the list, not a property of the silo it happens to sit
+    # under (T-593). Remapping it made the divider chase a silo around on
+    # every reorder, which is the "unpredictable" behaviour users hit: you
+    # park a separator, move a silo, and the separator teleports. Leaving
+    # the slot index unremapped keeps the gap on the same visual row while
+    # silos move past it.
 
     # The archive is its own index space with its own slot-keyed stores.
     # Reordering archived silos used to move only the TEXT, leaving these
@@ -6560,6 +6564,7 @@ class FastPrompter(
         # A spacer below each visible silo whose slot is in silo_gaps. Pooled
         # frames, re-placed by live layout index each refresh so they coexist
         # with the pinned/unpinned divider above.
+        self.prune_silo_gaps()
         gaps = self.data.get("silo_gaps") or []
         pool = getattr(self, "_user_gap_widgets", None)
         if pool is None:
@@ -6573,7 +6578,7 @@ class FastPrompter(
             except (TypeError, ValueError):
                 gap_h = 8
             gap_h = max(2, min(80, gap_h))
-            from PyQt6.QtWidgets import QFrame
+            from fastprompter.ui.snippet_panel import SiloGapBar
             need = 0
             for i, btn in enumerate(self.silo_buttons):
                 disp_pos = start_idx + i
@@ -6582,12 +6587,15 @@ class FastPrompter(
                 if display_order[disp_pos] not in gaps:
                     continue
                 while len(pool) <= need:
-                    f = QFrame(self)
+                    f = SiloGapBar(self, self)
                     f.setObjectName("SiloUserGap")
                     f.setStyleSheet("margin: 0px 8px; background: transparent;")
                     pool.append(f)
                 gw = pool[need]
                 need += 1
+                # the bar has to know which row it is parked under, so a
+                # Ctrl+drag can rewrite that anchor
+                gw.slot_idx = display_order[disp_pos]
                 gw.setFixedHeight(gap_h)
                 self.silos_widget.layout.insertWidget(
                     self.silos_widget.layout.indexOf(btn) + 1, gw)
@@ -6767,18 +6775,53 @@ class FastPrompter(
         self._silo_selection = set()
         self.refresh_temp_presets()
 
-    def toggle_silo_gap(self, idx):
-        """T-590: add/remove a user gap rendered below the silo at ``idx``."""
+    def _silo_gaps_list(self):
+        """The active category's gap list, created and aliased if missing."""
         gaps = self.data.get("silo_gaps")
         if not isinstance(gaps, list):
             gaps = self.data["silo_gaps"] = []
             self.data.setdefault("silo_gaps_all", {})[self.get_current_category() or ""] = gaps
+        return gaps
+
+    def toggle_silo_gap(self, idx):
+        """T-590: add/remove a user gap rendered below the silo at ``idx``."""
+        gaps = self._silo_gaps_list()
         if idx in gaps:
             gaps.remove(idx)
         else:
             gaps.append(idx)
         self.mark_dirty()
         self.refresh_temp_presets()
+
+    def move_silo_gap(self, from_idx, to_idx):
+        """T-593: drag a gap to sit below a different row.
+
+        The gap is positional, so this rewrites the anchor slot rather than
+        following any silo. A drop onto a row that already has a gap, or
+        outside the list, is a no-op instead of silently stacking two."""
+        gaps = self._silo_gaps_list()
+        n = len(self.data.get("temp_presets", []))
+        if from_idx not in gaps or not (0 <= to_idx < n) or to_idx in gaps:
+            return False
+        gaps[gaps.index(from_idx)] = to_idx
+        self.mark_dirty()
+        self.refresh_temp_presets()
+        return True
+
+    def prune_silo_gaps(self):
+        """Drop gap anchors that fell off the end (silos deleted).
+
+        Positional gaps do not remap with silos, so a shrinking list can
+        leave an anchor pointing past the last row; it would simply never
+        render and would silently resurrect if the list grew again."""
+        gaps = self.data.get("silo_gaps")
+        if not isinstance(gaps, list):
+            return
+        n = len(self.data.get("temp_presets", []))
+        alive = [i for i in gaps if isinstance(i, int) and 0 <= i < n]
+        if len(alive) != len(gaps):
+            gaps[:] = alive
+            self.mark_dirty()
 
     def show_temp_menu(self, idx, pos, is_archive=False):
         cur = self.text_area.toPlainText().strip()

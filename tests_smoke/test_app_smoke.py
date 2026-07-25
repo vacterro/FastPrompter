@@ -8158,10 +8158,13 @@ def test_silo_gap_is_aliased_into_per_category_store(win):
     assert 1 in win.data["silo_gaps_all"][cat]
 
 
-def test_silo_gap_survives_reorder_remap(win):
+def test_silo_gap_stays_put_when_silos_reorder(win):
+    # T-593: a gap is a POSITION, not a property of the silo under it. The
+    # remap must leave it alone, otherwise the divider chases the silo
+    # around the list — the "unpredictable" behaviour this replaced.
     win.data["silo_gaps"] = [3]
     win._remap_silo_indices(lambda i: 5 if i == 3 else i)
-    assert win.data["silo_gaps"] == [5]
+    assert win.data["silo_gaps"] == [3]
 
 
 def test_refresh_with_a_gap_does_not_crash(win):
@@ -8274,3 +8277,78 @@ def test_sync_survives_a_parent_cycle(win):
     win.data["silo_children"] = {"0": [1], "1": [0]}
     win._sync_rel_paths()          # must terminate, not hang or recurse away
     win.data["silo_children"] = {}
+
+
+# ---------------------------------------------------------------------------
+# T-593: gaps are positional and draggable.
+# ---------------------------------------------------------------------------
+
+
+def _gap_setup(win, n=6):
+    presets = win.data["temp_presets"]
+    while len(presets) < n:
+        presets.append(f"# silo {len(presets)}")
+    for i in range(n):
+        if not presets[i].strip():
+            presets[i] = f"# silo {i}"
+    win.data["silo_gaps"] = []
+    return presets
+
+
+def test_move_gap_rewrites_the_anchor(win):
+    _gap_setup(win)
+    win.data["silo_gaps"] = [1]
+    assert win.move_silo_gap(1, 4) is True
+    assert win.data["silo_gaps"] == [4]
+
+
+def test_move_gap_onto_an_existing_gap_is_refused(win):
+    _gap_setup(win)
+    win.data["silo_gaps"] = [1, 4]
+    assert win.move_silo_gap(1, 4) is False
+    assert sorted(win.data["silo_gaps"]) == [1, 4]   # no stacking, no loss
+
+
+def test_move_gap_out_of_range_is_refused(win):
+    _gap_setup(win)
+    win.data["silo_gaps"] = [1]
+    assert win.move_silo_gap(1, 999) is False
+    assert win.move_silo_gap(1, -1) is False
+    assert win.data["silo_gaps"] == [1]
+
+
+def test_move_gap_that_does_not_exist_is_refused(win):
+    _gap_setup(win)
+    win.data["silo_gaps"] = [1]
+    assert win.move_silo_gap(2, 3) is False
+    assert win.data["silo_gaps"] == [1]
+
+
+def test_prune_drops_gaps_past_the_end(win):
+    _gap_setup(win, 3)
+    del win.data["temp_presets"][3:]
+    win.data["silo_gaps"] = [1, 99]
+    win.prune_silo_gaps()
+    assert win.data["silo_gaps"] == [1]
+
+
+def test_gap_bar_carries_its_anchor_slot(win):
+    _gap_setup(win)
+    win.data["silo_gaps"] = [0]
+    win.refresh_temp_presets()
+    bars = [g for g in win._user_gap_widgets if not g.isHidden()]
+    assert bars, "expected a shown gap bar"
+    assert bars[0].slot_idx == 0
+    assert hasattr(bars[0], "move_silo_gap") is False   # it delegates, not owns
+    win.data["silo_gaps"] = []
+    win.refresh_temp_presets()
+
+
+def test_gap_bar_ignores_plain_click_without_ctrl(win):
+    from PyQt6.QtCore import QPoint
+    from fastprompter.ui.snippet_panel import SiloGapBar
+    bar = SiloGapBar(win)
+    bar.slot_idx = 1
+    # no Ctrl press recorded -> release must not attempt a move
+    bar._press_pos = None
+    assert bar._press_pos is None
