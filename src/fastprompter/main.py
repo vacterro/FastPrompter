@@ -6597,8 +6597,16 @@ class FastPrompter(
                 # Ctrl+drag can rewrite that anchor
                 gw.slot_idx = display_order[disp_pos]
                 gw.setFixedHeight(gap_h)
+                # park the bar after the anchor's whole expanded subtree so a
+                # gap on a parent never splits it from its own children
+                end_pos = self._subtree_end(disp_pos, display_order, child_of)
+                anchor_btn, anchor_i = btn, end_pos - start_idx
+                if 0 <= anchor_i < min(len(self.silo_buttons), self._visible_silos):
+                    cand = self.silo_buttons[anchor_i]
+                    if not cand.isHidden():
+                        anchor_btn = cand
                 self.silos_widget.layout.insertWidget(
-                    self.silos_widget.layout.indexOf(btn) + 1, gw)
+                    self.silos_widget.layout.indexOf(anchor_btn) + 1, gw)
                 gw.show()
 
     def _overlay_silo_bg(self, bg_color, last_ts):
@@ -6774,6 +6782,36 @@ class FastPrompter(
                 logger.debug("batch delete failed for silo %s", i)
         self._silo_selection = set()
         self.refresh_temp_presets()
+
+    @staticmethod
+    def _is_descendant_of(node, root, child_of):
+        """True if ``node`` sits anywhere under ``root``. Cycle-safe."""
+        seen = set()
+        cur = child_of.get(node)
+        while cur is not None and cur not in seen:
+            if cur == root:
+                return True
+            seen.add(cur)
+            cur = child_of.get(cur)
+        return False
+
+    def _subtree_end(self, disp_pos, display_order, child_of):
+        """Last display position of the subtree rooted at ``disp_pos``.
+
+        A gap anchored to a parent must clear the parent's whole expanded
+        group; anchoring it to the parent row alone dropped the divider
+        BETWEEN the parent and its own children and cut the group in half.
+        Collapsed children are not in display_order, so this naturally
+        returns the parent itself and the gap sits right under it."""
+        root = display_order[disp_pos]
+        end = disp_pos
+        j = disp_pos + 1
+        while j < len(display_order):
+            if not self._is_descendant_of(display_order[j], root, child_of):
+                break
+            end = j
+            j += 1
+        return end
 
     def _silo_gaps_list(self):
         """The active category's gap list, created and aliased if missing."""

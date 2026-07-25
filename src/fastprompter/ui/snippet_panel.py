@@ -904,6 +904,23 @@ class SiloGapBar(QFrame):
             return
         super().mousePressEvent(e)
 
+    def mouseMoveEvent(self, e):
+        """Re-park the gap as the cursor crosses rows, so the divider follows
+        the drag instead of jumping only on release."""
+        if self._press_pos is None or not (e.buttons() & Qt.MouseButton.LeftButton):
+            super().mouseMoveEvent(e)
+            return
+        here = e.globalPosition().toPoint()
+        if (here - self._press_pos).manhattanLength() < self.GRAB_PX:
+            e.accept()
+            return
+        target = self._slot_under(here)
+        if target is not None and target != self.slot_idx:
+            if self.main_win.move_silo_gap(self.slot_idx, target):
+                # the refresh re-places this same pooled bar; keep dragging it
+                self.slot_idx = target
+        e.accept()
+
     def mouseReleaseEvent(self, e):
         if self._press_pos is None:
             super().mouseReleaseEvent(e)
@@ -914,7 +931,7 @@ class SiloGapBar(QFrame):
             e.accept()
             return                      # a click, not a drag
         target = self._slot_under(drop)
-        if target is not None:
+        if target is not None and target != self.slot_idx:
             self.main_win.move_silo_gap(self.slot_idx, target)
         e.accept()
 

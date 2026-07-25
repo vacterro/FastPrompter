@@ -8503,3 +8503,73 @@ def test_strikethrough_and_underline_still_apply(win):
     assert fs is not None and fs.fontStrikeOut() is True
     fu = _fmt_at(win, "a __under__ b", "under")
     assert fu is not None and fu.fontUnderline() is True
+
+
+# ---------------------------------------------------------------------------
+# T-600: gaps behave inside a parent/children hierarchy.
+# ---------------------------------------------------------------------------
+
+
+def _hier(win, collapsed=()):
+    p = win.data["temp_presets"]
+    while len(p) < 5:
+        p.append("")
+    for i in range(5):
+        p[i] = f"# silo {i}"
+    win.data["silo_children"] = {0: [1, 2]}
+    win.data["silo_collapsed"] = list(collapsed)
+    return p
+
+
+def _visible_layout(win):
+    lay = win.silos_widget.layout
+    out = []
+    for i in range(lay.count()):
+        it = lay.itemAt(i)
+        w = it.widget() if it else None
+        if w is None or w.isHidden():
+            continue
+        out.append((type(w).__name__, getattr(w, "global_idx", getattr(w, "slot_idx", -1))))
+    return out
+
+
+def test_gap_on_parent_clears_the_whole_group(win):
+    _hier(win)
+    win.data["silo_gaps"] = [0]
+    win.refresh_temp_presets()
+    rows = _visible_layout(win)
+    names = [f"{n}:{i}" for n, i in rows[:4]]
+    # the divider must come AFTER both children, not between parent and them
+    assert names[:4] == ["DraggableSiloButton:0", "DraggableSiloButton:1",
+                         "DraggableSiloButton:2", "SiloGapBar:0"]
+    win.data["silo_children"], win.data["silo_gaps"] = {}, []
+
+
+def test_gap_on_a_child_renders_inside_the_group(win):
+    _hier(win)
+    win.data["silo_gaps"] = [1]
+    win.refresh_temp_presets()
+    rows = _visible_layout(win)
+    names = [f"{n}:{i}" for n, i in rows[:4]]
+    assert names[:3] == ["DraggableSiloButton:0", "DraggableSiloButton:1", "SiloGapBar:1"]
+    win.data["silo_children"], win.data["silo_gaps"] = {}, []
+
+
+def test_gap_inside_a_collapsed_group_hides_but_is_kept(win):
+    _hier(win, collapsed=(0,))
+    win.data["silo_gaps"] = [1]
+    win.refresh_temp_presets()
+    assert not [g for g in win._user_gap_widgets if not g.isHidden()]
+    assert win.data["silo_gaps"] == [1]          # data preserved, not pruned
+    # expanding brings it back
+    win.data["silo_collapsed"] = []
+    win.refresh_temp_presets()
+    shown = [g for g in win._user_gap_widgets if not g.isHidden()]
+    assert [g.slot_idx for g in shown] == [1]
+    win.data["silo_children"], win.data["silo_gaps"] = {}, []
+
+
+def test_subtree_end_is_cycle_safe(win):
+    # a corrupt parent map must not hang the render
+    child_of = {1: 2, 2: 1}
+    assert win._subtree_end(0, [0, 1, 2], child_of) == 0
