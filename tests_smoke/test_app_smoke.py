@@ -906,7 +906,11 @@ def _run_fuzz_ui(win, rng):
             lambda: win.apply_format("**"),
             lambda: win.apply_format("*"),
             win.apply_bold_smart,
-            win.toggle_header_line,
+            # was toggle_header_line (deleted as dead code). The list length
+            # MUST stay 6: random.choice consumes a variable number of bits
+            # from the seeded stream, so shrinking it reshuffles every later
+            # fuzz op and breaks unrelated tests downstream.
+            win.toggle_quote_conversion,
             win.clear_formatting,
             win.toggle_bullet_conversion,
         ])()
@@ -3844,7 +3848,6 @@ def test_no_unguarded_edit_blocks_in_new_code():
     known_unguarded = {
         ("editor.py", "keyPressEvent"),
         ("formatting_mixin.py", "apply_format"),
-        ("formatting_mixin.py", "toggle_header_line"),
         ("formatting_mixin.py", "toggle_bullet_conversion"),
         ("formatting_mixin.py", "insert_add_line"),
         ("formatting_mixin.py", "insert_old_add_line"),
@@ -5694,9 +5697,10 @@ def test_snapping_does_not_hide_a_window_set_to_hide_on_click_out(win):
         win.data["fancyzones_layout"] = kept_layout
 
 def test_real_ctrl_e_reverses_a_header(win):
-    """The earlier "Ctrl+E reverses any header" fix was applied to
-    toggle_header_line, which nothing in the app calls - both Ctrl+E and the
-    H button go to apply_header_timestamp, and that only ever re-stamped.
+    """The earlier "Ctrl+E reverses any header" fix was applied to the old
+    toggle_header_line, which nothing in the app ever called (it has since
+    been deleted) - both Ctrl+E and the H button go to
+    apply_header_timestamp, and that only ever re-stamped.
     So "## Sub" became "# Sub (Morning 21.07 - 11:05)" with no way back."""
     from PyQt6.QtCore import Qt
     from PyQt6.QtGui import QFont, QTextCursor
