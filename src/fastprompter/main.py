@@ -2336,6 +2336,7 @@ class FastPrompter(
         self.btn_toggle_search = QPushButton("⌕")
         self.apply_button_size(self.btn_toggle_search, 20, 20)
         self.btn_toggle_search.setCheckable(True)
+        self.btn_toggle_search.setToolTip(tr("Show / hide find and replace", getattr(self, "_current_lang", "EN")))
 
         self.btn_arc_snip = QPushButton("📥")
         self.apply_button_size(self.btn_arc_snip, 20, 20)
@@ -3688,11 +3689,13 @@ class FastPrompter(
         search_layout.addWidget(self.search_input)
 
         self.btn_find_prev = QPushButton("◄")
+        self.btn_find_prev.setToolTip(tr("Find previous match", getattr(self, "_current_lang", "EN")))
         self.btn_find_prev.clicked.connect(self.find_prev)
         self.apply_button_size(self.btn_find_prev, 24, 24)
         search_layout.addWidget(self.btn_find_prev)
 
         self.btn_find_next = QPushButton("►")
+        self.btn_find_next.setToolTip(tr("Find next match", getattr(self, "_current_lang", "EN")))
         self.btn_find_next.clicked.connect(self.find_next)
         self.apply_button_size(self.btn_find_next, 24, 24)
         search_layout.addWidget(self.btn_find_next)
@@ -3702,17 +3705,20 @@ class FastPrompter(
         search_layout.addWidget(self.replace_input)
 
         self.btn_replace = QPushButton(tr("Rpl", getattr(self, "_current_lang", "EN")))
+        self.btn_replace.setToolTip(tr("Replace the current match", getattr(self, "_current_lang", "EN")))
         self.btn_replace.clicked.connect(self.replace_text)
         self.apply_button_size(self.btn_replace, 24)
         search_layout.addWidget(self.btn_replace)
 
         self.btn_replace_all = QPushButton(tr("Rpl All", getattr(self, "_current_lang", "EN")))
+        self.btn_replace_all.setToolTip(tr("Replace every match in this silo", getattr(self, "_current_lang", "EN")))
         self.btn_replace_all.clicked.connect(self.replace_all)
         self.apply_button_size(self.btn_replace_all, 24)
         search_layout.addWidget(self.btn_replace_all)
 
         self.btn_close_search = QPushButton("✕")
         self.apply_button_size(self.btn_close_search, 24, 24)
+        self.btn_close_search.setToolTip(tr("Close the search bar", getattr(self, "_current_lang", "EN")))
         self.btn_close_search.clicked.connect(self.close_search)
         search_layout.addWidget(self.btn_close_search)
 

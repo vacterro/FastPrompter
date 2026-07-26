@@ -8754,3 +8754,46 @@ def test_int_keys_do_not_survive_json_unaided(tmp_path):
         st2.conn.close()
     finally:
         sm.get_db_path = orig
+
+
+# ---------------------------------------------------------------------------
+# T-602: mechanical toolbar audit — no dead or unlabelled buttons.
+# ---------------------------------------------------------------------------
+
+
+def _toolbar_buttons(win):
+    from PyQt6.QtWidgets import QPushButton
+    return [(n, getattr(win, n)) for n in dir(win)
+            if n.startswith("btn_") and isinstance(getattr(win, n, None), QPushButton)]
+
+
+def test_every_toolbar_button_is_wired_to_something(win):
+    """GUARD: a button with no receiver on clicked/toggled/pressed is dead
+    chrome — it looks clickable and does nothing."""
+    dead = []
+    for name, b in _toolbar_buttons(win):
+        recv = 0
+        for sig in ("clicked", "toggled", "pressed"):
+            try:
+                recv += b.receivers(getattr(b, sig))
+            except Exception:
+                pass
+        if recv == 0:
+            dead.append(name)
+    assert dead == [], f"dead toolbar buttons: {dead}"
+
+
+def test_every_toolbar_button_has_a_tooltip(win):
+    """GUARD: most of these are icon-only (⌕ ✕ ◄ ► 📦), so a missing tooltip
+    leaves the control unidentifiable."""
+    bare = [n for n, b in _toolbar_buttons(win) if not (b.toolTip() or "").strip()]
+    assert bare == [], f"toolbar buttons without a tooltip: {bare}"
+
+
+def test_default_toolbar_order_has_no_dead_names(win):
+    """GUARD: names are resolved with getattr(..., None), so a stale entry is
+    skipped in silence — the reorder UI just quietly loses a slot."""
+    from fastprompter.ui.toolbar_reorder import DEFAULT_TOOLBAR_ORDER
+    dead = [n for n in DEFAULT_TOOLBAR_ORDER
+            if not n.startswith("<") and getattr(win, n, None) is None]
+    assert dead == [], f"toolbar order references widgets that do not exist: {dead}"
