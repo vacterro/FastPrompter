@@ -2146,7 +2146,7 @@ class FastPrompter(
         # breaks packing into a Ctrl+Q quarter-FullHD window.
 
 
-        for cat in self.data["cats_order"]:
+        for cat in self.visible_categories():
             self.cat_combo.addItem(cat, cat)
         self.cat_combo.currentIndexChanged.connect(self.on_tab_changed)
 
@@ -3263,6 +3263,11 @@ class FastPrompter(
                 self.mark_dirty()
                 self.sync_to_disk(force=True)
 
+        self.btn_projects_mgr = QPushButton(tr("Projects…", self._current_lang))
+        self.btn_projects_mgr.setToolTip(tr(
+            "Choose which projects appear in the tab list", self._current_lang))
+        self.btn_projects_mgr.clicked.connect(self.open_projects_manager)
+        sync_row.addWidget(self.btn_projects_mgr)
         self.btn_sync_path.clicked.connect(_pick_sync_path)
         sync_row.addWidget(self.btn_sync_path)
         sync_row.addStretch(1)
@@ -5851,6 +5856,83 @@ class FastPrompter(
             self.close_search()
             return
         self.hide_and_save()
+
+    def hidden_categories(self):
+        """Projects the user unchecked in the projects manager (T-599).
+
+        Hiding only affects the combo; nothing is deleted and every store
+        keeps its data. The ACTIVE project is never hidden, and the last
+        visible one cannot be hidden either — that would leave no way back."""
+        h = self.data.get("hidden_categories")
+        if not isinstance(h, list):
+            h = self.data["hidden_categories"] = []
+        return h
+
+    def visible_categories(self):
+        hidden = set(self.hidden_categories())
+        cats = [c for c in self.data.get("cats_order", []) if c not in hidden]
+        return cats or list(self.data.get("cats_order", []))
+
+    def rebuild_cat_combo(self, keep=None):
+        """Repopulate the combo from visible_categories, preserving the
+        selected PROJECT (not its row index)."""
+        keep = keep or self.get_current_category()
+        combo = self.cat_combo
+        combo.blockSignals(True)
+        try:
+            combo.clear()
+            for name in self.visible_categories():
+                combo.addItem(name, name)
+            idx = combo.findData(keep)
+            combo.setCurrentIndex(idx if idx >= 0 else 0)
+        finally:
+            combo.blockSignals(False)
+        self.on_tab_changed(combo.currentIndex())
+
+    def open_projects_manager(self):
+        """Check/uncheck which projects appear in the combo."""
+        from PyQt6.QtWidgets import (QDialog, QDialogButtonBox, QLabel,
+                                     QListWidget, QListWidgetItem, QVBoxLayout)
+        le = getattr(self, "_current_lang", "EN")
+        cur = self.get_current_category()
+        dlg = QDialog(self)
+        dlg.setWindowTitle(tr("Projects", le))
+        lay = QVBoxLayout(dlg)
+        lay.addWidget(QLabel(tr("Untick a project to hide it from the tab list. "
+                                "Nothing is deleted - its silos stay put.", le)))
+        lst = QListWidget()
+        hidden = set(self.hidden_categories())
+        for name in self.data.get("cats_order", []):
+            it = QListWidgetItem(name)
+            it.setFlags(it.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            it.setCheckState(Qt.CheckState.Unchecked if name in hidden
+                             else Qt.CheckState.Checked)
+            if name == cur:
+                # hiding the project you are standing in would yank the
+                # ground out from under the editor
+                it.setFlags(it.flags() & ~Qt.ItemFlag.ItemIsEnabled)
+                it.setCheckState(Qt.CheckState.Checked)
+            lst.addItem(it)
+        lay.addWidget(lst)
+        bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok
+                              | QDialogButtonBox.StandardButton.Cancel)
+        bb.accepted.connect(dlg.accept)
+        bb.rejected.connect(dlg.reject)
+        lay.addWidget(bb)
+        self.ignore_focus_loss = True
+        try:
+            ok = dlg.exec()
+        finally:
+            self.ignore_focus_loss = False
+        if not ok:
+            return
+        new_hidden = [lst.item(i).text() for i in range(lst.count())
+                      if lst.item(i).checkState() == Qt.CheckState.Unchecked]
+        if len(new_hidden) >= len(self.data.get("cats_order", [])):
+            return                      # refuse to hide every project
+        self.hidden_categories()[:] = new_hidden
+        self.mark_dirty()
+        self.rebuild_cat_combo(keep=cur)
 
     def _cat_at(self, idx):
         """Category name for a combo row.

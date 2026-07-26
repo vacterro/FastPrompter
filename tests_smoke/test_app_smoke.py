@@ -8828,7 +8828,69 @@ def test_cat_at_falls_back_when_a_row_has_no_name(win):
 
 
 def test_get_current_category_matches_the_selected_row(win):
-    for i, name in enumerate(list(win.data["cats_order"])):
-        win.cat_combo.setCurrentIndex(i)
+    # locate each project by its row DATA: the combo can also hold pseudo
+    # rows (e.g. "Trash") that are not projects at all, so row order is not
+    # a safe stand-in for cats_order
+    for name in list(win.data["cats_order"]):
+        row = win.cat_combo.findData(name)
+        if row < 0:
+            continue
+        win.cat_combo.setCurrentIndex(row)
         assert win.get_current_category() == name
     win.cat_combo.setCurrentIndex(0)
+
+
+# ---------------------------------------------------------------------------
+# T-599: hide projects from the tab list without deleting them.
+# ---------------------------------------------------------------------------
+
+
+def test_hidden_project_leaves_the_combo_but_keeps_its_data(win):
+    cats = list(win.data["cats_order"])
+    victim = cats[-1]
+    win.cat_combo.setCurrentIndex(0)
+    win.data["temp_presets_all"].setdefault(victim, [""] * 10)[0] = "# keep me"
+    win.hidden_categories()[:] = [victim]
+    win.rebuild_cat_combo(keep=cats[0])
+    shown = [win.cat_combo.itemData(i) for i in range(win.cat_combo.count())]
+    assert victim not in shown
+    assert cats[0] in shown
+    # data untouched, and the project is still in cats_order
+    assert win.data["temp_presets_all"][victim][0] == "# keep me"
+    assert victim in win.data["cats_order"]
+    win.hidden_categories()[:] = []
+    win.rebuild_cat_combo(keep=cats[0])
+
+
+def test_selection_follows_the_project_not_the_row(win):
+    cats = list(win.data["cats_order"])
+    win.cat_combo.setCurrentIndex(win.cat_combo.findData(cats[-1]))
+    assert win.get_current_category() == cats[-1]
+    # hiding an EARLIER project shifts every row index down by one
+    win.hidden_categories()[:] = [cats[0]]
+    win.rebuild_cat_combo()
+    assert win.get_current_category() == cats[-1]   # still the same project
+    win.hidden_categories()[:] = []
+    win.rebuild_cat_combo(keep=cats[0])
+
+
+def test_visible_categories_never_returns_empty(win):
+    win.hidden_categories()[:] = list(win.data["cats_order"])
+    assert win.visible_categories(), "hiding everything must not empty the combo"
+    win.hidden_categories()[:] = []
+
+
+def test_hidden_categories_survive_a_db_round_trip(tmp_path):
+    import fastprompter.core.state as sm
+    orig = sm.get_db_path
+    sm.get_db_path = lambda profile_id=1: str(tmp_path / "h.db")
+    try:
+        st = sm.FastPrompterState()
+        st.data["hidden_categories"] = ["Misc"]
+        st.save_data_to_db("x", force=True)
+        st.conn.close()
+        st2 = sm.FastPrompterState()
+        assert st2.data["hidden_categories"] == ["Misc"]
+        st2.conn.close()
+    finally:
+        sm.get_db_path = orig
