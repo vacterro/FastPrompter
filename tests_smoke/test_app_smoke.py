@@ -9023,3 +9023,33 @@ def test_projects_manager_refuses_to_hide_everything(win):
     new_hidden = list(order)
     assert len(new_hidden) >= len(order)      # the condition that returns early
     assert win.hidden_categories() == []
+
+
+# ---------------------------------------------------------------------------
+# HUNT: deferred callbacks must survive their widget being destroyed.
+# ---------------------------------------------------------------------------
+
+
+def test_deferred_callbacks_guard_a_deleted_widget():
+    """Both of these run from QTimer.singleShot, so the widget can be gone
+    before they fire; calling a Qt method on a dead C++ object is an access
+    violation, not an exception, and takes the whole app with it."""
+    import inspect
+    from fastprompter.ui import editor as editor_mod
+    from fastprompter import main as main_mod
+
+    for src, name in (
+        (inspect.getsource(editor_mod.VaultTextEdit._refresh_checkbox_flag),
+         "_refresh_checkbox_flag"),
+        (inspect.getsource(main_mod.FastPrompter._apply_header_density),
+         "_apply_header_density"),
+    ):
+        # strip docstring AND comments: the guard's own comment mentions the
+        # very calls being searched for, which would match ahead of the code
+        body = src.split('"""')[-1] if '"""' in src else src
+        code = "\n".join(ln.split("#", 1)[0] for ln in body.splitlines())
+        assert "sip.isdeleted(self)" in code, f"{name} has no self guard"
+        guard_at = code.index("sip.isdeleted(self)")
+        for call in ("self.document()", "self.width()"):
+            if call in code:
+                assert code.index(call) > guard_at, f"{name}: {call} runs before the guard"

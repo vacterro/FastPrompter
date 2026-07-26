@@ -512,6 +512,10 @@ class FastPrompter(
         below): hard-clamp text-button widths to their label, shorten the
         widest labels, and let the date clock degrade (day word first,
         then seconds). Nothing gets hidden — only tightened."""
+        # A theme change defers this via QTimer.singleShot, so the window can
+        # be gone before it runs and self.width() would hit a dead C++ object.
+        if sip.isdeleted(self):
+            return
         # Compare against the width the header EFFECTIVELY has: at 150% every
         # widget is half again as big, so a 960px window has as much usable
         # room as a 640px one at 100%. Measuring raw pixels kept it in the

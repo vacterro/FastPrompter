@@ -305,6 +305,11 @@ class VaultTextEdit(QTextEdit):
         practice and saves scanning ~200 blocks on every keystroke for the
         lifetime of the edit session.
         """
+        # Guard SELF first: this runs from QTimer.singleShot(0, ...) and from
+        # textChanged, so the editor can be gone by the time it fires and
+        # self.document() would then touch a dead C++ object.
+        if sip.isdeleted(self):
+            return
         doc = self.document()
         if not doc or sip.isdeleted(doc):
             return
