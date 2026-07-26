@@ -2147,7 +2147,7 @@ class FastPrompter(
 
 
         for cat in self.data["cats_order"]:
-            self.cat_combo.addItem(cat)
+            self.cat_combo.addItem(cat, cat)
         self.cat_combo.currentIndexChanged.connect(self.on_tab_changed)
 
         self.cat_combo.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -5391,7 +5391,7 @@ class FastPrompter(
         while self.cat_combo.count() > 0:
             self.cat_combo.removeItem(0)
         for cat in self.data["cats_order"]:
-            self.cat_combo.addItem(cat)
+            self.cat_combo.addItem(cat, cat)
         self.cat_combo.blockSignals(False)
         if self.cat_combo.count() > 0:
             self.cat_combo.setCurrentIndex(0)
@@ -5714,7 +5714,9 @@ class FastPrompter(
         idx = self.cat_combo.currentIndex()
         if idx >= len(self.data.get("cats_order", [])):
             return
-        old_cat = self.data["cats_order"][idx]
+        old_cat = self._cat_at(idx)
+        if old_cat is None:
+            return
         
         self.ignore_focus_loss = True
         try:
@@ -5729,7 +5731,12 @@ class FastPrompter(
                 return
             
             self.add_data_undo_state("Rename category")
-            self.data["cats_order"][idx] = new_cat
+            # position of the OLD name, not the combo row: the two are no
+            # longer guaranteed to line up (see _cat_at)
+            try:
+                self.data["cats_order"][self.data["cats_order"].index(old_cat)] = new_cat
+            except ValueError:
+                self.data["cats_order"][idx] = new_cat
             
             _all_keys = [
                 "categories", "temp_presets_all", "archive_temp_presets_all", "pinned_silos_all",
@@ -5746,6 +5753,9 @@ class FastPrompter(
                 self.current_pages[new_cat] = self.current_pages.pop(old_cat)
                 
             self.cat_combo.setItemText(idx, new_cat)
+            # the row carries its own name for lookups — leaving the old one
+            # here would make _cat_at resolve a project that no longer exists
+            self.cat_combo.setItemData(idx, new_cat)
             self.mark_dirty()
 
     def add_category(self):
@@ -5766,7 +5776,7 @@ class FastPrompter(
             name = name.strip()
             self.data["cats_order"].append(name)
             self.data["categories"][name] = [None] * 100
-            self.cat_combo.addItem(name)
+            self.cat_combo.addItem(name, name)
             self.cat_combo.setCurrentIndex(self.cat_combo.count() - 1)
             self.mark_dirty()
 
@@ -5775,7 +5785,9 @@ class FastPrompter(
         if self.cat_combo.count() <= 1:
             return
         idx = self.cat_combo.currentIndex()
-        cat = self.data["cats_order"][idx]
+        cat = self._cat_at(idx)
+        if cat is None:
+            return
         self.ignore_focus_loss = True
         try:
             reply = QMessageBox.question(
@@ -5840,6 +5852,24 @@ class FastPrompter(
             return
         self.hide_and_save()
 
+    def _cat_at(self, idx):
+        """Category name for a combo row.
+
+        The combo row index used to be assumed identical to the cats_order
+        index everywhere, which is only true while every project is shown in
+        order. Anything that hides or reorders a row (T-599) would silently
+        make get_current_category() return the WRONG project, and silos would
+        be written into it. Each row now carries its own name; the positional
+        read stays as the fallback for rows created before that."""
+        try:
+            name = self.cat_combo.itemData(idx)
+        except Exception:
+            name = None
+        if isinstance(name, str) and name in self.data.get("categories", {}):
+            return name
+        cats = self.data.get("cats_order", [])
+        return cats[idx] if 0 <= idx < len(cats) else None
+
     def on_tab_changed(self, index):
         if index < 0:
             return
@@ -5848,10 +5878,9 @@ class FastPrompter(
         self.cancel_editing()
 
         # Switch Silos to the new Tab's hierarchy
-        cats = self.data.get("cats_order", [])
-        if index >= len(cats):
+        cat = self._cat_at(index)
+        if cat is None:
             return
-        cat = cats[index]
         if "temp_presets_all" in self.data:
             if cat not in self.data["temp_presets_all"]:
                 self.data["temp_presets_all"][cat] = [""] * 10

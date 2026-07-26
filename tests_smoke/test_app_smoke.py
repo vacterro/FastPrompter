@@ -8797,3 +8797,38 @@ def test_default_toolbar_order_has_no_dead_names(win):
     dead = [n for n in DEFAULT_TOOLBAR_ORDER
             if not n.startswith("<") and getattr(win, n, None) is None]
     assert dead == [], f"toolbar order references widgets that do not exist: {dead}"
+
+
+# ---------------------------------------------------------------------------
+# Hardening: combo row -> project name is resolved by NAME, not by position.
+# ---------------------------------------------------------------------------
+
+
+def test_cat_at_resolves_by_row_name_not_position(win):
+    names = list(win.data["cats_order"])
+    for i, n in enumerate(names):
+        assert win._cat_at(i) == n
+    # a row whose data disagrees with its position must follow its DATA:
+    # this is what makes hiding or reordering rows safe (T-599)
+    win.cat_combo.setItemData(0, names[1])
+    try:
+        assert win._cat_at(0) == names[1]
+    finally:
+        win.cat_combo.setItemData(0, names[0])
+
+
+def test_cat_at_falls_back_when_a_row_has_no_name(win):
+    names = list(win.data["cats_order"])
+    win.cat_combo.setItemData(0, None)
+    try:
+        assert win._cat_at(0) == names[0]      # positional fallback
+    finally:
+        win.cat_combo.setItemData(0, names[0])
+    assert win._cat_at(999) is None            # out of range is not a crash
+
+
+def test_get_current_category_matches_the_selected_row(win):
+    for i, name in enumerate(list(win.data["cats_order"])):
+        win.cat_combo.setCurrentIndex(i)
+        assert win.get_current_category() == name
+    win.cat_combo.setCurrentIndex(0)

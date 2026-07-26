@@ -376,6 +376,10 @@ class SnippetOpsMixin:
 
     def get_current_category(self):
         """Get the category name of the currently selected tab."""
+        # resolved by the row's own name, not by assuming the combo row
+        # index equals the cats_order index (see _cat_at)
+        if hasattr(self, "_cat_at"):
+            return self._cat_at(self.cat_combo.currentIndex())
         idx = self.cat_combo.currentIndex()
         if 0 <= idx < len(self.data["cats_order"]):
             return self.data["cats_order"][idx]
