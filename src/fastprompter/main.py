@@ -541,9 +541,12 @@ class FastPrompter(
         # Ultra tier (portrait / 9:16 slivers): only the essentials survive —
         # tabs, NEW/Save, a short DD.MM - hh:mm clock, line counter, ⚙.
         # Formatting stays reachable via hotkeys and the context menu.
-        # Dense hides only the two rarest text buttons (Clear Fmt, Line) —
-        # both reachable via the editor's right-click menu and Ctrl+W. The
-        # bullet-toggle (-→•) stays visible; it only drops in ultra.
+        # Dense hides the ten widgets in _DENSE_HIDDEN — Clear Fmt, Line,
+        # Home/End, Underline, Strike, Copy and the three aligns — all
+        # reachable from the editor's right-click menu or a hotkey. (This
+        # comment used to claim only Clear Fmt and Line were hidden, which
+        # made the dense tier look broken whenever someone compared it
+        # against the list.) The bullet-toggle stays; it drops only in ultra.
         ultra = effective < 700
         ultra_flipped = getattr(self, "_header_ultra", None) != ultra
         self._header_ultra = ultra
@@ -6717,7 +6720,12 @@ class FastPrompter(
                 gap_h = int(self.data.get("silo_gap_height", 8))
             except (TypeError, ValueError):
                 gap_h = 8
-            gap_h = max(2, min(80, gap_h))
+            # Floor of 6px is a minimum hit target, not styling: the bar is
+            # transparent and lives in a layout cell, so there is no way to
+            # give it a grab zone bigger than its own height (a taller widget
+            # changes the visible gap, and negative stylesheet margins are
+            # unreliable in Qt). At 2px the Ctrl+drag handle was unusable.
+            gap_h = max(6, min(80, gap_h))
             from fastprompter.ui.snippet_panel import SiloGapBar
             need = 0
             for i, btn in enumerate(self.silo_buttons):
