@@ -368,6 +368,10 @@ class ThemeMixin:
             large = self.text_area.document().blockCount() > 500
             self.highlighter.set_skip_large(large)
             self.highlighter.setDocument(self.text_area.document())
+            # re-arm Hide Markup for this document: conceal has to know the
+            # caret's block, and a fresh setDocument() drops the old one
+            if hasattr(self, "_apply_conceal_mode"):
+                self._apply_conceal_mode()
             if not large:
                 self.highlighter.rehighlight()
 

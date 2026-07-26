@@ -8894,3 +8894,87 @@ def test_hidden_categories_survive_a_db_round_trip(tmp_path):
         st2.conn.close()
     finally:
         sm.get_db_path = orig
+
+
+# ---------------------------------------------------------------------------
+# T-603: Obsidian-style Hide Markup — markers vanish except on the caret line.
+# ---------------------------------------------------------------------------
+
+
+def _marker_pt(win, block_no, needle):
+    """Point size applied to `needle` on that block. 1.0 == concealed."""
+    doc = win.text_area.document()
+    blk = doc.findBlockByNumber(block_no)
+    i = blk.text().index(needle)
+    for r in blk.layout().formats():
+        if r.start <= i < r.start + r.length:
+            return r.format.fontPointSize()
+    return None
+
+
+def _conceal_setup(win, text, caret_block=0):
+    from PyQt6.QtWidgets import QApplication
+    win.preview_combo.setCurrentIndex(1)          # Live Preview
+    win.data["live_preview_conceal"] = "True"
+    win.text_area.document().setPlainText(text)
+    win._apply_conceal_mode()
+    c = win.text_area.textCursor()
+    c.setPosition(win.text_area.document().findBlockByNumber(caret_block).position())
+    win.text_area.setTextCursor(c)
+    QApplication.processEvents()
+
+
+_CONCEAL_DOC = "zero **loud** end\none *lean* end\ntwo `code` end"
+
+
+def test_markers_are_hidden_off_the_caret_line(win):
+    _conceal_setup(win, _CONCEAL_DOC, caret_block=1)
+    assert _marker_pt(win, 0, "**") == 1.0          # shrunk to nothing
+    assert _marker_pt(win, 2, "`") == 1.0
+    win.data["live_preview_conceal"] = "False"
+    win._apply_conceal_mode()
+
+
+def test_markers_reappear_on_the_caret_line(win):
+    _conceal_setup(win, _CONCEAL_DOC, caret_block=1)
+    assert _marker_pt(win, 1, "*") != 1.0           # left editable
+    win.data["live_preview_conceal"] = "False"
+    win._apply_conceal_mode()
+
+
+def test_moving_the_caret_moves_which_line_is_revealed(win):
+    from PyQt6.QtWidgets import QApplication
+    _conceal_setup(win, _CONCEAL_DOC, caret_block=1)
+    c = win.text_area.textCursor()
+    c.setPosition(win.text_area.document().findBlockByNumber(0).position())
+    win.text_area.setTextCursor(c)
+    QApplication.processEvents()
+    assert _marker_pt(win, 0, "**") != 1.0          # now revealed
+    assert _marker_pt(win, 1, "*") == 1.0           # and re-hidden
+    win.data["live_preview_conceal"] = "False"
+    win._apply_conceal_mode()
+
+
+def test_markup_stays_visible_while_the_toggle_is_off(win):
+    _conceal_setup(win, _CONCEAL_DOC, caret_block=1)
+    win.data["live_preview_conceal"] = "False"
+    win._apply_conceal_mode()
+    assert _marker_pt(win, 0, "**") != 1.0
+    assert _marker_pt(win, 2, "`") != 1.0
+
+
+def test_conceal_leaves_the_text_itself_untouched(win):
+    _conceal_setup(win, _CONCEAL_DOC, caret_block=1)
+    # purely visual: the document must still hold the real markdown
+    assert win.text_area.toPlainText() == _CONCEAL_DOC
+    win.data["live_preview_conceal"] = "False"
+    win._apply_conceal_mode()
+
+
+def test_empty_emphasis_is_not_concealed(win):
+    # '****' has nothing between the markers — hiding all four would make it
+    # invisible and uneditable
+    _conceal_setup(win, "a **** b\nsecond line", caret_block=1)
+    assert _marker_pt(win, 0, "****") != 1.0
+    win.data["live_preview_conceal"] = "False"
+    win._apply_conceal_mode()

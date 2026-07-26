@@ -266,6 +266,7 @@ class VaultTextEdit(QTextEdit):
         self.textChanged.connect(self._refresh_checkbox_flag)
         self.textChanged.connect(self.line_number_area.update)
         self.cursorPositionChanged.connect(self.line_number_area.update)
+        self.cursorPositionChanged.connect(self._sync_conceal_reveal)
         self._last_hover_pos = QPoint(-10000, -10000)
         self._hover_block = None
         self._gutter_anchor_block = None
@@ -338,6 +339,16 @@ class VaultTextEdit(QTextEdit):
             changed = True
         if changed:
             self.update_line_number_area_width()
+
+    def _sync_conceal_reveal(self):
+        """Tell the highlighter which block the caret is on, so Obsidian-style
+        preview can un-hide the markup on just that line."""
+        hl = getattr(self.main_win, "highlighter", None) if hasattr(self, "main_win") else None
+        if hl is None or sip.isdeleted(hl) or not getattr(hl, "conceal", False):
+            return
+        if hl.document() is not self.document():
+            return                  # highlighter is attached to another silo
+        hl.set_reveal_block(self.textCursor().blockNumber())
 
     def _gutter_active(self):
         """The line-number gutter follows the user's toggle alone — a reliable

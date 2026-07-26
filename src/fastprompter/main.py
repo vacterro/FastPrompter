@@ -2907,6 +2907,18 @@ class FastPrompter(
                 or self.refresh_snippets_panel()
             ),
         )
+        self.cb_conceal = create_footer_cb(
+            "👁 Hide Markup (Live)",
+            "Obsidian-style Live Preview: hide **, *, __, ~~ and ` markers so\n"
+            "the text reads as rendered. The line the caret is on still shows\n"
+            "its markers, so it stays editable.",
+            self.data.get("live_preview_conceal", "False") == "True",
+            lambda checked: (
+                self.data.update({"live_preview_conceal": "True" if checked else "False"})
+                or self.mark_dirty()
+                or self._apply_conceal_mode()
+            ),
+        )
         self.cb_hr_visual = create_footer_cb(
             "➖ Render HR Lines",
             "Render ---/***/___ dividers as crisp visual lines instead of raw text",
@@ -3439,7 +3451,7 @@ class FastPrompter(
 
         self.settings_tabs.addTab(_tab([
             _settings_group("Dividers & headers", [
-                div_row, ctrlw_btn_row, hdr_row, self.cb_hr_visual,
+                div_row, ctrlw_btn_row, hdr_row, self.cb_hr_visual, self.cb_conceal,
             ]),
             _settings_group("Typing", [
                 self.cb_focus, self.cb_wrap, self.cb_ctrl_c,
@@ -6936,6 +6948,20 @@ class FastPrompter(
             end = j
             j += 1
         return end
+
+    def _apply_conceal_mode(self):
+        """Push the Hide-Markup setting into the highlighter.
+
+        Only meaningful while a highlighter is attached, i.e. in a preview
+        mode; in Source View there is nothing to conceal."""
+        hl = getattr(self, "highlighter", None)
+        if hl is None or sip.isdeleted(hl):
+            return
+        on = self.data.get("live_preview_conceal", "False") == "True"
+        hl.set_conceal(on)
+        if on and hasattr(self, "text_area"):
+            hl.reveal_block = self.text_area.textCursor().blockNumber()
+            hl.rehighlight()
 
     def _normalise_int_keys(self, all_key):
         """Coerce every category map under ``data[all_key]`` to int keys.

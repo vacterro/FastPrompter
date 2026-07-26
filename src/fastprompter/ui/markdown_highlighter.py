@@ -45,6 +45,17 @@ class MarkdownHighlighter(QSyntaxHighlighter):
         self._highlighting_rules = []
         self._skip_highlighting = False
         self.hr_as_line = False   # when True, --- text is hidden (painted as a visual line)
+        # Obsidian-style Live Preview: the emphasis markers themselves are
+        # hidden so the text reads as rendered, and reappear on the block the
+        # caret is in so it stays editable. reveal_block is the caret's block
+        # number, kept up to date by the editor.
+        self.conceal = False
+        self.reveal_block = -1
+        # same technique the `---` rule uses: a char format cannot delete
+        # glyphs, so shrink them to 1pt and paint them fully transparent
+        self._hidden_format = QTextCharFormat()
+        self._hidden_format.setForeground(QColor(0, 0, 0, 0))
+        self._hidden_format.setFontPointSize(1)
 
         self._setup_rules()
 
@@ -63,6 +74,38 @@ class MarkdownHighlighter(QSyntaxHighlighter):
         self.code_font_family = family or None
         self._setup_rules()
         self.rehighlight()
+
+    # (pattern, left marker width, right marker width)
+    _CONCEAL_RULES = (
+        (re.compile(r'\*\*[^*\n]+\*\*'), 2, 2),
+        (re.compile(r'(?<!\*)\*(?!\*)[^*\n]+\*(?!\*)'), 1, 1),
+        (re.compile(r'__[^_\n]+__'), 2, 2),
+        (re.compile(r'~~[^~\n]+~~'), 2, 2),
+        (re.compile(r'(?<!`)`(?!`)[^`\n]+`(?!`)'), 1, 1),
+    )
+
+    def set_conceal(self, enable):
+        self.conceal = bool(enable)
+        self.rehighlight()
+
+    def set_reveal_block(self, block_number):
+        """Move the revealed block, repainting only the two blocks involved.
+
+        A full rehighlight on every caret move is far too expensive on a long
+        document, and this fires on every arrow key."""
+        old = self.reveal_block
+        if old == block_number:
+            return
+        self.reveal_block = block_number
+        doc = self.document()
+        if doc is None or sip.isdeleted(doc):
+            return
+        for n in (old, block_number):
+            if n is None or n < 0:
+                continue
+            blk = doc.findBlockByNumber(n)
+            if blk.isValid():
+                self.rehighlightBlock(blk)
 
     def update_hr_as_line(self, enable):
         self.hr_as_line = enable
@@ -286,6 +329,26 @@ class MarkdownHighlighter(QSyntaxHighlighter):
                         self._apply(start, length, format)
                 else:
                     self._apply(start, length, format)
+
+        self._conceal_markers(text)
+
+    def _conceal_markers(self, text):
+        """Hide the emphasis markers themselves (Obsidian-style preview).
+
+        The caret's own block is left alone so the markup stays visible
+        exactly where it is being edited. Hiding uses the same trick the
+        `---` rule already uses in this file - transparent colour plus a 1pt
+        size - because a QTextCharFormat cannot actually remove glyphs."""
+        if not self.conceal:
+            return
+        if self.currentBlock().blockNumber() == self.reveal_block:
+            return
+        for pattern, left, right in self._CONCEAL_RULES:
+            for m in pattern.finditer(text):
+                if m.end() - m.start() <= left + right:
+                    continue                 # nothing between the markers
+                self._apply(m.start(), left, self._hidden_format)
+                self._apply(m.end() - right, right, self._hidden_format)
 
     def _apply(self, start, length, fmt):
         """Merge a rule's format onto what is already there.
