@@ -5403,11 +5403,15 @@ class FastPrompter(
         self._save_undo_state()
 
     def build_categories(self):
-        """Rebuild the tab bar from cats_order."""
+        """Rebuild the tab bar from the VISIBLE projects.
+
+        It used to iterate cats_order raw, which quietly undid T-599: every
+        caller (profile switch, undo restore, the Trash toggle) brought
+        hidden projects straight back into the combo."""
         self.cat_combo.blockSignals(True)
         while self.cat_combo.count() > 0:
             self.cat_combo.removeItem(0)
-        for cat in self.data["cats_order"]:
+        for cat in self.visible_categories():
             self.cat_combo.addItem(cat, cat)
         self.cat_combo.blockSignals(False)
         if self.cat_combo.count() > 0:

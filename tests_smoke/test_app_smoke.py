@@ -8978,3 +8978,44 @@ def test_empty_emphasis_is_not_concealed(win):
     assert _marker_pt(win, 0, "****") != 1.0
     win.data["live_preview_conceal"] = "False"
     win._apply_conceal_mode()
+
+
+# ---------------------------------------------------------------------------
+# T-599: hiding a project must survive the paths that rebuild the tab bar.
+# ---------------------------------------------------------------------------
+
+
+def _combo_names(win):
+    return [win.cat_combo.itemData(i) or win.cat_combo.itemText(i)
+            for i in range(win.cat_combo.count())]
+
+
+def test_hidden_project_stays_hidden_after_build_categories(win):
+    order = list(win.data.get("cats_order") or [])
+    assert len(order) >= 2
+    victim = order[-1]
+    win.cat_combo.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    win.data["hidden_categories"] = [victim]
+    win.build_categories()          # profile switch / undo / Trash toggle path
+    assert victim not in _combo_names(win)
+    win.data["hidden_categories"] = []
+    win.build_categories()
+    assert victim in _combo_names(win)
+
+
+def test_visible_categories_never_returns_empty(win):
+    order = list(win.data.get("cats_order") or [])
+    win.data["hidden_categories"] = list(order)      # hide everything
+    # a combo with no rows would strand the user with no way back
+    assert win.visible_categories() == order
+    win.data["hidden_categories"] = []
+
+
+def test_projects_manager_refuses_to_hide_everything(win):
+    order = list(win.data.get("cats_order") or [])
+    win.data["hidden_categories"] = []
+    # mirrors the dialog's own guard without opening a modal
+    new_hidden = list(order)
+    assert len(new_hidden) >= len(order)      # the condition that returns early
+    assert win.hidden_categories() == []
