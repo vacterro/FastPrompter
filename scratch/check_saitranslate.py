@@ -16,7 +16,7 @@ for root, dirs, files in os.walk(src_dir):
                 for m in matches:
                     collected_keys.add(m)
 
-locales_dir = r"V:\___VAC\__K\__CODE\_PY\_FastPrompter\.saitranslate\locales"
+locales_dir = r"V:\___VAC\__K\__CODE\_PY\_FastPrompter\.saipen\saitranslate\locales"
 locale_files = [f for f in os.listdir(locales_dir) if f.endswith('.json')]
 
 missing_per_lang = {}

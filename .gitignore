@@ -26,5 +26,7 @@ src/test_dir/
 .freebuff/
 src/fastprompter/_extract.txt
 
-# saipen working memory — local only, not part of the shipped project
-.saipen/
+# saipen working memory IS tracked (the 24.07 wipe had no git fallback because
+# it wasn't). Only the snapshot generations stay out: they are regenerated on
+# every run and git now provides the history they stood in for.
+.saipen/snapshots/

@@ -1,16 +1,13 @@
-import glob
-import re
-
-for filepath in glob.glob('tests/test_*.py'):
-    with open(filepath, 'r', encoding='utf-8') as f:
-        content = f.read()
+import glob, re
+for f in glob.glob('tests_smoke/test_*.py'):
+    with open(f, 'r', encoding='utf-8') as file:
+        content = file.read()
+    content = content.replace('scope="module"', 'scope="function"')
     
-    new_content = re.sub(r'sys\.modules\[\"PyQt6.*?\] = .*?\n', '', content)
-    new_content = re.sub(r'sys\.modules\[\"pynput.*?\] = .*?\n', '', new_content)
-    new_content = re.sub(r'sys\.modules\[\'PyQt6.*?\] = .*?\n', '', new_content)
-    new_content = re.sub(r'sys\.modules\[\'pynput.*?\] = .*?\n', '', new_content)
-    
-    if new_content != content:
-        with open(filepath, 'w', encoding='utf-8') as f:
-            f.write(new_content)
-        print(f'Stripped sys.modules patches from {filepath}')
+    # ensure w.deleteLater() is in teardown
+    if 'w.deleteLater()' not in content:
+        content = re.sub(r'(w\.conn = None\s*\n)', r'\1    w.deleteLater()\n', content)
+        
+    with open(f, 'w', encoding='utf-8') as file:
+        file.write(content)
+print('Done!')

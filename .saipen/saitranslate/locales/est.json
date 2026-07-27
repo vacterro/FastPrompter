@@ -806,6 +806,8 @@
     "rule": "reegel",
     "same as title": "sama mis pealkiri",
     "then:": "siis:",
-    "title": "pealkiri"
+    "title": "pealkiri",
+    "Alt+W…": "Alt+W…",
+    "Alt+W — Smart Line (upward)": "Alt+W – Smart Line (ülespoole)”, kui üles, muidu „Ctrl+W – Smart Line"
   }
 }

@@ -806,6 +806,8 @@
     "rule": "ルール",
     "same as title": "タイトルと同じ",
     "then:": "それから：",
-    "title": "タイトル"
+    "title": "タイトル",
+    "Alt+W…": "Alt+W…",
+    "Alt+W — Smart Line (upward)": "Alt+W — スマート ライン (上方向) 上向きの場合は \"Ctrl+W — スマート ライン"
   }
 }

@@ -5,7 +5,7 @@ import time
 from deep_translator import GoogleTranslator
 
 src_dir = r"V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter"
-locales_dir = r"V:\___VAC\__K\__CODE\_PY\_FastPrompter\.saitranslate\locales"
+locales_dir = r"V:\___VAC\__K\__CODE\_PY\_FastPrompter\.saipen\saitranslate\locales"
 
 # 1. Collect all tr() keys from codebase
 tr_pattern = re.compile(r'tr\(\s*["\'](.*?)["\']\s*(?:,|\))')

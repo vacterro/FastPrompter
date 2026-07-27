@@ -1,0 +1,8 @@
+# SubSaipen saiwiki Log
+
+- 22.07.26 22:53 [E-001] [parent: none] [T-none] [agent: main] RUN: spawned subSaipen saiwiki.
+- 22.07.26 22:53 [E-002] [parent: none] [T-all] [agent: saiwiki] DONE: generated Wave 1 wiki docs (_architecture.md, _modules.md, _api.md, _configuration.md, _ui.md) in kitchen/, OUTBOX.md ready.
+- 22.07.26 22:55 [E-003] [parent: none] [T-006..T-009] [agent: saiwiki] DONE: generated Wave 2 wiki docs (_user_guide.md, _saipen_guide.md, _deployment.md, Home.md, _Sidebar.md) in kitchen/, updated OUTBOX.md and STATE.md phase DONE.
+- 22.07.26 22:56 [E-004] [parent: none] [T-010..T-012] [agent: saiwiki] DONE: created wiki/ structure with 11 GitHub Wiki formatted pages, _Footer.md, sync_wiki.py, updated OUTBOX.md, BOARD.md, and STATE.md phase DONE.
+- 23.07.26 05:14 [E-005] [parent: none] [T-014..T-018] [agent: saiwiki] DONE: executed Wave 4 Deep Wiki Expansion. Created Troubleshooting-and-FAQ.md, Keyboard-Shortcuts-and-Cheatsheet.md, Watcher-Engine-Architecture.md, Plugin-and-Skill-Development.md. Updated Home.md and _Sidebar.md across subs/saiwiki/wiki/ and docs/wiki/ (15 total pages). Updated OUTBOX.md (ready), BOARD.md, STATE.md (phase: DONE). Zero source code modified.
+- 2026-07-24T15:25:29Z [E-006] [parent: none] [WIKI-001..WIKI-007] [agent: claude] RUN: maintenance wave 5 - merged 7 corrected wiki pages from kitchen/ to docs/wiki/. Fixed: User-Guide (14+ missing features), Keyboard-Shortcuts (7+ missing shortcuts), Module-Structure (25 missing files), Configuration (wrong DB path + 12 missing settings), Core-API (12+ missing classes), SAIPEN-Protocol (subs/ path fix), Plugin-Skill (subs/ path fix + watcher sections). Tests: 851 passed, 1 skipped.

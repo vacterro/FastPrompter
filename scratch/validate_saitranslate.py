@@ -50,6 +50,18 @@ else:
     if missing_files:
         errors.append(f"Missing locale JSON files: {missing_files}")
     
+    # EN is the source of truth for what "100%" even means
+    en_keys = set()
+    _en = os.path.join(locales_dir, "en.json")
+    if os.path.exists(_en):
+        try:
+            with open(_en, 'r', encoding='utf-8') as f:
+                en_keys = set(json.load(f).get("translations", {}))
+        except Exception as e:
+            errors.append(f"[en] baseline unreadable, coverage cannot be checked: {e}")
+    else:
+        errors.append("en.json missing — coverage cannot be computed")
+
     locale_stats = {}
     for lang in REQUIRED_LANGS:
         lpath = os.path.join(locales_dir, f"{lang}.json")
@@ -64,8 +76,20 @@ else:
                 warnings.append(f"[{lang}] Incomplete _meta tags")
             
             trans = data.get("translations", {})
-            cov = data.get("coverage_pct", 0)
-            
+            # COMPUTE coverage; never trust the stored field. Ten locales
+            # claimed coverage_pct 100.0 while actually missing keys (tur was
+            # at 785/802), and this validator passed them because it simply
+            # echoed the number the data made up about itself.
+            covered = len(set(trans) & en_keys) if en_keys else len(trans)
+            cov = round(100.0 * covered / len(en_keys), 1) if en_keys else 0.0
+            stored = data.get("coverage_pct")
+            if stored is not None and abs(float(stored) - cov) > 0.05:
+                warnings.append(
+                    f"[{lang}] coverage_pct says {stored} but the keys say {cov}")
+            missing = len(en_keys - set(trans)) if en_keys else 0
+            if missing:
+                warnings.append(f"[{lang}] {missing} key(s) untranslated (falls back to EN)")
+
             locale_stats[lang] = {
                 "keys": len(trans),
                 "coverage": cov,
@@ -117,7 +141,10 @@ print("\n--- Translated Docs Summary ---")
 for dl, count in doc_stats.items():
     print(f"  DOCS {dl.upper()}: {count} markdown docs translated")
 
-if not errors:
-    print("\nSTATUS: VALIDATION PASSED (100% OK)")
-else:
+if errors:
     print("\nSTATUS: VALIDATION FAILED")
+elif warnings:
+    # "(100% OK)" next to a list of warnings was its own small lie
+    print(f"\nSTATUS: VALIDATION PASSED with {len(warnings)} warning(s) — no structural errors")
+else:
+    print("\nSTATUS: VALIDATION PASSED (100% OK)")

@@ -806,6 +806,8 @@
     "rule": "규칙",
     "same as title": "제목과 동일",
     "then:": "그 다음에:",
-    "title": "제목"
+    "title": "제목",
+    "Alt+W…": "Alt+W…",
+    "Alt+W — Smart Line (upward)": "Alt+W — 스마트 라인(위쪽)\", 위쪽이면 \"Ctrl+W — 스마트 라인"
   }
 }

@@ -806,6 +806,8 @@
     "rule": "规则",
     "same as title": "与标题相同",
     "then:": "然后：",
-    "title": "标题"
+    "title": "标题",
+    "Alt+W…": "Alt+W...",
+    "Alt+W — Smart Line (upward)": "Alt+W — 智能线（向上）” 如果向上，则“Ctrl+W — 智能线"
   }
 }

@@ -806,6 +806,8 @@
     "rule": "regel",
     "same as title": "samma som titel",
     "then:": "sedan:",
-    "title": "titel"
+    "title": "titel",
+    "Alt+W…": "Alt+W...",
+    "Alt+W — Smart Line (upward)": "Alt+W — Smart Line (uppåt)\" om uppåt annars \"Ctrl+W — Smart Line"
   }
 }

@@ -806,6 +806,8 @@
     "rule": "กฎ",
     "same as title": "เช่นเดียวกับชื่อเรื่อง",
     "then:": "แล้ว:",
-    "title": "ชื่อ"
+    "title": "ชื่อ",
+    "Alt+W…": "Alt+W...",
+    "Alt+W — Smart Line (upward)": "Alt+W — Smart Line (ขึ้นด้านบน)\" หากขึ้นไปด้านบน \"Ctrl+W — Smart Line"
   }
 }

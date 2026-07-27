@@ -806,6 +806,8 @@
     "rule": "règle",
     "same as title": "identique au titre",
     "then:": "alors:",
-    "title": "titre"
+    "title": "titre",
+    "Alt+W…": "Alt+W…",
+    "Alt+W — Smart Line (upward)": "Alt+W — Smart Line (vers le haut)\" si vers le haut, sinon \"Ctrl+W — Smart Line"
   }
 }

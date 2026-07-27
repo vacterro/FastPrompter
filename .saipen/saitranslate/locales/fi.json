@@ -806,6 +806,8 @@
     "rule": "sääntö",
     "same as title": "sama kuin otsikko",
     "then:": "sitten:",
-    "title": "otsikko"
+    "title": "otsikko",
+    "Alt+W…": "Alt+W…",
+    "Alt+W — Smart Line (upward)": "Alt+W — Smart Line (ylöspäin)\" jos ylöspäin muuten \"Ctrl+W - Smart Line"
   }
 }
