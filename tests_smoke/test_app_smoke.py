@@ -9411,10 +9411,119 @@ def test_fancy_zones_no_presets_page_when_empty():
 def test_fancy_zones_save_preset():
     from fastprompter.ui.fancy_zones import _load_presets, _save_presets
     data = {}
+    # bare [x,y,w,h] in, normalised dict out (legacy shape still accepted)
     _save_presets(data, [[0.0, 0.0, 1.0, 1.0]])
     presets = _load_presets(data)
     assert len(presets) == 1
-    assert presets[0] == [0.0, 0.0, 1.0, 1.0]
+    p = presets[0]
+    assert (p["x"], p["y"], p["w"], p["h"]) == (0.0, 0.0, 1.0, 1.0)
+    assert p["state"] == "normal"
+
+
+def test_legacy_bare_list_presets_still_load():
+    """The first build stored [x,y,w,h]. A saved preset must not vanish
+    because the format grew a name and a state."""
+    from fastprompter.ui.fancy_zones import _load_presets
+    got = _load_presets({"window_presets": [[0.1, 0.2, 0.3, 0.4]]})
+    assert len(got) == 1
+    assert (got[0]["x"], got[0]["y"], got[0]["w"], got[0]["h"]) == (0.1, 0.2, 0.3, 0.4)
+    assert got[0]["state"] == "normal"
+    assert got[0]["name"]
+
+
+def test_presets_page_hidden_when_disabled():
+    from fastprompter.ui.fancy_zones import layouts_for
+    data = {"window_presets": [{"name": "a", "x": 0, "y": 0, "w": 1, "h": 1}]}
+    assert "Presets" in [n for n, _ in layouts_for(data)]
+    data["window_presets_enabled"] = "False"
+    assert "Presets" not in [n for n, _ in layouts_for(data)]
+
+
+def test_preset_round_trips_name_and_state():
+    from fastprompter.ui.fancy_zones import _load_presets, _save_presets
+    data = {}
+    _save_presets(data, [{"name": "Wide", "x": 0.0, "y": 0.0,
+                          "w": 1.0, "h": 0.5, "state": "maximized"}])
+    got = _load_presets(data)
+    assert got[0]["name"] == "Wide"
+    assert got[0]["state"] == "maximized"
+
+
+def test_presets_dialog_reorders_and_renames(win):
+    from fastprompter.ui.window_presets_dialog import WindowPresetsDialog
+    saved = win.data.get("window_presets")
+    try:
+        win.data["window_presets"] = [
+            {"name": "first", "x": 0.0, "y": 0.0, "w": 0.5, "h": 0.5},
+            {"name": "second", "x": 0.5, "y": 0.0, "w": 0.5, "h": 0.5},
+        ]
+        dlg = WindowPresetsDialog(win)
+        assert [p["name"] for p in dlg.presets] == ["first", "second"]
+        dlg.list.setCurrentRow(1)
+        dlg.move_up()
+        assert [p["name"] for p in dlg.presets] == ["second", "first"]
+        dlg.presets[0]["name"] = "renamed"
+        dlg.accept()
+        assert [p["name"] for p in win.data["window_presets"]] == ["renamed", "first"]
+    finally:
+        if saved is None:
+            win.data.pop("window_presets", None)
+        else:
+            win.data["window_presets"] = saved
+
+
+def test_presets_dialog_recapture_keeps_name_and_slot(win):
+    """The picker alone could only delete + re-add, which moved the entry to
+    the end and lost its name."""
+    from fastprompter.ui.window_presets_dialog import WindowPresetsDialog
+    saved = win.data.get("window_presets")
+    try:
+        win.data["window_presets"] = [
+            {"name": "keepme", "x": 0.0, "y": 0.0, "w": 0.1, "h": 0.1},
+            {"name": "other", "x": 0.5, "y": 0.0, "w": 0.5, "h": 0.5},
+        ]
+        dlg = WindowPresetsDialog(win)
+        dlg.list.setCurrentRow(0)
+        dlg.recapture()
+        assert dlg.presets[0]["name"] == "keepme"     # name kept
+        assert [p["name"] for p in dlg.presets] == ["keepme", "other"]  # slot kept
+        assert dlg.presets[0]["w"] != 0.1             # geometry actually changed
+    finally:
+        if saved is None:
+            win.data.pop("window_presets", None)
+        else:
+            win.data["window_presets"] = saved
+
+
+def test_presets_dialog_delete_and_cap(win):
+    from fastprompter.ui.window_presets_dialog import WindowPresetsDialog
+    from fastprompter.ui.fancy_zones import _MAX_PRESETS
+    saved = win.data.get("window_presets")
+    try:
+        win.data["window_presets"] = [
+            {"name": f"p{i}", "x": 0.0, "y": 0.0, "w": 0.5, "h": 0.5}
+            for i in range(_MAX_PRESETS)
+        ]
+        dlg = WindowPresetsDialog(win)
+        dlg.list.setCurrentRow(0)
+        dlg.delete()
+        assert len(dlg.presets) == _MAX_PRESETS - 1
+        from unittest.mock import patch
+        with patch("fastprompter.ui.window_presets_dialog.QMessageBox"):
+            dlg.add_current()
+            assert len(dlg.presets) == _MAX_PRESETS
+            dlg.add_current()                      # refused at the cap
+            assert len(dlg.presets) == _MAX_PRESETS
+    finally:
+        if saved is None:
+            win.data.pop("window_presets", None)
+        else:
+            win.data["window_presets"] = saved
+
+
+def test_settings_expose_presets_toggle_and_manage(win):
+    assert hasattr(win, "cb_window_presets")
+    assert hasattr(win, "btn_manage_presets")
 
 
 def test_fancy_zones_max_presets():

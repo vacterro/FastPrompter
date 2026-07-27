@@ -2775,6 +2775,22 @@ class FastPrompter(
             self.data.get("numbox_tabs", "False") == "True",
             self._toggle_numbox_mode,
         )
+        self.cb_window_presets = create_footer_cb(
+            "🗔 Ctrl+Q Presets",
+            "Add a 'Presets' page to the Ctrl+Q picker holding your own\n"
+            "saved window positions (S saves, Del removes, 1-0 applies)",
+            self.data.get("window_presets_enabled", "True") == "True",
+            lambda checked: (
+                self.data.update(
+                    {"window_presets_enabled": "True" if checked else "False"})
+                or self.mark_dirty()
+            ),
+        )
+        self.btn_manage_presets = QPushButton(tr("Manage presets", self._current_lang))
+        self.btn_manage_presets.setToolTip(tr(
+            "Reorder, rename, re-capture or delete your Ctrl+Q window presets",
+            self._current_lang))
+        self.btn_manage_presets.clicked.connect(self.open_window_presets)
         self.cb_customize_toolbar.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.cb_customize_toolbar.customContextMenuRequested.connect(
             lambda _p: self.reset_toolbar_order())
@@ -3484,6 +3500,9 @@ class FastPrompter(
             _settings_group("Layout", [
                 self.cb_sidebar, self.cb_customize_toolbar,
                 self.cb_numbox_tabs, self.btn_reset_layout,
+            ]),
+            _settings_group("Window presets", [
+                self.cb_window_presets, self.btn_manage_presets,
             ]),
             _settings_group("Silo look", [
                 self.cb_silo_color_box, self.cb_trash_vision,
@@ -5524,6 +5543,14 @@ class FastPrompter(
         idx = self.cat_combo.currentIndex()
         for i, btn in enumerate(self._cat_num_buttons):
             btn.setChecked(i == idx)
+
+    def open_window_presets(self):
+        from fastprompter.ui.window_presets_dialog import WindowPresetsDialog
+        self._increment_focus_lock()
+        try:
+            WindowPresetsDialog(self).exec()
+        finally:
+            QTimer.singleShot(300, self._decrement_focus_lock)
 
     def _toggle_numbox_mode(self, checked):
         self.data["numbox_tabs"] = "True" if checked else "False"

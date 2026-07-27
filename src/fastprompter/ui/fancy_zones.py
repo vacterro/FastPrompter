@@ -38,33 +38,78 @@ _PAD = 6
 _MAX_PRESETS = 10
 
 
+def presets_enabled(data) -> bool:
+    """The Presets page is opt-in, like every other added surface here."""
+    if not data:
+        return False
+    return str(data.get("window_presets_enabled", "True")) == "True"
+
+
 def layouts_for(data=None) -> list[tuple[str, list]]:
     """Builtin pages + user presets (if any)."""
     layouts = list(BUILTIN_LAYOUTS)
-    presets = _load_presets(data)
-    if presets:
-        layouts.append(("Presets", [tuple(p[:4]) for p in presets]))
+    if presets_enabled(data):
+        presets = _load_presets(data)
+        if presets:
+            layouts.append(("Presets", [_rect_of(p) for p in presets]))
     return layouts
 
 
+def _rect_of(preset) -> tuple[float, float, float, float]:
+    return (preset["x"], preset["y"], preset["w"], preset["h"])
+
+
 def _load_presets(data):
+    """Normalise to dicts: {name, x, y, w, h, state}.
+
+    Accepts the original bare [x, y, w, h] shape too — the first build wrote
+    that, and a saved preset must not vanish because the format grew.
+    """
     if not data:
         return []
     raw = data.get("window_presets", [])
     if not isinstance(raw, list):
         return []
     out = []
-    for item in raw:
-        if isinstance(item, (list, tuple)) and len(item) >= 4:
-            try:
-                out.append([float(v) for v in item[:4]])
-            except (TypeError, ValueError):
+    for i, item in enumerate(raw):
+        try:
+            if isinstance(item, dict):
+                p = {
+                    "name": str(item.get("name") or f"Preset {i + 1}"),
+                    "x": float(item["x"]), "y": float(item["y"]),
+                    "w": float(item["w"]), "h": float(item["h"]),
+                    "state": "maximized"
+                    if item.get("state") == "maximized" else "normal",
+                }
+            elif isinstance(item, (list, tuple)) and len(item) >= 4:
+                x, y, w, h = (float(v) for v in item[:4])
+                p = {"name": f"Preset {i + 1}", "x": x, "y": y,
+                     "w": w, "h": h, "state": "normal"}
+            else:
                 continue
+        except (TypeError, ValueError, KeyError):
+            continue
+        out.append(p)
     return out
 
 
 def _save_presets(data, presets):
-    data["window_presets"] = [list(p[:4]) for p in presets]
+    """Accepts dicts or the legacy bare [x, y, w, h] — symmetric with
+    _load_presets, which has always taken both. Without this, a caller still
+    handing over the old shape raised TypeError on save."""
+    out = []
+    for i, p in enumerate(presets):
+        if isinstance(p, dict):
+            out.append({
+                "name": str(p.get("name") or f"Preset {i + 1}"),
+                "x": p["x"], "y": p["y"], "w": p["w"], "h": p["h"],
+                "state": p.get("state", "normal"),
+            })
+        elif isinstance(p, (list, tuple)) and len(p) >= 4:
+            x, y, w, h = p[:4]
+            out.append({"name": f"Preset {i + 1}", "x": x, "y": y,
+                        "w": w, "h": h, "state": "normal"})
+    data["window_presets"] = out
 
 
 class FancyZoneOverlay(QWidget):
@@ -218,6 +263,22 @@ class FancyZoneOverlay(QWidget):
         if mw.isMinimized():
             mw.showNormal()
 
+        # A preset can carry a STATE. Maximized has to be applied as a state,
+        # not as a rectangle — setGeometry on a maximized window is ignored,
+        # and a "maximized" preset restored as a mere rect is not maximized.
+        if self._is_presets_page():
+            presets = _load_presets(getattr(mw, "data", None))
+            if 0 <= idx < len(presets) and presets[idx].get("state") == "maximized":
+                mw.showMaximized()
+                self.close()
+                if not mw.isVisible():
+                    mw.show()
+                mw.raise_()
+                mw.activateWindow()
+                return True
+            if mw.isMaximized():
+                mw.showNormal()      # leave maximized before placing a rect
+
         w = max(z.width(), mw.minimumWidth())
         h = max(z.height(), mw.minimumHeight())
         a = self._avail
@@ -264,7 +325,13 @@ class FancyZoneOverlay(QWidget):
         presets = _load_presets(data)
         if len(presets) >= _MAX_PRESETS:
             return
-        presets.append([fx, fy, fw, fh])
+        presets.append({
+            "name": f"Preset {len(presets) + 1}",
+            "x": fx, "y": fy, "w": fw, "h": fh,
+            # the window STATE, not just its box: a maximized window has a
+            # normal-geometry rect that says nothing about being maximized
+            "state": "maximized" if mw.isMaximized() else "normal",
+        })
         _save_presets(data, presets)
         if hasattr(mw, "mark_dirty"):
             mw.mark_dirty()
@@ -375,6 +442,11 @@ class FancyZoneOverlay(QWidget):
                        Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
                        hint)
 
+            names = []
+            if self._is_presets_page():
+                names = [p["name"] for p in
+                         _load_presets(getattr(self.main_win, "data", None))]
+
             fill = QColor(accent)
             fill.setAlpha(40)
             hot_fill = QColor(accent)
@@ -387,7 +459,9 @@ class FancyZoneOverlay(QWidget):
                 p.drawRect(inner)
 
                 p.setPen(text if i != self._hot else accent.lighter(150))
-                p.drawText(QRectF(inner), Qt.AlignmentFlag.AlignCenter,
-                           str(i + 1))
+                label = str(i + 1) if i < 9 else "0"
+                if names:
+                    label = f"{label}  {names[i]}" if i < len(names) else label
+                p.drawText(QRectF(inner), Qt.AlignmentFlag.AlignCenter, label)
         finally:
             p.end()
