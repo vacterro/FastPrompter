@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../s
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
+from PyQt6 import sip
 from PyQt6.QtWidgets import QApplication
 
 import fastprompter.core.state as state_mod
@@ -38,14 +39,51 @@ def win():
 
     w = FastPrompter()
     yield w
-    w.auto_save_timer.stop()
-    w.topmost_timer.stop()
-    w._cache_timer.stop()
-    w.state.conn = None  # skip final DB write on close
+    _teardown_window(w)
+
+
+def _teardown_window(w):
+    """Tear a FastPrompter down so it is actually GONE.
+
+    T-295: QApplication.processEvents() does NOT deliver DeferredDelete, so
+    deleteLater() alone never lands and the whole widget tree leaks — measured
+    at +1397 widgets and +11 top-levels per window, with construction cost
+    climbing 1.2s -> 15.0s over six windows. Worse, a gc.collect() over that
+    pile of half-dead PyQt wrappers segfaults the process (SIGSEGV at the
+    third window). sendPostedEvents(None, DeferredDelete) is the missing
+    flush: with it, widgets stay flat at 1 and gc.collect() is safe.
+    """
+    from PyQt6.QtCore import QEvent
+    for timer in ("auto_save_timer", "topmost_timer", "_cache_timer"):
+        t = getattr(w, timer, None)
+        if t is not None and not sip.isdeleted(t):
+            t.stop()
+    if getattr(w, "state", None) is not None:
+        w.state.conn = None      # skip final DB write on close
     w.conn = None
+    w.close()                    # close BEFORE scheduling the delete
     w.deleteLater()
     QApplication.processEvents()
-    w.close()
+    QApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    QApplication.processEvents()
+
+
+@pytest.fixture(scope="function")
+def fresh_win():
+    """A window nobody else has touched, for order-sensitive tests.
+
+    The module-scoped `win` is shared by 500+ tests, so state leaks between
+    them (T-295). Use this when a test needs a pristine window; it costs a
+    full construction (~1.9s) so do not reach for it by default.
+    """
+    state_mod.get_db_path = lambda profile_id=1: os.path.join(_tmpdir, f"fresh_{profile_id}.db")
+    state_mod.run_portable_backup = lambda data: None
+    FastPrompter.setup_single_instance_server = lambda self: None
+    FastPrompter.register_all_hotkeys = lambda self: None
+    FastPrompter.unregister_all_hotkeys = lambda self: None
+    w = FastPrompter()
+    yield w
+    _teardown_window(w)
 
 
 def test_window_constructs_with_all_mixins(win):
@@ -9153,6 +9191,44 @@ def test_numbox_click_switches_project(win):
     assert win.cat_combo.currentIndex() == 1
     win._cat_numbox_clicked(0)
     assert win.cat_combo.currentIndex() == 0
+
+
+def test_fresh_win_is_a_real_independent_window(fresh_win, win):
+    """T-295: the function-scoped fixture must hand back a DIFFERENT window,
+    not the shared module one."""
+    assert fresh_win is not win
+    assert fresh_win.text_area is not win.text_area
+
+
+def test_teardown_actually_destroys_the_window():
+    """The core T-295 finding, pinned: processEvents() does NOT deliver
+    DeferredDelete, so deleteLater alone leaks the entire widget tree. Build
+    a window, tear it down properly, and assert the C++ object is gone."""
+    state_mod.get_db_path = lambda profile_id=1: os.path.join(_tmpdir, "leakprobe.db")
+    state_mod.run_portable_backup = lambda data: None
+    FastPrompter.setup_single_instance_server = lambda self: None
+    FastPrompter.register_all_hotkeys = lambda self: None
+    FastPrompter.unregister_all_hotkeys = lambda self: None
+
+    before = len(QApplication.allWidgets())
+    w = FastPrompter()
+    grew = len(QApplication.allWidgets())
+    assert grew > before, "window built no widgets — probe is not measuring"
+    _teardown_window(w)
+    assert sip.isdeleted(w), "window survived teardown (DeferredDelete never flushed)"
+    after = len(QApplication.allWidgets())
+    # allow a little slack for shared/global widgets, but the ~1400-widget
+    # tree this used to leak must be gone
+    assert after < before + 100, f"leaked widgets: {before} -> {after}"
+
+
+def test_teardown_leaves_gc_safe(fresh_win):
+    """gc.collect() over half-deleted PyQt wrappers used to SIGSEGV at the
+    third window. Nothing to assert but survival — a crash fails the run."""
+    import gc
+    gc.collect()
+    QApplication.processEvents()
+    assert fresh_win.text_area is not None
 
 
 def test_hotkey_summon_focuses_the_text_silo(win):
