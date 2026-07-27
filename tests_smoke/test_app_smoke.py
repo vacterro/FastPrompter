@@ -2677,20 +2677,42 @@ def test_escape_closes_search_before_hiding(win):
     assert not win.isVisible()
 
 
-def test_add_category_capped_at_five(win):
+def test_add_category_capped_at_hundred(win):
+    """T-607 raised the cap from 5 to 100. Filling to exactly the cap must
+    still refuse — and it has to refuse BEFORE QInputDialog, which is modal
+    and would hang the suite offscreen (only QMessageBox is patched here)."""
     from unittest.mock import patch
 
-    # These 5 names deliberately don't exist in data["categories"], so the
+    # These names deliberately don't exist in data["categories"], so the
     # window is in an invalid state for the duration of this test — restore
     # cats_order afterwards or every later test that touches the category
     # machinery dies on data["categories"][cat] (KeyError, main.py:4001).
     saved_order = list(win.data.get("cats_order", []))
     try:
-        win.data["cats_order"] = ["A", "B", "C", "D", "E"]
+        win.data["cats_order"] = [f"P{i}" for i in range(100)]
         before = list(win.data["cats_order"])
         with patch("fastprompter.main.QMessageBox"):  # suppress blocking info dialog
             win.add_category()
         assert win.data["cats_order"] == before
+    finally:
+        win.data["cats_order"] = saved_order
+
+
+def test_add_category_below_the_cap_is_not_refused_early(win):
+    """Guards the other side of the boundary: at 99 the cap must NOT fire, so
+    the refusal branch cannot silently swallow legitimate adds."""
+    from unittest.mock import patch
+
+    saved_order = list(win.data.get("cats_order", []))
+    try:
+        win.data["cats_order"] = [f"P{i}" for i in range(99)]
+        with patch("fastprompter.main.QMessageBox") as mb, \
+             patch("fastprompter.main.QInputDialog") as dlg:
+            dlg.getText.return_value = ("", False)   # user cancels
+            win.add_category()
+        # cap dialog never shown; it got as far as asking for a name
+        assert not mb.information.called
+        assert dlg.getText.called
     finally:
         win.data["cats_order"] = saved_order
 
@@ -9053,3 +9075,293 @@ def test_deferred_callbacks_guard_a_deleted_widget():
         for call in ("self.document()", "self.width()"):
             if call in code:
                 assert code.index(call) > guard_at, f"{name}: {call} runs before the guard"
+
+
+# ---------------------------------------------------------------------------
+# T-568: Vintage Classic contrast must pass 3.0 threshold.
+# ---------------------------------------------------------------------------
+
+
+def test_vintage_classic_btn_new_contrast(win):
+    from fastprompter.theme.themes import THEMES
+    vc = THEMES["Vintage Classic"]
+    style = vc["btn_new"]
+    assert "#3a5e5e" in style, "btn_new text should be darkened teal"
+
+
+def test_vintage_classic_lbl_help_contrast(win):
+    from fastprompter.theme.themes import THEMES
+    vc = THEMES["Vintage Classic"]
+    style = vc["lbl_help"]
+    assert "#808080" not in style, "lbl_help should no longer use #808080"
+
+
+# ---------------------------------------------------------------------------
+# T-604: Timer toast shows raw description, no "Estimated reset" override.
+# ---------------------------------------------------------------------------
+
+
+def test_timer_toast_no_estimated_text():
+    import inspect
+    import fastprompter.ui.timer_toast as tt
+    src = inspect.getsource(tt.TimerToast.__init__)
+    assert "Estimated reset" not in src
+
+
+# ---------------------------------------------------------------------------
+# T-606: Cursor blink speed setting exists.
+# ---------------------------------------------------------------------------
+
+
+def test_cursor_blink_spinner_exists(win):
+    assert hasattr(win, "spin_cursor_blink")
+    assert win.spin_cursor_blink.minimum() == 0
+    assert win.spin_cursor_blink.maximum() == 2000
+
+
+def test_cursor_blink_change_updates_data(win):
+    old = win.data.get("cursor_blink_ms")
+    win.spin_cursor_blink.setValue(800)
+    assert win.data["cursor_blink_ms"] == "800"
+    if old is not None:
+        win.spin_cursor_blink.setValue(int(old))
+    else:
+        win.spin_cursor_blink.setValue(530)
+
+
+# ---------------------------------------------------------------------------
+# T-607: Number-box project switcher.
+# ---------------------------------------------------------------------------
+
+
+def test_numbox_container_exists(win):
+    assert hasattr(win, "cat_numbox")
+    assert hasattr(win, "_cat_num_buttons")
+
+
+def test_numbox_buttons_match_visible_categories(win):
+    cats = win.visible_categories()
+    assert len(win._cat_num_buttons) == len(cats)
+    for i, cat in enumerate(cats):
+        assert win._cat_num_buttons[i].toolTip() == cat
+
+
+def test_numbox_click_switches_project(win):
+    if len(win._cat_num_buttons) < 2:
+        pytest.skip("need >=2 projects")
+    win._cat_numbox_clicked(1)
+    assert win.cat_combo.currentIndex() == 1
+    win._cat_numbox_clicked(0)
+    assert win.cat_combo.currentIndex() == 0
+
+
+def test_hotkey_summon_focuses_the_text_silo(win):
+    """T-609: brought up by hotkey, the caret belongs in the silo.
+
+    Asserts focusWidget(), NOT hasFocus(). hasFocus() additionally requires
+    the widget's WINDOW to be active, and on the offscreen platform ("this
+    plugin does not support raise()") activation is order-dependent — the
+    test passed alone and failed in full-suite order for that reason alone.
+    focusWidget() is the window's own focus target and is what setFocus
+    actually sets, so it tests the behaviour without the OS in the way."""
+    # clearFocus, not setFocus on some other widget: snippets_widget is a
+    # plain container with NoFocus policy, so focusing it is a silent no-op
+    # and the editor kept focus — the assert below would have passed without
+    # show_window doing anything at all.
+    win.text_area.clearFocus()
+    QApplication.processEvents()
+    assert win.focusWidget() is not win.text_area   # precondition really held
+    win.show_window(by_hotkey=True)
+    QApplication.processEvents()          # let the deferred re-focus land
+    assert win.focusWidget() is win.text_area
+
+
+def test_focus_text_silo_is_guarded_for_deferred_use(win):
+    """It runs from QTimer.singleShot, so it must check for a dead widget
+    BEFORE touching Qt — an access violation has no traceback (H-406)."""
+    import inspect
+    src = inspect.getsource(win._focus_text_silo)
+    body = src.split('"""')[-1] if '"""' in src else src
+    code = "\n".join(ln.split("#", 1)[0] for ln in body.splitlines())
+    assert "_is_deleted" in code, "no deletion guard"
+    assert code.index("_is_deleted") < code.index("setFocus"), \
+        "setFocus runs before the guard"
+
+
+def test_focus_text_silo_survives_a_missing_editor(win):
+    saved = win.text_area
+    try:
+        win.text_area = None
+        win._focus_text_silo()            # must not raise
+    finally:
+        win.text_area = saved
+
+
+def test_window_mixin_imports_qtimer_at_module_level(win):
+    """The deferred re-focus calls QTimer with no local import — a missing
+    module-level import would NameError on every hotkey summon."""
+    import fastprompter.ui.window_mixin as wm
+    assert hasattr(wm, "QTimer")
+
+
+def test_numbox_rebuild_unparents_before_deleting(win):
+    """H-409: deleteLater does NOT remove a widget from the parent's child
+    list, and theme_mixin's font/theme pass walks self.findChildren(QWidget)
+    calling styleSheet()/unpolish/polish. A button left parented while dead on
+    the C++ side is an access violation there — no traceback, process gone."""
+    import inspect
+    src = inspect.getsource(win._rebuild_cat_numbox)
+    code = "\n".join(ln.split("#", 1)[0] for ln in src.splitlines())
+    assert "setParent(None)" in code, "old buttons are never unparented"
+    assert code.index("setParent(None)") < code.index("deleteLater"), \
+        "unparent must precede deleteLater"
+
+
+def test_rebuilt_numbox_buttons_leave_the_child_tree(win):
+    """Behavioural half: after a rebuild no stale button may still answer to
+    findChildren, or the theme pass will reach it."""
+    from PyQt6.QtWidgets import QPushButton
+    win._rebuild_cat_numbox()
+    old = list(win._cat_num_buttons)
+    win._rebuild_cat_numbox()
+    live = set(win.findChildren(QPushButton))
+    assert not (set(old) & live), "a replaced number button is still parented"
+
+
+def test_theme_apply_after_numbox_rebuild_does_not_crash(win):
+    """The actual crash path, driven end to end: rebuild (queues deletions)
+    then immediately re-apply the theme, which is what walks the child tree."""
+    win._rebuild_cat_numbox()
+    win.apply_theme()
+    win.apply_font()
+    QApplication.processEvents()
+    assert len(win._cat_num_buttons) == win.cat_combo.count()
+
+
+def test_numbox_active_highlight(win):
+    win.cat_combo.setCurrentIndex(0)
+    QApplication.processEvents()
+    win._update_cat_numbox_active()
+    assert win._cat_num_buttons[0].isChecked()
+    if len(win._cat_num_buttons) > 1:
+        assert not win._cat_num_buttons[1].isChecked()
+
+
+def test_numbox_toggle_mode(win):
+    win._toggle_numbox_mode(True)
+    assert win.cat_combo.isHidden()
+    assert not win.cat_numbox.isHidden()
+    assert win.data["numbox_tabs"] == "True"
+    win._toggle_numbox_mode(False)
+    assert not win.cat_combo.isHidden()
+    assert win.cat_numbox.isHidden()
+    assert win.data["numbox_tabs"] == "False"
+
+
+def test_hidden_combo_stays_hidden_across_a_layout_pass(win):
+    """The boot path hides one of the two BEFORE either is added to
+    header_layout. Qt only honours that if the hide was explicit — assert it
+    rather than trusting the internal flag."""
+    win._toggle_numbox_mode(True)
+    win.header_layout.activate()
+    win.header_layout.update()
+    QApplication.processEvents()
+    assert win.cat_combo.isHidden(), "combo re-shown by a layout pass"
+    assert not win.cat_numbox.isHidden()
+    win._toggle_numbox_mode(False)
+
+
+def test_project_cap_is_100(win):
+    import inspect
+    src = inspect.getsource(win.add_category)
+    assert "100" in src
+
+
+def test_cat_context_menu_anchors_on_the_widget_that_was_clicked(win):
+    """H-407: in number-box mode the combo is HIDDEN, and mapToGlobal on a
+    hidden widget puts the menu somewhere off in the corner."""
+    import inspect
+    src = inspect.getsource(win.show_cat_context_menu)
+    assert "anchor" in src, "show_cat_context_menu takes no anchor"
+    code = "\n".join(ln.split("#", 1)[0] for ln in src.splitlines())
+    assert "self.cat_combo.mapToGlobal" not in code, \
+        "menu still anchors on the (possibly hidden) combo unconditionally"
+
+
+def test_numbox_context_passes_the_button_as_anchor(win):
+    import inspect
+    src = inspect.getsource(win._cat_numbox_context)
+    assert "anchor=" in src
+
+
+def test_build_categories_rebuilds_numbox_before_switching(win):
+    """H-408: setCurrentIndex fires on_tab_changed, which highlights the
+    number buttons — rebuilding after that painted the row about to die."""
+    import inspect
+    src = inspect.getsource(win.build_categories)
+    code = "\n".join(ln.split("#", 1)[0] for ln in src.splitlines())
+    assert "_rebuild_cat_numbox" in code
+    assert code.index("_rebuild_cat_numbox") < code.index("setCurrentIndex"), \
+        "numbox is rebuilt after the index change"
+
+
+def test_build_categories_leaves_numbox_matching_the_combo(win):
+    win.build_categories()
+    QApplication.processEvents()
+    assert len(win._cat_num_buttons) == win.cat_combo.count()
+    checked = [i for i, b in enumerate(win._cat_num_buttons) if b.isChecked()]
+    assert checked == [win.cat_combo.currentIndex()]
+
+
+# ---------------------------------------------------------------------------
+# T-608: Ctrl+Q window presets (save/delete/cycle).
+# ---------------------------------------------------------------------------
+
+
+def test_fancy_zones_presets_page_appears_when_data_has_presets():
+    from fastprompter.ui.fancy_zones import layouts_for
+    data = {"window_presets": [[0.1, 0.1, 0.5, 0.5], [0.5, 0.0, 0.5, 1.0]]}
+    layouts = layouts_for(data)
+    names = [name for name, _ in layouts]
+    assert "Presets" in names
+
+
+def test_fancy_zones_no_presets_page_when_empty():
+    from fastprompter.ui.fancy_zones import layouts_for
+    assert "Presets" not in [n for n, _ in layouts_for({})]
+    assert "Presets" not in [n for n, _ in layouts_for(None)]
+
+
+def test_fancy_zones_save_preset():
+    from fastprompter.ui.fancy_zones import _load_presets, _save_presets
+    data = {}
+    _save_presets(data, [[0.0, 0.0, 1.0, 1.0]])
+    presets = _load_presets(data)
+    assert len(presets) == 1
+    assert presets[0] == [0.0, 0.0, 1.0, 1.0]
+
+
+def test_fancy_zones_max_presets():
+    from fastprompter.ui.fancy_zones import _load_presets, _save_presets, _MAX_PRESETS
+    data = {}
+    big = [[0.1 * i, 0.0, 0.5, 0.5] for i in range(_MAX_PRESETS + 5)]
+    _save_presets(data, big)
+    assert len(_load_presets(data)) == _MAX_PRESETS + 5
+
+
+def test_window_presets_round_trips_through_db(tmp_path):
+    import fastprompter.core.state as sm
+    db = tmp_path / "presets_rt.db"
+    orig = sm.get_db_path
+    sm.get_db_path = lambda profile_id=1: str(db)
+    try:
+        st = sm.FastPrompterState()
+        st.data["window_presets"] = [[0.1, 0.2, 0.3, 0.4]]
+        st.save_data_to_db("body", force=True)
+        st.conn.close()
+
+        st2 = sm.FastPrompterState()
+        assert st2.data.get("window_presets") == [[0.1, 0.2, 0.3, 0.4]]
+        st2.conn.close()
+    finally:
+        sm.get_db_path = orig

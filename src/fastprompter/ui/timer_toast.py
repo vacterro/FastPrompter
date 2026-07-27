@@ -186,20 +186,8 @@ class TimerToast(QWidget):
         b_lay.addWidget(title)
 
         if timer.description:
-            raw_desc = timer.description
-            if "assumed" in raw_desc.lower():
-                desc_text = tr("Estimated reset window (no exact time in agent output)", lang)
-                desc_tooltip = tr(
-                    "The AI agent reported a usage limit but gave no reset timestamp.\n"
-                    "FastPrompter defaulted to an assumed time window.", lang
-                )
-            else:
-                desc_text = raw_desc
-                desc_tooltip = raw_desc
-
-            desc = QLabel(desc_text)
+            desc = QLabel(timer.description)
             desc.setObjectName("DescLbl")
-            desc.setToolTip(desc_tooltip)
             desc.setWordWrap(True)
             desc.setMaximumWidth(320)
             b_lay.addWidget(desc)

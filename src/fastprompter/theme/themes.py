@@ -262,9 +262,9 @@ QDockWidget::title { padding: 2px; border: 2px outset #ffffff; background-color:
         "active_temp_color": "#5e7a7a",
         "inactive_temp_color": "#e6e6e6",
         "tray_color": "#8b4513",
-        "btn_new": "background-color: #c0c0c0; color: #5e7a7a; font-weight: bold; font-size: 12px; padding: 6px; border: 2px outset #ffffff;",
+        "btn_new": "background-color: #c0c0c0; color: #3a5e5e; font-weight: bold; font-size: 12px; padding: 6px; border: 2px outset #ffffff;",
         "btn_save": "background-color: #c0c0c0; color: #000000; font-weight: bold; font-size: 12px; padding: 6px; border: 2px outset #ffffff;",
-        "lbl_help": "font-size: 14px; color: #808080;",
+        "lbl_help": "font-size: 14px; color: #505050;",
         "lbl_title": "font-weight: bold; color: #000000;",
         "mini_settings": "QFrame { background-color: #c0c0c0; border: 2px solid #ffffff; border-bottom-color: #808080; border-right-color: #808080; } QLabel { color: #000000; } QCheckBox { color: #000000; } QComboBox, QSpinBox { background-color: #ffffff; color: #000000; border: 2px solid #808080; border-bottom-color: #ffffff; border-right-color: #ffffff; } QPushButton { background-color: #c0c0c0; color: #000000; border: 2px solid #ffffff; border-bottom-color: #808080; border-right-color: #808080; }",
         "raw_colors": {

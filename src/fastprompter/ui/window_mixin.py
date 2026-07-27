@@ -8,7 +8,7 @@ Provides WindowMixin class for use as a mixin with FastPrompter QMainWindow.
 import ctypes
 
 from PyQt6 import sip
-from PyQt6.QtCore import QRect
+from PyQt6.QtCore import QRect, QTimer
 from PyQt6.QtGui import QCursor
 from PyQt6.QtWidgets import QApplication
 
@@ -83,6 +83,23 @@ class WindowMixin:
         self.raise_()
         self.activateWindow()
         self.text_area.setFocus()
+        if by_hotkey:
+            # activateWindow() is ASYNC on Windows: the window is not active
+            # yet when the setFocus above runs, so the caret often did not
+            # land in the silo and the first keystroke went nowhere. Re-apply
+            # once activation has settled. Guarded because a deferred call
+            # into a destroyed widget is an access violation, not an
+            # exception (same class as H-406).
+            QTimer.singleShot(0, self._focus_text_silo)
+
+    def _focus_text_silo(self) -> None:
+        """Put the caret in the editor. Safe to call from a deferred slot."""
+        if _is_deleted(self):
+            return
+        ta = getattr(self, "text_area", None)
+        if ta is None or _is_deleted(ta):
+            return
+        ta.setFocus()
 
     def place_window(self) -> None:
         """Restore or calculate window position and size from saved geometry."""
@@ -405,13 +422,9 @@ class WindowMixin:
         """Toggle the mini settings footer frame."""
         was_visible = self.mini_settings_frame.isVisible()
         self.mini_settings_frame.setVisible(not was_visible)
-        if not was_visible:
-            # The frame just became visible — clamp its height to the
-            # current tab's actual content instead of leaving the default
-            # max height which creates empty space below settings.
-            # _fit_settings_tabs is normally only called on tab switch.
-            if hasattr(self, "_fit_settings_tabs"):
-                self._fit_settings_tabs()
+        if not was_visible and hasattr(self, "_fit_settings_tabs"):
+            self._fit_settings_tabs()
+            QTimer.singleShot(0, self._fit_settings_tabs)
         self.data["hide_extra"] = "True" if was_visible else "False"
         self.mark_dirty()
 

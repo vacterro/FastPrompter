@@ -369,6 +369,12 @@ class FastPrompter(
         self._initializing_ui, self._suspend_temp_sync = False, False
         self.apply_font()
         self.apply_theme()
+        saved_blink = self.data.get("cursor_blink_ms")
+        if saved_blink is not None:
+            try:
+                QApplication.setCursorFlashTime(int(saved_blink))
+            except (TypeError, ValueError):
+                pass
 
         self.topmost_timer = QTimer(self)
         self.topmost_timer.timeout.connect(self.enforce_topmost)
@@ -2148,17 +2154,22 @@ class FastPrompter(
 
         self.cat_combo = QComboBox()
 
-        # Scroll buttons only appear when tabs truly overflow; without them
-        # the tab bar's minimum width is the sum of ALL tabs, which alone
-        # breaks packing into a Ctrl+Q quarter-FullHD window.
-
-
         for cat in self.visible_categories():
             self.cat_combo.addItem(cat, cat)
         self.cat_combo.currentIndexChanged.connect(self.on_tab_changed)
 
         self.cat_combo.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.cat_combo.customContextMenuRequested.connect(self.show_cat_context_menu)
+
+        self.cat_numbox = QWidget()
+        self._cat_numbox_layout = QHBoxLayout(self.cat_numbox)
+        self._cat_numbox_layout.setContentsMargins(0, 0, 0, 0)
+        self._cat_numbox_layout.setSpacing(1)
+        self._cat_num_buttons: list[QPushButton] = []
+        self._rebuild_cat_numbox()
+        numbox_on = self.data.get("numbox_tabs", "False") == "True"
+        self.cat_combo.setVisible(not numbox_on)
+        self.cat_numbox.setVisible(numbox_on)
         
         self.btn_new = QPushButton(tr("NEW", getattr(self, "_current_lang", "EN")))
         self.btn_new.setToolTip(
@@ -2363,7 +2374,7 @@ class FastPrompter(
         self.btn_toggle_archive.setCheckable(True)
         # Navigation
         self.header_layout.addWidget(self.cat_combo)
-
+        self.header_layout.addWidget(self.cat_numbox)
 
         self.header_layout.addWidget(self.btn_new)
         self.header_layout.addWidget(self.btn_save)
@@ -2758,6 +2769,12 @@ class FastPrompter(
             self.data.get("customize_toolbar", "False") == "True",
             self.on_customize_toolbar_toggled,
         )
+        self.cb_numbox_tabs = create_footer_cb(
+            "# Number Tabs",
+            "Show numbered boxes instead of the project dropdown",
+            self.data.get("numbox_tabs", "False") == "True",
+            self._toggle_numbox_mode,
+        )
         self.cb_customize_toolbar.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.cb_customize_toolbar.customContextMenuRequested.connect(
             lambda _p: self.reset_toolbar_order())
@@ -3129,6 +3146,27 @@ class FastPrompter(
         vol_row.addWidget(self.spin_volume)
         vol_row.addStretch(1)
 
+        self.spin_cursor_blink = QSpinBox()
+        self.spin_cursor_blink.setRange(0, 2000)
+        self.spin_cursor_blink.setSingleStep(50)
+        self.spin_cursor_blink.setSuffix(" ms")
+        self.spin_cursor_blink.setSpecialValueText(tr("No blink", self._current_lang))
+        self.spin_cursor_blink.setToolTip(tr(
+            "Cursor blink cycle (ms). 0 = solid, no blink.\n"
+            "Default: 530 on Windows.", self._current_lang))
+        try:
+            self.spin_cursor_blink.setValue(int(self.data.get("cursor_blink_ms",
+                                           QApplication.cursorFlashTime())))
+        except (TypeError, ValueError):
+            self.spin_cursor_blink.setValue(530)
+        self.spin_cursor_blink.valueChanged.connect(self._on_cursor_blink_changed)
+        blink_row = QHBoxLayout()
+        blink_row.setContentsMargins(0, 0, 0, 0)
+        blink_row.setSpacing(4)
+        blink_row.addWidget(QLabel(tr("Cursor blink:", self._current_lang)))
+        blink_row.addWidget(self.spin_cursor_blink)
+        blink_row.addStretch(1)
+
         hdr_row = QHBoxLayout()
         hdr_row.setContentsMargins(0, 0, 0, 0)
         hdr_row.setSpacing(4)
@@ -3445,7 +3483,7 @@ class FastPrompter(
             ]),
             _settings_group("Layout", [
                 self.cb_sidebar, self.cb_customize_toolbar,
-                self.btn_reset_layout,
+                self.cb_numbox_tabs, self.btn_reset_layout,
             ]),
             _settings_group("Silo look", [
                 self.cb_silo_color_box, self.cb_trash_vision,
@@ -3462,7 +3500,7 @@ class FastPrompter(
             ]),
             _settings_group("Typing", [
                 self.cb_focus, self.cb_wrap, self.cb_ctrl_c,
-                self.cb_lock_cursor, self.cb_double_line,
+                self.cb_lock_cursor, self.cb_double_line, blink_row,
             ]),
             _settings_group("Lines", [
                 self.cb_line_numbers, self.cb_line_marks, self.cb_zebra,
@@ -3679,6 +3717,7 @@ class FastPrompter(
         WheelPager(self.archive_section, self.change_arc_page, ctrl_callback=self.navigate_silo)
         WheelPager(self.snippets_section, self.change_page)
         WheelPager(self.cat_combo, self._wheel_switch_tab)
+        WheelPager(self.cat_numbox, self._wheel_switch_tab)
         wheel_hint = (
             "\nTip: mouse wheel over the list scrolls pages;"
             "\nCtrl+wheel selects the previous/next silo."
@@ -4977,6 +5016,11 @@ class FastPrompter(
                     QTextCursor(block).mergeBlockFormat(bfmt)
             block = block.next()
 
+    def _on_cursor_blink_changed(self, ms):
+        self.data["cursor_blink_ms"] = str(ms)
+        QApplication.setCursorFlashTime(ms)
+        self.mark_dirty()
+
     def _on_align_changed(self, idx):
         align = self.cb_align_combo.itemData(idx) or "left"
         self.data["text_align"] = align
@@ -5421,9 +5465,73 @@ class FastPrompter(
         for cat in self.visible_categories():
             self.cat_combo.addItem(cat, cat)
         self.cat_combo.blockSignals(False)
+        # BEFORE the index change: setCurrentIndex fires on_tab_changed, which
+        # highlights the number buttons — doing it after left that pass
+        # painting the OLD row a beat before it was thrown away.
+        self._rebuild_cat_numbox()
         if self.cat_combo.count() > 0:
             self.cat_combo.setCurrentIndex(0)
         self.refresh_snippets_panel()
+
+    def _rebuild_cat_numbox(self):
+        if not hasattr(self, "cat_numbox"):
+            return
+        layout = self._cat_numbox_layout
+        while layout.count():
+            item = layout.takeAt(0)
+            w = item.widget()
+            if w:
+                # takeAt drops it from the LAYOUT but not from the parent, and
+                # deleteLater only schedules the destructor — so without this
+                # the button stays in self.findChildren(QWidget) while already
+                # dead on the C++ side. theme_mixin's font/theme pass walks
+                # exactly that list calling styleSheet()/unpolish/polish, and
+                # touching a destroyed object there is an access violation,
+                # not an exception: the process dies with no traceback.
+                w.setParent(None)
+                w.deleteLater()
+        self._cat_num_buttons = []
+        cats = self.visible_categories()
+        for i, cat in enumerate(cats):
+            btn = QPushButton(str(i + 1))
+            btn.setFixedSize(22, 22)
+            btn.setCheckable(True)
+            btn.setToolTip(cat)
+            idx = i
+            btn.clicked.connect(lambda _c, n=idx: self._cat_numbox_clicked(n))
+            btn.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+            btn.customContextMenuRequested.connect(
+                lambda pos, n=idx: self._cat_numbox_context(n, pos))
+            layout.addWidget(btn)
+            self._cat_num_buttons.append(btn)
+        self._update_cat_numbox_active()
+
+    def _cat_numbox_clicked(self, idx):
+        if 0 <= idx < self.cat_combo.count():
+            self.cat_combo.setCurrentIndex(idx)
+
+    def _cat_numbox_context(self, idx, pos):
+        if 0 <= idx < self.cat_combo.count():
+            self.cat_combo.setCurrentIndex(idx)
+            # the click landed on the BUTTON, so the button is the anchor —
+            # switching first can rebuild the row, so re-read it by index
+            if 0 <= idx < len(self._cat_num_buttons):
+                self.show_cat_context_menu(pos, anchor=self._cat_num_buttons[idx])
+
+    def _update_cat_numbox_active(self):
+        if not hasattr(self, "_cat_num_buttons"):
+            return
+        idx = self.cat_combo.currentIndex()
+        for i, btn in enumerate(self._cat_num_buttons):
+            btn.setChecked(i == idx)
+
+    def _toggle_numbox_mode(self, checked):
+        self.data["numbox_tabs"] = "True" if checked else "False"
+        self.cat_combo.setVisible(not checked)
+        self.cat_numbox.setVisible(checked)
+        if checked:
+            self._rebuild_cat_numbox()
+        self.mark_dirty()
 
     def _sync_silo_folder(self, cat, old_text, new_text):
         """Deprecated: folder identity is now the per-slot silo_folders map
@@ -5722,19 +5830,23 @@ class FastPrompter(
                 return False
         return super().eventFilter(obj, event)
 
-    def show_cat_context_menu(self, pos):
+    def show_cat_context_menu(self, pos, anchor=None):
+        """`anchor` is the widget `pos` is relative to. It defaults to the
+        combo, but in number-box mode the combo is HIDDEN — mapToGlobal on a
+        hidden widget lands the menu somewhere off in the corner, so the
+        number button that was right-clicked passes itself in."""
         if not hasattr(self, "cat_combo"): return
         idx = self.cat_combo.currentIndex()
         if idx >= len(self.data.get("cats_order", [])):
             return
-            
+
         from PyQt6.QtWidgets import QMenu
         menu = QMenu(self)
         menu.setFont(QApplication.font())
         menu.addAction(tr("➕ Add New Project Tab", getattr(self, "_current_lang", "EN")), self.add_category)
         menu.addAction(tr("✏️ Rename Project Tab", getattr(self, "_current_lang", "EN")), self.rename_category)
         menu.addAction(tr("❌ Delete Project Tab", getattr(self, "_current_lang", "EN")), self.del_category)
-        menu.exec(self.cat_combo.mapToGlobal(pos))
+        menu.exec((anchor or self.cat_combo).mapToGlobal(pos))
 
     def rename_category(self):
         if self.cat_combo.count() == 0:
@@ -5788,9 +5900,9 @@ class FastPrompter(
 
     def add_category(self):
         self.play_sound("new")
-        if len(self.data["cats_order"]) >= 5:
+        if len(self.data["cats_order"]) >= 100:
             QMessageBox.information(
-                self, tr("Tab Limit", self._current_lang), tr("Maximum of 5 tabs/projects. Remove one first.", self._current_lang)
+                self, tr("Tab Limit", self._current_lang), tr("Maximum of 100 projects. Remove one first.", self._current_lang)
             )
             return
         self.ignore_focus_loss = True
@@ -5910,6 +6022,7 @@ class FastPrompter(
             combo.setCurrentIndex(idx if idx >= 0 else 0)
         finally:
             combo.blockSignals(False)
+        self._rebuild_cat_numbox()
         self.on_tab_changed(combo.currentIndex())
 
     def open_projects_manager(self):
@@ -6060,6 +6173,7 @@ class FastPrompter(
             self._switch_to_slot(self.active_temp_slot, initial=True)
             self.refresh_temp_presets()
 
+        self._update_cat_numbox_active()
         self.refresh_snippets_panel()
         self.mark_dirty()
         self.text_area.setFocus()
