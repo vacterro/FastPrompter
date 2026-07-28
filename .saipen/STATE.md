@@ -1,8 +1,8 @@
 ---
-phase: DOING
-task: "T-617 paste crash — needs a user repro"
-next_action: "Ask the user what/where/how they paste when it dies. Everything else from the 28.07 list is shipped (T-610..T-616); board TODO holds T-617 only, BLOCKED still holds T-555 and T-295."
-blocker: "paste crash not reproducible from here: every probe survived"
+phase: DONE
+task: "none"
+next_action: "Board TODO holds T-617 (paste crash, parked pending a second occurrence). BLOCKED holds T-555 and T-295. v0.8.0 is out."
+blocker: ""
 agent: claude
 saipen_version: 7
 saipen_home: "V:\___VAC\__K\__CODE\_AI_STUFF_AGENTIC\_SAIPEN"
