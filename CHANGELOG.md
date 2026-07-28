@@ -1,5 +1,37 @@
 # Changelog
 
+## v0.8.0 — 2026-07-28
+
+### Big new things
+- **Watcher** — per-silo prompt queues (`Alt+C` queues the line under the caret), idle detection for your agents, and a sender that posts without stealing focus. Queue state shows right in the line-number gutter; a master view spans every silo.
+- **Timers & limits** — human duration input ("4d 11h", "45 мин", "18:30"), descriptions, popup notifications, a productivity work/break timer, and a 5-hour rolling limit catcher that can read the agent's own store while the app is shut.
+- **Silo nesting** — two levels (1 → 1.1 → 1.1.1), multi-select with batch save/delete, user-defined gaps you can drag, per-silo colours, and one-way sync of silo text to disk.
+- **Ctrl+Q window zones** — a compact map under the cursor, plus up to 10 of your own saved window positions (reorder, rename, re-capture; a maximised preset restores maximised). **Fast mode** skips the picker entirely and cycles the zones of one page.
+- **Files sidebar** — the silo file container can dock as a collapsible sidebar on the side opposite the silo list instead of floating in its own window. It follows the silo you switch to, and shows a drop target while you drag.
+- **Hashtags**, **collapsible images**, **Obsidian-style Hide Markup**, **line temperature** (tints recently edited lines), and a **Word-style line-number margin** with click-to-mark.
+
+### Header & layout
+- **Vision button** cycles Source View / Live Preview / Reading from the toolbar.
+- **Number Tabs** — projects as numbered boxes instead of the dropdown, wrapping into rows, size and per-row count configurable. Project cap raised 5 → 100.
+- **Token counter** beside the line count: an estimated input-token count for the open silo, weighted by characters or by words. Click it to flip the weighting.
+- **Timer Minutes** toggle — a long countdown reads "4d 11h 05m" instead of "4d".
+- Projects can be **reordered** (and hidden without deleting) in the Projects manager.
+- Tabbed, reflowing **settings panel**: minimum width went from 1848px to 287px.
+- **Reset UI Layout**, customizable toolbar order, and a header that packs itself down instead of clipping at small widths or high UI scales.
+
+### Zen
+- `Ctrl+D` now has three stages: Zen (chrome away), Solo (every other window on the desktop minimised), then back. Clicking away, minimising or hiding the window restores your desktop too.
+
+### Fixed
+- **Line numbers no longer overlap.** A block the highlighter collapses to 1pt (a `---` rule, an image, concealed markup) was ~2px tall but still got a full-height number, which landed on the next line's.
+- **A leaked signal connection on every silo switch.** Returning to a silo stacked another copy of an editor callback onto its document — measured 4 → 14 after ten round trips — and the connection outlived the editor, which is an access violation waiting to happen.
+- **Number Tabs showed nothing** and swallowed the sidebar hamburger: the widget was never registered in the toolbar order, so it was left orphaned in the corner.
+- **A dead gap at the top-right** — the toolbar's flexible spacers could end up trailing, collapsing the whole right-hand cluster leftwards.
+- **The hamburger grew the sidebar instead of hiding it** when the sidebar was on the right.
+- **The layout you leave is the layout you return to**: a sidebar collapsed with the hamburger, and an open files sidebar, now survive a restart.
+- Heavy-document crash on `setExtraSelections` during paint; a crash when dropping a pinned silo onto itself; `Alt+C` on an older database; silo state detaching from silos on reorder; per-silo colours belonging to a slot number instead of a tab; the window hiding itself at startup.
+- Cursor sets are copied into the program instead of mirrored from the registry, and the saved set is applied at startup.
+
 ## v0.7.0 — 2026-07-19
 - **22 languages** (was Russian/English only): English, Russian, Ukrainian, German, French, Spanish, Italian, Portuguese, Dutch, Polish, Swedish, Danish, Finnish, Norwegian, Japanese, Chinese, Korean, Thai, Vietnamese, Arabic, Hebrew, Estonian — pick any of them live in Settings → Language. Russian coverage also grew (the picker fills gaps the old dictionary left in English), and English is unchanged.
 - **Flag icons** in the language selector — drawn as crisp little pictures (emoji flags don't render on Windows), so every language has a recognisable flag.
