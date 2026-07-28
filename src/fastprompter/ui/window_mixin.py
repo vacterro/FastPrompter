@@ -380,16 +380,25 @@ class WindowMixin:
         """Layout sidebar on the left or right based on _sidebar_right."""
         is_right = self._sidebar_right
         self._place_sidebar_toggle(is_right)
+        # The files dock always takes the side the silo sidebar does not, so
+        # the two never fight over an edge: sidebar right -> files left.
+        dock = getattr(self, "files_dock", None)
         if is_right:
-            self.splitter.insertWidget(0, self.center_panel)
-            self.splitter.insertWidget(1, self.left_panel)
-            self.splitter.setCollapsible(0, False)
-            self.splitter.setCollapsible(1, True)
+            if dock is not None:
+                self.splitter.insertWidget(0, dock)
+            self.splitter.insertWidget(1 if dock is not None else 0, self.center_panel)
+            self.splitter.insertWidget(2 if dock is not None else 1, self.left_panel)
+            self.splitter.setCollapsible(self.splitter.indexOf(self.center_panel), False)
+            self.splitter.setCollapsible(self.splitter.indexOf(self.left_panel), True)
         else:
             self.splitter.insertWidget(0, self.left_panel)
             self.splitter.insertWidget(1, self.center_panel)
-            self.splitter.setCollapsible(0, True)
-            self.splitter.setCollapsible(1, False)
+            if dock is not None:
+                self.splitter.insertWidget(2, dock)
+            self.splitter.setCollapsible(self.splitter.indexOf(self.left_panel), True)
+            self.splitter.setCollapsible(self.splitter.indexOf(self.center_panel), False)
+        if dock is not None:
+            self.splitter.setCollapsible(self.splitter.indexOf(dock), True)
 
         key = "splitter_sizes_right" if is_right else "splitter_sizes_left"
         raw_sizes = self.data.get(key)
@@ -400,23 +409,36 @@ class WindowMixin:
             except Exception:
                 raw_sizes = [0, 0]
         
+        # panes are read back by identity, not by a hardcoded index: the
+        # files dock made "sidebar is pane 0 or 1" wrong in both directions
+        sidebar_idx = self.splitter.indexOf(self.left_panel)
+        center_idx = self.splitter.indexOf(self.center_panel)
+        count = self.splitter.count()
+
         try:
-            sizes = [int(x) for x in raw_sizes] if raw_sizes else [0, 0]
+            sizes = [int(x) for x in raw_sizes] if raw_sizes else []
+            if len(sizes) < count:
+                sizes += [0] * (count - len(sizes))
+            sizes = sizes[:count]
             if sum(sizes) > 0:
-                sidebar_idx = 1 if is_right else 0
-                center_idx = 0 if is_right else 1
                 # If sidebar somehow captured >80% of space and center is tiny, reset to prevent getting stuck
                 if sizes[sidebar_idx] > self.width() * 0.8 and sizes[center_idx] < 200:
-                    sizes = [0, 0]
+                    sizes = [0] * count
         except (ValueError, TypeError):
-            sizes = [0, 0]
+            sizes = [0] * count
 
         if sum(sizes) == 0:
-            if is_right:
-                sizes = [self.width() - 130, 130]
-            else:
-                sizes = [130, self.width() - 130]
+            sizes = [0] * count
+            sizes[sidebar_idx] = 130
+            sizes[center_idx] = max(200, self.width() - 130)
         self.splitter.setSizes(sizes)
+
+        # A saved size list predates the dock (or was saved for the other
+        # side), so the dock lands at 0 width and looks like it vanished when
+        # the sidebar is flipped. Give it its width back if it is open.
+        if (dock is not None and not dock.isHidden()
+                and hasattr(self, "_show_files_dock")):
+            self._show_files_dock(True)
 
     def toggle_mini_settings(self) -> None:
         """Toggle the mini settings footer frame."""

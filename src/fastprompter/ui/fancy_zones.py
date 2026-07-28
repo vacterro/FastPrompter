@@ -182,19 +182,53 @@ class FancyZoneOverlay(QWidget):
             for fx, fy, fw, fh in self._layouts[self._layout_idx][1]
         ]
 
-    def open_for(self, main_win):
+    def _prepare(self, main_win):
+        """Load the pages and the screen the picker would act on.
+
+        Split out of open_for so fast mode can place a window without ever
+        building or showing the picker.
+        """
         self.main_win = main_win
         screen = QApplication.screenAt(QCursor.pos()) or QApplication.primaryScreen()
         if screen is None:
-            return False
+            return None
 
         data = getattr(main_win, "data", {}) or {}
         self._layouts = layouts_for(data)
         saved = data.get("fancyzones_layout", "")
         self._layout_idx = next(
             (i for i, (name, _) in enumerate(self._layouts) if name == saved), 0)
-
         self._avail = screen.availableGeometry()
+        return screen
+
+    def apply_fast(self, main_win, step: int = 1) -> bool:
+        """Fast mode: no picker, just move to the next zone of the saved page.
+
+        The picker is the right surface when you are choosing; when you
+        already know the two or three spots you work in, it is a modal step
+        between you and the window move. This advances a remembered index
+        through the current page's zones and applies it directly.
+        """
+        if self._prepare(main_win) is None or not self._layouts:
+            return False
+        zones = self._layouts[self._layout_idx][1]
+        if not zones:
+            return False
+        data = getattr(main_win, "data", {}) or {}
+        try:
+            idx = int(data.get("fancyzones_fast_idx", -1))
+        except (TypeError, ValueError):
+            idx = -1
+        idx = (idx + step) % len(zones)
+        data["fancyzones_fast_idx"] = str(idx)
+        self._rebuild_zones()
+        return self.apply_zone(idx)
+
+    def open_for(self, main_win):
+        screen = self._prepare(main_win)
+        if screen is None:
+            return False
+        data = getattr(main_win, "data", {}) or {}
 
         try:
             scale = float(data.get("ui_scale", "0.5"))

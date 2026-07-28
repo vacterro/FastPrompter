@@ -1903,16 +1903,91 @@ class FastPrompter(
             if global_idx == self.active_temp_slot:
                 self._update_project_buttons()
 
+    def files_docked(self):
+        """Files panel lives in the splitter rather than in its own window."""
+        return self.data.get("file_panel_docked", "False") == "True"
+
+    def _ensure_file_container(self):
+        """The panel, built once, parked on whichever side it belongs to."""
+        from fastprompter.ui.file_container import FileContainerPanel
+        panel = getattr(self, "_file_container", None)
+        if panel is None or sip.isdeleted(panel):
+            panel = self._file_container = FileContainerPanel(self)
+            panel.docked = False
+        want_docked = self.files_docked()
+        if bool(panel.docked) != want_docked:
+            panel.set_docked(want_docked, self.files_dock)
+            if want_docked:
+                self.files_dock_layout.addWidget(panel)
+                panel.show()
+            else:
+                self._show_files_dock(False)
+        return panel
+
+    def _show_files_dock(self, visible, title=""):
+        """Show/hide the docked files pane, restoring its saved width."""
+        dock = getattr(self, "files_dock", None)
+        if dock is None or sip.isdeleted(dock):
+            return
+        if visible and not self.files_docked():
+            return
+        dock.setVisible(bool(visible))
+        if not visible:
+            return
+        idx = self.splitter.indexOf(dock)
+        sizes = self.splitter.sizes()
+        if 0 <= idx < len(sizes) and sizes[idx] < 60:
+            try:
+                width = max(120, min(600, int(self.data.get("files_dock_width", 220))))
+            except (TypeError, ValueError):
+                width = 220
+            centre = self.splitter.indexOf(self.center_panel)
+            if 0 <= centre < len(sizes):
+                sizes[centre] = max(160, sizes[centre] - width)
+            sizes[idx] = width
+            self.splitter.setSizes(sizes)
+
+    def toggle_file_container(self):
+        """The 📁 button: a toggle when docked, 'open/raise' when floating."""
+        if self.files_docked():
+            dock = getattr(self, "files_dock", None)
+            # isHidden(), not isVisible(): isVisible() is False whenever an
+            # ancestor is hidden (window in the tray), which would turn the
+            # toggle into "always open"
+            if dock is not None and not dock.isHidden():
+                self._save_files_dock_width()
+                dock.setVisible(False)
+                return
+        self.open_file_container()
+
+    def _save_files_dock_width(self):
+        dock = getattr(self, "files_dock", None)
+        if dock is None or sip.isdeleted(dock) or dock.isHidden():
+            return
+        idx = self.splitter.indexOf(dock)
+        sizes = self.splitter.sizes()
+        if 0 <= idx < len(sizes) and sizes[idx] > 0:
+            self.data["files_dock_width"] = str(sizes[idx])
+            self.mark_dirty()
+
+    def _on_files_dock_toggled(self, checked):
+        self.data["file_panel_docked"] = "True" if checked else "False"
+        panel = getattr(self, "_file_container", None)
+        was_open = panel is not None and not sip.isdeleted(panel) and panel.isVisible()
+        self._ensure_file_container()
+        if was_open:
+            self.open_file_container()
+        self.mark_dirty()
+
     def open_file_container(self, global_idx=None, is_archive=False):
-        from fastprompter.ui.file_container import FileContainerPanel, silo_slug
+        from fastprompter.ui.file_container import silo_slug
         if global_idx is None:
             global_idx = self.active_temp_slot
             is_archive = getattr(self, "active_is_archive", False)
         presets = self.data.get("archive_temp_presets" if is_archive else "temp_presets", [])
         text = presets[global_idx] if 0 <= global_idx < len(presets) else ""
-        if getattr(self, "_file_container", None) is None:
-            self._file_container = FileContainerPanel(self)
-        self._file_container.open_for(
+        panel = self._ensure_file_container()
+        panel.open_for(
             self._silo_folder_dir(global_idx, is_archive), title=silo_slug(text))
 
     def _begin_batch_update(self):
@@ -2344,7 +2419,7 @@ class FastPrompter(
             "drag them out, preview, export. Stored as a plain folder\n"
             "in data/files — readable outside FastPrompter.", getattr(self, "_current_lang", "EN")))
         self.apply_button_size(self.btn_files, 24)
-        self.btn_files.clicked.connect(lambda: self.open_file_container())
+        self.btn_files.clicked.connect(self.toggle_file_container)
 
         self.btn_project_run = QPushButton("▶️")
         self.btn_project_run.setToolTip(tr("Run Executable", getattr(self, "_current_lang", "EN")))
@@ -2835,6 +2910,38 @@ class FastPrompter(
                 or self.mark_dirty()
             ),
         )
+        self.cb_files_dock = create_footer_cb(
+            "🗂 Files Sidebar",
+            "Keep the silo file panel docked as a collapsible sidebar on the\n"
+            "side opposite the silo list, instead of a separate window.\n"
+            "The 📁 button then opens and closes it.",
+            self.data.get("file_panel_docked", "False") == "True",
+            self._on_files_dock_toggled,
+        )
+        self.cb_fast_zones = create_footer_cb(
+            "⚡ Fast Ctrl+Q",
+            "Skip the zone picker: every Ctrl+Q jumps straight to the next\n"
+            "zone of the page chosen below and cycles through them",
+            self.data.get("fancyzones_fast", "False") == "True",
+            lambda checked: (
+                self.data.update(
+                    {"fancyzones_fast": "True" if checked else "False"})
+                or self.mark_dirty()
+            ),
+        )
+        self.cb_fast_zone_page = QComboBox()
+        self.cb_fast_zone_page.setToolTip(tr(
+            "Which page Fast mode cycles through", self._current_lang))
+        self._reload_fast_zone_pages()
+        self.cb_fast_zone_page.currentIndexChanged.connect(
+            self._on_fast_zone_page_changed)
+        fast_row = QHBoxLayout()
+        fast_row.setContentsMargins(0, 0, 0, 0)
+        fast_row.setSpacing(4)
+        fast_row.addWidget(QLabel(tr("Fast page:", self._current_lang)))
+        fast_row.addWidget(self.cb_fast_zone_page)
+        fast_row.addStretch(1)
+
         self.btn_manage_presets = QPushButton(tr("Manage presets", self._current_lang))
         self.btn_manage_presets.setToolTip(tr(
             "Reorder, rename, re-capture or delete your Ctrl+Q window presets",
@@ -3601,10 +3708,12 @@ class FastPrompter(
             ]),
             _settings_group("Layout", [
                 self.cb_sidebar, self.cb_customize_toolbar,
-                self.cb_numbox_tabs, numbox_row, self.btn_reset_layout,
+                self.cb_numbox_tabs, numbox_row, self.cb_files_dock,
+                self.btn_reset_layout,
             ]),
             _settings_group("Window presets", [
                 self.cb_window_presets, self.btn_manage_presets,
+                self.cb_fast_zones, fast_row,
             ]),
             _settings_group("Silo look", [
                 self.cb_silo_color_box, self.cb_trash_vision,
@@ -3709,6 +3818,15 @@ class FastPrompter(
         self.left_panel_layout = QVBoxLayout(self.left_panel)
         self.left_panel_layout.setContentsMargins(0, 0, 0, 0)
         self.left_panel_layout.setSpacing(0)
+
+        # Files dock: the third splitter pane, always on the side the silo
+        # sidebar is NOT on. Empty (and hidden) until the file panel is
+        # actually docked into it — the floating drawer is still the default.
+        self.files_dock = QWidget()
+        self.files_dock_layout = QVBoxLayout(self.files_dock)
+        self.files_dock_layout.setContentsMargins(0, 0, 0, 0)
+        self.files_dock_layout.setSpacing(0)
+        self.files_dock.hide()
 
         self.snippets_section = QWidget()
         self.snippets_section_layout = QVBoxLayout(self.snippets_section)
@@ -5663,12 +5781,43 @@ class FastPrompter(
         for i, btn in enumerate(self._cat_num_buttons):
             btn.setChecked(i == idx)
 
+    def _reload_fast_zone_pages(self):
+        """Refill the Fast-mode page picker. The Presets page only exists
+        once the user has saved one, so this is re-run after the presets
+        dialog rather than built once."""
+        combo = getattr(self, "cb_fast_zone_page", None)
+        if combo is None or sip.isdeleted(combo):
+            return
+        from fastprompter.ui.fancy_zones import layouts_for
+        current = self.data.get("fancyzones_layout", "")
+        combo.blockSignals(True)
+        combo.clear()
+        names = [name for name, _zones in layouts_for(self.data)]
+        for name in names:
+            combo.addItem(tr(name, self._current_lang), name)
+        if current in names:
+            combo.setCurrentIndex(names.index(current))
+        combo.blockSignals(False)
+
+    def _on_fast_zone_page_changed(self, idx):
+        name = self.cb_fast_zone_page.itemData(idx)
+        if not name:
+            return
+        self.data["fancyzones_layout"] = name
+        # a different page has a different number of zones, so the remembered
+        # position in the cycle no longer means anything
+        self.data["fancyzones_fast_idx"] = "-1"
+        self.mark_dirty()
+
     def open_window_presets(self):
         from fastprompter.ui.window_presets_dialog import WindowPresetsDialog
         self._increment_focus_lock()
         try:
             WindowPresetsDialog(self).exec()
         finally:
+            # the Presets page appears/disappears with the preset list, so the
+            # Fast-mode page picker has to be refilled after this dialog
+            self._reload_fast_zone_pages()
             QTimer.singleShot(300, self._decrement_focus_lock)
 
     def _on_token_mode_changed(self, idx):
@@ -8097,7 +8246,14 @@ class FastPrompter(
 
         (Kept under the old name so the existing hk_snap binding, tooltips
         and any saved user hotkey keep working.)
+
+        In Fast mode the picker never appears: each press steps to the next
+        zone of the page chosen in Settings.
         """
+        if self.data.get("fancyzones_fast", "False") == "True":
+            if self._fancy_zones.apply_fast(self, 1):
+                self.mark_dirty()
+                return
         self._fancy_zones.open_for(self)
 
     _TS_RE = None  # compiled lazily below

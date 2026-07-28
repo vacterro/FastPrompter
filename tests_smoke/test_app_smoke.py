@@ -9741,3 +9741,122 @@ def test_timer_minutes_setting_reaches_the_label(fresh_win):
     w._update_timer_label()        # must not raise with or without timers
     w.data["timer_show_minutes"] = "False"
     w._update_timer_label()
+
+
+# --- T-616: Fast mode — Ctrl+Q without the picker ---
+
+def test_fast_mode_cycles_zones_without_showing_the_picker(fresh_win):
+    w = fresh_win
+    w.data["fancyzones_fast"] = "True"
+    w.data["fancyzones_layout"] = "Quarters"
+    w.data["fancyzones_fast_idx"] = "-1"
+    seen = []
+    for _ in range(5):
+        w.cycle_snap_corner()
+        QApplication.processEvents()
+        assert not w._fancy_zones.isVisible(), "fast mode opened the picker"
+        seen.append(w.data["fancyzones_fast_idx"])
+    assert seen == ["0", "1", "2", "3", "0"], seen
+
+
+def test_fast_mode_off_still_opens_the_picker(fresh_win):
+    w = fresh_win
+    w.data["fancyzones_fast"] = "False"
+    w.cycle_snap_corner()
+    QApplication.processEvents()
+    try:
+        assert w._fancy_zones.isVisible()
+    finally:
+        w._fancy_zones.close()
+        QApplication.processEvents()
+
+
+def test_fast_mode_survives_a_junk_index(fresh_win):
+    w = fresh_win
+    w.data["fancyzones_fast"] = "True"
+    w.data["fancyzones_layout"] = "Quarters"
+    for junk in ("", "abc", None, "99"):
+        w.data["fancyzones_fast_idx"] = junk
+        w.cycle_snap_corner()
+        assert 0 <= int(w.data["fancyzones_fast_idx"]) < 4
+
+
+def test_fast_page_picker_lists_the_real_pages(fresh_win):
+    w = fresh_win
+    assert hasattr(w, "cb_fast_zone_page")
+    from fastprompter.ui.fancy_zones import layouts_for
+    names = [n for n, _z in layouts_for(w.data)]
+    assert [w.cb_fast_zone_page.itemData(i)
+            for i in range(w.cb_fast_zone_page.count())] == names
+    w.cb_fast_zone_page.setCurrentIndex(1)
+    assert w.data["fancyzones_layout"] == names[1]
+    assert w.data["fancyzones_fast_idx"] == "-1"
+
+
+# --- T-615: files panel as a docked, collapsible sidebar ---
+
+def test_files_dock_sits_opposite_the_silo_sidebar(fresh_win):
+    w = fresh_win
+    for right in (False, True):
+        w.data["sidebar_right"] = "True" if right else "False"
+        w.apply_sidebar_position()
+        i_dock = w.splitter.indexOf(w.files_dock)
+        i_side = w.splitter.indexOf(w.left_panel)
+        i_center = w.splitter.indexOf(w.center_panel)
+        assert -1 not in (i_dock, i_side, i_center)
+        # centre in the middle, dock and sidebar on opposite edges
+        assert min(i_dock, i_side) < i_center < max(i_dock, i_side)
+        assert (i_dock < i_side) is right
+
+
+def test_files_panel_docks_and_undocks(fresh_win):
+    w = fresh_win
+    w.data["file_panel_docked"] = "True"
+    panel = w._ensure_file_container()
+    assert panel.docked
+    assert panel.parent() is w.files_dock
+    w.data["file_panel_docked"] = "False"
+    panel = w._ensure_file_container()
+    assert not panel.docked
+    assert w.files_dock.isHidden()
+
+
+def test_files_button_toggles_the_dock(fresh_win):
+    w = fresh_win
+    w.data["file_panel_docked"] = "True"
+    w.toggle_file_container()          # opens
+    QApplication.processEvents()
+    # isHidden(), not isVisible(): the test window has no shown ancestor
+    assert not w.files_dock.isHidden()
+    w.toggle_file_container()          # and closes
+    QApplication.processEvents()
+    assert w.files_dock.isHidden()
+
+
+def test_dock_gets_a_real_width_when_shown(fresh_win):
+    w = fresh_win
+    w.data["file_panel_docked"] = "True"
+    w.data["files_dock_width"] = "240"
+    w.resize(1000, 600)
+    QApplication.processEvents()
+    w.open_file_container()
+    QApplication.processEvents()
+    idx = w.splitter.indexOf(w.files_dock)
+    assert w.splitter.sizes()[idx] >= 120
+
+
+def test_splitter_sizes_survive_the_third_pane(fresh_win):
+    """apply_sidebar_position used to index the panes as 0/1 by hand; the
+    dock made that wrong on both sides."""
+    w = fresh_win
+    w.data["sidebar_right"] = "False"
+    w.data["splitter_sizes_left"] = [130, 500]      # a pre-dock saved value
+    w.apply_sidebar_position()
+    sizes = w.splitter.sizes()
+    assert len(sizes) == w.splitter.count()
+    assert sizes[w.splitter.indexOf(w.left_panel)] > 0
+    assert sizes[w.splitter.indexOf(w.center_panel)] > 0
+
+
+def test_files_dock_setting_exists(win):
+    assert hasattr(win, "cb_files_dock")

@@ -200,11 +200,17 @@ class _FileList(QListWidget):
 
 
 class FileContainerPanel(QWidget):
-    """Non-modal drawer window over one silo's file folder."""
+    """One silo's file folder: a floating drawer, or a docked sidebar.
+
+    Same widget either way — `set_docked()` flips the window flags and
+    `open_for()` stops trying to raise/activate a window that is really a
+    child panel inside the splitter.
+    """
 
     def __init__(self, main_win):
         super().__init__(main_win, Qt.WindowType.Tool)
         self.main_win = main_win
+        self.docked = False
         self.lang = getattr(main_win, "_current_lang", "EN")
         self.folder = ""
         self._icon_provider = QFileIconProvider()
@@ -320,6 +326,25 @@ class FileContainerPanel(QWidget):
 
     # ---- lifecycle -------------------------------------------------------
 
+    def set_docked(self, docked, parent=None):
+        """Move between floating Tool window and in-layout child panel.
+
+        A Qt.Tool widget cannot simply be added to a layout — the flags have
+        to go back to Qt.Widget first, and a reparent resets visibility, so
+        callers show it again themselves.
+        """
+        docked = bool(docked)
+        self.docked = docked
+        self.hide()
+        if docked:
+            self.setWindowFlags(Qt.WindowType.Widget)
+            self.setParent(parent or self.main_win)
+            self.setMinimumSize(180, 120)
+        else:
+            self.setParent(self.main_win, Qt.WindowType.Tool)
+            self.setMinimumSize(300, 220)
+            self.resize(420, 320)
+
     def open_for(self, folder, title=""):
         """Point the panel at a resolved (unique) folder, creating it, and show."""
         # tidy the folder we're leaving if nothing was ever put in it —
@@ -333,8 +358,13 @@ class FileContainerPanel(QWidget):
         self.setWindowTitle(tr("Files — {}", self.lang).format(title))
         self.refresh()
         self.show()
-        self.raise_()
-        self.activateWindow()
+        if not self.docked:
+            # a docked panel is a child of the splitter: raising it does
+            # nothing useful and activating it steals focus from the editor
+            self.raise_()
+            self.activateWindow()
+        elif hasattr(self.main_win, "_show_files_dock"):
+            self.main_win._show_files_dock(True, title=title)
 
     def _discard_if_empty(self):
         """Remove the current folder if it is still completely empty."""
