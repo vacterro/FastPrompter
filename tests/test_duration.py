@@ -124,3 +124,19 @@ class TestPresets:
     def test_every_preset_actually_parses(self):
         for label, value in PRESETS:
             assert parse_duration(value) is not None, f"{label!r} -> {value!r}"
+
+
+# --- T-613: always-show-minutes for the top-right countdown ---
+
+def test_format_remaining_minutes_flag():
+    from fastprompter.core.duration import format_remaining
+    day = 4 * 24 * 3600 + 11 * 3600 + 5 * 60
+    assert format_remaining(day) == "4d 11h"
+    assert format_remaining(day, short=True) == "4d"
+    assert format_remaining(day, minutes=True) == "4d 11h 05m"
+    # minutes overrides short — short exists to shrink a dense header, the
+    # toggle exists because the user wants the minutes anyway
+    assert format_remaining(day, short=True, minutes=True) == "4d 11h 05m"
+    assert format_remaining(2 * 3600 + 5 * 60, short=True, minutes=True) == "2h 05m"
+    assert format_remaining(45, minutes=True) == "45s"
+    assert format_remaining(0, minutes=True) == "now"

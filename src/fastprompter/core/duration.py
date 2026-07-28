@@ -169,8 +169,14 @@ def resolve_target(text: str, now: datetime.datetime | None = None,
     return None
 
 
-def format_remaining(seconds: float, short: bool = False) -> str:
-    """Human countdown: "4d 11h", "2h 05m", "45s", "now"."""
+def format_remaining(seconds: float, short: bool = False,
+                     minutes: bool = False) -> str:
+    """Human countdown: "4d 11h", "2h 05m", "45s", "now".
+
+    ``minutes=True`` keeps the minute field whatever the magnitude, so a
+    long timer reads "4d 11h 05m" rather than "4d" — it overrides ``short``,
+    which exists to shrink the label in a dense header.
+    """
     seconds = int(max(0, seconds))
     if seconds <= 0:
         return "now"
@@ -178,11 +184,13 @@ def format_remaining(seconds: float, short: bool = False) -> str:
     h, rem = divmod(rem, 3600)
     m, s = divmod(rem, 60)
     if d:
+        if minutes:
+            return f"{d}d {h}h {m:02d}m"
         return f"{d}d {h}h" if not short else f"{d}d"
     if h:
-        return f"{h}h {m:02d}m" if not short else f"{h}h"
+        return f"{h}h {m:02d}m" if not short or minutes else f"{h}h"
     if m:
-        return f"{m}m {s:02d}s" if not short else f"{m}m"
+        return f"{m}m {s:02d}s" if not short or minutes else f"{m}m"
     return f"{s}s"
 
 

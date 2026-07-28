@@ -9181,7 +9181,9 @@ def test_numbox_buttons_match_visible_categories(win):
     cats = win.visible_categories()
     assert len(win._cat_num_buttons) == len(cats)
     for i, cat in enumerate(cats):
-        assert win._cat_num_buttons[i].toolTip() == cat
+        # the tooltip carries the number too — at 100 projects the button face
+        # is the only thing distinguishing them, so the pairing has to be shown
+        assert win._cat_num_buttons[i].toolTip() == f"{i + 1}: {cat}"
 
 
 def test_numbox_click_switches_project(win):
@@ -9550,3 +9552,192 @@ def test_window_presets_round_trips_through_db(tmp_path):
         st2.conn.close()
     finally:
         sm.get_db_path = orig
+
+
+# --- T-610 / T-611: gutter overlap + the leaked contentsChange connection ---
+
+def test_gutter_skips_rows_that_would_overlap(win):
+    """A 1pt block (a `---` rule, an image ref) is ~2px tall, so drawing its
+    number in a full font-height box painted straight over the next line's
+    digits. gutter_rows() must skip any block whose top falls inside the band
+    the previous number already occupies."""
+    from PyQt6.QtGui import QTextCursor
+    ed = win.text_area
+    saved = win.data.get("show_line_numbers", "False")
+    win.data["show_line_numbers"] = "True"
+    try:
+        ed.setPlainText("\n".join(f"line {i}" for i in range(20)))
+        QApplication.processEvents()
+        rows = list(ed.gutter_rows())
+        assert rows, "gutter produced no rows at all"
+        fm_height = ed.fontMetrics().height()
+        tops = [top for _b, top, _h in rows]
+        for a, b in zip(tops, tops[1:]):
+            assert b - a >= fm_height, f"numbers at y={a} and y={b} overlap"
+        for _b, _top, row_h in rows:
+            assert 2 <= row_h <= fm_height
+    finally:
+        win.data["show_line_numbers"] = saved
+
+
+def test_gutter_rows_survives_a_collapsed_block(win):
+    """Same rule with a block the layout really did collapse: force one line
+    to a 1pt char format and check the rows stay monotonic and non-colliding."""
+    from PyQt6.QtGui import QTextCharFormat, QTextCursor
+    ed = win.text_area
+    saved = win.data.get("show_line_numbers", "False")
+    win.data["show_line_numbers"] = "True"
+    try:
+        ed.setPlainText("alpha\n---\nbeta\n---\ngamma")
+        doc = ed.document()
+        tiny = QTextCharFormat()
+        tiny.setFontPointSize(1)
+        for n in (1, 3):
+            blk = doc.findBlockByNumber(n)
+            cur = QTextCursor(blk)
+            cur.select(QTextCursor.SelectionType.BlockUnderCursor)
+            cur.mergeCharFormat(tiny)
+        QApplication.processEvents()
+        rows = list(ed.gutter_rows())
+        tops = [top for _b, top, _h in rows]
+        assert tops == sorted(tops)
+        fm_height = ed.fontMetrics().height()
+        for a, b in zip(tops, tops[1:]):
+            assert b - a >= fm_height
+    finally:
+        win.data["show_line_numbers"] = saved
+
+
+def test_contents_change_connection_does_not_accumulate(fresh_win):
+    """set_active_document connected `lambda *_a: self.refresh_extra_selections()`
+    to every document and disconnected nothing, so each switch BACK to a silo
+    stacked another copy on the same document (measured 4 -> 14 over ten round
+    trips) and the connection outlived the editor. Named method now, and the
+    outgoing document is disconnected."""
+    w = fresh_win
+    ed = w.text_area
+    doc = ed.document()
+    before = doc.receivers(doc.contentsChange)
+    for i in range(10):
+        w._switch_to_slot((i % 3) + 1)
+        QApplication.processEvents()
+        w._switch_to_slot(0)
+        QApplication.processEvents()
+    assert doc is ed.document(), "slot 0 handed back a different document"
+    assert doc.receivers(doc.contentsChange) == before
+
+
+def test_contents_change_handler_is_guarded(fresh_win):
+    """The document outlives the editor, so the handler must check first."""
+    import inspect
+    from fastprompter.ui.editor import VaultTextEdit
+    src = inspect.getsource(VaultTextEdit._on_contents_change)
+    assert "sip.isdeleted(self)" in src
+    src2 = inspect.getsource(VaultTextEdit._stamp_edited_blocks)
+    assert "sip.isdeleted(self)" in src2
+    # the guard has to precede the first Qt call, not merely exist. Comments
+    # and the docstring mention document() too, so compare against code only.
+    code = "\n".join(
+        line for line in src2.splitlines()
+        if line.strip() and not line.strip().startswith("#"))
+    body = code[code.index('"""', code.index('"""') + 3):]
+    assert body.index("sip.isdeleted(self)") < body.index("self.document()")
+
+
+# --- T-612: number boxes have to survive the 100-project cap ---
+
+def test_numbox_wraps_into_rows_at_the_cap(fresh_win):
+    """One QHBoxLayout of 100 boxes is ~2200px — it runs straight off the
+    header. The grid wraps every `numbox_per_row` buttons instead."""
+    w = fresh_win
+    w.data["numbox_per_row"] = "10"
+    cats = w.visible_categories()
+    w._rebuild_cat_numbox()
+    layout = w._cat_numbox_layout
+    assert layout.rowCount() >= 1
+    for i in range(len(cats)):
+        row, col, _rs, _cs = layout.getItemPosition(i)
+        assert row == i // 10 and col == i % 10
+
+
+def test_numbox_geometry_settings_clamp_and_persist(fresh_win):
+    w = fresh_win
+    w._on_numbox_geometry_changed("numbox_per_row", 7)
+    assert w.data["numbox_per_row"] == "7"
+    assert w.numbox_per_row() == 7
+    w._on_numbox_geometry_changed("numbox_btn_size", 30)
+    assert w.numbox_button_size() == 30
+    assert w._cat_num_buttons[0].width() == 30
+    for bad in ("", "nope", None, 0, 999):
+        w.data["numbox_per_row"] = bad
+        assert 1 <= w.numbox_per_row() <= 100
+        w.data["numbox_btn_size"] = bad
+        assert 14 <= w.numbox_button_size() <= 40
+
+
+def test_numbox_settings_controls_exist(win):
+    assert hasattr(win, "spin_numbox_per_row")
+    assert hasattr(win, "spin_numbox_size")
+
+
+# --- T-614: token estimate beside the line count ---
+
+def test_token_label_exists_and_follows_its_setting(fresh_win):
+    w = fresh_win
+    assert hasattr(w, "lbl_token_count")
+    w.data["show_token_count"] = "False"
+    w._update_token_count_label()
+    assert not w.lbl_token_count.isVisibleTo(w.header_widget)
+    w.data["show_token_count"] = "True"
+    w.text_area.setPlainText("one two three four five")
+    w._update_token_count_label()
+    assert w.lbl_token_count.isVisibleTo(w.header_widget)
+    assert w.lbl_token_count.text().startswith("~")
+    assert w.lbl_token_count.text().endswith("T")
+
+
+def test_token_estimate_modes_and_weights(fresh_win):
+    w = fresh_win
+    text = "a" * 400
+    w.data["token_mode"] = "chars"
+    w.data["token_weight"] = "4.0"
+    assert w.token_estimate(text) == 100
+    w.data["token_weight"] = "2.0"
+    assert w.token_estimate(text) == 200
+    w.data["token_mode"] = "words"
+    w.data["token_weight"] = "1.33"
+    assert w.token_estimate("one two three") == 4      # 3 * 1.33 -> 3.99
+    assert w.token_estimate("") == 0
+    for bad in ("", "x", None):
+        w.data["token_weight"] = bad
+        assert w.token_estimate("word word") >= 0
+
+
+def test_token_label_is_in_the_toolbar_order(win):
+    """apply_toolbar_order re-adds ONLY tokens from the order list, so a
+    header widget missing from it disappears at the first rebuild."""
+    from fastprompter.ui.toolbar_reorder import DEFAULT_TOOLBAR_ORDER
+    assert "lbl_token_count" in DEFAULT_TOOLBAR_ORDER
+    assert "lbl_token_count" in win._toolbar_order_list()
+    win.apply_toolbar_order()
+    assert win.lbl_token_count.parent() is win.header_widget
+
+
+def test_token_mode_click_cycles(fresh_win):
+    w = fresh_win
+    w.data["token_mode"] = "chars"
+    w._cycle_token_mode()
+    assert w.data["token_mode"] == "words"
+    assert w.data["token_weight"] == "1.33"
+    w._cycle_token_mode()
+    assert w.data["token_mode"] == "chars"
+    assert w.data["token_weight"] == "4.0"
+
+
+def test_timer_minutes_setting_reaches_the_label(fresh_win):
+    w = fresh_win
+    assert hasattr(w, "cb_timer_minutes")
+    w.data["timer_show_minutes"] = "True"
+    w._update_timer_label()        # must not raise with or without timers
+    w.data["timer_show_minutes"] = "False"
+    w._update_timer_label()

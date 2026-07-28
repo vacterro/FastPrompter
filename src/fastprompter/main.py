@@ -482,7 +482,9 @@ class FastPrompter(
             return
         rem = nxt.remaining()
         short = getattr(self, "_header_dense", False)
-        text = format_remaining(rem, short=short)
+        text = format_remaining(
+            rem, short=short,
+            minutes=self.data.get("timer_show_minutes", "False") == "True")
         if not short:
             name = nxt.name if len(nxt.name) <= 14 else nxt.name[:13] + "…"
             text = f"{name} {text}"
@@ -1397,7 +1399,9 @@ class FastPrompter(
         header = getattr(self, "header_widget", None)
         if header is None or sip.isdeleted(header):
             return
-        drop_order = ("btn_settings_toggle_right", "_counter_sep", "lbl_line_count")
+        # token count goes first: it is the most optional of the cluster
+        drop_order = ("lbl_token_count", "btn_settings_toggle_right",
+                      "_counter_sep", "lbl_line_count")
         widgets = [getattr(self, name, None) for name in drop_order]
         if any(w is None or sip.isdeleted(w) for w in widgets):
             return
@@ -1410,8 +1414,12 @@ class FastPrompter(
         previously_hidden = getattr(self, "_priority_fit_hidden", ())
         for name in previously_hidden:
             w = getattr(self, name, None)
-            if w is not None and not sip.isdeleted(w):
-                w.setVisible(True)
+            if w is None or sip.isdeleted(w):
+                continue
+            if (name == "lbl_token_count"
+                    and self.data.get("show_token_count", "False") != "True"):
+                continue        # the user turned it off; do not resurrect it
+            w.setVisible(True)
         self.header_layout.activate()
 
         now_hidden = []
@@ -2162,7 +2170,11 @@ class FastPrompter(
         self.cat_combo.customContextMenuRequested.connect(self.show_cat_context_menu)
 
         self.cat_numbox = QWidget()
-        self._cat_numbox_layout = QHBoxLayout(self.cat_numbox)
+        # A grid, not a row: the project cap is 100, and 100 boxes in one
+        # QHBoxLayout is ~2200px of header that simply runs off the window.
+        # Wraps every `numbox_per_row` buttons instead (user-configurable).
+        from PyQt6.QtWidgets import QGridLayout
+        self._cat_numbox_layout = QGridLayout(self.cat_numbox)
         self._cat_numbox_layout.setContentsMargins(0, 0, 0, 0)
         self._cat_numbox_layout.setSpacing(1)
         self._cat_num_buttons: list[QPushButton] = []
@@ -2464,6 +2476,17 @@ class FastPrompter(
         self.lbl_line_count.setToolTip(tr("Line count of the open silo/snippet", getattr(self, "_current_lang", "EN")))
         self.lbl_line_count.setStyleSheet("padding: 0 4px; font-weight: bold;")
         self.header_layout.addWidget(self.lbl_line_count)
+
+        # Token estimate, right beside the line count — same cluster, same
+        # question ("how big is this silo"), just the unit an LLM charges in.
+        self.lbl_token_count = QLabel("")
+        self.lbl_token_count.setStyleSheet("padding: 0 4px; font-weight: bold;")
+        self.lbl_token_count.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.lbl_token_count.mousePressEvent = lambda _e: self._cycle_token_mode()
+        self.lbl_token_count.setVisible(
+            self.data.get("show_token_count", "False") == "True")
+        self.header_layout.addWidget(self.lbl_token_count)
+
         self.header_layout.addWidget(self.btn_settings_toggle)
         self.header_layout.addWidget(self.btn_help)
 
@@ -2775,6 +2798,32 @@ class FastPrompter(
             self.data.get("numbox_tabs", "False") == "True",
             self._toggle_numbox_mode,
         )
+        # Number-box geometry. With the project cap at 100 these are what keep
+        # the row from running off the header, so they live beside the toggle.
+        self.spin_numbox_per_row = QSpinBox()
+        self.spin_numbox_per_row.setRange(1, 100)
+        self.spin_numbox_per_row.setToolTip(tr(
+            "How many number boxes per row before they wrap", self._current_lang))
+        self.spin_numbox_per_row.setValue(self.numbox_per_row())
+        self.spin_numbox_per_row.valueChanged.connect(
+            lambda v: self._on_numbox_geometry_changed("numbox_per_row", v))
+        self.spin_numbox_size = QSpinBox()
+        self.spin_numbox_size.setRange(14, 40)
+        self.spin_numbox_size.setSuffix(" px")
+        self.spin_numbox_size.setToolTip(tr(
+            "Size of one number box", self._current_lang))
+        self.spin_numbox_size.setValue(self.numbox_button_size())
+        self.spin_numbox_size.valueChanged.connect(
+            lambda v: self._on_numbox_geometry_changed("numbox_btn_size", v))
+        numbox_row = QHBoxLayout()
+        numbox_row.setContentsMargins(0, 0, 0, 0)
+        numbox_row.setSpacing(4)
+        numbox_row.addWidget(QLabel(tr("Per row:", self._current_lang)))
+        numbox_row.addWidget(self.spin_numbox_per_row)
+        numbox_row.addWidget(QLabel(tr("Size:", self._current_lang)))
+        numbox_row.addWidget(self.spin_numbox_size)
+        numbox_row.addStretch(1)
+
         self.cb_window_presets = create_footer_cb(
             "🗔 Ctrl+Q Presets",
             "Add a 'Presets' page to the Ctrl+Q picker holding your own\n"
@@ -2878,6 +2927,47 @@ class FastPrompter(
                             or (self.text_area.line_number_area.update() if hasattr(self, "text_area") and hasattr(self.text_area, "line_number_area") else None)
         )
 
+        self.cb_token_count = create_footer_cb(
+            "\ud83d\udd22 Token Counter",
+            "Show an estimated input-token count beside the line count",
+            self.data.get("show_token_count", "False") == "True",
+            lambda checked: (
+                self.data.update(
+                    {"show_token_count": "True" if checked else "False"})
+                or self._update_token_count_label()
+                or self.mark_dirty()
+            ),
+        )
+        self.cb_token_mode = QComboBox()
+        self.cb_token_mode.addItem(tr("chars", self._current_lang), "chars")
+        self.cb_token_mode.addItem(tr("words", self._current_lang), "words")
+        mode = self.data.get("token_mode", "chars")
+        self.cb_token_mode.setCurrentIndex(1 if mode == "words" else 0)
+        self.cb_token_mode.setToolTip(tr(
+            "How the estimate is weighted: characters per token,\n"
+            "or tokens per word", self._current_lang))
+        self.cb_token_mode.currentIndexChanged.connect(self._on_token_mode_changed)
+        from PyQt6.QtWidgets import QDoubleSpinBox
+        self.spin_token_weight = QDoubleSpinBox()
+        self.spin_token_weight.setRange(0.1, 20.0)
+        self.spin_token_weight.setSingleStep(0.1)
+        self.spin_token_weight.setDecimals(2)
+        self.spin_token_weight.setToolTip(tr(
+            "Chars per token (chars mode) or tokens per word (words mode).\n"
+            "Defaults: 4.0 and 1.33", self._current_lang))
+        try:
+            self.spin_token_weight.setValue(float(self.data.get("token_weight", 4.0)))
+        except (TypeError, ValueError):
+            self.spin_token_weight.setValue(4.0)
+        self.spin_token_weight.valueChanged.connect(self._on_token_weight_changed)
+        token_row = QHBoxLayout()
+        token_row.setContentsMargins(0, 0, 0, 0)
+        token_row.setSpacing(4)
+        token_row.addWidget(QLabel(tr("Tokens by:", self._current_lang)))
+        token_row.addWidget(self.cb_token_mode)
+        token_row.addWidget(self.spin_token_weight)
+        token_row.addStretch(1)
+
         # "\u2192 Ctrl+E Center" used to live here. It was the two-state face of
         # an alignment that is now chosen per line - title, rule and bullet
         # each on their own - in the Ctrl+E\u2026 dialog, and a checkbox has
@@ -2977,6 +3067,18 @@ class FastPrompter(
             self.data.get("show_date_rect", "True") == "True",
             lambda checked: (
                 self.data.update({"show_date_rect": "True" if checked else "False"})
+                or self.mark_dirty()
+            ),
+        )
+        self.cb_timer_minutes = create_footer_cb(
+            "⏳ Timer Minutes",
+            "Always show minutes in the top-right timer countdown\n"
+            "(otherwise a long timer reads just '4d' or '2h')",
+            self.data.get("timer_show_minutes", "False") == "True",
+            lambda checked: (
+                self.data.update(
+                    {"timer_show_minutes": "True" if checked else "False"})
+                or self._update_timer_label()
                 or self.mark_dirty()
             ),
         )
@@ -3499,7 +3601,7 @@ class FastPrompter(
             ]),
             _settings_group("Layout", [
                 self.cb_sidebar, self.cb_customize_toolbar,
-                self.cb_numbox_tabs, self.btn_reset_layout,
+                self.cb_numbox_tabs, numbox_row, self.btn_reset_layout,
             ]),
             _settings_group("Window presets", [
                 self.cb_window_presets, self.btn_manage_presets,
@@ -3524,6 +3626,7 @@ class FastPrompter(
             _settings_group("Lines", [
                 self.cb_line_numbers, self.cb_line_marks, self.cb_zebra,
                 self.cb_bold_titles, self.lbl_align, self.cb_align_combo,
+                self.cb_token_count, token_row,
             ]),
             # split in two: eight controls in one group stretched to 186px
             # tall beside 49px neighbours, which is the ragged look the panel
@@ -3546,7 +3649,7 @@ class FastPrompter(
         self.settings_tabs.addTab(_tab([
             _settings_group("Clock", [
                 self.cb_analog_clock, self.cb_date_rect, self.cb_date_seconds,
-                self.cb_date_ampm,
+                self.cb_date_ampm, self.cb_timer_minutes,
             ]),
             _settings_group("Date", [
                 self.cb_date_daypart, self.cb_date_emoji,
@@ -5511,19 +5614,35 @@ class FastPrompter(
                 w.deleteLater()
         self._cat_num_buttons = []
         cats = self.visible_categories()
+        per_row = self.numbox_per_row()
+        size = self.numbox_button_size()
         for i, cat in enumerate(cats):
             btn = QPushButton(str(i + 1))
-            btn.setFixedSize(22, 22)
+            btn.setFixedSize(size, size)
             btn.setCheckable(True)
-            btn.setToolTip(cat)
+            btn.setToolTip(f"{i + 1}: {cat}")
             idx = i
             btn.clicked.connect(lambda _c, n=idx: self._cat_numbox_clicked(n))
             btn.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
             btn.customContextMenuRequested.connect(
                 lambda pos, n=idx: self._cat_numbox_context(n, pos))
-            layout.addWidget(btn)
+            layout.addWidget(btn, i // per_row, i % per_row)
             self._cat_num_buttons.append(btn)
         self._update_cat_numbox_active()
+
+    def numbox_per_row(self):
+        """How many number boxes fit on one row before wrapping (1..100)."""
+        try:
+            return max(1, min(100, int(self.data.get("numbox_per_row", 10))))
+        except (TypeError, ValueError):
+            return 10
+
+    def numbox_button_size(self):
+        """Edge length of one number box, in px (14..40)."""
+        try:
+            return max(14, min(40, int(self.data.get("numbox_btn_size", 22))))
+        except (TypeError, ValueError):
+            return 22
 
     def _cat_numbox_clicked(self, idx):
         if 0 <= idx < self.cat_combo.count():
@@ -5551,6 +5670,43 @@ class FastPrompter(
             WindowPresetsDialog(self).exec()
         finally:
             QTimer.singleShot(300, self._decrement_focus_lock)
+
+    def _on_token_mode_changed(self, idx):
+        mode = self.cb_token_mode.itemData(idx) or "chars"
+        self.data["token_mode"] = mode
+        self.data["token_weight"] = "4.0" if mode == "chars" else "1.33"
+        self.spin_token_weight.blockSignals(True)
+        self.spin_token_weight.setValue(float(self.data["token_weight"]))
+        self.spin_token_weight.blockSignals(False)
+        self._update_token_count_label()
+        self.mark_dirty()
+
+    def _on_token_weight_changed(self, value):
+        self.data["token_weight"] = str(float(value))
+        self._update_token_count_label()
+        self.mark_dirty()
+
+    def _cycle_token_mode(self):
+        """Click the token label to flip chars <-> words weighting."""
+        modes = self.TOKEN_MODES
+        cur = self.data.get("token_mode", "chars")
+        nxt = modes[(modes.index(cur) + 1) % len(modes)] if cur in modes else modes[0]
+        self.data["token_mode"] = nxt
+        # the default weight differs per mode, so reset it with the mode
+        self.data["token_weight"] = "4.0" if nxt == "chars" else "1.33"
+        if hasattr(self, "cb_token_mode"):
+            self.cb_token_mode.setCurrentIndex(modes.index(nxt))
+        if hasattr(self, "spin_token_weight"):
+            self.spin_token_weight.setValue(float(self.data["token_weight"]))
+        self._update_token_count_label()
+        self.mark_dirty()
+
+    def _on_numbox_geometry_changed(self, key, value):
+        # stored as a string like every other settings value — the DB layer
+        # round-trips strings, and the readers above int() them back
+        self.data[key] = str(int(value))
+        self._rebuild_cat_numbox()
+        self.mark_dirty()
 
     def _toggle_numbox_mode(self, checked):
         self.data["numbox_tabs"] = "True" if checked else "False"
@@ -7964,6 +8120,53 @@ class FastPrompter(
             lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         lbl.setText(f"{lines} L" if lines else "")
+        self._update_token_count_label()
+
+    # Two ways to guess a token count without shipping a tokenizer. Chars are
+    # the better proxy for prose in any language; words are the better proxy
+    # for English-ish text with a lot of punctuation. Both are estimates and
+    # the label says so with a leading ~.
+    TOKEN_MODES = ("chars", "words")
+
+    def token_estimate(self, text):
+        """Rough token count for this text under the user's chosen weighting."""
+        if not text:
+            return 0
+        mode = self.data.get("token_mode", "chars")
+        try:
+            weight = float(self.data.get("token_weight", 4.0))
+        except (TypeError, ValueError):
+            weight = 4.0
+        if mode == "words":
+            return int(round(len(text.split()) * max(0.1, min(10.0, weight))))
+        weight = max(1.0, min(20.0, weight))
+        return int(round(len(text) / weight))
+
+    @staticmethod
+    def _short_count(n):
+        if n >= 1_000_000:
+            return f"{n / 1_000_000:.1f}M"
+        if n >= 1000:
+            return f"{n / 1000:.1f}k"
+        return str(n)
+
+    def _update_token_count_label(self):
+        lbl = getattr(self, "lbl_token_count", None)
+        if lbl is None or sip.isdeleted(lbl):
+            return
+        if self.data.get("show_token_count", "False") != "True":
+            lbl.setVisible(False)
+            return
+        text = self.text_area.toPlainText()
+        tokens = self.token_estimate(text)
+        lbl.setText(f"~{self._short_count(tokens)} T" if tokens else "")
+        lbl.setToolTip(tr(
+            "Estimated input tokens for the open silo\n"
+            "{} characters, {} words\n"
+            "Weighting is configurable in Settings > Editor > Lines",
+            getattr(self, "_current_lang", "EN")
+        ).format(len(text), len(text.split())))
+        lbl.setVisible(True)
 
     def refresh_timestamp_in_block(self, block):
         """Replace a line's (DD.MM - hh:mm) stamp with right now — used by

@@ -383,14 +383,23 @@ class VaultTextEdit(QTextEdit):
                 cur_doc.contentsChange.disconnect(self._stamp_edited_blocks)
             except Exception:
                 pass
+            try:
+                cur_doc.contentsChange.disconnect(self._on_contents_change)
+            except Exception:
+                pass
         self.setDocument(doc)
         self.document().setUndoRedoEnabled(True)
         # Each silo is its own QTextDocument, so the heat hook has to follow
         # the swap — connecting once in __init__ only ever stamped the very
         # first document.
         self.document().contentsChange.connect(self._stamp_edited_blocks)
-        self.document().contentsChange.connect(
-            lambda *_a: self.refresh_extra_selections())
+        # NOT a lambda: this used to be `lambda *_a: self.refresh_extra_selections()`,
+        # which nothing could ever disconnect. Documents outlive the swap (one
+        # per silo), so every switch BACK to a silo stacked another copy on the
+        # same document — after N switches one paste fired N identical handlers,
+        # and the connection also outlived the editor itself (a dead C++ object
+        # reached from a document signal is an access violation, H-406 class).
+        self.document().contentsChange.connect(self._on_contents_change)
         self.refresh_extra_selections()
         self.document().documentLayout().documentSizeChanged.connect(self.update_line_number_area_width)
         self.update_line_number_area_width()
@@ -474,6 +483,41 @@ class VaultTextEdit(QTextEdit):
             numbers = QColor("#808080")
         return bg, numbers
 
+    def gutter_rows(self, limit=200):
+        """Which blocks get a number, and how tall their row really is.
+
+        Yields ``(block, top, row_height)``. Split out of the paint loop so
+        the anti-overlap rule is testable without rendering: numbers used to
+        be drawn at every block's top in a box a full font-height tall
+        whatever the block's REAL height was, and a block the highlighter
+        collapses to 1pt (a `---` rule, an image ref, concealed markup) is
+        only ~2px, so its digits landed on top of the next line's. A block
+        whose top falls inside the band the previous number already occupies
+        is skipped — a 1pt filler row carries no visible text anyway.
+        """
+        doc = self.document()
+        if not doc or sip.isdeleted(doc):
+            return
+        first = self._first_visible_block()
+        if not first:
+            return
+        first_number = first.blockNumber()
+        last_number = min(doc.blockCount(), first_number + limit)
+        fm_height = self.fontMetrics().height()
+        last_bottom = -1
+        for block_number in range(first_number, last_number):
+            block = doc.findBlockByNumber(block_number)
+            if not block.isValid():
+                break
+            if not block.isVisible():       # folded away
+                continue
+            rect = self.cursorRect(QTextCursor(block))
+            top = int(rect.top())
+            if top < last_bottom:
+                continue
+            last_bottom = top + fm_height
+            yield block, top, max(2, min(fm_height, int(rect.height()) or fm_height))
+
     def line_number_area_paint_event(self, event):
         if not self._gutter_active():
             return
@@ -490,23 +534,11 @@ class VaultTextEdit(QTextEdit):
             bg, text_color = self._gutter_colors()
             painter.fillRect(event.rect(), bg)
 
-            first = self._first_visible_block()
-            if not first:
-                return
-            first_number = first.blockNumber()
-            last_visible = min(block_count, first_number + 200)
-
-            for block_number in range(first_number, last_visible):
-                block = doc.findBlockByNumber(block_number)
-                if not block.isValid():
-                    break
-                if not block.isVisible():  # folded away
-                    continue
-                cursor = QTextCursor(block)
-                rect = self.cursorRect(cursor)
-
+            for block, top, row_height in self.gutter_rows():
+                block_number = block.blockNumber()
                 mark = max(0, block.userState()) & 0xFF
-                is_hovered = getattr(self.line_number_area, "hover_y", -1) != -1 and rect.top() <= self.line_number_area.hover_y <= rect.bottom()
+                hover_y = getattr(self.line_number_area, "hover_y", -1)
+                is_hovered = hover_y != -1 and top <= hover_y <= top + row_height
 
                 # Fold count badge: when a header is folded, replace the line
                 # number with the hidden line count — more useful at a glance.
@@ -521,23 +553,23 @@ class VaultTextEdit(QTextEdit):
                     painter.setFont(smaller)
                     painter.setPen(text_color)
                     painter.drawText(
-                        2, int(rect.top()), self.line_number_area.width() - 4,
+                        2, top, self.line_number_area.width() - 4,
                         self.fontMetrics().height(),
                         Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
                         label)
                     painter.setFont(old_font)
                 else:
                     painter.setPen(text_color)
-                    painter.drawText(0, int(rect.top()), self.line_number_area.width() - 4,
+                    painter.drawText(0, top, self.line_number_area.width() - 4,
                                      self.fontMetrics().height(), Qt.AlignmentFlag.AlignRight,
                                      str(block_number + 1))
 
                 marks_enabled = self.main_win.data.get("line_marks", "False") == "True"
 
                 if marks_enabled and (mark > 0 or is_hovered):
-                    h = self.fontMetrics().height()
+                    h = row_height
                     cx = 8
-                    cy = int(rect.top()) + h // 2
+                    cy = top + h // 2
                     size = min(h - 4, 10)
                     
                     if mark == 1 or (mark == 0 and is_hovered):
@@ -587,11 +619,11 @@ class VaultTextEdit(QTextEdit):
                 if queue_state:
                     stripe = QColor("#46b98a") if queue_state & SENT_BIT \
                         else QColor("#6aa9ff")
-                    h = self.fontMetrics().height()
+                    h = row_height
                     width = self.line_number_area.width()
                     painter.setPen(Qt.PenStyle.NoPen)
                     painter.setBrush(stripe)
-                    painter.drawRect(width - 3, int(rect.top()) + 1, 2, h - 2)
+                    painter.drawRect(width - 3, top + 1, 2, max(1, h - 2))
 
         finally:
             painter.end()
@@ -2449,11 +2481,28 @@ class VaultTextEdit(QTextEdit):
         except Exception:
             return False
 
+    def _on_contents_change(self, *_args):
+        """Document changed — rebuild the background tints.
+
+        A named method, not a lambda, so `set_active_document` can disconnect
+        it from the outgoing document. Guarded because a QTextDocument can
+        outlive the editor that connected to it.
+        """
+        if sip.isdeleted(self):
+            return
+        self.refresh_extra_selections()
+
     def _stamp_edited_blocks(self, position, removed, added):
         """Timestamp every block the change touched."""
+        # same reason as _on_contents_change: the document can outlive us, and
+        # self.document() on a dead editor is an access violation
+        if sip.isdeleted(self):
+            return
         if not self._heat_enabled():
             return
         doc = self.document()
+        if doc is None or sip.isdeleted(doc):
+            return
         if doc.blockCount() > 2000:      # same ceiling as the other per-block work
             return
         import time as _t

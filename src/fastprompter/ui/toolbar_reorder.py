@@ -27,7 +27,8 @@ DEFAULT_TOOLBAR_ORDER = [
     "btn_clear_fmt", "btn_add_line", "btn_bullet_toggle", "btn_copy", "btn_clear",
     "<stretch>",
     "analog_clock", "lbl_date", "lbl_timer",
-    "<sep>", "lbl_line_count", "btn_settings_toggle_right", "btn_help",
+    "<sep>", "lbl_line_count", "lbl_token_count",
+    "btn_settings_toggle_right", "btn_help",
 ]
 
 _MIME = "application/x-fastprompter-toolbar-token"
