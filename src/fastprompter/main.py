@@ -667,8 +667,11 @@ class FastPrompter(
 
     # Buttons the density tiers pull out of the header. They stay reachable
     # through the "»" overflow menu — see _refresh_overflow_button.
+    # btn_vision is here because the same three modes are always one click
+    # away in the settings footer's preview combo — the button is a shortcut,
+    # not the only route, so it is fair game for the narrow tier.
     _DENSE_HIDDEN = ("btn_clear_fmt", "btn_add_line", "btn_home", "btn_end",
-                     "btn_under", "btn_strike", "btn_copy",
+                     "btn_under", "btn_strike", "btn_copy", "btn_vision",
                      "btn_align_left", "btn_align_center", "btn_align_right")
     _ULTRA_HIDDEN = ("btn_bold", "btn_italic", "btn_under", "btn_strike",
                      "btn_header", "btn_quote",
@@ -1518,12 +1521,20 @@ class FastPrompter(
             elif (t == "<sep>" or getattr(self, t, None) is not None) and t not in seen:
                 valid.append(t)
                 seen.add(t)
+        if not valid:
+            return list(default)        # nothing saved: the default IS the order
+
         # add any default tokens missing from the saved order. NOT blindly at
         # the end: a token added in a later version (cat_numbox next to
         # cat_combo, lbl_token_count next to lbl_line_count) landed after the
         # help button for everyone with a saved order, which reads as the
         # feature being broken. Put it back beside the neighbour it was
         # defined next to, and only fall back to the end.
+        #
+        # The anchor search MUST see the stretches. Skipping them put every
+        # token defined after a "<stretch>" in front of it, which collapses
+        # the whole right-hand cluster leftwards and leaves a dead gap at the
+        # right edge — the exact symptom this was reported for.
         stretch_needed = default.count("<stretch>") - valid.count("<stretch>")
         for pos, t in enumerate(default):
             if t == "<stretch>":
@@ -1534,8 +1545,18 @@ class FastPrompter(
             if t in seen:
                 continue
             anchor = -1
+            stretches_before = 0
             for prev in reversed(default[:pos]):
-                if prev != "<stretch>" and prev in valid:
+                if prev == "<stretch>":
+                    # the n-th stretch of `default` is the n-th of `valid`
+                    n = default[:pos].count("<stretch>") - stretches_before - 1
+                    idx = [i for i, v in enumerate(valid) if v == "<stretch>"]
+                    if 0 <= n < len(idx):
+                        anchor = idx[n]
+                        break
+                    stretches_before += 1
+                    continue
+                if prev in valid:
                     anchor = valid.index(prev)
                     break
             if anchor >= 0:
@@ -1611,6 +1632,7 @@ class FastPrompter(
         # reset button is a fixed trailing control, never part of the order
         if hasattr(self, "btn_toolbar_reset"):
             lay.addWidget(self.btn_toolbar_reset)
+        self._place_files_button(self._sidebar_right)
         if self._sidebar_right:
             self._place_sidebar_toggle(True)
         self._style_toolbar_gaps(self.data.get("customize_toolbar", "False") == "True")
@@ -1947,6 +1969,7 @@ class FastPrompter(
         if visible and not self.files_docked():
             return
         dock.setVisible(bool(visible))
+        self.data["files_dock_open"] = "True" if visible else "False"
         if not visible:
             return
         idx = self.splitter.indexOf(dock)
@@ -1961,6 +1984,45 @@ class FastPrompter(
                 sizes[centre] = max(160, sizes[centre] - width)
             sizes[idx] = width
             self.splitter.setSizes(sizes)
+
+    def cycle_vision_mode(self):
+        """Step the view mode: Source View -> Live Preview -> Reading."""
+        combo = getattr(self, "preview_combo", None)
+        if combo is None or sip.isdeleted(combo) or combo.count() == 0:
+            return
+        combo.setCurrentIndex((combo.currentIndex() + 1) % combo.count())
+        self._refresh_vision_button()
+
+    def _refresh_vision_button(self):
+        btn = getattr(self, "btn_vision", None)
+        combo = getattr(self, "preview_combo", None)
+        if btn is None or sip.isdeleted(btn) or combo is None or sip.isdeleted(combo):
+            return
+        mode = combo.currentData() or combo.currentText()
+        btn.setToolTip(tr(
+            "Vision: {}\nClick to cycle Source View / Live Preview / Reading",
+            getattr(self, "_current_lang", "EN")).format(
+                tr(str(mode), getattr(self, "_current_lang", "EN"))))
+
+    def _place_files_button(self, is_right):
+        """Keep 📁 on the side its panel opens on.
+
+        The files dock sits opposite the silo sidebar, so with the sidebar on
+        the right the button belongs next to the settings gear on the left —
+        beside the edge the panel actually appears at.
+        """
+        btn = getattr(self, "btn_files", None)
+        layout = getattr(self, "header_layout", None)
+        anchor = getattr(self, "btn_settings_toggle_right", None)
+        if btn is None or layout is None:
+            return
+        if not is_right or anchor is None:
+            return          # left sidebar: the order list already placed it
+        idx = layout.indexOf(anchor)
+        if idx < 0:
+            return
+        layout.removeWidget(btn)
+        layout.insertWidget(layout.indexOf(anchor), btn)
 
     def _sync_files_dock_to_active_silo(self):
         """An OPEN files sidebar has to follow the silo you switch to.
@@ -1990,6 +2052,8 @@ class FastPrompter(
             if dock is not None and not dock.isHidden():
                 self._save_files_dock_width()
                 dock.setVisible(False)
+                self.data["files_dock_open"] = "False"
+                self.mark_dirty()
                 return
         self.open_file_container()
 
@@ -2324,6 +2388,19 @@ class FastPrompter(
             getattr(self, "_current_lang", "EN")))
         self.apply_button_size(self.btn_add_line, 24)
         self.btn_add_line.clicked.connect(self.insert_add_line)
+
+        # Vision: the preview_combo's three modes as one cycling button, for
+        # people who want the mode switch on the toolbar rather than in the
+        # settings footer. The combo stays the data layer — this only drives
+        # its index, so there is one source of truth for the mode.
+        self.btn_vision = QPushButton("👁")
+        self.apply_button_size(self.btn_vision, 24, 24)
+        # a tooltip from the start: _refresh_vision_button only runs once the
+        # mode changes, and a header button with no tooltip is a dead control
+        self.btn_vision.setToolTip(tr(
+            "Vision\nClick to cycle Source View / Live Preview / Reading",
+            getattr(self, "_current_lang", "EN")))
+        self.btn_vision.clicked.connect(self.cycle_vision_mode)
 
         self.btn_bullet_toggle = QPushButton("-→•")
         self.apply_button_size(self.btn_bullet_toggle, 24)
@@ -4139,6 +4216,11 @@ class FastPrompter(
         self.refresh_snippets_panel()
         self.refresh_temp_presets()
         QTimer.singleShot(0, lambda: not sip.isdeleted(self) and self._deferred_silo_refresh())
+        # a files sidebar left open is part of the layout the user left
+        if (self.files_docked()
+                and self.data.get("files_dock_open", "False") == "True"):
+            QTimer.singleShot(0, lambda: not sip.isdeleted(self)
+                              and self.open_file_container())
         self.change_preview_mode(self.preview_combo.currentIndex())
         self.on_tray_toggled(self.cb_tray.isChecked())
         self.set_lock_state(self.cb_lock_window.isChecked())
@@ -6040,6 +6122,8 @@ class FastPrompter(
         super().moveEvent(event)
 
     def closeEvent(self, event):
+        # never exit leaving the user's desktop minimised on our account
+        self.exit_zen_solo()
         # capture cursor/selection/marks for the silo that is open right now,
         # otherwise the current one is the only silo that forgets
         try:
@@ -6119,6 +6203,15 @@ class FastPrompter(
         super().showEvent(event)
 
     def changeEvent(self, event):
+        # Zen solo swept the user's desktop clean on our behalf; the moment
+        # this window stops being what they are looking at, put it back.
+        if getattr(self, "zen_solo", False):
+            if event.type() == QEvent.Type.WindowStateChange and self.isMinimized():
+                self.exit_zen_solo()
+            elif (event.type() in (QEvent.Type.ActivationChange,
+                                   QEvent.Type.WindowDeactivate)
+                    and not self.isActiveWindow()):
+                self.exit_zen_solo(grace=True)
         if event.type() in (QEvent.Type.ActivationChange, QEvent.Type.WindowDeactivate):
             if self.isActiveWindow():
                 # The user has it in front now; from here a deactivation is a
@@ -6391,16 +6484,18 @@ class FastPrompter(
         self.on_tab_changed(combo.currentIndex())
 
     def open_projects_manager(self):
-        """Check/uncheck which projects appear in the combo."""
-        from PyQt6.QtWidgets import (QDialog, QDialogButtonBox, QLabel,
-                                     QListWidget, QListWidgetItem, QVBoxLayout)
+        """Check/uncheck which projects appear in the combo, and reorder them."""
+        from PyQt6.QtWidgets import (QDialog, QDialogButtonBox, QHBoxLayout,
+                                     QLabel, QListWidget, QListWidgetItem,
+                                     QPushButton, QVBoxLayout)
         le = getattr(self, "_current_lang", "EN")
         cur = self.get_current_category()
         dlg = QDialog(self)
         dlg.setWindowTitle(tr("Projects", le))
         lay = QVBoxLayout(dlg)
         lay.addWidget(QLabel(tr("Untick a project to hide it from the tab list. "
-                                "Nothing is deleted - its silos stay put.", le)))
+                                "Nothing is deleted - its silos stay put.\n"
+                                "Use ▲ ▼ to change the order of the tabs.", le)))
         lst = QListWidget()
         hidden = set(self.hidden_categories())
         for name in self.data.get("cats_order", []):
@@ -6415,6 +6510,29 @@ class FastPrompter(
                 it.setCheckState(Qt.CheckState.Checked)
             lst.addItem(it)
         lay.addWidget(lst)
+
+        def _move(step):
+            row = lst.currentRow()
+            new = row + step
+            if row < 0 or not (0 <= new < lst.count()):
+                return
+            # takeItem drops the check state on some styles, so carry it over
+            item = lst.takeItem(row)
+            lst.insertItem(new, item)
+            lst.setCurrentRow(new)
+
+        move_row = QHBoxLayout()
+        btn_up = QPushButton("▲")
+        btn_up.setToolTip(tr("Move this project up", le))
+        btn_up.clicked.connect(lambda: _move(-1))
+        btn_down = QPushButton("▼")
+        btn_down.setToolTip(tr("Move this project down", le))
+        btn_down.clicked.connect(lambda: _move(1))
+        move_row.addWidget(btn_up)
+        move_row.addWidget(btn_down)
+        move_row.addStretch(1)
+        lay.addLayout(move_row)
+
         bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok
                               | QDialogButtonBox.StandardButton.Cancel)
         bb.accepted.connect(dlg.accept)
@@ -6432,8 +6550,17 @@ class FastPrompter(
         if len(new_hidden) >= len(self.data.get("cats_order", [])):
             return                      # refuse to hide every project
         self.hidden_categories()[:] = new_hidden
+
+        # Order follows the list. Rebound in place rather than reassigned:
+        # data["cats_order"] is aliased elsewhere, and swapping the object
+        # would orphan those readers on the old list.
+        new_order = [lst.item(i).text() for i in range(lst.count())]
+        old_order = self.data.get("cats_order", [])
+        if sorted(new_order) == sorted(old_order) and new_order != old_order:
+            old_order[:] = new_order
         self.mark_dirty()
         self.rebuild_cat_combo(keep=cur)
+        self._rebuild_cat_numbox()
 
     def _cat_at(self, idx):
         """Category name for a combo row.
@@ -8161,7 +8288,7 @@ class FastPrompter(
             self._app_shortcuts.append(shortcut)
             flt.register(seq, slot)
 
-        add_shortcut("hk_focus", "Ctrl+D", self.toggle_focus_mode)
+        add_shortcut("hk_focus", "Ctrl+D", self.cycle_focus_mode)
         add_shortcut("hk_find", "Ctrl+F", self.show_find)
         add_shortcut("hk_replace", "Ctrl+H", self.show_replace)
         add_shortcut("hk_export_silo", "Ctrl+Shift+S", self.save_silo_to_file)
@@ -8509,6 +8636,8 @@ class FastPrompter(
             doc.setUndoRedoEnabled(True)
 
     def hide_and_save(self):
+        # every route out of the window restores the desktop, not just Ctrl+D
+        self.exit_zen_solo()
         try:
             self.capture_silo_state()
         except Exception:

@@ -338,6 +338,10 @@ class ThemeMixin:
         # Read the English mode key from itemData — currentText() is localized
         # and would never match the English "Source View"/"Reading" checks.
         mode = self.preview_combo.currentData() or self.preview_combo.currentText()
+        # the Vision button is a second face of this combo, so its tooltip
+        # has to follow the mode however the mode was changed
+        if hasattr(self, "_refresh_vision_button"):
+            self._refresh_vision_button()
 
         if self._preview_connected and hasattr(self, "_preview_timer"):
             try:

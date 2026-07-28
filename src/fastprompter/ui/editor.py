@@ -2192,7 +2192,7 @@ class VaultTextEdit(QTextEdit):
             if matches("hk_replace", "Ctrl+H"):
                 mw.show_replace(); event.accept(); return
             if matches("hk_focus", "Ctrl+D"):
-                mw.toggle_focus_mode(); event.accept(); return
+                mw.cycle_focus_mode(); event.accept(); return
             if matches("hk_divider", "Ctrl+W"):
                 mw.insert_divider_line(); event.accept(); return
             if matches("hk_snap", "Ctrl+Q"):

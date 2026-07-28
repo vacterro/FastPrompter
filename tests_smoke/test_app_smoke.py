@@ -9974,3 +9974,272 @@ def test_new_tokens_heal_next_to_their_neighbour(fresh_win):
         assert healed.index("lbl_token_count") == healed.index("lbl_line_count") + 1
     finally:
         w.data["toolbar_order"] = saved
+
+
+# --- T-620 / T-621: header order and pane indices with three panes ---
+
+def test_right_cluster_hugs_the_right_edge(fresh_win):
+    """The anchor search skipped <stretch>, so every token defined after one
+    was inserted in FRONT of it: the whole right cluster collapsed leftwards
+    and left a dead gap at the right edge."""
+    w = fresh_win
+    w.data["toolbar_order"] = ""
+    w.apply_toolbar_order()
+    w.resize(1200, 300)
+    QApplication.processEvents()
+    order = w._toolbar_order_list()
+    assert order.index("<stretch>") < order.index("btn_help")
+    assert order.index("lbl_line_count") > order.index("<stretch>")
+    right = w.header_widget.width()
+    assert w.btn_help.geometry().right() >= right - 2, w.btn_help.geometry()
+
+
+def test_empty_saved_order_is_exactly_the_default(fresh_win):
+    from fastprompter.ui.toolbar_reorder import DEFAULT_TOOLBAR_ORDER
+    w = fresh_win
+    w.data["toolbar_order"] = ""
+    assert w._toolbar_order_list() == list(DEFAULT_TOOLBAR_ORDER)
+
+
+def test_hamburger_hides_the_sidebar_on_both_sides(fresh_win):
+    """With the files dock the splitter has three panes; the old hardcoded
+    'pane 1 when right' pointed at the CENTRE, so the button grew the
+    sidebar instead of hiding it."""
+    w = fresh_win
+    w.resize(1000, 600)
+    for right in (False, True):
+        w.data["sidebar_right"] = "True" if right else "False"
+        w.apply_sidebar_position()
+        QApplication.processEvents()
+        idx = w.splitter.indexOf(w.left_panel)
+        assert w.splitter.sizes()[idx] > 0, "sidebar started hidden"
+        w.toggle_sidebar_visibility()
+        assert w.splitter.sizes()[idx] == 0, f"right={right}: did not hide"
+        w.toggle_sidebar_visibility()
+        assert w.splitter.sizes()[idx] > 0, f"right={right}: did not come back"
+
+
+def test_zen_mode_collapses_every_other_pane(fresh_win):
+    w = fresh_win
+    w.resize(1000, 600)
+    w.data["file_panel_docked"] = "True"
+    w.open_file_container()
+    QApplication.processEvents()
+    w.toggle_focus_mode()
+    QApplication.processEvents()
+    try:
+        sizes = w.splitter.sizes()
+        centre = w.splitter.indexOf(w.center_panel)
+        for i, s in enumerate(sizes):
+            if i != centre:
+                assert s == 0, f"pane {i} survived Zen mode"
+    finally:
+        w.toggle_focus_mode()
+
+
+# --- T-622..T-625: files button side, Vision, project reorder, Zen solo ---
+
+def test_files_button_mirrors_the_sidebar_side(fresh_win):
+    w = fresh_win
+    lay = w.header_layout
+    w.data["sidebar_right"] = "False"
+    w.apply_toolbar_order()
+    left_pos = lay.indexOf(w.btn_files)
+    assert left_pos < lay.indexOf(w.btn_settings_toggle_right)
+    w.data["sidebar_right"] = "True"
+    w.apply_toolbar_order()
+    # sidebar right -> dock left -> 📁 sits next to the settings gear
+    assert lay.indexOf(w.btn_files) == lay.indexOf(w.btn_settings_toggle_right) - 1
+
+
+def test_vision_button_cycles_the_view_mode(fresh_win):
+    w = fresh_win
+    assert hasattr(w, "btn_vision")
+    from fastprompter.ui.toolbar_reorder import DEFAULT_TOOLBAR_ORDER
+    assert "btn_vision" in DEFAULT_TOOLBAR_ORDER
+    modes = [w.preview_combo.itemData(i) for i in range(w.preview_combo.count())]
+    start = w.preview_combo.currentIndex()
+    seen = []
+    for _ in range(len(modes) + 1):
+        w.cycle_vision_mode()
+        QApplication.processEvents()
+        seen.append(w.preview_combo.currentData())
+    assert seen[:len(modes)] == modes[start + 1:] + modes[:start + 1]
+    assert w.btn_vision.toolTip()
+
+
+def test_projects_dialog_can_reorder(fresh_win, monkeypatch):
+    """The manager could hide projects but never move them."""
+    from PyQt6.QtWidgets import QDialog, QListWidget
+    w = fresh_win
+    order_before = list(w.data["cats_order"])
+    if len(order_before) < 2:
+        pytest.skip("need >=2 projects")
+    captured = {}
+
+    def fake_exec(self):
+        lst = self.findChild(QListWidget)
+        captured["lst"] = lst
+        lst.setCurrentRow(lst.count() - 1)
+        for btn in self.findChildren(type(w.btn_new)):
+            if btn.text() == "▲":
+                btn.click()
+                break
+        return 1
+
+    monkeypatch.setattr(QDialog, "exec", fake_exec)
+    w.open_projects_manager()
+    assert captured.get("lst") is not None
+    expected = list(order_before)
+    expected[-2], expected[-1] = expected[-1], expected[-2]
+    assert w.data["cats_order"] == expected
+    assert w.data["cats_order"] is not None
+
+
+def test_zen_has_three_stages(fresh_win, monkeypatch):
+    from fastprompter.ui import zen_desktop
+    w = fresh_win
+    calls = {"min": 0, "restore": 0}
+    monkeypatch.setattr(zen_desktop, "minimise_others",
+                        lambda own: calls.__setitem__("min", calls["min"] + 1) or [111])
+    monkeypatch.setattr(zen_desktop, "restore",
+                        lambda h: calls.__setitem__("restore", calls["restore"] + 1))
+    assert not getattr(w, "focus_mode", False)
+    w.cycle_focus_mode()                  # 1: zen
+    assert w.focus_mode and not getattr(w, "zen_solo", False)
+    assert calls["min"] == 0
+    w.cycle_focus_mode()                  # 2: solo
+    assert w.focus_mode and w.zen_solo
+    assert calls["min"] == 1
+    w.cycle_focus_mode()                  # 3: all the way back
+    assert not w.focus_mode and not w.zen_solo
+    assert calls["restore"] == 1
+
+
+def test_plain_toggle_never_sweeps_the_desktop(fresh_win, monkeypatch):
+    """A dozen callers (and the fuzz suite) use toggle_focus_mode as a plain
+    two-state switch. Folding the stages into it made "toggle twice" mean
+    "minimise every window on the machine" for all of them — which is exactly
+    what the suite then did to the developer's desktop."""
+    from fastprompter.ui import zen_desktop
+    w = fresh_win
+    swept = []
+    monkeypatch.setattr(zen_desktop, "minimise_others",
+                        lambda own: swept.append(1) or [1])
+    monkeypatch.setattr(zen_desktop, "restore", lambda h: None)
+    for _ in range(3):
+        w.toggle_focus_mode()
+        w.toggle_focus_mode()
+    assert not w.focus_mode
+    assert not getattr(w, "zen_solo", False)
+    assert swept == []
+
+
+def test_leaving_the_window_restores_the_desktop(fresh_win, monkeypatch):
+    from fastprompter.ui import zen_desktop
+    w = fresh_win
+    monkeypatch.setattr(zen_desktop, "minimise_others", lambda own: [222])
+    restored = []
+    monkeypatch.setattr(zen_desktop, "restore", lambda h: restored.append(list(h)))
+    w.cycle_focus_mode()
+    w.cycle_focus_mode()
+    assert w.zen_solo
+    w.hide_and_save()                     # click-out / hotkey hide
+    assert not w.zen_solo
+    assert restored == [[222]]
+    w.toggle_focus_mode()                 # leave zen for the shared fixture
+
+
+def test_zen_solo_ignores_its_own_activation_churn(fresh_win, monkeypatch):
+    """Minimising other windows churns the foreground; that transient
+    deactivation must not undo solo the instant it starts."""
+    from fastprompter.ui import zen_desktop
+    w = fresh_win
+    monkeypatch.setattr(zen_desktop, "minimise_others", lambda own: [333])
+    monkeypatch.setattr(zen_desktop, "restore", lambda h: None)
+    w.cycle_focus_mode()
+    w.cycle_focus_mode()
+    w.exit_zen_solo(grace=True)
+    assert w.zen_solo, "grace period did not hold"
+    w._zen_solo_at = 0.0
+    w.exit_zen_solo(grace=True)
+    assert not w.zen_solo
+    w.toggle_focus_mode()
+
+
+# --- T-626: the layout you left is the layout you come back to ---
+
+def _restart(tmpdir, tag):
+    """Build a window against a private DB, twice, around a mutation."""
+    import fastprompter.core.state as sm
+    from fastprompter.main import FastPrompter as FP
+    sm.get_db_path = lambda profile_id=1, _t=tag: os.path.join(
+        tmpdir, f"{_t}_{profile_id}.db")
+    sm.run_portable_backup = lambda data: None
+    return FP()
+
+
+def test_collapsed_sidebar_survives_a_restart(tmp_path):
+    """Splitter sizes were only written by splitterMoved, so a sidebar
+    collapsed with the hamburger came back open on the next start."""
+    w = _restart(str(tmp_path), "sidebar")
+    w.resize(1000, 600)
+    QApplication.processEvents()
+    w.toggle_sidebar_visibility()
+    idx = w.splitter.indexOf(w.left_panel)
+    assert w.splitter.sizes()[idx] == 0
+    # _teardown_window drops the connection to skip the final write, so save
+    # explicitly — the real app writes this on close
+    w.save_data_to_db(force=True)
+    _teardown_window(w)
+
+    w2 = _restart(str(tmp_path), "sidebar")
+    w2.resize(1000, 600)
+    QApplication.processEvents()
+    try:
+        idx2 = w2.splitter.indexOf(w2.left_panel)
+        assert w2.splitter.sizes()[idx2] == 0, "sidebar came back open"
+        assert w2.sidebar_visible is False
+        w2.toggle_sidebar_visibility()
+        assert w2.splitter.sizes()[idx2] > 0, "could not reopen it"
+    finally:
+        _teardown_window(w2)
+
+
+def test_open_files_sidebar_survives_a_restart(tmp_path):
+    w = _restart(str(tmp_path), "dock")
+    w.resize(1000, 600)
+    w.data["file_panel_docked"] = "True"
+    w.open_file_container()
+    QApplication.processEvents()
+    assert not w.files_dock.isHidden()
+    w.save_data_to_db(force=True)
+    _teardown_window(w)
+
+    w2 = _restart(str(tmp_path), "dock")
+    w2.resize(1000, 600)
+    QApplication.processEvents()
+    try:
+        assert w2.files_docked()
+        assert not w2.files_dock.isHidden(), "files sidebar came back closed"
+    finally:
+        _teardown_window(w2)
+
+
+def test_closed_files_sidebar_stays_closed(tmp_path):
+    w = _restart(str(tmp_path), "dock2")
+    w.resize(1000, 600)
+    w.data["file_panel_docked"] = "True"
+    w.open_file_container()
+    QApplication.processEvents()
+    w.toggle_file_container()          # close it again
+    assert w.files_dock.isHidden()
+    w.save_data_to_db(force=True)
+    _teardown_window(w)
+
+    w2 = _restart(str(tmp_path), "dock2")
+    QApplication.processEvents()
+    try:
+        assert w2.files_dock.isHidden()
+    finally:
+        _teardown_window(w2)

@@ -25,7 +25,7 @@ DEFAULT_TOOLBAR_ORDER = [
     # btn_saipen_log/board/state used to sit here; the buttons themselves are
     # gone from the app, so they were dead names the reorder UI silently
     # skipped via getattr(..., None).
-    "btn_project_folder", "btn_project_run", "btn_files",
+    "btn_project_folder", "btn_project_run", "btn_files", "btn_vision",
     "<stretch>",
     "btn_bold", "btn_italic", "btn_under", "btn_strike", "btn_header", "btn_quote",
     "btn_align_left", "btn_align_center", "btn_align_right", "btn_overflow",

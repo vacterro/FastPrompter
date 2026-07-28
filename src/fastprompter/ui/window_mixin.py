@@ -239,27 +239,72 @@ class WindowMixin:
     # --- Sidebar / layout management ---
 
     def toggle_sidebar_visibility(self) -> None:
-        """Toggle sidebar panel visibility."""
+        """Toggle sidebar panel visibility.
+
+        Panes are located by identity. This used to assume the sidebar was
+        pane 1 when it sat on the right and pane 0 otherwise; the files dock
+        added a third pane, so on the right that index pointed at the CENTRE
+        and the hamburger grew the sidebar instead of hiding it.
+        """
         sizes = self.splitter.sizes()
-        is_right = self._sidebar_right
-        idx = 1 if is_right else 0
+        idx = self.splitter.indexOf(self.left_panel)
+        centre = self.splitter.indexOf(self.center_panel)
+        if idx < 0 or centre < 0 or idx >= len(sizes):
+            return
 
         if sizes[idx] == 0:
             restored = getattr(self, "_saved_sidebar_size", 130)
             if restored <= 0:
                 restored = 130
             sizes[idx] = restored
-            sizes[1 - idx] = max(0, self.width() - restored)
+            sizes[centre] = max(0, sizes[centre] - restored)
         else:
             self._saved_sidebar_size = sizes[idx]
-            sizes[1 - idx] += sizes[idx]
+            sizes[centre] += sizes[idx]
             sizes[idx] = 0
 
+        self.sidebar_visible = sizes[idx] > 0
+        btn = getattr(self, "btn_sidebar_toggle", None)
+        if btn is not None and btn.isCheckable():
+            btn.setChecked(self.sidebar_visible)
         self.splitter.setSizes(sizes)
+        # Persist here too. Sizes were only ever written by splitterMoved, so
+        # a sidebar collapsed with the hamburger came back open on the next
+        # start — the layout you left was not the layout you returned to.
+        key = ("splitter_sizes_right" if self._sidebar_right
+               else "splitter_sizes_left")
+        self.data[key] = list(sizes)
+        self.data["saved_sidebar_size"] = str(getattr(self, "_saved_sidebar_size", 130))
         self.mark_dirty()
 
+    def cycle_focus_mode(self) -> None:
+        """What Ctrl+D does. Three stages:
+
+        1st press  Zen: header, footer, search and sidebar go away.
+        2nd press  Solo: every OTHER window on the desktop is minimised too.
+        3rd press  back to normal — and so is anything that takes the window
+                   away (click-out, minimise, tray, hotkey hide), because a
+                   desktop left swept clean by an app you are no longer
+                   looking at is the worst possible outcome here.
+
+        Kept separate from toggle_focus_mode on purpose. That one is the
+        plain two-state switch a dozen callers already use, and folding the
+        stages into it made "toggle twice" mean "sweep the desktop" for every
+        one of them.
+        """
+        if getattr(self, "zen_solo", False):
+            self.exit_zen_solo()
+            self.toggle_focus_mode()        # third press leaves Zen as well
+            return
+        if getattr(self, "focus_mode", False):
+            self._enter_zen_solo()
+            return
+        self.toggle_focus_mode()
+
     def toggle_focus_mode(self) -> None:
-        """Toggle Zen/Focus mode: hide header, settings, sidebar, and search."""
+        """Zen on/off: hide header, settings, sidebar and search."""
+        if getattr(self, "zen_solo", False):
+            self.exit_zen_solo()
         self.focus_mode = not getattr(self, "focus_mode", False)
 
         if self.focus_mode:
@@ -272,10 +317,14 @@ class WindowMixin:
             self.header_widget.setVisible(False)
             self.mini_settings_frame.setVisible(False)
             self.search_frame.setVisible(False)
-            if self._sidebar_right:
-                self.splitter.setSizes([self.width(), 0])
-            else:
-                self.splitter.setSizes([0, self.width()])
+            # by identity, not by a 2-element list: with the files dock the
+            # splitter has three panes and a short list left the extra one
+            # untouched, so Zen mode kept a sidebar on screen
+            zen = [0] * self.splitter.count()
+            centre = self.splitter.indexOf(self.center_panel)
+            if 0 <= centre < len(zen):
+                zen[centre] = self.width()
+            self.splitter.setSizes(zen)
             self.sidebar_visible = False
             self.btn_sidebar_toggle.setChecked(False)
             if hasattr(self, "btn_focus_toggle"):
@@ -287,6 +336,47 @@ class WindowMixin:
             self.sidebar_visible = getattr(self, "_pre_focus_sidebar", True)
             self.btn_sidebar_toggle.setChecked(self.sidebar_visible)
             self.splitter.setSizes(self._pre_focus_sizes)
+
+    def _own_hwnds(self):
+        """Every window id this app owns, so Zen never minimises itself."""
+        from PyQt6.QtWidgets import QApplication
+        out = []
+        for w in [self] + list(QApplication.topLevelWidgets()):
+            try:
+                wid = int(w.winId())
+            except Exception:
+                continue
+            if wid:
+                out.append(wid)
+        return out
+
+    def _enter_zen_solo(self) -> None:
+        import time as _t
+        from fastprompter.ui import zen_desktop
+        self._zen_minimised = zen_desktop.minimise_others(self._own_hwnds())
+        self.zen_solo = True
+        # minimising other windows churns the foreground, and one of those
+        # transient deactivations would otherwise undo solo the instant it
+        # started. Ignore deactivations for a moment after entering.
+        self._zen_solo_at = _t.time()
+        # Windows hands the foreground to whatever it un-minimised last, so
+        # take it back explicitly — the point of solo is being the only thing
+        # in front of the user.
+        self.raise_()
+        self.activateWindow()
+
+    def exit_zen_solo(self, grace: bool = False) -> None:
+        """Put the desktop back. Safe to call when solo was never entered."""
+        if not getattr(self, "zen_solo", False):
+            return
+        if grace:
+            import time as _t
+            if _t.time() - getattr(self, "_zen_solo_at", 0.0) < 1.0:
+                return
+        from fastprompter.ui import zen_desktop
+        self.zen_solo = False
+        zen_desktop.restore(getattr(self, "_zen_minimised", []))
+        self._zen_minimised = []
 
     def toggle_sidebar_position(self, checked: bool) -> None:
         """Toggle sidebar between left and right."""
@@ -439,6 +529,18 @@ class WindowMixin:
         if (dock is not None and not dock.isHidden()
                 and hasattr(self, "_show_files_dock")):
             self._show_files_dock(True)
+
+        # a sidebar the user collapsed stays collapsed across a restart, so
+        # the toggle button has to agree with it from the first paint
+        self.sidebar_visible = sizes[sidebar_idx] > 0
+        btn = getattr(self, "btn_sidebar_toggle", None)
+        if btn is not None and btn.isCheckable():
+            btn.setChecked(self.sidebar_visible)
+        try:
+            self._saved_sidebar_size = max(
+                60, int(self.data.get("saved_sidebar_size", 130)))
+        except (TypeError, ValueError):
+            self._saved_sidebar_size = 130
 
     def toggle_mini_settings(self) -> None:
         """Toggle the mini settings footer frame."""
