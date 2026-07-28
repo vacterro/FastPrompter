@@ -29,6 +29,7 @@ class _MockQPushButton:
         self._font = _MockQFont()
         self._name = name
         self._text = ""
+        self._props = {}
         self.is_squishable = False
 
     def setFixedHeight(self, h):
@@ -48,6 +49,17 @@ class _MockQPushButton:
 
     def setText(self, text):
         self._text = text
+
+    def text(self):
+        return self._text
+
+    def setProperty(self, name, value):
+        # apply_button_size tags icon buttons so the theme can drop their
+        # text padding (T-627); the mock has to record it like a QWidget
+        self._props[name] = value
+
+    def property(self, name):
+        return self._props.get(name)
 
     def font(self):
         return self._font
@@ -480,3 +492,26 @@ class TestRefreshButtonScale:
         m.findChildren = MagicMock(return_value=[btn])
         m.refresh_button_scale()
         # btn has no _base_size — should be skipped
+
+
+class TestIconButtonTagging:
+    """T-627: apply_button_size tags icon buttons so the theme can drop the
+    text padding that was cropping their glyphs."""
+
+    def test_glyph_button_is_tagged(self):
+        from fastprompter.ui.scaling_mixin import _is_icon_label
+        m = ScalingMixin()
+        m._ui_scale = 1.0
+        btn = _MockQPushButton("btn_pin_top")
+        btn.setText("📌")
+        m.apply_button_size(btn, 20, 20)
+        assert btn.property("fp_icon_button") is True
+        assert _is_icon_label("📌")
+
+    def test_word_button_is_not_tagged(self):
+        m = ScalingMixin()
+        m._ui_scale = 1.0
+        btn = _MockQPushButton("btn_new")
+        btn.setText("NEW")
+        m.apply_button_size(btn, 24)
+        assert btn.property("fp_icon_button") is False

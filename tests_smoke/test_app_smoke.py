@@ -10243,3 +10243,65 @@ def test_closed_files_sidebar_stays_closed(tmp_path):
         assert w2.files_dock.isHidden()
     finally:
         _teardown_window(w2)
+
+
+# --- T-627: cropped toolbar icons on themes with fat button padding ---
+
+def test_icon_buttons_have_room_for_their_glyph(fresh_win):
+    """Vintage Classic asks for a 2px border plus 3px/6px padding. Inside a
+    20x20 button that left a 4x10 content rect for a glyph needing 15px, so
+    the emoji was painted as a narrow vertical slice — the "cropped icons"
+    report. Measured through the STYLE's content rect: contentsRect() knows
+    nothing about stylesheet padding and happily reported the full 20x20."""
+    from PyQt6.QtGui import QFontMetrics
+    from PyQt6.QtWidgets import QPushButton, QStyle, QStyleOptionButton
+    w = fresh_win
+    w.resize(1100, 300)
+    for theme in ("Vintage Classic", "Golden Default", "Default"):
+        w.change_theme(theme)
+        QApplication.processEvents()
+        checked = 0
+        for btn in w.header_widget.findChildren(QPushButton):
+            if btn.isHidden() or not btn.property("fp_icon_button"):
+                continue
+            text = btn.text()
+            if not text:
+                continue
+            opt = QStyleOptionButton()
+            btn.initStyleOption(opt)
+            content = btn.style().subElementRect(
+                QStyle.SubElement.SE_PushButtonContents, opt, btn)
+            need = QFontMetrics(btn.font()).horizontalAdvance(text)
+            assert content.width() >= need, (
+                f"{theme}: {text!r} needs {need}px, has {content.width()}px")
+            checked += 1
+        assert checked >= 5, f"{theme}: only {checked} icon buttons found"
+
+
+def test_icon_label_detection():
+    from fastprompter.ui.scaling_mixin import _is_icon_label
+    for glyph in ("📁", "☰", "✕", "-→•", "#", "📁3", ""):
+        assert _is_icon_label(glyph), glyph
+    for word in ("NEW", "Save", "B", "I", "H", "Line"):
+        assert not _is_icon_label(word), word
+
+
+def test_word_buttons_keep_their_padding(fresh_win):
+    """The rule is about labels, not shapes: NEW and Save are words and the
+    theme's padding is right for them."""
+    w = fresh_win
+    w.change_theme("Vintage Classic")
+    QApplication.processEvents()
+    assert w.btn_new.property("fp_icon_button") is False
+    assert w.btn_save.property("fp_icon_button") is False
+    assert w.btn_pin_top.property("fp_icon_button") is True
+
+
+def test_padding_override_reaches_existing_buttons(fresh_win):
+    """A dynamic property set after polish does not re-evaluate the sheet on
+    its own, so the override needs an explicit repolish pass."""
+    import inspect
+    from fastprompter.ui.theme_mixin import ThemeMixin
+    src = inspect.getsource(ThemeMixin.apply_theme)
+    assert "repolish_icon_buttons" in src
+    assert 'fp_icon_button' in src

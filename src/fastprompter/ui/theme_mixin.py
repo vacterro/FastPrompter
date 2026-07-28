@@ -13,7 +13,8 @@ import os
 from PyQt6 import sip
 from PyQt6.QtCore import QTimer
 from PyQt6.QtGui import QFont, QFontDatabase, QIcon
-from PyQt6.QtWidgets import QApplication, QFileDialog, QMessageBox, QWidget
+from PyQt6.QtWidgets import (QApplication, QFileDialog, QMessageBox, QPushButton,
+                             QWidget)
 
 from fastprompter.core.config import create_tray_icon, extract_bg
 from fastprompter.core.logging import logger
@@ -115,6 +116,13 @@ class ThemeMixin:
         # just looks like a rendering glitch, not a focus indicator.
         no_focus_rect_qss = (
             "\nQPushButton:focus, QToolButton:focus, QCheckBox:focus { outline: none; }\n"
+            # Square icon buttons keep the theme's bevel but drop its text
+            # padding: a themed 2px border + 3px/6px padding leaves a 4x10
+            # content rect inside a 20x20 button, and a 15px emoji is then
+            # painted as a narrow vertical slice. This is what "the icons are
+            # cropped" was. Property selector, so it beats the plain
+            # QPushButton rule in every theme without editing all of them.
+            "QPushButton[fp_icon_button=\"true\"] { padding: 0px; }\n"
         )
         raw = theme.get("raw_colors") or {}
         extra_qss = no_focus_rect_qss
@@ -188,12 +196,35 @@ class ThemeMixin:
         except Exception:
             logger.debug("apply_theme: could not re-apply the font")
 
+        # The padding override is keyed on a dynamic property, which an
+        # already-polished widget does not re-evaluate by itself.
+        try:
+            self.repolish_icon_buttons()
+        except Exception:
+            logger.debug("apply_theme: icon-button repolish failed", exc_info=True)
+
         self._begin_batch_update()
         try:
             self.refresh_snippets_panel()
             self.refresh_temp_presets()
         finally:
             self._end_batch_update()
+
+    def repolish_icon_buttons(self):
+        """Make the fp_icon_button padding rule land on existing buttons.
+
+        A dynamic property set after a widget was polished does not
+        re-evaluate the stylesheet on its own, so without this the padding
+        override only applied to buttons created after the theme.
+        """
+        style = QApplication.style()
+        if style is None:
+            return
+        for btn in self.findChildren(QPushButton):
+            if _is_deleted(btn) or not btn.property("fp_icon_button"):
+                continue
+            style.unpolish(btn)
+            style.polish(btn)
 
     def apply_font(self):
         """Apply the configured font to the UI. Defaults to Verdana."""

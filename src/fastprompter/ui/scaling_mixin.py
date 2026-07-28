@@ -11,6 +11,18 @@ from fastprompter.core.logging import logger
 
 _is_deleted = sip.isdeleted
 
+
+def _is_icon_label(text: str) -> bool:
+    """True for a label that is glyphs, not words.
+
+    Any ASCII letter means it is a word ("NEW", "Save", "B") and the theme's
+    text padding is right for it. Everything else — 📁, ☰, ✕, -→• — is an
+    icon and needs the button's whole box.
+    """
+    if not text:
+        return True
+    return not any(ch.isascii() and ch.isalpha() for ch in text)
+
 # Static button height / font scale data for apply_scaled_ui
 _BTN_BASE_HEIGHTS = {
     "btn_clear": 24,
@@ -149,6 +161,16 @@ class ScalingMixin:
         scale = self._effective_scale()
         widget._base_size = (base_w, base_h)
         min_sz = max(self.MIN_BTN_PX, int(base_w * scale))
+        # An icon button cannot afford the theme's TEXT padding. Vintage
+        # Classic asks for a 2px border plus 3px/6px padding, which inside a
+        # 20x20 button leaves a 4x10 content rect for a glyph that needs 15px
+        # — the emoji was painted as a narrow vertical slice, which is what
+        # "the icons are cropped" was. Golden Default's 1px + 2px/4px leaves
+        # 10x14, which is why the dark themes looked nearly right and the
+        # light one looked broken. Decided by the LABEL, not by the shape:
+        # 📁 is an icon at any size, NEW and Save are words and keep their
+        # padding.
+        widget.setProperty("fp_icon_button", _is_icon_label(widget.text()))
         if base_h is None:
             if getattr(widget, "is_squishable", False):
                 widget.setMaximumHeight(max(self.MIN_BTN_PX, int(base_w * scale)))
