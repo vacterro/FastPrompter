@@ -9860,3 +9860,117 @@ def test_splitter_sizes_survive_the_third_pane(fresh_win):
 
 def test_files_dock_setting_exists(win):
     assert hasattr(win, "cb_files_dock")
+
+
+# --- T-618: the drop system has to match a DOCKED files panel ---
+
+def test_docked_panel_follows_the_active_silo(fresh_win):
+    """A floating drawer left on the old silo is merely stale; a docked one
+    is what a drop lands in, so it must follow the switch."""
+    w = fresh_win
+    w.data["file_panel_docked"] = "True"
+    w.open_file_container()
+    QApplication.processEvents()
+    first = w._file_container.folder
+    w._switch_to_slot(3)
+    QApplication.processEvents()
+    second = w._file_container.folder
+    assert second != first
+    assert second == w._silo_folder_dir(3, False)
+
+
+def test_floating_panel_is_not_dragged_around_by_silo_switches(fresh_win):
+    """The follow is for the dock only — a floating window the user placed
+    somewhere must not be re-opened by every silo switch."""
+    w = fresh_win
+    w.data["file_panel_docked"] = "False"
+    w.open_file_container()
+    QApplication.processEvents()
+    before = w._file_container.folder
+    w._switch_to_slot(2)
+    QApplication.processEvents()
+    assert w._file_container.folder == before
+
+
+def test_panel_shows_a_drop_target_while_dragging(fresh_win):
+    w = fresh_win
+    w.data["file_panel_docked"] = "True"
+    w.open_file_container()
+    panel = w._file_container
+    plain = panel.file_list.styleSheet()
+    hint = panel.lbl_hint.text()
+    panel._set_drop_hot(True)
+    assert "border" in panel.file_list.styleSheet()
+    assert panel.lbl_hint.text() != hint
+    panel._set_drop_hot(False)
+    assert panel.file_list.styleSheet() == plain
+    assert panel.lbl_hint.text() == hint
+
+
+def test_drop_hot_is_idempotent(fresh_win):
+    """dragEnter can fire repeatedly; the hint must not eat itself."""
+    w = fresh_win
+    w.data["file_panel_docked"] = "True"
+    w.open_file_container()
+    panel = w._file_container
+    hint = panel.lbl_hint.text()
+    for _ in range(3):
+        panel._set_drop_hot(True)
+    panel._set_drop_hot(False)
+    assert panel.lbl_hint.text() == hint
+
+
+# --- T-619: header widgets missing from the toolbar order ---
+
+def test_numbox_is_in_the_header_layout(fresh_win):
+    """T-607 shipped the number boxes without adding cat_numbox to
+    DEFAULT_TOOLBAR_ORDER. apply_toolbar_order detaches every header child
+    and re-adds only listed tokens, so the widget was orphaned at (0,0):
+    invisible itself, and painting over the sidebar hamburger."""
+    from fastprompter.ui.toolbar_reorder import DEFAULT_TOOLBAR_ORDER
+    w = fresh_win
+    assert "cat_numbox" in DEFAULT_TOOLBAR_ORDER
+    w.apply_toolbar_order()
+    assert w.header_layout.indexOf(w.cat_numbox) >= 0
+    assert w.header_layout.indexOf(w.cat_combo) >= 0
+
+
+def test_every_ordered_token_resolves_to_a_widget(fresh_win):
+    """Any header widget that is not a token is invisible after the first
+    rebuild — so the order list is the real inventory."""
+    w = fresh_win
+    for tok in w._toolbar_order_list():
+        if tok == "<stretch>":
+            continue
+        assert w._toolbar_widget_for(tok) is not None, tok
+
+
+def test_numbox_toggle_shows_the_boxes(fresh_win):
+    w = fresh_win
+    w.cb_numbox_tabs.setChecked(True)
+    QApplication.processEvents()
+    assert not w.cat_numbox.isHidden()
+    assert w.cat_combo.isHidden()
+    assert w._cat_num_buttons
+    assert w.cat_numbox.width() > 0
+    w.cb_numbox_tabs.setChecked(False)
+    QApplication.processEvents()
+    assert w.cat_numbox.isHidden()
+    assert not w.cat_combo.isHidden()
+
+
+def test_new_tokens_heal_next_to_their_neighbour(fresh_win):
+    """A saved order from an older version must not dump new tokens after
+    the help button."""
+    w = fresh_win
+    saved = w.data.get("toolbar_order")
+    try:
+        from fastprompter.ui.toolbar_reorder import DEFAULT_TOOLBAR_ORDER
+        old = [t for t in DEFAULT_TOOLBAR_ORDER
+               if t not in ("cat_numbox", "lbl_token_count")]
+        w.data["toolbar_order"] = ",".join(old)
+        healed = w._toolbar_order_list()
+        assert healed.index("cat_numbox") == healed.index("cat_combo") + 1
+        assert healed.index("lbl_token_count") == healed.index("lbl_line_count") + 1
+    finally:
+        w.data["toolbar_order"] = saved

@@ -462,11 +462,43 @@ class FileContainerPanel(QWidget):
 
     # ---- drop in ---------------------------------------------------------
 
+    def _set_drop_hot(self, hot):
+        """Outline the panel while a drag is over it.
+
+        As a floating window the title bar told you where the drop would
+        land. Docked, the panel is just another strip of the window, so it
+        has to say so itself.
+        """
+        if bool(getattr(self, "_drop_hot", False)) == bool(hot):
+            return
+        self._drop_hot = bool(hot)
+        accent = "#C0A060"
+        try:
+            cache = getattr(self.main_win, "_theme_cache", None)
+            if cache and cache.get("raw_colors"):
+                accent = cache["raw_colors"].get("accent", accent)
+        except Exception:
+            pass
+        self.file_list.setStyleSheet(
+            f"border: 2px solid {accent};" if hot else "")
+        old = self.lbl_hint.text()
+        if hot:
+            self._hint_text = old
+            self.lbl_hint.setText(tr("Drop to file into this silo", self.lang))
+        elif getattr(self, "_hint_text", None):
+            self.lbl_hint.setText(self._hint_text)
+
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
+            self._set_drop_hot(True)
             event.acceptProposedAction()
 
+    def dragLeaveEvent(self, event):
+        self._set_drop_hot(False)
+        super().dragLeaveEvent(event)
+
     def dropEvent(self, event):
+        self._set_drop_hot(False)
         paths = [u.toLocalFile() for u in event.mimeData().urls() if u.isLocalFile()]
         if paths:
             from PyQt6.QtWidgets import QApplication

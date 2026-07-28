@@ -1518,16 +1518,31 @@ class FastPrompter(
             elif (t == "<sep>" or getattr(self, t, None) is not None) and t not in seen:
                 valid.append(t)
                 seen.add(t)
-        # append any default tokens missing from the saved order
+        # add any default tokens missing from the saved order. NOT blindly at
+        # the end: a token added in a later version (cat_numbox next to
+        # cat_combo, lbl_token_count next to lbl_line_count) landed after the
+        # help button for everyone with a saved order, which reads as the
+        # feature being broken. Put it back beside the neighbour it was
+        # defined next to, and only fall back to the end.
         stretch_needed = default.count("<stretch>") - valid.count("<stretch>")
-        for t in default:
+        for pos, t in enumerate(default):
             if t == "<stretch>":
                 if stretch_needed > 0:
                     valid.append(t)
                     stretch_needed -= 1
-            elif t not in seen:
+                continue
+            if t in seen:
+                continue
+            anchor = -1
+            for prev in reversed(default[:pos]):
+                if prev != "<stretch>" and prev in valid:
+                    anchor = valid.index(prev)
+                    break
+            if anchor >= 0:
+                valid.insert(anchor + 1, t)
+            else:
                 valid.append(t)
-                seen.add(t)
+            seen.add(t)
         return valid
 
     def _toolbar_widget_for(self, token):
@@ -1946,6 +1961,24 @@ class FastPrompter(
                 sizes[centre] = max(160, sizes[centre] - width)
             sizes[idx] = width
             self.splitter.setSizes(sizes)
+
+    def _sync_files_dock_to_active_silo(self):
+        """An OPEN files sidebar has to follow the silo you switch to.
+
+        As a floating drawer, a panel left pointing at the previous silo was
+        merely stale — you had to go find it. As a permanent sidebar it is
+        wrong and dangerous: what it shows is what a drop lands in, so a
+        stale panel silently files your drop under another silo.
+        """
+        if not self.files_docked():
+            return
+        dock = getattr(self, "files_dock", None)
+        if dock is None or sip.isdeleted(dock) or dock.isHidden():
+            return
+        panel = getattr(self, "_file_container", None)
+        if panel is None or sip.isdeleted(panel):
+            return
+        self.open_file_container()
 
     def toggle_file_container(self):
         """The 📁 button: a toggle when docked, 'open/raise' when floating."""
@@ -6962,6 +6995,7 @@ class FastPrompter(
             self.update_preview()
             self._update_line_count_label()
             self._update_files_button()
+            self._sync_files_dock_to_active_silo()
             self._update_project_buttons()
             # seed the live folder-sync baseline for the new silo
             from fastprompter.ui.file_container import silo_slug as _sl2

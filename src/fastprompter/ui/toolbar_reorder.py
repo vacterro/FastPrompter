@@ -15,7 +15,12 @@ from PyQt6.QtWidgets import QApplication, QPushButton
 # Default header order AFTER the fixed sidebar-toggle anchor (index 0).
 DEFAULT_TOOLBAR_ORDER = [
     "btn_settings_toggle", "btn_pin_top", "btn_line_nums",
-    "cat_combo", "btn_new", "btn_save", "btn_home", "btn_end",
+    # cat_numbox is the number-box face of cat_combo — only one of the two is
+    # ever visible, but BOTH have to be in the order: apply_toolbar_order
+    # detaches every header child and re-adds only listed tokens, so an
+    # unlisted one is orphaned at (0,0) — invisible itself, and painting over
+    # whatever really lives in that corner (the sidebar hamburger).
+    "cat_combo", "cat_numbox", "btn_new", "btn_save", "btn_home", "btn_end",
     "btn_trash", "btn_toggle_search", "btn_toggle_snippets", "btn_arc_snip", "btn_toggle_archive",
     # btn_saipen_log/board/state used to sit here; the buttons themselves are
     # gone from the app, so they were dead names the reorder UI silently
