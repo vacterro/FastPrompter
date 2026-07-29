@@ -15,13 +15,16 @@ _is_deleted = sip.isdeleted
 def _is_icon_label(text: str) -> bool:
     """True for a label that is glyphs, not words.
 
-    Any ASCII letter means it is a word ("NEW", "Save", "B") and the theme's
-    text padding is right for it. Everything else — 📁, ☰, ✕, -→• — is an
-    icon and needs the button's whole box.
+    A multi-letter ASCII label ("NEW", "Save", "Line") is a word and the
+    theme's text padding is right for it. Everything else — 📁, ☰, ✕, -→•,
+    and the single-letter format buttons B / I / U / S / H — is a mark that
+    needs the button's whole box. A lone letter counts as a mark: those live
+    in 24px squares where 6px of side padding leaves 8px for an 11px glyph.
     """
     if not text:
         return True
-    return not any(ch.isascii() and ch.isalpha() for ch in text)
+    letters = [ch for ch in text if ch.isascii() and ch.isalpha()]
+    return len(letters) < 2
 
 # Static button height / font scale data for apply_scaled_ui
 _BTN_BASE_HEIGHTS = {
@@ -288,6 +291,191 @@ class ScalingMixin:
                     logger.debug("apply_scaled_ui: failed to set font on %s", btn_name)
 
         self.refresh_scaled_button_qss()
+        self.enforce_button_fit()
+
+    # How small a label may get before growing the box is the better trade.
+    # Below this a glyph is mush, so the box gives way instead.
+    FIT_MIN_FONT_PT = 7.0
+
+    def button_content_rect(self, btn):
+        """The box a button really has for its label, chrome subtracted.
+
+        MUST come from the style, not from contentsRect(): a QWidget knows
+        nothing about the padding and border its stylesheet asks for, so
+        contentsRect() cheerfully reports the whole 20x20 while the style is
+        handing the label a 4x10 slot. That gap is why every previous size
+        check passed while the icons were visibly sliced.
+        """
+        from PyQt6.QtWidgets import QStyle, QStyleOptionButton
+        opt = QStyleOptionButton()
+        btn.initStyleOption(opt)
+        return btn.style().subElementRect(
+            QStyle.SubElement.SE_PushButtonContents, opt, btn)
+
+    def _label_fits(self, btn):
+        """Does this button's label fit the box the style gives it?"""
+        from PyQt6.QtGui import QFontMetrics
+        content = self.button_content_rect(btn)
+        fm = QFontMetrics(btn.font())
+        return (content.width() >= fm.horizontalAdvance(btn.text())
+                and content.height() >= fm.height())
+
+    def fit_button_label(self, btn):
+        """Guarantee this button's label fits the box the style gives it.
+
+        Two levers, in order of who should give way:
+
+        1. The FONT, while the button has a fixed size. A header button is
+           fixed on purpose (the toolbar packs to a budget) so growing it is
+           not allowed — the label shrinks, down to FIT_MIN_FONT_PT.
+        2. The BOX, for anything the layout is free to size. A settings
+           button with a word on it should be as wide as the word.
+
+        Returns True when it had to change something.
+        """
+        from PyQt6.QtGui import QFontMetrics
+        if _is_deleted(btn) or not btn.text():
+            return False
+        text = btn.text()
+        changed = False
+
+        chrome_w = btn.width() - self.button_content_rect(btn).width()
+        chrome_h = btn.height() - self.button_content_rect(btn).height()
+        fixed_w = btn.minimumWidth() == btn.maximumWidth()
+        fixed_h = btn.minimumHeight() == btn.maximumHeight()
+
+        # Start from the size somebody else intended, not from whatever this
+        # pass left last time. Without this the shrink is a ratchet: a button
+        # squeezed once at 50% scale stays small forever, and the "fix" then
+        # depends on the history of themes the window has been through rather
+        # than on the theme it is wearing.
+        base = btn.property("_fit_base_pt")
+        applied = btn.property("_fit_applied_pt")
+        current = btn.font().pointSizeF()
+        if base is None or applied is None or abs(current - float(applied)) > 0.01:
+            base = current                  # a real font change: new baseline
+            btn.setProperty("_fit_base_pt", base)
+        elif abs(current - float(base)) > 0.01:
+            font = btn.font()
+            font.setPointSizeF(float(base))
+            btn.setFont(font)
+
+        # How far the label may shrink before the box has to give instead.
+        # A fixed button (a toolbar square) can go to the hard floor — it is
+        # not allowed to grow at all. A free one only gives up 2pt: past that
+        # the box growing is the better trade, since the alternative is a
+        # settings panel full of tiny text.
+        floor = self.FIT_MIN_FONT_PT
+        if not (fixed_w or fixed_h):
+            floor = max(floor, btn.font().pointSizeF() - 2.0)
+
+        for _ in range(24):                       # 24 half-point steps floor-ward
+            content = self.button_content_rect(btn)
+            fm = QFontMetrics(btn.font())
+            need_w, need_h = fm.horizontalAdvance(text), fm.height()
+            if content.width() >= need_w and content.height() >= need_h:
+                btn.setProperty("_fit_applied_pt", btn.font().pointSizeF())
+                return changed
+            size = btn.font().pointSizeF()
+            if size <= floor:
+                break
+            font = btn.font()
+            font.setPointSizeF(max(floor, size - 0.5))
+            btn.setFont(font)
+            changed = True
+
+        # Still short, and the box is free: leave it to the layout. Raising
+        # the minimum of a button inside the wrapping settings panel pushes
+        # that panel into another row, which is the wasted-vertical-space
+        # complaint T-605 was about — and a free button is one the user can
+        # give room by widening the window. Only a FIXED box, which no layout
+        # will ever grow, has to be enlarged here.
+        if not (fixed_w or fixed_h):
+            btn.setProperty("_fit_applied_pt", btn.font().pointSizeF())
+            return changed
+
+        # Never shrinks a button — only raises the minimum it needs, so a
+        # layout that already gave it more keeps that.
+        fm = QFontMetrics(btn.font())
+        need_w, need_h = fm.horizontalAdvance(text), fm.height()
+        content = self.button_content_rect(btn)
+        if content.width() < need_w:
+            want = need_w + max(0, chrome_w)
+            if fixed_w:
+                btn.setFixedWidth(want)
+            elif btn.minimumWidth() < want:
+                btn.setMinimumWidth(want)
+            changed = True
+        if content.height() < need_h:
+            want = need_h + max(0, chrome_h)
+            if fixed_h:
+                btn.setFixedHeight(want)
+            elif btn.minimumHeight() < want:
+                btn.setMinimumHeight(want)
+            changed = True
+        btn.setProperty("_fit_applied_pt", btn.font().pointSizeF())
+        return changed
+
+    def enforce_button_fit(self):
+        """Run fit_button_label over every button in the window.
+
+        One pass, after the theme and the scale have settled. Deliberately
+        not a per-button opt-in: the cropped-icon bug survived years of
+        per-button fixes precisely because every new button, theme and scale
+        combination was a fresh chance to get it wrong. Measuring every
+        button after every change is the only version of this that stays
+        fixed.
+        """
+        from PyQt6.QtWidgets import QApplication, QPushButton
+        if not hasattr(self, "findChildren"):
+            return 0            # the mixin used on its own, without a widget
+        style = QApplication.style()
+        fixed = 0
+        for btn in self.findChildren(QPushButton):
+            if _is_deleted(btn) or btn.isHidden() or not btn.text():
+                continue
+
+            # Tag by label HERE, not only in apply_button_size. Half the
+            # buttons in the app are built by panels that never call it — the
+            # snippet row's ▲ ▶ ▼ among them — and those kept the theme's
+            # text padding, which on Vintage Classic left 10px of a 20px box
+            # for an 11px mark. Tagging centrally is the difference between
+            # "the buttons I remembered" and "every button".
+            want_icon = _is_icon_label(btn.text())
+            tag_changed = btn.property("fp_icon_button") != want_icon
+            if tag_changed:
+                btn.setProperty("fp_icon_button", want_icon)
+            # Repolish whenever the tag CHANGED, and also whenever a tagged
+            # button still does not fit: a property set before the theme's
+            # stylesheet existed (apply_button_size runs during construction)
+            # is not re-evaluated on its own, so the padding rule silently
+            # never applied to it and the measurement below was of the old
+            # chrome. Only offenders pay for the repolish.
+            if style is not None and (tag_changed or
+                                      (want_icon and not self._label_fits(btn))):
+                style.unpolish(btn)
+                style.polish(btn)
+            # Only marks and fixed boxes are guaranteed. A word in a layout
+            # that squeezes it gets elided by Qt — "+ Fon…" is legible and
+            # the user can widen the window; forcing those wider instead
+            # makes the settings panel wrap into extra rows, which is the
+            # wasted-vertical-space complaint T-605 was about. A MARK cannot
+            # elide into anything readable: half a folder is just a slice.
+            if not (btn.property("fp_icon_button")
+                    or btn.minimumWidth() == btn.maximumWidth()
+                    or btn.minimumHeight() == btn.maximumHeight()):
+                continue
+            # is_squishable is a deliberate "this may be squeezed" mark on the
+            # snippet-row arrows; they are meant to lose a pixel rather than
+            # push the row taller, so the guarantee does not apply to them.
+            if getattr(btn, "is_squishable", False):
+                continue
+            try:
+                if self.fit_button_label(btn):
+                    fixed += 1
+            except Exception:
+                logger.debug("fit pass failed on %s", btn.objectName(), exc_info=True)
+        return fixed
 
     def refresh_scaled_button_qss(self):
         """Re-apply the themed button stylesheets at the current scale.

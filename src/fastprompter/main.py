@@ -664,6 +664,12 @@ class FastPrompter(
 
         self._enforce_header_priority_fit()
         self._refresh_overflow_button()
+        # The density tiers re-set widths and fonts, so the label-fit
+        # guarantee has to be re-checked AFTER them — this runs on a 0ms
+        # singleShot from apply_theme, i.e. after the theme's own fit pass,
+        # and would otherwise silently undo it.
+        if hasattr(self, "enforce_button_fit"):
+            self.enforce_button_fit()
 
     # Buttons the density tiers pull out of the header. They stay reachable
     # through the "»" overflow menu — see _refresh_overflow_button.
@@ -1234,6 +1240,29 @@ class FastPrompter(
             bar = tabs.tabBar().sizeHint().height() if tabs.tabBar() else 24
             tabs.setMaximumHeight(max(60, needed + bar + 10))
         tabs.updateGeometry()
+
+        # The footer's own wrapping row has to be re-measured too. It is a
+        # FlowLayout, so its height is a function of a width it only learns
+        # when the frame is laid out — and on the FIRST fit it is still
+        # carrying the height it had at the previous width. Measured: 194px
+        # of footer against a 163px hint on the Window tab, i.e. ~100px of
+        # dead panel under the checkboxes, which is precisely the complaint
+        # T-605 was filed for and precisely what a single pass cannot see.
+        frame = getattr(self, "mini_settings_frame", None)
+        if frame is None or sip.isdeleted(frame):
+            return
+        for child in frame.children():
+            # children() also hands back LAYOUTS, which have no geometry of
+            # their own — the first cut of this crashed on QVBoxLayout
+            if not isinstance(child, QWidget):
+                continue
+            inner = child.layout()
+            if inner is not None and inner.hasHeightForWidth():
+                inner.invalidate()
+                child.updateGeometry()
+        if frame.layout() is not None:
+            frame.layout().invalidate()
+            frame.layout().activate()
 
     def pick_hover_colour(self):
         from PyQt6.QtWidgets import QColorDialog

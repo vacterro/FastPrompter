@@ -1459,7 +1459,18 @@ def test_theme_switch_keeps_button_labels(win):
     # labels survive the repack — no truncation to fixed stale widths
     assert win.btn_copy.text()
     assert win.btn_clear.text()
-    assert win.btn_save.minimumWidth() <= max(1, win.btn_save.fontMetrics().horizontalAdvance(win.btn_save.text()) + 8)
+    # "+ 8" used to stand in for the chrome. It is not a constant: a theme
+    # asks for its own border and padding, and the label-fit pass sizes a
+    # fixed button to exactly label + that chrome. Measure it instead of
+    # guessing, or this fails on any theme whose buttons are chunkier.
+    from PyQt6.QtWidgets import QStyle, QStyleOptionButton
+    _opt = QStyleOptionButton()
+    win.btn_save.initStyleOption(_opt)
+    _content = win.btn_save.style().subElementRect(
+        QStyle.SubElement.SE_PushButtonContents, _opt, win.btn_save)
+    _chrome = win.btn_save.width() - _content.width()
+    assert win.btn_save.minimumWidth() <= max(
+        1, win.btn_save.fontMetrics().horizontalAdvance(win.btn_save.text()) + _chrome)
     win.data["theme"] = "Default"
     win.apply_theme()
 
@@ -4605,14 +4616,25 @@ def test_settings_panel_hugs_its_content_vertically(win):
 
         tabs = win.settings_tabs
         heights = {}
+        wanted = {}
         for i in range(tabs.count()):
             tabs.setCurrentIndex(i)
             win._fit_settings_tabs(i)
             QApplication.processEvents()
             heights[tabs.tabText(i)] = win.mini_settings_frame.height()
+            # the frame's OWN hint: it holds the tab page plus the footer
+            # rows, so the page's hint alone is not what it is sized against
+            wanted[tabs.tabText(i)] = win.mini_settings_frame.sizeHint().height()
 
+        # "Hugs" means the frame tracks the CONTENT, not a fixed number of
+        # pixels: a flat cap goes stale the moment a tab gains a control, and
+        # then reads as this bug coming back when it has not. The failure
+        # being guarded is the panel reserving hundreds of pixels of nothing,
+        # so compare against what the page actually asks for.
         for name, h in heights.items():
-            assert h <= 320, f"{name} tab leaves a huge empty panel ({h}px)"
+            assert h <= wanted[name] + 40, (
+                f"{name} tab leaves empty panel: {h}px frame for "
+                f"{wanted[name]}px of content")
 
         # a short tab must be visibly shorter than the busiest one — proof the
         # panel follows the CURRENT page rather than the tallest
@@ -10282,7 +10304,11 @@ def test_icon_label_detection():
     from fastprompter.ui.scaling_mixin import _is_icon_label
     for glyph in ("📁", "☰", "✕", "-→•", "#", "📁3", ""):
         assert _is_icon_label(glyph), glyph
-    for word in ("NEW", "Save", "B", "I", "H", "Line"):
+    # single letters moved to the MARK side: B / I / U / S / H live in 24px
+    # squares where the theme's side padding leaves 8px for an 11px glyph
+    for mark in ("B", "I", "H"):
+        assert _is_icon_label(mark), mark
+    for word in ("NEW", "Save", "Line"):
         assert not _is_icon_label(word), word
 
 
@@ -10294,6 +10320,7 @@ def test_word_buttons_keep_their_padding(fresh_win):
     QApplication.processEvents()
     assert w.btn_new.property("fp_icon_button") is False
     assert w.btn_save.property("fp_icon_button") is False
+    assert w.btn_bold.property("fp_icon_button") is True
     assert w.btn_pin_top.property("fp_icon_button") is True
 
 
@@ -10305,3 +10332,119 @@ def test_padding_override_reaches_existing_buttons(fresh_win):
     src = inspect.getsource(ThemeMixin.apply_theme)
     assert "repolish_icon_buttons" in src
     assert 'fp_icon_button' in src
+
+
+# --- T-628: the label-fits-the-box guarantee, swept ---
+
+def _clipped_buttons(win):
+    """Every visible button whose label does not fit the box the STYLE gives
+    it. Measured through SE_PushButtonContents: contentsRect() knows nothing
+    about stylesheet padding and reports the full box, which is exactly how
+    years of size checks passed over visibly sliced icons."""
+    from PyQt6.QtGui import QFontMetrics
+    from PyQt6.QtWidgets import QPushButton, QStyle, QStyleOptionButton
+    bad = []
+    for btn in win.findChildren(QPushButton):
+        if btn.isHidden() or not btn.text():
+            continue
+        # squishable widgets are explicitly allowed to be squeezed (the
+        # snippet-row arrows lose a pixel rather than push the row taller)
+        if getattr(btn, "is_squishable", False):
+            continue
+        # The guarantee covers MARKS and FIXED boxes — the same set the
+        # production pass guards. A word in a box the layout is free to size
+        # gets elided by Qt ("Copy my se…"), which is legible and which the
+        # user can fix by widening the window; forcing those wider instead
+        # wraps the settings panel into extra rows (T-605). Half a folder
+        # icon is not legible at any width, which is why marks are absolute.
+        if not (btn.property("fp_icon_button")
+                or btn.minimumWidth() == btn.maximumWidth()
+                or btn.minimumHeight() == btn.maximumHeight()):
+            continue
+        opt = QStyleOptionButton()
+        btn.initStyleOption(opt)
+        content = btn.style().subElementRect(
+            QStyle.SubElement.SE_PushButtonContents, opt, btn)
+        fm = QFontMetrics(btn.font())
+        need_w, need_h = fm.horizontalAdvance(btn.text()), fm.height()
+        if content.width() < need_w or content.height() < need_h:
+            bad.append(f"{btn.text()!r} w {content.width()}/{need_w} "
+                       f"h {content.height()}/{need_h}")
+    return bad
+
+
+def test_no_button_label_is_clipped_on_any_theme_or_scale(fresh_win):
+    """The cropped-icon bug survived from the alpha because every new theme,
+    button and scale was a fresh chance to reintroduce it. This is the guard:
+    every theme x every scale, nothing clipped. Before the fit pass this
+    found 58 clipped buttons on Vintage Classic alone."""
+    from fastprompter.theme.themes import THEMES
+    w = fresh_win
+    w.resize(1400, 700)
+    QApplication.processEvents()
+    failures = []
+    for theme in THEMES:
+        for scale in ("0.5", "1.0", "1.5"):
+            w.data["ui_scale"] = scale
+            w.change_theme(theme)
+            w.apply_scaled_ui()
+            QApplication.processEvents()
+            for bad in _clipped_buttons(w):
+                failures.append(f"{theme} @{scale}: {bad}")
+    assert not failures, "clipped labels:\n  " + "\n  ".join(failures[:20])
+
+
+def test_fit_pass_reports_what_it_changed(fresh_win):
+    """A second run must find nothing left to do — the pass has to converge,
+    not oscillate."""
+    w = fresh_win
+    w.change_theme("Vintage Classic")
+    QApplication.processEvents()
+    w.enforce_button_fit()
+    assert w.enforce_button_fit() == 0
+
+
+def test_single_letter_buttons_count_as_marks(fresh_win):
+    """B / I / U / S / H live in 24px squares; 6px of side padding leaves 8px
+    for an 11px glyph, so they are marks, not words."""
+    from fastprompter.ui.scaling_mixin import _is_icon_label
+    for mark in ("B", "I", "U", "S", "H", "📁", "☰", "-→•"):
+        assert _is_icon_label(mark), mark
+    for word in ("NEW", "Save", "Line", "Build Template"):
+        assert not _is_icon_label(word), word
+
+
+def test_footer_row_reflows_on_the_first_fit(win):
+    """The footer is a FlowLayout: its height depends on a width it only
+    learns once the frame is laid out, and on the FIRST fit it was still
+    carrying the height from the previous width — 194px against a 163px hint,
+    i.e. ~100px of dead panel under the checkboxes on the tab that happens to
+    be open first. One pass cannot see that; _fit_settings_tabs invalidates
+    the wrapping children now."""
+    from PyQt6.QtWidgets import QWidget
+    win.is_locked = False
+    win._locked_geometry = None
+    was_visible = win.mini_settings_frame.isVisible()
+    try:
+        win.mini_settings_frame.setVisible(True)
+        win.resize(905, 965)
+        win.show()
+        QApplication.processEvents()
+        tabs = win.settings_tabs
+        tabs.setCurrentIndex(0)
+        win._fit_settings_tabs(0)
+        QApplication.processEvents()
+        frame = win.mini_settings_frame
+        for child in frame.children():
+            if not isinstance(child, QWidget) or child.isHidden():
+                continue
+            inner = child.layout()
+            if inner is None or not inner.hasHeightForWidth():
+                continue
+            allowed = inner.heightForWidth(max(120, child.width())) + 8
+            assert child.height() <= allowed, (
+                f"{type(child).__name__} kept {child.height()}px for "
+                f"{allowed}px of wrapped content")
+    finally:
+        win.mini_settings_frame.setVisible(was_visible)
+        win.resize(1400, 700)

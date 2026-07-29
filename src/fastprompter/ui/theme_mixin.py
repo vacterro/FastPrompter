@@ -210,6 +210,14 @@ class ThemeMixin:
         finally:
             self._end_batch_update()
 
+        # LAST. Every theme hands buttons a different content rect, and the
+        # panels above rebuild their own buttons with their own fixed sizes,
+        # so a fit pass run any earlier is simply overwritten by them.
+        try:
+            self.enforce_button_fit()
+        except Exception:
+            logger.debug("apply_theme: button fit pass failed", exc_info=True)
+
     def repolish_icon_buttons(self):
         """Make the fp_icon_button padding rule land on existing buttons.
 

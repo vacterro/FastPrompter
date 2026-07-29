@@ -377,6 +377,11 @@ class WindowMixin:
         self.zen_solo = False
         zen_desktop.restore(getattr(self, "_zen_minimised", []))
         self._zen_minimised = []
+        
+        # Windows hands the foreground to whatever it un-minimised last, so
+        # take it back explicitly — the user was just looking at FastPrompter.
+        self.raise_()
+        self.activateWindow()
 
     def toggle_sidebar_position(self, checked: bool) -> None:
         """Toggle sidebar between left and right."""

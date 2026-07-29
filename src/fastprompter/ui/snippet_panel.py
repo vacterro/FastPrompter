@@ -270,6 +270,12 @@ class SnippetWidget(QWidget):
         for btn in (self.btn_top, self.btn_ins, self.btn_bot):
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.clicked.connect(self.on_action_clicked)
+            # A size from the start, not only once update_data runs. A widget
+            # that has never held a snippet was left at the layout's own idea
+            # of small — measured 13x13, which is 9px of room for an 11px
+            # mark once a 2px-border theme takes its cut.
+            btn.setProperty("fp_icon_button", True)
+            btn.setFixedSize(18, 18)
             self.layout.addWidget(btn)
 
     def update_data(self, text_label, cat, global_idx, full_text, color, font_family, scale,
@@ -300,11 +306,19 @@ class SnippetWidget(QWidget):
         btn_style = f"background-color:{bg}; color:{fg}; border: 1px solid {border}; padding:0;"
 
         arrows_on = self.main_win.data.get("snippet_arrows", "False") == "True"
+        # Size from the FONT, not from a magic 18. These are rebuilt on every
+        # refresh with their own fixed size, so a box picked without asking
+        # how big the glyph is simply clips it again after every repaint —
+        # measured at 9px of room for an 11px mark on the vintage themes.
+        from PyQt6.QtGui import QFontMetrics
+        fm = QFontMetrics(btn_font)
+        glyph = max(fm.height(), max(fm.horizontalAdvance(g) for g in "▲▶▼"))
+        act_size = max(18, int(20 * button_scale), glyph + 4)
         for btn in (self.btn_top, self.btn_ins, self.btn_bot):
             btn.setVisible(arrows_on)
             btn.setFont(btn_font)
             btn.setStyleSheet(btn_style)
-            act_size = max(18, int(20 * button_scale))
+            btn.setProperty("fp_icon_button", True)
             btn.setFixedSize(act_size, act_size)
 
     def on_action_clicked(self):
