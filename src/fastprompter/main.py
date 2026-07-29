@@ -5116,6 +5116,47 @@ class FastPrompter(
         if is_archive:
             self.refresh_archive_panel()
 
+    def _recalc_native_frame(self):
+        """Make Windows re-compute the non-client area after a style change.
+
+        Turning "Normal Window" on set WS_CAPTION correctly on the very first
+        click — measured — and yet no title bar appeared: the window rect and
+        the client rect stayed identical, because Windows does not recompute
+        the frame just because the style word changed. The caption only
+        showed up on the NEXT toggle, which is the "it takes three clicks"
+        report. SWP_FRAMECHANGED is the message that forces the recompute.
+        """
+        try:
+            SWP_NOSIZE, SWP_NOMOVE, SWP_NOZORDER = 0x0001, 0x0002, 0x0004
+            SWP_FRAMECHANGED = 0x0020
+            ctypes.windll.user32.SetWindowPos(
+                int(self.winId()), 0, 0, 0, 0, 0,
+                SWP_NOSIZE | SWP_NOMOVE | SWP_NOZORDER | SWP_FRAMECHANGED)
+        except Exception:
+            from fastprompter.core.logging import logger
+            logger.debug("could not force a frame recalculation", exc_info=True)
+
+    def _restore_frame_position(self, frame_before, client_size):
+        """Put the window back where it was, measured by its FRAME.
+
+        Neither naive restore works on its own: setGeometry pins the CLIENT,
+        so gaining a caption pushes the whole window down by its height, and
+        move() pins the FRAME, so losing the caption pulls it up. Both walked
+        the window across the screen a step per toggle — measured +4/+23 one
+        way and -4 the other. Anchoring the frame and deriving the client
+        offset from the margins the new frame actually has keeps it still.
+        """
+        from PyQt6.QtCore import QRect
+        margins = self.frameGeometry()
+        client = self.geometry()
+        dx = client.left() - margins.left()
+        dy = client.top() - margins.top()
+        target = QRect(frame_before.left() + dx, frame_before.top() + dy,
+                       client_size.width(), client_size.height())
+        if target == client:
+            return
+        self.setGeometry(target)
+
     def apply_window_flags(self, _=None):
         self.data["always_on_top"] = "True" if self.cb_top.isChecked() else "False"
         self.data["normal_window"] = "True" if self.cb_normal_window.isChecked() else "False"
@@ -5144,6 +5185,7 @@ class FastPrompter(
         # the toggle look broken. Suppress it until the dust settles.
         self._increment_focus_lock()
         geo = self.geometry()
+        frame_before = self.frameGeometry()
         # Anti-flashbang: the recreated native window first paints with the
         # default (white) background brush before the stylesheet kicks in.
         # Paint it in the theme's window color instead.
@@ -5165,6 +5207,10 @@ class FastPrompter(
         if was_visible:
             self.show()
             self.setUpdatesEnabled(True)
+            self._recalc_native_frame()
+            # let Qt learn the new frame margins before they are read back
+            QApplication.processEvents()
+            self._restore_frame_position(frame_before, geo.size())
             self.repaint()
             self.raise_()
             self.activateWindow()

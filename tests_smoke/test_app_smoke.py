@@ -10448,3 +10448,51 @@ def test_footer_row_reflows_on_the_first_fit(win):
     finally:
         win.mini_settings_frame.setVisible(was_visible)
         win.resize(1400, 700)
+
+
+# --- T-629: Normal Window has to show its title bar on the FIRST click ---
+
+def test_normal_window_forces_a_frame_recalculation():
+    """WS_CAPTION was set correctly on the first click — measured — and no
+    title bar appeared, because Windows does not recompute the non-client
+    area just because the style word changed. The caption turned up on the
+    next toggle, which is the "it takes three clicks" report."""
+    import inspect
+    from fastprompter.main import FastPrompter
+    src = inspect.getsource(FastPrompter._recalc_native_frame)
+    assert "0x0020" in src, "SWP_FRAMECHANGED is the whole point"
+    flags_src = inspect.getsource(FastPrompter.apply_window_flags)
+    assert "_recalc_native_frame" in flags_src
+    # and it must run AFTER the window is shown again, not before
+    assert flags_src.index("self.show()") < flags_src.index("_recalc_native_frame")
+
+
+def test_normal_window_toggle_does_not_walk_the_window(fresh_win):
+    """Neither naive restore works alone: setGeometry pins the CLIENT, so
+    gaining a caption pushes the window down by its height, and move() pins
+    the FRAME, so losing it pulls the window up. Measured +4/+23 one way and
+    -4 the other, a step per toggle."""
+    w = fresh_win
+    w.resize(700, 260)
+    w.move(120, 120)
+    QApplication.processEvents()
+    before_frame = w.frameGeometry()
+    before_size = w.geometry().size()
+    for _ in range(3):
+        w.cb_normal_window.setChecked(True)
+        QApplication.processEvents()
+        w.cb_normal_window.setChecked(False)
+        QApplication.processEvents()
+    assert w.geometry().size() == before_size, "the client resized itself"
+    assert w.frameGeometry().topLeft() == before_frame.topLeft(), (
+        f"window walked from {before_frame.topLeft()} to "
+        f"{w.frameGeometry().topLeft()}")
+
+
+def test_frame_position_restore_is_a_no_op_when_nothing_moved(fresh_win):
+    w = fresh_win
+    QApplication.processEvents()
+    frame = w.frameGeometry()
+    size = w.geometry().size()
+    w._restore_frame_position(frame, size)
+    assert w.frameGeometry().topLeft() == frame.topLeft()
