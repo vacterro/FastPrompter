@@ -356,6 +356,15 @@ class FastPrompter(
             apall[first_cat] = self.data["archive_project_paths"]
         self.data["archive_project_paths_all"] = apall
         self.data["archive_project_paths"] = apall.setdefault(first_cat, {})
+        
+        # Per-slot silo type ("text", "kanban", "table")
+        type_all = self.data.get("silo_type_all")
+        if not isinstance(type_all, dict):
+            type_all = {}
+        if not type_all and isinstance(self.data.get("silo_types"), dict) and self.data["silo_types"]:
+            type_all[first_cat] = self.data["silo_types"]
+        self.data["silo_type_all"] = type_all
+        self.data["silo_types"] = type_all.setdefault(first_cat, {})
 
         self._current_lang = get_language(self.data)
         self.init_ui()
@@ -4217,15 +4226,35 @@ class FastPrompter(
 
         self.snippet_docs = {}
 
-        self.center_layout.addWidget(self.text_area, 1)
+        from PyQt6.QtWidgets import QStackedWidget
+        self.silo_view = QStackedWidget()
+        
+        self.text_area_wrapper = QWidget()
+        self.text_area_layout = QVBoxLayout(self.text_area_wrapper)
+        self.text_area_layout.setContentsMargins(0, 0, 0, 0)
+        self.text_area_layout.setSpacing(0)
+        
+        self.text_area_layout.addWidget(self.text_area, 1)
 
         self.preview_area = QTextEdit(readOnly=True)
         self.preview_area.setVisible(False)
         self.preview_area.setFont(font)
-        # No fixed height — in Reading mode it should fill the whole center
-        self.center_layout.addWidget(self.preview_area, 1)
+        self.text_area_layout.addWidget(self.preview_area, 1)
+        
+        self.silo_view.addWidget(self.text_area_wrapper) # page 0
+        
+        from fastprompter.ui.kanban_widget import KanbanBoardWidget
+        from fastprompter.ui.table_widget import TableGridWidget
+        self.kanban_widget = KanbanBoardWidget(self)
+        self.kanban_widget.changed.connect(lambda markdown: self._on_visual_widget_changed(markdown))
+        self.silo_view.addWidget(self.kanban_widget) # page 1
+        
+        self.table_widget = TableGridWidget(self)
+        self.table_widget.changed.connect(lambda markdown: self._on_visual_widget_changed(markdown))
+        self.silo_view.addWidget(self.table_widget) # page 2
+        
+        self.center_layout.addWidget(self.silo_view, 1)
 
-        self.main_layout.addWidget(self.splitter, 1)
 
         # Use custom EdgeResizer instead of QSizeGrip
 
@@ -4909,6 +4938,7 @@ class FastPrompter(
         ("silo_colors", "str_dict"),
         ("silo_folders", "str_dict"),
         ("silo_project_paths", "str_dict"),
+        ("silo_types", "str_dict"),
     )
     # NOTE: silo_gaps is deliberately NOT in the table above. A gap is a
     # POSITION in the list, not a property of the silo it happens to sit
@@ -6707,6 +6737,9 @@ class FastPrompter(
             self.data["silo_project_paths"] = self.data.setdefault("silo_project_paths_all", {}).setdefault(
                 cat, {}
             )
+            self.data["silo_types"] = self.data.setdefault("silo_type_all", {}).setdefault(
+                cat, {}
+            )
             # same str(dict)-from-an-old-DB guard as save_prompt_queues: a
             # string here would blow up on .setdefault a tab-switch later
             wq_all = self.data.get("watcher_queues_all")
@@ -7206,6 +7239,7 @@ class FastPrompter(
             self._update_files_button()
             self._sync_files_dock_to_active_silo()
             self._update_project_buttons()
+            self._apply_silo_type(idx, is_archive)
             # seed the live folder-sync baseline for the new silo
             from fastprompter.ui.file_container import silo_slug as _sl2
             cur_text = self.text_area.toPlainText()
@@ -7217,6 +7251,29 @@ class FastPrompter(
                 self.mark_dirty()
         finally:
             self._end_batch_update()
+
+    def _on_visual_widget_changed(self, new_text):
+        if getattr(self, "_suspend_temp_sync", False) or getattr(self, "_suspend_cache", False):
+            return
+        if self.text_area.toPlainText() != new_text:
+            self._set_plain_text_clean(self.text_area, new_text)
+            self.mark_dirty()
+
+    def _apply_silo_type(self, idx, is_archive):
+        if is_archive:
+            self.silo_view.setCurrentIndex(0)
+            return
+
+        stype = self.data.get("silo_types", {}).get(str(idx), "text")
+        
+        if stype == "kanban":
+            self.silo_view.setCurrentIndex(1)
+            self.kanban_widget.load_markdown(self.text_area.toPlainText())
+        elif stype == "table":
+            self.silo_view.setCurrentIndex(2)
+            self.table_widget.load_markdown(self.text_area.toPlainText())
+        else:
+            self.silo_view.setCurrentIndex(0)
 
     def _switch_to_arc_slot(self, idx):
         self._switch_to_slot(idx, is_archive=True)
@@ -7892,6 +7949,33 @@ class FastPrompter(
             replace_menu.addAction(act_label, make_replace())
         if not has_source:
             replace_menu.setEnabled(False)
+
+        # Transform to...
+        transform_menu = menu.addMenu("✨ Transform to…")
+        current_type = self.data.get("silo_types", {}).get(str(idx), "text")
+        
+        def make_transform(tgt_type):
+            def _t():
+                cat = self.get_current_category() or ""
+                self.data.setdefault("silo_type_all", {}).setdefault(cat, {})
+                self.data["silo_types"][str(idx)] = tgt_type
+                if self.active_temp_slot == idx and not is_archive:
+                    self._apply_silo_type(idx, is_archive)
+                self.mark_dirty()
+            return _t
+
+        a_text = transform_menu.addAction("📄 Text")
+        if current_type == "text": a_text.setEnabled(False)
+        else: a_text.triggered.connect(make_transform("text"))
+
+        a_kanban = transform_menu.addAction("📋 Kanban Board")
+        if current_type == "kanban": a_kanban.setEnabled(False)
+        else: a_kanban.triggered.connect(make_transform("kanban"))
+
+        a_table = transform_menu.addAction("📊 Table")
+        if current_type == "table": a_table.setEnabled(False)
+        else: a_table.triggered.connect(make_transform("table"))
+
 
         self.ignore_focus_loss = True
         try:
