@@ -102,6 +102,7 @@ class KanbanCardWidget(QFrame):
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self._show_menu)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self._mark_done_state()
         
     def keyPressEvent(self, e):
         if e.key() == Qt.Key.Key_Space:
@@ -143,9 +144,22 @@ class KanbanCardWidget(QFrame):
                 drag.setMimeData(mime)
                 drag.exec(Qt.DropAction.MoveAction)
                 
+    def _mark_done_state(self):
+        """Tell the stylesheet whether this card is done, and re-polish.
+
+        A dynamic property does not re-evaluate the sheet on its own, so a
+        ticked card kept full-strength text until something else repainted it.
+        """
+        self.setProperty("done", "true" if self.card_state.done else "false")
+        style = self.style()
+        if style is not None:
+            style.unpolish(self)
+            style.polish(self)
+
     def _on_check(self, checked):
         if self.card_state.done != checked:
             self.card_state.done = checked
+            self._mark_done_state()
             self.changed.emit()
         
     def _on_edit_finished(self):
@@ -218,15 +232,19 @@ class KanbanColumnWidget(QFrame):
         self._box.setContentsMargins(4, 4, 4, 4)
         
         header_layout = QHBoxLayout()
-        self.lbl_name = QLabel(f"<b>{column_state.name}</b>")
+        self.lbl_name = QLabel(column_state.name)
+        self.lbl_name.setObjectName("kanban_column_name")
         self.lbl_name.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self.editor_name = QLineEdit(column_state.name)
         self.editor_name.hide()
         self.editor_name.editingFinished.connect(self._on_name_edit_finished)
         
         self.lbl_count = QLabel(f"({len(column_state.cards)})")
-        
-        btn_add = QLabel("＋")
+        self.lbl_count.setObjectName("kanban_column_count")
+
+        btn_add = QLabel("+")
+        btn_add.setObjectName("kanban_add")
+        btn_add.setToolTip("Add a card to this column")
         btn_add.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_add.mousePressEvent = self._on_add_clicked
         
@@ -266,7 +284,7 @@ class KanbanColumnWidget(QFrame):
         self.editor_name.hide()
         if self.editor_name.text() != self.column_state.name:
             self.column_state.name = self.editor_name.text()
-            self.lbl_name.setText(f"<b>{self.column_state.name}</b>")
+            self.lbl_name.setText(self.column_state.name)
             self.changed.emit()
         self.lbl_name.show()
         
@@ -392,7 +410,9 @@ class KanbanBoardWidget(QScrollArea):
             self.board_layout.addWidget(cw)
             
         # Add a prominent "Add Column" button
-        self.btn_add_col = QLabel("Add Column")
+        self.btn_add_col = QLabel("+ Column")
+        self.btn_add_col.setObjectName("kanban_add")
+        self.btn_add_col.setToolTip("Add a column to this board")
         self.btn_add_col.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_add_col.mousePressEvent = self._on_add_column_clicked
         self.btn_add_col.mousePressEvent = self._on_add_column_clicked

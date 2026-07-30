@@ -446,24 +446,89 @@ class ThemeMixin:
         if mode == "Reading":
             self.preview_area.setHtml(self.simple_markdown_to_html(text))
 
+    # ---- SiloTable / SiloKanban skin ------------------------------------
+    #
+    # House rules (saipen UI.md), and they are rules, not taste:
+    #   * depth is a 2px BEVEL and nothing else — no radius, no shadow, no
+    #     gradient, no transition;
+    #   * every colour traces back to a token — here the active theme's
+    #     raw_colors, so the board follows Vintage Classic and OLED alike
+    #     instead of carrying its own hardcoded greys;
+    #   * compact by default, and states must be instant.
+
+    def _skin_tokens(self):
+        """The theme's palette, with sane fallbacks. One place, both widgets."""
+        raw = (self._theme_cache or {}).get("raw_colors") or {}
+        return {
+            "bg": raw.get("bg_main", "#232018"),
+            "sunken": raw.get("bg_text", "#1a1810"),
+            "raised": raw.get("btn_bg", "#332e22"),
+            "pressed": raw.get("btn_pressed", "#232018"),
+            "light": raw.get("border_light", "#5a5040"),
+            "dark": raw.get("border_dark", "#100e08"),
+            "text": raw.get("text_main", "#d4c89a"),
+            "btn_text": raw.get("btn_text", "#c9a84c"),
+            "accent": raw.get("accent", "#c9a84c"),
+        }
+
+    @staticmethod
+    def _bevel(t, raised=True):
+        """A 2px Win95 bevel. Raised = lit from the top-left, sunken = inverse."""
+        a, b = (t["light"], t["dark"]) if raised else (t["dark"], t["light"])
+        return (f"border: 2px solid; border-top-color: {a}; "
+                f"border-left-color: {a}; border-right-color: {b}; "
+                f"border-bottom-color: {b};")
+
     def _apply_kanban_theme(self, theme):
-        if not hasattr(self, "kanban_widget"): return
-        from fastprompter.theme.themes import extract_bg, extract_border_color
-        bg = extract_bg(theme.get("mini_settings", "")) or "#1a1a1a"
-        card_bg = extract_bg(theme.get("btn_new", "")) or "#2a2a2a"
-        border = extract_border_color(theme.get("mini_settings", "")) or "#555"
+        if not hasattr(self, "kanban_widget"):
+            return
+        from fastprompter.theme.themes import blend_hex
+        t = self._skin_tokens()
+        # a done card's text steps back rather than disappearing: still
+        # readable, visibly finished
+        muted = blend_hex(t["text"], t["bg"], 0.45)
         self.kanban_widget.setStyleSheet(
-            f"QScrollArea {{ background-color: {bg}; border: none; }}"
-            f"QFrame#kanban_column {{ background: transparent; }}"
-            f"QFrame#kanban_card {{ background-color: {card_bg}; border: 1px solid {border}; }}"
+            f"QScrollArea {{ background-color: {t['bg']}; border: none; }}"
+            f"QWidget {{ background-color: {t['bg']}; color: {t['text']}; }}"
+            # column: a sunken well, so the cards read as sitting IN it
+            f"QFrame#kanban_column {{ background-color: {t['sunken']}; "
+            f"  {self._bevel(t, raised=False)} margin: 0px; }}"
+            f"QLabel#kanban_column_name {{ background: transparent; "
+            f"  color: {t['btn_text']}; font-weight: bold; padding: 1px 2px; }}"
+            f"QLabel#kanban_column_count {{ background: transparent; "
+            f"  color: {muted}; padding: 1px 2px; }}"
+            # card: a raised tile
+            f"QFrame#kanban_card {{ background-color: {t['raised']}; "
+            f"  {self._bevel(t)} }}"
+            f"QFrame#kanban_card:hover {{ background-color: {t['pressed']}; }}"
+            f"QFrame#kanban_card QLabel {{ background: transparent; "
+            f"  color: {t['text']}; }}"
+            f"QFrame#kanban_card[done=\"true\"] QLabel {{ color: {muted}; }}"
+            f"QFrame#kanban_card QLineEdit {{ background-color: {t['sunken']}; "
+            f"  color: {t['text']}; {self._bevel(t, raised=False)} padding: 1px; }}"
+            # the add controls are BUTTONS, not decorated labels
+            f"QLabel#kanban_add {{ background-color: {t['raised']}; "
+            f"  color: {t['btn_text']}; {self._bevel(t)} padding: 1px 6px; }}"
+            f"QLabel#kanban_add:hover {{ background-color: {t['pressed']}; }}"
         )
 
     def _apply_table_theme(self, theme):
-        if not hasattr(self, "table_widget"): return
-        from fastprompter.theme.themes import extract_bg, extract_border_color
-        bg = extract_bg(theme.get("mini_settings", "")) or "#1a1a1a"
-        border = extract_border_color(theme.get("mini_settings", "")) or "#555"
+        if not hasattr(self, "table_widget"):
+            return
+        t = self._skin_tokens()
         self.table_widget.setStyleSheet(
-            f"QWidget {{ background-color: {bg}; }}"
-            f"QLineEdit {{ border: 1px solid {border}; background-color: transparent; padding: 2px; }}"
+            f"QWidget {{ background-color: {t['bg']}; color: {t['text']}; }}"
+            # every cell is a sunken field: that is what a text input looks
+            # like in this house, and a table is a grid of them
+            f"QLineEdit {{ background-color: {t['sunken']}; color: {t['text']}; "
+            f"  {self._bevel(t, raised=False)} padding: 1px 3px; }}"
+            # focus is instant and unmistakable — no animation budget here
+            f"QLineEdit:focus {{ background-color: {t['pressed']}; "
+            f"  border-color: {t['accent']}; }}"
+            f"QLineEdit[header=\"true\"] {{ background-color: {t['raised']}; "
+            f"  color: {t['btn_text']}; font-weight: bold; "
+            f"  {self._bevel(t)} }}"
+            f"QLabel#table_add {{ background-color: {t['raised']}; "
+            f"  color: {t['btn_text']}; {self._bevel(t)} padding: 1px 6px; }}"
+            f"QLabel#table_add:hover {{ background-color: {t['pressed']}; }}"
         )

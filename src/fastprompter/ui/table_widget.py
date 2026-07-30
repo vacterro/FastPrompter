@@ -216,7 +216,10 @@ class TableGridWidget(QWidget):
             for c_idx, text in enumerate(row):
                 cw = CellWidget(text, self)
                 if r_idx == 0:
-                    cw.setStyleSheet("font-weight: bold;")
+                    # a PROPERTY, not an inline stylesheet: an inline sheet on
+                    # the widget overrides the themed one and the header cell
+                    # stopped following the theme entirely
+                    cw.setProperty("header", "true")
                 
                 if c_idx < len(self.alignments):
                     cw.setAlignment(self.alignments[c_idx])
@@ -237,15 +240,26 @@ class TableGridWidget(QWidget):
             self.btn_add_row.deleteLater()
             
         self.btn_add_col = QLabel("+")
+        self.btn_add_col.setObjectName("table_add")
         self.btn_add_col.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_add_col.setToolTip("Add Column")
         self.btn_add_col.mousePressEvent = lambda e: self.insert_col(self.cells[0][-1], 1)
         self._grid.addWidget(self.btn_add_col, 0, len(self.cells[0]))
         
-        self.btn_add_row = QLabel("Add Row")
+        self.btn_add_row = QLabel("+ Row")
+        self.btn_add_row.setObjectName("table_add")
+        self.btn_add_row.setToolTip("Add Row")
         self.btn_add_row.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_add_row.mousePressEvent = lambda e: self.insert_row(self.cells[-1][0], 1)
-        self._grid.addWidget(self.btn_add_row, len(self.cells), 0, 1, len(self.cells[0]))
+        self._grid.addWidget(self.btn_add_row, len(self.cells), 0,
+                             Qt.AlignmentFlag.AlignLeft)
+
+        # All the slack goes into a phantom row BELOW everything, so the table
+        # packs to the top and "+ Row" sits under the last row instead of
+        # floating in the middle of the empty space the grid handed it.
+        for r in range(self._grid.rowCount()):
+            self._grid.setRowStretch(r, 0)
+        self._grid.setRowStretch(len(self.cells) + 1, 1)
         
     def _schedule_sync(self):
         self._sync_timer.start()

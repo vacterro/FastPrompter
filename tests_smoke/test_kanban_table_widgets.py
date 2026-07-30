@@ -158,10 +158,15 @@ class TestTableLoadMarkdown:
         t.load_markdown("")
         assert len(t.cells) >= 2
 
-    def test_header_cells_are_bold(self):
+    def test_header_cells_are_marked_for_the_skin(self):
+        # Bold moved from an inline stylesheet to a dynamic property. An
+        # inline sheet set ON the widget overrides the themed one, so the
+        # header was the single cell that stopped following the theme.
         t = TableGridWidget()
         t.load_markdown("| H1 | H2 |\n| --- | --- |\n| a | b |")
-        assert "font-weight: bold" in (t.cells[0][0].styleSheet() or "")
+        assert t.cells[0][0].property("header") == "true"
+        assert t.cells[1][0].property("header") in (None, "false")
+        assert not (t.cells[0][0].styleSheet() or "")
 
     def test_round_trip_mixed_content(self):
         t = TableGridWidget()
