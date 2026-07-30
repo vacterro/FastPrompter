@@ -1,137 +1,175 @@
-# FastPrompter User Guide & Workflow Manual
+# FastPrompter User Guide
 
 ## Overview
-FastPrompter is a high-speed, keyboard-driven portable notepad and prompt engineering workbench for Windows. It provides zero-latency summon (`Alt+X`), instant local persistence via SQLite, multi-project workspace isolation, tabbed silo organization, markdown editor with live syntax highlighting and section folding, macro snippet triggers, file container attachments, built-in Pomodoro timer, typing watcher automation, sound feedback, and automatic backup mirrors.
+
+High-speed keyboard-driven scratchpad + prompt workbench. Alt+X summons at cursor. Write. Close (Esc). Zero manual save — SQLite syncs every 10s.
 
 ---
 
 ## Key Concepts
 
-### 1. Zero-Latency Summon (`Alt+X`)
-- Press **Alt+X** from any Windows application. FastPrompter pops up at cursor location.
-- Press **Esc** or click outside to instantly hide the window.
-- All keystrokes flush to disk synchronously — no manual save required.
+### 1. Summon (Alt+X)
 
-### 2. Multi-Project Workspaces
-- Work organized into named Projects (tabs across top bar).
-- Each Project holds up to 100 dedicated Silos.
-- Right-click project tabs to create, rename, or delete.
+Global hotkey. Window appears at mouse cursor. Esc closes. All keystrokes flush to disk via auto-save timer (10s tick) + sync flush on close.
 
-### 3. Silos (Scratch Slots)
-- Each Silo is an independent markdown canvas.
-- **Quick Jump**: **Ctrl+1** through **Ctrl+0** for Silos 1–10.
-- **Quick Walk**: **Alt+Up** / **Alt+Down** cycles active Silos.
-- **New Silo**: **Ctrl+N** spawns an empty numbered silo.
-- **Silo Actions on hover**:
-  - **Done / Tick (✅)**: Mark silo completed (visual styling).
-  - **File Container (📁)**: Open dedicated attachments folder.
-  - **Pin (📌)**: Lock silo to top of list.
-  - **Archive (📥)**: Move completed silo to project archive.
-  - **Middle Click**: Send silo to Trash Bin (`data/files/_trash/`).
-- **Hierarchy**: Drag a silo onto another to nest as child (2 levels max: 1 → 1.1 → 1.1.1). Shift+Drag swaps.
-- **Recency Heatmap Tinting**: Recently edited silos get a warm background tint, configurable in Settings.
+Double-tap Alt+X toggles always-on-top. Shift+Alt+X opens pie menu (theme/scale/tools).
 
-### 4. Snippet Macros (`F1`–`F10`)
-- 10 quick-paste snippet slots bound to **F1**–**F10** (or **Ctrl+Shift+1**–**9**).
-- Press **Ctrl+S** or open Snippet Manager to edit titles and template text.
-- Supports variable placeholders, system prompts, code templates.
+### 2. Projects (Tabs)
 
-### 5. Markdown Editor & Formatting Features
-- **Live Syntax Highlighting**: Code blocks, headings, bold, italic, lists, blockquotes.
-- **Section Folding**: Click collapse arrows next to headings to fold section text.
-- **Header Formatting (`Ctrl+E`)**: Fully configurable — rule, gap, bullet, alignment, timestamp stamp. Configurable via Settings > Dividers & headers.
-- **Checkbox Toggle (`Ctrl+Return`)**: Toggles `- [ ]` and `- [x]` on current line or selection.
-- **Dividers**:
-  - **Ctrl+W**: Inserts spaced `---` horizontal rule (smart: strips duplicate bullet on split).
-  - **Alt+W**: Inserts `---` upward — the new point goes above the cursor.
-  - Both customizable via Settings (template, auto-bullet behavior).
-- **Text Formatting**:
-  - **Ctrl+B**: Bold (`**text**`)
-  - **Ctrl+I**: Italic (`*text*`)
-  - **Ctrl+U**: Underline (`<u>text</u>`)
-  - **Ctrl+T**: Strikethrough (`~~text~~`)
-  - **Ctrl+Shift+Q**: Blockquote (`> text`)
-  - **Alt+Backspace**: Word-level deletion.
-- **Ctrl+Click on bullet**: Toggles between `-` and `•`.
-- **Collapsible Images**: Markdown images render as compact buttons (150px). Ctrl+Click opens file, Ctrl+RClick opens folder.
+Named project tabs in header. Right-click: Create, Rename, Delete. Up to 100 projects. Switch via click or num-box mode (Settings → Window → Layout → Number boxes per row). Each project holds 100 silos + 10 snippets.
 
-### 6. Zen Mode (`Ctrl+D`)
-- Hides sidebar, snippet bar, file container, status bar, framing borders.
-- Leaves a pristine full-screen/frameless markdown writing canvas.
+### 3. Silos
 
-### 7. Window Positioning & Corner Snap (`Ctrl+Q`)
-- Cycles snap positions: Top-Left, Top-Right, Bottom-Left, Bottom-Right, Center, Cursor Position.
-- **Fancy Zones**: Visual overlay picker with 7 layouts for quick window arrangement.
+Independent markdown canvas slots. 100 per project. Auto-numbered 00-99.
 
-### 8. File Container & Attachments
-- Every Silo gets a dedicated disk directory: `data/silo_files/<project>/<silo_id>/`.
-- Drag and drop files onto the File Container drawer or Smart Drop Overlay.
-- Files can be opened directly or launched with default apps.
+**Navigation:**
+- Ctrl+1..Ctrl+0 — jump to silo 1-10
+- Alt+↑/↓ — walk silos
+- Ctrl+N — new empty silo (appends at bottom)
+- Right-click NEW — append at bottom
 
-### 9. Typing Watcher & CDP Automation
-- **Alt+C**: Toggle Typing Watcher engine. Queues prompt lines and auto-sends to target app when idle.
-- **Alt+Shift+C**: Open Queue Master dialog to inspect/reorder/clear queues.
-- Supports Chrome DevTools Protocol (CDP) for Electron apps (VS Code, Claude Desktop, ChatGPT) and Win32 probes for any window.
-- Skills system: apply prompt wrappers (e.g. `/review`, `/refactor`) to queued items.
+**Per-silo actions (hover):**
+- 📌 **Pin** — locks silo to top of list (sorted above unpinned)
+- ✅ **Tick** — marks done (visual indicator)
+- 🎨 **Color box** — per-silo color highlight (toggle in Settings)
+- 📁 **File container** — open asset drawer for this silo
+- 📁 **Folder link** — links silo to external project folder/executable
+- **Middle click** — send to trash
 
-### 10. Hashtag System
-- Tags extracted from silo text and indexed for cross-silo search.
-- **Hashtag Dialog**: Search by tag to find all silos containing it.
+**Hierarchy:** Drag silo onto another to nest as child. Max depth 2 (1 → 1.1 → 1.1.1). Shift+drag swaps. Collapse arrow (▾/▸) on parent hides children.
 
-### 11. Timer & Pomodoro Engine
-- Built-in countdown timers and Pomodoro focus engine.
-- Configurable interval, break cycles, alert sounds, visual progress bar.
-- Timer Toast: floating notification window with Win95 3D bevels, theme colors, snooze support.
-- Access via Timer Dialog (`Ctrl+Shift+T` or toolbar icon).
+**Recency heatmap:** Recently edited silos get warm background tint. Configurable via Settings → Silos.
 
-### 12. SAIPEN Integration
-- Built-in SAIPEN viewer dialog for `.saipen` project tracking (STATE, BOARD, LOG).
-- Toolbar buttons for quick access when project folder with `.saipen/` is configured.
+### 4. Sidebar Gaps
 
-### 13. Trash & Backup Recovery
-- Middle-clicked silos move to `data/files/_trash/` and trash database entries.
-- Open **Trash Dialog** to restore deleted silos or purge permanently.
-- Daily Markdown Mirror written to `Documents\.fastprompter\`.
-- Startup `.bak` database file.
+User-defined spacer bars in silo list. Help organise silos into groups. Ctrl+drag a gap to re-park it elsewhere. Settings → Silos → Gap height controls thickness.
 
-### 14. Overflow Menu
-- When header is narrow (<700px portrait), hidden buttons are collected in a `»` overflow popup.
-- Every formatting, navigation, and tool action stays reachable without resizing.
+### 5. Multi-Select Silos
 
----
+- Shift+click — range select
+- Ctrl+click — toggle selection
+- Right-click selection — batch Save, Delete, Clear (deletes high-index-first to avoid slot shift issues)
 
-## Complete Hotkey Reference Chart
+### 6. Snippet Macros (F1-F10)
 
-| Hotkey | Context | Action |
-|---|---|---|
-| **Alt+X** | Global | Summon / Hide FastPrompter |
-| **Esc** | Global / Local | Hide window / Close overlay |
-| **F1**..**F10** | Local | Paste Snippet 1–10 |
-| **Ctrl+Shift+1**..**9** | Local | Paste Snippet 1–9 (alt) |
-| **Ctrl+1**..**Ctrl+0** | Local | Switch to Silo 1–10 |
-| **Alt+Up** / **Alt+Down** | Local | Previous / Next Silo |
-| **Ctrl+N** | Local | New empty Silo |
-| **Alt+C** | Main | Toggle Typing Watcher |
-| **Alt+Shift+C** | Main | Open Queue Master Dialog |
-| **Ctrl+E** | Editor | Format line as H1 header (configurable) |
-| **Ctrl+Return** | Editor | Toggle `- [ ]` / `- [x]` |
-| **Ctrl+W** | Editor | Insert divider `---` |
-| **Alt+W** | Editor | Insert divider upward + bullet above cursor |
-| **Ctrl+B** | Editor | Toggle Bold |
-| **Ctrl+I** | Editor | Toggle Italic |
-| **Ctrl+U** | Editor | Toggle Underline |
-| **Ctrl+T** | Editor | Toggle Strikethrough |
-| **Ctrl+Shift+Q** | Editor | Toggle Blockquote |
-| **Alt+Z** | Editor | Toggle line numbers |
-| **Alt+Backspace** | Editor | Delete previous word |
-| **Ctrl+S** | Editor | Open Snippet Manager |
-| **Ctrl+D** | Main | Toggle Zen Mode |
-| **Ctrl+Q** | Main | Cycle window snap position |
-| **Ctrl+Shift+S** | Main | Export active silo to file |
-| **Alt+S** | Main | Toggle window lock |
-| **Alt+E** | Main | Toggle Always-on-Top |
-| **Alt+D** | Main | Toggle sidebar |
-| **Alt+A** | Main | Toggle hide-on-clickout |
-| **Alt+`** | Main | Open Mini Settings |
-| **Ctrl+Shift+C** | Main | Open SAIPEN viewer |
-| **Ctrl+Shift+T** | Main | Open Timer Dialog |
+10 quick-paste slots per project. Bound to F1-F10 or Ctrl+Shift+1-9.
+
+- Ctrl+S — open Snippet Manager (edit name + content)
+- Right-click F-button — rename inline
+- Supports variable placeholders for prompt templates
+
+### 7. Markdown Editor
+
+**VaultTextEdit** — extended QPlainTextEdit.
+
+**Features:**
+- Live syntax highlighting — headings, bold, italic, links, code fences, checkboxes, blockquotes
+- Line gutter — numbers + fold arrows (▾)
+- Section folding — click ▾ to collapse headers
+- Code fence copy button — hover fence, click copy icon
+- Checkbox click — click `- [ ]` to toggle `- [x]`
+- Collapsible images — `![alt](url)` renders as compact pill button (150px). Ctrl+click opens, Ctrl+rclick opens folder
+- Smart paste — drops table/list/code formatting cleaner
+
+**Formatting shortcuts:**
+- Ctrl+B/I/U/T — bold/italic/underline/strikethrough
+- Ctrl+Return — toggle checkbox
+- Ctrl+E — insert header (configurable: rule, bullet, timestamp, alignment)
+- Ctrl+W — insert divider `---` with smart line split (strips duplicate bullet)
+- Alt+W — insert divider upward + bullet above
+- Ctrl+Shift+Q — blockquote toggle
+- Ctrl+Click on bullet — toggle `-` / `•`
+- Ctrl+MiddleButton — delete line under cursor (smart reflow: ordered lists renumber)
+- Alt+Z — toggle line numbers
+- Alt+Backspace — word delete
+
+### 8. Hide Markup Mode (T-603)
+
+Toggle in Settings → Editor → Hide Markup. Conceals **bold**, *italic*, ~~strike~~ and `code` markers so text reads clean. Caret block keeps its markers so editing stays possible. Only repaints the 2 blocks around caret movement.
+
+### 9. Kanban Board
+
+Insert Kanban creates a markdown kanban board (pure text, survives save/db round-trip).
+
+- Alt+↑/↓ — move card up/down within column
+- Alt+←/→ — move card to adjacent column
+- Enter on empty board line — new card row
+- Alt+click — tick checkbox on card
+
+### 10. Table Builder
+
+Insert Table creates a markdown table. Tab/Shift+Tab walks cells. Tab off last cell grows a new row. Enter adds row (not split cell).
+
+### 11. File Container
+
+Each silo gets `data/silo_files/<project>/<slot_idx>/` on disk.
+
+- Drag files onto drawer overlay → copy into silo folder
+- Drop overlay (4 options): Insert Text, Insert Link, Copy to Files, Shortcut
+- Templates: IN/OUT, Assets, Drafts, Custom
+- Image preview + open with default app
+- Ctrl+click 📁 — export silo text as .md
+
+### 12. Watcher Engine (Alt+C)
+
+Prompt drainage + auto-send to target app.
+
+- Alt+C — queue current line under caret (block-anchored)
+- Alt+Shift+C — Queue Master dialog (inspect/reorder/clear queues)
+- Arming: target app (CDP for Electron, Win32 for native), skill/prompt wrapper
+- Rate limits: settle=2.5s, min gap=4s, max 25 sends per session
+- Skills: `/review`, `/refactor`, custom prompt templates
+
+See [Watcher Engine Architecture](Watcher-Engine-Architecture) for full details.
+
+### 13. Hashtag System
+
+`#tag` in silo text indexed for cross-silo search. Alt+Shift+T opens Hashtag Dialog — search by tag, see all matching silos, click to jump.
+
+### 14. Timers & Pomodoro
+
+**Countdown timers:** Set via Ctrl+Shift+T or timer button. Configurable name, duration, sound, volume, color urgency. Timer toast notification with snooze (Win95 3D bevels).
+
+**Pomodoro:** Work/break state machine. Configurable intervals. Tray notification + sound on phase end. Timer label beside clock shows remaining time + urgency color.
+
+### 15. Zen Mode (Ctrl+D)
+
+3-stage cycle:
+1. **Zen** — hide sidebar, snippet bar, file container, status bar, frame borders. Only editor visible.
+2. **Solo** — minimise all other desktop windows. Editor stays.
+3. **Back** — restore desktop + normal layout.
+
+### 16. Window Snap (Ctrl+Q)
+
+Cycle through: Top-Left, Top-Right, Bottom-Left, Bottom-Right, Center, Full, Cursor Position. FancyZone overlay shows 7 visual zones on click. Window presets page saves up to 10 user-defined geometries (as screen fractions — survive monitor changes).
+
+### 17. Finder & Archive
+
+- **Archive silo** — move completed silo to archive (keeps text, removes from active list)
+- **Archive tab** — browse archived silos per project
+- **Trash dialog** — browse/restore soft-deleted silos and files
+- **Silo sync to disk** (T-591) — one-way .md export to external folder per project
+
+### 18. Number-Box Mode (T-607)
+
+Settings → Window → Layout → Number boxes per row. Replaces project combo with numbered buttons. Right-click for add/rename/delete. Wheel still switches. Project cap 100.
+
+### 19. Toolbar Customize
+
+Settings → Customize Toolbar. Drag buttons to reorder. Visible gap widgets show where a button lands. Reset restores default order.
+
+### 20. Overflow Menu
+
+When header < 700px: hidden buttons collected in » popup. Every action still reachable — formatting, navigation, silo ops, tools.
+
+### 21. SAIPEN Integration
+
+Ctrl+Shift+C opens SAIPEN viewer (STATE/BOARD/LOG from `.saipen/`). Toolbar buttons for quick access when project folder has `.saipen/`.
+
+### 22. Backup
+
+**Layers:**
+1. SQLite WAL — crash-safe writes (synchronous=NORMAL)
+2. .bak — at startup + every 60s (full SQLite backup to .bak file)
+3. Daily markdown mirror — `~/Documents/.fastprompter/` (silos per project + archive + snippets)
+4. Portable ZIP — manual backup via Backup dialog

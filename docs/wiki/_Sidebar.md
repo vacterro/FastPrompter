@@ -18,12 +18,12 @@
 - [Troubleshooting & FAQ](Troubleshooting-and-FAQ)
 
 ### Developer & Protocols
-- [Plugin & Skill Development](Plugin-and-Skill-Development)
+- [Plugin & Skill Dev](Plugin-and-Skill-Development)
 - [SAIPEN Protocol](SAIPEN-Protocol)
 - [Deployment Guide](Deployment-Guide)
 
 ---
 
 ### Project Links
-- [GitHub Repository](https://github.com/vacterro/FastPrompter)
-- [Releases & Downloads](https://github.com/vacterro/FastPrompter/releases)
+- [GitHub Repo](https://github.com/vacterro/FastPrompter)
+- [Releases](https://github.com/vacterro/FastPrompter/releases)

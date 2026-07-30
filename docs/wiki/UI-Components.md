@@ -1,77 +1,108 @@
 # FastPrompter UI Components Reference
 
-## Overview & Layout Model
-FastPrompter features a compact, frameless vintage Windows 95 aesthetic interface with dark/gold hues, sharp bevels, and fast keyboard-first operation.
+## Layout Model
+
+Vintage Win95 aesthetic. Frameless, dark golden, sharp bevels. Keyboard-first. Header auto-adjusts density tiers (full → dense <1280px → ultra <700px).
 
 ```
-+-----------------------------------------------------------------------------------+
-|  [Tab 1] [Tab 2] [Tab 3] | 🔍 Search | 📌 🎨 ⚙️ 🕒 🧠 | Scale: 100% | 🇬🇧 | [_] [X] |  (Toolbar)
-+------------------------------------+----------------------------------------------+
-|  SILOS & SNIPPETS SIDEBAR          |  MAIN MARKDOWN EDITOR CANVAS                 |
-|  - Silo Items 00..99               |  - Line Numbers Gutter & Fold Controls (▾)   |
-|    [📌] [✅] [📁] [📁 Link]          |  - Live Markdown Syntax Highlighting         |
-|  - Parent / Child Indentation      |  - Code Fences with Copy Button              |
-|  - Recency Heatmap Tinting         |  - Interactive Checkboxes [ ] -> [x]         |
-|  - Snippet Slots F1-F10            +----------------------------------------------+
-|                                    |  FILE CONTAINER DRAWER                       |
-|                                    |  - Asset Grid / Template Buttons             |
-+------------------------------------+----------------------------------------------+
-|  STATUS BAR: Words: 240 | Lines: 42 | Pomodoro: 25:00 | SAIPEN: STATE [OK]          |
-+-----------------------------------------------------------------------------------+
++------------------------------------------------------------------+
+| [Tab1][Tab2]... | 🔍 | 📌🎨⚙️🕒🧠 | LN:42 | Tok:156 | DD.MM - HH:MM | ⚙ | » | [_][X] |
++--------------------------------+---------------------------------+
+| SIDEBAR (silos + snippets)     | EDITOR (VaultTextEdit)          |
+| ┌──────────────────────────┐   | ┌──────┬────────────────────┐  |
+| │ Silo 00  📌 ✅   📁  📁│   │ │  1.  │ # Heading           │  |
+| │ Silo 01       📁       │   │ │  2.  │ Regular text here   │  |
+| │ ─── gap ───            │   │ │  3.  │ - [ ] checkbox      │  |
+| │   └─ child silo  📁    │   │ │  4.  │ ```python           │  |
+| │ Silo 02  🎨     📁    │   │ │      │ print(\"code\")      │  |
+| │ [F1][F2]...[F10]       │   │ │      │ ```                 │  |
+| └──────────────────────────┘   │ └──────┴────────────────────┘  |
+|                                | FILE CONTAINER DRAWER           |
+|                                | [📁 file1] [📁 file2] [📁 IN/OUT]|
++--------------------------------+---------------------------------+
+| Timer: 12:34  📊               |  Words: 240  |  Lines: 42       |
++------------------------------------------------------------------+
 ```
 
----
+## Primary Components
 
-## Primary UI Components
+### 1. Header Toolbar
 
-### 1. Snippet & Silo Panel (`ui/snippet_panel.py`)
-- **Silo List**: Vertically scrollable list supporting up to 100 silos per category tab.
-- **Silo Badges & Controls**:
-  - `📌 Pin`: Keeps silo anchored to top of list.
-  - `✅ Tick`: Marks silo as completed with visual strike-through / check icon.
-  - `│ Divider`: Visual separation for line count and characters.
-  - `📁 File Container Toggle`: Opens/closes per-silo asset drawer.
-  - `Recency Tinting`: Dynamically adjusts item background hue based on how recently text was edited.
-- **Hierarchy Drag & Drop**: Drag a silo onto another to nest as a child element.
-- **Snippet Buttons (`F1`-`F10`)**: 10 fast-paste text buttons per category.
+Configurable button bar. Tokens: cat tabs, search, silo controls, formatting, clock, line count, token count, settings, tray buttons. Drag-and-drop reorder mode (Settings → Customize Toolbar). Overflow menu when ultra-narrow.
 
----
+**Density tiers:**
+- **Full** (>1280px effective): all buttons visible
+- **Dense** (<1280px): label shortening + 18px squares + tabs scroll; hide: Clear Fmt, Line, Home/End, Underline, Strike, Copy, Vision, aligns
+- **Ultra** (<700px): portrait sliver; only tabs, NEW/Save, short clock, counter, ⚙ survive. » overflow menu collects rest
 
-### 2. Markdown Editor Canvas (`ui/editor.py`)
-- **Line Gutter**: Left-hand margin displaying exact line numbers and code/header folding arrows (`▾`).
-- **Syntax Highlighting**: Real-time coloring for `# Headers`, `**bold**`, `*italic*`, `[links](url)`, `- [ ] checkboxes`, and \`\`\`code blocks\`\`\`.
-- **Code Block Controls**:
-  - Monospace font styling inside fenced blocks.
-  - Single-click "Copy Code" overlay button.
-  - Section folding to hide long code snippets.
-- **Checkables**: Clicking a `- [ ]` task list item updates text directly to `- [x]`.
+### 2. Snippet & Silo Panel (`ui/snippet_panel.py`)
 
----
+**Silo List:** Up to 100 per project tab. Features:
+- Pin (📌) — anchor to top, sorted above unpinned
+- Tick (✅) — cross-silo done marker
+- Color box (🎨) — per-silo color tint (toggle in Settings)
+- File container icon (📁) — opens file drawer
+- Hierarchy — drag onto another silo to nest; Shift+drag swaps; collapse arrow (▾/▸)
+- Recency heatmap — warm background tint for recently edited
+- Sidebar gaps — user-defined spacer bars; Ctrl+drag to re-park
+- Multi-select — Shift=range, Ctrl=toggle; batch delete/save/clear
 
-### 3. File Container Drawer (`ui/file_container.py`)
-- Collapsible bottom drawer attached to each silo.
-- Displays attached files, image thumbnails, and document shortcuts.
-- **Folder Templates**: Preset creation buttons (`IN/OUT`, `Assets`, `Drafts`).
-- **Silo Backup Button**: `Ctrl+Click` on `📁` button opens portable silo text exporter.
+**Snippet Slots (F1-F10):** 10 macro paste buttons per project tab. Right-click to edit name/content. Ctrl+S or double-click opens Snippet Manager dialog.
 
----
+### 3. Markdown Editor (`ui/editor.py` — VaultTextEdit)
 
-### 4. Smart Drop Overlay (`ui/drop_overlay.py`)
-Triggered automatically when dropping files onto the editor canvas. Displays 4 clear options:
-1. **Insert Text**: Reads dropped file contents into editor.
-2. **Insert Link**: Pastes Markdown file URI link (`[filename](file:///...)`).
-3. **Copy to Files**: Copies dropped file into silo File Container.
-4. **Create Shortcut**: Creates file shortcut link in silo File Container.
+**Line gutter:** Left margin — line numbers + fold arrows (▾) + margin marks + heat stripes.
 
----
+**Syntax highlighting:** `# Headers`, `**bold**`, `*italic*`, `~~strike~~`, `[links](url)`, `` `code` ``, ```code blocks```, `- [ ]` checkboxes, `> blockquotes`, `---` rules.
 
-### 5. Dialogs & Overlays
+**Code fences:** Monospace (Consolas default) + single-click copy button + fold to collapse.
+
+**Collapsible images:** `![alt](url)` → compact 150px button. Ctrl+Click opens, Ctrl+RClick opens folder.
+
+**Interactive checkboxes:** Click `- [ ]` toggles to `- [x]`.
+
+**Hide markup mode (T-603):** Toggle hides `**`, `*`, `~~`, `` ` `` markers → text reads as rendered. Caret block keeps markers for editing.
+
+**Drop overlay:** 4 options on drag-drop: Insert Text, Insert Link, Copy to Files, Create Shortcut.
+
+### 4. File Container Drawer (`ui/file_container.py`)
+
+Per-silo collapsible drawer. Attached files, image thumbnails, document shortcuts.
+
+- Templates: IN/OUT, Assets, Drafts, Custom folder structure
+- Drag-drop to add files
+- Silo export: Ctrl+click 📁 exports silo text to .md
+
+### 5. Kanban Board (`ui/silo_kanban.py`)
+
+Pure-text markdown kanban. Alt+arrows move cards between columns. Enter adds row. Click checkbox ticks card. No Qt tables — works on plain markdown, survives save.
+
+### 6. Table Builder (`ui/silo_table.py`)
+
+Pure-text markdown table. Tab/Shift+Tab walk cells. Tab off last cell grows row. Enter adds row. No split-cell. Works on plain text.
+
+### 7. Dialogs & Overlays
 
 | Dialog | Purpose |
 |---|---|
-| `SettingsDialog` (`ui/settings.py`) | Theme picker, hotkey rebuilder, sound controls, UI scale slider |
-| `SaipenDialog` (`ui/saipen_dialog.py`) | Dedicated viewer for `.saipen` project state, task board, and event logs |
-| `TimerDialog` (`ui/timer_dialog.py`) | Pomodoro focus timer setup, duration tweaks, and sound alarms |
-| `TrashDialog` (`ui/trash_dialog.py`) | Trash bin browser for viewing and restoring soft-deleted silos |
-| `BackupDialog` (`ui/backup_dialog.py`) | Full database export, import, and backup snapshot creation |
-| `HelpDialog` (`ui/help_dialog.py`) | Keyboard shortcut reference and usage manual |
+| `Settings (Alt+`)` | Theme picker, hotkey rebind, sound, scale, toolbar reorder |
+| `Snippet Manager (Ctrl+S)` | Edit F1-F10 snippet names + content |
+| `Saipen Viewer (Ctrl+Shift+C)` | Read-only STATE/BOARD/LOG viewer |
+| `Timer Dialog (Ctrl+Shift+T)` | Pomodoro + countdown timer setup |
+| `Queue Master (Alt+Shift+C)` | Watcher queue overview per silo |
+| `Hashtag Dialog (Alt+Shift+T)` | Cross-silo tag search |
+| `Trash Dialog` | Browse/restore soft-deleted silos |
+| `Backup Dialog` | DB export/import, backup snapshot |
+| `Help Dialog` | Interactive shortcut reference |
+| `Window Presets` | Save/rename/reorder/move window geometry presets |
+| `Project Manager` | Show/hide projects, reorder (▲▼) |
+| `Color Config` | Custom theme color editing |
+
+### 8. Window Components
+
+- **FancyZoneOverlay** — visual 7-zone picker for screen snap
+- **AnalogClock** — custom-painted clock widget (header)
+- **PieMenu (Shift+Alt+X)** — radial menu: themes, scale, tools
+- **Overflow menu (»)** — hidden buttons in ultra mode
+- **Resizers** — custom resize handles (T-629 fix: WS_CAPTION recompute)
+- **ZenDesktop** — 3-stage Ctrl+D: Zen → Solo (minimise all) → back

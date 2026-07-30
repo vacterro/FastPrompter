@@ -1,106 +1,130 @@
-# Watcher Engine Architecture & CDP Automation Guide
+# Watcher Engine Architecture
 
 ## Overview
-The **Watcher Engine** (`src/fastprompter/core/watcher/`) is FastPrompter's automated prompt drainage and target interaction subsystem. It allows FastPrompter to safely queue prompts, monitor target application states (such as Electron-based LLM clients, Web UI browsers, or IDEs), and automatically send prompts when the target becomes idle.
+
+Prompt drainage + target automation subsystem. Queues prompts, monitors target app state (Electron/web/any Win32 window), auto-sends when target idle.
 
 ---
 
-## High-Level Watcher Architecture
+## High-Level Architecture
 
 ```
-+-----------------------------------------------------------------------------------+
-|                                 Watcher Engine                                    |
-|                                 (`engine.py`)                                     |
-|  +--------------------+    +--------------------+    +-------------------------+  |
-|  |   State Machine    | -> |   Probes & Hooks   | -> |     SendIntent Generator |  |
-|  | DISARMED->ARMED->  |    | (Win32 & CDP State)|    |   (Item + Skill Format) |  |
-|  | WATCHING->SENDING  |    +--------------------+    +-------------------------+  |
-|  +--------------------+                                           |               |
-+-------------------------------------------------------------------|---------------|
-                                                                    v
-+-----------------------------------------------------------------------------------+
-|                                  Sender & Queue                                   |
-|  +--------------------------------+       +------------------------------------+  |
-|  |     Queue (`queue.py`)         |       |      Sender (`sender.py`)          |  |
-|  | - Pinned queue_key per target  |       | - Chrome DevTools Protocol (CDP)   |  |
-|  | - FIFO Item backlog            |       | - Win32 Keystroke Injection        |  |
-|  +--------------------------------+       +------------------------------------+  |
-+-----------------------------------------------------------------------------------+
++------------------------------------------------------------------+
+|                        Watcher Engine (engine.py)                  |
+|  +------------------+    +------------------+   +--------------+  |
+|  | State Machine    | -> | Probes & Hooks   | ->| SendIntent   |  |
+|  | DISARMED→ARMED→  |    | (Win32 + CDP)    |   | Generator    |  |
+|  | WATCHING→SENDING |    +------------------+   +--------------+  |
+|  +------------------+                                          |
++------------------------------------------------------------------+
+                              v
++------------------------------------------------------------------+
+|  Queue (queue.py)           |    Sender (sender.py)              |
+|  - Per-target queue_key     |    - CDP Runtime.evaluate          |
+|  - FIFO item backlog        |    - Win32 key injection           |
+|  - Pinned queue_key on arm  |    - Read-back verify              |
++------------------------------------------------------------------+
 ```
 
 ---
 
-## 1. Engine State Machine (`engine.py`)
-
-The Engine operates as a finite state machine with four explicit states:
+## 1. State Machine (`engine.py`)
 
 ```
-[ DISARMED ] <--- (error / panic / max sends reached)
-     |
-     | arm(target, queue_key)
-     v
-  [ ARMED ] ----> (agent seen busy) ----> [ WATCHING ]
-     ^                                          |
-     |                                          | (agent idle + settle_ms elapsed)
-     +------------- (send completed) <---- [ SENDING ]
+[DISARMED] ← (error/panic/max_sends)
+    |
+    | arm(target, queue_key)
+    v
+[ARMED] —→ (agent seen busy) —→ [WATCHING]
+    ^                               |
+    |     (send completed)          | (agent idle + settle_ms)
+    +———————— <— [SENDING] ————————+
 ```
 
-### State Definitions
-1. **DISARMED**: Engine is inactive. No probes are polled and no queue items are processed.
-2. **ARMED**: Engine is bound to a specific target window/socket and a pinned `queue_key`. Waiting to detect initial target activity.
-3. **WATCHING**: Target application has been observed in a busy state (e.g. LLM generating response). Watcher is waiting for the target to become idle and settle.
-4. **SENDING**: A `SendIntent` has been dispatched to `Sender`. Watcher is awaiting confirmation of text injection and submission.
+### States
+1. **DISARMED** — inactive, no probes polling, no items processing
+2. **ARMED** — bound to target window + queue_key. Waiting for target activity.
+3. **WATCHING** — target observed busy (LLM generating). Waiting for idle + settle.
+4. **SENDING** — SendIntent dispatched. Waiting for injection confirmation.
 
 ---
 
-## 2. Chrome DevTools Protocol (CDP) Attachment (`cdp.py`)
+## 2. Chrome CDP (`cdp.py`)
 
-### Why CDP Instead of Win32 Messages?
-Electron-based desktop applications (VS Code, Claude Desktop, ChatGPT App, Obsidian) process input through Chromium's internal IPC rather than standard Windows OS message queues (`WM_CHAR`, `PostMessageW`). Posting Win32 messages to Electron windows often results in dropped characters or ignored input.
+Why CDP: Electron apps (VS Code, Claude Desktop, ChatGPT, Obsidian) don't process Win32 messages. Chromium's IPC ignores `PostMessageW` — characters drop silently.
 
-CDP (`cdp.py`) provides direct, reliable automation by connecting to Chromium's remote debugging port (`--remote-debugging-port=<port>`).
-
-### CDP Operations & Verification
-* **Discovery (`discover()`)**: Queries `http://127.0.0.1:<port>/json/list` to retrieve active page targets.
-* **WebSocket JSON-RPC**: Establishes a WebSocket transport to send `Runtime.evaluate`, `Input.dispatchKeyEvent`, or `DOM` manipulation commands.
-* **Read-Back Verification**: To prevent silent input failure, `cdp.py` inserts text into the prompt field, reads back the field value via DOM query, and only sends the Submit command (`Enter`) once text presence is verified.
-* **Non-Blocking Timeouts**: All socket operations use short default timeouts (3.0 seconds) to ensure Qt UI responsiveness.
+### Operations
+- `discover()` — query `http://127.0.0.1:<port>/json/list` for page targets
+- WebSocket JSON-RPC connection per page
+- `Runtime.evaluate` + `Input.dispatchKeyEvent` for text injection
+- **Read-back verify** — insert text, read field value via DOM query, only Submit on match
+- Non-blocking timeouts (3s default)
 
 ---
 
-## 3. Win32 Hooks & Target Probes (`win32.py`, `probes.py`)
+## 3. Win32 Probes (`win32.py`, `probes.py`)
 
-For non-Electron target applications, FastPrompter uses Win32 OS probes:
-* **Foreground Window Probe**: Checks `GetForegroundWindow()` and verifies window title against configured target regex patterns.
-* **Caret & Focus Probe**: Monitors caret location and focus state to ensure prompt injection occurs only when target input fields are active.
-* **Combined Probe Matrix (`combine()`)**: Aggregates multi-probe states (`is_target_active`, `is_target_busy`, `is_blocked`) into a single deterministic boolean result.
+For non-Electron target apps.
+
+- `GetForegroundWindow()` + title regex match → target detection
+- Caret + focus monitoring → injection only when input field active
+- `combine()` — aggregate multi-probe states into single bool (is_target_active, is_target_busy, is_blocked)
 
 ---
 
-## 4. Queue Management & Item Lifecycle (`queue.py`)
+## 4. Queue Model (`queue.py`)
+
+### QueueItem
+- `id` — UUID
+- `text` — prompt text
+- `skill` — wrapper skill name
+- `line` — source line number (for live-text tracking)
+
+### SendIntent
+- `item_id`, `text`, `queue_key`, `skill` — encapsulated for sender
+
+### Lifecycle
+1. **Pending** — in backlog
+2. **In-Flight** — SendIntent dispatched to sender
+3. **Sent** — confirmed by sender, removed from queue
+4. **Failed** — increments consecutive_failures, retry up to max_failures (3)
 
 ### Queue Pinning
-When the engine is armed (`arm(target, queue_key)`), the `queue_key` is pinned. This ensures that even if the user switches active project tabs or silos in FastPrompter, the watcher continues draining the exact queue for which it was armed.
-
-### Queue Item Lifecycle
-1. **Pending**: Item added to queue backlog.
-2. **In-Flight (`SendIntent`)**: Item encapsulated into `SendIntent(item_id, text, queue_key, skill)`.
-3. **Sent / Completed**: Confirmed by sender, removed from queue.
-4. **Failed / Retried**: Increments `consecutive_failures`. Retried up to `max_failures` (default: 3).
+On `arm(target, queue_key)`, key is pinned. Switches project/silo mid-session → watcher still drains correct queue.
 
 ---
 
-## 5. Safety Guards & Rate Limiting
+## 5. Safety Guards
 
-To prevent runaway prompt loops or spamming target LLM APIs, the Watcher Engine enforces strict rate limiting parameters:
-
-| Parameter | Default Value | Purpose |
+| Parameter | Default | Purpose |
 |---|---|---|
-| `settle_ms` | `2500 ms` | Quiet duration required after target becomes idle before sending next prompt. |
-| `min_gap_ms` | `4000 ms` | Enforced minimum delay between consecutive sends. |
-| `max_sends` | `25 items` | Maximum number of prompts sent in a single armed session before auto-disarming. |
-| `max_failures` | `3 failures` | Consecutive failure threshold before disarming engine with error reason. |
-| `panic()` | Emergency Stop | Instantly disarms engine and cancels all pending/in-flight send intents. |
+| `settle_ms` | 2500 | Quiet time after target idle before sending |
+| `min_gap_ms` | 4000 | Min delay between consecutive sends |
+| `max_sends` | 25 | Max prompts per armed session (auto-disarm) |
+| `max_failures` | 3 | Consecutive failures → disarm with error |
+| `panic()` | — | Emergency stop: disarm + cancel all in-flight |
 
 ---
-*FastPrompter Wiki — Built with [SAIPEN Protocol](SAIPEN-Protocol) | [GitHub Repository](https://github.com/vacterro/FastPrompter)*
+
+## 6. Skill System (`skills.py`)
+
+Prompt wrappers applied before dispatch.
+
+```python
+{
+    "name": "Code Review",
+    "prefix": "/review",
+    "template": "Review:\n\n{text}",
+}
+```
+
+Variables: `{text}`, `{timestamp}`, `{project}`.
+
+---
+
+## 7. Skills & Watcher Dialog
+
+- `Alt+C` — queue current editor line (block-anchored)
+- `Alt+Shift+C` — Queue Master (all silos overview)
+- Set default skill in Settings
+- Watcher dialog: arm/disarm, pick target, configure probes

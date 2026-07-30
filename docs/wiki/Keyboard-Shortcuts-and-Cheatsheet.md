@@ -1,35 +1,33 @@
 # FastPrompter Keyboard Shortcuts & Cheatsheet
 
-## Overview
-FastPrompter is built for speed and 100% keyboard-driven operation. All major actions — summoning, navigation, formatting, queue management, macro pasting — have dedicated shortcuts. Physical layout-independent mapping ensures shortcuts work regardless of active Windows keyboard layout (QWERTY, JCUKEN, QWERTZ, AZERTY).
+Full keyboard-driven operation. Layout-independent VK dispatch — works on QWERTY, JCUKEN, AZERTY, QWERTZ.
 
----
-
-## Quick Reference Table
+## Quick Reference
 
 | Category | Hotkey | Action | Scope |
 |---|---|---|---|
 | **Global** | **Alt+X** | Summon / Hide window | System-wide |
+| **Global** | **Shift+Alt+X** | Open pie menu | System-wide |
 | **Global** | **Ctrl+Alt+Shift+Q** | Emergency force quit | System-wide |
-| **Watcher** | **Alt+C** | Toggle Typing Watcher | Main Window |
-| **Watcher** | **Alt+Shift+C** | Open Queue Master Dialog | Main Window |
-| **Window** | **Ctrl+D** | Toggle Zen Focus Mode | Main Window |
-| **Window** | **Ctrl+Q** | Cycle snap position | Main Window |
-| **Window** | **Alt+S** | Toggle window lock | Main Window |
-| **Window** | **Alt+E** | Toggle Always-on-Top | Main Window |
-| **Window** | **Alt+D** | Toggle sidebar visibility | Main Window |
-| **Window** | **Alt+A** | Toggle hide-on-clickout | Main Window |
-| **Window** | **Alt+`** | Open Mini Settings overlay | Main Window |
-| **Navigation** | **Ctrl+1**..**Ctrl+0** | Jump to Silo 1–10 | Application |
-| **Navigation** | **Alt+Up** / **Alt+Down** | Walk Silos | Application |
-| **Navigation** | **Ctrl+N** | New empty Silo | Application |
-| **Navigation** | **Ctrl+F** | Open Find bar | Editor |
-| **Navigation** | **Ctrl+H** | Open Replace bar | Editor |
-| **Navigation** | **Ctrl+Shift+S** | Export active silo | Application |
-| **Formatting** | **Ctrl+E** | Format line as H1 header | Editor |
+| **Window** | **Ctrl+D** | Cycle Zen/Solo/normal (3-stage) | Main |
+| **Window** | **Ctrl+Q** | Cycle snap position / presets | Main |
+| **Window** | **Alt+S** | Toggle window position lock | Main |
+| **Window** | **Alt+E** | Toggle Always-on-Top | Main |
+| **Window** | **Alt+D** | Toggle sidebar | Main |
+| **Window** | **Alt+A** | Toggle hide-on-focus-loss | Main |
+| **Window** | **Alt+\`** | Open Mini Settings | Main |
+| **Watcher** | **Alt+C** | Queue current line for watcher | Main |
+| **Watcher** | **Alt+Shift+C** | Open Queue Master dialog | Main |
+| **Navigation** | **Ctrl+1**…**Ctrl+0** | Jump to Silo 1–10 | App |
+| **Navigation** | **Alt+↑** / **Alt+↓** | Walk silos | App |
+| **Navigation** | **Ctrl+N** | New empty silo | App |
+| **Navigation** | **Ctrl+F** | Find in silo | Editor |
+| **Navigation** | **Ctrl+H** | Find and replace | Editor |
+| **Navigation** | **Ctrl+Shift+S** | Export active silo to .md | App |
+| **Formatting** | **Ctrl+E** | Header format (configurable) | Editor |
 | **Formatting** | **Ctrl+Return** | Toggle checkbox `- [ ]` / `- [x]` | Editor |
-| **Formatting** | **Ctrl+W** | Insert divider `---` | Editor |
-| **Formatting** | **Alt+W** | Insert divider + bullet above cursor | Editor |
+| **Formatting** | **Ctrl+W** | Insert divider `---` (smart split) | Editor |
+| **Formatting** | **Alt+W** | Insert divider upward + bullet | Editor |
 | **Formatting** | **Ctrl+B** | Toggle Bold | Editor |
 | **Formatting** | **Ctrl+I** | Toggle Italic | Editor |
 | **Formatting** | **Ctrl+U** | Toggle Underline | Editor |
@@ -37,61 +35,58 @@ FastPrompter is built for speed and 100% keyboard-driven operation. All major ac
 | **Formatting** | **Ctrl+Shift+Q** | Toggle Blockquote | Editor |
 | **Formatting** | **Alt+Z** | Toggle Line Numbers | Editor |
 | **Formatting** | **Alt+Backspace** | Delete previous word | Editor |
-| **Formatting** | **Ctrl+Z** | Smart Undo | Editor |
-| **Snippets** | **F1**..**F10** | Paste Snippet 1–10 | Application |
-| **Snippets** | **Ctrl+Shift+1**..**9** | Paste Snippet 1–9 (alt) | Application |
-| **Snippets** | **Ctrl+S** | Open Snippet Manager | Application |
-| **SAIPEN** | **Ctrl+Shift+C** | Open SAIPEN viewer | Application |
-| **Timers** | **Ctrl+Shift+T** | Open Timer Dialog | Application |
-| **Timers** | **Alt+Shift+T** | Open Hashtag Dialog | Application |
-| **Attachments** | **F2** | Rename attachment | File Container |
-| **Attachments** | **Delete** | Delete attachment to Trash | File Container |
-| **General** | **Esc** | Hide window / Close overlay | System / Local |
+| **Formatting** | **Ctrl+Z** | Smart Undo (per silo) | Editor |
+| **Formatting** | **Ctrl+MiddleButton** | Delete line under cursor (smart list reflow) | Editor |
+| **Formatting** | **Ctrl+Click on bullet** | Toggle `-` / `•` | Editor |
+| **Snippets** | **F1**…**F10** | Paste Snippet 1–10 | App |
+| **Snippets** | **Ctrl+Shift+1**…**9** | Paste Snippet 1–9 (alternate) | App |
+| **Snippets** | **Ctrl+S** | Open Snippet Manager | App |
+| **SAIPEN** | **Ctrl+Shift+C** | Open SAIPEN viewer | App |
+| **Timers** | **Ctrl+Shift+T** | Open Timer Dialog | App |
+| **Hashtags** | **Alt+Shift+T** | Open Hashtag Dialog | App |
+| **Attachments** | **F2** | Rename file container attachment | File Container |
+| **Attachments** | **Delete** | Delete attachment to trash | File Container |
+| **Kanban** | **Alt+↑↓** | Move card up/down (in kanban silo) | Editor |
+| **Kanban** | **Alt+←→** | Move card left/right column (kanban) | Editor |
+| **Table** | **Tab** | Walk to next cell (in table silo) | Editor |
+| **Table** | **Shift+Tab** | Walk to previous cell | Editor |
+| **General** | **Esc** | Hide window / Close overlay | System/Local |
+| **General** | **Alt+X** (double) | Toggle always-on-top | Global |
+| **General** | **Ctrl+Plus/Minus** | Zoom scale | App |
 
----
+## Category Groups
 
-## Detailed Category Breakdown
+### Global: Summon, Pie Menu, Emergency
+**Alt+X** — toggle window at cursor. **Shift+Alt+X** — radial pie menu (themes, scale, tools). **Ctrl+Alt+Shift+Q** — kill process.
 
-### 1. Global & Window Management
-- **Alt+X (Global Summon)**: Brings FastPrompter to foreground at cursor. Toggle hides to tray.
-- **Ctrl+D (Zen Mode)**: Hides sidebar, snippet bar, file container, status bar, borders.
-- **Ctrl+Q (Corner Snap)**: Rotates through screen regions + FancyZone overlay picker.
-- **Alt+S / Alt+E**: Lock geometry / Always-on-Top.
-- **Alt+D / Alt+A**: Sidebar toggle / Hide-on-clickout toggle.
-- **Alt+`**: Mini Settings overlay for quick theme/scale/hotkey access.
+### Window Management
+**Ctrl+D** — 3-stage: Zen (minimal editor only) → Solo (minimise all other windows) → back to normal. **Ctrl+Q** — cycle through 7 snap zones, FancyZone picker, and user presets. **Alt+S/E/D/A** — lock geometry, pin-on-top, show sidebar, toggle focus-loss hide.
 
-### 2. Typing Watcher & Queue
-- **Alt+C**: Toggle Typing Watcher engine. Queues current line for auto-send.
-- **Alt+Shift+C**: Queue Master dialog — inspect, reorder, clear, or inject items.
-- Supports CDP (Electron apps) and Win32 probes.
+### Watcher Queue
+**Alt+C** — queue current line under caret. Block-anchored, survives edits above it. **Alt+Shift+C** — Queue Master: inspect/reorder/clear queues across all silos.
 
-### 3. Markdown Formatting Shortcuts
-- **Ctrl+E**: Converts current line into configurable header template (`# HH:MM - Heading`).
-- **Ctrl+Return**: `- [ ]` toggle — clickable checkboxes in editor.
-- **Ctrl+W / Alt+W**: Insert `---` divider. Alt+W puts bullet above cursor (upward).
-- **Ctrl+B/I/U/T**: Inline bold, italic, underline, strikethrough.
-- **Ctrl+Shift+Q**: Blockquote `> text` toggle.
-- **Alt+Z**: Line numbers gutter toggle.
-- **Alt+Backspace**: Word-level deletion.
+### Markdown Formatting
+All formatting shortcuts toggle inline markers: **Ctrl+B** → `**bold**`, Ctrl+I → `*italic*`, Ctrl+U → `<u>underline</u>`, Ctrl+T → `~~strike~~`, Ctrl+Shift+Q → `> quote`.
 
-### 4. Silo & Tab Navigation
-- **Ctrl+1..Ctrl+0**: Jump to Silo slot 1 through 10.
-- **Alt+Up / Alt+Down**: Walk active silos sequentially.
-- **Ctrl+N**: New numbered silo in active project tab.
+**Ctrl+W** inserts `---` divider + smart line split. **Alt+W** inserts upward divider + bullet above cursor. Both configurable via Settings → Dividers.
 
-### 5. Snippet Macro Slots
-- **F1..F10**: Paste pre-configured snippet templates at cursor.
-- **Ctrl+Shift+1..9**: Secondary binding for compact keyboards.
+**Ctrl+Click on bullet** cycles `-` / `•`. **Ctrl+Return** toggles `- [ ]` / `- [x]`.
 
-### 6. SAIPEN Integration
-- **Ctrl+Shift+C**: Open SAIPEN viewer dialog (STATE, BOARD, LOG).
-- Toolbar buttons appear when project folder with `.saipen/` is configured.
+**Ctrl+E** — format current line as header. Configurable: rule type, bullet, timestamp stamp, alignment. Open Settings → Dividers & headers to customize.
 
----
+**Ctrl+MiddleButton** — delete whole line with smart reflow: ordered lists renumber, bullet lists close gap.
 
-## Physical Virtual Key (VK) Layout Fallbacks
-FastPrompter uses `LayoutIndependentShortcuts` intercepting physical VK codes — shortcuts work regardless of active Windows keyboard layout (QWERTY, JCUKEN, QWERTZ, AZERTY).
+### Silo Navigation
+**Ctrl+1** through **Ctrl+0** jump to silos 1-10. **Alt+↑↓** walk sequentially. **Ctrl+N** appends empty silo at bottom.
 
----
+### Snippet Macros
+**F1-F10** paste pre-configured text templates. Bind content via Snippet Manager (**Ctrl+S**) or right-click on F-button.
 
-*FastPrompter Wiki — Built with [SAIPEN Protocol](SAIPEN-Protocol) | [GitHub Repository](https://github.com/vacterro/FastPrompter)*
+### SAIPEN + Timers
+**Ctrl+Shift+C** — open SAIPEN viewer (STATE/BOARD/LOG). **Ctrl+Shift+T** — open timer dialog. **Alt+Shift+T** — open hashtag search.
+
+### Kanban & Table (T-630)
+Inside a kanban silo: **Alt+arrows** move cards. Inside a table silo: **Tab/Shift+Tab** walk cells, **Enter** adds row.
+
+### Layout Independence
+All shortcuts use physical VK codes via `HotkeyFilter` + `layout_shortcuts.py`. Works regardless of active keyboard layout. Binds by key position, not character.

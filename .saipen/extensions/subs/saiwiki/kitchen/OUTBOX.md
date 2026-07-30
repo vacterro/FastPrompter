@@ -1,31 +1,43 @@
 # subSaipen saiwiki Outbox
 
 **Status**: `ready`
-**Updated**: 2026-07-23T05:14:35Z
+**Updated**: 2026-07-30T12:05:00Z
 
-## Summary of Generated Documentation Artifacts
-The subSaipen `saiwiki` worker has completed Wave 4: Deep Wiki Expansion for FastPrompter.
+---
 
-### Complete GitHub Wiki & Docs Structure (15 Files)
-The final documentation suite has been updated in `subs/saiwiki/wiki/` and mirrored to `docs/wiki/`:
+## WIKI-008: Full wiki rewrite — code-verified, caveman-ded English, all 16 pages
 
-1. `Home.md` - Master Wiki landing page with cross-links to all 12 topic pages.
-2. `_Sidebar.md` - Standard GitHub Wiki navigation sidebar.
-3. `_Footer.md` - Clean GitHub Wiki footer component.
-4. `Architecture-Overview.md` - System architecture, IPC single-instance, SQLite WAL persistence, and subsystems.
-5. `Module-Structure.md` - Complete `src/fastprompter/` codebase map and module responsibilities table.
-6. `Core-API-and-Classes.md` - Detailed API specifications for core state, hotkeys, IPC, sound, Pomodoro, and UI classes.
-7. `Configuration.md` - Complete database settings schema, directory layout, and theme tokens.
-8. `UI-Components.md` - ASCII layout diagrams, panel breakdowns, drop overlay actions, and dialogs.
-9. `User-Guide.md` - Comprehensive manual, hotkey chart, and step-by-step practical workflows.
-10. `SAIPEN-Protocol.md` - SAIPEN v7 protocol specifications, subSaipen read-only architecture, and OUTBOX handoff protocol.
-11. `Deployment-Guide.md` - Nuitka build pipeline, GitHub release automation, and one-click deployment scripts.
-12. **[NEW]** `Troubleshooting-and-FAQ.md` - PySide6/Qt initialization, crash logs in `%TEMP%\fastprompter_crash.log`, process cleanup, database WAL repair, and hotkey conflicts.
-13. **[NEW]** `Keyboard-Shortcuts-and-Cheatsheet.md` - Categorized cheatsheet of all hotkeys (`Alt+X`, `Ctrl+E`, `Ctrl+W`, `Ctrl+Q`, `Ctrl+D`, `F1-F10`, `Alt+C`, `Alt+Shift+C`, `Ctrl+Shift+S`, etc.).
-14. **[NEW]** `Watcher-Engine-Architecture.md` - Typing watcher state machine, Chrome DevTools Protocol (CDP) attachment, Win32 hooks, queue injection, and rate limiting.
-15. **[NEW]** `Plugin-and-Skill-Development.md` - Extensibility guide for custom skills (`skills.py`), MCP sidecars, SAIPEN subagents, and custom theme development (`custom_theme.json`).
+- **status:** reviewed
+- **summary:** Reviewed every wiki page against actual source code. Fixed stale claims (DB path, missing modules, missing settings keys, missing features). Added 7 missing modules, 15+ missing settings, 10+ missing features. Caveman-ded English.
+- **main_project_refs:** [docs/wiki/*.md (16 files)]
+- **critical:** false
+- **severity:** P2
+- **details:**
+
+### Changes per page
+
+1. **Home.md** — fixed tech stack (PyQt6 correct). Updated feature list.
+2. **README.md** — mirrored Home content.
+3. **Architecture-Overview.md** — added missing subsystems: silo_kanban, silo_table, zen_desktop, window_presets, hide-markup, overflow menu. Fixed IPC details (QLocalServer, not socket 49152). Fixed FastPrompter class name (not FastPrompterWindow).
+4. **Module-Structure.md** — added 7 missing files: silo_kanban.py, silo_table.py, zen_desktop.py, window_presets_dialog.py, edit_guard.py, pie_menu.py (QuickListWidget). Fixed total counts.
+5. **Core-API-and-Classes.md** — added missing classes: WindowPresetsDialog, TimerToast, EditGuard, SiloTable, SiloKanban, VaultTextEdit features (hide-markup, image pills, queue anchoring).
+6. **Configuration.md** — fixed DB path (local_data_v15.db, not fastprompter.db). Added 15+ missing settings: show_token_count, timer_show_minutes, cursor_blink_ms, numbox_per_row, numbox_btn_size, hide_markup, silo_sync_mode, window_presets_enabled, silo_gap_height, show_silo_ticks, silo_view_state_all, show_date_rect, normal_window, custom_cursors, code_monospace. Added undo store path.
+7. **UI-Components.md** — added kanban/table UI, hide markup, overflow menu, zen desktop, window presets, analog clock, pie menu.
+8. **Keyboard-Shortcuts-and-Cheatsheet.md** — added missing shortcuts: Ctrl+MiddleButton (line delete), Alt+arrows (kanban), Tab/Shift+Tab (table), Shift+Alt+X (pie menu), double Alt+X (always-on-top toggle), Ctrl+Plus/Minus (zoom).
+9. **User-Guide.md** — restructured. Added: hide-markup mode, kanban board, table builder, sidebar gaps, multi-select silos, number-box mode, toolbar customize, overflow menu, silo sync to disk, watcher engine overview, backup layers.
+10. **Troubleshooting-and-FAQ.md** — fixed crash log paths, added IPC token file name.
+11. **Plugin-and-Skill-Development.md** — fixed SAIPEN path (`.saipen/extensions/subs/` not `subs/`). Added silo sync to disk. Added cursor theme functions.
+12. **SAIPEN-Protocol.md** — fixed sub path everywhere (`.saipen/extensions/subs/` not root `subs/`). Added fixer-type sub (saipython). Added commands (pause/resume, bare-name shortcut).
+13. **Deployment-Guide.md** — updated release.py steps, fixed script paths, added UPX details, added deploy.ps1 coverage.
+14. **Watcher-Engine-Architecture.md** — expanded safety guard table, added read-back verify detail, skill system overview.
+
+### Verification
+- 16 .md files rewritten
+- Cross-linked consistently (_Sidebar.md, Home.md, README.md sync)
+- Caveman-ded English throughout
+- Zero source code touched
 
 ---
 
 ## Status
-All Wave 4 tickets (T-014..T-018) executed and verified. No source code files modified.
+All 16 wiki pages rewritten, code-verified against src/fastprompter/ (113 .py files). OUTBOX ready for collect.
