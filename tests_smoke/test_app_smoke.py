@@ -6840,10 +6840,11 @@ def test_the_dialog_locks_the_target_while_armed(win, monkeypatch):
 
 def test_arming_from_the_dialog_needs_something_queued(win):
     """Arming an empty queue would sit watching forever with nothing to say."""
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtWidgets import QListWidgetItem
+
     from fastprompter.core.watcher.queue import queue_for
     from fastprompter.ui.watcher_dialog import WatcherDialog
-    from PyQt6.QtWidgets import QListWidgetItem
-    from PyQt6.QtCore import Qt
 
     queue = queue_for(win.prompt_queues, win._queue_slot_key())
     saved = queue.to_list()
@@ -9107,7 +9108,7 @@ def test_hidden_project_stays_hidden_after_build_categories(win):
     assert victim in _combo_names(win)
 
 
-def test_visible_categories_never_returns_empty(win):
+def test_visible_categories_never_returns_empty_2(win):
     order = list(win.data.get("cats_order") or [])
     win.data["hidden_categories"] = list(order)      # hide everything
     # a combo with no rows would strand the user with no way back
@@ -10542,7 +10543,6 @@ def test_inserted_table_is_aligned_and_empty(fresh_win):
     """The old insert wrote 'Row 1' into every cell — one deletion per cell
     before you can type — and never lined the pipes up."""
     from fastprompter.ui import silo_table as st
-    w = fresh_win
     lines = st.render(st.new_table(2, 3))
     assert len({len(x) for x in lines}) == 1, lines
     parsed = st.parse(lines, 0)
