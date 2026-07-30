@@ -195,7 +195,7 @@ class _FileList(QListWidget):
         icon = self.currentItem().icon() if self.currentItem() else QIcon()
         if not icon.isNull():
             drag.setPixmap(icon.pixmap(48, 48))
-        drag.exec(Qt.DropAction.CopyAction)
+        drag.exec(Qt.DropAction.CopyAction | Qt.DropAction.MoveAction)
 
 
 
@@ -502,14 +502,24 @@ class FileContainerPanel(QWidget):
         paths = [u.toLocalFile() for u in event.mimeData().urls() if u.isLocalFile()]
         if paths:
             from PyQt6.QtWidgets import QApplication
-            if QApplication.keyboardModifiers() & Qt.KeyboardModifier.AltModifier:
+            is_internal = event.source() is not None
+            is_ctrl = QApplication.keyboardModifiers() & Qt.KeyboardModifier.ControlModifier
+            is_alt = QApplication.keyboardModifiers() & Qt.KeyboardModifier.AltModifier
+            
+            if is_alt:
                 self.import_links(paths)
+                event.acceptProposedAction()
             else:
-                self.import_paths(paths)
-            event.acceptProposedAction()
+                do_move = is_internal and not is_ctrl
+                self.import_paths(paths, do_move=do_move)
+                if do_move:
+                    event.setDropAction(Qt.DropAction.MoveAction)
+                else:
+                    event.setDropAction(Qt.DropAction.CopyAction)
+                event.accept()
 
-    def import_paths(self, paths):
-        """Copy files (or whole folders) into the silo folder."""
+    def import_paths(self, paths, do_move=False):
+        """Copy or move files (or whole folders) into the silo folder."""
         if not self.folder:
             return
         copied = 0
@@ -519,9 +529,17 @@ class FileContainerPanel(QWidget):
             # Never swallow our own folder into itself
             if os.path.abspath(src) == os.path.abspath(self.folder):
                 continue
+            
+            # If the file is already in this exact folder
+            if os.path.dirname(os.path.abspath(src)) == os.path.abspath(self.folder):
+                if do_move:
+                    continue  # Moving to same folder is a no-op
+            
             dest = _unique_dest(self.folder, os.path.basename(src.rstrip("\\/")))
             try:
-                if os.path.isdir(src):
+                if do_move:
+                    shutil.move(src, dest)
+                elif os.path.isdir(src):
                     shutil.copytree(src, dest)
                 else:
                     shutil.copy2(src, dest)
