@@ -10496,3 +10496,171 @@ def test_frame_position_restore_is_a_no_op_when_nothing_moved(fresh_win):
     size = w.geometry().size()
     w._restore_frame_position(frame, size)
     assert w.frameGeometry().topLeft() == frame.topLeft()
+
+
+# --- T-630: SiloTable and SiloKanban in the live editor ---
+
+def _put(win, text, line=0, col=0):
+    from PyQt6.QtGui import QTextCursor
+    win.text_area.setPlainText(text)
+    QApplication.processEvents()
+    doc = win.text_area.document()
+    block = doc.findBlockByNumber(line)
+    cur = QTextCursor(block)
+    cur.setPosition(block.position() + min(col, len(block.text())))
+    win.text_area.setTextCursor(cur)
+    return cur
+
+
+TABLE_TEXT = ("| Name | Qty |\n"
+              "| :--- | --- |\n"
+              "| apple | 3 |\n")
+
+
+def test_inserted_table_is_aligned_and_empty(fresh_win):
+    """The old insert wrote 'Row 1' into every cell — one deletion per cell
+    before you can type — and never lined the pipes up."""
+    from fastprompter.ui import silo_table as st
+    w = fresh_win
+    lines = st.render(st.new_table(2, 3))
+    assert len({len(x) for x in lines}) == 1, lines
+    parsed = st.parse(lines, 0)
+    assert parsed.rows[1:] == [["", "", ""], ["", "", ""]]
+
+
+def test_tab_walks_the_cells(fresh_win):
+    w = fresh_win
+    ed = w.text_area
+    _put(w, TABLE_TEXT, line=2, col=2)          # inside "apple"
+    assert ed.table_move_cell(forward=True)
+    cur = ed.textCursor()
+    assert cur.selectedText() == "3", cur.selectedText()
+    assert ed.table_move_cell(forward=False)
+    assert ed.textCursor().selectedText() == "apple"
+
+
+def test_tab_off_the_last_cell_grows_the_table(fresh_win):
+    from fastprompter.ui import silo_table as st
+    w = fresh_win
+    ed = w.text_area
+    _put(w, TABLE_TEXT, line=2, col=TABLE_TEXT.split("\n")[2].index("3"))
+    before = len(st.parse(ed.toPlainText().split("\n"), 2).rows)
+    assert ed.table_move_cell(forward=True)
+    after = st.parse(ed.toPlainText().split("\n"), 2)
+    assert len(after.rows) == before + 1
+    assert ed.textCursor().blockNumber() == 3
+
+
+def test_shift_tab_at_the_start_refuses_rather_than_wrapping(fresh_win):
+    w = fresh_win
+    ed = w.text_area
+    _put(w, TABLE_TEXT, line=0, col=2)
+    assert ed.table_move_cell(forward=False) is False
+
+
+def test_enter_in_a_table_adds_a_row(fresh_win):
+    from fastprompter.ui import silo_table as st
+    w = fresh_win
+    ed = w.text_area
+    _put(w, TABLE_TEXT, line=2, col=3)
+    assert ed.table_new_row()
+    rows = st.parse(ed.toPlainText().split("\n"), 2).rows
+    assert rows[-1] == ["", ""]
+    assert ed.textCursor().blockNumber() == 3
+
+
+def test_realign_is_idempotent_and_makes_no_undo_step_when_tidy(fresh_win):
+    w = fresh_win
+    ed = w.text_area
+    _put(w, "| a | b |\n| --- | --- |\n| longer | x |\n", line=2, col=3)
+    assert ed.table_realign()
+    tidy = ed.toPlainText()
+    assert ed.table_realign() is False, "a tidy table must not be re-edited"
+    assert ed.toPlainText() == tidy
+
+
+def test_table_structure_ops(fresh_win):
+    from fastprompter.ui import silo_table as st
+    w = fresh_win
+    ed = w.text_area
+    _put(w, TABLE_TEXT, line=2, col=3)
+    assert ed.table_edit("col_right")
+    assert st.parse(ed.toPlainText().split("\n"), 2).columns == 3
+    assert ed.table_edit("col_delete")
+    assert st.parse(ed.toPlainText().split("\n"), 2).columns == 2
+    assert ed.table_edit("align_center")
+    assert st.parse(ed.toPlainText().split("\n"), 2).aligns[0] == st.ALIGN_CENTER
+
+
+def test_table_ops_are_one_undo_step(fresh_win):
+    w = fresh_win
+    ed = w.text_area
+    _put(w, TABLE_TEXT, line=2, col=3)
+    before = ed.toPlainText()
+    ed.table_edit("row_below")
+    assert ed.toPlainText() != before
+    ed.undo()
+    assert ed.toPlainText() == before
+
+
+KANBAN_TEXT = ("## To Do\n"
+               "- [ ] first\n"
+               "- [ ] second\n"
+               "\n"
+               "## Doing\n"
+               "- [ ] busy\n"
+               "\n"
+               "## Done\n"
+               "- [x] finished\n")
+
+
+def test_inserted_kanban_is_a_real_board(fresh_win):
+    """The old 'kanban' was a markdown TABLE with checkboxes: it looked like a
+    board and no card could move, because a table cell is not a card."""
+    from fastprompter.ui import silo_kanban as sk
+    board = sk.parse(sk.new_board())
+    assert [c.name for c in board.columns] == ["To Do", "Doing", "Done"]
+
+
+def test_alt_arrows_move_a_card(fresh_win):
+    from fastprompter.ui import silo_kanban as sk
+    w = fresh_win
+    ed = w.text_area
+    _put(w, KANBAN_TEXT, line=1, col=8)         # on "first"
+    assert ed.kanban_move(dx=1)
+    board = sk.parse(ed.toPlainText().split("\n"))
+    assert [len(c.cards) for c in board.columns] == [1, 2, 1]
+    assert ed.kanban_move(dx=-1)
+    board = sk.parse(ed.toPlainText().split("\n"))
+    assert [len(c.cards) for c in board.columns] == [2, 1, 1]
+
+
+def test_alt_arrow_is_inert_outside_a_board(fresh_win):
+    w = fresh_win
+    ed = w.text_area
+    _put(w, "just prose here\nand more\n", line=0, col=3)
+    assert ed.kanban_move(dx=1) is False
+    assert ed.kanban_move(dy=1) is False
+    assert ed.in_kanban() is False
+
+
+def test_kanban_toggle_and_add(fresh_win):
+    from fastprompter.ui import silo_kanban as sk
+    w = fresh_win
+    ed = w.text_area
+    _put(w, KANBAN_TEXT, line=1, col=8)
+    assert ed.kanban_toggle()
+    assert sk.parse(ed.toPlainText().split("\n")).columns[0].cards[0].done
+    assert ed.kanban_add_card()
+    assert len(sk.parse(ed.toPlainText().split("\n")).columns[0].cards) == 3
+
+
+def test_kanban_move_is_one_undo_step(fresh_win):
+    w = fresh_win
+    ed = w.text_area
+    _put(w, KANBAN_TEXT, line=1, col=8)
+    before = ed.toPlainText()
+    ed.kanban_move(dx=1)
+    assert ed.toPlainText() != before
+    ed.undo()
+    assert ed.toPlainText() == before

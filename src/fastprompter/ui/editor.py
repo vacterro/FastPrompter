@@ -1842,9 +1842,313 @@ class VaultTextEdit(QTextEdit):
         menu.addAction(tr("Insert Divider Line\tCtrl+W", lang), self.main_win.insert_divider_line)
         menu.addAction(tr("Insert Table", lang), self._insert_table)
         menu.addAction(tr("Insert Kanban", lang), self._insert_kanban)
+        self._add_table_menu(menu, lang)
+        self._add_kanban_menu(menu, lang)
         state = tr("ON", lang) if self.main_win.data.get("auto_bullet", "False") == "True" else tr("OFF", lang)
         menu.addAction(f"{tr('Auto-Bullet:', lang)} {state}", self._toggle_auto_bullet)
         menu.exec(event.globalPos())
+
+    def _add_table_menu(self, menu, lang):
+        """Table ops, shown only when the caret is actually in a table."""
+        if not self.table_at_caret():
+            return
+        menu.addSeparator()
+        sub = menu.addMenu(tr("SiloTable", lang))
+        sub.addAction(tr("Row above", lang),
+                      lambda: self.table_edit("row_above"))
+        sub.addAction(tr("Row below	Enter", lang),
+                      lambda: self.table_edit("row_below"))
+        sub.addAction(tr("Delete row", lang),
+                      lambda: self.table_edit("row_delete"))
+        sub.addSeparator()
+        sub.addAction(tr("Column left", lang),
+                      lambda: self.table_edit("col_left"))
+        sub.addAction(tr("Column right", lang),
+                      lambda: self.table_edit("col_right"))
+        sub.addAction(tr("Delete column", lang),
+                      lambda: self.table_edit("col_delete"))
+        sub.addSeparator()
+        sub.addAction(tr("Align left", lang),
+                      lambda: self.table_edit("align_left"))
+        sub.addAction(tr("Align center", lang),
+                      lambda: self.table_edit("align_center"))
+        sub.addAction(tr("Align right", lang),
+                      lambda: self.table_edit("align_right"))
+        sub.addSeparator()
+        sub.addAction(tr("Tidy up the pipes", lang), self.table_realign)
+
+    def _add_kanban_menu(self, menu, lang):
+        """Board ops, shown only when the caret is on a card."""
+        if not self.in_kanban():
+            return
+        menu.addSeparator()
+        sub = menu.addMenu(tr("SiloKanban", lang))
+        sub.addAction(tr("Move card left	Alt+Left", lang),
+                      lambda: self.kanban_move(dx=-1))
+        sub.addAction(tr("Move card right	Alt+Right", lang),
+                      lambda: self.kanban_move(dx=1))
+        sub.addAction(tr("Move card up	Alt+Up", lang),
+                      lambda: self.kanban_move(dy=-1))
+        sub.addAction(tr("Move card down	Alt+Down", lang),
+                      lambda: self.kanban_move(dy=1))
+        sub.addSeparator()
+        sub.addAction(tr("Tick / untick card", lang), self.kanban_toggle)
+        sub.addAction(tr("New card in this column", lang), self.kanban_add_card)
+
+    # ---- SiloTable / SiloKanban -------------------------------------------
+    #
+    # Both are markdown, not widgets. A silo is stored as plain text — that is
+    # what the DB holds, what the disk mirror writes and what gets pasted into
+    # an agent — so a QTextTable would look right until the first save and
+    # then be gone. The text IS the table; these methods give it behaviour.
+
+    def _doc_lines(self):
+        return self.toPlainText().split("\n")
+
+    def _replace_lines(self, first, last, new_lines, caret_line=None,
+                       caret_col=0, select_to=None):
+        """Swap lines [first, last] for `new_lines` as ONE undo step."""
+        doc = self.document()
+        start_block = doc.findBlockByNumber(first)
+        end_block = doc.findBlockByNumber(last)
+        if not start_block.isValid() or not end_block.isValid():
+            return False
+        from fastprompter.ui.edit_guard import edit_block
+        cursor = self.textCursor()
+        # guarded: an exception between begin and end leaves the document
+        # stuck inside an edit block forever, which is the whole history of
+        # "the app froze after formatting" in this codebase
+        with edit_block(cursor, self):
+            cursor.setPosition(start_block.position())
+            cursor.setPosition(end_block.position() + len(end_block.text()),
+                               QTextCursor.MoveMode.KeepAnchor)
+            cursor.insertText("\n".join(new_lines))
+        if caret_line is not None:
+            target = doc.findBlockByNumber(caret_line)
+            if target.isValid():
+                cursor.setPosition(target.position() + min(caret_col, len(target.text())))
+                if select_to is not None:
+                    cursor.setPosition(
+                        target.position() + min(select_to, len(target.text())),
+                        QTextCursor.MoveMode.KeepAnchor)
+        self.setTextCursor(cursor)
+        self.ensureCursorVisible()
+        return True
+
+    def table_at_caret(self):
+        """(Table, line index, column index) for the caret, or None."""
+        from fastprompter.ui import silo_table as st
+        cursor = self.textCursor()
+        line = cursor.blockNumber()
+        lines = self._doc_lines()
+        table = st.parse(lines, line)
+        if table is None:
+            return None
+        col = st.cell_index(lines[line], cursor.positionInBlock())
+        return table, line, col
+
+    def _table_body_index(self, table, line):
+        """Which BODY row a document line is, skipping the separator."""
+        from fastprompter.ui import silo_table as st
+        lines = self._doc_lines()
+        idx = -1
+        for i in range(table.first_block, min(line + 1, table.last_block + 1)):
+            if st.is_separator_row(lines[i]) and i > table.first_block:
+                continue
+            if st.is_separator_row(lines[i]) and i == table.first_block:
+                continue
+            idx += 1
+        return max(0, idx)
+
+    def _table_line_of_body(self, table, body_index):
+        """Inverse of _table_body_index, on the CURRENT text."""
+        from fastprompter.ui import silo_table as st
+        lines = self._doc_lines()
+        idx = -1
+        for i in range(table.first_block, table.last_block + 1):
+            if i >= len(lines):
+                break
+            if st.is_separator_row(lines[i]):
+                continue
+            idx += 1
+            if idx == body_index:
+                return i
+        return table.last_block
+
+    def table_move_cell(self, forward=True):
+        """Tab / Shift+Tab: next or previous cell, its content selected.
+
+        Walks off the end of a row into the next one, and off the end of the
+        table into a fresh row — the behaviour every table editor has and the
+        reason a markdown table is otherwise miserable to fill in.
+        """
+        from fastprompter.ui import silo_table as st
+        found = self.table_at_caret()
+        if not found:
+            return False
+        table, line, col = found
+        lines = self._doc_lines()
+        width = max(table.columns, len(table.aligns))
+
+        target_col = col + (1 if forward else -1)
+        target_line = line
+        if target_col >= width or target_col < 0:
+            step = 1 if forward else -1
+            target_line = line + step
+            # the separator is not a cell the user can type in
+            while (table.first_block <= target_line <= table.last_block
+                   and st.is_separator_row(lines[target_line])):
+                target_line += step
+            target_col = 0 if forward else width - 1
+            if target_line > table.last_block:
+                if not forward:
+                    return False
+                body = self._table_body_index(table, table.last_block)
+                grown = st.with_row(table, body)
+                rendered = st.render(grown)
+                if not self._replace_lines(table.first_block, table.last_block,
+                                           rendered):
+                    return False
+                new_last = table.first_block + len(rendered) - 1
+                span = st.cell_span(self._doc_lines()[new_last], 0)
+                return self._place_caret(new_last, span)
+            if target_line < table.first_block:
+                return False
+
+        span = st.cell_span(lines[target_line], target_col)
+        return self._place_caret(target_line, span)
+
+    def _place_caret(self, line, span):
+        doc = self.document()
+        block = doc.findBlockByNumber(line)
+        if not block.isValid():
+            return False
+        cursor = self.textCursor()
+        cursor.setPosition(block.position() + min(span[0], len(block.text())))
+        if span[1] > span[0]:
+            cursor.setPosition(block.position() + min(span[1], len(block.text())),
+                               QTextCursor.MoveMode.KeepAnchor)
+        self.setTextCursor(cursor)
+        self.ensureCursorVisible()
+        return True
+
+    def table_new_row(self):
+        """Enter inside a table: a fresh row under this one, caret in cell 1."""
+        from fastprompter.ui import silo_table as st
+        found = self.table_at_caret()
+        if not found:
+            return False
+        table, line, _col = found
+        body = self._table_body_index(table, line)
+        grown = st.with_row(table, body)
+        rendered = st.render(grown)
+        if not self._replace_lines(table.first_block, table.last_block, rendered):
+            return False
+        new_line = self._table_line_of_body(
+            st.Table(table.first_block, table.first_block + len(rendered) - 1,
+                     grown.rows, grown.aligns, grown.has_header), body + 1)
+        span = st.cell_span(self._doc_lines()[new_line], 0)
+        return self._place_caret(new_line, span)
+
+    def table_realign(self):
+        """Re-render the table under the caret with every pipe lined up."""
+        from fastprompter.ui import silo_table as st
+        found = self.table_at_caret()
+        if not found:
+            return False
+        table, line, col = found
+        rendered = st.render(table)
+        current = self._doc_lines()[table.first_block:table.last_block + 1]
+        if current == rendered:
+            return False                     # already tidy: no undo entry
+        offset = line - table.first_block
+        if not self._replace_lines(table.first_block, table.last_block, rendered):
+            return False
+        new_line = min(table.first_block + offset,
+                       table.first_block + len(rendered) - 1)
+        span = st.cell_span(self._doc_lines()[new_line], col)
+        return self._place_caret(new_line, (span[0], span[0]))
+
+    def table_edit(self, action):
+        """Structural table ops, driven from the context menu."""
+        from fastprompter.ui import silo_table as st
+        found = self.table_at_caret()
+        if not found:
+            return False
+        table, line, col = found
+        body = self._table_body_index(table, line)
+        ops = {
+            "row_above": lambda t: st.with_row(t, body - 1),
+            "row_below": lambda t: st.with_row(t, body),
+            "row_delete": lambda t: st.without_row(t, body),
+            "col_left": lambda t: st.with_column(t, col - 1),
+            "col_right": lambda t: st.with_column(t, col),
+            "col_delete": lambda t: st.without_column(t, col),
+            "align_left": lambda t: st.set_align(t, col, st.ALIGN_LEFT),
+            "align_center": lambda t: st.set_align(t, col, st.ALIGN_CENTER),
+            "align_right": lambda t: st.set_align(t, col, st.ALIGN_RIGHT),
+        }
+        op = ops.get(action)
+        if op is None:
+            return False
+        changed = op(table)
+        rendered = st.render(changed)
+        offset = min(line - table.first_block, len(rendered) - 1)
+        if not self._replace_lines(table.first_block, table.last_block, rendered):
+            return False
+        new_line = table.first_block + max(0, offset)
+        lines = self._doc_lines()
+        if new_line < len(lines):
+            span = st.cell_span(lines[new_line], min(col, changed.columns - 1))
+            self._place_caret(new_line, (span[0], span[0]))
+        return True
+
+    def kanban_move(self, dx=0, dy=0):
+        """Alt+arrows: move the card under the caret across the board."""
+        from fastprompter.ui import silo_kanban as sk
+        lines = self._doc_lines()
+        line = self.textCursor().blockNumber()
+        moved = sk.move_card(lines, line, dx, dy)
+        if moved is None:
+            return False
+        new_lines, at = moved
+        if not self._replace_lines(0, len(lines) - 1, new_lines):
+            return False
+        block = self.document().findBlockByNumber(at)
+        if block.isValid():
+            cursor = self.textCursor()
+            cursor.setPosition(block.position() + len(block.text()))
+            self.setTextCursor(cursor)
+            self.ensureCursorVisible()
+        return True
+
+    def kanban_toggle(self):
+        from fastprompter.ui import silo_kanban as sk
+        lines = self._doc_lines()
+        line = self.textCursor().blockNumber()
+        out = sk.toggle_card(lines, line)
+        if out is None:
+            return False
+        col = self.textCursor().positionInBlock()
+        return self._replace_lines(0, len(lines) - 1, out, caret_line=line,
+                                   caret_col=col)
+
+    def kanban_add_card(self):
+        from fastprompter.ui import silo_kanban as sk
+        lines = self._doc_lines()
+        line = self.textCursor().blockNumber()
+        added = sk.add_card(lines, line)
+        if added is None:
+            return False
+        out, at = added
+        return self._replace_lines(0, len(lines) - 1, out, caret_line=at,
+                                   caret_col=len(out[at]))
+
+    def in_kanban(self):
+        from fastprompter.ui import silo_kanban as sk
+        lines = self._doc_lines()
+        board = sk.parse(lines)
+        return board.card_at(self.textCursor().blockNumber()) is not None
 
     def _insert_table(self):
         from PyQt6.QtWidgets import (
@@ -2126,6 +2430,10 @@ class VaultTextEdit(QTextEdit):
                 return
         super().wheelEvent(event)
 
+    # Alt+arrow moves a SiloKanban card. Alt is free in the editor, and the
+    # gesture matches what the arrows already mean: direction.
+    _KANBAN_ARROWS = None      # built lazily; Qt enums are not module-level
+
     def keyPressEvent(self, event):
         mods = event.modifiers()
 
@@ -2133,6 +2441,19 @@ class VaultTextEdit(QTextEdit):
             self._toggle_checkboxes()
             event.accept()
             return
+
+        if mods == Qt.KeyboardModifier.AltModifier:
+            if self._KANBAN_ARROWS is None:
+                type(self)._KANBAN_ARROWS = {
+                    Qt.Key.Key_Left: (-1, 0), Qt.Key.Key_Right: (1, 0),
+                    Qt.Key.Key_Up: (0, -1), Qt.Key.Key_Down: (0, 1),
+                }
+            step = self._KANBAN_ARROWS.get(event.key())
+            # only swallow the key when a card really moved: Alt+arrow has to
+            # stay inert in ordinary prose
+            if step and self.kanban_move(*step):
+                event.accept()
+                return
             
         mw = self.main_win
         
@@ -2279,6 +2600,15 @@ class VaultTextEdit(QTextEdit):
                         return
 
         if event.key() in (Qt.Key.Key_Tab, Qt.Key.Key_Backtab) and mods in (Qt.KeyboardModifier.NoModifier, Qt.KeyboardModifier.ShiftModifier):
+            # Inside a SiloTable, Tab walks the cells. Checked before the
+            # indent path because four spaces inside a table row is never
+            # what Tab was meant to do there.
+            if not self.textCursor().hasSelection():
+                forward = (event.key() == Qt.Key.Key_Tab
+                           and mods == Qt.KeyboardModifier.NoModifier)
+                if self.table_move_cell(forward=forward):
+                    event.accept()
+                    return
             cursor = self.textCursor()
             if cursor.hasSelection():
                 # Block indentation
@@ -2373,6 +2703,11 @@ class VaultTextEdit(QTextEdit):
         if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter) and mods == Qt.KeyboardModifier.NoModifier:
             cursor = self.textCursor()
             if not cursor.hasSelection():
+                # Enter in a table adds a ROW rather than splitting the row in
+                # half, which is what a bare newline does to markdown.
+                if self.table_at_caret() and self.table_new_row():
+                    event.accept()
+                    return
                 block_text = cursor.block().text()
                 stripped = block_text.lstrip()
 
