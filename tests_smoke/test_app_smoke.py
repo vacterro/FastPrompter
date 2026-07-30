@@ -6842,6 +6842,8 @@ def test_arming_from_the_dialog_needs_something_queued(win):
     """Arming an empty queue would sit watching forever with nothing to say."""
     from fastprompter.core.watcher.queue import queue_for
     from fastprompter.ui.watcher_dialog import WatcherDialog
+    from PyQt6.QtWidgets import QListWidgetItem
+    from PyQt6.QtCore import Qt
 
     queue = queue_for(win.prompt_queues, win._queue_slot_key())
     saved = queue.to_list()
@@ -6850,7 +6852,10 @@ def test_arming_from_the_dialog_needs_something_queued(win):
     dlg = WatcherDialog(win)
     try:
         # Guarantee a valid hwnd so toggle_arm() proceeds past the "pick a window" check
-        dlg.current_hwnd = lambda: 12345
+        item = QListWidgetItem("Dummy Window")
+        item.setData(Qt.ItemDataRole.UserRole, 12345)
+        dlg.lst_windows.addItem(item)
+        dlg.lst_windows.setCurrentRow(0)
         dlg.toggle_arm()
         assert win.watcher_engine().armed is False
         assert "Alt+C" in dlg.lbl_state.text()
