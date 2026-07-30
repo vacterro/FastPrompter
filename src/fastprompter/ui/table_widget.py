@@ -66,6 +66,7 @@ class CellWidget(QLineEdit):
 
 class TableGridWidget(QWidget):
     changed = pyqtSignal(str)
+    undoRequested = pyqtSignal()
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -80,6 +81,15 @@ class TableGridWidget(QWidget):
         
         self.cells = [] # 2D array of CellWidgets
         self.alignments = [] # List of alignments (left, center, right)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        
+    def keyPressEvent(self, e):
+        mods = e.modifiers()
+        if mods == Qt.KeyboardModifier.ControlModifier and e.key() == Qt.Key.Key_Z:
+            self.undoRequested.emit()
+            e.accept()
+            return
+        super().keyPressEvent(e)
         
     def load_markdown(self, text):
         # Clear existing
@@ -179,6 +189,62 @@ class TableGridWidget(QWidget):
                 
         return "\n".join(lines)
         
+    def swap_row_up(self, cell):
+        r, c = self._pos_of(cell)
+        if r > 1: # Don't swap with header (row 0)
+            for i in range(len(self.cells[r])):
+                t1 = self.cells[r][i].text()
+                t2 = self.cells[r-1][i].text()
+                self.cells[r][i].setText(t2)
+                self.cells[r-1][i].setText(t1)
+            self.cells[r-1][c].setFocus()
+            self._schedule_sync()
+        
+    def swap_row_down(self, cell):
+        r, c = self._pos_of(cell)
+        if r >= 1 and r < len(self.cells) - 1:
+            for i in range(len(self.cells[r])):
+                t1 = self.cells[r][i].text()
+                t2 = self.cells[r+1][i].text()
+                self.cells[r][i].setText(t2)
+                self.cells[r+1][i].setText(t1)
+            self.cells[r+1][c].setFocus()
+            self._schedule_sync()
+        
+    def swap_col_left(self, cell):
+        r, c = self._pos_of(cell)
+        if c > 0:
+            for row in self.cells:
+                t1 = row[c].text()
+                t2 = row[c-1].text()
+                row[c].setText(t2)
+                row[c-1].setText(t1)
+            # Swap alignments too
+            if len(self.alignments) > c:
+                self.alignments[c], self.alignments[c-1] = self.alignments[c-1], self.alignments[c]
+                # Re-apply alignments
+                for row in self.cells:
+                    row[c].setAlignment(self.alignments[c])
+                    row[c-1].setAlignment(self.alignments[c-1])
+            self.cells[r][c-1].setFocus()
+            self._schedule_sync()
+        
+    def swap_col_right(self, cell):
+        r, c = self._pos_of(cell)
+        if c >= 0 and c < len(self.cells[0]) - 1:
+            for row in self.cells:
+                t1 = row[c].text()
+                t2 = row[c+1].text()
+                row[c].setText(t2)
+                row[c+1].setText(t1)
+            if len(self.alignments) > c + 1:
+                self.alignments[c], self.alignments[c+1] = self.alignments[c+1], self.alignments[c]
+                for row in self.cells:
+                    row[c].setAlignment(self.alignments[c])
+                    row[c+1].setAlignment(self.alignments[c+1])
+            self.cells[r][c+1].setFocus()
+            self._schedule_sync()
+
     def _pos_of(self, cell):
         for r, row in enumerate(self.cells):
             if cell in row:

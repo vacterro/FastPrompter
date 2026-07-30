@@ -4247,10 +4247,12 @@ class FastPrompter(
         from fastprompter.ui.table_widget import TableGridWidget
         self.kanban_widget = KanbanBoardWidget(self)
         self.kanban_widget.changed.connect(lambda markdown: self._on_visual_widget_changed(markdown))
+        self.kanban_widget.undoRequested.connect(self.text_area.undo)
         self.silo_view.addWidget(self.kanban_widget) # page 1
         
         self.table_widget = TableGridWidget(self)
         self.table_widget.changed.connect(lambda markdown: self._on_visual_widget_changed(markdown))
+        self.table_widget.undoRequested.connect(self.text_area.undo)
         self.silo_view.addWidget(self.table_widget) # page 2
         
         self.center_layout.addWidget(self.silo_view, 1)
@@ -7256,7 +7258,16 @@ class FastPrompter(
         if getattr(self, "_suspend_temp_sync", False) or getattr(self, "_suspend_cache", False):
             return
         if self.text_area.toPlainText() != new_text:
-            self._set_plain_text_clean(self.text_area, new_text)
+            # Use QTextCursor so that the change is recorded in the undo stack
+            from fastprompter.ui.edit_guard import edit_block
+            cursor = self.text_area.textCursor()
+            cursor.select(cursor.SelectionType.Document)
+            self._syncing_from_visual = True
+            try:
+                with edit_block(cursor, self.text_area):
+                    cursor.insertText(new_text)
+            finally:
+                self._syncing_from_visual = False
             self.mark_dirty()
 
     def _apply_silo_type(self, idx, is_archive):
@@ -7956,6 +7967,30 @@ class FastPrompter(
         
         def make_transform(tgt_type):
             def _t():
+                presets = self.data["archive_temp_presets"] if is_archive else self.data["temp_presets"]
+                text = presets[idx] if idx < len(presets) else ""
+                
+                if tgt_type == "kanban":
+                    if "## " not in text:
+                        from PyQt6.QtWidgets import QMessageBox
+                        reply = QMessageBox.question(
+                            self, "Transform to Kanban",
+                            "Text contains no columns (## Column Name). Format as one first?",
+                            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                            QMessageBox.StandardButton.No
+                        )
+                        if reply == QMessageBox.StandardButton.No: return
+                elif tgt_type == "table":
+                    if "|" not in text or "\n" not in text:
+                        from PyQt6.QtWidgets import QMessageBox
+                        reply = QMessageBox.question(
+                            self, "Transform to Table",
+                            "Text contains no table. Format as one first?",
+                            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                            QMessageBox.StandardButton.No
+                        )
+                        if reply == QMessageBox.StandardButton.No: return
+                        
                 cat = self.get_current_category() or ""
                 self.data.setdefault("silo_type_all", {}).setdefault(cat, {})
                 self.data["silo_types"][str(idx)] = tgt_type
@@ -8716,6 +8751,14 @@ class FastPrompter(
         self._last_text_edit_time = self._bump_action_seq()
         self._update_line_count_label()
         self._live_folder_sync()
+        
+        if not getattr(self, "_syncing_from_visual", False):
+            idx = self.silo_view.currentIndex()
+            if idx == 1:
+                self.kanban_widget.load_markdown(self.text_area.toPlainText())
+            elif idx == 2:
+                self.table_widget.load_markdown(self.text_area.toPlainText())
+                
         doc = self.text_area.document()
         count = doc.characterCount()
         if count > 50000:

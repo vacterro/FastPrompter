@@ -147,9 +147,17 @@ class KanbanCardWidget(QFrame):
         menu.addAction("Delete", self._do_delete)
         menu.exec(self.mapToGlobal(pos))
         
+    def _get_column_widget(self):
+        w = self
+        while w:
+            if isinstance(w, KanbanColumnWidget):
+                return w
+            w = w.parentWidget()
+        return None
+
     def _do_delete(self):
-        col_widget = self.parentWidget().parentWidget()
-        if isinstance(col_widget, KanbanColumnWidget):
+        col_widget = self._get_column_widget()
+        if col_widget:
             col_widget.remove_card(self)
 
 class KanbanColumnWidget(QFrame):
@@ -222,8 +230,8 @@ class KanbanColumnWidget(QFrame):
     def dropEvent(self, e):
         source_cw = e.source()
         if source_cw and isinstance(source_cw, KanbanCardWidget):
-            source_col = source_cw.parentWidget().parentWidget()
-            if source_col and isinstance(source_col, KanbanColumnWidget):
+            source_col = source_cw._get_column_widget()
+            if source_col:
                 source_col.remove_card(source_cw)
                 self.column_state.cards.append(source_cw.card_state)
                 self._add_card_widget(source_cw.card_state)
@@ -233,6 +241,8 @@ class KanbanColumnWidget(QFrame):
 
 class KanbanBoardWidget(QScrollArea):
     changed = pyqtSignal(str)
+    
+    undoRequested = pyqtSignal()
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -250,6 +260,12 @@ class KanbanBoardWidget(QScrollArea):
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         
     def keyPressEvent(self, e):
+        mods = e.modifiers()
+        if mods == Qt.KeyboardModifier.ControlModifier and e.key() == Qt.Key.Key_Z:
+            self.undoRequested.emit()
+            e.accept()
+            return
+            
         if e.key() == Qt.Key.Key_N and self.columns:
             # Add to first column
             first_col_widget = self.board_layout.itemAt(0).widget()
