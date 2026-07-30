@@ -624,8 +624,8 @@ class FileContainerPanel(QWidget):
 
         default_name = f"clip-{first_word}" if first_word else f"clip-{stamp}"
 
-        name, ok = QInputDialog.getText(
-            self, tr("Save Clipboard", self.lang), tr("Enter filename (without .txt):", self.lang), text=default_name
+        name, ok = self._prompt_text(
+            tr("Save Clipboard", self.lang), tr("Enter filename (without .txt):", self.lang), default_name
         )
         if not ok or not name.strip():
             return
@@ -684,14 +684,27 @@ class FileContainerPanel(QWidget):
             except OSError as e:
                 logger.error(f"File container export failed for {src}: {e}")
 
-    def _rename(self, path):
+    def _prompt_text(self, title, label, default_text=""):
         from PyQt6.QtWidgets import QInputDialog
-        old = os.path.basename(path)
+        from PyQt6.QtCore import Qt
+        dialog = QInputDialog(self)
+        dialog.setWindowTitle(title)
+        dialog.setLabelText(label)
+        dialog.setTextValue(default_text)
+        # Force the dialog to stay on top, fixing issues when opened in the collapsible sidebar
+        dialog.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint)
+        
         restore = self._modal_guard()
         try:
-            new, ok = QInputDialog.getText(self, tr("Rename", self.lang), tr("New name:", self.lang), text=old)
+            ok = dialog.exec()
         finally:
             restore()
+            
+        return dialog.textValue(), bool(ok)
+
+    def _rename(self, path):
+        old = os.path.basename(path)
+        new, ok = self._prompt_text(tr("Rename", self.lang), tr("New name:", self.lang), old)
         new = (new or "").strip()
         if not ok or not new or new == old:
             return
@@ -753,13 +766,7 @@ class FileContainerPanel(QWidget):
         """Create a subfolder in the container (Ctrl+N)."""
         if not self.folder:
             return
-        from PyQt6.QtWidgets import QInputDialog
-        restore = self._modal_guard()
-        try:
-            name, ok = QInputDialog.getText(self, tr("New Folder", self.lang), tr("Folder name:", self.lang),
-                                            text=tr("New Folder", self.lang))
-        finally:
-            restore()
+        name, ok = self._prompt_text(tr("New Folder", self.lang), tr("Folder name:", self.lang), tr("New Folder", self.lang))
         name = (name or "").strip().strip(".")
         if not ok or not name:
             return
