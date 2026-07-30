@@ -3302,7 +3302,17 @@ class VaultTextEdit(QTextEdit):
                                     img_rect = r
                                 # Draw the pill
                                 btn_h = max(18, img_rect.height())
-                                btn_w = 150 # fixed width for stub
+                                
+                                # Find the width of the collapsed text
+                                end_cursor = QTextCursor(block)
+                                end_cursor.setPosition(block.position() + m_img.end())
+                                end_rect = self.cursorRect(end_cursor)
+                                
+                                # If they wrap across lines, fallback to 150. Otherwise, use exact width.
+                                if end_rect.y() == img_rect.y():
+                                    btn_w = max(150, abs(end_rect.left() - img_rect.left()))
+                                else:
+                                    btn_w = 150
                                 
                                 # Make sure it doesn't draw at exactly y=0 if the line is tall, center it
                                 mid_y = img_rect.top() + img_rect.height() // 2

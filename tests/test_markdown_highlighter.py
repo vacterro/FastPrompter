@@ -61,6 +61,12 @@ class _MockQTextCharFormat:
     def setFontStrikeOut(self, enabled):
         self._font_strike_out = enabled
 
+    def setFontLetterSpacingType(self, t):
+        self._font_letter_spacing_type = t
+
+    def setFontLetterSpacing(self, spacing):
+        self._font_letter_spacing = spacing
+
     def setFontPointSize(self, size):
         self._font_point_size = size
 
@@ -128,6 +134,9 @@ class _MockQFont:
     class StyleStrategy:
         NoAntialias = 0x0100
         NoSubpixelAntialias = 0x0200
+
+    class SpacingType:
+        AbsoluteSpacing = 1
 
 
 class _MockQTextFormat:
@@ -236,10 +245,8 @@ class TestInit:
 
     def test_rules_populated_after_init(self):
         h = make_highlighter()
-        assert len(h._highlighting_rules) == 18, (
-            f"Expected 17 rules (underline, strike, bold, italic x2, h1-h3, hashtag, "
-            f"code, quote, link, hr, cb_unchecked, cb_checked, bullet list, "
-            f"numbered list), got {len(h._highlighting_rules)}"
+        assert len(h._highlighting_rules) == 19, (
+            f"Expected 19 rules, got {len(h._highlighting_rules)}"
         )
 
     def test_each_rule_is_pattern_format_tuple(self):

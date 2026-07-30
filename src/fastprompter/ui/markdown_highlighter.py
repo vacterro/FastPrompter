@@ -217,12 +217,19 @@ class MarkdownHighlighter(QSyntaxHighlighter):
         self._highlighting_rules.append((self._link_pattern, link_format))
 
         # Markdown Images: ![alt](url) — visually collapse to a tiny invisible dot
-        img_format = QTextCharFormat()
-        img_format.setForeground(QColor(0, 0, 0, 0))
-        img_format.setFontPointSize(1)
-        # Prevent it from being treated as a clickable link by our anchor logic:
-        # We don't setAnchor(True) here.
-        self._highlighting_rules.append((re.compile(r'!\[.*?\]\((.*?)\)'), img_format))
+        # 1. The '!' keeps normal height (preventing vertical overlap) and gets 150px letter spacing
+        #    to guarantee minimum width for the drawn pill.
+        img_format_first = QTextCharFormat()
+        img_format_first.setForeground(QColor(0, 0, 0, 0))
+        img_format_first.setFontLetterSpacingType(QFont.SpacingType.AbsoluteSpacing)
+        img_format_first.setFontLetterSpacing(150.0)
+        self._highlighting_rules.append((re.compile(r'!(?=\[.*?\]\(.*?\))'), img_format_first))
+
+        # 2. The rest of the string gets 1pt font to minimize extra width.
+        img_format_rest = QTextCharFormat()
+        img_format_rest.setForeground(QColor(0, 0, 0, 0))
+        img_format_rest.setFontPointSize(1)
+        self._highlighting_rules.append((re.compile(r'(?<=!)\[.*?\]\((.*?)\)'), img_format_rest))
 
         # Horizontal Rule: ---
         hr_format = QTextCharFormat()

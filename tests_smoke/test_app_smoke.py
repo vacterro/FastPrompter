@@ -6840,8 +6840,8 @@ def test_the_dialog_locks_the_target_while_armed(win, monkeypatch):
 
 def test_arming_from_the_dialog_needs_something_queued(win):
     """Arming an empty queue would sit watching forever with nothing to say."""
-    from PyQt6.QtCore import Qt
-    from PyQt6.QtWidgets import QListWidgetItem
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QListWidgetItem
 
     from fastprompter.core.watcher.queue import queue_for
     from fastprompter.ui.watcher_dialog import WatcherDialog
