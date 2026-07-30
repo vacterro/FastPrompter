@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.8.1a — 2026-07-30
+
+- **Fixed: the daily Markdown snapshot only covered the project you had open.** It read the active-project alias, so a user with several projects had the others missing from `Documents\.fastprompter\<date>\` — and the folder looked full, so nothing said otherwise. Silos and archive are now exported per project (`silos\<project>\`), matching how snippets were already handled, and the day's manifest counts all of them. Your primary data was never affected: the database, its `.bak` and the undo file always held every project.
+- **README** gained a *Reliability & data safety* section — what protects your data, and an honest list of the limits.
+
 ## v0.8.1 — 2026-07-30
 
 ### New

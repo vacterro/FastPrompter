@@ -30,6 +30,31 @@ def run_portable_backup(data: dict) -> None:
         traceback.print_exc()
 
 
+def _safe_name(name: str) -> str:
+    """A project name that is legal as a folder name on Windows."""
+    import re
+    cleaned = re.sub(r'[\\/:*?"<>|]+', "_", str(name)).strip(" .")
+    return cleaned[:60] or "Unnamed"
+
+
+def _per_project(data: dict, key: str) -> dict:
+    """{project: slots} for silos or archive, whatever shape the data is in.
+
+    Prefers the per-category store; falls back to the active-project alias so
+    a caller holding only that (an older snapshot, a test) still exports
+    something rather than nothing.
+    """
+    everything = data.get(f"{key}_all")
+    if isinstance(everything, dict) and everything:
+        return {cat: slots for cat, slots in everything.items()
+                if isinstance(slots, list)}
+    slots = data.get(key)
+    if isinstance(slots, list) and slots:
+        cats = data.get("cats_order") or ["Text"]
+        return {cats[0]: slots}
+    return {}
+
+
 def _do_export(data: dict) -> None:
     backup_dir = get_portable_backup_dir()
     # Per-day subdirectory
@@ -37,24 +62,32 @@ def _do_export(data: dict) -> None:
     day_dir = os.path.join(backup_dir, date_str)
     os.makedirs(day_dir, exist_ok=True)
 
-    # 1. Silos (temp_presets)
+    # 1. Silos — EVERY project, not just the open one.
+    #
+    # This used to read data["temp_presets"], which is an alias for the
+    # ACTIVE category. A user with five projects therefore had four of them
+    # missing from the daily snapshot and no way to know: the folder looked
+    # full. Snippets were already exported per project; silos now match.
     silos_dir = os.path.join(day_dir, "silos")
     os.makedirs(silos_dir, exist_ok=True)
-    presets = data.get("temp_presets", [])
-    for i, text in enumerate(presets):
-        if text and text.strip():
-            fname = f"silo_{i+1:03d}.md"
-            _write_md(os.path.join(silos_dir, fname), text, f"Silo {i+1}")
-
-    # 2. Archive silos
-    arc_presets = data.get("archive_temp_presets", [])
-    if arc_presets:
-        arc_dir = os.path.join(day_dir, "archive")
-        os.makedirs(arc_dir, exist_ok=True)
-        for i, text in enumerate(arc_presets):
+    for cat, presets in _per_project(data, "temp_presets").items():
+        out_dir = os.path.join(silos_dir, _safe_name(cat))
+        for i, text in enumerate(presets):
             if text and text.strip():
+                os.makedirs(out_dir, exist_ok=True)
+                fname = f"silo_{i+1:03d}.md"
+                _write_md(os.path.join(out_dir, fname), text, f"{cat} · Silo {i+1}")
+
+    # 2. Archive silos, same rule
+    arc_dir = os.path.join(day_dir, "archive")
+    for cat, presets in _per_project(data, "archive_temp_presets").items():
+        out_dir = os.path.join(arc_dir, _safe_name(cat))
+        for i, text in enumerate(presets):
+            if text and text.strip():
+                os.makedirs(out_dir, exist_ok=True)
                 fname = f"archive_{i+1:03d}.md"
-                _write_md(os.path.join(arc_dir, fname), text, f"Archive Silo {i+1}")
+                _write_md(os.path.join(out_dir, fname), text,
+                          f"{cat} · Archive Silo {i+1}")
 
     # 3. Snippets (by category)
     cats = data.get("cats_order", [])
@@ -80,8 +113,13 @@ def _do_export(data: dict) -> None:
         with open(meta_path, "w", encoding="utf-8") as f:
             json.dump({
                 "exported_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-                "silo_count": sum(1 for p in presets if p.strip()),
-                "archive_count": sum(1 for p in arc_presets if p.strip()),
+                # counted over every project, like the export itself
+                "silo_count": sum(
+                    1 for slots in _per_project(data, "temp_presets").values()
+                    for p in slots if p and p.strip()),
+                "archive_count": sum(
+                    1 for slots in _per_project(data, "archive_temp_presets").values()
+                    for p in slots if p and p.strip()),
                 "snippet_count": sum(1 for cat in cats for s in categories.get(cat, []) if s and s.get("text", "").strip())
             }, f, indent=2)
     except Exception:

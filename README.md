@@ -35,7 +35,7 @@ Press `Alt+X` anywhere — in your browser, IDE, terminal — and FastPrompter p
 |---|---|
 | 🗄️ **Silos** | Up to 100 auto-saved scratch slots per project — kill the app, your text survives |
 | 📋 **Snippets** | Named text blocks, pasted instantly with `F1`–`F10` |
-| 🗂️ **Projects** | 5 independent tabs, each with its own silos, snippets and archive |
+| 🗂️ **Projects** | Up to 100 independent tabs, each with its own silos, snippets and archive |
 | 📦 **Archive** | One click stores the current silo or snippet out of the way |
 | 📌 **Pin, tick & tint** | Hover a silo for tick/files/pin/archive buttons; silos tint by how recently you edited them. Silo line counters are separated by `│` for quick reading |
 | 🌳 **Hierarchy** | Drag a silo onto another to nest it as a child; right-click to collapse parents |
@@ -54,7 +54,7 @@ Press `Alt+X` anywhere — in your browser, IDE, terminal — and FastPrompter p
 | 🕒 **Clock & Timer** | Optional mini analog clock, date/time widget, and a built-in Pomodoro-style timer with snooze and adjustment controls |
 | 🧠 **[SAIPEN](https://github.com/vacterro/saipen) Integration** | Auto-detects `.saipen` folders in your projects and adds a compact toolbar viewer for STATE, BOARD, and LOG |
 | ⌨️ **Bindable shortcuts** | Rebind every in-app hotkey from the Settings panel — two slots per action, with dynamic tooltips |
-| 🌍 **22 languages + flags** | English, Russian, Ukrainian, German, French, Spanish, Italian, Portuguese, Dutch, Polish, Swedish, Danish, Finnish, Norwegian, Japanese, Chinese, Korean, Thai, Vietnamese, Arabic, Hebrew, Estonian — each with a drawn flag icon, switchable live in Settings. Plus a bonus **«Дед»** angry-grandpa voice 👴 |
+| 🌍 **32 languages + flags** | English, Russian, Ukrainian, German, French, Spanish, Italian, Portuguese, Dutch, Polish, Swedish, Danish, Finnish, Norwegian, Japanese, Chinese, Korean, Thai, Vietnamese, Arabic, Hebrew, Estonian, Czech, Slovak, Hungarian, Romanian, Bulgarian, Croatian, Greek, Turkish, Hindi, Indonesian — each with a drawn flag icon, switchable live in Settings. Plus a bonus **«Дед»** angry-grandpa voice 👴 |
 | 🗑️ **Trash** | Middle-click to trash a silo — text and files are safely moved to `_trash`, never permanently deleted |
 | ↩️ **Undo everything** | `Ctrl+Z` covers text *and* silo operations (clear, trash, move) |
 
@@ -68,7 +68,7 @@ Press `Alt+X` anywhere — in your browser, IDE, terminal — and FastPrompter p
 - **The magic knock (`Alt+X`)** — you press one key combo and the notepad appears right where your mouse is. Press `Esc` — it's gone. Like a cuckoo clock, but useful.
 - **Silos** — imagine a shelf with 100 labeled jars. Every jar holds one piece of text. You never press "save" — the moment you stop typing, it's already in the jar. Power goes out? The jar's still full.
 - **Snippets** — your favorite phrases on speed-dial. Press `F1`–`F10` and the whole text pastes itself wherever you are. Like rubber stamps, but for words.
-- **Projects (tabs)** — five separate shelves. One for work, one for the novel, one for the shopping lists. Each shelf has its own jars, stamps and attic.
+- **Projects (tabs)** — up to a hundred separate shelves. One for work, one for the novel, one for the shopping lists. Each shelf has its own jars, stamps and attic.
 - **Archive** — the attic. One click and a jar goes up there, out of sight but never thrown away.
 - **Pin 📌** — nail a jar to the top of the shelf so it never wanders off.
 - **Tick ✅** — put a "done" sticker on a jar. Click again — sticker's off.
@@ -102,7 +102,7 @@ Press `Alt+X` anywhere — in your browser, IDE, terminal — and FastPrompter p
 - **Волшебный стук (`Alt+X`)** — нажал комбинацию, и блокнот выскочил прямо у мышки. Нажал `Esc` — исчез. Как кукушка из часов, только полезная.
 - **Сило (ячейки)** — полка со ста подписанными банками. В каждой банке — один текст. Кнопку «сохранить» жать не надо: перестал печатать — оно уже в банке. Свет вырубили? Банка целая.
 - **Снипеты** — любимые фразы на быстром наборе. Жмёшь `F1`–`F10` — и весь текст сам вставился, где бы ты ни был. Как печати-штампы, только для слов.
-- **Проекты (вкладки)** — пять отдельных полок. Одна для работы, одна для романа, одна для списков в магазин. У каждой полки свои банки, штампы и чердак.
+- **Проекты (вкладки)** — до ста отдельных полок. Одна для работы, одна для романа, одна для списков в магазин. У каждой полки свои банки, штампы и чердак.
 - **Архив** — чердак. Один клик — банка уехала наверх: с глаз долой, но не выброшена.
 - **Пин 📌** — прибил банку к верху полки, чтоб не уползала.
 - **Галка ✅** — наклейка «сделано» на банку. Кликнул ещё раз — снял.
@@ -287,13 +287,97 @@ Everything is local and yours:
 
 See [`CHANGELOG.md`](CHANGELOG.md) for version history.
 
+## 🛡️ Reliability & data safety
+
+FastPrompter uses **several independent protection layers instead of relying on a single backup mechanism**. Each one catches a different class of failure, so no single thing going wrong takes your text with it.
+
+<details>
+<summary><b>How your data is protected</b></summary>
+
+<br>
+
+**Atomic storage**
+
+- SQLite runs in WAL mode.
+- Every save is a single transaction.
+- The "already saved" snapshot is updated **only after** a successful commit, so an interrupted write can never leave the app disagreeing with the database.
+
+**Automatic saving**
+
+Your text is written out:
+
+- every 10 seconds — only when something actually changed
+- when the window is hidden (click-out, hotkey, tray)
+- when FastPrompter closes
+- when you switch silo
+- when you switch profile
+
+Worst case after a forced process kill is roughly **10 seconds** of unsaved typing.
+
+**Layer 1 — database backup**
+
+- A `.bak` copy of the database, next to it.
+- Taken at startup *before* the app connects.
+- Refreshed after real changes, at most once a minute.
+- A fresh or empty database is never allowed to overwrite a healthy backup.
+
+**Layer 2 — portable Markdown snapshots**
+
+```
+Documents\.fastprompter\YYYY-MM-DD\
+    silos\<project>\    archive\<project>\    snippets\    _meta.json
+```
+
+- Plain `.md` files — readable, greppable and restorable **without FastPrompter**.
+- Every project, not only the one you had open.
+- Written at most once every 120 seconds, last 7 days kept, each day carrying a small manifest of what it holds.
+- On by default, switchable off in Settings.
+
+**Layer 3 — optional one-way disk mirror**
+
+- Point Settings at any folder and your silos are mirrored there as you save.
+- Strictly one-way: it **never reads back** and **never deletes**. A leftover file from a renamed silo is left alone rather than risking your data.
+
+**Undo that survives a restart**
+
+- 50 snapshots of silo/snippet operations in memory (capped at 20 MB).
+- The latest 10 are written to `<database>_undo.json` and reloaded on the next launch, so `Ctrl+Z` still works after a crash.
+
+**Deletion is not destruction**
+
+- Deleting a silo moves it — text *and* its file folder — into `_trash`.
+- Trashed silos are restorable; nothing is destroyed behind your back.
+
+**Every file written atomically**
+
+- Temporary file first, then an atomic rename over the target.
+- A half-written file cannot exist, even if the machine dies mid-save.
+
+**Crashes are loud**
+
+- Uncaught errors on the main thread *and* on worker threads are logged to a crash log next to the EXE, with a dialog. Nothing fails silently.
+
+</details>
+
+<details>
+<summary><b>Known limits — the honest list</b></summary>
+
+<br>
+
+- **SQLite uses `synchronous=NORMAL`.** A sudden power loss can cost the most recent transaction. Database corruption is not expected, and the WAL journal is what makes that true.
+- **The `.bak` is a single generation.** It is a rollback, not an archive — the Markdown snapshots are the archive.
+- **Markdown snapshots keep 7 days.** Older day folders are pruned.
+- **One open issue:** a rare crash while pasting that we have not yet been able to reproduce (internally: T-617). Everything committed before it — which, given the save triggers above, is nearly everything — is still there on the next launch.
+
+</details>
+
 ## 🛠️ Under the hood
 
 Python 3.11 + PyQt6, SQLite via the standard library, Win32 `RegisterHotKey` for global hotkeys, Nuitka for the single-file EXE. Sounds use `QSoundEffect` with a stdlib `winsound` fallback, which keeps the FFmpeg payload (~100 MB) out of the build entirely.
 
 ```powershell
-uv run pytest tests/         # 461 unit tests
-uv run pytest tests_smoke/   # 104 integration tests — boots the real app offscreen
+uv run pytest tests/         # 880 unit tests
+uv run pytest tests_smoke/   # 589 integration tests — boots the real app offscreen
 ```
 
 ## 📜 License

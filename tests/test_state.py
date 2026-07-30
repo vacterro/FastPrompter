@@ -575,3 +575,65 @@ class TestExportMdBackup:
             expected_dir = Path(tmpdir) / ".fastprompter" / "Snippets" / "CodeText"
             assert expected_dir.exists()
             assert len(list(expected_dir.glob("*.md"))) >= 1
+
+
+# ---------------------------------------------------------------------------
+# T-632: the daily Markdown snapshot must cover EVERY project
+# ---------------------------------------------------------------------------
+
+
+class TestPortableBackupCoversEveryProject:
+    """`temp_presets` is an alias for the ACTIVE category, so exporting from
+    it silently left every other project out of the daily snapshot — and the
+    folder looked full, so nothing said so."""
+
+    def _run(self, tmp_path, data, monkeypatch):
+        from fastprompter.utils import portable_backup as pb
+        monkeypatch.setattr(pb, "get_portable_backup_dir", lambda: str(tmp_path))
+        pb._last_backup_time = 0.0
+        pb.run_portable_backup(data)
+        import time as _t
+        return tmp_path / _t.strftime("%Y-%m-%d")
+
+    def test_every_project_is_exported(self, tmp_path, monkeypatch):
+        data = {
+            "cats_order": ["Text", "Code"],
+            "temp_presets_all": {"Text": ["note one", ""], "Code": ["snippet two"]},
+            "archive_temp_presets_all": {"Text": ["old note"], "Code": []},
+            "temp_presets": ["note one", ""],
+            "categories": {},
+        }
+        day = self._run(tmp_path, data, monkeypatch)
+        assert (day / "silos" / "Text" / "silo_001.md").exists()
+        assert (day / "silos" / "Code" / "silo_001.md").exists()
+        assert "snippet two" in (day / "silos" / "Code" / "silo_001.md").read_text(
+            encoding="utf-8")
+        assert (day / "archive" / "Text" / "archive_001.md").exists()
+        # an empty project gets no empty folder
+        assert not (day / "archive" / "Code").exists()
+
+    def test_manifest_counts_every_project(self, tmp_path, monkeypatch):
+        import json
+        data = {
+            "cats_order": ["Text", "Code"],
+            "temp_presets_all": {"Text": ["a", "b"], "Code": ["c"]},
+            "archive_temp_presets_all": {"Text": ["d"]},
+            "categories": {},
+        }
+        day = self._run(tmp_path, data, monkeypatch)
+        meta = json.loads((day / "_meta.json").read_text(encoding="utf-8"))
+        assert meta["silo_count"] == 3
+        assert meta["archive_count"] == 1
+
+    def test_falls_back_to_the_active_alias(self, tmp_path, monkeypatch):
+        """Older data, or a caller holding only the alias, still exports."""
+        data = {"cats_order": ["Text"], "temp_presets": ["only this"],
+                "categories": {}}
+        day = self._run(tmp_path, data, monkeypatch)
+        assert (day / "silos" / "Text" / "silo_001.md").exists()
+
+    def test_project_names_are_made_filesystem_safe(self, tmp_path, monkeypatch):
+        data = {"cats_order": ["a/b:c"],
+                "temp_presets_all": {"a/b:c": ["x"]}, "categories": {}}
+        day = self._run(tmp_path, data, monkeypatch)
+        assert (day / "silos" / "a_b_c" / "silo_001.md").exists()
