@@ -350,9 +350,14 @@ class KanbanColumnWidget(QFrame):
         if source_cw and isinstance(source_cw, KanbanCardWidget):
             source_col = source_cw._get_column_widget()
             if source_col:
-                source_col.remove_card(source_cw)
+                if source_cw.card_state in source_col.column_state.cards:
+                    source_col.column_state.cards.remove(source_cw.card_state)
+                source_col.cards_layout.removeWidget(source_cw)
+                source_col.lbl_count.setText(f"({len(source_col.column_state.cards)})")
+                source_col.changed.emit()
+                
                 self.column_state.cards.append(source_cw.card_state)
-                self._add_card_widget(source_cw.card_state)
+                self.cards_layout.addWidget(source_cw)
                 self.lbl_count.setText(f"({len(self.column_state.cards)})")
                 self.changed.emit()
                 e.acceptProposedAction()
@@ -423,7 +428,6 @@ class KanbanBoardWidget(QScrollArea):
         self.btn_add_col.setToolTip("Add a column to this board")
         self.btn_add_col.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_add_col.mousePressEvent = self._on_add_column_clicked
-        self.btn_add_col.mousePressEvent = self._on_add_column_clicked
         
         self.add_col_container = QWidget()
         add_col_layout = QVBoxLayout(self.add_col_container)
@@ -431,7 +435,7 @@ class KanbanBoardWidget(QScrollArea):
         add_col_layout.addWidget(self.btn_add_col)
         self.board_layout.addWidget(self.add_col_container)
             
-    def _on_add_column_clicked(self, e):
+    def _on_add_column_clicked(self, e=None):
         new_col = ColumnState("New Column")
         self.columns.append(new_col)
         cw = KanbanColumnWidget(new_col, self.container)
@@ -439,6 +443,7 @@ class KanbanBoardWidget(QScrollArea):
         # Insert before the add button container
         self.board_layout.insertWidget(self.board_layout.count() - 1, cw)
         self._schedule_sync()
+        cw._enter_edit_mode()
         
     def _schedule_sync(self):
         self._sync_timer.start()

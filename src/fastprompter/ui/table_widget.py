@@ -32,18 +32,14 @@ class CellWidget(QLineEdit):
             
         if e.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
             # Move to cell below
-            r, c, _, _ = grid._grid.getItemPosition(grid._grid.indexOf(self))
-            if r + 1 < grid._grid.rowCount():
-                item = grid._grid.itemAtPosition(r + 1, c)
-                if item and item.widget():
-                    item.widget().setFocus()
+            r, c = grid._pos_of(self)
+            if r + 1 < len(grid.cells):
+                grid.cells[r + 1][c].setFocus()
             else:
                 # We are at the bottom, insert a new row!
                 grid.insert_row(self, 1)
                 # focus the new cell below
-                item = grid._grid.itemAtPosition(r + 1, c)
-                if item and item.widget():
-                    item.widget().setFocus()
+                grid.cells[-1][c].setFocus()
             e.accept()
             return
             
@@ -371,6 +367,9 @@ class TableGridWidget(QWidget):
         if r == -1: return
         
         target_r = r if offset < 0 else r + 1
+        # Prevent inserting a row above the header (row 0)
+        target_r = max(1, target_r)
+        
         cols = len(self.cells[0]) if self.cells else 0
         new_row = []
         
