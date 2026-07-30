@@ -62,6 +62,7 @@ class KanbanCardWidget(QFrame):
         super().__init__(parent)
         self.card_state = card_state
         self.setObjectName("kanban_card")
+        self.setAcceptDrops(True)
         
         self.layout = QHBoxLayout(self)
         self.layout.setContentsMargins(4, 4, 4, 4)
@@ -165,6 +166,33 @@ class KanbanCardWidget(QFrame):
         col_widget = self._get_column_widget()
         if col_widget:
             col_widget.remove_card(self)
+            
+    def dragEnterEvent(self, e):
+        if e.mimeData().hasText() and e.mimeData().text() == "kanban_card":
+            e.acceptProposedAction()
+            
+    def dropEvent(self, e):
+        source_cw = e.source()
+        if source_cw and isinstance(source_cw, KanbanCardWidget) and source_cw != self:
+            source_col = source_cw._get_column_widget()
+            target_col = self._get_column_widget()
+            if source_col and target_col:
+                source_col.remove_card(source_cw)
+                # find our index
+                idx = target_col.column_state.cards.index(self.card_state)
+                # insert before us if dropped on top half, after if bottom half?
+                # for simplicity, just insert before
+                if e.position().y() > self.height() / 2:
+                    idx += 1
+                    
+                target_col.column_state.cards.insert(idx, source_cw.card_state)
+                
+                # rebuild UI
+                target_col.cards_layout.insertWidget(idx, source_cw)
+                
+                target_col.lbl_count.setText(f"({len(target_col.column_state.cards)})")
+                target_col.changed.emit()
+                e.acceptProposedAction()
 
 class KanbanColumnWidget(QFrame):
     changed = pyqtSignal()
@@ -180,6 +208,11 @@ class KanbanColumnWidget(QFrame):
         
         header_layout = QHBoxLayout()
         self.lbl_name = QLabel(f"<b>{column_state.name}</b>")
+        self.lbl_name.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.editor_name = QLineEdit(column_state.name)
+        self.editor_name.hide()
+        self.editor_name.editingFinished.connect(self._on_name_edit_finished)
+        
         self.lbl_count = QLabel(f"({len(column_state.cards)})")
         self.lbl_count.setStyleSheet("color: gray;")
         
@@ -188,9 +221,52 @@ class KanbanColumnWidget(QFrame):
         btn_add.mousePressEvent = self._on_add_clicked
         
         header_layout.addWidget(self.lbl_name)
+        header_layout.addWidget(self.editor_name)
         header_layout.addWidget(self.lbl_count, 1)
         header_layout.addWidget(btn_add)
         self.layout.addLayout(header_layout)
+        
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.customContextMenuRequested.connect(self._show_menu)
+        
+    def mouseDoubleClickEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton:
+            self.lbl_name.hide()
+            self.editor_name.show()
+            self.editor_name.setText(self.column_state.name)
+            self.editor_name.setFocus()
+            self.editor_name.selectAll()
+            e.accept()
+            
+    def _on_name_edit_finished(self):
+        self.editor_name.hide()
+        if self.editor_name.text() != self.column_state.name:
+            self.column_state.name = self.editor_name.text()
+            self.lbl_name.setText(f"<b>{self.column_state.name}</b>")
+            self.changed.emit()
+        self.lbl_name.show()
+        
+    def _show_menu(self, pos):
+        menu = QMenu(self)
+        act_edit = menu.addAction("✏️ Edit Column Name")
+        act_edit.triggered.connect(lambda: self.mouseDoubleClickEvent(
+            type("MockEvent", (), {"button": lambda: Qt.MouseButton.LeftButton, "accept": lambda: None})()
+        ))
+        menu.addAction("❌ Delete Column", self._do_delete_column)
+        menu.exec(self.mapToGlobal(pos))
+        
+    def _do_delete_column(self):
+        # find the board and remove this column
+        p = self.parentWidget()
+        while p and not hasattr(p, "columns"):
+            p = p.parentWidget()
+        if p and hasattr(p, "columns"):
+            if self.column_state in p.columns:
+                p.columns.remove(self.column_state)
+            p.board_layout.removeWidget(self)
+            self.deleteLater()
+            if hasattr(p, "_schedule_sync"):
+                p._schedule_sync()
         
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
