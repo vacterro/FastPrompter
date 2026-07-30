@@ -25,6 +25,7 @@
 
 ## DONE
 
+- [x] T-644 (feat) Skinned the Table/Kanban silos against UI.md. Depth is a 2px bevel and only that; every colour traces back to the ACTIVE theme's raw_colors, so the board is a light Win95 panel on Vintage Classic and dark golden on Golden Vintage with no hardcoded grey — rendered both to check rather than assuming. Column = sunken well, card = raised tile with an instant hover, done card's text steps back to a muted blend (dynamic property + explicit repolish, since a property set after polish does not re-evaluate the sheet). Table header raised, cells sunken, focus flips the border to the accent. Add controls became bevelled buttons instead of decorated labels. Two fixes fell out: the header cell carried `font-weight: bold` as an INLINE sheet, which overrides the themed one — the one cell that ignored the theme; and "+ Row" floated mid-grid until the slack was pushed into a phantom row below. bdf6501 | verify: tests_smoke 637, tests 884+1, ruff clean, three themes rendered
 > NOTE: T-640..T-643 were first written as T-634..T-637, which collided with
 > the MARKHUNT tickets of those numbers still open in BLOCKED. Renumbered.
 
