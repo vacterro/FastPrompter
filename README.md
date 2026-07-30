@@ -12,6 +12,7 @@ One hotkey. Instant window. Your prompts, notes and drafts — always one keystr
 <a href="LICENSE"><img src="https://img.shields.io/github/license/vacterro/FastPrompter?style=for-the-badge&color=blue" alt="MIT"></a>
 <img src="https://img.shields.io/badge/Windows-0078D6?style=for-the-badge&logoColor=white" alt="Windows">
 <img src="https://img.shields.io/badge/~27_MB-Portable_EXE-important?style=for-the-badge" alt="Portable">
+<a href="https://buymeacoffee.com/vacuum34"><img src="https://img.shields.io/badge/Buy_Me_A_Coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black" alt="Buy Me A Coffee"></a>
 
 <br>
 
@@ -371,7 +372,6 @@ Documents\.fastprompter\YYYY-MM-DD\
 - **SQLite uses `synchronous=NORMAL`.** A sudden power loss can cost the most recent transaction. Database corruption is not expected, and the WAL journal is what makes that true.
 - **The `.bak` is a single generation.** It is a rollback, not an archive — the Markdown snapshots are the archive.
 - **Markdown snapshots keep 7 days.** Older day folders are pruned.
-- **One open issue:** a rare crash while pasting that we have not yet been able to reproduce (internally: T-617). Everything committed before it — which, given the save triggers above, is nearly everything — is still there on the next launch.
 
 </details>
 

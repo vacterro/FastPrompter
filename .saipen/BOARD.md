@@ -13,11 +13,9 @@
 
 - [ ] T-633 (P3) `state._export_md_backup()` has nine unit tests and NO production caller — dead code that reads like a safety net. Either wire it up (a flat, always-current mirror under `~/.fastprompter/` complements the dated snapshots) or delete it with its tests. Do not document it until then.
 
-- [ ] T-617 (P1) Paste crash NOT reproduced. User reports the app dying on paste, no traceback (so: access violation, not an exception). Probed offscreen AND on the real windows platform: plain/multiline/3k-line markdown/200k one-liner/HTML-flavoured mime/image mime, Ctrl+V through the real clipboard, with the event loop running and silo switches + apply_theme interleaved — 0 crashes. crash.log holds only a stale ImportError from 22.07; fastprompter.log has no traceback. T-611 fixed a real leak on that path (see DONE) but it is NOT proven to be the reported crash. USER DETAIL 28.07: it was silo #7 of the SAIPEN project, a silo that HAS user gaps set (silo_gaps). User cannot reproduce it either — big pastes are eaten fine now — so this is parked, not chased. Do not re-hunt it blind; wait for a second occurrence and grab the state at that moment. NOTE the gap angle is untested: T-593 moved silo_gaps out of _SILO_INDEX_STATE, and SiloGapBar frames are pooled — a paste that triggers refresh_temp_presets while a pooled gap frame is being reused is the one path I never probed.
 
 ## BLOCKED
 
-- [ ] T-555 (P1) Document jumps to top on wheel. Mechanism confirmed: a scroll-RANGE collapse clamps value to 0. 3-hypothesis cap reached. DEAD: wheel-scrolls-to-0, WheelPager bubbling, stale fold range. UNTESTED: document replaced mid-wheel by autosave/silo switch; viewport resize re-wrap. | verify: reproduce a plain wheel that collapses the range
 - [ ] T-295 (P2) UNBLOCKED 27.07, partially done. `tests_smoke` still shares ONE module-scoped `win`; the remaining work is converting tests that actually need isolation onto `fresh_win`. NOT doing a wholesale conversion: a full function-scope suite costs ~1.9s x 509 = ~16 min/run against 2:51 now. | verify: per-test, as tests are moved
 
 ## DONE

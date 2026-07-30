@@ -662,3 +662,90 @@ class TestRenamePastedImage:
             assert w.text_area.image_pill_at(pos) is None
         finally:
             w.close()
+
+
+# ---------------------------------------------------------------------------
+# T-646: the number row has to follow the project list
+# ---------------------------------------------------------------------------
+
+
+class TestNumboxFollowsTheProjects:
+    """Adding a project left the Number Tabs row a button short until the
+    setting was flipped twice. Four call sites changed the project list
+    without rebuilding the row — add, delete, rename and opening Trash — so
+    the row now listens to the combo's MODEL instead, which covers the call
+    sites nobody has written yet."""
+
+    def _win(self, tmp_path):
+        import fastprompter.core.state as sm
+        from fastprompter.main import FastPrompter
+        sm.get_db_path = lambda profile_id=1, _p=tmp_path: str(_p / f"n_{profile_id}.db")
+        sm.run_portable_backup = lambda data: None
+        FastPrompter.setup_single_instance_server = lambda self: None
+        FastPrompter.register_all_hotkeys = lambda self: None
+        FastPrompter.unregister_all_hotkeys = lambda self: None
+        w = FastPrompter()
+        w.cb_numbox_tabs.setChecked(True)
+        _app.processEvents()
+        return w
+
+    def test_adding_a_project_adds_a_button(self, tmp_path, monkeypatch):
+        from PyQt6.QtWidgets import QInputDialog
+        w = self._win(tmp_path)
+        try:
+            before = len(w._cat_num_buttons)
+            monkeypatch.setattr(QInputDialog, "getText",
+                                staticmethod(lambda *a, **k: ("Fresh", True)))
+            w.add_category()
+            _app.processEvents()
+            assert len(w._cat_num_buttons) == before + 1
+            assert w._cat_num_buttons[-1].text() == str(before + 1)
+            assert w._cat_num_buttons[-1].toolTip().endswith("Fresh")
+        finally:
+            w.close()
+
+    def test_deleting_a_project_removes_its_button(self, tmp_path, monkeypatch):
+        from PyQt6.QtWidgets import QInputDialog, QMessageBox
+        w = self._win(tmp_path)
+        try:
+            monkeypatch.setattr(QInputDialog, "getText",
+                                staticmethod(lambda *a, **k: ("Doomed", True)))
+            w.add_category()
+            _app.processEvents()
+            peak = len(w._cat_num_buttons)
+            monkeypatch.setattr(QMessageBox, "question",
+                                staticmethod(lambda *a, **k: QMessageBox.StandardButton.Yes))
+            w.del_category()
+            _app.processEvents()
+            assert len(w._cat_num_buttons) == peak - 1
+        finally:
+            w.close()
+
+    def test_renaming_a_project_updates_its_tooltip(self, tmp_path, monkeypatch):
+        from PyQt6.QtWidgets import QInputDialog
+        w = self._win(tmp_path)
+        try:
+            idx = w.cat_combo.currentIndex()
+            monkeypatch.setattr(QInputDialog, "getText",
+                                staticmethod(lambda *a, **k: ("Renamed", True)))
+            w.rename_category()
+            _app.processEvents()
+            assert w._cat_num_buttons[idx].toolTip().endswith("Renamed")
+        finally:
+            w.close()
+
+    def test_the_rebuild_is_coalesced(self, tmp_path):
+        """Refilling the combo fires a signal per row; each rebuild throws
+        away and recreates every button, so they must collapse into one."""
+        w = self._win(tmp_path)
+        try:
+            calls = []
+            real = w._rebuild_cat_numbox
+            w._rebuild_cat_numbox = lambda *a, **k: (calls.append(1), real())[1]
+            for _ in range(5):
+                w._schedule_numbox_rebuild()
+            assert calls == []          # nothing yet: it is deferred
+            _app.processEvents()
+            assert len(calls) == 1, calls
+        finally:
+            w.close()

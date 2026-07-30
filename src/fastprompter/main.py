@@ -2389,6 +2389,19 @@ class FastPrompter(
         self._cat_numbox_layout.setSpacing(1)
         self._cat_num_buttons: list[QPushButton] = []
         self._rebuild_cat_numbox()
+
+        # The number row FOLLOWS the combo instead of being rebuilt by hand at
+        # every call site. Four places changed the project list without
+        # touching it — add, delete, rename, and opening Trash — so a new
+        # project simply did not get a button until the Number Tabs switch was
+        # flipped twice. Sprinkling four more calls would leave the fifth site
+        # anyone writes next year broken in exactly the same way; listening to
+        # the model covers those too.
+        model = self.cat_combo.model()
+        model.rowsInserted.connect(self._schedule_numbox_rebuild)
+        model.rowsRemoved.connect(self._schedule_numbox_rebuild)
+        model.dataChanged.connect(self._schedule_numbox_rebuild)
+
         numbox_on = self.data.get("numbox_tabs", "False") == "True"
         self.cat_combo.setVisible(not numbox_on)
         self.cat_numbox.setVisible(numbox_on)
@@ -5969,6 +5982,25 @@ class FastPrompter(
             layout.addWidget(btn, i // per_row, i % per_row)
             self._cat_num_buttons.append(btn)
         self._update_cat_numbox_active()
+
+    def _schedule_numbox_rebuild(self, *_args):
+        """Rebuild the number row once, after the combo has settled.
+
+        Clearing and refilling the combo fires a signal per row, and each
+        rebuild throws away and recreates every button — so this coalesces to
+        one pass on the next tick instead of N passes mid-edit.
+        """
+        if sip.isdeleted(self) or getattr(self, "_numbox_rebuild_pending", False):
+            return
+        self._numbox_rebuild_pending = True
+
+        def run():
+            if sip.isdeleted(self):
+                return
+            self._numbox_rebuild_pending = False
+            self._rebuild_cat_numbox()
+
+        QTimer.singleShot(0, run)
 
     def numbox_per_row(self):
         """How many number boxes fit on one row before wrapping (1..100)."""
