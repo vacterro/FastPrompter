@@ -110,6 +110,26 @@ def parse(lines: list[str]) -> Board:
     return board
 
 
+def board_span(lines: list[str]) -> tuple[int, int] | None:
+    """(first, last) line the board occupies, or None when there is no board.
+
+    Callers rewrite only this range. Rewriting the whole silo instead threw
+    away every QTextBlock in it, and with them the margin marks, the queue
+    anchors and the line-heat stamps of text that has nothing to do with the
+    board — measured: two marked notes above a board lost their marks the
+    moment a card moved.
+    """
+    board = parse(lines)
+    if not board.columns:
+        return None
+    first = board.columns[0].heading
+    last = board.columns[-1].end
+    # trailing blank lines are not the board's
+    while last > first and not lines[last].strip():
+        last -= 1
+    return first, last
+
+
 def render_card(card: Card, source: list[str]) -> list[str]:
     return [source[i] for i in card.span]
 
@@ -147,7 +167,7 @@ def move_card(lines: list[str], line: int, dx: int, dy: int) -> tuple[list[str],
         anchor = other.first if dy < 0 else other.last + 1
         dest = col
 
-    rest = [l for i, l in enumerate(lines) if i not in card.span]
+    rest = [text for i, text in enumerate(lines) if i not in card.span]
     # every index after the removal shifts, including the anchor
     removed_before = sum(1 for i in card.span if i < anchor)
     at = max(0, min(anchor - removed_before, len(rest)))

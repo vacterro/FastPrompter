@@ -10664,3 +10664,38 @@ def test_kanban_move_is_one_undo_step(fresh_win):
     assert ed.toPlainText() != before
     ed.undo()
     assert ed.toPlainText() == before
+
+
+def test_board_edits_do_not_wipe_marks_elsewhere(fresh_win):
+    """A QTextBlock carries its line's margin mark, and replacing text
+    destroys the blocks it spans. Rewriting the whole silo to move one card
+    cleared the marks on notes that had nothing to do with the board."""
+    w = fresh_win
+    ed = w.text_area
+    _put(w, "notes line\nsecond note\n\n" + KANBAN_TEXT, line=0)
+    doc = ed.document()
+    for n in (0, 1):
+        doc.findBlockByNumber(n).setUserState(2)
+    _put(w, ed.toPlainText(), line=4, col=8)     # caret on the first card
+    doc = ed.document()
+    for n in (0, 1):
+        doc.findBlockByNumber(n).setUserState(2)
+    assert ed.kanban_move(dx=1)
+    doc = ed.document()
+    assert [doc.findBlockByNumber(n).userState() for n in (0, 1)] == [2, 2]
+
+
+def test_a_moved_card_keeps_its_own_mark(fresh_win):
+    """Marks are remembered by CONTENT, so the mark travels with the card
+    instead of staying on whatever line number it used to occupy."""
+    from fastprompter.ui import silo_kanban as sk
+    w = fresh_win
+    ed = w.text_area
+    _put(w, KANBAN_TEXT, line=1, col=8)
+    doc = ed.document()
+    doc.findBlockByNumber(1).setUserState(3)
+    assert ed.kanban_move(dx=1)
+    lines = ed.toPlainText().split("\n")
+    moved = sk.parse(lines).columns[1].cards
+    where = next(c.first for c in moved if c.text == "first")
+    assert ed.document().findBlockByNumber(where).userState() == 3

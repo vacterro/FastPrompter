@@ -1914,6 +1914,18 @@ class VaultTextEdit(QTextEdit):
         if not start_block.isValid() or not end_block.isValid():
             return False
         from fastprompter.ui.edit_guard import edit_block
+
+        # A QTextBlock carries the margin mark for its line, and replacing
+        # text destroys every block it spans. Remember the marks by CONTENT,
+        # so a line that merely moved keeps its own and a line that was
+        # rewritten does not inherit a stranger's. Measured before this:
+        # moving one kanban card cleared the marks on notes above the board.
+        old_state = {}
+        for n in range(first, last + 1):
+            blk = doc.findBlockByNumber(n)
+            if blk.isValid() and blk.userState() > 0:
+                old_state.setdefault(blk.text(), []).append(blk.userState())
+
         cursor = self.textCursor()
         # guarded: an exception between begin and end leaves the document
         # stuck inside an edit block forever, which is the whole history of
@@ -1923,6 +1935,15 @@ class VaultTextEdit(QTextEdit):
             cursor.setPosition(end_block.position() + len(end_block.text()),
                                QTextCursor.MoveMode.KeepAnchor)
             cursor.insertText("\n".join(new_lines))
+
+        for offset, text in enumerate(new_lines):
+            states = old_state.get(text)
+            if not states:
+                continue
+            blk = doc.findBlockByNumber(first + offset)
+            if blk.isValid():
+                blk.setUserState(states.pop(0))
+
         if caret_line is not None:
             target = doc.findBlockByNumber(caret_line)
             if target.isValid():
@@ -2112,7 +2133,14 @@ class VaultTextEdit(QTextEdit):
         if moved is None:
             return False
         new_lines, at = moved
-        if not self._replace_lines(0, len(lines) - 1, new_lines):
+        # Rewrite the BOARD, not the silo. A move only rearranges lines
+        # inside the board, and rewriting everything threw away the blocks —
+        # and the margin marks — of text that has nothing to do with it.
+        span = sk.board_span(lines)
+        if span is None:
+            return False
+        first, last = span
+        if not self._replace_lines(first, last, new_lines[first:last + 1]):
             return False
         block = self.document().findBlockByNumber(at)
         if block.isValid():
@@ -2130,7 +2158,8 @@ class VaultTextEdit(QTextEdit):
         if out is None:
             return False
         col = self.textCursor().positionInBlock()
-        return self._replace_lines(0, len(lines) - 1, out, caret_line=line,
+        # exactly one line changes: rewrite exactly that line
+        return self._replace_lines(line, line, [out[line]], caret_line=line,
                                    caret_col=col)
 
     def kanban_add_card(self):
@@ -2141,8 +2170,13 @@ class VaultTextEdit(QTextEdit):
         if added is None:
             return False
         out, at = added
-        return self._replace_lines(0, len(lines) - 1, out, caret_line=at,
-                                   caret_col=len(out[at]))
+        span = sk.board_span(lines)
+        if span is None:
+            return False
+        first, last = span
+        # one line longer than the span it replaces
+        return self._replace_lines(first, last, out[first:last + 2],
+                                   caret_line=at, caret_col=len(out[at]))
 
     def in_kanban(self):
         from fastprompter.ui import silo_kanban as sk
