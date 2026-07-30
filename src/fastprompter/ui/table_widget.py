@@ -26,6 +26,44 @@ class CellWidget(QLineEdit):
             menu.addAction("Delete column", lambda: grid.delete_col(self))
         menu.exec(e.globalPos())
 
+    def keyPressEvent(self, e):
+        grid = self.parentWidget()
+        if not isinstance(grid, TableGridWidget):
+            return super().keyPressEvent(e)
+            
+        if e.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            # Move to cell below
+            r, c, _, _ = grid.layout.getItemPosition(grid.layout.indexOf(self))
+            if r + 1 < grid.layout.rowCount():
+                item = grid.layout.itemAtPosition(r + 1, c)
+                if item and item.widget():
+                    item.widget().setFocus()
+            e.accept()
+            return
+            
+        mods = e.modifiers()
+        if mods == (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier):
+            if e.key() == Qt.Key.Key_Up:
+                grid.swap_row_up(self)
+                e.accept()
+                return
+            elif e.key() == Qt.Key.Key_Down:
+                grid.swap_row_down(self)
+                e.accept()
+                return
+                
+        if mods == Qt.KeyboardModifier.AltModifier:
+            if e.key() == Qt.Key.Key_Left:
+                grid.swap_col_left(self)
+                e.accept()
+                return
+            elif e.key() == Qt.Key.Key_Right:
+                grid.swap_col_right(self)
+                e.accept()
+                return
+                
+        super().keyPressEvent(e)
+
 class TableGridWidget(QWidget):
     changed = pyqtSignal(str)
     

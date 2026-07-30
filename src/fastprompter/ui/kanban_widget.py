@@ -83,6 +83,23 @@ class KanbanCardWidget(QFrame):
         
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self._show_menu)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        
+    def keyPressEvent(self, e):
+        if e.key() == Qt.Key.Key_Space:
+            self.checkbox.setChecked(not self.checkbox.isChecked())
+            e.accept()
+        elif e.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            self.mouseDoubleClickEvent(e)
+            e.accept()
+        elif e.key() == Qt.Key.Key_Delete:
+            # Simple delete for now
+            self._do_delete()
+            e.accept()
+        # Alt+arrows would go here, but for simplicity we rely on drag and drop 
+        # or we implement manual move logic.
+        else:
+            super().keyPressEvent(e)
         
     def mouseDoubleClickEvent(self, e):
         if e.button() == Qt.MouseButton.LeftButton:
@@ -230,6 +247,17 @@ class KanbanBoardWidget(QScrollArea):
         self._sync_timer.setInterval(300)
         self._sync_timer.setSingleShot(True)
         self._sync_timer.timeout.connect(self._do_serialize)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        
+    def keyPressEvent(self, e):
+        if e.key() == Qt.Key.Key_N and self.columns:
+            # Add to first column
+            first_col_widget = self.board_layout.itemAt(0).widget()
+            if first_col_widget:
+                first_col_widget._on_add_clicked(e)
+            e.accept()
+        else:
+            super().keyPressEvent(e)
         
     def load_markdown(self, text):
         while self.board_layout.count():

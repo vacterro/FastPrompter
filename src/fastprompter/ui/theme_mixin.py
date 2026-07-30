@@ -209,6 +209,12 @@ class ThemeMixin:
         finally:
             self._end_batch_update()
 
+        try:
+            self._apply_kanban_theme(theme)
+            self._apply_table_theme(theme)
+        except Exception:
+            logger.debug("apply_theme: visual widget theme pass failed", exc_info=True)
+
         # LAST. Every theme hands buttons a different content rect, and the
         # panels above rebuild their own buttons with their own fixed sizes,
         # so a fit pass run any earlier is simply overwritten by them.
@@ -440,4 +446,24 @@ class ThemeMixin:
         if mode == "Reading":
             self.preview_area.setHtml(self.simple_markdown_to_html(text))
 
+    def _apply_kanban_theme(self, theme):
+        if not hasattr(self, "kanban_widget"): return
+        from fastprompter.theme.themes import extract_bg, extract_border_color
+        bg = extract_bg(theme.get("mini_settings", "")) or "#1a1a1a"
+        card_bg = extract_bg(theme.get("btn_new", "")) or "#2a2a2a"
+        border = extract_border_color(theme.get("mini_settings", "")) or "#555"
+        self.kanban_widget.setStyleSheet(
+            f"QScrollArea {{ background-color: {bg}; border: none; }}"
+            f"QFrame#kanban_column {{ background: transparent; }}"
+            f"QFrame#kanban_card {{ background-color: {card_bg}; border: 1px solid {border}; border-radius: 4px; }}"
+        )
 
+    def _apply_table_theme(self, theme):
+        if not hasattr(self, "table_widget"): return
+        from fastprompter.theme.themes import extract_bg, extract_border_color
+        bg = extract_bg(theme.get("mini_settings", "")) or "#1a1a1a"
+        border = extract_border_color(theme.get("mini_settings", "")) or "#555"
+        self.table_widget.setStyleSheet(
+            f"QWidget {{ background-color: {bg}; }}"
+            f"QLineEdit {{ border: 1px solid {border}; background-color: transparent; padding: 2px; }}"
+        )

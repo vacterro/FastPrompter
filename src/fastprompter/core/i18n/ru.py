@@ -877,4 +877,8 @@ TRANSLATIONS: dict[str, str] = {
     '🦓 Zebra Stripes': '🦓 Зебра',
     '🧹 Clear': '🧹 Очистить',
     '🪟 Normal Window': '🪟 Обычное окно',
+    '✨ Transform to…': '✨ Преобразовать в…',
+    '📄 Text': '📄 Текст',
+    '📋 Kanban Board': '📋 Канбан доска',
+    '📊 Table': '📊 Таблица',
 }
