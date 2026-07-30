@@ -131,7 +131,7 @@ Press `Alt+X` anywhere — in your browser, IDE, terminal — and FastPrompter p
 ## 📸 Screenshots
 
 <div align="center">
-<img alt="Screenshot 1" src="docs/images/2026-07-19_054758.png" />
+<img width="960" height="907" alt="2026-07-30_115642" src="https://github.com/user-attachments/assets/7c596dfc-f232-4084-94d7-bf9de0103dc6" />
 <br><em>A distraction-free text area with red pins to keep your most important notes glued to the top of the list.</em><br><br>
 
 <img alt="Screenshot 2" src="docs/images/2026-07-19_054734.png" />
