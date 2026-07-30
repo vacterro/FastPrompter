@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.8.1 — 2026-07-30
+
+### New
+- **SiloTable** — markdown tables you can actually edit. `Tab` / `Shift+Tab` walk the cells and select their content, `Tab` off the last cell grows a row, `Enter` adds a row instead of splitting one in half, and the pipes are column-aligned on demand. Right-click inside a table for rows, columns and alignment.
+- **SiloKanban** — a real board: columns are `##` headings, cards are bullets, and `Alt`+arrows move the card under the caret between columns or up and down. Tick a card, add a card, all from the right-click menu. A card's indented lines travel with it.
+- Both stay plain markdown on purpose — that is what gets saved, mirrored to disk and pasted into an agent, so the board survives leaving the app.
+
+### Fixed
+- **Toolbar icons were cropped**, and had been since the alpha. The theme's *text* padding was eating the button: on Vintage Classic a 20x20 button had a 4x10 slot for a 15px glyph, so only a narrow vertical slice of each emoji was ever painted. Every button in the app is now measured after each theme and scale change and guaranteed to fit its label — swept across 9 themes x 5 scales, nothing clips.
+- **Normal Window** showed its title bar only from the third click. The frame flag was right the first time; Windows just never recomputed the frame. It also stopped walking the window a few pixels across the screen on every toggle.
+- **The settings panel** left about 100px of empty space under the checkboxes on whichever tab opened first — its footer row kept the height it had at the previous window width.
+- Moving a kanban card no longer clears the margin marks of unrelated lines in the same silo.
+
 ## v0.8.0 — 2026-07-28
 
 ### Big new things
