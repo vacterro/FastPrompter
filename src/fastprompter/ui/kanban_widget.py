@@ -77,7 +77,8 @@ class KanbanCardWidget(QFrame):
 
         self.lbl_title = QLabel(title_text)
         self.lbl_title.setWordWrap(True)
-        self.lbl_title.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        # Removed TextSelectableByMouse so right-click falls through to the card's context menu
+        self.lbl_title.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         
         self.layout.addWidget(self.checkbox)
         self.layout.addWidget(self.lbl_title, 1)
@@ -111,7 +112,6 @@ class KanbanCardWidget(QFrame):
         if e.button() == Qt.MouseButton.LeftButton:
             self.lbl_title.hide()
             self.editor.show()
-            self.editor.setText(self.card_state.title)
             self.editor.setFocus()
             self.editor.selectAll()
             
@@ -294,6 +294,27 @@ class KanbanBoardWidget(QScrollArea):
             cw.changed.connect(self._schedule_sync)
             self.board_layout.addWidget(cw)
             
+        # Add a prominent "Add Column" button
+        self.btn_add_col = QLabel("➕ Add Column")
+        self.btn_add_col.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_add_col.setStyleSheet("QLabel { padding: 10px; border: 1px dashed gray; border-radius: 4px; color: gray; } QLabel:hover { color: white; border-color: white; }")
+        self.btn_add_col.mousePressEvent = self._on_add_column_clicked
+        
+        self.add_col_container = QWidget()
+        l = QVBoxLayout(self.add_col_container)
+        l.setAlignment(Qt.AlignmentFlag.AlignTop)
+        l.addWidget(self.btn_add_col)
+        self.board_layout.addWidget(self.add_col_container)
+            
+    def _on_add_column_clicked(self, e):
+        new_col = ColumnState("New Column")
+        self.columns.append(new_col)
+        cw = KanbanColumnWidget(new_col, self.container)
+        cw.changed.connect(self._schedule_sync)
+        # Insert before the add button container
+        self.board_layout.insertWidget(self.board_layout.count() - 1, cw)
+        self._schedule_sync()
+        
     def _schedule_sync(self):
         self._sync_timer.start()
         

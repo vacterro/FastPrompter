@@ -38,6 +38,13 @@ class CellWidget(QLineEdit):
                 item = grid.layout.itemAtPosition(r + 1, c)
                 if item and item.widget():
                     item.widget().setFocus()
+            else:
+                # We are at the bottom, insert a new row!
+                grid.insert_row(self, 1)
+                # focus the new cell below
+                item = grid.layout.itemAtPosition(r + 1, c)
+                if item and item.widget():
+                    item.widget().setFocus()
             e.accept()
             return
             
