@@ -30,3 +30,6 @@ src/fastprompter/_extract.txt
 # it wasn't). Only the snapshot generations stay out: they are regenerated on
 # every run and git now provides the history they stood in for.
 .saipen/snapshots/
+
+# saipen scratch — per-session caches, never committed
+.saipen/kitchen/

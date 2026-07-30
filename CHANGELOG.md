@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.8.2 — 2026-07-30
+
+- **Translation sync — all 33 languages back to 100%.** 72 recently-added `tr()` keys that never reached the translation bundle (from SiloTable, SiloKanban, Watcher, Timers, Number Tabs, File sidebar, and the other v0.8.0/v0.8.1 features) are now in every locale. Turkish coverage closed 17 gaps; 9 other languages each closed 1. Every shipped `.py` module regenerated from the JSON source of truth.
+- **Cleanup:** removed orphaned `tr.py` (legacy Turkish module that `tur.py` replaced).
+
 ## v0.8.1b — 2026-07-30
 
 - **Zen Mode exit**: FastPrompter explicitly brings itself back to the foreground after restoring other windows on the third `Ctrl+D` tap, so it doesn't get buried under them.
