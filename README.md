@@ -21,6 +21,10 @@ One hotkey. Instant window. Your prompts, notes and drafts — always one keystr
 
 </div>
 
+### 📖 [Full documentation → `docs/wiki/`](docs/wiki/Home.md)
+
+Complete technical docs: [architecture](docs/wiki/Architecture-Overview.md), [module tree](docs/wiki/Module-Structure.md), [API reference](docs/wiki/Core-API-and-Classes.md), [configuration](docs/wiki/Configuration.md), [UI components](docs/wiki/UI-Components.md), [keyboard shortcuts](docs/wiki/Keyboard-Shortcuts-and-Cheatsheet.md), [user guide](docs/wiki/User-Guide.md), [watcher engine](docs/wiki/Watcher-Engine-Architecture.md), [deployment guide](docs/wiki/Deployment-Guide.md), [plugin dev](docs/wiki/Plugin-and-Skill-Development.md), [SAIPEN protocol](docs/wiki/SAIPEN-Protocol.md), [troubleshooting](docs/wiki/Troubleshooting-and-FAQ.md).
+
 ---
 
 Press `Alt+X` anywhere — in your browser, IDE, terminal — and FastPrompter pops up at your cursor with everything you keep: auto-saved scratchpads (**silos**), reusable **snippets** on `F1`–`F10`, per-project tabs, and an archive. Press `Esc`, it vanishes. Everything lives in one folder, saved in real time. No cloud, no accounts, no telemetry.
