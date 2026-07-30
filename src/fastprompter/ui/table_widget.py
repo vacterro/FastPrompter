@@ -107,7 +107,7 @@ class TableGridWidget(QWidget):
             lines.pop(0)
             
         if not lines:
-            return
+            lines = ["New Column 1 | New Column 2", "--- | ---", " | "]
             
         # Parse table
         # We expect header, separator, body

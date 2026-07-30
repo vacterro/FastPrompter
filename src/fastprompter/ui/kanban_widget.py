@@ -47,6 +47,12 @@ class KanbanParser:
                 continue
             else:
                 pass
+        if not columns:
+            columns.append(ColumnState("New Column"))
+            if text.strip():
+                # Dump the unrecognized text into the first column as a card so it's not lost
+                columns[0].cards.append(CardState(text.strip(), False))
+                
         return columns
 
 class KanbanCardWidget(QFrame):
