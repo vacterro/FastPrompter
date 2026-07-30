@@ -1,10 +1,18 @@
-import re
+from PyQt6.QtCore import QMimeData, Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QDrag
 from PyQt6.QtWidgets import (
-    QScrollArea, QWidget, QHBoxLayout, QVBoxLayout, QFrame,
-    QLabel, QLineEdit, QCheckBox, QMenu, QApplication
+    QApplication,
+    QCheckBox,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMenu,
+    QScrollArea,
+    QVBoxLayout,
+    QWidget,
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QMimeData, QPoint
-from PyQt6.QtGui import QDrag, QFont, QAction, QCursor
+
 
 class CardState:
     def __init__(self, title, done, continuation=None):
@@ -64,9 +72,11 @@ class KanbanCardWidget(QFrame):
         self.setObjectName("kanban_card")
         self.setAcceptDrops(True)
         
-        self.layout = QHBoxLayout(self)
-        self.layout.setContentsMargins(4, 4, 4, 4)
-        self.layout.setSpacing(4)
+        # not `self.layout` — see the note in table_widget: it shadows
+        # QWidget.layout() and breaks every generic widget walk
+        self._box = QHBoxLayout(self)
+        self._box.setContentsMargins(4, 4, 4, 4)
+        self._box.setSpacing(4)
         
         self.checkbox = QCheckBox()
         self.checkbox.setChecked(self.card_state.done)
@@ -81,13 +91,13 @@ class KanbanCardWidget(QFrame):
         # Removed TextSelectableByMouse so right-click falls through to the card's context menu
         self.lbl_title.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         
-        self.layout.addWidget(self.checkbox)
-        self.layout.addWidget(self.lbl_title, 1)
+        self._box.addWidget(self.checkbox)
+        self._box.addWidget(self.lbl_title, 1)
         
         self.editor = QLineEdit(self.card_state.title)
         self.editor.hide()
         self.editor.editingFinished.connect(self._on_edit_finished)
-        self.layout.addWidget(self.editor, 1)
+        self._box.addWidget(self.editor, 1)
         
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self._show_menu)
@@ -104,7 +114,7 @@ class KanbanCardWidget(QFrame):
             # Simple delete for now
             self._do_delete()
             e.accept()
-        # Alt+arrows would go here, but for simplicity we rely on drag and drop 
+        # Alt+arrows would go here, but for simplicity we rely on drag and drop
         # or we implement manual move logic.
         else:
             super().keyPressEvent(e)
@@ -162,7 +172,7 @@ class KanbanCardWidget(QFrame):
             w = w.parentWidget()
         return None
 
-    def _do_delete(self):
+    def _do_delete(self, _checked=None):
         col_widget = self._get_column_widget()
         if col_widget:
             col_widget.remove_card(self)
@@ -177,19 +187,20 @@ class KanbanCardWidget(QFrame):
             source_col = source_cw._get_column_widget()
             target_col = self._get_column_widget()
             if source_col and target_col:
-                source_col.remove_card(source_cw)
-                # find our index
+                # Detach from source WITHOUT deleteLater
+                if source_cw.card_state in source_col.column_state.cards:
+                    source_col.column_state.cards.remove(source_cw.card_state)
+                source_col.cards_layout.removeWidget(source_cw)
+                source_col.lbl_count.setText(f"({len(source_col.column_state.cards)})")
+                source_col.changed.emit()
+
+                # Insert into target at correct position
                 idx = target_col.column_state.cards.index(self.card_state)
-                # insert before us if dropped on top half, after if bottom half?
-                # for simplicity, just insert before
                 if e.position().y() > self.height() / 2:
                     idx += 1
-                    
                 target_col.column_state.cards.insert(idx, source_cw.card_state)
-                
-                # rebuild UI
                 target_col.cards_layout.insertWidget(idx, source_cw)
-                
+
                 target_col.lbl_count.setText(f"({len(target_col.column_state.cards)})")
                 target_col.changed.emit()
                 e.acceptProposedAction()
@@ -203,8 +214,8 @@ class KanbanColumnWidget(QFrame):
         self.setObjectName("kanban_column")
         self.setAcceptDrops(True)
         
-        self.layout = QVBoxLayout(self)
-        self.layout.setContentsMargins(4, 4, 4, 4)
+        self._box = QVBoxLayout(self)
+        self._box.setContentsMargins(4, 4, 4, 4)
         
         header_layout = QHBoxLayout()
         self.lbl_name = QLabel(f"<b>{column_state.name}</b>")
@@ -214,7 +225,6 @@ class KanbanColumnWidget(QFrame):
         self.editor_name.editingFinished.connect(self._on_name_edit_finished)
         
         self.lbl_count = QLabel(f"({len(column_state.cards)})")
-        self.lbl_count.setStyleSheet("color: gray;")
         
         btn_add = QLabel("＋")
         btn_add.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -224,8 +234,22 @@ class KanbanColumnWidget(QFrame):
         header_layout.addWidget(self.editor_name)
         header_layout.addWidget(self.lbl_count, 1)
         header_layout.addWidget(btn_add)
-        self.layout.addLayout(header_layout)
-        
+        self._box.addLayout(header_layout)
+
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.cards_widget = QWidget()
+        self.cards_layout = QVBoxLayout(self.cards_widget)
+        self.cards_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.cards_layout.setContentsMargins(2, 2, 2, 2)
+        self.cards_layout.setSpacing(4)
+        self.scroll.setWidget(self.cards_widget)
+        self._box.addWidget(self.scroll, 1)
+
+        for card in self.column_state.cards:
+            self._add_card_widget(card)
+
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self._show_menu)
         
@@ -249,13 +273,13 @@ class KanbanColumnWidget(QFrame):
     def _show_menu(self, pos):
         menu = QMenu(self)
         act_edit = menu.addAction("✏️ Edit Column Name")
-        act_edit.triggered.connect(lambda: self.mouseDoubleClickEvent(
+        act_edit.triggered.connect(lambda _: self.mouseDoubleClickEvent(
             type("MockEvent", (), {"button": lambda: Qt.MouseButton.LeftButton, "accept": lambda: None})()
         ))
         menu.addAction("❌ Delete Column", self._do_delete_column)
         menu.exec(self.mapToGlobal(pos))
         
-    def _do_delete_column(self):
+    def _do_delete_column(self, _checked=None):
         # find the board and remove this column
         p = self.parentWidget()
         while p and not hasattr(p, "columns"):
@@ -267,20 +291,6 @@ class KanbanColumnWidget(QFrame):
             self.deleteLater()
             if hasattr(p, "_schedule_sync"):
                 p._schedule_sync()
-        
-        self.scroll = QScrollArea()
-        self.scroll.setWidgetResizable(True)
-        self.scroll.setFrameShape(QFrame.Shape.NoFrame)
-        self.cards_widget = QWidget()
-        self.cards_layout = QVBoxLayout(self.cards_widget)
-        self.cards_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        self.cards_layout.setContentsMargins(2, 2, 2, 2)
-        self.cards_layout.setSpacing(4)
-        self.scroll.setWidget(self.cards_widget)
-        self.layout.addWidget(self.scroll, 1)
-        
-        for card in self.column_state.cards:
-            self._add_card_widget(card)
 
     def _add_card_widget(self, card_state):
         cw = KanbanCardWidget(card_state, self.cards_widget)
@@ -358,11 +368,22 @@ class KanbanBoardWidget(QScrollArea):
             super().keyPressEvent(e)
         
     def load_markdown(self, text):
+        # A board silo can still have a title, a goal line, a footer. The
+        # parser recognises only "## column" and "- [ ] card" and silently
+        # drops the rest, and serialize() writes back over the WHOLE silo —
+        # so without keeping the lines around the board, "# Sprint 12" and
+        # every note vanished on the first click. Measured.
+        from fastprompter.ui import silo_region
+        all_lines = (text or "").split("\n")
+        span = silo_region.board_region(all_lines)
+        self._prefix, region, self._suffix = silo_region.split(all_lines, span)
+        text = "\n".join(region)
+
         while self.board_layout.count():
             item = self.board_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
-                
+
         self.columns = KanbanParser.parse(text)
         
         for col in self.columns:
@@ -371,15 +392,15 @@ class KanbanBoardWidget(QScrollArea):
             self.board_layout.addWidget(cw)
             
         # Add a prominent "Add Column" button
-        self.btn_add_col = QLabel("➕ Add Column")
+        self.btn_add_col = QLabel("Add Column")
         self.btn_add_col.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_add_col.setStyleSheet("QLabel { padding: 10px; border: 1px dashed gray; border-radius: 4px; color: gray; } QLabel:hover { color: white; border-color: white; }")
+        self.btn_add_col.mousePressEvent = self._on_add_column_clicked
         self.btn_add_col.mousePressEvent = self._on_add_column_clicked
         
         self.add_col_container = QWidget()
-        l = QVBoxLayout(self.add_col_container)
-        l.setAlignment(Qt.AlignmentFlag.AlignTop)
-        l.addWidget(self.btn_add_col)
+        add_col_layout = QVBoxLayout(self.add_col_container)
+        add_col_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        add_col_layout.addWidget(self.btn_add_col)
         self.board_layout.addWidget(self.add_col_container)
             
     def _on_add_column_clicked(self, e):
@@ -398,6 +419,8 @@ class KanbanBoardWidget(QScrollArea):
         self.changed.emit(self.serialize())
         
     def serialize(self):
+        """The whole silo: the text around the board, with the board rebuilt."""
+        from fastprompter.ui import silo_region
         lines = []
         for col in self.columns:
             lines.append(f"## {col.name}")
@@ -407,4 +430,7 @@ class KanbanBoardWidget(QScrollArea):
                 for line in card.continuation:
                     lines.append(f"  {line}")
             lines.append("")
-        return "\n".join(lines).strip()
+        while lines and not lines[-1].strip():
+            lines.pop()
+        return silo_region.splice(getattr(self, "_prefix", []), lines,
+                                 getattr(self, "_suffix", []))

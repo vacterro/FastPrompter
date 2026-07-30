@@ -7270,6 +7270,54 @@ class FastPrompter(
                 self._syncing_from_visual = False
             self.mark_dirty()
 
+    def _seed_silo_structure(self, idx, tgt_type, text, is_archive):
+        """Give a silo the structure its new type needs. False = nothing added.
+
+        Returns None when the user backed out, so the caller leaves the type
+        alone. A silo that ALREADY holds a board or a table is never touched:
+        the transform is a change of view, not a rewrite of the text.
+        """
+        if tgt_type == "text":
+            return False
+        from fastprompter.ui import silo_region
+        lines = text.split("\n")
+        has_structure = (silo_region.board_region(lines) if tgt_type == "kanban"
+                         else silo_region.table_region(lines)) is not None
+        if has_structure:
+            return False
+
+        if text.strip():
+            # There IS text, and it is not a board/table: say what will happen
+            # rather than silently appending under someone's notes.
+            from PyQt6.QtWidgets import QMessageBox
+            what = "board" if tgt_type == "kanban" else "table"
+            reply = QMessageBox.question(
+                self, f"Transform to {what.title()}",
+                f"This silo has no {what} yet. Add an empty one below the "
+                f"text that is already there?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes)
+            if reply != QMessageBox.StandardButton.Yes:
+                return None
+
+        if tgt_type == "kanban":
+            from fastprompter.ui import silo_kanban as sk
+            block = sk.new_board()
+        else:
+            from fastprompter.ui import silo_table as st
+            block = st.render(st.new_table(2, 3))
+
+        body = (text.rstrip() + "\n\n" if text.strip() else "") + "\n".join(block)
+        presets = (self.data["archive_temp_presets"] if is_archive
+                   else self.data["temp_presets"])
+        while len(presets) <= idx:
+            presets.append("")
+        presets[idx] = body
+        if idx == getattr(self, "active_temp_slot", -1) and not is_archive:
+            self._set_plain_text_clean(self.text_area, body)
+        self.mark_dirty()
+        return True
+
     def _apply_silo_type(self, idx, is_archive):
         if is_archive:
             self.silo_view.setCurrentIndex(0)
@@ -7969,30 +8017,24 @@ class FastPrompter(
             def _t():
                 presets = self.data["archive_temp_presets"] if is_archive else self.data["temp_presets"]
                 text = presets[idx] if idx < len(presets) else ""
-                
-                if tgt_type == "kanban":
-                    if "## " not in text:
-                        from PyQt6.QtWidgets import QMessageBox
-                        reply = QMessageBox.question(
-                            self, "Transform to Kanban",
-                            "Text contains no columns (## Column Name). Format as one first?",
-                            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                            QMessageBox.StandardButton.No
-                        )
-                        if reply == QMessageBox.StandardButton.No: return
-                elif tgt_type == "table":
-                    if "|" not in text or "\n" not in text:
-                        from PyQt6.QtWidgets import QMessageBox
-                        reply = QMessageBox.question(
-                            self, "Transform to Table",
-                            "Text contains no table. Format as one first?",
-                            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                            QMessageBox.StandardButton.No
-                        )
-                        if reply == QMessageBox.StandardButton.No: return
-                        
+
+                # An EMPTY silo is the main way into this: make a new silo,
+                # right-click, turn it into a board. The old prompt asked
+                # "Format as one first?" and then formatted nothing whatever
+                # you answered, so Yes and No did the same thing and the user
+                # landed in an empty widget either way. Seed a real starter
+                # instead, and only ask when there is text that would be left
+                # sitting beside the new structure.
+                seeded = self._seed_silo_structure(idx, tgt_type, text, is_archive)
+                if seeded is None:
+                    return
+
                 cat = self.get_current_category() or ""
-                self.data.setdefault("silo_type_all", {}).setdefault(cat, {})
+                types = self.data.setdefault("silo_type_all", {}).setdefault(cat, {})
+                # write through the SAME dict the alias points at: rebinding
+                # data["silo_types"] is what orphans a per-category store
+                if self.data.get("silo_types") is not types:
+                    self.data["silo_types"] = types
                 self.data["silo_types"][str(idx)] = tgt_type
                 if self.active_temp_slot == idx and not is_archive:
                     self._apply_silo_type(idx, is_archive)
@@ -8532,8 +8574,8 @@ class FastPrompter(
         # existing text moves down. It used to insert the plain toolbar
         # divider, which had no settings of its own at all.
         add_fixed("Alt+W", self.insert_add_line_up, Qt.ShortcutContext.ApplicationShortcut)
-        add_fixed("Alt+Up", lambda: self.navigate_silo(-1), Qt.ShortcutContext.ApplicationShortcut)
-        add_fixed("Alt+Down", lambda: self.navigate_silo(1), Qt.ShortcutContext.ApplicationShortcut)
+        add_fixed("Alt+Up", lambda: self.navigate_silo(-1), Qt.ShortcutContext.WindowShortcut)
+        add_fixed("Alt+Down", lambda: self.navigate_silo(1), Qt.ShortcutContext.WindowShortcut)
         add_shortcut("hk_italic", "Ctrl+I", lambda: self.apply_format("italic"))
         add_shortcut("hk_underline", "Ctrl+U", lambda: self.apply_format("underline"))
         add_fixed("Ctrl+T", lambda: self.apply_format("strike"))

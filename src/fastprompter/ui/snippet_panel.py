@@ -434,6 +434,12 @@ class DropVerticalWidget(QWidget):
 class DraggableSiloButton(QWidget):
     """QWidget-based silo button with left-aligned text, right-aligned line count, and hover pin/archive buttons."""
 
+    # The empty colour swatch: a dashed outline while the row is hovered, and
+    # nothing at all at rest. The column stays reserved either way, so titles
+    # still line up down the sidebar (that is what the placeholder is for).
+    _SWATCH_HINT = "background: transparent; border: 1px dashed #777; border-radius: 2px;"
+    _SWATCH_BLANK = "background: transparent; border: none;"
+
     def __init__(self, main_win, parent=None, is_archive=False):
         super().__init__(parent)
         from PyQt6.QtWidgets import QSizePolicy
@@ -533,6 +539,11 @@ class DraggableSiloButton(QWidget):
         self._silo_layout.addWidget(self._btn_color_box)
         self._indent = QWidget()
         self._indent.setFixedWidth(0)
+        # A bare QWidget is painted by the theme's `QWidget { background-color }`
+        # rule, so on a CHILD row this 17px spacer drew a solid dark block over
+        # the row's own colour — the "strange rectangle that only appears when
+        # a silo has children". It is a layout gap, not a surface.
+        self._indent.setStyleSheet("background: transparent; border: none;")
         self._indent.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self._silo_layout.addWidget(self._indent)
         self._silo_layout.addWidget(self._btn_collapse)
@@ -671,6 +682,8 @@ class DraggableSiloButton(QWidget):
         self._hover_showing = False
         if self._hover_timer:
             self._hover_timer.stop()
+        if getattr(self, "_swatch_empty", False):
+            self._btn_color_box.setStyleSheet(self._SWATCH_BLANK)
         # pinned silos keep 📌 visible (it's the unpin control)
         self._btn_pin.setVisible(getattr(self, "_is_pinned", False) and not self.is_archive)
         self._btn_archive.hide()
@@ -688,6 +701,8 @@ class DraggableSiloButton(QWidget):
     def _update_hover_buttons(self):
         """Show/hide action buttons based on hover state."""
         if self._hover_showing and not self.is_archive and self.global_idx >= 0:
+            if getattr(self, "_swatch_empty", False):
+                self._btn_color_box.setStyleSheet(self._SWATCH_HINT)
             self._btn_pin.show()
             self._btn_archive.show()
             self._btn_files.show()  # empty silos get the plain 📁 on hover
@@ -760,11 +775,17 @@ class DraggableSiloButton(QWidget):
             self._btn_color_box.hide()
         else:
             self._btn_color_box.show()
+        # An empty swatch is an INVITATION, not information, so it follows the
+        # same rule as 📌 and 📁: visible on hover, invisible at rest. Drawn
+        # permanently it read as a stray rectangle on every titled row that
+        # had not been given a colour — which is most of them.
+        self._swatch_empty = bool(has_hash and not color_hex)
         if has_hash:
             if color_hex:
                 self._btn_color_box.setStyleSheet(f"background: {color_hex}; border: 1px solid #777; border-radius: 2px;")
             else:
-                self._btn_color_box.setStyleSheet("background: transparent; border: 1px dashed #777; border-radius: 2px;")
+                self._btn_color_box.setStyleSheet(
+                    self._SWATCH_HINT if self._hover_showing else self._SWATCH_BLANK)
             self._btn_color_box.setEnabled(True)
             self._btn_color_box.setCursor(Qt.CursorShape.PointingHandCursor)
         else:

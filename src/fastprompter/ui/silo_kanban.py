@@ -123,7 +123,13 @@ def board_span(lines: list[str]) -> tuple[int, int] | None:
     if not board.columns:
         return None
     first = board.columns[0].heading
-    last = board.columns[-1].end
+    # The last column's `end` is the end of the DOCUMENT — that is how a
+    # column claims the lines under it. Using it as the board's end swallowed
+    # anything written below the board, so a footer note was inside the region
+    # and the serialise dropped it. The board ends at its last actual card
+    # (or at the last heading, for an empty final column).
+    tail = board.columns[-1]
+    last = tail.cards[-1].last if tail.cards else tail.heading
     # trailing blank lines are not the board's
     while last > first and not lines[last].strip():
         last -= 1

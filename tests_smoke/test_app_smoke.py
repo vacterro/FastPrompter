@@ -1862,9 +1862,13 @@ def test_file_container_views_links_clipboard(win):
     # clipboard -> file (prompts for a name; mock the dialog)
     from unittest.mock import patch
 
-    from PyQt6.QtWidgets import QInputDialog
+    # Patch what the code CALLS. The prompt moved from the static
+    # QInputDialog.getText to FileContainerPanel._prompt_text, which builds a
+    # dialog and exec()s it — so patching the static left a real modal open
+    # offscreen and the whole suite hung here forever (H-410 all over again).
     _QApp.clipboard().setText("clipboard payload")
-    with patch.object(QInputDialog, "getText", return_value=("clip-test", True)):
+    with patch.object(FileContainerPanel, "_prompt_text",
+                      return_value=("clip-test", True)):
         panel.save_clipboard_as_file()
     clips = [n for n in os.listdir(panel.folder) if n.startswith("clip-") and n.endswith(".txt")]
     assert len(clips) == 1
@@ -6840,8 +6844,12 @@ def test_the_dialog_locks_the_target_while_armed(win, monkeypatch):
 
 def test_arming_from_the_dialog_needs_something_queued(win):
     """Arming an empty queue would sit watching forever with nothing to say."""
-    from PySide6.QtCore import Qt
-    from PySide6.QtWidgets import QListWidgetItem
+    # PyQt6, like the rest of the app. Importing the PySide6 classes here
+    # handed a PySide6.QListWidgetItem to a PyQt6 addItem() and the call had
+    # no matching overload. It never showed up because the suite hung earlier
+    # in the file and this test was simply never reached.
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtWidgets import QListWidgetItem
 
     from fastprompter.core.watcher.queue import queue_for
     from fastprompter.ui.watcher_dialog import WatcherDialog

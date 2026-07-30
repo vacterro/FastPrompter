@@ -455,7 +455,7 @@ class ThemeMixin:
         self.kanban_widget.setStyleSheet(
             f"QScrollArea {{ background-color: {bg}; border: none; }}"
             f"QFrame#kanban_column {{ background: transparent; }}"
-            f"QFrame#kanban_card {{ background-color: {card_bg}; border: 1px solid {border}; border-radius: 4px; }}"
+            f"QFrame#kanban_card {{ background-color: {card_bg}; border: 1px solid {border}; }}"
         )
 
     def _apply_table_theme(self, theme):

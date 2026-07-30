@@ -1916,15 +1916,19 @@ class VaultTextEdit(QTextEdit):
         from fastprompter.ui.edit_guard import edit_block
 
         # A QTextBlock carries the margin mark for its line, and replacing
-        # text destroys every block it spans. Remember the marks by CONTENT,
-        # so a line that merely moved keeps its own and a line that was
-        # rewritten does not inherit a stranger's. Measured before this:
-        # moving one kanban card cleared the marks on notes above the board.
-        old_state = {}
+        # text destroys every block it spans. Remember marks by POSITION
+        # first (same text at same position = exact match), then by CONTENT
+        # as fallback so a moved card keeps its mark. Two-level: position
+        # match avoids the duplicate-text bug (two identical lines trading
+        # states when one is rewritten), content fallback preserves marks
+        # across kanban reorder where lines genuinely move.
+        old_state_by_pos = {}
+        old_state_by_text = {}
         for n in range(first, last + 1):
             blk = doc.findBlockByNumber(n)
             if blk.isValid() and blk.userState() > 0:
-                old_state.setdefault(blk.text(), []).append(blk.userState())
+                old_state_by_pos[(blk.text(), n - first)] = blk.userState()
+                old_state_by_text.setdefault(blk.text(), []).append(blk.userState())
 
         cursor = self.textCursor()
         # guarded: an exception between begin and end leaves the document
@@ -1937,11 +1941,17 @@ class VaultTextEdit(QTextEdit):
             cursor.insertText("\n".join(new_lines))
 
         for offset, text in enumerate(new_lines):
-            states = old_state.get(text)
-            if not states:
-                continue
             blk = doc.findBlockByNumber(first + offset)
-            if blk.isValid():
+            if not blk.isValid():
+                continue
+            # Exact (text, position) match wins — handles unchanged lines
+            key = (text, offset)
+            if key in old_state_by_pos:
+                blk.setUserState(old_state_by_pos[key])
+                continue
+            # Fallback: text match for reordered lines (kanban move)
+            states = old_state_by_text.get(text)
+            if states:
                 blk.setUserState(states.pop(0))
 
         if caret_line is not None:
@@ -2228,20 +2238,16 @@ class VaultTextEdit(QTextEdit):
             r = spin_rows.value()
             c = spin_cols.value()
             
-            headers = "| " + " | ".join([f"Column {i+1}" for i in range(c)]) + " |\n"
-            sep = "| " + " | ".join([":---" for i in range(c)]) + " |\n"
-            
-            rows = ""
-            for i in range(r):
-                rows += "| " + " | ".join([f"Row {i+1}" for j in range(c)]) + " |\n"
-                
+            from fastprompter.ui import silo_table as st
+            table = st.new_table(r, c)
+            lines = st.render(table)
             cursor = self.textCursor()
-            cursor.insertText(headers + sep + rows)
+            cursor.insertText("\n".join(lines) + "\n")
 
     def _insert_kanban(self):
+        from fastprompter.ui import silo_kanban as sb
         cursor = self.textCursor()
-        kanban = "## Kanban Board\n\n| To Do | In Progress | Done |\n| :--- | :--- | :--- |\n| [ ] Task 1 | [ ] Task 2 | [x] Task 3 |\n| [ ] Task 4 | | |\n"
-        cursor.insertText(kanban)
+        cursor.insertText("\n".join(sb.new_board()) + "\n")
 
     def _toggle_auto_bullet(self):
         # goes through the main window so the change is saved and the
