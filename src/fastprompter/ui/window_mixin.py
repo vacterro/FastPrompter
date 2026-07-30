@@ -345,6 +345,9 @@ class WindowMixin:
             try:
                 wid = int(w.winId())
             except Exception:
+                # a window being torn down has no id; skipping it is right,
+                # but say so — this list decides what Zen solo may minimise
+                logger.debug("zen: window without an id, skipped", exc_info=True)
                 continue
             if wid:
                 out.append(wid)
@@ -503,6 +506,8 @@ class WindowMixin:
             try:
                 raw_sizes = ast.literal_eval(raw_sizes)
             except Exception:
+                logger.debug("unreadable splitter sizes %r, using defaults",
+                             raw_sizes, exc_info=True)
                 raw_sizes = [0, 0]
         
         # panes are read back by identity, not by a hardcoded index: the

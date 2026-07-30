@@ -597,7 +597,7 @@ class FileContainerPanel(QWidget):
         import datetime
         import re
 
-        from PyQt6.QtWidgets import QApplication, QInputDialog
+        from PyQt6.QtWidgets import QApplication
 
         text = QApplication.clipboard().text()
         if not text.strip():
@@ -685,8 +685,8 @@ class FileContainerPanel(QWidget):
                 logger.error(f"File container export failed for {src}: {e}")
 
     def _prompt_text(self, title, label, default_text=""):
-        from PyQt6.QtWidgets import QInputDialog
         from PyQt6.QtCore import Qt
+        from PyQt6.QtWidgets import QInputDialog
         dialog = QInputDialog(self)
         dialog.setWindowTitle(title)
         dialog.setLabelText(label)

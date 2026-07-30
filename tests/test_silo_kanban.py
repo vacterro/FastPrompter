@@ -54,9 +54,7 @@ def test_move_right_carries_the_whole_card():
 
 def test_move_left_and_back_is_the_identity():
     right, _ = sk.move_card(BOARD, 3, 1, 0)
-    where = sk.parse(right).card_at(0) or sk.parse(right).card_at(1)
     b = sk.parse(right)
-    ci, ki = b.card_at(b.columns[1].cards[0].first)
     back, _ = sk.move_card(right, b.columns[1].cards[0].first, -1, 0)
     assert sk.parse(back).columns[0].cards[0].text == "write the thing"
     assert [len(c.cards) for c in sk.parse(back).columns] == [2, 1, 1]

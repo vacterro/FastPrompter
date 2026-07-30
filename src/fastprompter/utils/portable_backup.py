@@ -9,6 +9,7 @@ import json
 import os
 import time
 
+from fastprompter.core.logging import logger
 from fastprompter.utils.paths import get_portable_backup_dir
 
 _last_backup_time = 0.0
@@ -26,8 +27,10 @@ def run_portable_backup(data: dict) -> None:
     try:
         _do_export(data)
     except Exception:
-        import traceback
-        traceback.print_exc()
+        # A backup that fails silently is worse than no backup: the user
+        # believes the snapshot exists. print_exc() goes to a console nobody
+        # sees in a windowed build, so this has to reach the log file.
+        logger.exception("portable backup failed")
 
 
 def _safe_name(name: str) -> str:
@@ -123,7 +126,8 @@ def _do_export(data: dict) -> None:
                 "snippet_count": sum(1 for cat in cats for s in categories.get(cat, []) if s and s.get("text", "").strip())
             }, f, indent=2)
     except Exception:
-        pass
+        logger.warning("portable backup: could not write the day manifest",
+                       exc_info=True)
 
     # Cleanup: keep last 7 day dirs
     _cleanup_old_backups(backup_dir, max_days=7)
@@ -143,8 +147,7 @@ def _write_raw(path: str, content: str) -> None:
             f.write(content)
         os.replace(tmp_path, path)
     except Exception:
-        import traceback
-        traceback.print_exc()
+        logger.exception("portable backup: could not write %s", path)
 
 
 def _cleanup_old_backups(backup_dir: str, max_days: int = 7) -> None:
@@ -160,6 +163,8 @@ def _cleanup_old_backups(backup_dir: str, max_days: int = 7) -> None:
                         import shutil
                         shutil.rmtree(entry_path, ignore_errors=True)
                 except (ValueError, OSError):
-                    pass
+                    # not a date-named folder, or it is busy: leave it alone
+                    logger.debug("backup cleanup skipped %s", entry_path,
+                                 exc_info=True)
     except Exception:
-        pass
+        logger.warning("portable backup: cleanup pass failed", exc_info=True)

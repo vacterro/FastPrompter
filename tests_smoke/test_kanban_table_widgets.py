@@ -20,8 +20,11 @@ def _flush():
 # ═══════════════════════════════════════════════════════════════════════════════
 
 from fastprompter.ui.kanban_widget import (
-    KanbanBoardWidget, KanbanColumnWidget, KanbanCardWidget,
-    KanbanParser, CardState, ColumnState,
+    CardState,
+    ColumnState,
+    KanbanBoardWidget,
+    KanbanColumnWidget,
+    KanbanParser,
 )
 
 
@@ -491,6 +494,7 @@ class TestTransformSeedsStructure:
 
     def test_existing_notes_are_kept_above_the_new_structure(self, tmp_path, monkeypatch):
         from PyQt6.QtWidgets import QMessageBox
+
         from fastprompter.ui import silo_kanban as sk
         w = self._win(tmp_path)
         try:

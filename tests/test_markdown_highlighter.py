@@ -58,8 +58,6 @@ class _MockQTextCharFormat:
                 setattr(self, attr, True)
         self._properties.update(getattr(other, "_properties", {}))
 
-    def setFontStrikeOut(self, enabled):
-        self._font_strike_out = enabled
 
     def setFontLetterSpacingType(self, t):
         self._font_letter_spacing_type = t
