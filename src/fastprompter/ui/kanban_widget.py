@@ -109,7 +109,7 @@ class KanbanCardWidget(QFrame):
             self.checkbox.setChecked(not self.checkbox.isChecked())
             e.accept()
         elif e.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-            self.mouseDoubleClickEvent(e)
+            self._enter_edit_mode()
             e.accept()
         elif e.key() == Qt.Key.Key_Delete:
             # Simple delete for now
@@ -119,13 +119,16 @@ class KanbanCardWidget(QFrame):
         # or we implement manual move logic.
         else:
             super().keyPressEvent(e)
+            
+    def _enter_edit_mode(self):
+        self.lbl_title.hide()
+        self.editor.show()
+        self.editor.setFocus()
+        self.editor.selectAll()
         
     def mouseDoubleClickEvent(self, e):
         if e.button() == Qt.MouseButton.LeftButton:
-            self.lbl_title.hide()
-            self.editor.show()
-            self.editor.setFocus()
-            self.editor.selectAll()
+            self._enter_edit_mode()
             
     def mousePressEvent(self, e):
         if e.button() == Qt.MouseButton.LeftButton:
@@ -175,7 +178,9 @@ class KanbanCardWidget(QFrame):
             
     def _show_menu(self, pos):
         menu = QMenu(self)
-        menu.addAction("Delete", self._do_delete)
+        act_edit = menu.addAction("✏️ Edit")
+        act_edit.triggered.connect(self._enter_edit_mode)
+        menu.addAction("❌ Delete", self._do_delete)
         menu.exec(self.mapToGlobal(pos))
         
     def _get_column_widget(self):
@@ -271,13 +276,16 @@ class KanbanColumnWidget(QFrame):
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self._show_menu)
         
+    def _enter_edit_mode(self):
+        self.lbl_name.hide()
+        self.editor_name.show()
+        self.editor_name.setText(self.column_state.name)
+        self.editor_name.setFocus()
+        self.editor_name.selectAll()
+        
     def mouseDoubleClickEvent(self, e):
         if e.button() == Qt.MouseButton.LeftButton:
-            self.lbl_name.hide()
-            self.editor_name.show()
-            self.editor_name.setText(self.column_state.name)
-            self.editor_name.setFocus()
-            self.editor_name.selectAll()
+            self._enter_edit_mode()
             e.accept()
             
     def _on_name_edit_finished(self):
@@ -290,11 +298,11 @@ class KanbanColumnWidget(QFrame):
         
     def _show_menu(self, pos):
         menu = QMenu(self)
-        act_edit = menu.addAction("✏️ Edit Column Name")
-        act_edit.triggered.connect(lambda _: self.mouseDoubleClickEvent(
-            type("MockEvent", (), {"button": lambda: Qt.MouseButton.LeftButton, "accept": lambda: None})()
-        ))
-        menu.addAction("❌ Delete Column", self._do_delete_column)
+        
+        act_edit = menu.addAction("✏️ Edit")
+        act_edit.triggered.connect(self._enter_edit_mode)
+        
+        menu.addAction("❌ Delete", self._do_delete_column)
         menu.exec(self.mapToGlobal(pos))
         
     def _do_delete_column(self, _checked=None):
@@ -315,7 +323,7 @@ class KanbanColumnWidget(QFrame):
         cw.changed.connect(self.changed.emit)
         self.cards_layout.addWidget(cw)
         
-    def _on_add_clicked(self, e):
+    def _on_add_clicked(self, e=None):
         new_card = CardState("New Card", False)
         self.column_state.cards.append(new_card)
         cw = KanbanCardWidget(new_card, self.cards_widget)
@@ -323,7 +331,7 @@ class KanbanColumnWidget(QFrame):
         self.cards_layout.addWidget(cw)
         self.lbl_count.setText(f"({len(self.column_state.cards)})")
         self.changed.emit()
-        cw.mouseDoubleClickEvent(e)
+        cw._enter_edit_mode()
         
     def remove_card(self, cw):
         if cw.card_state in self.column_state.cards:

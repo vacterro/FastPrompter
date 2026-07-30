@@ -515,3 +515,146 @@ class TestTransformSeedsStructure:
             assert w.data["temp_presets"][0] == "my notes"
         finally:
             w.close()
+
+
+# ---------------------------------------------------------------------------
+# T-645: rename a pasted image by double-clicking its pill
+# ---------------------------------------------------------------------------
+
+
+class TestRenamePastedImage:
+    """A pasted image lands as `paste-20260730_140826.png` — a name that says
+    when it arrived and nothing about what it is."""
+
+    def _win(self, tmp_path):
+        import fastprompter.core.state as sm
+        from fastprompter.main import FastPrompter
+        sm.get_db_path = lambda profile_id=1, _p=tmp_path: str(_p / f"r_{profile_id}.db")
+        sm.run_portable_backup = lambda data: None
+        FastPrompter.setup_single_instance_server = lambda self: None
+        FastPrompter.register_all_hotkeys = lambda self: None
+        FastPrompter.unregister_all_hotkeys = lambda self: None
+        return FastPrompter()
+
+    def _seed(self, w, tmp_path, name="paste-20260730_140826.png"):
+        from PyQt6.QtCore import QUrl
+        img = tmp_path / name
+        img.write_bytes(b"not really a png")
+        url = QUrl.fromLocalFile(str(img)).toString()
+        w.text_area.setPlainText(f"before\n![]({url})\nafter")
+        _app.processEvents()
+        block = w.text_area.document().findBlockByNumber(1)
+        from fastprompter.ui.editor import MD_IMAGE_RE
+        match = MD_IMAGE_RE.search(block.text())
+        return img, block, match
+
+    def test_renames_the_file_and_the_link(self, tmp_path, monkeypatch):
+        from PyQt6.QtWidgets import QInputDialog
+        w = self._win(tmp_path)
+        try:
+            img, block, match = self._seed(w, tmp_path)
+            monkeypatch.setattr(QInputDialog, "getText",
+                                staticmethod(lambda *a, **k: ("architecture", True)))
+            assert w.text_area.rename_image_at(block, match) is True
+            assert not img.exists()
+            assert (tmp_path / "architecture.png").exists()
+            assert "architecture.png" in w.text_area.toPlainText()
+            assert "paste-2026" not in w.text_area.toPlainText()
+        finally:
+            w.close()
+
+    def test_keeps_the_extension_the_user_left_off(self, tmp_path, monkeypatch):
+        from PyQt6.QtWidgets import QInputDialog
+        w = self._win(tmp_path)
+        try:
+            self._seed(w, tmp_path)
+            block = w.text_area.document().findBlockByNumber(1)
+            from fastprompter.ui.editor import MD_IMAGE_RE
+            monkeypatch.setattr(QInputDialog, "getText",
+                                staticmethod(lambda *a, **k: ("diagram.png", True)))
+            w.text_area.rename_image_at(block, MD_IMAGE_RE.search(block.text()))
+            assert (tmp_path / "diagram.png").exists()
+            assert "diagram.png.png" not in w.text_area.toPlainText()
+        finally:
+            w.close()
+
+    def test_cancel_changes_nothing(self, tmp_path, monkeypatch):
+        from PyQt6.QtWidgets import QInputDialog
+        w = self._win(tmp_path)
+        try:
+            img, block, match = self._seed(w, tmp_path)
+            before = w.text_area.toPlainText()
+            monkeypatch.setattr(QInputDialog, "getText",
+                                staticmethod(lambda *a, **k: ("nope", False)))
+            assert w.text_area.rename_image_at(block, match) is False
+            assert img.exists()
+            assert w.text_area.toPlainText() == before
+        finally:
+            w.close()
+
+    def test_illegal_characters_are_replaced(self, tmp_path, monkeypatch):
+        from PyQt6.QtWidgets import QInputDialog
+        w = self._win(tmp_path)
+        try:
+            self._seed(w, tmp_path)
+            block = w.text_area.document().findBlockByNumber(1)
+            from fastprompter.ui.editor import MD_IMAGE_RE
+            monkeypatch.setattr(QInputDialog, "getText",
+                                staticmethod(lambda *a, **k: ("a/b:c", True)))
+            w.text_area.rename_image_at(block, MD_IMAGE_RE.search(block.text()))
+            assert (tmp_path / "a_b_c.png").exists()
+        finally:
+            w.close()
+
+    def test_an_existing_name_is_not_clobbered(self, tmp_path, monkeypatch):
+        from PyQt6.QtWidgets import QInputDialog
+        w = self._win(tmp_path)
+        try:
+            (tmp_path / "taken.png").write_bytes(b"i was here first")
+            self._seed(w, tmp_path)
+            block = w.text_area.document().findBlockByNumber(1)
+            from fastprompter.ui.editor import MD_IMAGE_RE
+            monkeypatch.setattr(QInputDialog, "getText",
+                                staticmethod(lambda *a, **k: ("taken", True)))
+            w.text_area.rename_image_at(block, MD_IMAGE_RE.search(block.text()))
+            assert (tmp_path / "taken.png").read_bytes() == b"i was here first"
+            assert (tmp_path / "taken (2).png").exists()
+        finally:
+            w.close()
+
+    def test_rename_is_one_undo_step(self, tmp_path, monkeypatch):
+        from PyQt6.QtWidgets import QInputDialog
+        w = self._win(tmp_path)
+        try:
+            _img, block, match = self._seed(w, tmp_path)
+            before = w.text_area.toPlainText()
+            monkeypatch.setattr(QInputDialog, "getText",
+                                staticmethod(lambda *a, **k: ("one-step", True)))
+            w.text_area.rename_image_at(block, match)
+            assert w.text_area.toPlainText() != before
+            w.text_area.undo()
+            assert w.text_area.toPlainText() == before
+        finally:
+            w.close()
+
+    def test_the_pill_is_hit_testable(self, tmp_path):
+        w = self._win(tmp_path)
+        try:
+            w.resize(900, 400)
+            w.show()
+            _app.processEvents()
+            self._seed(w, tmp_path)
+            _app.processEvents()
+            block = w.text_area.document().findBlockByNumber(1)
+            from fastprompter.ui.editor import MD_IMAGE_RE
+            match = MD_IMAGE_RE.search(block.text())
+            rect = w.text_area._image_pill_rect(block, match)
+            assert rect.width() >= 40 and rect.height() >= 18
+            assert w.text_area.image_pill_at(rect.center()) is not None
+            # ordinary prose is not a pill
+            plain = w.text_area.document().findBlockByNumber(0)
+            from PyQt6.QtGui import QTextCursor
+            pos = w.text_area.cursorRect(QTextCursor(plain)).center()
+            assert w.text_area.image_pill_at(pos) is None
+        finally:
+            w.close()

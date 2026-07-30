@@ -1225,6 +1225,106 @@ class VaultTextEdit(QTextEdit):
         size = max(14, r.height() - 2)
         return QRect(r.right() + 6, r.top() + (r.height() - size) // 2, size, size)
 
+    def _image_pill_rect(self, block, match):
+        """Screen rect of the collapsed image pill for one ![](...) match.
+
+        Same geometry paintEvent draws, derived from cursor rects so the two
+        cannot disagree: the pill runs from the start of the match to its end
+        on the same visual line, and falls back to a fixed width when the
+        match wraps.
+        """
+        start = QTextCursor(block)
+        start.setPosition(block.position() + match.start())
+        end = QTextCursor(block)
+        end.setPosition(block.position() + match.end())
+        r_start, r_end = self.cursorRect(start), self.cursorRect(end)
+        height = max(18, r_start.height())
+        width = (abs(r_end.left() - r_start.left())
+                 if r_end.top() == r_start.top() else 150)
+        top = r_start.top() + (r_start.height() - height) // 2
+        return QRect(r_start.left(), top, max(40, width), height)
+
+    def image_pill_at(self, pos):
+        """(block, match) for the image pill under `pos`, or None."""
+        doc = self.document()
+        if doc.blockCount() > 2000:
+            return None            # the pills are not painted on huge docs
+        block = self._first_visible_block()
+        vp_h = self.viewport().height()
+        while block is not None and block.isValid():
+            if not block.isVisible():
+                block = block.next()
+                continue
+            if self.cursorRect(QTextCursor(block)).top() > vp_h:
+                break
+            for match in MD_IMAGE_RE.finditer(block.text()):
+                if self._image_pill_rect(block, match).contains(pos):
+                    return block, match
+            block = block.next()
+        return None
+
+    def rename_image_at(self, block, match):
+        """Rename the file a pill points at, and the link with it.
+
+        Double-clicking the pill is the only obvious place to do this: the
+        file was written as `paste-20260730_140826.png`, which says when it
+        arrived and nothing about what it is.
+        """
+        import os as _os
+
+        from PyQt6.QtCore import QUrl
+        from PyQt6.QtWidgets import QInputDialog
+
+        target = match.group(1)
+        path = QUrl(target).toLocalFile() if target.startswith("file:") else target
+        path = _os.path.normpath(path) if path else ""
+        old_name = _os.path.basename(path) or target
+        stem, ext = _os.path.splitext(old_name)
+
+        mw = self.main_win
+        lang = getattr(mw, "_current_lang", "EN")
+        if hasattr(mw, "_increment_focus_lock"):
+            mw._increment_focus_lock()      # the window hides on focus loss
+        try:
+            new_stem, ok = QInputDialog.getText(
+                self, tr("Rename image", lang), tr("New name:", lang),
+                text=stem)
+        finally:
+            if hasattr(mw, "_decrement_focus_lock"):
+                QTimer.singleShot(300, mw._decrement_focus_lock)
+        new_stem = (new_stem or "").strip()
+        if not ok or not new_stem or new_stem == stem:
+            return False
+
+        # keep the extension unless the user typed one themselves
+        new_name = new_stem if _os.path.splitext(new_stem)[1] else new_stem + ext
+        new_name = re.sub(r'[\\/:*?"<>|]+', "_", new_name)
+
+        new_path = path
+        if path and _os.path.isfile(path):
+            from fastprompter.ui.file_container import _unique_dest
+            new_path = _unique_dest(_os.path.dirname(path), new_name)
+            try:
+                _os.rename(path, new_path)
+            except OSError:
+                logger.exception("could not rename the pasted image")
+                return False        # link untouched: it still points at a file
+
+        # the link follows the file, in ONE undo step with it
+        new_target = (QUrl.fromLocalFile(new_path).toString()
+                      if target.startswith("file:") else new_path)
+        cursor = self.textCursor()
+        from fastprompter.ui.edit_guard import edit_block
+        with edit_block(cursor, self):
+            cursor.setPosition(block.position() + match.start(1))
+            cursor.setPosition(block.position() + match.end(1),
+                               QTextCursor.MoveMode.KeepAnchor)
+            cursor.insertText(new_target)
+        fc = getattr(mw, "_file_container", None)
+        if fc is not None and not sip.isdeleted(fc):
+            fc.refresh()
+        return True
+
     def _code_copy_block_at(self, pos):
         """Return the opening fence block whose copy button contains pos."""
         if self.document().blockCount() > 2000:
@@ -1437,6 +1537,21 @@ class VaultTextEdit(QTextEdit):
                 bc.insertText(want)
             n += 1
             block = block.next()
+
+    def mouseDoubleClickEvent(self, event):
+        """Double-click an image pill to rename the file it points at.
+
+        Anywhere else this is the normal word-select, so the gesture costs
+        nothing: a pill is not text you would double-click to select.
+        """
+        if (not sip.isdeleted(self)
+                and event.button() == Qt.MouseButton.LeftButton):
+            hit = self.image_pill_at(event.pos())
+            if hit is not None:
+                self.rename_image_at(*hit)
+                event.accept()
+                return
+        super().mouseDoubleClickEvent(event)
 
     def mousePressEvent(self, event):
         if sip.isdeleted(self):
