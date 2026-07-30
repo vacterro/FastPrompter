@@ -1,7 +1,8 @@
-import os, re
+import os
+import re
 
 d = r'V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\i18n'
-with open(os.path.join(d, 'en.py'), 'r', encoding='utf-8') as f:
+with open(os.path.join(d, 'en.py'), encoding='utf-8') as f:
     ct = f.read()
 
 s = ct.index('TRANSLATIONS')
@@ -93,7 +94,7 @@ vi_data = {}
 vi_path = os.path.join(d, 'vi.py')
 existing = {}
 if os.path.exists(vi_path):
-    with open(vi_path, 'r', encoding='utf-8') as f:
+    with open(vi_path, encoding='utf-8') as f:
         vi_txt = f.read()
     # Try to parse existing vi.py
     vi_body_match = re.search(r'TRANSLATIONS.*?\{', vi_txt)

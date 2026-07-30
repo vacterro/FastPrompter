@@ -1,8 +1,6 @@
-import os
-import re
 
 filepath = 'src/fastprompter/main.py'
-with open(filepath, 'r', encoding='utf-8') as f:
+with open(filepath, encoding='utf-8') as f:
     text = f.read()
 
 old_func = """    def _update_project_buttons(self):

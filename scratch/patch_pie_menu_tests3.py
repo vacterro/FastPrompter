@@ -1,7 +1,6 @@
-import os
 
 filepath = 'tests/test_pie_menu.py'
-with open(filepath, 'r', encoding='utf-8') as f:
+with open(filepath, encoding='utf-8') as f:
     text = f.read()
 
 index = text.find("# ---------------------------------------------------------------------------\n# Show/hide/close events")

@@ -1,8 +1,7 @@
-import os
 import re
 
 filepath = 'src/fastprompter/main.py'
-with open(filepath, 'r', encoding='utf-8') as f:
+with open(filepath, encoding='utf-8') as f:
     text = f.read()
 
 # We want to replace from 'nxt = cursor.block().next()' to 'if want_center:'

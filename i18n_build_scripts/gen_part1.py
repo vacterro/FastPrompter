@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Generate translation files - part 1 (Catalan data)."""
 from __future__ import annotations
-import json, os, sys
+
+import os
 
 DIR = r"V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\i18n"
 en_path = os.path.join(DIR, "en.py")

@@ -1,7 +1,6 @@
-import os
 
 filepath = 'src/fastprompter/ui/formatting_mixin.py'
-with open(filepath, 'r', encoding='utf-8') as f:
+with open(filepath, encoding='utf-8') as f:
     text = f.read()
 
 # 1. Fix clear_formatting()

@@ -29,6 +29,12 @@ from PyQt6.QtWidgets import (
 
 from fastprompter.core.translations import tr
 from fastprompter.core.watcher import skills as skills_mod
+from fastprompter.core.watcher.engine import (
+    ARMED,
+    DISARMED,
+    SENDING,
+    WATCHING,
+)
 from fastprompter.core.watcher.queue import (
     DETACHED,
     FAILED,
@@ -38,12 +44,6 @@ from fastprompter.core.watcher.queue import (
     all_items,
     move_between,
     queue_for,
-)
-from fastprompter.core.watcher.engine import (
-    DISARMED,
-    ARMED,
-    WATCHING,
-    SENDING,
 )
 
 # state -> (lamp, tooltip). The lamp is text, not an icon, so it survives

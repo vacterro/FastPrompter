@@ -2372,6 +2372,7 @@ def test_trash_vision_snippet_schema_no_crash(win):
 
 def test_ampm_clock_toggle(win):
     import re
+
     from fastprompter.ui.editor import TS_STAMP_LINE_RE
 
     win.data["show_date_rect"] = "True"
@@ -2584,7 +2585,7 @@ def test_translation_pack_injected():
     # EN passes through, RU never regresses + gains pack-only keys, and the
     # new languages actually translate. Asserted WITHOUT Cyrillic literals so
     # this file stays clean for test_no_cyrillic_in_codebase.
-    from fastprompter.core.translations import tr, available_languages
+    from fastprompter.core.translations import available_languages, tr
 
     langs = available_languages()
     assert langs[0] == "EN"
@@ -2771,8 +2772,7 @@ def test_code_block_background_does_not_hide_text(win):
     # QColor AFTER QTextEdit had already drawn the text, painting over it and
     # making every code block render as a blank black rectangle. It must ride
     # on setExtraSelections() so Qt draws it BEHIND the text.
-    from PyQt6.QtCore import QRect
-    from PyQt6.QtGui import QPaintEvent, QTextFormat
+    from PyQt6.QtGui import QTextFormat
 
     win.cat_combo.setCurrentIndex(0)
     win.on_tab_changed(0)
@@ -2956,7 +2956,8 @@ def test_ctrl_v_wraps_selection_as_hyperlink(win):
 def test_ctrl_wheel_zoom_falls_back_to_pixel_delta(win):
     # Regression: only angleDelta() was read, which stays 0 on trackpads that
     # report pixelDelta — Ctrl+wheel zoom silently did nothing there.
-    from PyQt6.QtCore import QPoint, QPointF, Qt as _Qt
+    from PyQt6.QtCore import QPoint, QPointF
+    from PyQt6.QtCore import Qt as _Qt
     from PyQt6.QtGui import QWheelEvent
 
     before = win.data.get("font_size")
@@ -3032,7 +3033,6 @@ def test_collapsible_quote_wrap_and_fold(win):
     # Collapsible quote: wrap lines as '> ', and a 2+ line quote becomes a
     # fold anchor that collapses down to its own first line (footnote-style),
     # reusing the existing header/code-fence fold machinery.
-    from PyQt6.QtGui import QTextCursor
 
     win.cat_combo.setCurrentIndex(0)
     win.on_tab_changed(0)
@@ -3624,6 +3624,7 @@ def test_hover_line_wash_follows_the_cursor(win):
 def test_shortcuts_match_physical_key_regardless_of_layout():
     from PyQt6.QtCore import Qt
     from PyQt6.QtGui import QKeySequence
+
     from fastprompter.ui.layout_shortcuts import LayoutIndependentShortcuts, split_sequence
 
     key, mods = split_sequence(QKeySequence("Alt+Z"))
@@ -4046,9 +4047,8 @@ def test_timer_label_hides_in_ultra_and_with_no_timers(win):
 def test_timer_description_edit_snooze_and_test_fire(win):
     # The "comprehensive" half: description, editing an existing timer,
     # snoozing, and a test fire that must never become a real timer.
-    import datetime
 
-    from fastprompter.core.timers import Timer, load_timers
+    from fastprompter.core.timers import load_timers
     from fastprompter.ui.timer_dialog import TimerDialog
 
     saved = list(win.timers)
@@ -4125,6 +4125,7 @@ def test_timer_toast_shows_and_snoozes(win):
     import datetime
 
     from PyQt6.QtCore import Qt
+
     from fastprompter.core.timers import Timer
     from fastprompter.ui.timer_toast import TimerToast, show_toast
 
@@ -4740,8 +4741,6 @@ def test_heavy_document_operations_stay_responsive(win):
     # paths, which is where a heavy-document freeze would come from.
     import time
 
-    from PyQt6.QtCore import QRect
-    from PyQt6.QtGui import QPaintEvent
 
     text = "\n".join(
         (f"# Header {i}" if i % 50 == 0 else f"line {i} of a long document")
@@ -5085,6 +5084,7 @@ def test_reset_ui_layout_restores_every_layout_choice(win):
 
 def test_reset_ui_layout_can_be_declined(win):
     from unittest.mock import patch
+
     from PyQt6.QtWidgets import QMessageBox as _QMB
 
     win.data["toolbar_order"] = "btn_help,btn_save"
@@ -5119,8 +5119,8 @@ def test_auto_bullet_setting_has_one_owner(win):
 
 
 def test_auto_bullet_converts_while_typing(win):
-    from PyQt6.QtTest import QTest
     from PyQt6.QtCore import Qt
+    from PyQt6.QtTest import QTest
 
     before = win.data.get("auto_bullet", "False")
     ed = win.text_area
@@ -5156,8 +5156,9 @@ def test_limit_window_catcher_builds_a_rolling_timer(win):
     """The 5-hour agent quota is a rolling window anchored at the moment it
     opened, which the generic "when" box cannot express."""
     import datetime
-    from fastprompter.ui.timer_dialog import TimerDialog
+
     from fastprompter.core import timers as T
+    from fastprompter.ui.timer_dialog import TimerDialog
 
     kept = list(win.timers)
     try:
@@ -5205,6 +5206,7 @@ def test_margin_selects_whole_lines_like_word(win):
     """Clicking the line-number margin takes the whole line and dragging
     sweeps them, with the mirrored arrow cursor that signals it."""
     from PyQt6.QtGui import QTextCursor
+
     from fastprompter.ui.editor import MARK_ZONE_PX, margin_cursor
 
     ed = win.text_area
@@ -5265,8 +5267,8 @@ def test_hover_line_follows_the_pointer_when_the_text_scrolls(win):
     """Reported: the hover wash stops sitting under the cursor. Hover was
     only recomputed from mouseMoveEvent, so scrolling under a stationary
     mouse left it on the block number it started on."""
-    from PyQt6.QtGui import QCursor
     from PyQt6.QtCore import QPoint
+    from PyQt6.QtGui import QCursor
 
     ed = win.text_area
     kept = win.data.get("hover_line", "True")
@@ -5353,8 +5355,10 @@ def test_ctrl_click_opens_links_and_ctrl_right_click_reveals_the_folder(win):
     """Ctrl+LClick opens the link, Ctrl+RClick shows the file in its folder."""
     import os
     import tempfile
-    from PyQt6.QtCore import QEvent, QPointF, QUrl, Qt
+
+    from PyQt6.QtCore import QEvent, QPointF, Qt, QUrl
     from PyQt6.QtGui import QDesktopServices, QMouseEvent, QTextCursor
+
     import fastprompter.ui.editor as editor_mod
 
     ed = win.text_area
@@ -5412,8 +5416,8 @@ def test_ctrl_click_opens_links_and_ctrl_right_click_reveals_the_folder(win):
 def test_productivity_timer_tab_drives_the_model(win):
     """The my_timer2 work/break timer as a first-class feature: the form
     edits the model, the buttons drive it, and it survives a restart."""
-    from fastprompter.ui.timer_dialog import TimerDialog
     from fastprompter.core import pomodoro as P
+    from fastprompter.ui.timer_dialog import TimerDialog
 
     kept = win.data.get("productivity_timer")
     saved_state = win.productivity_timer.to_dict()
@@ -5516,6 +5520,7 @@ def test_gutter_colours_come_from_the_theme(win):
     """They were hardcoded per theme NAME, tested with `"vintage" in name` -
     so "Vintage Dark" (editor background #181818) got golden-vintage brown."""
     from PyQt6.QtGui import QColor
+
     from fastprompter.theme.themes import THEMES
 
     ed = win.text_area
@@ -5553,6 +5558,7 @@ def test_hashtags_are_clickable_and_findable_across_silos(win):
     """Tags live in the text, so Ctrl+click finds every silo carrying one."""
     from PyQt6.QtCore import QEvent, QPointF, Qt
     from PyQt6.QtGui import QMouseEvent, QTextCursor
+
     from fastprompter.ui.hashtag_dialog import HashtagDialog
 
     ed = win.text_area
@@ -5653,6 +5659,7 @@ def test_custom_cursors_survive_a_restart(win):
     saved data, which does not fire its callback, and nothing else applied
     them at startup."""
     from PyQt6.QtCore import Qt
+
     from fastprompter.ui.cursor_theme import capture_current_scheme, load_bundle
 
     kept = win.data.get("custom_cursors", "False")
@@ -5693,6 +5700,7 @@ def test_zone_picker_is_compact_and_opens_under_the_cursor(win):
     and a long mouse trip to reach a corner."""
     from PyQt6.QtGui import QCursor
     from PyQt6.QtWidgets import QApplication
+
     from fastprompter.ui.fancy_zones import FancyZoneOverlay
 
     screen = QApplication.primaryScreen()
@@ -5718,6 +5726,7 @@ def test_zone_picker_is_compact_and_opens_under_the_cursor(win):
 def test_zone_picker_has_two_pages_and_remembers_the_last(win):
     from PyQt6.QtGui import QCursor
     from PyQt6.QtWidgets import QApplication
+
     from fastprompter.ui.fancy_zones import FancyZoneOverlay
 
     kept = win.data.get("fancyzones_layout", "")
@@ -5758,6 +5767,7 @@ def test_snapping_does_not_hide_a_window_set_to_hide_on_click_out(win):
     stayed gone after snapping."""
     from PyQt6.QtGui import QCursor
     from PyQt6.QtWidgets import QApplication
+
     from fastprompter.ui.fancy_zones import FancyZoneOverlay
 
     kept_focus = win.data.get("close_on_focus_loss", "True")
@@ -5967,8 +5977,8 @@ def test_alt_c_queues_the_current_line(win):
     """Alt+C is FastPrompter's own queue command: the line goes in, the
     caret moves on, and the line is marked."""
     from PyQt6.QtCore import Qt
-    from PyQt6.QtGui import QTextCursor
     from PyQt6.QtTest import QTest
+
     from fastprompter.ui.markdown_highlighter import QUEUED_BIT
 
     ed = win.text_area
@@ -6045,6 +6055,7 @@ def test_deleting_the_line_detaches_and_leaves_no_stale_tick(win):
     bits without the anchor - which would paint a tick beside a line that
     was never sent."""
     from PyQt6.QtGui import QTextCursor
+
     from fastprompter.ui.markdown_highlighter import QUEUED_BIT, SENT_BIT
 
     ed = win.text_area
@@ -6111,9 +6122,9 @@ def test_the_queue_bits_survive_a_rehighlight(win):
     """_KEEP_MASK is what survives a rehighlight pass. A bit missing from it
     is wiped at random, which looks like the queue losing its own state."""
     from fastprompter.ui.markdown_highlighter import (
+        _KEEP_MASK,
         QUEUED_BIT,
         SENT_BIT,
-        _KEEP_MASK,
     )
 
     assert _KEEP_MASK & QUEUED_BIT, "QUEUED_BIT would be wiped"
@@ -6257,6 +6268,7 @@ def test_rows_follow_edits_made_in_the_note(win):
 
 def test_deleting_the_line_detaches_but_keeps_the_text(win):
     from PyQt6.QtGui import QTextCursor
+
     from fastprompter.core.watcher.queue import DETACHED
 
     kept = dict(win.prompt_queues)
@@ -6837,8 +6849,8 @@ def test_arming_from_the_dialog_needs_something_queued(win):
 
     dlg = WatcherDialog(win)
     try:
-        if dlg.lst_windows.count():
-            dlg.lst_windows.setCurrentRow(0)
+        # Guarantee a valid hwnd so toggle_arm() proceeds past the "pick a window" check
+        dlg.current_hwnd = lambda: 12345
         dlg.toggle_arm()
         assert win.watcher_engine().armed is False
         assert "Alt+C" in dlg.lbl_state.text()
@@ -8101,8 +8113,8 @@ def test_show_is_acknowledged_so_a_corpse_can_be_detected(win):
     answers nothing; the newcomer waits for ACK and takes over on silence."""
     import inspect
 
-    from fastprompter.core import ipc_server
     from fastprompter import main as main_mod
+    from fastprompter.core import ipc_server
 
     assert "ACK" in inspect.getsource(ipc_server.IpcServer._handle_command)
     entry = inspect.getsource(main_mod.main_entry)
@@ -8431,7 +8443,6 @@ def test_gap_bar_carries_its_anchor_slot(win):
 
 
 def test_gap_bar_ignores_plain_click_without_ctrl(win):
-    from PyQt6.QtCore import QPoint
     from fastprompter.ui.snippet_panel import SiloGapBar
     bar = SiloGapBar(win)
     bar.slot_idx = 1
@@ -8466,6 +8477,7 @@ def test_gaps_survive_a_real_db_round_trip(tmp_path):
 
 def test_legacy_python_repr_gaps_are_recovered(tmp_path):
     import sqlite3
+
     import fastprompter.core.state as sm
     db = tmp_path / "legacy.db"
     orig = sm.get_db_path
@@ -9117,8 +9129,9 @@ def test_deferred_callbacks_guard_a_deleted_widget():
     before they fire; calling a Qt method on a dead C++ object is an access
     violation, not an exception, and takes the whole app with it."""
     import inspect
-    from fastprompter.ui import editor as editor_mod
+
     from fastprompter import main as main_mod
+    from fastprompter.ui import editor as editor_mod
 
     for src, name in (
         (inspect.getsource(editor_mod.VaultTextEdit._refresh_checkbox_flag),
@@ -9163,6 +9176,7 @@ def test_vintage_classic_lbl_help_contrast(win):
 
 def test_timer_toast_no_estimated_text():
     import inspect
+
     import fastprompter.ui.timer_toast as tt
     src = inspect.getsource(tt.TimerToast.__init__)
     assert "Estimated reset" not in src
@@ -9520,8 +9534,8 @@ def test_presets_dialog_recapture_keeps_name_and_slot(win):
 
 
 def test_presets_dialog_delete_and_cap(win):
-    from fastprompter.ui.window_presets_dialog import WindowPresetsDialog
     from fastprompter.ui.fancy_zones import _MAX_PRESETS
+    from fastprompter.ui.window_presets_dialog import WindowPresetsDialog
     saved = win.data.get("window_presets")
     try:
         win.data["window_presets"] = [
@@ -9551,7 +9565,7 @@ def test_settings_expose_presets_toggle_and_manage(win):
 
 
 def test_fancy_zones_max_presets():
-    from fastprompter.ui.fancy_zones import _load_presets, _save_presets, _MAX_PRESETS
+    from fastprompter.ui.fancy_zones import _MAX_PRESETS, _load_presets, _save_presets
     data = {}
     big = [[0.1 * i, 0.0, 0.5, 0.5] for i in range(_MAX_PRESETS + 5)]
     _save_presets(data, big)
@@ -9583,7 +9597,6 @@ def test_gutter_skips_rows_that_would_overlap(win):
     number in a full font-height box painted straight over the next line's
     digits. gutter_rows() must skip any block whose top falls inside the band
     the previous number already occupies."""
-    from PyQt6.QtGui import QTextCursor
     ed = win.text_area
     saved = win.data.get("show_line_numbers", "False")
     win.data["show_line_numbers"] = "True"
@@ -9652,6 +9665,7 @@ def test_contents_change_connection_does_not_accumulate(fresh_win):
 def test_contents_change_handler_is_guarded(fresh_win):
     """The document outlives the editor, so the handler must check first."""
     import inspect
+
     from fastprompter.ui.editor import VaultTextEdit
     src = inspect.getsource(VaultTextEdit._on_contents_change)
     assert "sip.isdeleted(self)" in src
@@ -10328,6 +10342,7 @@ def test_padding_override_reaches_existing_buttons(fresh_win):
     """A dynamic property set after polish does not re-evaluate the sheet on
     its own, so the override needs an explicit repolish pass."""
     import inspect
+
     from fastprompter.ui.theme_mixin import ThemeMixin
     src = inspect.getsource(ThemeMixin.apply_theme)
     assert "repolish_icon_buttons" in src
@@ -10458,6 +10473,7 @@ def test_normal_window_forces_a_frame_recalculation():
     area just because the style word changed. The caption turned up on the
     next toggle, which is the "it takes three clicks" report."""
     import inspect
+
     from fastprompter.main import FastPrompter
     src = inspect.getsource(FastPrompter._recalc_native_frame)
     assert "0x0020" in src, "SWP_FRAMECHANGED is the whole point"

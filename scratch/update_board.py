@@ -1,7 +1,6 @@
-import os
 
 filepath = '.saipen/BOARD.md'
-with open(filepath, 'r', encoding='utf-8') as f:
+with open(filepath, encoding='utf-8') as f:
     text = f.read()
 
 text = text.replace("- [ ] T-211 (P2)", "- [x] T-211 (P2)")

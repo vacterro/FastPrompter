@@ -1,10 +1,11 @@
-import re, json, sys
+import re
+import sys
 
 sys.stdout.reconfigure(encoding='utf-8')
 
 def parse_en(path):
     en = {}
-    with open(path, 'r', encoding='utf-8') as f:
+    with open(path, encoding='utf-8') as f:
         content = f.read()
     
     # Find the dict content between TRANSLATIONS = { and }
@@ -38,7 +39,7 @@ def parse_en(path):
 
 def parse_est(path):
     est = {}
-    with open(path, 'r', encoding='utf-8') as f:
+    with open(path, encoding='utf-8') as f:
         content = f.read()
     
     start = content.index('TRANSLATIONS: dict[str, str] = {')

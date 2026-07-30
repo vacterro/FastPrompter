@@ -352,6 +352,7 @@ class WindowMixin:
 
     def _enter_zen_solo(self) -> None:
         import time as _t
+
         from fastprompter.ui import zen_desktop
         self._zen_minimised = zen_desktop.minimise_others(self._own_hwnds())
         self.zen_solo = True

@@ -1,5 +1,7 @@
 """Fix missing/extra keys in translation files."""
-import sys, os
+import os
+import sys
+
 sys.path.insert(0, 'V:/___VAC/__K/__CODE/_PY/_FastPrompter/src')
 from fastprompter.core.i18n.en import TRANSLATIONS as en
 
@@ -65,7 +67,7 @@ for code, ops in fixes.items():
     # Write file
     lines = []
     # Read existing docstring
-    with open(fpath, 'r', encoding='utf-8') as f:
+    with open(fpath, encoding='utf-8') as f:
         first_line = f.readline().strip()
     lines.append(first_line)
     lines.append('')

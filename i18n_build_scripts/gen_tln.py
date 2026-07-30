@@ -1,7 +1,7 @@
 import ast
 
 path = 'V:/___VAC/__K/__CODE/_PY/_FastPrompter/src/fastprompter/core/i18n/tln.py'
-with open(path, 'r', encoding='utf-8') as f:
+with open(path, encoding='utf-8') as f:
     content = f.read()
 
 # Try to extract the original Klingon values by reading line by line
@@ -10,7 +10,7 @@ lines = content.split('\n')
 
 # Read EN file for reference
 en_path = 'V:/___VAC/__K/__CODE/_PY/_FastPrompter/src/fastprompter/core/i18n/en.py'
-with open(en_path, 'r', encoding='utf-8') as f:
+with open(en_path, encoding='utf-8') as f:
     en_content = f.read()
 en_lines = en_content.split('\n')
 

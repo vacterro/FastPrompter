@@ -1,8 +1,9 @@
 import re
 import sys
 
+
 def get_dict_text(filepath):
-    with open(filepath, 'r', encoding='utf-8') as f:
+    with open(filepath, encoding='utf-8') as f:
         text = f.read()
     m = re.search(r'TRANSLATIONS.*?=\s*\{', text, re.DOTALL)
     if not m:

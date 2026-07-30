@@ -1,8 +1,9 @@
-import os
 import json
+import os
 import re
-import time
 import subprocess
+import time
+
 from deep_translator import GoogleTranslator
 
 src_dir = r"V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter"
@@ -21,7 +22,7 @@ for root, dirs, files in os.walk(src_dir):
     for f in files:
         if f.endswith('.py'):
             path = os.path.join(root, f)
-            with open(path, 'r', encoding='utf-8') as file:
+            with open(path, encoding='utf-8') as file:
                 content = file.read()
                 matches = tr_pattern.findall(content)
                 for m in matches:
@@ -82,7 +83,7 @@ for lang_key, meta in sorted(LANG_META.items()):
     filepath = os.path.join(locales_dir, f"{lang_key}.json")
     
     if os.path.exists(filepath):
-        with open(filepath, 'r', encoding='utf-8') as f:
+        with open(filepath, encoding='utf-8') as f:
             try:
                 data = json.load(f)
             except Exception:
@@ -165,7 +166,7 @@ if os.path.exists(docs_dir):
             dst_file_path = os.path.join(target_lang_dir, wf)
             
             if not os.path.exists(dst_file_path):
-                with open(src_file_path, 'r', encoding='utf-8') as f:
+                with open(src_file_path, encoding='utf-8') as f:
                     content = f.read()
                 
                 paragraphs = content.split('\n\n')
@@ -210,7 +211,7 @@ log_file = r"V:\___VAC\__K\__CODE\_PY\_FastPrompter\.saipen\LOG.md"
 
 last_eid = 1012
 if os.path.exists(log_file):
-    with open(log_file, 'r', encoding='utf-8') as f:
+    with open(log_file, encoding='utf-8') as f:
         log_content = f.read()
         e_matches = re.findall(r'\[E-(\d+)\]', log_content)
         if e_matches:

@@ -1,5 +1,5 @@
-from PyQt6.QtWidgets import QApplication, QTextEdit
 from PyQt6.QtGui import QTextCursor
+from PyQt6.QtWidgets import QApplication, QTextEdit
 
 app = QApplication([])
 t = QTextEdit()

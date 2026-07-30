@@ -1,18 +1,21 @@
-# -*- coding: utf-8 -*-
 """Batch translate untranslated entries in all i18n language files."""
-import sys, os, json, re, time
+import json
+import os
+import sys
+import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 sys.stdout.reconfigure(encoding='utf-8')
 
 from deep_translator import GoogleTranslator
+
 from fastprompter.core.i18n import ensure_initialized
 from fastprompter.core.i18n._engine import _registry as r
 
 ensure_initialized()
 en = r.get("EN", {})
 
-with open("_untranslated.json", "r", encoding="utf-8") as f:
+with open("_untranslated.json", encoding="utf-8") as f:
     unt_data = json.load(f)
 
 LANG_MAP = {
@@ -36,7 +39,7 @@ for code in sorted(unt_data.keys()):
     print(f"\n=== {code} ({target}) \u2014 {len(keys)} entries ===")
     
     filepath = os.path.join(i18n_dir, f"{code.lower()}.py")
-    with open(filepath, "r", encoding="utf-8") as f:
+    with open(filepath, encoding="utf-8") as f:
         content = f.read()
     
     changes = 0
@@ -87,6 +90,6 @@ for code in sorted(unt_data.keys()):
             f.write(content)
         print(f"  -> {changes} changes to {code.lower()}.py")
     else:
-        print(f"  -> No changes")
+        print("  -> No changes")
 
 print("\n=== DONE ===")

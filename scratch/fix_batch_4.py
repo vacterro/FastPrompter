@@ -4,7 +4,7 @@ PROJECT = r"v:\___VAC\__K\__CODE\_PY\_FastPrompter"
 
 def fix_main_py():
     path = os.path.join(PROJECT, "src", "fastprompter", "main.py")
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         content = f.read()
 
     # T-189, T-194, T-310: change_profile
@@ -42,7 +42,7 @@ def fix_main_py():
 
 def fix_snippet_panel_py():
     path = os.path.join(PROJECT, "src", "fastprompter", "ui", "snippet_panel.py")
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         content = f.read()
     
     # T-209: _update_hover_buttons calls folder_summary

@@ -10,7 +10,6 @@ Stdlib only. Run from the project root:  python .saipen/kitchen/validate.py
 
 from __future__ import annotations
 
-import io
 import os
 import re
 import sys
@@ -42,7 +41,7 @@ def read(name):
     path = os.path.join(ROOT, name)
     if not os.path.isfile(path):
         return None
-    return io.open(path, encoding="utf-8").read()
+    return open(path, encoding="utf-8").read()
 
 
 def check_state(fails):

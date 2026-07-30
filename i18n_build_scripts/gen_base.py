@@ -1,5 +1,4 @@
-﻿import ast
-import os
+﻿import os
 
 EN_PATH = r"V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\i18n\en.py"
 OUT_DIR = r"V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\i18n"

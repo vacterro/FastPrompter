@@ -1,8 +1,9 @@
 """Write vi.py - Vietnamese"""
-import os, re
+import os
+import re
 
 d = r'V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\i18n'
-with open(os.path.join(d, 'en.py'),'r',encoding='utf-8') as f:
+with open(os.path.join(d, 'en.py'),encoding='utf-8') as f:
     en = f.read()
 
 # Parse keys and values

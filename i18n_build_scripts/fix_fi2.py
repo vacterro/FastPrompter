@@ -1,6 +1,9 @@
 """Regenerate fi.py with proper escaping."""
 from __future__ import annotations
-import ast, json, pathlib
+
+import ast
+import json
+import pathlib
 
 DIR = pathlib.Path("V:/___VAC/__K/__CODE/_PY/_FastPrompter/src/fastprompter/core/i18n")
 EN = DIR / "en.py"

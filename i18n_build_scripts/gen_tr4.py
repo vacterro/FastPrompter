@@ -5,18 +5,19 @@ Usage: python gen_tr4.py
 Reads _parsed.py for EN entries, applies translations from data dicts below,
 writes each .py file with 483 entries.
 """
-import os, sys, json
+import json
+import os
 
 d = r'V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\i18n'
 tmp = r'V:\_TEMP_\opencode'
 
 # Load EN entries
-exec(open(os.path.join(d, '_parsed.py'), 'r', encoding='utf-8').read())
+exec(open(os.path.join(d, '_parsed.py'), encoding='utf-8').read())
 entries = en_entries
 
 def load_translations(lang):
     path = os.path.join(tmp, f'tr_{lang}.json')
-    with open(path, 'r', encoding='utf-8') as f:
+    with open(path, encoding='utf-8') as f:
         return json.load(f)
 
 def write_file(filename, lang_header, translations):

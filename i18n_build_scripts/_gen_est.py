@@ -1,13 +1,14 @@
 """Generate complete Estonian translation file."""
 
-import re, sys
+import re
+import sys
 
 sys.stdout.reconfigure(encoding='utf-8')
 
 def parse_en(path):
     """Parse all EN keys, handling both single and double quote lines."""
     en = {}
-    with open(path, 'r', encoding='utf-8') as f:
+    with open(path, encoding='utf-8') as f:
         content = f.read()
     
     for line in content.split('\n'):
@@ -29,7 +30,7 @@ def parse_en(path):
 def parse_est(path):
     """Parse EST file."""
     est = {}
-    with open(path, 'r', encoding='utf-8') as f:
+    with open(path, encoding='utf-8') as f:
         content = f.read()
     for line in content.split('\n'):
         stripped = line.strip()

@@ -1,9 +1,8 @@
-import os
 
 file1 = r"scratch\execute_saitranslate_full.py"
 file2 = r"scratch\validate_saitranslate.py"
 
-with open(file1, 'r', encoding='utf-8') as f:
+with open(file1, encoding='utf-8') as f:
     text = f.read()
 
 text = text.replace(
@@ -14,7 +13,7 @@ text = text.replace(
 with open(file1, 'w', encoding='utf-8') as f:
     f.write(text)
 
-with open(file2, 'r', encoding='utf-8') as f:
+with open(file2, encoding='utf-8') as f:
     text = f.read()
 
 text = text.replace(

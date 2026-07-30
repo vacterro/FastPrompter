@@ -1,11 +1,10 @@
 import os
-import re
 
 PROJECT = r"v:\___VAC\__K\__CODE\_PY\_FastPrompter"
 
 def fix_main_py():
     path = os.path.join(PROJECT, "src", "fastprompter", "main.py")
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         content = f.read()
 
     # T-164: _save_undo_state thread race
@@ -82,7 +81,7 @@ def fix_main_py():
 
 def fix_state_py():
     path = os.path.join(PROJECT, "src", "fastprompter", "core", "state.py")
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         content = f.read()
 
     # T-165: state.py backup connection leak
@@ -106,7 +105,7 @@ def fix_state_py():
 
 def fix_file_container_py():
     path = os.path.join(PROJECT, "src", "fastprompter", "ui", "file_container.py")
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         content = f.read()
 
     # T-171: _thumb_cache unbounded

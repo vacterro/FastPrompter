@@ -1,9 +1,11 @@
-import re, sys
+import re
+import sys
+
 sys.stdout.reconfigure(encoding='utf-8')
 
 # Original EST
 orig = {}
-with open(r'V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\i18n\est.py', 'r', encoding='utf-8') as f:
+with open(r'V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\i18n\est.py', encoding='utf-8') as f:
     for line in f:
         m = re.match(r'    "(.+?)": "(.+?)",?$', line.rstrip())
         if m:
@@ -11,7 +13,7 @@ with open(r'V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\i18n\es
 
 # New file
 new = {}
-with open(r'V:\_TEMP_\opencode\est_full.py', 'r', encoding='utf-8') as f:
+with open(r'V:\_TEMP_\opencode\est_full.py', encoding='utf-8') as f:
     for line in f:
         m = re.match(r'    "(.+?)": "(.+?)",?$', line.rstrip())
         if m:

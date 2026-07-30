@@ -12,7 +12,7 @@ PROJECT = r"v:\___VAC\__K\__CODE\_PY\_FastPrompter"
 
 def fix_state_py():
     path = os.path.join(PROJECT, "src", "fastprompter", "core", "state.py")
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         content = f.read()
     changes = 0
 
@@ -22,7 +22,7 @@ def fix_state_py():
         # cats_order
         ('                    except Exception: self.data[row[0]] = {}',
          '                    except Exception as e: logger.warning(f"Failed to parse {row[0]}: {e}"); self.data[row[0]] = {}'),
-        # silo_last_edited 
+        # silo_last_edited
         ('                except Exception: self.data[row[0]] = {}',
          '                except Exception as e: logger.warning(f"Failed to parse {row[0]}: {e}"); self.data[row[0]] = {}'),
         # pinned_silos, silo_ticked, silo_collapsed
@@ -47,7 +47,7 @@ def fix_state_py():
 
 def fix_main_py():
     path = os.path.join(PROJECT, "src", "fastprompter", "main.py")
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         content = f.read()
     changes = 0
 
@@ -152,7 +152,7 @@ def fix_main_py():
 
 def fix_settings_py():
     path = os.path.join(PROJECT, "src", "fastprompter", "ui", "settings.py")
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         content = f.read()
     changes = 0
 
@@ -179,7 +179,7 @@ def fix_settings_py():
 
 def fix_hotkeys_py():
     path = os.path.join(PROJECT, "src", "fastprompter", "core", "hotkeys.py")
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         content = f.read()
     changes = 0
 

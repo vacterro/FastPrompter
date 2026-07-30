@@ -2,13 +2,14 @@
 """Generate ny.py — Chichewa translation."""
 
 from __future__ import annotations
+
 import sys
 
 EN_FILE = r"V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\i18n\en.py"
 
 def parse_en(path: str) -> list[tuple[str, str]]:
     """Return list of (key, en_value) preserving order."""
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         content = f.read()
     pairs = []
     import ast
@@ -31,7 +32,7 @@ T = {}
 
 # Helper: Chichewa (Chichewa / Nyanja) translations
 def tr(en: str) -> str:
-    """Return Chichewa translation for key en. Falls back to en.""" 
+    """Return Chichewa translation for key en. Falls back to en."""
     return T.get(en, en)
 
 for k, _ in KEYS:

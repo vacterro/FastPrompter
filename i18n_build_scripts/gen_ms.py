@@ -4,7 +4,7 @@ import os
 
 d = r'V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\i18n'
 
-exec(open(os.path.join(d, '_parsed.py'), 'r', encoding='utf-8').read())
+exec(open(os.path.join(d, '_parsed.py'), encoding='utf-8').read())
 
 MS = {
     "+ Font": "+ Fon",

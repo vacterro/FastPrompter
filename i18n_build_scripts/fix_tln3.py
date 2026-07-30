@@ -1,7 +1,6 @@
-import re
 
 path = 'V:/___VAC/__K/__CODE/_PY/_FastPrompter/src/fastprompter/core/i18n/tln.py'
-with open(path, 'r', encoding='utf-8') as f:
+with open(path, encoding='utf-8') as f:
     content = f.read()
 
 lines = content.split('\n')
@@ -88,6 +87,7 @@ with open(path, 'w', encoding='utf-8') as f:
 
 # Verify
 import ast
+
 try:
     ast.parse(result_text)
     print("SYNTAX OK")

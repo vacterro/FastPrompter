@@ -1,5 +1,8 @@
 """Generate Uzbek translation file."""
-import sys, os, json, ast
+import json
+import os
+import sys
+
 sys.path.insert(0, os.path.dirname(__file__))
 
 OUT_DIR = r"V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\i18n"

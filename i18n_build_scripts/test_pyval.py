@@ -1,4 +1,6 @@
-import ast, json
+import ast
+import json
+
 
 def py_val(s):
     has_single = "'" in s

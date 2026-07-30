@@ -1,10 +1,10 @@
 import ast
 import re
 
-with open('V:/___VAC/__K/__CODE/_PY/_FastPrompter/src/fastprompter/core/i18n/en.py', 'r', encoding='utf-8') as f:
+with open('V:/___VAC/__K/__CODE/_PY/_FastPrompter/src/fastprompter/core/i18n/en.py', encoding='utf-8') as f:
     en_content = f.read()
 
-with open('V:/___VAC/__K/__CODE/_PY/_FastPrompter/src/fastprompter/core/i18n/spa.py', 'r', encoding='utf-8') as f:
+with open('V:/___VAC/__K/__CODE/_PY/_FastPrompter/src/fastprompter/core/i18n/spa.py', encoding='utf-8') as f:
     spa_content = f.read()
 
 en_match = re.search(r'TRANSLATIONS: dict\[str, str\] = (\{.*\})', en_content, re.DOTALL)

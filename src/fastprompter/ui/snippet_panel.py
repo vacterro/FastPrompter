@@ -1,6 +1,14 @@
 from PyQt6.QtCore import QEvent, QMimeData, QObject, Qt, QTimer
 from PyQt6.QtGui import QDrag, QFontMetrics
-from PyQt6.QtWidgets import QApplication, QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import (
+    QApplication,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 from fastprompter.core.config import extract_bg, extract_border_color, extract_color
 from fastprompter.core.translations import tr

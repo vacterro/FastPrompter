@@ -6560,9 +6560,16 @@ class FastPrompter(
 
     def open_projects_manager(self):
         """Check/uncheck which projects appear in the combo, and reorder them."""
-        from PyQt6.QtWidgets import (QDialog, QDialogButtonBox, QHBoxLayout,
-                                     QLabel, QListWidget, QListWidgetItem,
-                                     QPushButton, QVBoxLayout)
+        from PyQt6.QtWidgets import (
+            QDialog,
+            QDialogButtonBox,
+            QHBoxLayout,
+            QLabel,
+            QListWidget,
+            QListWidgetItem,
+            QPushButton,
+            QVBoxLayout,
+        )
         le = getattr(self, "_current_lang", "EN")
         cur = self.get_current_category()
         dlg = QDialog(self)

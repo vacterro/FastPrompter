@@ -8,7 +8,7 @@ for fname in targets:
     if not os.path.exists(p):
         print(f'{fname}: NOT FOUND')
         continue
-    with open(p, 'r', encoding='utf-8') as f:
+    with open(p, encoding='utf-8') as f:
         ct = f.read()
     lines = ct.split('\n')
     in_dict = False

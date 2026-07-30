@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """Regenerate all 4 files using direct imports (avoids parser escape bugs)."""
-import os, sys, importlib.util
+import os
+import sys
 
 d = r'V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\i18n'
 sys.path.insert(0, d)
 
 # Direct import - Python handles all escaping correctly
 import en
+
 en_tr = en.TRANSLATIONS
 
 print(f'EN keys: {len(en_tr)}')

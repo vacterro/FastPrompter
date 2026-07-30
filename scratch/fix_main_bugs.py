@@ -1,8 +1,7 @@
-import os
 import re
 
 main_path = r"v:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\main.py"
-with open(main_path, "r", encoding="utf-8") as f:
+with open(main_path, encoding="utf-8") as f:
     main_code = f.read()
 
 # Fix T-163: Add import datetime at the top, replace __import__('datetime')

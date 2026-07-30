@@ -1,10 +1,11 @@
 import os
+
 script_abs = os.path.abspath(r'V:\___VAC\__K\__CODE\_PY\_WR\WildRiftAssistant\wr_runtime.ahk').replace('\\', '\\\\')
 ps_cmd = (
     "Get-CimInstance Win32_Process -Filter \"name like '%AutoHotkey%'\" | "
-    "Where-Object {{ $_.CommandLine -like '*{script}*' }} | "
+    f"Where-Object {{ $_.CommandLine -like '*{script_abs}*' }} | "
     "Select-Object -ExpandProperty ProcessId"
-).format(script=script_abs)
+)
 print("POWERSHELL CMD:")
 print(ps_cmd)
 print("---")

@@ -1,4 +1,5 @@
-import ast, os, re
+import ast
+import os
 
 dir = 'V:/___VAC/__K/__CODE/_PY/_FastPrompter/src/fastprompter/core/i18n'
 
@@ -7,14 +8,14 @@ key_text = "``` fences render monospace with syntax tints, auto line numbers and
 
 # Build the line to insert: use single quotes matching the file style
 # Value = same text for now (will be a placeholder)
-new_line = "    '{}': '{}',\n".format(key_text, key_text)
+new_line = f"    '{key_text}': '{key_text}',\n"
 print(f"New line: {repr(new_line)}")
 
 files = ['ts.py','ve.py','nr.py','ss.py','sn.py','ck.py','dst.py']
 
 for fname in files:
     path = os.path.join(dir, fname)
-    with open(path, 'r', encoding='utf-8') as f:
+    with open(path, encoding='utf-8') as f:
         lines = f.readlines()
     
     # Insert before "'add shortcut"
@@ -35,7 +36,7 @@ for fname in files:
         f.writelines(lines)
     
     # Verify
-    with open(path, 'r', encoding='utf-8') as f:
+    with open(path, encoding='utf-8') as f:
         content = f.read()
     tree = ast.parse(content)
     key_count = 0

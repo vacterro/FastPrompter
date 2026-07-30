@@ -1,5 +1,6 @@
 """Generate ru.py from old _DATA."""
 import sys
+
 sys.path.insert(0, 'V:/___VAC/__K/__CODE/_PY/_FastPrompter/src')
 
 from fastprompter.core.translations import _DATA

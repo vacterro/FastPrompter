@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.8.1b — 2026-07-30
+
+- **Zen Mode exit**: FastPrompter explicitly brings itself back to the foreground after restoring other windows on the third `Ctrl+D` tap, so it doesn't get buried under them.
+
 ## v0.8.1a — 2026-07-30
 
 - **Fixed: the daily Markdown snapshot only covered the project you had open.** It read the active-project alias, so a user with several projects had the others missing from `Documents\.fastprompter\<date>\` — and the folder looked full, so nothing said otherwise. Silos and archive are now exported per project (`silos\<project>\`), matching how snippets were already handled, and the day's manifest counts all of them. Your primary data was never affected: the database, its `.bak` and the undo file always held every project.

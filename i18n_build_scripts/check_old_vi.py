@@ -1,4 +1,5 @@
-import os, subprocess, sys
+import subprocess
+import sys
 
 repo = r'V:\___VAC\__K\__CODE\_PY\_FastPrompter'
 result = subprocess.run(['git', 'show', 'HEAD:src/fastprompter/core/i18n/vi.py'],

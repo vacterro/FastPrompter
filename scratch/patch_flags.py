@@ -1,7 +1,6 @@
-import os
 
 filepath = 'src/fastprompter/ui/flags.py'
-with open(filepath, 'r', encoding='utf-8') as f:
+with open(filepath, encoding='utf-8') as f:
     text = f.read()
 
 new_specs = """    # DED (grandpa) has no country — a dark-gold banner in the app's colors.

@@ -1,15 +1,22 @@
 """Test i18n package."""
 import sys
+
 sys.path.insert(0, 'V:/___VAC/__K/__CODE/_PY/_FastPrompter/src')
 sys.stdout.reconfigure(encoding='utf-8')
 
 # Init
 from fastprompter.core.i18n._container import initialize
+
 initialize(load_external=False)
 
 from fastprompter.core.i18n import (
-    tr, tr_fmt, available_langs, coverage_report, missing_keys,
-    set_language, get_language
+    available_langs,
+    coverage_report,
+    get_language,
+    missing_keys,
+    set_language,
+    tr,
+    tr_fmt,
 )
 
 langs = available_langs()
@@ -56,7 +63,7 @@ if result != 'Сохранить (Ctrl+S)':
 
 # Test coverage
 report = coverage_report()
-print(f'\nCoverage:')
+print('\nCoverage:')
 for code, pct in sorted(report.items()):
     missing = len(missing_keys(code))
     print(f'  {code}: {pct}% ({missing} missing)')
@@ -70,6 +77,7 @@ set_language('EN')
 
 # Verify old translations.py not broken
 from fastprompter.core import translations as old
+
 old_tr = old.tr('Window', 'RU')
 if old_tr != 'Окно':
     print(f'FAIL: old tr() broken: {old_tr!r}')

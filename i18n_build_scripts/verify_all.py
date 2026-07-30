@@ -1,8 +1,9 @@
-import ast, os
+import ast
+import os
 
 dir = 'V:/___VAC/__K/__CODE/_PY/_FastPrompter/src/fastprompter/core/i18n'
 en_path = os.path.join(dir, 'en.py')
-with open(en_path, 'r', encoding='utf-8') as f:
+with open(en_path, encoding='utf-8') as f:
     en_tree = ast.parse(f.read())
 en_keys = set()
 for node in ast.walk(en_tree):
@@ -15,7 +16,7 @@ files = ['ts.py','ve.py','nr.py','ss.py','sn.py','ck.py','dst.py','tln.py']
 all_ok = True
 for fname in files:
     path = os.path.join(dir, fname)
-    with open(path, 'r', encoding='utf-8') as f:
+    with open(path, encoding='utf-8') as f:
         content = f.read()
     try:
         ast.parse(content)

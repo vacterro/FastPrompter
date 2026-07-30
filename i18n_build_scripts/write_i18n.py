@@ -1,9 +1,10 @@
-import os, sys, re
+import os
+import re
 
 target_dir = r'V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\i18n'
 
 # Read EN source
-with open(os.path.join(target_dir, 'en.py'), 'r', encoding='utf-8') as f:
+with open(os.path.join(target_dir, 'en.py'), encoding='utf-8') as f:
     en_text = f.read()
 
 # Extract dict body

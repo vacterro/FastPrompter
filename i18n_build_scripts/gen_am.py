@@ -1,5 +1,5 @@
 """Amharic (አማርኛ) translation generator."""
-import sys, os; sys.path.insert(0, os.path.dirname(__file__))
+import sys; import os; sys.path.insert(0, os.path.dirname(__file__))
 from gen_smart import make_translations, write_file
 
 o = {

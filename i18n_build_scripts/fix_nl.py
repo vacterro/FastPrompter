@@ -1,8 +1,7 @@
 """Fix nl.py quote issue."""
-import os
 
 fpath = 'V:/___VAC/__K/__CODE/_PY/_FastPrompter/src/fastprompter/core/i18n/nl.py'
-with open(fpath, 'r', encoding='utf-8') as f:
+with open(fpath, encoding='utf-8') as f:
     content = f.read()
 
 old = "    'Flip pages': 'Pagina's omslaan',"

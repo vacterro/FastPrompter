@@ -1,8 +1,7 @@
-import os
 import re
 
 filepath = 'tests/test_pie_menu.py'
-with open(filepath, 'r', encoding='utf-8') as f:
+with open(filepath, encoding='utf-8') as f:
     text = f.read()
 
 # Comment out TestShowHideCloseEvents class

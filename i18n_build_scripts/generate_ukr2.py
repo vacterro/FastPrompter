@@ -1,12 +1,11 @@
-# -*- coding: utf-8 -*-
 """Generate complete Ukrainian translation file using proper AST parsing."""
 
 import ast
-import sys
+
 
 def parse_file(filepath):
     """Parse a translations file and return the dict."""
-    with open(filepath, 'r', encoding='utf-8') as f:
+    with open(filepath, encoding='utf-8') as f:
         source = f.read()
     
     # We need to parse this as a dict literal

@@ -1,5 +1,7 @@
 """Smart i18n generator using word-boundary translation."""
-import os, json, re
+import json
+import os
+import re
 
 OUT_DIR = r"V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\i18n"
 

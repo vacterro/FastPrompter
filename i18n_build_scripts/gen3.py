@@ -1,12 +1,16 @@
 """Generate complete Spanish translation file."""
 from __future__ import annotations
-import ast, re, sys
+
+import ast
+import re
+import sys
+
 sys.stdout.reconfigure(encoding='utf-8')
 
-with open('V:/___VAC/__K/__CODE/_PY/_FastPrompter/src/fastprompter/core/i18n/en.py', 'r', encoding='utf-8') as f:
+with open('V:/___VAC/__K/__CODE/_PY/_FastPrompter/src/fastprompter/core/i18n/en.py', encoding='utf-8') as f:
     en_d = ast.literal_eval(re.search(r'TRANSLATIONS: dict\[str, str\] = (\{.*\})', f.read(), re.DOTALL).group(1))
 
-with open('V:/___VAC/__K/__CODE/_PY/_FastPrompter/src/fastprompter/core/i18n/spa.py', 'r', encoding='utf-8') as f:
+with open('V:/___VAC/__K/__CODE/_PY/_FastPrompter/src/fastprompter/core/i18n/spa.py', encoding='utf-8') as f:
     spa_d = ast.literal_eval(re.search(r'TRANSLATIONS: dict\[str, str\] = (\{.*\})', f.read(), re.DOTALL).group(1))
 
 # Build result: start with SPA entries, then add EN for missing keys

@@ -1,8 +1,9 @@
 import re
 
+
 def extract_keys(filepath):
     keys = set()
-    with open(filepath, 'r', encoding='utf-8') as f:
+    with open(filepath, encoding='utf-8') as f:
         for line in f:
             m = re.match(r'^\s+[\"\'](.+?)[\"\']\s*:', line)
             if m:

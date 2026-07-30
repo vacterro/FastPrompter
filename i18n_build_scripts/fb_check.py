@@ -1,9 +1,11 @@
 """Check for EN fallback values in translation files."""
-import re, sys, io
+import io
+import sys
+
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
 def list_fallbacks(path):
-    with open(path, 'r', encoding='utf-8') as f:
+    with open(path, encoding='utf-8') as f:
         text = f.read()
     fallbacks = []
     for line in text.split('\n'):

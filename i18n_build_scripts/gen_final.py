@@ -1,6 +1,6 @@
 """Generate complete BG and EL translation files with all 483 keys."""
 
-import re, json
+import re
 
 EN_PATH = r'V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\i18n\en.py'
 BG_PATH = r'V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\i18n\bg.py'
@@ -9,7 +9,7 @@ EL_PATH = r'V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\i18n\el
 def parse_file(filepath):
     """Parse a translation file, return dict of key->value."""
     result = {}
-    with open(filepath, 'r', encoding='utf-8') as f:
+    with open(filepath, encoding='utf-8') as f:
         content = f.read()
     # Match lines like:     'key': 'value',
     # or:     "key": "value",

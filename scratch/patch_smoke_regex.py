@@ -1,4 +1,3 @@
-import os
 import glob
 import re
 
@@ -51,7 +50,7 @@ for filepath in target_files:
     if filepath.endswith("test_app_smoke.py"):
         continue  # Already patched
 
-    with open(filepath, 'r', encoding='utf-8') as f:
+    with open(filepath, encoding='utf-8') as f:
         content = f.read()
 
     new_content, count = fixture_pattern.subn(build_replacement, content)

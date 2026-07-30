@@ -1,10 +1,9 @@
-import os
 import glob
 
 target_files = glob.glob(r"tests_smoke\test_*.py")
 
 for filepath in target_files:
-    with open(filepath, 'r', encoding='utf-8') as f:
+    with open(filepath, encoding='utf-8') as f:
         content = f.read()
 
     new_content = content.replace(

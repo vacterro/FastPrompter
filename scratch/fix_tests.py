@@ -1,6 +1,8 @@
-import glob, re
+import glob
+import re
+
 for f in glob.glob('tests_smoke/test_*.py'):
-    with open(f, 'r', encoding='utf-8') as file:
+    with open(f, encoding='utf-8') as file:
         content = file.read()
     content = content.replace('scope="module"', 'scope="function"')
     

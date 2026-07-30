@@ -4,7 +4,7 @@ PROJECT = r"v:\___VAC\__K\__CODE\_PY\_FastPrompter"
 
 def fix_main_py():
     path = os.path.join(PROJECT, "src", "fastprompter", "main.py")
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         content = f.read()
 
     # T-179: open_file_container imports
@@ -59,7 +59,7 @@ def fix_main_py():
 
 def fix_snippet_panel_py():
     path = os.path.join(PROJECT, "src", "fastprompter", "ui", "snippet_panel.py")
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         content = f.read()
     
     # T-175: snippet_panel.py _hover_timer runs continuously

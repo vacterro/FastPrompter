@@ -1,7 +1,6 @@
-import os
 
 filepath = 'src/fastprompter/ui/pie_menu.py'
-with open(filepath, 'r', encoding='utf-8') as f:
+with open(filepath, encoding='utf-8') as f:
     text = f.read()
 
 # 1. Remove pynput import

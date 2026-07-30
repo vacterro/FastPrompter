@@ -1,8 +1,9 @@
 """Add missing Vietnamese translations to bring vi.py to 100% coverage."""
 import sys
+
 sys.path.insert(0, 'src')
 
-with open('src/fastprompter/core/i18n/vi.py', 'r', encoding='utf-8') as f:
+with open('src/fastprompter/core/i18n/vi.py', encoding='utf-8') as f:
     content = f.read()
 
 start_marker = 'TRANSLATIONS: dict[str, str] = {'
@@ -83,6 +84,7 @@ print(f'Total keys: {len(d)}')
 
 # Check if all EN keys are present
 from fastprompter.core.i18n._container import _extract_key_source
+
 en_keys = _extract_key_source()
 missing = [k for k in en_keys if k not in d]
 print(f'Missing keys: {len(missing)}')

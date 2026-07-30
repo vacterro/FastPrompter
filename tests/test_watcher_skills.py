@@ -1,6 +1,5 @@
 """Tests for fastprompter.core.watcher.skills — the skill palette."""
 
-import io
 import os
 import sys
 import tempfile
@@ -24,7 +23,7 @@ def make_skill_tree(entries):
     for name, text in entries.items():
         folder = os.path.join(root, name)
         os.makedirs(folder, exist_ok=True)
-        with io.open(os.path.join(folder, "SKILL.md"), "w", encoding="utf-8") as fh:
+        with open(os.path.join(folder, "SKILL.md"), "w", encoding="utf-8") as fh:
             fh.write(text)
     return os.path.join(root, "*", "SKILL.md")
 
@@ -95,7 +94,7 @@ def test_a_project_placeholder_is_expanded_when_given():
     root = tempfile.mkdtemp()
     folder = os.path.join(root, ".claude", "skills", "local")
     os.makedirs(folder)
-    with io.open(os.path.join(folder, "SKILL.md"), "w", encoding="utf-8") as fh:
+    with open(os.path.join(folder, "SKILL.md"), "w", encoding="utf-8") as fh:
         fh.write("---\nname: local\n---\n")
     found = discover(["{project}/.claude/skills/*/SKILL.md"], project=root)
     assert [s.name for s in found] == ["local"]

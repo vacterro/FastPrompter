@@ -1,6 +1,6 @@
 import ast
 
-with open('V:/___VAC/__K/__CODE/_PY/_FastPrompter/src/fastprompter/core/i18n/tln.py', 'r', encoding='utf-8') as f:
+with open('V:/___VAC/__K/__CODE/_PY/_FastPrompter/src/fastprompter/core/i18n/tln.py', encoding='utf-8') as f:
     content = f.read()
 
 lines = content.split('\n')

@@ -1,8 +1,7 @@
-import os
 import re
 
 filepath = 'tests/test_pie_menu.py'
-with open(filepath, 'r', encoding='utf-8') as f:
+with open(filepath, encoding='utf-8') as f:
     text = f.read()
 
 # I will just look for `class _TestShowHideCloseEvents` and replace everything down to `class _TestGlobalKeyPress` with nothing, then clear everything to the end of file.

@@ -1,5 +1,6 @@
 """Final validation for all 5 translation files."""
-import ast, pathlib
+import ast
+import pathlib
 
 DIR = pathlib.Path("V:/___VAC/__K/__CODE/_PY/_FastPrompter/src/fastprompter/core/i18n")
 en = ast.parse((DIR / "en.py").read_text("utf-8"))

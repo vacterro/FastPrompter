@@ -1,11 +1,10 @@
-import os
 import glob
 import re
 
 target_files = glob.glob(r"tests_smoke\test_*.py")
 
 for filepath in target_files:
-    with open(filepath, 'r', encoding='utf-8') as f:
+    with open(filepath, encoding='utf-8') as f:
         content = f.read()
 
     # Find the def win(monkeypatch): block

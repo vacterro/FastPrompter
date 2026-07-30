@@ -1,8 +1,7 @@
 """Verify translation files match EN master."""
-import re
 
 def count_keys(path):
-    with open(path, 'r', encoding='utf-8') as f:
+    with open(path, encoding='utf-8') as f:
         text = f.read()
     keys = set()
     for line in text.split('\n'):
@@ -49,7 +48,7 @@ if eh: print(f'  {list(eh)[:3]}')
 
 # Check for EN fallbacks
 def list_fallbacks(path):
-    with open(path, 'r', encoding='utf-8') as f:
+    with open(path, encoding='utf-8') as f:
         text = f.read()
     fallbacks = []
     for line in text.split('\n'):

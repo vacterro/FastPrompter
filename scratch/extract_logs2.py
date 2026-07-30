@@ -1,9 +1,8 @@
 import json
-import sys
 
 log_path = r'C:\Users\vac34\.gemini\antigravity\brain\2c7a476c-ab4c-4162-9b3f-29a92e3c1f4d\.system_generated\logs\transcript_full.jsonl'
 try:
-    with open(log_path, 'r', encoding='utf-8') as f:
+    with open(log_path, encoding='utf-8') as f:
         for line in f:
             if 'open_saipen_dialog' in line and 'def ' in line:
                 data = json.loads(line)

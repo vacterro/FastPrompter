@@ -3,6 +3,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
+
 def run_cmd(cmd):
     print(f"Running: {' '.join(cmd)}")
     res = subprocess.run(cmd, text=True, capture_output=True)
@@ -49,7 +50,7 @@ if old_wiki_dir.exists():
 # 6. Update sync_wiki.py to point to docs/wiki/
 sync_script = root / ".saipen" / "saiwiki" / "kitchen" / "sync_wiki.py"
 if sync_script.exists():
-    with open(sync_script, "r", encoding="utf-8") as f:
+    with open(sync_script, encoding="utf-8") as f:
         content = f.read()
     
     # Change DEFAULT_WIKI_DIR pointing

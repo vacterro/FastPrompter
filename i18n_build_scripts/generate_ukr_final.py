@@ -1,10 +1,10 @@
-# -*- coding: utf-8 -*-
 """Generate complete Ukrainian translation file."""
 
 import ast
 
+
 def parse_file(filepath):
-    with open(filepath, 'r', encoding='utf-8') as f:
+    with open(filepath, encoding='utf-8') as f:
         source = f.read()
     tree = ast.parse(source)
     for node in ast.walk(tree):

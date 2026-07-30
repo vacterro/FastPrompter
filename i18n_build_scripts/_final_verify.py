@@ -1,8 +1,9 @@
-import re, sys
+import re
+import sys
 
 sys.stdout.reconfigure(encoding='utf-8')
 
-with open(r'V:\_TEMP_\opencode\est_full.py', 'r', encoding='utf-8') as f:
+with open(r'V:\_TEMP_\opencode\est_full.py', encoding='utf-8') as f:
     content = f.read()
 
 # Extract keys in order
@@ -30,6 +31,7 @@ else:
 
 # Check file is valid Python
 import ast
+
 try:
     ast.parse(content)
     print("Valid Python syntax ✓")

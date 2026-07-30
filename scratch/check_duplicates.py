@@ -1,6 +1,8 @@
-import re
 import os
+import re
+
 from PIL import Image
+
 
 def dhash(image, hash_size=8):
     image = image.convert('L').resize((hash_size + 1, hash_size), Image.Resampling.LANCZOS)
@@ -17,7 +19,7 @@ def hamming_distance(s1, s2):
     return sum(c1 != c2 for c1, c2 in zip(s1, s2))
 
 readme_path = r'v:\___VAC\__K\__CODE\_PY\_FastPrompter\README.md'
-with open(readme_path, 'r', encoding='utf-8') as f:
+with open(readme_path, encoding='utf-8') as f:
     content = f.read()
 
 img_paths = re.findall(r'src="([^"]+)"', content)

@@ -270,9 +270,9 @@ python tools/build.py
 </details>
 
 <div align="center">
-<img alt="Screenshot v1" src="docs/images/screenshot_v1.png" width="32%" />
-<img alt="Screenshot v2" src="docs/images/screenshot_v2.png" width="32%" />
-<img alt="Screenshot v3" src="docs/images/screenshot_v3.png" width="32%" />
+<img alt="Screenshot v1" src="docs/images/2026-07-23_104633.png" width="32%" />
+<img alt="Screenshot v2" src="docs/images/2026-07-23_104611.png" width="32%" />
+<img alt="Screenshot v3" src="docs/images/2026-07-23_104523.png" width="32%" />
 <br><em>Three views of the FastPrompter workspace: settings panel, silo management, and the markdown editor in action.</em>
 </div>
 

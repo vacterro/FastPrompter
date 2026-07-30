@@ -1,5 +1,7 @@
 """Cross-check all .py files against EN master keys."""
-import os, sys, importlib
+import importlib
+import os
+import sys
 
 sys.path.insert(0, 'V:/___VAC/__K/__CODE/_PY/_FastPrompter/src')
 from fastprompter.core.i18n.en import TRANSLATIONS as en

@@ -1,4 +1,5 @@
-import os, re, subprocess
+import os
+import subprocess
 
 d = r'V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\i18n'
 
@@ -12,16 +13,16 @@ print(f'Old translations: {len(old_tr)}')
 
 # Check specific key formats
 old_keys = list(old_tr.keys())
-print(f'\nSample old keys with special chars:')
+print('\nSample old keys with special chars:')
 for k in old_keys:
     if any(ord(c) > 127 for c in k):
         print(f'  {k.encode("utf-8")}')
         print(f'  {repr(k)}')
 
 # Now check current parsed format
-exec(open(os.path.join(d, '_parsed.py'), 'r', encoding='utf-8').read())
+exec(open(os.path.join(d, '_parsed.py'), encoding='utf-8').read())
 en_map = dict(en_entries)
-print(f'\nSample EN keys with special chars:')
+print('\nSample EN keys with special chars:')
 for k, v in en_entries:
     if any(ord(c) > 127 for c in k):
         print(f'  {repr(k)}')

@@ -13,7 +13,6 @@ from fastprompter.core.hashtags import (  # noqa: E402
     tags_in_line,
 )
 
-
 # ------------------------------------------------------------ what is a tag
 
 def test_a_plain_tag_is_found():

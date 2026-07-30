@@ -1,7 +1,6 @@
-import os
 
 filepath = 'src/fastprompter/ui/saipen_dialog.py'
-with open(filepath, 'r', encoding='utf-8') as f:
+with open(filepath, encoding='utf-8') as f:
     text = f.read()
 
 old_font = """        font = QFont("Consolas" if os.name == "nt" else "Monospace", 10)

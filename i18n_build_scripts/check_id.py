@@ -1,6 +1,7 @@
 import os
+
 d = r'V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\i18n'
-ct = open(os.path.join(d,'id.py'),'r',encoding='utf-8').read()
+ct = open(os.path.join(d,'id.py'),encoding='utf-8').read()
 s = ct.index('TRANSLATIONS')
 s = ct.index('{', s)
 depth = 1

@@ -1,8 +1,9 @@
 """Add missing keys to ru.py."""
 import sys
+
 sys.path.insert(0, 'V:/___VAC/__K/__CODE/_PY/_FastPrompter/src')
-from fastprompter.core.i18n.ru import TRANSLATIONS as ru
 from fastprompter.core.i18n.en import TRANSLATIONS as en
+from fastprompter.core.i18n.ru import TRANSLATIONS as ru
 
 new_keys = {
     'Bottom Left Zone': 'Нижняя левая зона',

@@ -1,8 +1,9 @@
-import re, sys
+import re
+import sys
 
 sys.stdout.reconfigure(encoding='utf-8')
 
-with open(r'V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\i18n\en.py', 'r', encoding='utf-8') as f:
+with open(r'V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\i18n\en.py', encoding='utf-8') as f:
     lines = f.readlines()
 
 unmatched = []
@@ -26,6 +27,6 @@ for i, line in enumerate(lines):
         unmatched.append((i+1, stripped[:100]))
 
 print(f"Matched: {matched_count}")
-print(f"Unmatched lines in dict:")
+print("Unmatched lines in dict:")
 for ln, txt in unmatched:
     print(f"  Line {ln}: {txt}")

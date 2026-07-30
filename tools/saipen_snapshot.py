@@ -26,7 +26,7 @@ import argparse
 import hashlib
 import shutil
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 CORE_FILES = ("STATE.md", "BOARD.md", "LOG.md")
@@ -75,7 +75,7 @@ def snapshot(root: Path, force: bool = False, keep: int = DEFAULT_KEEP) -> Path 
         if stamp.is_file() and stamp.read_text(encoding="utf-8").strip() == digest:
             return None                      # nothing changed since last time
 
-    name = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    name = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     dest = snap_dir / name
     if dest.exists():                        # same second, still keep both
         dest = snap_dir / (name + "-b")

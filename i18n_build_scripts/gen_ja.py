@@ -1,7 +1,8 @@
 """Generate ja.py."""
 from __future__ import annotations
 
-import sys, os
+import sys
+
 sys.path.insert(0, "V:/___VAC/__K/__CODE/_PY/_FastPrompter/src/fastprompter/core/i18n")
 from en import TRANSLATIONS as EN
 

@@ -1,14 +1,21 @@
 """Test the new translation package."""
 
-import sys, os
+import sys
+
 sys.stdout.reconfigure(encoding='utf-8')
 sys.path.insert(0, 'V:/___VAC/__K/__CODE/_PY/_FastPrompter/src')
 
-from fastprompter.core.translations import (
-    tr, tr_fmt, set_language, get_language, available_langs,
-    coverage_report, missing_keys
-)
 from fastprompter.core.translations._container import initialize
+
+from fastprompter.core.translations import (
+    available_langs,
+    coverage_report,
+    get_language,
+    missing_keys,
+    set_language,
+    tr,
+    tr_fmt,
+)
 
 initialize(load_external=False)
 
@@ -64,11 +71,14 @@ print()
 print('--- Legacy file integrity test ---')
 sys.path.insert(0, 'V:/___VAC/__K/__CODE/_PY/_FastPrompter/src')
 from fastprompter.core.translations_old import _DATA as old_data
+
 print(f'Old _DATA has {len(old_data)} keys — untouched')
 
 # Spot-check a few against the new engine
-from fastprompter.core.translations import tr as new_tr
 import fastprompter.core.translations_old as old_mod
+
+from fastprompter.core.translations import tr as new_tr
+
 assert old_mod.tr('Window', 'RU') == new_tr('Window', 'RU')
 assert old_mod.tr('Help — every hotkey, gesture and feature (click)', 'RU') == \
        new_tr('Help — every hotkey, gesture and feature (click)', 'RU')

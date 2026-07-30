@@ -1,5 +1,5 @@
-import os
 import json
+import os
 import re
 import sys
 
@@ -17,7 +17,7 @@ warnings = []
 if not os.path.exists(state_file):
     errors.append("STATE.md missing in .saipen/saitranslate/")
 else:
-    with open(state_file, 'r', encoding='utf-8') as f:
+    with open(state_file, encoding='utf-8') as f:
         content = f.read()
         if "phase: DONE" not in content and "phase: TRANSLATE" not in content:
             warnings.append("STATE.md phase is neither DONE nor TRANSLATE")
@@ -28,7 +28,7 @@ collected_keys = set()
 for root, dirs, files in os.walk(src_dir):
     for f in files:
         if f.endswith('.py'):
-            with open(os.path.join(root, f), 'r', encoding='utf-8') as file:
+            with open(os.path.join(root, f), encoding='utf-8') as file:
                 matches = tr_pattern.findall(file.read())
                 for m in matches:
                     if m.strip():
@@ -55,7 +55,7 @@ else:
     _en = os.path.join(locales_dir, "en.json")
     if os.path.exists(_en):
         try:
-            with open(_en, 'r', encoding='utf-8') as f:
+            with open(_en, encoding='utf-8') as f:
                 en_keys = set(json.load(f).get("translations", {}))
         except Exception as e:
             errors.append(f"[en] baseline unreadable, coverage cannot be checked: {e}")
@@ -68,7 +68,7 @@ else:
         if not os.path.exists(lpath):
             continue
         try:
-            with open(lpath, 'r', encoding='utf-8') as f:
+            with open(lpath, encoding='utf-8') as f:
                 data = json.load(f)
             
             meta = data.get("_meta", {})

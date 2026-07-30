@@ -1,5 +1,4 @@
 import os
-import json
 import re
 
 src_dir = r"V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter"
@@ -12,7 +11,7 @@ for root, dirs, files in os.walk(src_dir):
     for f in files:
         if f.endswith('.py'):
             path = os.path.join(root, f)
-            with open(path, 'r', encoding='utf-8') as file:
+            with open(path, encoding='utf-8') as file:
                 content = file.read()
                 matches = tr_pattern.findall(content)
                 for m in matches:

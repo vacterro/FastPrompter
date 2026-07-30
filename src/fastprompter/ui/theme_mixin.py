@@ -13,8 +13,7 @@ import os
 from PyQt6 import sip
 from PyQt6.QtCore import QTimer
 from PyQt6.QtGui import QFont, QFontDatabase, QIcon
-from PyQt6.QtWidgets import (QApplication, QFileDialog, QMessageBox, QPushButton,
-                             QWidget)
+from PyQt6.QtWidgets import QApplication, QFileDialog, QMessageBox, QPushButton, QWidget
 
 from fastprompter.core.config import create_tray_icon, extract_bg
 from fastprompter.core.logging import logger

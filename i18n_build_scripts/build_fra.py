@@ -1,6 +1,6 @@
 """Build complete French translation from EN master + existing FRA."""
-import re
 import ast
+import re
 
 # Read EN file
 with open(r"V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\i18n\en.py", encoding="utf-8") as f:
@@ -34,4 +34,4 @@ print("\n=== MISSING KEYS ===")
 with open(r"V:\_TEMP_\opencode\missing_keys.txt", "w", encoding="utf-8") as out:
     for k in sorted(missing):
         out.write(repr(k) + "\n")
-print(f"Written to missing_keys.txt")
+print("Written to missing_keys.txt")

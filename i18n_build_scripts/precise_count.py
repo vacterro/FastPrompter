@@ -1,4 +1,4 @@
-import os, re
+import os
 
 d = r'V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\i18n'
 
@@ -21,7 +21,7 @@ def count_entries(text):
 
 for fname in ['en.py','he.py','ar.py','tr.py','th.py']:
     p = os.path.join(d, fname)
-    with open(p, 'r', encoding='utf-8') as f:
+    with open(p, encoding='utf-8') as f:
         ct = f.read()
     cnt = count_entries(ct)
     print(f'{fname}: {cnt} entries')

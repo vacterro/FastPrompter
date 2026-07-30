@@ -1,4 +1,4 @@
-import ast, json
+import ast
 
 with open(r'V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\i18n\en.py', encoding='utf-8') as f:
     content = f.read()

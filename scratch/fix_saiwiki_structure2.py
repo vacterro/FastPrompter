@@ -1,6 +1,5 @@
 import os
 import shutil
-import subprocess
 from pathlib import Path
 
 root = Path(r"V:\___VAC\__K\__CODE\_PY\_FastPrompter")
@@ -54,7 +53,7 @@ if old_wiki_dir.exists():
 # 6. Update sync_wiki.py to point to docs/wiki/
 sync_script = saipen_dir / "saiwiki" / "kitchen" / "sync_wiki.py"
 if sync_script.exists():
-    with open(sync_script, "r", encoding="utf-8") as f:
+    with open(sync_script, encoding="utf-8") as f:
         content = f.read()
     
     # Change DEFAULT_WIKI_DIR pointing

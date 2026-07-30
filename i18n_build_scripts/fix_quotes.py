@@ -1,5 +1,5 @@
 """Fix single-quote conflicts in translation files."""
-import os, re
+import os
 
 i18n_dir = 'V:/___VAC/__K/__CODE/_PY/_FastPrompter/src/fastprompter/core/i18n'
 fixes = ['da.py', 'fi.py', 'no.py', 'pl.py', 'sv.py']
@@ -11,7 +11,7 @@ fixes = ['da.py', 'fi.py', 'no.py', 'pl.py', 'sv.py']
 
 for fname in fixes:
     fpath = os.path.join(i18n_dir, fname)
-    with open(fpath, 'r', encoding='utf-8') as f:
+    with open(fpath, encoding='utf-8') as f:
         content = f.read()
     original = content
 
@@ -57,7 +57,7 @@ for fname in fixes:
 
 # Now handle nl.py separately - unterminated string at line 163
 nl_path = os.path.join(i18n_dir, 'nl.py')
-with open(nl_path, 'r', encoding='utf-8') as f:
+with open(nl_path, encoding='utf-8') as f:
     nl_lines = f.readlines()
 
 # Line 163 (0-indexed: 162)

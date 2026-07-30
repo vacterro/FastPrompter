@@ -1,10 +1,8 @@
-import os
-import glob
 
 target_files = ["tests_smoke\\test_send_selection.py", "tests_smoke\\test_settings_layout.py"]
 
 for filepath in target_files:
-    with open(filepath, 'r', encoding='utf-8') as f:
+    with open(filepath, encoding='utf-8') as f:
         content = f.read()
 
     # The file has bad indentation starting at `w.hide()`

@@ -1,5 +1,6 @@
 """Build vi.py with 483 entries using old 470 translations + 13 new ones."""
-import os, re, subprocess
+import os
+import subprocess
 
 d = r'V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\i18n'
 repo = d
@@ -13,7 +14,7 @@ old_tr = dict(TRANSLATIONS)
 print(f'Old translations: {len(old_tr)}')
 
 # Load current EN entries
-exec(open(os.path.join(d, '_parsed.py'), 'r', encoding='utf-8').read())
+exec(open(os.path.join(d, '_parsed.py'), encoding='utf-8').read())
 en_map = dict(en_entries)
 print(f'EN entries: {len(en_map)}')
 

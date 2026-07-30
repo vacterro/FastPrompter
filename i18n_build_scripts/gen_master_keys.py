@@ -1,5 +1,7 @@
 """Extract ALL tr() keys from codebase, merge with old _DATA, generate en.py."""
-import ast, os, sys
+import ast
+import os
+import sys
 
 src_dir = 'V:/___VAC/__K/__CODE/_PY/_FastPrompter/src'
 
@@ -38,6 +40,7 @@ tr_keys.update(hand_added)
 
 sys.path.insert(0, src_dir)
 from fastprompter.core.translations import _DATA
+
 tr_keys.update(_DATA.keys())
 
 sorted_keys = sorted(tr_keys)

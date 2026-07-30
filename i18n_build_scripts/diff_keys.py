@@ -1,4 +1,5 @@
-import os, sys
+import sys
+
 d = r'V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\i18n'
 sys.path.insert(0, d)
 

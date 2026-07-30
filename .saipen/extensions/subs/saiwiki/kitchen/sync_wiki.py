@@ -6,7 +6,6 @@ all wiki pages from subs/saiwiki/wiki/.
 """
 
 import argparse
-import os
 import shutil
 import subprocess
 import sys
@@ -51,7 +50,7 @@ def sync_wiki(repo_url, source_dir, push=False, dry_run=False):
         print(f"[ERROR] Source wiki directory does not exist: {source_path}", file=sys.stderr)
         sys.exit(1)
 
-    print(f"=== FastPrompter Wiki Sync ===")
+    print("=== FastPrompter Wiki Sync ===")
     print(f"Source Directory: {source_path}")
     print(f"Target Repo URL:  {repo_url}")
     print(f"Push Mode:        {'ENABLED' if push else 'DISABLED (Use --push to push changes)'}")

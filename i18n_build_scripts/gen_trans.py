@@ -1,5 +1,6 @@
 """Generate FI, NO, PL, SV translation files from EN master."""
-import ast, pathlib
+import ast
+import pathlib
 
 EN = pathlib.Path("V:/___VAC/__K/__CODE/_PY/_FastPrompter/src/fastprompter/core/i18n/en.py")
 DIR = pathlib.Path("V:/___VAC/__K/__CODE/_PY/_FastPrompter/src/fastprompter/core/i18n")

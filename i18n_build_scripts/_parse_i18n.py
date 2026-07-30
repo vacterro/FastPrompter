@@ -1,10 +1,11 @@
-import re, json, sys
+import re
+import sys
 
 sys.stdout.reconfigure(encoding='utf-8')
 
 # Parse EST file
 est = {}
-with open(r'V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\i18n\est.py', 'r', encoding='utf-8') as f:
+with open(r'V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\i18n\est.py', encoding='utf-8') as f:
     content = f.read()
 
 for line in content.split('\n'):
@@ -17,7 +18,7 @@ print(f'EST keys: {len(est)}')
 
 # Parse EN file
 en = {}
-with open(r'V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\i18n\en.py', 'r', encoding='utf-8') as f:
+with open(r'V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\i18n\en.py', encoding='utf-8') as f:
     content = f.read()
 
 for line in content.split('\n'):

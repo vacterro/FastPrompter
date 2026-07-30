@@ -22,6 +22,7 @@ from PyQt6.QtCore import QPoint, QPointF, Qt
 from PyQt6.QtGui import QWheelEvent
 from PyQt6.QtWidgets import QApplication
 
+
 def FLUSHPRINT(*a, **k):
     k["flush"] = True
     __builtins__.print(*a, **k)

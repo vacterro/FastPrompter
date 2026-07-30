@@ -1,4 +1,3 @@
-import os
 import glob
 import re
 
@@ -34,7 +33,7 @@ def build_replacement(match):
     )
 
 for filepath in target_files:
-    with open(filepath, 'r', encoding='utf-8') as f:
+    with open(filepath, encoding='utf-8') as f:
         content = f.read()
 
     new_content, count = fixture_pattern.subn(build_replacement, content)

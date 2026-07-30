@@ -1,6 +1,6 @@
 import re
 
-with open(r'V:\_TEMP_\opencode\est_full.py', 'r', encoding='utf-8') as f:
+with open(r'V:\_TEMP_\opencode\est_full.py', encoding='utf-8') as f:
     lines = f.readlines()
 
 keys = []
