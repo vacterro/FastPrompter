@@ -21,9 +21,9 @@ One hotkey. Instant window. Your prompts, notes and drafts — always one keystr
 
 </div>
 
-### 📖 [Full documentation → `docs/wiki/`](docs/wiki/Home.md)
+### 📖 [Full documentation → GitHub Wiki](https://github.com/vacterro/FastPrompter/wiki)
 
-Complete technical docs: [architecture](docs/wiki/Architecture-Overview.md), [module tree](docs/wiki/Module-Structure.md), [API reference](docs/wiki/Core-API-and-Classes.md), [configuration](docs/wiki/Configuration.md), [UI components](docs/wiki/UI-Components.md), [keyboard shortcuts](docs/wiki/Keyboard-Shortcuts-and-Cheatsheet.md), [user guide](docs/wiki/User-Guide.md), [watcher engine](docs/wiki/Watcher-Engine-Architecture.md), [deployment guide](docs/wiki/Deployment-Guide.md), [plugin dev](docs/wiki/Plugin-and-Skill-Development.md), [SAIPEN protocol](docs/wiki/SAIPEN-Protocol.md), [troubleshooting](docs/wiki/Troubleshooting-and-FAQ.md).
+Complete technical docs: [architecture](https://github.com/vacterro/FastPrompter/wiki/Architecture-Overview), [module tree](https://github.com/vacterro/FastPrompter/wiki/Module-Structure), [API reference](https://github.com/vacterro/FastPrompter/wiki/Core-API-and-Classes), [configuration](https://github.com/vacterro/FastPrompter/wiki/Configuration), [UI components](https://github.com/vacterro/FastPrompter/wiki/UI-Components), [keyboard shortcuts](https://github.com/vacterro/FastPrompter/wiki/Keyboard-Shortcuts-and-Cheatsheet), [user guide](https://github.com/vacterro/FastPrompter/wiki/User-Guide), [watcher engine](https://github.com/vacterro/FastPrompter/wiki/Watcher-Engine-Architecture), [deployment guide](https://github.com/vacterro/FastPrompter/wiki/Deployment-Guide), [plugin dev](https://github.com/vacterro/FastPrompter/wiki/Plugin-and-Skill-Development), [SAIPEN protocol](https://github.com/vacterro/FastPrompter/wiki/SAIPEN-Protocol), [troubleshooting](https://github.com/vacterro/FastPrompter/wiki/Troubleshooting-and-FAQ).
 
 ---
 
