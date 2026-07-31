@@ -4266,6 +4266,9 @@ class FastPrompter(
         self.table_widget = TableGridWidget(self)
         self.table_widget.changed.connect(lambda markdown: self._on_visual_widget_changed(markdown))
         self.table_widget.undoRequested.connect(self.text_area.undo)
+        # the page has to be re-picked when the TEXT stops matching the type,
+        # not only when the silo is switched
+        self.text_area.textChanged.connect(self._schedule_silo_type_recheck)
         self.silo_view.addWidget(self.table_widget) # page 2
         
         self.center_layout.addWidget(self.silo_view, 1)
@@ -7312,6 +7315,15 @@ class FastPrompter(
         if tgt_type == "text":
             return False
         from fastprompter.ui import silo_region
+
+        # For the OPEN silo the editor is the live text and temp_presets lags
+        # behind it until the next save or switch. Seeding from the lagging
+        # copy wrote the new structure onto a stale base and left the editor
+        # showing something else entirely — measured in the transform fuzz:
+        # presets held a table while the editor still held prose.
+        if idx == getattr(self, "active_temp_slot", -1) and not is_archive:
+            text = self.text_area.toPlainText()
+
         lines = text.split("\n")
         has_structure = (silo_region.board_region(lines) if tgt_type == "kanban"
                          else silo_region.table_region(lines)) is not None
@@ -7356,15 +7368,66 @@ class FastPrompter(
             return
 
         stype = self.data.get("silo_types", {}).get(str(idx), "text")
-        
+        text = self.text_area.toPlainText()
+
+        # The recorded type is the user's INTENT; the text is the truth, and
+        # the two drift apart in ordinary use — undo restores the previous
+        # text without restoring the previous type, and a paste or a clear
+        # can leave a "kanban" silo holding prose. Showing a board widget for
+        # a silo with no board is confusing at best, and it hands that widget
+        # a document it does not own. Found by fuzzing the transform path:
+        # 17 mismatches in 220 steps, e.g. type "table" over a live board.
+        if stype in ("kanban", "table"):
+            self._silo_structure_ok = self._silo_has_structure(stype, text)
+            if not self._silo_structure_ok:
+                stype = "text"
+
         if stype == "kanban":
             self.silo_view.setCurrentIndex(1)
-            self.kanban_widget.load_markdown(self.text_area.toPlainText())
+            self.kanban_widget.load_markdown(text)
         elif stype == "table":
             self.silo_view.setCurrentIndex(2)
-            self.table_widget.load_markdown(self.text_area.toPlainText())
+            self.table_widget.load_markdown(text)
         else:
             self.silo_view.setCurrentIndex(0)
+
+    def _schedule_silo_type_recheck(self):
+        """Re-pick the view when the text stops matching the silo's type.
+
+        The page used to be decided only on a silo SWITCH, so replacing the
+        text under an open board — a paste over everything, an undo, a
+        replace-from-another-silo — left the board widget on screen showing an
+        empty board over the user's prose. Only structure-PRESENCE flips act;
+        ordinary typing changes nothing and costs one scan.
+        """
+        if sip.isdeleted(self) or getattr(self, "_syncing_from_visual", False):
+            return          # the widget is writing its own text: not a flip
+        idx = getattr(self, "active_temp_slot", -1)
+        if idx < 0 or getattr(self, "active_is_archive", False):
+            return
+        stype = self.data.get("silo_types", {}).get(str(idx), "text")
+        if stype not in ("kanban", "table"):
+            return          # a text silo has nothing to lose
+        ok = self._silo_has_structure(stype, self.text_area.toPlainText())
+        if ok == getattr(self, "_silo_structure_ok", None):
+            return          # nothing flipped
+        self._silo_structure_ok = ok
+        self._apply_silo_type(idx, False)
+
+    @staticmethod
+    def _silo_has_structure(stype, text):
+        """Does this text actually hold the thing its type claims?
+
+        An EMPTY silo counts as ready for either: that is the transform's own
+        starting point, and the widget seeds it.
+        """
+        from fastprompter.ui import silo_region
+        if not text.strip():
+            return True
+        lines = text.split("\n")
+        if stype == "kanban":
+            return silo_region.board_region(lines) is not None
+        return silo_region.table_region(lines) is not None
 
     def _switch_to_arc_slot(self, idx):
         self._switch_to_slot(idx, is_archive=True)

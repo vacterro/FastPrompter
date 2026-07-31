@@ -478,9 +478,17 @@ class TestTransformSeedsStructure:
     def test_a_silo_that_already_has_one_is_left_alone(self, tmp_path):
         w = self._win(tmp_path)
         try:
+            # For the OPEN silo the EDITOR holds the live text and
+            # temp_presets lags it, so the content has to be put where the app
+            # would really have it. Passing it as an argument only used to
+            # work because seeding read the lagging copy.
             text = "## To Do\n- [ ] a"
+            w._set_plain_text_clean(w.text_area, text)
+            _app.processEvents()
             assert w._seed_silo_structure(0, "kanban", text, False) is False
             table = "| a | b |\n| --- | --- |\n| 1 | 2 |"
+            w._set_plain_text_clean(w.text_area, table)
+            _app.processEvents()
             assert w._seed_silo_structure(0, "table", table, False) is False
         finally:
             w.close()
@@ -500,6 +508,8 @@ class TestTransformSeedsStructure:
         try:
             monkeypatch.setattr(QMessageBox, "question",
                                 lambda *a, **k: QMessageBox.StandardButton.Yes)
+            w._set_plain_text_clean(w.text_area, "my notes")
+            _app.processEvents()
             assert w._seed_silo_structure(0, "kanban", "my notes", False) is True
             body = w.data["temp_presets"][0]
             assert body.startswith("my notes")
@@ -513,6 +523,8 @@ class TestTransformSeedsStructure:
         w = self._win(tmp_path)
         try:
             w.data["temp_presets"][0] = "my notes"
+            w._set_plain_text_clean(w.text_area, "my notes")
+            _app.processEvents()
             monkeypatch.setattr(QMessageBox, "question",
                                 lambda *a, **k: QMessageBox.StandardButton.No)
             assert w._seed_silo_structure(0, "kanban", "my notes", False) is None
@@ -747,5 +759,115 @@ class TestNumboxFollowsTheProjects:
             assert calls == []          # nothing yet: it is deferred
             _app.processEvents()
             assert len(calls) == 1, calls
+        finally:
+            w.close()
+
+
+# ---------------------------------------------------------------------------
+# T-647: the view follows the CONTENT, not just the recorded type
+# ---------------------------------------------------------------------------
+
+
+class TestSiloTypeFollowsTheContent:
+    """The recorded type is the user's intent; the text is the truth, and the
+    two drift in ordinary use — undo restores text without restoring the type,
+    a paste can leave a "kanban" silo holding prose. Showing a board widget
+    over prose is confusing, and it hands that widget a document it does not
+    own. Found by fuzzing the transform path: 17 mismatches in 220 steps."""
+
+    def _win(self, tmp_path, monkeypatch):
+        from PyQt6.QtWidgets import QMessageBox
+
+        import fastprompter.core.state as sm
+        from fastprompter.main import FastPrompter
+        sm.get_db_path = lambda profile_id=1, _p=tmp_path: str(_p / f"t_{profile_id}.db")
+        sm.run_portable_backup = lambda data: None
+        FastPrompter.setup_single_instance_server = lambda self: None
+        FastPrompter.register_all_hotkeys = lambda self: None
+        FastPrompter.unregister_all_hotkeys = lambda self: None
+        monkeypatch.setattr(QMessageBox, "question",
+                            staticmethod(lambda *a, **k: QMessageBox.StandardButton.Yes))
+        w = FastPrompter()
+        _app.processEvents()
+        return w
+
+    def _make_board(self, w):
+        w._switch_to_slot(0)
+        _app.processEvents()
+        w._seed_silo_structure(0, "kanban", w.text_area.toPlainText(), False)
+        w.data["silo_types"]["0"] = "kanban"
+        w._apply_silo_type(0, False)
+        _app.processEvents()
+
+    def test_transform_then_switch_away_and_back(self, tmp_path, monkeypatch):
+        w = self._win(tmp_path, monkeypatch)
+        try:
+            self._make_board(w)
+            assert w.silo_view.currentIndex() == 1
+            w._switch_to_slot(1)
+            _app.processEvents()
+            assert w.silo_view.currentIndex() == 0
+            w._switch_to_slot(0)
+            _app.processEvents()
+            assert w.silo_view.currentIndex() == 1
+        finally:
+            w.close()
+
+    def test_pasting_prose_over_a_board_falls_back_to_the_editor(self, tmp_path, monkeypatch):
+        w = self._win(tmp_path, monkeypatch)
+        try:
+            self._make_board(w)
+            cur = w.text_area.textCursor()
+            cur.select(cur.SelectionType.Document)
+            w.text_area.setTextCursor(cur)
+            w.text_area.insertPlainText("just prose now\nnothing structured")
+            _app.processEvents()
+            assert w.silo_view.currentIndex() == 0, "board widget left over prose"
+            assert "just prose now" in w.text_area.toPlainText()
+        finally:
+            w.close()
+
+    def test_typing_the_board_back_brings_the_board_back(self, tmp_path, monkeypatch):
+        w = self._win(tmp_path, monkeypatch)
+        try:
+            self._make_board(w)
+            cur = w.text_area.textCursor()
+            cur.select(cur.SelectionType.Document)
+            w.text_area.setTextCursor(cur)
+            w.text_area.insertPlainText("prose")
+            _app.processEvents()
+            assert w.silo_view.currentIndex() == 0
+            w.text_area.insertPlainText("\n\n## To Do\n- [ ] back")
+            _app.processEvents()
+            assert w.silo_view.currentIndex() == 1
+        finally:
+            w.close()
+
+    def test_an_empty_silo_counts_as_ready_for_either(self, tmp_path, monkeypatch):
+        w = self._win(tmp_path, monkeypatch)
+        try:
+            assert w._silo_has_structure("kanban", "") is True
+            assert w._silo_has_structure("table", "   ") is True
+            assert w._silo_has_structure("kanban", "# just a title") is False
+            assert w._silo_has_structure("table", "# just a title") is False
+            assert w._silo_has_structure("kanban", "## Col\n- [ ] c") is True
+            assert w._silo_has_structure("table", "| a |\n| --- |") is True
+        finally:
+            w.close()
+
+    def test_seeding_reads_the_live_editor_for_the_open_silo(self, tmp_path, monkeypatch):
+        """temp_presets lags the editor until a save or a switch; seeding from
+        the lagging copy wrote the new structure onto a stale base."""
+        w = self._win(tmp_path, monkeypatch)
+        try:
+            w._switch_to_slot(0)
+            _app.processEvents()
+            w.data["temp_presets"][0] = "STALE"
+            w._set_plain_text_clean(w.text_area, "live text in the editor")
+            _app.processEvents()
+            w._seed_silo_structure(0, "table", w.data["temp_presets"][0], False)
+            body = w.data["temp_presets"][0]
+            assert "live text in the editor" in body
+            assert "STALE" not in body
         finally:
             w.close()
