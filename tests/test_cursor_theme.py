@@ -58,19 +58,15 @@ def test_zero_image_count_is_rejected():
     assert _cur_hotspot(path) is None
 
 
-def test_unreadable_paths_are_simply_skipped():
-    """A scheme pointing at files that are gone must yield an empty map,
-    not an exception on startup."""
-    from fastprompter.ui.cursor_theme import build_cursor_map
-
-    assert build_cursor_map({"Arrow": "V:/nope/does-not-exist.cur"}) == {}
-    assert build_cursor_map({}) == {}
+# build_cursor_map constructs QPixmap, which hard-crashes the interpreter
+# without a QApplication (0xC0000409, no traceback). It lives in
+# tests_smoke/test_margin_cursor.py, where Qt is real and running.
 
 
 def test_the_role_table_covers_the_shapes_that_matter():
-    """PyQt6 is stubbed in this suite, so the shapes themselves are checked
-    in tests_smoke against real Qt; here just guard the role names, which
-    are what the Windows registry actually uses."""
+    """The shapes themselves are checked in tests_smoke against real Qt;
+    here just guard the role names, which are what the Windows registry
+    actually uses."""
     from fastprompter.ui.cursor_theme import _ROLE_TO_SHAPE
 
     for role in ("Arrow", "IBeam", "Hand", "SizeAll", "Wait"):

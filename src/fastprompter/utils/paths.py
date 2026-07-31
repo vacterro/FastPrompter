@@ -95,3 +95,40 @@ def get_resource_path(*args) -> str:
     pkg_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     alt = os.path.join(pkg_dir, *args)
     return alt if os.path.exists(alt) else path
+
+
+def exists_within(path: str, timeout: float = 0.25) -> bool:
+    r"""os.path.exists() that cannot freeze the caller.
+
+    The editor probes the filesystem on EVERY paste of a short single-line
+    string, to turn a pasted path into a markdown link. On Windows that probe
+    is not bounded: os.path.exists(r"\\192.0.2.77\share\x") sends the
+    calling thread into an SMB connect that took a MEASURED 93 seconds on the
+    developer's machine. Run from the GUI thread, that is the whole window
+    frozen with "Not Responding" — which is exactly how a user describes a
+    paste that "crashes the app".
+
+    A named host that does not resolve fails fast (DNS says no); an IP literal
+    that nobody answers does not, and neither does a mapped drive whose server
+    went away. So the probe runs on a throwaway daemon thread and the answer is
+    only used if it arrives in time.
+
+    Timing out returns False, i.e. "not a path": the paste falls through to
+    inserting the text verbatim, which is the safe outcome. A stuck probe
+    thread is a daemon and costs nothing but its own stack until the process
+    ends.
+    """
+    import threading
+
+    answer = []
+
+    def probe():
+        try:
+            answer.append(os.path.exists(path))
+        except (OSError, ValueError):
+            answer.append(False)
+
+    worker = threading.Thread(target=probe, daemon=True)
+    worker.start()
+    worker.join(timeout)
+    return bool(answer) and answer[0]

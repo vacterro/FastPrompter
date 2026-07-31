@@ -235,6 +235,12 @@ class _MockMetaObject:
 
 
 # Patch modules before importing QuickListWidget
+# Stubs are undone right after the import below — assigning into
+# sys.modules permanently broke eight tests_smoke files at collection
+# time. See tests/_qt_stub.py.
+import _qt_stub
+
+_before_stubs = _qt_stub.snapshot()
 sys.modules["PyQt6"] = MagicMock()
 sys.modules["PyQt6.sip"] = _MockSip
 sys.modules["PyQt6.QtCore"] = MagicMock()
@@ -259,6 +265,8 @@ sys.modules["pynput"] = _pynput_mock
 sys.modules["pynput.keyboard"] = _pynput_mock.keyboard  # keep in sync
 
 from fastprompter.ui.pie_menu import QuickListWidget
+
+_qt_stub.restore(_before_stubs)
 
 # ---------------------------------------------------------------------------
 # Fixtures

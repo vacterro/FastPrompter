@@ -98,3 +98,16 @@ def test_margin_cursor_always_returns_something_and_caches():
     assert margin_cursor() is first, "rebuilt on every hover"
     reset_margin_cursor()
     assert margin_cursor() is not None
+
+
+def test_unreadable_paths_are_simply_skipped():
+    """A scheme pointing at files that are gone must yield an empty map,
+    not an exception on startup.
+
+    Moved here from tests/: it calls QPixmap, and a QPixmap built with no
+    QApplication takes the whole interpreter down with STATUS_STACK_BUFFER_
+    OVERRUN. It only ever passed in the unit suite because another test file
+    had leaked a MagicMock into sys.modules["PyQt6"].
+    """
+    assert cursor_theme.build_cursor_map({"Arrow": "V:/nope/does-not-exist.cur"}) == {}
+    assert cursor_theme.build_cursor_map({}) == {}

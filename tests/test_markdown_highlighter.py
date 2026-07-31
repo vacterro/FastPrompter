@@ -195,19 +195,23 @@ class _MockTextDocument:
         self._parent = parent
 
 
-# Patch modules before importing MarkdownHighlighter
+# Stubs live only for the duration of this import — see tests/_qt_stub.py.
+from _qt_stub import import_with_stubs
+
 pyqt6_mock = MagicMock()
 pyqt6_mock.sip = _MockSip
-sys.modules["PyQt6"] = pyqt6_mock
-sys.modules["PyQt6.QtGui"] = MagicMock()
-sys.modules["PyQt6.QtGui"].QColor = _MockQColor
-sys.modules["PyQt6.QtGui"].QFont = _MockQFont
-sys.modules["PyQt6.QtGui"].QSyntaxHighlighter = _MockQSyntaxHighlighter
-sys.modules["PyQt6.QtGui"].QTextCharFormat = _MockQTextCharFormat
-sys.modules["PyQt6.QtGui"].QTextDocument = _MockTextDocument
-sys.modules["PyQt6.QtGui"].QTextFormat = _MockQTextFormat
+_qtgui_stub = MagicMock()
+_qtgui_stub.QColor = _MockQColor
+_qtgui_stub.QFont = _MockQFont
+_qtgui_stub.QSyntaxHighlighter = _MockQSyntaxHighlighter
+_qtgui_stub.QTextCharFormat = _MockQTextCharFormat
+_qtgui_stub.QTextDocument = _MockTextDocument
+_qtgui_stub.QTextFormat = _MockQTextFormat
 
-from fastprompter.ui.markdown_highlighter import MarkdownHighlighter
+MarkdownHighlighter = import_with_stubs(
+    "fastprompter.ui.markdown_highlighter",
+    {"PyQt6": pyqt6_mock, "PyQt6.QtGui": _qtgui_stub},
+).MarkdownHighlighter
 
 # ---------------------------------------------------------------------------
 # Fixtures

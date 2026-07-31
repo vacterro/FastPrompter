@@ -94,6 +94,12 @@ class _MockQApplication:
 
 _mock_sip = MagicMock()
 _mock_sip.isdeleted.return_value = False
+# Stubs are undone right after the import below — assigning into
+# sys.modules permanently broke eight tests_smoke files at collection
+# time. See tests/_qt_stub.py.
+import _qt_stub
+
+_before_stubs = _qt_stub.snapshot()
 sys.modules["PyQt6"] = MagicMock()
 sys.modules["PyQt6"].sip = _mock_sip
 sys.modules["PyQt6.QtCore"] = MagicMock()
@@ -104,6 +110,8 @@ sys.modules["PyQt6.QtWidgets"].QPushButton = _MockQPushButton
 sys.modules["PyQt6.QtWidgets"].QApplication = _MockQApplication
 
 from fastprompter.ui.scaling_mixin import _BTN_BASE_HEIGHTS, _BTN_WIDTH_SCALE_NAMES, ScalingMixin
+
+_qt_stub.restore(_before_stubs)
 
 # ---------------------------------------------------------------------------
 # Data integrity

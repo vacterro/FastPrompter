@@ -106,31 +106,49 @@ class _MockQTextCursor:
         pass
 
 
-sys.modules["PyQt6"] = MagicMock()
-sys.modules["PyQt6.QtGui"] = MagicMock()
-sys.modules["PyQt6.QtGui"].QFont = _MockQFont
-sys.modules["PyQt6.QtGui"].QTextCharFormat = _MockQTextCharFormat
-sys.modules["PyQt6.QtGui"].QTextCursor = _MockQTextCursor
+_qtgui_stub = MagicMock()
+_qtgui_stub.QFont = _MockQFont
+_qtgui_stub.QTextCharFormat = _MockQTextCharFormat
+_qtgui_stub.QTextCursor = _MockQTextCursor
 
-# Force the fallback renderer path by patching markdown.markdown to raise.
-# Without this, the installed markdown library would handle rendering and
-# output <strong>/<em> instead of the fallback's <b>/<i>.
-import markdown as _markdown_mod
+# The stubs are installed only for the duration of this import — see
+# tests/_qt_stub.py for why assigning into sys.modules permanently broke
+# eight tests_smoke files at collection time.
+import pytest
+from _qt_stub import import_with_stubs
 
-from fastprompter.ui.formatting_mixin import (
-    _RE_BOLD,
-    _RE_BULLET,
-    _RE_DASH_LINE,
-    _RE_HEADER_DASH,
-    _RE_INLINE_CODE,
-    _RE_ITALIC,
-    _RE_LINK,
-    _RE_LIST_ITEM,
-    _RE_LIST_SUB,
-    FormattingMixin,
+_mod = import_with_stubs(
+    "fastprompter.ui.formatting_mixin",
+    {"PyQt6": MagicMock(), "PyQt6.QtGui": _qtgui_stub},
 )
 
-_markdown_mod.markdown = MagicMock(side_effect=Exception("forced fallback"))
+_RE_BOLD = _mod._RE_BOLD
+_RE_BULLET = _mod._RE_BULLET
+_RE_DASH_LINE = _mod._RE_DASH_LINE
+_RE_HEADER_DASH = _mod._RE_HEADER_DASH
+_RE_INLINE_CODE = _mod._RE_INLINE_CODE
+_RE_ITALIC = _mod._RE_ITALIC
+_RE_LINK = _mod._RE_LINK
+_RE_LIST_ITEM = _mod._RE_LIST_ITEM
+_RE_LIST_SUB = _mod._RE_LIST_SUB
+FormattingMixin = _mod.FormattingMixin
+
+
+@pytest.fixture(autouse=True)
+def _force_fallback_renderer():
+    """Force the fallback renderer by making markdown.markdown raise.
+
+    Scoped to each test: this used to be a permanent assignment on the shared
+    markdown module, which left every later test in the process rendering
+    through the fallback too.
+    """
+    import markdown as markdown_mod
+    real = markdown_mod.markdown
+    markdown_mod.markdown = MagicMock(side_effect=Exception("forced fallback"))
+    try:
+        yield
+    finally:
+        markdown_mod.markdown = real
 
 
 # ---------------------------------------------------------------------------

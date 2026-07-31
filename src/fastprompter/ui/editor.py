@@ -24,6 +24,7 @@ from fastprompter.core.logging import logger
 from fastprompter.core.translations import tr
 from fastprompter.ui.edit_guard import edit_block
 from fastprompter.ui.markdown_highlighter import QUEUED_BIT, SENT_BIT
+from fastprompter.utils.paths import exists_within
 
 # Matches every stamp shape Ctrl+E ever wrote: "17.07 - 04:19",
 # "17 Jul - 04:19", optional seconds, optional day-part word prefix.
@@ -1793,8 +1794,12 @@ class VaultTextEdit(QTextEdit):
         try:
             if os.name == "nt":
                 # /select, needs the path as its own argument, and the comma
-                # belongs to the switch - explorer is fussy about both
-                subprocess.run(["explorer", "/select,", path])
+                # belongs to the switch - explorer is fussy about both.
+                # Popen, not run: run() waits for explorer to exit, on the GUI
+                # thread, with no timeout. Revealing a file on a share that has
+                # gone away would freeze the window for as long as explorer
+                # took to give up. Nothing here needs its exit code.
+                subprocess.Popen(["explorer", "/select,", path])
             else:
                 QDesktopServices.openUrl(
                     QUrl.fromLocalFile(os.path.dirname(path)))
@@ -2564,10 +2569,13 @@ class VaultTextEdit(QTextEdit):
                     selected = cursor.selectedText().replace(" ", "\n")
                     cursor.insertText(f"[{selected}]({text})")
                     return
-            # Plain text file path — insert as markdown link
+            # Plain text file path — insert as markdown link.
+            # exists_within, not os.path.exists: this runs on the GUI thread for
+            # every short paste, and an unreachable UNC path froze the window for
+            # a measured 93 seconds. See fastprompter.utils.paths.
             if text and len(text) < 260 and "\n" not in text:
                 normalized = os.path.normpath(text)
-                if os.path.exists(normalized):
+                if exists_within(normalized):
                     name = os.path.basename(normalized)
                     clean_path = normalized.replace(os.sep, '/')
                     self.insertPlainText(f"[{name}](file:///{clean_path})")

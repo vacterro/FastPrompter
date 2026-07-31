@@ -218,6 +218,12 @@ class _MockQMessageBox:
         cls._last_info_text = ""
 
 
+# Stubs are undone right after the import below — assigning into
+# sys.modules permanently broke eight tests_smoke files at collection
+# time. See tests/_qt_stub.py.
+import _qt_stub
+
+_before_stubs = _qt_stub.snapshot()
 sys.modules["PyQt6"] = MagicMock()
 sys.modules["PyQt6.QtGui"] = MagicMock()
 sys.modules["PyQt6.QtGui"].QTextCursor = _MockQTextCursor
@@ -230,6 +236,8 @@ sys.modules["PyQt6.QtWidgets"].QFrame = _MockQFrame
 sys.modules["PyQt6.QtCore"] = MagicMock()
 
 from fastprompter.ui.search_mixin import SearchMixin
+
+_qt_stub.restore(_before_stubs)
 
 # ---------------------------------------------------------------------------
 # Helper

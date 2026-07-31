@@ -2957,6 +2957,40 @@ def test_ctrl_v_wraps_selection_as_hyperlink(win):
     assert ta.toPlainText() == "https://example.com/docs"
 
 
+def test_pasting_an_unreachable_network_path_does_not_freeze_the_editor(win):
+    r"""Ctrl+V must never hand the GUI thread to the network.
+
+    The paste path turns a pasted file path into a markdown link, which means
+    it probes the filesystem for EVERY short single-line paste. That probe was
+    a bare os.path.exists, and on Windows os.path.exists(r"\\192.0.2.77\share\x")
+    is an SMB connect to a host that never answers: MEASURED at 93 seconds on
+    the developer's machine, with the window frozen and "Not Responding" the
+    whole time. That is the shape of the "pasting text crashes the app" report.
+
+    The address is TEST-NET-1 (RFC 5737) - reserved, so nothing can ever be
+    listening on it, on any network this runs on.
+    """
+    import time
+
+    from PyQt6.QtCore import QMimeData
+
+    win.data["temp_presets"][:] = [""]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    ta = win.text_area
+
+    unreachable = "\\\\192.0.2.77\\share\\x"
+    mime = QMimeData()
+    mime.setText(unreachable)
+
+    started = time.perf_counter()
+    ta.insertFromMimeData(mime)
+    elapsed = time.perf_counter() - started
+
+    assert elapsed < 5.0, f"paste held the GUI thread for {elapsed:.1f}s"
+    assert unreachable in ta.toPlainText(), "an unprobeable path still pastes as text"
+
+
 def test_ctrl_wheel_zoom_falls_back_to_pixel_delta(win):
     # Regression: only angleDelta() was read, which stays 0 on trackpads that
     # report pixelDelta — Ctrl+wheel zoom silently did nothing there.
@@ -5373,7 +5407,8 @@ def test_ctrl_click_opens_links_and_ctrl_right_click_reveals_the_folder(win):
 
     opened, revealed = [], []
     real_open = QDesktopServices.openUrl
-    real_run = editor_mod.subprocess.run
+    # Popen, not run: reveal must not wait on explorer from the GUI thread
+    real_popen = editor_mod.subprocess.Popen
     try:
         ed.clear()
         c = ed.textCursor()
@@ -5383,7 +5418,7 @@ def test_ctrl_click_opens_links_and_ctrl_right_click_reveals_the_folder(win):
 
         QDesktopServices.openUrl = staticmethod(
             lambda u: opened.append(u.toString()))
-        editor_mod.subprocess.run = lambda *a, **k: revealed.append(a[0])
+        editor_mod.subprocess.Popen = lambda *a, **k: revealed.append(a[0])
 
         def click(block, button, mods):
             r = ed.cursorRect(QTextCursor(ed.document().findBlockByNumber(block)))
@@ -5413,7 +5448,7 @@ def test_ctrl_click_opens_links_and_ctrl_right_click_reveals_the_folder(win):
         assert not opened and not revealed
     finally:
         QDesktopServices.openUrl = real_open
-        editor_mod.subprocess.run = real_run
+        editor_mod.subprocess.Popen = real_popen
         ed._suppress_context_menu = False
         ed.clear()
 

@@ -5,7 +5,13 @@ import sys
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
-from fastprompter.utils.paths import get_base_dir, get_data_dir, get_db_path, get_resource_path
+from fastprompter.utils.paths import (
+    exists_within,
+    get_base_dir,
+    get_data_dir,
+    get_db_path,
+    get_resource_path,
+)
 
 
 class TestGetBaseDir:
@@ -111,3 +117,57 @@ class TestGetResourcePath:
         result = get_resource_path()
         base = get_base_dir()
         assert result == base
+
+
+class TestExistsWithin:
+    """The paste path probes the filesystem on the GUI thread.
+
+    os.path.exists on an unreachable UNC path took a measured 93 SECONDS here,
+    which the user experiences as the app hanging on Ctrl+V. These tests pin the
+    bound, not the plumbing: a probe that cannot answer must be abandoned.
+    """
+
+    def test_answers_a_real_path(self):
+        assert exists_within(os.path.dirname(__file__)) is True
+
+    def test_answers_a_missing_path(self):
+        assert exists_within(os.path.join(os.path.dirname(__file__), "no-such-file-xyz")) is False
+
+    def test_a_hanging_probe_is_abandoned_not_awaited(self):
+        """A probe that never returns must cost the caller the timeout, no more."""
+        import threading
+        import time
+
+        started = threading.Event()
+        release = threading.Event()
+
+        class _Hangs:
+            """os.stat() resolves this through __fspath__ — and waits there.
+
+            Not a str subclass: os.path.exists takes a str as the path itself
+            and never consults the protocol, so the probe would return at once.
+            """
+
+            def __fspath__(self):
+                started.set()
+                release.wait(30)          # stands in for the SMB connect
+                return "/definitely/not/here"
+
+        t = time.perf_counter()
+        try:
+            result = exists_within(_Hangs(), timeout=0.2)
+            elapsed = time.perf_counter() - t
+        finally:
+            release.set()
+
+        assert started.is_set(), "the probe never ran"
+        assert result is False, "a probe that did not answer must not be trusted"
+        assert elapsed < 2.0, f"caller was held for {elapsed:.1f}s despite a 0.2s bound"
+
+    def test_timeout_is_not_charged_to_ordinary_paths(self):
+        """The common case must not pay the timeout — it is a bound, not a sleep."""
+        import time
+        t = time.perf_counter()
+        for _ in range(20):
+            exists_within(os.path.dirname(__file__), timeout=5.0)
+        assert time.perf_counter() - t < 1.0

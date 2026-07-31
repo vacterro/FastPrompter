@@ -80,13 +80,20 @@ class _MockQLocalServer:
 _real_exit = sys.exit
 
 
-# Patch modules before importing
-sys.modules["PyQt6"] = MagicMock()
-sys.modules["PyQt6.QtNetwork"] = MagicMock()
-sys.modules["PyQt6.QtNetwork"].QLocalServer = _MockQLocalServer
-sys.modules["PyQt6.QtNetwork"].QLocalSocket = _MockQLocalSocket
+# Stubs live only for the duration of this import — see tests/_qt_stub.py.
+from _qt_stub import import_with_stubs
 
-from fastprompter.core.ipc_server import SERVER_NAME, IpcServer, try_connect_to_server
+_qtnetwork_stub = MagicMock()
+_qtnetwork_stub.QLocalServer = _MockQLocalServer
+_qtnetwork_stub.QLocalSocket = _MockQLocalSocket
+
+_ipc = import_with_stubs(
+    "fastprompter.core.ipc_server",
+    {"PyQt6": MagicMock(), "PyQt6.QtNetwork": _qtnetwork_stub},
+)
+SERVER_NAME = _ipc.SERVER_NAME
+IpcServer = _ipc.IpcServer
+try_connect_to_server = _ipc.try_connect_to_server
 
 
 class TestServerName:
@@ -110,7 +117,7 @@ class TestTryConnectToServer:
         result = try_connect_to_server(retries=1, delay=0.01)
         assert result is None
 
-    @patch("fastprompter.core.ipc_server.QLocalSocket")
+    @patch.object(_ipc, "QLocalSocket")
     def test_returns_socket_when_connected(self, mock_socket_cls):
         """Server responds -> returns a connected socket."""
         mock_sock = MagicMock()
@@ -121,7 +128,7 @@ class TestTryConnectToServer:
         assert result is not None
         mock_sock.connectToServer.assert_called_once_with(SERVER_NAME)
 
-    @patch("fastprompter.core.ipc_server.QLocalSocket")
+    @patch.object(_ipc, "QLocalSocket")
     def test_attaches_token_when_token_file_exists(self, mock_socket_cls):
         """A token on disk is attached to the socket as the ipc_token property.
 
@@ -155,7 +162,7 @@ class TestTryConnectToServer:
             elif os.path.exists(token_file):
                 os.remove(token_file)
 
-    @patch("fastprompter.core.ipc_server.QLocalSocket")
+    @patch.object(_ipc, "QLocalSocket")
     def test_no_token_property_when_token_file_absent(self, mock_socket_cls):
         """No token on disk -> no ipc_token property set (the flaky case)."""
         import tempfile
@@ -180,7 +187,7 @@ class TestTryConnectToServer:
                 with open(token_file, "w") as f:
                     f.write(prior)
 
-    @patch("fastprompter.core.ipc_server.QLocalSocket")
+    @patch.object(_ipc, "QLocalSocket")
     def test_retries_on_failure(self, mock_socket_cls):
         """Server doesn't respond -> retries the specified number of times."""
         mock_sock = MagicMock()

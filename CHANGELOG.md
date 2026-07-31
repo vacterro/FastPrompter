@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.8.3 — 2026-07-31
+
+- **Fixed: pasting could freeze the whole window for a minute and a half.** When you paste a short single line, FastPrompter checks whether it is a file path so it can turn it into a clickable link. That check ran on the UI thread with no time limit — so pasting a Windows network path whose server is not answering (an office share, a sleeping NAS, anything behind a VPN that is down) left Windows waiting for the connection to time out. Measured here: **93 seconds**, window frozen, "Not Responding" in the title bar. That is what *"the app crashes when I paste text"* actually was. The check now gets a quarter of a second; if the filesystem cannot answer in that time the text is pasted as text, which is what you wanted anyway. Local paths are unaffected — they answer instantly.
+- **Fixed: "Reveal in folder"** (Ctrl+right-click a file link) waited for Explorer to exit before the window would respond again. It no longer waits.
+- *Under the hood:* the test suite could not be run as a single command — eight of its files died during collection, because four unit tests replaced PyQt6 with a mock and never put it back. Fixed; the suite now runs whole, 1542 tests in one process. That is how the paste bug's neighbours were found.
+
+Note: v0.8.2 was tagged and its changelog written, but never published as a download — its translation work ships here.
+
 ## v0.8.2 — 2026-07-30
 
 - **Translation sync — all 33 languages back to 100%.** 72 recently-added `tr()` keys that never reached the translation bundle (from SiloTable, SiloKanban, Watcher, Timers, Number Tabs, File sidebar, and the other v0.8.0/v0.8.1 features) are now in every locale. Turkish coverage closed 17 gaps; 9 other languages each closed 1. Every shipped `.py` module regenerated from the JSON source of truth.

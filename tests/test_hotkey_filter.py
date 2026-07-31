@@ -28,14 +28,18 @@ class _MockAbstractEventFilter:
         return False, 0
 
 
-# Patch modules before importing HotkeyFilter
-sys.modules["PyQt6"] = MagicMock()
-sys.modules["PyQt6.sip"] = _MockSip
-sys.modules["PyQt6"].sip = _MockSip
-sys.modules["PyQt6.QtCore"] = MagicMock()
-sys.modules["PyQt6.QtCore"].QAbstractNativeEventFilter = _MockAbstractEventFilter
+# Stubs live only for the duration of this import — see tests/_qt_stub.py.
+from _qt_stub import import_with_stubs
 
-from fastprompter.core.hotkey_filter import HotkeyFilter
+_pyqt6_stub = MagicMock()
+_pyqt6_stub.sip = _MockSip
+_qtcore_stub = MagicMock()
+_qtcore_stub.QAbstractNativeEventFilter = _MockAbstractEventFilter
+
+HotkeyFilter = import_with_stubs(
+    "fastprompter.core.hotkey_filter",
+    {"PyQt6": _pyqt6_stub, "PyQt6.sip": _MockSip, "PyQt6.QtCore": _qtcore_stub},
+).HotkeyFilter
 
 
 class _MsgPointer:

@@ -38,6 +38,12 @@ class _MockQSoundEffect:
 
 
 # Patch modules before importing SoundManager
+# Stubs are undone right after the import below — assigning into
+# sys.modules permanently broke eight tests_smoke files at collection
+# time. See tests/_qt_stub.py.
+import _qt_stub
+
+_before_stubs = _qt_stub.snapshot()
 sys.modules["PyQt6"] = MagicMock()
 sys.modules["PyQt6.QtMultimedia"] = MagicMock()
 sys.modules["PyQt6.QtMultimedia"].QSoundEffect = _MockQSoundEffect
@@ -47,6 +53,8 @@ sys.modules["PyQt6.QtCore"].QUrl = MagicMock()
 sys.modules["PyQt6.QtCore"].QUrl.fromLocalFile = lambda p: f"file:///{p}"
 
 from fastprompter.core.sound_manager import _SOUND_FILE_MAP, SoundManager
+
+_qt_stub.restore(_before_stubs)
 
 
 class TestSoundFileMap:
