@@ -118,13 +118,32 @@ def exists_within(path: str, timeout: float = 0.25) -> bool:
     thread is a daemon and costs nothing but its own stack until the process
     ends.
     """
+    return _probe_within(os.path.exists, path, timeout)
+
+
+def isdir_within(path: str, timeout: float = 0.25) -> bool:
+    """os.path.isdir() with the same bound as `exists_within`.
+
+    The configured files root is user-chosen through a QFileDialog, so it can
+    sit on a share. Checking it is on the silo-refresh path, which means an
+    unplugged NAS would stall the UI once per silo.
+    """
+    return _probe_within(os.path.isdir, path, timeout)
+
+
+def _probe_within(check, path, timeout):
+    """Run `check(path)` on a throwaway thread; False if it does not answer.
+
+    The thread is a daemon, so one stuck on a dead SMB connect costs its own
+    stack and nothing else — it cannot hold up shutdown.
+    """
     import threading
 
     answer = []
 
     def probe():
         try:
-            answer.append(os.path.exists(path))
+            answer.append(check(path))
         except (OSError, ValueError):
             answer.append(False)
 

@@ -1763,12 +1763,40 @@ class FastPrompter(
         """Header # button: fast toggle for the line-number gutter."""
         self.set_line_numbers(checked)
 
+    # How long a verdict about the custom files root is trusted before it is
+    # probed again. _files_root() is called from the silo-refresh path, once
+    # per silo, so an unbounded-but-uncached probe would still stutter.
+    _FILES_ROOT_RECHECK = 5.0
+
     def _files_root(self):
         custom = (self.data.get("files_root") or "").strip()
-        if custom and os.path.isdir(custom):
+        if custom and self._custom_files_root_usable(custom):
             return custom
         from fastprompter.utils.paths import get_data_dir
         return os.path.join(get_data_dir(), "files")
+
+    def _custom_files_root_usable(self, custom):
+        """Is the configured files root reachable, without betting the UI on it?
+
+        The root is user-chosen through a QFileDialog, so it can be a share.
+        `os.path.isdir` on a share whose server has gone away blocks the GUI
+        thread exactly the way the paste probe did — measured at 93s there.
+        The fallback to the local data dir is what the old code did anyway,
+        after the block; bounding the probe only removes the freeze.
+
+        Cached for a few seconds because the answer is asked for once per
+        silo during a refresh, and 0.25s x 20 silos is its own stutter.
+        """
+        from fastprompter.utils.paths import isdir_within
+
+        now = time.monotonic()
+        cached = getattr(self, "_files_root_probe", None)
+        if (cached and cached[0] == custom
+                and now - cached[1] < self._FILES_ROOT_RECHECK):
+            return cached[2]
+        usable = isdir_within(custom)
+        self._files_root_probe = (custom, now, usable)
+        return usable
 
     def _silo_folder_name(self, slot_idx, is_archive=False):
         """Stable, UNIQUE folder name for a silo's files. Keyed by slot (not
@@ -2206,6 +2234,9 @@ class FastPrompter(
         if not getattr(self, "_suspend_cache", False) and hasattr(self, "text_area"):
             self.capture_silo_state(self.active_temp_slot,
                                     getattr(self, "active_is_archive", False))
+            # and WHICH silo that was, for this project — the outer half of
+            # "put me back where I left off"
+            self.capture_silo_session()
         if hasattr(self, "text_area"):
             cached = getattr(self, "_last_cached_text", None)
             current_text = self.text_area.toPlainText() if cached is None else cached
@@ -4356,13 +4387,18 @@ class FastPrompter(
         self.build_categories()
         self.text_area.document().clearUndoRedoStacks()
 
-        # Switch to first silo
-        try:
-            slot_val = int(self.data.get("active_temp_slot", 0))
-        except Exception:
-            slot_val = 0
-        self.active_temp_slot = max(0, min(slot_val, len(self.data["temp_presets"]) - 1))
-        self._switch_to_slot(self.active_temp_slot, initial=True)
+        # Back to the silo this project was left on — including the archive,
+        # which used to be dropped on every start. Falls back to the old global
+        # active_temp_slot for a database written before silo_session_all.
+        session = self._silo_session()
+        if "slot" not in session:
+            try:
+                session["slot"] = int(self.data.get("active_temp_slot", 0))
+            except (TypeError, ValueError):
+                session["slot"] = 0
+        slot_val = self.restore_silo_session()
+        self._switch_to_slot(slot_val, initial=True,
+                             is_archive=getattr(self, "active_is_archive", False))
 
         # Switch to Text category
         text_idx = 0
@@ -5616,6 +5652,15 @@ class FastPrompter(
             "silo_collapsed": list(self.data.get("silo_collapsed", [])),
             "silo_folders": dict(self.data.get("silo_folders", {})),
             "silo_last_edited": dict(getattr(self, "silo_last_edited", {})),
+            # The rest of _SILO_INDEX_STATE. Deleting a silo REMAPS these down
+            # by one; undo used to restore only the text, so every colour,
+            # project path, silo type and watcher queue below the deleted slot
+            # stayed shifted — permanently, and silently. Measured: delete silo
+            # 0 of three, undo, and silo 0 wears silo 1's colour.
+            "silo_colors": dict(self.data.get("silo_colors", {})),
+            "silo_project_paths": copy.deepcopy(self.data.get("silo_project_paths", {})),
+            "silo_types": dict(self.data.get("silo_types", {})),
+            "watcher_queues": copy.deepcopy(self.data.get("watcher_queues", {})),
         }
 
     def _snapshot_is_noop(self, state):
@@ -5765,6 +5810,21 @@ class FastPrompter(
             edict.clear()
             edict.update(state.get("silo_last_edited", {}))
             self.silo_last_edited = edict
+            # The stores that a delete remaps but undo used to leave shifted.
+            # `is not None` on purpose: an undo entry written by an older build
+            # has no such key, and clearing on a missing key would DELETE the
+            # user's colours instead of leaving them alone.
+            for key, store in (("silo_colors", "silo_colors_all"),
+                               ("silo_project_paths", "silo_project_paths_all"),
+                               ("silo_types", "silo_type_all"),
+                               ("watcher_queues", "watcher_queues_all")):
+                saved = state.get(key)
+                if saved is None:
+                    continue
+                live = self.data.setdefault(store, {}).setdefault(snap_cat, {})
+                live.clear()
+                live.update(copy.deepcopy(saved))
+                self.data[key] = live
         from PyQt6.QtGui import QTextDocument
 
         font = self.text_area.font()
@@ -6711,6 +6771,65 @@ class FastPrompter(
         self.rebuild_cat_combo(keep=cur)
         self._rebuild_cat_numbox()
 
+    def _silo_session(self, cat=None):
+        """Per-project "where I was": active silo, archive or not, which page.
+
+        All three used to be single global values. Switching projects clamped
+        the slot to the new project's length and carried it straight over, so
+        leaving project A on silo 7 and coming back landed you wherever
+        project B had left the number — and `active_is_archive` and the page
+        were not saved at all, so every restart dropped you in the normal list
+        on page one. The cursor and scroll INSIDE a silo were already
+        per-project (silo_view_state_all); this is the outer half of it.
+
+        One key rather than three `_all` maps on purpose: a slot-keyed store
+        that someone forgets to register is exactly how silo_type_all was lost
+        (H-653).
+        """
+        cat = cat or self.get_current_category()
+        store = self.data.get("silo_session_all")
+        if not isinstance(store, dict):       # an older DB wrote it with str()
+            store = {}
+            self.data["silo_session_all"] = store
+        entry = store.get(cat)
+        if not isinstance(entry, dict):
+            entry = {}
+            store[cat] = entry
+        return entry
+
+    def capture_silo_session(self, cat=None):
+        """Record where the user is, for the project they are in."""
+        if not cat and not self.get_current_category():
+            return
+        entry = self._silo_session(cat)
+        entry["slot"] = int(getattr(self, "active_temp_slot", 0) or 0)
+        entry["archive"] = bool(getattr(self, "active_is_archive", False))
+        # The page is NOT stored: _switch_to_slot derives it from the slot
+        # (idx // visible), so restoring the slot restores the page. Keeping a
+        # copy would be a second source of truth that can disagree.
+
+    def restore_silo_session(self, cat=None):
+        """Put the user back where they left this project. Returns the slot.
+
+        Every value is clamped to what the project actually holds now: silos
+        can be deleted while you are elsewhere, and a stale slot must land on
+        a real one rather than out of range.
+        """
+        entry = self._silo_session(cat)
+        archive = bool(entry.get("archive", False))
+        presets = self.data.get("archive_temp_presets" if archive else "temp_presets") or []
+        if archive and not presets:
+            archive = False
+            presets = self.data.get("temp_presets") or []
+        try:
+            slot = int(entry.get("slot", 0))
+        except (TypeError, ValueError):
+            slot = 0
+        slot = max(0, min(slot, len(presets) - 1)) if presets else 0
+        self.active_is_archive = archive
+        self.active_temp_slot = slot
+        return slot
+
     def _cat_at(self, idx):
         """Category name for a combo row.
 
@@ -6727,11 +6846,25 @@ class FastPrompter(
         if isinstance(name, str) and name in self.data.get("categories", {}):
             return name
         cats = self.data.get("cats_order", [])
+        # idx may arrive as a STRING: last_tab_idx is written to the settings
+        # table with str() and is only coerced back on load, so an in-memory
+        # value after a save is "0", and `0 <= "0"` is a TypeError.
+        try:
+            idx = int(idx)
+        except (TypeError, ValueError):
+            return None
         return cats[idx] if 0 <= idx < len(cats) else None
 
     def on_tab_changed(self, index):
         if index < 0:
             return
+        # Record where the project being LEFT was, before the aliases move.
+        # Not get_current_category(): the combo has already been set to the new
+        # row by the time this signal fires, so that would file the outgoing
+        # slot under the incoming project. last_tab_idx is still the old row.
+        prev_cat = self._cat_at(self.data.get("last_tab_idx", -1))
+        if prev_cat:
+            self.capture_silo_session(prev_cat)
         self.data["last_tab_idx"] = index
         self.commit_current_text()
         self.cancel_editing()
@@ -6810,11 +6943,10 @@ class FastPrompter(
                 self._set_plain_text_clean(doc, text)
                 self.archive_docs.append(doc)
 
-            # Keep active slot within bounds and switch to it
-            self.active_temp_slot = max(
-                0, min(self.active_temp_slot, len(self.data["temp_presets"]) - 1)
-            )
-            self._switch_to_slot(self.active_temp_slot, initial=True)
+            # Land where this project was left, not where the last one was.
+            slot = self.restore_silo_session(cat)
+            self._switch_to_slot(slot, initial=True,
+                                 is_archive=getattr(self, "active_is_archive", False))
             self.refresh_temp_presets()
 
         self._update_cat_numbox_active()

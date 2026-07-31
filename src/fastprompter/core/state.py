@@ -8,6 +8,43 @@ import time
 from fastprompter.core.logging import logger
 from fastprompter.utils.paths import get_db_path
 
+# Settings whose value is a list or a dict and must therefore be written as
+# JSON. Everything else goes through str(), and a dict written that way comes
+# back with single quotes — not valid JSON, so it reloads as a raw string and
+# the setting is silently lost. That is what happened to `silo_type_all`: a
+# silo's Table/Kanban type never survived a restart.
+#
+# This lived inline in TWO places, and they had already drifted apart
+# (`window_presets` was in one of them only), which is how a key gets missed.
+# One tuple now, used by both.
+_JSON_SETTINGS = (
+    "cats_order", "custom_colors", "timers",
+    "silo_last_edited", "silo_last_edited_all",
+    "pinned_silos", "pinned_silos_all",
+    "silo_ticked", "silo_ticked_all",
+    "silo_children", "silo_children_all",
+    "silo_collapsed", "silo_collapsed_all",
+    "silo_colors", "silo_colors_all",
+    "silo_folders", "silo_folders_all",
+    "archive_silo_folders", "archive_silo_folders_all",
+    "silo_project_paths", "silo_project_paths_all",
+    "archive_project_paths", "archive_project_paths_all",
+    "silo_gaps", "silo_gaps_all",
+    "silo_view_state_all", "silo_type_all", "silo_session_all",
+    "watcher_queues", "watcher_queues_all",
+    "folder_trash_log", "hidden_categories", "window_presets",
+)
+
+# Never stored in the settings table: they have tables of their own.
+_SETTINGS_SKIP = ("categories", "temp_presets_all", "archive_temp_presets_all",
+                  "temp_presets", "archive_temp_presets")
+
+
+def _encode_settings(data):
+    """{key: text} for the settings table, JSON where the value needs it."""
+    return {k: (json.dumps(v) if k in _JSON_SETTINGS else str(v))
+            for k, v in data.items() if k not in _SETTINGS_SKIP}
+
 
 class FastPrompterState:
     def __init__(self, profile_id=1):
@@ -33,7 +70,7 @@ class FastPrompterState:
             "last_text": "", "last_tab_idx": 0, "last_geometry": "", "active_temp_slot": 0,
             "font_size": 11, "preview_mode": "None", "paste_mode": "Plain", "tray_visible": "True", "global_hotkey": "Alt+X",
             "pie_menu_hotkey": "Shift+Alt+X", "lock_window_hotkey": "Alt+S", "always_on_top_hotkey": "Alt+E",
-            "close_on_focus_loss": "True", "ctrl_c_closes": "True", "hk_italic": "Ctrl+I", "hk_underline": "Ctrl+U", "theme": "Default", "ui_scale": "0.5", "button_scale": "1.0", "window_locked": "False", "silo_last_edited": {}, "pinned_silos": [], "silo_last_edited_all": {}, "pinned_silos_all": {}, "silo_ticked": [], "silo_ticked_all": {}, "silo_children": {}, "silo_children_all": {}, "silo_collapsed": [], "silo_collapsed_all": {}, "silo_gaps": [], "silo_gaps_all": {}, "hidden_categories": [], "silo_colors": {}, "silo_colors_all": {}, "silo_folders": {}, "silo_folders_all": {}, "archive_silo_folders": {}, "archive_silo_folders_all": {}, "silo_project_paths": {}, "silo_project_paths_all": {}, "archive_project_paths": {}, "archive_project_paths_all": {}, "folder_trash_log": [],
+            "close_on_focus_loss": "True", "ctrl_c_closes": "True", "hk_italic": "Ctrl+I", "hk_underline": "Ctrl+U", "theme": "Default", "ui_scale": "0.5", "button_scale": "1.0", "window_locked": "False", "silo_last_edited": {}, "pinned_silos": [], "silo_last_edited_all": {}, "pinned_silos_all": {}, "silo_ticked": [], "silo_ticked_all": {}, "silo_children": {}, "silo_children_all": {}, "silo_collapsed": [], "silo_collapsed_all": {}, "silo_gaps": [], "silo_gaps_all": {}, "hidden_categories": [], "silo_colors": {}, "silo_colors_all": {}, "silo_folders": {}, "silo_folders_all": {}, "archive_silo_folders": {}, "archive_silo_folders_all": {}, "silo_project_paths": {}, "silo_project_paths_all": {}, "silo_type_all": {}, "silo_session_all": {}, "archive_project_paths": {}, "archive_project_paths_all": {}, "folder_trash_log": [],
             "sidebar_right": "False", "sound_ui": "False", "sound_typewriter": "False", "sound_volume": "5", "portable_backup_enabled": "True", "language": "EN",
             "customize_toolbar": "False", "toolbar_order": "", "code_auto_gutter": "False"
         }
@@ -100,7 +137,7 @@ class FastPrompterState:
                     except json.JSONDecodeError: self.data['cats_order'] = ["Code", "Text", "Misc"]
                 elif row[0] in ('ui_scale', 'window_locked', 'sidebar_right'): self.data[row[0]] = row[1]
                 elif row[0] == 'hide_font': continue
-                elif row[0] in ('silo_last_edited_all', 'pinned_silos_all', 'silo_ticked_all', 'silo_children', 'silo_children_all', 'silo_collapsed_all', 'silo_colors', 'silo_colors_all', 'silo_folders', 'silo_folders_all', 'archive_silo_folders', 'archive_silo_folders_all', 'silo_project_paths', 'silo_project_paths_all', 'archive_project_paths', 'archive_project_paths_all', 'folder_trash_log', 'silo_view_state_all'):
+                elif row[0] in ('silo_last_edited_all', 'pinned_silos_all', 'silo_ticked_all', 'silo_children', 'silo_children_all', 'silo_collapsed_all', 'silo_colors', 'silo_colors_all', 'silo_folders', 'silo_folders_all', 'archive_silo_folders', 'archive_silo_folders_all', 'silo_project_paths', 'silo_project_paths_all', 'archive_project_paths', 'archive_project_paths_all', 'folder_trash_log', 'silo_view_state_all', 'silo_type_all', 'silo_session_all'):
                     try: self.data[row[0]] = json.loads(row[1])
                     except Exception as e: logger.warning(f"Failed to parse {row[0]}: {e}"); self.data[row[0]] = {}
                 elif row[0] in ('silo_gaps', 'silo_gaps_all', 'hidden_categories'):
@@ -209,82 +246,23 @@ class FastPrompterState:
         self._last_saved_presets = {(cat, i, item["name"], item["text"], item.get("last_edited", 0)) for cat, slots in self.data["categories"].items() for i, item in enumerate(slots) if item}
         self._last_saved_temp = {(cat, i, content) for cat, slots in self.data["temp_presets_all"].items() for i, content in enumerate(slots) if content}
         self._last_saved_arc = {(cat, i, content) for cat, slots in self.data["archive_temp_presets_all"].items() for i, content in enumerate(slots) if content}
-        self._last_saved_settings = {k: (json.dumps(v) if k in ("cats_order", "custom_colors", "silo_last_edited", "pinned_silos", "silo_last_edited_all", "pinned_silos_all", "silo_ticked", "silo_ticked_all", "silo_children", "silo_children_all", "silo_collapsed", "silo_collapsed_all", "silo_colors", "silo_colors_all", "silo_folders", "silo_folders_all", "archive_silo_folders", "archive_silo_folders_all", "silo_project_paths", "silo_project_paths_all", "archive_project_paths", "archive_project_paths_all", "folder_trash_log", "silo_view_state_all", "timers", "watcher_queues", "watcher_queues_all", "silo_gaps", "silo_gaps_all", "hidden_categories") else str(v)) for k, v in self.data.items() if k not in ("categories", "temp_presets_all", "archive_temp_presets_all", "temp_presets", "archive_temp_presets")}
+        self._last_saved_settings = _encode_settings(self.data)
 
     def mark_dirty(self):
         self._db_dirty = True
 
     def _sanitize_cat_name(self, name: str) -> str:
         """Sanitize a category name for use as a directory name."""
-        import re
         return re.sub(r'[^a-zA-Z0-9_ -]+', '', name).strip() or 'Unnamed'
 
-    def _safe_write(self, path: str, content: str) -> None:
-        """Atomically write a file using temp + rename."""
-        tmp = path + ".tmp"
-        try:
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            with open(tmp, "w", encoding="utf-8") as f:
-                f.write(content)
-            os.replace(tmp, path)
-        except Exception:
-            import traceback
-            traceback.print_exc()
-
-    def _export_md_backup(self, snapshot: dict) -> None:
-        """Export a snapshot of data as flat .md files under ~/.fastprompter/.
-
-        Creates directories:
-          Snippets/<Category>/  — one file per populated snippet slot
-          Silos/<Category>/     — one file per non-empty silo
-          Archive/<Category>/   — one file per non-empty archive entry
-        """
-        base = os.path.join(os.path.expanduser("~"), ".fastprompter")
-        cats = snapshot.get("categories", {})
-        temp_presets = snapshot.get("temp_presets_all", {})
-        arc_presets = snapshot.get("archive_temp_presets_all", {})
-
-        # Create skeleton directories upfront (even for empty snapshots)
-        for cat_name in cats:
-            safe_cat = self._sanitize_cat_name(cat_name)
-            os.makedirs(os.path.join(base, "Snippets", safe_cat), exist_ok=True)
-        for cat_name in temp_presets:
-            safe_cat = self._sanitize_cat_name(cat_name)
-            os.makedirs(os.path.join(base, "Silos", safe_cat), exist_ok=True)
-        for cat_name in arc_presets:
-            safe_cat = self._sanitize_cat_name(cat_name)
-            os.makedirs(os.path.join(base, "Archive", safe_cat), exist_ok=True)
-
-        # --- Snippets ---
-        for cat_name, slots in cats.items():
-            safe_cat = self._sanitize_cat_name(cat_name)
-            cat_dir = os.path.join(base, "Snippets", safe_cat)
-            for i, slot in enumerate(slots):
-                if slot and isinstance(slot, dict) and slot.get("text", "").strip():
-                    name = slot.get("name", f"Snippet {i+1}")
-                    text = slot["text"]
-                    fname = f"{i+1:03d}_{name}"[:80] + ".md"
-                    fname = re.sub(r'[\\/:*?"<>|]+', '_', fname)
-                    content = f"# {name}\n\n{text}\n"
-                    self._safe_write(os.path.join(cat_dir, fname), content)
-
-        # --- Silos ---
-        for cat_name, presets in temp_presets.items():
-            safe_cat = self._sanitize_cat_name(cat_name)
-            silo_dir = os.path.join(base, "Silos", safe_cat)
-            for i, text in enumerate(presets):
-                if text and text.strip():
-                    fname = f"silo_{i+1:03d}.md"
-                    self._safe_write(os.path.join(silo_dir, fname), text)
-
-        # --- Archive ---
-        for cat_name, presets in arc_presets.items():
-            safe_cat = self._sanitize_cat_name(cat_name)
-            arc_dir = os.path.join(base, "Archive", safe_cat)
-            for i, text in enumerate(presets):
-                if text and text.strip():
-                    fname = f"archive_{i+1:03d}.md"
-                    self._safe_write(os.path.join(arc_dir, fname), text)
+    # _export_md_backup and its _safe_write helper lived here: a flat
+    # ~/.fastprompter/ mirror of every snippet, silo and archive entry. It had
+    # nine unit tests and NOT ONE production caller, which is worse than no
+    # backup — it read like a safety net, in review and in the test list, while
+    # writing nothing, ever. The dated per-project snapshots in
+    # utils/portable_backup.py are the real thing and ARE wired into
+    # save_data_to_db. `_sanitize_cat_name` above stays: backup_dialog borrows
+    # it for the user-driven export. Removed 31.07.26 (T-633).
 
     def save_data_to_db(self, current_text, ui_settings=None, force=False):
         run_pb = False
@@ -306,7 +284,7 @@ class FastPrompterState:
 
         try:
             # Compute snapshots BEFORE tx; assign _last_saved_* AFTER tx commits
-            current_settings = {k: (json.dumps(v) if k in ("cats_order", "custom_colors", "silo_last_edited", "pinned_silos", "silo_last_edited_all", "pinned_silos_all", "silo_ticked", "silo_ticked_all", "silo_children", "silo_children_all", "silo_collapsed", "silo_collapsed_all", "silo_colors", "silo_colors_all", "silo_folders", "silo_folders_all", "archive_silo_folders", "archive_silo_folders_all", "silo_project_paths", "silo_project_paths_all", "archive_project_paths", "archive_project_paths_all", "folder_trash_log", "silo_view_state_all", "timers", "watcher_queues", "watcher_queues_all", "silo_gaps", "silo_gaps_all", "hidden_categories", "window_presets") else str(v)) for k, v in self.data.items() if k not in ("categories", "temp_presets_all", "archive_temp_presets_all", "temp_presets", "archive_temp_presets")}
+            current_settings = _encode_settings(self.data)
             settings_to_save = [(k, v) for k, v in current_settings.items() if k not in self._last_saved_settings or self._last_saved_settings[k] != v]
 
             current_presets = {(cat, i, item["name"], item["text"], item.get("last_edited", 0)) for cat, slots in self.data["categories"].items() for i, item in enumerate(slots) if item}

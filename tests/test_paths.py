@@ -11,6 +11,7 @@ from fastprompter.utils.paths import (
     get_data_dir,
     get_db_path,
     get_resource_path,
+    isdir_within,
 )
 
 
@@ -171,3 +172,31 @@ class TestExistsWithin:
         for _ in range(20):
             exists_within(os.path.dirname(__file__), timeout=5.0)
         assert time.perf_counter() - t < 1.0
+
+    def test_isdir_within_answers_a_real_directory(self):
+        assert isdir_within(os.path.dirname(__file__)) is True
+
+    def test_isdir_within_rejects_a_file(self):
+        assert isdir_within(__file__) is False
+
+    def test_isdir_within_is_bounded_too(self):
+        """Same guarantee as exists_within — the files root can be a share."""
+        import threading
+        import time
+
+        release = threading.Event()
+
+        class _Hangs:
+            def __fspath__(self):
+                release.wait(30)
+                return "/definitely/not/here"
+
+        t = time.perf_counter()
+        try:
+            result = isdir_within(_Hangs(), timeout=0.2)
+            elapsed = time.perf_counter() - t
+        finally:
+            release.set()
+
+        assert result is False
+        assert elapsed < 2.0, f"caller was held for {elapsed:.1f}s"

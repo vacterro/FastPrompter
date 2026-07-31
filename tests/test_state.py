@@ -2,8 +2,6 @@
 
 import os
 import sys
-import tempfile
-from pathlib import Path
 
 import pytest
 
@@ -432,154 +430,9 @@ class TestErrorHandling:
         state.save_data_to_db("text", force=False)  # Should no-op without error
 
 
-# ---------------------------------------------------------------------------
-# _export_md_backup
-# ---------------------------------------------------------------------------
-
-
-class TestExportMdBackup:
-    """Tests for _export_md_backup — MD file export of snippets, silos, and archives."""
-
-    def _monkeypatch_expanduser(self, monkeypatch, tmpdir):
-        """Redirect os.path.expanduser to write to a temp dir."""
-        monkeypatch.setattr(os.path, "expanduser", lambda _: str(Path(tmpdir)))
-
-    def test_export_snippet(self, monkeypatch):
-        """Export a snippet and verify the file is created."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            self._monkeypatch_expanduser(monkeypatch, tmpdir)
-            snapshot = {
-                "categories": {
-                    "Code": [{"name": "Test Snip", "text": "print('hello')", "last_edited": 1000}]
-                    + [None] * 99,
-                },
-                "temp_presets_all": {"Code": [""] * 10},
-                "archive_temp_presets_all": {"Code": []},
-            }
-            state = FastPrompterState(profile_id=999)
-            state._export_md_backup(snapshot)
-
-            base = Path(tmpdir) / ".fastprompter" / "Snippets" / "Code"
-            files = list(base.glob("*.md"))
-            assert len(files) >= 1
-            content = files[0].read_text(encoding="utf-8")
-            assert "Test Snip" in content
-            assert "print('hello')" in content
-
-    def test_export_silo(self, monkeypatch):
-        """Export a silo and verify the file content."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            self._monkeypatch_expanduser(monkeypatch, tmpdir)
-            snapshot = {
-                "categories": {"Code": [None] * 100},
-                "temp_presets_all": {"Code": ["silo text content", ""] + [""] * 8},
-                "archive_temp_presets_all": {"Code": []},
-            }
-            state = FastPrompterState(profile_id=999)
-            state._export_md_backup(snapshot)
-
-            base = Path(tmpdir) / ".fastprompter" / "Silos" / "Code"
-            files = sorted(base.glob("*.md"))
-            assert len(files) >= 1
-            content = files[0].read_text(encoding="utf-8")
-            assert content == "silo text content"
-
-    def test_export_archive(self, monkeypatch):
-        """Export an archived silo and verify the file is written under Archive/."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            self._monkeypatch_expanduser(monkeypatch, tmpdir)
-            snapshot = {
-                "categories": {"Code": [None] * 100},
-                "temp_presets_all": {"Code": [""] * 10},
-                "archive_temp_presets_all": {"Code": ["archived text"]},
-            }
-            state = FastPrompterState(profile_id=999)
-            state._export_md_backup(snapshot)
-
-            base = Path(tmpdir) / ".fastprompter" / "Archive" / "Code"
-            files = sorted(base.glob("*.md"))
-            assert len(files) >= 1
-            content = files[0].read_text(encoding="utf-8")
-            assert content == "archived text"
-
-    def test_export_multiple_categories(self, monkeypatch):
-        """Export data for multiple categories — each should get its own subdir."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            self._monkeypatch_expanduser(monkeypatch, tmpdir)
-            snapshot = {
-                "categories": {
-                    "Code": [None] * 100,
-                    "Text": [{"name": "Text Snip", "text": "text content", "last_edited": 1}]
-                    + [None] * 99,
-                },
-                "temp_presets_all": {"Code": [""] * 10, "Text": [""] * 10},
-                "archive_temp_presets_all": {"Code": [], "Text": []},
-            }
-            state = FastPrompterState(profile_id=999)
-            state._export_md_backup(snapshot)
-
-            code_files = list((Path(tmpdir) / ".fastprompter" / "Snippets" / "Code").glob("*.md"))
-            text_files = list((Path(tmpdir) / ".fastprompter" / "Snippets" / "Text").glob("*.md"))
-            assert len(code_files) == 0  # Code has no non-None snippets
-            assert len(text_files) >= 1
-            assert "Text Snip" in text_files[0].read_text(encoding="utf-8")
-
-    def test_export_empty_snapshot(self, monkeypatch):
-        """Export with empty data should create directories but no files."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            self._monkeypatch_expanduser(monkeypatch, tmpdir)
-            snapshot = {
-                "categories": {"Code": [None] * 100},
-                "temp_presets_all": {"Code": [""] * 10},
-                "archive_temp_presets_all": {"Code": []},
-            }
-            state = FastPrompterState(profile_id=999)
-            state._export_md_backup(snapshot)
-
-            base = Path(tmpdir) / ".fastprompter"
-            assert (base / "Snippets" / "Code").exists()
-            assert (base / "Silos" / "Code").exists()
-            assert (base / "Archive" / "Code").exists()
-            assert len(list((base / "Snippets" / "Code").glob("*.md"))) == 0
-            assert len(list((base / "Silos" / "Code").glob("*.md"))) == 0
-            assert len(list((base / "Archive" / "Code").glob("*.md"))) == 0
-
-    def test_export_with_no_archive_key(self, monkeypatch):
-        """Export should not crash if snapshot lacks archive key."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            self._monkeypatch_expanduser(monkeypatch, tmpdir)
-            snapshot = {
-                "categories": {"Code": [None] * 100},
-                "temp_presets_all": {"Code": [""] * 10},
-            }
-            state = FastPrompterState(profile_id=999)
-            state._export_md_backup(snapshot)  # Should not raise
-
-    def test_export_special_chars_in_name(self, monkeypatch):
-        """Category names with special chars should be sanitized in dir names."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            self._monkeypatch_expanduser(monkeypatch, tmpdir)
-            snapshot = {
-                "categories": {
-                    "Code/Text": [
-                        {"name": "Test", "text": "content", "last_edited": 1}
-                    ]
-                    + [None] * 99,
-                },
-                "temp_presets_all": {"Code/Text": [""] * 10},
-                "archive_temp_presets_all": {"Code/Text": []},
-            }
-            state = FastPrompterState(profile_id=999)
-            state._export_md_backup(snapshot)
-
-            expected_dir = Path(tmpdir) / ".fastprompter" / "Snippets" / "CodeText"
-            assert expected_dir.exists()
-            assert len(list(expected_dir.glob("*.md"))) >= 1
-
-
-# ---------------------------------------------------------------------------
-# T-632: the daily Markdown snapshot must cover EVERY project
-# ---------------------------------------------------------------------------
+# TestExportMdBackup lived here — nine tests for a method with no
+# production caller. Both are gone (T-633); the real Markdown mirror is
+# TestPortableBackupCoversEveryProject below.
 
 
 class TestPortableBackupCoversEveryProject:
@@ -637,3 +490,107 @@ class TestPortableBackupCoversEveryProject:
                 "temp_presets_all": {"a/b:c": ["x"]}, "categories": {}}
         day = self._run(tmp_path, data, monkeypatch)
         assert (day / "silos" / "a_b_c" / "silo_001.md").exists()
+
+
+class TestSettingsSurviveAReload:
+    """A dict setting must come back as a dict, not as its own repr.
+
+    Settings not listed in `_JSON_SETTINGS` are written with `str()`. A list
+    survives that by accident (valid JSON); a dict does not — single quotes —
+    so it reloads as a raw string and the guard that expects a dict throws it
+    away. `silo_type_all` was missing from the list, which is why a silo's
+    Table/Kanban type never survived a restart.
+    """
+
+    def _reload(self, state):
+        """Close and reopen the same database file."""
+        state.conn.close()
+        fresh = FastPrompterState(profile_id=999)
+        if fresh.conn:
+            fresh.conn.close()
+        fresh.db_path = state.db_path
+        fresh.init_db()
+        return fresh
+
+    def test_silo_types_survive_a_restart(self, state):
+        types = {"Code": {"0": "table", "1": "kanban"}}
+        state.data["silo_type_all"] = {k: dict(v) for k, v in types.items()}
+        state.mark_dirty()
+        state.save_data_to_db("text", force=True)
+
+        fresh = self._reload(state)
+        try:
+            assert fresh.data.get("silo_type_all") == types
+        finally:
+            if fresh.conn:
+                fresh.conn.close()
+
+    def test_every_structured_setting_is_json_encoded(self):
+        """Guard the tuple itself: no dict or list default may be missing.
+
+        This is the check that would have caught silo_type_all before a user
+        did. Lists are included, not just dicts: `str([1, 2])` happens to be
+        valid JSON and survives, but `str(['a', 'b'])` is single-quoted and
+        does not — so "it is only a list" is not safety, it is luck about the
+        element type.
+        """
+        from fastprompter.core.state import _JSON_SETTINGS, _SETTINGS_SKIP
+
+        probe = FastPrompterState(profile_id=999)
+        try:
+            missing = [
+                k for k, v in probe.data.items()
+                if isinstance(v, (dict, list)) and k not in _SETTINGS_SKIP
+                and k not in _JSON_SETTINGS
+            ]
+            assert not missing, f"structured settings written with str(): {missing}"
+        finally:
+            if probe.conn:
+                probe.conn.close()
+
+    def test_a_settings_round_trip_keeps_every_structured_value(self):
+        """Save then reload must hand back the same objects, not their reprs.
+
+        The point of the ticket: "100% save state". Every dict/list setting is
+        given a distinctive value, written, and read back from a fresh state on
+        the same file. Anything that comes back as a str, or empty, is a
+        setting the user would silently lose on restart.
+        """
+        from fastprompter.core.state import _JSON_SETTINGS, _SETTINGS_SKIP
+
+        state = FastPrompterState(profile_id=999)
+        state.conn.close()
+        import tempfile
+        state.db_path = os.path.join(tempfile.mkdtemp(), "roundtrip.db")
+        state.init_db()
+
+        expected = {}
+        for key, value in list(state.data.items()):
+            if key in _SETTINGS_SKIP or not isinstance(value, (dict, list)):
+                continue
+            marker = {"probe": [key, 1]} if isinstance(value, dict) else [key, "x"]
+            state.data[key] = marker
+            expected[key] = marker
+        assert expected, "no structured settings found — the probe is wrong"
+
+        state.mark_dirty()
+        state.save_data_to_db("text", force=True)
+        db_path = state.db_path
+        state.conn.close()
+
+        fresh = FastPrompterState(profile_id=999)
+        fresh.conn.close()
+        fresh.db_path = db_path
+        fresh.init_db()
+        try:
+            lost = {k: fresh.data.get(k) for k, v in expected.items()
+                    if fresh.data.get(k) != v}
+            assert not lost, (
+                "settings that did not survive a save/reload: "
+                + ", ".join(f"{k} -> {v!r}" for k, v in lost.items())
+            )
+            missing_from_tuple = [k for k in expected if k not in _JSON_SETTINGS]
+            assert not missing_from_tuple, missing_from_tuple
+        finally:
+            if fresh.conn:
+                fresh.conn.close()

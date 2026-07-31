@@ -2991,6 +2991,163 @@ def test_pasting_an_unreachable_network_path_does_not_freeze_the_editor(win):
     assert unreachable in ta.toPlainText(), "an unprobeable path still pastes as text"
 
 
+def test_an_unreachable_files_root_does_not_stall_the_silo_refresh(win):
+    """The files root is user-chosen and can be a share. It must not freeze us.
+
+    `_files_root()` is asked once per silo while the list refreshes, and it
+    validated the configured root with a bare `os.path.isdir`. On a share whose
+    server has gone away that is the same unbounded SMB connect that made
+    pasting a UNC path cost 93 seconds - only now multiplied by the silo count.
+    Falling back to the local data dir is what the old code did anyway, just
+    after the stall; only the stall is gone.
+    """
+    import time
+
+    kept = win.data.get("files_root")
+    win._files_root_probe = None
+    try:
+        # What the app uses when no custom root is configured. Asked for
+        # rather than spelled out: an earlier test in this module may have
+        # pointed the window somewhere of its own, and the guarantee here is
+        # "falls back to whatever normal is", not a particular path.
+        win.data["files_root"] = ""
+        win._files_root_probe = None
+        fallback = win._files_root()
+
+        win.data["files_root"] = "\\\\192.0.2.77\\share\\files"
+        win._files_root_probe = None
+
+        started = time.perf_counter()
+        root = win._files_root()
+        first = time.perf_counter() - started
+
+        assert first < 5.0, f"_files_root blocked for {first:.1f}s"
+        assert "192.0.2.77" not in root, "an unreachable root must not be handed out"
+        assert root == fallback, f"{root!r} is neither the share nor the fallback"
+
+        # asked once per silo: the verdict is cached, not re-probed each time
+        started = time.perf_counter()
+        for _ in range(20):
+            win._files_root()
+        assert time.perf_counter() - started < 1.0, "the probe is not cached"
+    finally:
+        if kept is None:
+            win.data.pop("files_root", None)
+        else:
+            win.data["files_root"] = kept
+        win._files_root_probe = None
+
+
+def test_undoing_a_delete_puts_the_slot_keyed_state_back_too(win):
+    """Undo must move colours and project paths back with their silos.
+
+    Deleting a silo remaps every slot-keyed store down by one. The undo
+    snapshot carried the text, pins, ticks, children, collapsed state and
+    folders — but NOT colours, project paths, silo types or watcher queues.
+    So the text came back and those stayed shifted: silo 0 wearing silo 1's
+    colour, and a silo pointing at another silo's project folder. Silent, and
+    permanent — nothing later would ever put them right.
+    """
+    cat = win.get_current_category()
+    win.data["temp_presets"][:] = ["alpha", "bravo", "charlie"]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+
+    colours = win.data.setdefault("silo_colors", {})
+    colours.clear()
+    colours.update({"0": "#ff0000", "1": "#00ff00", "2": "#0000ff"})
+    paths = win.data.setdefault("silo_project_paths", {})
+    paths.clear()
+    paths.update({"0": {"path": "A"}, "2": {"path": "C"}})
+
+    before_colours = dict(colours)
+    before_paths = {k: dict(v) for k, v in paths.items()}
+
+    win.del_silo(0)
+    assert dict(win.data["silo_colors"]) != before_colours, "the delete must remap"
+
+    win.undo_action()
+
+    assert list(win.data["temp_presets"]) == ["alpha", "bravo", "charlie"]
+    assert dict(win.data["silo_colors"]) == before_colours, "colours stayed shifted"
+    assert {k: dict(v) for k, v in win.data["silo_project_paths"].items()} == before_paths
+
+    # the alias must still BE the per-category store, or the next save drops it
+    assert win.data["silo_colors"] is win.data["silo_colors_all"][cat]
+
+
+def test_each_project_remembers_which_silo_you_were_on(win):
+    """Leave project A on silo 2, wander to B, come back — still silo 2.
+
+    The active slot was ONE global number: switching projects clamped it to
+    the new project's length and carried it straight over, so coming back put
+    you wherever the other project had left the counter. Cursor and scroll
+    inside a silo were already per-project; which silo was open was not.
+    """
+    cats = win.data["cats_order"]
+    if len(cats) < 2:
+        import pytest as _pytest
+        _pytest.skip("needs two projects")
+
+    win.cat_combo.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    while len(win.data["temp_presets"]) < 4:
+        win.data["temp_presets"].append("")
+    win._switch_to_slot(2, initial=True)
+    assert win.active_temp_slot == 2
+
+    win.cat_combo.setCurrentIndex(1)
+    win.on_tab_changed(1)
+    win._switch_to_slot(0, initial=True)
+    assert win.active_temp_slot == 0
+
+    win.cat_combo.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    assert win.active_temp_slot == 2, "project A forgot where it was"
+
+    win.cat_combo.setCurrentIndex(1)
+    win.on_tab_changed(1)
+    assert win.active_temp_slot == 0, "project B forgot where it was"
+
+
+def test_a_stale_remembered_slot_is_clamped_not_trusted(win):
+    """Silos can be deleted while you are in another project."""
+    cat = win.get_current_category()
+    win.data["temp_presets"][:] = ["one", "two"]
+    win.silo_docs[:] = []
+    win.data.setdefault("silo_session_all", {})[cat] = {"slot": 97, "archive": False}
+
+    slot = win.restore_silo_session(cat)
+    assert slot == 1, f"out-of-range slot came back as {slot}"
+    assert win.active_temp_slot == 1
+
+
+def test_the_remembered_session_reaches_the_database(win):
+    """It is worth nothing if it does not survive the restart."""
+    import fastprompter.core.state as state_mod
+
+    cat = win.get_current_category()
+    while len(win.data["temp_presets"]) < 3:
+        win.data["temp_presets"].append("")
+    win._switch_to_slot(2, initial=True)
+    win.capture_silo_session()
+    win.mark_dirty()
+    win.save_data_to_db(force=True)
+
+    fresh = state_mod.FastPrompterState(profile_id=999)
+    if fresh.conn:
+        fresh.conn.close()
+    fresh.db_path = win.state.db_path
+    fresh.init_db()
+    try:
+        stored = fresh.data.get("silo_session_all")
+        assert isinstance(stored, dict), f"reloaded as {type(stored).__name__}"
+        assert stored.get(cat, {}).get("slot") == 2
+    finally:
+        if fresh.conn:
+            fresh.conn.close()
+
+
 def test_ctrl_wheel_zoom_falls_back_to_pixel_delta(win):
     # Regression: only angleDelta() was read, which stays 0 on trackpads that
     # report pixelDelta — Ctrl+wheel zoom silently did nothing there.
