@@ -1,138 +1,144 @@
-# SAIPEN Protocol v7 & SubSaipen Architecture Specification
+# SAIPEN-Protokoll v7 & SubSaipen-Architektur
 
-## Overview
-SAIPEN (v7) is a lightweight, structured protocol for persistent AI agent task tracking, state management, event logging, and multi-agent subagent delegation. It guarantees zero context-drift across long development sessions by maintaining machine-parsable tracking files in `.saipen/` (for main workspace) and `subs/<agent_name>/` (for subSaipen agents).
+## Übersicht
+
+SAIPEN (v7) — leichtgewichtiges, strukturiertes Protokoll für persistente KI-Agenten-Aufgabenverfolgung, Zustandsverwaltung, Ereignisprotokollierung und Multi-Agenten-Delegation. Null Kontextdrift über lange Sitzungen durch maschinenlesbare Dateien in `.saipen/`.
 
 ---
 
-## 1. Core SAIPEN v7 Protocol Specification
+## 1. Kern-Protokoll
 
-### Memory Storage Structure (`.saipen/`)
+### Speicherstruktur (`.saipen/`)
+
 ```
 .saipen/
-├── STATE.md         # Current phase, active task, blocker, agent parameters
-├── BOARD.md         # Kanban ticket board (DOING, TODO, DONE, BLOCKED)
-├── LOG.md           # Immutable append-only work log history
-├── KNOWLEDGE/       # Subsystem reference cards and domain context
-└── kitchen/         # Temporary scratchpads and intermediate outputs
+├── STATE.md         # Phase, Aufgabe, Blocker, Agent-Parameter
+├── BOARD.md         # Kanban: DOING/TODO/DONE/BLOCKED
+├── LOG.md           # Nur-Anhängen-Arbeitsprotokoll (RFC § 1.2)
+├── KNOWLEDGE/       # Subsystem-Referenzkarten
+├── kitchen/         # Notizblöcke, Zwischenausgaben
+├── snapshots/       # Zeitgestempelte STATE/BOARD/LOG-Backups
+└── recovery/        # Wipe-Recovery-Archive
 ```
 
-### State Schema (`STATE.md`)
-The `STATE.md` file uses YAML frontmatter format:
+### STATE.md-Schema (YAML-Frontmatter)
 
 ```yaml
 ---
-phase: SCOUT | PLAN | BUILD | VERIFY | REVIEW | DONE
-task: "Description of active task"
-next_action: "Immediate action execution step"
-blocker: ""
-agent: antigravity
+phase: SCOUT | PLAN | BUILD | VERIFY | REVIEW | DONE | BLOCKED
+task: "Active task description"
+next_action: "Immediate next step"
+blocker: ""  # Reason if BLOCKED
+agent: claude | main | <name>
 saipen_version: 7
-saipen_home: "V:\\___VAC\\__K\\__CODE\\_AI_STUFF_AGENTIC\\_SAIPEN\\saipen"
-mode: full
+saipen_home: "V:\\path\\to\\saipen"
+mode: full | read-only
 requires: [filesystem, python, shell, git]
-updated: 2026-07-22T22:54:00Z
-goal_mode: true
-goal_waves: 1
-goal_tickets: 5
+updated: 2026-07-30T12:00:00Z
 ---
 ```
 
-### State Phase Machine
-1. **SCOUT**: Codebase inspection, dependency check, log reading.
-2. **PLAN**: Ticket creation on `BOARD.md`, architectural design.
-3. **BUILD**: Implementation of code, configuration, or documentation edits.
-4. **VERIFY**: Execution of tests, linters, or manual verification tools.
-5. **REVIEW**: Code review, diff check, logging completion to `LOG.md`.
-6. **DONE**: All tickets executed, state reset to idle.
+### Phasenmaschine
 
-### Event Logging (`LOG.md`)
-Every finished ticket or wave appends a structured log entry:
+1. **SCOUT** — Codebase prüfen, Abhängigkeiten checken, Protokolle lesen
+2. **PLAN** — Tickets auf BOARD.md erstellen, Design
+3. **BUILD** — Code/Konfiguration/Dokumente implementieren
+4. **VERIFY** — Tests, Linter, manuelle Checks ausführen
+5. **REVIEW** — Diff-Review, LOG-Eintrag
+6. **DONE** — alle Tickets abgeschlossen
+7. **BLOCKED** — festgefahren, Blocker-Feld erklärt warum
 
-```markdown
-## [2026-07-22T22:54:00Z] T-006: Document User Guide, Hotkeys & Workflows
-- **Agent**: saiwiki
-- **Phase**: BUILD -> REVIEW
-- **Changes**: Created `_user_guide.md` in `subs/saiwiki/kitchen/`.
-- **Status**: SUCCESS
+### Ereignisprotokoll (LOG.md)
+
 ```
+- 2026-07-30T12:00:00Z [E-001] [T-057] [agent: main] RUN: fix -> PASS
+```
+
+### Schlüsselregeln
+- Ein Agent schreibt `.saipen/` zu einer Zeit (RFC § 1.4)
+- Dirty Tree ist NORMAL — vor dem Handeln zuordnen, nie uncommittete Arbeit anderer Agenten zurücksetzen/committen (RFC § 1.5)
+- Checkpoint-Reihenfolge: LOG → BOARD → STATE (crashsichere Asymmetrie, RFC § 1.5)
+- Ticketformat: nur `T-###` (RFC § 1.2)
 
 ---
 
-## 2. SubSaipen Architecture & Protocol (`subs/`)
+## 2. SubSaipen-Architektur
 
-### SubSaipen Directory Map
-SubSaipens are isolated sub-agents that run with **read-only access** to the main project codebase and write output exclusively inside their designated sub-directory under `subs/`.
+Isolierte Read-only-Subagenten. Ausgabe nur innerhalb von `.saipen/extensions/subs/<name>/`.
 
 ```
 project-root/
-├── subs/                          # SubSaipen container directory
-│   ├── MANIFEST.md                # Active subSaipen registry & status
-│   ├── RFC_SUBSAIPEN.md           # Protocol specification
-│   ├── saiwiki/                   # Wiki Generator subSaipen
-│   │   ├── STATE.md
-│   │   ├── BOARD.md
-│   │   ├── LOG.md
-│   │   └── kitchen/
-│   │       ├── OUTBOX.md          # Hand-off results for main agent
-│   │       └── (scratch files)
-│   ├── saihunt/                   # Bug Hunter subSaipen
-│   │   ├── STATE.md
-│   │   ├── BOARD.md
-│   │   ├── LOG.md
-│   │   └── kitchen/
-│   │       ├── OUTBOX.md
-│   │       └── (scratch files)
-│   └── _shared/                   # Cross-agent communications inbox
-│       └── inbox.md
+└── .saipen/
+    └── extensions/
+        └── subs/
+            ├── MANIFEST.md         # Aktive Sub-Liste
+            ├── PROTOCOL.md         # Volles Sub-Protokoll
+            ├── _shared/inbox.md    # Cross-Agent-Inbox
+            ├── TEMPLATE/           # Bootstrap-Template
+            ├── saiwiki/            # Wiki-Generator (Phase DONE)
+            └── saihunt/            # Bug-Jäger (Phase DONE)
 ```
 
-### SubSaipen Lifecycle State Machine
+### Lebenszyklus
+1. **SPAWN** — `saipen sub spawn <name>` kopiert TEMPLATE, fügt MANIFEST hinzu
+2. **WORK** — liest das Hauptprojekt (read-only), erzeugt Artefakte im eigenen kitchen/
+3. **SIGNAL** — OUTBOX.md-Eintrag mit `status: ready`
+4. **COLLECT** — Hauptagent führt `saipen sub collect` aus, erstellt T-###-Tickets für kritische Befunde
 
-```
-+-------+      +------+      +--------+      +----------+      +--------------+      +-------+
-| SPAWN | ---> | WORK | ---> | SIGNAL | ---> | WAIT_ACK | ---> | ACK_RECEIVED | ---> | CLEAN |
-+-------+      +------+      +--------+      +----------+      +--------------+      +-------+
-```
-
-1. **SPAWN**: Der übergeordnete Agent initialisiert das Unterverzeichnis „subs/<name>/“ mit den Standardeinstellungen „STATE.md“, „BOARD.md“, „LOG.md“ und „kitchen/OUTBOX.md“. Registriert den Agenten in „subs/MANIFEST.md“.
-2. **ARBEIT**: SubSaipen liest die Quelldateien des Hauptprojekts im schreibgeschützten Modus, führt Analysen oder Dokumenterstellungen durch und aktualisiert seine lokalen „BOARD.md“ und „STATE.md“.
-3. **SIGNAL**: SubSaipen gibt Entwurfsartefakte in „kitchen/“ aus und schreibt die Übergabezusammenfassung in „kitchen/OUTBOX.md“ mit dem Status „ready“.
-4. **WAIT_ACK**: SubSaipen unterbricht die Ausführung und wartet auf die Bestätigung durch die Eltern.
-5. **ACK_RECEIVED**: Der Hauptagent liest „OUTBOX.md“, integriert Artefakte oder stellt Tickets aus und schreibt ACK in „OUTBOX.md“ oder „_shared/inbox.md“.
-6. **REINIGUNG**: SubSaipen schließt den Lebenszyklus ab oder geht zur nächsten Welle über.
-
----
-
-## 3. OUTBOX Hand-off Format Specification
-
-Die Datei „kitchen/OUTBOX.md“ dient als strenger Vertrag zwischen subSaipens und dem Hauptagenten:
+### OUTBOX-Format
 
 ```markdown
-# subSaipen <agent_name> Outbox
+# OUTBOX
 
-**Status**: „bereit“ | „Entwurf“ | „blockiert“.
-**Aktualisiert**: 22.07.2026T22:54:00Z
+## WIKI-001: Description
+- **status:** ready | draft | blocked | reviewed
+- **summary:** one line finding
+- **main_project_refs:** [docs/wiki/foo.md]
+- **critical:** true | false
+- **severity:** P0 | P1 | P2 (optional)
+- **details:** Full description
+```
 
-## Summary of Output Artifacts
-Detailed overview of generated drafts and findings.
+### Ticket-ID-Namespace
 
-1. **Artefaktname („Pfad/zu/Artefakt“)**
-   - Ziel / Zweck
-   - Zusammenfassung der Erkenntnisse oder Inhalte
-   - „kritisch“: wahr | falsch
-   - „main_project_refs“: [Liste der Hauptprojektdateien, auf die verwiesen wird]
+| Präfix | Besitzer |
+|---|---|
+| `SYS-` | Querschnitt / Protokoll |
+| `WIKI-` | saiwiki |
+| `HUNT-` | saihunt |
+| `PY-` | saipython (Fixer) |
+| `<NAME>-` | jeder andere Sub |
 
-## Next Recommended Actions for Main Agent
-- Action items or ticket suggestions for the main workspace BOARD.
+Sub-IDs gehen nie direkt auf das Haupt-BOARD.md — immer normale `T-###` mit Original in der Beschreibung.
+
+### Befehle
+
+| Befehl | Aktion |
+|---|---|
+| `saipen sub list` | Aktive Subs + Phase anzeigen (WARNUNG bei BLOCKED) |
+| `saipen sub spawn <name>` | Neuen Subagenten erstellen |
+| `saipen sub collect` | Alle OUTBOX-Einträge verarbeiten |
+| `saipen sub clean <name>` | Subagenten entfernen (verweigert bei nicht eingesammelten Befunden) |
+| `saipen sub status <name>` | OUTBOX ansehen ohne einzusammeln |
+| `<name>` (nackt) | Rollenübernahme-Shortcut — wird zu diesem Subagenten |
+| `saipen sub pause <name>` | Subagenten einfrieren (BLOCKED), ohne Zustand zu zerstören |
+| `saipen sub resume <name>` | Subagenten auftauen |
+
+### Fixer-Typ-Sub (saipython)
+
+Geht weiter — OUTBOX trägt einen **getesteten Patch** als Unified-Diff. Arbeit in eigenem `kitchen/pen/`-Sandbox (Kopie der Zieldatei). Verifiziert über die eigene Test-Harness des Projekts, bevor `ready` markiert wird. Schreibt nie in den Haupt-Baum.
+
+```markdown
+## PY-001: Description
+- **status:** ready
+- **patch:**
+  ```diff
+  <unified diff, applies from repo root>
+  ```
+- **verified:** pytest PASS (N) / ruff clean / mypy clean
+- **base_head:** abc1234
 ```
 
 ---
 
-## 4. SubSaipen Conflict Resolution & Safety Rules
-
-1. **Schreibgeschützter Schutz des Hauptarbeitsbereichs**: SubSaipen-Agenten ist es strengstens untersagt, Dateien außerhalb von „subs/<agent_name>/“ zu bearbeiten.
-2. **Unabhängiger Speicher**: Jeder SubSaipen verwaltet seine eigenen „STATE.md“, „BOARD.md“ und „LOG.md“.
-3. **Keine direkte Mutation zwischen Subagenten**: SubSaipens ändern niemals gegenseitig die Verzeichnisse. Die Kommunikation erfolgt ausschließlich über „OUTBOX.md“ und „_shared/inbox.md“.
-4. **Schlichtung durch den Hauptagenten**: Wenn zwei Subsaipens widersprüchliche Änderungen vorschlagen, legt der Hauptagent die Prioritäten anhand der Hierarchie fest:
-   - **Fehlerbehebung (`saihunt`)** > **Dokumentation (`saiwiki`)** > **Refactoring** > **Neue Funktion**.
+*FastPrompter Wiki — Erstellt mit [SAIPEN-Protokoll](SAIPEN-Protocol) | [GitHub-Repo](https://github.com/vacterro/FastPrompter)*

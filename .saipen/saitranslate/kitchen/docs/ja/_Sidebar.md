@@ -1,23 +1,29 @@
-**[FastPrompter Wiki](ホーム)**
+**[FastPrompter Wiki](Home)**
 
 ---
 
-### Core Architecture
-- [Architecture Overview](Architecture-Overview)
-- [Module Structure](Module-Structure)
-- [Core API & Classes](Core-API-and-Classes)
+### コアアーキテクチャ
+- [アーキテクチャ概要](Architecture-Overview)
+- [モジュール構成](Module-Structure)
+- [コア API とクラス](Core-API-and-Classes)
+- [Watcher エンジン](Watcher-Engine-Architecture)
 
-### Interface & Data
-- [Configuration](Configuration)
-- [UI Components](UI-Components)
+### インターフェースと設定
+- [設定](Configuration)
+- [UI コンポーネント](UI-Components)
+- [キーボードショートカット](Keyboard-Shortcuts-and-Cheatsheet)
 
-### Guides & Workflows
-- [User Guide](User-Guide)
-- [SAIPEN Protocol](SAIPEN-Protocol)
-- [Deployment Guide](Deployment-Guide)
+### ユーザーガイドと FAQ
+- [ユーザーガイド](User-Guide)
+- [トラブルシューティングと FAQ](Troubleshooting-and-FAQ)
+
+### 開発者とプロトコル
+- [プラグインとスキル開発](Plugin-and-Skill-Development)
+- [SAIPEN プロトコル](SAIPEN-Protocol)
+- [デプロイガイド](Deployment-Guide)
 
 ---
 
-### Project Links
-- [GitHub Repository](https://github.com/vacterro/FastPrompter)
-- [Releases & Downloads](https://github.com/vacterro/FastPrompter/releases)
+### プロジェクトリンク
+- [GitHub リポジトリ](https://github.com/vacterro/FastPrompter)
+- [リリース](https://github.com/vacterro/FastPrompter/releases)

@@ -1,87 +1,131 @@
-# FastPrompter Module Structure
+# FastPrompter モジュール構成
 
-## Codebase Map (`src/fastprompter/`)
+## コードベースマップ (`src/fastprompter/`)
 
 ```
 src/fastprompter/
-├── main.py                     # Main application entry point, window setup, and event loop
-├── core/                       # Core backend logic, state management, and subsystems
-│   ├── config.py               # Theme color extractors & tray icon generators
-│   ├── duration.py             # Time parsing and human-readable duration formatters
-│   ├── hashtags.py             # Hashtag extraction and indexing utilities
-│   ├── hotkey_filter.py        # Windows native hook filter for global hotkey processing
-│   ├── hotkeys.py              # Pynput-based global hotkey manager thread
-│   ├── ipc_server.py           # Single-instance IPC socket server & client listener
-│   ├── logging.py              # Application logger setup and file output handler
-│   ├── pomodoro.py             # Pomodoro timer engine, work/break state machine
-│   ├── sound_manager.py        # Audio playback engine (UI clicks, typewriter sounds)
-│   ├── state.py                # SQLite database interface & state management model
-│   ├── timers.py               # Timer manager for countdowns, alarms, and notifications
-│   ├── translations.py         # Multi-language translation strings (22 languages + Дед)
-│   ├── i18n/                   # Language resource files and flag assets
-│   └── watcher/                # Automation & inspection engine
-│       ├── adapter.py          # Abstract probe adapter interface
-│       ├── cdp_probe.py        # Chrome DevTools Protocol probe driver
-│       ├── engine.py           # Watcher execution loop and rule evaluator
-│       ├── queue.py            # Async action queue for watcher operations
-│       ├── sender.py           # Output dispatcher for automated key/text sending
-│       └── win32_probe.py      # Native Windows API window & control probe
-├── ui/                         # PyQt6 User Interface components & mixins
-│   ├── analog_clock.py         # Custom painted analog clock widget
-│   ├── backup_dialog.py        # Export/import database & text backup dialog
-│   ├── cursor_theme.py         # Retro mouse cursor theme overlay manager
-│   ├── drop_overlay.py         # Interactive drag-and-drop target overlay widget
-│   ├── edit_guard.py           # Read-only edit lock guard widget wrapper
-│   ├── editor.py               # Main Markdown editor, code block renderer, & line gutter
-│   ├── fancy_zones.py          # Screen snap & window positioning utility
-│   ├── file_container.py       # Silo asset file drawer and template manager widget
-│   ├── flags.py                # Vector/raster country flag renderer for language selection
-│   ├── flow_layout.py          # Dynamic reflowing layout for tag & button bars
-│   ├── formatting_mixin.py     # Markdown editor formatting shortcuts (bold, list, code block)
-│   ├── hashtag_dialog.py       # Tag search and silo filter overlay
-│   ├── header_format_dialog.py # Date/time timestamp format customization dialog
-│   ├── help_dialog.py          # Keyboard shortcuts & interactive user guide
-│   ├── hotkey_mixin.py         # Hotkey binding interface mixin for main window
-│   ├── layout_shortcuts.py     # Layout configuration & quick switch shortcuts
-│   ├── markdown_highlighter.py # QSyntaxHighlighter for live Markdown syntax styling
-│   ├── pie_menu.py             # Radial contextual pie menu widget
-│   ├── queue_panel.py          # Watcher task queue panel
-│   ├── resizers.py             # Custom window resize handle controls
-│   ├── saipen_dialog.py        # SAIPEN project tracking viewer dialog (STATE, BOARD, LOG)
-│   ├── scaling_mixin.py        # UI DPI & global font scaling mixin
-│   ├── search_mixin.py         # Smart multi-word AND search filter logic
-│   ├── settings.py             # Preferences dialog (themes, hotkeys, sounds, flags)
-│   ├── silo_settings_dialog.py # Per-silo configuration (custom colors, project links)
-│   ├── snippet_ops_mixin.py    # Operations on silos & snippets (trash, move, duplicate)
-│   ├── snippet_panel.py        # Silo tree view & F1-F10 snippet buttons panel
-│   ├── theme_mixin.py          # Vintage theme styling, stylesheet generator, & palette builder
-│   ├── timer_dialog.py         # Pomodoro & alarm timer settings dialog
-│   ├── timer_toast.py          # Floating notification toast widget for timer alarms
-│   ├── toolbar_reorder.py      # Drag-and-drop toolbar button reordering utility
-│   ├── trash_dialog.py         # Trash bin management & file restore dialog
-│   ├── tray_mixin.py           # System tray icon, context menu, & quick actions
-│   ├── watcher_dialog.py       # Watcher configuration and script manager UI
-│   ├── watcher_mixin.py        # Main window integration mixin for Watcher engine
-│   └── window_mixin.py         # Frameless window moving, snapping, & borderless controls
-└── utils/                      # Low-level helper utilities
-    ├── fonts.py                # System font loader & fallback resolver
-    ├── paths.py                # Portable path resolver for executable & user data
-    ├── portable_backup.py      # Portable zip backup archive builder
-    └── textfit.py              # Dynamic text truncation & label fitting helpers
+├── main.py                     # エントリポイント、QMainWindow、ミックスイン調整
+├── __init__.py                 # パッケージマーカー
+│
+├── core/                       # バックエンドロジック、状態、サブシステム
+│   ├── config.py               # テーマカラー抽出、トレイアイコン生成
+│   ├── ctrlw.py                # Ctrl+W / Alt+W 区切り挿入エンジン
+│   ├── duration.py             # 時間パーシング、人間可読な期間書式
+│   ├── hashtags.py             # ハッシュタグ抽出 + サイロ横断インデックス
+│   ├── header.py               # Ctrl+E ヘッダー書式コア
+│   ├── hotkey_filter.py        # VK ディスパッチ用 Win32 WH_KEYBOARD_LL フック
+│   ├── hotkeys.py              # pynput グローバルホットキーリスナースレッド
+│   ├── ipc_server.py           # QLocalServer シングルインスタンス IPC
+│   ├── limits.py               # エージェントリセット制限スキャナー + タイマー作成
+│   ├── logging.py              # ロガー設定、ローテーションファイルハンドラー
+│   ├── pomodoro.py             # Pomodoro 状態機械 (作業/休憩)
+│   ├── sound_manager.py        # オーディオ再生 (クリック、タイプライター、アラーム)
+│   ├── state.py                # SQLite DB インターフェース + 状態管理
+│   ├── timers.py               # カウントダウンタイマーモデル、期限検出
+│   ├── translations.py         # i18n パッケージへのレガシープロキシ (22 言語)
+│   │
+│   ├── i18n/                   # 22 言語リソースパック
+│   │   ├── __init__.py, _compat.py, _container.py, _context.py, _engine.py
+│   │   ├── en.py, ru.py, de.py, fra.py, spa.py, ... (22 言語モジュール)
+│   │   └── flags/              # 国旗レンダラー
+│   │
+│   └── watcher/                # 自動化 + プロンプト排出エンジン
+│       ├── __init__.py
+│       ├── adapter.py          # 抽象プローブアダプターインターフェース
+│       ├── cdp.py              # Chrome DevTools Protocol ドライバー
+│       ├── engine.py           # Watcher 実行ループ + 状態機械
+│       ├── limit_scan.py       # クロスエージェント制限スキャナー
+│       ├── probes.py           # マルチプローブ状態コンビネーター
+│       ├── queue.py            # キューモデル (QueueItem、SendIntent、ピン留め)
+│       ├── sender.py           # 出力ディスパッチ (CDP / Win32 キー注入)
+│       ├── skills.py           # スキル定義 + プロンプトラッパー
+│       └── win32.py            # ネイティブ Win32 ウィンドウ + コントロールプローブ
+│
+├── ui/                         # PyQt6 UI コンポーネント + ミックスイン
+│   ├── analog_clock.py         # カスタム描画アナログ時計ウィジェット
+│   ├── backup_dialog.py        # DB エクスポート/インポート + バックアップスナップショットダイアログ
+│   ├── ctrlw_settings.py       # Ctrl+W/Alt+W テンプレート設定 UI
+│   ├── cursor_theme.py         # レトロカーソルテーマオーバーレイマネージャー
+│   ├── drop_overlay.py         # ドラッグ & ドロップ 4 オプションターゲットオーバーレイ
+│   ├── edit_guard.py           # 読み取り専用編集ロックガードラッパー
+│   ├── editor.py               # VaultTextEdit: コードブロック、ガター、折りたたみ
+│   ├── fancy_zones.py          # 画面スナップゾーンオーバーレイピッカー
+│   ├── file_container.py       # サイロアセットファイルドロワー + テンプレート
+│   ├── flags.py                # ベクター/ラスターフラグレンダラー
+│   ├── flow_layout.py          # 動的 heightForWidth ラッピングレイアウト
+│   ├── formatting_mixin.py     # マークダウン書式ショートカット
+│   ├── hashtag_dialog.py       # タグ検索 + サイロフィルターオーバーレイ
+│   ├── header_format_dialog.py # 日時タイムスタンプ書式ダイアログ
+│   ├── help_dialog.py          # キーボードショートカット + 対話型ガイド
+│   ├── hotkey_mixin.py         # メインウィンドウ用ホットキーバインドミックスイン
+│   ├── layout_shortcuts.py     # 物理 VK ショートカットマッピング (レイアウト非依存)
+│   ├── markdown_highlighter.py # ライブマークダウン用 QSyntaxHighlighter
+│   ├── pie_menu.py             # QuickListWidget 放射状コンテキストメニュー
+│   ├── queue_panel.py          # Watcher キューダイアログ
+│   ├── resizers.py             # ウィンドウリサイズハンドルコントロール
+│   ├── saipen_dialog.py        # SAIPEN プロジェクトビューアー (STATE、BOARD、LOG)
+│   ├── scaling_mixin.py        # UI DPI + フォントスケーリングミックスイン
+│   ├── search_mixin.py         # 複数語 AND 検索フィルター
+│   ├── send_selection_mixin.py # watcher 経由で選択範囲を送信
+│   ├── settings.py             # 設定ダイアログ (テーマ、ホットキー、サウンド)
+│   ├── silo_kanban.py          # マークダウンかんばんボード (T-630)
+│   ├── silo_settings_dialog.py # サイロごとの設定 (色、プロジェクトリンク)
+│   ├── silo_table.py           # マークダウンテーブルビルダー (T-630)
+│   ├── snippet_ops_mixin.py    # サイロ操作 (ゴミ箱、移動、複製、クリア)
+│   ├── snippet_panel.py        # サイロツリー + F1-F10 スニペットボタン
+│   ├── theme_mixin.py          # ビンテージテーマスタイリング + QSS ジェネレーター
+│   ├── timer_dialog.py         # Pomodoro + アラームタイマー設定ダイアログ
+│   ├── timer_toast.py          # 浮遊通知トーストウィジェット
+│   ├── toolbar_reorder.py      # ドラッグ & ドロップツールバーボタン並べ替え
+│   ├── trash_dialog.py         # ゴミ箱 + 復元ダイアログ
+│   ├── tray_mixin.py           # システムトレイアイコン + コンテキストメニュー
+│   ├── watcher_dialog.py       # Watcher 設定 + スクリプトマネージャー UI
+│   ├── watcher_mixin.py        # Watcher エンジンウィンドウ統合
+│   ├── window_mixin.py         # フレームレス移動、スナップ、ボーダーレスコントロール
+│   ├── window_presets_dialog.py # ユーザー定義ウィンドウ位置プリセット
+│   └── zen_desktop.py          # 3 段階 Zen/ソロデスクトップ掃引 (Ctrl+D)
+│
+├── theme/                      # テーマプリセット
+│   └── themes.py               # 6 つのレトロ Win95 カラーテーマ定義
+│
+└── utils/                      # 低レベルヘルパー
+    ├── fonts.py                # システムフォントローダー、フォールバック解決、no-AA
+    ├── paths.py                # ポータブルパス解決 (exe + ユーザーデータ)
+    ├── portable_backup.py      # ポータブル ZIP バックアップビルダー
+    └── textfit.py              # 動的テキスト切り詰め + ラベルフィッティング
 ```
 
-## Subsystem Functional Responsibilities
+## サブシステムの責任
 
-|パッケージ/モジュール |主な責任 |
+| パッケージ | 責任 |
 |---|---|
-| `コア.状態` |データ モデル、SQLite WAL 永続性、状態同期、元に戻すスタック |
-| `コア.ホットキー` | Pynput グローバル ホットキー リスナーとディスパッチ |
-| `コア.ipc_サーバー` |単一インスタンスの強制と CLI IPC メッセージ レシーバー |
-| `コア.ポモドーロ` |ポモドーロ セッション タイマー ステート マシンと作業/休憩間隔マネージャー |
-| `コア.トランスレーション` | 22言語翻訳辞書＆ロケール切替エンジン |
-| `ui.エディター` |折りたたみ、行余白、チェックボックス、行数を備えた拡張 `QPlainTextEdit` |
-| `ui.snippet_panel` |サイロ ツリー ビュー、階層管理、カテゴリ タブ、および F1 ～ F10 スニペット スロット |
-| `ui.file_container` |サイロごとのフォルダー ドロワー、アセット添付プレビュー、テンプレート ジェネレーター |
-| `ui.theme_mixin` | 6 つのレトロな Win95 テーマ、カスタム カラー エンジン、CSS スタイルシート ジェネレーター |
-| `ui.saipen_dialog` | `.saipen` AI プロジェクト追跡ファイルの統合ビューア |
-| `utils.paths` |システム レジストリや AppData に触れることなく、ポータブルな実行を保証します。
+| `core.state` | SQLite WAL 永続化、状態同期、アンドゥスタック、カテゴリ別エイリアスストア |
+| `core.hotkey*` | グローバルホットキーリスナー + Win32 VK フィルター、レイアウト非依存ディスパッチ |
+| `core.watcher` | プロンプトキュー、CDP/Win32 自動化、スキルラッパー、制限スキャナー |
+| `core.i18n` | 22 言語翻訳パック + translations.py からのプロキシ委譲 |
+| `core.ctrlw` | 区切りテンプレートエンジン (Ctrl+W / Alt+W) |
+| `core.timers` | タイマーモデル、期限検出、シリアライゼーション |
+| `core.pomodoro` | 作業/休憩状態機械、フォーカスタイマー |
+| `ui.editor` | VaultTextEdit — 折りたたみ、ガター、チェックボックス、ヒートマップ、マージンマーク、マークアップ非表示 |
+| `ui.snippet_panel` | サイロツリー、階層、カテゴリタブ、F1-F10 スロット、サイドバーギャップ、複数選択 |
+| `ui.silo_kanban` | プレーンテキストかんばんボード (Alt+矢印でカード移動、Enter で新行) |
+| `ui.silo_table` | プレーンテキストテーブルエディタ (Tab でセル移動、Enter で新行) |
+| `ui.file_container` | サイロごとのフォルダドロワー、アセットプレビュー、テンプレート |
+| `ui.theme_mixin` | 6 つのレトロ Win95 テーマ + カスタムカラーエンジン + QSS ジェネレーター |
+| `ui.saipen_dialog` | SAIPEN プロジェクトビューアー (.saipen STATE/BOARD/LOG) |
+| `ui.fancy_zones` | 7 レイアウトプリセットの視覚ゾーンピッカー |
+| `ui.window_presets_dialog` | ユーザー保存のウィンドウジオメトリプリセット (Ctrl+Q ページ) |
+| `ui.zen_desktop` | 3 段階 Ctrl+D: Zen、ソロ (他を最小化)、戻る |
+| `ui.toolbar_reorder` | ドラッグ & ドロップツールバーボタンカスタマイズ |
+| `ui.flow_layout` | コンパクト設定パネル用のレスポンシブラッピングレイアウト |
+| `ui.edit_guard` | begin/endEditBlock ガード — 終了していない編集によるフリーズを防止 |
+| `utils.fonts` | フォント解決、ビットマップフォントインストール、no-AA フォールバック |
+| `utils.paths` | ポータブル実行 — レジストリなし、AppData 依存なし |
+
+## モジュール数まとめ
+
+- **core/**: 14 モジュール + i18n/ (22 言語) + watcher/ (9 モジュール) = 約 45
+- **ui/**: 39 モジュール
+- **theme/**: 1 モジュール
+- **utils/**: 4 モジュール
+- **合計**: 約 45 モジュール + i18n 言語

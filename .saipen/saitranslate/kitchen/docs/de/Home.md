@@ -1,30 +1,41 @@
-# Welcome to the FastPrompter Wiki
+# FastPrompter Wiki
 
-FastPrompter ist ein ultraschnelles, tastaturgesteuertes, tragbares Scratchpad und eine Prompt-Engineering-Workbench, die für Windows mit Python 3.11+ und PyQt6 entwickelt wurde.
+FastPrompter — ultraschnelles, tastaturgesteuertes Scratchpad + Prompt-Workbench für Windows. Python 3.11+, PyQt6. SQLite-WAL-Persistenz. Nuitka-gebautes, eigenständiges EXE.
 
-> **Eine Tastenkombination („Alt+X“)** ruft einen Notizblock mit 100 Plätzen an Ihrem Mauszeiger auf. Keine Installation, keine Cloud, keine Telemetrie. Der gesamte Status wird sofort in einer lokalen SQLite-WAL-Datenbank gespeichert.
-
----
-
-## Technical Documentation Index
-
-### 🏗️ Architecture & Core System
-- **[Architecture Overview](Architecture-Overview)**: High-level system design, IPC single-instance server, SQLite WAL persistence, state synchronization, and core subsystems.
-- **[Module Structure](Module-Structure)**: Complete directory structure of `src/fastprompter/`, file responsibilities, and functional map across `core/`, `ui/`, `utils/`, and `watcher/`.
-- **[Core API & Classes](Core-API-and-Classes)**: Detailed technical specifications for `FastPrompterState`, `GlobalHotkeyManager`, `IPCServer`, `SoundManager`, `PomodoroEngine`, and primary UI widgets.
-
-### ⚙️ Configuration & Interface
-- **[Configuration](Configuration)**: Database schema (`local_data_v15.db`), settings table, custom theme engine (`custom_theme.json`), attachment file layout, and automatic backup mirrors.
-- **[UI Components](UI-Components)**: Graphical layout diagrams, panel breakdowns (Editor, Snippets, Queue, File Container), and dialog overlays.
-
-### 📖 Operations & Developer Guides
-- **[User Guide](User-Guide)**: Complete manual for end users, hotkey chart (`Alt+X`, `F1-F10`, `Ctrl+1..0`, `Ctrl+E`), silo management, snippets, file container, zen mode, and Pomodoro timer.
-- **[SAIPEN Protocol](SAIPEN-Protocol)**: SAIPEN v7 protocol specifications, machine state loop (`SCOUT` -> `PLAN` -> `BUILD` -> `VERIFY` -> `REVIEW`), event logging, subSaipen read-only architecture, and `OUTBOX.md` handoff protocol.
-- **[Deployment Guide](Deployment-Guide)**: Step-by-step instructions for Nuitka standalone executable compilation (`tools/build.py`), GitHub release automation (`tools/release.py`), and one-click deployment scripts (`deploy.cmd`, `release.cmd`).
+> **Alt+X** ruft ein 100-Slots-Scratchpad am Cursor auf. Null Installation, null Cloud, null Telemetrie. Der gesamte Zustand wird sofort in die lokale DB synchronisiert.
 
 ---
 
-## Project Info & Links
-- **Repository**: [vacterro/FastPrompter](https://github.com/vacterro/FastPrompter)
-- **Tech Stack**: Python 3.11+, PyQt6, SQLite (WAL mode), Nuitka 4.1+, pynput
-- **License**: MIT
+## Tech-Dokumentationsindex
+
+### Kernarchitektur
+- **[Architekturübersicht](Architecture-Overview)** — Systemdesign, IPC-Single-Instance, SQLite-WAL, Zustandssync, Subsysteme
+- **[Modulstruktur](Module-Structure)** — `src/fastprompter/`-Baum, Dateiverantwortlichkeiten, core/ui/utils/watcher-Karte
+- **[Core API & Klassen](Core-API-and-Classes)** — FastPrompterState, HotkeyManager, IPCServer, SoundManager, PomodoroEngine, UI-Widgets
+- **[Watcher-Engine](Watcher-Engine-Architecture)** — CDP-Attach, Win32-Hooks, Queue-Injection, Zustandsmaschine, Rate-Limits
+
+### Schnittstelle & Daten
+- **[Konfiguration](Configuration)** — DB-Schema (local_data_v15.db), Einstellungsschlüssel, Custom-Theme-Engine, Backup-Spiegel
+- **[UI-Komponenten](UI-Components)** — Layout-Diagramm, Panel-Aufschlüsselung (Editor, Silos, Queue, Dateien, Kanban, Tabelle)
+- **[Tastenkombinationen](Keyboard-Shortcuts-and-Cheatsheet)** — vollständige Referenz: global, Fenster, Formatierung, Watcher, Silo, Snippet
+
+### Anleitungen & Erweiterbarkeit
+- **[Benutzerhandbuch](User-Guide)** — Workflows, Silo-Verwaltung, Snippet-Makros, Datei-Container, Zen-Modus, Pomodoro-Timer, Hide-Markup, Kanban/Tabelle
+- **[Fehlerbehebung & FAQ](Troubleshooting-and-FAQ)** — Absturzprotokolle (%TEMP%\fastprompter_crash.log), Prozessbereinigung, DB-Reparatur, Hotkey-Konflikte
+- **[Plugin- & Skill-Entwicklung](Plugin-and-Skill-Development)** — benutzerdefinierte Skills (skills.py), SAIPEN-Subagenten, Custom Themes, Cursor-Themes
+
+### Automatisierung & Protokoll
+- **[SAIPEN-Protokoll](SAIPEN-Protocol)** — v7-Protokollspezifikation: Zustandsmaschinen-Schleife, Ereignisprotokollierung, SubSaipen-Read-Only-Architektur, OUTBOX-Übergabe
+- **[Deployment-Anleitung](Deployment-Guide)** — Nuitka-Kompilierung (tools/build.py), GitHub-Release (tools/release.py), One-Click-Skripte
+
+---
+
+## Projekt
+
+- **Repo**: [vacterro/FastPrompter](https://github.com/vacterro/FastPrompter)
+- **Stack**: Python 3.11+, PyQt6, SQLite WAL, Nuitka ≥4.1.2, pynput
+- **Lizenz**: MIT
+
+---
+
+*Erstellt mit [SAIPEN-Protokoll](SAIPEN-Protocol) | [GitHub](https://github.com/vacterro/FastPrompter)*

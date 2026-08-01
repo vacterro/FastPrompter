@@ -1,61 +1,111 @@
-# FastPrompter Configuration & Settings Reference
+# FastPrompter konfiguratsioon ja seaded
 
-## Database Settings Schema
-Settings are stored in the SQLite database (`data/fastprompter.db` or `data/fastprompter_p<ID>.db`) within the `settings` table as key-value text pairs.
+## Andmebaasi skeem
 
-### Settings Keys Reference
+SQLite DB: `data/local_data_v15.db` (profiil 1) või `data/local_data_v15_p<ID>.db` (profiilid >1). Kaasaskantav `data/` kaust asub EXE kõrval. Tagasilangus `%LOCALAPPDATA%/FastPrompter/`, kui exe kaust ei ole kirjutatav.
 
-| Seadistusklahv | Tüüp | Vaikimisi | Kirjeldus |
+**Tabelid:**
+- `settings` — võti-väärtus tekstipaarid (kogu rakenduse konfiguratsioon)
+- `presets` — snippetide hoidla (kategooria, koht, nimi, sisu, last_edited)
+- `temp_presets_v2` — silo tekstiline sisu kategooria kaupa
+- `archive_temp_presets_v2` — arhiveeritud silo sisu kategooria kaupa
+
+Konfiguratsioon elab `settings` tabeli võti-väärtus paarides. INI-faili pole. Kõik hoot-reload rakendamisel.
+
+## Seadete võtmed
+
+| Võti | Tüüp | Vaikimisi | Kirjeldus |
 |---|---|---|---|
-| `teema` | string | `"Vaikimisi"` | Aktiivne visuaalne teema (`"Vaikimisi"`, `"Amber"`, "OLED"`, "Win95"`, "Rose"`, `"Kohandatud"`) |
-| `fondi_suurus` | täisarv | "11" | Peamise redaktori fondi suurus punktides |
-| "ui_scale" | ujuk | "1,0" | Kasutajaliidese üldine skaleerimistegur (0,5–1,5) |
-| "nupu_skaala" | ujuk | "1,0" | Silo ja tööriistariba nupu suuruse kordaja |
-| `global_hotkey` | string | `"Alt+X"` | Peamine kiirklahv rakenduse akna kuvamiseks/peitmiseks |
-| `piruka_menüü_kiireklahv` | string | `"Tõstuklahv+Alt+X"` | Kiirklahv radiaalse piruka menüü käivitamiseks |
-| `lock_window_hotkey` | string | `"Alt+S"` | Kiirklahv akna asendi lukustuse lülitamiseks |
-| `alati_ülaosas_hotkey` | string | `"Alt+E"` | Kiirklahv Alati üleval aknarežiimi lülitamiseks |
-| `kinni_keskendumise_kaotusele' | tõeväärtus | `"Tõsi"` | Peida aken automaatselt, kui fookus kaob |
-| `ctrl_c_closes` | tõeväärtus | `"Tõsi"` | Sulgege/peida aken pärast klahvikombinatsiooni Ctrl+C vajutamist lõigurežiimis |
-| `heli_ui` | tõeväärtus | `"Vale"` | Luba kasutajaliidese nupu klõpsamise heliefektid |
-| `heli_kirjutusmasin` | tõeväärtus | `"Vale"` | Luba kirjutusmasina klahvide heliefektid |
-| "heli_helitugevus" | täisarv | "5" | Helitugevuse tase (0 kuni 10) |
-| `portable_backup_enabled` | tõeväärtus | `"Tõsi"` | Andmebaasifaili `.bak` automaatne loomine käivitamisel |
-| `keel` | string | "ET" | Liidese keel ("EN", "RU", "UK", "DE", "FR", "ES", "IT", "PT", "NL", "PL", "SV", "DA", "FI", "NO", "JA", "ZH", "KO", "TH", "HEAR, " "DED") |
-| `külgriba_parempoolne` | tõeväärtus | `"Vale"` | Asetage silo külgriba redaktori paremasse serva |
-| `kood_auto_rennid` | tõeväärtus | `"Vale"` | Reanumbrite automaatne kuvamine redaktori koodiplokkides |
-| `kasside_tellimus` | JSON-loend | `["Kood","Tekst","Mitu"]` | Projektikategooria vahekaartide kohandatud järjekord |
+| **Teema ja kuvamine** | | | |
+| `theme` | string | `Default` | Teema: Default, Amber, OLED, Win95, Rose, Vintage Classic, Custom |
+| `font_family` | string | `Verdana` | Redaktori font (automaatselt `_m1` bitmap-variant, kui installitud) |
+| `font_size` | int | 11 | Redaktori fondi suurus punktides |
+| `ui_scale` | float | 0.5 | UI skaleerimine (0.5 kuni 1.5) |
+| `button_scale` | float | 1.0 | Silo + tööriistariba nuppude suuruse kordaja |
+| `custom_cursors` | bool | False | Retro kursori teema overlay |
+| `code_monospace` | bool | True | Mono-tähtedega font koodiplokkides (False = redaktori font) |
+| `code_auto_gutter` | bool | False | Automaatsed reanumbrid koodiplokkides |
+| `hr_line` | bool | False | `---` renderdamine visuaalse joonena teksti asemel |
+| `hide_markup` | bool | False | Peida `**`, `*`, `~~`, `` ` `` märgid (Obsidian stiil, T-603) |
+| **Klõbustikud** | | | |
+| `global_hotkey` | string | `Alt+X` | Globaalne kutsumise klõbustik |
+| `pie_menu_hotkey` | string | `Shift+Alt+X` | Pie-menüü klõbustik |
+| `lock_window_hotkey` | string | `Alt+S` | Akna lukustuse lülitus |
+| `always_on_top_hotkey` | string | `Alt+E` | Always-on-top lülitus |
+| **Käitumine** | | | |
+| `close_on_focus_loss` | bool | True | Automaatne peitmine fookuse kaotamisel |
+| `always_on_top` | bool | True | Start always-on-top olekus |
+| `normal_window` | bool | False | Tavaline aknarežiim (mitte raamita) |
+| `tray_visible` | bool | True | Süsteemisalve ikooni näitamine |
+| `auto_bullet` | bool | False | Kriipsude automaatne muutmine täppideks |
+| `ctrl_e_center` | bool | False | Ctrl+E päiste tsentreerimine |
+| `customize_toolbar` | bool | False | Tööriistariba ümberjärjestamise režiim |
+| `snippets_hidden` | bool | False | Snippetide paneeli peitmine |
+| `sidebar_right` | bool | False | Külgriba paremal |
+| `show_token_count` | bool | False | Tokenite hinnang reaarvu kõrval (T-614) |
+| `silo_sync_mode` | string | Off | Ühesuunaline silo sünkroonimine kettale: Off/Silo/Hierarchy (T-591) |
+| `window_presets_enabled` | bool | False | Ctrl+Q aknapreseotide lehe sisselülitamine (T-608) |
+| **Heli** | | | |
+| `sound_ui` | bool | False | UI klõpsu heliefektid |
+| `sound_typewriter` | bool | False | Kirjutusmasina klahvihelid |
+| `sound_volume` | int (0-10) | 5 | Peamine helitugevus |
+| **Kell ja kuupäev** | | | |
+| `date_seconds` | bool | True | Sekundite kuvamine kellas |
+| `date_daypart` | bool | True | Hommik/päev/õhtu/öö sildi kuvamine |
+| `date_text_month` | bool | False | Tekstiline kuu (Jan/Feb) |
+| `date_ampm` | bool | False | 12h AM/PM formaat |
+| `date_emoji` | bool | False | Emoji kellaaeg (🌅/☀️/🌇/🌙) |
+| `show_date_rect` | bool | True | Kuupäeva kuvamine päises |
+| **Kursor** | | | |
+| `cursor_blink_ms` | int | system | Kursori vilkumise kiirus ms (0 = ei vilgu, T-606) |
+| **Taimerid** | | | |
+| `timer_show_minutes` | bool | False | Minutivälja hoidmine taimerikuval (T-613) |
+| **Akna paigutus** | | | |
+| `numbox_per_row` | int | 10 | Numbrikastid rea kohta ruudustikus (T-612) |
+| `numbox_btn_size` | int | 24 | Numbrikasti nupu suurus px (T-612) |
+| **Muud** | | | |
+| `language` | string | EN | UI keel (23 valikut) |
+| `hover_line_color` | string | auto | Rea esiletõstu värv (auto = teema aktsent) |
+| `portable_backup_enabled` | bool | True | Auto .bak käivitumisel |
+| `watcher_skill` | string | (tühi) | Vaikimisi oskus watcheri järjekorra üksustele |
+| `cats_order` | JSON list | `["Code","Text","Misc"]` | Kategooria vahekaartide järjekord + nimed |
+| `hidden_categories` | JSON list | [] | Peidetud kategooriad (nähtavad projektihalduris) |
+| `timers` | JSON | [] | Salvestatud taimeri määratlused |
+| `productivity_timer` | JSON | — | Pomodoro taimeri olek |
+| `watcher_queues` | JSON | `{}` | Silo-põhised promptide järjekorrad |
+| `toolbar_order` | string | (tühi) | Kohandatud tööriistariba nuppude järjestuse tokenid |
+| `window_presets` | JSON | [] | Kasutaja salvestatud akna geomeetria preseendid |
+| `silo_gap_height` | int | 6 | Külgriba vahe eraldaja kõrgus px |
+| `show_silo_ticks` | bool | True | Linnukese nuppude kuvamine silodel |
+| `silo_view_state_all` | JSON dict | `{}` | Silo-põhine kursori/kerimise/voltimise olek |
 
----
-
-## File System & Storage Directory Structure
-
-FastPrompter salvestab kõik kasutajaandmed käivitatava faili kõrval olevasse iseseisvasse kataloogi "data/", tagades 100% kaasaskantava täitmise.
+## Failisüsteemi paigutus
 
 ```
 data/
-├── fastprompter.db             # Main SQLite database (Default profile)
-├── fastprompter.db.bak         # Startup backup SQLite database
-├── fastprompter_p2.db          # Profile 2 SQLite database
-├── silo_files/                 # File Container attachments
-│   ├── Code/                   # Category folder
-│   │   ├── 0/                  # Silo slot 0 attachment directory
-│   │   └── 1/                  # Silo slot 1 attachment directory
+├── local_data_v15.db           # Peamine SQLite DB (profiil 1)
+├── local_data_v15.db.bak       # Drosseldatud varukoopia (min 60 s intervall)
+├── local_data_v15.db-wal       # WAL write-ahead logi
+├── local_data_v15.db-shm       # WAL ühismälu
+├── local_data_v15_p2.db        # Profiili 2 DB
+├── silo_files/                 # Failikonteineri manused
+│   ├── Code/                   # Kategooria kaust
+│   │   ├── 0/                  # Silo koha 0 failid
+│   │   └── 1/                  # Silo koha 1 failid
 │   └── Text/
-├── _trash/                     # Soft-deleted silos and files
-│   └── 2026-07-22_153022_Silo0/# Timestamped trash archive
-└── custom_theme.json           # User-defined custom color palette (if enabled)
+├── _trash/                     # Pehme kustutatud silod + failid
+│   └── 2026-07-22_153022_Silo0/# Ajatempliga prügikasti kanne
+└── custom_theme.json           # Kasutaja määratud värvipalett
 ```
 
----
+**Igapäevane peegel:** `%USERPROFILE%/Documents/.fastprompter/` — ajatemplid, silo/arhiiv/snippetid projekti kaupa lamedate .md-failidena
 
-## Custom Themes & Color Editing
-When `theme` is set to `"Custom"`, FastPrompter reads color preferences from `custom_theme.json` or state overrides.
+**Undo-hoidla:** `data/data_undo_stack.json` + `data/data_redo_stack.json` (automaatselt tihendatud, 20MB piir)
 
-### Supported Theme Color Tokens
-- `bg_main`: Primary window and panel background color
-- `bg_editor`: Editor canvas background color
-- `fg_text`: Primary text color
-- `border`: Window border and divider line color
-- `accent`: Active selection, focus ring, and pin highlight color
-- `header_bg`: Header bar and title background color
+## Kohandatud teemad
+
+`data/custom_theme.json` laetakse, kui teema = Custom.
+
+**Värvitokenid:** `bg_main`, `bg_surface`, `bg_editor`, `fg_text`, `fg_accent`, `text_primary`, `text_accent`, `border`, `selection`, `header_bg`, `accent`, `button_bg` jne.
+
+Rakendamine läbi Seaded → Teema või Mini Settings (Alt+`). Hetkeline hot-reload, ilma taaskäivitamiseta.

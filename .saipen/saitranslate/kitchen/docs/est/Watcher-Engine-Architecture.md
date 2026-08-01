@@ -1,106 +1,131 @@
-# Watcher Engine Architecture & CDP Automation Guide
+# Watcheri mootori arhitektuur
 
-## Overview
-The **Watcher Engine** (`src/fastprompter/core/watcher/`) is FastPrompter's automated prompt drainage and target interaction subsystem. It allows FastPrompter to safely queue prompts, monitor target application states (such as Electron-based LLM clients, Web UI browsers, or IDEs), and automatically send prompts when the target becomes idle.
+## Ülevaade
+
+Promptide äravoolu + sihtmärgi automatiseerimise alamsüsteem. Paneb prompte järjekorda, jälgib sihtrakenduse olekut (Electron/veeb/mis tahes Win32 aken), saadab automaatselt, kui sihtmärk on vaba.
 
 ---
 
-## High-Level Watcher Architecture
+## Kõrgetasemeline arhitektuur
 
 ```
-+-----------------------------------------------------------------------------------+
-|                                 Watcher Engine                                    |
-|                                 (`engine.py`)                                     |
-|  +--------------------+    +--------------------+    +-------------------------+  |
-|  |   State Machine    | -> |   Probes & Hooks   | -> |     SendIntent Generator |  |
-|  | DISARMED->ARMED->  |    | (Win32 & CDP State)|    |   (Item + Skill Format) |  |
-|  | WATCHING->SENDING  |    +--------------------+    +-------------------------+  |
-|  +--------------------+                                           |               |
-+-------------------------------------------------------------------|---------------|
-                                                                    v
-+-----------------------------------------------------------------------------------+
-|                                  Sender & Queue                                   |
-|  +--------------------------------+       +------------------------------------+  |
-|  |     Queue (`queue.py`)         |       |      Sender (`sender.py`)          |  |
-|  | - Pinned queue_key per target  |       | - Chrome DevTools Protocol (CDP)   |  |
-|  | - FIFO Item backlog            |       | - Win32 Keystroke Injection        |  |
-|  +--------------------------------+       +------------------------------------+  |
-+-----------------------------------------------------------------------------------+
++------------------------------------------------------------------+
+|                        Watcher Engine (engine.py)                  |
+|  +------------------+    +------------------+   +--------------+  |
+|  | Olekumasin       | -> | Proovid ja konksud| ->| SendIntent   |  |
+|  | DISARMED→ARMED→  |    | (Win32 + CDP)    |   | Generaator   |  |
+|  | WATCHING→SENDING |    +------------------+   +--------------+  |
+|  +------------------+                                          |
++------------------------------------------------------------------+
+                              v
++------------------------------------------------------------------+
+|  Järjekord (queue.py)        |    Saatja (sender.py)             |
+|  - Sihtmärgi-põhine queue_key|    - CDP Runtime.evaluate         |
+|  - FIFO üksuste järjekord    |    - Win32 klahvisüstimine        |
+|  - Kinnitatud queue_key      |    - Read-back kontroll           |
+|    armeerimisel              |                                   |
++------------------------------------------------------------------+
 ```
 
 ---
 
-## 1. Engine State Machine (`engine.py`)
-
-Mootor töötab lõpliku olekuga masinana, millel on neli selget olekut:
+## 1. Olekumasin (`engine.py`)
 
 ```
-[ DISARMED ] <--- (error / panic / max sends reached)
-     |
-     | arm(target, queue_key)
-     v
-  [ ARMED ] ----> (agent seen busy) ----> [ WATCHING ]
-     ^                                          |
-     |                                          | (agent idle + settle_ms elapsed)
-     +------------- (send completed) <---- [ SENDING ]
+[DISARMED] ← (viga/paanika/max_sends)
+    |
+    | arm(target, queue_key)
+    v
+[ARMED] —→ (agent märgatud hõivatuna) —→ [WATCHING]
+    ^                               |
+    |     (saatmine lõpetatud)       | (agent vaba + settle_ms)
+    +———————— <— [SENDING] ————————+
 ```
 
-### State Definitions
-1. **DISARMED**: Engine is inactive. No probes are polled and no queue items are processed.
-2. **ARMED**: Engine is bound to a specific target window/socket and a pinned `queue_key`. Waiting to detect initial target activity.
-3. **WATCHING**: Target application has been observed in a busy state (e.g. LLM generating response). Watcher is waiting for the target to become idle and settle.
-4. **SENDING**: A `SendIntent` has been dispatched to `Sender`. Watcher is awaiting confirmation of text injection and submission.
+### Olekud
+1. **DISARMED** — passiivne, proovid ei küsi, üksusi ei töödelda
+2. **ARMED** — seotud sihtakna + queue_key-ga. Ootab sihtmärgi tegevust.
+3. **WATCHING** — sihtmärk märgatud hõivatuna (LLM genereerib). Ootab vabadust + settle.
+4. **SENDING** — SendIntent saadetud. Ootab süstimise kinnitust.
 
 ---
 
-## 2. Chrome DevTools Protocol (CDP) Attachment (`cdp.py`)
+## 2. Chrome CDP (`cdp.py`)
 
-### Why CDP Instead of Win32 Messages?
-Electron-based desktop applications (VS Code, Claude Desktop, ChatGPT App, Obsidian) process input through Chromium's internal IPC rather than standard Windows OS message queues (`WM_CHAR`, `PostMessageW`). Posting Win32 messages to Electron windows often results in dropped characters or ignored input.
+Miks CDP: Electroni rakendused (VS Code, Claude Desktop, ChatGPT, Obsidian) ei töötle Win32-sõnumeid. Chromiumi IPC ignoreerib `PostMessageW` — märgid kaovad vaikselt.
 
-CDP (`cdp.py`) pakub otsest ja usaldusväärset automatiseerimist, luues ühenduse Chromiumi kaugsilumispordiga (`--remote-debugging-port=<port>`).
-
-### CDP Operations & Verification
-* **Discovery (`discover()`)**: Queries `http://127.0.0.1:<port>/json/list` to retrieve active page targets.
-* **WebSocket JSON-RPC**: Establishes a WebSocket transport to send `Runtime.evaluate`, `Input.dispatchKeyEvent`, or `DOM` manipulation commands.
-* **Read-Back Verification**: To prevent silent input failure, `cdp.py` inserts text into the prompt field, reads back the field value via DOM query, and only sends the Submit command (`Enter`) once text presence is verified.
-* **Non-Blocking Timeouts**: All socket operations use short default timeouts (3.0 seconds) to ensure Qt UI responsiveness.
+### Operatsioonid
+- `discover()` — päring `http://127.0.0.1:<port>/json/list` lehe-sihtmärkide jaoks
+- WebSocket JSON-RPC ühendus lehe kohta
+- `Runtime.evaluate` + `Input.dispatchKeyEvent` teksti süstimiseks
+- **Read-back kontroll** — sisesta tekst, loe välja väärtus DOM-päringuga, Submit ainult vastavuse korral
+- Mitteblokeerivad ajalõpud (3 s vaikimisi)
 
 ---
 
-## 3. Win32 Hooks & Target Probes (`win32.py`, `probes.py`)
+## 3. Win32 proovid (`win32.py`, `probes.py`)
 
-Mitte-elektroni sihtrakenduste jaoks kasutab FastPrompter Win32 OS-i sonde:
-* **Eesplaan Window Probe**: kontrollib 'GetForegroundWindow()' ja kontrollib akna pealkirja konfigureeritud sihtmärgi regex-mustrite suhtes.
-* **Caret & Focus Probe**: jälgib tähise asukohta ja fookuse olekut, et tagada kiire süstimine ainult siis, kui sihtmärgi sisendväljad on aktiivsed.
-* **Kombineeritud proovimaatriks (combine())**: koondab mitme sondi olekud ("on_target_active", "on_target_busy", "on_blocked") üheks deterministlikuks tõeväärtuslikuks tulemuseks.
+Mitte-Electroni sihtrakenduste jaoks.
 
----
-
-## 4. Queue Management & Item Lifecycle (`queue.py`)
-
-### Queue Pinning
-When the engine is armed (`arm(target, queue_key)`), the `queue_key` is pinned. This ensures that even if the user switches active project tabs or silos in FastPrompter, the watcher continues draining the exact queue for which it was armed.
-
-### Queue Item Lifecycle
-1. **Pending**: Item added to queue backlog.
-2. **In-Flight (`SendIntent`)**: Item encapsulated into `SendIntent(item_id, text, queue_key, skill)`.
-3. **Sent / Completed**: Confirmed by sender, removed from queue.
-4. **Failed / Retried**: Increments `consecutive_failures`. Retried up to `max_failures` (default: 3).
+- `GetForegroundWindow()` + pealkirja regex-vastendus → sihtmärgi tuvastus
+- Kursori + fookuse monitooring → süstimine ainult siis, kui sisestusväli on aktiivne
+- `combine()` — mitme proovi oleku agregeerimine üheks bool-iks (is_target_active, is_target_busy, is_blocked)
 
 ---
 
-## 5. Safety Guards & Rate Limiting
+## 4. Järjekorra mudel (`queue.py`)
 
-Vältimaks jooksvaid viipasilmuseid või rämpsposti saatmist siht-LLM API-de kaudu, rakendab Watcher Engine ranged kiirust piiravad parameetrid.
+### QueueItem
+- `id` — UUID
+- `text` — prompti tekst
+- `skill` — ümbrisoskuse nimi
+- `line` — lähterea number (reaalajas teksti jälgimiseks)
 
-| Parameeter | Vaikeväärtus | Eesmärk |
+### SendIntent
+- `item_id`, `text`, `queue_key`, `skill` — saatjale inkapsuleeritud
+
+### Elutsükkel
+1. **Pending** — järjekorras
+2. **In-Flight** — SendIntent saadetud saatjale
+3. **Sent** — saatja kinnitanud, järjekorrast eemaldatud
+4. **Failed** — suurendab consecutive_failures, uuesti kuni max_failures (3)
+
+### Järjekorra kinnitamine
+`arm(target, queue_key)` korral kinnitatakse võti. Projekti/silo vahetamine seansi keskel → watcher tühjendab ikka õiget järjekorda.
+
+---
+
+## 5. Ohutuskaitsed
+
+| Parameeter | Vaikimisi | Otstarve |
 |---|---|---|
-| `settle_ms` | "2500 ms" | Vaikne kestus on vajalik pärast seda, kui sihtmärk muutub enne järgmise viipa saatmist jõudeolekuks. |
-| "min_gap_ms" | "4000 ms" | Sunnitud minimaalne viivitus järjestikuste saatmiste vahel. |
-| "max_sends" | "25 kirjet" | Maksimaalne viipade arv, mis saadetakse ühe valveseansi jooksul enne automaatset desarmeerimist. |
-| "max_failures" | `3 tõrget` | Järjestikuse rikke lävi enne mootori valve mahavõtmist vea põhjusega. |
-| `paanika()` | Hädapeatus | Demonteerib mootori koheselt ja tühistab kõik ootel/lennu ajal saatmise kavatsused. |
+| `settle_ms` | 2500 | Vaikne aeg pärast sihtmärgi vabadust enne saatmist |
+| `min_gap_ms` | 4000 | Min. viivitus järjestikuste saatmiste vahel |
+| `max_sends` | 25 | Max prompte armeeritud seansi kohta (auto-disarm) |
+| `max_failures` | 3 | Järjestikused ebaõnnestumised → disarm veaga |
+| `panic()` | — | Hädasulgemine: disarm + kõigi in-flight tühistamine |
 
 ---
-*FastPrompter Wiki – ehitatud [SAIPEN-protokolli] (SAIPEN-protokolli) abil | [GitHubi hoidla](https://github.com/vacterro/FastPrompter)*
+
+## 6. Oskuste süsteem (`skills.py`)
+
+Prompti ümbrised, mida rakendatakse enne saatmist.
+
+```python
+{
+    "name": "Code Review",
+    "prefix": "/review",
+    "template": "Review:\n\n{text}",
+}
+```
+
+Muutujad: `{text}`, `{timestamp}`, `{project}`.
+
+---
+
+## 7. Oskused ja Watcheri dialoog
+
+- `Alt+C` — praegune redaktori rida järjekorda (bloki-ankurdatud)
+- `Alt+Shift+C` — Queue Master (kõigi silode ülevaade)
+- Vaikimisi oskuse määramine Seadetes
+- Watcheri dialoog: arm/disarm, sihtmärgi valik, proovide konfigureerimine

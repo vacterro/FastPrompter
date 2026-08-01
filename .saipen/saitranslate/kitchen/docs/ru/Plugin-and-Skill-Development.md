@@ -1,121 +1,113 @@
-# Plugin, Skill & Extension Development Guide
+# Руководство по разработке плагинов, навыков и расширений
 
-## Overview
-FastPrompter provides an extensible ecosystem that allows developers to add custom skills, integrate Model Context Protocol (MCP) sidecars, construct SAIPEN subagents, and design custom UI themes.
+## 1. Кастомные навыки (`core/watcher/skills.py`)
 
----
+Навыки — обёртки промптов, применяемые при отправке элементов через watcher.
 
-## 1. Custom Skill Development (`skills.py` & TOML Adapters)
+### Определение
 
-Навыки — это преобразования макросов и форматы команд, применяемые при отправке элементов через Watcher Engine или диспетчер фрагментов.
-
-### Skill Definition & Structure
-Skills are managed via `src/fastprompter/core/watcher/skills.py` and configured in `adapters.example.toml` (or user `adapters.toml`).
-
-```toml
-# Example adapters.toml configuration
-[skills.code_review]
-name = "Code Review"
-prefix = "/review"
-template = "Please review the following code for security, performance, and style:\n\n{text}"
-description = "Applies standard code review prompt wrapper"
-
-[skills.refactor]
-name = "Функция рефакторинга"
-префикс = "/рефакторинг"
-template = "Рефакторинг следующего кода для улучшения читаемости и безопасности типов:\n\n{text}"
+```python
+# Словарь записи навыка
+{
+    "name": "Code Review",
+    "prefix": "/review",
+    "template": "Review this code:\n\n{text}",
+    "description": "Standard code review prompt wrapper"
+}
 ```
 
-### Skill Format String Handling
-When an item is processed through `Engine` with a skill assigned:
-1. `skill_format` evaluates to `/{skill} {text}` or the skill's defined `template`.
-2. Variables such as `{text}`, `{timestamp}`, and `{project}` are substituted dynamically before dispatching to the target application.
+### Переменные шаблона
+- `{text}` — текст поставленного в очередь элемента
+- `{timestamp}` — текущее время
+- `{project}` — имя активного проекта
 
----
+### Применение
+Задайте навык по умолчанию в Настройках → Watcher → Default Skill. Переопределите на элемент в диалоге Queue Master.
 
-## 2. Model Context Protocol (MCP) Sidecar Integration
+## 2. Субагенты SAIPEN
 
-FastPrompter поддерживает дополнительные расширения MCP для взаимодействия с локальными моделями искусственного интеллекта, агентами LLM и поставщиками контекста.
+Субагенты живут в `.saipen/extensions/subs/<name>/` (не в корневом `subs/` проекта).
 
-### Architecture
-* **Transport**: Stdio or local TCP WebSocket JSON-RPC.
-* **Sidecar Lifecycle**: Executable sidecars specified in configuration are spawned on FastPrompter startup and managed via subprocess pipes.
-* **Exposed Context**: FastPrompter exposes active Silo text, Snippets, and File Container paths to MCP sidecars as readable resources.
+```
+.saipen/extensions/subs/
+├── MANIFEST.md          # активный список подсистем
+├── PROTOCOL.md          # правила
+├── TEMPLATE/            # шаблон бутстрапа
+├── saiwiki/             # субагент-генератор вики
+├── saihunt/             # субагент-охотник за багами
+└── _shared/inbox.md     # меж-агентная коммуникация
+```
 
-### Example MCP Sidecar Manifest (`mcp_sidecar.json`)
+### Передача (OUTBOX.md)
+
+```
+# OUTBOX
+
+## WIKI-001: Описание
+- **status:** ready | draft | blocked | reviewed
+- **summary:** однострочное описание находки
+- **critical:** true | false
+- **details:** полное описание
+```
+
+`critical: true` → главный агент немедленно создаёт тикет T-###.
+`critical: false` → ставится в очередь `_shared/inbox.md` для следующего раунда планирования.
+
+**Команды:**
+- `saipen sub spawn <name>` — создать нового субагента из TEMPLATE
+- `saipen sub collect` — собрать все записи OUTBOX
+- `saipen sub list` — показать активных субагентов + фазу
+- `saipen sub clean <name>` — удалить завершённого субагента
+
+## 3. Кастомные темы
+
+Файл: `data/custom_theme.json`. Загружается, когда тема = Custom.
+
+### Схема
+
 ```json
 {
-  "name": "fastprompter-mcp-bridge",
-  "version": "1.0.0",
-  "command": "python",
-  "args": ["-m", "fastprompter_mcp_sidecar"],
-  "env": {
-    "FASTPROMPTER_DB": "data/local_data_v15.db"
+  "theme_name": "My Theme",
+  "colors": {
+    "bg_main": "#1e1e1e",
+    "bg_editor": "#1b1b1b",
+    "fg_text": "#d4d4d4",
+    "fg_accent": "#e6b422",
+    "border": "#3c3c3c",
+    "selection": "#264f78",
+    "header_bg": "#252526",
+    "button_bg": "#2d2d30",
+    "text_primary": "#d4d4d4",
+    "text_accent": "#e6b422"
   }
 }
 ```
 
----
+**Применение:** Настройки → Тема → Custom. Мгновенный хот-релоад, без перезапуска.
 
-## 3. SAIPEN Protocol & SubSaipen Agent Architecture
+## 4. Темы курсоров (`ui/cursor_theme.py`)
 
-FastPrompter изначально интегрируется с **Протоколом SAIPEN v7** для многоагентного автономного проектирования.
+Кастомные наборы курсоров мыши. Ретро-ощущение вычислительной техники.
 
-### SubSaipen Directory Structure
-When a subagent (such as `saiwiki`) is spawned, it operates within an isolated directory under `subs/<agent_name>/`:
+**Функции:**
+- `capture_current_scheme()` — скопировать живой набор курсоров Windows в программу
+- `load_bundle()` — вернуть установленный набор курсоров
+- `install_to_system(paths)` — установить как схему курсоров Windows по умолчанию
+- `build_cursor_map()` — пересобрать карту форм курсоров
 
-```
-subs/<agent_name>/
-├── STATE.md            # Machine-readable phase state (BUILD, VERIFY, DONE)
-├── BOARD.md            # Kanban board with task tickets (T-001..T-999)
-├── LOG.md              # Timestamped execution audit log
-├── kitchen/
-│   ├── OUTBOX.md       # Status handoff and results output file
-│   └── INBOX.md        # Incoming instructions from orchestrator
-└── wiki/               # Agent-specific generated documentation
-```
+**Переключение:** Настройки → Курсоры → Enable custom cursors. При первом включении автоматически захватывается текущий набор Windows.
 
-### Handoff Protocol (`OUTBOX.md`)
-Upon task completion, the subagent writes final results and marks `status: ready` in `kitchen/OUTBOX.md`:
+## 5. Расширяемость движка Watcher
 
-```markdown
----
-status: ready
-updated: 2026-07-23T05:14:00Z
-summary: "Wave 4: Deep Wiki Expansion completed cleanly."
----
-```
+| Модуль | Точка расширения |
+|---|---|
+| `adapter.py` | Реализуйте ProbeAdapter для кастомного определения цели |
+| `cdp.py` | Кастомные CDP-команды для Electron-приложений |
+| `win32.py` | Кастомизация Win32-пробы окна |
+| `skills.py` | Добавьте кастомные шаблоны навыков промптов |
+| `limit_scan.py` | Кастомный кросс-агентный сканер лимитов |
+| `sender.py` | Кастомные стратегии инъекции текста |
 
----
+## 6. Синхронизация silo на диск (T-591)
 
-## 4. Custom Theme Development (`custom_theme.json`)
-
-FastPrompter имеет гибкий движок тем QSS (таблицы стилей Qt), управляемый через `data/custom_theme.json`.
-
-### Theme Schema Example
-```json
-{
-  "theme_name": "Dark Golden Win95",
-  "colors": {
-    "bg_main": "#1e1e1e",
-    "bg_surface": "#252526",
-    "bg_editor": "#1b1b1b",
-    "text_primary": "#d4d4d4",
-    "text_accent": "#e6b422",
-    "border": "#3c3c3c",
-    "selection": "#264f78"
-  },
-  "fonts": {
-    "editor_font": "Consolas",
-    "ui_font": "Segoe UI",
-    "font_size_pt": 10
-  },
-  "custom_qss": "QPlainTextEdit { line-height: 1.4; }"
-}
-```
-
-### Applying Themes
-Custom themes can be edited directly in `data/custom_theme.json` or switched via the Mini Settings overlay (**Alt+`**). Changes take effect instantly without restarting FastPrompter.
-
----
-*FastPrompter Wiki — создан с использованием [Протокол SAIPEN] (Протокол SAIPEN) | [Репозиторий GitHub](https://github.com/vaacterro/FastPrompter)*
+Односторонний экспорт silo → файловая система. Настройки → Sync mode: Off / Silo (плоский) / Hierarchy (вложенный). Пишет `<root>/<category>/<NN_slug>.md` при сохранении. Никогда не читает обратно, никогда не удаляет. Пропускает неизменённый текст.

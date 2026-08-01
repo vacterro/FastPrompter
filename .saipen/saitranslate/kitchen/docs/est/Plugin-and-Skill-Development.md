@@ -1,121 +1,113 @@
-# Plugin, Skill & Extension Development Guide
+# Plugin-, oskuste ja laienduste arendamise juhend
 
-## Overview
-FastPrompter provides an extensible ecosystem that allows developers to add custom skills, integrate Model Context Protocol (MCP) sidecars, construct SAIPEN subagents, and design custom UI themes.
+## 1. Kohandatud oskused (`core/watcher/skills.py`)
 
----
+Oskused on prompti ümbrised, mida rakendatakse, kui üksused saadetakse watcheri kaudu.
 
-## 1. Custom Skill Development (`skills.py` & TOML Adapters)
+### Definitsioon
 
-Oskused on makroviiba teisendused ja käsuvormingud, mida rakendatakse üksuste saatmisel Watcher Engine'i või Snippet Manageri kaudu.
-
-### Skill Definition & Structure
-Skills are managed via `src/fastprompter/core/watcher/skills.py` and configured in `adapters.example.toml` (or user `adapters.toml`).
-
-```toml
-# Example adapters.toml configuration
-[skills.code_review]
-name = "Code Review"
-prefix = "/review"
-template = "Please review the following code for security, performance, and style:\n\n{text}"
-description = "Applies standard code review prompt wrapper"
-
-[skills.refactor]
-nimi = "Refaktori funktsioon"
-prefiks = "/refaktor"
-template = "Refaktoreerige järgmine kood loetavuse ja tüübiohutuse parandamiseks:\n\n{text}"
+```python
+# Oskuse kirje dict
+{
+    "name": "Code Review",
+    "prefix": "/review",
+    "template": "Review this code:\n\n{text}",
+    "description": "Standard code review prompt wrapper"
+}
 ```
 
-### Skill Format String Handling
-When an item is processed through `Engine` with a skill assigned:
-1. `skill_format` evaluates to `/{skill} {text}` or the skill's defined `template`.
-2. Variables such as `{text}`, `{timestamp}`, and `{project}` are substituted dynamically before dispatching to the target application.
+### Malli muutujad
+- `{text}` — järjekorras oleva üksuse tekst
+- `{timestamp}` — praegune aeg
+- `{project}` — aktiivse projekti nimi
 
----
+### Rakendamine
+Määra vaikimisi oskus Seaded → Watcher → Default Skill kaudu. Tühista üksuseti Queue Master dialoogis.
 
-## 2. Model Context Protocol (MCP) Sidecar Integration
+## 2. SAIPENi alamagendid
 
-FastPrompter toetab MCP külgkorvi laiendusi, et liidestada kohalike AI mudelite, LLM agentide ja konteksti pakkujatega.
+Alamagendid elavad `.saipen/extensions/subs/<name>/` (mitte projekti juurkaustas `subs/`).
 
-### Architecture
-* **Transport**: Stdio or local TCP WebSocket JSON-RPC.
-* **Sidecar Lifecycle**: Executable sidecars specified in configuration are spawned on FastPrompter startup and managed via subprocess pipes.
-* **Exposed Context**: FastPrompter exposes active Silo text, Snippets, and File Container paths to MCP sidecars as readable resources.
+```
+.saipen/extensions/subs/
+├── MANIFEST.md          # aktiivsete alamsüsteemide loend
+├── PROTOCOL.md          # reeglid
+├── TEMPLATE/            # bootstrap-mall
+├── saiwiki/             # wiki-dokumendi generaatori alamagent
+├── saihunt/             # veaotsija alamagent
+└── _shared/inbox.md     # agentide-ülene side
+```
 
-### Example MCP Sidecar Manifest (`mcp_sidecar.json`)
+### Üleandmine (OUTBOX.md)
+
+```
+# OUTBOX
+
+## WIKI-001: Kirjeldus
+- **status:** ready | draft | blocked | reviewed
+- **summary:** üherealine leid
+- **critical:** true | false
+- **details:** täielik kirjeldus
+```
+
+`critical: true` → peamine agent loob kohe T-### pileti.
+`critical: false` → järjekorda `_shared/inbox.md`-i järgmiseks planeerimisringiks.
+
+**Käsud:**
+- `saipen sub spawn <name>` — loo uus alamagent TEMPLATE-ist
+- `saipen sub collect` — kogu kõik OUTBOX-i kanded
+- `saipen sub list` — näita aktiivseid alamagente + faasi
+- `saipen sub clean <name>` — eemalda lõpetatud alamagent
+
+## 3. Kohandatud teemad
+
+Fail: `data/custom_theme.json`. Laetakse, kui teema = Custom.
+
+### Skeem
+
 ```json
 {
-  "name": "fastprompter-mcp-bridge",
-  "version": "1.0.0",
-  "command": "python",
-  "args": ["-m", "fastprompter_mcp_sidecar"],
-  "env": {
-    "FASTPROMPTER_DB": "data/local_data_v15.db"
+  "theme_name": "My Theme",
+  "colors": {
+    "bg_main": "#1e1e1e",
+    "bg_editor": "#1b1b1b",
+    "fg_text": "#d4d4d4",
+    "fg_accent": "#e6b422",
+    "border": "#3c3c3c",
+    "selection": "#264f78",
+    "header_bg": "#252526",
+    "button_bg": "#2d2d30",
+    "text_primary": "#d4d4d4",
+    "text_accent": "#e6b422"
   }
 }
 ```
 
----
+**Rakendamine:** Seaded → Teema → Custom. Hetkeline hot-reload, ilma taaskäivitamiseta.
 
-## 3. SAIPEN Protocol & SubSaipen Agent Architecture
+## 4. Kursori teemad (`ui/cursor_theme.py`)
 
-FastPrompter integreerub natiivselt **SAIPEN v7 protokolliga** mitme agendi autonoomse projekteerimise jaoks.
+Kohandatud hiirekursori komplektid. Retro-arvestuse tunne.
 
-### SubSaipen Directory Structure
-When a subagent (such as `saiwiki`) is spawned, it operates within an isolated directory under `subs/<agent_name>/`:
+**Funktsioonid:**
+- `capture_current_scheme()` — kopeeri elav Windowsi kursori komplekt programmi
+- `load_bundle()` — tagasta installitud kursori komplekt
+- `install_to_system(paths)` — määra Windowsi vaikimisi kursori skeemiks
+- `build_cursor_map()` — ehita kursori kujude kaart uuesti
 
-```
-subs/<agent_name>/
-├── STATE.md            # Machine-readable phase state (BUILD, VERIFY, DONE)
-├── BOARD.md            # Kanban board with task tickets (T-001..T-999)
-├── LOG.md              # Timestamped execution audit log
-├── kitchen/
-│   ├── OUTBOX.md       # Status handoff and results output file
-│   └── INBOX.md        # Incoming instructions from orchestrator
-└── wiki/               # Agent-specific generated documentation
-```
+**Lülitus:** Seaded → Kursorid → Enable custom cursors. Esimesel sisselülitamisel püütakse automaatselt praegune Windowsi komplekt.
 
-### Handoff Protocol (`OUTBOX.md`)
-Upon task completion, the subagent writes final results and marks `status: ready` in `kitchen/OUTBOX.md`:
+## 5. Watcheri mootori laiendatavus
 
-```markdown
----
-status: ready
-updated: 2026-07-23T05:14:00Z
-summary: "Wave 4: Deep Wiki Expansion completed cleanly."
----
-```
+| Moodul | Laienduspunkt |
+|---|---|
+| `adapter.py` | Rakenda ProbeAdapter kohandatud sihtmärgi tuvastamiseks |
+| `cdp.py` | Kohandatud CDP-käsud Electroni rakendustele |
+| `win32.py` | Win32 aknaproovi kohandamine |
+| `skills.py` | Lisa kohandatud prompt-oskuse malle |
+| `limit_scan.py` | Kohandatud agentide-ülene limiidiskanner |
+| `sender.py` | Kohandatud teksti süstimise strateegiad |
 
----
+## 6. Silo sünkroonimine kettale (T-591)
 
-## 4. Custom Theme Development (`custom_theme.json`)
-
-FastPrompter sisaldab paindlikku QSS-i (Qt Style Sheets) teemamootorit, mida juhitakse faili „data/custom_theme.json” kaudu.
-
-### Theme Schema Example
-```json
-{
-  "theme_name": "Dark Golden Win95",
-  "colors": {
-    "bg_main": "#1e1e1e",
-    "bg_surface": "#252526",
-    "bg_editor": "#1b1b1b",
-    "text_primary": "#d4d4d4",
-    "text_accent": "#e6b422",
-    "border": "#3c3c3c",
-    "selection": "#264f78"
-  },
-  "fonts": {
-    "editor_font": "Consolas",
-    "ui_font": "Segoe UI",
-    "font_size_pt": 10
-  },
-  "custom_qss": "QPlainTextEdit { line-height: 1.4; }"
-}
-```
-
-### Applying Themes
-Custom themes can be edited directly in `data/custom_theme.json` or switched via the Mini Settings overlay (**Alt+`**). Changes take effect instantly without restarting FastPrompter.
-
----
-*FastPrompter Wiki – ehitatud [SAIPEN-protokolli] (SAIPEN-protokolli) abil | [GitHubi hoidla](https://github.com/vacterro/FastPrompter)*
+Ühesuunaline silo → failisüsteemi eksport. Seaded → Sync mode: Off / Silo (lame) / Hierarchy (pesastatud). Kirjutab `<root>/<category>/<NN_slug>.md` salvestamisel. Ei loe kunagi tagasi, ei kustuta kunagi. Jätab muutmata teksti vahele.

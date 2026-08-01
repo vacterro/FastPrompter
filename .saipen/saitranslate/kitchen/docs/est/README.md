@@ -1,30 +1,41 @@
-# Welcome to the FastPrompter Wiki
+# FastPrompter Wiki
 
-FastPrompter on ülikiire, klaviatuuriga juhitav kaasaskantav märkmik ja kiire inseneritöölaud, mis on loodud Windowsile koos Python 3.11+ ja PyQt6-ga.
+FastPrompter — ülikiire klaviatuuripõhine märkmik + promptide töölaud Windowsile. Python 3.11+, PyQt6. SQLite WAL püsimälu. Nuitka ehitatud iseseisev EXE.
 
-> **Üks kiirklahv (Alt+X)** avab teie hiirekursori juures 100-kohalise märkmiku. Null installi, null pilve, null telemeetriat. Kogu olek säilib koheselt kohalikus SQLite WAL-i andmebaasis.
-
----
-
-## Technical Documentation Index
-
-### 🏗️ Architecture & Core System
-- **[Architecture Overview](Architecture-Overview)**: High-level system design, IPC single-instance server, SQLite WAL persistence, state synchronization, and core subsystems.
-- **[Module Structure](Module-Structure)**: Complete directory structure of `src/fastprompter/`, file responsibilities, and functional map across `core/`, `ui/`, `utils/`, and `watcher/`.
-- **[Core API & Classes](Core-API-and-Classes)**: Detailed technical specifications for `FastPrompterState`, `GlobalHotkeyManager`, `IPCServer`, `SoundManager`, `PomodoroEngine`, and primary UI widgets.
-
-### ⚙️ Configuration & Interface
-- **[Configuration](Configuration)**: Database schema (`local_data_v15.db`), settings table, custom theme engine (`custom_theme.json`), attachment file layout, and automatic backup mirrors.
-- **[UI Components](UI-Components)**: Graphical layout diagrams, panel breakdowns (Editor, Snippets, Queue, File Container), and dialog overlays.
-
-### 📖 Operations & Developer Guides
-- **[User Guide](User-Guide)**: Complete manual for end users, hotkey chart (`Alt+X`, `F1-F10`, `Ctrl+1..0`, `Ctrl+E`), silo management, snippets, file container, zen mode, and Pomodoro timer.
-- **[SAIPEN Protocol](SAIPEN-Protocol)**: SAIPEN v7 protocol specifications, machine state loop (`SCOUT` -> `PLAN` -> `BUILD` -> `VERIFY` -> `REVIEW`), event logging, subSaipen read-only architecture, and `OUTBOX.md` handoff protocol.
-- **[Deployment Guide](Deployment-Guide)**: Step-by-step instructions for Nuitka standalone executable compilation (`tools/build.py`), GitHub release automation (`tools/release.py`), and one-click deployment scripts (`deploy.cmd`, `release.cmd`).
+> **Alt+X** kutsub 100-kohalise märkmiku hiirekursori juurde. Null installi, null pilve, null telemeetriat. Kogu olek salvestub hetkega kohalikku andmebaasi.
 
 ---
 
-## Project Info & Links
-- **Repository**: [vacterro/FastPrompter](https://github.com/vacterro/FastPrompter)
-- **Tech Stack**: Python 3.11+, PyQt6, SQLite (WAL mode), Nuitka 4.1+, pynput
-- **License**: MIT
+## Tehnilise dokumentatsiooni indeks
+
+### Põhiarhitektuur
+- **[Arhitektuuri ülevaade](Architecture-Overview)** — süsteemi kujundus, IPC single-instance, SQLite WAL, oleku sünkroonimine, alamsüsteemid
+- **[Moodulite struktuur](Module-Structure)** — `src/fastprompter/` puu, failide vastutus, core/ui/utils/watcher kaart
+- **[Core API ja klassid](Core-API-and-Classes)** — FastPrompterState, HotkeyManager, IPCServer, SoundManager, PomodoroEngine, UI vidinad
+- **[Watcheri mootor](Watcher-Engine-Architecture)** — CDP ühendus, Win32 konksud, järjekorra süstimine, olekumasin, kiiruspiirid
+
+### Liides ja andmed
+- **[Konfiguratsioon](Configuration)** — andmebaasi skeem (local_data_v15.db), seadete võtmed, kohandatud teemade mootor, varukoopiapeeglid
+- **[UI komponendid](UI-Components)** — paigutuse skeem, paneelide jaotus (Editor, Silos, Queue, Files, Kanban, Table)
+- **[Klõbustikud](Keyboard-Shortcuts-and-Cheatsheet)** — täielik teatmik: globaalsed, aken, vormindamine, watcher, silo, snippetid
+
+### Juhendid ja laiendatavus
+- **[Kasutusjuhend](User-Guide)** — töövoogud, silo haldus, snippetide makrod, failikonteinerid, zen-režiim, Pomodoro taimer, märgistuse peitmine, kanban/table
+- **[Tõrkeotsing ja KKK](Troubleshooting-and-FAQ)** — krahilogid (%TEMP%\\fastprompter_crash.log), protsesside puhastus, andmebaasi parandus, klõbustike konfliktid
+- **[Plugin- ja oskuste arendus](Plugin-and-Skill-Development)** — kohandatud oskused (skills.py), SAIPEN alamagendid, kohandatud teemad, kursori teemad
+
+### Automatiseerimine ja protokoll
+- **[SAIPEN protokoll](SAIPEN-Protocol)** — v7 spetsifikatsioon: olekumasina tsükkel, sündmuste logimine, subSaipen read-only arhitektuur, OUTBOX üleandmisprotokoll
+- **[Ehitamise juhend](Deployment-Guide)** — Nuitka kompileerimine (tools/build.py), GitHub väljalase (tools/release.py), ühe-kliki skriptid
+
+---
+
+## Projekt
+
+- **Hoidla**: [vacterro/FastPrompter](https://github.com/vacterro/FastPrompter)
+- **Pinu**: Python 3.11+, PyQt6, SQLite WAL, Nuitka ≥4.1.2, pynput
+- **Litsents**: MIT
+
+---
+
+*Ehitatud [SAIPEN protokolliga](SAIPEN-Protocol) | [GitHub](https://github.com/vacterro/FastPrompter)*

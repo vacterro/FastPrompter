@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.8.4 — 2026-08-01
+
+- **Translation bundle fully synced — 33 locales at 100%.** The re-sync sweep from v0.8.3 is now complete: `kitchen/docs/` mirrors the rewritten wiki in all four languages (RU/EST were done in the v0.8.3 run, JA/DE in this one — 16 files each, headings/links/code blocks/setting keys/hotkeys preserved). The 63 multi-line `tr()` tooltip keys from the 01.08 repair are registered in every locale; validator passes 33/33 at 939 keys.
+- **Orphaned SAIPEN viewer dialog removed.** The 101-line `saipen_dialog.py` was never wired into the app (zero references) — dropped.
+
+Note: v0.8.3 was written and logged but never tagged/published — its work ships here.
+
 ## v0.8.3 — 2026-07-31
 
 - **Fixed: pasting could freeze the whole window for a minute and a half.** When you paste a short single line, FastPrompter checks whether it is a file path so it can turn it into a clickable link. That check ran on the UI thread with no time limit — so pasting a Windows network path whose server is not answering (an office share, a sleeping NAS, anything behind a VPN that is down) left Windows waiting for the connection to time out. Measured here: **93 seconds**, window frozen, "Not Responding" in the title bar. That is what *"the app crashes when I paste text"* actually was. The check now gets a quarter of a second; if the filesystem cannot answer in that time the text is pasted as text, which is what you wanted anyway. Local paths are unaffected — they answer instantly.

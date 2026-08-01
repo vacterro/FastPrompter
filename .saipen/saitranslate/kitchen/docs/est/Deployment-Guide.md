@@ -1,46 +1,40 @@
-# FastPrompter Build, Packaging & Release Deployment Guide
+# FastPrompter ehitamise ja väljalaske juhend
 
-## Overview
-FastPrompter is delivered as a single-file, zero-installer portable Windows executable (`FastPrompter.exe`). It requires no admin rights, no pre-installed Python interpreter, and no registry changes. All application state is stored locally in the `data/` directory adjacent to the binary.
+## Ülevaade
 
----
-
-## Prerequisites & Build Environment
-
-FastPrompteri koostamiseks ja avaldamiseks on vaja järgmisi tööriistu:
-
-- **Python**: versioon 3.11 või uuem.
-- **Pakihaldur**: [`uv`](https://github.com/astral-sh/uv) (soovitatav) või standardne pip.
-- **Koostaja**: [`Nuitka`](https://nuitka.net/) (versioon >= 4.1.2).
-- **C-kompilaator**: C64/MSVC või MinGW64 (Nuitka laadib vajadusel automaatselt alla C-kompilaatori).
-- **Kompressor (valikuline)**: [UPX](https://upx.github.io/) käivitatav lahtris PATH binaarsuuruse vähendamiseks 50–60%.
-- **Git**: konfigureeritud GitHubi mandaatidega Git Windowsile.
+Ühefaililine kaasaskantav EXE (`FastPrompter.exe`). Pole installerit, pole administraatoriõigusi, pole Pythoni käituskeskkonda. Kogu olek `data/` kaustas binaari kõrval.
 
 ---
 
-## 1. Nuitka Compilation Pipeline (`tools/build.py`)
+## Eeltingimused
 
-Eraldiseisev käivitatav fail kompileeritakse Nuitka abil faili "tools/build.py" kaudu.
+- **Python** 3.11+
+- **uv** (paketihaldur) või pip
+- **Nuitka** >= 4.1.2
+- **C-kompilaator** — Nuitka laadib automaatselt, kui puudub
+- **UPX** (valikuline, 50-60% suuruse vähendamine)
+- **Git** Windowsile GitHubi tunnustega
 
-### Execution Command
+---
+
+## 1. Kompileerimine (`tools/build.py`)
+
 ```bash
 uv run python tools/build.py
 ```
 
-### Build Steps & Technical Mechanics
-1. **Nuitka Check**: Verification that `nuitka>=4.1.2` is installed. If missing, `tools/build.py` automatically invokes `pip install nuitka>=4.1.2`.
-2. **UPX Detection**: Checks for `upx` in system PATH. If available, adds `--plugin-enable=upx` and `--upx-binary=<path>` flags to shrink binary size down to ~15-25MB.
-3. **`PYTHONPATH` Injection**: Adds `src/` directory to environment `PYTHONPATH` during compilation so Nuitka traces and embeds the entire `fastprompter` package cleanly.
-4. **Target Script**: Compiles `FastPrompter.pyw` (GUI entry point without console popup).
-5. **Output**: Generates `build/FastPrompter.exe`.
+### Sammud
+1. Kontrolli Nuitka >= 4.1.2 installimist (autoinstall, kui puudub)
+2. Tuvasta UPX PATH-is (lisab `--plugin-enable=upx`, kui leitud)
+3. Süsti `src/` PYTHONPATH-i puhta moodulijälje jaoks
+4. Kompileeri `FastPrompter.pyw` (GUI sisenemispunkt, ilma konsoolita)
+5. Väljund: `build/FastPrompter.exe`
 
-### `tools/build.py` Source Workflow
+### Peamised lipud
 ```python
-# Key invocation parameters inside build.py:
 cmd = [
     sys.executable,
-    "-m",
-    "nuitka",
+    "-m", "nuitka",
     "FastPrompter.pyw",
 ]
 if upx_bin:
@@ -48,61 +42,50 @@ if upx_bin:
     cmd.append(f"--upx-binary={upx_bin}")
 ```
 
+Väljund EXE ~15-28MB sõltuvalt UPX-ist.
+
 ---
 
-## 2. GitHub Release Automation (`tools/release.py`)
+## 2. Avaldamine (`tools/release.py`)
 
-Skript "tools/release.py" automatiseerib märgendi loomise ja binaarse levitamise GitHubi väljaannetes.
-
-### Execution Command
 ```bash
 uv run python tools/release.py [release_notes.md]
 ```
 
-### Automation Steps
-1. **EXE Verification**: Verifies `build/FastPrompter.exe` exists.
-2. **Version Extraction**: Parses the exact version string from `pyproject.toml` (e.g., `version = "1.5.0"` -> tag `v1.5.0`).
-3. **GitHub Credential Retrieval**: Invokes `git credential fill` using host `github.com` to safely extract the GitHub token stored in Windows Credential Manager (same token used by `git push`).
-4. **Release API Dispatch**:
-   - Queries GitHub API `https://api.github.com/repos/vacterro/FastPrompter/releases/tags/v<version>`.
-   - If tag doesn't exist, creates a new GitHub Release.
-   - If tag exists, updates release notes.
-5. **Asset Upload**: Deletes old `FastPrompter.exe` release asset if present and uploads the newly compiled binary (`build/FastPrompter.exe`) via `uploads.github.com`.
+### Sammud
+1. Kontrolli, et `build/FastPrompter.exe` on olemas
+2. Loe versioon `pyproject.toml`-ist (silt = `v<version>`)
+3. Eralda GitHubi token Windows Credential Managerist (`git credential fill`)
+4. Kontrolli sildi olemasolu GitHub API kaudu
+   - Ei → loo uus väljalase
+   - Jah → uuenda väljalaske märkmeid
+5. Laadi `build/FastPrompter.exe` üles väljalaske varana (kustutab vana esmalt)
 
 ---
 
-## 3. One-Click Batch Scripts
+## 3. Ühe-kliki skriptid
 
-Operaatori kiireks juurutamiseks sisaldab FastPrompter juurkataloogis kolme ühe klõpsuga skripti:
+### deploy.cmd / deploy.ps1
+Commit + push kõigi projektimuudatuste jaoks:
+- Stage kõik (`git add -A`)
+- Ajatempliga commit (`deploy: YYYY-MM-DD HH:mm`)
+- Pull rebase (`git pull --rebase --autostash origin main`)
+- Force push konfliktide korral (`git push --force-with-lease origin main`)
 
-### A. `deploy.cmd` / `deploy.ps1` (Codebase Sync)
-Double-click `deploy.cmd` to commit and push all project changes to GitHub.
-
-- **PowerShelli skript (`deploy.ps1`)**:
-  1. Etapib kõik muudetud failid (`git add -A`).
-  2. Kui on olemas kinnitamata muudatused, loob ajatempliga sidumise `juurutamine: AAAA-KK-PP HH:mm.
-  3. Tõmbab kaugmuudatused, kasutades käsku "git pull --rebase --autostash origin main".
-  4. Lahendab konfliktid, sundides kohalikku osariiki võitma (`git push --force-with-lease origin main`, kui rebase ebaõnnestub).
-  5. Tõukab värskendatud põhiharu lähtekohaks.
-
-### B. `release.cmd` (Build + Release Pipeline)
-Double-click `release.cmd` to run end-to-end build and deployment in one action.
-
-```cmd
-@echo off
-uv run python tools\build.py || (echo BUILD FAILED & pause & exit /b 1)
+### release.cmd
+Ehitus + avaldamine ühe klõpsuga:
+```
+uv run python tools\build.py || pause
 uv run python tools\release.py %*
-echo.
-pause
 ```
 
 ---
 
-## 4. Troubleshooting & Edge Cases
+## Tõrkeotsing
 
-| Väljaanne | Algpõhjus | Lahendus |
+| Probleem | Põhjus | Lahendus |
 |---|---|---|
-| **`Impordiviga: sisseehitatud EXE-s ei ole moodulit nimega fastprompter** Nuitka ei jälginud kataloogi `src/`. | Enne Nuitka käivitamist veenduge, et 'PYTHONPATH' sisaldaks parameetrit 'src/' (seda haldab automaatselt 'tools/build.py'). |
-| **„GitHubi mandaati ei leitud”** avaldamise ajal | Giti mandaadiabimees pole aktiivne või kasutaja pole GitHubisse sisse logitud. | Käivitage käsk „git push” üks kord käsitsi, et salvestada märk Windowsi mandaadihaldurisse. |
-| **Suur EXE-i suurus (>60 MB)** | Süsteemis PATH ei leitud UPX-i binaarfaili. | Installige UPX saidilt https://upx.github.io/ ja lisage süsteemi PATH-i asukoht "upx.exe". |
-| **Uuesti baaskonflikt faili „deploy.cmd” ajal** | Kaughoidla, mida muudeti otse GitHubis. | "deploy.ps1" katkestab automaatselt ümberbaasi ja sooritab kohaliku masina oleku säilitamiseks tõuke "--force-with-lease". |
+| `ImportError: No module named fastprompter` | Nuitka ei jälginud src/ | Veendu, et PYTHONPATH sisaldab src/ (build.py teeb seda) |
+| `No GitHub credential found` | Git-token pole Credential Manageris | Käivita üks kord käsitsi `git push` tokeni salvestamiseks |
+| Suur EXE (>60MB) | UPX pole PATH-is | Installi UPX saidilt https://upx.github.io/ |
+| Rebase konflikt deploy-l | Kaugrepo redigeeritud otse GitHubis | Force-with-lease push (deploy.ps1 teeb seda automaatselt) |

@@ -1,87 +1,131 @@
-# FastPrompter Module Structure
+# Структура модулей FastPrompter
 
-## Codebase Map (`src/fastprompter/`)
+## Карта кодовой базы (`src/fastprompter/`)
 
 ```
 src/fastprompter/
-├── main.py                     # Main application entry point, window setup, and event loop
-├── core/                       # Core backend logic, state management, and subsystems
-│   ├── config.py               # Theme color extractors & tray icon generators
-│   ├── duration.py             # Time parsing and human-readable duration formatters
-│   ├── hashtags.py             # Hashtag extraction and indexing utilities
-│   ├── hotkey_filter.py        # Windows native hook filter for global hotkey processing
-│   ├── hotkeys.py              # Pynput-based global hotkey manager thread
-│   ├── ipc_server.py           # Single-instance IPC socket server & client listener
-│   ├── logging.py              # Application logger setup and file output handler
-│   ├── pomodoro.py             # Pomodoro timer engine, work/break state machine
-│   ├── sound_manager.py        # Audio playback engine (UI clicks, typewriter sounds)
-│   ├── state.py                # SQLite database interface & state management model
-│   ├── timers.py               # Timer manager for countdowns, alarms, and notifications
-│   ├── translations.py         # Multi-language translation strings (22 languages + Дед)
-│   ├── i18n/                   # Language resource files and flag assets
-│   └── watcher/                # Automation & inspection engine
-│       ├── adapter.py          # Abstract probe adapter interface
-│       ├── cdp_probe.py        # Chrome DevTools Protocol probe driver
-│       ├── engine.py           # Watcher execution loop and rule evaluator
-│       ├── queue.py            # Async action queue for watcher operations
-│       ├── sender.py           # Output dispatcher for automated key/text sending
-│       └── win32_probe.py      # Native Windows API window & control probe
-├── ui/                         # PyQt6 User Interface components & mixins
-│   ├── analog_clock.py         # Custom painted analog clock widget
-│   ├── backup_dialog.py        # Export/import database & text backup dialog
-│   ├── cursor_theme.py         # Retro mouse cursor theme overlay manager
-│   ├── drop_overlay.py         # Interactive drag-and-drop target overlay widget
-│   ├── edit_guard.py           # Read-only edit lock guard widget wrapper
-│   ├── editor.py               # Main Markdown editor, code block renderer, & line gutter
-│   ├── fancy_zones.py          # Screen snap & window positioning utility
-│   ├── file_container.py       # Silo asset file drawer and template manager widget
-│   ├── flags.py                # Vector/raster country flag renderer for language selection
-│   ├── flow_layout.py          # Dynamic reflowing layout for tag & button bars
-│   ├── formatting_mixin.py     # Markdown editor formatting shortcuts (bold, list, code block)
-│   ├── hashtag_dialog.py       # Tag search and silo filter overlay
-│   ├── header_format_dialog.py # Date/time timestamp format customization dialog
-│   ├── help_dialog.py          # Keyboard shortcuts & interactive user guide
-│   ├── hotkey_mixin.py         # Hotkey binding interface mixin for main window
-│   ├── layout_shortcuts.py     # Layout configuration & quick switch shortcuts
-│   ├── markdown_highlighter.py # QSyntaxHighlighter for live Markdown syntax styling
-│   ├── pie_menu.py             # Radial contextual pie menu widget
-│   ├── queue_panel.py          # Watcher task queue panel
-│   ├── resizers.py             # Custom window resize handle controls
-│   ├── saipen_dialog.py        # SAIPEN project tracking viewer dialog (STATE, BOARD, LOG)
-│   ├── scaling_mixin.py        # UI DPI & global font scaling mixin
-│   ├── search_mixin.py         # Smart multi-word AND search filter logic
-│   ├── settings.py             # Preferences dialog (themes, hotkeys, sounds, flags)
-│   ├── silo_settings_dialog.py # Per-silo configuration (custom colors, project links)
-│   ├── snippet_ops_mixin.py    # Operations on silos & snippets (trash, move, duplicate)
-│   ├── snippet_panel.py        # Silo tree view & F1-F10 snippet buttons panel
-│   ├── theme_mixin.py          # Vintage theme styling, stylesheet generator, & palette builder
-│   ├── timer_dialog.py         # Pomodoro & alarm timer settings dialog
-│   ├── timer_toast.py          # Floating notification toast widget for timer alarms
-│   ├── toolbar_reorder.py      # Drag-and-drop toolbar button reordering utility
-│   ├── trash_dialog.py         # Trash bin management & file restore dialog
-│   ├── tray_mixin.py           # System tray icon, context menu, & quick actions
-│   ├── watcher_dialog.py       # Watcher configuration and script manager UI
-│   ├── watcher_mixin.py        # Main window integration mixin for Watcher engine
-│   └── window_mixin.py         # Frameless window moving, snapping, & borderless controls
-└── utils/                      # Low-level helper utilities
-    ├── fonts.py                # System font loader & fallback resolver
-    ├── paths.py                # Portable path resolver for executable & user data
-    ├── portable_backup.py      # Portable zip backup archive builder
-    └── textfit.py              # Dynamic text truncation & label fitting helpers
+├── main.py                     # Точка входа, QMainWindow, оркестрация миксинов
+├── __init__.py                 # Маркер пакета
+│
+├── core/                       # Бэкенд-логика, состояние, подсистемы
+│   ├── config.py               # Извлекатели цветов тем, генераторы иконок трея
+│   ├── ctrlw.py                # Движок вставки разделителей Ctrl+W / Alt+W
+│   ├── duration.py             # Разбор времени, человекочитаемый формат длительности
+│   ├── hashtags.py             # Извлечение хэштегов + кросс-silo индексирование
+│   ├── header.py               # Ядро форматирования заголовков Ctrl+E
+│   ├── hotkey_filter.py        # Win32 WH_KEYBOARD_LL хук для VK-диспетчеризации
+│   ├── hotkeys.py              # Поток-слушатель глобальных горячих клавиш pynput
+│   ├── ipc_server.py           # QLocalServer single-instance IPC
+│   ├── limits.py               # Сканер лимитов сброса агентов + создание таймеров
+│   ├── logging.py              # Настройка логгера, ротация файлов
+│   ├── pomodoro.py             # Pomodoro конечный автомат (работа/перерыв)
+│   ├── sound_manager.py        # Воспроизведение аудио (клики, пишущая машинка, будильники)
+│   ├── state.py                # Интерфейс SQLite БД + управление состоянием
+│   ├── timers.py               # Модель таймера обратного отсчёта, определение просрочки
+│   ├── translations.py         # Легаси-прокси → пакет i18n (22 языка)
+│   │
+│   ├── i18n/                   # Пакет ресурсов на 22 языка
+│   │   ├── __init__.py, _compat.py, _container.py, _context.py, _engine.py
+│   │   ├── en.py, ru.py, de.py, fra.py, spa.py, ... (22 модуля языков)
+│   │   └── flags/              # Рендереры флагов стран
+│   │
+│   └── watcher/                # Движок автоматизации + слива промптов
+│       ├── __init__.py
+│       ├── adapter.py          # Абстрактный интерфейс адаптера проб
+│       ├── cdp.py              # Драйвер Chrome DevTools Protocol
+│       ├── engine.py           # Цикл выполнения watcher + конечный автомат
+│       ├── limit_scan.py       # Кросс-агентный сканер лимитов
+│       ├── probes.py           # Комбинаторы состояний мульти-проб
+│       ├── queue.py            # Модель очереди (QueueItem, SendIntent, закрепление)
+│       ├── sender.py           # Диспетчеризация вывода (CDP / Win32 инъекция клавиш)
+│       ├── skills.py           # Определения навыков + обёртки промптов
+│       └── win32.py            # Нативный Win32-проб окна и элементов управления
+│
+├── ui/                         # UI-компоненты PyQt6 + миксины
+│   ├── analog_clock.py         # Кастомно-рисуемый аналоговый виджет часов
+│   ├── backup_dialog.py        # Экспорт/импорт БД + диалог снапшотов бэкапа
+│   ├── ctrlw_settings.py       # UI конфигурации шаблонов Ctrl+W/Alt+W
+│   ├── cursor_theme.py         # Менеджер оверлея ретро-тем курсоров
+│   ├── drop_overlay.py         # Оверлей цели drag-and-drop из 4 вариантов
+│   ├── edit_guard.py           # Обёртка-гвард блокировки редактирования
+│   ├── editor.py               # VaultTextEdit: кодовые блоки, гуттер, сворачивание
+│   ├── fancy_zones.py          # Оверлей-пикер зон привязки экрана
+│   ├── file_container.py       # Ящик файлов-ассетов silo + шаблоны
+│   ├── flags.py                # Векторный/растровый рендерер флагов стран
+│   ├── flow_layout.py          # Динамическая оборачивающая раскладка heightForWidth
+│   ├── formatting_mixin.py     # Шорткаты markdown-форматирования
+│   ├── hashtag_dialog.py       # Оверлей поиска тегов + фильтра silo
+│   ├── header_format_dialog.py # Диалог формата метки времени даты/времени
+│   ├── help_dialog.py          # Горячие клавиши + интерактивное руководство
+│   ├── hotkey_mixin.py         # Миксин привязки горячих клавиш главного окна
+│   ├── layout_shortcuts.py     # Карта физических VK-шорткатов (независимость от раскладки)
+│   ├── markdown_highlighter.py # QSyntaxHighlighter для живого markdown
+│   ├── pie_menu.py             # Радиальное контекстное меню QuickListWidget
+│   ├── queue_panel.py          # Диалог очереди watcher
+│   ├── resizers.py             # Управление хэндлами изменения размера окна
+│   ├── saipen_dialog.py        # Просмотрщик проекта SAIPEN (STATE, BOARD, LOG)
+│   ├── scaling_mixin.py        # Миксин масштабирования DPI + шрифта
+│   ├── search_mixin.py         # Фильтр поиска по нескольким словам (AND)
+│   ├── send_selection_mixin.py # Отправка выделенного через watcher
+│   ├── settings.py             # Диалог предпочтений (темы, горячие клавиши, звуки)
+│   ├── silo_kanban.py          # Markdown-канбан-доска (T-630)
+│   ├── silo_settings_dialog.py # Конфигурация silo (цвет, ссылки на проекты)
+│   ├── silo_table.py           # Построитель markdown-таблиц (T-630)
+│   ├── snippet_ops_mixin.py    # Операции с silo (корзина, перемещение, дубль, очистка)
+│   ├── snippet_panel.py        # Дерево silo + кнопки сниппетов F1-F10
+│   ├── theme_mixin.py          # Винтажная стилизация тем + генератор QSS
+│   ├── timer_dialog.py         # Диалог настройки Pomodoro + будильников
+│   ├── timer_toast.py          # Виджет плавающего уведомления
+│   ├── toolbar_reorder.py      # Переупорядочивание кнопок тулбара drag-and-drop
+│   ├── trash_dialog.py         # Корзина + диалог восстановления
+│   ├── tray_mixin.py           # Иконка в трее + контекстное меню
+│   ├── watcher_dialog.py       # UI конфигурации watcher + менеджера скриптов
+│   ├── watcher_mixin.py        # Интеграция движка watcher в окно
+│   ├── window_mixin.py         # Перемещение без рамки, привязка, borderless
+│   ├── window_presets_dialog.py # Пользовательские пресеты позиций окна
+│   └── zen_desktop.py          # 3-стадийная заметающая очистка Zen/Solo (Ctrl+D)
+│
+├── theme/                      # Пресеты тем
+│   └── themes.py               # 6 определений ретро-тем Win95
+│
+└── utils/                      # Низкоуровневые хелперы
+    ├── fonts.py                # Загрузчик системных шрифтов, резолвер фолбэков, no-AA
+    ├── paths.py                # Портативный резолвер путей (exe + данные пользователя)
+    ├── portable_backup.py      # Построитель портативных ZIP-бэкапов
+    └── textfit.py              # Динамическое усечение текста + подгонка меток
 ```
 
-## Subsystem Functional Responsibilities
+## Зоны ответственности подсистем
 
-| Пакет/Модуль | Основная ответственность |
+| Пакет | Ответственность |
 |---|---|
-| `core.state` | Модель данных, сохранение SQLite WAL, синхронизация состояний, стек отмены |
-| `core.hotkeys` | Глобальный прослушиватель и отправка горячих клавиш Pynput |
-| `core.ipc_server` | Принудительное применение одного экземпляра и приемник сообщений CLI IPC |
-| `core.pomodoro` | Конечный автомат таймера сеанса Pomodoro и менеджер интервалов работы/перерыва |
-| `core.translations` | словарь перевода на 22 языка и механизм переключения локали |
-| `ui.editor` | Расширенный `QPlainTextEdit` со сгибами, разделителями строк, флажками и количеством строк |
-| `ui.snippet_panel` | Представление в виде дерева, управление иерархией, вкладки категорий и слоты для фрагментов F1-F10 |
-| `ui.file_container` | Ящик папок для отдельных бункеров, предварительный просмотр вложений ресурсов и генератор шаблонов |
-| `ui.theme_mixin` | 6 ретро-тем для Win95, механизм настройки цветов и генератор таблиц стилей CSS |
-| `ui.saipen_dialog` | Средство просмотра интеграции для файлов отслеживания AI-проектов `.saipen` |
-| `utils.paths` | Обеспечивает переносимое выполнение, не затрагивая системные реестры или AppData |
+| `core.state` | Персистентность SQLite WAL, синхронизация состояния, стек undo, алиасные хранилища по категориям |
+| `core.hotkey*` | Глобальный слушатель горячих клавиш + Win32 VK-фильтр, диспетчеризация независимо от раскладки |
+| `core.watcher` | Очередь промптов, автоматизация CDP/Win32, обёртки навыков, сканер лимитов |
+| `core.i18n` | Пакет переводов на 22 языка + делегирование прокси из translations.py |
+| `core.ctrlw` | Шаблонный движок разделителей (Ctrl+W / Alt+W) |
+| `core.timers` | Модель таймера, определение просрочки, сериализация |
+| `core.pomodoro` | Конечный автомат работы/перерыва, таймер фокуса |
+| `ui.editor` | VaultTextEdit — сворачивание, гуттер, чекбоксы, тепловая карта, заметки на полях, скрытие разметки |
+| `ui.snippet_panel` | Дерево silo, иерархия, вкладки категорий, слоты F1-F10, пробелы сайдбара, мультивыбор |
+| `ui.silo_kanban` | Чисто-текстовая канбан-доска (Alt+стрелки двигают карточки, Enter новая строка) |
+| `ui.silo_table` | Чисто-текстовый редактор таблиц (Tab обход ячеек, Enter новая строка) |
+| `ui.file_container` | Ящик-папка на silo, превью ассетов, шаблоны |
+| `ui.theme_mixin` | 6 ретро-тем Win95 + кастомный движок цветов + генератор QSS |
+| `ui.saipen_dialog` | Просмотрщик проекта SAIPEN (.saipen STATE/BOARD/LOG) |
+| `ui.fancy_zones` | Визуальный пикер зон с 7 пресетами раскладки |
+| `ui.window_presets_dialog` | Пользовательские пресеты геометрии окна (страница Ctrl+Q) |
+| `ui.zen_desktop` | 3-стадийный Ctrl+D: Zen, Solo (свернуть остальные), назад |
+| `ui.toolbar_reorder` | Кастомизация кнопок тулбара drag-and-drop |
+| `ui.flow_layout` | Отзывчивая оборачивающая раскладка для компактных панелей настроек |
+| `ui.edit_guard` | Гвард begin/endEditBlock — предотвращает зависание от незавершённых правок |
+| `utils.fonts` | Резолв шрифтов, установка битмап-шрифтов, фолбэк no-AA |
+| `utils.paths` | Портативный запуск — без реестра, без зависимости от AppData |
+
+## Сводка по количеству модулей
+
+- **core/**: 14 модулей + i18n/ (22 языка) + watcher/ (9 модулей) = ~45
+- **ui/**: 39 модулей
+- **theme/**: 1 модуль
+- **utils/**: 4 модуля
+- **Итого**: ~45 модулей + языки i18n

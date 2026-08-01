@@ -11,12 +11,13 @@
 
 ## TODO
 
-- [ ] T-685 (HUNT, dead code) src/fastprompter/ui/saipen_dialog.py is an orphan: a working SAIPEN Viewer dialog (STATE/BOARD/LOG tabs, 8 tr() keys, 101 lines) built via scratch patches but never wired into the app -- zero references in src/ and tests/. Wire it into the UI or delete it? | verify: grep -rn "saipen_dialog\|SaipenViewer" src tests (zero = deleted, one+ = wired)
-## BLOCKED
-
-- [ ] T-295 (P2) UNBLOCKED 27.07, partially done. `tests_smoke` still shares ONE module-scoped `win`; the remaining work is converting tests that actually need isolation onto `fresh_win`. NOT doing a wholesale conversion: a full function-scope suite costs ~1.9s x 509 = ~16 min/run against 2:51 now. | verify: per-test, as tests are moved
-
 ## DONE
+
+- [x] T-687 (cleanup, ccc ship preflight) State-repair work from the 10:05 checkpoint (E-1134): replaced the previous session's non-conformant `WAIT: user decision` next_action with a conformant DONE/PHASE HUNT/transition_from TRANSLATE landing, merged duplicate ## DONE headings, re-added T-295 under single ## BLOCKED. | verify: validator STATE check + single ## DONE / ## BLOCKED each once
+
+- [x] T-686 (translate, subSaipen scope) `kitchen/docs/{ja,de}/` re-synced to the rewritten wiki (2cf4190, "caveman-ded") — all 16 files of ja/ and 16 files of de/ mirror the current wiki (headings, links, code blocks, setting keys, hotkeys preserved; stale pre-rewrite content dropped). The dedicated translate instance ran in-role: no spawnable opus/gpt-5 sub-agent exists on this host (spawn_agents refused both), so the `ee` run did the ja/de re-sync directly instead of delegating. Validator PASSED 33/33 @ 939 keys, docs 16/16 x 4. | verify: `ls .saipen/saitranslate/kitchen/docs/{ja,de}` head matches current docs/wiki files
+
+- [x] T-685 (HUNT, dead code) src/fastprompter/ui/saipen_dialog.py orphan — RESOLVED by deletion. The concurrent session's c384711 "chore: drop orphaned saipen_dialog.py" removed the 101-line file; grep now shows zero references in src/tests/tests_smoke (ticket's own verify criterion: zero = deleted). The UTF-16 LOG line from that session ("DEC: orphan deleted, forced ship via ccc") was recovered and re-shaped as E-1130 during the 01.08 09:48 LOG encoding repair. | verify: grep -rn "saipen_dialog\|SaipenViewer" src tests tests_smoke = zero (confirmed)
 
 - [x] T-657 [was H-656] (HUNT, P1, same family as H-652) Dragging a silo into a snippet category shifted the silo LIST and nothing else. `move_preset_cross_category` popped straight out of `temp_presets` and inserted straight into it, never touching `_remap_silo_indices` — so after dragging silo 0 of three away, the silos were ['bravo','charlie'] while the colours were still `{0:red, 1:green, 2:blue}`: bravo wearing the departed silo's red, and a colour parked on slot 2, which no longer exists. Pins, ticks, children, types, project paths and watcher queues all the same. Both directions and both index spaces fixed (silo and arcsilo, removal and insertion) through two named helpers, `drop_silo_state` / `open_silo_slot`; `del_silo` had this written out INLINE and now shares them, which is why the drag path could be missing it in the first place. | verify: 1 smoke test, fails with the remap taken back out
   CHECKED, NOT A BUG: suspected the str_dict remap was insertion-order dependent, since a delete never explicitly drops the removed slot's key — it survives only by being overwritten. Measured both orders ('0','1','2' and '2','0','1'): identical result. The collision is structural (idx and idx+1 both land on idx), not luck. No change made.
@@ -34,6 +35,10 @@
   HONEST LIMIT: the fuzz still flags orders the app cannot produce (serialising a HIDDEN widget, interleaved transforms). Not chased — that is the harness, not the app.
 - [x] T-645 (feat) Double-click a pasted image's pill to rename it — file on disk AND the link, one undo step. `paste-20260730_140826.png` records when it arrived and nothing about what it is. The pill's geometry existed only inside paintEvent, so there was nothing to hit-test; `_image_pill_rect` derives it from cursor rects the same way the paint pass does, so the two cannot disagree. Extension kept when omitted, illegal chars replaced, existing name not clobbered, a failed rename leaves the link alone rather than pointing at a missing file, focus lock held across the dialog so the window does not hide mid-rename. Code landed in c04c3e8 (another agent's `add -A` swept my unstaged work), tests in 80d25ec | verify: 7 tests + live paste-and-rename
 - [x] T-663 [closure record for T-634/T-635/T-636] [MARKHUNT] all three VERIFIED and closed. Ruff: 4 claimed, 7 real — a stale QInputDialog import left by the move to `_prompt_text`, two unsorted import blocks, a duplicate `setFontStrikeOut` stub silently shadowing the first (the test fake had been exercising the wrong one), two unused names of mine. Clean across src/tests/tests_smoke now. Silent exceptions: portable_backup swallowed four, two into `traceback.print_exc()` — a console nobody sees in a windowed build, and a backup that fails silently is worse than none because the user believes the snapshot exists. All four log; two bare excepts in window_mixin say what they skipped. 80d25ec
+
+## BLOCKED
+
+- [ ] T-295 (P2) UNBLOCKED 27.07, partially done. `tests_smoke` still shares ONE module-scoped `win`; the remaining work is converting tests that actually need isolation onto `fresh_win`. NOT doing a wholesale conversion: a full function-scope suite costs ~1.9s x 509 = ~16 min/run against 2:51 now. | verify: per-test, as tests are moved
 
 > CLEAN 01.08.26: 72 older DONE tickets pruned from the board (T-644..T-684).
 > Nothing is lost - every one of their events lives in the append-only

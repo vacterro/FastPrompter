@@ -1,61 +1,111 @@
-# FastPrompter Configuration & Settings Reference
+# FastPrompter 設定
 
-## Database Settings Schema
-Settings are stored in the SQLite database (`data/fastprompter.db` or `data/fastprompter_p<ID>.db`) within the `settings` table as key-value text pairs.
+## DB スキーマ
 
-### Settings Keys Reference
+SQLite DB: `data/local_data_v15.db` (プロファイル 1) または `data/local_data_v15_p<ID>.db` (プロファイル 2 以降)。ポータブル `data/` ディレクトリは EXE の隣。exe ディレクトリが書き込み不可の場合は `%LOCALAPPDATA%/FastPrompter/` にフォールバック。
 
-|設定キー |タイプ |デフォルト |説明 |
+**テーブル:**
+- `settings` — キーと値のテキストペア (すべてのアプリ設定)
+- `presets` — スニペット保存 (カテゴリ、スロット、名前、内容、last_edited)
+- `temp_presets_v2` — カテゴリ別サイロテキスト内容
+- `archive_temp_presets_v2` — カテゴリ別アーカイブ済みサイロ内容
+
+設定は `settings` テーブルのキーと値のペアに保存。INI ファイルなし。適用時にすべてホットリロード。
+
+## 設定キー
+
+| キー | 型 | デフォルト | 説明 |
 |---|---|---|---|
-| `テーマ` |文字列 | `"デフォルト"` |アクティブなビジュアル テーマ (`"デフォルト"`、`"アンバー"`、`"OLED"`、`"Win95"`、`"ローズ"`、`"カスタム"`) |
-| `フォントサイズ` |整数 | `11` |プライマリ エディタのフォント サイズ (ポイント単位) |
-| `ui_scale` |フロート | `"1.0"` |全体的な UI スケーリング係数 (0.5 ～ 1.5) |
-| `ボタンスケール` |フロート | `"1.0"` |サイロとツールバーのボタン サイズの乗数 |
-| `グローバルホットキー` |文字列 | 「Alt+X」 |アプリケーション ウィンドウを表示/非表示にするためのプライマリ ホットキー |
-| `パイ_メニュー_ホットキー` |文字列 | `"Shift+Alt+X"` |放射状の円メニューをトリガーするホットキー |
-| `ロックウィンドウホットキー` |文字列 | 「Alt+S」 |ウィンドウ位置のロックを切り替えるホットキー |
-| `always_on_top_hotkey` |文字列 | 「Alt+E」 |ホットキーで常に上部ウィンドウ モードを切り替える |
-| `close_on_focus_loss` |ブール値 | 「本当です」 |フォーカスが失われたときにウィンドウを自動的に非表示にする |
-| `ctrl_c_closes` |ブール値 | 「本当です」 |スニペット モードで `Ctrl+C` を押した後にウィンドウを閉じる/非表示にする |
-| `サウンド_UI` |ブール値 | `"偽"` | UI ボタン​​のクリック音の効果を有効にする |
-| `サウンドタイプライター` |ブール値 | `"偽"` |タイプライターキーの効果音を有効にする |
-| `サウンドボリューム` |整数 | `"5"` |音量レベル (0 ～ 10) |
-| `ポータブルバックアップが有効` |ブール値 | 「本当です」 |起動時に `.bak` データベース ファイルを自動作成 |
-| `言語` |文字列 | `"EN"` |インターフェース言語 (`EN`、`RU`、`UK`、`DE`、`FR`、`ES`、`IT`、`PT`、`NL`、`PL`、`SV`、`DA`、`FI`、`NO`、`JA`、`ZH`、`KO`、`TH`、`VI`、`AR`、`HE`、`ET`、 `DED`) |
-| `サイドバー右` |ブール値 | `"偽"` |サイロ サイドバーをエディターの右側に配置する |
-| `code_auto_gutter` |ブール値 | `"偽"` |エディターのコード ブロックに行番号を自動的に表示する |
-| `猫の注文` | JSON リスト | `["コード","テキスト","その他"]` |プロジェクト カテゴリ タブのカスタム順序 |
+| **テーマと表示** | | | |
+| `theme` | string | `Default` | テーマ: Default、Amber、OLED、Win95、Rose、Vintage Classic、Custom |
+| `font_family` | string | `Verdana` | エディタフォント (インストール済みなら `_m1` ビットマップ版に自動解決) |
+| `font_size` | int | 11 | エディタフォントサイズ (pt) |
+| `ui_scale` | float | 0.5 | UI スケーリング (0.5〜1.5) |
+| `button_scale` | float | 1.0 | サイロ + ツールバーボタンサイズ倍率 |
+| `custom_cursors` | bool | False | レトロカーソルテーマオーバーレイ |
+| `code_monospace` | bool | True | コードブロックの等幅フォント (False = エディタフォント) |
+| `code_auto_gutter` | bool | False | コードブロックの自動行番号 |
+| `hr_line` | bool | False | `---` をテキストではなく視覚的な線として描画 |
+| `hide_markup` | bool | False | `**`、`*`、`~~`、`` ` `` マーカーを隠す (Obsidian 風、T-603) |
+| **ホットキー** | | | |
+| `global_hotkey` | string | `Alt+X` | グローバル召喚ホットキー |
+| `pie_menu_hotkey` | string | `Shift+Alt+X` | パイメニューホットキー |
+| `lock_window_hotkey` | string | `Alt+S` | ウィンドウロック切替 |
+| `always_on_top_hotkey` | string | `Alt+E` | 常に最前面切替 |
+| **動作** | | | |
+| `close_on_focus_loss` | bool | True | フォーカス喪失で自動非表示 |
+| `always_on_top` | bool | True | 起動時に常に最前面 |
+| `normal_window` | bool | False | 通常のウィンドウモード (フレームレスでない) |
+| `tray_visible` | bool | True | システムトレイアイコン表示 |
+| `auto_bullet` | bool | False | ダッシュを自動で箇条書きに変換 |
+| `ctrl_e_center` | bool | False | Ctrl+E ヘッダーを中央揃え |
+| `customize_toolbar` | bool | False | ツールバー並べ替えモード |
+| `snippets_hidden` | bool | False | スニペットパネル非表示 |
+| `sidebar_right` | bool | False | サイドバーを右側に |
+| `show_token_count` | bool | False | 行数横にトークン推定表示 (T-614) |
+| `silo_sync_mode` | string | Off | サイロのディスク同期 (一方向): Off/Silo/Hierarchy (T-591) |
+| `window_presets_enabled` | bool | False | Ctrl+Q ウィンドウプリセットページ有効化 (T-608) |
+| **サウンド** | | | |
+| `sound_ui` | bool | False | UI クリック効果音 |
+| `sound_typewriter` | bool | False | タイプライターキー音 |
+| `sound_volume` | int (0-10) | 5 | マスター音量 |
+| **時計と日付** | | | |
+| `date_seconds` | bool | True | 時計に秒を表示 |
+| `date_daypart` | bool | True | 朝/昼/夕/夜ラベル表示 |
+| `date_text_month` | bool | False | テキスト月 (Jan/Feb) を使用 |
+| `date_ampm` | bool | False | 12 時間制 AM/PM 形式 |
+| `date_emoji` | bool | False | 絵文字の時刻帯 (🌅/☀️/🌇/🌙) |
+| `show_date_rect` | bool | True | ヘッダーに日付表示 |
+| **カーソル** | | | |
+| `cursor_blink_ms` | int | system | カーソル点滅速度 ms (0 = 点滅なし、T-606) |
+| **タイマー** | | | |
+| `timer_show_minutes` | bool | False | タイマー表示に分フィールドを保持 (T-613) |
+| **ウィンドウレイアウト** | | | |
+| `numbox_per_row` | int | 10 | グリッドの 1 行あたりの数字ボックス数 (T-612) |
+| `numbox_btn_size` | int | 24 | 数字ボックスボタンサイズ px (T-612) |
+| **その他** | | | |
+| `language` | string | EN | UI 言語 (23 言語) |
+| `hover_line_color` | string | auto | 行ハイライト色 (auto = テーマアクセント) |
+| `portable_backup_enabled` | bool | True | 起動時の自動 .bak |
+| `watcher_skill` | string | (empty) | watcher キューのデフォルトスキル |
+| `cats_order` | JSON list | `["Code","Text","Misc"]` | カテゴリタブ順 + 名前 |
+| `hidden_categories` | JSON list | [] | 非表示カテゴリ (プロジェクトマネージャーで表示可能) |
+| `timers` | JSON | [] | 保存されたカウントダウン定義 |
+| `productivity_timer` | JSON | — | Pomodoro タイマー状態 |
+| `watcher_queues` | JSON | `{}` | サイロごとのプロンプトキュー |
+| `toolbar_order` | string | (empty) | カスタムツールバーボタン順トークン |
+| `window_presets` | JSON | [] | ユーザー保存のウィンドウジオメトリプリセット |
+| `silo_gap_height` | int | 6 | サイドバーギャップスペーサー高さ px |
+| `show_silo_ticks` | bool | True | サイロにチェックボタン表示 |
+| `silo_view_state_all` | JSON dict | `{}` | サイロごとのカーソル/スクロール/折りたたみ状態 |
 
----
-
-## File System & Storage Directory Structure
-
-FastPrompter は、すべてのユーザー データを実行可能ファイルに隣接する自己完結型の `data/` ディレクトリに保存し、100% ポータブルな実行を保証します。
+## ファイルシステムレイアウト
 
 ```
 data/
-├── fastprompter.db             # Main SQLite database (Default profile)
-├── fastprompter.db.bak         # Startup backup SQLite database
-├── fastprompter_p2.db          # Profile 2 SQLite database
-├── silo_files/                 # File Container attachments
-│   ├── Code/                   # Category folder
-│   │   ├── 0/                  # Silo slot 0 attachment directory
-│   │   └── 1/                  # Silo slot 1 attachment directory
+├── local_data_v15.db           # メイン SQLite DB (プロファイル 1)
+├── local_data_v15.db.bak       # スロットル式バックアップ (60 秒最小間隔)
+├── local_data_v15.db-wal       # WAL 書き込み先ログ
+├── local_data_v15.db-shm       # WAL 共有メモリ
+├── local_data_v15_p2.db        # プロファイル 2 DB
+├── silo_files/                 # ファイルコンテナ添付
+│   ├── Code/                   # カテゴリフォルダ
+│   │   ├── 0/                  # サイロスロット 0 のファイル
+│   │   └── 1/                  # サイロスロット 1 のファイル
 │   └── Text/
-├── _trash/                     # Soft-deleted silos and files
-│   └── 2026-07-22_153022_Silo0/# Timestamped trash archive
-└── custom_theme.json           # User-defined custom color palette (if enabled)
+├── _trash/                     # ソフト削除されたサイロ + ファイル
+│   └── 2026-07-22_153022_Silo0/# タイムスタンプ付きゴミ箱エントリ
+└── custom_theme.json           # ユーザー定義カラーパレット
 ```
 
----
+**毎日ミラー:** `%USERPROFILE%/Documents/.fastprompter/` — タイムスタンプ、プロジェクトごとのサイロ/アーカイブ/スニペットをフラットな .md で
 
-## Custom Themes & Color Editing
-When `theme` is set to `"Custom"`, FastPrompter reads color preferences from `custom_theme.json` or state overrides.
+**アンドゥストア:** `data/data_undo_stack.json` + `data/data_redo_stack.json` (自動圧縮、20MB 上限)
 
-### Supported Theme Color Tokens
-- `bg_main`: Primary window and panel background color
-- `bg_editor`: Editor canvas background color
-- `fg_text`: Primary text color
-- `border`: Window border and divider line color
-- `accent`: Active selection, focus ring, and pin highlight color
-- `header_bg`: Header bar and title background color
+## カスタムテーマ
+
+テーマ = Custom のときに `data/custom_theme.json` を読み込み。
+
+**カラートークン:** `bg_main`、`bg_surface`、`bg_editor`、`fg_text`、`fg_accent`、`text_primary`、`text_accent`、`border`、`selection`、`header_bg`、`accent`、`button_bg` など。
+
+設定 → テーマ、またはミニ設定 (Alt+`) で適用。即時ホットリロード、再起動不要。

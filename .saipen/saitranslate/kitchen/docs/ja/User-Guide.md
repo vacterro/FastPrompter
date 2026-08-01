@@ -1,123 +1,175 @@
-# FastPrompter User Guide & Workflow Manual
+# FastPrompter ユーザーガイド
 
-## Overview
-FastPrompter is a high-speed, keyboard-driven portable notepad and prompt engineering workbench for Windows. It provides zero-latency access (`Alt+X`), instant local persistence via SQLite, multi-project workspace isolation, tabbed silo organization, markdown editor with live syntax highlighting and section folding, macro snippet triggers, file container attachments, built-in Pomodoro timer, sound feedback, and automatic backup mirrors.
+## 概要
 
----
-
-## Key Concepts
-
-### 1. Zero-Latency Summon (`Alt+X`)
-- Press **Alt+X** from any Windows application. FastPrompter pops up at cursor location.
-- Press **Esc** or click outside to instantly hide the window.
-- All keystrokes and note state are flushed to disk synchronously without requiring manual save actions.
-
-### 2. Multi-Project Workspaces
-- Work is organized into named Projects (Tabs across top bar).
-- Each Project contains up to 100 dedicated Silos (scratch slots).
-- Right-click project tabs to create, rename, or delete projects.
-
-### 3. Silos (Scratch Slots)
-- Each Silo is an independent markdown canvas.
-- Quick Jump: **Ctrl+1** through **Ctrl+0** for Silos 1–10.
-- Quick Walk: **Alt+Up** / **Alt+Down** cycles forward and backward through active Silos.
-- New Silo: **Ctrl+N** spawns an empty numbered silo.
-- Silo Actions on hover:
-  - **Done / Tick (✅)**: Mark silo completed (visual styling).
-  - **File Container (📁)**: Open dedicated attachments folder.
-  - **Pin (📌)**: Lock silo to top of list.
-  - **Archive (📥)**: Move completed silo to project archive.
-  - **Middle Click**: Send silo to Trash Bin (`data/files/_trash/`).
-
-### 4. Snippet Macros (`F1`–`F10`)
-- 10 quick-paste snippet slots bound to **F1**–**F10** (or **Ctrl+Shift+1**–**9**).
-- Press **Ctrl+S** or open Snippet Manager to edit titles and template text.
-- Supports variable placeholders, system prompts, code templates, and recurring AI prompts.
-
-### 5. Markdown Editor & Formatting Features
-- **Live Syntax Highlighting**: Code blocks, headings, bold, italic, lists, blockquotes.
-- **Section Folding**: Click collapse arrows next to headings to fold section text.
-- **Header Formatting (`Ctrl+E`)**: Turns current line into header `# Title` with timestamp and formatting.
-- **Checkbox Toggle (`Ctrl+Return`)**: Toggles `- [ ]` and `- [x]` checkboxes on current line or selection.
-- **Dividers**:
-  - **Ctrl+W**: Inserts spaced `---` markdown horizontal rule.
-  - **Alt+W**: Inserts spaced `---` horizontal rule and starts a bullet `- `.
-- **Text Formatting**:
-  - **Ctrl+B**: Bold (`**text**`)
-  - **Ctrl+I**: Italic (`*text*`)
-  - **Ctrl+U**: Underline (`<u>text</u>`)
-  - **Ctrl+T**: Strikethrough (`~~text~~`)
-  - **Alt+Backspace**: Word-level deletion.
-
-### 6. Zen Mode (`Ctrl+D`)
-- Press **Ctrl+D** to toggle Zen Focus Mode.
-- Hides sidebar, snippet bar, file container panel, status bar, and framing borders.
-- Leaves a pristine full-screen/frameless markdown writing canvas.
-
-### 7. Window Positioning & Corner Snap (`Ctrl+Q`)
-- Press **Ctrl+Q** to cycle window snap positions:
-  - Top-Left, Top-Right, Bottom-Left, Bottom-Right, Center, Cursor Position.
-
-### 8. File Container & Attachments
-- Every Silo gets a dedicated disk directory: `data/files/<project>/<silo_id>/`.
-- Drag and drop files onto the File Container drawer or Smart Drop Overlay.
-- Files can be opened directly in Windows Explorer or launched with default apps.
-
-### 9. Trash & Backup Recovery
-- Middle-clicked silos move to `data/files/_trash/` and trash database entries.
-- Open **Trash Dialog** to restore deleted silos or purge permanently.
-- Daily Markdown Mirror written to `Documents\.fastprompter\` ensures data readability even if DB file is lost.
-
-### 10. Timer & Pomodoro Engine
-- Built-in countdown timer and Pomodoro focus engine.
-- Configurable interval duration, break cycles, alert sounds, and visual progress ring.
-- Access via Timer Dialog (`Ctrl+Shift+T` or toolbar icon).
+高速なキーボード駆動スクラッチパッド兼プロンプトワークベンチ。Alt+X でカーソル位置に召喚。書く。閉じる (Esc)。手動保存ゼロ — SQLite が 10 秒ごとに同期。
 
 ---
 
-## Complete Hotkey Reference Chart
+## 主要コンセプト
 
-|ホットキー |コンテキスト |アクション |
-|---|---|---|
-| **Alt+X** |グローバル (システム全体) | FastPrompter ウィンドウを呼び出す/非表示にする |
-| **Esc** |グローバル / ローカル |ウィンドウを非表示にする / オーバーレイ ダイアログを閉じる |
-| **F1** .. **F10** |ローカル |スニペット 1 ～ 10 をエディターに貼り付けます。
-| **Ctrl+Shift+1** .. **9** |ローカル |スニペット 1 ～ 9 を貼り付けます。
-| **Ctrl+1** .. **Ctrl+0** |ローカル |サイロ 1 ～ 10 に直接切り替える |
-| **Alt+上** / **Alt+下** |ローカル |前/次のサイロに移動 |
-| **Ctrl+N** |ローカル |新しい空のサイロを作成する |
-| **Ctrl+E** |編集者 |行を H1 タイムスタンプ付きヘッダーとしてフォーマットします。
-| **Ctrl+Return** |編集者 | `- [ ]` / `- [x]` チェックボックスのステータスを切り替えます |
-| **Ctrl+W** |編集者 |区切り線 `---` を挿入 |
-| **Alt+W** |編集者 |区切り線「---」と箇条書きを挿入 |
-| **Ctrl+B** |編集者 |大胆なスタイルを切り替え |
-| **Ctrl+I** |編集者 |斜体のスタイルを切り替え |
-| **Ctrl+U** |編集者 |下線のスタイルを切り替え |
-| **Ctrl+T** |編集者 |取り消し線のスタイルを切り替え |
-| **Alt+Backspace** |編集者 |前の単語を削除 |
-| **Ctrl+S** |編集者 |スニペット マネージャーを開く / スニペットを保存 |
-| **Ctrl+D** |メインウィンドウ | Zen フォーカス モードを切り替える |
-| **Ctrl+Q** |メインウィンドウ |サイクルウィンドウ画面のスナップ配置 |
+### 1. 召喚 (Alt+X)
 
----
+グローバルホットキー。マウスカーソル位置にウィンドウが表示。Esc で閉じる。すべてのキーストロークは自動保存タイマー (10 秒ティック) + 閉じる時の同期フラッシュでディスクにフラッシュ。
 
-## Practical Workflows
+Alt+X のダブルタップで常に最前面を切替。Shift+Alt+X でパイメニューを開く (テーマ/スケール/ツール)。
 
-### Workflow A: Rapid AI Prompting
-1. Press `Alt+X` to summon FastPrompter anywhere.
-2. Press `F1` to insert standard system prompt header.
-3. Type task prompt or paste code snippets.
-4. Select all (`Ctrl+A`), copy (`Ctrl+C`), press `Esc` to hide window.
+### 2. プロジェクト (タブ)
 
-### Workflow B: Task Checklist & Daily Notes
-1. Create new silo (`Ctrl+N`).
-2. Add title (`Ctrl+E`).
-3. Add checklist items (`Ctrl+W`, `Alt+W`, type item).
-4. Use `Ctrl+Return` to tick off items as completed.
-5. Click tick icon (✅) on silo hover to mark whole silo finished.
+ヘッダーの名前付きプロジェクトタブ。右クリック: 作成、名前変更、削除。最大 100 プロジェクト。クリックまたは数字ボックスモード (設定 → ウィンドウ → レイアウト → 1 行あたりの数字ボックス数) で切り替え。各プロジェクトは 100 サイロ + 10 スニペットを保持。
 
-### Workflow C: Project File Sandbox
-1. Open desired Project Tab.
-2. Hover silo and click File Container icon (📁).
-3. Drag assets/PDFs/logs directly onto the file container panel.
-4. Attachments remain linked to the silo and saved in `data/files/<project>/<silo_id>/`.
+### 3. サイロ
+
+独立したマークダウンキャンバススロット。プロジェクトごとに 100。00-99 で自動番号付け。
+
+**ナビゲーション:**
+- Ctrl+1..Ctrl+0 — サイロ 1-10 にジャンプ
+- Alt+↑/↓ — サイロを移動
+- Ctrl+N — 新しい空のサイロ (下部に追加)
+- 右クリック NEW — 下部に追加
+
+**サイロごとのアクション (ホバー):**
+- 📌 **ピン** — サイロをリスト先頭にロック (未ピンより上にソート)
+- ✅ **チェック** — 完了マーク (視覚インジケーター)
+- 🎨 **カラーボックス** — サイロごとの色ハイライト (設定で切替)
+- 📁 **ファイルコンテナ** — このサイロのアセットドロワーを開く
+- 📁 **フォルダリンク** — サイロを外部プロジェクトフォルダ/実行可能ファイルにリンク
+- **中クリック** — ゴミ箱へ送る
+
+**階層:** サイロを別のサイロにドラッグして子としてネスト。最大深さ 2 (1 → 1.1 → 1.1.1)。Shift+ドラッグで交換。親の折りたたみ矢印 (▾/▸) で子を非表示。
+
+**新しさヒートマップ:** 最近編集したサイロに暖色背景。設定 → サイロで設定可能。
+
+### 4. サイドバーギャップ
+
+サイロリストのユーザー定義スペーサーバー。サイロをグループに整理するのに役立つ。Ctrl+ドラッグでギャップを別の場所に再配置。設定 → サイロ → ギャップ高さで太さを制御。
+
+### 5. 複数選択サイロ
+
+- Shift+クリック — 範囲選択
+- Ctrl+クリック — 選択トグル
+- 選択範囲の右クリック — 一括保存、削除、クリア (スロットシフト問題を避けるため高インデックス順に削除)
+
+### 6. スニペットマクロ (F1-F10)
+
+プロジェクトごとに 10 個のクイック貼り付けスロット。F1-F10 または Ctrl+Shift+1-9 にバインド。
+
+- Ctrl+S — スニペットマネージャーを開く (名前 + 内容を編集)
+- F ボタンの右クリック — インラインで名前変更
+- プロンプトテンプレート用の変数プレースホルダーをサポート
+
+### 7. マークダウンエディタ
+
+**VaultTextEdit** — 拡張された QPlainTextEdit。
+
+**機能:**
+- ライブ構文ハイライト — 見出し、太字、斜体、リンク、コードフェンス、チェックボックス、引用
+- ラインガター — 行番号 + 折りたたみ矢印 (▾)
+- セクション折りたたみ — ▾ をクリックでヘッダーを折りたたみ
+- コードフェンスコピーボタン — フェンスをホバー、コピーアイコンをクリック
+- チェックボックスクリック — `- [ ]` をクリックで `- [x]` に切替
+- 折りたたみ可能画像 — `![alt](url)` をコンパクトなピルボタン (150px) として描画。Ctrl+クリックで開く、Ctrl+右クリックでフォルダを開く
+- スマート貼り付け — テーブル/リスト/コードの書式をきれいに
+
+**書式ショートカット:**
+- Ctrl+B/I/U/T — 太字/斜体/下線/取り消し線
+- Ctrl+Return — チェックボックス切替
+- Ctrl+E — ヘッダー挿入 (設定可能: ルール、箇条書き、タイムスタンプ、配置)
+- Ctrl+W — 区切り `---` をスマート行分割で挿入 (重複箇条書きを除去)
+- Alt+W — 上向き区切り + 上の箇条書きを挿入
+- Ctrl+Shift+Q — 引用ブロック切替
+- Ctrl+クリック (箇条書き) — `-` / `•` 切替
+- Ctrl+中ボタン — カーソル下の行を削除 (スマート再フロー: 順序付きリストは番号を振り直し)
+- Alt+Z — 行番号切替
+- Alt+Backspace — 単語削除
+
+### 8. マークアップ非表示モード (T-603)
+
+設定 → エディタ → マークアップ非表示で切替。**太字**、*斜体*、~~取り消し線~~、`コード` マーカーを隠し、テキストがきれいに読める。キャレットブロックは編集できるようにマーカーを保持。キャレット移動の周囲 2 ブロックのみ再描画。
+
+### 9. かんばんボード
+
+かんばん挿入でマークダウンかんばんボードを作成 (プレーンテキスト、保存/DB ラウンドトリップ後も生存)。
+
+- Alt+↑/↓ — カラム内でカードを上下に移動
+- Alt+←/→ — カードを隣接カラムに移動
+- 空のボード行で Enter — 新しいカード行
+- Alt+クリック — カードのチェックボックスをチェック
+
+### 10. テーブルビルダー
+
+テーブル挿入でマークダウンテーブルを作成。Tab/Shift+Tab でセル移動。最後のセルで Tab → 新しい行が成長。Enter で行を追加 (セル分割なし)。
+
+### 11. ファイルコンテナ
+
+各サイロはディスク上に `data/silo_files/<project>/<slot_idx>/` を取得。
+
+- ドロワーオーバーレイにファイルをドラッグ → サイロフォルダにコピー
+- ドロップオーバーレイ (4 オプション): テキスト挿入、リンク挿入、ファイルにコピー、ショートカット
+- テンプレート: IN/OUT、Assets、Drafts、カスタム
+- 画像プレビュー + デフォルトアプリで開く
+- Ctrl+クリック 📁 — サイロテキストを .md としてエクスポート
+
+### 12. Watcher エンジン (Alt+C)
+
+プロンプト排出 + ターゲットアプリへの自動送信。
+
+- Alt+C — キャレット下の現在行をキュー (ブロックアンカー付き)
+- Alt+Shift+C — Queue Master ダイアログ (キューの検査/並べ替え/クリア)
+- アーミング: ターゲットアプリ (Electron は CDP、ネイティブは Win32)、スキル/プロンプトラッパー
+- レート制限: settle=2.5s、min gap=4s、セッションごとに最大 25 送信
+- スキル: `/review`、`/refactor`、カスタムプロンプトテンプレート
+
+詳細は [Watcher エンジンアーキテクチャ](Watcher-Engine-Architecture) を参照。
+
+### 13. ハッシュタグシステム
+
+サイロテキストの `#tag` はサイロ横断検索用にインデックス化。Alt+Shift+T でハッシュタグダイアログを開く — タグで検索、一致するすべてのサイロを表示、クリックでジャンプ。
+
+### 14. タイマーと Pomodoro
+
+**カウントダウンタイマー:** Ctrl+Shift+T またはタイマーボタンで設定。設定可能な名前、期間、サウンド、音量、色の緊急度。スヌーズ付きタイマートースト通知 (Win95 3D ベベル)。
+
+**Pomodoro:** 作業/休憩状態機械。設定可能な間隔。フェーズ終了時にトレイ通知 + サウンド。時計の横のタイマーラベルに残り時間 + 緊急度カラーを表示。
+
+### 15. 禅モード (Ctrl+D)
+
+3 段階サイクル:
+1. **Zen** — サイドバー、スニペットバー、ファイルコンテナ、ステータスバー、フレームボーダーを非表示。エディタのみ表示。
+2. **ソロ** — 他のすべてのデスクトップウィンドウを最小化。エディタは残る。
+3. **戻る** — デスクトップ + 通常レイアウトを復元。
+
+### 16. ウィンドウスナップ (Ctrl+Q)
+
+循環: 左上、右上、左下、右下、中央、フル、カーソル位置。FancyZone オーバーレイがクリック時に 7 つの視覚ゾーンを表示。ウィンドウプリセットページは最大 10 のユーザー定義ジオメトリを保存 (画面の分数として — モニター変更後も生存)。
+
+### 17. ファインダーとアーカイブ
+
+- **サイロをアーカイブ** — 完了したサイロをアーカイブに移動 (テキストを保持、アクティブリストから削除)
+- **アーカイブタブ** — プロジェクトごとのアーカイブ済みサイロを参照
+- **ゴミ箱ダイアログ** — ソフト削除されたサイロとファイルを参照/復元
+- **サイロのディスク同期** (T-591) — プロジェクトごとに外部フォルダへの一方向 .md エクスポート
+
+### 18. 数字ボックスモード (T-607)
+
+設定 → ウィンドウ → レイアウト → 1 行あたりの数字ボックス数。プロジェクトコンボを番号付きボタンに置き換え。右クリックで追加/名前変更/削除。ホイールでも切り替え。プロジェクト上限 100。
+
+### 19. ツールバーのカスタマイズ
+
+設定 → ツールバーをカスタマイズ。ボタンをドラッグして並べ替え。表示可能なギャップウィジェットがボタンの着地位置を示す。リセットでデフォルト順に復元。
+
+### 20. オーバーフローメニュー
+
+ヘッダーが < 700px のとき: 非表示ボタンは » ポップアップに収集。すべてのアクションに引き続き到達可能 — 書式、ナビゲーション、サイロ操作、ツール。
+
+### 21. SAIPEN 統合
+
+Ctrl+Shift+C で SAIPEN ビューアー (`.saipen/` の STATE/BOARD/LOG) を開く。プロジェクトフォルダに `.saipen/` があるときはツールバーボタンでクイックアクセス。
+
+### 22. バックアップ
+
+**レイヤー:**
+1. SQLite WAL — クラッシュセーフな書き込み (synchronous=NORMAL)
+2. .bak — 起動時 + 60 秒ごと (完全な SQLite バックアップを .bak ファイルに)
+3. 毎日マークダウンミラー — `~/Documents/.fastprompter/` (プロジェクトごとのサイロ + アーカイブ + スニペット)
+4. ポータブル ZIP — バックアップダイアログ経由の手動バックアップ

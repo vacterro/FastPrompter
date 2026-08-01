@@ -1,2 +1,2 @@
 ---
-*FastPrompter Wiki — создан с использованием [Протокол SAIPEN] (Протокол SAIPEN) | [Репозиторий GitHub](https://github.com/vaacterro/FastPrompter)*
+*FastPrompter Wiki — собрано с [Протоколом SAIPEN](SAIPEN-Protocol) | [GitHub Repo](https://github.com/vacterro/FastPrompter)*

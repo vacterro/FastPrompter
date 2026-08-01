@@ -1,83 +1,92 @@
-# FastPrompter Keyboard Shortcuts & Cheatsheet
+# FastPrompter キーボードショートカット & チートシート
 
-## Overview
-FastPrompter is built for speed and 100% keyboard-driven operation. All major actions—from summoning the window to line formatting, queue management, silo navigation, and macro pasting—have dedicated keyboard shortcuts.
+完全なキーボード駆動操作。レイアウト非依存の VK ディスパッチ — QWERTY、JCUKEN、AZERTY、QWERTZ で動作。
 
----
+## クイックリファレンス
 
-## Quick Reference Table
-
-|カテゴリー |ホットキー |アクション |範囲/コンテキスト |
+| カテゴリ | ホットキー | アクション | スコープ |
 |---|---|---|---|
-| **グローバル** | **Alt+X** | FastPrompter ウィンドウを呼び出す/非表示にする |システム全体 (任意のアプリ) |
-| **ウォッチャー** | **Alt+C** | Typing Watcher / ステータスの表示を切り替え |メインウィンドウ |
-| **ウォッチャー** | **Alt+Shift+C** |キューマスターダイアログを開く |メインウィンドウ |
-| **ウィンドウ** | **Ctrl+D** | Zen フォーカス モードを切り替えます (パネル/クロムを非表示) |メインウィンドウ |
-| **ウィンドウ** | **Ctrl+Q** |サイクル スナップ位置 (左上、右上、中央、カーソル) |メインウィンドウ |
-| **ウィンドウ** | **Alt+S** |ウィンドウ ロックの切り替え (ピンのサイズと位置) |メインウィンドウ |
-| **ウィンドウ** | **Alt+E** |常に表示される固定ステータスを切り替える |メインウィンドウ |
-| **ウィンドウ** | **Alt+D** |サイドバーの表示/非表示を切り替える |メインウィンドウ |
-| **ウィンドウ** | **Alt+A** |クリックアウト時の非表示動作を切り替える |メインウィンドウ |
-| **ウィンドウ** | **Alt+`** |ミニ設定オーバーレイを開く |メインウィンドウ |
-| **ウィンドウ** | **Ctrl+Alt+Shift+Q** |緊急強制終了 FastPrompter |システム全体 |
-| **ナビゲーション** | **Ctrl+1** .. **Ctrl+0** |サイロ 1 ～ 10 に直接ジャンプ |アプリケーション |
-| **ナビゲーション** | **Alt+上** / **Alt+下** |アクティブなサイロを前方または後方に歩きます |アプリケーション |
-| **ナビゲーション** | **Ctrl+N** |新しい空のサイロを作成する |アプリケーション |
-| **ナビゲーション** | **Ctrl+F** | [検索] 検索バーを開く |編集者 |
-| **ナビゲーション** | **Ctrl+H** |置換検索と置換バーを開く |編集者 |
-| **ナビゲーション** | **Ctrl+Shift+S** |アクティブなサイロ テキストをファイルにエクスポート |アプリケーション |
-| **フォーマット** | **Ctrl+E** |行をタイムスタンプ付きの H1 ヘッダーとしてフォーマットする |編集者 |
-| **フォーマット** | **Ctrl+Return** |現在の行の `- [ ]` / `- [x]` チェックボックスを切り替えます |編集者 |
-| **フォーマット** | **Ctrl+W** |間隔をあけた「---」水平区切り線を挿入します。編集者 |
-| **フォーマット** | **Alt+W** |区切り線「---」と新しい箇条書き「-」を挿入します。編集者 |
-| **フォーマット** | **Ctrl+B** | **太字** テキスト (`**テキスト**`) を切り替え |編集者 |
-| **フォーマット** | **Ctrl+I** | *斜体* テキスト (`*テキスト*`) を切り替えます |編集者 |
-| **フォーマット** | **Ctrl+U** |テキストの <u>下線</u> を切り替えます (`<u>テキスト</u>`) |編集者 |
-| **フォーマット** | **Ctrl+T** | ~~取り消し線~~テキストの切り替え (`~~テキスト~~`) |編集者 |
-| **フォーマット** | **Ctrl+Shift+Q** | Blockquote ブロック (`> text`) を切り替えます |編集者 |
-| **フォーマット** | **Alt+Z** |エディターのガターの行番号を切り替える |編集者 |
-| **フォーマット** | **Alt+Backspace** |前の単語を削除 |編集者 |
-| **フォーマット** | **Ctrl+Z** |スマートな元に戻す編集アクション |編集者 |
-| **抜粋** | **F1** .. **F10** |スニペット 1 ～ 10 をエディターに貼り付けます。アプリケーション |
-| **抜粋** | **Ctrl+Shift+1** .. **9** |スニペット 1 ～ 9 を貼り付けます (代替) |アプリケーション |
-| **抜粋** | **Ctrl+S** |スニペット マネージャーを開く / アクティブなスニペットを保存する |アプリケーション |
-| **添付ファイル** | **F2** |選択した添付ファイルの名前を変更 |ファイルコンテナパネル |
-| **添付ファイル** | **削除** |選択した添付ファイルをゴミ箱に削除 |ファイルコンテナパネル |
-| **一般** | **Esc** | FastPrompter ウィンドウを非表示にする / アクティブなオーバーレイを閉じる |システム / ローカル |
+| **グローバル** | **Alt+X** | ウィンドウを召喚 / 非表示 | システム全体 |
+| **グローバル** | **Shift+Alt+X** | パイメニューを開く | システム全体 |
+| **グローバル** | **Ctrl+Alt+Shift+Q** | 緊急強制終了 | システム全体 |
+| **ウィンドウ** | **Ctrl+D** | Zen/ソロ/通常を循環 (3 段階) | メイン |
+| **ウィンドウ** | **Ctrl+Q** | スナップ位置 / プリセットを循環 | メイン |
+| **ウィンドウ** | **Alt+S** | ウィンドウ位置ロック切替 | メイン |
+| **ウィンドウ** | **Alt+E** | 常に最前面切替 | メイン |
+| **ウィンドウ** | **Alt+D** | サイドバー切替 | メイン |
+| **ウィンドウ** | **Alt+A** | フォーカス喪失時の非表示切替 | メイン |
+| **ウィンドウ** | **Alt+`** | ミニ設定を開く | メイン |
+| **Watcher** | **Alt+C** | 現在行を watcher 用にキュー | メイン |
+| **Watcher** | **Alt+Shift+C** | Queue Master ダイアログを開く | メイン |
+| **ナビゲーション** | **Ctrl+1**…**Ctrl+0** | サイロ 1–10 にジャンプ | アプリ |
+| **ナビゲーション** | **Alt+↑** / **Alt+↓** | サイロを移動 | アプリ |
+| **ナビゲーション** | **Ctrl+N** | 新しい空のサイロ | アプリ |
+| **ナビゲーション** | **Ctrl+F** | サイロ内を検索 | エディタ |
+| **ナビゲーション** | **Ctrl+H** | 検索して置換 | エディタ |
+| **ナビゲーション** | **Ctrl+Shift+S** | アクティブサイロを .md にエクスポート | アプリ |
+| **書式** | **Ctrl+E** | ヘッダー書式 (設定可能) | エディタ |
+| **書式** | **Ctrl+Return** | チェックボックス `- [ ]` / `- [x]` 切替 | エディタ |
+| **書式** | **Ctrl+W** | 区切り `---` を挿入 (スマート分割) | エディタ |
+| **書式** | **Alt+W** | 上向き区切り + 箇条書きを挿入 | エディタ |
+| **書式** | **Ctrl+B** | 太字切替 | エディタ |
+| **書式** | **Ctrl+I** | 斜体切替 | エディタ |
+| **書式** | **Ctrl+U** | 下線切替 | エディタ |
+| **書式** | **Ctrl+T** | 取り消し線切替 | エディタ |
+| **書式** | **Ctrl+Shift+Q** | 引用ブロック切替 | エディタ |
+| **書式** | **Alt+Z** | 行番号切替 | エディタ |
+| **書式** | **Alt+Backspace** | 前の単語を削除 | エディタ |
+| **書式** | **Ctrl+Z** | スマートアンドゥ (サイロごと) | エディタ |
+| **書式** | **Ctrl+中ボタン** | カーソル下の行を削除 (スマートリスト再フロー) | エディタ |
+| **書式** | **Ctrl+クリック (箇条書き)** | `-` / `•` 切替 | エディタ |
+| **スニペット** | **F1**…**F10** | スニペット 1–10 を貼り付け | アプリ |
+| **スニペット** | **Ctrl+Shift+1**…**9** | スニペット 1–9 を貼り付け (代替) | アプリ |
+| **スニペット** | **Ctrl+S** | スニペットマネージャーを開く | アプリ |
+| **SAIPEN** | **Ctrl+Shift+C** | SAIPEN ビューアーを開く | アプリ |
+| **タイマー** | **Ctrl+Shift+T** | タイマーダイアログを開く | アプリ |
+| **ハッシュタグ** | **Alt+Shift+T** | ハッシュタグダイアログを開く | アプリ |
+| **添付** | **F2** | ファイルコンテナの添付名を変更 | ファイルコンテナ |
+| **添付** | **Delete** | 添付をゴミ箱へ削除 | ファイルコンテナ |
+| **かんばん** | **Alt+↑↓** | カードを上下に移動 (かんばんサイロ内) | エディタ |
+| **かんばん** | **Alt+←→** | カードを左右のカラムに移動 (かんばん) | エディタ |
+| **テーブル** | **Tab** | 次のセルへ移動 (テーブルサイロ内) | エディタ |
+| **テーブル** | **Shift+Tab** | 前のセルへ移動 | エディタ |
+| **一般** | **Esc** | ウィンドウ非表示 / オーバーレイを閉じる | システム/ローカル |
+| **一般** | **Alt+X** (2 回) | 常に最前面切替 | グローバル |
+| **一般** | **Ctrl+Plus/Minus** | ズームスケール | アプリ |
 
----
+## カテゴリグループ
 
-## Detailed Category Breakdown
+### グローバル: 召喚、パイメニュー、緊急
+**Alt+X** — カーソル位置でウィンドウを切替。**Shift+Alt+X** — 放射状パイメニュー (テーマ、スケール、ツール)。**Ctrl+Alt+Shift+Q** — プロセスを強制終了。
 
-### 1. Global & Window Management
-- **Alt+X (Global Summon)**: Instantly brings FastPrompter to the foreground at your current mouse cursor coordinates. Pressing `Alt+X` again hides the window back to system tray.
-- **Ctrl+D (Zen Mode)**: Hides sidebar, snippet bar, file container, status bar, and window framing for distraction-free writing.
-- **Ctrl+Q (Corner Snap)**: Rotates window placement across predefined screen regions: Top-Left -> Top-Right -> Bottom-Left -> Bottom-Right -> Center -> Cursor Position.
-- **Alt+S & Alt+E**: Lock window geometry to prevent accidental dragging (`Alt+S`) and pin window above all other desktop windows (`Alt+E`).
+### ウィンドウ管理
+**Ctrl+D** — 3 段階: Zen (最小エディタのみ) → ソロ (他のすべてのウィンドウを最小化) → 通常に戻る。**Ctrl+Q** — 7 つのスナップゾーン、FancyZone ピッカー、ユーザープリセットを循環。**Alt+S/E/D/A** — ジオメトリロック、最前面ピン、サイドバー表示、フォーカス喪失非表示切替。
 
-### 2. Typing Watcher & CDP Automation
-- **Alt+C**: Toggles the automated typing watcher engine on/off. When armed, watches target application focus.
-- **Alt+Shift+C**: Opens the Queue Master dialog to inspect, reorder, clear, or inject items into the active watcher drainage queue.
+### Watcher キュー
+**Alt+C** — キャレット下の現在行をキュー。ブロックアンカー付きで、上の編集後も生存。**Alt+Shift+C** — Queue Master: すべてのサイロのキューを検査/並べ替え/クリア。
 
-### 3. Markdown Formatting Shortcuts
-- **Ctrl+E**: Converts current line into `# HH:MM - Heading`.
-- **Ctrl+Return**: Converts regular text into `- [ ] text` or toggles `- [ ]` <-> `- [x]`.
-- **Ctrl+W / Alt+W**: Inserts markdown dividers `---`. `Alt+W` automatically starts a new bullet point on the following line.
-- **Ctrl+B / Ctrl+I / Ctrl+U / Ctrl+T**: Inline formatting for bold, italic, underline, and strikethrough.
+### マークダウン書式
+すべての書式ショートカットはインラインマーカーを切替: **Ctrl+B** → `**bold**`、Ctrl+I → `*italic*`、Ctrl+U → `<u>underline</u>`、Ctrl+T → `~~strike~~`、Ctrl+Shift+Q → `> quote`。
 
-### 4. Silo & Tab Navigation
-- **Ctrl+1 .. Ctrl+0**: Instantly switches editor tab to Silo slot 1 through 10.
-- **Alt+Up / Alt+Down**: Step through active silos sequentially without mouse interaction.
-- **Ctrl+N**: Creates a new numbered scratch silo in the active project tab.
+**Ctrl+W** は `---` 区切り + スマート行分割を挿入。**Alt+W** は上向き区切り + カーソル上の箇条書きを挿入。どちらも設定 → 区切りで設定可能。
 
-### 5. Snippet Macro Slots (`F1`-`F10`)
-- **F1 .. F10**: Pastes pre-configured snippet templates directly at the editor cursor location.
-- **Ctrl+Shift+1 .. 9**: Secondary hotkey binding for devices without dedicated function keys (e.g. compact keyboards).
+**Ctrl+クリック (箇条書き)** で `-` / `•` を循環。**Ctrl+Return** で `- [ ]` / `- [x]` を切替。
 
----
+**Ctrl+E** — 現在行をヘッダーとして書式化。設定可能: ルーラー種別、箇条書き、タイムスタンプ、配置。カスタマイズは設定 → 区切りとヘッダー。
 
-## Physical Virtual Key (VK) Layout Fallbacks
-FastPrompter features physical keyboard key mapping via `LayoutIndependentShortcuts`. Shortcuts continue to work reliably regardless of whether the active Windows keyboard layout is set to English (QWERTY), Russian (JCUKEN), German (QWERTZ), or French (AZERTY).
+**Ctrl+中ボタン** — スマート再フローで行全体を削除: 順序付きリストは番号を振り直し、箇条書きリストは隙間を閉じる。
 
----
-*FastPrompter Wiki — [SAIPEN プロトコル](SAIPEN-プロトコル) で構築 | [GitHub リポジトリ](https://github.com/vacterro/FastPrompter)*
+### サイロナビゲーション
+**Ctrl+1** から **Ctrl+0** でサイロ 1-10 にジャンプ。**Alt+↑↓** で順次移動。**Ctrl+N** で下部に空のサイロを追加。
+
+### スニペットマクロ
+**F1-F10** で事前設定済みのテキストテンプレートを貼り付け。スニペットマネージャー (**Ctrl+S**) または F ボタンの右クリックで内容をバインド。
+
+### SAIPEN + タイマー
+**Ctrl+Shift+C** — SAIPEN ビューアー (STATE/BOARD/LOG) を開く。**Ctrl+Shift+T** — タイマーダイアログを開く。**Alt+Shift+T** — ハッシュタグ検索を開く。
+
+### かんばんとテーブル (T-630)
+かんばんサイロ内: **Alt+矢印** でカードを移動。テーブルサイロ内: **Tab/Shift+Tab** でセルを移動、**Enter** で行を追加。
+
+### レイアウト非依存
+すべてのショートカットは `HotkeyFilter` + `layout_shortcuts.py` 経由で物理 VK コードを使用。アクティブなキーボードレイアウトに関係なく動作。文字ではなくキー位置でバインド。

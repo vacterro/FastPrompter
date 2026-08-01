@@ -1,7 +1,7 @@
 # Translation Bundle — FastPrompter
 
 Generated: 2026-07-31 UTC (synced 01.08: 2-key drift closed)
-Updated: 2026-08-01 UTC (repair: 63 unregistered multi-line tr() keys -> 939 keys/33 loc)
+Updated: 2026-08-01 UTC (repair: 63 unregistered multi-line tr() keys -> 939 keys/33 loc; docs re-sync: wiki rewrite 2cf4190 mirrored into kitchen/docs ru+est, ja/de ticketed T-686)
 Source: `src/fastprompter/` `tr()` call sites + `docs/wiki/` (read-only reference)
 Bundle: `.saipen/saitranslate/locales/` (JSON, one file per language)
 
@@ -52,6 +52,8 @@ Missing keys fall back to English at runtime via the `tr()` engine.
 - 30.07: en.json 802 -> 874 (72 unregistered `tr()` keys from T-589..T-632; TUR 17 gaps repaired, 9 locales 1 each)
 - 31.07: en.json 874 -> 876 — `Rename image` (`tr()` in editor.py, c04c3e8) and `🤍 Support developer` (hardcoded button in help_dialog.py, uncommitted user work). All 29 non-Core locales via dedicated translator instance; RU/EST/DED by Core. The help_dialog button is still hardcoded English in code — integration must wrap it in `tr()` (future ADD/PLAN ticket, not TRANSLATE's scope).
 - 01.08: en.json 876 -> 939 — repair: the sync regex only captured single-line `tr()` fragments, so 63 multi-line tooltip keys (main.py, header_format_dialog.py, timer_dialog.py, ctrlw_settings.py, queue_panel.py, translations.py, send_selection_mixin.py, watcher_dialog.py, window_mixin.py, window_presets_dialog.py) were never registered and silently fell back to EN — the old 100% was a false 100% (validator compares locales vs en.json, never source vs en.json; the AST-vs-en check is the real one). RU/EST/DED hand-translated, 29 other locales via GoogleTranslator (same pipeline as prior runs). Validator PASSED 33/33 939 keys.
+- 01.08 (docs drift): `docs/wiki/` was fully rewritten in 2cf4190 (+1228/−993 lines, "caveman-ded" compression) but the kitchen docs still mirrored the OLD wiki from 07-23. Re-synced all 16 files of `kitchen/docs/ru/` and `kitchen/docs/est/` to the rewritten wiki by hand (Core-owned per the EN/RU/EST/DED split). JA/DE doc re-sync is subSaipen work per the hard split — ticketed T-686 for a dedicated translate instance. UI keys unchanged: validator PASSED 33/33 @ 939 keys, AST-vs-source 0 missing.
+- 01.08 (T-686 closed): the `ee` run executed the dedicated translate instance in-role (no spawnable opus/gpt-5 sub-agent on this host — `spawn_agents` refused both). Re-synced all 16 files of `kitchen/docs/ja/` AND `kitchen/docs/de/` to the rewritten wiki (2cf4190): headings, internal links, code blocks, setting keys, hotkeys preserved, stale pre-rewrite content dropped. Validator PASSED 33/33 @ 939 keys, docs now 16/16 x 4 (ru, est, ja, de) — all four mirror the current wiki.
 
 ## Format
 
@@ -67,6 +69,8 @@ Each JSON file:
 ## Translated docs
 
 `kitchen/docs/{ru,est,ja,de}/` — 16 markdown files each, mirroring `docs/wiki/`.
+
+Status 01.08: **all four (ru, est, ja, de) are in sync with the current wiki** (rewritten 2cf4190). T-686 closed after the dedicated-instance run.
 
 ## Integration
 

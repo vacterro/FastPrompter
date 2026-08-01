@@ -1,83 +1,92 @@
-# FastPrompter Keyboard Shortcuts & Cheatsheet
+# FastPrompter Tastenkombinationen & Cheatsheet
 
-## Overview
-FastPrompter is built for speed and 100% keyboard-driven operation. All major actions—from summoning the window to line formatting, queue management, silo navigation, and macro pasting—have dedicated keyboard shortcuts.
+Vollständiger tastaturgesteuerter Betrieb. Layoutunabhängiger VK-Dispatch — funktioniert auf QWERTY, JCUKEN, AZERTY, QWERTZ.
 
----
+## Schnellreferenz
 
-## Quick Reference Table
-
-| Kategorie | Hotkey | Aktion | Umfang / Kontext |
+| Kategorie | Hotkey | Aktion | Bereich |
 |---|---|---|---|
-| **Global** | **Alt+X** | FastPrompter-Fenster beschwören/ausblenden | Systemweit (jede App) |
-| **Beobachter** | **Alt+C** | Tippüberwachung / Status anzeigen umschalten | Hauptfenster |
-| **Beobachter** | **Alt+Umschalt+C** | Warteschlangenmaster-Dialogfeld öffnen | Hauptfenster |
-| **Fenster** | **Strg+D** | Zen-Fokus-Modus umschalten (Panels/Chrom ausblenden) | Hauptfenster |
-| **Fenster** | **Strg+Q** | Fangposition wechseln (Oben links, Oben rechts, Mitte, Cursor) | Hauptfenster |
-| **Fenster** | **Alt+S** | Fenstersperre umschalten (Stiftgröße und -position) | Hauptfenster |
-| **Fenster** | **Alt+E** | Angehefteten Status „Always-on-Top“ umschalten | Hauptfenster |
-| **Fenster** | **Alt+D** | Sichtbarkeit der Seitenleiste umschalten | Hauptfenster |
-| **Fenster** | **Alt+A** | Verhalten beim Ausblenden beim Klicken umschalten | Hauptfenster |
-| **Fenster** | **Alt+`** | Öffnen Sie das Mini-Einstellungen-Overlay | Hauptfenster |
-| **Fenster** | **Strg+Alt+Umschalt+Q** | Notfall erzwingen Sie das Beenden von FastPrompter | Systemweit |
-| **Navigation** | **Strg+1** .. **Strg+0** | Springe direkt zu Silo 1 bis 10 | Bewerbung |
-| **Navigation** | **Alt+Up** / **Alt+Down** | Vorwärts/rückwärts durch aktive Silos gehen | Bewerbung |
-| **Navigation** | **Strg+N** | Neues leeres Silo erstellen | Bewerbung |
-| **Navigation** | **Strg+F** | Öffnen Sie die Suchleiste „Suchen“ | Herausgeber |
-| **Navigation** | **Strg+H** | Öffnen Sie die Such- und Ersetzungsleiste „Ersetzen“ | Herausgeber |
-| **Navigation** | **Strg+Umschalt+S** | Aktiven Silo-Text in Datei exportieren | Bewerbung |
-| **Formatierung** | **Strg+E** | Zeile als H1-Header mit Zeitstempel formatieren | Herausgeber |
-| **Formatierung** | **Strg+Eingabetaste** | Aktivieren Sie das Kontrollkästchen „- [ ]“ / „- [x]“ in der aktuellen Zeile | Herausgeber |
-| **Formatierung** | **Strg+W** | Fügen Sie die horizontale Trennlinie „---“ mit Abstand ein | Herausgeber |
-| **Formatierung** | **Alt+W** | Fügen Sie die Trennlinie „---“ und das neue Aufzählungszeichen „-“ | ein Herausgeber |
-| **Formatierung** | **Strg+B** | **Fettgedruckter** Text (`**Text**`) umschalten | Herausgeber |
-| **Formatierung** | **Strg+I** | *Kursiv*-Text umschalten („*text*`) | Herausgeber |
-| **Formatierung** | **Strg+U** | Toggle <u>Text unterstreichen</u> (`<u>text</u>`) | Herausgeber |
-| **Formatierung** | **Strg+T** | Toggle ~~Durchgestrichener~~ Text (`~~text~~`) | Herausgeber |
-| **Formatierung** | **Strg+Umschalt+Q** | Toggle Blockquote-Block (`> text`) | Herausgeber |
-| **Formatierung** | **Alt+Z** | Zeilennummern im Randbereich des Editors umschalten | Herausgeber |
-| **Formatierung** | **Alt+Rücktaste** | Vorheriges Wort löschen | Herausgeber |
-| **Formatierung** | **Strg+Z** | Intelligente Bearbeitungsaktion rückgängig machen | Herausgeber |
-| **Ausschnitte** | **F1** .. **F10** | Fügen Sie Snippet 1 bis 10 in den Editor ein | Bewerbung |
-| **Ausschnitte** | **Strg+Umschalt+1** .. **9** | Snippet 1 bis 9 einfügen (Alternative) | Bewerbung |
-| **Ausschnitte** | **Strg+S** | Snippet-Manager öffnen / Aktives Snippet speichern | Bewerbung |
-| **Anhänge** | **F2** | Ausgewählte Anhangdatei umbenennen | Dateicontainer-Panel |
-| **Anhänge** | **Löschen** | Ausgewählte Anhangdatei in den Papierkorb löschen | Dateicontainer-Panel |
-| **Allgemein** | **Esc** | FastPrompter-Fenster ausblenden / Aktives Overlay schließen | System / Lokal |
+| **Global** | **Alt+X** | Fenster aufrufen / ausblenden | Systemweit |
+| **Global** | **Shift+Alt+X** | Pie-Menü öffnen | Systemweit |
+| **Global** | **Ctrl+Alt+Shift+Q** | Notfall-Force-Quit | Systemweit |
+| **Fenster** | **Ctrl+D** | Zen/Solo/normal durchlaufen (3-stufig) | Haupt |
+| **Fenster** | **Ctrl+Q** | Snap-Position / Presets durchlaufen | Haupt |
+| **Fenster** | **Alt+S** | Fensterpositionssperre umschalten | Haupt |
+| **Fenster** | **Alt+E** | Immer-im-Vordergrund umschalten | Haupt |
+| **Fenster** | **Alt+D** | Seitenleiste umschalten | Haupt |
+| **Fenster** | **Alt+A** | Hide-on-Focus-Loss umschalten | Haupt |
+| **Fenster** | **Alt+`** | Mini-Einstellungen öffnen | Haupt |
+| **Watcher** | **Alt+C** | Aktuelle Zeile für Watcher in Queue | Haupt |
+| **Watcher** | **Alt+Shift+C** | Queue-Master-Dialog öffnen | Haupt |
+| **Navigation** | **Ctrl+1**…**Ctrl+0** | Zu Silo 1–10 springen | App |
+| **Navigation** | **Alt+↑** / **Alt+↓** | Silos durchlaufen | App |
+| **Navigation** | **Ctrl+N** | Neues leeres Silo | App |
+| **Navigation** | **Ctrl+F** | Im Silo suchen | Editor |
+| **Navigation** | **Ctrl+H** | Suchen und ersetzen | Editor |
+| **Navigation** | **Ctrl+Shift+S** | Aktives Silo als .md exportieren | App |
+| **Formatierung** | **Ctrl+E** | Header formatieren (konfigurierbar) | Editor |
+| **Formatierung** | **Ctrl+Return** | Checkbox `- [ ]` / `- [x]` umschalten | Editor |
+| **Formatierung** | **Ctrl+W** | Trenner `---` einfügen (Smart-Split) | Editor |
+| **Formatierung** | **Alt+W** | Trenner nach oben + Aufzählung einfügen | Editor |
+| **Formatierung** | **Ctrl+B** | Fett umschalten | Editor |
+| **Formatierung** | **Ctrl+I** | Kursiv umschalten | Editor |
+| **Formatierung** | **Ctrl+U** | Unterstreichen umschalten | Editor |
+| **Formatierung** | **Ctrl+T** | Durchgestrichen umschalten | Editor |
+| **Formatierung** | **Ctrl+Shift+Q** | Blockquote umschalten | Editor |
+| **Formatierung** | **Alt+Z** | Zeilennummern umschalten | Editor |
+| **Formatierung** | **Alt+Backspace** | Vorheriges Wort löschen | Editor |
+| **Formatierung** | **Ctrl+Z** | Smart Undo (pro Silo) | Editor |
+| **Formatierung** | **Ctrl+Mitteltaste** | Zeile unter Cursor löschen (Smart-List-Reflow) | Editor |
+| **Formatierung** | **Ctrl+Klick auf Aufzählung** | `-` / `•` umschalten | Editor |
+| **Snippets** | **F1**…**F10** | Snippet 1–10 einfügen | App |
+| **Snippets** | **Ctrl+Shift+1**…**9** | Snippet 1–9 einfügen (alternativ) | App |
+| **Snippets** | **Ctrl+S** | Snippet-Manager öffnen | App |
+| **SAIPEN** | **Ctrl+Shift+C** | SAIPEN-Viewer öffnen | App |
+| **Timer** | **Ctrl+Shift+T** | Timer-Dialog öffnen | App |
+| **Hashtags** | **Alt+Shift+T** | Hashtag-Dialog öffnen | App |
+| **Anhänge** | **F2** | Datei-Container-Anhang umbenennen | Datei-Container |
+| **Anhänge** | **Delete** | Anhang in Papierkorb löschen | Datei-Container |
+| **Kanban** | **Alt+↑↓** | Karte hoch/runter (im Kanban-Silo) | Editor |
+| **Kanban** | **Alt+←→** | Karte in linke/rechte Spalte (Kanban) | Editor |
+| **Tabelle** | **Tab** | Zur nächsten Zelle (im Tabellen-Silo) | Editor |
+| **Tabelle** | **Shift+Tab** | Zur vorherigen Zelle | Editor |
+| **Allgemein** | **Esc** | Fenster ausblenden / Overlay schließen | System/Lokal |
+| **Allgemein** | **Alt+X** (doppelt) | Immer-im-Vordergrund umschalten | Global |
+| **Allgemein** | **Ctrl+Plus/Minus** | Zoom-Skalierung | App |
 
----
+## Kategoriegruppen
 
-## Detailed Category Breakdown
+### Global: Aufruf, Pie-Menü, Notfall
+**Alt+X** — Fenster am Cursor umschalten. **Shift+Alt+X** — radiales Pie-Menü (Themes, Skalierung, Werkzeuge). **Ctrl+Alt+Shift+Q** — Prozess beenden.
 
-### 1. Global & Window Management
-- **Alt+X (Global Summon)**: Instantly brings FastPrompter to the foreground at your current mouse cursor coordinates. Pressing `Alt+X` again hides the window back to system tray.
-- **Ctrl+D (Zen Mode)**: Hides sidebar, snippet bar, file container, status bar, and window framing for distraction-free writing.
-- **Ctrl+Q (Corner Snap)**: Rotates window placement across predefined screen regions: Top-Left -> Top-Right -> Bottom-Left -> Bottom-Right -> Center -> Cursor Position.
-- **Alt+S & Alt+E**: Lock window geometry to prevent accidental dragging (`Alt+S`) and pin window above all other desktop windows (`Alt+E`).
+### Fensterverwaltung
+**Ctrl+D** — 3-stufig: Zen (nur Minimal-Editor) → Solo (alle anderen Fenster minimieren) → zurück zu normal. **Ctrl+Q** — 7 Snap-Zonen, FancyZone-Picker und Benutzer-Presets durchlaufen. **Alt+S/E/D/A** — Geometrie sperren, oben-anpinnen, Seitenleiste zeigen, Focus-Loss-Ausblenden umschalten.
 
-### 2. Typing Watcher & CDP Automation
-- **Alt+C**: Toggles the automated typing watcher engine on/off. When armed, watches target application focus.
-- **Alt+Shift+C**: Opens the Queue Master dialog to inspect, reorder, clear, or inject items into the active watcher drainage queue.
+### Watcher-Queue
+**Alt+C** — aktuelle Zeile unter dem Caret in Queue. Blockverankert, überlebt Bearbeitungen darüber. **Alt+Shift+C** — Queue Master: Queues aller Silos prüfen/sortieren/leeren.
 
-### 3. Markdown Formatting Shortcuts
-- **Ctrl+E**: Converts current line into `# HH:MM - Heading`.
-- **Ctrl+Return**: Converts regular text into `- [ ] text` or toggles `- [ ]` <-> `- [x]`.
-- **Ctrl+W / Alt+W**: Inserts markdown dividers `---`. `Alt+W` automatically starts a new bullet point on the following line.
-- **Ctrl+B / Ctrl+I / Ctrl+U / Ctrl+T**: Inline formatting for bold, italic, underline, and strikethrough.
+### Markdown-Formatierung
+Alle Formatierungs-Shortcuts schalten Inline-Marker um: **Ctrl+B** → `**fett**`, Ctrl+I → `*kursiv*`, Ctrl+U → `<u>unterstrichen</u>`, Ctrl+T → `~~durchgestrichen~~`, Ctrl+Shift+Q → `> Zitat`.
 
-### 4. Silo & Tab Navigation
-- **Ctrl+1 .. Ctrl+0**: Instantly switches editor tab to Silo slot 1 through 10.
-- **Alt+Up / Alt+Down**: Step through active silos sequentially without mouse interaction.
-- **Ctrl+N**: Creates a new numbered scratch silo in the active project tab.
+**Ctrl+W** fügt `---`-Trenner + Smart-Zeilensplit ein. **Alt+W** fügt Trenner nach oben + Aufzählung über dem Cursor ein. Beide über Einstellungen → Trenner konfigurierbar.
 
-### 5. Snippet Macro Slots (`F1`-`F10`)
-- **F1 .. F10**: Pastes pre-configured snippet templates directly at the editor cursor location.
-- **Ctrl+Shift+1 .. 9**: Secondary hotkey binding for devices without dedicated function keys (e.g. compact keyboards).
+**Ctrl+Klick auf Aufzählung** durchläuft `-` / `•`. **Ctrl+Return** schaltet `- [ ]` / `- [x]` um.
 
----
+**Ctrl+E** — aktuelle Zeile als Header formatieren. Konfigurierbar: Regeltyp, Aufzählung, Zeitstempel, Ausrichtung. Anpassen unter Einstellungen → Trenner & Header.
 
-## Physical Virtual Key (VK) Layout Fallbacks
-FastPrompter features physical keyboard key mapping via `LayoutIndependentShortcuts`. Shortcuts continue to work reliably regardless of whether the active Windows keyboard layout is set to English (QWERTY), Russian (JCUKEN), German (QWERTZ), or French (AZERTY).
+**Ctrl+Mitteltaste** — ganze Zeile mit Smart-Reflow löschen: nummerierte Listen nummerieren neu, Aufzählungslisten schließen Lücken.
 
----
-*FastPrompter-Wiki – erstellt mit [SAIPEN-Protokoll](SAIPEN-Protokoll) | [GitHub-Repository](https://github.com/vacterro/FastPrompter)*
+### Silo-Navigation
+**Ctrl+1** bis **Ctrl+0** springen zu Silos 1-10. **Alt+↑↓** durchläuft sequenziell. **Ctrl+N** fügt unten ein leeres Silo an.
+
+### Snippet-Makros
+**F1-F10** fügen vorkonfigurierte Textvorlagen ein. Inhalte über Snippet-Manager (**Ctrl+S**) oder Rechtsklick auf F-Button binden.
+
+### SAIPEN + Timer
+**Ctrl+Shift+C** — SAIPEN-Viewer (STATE/BOARD/LOG) öffnen. **Ctrl+Shift+T** — Timer-Dialog öffnen. **Alt+Shift+T** — Hashtag-Suche öffnen.
+
+### Kanban & Tabelle (T-630)
+In einem Kanban-Silo: **Alt+Pfeile** bewegen Karten. In einem Tabellen-Silo: **Tab/Shift+Tab** durchläuft Zellen, **Enter** fügt eine Zeile hinzu.
+
+### Layoutunabhängigkeit
+Alle Shortcuts verwenden physische VK-Codes über `HotkeyFilter` + `layout_shortcuts.py`. Funktioniert unabhängig vom aktiven Tastaturlayout. Bindet nach Tastenposition, nicht nach Zeichen.

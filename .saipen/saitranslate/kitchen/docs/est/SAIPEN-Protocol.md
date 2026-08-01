@@ -1,138 +1,144 @@
-# SAIPEN Protocol v7 & SubSaipen Architecture Specification
+# SAIPEN-protokoll v7 ja SubSaipen-arhitektuur
 
-## Overview
-SAIPEN (v7) is a lightweight, structured protocol for persistent AI agent task tracking, state management, event logging, and multi-agent subagent delegation. It guarantees zero context-drift across long development sessions by maintaining machine-parsable tracking files in `.saipen/` (for main workspace) and `subs/<agent_name>/` (for subSaipen agents).
+## Ülevaade
+
+SAIPEN (v7) — kerge struktureeritud protokoll püsivaks AI-agendi ülesannete jälgimiseks, oleku halduseks, sündmuste logimiseks ja mitme-agendi deleerimiseks. Null konteksti-triivi pikkade seansside jooksul masinloetavate failide kaudu `.saipen/` kaustas.
 
 ---
 
-## 1. Core SAIPEN v7 Protocol Specification
+## 1. Põhiprotokoll
 
-### Memory Storage Structure (`.saipen/`)
+### Mälu struktuur (`.saipen/`)
+
 ```
 .saipen/
-├── STATE.md         # Current phase, active task, blocker, agent parameters
-├── BOARD.md         # Kanban ticket board (DOING, TODO, DONE, BLOCKED)
-├── LOG.md           # Immutable append-only work log history
-├── KNOWLEDGE/       # Subsystem reference cards and domain context
-└── kitchen/         # Temporary scratchpads and intermediate outputs
+├── STATE.md         # Faas, ülesanne, blokeerija, agendi parameetrid
+├── BOARD.md         # Kanban: DOING/TODO/DONE/BLOCKED
+├── LOG.md           # Lisanduv töölähend (RFC § 1.2)
+├── KNOWLEDGE/       # Alamsüsteemide teatmekaardid
+├── kitchen/         # Mustandid, vahetulemused
+├── snapshots/       # Ajatempliga STATE/BOARD/LOG varukoopiad
+└── recovery/        # Pühkimise taastamisarhiivid
 ```
 
-### State Schema (`STATE.md`)
-The `STATE.md` file uses YAML frontmatter format:
+### STATE.md skeem (YAML frontmatter)
 
 ```yaml
 ---
-phase: SCOUT | PLAN | BUILD | VERIFY | REVIEW | DONE
-task: "Description of active task"
-next_action: "Immediate action execution step"
-blocker: ""
-agent: antigravity
+phase: SCOUT | PLAN | BUILD | VERIFY | REVIEW | DONE | BLOCKED
+task: "Aktiivse ülesande kirjeldus"
+next_action: "Vahetu järgmine samm"
+blocker: ""  # Põhjus, kui BLOCKED
+agent: claude | main | <nimi>
 saipen_version: 7
-saipen_home: "V:\\___VAC\\__K\\__CODE\\_AI_STUFF_AGENTIC\\_SAIPEN\\saipen"
-mode: full
+saipen_home: "V:\\tee\\saipenile"
+mode: full | read-only
 requires: [filesystem, python, shell, git]
-updated: 2026-07-22T22:54:00Z
-goal_mode: true
-goal_waves: 1
-goal_tickets: 5
+updated: 2026-07-30T12:00:00Z
 ---
 ```
 
-### State Phase Machine
-1. **SCOUT**: Codebase inspection, dependency check, log reading.
-2. **PLAN**: Ticket creation on `BOARD.md`, architectural design.
-3. **BUILD**: Implementation of code, configuration, or documentation edits.
-4. **VERIFY**: Execution of tests, linters, or manual verification tools.
-5. **REVIEW**: Code review, diff check, logging completion to `LOG.md`.
-6. **DONE**: All tickets executed, state reset to idle.
+### Faaside olekumasin
 
-### Event Logging (`LOG.md`)
-Every finished ticket or wave appends a structured log entry:
+1. **SCOUT** — koodibaasi inspekteerimine, sõltuvuste kontroll, logide lugemine
+2. **PLAN** — piletite loomine BOARD.md-s, kujundus
+3. **BUILD** — koodi/konfigide/dokumentatsiooni realiseerimine
+4. **VERIFY** — testide, linterite, käsitsi kontrollide käivitamine
+5. **REVIEW** — diffi ülevaade, LOG-i kanne
+6. **DONE** — kõik piletid lõpetatud
+7. **BLOCKED** — kinni, blokeerija väli selgitab miks
 
-```markdown
-## [2026-07-22T22:54:00Z] T-006: Document User Guide, Hotkeys & Workflows
-- **Agent**: saiwiki
-- **Phase**: BUILD -> REVIEW
-- **Changes**: Created `_user_guide.md` in `subs/saiwiki/kitchen/`.
-- **Status**: SUCCESS
+### Sündmuste logi (LOG.md)
+
 ```
+- 2026-07-30T12:00:00Z [E-001] [T-057] [agent: main] RUN: fix -> PASS
+```
+
+### Peamised reeglid
+- Üks agent kirjutab `.saipen/`-i korraga (RFC § 1.4)
+- Määrdunud puu on TAVALINE — atribuut enne tegutsemist, ära kunagi reeda/kommi teise agendi kinnitamata tööd (RFC § 1.5)
+- Kontrollpunkti järjekord: LOG → BOARD → STATE (krahhikindel asümmeetria, RFC § 1.5)
+- Pileti formaat: ainult `T-###` (RFC § 1.2)
 
 ---
 
-## 2. SubSaipen Architecture & Protocol (`subs/`)
+## 2. SubSaipen-arhitektuur
 
-### SubSaipen Directory Map
-SubSaipens are isolated sub-agents that run with **read-only access** to the main project codebase and write output exclusively inside their designated sub-directory under `subs/`.
+Isoleeritud read-only alamagendid. Väljund ainult `.saipen/extensions/subs/<name>/` sees.
 
 ```
 project-root/
-├── subs/                          # SubSaipen container directory
-│   ├── MANIFEST.md                # Active subSaipen registry & status
-│   ├── RFC_SUBSAIPEN.md           # Protocol specification
-│   ├── saiwiki/                   # Wiki Generator subSaipen
-│   │   ├── STATE.md
-│   │   ├── BOARD.md
-│   │   ├── LOG.md
-│   │   └── kitchen/
-│   │       ├── OUTBOX.md          # Hand-off results for main agent
-│   │       └── (scratch files)
-│   ├── saihunt/                   # Bug Hunter subSaipen
-│   │   ├── STATE.md
-│   │   ├── BOARD.md
-│   │   ├── LOG.md
-│   │   └── kitchen/
-│   │       ├── OUTBOX.md
-│   │       └── (scratch files)
-│   └── _shared/                   # Cross-agent communications inbox
-│       └── inbox.md
+└── .saipen/
+    └── extensions/
+        └── subs/
+            ├── MANIFEST.md         # Aktiivsete alamsüsteemide loend
+            ├── PROTOCOL.md         # Täielik sub-protokoll
+            ├── _shared/inbox.md    # Agentide-ülene inbox
+            ├── TEMPLATE/           # Bootstrap-mall
+            ├── saiwiki/            # Wiki generaator (faas DONE)
+            └── saihunt/            # Veaotsija (faas DONE)
 ```
 
-### SubSaipen Lifecycle State Machine
+### Elutsükkel
+1. **SPAWN** — `saipen sub spawn <name>` kopeerib TEMPLATE-i, lisab MANIFEST-i
+2. **WORK** — loeb peamist projekti (read-only), toodab artefakte oma kitchen/-is
+3. **SIGNAL** — OUTBOX.md kanne `status: ready`
+4. **COLLECT** — peamine agent käivitab `saipen sub collect`, loob T-### piletid kriitilistele leidudele
 
-```
-+-------+      +------+      +--------+      +----------+      +--------------+      +-------+
-| SPAWN | ---> | WORK | ---> | SIGNAL | ---> | WAIT_ACK | ---> | ACK_RECEIVED | ---> | CLEAN |
-+-------+      +------+      +--------+      +----------+      +--------------+      +-------+
-```
-
-1. **SPAWN**: vanemagent initsialiseerib alamkataloogi `subs/<nimi>/` vaikeväärtustega STATE.md, BOARD.md, LOG.md ja kitchen/OUTBOX.md. Registreerib agendi saidil "subs/MANIFEST.md".
-2. **TÖÖ**: SubSaipen loeb kirjutuskaitstud režiimis peamisi projekti lähtefaile, analüüsib või koostab dokumente ning värskendab kohalikke faile BOARD.md ja STATE.md.
-3. **SIGNAAL**: SubSaipen väljastab mustandi artefaktid kaustas "kitchen/" ja kirjutab üleandmise kokkuvõtte kausta "kitchen/OUTBOX.md" olekuga "valmis".
-4. **WAIT_ACK**: SubSaipen peatab täitmise, oodates vanema kinnitust.
-5. **ACK_RECEIVED**: põhiagent loeb faili OUTBOX.md, integreerib artefakte või väljastab pileteid ja kirjutab ACK-i failile OUTBOX.md või _shared/inbox.md.
-6. **CLEAN**: SubSaipen lõpetab elutsükli või läheb üle järgmisele lainele.
-
----
-
-## 3. OUTBOX Hand-off Format Specification
-
-Fail "kitchen/OUTBOX.md" toimib range lepinguna subSaipensi ja põhiagendi vahel:
+### OUTBOX-i formaat
 
 ```markdown
-# subSaipen <agent_name> Outbox
+# OUTBOX
 
-**Olek**: "valmis" | "mustand" | `blokeeritud`
-**Värskendatud**: 2026-07-22T22:54:00Z
+## WIKI-001: Kirjeldus
+- **status:** ready | draft | blocked | reviewed
+- **summary:** üherealine leid
+- **main_project_refs:** [docs/wiki/foo.md]
+- **critical:** true | false
+- **severity:** P0 | P1 | P2 (valikuline)
+- **details:** täielik kirjeldus
+```
 
-## Summary of Output Artifacts
-Detailed overview of generated drafts and findings.
+### Pileti ID nimeruum
 
-1. **Artefakti nimi (tee/artefaktini)**
-   - Eesmärk / eesmärk
-   - Leidude või sisu kokkuvõte
-   - "kriitiline": tõsi | vale
-   - "main_project_refs": [viidatud põhiprojektifailide loend]
+| Eesliide | Omanik |
+|---|---|
+| `SYS-` | Läbilõikav / protokoll |
+| `WIKI-` | saiwiki |
+| `HUNT-` | saihunt |
+| `PY-` | saipython (parandaja) |
+| `<NAME>-` | Mis tahes muu alamsüsteem |
 
-## Next Recommended Actions for Main Agent
-- Action items or ticket suggestions for the main workspace BOARD.
+Sub-ID-sid ei panda kunagi otse peamisele BOARD.md-le — alati tavaline `T-###` originaaliga kirjelduses.
+
+### Käsud
+
+| Käsk | Toiming |
+|---|---|
+| `saipen sub list` | Näita aktiivseid alamsüsteeme + faasi (WARNING BLOCKED-i korral) |
+| `saipen sub spawn <name>` | Loo uus alamagent |
+| `saipen sub collect` | Töötle kõik OUTBOX-i kanded |
+| `saipen sub clean <name>` | Eemalda alamagent (keeldub kogumata leidude korral) |
+| `saipen sub status <name>` | Piilu OUTBOX-i ilma kogumata |
+| `<name>` (üksi) | Rolli-võtmise otsetee — muutu selleks alamagendiks |
+| `saipen sub pause <name>` | Külmuta alamagent (BLOCKED) ilma olekut hävitamata |
+| `saipen sub resume <name>` | Sulata alamagent üles |
+
+### Parandajatüüpi sub (saipython)
+
+Läheb kaugemale — OUTBOX kannab **testitud paranduse** ühendatud diffina. Töö tehakse oma `kitchen/pen/` liivakastis (sihtfaili koopia). Kontrollitud projekti enda testiharjaga enne `ready` märkimist. Ei kirjuta kunagi peamisse puusse.
+
+```markdown
+## PY-001: Kirjeldus
+- **status:** ready
+- **patch:**
+  ```diff
+  <ühendatud diff, rakendub repo juurest>
+  ```
+- **verified:** pytest PASS (N) / ruff clean / mypy clean
+- **base_head:** abc1234
 ```
 
 ---
 
-## 4. SubSaipen Conflict Resolution & Safety Rules
-
-1. **Kirjutuskaitstud põhitööruumi kaitse**: SubSaipeni agentidel on rangelt keelatud redigeerida faile väljaspool lahtrit `subs/<agendi_nimi>/`.
-2. **Sõltumatu mälu**: iga subSaipen säilitab oma oleku 'STATE.md', 'BOARD.md' ja 'LOG.md'.
-3. **Otsene alaagentidevaheline mutatsioon puudub**: SubSaipenid ei muuda kunagi üksteise katalooge. Suhtlus toimub ainult OUTBOX.md ja _shared/inbox.md kaudu.
-4. **Peaagendi vahekohtumenetlus**: kui kaks alam-Saipenit pakuvad vastukäivaid muudatusi, määrab põhiagent prioriteedid kindlaks hierarhiat kasutades:
-   - **Veaparandus (saihunt)** > **Dokumentatsioon (saiwiki)** > **Refaktoreerimine** > **Uus funktsioon**.
+*FastPrompter Wiki — ehitatud [SAIPEN-protokolliga](SAIPEN-Protocol) | [GitHub Repo](https://github.com/vacterro/FastPrompter)*

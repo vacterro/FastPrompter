@@ -1,123 +1,175 @@
-# FastPrompter User Guide & Workflow Manual
+# Руководство пользователя FastPrompter
 
-## Overview
-FastPrompter is a high-speed, keyboard-driven portable notepad and prompt engineering workbench for Windows. It provides zero-latency access (`Alt+X`), instant local persistence via SQLite, multi-project workspace isolation, tabbed silo organization, markdown editor with live syntax highlighting and section folding, macro snippet triggers, file container attachments, built-in Pomodoro timer, sound feedback, and automatic backup mirrors.
+## Обзор
 
----
-
-## Key Concepts
-
-### 1. Zero-Latency Summon (`Alt+X`)
-- Press **Alt+X** from any Windows application. FastPrompter pops up at cursor location.
-- Press **Esc** or click outside to instantly hide the window.
-- All keystrokes and note state are flushed to disk synchronously without requiring manual save actions.
-
-### 2. Multi-Project Workspaces
-- Work is organized into named Projects (Tabs across top bar).
-- Each Project contains up to 100 dedicated Silos (scratch slots).
-- Right-click project tabs to create, rename, or delete projects.
-
-### 3. Silos (Scratch Slots)
-- Each Silo is an independent markdown canvas.
-- Quick Jump: **Ctrl+1** through **Ctrl+0** for Silos 1–10.
-- Quick Walk: **Alt+Up** / **Alt+Down** cycles forward and backward through active Silos.
-- New Silo: **Ctrl+N** spawns an empty numbered silo.
-- Silo Actions on hover:
-  - **Done / Tick (✅)**: Mark silo completed (visual styling).
-  - **File Container (📁)**: Open dedicated attachments folder.
-  - **Pin (📌)**: Lock silo to top of list.
-  - **Archive (📥)**: Move completed silo to project archive.
-  - **Middle Click**: Send silo to Trash Bin (`data/files/_trash/`).
-
-### 4. Snippet Macros (`F1`–`F10`)
-- 10 quick-paste snippet slots bound to **F1**–**F10** (or **Ctrl+Shift+1**–**9**).
-- Press **Ctrl+S** or open Snippet Manager to edit titles and template text.
-- Supports variable placeholders, system prompts, code templates, and recurring AI prompts.
-
-### 5. Markdown Editor & Formatting Features
-- **Live Syntax Highlighting**: Code blocks, headings, bold, italic, lists, blockquotes.
-- **Section Folding**: Click collapse arrows next to headings to fold section text.
-- **Header Formatting (`Ctrl+E`)**: Turns current line into header `# Title` with timestamp and formatting.
-- **Checkbox Toggle (`Ctrl+Return`)**: Toggles `- [ ]` and `- [x]` checkboxes on current line or selection.
-- **Dividers**:
-  - **Ctrl+W**: Inserts spaced `---` markdown horizontal rule.
-  - **Alt+W**: Inserts spaced `---` horizontal rule and starts a bullet `- `.
-- **Text Formatting**:
-  - **Ctrl+B**: Bold (`**text**`)
-  - **Ctrl+I**: Italic (`*text*`)
-  - **Ctrl+U**: Underline (`<u>text</u>`)
-  - **Ctrl+T**: Strikethrough (`~~text~~`)
-  - **Alt+Backspace**: Word-level deletion.
-
-### 6. Zen Mode (`Ctrl+D`)
-- Press **Ctrl+D** to toggle Zen Focus Mode.
-- Hides sidebar, snippet bar, file container panel, status bar, and framing borders.
-- Leaves a pristine full-screen/frameless markdown writing canvas.
-
-### 7. Window Positioning & Corner Snap (`Ctrl+Q`)
-- Press **Ctrl+Q** to cycle window snap positions:
-  - Top-Left, Top-Right, Bottom-Left, Bottom-Right, Center, Cursor Position.
-
-### 8. File Container & Attachments
-- Every Silo gets a dedicated disk directory: `data/files/<project>/<silo_id>/`.
-- Drag and drop files onto the File Container drawer or Smart Drop Overlay.
-- Files can be opened directly in Windows Explorer or launched with default apps.
-
-### 9. Trash & Backup Recovery
-- Middle-clicked silos move to `data/files/_trash/` and trash database entries.
-- Open **Trash Dialog** to restore deleted silos or purge permanently.
-- Daily Markdown Mirror written to `Documents\.fastprompter\` ensures data readability even if DB file is lost.
-
-### 10. Timer & Pomodoro Engine
-- Built-in countdown timer and Pomodoro focus engine.
-- Configurable interval duration, break cycles, alert sounds, and visual progress ring.
-- Access via Timer Dialog (`Ctrl+Shift+T` or toolbar icon).
+Сверхскоростной клавиатурный блокнот + рабочая среда для промптов. Alt+X вызывает под курсором. Пиши. Закрой (Esc). Ноль ручного сохранения — SQLite синхронизирует каждые 10 с.
 
 ---
 
-## Complete Hotkey Reference Chart
+## Ключевые концепции
 
-| Горячая клавиша | Контекст | Действие |
-|---|---|---|
-| **Alt+X** | Глобальный (общесистемный) | Вызвать/скрыть окно FastPrompter |
-| **Эск** | Глобальный/локальный | Скрыть окно / Закрыть диалоговое окно наложения |
-| **F1** .. **F10** | Местный | Вставьте фрагмент с 1 по 10 в редактор |
-| **Ctrl+Shift+1** .. **9** | Местный | Вставить фрагмент с 1 по 9 |
-| **Ctrl+1** .. **Ctrl+0** | Местный | Переключиться непосредственно на бункеры с 1 по 10 |
-| **Alt+Вверх** / **Alt+Вниз** | Местный | Перейти к предыдущему/следующему бункеру |
-| **Ctrl+N** | Местный | Создать новый пустой бункер |
-| **Ctrl+E** | Редактор | Отформатировать строку как заголовок с меткой времени H1 |
-| **Ctrl+Return** | Редактор | Переключить статус флажка `- [ ]` / `- [x]` |
-| **Ctrl+W** | Редактор | Вставьте разделитель `---` |
-| **Alt+W** | Редактор | Вставьте разделитель `---` и точку списка |
-| **Ctrl+B** | Редактор | Переключить Жирный стиль |
-| **Ctrl+I** | Редактор | Переключить стиль курсива |
-| **Ctrl+U** | Редактор | Переключить стиль подчеркивания |
-| **Ctrl+T** | Редактор | Переключить стиль зачеркивания |
-| **Alt+Backspace** | Редактор | Удалить предыдущее слово |
-| **Ctrl+S** | Редактор | Открыть диспетчер фрагментов/Сохранить фрагмент |
-| **Ctrl+D** | Главное окно | Переключить режим фокусировки дзен |
-| **Ctrl+Q** | Главное окно | Циклическое размещение привязки к экрану окна |
+### 1. Вызов (Alt+X)
 
----
+Глобальная горячая клавиша. Окно появляется под курсором мыши. Esc закрывает. Все нажатия сбрасываются на диск через таймер автосохранения (тик 10 с) + синхронизированный сброс при закрытии.
 
-## Practical Workflows
+Двойной тап Alt+X переключает always-on-top. Shift+Alt+X открывает pie-меню (тема/масштаб/инструменты).
 
-### Workflow A: Rapid AI Prompting
-1. Press `Alt+X` to summon FastPrompter anywhere.
-2. Press `F1` to insert standard system prompt header.
-3. Type task prompt or paste code snippets.
-4. Select all (`Ctrl+A`), copy (`Ctrl+C`), press `Esc` to hide window.
+### 2. Проекты (Вкладки)
 
-### Workflow B: Task Checklist & Daily Notes
-1. Create new silo (`Ctrl+N`).
-2. Add title (`Ctrl+E`).
-3. Add checklist items (`Ctrl+W`, `Alt+W`, type item).
-4. Use `Ctrl+Return` to tick off items as completed.
-5. Click tick icon (✅) on silo hover to mark whole silo finished.
+Именованные вкладки проектов в заголовке. Правый клик: Создать, Переименовать, Удалить. До 100 проектов. Переключение кликом или режимом номеров-боксов (Настройки → Окно → Раскладка → Номера-боксы в ряд). Каждый проект держит 100 silo + 10 сниппетов.
 
-### Workflow C: Project File Sandbox
-1. Open desired Project Tab.
-2. Hover silo and click File Container icon (📁).
-3. Drag assets/PDFs/logs directly onto the file container panel.
-4. Attachments remain linked to the silo and saved in `data/files/<project>/<silo_id>/`.
+### 3. Silos
+
+Независимые markdown-холсты. 100 на проект. Автонумерация 00-99.
+
+**Навигация:**
+- Ctrl+1..Ctrl+0 — переход к silo 1-10
+- Alt+↑/↓ — ходить по silo
+- Ctrl+N — новый пустой silo (добавляется внизу)
+- Правый клик по NEW — добавить внизу
+
+**Действия на silo (при наведении):**
+- 📌 **Pin** — закрепляет silo вверху списка (сортируется выше незакреплённых)
+- ✅ **Tick** — отмечает выполненным (визуальный индикатор)
+- 🎨 **Color box** — цветовая подсветка silo (переключается в Настройках)
+- 📁 **File container** — открыть ящик ассетов этого silo
+- 📁 **Folder link** — связывает silo с внешней папкой проекта/исполняемым файлом
+- **Средняя кнопка** — отправить в корзину
+
+**Иерархия:** Перетащите silo на другой, чтобы вложить как дочерний. Макс. глубина 2 (1 → 1.1 → 1.1.1). Shift+перетаскивание меняет местами. Стрелка сворачивания (▾/▸) на родителе скрывает детей.
+
+**Тепловая карта давности:** Недавно отредактированные silo получают тёплый фоновый оттенок. Настраивается через Настройки → Silos.
+
+### 4. Пробелы в сайдбаре
+
+Определяемые пользователем полосы-разделители в списке silo. Помогают организовать silo в группы. Ctrl+перетаскивание пробела перемещает его в другое место. Настройки → Silos → Gap height управляет толщиной.
+
+### 5. Мультивыбор silo
+
+- Shift+клик — выбор диапазона
+- Ctrl+клик — переключение выделения
+- Правый клик по выделению — пакетные Сохранить, Удалить, Очистить (удаляет от старших индексов, чтобы избежать сдвига слотов)
+
+### 6. Макросы сниппетов (F1-F10)
+
+10 слотов быстрой вставки на проект. Привязка к F1-F10 или Ctrl+Shift+1-9.
+
+- Ctrl+S — открыть Snippet Manager (редактировать имя + содержимое)
+- Правый клик по F-кнопке — переименование инлайн
+- Поддерживает переменные-плейсхолдеры для шаблонов промптов
+
+### 7. Markdown-редактор
+
+**VaultTextEdit** — расширенный QPlainTextEdit.
+
+**Возможности:**
+- Живая подсветка синтаксиса — заголовки, жирный, курсив, ссылки, кодовые блоки, чекбоксы, цитаты
+- Гуттер строк — номера + стрелки сворачивания (▾)
+- Сворачивание секций — клик по ▾ сворачивает заголовки
+- Кнопка копирования кодового блока — наведите на блок, клик по иконке копирования
+- Клик по чекбоксу — клик по `- [ ]` переключает на `- [x]`
+- Сворачиваемые изображения — `![alt](url)` рендерится как компактная пилюля-кнопка (150px). Ctrl+клик открывает, Ctrl+правый клик открывает папку
+- Умная вставка — чище вставляет таблицы/списки/код
+
+**Шорткаты форматирования:**
+- Ctrl+B/I/U/T — жирный/курсив/подчёркнутый/зачёркнутый
+- Ctrl+Return — переключить чекбокс
+- Ctrl+E — вставить заголовок (настраивается: правило, буллет, метка времени, выравнивание)
+- Ctrl+W — вставить разделитель `---` с умным сплитом строки (убирает дубль буллета)
+- Alt+W — вставить разделитель вверх + буллет выше
+- Ctrl+Shift+Q — переключить цитату
+- Ctrl+Клик по буллету — переключить `-` / `•`
+- Ctrl+СредняяКнопка — удалить строку под курсором (умный рефлоу: нумерованные списки перенумеровываются)
+- Alt+Z — переключить номера строк
+- Alt+Backspace — удаление слова
+
+### 8. Режим скрытия разметки (T-603)
+
+Переключается в Настройках → Редактор → Hide Markup. Скрывает маркеры **bold**, *italic*, ~~strike~~ и `code`, чтобы текст читался чисто. Блок каретки держит свои маркеры, чтобы редактирование оставалось возможным. Перерисовывает только 2 блока вокруг движения каретки.
+
+### 9. Канбан-доска
+
+Вставка Kanban создаёт markdown-канбан-доску (чистый текст, переживает save/DB round-trip).
+
+- Alt+↑/↓ — переместить карточку вверх/вниз внутри колонки
+- Alt+←/→ — переместить карточку в соседнюю колонку
+- Enter на пустой строке доски — новая строка карточки
+- Alt+клик — переключить чекбокс на карточке
+
+### 10. Построитель таблиц
+
+Вставка Table создаёт markdown-таблицу. Tab/Shift+Tab обходят ячейки. Tab с последней ячейки растёт новая строка. Enter добавляет строку (не разбивает ячейку).
+
+### 11. Файловый контейнер
+
+Каждый silo получает `data/silo_files/<project>/<slot_idx>/` на диске.
+
+- Перетащите файлы на оверлей ящика → копирование в папку silo
+- Drop-оверлей (4 варианта): Вставить текст, Вставить ссылку, Копировать в файлы, Ярлык
+- Шаблоны: IN/OUT, Assets, Drafts, Custom
+- Превью изображений + открытие приложением по умолчанию
+- Ctrl+клик по 📁 — экспорт текста silo как .md
+
+### 12. Движок Watcher (Alt+C)
+
+Слив промптов + автоотправка в целевое приложение.
+
+- Alt+C — поставить строку под кареткой в очередь (привязана к блоку)
+- Alt+Shift+C — диалог Queue Master (просмотр/переупорядочивание/очистка очередей)
+- Армирование: целевое приложение (CDP для Electron, Win32 для нативных), навык/обёртка промпта
+- Лимиты скорости: settle=2.5s, min gap=4s, макс. 25 отправок за сессию
+- Навыки: `/review`, `/refactor`, кастомные шаблоны промптов
+
+См. [Архитектуру движка Watcher](Watcher-Engine-Architecture) для деталей.
+
+### 13. Система хэштегов
+
+`#tag` в тексте silo индексируется для кросс-silo поиска. Alt+Shift+T открывает диалог хэштегов — поиск по тегу, просмотр всех подходящих silo, клик для перехода.
+
+### 14. Таймеры и Pomodoro
+
+**Таймеры обратного отсчёта:** настройка через Ctrl+Shift+T или кнопку таймера. Настраиваемые имя, длительность, звук, громкость, цветовая срочность. Toast-уведомление таймера с отложенным звонком (3D-фаски Win95).
+
+**Pomodoro:** конечный автомат работы/перерыва. Настраиваемые интервалы. Уведомление в трее + звук при смене фазы. Метка таймера рядом с часами показывает оставшееся время + цвет срочности.
+
+### 15. Zen-режим (Ctrl+D)
+
+Цикл из 3 стадий:
+1. **Zen** — скрыть сайдбар, панель сниппетов, файловый контейнер, статус-бар, рамки. Виден только редактор.
+2. **Solo** — свернуть все остальные окна рабочего стола. Редактор остаётся.
+3. **Назад** — восстановить рабочий стол + обычную раскладку.
+
+### 16. Привязка окна (Ctrl+Q)
+
+Цикл: Верх-Лево, Верх-Право, Низ-Лево, Низ-Право, Центр, Полный экран, Позиция курсора. Оверлей FancyZone показывает 7 визуальных зон по клику. Страница пресетов окна сохраняет до 10 пользовательских геометрий (как доли экрана — переживают смену мониторов).
+
+### 17. Найти и архив
+
+- **Архив silo** — переместить завершённый silo в архив (сохраняет текст, убирает из активного списка)
+- **Вкладка архив** — просмотр архивированных silo по проекту
+- **Диалог корзины** — просмотр/восстановление мягко удалённых silo и файлов
+- **Синхронизация silo на диск** (T-591) — односторонний экспорт .md во внешнюю папку по проекту
+
+### 18. Режим номеров-боксов (T-607)
+
+Настройки → Окно → Раскладка → Номера-боксы в ряд. Заменяет комбо проектов на нумерованные кнопки. Правый клик для добавления/переименования/удаления. Колесо по-прежнему переключает. Лимит проектов 100.
+
+### 19. Кастомизация тулбара
+
+Настройки → Customize Toolbar. Перетаскивайте кнопки для переупорядочивания. Видимые виджеты-зазоры показывают, куда ляжет кнопка. Reset восстанавливает порядок по умолчанию.
+
+### 20. Оверлей-меню
+
+Когда заголовок < 700px: скрытые кнопки собираются в » popup. Любое действие по-прежнему доступно — форматирование, навигация, операции с silo, инструменты.
+
+### 21. Интеграция SAIPEN
+
+Ctrl+Shift+C открывает SAIPEN-просмотрщик (STATE/BOARD/LOG из `.saipen/`). Кнопки тулбара для быстрого доступа, когда в папке проекта есть `.saipen/`.
+
+### 22. Резервное копирование
+
+**Слои:**
+1. SQLite WAL — устойчивые к падению записи (synchronous=NORMAL)
+2. .bak — при запуске + каждые 60 с (полный SQLite-бэкап в файл .bak)
+3. Ежедневное markdown-зеркало — `~/Documents/.fastprompter/` (silos по проектам + архив + сниппеты)
+4. Портативный ZIP — ручной бэкап через диалог Backup

@@ -1,7 +1,7 @@
 ---
-phase: SCOUT
-task: "T-685 orphan saipen_dialog.py -- wire into UI or delete (user decision)"
-next_action: "WAIT: manual-verify -- T-685: wire saipen_dialog.py into the app (menu entry in help_dialog) or delete the 101-line orphan? "
+phase: DONE
+task: "none"
+next_action: "PHASE HUNT"
 blocker: ""
 agent: claude
 saipen_version: 7
@@ -13,10 +13,10 @@ requires:
  - shell
  - git
 schema_version: 2
-last_event: 1128
+last_event: 1134
 goal_mode: true
 goal_waves: 0
 goal_tickets: 0
-updated: 2026-08-01T09:09:00Z
-transition_from: HUNT
+updated: 2026-08-01T10:05:00Z
+transition_from: TRANSLATE
 ---

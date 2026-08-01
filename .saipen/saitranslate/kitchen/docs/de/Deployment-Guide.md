@@ -1,46 +1,40 @@
-# FastPrompter Build, Packaging & Release Deployment Guide
+# FastPrompter Build- & Release-Anleitung
 
-## Overview
-FastPrompter is delivered as a single-file, zero-installer portable Windows executable (`FastPrompter.exe`). It requires no admin rights, no pre-installed Python interpreter, and no registry changes. All application state is stored locally in the `data/` directory adjacent to the binary.
+## Übersicht
 
----
-
-## Prerequisites & Build Environment
-
-Zum Kompilieren und Veröffentlichen von FastPrompter sind die folgenden Tools erforderlich:
-
-- **Python**: Version 3.11 oder höher.
-- **Paketmanager**: [`uv`](https://github.com/astral-sh/uv) (empfohlen) oder Standard-`pip`.
-- **Compiler**: [`Nuitka`](https://nuitka.net/) (Version >= 4.1.2).
-- **C-Compiler**: C64/MSVC oder MinGW64 (Nuitka lädt bei Bedarf automatisch den C-Compiler herunter).
-- **Kompressor (optional)**: [`UPX`](https://upx.github.io/) ausführbar in „PATH“ für 50–60 % Reduzierung der Binärgröße.
-- **Git**: Git für Windows mit konfigurierten GitHub-Anmeldeinformationen.
+Einzeldatei-portables EXE (`FastPrompter.exe`). Kein Installer, keine Admin-Rechte, keine Python-Runtime nötig. Der gesamte Zustand in `data/` neben dem Binary.
 
 ---
 
-## 1. Nuitka Compilation Pipeline (`tools/build.py`)
+## Voraussetzungen
 
-Die eigenständige ausführbare Datei wird mit Nuitka über „tools/build.py“ kompiliert.
+- **Python** 3.11+
+- **uv** (Paketmanager) oder pip
+- **Nuitka** >= 4.1.2
+- **C-Compiler** — Nuitka lädt ihn automatisch herunter, wenn fehlend
+- **UPX** (optional, 50-60 % Größenreduzierung)
+- **Git für Windows** mit GitHub-Anmeldedaten
 
-### Execution Command
+---
+
+## 1. Kompilieren (`tools/build.py`)
+
 ```bash
 uv run python tools/build.py
 ```
 
-### Build Steps & Technical Mechanics
-1. **Nuitka Check**: Verification that `nuitka>=4.1.2` is installed. If missing, `tools/build.py` automatically invokes `pip install nuitka>=4.1.2`.
-2. **UPX Detection**: Checks for `upx` in system PATH. If available, adds `--plugin-enable=upx` and `--upx-binary=<path>` flags to shrink binary size down to ~15-25MB.
-3. **`PYTHONPATH` Injection**: Adds `src/` directory to environment `PYTHONPATH` during compilation so Nuitka traces and embeds the entire `fastprompter` package cleanly.
-4. **Target Script**: Compiles `FastPrompter.pyw` (GUI entry point without console popup).
-5. **Output**: Generates `build/FastPrompter.exe`.
+### Schritte
+1. Prüfen, dass Nuitka >= 4.1.2 installiert ist (auto-installiert, wenn fehlend)
+2. UPX im PATH erkennen (fügt `--plugin-enable=upx` hinzu, falls gefunden)
+3. `src/` in PYTHONPATH injizieren für sauberen Modul-Trace
+4. `FastPrompter.pyw` kompilieren (GUI-Einstieg, keine Konsole)
+5. Ausgabe: `build/FastPrompter.exe`
 
-### `tools/build.py` Source Workflow
+### Wichtige Flags
 ```python
-# Key invocation parameters inside build.py:
 cmd = [
     sys.executable,
-    "-m",
-    "nuitka",
+    "-m", "nuitka",
     "FastPrompter.pyw",
 ]
 if upx_bin:
@@ -48,61 +42,50 @@ if upx_bin:
     cmd.append(f"--upx-binary={upx_bin}")
 ```
 
+Ausgabe-EXE ~15-28 MB je nach UPX.
+
 ---
 
-## 2. GitHub Release Automation (`tools/release.py`)
+## 2. Veröffentlichen (`tools/release.py`)
 
-Das Skript „tools/release.py“ automatisiert die Tag-Erstellung und Binärverteilung auf GitHub Releases.
-
-### Execution Command
 ```bash
 uv run python tools/release.py [release_notes.md]
 ```
 
-### Automation Steps
-1. **EXE Verification**: Verifies `build/FastPrompter.exe` exists.
-2. **Version Extraction**: Parses the exact version string from `pyproject.toml` (e.g., `version = "1.5.0"` -> tag `v1.5.0`).
-3. **GitHub Credential Retrieval**: Invokes `git credential fill` using host `github.com` to safely extract the GitHub token stored in Windows Credential Manager (same token used by `git push`).
-4. **Release API Dispatch**:
-   - Queries GitHub API `https://api.github.com/repos/vacterro/FastPrompter/releases/tags/v<version>`.
-   - If tag doesn't exist, creates a new GitHub Release.
-   - If tag exists, updates release notes.
-5. **Asset Upload**: Deletes old `FastPrompter.exe` release asset if present and uploads the newly compiled binary (`build/FastPrompter.exe`) via `uploads.github.com`.
+### Schritte
+1. Prüfen, dass `build/FastPrompter.exe` existiert
+2. Version aus `pyproject.toml` lesen (Tag = `v<version>`)
+3. GitHub-Token aus dem Windows Credential Manager holen (`git credential fill`)
+4. Prüfen, ob der Tag über die GitHub-API existiert
+   - Nein → neues Release erstellen
+   - Ja → Release-Notizen aktualisieren
+5. `build/FastPrompter.exe` als Release-Asset hochladen (löscht zuerst das alte)
 
 ---
 
-## 3. One-Click Batch Scripts
+## 3. One-Click-Skripte
 
-Für eine schnelle Bereitstellung durch den Bediener enthält FastPrompter drei Ein-Klick-Skripte im Stammverzeichnis:
+### deploy.cmd / deploy.ps1
+Alle Projektänderungen committen + pushen:
+- Alles stagen (`git add -A`)
+- Zeitgestempelter Commit (`deploy: YYYY-MM-DD HH:mm`)
+- Pull-Rebase (`git pull --rebase --autostash origin main`)
+- Force-Push bei Konflikten (`git push --force-with-lease origin main`)
 
-### A. `deploy.cmd` / `deploy.ps1` (Codebase Sync)
-Double-click `deploy.cmd` to commit and push all project changes to GitHub.
-
-- **PowerShell-Skript (`deploy.ps1`)**:
-  1. Stellt alle geänderten Dateien bereit („git add -A“).
-  2. Erstellt einen zeitgestempelten Commit „deploy: YYYY-MM-DD HH:mm“, wenn nicht festgeschriebene Änderungen vorhanden sind.
-  3. Ruft Remote-Änderungen mit „git pull --rebase --autostash origin main“ ab.
-  4. Löst Konflikte, indem der lokale Staat zum Sieg gezwungen wird („git push --force-with-lease origin main“, wenn die Rebase fehlschlägt).
-  5. Schiebt den aktualisierten Hauptzweig nach „Origin Main“.
-
-### B. `release.cmd` (Build + Release Pipeline)
-Double-click `release.cmd` to run end-to-end build and deployment in one action.
-
-```cmd
-@echo off
-uv run python tools\build.py || (echo BUILD FAILED & pause & exit /b 1)
+### release.cmd
+Build + Veröffentlichung mit einem Klick:
+```
+uv run python tools\build.py || pause
 uv run python tools\release.py %*
-echo.
-pause
 ```
 
 ---
 
-## 4. Troubleshooting & Edge Cases
+## Fehlerbehebung
 
-| Problem | Grundursache | Lösung |
+| Problem | Ursache | Fix |
 |---|---|---|
-| **`ImportError: Kein Modul namens fastprompter`** in der erstellten EXE-Datei | Nuitka hat das Verzeichnis „src/“ nicht verfolgt. | Stellen Sie sicher, dass „PYTHONPATH“ „src/“ enthält, bevor Sie Nuitka ausführen (wird automatisch von „tools/build.py“ verarbeitet). |
-| **`Keine GitHub-Anmeldeinformationen gefunden`** während der Veröffentlichung | Git-Anmeldeinformationshilfe nicht aktiv oder Benutzer nicht bei GitHub angemeldet. | Führen Sie „git push“ einmal manuell aus, um das Token im Windows Credential Manager zu speichern. |
-| **Große EXE-Größe (>60 MB)** | UPX-Binärdatei wurde im Systempfad nicht gefunden. | Installieren Sie UPX von „https://upx.github.io/“ und fügen Sie den Speicherort „upx.exe“ zum Systempfad hinzu. |
-| **Rebase-Konflikt während „deploy.cmd“** | Direkt auf GitHub bearbeitetes Remote-Repository. | „deploy.ps1“ bricht den Rebase automatisch ab und führt einen „--force-with-lease“-Push aus, um den lokalen Maschinenstatus beizubehalten. |
+| `ImportError: No module named fastprompter` | Nuitka hat src/ nicht getracet | Sicherstellen, dass PYTHONPATH src/ enthält (build.py macht das) |
+| `No GitHub credential found` | Git-Token nicht im Credential Manager | Einmal `git push` manuell ausführen, um Token zu speichern |
+| Großes EXE (>60MB) | UPX nicht im PATH | UPX von https://upx.github.io/ installieren |
+| Rebase-Konflikt beim Deploy | Remote direkt auf GitHub bearbeitet | Force-with-lease-Push (deploy.ps1 macht das automatisch) |

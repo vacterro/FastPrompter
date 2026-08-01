@@ -1,121 +1,113 @@
-# Plugin, Skill & Extension Development Guide
+# プラグイン、スキル & 拡張開発ガイド
 
-## Overview
-FastPrompter provides an extensible ecosystem that allows developers to add custom skills, integrate Model Context Protocol (MCP) sidecars, construct SAIPEN subagents, and design custom UI themes.
+## 1. カスタムスキル (`core/watcher/skills.py`)
 
----
+スキルは watcher 経由でアイテムを送信するときに適用されるプロンプトラッパー。
 
-## 1. Custom Skill Development (`skills.py` & TOML Adapters)
+### 定義
 
-スキルは、Watcher Engine または Snippet Manager 経由でアイテムを送信するときに適用されるマクロ プロンプト変換とコマンド形式です。
+```python
+# Skill entry dict
+{
+    "name": "Code Review",
+    "prefix": "/review",
+    "template": "Review this code:\n\n{text}",
+    "description": "Standard code review prompt wrapper"
+}
+```
 
-### Skill Definition & Structure
-Skills are managed via `src/fastprompter/core/watcher/skills.py` and configured in `adapters.example.toml` (or user `adapters.toml`).
+### テンプレート変数
+- `{text}` — キューされたアイテムテキスト
+- `{timestamp}` — 現在時刻
+- `{project}` — アクティブプロジェクト名
 
-```toml
-# Example adapters.toml configuration
-[skills.code_review]
-name = "Code Review"
-prefix = "/review"
-template = "Please review the following code for security, performance, and style:\n\n{text}"
-description = "Applies standard code review prompt wrapper"
+### 適用
+設定 → Watcher → デフォルトスキルで設定。Queue Master ダイアログでアイテムごとに上書き。
 
-[スキル.リファクタリング]
-name = "リファクタリング関数"
-プレフィックス = "/リファクタリング"
-template = "可読性と型安全性を向上させるために、次のコードをリファクタリングします:\n\n{text}"
-「」
+## 2. SAIPEN サブエージェント
 
-### Skill Format String Handling
-When an item is processed through `Engine` with a skill assigned:
-1. `skill_format` evaluates to `/{skill} {text}` or the skill's defined `template`.
-2. Variables such as `{text}`, `{timestamp}`, and `{project}` are substituted dynamically before dispatching to the target application.
+サブエージェントは `.saipen/extensions/subs/<name>/` に存在 (プロジェクトルートの `subs/` ではない)。
 
----
+```
+.saipen/extensions/subs/
+├── MANIFEST.md          # アクティブサブリスト
+├── PROTOCOL.md          # ルール
+├── TEMPLATE/            # ブートストラップテンプレート
+├── saiwiki/             # wiki ドキュメント生成サブエージェント
+├── saihunt/             # バグハンターサブエージェント
+└── _shared/inbox.md     # クロスエージェント通信
+```
 
-## 2. Model Context Protocol (MCP) Sidecar Integration
+### ハンドオフ (OUTBOX.md)
 
-FastPrompter は、ローカル AI モデル、LLM エージェント、およびコンテキスト プロバイダーとインターフェイスするための MCP サイドカー拡張機能をサポートしています。
+```
+# OUTBOX
 
-### Architecture
-* **Transport**: Stdio or local TCP WebSocket JSON-RPC.
-* **Sidecar Lifecycle**: Executable sidecars specified in configuration are spawned on FastPrompter startup and managed via subprocess pipes.
-* **Exposed Context**: FastPrompter exposes active Silo text, Snippets, and File Container paths to MCP sidecars as readable resources.
+## WIKI-001: Description
+- **status:** ready | draft | blocked | reviewed
+- **summary:** one line finding
+- **critical:** true | false
+- **details:** full description
+```
 
-### Example MCP Sidecar Manifest (`mcp_sidecar.json`)
+`critical: true` → メインエージェントが即座に T-### チケットを作成。
+`critical: false` → 次の計画ラウンドのために `_shared/inbox.md` にキュー。
+
+**コマンド:**
+- `saipen sub spawn <name>` — TEMPLATE から新しいサブエージェントを作成
+- `saipen sub collect` — すべての OUTBOX エントリを収集
+- `saipen sub list` — アクティブなサブエージェント + フェーズを表示
+- `saipen sub clean <name>` — 完了したサブエージェントを削除
+
+## 3. カスタムテーマ
+
+ファイル: `data/custom_theme.json`。テーマ = Custom のときに読み込み。
+
+### スキーマ
+
 ```json
 {
-  "name": "fastprompter-mcp-bridge",
-  "version": "1.0.0",
-  "command": "python",
-  "args": ["-m", "fastprompter_mcp_sidecar"],
-  "env": {
-    "FASTPROMPTER_DB": "data/local_data_v15.db"
+  "theme_name": "My Theme",
+  "colors": {
+    "bg_main": "#1e1e1e",
+    "bg_editor": "#1b1b1b",
+    "fg_text": "#d4d4d4",
+    "fg_accent": "#e6b422",
+    "border": "#3c3c3c",
+    "selection": "#264f78",
+    "header_bg": "#252526",
+    "button_bg": "#2d2d30",
+    "text_primary": "#d4d4d4",
+    "text_accent": "#e6b422"
   }
 }
 ```
 
----
+**適用:** 設定 → テーマ → Custom。即時ホットリロード、再起動不要。
 
-## 3. SAIPEN Protocol & SubSaipen Agent Architecture
+## 4. カーソルテーマ (`ui/cursor_theme.py`)
 
-FastPrompter は、マルチエージェント自律エンジニアリングのために **SAIPEN v7 プロトコル**とネイティブに統合します。
+カスタムマウスカーソルセット。レトロコンピューティング風。
 
-### SubSaipen Directory Structure
-When a subagent (such as `saiwiki`) is spawned, it operates within an isolated directory under `subs/<agent_name>/`:
+**関数:**
+- `capture_current_scheme()` — 実行中の Windows カーソルセットをプログラムにコピー
+- `load_bundle()` — インストール済みカーソルセットを返す
+- `install_to_system(paths)` — Windows のデフォルトカーソルスキームとして設定
+- `build_cursor_map()` — カーソルシェイプマップを再構築
 
-```
-subs/<agent_name>/
-├── STATE.md            # Machine-readable phase state (BUILD, VERIFY, DONE)
-├── BOARD.md            # Kanban board with task tickets (T-001..T-999)
-├── LOG.md              # Timestamped execution audit log
-├── kitchen/
-│   ├── OUTBOX.md       # Status handoff and results output file
-│   └── INBOX.md        # Incoming instructions from orchestrator
-└── wiki/               # Agent-specific generated documentation
-```
+**切替:** 設定 → カーソル → カスタムカーソルを有効化。初回有効化時に現在の Windows セットを自動キャプチャ。
 
-### Handoff Protocol (`OUTBOX.md`)
-Upon task completion, the subagent writes final results and marks `status: ready` in `kitchen/OUTBOX.md`:
+## 5. Watcher エンジンの拡張性
 
-```markdown
----
-status: ready
-updated: 2026-07-23T05:14:00Z
-summary: "Wave 4: Deep Wiki Expansion completed cleanly."
----
-```
+| モジュール | 拡張ポイント |
+|---|---|
+| `adapter.py` | カスタムターゲット検出用の ProbeAdapter を実装 |
+| `cdp.py` | Electron アプリ用のカスタム CDP コマンド |
+| `win32.py` | Win32 ウィンドウプローブのカスタマイズ |
+| `skills.py` | カスタムプロンプトスキルテンプレートを追加 |
+| `limit_scan.py` | カスタムクロスエージェント制限スキャナー |
+| `sender.py` | カスタムテキスト注入戦略 |
 
----
+## 6. サイロのディスク同期 (T-591)
 
-## 4. Custom Theme Development (`custom_theme.json`)
-
-FastPrompter は、`data/custom_theme.json` 経由で制御される柔軟な QSS (Qt Style Sheets) テーマ エンジンを備えています。
-
-### Theme Schema Example
-```json
-{
-  "theme_name": "Dark Golden Win95",
-  "colors": {
-    "bg_main": "#1e1e1e",
-    "bg_surface": "#252526",
-    "bg_editor": "#1b1b1b",
-    "text_primary": "#d4d4d4",
-    "text_accent": "#e6b422",
-    "border": "#3c3c3c",
-    "selection": "#264f78"
-  },
-  "fonts": {
-    "editor_font": "Consolas",
-    "ui_font": "Segoe UI",
-    "font_size_pt": 10
-  },
-  "custom_qss": "QPlainTextEdit { line-height: 1.4; }"
-}
-```
-
-### Applying Themes
-Custom themes can be edited directly in `data/custom_theme.json` or switched via the Mini Settings overlay (**Alt+`**). Changes take effect instantly without restarting FastPrompter.
-
----
-*FastPrompter Wiki — [SAIPEN プロトコル](SAIPEN-プロトコル) で構築 | [GitHub リポジトリ](https://github.com/vacterro/FastPrompter)*
+一方向のサイロ → ファイルシステムエクスポート。設定 → 同期モード: Off / Silo (フラット) / Hierarchy (ネスト)。保存時に `<root>/<category>/<NN_slug>.md` を書き込み。読み戻しなし、削除なし。変更のないテキストはスキップ。

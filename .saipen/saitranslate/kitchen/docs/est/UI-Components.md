@@ -1,77 +1,108 @@
-# FastPrompter UI Components Reference
+# FastPrompter UI komponentide teatmik
 
-## Overview & Layout Model
-FastPrompter features a compact, frameless vintage Windows 95 aesthetic interface with dark/gold hues, sharp bevels, and fast keyboard-first operation.
+## Paigutuse mudel
+
+Vintage-Win95 esteetika. Raamita, tumedakuldne, teravad kaldservad. Klaviatuuri-esimene. Päis kohandab tiheduse astmeid automaatselt (täielik → tihe <1280px → ülike <700px).
 
 ```
-+-----------------------------------------------------------------------------------+
-|  [Tab 1] [Tab 2] [Tab 3] | 🔍 Search | 📌 🎨 ⚙️ 🕒 🧠 | Scale: 100% | 🇬🇧 | [_] [X] |  (Toolbar)
-+------------------------------------+----------------------------------------------+
-|  SILOS & SNIPPETS SIDEBAR          |  MAIN MARKDOWN EDITOR CANVAS                 |
-|  - Silo Items 00..99               |  - Line Numbers Gutter & Fold Controls (▾)   |
-|    [📌] [✅] [📁] [📁 Link]          |  - Live Markdown Syntax Highlighting         |
-|  - Parent / Child Indentation      |  - Code Fences with Copy Button              |
-|  - Recency Heatmap Tinting         |  - Interactive Checkboxes [ ] -> [x]         |
-|  - Snippet Slots F1-F10            +----------------------------------------------+
-|                                    |  FILE CONTAINER DRAWER                       |
-|                                    |  - Asset Grid / Template Buttons             |
-+------------------------------------+----------------------------------------------+
-|  STATUS BAR: Words: 240 | Lines: 42 | Pomodoro: 25:00 | SAIPEN: STATE [OK]          |
-+-----------------------------------------------------------------------------------+
++------------------------------------------------------------------+
+| [Tab1][Tab2]... | 🔍 | 📌🎨⚙️🕒🧠 | LN:42 | Tok:156 | DD.MM - HH:MM | ⚙ | » | [_][X] |
++--------------------------------+---------------------------------+
+| SIDEBAR (silos + snippetid)    | EDITOR (VaultTextEdit)          |
+| ┌──────────────────────────┐   | ┌──────┬────────────────────┐  |
+| │ Silo 00  📌 ✅   📁  📁│   | │  1.  │ # Heading           │  |
+| │ Silo 01       📁       │   | │  2.  │ Regular text here   │  |
+| │ ─── gap ───            │   | │  3.  │ - [ ] checkbox      │  |
+| │   └─ child silo  📁    │   | │  4.  │ ```python           │  |
+| │ Silo 02  🎨     📁    │   | │      │ print("code")        │  |
+| │ [F1][F2]...[F10]       │   | │      │ ```                 │  |
+| └──────────────────────────┘   | └──────┴────────────────────┘  |
+|                                | FILE CONTAINER DRAWER           |
+|                                | [📁 file1] [📁 file2] [📁 IN/OUT]|
++--------------------------------+---------------------------------+
+| Timer: 12:34  📊               |  Words: 240  |  Lines: 42       |
++------------------------------------------------------------------+
 ```
 
----
+## Peamised komponendid
 
-## Primary UI Components
+### 1. Päise tööriistariba
 
-### 1. Snippet & Silo Panel (`ui/snippet_panel.py`)
-- **Silo List**: Vertically scrollable list supporting up to 100 silos per category tab.
-- **Silo Badges & Controls**:
-  - `📌 Pin`: Keeps silo anchored to top of list.
-  - `✅ Tick`: Marks silo as completed with visual strike-through / check icon.
-  - `│ Divider`: Visual separation for line count and characters.
-  - `📁 File Container Toggle`: Opens/closes per-silo asset drawer.
-  - `Recency Tinting`: Dynamically adjusts item background hue based on how recently text was edited.
-- **Hierarchy Drag & Drop**: Drag a silo onto another to nest as a child element.
-- **Snippet Buttons (`F1`-`F10`)**: 10 fast-paste text buttons per category.
+Kohandatav nuppude riba. Tokenid: kategooria vahekaardid, otsing, silo juhtimine, vormindamine, kell, reaarv, tokenite arv, seaded, salve nupud. Lohista-sisesta ümberjärjestuse režiim (Seaded → Customize Toolbar). Ülevoolumenüü ülikitsa režiimi korral.
 
----
+**Tiheduse astmed:**
+- **Täielik** (>1280px efektiivne): kõik nupud nähtavad
+- **Tihe** (<1280px): siltide lühendamine + 18px ruudud + vahekaartide kerimine; peidetud: Clear Fmt, Line, Home/End, Underline, Strike, Copy, Vision, joondused
+- **Ülike** (<700px): portree-kild; ellu jäävad ainult vahekaardid, NEW/Save, lühike kell, loendur, ⚙. » ülevoolumenüü kogub ülejäänu
 
-### 2. Markdown Editor Canvas (`ui/editor.py`)
-- **Line Gutter**: Left-hand margin displaying exact line numbers and code/header folding arrows (`▾`).
-- **Syntax Highlighting**: Real-time coloring for `# Headers`, `**bold**`, `*italic*`, `[links](url)`, `- [ ] checkboxes`, and \`\`\`code blocks\`\`\`.
-- **Code Block Controls**:
-  - Monospace font styling inside fenced blocks.
-  - Single-click "Copy Code" overlay button.
-  - Section folding to hide long code snippets.
-- **Checkables**: Clicking a `- [ ]` task list item updates text directly to `- [x]`.
+### 2. Snippeti ja silo paneel (`ui/snippet_panel.py`)
 
----
+**Siloloend:** kuni 100 projekti vahekaardi kohta. Võimalused:
+- Pinn (📌) — kinnita üles, sorteeritud kinnitamata üles
+- Linnuke (✅) — silode-ülene lõpetamise märk
+- Värvikast (🎨) — silo-põhine värvitoon (lülitus Seadetes)
+- Failikonteineri ikoon (📁) — avab failisahtli
+- Hierarhia — lohista teisele silole pesastamiseks; Shift+lohistamine vahetab; voltimisnool (▾/▸)
+- Värskuse soojuskaart — soe taustatoon hiljuti redigeeritule
+- Külgriba vahed — kasutaja määratud eraldusribad; Ctrl+lohistamine ümberpaigutuseks
+- Mitmevalik — Shift=vahemik, Ctrl=lülitus; partii kustutamine/salvestamine/tühjendamine
 
-### 3. File Container Drawer (`ui/file_container.py`)
-- Collapsible bottom drawer attached to each silo.
-- Displays attached files, image thumbnails, and document shortcuts.
-- **Folder Templates**: Preset creation buttons (`IN/OUT`, `Assets`, `Drafts`).
-- **Silo Backup Button**: `Ctrl+Click` on `📁` button opens portable silo text exporter.
+**Snippeti kohad (F1-F10):** 10 makro-sisestuse nuppu projekti vahekaardi kohta. Paremklõps nime/sisu muutmiseks. Ctrl+S või topeltklõps avab Snippet Manager dialoogi.
 
----
+### 3. Markdown-redaktor (`ui/editor.py` — VaultTextEdit)
 
-### 4. Smart Drop Overlay (`ui/drop_overlay.py`)
-Triggered automatically when dropping files onto the editor canvas. Displays 4 clear options:
-1. **Insert Text**: Reads dropped file contents into editor.
-2. **Insert Link**: Pastes Markdown file URI link (`[filename](file:///...)`).
-3. **Copy to Files**: Copies dropped file into silo File Container.
-4. **Create Shortcut**: Creates file shortcut link in silo File Container.
+**Reagutter:** vasak serv — reanumbrid + voltimisnooled (▾) + marginaalimärgid + soojusribad.
 
----
+**Süntaksi esiletõst:** `# Päised`, `**paks**`, `*kaldkiri*`, `~~läbikriipsutatud~~`, `[lingid](url)`, `` `kood` ``, ```koodiblokid```, `- [ ]` märkeruudud, `> tsitaadid`, `---` reeglid.
 
-### 5. Dialogs & Overlays
+**Koodiaiad:** mono-tähtedega (Consolas vaikimisi) + ühe-kliki kopeerimisnupp + voltimine kokku.
 
-| Dialoog | Eesmärk |
+**Kokkuvolditavad pildid:** `![alt](url)` → kompaktne 150px nupp. Ctrl+klõps avab, Ctrl+paremklõps avab kausta.
+
+**Interaktiivsed märkeruudud:** klõps `- [ ]`-l lülitab `- [x]`-iks.
+
+**Märgistuse peitmise režiim (T-603):** lülitus peidab `**`, `*`, `~~`, `` ` `` märgid → tekst loetakse renderdatuna. Kursoriplokk hoiab märke redigeerimiseks.
+
+**Drop-overlay:** 4 valikut lohista-sisestusel: Sisesta tekst, Sisesta link, Kopeeri failidesse, Loo otsetee.
+
+### 4. Failikonteineri sahtel (`ui/file_container.py`)
+
+Silo-põhine kokkuvolditav sahtel. Manustatud failid, pildi pisipildid, dokumendi otseteed.
+
+- Mallid: IN/OUT, Assets, Drafts, Kohandatud kaustastruktuur
+- Lohista-sisesta failide lisamiseks
+- Silo eksport: Ctrl+klõps 📁 ekspordib silo teksti .md-faili
+
+### 5. Kanban-tahvel (`ui/silo_kanban.py`)
+
+Puhtalt-tekstiline markdown-kanban. Alt+nooleklahvid liigutavad kaarte veergude vahel. Enter lisab rea. Märkeruudu klõps märgib kaardi. Pole Qt-tabeleid — töötab tavalisel markdownil, peab vastu salvestamisele.
+
+### 6. Tabeliehitaja (`ui/silo_table.py`)
+
+Puhtalt-tekstiline markdown-tabel. Tab/Shift+Tab lahtrite läbikäimine. Tab viimaselt lahtrilt kasvatab rea. Enter lisab rea. Ei lõhusta lahtrit. Töötab tavalisel teksti.
+
+### 7. Dialoogid ja overlayd
+
+| Dialoog | Otstarve |
 |---|---|
-| `SettingsDialog` (`ui/settings.py`) | Teemavalija, kiirklahvide taasehitaja, helijuhtelemendid, kasutajaliidese skaala liugur |
-| `SaipenDialog` (`ui/saipen_dialog.py`) | Spetsiaalne vaataja ".saipen" projekti oleku, tegumipaneeli ja sündmuste logide jaoks |
-| `TimerDialog` (`ui/timer_dialog.py`) | Pomodoro fookuse taimeri seadistamine, kestuse muudatused ja helialarmid |
-| `TrashDialog` (`ui/trash_dialog.py`) | Prügikasti brauser pehmelt kustutatud silode vaatamiseks ja taastamiseks |
-| `BackupDialog` (`ui/backup_dialog.py`) | Andmebaasi täielik eksport, import ja varukoopia hetktõmmise loomine |
-| `HelpDialog` (`ui/help_dialog.py`) | Klaviatuuri otseteede viide ja kasutusjuhend |
+| `Settings (Alt+`)` | Teemavalija, klõbustike ümbersidumine, heli, skaala, tööriistariba ümberjärjestus |
+| `Snippet Manager (Ctrl+S)` | F1-F10 snippeti nimede + sisu redigeerimine |
+| `Saipen Viewer (Ctrl+Shift+C)` | Read-only STATE/BOARD/LOG vaataja |
+| `Timer Dialog (Ctrl+Shift+T)` | Pomodoro + taimeri seadistamine |
+| `Queue Master (Alt+Shift+C)` | Watcheri järjekorra ülevaade silo kaupa |
+| `Hashtag Dialog (Alt+Shift+T)` | Silode-ülene sildiotsing |
+| `Trash Dialog` | Pehme kustutatud silode sirvimine/taastamine |
+| `Backup Dialog` | DB eksport/import, varukoopia hetktõmmis |
+| `Help Dialog` | Interaktiivne klõbustike teatmik |
+| `Window Presets` | Akna geomeetria preseedide salvestamine/ümbernimetamine/ümberjärjestamine/liigutamine |
+| `Project Manager` | Projektide näitamine/peitmine, ümberjärjestamine (▲▼) |
+| `Color Config` | Kohandatud teema värvide redigeerimine |
+
+### 8. Akna komponendid
+
+- **FancyZoneOverlay** — visuaalne 7-tsooni valija ekraanihaakimiseks
+- **AnalogClock** — kohandatult joonistatud kella vidin (päis)
+- **PieMenu (Shift+Alt+X)** — radiaalne menüü: teemad, skaala, tööriistad
+- **Ülevoolumenüü (»)** — peidetud nupud ülikitsas režiimis
+- **Resizers** — kohandatud suurusemuutmise käepidemed (T-629 parandus: WS_CAPTION ümberarvutus)
+- **ZenDesktop** — 3-astmeline Ctrl+D: Zen → Solo (kõikide minimeerimine) → tagasi

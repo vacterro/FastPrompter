@@ -1,2 +1,2 @@
 ---
-*FastPrompter Wiki – ehitatud [SAIPEN-protokolli] (SAIPEN-protokolli) abil | [GitHubi hoidla](https://github.com/vacterro/FastPrompter)*
+*FastPrompter Wiki — ehitatud [SAIPEN-protokolliga](SAIPEN-Protocol) | [GitHub Repo](https://github.com/vacterro/FastPrompter)*

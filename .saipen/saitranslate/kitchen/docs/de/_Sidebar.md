@@ -2,22 +2,28 @@
 
 ---
 
-### Core Architecture
-- [Architecture Overview](Architecture-Overview)
-- [Module Structure](Module-Structure)
-- [Core API & Classes](Core-API-and-Classes)
+### Kernarchitektur
+- [Architekturübersicht](Architecture-Overview)
+- [Modulstruktur](Module-Structure)
+- [Core API & Klassen](Core-API-and-Classes)
+- [Watcher-Engine](Watcher-Engine-Architecture)
 
-### Interface & Data
-- [Configuration](Configuration)
-- [UI Components](UI-Components)
+### Schnittstelle & Konfiguration
+- [Konfiguration](Configuration)
+- [UI-Komponenten](UI-Components)
+- [Tastenkombinationen](Keyboard-Shortcuts-and-Cheatsheet)
 
-### Guides & Workflows
-- [User Guide](User-Guide)
-- [SAIPEN Protocol](SAIPEN-Protocol)
-- [Deployment Guide](Deployment-Guide)
+### Benutzerhandbücher & FAQ
+- [Benutzerhandbuch](User-Guide)
+- [Fehlerbehebung & FAQ](Troubleshooting-and-FAQ)
+
+### Entwickler & Protokolle
+- [Plugin- & Skill-Entwicklung](Plugin-and-Skill-Development)
+- [SAIPEN-Protokoll](SAIPEN-Protocol)
+- [Deployment-Anleitung](Deployment-Guide)
 
 ---
 
-### Project Links
-- [GitHub Repository](https://github.com/vacterro/FastPrompter)
-- [Releases & Downloads](https://github.com/vacterro/FastPrompter/releases)
+### Projektlinks
+- [GitHub-Repository](https://github.com/vacterro/FastPrompter)
+- [Releases](https://github.com/vacterro/FastPrompter/releases)

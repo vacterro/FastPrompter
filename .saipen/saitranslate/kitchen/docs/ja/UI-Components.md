@@ -1,77 +1,108 @@
-# FastPrompter UI Components Reference
+# FastPrompter UI コンポーネントリファレンス
 
-## Overview & Layout Model
-FastPrompter features a compact, frameless vintage Windows 95 aesthetic interface with dark/gold hues, sharp bevels, and fast keyboard-first operation.
+## レイアウトモデル
+
+ビンテージ Win95 の美観。フレームレス、ダークゴールデン、鋭いベベル。キーボードファースト。ヘッダーは密度ティアを自動調整 (full → dense <1280px → ultra <700px)。
 
 ```
-+-----------------------------------------------------------------------------------+
-|  [Tab 1] [Tab 2] [Tab 3] | 🔍 Search | 📌 🎨 ⚙️ 🕒 🧠 | Scale: 100% | 🇬🇧 | [_] [X] |  (Toolbar)
-+------------------------------------+----------------------------------------------+
-|  SILOS & SNIPPETS SIDEBAR          |  MAIN MARKDOWN EDITOR CANVAS                 |
-|  - Silo Items 00..99               |  - Line Numbers Gutter & Fold Controls (▾)   |
-|    [📌] [✅] [📁] [📁 Link]          |  - Live Markdown Syntax Highlighting         |
-|  - Parent / Child Indentation      |  - Code Fences with Copy Button              |
-|  - Recency Heatmap Tinting         |  - Interactive Checkboxes [ ] -> [x]         |
-|  - Snippet Slots F1-F10            +----------------------------------------------+
-|                                    |  FILE CONTAINER DRAWER                       |
-|                                    |  - Asset Grid / Template Buttons             |
-+------------------------------------+----------------------------------------------+
-|  STATUS BAR: Words: 240 | Lines: 42 | Pomodoro: 25:00 | SAIPEN: STATE [OK]          |
-+-----------------------------------------------------------------------------------+
++------------------------------------------------------------------+
+| [Tab1][Tab2]... | 🔍 | 📌🎨⚙️🕒🧠 | LN:42 | Tok:156 | DD.MM - HH:MM | ⚙ | » | [_][X] |
++--------------------------------+---------------------------------+
+| SIDEBAR (silos + snippets)     | EDITOR (VaultTextEdit)          |
+| ┌──────────────────────────┐   | ┌──────┬────────────────────┐  |
+| │ Silo 00  📌 ✅   📁  📁│   | │  1.  │ # Heading           │  |
+| │ Silo 01       📁       │   | │  2.  │ Regular text here   │  |
+| │ ─── gap ───            │   | │  3.  │ - [ ] checkbox      │  |
+| │   └─ child silo  📁    │   | │  4.  │ ```python           │  |
+| │ Silo 02  🎨     📁    │   | │      │ print("code")        │  |
+| │ [F1][F2]...[F10]       │   | │      │ ```                 │  |
+| └──────────────────────────┘   | └──────┴────────────────────┘  |
+|                                | FILE CONTAINER DRAWER           |
+|                                | [📁 file1] [📁 file2] [📁 IN/OUT]|
++--------------------------------+---------------------------------+
+| Timer: 12:34  📊               |  Words: 240  |  Lines: 42       |
++------------------------------------------------------------------+
 ```
 
----
+## 主要コンポーネント
 
-## Primary UI Components
+### 1. ヘッダーツールバー
 
-### 1. Snippet & Silo Panel (`ui/snippet_panel.py`)
-- **Silo List**: Vertically scrollable list supporting up to 100 silos per category tab.
-- **Silo Badges & Controls**:
-  - `📌 Pin`: Keeps silo anchored to top of list.
-  - `✅ Tick`: Marks silo as completed with visual strike-through / check icon.
-  - `│ Divider`: Visual separation for line count and characters.
-  - `📁 File Container Toggle`: Opens/closes per-silo asset drawer.
-  - `Recency Tinting`: Dynamically adjusts item background hue based on how recently text was edited.
-- **Hierarchy Drag & Drop**: Drag a silo onto another to nest as a child element.
-- **Snippet Buttons (`F1`-`F10`)**: 10 fast-paste text buttons per category.
+設定可能なボタンバー。トークン: カテゴリタブ、検索、サイロコントロール、書式、時計、行数、トークン数、設定、トレイボタン。ドラッグ & ドロップ並べ替えモード (設定 → ツールバーをカスタマイズ)。極細時にオーバーフローメニュー。
 
----
+**密度ティア:**
+- **Full** (>1280px 実効): すべてのボタン表示
+- **Dense** (<1280px): ラベル短縮 + 18px 正方形 + タブスクロール; 非表示: Clear Fmt、Line、Home/End、Underline、Strike、Copy、Vision、配置
+- **Ultra** (<700px): 縦長スリバー; タブ、NEW/Save、短い時計、カウンター、⚙ のみ生存。» オーバーフローメニューが残りを収集
 
-### 2. Markdown Editor Canvas (`ui/editor.py`)
-- **Line Gutter**: Left-hand margin displaying exact line numbers and code/header folding arrows (`▾`).
-- **Syntax Highlighting**: Real-time coloring for `# Headers`, `**bold**`, `*italic*`, `[links](url)`, `- [ ] checkboxes`, and \`\`\`code blocks\`\`\`.
-- **Code Block Controls**:
-  - Monospace font styling inside fenced blocks.
-  - Single-click "Copy Code" overlay button.
-  - Section folding to hide long code snippets.
-- **Checkables**: Clicking a `- [ ]` task list item updates text directly to `- [x]`.
+### 2. スニペット & サイロパネル (`ui/snippet_panel.py`)
 
----
+**サイロリスト:** プロジェクトタブごとに最大 100。機能:
+- ピン (📌) — 先頭に固定、未ピンより上にソート
+- チェック (✅) — サイロ横断の完了マーカー
+- カラーボックス (🎨) — サイロごとの色合い (設定で切替)
+- ファイルコンテナアイコン (📁) — ファイルドロワーを開く
+- 階層 — 別のサイロにドラッグしてネスト; Shift+ドラッグで交換; 折りたたみ矢印 (▾/▸)
+- 新しさヒートマップ — 最近編集したものの暖色背景
+- サイドバーギャップ — ユーザー定義スペーサーバー; Ctrl+ドラッグで再配置
+- 複数選択 — Shift=範囲、Ctrl=トグル; 一括削除/保存/クリア
 
-### 3. File Container Drawer (`ui/file_container.py`)
-- Collapsible bottom drawer attached to each silo.
-- Displays attached files, image thumbnails, and document shortcuts.
-- **Folder Templates**: Preset creation buttons (`IN/OUT`, `Assets`, `Drafts`).
-- **Silo Backup Button**: `Ctrl+Click` on `📁` button opens portable silo text exporter.
+**スニペットスロット (F1-F10):** プロジェクトタブごとの 10 個のマクロ貼り付けボタン。右クリックで名前/内容を編集。Ctrl+S またはダブルクリックでスニペットマネージャーダイアログを開く。
 
----
+### 3. マークダウンエディタ (`ui/editor.py` — VaultTextEdit)
 
-### 4. Smart Drop Overlay (`ui/drop_overlay.py`)
-Triggered automatically when dropping files onto the editor canvas. Displays 4 clear options:
-1. **Insert Text**: Reads dropped file contents into editor.
-2. **Insert Link**: Pastes Markdown file URI link (`[filename](file:///...)`).
-3. **Copy to Files**: Copies dropped file into silo File Container.
-4. **Create Shortcut**: Creates file shortcut link in silo File Container.
+**ラインガター:** 左マージン — 行番号 + 折りたたみ矢印 (▾) + マージンマーク + ヒートストライプ。
 
----
+**構文ハイライト:** `# 見出し`、`**太字**`、`*斜体*`、`~~取り消し線~~`、`[リンク](url)`、`` `コード` ``、```コードブロック```、`- [ ]` チェックボックス、`> 引用`、`---` ルール。
 
-### 5. Dialogs & Overlays
+**コードフェンス:** 等幅 (デフォルト Consolas) + ワンクリックコピーボタン + 折りたたみ。
 
-|ダイアログ |目的 |
+**折りたたみ可能画像:** `![alt](url)` → コンパクトな 150px ボタン。Ctrl+クリックで開く、Ctrl+右クリックでフォルダを開く。
+
+**対話型チェックボックス:** `- [ ]` をクリックで `- [x]` に切替。
+
+**マークアップ非表示モード (T-603):** 切替で `**`、`*`、`~~`、`` ` `` マーカーを非表示 → レンダリングされたように読める。キャレットブロックは編集用にマーカーを保持。
+
+**ドロップオーバーレイ:** ドラッグ & ドロップで 4 オプション: テキスト挿入、リンク挿入、ファイルにコピー、ショートカット作成。
+
+### 4. ファイルコンテナドロワー (`ui/file_container.py`)
+
+サイロごとの折りたたみ可能ドロワー。添付ファイル、画像サムネイル、ドキュメントショートカット。
+
+- テンプレート: IN/OUT、Assets、Drafts、カスタムフォルダ構造
+- ドラッグ & ドロップでファイルを追加
+- サイロエクスポート: Ctrl+クリック 📁 でサイロテキストを .md にエクスポート
+
+### 5. かんばんボード (`ui/silo_kanban.py`)
+
+プレーンテキストのマークダウンかんばん。Alt+矢印でカードをカラム間移動。Enter で行を追加。チェックボックスクリックでカードをチェック。Qt テーブルなし — プレーンマークダウンで動作、保存後も生存。
+
+### 6. テーブルビルダー (`ui/silo_table.py`)
+
+プレーンテキストのマークダウンテーブル。Tab/Shift+Tab でセル移動。最後のセルで Tab → 行が成長。Enter で行を追加。セル分割なし。プレーンテキストで動作。
+
+### 7. ダイアログとオーバーレイ
+
+| ダイアログ | 目的 |
 |---|---|
-| `設定ダイアログ` (`ui/settings.py`) |テーマ ピッカー、ホットキー リビルド、サウンド コントロール、UI スケール スライダー |
-| `SaipenDialog` (`ui/saipen_dialog.py`) | `.saipen` プロジェクトの状態、タスク ボード、およびイベント ログの専用ビューア |
-| `TimerDialog` (`ui/timer_dialog.py`) |ポモドーロ フォーカス タイマーのセットアップ、継続時間の微調整、アラーム音 |
-| `TrashDialog` (`ui/trash_dialog.py`) |ソフト削除されたサイロを表示および復元するためのゴミ箱ブラウザ |
-| `バックアップダイアログ` (`ui/backup_dialog.py`) |データベース全体のエクスポート、インポート、バックアップ スナップショットの作成 |
-| `ヘルプダイアログ` (`ui/help_dialog.py`) |キーボード ショートカットのリファレンスと使用マニュアル |
+| `設定 (Alt+`)` | テーマピッカー、ホットキー再バインド、サウンド、スケール、ツールバー並べ替え |
+| `スニペットマネージャー (Ctrl+S)` | F1-F10 スニペット名 + 内容を編集 |
+| `SAIPEN ビューアー (Ctrl+Shift+C)` | 読み取り専用の STATE/BOARD/LOG ビューアー |
+| `タイマーダイアログ (Ctrl+Shift+T)` | Pomodoro + カウントダウンタイマー設定 |
+| `Queue Master (Alt+Shift+C)` | サイロごとの watcher キュー概要 |
+| `ハッシュタグダイアログ (Alt+Shift+T)` | サイロ横断タグ検索 |
+| `ゴミ箱ダイアログ` | ソフト削除されたサイロを参照/復元 |
+| `バックアップダイアログ` | DB エクスポート/インポート、バックアップスナップショット |
+| `ヘルプダイアログ` | 対話型ショートカットリファレンス |
+| `ウィンドウプリセット` | ウィンドウジオメトリプリセットを保存/名前変更/並べ替え/移動 |
+| `プロジェクトマネージャー` | プロジェクトを表示/非表示、並べ替え (▲▼) |
+| `カラー設定` | カスタムテーマカラー編集 |
+
+### 8. ウィンドウコンポーネント
+
+- **FancyZoneOverlay** — 画面スナップ用の視覚的な 7 ゾーンピッカー
+- **AnalogClock** — カスタム描画時計ウィジェット (ヘッダー)
+- **PieMenu (Shift+Alt+X)** — 放射状メニュー: テーマ、スケール、ツール
+- **オーバーフローメニュー (»)** — ウルトラモードの非表示ボタン
+- **Resizers** — カスタムリサイズハンドル (T-629 修正: WS_CAPTION 再計算)
+- **ZenDesktop** — 3 段階 Ctrl+D: Zen → ソロ (すべて最小化) → 戻る

@@ -1,121 +1,113 @@
-# Plugin, Skill & Extension Development Guide
+# Plugin-, Skill- & Erweiterungs-Entwicklungsanleitung
 
-## Overview
-FastPrompter provides an extensible ecosystem that allows developers to add custom skills, integrate Model Context Protocol (MCP) sidecars, construct SAIPEN subagents, and design custom UI themes.
+## 1. Benutzerdefinierte Skills (`core/watcher/skills.py`)
 
----
+Skills sind Prompt-Wrapper, die angewendet werden, wenn Elemente über den Watcher gesendet werden.
 
-## 1. Custom Skill Development (`skills.py` & TOML Adapters)
+### Definition
 
-Fähigkeiten sind Makro-Eingabeaufforderungsumwandlungen und Befehlsformate, die beim Senden von Elementen über die Watcher Engine oder den Snippet Manager angewendet werden.
+```python
+# Skill-Eintrags-Dict
+{
+    "name": "Code Review",
+    "prefix": "/review",
+    "template": "Review this code:\n\n{text}",
+    "description": "Standard code review prompt wrapper"
+}
+```
 
-### Skill Definition & Structure
-Skills are managed via `src/fastprompter/core/watcher/skills.py` and configured in `adapters.example.toml` (or user `adapters.toml`).
+### Template-Variablen
+- `{text}` — der Text des Queued-Elements
+- `{timestamp}` — aktuelle Zeit
+- `{project}` — aktiver Projektname
 
-```toml
-# Example adapters.toml configuration
-[skills.code_review]
-name = "Code Review"
-prefix = "/review"
-template = "Please review the following code for security, performance, and style:\n\n{text}"
-description = "Applies standard code review prompt wrapper"
+### Anwenden
+Standard-Skill in Einstellungen → Watcher → Standard-Skill festlegen. Pro Element im Queue-Master-Dialog überschreiben.
 
-[skills.refactor]
-name = „Refactor-Funktion“
-prefix = „/refactor“
-template = „Refaktorieren Sie den folgenden Code, um die Lesbarkeit und Typsicherheit zu verbessern:\n\n{text}“
-„
+## 2. SAIPEN-Subagenten
 
-### Skill Format String Handling
-When an item is processed through `Engine` with a skill assigned:
-1. `skill_format` evaluates to `/{skill} {text}` or the skill's defined `template`.
-2. Variables such as `{text}`, `{timestamp}`, and `{project}` are substituted dynamically before dispatching to the target application.
+Subagenten leben in `.saipen/extensions/subs/<name>/` (nicht im Projekt-Root `subs/`).
 
----
+```
+.saipen/extensions/subs/
+├── MANIFEST.md          # aktive Sub-Liste
+├── PROTOCOL.md          # Regeln
+├── TEMPLATE/            # Bootstrap-Template
+├── saiwiki/             # Wiki-Dokument-Generator-Subagent
+├── saihunt/             # Bug-Jäger-Subagent
+└── _shared/inbox.md     # Cross-Agent-Kommunikation
+```
 
-## 2. Model Context Protocol (MCP) Sidecar Integration
+### Übergabe (OUTBOX.md)
 
-FastPrompter unterstützt MCP-Sidecar-Erweiterungen zur Schnittstelle mit lokalen KI-Modellen, LLM-Agenten und Kontextanbietern.
+```
+# OUTBOX
 
-### Architecture
-* **Transport**: Stdio or local TCP WebSocket JSON-RPC.
-* **Sidecar Lifecycle**: Executable sidecars specified in configuration are spawned on FastPrompter startup and managed via subprocess pipes.
-* **Exposed Context**: FastPrompter exposes active Silo text, Snippets, and File Container paths to MCP sidecars as readable resources.
+## WIKI-001: Description
+- **status:** ready | draft | blocked | reviewed
+- **summary:** one line finding
+- **critical:** true | false
+- **details:** full description
+```
 
-### Example MCP Sidecar Manifest (`mcp_sidecar.json`)
+`critical: true` → Hauptagent erstellt sofort ein T-###-Ticket.
+`critical: false` → zur nächsten Planungsrunde in `_shared/inbox.md` eingereiht.
+
+**Befehle:**
+- `saipen sub spawn <name>` — neuen Subagenten aus TEMPLATE erstellen
+- `saipen sub collect` — alle OUTBOX-Einträge einsammeln
+- `saipen sub list` — aktive Subagenten + Phase anzeigen
+- `saipen sub clean <name>` — fertigen Subagenten entfernen
+
+## 3. Custom Themes
+
+Datei: `data/custom_theme.json`. Wird geladen, wenn Theme = Custom.
+
+### Schema
+
 ```json
 {
-  "name": "fastprompter-mcp-bridge",
-  "version": "1.0.0",
-  "command": "python",
-  "args": ["-m", "fastprompter_mcp_sidecar"],
-  "env": {
-    "FASTPROMPTER_DB": "data/local_data_v15.db"
+  "theme_name": "My Theme",
+  "colors": {
+    "bg_main": "#1e1e1e",
+    "bg_editor": "#1b1b1b",
+    "fg_text": "#d4d4d4",
+    "fg_accent": "#e6b422",
+    "border": "#3c3c3c",
+    "selection": "#264f78",
+    "header_bg": "#252526",
+    "button_bg": "#2d2d30",
+    "text_primary": "#d4d4d4",
+    "text_accent": "#e6b422"
   }
 }
 ```
 
----
+**Anwenden:** Einstellungen → Theme → Custom. Sofortiges Hot-Reload, kein Neustart.
 
-## 3. SAIPEN Protocol & SubSaipen Agent Architecture
+## 4. Cursor-Themes (`ui/cursor_theme.py`)
 
-FastPrompter lässt sich nativ in das **SAIPEN v7-Protokoll** für autonomes Multi-Agent-Engineering integrieren.
+Benutzerdefinierte Mauszeiger-Sets. Retro-Computing-Gefühl.
 
-### SubSaipen Directory Structure
-When a subagent (such as `saiwiki`) is spawned, it operates within an isolated directory under `subs/<agent_name>/`:
+**Funktionen:**
+- `capture_current_scheme()` — laufendes Windows-Cursor-Set ins Programm kopieren
+- `load_bundle()` — installiertes Cursor-Set zurückgeben
+- `install_to_system(paths)` — als Windows-Standard-Cursorschema festlegen
+- `build_cursor_map()` — Cursor-Form-Karte neu aufbauen
 
-```
-subs/<agent_name>/
-├── STATE.md            # Machine-readable phase state (BUILD, VERIFY, DONE)
-├── BOARD.md            # Kanban board with task tickets (T-001..T-999)
-├── LOG.md              # Timestamped execution audit log
-├── kitchen/
-│   ├── OUTBOX.md       # Status handoff and results output file
-│   └── INBOX.md        # Incoming instructions from orchestrator
-└── wiki/               # Agent-specific generated documentation
-```
+**Umschalten:** Einstellungen → Cursor → Benutzerdefinierte Cursor aktivieren. Beim ersten Aktivieren wird das aktuelle Windows-Set automatisch erfasst.
 
-### Handoff Protocol (`OUTBOX.md`)
-Upon task completion, the subagent writes final results and marks `status: ready` in `kitchen/OUTBOX.md`:
+## 5. Watcher-Engine-Erweiterbarkeit
 
-```markdown
----
-status: ready
-updated: 2026-07-23T05:14:00Z
-summary: "Wave 4: Deep Wiki Expansion completed cleanly."
----
-```
+| Modul | Erweiterungspunkt |
+|---|---|
+| `adapter.py` | ProbeAdapter für benutzerdefinierte Zielerkennung implementieren |
+| `cdp.py` | Benutzerdefinierte CDP-Befehle für Electron-Apps |
+| `win32.py` | Win32-Fenster-Probe-Anpassung |
+| `skills.py` | Benutzerdefinierte Prompt-Skill-Templates hinzufügen |
+| `limit_scan.py` | Benutzerdefinierter Cross-Agent-Limit-Scanner |
+| `sender.py` | Benutzerdefinierte Text-Injektionsstrategien |
 
----
+## 6. Silo-Sync auf Disk (T-591)
 
-## 4. Custom Theme Development (`custom_theme.json`)
-
-FastPrompter verfügt über eine flexible QSS-Theme-Engine (Qt Style Sheets), die über „data/custom_theme.json“ gesteuert wird.
-
-### Theme Schema Example
-```json
-{
-  "theme_name": "Dark Golden Win95",
-  "colors": {
-    "bg_main": "#1e1e1e",
-    "bg_surface": "#252526",
-    "bg_editor": "#1b1b1b",
-    "text_primary": "#d4d4d4",
-    "text_accent": "#e6b422",
-    "border": "#3c3c3c",
-    "selection": "#264f78"
-  },
-  "fonts": {
-    "editor_font": "Consolas",
-    "ui_font": "Segoe UI",
-    "font_size_pt": 10
-  },
-  "custom_qss": "QPlainTextEdit { line-height: 1.4; }"
-}
-```
-
-### Applying Themes
-Custom themes can be edited directly in `data/custom_theme.json` or switched via the Mini Settings overlay (**Alt+`**). Changes take effect instantly without restarting FastPrompter.
-
----
-*FastPrompter-Wiki – erstellt mit [SAIPEN-Protokoll](SAIPEN-Protokoll) | [GitHub-Repository](https://github.com/vacterro/FastPrompter)*
+Einweg-Silo → Dateisystem-Export. Einstellungen → Sync-Modus: Off / Silo (flach) / Hierarchie (verschachtelt). Schreibt `<root>/<category>/<NN_slug>.md` beim Speichern. Liest nie zurück, löscht nie. Überspringt unveränderten Text.

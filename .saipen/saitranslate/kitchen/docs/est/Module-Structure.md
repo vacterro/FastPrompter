@@ -1,87 +1,131 @@
-# FastPrompter Module Structure
+# FastPrompter moodulite struktuur
 
-## Codebase Map (`src/fastprompter/`)
+## Koodibaasi kaart (`src/fastprompter/`)
 
 ```
 src/fastprompter/
-├── main.py                     # Main application entry point, window setup, and event loop
-├── core/                       # Core backend logic, state management, and subsystems
-│   ├── config.py               # Theme color extractors & tray icon generators
-│   ├── duration.py             # Time parsing and human-readable duration formatters
-│   ├── hashtags.py             # Hashtag extraction and indexing utilities
-│   ├── hotkey_filter.py        # Windows native hook filter for global hotkey processing
-│   ├── hotkeys.py              # Pynput-based global hotkey manager thread
-│   ├── ipc_server.py           # Single-instance IPC socket server & client listener
-│   ├── logging.py              # Application logger setup and file output handler
-│   ├── pomodoro.py             # Pomodoro timer engine, work/break state machine
-│   ├── sound_manager.py        # Audio playback engine (UI clicks, typewriter sounds)
-│   ├── state.py                # SQLite database interface & state management model
-│   ├── timers.py               # Timer manager for countdowns, alarms, and notifications
-│   ├── translations.py         # Multi-language translation strings (22 languages + Дед)
-│   ├── i18n/                   # Language resource files and flag assets
-│   └── watcher/                # Automation & inspection engine
-│       ├── adapter.py          # Abstract probe adapter interface
-│       ├── cdp_probe.py        # Chrome DevTools Protocol probe driver
-│       ├── engine.py           # Watcher execution loop and rule evaluator
-│       ├── queue.py            # Async action queue for watcher operations
-│       ├── sender.py           # Output dispatcher for automated key/text sending
-│       └── win32_probe.py      # Native Windows API window & control probe
-├── ui/                         # PyQt6 User Interface components & mixins
-│   ├── analog_clock.py         # Custom painted analog clock widget
-│   ├── backup_dialog.py        # Export/import database & text backup dialog
-│   ├── cursor_theme.py         # Retro mouse cursor theme overlay manager
-│   ├── drop_overlay.py         # Interactive drag-and-drop target overlay widget
-│   ├── edit_guard.py           # Read-only edit lock guard widget wrapper
-│   ├── editor.py               # Main Markdown editor, code block renderer, & line gutter
-│   ├── fancy_zones.py          # Screen snap & window positioning utility
-│   ├── file_container.py       # Silo asset file drawer and template manager widget
-│   ├── flags.py                # Vector/raster country flag renderer for language selection
-│   ├── flow_layout.py          # Dynamic reflowing layout for tag & button bars
-│   ├── formatting_mixin.py     # Markdown editor formatting shortcuts (bold, list, code block)
-│   ├── hashtag_dialog.py       # Tag search and silo filter overlay
-│   ├── header_format_dialog.py # Date/time timestamp format customization dialog
-│   ├── help_dialog.py          # Keyboard shortcuts & interactive user guide
-│   ├── hotkey_mixin.py         # Hotkey binding interface mixin for main window
-│   ├── layout_shortcuts.py     # Layout configuration & quick switch shortcuts
-│   ├── markdown_highlighter.py # QSyntaxHighlighter for live Markdown syntax styling
-│   ├── pie_menu.py             # Radial contextual pie menu widget
-│   ├── queue_panel.py          # Watcher task queue panel
-│   ├── resizers.py             # Custom window resize handle controls
-│   ├── saipen_dialog.py        # SAIPEN project tracking viewer dialog (STATE, BOARD, LOG)
-│   ├── scaling_mixin.py        # UI DPI & global font scaling mixin
-│   ├── search_mixin.py         # Smart multi-word AND search filter logic
-│   ├── settings.py             # Preferences dialog (themes, hotkeys, sounds, flags)
-│   ├── silo_settings_dialog.py # Per-silo configuration (custom colors, project links)
-│   ├── snippet_ops_mixin.py    # Operations on silos & snippets (trash, move, duplicate)
-│   ├── snippet_panel.py        # Silo tree view & F1-F10 snippet buttons panel
-│   ├── theme_mixin.py          # Vintage theme styling, stylesheet generator, & palette builder
-│   ├── timer_dialog.py         # Pomodoro & alarm timer settings dialog
-│   ├── timer_toast.py          # Floating notification toast widget for timer alarms
-│   ├── toolbar_reorder.py      # Drag-and-drop toolbar button reordering utility
-│   ├── trash_dialog.py         # Trash bin management & file restore dialog
-│   ├── tray_mixin.py           # System tray icon, context menu, & quick actions
-│   ├── watcher_dialog.py       # Watcher configuration and script manager UI
-│   ├── watcher_mixin.py        # Main window integration mixin for Watcher engine
-│   └── window_mixin.py         # Frameless window moving, snapping, & borderless controls
-└── utils/                      # Low-level helper utilities
-    ├── fonts.py                # System font loader & fallback resolver
-    ├── paths.py                # Portable path resolver for executable & user data
-    ├── portable_backup.py      # Portable zip backup archive builder
-    └── textfit.py              # Dynamic text truncation & label fitting helpers
+├── main.py                     # Sisenemispunkt, QMainWindow, mixini orkestreerimine
+├── __init__.py                 # Paketi marker
+│
+├── core/                       # Taustloogika, olek, alamsüsteemid
+│   ├── config.py               # Teema värvi eraldajad, salve ikoonide generaatorid
+│   ├── ctrlw.py                # Ctrl+W / Alt+W eraldaja sisestuse mootor
+│   ├── duration.py             # Aja parsimine, inimloetav kestuse vorming
+│   ├── hashtags.py             # Hashtagi väljavõtt + silode-ülene indekseerimine
+│   ├── header.py               # Ctrl+E päise vormindamise tuum
+│   ├── hotkey_filter.py        # Win32 WH_KEYBOARD_LL konks VK-edastuseks
+│   ├── hotkeys.py              # pynput globaalse klõbustiku kuulajalõim
+│   ├── ipc_server.py           # QLocalServer single-instance IPC
+│   ├── limits.py               # Agendi lähtestuslimiidi skanner + taimeri loomine
+│   ├── logging.py              # Loggeri seadistus, rotatsioonifaili haldur
+│   ├── pomodoro.py             # Pomodoro olekumasin (töö/paus)
+│   ├── sound_manager.py        # Heli esitus (klõpsud, kirjutusmasin, häired)
+│   ├── state.py                # SQLite DB liides + oleku haldus
+│   ├── timers.py               # Taimeri mudel, tähtaja tuvastus
+│   ├── translations.py         # Pärand-proksi → i18n pakett (22 keelt)
+│   │
+│   ├── i18n/                   # 22-keelne ressursipakett
+│   │   ├── __init__.py, _compat.py, _container.py, _context.py, _engine.py
+│   │   ├── en.py, ru.py, de.py, fra.py, spa.py, ... (22 keelemoodulit)
+│   │   └── flags/              # Riigilippude renderdajad
+│   │
+│   └── watcher/                # Automatiseerimise + promptide äravoolu mootor
+│       ├── __init__.py
+│       ├── adapter.py          # Abstraktne prooviadapteri liides
+│       ├── cdp.py              # Chrome DevTools Protocol draiver
+│       ├── engine.py           # Watcheri käivitustsükkel + olekumasin
+│       ├── limit_scan.py       # Agentide-ülene limiidiskanner
+│       ├── probes.py           # Mitme proovi oleku kombinaatorid
+│       ├── queue.py            # Järjekorra mudel (QueueItem, SendIntent, kinnitamine)
+│       ├── sender.py           # Väljundi edastus (CDP / Win32 klahvisüstimine)
+│       ├── skills.py           # Oskuste definitsioonid + prompti ümbrised
+│       └── win32.py            # Natiiivne Win32 akna + juhtelemendi proov
+│
+├── ui/                         # PyQt6 UI komponendid + mixinid
+│   ├── analog_clock.py         # Kohandatult joonistatud analoogkella vidin
+│   ├── backup_dialog.py        # DB eksport/import + varukoopia hetktõmmise dialoog
+│   ├── ctrlw_settings.py       # Ctrl+W/Alt+W malli konfiguratsiooni UI
+│   ├── cursor_theme.py         # Retro kursori teema overlay haldur
+│   ├── drop_overlay.py         # Lohista-sisesta 4-valikuline sihtmärk-overlay
+│   ├── edit_guard.py           # Kirjutuskaitse lukuhalduri ümbris
+│   ├── editor.py               # VaultTextEdit: koodiplokid, gutter, voltimine
+│   ├── fancy_zones.py          # Ekraani haakimistsooni overlay valija
+│   ├── file_container.py       # Silo varafaili sahtel + mallid
+│   ├── flags.py                # Vektor/raster riigilippude renderdaja
+│   ├── flow_layout.py          # Dünaamiline heightForWidth mähkimispaigutus
+│   ├── formatting_mixin.py     # Markdowni vormindamise klõbustikud
+│   ├── hashtag_dialog.py       # Sildiotsingu + silo filtri overlay
+│   ├── header_format_dialog.py # Kuupäeva/aja ajatempli vormingu dialoog
+│   ├── help_dialog.py          # Klõbustikud + interaktiivne juhend
+│   ├── hotkey_mixin.py         # Klõbustike sidumise mixin peamisele aknale
+│   ├── layout_shortcuts.py     # Füüsilise VK klõbustiku kaardistus (paigutusest sõltumatu)
+│   ├── markdown_highlighter.py # QSyntaxHighlighter reaalajas markdowni jaoks
+│   ├── pie_menu.py             # QuickListWidget radiaalne kontekstimenüü
+│   ├── queue_panel.py          # Watcheri järjekorra dialoog
+│   ├── resizers.py             # Akna suuruse muutmise käepidemete juhtimine
+│   ├── saipen_dialog.py        # SAIPENi projekti vaataja (STATE, BOARD, LOG)
+│   ├── scaling_mixin.py        # UI DPI + fondi skaleerimise mixin
+│   ├── search_mixin.py         # Mitmesõnaline AND-otsingufilter
+│   ├── send_selection_mixin.py # Valiku saatmine watcheri kaudu
+│   ├── settings.py             # Eelistuste dialoog (teemad, klõbustikud, helid)
+│   ├── silo_kanban.py          # Markdowni kanban-tahvel (T-630)
+│   ├── silo_settings_dialog.py # Silo-põhine konfiguratsioon (värv, projektilingid)
+│   ├── silo_table.py           # Markdowni tabeliehitaja (T-630)
+│   ├── snippet_ops_mixin.py    # Silo toimingud (prügikast, liigutus, duplikaat, tühjendus)
+│   ├── snippet_panel.py        # Silo puu + F1-F10 snippetide nupud
+│   ├── theme_mixin.py          # Vintage teema stiliseerimine + QSS generaator
+│   ├── timer_dialog.py         # Pomodoro + häiretäimeri seadistamise dialoog
+│   ├── timer_toast.py          # Ujuv teavitustoast vidin
+│   ├── toolbar_reorder.py      # Lohista-sisesta tööriistariba nupu ümberjärjestus
+│   ├── trash_dialog.py         # Prügikast + taastamise dialoog
+│   ├── tray_mixin.py           # Süsteemisalve ikoon + kontekstimenüü
+│   ├── watcher_dialog.py       # Watcheri konfiguratsioon + skriptihalduri UI
+│   ├── watcher_mixin.py        # Watcheri mootori akna integratsioon
+│   ├── window_mixin.py         # Raamita liigutus, haakimine, borderless
+│   ├── window_presets_dialog.py # Kasutaja määratud aknaasendi preseendid
+│   └── zen_desktop.py          # 3-astmeline Zen/Solo töölauapühkimine (Ctrl+D)
+│
+├── theme/                      # Teemapreseendid
+│   └── themes.py               # 6 retro-Win95 värviteema definitsiooni
+│
+└── utils/                      # Madalatasemelised abivahendid
+    ├── fonts.py                # Süsteemifondi laadija, fallback-resolver, no-AA
+    ├── paths.py                # Kaasaskantav tee resolver (exe + kasutaja andmed)
+    ├── portable_backup.py      # Kaasaskantava ZIP-varukoopia ehitaja
+    └── textfit.py              # Dünaamiline teksti kärpimine + sildi sobitamine
 ```
 
-## Subsystem Functional Responsibilities
+## Alamsüsteemide vastutus
 
-| Pakett / moodul | Esmane vastutus |
+| Pakett | Vastutus |
 |---|---|
-| `core.state` | Andmemudel, SQLite WAL-i püsivus, oleku sünkroonimine, pinu tagasivõtmine |
-| `core.hotkeys` | Pynput globaalse kiirklahvi kuulaja ja saatmine |
-| `core.ipc_server` | Ühe eksemplari jõustamine ja CLI IPC sõnumite vastuvõtja |
-| `core.pomodoro` | Pomodoro seansi taimeri olekumasin ja töö/pauside intervallide haldur |
-| `core.translations` | 22-keelne tõlkesõnastik ja lokaadi vahetamise mootor |
-| `ui.editor` | Laiendatud `QPlainTextEdit` koos voltimise, joonega renni, märkeruutude ja ridade loendamisega |
-| `ui.snippet_panel` | Silopuu vaade, hierarhia haldamine, kategooriate vahekaardid ja F1-F10 väljavõtte pesad |
-| "ui.file_container" | Silo-kaustasahtel, varamanuse eelvaade ja malligeneraator |
-| "ui.theme_mixin" | 6 retro Win95 teemat, kohandatud värvimootor ja CSS-laaditabeli generaator |
-| `ui.saipen_dialog` | .saipeni AI projekti jälgimisfailide integratsioonivaatur |
-| `utils.paths` | Tagab kaasaskantava täitmise, puudutamata süsteemiregistreid või AppData |
+| `core.state` | SQLite WAL püsivus, oleku sünkroonimine, undo-stack, kategooria-põhised alias-hoidlad |
+| `core.hotkey*` | Globaalne klõbustike kuulaja + Win32 VK-filter, paigutusest sõltumatu edastus |
+| `core.watcher` | Promptide järjekord, CDP/Win32 automatiseerimine, oskuste ümbrised, limiidiskanner |
+| `core.i18n` | 22-keelne tõlkepakett + proksi delegaat translations.py-st |
+| `core.ctrlw` | Eraldaja malli mootor (Ctrl+W / Alt+W) |
+| `core.timers` | Taimeri mudel, tähtaja tuvastus, serialiseerimine |
+| `core.pomodoro` | Töö/pausi olekumasin, fookusetaimer |
+| `ui.editor` | VaultTextEdit — voltimine, gutter, märkeruudud, soojuskaart, marginaalimärgid, märgistuse peitmine |
+| `ui.snippet_panel` | Silo puu, hierarhia, kategooria vahekaardid, F1-F10 kohad, külgriba vahed, mitmevalik |
+| `ui.silo_kanban` | Puhtalt-tekstiline kanban-tahvel (Alt+nooleklahvid liigutavad kaarte, Enter uus rida) |
+| `ui.silo_table` | Puhtalt-tekstiline tabeliredaktor (Tab lahtrite läbikäimine, Enter uus rida) |
+| `ui.file_container` | Silo-põhine kaustasahtel, varade eelvaade, mallid |
+| `ui.theme_mixin` | 6 retro-Win95-teemat + kohandatud värvimootor + QSS generaator |
+| `ui.saipen_dialog` | SAIPENi projekti vaataja (.saipen STATE/BOARD/LOG) |
+| `ui.fancy_zones` | Visuaalne tsoonivalija 7 paigutuse preseendiga |
+| `ui.window_presets_dialog` | Kasutaja salvestatud akna geomeetria preseendid (Ctrl+Q leht) |
+| `ui.zen_desktop` | 3-astmeline Ctrl+D: Zen, Solo (teiste minimeerimine), tagasi |
+| `ui.toolbar_reorder` | Lohista-sisesta tööriistariba nuppude kohandamine |
+| `ui.flow_layout` | Reageeriv mähkimispaigutus kompaktsetele seadete paneelidele |
+| `ui.edit_guard` | begin/endEditBlock hoidja — takistab külmutamist lõpetamata muudatustest |
+| `utils.fonts` | Fondi lahendus, bitmap-fondi install, no-AA fallback |
+| `utils.paths` | Kaasaskantav käivitamine — ilma registri ja AppData sõltuvuseta |
+
+## Moodulite arvu kokkuvõte
+
+- **core/**: 14 moodulit + i18n/ (22 keelt) + watcher/ (9 moodulit) = ~45
+- **ui/**: 39 moodulit
+- **theme/**: 1 moodul
+- **utils/**: 4 moodulit
+- **Kokku**: ~45 moodulit + i18n keeled
