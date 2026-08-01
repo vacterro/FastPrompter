@@ -49,6 +49,7 @@ Missing keys fall back to English at runtime via the `tr()` engine.
 
 ## Drift log
 
+- 01.08.26 [v0.8.7] bundle INTEGRATED: 33 i18n modules regenerated from these JSON files via `scratch/inject_translations.py` (the one script that does it — future bundle syncs run it, never hand-write modules). 939 keys each, 100% coverage. T-693 tracks 4 hardcoded transform-menu strings (main.py) still missing from the bundle.
 - 01.08 (2): guides added — `GUIDE_EN.md` ("FastPrompter for dummies") translated into `kitchen/guides/GUIDE_{EST,JA,DE}.md` (Core: EST; in-role: JA/DE, no spawnable sub-agent on host). RU sibling `GUIDE_RU.md` is hand-maintained at repo root — per translate.md § 2 carve-out, not re-translated or clobbered.
 - 30.07: en.json 802 -> 874 (72 unregistered `tr()` keys from T-589..T-632; TUR 17 gaps repaired, 9 locales 1 each)
 - 31.07: en.json 874 -> 876 — `Rename image` (`tr()` in editor.py, c04c3e8) and `🤍 Support developer` (hardcoded button in help_dialog.py, uncommitted user work). All 29 non-Core locales via dedicated translator instance; RU/EST/DED by Core. The help_dialog button is still hardcoded English in code — integration must wrap it in `tr()` (future ADD/PLAN ticket, not TRANSLATE's scope).
