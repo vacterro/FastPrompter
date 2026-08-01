@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.8.6 — 2026-08-01
+
+- *Housekeeping:* full maintenance sweep clean (886 tests pass), translation bundle verified 100% in sync across all 33 locales and the translated wiki docs/guides. No user-facing changes.
+
 ## v0.8.5 — 2026-08-01
 
 - **Fixed: hotkey test could fail depending on the active Windows keyboard layout.** The hyphen key (`Ctrl+Shift+-`) resolves through `VkKeyScanW`, which is deliberately layout-aware — on a non-US layout (e.g. Estonian) the hyphen lives on a different physical key. The test hardcoded the US layout's VK code, so it failed the moment the machine's keyboard layout changed. The test now asserts the exact US value only on the US layout and a valid VK elsewhere.
