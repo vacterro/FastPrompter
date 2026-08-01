@@ -945,6 +945,10 @@
     "Where the --- line sits. \"same as title\" is the default, so a centred title carries its rule with it.": "حيث يقع الخط ---. \"نفس العنوان\" هو الإعداد الافتراضي، لذا يحمل العنوان المركزي قاعدته معه.",
     "Where the bullet - and everything you then type on that line - sits. Left is almost always what you want here.": "حيث توجد الرصاصة - وكل ما تكتبه بعد ذلك على هذا السطر -. اليسار هو دائمًا ما تريده هنا.",
     "Wrap the selection in this markdown marker. The header is already bold on its own, so these are usually clutter.": "لف التحديد في علامة تخفيض السعر هذه. الرأس غامق بالفعل من تلقاء نفسه، لذلك عادة ما يكون فوضى.",
-    "· marks an empty line, │ the caret. Press Ctrl+E on the left, get the right.": "· يمثل خطًا فارغًا، │ علامة الإقحام. اضغط على Ctrl+E على اليسار، للوصول إلى اليمين."
+    "· marks an empty line, │ the caret. Press Ctrl+E on the left, get the right.": "· يمثل خطًا فارغًا، │ علامة الإقحام. اضغط على Ctrl+E على اليسار، للوصول إلى اليمين.",
+    "✨ Transform to…": "✨ التحويل إلى…",
+    "📄 Text": "📄 نص",
+    "📋 Kanban Board": "📋 لوحة كانبان",
+    "📊 Table": "📊 جدول"
   }
 }

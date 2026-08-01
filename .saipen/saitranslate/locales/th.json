@@ -945,6 +945,10 @@
     "Where the --- line sits. \"same as title\" is the default, so a centred title carries its rule with it.": "โดยที่บรรทัด --- ตั้งอยู่ \"same as title\" เป็นค่าเริ่มต้น ดังนั้นชื่อที่อยู่กึ่งกลางจึงมีกฎกำกับอยู่ด้วย",
     "Where the bullet - and everything you then type on that line - sits. Left is almost always what you want here.": "ที่ซึ่งสัญลักษณ์แสดงหัวข้อย่อยและทุกสิ่งที่คุณพิมพ์ในบรรทัดนั้นตั้งอยู่ ด้านซ้ายคือสิ่งที่คุณต้องการที่นี่เกือบทุกครั้ง",
     "Wrap the selection in this markdown marker. The header is already bold on its own, so these are usually clutter.": "รวมส่วนที่เลือกไว้ในเครื่องหมายมาร์กดาวน์นี้ ส่วนหัวมีตัวหนาอยู่แล้ว ดังนั้นส่วนหัวเหล่านี้จึงมักจะเกะกะ",
-    "· marks an empty line, │ the caret. Press Ctrl+E on the left, get the right.": "· ทำเครื่องหมายบรรทัดว่าง │ เครื่องหมายรูปหมวก กด Ctrl+E ทางซ้าย ไปทางขวา"
+    "· marks an empty line, │ the caret. Press Ctrl+E on the left, get the right.": "· ทำเครื่องหมายบรรทัดว่าง │ เครื่องหมายรูปหมวก กด Ctrl+E ทางซ้าย ไปทางขวา",
+    "✨ Transform to…": "✨ แปลงเป็น…",
+    "📄 Text": "📄 ข้อความ",
+    "📋 Kanban Board": "📋 บอร์ดคัมบัง",
+    "📊 Table": "📊 ตาราง"
   }
 }

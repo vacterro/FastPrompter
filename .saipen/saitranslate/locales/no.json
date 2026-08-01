@@ -945,6 +945,10 @@
     "Where the --- line sits. \"same as title\" is the default, so a centred title carries its rule with it.": "Hvor --- streken sitter. \"samme som tittel\" er standard, så en sentrert tittel bærer sin regel med seg.",
     "Where the bullet - and everything you then type on that line - sits. Left is almost always what you want here.": "Hvor kulen – og alt du så skriver på den linjen – sitter. Venstre er nesten alltid det du vil ha her.",
     "Wrap the selection in this markdown marker. The header is already bold on its own, so these are usually clutter.": "Pakk utvalget inn i denne markdown-markøren. Overskriften er allerede fet i seg selv, så disse er vanligvis rot.",
-    "· marks an empty line, │ the caret. Press Ctrl+E on the left, get the right.": "· markerer en tom linje, │ merket. Trykk Ctrl+E til venstre, få til høyre."
+    "· marks an empty line, │ the caret. Press Ctrl+E on the left, get the right.": "· markerer en tom linje, │ merket. Trykk Ctrl+E til venstre, få til høyre.",
+    "✨ Transform to…": "✨ Konverter til…",
+    "📄 Text": "📄 Tekst",
+    "📋 Kanban Board": "📋 Kanban-tavle",
+    "📊 Table": "📊 Tabell"
   }
 }

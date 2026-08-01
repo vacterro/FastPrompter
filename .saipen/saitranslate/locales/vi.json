@@ -945,6 +945,10 @@
     "Where the --- line sits. \"same as title\" is the default, so a centred title carries its rule with it.": "Vị trí của dòng ---. \"Giống như tiêu đề\" là mặc định, vì vậy tiêu đề ở giữa sẽ mang theo quy tắc của nó.",
     "Where the bullet - and everything you then type on that line - sits. Left is almost always what you want here.": "Vị trí của dấu đầu dòng - và mọi thứ bạn nhập vào dòng đó - nằm ở đâu. Left hầu như luôn là thứ bạn muốn ở đây.",
     "Wrap the selection in this markdown marker. The header is already bold on its own, so these are usually clutter.": "Bao bọc vùng chọn trong điểm đánh dấu đánh dấu này. Tiêu đề vốn đã được in đậm nên chúng thường lộn xộn.",
-    "· marks an empty line, │ the caret. Press Ctrl+E on the left, get the right.": "· đánh dấu một dòng trống, │ dấu mũ. Nhấn Ctrl+E bên trái, bên phải."
+    "· marks an empty line, │ the caret. Press Ctrl+E on the left, get the right.": "· đánh dấu một dòng trống, │ dấu mũ. Nhấn Ctrl+E bên trái, bên phải.",
+    "✨ Transform to…": "✨ Chuyển thành…",
+    "📄 Text": "📄 Văn bản",
+    "📋 Kanban Board": "📋 Bảng Kanban",
+    "📊 Table": "📊 Bảng"
   }
 }

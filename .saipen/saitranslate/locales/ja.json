@@ -945,6 +945,10 @@
     "Where the --- line sits. \"same as title\" is the default, so a centred title carries its rule with it.": "--- 行が存在する場所。 「タイトルと同じ」がデフォルトであるため、中央揃えのタイトルにはそのルールが適用されます。",
     "Where the bullet - and everything you then type on that line - sits. Left is almost always what you want here.": "箇条書き、およびその行に入力するすべての内容が配置される場所。ここで希望するのはほとんどの場合、左です。",
     "Wrap the selection in this markdown marker. The header is already bold on its own, so these are usually clutter.": "選択範囲をこのマークダウン マーカーで囲みます。ヘッダーはそれ自体ですでに太字になっているため、通常は乱雑になります。",
-    "· marks an empty line, │ the caret. Press Ctrl+E on the left, get the right.": "· 空行、キャレットをマークします。左側で Ctrl+E を押し、右側を取得します。"
+    "· marks an empty line, │ the caret. Press Ctrl+E on the left, get the right.": "· 空行、キャレットをマークします。左側で Ctrl+E を押し、右側を取得します。",
+    "✨ Transform to…": "✨ 変換…",
+    "📄 Text": "📄 テキスト",
+    "📋 Kanban Board": "📋 かんばんボード",
+    "📊 Table": "📊 表"
   }
 }

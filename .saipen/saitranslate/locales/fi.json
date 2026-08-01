@@ -945,6 +945,10 @@
     "Where the --- line sits. \"same as title\" is the default, so a centred title carries its rule with it.": "Missä --- linja on. \"sama kuin otsikko\" on oletusarvo, joten keskitetty otsikko kantaa sääntönsä mukanaan.",
     "Where the bullet - and everything you then type on that line - sits. Left is almost always what you want here.": "Missä luoti - ja kaikki, mitä sitten kirjoitat tälle riville - istuu. Vasen on melkein aina mitä haluat täällä.",
     "Wrap the selection in this markdown marker. The header is already bold on its own, so these are usually clutter.": "Kääri valinta tähän merkintämerkkiin. Otsikko on jo itsessään lihavoitu, joten ne ovat yleensä sotkua.",
-    "· marks an empty line, │ the caret. Press Ctrl+E on the left, get the right.": "· merkitsee tyhjän rivin, │ merkin. Paina Ctrl+E vasemmalla päästäksesi oikealle."
+    "· marks an empty line, │ the caret. Press Ctrl+E on the left, get the right.": "· merkitsee tyhjän rivin, │ merkin. Paina Ctrl+E vasemmalla päästäksesi oikealle.",
+    "✨ Transform to…": "✨ Muunna muotoon…",
+    "📄 Text": "📄 Teksti",
+    "📋 Kanban Board": "📋 Kanban-taulu",
+    "📊 Table": "📊 Taulukko"
   }
 }

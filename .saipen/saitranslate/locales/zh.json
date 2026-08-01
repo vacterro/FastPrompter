@@ -945,6 +945,10 @@
     "Where the --- line sits. \"same as title\" is the default, so a centred title carries its rule with it.": "--- 行所在的位置。 “与标题相同”是默认设置，因此居中标题带有其规则。",
     "Where the bullet - and everything you then type on that line - sits. Left is almost always what you want here.": "项目符号以及您随后在该行键入的所有内容所在的位置。左边几乎总是你想要的。",
     "Wrap the selection in this markdown marker. The header is already bold on its own, so these are usually clutter.": "将选择内容包含在此 Markdown 标记中。标题本身已经是粗体了，所以这些通常很混乱。",
-    "· marks an empty line, │ the caret. Press Ctrl+E on the left, get the right.": "· 标记一个空行，│ 插入符号。按左边的Ctrl+E，得到右边。"
+    "· marks an empty line, │ the caret. Press Ctrl+E on the left, get the right.": "· 标记一个空行，│ 插入符号。按左边的Ctrl+E，得到右边。",
+    "✨ Transform to…": "✨ 转换为…",
+    "📄 Text": "📄 文本",
+    "📋 Kanban Board": "📋 看板",
+    "📊 Table": "📊 表格"
   }
 }

@@ -945,7 +945,11 @@
     "Where the --- line sits. \"same as title\" is the default, so a centred title carries its rule with it.": "Where the --- line sits. \"same as title\" is the default, so a centred title carries its rule with it.",
     "Where the bullet - and everything you then type on that line - sits. Left is almost always what you want here.": "Where the bullet - and everything you then type on that line - sits. Left is almost always what you want here.",
     "Wrap the selection in this markdown marker. The header is already bold on its own, so these are usually clutter.": "Wrap the selection in this markdown marker. The header is already bold on its own, so these are usually clutter.",
-    "· marks an empty line, │ the caret. Press Ctrl+E on the left, get the right.": "· marks an empty line, │ the caret. Press Ctrl+E on the left, get the right."
+    "· marks an empty line, │ the caret. Press Ctrl+E on the left, get the right.": "· marks an empty line, │ the caret. Press Ctrl+E on the left, get the right.",
+    "✨ Transform to…": "✨ Previesť na…",
+    "📄 Text": "📄 Text",
+    "📋 Kanban Board": "📋 Kanban tabuľa",
+    "📊 Table": "📊 Tabuľka"
   },
   "coverage_pct": 100.0
 }

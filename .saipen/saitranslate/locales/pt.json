@@ -945,6 +945,10 @@
     "Where the --- line sits. \"same as title\" is the default, so a centred title carries its rule with it.": "Onde fica a linha ---. \"igual ao título\" é o padrão, portanto, um título centralizado carrega consigo sua regra.",
     "Where the bullet - and everything you then type on that line - sits. Left is almost always what you want here.": "Onde fica o marcador - e tudo o que você digita nessa linha. Esquerda é quase sempre o que você quer aqui.",
     "Wrap the selection in this markdown marker. The header is already bold on its own, so these are usually clutter.": "Envolva a seleção neste marcador de redução. O cabeçalho já está em negrito por si só, então geralmente são confusos.",
-    "· marks an empty line, │ the caret. Press Ctrl+E on the left, get the right.": "· marca uma linha vazia, │ o cursor. Pressione Ctrl + E à esquerda, vá para a direita."
+    "· marks an empty line, │ the caret. Press Ctrl+E on the left, get the right.": "· marca uma linha vazia, │ o cursor. Pressione Ctrl + E à esquerda, vá para a direita.",
+    "✨ Transform to…": "✨ Transformar em…",
+    "📄 Text": "📄 Texto",
+    "📋 Kanban Board": "📋 Quadro Kanban",
+    "📊 Table": "📊 Tabela"
   }
 }

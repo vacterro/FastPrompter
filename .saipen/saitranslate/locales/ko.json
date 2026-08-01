@@ -945,6 +945,10 @@
     "Where the --- line sits. \"same as title\" is the default, so a centred title carries its rule with it.": "--- 라인이 있는 곳. \"제목과 동일\"이 기본값이므로 중앙에 있는 제목에는 규칙이 적용됩니다.",
     "Where the bullet - and everything you then type on that line - sits. Left is almost always what you want here.": "글머리 기호와 해당 줄에 입력하는 모든 내용이 있는 위치입니다. 왼쪽은 거의 항상 여기서 원하는 것입니다.",
     "Wrap the selection in this markdown marker. The header is already bold on its own, so these are usually clutter.": "이 마크다운 마커로 선택 항목을 래핑합니다. 헤더는 이미 그 자체로 굵게 표시되어 있어 일반적으로 복잡해집니다.",
-    "· marks an empty line, │ the caret. Press Ctrl+E on the left, get the right.": "· 빈 줄을 표시하고, │ 캐럿을 표시합니다. 왼쪽에서 Ctrl+E를 눌러 오른쪽으로 이동하세요."
+    "· marks an empty line, │ the caret. Press Ctrl+E on the left, get the right.": "· 빈 줄을 표시하고, │ 캐럿을 표시합니다. 왼쪽에서 Ctrl+E를 눌러 오른쪽으로 이동하세요.",
+    "✨ Transform to…": "✨ 변환…",
+    "📄 Text": "📄 텍스트",
+    "📋 Kanban Board": "📋 간반 보드",
+    "📊 Table": "📊 표"
   }
 }

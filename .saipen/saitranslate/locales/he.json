@@ -945,6 +945,10 @@
     "Where the --- line sits. \"same as title\" is the default, so a centred title carries its rule with it.": "היכן יושב הקו ---. \"זהה לכותרת\" היא ברירת המחדל, כך שכותרת ממורכזת נושאת את הכלל שלה.",
     "Where the bullet - and everything you then type on that line - sits. Left is almost always what you want here.": "איפה הכדור - וכל מה שאתה מקליד אז על השורה הזו - יושב. שמאל זה כמעט תמיד מה שאתה רוצה כאן.",
     "Wrap the selection in this markdown marker. The header is already bold on its own, so these are usually clutter.": "עטפו את הבחירה בסמן סימון זה. הכותרת כבר מודגשת בפני עצמה, כך שבדרך כלל מדובר בבלגן.",
-    "· marks an empty line, │ the caret. Press Ctrl+E on the left, get the right.": "· מסמן שורה ריקה, │ את הקרט. הקש Ctrl+E בצד שמאל, קבל ימינה."
+    "· marks an empty line, │ the caret. Press Ctrl+E on the left, get the right.": "· מסמן שורה ריקה, │ את הקרט. הקש Ctrl+E בצד שמאל, קבל ימינה.",
+    "✨ Transform to…": "✨ המר ל…",
+    "📄 Text": "📄 טקסט",
+    "📋 Kanban Board": "📋 לוח קנבן",
+    "📊 Table": "📊 טבלה"
   }
 }

@@ -8280,7 +8280,7 @@ class FastPrompter(
             replace_menu.setEnabled(False)
 
         # Transform to...
-        transform_menu = menu.addMenu("✨ Transform to…")
+        transform_menu = menu.addMenu(tr("✨ Transform to…", getattr(self, "_current_lang", "EN")))
         current_type = self.data.get("silo_types", {}).get(str(idx), "text")
         
         def make_transform(tgt_type):
@@ -8311,15 +8311,15 @@ class FastPrompter(
                 self.mark_dirty()
             return _t
 
-        a_text = transform_menu.addAction("📄 Text")
+        a_text = transform_menu.addAction(tr("📄 Text", getattr(self, "_current_lang", "EN")))
         if current_type == "text": a_text.setEnabled(False)
         else: a_text.triggered.connect(make_transform("text"))
 
-        a_kanban = transform_menu.addAction("📋 Kanban Board")
+        a_kanban = transform_menu.addAction(tr("📋 Kanban Board", getattr(self, "_current_lang", "EN")))
         if current_type == "kanban": a_kanban.setEnabled(False)
         else: a_kanban.triggered.connect(make_transform("kanban"))
 
-        a_table = transform_menu.addAction("📊 Table")
+        a_table = transform_menu.addAction(tr("📊 Table", getattr(self, "_current_lang", "EN")))
         if current_type == "table": a_table.setEnabled(False)
         else: a_table.triggered.connect(make_transform("table"))
 

@@ -945,6 +945,10 @@
     "Where the --- line sits. \"same as title\" is the default, so a centred title carries its rule with it.": "Где линия ---. Стандарт — «как заголовок»: центрированный\nзаголовок тянет линию за собой.",
     "Where the bullet - and everything you then type on that line - sits. Left is almost always what you want here.": "Где маркер — и всё, что наберёшь на этой строке. Слева —\nпочти всегда правильно.",
     "Wrap the selection in this markdown marker. The header is already bold on its own, so these are usually clutter.": "Заворачивает выделение в этот маркер. Заголовок и так жирный —\nобычно это мусор.",
-    "· marks an empty line, │ the caret. Press Ctrl+E on the left, get the right.": "· — пустая строка, │ — курсор. Ctrl+E слева —\nрезультат справа."
+    "· marks an empty line, │ the caret. Press Ctrl+E on the left, get the right.": "· — пустая строка, │ — курсор. Ctrl+E слева —\nрезультат справа.",
+    "✨ Transform to…": "✨ Transform to…",
+    "📄 Text": "📄 Text",
+    "📋 Kanban Board": "📋 Kanban Board",
+    "📊 Table": "📊 Table"
   }
 }

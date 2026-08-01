@@ -945,6 +945,10 @@
     "Where the --- line sits. \"same as title\" is the default, so a centred title carries its rule with it.": "Там, де знаходиться рядок ---. \"так само, як заголовок\" є типовим, тому заголовок по центру має своє правило.",
     "Where the bullet - and everything you then type on that line - sits. Left is almost always what you want here.": "Там, де знаходиться маркер і все, що ви потім вводите в цей рядок. Зліва майже завжди те, що ви хочете тут.",
     "Wrap the selection in this markdown marker. The header is already bold on its own, so these are usually clutter.": "Загорніть виділення в цей маркер розмітки. Заголовок уже сам по собі виділений жирним шрифтом, тому зазвичай це безлад.",
-    "· marks an empty line, │ the caret. Press Ctrl+E on the left, get the right.": "· позначає порожній рядок, │ введення. Натисніть Ctrl+E зліва, візьміть праворуч."
+    "· marks an empty line, │ the caret. Press Ctrl+E on the left, get the right.": "· позначає порожній рядок, │ введення. Натисніть Ctrl+E зліва, візьміть праворуч.",
+    "✨ Transform to…": "✨ Перетворити на…",
+    "📄 Text": "📄 Текст",
+    "📋 Kanban Board": "📋 Канбан-дошка",
+    "📊 Table": "📊 Таблиця"
   }
 }

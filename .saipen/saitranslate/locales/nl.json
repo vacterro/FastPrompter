@@ -945,6 +945,10 @@
     "Where the --- line sits. \"same as title\" is the default, so a centred title carries its rule with it.": "Waar de --- lijn zit. \"zelfde als titel\" is de standaardinstelling, dus een gecentreerde titel draagt ​​zijn regel met zich mee.",
     "Where the bullet - and everything you then type on that line - sits. Left is almost always what you want here.": "Waar de kogel (en alles wat u vervolgens op die regel typt) zit. Links is hier bijna altijd wat je wilt.",
     "Wrap the selection in this markdown marker. The header is already bold on its own, so these are usually clutter.": "Wikkel de selectie in deze afprijsmarkering. De koptekst is op zichzelf al vetgedrukt, dus deze zijn meestal onoverzichtelijk.",
-    "· marks an empty line, │ the caret. Press Ctrl+E on the left, get the right.": "· markeert een lege regel, │ het dakje. Druk op Ctrl+E aan de linkerkant, ga naar rechts."
+    "· marks an empty line, │ the caret. Press Ctrl+E on the left, get the right.": "· markeert een lege regel, │ het dakje. Druk op Ctrl+E aan de linkerkant, ga naar rechts.",
+    "✨ Transform to…": "✨ Omzetten naar…",
+    "📄 Text": "📄 Tekst",
+    "📋 Kanban Board": "📋 Kanbanbord",
+    "📊 Table": "📊 Tabel"
   }
 }

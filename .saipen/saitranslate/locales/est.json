@@ -945,6 +945,10 @@
     "Where the --- line sits. \"same as title\" is the default, so a centred title carries its rule with it.": "Kus --- joon asub. Vaikimisi \"nagu pealkiri\": keskele\njoondatud pealkiri tõmbab joone kaasa.",
     "Where the bullet - and everything you then type on that line - sits. Left is almost always what you want here.": "Kus loetelumärk — ja kõik, mida sellele reale trükid — asub.\nVasak on siin peaaegu alati õige.",
     "Wrap the selection in this markdown marker. The header is already bold on its own, so these are usually clutter.": "Mähib valiku sellesse markdown-märki. Pealkiri on niigi paks,\nnii et see on tavaliselt ülearune.",
-    "· marks an empty line, │ the caret. Press Ctrl+E on the left, get the right.": "· — tühi rida, │ — kursor. Vajuta Ctrl+E vasakul —\nsaad parema."
+    "· marks an empty line, │ the caret. Press Ctrl+E on the left, get the right.": "· — tühi rida, │ — kursor. Vajuta Ctrl+E vasakul —\nsaad parema.",
+    "✨ Transform to…": "✨ Teisenda…",
+    "📄 Text": "📄 Tekst",
+    "📋 Kanban Board": "📋 Kanban-tahvel",
+    "📊 Table": "📊 Tabel"
   }
 }
