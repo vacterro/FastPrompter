@@ -3200,8 +3200,10 @@ def test_ctrl_wheel_zoom_falls_back_to_pixel_delta(win):
 
 
 def test_line_blocking_drag_swaps_whole_lines(win):
-    # Ctrl+Shift+hold LMB picks up the whole line and, on a real drag, swaps
-    # it with the line it's dropped on (PureRef-style whole-line reorder).
+    # Ctrl+Shift+hold LMB picks up whole lines and, on a real drag, MOVES them
+    # to the drop line (PureRef-style whole-line reorder). It used to swap the
+    # two lines; 3ce4357 made it a move and widened the pickup to a multi-line
+    # selection, so the source is a (start, end) block range, not one number.
     from PyQt6.QtCore import QEvent, Qt
     from PyQt6.QtGui import QMouseEvent, QTextCursor
 
@@ -3224,7 +3226,7 @@ def test_line_blocking_drag_swaps_whole_lines(win):
     ta.mousePressEvent(QMouseEvent(
         QEvent.Type.MouseButtonPress, p0,
         Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton, both))
-    assert ta._line_drag_source_block == 0
+    assert ta._line_drag_source_block == (0, 0)
     assert ta._line_drag_active is False
     ta.mouseMoveEvent(QMouseEvent(
         QEvent.Type.MouseMove, p2,
@@ -3234,8 +3236,24 @@ def test_line_blocking_drag_swaps_whole_lines(win):
     ta.mouseReleaseEvent(QMouseEvent(
         QEvent.Type.MouseButtonRelease, p2,
         Qt.MouseButton.LeftButton, Qt.MouseButton.NoButton, both))
-    assert ta.toPlainText() == "third line\nmiddle line\nfirst line"
+    assert ta.toPlainText() == "middle line\nthird line\nfirst line"
     assert ta._line_drag_source_block is None
+
+    # a multi-line SELECTION is picked up as one block and moves together
+    ta = _load("one\ntwo\nthree\nfour")
+    _select(ta, 0, len("one\ntwo"))
+    p0, p3 = _pt(ta, 0), _pt(ta, 3)
+    ta.mousePressEvent(QMouseEvent(
+        QEvent.Type.MouseButtonPress, p0,
+        Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton, both))
+    assert ta._line_drag_source_block == (0, 1)
+    ta.mouseMoveEvent(QMouseEvent(
+        QEvent.Type.MouseMove, p3,
+        Qt.MouseButton.NoButton, Qt.MouseButton.LeftButton, both))
+    ta.mouseReleaseEvent(QMouseEvent(
+        QEvent.Type.MouseButtonRelease, p3,
+        Qt.MouseButton.LeftButton, Qt.MouseButton.NoButton, both))
+    assert ta.toPlainText() == "three\nfour\none\ntwo"
 
     # click with no movement is a no-op
     ta = _load("alpha\nbeta")
@@ -3967,7 +3985,7 @@ def test_every_edit_op_is_exactly_one_undo_step(win):
         ("header", "title\nbody", lambda ta: (_select(ta, 0, 0), win.apply_header_timestamp())),
         ("bold", "make me bold", lambda ta: (_select(ta, 0, 4), win.apply_format("bold"))),
         ("checkbox", "task line", lambda ta: ta._toggle_checkboxes()),
-        ("swap", "one\ntwo\nthree", lambda ta: ta._swap_lines(0, 2)),
+        ("move", "one\ntwo\nthree", lambda ta: ta._move_lines(0, 0, 2)),
     ]
     for name, start_text, run in ops:
         ta = _fresh_doc(win, start_text)
@@ -10953,3 +10971,5 @@ def test_a_moved_card_keeps_its_own_mark(fresh_win):
     moved = sk.parse(lines).columns[1].cards
     where = next(c.first for c in moved if c.text == "first")
     assert ed.document().findBlockByNumber(where).userState() == 3
+
+

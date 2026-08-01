@@ -1729,48 +1729,42 @@ class VaultTextEdit(QTextEdit):
         doc = self.document()
         start_block = doc.findBlockByNumber(start_num)
         end_block = doc.findBlockByNumber(end_num)
-        target_block = doc.findBlockByNumber(target_num)
         
-        if not start_block.isValid() or not end_block.isValid() or not target_block.isValid():
+        if not start_block.isValid() or not end_block.isValid():
             return
             
         with edit_block(self.textCursor(), self):
-            # Extract the text of the source lines
             c = QTextCursor(start_block)
             c.movePosition(QTextCursor.MoveOperation.StartOfBlock)
+            
             c_end = QTextCursor(end_block)
             c_end.movePosition(QTextCursor.MoveOperation.EndOfBlock)
-            c.setPosition(c_end.position(), QTextCursor.MoveMode.KeepAnchor)
             
-            text_to_move = c.selectedText().replace('\u2029', '\n')
+            c_text = QTextCursor(c)
+            c_text.setPosition(c_end.position(), QTextCursor.MoveMode.KeepAnchor)
+            text_to_move = c_text.selectedText().replace('\u2029', '\n')
             
-            # Remove the source lines. If it's at the end of the document, 
-            # removing the trailing newline is tricky, so we just remove the block text and the newline before/after.
-            if c.atStart():
-                c.movePosition(QTextCursor.MoveOperation.NextBlock, QTextCursor.MoveMode.KeepAnchor)
+            if end_block.next().isValid():
+                c_end.movePosition(QTextCursor.MoveOperation.NextBlock)
+                c.setPosition(c_end.position(), QTextCursor.MoveMode.KeepAnchor)
+            elif start_block.previous().isValid():
+                c.movePosition(QTextCursor.MoveOperation.PreviousBlock)
+                c.movePosition(QTextCursor.MoveOperation.EndOfBlock)
+                c.setPosition(c_end.position(), QTextCursor.MoveMode.KeepAnchor)
             else:
-                c.movePosition(QTextCursor.MoveOperation.PreviousBlock, QTextCursor.MoveMode.KeepAnchor)
-                # re-select forward to properly delete the block and the newline
-                pos1 = c.position()
-                c.setPosition(c_end.position())
-                c.setPosition(pos1, QTextCursor.MoveMode.KeepAnchor)
+                c.setPosition(c_end.position(), QTextCursor.MoveMode.KeepAnchor)
                 
             c.removeSelectedText()
             
-            # Insert at target
-            # Need to re-find target_block because removing text before it shifted its position!
             target_block = doc.findBlockByNumber(target_num if target_num < start_num else target_num - (end_num - start_num + 1))
-            
             if not target_block.isValid():
                 target_block = doc.lastBlock()
                 
             ins_cursor = QTextCursor(target_block)
             if target_num > end_num:
-                # Dragged down: insert after target
                 ins_cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock)
                 ins_cursor.insertText("\n" + text_to_move)
             else:
-                # Dragged up: insert before target
                 ins_cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
                 ins_cursor.insertText(text_to_move + "\n")
 
