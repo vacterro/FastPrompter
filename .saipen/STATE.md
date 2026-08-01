@@ -1,7 +1,7 @@
 ---
-phase: BUILD
-task: "T-691 translation-bundle integration (wrap help_dialog support button in tr(), regenerate 33 i18n modules from 939-key JSON bundle, copy kitchen/guides to root)"
-next_action: "PHASE BUILD T-691"
+phase: DONE
+task: "v0.8.7 shipped: translation bundle integrated (T-691), AST validator gate (T-692)"
+next_action: "PHASE HUNT"
 blocker: ""
 agent: claude
 saipen_version: 7
@@ -13,10 +13,10 @@ requires:
  - shell
  - git
 schema_version: 2
-last_event: 1149
+last_event: 1151
 goal_mode: true
 goal_waves: 1
-goal_tickets: 1
-updated: 2026-08-01T11:55:00Z
-transition_from: SCOUT
+goal_tickets: 2
+updated: 2026-08-01T12:10:00Z
+transition_from: SHIP
 ---
