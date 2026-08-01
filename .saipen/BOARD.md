@@ -11,7 +11,9 @@
 
 ## TODO
 
-## DONE
+- [ ] T-688 (translate, infra) This host cannot spawn dedicated sub-agents (`opus-agent`/`gpt-5-agent` refused by spawn_agents; the code-searcher's ripgrep binary is also missing from the SDK vendor dir). The hard-split rule in translate.md § 2 says Core must NOT grind subSaipen languages — yet JA/DE translation has now run in-role twice (T-686 docs, then the guides). Formalize the deviation or fix the spawn path: ticket decision — restore spawnable instances on this host (CODEBUFF_RG_PATH / reinstall ripgrep + agent availability) OR amend the split with a documented fallback for hosts without one. | verify: attempt a dedicated-instance spawn and confirm behavior matches the chosen option## DONE
+
+- [x] T-689 (HUNT, test) `tests/test_hotkeys.py::test_special_character_handling` hardcoded the US-layout VK (0xBD) for `Ctrl+Shift+-`, but `-` routes through `_LAYOUT_DEPENDENT`/`VkKeyScanW` (deliberately layout-aware — module docstring: "hotkeys work on any layout"). On the machine's active Estonian layout (0x0425) VkKeyScanW correctly returns VK 0xDD, so the test failed the moment the layout changed from US. Fix: gate the exact-VK assertion on `GetKeyboardLayout(0) & 0xFFFF == 0x0409`, else assert `vk > 0` (mirrors sibling `test_oem_fallback`). Code unchanged — it was behaving as designed. | verify: 21 tests in test_hotkeys.py pass on both US and Estonian layouts; full suite 886 pass
 
 - [x] T-687 (cleanup, ccc ship preflight) State-repair work from the 10:05 checkpoint (E-1134): replaced the previous session's non-conformant `WAIT: user decision` next_action with a conformant DONE/PHASE HUNT/transition_from TRANSLATE landing, merged duplicate ## DONE headings, re-added T-295 under single ## BLOCKED. | verify: validator STATE check + single ## DONE / ## BLOCKED each once
 

@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.8.5 — 2026-08-01
+
+- **Fixed: hotkey test could fail depending on the active Windows keyboard layout.** The hyphen key (`Ctrl+Shift+-`) resolves through `VkKeyScanW`, which is deliberately layout-aware — on a non-US layout (e.g. Estonian) the hyphen lives on a different physical key. The test hardcoded the US layout's VK code, so it failed the moment the machine's keyboard layout changed. The test now asserts the exact US value only on the US layout and a valid VK elsewhere.
+- *Under the hood:* the translation bundle gained `kitchen/guides/` — the "FastPrompter for dummies" guide translated into Estonian, Japanese and German (Russian is hand-maintained). Bundle still awaits integration via an ADD ticket.
+
 ## v0.8.4 — 2026-08-01
 
 - **Translation bundle fully synced — 33 locales at 100%.** The re-sync sweep from v0.8.3 is now complete: `kitchen/docs/` mirrors the rewritten wiki in all four languages (RU/EST were done in the v0.8.3 run, JA/DE in this one — 16 files each, headings/links/code blocks/setting keys/hotkeys preserved). The 63 multi-line `tr()` tooltip keys from the 01.08 repair are registered in every locale; validator passes 33/33 at 939 keys.

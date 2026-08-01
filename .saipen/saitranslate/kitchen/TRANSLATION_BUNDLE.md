@@ -1,9 +1,9 @@
 # Translation Bundle — FastPrompter
 
 Generated: 2026-07-31 UTC (synced 01.08: 2-key drift closed)
-Updated: 2026-08-01 UTC (repair: 63 unregistered multi-line tr() keys -> 939 keys/33 loc; docs re-sync: wiki rewrite 2cf4190 mirrored into kitchen/docs ru+est, ja/de ticketed T-686)
-Source: `src/fastprompter/` `tr()` call sites + `docs/wiki/` (read-only reference)
-Bundle: `.saipen/saitranslate/locales/` (JSON, one file per language)
+Updated: 2026-08-01 UTC (repair: 63 unregistered multi-line tr() keys -> 939 keys/33 loc; docs re-sync: wiki rewrite 2cf4190 mirrored into kitchen/docs ru+est, ja/de ticketed T-686; guides: GUIDE_EN.md translated into kitchen/guides/ {est,ja,de}, RU guide hand-maintained at repo root)
+Source: `src/fastprompter/` `tr()` call sites + `docs/wiki/` + root `GUIDE_EN.md` (read-only references)
+Bundle: `.saipen/saitranslate/locales/` (JSON, one file per language); docs in `kitchen/docs/{ru,est,ja,de}/`; guides in `kitchen/guides/`
 
 ## Languages (32 + 1 bonus)
 
@@ -49,6 +49,7 @@ Missing keys fall back to English at runtime via the `tr()` engine.
 
 ## Drift log
 
+- 01.08 (2): guides added — `GUIDE_EN.md` ("FastPrompter for dummies") translated into `kitchen/guides/GUIDE_{EST,JA,DE}.md` (Core: EST; in-role: JA/DE, no spawnable sub-agent on host). RU sibling `GUIDE_RU.md` is hand-maintained at repo root — per translate.md § 2 carve-out, not re-translated or clobbered.
 - 30.07: en.json 802 -> 874 (72 unregistered `tr()` keys from T-589..T-632; TUR 17 gaps repaired, 9 locales 1 each)
 - 31.07: en.json 874 -> 876 — `Rename image` (`tr()` in editor.py, c04c3e8) and `🤍 Support developer` (hardcoded button in help_dialog.py, uncommitted user work). All 29 non-Core locales via dedicated translator instance; RU/EST/DED by Core. The help_dialog button is still hardcoded English in code — integration must wrap it in `tr()` (future ADD/PLAN ticket, not TRANSLATE's scope).
 - 01.08: en.json 876 -> 939 — repair: the sync regex only captured single-line `tr()` fragments, so 63 multi-line tooltip keys (main.py, header_format_dialog.py, timer_dialog.py, ctrlw_settings.py, queue_panel.py, translations.py, send_selection_mixin.py, watcher_dialog.py, window_mixin.py, window_presets_dialog.py) were never registered and silently fell back to EN — the old 100% was a false 100% (validator compares locales vs en.json, never source vs en.json; the AST-vs-en check is the real one). RU/EST/DED hand-translated, 29 other locales via GoogleTranslator (same pipeline as prior runs). Validator PASSED 33/33 939 keys.

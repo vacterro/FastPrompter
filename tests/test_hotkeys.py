@@ -1,5 +1,6 @@
 """Tests for fastprompter.core.hotkeys — parse_hotkey, _resolve_vk."""
 
+import ctypes
 import os
 import sys
 
@@ -191,7 +192,15 @@ class TestParseHotkey:
 
     def test_special_character_handling(self):
         """Symbol characters should resolve (may be layout-dependent)."""
-        # These use static fallback which maps US layout
+        # '-' is in _LAYOUT_DEPENDENT, so it resolves via VkKeyScanW against
+        # the CURRENT keyboard layout (module docstring: hotkeys work on any
+        # layout). On the US layout the hyphen is VK 0xBD; on others (e.g.
+        # Estonian 0x425) the character lives on a different physical key, so
+        # the exact VK is only asserted under US — elsewhere just assert a
+        # valid VK, mirroring test_oem_fallback.
         mod, vk = parse_hotkey("Ctrl+Shift+-")
         assert mod == (MOD_CONTROL | MOD_SHIFT)
-        assert vk == 0xBD  # US layout hyphen
+        if ctypes.windll.user32.GetKeyboardLayout(0) & 0xFFFF == 0x0409:
+            assert vk == 0xBD  # US layout hyphen
+        else:
+            assert vk > 0  # valid, layout-dependent VK
