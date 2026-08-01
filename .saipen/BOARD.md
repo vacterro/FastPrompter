@@ -9,9 +9,15 @@
 
 ## DOING
 
+- [/] T-691 (ADD, integration) The translation bundle has awaited integration since 30.07 (saitranslate STATE `next_action`). Work: (1) wrap the hardcoded `🤍 Support developer` button in help_dialog.py with `tr()`; (2) inject the 33-locale JSON bundle from `.saipen/saitranslate/locales/` into `src/fastprompter/core/i18n/`; (3) copy `kitchen/guides/GUIDE_{EST,JA,DE}.md` to repo root next to GUIDE_EN/GUIDE_RU. Not minimal-delta (touches core i18n + dialogs + docs) -> PLAN first. | owner: claude | claim_time: 2026-08-01T11:52:00Z | verify: app runs with a non-EN locale showing translated support button + guides present at root
+
 ## TODO
 
+- [ ] T-693 (ADD, i18n gap surfaced by T-691 integration) `main.py` transform menu hardcodes four UI strings (`✨ Transform to…`, `📄 Text`, `📊 Table`, `📋 Kanban Board`) with ZERO `tr()` call sites — they were never served by the engine, and the bundle (939 keys) lacks them, so they render as hardcoded English in every locale. Work: wrap them in `tr()` + add the 4 keys to the bundle (TRANSLATE phase) + re-inject. | verify: app in non-EN locale shows translated transform-menu items; validator 0 missing
+
 - [ ] T-688 (translate, infra) This host cannot spawn dedicated sub-agents (`opus-agent`/`gpt-5-agent` refused by spawn_agents; the code-searcher's ripgrep binary is also missing from the SDK vendor dir). The hard-split rule in translate.md § 2 says Core must NOT grind subSaipen languages — yet JA/DE translation has now run in-role twice (T-686 docs, then the guides). Formalize the deviation or fix the spawn path: ticket decision — restore spawnable instances on this host (CODEBUFF_RG_PATH / reinstall ripgrep + agent availability) OR amend the split with a documented fallback for hosts without one. | verify: attempt a dedicated-instance spawn and confirm behavior matches the chosen option## DONE
+
+- [x] T-692 (tool, user-requested) AST-based `tr()` extractor + source-vs-en gate built into `scratch/validate_saitranslate.py`. Closes the 01.08 multi-line-key hole structurally: ast.Call walk captures multi-line/implicitly-concatenated keys WHOLE (688 static + 34 dynamic), any static key missing from en.json is now a HARD error (synthetic multi-line probe caught as 1 MISSING). Advisory splits unused keys into data-driven vs docs/wiki. Reviewer 2 passes. | verify: `python scratch/validate_saitranslate.py` green (688 keys, 0 missing, 33/33); synthetic multi-line tr() probe flagged as hard error (E-1146)
 
 - [x] T-690 (translate) `GUIDE_EN.md` ("FastPrompter for dummies", 66 lines) translated into `.saipen/saitranslate/kitchen/guides/` — GUIDE_EST.md (Core-owned), GUIDE_JA.md + GUIDE_DE.md (in-role, no spawnable sub-agent on host). Fidelity verified: 64/64 backtick code spans preserved, headings/hotkeys/README anchor intact, no verbatim copies, no BOM. `GUIDE_RU.md` at repo root is hand-maintained — untouched per translate.md § 2 carve-out. Shipped in v0.8.5 (E-1137). | verify: kitchen/guides/ has 3 files, backtick count == 64 each
 

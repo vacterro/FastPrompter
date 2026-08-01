@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.8.7 — 2026-08-01
+
+- **Translation bundle integrated (T-691).** The 939-key, 33-locale bundle that has sat in `.saipen/saitranslate/` since 30.07 is now the live runtime pack: all 33 `core/i18n/*.py` modules regenerated from it (each 939 keys, 100% coverage — the old pack was stale at 874 and silently missed the 63 multi-line tooltip keys from the 01.08 repair). The hardcoded `🤍 Support developer` button in the Help dialog now translates via `tr()`. `GUIDE_EST.md`, `GUIDE_JA.md`, `GUIDE_DE.md` copied from the translate kitchen to the repo root next to `GUIDE_EN/GUIDE_RU`.
+
 ## v0.8.6 — 2026-08-01
 
 - *Housekeeping:* full maintenance sweep clean (886 tests pass), translation bundle verified 100% in sync across all 33 locales and the translated wiki docs/guides. No user-facing changes.

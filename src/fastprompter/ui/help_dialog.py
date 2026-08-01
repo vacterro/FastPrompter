@@ -142,7 +142,7 @@ class HelpDialog(QDialog):
         
         btn_layout = QHBoxLayout()
         
-        support_btn = QPushButton("🤍 Support developer", self)
+        support_btn = QPushButton(tr("🤍 Support developer", self._lang), self)
         support_btn.setStyleSheet("background-color: #2b2b2b; color: #ffdd00; font-weight: bold; border-radius: 4px; padding: 4px 8px;")
         support_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         support_btn.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://buymeacoffee.com/vacuum34")))
