@@ -15,6 +15,8 @@
 
 ## DONE
 
+- [x] T-694 (HUNT, bug) `test_line_blocking_drag_swaps_whole_lines` failed. `_move_lines` in `editor.py` failed to delete block 0 because `atStart()` is False when the cursor has a selection. Text insertion offset was also miscalculated. Replaced block deletion logic with robust `NextBlock`/`PreviousBlock` bound selection. Removed diagnostic `test_zz_probe_move` probe. | verify: `test_app_smoke.py::test_line_blocking_drag_swaps_whole_lines` passes.
+
 - [x] T-693 (ADD, i18n gap surfaced by T-691 integration) `main.py` transform menu hardcodes four UI strings (`✨ Transform to…`, `📄 Text`, `📊 Table`, `📋 Kanban Board`) with ZERO `tr()` call sites — they were never served by the engine, and the bundle (939 keys) lacks them, so they render as hardcoded English in every locale. Work: wrap them in `tr()` + add the 4 keys to the bundle (TRANSLATE phase) + re-inject. | verify: app in non-EN locale shows translated transform-menu items; validator 0 missing
 
 - [x] T-691 (ADD, integration) The 33-locale translation bundle integrated into the running app: all `src/fastprompter/core/i18n/*.py` modules regenerated from `.saipen/saitranslate/locales/*.json` (939 keys each, was 874 stale — the 63 multi-line tooltip keys from the 01.08 repair now actually ship); hardcoded `🤍 Support developer` button in help_dialog.py wrapped in `tr()`; `GUIDE_EST/JA/DE.md` copied to repo root. Engine smoke: 33 langs, 100% coverage, multi-line + support keys translate. Shipped v0.8.7 (E-1150/E-1151). | verify: engine smoke (33 langs 100%, `tr('🤍 Support developer','EST')` = '🤍 Toeta arendajat'); suite 886 pass / 1 skip; saitranslate validator 0 missing (E-1150)

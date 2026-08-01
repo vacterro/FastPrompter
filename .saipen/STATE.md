@@ -13,7 +13,7 @@ requires:
  - shell
  - git
 schema_version: 2
-last_event: 1157
+last_event: 1158
 goal_mode: true
 goal_waves: 2
 goal_tickets: 2
