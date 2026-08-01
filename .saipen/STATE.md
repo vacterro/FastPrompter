@@ -13,10 +13,10 @@ requires:
  - shell
  - git
 schema_version: 2
-last_event: 1139
+last_event: 1141
 goal_mode: true
 goal_waves: 0
 goal_tickets: 0
-updated: 2026-08-01T14:18:00Z
+updated: 2026-08-01T14:55:00Z
 transition_from: SHIP
 ---
