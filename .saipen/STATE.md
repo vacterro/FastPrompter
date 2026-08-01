@@ -1,6 +1,6 @@
 ---
 phase: DONE
-task: "v0.8.7 shipped: translation bundle integrated (T-691), AST validator gate (T-692)"
+task: ""
 next_action: "PHASE HUNT"
 blocker: ""
 agent: claude
@@ -13,10 +13,10 @@ requires:
  - shell
  - git
 schema_version: 2
-last_event: 1151
+last_event: 1157
 goal_mode: true
-goal_waves: 1
+goal_waves: 2
 goal_tickets: 2
-updated: 2026-08-01T12:10:00Z
-transition_from: SHIP
+updated: 2026-08-01T13:24:00Z
+transition_from: BUILD
 ---
