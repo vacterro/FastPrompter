@@ -1,61 +1,111 @@
-# FastPrompter Configuration & Settings Reference
+# Конфигурация и настройки FastPrompter
 
-## Database Settings Schema
-Settings are stored in the SQLite database (`data/fastprompter.db` or `data/fastprompter_p<ID>.db`) within the `settings` table as key-value text pairs.
+## Схема БД
 
-### Settings Keys Reference
+SQLite БД: `data/local_data_v15.db` (профиль 1) или `data/local_data_v15_p<ID>.db` (профили >1). Портативная папка `data/` лежит рядом с EXE. Откат к `%LOCALAPPDATA%/FastPrompter/`, если папка exe не перезаписывается.
 
-| Настройка ключа | Тип | По умолчанию | Описание |
+**Таблицы:**
+- `settings` — пары ключ-значение (вся конфигурация приложения)
+- `presets` — хранилище сниппетов (категория, слот, имя, содержимое, last_edited)
+- `temp_presets_v2` — текстовое содержимое silo по категориям
+- `archive_temp_presets_v2` — архивированное содержимое silo по категориям
+
+Конфиг живёт в таблице `settings` как пары ключ-значение. Никаких INI-файлов. Всё хот-релоадится при применении.
+
+## Ключи настроек
+
+| Ключ | Тип | По умолчанию | Описание |
 |---|---|---|---|
-| `тема` | строка | `"По умолчанию"` | Активная визуальная тема («По умолчанию», «Янтарный», «OLED», «Win95», «Роза», «Пользовательский») |
-| `размер_шрифта` | целое число | `11` | Размер шрифта основного редактора в пунктах |
-| `ui_scale` | плавать | `"1.0"` | Общий коэффициент масштабирования пользовательского интерфейса (от 0,5 до 1,5) |
-| `button_scale` | плавать | `"1.0"` | Множитель размера кнопок бункера и панели инструментов |
-| `global_hotkey` | строка | `"Alt+X"` | Основная горячая клавиша для отображения/скрытия окна приложения |
-| `pie_menu_hotkey` | строка | `"Shift+Alt+X"` | Горячая клавиша для вызова кругового меню |
-| `lock_window_hotkey` | строка | `"Alt+S"` | Горячая клавиша для переключения блокировки положения окна |
-| `always_on_top_hotkey` | строка | `"Alt+E"` | Горячая клавиша для переключения режима окна Always-On-Top |
-| `close_on_focus_loss` | логическое | `"Правда"` | Автоматически скрывать окно при потере фокуса |
-| `ctrl_c_closes` | логическое | `"Правда"` | Закрыть/скрыть окно после нажатия `Ctrl+C` в режиме фрагмента |
-| `sound_ui` | логическое | `"Ложь"` | Включить звуковые эффекты при нажатии кнопок пользовательского интерфейса |
-| `звуковая_пишущая машинка` | логическое | `"Ложь"` | Включить звуковые эффекты клавиш пишущей машинки |
-| `sound_volume` | целое число | `"5"` | Уровень громкости звука (от 0 до 10) |
-| `portable_backup_enabled` | логическое | `"Правда"` | Автоматическое создание файла базы данных `.bak` при запуске |
-| `язык` | строка | `"RU"` | Язык интерфейса (`EN`, `RU`, `UK`, `DE`, `FR`, `ES`, `IT`, `PT`, `NL`, `PL`, `SV`, `DA`, `FI`, `NO`, `JA`, `ZH`, `KO`, `TH`, `VI`, `AR`, `HE`, `ET`, `DED`) |
-| `sidebar_right` | логическое | `"Ложь"` | Разместите боковую панель бункера в правой части редактора |
-| `code_auto_gutter` | логическое | `"Ложь"` | Автоматически отображать номера строк в блоках кода редактора |
-| `cats_order` | Список JSON | `["Код","Текст","Разное"]` | Индивидуальный порядок вкладок категорий проектов |
+| **Тема и отображение** | | | |
+| `theme` | string | `Default` | Тема: Default, Amber, OLED, Win95, Rose, Vintage Classic, Custom |
+| `font_family` | string | `Verdana` | Шрифт редактора (авторезолв в битмап-вариант `_m1`, если установлен) |
+| `font_size` | int | 11 | Размер шрифта редактора в пунктах |
+| `ui_scale` | float | 0.5 | Масштаб UI (от 0.5 до 1.5) |
+| `button_scale` | float | 1.0 | Множитель размера кнопок silo + тулбара |
+| `custom_cursors` | bool | False | Оверлей ретро-темы курсоров |
+| `code_monospace` | bool | True | Моноширинный шрифт в кодовых блоках (False = шрифт редактора) |
+| `code_auto_gutter` | bool | False | Автономера строк в кодовых блоках |
+| `hr_line` | bool | False | Рендер `---` как визуальной линии вместо текста |
+| `hide_markup` | bool | False | Скрыть маркеры `**`, `*`, `~~`, `` ` `` (стиль Obsidian, T-603) |
+| **Горячие клавиши** | | | |
+| `global_hotkey` | string | `Alt+X` | Глобальная горячая клавиша вызова |
+| `pie_menu_hotkey` | string | `Shift+Alt+X` | Горячая клавиша pie-меню |
+| `lock_window_hotkey` | string | `Alt+S` | Переключатель блокировки окна |
+| `always_on_top_hotkey` | string | `Alt+E` | Переключатель always-on-top |
+| **Поведение** | | | |
+| `close_on_focus_loss` | bool | True | Автоскрытие при потере фокуса |
+| `always_on_top` | bool | True | Старт с always-on-top |
+| `normal_window` | bool | False | Обычный оконный режим (не без рамки) |
+| `tray_visible` | bool | True | Показывать иконку в трее |
+| `auto_bullet` | bool | False | Автоконвертация тире в буллеты |
+| `ctrl_e_center` | bool | False | Центрировать заголовки Ctrl+E |
+| `customize_toolbar` | bool | False | Режим переупорядочивания тулбара |
+| `snippets_hidden` | bool | False | Скрыть панель сниппетов |
+| `sidebar_right` | bool | False | Сайдбар справа |
+| `show_token_count` | bool | False | Оценка токенов рядом со счётчиком строк (T-614) |
+| `silo_sync_mode` | string | Off | Односторонняя синхронизация silo на диск: Off/Silo/Hierarchy (T-591) |
+| `window_presets_enabled` | bool | False | Включить страницу пресетов окна Ctrl+Q (T-608) |
+| **Звук** | | | |
+| `sound_ui` | bool | False | Звуки кликов UI |
+| `sound_typewriter` | bool | False | Звуки клавиш пишущей машинки |
+| `sound_volume` | int (0-10) | 5 | Общая громкость звука |
+| **Часы и дата** | | | |
+| `date_seconds` | bool | True | Показывать секунды в часах |
+| `date_daypart` | bool | True | Метка утро/день/вечер/ночь |
+| `date_text_month` | bool | False | Текстовый месяц (Jan/Feb) |
+| `date_ampm` | bool | False | Формат 12ч AM/PM |
+| `date_emoji` | bool | False | Эмодзи времени суток (🌅/☀️/🌇/🌙) |
+| `show_date_rect` | bool | True | Показывать дату в заголовке |
+| **Курсор** | | | |
+| `cursor_blink_ms` | int | system | Скорость мигания курсора мс (0 = без мигания, T-606) |
+| **Таймеры** | | | |
+| `timer_show_minutes` | bool | False | Держать поле минут в отображении таймера (T-613) |
+| **Раскладка окна** | | | |
+| `numbox_per_row` | int | 10 | Номера-боксы в ряд в сетке (T-612) |
+| `numbox_btn_size` | int | 24 | Размер кнопки номера-бокса в px (T-612) |
+| **Прочее** | | | |
+| `language` | string | EN | Язык UI (23 варианта) |
+| `hover_line_color` | string | auto | Цвет подсветки строки (auto = акцент темы) |
+| `portable_backup_enabled` | bool | True | Авто .bak при запуске |
+| `watcher_skill` | string | (пусто) | Навык по умолчанию для элементов очереди watcher |
+| `cats_order` | JSON list | `["Code","Text","Misc"]` | Порядок и имена вкладок категорий |
+| `hidden_categories` | JSON list | [] | Скрытые категории (видны в менеджере проектов) |
+| `timers` | JSON | [] | Сохранённые определения обратного отсчёта |
+| `productivity_timer` | JSON | — | Состояние Pomodoro-таймера |
+| `watcher_queues` | JSON | `{}` | Очереди промптов по silo |
+| `toolbar_order` | string | (пусто) | Токены порядка кнопок кастомного тулбара |
+| `window_presets` | JSON | [] | Сохранённые пресеты геометрии окна |
+| `silo_gap_height` | int | 6 | Высота пробела-разделителя в сайдбаре, px |
+| `show_silo_ticks` | bool | True | Показывать кнопки галочек на silo |
+| `silo_view_state_all` | JSON dict | `{}` | Состояние курсора/скролла/сворачивания по silo |
 
----
-
-## File System & Storage Directory Structure
-
-FastPrompter хранит все пользовательские данные в автономном каталоге `data/` рядом с исполняемым файлом, обеспечивая 100% переносимость выполнения.
+## Раскладка файловой системы
 
 ```
 data/
-├── fastprompter.db             # Main SQLite database (Default profile)
-├── fastprompter.db.bak         # Startup backup SQLite database
-├── fastprompter_p2.db          # Profile 2 SQLite database
-├── silo_files/                 # File Container attachments
-│   ├── Code/                   # Category folder
-│   │   ├── 0/                  # Silo slot 0 attachment directory
-│   │   └── 1/                  # Silo slot 1 attachment directory
+├── local_data_v15.db           # Основная SQLite БД (профиль 1)
+├── local_data_v15.db.bak       # Дросселированный бэкап (мин. интервал 60 с)
+├── local_data_v15.db-wal       # WAL журнал упреждающей записи
+├── local_data_v15.db-shm       # WAL разделяемая память
+├── local_data_v15_p2.db        # БД профиля 2
+├── silo_files/                 # Вложения файловых контейнеров
+│   ├── Code/                   # Папка категории
+│   │   ├── 0/                  # Файлы слота silo 0
+│   │   └── 1/                  # Файлы слота silo 1
 │   └── Text/
-├── _trash/                     # Soft-deleted silos and files
-│   └── 2026-07-22_153022_Silo0/# Timestamped trash archive
-└── custom_theme.json           # User-defined custom color palette (if enabled)
+├── _trash/                     # Мягко удалённые silo + файлы
+│   └── 2026-07-22_153022_Silo0/# Запись корзины с меткой времени
+└── custom_theme.json           # Пользовательская цветовая палитра
 ```
 
----
+**Ежедневное зеркало:** `%USERPROFILE%/Documents/.fastprompter/` — метки времени, silo/архив/сниппеты по проектам как плоские .md
 
-## Custom Themes & Color Editing
-When `theme` is set to `"Custom"`, FastPrompter reads color preferences from `custom_theme.json` or state overrides.
+**Хранилище undo:** `data/data_undo_stack.json` + `data/data_redo_stack.json` (автокомпактируется, лимит 20MB)
 
-### Supported Theme Color Tokens
-- `bg_main`: Primary window and panel background color
-- `bg_editor`: Editor canvas background color
-- `fg_text`: Primary text color
-- `border`: Window border and divider line color
-- `accent`: Active selection, focus ring, and pin highlight color
-- `header_bg`: Header bar and title background color
+## Кастомные темы
+
+`data/custom_theme.json` загружается, когда тема = Custom.
+
+**Цветовые токены:** `bg_main`, `bg_surface`, `bg_editor`, `fg_text`, `fg_accent`, `text_primary`, `text_accent`, `border`, `selection`, `header_bg`, `accent`, `button_bg` и т.д.
+
+Применение через Настройки → Тема или Mini Settings (Alt+`). Мгновенный хот-релоад, без перезапуска.

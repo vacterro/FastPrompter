@@ -1,58 +1,100 @@
-# FastPrompter System Architecture Overview
+# Обзор архитектуры FastPrompter
 
-## Overview
-FastPrompter is a portable scratchpad and snippet manager built with Python 3.11+ and PyQt6. It provides instant floating access (`Alt+X`), multi-project tabs, tab-aware silos (up to 100 per tab), global/local hotkeys, markdown editing with live syntax highlighting and section folding, custom themes, sound effects, file container attachments per silo, Pomodoro timer, Watcher integration, and SAIPEN tracking viewer.
+## Обзор
 
-## High-Level Architecture Diagram
+Портативный блокнот + рабочая среда для промптов. Python 3.11+, PyQt6. Персистентность через SQLite WAL. EXE без установки (Nuitka). Вызов по глобальной горячей клавише Alt+X, пиши, закрывай — состояние сохраняется мгновенно.
+
+## Высокоуровневая схема
+
 ```
-+-----------------------------------------------------------------------------------+
-|                                  FastPrompter UI                                  |
-|  +---------------------+  +--------------------------+  +----------------------+  |
-|  |    SnippetPanel     |  |       EditorPanel        |  |     QueuePanel       |  |
-|  |  (F1-F10 Snippets)  |  | (MarkdownEditor + Mixins)|  |   (Watcher Queue)    |  |
-|  +---------------------+  +--------------------------+  +----------------------+  |
-+-----------------------------------------+-----------------------------------------+
-                                          | Events / State Sync
-                                          v
-+-----------------------------------------------------------------------------------+
-|                             FastPrompterState (Core)                              |
-|  - SQLite Storage (WAL mode, automatic backup)                                     |
-|  - In-memory cache: silos, snippets, settings, theme, hotkeys                      |
-+-----------------------------------------+-----------------------------------------+
-                                          | Systems Management
-     +-------------------+----------------+------------------+------------------+
-     v                   v                v                  v                  v
-+----------+     +---------------+  +-----------+    +---------------+  +---------------+
-| Hotkeys  |     |  IPC Server   |  |   Sound   |    |    Watcher    |  |  File Container|
-| (pynput) |     |  (Single Inst)|  |  Manager  |    | Engine/Probes |  | & Trash Mgt   |
-+----------+     +---------------+  +-----------+    +---------------+  +---------------+
++------------------------------------------------------------------+
+|                        FastPrompter UI (PyQt6)                   |
+|  +------------------+  +--------------------+  +---------------+  |
+|  | SnippetPanel     |  | VaultTextEdit      |  | QueuePanel    |  |
+|  | (F1-F10 Silos)   |  | (Markdown + Mixins)|  | (Watcher Q)   |  |
+|  +------------------+  +--------------------+  +---------------+  |
++----------------------------+-------------------------------------+
+                             | события / синхронизация состояния
+                             v
++------------------------------------------------------------------+
+|                    FastPrompterState (core)                       |
+|  SQLite WAL DB — silos, сниппеты, настройки, темы, очереди       |
+|  Кэш в памяти + стек undo + состояние silo (курсор/скролл)       |
++------------------------------------------------------------------+
+      |         |          |          |            |
+      v         v          v          v            v
++--------+ +---------+ +--------+ +---------+ +-----------+
+|Hotkeys | | IPC     | | Sound  | | Watcher | | File      |
+|(pynput)| |(QLocal) | |Manager | |Engine   | | Container |
++--------+ +---------+ +--------+ +---------+ +-----------+
 ```
 
-## System Subsystems
+## Основные подсистемы
 
-### 1. Application Core & Lifecycle
-- **Entry Point (`main.py` / `main_entry`)**: Initializes QApplication, SingleInstance IPC check, database connection, global exception hooks, UI window construction, and system tray integration.
-- **IPC Server (`core/ipc_server.py`)**: Listens on a local socket to enforce single-instance behavior and accept external commands (toggle window, paste text).
+### 1. Жизненный цикл приложения (`main.py`)
 
-### 2. State & Storage Layer (`core/state.py`)
-- **SQLite Database**: Operates with `PRAGMA journal_mode=WAL` and `synchronous=NORMAL` for speed and transactional stability. Automatic database backup `.bak` is maintained on startup.
-- **Tab-aware Silos (`temp_presets_v2`)**: Up to 100 scratch silos per project tab with color tints, pinning, ticking, folder links, and hierarchy (parent-child relationships).
-- **Snippets (`presets`)**: Up to 10 reusable text snippets per project tab triggered via `F1`-`F10`.
-- **Settings Store (`settings`)**: Key-value store for app configuration, geometry, hotkeys, theme preferences, and flags.
+Точка входа. Инициализация QApplication, проверка single-instance IPC (QLocalServer), подключение к БД, глобальные перехватчики исключений, построение окна UI, системный трей, регистрация горячих клавиш. Все миксины компонуются на FastPrompter (QMainWindow):
 
-### 3. Editor & Formatting Engine
-- **Markdown Highlighter (`ui/markdown_highlighter.py`)**: Real-time syntax highlighting for headings, list markers, code fences, blockquotes, bold/italic formatting, and checkboxes.
-- **Code Block Folding & Line Gutter**: Custom QPlainTextEdit extensions supporting line numbers, fold toggles (`▾`), fence copy buttons, and header section collapses.
-- **Drop Overlay (`ui/drop_overlay.py`)**: Smart drop target offering 4 drop actions: insert text, insert markdown link, copy file to Silo File Container, or create shortcut.
+- FormattingMixin — markdown-шорткаты (жирный, курсив, список, код)
+- HotkeyMixin — интерфейс привязки шорткатов
+- ScalingMixin — масштабирование DPI/шрифта
+- SearchMixin — поиск по нескольким словам (AND)
+- SendSelectionMixin — отправка текста через watcher
+- SnippetOpsMixin — операции с silo (корзина, дубль, порядок, очистка)
+- ThemeMixin — таблица стилей приложения, 6 ретро-тем Win95 + кастомная
+- TrayMixin — иконка в трее + меню
+- WatcherMixin — интеграция движка watcher
+- WindowMixin — окно без рамки, привязка, borderless
 
-### 4. Hotkey System (`core/hotkeys.py`, `core/hotkey_filter.py`)
-- **Global Listener**: Uses `pynput` keyboard listener to capture global triggers (e.g. `Alt+X`) even when unfocused.
-- **Native Windows Filter (`hotkey_filter.py`)**: Win32 API hook (`WM_HOTKEY`) handling background key events with fallbacks to avoid key clashes.
+### 2. IPC Single-Instance (`core/ipc_server.py`)
 
-### 5. File Container & Trash Management
-- **File Container (`ui/file_container.py`)**: Per-silo disk storage directory located inside `data/silo_files/<tab>/<silo_idx>/`. Supports image preview, link mode, drag-and-drop, and custom folder templates.
-- **Trash Manager**: Soft-deletion system storing deleted silos and attached files in `_trash/` with timestamped folders and undo capabilities (`Ctrl+Z`).
+QLocalServer на именованном канале `FastPrompter_Server_V15`. Второй экземпляр шлёт команду SHOW → существующий экземпляр выводит окно вперёд. UUID-токен в `%TEMP%/fastprompter_ipc.token` для авторизации. Нет больше тихого no-op при падении (server.removeServer восстанавливает устаревшие имена сокетов).
 
-### 6. SAIPEN & External Watcher Subsystem (`core/watcher/`, `ui/saipen_dialog.py`)
-- **SAIPEN Tracking**: Integrates with `.saipen` project roots to present live STATE, BOARD, and LOG data in dedicated dialogs.
-- **Watcher Engine**: Background automation probe system supporting Chrome CDP, Win32 window monitoring, and automated input queues.
+### 3. Состояние и хранение (`core/state.py`)
+
+SQLite БД (`data/local_data_v15.db`) с WAL + synchronous=NORMAL. Ключевые таблицы: `presets` (сниппеты), `settings` (k/v), `temp_presets_v2` (текст silo), `archive_temp_presets_v2` (архивированные silo).
+
+Авторезерв при запуске (полная копия БД в `.bak`). Дросселированный инкрементальный бэкап каждые 60 с. Хранилища данных по категориям: `silo_colors_all`, `pinned_silos_all`, `silo_ticked_all`, `silo_children_all`, `silo_gaps_all`, `silo_project_paths_all` и т.д. Все алиасятся на плоские ключи (`temp_presets`) для активной категории.
+
+### 4. Система горячих клавиш (`core/hotkeys.py`, `core/hotkey_filter.py`)
+
+Два слоя: (1) глобальный поток-слушатель pynput для вызова/аварийного выхода; (2) QShortcut PyQt6 для привязок внутри окна. `HotkeyFilter` (Win32 WH_KEYBOARD_LL) перехватывает физические VK-коды — независимо от раскладки. Работает на QWERTY, JCUKEN, AZERTY, QWERTZ.
+
+### 5. Движок редактора (`ui/editor.py`)
+
+VaultTextEdit расширяет QPlainTextEdit. Возможности:
+- MarkdownHighlighter — живая подсветка синтаксиса (заголовки, жирный, курсив, кодовые блоки, чекбоксы, ссылки, изображения)
+- Нумерация строк — номера, стрелки сворачивания (▾), кнопка копирования кодового блока
+- Сворачивание секций — клик по заголовку сворачивает блок
+- Сворачиваемые изображения — `![alt](url)` рендерится как кликабельная пилюля 150px
+- Drop-оверлей — цель из 4 вариантов (вставить текст, вставить ссылку, скопировать файл, ярлык)
+- Заметки на полях — пины, галочки, якоря очереди, тепловая карта
+- Режим скрытия разметки — переключение `**bold**` → `bold` (T-603)
+
+### 6. Система Silo (`ui/snippet_panel.py`)
+
+До 100 silo на вкладку проекта. Возможности:
+- Пины (📌) — закрепить сверху
+- Галочки (✅) — маркер завершения
+- Иерархия — перетаскивание на другой silo для вложения (макс. глубина 2)
+- Тепловая карта давности — тёплый оттенок недавно отредактированных
+- Пробелы в сайдбаре — определяемые пользователем разделители (Ctrl+перетаскивание)
+- Мультивыбор — Shift=диапазон, Ctrl=переключение, групповые операции
+- Файловые контейнеры — папка на диске на silo (`data/silo_files/<cat>/<idx>/`)
+- Kanban (Alt+стрелки двигают карточки) + построитель таблиц (Tab обход ячеек) — T-630
+
+### 7. Движок Watcher (`core/watcher/`)
+
+Слив промптов + автоматизация цели. Конечный автомат: DISARMED → ARMED → WATCHING → SENDING. Chrome CDP (Electron-приложения) + Win32-пробы окна. Закрепление очереди за целью. Лимиты скорости: settle_ms=2500, min_gap_ms=4000, max_sends=25, max_failures=3.
+
+### 8. Управление окном (`ui/window_mixin.py`, `ui/zen_desktop.py`)
+
+Окно без рамки, эстетика тёмно-золотого Win95. Ctrl+Q циклирует позиции привязки (7 зон + выбор FancyZone + пользовательские пресеты). Ctrl+D в 3 стадии: Zen (минимальный редактор), Solo (свернуть остальные окна), назад. Оверлей-меню (») собирает скрытые кнопки в ультраузком режиме (<700px). Ярусы плотности заголовка подстраиваются автоматически (плотный <1280px, ультра <700px).
+
+### 9. Таймеры и Pomodoro (`core/timers.py`, `core/pomodoro.py`)
+
+Таймеры обратного отсчёта с цветовой срочностью, отложенным звонком, toast-уведомлениями (3D-фаски Win95). Pomodoro: конечный автомат работы/перерыва.
+
+### 10. Резервное копирование и восстановление
+
+Многослойно: (1) SQLite WAL — устойчивые к падению записи; (2) `.bak` при запуске + каждые 60 с; (3) ежедневное markdown-зеркало в `~/Documents/.fastprompter/` (silos + сниппеты + архив по проектам); (4) сборщик портативных ZIP-бэкапов.
