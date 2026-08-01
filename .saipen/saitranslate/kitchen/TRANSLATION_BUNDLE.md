@@ -1,56 +1,57 @@
 # Translation Bundle — FastPrompter
 
-Generated: 2026-07-22 UTC
-Source: `src/fastprompter/core/i18n/` (read-only reference)
-Bundle: `.saitranslate/locales/` (JSON, one file per language)
+Generated: 2026-07-31 UTC (synced 01.08: 2-key drift closed)
+Updated: 2026-08-01 UTC (repair: 63 unregistered multi-line tr() keys -> 939 keys/33 loc)
+Source: `src/fastprompter/` `tr()` call sites + `docs/wiki/` (read-only reference)
+Bundle: `.saipen/saitranslate/locales/` (JSON, one file per language)
 
-## Languages (22 + 1 bonus)
+## Languages (32 + 1 bonus)
 
 | Code | Name | Flag | Coverage |
 |------|------|------|----------|
 | EN | English | 🇺🇸 | 100.0% |
-| RU | Russian | 🇷🇺 | 97.7% |
-| EST | Estonian | 🇪🇪 | 97.7% |
-| JA | Japanese | 🇯🇵 | 97.7% |
-| UKR | Ukrainian | 🇺🇦 | 97.7% |
-| DE | German | 🇩🇪 | 97.7% |
-| FRA | French | 🇫🇷 | 97.7% |
-| SPA | Spanish | 🇪🇸 | 97.7% |
-| IT | Italian | 🇮🇹 | 97.7% |
-| PT | Portuguese | 🇵🇹 | 97.7% |
-| NL | Dutch | 🇳🇱 | 97.7% |
-| PL | Polish | 🇵🇱 | 97.7% |
-| SV | Swedish | 🇸🇪 | 97.7% |
-| DA | Danish | 🇩🇰 | 97.7% |
-| FI | Finnish | 🇫🇮 | 97.7% |
-| NO | Norwegian | 🇳🇴 | 97.7% |
-| ZH | Chinese | 🇨🇳 | 97.7% |
-| KO | Korean | 🇰🇷 | 97.7% |
-| TH | Thai | 🇹🇭 | 97.7% |
-| VI | Vietnamese | 🇻🇳 | 97.7% |
-| AR | Arabic | 🇦🇪 | 97.7% |
-| HE | Hebrew | 🇮🇱 | 97.7% |
-| DED | Дед (Angry Grandpa) | 🇷🇺 | 35.2% |
+| RU | Russian | 🇷🇺 | 100.0% |
+| EST | Estonian | 🇪🇪 | 100.0% |
+| JA | Japanese | 🇯🇵 | 100.0% |
+| UKR | Ukrainian | 🇺🇦 | 100.0% |
+| DE | German | 🇩🇪 | 100.0% |
+| FRA | French | 🇫🇷 | 100.0% |
+| SPA | Spanish | 🇪🇸 | 100.0% |
+| IT | Italian | 🇮🇹 | 100.0% |
+| PT | Portuguese | 🇵🇹 | 100.0% |
+| NL | Dutch | 🇳🇱 | 100.0% |
+| PL | Polish | 🇵🇱 | 100.0% |
+| SV | Swedish | 🇸🇪 | 100.0% |
+| DA | Danish | 🇩🇰 | 100.0% |
+| FI | Finnish | 🇫🇮 | 100.0% |
+| NO | Norwegian | 🇳🇴 | 100.0% |
+| ZH | Chinese | 🇨🇳 | 100.0% |
+| KO | Korean | 🇰🇷 | 100.0% |
+| TH | Thai | 🇹🇭 | 100.0% |
+| VI | Vietnamese | 🇻🇳 | 100.0% |
+| AR | Arabic | 🇦🇪 | 100.0% |
+| HE | Hebrew | 🇮🇱 | 100.0% |
+| BG | Bulgarian | 🇧🇬 | 100.0% |
+| CS | Czech | 🇨🇿 | 100.0% |
+| EL | Greek | 🇬🇷 | 100.0% |
+| HI | Hindi | 🇮🇳 | 100.0% |
+| HR | Croatian | 🇭🇷 | 100.0% |
+| HU | Hungarian | 🇭🇺 | 100.0% |
+| ID | Indonesian | 🇮🇩 | 100.0% |
+| RO | Romanian | 🇷🇴 | 100.0% |
+| SK | Slovak | 🇸🇰 | 100.0% |
+| TUR | Turkish | 🇹🇷 | 100.0% |
+| DED | Дед (Angry Grandpa) | 🇷🇺 | 100.0% |
 
-## Coverage Gap
+All 33 locales carry the same 939 keys; coverage is COMPUTED against en.json
+by `scratch/validate_saitranslate.py`, never read from the stored field.
+Missing keys fall back to English at runtime via the `tr()` engine.
 
-All 21 full languages share 11 missing dialog keys:
-- App will restart. Proceed?
-- Are you sure you want to delete this silo and its content?
-- Are you sure you want to delete this snippet?
-- Clear all custom fonts and reset to defaults?
-- Delete from this silo's folder?
-- Delete this snippet?
-- How should '{}' be added?
-- Nuke '{}' and all snippets?
-- Remove all custom fonts from the font selector?
-- Snippet #{} already exists. Overwrite?
-- The nested silo owns {} file(s). Merge them into the parent silo's Files?
+## Drift log
 
-These keys fall back to English at runtime via the `tr()` engine.
-
-DED is intentionally a partial overlay (35.2%) — only strings worth saying in
-дед-voice. Unknown keys fall back to Russian, then English.
+- 30.07: en.json 802 -> 874 (72 unregistered `tr()` keys from T-589..T-632; TUR 17 gaps repaired, 9 locales 1 each)
+- 31.07: en.json 874 -> 876 — `Rename image` (`tr()` in editor.py, c04c3e8) and `🤍 Support developer` (hardcoded button in help_dialog.py, uncommitted user work). All 29 non-Core locales via dedicated translator instance; RU/EST/DED by Core. The help_dialog button is still hardcoded English in code — integration must wrap it in `tr()` (future ADD/PLAN ticket, not TRANSLATE's scope).
+- 01.08: en.json 876 -> 939 — repair: the sync regex only captured single-line `tr()` fragments, so 63 multi-line tooltip keys (main.py, header_format_dialog.py, timer_dialog.py, ctrlw_settings.py, queue_panel.py, translations.py, send_selection_mixin.py, watcher_dialog.py, window_mixin.py, window_presets_dialog.py) were never registered and silently fell back to EN — the old 100% was a false 100% (validator compares locales vs en.json, never source vs en.json; the AST-vs-en check is the real one). RU/EST/DED hand-translated, 29 other locales via GoogleTranslator (same pipeline as prior runs). Validator PASSED 33/33 939 keys.
 
 ## Format
 
@@ -58,12 +59,16 @@ Each JSON file:
 ```json
 {
   "_meta": { "code": "...", "name": "...", "name_native": "...", "flag": "..." },
-  "coverage_pct": 97.7,
+  "coverage_pct": 100.0,
   "translations": { "EN key": "translated string" }
 }
 ```
 
+## Translated docs
+
+`kitchen/docs/{ru,est,ja,de}/` — 16 markdown files each, mirroring `docs/wiki/`.
+
 ## Integration
 
-This bundle sits in `.saitranslate/kitchen/` per TRANSLATE phase isolation rules (`RFC.md § 2.1`).
+This bundle sits in `.saipen/saitranslate/kitchen/` per TRANSLATE phase isolation rules (`RFC.md § 2.1`).
 Integration into the main project requires a future ADD/PLAN ticket through normal VERIFY/REVIEW/SHIP.

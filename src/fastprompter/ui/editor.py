@@ -1633,15 +1633,19 @@ class VaultTextEdit(QTextEdit):
             self._copy_pressed_block = None
             self._ts_pressed_block = None
             logger.exception("mouse press handling failed at %s", event.pos())
-        # Line-blocking drag: Ctrl+Shift+hold picks up the whole line under
-        # the cursor; a real drag (past the OS threshold) swaps it with the
-        # line it's dropped on, PureRef-style. A click with no movement is a
-        # no-op — see mouseReleaseEvent.
         _line_drag_mods = (Qt.KeyboardModifier.ControlModifier
                            | Qt.KeyboardModifier.ShiftModifier)
         if (event.button() == Qt.MouseButton.LeftButton
                 and (event.modifiers() & _line_drag_mods) == _line_drag_mods):
-            self._line_drag_source_block = self.cursorForPosition(event.pos()).block().blockNumber()
+            cursor = self.textCursor()
+            click_pos = self.cursorForPosition(event.pos()).position()
+            if cursor.hasSelection() and cursor.selectionStart() <= click_pos <= cursor.selectionEnd():
+                start = self.document().findBlock(cursor.selectionStart()).blockNumber()
+                end = self.document().findBlock(cursor.selectionEnd()).blockNumber()
+                self._line_drag_source_block = (start, end)
+            else:
+                blk = self.cursorForPosition(event.pos()).block().blockNumber()
+                self._line_drag_source_block = (blk, blk)
             self._line_drag_press_pos = event.pos()
             self._line_drag_active = False
             self._line_drag_hover_block = None
@@ -1669,6 +1673,31 @@ class VaultTextEdit(QTextEdit):
             event.accept()
             return
         if event.button() == Qt.MouseButton.MiddleButton:
+            if event.modifiers() == Qt.KeyboardModifier.AltModifier:
+                cursor = self.textCursor()
+                if not cursor.hasSelection():
+                    cursor.setPosition(self.cursorForPosition(event.pos()).position())
+                
+                with edit_block(cursor, self):
+                    start_block = self.document().findBlock(cursor.selectionStart())
+                    end_block = self.document().findBlock(cursor.selectionEnd())
+                    
+                    b = start_block
+                    while b.isValid() and b.blockNumber() <= end_block.blockNumber():
+                        text = b.text()
+                        if text.strip():
+                            if not re.match(r'^\s*[-*•]\s+', text):
+                                c = QTextCursor(b)
+                                c.movePosition(QTextCursor.MoveOperation.StartOfBlock)
+                                m = re.match(r'^(\s*)', text)
+                                ind = m.group(1) if m else ""
+                                c.setPosition(b.position() + len(ind))
+                                c.insertText("- ")
+                        b = b.next()
+                self.main_win.mark_dirty()
+                event.accept()
+                return
+
             block = self.cursorForPosition(event.pos()).block()
             if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
                 # Ctrl+Middle-click deletes the whole line under the cursor,
@@ -1692,35 +1721,73 @@ class VaultTextEdit(QTextEdit):
             self._dragged = False
         super().mousePressEvent(event)
 
-    def _swap_lines(self, block_num_a, block_num_b):
-        """Line-blocking drop: swap two whole lines in one undo step."""
+    def _move_lines(self, start_num, end_num, target_num):
+        """Line-blocking drop: move a block of lines to a new position."""
+        if target_num >= start_num and target_num <= end_num:
+            return  # target is inside the dragged range
+            
         doc = self.document()
-        block_a = doc.findBlockByNumber(block_num_a)
-        block_b = doc.findBlockByNumber(block_num_b)
-        if not block_a.isValid() or not block_b.isValid():
+        start_block = doc.findBlockByNumber(start_num)
+        end_block = doc.findBlockByNumber(end_num)
+        target_block = doc.findBlockByNumber(target_num)
+        
+        if not start_block.isValid() or not end_block.isValid() or not target_block.isValid():
             return
-        text_a, text_b = block_a.text(), block_b.text()
-        if text_a == text_b:
-            return
+            
         with edit_block(self.textCursor(), self):
-            for block, new_text in ((block_a, text_b), (block_b, text_a)):
-                c = QTextCursor(block)
-                c.movePosition(QTextCursor.MoveOperation.StartOfBlock)
-                c.movePosition(QTextCursor.MoveOperation.EndOfBlock,
-                               QTextCursor.MoveMode.KeepAnchor)
-                c.insertText(new_text)
+            # Extract the text of the source lines
+            c = QTextCursor(start_block)
+            c.movePosition(QTextCursor.MoveOperation.StartOfBlock)
+            c_end = QTextCursor(end_block)
+            c_end.movePosition(QTextCursor.MoveOperation.EndOfBlock)
+            c.setPosition(c_end.position(), QTextCursor.MoveMode.KeepAnchor)
+            
+            text_to_move = c.selectedText().replace('\u2029', '\n')
+            
+            # Remove the source lines. If it's at the end of the document, 
+            # removing the trailing newline is tricky, so we just remove the block text and the newline before/after.
+            if c.atStart():
+                c.movePosition(QTextCursor.MoveOperation.NextBlock, QTextCursor.MoveMode.KeepAnchor)
+            else:
+                c.movePosition(QTextCursor.MoveOperation.PreviousBlock, QTextCursor.MoveMode.KeepAnchor)
+                # re-select forward to properly delete the block and the newline
+                pos1 = c.position()
+                c.setPosition(c_end.position())
+                c.setPosition(pos1, QTextCursor.MoveMode.KeepAnchor)
+                
+            c.removeSelectedText()
+            
+            # Insert at target
+            # Need to re-find target_block because removing text before it shifted its position!
+            target_block = doc.findBlockByNumber(target_num if target_num < start_num else target_num - (end_num - start_num + 1))
+            
+            if not target_block.isValid():
+                target_block = doc.lastBlock()
+                
+            ins_cursor = QTextCursor(target_block)
+            if target_num > end_num:
+                # Dragged down: insert after target
+                ins_cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock)
+                ins_cursor.insertText("\n" + text_to_move)
+            else:
+                # Dragged up: insert before target
+                ins_cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
+                ins_cursor.insertText(text_to_move + "\n")
 
     def mouseReleaseEvent(self, event):
         line_drag_source = getattr(self, "_line_drag_source_block", None)
         if line_drag_source is not None and event.button() == Qt.MouseButton.LeftButton:
             was_active = getattr(self, "_line_drag_active", False)
             hover = getattr(self, "_line_drag_hover_block", None)
+            
+            start_num, end_num = line_drag_source
             self._line_drag_source_block = None
             self._line_drag_active = False
             self._line_drag_hover_block = None
             self.viewport().update()
-            if was_active and hover is not None and hover != line_drag_source:
-                self._swap_lines(line_drag_source, hover)
+            
+            if was_active and hover is not None and not (start_num <= hover <= end_num):
+                self._move_lines(start_num, end_num, hover)
             event.accept()
             return
         pressed_fold = getattr(self, "_fold_pressed_block", None)

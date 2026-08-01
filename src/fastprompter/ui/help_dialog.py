@@ -5,8 +5,9 @@ user's actual rebound global hotkeys), mouse gesture, and feature.
 Now supports EN/RU translation.
 """
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QDialog, QPushButton, QTextBrowser, QVBoxLayout
+from PyQt6.QtCore import Qt, QUrl
+from PyQt6.QtGui import QDesktopServices
+from PyQt6.QtWidgets import QDialog, QPushButton, QTextBrowser, QVBoxLayout, QHBoxLayout
 
 from fastprompter.core.translations import tr
 
@@ -138,6 +139,17 @@ class HelpDialog(QDialog):
         browser.setOpenExternalLinks(True)
         browser.setHtml(build_help_html(main_win.data, self._lang))
         layout.addWidget(browser)
+        
+        btn_layout = QHBoxLayout()
+        
+        support_btn = QPushButton("🤍 Support developer", self)
+        support_btn.setStyleSheet("background-color: #2b2b2b; color: #ffdd00; font-weight: bold; border-radius: 4px; padding: 4px 8px;")
+        support_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        support_btn.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://buymeacoffee.com/vacuum34")))
+        btn_layout.addWidget(support_btn, alignment=Qt.AlignmentFlag.AlignLeft)
+        
         btn = QPushButton(tr("Close", self._lang), self)
         btn.clicked.connect(self.close)
-        layout.addWidget(btn, alignment=Qt.AlignmentFlag.AlignRight)
+        btn_layout.addWidget(btn, alignment=Qt.AlignmentFlag.AlignRight)
+        
+        layout.addLayout(btn_layout)

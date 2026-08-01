@@ -11,8 +11,7 @@
 
 ## TODO
 
-
-
+- [ ] T-685 (HUNT, dead code) src/fastprompter/ui/saipen_dialog.py is an orphan: a working SAIPEN Viewer dialog (STATE/BOARD/LOG tabs, 8 tr() keys, 101 lines) built via scratch patches but never wired into the app -- zero references in src/ and tests/. Wire it into the UI or delete it? | verify: grep -rn "saipen_dialog\|SaipenViewer" src tests (zero = deleted, one+ = wired)
 ## BLOCKED
 
 - [ ] T-295 (P2) UNBLOCKED 27.07, partially done. `tests_smoke` still shares ONE module-scoped `win`; the remaining work is converting tests that actually need isolation onto `fresh_win`. NOT doing a wholesale conversion: a full function-scope suite costs ~1.9s x 509 = ~16 min/run against 2:51 now. | verify: per-test, as tests are moved
