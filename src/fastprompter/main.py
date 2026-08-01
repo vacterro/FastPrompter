@@ -5010,6 +5010,44 @@ class FastPrompter(
         ("archive_project_paths", "str_dict"),
     )
 
+    def drop_silo_state(self, idx, is_archive=False):
+        """Slot `idx` is going away: forget its state, pull the rest up one.
+
+        The membership lists need the slot REMOVED, not remapped — a remap
+        lambda cannot express "delete", and leaving `idx` pinned would pin
+        whichever silo slid into its place. The keyed stores are safe to
+        remap: `idx` and `idx + 1` both land on `idx` and the survivor wins.
+
+        Lives here so that every path which removes a silo shares it. It used
+        to be written out inside del_silo, and move_preset_cross_category —
+        dragging a silo into a snippet category — did not do it at all, so the
+        silo list shifted while the colours, types and project paths stayed on
+        their old numbers.
+        """
+        if not is_archive:
+            pinned = self.data.get("pinned_silos", [])
+            if isinstance(pinned, list) and idx in pinned:
+                pinned.remove(idx)
+            ticked = self.data.get("silo_ticked", [])
+            if isinstance(ticked, list) and idx in ticked:
+                ticked.remove(idx)
+            cmap = self.data.get("silo_children", {})
+            if isinstance(cmap, dict):
+                cmap.pop(idx, None)     # deleting a parent promotes its children
+                for kids in cmap.values():
+                    if idx in kids:
+                        kids.remove(idx)
+            collapsed = self.data.get("silo_collapsed", [])
+            if isinstance(collapsed, list) and idx in collapsed:
+                collapsed.remove(idx)
+        self._remap_silo_indices(lambda i: i - 1 if i > idx else i,
+                                 is_archive=is_archive)
+
+    def open_silo_slot(self, idx, is_archive=False):
+        """A silo is being inserted at `idx`: push everything from there down."""
+        self._remap_silo_indices(lambda i: i + 1 if i >= idx else i,
+                                 is_archive=is_archive)
+
     def _remap_silo_indices(self, remap, is_archive=False):
         """Apply an index remap to every slot-index-keyed store.
 
@@ -5331,6 +5369,7 @@ class FastPrompter(
             text = self.data["temp_presets"].pop(from_idx)
             if from_idx < len(self.silo_docs):
                 self.silo_docs.pop(from_idx)
+            self.drop_silo_state(from_idx)
             item = {"name": text[:20], "text": text}
             if not getattr(self, "active_is_archive", False):
                 if from_idx < self.active_temp_slot:
@@ -5345,6 +5384,7 @@ class FastPrompter(
             text = self.data["archive_temp_presets"].pop(from_idx)
             if from_idx < len(self.archive_docs):
                 self.archive_docs.pop(from_idx)
+            self.drop_silo_state(from_idx, is_archive=True)
             item = {"name": text[:20], "text": text}
             if getattr(self, "active_is_archive", False):
                 if from_idx < self.active_temp_slot:
@@ -5362,6 +5402,8 @@ class FastPrompter(
                 slots.append(None)
 
         if to_cat == "silo":
+            # push the existing silos' state down BEFORE the slot exists
+            self.open_silo_slot(to_idx)
             self.data["temp_presets"].insert(to_idx, item["text"] if item else "")
             doc = QTextDocument()
             doc.setDefaultFont(self.text_area.font())
@@ -5370,6 +5412,7 @@ class FastPrompter(
         elif to_cat == "arcsilo":
             if "archive_temp_presets" not in self.data:
                 self.data["archive_temp_presets"] = []
+            self.open_silo_slot(to_idx, is_archive=True)
             self.data["archive_temp_presets"].insert(to_idx, item["text"] if item else "")
             doc = QTextDocument()
             doc.setDefaultFont(self.text_area.font())

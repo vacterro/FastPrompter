@@ -3148,6 +3148,39 @@ def test_the_remembered_session_reaches_the_database(win):
             fresh.conn.close()
 
 
+def test_dragging_a_silo_out_shifts_the_slot_keyed_state_with_it(win):
+    """Dragging a silo into a snippet category is a removal like any other.
+
+    move_preset_cross_category popped straight out of temp_presets and never
+    called the remap, so the list shifted while colours, types and project
+    paths stayed on their old numbers: the silo that slid up into slot 0 wore
+    the colour of the one that left, and a colour sat on a slot that no longer
+    existed. del_silo did the same work inline; both go through
+    drop_silo_state now so they cannot drift apart again.
+    """
+    cats = win.data["cats_order"]
+    target = next((c for c in cats if c in win.data.get("categories", {})), None)
+    if target is None:
+        import pytest as _pytest
+        _pytest.skip("needs a snippet category")
+
+    win.data["temp_presets"][:] = ["alpha", "bravo", "charlie"]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+
+    colours = win.data.setdefault("silo_colors", {})
+    colours.clear()
+    colours.update({"0": "#ff0000", "1": "#00ff00", "2": "#0000ff"})
+    pinned = win.data.setdefault("pinned_silos", [])
+    pinned[:] = [0, 2]
+
+    win.move_preset_cross_category("silo", 0, target, 0)
+
+    assert list(win.data["temp_presets"]) == ["bravo", "charlie"]
+    assert dict(win.data["silo_colors"]) == {"0": "#00ff00", "1": "#0000ff"},         "colours did not follow their silos"
+    assert sorted(win.data["pinned_silos"]) == [1],         "the pin of the silo that left, or of the wrong silo, survived"
+
+
 def test_ctrl_wheel_zoom_falls_back_to_pixel_delta(win):
     # Regression: only angleDelta() was read, which stays 0 on trackpads that
     # report pixelDelta — Ctrl+wheel zoom silently did nothing there.

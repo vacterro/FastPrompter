@@ -717,23 +717,12 @@ class SnippetOpsMixin:
 
             if not is_arc:
                 self.silo_last_edited.pop(idx, None)
-                pinned = self.data.get("pinned_silos", [])
-                if isinstance(pinned, list) and idx in pinned:
-                    pinned.remove(idx)
-                ticked = self.data.get("silo_ticked", [])
-                if isinstance(ticked, list) and idx in ticked:
-                    ticked.remove(idx)
-                cmap = self.data.get("silo_children", {})
-                if isinstance(cmap, dict):
-                    cmap.pop(idx, None)  # deleting a parent promotes its children
-                    for kids in cmap.values():
-                        if idx in kids:
-                            kids.remove(idx)
-                collapsed = self.data.get("silo_collapsed", [])
-                if isinstance(collapsed, list) and idx in collapsed:
-                    collapsed.remove(idx)
-                if hasattr(self, "_remap_silo_indices"):
-                    self._remap_silo_indices(lambda i: i - 1 if i > idx else i)
+                # One helper for every path that removes a silo. This was
+                # written out here, and the drag-to-snippets path did not do
+                # it at all — so the silo list shifted and the colours, types
+                # and project paths stayed on their old slot numbers.
+                if hasattr(self, "drop_silo_state"):
+                    self.drop_silo_state(idx)
 
             if idx < self.active_temp_slot:
                 self.active_temp_slot -= 1
