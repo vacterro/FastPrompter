@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.8.8 — 2026-08-02
+
+- **Transform menu speaks 33 languages (T-693).** `✨ Transform to…`, `📄 Text`, `📋 Kanban Board` and `📊 Table` were built with `addMenu`/`addAction` and never passed through `tr()`, so they rendered English in every locale — and the bundle did not carry them either. Wrapped at the call sites and added to all 33 locales (939 → 943 keys), reusing each locale's existing `Insert Table` / `Insert Kanban` wording so the menu does not invent a second word for the same object.
+- **Ctrl+Shift line drag no longer mangles the text (T-694).** The multi-line drag shipped in v0.8.7 duplicated the dragged lines, deleted a neighbouring one and left blank lines behind (measured: dragging line 2 of `one/two/three/four` onto line 4 returned `\nthree\nfour\ntwo` — `one` was gone). The lines now travel as a `QTextDocumentFragment`, so bold, checkboxes and image pills survive the move instead of being flattened to plain text.
+
 ## v0.8.7 — 2026-08-01
 
 - **Translation bundle integrated (T-691).** The 939-key, 33-locale bundle that has sat in `.saipen/saitranslate/` since 30.07 is now the live runtime pack: all 33 `core/i18n/*.py` modules regenerated from it (each 939 keys, 100% coverage — the old pack was stale at 874 and silently missed the 63 multi-line tooltip keys from the 01.08 repair). The hardcoded `🤍 Support developer` button in the Help dialog now translates via `tr()`. `GUIDE_EST.md`, `GUIDE_JA.md`, `GUIDE_DE.md` copied from the translate kitchen to the repo root next to `GUIDE_EN/GUIDE_RU`.

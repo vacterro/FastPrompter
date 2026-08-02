@@ -7,7 +7,7 @@ Now supports EN/RU translation.
 
 from PyQt6.QtCore import Qt, QUrl
 from PyQt6.QtGui import QDesktopServices
-from PyQt6.QtWidgets import QDialog, QPushButton, QTextBrowser, QVBoxLayout, QHBoxLayout
+from PyQt6.QtWidgets import QDialog, QHBoxLayout, QPushButton, QTextBrowser, QVBoxLayout
 
 from fastprompter.core.translations import tr
 
