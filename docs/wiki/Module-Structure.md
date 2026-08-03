@@ -22,11 +22,11 @@ src/fastprompter/
 │   ├── sound_manager.py        # Audio playback (clicks, typewriter, alarms)
 │   ├── state.py                # SQLite DB interface + state management
 │   ├── timers.py               # Countdown timer model, due detection
-│   ├── translations.py         # Legacy proxy → i18n package (22 langs)
+│   ├── translations.py         # Legacy proxy → i18n package (33 locales)
 │   │
-│   ├── i18n/                   # 22-language resource pack
+│   ├── i18n/                   # 33-locale resource pack (32 languages + Дед)
 │   │   ├── __init__.py, _compat.py, _container.py, _context.py, _engine.py
-│   │   ├── en.py, ru.py, de.py, fra.py, spa.py, ... (22 lang modules)
+│   │   ├── en.py, ru.py, est.py, ja.py, ded.py, ... (33 locale modules)
 │   │   └── flags/              # Country flag renderers
 │   │
 │   └── watcher/                # Automation + prompt drainage engine
@@ -63,7 +63,6 @@ src/fastprompter/
 │   ├── pie_menu.py             # QuickListWidget radial context menu
 │   ├── queue_panel.py          # Watcher queue dialog
 │   ├── resizers.py             # Window resize handle controls
-│   ├── saipen_dialog.py        # SAIPEN project viewer (STATE, BOARD, LOG)
 │   ├── scaling_mixin.py        # UI DPI + font scaling mixin
 │   ├── search_mixin.py         # Multi-word AND search filter
 │   ├── send_selection_mixin.py # Send selection via watcher
@@ -71,6 +70,9 @@ src/fastprompter/
 │   ├── silo_kanban.py          # Markdown kanban board (T-630)
 │   ├── silo_settings_dialog.py # Per-silo config (color, project links)
 │   ├── silo_table.py           # Markdown table builder (T-630)
+│   ├── kanban_widget.py        # Kanban board view widget (silo_kanban backend)
+│   ├── table_widget.py         # Table view widget (silo_table backend)
+│   ├── silo_region.py          # Silo list region: drag, gaps, multi-select
 │   ├── snippet_ops_mixin.py    # Silo ops (trash, move, duplicate, clear)
 │   ├── snippet_panel.py        # Silo tree + F1-F10 snippet buttons
 │   ├── theme_mixin.py          # Vintage theme styling + QSS generator
@@ -102,7 +104,7 @@ src/fastprompter/
 | `core.state` | SQLite WAL persistence, state sync, undo stack, per-category aliased stores |
 | `core.hotkey*` | Global hotkey listener + Win32 VK filter, layout-independent dispatch |
 | `core.watcher` | Prompt queue, CDP/Win32 automation, skill wrappers, limit scanner |
-| `core.i18n` | 22-language translation pack + proxy delegation from translations.py |
+| `core.i18n` | 33-locale translation pack + proxy delegation from translations.py |
 | `core.ctrlw` | Divider template engine (Ctrl+W / Alt+W) |
 | `core.timers` | Timer model, due detection, serialization |
 | `core.pomodoro` | Work/break state machine, focus timer |
@@ -112,7 +114,9 @@ src/fastprompter/
 | `ui.silo_table` | Pure-text table editor (Tab walk cells, Enter new row) |
 | `ui.file_container` | Per-silo folder drawer, asset preview, templates |
 | `ui.theme_mixin` | 6 retro Win95 themes + custom color engine + QSS generator |
-| `ui.saipen_dialog` | SAIPEN project viewer (.saipen STATE/BOARD/LOG) |
+| `ui.kanban_widget` | Kanban board view widget (silo_kanban backend) |
+| `ui.table_widget` | Table view widget (silo_table backend) |
+| `ui.silo_region` | Silo list region: drag, gaps, multi-select |
 | `ui.fancy_zones` | Visual zone picker with 7 layout presets |
 | `ui.window_presets_dialog` | User-saved window geometry presets (Ctrl+Q page) |
 | `ui.zen_desktop` | 3-stage Ctrl+D: Zen, Solo (minimise others), back |
@@ -124,8 +128,8 @@ src/fastprompter/
 
 ## Module Count Summary
 
-- **core/**: 14 modules + i18n/ (22 lang) + watcher/ (9 modules) = ~45
-- **ui/**: 39 modules
+- **core/**: 15 modules + i18n/ (33 locales + 5 infra files = 38) + watcher/ (10 modules)
+- **ui/**: 44 modules
 - **theme/**: 1 module
 - **utils/**: 4 modules
-- **Total**: ~45 modules + i18n languages
+- **Total**: 112 `.py` files under `src/fastprompter/` (includes `main.py` + `__init__.py`)

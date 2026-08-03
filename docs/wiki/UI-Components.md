@@ -57,7 +57,7 @@ Configurable button bar. Tokens: cat tabs, search, silo controls, formatting, cl
 
 **Code fences:** Monospace (Consolas default) + single-click copy button + fold to collapse.
 
-**Collapsible images:** `![alt](url)` → compact 150px button. Ctrl+Click opens, Ctrl+RClick opens folder.
+**Collapsible images:** `![alt](url)` → compact 150px button. Ctrl+Click opens, Ctrl+RClick opens folder. Double-click the pill renames the file on disk and the link together (one undo step).
 
 **Interactive checkboxes:** Click `- [ ]` toggles to `- [x]`.
 
@@ -87,7 +87,6 @@ Pure-text markdown table. Tab/Shift+Tab walk cells. Tab off last cell grows row.
 |---|---|
 | `Settings (Alt+`)` | Theme picker, hotkey rebind, sound, scale, toolbar reorder |
 | `Snippet Manager (Ctrl+S)` | Edit F1-F10 snippet names + content |
-| `Saipen Viewer (Ctrl+Shift+C)` | Read-only STATE/BOARD/LOG viewer |
 | `Timer Dialog (Ctrl+Shift+T)` | Pomodoro + countdown timer setup |
 | `Queue Master (Alt+Shift+C)` | Watcher queue overview per silo |
 | `Hashtag Dialog (Alt+Shift+T)` | Cross-silo tag search |

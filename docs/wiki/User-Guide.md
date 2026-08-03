@@ -68,7 +68,7 @@ User-defined spacer bars in silo list. Help organise silos into groups. Ctrl+dra
 - Section folding — click ▾ to collapse headers
 - Code fence copy button — hover fence, click copy icon
 - Checkbox click — click `- [ ]` to toggle `- [x]`
-- Collapsible images — `![alt](url)` renders as compact pill button (150px). Ctrl+click opens, Ctrl+rclick opens folder
+- Collapsible images — `![alt](url)` renders as compact pill button (150px). Ctrl+click opens, Ctrl+rclick opens folder. Double-click the pill renames the file and the link together
 - Smart paste — drops table/list/code formatting cleaner
 
 **Formatting shortcuts:**
@@ -162,9 +162,13 @@ Settings → Customize Toolbar. Drag buttons to reorder. Visible gap widgets sho
 
 When header < 700px: hidden buttons collected in » popup. Every action still reachable — formatting, navigation, silo ops, tools.
 
-### 21. SAIPEN Integration
+### 21. Editor Mouse & Line Drag
 
-Ctrl+Shift+C opens SAIPEN viewer (STATE/BOARD/LOG from `.saipen/`). Toolbar buttons for quick access when project folder has `.saipen/`.
+**Ctrl+Shift+drag** — move the line under the pointer (or the whole selected block) to the drop indicator. Rich formatting survives the trip — bold, checkboxes and image pills travel as a document fragment, not plain text.
+
+**Alt+MiddleButton** — bullet-ize every selected line. **MiddleButton** — cycle the clicked line's state: plain → checked+struck → unchecked. **Ctrl+MiddleButton** — delete the whole line with smart list reflow.
+
+**Double-click an image pill** — rename the file on disk and the markdown link together, one undo step.
 
 ### 22. Backup
 

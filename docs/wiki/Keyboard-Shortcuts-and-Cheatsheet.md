@@ -37,11 +37,14 @@ Full keyboard-driven operation. Layout-independent VK dispatch — works on QWER
 | **Formatting** | **Alt+Backspace** | Delete previous word | Editor |
 | **Formatting** | **Ctrl+Z** | Smart Undo (per silo) | Editor |
 | **Formatting** | **Ctrl+MiddleButton** | Delete line under cursor (smart list reflow) | Editor |
+| **Formatting** | **Alt+MiddleButton** | Bullet-ize every selected line (`• ` prefix) | Editor |
+| **Formatting** | **MiddleButton** | Cycle line state: plain → checked+struck → unchecked | Editor |
 | **Formatting** | **Ctrl+Click on bullet** | Toggle `-` / `•` | Editor |
+| **Formatting** | **Ctrl+Shift+drag** | Move whole line(s) to the drop point, rich formatting kept | Editor |
 | **Snippets** | **F1**…**F10** | Paste Snippet 1–10 | App |
 | **Snippets** | **Ctrl+Shift+1**…**9** | Paste Snippet 1–9 (alternate) | App |
 | **Snippets** | **Ctrl+S** | Open Snippet Manager | App |
-| **SAIPEN** | **Ctrl+Shift+C** | Open SAIPEN viewer | App |
+| **General** | **Ctrl+Shift+C** | Clear the current text | App |
 | **Timers** | **Ctrl+Shift+T** | Open Timer Dialog | App |
 | **Hashtags** | **Alt+Shift+T** | Open Hashtag Dialog | App |
 | **Attachments** | **F2** | Rename file container attachment | File Container |
@@ -74,7 +77,9 @@ All formatting shortcuts toggle inline markers: **Ctrl+B** → `**bold**`, Ctrl+
 
 **Ctrl+E** — format current line as header. Configurable: rule type, bullet, timestamp stamp, alignment. Open Settings → Dividers & headers to customize.
 
-**Ctrl+MiddleButton** — delete whole line with smart reflow: ordered lists renumber, bullet lists close gap.
+**Ctrl+MiddleButton** — delete whole line with smart reflow: ordered lists renumber, bullet lists close gap. **Alt+MiddleButton** — turn every selected line into a bullet. **MiddleButton** — cycle the clicked line: plain → checked+struck → unchecked.
+
+**Ctrl+Shift+drag** — grab the line under the pointer (or the whole selection) and move it to the drop indicator; bold, checkboxes and image pills survive the trip.
 
 ### Silo Navigation
 **Ctrl+1** through **Ctrl+0** jump to silos 1-10. **Alt+↑↓** walk sequentially. **Ctrl+N** appends empty silo at bottom.
@@ -82,8 +87,8 @@ All formatting shortcuts toggle inline markers: **Ctrl+B** → `**bold**`, Ctrl+
 ### Snippet Macros
 **F1-F10** paste pre-configured text templates. Bind content via Snippet Manager (**Ctrl+S**) or right-click on F-button.
 
-### SAIPEN + Timers
-**Ctrl+Shift+C** — open SAIPEN viewer (STATE/BOARD/LOG). **Ctrl+Shift+T** — open timer dialog. **Alt+Shift+T** — open hashtag search.
+### Clear + Timers
+**Ctrl+Shift+C** — clear the current silo text. **Ctrl+Shift+T** — open timer dialog. **Alt+Shift+T** — open hashtag search.
 
 ### Kanban & Table (T-630)
 Inside a kanban silo: **Alt+arrows** move cards. Inside a table silo: **Tab/Shift+Tab** walk cells, **Enter** adds row.

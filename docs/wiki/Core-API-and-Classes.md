@@ -248,16 +248,6 @@ Visual screen zone picker. 7 layout presets (TL, TR, BL, BR, Center, Full, Curso
 
 ---
 
-### `SaipenViewerDialog` (`ui/saipen_dialog.py`)
-
-Read-only viewer for `.saipen/` STATE, BOARD, LOG files.
-
-- Open via Ctrl+Shift+C or toolbar
-- Auto-detect `.saipen/` in project path
-- Live refresh button
-
----
-
 ### `WindowPresetsDialog` (`ui/window_presets_dialog.py`)
 
 User-defined window position presets. Up to 10 saved geometries as screen fractions.
