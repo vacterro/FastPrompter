@@ -68,7 +68,7 @@ Benutzerdefinierte Abstandsbalken in der Silo-Liste. Helfen, Silos in Gruppen zu
 - Abschnittsfaltung — Klick auf ▾ klappt Überschriften ein
 - Code-Fence-Kopier-Button — Fence hoveren, Kopier-Icon klicken
 - Checkbox-Klick — Klick auf `- [ ]` schaltet auf `- [x]` um
-- Einklappbare Bilder — `![alt](url)` als kompakte Pillen-Button (150px). Ctrl+Klick öffnet, Ctrl-R-Klick öffnet Ordner
+- Einklappbare Bilder — `![alt](url)` als kompakte Pillen-Button (150px). Ctrl+Klick öffnet, Ctrl-R-Klick öffnet Ordner. Doppelklick auf die Pill benennt Datei und Link zusammen um
 - Smart-Paste — bereinigt Tabellen-/Listen-/Code-Formatierung
 
 **Formatierungs-Shortcuts:**
@@ -162,9 +162,13 @@ Einstellungen → Toolbar anpassen. Buttons zum Sortieren ziehen. Sichtbare Lüc
 
 Wenn Header < 700px: ausgeblendete Buttons in »-Popup gesammelt. Jede Aktion bleibt erreichbar — Formatierung, Navigation, Silo-Operationen, Werkzeuge.
 
-### 21. SAIPEN-Integration
+### 21. Editor-Maus & Zeilen-Drag
 
-Ctrl+Shift+C öffnet den SAIPEN-Viewer (STATE/BOARD/LOG aus `.saipen/`). Toolbar-Buttons für schnellen Zugriff, wenn der Projektordner `.saipen/` hat.
+**Ctrl+Shift+Ziehen** — Zeile unter dem Zeiger (oder den ganzen markierten Block) zum Ablageindikator bewegen. Rich-Formatierung überlebt den Weg — Fett, Kontrollkästchen und Bild-Pills wandern als Dokumentfragment, nicht als Klartext.
+
+**Alt+Mitteltaste** — ausgewählte Zeilen in Aufzählungen verwandeln. **Mitteltaste** — Zeilenzustand zyklisch: normal → markiert+durchgestrichen → unmarkiert. **Ctrl+Mitteltaste** — ganze Zeile mit Smart-List-Reflow löschen.
+
+**Doppelklick auf Bild-Pill** — Datei auf Platte und Markdown-Link zusammen umbenennen, ein Undo-Schritt.
 
 ### 22. Backup
 

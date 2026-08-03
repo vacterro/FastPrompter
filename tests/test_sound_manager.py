@@ -1,5 +1,6 @@
 """Tests for fastprompter.core.sound_manager — SoundManager."""
 
+import io
 import os
 import sys
 
@@ -52,7 +53,13 @@ sys.modules["PyQt6.QtCore"].QObject = _MockQObject
 sys.modules["PyQt6.QtCore"].QUrl = MagicMock()
 sys.modules["PyQt6.QtCore"].QUrl.fromLocalFile = lambda p: f"file:///{p}"
 
-from fastprompter.core.sound_manager import _SOUND_FILE_MAP, SoundManager
+from fastprompter.core.sound_manager import (
+    _SOUND_FILE_MAP,
+    SoundManager,
+    _volume_level,
+    scale_wav_bytes,
+    scaled_wav_path,
+)
 
 _qt_stub.restore(_before_stubs)
 
@@ -204,3 +211,79 @@ class TestSoundManagerInit:
         data = {"sound_ui": "True", "sound_volume": "7"}
         sm = SoundManager(_MockQObject(), data)
         assert sm._data is data
+
+
+class TestVolumeOnTheWinsoundPath:
+    """T-699. The Volume spinner did nothing in the SHIPPED build.
+
+    QtMultimedia is not in the dist (no qt6multimedia.dll), so the packaged
+    app always takes the winsound path — and winsound has no volume control
+    at all. Every test here is about that path; the QSoundEffect one was
+    already fine, which is why the bug was invisible from a dev checkout.
+    """
+
+    def test_level_is_clamped_and_junk_reads_as_five(self):
+        assert _volume_level({"sound_volume": "7"}) == 7
+        assert _volume_level({"sound_volume": "0"}) == 0
+        assert _volume_level({"sound_volume": "99"}) == 10
+        assert _volume_level({"sound_volume": "-3"}) == 0
+        assert _volume_level({"sound_volume": "loud"}) == 5
+        assert _volume_level({}) == 5
+
+    def _sample(self):
+        sm = SoundManager(_MockQObject(), {})
+        return os.path.join(sm._sounds_dir, "button1.wav")
+
+    def test_samples_are_actually_scaled(self):
+        import wave
+        from array import array
+
+        src = self._sample()
+        assert os.path.exists(src), src
+
+        def peak(fh):
+            with wave.open(fh, "rb") as w:
+                code = {1: "B", 2: "h", 4: "i"}[w.getsampwidth()]
+                a = array(code)
+                a.frombytes(w.readframes(w.getnframes()))
+                return max(abs(x) for x in a), w.getparams()
+
+        full, params = peak(src)
+        for factor in (0.5, 0.1):
+            data = scale_wav_bytes(src, factor)
+            assert data is not None, "the shipped effects are 32-bit PCM — width 4 must be handled"
+            got, got_params = peak(io.BytesIO(data))
+            assert abs(got / full - factor) < 0.01, (factor, got / full)
+            assert got_params == params  # same rate/width/channels
+
+    def test_cached_file_is_per_level(self, tmp_path):
+        src = self._sample()
+        a = scaled_wav_path(src, 3)
+        b = scaled_wav_path(src, 7)
+        assert a and b and a != b
+        assert os.path.exists(a) and os.path.exists(b)
+        assert scaled_wav_path(src, 3) == a  # reused, not rewritten
+        # full volume has nothing to scale — the original file is used
+        assert scaled_wav_path(src, 10) is None
+
+    def test_play_uses_the_scaled_copy_and_stays_async(self):
+        played = []
+        fake = MagicMock()
+        fake.SND_FILENAME, fake.SND_ASYNC, fake.SND_MEMORY = 0x20000, 0x0001, 0x0004
+        fake.PlaySound = lambda s, f: played.append((s, f))
+        with patch.dict(sys.modules, {"winsound": fake}):
+            src = self._sample()
+            SoundManager._play_winsound(src, 2)
+            SoundManager._play_winsound(src, 10)
+            SoundManager._play_winsound(src, 0)
+
+        assert len(played) == 2, "level 0 must play nothing at all"
+        quiet, loud = played
+        assert quiet[0] != src and quiet[0].endswith("_v2.wav")
+        assert loud[0] == src
+        # SND_MEMORY is refused by winsound together with SND_ASYNC
+        # ("Cannot play asynchronously from memory"), and playing a click
+        # synchronously would freeze the editor on every keystroke.
+        for source, flags in played:
+            assert flags == fake.SND_FILENAME | fake.SND_ASYNC
+            assert isinstance(source, str)

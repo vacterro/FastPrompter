@@ -22,11 +22,11 @@ src/fastprompter/
 │   ├── sound_manager.py        # Audio-Wiedergabe (Klicks, Schreibmaschine, Alarme)
 │   ├── state.py                # SQLite-DB-Schnittstelle + Zustandsverwaltung
 │   ├── timers.py               # Countdown-Timer-Modell, Fälligkeitserkennung
-│   ├── translations.py         # Legacy-Proxy → i18n-Paket (22 Sprachen)
+│   ├── translations.py         # Legacy-Proxy → i18n-Paket (33 Lokale)
 │   │
-│   ├── i18n/                   # 22-Sprachen-Ressourcenpaket
+│   ├── i18n/                   # 33-Lokale-Ressourcenpaket
 │   │   ├── __init__.py, _compat.py, _container.py, _context.py, _engine.py
-│   │   ├── en.py, ru.py, de.py, fra.py, spa.py, ... (22 Sprachmodule)
+│   │   ├── en.py, ru.py, est.py, ja.py, ded.py, ... (33 Lokalmodule)
 │   │   └── flags/              # Länderflaggen-Renderer
 │   │
 │   └── watcher/                # Automatisierungs- + Prompt-Ableitungs-Engine
@@ -63,7 +63,6 @@ src/fastprompter/
 │   ├── pie_menu.py             # QuickListWidget-radiales Kontextmenü
 │   ├── queue_panel.py          # Watcher-Queue-Dialog
 │   ├── resizers.py             # Fenster-Größenänderungs-Handles
-│   ├── saipen_dialog.py        # SAIPEN-Projekt-Viewer (STATE, BOARD, LOG)
 │   ├── scaling_mixin.py        # UI-DPI- + Schrift-Skalierungs-Mixin
 │   ├── search_mixin.py         # Mehrwort-UND-Suchfilter
 │   ├── send_selection_mixin.py # Auswahl über Watcher senden
@@ -71,6 +70,9 @@ src/fastprompter/
 │   ├── silo_kanban.py          # Markdown-Kanban-Board (T-630)
 │   ├── silo_settings_dialog.py # Pro-Silo-Konfiguration (Farbe, Projektlinks)
 │   ├── silo_table.py           # Markdown-Tabellen-Builder (T-630)
+│   ├── kanban_widget.py        # Kanban-Board-Ansichts-Widget (silo_kanban-Backend)
+│   ├── table_widget.py         # Tabellen-Ansichts-Widget (silo_table-Backend)
+│   ├── silo_region.py          # Silo-Listenbereich: Drag, Lücken, Mehrfachauswahl
 │   ├── snippet_ops_mixin.py    # Silo-Operationen (Papierkorb, Verschieben, Duplizieren, Leeren)
 │   ├── snippet_panel.py        # Silo-Baum + F1-F10-Snippet-Buttons
 │   ├── theme_mixin.py          # Vintage-Theme-Styling + QSS-Generator
@@ -102,7 +104,7 @@ src/fastprompter/
 | `core.state` | SQLite-WAL-Persistenz, Zustandssync, Undo-Stack, kategoriebezogene Aliased-Stores |
 | `core.hotkey*` | Globaler Hotkey-Listener + Win32-VK-Filter, layoutunabhängiger Dispatch |
 | `core.watcher` | Prompt-Queue, CDP/Win32-Automatisierung, Skill-Wrapper, Limit-Scanner |
-| `core.i18n` | 22-Sprachen-Übersetzungspaket + Proxy-Delegation von translations.py |
+| `core.i18n` | 33-Lokale-Übersetzungspaket + Proxy-Delegation von translations.py |
 | `core.ctrlw` | Trenner-Template-Engine (Ctrl+W / Alt+W) |
 | `core.timers` | Timer-Modell, Fälligkeitserkennung, Serialisierung |
 | `core.pomodoro` | Arbeits-/Pausen-Zustandsmaschine, Fokus-Timer |
@@ -112,7 +114,9 @@ src/fastprompter/
 | `ui.silo_table` | Reintext-Tabellen-Editor (Tab durchläuft Zellen, Enter neue Zeile) |
 | `ui.file_container` | Pro-Silo-Ordner-Schublade, Asset-Vorschau, Templates |
 | `ui.theme_mixin` | 6 Retro-Win95-Themes + Custom-Farb-Engine + QSS-Generator |
-| `ui.saipen_dialog` | SAIPEN-Projekt-Viewer (.saipen STATE/BOARD/LOG) |
+| `ui.kanban_widget` | Kanban-Board-Ansichts-Widget (silo_kanban-Backend) |
+| `ui.table_widget` | Tabellen-Ansichts-Widget (silo_table-Backend) |
+| `ui.silo_region` | Silo-Listenbereich: Drag, Lücken, Mehrfachauswahl |
 | `ui.fancy_zones` | Visueller Zonen-Picker mit 7 Layout-Presets |
 | `ui.window_presets_dialog` | Benutzerdefinierte Fenstergeometrie-Presets (Ctrl+Q-Seite) |
 | `ui.zen_desktop` | 3-stufiges Ctrl+D: Zen, Solo (andere minimieren), zurück |
@@ -124,8 +128,8 @@ src/fastprompter/
 
 ## Modulzählung-Zusammenfassung
 
-- **core/**: 14 Module + i18n/ (22 Sprachen) + watcher/ (9 Module) = ~45
-- **ui/**: 39 Module
+- **core/**: 15 Module + i18n/ (33 Lokale + 5 Infra-Dateien = 38) + watcher/ (10 Module)
+- **ui/**: 44 Module
 - **theme/**: 1 Modul
 - **utils/**: 4 Module
-- **Gesamt**: ~45 Module + i18n-Sprachen
+- **Gesamt**: 112 `.py`-Dateien unter `src/fastprompter/` (einschließlich `main.py` + `__init__.py`)

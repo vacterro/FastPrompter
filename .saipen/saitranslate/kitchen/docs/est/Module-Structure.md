@@ -22,11 +22,11 @@ src/fastprompter/
 │   ├── sound_manager.py        # Heli esitus (klõpsud, kirjutusmasin, häired)
 │   ├── state.py                # SQLite DB liides + oleku haldus
 │   ├── timers.py               # Taimeri mudel, tähtaja tuvastus
-│   ├── translations.py         # Pärand-proksi → i18n pakett (22 keelt)
+│   ├── translations.py         # Pärand-proksi → i18n pakett (33 lokaalit)
 │   │
-│   ├── i18n/                   # 22-keelne ressursipakett
+│   ├── i18n/                   # 33-lokaline ressursipakett
 │   │   ├── __init__.py, _compat.py, _container.py, _context.py, _engine.py
-│   │   ├── en.py, ru.py, de.py, fra.py, spa.py, ... (22 keelemoodulit)
+│   │   ├── en.py, ru.py, est.py, ja.py, ded.py, ... (33 lokaalimoodulit)
 │   │   └── flags/              # Riigilippude renderdajad
 │   │
 │   └── watcher/                # Automatiseerimise + promptide äravoolu mootor
@@ -63,7 +63,6 @@ src/fastprompter/
 │   ├── pie_menu.py             # QuickListWidget radiaalne kontekstimenüü
 │   ├── queue_panel.py          # Watcheri järjekorra dialoog
 │   ├── resizers.py             # Akna suuruse muutmise käepidemete juhtimine
-│   ├── saipen_dialog.py        # SAIPENi projekti vaataja (STATE, BOARD, LOG)
 │   ├── scaling_mixin.py        # UI DPI + fondi skaleerimise mixin
 │   ├── search_mixin.py         # Mitmesõnaline AND-otsingufilter
 │   ├── send_selection_mixin.py # Valiku saatmine watcheri kaudu
@@ -71,6 +70,9 @@ src/fastprompter/
 │   ├── silo_kanban.py          # Markdowni kanban-tahvel (T-630)
 │   ├── silo_settings_dialog.py # Silo-põhine konfiguratsioon (värv, projektilingid)
 │   ├── silo_table.py           # Markdowni tabeliehitaja (T-630)
+│   ├── kanban_widget.py        # Kanban-tahvli vaatevidin (silo_kanban taust)
+│   ├── table_widget.py         # Tabeli vaatevidin (silo_table taust)
+│   ├── silo_region.py          # Silo loendi piirkond: lohistamine, lüngad, multivalik
 │   ├── snippet_ops_mixin.py    # Silo toimingud (prügikast, liigutus, duplikaat, tühjendus)
 │   ├── snippet_panel.py        # Silo puu + F1-F10 snippetide nupud
 │   ├── theme_mixin.py          # Vintage teema stiliseerimine + QSS generaator
@@ -102,7 +104,7 @@ src/fastprompter/
 | `core.state` | SQLite WAL püsivus, oleku sünkroonimine, undo-stack, kategooria-põhised alias-hoidlad |
 | `core.hotkey*` | Globaalne klõbustike kuulaja + Win32 VK-filter, paigutusest sõltumatu edastus |
 | `core.watcher` | Promptide järjekord, CDP/Win32 automatiseerimine, oskuste ümbrised, limiidiskanner |
-| `core.i18n` | 22-keelne tõlkepakett + proksi delegaat translations.py-st |
+| `core.i18n` | 33-lokaline tõlkepakett + proksi delegaat translations.py-st |
 | `core.ctrlw` | Eraldaja malli mootor (Ctrl+W / Alt+W) |
 | `core.timers` | Taimeri mudel, tähtaja tuvastus, serialiseerimine |
 | `core.pomodoro` | Töö/pausi olekumasin, fookusetaimer |
@@ -112,7 +114,9 @@ src/fastprompter/
 | `ui.silo_table` | Puhtalt-tekstiline tabeliredaktor (Tab lahtrite läbikäimine, Enter uus rida) |
 | `ui.file_container` | Silo-põhine kaustasahtel, varade eelvaade, mallid |
 | `ui.theme_mixin` | 6 retro-Win95-teemat + kohandatud värvimootor + QSS generaator |
-| `ui.saipen_dialog` | SAIPENi projekti vaataja (.saipen STATE/BOARD/LOG) |
+| `ui.kanban_widget` | Kanban-tahvli vaatevidin (silo_kanban taust) |
+| `ui.table_widget` | Tabeli vaatevidin (silo_table taust) |
+| `ui.silo_region` | Silo loendi piirkond: lohistamine, lüngad, multivalik |
 | `ui.fancy_zones` | Visuaalne tsoonivalija 7 paigutuse preseendiga |
 | `ui.window_presets_dialog` | Kasutaja salvestatud akna geomeetria preseendid (Ctrl+Q leht) |
 | `ui.zen_desktop` | 3-astmeline Ctrl+D: Zen, Solo (teiste minimeerimine), tagasi |
@@ -124,8 +128,8 @@ src/fastprompter/
 
 ## Moodulite arvu kokkuvõte
 
-- **core/**: 14 moodulit + i18n/ (22 keelt) + watcher/ (9 moodulit) = ~45
-- **ui/**: 39 moodulit
+- **core/**: 15 moodulit + i18n/ (33 lokaalit + 5 infrafaili = 38) + watcher/ (10 moodulit)
+- **ui/**: 44 moodulit
 - **theme/**: 1 moodul
 - **utils/**: 4 moodulit
-- **Kokku**: ~45 moodulit + i18n keeled
+- **Kokku**: 112 `.py`-faili all `src/fastprompter/` (kaasa arvatud `main.py` + `__init__.py`)

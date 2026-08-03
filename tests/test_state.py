@@ -51,7 +51,8 @@ class TestInit:
         assert d["last_text"] == ""
         assert d["last_tab_idx"] == 0
         assert d["active_temp_slot"] == 0
-        assert d["font_size"] == 11
+        # T-696: the shipped default is 18, baked in by DEFAULT_PROFILE
+        assert d["font_size"] == 18
 
     def test_default_categories_have_100_slots(self, state):
         """Each category should have 100 None slots."""
@@ -594,3 +595,99 @@ class TestSettingsSurviveAReload:
         finally:
             if fresh.conn:
                 fresh.conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Shipped defaults (T-695 / T-696)
+# ---------------------------------------------------------------------------
+
+
+class TestDefaultProfile:
+    """The baked "current configuration" that ships as the defaults."""
+
+    def test_baked_values_reach_the_data_dict(self, state):
+        from fastprompter.core.default_profile import DEFAULT_PROFILE
+
+        assert state.data["font_size"] == 18
+        assert state.data["ui_scale"] == "0.5"
+        assert state.data["language"] == "EN"
+        assert state.data["theme"] == DEFAULT_PROFILE["theme"]
+        # the Ctrl+Q window presets ship with the app, not just the toggle
+        assert isinstance(state.data["window_presets"], list)
+        assert state.data["window_presets"], "no window presets baked in"
+        assert state.data["window_presets_enabled"] == "True"
+
+    def test_no_user_content_baked_in(self):
+        """A regenerated profile must never carry somebody's silos with it.
+
+        The generator excludes these; this is the guard that says so out loud,
+        because the failure is invisible — the app works perfectly while
+        shipping a stranger's project paths and note titles.
+        """
+        from fastprompter.core.default_profile import DEFAULT_PROFILE
+
+        forbidden = {
+            "last_text", "last_geometry", "categories", "cats_order",
+            "timers", "agent_timers", "productivity_timer", "files_root",
+            "silo_folders", "silo_folders_all", "silo_colors_all",
+            "silo_project_paths_all", "silo_last_edited_all",
+            "silo_view_state_all", "silo_session_all", "line_marks_data",
+            "centered_blocks", "aligned_blocks", "watcher_queues_all",
+            "archive_silo_folders_all", "archive_project_paths_all",
+        }
+        leaked = sorted(forbidden & set(DEFAULT_PROFILE))
+        assert not leaked, f"user content baked into the shipped defaults: {leaked}"
+
+    def test_custom_colors_never_shadow_a_theme(self):
+        """custom_colors is an unconditional overlay on the active theme.
+
+        Baking a key a theme already owns pins the shipped palette onto EVERY
+        theme — pick Vintage Classic and the background stays golden. Only
+        keys no theme defines (the overlay/edit extras) may ship.
+        """
+        from fastprompter.core.default_profile import DEFAULT_PROFILE
+        from fastprompter.theme.themes import THEMES
+
+        theme_keys = set()
+        for spec in THEMES.values():
+            theme_keys |= set((spec.get("raw_colors") or {}).keys())
+        shadowed = sorted(set(DEFAULT_PROFILE.get("custom_colors", {})) & theme_keys)
+        assert not shadowed, f"baked custom_colors override every theme: {shadowed}"
+
+    def test_stored_values_win_over_the_baked_default(self, state):
+        """Defaults are a fallback, never a migration.
+
+        DEFAULT_PROFILE is also the map an existing database falls back to for
+        keys it never stored, so the dangerous direction is the baked value
+        overwriting a value the user actually chose.
+        """
+        state.data["font_size"] = 9
+        state.data["theme"] = "Something Else"
+        state.mark_dirty()
+        state.save_data_to_db("text", force=True)
+        db_path = state.db_path
+        state.conn.close()
+
+        fresh = FastPrompterState(profile_id=999)
+        fresh.conn.close()
+        fresh.db_path = db_path
+        fresh.init_db()
+        try:
+            assert fresh.data["font_size"] == 9
+            assert fresh.data["theme"] == "Something Else"
+        finally:
+            if fresh.conn:
+                fresh.conn.close()
+
+    def test_mutable_defaults_are_not_shared(self, state):
+        """Each profile gets its own copy of the structured values."""
+        from fastprompter.core.default_profile import DEFAULT_PROFILE
+
+        before = len(DEFAULT_PROFILE["window_presets"])
+        state.data["window_presets"].append({"name": "scratch"})
+        state.data["custom_colors"]["probe"] = "#000000"
+        assert len(DEFAULT_PROFILE["window_presets"]) == before
+        assert "probe" not in DEFAULT_PROFILE["custom_colors"]
+
+        state.reset_data()
+        assert len(state.data["window_presets"]) == before

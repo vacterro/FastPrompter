@@ -1,7 +1,7 @@
 # Translation Bundle — FastPrompter
 
 Generated: 2026-07-31 UTC (synced 01.08: 2-key drift closed)
-Updated: 2026-08-01 UTC (repair: 63 unregistered multi-line tr() keys -> 939 keys/33 loc; docs re-sync: wiki rewrite 2cf4190 mirrored into kitchen/docs ru+est, ja/de ticketed T-686; guides: GUIDE_EN.md translated into kitchen/guides/ {est,ja,de}, RU guide hand-maintained at repo root)
+Updated: 2026-08-02 UTC (T-693 closed: 4 transform-menu keys added -> 943 keys/33 loc, wrapped in tr(), integrated + shipped v0.8.8; docs/guides unchanged)
 Source: `src/fastprompter/` `tr()` call sites + `docs/wiki/` + root `GUIDE_EN.md` (read-only references)
 Bundle: `.saipen/saitranslate/locales/` (JSON, one file per language); docs in `kitchen/docs/{ru,est,ja,de}/`; guides in `kitchen/guides/`
 
@@ -43,12 +43,13 @@ Bundle: `.saipen/saitranslate/locales/` (JSON, one file per language); docs in `
 | TUR | Turkish | 🇹🇷 | 100.0% |
 | DED | Дед (Angry Grandpa) | 🇷🇺 | 100.0% |
 
-All 33 locales carry the same 939 keys; coverage is COMPUTED against en.json
+All 33 locales carry the same 943 keys; coverage is COMPUTED against en.json
 by `scratch/validate_saitranslate.py`, never read from the stored field.
 Missing keys fall back to English at runtime via the `tr()` engine.
 
 ## Drift log
 
+- 02.08.26 [v0.8.8] T-693 closed: `✨ Transform to…`, `📄 Text`, `📊 Table`, `📋 Kanban Board` wrapped in `tr()` in main.py and added to every locale (939 -> 943). Bundle re-injected via `scratch/inject_translations.py`, shipped v0.8.8 (005d776, 99e0414). Validator 0 missing, 33/33 @ 943 keys (E-1160). No pending drift on any surface.
 - 01.08.26 [v0.8.7] bundle INTEGRATED: 33 i18n modules regenerated from these JSON files via `scratch/inject_translations.py` (the one script that does it — future bundle syncs run it, never hand-write modules). 939 keys each, 100% coverage. T-693 tracks 4 hardcoded transform-menu strings (main.py) still missing from the bundle.
 - 01.08 (2): guides added — `GUIDE_EN.md` ("FastPrompter for dummies") translated into `kitchen/guides/GUIDE_{EST,JA,DE}.md` (Core: EST; in-role: JA/DE, no spawnable sub-agent on host). RU sibling `GUIDE_RU.md` is hand-maintained at repo root — per translate.md § 2 carve-out, not re-translated or clobbered.
 - 30.07: en.json 802 -> 874 (72 unregistered `tr()` keys from T-589..T-632; TUR 17 gaps repaired, 9 locales 1 each)
@@ -72,9 +73,8 @@ Each JSON file:
 
 `kitchen/docs/{ru,est,ja,de}/` — 16 markdown files each, mirroring `docs/wiki/`.
 
-Status 01.08: **all four (ru, est, ja, de) are in sync with the current wiki** (rewritten 2cf4190). T-686 closed after the dedicated-instance run.
+Status 03.08 (ee): all four (ru, est, ja, de) re-synced to the wiki at 42347fe (qqq docs re-sync, 03.08 04:20 — 5 pages changed: saipen_dialog purged, Ctrl+Shift+C = Clear, 3 new mouse-hotkey rows, kanban_widget/table_widget/silo_region, 33 locales, module counts 15/44/112). T-686 closed after the dedicated-instance run; this ee run re-translated the 5 drifted pages in-role (T-688 remains open for the spawn path).
 
 ## Integration
 
-This bundle sits in `.saipen/saitranslate/kitchen/` per TRANSLATE phase isolation rules (`RFC.md § 2.1`).
-Integration into the main project requires a future ADD/PLAN ticket through normal VERIFY/REVIEW/SHIP.
+Integrated at v0.8.8 (T-691/T-693): 33 i18n modules regenerated from these JSON files via `scratch/inject_translations.py`, support-button + transform-menu strings wrapped in `tr()`, guides copied to repo root. Bundle lives in `.saipen/saitranslate/kitchen/` per TRANSLATE phase isolation rules (`RFC.md § 2.1`); future bundle syncs re-run `scratch/inject_translations.py`, never hand-write modules.

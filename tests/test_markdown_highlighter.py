@@ -352,6 +352,24 @@ class TestHighlightBlock:
         found = any(start == 5 and length == 8 for start, length, fmt in h._format_calls)
         assert found, f"Expected italic format at (5,8), got calls: {h._format_calls}"
 
+    def test_underscore_inside_a_word_is_not_italic(self):
+        """T-712. `chest_open: … chest_closed` italicised everything between
+        the two underscores — and so did every snake_case name in a note.
+        CommonMark does not open `_` emphasis inside a word."""
+        h = make_highlighter()
+        line = "chest_open: open sound; chest_closed: closed sound"
+        h.highlightBlock(line)
+        italics = [(s, ln) for s, ln, fmt in h._format_calls
+                   if getattr(fmt, "_font_italic", False)]
+        assert not italics, f"identifier italicised: {italics}"
+
+        # a real pair still works right next to the identifier text
+        h = make_highlighter()
+        h.highlightBlock("chest_open is _really_ fine")
+        found = any(start == 14 and length == 8 and getattr(fmt, "_font_italic", False)
+                    for start, length, fmt in h._format_calls)
+        assert found, h._format_calls
+
     def test_header_h1(self):
         h = make_highlighter()
         h.highlightBlock("# Heading 1")

@@ -3,21 +3,27 @@
 ---
 
 ### Core Architecture
-- [System Architecture](_architecture)
-- [Module Breakdown](_modules)
-- [Core API & Classes](_api)
+- [Architecture Overview](Architecture-Overview)
+- [Module Structure](Module-Structure)
+- [Core API & Classes](Core-API-and-Classes)
+- [Watcher Engine](Watcher-Engine-Architecture)
 
-### Interface & Data
-- [Configuration & Storage](_configuration)
-- [UI Components & Layout](_ui)
+### Interface & Configuration
+- [Configuration](Configuration)
+- [UI Components](UI-Components)
+- [Keyboard Shortcuts](Keyboard-Shortcuts-and-Cheatsheet)
 
-### Guides & Workflows
-- [User Guide & Workflows](_user_guide)
-- [SAIPEN Protocol](_saipen_guide)
-- [Build & Deployment](_deployment)
+### User Guides & FAQ
+- [User Guide](User-Guide)
+- [Troubleshooting & FAQ](Troubleshooting-and-FAQ)
+
+### Developer & Protocols
+- [Plugin & Skill Dev](Plugin-and-Skill-Development)
+- [SAIPEN Protocol](SAIPEN-Protocol)
+- [Deployment Guide](Deployment-Guide)
 
 ---
 
 ### Project Links
-- [GitHub Repository](https://github.com/vacterro/FastPrompter)
-- [Releases & Downloads](https://github.com/vacterro/FastPrompter/releases)
+- [GitHub Repo](https://github.com/vacterro/FastPrompter)
+- [Releases](https://github.com/vacterro/FastPrompter/releases)

@@ -37,11 +37,14 @@ Vollständiger tastaturgesteuerter Betrieb. Layoutunabhängiger VK-Dispatch — 
 | **Formatierung** | **Alt+Backspace** | Vorheriges Wort löschen | Editor |
 | **Formatierung** | **Ctrl+Z** | Smart Undo (pro Silo) | Editor |
 | **Formatierung** | **Ctrl+Mitteltaste** | Zeile unter Cursor löschen (Smart-List-Reflow) | Editor |
+| **Formatierung** | **Alt+Mitteltaste** | Ausgewählte Zeilen zu Aufzählungen machen (`• `-Präfix) | Editor |
+| **Formatierung** | **Mitteltaste** | Zeilenzustand zyklisch: normal → markiert+durchgestrichen → unmarkiert | Editor |
+| **Formatierung** | **Ctrl+Shift+Ziehen** | Zeile(n) zum Ablagepunkt bewegen, Formatierung bleibt erhalten | Editor |
 | **Formatierung** | **Ctrl+Klick auf Aufzählung** | `-` / `•` umschalten | Editor |
 | **Snippets** | **F1**…**F10** | Snippet 1–10 einfügen | App |
 | **Snippets** | **Ctrl+Shift+1**…**9** | Snippet 1–9 einfügen (alternativ) | App |
 | **Snippets** | **Ctrl+S** | Snippet-Manager öffnen | App |
-| **SAIPEN** | **Ctrl+Shift+C** | SAIPEN-Viewer öffnen | App |
+| **Allgemein** | **Ctrl+Shift+C** | Aktuellen Text löschen | App |
 | **Timer** | **Ctrl+Shift+T** | Timer-Dialog öffnen | App |
 | **Hashtags** | **Alt+Shift+T** | Hashtag-Dialog öffnen | App |
 | **Anhänge** | **F2** | Datei-Container-Anhang umbenennen | Datei-Container |
@@ -74,7 +77,9 @@ Alle Formatierungs-Shortcuts schalten Inline-Marker um: **Ctrl+B** → `**fett**
 
 **Ctrl+E** — aktuelle Zeile als Header formatieren. Konfigurierbar: Regeltyp, Aufzählung, Zeitstempel, Ausrichtung. Anpassen unter Einstellungen → Trenner & Header.
 
-**Ctrl+Mitteltaste** — ganze Zeile mit Smart-Reflow löschen: nummerierte Listen nummerieren neu, Aufzählungslisten schließen Lücken.
+**Ctrl+Mitteltaste** — ganze Zeile mit Smart-Reflow löschen: nummerierte Listen nummerieren neu, Aufzählungslisten schließen Lücken. **Alt+Mitteltaste** — ausgewählte Zeilen in Aufzählungen verwandeln. **Mitteltaste** — Zeilenzustand zyklisch: normal → markiert+durchgestrichen → unmarkiert.
+
+**Ctrl+Shift+Ziehen** — Zeile unter dem Zeiger (oder die gesamte Auswahl) greifen und zum Ablageindikator bewegen; Fett, Kontrollkästchen und Bild-Pills überleben den Weg.
 
 ### Silo-Navigation
 **Ctrl+1** bis **Ctrl+0** springen zu Silos 1-10. **Alt+↑↓** durchläuft sequenziell. **Ctrl+N** fügt unten ein leeres Silo an.
@@ -82,8 +87,8 @@ Alle Formatierungs-Shortcuts schalten Inline-Marker um: **Ctrl+B** → `**fett**
 ### Snippet-Makros
 **F1-F10** fügen vorkonfigurierte Textvorlagen ein. Inhalte über Snippet-Manager (**Ctrl+S**) oder Rechtsklick auf F-Button binden.
 
-### SAIPEN + Timer
-**Ctrl+Shift+C** — SAIPEN-Viewer (STATE/BOARD/LOG) öffnen. **Ctrl+Shift+T** — Timer-Dialog öffnen. **Alt+Shift+T** — Hashtag-Suche öffnen.
+### Löschen + Timer
+**Ctrl+Shift+C** — aktuellen Silo-Text löschen. **Ctrl+Shift+T** — Timer-Dialog öffnen. **Alt+Shift+T** — Hashtag-Suche öffnen.
 
 ### Kanban & Tabelle (T-630)
 In einem Kanban-Silo: **Alt+Pfeile** bewegen Karten. In einem Tabellen-Silo: **Tab/Shift+Tab** durchläuft Zellen, **Enter** fügt eine Zeile hinzu.

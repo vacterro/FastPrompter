@@ -98,7 +98,9 @@ def test_bullet_can_be_switched_off_and_changed(win):
     assert not any(line.startswith("• ") for line in _shape(_press(win)))
 
     _set(win, rule="True", gap_after="1", bullet="True", bullet_char="→")
-    assert _shape(_press(win))[-1] == "→ "
+    # not [-1]: the shipped defaults put a gap (and optionally a closing
+    # rule) BELOW the bullet, so the bullet is no longer the last line
+    assert "→ " in _shape(_press(win))
 
 
 def test_caret_lands_on_the_bullet(win):

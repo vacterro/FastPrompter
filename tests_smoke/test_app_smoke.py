@@ -1220,12 +1220,17 @@ def test_bold_hash_titles_toggle(win):
     cat = win.get_current_category()
     win.data["categories"][cat][0] = {"name": "hdr", "text": "# heading note", "last_edited": 0}
     win.data["categories"][cat][1] = {"name": "plain", "text": "just text", "last_edited": 0}
+    # the shipped default hides the snippets panel, and a hidden panel makes
+    # refresh_snippets_panel a no-op — pin it rather than inherit it
+    kept_hidden = win.data.get("snippets_hidden", "False")
+    win.data["snippets_hidden"] = "False"
     win.refresh_snippets_panel()
     assert win.snippet_buttons[0].main_btn.font().bold() is True
     assert win.snippet_buttons[1].main_btn.font().bold() is False
     win.data["categories"][cat][0] = None
     win.data["categories"][cat][1] = None
     win.refresh_snippets_panel()
+    win.data["snippets_hidden"] = kept_hidden
 
 
 def test_code_block_copy_button(win):
@@ -1425,6 +1430,46 @@ def test_trash_silo_writes_md_and_removes_slot(win):
     with open(os.path.join(trash, mds[0]), encoding="utf-8") as f:
         assert "precious text" in f.read()
     del win.__dict__["_files_root"]
+
+
+def test_delete_silo_is_offered_on_an_empty_silo_too(win, monkeypatch):
+    """T-698. The context-menu delete used to be gated on the silo already
+    having text, so an empty one had no delete anywhere in the UI. The gate
+    is now the CONFIRMATION, not the menu entry."""
+    from PyQt6.QtWidgets import QMessageBox
+
+    asked = []
+
+    def fake_question(*a, **k):
+        asked.append(a[1] if len(a) > 1 else "")
+        return QMessageBox.StandardButton.Yes
+
+    monkeypatch.setattr(QMessageBox, "question", staticmethod(fake_question))
+
+    win.cat_combo.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    win.data["temp_presets"][:] = ["", "written silo", "third"]
+    win.data["pinned_silos"][:] = []
+    win.data["silo_ticked"][:] = []
+    win.silo_docs[:] = []
+    win._switch_to_slot(2, initial=True)
+
+    # empty slot: goes without a dialog — there is nothing to lose
+    assert win.prompt_delete_silo(0) is True
+    assert asked == []
+    assert win.data["temp_presets"][0] == "written silo"
+
+    # written slot: asks first, and No leaves it alone
+    monkeypatch.setattr(QMessageBox, "question",
+                        staticmethod(lambda *a, **k: QMessageBox.StandardButton.No))
+    before = list(win.data["temp_presets"])
+    assert win.prompt_delete_silo(0) is False
+    assert win.data["temp_presets"] == before
+
+    # …and Yes goes through the same del_silo the rest of the app uses
+    monkeypatch.setattr(QMessageBox, "question", staticmethod(fake_question))
+    assert win.prompt_delete_silo(0) is True
+    assert "written silo" not in win.data["temp_presets"]
 
 
 def test_hide_on_clickout_toggle_and_header_mirrors(win):
@@ -1736,6 +1781,9 @@ def test_delete_silo_keeps_snippets_visible(win):
         win.data["categories"][cat][i] = {"name": f"snip{i}", "text": f"body{i}"}
     win.data["temp_presets"][:] = ["one", "two", "three"]
     win.data["pinned_silos"] = []
+    # the shipped profile hides the snippets panel, and a hidden panel makes
+    # refresh_snippets_panel a no-op
+    win.data["snippets_hidden"] = "False"
     win.silo_docs[:] = []
     win._switch_to_slot(0, initial=True)
     win.refresh_snippets_panel()
@@ -1943,6 +1991,193 @@ def test_file_container_button_wired(win):
     assert win.silo_buttons[0]._btn_files.toolTip().startswith("Files")
 
 
+def test_snippets_visibility_is_remembered_per_project(win):
+    """T-713. One project is a snippet library, the next is a scratchpad —
+    a single global flag made every switch fight the user for the panel."""
+    cats = win.data["cats_order"]
+    if len(cats) < 2:
+        import pytest
+        pytest.skip("needs two projects")
+    kept = win.data.get("snippets_hidden", "False")
+    try:
+        win.cat_combo.setCurrentIndex(0)
+        win.on_tab_changed(0)
+        win.data["snippets_hidden"] = "False"
+        win.toggle_snippets_panel()               # hide in project A
+        assert win.data["snippets_hidden"] == "True"
+
+        win.cat_combo.setCurrentIndex(1)
+        win.on_tab_changed(1)
+        win.data["snippets_hidden"] = "False"
+        win.capture_silo_session()                # project B: shown
+
+        win.cat_combo.setCurrentIndex(0)
+        win.on_tab_changed(0)
+        assert win.data["snippets_hidden"] == "True", "A must come back hidden"
+
+        win.cat_combo.setCurrentIndex(1)
+        win.on_tab_changed(1)
+        assert win.data["snippets_hidden"] == "False", "B must stay shown"
+
+        # a project that has never said anything leaves the panel alone
+        entry = win._silo_session(cats[0])
+        entry.pop("snippets_hidden", None)
+        win.data["snippets_hidden"] = "False"
+        win.restore_silo_session(cats[0])
+        assert win.data["snippets_hidden"] == "False"
+    finally:
+        win.data["snippets_hidden"] = kept
+        win.cat_combo.setCurrentIndex(0)
+        win.on_tab_changed(0)
+
+
+def test_alt_click_collapses_a_parent_silo(win):
+    """T-714. The ▾ button only exists on a hovered parent row; Alt+click is
+    the same action without hunting for it."""
+    from PyQt6.QtCore import QEvent, QPointF, Qt
+    from PyQt6.QtGui import QMouseEvent
+
+    win.cat_combo.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    win.data["temp_presets"][:] = ["parent", "kid", "loner"]
+    win.data["silo_children"] = {0: [1]}
+    win.data["silo_collapsed"] = []
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    win.refresh_temp_presets()
+
+    def alt_click(btn):
+        btn.mousePressEvent(QMouseEvent(
+            QEvent.Type.MouseButtonPress, QPointF(5, 5),
+            Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.AltModifier))
+
+    parent = next(b for b in win.silo_buttons if b.global_idx == 0)
+    alt_click(parent)
+    assert 0 in win.data["silo_collapsed"]
+    parent = next(b for b in win.silo_buttons if b.global_idx == 0)
+    alt_click(parent)
+    assert 0 not in win.data["silo_collapsed"]
+
+    # a childless silo is not collapsible, so the modifier stays meaningless
+    loner = next(b for b in win.silo_buttons if b.global_idx == 2)
+    alt_click(loner)
+    assert 2 not in win.data["silo_collapsed"]
+
+    win.data["silo_children"] = {}
+    win.data["silo_collapsed"] = []
+
+
+def test_silo_drop_zone_follows_the_pointer(win):
+    """T-702. Releasing over the TOP of a silo must mean "put it above".
+
+    The bands used to be 28% edge / 44% centre, so most of a row said
+    "nest this inside me" — dropping near the top usually nested instead of
+    moving, which is why silo dragging felt like it ignored the pointer.
+    """
+    from PyQt6.QtCore import QPoint
+    from PyQt6.QtWidgets import QApplication
+
+    win.cat_combo.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    win.data["temp_presets"][:] = ["alpha", "bravo", "charlie"]
+    win.data["pinned_silos"] = []
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    win.refresh_temp_presets()
+    QApplication.processEvents()
+
+    drop = win.silos_widget
+    btns = drop._visible_buttons()
+    assert len(btns) >= 3, "need three visible silos for this test"
+    g = btns[1].geometry()
+
+    # top edge -> insert BEFORE row 1, bottom edge -> insert AFTER it
+    assert drop._drop_target_at(QPoint(5, g.top() + 1)) == ("move", 1)
+    assert drop._drop_target_at(QPoint(5, g.bottom() - 1)) == ("move", 2)
+
+    # a third of the way down is still "above", not "into"
+    assert drop._drop_target_at(
+        QPoint(5, g.top() + g.height() // 3)) == ("move", 1)
+
+    # the centre remains the deliberate nest/swap aim
+    mode, target = drop._drop_target_at(QPoint(5, g.center().y()))
+    assert mode == "swap" and target is btns[1]
+
+
+def test_toolbar_drag_keeps_buttons_the_window_is_too_narrow_to_show(win):
+    """T-702. The reorder rebuilt the order from the VISIBLE row, so every
+    button the density packer had hidden was dropped from the saved order and
+    re-inserted wherever the self-heal fancied — one drag rearranged buttons
+    the user never touched."""
+    win.reset_toolbar_order()
+    before = win._toolbar_order_list()
+    hidden = win.btn_quote
+    hidden.setVisible(False)
+    try:
+        win.reorder_toolbar_token("btn_help", 0)
+        after = win._toolbar_order_list()
+        assert set(after) == set(before), "a drag must not add or lose tokens"
+        assert after.index("btn_help") == 0
+        # the hidden button kept its neighbours
+        i = after.index("btn_quote")
+        assert after[i - 1] == before[before.index("btn_quote") - 1]
+    finally:
+        hidden.setVisible(True)
+        win.reset_toolbar_order()
+
+
+def test_hovering_a_silo_never_moves_its_title(win):
+    """T-703. The ✅ sits BEFORE the title, so showing it on hover pushed the
+    whole title sideways — the text ran out from under the pointer."""
+    from PyQt6.QtWidgets import QApplication
+
+    win.cat_combo.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    kept_ticks = win.data.get("silo_ticks_enabled", "False")
+    kept_ticked = list(win.data.get("silo_ticked", []))
+    try:
+        win.data["silo_ticks_enabled"] = "True"
+        win.data["silo_ticked"][:] = []
+        win.data["temp_presets"][:] = ["first silo", "second silo"]
+        win.silo_docs[:] = []
+        win._switch_to_slot(0, initial=True)
+        win.refresh_temp_presets()
+        QApplication.processEvents()
+
+        btn = win.silo_buttons[0]
+        at_rest = btn._lbl_text.geometry()
+
+        btn._hover_showing = True
+        btn._update_hover_buttons()          # the timer's payload, run directly
+        QApplication.processEvents()
+        hovered = btn._lbl_text.geometry()
+        assert hovered == at_rest, f"title moved on hover: {at_rest} -> {hovered}"
+        assert btn._btn_tick.text() == "✅"
+
+        btn._hover_showing = False
+        btn._update_hover_buttons()
+        QApplication.processEvents()
+        assert btn._lbl_text.geometry() == at_rest
+
+        # with ticks switched off nothing can appear there, so no space is
+        # held and hovering still moves nothing
+        win.data["silo_ticks_enabled"] = "False"
+        win.refresh_temp_presets()
+        QApplication.processEvents()
+        btn = win.silo_buttons[0]
+        off_rest = btn._lbl_text.geometry()
+        assert btn._btn_tick.isHidden()
+        btn._hover_showing = True
+        btn._update_hover_buttons()
+        QApplication.processEvents()
+        assert btn._lbl_text.geometry() == off_rest
+    finally:
+        win.data["silo_ticks_enabled"] = kept_ticks
+        win.data["silo_ticked"][:] = kept_ticked
+        win.refresh_temp_presets()
+
+
 def test_silo_color_box_toggle(win):
     win.cat_combo.setCurrentIndex(0)
     win.on_tab_changed(0)
@@ -2077,6 +2312,9 @@ def test_divider_commands_balanced_edit_blocks(win):
     ta = win.text_area
     doc = ta.document()
 
+    for _s in (1, 2, 3, 4, 5):
+        win.data[f"ctrlw_s{_s}_divider"] = "True"
+        win.data[f"ctrlw_s{_s}_bullet"] = "True"
     ta.setPlainText("hello")
     win.insert_divider_line()  # Ctrl+W — divider + bullet below text
     t = ta.toPlainText()
@@ -2101,11 +2339,16 @@ def test_divider_commands_balanced_edit_blocks(win):
 
 def test_toolbar_reorder_persists_and_self_heals(win):
     def layout_tokens():
+        # The sidebar hamburger is an edge control, not part of the order: it
+        # sits at index 0 with the sidebar on the left and LAST with it on the
+        # right, so anything that hardcodes its position only tests one side.
         out = []
         for i in range(win.header_layout.count()):
             w = win.header_layout.itemAt(i).widget()
             if w is None:
                 out.append("<stretch>")
+            elif w is getattr(win, "btn_sidebar_toggle", None):
+                continue
             else:
                 out.append(win.toolbar_token_of(w) or ("<sep>" if w is win._counter_sep else "_"))
         return out
@@ -2114,15 +2357,15 @@ def test_toolbar_reorder_persists_and_self_heals(win):
     base = layout_tokens()
     assert "btn_help" in base and "btn_new" in base
 
-    # move btn_help to the front of the movable region (next to sidebar)
+    # move btn_help to the front of the movable region
     win.reorder_toolbar_token("btn_help", 0)
     moved = layout_tokens()
-    assert moved.index("btn_help") == 1  # right after the fixed sidebar anchor
+    assert moved.index("btn_help") == 0
     assert win.data["toolbar_order"].split(",")[0] == "btn_help"
 
     # order survives a full rebuild
     win.apply_toolbar_order()
-    assert layout_tokens().index("btn_help") == 1
+    assert layout_tokens().index("btn_help") == 0
 
     # self-heal: a stale/partial saved order still yields every button
     win.data["toolbar_order"] = "btn_help,btn_new,bogus_token"
@@ -2169,9 +2412,9 @@ def test_toolbar_button_can_move_back_across_gaps(win):
 def _run_toolbar_move_back_checks(win):
     def seq():
         out = []
-        for i in range(1, win.header_layout.count()):
+        for i in range(win.header_layout.count()):
             w = win.header_layout.itemAt(i).widget()
-            if w is None:
+            if w is None or w is getattr(win, "btn_sidebar_toggle", None):
                 continue
             t = win._toolbar_seq_token(w)
             if t:
@@ -2318,6 +2561,9 @@ def test_date_rectangle_formats_and_toggles(win):
     win.data["show_date_rect"] = "True"
     win.data["date_seconds"] = "True"
     win.data["date_daypart"] = "False"
+    # numeric month: the shipped default is the "03 Aug" wording, which the
+    # \d{2}\.\d{2} patterns below are not about
+    win.data["date_text_month"] = "False"
     win._update_date_label()
     assert re.fullmatch(r".*?\d{2}.*?\d{2}:\d{2}(:\d{2})?.*?", win.lbl_date.text())
     win.data["date_seconds"] = "False"
@@ -2454,6 +2700,42 @@ def test_ctrl_e_header_timestamp(win):
     win.apply_header_timestamp()
     line2 = win.text_area.toPlainText().splitlines()[0]
     assert line2 == "My heading", line2
+
+
+def test_ctrl_e_on_a_bullet_makes_a_header_without_spawning_one(win):
+    """T-697. The bullet you pressed it on IS the title.
+
+    It used to strip the bullet from the title and then append a fresh empty
+    "• " under the rule, cutting a list in half and leaving a stray bullet
+    for the user to delete.
+    """
+    win.cat_combo.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    win.data["temp_presets"][:] = ["• Fix\n• already a list item"]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    cur = win.text_area.textCursor()
+    cur.setPosition(0)
+    win.text_area.setTextCursor(cur)
+
+    win.apply_header_timestamp()
+    lines = win.text_area.toPlainText().splitlines()
+
+    assert lines[0].startswith("# Fix"), lines[0]
+    assert "•" not in lines[0]
+    # the rule still lands under it — this is the beauty header, not a bare "#"
+    assert lines[1] == "---", lines
+    # …and the ONLY bullet left is the list item that was already there
+    assert [n for n, ln in enumerate(lines) if ln.strip().startswith("•")] == \
+        [len(lines) - 1], lines
+    assert lines[-1] == "• already a list item", lines
+
+    # a plain (non-bullet) line still gets its bullet to type on
+    win.data["temp_presets"][:] = ["My heading"]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    win.apply_header_timestamp()
+    assert win.text_area.textCursor().block().text() == "• "
 
 
 def test_ctrl_e_refreshes_stale_stamp_in_place(win):
@@ -4487,8 +4769,9 @@ def test_line_heat_follows_the_text_not_the_line_number(win):
     doc = ta.document()
 
     try:
-        # default OFF — the user asked for it to stay out of the way
-        assert win.data.get("line_heat", "False") == "False"
+        # switched off, nothing is painted (the shipped profile has it on,
+        # so this pins the state instead of reading the default)
+        win.data["line_heat"] = "False"
         assert ta._line_heat_selections(doc) == []
 
         win.data["line_heat"] = "True"
@@ -5875,8 +6158,12 @@ def test_custom_cursors_toggle(win):
 
     kept = win.data.get("custom_cursors", "False")
     try:
-        win.data["custom_cursors"] = "False"
+        # drive it through the checkbox: the shipped default has this ON, so
+        # writing data directly leaves the box checked and the setChecked(True)
+        # below is a no-op that never fires the signal under test
+        win.cb_custom_cursors.setChecked(False)
         win.apply_custom_cursors()
+        assert win.data["custom_cursors"] == "False"
         assert win.themed_cursor(Qt.CursorShape.ArrowCursor) == \
             Qt.CursorShape.ArrowCursor, "off means stock shapes"
 
@@ -5952,7 +6239,11 @@ def test_zone_picker_is_compact_and_opens_under_the_cursor(win):
 
     screen = QApplication.primaryScreen()
     ov = FancyZoneOverlay()
+    kept_layout = win.data.get("fancyzones_layout", "")
     try:
+        # a builtin page, not whatever the profile last used: the shipped
+        # defaults land on Presets, whose cells overlap each other
+        win.data["fancyzones_layout"] = "Quarters"
         QCursor.setPos(screen.geometry().center())
         assert ov.open_for(win) is True
 
@@ -5967,6 +6258,7 @@ def test_zone_picker_is_compact_and_opens_under_the_cursor(win):
         assert ov._zone_at(ov._cells[1].center()) == 1
         assert ov._zone_at(g.topLeft() - g.topLeft()) in (-1, 0)
     finally:
+        win.data["fancyzones_layout"] = kept_layout
         ov.close()
 
 
@@ -5977,12 +6269,16 @@ def test_zone_picker_has_two_pages_and_remembers_the_last(win):
     from fastprompter.ui.fancy_zones import FancyZoneOverlay
 
     kept = win.data.get("fancyzones_layout", "")
+    kept_presets = win.data.get("window_presets", [])
     try:
         QCursor.setPos(QApplication.primaryScreen().geometry().center())
         win.data["fancyzones_layout"] = "Quarters"   # start from a known page
+        # this test is about the two BUILTIN pages; the shipped profile ships
+        # saved presets, which legitimately add a third
+        win.data["window_presets"] = []
         ov = FancyZoneOverlay()
         ov.open_for(win)
-        assert len(ov._layouts) == 2, "Tab must switch between exactly two pages"
+        assert len(ov._layouts) == 2, "Tab must switch between exactly two builtin pages"
         assert ov._layouts[ov._layout_idx][0] == "Quarters"
         assert len(ov._zones) == 4
 
@@ -6006,6 +6302,7 @@ def test_zone_picker_has_two_pages_and_remembers_the_last(win):
         ov2.close()
     finally:
         win.data["fancyzones_layout"] = kept
+        win.data["window_presets"] = kept_presets
 
 
 def test_snapping_does_not_hide_a_window_set_to_hide_on_click_out(win):
@@ -6091,9 +6388,15 @@ def test_real_ctrl_e_reverses_a_header(win):
         ed.clear()
 
 
-def test_ctrl_e_centering_is_off_by_default_and_reversible(win):
-    """It shipped defaulting to ON, which silently changed Ctrl+E for
-    everyone, and the centring is not saved - so it vanished on reload."""
+def test_ctrl_e_centering_toggle_is_reversible(win):
+    """Centring must follow the setting in both directions.
+
+    This used to also assert the default was OFF, from the days when the
+    feature had silently switched itself on for everyone. The shipped
+    profile now centres deliberately (T-695), and the promise it was really
+    guarding — an existing database keeps whatever it stored — is held by
+    tests/test_state.py::test_stored_values_win_over_the_baked_default.
+    """
     from PyQt6.QtCore import Qt
     from PyQt6.QtGui import QTextCursor
     from PyQt6.QtTest import QTest
@@ -6101,8 +6404,6 @@ def test_ctrl_e_centering_is_off_by_default_and_reversible(win):
     ed = win.text_area
     kept = win.data.get("ctrl_e_center", "False")
     try:
-        assert win.data.get("ctrl_e_center", "False") != "True", \
-            "must not change Ctrl+E for existing users without being asked"
 
         def ctrl_e():
             c = ed.textCursor()
@@ -8030,6 +8331,10 @@ def test_an_old_str_dict_value_is_recovered_not_dropped(tmp_path):
 
 def test_ctrl_w_s1_end_of_text_divider_and_bullet(win):
     """S1: Ctrl+W at end of text — divider + bullet below, cursor on bullet."""
+    # both are user settings now, and the shipped profile turns the S1
+    # divider OFF — pin what this scenario is about instead of inheriting it
+    win.data["ctrlw_s1_divider"] = "True"
+    win.data["ctrlw_s1_bullet"] = "True"
     win.data["temp_presets"] = ["head"]
     win.silo_docs[:] = []
     win._switch_to_slot(0, initial=True)
@@ -8049,6 +8354,8 @@ def test_ctrl_w_s1_end_of_text_divider_and_bullet(win):
 
 def test_ctrl_w_s4_mid_text_splits_block(win):
     """S4: Ctrl+W mid-text — splits block, rest of line goes after bullet."""
+    win.data["ctrlw_s4_divider"] = "True"
+    win.data["ctrlw_s4_bullet"] = "True"
     ta = win.text_area
     ta.setPlainText("one two three")
     cur = ta.textCursor()
@@ -8513,13 +8820,41 @@ def test_silo_gap_is_aliased_into_per_category_store(win):
     assert 1 in win.data["silo_gaps_all"][cat]
 
 
-def test_silo_gap_stays_put_when_silos_reorder(win):
-    # T-593: a gap is a POSITION, not a property of the silo under it. The
-    # remap must leave it alone, otherwise the divider chases the silo
-    # around the list — the "unpredictable" behaviour this replaced.
+def test_silo_gap_follows_the_silo_it_was_placed_under(win):
+    # T-704 (user's call) replaces T-593: a gap belongs to the silo it sits
+    # under and is remapped with every other slot-keyed store. Left out of
+    # the remap it was neither positional nor attached — a reorder carried
+    # it along (it is stored as a slot index) while a delete renumbered the
+    # slots around it and parked it under a stranger.
     win.data["silo_gaps"] = [3]
     win._remap_silo_indices(lambda i: 5 if i == 3 else i)
-    assert win.data["silo_gaps"] == [3]
+    assert win.data["silo_gaps"] == [5]
+
+
+def test_deleting_a_silo_takes_its_gap_with_it(win):
+    """The gap of a DELETED silo must not be inherited by its replacement."""
+    win.cat_combo.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    cat = win.get_current_category()
+    win.data["temp_presets"][:] = ["alpha", "bravo", "charlie"]
+    win.data.setdefault("silo_gaps_all", {})[cat] = win.data["silo_gaps"] = [2]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+
+    # a gap under "charlie" (slot 2); deleting "alpha" shifts it to slot 1
+    win.drop_silo_state(0)
+    assert win.data["silo_gaps"] == [1]
+
+    # deleting the silo that CARRIES the gap drops the gap too
+    win.data["silo_gaps"][:] = [1]
+    win.drop_silo_state(1)
+    assert win.data["silo_gaps"] == []
+
+    # inserting above pushes it back down
+    win.data["silo_gaps"][:] = [1]
+    win.open_silo_slot(0)
+    assert win.data["silo_gaps"] == [2]
+    win.data["silo_gaps"][:] = []
 
 
 def test_refresh_with_a_gap_does_not_crash(win):
@@ -9715,6 +10050,80 @@ def test_fancy_zones_save_preset():
     assert p["state"] == "normal"
 
 
+class _FakeWin:
+    """Minimal stand-in with the two toggles apply_ui_state may press."""
+
+    def __init__(self, zen=False, sidebar=True):
+        self.focus_mode = zen
+        self.sidebar_visible = sidebar
+        self.presses = []
+
+    def toggle_focus_mode(self):
+        self.focus_mode = not self.focus_mode
+        # the real one collapses the sidebar on the way in
+        if self.focus_mode:
+            self.sidebar_visible = False
+        self.presses.append("zen")
+
+    def toggle_sidebar_visibility(self):
+        self.sidebar_visible = not self.sidebar_visible
+        self.presses.append("sidebar")
+
+
+def test_window_preset_carries_zen_and_sidebar_state():
+    """T-700/701. A preset used to be a rectangle and nothing else, so one
+    saved in zen with the sidebar away came back with all the chrome on."""
+    from fastprompter.ui.fancy_zones import _load_presets, _save_presets
+
+    data = {}
+    _save_presets(data, [{"name": "Zen", "x": 0.0, "y": 0.0, "w": 0.5, "h": 1.0,
+                          "zen": True, "sidebar": False}])
+    p = _load_presets(data)[0]
+    assert p["zen"] is True and p["sidebar"] is False
+
+    # False is a real answer and must survive the round trip as False,
+    # not be dropped as falsy
+    _save_presets(data, [{"name": "Plain", "x": 0.0, "y": 0.0, "w": 1.0, "h": 1.0,
+                          "zen": False, "sidebar": True}])
+    p = _load_presets(data)[0]
+    assert p["zen"] is False and p["sidebar"] is True
+
+    # a preset written before this existed says nothing — not False
+    _save_presets(data, [{"name": "Old", "x": 0.0, "y": 0.0, "w": 1.0, "h": 1.0}])
+    assert "zen" not in data["window_presets"][0]
+    p = _load_presets(data)[0]
+    assert p["zen"] is None and p["sidebar"] is None
+
+
+def test_apply_ui_state_only_presses_what_has_to_change():
+    from fastprompter.ui.fancy_zones import apply_ui_state
+
+    # already in the wanted state: nothing is pressed (applying a preset
+    # twice must not toggle zen back off)
+    win = _FakeWin(zen=True, sidebar=False)
+    apply_ui_state(win, {"zen": True, "sidebar": False})
+    assert win.presses == []
+
+    # into zen from a normal window
+    win = _FakeWin(zen=False, sidebar=True)
+    apply_ui_state(win, {"zen": True, "sidebar": False})
+    assert win.focus_mode is True and win.sidebar_visible is False
+    assert win.presses == ["zen"]
+
+    # out of zen, sidebar back on — zen first, then the sidebar, or leaving
+    # zen would undo the sidebar again
+    win = _FakeWin(zen=True, sidebar=False)
+    apply_ui_state(win, {"zen": False, "sidebar": True})
+    assert win.focus_mode is False and win.sidebar_visible is True
+    assert win.presses == ["zen", "sidebar"]
+
+    # a legacy preset leaves the window exactly as it found it
+    win = _FakeWin(zen=True, sidebar=False)
+    apply_ui_state(win, {"x": 0, "y": 0, "w": 1, "h": 1})
+    assert win.presses == []
+    assert win.focus_mode is True and win.sidebar_visible is False
+
+
 def test_legacy_bare_list_presets_still_load():
     """The first build stored [x,y,w,h]. A saved preset must not vanish
     because the format grew a name and a state."""
@@ -10283,7 +10692,12 @@ def test_right_cluster_hugs_the_right_edge(fresh_win):
     order = w._toolbar_order_list()
     assert order.index("<stretch>") < order.index("btn_help")
     assert order.index("lbl_line_count") > order.index("<stretch>")
+    # With the sidebar on the right — which the shipped profile does — the
+    # hamburger is an EDGE control placed after the order, so the right
+    # cluster hugs it rather than the raw header width.
     right = w.header_widget.width()
+    if w._sidebar_right:
+        right = min(right, w.btn_sidebar_toggle.geometry().left())
     assert w.btn_help.geometry().right() >= right - 2, w.btn_help.geometry()
 
 

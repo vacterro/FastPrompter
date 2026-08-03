@@ -25,10 +25,17 @@ from fastprompter.ui.fancy_zones import _MAX_PRESETS, _load_presets, _save_prese
 
 
 def _describe(p) -> str:
+    # zen / no-sidebar are shown because they are part of what the preset
+    # will DO to the window, and a list that only shows the box makes the
+    # layout half of it look like a surprise.
+    extra = "".join(t for t in (
+        ", zen" if p.get("zen") else "",
+        ", no sidebar" if p.get("sidebar") is False and not p.get("zen") else "",
+    ))
     if p.get("state") == "maximized":
-        return f'{p["name"]}  —  maximized'
+        return f'{p["name"]}  —  maximized{extra}'
     return (f'{p["name"]}  —  {round(p["w"] * 100)}% x {round(p["h"] * 100)}% '
-            f'@ {round(p["x"] * 100)},{round(p["y"] * 100)}')
+            f'@ {round(p["x"] * 100)},{round(p["y"] * 100)}{extra}')
 
 
 class WindowPresetsDialog(QDialog):
@@ -104,6 +111,11 @@ class WindowPresetsDialog(QDialog):
             "w": max(0.05, g.width() / a.width()),
             "h": max(0.05, g.height() / a.height()),
             "state": "maximized" if mw.isMaximized() else "normal",
+            # Same layout state the picker's own S=save records — this is the
+            # second place a preset is born, and a preset that means different
+            # things depending on which surface made it is worse than neither.
+            "zen": bool(getattr(mw, "focus_mode", False)),
+            "sidebar": bool(getattr(mw, "sidebar_visible", True)),
         }
 
     # ---- actions ------------------------------------------------------

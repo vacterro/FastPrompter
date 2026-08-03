@@ -57,7 +57,7 @@ Konfigurierbare Button-Leiste. Tokens: Kat-Tabs, Suche, Silo-Steuerung, Formatie
 
 **Code-Fences:** Monospace (Consolas-Standard) + Ein-Klick-Kopier-Button + Faltung zum Einklappen.
 
-**Einklappbare Bilder:** `![alt](url)` → kompakter 150px-Button. Ctrl+Klick öffnet, Ctrl-R-Klick öffnet Ordner.
+**Einklappbare Bilder:** `![alt](url)` → kompakter 150px-Button. Ctrl+Klick öffnet, Ctrl-R-Klick öffnet Ordner. Doppelklick auf die Pill benennt Datei auf Platte und Link zusammen um (ein Undo-Schritt).
 
 **Interaktive Checkboxen:** Klick auf `- [ ]` schaltet auf `- [x]` um.
 
@@ -87,7 +87,6 @@ Reintext-Markdown-Tabelle. Tab/Shift+Tab durchläuft Zellen. Tab an letzter Zell
 |---|---|
 | `Einstellungen (Alt+`)` | Theme-Picker, Hotkey-Neubindung, Sound, Skalierung, Toolbar-Sortierung |
 | `Snippet-Manager (Ctrl+S)` | F1-F10-Snippet-Namen + -Inhalte bearbeiten |
-| `SAIPEN-Viewer (Ctrl+Shift+C)` | Read-only-STATE/BOARD/LOG-Viewer |
 | `Timer-Dialog (Ctrl+Shift+T)` | Pomodoro- + Countdown-Timer-Setup |
 | `Queue Master (Alt+Shift+C)` | Watcher-Queue-Übersicht pro Silo |
 | `Hashtag-Dialog (Alt+Shift+T)` | Siloübergreifende Tag-Suche |

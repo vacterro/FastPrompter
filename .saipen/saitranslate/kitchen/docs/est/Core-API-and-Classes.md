@@ -248,16 +248,6 @@ Visuaalne ekraanitsooni valija. 7 paigutuse preseedi (TL, TR, BL, BR, Center, Fu
 
 ---
 
-### `SaipenViewerDialog` (`ui/saipen_dialog.py`)
-
-Read-only vaataja `.saipen/` STATE, BOARD, LOG failidele.
-
-- Avamine läbi Ctrl+Shift+C või tööriistariba
-- `.saipen/` automaatne tuvastus projekti tees
-- Reaalajas värskendamise nupp
-
----
-
 ### `WindowPresetsDialog` (`ui/window_presets_dialog.py`)
 
 Kasutaja määratud aknaasendite preseendid. Kuni 10 salvestatud geomeetriat ekraani murdosadena.

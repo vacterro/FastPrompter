@@ -23,5 +23,6 @@
 - [x] T-016 Create Watcher Engine Deep Dive (Watcher-Engine-Architecture.md)
 - [x] T-017 Create Plugin, Skill & MCP Development Guide (Plugin-and-Skill-Development.md)
 - [x] T-018 Update Home.md and _Sidebar.md with all new pages & mirror to docs/wiki/
+- [x] T-019 Post-rewrite drift repair (qq 03.08): 5 wiki pages re-synced to HEAD 60dda3e — saipen_dialog (deleted c384711) purged from Module-Structure/Core-API/UI-Components/Keyboard/User-Guide; Ctrl+Shift+C corrected to Clear (main.py:8842); kanban_widget/table_widget/silo_region + i18n 33 locales + real module counts (112 py) added; Alt+MiddleButton/MiddleButton/Ctrl+Shift+drag/pill-rename documented (3ce4357, T-645). Kitchen re-synced to 16 wiki pages, stale _*.md drafts removed. OUTBOX status ready. | verify: docs/wiki pages match kitchen copies after collect (5 files)
 
 ## BLOCKED

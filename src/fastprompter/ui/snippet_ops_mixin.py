@@ -633,6 +633,50 @@ class SnippetOpsMixin:
         Just calls del_silo which now handles the trashing of text."""
         self.del_silo(idx)
 
+    def silo_text_at(self, idx, is_archive=False):
+        """The stored text of silo ``idx``, or "" when the slot is empty."""
+        key = "archive_temp_presets" if is_archive else "temp_presets"
+        presets = self.data.get(key) or []
+        if 0 <= idx < len(presets):
+            return presets[idx] or ""
+        return ""
+
+    def prompt_delete_silo(self, idx=None, is_archive=False):
+        """Delete a silo from the UI, asking first when it holds text.
+
+        The menu entry used to appear only on a silo that already had
+        content, which left an empty one with no delete anywhere — so the
+        gate moved here, where it belongs: an empty slot goes without a
+        dialog (there is nothing to lose), a written one has to be
+        confirmed. Both land in the same `del_silo`, so the undo snapshot
+        and the slot-keyed remap stay one code path.
+        """
+        if idx is None:
+            idx = self.active_temp_slot
+        lang = getattr(self, "_current_lang", "EN")
+        text = self.silo_text_at(idx, is_archive)
+        if not is_archive and idx == getattr(self, "active_temp_slot", None):
+            # the live editor is ahead of the stored copy for the open silo
+            text = self.text_area.toPlainText() or text
+        if text.strip():
+            # ignore_focus_loss around the dialog: without it the modal takes
+            # focus and close_on_focus_loss hides the whole window behind it.
+            self.ignore_focus_loss = True
+            try:
+                reply = QMessageBox.question(
+                    self,
+                    tr("Delete Silo", lang),
+                    tr("Are you sure you want to delete this silo and its content?", lang),
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                )
+            finally:
+                self.ignore_focus_loss = False
+            self.activateWindow()
+            if reply != QMessageBox.StandardButton.Yes:
+                return False
+        self.trash_silo(idx, is_archive)
+        return True
+
     def _trash_silo_content(self, text):
         """Write text to _trash folder and to Trash category if enabled."""
         if not text.strip():

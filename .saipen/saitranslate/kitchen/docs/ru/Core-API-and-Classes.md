@@ -248,16 +248,6 @@ QMainWindow. Композиция миксинов (порядок объявл�
 
 ---
 
-### `SaipenViewerDialog` (`ui/saipen_dialog.py`)
-
-Read-only просмотрщик файлов `.saipen/` STATE, BOARD, LOG.
-
-- Открытие через Ctrl+Shift+C или тулбар
-- Автоопределение `.saipen/` в пути проекта
-- Кнопка живого обновления
-
----
-
 ### `WindowPresetsDialog` (`ui/window_presets_dialog.py`)
 
 Пользовательские пресеты позиций окна. До 10 сохранённых геометрий как долей экрана.

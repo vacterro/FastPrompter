@@ -37,11 +37,14 @@ Täielik klaviatuuripõhine töö. Paigutusest sõltumatu VK-edastus — tööta
 | **Vormindamine** | **Alt+Backspace** | Kustuta eelmine sõna | Redaktor |
 | **Vormindamine** | **Ctrl+Z** | Nutikas Undo (silo-põhine) | Redaktor |
 | **Vormindamine** | **Ctrl+KeskmineNupp** | Kustuta rida kursori all (nutikas loendi ümbervool) | Redaktor |
+| **Vormindamine** | **Alt+KeskmineNupp** | Muuda kõik valitud read täppideks (eeliide `• `) | Redaktor |
+| **Vormindamine** | **KeskmineNupp** | Rea oleku tsükkel: tavaline → märgitud+läbikriipsutatud → märkimata | Redaktor |
+| **Vormindamine** | **Ctrl+Shift+lohistamine** | Liiguta rida(d) mahalaskmise punkti, vorming säilib | Redaktor |
 | **Vormindamine** | **Ctrl+Klõps täpil** | Lülitus `-` / `•` | Redaktor |
 | **Snippetid** | **F1**…**F10** | Sisesta snippet 1–10 | Rakendus |
 | **Snippetid** | **Ctrl+Shift+1**…**9** | Sisesta snippet 1–9 (alternatiiv) | Rakendus |
 | **Snippetid** | **Ctrl+S** | Ava Snippet Manager | Rakendus |
-| **SAIPEN** | **Ctrl+Shift+C** | Ava SAIPEN-vaataja | Rakendus |
+| **Üldine** | **Ctrl+Shift+C** | Puhasta praegune tekst | Rakendus |
 | **Taimerid** | **Ctrl+Shift+T** | Ava taimeridialoog | Rakendus |
 | **Hastagid** | **Alt+Shift+T** | Ava hashtagi dialoog | Rakendus |
 | **Manused** | **F2** | Nimeta failikonteineri manus ümber | Failikonteiner |
@@ -74,7 +77,9 @@ Kõik vormindamise klõbustikud lülitavad inline-märke: **Ctrl+B** → `**paks
 
 **Ctrl+E** — vormindab praeguse rea päiseks. Kohandatav: reegli tüüp, täpp, ajatempel, joondus. Ava Seaded → Eraldajad ja päised kohandamiseks.
 
-**Ctrl+KeskmineNupp** — kustutab terve rea nutika ümbervooluga: nummerdatud loendid numereeritakse ümber, täpploendid sulevad vahe.
+**Ctrl+KeskmineNupp** — kustutab terve rea nutika ümbervooluga: nummerdatud loendid numereeritakse ümber, täpploendid sulevad vahe. **Alt+KeskmineNupp** — muudab iga valitud rea täpiks. **KeskmineNupp** — rea oleku tsükkel: tavaline → märgitud+ läbikriipsutatud → märkimata.
+
+**Ctrl+Shift+lohistamine** — haara pointeri all olev rida (või terve valik) ja liiguta mahalaskmise indikaatorini; paks, märkeruudud ja pildipillid peavad reisi üle.
 
 ### Silo navigatsioon
 **Ctrl+1** kuni **Ctrl+0** hüppab silodele 1-10. **Alt+↑↓** järjestikune liikumine. **Ctrl+N** lisab tühja silo alla.
@@ -82,8 +87,8 @@ Kõik vormindamise klõbustikud lülitavad inline-märke: **Ctrl+B** → `**paks
 ### Snippeti makrod
 **F1-F10** sisestavad eelkonfigureeritud tekstimalle. Sisu sidumine läbi Snippet Manager (**Ctrl+S**) või paremklõps F-nupul.
 
-### SAIPEN + taimerid
-**Ctrl+Shift+C** — ava SAIPEN-vaataja (STATE/BOARD/LOG). **Ctrl+Shift+T** — taimeridialoog. **Alt+Shift+T** — hashtagi otsing.
+### Puhastus + taimerid
+**Ctrl+Shift+C** — puhasta praeguse silo tekst. **Ctrl+Shift+T** — taimeridialoog. **Alt+Shift+T** — hashtagi otsing.
 
 ### Kanban ja tabelid (T-630)
 Kanban-silos: **Alt+nooleklahvid** liigutavad kaarte. Tabelisilos: **Tab/Shift+Tab** lahtrite läbikäimine, **Enter** lisab rea.

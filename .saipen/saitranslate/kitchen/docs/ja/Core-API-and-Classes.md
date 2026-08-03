@@ -248,16 +248,6 @@ QMainWindow。ミックスイン構成 (宣言順):
 
 ---
 
-### `SaipenViewerDialog` (`ui/saipen_dialog.py`)
-
-`.saipen/` の STATE、BOARD、LOG ファイル用の読み取り専用ビューアー。
-
-- Ctrl+Shift+C またはツールバーで開く
-- プロジェクトパスの `.saipen/` を自動検出
-- ライブ更新ボタン
-
----
-
 ### `WindowPresetsDialog` (`ui/window_presets_dialog.py`)
 
 ユーザー定義のウィンドウ位置プリセット。画面の分数として最大 10 の保存済みジオメトリ。

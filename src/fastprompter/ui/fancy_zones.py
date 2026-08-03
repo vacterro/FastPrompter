@@ -59,8 +59,23 @@ def _rect_of(preset) -> tuple[float, float, float, float]:
     return (preset["x"], preset["y"], preset["w"], preset["h"])
 
 
+# UI state a preset can carry beyond its rectangle. None means "the preset
+# does not say", which is what every preset saved before this existed holds —
+# and it must leave the current window alone rather than force a default.
+_UI_STATE_KEYS = ("zen", "sidebar")
+
+
+def _ui_state_of(item):
+    """The tri-state UI flags of a stored preset: True / False / None."""
+    out = {}
+    for key in _UI_STATE_KEYS:
+        val = item.get(key) if isinstance(item, dict) else None
+        out[key] = None if val is None else bool(val)
+    return out
+
+
 def _load_presets(data):
-    """Normalise to dicts: {name, x, y, w, h, state}.
+    """Normalise to dicts: {name, x, y, w, h, state, zen, sidebar}.
 
     Accepts the original bare [x, y, w, h] shape too — the first build wrote
     that, and a saved preset must not vanish because the format grew.
@@ -80,11 +95,12 @@ def _load_presets(data):
                     "w": float(item["w"]), "h": float(item["h"]),
                     "state": "maximized"
                     if item.get("state") == "maximized" else "normal",
+                    **_ui_state_of(item),
                 }
             elif isinstance(item, (list, tuple)) and len(item) >= 4:
                 x, y, w, h = (float(v) for v in item[:4])
                 p = {"name": f"Preset {i + 1}", "x": x, "y": y,
-                     "w": w, "h": h, "state": "normal"}
+                     "w": w, "h": h, "state": "normal", **_ui_state_of(None)}
             else:
                 continue
         except (TypeError, ValueError, KeyError):
@@ -100,16 +116,58 @@ def _save_presets(data, presets):
     out = []
     for i, p in enumerate(presets):
         if isinstance(p, dict):
-            out.append({
+            entry = {
                 "name": str(p.get("name") or f"Preset {i + 1}"),
                 "x": p["x"], "y": p["y"], "w": p["w"], "h": p["h"],
                 "state": p.get("state", "normal"),
-            })
+            }
+            # Written only when the preset actually knows: an absent key is
+            # "leave the window as it is", and writing False for it would
+            # silently turn every old preset into "open with zen off".
+            for key, val in _ui_state_of(p).items():
+                if val is not None:
+                    entry[key] = val
+            out.append(entry)
         elif isinstance(p, (list, tuple)) and len(p) >= 4:
             x, y, w, h = p[:4]
             out.append({"name": f"Preset {i + 1}", "x": x, "y": y,
                         "w": w, "h": h, "state": "normal"})
     data["window_presets"] = out
+
+
+def apply_ui_state(main_win, preset) -> None:
+    """Put the window into the zen/sidebar state a preset recorded.
+
+    Toggles rather than sets, because that is the only API the window has —
+    and each is compared against the CURRENT state first, so applying a
+    preset twice is not the same as pressing Ctrl+D twice. A key the preset
+    does not carry is left alone: presets saved before this existed must not
+    start forcing the chrome back on.
+
+    Zen goes first: it collapses the sidebar itself, so the sidebar flag has
+    to be applied after it, or leaving zen would immediately undo it.
+    """
+    if main_win is None or not isinstance(preset, dict):
+        return
+    state = _ui_state_of(preset)
+
+    want_zen = state["zen"]
+    if want_zen is not None and bool(getattr(main_win, "focus_mode", False)) != want_zen:
+        toggle = getattr(main_win, "toggle_focus_mode", None)
+        if callable(toggle):
+            toggle()
+
+    want_sidebar = state["sidebar"]
+    if want_sidebar is None:
+        return
+    # In zen there is deliberately no sidebar; honouring the flag there would
+    # put one back on screen inside the mode that exists to remove it.
+    if bool(getattr(main_win, "focus_mode", False)):
+        return
+    if bool(getattr(main_win, "sidebar_visible", True)) != want_sidebar:
+        toggle = getattr(main_win, "toggle_sidebar_visibility", None)
+        if callable(toggle):
+            toggle()
 
 
 class FancyZoneOverlay(QWidget):
@@ -304,12 +362,15 @@ class FancyZoneOverlay(QWidget):
             presets = _load_presets(getattr(mw, "data", None))
             if 0 <= idx < len(presets) and presets[idx].get("state") == "maximized":
                 mw.showMaximized()
+                apply_ui_state(mw, presets[idx])
                 self.close()
                 if not mw.isVisible():
                     mw.show()
                 mw.raise_()
                 mw.activateWindow()
                 return True
+            if 0 <= idx < len(presets):
+                apply_ui_state(mw, presets[idx])
             if mw.isMaximized():
                 mw.showNormal()      # leave maximized before placing a rect
 
@@ -365,6 +426,11 @@ class FancyZoneOverlay(QWidget):
             # the window STATE, not just its box: a maximized window has a
             # normal-geometry rect that says nothing about being maximized
             "state": "maximized" if mw.isMaximized() else "normal",
+            # …and the LAYOUT state, which is the half a rectangle cannot
+            # hold: a preset saved in zen with the sidebar away came back as
+            # a plain rect with all the chrome switched back on.
+            "zen": bool(getattr(mw, "focus_mode", False)),
+            "sidebar": bool(getattr(mw, "sidebar_visible", True)),
         })
         _save_presets(data, presets)
         if hasattr(mw, "mark_dirty"):

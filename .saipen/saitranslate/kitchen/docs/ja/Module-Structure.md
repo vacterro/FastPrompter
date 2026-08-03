@@ -22,11 +22,11 @@ src/fastprompter/
 │   ├── sound_manager.py        # オーディオ再生 (クリック、タイプライター、アラーム)
 │   ├── state.py                # SQLite DB インターフェース + 状態管理
 │   ├── timers.py               # カウントダウンタイマーモデル、期限検出
-│   ├── translations.py         # i18n パッケージへのレガシープロキシ (22 言語)
+│   ├── translations.py         # i18n パッケージへのレガシープロキシ (33 ロケール)
 │   │
-│   ├── i18n/                   # 22 言語リソースパック
+│   ├── i18n/                   # 33 ロケールリソースパック
 │   │   ├── __init__.py, _compat.py, _container.py, _context.py, _engine.py
-│   │   ├── en.py, ru.py, de.py, fra.py, spa.py, ... (22 言語モジュール)
+│   │   ├── en.py, ru.py, est.py, ja.py, ded.py, ... (33 ロケールモジュール)
 │   │   └── flags/              # 国旗レンダラー
 │   │
 │   └── watcher/                # 自動化 + プロンプト排出エンジン
@@ -63,7 +63,6 @@ src/fastprompter/
 │   ├── pie_menu.py             # QuickListWidget 放射状コンテキストメニュー
 │   ├── queue_panel.py          # Watcher キューダイアログ
 │   ├── resizers.py             # ウィンドウリサイズハンドルコントロール
-│   ├── saipen_dialog.py        # SAIPEN プロジェクトビューアー (STATE、BOARD、LOG)
 │   ├── scaling_mixin.py        # UI DPI + フォントスケーリングミックスイン
 │   ├── search_mixin.py         # 複数語 AND 検索フィルター
 │   ├── send_selection_mixin.py # watcher 経由で選択範囲を送信
@@ -71,6 +70,9 @@ src/fastprompter/
 │   ├── silo_kanban.py          # マークダウンかんばんボード (T-630)
 │   ├── silo_settings_dialog.py # サイロごとの設定 (色、プロジェクトリンク)
 │   ├── silo_table.py           # マークダウンテーブルビルダー (T-630)
+│   ├── kanban_widget.py        # かんばんボード表示ウィジェット (silo_kanban バックエンド)
+│   ├── table_widget.py         # テーブル表示ウィジェット (silo_table バックエンド)
+│   ├── silo_region.py          # サイロリスト領域: ドラッグ、ギャップ、複数選択
 │   ├── snippet_ops_mixin.py    # サイロ操作 (ゴミ箱、移動、複製、クリア)
 │   ├── snippet_panel.py        # サイロツリー + F1-F10 スニペットボタン
 │   ├── theme_mixin.py          # ビンテージテーマスタイリング + QSS ジェネレーター
@@ -102,7 +104,7 @@ src/fastprompter/
 | `core.state` | SQLite WAL 永続化、状態同期、アンドゥスタック、カテゴリ別エイリアスストア |
 | `core.hotkey*` | グローバルホットキーリスナー + Win32 VK フィルター、レイアウト非依存ディスパッチ |
 | `core.watcher` | プロンプトキュー、CDP/Win32 自動化、スキルラッパー、制限スキャナー |
-| `core.i18n` | 22 言語翻訳パック + translations.py からのプロキシ委譲 |
+| `core.i18n` | 33 ロケール翻訳パック + translations.py からのプロキシ委譲 |
 | `core.ctrlw` | 区切りテンプレートエンジン (Ctrl+W / Alt+W) |
 | `core.timers` | タイマーモデル、期限検出、シリアライゼーション |
 | `core.pomodoro` | 作業/休憩状態機械、フォーカスタイマー |
@@ -112,7 +114,9 @@ src/fastprompter/
 | `ui.silo_table` | プレーンテキストテーブルエディタ (Tab でセル移動、Enter で新行) |
 | `ui.file_container` | サイロごとのフォルダドロワー、アセットプレビュー、テンプレート |
 | `ui.theme_mixin` | 6 つのレトロ Win95 テーマ + カスタムカラーエンジン + QSS ジェネレーター |
-| `ui.saipen_dialog` | SAIPEN プロジェクトビューアー (.saipen STATE/BOARD/LOG) |
+| `ui.kanban_widget` | かんばんボード表示ウィジェット (silo_kanban バックエンド) |
+| `ui.table_widget` | テーブル表示ウィジェット (silo_table バックエンド) |
+| `ui.silo_region` | サイロリスト領域: ドラッグ、ギャップ、複数選択 |
 | `ui.fancy_zones` | 7 レイアウトプリセットの視覚ゾーンピッカー |
 | `ui.window_presets_dialog` | ユーザー保存のウィンドウジオメトリプリセット (Ctrl+Q ページ) |
 | `ui.zen_desktop` | 3 段階 Ctrl+D: Zen、ソロ (他を最小化)、戻る |
@@ -124,8 +128,8 @@ src/fastprompter/
 
 ## モジュール数まとめ
 
-- **core/**: 14 モジュール + i18n/ (22 言語) + watcher/ (9 モジュール) = 約 45
-- **ui/**: 39 モジュール
+- **core/**: 15 モジュール + i18n/ (33 ロケール + インフラ 5 ファイル = 38) + watcher/ (10 モジュール)
+- **ui/**: 44 モジュール
 - **theme/**: 1 モジュール
 - **utils/**: 4 モジュール
-- **合計**: 約 45 モジュール + i18n 言語
+- **合計**: `src/fastprompter/` 配下に `.py` ファイル 112 個 (`main.py` + `__init__.py` を含む)

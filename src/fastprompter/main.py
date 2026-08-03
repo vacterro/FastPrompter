@@ -1309,6 +1309,9 @@ class FastPrompter(
         """Hide/show the snippets panel and make it stick across refreshes."""
         hidden = self.data.get("snippets_hidden", "False") != "True"
         self.data["snippets_hidden"] = "True" if hidden else "False"
+        # write it straight into this project's session, so it survives a
+        # restart even if the user never switches projects afterwards
+        self.capture_silo_session()
         self.play_tick_sound()
         self.mark_dirty()
         self.refresh_snippets_panel()
@@ -1692,29 +1695,54 @@ class FastPrompter(
         return self.toolbar_token_of(w)
 
     def reorder_toolbar_token(self, token, drop_x):
-        """Rebuild the whole order from the current left-to-right layout with
-        `token` reinserted at drop_x. Because gaps are real widgets now, the
-        visual sequence IS the order — unambiguous even with two stretches."""
-        seq = []
-        for i in range(1, self.header_layout.count()):
-            w = self.header_layout.itemAt(i).widget()
-            if w is None:
+        """Move `token` to where the pointer released it.
+
+        Works on the SAVED order, not on the visible row. Rebuilding from
+        what happens to be on screen quietly dropped every button the
+        density packer had hidden at that window width; they came back at
+        whatever position the self-heal in `_toolbar_order_list` chose, so
+        one drag re-arranged buttons the user had never touched and the same
+        drag "worked" or "didn't" depending on how wide the window was.
+
+        Only the drop POSITION is read from the layout: the first visible
+        item whose centre is right of the cursor is what the token lands in
+        front of. Hidden items keep their place around it.
+        """
+        order = self._toolbar_order_list()
+        if token not in order:
+            return
+
+        # order index -> centre x, for the items actually on screen
+        stretch_seen = 0
+        visible = []
+        for i, tok in enumerate(order):
+            if tok == "<stretch>":
+                w = self._toolbar_gap(stretch_seen)
+                stretch_seen += 1
+            else:
+                w = self._toolbar_widget_for(tok)
+            # isVisibleTo, not isVisible: the latter is False for every child
+            # while the window itself is hidden (headless tests, a tray-hidden
+            # window), which would empty this list and send every drop to the
+            # end of the row.
+            if (w is None or sip.isdeleted(w)
+                    or not w.isVisibleTo(self.header_widget)):
                 continue
-            t = self._toolbar_seq_token(w)
-            if t is None:
-                continue
-            cx = w.x() + w.width() / 2
-            if self.toolbar_token_of(w) == token:  # the dragged widget — skip
-                continue
-            seq.append((t, cx))
-        insert_at = len(seq)
-        for idx, (_t, cx) in enumerate(seq):
+            visible.append((i, w.x() + w.width() / 2))
+
+        insert_at = len(order)
+        for i, cx in visible:
             if drop_x < cx:
-                insert_at = idx
+                insert_at = i
                 break
-        tokens = [t for t, _ in seq]
-        tokens.insert(insert_at, token)
-        self.data["toolbar_order"] = ",".join(tokens)
+
+        src = order.index(token)
+        order.pop(src)
+        if src < insert_at:
+            insert_at -= 1
+        order.insert(max(0, min(len(order), insert_at)), token)
+
+        self.data["toolbar_order"] = ",".join(order)
         self.apply_toolbar_order()
         self.mark_dirty()
 
@@ -4648,6 +4676,13 @@ class FastPrompter(
         # it dates the note, and every later header is just a section marker.
         # "Stamp every header" in the settings turns that off.
         cfg = header_core.read_settings(self.data)
+        # Ctrl+E on a line that was ALREADY a bullet turns that bullet into
+        # the header — it does not also leave a fresh empty bullet under it.
+        # Pressing it on an item in the middle of a list used to cut the list
+        # in half with a stray "• " the user then had to delete by hand; the
+        # line they pressed it on is the one they wanted to become a title.
+        if re.match(r'^\s*[-*•●+]\s+', sel):
+            cfg = {**cfg, "bullet": False}
         if self._has_header_above(cursor.block()) and not cfg["stamp_every"]:
             formatted_text = f"# {clean_sel}"
         else:
@@ -4993,14 +5028,16 @@ class FastPrompter(
         ("silo_folders", "str_dict"),
         ("silo_project_paths", "str_dict"),
         ("silo_types", "str_dict"),
+        # T-704 reverses T-593's carve-out, by the user's own call. Leaving
+        # silo_gaps out produced the WORST of both readings, not the
+        # positional one it was aiming for: the gap is stored as a slot
+        # index, so a reorder moved it along with its silo anyway, while a
+        # delete or an insert renumbered every slot around it and parked it
+        # under a stranger. A gap now belongs to the silo it was placed
+        # under and is remapped with everything else — put one under
+        # "bravo" and it stays under "bravo".
+        ("silo_gaps", "int_list"),
     )
-    # NOTE: silo_gaps is deliberately NOT in the table above. A gap is a
-    # POSITION in the list, not a property of the silo it happens to sit
-    # under (T-593). Remapping it made the divider chase a silo around on
-    # every reorder, which is the "unpredictable" behaviour users hit: you
-    # park a separator, move a silo, and the separator teleports. Leaving
-    # the slot index unremapped keeps the gap on the same visual row while
-    # silos move past it.
 
     # The archive is its own index space with its own slot-keyed stores.
     # Reordering archived silos used to move only the TEXT, leaving these
@@ -5040,6 +5077,11 @@ class FastPrompter(
             collapsed = self.data.get("silo_collapsed", [])
             if isinstance(collapsed, list) and idx in collapsed:
                 collapsed.remove(idx)
+            # the gap belonged to THIS silo (T-704), so it leaves with it —
+            # remapping alone would hand it to whoever slides into the slot
+            gaps = self.data.get("silo_gaps", [])
+            if isinstance(gaps, list) and idx in gaps:
+                gaps.remove(idx)
         self._remap_silo_indices(lambda i: i - 1 if i > idx else i,
                                  is_archive=is_archive)
 
@@ -6847,6 +6889,11 @@ class FastPrompter(
         entry = self._silo_session(cat)
         entry["slot"] = int(getattr(self, "active_temp_slot", 0) or 0)
         entry["archive"] = bool(getattr(self, "active_is_archive", False))
+        # Snippets shown/hidden is per PROJECT too (T-713): one project is a
+        # snippet library and the next is a scratchpad, and a single global
+        # flag made every switch fight the user for the panel.
+        entry["snippets_hidden"] = (
+            self.data.get("snippets_hidden", "False") == "True")
         # The page is NOT stored: _switch_to_slot derives it from the slot
         # (idx // visible), so restoring the slot restores the page. Keeping a
         # copy would be a second source of truth that can disagree.
@@ -6871,6 +6918,12 @@ class FastPrompter(
         slot = max(0, min(slot, len(presets) - 1)) if presets else 0
         self.active_is_archive = archive
         self.active_temp_slot = slot
+        # Absent means "this project has never said", which must leave the
+        # panel as it is — a database written before T-713 has no entry, and
+        # defaulting it would slam every project's snippets shut on upgrade.
+        if "snippets_hidden" in entry:
+            self.data["snippets_hidden"] = (
+                "True" if entry["snippets_hidden"] else "False")
         return slot
 
     def _cat_at(self, idx):
@@ -8143,16 +8196,6 @@ class FastPrompter(
         menu.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         menu.setFont(QApplication.font())
 
-        has_content = (
-            is_archive
-            and idx < len(self.data.get("archive_temp_presets", []))
-            and self.data["archive_temp_presets"][idx]
-        ) or (
-            not is_archive
-            and idx < len(self.data["temp_presets"])
-            and self.data["temp_presets"][idx]
-        )
-
         # -- batch actions (only when a multi-selection is active) -----------
         sel = getattr(self, "_silo_selection", None)
         if not is_archive and sel:
@@ -8213,10 +8256,14 @@ class FastPrompter(
             menu.addAction(tr("💾 Save as Snippet #…", getattr(self, "_current_lang", "EN")), self.save_snippet_as_number)
 
         # -- destructive (middle-click already trashes a silo directly) -------
-        if has_content:
-            menu.addSeparator()
-            menu.addAction(tr("🗑 Delete to Trash", getattr(self, "_current_lang", "EN")), lambda: self.trash_silo(idx, is_archive))
-            menu.addAction(tr("♻ Manage Trash", getattr(self, "_current_lang", "EN")), self.open_trash_folder)
+        # Deleting used to appear ONLY on a silo that already had text in it,
+        # so an empty one had no delete anywhere in the UI and the whole
+        # feature read as missing. It is always offered now; the confirmation
+        # is what protects the silo that actually holds something.
+        menu.addSeparator()
+        menu.addAction(tr("🗑 Delete to Trash", getattr(self, "_current_lang", "EN")),
+                       lambda i=idx, a=is_archive: self.prompt_delete_silo(i, a))
+        menu.addAction(tr("♻ Manage Trash", getattr(self, "_current_lang", "EN")), self.open_trash_folder)
 
         menu.addSeparator()
         # Transfer to Snippet

@@ -1,3 +1,4 @@
+import copy
 import json
 import os
 import re
@@ -5,6 +6,7 @@ import sqlite3
 import threading
 import time
 
+from fastprompter.core.default_profile import DEFAULT_PROFILE
 from fastprompter.core.logging import logger
 from fastprompter.utils.paths import get_db_path
 
@@ -74,6 +76,12 @@ class FastPrompterState:
             "sidebar_right": "False", "sound_ui": "False", "sound_typewriter": "False", "sound_volume": "5", "portable_backup_enabled": "True", "language": "EN",
             "customize_toolbar": "False", "toolbar_order": "", "code_auto_gutter": "False"
         }
+        # The shipped look (T-695): the baked profile wins over the bare
+        # literals above, which stay as the last-resort skeleton. copy.deepcopy
+        # because the values are mutable and a module-level dict handed out by
+        # reference would let one profile's edits leak into the next
+        # reset_data() — and into every test that touches them.
+        self.data.update(copy.deepcopy(DEFAULT_PROFILE))
 
     def switch_profile(self, new_profile_id):
         if self.conn:

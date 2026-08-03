@@ -57,7 +57,7 @@ Kohandatav nuppude riba. Tokenid: kategooria vahekaardid, otsing, silo juhtimine
 
 **Koodiaiad:** mono-tähtedega (Consolas vaikimisi) + ühe-kliki kopeerimisnupp + voltimine kokku.
 
-**Kokkuvolditavad pildid:** `![alt](url)` → kompaktne 150px nupp. Ctrl+klõps avab, Ctrl+paremklõps avab kausta.
+**Kokkuvolditavad pildid:** `![alt](url)` → kompaktne 150px nupp. Ctrl+klõps avab, Ctrl+paremklõps avab kausta. Topeltklõps pillil nimetab faili kettal ja lingi koos ümber (üks undo-samm).
 
 **Interaktiivsed märkeruudud:** klõps `- [ ]`-l lülitab `- [x]`-iks.
 
@@ -87,7 +87,6 @@ Puhtalt-tekstiline markdown-tabel. Tab/Shift+Tab lahtrite läbikäimine. Tab vii
 |---|---|
 | `Settings (Alt+`)` | Teemavalija, klõbustike ümbersidumine, heli, skaala, tööriistariba ümberjärjestus |
 | `Snippet Manager (Ctrl+S)` | F1-F10 snippeti nimede + sisu redigeerimine |
-| `Saipen Viewer (Ctrl+Shift+C)` | Read-only STATE/BOARD/LOG vaataja |
 | `Timer Dialog (Ctrl+Shift+T)` | Pomodoro + taimeri seadistamine |
 | `Queue Master (Alt+Shift+C)` | Watcheri järjekorra ülevaade silo kaupa |
 | `Hashtag Dialog (Alt+Shift+T)` | Silode-ülene sildiotsing |

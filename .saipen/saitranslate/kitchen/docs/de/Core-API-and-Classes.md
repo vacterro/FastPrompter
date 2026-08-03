@@ -248,16 +248,6 @@ Visueller Bildschirm-Zonen-Picker. 7 Layout-Presets (TL, TR, BL, BR, Center, Ful
 
 ---
 
-### `SaipenViewerDialog` (`ui/saipen_dialog.py`)
-
-Read-only-Viewer für `.saipen/`-STATE-, BOARD-, LOG-Dateien.
-
-- Öffnen über Ctrl+Shift+C oder Toolbar
-- `.saipen/` im Projektpfad automatisch erkennen
-- Live-Refresh-Button
-
----
-
 ### `WindowPresetsDialog` (`ui/window_presets_dialog.py`)
 
 Benutzerdefinierte Fensterpositions-Presets. Bis zu 10 gespeicherte Geometrien als Bildschirmfraktionen.

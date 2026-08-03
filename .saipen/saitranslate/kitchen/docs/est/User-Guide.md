@@ -68,7 +68,7 @@ Kasutaja määratud eraldusribad siloloendis. Aitavad silosid gruppidesse organi
 - Sektsiooni voltimine — klõps ▾-l voltib päised kokku
 - Koodiaia kopeerimisnupp — hover aiast, klõps kopeerimisikoonil
 - Märkeruudu klõps — klõps `- [ ]`-l lülitab `- [x]`-iks
-- Kokkuvolditavad pildid — `![alt](url)` renderdub kompaktse pillina (150px). Ctrl+klõps avab, Ctrl+paremklõps avab kausta
+- Kokkuvolditavad pildid — `![alt](url)` renderdub kompaktse pillina (150px). Ctrl+klõps avab, Ctrl+paremklõps avab kausta. Topeltklõps pillil nimetab faili ja lingi koos ümber
 - Nutikas asetamine — tabelid/loendid/kood asetuvad puhtamalt
 
 **Vormindamise klõbustikud:**
@@ -162,9 +162,13 @@ Seaded → Customize Toolbar. Lohista nuppe ümberjärjestamiseks. Nähtavad vah
 
 Kui päis < 700px: peidetud nupud kogutakse » popup-i. Iga toiming jääb kättesaadavaks — vormindamine, navigatsioon, silo toimingud, tööriistad.
 
-### 21. SAIPENi integratsioon
+### 21. Redaktori hiir ja rea lohistamine
 
-Ctrl+Shift+C avab SAIPEN-vaataja (STATE/BOARD/LOG `.saipen/`-ist). Tööriistariba nupud kiireks juurdepääsuks, kui projektikaustas on `.saipen/`.
+**Ctrl+Shift+lohistamine** — liiguta pointeri all olev rida (või terve valitud plokk) mahalaskmise indikaatorini. Rikkalik vorming peab reisi üle — paks, märkeruudud ja pildipillid liiguvad dokumendifragmendina, mitte lihttekstina.
+
+**Alt+KeskmineNupp** — muudab iga valitud rea täpiks. **KeskmineNupp** — rea oleku tsükkel: tavaline → märgitud+ läbikriipsutatud → märkimata. **Ctrl+KeskmineNupp** — kustutab terve rea nutika loendi ümbervooluga.
+
+**Topeltklõps pildipillil** — nimeta fail kettal ja markdown-link koos ümber, üks undo-samm.
 
 ### 22. Varukoopia
 

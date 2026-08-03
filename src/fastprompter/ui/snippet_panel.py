@@ -663,6 +663,35 @@ class DraggableSiloButton(QWidget):
         if hasattr(self.main_win, '_toggle_tick_silo'):
             self.main_win._toggle_tick_silo(self.global_idx)
 
+    def _tick_column_reserved(self):
+        """Whether this row's tick can ever appear, so its width is held.
+
+        The tick sits BEFORE the title, so showing it on hover used to push
+        the whole title sideways — the text ran away from under the pointer.
+        The column is now reserved for any row where the tick is reachable
+        (ticks enabled, or the row is already ticked) and hover changes only
+        what is painted in it. A row that can never show one keeps no gap:
+        nothing there can move either way.
+        """
+        if self.is_archive:
+            return False
+        if self._is_ticked():
+            return True
+        data = getattr(self.main_win, "data", {}) or {}
+        return data.get("silo_ticks_enabled", "False") == "True"
+
+    def _apply_tick_state(self, show_mark, reserved=None):
+        """Paint the tick or leave its space blank — never resize the row."""
+        if reserved is None:
+            reserved = self._tick_column_reserved()
+        if not reserved:
+            self._btn_tick.hide()
+            return
+        self._btn_tick.setText("✅" if show_mark else "")
+        # a blank tick must not read as a button
+        self._btn_tick.setEnabled(show_mark)
+        self._btn_tick.show()
+
     def enterEvent(self, event):
         """Show action buttons on hover with a tiny delay for smooth feel."""
         if self.is_archive:
@@ -690,7 +719,7 @@ class DraggableSiloButton(QWidget):
         # with files the 📁N doubles as the counter — it never hides
         self._btn_files.setVisible(getattr(self, "_fcount", 0) > 0 and not self.is_archive)
         # ticked silos always show the mark; setting only gates the hover btn
-        self._btn_tick.setVisible(self._is_ticked() and not self.is_archive)
+        self._apply_tick_state(self._is_ticked())
         self._lbl_count.show()
         super().leaveEvent(event)
 
@@ -707,8 +736,7 @@ class DraggableSiloButton(QWidget):
             self._btn_archive.show()
             self._btn_files.show()  # empty silos get the plain 📁 on hover
             if self.main_win.data.get("silo_ticks_enabled", "False") == "True":
-                self._btn_tick.setText("✅")
-                self._btn_tick.show()
+                self._apply_tick_state(True)
             self._lbl_count.hide()
             self._btn_files.setToolTip(tr("Files: drop/drag/preview assets for this silo\n(Shift+Click: Project Config)", getattr(self.main_win, "_current_lang", "EN")))
         else:
@@ -730,7 +758,14 @@ class DraggableSiloButton(QWidget):
         is_ticked = isinstance(ticked_list, list) and global_idx in ticked_list
         sel = getattr(self.main_win, "_silo_selection", None)
         is_selected = bool(sel) and global_idx in sel and not self.is_archive
-        current_state = (text_label, global_idx, bg_color, font_family, scale, theme_name, line_count_str, is_pushed, title_bold, is_ticked, is_child, fcount, has_children, is_collapsed, has_hash, color_hex, is_pinned, is_selected)
+        # in the cache key because it decides whether the tick's COLUMN is
+        # held open: flipping the setting has to repaint the row, and a state
+        # tuple without it silently kept the old spacing until something else
+        # changed on that row.
+        tick_reserved = (not self.is_archive) and (
+            is_ticked
+            or self.main_win.data.get("silo_ticks_enabled", "False") == "True")
+        current_state = (text_label, global_idx, bg_color, font_family, scale, theme_name, line_count_str, is_pushed, title_bold, is_ticked, is_child, fcount, has_children, is_collapsed, has_hash, color_hex, is_pinned, is_selected, tick_reserved)
         if getattr(self, '_last_state', None) == current_state:
             self.show()
             return
@@ -753,8 +788,10 @@ class DraggableSiloButton(QWidget):
         # A ticked silo ALWAYS shows its ✅ mark (even with ticks disabled —
         # Ctrl+Shift+click can still set it). The setting only controls the
         # convenience hover button, handled in _update_hover_buttons.
-        self._btn_tick.setText("✅")
-        self._btn_tick.setVisible(is_ticked and not self.is_archive)
+        # …and the column it lives in is reserved on every row that could ever
+        # show one, exactly like the colour swatch below, so hovering paints a
+        # tick instead of pushing the title sideways.
+        self._apply_tick_state(is_ticked, reserved=tick_reserved)
 
         # Pinned silos keep the 📌 button visible as the UNPIN control
         # (clicking it unpins). Unpinned silos only reveal it on hover to pin.
@@ -887,6 +924,19 @@ class DraggableSiloButton(QWidget):
                     and not self.is_archive):
                 if hasattr(self.main_win, "_toggle_tick_silo"):
                     self.main_win._toggle_tick_silo(self.global_idx)
+                e.accept()
+                return
+            # Alt+click folds a parent's children away (T-714). The ▾ button
+            # only exists on rows that have children and only while hovered;
+            # this is the same action without hunting for it. On a childless
+            # silo it does nothing rather than selecting it, so the modifier
+            # never means two different things.
+            if (mods & Qt.KeyboardModifier.AltModifier
+                    and not self.is_archive
+                    and hasattr(self.main_win, "toggle_silo_collapse")):
+                kids = self.main_win._children_map().get(self.global_idx, [])
+                if kids:
+                    self.main_win.toggle_silo_collapse(self.global_idx)
                 e.accept()
                 return
             super().mousePressEvent(e)
@@ -1036,28 +1086,43 @@ class SiloDropWidget(QWidget):
             e.acceptProposedAction()
 
     def _visible_buttons(self):
+        # isVisibleTo(self), not isVisible(): the latter is False for every
+        # child while the window itself is hidden, which made the drop
+        # classifier see an empty list and answer "append at the end" for
+        # every position.
         out = []
         for i in range(self.layout.count()):
             w = self.layout.itemAt(i).widget()
-            if w and w.isVisible() and hasattr(w, "global_idx") and type(w).__name__ == "DraggableSiloButton":
+            if (w and w.isVisibleTo(self) and hasattr(w, "global_idx")
+                    and type(w).__name__ == "DraggableSiloButton"):
                 out.append(w)
         return out
+
+    # How much of a row counts as "drop it INTO this silo" (nest / swap).
+    # It used to be the middle 44%, with only 28% at each edge meaning
+    # "put it above / below" — so releasing over the top of a row usually
+    # nested the silo instead of moving it there, which is the single
+    # biggest reason silo dragging felt unpredictable. The move bands are
+    # now the majority of the row and the nest band is a deliberate aim at
+    # its centre.
+    _NEST_BAND = 0.20
 
     def _drop_target_at(self, pos):
         """Classify a drop position.
 
-        Returns ("swap", button) when pos is over the middle band of a silo,
-        or ("move", gap_index) when pos is near a silo edge / between silos
-        (gap_index counts insertion boundaries among visible buttons).
+        Returns ("swap", button) when pos is over the centre band of a silo,
+        or ("move", gap_index) when pos is anywhere in its top or bottom
+        band (gap_index counts insertion boundaries among visible buttons).
         """
         btns = self._visible_buttons()
         for i, btn in enumerate(btns):
             g = btn.geometry()
             if pos.y() <= g.bottom():
-                band = max(3, int(g.height() * 0.28))
-                if pos.y() < g.top() + band:
+                nest = max(2, int(g.height() * self._NEST_BAND))
+                edge = (g.height() - nest) / 2.0
+                if pos.y() < g.top() + edge:
                     return "move", i
-                if pos.y() > g.bottom() - band:
+                if pos.y() > g.bottom() - edge:
                     return "move", i + 1
                 return "swap", btn
         return "move", len(btns)

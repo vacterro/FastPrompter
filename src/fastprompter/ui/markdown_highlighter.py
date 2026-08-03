@@ -162,7 +162,14 @@ class MarkdownHighlighter(QSyntaxHighlighter):
         # `.*?` run to `bold*`, so the italic rule (applied later) replaced
         # the bold weight and bold rendered as italic.
         self._highlighting_rules.append((re.compile(r'(?<!\*)\*(?!\*)[^*\n]+\*(?!\*)'), italic_format))
-        self._highlighting_rules.append((re.compile(r'(?<!_)_(?!_)[^_\n]+(?<!_)_(?!_)'), italic_format))
+        # `_` is NOT emphasis inside a word — CommonMark says so precisely
+        # because identifiers exist: `chest_open: … chest_closed` italicised
+        # everything between the two underscores, and so did every
+        # snake_case name, file path and __dunder__ in a note. Asterisks keep
+        # their intraword behaviour (`in*ter*nal` is still italic) — that is
+        # the same carve-out the spec makes.
+        self._highlighting_rules.append(
+            (re.compile(r'(?<![\w_])_(?!_)[^_\n]+(?<!_)_(?![\w_])'), italic_format))
 
         # Header 1: # Text
         h1_format = QTextCharFormat()

@@ -1692,7 +1692,7 @@ class VaultTextEdit(QTextEdit):
                                 m = re.match(r'^(\s*)', text)
                                 ind = m.group(1) if m else ""
                                 c.setPosition(b.position() + len(ind))
-                                c.insertText("- ")
+                                c.insertText("• ")
                         b = b.next()
                 self.main_win.mark_dirty()
                 event.accept()

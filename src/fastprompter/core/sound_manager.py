@@ -41,6 +41,120 @@ _SOUND_FALLBACKS: dict[str, str] = {
 }
 
 
+def _volume_level(data: dict[str, Any]) -> int:
+    """The Volume spinner as an int 0-10, clamped, junk reading as 5."""
+    try:
+        vol = int(data.get("sound_volume", "5"))
+    except (TypeError, ValueError):
+        vol = 5
+    return max(0, min(10, vol))
+
+
+def _volume_factor(data: dict[str, Any]) -> float:
+    """The Volume spinner as an amplitude factor 0.0-1.0."""
+    return _volume_level(data) / 10.0
+
+
+def scale_wav_bytes(path: str, factor: float) -> bytes | None:
+    """A copy of the WAV at ``path`` with every sample scaled by ``factor``.
+
+    winsound has no volume control of its own, and the shipped build has no
+    QtMultimedia in it (there is no qt6multimedia.dll in the dist) — that is
+    the whole reason the Volume setting appeared to do nothing in the
+    packaged app while working in a dev checkout. Scaling the samples is the
+    only way that path can obey the setting.
+
+    Returns None when the file is not something we can safely rewrite —
+    compressed, exotic sample width, or a big-endian host — in which case the
+    caller plays it unscaled rather than not at all.
+    """
+    import io
+    import sys
+    import wave
+    from array import array
+
+    if sys.byteorder != "little":
+        return None
+    try:
+        with wave.open(path, "rb") as wf:
+            if wf.getcomptype() != "NONE":
+                return None
+            width = wf.getsampwidth()
+            # The shipped effects are 32-bit PCM, which is exactly why this
+            # has to cover width 4: a 1/2-only version returns None for every
+            # sound the app actually plays and the setting stays decorative.
+            if width not in (1, 2, 4):
+                return None
+            params = wf.getparams()
+            frames = wf.readframes(wf.getnframes())
+    except (OSError, wave.Error):
+        logger.debug("volume scaling skipped for %s", path, exc_info=True)
+        return None
+
+    if width in (2, 4):
+        code = "h" if width == 2 else "i"
+        samples = array(code)
+        if samples.itemsize != width:
+            return None
+        samples.frombytes(frames[: len(frames) - (len(frames) % width)])
+        lo, hi = -(1 << (8 * width - 1)), (1 << (8 * width - 1)) - 1
+        for i, s in enumerate(samples):
+            samples[i] = max(lo, min(hi, int(s * factor)))
+    else:
+        # 8-bit WAV samples are UNSIGNED with silence at 128, so they have to
+        # be scaled around that midpoint — scaling the raw byte would pull
+        # the whole waveform down towards a DC offset instead of quieter.
+        samples = array("B")
+        samples.frombytes(frames)
+        for i, s in enumerate(samples):
+            samples[i] = max(0, min(255, int((s - 128) * factor) + 128))
+
+    buf = io.BytesIO()
+    try:
+        with wave.open(buf, "wb") as out:
+            out.setparams(params)
+            out.writeframes(samples.tobytes())
+    except wave.Error:
+        logger.debug("volume scaling failed to re-encode %s", path, exc_info=True)
+        return None
+    return buf.getvalue()
+
+
+def scaled_wav_path(path: str, level: int) -> str | None:
+    """Path to a cached copy of ``path`` scaled to volume ``level`` (0-10).
+
+    A file, not a bytes buffer, because winsound refuses SND_MEMORY together
+    with SND_ASYNC ("Cannot play asynchronously from memory") — and playing a
+    UI click SYNCHRONOUSLY would freeze the editor for the length of the
+    sound on every keystroke. Written once per sound per level into the
+    system temp dir; the level is in the filename, so changing the setting
+    picks a different file instead of racing a rewrite of the one in flight.
+
+    Returns None if anything about the copy fails, leaving the caller to play
+    the original at full volume rather than fall silent.
+    """
+    import tempfile
+
+    if not (0 <= level < 10):
+        return None
+    try:
+        stem = os.path.splitext(os.path.basename(path))[0]
+        cache_dir = os.path.join(tempfile.gettempdir(), "fastprompter_sound")
+        os.makedirs(cache_dir, exist_ok=True)
+        out = os.path.join(cache_dir, f"{stem}_v{level}.wav")
+        if os.path.exists(out) and os.path.getmtime(out) >= os.path.getmtime(path):
+            return out
+        data = scale_wav_bytes(path, level / 10.0)
+        if data is None:
+            return None
+        with open(out, "wb") as fh:
+            fh.write(data)
+        return out
+    except OSError:
+        logger.debug("volume cache write failed for %s", path, exc_info=True)
+        return None
+
+
 class SoundManager(QObject):
     """Manages UI sound effects using QSoundEffect.
 
@@ -79,7 +193,7 @@ class SoundManager(QObject):
             logger.warning("Unknown sound name: %s", name)
 
         if QSoundEffect is None:
-            self._play_winsound(path)
+            self._play_winsound(path, _volume_level(self._data))
             return
 
         # Only cache players for known sound names to prevent unbounded dict growth
@@ -91,8 +205,7 @@ class SoundManager(QObject):
             player = QSoundEffect(self)
 
         try:
-            vol: int = int(self._data.get("sound_volume", "5"))
-            player.setVolume(vol / 10.0)
+            player.setVolume(_volume_factor(self._data))
 
             if os.path.exists(path):
                 player.setSource(QUrl.fromLocalFile(path))
@@ -101,13 +214,22 @@ class SoundManager(QObject):
             logger.exception("Failed to play sound")
 
     @staticmethod
-    def _play_winsound(path: str) -> None:
-        """Fallback WAV playback without QtMultimedia (no volume control)."""
+    def _play_winsound(path: str, level: int = 10) -> None:
+        """Fallback WAV playback without QtMultimedia.
+
+        This is the path the SHIPPED build takes — QtMultimedia is not in the
+        dist — so it has to honour the Volume setting or the setting is
+        decorative. winsound has no volume of its own, so anything below 10
+        plays a pre-scaled copy of the file instead. Level 0 is silence, and
+        is answered by playing nothing rather than by a wav full of zeroes.
+        """
         try:
             import winsound
 
-            if os.path.exists(path):
-                winsound.PlaySound(path, winsound.SND_FILENAME | winsound.SND_ASYNC)
+            if level <= 0 or not os.path.exists(path):
+                return
+            src = scaled_wav_path(path, level) or path
+            winsound.PlaySound(src, winsound.SND_FILENAME | winsound.SND_ASYNC)
         except Exception:
             logger.exception("Failed to play sound via winsound")
 

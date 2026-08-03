@@ -1,10 +1,10 @@
 ---
 phase: DONE
-task: "sync: 33 loc 939/939 keys (unchanged); kitchen/docs {ru,est,ja,de} synced to wiki rewrite; guides: GUIDE_EN -> kitchen/guides/ {est,ja,de}, RU guide hand-maintained (not clobbered)"
-next_action: "Bundle awaits integration (ADD/PLAN ticket): wrap help_dialog support button in tr(), inject bundle into src/fastprompter/core/i18n/; integrate guides into repo root when ADD runs"
+task: "prepare re-run done 04:30: wiki moved to 42347fe (qqq), 5 pages re-translated in-role into kitchen/docs x4 langs; bundle unchanged 943 keys/33 loc; OUTBOX status ready, source_head 42347fe"
+next_action: "OUTBOX ready: run eee (collect + ship) if desired; expect no-op integration since bundle shipped; docs mirrors re-synced"
 agent: claude
 saipen_version: 7
 mode: full
-updated: 2026-08-01T13:40:00Z
+updated: 2026-08-03T04:30:00Z
 transition_from: TRANSLATE
 ---
