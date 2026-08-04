@@ -704,6 +704,10 @@ class DraggableSiloButton(QWidget):
             self._hover_timer.setInterval(80)
             self._hover_timer.timeout.connect(self._update_hover_buttons)
         self._hover_timer.start()
+        # Play hover sound if CS style is enabled
+        if hasattr(self.main_win, 'data') and self.main_win.data.get("cs_style", "False") == "True":
+            if hasattr(self.main_win, 'sound_manager'):
+                self.main_win.sound_manager.play_hover()
         super().enterEvent(event)
 
     def leaveEvent(self, event):
@@ -939,6 +943,10 @@ class DraggableSiloButton(QWidget):
                     self.main_win.toggle_silo_collapse(self.global_idx)
                 e.accept()
                 return
+            # Play click sound if CS style is enabled
+            if hasattr(self.main_win, 'data') and self.main_win.data.get("cs_style", "False") == "True":
+                if hasattr(self.main_win, 'sound_manager'):
+                    self.main_win.sound_manager.play_click()
             super().mousePressEvent(e)
             self.drag_start, self._dragging = e.pos(), False
             e.accept()
@@ -987,6 +995,10 @@ class DraggableSiloButton(QWidget):
                 self.main_win._switch_to_slot(self.global_idx)
             else:
                 self.main_win._switch_to_arc_slot(self.global_idx)
+            # Play button release sound if CS style is enabled
+            if hasattr(self.main_win, 'data') and self.main_win.data.get("cs_style", "False") == "True":
+                if hasattr(self.main_win, 'sound_manager'):
+                    self.main_win.sound_manager.play_button_release()
             super().mouseReleaseEvent(e)
             e.accept()
             return

@@ -41,6 +41,28 @@ def edit_block(cursor, editor=None):
 
 
 @contextmanager
+def keep_view(editor):
+    """Hold the viewport still across a document rewrite.
+
+    Qt reflows the document when the OUTERMOST edit block closes, and that
+    reflow routinely resets the vertical scrollbar to 0 — so a formatting
+    command fired at the bottom of a long silo threw the user back to the
+    top. An `ensureCursorVisible()` inside the edit block cannot help: it
+    runs before the reflow that undoes it. This restores the scroll value
+    afterwards and only then puts the caret back in view, so a command that
+    genuinely moved the caret off-screen still scrolls to it.
+    """
+    sb = editor.verticalScrollBar()
+    before = sb.value()
+    try:
+        yield
+    finally:
+        if sb.value() != before:
+            sb.setValue(min(before, sb.maximum()))
+        editor.ensureCursorVisible()
+
+
+@contextmanager
 def undo_group(text_edit):
     """Same, for when you only have the widget to hand."""
     cursor = text_edit.textCursor()

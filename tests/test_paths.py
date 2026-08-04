@@ -95,11 +95,18 @@ class TestGetDbPath:
 
 class TestGetResourcePath:
     def test_single_component(self):
-        """Join base dir with a single path component."""
-        result = get_resource_path("sound", "click.wav")
+        """A name that exists nowhere still resolves under the base dir."""
+        result = get_resource_path("sound", "definitely-not-a-real-file.wav")
         base = get_base_dir()
-        assert result == os.path.join(base, "sound", "click.wav")
+        assert result == os.path.join(base, "sound", "definitely-not-a-real-file.wav")
         assert os.path.isabs(result)
+
+    def test_existing_resource_prefers_the_package_dir(self):
+        """sound/ lives in src/fastprompter/, not at the project root, and
+        get_resource_path is what papers over that in the source layout."""
+        result = get_resource_path("sound", "click_soft.wav")
+        assert os.path.exists(result)
+        assert result.endswith(os.path.join("sound", "click_soft.wav"))
 
     def test_multiple_components(self):
         """Resources in the package dir (src/fastprompter/) are resolved there."""
@@ -111,7 +118,9 @@ class TestGetResourcePath:
         """The sound/ resource dir must resolve to where the .wav files live."""
         result = get_resource_path("sound")
         assert os.path.isdir(result)
-        assert os.path.exists(os.path.join(result, "button1.wav"))
+        # a shipped default, so this stays honest through a library rename
+        from fastprompter.core.sound_manager import _DEFAULT_SOUND_MAP
+        assert os.path.exists(os.path.join(result, _DEFAULT_SOUND_MAP["click"]))
 
     def test_no_components(self):
         """No args should return the base dir unchanged."""

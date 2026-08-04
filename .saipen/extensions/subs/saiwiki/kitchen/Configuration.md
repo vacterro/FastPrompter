@@ -17,55 +17,56 @@ Config lives in `settings` table key-value pairs. No INI file. All hot-reload on
 | Key | Type | Default | Description |
 |---|---|---|---|
 | **Theme & Display** | | | |
-| `theme` | string | `Default` | Theme: Default, Amber, OLED, Win95, Rose, Vintage Classic, Custom |
+| `theme` | string | `Golden Default` | Theme: Default, Golden Vintage, Golden Default, Vintage Dark, Vintage Classic, Dark 2 (OLED), Dracula, Nord, Solarized Dark, Custom |
 | `font_family` | string | `Verdana` | Editor font (auto-resolves to `_m1` bitmap variant if installed) |
-| `font_size` | int | 11 | Editor font size in points |
+| `font_size` | int | 18 | Editor font size in points |
 | `ui_scale` | float | 0.5 | UI scaling (0.5 to 1.5) |
-| `button_scale` | float | 1.0 | Silo + toolbar button size multiplier |
-| `custom_cursors` | bool | False | Retro cursor theme overlay |
-| `code_monospace` | bool | True | Monospace font in code blocks (False = editor font) |
+| `button_scale` | float | 0.5 | Silo + toolbar button size multiplier |
+| `custom_cursors` | bool | True | Retro cursor theme overlay |
+| `code_monospace` | bool | False | Monospace font in code blocks (False = editor font) |
 | `code_auto_gutter` | bool | False | Auto line numbers in code blocks |
-| `hr_line` | bool | False | Render `---` as visual line instead of text |
-| `hide_markup` | bool | False | Hide `**`, `*`, `~~`, `` ` `` markers (Obsidian style, T-603) |
+| `hr_visual_line` | bool | True | Render `---` as horizontal line instead of text |
+| `live_preview_conceal` | bool | True | Hide `**`, `*`, `~~`, `` ` `` markers in live preview |
 | **Hotkeys** | | | |
 | `global_hotkey` | string | `Alt+X` | Global summon hotkey |
 | `pie_menu_hotkey` | string | `Shift+Alt+X` | Pie menu hotkey |
-| `lock_window_hotkey` | string | `Alt+S` | Window lock toggle |
-| `always_on_top_hotkey` | string | `Alt+E` | Always-on-top toggle |
+| `lock_window_hotkey` | string | `Alt+E` | Window lock toggle |
+| `always_on_top_hotkey` | string | `Alt+S` | Always-on-top toggle |
 | **Behavior** | | | |
 | `close_on_focus_loss` | bool | True | Auto-hide on focus loss |
-| `always_on_top` | bool | True | Start with always-on-top |
+| `always_on_top` | bool | False | Start with always-on-top |
 | `normal_window` | bool | False | Normal windowed mode (not frameless) |
 | `tray_visible` | bool | True | Show system tray icon |
-| `auto_bullet` | bool | False | Auto-convert dashes to bullets |
-| `ctrl_e_center` | bool | False | Center-align Ctrl+E headers |
+| `auto_bullet` | bool | True | Auto-convert dashes to bullets |
+| `ctrl_e_center` | bool | True | Center-align Ctrl+E headers |
 | `customize_toolbar` | bool | False | Toolbar reorder mode |
-| `snippets_hidden` | bool | False | Hide snippet panel |
-| `sidebar_right` | bool | False | Sidebar on right side |
-| `show_token_count` | bool | False | Token estimate beside line count (T-614) |
-| `silo_sync_mode` | string | Off | One-way silo sync to disk: Off/Silo/Hierarchy (T-591) |
-| `window_presets_enabled` | bool | False | Enable Ctrl+Q window presets page (T-608) |
+| `snippets_hidden` | bool | True | Hide snippet panel |
+| `sidebar_right` | bool | True | Sidebar on right side |
+| `show_token_count` | bool | False | Token estimate (pill count) (T-614) |
+| `sync_mode` | string | Off | One-way silo sync to disk: Off/Silo/Hierarchy (T-591) |
+| `window_presets_enabled` | bool | True | Enable Ctrl+Q window presets page (T-608) |
 | **Sound** | | | |
-| `sound_ui` | bool | False | UI click sound effects |
+| `sound_enabled` | bool | True | Master sound toggle |
+| `sound_ui` | bool | True | UI click sound effects |
 | `sound_typewriter` | bool | False | Typewriter key sounds |
-| `sound_volume` | int (0-10) | 5 | Master sound volume |
+| `sound_volume` | int (0-10) | 1 | Master sound volume |
 | **Clock & Date** | | | |
 | `date_seconds` | bool | True | Show seconds in clock |
 | `date_daypart` | bool | True | Show morning/day/evening/night label |
-| `date_text_month` | bool | False | Use text month (Jan/Feb) |
+| `date_text_month` | bool | True | Use text month (Jan/Feb) |
 | `date_ampm` | bool | False | 12h AM/PM format |
 | `date_emoji` | bool | False | Emoji daypart (🌅/☀️/🌇/🌙) |
 | `show_date_rect` | bool | True | Show date in header |
 | **Cursor** | | | |
-| `cursor_blink_ms` | int | system | Cursor blink speed ms (0 = no blink, T-606) |
+| `cursor_blink_ms` | int | 1000 | Cursor blink speed ms (0 = no blink, T-606) |
 | **Timers** | | | |
-| `timer_show_minutes` | bool | False | Keep minute field in timer display (T-613) |
+| `timer_show_minutes` | bool | True | Keep minute field in timer display (T-613) |
 | **Window Layout** | | | |
 | `numbox_per_row` | int | 10 | Number boxes per row in grid (T-612) |
 | `numbox_btn_size` | int | 24 | Number box button size px (T-612) |
 | **Other** | | | |
-| `language` | string | EN | UI language (23 options) |
-| `hover_line_color` | string | auto | Line highlight color (auto = theme accent) |
+| `language` | string | EN | UI language (33 locales) |
+| `hover_line_color` | string | `#0059ff` | Line highlight color (auto = theme accent) |
 | `portable_backup_enabled` | bool | True | Auto .bak on startup |
 | `watcher_skill` | string | (empty) | Default skill for watcher queue items |
 | `cats_order` | JSON list | `["Code","Text","Misc"]` | Category tab order + names |
@@ -75,8 +76,8 @@ Config lives in `settings` table key-value pairs. No INI file. All hot-reload on
 | `watcher_queues` | JSON | `{}` | Per-silo prompt queues |
 | `toolbar_order` | string | (empty) | Custom toolbar button order tokens |
 | `window_presets` | JSON | [] | User-saved window geometry presets |
-| `silo_gap_height` | int | 6 | Sidebar gap spacer height in px |
-| `show_silo_ticks` | bool | True | Show tick buttons on silos |
+| `silo_gap_height` | int | 12 | Sidebar gap spacer height in px |
+| `silo_ticks_enabled` | bool | True | Show tick buttons on silos |
 | `silo_view_state_all` | JSON dict | `{}` | Per-silo cursor/scroll/fold state |
 
 ## File System Layout

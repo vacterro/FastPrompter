@@ -358,6 +358,9 @@ class FileContainerPanel(QWidget):
         self.setWindowTitle(tr("Files — {}", self.lang).format(title))
         self.refresh()
         self.show()
+        # Play chest_open sound (T-710)
+        if hasattr(self.main_win, 'sound_manager'):
+            self.main_win.sound_manager.play("chest_open")
         if not self.docked:
             # a docked panel is a child of the splitter: raising it does
             # nothing useful and activating it steals focus from the editor
@@ -404,6 +407,9 @@ class FileContainerPanel(QWidget):
         that accumulates one-per-silo forever, so remove it again — but only
         when it is genuinely empty, never when it holds anything.
         """
+        # Play chest_close sound (T-710)
+        if hasattr(self.main_win, 'sound_manager'):
+            self.main_win.sound_manager.play("chest_close")
         self._discard_if_empty()
         super().closeEvent(event)
 

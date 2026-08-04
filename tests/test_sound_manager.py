@@ -54,9 +54,11 @@ sys.modules["PyQt6.QtCore"].QUrl = MagicMock()
 sys.modules["PyQt6.QtCore"].QUrl.fromLocalFile = lambda p: f"file:///{p}"
 
 from fastprompter.core.sound_manager import (
-    _SOUND_FILE_MAP,
+    _DEFAULT_SOUND_MAP,
     SoundManager,
     _volume_level,
+    get_event_volume,
+    get_sound_file_for_event,
     scale_wav_bytes,
     scaled_wav_path,
 )
@@ -68,48 +70,125 @@ class TestSoundFileMap:
     """Verify the sound file mapping covers all expected sounds."""
 
     def test_has_click(self):
-        assert "click" in _SOUND_FILE_MAP
+        assert "click" in _DEFAULT_SOUND_MAP
 
     def test_has_new(self):
-        assert "new" in _SOUND_FILE_MAP
+        assert "new" in _DEFAULT_SOUND_MAP
 
     def test_has_save(self):
-        assert "save" in _SOUND_FILE_MAP
+        assert "save" in _DEFAULT_SOUND_MAP
 
     def test_has_silo(self):
-        assert "silo" in _SOUND_FILE_MAP
+        assert "silo" in _DEFAULT_SOUND_MAP
 
     def test_has_snippet(self):
-        assert "snippet" in _SOUND_FILE_MAP
+        assert "snippet" in _DEFAULT_SOUND_MAP
 
     def test_has_tick(self):
-        assert "tick" in _SOUND_FILE_MAP
+        assert "tick" in _DEFAULT_SOUND_MAP
 
     def test_has_delete(self):
-        assert "delete" in _SOUND_FILE_MAP
+        assert "delete" in _DEFAULT_SOUND_MAP
 
     def test_has_clear(self):
-        assert "clear" in _SOUND_FILE_MAP
+        assert "clear" in _DEFAULT_SOUND_MAP
 
     def test_has_type(self):
-        assert "type" in _SOUND_FILE_MAP
+        assert "type" in _DEFAULT_SOUND_MAP
 
-    def test_clear_maps_to_clear1(self):
-        assert _SOUND_FILE_MAP["clear"] == "clear1.wav"
+    def test_every_default_is_a_file_that_actually_ships(self):
+        """A default pointing at a missing file is a silent silence.
 
-    def test_delete_maps_to_delete1(self):
-        assert _SOUND_FILE_MAP["delete"] == "delete1.wav"
+        The library was renamed wholesale (T-705) and every one of these
+        moved with it; asserting the NAMES here would only pin yesterday's
+        spelling, so this asserts the thing that matters — the file is there.
+        """
+        sm = SoundManager(_MockQObject(), {})
+        available = set(sm.get_available_sounds())
+        missing = {e: f for e, f in _DEFAULT_SOUND_MAP.items() if f not in available}
+        assert not missing, f"defaults with no file: {missing}"
 
-    def test_missing_files_have_fallbacks(self):
-        from fastprompter.core.sound_manager import _SOUND_FALLBACKS
+    def test_has_backspace(self):
+        assert "backspace" in _DEFAULT_SOUND_MAP
 
-        assert _SOUND_FALLBACKS["clear1.wav"] == "delete1.wav"
-        assert _SOUND_FALLBACKS["savebutton1.wav"] == "tickbox3.wav"
-        assert _SOUND_FALLBACKS["type1.wav"] == "tickbox1.wav"
+    def test_has_chest_open(self):
+        assert "chest_open" in _DEFAULT_SOUND_MAP
+
+    def test_has_chest_close(self):
+        assert "chest_close" in _DEFAULT_SOUND_MAP
+
+
+class TestSoundDiscovery:
+    """Test sound file discovery."""
+
+    def test_discover_returns_wav_files(self):
+        sm = SoundManager(_MockQObject(), {})
+        sounds = sm.get_available_sounds()
+        assert all(s.lower().endswith(".wav") for s in sounds)
+
+    def test_discover_returns_sorted_list(self):
+        sm = SoundManager(_MockQObject(), {})
+        sounds = sm.get_available_sounds()
+        assert sounds == sorted(sounds)
+
+
+class TestEventMapping:
+    """Test event-to-file mapping with user overrides."""
+
+    def test_default_mapping_used_when_no_override(self):
+        data = {}
+        sm = SoundManager(_MockQObject(), data)
+        file = get_sound_file_for_event("click", data, sm._sounds_dir)
+        assert file == _DEFAULT_SOUND_MAP["click"]
+
+    def test_user_mapping_overrides_default(self):
+        data = {
+            "sound_events": {
+                "click": {"file": "Click.wav", "enabled": "True", "volume": ""}
+            }
+        }
+        sm = SoundManager(_MockQObject(), data)
+        file = get_sound_file_for_event("click", data, sm._sounds_dir)
+        assert file == "Click.wav"
+
+    def test_missing_event_returns_none(self):
+        data = {}
+        sm = SoundManager(_MockQObject(), data)
+        file = get_sound_file_for_event("nonexistent_event", data, sm._sounds_dir)
+        assert file is None
+
+
+class TestEventVolume:
+    """Test per-event volume."""
+
+    def test_global_volume_used_when_per_event_empty(self):
+        data = {"sound_volume": "7"}
+        vol = get_event_volume("click", data)
+        assert vol == 7
+
+    def test_per_event_volume_overrides_global(self):
+        data = {
+            "sound_volume": "5",
+            "sound_events": {
+                "click": {"file": "click_soft.wav", "enabled": "True", "volume": "8"}
+            }
+        }
+        vol = get_event_volume("click", data)
+        assert vol == 8
+
+    def test_invalid_volume_falls_back_to_global(self):
+        data = {
+            "sound_volume": "5",
+            "sound_events": {
+                "click": {"file": "click_soft.wav", "enabled": "True", "volume": "invalid"}
+            }
+        }
+        vol = get_event_volume("click", data)
+        assert vol == 5
 
 
 class TestSoundManagerToggle:
-    """Verify sound toggle logic (sound_ui, sound_typewriter)."""
+    """Verify sound toggle logic (sound_ui, sound_typewriter, per-event)."""
 
     def _make_sm(self, data=None):
         return SoundManager(_MockQObject(), data or {})
@@ -145,6 +224,17 @@ class TestSoundManagerToggle:
         sm = self._make_sm({})
         sm.play("type")
         assert "type" not in sm._players
+
+    def test_per_event_disabled_overrides_global(self):
+        data = {
+            "sound_ui": "True",
+            "sound_events": {
+                "click": {"enabled": "False", "file": "click_soft.wav", "volume": ""}
+            }
+        }
+        sm = self._make_sm(data)
+        sm.play("click")
+        assert "click" not in sm._players
 
 
 class TestSoundManagerVolume:
@@ -190,6 +280,18 @@ class TestSoundManagerShortcuts:
             sm.play_tick()
             mock_play.assert_called_once_with("tick")
 
+    def test_play_hover_delegates_to_play(self):
+        sm = self._make_sm({"sound_ui": "True"})
+        with patch.object(sm, "play") as mock_play:
+            sm.play_hover()
+            mock_play.assert_called_once_with("hover")
+
+    def test_play_button_release_delegates_to_play(self):
+        sm = self._make_sm({"sound_ui": "True"})
+        with patch.object(sm, "play") as mock_play:
+            sm.play_button_release()
+            mock_play.assert_called_once_with("button_release")
+
 
 class TestSoundManagerInit:
     """Verify SoundManager initialization."""
@@ -232,7 +334,7 @@ class TestVolumeOnTheWinsoundPath:
 
     def _sample(self):
         sm = SoundManager(_MockQObject(), {})
-        return os.path.join(sm._sounds_dir, "button1.wav")
+        return os.path.join(sm._sounds_dir, "click_soft.wav")
 
     def test_samples_are_actually_scaled(self):
         import wave

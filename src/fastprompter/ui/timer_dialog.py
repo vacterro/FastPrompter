@@ -11,12 +11,13 @@ from __future__ import annotations
 
 import datetime
 
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import QDateTime, Qt, QTimer
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QApplication,
     QCheckBox,
     QComboBox,
+    QDateTimeEdit,
     QDialog,
     QDoubleSpinBox,
     QGridLayout,
@@ -112,6 +113,30 @@ class TimerDialog(QDialog):
         self.cb_preset.currentIndexChanged.connect(self._preset_picked)
         row.addWidget(self.cb_preset, 1)
         root.addLayout(row)
+
+        # ---- modern date/time picker (T-711) ----
+        picker_row = QHBoxLayout()
+        picker_row.setSpacing(4)
+        
+        self.date_time_picker = QDateTimeEdit()
+        self.date_time_picker.setDisplayFormat("yyyy-MM-dd HH:mm")
+        self.date_time_picker.setCalendarPopup(True)
+        self.date_time_picker.setTimeSpec(Qt.TimeSpec.LocalTime)
+        self.date_time_picker.setToolTip(tr("Pick date and time (modern picker)", self.lang))
+        self.date_time_picker.setDateTime(QDateTime.currentDateTime().addSecs(3600))  # Default: 1 hour from now
+        picker_row.addWidget(self.date_time_picker, 2)
+        
+        self.btn_pick_now = QPushButton(tr("Now", self.lang))
+        self.btn_pick_now.setToolTip(tr("Set to current time", self.lang))
+        self.btn_pick_now.clicked.connect(lambda: self.date_time_picker.setDateTime(QDateTime.currentDateTime()))
+        picker_row.addWidget(self.btn_pick_now)
+        
+        self.btn_use_picker = QPushButton(tr("Use Picker", self.lang))
+        self.btn_use_picker.setToolTip(tr("Use the picker date/time instead of text", self.lang))
+        self.btn_use_picker.clicked.connect(self._use_picker_value)
+        picker_row.addWidget(self.btn_use_picker)
+        
+        root.addLayout(picker_row)
 
         # ---- the 5-hour limit catcher ----
         # An agent quota is a rolling window, not a one-off alarm: it opened
@@ -599,6 +624,14 @@ class TimerDialog(QDialog):
         self.main_win.test_timer_notification(self._form_timer(), _TEST_DELAY_S)
         self.lbl_hint.setText(
             tr("Test fires in {} seconds", self.lang).format(_TEST_DELAY_S))
+
+    def _use_picker_value(self):
+        """Fill the text field with the picker's date/time in a readable format."""
+        dt = self.date_time_picker.dateTime()
+        # Format as "YYYY-MM-DD HH:MM" which is parseable by resolve_target
+        text = dt.toString("yyyy-MM-dd HH:mm")
+        self.in_when.setText(text)
+        self.in_when.setFocus()
 
     def commit(self):
         """Add a new timer, or save the one being edited."""

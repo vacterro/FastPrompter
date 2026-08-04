@@ -11,8 +11,8 @@ Full keyboard-driven operation. Layout-independent VK dispatch — works on QWER
 | **Global** | **Ctrl+Alt+Shift+Q** | Emergency force quit | System-wide |
 | **Window** | **Ctrl+D** | Cycle Zen/Solo/normal (3-stage) | Main |
 | **Window** | **Ctrl+Q** | Cycle snap position / presets | Main |
-| **Window** | **Alt+S** | Toggle window position lock | Main |
-| **Window** | **Alt+E** | Toggle Always-on-Top | Main |
+| **Window** | **Alt+E** | Toggle window position lock | Main |
+| **Window** | **Alt+S** | Toggle Always-on-Top | Main |
 | **Window** | **Alt+D** | Toggle sidebar | Main |
 | **Window** | **Alt+A** | Toggle hide-on-focus-loss | Main |
 | **Window** | **Alt+\`** | Open Mini Settings | Main |
@@ -63,7 +63,7 @@ Full keyboard-driven operation. Layout-independent VK dispatch — works on QWER
 **Alt+X** — toggle window at cursor. **Shift+Alt+X** — radial pie menu (themes, scale, tools). **Ctrl+Alt+Shift+Q** — kill process.
 
 ### Window Management
-**Ctrl+D** — 3-stage: Zen (minimal editor only) → Solo (minimise all other windows) → back to normal. **Ctrl+Q** — cycle through 7 snap zones, FancyZone picker, and user presets. **Alt+S/E/D/A** — lock geometry, pin-on-top, show sidebar, toggle focus-loss hide.
+**Ctrl+D** — 3-stage: Zen (minimal editor only) → Solo (minimise all other windows) → back to normal. **Ctrl+Q** — cycle through 7 snap zones, FancyZone picker, and user presets. **Alt+E/S/D/A** — lock geometry, pin-on-top, show sidebar, toggle focus-loss hide.
 
 ### Watcher Queue
 **Alt+C** — queue current line under caret. Block-anchored, survives edits above it. **Alt+Shift+C** — Queue Master: inspect/reorder/clear queues across all silos.

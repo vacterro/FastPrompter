@@ -831,8 +831,8 @@ class SnippetOpsMixin:
         # so a child silo vanished from the sidebar) and it never shifted
         # watcher_queues at all (every queue moved to the wrong silo). One
         # remap through _SILO_INDEX_STATE keeps all nine stores in step.
-        # silo_gaps is intentionally NOT in that table: gaps are positional
-        # and must stay on the row the user parked them on.
+        # silo_gaps IS in that table since T-704 — a gap belongs to the silo
+        # it was placed under, so it rides along with the shift.
         if not getattr(self, "active_is_archive", False) and hasattr(self, "_remap_silo_indices"):
             self._remap_silo_indices(lambda i: i + 1)
 

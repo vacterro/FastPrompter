@@ -33,6 +33,17 @@ _JSON_SETTINGS = (
     "archive_project_paths", "archive_project_paths_all",
     "silo_gaps", "silo_gaps_all",
     "silo_view_state_all", "silo_type_all", "silo_session_all",
+    # {event: {file, enabled, volume}} — a dict, so it MUST be here. Written
+    # with str() it comes back single-quoted, json.loads rejects it, and the
+    # whole sound panel silently forgets every choice on restart (the exact
+    # way silo_type_all was lost, H-653).
+    "sound_events", "saved_sound_mappings",
+    # Same trap, three more keys that were written with str(): silo_types is
+    # the per-category dict behind silo_type_all, saved_sound_mappings is what
+    # the CS-style toggle restores from, watcher_skills_extra is a list of
+    # dicts (a list survives str() only while its ELEMENTS do — dicts do not),
+    # and custom_font_ids is a list of ints that survived on luck alone.
+    "silo_types", "watcher_skills_extra", "custom_font_ids",
     "watcher_queues", "watcher_queues_all",
     "folder_trash_log", "hidden_categories", "window_presets",
 )
@@ -145,17 +156,20 @@ class FastPrompterState:
                     except json.JSONDecodeError: self.data['cats_order'] = ["Code", "Text", "Misc"]
                 elif row[0] in ('ui_scale', 'window_locked', 'sidebar_right'): self.data[row[0]] = row[1]
                 elif row[0] == 'hide_font': continue
-                elif row[0] in ('silo_last_edited_all', 'pinned_silos_all', 'silo_ticked_all', 'silo_children', 'silo_children_all', 'silo_collapsed_all', 'silo_colors', 'silo_colors_all', 'silo_folders', 'silo_folders_all', 'archive_silo_folders', 'archive_silo_folders_all', 'silo_project_paths', 'silo_project_paths_all', 'archive_project_paths', 'archive_project_paths_all', 'folder_trash_log', 'silo_view_state_all', 'silo_type_all', 'silo_session_all'):
+                elif row[0] in ('silo_last_edited_all', 'pinned_silos_all', 'silo_ticked_all', 'silo_children', 'silo_children_all', 'silo_collapsed_all', 'silo_colors', 'silo_colors_all', 'silo_folders', 'silo_folders_all', 'archive_silo_folders', 'archive_silo_folders_all', 'silo_project_paths', 'silo_project_paths_all', 'archive_project_paths', 'archive_project_paths_all', 'folder_trash_log', 'silo_view_state_all', 'silo_type_all', 'silo_session_all', 'sound_events'):
                     try: self.data[row[0]] = json.loads(row[1])
                     except Exception as e: logger.warning(f"Failed to parse {row[0]}: {e}"); self.data[row[0]] = {}
-                elif row[0] in ('silo_gaps', 'silo_gaps_all', 'hidden_categories'):
+                elif row[0] in ('silo_gaps', 'silo_gaps_all', 'hidden_categories',
+                                'silo_types', 'saved_sound_mappings',
+                                'watcher_skills_extra', 'custom_font_ids'):
                     # silo_gaps is a LIST of slot indices, silo_gaps_all a
                     # dict of them per category. Both were missing from the
                     # save list below at first, so early builds wrote them
                     # with str(): a list survives that (valid JSON), a dict
                     # does not (single quotes), which silently emptied every
                     # saved gap on reload. ast recovers those older rows.
-                    _empty = {} if row[0] == 'silo_gaps_all' else []
+                    _empty = ({} if row[0] in ('silo_gaps_all', 'silo_types',
+                                               'saved_sound_mappings') else [])
                     try:
                         self.data[row[0]] = json.loads(row[1])
                     except Exception:

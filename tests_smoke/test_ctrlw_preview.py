@@ -122,9 +122,14 @@ def test_editor_and_preview_share_one_template():
 
     from fastprompter.ui import formatting_mixin
 
-    src = inspect.getsource(formatting_mixin.insert_add_line
-                            if hasattr(formatting_mixin, "insert_add_line")
-                            else formatting_mixin.FormattingMixin.insert_add_line)
+    # `insert_add_line` is a thin wrapper since T-717 (it holds the viewport
+    # guard, which has to sit OUTSIDE the edit block); the Ctrl+W body — and
+    # therefore the template call this test is about — lives in the `_locked`
+    # half. Read whichever of the two exists so a future rename fails loudly
+    # instead of the assertion quietly passing on the wrong function.
+    cls = formatting_mixin.FormattingMixin
+    body = getattr(cls, "_insert_add_line_locked", None) or cls.insert_add_line
+    src = inspect.getsource(body)
     assert "build_template(" in src
     assert formatting_mixin.build_template is build_template
 

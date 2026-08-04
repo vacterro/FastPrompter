@@ -242,6 +242,15 @@ class FastPrompter(
         self._undo_save_lock = threading.Lock()
         self._load_undo_state()
         self.sound_manager = SoundManager(self, self.data)
+        # One owner for the sound-event mapping. This was written out here as
+        # well, which is how the two copies drift: the module function also
+        # heals overrides that point at a file the library no longer has.
+        from fastprompter.core.sound_manager import migrate_sound_settings
+        migrate_sound_settings(self.data, self.sound_manager._sounds_dir)
+        
+        # Ensure cs_style key exists
+        if "cs_style" not in self.data:
+            self.data["cs_style"] = "False"
         self._theme_cache, self._theme_cache_name = THEMES["Default"], None
         self._custom_colors_cache, self._custom_colors_cache_key = {}, None
         self._font_cache_key, self._cached_main_font = None, None
@@ -1241,7 +1250,16 @@ class FastPrompter(
         page = tabs.currentWidget()
         if page is not None and page.layout() is not None:
             inner = page.layout()
-            avail = max(120, tabs.width() - 12)
+            # Measure against the widest thing that already knows its size.
+            # tabs.width() is ~100px while the window is still being built,
+            # and a FlowLayout measured at 100px answers with the height of a
+            # single tall column — which then became the panel's maximum.
+            frame = getattr(self, "mini_settings_frame", None)
+            widths = [tabs.width()]
+            if frame is not None and not sip.isdeleted(frame):
+                widths.append(frame.width() - 8)
+            widths.append(self.width() - 16)
+            avail = max(120, max(widths) - 12)
             try:
                 needed = inner.totalHeightForWidth(avail)
             except (AttributeError, TypeError):
@@ -1946,6 +1964,15 @@ class FastPrompter(
         self.data["files_root"] = ""
         self.mark_dirty()
         self._update_files_button()
+
+    def open_sound_settings_dialog(self):
+        """Open the comprehensive sound settings dialog."""
+        from fastprompter.ui.sound_settings_dialog import SoundSettingsDialog
+        
+        dialog = SoundSettingsDialog(self, self.data, self.sound_manager)
+        dialog.exec()
+        # Force sync: ensure sound_manager sees updated data
+        self.sound_manager._data = self.data
         self.refresh_temp_presets()
 
     def add_files_to_active_silo(self, paths):
@@ -3591,6 +3618,29 @@ class FastPrompter(
         vol_row.addWidget(self.spin_volume)
         vol_row.addStretch(1)
 
+        # Sound settings button
+        self.btn_sound_settings = QPushButton(tr("Sound Settings...", getattr(self, "_current_lang", "EN")))
+        self.btn_sound_settings.clicked.connect(self.open_sound_settings_dialog)
+        self.btn_sound_settings._en_text = "Sound Settings..."
+        _sound_btn_tip = ("Every sound the app makes: pick the file, the volume "
+                          "and whether it plays at all, per event")
+        self.btn_sound_settings.setToolTip(
+            tr(_sound_btn_tip, getattr(self, "_current_lang", "EN")))
+        self.btn_sound_settings._en_tooltip = _sound_btn_tip
+
+        # CS 1.6 UI style checkbox
+        self.cb_cs_style = create_footer_cb(
+            "CS 1.6 UI Style",
+            "Use Counter-Strike 1.6 style sounds for silo interactions:\n"
+            "• Hover: buttonrollover.wav\n"
+            "• Click: buttonclick.wav\n"
+            "• Release: buttonclickrelease.wav",
+            self.data.get("cs_style", "False") == "True",
+            self.on_cs_style_toggled,
+        )
+        self.cb_cs_style._en_text = "CS 1.6 UI Style"
+        self.cb_cs_style._en_tooltip = "Use Counter-Strike 1.6 style sounds for silo interactions:\n• Hover: buttonrollover.wav\n• Click: buttonclick.wav\n• Release: buttonclickrelease.wav"
+
         self.spin_cursor_blink = QSpinBox()
         self.spin_cursor_blink.setRange(0, 2000)
         self.spin_cursor_blink.setSingleStep(50)
@@ -3993,6 +4043,7 @@ class FastPrompter(
             ]),
             _settings_group("Sound", [
                 self.cb_sound, self.cb_typewriter, vol_row,
+                self.cb_cs_style, self.btn_sound_settings,
             ]),
             _settings_group("Files & backup", [
                 self.cb_portable_backup, files_row, sync_row,
@@ -4377,6 +4428,7 @@ class FastPrompter(
         self.save_data_to_db(force=True)
         self.data_undo_stack = []
         self.data_redo_stack = []
+        self._undo_kinds().clear()
         self.state.switch_profile(idx + 1)
         self.data = self.state.data
         cat = self.data["cats_order"][0] if self.data.get("cats_order") else "Text"
@@ -4539,17 +4591,15 @@ class FastPrompter(
     def apply_header_timestamp(self):
         """Ctrl+E: Apply user-defined header formatting and timestamp at end of current line."""
         cursor = self.text_area.textCursor()
-        # Save scroll position — the edit block's endEditBlock can trigger a
-        # document reflow that resets the view to the top.
-        sb = self.text_area.verticalScrollBar()
-        scroll_save = sb.value()
-        with edit_block(cursor, self.text_area):
-            self._apply_header_timestamp_locked(cursor)
-        # Restore scroll unless the cursor genuinely moved out of view
-        # (header at the very bottom). Checking value == 0 catches the
-        # common "jump to start" symptom without suppressing a real scroll.
-        if scroll_save > 0 and self.text_area.verticalScrollBar().value() == 0:
-            self.text_area.verticalScrollBar().setValue(scroll_save)
+        # keep_view replaces a narrower guard that only restored the scroll
+        # when the reflow landed on EXACTLY 0 — a reflow that merely moved the
+        # view a few hundred pixels was left alone, which is the other half of
+        # "the view jumps around when I format".
+        from fastprompter.ui.edit_guard import keep_view
+
+        with keep_view(self.text_area):
+            with edit_block(cursor, self.text_area):
+                self._apply_header_timestamp_locked(cursor)
 
     def _apply_header_timestamp_locked(self, cursor):
         """Body of apply_header_timestamp, run inside one undo step."""
@@ -5720,9 +5770,76 @@ class FastPrompter(
         finally:
             self.ignore_focus_loss = False
 
+    # Snapshot keys that are bookkeeping, not user data. They MUST be left out
+    # of every equality test, or each snapshot differs from every other one and
+    # the no-op guards below silently stop guarding anything.
+    _SNAPSHOT_META = ("_seq", "_doc_id", "_text_steps")
+
+    def _active_doc(self):
+        area = getattr(self, "text_area", None)
+        if area is None:
+            return None
+        try:
+            return area.document()
+        except RuntimeError:          # C++ side already gone (shutdown)
+            return None
+
+    def _text_undo_steps(self):
+        """How many undo steps the OPEN document has — the ordering key that
+        tells a data action apart from the typing that followed it."""
+        doc = self._active_doc()
+        try:
+            return doc.availableUndoSteps() if doc is not None else 0
+        except (RuntimeError, AttributeError):
+            return 0
+
+    def _stamp_snapshot(self, snap):
+        """Attach the ordering metadata Ctrl+Z routing reads back later."""
+        snap["_seq"] = self._bump_action_seq()
+        doc = self._active_doc()
+        snap["_doc_id"] = id(doc) if doc is not None else 0
+        snap["_text_steps"] = self._text_undo_steps()
+        return snap
+
+    def _same_snapshot(self, a, b):
+        keys = set(a) | set(b)
+        return all(a.get(k) == b.get(k) for k in keys if k not in self._SNAPSHOT_META)
+
+    def _live_text_into(self, snap):
+        """Fold the OPEN editor's text into a snapshot.
+
+        `temp_presets` only receives the active silo's text when something
+        flushes it, and most callers of `add_data_undo_state` never do. A
+        snapshot taken between flushes is therefore stale by exactly what the
+        user has typed since — and restoring it DELETES that typing with
+        nothing left to bring it back. That is the reported catastrophe:
+        "undo returned the deleted text and ate the text I had just written".
+        Carrying the live text also makes the redo push a true 'before' state,
+        so anything a data undo overwrites is one Ctrl+Y away."""
+        area = getattr(self, "text_area", None)
+        if area is None:
+            return
+        try:
+            live = area.toPlainText()
+        except RuntimeError:
+            return
+        editing = snap.get("editing_snippet")
+        if editing:
+            slots = snap.get("categories", {}).get(editing[0])
+            if (isinstance(slots, list) and isinstance(editing[1], int)
+                    and 0 <= editing[1] < len(slots)
+                    and isinstance(slots[editing[1]], dict)):
+                slots[editing[1]]["text"] = live
+            return
+        key = "archive_temp_presets" if snap.get("active_is_archive") else "temp_presets"
+        target = snap.get(key)
+        slot = snap.get("active_temp_slot", 0)
+        if isinstance(target, list) and isinstance(slot, int) and 0 <= slot < len(target):
+            target[slot] = live
+
     def _snapshot_current(self):
         pinned = self.data.get("pinned_silos", [])
-        return {
+        snap = {
             "categories": copy.deepcopy(self.data["categories"]),
             "cats_order": list(self.data.get("cats_order", [])),
             "category": self.get_current_category(),
@@ -5746,19 +5863,33 @@ class FastPrompter(
             "silo_project_paths": copy.deepcopy(self.data.get("silo_project_paths", {})),
             "silo_types": dict(self.data.get("silo_types", {})),
             "watcher_queues": copy.deepcopy(self.data.get("watcher_queues", {})),
+            # T-704 made gaps ride with their silo, but the undo snapshot never
+            # carried them: a gap move had no undo entry at all, so Ctrl+Z after
+            # one popped an UNRELATED older action instead.
+            "silo_gaps": [i for i in (self.data.get("silo_gaps") or []) if isinstance(i, int)],
         }
+        self._live_text_into(snap)
+        return snap
 
-    def _snapshot_is_noop(self, state):
-        """True when restoring this snapshot would change no user data."""
-        return (
-            state["temp_presets"] == self.data["temp_presets"]
-            and state["archive_temp_presets"] == self.data["archive_temp_presets"]
-            and state["categories"] == self.data["categories"]
-            and state.get("active_temp_slot") == self.active_temp_slot
-            and state.get("active_is_archive", False) == getattr(self, "active_is_archive", False)
-            and state.get("pinned_silos", self.data.get("pinned_silos", []))
-            == self.data.get("pinned_silos", [])
-        )
+    def _snapshot_is_noop(self, state, now=None):
+        """True when restoring this snapshot would change no user data.
+
+        Compared field by field against a snapshot of NOW. The old version
+        looked at six of the eighteen keys, so an action that only moved a gap,
+        recoloured, ticked, nested or retyped a silo read as a "no-op" — and
+        `undo_action`'s skip loop then DISCARDED it and walked back into an
+        OLDER snapshot, restoring that snapshot's text over the user's. A key
+        the incoming state does not carry at all (an entry written by an older
+        build) counts as different, so it is restored rather than thrown away:
+        never discard a snapshot on a guess."""
+        if now is None:
+            now = self._snapshot_current()
+        for key, value in now.items():
+            if key in self._SNAPSHOT_META or key == "category":
+                continue
+            if key not in state or state[key] != value:
+                return False
+        return True
 
     def _bump_action_seq(self):
         """Monotonic ordering for text edits vs data actions — wall-clock
@@ -5767,21 +5898,67 @@ class FastPrompter(
         return self._action_seq
 
     def _undo_prefers_data(self):
-        """Route Ctrl+Z to the data stack when a silo/snippet action is newer
-        than the last text edit, or when text undo has nothing to offer."""
-        if not getattr(self, "data_undo_stack", None):
+        """Ctrl+Z reverses the NEWEST action, whichever kind it was.
+
+        Every data snapshot records how many undo steps the open document had
+        when it was pushed, so "did the user type after this data action?" is a
+        comparison rather than a guess. The old version compared two counters
+        and then LATCHED onto the data stack after the first data undo ("keep
+        data undo fresh"), so a second Ctrl+Z restored an ever-older snapshot
+        straight over text typed since — unrecoverable text loss, which is the
+        whole reason this ticket exists."""
+        stack = getattr(self, "data_undo_stack", None)
+        if not stack:
             return False
-        if getattr(self, "_last_data_action_time", 0) > getattr(self, "_last_text_edit_time", 0):
+        top = stack[-1]
+        doc = self._active_doc()
+        if doc is None:
             return True
-        doc = self.text_area.document()
-        return not doc.isUndoAvailable()
+        if top.get("_doc_id") != id(doc):
+            # Snapshot belongs to another document (silo/snippet/tab switch, or
+            # a stack reloaded from disk): its step count is not comparable, so
+            # the data action is the only thing we can honestly reverse.
+            return True
+        return self._text_undo_steps() <= top.get("_text_steps", 0)
 
     def _smart_undo(self):
-        """Ctrl+Z: data undo (silo clear/delete/move) or text undo."""
+        """Ctrl+Z: data undo (silo clear/delete/move/gap) or text undo."""
+        kinds = self._undo_kinds()
         if self._undo_prefers_data():
-            self.undo_action()
-        else:
+            if self.undo_action():
+                kinds.append("data")
+                return
+        doc = self._active_doc()
+        if doc is not None and doc.isUndoAvailable():
             self.text_area.undo()
+            kinds.append("text")
+        elif self.undo_action():
+            kinds.append("data")
+
+    def _undo_kinds(self):
+        """What each Ctrl+Z actually reversed, newest last — the only thing
+        that lets Ctrl+Y put the same actions back in the same order."""
+        if not isinstance(getattr(self, "_undo_kind_stack", None), list):
+            self._undo_kind_stack = []
+        return self._undo_kind_stack
+
+    def _smart_redo(self):
+        """Ctrl+Y / Ctrl+Shift+Z: mirror of `_smart_undo`, step for step."""
+        kinds = self._undo_kinds()
+        kind = kinds.pop() if kinds else None
+        doc = self._active_doc()
+        if kind == "text":
+            if doc is not None and doc.isRedoAvailable():
+                self.text_area.redo()
+                return
+            self.redo_action()
+            return
+        if kind == "data" and self.redo_action():
+            return
+        # No recorded history (fresh session, or the stacks were trimmed):
+        # data first, text as the fallback, so nothing is unreachable.
+        if not self.redo_action() and doc is not None and doc.isRedoAvailable():
+            self.text_area.redo()
 
     def undo_action(self):
         if hasattr(self, "data_undo_stack") and self.data_undo_stack:
@@ -5791,16 +5968,20 @@ class FastPrompter(
             # a snapshot from another tab is never comparable to the
             # currently visible lists and must be restored, not judged
             cur_cat = self.get_current_category()
+            # One snapshot of NOW serves the whole skip loop AND becomes the
+            # redo entry — taking it per iteration deep-copies every silo's
+            # text on every step of a walk that can be 50 long.
+            now = self._snapshot_current()
             state = self.data_undo_stack.pop()
             while (
                 self.data_undo_stack
                 and state.get("category") == cur_cat
-                and self._snapshot_is_noop(state)
+                and self._snapshot_is_noop(state, now)
             ):
                 state = self.data_undo_stack.pop()
-            if state.get("category") == cur_cat and self._snapshot_is_noop(state):
-                return
-            redo_state = self._snapshot_current()
+            if state.get("category") == cur_cat and self._snapshot_is_noop(state, now):
+                return False
+            redo_state = self._stamp_snapshot(now)
             self.data_redo_stack.append(redo_state)
             
             MAX_CHARS = 20_000_000
@@ -5826,24 +6007,29 @@ class FastPrompter(
                 self.data_redo_stack.pop(0)
             self._apply_data_state(state)
             self.play_sound("tick")
-            # Keep data undo "fresh" so repeated Ctrl+Z keeps popping this stack
-            self._last_data_action_time = self._bump_action_seq()
+            # NOT a fresh bump: latching the data stack "fresh" here is what
+            # made every following Ctrl+Z overwrite newer text (see
+            # _undo_prefers_data). Inherit the restored action's own position.
+            self._last_data_action_time = state.get("_seq", 0)
             self._save_undo_state()
-            return
+            return True
         # Text undo is handled natively by QTextEdit via VaultTextEdit.keyPressEvent
+        return False
 
     def redo_action(self):
         if hasattr(self, "data_redo_stack") and self.data_redo_stack:
             if not hasattr(self, "data_undo_stack"):
                 self.data_undo_stack = []
-            undo_state = self._snapshot_current()
+            undo_state = self._stamp_snapshot(self._snapshot_current())
             self.data_undo_stack.append(undo_state)
             state = self.data_redo_stack.pop()
             self._apply_data_state(state)
             self.play_sound("tick")
+            self._last_data_action_time = undo_state["_seq"]
             self._save_undo_state()
-            return
+            return True
         # Text redo is handled natively by QTextEdit via VaultTextEdit.keyPressEvent
+        return False
 
     def _apply_data_state(self, state):
         self.data["categories"] = state["categories"]
@@ -5888,6 +6074,16 @@ class FastPrompter(
             fdict.clear()
             fdict.update(dict(state.get("silo_folders", {})))
             self.data["silo_folders"] = fdict
+            # Gaps are slot-keyed like everything above (T-704) and were the
+            # one store the snapshot never carried. `is not None` for the same
+            # reason as the colours below: an entry written by an older build
+            # has no such key, and clearing on a missing key would DELETE the
+            # user's gaps instead of leaving them alone.
+            saved_gaps = state.get("silo_gaps")
+            if saved_gaps is not None:
+                glist = self.data.setdefault("silo_gaps_all", {}).setdefault(snap_cat, [])
+                glist[:] = [i for i in saved_gaps if isinstance(i, int)]
+                self.data["silo_gaps"] = glist
             # a restored silo must get its files back too — pull the folder
             # out of _trash if the delete/clear moved it there
             self._restore_trashed_folders(snap_cat)
@@ -5984,6 +6180,74 @@ class FastPrompter(
         else:
             if "Trash" in self.data["cats_order"]:
                 self.data["cats_order"].remove("Trash")
+        self.mark_dirty()
+        self.refresh_categories()
+
+    def on_sound_toggled(self, checked):
+        """Handle UI sound toggle."""
+        self.data["sound_ui"] = "True" if checked else "False"
+        self.mark_dirty()
+
+    def on_typewriter_toggled(self, checked):
+        """Handle typewriter sound toggle."""
+        self.data["sound_typewriter"] = "True" if checked else "False"
+        self.mark_dirty()
+
+    def on_cs_style_toggled(self, checked):
+        """Handle CS 1.6 UI style toggle."""
+        self.data["cs_style"] = "True" if checked else "False"
+        
+        # Apply or restore CS style sounds
+        sound_events = self.data.setdefault("sound_events", {})
+        if not isinstance(sound_events, dict):
+            sound_events = {}
+            self.data["sound_events"] = sound_events
+        
+        # cs_style/ is a real subfolder — these three used to be named as if
+        # they sat at the top level, which after the library rename pointed
+        # the whole style at files that do not exist.
+        cs_mappings = {
+            "hover": "cs_style/buttonrollover.wav",
+            "click": "cs_style/buttonclick.wav",
+            "button_click": "cs_style/buttonclick.wav",
+            "button_release": "cs_style/buttonclickrelease.wav",
+        }
+        
+        if checked:
+            # Save current mappings before applying CS style
+            saved_mappings = self.data.setdefault("saved_sound_mappings", {})
+            for event in cs_mappings.keys():
+                if event in sound_events and isinstance(sound_events[event], dict):
+                    saved_mappings[event] = sound_events[event].get("file", "")
+            
+            # Apply CS style
+            for event, sound_file in cs_mappings.items():
+                if event not in sound_events:
+                    sound_events[event] = {}
+                if not isinstance(sound_events[event], dict):
+                    sound_events[event] = {}
+                sound_events[event]["file"] = sound_file
+                sound_events[event]["enabled"] = "True"
+        else:
+            # Restore previous mappings
+            saved_mappings = self.data.get("saved_sound_mappings", {})
+            if not isinstance(saved_mappings, dict):
+                saved_mappings = {}
+            for event in cs_mappings.keys():
+                if event in saved_mappings:
+                    # saved_mappings[event] is a string (the file name) or empty
+                    if saved_mappings[event]:
+                        if event not in sound_events:
+                            sound_events[event] = {}
+                        if not isinstance(sound_events[event], dict):
+                            sound_events[event] = {}
+                        sound_events[event]["file"] = saved_mappings[event]
+                    else:
+                        # Was using default, remove override
+                        if event in sound_events and isinstance(sound_events[event], dict) and "file" in sound_events[event]:
+                            del sound_events[event]["file"]
+        
+        self.mark_dirty()
         self.build_categories()
         self.mark_dirty()
 
@@ -6044,9 +6308,11 @@ class FastPrompter(
             self.data_redo_stack = []
         state = self._snapshot_current()
         # Never push a snapshot identical to the top — no-op pileups make
-        # the skip logic walk into unrelated (even cross-tab) history
-        if self.data_undo_stack and self.data_undo_stack[-1] == state:
+        # the skip logic walk into unrelated (even cross-tab) history.
+        # Compared without the ordering metadata, which differs every time.
+        if self.data_undo_stack and self._same_snapshot(self.data_undo_stack[-1], state):
             return
+        self._stamp_snapshot(state)
         self.data_undo_stack.append(state)
         
         # Enforce caps (50 items max, ~20MB max)
@@ -6072,8 +6338,11 @@ class FastPrompter(
         while len(self.data_undo_stack) > 1 and sum(_get_size(s) for s in self.data_undo_stack) > MAX_CHARS:
             self.data_undo_stack.pop(0)
         self.data_redo_stack.clear()
+        # A new action invalidates the recorded undo order too, or Ctrl+Y would
+        # try to replay steps that no longer have anything behind them.
+        self._undo_kinds().clear()
         # Lets Ctrl+Z pick data undo over text undo when this action is newer
-        self._last_data_action_time = self._bump_action_seq()
+        self._last_data_action_time = state["_seq"]
         self._save_undo_state()
 
     def build_categories(self):
@@ -6488,6 +6757,14 @@ class FastPrompter(
         """
         self._shown_at = time.time()
         super().showEvent(event)
+        # The panel is measured against a WIDTH, and during construction the
+        # tabs are still a few pixels wide — a wrapping row measured there
+        # reports the height it would need in a sliver, which is how a fresh
+        # launch came up with a screenful of dead panel under two rows of
+        # checkboxes. The first real geometry only exists now, so re-fit once
+        # the event loop has laid the window out.
+        if getattr(self, "mini_settings_frame", None) is not None:
+            QTimer.singleShot(0, self._fit_settings_tabs)
 
     def changeEvent(self, event):
         # Zen solo swept the user's desktop clean on our behalf; the moment
@@ -7289,8 +7566,35 @@ class FastPrompter(
             btn.update_data(label, slot_idx, bg_color, font_family, scale, line_count_str=line_str, is_pushed=is_active, title_bold=title_bold)
             btn.show()
 
+        # The rows used to OVERLAP: measured 4 buttons of 21px landing at
+        # y = 0, 2, 4, 6 inside a 42px archive_widget, i.e. two rows of space
+        # for four rows of content — which is the "empty box with slivers
+        # down the left" the archive rendered as. adjustSize() alone cannot
+        # fix it: it asks a layout that has not been re-run since the buttons
+        # were shown, so the hint it copies is the old, too-small one. Pin the
+        # height the rows actually need, then let the section follow.
+        lay = self.archive_widget.layout
+        shown = [b for b in self.archive_buttons if not b.isHidden()]
+        if shown:
+            row_h = max(b.sizeHint().height() for b in shown)
+            m = lay.contentsMargins()
+            self.archive_widget.setMinimumHeight(
+                len(shown) * row_h
+                + lay.spacing() * max(0, len(shown) - 1)
+                + m.top() + m.bottom()
+            )
+        else:
+            self.archive_widget.setMinimumHeight(0)
+        self.archive_widget.updateGeometry()
         self.archive_widget.adjustSize()
+        # activate() AFTER the resize, never before: run against the old,
+        # too-small height it is exactly what put four 21px rows at
+        # y = 0, 2, 4, 6 on top of each other.
+        lay.activate()
         self.archive_section.adjustSize()
+        # The overlay is placed by hand, so a taller panel has to be re-placed
+        # or it keeps the height it had before the rows grew.
+        self._position_archive_overlay()
 
     def _trim_archive(self):
         entries = self.data.get("archive_temp_presets", [])
@@ -8152,6 +8456,9 @@ class FastPrompter(
 
     def toggle_silo_gap(self, idx):
         """T-590: add/remove a user gap rendered below the silo at ``idx``."""
+        # T-716: without this, moving gaps around had NO undo entry, so the
+        # next Ctrl+Z reached past them into an unrelated older action.
+        self.add_data_undo_state("Toggle silo gap")
         gaps = self._silo_gaps_list()
         if idx in gaps:
             gaps.remove(idx)
@@ -8163,13 +8470,16 @@ class FastPrompter(
     def move_silo_gap(self, from_idx, to_idx):
         """T-593: drag a gap to sit below a different row.
 
-        The gap is positional, so this rewrites the anchor slot rather than
-        following any silo. A drop onto a row that already has a gap, or
-        outside the list, is a no-op instead of silently stacking two."""
+        This rewrites the anchor slot. A drop onto a row that already has a
+        gap, or outside the list, is a no-op instead of silently stacking two.
+        (Since T-704 the anchor also rides with its silo through
+        `_SILO_INDEX_STATE` — a gap belongs to the silo it was placed under.)"""
         gaps = self._silo_gaps_list()
         n = len(self.data.get("temp_presets", []))
         if from_idx not in gaps or not (0 <= to_idx < n) or to_idx in gaps:
             return False
+        # Validated first: a rejected drag must not leave an undo entry behind.
+        self.add_data_undo_state("Move silo gap")
         gaps[gaps.index(from_idx)] = to_idx
         self.mark_dirty()
         self.refresh_temp_presets()
@@ -8178,9 +8488,9 @@ class FastPrompter(
     def prune_silo_gaps(self):
         """Drop gap anchors that fell off the end (silos deleted).
 
-        Positional gaps do not remap with silos, so a shrinking list can
-        leave an anchor pointing past the last row; it would simply never
-        render and would silently resurrect if the list grew again."""
+        A shrinking list can leave an anchor pointing past the last row; it
+        would simply never render and would silently resurrect if the list
+        grew again."""
         gaps = self.data.get("silo_gaps")
         if not isinstance(gaps, list):
             return
@@ -8885,7 +9195,10 @@ class FastPrompter(
             shortcut.activated.connect(slot)
             self._app_shortcuts.append(shortcut)
 
-        add_fixed("Ctrl+Shift+Z", self.redo_action)
+        add_fixed("Ctrl+Shift+Z", self._smart_redo)
+        # Ctrl+Y was text-only (handled inside the editor), so a data undo had
+        # exactly one redo key and you had to know which one.
+        add_fixed("Ctrl+Y", self._smart_redo)
         add_fixed("Ctrl+Shift+C", self.clear_text)
         # Alt+W is Ctrl+W turned around: the new point goes ABOVE and the
         # existing text moves down. It used to insert the plain toolbar

@@ -3024,6 +3024,12 @@ class VaultTextEdit(QTextEdit):
                 self.main_win.play_sound("type")
             except Exception:
                 pass
+        # Backspace sound (T-709)
+        elif event.key() in (Qt.Key.Key_Backspace, Qt.Key.Key_Delete):
+            try:
+                self.main_win.play_sound("backspace")
+            except Exception:
+                pass
 
     @staticmethod
     def _whole_block_cursor(block):

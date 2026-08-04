@@ -10,6 +10,7 @@ src/fastprompter/
 ├── core/                       # Backend logic, state, subsystems
 │   ├── config.py               # Theme color extractors, tray icon generators
 │   ├── ctrlw.py                # Ctrl+W / Alt+W divider insertion engine
+│   ├── default_profile.py      # Shipped defaults map, merged into state.reset_data()
 │   ├── duration.py             # Time parsing, human-readable duration format
 │   ├── hashtags.py             # Hashtag extraction + cross-silo indexing
 │   ├── header.py               # Ctrl+E header formatting core
@@ -88,7 +89,7 @@ src/fastprompter/
 │   └── zen_desktop.py          # 3-stage Zen/Solo desktop sweep (Ctrl+D)
 │
 ├── theme/                      # Theme presets
-│   └── themes.py               # 6 retro Win95 color theme definitions
+│   └── themes.py               # 9 built-in color themes + custom engine
 │
 └── utils/                      # Low-level helpers
     ├── fonts.py                # System font loader, fallback resolver, no-AA
@@ -113,7 +114,7 @@ src/fastprompter/
 | `ui.silo_kanban` | Pure-text kanban board (Alt+arrows move cards, Enter new row) |
 | `ui.silo_table` | Pure-text table editor (Tab walk cells, Enter new row) |
 | `ui.file_container` | Per-silo folder drawer, asset preview, templates |
-| `ui.theme_mixin` | 6 retro Win95 themes + custom color engine + QSS generator |
+| `ui.theme_mixin` | 9 built-in themes + custom color engine + QSS generator |
 | `ui.kanban_widget` | Kanban board view widget (silo_kanban backend) |
 | `ui.table_widget` | Table view widget (silo_table backend) |
 | `ui.silo_region` | Silo list region: drag, gaps, multi-select |
@@ -128,8 +129,8 @@ src/fastprompter/
 
 ## Module Count Summary
 
-- **core/**: 15 modules + i18n/ (33 locales + 5 infra files = 38) + watcher/ (10 modules)
+- **core/**: 16 modules + i18n/ (33 locales + 5 infra files = 38) + watcher/ (10 modules)
 - **ui/**: 44 modules
 - **theme/**: 1 module
 - **utils/**: 4 modules
-- **Total**: 112 `.py` files under `src/fastprompter/` (includes `main.py` + `__init__.py`)
+- **Total**: 115 `.py` files under `src/fastprompter/` (includes `main.py` + `__init__.py`)

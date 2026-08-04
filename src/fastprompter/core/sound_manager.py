@@ -19,26 +19,215 @@ except ImportError:
 from fastprompter.core.logging import logger
 from fastprompter.utils.paths import get_resource_path
 
-# Map sound names to preferred WAV filenames
-_SOUND_FILE_MAP: dict[str, str] = {
-    "new": "newbutton1.wav",
-    "save": "savebutton1.wav",
-    "silo": "button1.wav",
-    "snippet": "button2.wav",
-    "tick": "tickbox1.wav",
-    "delete": "delete1.wav",
-    "clear": "clear1.wav",
-    "type": "type1.wav",
-    "click": "button1.wav",
+# Default sound mappings (shipped fallbacks)
+_DEFAULT_SOUND_MAP: dict[str, str] = {
+    # Every value here is checked against the shipped folder by a test — a
+    # default pointing at a file that no longer exists is a silent silence,
+    # which is exactly what the library rename produced the first time.
+    "new": "ui_new.wav",
+    "save": "ui_save.wav",
+    "silo": "click_soft.wav",
+    "snippet": "click_double.wav",
+    "tick": "tick_on.wav",
+    "untick": "tick_off.wav",
+    "delete": "ui_delete.wav",
+    "clear": "ui_clear.wav",
+    "type": "type_key_1.wav",
+    "backspace": "type_key_3.wav",
+    "click": "click_soft.wav",
+    "hover": "cs_style/buttonrollover.wav",
+    "button_click": "cs_style/buttonclick.wav",
+    "button_release": "cs_style/buttonclickrelease.wav",
+    "chest_open": "chest_open.wav",
+    "chest_close": "chest_closed.wav",
+    "notify": "notify.wav",
+    "error": "error.wav",
+    "success": "success_levelup.wav",
+    "timer": "timer_tick_pack.wav",
 }
 
-# Used when the preferred file isn't shipped yet — drop the preferred
-# .wav into the sound/ folder and it takes over automatically.
-_SOUND_FALLBACKS: dict[str, str] = {
-    "savebutton1.wav": "tickbox3.wav",
-    "clear1.wav": "delete1.wav",
-    "type1.wav": "tickbox1.wav",
+# What each event is, for the settings panel. Nothing is hardcoded about
+# WHICH sound plays — only what the event means.
+EVENT_LABELS: dict[str, str] = {
+    "new": "New silo",
+    "save": "Save",
+    "silo": "Switch silo",
+    "snippet": "Snippet",
+    "tick": "Tick on",
+    "untick": "Tick off",
+    # NOT the bare words "Delete"/"Clear": those keys already exist in the
+    # bundle as the toolbar's icon captions, where EST renders "Clear" as the
+    # glyph "✕" — which is what showed up in this list instead of a label.
+    "delete": "Delete silo",
+    "clear": "Clear the editor",
+    "type": "Typewriter",
+    "backspace": "Typewriter: backspace",
+    "click": "Click",
+    "hover": "Hover a silo",
+    "button_click": "Button press",
+    "button_release": "Button release",
+    "chest_open": "Files panel opens",
+    "chest_close": "Files panel closes",
+    "notify": "Notification",
+    "error": "Error",
+    "success": "Success",
+    "timer": "Timer alarm",
 }
+
+
+def discover_sound_files(sounds_dir: str) -> list[str]:
+    """Discover all WAV files in the sounds directory.
+    
+    Returns sorted list of WAV filenames (without path).
+    """
+    if not os.path.isdir(sounds_dir):
+        logger.warning("Sounds directory not found: %s", sounds_dir)
+        return []
+    
+    # Recursive: cs_style/ is a real subfolder and its three files are the
+    # ones the CS 1.6 style names, so a flat listdir left them unreachable
+    # from the picker and made those defaults unresolvable.
+    wav_files = []
+    try:
+        for root, _dirs, names in os.walk(sounds_dir):
+            for f in names:
+                if not f.lower().endswith(".wav"):
+                    continue
+                rel = os.path.relpath(os.path.join(root, f), sounds_dir)
+                wav_files.append(rel.replace(os.sep, "/"))
+        wav_files.sort()
+        logger.debug("Discovered %d sound files in %s", len(wav_files), sounds_dir)
+    except OSError:
+        logger.error("Failed to list sounds directory: %s", sounds_dir)
+    
+    return wav_files
+
+
+def get_sound_file_for_event(
+    event: str,
+    data: dict[str, Any],
+    sounds_dir: str
+) -> str | None:
+    """Get the sound file for an event from settings or defaults.
+    
+    Priority:
+    1. User mapping in data["sound_events"][event]["file"]
+    2. Default mapping in _DEFAULT_SOUND_MAP
+    3. Fallback to {event}.wav
+    
+    Returns None if no file found.
+    """
+    # Check user mapping first
+    sound_events = data.get("sound_events", {})
+    if isinstance(sound_events, dict):
+        event_config = sound_events.get(event)
+        if isinstance(event_config, dict):
+            file_name = event_config.get("file")
+            if file_name:
+                path = os.path.join(sounds_dir, file_name)
+                if os.path.exists(path):
+                    logger.debug("Using user sound: %s for event %s", file_name, event)
+                    return file_name
+                else:
+                    logger.warning("User sound file not found: %s for event %s", path, event)
+    
+    # Fall back to defaults
+    file_name = _DEFAULT_SOUND_MAP.get(event)
+    if file_name:
+        path = os.path.join(sounds_dir, file_name)
+        if os.path.exists(path):
+            return file_name
+    
+    # Last resort: try {event}.wav
+    path = os.path.join(sounds_dir, f"{event}.wav")
+    if os.path.exists(path):
+        return f"{event}.wav"
+    
+    return None
+
+
+def is_event_enabled(event: str, data: dict[str, Any]) -> bool:
+    """Check if a sound event is enabled in settings.
+    
+    Respects sound_ui/sound_typewriter global toggles and per-event enabled flag.
+    """
+    # Global toggles. Backspace belongs to the TYPEWRITER switch, not the UI
+    # one — it is the same effect, and the user asked for it as an option of
+    # the typewriter sound. Left in the UI branch it clattered away while the
+    # typewriter was off.
+    if event in ("type", "backspace"):
+        if data.get("sound_typewriter", "False") != "True":
+            return False
+    elif data.get("sound_ui", "False") != "True":
+        return False
+    
+    # Per-event toggle
+    sound_events = data.get("sound_events", {})
+    if isinstance(sound_events, dict):
+        event_config = sound_events.get(event)
+        if isinstance(event_config, dict):
+            enabled = event_config.get("enabled", "True")
+            if enabled != "True":
+                return False
+    
+    return True
+
+
+def get_event_volume(event: str, data: dict[str, Any]) -> int:
+    """Get the volume for a specific event (0-10).
+    
+    Falls back to global sound_volume if no per-event volume set.
+    """
+    sound_events = data.get("sound_events", {})
+    if isinstance(sound_events, dict):
+        event_config = sound_events.get(event)
+        if isinstance(event_config, dict):
+            vol_str = event_config.get("volume")
+            if vol_str:
+                try:
+                    vol = int(vol_str)
+                    return max(0, min(10, vol))
+                except (ValueError, TypeError):
+                    pass
+    
+    # Global volume
+    try:
+        vol = int(data.get("sound_volume", "5"))
+    except (TypeError, ValueError):
+        vol = 5
+    return max(0, min(10, vol))
+
+
+def migrate_sound_settings(data: dict[str, Any], sounds_dir: str = "") -> None:
+    """Bring data["sound_events"] up to date, and HEAL it.
+
+    Called on every start, not once: an override pointing at a file the
+    library no longer ships is dropped here rather than left to fail
+    silently at play time (the sound rename made every stored mapping stale
+    at once). A value the user chose that still exists is never touched, and
+    an event added in a later version gets its default without wiping the
+    rest.
+    """
+    events = data.get("sound_events")
+    if not isinstance(events, dict):
+        events = {}
+    healed = {}
+    for event, default_file in _DEFAULT_SOUND_MAP.items():
+        cfg = events.get(event)
+        cfg = dict(cfg) if isinstance(cfg, dict) else {}
+        chosen = cfg.get("file") or ""
+        if chosen and sounds_dir and not os.path.exists(
+                os.path.join(sounds_dir, chosen)):
+            chosen = ""                      # stale name: fall back to default
+        cfg["file"] = chosen or default_file
+        cfg.setdefault("enabled", "True")
+        cfg.setdefault("volume", "")
+        healed[event] = cfg
+    # anything the user added for an event this build does not know stays put
+    for event, cfg in events.items():
+        if event not in healed and isinstance(cfg, dict):
+            healed[event] = cfg
+    data["sound_events"] = healed
 
 
 def _volume_level(data: dict[str, Any]) -> int:
@@ -170,6 +359,11 @@ class SoundManager(QObject):
         self._data: dict[str, Any] = data
         self._players: dict[str, QSoundEffect] = {}
         self._sounds_dir: str = get_resource_path("sound")
+        self._available_sounds: list[str] = discover_sound_files(self._sounds_dir)
+
+    def get_available_sounds(self) -> list[str]:
+        """Get list of available sound files."""
+        return self._available_sounds.copy()
 
     def play(self, name: str) -> None:
         """Play a named sound effect.
@@ -179,39 +373,75 @@ class SoundManager(QObject):
         Silently does nothing if the corresponding toggle is off or
         the sound file is missing.
         """
-        if name == "type":
-            if self._data.get("sound_typewriter", "False") != "True":
-                return
-        elif self._data.get("sound_ui", "False") != "True":
+        if not is_event_enabled(name, self._data):
             return
 
-        file_name: str = _SOUND_FILE_MAP.get(name, f"{name}.wav")
+        file_name = get_sound_file_for_event(name, self._data, self._sounds_dir)
+        if not file_name:
+            logger.debug("No sound file found for event: %s", name)
+            return
+
         path: str = os.path.join(self._sounds_dir, file_name)
-        if not os.path.exists(path) and file_name in _SOUND_FALLBACKS:
-            path = os.path.join(self._sounds_dir, _SOUND_FALLBACKS[file_name])
-        if name not in _SOUND_FILE_MAP:
-            logger.warning("Unknown sound name: %s", name)
+        volume = get_event_volume(name, self._data)
 
         if QSoundEffect is None:
-            self._play_winsound(path, _volume_level(self._data))
+            self._play_winsound(path, volume)
             return
 
-        # Only cache players for known sound names to prevent unbounded dict growth
-        if name in _SOUND_FILE_MAP:
-            if name not in self._players:
-                self._players[name] = QSoundEffect(self)
-            player = self._players[name]
-        else:
-            player = QSoundEffect(self)
+        # Cache players for frequently used sounds
+        if name not in self._players:
+            self._players[name] = QSoundEffect(self)
+        player = self._players[name]
 
         try:
-            player.setVolume(_volume_factor(self._data))
+            player.setVolume(volume / 10.0)
 
             if os.path.exists(path):
                 player.setSource(QUrl.fromLocalFile(path))
                 player.play()
         except Exception:
             logger.exception("Failed to play sound")
+
+    def play_file(self, file_name: str, level: int | None = None) -> None:
+        """Play one file by name, ignoring every toggle.
+
+        The settings panel needs this: a preview has to be audible while UI
+        sounds are switched off, and it must not route through play(), whose
+        whole job is to obey the toggles.
+        """
+        if not file_name:
+            return
+        path = os.path.join(self._sounds_dir, file_name)
+        if not os.path.exists(path):
+            logger.warning("preview: missing sound file %s", path)
+            return
+        vol = _volume_level(self._data) if level is None else max(0, min(10, level))
+        if QSoundEffect is None:
+            self._play_winsound(path, vol)
+            return
+        try:
+            player = self._players.setdefault("__preview__", QSoundEffect(self))
+            player.setVolume(vol / 10.0)
+            player.setSource(QUrl.fromLocalFile(path))
+            player.play()
+        except Exception:
+            logger.exception("Failed to preview sound")
+
+    def play_click(self) -> None:
+        """Convenience method for click sounds."""
+        self.play("click")
+
+    def play_tick(self) -> None:
+        """Convenience method for tick sounds."""
+        self.play("tick")
+
+    def play_hover(self) -> None:
+        """Convenience method for hover sounds."""
+        self.play("hover")
+
+    def play_button_release(self) -> None:
+        """Convenience method for button release sounds."""
+        self.play("button_release")
 
     @staticmethod
     def _play_winsound(path: str, level: int = 10) -> None:
@@ -232,11 +462,3 @@ class SoundManager(QObject):
             winsound.PlaySound(src, winsound.SND_FILENAME | winsound.SND_ASYNC)
         except Exception:
             logger.exception("Failed to play sound via winsound")
-
-    def play_click(self) -> None:
-        """Shortcut for ``play("click")``."""
-        self.play("click")
-
-    def play_tick(self) -> None:
-        """Shortcut for ``play("tick")``."""
-        self.play("tick")

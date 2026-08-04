@@ -210,6 +210,9 @@ def test_archive_single_silo(win):
 
 def test_insert_divider_line_mid_text_split(win):
     """S4: mid-text split — cursor splits block, divider+bullet between halves."""
+    # the shipped profile turns the S4 divider off; pin what this is about
+    win.data["ctrlw_s4_divider"] = "True"
+    win.data["ctrlw_s4_bullet"] = "True"
     win.data["temp_presets"] = ["hello world"]
     win.silo_docs[:] = []
     win._switch_to_slot(0, initial=True)
@@ -256,6 +259,10 @@ def test_auto_bullet_space_and_enter(win):
     from PyQt6.QtGui import QKeyEvent
 
     win.data["auto_bullet"] = "True"
+    # one bullet per line: the shipped profile spaces them out, which is a
+    # look, not the behaviour this test is about
+    kept_double = win.data.get("bullet_double_line", "False")
+    win.data["bullet_double_line"] = "False"
     win.data["temp_presets"] = [""]
     win.silo_docs[:] = []
     win._switch_to_slot(0, initial=True)
@@ -272,6 +279,7 @@ def test_auto_bullet_space_and_enter(win):
     ta.keyPressEvent(QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Return,
                                Qt.KeyboardModifier.NoModifier, "\r"))
     assert ta.toPlainText() == "• item one\n"
+    win.data["bullet_double_line"] = kept_double
     win.data["auto_bullet"] = "False"
 
 
@@ -457,6 +465,167 @@ def test_undo_delete_active_silo(win):
     _press_ctrl_z(win)  # real Ctrl+Z inside the editor
     assert win.data["temp_presets"] == ["first", "the active one", "third"]
     assert win.text_area.toPlainText() == "the active one"
+
+
+# --- T-716: one undo timeline for text edits AND silo/gap actions -----------
+
+def _type_block(win, text):
+    """Append `text` as exactly ONE text-undo step.
+
+    Deliberately not the per-key `_type` helper further down: this ticket is
+    about the ORDER of text steps against data actions, so each edit has to be
+    one countable step rather than however many Qt decides to coalesce.
+    """
+    from PyQt6.QtGui import QTextCursor
+
+    cur = win.text_area.textCursor()
+    cur.movePosition(QTextCursor.MoveOperation.End)
+    cur.beginEditBlock()
+    cur.insertText(text)
+    cur.endEditBlock()
+    win.text_area.setTextCursor(cur)
+
+
+@pytest.fixture
+def undo_bed(win):
+    """A silo open in the editor with an empty undo history and known gaps.
+
+    Restores what it replaced: `win` is module-scoped (T-295), and the gap
+    tests further down assume the presets they inherited.
+    """
+    saved = (
+        list(win.data.get("temp_presets", [])),
+        list(win.data.get("pinned_silos", [])),
+        list(win.data.get("silo_gaps") or []),
+        win.active_temp_slot,
+    )
+
+    def _bed(presets=("alpha", "bravo"), gaps=()):
+        win.data["temp_presets"] = list(presets)
+        win.data["pinned_silos"] = []
+        win.silo_docs[:] = []
+        win._switch_to_slot(0, initial=True)
+        win._silo_gaps_list()[:] = list(gaps)
+        win.data_undo_stack = []
+        win.data_redo_stack = []
+        win._undo_kinds().clear()
+        return win
+
+    yield _bed
+
+    win.data["temp_presets"] = saved[0]
+    win.data["pinned_silos"] = saved[1]
+    win.silo_docs[:] = []
+    win.data_undo_stack = []
+    win.data_redo_stack = []
+    win._undo_kinds().clear()
+    win._switch_to_slot(min(saved[3], max(0, len(saved[0]) - 1)), initial=True)
+    win._silo_gaps_list()[:] = saved[2]
+
+
+def test_snapshot_carries_the_live_editor_text(undo_bed):
+    """A snapshot taken between flushes used to be stale by exactly what the
+    user had typed since — restoring it deleted that text with nothing left
+    to bring it back."""
+    win = undo_bed()
+    _type_block(win, " unflushed")
+    # deliberately NOT calling commit_current_text: this is the state the app
+    # is in for every keystroke between flushes
+    assert win.data["temp_presets"][0] == "alpha", "precondition: not flushed yet"
+    snap = win._snapshot_current()
+    assert snap["temp_presets"][0] == "alpha unflushed"
+
+
+def test_gap_move_is_undoable(undo_bed):
+    win = undo_bed(gaps=[1])
+    assert win.move_silo_gap(1, 0) is True
+    assert win._silo_gaps_list() == [0]
+    win._smart_undo()
+    assert win._silo_gaps_list() == [1]
+
+
+def test_rejected_gap_drag_leaves_no_undo_entry(undo_bed):
+    win = undo_bed(gaps=[1])
+    assert win.move_silo_gap(0, 1) is False  # no gap at 0, and 1 is taken
+    assert win.data_undo_stack == []
+
+
+def test_undo_after_a_gap_move_does_not_eat_newer_text(undo_bed):
+    """The reported catastrophe: move gaps, type, Ctrl+Z — and the typing was
+    gone for good while unrelated older text came back."""
+    win = undo_bed(gaps=[1])
+    _type_block(win, " typed")
+    assert win.move_silo_gap(1, 0) is True
+    win._smart_undo()
+    assert win._silo_gaps_list() == [1], "Ctrl+Z must reverse the gap move"
+    assert win.text_area.toPlainText() == "alpha typed", "and must not touch the text"
+
+
+def test_interleaved_text_and_data_undo_redo_round_trip(undo_bed):
+    """Ctrl+Z all the way back, Ctrl+Y all the way forward — text AND layout
+    asserted at every step, in strict reverse-chronological order."""
+    win = undo_bed()
+    _type_block(win, " one")
+    win.toggle_silo_gap(0)
+    _type_block(win, " two")
+    assert (win.text_area.toPlainText(), win._silo_gaps_list()) == ("alpha one two", [0])
+
+    win._smart_undo()
+    assert (win.text_area.toPlainText(), list(win._silo_gaps_list())) == ("alpha one", [0])
+    win._smart_undo()
+    assert (win.text_area.toPlainText(), list(win._silo_gaps_list())) == ("alpha one", [])
+    win._smart_undo()
+    assert (win.text_area.toPlainText(), list(win._silo_gaps_list())) == ("alpha", [])
+
+    win._smart_redo()
+    assert (win.text_area.toPlainText(), list(win._silo_gaps_list())) == ("alpha one", [])
+    win._smart_redo()
+    assert (win.text_area.toPlainText(), list(win._silo_gaps_list())) == ("alpha one", [0])
+    win._smart_redo()
+    assert (win.text_area.toPlainText(), list(win._silo_gaps_list())) == ("alpha one two", [0])
+
+
+# --- T-717: formatting hotkeys must not throw the viewport to the top -------
+
+def test_formatting_hotkeys_keep_the_viewport_where_it_was(undo_bed):
+    """Ctrl+W / Alt+W / Ctrl+E fired near the bottom of a long silo used to
+    scroll back to line 1: their `ensureCursorVisible()` ran INSIDE the edit
+    block, before the reflow at `endEditBlock` reset the scrollbar."""
+    from PyQt6.QtGui import QTextCursor
+
+    win = undo_bed(presets=["\n".join(f"line {i}" for i in range(300)), "bravo"])
+    ta = win.text_area
+    ta.resize(420, 300)
+    sb = ta.verticalScrollBar()
+    line_h = max(1, ta.fontMetrics().height())
+
+    for name, run in (
+        ("Ctrl+W", win.insert_add_line),
+        ("Alt+W", win.insert_add_line_up),
+        ("Ctrl+E", win.apply_header_timestamp),
+    ):
+        cur = ta.textCursor()
+        cur.movePosition(QTextCursor.MoveOperation.End)
+        ta.setTextCursor(cur)
+        ta.ensureCursorVisible()
+        before = sb.value()
+        assert before > 0, f"{name}: precondition — the view must be scrolled to test this"
+        run()
+        assert sb.value() > 0, f"{name} threw the view to the top"
+        assert sb.value() >= before - 4 * line_h, (
+            f"{name} scrolled away: {before} -> {sb.value()} (line {line_h}px)")
+
+
+def test_noop_guard_looks_at_every_snapshot_key(undo_bed):
+    """`_snapshot_is_noop` compared six of eighteen keys, so an action that
+    only moved a gap (or recoloured, ticked, nested…) was judged a no-op and
+    DISCARDED — and the skip loop then restored an older snapshot's text."""
+    win = undo_bed(gaps=[1])
+    before = win._snapshot_current()
+    win._silo_gaps_list()[:] = [0]
+    assert win._snapshot_is_noop(before) is False
+    win._silo_gaps_list()[:] = [1]
+    assert win._snapshot_is_noop(before) is True
 
 
 def test_undo_clear_active_silo(win):
@@ -1103,6 +1272,9 @@ def test_inline_timestamp_refresh_glyph(win):
 
     win.cat_combo.setCurrentIndex(0)
     win.on_tab_changed(0)
+    # numeric month: the \d{2}\.\d{2} assertions below are not about the
+    # "03 Aug" wording the shipped profile uses
+    win.data["date_text_month"] = "False"
     win.data["temp_presets"][:] = ["# Log (01.01 - 00:00)\n\nbody"]
     win.silo_docs[:] = []
     win._switch_to_slot(0, initial=True)
@@ -1311,15 +1483,46 @@ def test_file_container_import_export_delete(win):
     panel.close()
 
 
+
+def _force_width(win, w, h):
+    """Resize past Qt's layout floor.
+
+    `win` is module-scoped and by this point in the file its layout minimum
+    can sit near 950px (the settings panel, the docks, a theme pass), so a
+    plain resize() to 636 silently lands at 720 and the density tier under
+    test never engages. These tests measure the packing algorithm, not Qt's
+    floor, so the floor is lifted for the measurement and put back after.
+    """
+    from PyQt6.QtWidgets import QApplication
+
+    kept = (win.minimumWidth(), win.minimumHeight())
+    win.setMinimumSize(0, 0)
+    win.resize(w, h)
+    QApplication.processEvents()
+    return kept
+
+
+def _restore_minimum(win, kept):
+    win.setMinimumSize(*kept)
+
+
 def test_header_fits_quarter_fullhd_with_full_clock(win):
     # Ctrl+Q quarter snap (960x540): seconds + day word + text month must
-    # ALL fit — dense mode packs buttons instead of degrading the clock
+    # ALL fit — dense mode packs buttons instead of degrading the clock.
+    # The 1280/700 tier constants are calibrated against an 11pt editor
+    # font, so the calibration has to be STATED here: the shipped profile
+    # ships 18pt (T-696), at which the same header genuinely needs ~1030px
+    # and this measurement is about the tiers, not about the default.
+    kept_font, kept_scale = win.data.get("font_size"), win.data.get("ui_scale")
+    win.data["font_size"], win.data["ui_scale"] = 11, "1.0"
+    win.apply_scaled_ui()
+    win.apply_font()
     win.data["show_date_rect"] = "True"
     win.data["date_seconds"] = "True"
     win.data["date_daypart"] = "True"
     win.data["date_text_month"] = "True"
     win.data["analog_clock"] = "True"
-    win.resize(960, 540)
+    _kept_min = _force_width(win, 960, 540)
     win._header_dense = None
     win._apply_header_density()
     win._update_date_label()
@@ -1330,6 +1533,10 @@ def test_header_fits_quarter_fullhd_with_full_clock(win):
                       win.lbl_date.text()), win.lbl_date.text()
     total = win.header_widget.sizeHint().width()
     assert total <= 960, f"header wants {total}px at quarter-FullHD"
+    _restore_minimum(win, _kept_min)
+    win.data["font_size"], win.data["ui_scale"] = kept_font, kept_scale
+    win.apply_scaled_ui()
+    win.apply_font()
     # restore defaults used by other tests
     win.data["date_text_month"] = "False"
     win.data["analog_clock"] = "False"
@@ -2765,17 +2972,36 @@ def test_transfer_to_snippet_target_category(win):
 
 
 def test_sounds_do_not_crash_and_fall_back(win):
-    from fastprompter.core.sound_manager import _SOUND_FALLBACKS, _SOUND_FILE_MAP
+    """Every event plays or no-ops — never raises.
 
+    _SOUND_FALLBACKS is gone: the fallback chain now lives in
+    get_sound_file_for_event (user choice -> shipped default -> {event}.wav),
+    so what is worth asserting is that no event can throw and that a bogus
+    override degrades to the default instead of blowing up.
+    """
+    from fastprompter.core.sound_manager import _DEFAULT_SOUND_MAP
+
+    kept_events = win.data.get("sound_events")
     win.data["sound_ui"] = "True"
     win.data["sound_typewriter"] = "True"
-    for name in _SOUND_FILE_MAP:
-        win.play_sound(name)  # missing files must fall back / no-op, never raise
-    sounds_dir = win.sound_manager._sounds_dir
-    for preferred, fallback in _SOUND_FALLBACKS.items():
-        assert os.path.exists(os.path.join(sounds_dir, fallback)), fallback
-    win.data["sound_ui"] = "False"
-    win.data["sound_typewriter"] = "False"
+    try:
+        for name in _DEFAULT_SOUND_MAP:
+            win.play_sound(name)          # must never raise
+        win.play_sound("no-such-event")   # unknown event: silent, not fatal
+
+        # an override pointing at a deleted file falls back to the default
+        win.data["sound_events"] = {"click": {"file": "gone-forever.wav",
+                                              "enabled": "True", "volume": ""}}
+        win.play_sound("click")
+        from fastprompter.core.sound_manager import get_sound_file_for_event
+        assert get_sound_file_for_event(
+            "click", win.data, win.sound_manager._sounds_dir
+        ) == _DEFAULT_SOUND_MAP["click"]
+    finally:
+        win.data["sound_ui"] = "False"
+        win.data["sound_typewriter"] = "False"
+        if kept_events is not None:
+            win.data["sound_events"] = kept_events
 
 
 def test_zebra_and_line_numbers_paint(win):
@@ -3635,7 +3861,7 @@ def test_header_priority_fit_never_hides_clock_or_date(win):
         win.apply_font()
         win._header_dense = None
         win._header_ultra = None
-        win.resize(w, h)
+        _force_width(win, w, h)
         win._apply_header_density()
         win._update_date_label()
         win._apply_header_density()  # second pass, as a real resize settles
@@ -3820,7 +4046,7 @@ def test_overflow_menu_exposes_buttons_hidden_by_narrow_header(win):
         win.apply_scaled_ui()
         win._header_dense = None
         win._header_ultra = None
-        win.resize(636, 800)          # the reported resolution
+        _kept_min = _force_width(win, 636, 800)   # the reported resolution
         win._apply_header_density()
 
         assert win._header_ultra is True, (
@@ -3854,6 +4080,7 @@ def test_overflow_menu_exposes_buttons_hidden_by_narrow_header(win):
         assert win._overflow_hidden_buttons() == []
         assert win.btn_overflow.isHidden()
     finally:
+        _restore_minimum(win, _kept_min)
         win._header_dense = None
         win._header_ultra = None
         win.resize(1400, 700)
@@ -4449,7 +4676,8 @@ def test_no_unguarded_edit_blocks_in_new_code():
         ("editor.py", "keyPressEvent"),
         ("formatting_mixin.py", "apply_format"),
         ("formatting_mixin.py", "toggle_bullet_conversion"),
-        ("formatting_mixin.py", "insert_add_line"),
+        # insert_add_line came off this list on 04.08 (T-717): it now uses
+        # edit_block, like its Alt+W sibling. The list shrinks, never grows.
         ("formatting_mixin.py", "insert_old_add_line"),
         ("formatting_mixin.py", "toggle_quote_conversion"),
         ("formatting_mixin.py", "clear_formatting"),
@@ -6445,6 +6673,11 @@ def test_settings_controls_are_packed_not_spread_across_the_panel(win):
     "huge empty space" the panel was compacted to get rid of."""
     from PyQt6.QtWidgets import QCheckBox
 
+    # `win` is module-scoped: leaving the panel SHOWN here raises the whole
+    # window's layout minimum, and every later test that resizes the window
+    # narrow (the header density tiers) silently gets clamped instead —
+    # which is exactly why four of them only failed in a full run.
+    kept_visible = win.mini_settings_frame.isVisible()
     win.mini_settings_frame.setVisible(True)
     tabs = win.settings_tabs
     kept_tab = tabs.currentIndex()
@@ -6466,6 +6699,7 @@ def test_settings_controls_are_packed_not_spread_across_the_panel(win):
         assert worst <= 40, f"controls spread apart by {worst}px"
     finally:
         tabs.setCurrentIndex(kept_tab)
+        win.mini_settings_frame.setVisible(kept_visible)
 
 def test_analog_clock_blends_with_its_neighbours_on_every_theme(win):
     """Reported twice: a visible square behind the clock.
@@ -9399,8 +9633,11 @@ def test_insert_at_top_shifts_every_slot_keyed_store(win):
     assert win.data["silo_colors"].get("1") == "#abcdef"
     assert win.data["watcher_queues"].get("1") == ["q"]
     assert win.data["silo_children"] == {3: [4]}
-    # gaps are positional on purpose — they must NOT ride along
-    assert win.data["silo_gaps"] == [0]
+    # T-704 (user's call): a gap belongs to the silo it was placed under, so
+    # it shifts with everything else. It used to be left out of the remap,
+    # which made it neither positional nor attached — a delete renumbered the
+    # slots around it and parked it under a stranger.
+    assert win.data["silo_gaps"] == [1]
     win.data["silo_children"], win.data["silo_gaps"] = {}, []
     win.data["watcher_queues"], win.data["silo_colors"] = {}, {}
     win.data["silo_ticked"], win.data["pinned_silos"] = [], []
@@ -11387,3 +11624,185 @@ def test_a_moved_card_keeps_its_own_mark(fresh_win):
     assert ed.document().findBlockByNumber(where).userState() == 3
 
 
+
+
+# ---------------------------------------------------------------------------
+# Dialogs must survive being CONSTRUCTED. `QSlider.TickPosition.Below` is a
+# perfectly plausible line that raises AttributeError the moment the widget is
+# built, and nothing caught it until a user clicked the button.
+# ---------------------------------------------------------------------------
+
+
+def test_sound_settings_dialog_opens_and_edits(win):
+    from fastprompter.core.sound_manager import _DEFAULT_SOUND_MAP, EVENT_LABELS
+    from fastprompter.ui.sound_settings_dialog import SoundSettingsDialog
+
+    kept = win.data.get("sound_events")
+    try:
+        dlg = SoundSettingsDialog(win, win.data, win.sound_manager)
+        try:
+            assert dlg.table.rowCount() == len(EVENT_LABELS)
+
+            # every row starts on a real file
+            for event, row in dlg._rows.items():
+                combo = dlg.table.cellWidget(row, 2)
+                assert combo.count() > 1, event
+                assert "missing" not in combo.currentText(), event
+
+            # flipping a row writes through to the map the player reads
+            row = dlg._rows["click"]
+            dlg.table.cellWidget(row, 1).setChecked(False)
+            assert win.data["sound_events"]["click"]["enabled"] == "False"
+            dlg.table.cellWidget(row, 3).setValue(7)
+            assert win.data["sound_events"]["click"]["volume"] == "7"
+            dlg.table.cellWidget(row, 3).setValue(0)
+            assert win.data["sound_events"]["click"]["volume"] == ""
+
+            # loading must not write back — and must not stack a second
+            # connection onto every widget, which is what made one click
+            # fire the handler twice after a reset
+            dlg._load_settings()
+            dlg.table.cellWidget(row, 1).setChecked(True)
+            assert win.data["sound_events"]["click"]["enabled"] == "True"
+
+            # the filter hides rows by label AND by event id
+            dlg.filter_box.setText("zzz-no-such-event")
+            assert all(dlg.table.isRowHidden(r) for r in dlg._rows.values())
+            dlg.filter_box.setText("")
+            assert not any(dlg.table.isRowHidden(r) for r in dlg._rows.values())
+
+            # reset puts every shipped default back
+            win.data["sound_events"]["click"]["file"] = "notify.wav"
+            dlg._data["sound_events"] = {
+                e: {"file": f, "enabled": "True", "volume": ""}
+                for e, f in _DEFAULT_SOUND_MAP.items()
+            }
+            dlg._load_settings()
+            assert (win.data["sound_events"]["click"]["file"]
+                    == _DEFAULT_SOUND_MAP["click"])
+        finally:
+            dlg.deleteLater()
+    finally:
+        if kept is not None:
+            win.data["sound_events"] = kept
+
+
+def test_every_shipped_sound_default_exists(win):
+    """The library was renamed wholesale; a stale default plays nothing."""
+    import os
+
+    from fastprompter.core.sound_manager import _DEFAULT_SOUND_MAP
+
+    root = win.sound_manager._sounds_dir
+    missing = [f for f in _DEFAULT_SOUND_MAP.values()
+               if not os.path.exists(os.path.join(root, f))]
+    assert not missing, missing
+
+
+def test_timer_dialog_opens(win):
+    from fastprompter.ui.timer_dialog import TimerDialog
+
+    dlg = TimerDialog(win)
+    try:
+        assert dlg.date_time_picker is not None
+    finally:
+        dlg.deleteLater()
+
+
+def test_cs_style_toggle_maps_to_files_that_exist(win):
+    """T-708. The three CS sounds live in cs_style/, and the toggle used to
+    name them as if they sat at the top level — after the library rename that
+    pointed the whole style at nothing."""
+    import os
+
+    kept_events = win.data.get("sound_events")
+    kept_style = win.data.get("cs_style", "False")
+    try:
+        win.on_cs_style_toggled(True)
+        assert win.data["cs_style"] == "True"
+        root = win.sound_manager._sounds_dir
+        for event in ("hover", "click", "button_click", "button_release"):
+            name = win.data["sound_events"][event]["file"]
+            assert name.startswith("cs_style/"), (event, name)
+            assert os.path.exists(os.path.join(root, name)), name
+
+        # switching it off puts the previous choice back
+        win.on_cs_style_toggled(False)
+        assert win.data["cs_style"] == "False"
+        assert win.data["sound_events"]["click"]["file"] != "cs_style/buttonclick.wav"
+    finally:
+        win.data["cs_style"] = kept_style
+        if kept_events is not None:
+            win.data["sound_events"] = kept_events
+
+
+def test_backspace_follows_the_typewriter_toggle(win):
+    """T-709. It is part of the typewriter effect, not the UI clicks."""
+    from fastprompter.core.sound_manager import is_event_enabled
+
+    data = {"sound_ui": "True", "sound_typewriter": "False"}
+    assert is_event_enabled("backspace", data) is False
+    assert is_event_enabled("type", data) is False
+    assert is_event_enabled("click", data) is True
+
+    data = {"sound_ui": "False", "sound_typewriter": "True"}
+    assert is_event_enabled("backspace", data) is True
+    assert is_event_enabled("click", data) is False
+
+
+def test_settings_panel_hugs_its_content_after_show(win):
+    """The panel is measured against a WIDTH, and during construction the
+    tabs are a few pixels wide — measured there, a wrapping row reports the
+    height it would need in a sliver, and that became the panel's maximum.
+    A fresh launch then showed a screenful of dead space under two rows of
+    checkboxes."""
+    from PyQt6.QtWidgets import QApplication
+
+    kept = win.data.get("hide_extra", "True")
+    try:
+        win.resize(1000, 700)
+        win.mini_settings_frame.setVisible(True)
+        win.show()
+        QApplication.processEvents()
+        win._fit_settings_tabs()
+        QApplication.processEvents()
+
+        tabs = win.settings_tabs
+        page = tabs.currentWidget()
+        bar = tabs.tabBar().sizeHint().height() if tabs.tabBar() else 24
+        needed = page.layout().totalHeightForWidth(max(120, tabs.width() - 12))
+        slack = tabs.maximumHeight() - (needed + bar)
+        assert slack < 80, (
+            f"panel reserves {tabs.maximumHeight()}px for {needed + bar}px of "
+            f"content ({slack}px of dead space)")
+    finally:
+        win.hide()
+        win.data["hide_extra"] = kept
+        win.mini_settings_frame.setVisible(kept != "True")
+
+
+
+# --- T-729: the archive panel rendered as an empty box with slivers ---------
+
+def test_archive_rows_do_not_overlap(win):
+    """Measured before the fix: four 21px rows landed at y = 0, 2, 4, 6 inside
+    a 42px archive_widget — two rows of space for four rows of content, which
+    on screen is an empty dark box with thin strips down the left edge."""
+    saved = list(win.data.get("archive_temp_presets", []))
+    saved_vis = win.data.get("archive_visible", "False")
+    try:
+        win.data["archive_temp_presets"][:] = ["arch one", "arch two", "arch three", "arch four"]
+        win.data["archive_visible"] = "True"
+        win.refresh_archive_panel()
+        rows = [b for b in win.archive_buttons if not b.isHidden()][:4]
+        assert len(rows) == 4, f"expected 4 archive rows, got {len(rows)}"
+        for a, b in zip(rows, rows[1:]):
+            assert b.y() >= a.y() + a.height(), (
+                f"archive rows overlap: {a.geometry()} then {b.geometry()}")
+        assert win.archive_widget.height() >= sum(r.height() for r in rows), (
+            f"archive panel {win.archive_widget.height()}px cannot hold "
+            f"{len(rows)} rows of {rows[0].height()}px")
+    finally:
+        win.data["archive_temp_presets"][:] = saved
+        win.data["archive_visible"] = saved_vis
+        win.refresh_archive_panel()

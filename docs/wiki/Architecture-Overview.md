@@ -41,7 +41,7 @@ Entry point. QApplication init, single-instance IPC check (QLocalServer), DB con
 - SearchMixin — multi-word AND search
 - SendSelectionMixin — send text via watcher
 - SnippetOpsMixin — silo ops (trash, duplicate, reorder, clear)
-- ThemeMixin — app stylesheet, 6 retro Win95 themes + custom
+- ThemeMixin — app stylesheet, 9 built-in themes + custom
 - TrayMixin — systray icon + menu
 - WatcherMixin — watcher engine integration
 - WindowMixin — frameless window, snapping, borderless

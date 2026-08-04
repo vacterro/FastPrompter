@@ -168,8 +168,9 @@ class MarkdownHighlighter(QSyntaxHighlighter):
         # snake_case name, file path and __dunder__ in a note. Asterisks keep
         # their intraword behaviour (`in*ter*nal` is still italic) — that is
         # the same carve-out the spec makes.
+        # Fixed: exclude alphanumeric before/after, not underscore itself
         self._highlighting_rules.append(
-            (re.compile(r'(?<![\w_])_(?!_)[^_\n]+(?<!_)_(?![\w_])'), italic_format))
+            (re.compile(r'(?<![a-zA-Z0-9])_(?!_)[^_\n]+(?<!_)_(?![a-zA-Z0-9])'), italic_format))
 
         # Header 1: # Text
         h1_format = QTextCharFormat()

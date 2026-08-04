@@ -320,10 +320,23 @@ class FormattingMixin:
         return b, a
 
     def insert_add_line(self):
+        """Ctrl+W. Split so the viewport guard sits OUTSIDE the edit block \u2014
+        the reflow that threw the view to the top happens at endEditBlock."""
+        from fastprompter.ui.edit_guard import keep_view
+
+        with keep_view(self.text_area):
+            self._insert_add_line_locked()
+
+    def _insert_add_line_locked(self):
+        # Moved off the raw beginEditBlock/try/finally onto edit_block while
+        # splitting this out: same grouping, plus the undo boundary its Alt+W
+        # sibling already armed, so typing right after Ctrl+W is no longer
+        # merged into the same undo step.
+        from fastprompter.ui.edit_guard import edit_block
+
         bullet_char = self.data.get("ctrlw_bullet_char", "\u2022")
         cursor = self.text_area.textCursor()
-        cursor.beginEditBlock()
-        try:
+        with edit_block(cursor, self.text_area):
             stripped = cursor.block().text().strip()
 
             # ── S6: on divider ──
@@ -413,8 +426,6 @@ class FormattingMixin:
             self.text_area.ensureCursorVisible()
             self.text_area.setFocus()
             self.mark_dirty()
-        finally:
-            cursor.endEditBlock()
 
     def insert_add_line_up(self):
         """Alt+W: Ctrl+W turned around — the new point goes ABOVE.
@@ -424,6 +435,12 @@ class FormattingMixin:
         with the divider between them. Scenario detection is shared; only
         the settings prefix and the order of the parts differ.
         """
+        from fastprompter.ui.edit_guard import keep_view
+
+        with keep_view(self.text_area):
+            self._insert_add_line_up_locked()
+
+    def _insert_add_line_up_locked(self):
         from fastprompter.ui.edit_guard import edit_block
 
         bullet_char = self.data.get("altw_bullet_char", "•")

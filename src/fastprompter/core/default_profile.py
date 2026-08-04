@@ -194,6 +194,7 @@ DEFAULT_PROFILE = {
     'sound_typewriter': 'False',
     'sound_ui': 'True',
     'sound_volume': '1',
+    'cs_style': 'False',
     'splitter_sizes': '[178, 1257]',
     'splitter_sizes_left': '',
     'splitter_sizes_right': '[0, 466, 163]',

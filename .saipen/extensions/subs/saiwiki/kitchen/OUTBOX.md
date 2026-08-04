@@ -1,49 +1,50 @@
 # OUTBOX — saiwiki prepare handoff
 
-- **status**: reviewed
+- **status**: ready
 - **producer**: saiwiki
-- **source_head**: `60dda3e029faa20f0da56e5dd0ca78ec03a9ad96` (v0.8.8)
-- **generated**: 2026-08-03 (qq / `saipen prepare saiwiki`)
+- **source_head**: `bac28b6`... (HEAD, post-v0.8.8) — defaults freeze wave
+- **generated**: 2026-08-04 (qq / `saipen prepare saiwiki`)
 
 ## coverage
 
-All 16 maintained wiki pages (`docs/wiki/*.md`) re-verified against current source. 11 pages clean; **5 pages carried post-rewrite drift** (the rewrite 2cf4190 predates T-645, T-660, T-685, T-691, T-693, T-694, 3ce4357):
+All 16 maintained wiki pages (`docs/wiki/*.md`) re-verified against source at HEAD. 11 pages clean; **5 pages carry drift** (this wave moved the frozen `default_profile.py` defaults + one hotkey swap + 3 new core files):
 
 | Page | Drift found | Fix |
 |---|---|---|
-| `Module-Structure.md` | `saipen_dialog.py` listed but deleted (c384711); `kanban_widget.py`, `table_widget.py`, `silo_region.py` missing; i18n "22 languages" but 33 locales; counts stale (core 14→15, watcher 9→10, ui 39→44, i18n 22→38 files, total ~45→112) | module map + counts corrected, dead entry removed, 3 real modules added |
-| `Core-API-and-Classes.md` | `SaipenViewerDialog` section documents a deleted class | section removed |
-| `UI-Components.md` | "Saipen Viewer (Ctrl+Shift+C)" dialog row dead; image-pill rename (T-645) missing | row removed; pill line now documents double-click rename |
-| `Keyboard-Shortcuts-and-Cheatsheet.md` | Ctrl+Shift+C claimed "Open SAIPEN viewer" (2 places) — key is now **Clear** (main.py:8842 `add_fixed("Ctrl+Shift+C", self.clear_text)`); Alt+MiddleButton, plain MiddleButton cycle, Ctrl+Shift+drag (3ce4357) missing | SAIPEN rows → Clear; mouse/drag rows + paragraph added |
-| `User-Guide.md` | §21 "SAIPEN Integration" dead (viewer gone); pill rename missing | §21 replaced with "Editor Mouse & Line Drag" (verified facts); pill line updated |
-
-Source invariants checked against real code: `editor.py:1655` (Ctrl+Click bullet toggle), `editor.py:1675-1717` (Alt+MB bullet-ize, Ctrl+MB delete line, plain MB cycle), `editor.py:1636-1650` + `_move_lines` (Ctrl+Shift+drag block move, fragment-preserving), `editor.py:1267/1543` (pill rename), `main.py:8842` (Ctrl+Shift+C → Clear), `git ls-files` module counts (112 py), `src/fastprompter/core/i18n/` (38 files = 33 locales + 5 infra).
+| `Configuration.md` | default values stale vs `core/default_profile.py` (shipped defaults merged into `state.reset_data()` → or): font_size 11→18, button_scale 1.0→0.5, theme `Default`→`Golden Default`, theme list (10 names), custom_cursors False→True, code_monospace True→False; key rename `hr_line`→`hr_visual_line` (True), `hide_markup`→`live_preview_conceal` (True), `silo_sync_mode`→`sync_mode`, `show_silo_ticks`→`silo_ticks_enabled`; `always_on_top` False; lock/always hotkeys SWAPPED; sound_enabled row added + sound_volume 5→1, sound_ui True; `language` 23→33; cursor_blink_ms system→1000; date_text_month True; silo_gap_height 6→12; window_presets_enabled True; timer_show_minutes True; hover_line_color `#0059ff` | defaults + key names corrected to `default_profile.py` (evidence: file lines) |
+| `Module-Structure.md` | `default_profile.py` missing from core map; theme count "6 retro Win95" → 9 built-in (those.py); total `.py` 112→115 (core 16 + watcher 10 + i18n 38 + ui 44 + theme 1 + utils 4 + main/__init__ 2) | module map entry added; counts 115; themes line fixed (also in `ui.theme_mixin` row) |
+| `Keyboard-Shortcuts-and-Cheatsheet.md` | `Alt+S`/`Alt+E` swap: profile has `lock_window_hotkey`=Alt+E, `always_on_top_hotkey`=Alt+S (default_profile.py) | rows + paragraph fixed (S→pin, E→lock) |
+| `Core-API-and-Classes.md` | SoundManager method names stale (`play_ui_click`/`play_tick_sound`/`play_typewriter` → now `play(name)`/`play_click()`/`play_tick()`; volume scaling via `scale_wav_bytes`/`scaled_wav_path` added for winsound path) | SoundManager section rewritten |
+| `Architecture-Overview.md` | theme count "6 retro Win95" → 9 built-in | line fixed |
 
 ## payload
 
-Exact files to apply to `docs/wiki/` (all already corrected in this kitchen — copy each over its `docs/wiki/` twin):
+Exact files to apply to `docs/wiki/` (all already corrected in this kitchen):
 
-1. `Module-Structure.md`
-2. `Core-API-and-Classes.md`
-3. `UI-Components.md`
-4. `Keyboard-Shortcuts-and-Cheatsheet.md`
-5. `User-Guide.md`
+1. `Configuration.md`
+2. `Module-Structure.md`
+3. `Keyboard-Shortcuts-and-Cheatsheet.md`
+4. `Architecture-Overview.md`
+5. `Core-API-and-Classes.md`
 
-No new pages, no renames, no `_Footer`/`_Sidebar`/`Home`/`README` changes (verified clean).
+Copy each over its `docs/wiki/` twin, commit docs-only, then optionally push via `sync_wiki.py --push`.
 
 ## verified
 
-- Every claim re-checked against `src/fastprompter/` at HEAD 60dda3e (file:line evidence above).
-- Kitchen workspace re-synced: all 16 pages copied from `docs/wiki/` (working copies), stale `_*.md` drafts removed; only the 5 drifted pages differ from the wiki.
-- 11/16 pages byte-identical to wiki after sync (md5), 5 pages carry only the documented fixes.
+- Every default rechecked against `src/fastprompter/core/default_profile.py` at HEAD (223 lines, all shipping defaults).
+- Theme list = `theme/themes.py` `THEMES` dict (Default, Golden Vintage, Golden Default, Vintage Dark, Vintage Classic, Dark 2 (OLED), Dracula, Nord, Solarized Dark) + Custom.
+- Module counts from `git ls-tree HEAD`: core 16, watcher 10, i18n 38 (33 lex + 5 infra), ui 44, theme 1, utils 4, main.py + __init__.py → 115 total.
+- SoundManager methods verified at HEAD `core/sound_manager.py` (`play`, `play_click`, `play_tick`, `_play_winsound`, `scale_wav_bytes`, `scaled_wav_path`).
+- Remaining 11 pages (Home, UI-Components, User-Guide, Deployment, Troubleshooting, Plugin-Skill, Watcher-Engine, README, _Sidebar, _Footer, SAIPEN-Protocol) byte-clean against HEAD.
+- Kitchen hashes == docs/wiki after mirror (md5).
 
 ## instructions
 
 1. `git status` must show no concurrent edits to `docs/wiki/` before applying.
-2. Copy the 5 payload files from `.saipen/extensions/subs/saiwiki/kitchen/` over `docs/wiki/` (plain file copy, names unchanged).
-3. Commit as a docs change (`docs: wiki re-sync — dead viewer/module drift, new mouse hotkeys` style message, no version bump needed).
-4. Optional: re-sync `saitranslate` kitchen docs after this lands (`ee` next run picks it up automatically).
+2. Copy 5 payload files from `.saipen/extensions/subs/saiwiki/kitchen/` over `docs/wiki/` (plain copy, names unchanged).
+3. Commit as `docs: wiki re-sync — defaults freeze (font 18, scale 0.5, Golden Default), Alt+S/E swap, 9 themes, 115 py` style, no version bump.
+4. Optional: `sync_wiki.py --push` to push to GitHub wiki.
 
 ## history
 
-- WIKI-008 (rewrite wave 6, 30.07): reviewed — consumed at 2cf4190, superseded by this run's re-sync.
+- T-019 (03.08) reviewed — consumed at 42347fe/bac28b6. Superseded by this run's re-sync.
