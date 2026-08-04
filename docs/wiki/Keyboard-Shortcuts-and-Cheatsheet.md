@@ -36,6 +36,7 @@ Full keyboard-driven operation. Layout-independent VK dispatch — works on QWER
 | **Formatting** | **Alt+Z** | Toggle Line Numbers | Editor |
 | **Formatting** | **Alt+Backspace** | Delete previous word | Editor |
 | **Formatting** | **Ctrl+Z** | Smart Undo (per silo) | Editor |
+| **Formatting** | **Ctrl+Y** / **Ctrl+Shift+Z** | Smart Redo (mirror of undo) | Editor |
 | **Formatting** | **Ctrl+MiddleButton** | Delete line under cursor (smart list reflow) | Editor |
 | **Formatting** | **Alt+MiddleButton** | Bullet-ize every selected line (`• ` prefix) | Editor |
 | **Formatting** | **MiddleButton** | Cycle line state: plain → checked+struck → unchecked | Editor |

@@ -37,6 +37,8 @@ Configurable button bar. Tokens: cat tabs, search, silo controls, formatting, cl
 
 ### 2. Snippet & Silo Panel (`ui/snippet_panel.py`)
 
+**Layout:** `sidebar` (left column, default) or `tabs` (horizontal strip above the editor, T-718). In tab mode children move into the parent's right-click menu. Toolbar may sit above or below the editor (T-719).
+
 **Silo List:** Up to 100 per project tab. Features:
 - Pin (📌) — anchor to top, sorted above unpinned
 - Tick (✅) — cross-silo done marker
@@ -57,7 +59,7 @@ Configurable button bar. Tokens: cat tabs, search, silo controls, formatting, cl
 
 **Code fences:** Monospace (Consolas default) + single-click copy button + fold to collapse.
 
-**Collapsible images:** `![alt](url)` → compact 150px button. Ctrl+Click opens, Ctrl+RClick opens folder. Double-click the pill renames the file on disk and the link together (one undo step).
+**Collapsible images:** `![alt](url)` → compact 150px button. Ctrl+Click opens, Ctrl+RClick opens folder. Double-click the pill renames the file on disk and the link together (one undo step). Paste style configurable (pill/link/path, T-724).
 
 **Interactive checkboxes:** Click `- [ ]` toggles to `- [x]`.
 
@@ -85,7 +87,8 @@ Pure-text markdown table. Tab/Shift+Tab walk cells. Tab off last cell grows row.
 
 | Dialog | Purpose |
 |---|---|
-| `Settings (Alt+`)` | Theme picker, hotkey rebind, sound, scale, toolbar reorder |
+| `Settings (Alt+`)` | Theme picker, hotkey rebind, sound, scale, toolbar reorder, silo tabs mode, image paste style, toolbar position |
+| `Sound Settings` | Per-event sound controls — enabled/file/volume/preview |
 | `Snippet Manager (Ctrl+S)` | Edit F1-F10 snippet names + content |
 | `Timer Dialog (Ctrl+Shift+T)` | Pomodoro + countdown timer setup |
 | `Queue Master (Alt+Shift+C)` | Watcher queue overview per silo |

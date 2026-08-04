@@ -127,6 +127,16 @@ Ctrl+E header insertion. Configurable: rule line, gap, bullet, alignment, timest
 
 ---
 
+### `SiloPresets` (`core/silo_presets.py`)
+
+`.md` template loader for the "Fill from preset" feature (T-715).
+
+- `presets_dir()` — resolved path to the shipped `presets/` data dir (exe or src)
+- `label_for(filename)` — `03_Bullet list.md` → `Bullet list` (leading `NN_` stripped, underscores to spaces)
+- `load_presets(force=False)` — ordered `[(label, text)]` list; missing/unreadable folder yields `[]`
+
+---
+
 ### `Watcher Engine Modules` (`core/watcher/`)
 
 | Module | Role |

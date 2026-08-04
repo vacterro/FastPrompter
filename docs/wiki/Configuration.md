@@ -45,6 +45,7 @@ Config lives in `settings` table key-value pairs. No INI file. All hot-reload on
 | `show_token_count` | bool | False | Token estimate (pill count) (T-614) |
 | `sync_mode` | string | Off | One-way silo sync to disk: Off/Silo/Hierarchy (T-591) |
 | `window_presets_enabled` | bool | True | Enable Ctrl+Q window presets page (T-608) |
+| `image_paste_style` | string | `pill` | Pasted image markup: `pill` (clickable chip), `link` (markdown link), `path` (raw path) (T-724) |
 | **Sound** | | | |
 | `sound_enabled` | bool | True | Master sound toggle |
 | `sound_ui` | bool | True | UI click sound effects |
@@ -78,6 +79,8 @@ Config lives in `settings` table key-value pairs. No INI file. All hot-reload on
 | `window_presets` | JSON | [] | User-saved window geometry presets |
 | `silo_gap_height` | int | 12 | Sidebar gap spacer height in px |
 | `silo_ticks_enabled` | bool | True | Show tick buttons on silos |
+| `silo_tabs_mode` | string | `sidebar` | Silo layout: `sidebar` (left column) or `tabs` (horizontal bar above editor) (T-718) |
+| `toolbar_position` | string | `top` | Toolbar placement: `top` (above editor) or `bottom` (below splitter) (T-719) |
 | `silo_view_state_all` | JSON dict | `{}` | Per-silo cursor/scroll/fold state |
 
 ## File System Layout

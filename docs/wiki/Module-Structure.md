@@ -20,6 +20,7 @@ src/fastprompter/
 │   ├── limits.py               # Agent reset-limit scanner + timer creation
 │   ├── logging.py              # Logger setup, rotating file handler
 │   ├── pomodoro.py             # Pomodoro state machine (work/break)
+│   ├── silo_presets.py         # .md template loader — Fill from preset (T-715)
 │   ├── sound_manager.py        # Audio playback (clicks, typewriter, alarms)
 │   ├── state.py                # SQLite DB interface + state management
 │   ├── timers.py               # Countdown timer model, due detection
@@ -76,6 +77,7 @@ src/fastprompter/
 │   ├── silo_region.py          # Silo list region: drag, gaps, multi-select
 │   ├── snippet_ops_mixin.py    # Silo ops (trash, move, duplicate, clear)
 │   ├── snippet_panel.py        # Silo tree + F1-F10 snippet buttons
+│   ├── sound_settings_dialog.py # Per-event sound controls (enabled/file/volume)
 │   ├── theme_mixin.py          # Vintage theme styling + QSS generator
 │   ├── timer_dialog.py         # Pomodoro + alarm timer setup dialog
 │   ├── timer_toast.py          # Floating notification toast widget
@@ -87,6 +89,9 @@ src/fastprompter/
 │   ├── window_mixin.py         # Frameless move, snap, borderless controls
 │   ├── window_presets_dialog.py # User-defined window position presets
 │   └── zen_desktop.py          # 3-stage Zen/Solo desktop sweep (Ctrl+D)
+│
+├── presets/                    # .md silo templates, shipped as data dir (T-715)
+│   └── 01_TODO.md ... 11_Prompt.md   # filename orders + names the menu entry
 │
 ├── theme/                      # Theme presets
 │   └── themes.py               # 9 built-in color themes + custom engine
@@ -129,8 +134,8 @@ src/fastprompter/
 
 ## Module Count Summary
 
-- **core/**: 16 modules + i18n/ (33 locales + 5 infra files = 38) + watcher/ (10 modules)
-- **ui/**: 44 modules
+- **core/**: 17 modules + i18n/ (33 locales + 5 infra files = 38) + watcher/ (10 modules)
+- **ui/**: 45 modules
 - **theme/**: 1 module
 - **utils/**: 4 modules
-- **Total**: 115 `.py` files under `src/fastprompter/` (includes `main.py` + `__init__.py`)
+- **Total**: 117 `.py` files under `src/fastprompter/` (includes `main.py` + `__init__.py`; + `presets/` ships as a non-code data dir)

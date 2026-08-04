@@ -27,6 +27,9 @@ Independent markdown canvas slots. 100 per project. Auto-numbered 00-99.
 - Alt+↑/↓ — walk silos
 - Ctrl+N — new empty silo (appends at bottom)
 - Right-click NEW — append at bottom
+- **Middle-click NEW** — open the template list and create the silo pre-filled with the chosen preset (T-715)
+
+**Fill from preset (T-715):** right-click any silo → **▤ Fill from preset** replaces its text with a ready-made template — TODO, thoughts, bullet list, checklist, daily log, meeting notes, bug report, decision, kanban, table, prompt. One undo step (Ctrl+Z takes the whole template back). Templates are plain `.md` files shipped beside the EXE in `presets/`; drop your own in and they appear without a code change.
 
 **Per-silo actions (hover):**
 - 📌 **Pin** — locks silo to top of list (sorted above unpinned)
@@ -40,17 +43,21 @@ Independent markdown canvas slots. 100 per project. Auto-numbered 00-99.
 
 **Recency heatmap:** Recently edited silos get warm background tint. Configurable via Settings → Silos.
 
-### 4. Sidebar Gaps
+### 4. Silo Layout: Sidebar or Horizontal Tabs (T-718)
+
+Settings → Silo list → **Silo mode**. `Sidebar` is the usual column down the left. `Horizontal tabs` puts a strip of tabs above the editor; a child silo has no room on the bar, so children move into the parent's right-click menu (Children submenu). Tabs drag/reorder exactly like sidebar entries, and the saved order is what changes. Also in Settings → Layout: **Toolbar position** (`top`/`bottom`) moves the whole header toolbar above or below the editor (T-719).
+
+### 5. Sidebar Gaps
 
 User-defined spacer bars in silo list. Help organise silos into groups. Ctrl+drag a gap to re-park it elsewhere. Settings → Silos → Gap height controls thickness.
 
-### 5. Multi-Select Silos
+### 6. Multi-Select Silos
 
 - Shift+click — range select
 - Ctrl+click — toggle selection
 - Right-click selection — batch Save, Delete, Clear (deletes high-index-first to avoid slot shift issues)
 
-### 6. Snippet Macros (F1-F10)
+### 7. Snippet Macros (F1-F10)
 
 10 quick-paste slots per project. Bound to F1-F10 or Ctrl+Shift+1-9.
 
@@ -58,7 +65,7 @@ User-defined spacer bars in silo list. Help organise silos into groups. Ctrl+dra
 - Right-click F-button — rename inline
 - Supports variable placeholders for prompt templates
 
-### 7. Markdown Editor
+### 8. Markdown Editor
 
 **VaultTextEdit** — extended QPlainTextEdit.
 
@@ -82,12 +89,15 @@ User-defined spacer bars in silo list. Help organise silos into groups. Ctrl+dra
 - Ctrl+MiddleButton — delete line under cursor (smart reflow: ordered lists renumber)
 - Alt+Z — toggle line numbers
 - Alt+Backspace — word delete
+- **Ctrl+Z / Ctrl+Y** — smart undo/redo spanning text edits AND silo moves in one ordered timeline
 
-### 8. Hide Markup Mode (T-603)
+**Pasted images (T-724):** Settings → Lines → **Pasted image** chooses what a pasted image becomes: `Pill (clickable)` (default — the golden chip, double-click renames), `Markdown link` (`[name](url)`, plain link text), or `Plain path` (raw path).
+
+### 9. Hide Markup Mode (T-603)
 
 Toggle in Settings → Editor → Hide Markup. Conceals **bold**, *italic*, ~~strike~~ and `code` markers so text reads clean. Caret block keeps its markers so editing stays possible. Only repaints the 2 blocks around caret movement.
 
-### 9. Kanban Board
+### 10. Kanban Board
 
 Insert Kanban creates a markdown kanban board (pure text, survives save/db round-trip).
 
@@ -96,11 +106,11 @@ Insert Kanban creates a markdown kanban board (pure text, survives save/db round
 - Enter on empty board line — new card row
 - Alt+click — tick checkbox on card
 
-### 10. Table Builder
+### 11. Table Builder
 
 Insert Table creates a markdown table. Tab/Shift+Tab walks cells. Tab off last cell grows a new row. Enter adds row (not split cell).
 
-### 11. File Container
+### 12. File Container
 
 Each silo gets `data/silo_files/<project>/<slot_idx>/` on disk.
 
@@ -110,7 +120,7 @@ Each silo gets `data/silo_files/<project>/<slot_idx>/` on disk.
 - Image preview + open with default app
 - Ctrl+click 📁 — export silo text as .md
 
-### 12. Watcher Engine (Alt+C)
+### 13. Watcher Engine (Alt+C)
 
 Prompt drainage + auto-send to target app.
 
@@ -122,47 +132,47 @@ Prompt drainage + auto-send to target app.
 
 See [Watcher Engine Architecture](Watcher-Engine-Architecture) for full details.
 
-### 13. Hashtag System
+### 14. Hashtag System
 
 `#tag` in silo text indexed for cross-silo search. Alt+Shift+T opens Hashtag Dialog — search by tag, see all matching silos, click to jump.
 
-### 14. Timers & Pomodoro
+### 15. Timers & Pomodoro
 
 **Countdown timers:** Set via Ctrl+Shift+T or timer button. Configurable name, duration, sound, volume, color urgency. Timer toast notification with snooze (Win95 3D bevels).
 
 **Pomodoro:** Work/break state machine. Configurable intervals. Tray notification + sound on phase end. Timer label beside clock shows remaining time + urgency color.
 
-### 15. Zen Mode (Ctrl+D)
+### 16. Zen Mode (Ctrl+D)
 
 3-stage cycle:
 1. **Zen** — hide sidebar, snippet bar, file container, status bar, frame borders. Only editor visible.
 2. **Solo** — minimise all other desktop windows. Editor stays.
 3. **Back** — restore desktop + normal layout.
 
-### 16. Window Snap (Ctrl+Q)
+### 17. Window Snap (Ctrl+Q)
 
 Cycle through: Top-Left, Top-Right, Bottom-Left, Bottom-Right, Center, Full, Cursor Position. FancyZone overlay shows 7 visual zones on click. Window presets page saves up to 10 user-defined geometries (as screen fractions — survive monitor changes).
 
-### 17. Finder & Archive
+### 18. Finder & Archive
 
 - **Archive silo** — move completed silo to archive (keeps text, removes from active list)
 - **Archive tab** — browse archived silos per project
 - **Trash dialog** — browse/restore soft-deleted silos and files
 - **Silo sync to disk** (T-591) — one-way .md export to external folder per project
 
-### 18. Number-Box Mode (T-607)
+### 19. Number-Box Mode (T-607)
 
 Settings → Window → Layout → Number boxes per row. Replaces project combo with numbered buttons. Right-click for add/rename/delete. Wheel still switches. Project cap 100.
 
-### 19. Toolbar Customize
+### 20. Toolbar Customize
 
 Settings → Customize Toolbar. Drag buttons to reorder. Visible gap widgets show where a button lands. Reset restores default order.
 
-### 20. Overflow Menu
+### 21. Overflow Menu
 
 When header < 700px: hidden buttons collected in » popup. Every action still reachable — formatting, navigation, silo ops, tools.
 
-### 21. Editor Mouse & Line Drag
+### 22. Editor Mouse & Line Drag
 
 **Ctrl+Shift+drag** — move the line under the pointer (or the whole selected block) to the drop indicator. Rich formatting survives the trip — bold, checkboxes and image pills travel as a document fragment, not plain text.
 
@@ -170,7 +180,7 @@ When header < 700px: hidden buttons collected in » popup. Every action still re
 
 **Double-click an image pill** — rename the file on disk and the markdown link together, one undo step.
 
-### 22. Backup
+### 23. Backup
 
 **Layers:**
 1. SQLite WAL — crash-safe writes (synchronous=NORMAL)
