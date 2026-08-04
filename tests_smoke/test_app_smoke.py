@@ -11910,3 +11910,64 @@ def test_paste_style_setting_is_in_the_settings_panel(win):
     combo = getattr(win, "cb_img_paste", None)
     assert combo is not None, "no control for the paste-style setting"
     assert [combo.itemData(i) for i in range(combo.count())] == ["pill", "link", "path"]
+
+
+# --- T-718: silos as a horizontal tab strip --------------------------------
+
+def test_silo_tabs_mode_moves_the_strip_and_flips_the_axis(win):
+    """The SAME widgets move hosts — nothing is rebuilt — so every refresh
+    path and the whole drag machinery keep working in both modes."""
+    from PyQt6.QtWidgets import QHBoxLayout, QVBoxLayout
+
+    saved = win.data.get("silo_tabs_mode", "sidebar")
+    try:
+        win.apply_silo_tabs_mode(True)
+        assert isinstance(win.silos_widget.layout, QHBoxLayout)
+        assert win.silos_widget.horizontal is True
+        assert win.center_layout.indexOf(win.silos_section) == 0, "strip not above the editor"
+        assert win.left_panel_layout.indexOf(win.silos_section) == -1
+        assert win.btn_silo_up.text() == "◀" and win.btn_silo_down.text() == "▶"
+
+        win.apply_silo_tabs_mode(False)
+        assert isinstance(win.silos_widget.layout, QVBoxLayout)
+        assert win.silos_widget.horizontal is False
+        assert win.center_layout.indexOf(win.silos_section) == -1
+        assert win.left_panel_layout.indexOf(win.silos_section) >= 0
+        assert win.btn_silo_up.text() == "▲" and win.btn_silo_down.text() == "▼"
+    finally:
+        win.apply_silo_tabs_mode(saved == "tabs")
+
+
+def test_switching_mode_keeps_every_silo_button(win):
+    saved = win.data.get("silo_tabs_mode", "sidebar")
+    before = list(win.silo_buttons)
+    try:
+        win.apply_silo_tabs_mode(True)
+        in_layout = [win.silos_widget.layout.itemAt(i).widget()
+                     for i in range(win.silos_widget.layout.count())]
+        for btn in before:
+            assert btn in in_layout, "a silo button was dropped by the axis swap"
+    finally:
+        win.apply_silo_tabs_mode(saved == "tabs")
+
+
+def test_drop_maths_follows_the_axis(win):
+    """T-702's rule, one implementation, both orientations: the pointer in a
+    button's leading band inserts before it, trailing band after it."""
+    from PyQt6.QtCore import QPoint
+
+    w = win.silos_widget
+    saved = win.data.get("silo_tabs_mode", "sidebar")
+    try:
+        win.apply_silo_tabs_mode(True)
+        btns = w._visible_buttons()
+        if len(btns) < 2:
+            import pytest as _pytest
+            _pytest.skip("needs at least two visible silos")
+        g = btns[0].geometry()
+        assert w._drop_target_at(QPoint(g.left() + 1, g.center().y())) == ("move", 0)
+        assert w._drop_target_at(QPoint(g.right() - 1, g.center().y())) == ("move", 1)
+        mode, target = w._drop_target_at(QPoint(g.center().x(), g.center().y()))
+        assert mode == "swap" and target is btns[0]
+    finally:
+        win.apply_silo_tabs_mode(saved == "tabs")

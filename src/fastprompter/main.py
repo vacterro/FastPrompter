@@ -31,6 +31,7 @@ from PyQt6.QtGui import (
 )
 from PyQt6.QtWidgets import (
     QApplication,
+    QBoxLayout,
     QCheckBox,
     QComboBox,
     QFileDialog,
@@ -3397,6 +3398,23 @@ class FastPrompter(
                 {"image_paste_style": self.cb_img_paste.itemData(i) or "pill"})
                 or self.mark_dirty()))
 
+        # Silos down the side, or across the top as tabs.
+        self.lbl_silo_mode = QLabel(tr("Silos:", self._current_lang))
+        self.cb_silo_mode = QComboBox()
+        self.cb_silo_mode.addItem(tr("Sidebar", self._current_lang), "sidebar")
+        self.cb_silo_mode.addItem(tr("Horizontal tabs", self._current_lang), "tabs")
+        self.cb_silo_mode.setToolTip(tr(
+            "Sidebar: the usual column down the left\n"
+            "Horizontal tabs: a strip above the editor — child silos have no\n"
+            "room on a bar, so they move into the parent's right-click menu",
+            self._current_lang))
+        _idx = self.cb_silo_mode.findData(self.data.get("silo_tabs_mode", "sidebar"))
+        if _idx >= 0:
+            self.cb_silo_mode.setCurrentIndex(_idx)
+        self.cb_silo_mode.currentIndexChanged.connect(
+            lambda i: self.apply_silo_tabs_mode(
+                (self.cb_silo_mode.itemData(i) or "sidebar") == "tabs"))
+
         self.cb_double_line = create_footer_cb(
             "⇕ Double-Space Lists",
             "With Auto-Bullet on, Enter after a list item adds a blank\n"
@@ -4081,6 +4099,7 @@ class FastPrompter(
             _settings_group("Silo list", [
                 self.cb_silo_home, self.cb_silo_pinned_gap, self.cb_silo_ticks,
                 self.cb_snippet_arrows, self.cb_hide_shortkeys, gap_row,
+                self.lbl_silo_mode, self.cb_silo_mode,
             ]),
             _settings_group("Sound", [
                 self.cb_sound, self.cb_typewriter, vol_row,
@@ -4441,6 +4460,11 @@ class FastPrompter(
 
         self._trim_archive()
         self.refresh_snippets_panel()
+        # Sidebar or tab strip is part of the layout the user left behind,
+        # and it moves silos_section, so it has to run before the refresh
+        # that measures the panel it now lives in.
+        if self.silo_tabs_mode():
+            self.apply_silo_tabs_mode(True)
         self.refresh_temp_presets()
         QTimer.singleShot(0, lambda: not sip.isdeleted(self) and self._deferred_silo_refresh())
         # a files sidebar left open is part of the layout the user left
@@ -6672,6 +6696,46 @@ class FastPrompter(
         finally:
             self.ignore_focus_loss = False
 
+    def silo_tabs_mode(self):
+        return self.data.get("silo_tabs_mode", "sidebar") == "tabs"
+
+    def apply_silo_tabs_mode(self, tabs=None):
+        """Silos as the left sidebar, or as a horizontal tab strip.
+
+        The SAME widgets move between two hosts: nothing is rebuilt, so the
+        drag machinery, the page buttons and every refresh path keep working
+        in both modes — `SiloDropWidget.set_horizontal` only swaps the axis.
+        Children have no room on a bar, so in tab mode they are reached
+        through the parent's context menu (see `show_temp_menu`).
+        """
+        if tabs is None:
+            tabs = self.silo_tabs_mode()
+        tabs = bool(tabs)
+        self.data["silo_tabs_mode"] = "tabs" if tabs else "sidebar"
+        section = getattr(self, "silos_section", None)
+        if section is None:
+            return
+        was_visible = section.isVisible()
+        self.silos_widget.set_horizontal(tabs)
+        # The page buttons are the same buttons, pointing a different way.
+        self.btn_silo_up.setText("◀" if tabs else "▲")
+        self.btn_silo_down.setText("▶" if tabs else "▼")
+        if tabs:
+            self.left_panel_layout.removeWidget(section)
+            self.silos_section_layout.setDirection(QBoxLayout.Direction.LeftToRight)
+            section.setMaximumHeight(64)
+            self.center_layout.insertWidget(0, section)
+        else:
+            self.center_layout.removeWidget(section)
+            self.silos_section_layout.setDirection(QBoxLayout.Direction.TopToBottom)
+            section.setMaximumHeight(16777215)
+            self.left_panel_layout.addWidget(section, 1)
+        # A tab strip that is not on screen is not a tab strip; in sidebar
+        # mode keep whatever visibility the panel already had.
+        section.setVisible(True if tabs else was_visible)
+        self.refresh_temp_presets()
+        self.mark_dirty()
+
     def _position_archive_overlay(self):
         if not hasattr(self, "archive_section") or not hasattr(self, "left_panel"):
             return
@@ -8580,6 +8644,19 @@ class FastPrompter(
                 menu.addAction(
                     "▾ Expand Children" if collapsed_now else f"▸ Collapse Children ({len(kids)})",
                     lambda i=idx: self.toggle_silo_collapse(i))
+                # In tab mode a child has nowhere to render — the bar shows
+                # top-level silos only — so this menu IS the way to reach it.
+                # Harmless in sidebar mode: it is a second route, not the only.
+                presets = self.data.get("temp_presets", [])
+                kid_menu = menu.addMenu(
+                    tr("↳ Children", getattr(self, "_current_lang", "EN"))
+                    + f" ({len(kids)})")
+                for kid in kids:
+                    if not (0 <= kid < len(presets)):
+                        continue
+                    raw = (presets[kid] or "").replace("\n", " ").strip()
+                    label = f"{kid + 1}: {raw[:40]}" if raw else f"{kid + 1}"
+                    kid_menu.addAction(label, lambda k=kid: self._switch_to_slot(k))
             if self.silo_parent_of(idx) is not None:
                 menu.addAction(tr("⬆ Un-nest from Parent", getattr(self, "_current_lang", "EN")),
                                lambda i=idx: (self.unnest_silo(i), self.refresh_temp_presets()))

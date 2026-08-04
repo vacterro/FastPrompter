@@ -971,6 +971,11 @@
     "Pill (clickable)": "Pill (clickable)",
     "Markdown link": "Markdown link",
     "Plain path": "Plain path",
-    "Pill: ![](...) — collapses to a clickable chip\nMarkdown link: [name](...) — plain link text\nPlain path: the file path on its own": "Pill: ![](...) — collapses to a clickable chip\nMarkdown link: [name](...) — plain link text\nPlain path: the file path on its own"
+    "Pill: ![](...) — collapses to a clickable chip\nMarkdown link: [name](...) — plain link text\nPlain path: the file path on its own": "Pill: ![](...) — collapses to a clickable chip\nMarkdown link: [name](...) — plain link text\nPlain path: the file path on its own",
+    "Silos:": "Silos:",
+    "Sidebar": "Sidebar",
+    "Horizontal tabs": "Horizontal tabs",
+    "↳ Children": "↳ Children",
+    "Sidebar: the usual column down the left\nHorizontal tabs: a strip above the editor — child silos have no\nroom on a bar, so they move into the parent's right-click menu": "Sidebar: the usual column down the left\nHorizontal tabs: a strip above the editor — child silos have no\nroom on a bar, so they move into the parent's right-click menu"
   }
 }

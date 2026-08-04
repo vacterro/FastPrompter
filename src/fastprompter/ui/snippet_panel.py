@@ -1088,10 +1088,48 @@ class SiloDropWidget(QWidget):
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.main_win = main_win
         self.is_archive = is_archive
+        self.horizontal = False
         self.layout = QVBoxLayout(self)
         self.layout.setContentsMargins(0, 0, 0, 0)
         self.layout.setSpacing(2)
         self.layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+    def set_horizontal(self, horizontal):
+        """Lay the silos out as a ROW of tabs instead of a column.
+
+        Same button widgets, same order, same drag machinery — only the axis
+        changes, so nothing downstream needs to know which mode it is in.
+        """
+        horizontal = bool(horizontal)
+        want = QHBoxLayout if horizontal else QVBoxLayout
+        if isinstance(self.layout, want):
+            self.horizontal = horizontal
+            return
+        old = self.layout
+        widgets = [old.itemAt(i).widget() for i in range(old.count())]
+        widgets = [w for w in widgets if w is not None]
+        for w in widgets:
+            old.removeWidget(w)
+        # A widget can own only one layout, and Qt refuses to attach a second
+        # while the first is installed. Handing the old one to a throwaway
+        # parent is the documented way to detach it.
+        QWidget().setLayout(old)
+        new = want()
+        new.setContentsMargins(0, 0, 0, 0)
+        new.setSpacing(2)
+        new.setAlignment(Qt.AlignmentFlag.AlignLeft if horizontal
+                         else Qt.AlignmentFlag.AlignTop)
+        for w in widgets:
+            new.addWidget(w)
+        self.setLayout(new)
+        self.layout = new
+        self.horizontal = horizontal
+
+    def _axis(self, rect):
+        """(near edge, far edge, extent) along the layout's own axis."""
+        if self.horizontal:
+            return rect.left(), rect.right(), rect.width()
+        return rect.top(), rect.bottom(), rect.height()
 
     def dragEnterEvent(self, e):
         if e.mimeData().hasText() and (e.mimeData().text().startswith("silo:") or e.mimeData().text().startswith("arcsilo:")):
@@ -1127,14 +1165,19 @@ class SiloDropWidget(QWidget):
         band (gap_index counts insertion boundaries among visible buttons).
         """
         btns = self._visible_buttons()
+        # One rule, both axes: in tab mode "above/below" is "left/right" and
+        # the bands are measured across the button's width instead of its
+        # height. Duplicating the maths per orientation is how the two
+        # surfaces in T-702 drifted apart in the first place.
+        coord = pos.x() if self.horizontal else pos.y()
         for i, btn in enumerate(btns):
-            g = btn.geometry()
-            if pos.y() <= g.bottom():
-                nest = max(2, int(g.height() * self._NEST_BAND))
-                edge = (g.height() - nest) / 2.0
-                if pos.y() < g.top() + edge:
+            near, far, extent = self._axis(btn.geometry())
+            if coord <= far:
+                nest = max(2, int(extent * self._NEST_BAND))
+                edge = (extent - nest) / 2.0
+                if coord < near + edge:
                     return "move", i
-                if pos.y() > g.bottom() - edge:
+                if coord > far - edge:
                     return "move", i + 1
                 return "swap", btn
         return "move", len(btns)
@@ -1175,16 +1218,21 @@ class SiloDropWidget(QWidget):
                 # Highlight the hovered silo: drop here swaps places
                 painter.drawRect(target.adjusted(1, 1, -2, -2))
             else:
-                # Insertion line between silos: drop here reorders
+                # Insertion line between silos: drop here reorders. Same
+                # answer the drop itself will use, drawn across whichever
+                # axis the layout runs on.
                 visible_btns = self._visible_buttons()
-                y = 0
+                at = 0
                 if target == 0:
-                    y = visible_btns[0].geometry().top() - 1 if visible_btns else 0
+                    at = self._axis(visible_btns[0].geometry())[0] - 1 if visible_btns else 0
                 elif target < len(visible_btns):
-                    y = visible_btns[target].geometry().top() - 1
+                    at = self._axis(visible_btns[target].geometry())[0] - 1
                 elif visible_btns:
-                    y = visible_btns[-1].geometry().bottom() + 1
-                painter.drawLine(0, y, self.width(), y)
+                    at = self._axis(visible_btns[-1].geometry())[1] + 1
+                if self.horizontal:
+                    painter.drawLine(at, 0, at, self.height())
+                else:
+                    painter.drawLine(0, at, self.width(), at)
         finally:
             painter.end()
 

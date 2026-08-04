@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.8.12 — 2026-08-04
+
+- **Silos as horizontal tabs (T-718).** New setting under Settings → Silo list: **Silos — Sidebar** (the usual column) or **Horizontal tabs** (a strip above the editor). It is the same strip either way — the silo buttons move hosts rather than being rebuilt — so paging, drag-reorder and every refresh work identically in both modes, and dragging a tab uses the same rule as dragging a sidebar entry: the leading half of a tab drops before it, the trailing half after it, the centre nests. A child silo has no room on a bar, so it moves into the parent's right-click menu, under **↳ Children** — which also works in sidebar mode, as a second route rather than the only one.
+
 ## v0.8.11 — 2026-08-04
 
 - **Hotkeys work on any keyboard layout (T-723).** "Alt+~ does nothing on Estonian" was not one key — it was the entire shifted symbol row. `~ ! @ # $ % ^ & * ( ) _ + { } | : " < > ?` were all treated as layout-dependent and none of them had a fallback, so on any layout that cannot type the character directly (Estonian cannot type `~` — it is a dead key there) the hotkey resolved to a virtual key that does not exist and was never registered at all. A shifted symbol is now resolved as the physical key it shares with its unshifted partner, which is what a global hotkey means in the first place: `Alt+~` is the key left of 1, whatever your layout prints on it.
