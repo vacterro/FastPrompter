@@ -2520,6 +2520,12 @@ class FastPrompter(
         self.apply_button_size(self.btn_new, 24)
         self.btn_new.setMinimumWidth(80)
         self.btn_new.clicked.connect(self.select_empty_silo)
+        # Middle-click is a shortcut, not a second way to do the same thing:
+        # it skips the empty silo and offers the templates straight away.
+        self.btn_new.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.btn_new.customContextMenuRequested.connect(
+            lambda p: self.show_new_silo_presets(self.btn_new.mapToGlobal(p)))
+        self.btn_new.installEventFilter(self)
         # right-click creates from the BOTTOM instead of the top (T-598)
         self.btn_new.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.btn_new.customContextMenuRequested.connect(
@@ -6705,6 +6711,49 @@ class FastPrompter(
         finally:
             self.ignore_focus_loss = False
 
+    def fill_silo_from_preset(self, idx, text):
+        """Drop a template into silo `idx`, as ONE undoable action."""
+        self.add_data_undo_state("Silo preset")
+        presets = self.data.get("temp_presets", [])
+        if not (0 <= idx < len(presets)):
+            return
+        presets[idx] = text
+        if 0 <= idx < len(self.silo_docs):
+            self._set_plain_text_clean(self.silo_docs[idx], text)
+        if idx == self.active_temp_slot and not getattr(self, "active_is_archive", False):
+            self._set_plain_text_clean(self.text_area, text)
+        self.mark_dirty()
+        self.refresh_temp_presets()
+
+    def _add_silo_preset_actions(self, menu, on_pick):
+        """Fill `menu` with one action per template. Returns how many."""
+        from fastprompter.core.silo_presets import load_presets
+
+        entries = load_presets()
+        for label, text in entries:
+            menu.addAction(label, lambda t=text: on_pick(t))
+        return len(entries)
+
+    def show_new_silo_presets(self, pos=None):
+        """Middle-click on NEW: pick a template and create the silo with it."""
+        from PyQt6.QtGui import QCursor
+
+        menu = QMenu(self)
+        menu.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        menu.setFont(QApplication.font())
+        if not self._add_silo_preset_actions(menu, self._new_silo_with_text):
+            return
+        # popup(), not exec(): this is raised from a mouse-release handler, and
+        # exec() spins its own event loop that BLOCKS the caller until the menu
+        # closes. Measured the hard way — a suite run stopped dead at 79% with
+        # zero CPU for fifteen minutes because a test reached this method.
+        self._new_preset_menu = menu          # keep it alive; WA_DeleteOnClose frees it
+        menu.popup(pos if pos is not None else QCursor.pos())
+
+    def _new_silo_with_text(self, text):
+        self.select_empty_silo()
+        self.fill_silo_from_preset(self.active_temp_slot, text)
+
     def toolbar_at_bottom(self):
         return self.data.get("toolbar_position", "top") == "bottom"
 
@@ -6954,6 +7003,12 @@ class FastPrompter(
     def eventFilter(self, obj, event):
         if sip.isdeleted(self) or (obj and sip.isdeleted(obj)):
             return False
+
+        if (obj is getattr(self, "btn_new", None)
+                and event.type() == QEvent.Type.MouseButtonRelease
+                and event.button() == Qt.MouseButton.MiddleButton):
+            self.show_new_silo_presets(event.globalPosition().toPoint())
+            return True
 
         if obj == getattr(self, "silos_widget", None) and event.type() == QEvent.Type.Resize:
             self._update_visible_silo_count()
@@ -8700,6 +8755,11 @@ class FastPrompter(
             menu.addAction(
                 tr("↳ New Child Silo", getattr(self, "_current_lang", "EN")),
                 lambda i=idx: self.new_child_silo(i))
+            preset_menu = menu.addMenu(
+                tr("▤ Fill from preset", getattr(self, "_current_lang", "EN")))
+            if not self._add_silo_preset_actions(
+                    preset_menu, lambda t, i=idx: self.fill_silo_from_preset(i, t)):
+                preset_menu.setEnabled(False)
             gaps_now = self.data.get("silo_gaps") or []
             menu.addAction(
                 tr("␣ Remove gap below", getattr(self, "_current_lang", "EN"))

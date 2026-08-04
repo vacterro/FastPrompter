@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.8.14 — 2026-08-04
+
+- **Silo presets (T-715).** Eleven ready-made templates — TODO, thoughts, a ten-item bullet list, a ten-item checklist, daily log, meeting notes, bug report, decision record, kanban, table, prompt scaffold. Reach them from a silo's right-click menu under **▤ Fill from preset**, or by **middle-clicking NEW**, which skips the empty silo and creates one already filled. Filling is a single undo step, so Ctrl+Z takes the whole template back at once. They are `.md` files in the app's `presets/` folder rather than a list inside the code: drop your own `.md` in beside them and it appears in the menu, named after the file. A leading number orders it (`03_Bullet list.md` shows as "Bullet list").
+
 ## v0.8.13 — 2026-08-04
 
 - **Toolbar at the bottom (T-719).** New checkbox under Settings → Layout: **⬇ Toolbar at Bottom** puts the toolbar under the editor instead of above it. Same buttons, same order, same drag-to-reorder — the strip moves within the window's own layout rather than being rebuilt, so nothing it carries is affected. The choice survives a restart.

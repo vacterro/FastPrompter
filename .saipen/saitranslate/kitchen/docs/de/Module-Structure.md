@@ -10,6 +10,7 @@ src/fastprompter/
 ├── core/                       # Backend-Logik, Zustand, Subsysteme
 │   ├── config.py               # Theme-Farbextraktoren, Tray-Icon-Generatoren
 │   ├── ctrlw.py                # Ctrl+W / Alt+W-Trenner-Einfüge-Engine
+│   ├── default_profile.py      # Auslieferungs-Defaults-Map, in state.reset_data() gemerged
 │   ├── duration.py             # Zeit-Parsing, menschenlesbare Dauerformatierung
 │   ├── hashtags.py             # Hashtag-Extraktion + Siloübergreifende Indizierung
 │   ├── header.py               # Ctrl+E-Header-Formatierungs-Kern
@@ -88,7 +89,7 @@ src/fastprompter/
 │   └── zen_desktop.py          # 3-stufiger Zen/Solo-Desktop-Sweep (Ctrl+D)
 │
 ├── theme/                      # Theme-Presets
-│   └── themes.py               # 6 Retro-Win95-Farbthemen-Definitionen
+│   └── themes.py               # 9 integrierte Farbthemen + Custom-Engine
 │
 └── utils/                      # Low-Level-Helfer
     ├── fonts.py                # System-Font-Loader, Fallback-Auflösung, no-AA
@@ -113,7 +114,7 @@ src/fastprompter/
 | `ui.silo_kanban` | Reintext-Kanban-Board (Alt+Pfeile bewegen Karten, Enter neue Zeile) |
 | `ui.silo_table` | Reintext-Tabellen-Editor (Tab durchläuft Zellen, Enter neue Zeile) |
 | `ui.file_container` | Pro-Silo-Ordner-Schublade, Asset-Vorschau, Templates |
-| `ui.theme_mixin` | 6 Retro-Win95-Themes + Custom-Farb-Engine + QSS-Generator |
+| `ui.theme_mixin` | 9 integrierte Themes + Custom-Farb-Engine + QSS-Generator |
 | `ui.kanban_widget` | Kanban-Board-Ansichts-Widget (silo_kanban-Backend) |
 | `ui.table_widget` | Tabellen-Ansichts-Widget (silo_table-Backend) |
 | `ui.silo_region` | Silo-Listenbereich: Drag, Lücken, Mehrfachauswahl |
@@ -128,8 +129,8 @@ src/fastprompter/
 
 ## Modulzählung-Zusammenfassung
 
-- **core/**: 15 Module + i18n/ (33 Lokale + 5 Infra-Dateien = 38) + watcher/ (10 Module)
+- **core/**: 16 Module + i18n/ (33 Lokale + 5 Infra-Dateien = 38) + watcher/ (10 Module)
 - **ui/**: 44 Module
 - **theme/**: 1 Modul
 - **utils/**: 4 Module
-- **Gesamt**: 112 `.py`-Dateien unter `src/fastprompter/` (einschließlich `main.py` + `__init__.py`)
+- **Gesamt**: 115 `.py`-Dateien unter `src/fastprompter/` (einschließlich `main.py` + `__init__.py`)

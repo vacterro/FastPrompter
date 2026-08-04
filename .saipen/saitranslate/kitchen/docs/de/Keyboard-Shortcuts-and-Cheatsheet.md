@@ -11,8 +11,8 @@ Vollständiger tastaturgesteuerter Betrieb. Layoutunabhängiger VK-Dispatch — 
 | **Global** | **Ctrl+Alt+Shift+Q** | Notfall-Force-Quit | Systemweit |
 | **Fenster** | **Ctrl+D** | Zen/Solo/normal durchlaufen (3-stufig) | Haupt |
 | **Fenster** | **Ctrl+Q** | Snap-Position / Presets durchlaufen | Haupt |
-| **Fenster** | **Alt+S** | Fensterpositionssperre umschalten | Haupt |
-| **Fenster** | **Alt+E** | Immer-im-Vordergrund umschalten | Haupt |
+| **Fenster** | **Alt+E** | Fensterpositionssperre umschalten | Haupt |
+| **Fenster** | **Alt+S** | Immer-im-Vordergrund umschalten | Haupt |
 | **Fenster** | **Alt+D** | Seitenleiste umschalten | Haupt |
 | **Fenster** | **Alt+A** | Hide-on-Focus-Loss umschalten | Haupt |
 | **Fenster** | **Alt+`** | Mini-Einstellungen öffnen | Haupt |
@@ -63,7 +63,7 @@ Vollständiger tastaturgesteuerter Betrieb. Layoutunabhängiger VK-Dispatch — 
 **Alt+X** — Fenster am Cursor umschalten. **Shift+Alt+X** — radiales Pie-Menü (Themes, Skalierung, Werkzeuge). **Ctrl+Alt+Shift+Q** — Prozess beenden.
 
 ### Fensterverwaltung
-**Ctrl+D** — 3-stufig: Zen (nur Minimal-Editor) → Solo (alle anderen Fenster minimieren) → zurück zu normal. **Ctrl+Q** — 7 Snap-Zonen, FancyZone-Picker und Benutzer-Presets durchlaufen. **Alt+S/E/D/A** — Geometrie sperren, oben-anpinnen, Seitenleiste zeigen, Focus-Loss-Ausblenden umschalten.
+**Ctrl+D** — 3-stufig: Zen (nur Minimal-Editor) → Solo (alle anderen Fenster minimieren) → zurück zu normal. **Ctrl+Q** — 7 Snap-Zonen, FancyZone-Picker und Benutzer-Presets durchlaufen. **Alt+E/S/D/A** — Geometrie sperren, oben-anpinnen, Seitenleiste zeigen, Focus-Loss-Ausblenden umschalten.
 
 ### Watcher-Queue
 **Alt+C** — aktuelle Zeile unter dem Caret in Queue. Blockverankert, überlebt Bearbeitungen darüber. **Alt+Shift+C** — Queue Master: Queues aller Silos prüfen/sortieren/leeren.

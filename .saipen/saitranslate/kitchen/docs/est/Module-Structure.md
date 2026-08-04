@@ -10,6 +10,7 @@ src/fastprompter/
 ├── core/                       # Taustloogika, olek, alamsüsteemid
 │   ├── config.py               # Teema värvi eraldajad, salve ikoonide generaatorid
 │   ├── ctrlw.py                # Ctrl+W / Alt+W eraldaja sisestuse mootor
+│   ├── default_profile.py      # Tarnevaikimuste kaart, liidetud state.reset_data()
 │   ├── duration.py             # Aja parsimine, inimloetav kestuse vorming
 │   ├── hashtags.py             # Hashtagi väljavõtt + silode-ülene indekseerimine
 │   ├── header.py               # Ctrl+E päise vormindamise tuum
@@ -88,7 +89,7 @@ src/fastprompter/
 │   └── zen_desktop.py          # 3-astmeline Zen/Solo töölauapühkimine (Ctrl+D)
 │
 ├── theme/                      # Teemapreseendid
-│   └── themes.py               # 6 retro-Win95 värviteema definitsiooni
+│   └── themes.py               # 9 sisseehitatud värviteemat + kohandatud mootor
 │
 └── utils/                      # Madalatasemelised abivahendid
     ├── fonts.py                # Süsteemifondi laadija, fallback-resolver, no-AA
@@ -113,7 +114,7 @@ src/fastprompter/
 | `ui.silo_kanban` | Puhtalt-tekstiline kanban-tahvel (Alt+nooleklahvid liigutavad kaarte, Enter uus rida) |
 | `ui.silo_table` | Puhtalt-tekstiline tabeliredaktor (Tab lahtrite läbikäimine, Enter uus rida) |
 | `ui.file_container` | Silo-põhine kaustasahtel, varade eelvaade, mallid |
-| `ui.theme_mixin` | 6 retro-Win95-teemat + kohandatud värvimootor + QSS generaator |
+| `ui.theme_mixin` | 9 sisseehitatud teemat + kohandatud värvimootor + QSS generaator |
 | `ui.kanban_widget` | Kanban-tahvli vaatevidin (silo_kanban taust) |
 | `ui.table_widget` | Tabeli vaatevidin (silo_table taust) |
 | `ui.silo_region` | Silo loendi piirkond: lohistamine, lüngad, multivalik |
@@ -128,8 +129,8 @@ src/fastprompter/
 
 ## Moodulite arvu kokkuvõte
 
-- **core/**: 15 moodulit + i18n/ (33 lokaalit + 5 infrafaili = 38) + watcher/ (10 moodulit)
+- **core/**: 16 moodulit + i18n/ (33 lokaalit + 5 infrafaili = 38) + watcher/ (10 moodulit)
 - **ui/**: 44 moodulit
 - **theme/**: 1 moodul
 - **utils/**: 4 moodulit
-- **Kokku**: 112 `.py`-faili all `src/fastprompter/` (kaasa arvatud `main.py` + `__init__.py`)
+- **Kokku**: 115 `.py`-faili all `src/fastprompter/` (kaasa arvatud `main.py` + `__init__.py`)

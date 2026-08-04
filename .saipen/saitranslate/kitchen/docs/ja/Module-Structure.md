@@ -10,6 +10,7 @@ src/fastprompter/
 ├── core/                       # バックエンドロジック、状態、サブシステム
 │   ├── config.py               # テーマカラー抽出、トレイアイコン生成
 │   ├── ctrlw.py                # Ctrl+W / Alt+W 区切り挿入エンジン
+│   ├── default_profile.py      # 出荷時デフォルトマップ、state.reset_data() にマージ
 │   ├── duration.py             # 時間パーシング、人間可読な期間書式
 │   ├── hashtags.py             # ハッシュタグ抽出 + サイロ横断インデックス
 │   ├── header.py               # Ctrl+E ヘッダー書式コア
@@ -88,7 +89,7 @@ src/fastprompter/
 │   └── zen_desktop.py          # 3 段階 Zen/ソロデスクトップ掃引 (Ctrl+D)
 │
 ├── theme/                      # テーマプリセット
-│   └── themes.py               # 6 つのレトロ Win95 カラーテーマ定義
+│   └── themes.py               # 9 つの内蔵カラーテーマ + カスタムエンジン
 │
 └── utils/                      # 低レベルヘルパー
     ├── fonts.py                # システムフォントローダー、フォールバック解決、no-AA
@@ -113,7 +114,7 @@ src/fastprompter/
 | `ui.silo_kanban` | プレーンテキストかんばんボード (Alt+矢印でカード移動、Enter で新行) |
 | `ui.silo_table` | プレーンテキストテーブルエディタ (Tab でセル移動、Enter で新行) |
 | `ui.file_container` | サイロごとのフォルダドロワー、アセットプレビュー、テンプレート |
-| `ui.theme_mixin` | 6 つのレトロ Win95 テーマ + カスタムカラーエンジン + QSS ジェネレーター |
+| `ui.theme_mixin` | 9 つの内蔵テーマ + カスタムカラーエンジン + QSS ジェネレーター |
 | `ui.kanban_widget` | かんばんボード表示ウィジェット (silo_kanban バックエンド) |
 | `ui.table_widget` | テーブル表示ウィジェット (silo_table バックエンド) |
 | `ui.silo_region` | サイロリスト領域: ドラッグ、ギャップ、複数選択 |
@@ -128,8 +129,8 @@ src/fastprompter/
 
 ## モジュール数まとめ
 
-- **core/**: 15 モジュール + i18n/ (33 ロケール + インフラ 5 ファイル = 38) + watcher/ (10 モジュール)
+- **core/**: 16 モジュール + i18n/ (33 ロケール + インフラ 5 ファイル = 38) + watcher/ (10 モジュール)
 - **ui/**: 44 モジュール
 - **theme/**: 1 モジュール
 - **utils/**: 4 モジュール
-- **合計**: `src/fastprompter/` 配下に `.py` ファイル 112 個 (`main.py` + `__init__.py` を含む)
+- **合計**: `src/fastprompter/` 配下に `.py` ファイル 115 個 (`main.py` + `__init__.py` を含む)

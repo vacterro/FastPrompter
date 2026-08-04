@@ -54,8 +54,9 @@ QLocalServer auf Named Pipe `FastPrompter_Server_V15`. UUID-Token-Auth über `%T
 WAV-Wiedergabe für UI-Klicks, Schreibmaschinentasten, Timer-Alarme.
 
 **Methoden:**
-- `play_ui_click()`, `play_tick_sound()`, `play_typewriter()`, `play_sound(name)` — Audio dispatch
-- Lautstärke über `sound_volume`-Einstellung (0-10)
+- `play(name)`, `play_click()`, `play_tick()` — Audio-Dispatch nach Ereignis
+- Lautstärke über `sound_volume`-Einstellung (0-10); winsound-Pfad skaliert via `scale_wav_bytes()` / `scaled_wav_path()`
+- `sound_ui` / `sound_typewriter` / ereignisbezogene Flags steuern die Wiedergabe
 
 ---
 

@@ -43,12 +43,13 @@ Bundle: `.saipen/saitranslate/locales/` (JSON, one file per language); docs in `
 | TUR | Turkish | 🇹🇷 | 100.0% |
 | DED | Дед (Angry Grandpa) | 🇷🇺 | 100.0% |
 
-All 33 locales carry the same 943 keys; coverage is COMPUTED against en.json
+All 33 locales carry the same 971 keys; coverage is COMPUTED against en.json
 by `scratch/validate_saitranslate.py`, never read from the stored field.
 Missing keys fall back to English at runtime via the `tr()` engine.
 
 ## Drift log
 
+- 04.08.26 [v0.8.10–v0.8.13 + T-715] T-731 closed: 11 new `tr()` keys wrapped in `main.py`/`editor.py` across v0.8.10–13 (image-paste style ×5 from T-724, silo tab-mode ×5 from T-718, `▤ Fill from preset` from T-715) added to all 32 non-EN locales (943 -> 971). RU/EST/DED hand-translated (Core split); 29 other locales via GoogleTranslator (same pipeline as prior runs) with 72 manual fixes for pass-through labels. Existing translations untouched (0 changed, 0 removed per locale — verified by git diff). Validator PASSED 33/33 @ 971 keys, 0 missing.
 - 02.08.26 [v0.8.8] T-693 closed: `✨ Transform to…`, `📄 Text`, `📊 Table`, `📋 Kanban Board` wrapped in `tr()` in main.py and added to every locale (939 -> 943). Bundle re-injected via `scratch/inject_translations.py`, shipped v0.8.8 (005d776, 99e0414). Validator 0 missing, 33/33 @ 943 keys (E-1160). No pending drift on any surface.
 - 01.08.26 [v0.8.7] bundle INTEGRATED: 33 i18n modules regenerated from these JSON files via `scratch/inject_translations.py` (the one script that does it — future bundle syncs run it, never hand-write modules). 939 keys each, 100% coverage. T-693 tracks 4 hardcoded transform-menu strings (main.py) still missing from the bundle.
 - 01.08 (2): guides added — `GUIDE_EN.md` ("FastPrompter for dummies") translated into `kitchen/guides/GUIDE_{EST,JA,DE}.md` (Core: EST; in-role: JA/DE, no spawnable sub-agent on host). RU sibling `GUIDE_RU.md` is hand-maintained at repo root — per translate.md § 2 carve-out, not re-translated or clobbered.
@@ -73,7 +74,7 @@ Each JSON file:
 
 `kitchen/docs/{ru,est,ja,de}/` — 16 markdown files each, mirroring `docs/wiki/`.
 
-Status 03.08 (ee): all four (ru, est, ja, de) re-synced to the wiki at 42347fe (qqq docs re-sync, 03.08 04:20 — 5 pages changed: saipen_dialog purged, Ctrl+Shift+C = Clear, 3 new mouse-hotkey rows, kanban_widget/table_widget/silo_region, 33 locales, module counts 15/44/112). T-686 closed after the dedicated-instance run; this ee run re-translated the 5 drifted pages in-role (T-688 remains open for the spawn path).
+Status 04.08 (ee): all four (ru, est, ja, de) re-synced to the wiki at HEAD 8199480 (5 pages moved since 42347fe: Configuration — Golden Default/9-theme list, 18pt font, hotkey swap Alt+E/Alt+S, sound_enabled, hr_visual_line/live_preview_conceal/sync_mode/silo_ticks_enabled renames, 33 locales; Module-Structure — default_profile.py, 16 core modules, 115 total, 9 themes; Keyboard — Alt+E lock / Alt+S always-on-top; Core-API — play()/play_click()/play_tick() sound dispatch; Architecture — 9 built-in themes). T-686 closed after the dedicated-instance run; this ee run re-translated the 5 drifted pages in-role (T-688 remains open for the spawn path).
 
 ## Integration
 

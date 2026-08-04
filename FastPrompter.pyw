@@ -14,6 +14,7 @@
 # nuitka-project: --include-qt-plugins=platforms,styles,imageformats
 # nuitka-project: --nofollow-import-to=PyQt6.QtMultimedia
 # nuitka-project: --include-data-dir=src/fastprompter/sound=sound
+# nuitka-project: --include-data-dir=src/fastprompter/presets=presets
 # nuitka-project: --include-data-dir=_res=_res
 
 import sys

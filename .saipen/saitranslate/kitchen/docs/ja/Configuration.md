@@ -17,55 +17,56 @@ SQLite DB: `data/local_data_v15.db` (プロファイル 1) または `data/local
 | キー | 型 | デフォルト | 説明 |
 |---|---|---|---|
 | **テーマと表示** | | | |
-| `theme` | string | `Default` | テーマ: Default、Amber、OLED、Win95、Rose、Vintage Classic、Custom |
+| `theme` | string | `Golden Default` | テーマ: Default、Golden Vintage、Golden Default、Vintage Dark、Vintage Classic、Dark 2 (OLED)、Dracula、Nord、Solarized Dark、Custom |
 | `font_family` | string | `Verdana` | エディタフォント (インストール済みなら `_m1` ビットマップ版に自動解決) |
-| `font_size` | int | 11 | エディタフォントサイズ (pt) |
+| `font_size` | int | 18 | エディタフォントサイズ (pt) |
 | `ui_scale` | float | 0.5 | UI スケーリング (0.5〜1.5) |
-| `button_scale` | float | 1.0 | サイロ + ツールバーボタンサイズ倍率 |
-| `custom_cursors` | bool | False | レトロカーソルテーマオーバーレイ |
-| `code_monospace` | bool | True | コードブロックの等幅フォント (False = エディタフォント) |
+| `button_scale` | float | 0.5 | サイロ + ツールバーボタンサイズ倍率 |
+| `custom_cursors` | bool | True | レトロカーソルテーマオーバーレイ |
+| `code_monospace` | bool | False | コードブロックの等幅フォント (False = エディタフォント) |
 | `code_auto_gutter` | bool | False | コードブロックの自動行番号 |
-| `hr_line` | bool | False | `---` をテキストではなく視覚的な線として描画 |
-| `hide_markup` | bool | False | `**`、`*`、`~~`、`` ` `` マーカーを隠す (Obsidian 風、T-603) |
+| `hr_visual_line` | bool | True | `---` をテキストではなく水平線として描画 |
+| `live_preview_conceal` | bool | True | `**`、`*`、`~~`、`` ` `` マーカーをライブプレビューで隠す |
 | **ホットキー** | | | |
 | `global_hotkey` | string | `Alt+X` | グローバル召喚ホットキー |
 | `pie_menu_hotkey` | string | `Shift+Alt+X` | パイメニューホットキー |
-| `lock_window_hotkey` | string | `Alt+S` | ウィンドウロック切替 |
-| `always_on_top_hotkey` | string | `Alt+E` | 常に最前面切替 |
+| `lock_window_hotkey` | string | `Alt+E` | ウィンドウロック切替 |
+| `always_on_top_hotkey` | string | `Alt+S` | 常に最前面切替 |
 | **動作** | | | |
 | `close_on_focus_loss` | bool | True | フォーカス喪失で自動非表示 |
-| `always_on_top` | bool | True | 起動時に常に最前面 |
+| `always_on_top` | bool | False | 起動時に常に最前面 |
 | `normal_window` | bool | False | 通常のウィンドウモード (フレームレスでない) |
 | `tray_visible` | bool | True | システムトレイアイコン表示 |
-| `auto_bullet` | bool | False | ダッシュを自動で箇条書きに変換 |
-| `ctrl_e_center` | bool | False | Ctrl+E ヘッダーを中央揃え |
+| `auto_bullet` | bool | True | ダッシュを自動で箇条書きに変換 |
+| `ctrl_e_center` | bool | True | Ctrl+E ヘッダーを中央揃え |
 | `customize_toolbar` | bool | False | ツールバー並べ替えモード |
-| `snippets_hidden` | bool | False | スニペットパネル非表示 |
-| `sidebar_right` | bool | False | サイドバーを右側に |
-| `show_token_count` | bool | False | 行数横にトークン推定表示 (T-614) |
-| `silo_sync_mode` | string | Off | サイロのディスク同期 (一方向): Off/Silo/Hierarchy (T-591) |
-| `window_presets_enabled` | bool | False | Ctrl+Q ウィンドウプリセットページ有効化 (T-608) |
+| `snippets_hidden` | bool | True | スニペットパネル非表示 |
+| `sidebar_right` | bool | True | サイドバーを右側に |
+| `show_token_count` | bool | False | トークン推定 (ピル数) (T-614) |
+| `sync_mode` | string | Off | サイロのディスク同期 (一方向): Off/Silo/Hierarchy (T-591) |
+| `window_presets_enabled` | bool | True | Ctrl+Q ウィンドウプリセットページ有効化 (T-608) |
 | **サウンド** | | | |
-| `sound_ui` | bool | False | UI クリック効果音 |
+| `sound_enabled` | bool | True | サウンドのマスター切替 |
+| `sound_ui` | bool | True | UI クリック効果音 |
 | `sound_typewriter` | bool | False | タイプライターキー音 |
-| `sound_volume` | int (0-10) | 5 | マスター音量 |
+| `sound_volume` | int (0-10) | 1 | マスター音量 |
 | **時計と日付** | | | |
 | `date_seconds` | bool | True | 時計に秒を表示 |
 | `date_daypart` | bool | True | 朝/昼/夕/夜ラベル表示 |
-| `date_text_month` | bool | False | テキスト月 (Jan/Feb) を使用 |
+| `date_text_month` | bool | True | テキスト月 (Jan/Feb) を使用 |
 | `date_ampm` | bool | False | 12 時間制 AM/PM 形式 |
 | `date_emoji` | bool | False | 絵文字の時刻帯 (🌅/☀️/🌇/🌙) |
 | `show_date_rect` | bool | True | ヘッダーに日付表示 |
 | **カーソル** | | | |
-| `cursor_blink_ms` | int | system | カーソル点滅速度 ms (0 = 点滅なし、T-606) |
+| `cursor_blink_ms` | int | 1000 | カーソル点滅速度 ms (0 = 点滅なし、T-606) |
 | **タイマー** | | | |
-| `timer_show_minutes` | bool | False | タイマー表示に分フィールドを保持 (T-613) |
+| `timer_show_minutes` | bool | True | タイマー表示に分フィールドを保持 (T-613) |
 | **ウィンドウレイアウト** | | | |
 | `numbox_per_row` | int | 10 | グリッドの 1 行あたりの数字ボックス数 (T-612) |
 | `numbox_btn_size` | int | 24 | 数字ボックスボタンサイズ px (T-612) |
 | **その他** | | | |
-| `language` | string | EN | UI 言語 (23 言語) |
-| `hover_line_color` | string | auto | 行ハイライト色 (auto = テーマアクセント) |
+| `language` | string | EN | UI 言語 (33 ロケール) |
+| `hover_line_color` | string | `#0059ff` | 行ハイライト色 (auto = テーマアクセント) |
 | `portable_backup_enabled` | bool | True | 起動時の自動 .bak |
 | `watcher_skill` | string | (empty) | watcher キューのデフォルトスキル |
 | `cats_order` | JSON list | `["Code","Text","Misc"]` | カテゴリタブ順 + 名前 |
@@ -75,8 +76,8 @@ SQLite DB: `data/local_data_v15.db` (プロファイル 1) または `data/local
 | `watcher_queues` | JSON | `{}` | サイロごとのプロンプトキュー |
 | `toolbar_order` | string | (empty) | カスタムツールバーボタン順トークン |
 | `window_presets` | JSON | [] | ユーザー保存のウィンドウジオメトリプリセット |
-| `silo_gap_height` | int | 6 | サイドバーギャップスペーサー高さ px |
-| `show_silo_ticks` | bool | True | サイロにチェックボタン表示 |
+| `silo_gap_height` | int | 12 | サイドバーギャップスペーサー高さ px |
+| `silo_ticks_enabled` | bool | True | サイロにチェックボタン表示 |
 | `silo_view_state_all` | JSON dict | `{}` | サイロごとのカーソル/スクロール/折りたたみ状態 |
 
 ## ファイルシステムレイアウト

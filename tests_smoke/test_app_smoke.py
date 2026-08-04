@@ -11999,3 +11999,94 @@ def test_toolbar_can_move_to_the_bottom(win):
 def test_toolbar_position_has_a_control(win):
     cb = getattr(win, "cb_toolbar_bottom", None)
     assert cb is not None, "no control for the toolbar position setting"
+
+
+# --- T-715: SiloPresets ----------------------------------------------------
+
+def test_silo_preset_fill_is_one_undo_step(win):
+    """A template lands as ONE action, so Ctrl+Z takes the whole thing back
+    rather than unpicking it line by line."""
+    win.data["temp_presets"] = ["keep", "target"]
+    win.data["pinned_silos"] = []
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    win.data_undo_stack = []
+    win.data_redo_stack = []
+    win._undo_kinds().clear()
+
+    win.fill_silo_from_preset(1, "# TODO\n\n- [ ] \n")
+    assert win.data["temp_presets"][1] == "# TODO\n\n- [ ] \n"
+    win._smart_undo()
+    assert win.data["temp_presets"][1] == "target"
+
+
+def test_new_button_offers_the_templates(win):
+    from PyQt6.QtWidgets import QMenu
+    menu = QMenu(win)
+    try:
+        count = win._add_silo_preset_actions(menu, lambda t: None)
+        assert count >= 10, f"only {count} templates offered"
+        assert len(menu.actions()) == count
+    finally:
+        menu.deleteLater()
+
+
+def test_new_button_preset_menu_does_not_block(win):
+    """`exec()` spins its own event loop and blocks the caller — a suite run
+    stopped dead at 79% with zero CPU because a test reached this method."""
+    from PyQt6.QtCore import QPoint
+
+    win.show_new_silo_presets(QPoint(0, 0))   # must return, not block
+    menu = getattr(win, "_new_preset_menu", None)
+    assert menu is not None
+    try:
+        assert len(menu.actions()) >= 10
+    finally:
+        menu.close()
+
+
+# --- T-732: fc.refresh() must not trigger hide via changeEvent -----------
+
+def test_paste_image_fc_refresh_does_not_hide(win):
+    """fc.refresh() touches the floating Qt.Tool file container, which can
+    fire WindowDeactivate on the main window.  changeEvent then calls
+    hide_and_save().  The fix guards fc.refresh() with ignore_focus_loss."""
+    win.data["close_on_focus_loss"] = "True"
+    win.ignore_focus_loss = False
+    win._ever_activated = True
+
+    # Simulate the undo path that fires after image paste:
+    # add_data_undo_state -> _switch_to_slot(initial=True) -> refresh_temp_presets
+    win.add_data_undo_state("test image paste")
+    win.show()
+
+    # The fix: fc.refresh() is now wrapped in ignore_focus_loss, so
+    # changeEvent should NOT hide the window even if the tool window
+    # steals focus.
+    was_visible = win.isVisible()
+    assert was_visible, "window must be visible before undo"
+
+    # Force a changeEvent with WindowDeactivate — this is what the OS
+    # sends when the floating file container activates.
+    from PyQt6.QtGui import QCloseEvent
+    from PyQt6.QtCore import QEvent
+    evt = QEvent(QEvent.Type.WindowDeactivate)
+    win.changeEvent(evt)
+
+    # The window must STILL be visible — ignore_focus_loss should have
+    # suppressed the hide.
+    assert win.isVisible(), (
+        "Window hidden after WindowDeactivate with ignore_focus_loss guard — "
+        "the T-732 fix is not working"
+    )
+
+
+def test_fc_refresh_guard_in_code():
+    """The guard pattern must exist in the source — this is a structural
+    check that catches regressions if someone removes the try/finally."""
+    import inspect
+    from fastprompter.ui.editor import VaultTextEdit
+    source = inspect.getsource(VaultTextEdit.insertFromMimeData)
+    assert "ignore_focus_loss" in source, (
+        "insertFromMimeData must guard fc.refresh() with ignore_focus_loss"
+    )

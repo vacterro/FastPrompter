@@ -1323,7 +1323,12 @@ class VaultTextEdit(QTextEdit):
             cursor.insertText(new_target)
         fc = getattr(mw, "_file_container", None)
         if fc is not None and not sip.isdeleted(fc):
-            fc.refresh()
+            prev = getattr(mw, "ignore_focus_loss", False)
+            mw.ignore_focus_loss = True
+            try:
+                fc.refresh()
+            finally:
+                mw.ignore_focus_loss = prev
         return True
 
     def _code_copy_block_at(self, pos):
@@ -2651,11 +2656,20 @@ class VaultTextEdit(QTextEdit):
                         markup = self.image_paste_markup(
                             os.path.basename(name), QUrl.fromLocalFile(name).toString())
                         self.insertPlainText(f"{prefix}{markup}\n")
-                        # Refresh file container if open
+                        # Refresh file container if open.
+                        # Guard with ignore_focus_loss: the file container
+                        # is a Qt.Tool window when undocked, and touching
+                        # it can fire WindowDeactivate on the main window,
+                        # which hides it via changeEvent (T-732).
                         try:
                             fc = getattr(self.main_win, "_file_container", None)
                             if fc is not None:
-                                fc.refresh()
+                                prev = getattr(self.main_win, "ignore_focus_loss", False)
+                                self.main_win.ignore_focus_loss = True
+                                try:
+                                    fc.refresh()
+                                finally:
+                                    self.main_win.ignore_focus_loss = prev
                         except Exception:
                             pass
                 except Exception:

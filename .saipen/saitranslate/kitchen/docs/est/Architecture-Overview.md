@@ -41,7 +41,7 @@ Sisenemispunkt. QApplication initsialiseerimine, single-instance IPC kontroll (Q
 - SearchMixin — mitmesõnaline AND-otsing
 - SendSelectionMixin — teksti saatmine watcheri kaudu
 - SnippetOpsMixin — silo toimingud (prügikast, duplikaat, järjestus, tühjendus)
-- ThemeMixin — rakenduse stiilileht, 6 retro-Win95-teemat + kohandatud
+- ThemeMixin — rakenduse stiilileht, 9 sisseehitatud teemat + kohandatud
 - TrayMixin — süsteemisalve ikoon + menüü
 - WatcherMixin — watcheri mootori integratsioon
 - WindowMixin — raamita aken, haakimine, borderless

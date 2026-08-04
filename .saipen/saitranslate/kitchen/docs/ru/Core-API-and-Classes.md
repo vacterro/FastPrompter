@@ -54,8 +54,9 @@ QLocalServer на именованном канале `FastPrompter_Server_V15`.
 Воспроизведение WAV для кликов UI, клавиш пишущей машинки, будильников таймеров.
 
 **Методы:**
-- `play_ui_click()`, `play_tick_sound()`, `play_typewriter()`, `play_sound(name)` — диспетчеризация аудио
-- Громкость управляется настройкой `sound_volume` (0-10)
+- `play(name)`, `play_click()`, `play_tick()` — диспетчеризация аудио по событию
+- Громкость управляется настройкой `sound_volume` (0-10); путь winsound масштабируется через `scale_wav_bytes()` / `scaled_wav_path()`
+- `sound_ui` / `sound_typewriter` / по-событийные флаги управляют воспроизведением
 
 ---
 

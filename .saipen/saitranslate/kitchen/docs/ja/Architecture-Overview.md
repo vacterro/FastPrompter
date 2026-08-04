@@ -41,7 +41,7 @@
 - SearchMixin — 複数語 AND 検索
 - SendSelectionMixin — watcher 経由でテキスト送信
 - SnippetOpsMixin — サイロ操作 (ゴミ箱、複製、並べ替え、クリア)
-- ThemeMixin — アプリスタイルシート、6 つのレトロ Win95 テーマ + カスタム
+- ThemeMixin — アプリスタイルシート、9 つの内蔵テーマ + カスタム
 - TrayMixin — システムトレイアイコン + メニュー
 - WatcherMixin — watcher エンジン統合
 - WindowMixin — フレームレスウィンドウ、スナップ、ボーダーレス

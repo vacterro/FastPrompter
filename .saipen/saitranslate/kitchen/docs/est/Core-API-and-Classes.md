@@ -54,8 +54,9 @@ QLocalServer nimega torul `FastPrompter_Server_V15`. UUID-token autentimine `%TE
 WAV esitus UI klõpsudele, kirjutusmasina klahvidele, taimeri häiretele.
 
 **Meetodid:**
-- `play_ui_click()`, `play_tick_sound()`, `play_typewriter()`, `play_sound(name)` — audio edastus
-- Helitugevust juhib `sound_volume` seade (0-10)
+- `play(name)`, `play_click()`, `play_tick()` — audio edastus sündmuse kaupa
+- Helitugevust juhib `sound_volume` seade (0-10); winsoundi tee skaleeritakse läbi `scale_wav_bytes()` / `scaled_wav_path()`
+- `sound_ui` / `sound_typewriter` / sündmusepõhised lipud juhivad esitust
 
 ---
 

@@ -54,8 +54,9 @@ Win32 WH_KEYBOARD_LL フック。物理 VK コードをインターセプト —
 UI クリック、タイプライターキー、タイマーアラーム用の WAV 再生。
 
 **メソッド:**
-- `play_ui_click()`、`play_tick_sound()`、`play_typewriter()`、`play_sound(name)` — オーディオをディスパッチ
-- 音量は `sound_volume` 設定 (0-10) で制御
+- `play(name)`、`play_click()`、`play_tick()` — イベントごとにオーディオをディスパッチ
+- 音量は `sound_volume` 設定 (0-10) で制御; winsound パスは `scale_wav_bytes()` / `scaled_wav_path()` でスケール
+- `sound_ui` / `sound_typewriter` / イベント単位のフラグが再生を制御
 
 ---
 

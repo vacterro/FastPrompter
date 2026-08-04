@@ -17,55 +17,56 @@ Konfiguratsioon elab `settings` tabeli võti-väärtus paarides. INI-faili pole.
 | Võti | Tüüp | Vaikimisi | Kirjeldus |
 |---|---|---|---|
 | **Teema ja kuvamine** | | | |
-| `theme` | string | `Default` | Teema: Default, Amber, OLED, Win95, Rose, Vintage Classic, Custom |
+| `theme` | string | `Golden Default` | Teema: Default, Golden Vintage, Golden Default, Vintage Dark, Vintage Classic, Dark 2 (OLED), Dracula, Nord, Solarized Dark, Custom |
 | `font_family` | string | `Verdana` | Redaktori font (automaatselt `_m1` bitmap-variant, kui installitud) |
-| `font_size` | int | 11 | Redaktori fondi suurus punktides |
+| `font_size` | int | 18 | Redaktori fondi suurus punktides |
 | `ui_scale` | float | 0.5 | UI skaleerimine (0.5 kuni 1.5) |
-| `button_scale` | float | 1.0 | Silo + tööriistariba nuppude suuruse kordaja |
-| `custom_cursors` | bool | False | Retro kursori teema overlay |
-| `code_monospace` | bool | True | Mono-tähtedega font koodiplokkides (False = redaktori font) |
+| `button_scale` | float | 0.5 | Silo + tööriistariba nuppude suuruse kordaja |
+| `custom_cursors` | bool | True | Retro kursori teema overlay |
+| `code_monospace` | bool | False | Mono-tähtedega font koodiplokkides (False = redaktori font) |
 | `code_auto_gutter` | bool | False | Automaatsed reanumbrid koodiplokkides |
-| `hr_line` | bool | False | `---` renderdamine visuaalse joonena teksti asemel |
-| `hide_markup` | bool | False | Peida `**`, `*`, `~~`, `` ` `` märgid (Obsidian stiil, T-603) |
+| `hr_visual_line` | bool | True | `---` renderdamine horisontaalse joonena teksti asemel |
+| `live_preview_conceal` | bool | True | Peida `**`, `*`, `~~`, `` ` `` märgid reaalajas eelvaates |
 | **Klõbustikud** | | | |
 | `global_hotkey` | string | `Alt+X` | Globaalne kutsumise klõbustik |
 | `pie_menu_hotkey` | string | `Shift+Alt+X` | Pie-menüü klõbustik |
-| `lock_window_hotkey` | string | `Alt+S` | Akna lukustuse lülitus |
-| `always_on_top_hotkey` | string | `Alt+E` | Always-on-top lülitus |
+| `lock_window_hotkey` | string | `Alt+E` | Akna lukustuse lülitus |
+| `always_on_top_hotkey` | string | `Alt+S` | Always-on-top lülitus |
 | **Käitumine** | | | |
 | `close_on_focus_loss` | bool | True | Automaatne peitmine fookuse kaotamisel |
-| `always_on_top` | bool | True | Start always-on-top olekus |
+| `always_on_top` | bool | False | Start always-on-top olekus |
 | `normal_window` | bool | False | Tavaline aknarežiim (mitte raamita) |
 | `tray_visible` | bool | True | Süsteemisalve ikooni näitamine |
-| `auto_bullet` | bool | False | Kriipsude automaatne muutmine täppideks |
-| `ctrl_e_center` | bool | False | Ctrl+E päiste tsentreerimine |
+| `auto_bullet` | bool | True | Kriipsude automaatne muutmine täppideks |
+| `ctrl_e_center` | bool | True | Ctrl+E päiste tsentreerimine |
 | `customize_toolbar` | bool | False | Tööriistariba ümberjärjestamise režiim |
-| `snippets_hidden` | bool | False | Snippetide paneeli peitmine |
-| `sidebar_right` | bool | False | Külgriba paremal |
-| `show_token_count` | bool | False | Tokenite hinnang reaarvu kõrval (T-614) |
-| `silo_sync_mode` | string | Off | Ühesuunaline silo sünkroonimine kettale: Off/Silo/Hierarchy (T-591) |
-| `window_presets_enabled` | bool | False | Ctrl+Q aknapreseotide lehe sisselülitamine (T-608) |
+| `snippets_hidden` | bool | True | Snippetide paneeli peitmine |
+| `sidebar_right` | bool | True | Külgriba paremal |
+| `show_token_count` | bool | False | Tokenite hinnang (pillide arv) (T-614) |
+| `sync_mode` | string | Off | Ühesuunaline silo sünkroonimine kettale: Off/Silo/Hierarchy (T-591) |
+| `window_presets_enabled` | bool | True | Ctrl+Q aknapreseotide lehe sisselülitamine (T-608) |
 | **Heli** | | | |
-| `sound_ui` | bool | False | UI klõpsu heliefektid |
+| `sound_enabled` | bool | True | Heli peamine lüliti |
+| `sound_ui` | bool | True | UI klõpsu heliefektid |
 | `sound_typewriter` | bool | False | Kirjutusmasina klahvihelid |
-| `sound_volume` | int (0-10) | 5 | Peamine helitugevus |
+| `sound_volume` | int (0-10) | 1 | Peamine helitugevus |
 | **Kell ja kuupäev** | | | |
 | `date_seconds` | bool | True | Sekundite kuvamine kellas |
 | `date_daypart` | bool | True | Hommik/päev/õhtu/öö sildi kuvamine |
-| `date_text_month` | bool | False | Tekstiline kuu (Jan/Feb) |
+| `date_text_month` | bool | True | Tekstiline kuu (Jan/Feb) |
 | `date_ampm` | bool | False | 12h AM/PM formaat |
 | `date_emoji` | bool | False | Emoji kellaaeg (🌅/☀️/🌇/🌙) |
 | `show_date_rect` | bool | True | Kuupäeva kuvamine päises |
 | **Kursor** | | | |
-| `cursor_blink_ms` | int | system | Kursori vilkumise kiirus ms (0 = ei vilgu, T-606) |
+| `cursor_blink_ms` | int | 1000 | Kursori vilkumise kiirus ms (0 = ei vilgu, T-606) |
 | **Taimerid** | | | |
-| `timer_show_minutes` | bool | False | Minutivälja hoidmine taimerikuval (T-613) |
+| `timer_show_minutes` | bool | True | Minutivälja hoidmine taimerikuval (T-613) |
 | **Akna paigutus** | | | |
 | `numbox_per_row` | int | 10 | Numbrikastid rea kohta ruudustikus (T-612) |
 | `numbox_btn_size` | int | 24 | Numbrikasti nupu suurus px (T-612) |
 | **Muud** | | | |
-| `language` | string | EN | UI keel (23 valikut) |
-| `hover_line_color` | string | auto | Rea esiletõstu värv (auto = teema aktsent) |
+| `language` | string | EN | UI keel (33 lokaalit) |
+| `hover_line_color` | string | `#0059ff` | Rea esiletõstu värv (auto = teema aktsent) |
 | `portable_backup_enabled` | bool | True | Auto .bak käivitumisel |
 | `watcher_skill` | string | (tühi) | Vaikimisi oskus watcheri järjekorra üksustele |
 | `cats_order` | JSON list | `["Code","Text","Misc"]` | Kategooria vahekaartide järjekord + nimed |
@@ -75,8 +76,8 @@ Konfiguratsioon elab `settings` tabeli võti-väärtus paarides. INI-faili pole.
 | `watcher_queues` | JSON | `{}` | Silo-põhised promptide järjekorrad |
 | `toolbar_order` | string | (tühi) | Kohandatud tööriistariba nuppude järjestuse tokenid |
 | `window_presets` | JSON | [] | Kasutaja salvestatud akna geomeetria preseendid |
-| `silo_gap_height` | int | 6 | Külgriba vahe eraldaja kõrgus px |
-| `show_silo_ticks` | bool | True | Linnukese nuppude kuvamine silodel |
+| `silo_gap_height` | int | 12 | Külgriba vahe eraldaja kõrgus px |
+| `silo_ticks_enabled` | bool | True | Linnukese nuppude kuvamine silodel |
 | `silo_view_state_all` | JSON dict | `{}` | Silo-põhine kursori/kerimise/voltimise olek |
 
 ## Failisüsteemi paigutus

@@ -11,8 +11,8 @@ Täielik klaviatuuripõhine töö. Paigutusest sõltumatu VK-edastus — tööta
 | **Globaalne** | **Ctrl+Alt+Shift+Q** | Häda-sunnitud väljumine | Süsteemiülene |
 | **Aken** | **Ctrl+D** | Tsükkel Zen/Solo/tavaline (3 astet) | Peamine |
 | **Aken** | **Ctrl+Q** | Tsükkel haakimisasend / preseedid | Peamine |
-| **Aken** | **Alt+S** | Akna asendi lukustuse lülitus | Peamine |
-| **Aken** | **Alt+E** | Always-on-Top lülitus | Peamine |
+| **Aken** | **Alt+E** | Akna asendi lukustuse lülitus | Peamine |
+| **Aken** | **Alt+S** | Always-on-Top lülitus | Peamine |
 | **Aken** | **Alt+D** | Külgriba lülitus | Peamine |
 | **Aken** | **Alt+A** | Peitmise lülitus fookuse kaotamisel | Peamine |
 | **Aken** | **Alt+`** | Ava Mini Settings | Peamine |
@@ -63,7 +63,7 @@ Täielik klaviatuuripõhine töö. Paigutusest sõltumatu VK-edastus — tööta
 **Alt+X** — akna lülitus kursori juures. **Shift+Alt+X** — radiaalne pie-menüü (teemad, skaala, tööriistad). **Ctrl+Alt+Shift+Q** — protsessi tapmine.
 
 ### Akna haldus
-**Ctrl+D** — 3 astet: Zen (ainult minimaalne redaktor) → Solo (kõigi teiste akende minimeerimine) → tagasi tavalisele. **Ctrl+Q** — tsükkel läbi 7 haakimistsooni, FancyZone valija ja kasutaja preseendid. **Alt+S/E/D/A** — geomeetria lukk, peal-olek, külgriba kuvamine, fookuse-kaotuse peitmise lülitus.
+**Ctrl+D** — 3 astet: Zen (ainult minimaalne redaktor) → Solo (kõigi teiste akende minimeerimine) → tagasi tavalisele. **Ctrl+Q** — tsükkel läbi 7 haakimistsooni, FancyZone valija ja kasutaja preseendid. **Alt+E/S/D/A** — geomeetria lukk, peal-olek, külgriba kuvamine, fookuse-kaotuse peitmise lülitus.
 
 ### Watcheri järjekord
 **Alt+C** — praegune rida kursori all järjekorda. Bloki-ankurdatud, peab vastu ülal olevatele muudatustele. **Alt+Shift+C** — Queue Master: järjekordade vaatamine/ümberjärjestamine/tühjendamine kõigi silode lõikes.

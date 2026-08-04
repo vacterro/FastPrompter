@@ -41,7 +41,7 @@
 - SearchMixin — поиск по нескольким словам (AND)
 - SendSelectionMixin — отправка текста через watcher
 - SnippetOpsMixin — операции с silo (корзина, дубль, порядок, очистка)
-- ThemeMixin — таблица стилей приложения, 6 ретро-тем Win95 + кастомная
+- ThemeMixin — таблица стилей приложения, 9 встроенных тем + кастомная
 - TrayMixin — иконка в трее + меню
 - WatcherMixin — интеграция движка watcher
 - WindowMixin — окно без рамки, привязка, borderless
