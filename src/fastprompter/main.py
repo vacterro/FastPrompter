@@ -3186,6 +3186,13 @@ class FastPrompter(
             self.data.get("file_panel_docked", "False") == "True",
             self._on_files_dock_toggled,
         )
+        self.cb_toolbar_bottom = create_footer_cb(
+            "⬇ Toolbar at Bottom",
+            "Put the toolbar under the editor instead of above it.\n"
+            "Same buttons, same order — only the side changes.",
+            self.data.get("toolbar_position", "top") == "bottom",
+            self.apply_toolbar_position,
+        )
         self.cb_fast_zones = create_footer_cb(
             "⚡ Fast Ctrl+Q",
             "Skip the zone picker: every Ctrl+Q jumps straight to the next\n"
@@ -4037,7 +4044,7 @@ class FastPrompter(
             _settings_group("Layout", [
                 self.cb_sidebar, self.cb_customize_toolbar,
                 self.cb_numbox_tabs, numbox_row, self.cb_files_dock,
-                self.btn_reset_layout,
+                self.cb_toolbar_bottom, self.btn_reset_layout,
             ]),
             _settings_group("Window presets", [
                 self.cb_window_presets, self.btn_manage_presets,
@@ -4465,6 +4472,8 @@ class FastPrompter(
         # that measures the panel it now lives in.
         if self.silo_tabs_mode():
             self.apply_silo_tabs_mode(True)
+        if self.toolbar_at_bottom():
+            self.apply_toolbar_position(True)
         self.refresh_temp_presets()
         QTimer.singleShot(0, lambda: not sip.isdeleted(self) and self._deferred_silo_refresh())
         # a files sidebar left open is part of the layout the user left
@@ -6695,6 +6704,30 @@ class FastPrompter(
             self.conn = self.state.conn
         finally:
             self.ignore_focus_loss = False
+
+    def toolbar_at_bottom(self):
+        return self.data.get("toolbar_position", "top") == "bottom"
+
+    def apply_toolbar_position(self, bottom=None):
+        """Toolbar above the editor or below it.
+
+        `main_layout` is the central QVBoxLayout — header, mini settings,
+        splitter — so this is a move within one layout, not a rebuild: every
+        button keeps its widget, its order and its drag-reorder wiring.
+        """
+        if bottom is None:
+            bottom = self.toolbar_at_bottom()
+        bottom = bool(bottom)
+        self.data["toolbar_position"] = "bottom" if bottom else "top"
+        hw = getattr(self, "header_widget", None)
+        if hw is None or sip.isdeleted(hw):
+            return
+        self.main_layout.removeWidget(hw)
+        if bottom:
+            self.main_layout.addWidget(hw)
+        else:
+            self.main_layout.insertWidget(0, hw)
+        self.mark_dirty()
 
     def silo_tabs_mode(self):
         return self.data.get("silo_tabs_mode", "sidebar") == "tabs"

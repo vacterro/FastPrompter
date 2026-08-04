@@ -11971,3 +11971,31 @@ def test_drop_maths_follows_the_axis(win):
         assert mode == "swap" and target is btns[0]
     finally:
         win.apply_silo_tabs_mode(saved == "tabs")
+
+
+# --- T-719: toolbar above or below the editor ------------------------------
+
+def test_toolbar_can_move_to_the_bottom(win):
+    """A move inside the central QVBoxLayout, not a rebuild: every button
+    keeps its widget, its order and its drag-reorder wiring."""
+    saved = win.data.get("toolbar_position", "top")
+    try:
+        win.apply_toolbar_position(False)
+        assert win.main_layout.indexOf(win.header_widget) == 0
+        assert win.data["toolbar_position"] == "top"
+
+        win.apply_toolbar_position(True)
+        last = win.main_layout.count() - 1
+        assert win.main_layout.indexOf(win.header_widget) == last, "toolbar is not last"
+        assert win.main_layout.indexOf(win.splitter) < last, "toolbar must sit below the editor"
+        assert win.data["toolbar_position"] == "bottom"
+
+        win.apply_toolbar_position(False)
+        assert win.main_layout.indexOf(win.header_widget) == 0
+    finally:
+        win.apply_toolbar_position(saved == "bottom")
+
+
+def test_toolbar_position_has_a_control(win):
+    cb = getattr(win, "cb_toolbar_bottom", None)
+    assert cb is not None, "no control for the toolbar position setting"

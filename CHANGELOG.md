@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.8.13 — 2026-08-04
+
+- **Toolbar at the bottom (T-719).** New checkbox under Settings → Layout: **⬇ Toolbar at Bottom** puts the toolbar under the editor instead of above it. Same buttons, same order, same drag-to-reorder — the strip moves within the window's own layout rather than being rebuilt, so nothing it carries is affected. The choice survives a restart.
+
 ## v0.8.12 — 2026-08-04
 
 - **Silos as horizontal tabs (T-718).** New setting under Settings → Silo list: **Silos — Sidebar** (the usual column) or **Horizontal tabs** (a strip above the editor). It is the same strip either way — the silo buttons move hosts rather than being rebuilt — so paging, drag-reorder and every refresh work identically in both modes, and dragging a tab uses the same rule as dragging a sidebar entry: the leading half of a tab drops before it, the trailing half after it, the centre nests. A child silo has no room on a bar, so it moves into the parent's right-click menu, under **↳ Children** — which also works in sidebar mode, as a second route rather than the only one.
