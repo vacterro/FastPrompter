@@ -2570,6 +2570,29 @@ class VaultTextEdit(QTextEdit):
         if to_links:
             self.main_win.add_links_to_active_silo(to_links)
 
+    IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".bmp",
+                        ".webp", ".ico", ".tif", ".tiff", ".svg"}
+
+    def image_paste_markup(self, name, url):
+        """How a pasted image should land in the text.
+
+        `pill` — the default and what it always used to be — is `![](...)`,
+        the only shape `MD_IMAGE_RE` matches and therefore the only one the
+        painter collapses into the golden chip you can click to open. A
+        pasted image PATH went in as `[name](...)` instead: a plain markdown
+        link, no chip, and nothing to click, which is the regression.
+        `link` keeps that plain link, `path` inserts the bare path.
+        """
+        try:
+            style = self.main_win.data.get("image_paste_style", "pill")
+        except Exception:
+            style = "pill"
+        if style == "path":
+            return url
+        if style == "link":
+            return f"[{name}]({url})"
+        return f"![]({url})"
+
     def insertFromMimeData(self, source):
         if source.hasUrls():
             # Paste of copied files (Ctrl+V from Explorer) — no drag overlay,
@@ -2625,8 +2648,9 @@ class VaultTextEdit(QTextEdit):
                         cursor = self.textCursor()
                         block = cursor.block()
                         prefix = "" if (cursor.positionInBlock() == 0 and not block.text().strip()) else "\n"
-                        self.insertPlainText(
-                            f"{prefix}![]({QUrl.fromLocalFile(name).toString()})\n")
+                        markup = self.image_paste_markup(
+                            os.path.basename(name), QUrl.fromLocalFile(name).toString())
+                        self.insertPlainText(f"{prefix}{markup}\n")
                         # Refresh file container if open
                         try:
                             fc = getattr(self.main_win, "_file_container", None)
@@ -2658,7 +2682,14 @@ class VaultTextEdit(QTextEdit):
                 if exists_within(normalized):
                     name = os.path.basename(normalized)
                     clean_path = normalized.replace(os.sep, '/')
-                    self.insertPlainText(f"[{name}](file:///{clean_path})")
+                    url = f"file:///{clean_path}"
+                    if os.path.splitext(name)[1].lower() in self.IMAGE_EXTENSIONS:
+                        # An image path pasted as a plain link is the whole
+                        # T-724 regression: it rendered as raw `[name](...)`
+                        # text and could not be clicked.
+                        self.insertPlainText(self.image_paste_markup(name, url))
+                    else:
+                        self.insertPlainText(f"[{name}]({url})")
                     return
             self.insertPlainText(source.text())
 

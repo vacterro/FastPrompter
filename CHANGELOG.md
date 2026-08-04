@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.8.11 — 2026-08-04
+
+- **Hotkeys work on any keyboard layout (T-723).** "Alt+~ does nothing on Estonian" was not one key — it was the entire shifted symbol row. `~ ! @ # $ % ^ & * ( ) _ + { } | : " < > ?` were all treated as layout-dependent and none of them had a fallback, so on any layout that cannot type the character directly (Estonian cannot type `~` — it is a dead key there) the hotkey resolved to a virtual key that does not exist and was never registered at all. A shifted symbol is now resolved as the physical key it shares with its unshifted partner, which is what a global hotkey means in the first place: `Alt+~` is the key left of 1, whatever your layout prints on it.
+- **Pasted images are clickable chips again (T-724).** Pasting an image *path* inserted a plain markdown link — raw `[name](file:///...)` text you could not click — instead of the collapsed golden chip. Only the image form `![](...)` is ever drawn as a chip, and the path paste was not using it. New setting under Settings → Lines: **Pasted image** — *Pill (clickable)* (the default, and the old behaviour), *Markdown link*, or *Plain path*. Pasting a non-image path still makes an ordinary link.
+
 ## v0.8.10 — 2026-08-04
 
 - **Un-ticking sounds different from ticking (T-722).** `tick_off.wav` had been mapped since the sound registry was built and nothing ever asked for it: the play helper hardcoded the "tick" event, so switching a box off sounded exactly like switching it on. Both directions now have their own sound, at the silo tick, the settings checkboxes, the snippets panel and hide-on-click-out — and clicking a checkbox *in the text*, which made no sound at all. One-shot confirmations (copying a code block, a batch delete) are not toggles and keep the single tick.

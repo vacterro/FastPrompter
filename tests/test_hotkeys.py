@@ -204,3 +204,42 @@ class TestParseHotkey:
             assert vk == 0xBD  # US layout hyphen
         else:
             assert vk > 0  # valid, layout-dependent VK
+
+
+class TestShiftedSymbolsResolveToTheirPhysicalKey:
+    """T-723: `~ ! @ # $ % ^ & * ( ) _ + { } | : " < > ?` were all in
+    `_LAYOUT_DEPENDENT` and in no fallback map, so on any layout where
+    VkKeyScanW cannot produce the character — the Estonian layout cannot
+    produce `~`, it is a dead key there — `_resolve_vk` returned VK 0 and the
+    hotkey was registered on a key that does not exist. Reported as "Alt+~
+    does nothing on Estonian"; it was the whole shifted row.
+    """
+
+    SHIFTED = "~!@#$%^&*()_+{}|:\"<>?"
+
+    def test_no_shifted_symbol_resolves_to_zero(self):
+        from fastprompter.core.hotkeys import _resolve_vk
+        dead = [c for c in self.SHIFTED if _resolve_vk(c) == 0]
+        assert dead == [], f"these resolve to VK 0, i.e. an unregistrable hotkey: {dead}"
+
+    def test_shifted_and_unshifted_are_the_same_physical_key(self):
+        from fastprompter.core.hotkeys import _SHIFTED_TO_BASE, _resolve_vk
+        for shifted, base in _SHIFTED_TO_BASE.items():
+            assert _resolve_vk(shifted) == _resolve_vk(base), (
+                f"{shifted!r} and {base!r} are one key and must resolve alike")
+
+    def test_alt_tilde_parses_to_a_real_key(self):
+        from fastprompter.core.hotkeys import MOD_ALT, parse_hotkey
+        mods, vk = parse_hotkey("Alt+~")
+        assert mods == MOD_ALT
+        assert vk > 0, "Alt+~ resolved to VK 0 — the reported dead hotkey"
+        assert parse_hotkey("Alt+~") == parse_hotkey("Alt+`")
+
+    def test_every_default_hotkey_resolves(self):
+        """Whatever the machine's active layout is."""
+        from fastprompter.core.hotkeys import parse_hotkey
+        defaults = ["Ctrl+Z", "Ctrl+E", "Ctrl+B", "Ctrl+W", "Alt+W", "Alt+`",
+                    "Alt+~", "Alt+Z", "Ctrl+Shift+Z", "Ctrl+Shift+S",
+                    "Ctrl+Q", "Ctrl+D", "Ctrl+F", "Alt+Shift+C", "F5"]
+        dead = [h for h in defaults if parse_hotkey(h)[1] == 0]
+        assert dead == [], f"unregistrable on this layout: {dead}"

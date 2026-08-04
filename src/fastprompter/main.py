@@ -3377,6 +3377,26 @@ class FastPrompter(
             self.cb_align_combo.setCurrentIndex(idx)
         self.cb_align_combo.currentIndexChanged.connect(self._on_align_changed)
 
+        # How a pasted image lands. "Pill" is the collapsed golden chip you
+        # can click to open; the other two are for people who want the raw
+        # markdown or just the path.
+        self.lbl_img_paste = QLabel(tr("Pasted image:", self._current_lang))
+        self.cb_img_paste = QComboBox()
+        self.cb_img_paste.addItem(tr("Pill (clickable)", self._current_lang), "pill")
+        self.cb_img_paste.addItem(tr("Markdown link", self._current_lang), "link")
+        self.cb_img_paste.addItem(tr("Plain path", self._current_lang), "path")
+        self.cb_img_paste.setToolTip(tr(
+            "Pill: ![](...) — collapses to a clickable chip\n"
+            "Markdown link: [name](...) — plain link text\n"
+            "Plain path: the file path on its own", self._current_lang))
+        _idx = self.cb_img_paste.findData(self.data.get("image_paste_style", "pill"))
+        if _idx >= 0:
+            self.cb_img_paste.setCurrentIndex(_idx)
+        self.cb_img_paste.currentIndexChanged.connect(
+            lambda i: (self.data.update(
+                {"image_paste_style": self.cb_img_paste.itemData(i) or "pill"})
+                or self.mark_dirty()))
+
         self.cb_double_line = create_footer_cb(
             "⇕ Double-Space Lists",
             "With Auto-Bullet on, Enter after a list item adds a blank\n"
@@ -4025,6 +4045,7 @@ class FastPrompter(
             _settings_group("Lines", [
                 self.cb_line_numbers, self.cb_line_marks, self.cb_zebra,
                 self.cb_bold_titles, self.lbl_align, self.cb_align_combo,
+                self.lbl_img_paste, self.cb_img_paste,
                 self.cb_token_count, token_row,
             ]),
             # split in two: eight controls in one group stretched to 186px

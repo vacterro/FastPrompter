@@ -40,6 +40,21 @@ _STATIC_VK = {
 # These are symbol/OEM characters whose VK codes differ between layouts.
 _LAYOUT_DEPENDENT = set("`-=[]\\;',./!@#$%^&*()_+{}|:\"<>?~")
 
+# A shifted symbol and its unshifted partner are the SAME physical key, and a
+# global hotkey is a position rather than a character: "Alt+~" means the key
+# left of 1, whatever that layout happens to print on it. Every one of these
+# was in _LAYOUT_DEPENDENT and in NO fallback map, so on any layout where
+# VkKeyScanW cannot produce the character — the Estonian one cannot produce
+# `~`, it is a dead key there — _resolve_vk returned VK 0 and RegisterHotKey
+# was handed a key that does not exist. That is the reported "Alt+~ does
+# nothing on Estonian", and it applied to the whole shifted symbol row.
+_SHIFTED_TO_BASE = {
+    '~': '`', '!': '1', '@': '2', '#': '3', '$': '4', '%': '5', '^': '6',
+    '&': '7', '*': '8', '(': '9', ')': '0', '_': '-', '+': '=',
+    '{': '[', '}': ']', '|': '\\', ':': ';', '"': "'", '<': ',', '>': '.',
+    '?': '/',
+}
+
 
 def _resolve_vk(key_name: str) -> int:
     """Resolve a key name to its Windows VK code.
@@ -48,6 +63,10 @@ def _resolve_vk(key_name: str) -> int:
     correct VK code for the current keyboard layout.
     Falls back to the static US-layout mapping if resolution fails.
     """
+    # A shifted symbol is the same physical key as its unshifted partner, so
+    # resolve the partner: it is the one with a fallback, and it is what the
+    # user's finger presses either way.
+    key_name = _SHIFTED_TO_BASE.get(key_name, key_name)
     # Check if this is a layout-dependent single character
     if len(key_name) == 1 and key_name in _LAYOUT_DEPENDENT:
         ch = key_name if key_name.isupper() else key_name.upper()

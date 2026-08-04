@@ -11869,3 +11869,44 @@ def test_timer_calendar_popup_is_themed(win):
         assert "#fff" not in cal.styleSheet().lower()
     finally:
         dlg.deleteLater()
+
+
+# --- T-724: a pasted image must land as a clickable pill -------------------
+
+def test_pasted_image_path_lands_as_a_pill(win):
+    """`![](...)` is the only shape MD_IMAGE_RE matches, and therefore the
+    only one the painter collapses into the clickable chip. A pasted image
+    PATH went in as `[name](...)` — plain link text, nothing to click."""
+    from fastprompter.ui.editor import MD_IMAGE_RE
+
+    ta = win.text_area
+    saved = win.data.get("image_paste_style", "pill")
+    try:
+        win.data["image_paste_style"] = "pill"
+        markup = ta.image_paste_markup("shot.png", "file:///V:/pics/shot.png")
+        assert MD_IMAGE_RE.fullmatch(markup), f"{markup!r} is not a pill"
+        assert MD_IMAGE_RE.match(markup).group(1) == "file:///V:/pics/shot.png"
+
+        win.data["image_paste_style"] = "link"
+        assert ta.image_paste_markup("shot.png", "file:///V:/pics/shot.png") == \
+            "[shot.png](file:///V:/pics/shot.png)"
+
+        win.data["image_paste_style"] = "path"
+        assert ta.image_paste_markup("shot.png", "file:///V:/pics/shot.png") == \
+            "file:///V:/pics/shot.png"
+    finally:
+        win.data["image_paste_style"] = saved
+
+
+def test_image_extensions_are_recognised(win):
+    ta = win.text_area
+    for ext in (".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"):
+        assert ext in ta.IMAGE_EXTENSIONS, ext
+    for ext in (".txt", ".md", ".py", ".zip"):
+        assert ext not in ta.IMAGE_EXTENSIONS, ext
+
+
+def test_paste_style_setting_is_in_the_settings_panel(win):
+    combo = getattr(win, "cb_img_paste", None)
+    assert combo is not None, "no control for the paste-style setting"
+    assert [combo.itemData(i) for i in range(combo.count())] == ["pill", "link", "path"]
