@@ -140,3 +140,58 @@ def test_format_remaining_minutes_flag():
     assert format_remaining(2 * 3600 + 5 * 60, short=True, minutes=True) == "2h 05m"
     assert format_remaining(45, minutes=True) == "45s"
     assert format_remaining(0, minutes=True) == "now"
+
+
+class TestPickerFormatRoundTrip:
+    """T-727: the timer rejected the string its own picker wrote.
+
+    "Use Picker" fills `2026-08-10 11:00` and the dialog answered
+    "Not a time I understand" — screenshot 2026-08-04_030417.png.
+    """
+
+    def test_picker_format_parses(self):
+        import datetime
+
+        from fastprompter.core.duration import resolve_target
+        now = datetime.datetime(2026, 8, 4, 3, 4)
+        assert resolve_target("2026-08-10 11:00", now) == datetime.datetime(2026, 8, 10, 11, 0)
+
+    def test_every_string_the_picker_can_produce(self):
+        import datetime
+
+        from PyQt6.QtCore import QDateTime
+
+        from fastprompter.core.duration import resolve_target
+        now = datetime.datetime(2026, 8, 4, 3, 4)
+        for y, mo, d, h, mi in ((2026, 8, 10, 11, 0), (2026, 1, 1, 0, 0),
+                                (2027, 12, 31, 23, 59), (2026, 2, 28, 9, 5)):
+            text = QDateTime(y, mo, d, h, mi).toString("yyyy-MM-dd HH:mm")
+            assert resolve_target(text, now) == datetime.datetime(y, mo, d, h, mi), text
+
+    def test_a_dated_moment_in_the_past_stays_in_the_past(self):
+        import datetime
+
+        from fastprompter.core.duration import resolve_target
+        now = datetime.datetime(2026, 8, 4, 12, 0)
+        # a bare "09:00" means tomorrow; an explicit date means that date
+        assert resolve_target("2026-08-04 09:00", now) == datetime.datetime(2026, 8, 4, 9, 0)
+
+    def test_bare_date_is_midnight(self):
+        import datetime
+
+        from fastprompter.core.duration import resolve_target
+        now = datetime.datetime(2026, 8, 4, 12, 0)
+        assert resolve_target("2026-08-10", now) == datetime.datetime(2026, 8, 10, 0, 0)
+
+    def test_nonsense_date_is_still_not_a_time(self):
+        from fastprompter.core.duration import resolve_target
+        assert resolve_target("2026-13-45 11:00") is None
+
+    def test_durations_still_win_where_they_should(self):
+        import datetime
+
+        from fastprompter.core.duration import resolve_target
+        now = datetime.datetime(2026, 8, 4, 12, 0)
+        assert resolve_target("1.5h", now) == now + datetime.timedelta(hours=1, minutes=30)
+        assert resolve_target("30m", now) == now + datetime.timedelta(minutes=30)
+        assert resolve_target("18:30", now) == datetime.datetime(2026, 8, 4, 18, 30)

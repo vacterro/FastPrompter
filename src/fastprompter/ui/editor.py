@@ -1474,6 +1474,12 @@ class VaultTextEdit(QTextEdit):
             bcursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
             bcursor.movePosition(QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor)
             bcursor.insertText(new_text)
+            # Clicking a checkbox in the text made NO sound at all, and
+            # everywhere that did make one asked for "tick" in both
+            # directions — so un-ticking sounded exactly like ticking.
+            mw = getattr(self, "main_win", None)
+            if mw is not None and hasattr(mw, "play_tick_sound"):
+                mw.play_tick_sound(new_text.lstrip().startswith(("[x] ", "[X] ")))
         except Exception as e:
             logger.debug(f"checkbox toggle error: {e}")
 

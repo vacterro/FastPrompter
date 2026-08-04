@@ -38,6 +38,10 @@ _PART_RE = re.compile(
     re.UNICODE,
 )
 _CLOCK_RE = re.compile(r"^\s*(\d{1,2})\s*[:.]\s*(\d{2})\s*$")
+# "2026-08-10", optionally followed by a time — the shape the timer dialog's
+# date picker emits. Deliberately ISO only: "12.03" would be a coin toss
+# between 12 March and 12:03, and this parser already owns "12.03" as a time.
+_DATE_ISO_RE = re.compile(r"^(\d{4})-(\d{1,2})-(\d{1,2})[\st]*")
 _HM_SHORTHAND_RE = re.compile(r"^\s*(\d{1,2})\s*[hч]\s*(\d{1,2})\s*$", re.IGNORECASE)
 
 _TOMORROW = ("tomorrow", "tmr", "завтра")
@@ -121,6 +125,30 @@ def parse_when(text: str, now: datetime.datetime | None = None) -> datetime.date
         return None
     now = now or datetime.datetime.now()
     s = text.strip().lower()
+
+    # An explicit calendar date, which is exactly what the dialog's own
+    # "Use Picker" button writes ("2026-08-10 11:00") — and which this
+    # parser used to reject, so the timer answered "Not a time I understand"
+    # to a string the timer itself had just produced.
+    m = _DATE_ISO_RE.match(s)
+    if m:
+        try:
+            day = datetime.date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        except ValueError:
+            return None
+        rest = s[m.end():].strip()
+        if not rest:
+            hour = minute = 0
+        else:
+            mt = _CLOCK_RE.match(rest)
+            if not mt:
+                return None
+            hour, minute = int(mt.group(1)), int(mt.group(2))
+            if hour > 23 or minute > 59:
+                return None
+        # No day_offset and no "already passed -> tomorrow" bump: a dated
+        # moment is that moment, whether or not it is in the past.
+        return datetime.datetime.combine(day, datetime.time(hour, minute))
 
     day_offset = 0
     for word in _TOMORROW:

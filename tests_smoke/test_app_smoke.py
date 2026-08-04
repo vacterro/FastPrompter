@@ -11806,3 +11806,66 @@ def test_archive_rows_do_not_overlap(win):
         win.data["archive_temp_presets"][:] = saved
         win.data["archive_visible"] = saved_vis
         win.refresh_archive_panel()
+
+
+# --- T-721: closing the docked files pane ----------------------------------
+
+def test_closing_files_dock_returns_width_to_centre_and_plays_close(win):
+    """Two defects in one gesture: the docked pane is HIDDEN, never closed,
+    so `closeEvent`'s chest_close never fired — and Qt handed the freed width
+    to whoever had stretch, which is the silo sidebar. It grew every time."""
+    dock = getattr(win, "files_dock", None)
+    if dock is None:
+        import pytest as _pytest
+        _pytest.skip("no docked files pane in this build")
+
+    asked = []
+    real_play = win.sound_manager.play
+    win.sound_manager.play = lambda name: asked.append(name)
+    try:
+        idx = win.splitter.indexOf(dock)
+        centre = win.splitter.indexOf(win.center_panel)
+        left = win.splitter.indexOf(win.left_panel)
+        dock.setVisible(True)
+        sizes = win.splitter.sizes()
+        sizes[idx] = 200
+        win.splitter.setSizes(sizes)
+        before = win.splitter.sizes()
+
+        win._show_files_dock(False)
+
+        after = win.splitter.sizes()
+        assert not dock.isVisible()
+        assert "chest_close" in asked, f"no close sound, only {asked}"
+        if 0 <= left < len(after):
+            assert after[left] == before[left], (
+                f"silo sidebar grew {before[left]} -> {after[left]} "
+                "when the files pane closed")
+        assert after[centre] >= before[centre], "the centre pane should take the width"
+    finally:
+        win.sound_manager.play = real_play
+        dock.setVisible(False)
+
+
+# --- T-725: the timer's calendar popup rendered stock white ----------------
+
+def test_timer_calendar_popup_is_themed(win):
+    """`setCalendarPopup(True)` builds the calendar in its own top-level
+    window, so the sheet the dialog copies from the main window never reaches
+    it — screenshot showed a white calendar inside a dark golden app."""
+    from fastprompter.ui.timer_dialog import TimerDialog
+
+    dlg = TimerDialog(win)
+    try:
+        picker = dlg.date_time_picker
+        cal = picker.calendarWidget()
+        assert cal is not None, "the picker must have a calendar popup"
+        for widget, what in ((picker, "field"), (cal, "calendar")):
+            sheet = widget.styleSheet()
+            assert sheet.strip(), f"{what} carries no stylesheet at all"
+            assert "QCalendarWidget QAbstractItemView" in sheet, (
+                f"{what} does not style the calendar's own item view")
+        # and the colours come from the active theme, not hardcoded white
+        assert "#fff" not in cal.styleSheet().lower()
+    finally:
+        dlg.deleteLater()

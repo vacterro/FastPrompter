@@ -1330,7 +1330,7 @@ class FastPrompter(
         # write it straight into this project's session, so it survives a
         # restart even if the user never switches projects afterwards
         self.capture_silo_session()
-        self.play_tick_sound()
+        self.play_tick_sound(not hidden)
         self.mark_dirty()
         self.refresh_snippets_panel()
         self._sync_snippets_toggle_button()
@@ -1513,7 +1513,7 @@ class FastPrompter(
         """Alt+A: flip the Hide on Click-Out behavior from anywhere."""
         if hasattr(self, "cb_focus"):
             self.cb_focus.setChecked(not self.cb_focus.isChecked())
-            self.play_tick_sound()
+            self.play_tick_sound(self.cb_focus.isChecked())
 
     def _increment_focus_lock(self):
         """Counted ignore_focus_loss: overlapping dialogs each take a lock;
@@ -2089,18 +2089,38 @@ class FastPrompter(
             return
         if visible and not self.files_docked():
             return
-        dock.setVisible(bool(visible))
-        self.data["files_dock_open"] = "True" if visible else "False"
-        if not visible:
-            return
         idx = self.splitter.indexOf(dock)
+        centre = self.splitter.indexOf(self.center_panel)
+        if not visible:
+            # Read the sizes BEFORE hiding: a hidden splitter child reports 0.
+            sizes = self.splitter.sizes()
+            freed = sizes[idx] if 0 <= idx < len(sizes) else 0
+            if freed >= 60:
+                self.data["files_dock_width"] = str(freed)
+            dock.setVisible(False)
+            self.data["files_dock_open"] = "False"
+            if freed and 0 <= centre < len(sizes):
+                # Hand the width back to the CENTRE pane. Left to itself Qt
+                # gives a hidden child's space to whoever has stretch, which
+                # here is the silo sidebar — so it grew a little wider every
+                # single time the files pane was closed.
+                sizes[centre] += freed
+                sizes[idx] = 0
+                self.splitter.setSizes(sizes)
+            # The floating panel plays this from closeEvent, which a DOCKED
+            # panel never gets: it is hidden, not closed. So opening the
+            # sidebar had a sound and closing it had silence.
+            if freed and hasattr(self, "sound_manager"):
+                self.sound_manager.play("chest_close")
+            return
+        dock.setVisible(True)
+        self.data["files_dock_open"] = "True"
         sizes = self.splitter.sizes()
         if 0 <= idx < len(sizes) and sizes[idx] < 60:
             try:
                 width = max(120, min(600, int(self.data.get("files_dock_width", 220))))
             except (TypeError, ValueError):
                 width = 220
-            centre = self.splitter.indexOf(self.center_panel)
             if 0 <= centre < len(sizes):
                 sizes[centre] = max(160, sizes[centre] - width)
             sizes[idx] = width
@@ -2243,8 +2263,8 @@ class FastPrompter(
     def play_click_sound(self):
         self.sound_manager.play_click()
 
-    def play_tick_sound(self):
-        self.sound_manager.play_tick()
+    def play_tick_sound(self, on=True):
+        self.sound_manager.play_tick(bool(on))
 
     def _deferred_silo_refresh(self):
         """Called once after the window layout is computed to set correct silo count."""
@@ -3021,7 +3041,7 @@ class FastPrompter(
             cb.setToolTip(tooltip)
             cb.setChecked(checked)
             if callback:
-                cb.toggled.connect(lambda _: self.play_tick_sound())
+                cb.toggled.connect(self.play_tick_sound)
                 cb.toggled.connect(callback)
             cb._en_text = text
             cb._en_tooltip = tooltip
@@ -8966,7 +8986,7 @@ class FastPrompter(
             ticked.remove(idx)
         else:
             ticked.append(idx)
-        self.play_tick_sound()
+        self.play_tick_sound(idx in ticked)
         self.mark_dirty()
         self.refresh_temp_presets()
 

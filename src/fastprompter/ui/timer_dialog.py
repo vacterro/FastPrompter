@@ -124,6 +124,7 @@ class TimerDialog(QDialog):
         self.date_time_picker.setTimeSpec(Qt.TimeSpec.LocalTime)
         self.date_time_picker.setToolTip(tr("Pick date and time (modern picker)", self.lang))
         self.date_time_picker.setDateTime(QDateTime.currentDateTime().addSecs(3600))  # Default: 1 hour from now
+        self._style_calendar_popup()
         picker_row.addWidget(self.date_time_picker, 2)
         
         self.btn_pick_now = QPushButton(tr("Now", self.lang))
@@ -624,6 +625,52 @@ class TimerDialog(QDialog):
         self.main_win.test_timer_notification(self._form_timer(), _TEST_DELAY_S)
         self.lbl_hint.setText(
             tr("Test fires in {} seconds", self.lang).format(_TEST_DELAY_S))
+
+    def _style_calendar_popup(self):
+        """Theme the calendar popup, which the app stylesheet cannot reach.
+
+        `setCalendarPopup(True)` builds a QCalendarWidget in its OWN top-level
+        window, with its own QTableView, nav-bar buttons and month/year spin.
+        None of those inherit the sheet this dialog copies from the main
+        window, so the popup came up stock white inside a dark golden app —
+        and so did the up/down arrows on the field itself.
+        """
+        try:
+            from fastprompter.theme.themes import THEMES
+
+            theme = THEMES.get(self.main_win.data.get("theme", "Default")) or {}
+            c = dict(theme.get("raw_colors") or {})
+        except Exception:
+            c = {}
+        bg = c.get("bg_text", "#1a1810")
+        panel = c.get("bg_main", "#232018")
+        fg = c.get("text_main", "#d4c89a")
+        btn = c.get("btn_bg", "#332e22")
+        edge = c.get("border_light", "#5a5040")
+        accent = c.get("accent", "#f0d060")
+        sheet = f"""
+        QDateTimeEdit {{ background: {bg}; color: {fg}; border: 1px solid {edge}; }}
+        QDateTimeEdit::up-button, QDateTimeEdit::down-button {{
+            background: {btn}; border: 1px solid {edge}; }}
+        QCalendarWidget QWidget {{ background: {panel}; color: {fg}; }}
+        QCalendarWidget QAbstractItemView {{
+            background: {bg}; color: {fg};
+            selection-background-color: {accent}; selection-color: {panel};
+            outline: none; }}
+        QCalendarWidget QAbstractItemView:disabled {{ color: {edge}; }}
+        QCalendarWidget QToolButton {{
+            background: {btn}; color: {fg}; border: 1px solid {edge}; }}
+        QCalendarWidget QToolButton::menu-indicator {{ image: none; }}
+        QCalendarWidget QSpinBox {{
+            background: {bg}; color: {fg}; border: 1px solid {edge}; }}
+        QCalendarWidget QMenu {{ background: {panel}; color: {fg}; }}
+        """
+        self.date_time_picker.setStyleSheet(sheet)
+        cal = self.date_time_picker.calendarWidget()
+        if cal is not None:
+            # The popup is a separate window: setting the sheet on the field
+            # alone leaves it untouched.
+            cal.setStyleSheet(sheet)
 
     def _use_picker_value(self):
         """Fill the text field with the picker's date/time in a readable format."""

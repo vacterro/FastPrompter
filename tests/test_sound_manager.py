@@ -389,3 +389,30 @@ class TestVolumeOnTheWinsoundPath:
         for source, flags in played:
             assert flags == fake.SND_FILENAME | fake.SND_ASYNC
             assert isinstance(source, str)
+
+
+class TestTickDirection:
+    """T-722: un-tick never played. `untick` -> tick_off.wav was mapped from
+    the start and nothing asked for it — both directions played "tick"."""
+
+    def _mgr(self):
+        from fastprompter.core.sound_manager import SoundManager
+        mgr = SoundManager.__new__(SoundManager)
+        asked = []
+        mgr.play = lambda name: asked.append(name)
+        return mgr, asked
+
+    def test_tick_on_and_off_ask_for_different_events(self):
+        mgr, asked = self._mgr()
+        mgr.play_tick(True)
+        mgr.play_tick(False)
+        assert asked == ["tick", "untick"]
+
+    def test_default_is_still_tick(self):
+        mgr, asked = self._mgr()
+        mgr.play_tick()
+        assert asked == ["tick"]
+
+    def test_both_events_resolve_to_different_files(self):
+        from fastprompter.core.sound_manager import _DEFAULT_SOUND_MAP
+        assert _DEFAULT_SOUND_MAP["tick"] != _DEFAULT_SOUND_MAP["untick"]

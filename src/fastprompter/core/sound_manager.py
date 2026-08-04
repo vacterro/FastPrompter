@@ -431,9 +431,16 @@ class SoundManager(QObject):
         """Convenience method for click sounds."""
         self.play("click")
 
-    def play_tick(self) -> None:
-        """Convenience method for tick sounds."""
-        self.play("tick")
+    def play_tick(self, on: bool = True) -> None:
+        """Tick on / tick off — two different sounds.
+
+        `untick` -> tick_off.wav has been in the map since the registry was
+        built, and nothing ever asked for it: every caller played "tick" in
+        both directions, so switching a box OFF sounded exactly like
+        switching it ON. Callers that are not a two-state toggle (a one-shot
+        confirmation) keep the default and stay on "tick".
+        """
+        self.play("tick" if on else "untick")
 
     def play_hover(self) -> None:
         """Convenience method for hover sounds."""
