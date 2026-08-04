@@ -1,7 +1,7 @@
 ---
 phase: SCOUT
-task: "T-719"
-next_action: "PHASE SCOUT T-719"
+task: "T-715"
+next_action: "PHASE SCOUT T-715"
 blocker: ""
 agent: claude
 saipen_version: 7
@@ -13,11 +13,11 @@ requires:
  - shell
  - git
 schema_version: 3
-last_event: 1230
+last_event: 1233
 style_contract: ded-0d563e56
 goal_mode: true
 goal_waves: 1
-goal_tickets: 8
-updated: 2026-08-04T13:40:00Z
+goal_tickets: 9
+updated: 2026-08-04T14:35:00Z
 transition_from: SHIP
 ---
