@@ -90,13 +90,13 @@ Pure-text markdown table. Tab/Shift+Tab walk cells. Tab off last cell grows row.
 | `Settings (Alt+`)` | Theme picker, hotkey rebind, sound, scale, toolbar reorder, silo tabs mode, image paste style, toolbar position |
 | `Sound Settings` | Per-event sound controls — enabled/file/volume/preview |
 | `Snippet Manager (Ctrl+S)` | Edit F1-F10 snippet names + content |
-| `Timer Dialog (Ctrl+Shift+T)` | Pomodoro + countdown timer setup |
+| `Timer Dialog (Ctrl+Shift+T)` | Pomodoro + countdown timer setup; one-click quick presets — in 10m / in 1h / tonight / tomorrow (T-726) |
 | `Queue Master (Alt+Shift+C)` | Watcher queue overview per silo |
 | `Hashtag Dialog (Alt+Shift+T)` | Cross-silo tag search |
 | `Trash Dialog` | Browse/restore soft-deleted silos |
 | `Backup Dialog` | DB export/import, backup snapshot |
 | `Help Dialog` | Interactive shortcut reference |
-| `Window Presets` | Save/rename/reorder/move window geometry presets |
+| `Window Presets` | Save/rename/reorder/move window geometry presets; optional full-state capture — theme, font, scale, toolbar, zen, sidebar (T-728) |
 | `Project Manager` | Show/hide projects, reorder (▲▼) |
 | `Color Config` | Custom theme color editing |
 
