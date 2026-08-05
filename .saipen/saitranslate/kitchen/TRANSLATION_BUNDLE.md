@@ -44,12 +44,13 @@ Bundle: `.saipen/saitranslate/locales/` (JSON, one file per language); docs in `
 | TUR | Turkish | 🇹🇷 | 100.0% |
 | DED | Дед (Angry Grandpa) | 🇷🇺 | 100.0% |
 
-All 33 locales carry the same 973 keys; coverage is COMPUTED against en.json
+All 33 locales carry the same 976 keys; coverage is COMPUTED against en.json
 by `scratch/validate_saitranslate.py`, never read from the stored field.
 Missing keys fall back to English at runtime via the `tr()` engine.
 
 ## Drift log
 
+- 05.08.26 [T-733] ee prepare run: 3 new `tr()` keys from the T-733 timer-table QTreeWidget headers (`Name`/`Time`/`Remaining`, timer_dialog.py:83, committed 60e3c20) added to all 33 locales (973 -> 976). RU/EST/DED hand-translated per the Core split; the other 29 locales hand-translated by this run (short table-header words — no GoogleTranslator pass needed). Existing translations untouched (0 changed, 0 removed per locale — verified by git diff vs HEAD 60e3c20). Validator PASSED 33/33 @ 976 keys, 0 missing. Bundle ready for collect (eee).
 - 05.08.26 [v0.8.17 + T-728] ee prepare run: 2 new `tr()` keys from the uncommitted T-728 window-preset full-state capture (checkbox label + tooltip in window_presets_dialog.py) added to all 33 locales (971 -> 973). RU/EST/DED hand-translated per the Core split; the other 29 locales hand-translated by this run (short UI strings — no GoogleTranslator pass needed). Existing translations untouched (0 changed, 0 removed). Validator PASSED 33/33 @ 973 keys, 0 missing. T-728 uncommitted — bundle ready for its ship.
 - 04.08.26 [v0.8.10–v0.8.13 + T-715] T-731 closed: 11 new `tr()` keys wrapped in `main.py`/`editor.py` across v0.8.10–13 (image-paste style ×5 from T-724, silo tab-mode ×5 from T-718, `▤ Fill from preset` from T-715) added to all 32 non-EN locales (943 -> 971). RU/EST/DED hand-translated (Core split); 29 other locales via GoogleTranslator (same pipeline as prior runs) with 72 manual fixes for pass-through labels. Existing translations untouched (0 changed, 0 removed per locale — verified by git diff). Validator PASSED 33/33 @ 971 keys, 0 missing.
 - 02.08.26 [v0.8.8] T-693 closed: `✨ Transform to…`, `📄 Text`, `📊 Table`, `📋 Kanban Board` wrapped in `tr()` in main.py and added to every locale (939 -> 943). Bundle re-injected via `scratch/inject_translations.py`, shipped v0.8.8 (005d776, 99e0414). Validator 0 missing, 33/33 @ 943 keys (E-1160). No pending drift on any surface.

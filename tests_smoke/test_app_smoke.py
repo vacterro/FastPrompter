@@ -1556,7 +1556,13 @@ def _restore_minimum(win, kept):
     win.setMinimumSize(*kept)
 
 
-def test_header_fits_quarter_fullhd_with_full_clock(win):
+def test_header_fits_quarter_fullhd_with_full_clock(fresh_win):
+    # T-295: on the shared module-scoped `win` this measured a window some
+    # earlier test had already grown, so the tier under test could never
+    # engage and the assertion failed only in a FULL run. It is one of the
+    # tests that genuinely needs isolation, which is exactly what T-295
+    # scopes to — not a wholesale conversion.
+    win = fresh_win
     # Ctrl+Q quarter snap (960x540): seconds + day word + text month must
     # ALL fit — dense mode packs buttons instead of degrading the clock.
     # The 1280/700 tier constants are calibrated against an 11pt editor
@@ -1595,7 +1601,12 @@ def test_header_fits_quarter_fullhd_with_full_clock(win):
     win._update_date_label()
 
 
-def test_header_ultra_mode_fits_portrait_sliver(win):
+def test_header_ultra_mode_fits_portrait_sliver(fresh_win):
+    # T-295, second round: moving its sibling off the shared `win`
+    # changed what that window looked like by the time this one ran,
+    # and this test tripped instead. Same class, same remedy — a
+    # density measurement cannot share a window with 500 other tests.
+    win = fresh_win
     # 9:16-friendly: below 700px only the essentials remain and the
     # header still fits; clock shrinks to DD.MM - hh:mm
     import re as _re
@@ -8368,11 +8379,18 @@ def test_a_click_away_from_any_checkbox_finds_nothing(win):
         QPoint(int(r.x()) + 400, int(r.top()) + 4)) is None
 
 
-def test_a_degenerate_box_width_still_takes_a_click(win, monkeypatch):
+def test_a_degenerate_box_width_still_takes_a_click(fresh_win, monkeypatch):
     """A wrapped line can put the closing bracket on the next visual row,
     which makes the width negative - QRect.contains() is then false for
-    every point and the checkbox silently stops responding."""
+    every point and the checkbox silently stops responding.
+
+    T-295: needs its own window. It monkeypatches `cursorRect` on the shared
+    editor and measures geometry, so whatever the previous test left in the
+    document decided whether it passed — green alone, red in a full run.
+    """
     from PyQt6.QtCore import QPoint
+
+    win = fresh_win
 
     _doc, points = _checkbox_doc(win)
     ta = win.text_area
@@ -12590,3 +12608,4 @@ def test_migration_never_resets_a_custom_mapping(win):
     assert data["sound_events"]["undo"]["file"] == "pop.wav"
     assert data["sound_events"]["undo"]["enabled"] == "False"
     assert "redo" in data["sound_events"], "a new event must still be added"
+

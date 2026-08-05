@@ -105,6 +105,20 @@ class DraggableButton(QPushButton):
         is_editing = getattr(self.main_win, 'editing_snippet', None) == (cat, global_idx)
         current_state = (text_label, cat, global_idx, full_text, color, font_family, scale,
                          is_editing, title_bold)
+
+        # The font is applied BEFORE the cache check, not after it. A theme or
+        # scale pass elsewhere calls setFont on these buttons and wipes the
+        # bold, while `_last_state` still says it was applied — so the next
+        # refresh took the early return and the '#'-header snippet never got
+        # its bold title back. The cache is there to skip the expensive
+        # stylesheet work, and a QFont per refresh is not that.
+        from PyQt6.QtGui import QFont
+        f = no_aa(QFont(font_family))
+        base_size = 10  # base size in points
+        f.setPointSizeF(max(8.0, base_size * scale))
+        f.setBold(title_bold)
+        self.setFont(f)
+
         if getattr(self, '_last_state', None) == current_state:
             self.show()
             return
@@ -112,14 +126,6 @@ class DraggableButton(QPushButton):
 
         self.full_name = text_label
         self.cat, self.global_idx, self.full_text = cat, global_idx, full_text
-
-        # Apply font scaling safely
-        from PyQt6.QtGui import QFont
-        f = no_aa(QFont(font_family))
-        base_size = 10  # base size in points
-        f.setPointSizeF(max(8.0, base_size * scale))
-        f.setBold(title_bold)
-        self.setFont(f)
 
         self._last_width = -1
         self._update_text()

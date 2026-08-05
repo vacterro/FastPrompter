@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.8.19 — 2026-08-06
+
+- *Housekeeping, one small fix.* Sidebar buttons now re-apply their font on every refresh instead of trusting a cached "already done" flag — a theme or scale pass could wipe a title's boldness while the cache still claimed it had been applied, leaving the button plain until something unrelated changed. Otherwise this release is test hygiene: three window-density tests that shared one window with five hundred others now build their own, which takes the suite from four long-standing failures down to one. That last one is a real defect (a `#`-headed snippet does not get its bold sidebar title) and is now tracked as such rather than filed under "known noise".
+
 ## v0.8.18 — 2026-08-05
 
 - **Sound on every hotkey and toolbar action (T-735).** One wrapper at the single registration point gives every shortcut a sound event — named ones for undo/redo (a two-pitch pair), select-all, settings, help, new and save, with a generic `hotkey` fallback that ships switched off so the default stays quiet.
