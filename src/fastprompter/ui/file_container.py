@@ -17,7 +17,7 @@ import shutil
 import subprocess
 import sys
 
-from PyQt6.QtCore import QFileSystemWatcher, QMimeData, QSize, Qt, QUrl
+from PyQt6.QtCore import QFileSystemWatcher, QMimeData, QSize, Qt, QTimer, QUrl
 from PyQt6.QtGui import QDrag, QIcon, QPixmap
 from PyQt6.QtWidgets import (
     QFileDialog,
@@ -414,6 +414,29 @@ class FileContainerPanel(QWidget):
         super().closeEvent(event)
 
     def refresh(self):
+        """Reload the list, without letting the main window hide itself.
+
+        An UNDOCKED panel is a `Qt.Tool` window (see the class docstring), and
+        touching one can hand the foreground away for an instant — at which
+        point `changeEvent` in the main window sees a deactivation and, with
+        "Hide on Click-Out" on, hides everything. That is how "Ctrl+Z right
+        after pasting an image made the window vanish" happened: the paste
+        writes a PNG into the watched folder, `directoryChanged` fires a
+        moment LATER, and the refresh lands under the user's next keystroke,
+        so the hide looks like it belongs to whatever they just pressed.
+        The lock is the same counted one dialogs already take.
+        """
+        mw = getattr(self, "main_win", None)
+        lock = (not self.docked) and mw is not None and hasattr(mw, "_increment_focus_lock")
+        if lock:
+            mw._increment_focus_lock()
+        try:
+            self._refresh_list()
+        finally:
+            if lock:
+                QTimer.singleShot(300, mw._decrement_focus_lock)
+
+    def _refresh_list(self):
         self.file_list.clear()
         try:
             names = sorted(os.listdir(self.folder), key=str.lower)

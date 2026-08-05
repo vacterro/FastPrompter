@@ -12068,7 +12068,6 @@ def test_paste_image_fc_refresh_does_not_hide(win):
 
     # Force a changeEvent with WindowDeactivate — this is what the OS
     # sends when the floating file container activates.
-    from PyQt6.QtGui import QCloseEvent
     from PyQt6.QtCore import QEvent
     evt = QEvent(QEvent.Type.WindowDeactivate)
     win.changeEvent(evt)
@@ -12085,8 +12084,46 @@ def test_fc_refresh_guard_in_code():
     """The guard pattern must exist in the source — this is a structural
     check that catches regressions if someone removes the try/finally."""
     import inspect
+
     from fastprompter.ui.editor import VaultTextEdit
     source = inspect.getsource(VaultTextEdit.insertFromMimeData)
     assert "ignore_focus_loss" in source, (
         "insertFromMimeData must guard fc.refresh() with ignore_focus_loss"
     )
+
+
+# --- T-732: the window must not hide because a file panel refreshed --------
+
+def test_file_panel_refresh_holds_the_focus_lock(win, tmp_path):
+    """An undocked panel is a Qt.Tool window; touching one can hand the
+    foreground away, and the main window hides itself on focus loss. That is
+    how Ctrl+Z after an image paste made the window vanish — the paste writes
+    a PNG, the watcher fires a moment later, and the refresh lands under the
+    user's next keystroke."""
+    from fastprompter.ui.file_container import FileContainerPanel
+
+    panel = FileContainerPanel(win)
+    try:
+        panel.docked = False
+        panel.folder = str(tmp_path)
+        seen = []
+        real = panel._refresh_list
+        panel._refresh_list = lambda: seen.append(
+            getattr(win, "ignore_focus_loss", False))
+        panel.refresh()
+        assert seen == [True], "refresh ran without the focus lock held"
+        panel._refresh_list = real
+
+        # a DOCKED panel is a child widget, not a window: no lock needed
+        panel.docked = True
+        win.ignore_focus_loss = False
+        win._focus_lock_count = 0
+        seen.clear()
+        panel._refresh_list = lambda: seen.append(
+            getattr(win, "ignore_focus_loss", False))
+        panel.refresh()
+        assert seen == [False], "a docked panel should not take a focus lock"
+    finally:
+        panel.deleteLater()
+        win._focus_lock_count = 0
+        win.ignore_focus_loss = False

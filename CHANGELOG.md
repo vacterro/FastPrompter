@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.8.15 — 2026-08-04
+
+- **Undo no longer hides the window after an image paste (T-732).** Pasting an image writes a PNG into the watched file folder, and the panel's watcher fired its refresh a moment later — landing under whatever the user pressed next, so the very next Ctrl+Z (or anything else) looked like it had clicked the window away and the app hid itself. The refresh now takes the same focus lock dialogs use while the panel is a floating window, and skips it when docked, so the paste → refresh → hide chain is broken at its source.
+
+
 ## v0.8.14 — 2026-08-04
 
 - **Silo presets (T-715).** Eleven ready-made templates — TODO, thoughts, a ten-item bullet list, a ten-item checklist, daily log, meeting notes, bug report, decision record, kanban, table, prompt scaffold. Reach them from a silo's right-click menu under **▤ Fill from preset**, or by **middle-clicking NEW**, which skips the empty silo and creates one already filled. Filling is a single undo step, so Ctrl+Z takes the whole template back at once. They are `.md` files in the app's `presets/` folder rather than a list inside the code: drop your own `.md` in beside them and it appears in the menu, named after the file. A leading number orders it (`03_Bullet list.md` shows as "Bullet list").
