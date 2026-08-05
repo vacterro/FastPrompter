@@ -139,6 +139,35 @@ class TimerDialog(QDialog):
         
         root.addLayout(picker_row)
 
+        # ---- one-click quick presets (T-726) ----
+        # The primary flow must be visible, not typed: a click writes a
+        # concrete ISO moment into in_when, so commit() needs no typing and
+        # no new parsing. Free text stays the POWER path above it.
+        quick_row = QHBoxLayout()
+        quick_row.setSpacing(4)
+        self.btn_quick_10m = QPushButton("in 10m")
+        self.btn_quick_10m.setToolTip("10 minutes from now")
+        self.btn_quick_10m.clicked.connect(lambda: self._quick_pick("10m"))
+        quick_row.addWidget(self.btn_quick_10m)
+
+        self.btn_quick_1h = QPushButton("in 1h")
+        self.btn_quick_1h.setToolTip("1 hour from now")
+        self.btn_quick_1h.clicked.connect(lambda: self._quick_pick("1h"))
+        quick_row.addWidget(self.btn_quick_1h)
+
+        self.btn_quick_tonight = QPushButton("tonight")
+        self.btn_quick_tonight.setToolTip("Tonight at 22:00")
+        self.btn_quick_tonight.clicked.connect(lambda: self._quick_pick("tonight"))
+        quick_row.addWidget(self.btn_quick_tonight)
+
+        self.btn_quick_tomorrow = QPushButton("tomorrow")
+        self.btn_quick_tomorrow.setToolTip("Tomorrow at 09:00")
+        self.btn_quick_tomorrow.clicked.connect(lambda: self._quick_pick("tomorrow"))
+        quick_row.addWidget(self.btn_quick_tomorrow)
+
+        quick_row.addStretch(1)
+        root.addLayout(quick_row)
+
         # ---- the 5-hour limit catcher ----
         # An agent quota is a rolling window, not a one-off alarm: it opened
         # at some moment and comes back every N hours from THAT moment. The
@@ -678,6 +707,37 @@ class TimerDialog(QDialog):
         # Format as "YYYY-MM-DD HH:MM" which is parseable by resolve_target
         text = dt.toString("yyyy-MM-dd HH:mm")
         self.in_when.setText(text)
+        self.in_when.setFocus()
+
+    def _quick_when(self, kind):
+        """Resolve a quick-preset label to a concrete ISO moment."""
+        now = datetime.datetime.now()
+        if kind == "10m":
+            target = now + datetime.timedelta(minutes=10)
+        elif kind == "1h":
+            target = now + datetime.timedelta(hours=1)
+        elif kind == "tonight":
+            target = now.replace(hour=22, minute=0, second=0, microsecond=0)
+            if target <= now:
+                target += datetime.timedelta(days=1)
+        elif kind == "tomorrow":
+            target = (now + datetime.timedelta(days=1)).replace(
+                hour=9, minute=0, second=0, microsecond=0)
+        else:
+            return None
+        return target.strftime("%Y-%m-%d %H:%M")
+
+    def _quick_pick(self, kind):
+        """One-click preset: write a concrete parseable moment, show the
+        preview, and sync the calendar picker so the two cannot disagree."""
+        text = self._quick_when(kind)
+        if not text:
+            return
+        self.in_when.setText(text)
+        from PyQt6.QtCore import QDateTime
+        self.date_time_picker.setDateTime(
+            QDateTime.fromString(text, "yyyy-MM-dd HH:mm"))
+        self._preview(text)
         self.in_when.setFocus()
 
     def commit(self):

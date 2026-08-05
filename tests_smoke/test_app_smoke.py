@@ -12191,3 +12191,55 @@ def test_matching_text_still_restores_the_saved_cursor(win):
     assert ta.textCursor().position() == 6, (
         "identical text must restore the exact saved caret position"
     )
+
+
+# --- T-726: one-click quick presets create a timer without typing -----------
+
+def test_timer_quick_presets_write_parseable_moments(win):
+    """Each quick-preset button must produce a value commit() can resolve --
+    the whole point is creating a timer without typing anything."""
+    import datetime
+
+    from fastprompter.core.duration import resolve_target
+
+    dlg = _timer_dialog(win)
+    try:
+        for kind, btn in (("10m", dlg.btn_quick_10m),
+                          ("1h", dlg.btn_quick_1h),
+                          ("tonight", dlg.btn_quick_tonight),
+                          ("tomorrow", dlg.btn_quick_tomorrow)):
+            btn.click()
+            text = dlg.in_when.text()
+            assert text, f"{kind} quick preset wrote nothing"
+            target = resolve_target(text)
+            assert target is not None, f"{kind} -> '{text}' is not parseable"
+            now = datetime.datetime.now()
+            delta = (target - now).total_seconds()
+            if kind == "10m":
+                assert 500 <= delta <= 700, f"10m preset off: {delta}s"
+            elif kind == "1h":
+                assert 3500 <= delta <= 3700, f"1h preset off: {delta}s"
+            elif kind == "tonight":
+                assert target.hour == 22 and target.minute == 0
+            elif kind == "tomorrow":
+                assert target.hour == 9 and target.minute == 0
+                assert (target - now).days >= 0
+    finally:
+        dlg.close()
+
+
+def test_timer_created_end_to_end_without_typing(win):
+    """The modern picker flow: click a quick preset, click Add, timer exists.
+    No keystrokes anywhere in between."""
+    dlg = _timer_dialog(win)
+    saved = len(win.timers)
+    try:
+        dlg.btn_quick_1h.click()
+        dlg.commit()
+        assert len(win.timers) == saved + 1, "quick flow added no timer"
+        t = win.timers[-1]
+        assert t.target is not None and t.enabled
+    finally:
+        win.timers[:] = win.timers[:saved]
+        win.save_timers_to_data()
+        dlg.close()

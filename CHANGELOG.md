@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.8.17 — 2026-08-05
+
+- **One-click timer presets (T-726).** The timer dialog's primary flow is now visible: **in 10m**, **in 1h**, **tonight**, **tomorrow** buttons write the moment and show a live preview, so a timer is created without typing a word. The free-text field stays as the power path above them, and the calendar picker stays in sync.
+
+
 ## v0.8.16 — 2026-08-05
 
 - **The caret no longer lands mid-word at startup (T-720).** When a silo's text changed between sessions, the saved cursor offset was clamped into the new text, dropping the caret in the middle of a word instead of where the user left it — or, for a never-visited silo, at the predictable end. The saved position now carries a fingerprint of the text it belongs to; if the text changed, the restore falls back to the usual Start/End rule instead of trusting a stale offset. Saved positions from older versions still restore as before.
