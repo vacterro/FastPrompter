@@ -88,9 +88,9 @@ Pure-text markdown table. Tab/Shift+Tab walk cells. Tab off last cell grows row.
 | Dialog | Purpose |
 |---|---|
 | `Settings (Alt+`)` | Theme picker, hotkey rebind, sound, scale, toolbar reorder, silo tabs mode, image paste style, toolbar position |
-| `Sound Settings` | Per-event sound controls — enabled/file/volume/preview |
+| `Sound Settings` | Per-event sound controls — enabled/file/volume/preview; includes the T-735 hotkey events (undo/redo/select-all/settings/help/new/save + generic `hotkey`) |
 | `Snippet Manager (Ctrl+S)` | Edit F1-F10 snippet names + content |
-| `Timer Dialog (Ctrl+Shift+T)` | Pomodoro + countdown timer setup; one-click quick presets — in 10m / in 1h / tonight / tomorrow (T-726) |
+| `Timer Dialog (Ctrl+Shift+T)` | Pomodoro + countdown timer setup; one-click quick presets — in 10m / in 1h / tonight / tomorrow (T-726); timer list is a table with Name/Time/Remaining columns (T-733) |
 | `Queue Master (Alt+Shift+C)` | Watcher queue overview per silo |
 | `Hashtag Dialog (Alt+Shift+T)` | Cross-silo tag search |
 | `Trash Dialog` | Browse/restore soft-deleted silos |
@@ -107,4 +107,5 @@ Pure-text markdown table. Tab/Shift+Tab walk cells. Tab off last cell grows row.
 - **PieMenu (Shift+Alt+X)** — radial menu: themes, scale, tools
 - **Overflow menu (»)** — hidden buttons in ultra mode
 - **Resizers** — custom resize handles (T-629 fix: WS_CAPTION recompute)
+- **Header/grid theming (T-737)** — QHeaderView sections, view backgrounds, gridline-color and the table corner button come from the active theme's raw_colors (header_view_qss), so no near-white Qt default ever shows in a dark dialog; the calendar weekday strip gets its own copy
 - **ZenDesktop** — 3-stage Ctrl+D: Zen → Solo (minimise all) → back

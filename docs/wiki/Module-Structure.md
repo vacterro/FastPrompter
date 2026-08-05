@@ -21,6 +21,7 @@ src/fastprompter/
 │   ├── logging.py              # Logger setup, rotating file handler
 │   ├── pomodoro.py             # Pomodoro state machine (work/break)
 │   ├── silo_presets.py         # .md template loader — Fill from preset (T-715)
+│   ├── silo_export.py          # Drag a silo OUT to Explorer as a content-named .md (T-738)
 │   ├── sound_manager.py        # Audio playback (clicks, typewriter, alarms)
 │   ├── state.py                # SQLite DB interface + state management
 │   ├── timers.py               # Countdown timer model, due detection
@@ -134,8 +135,8 @@ src/fastprompter/
 
 ## Module Count Summary
 
-- **core/**: 17 modules + i18n/ (33 locales + 5 infra files = 38) + watcher/ (10 modules)
+- **core/**: 18 modules + i18n/ (33 locales + 5 infra files = 38) + watcher/ (10 modules)
 - **ui/**: 45 modules
 - **theme/**: 1 module
 - **utils/**: 4 modules
-- **Total**: 117 `.py` files under `src/fastprompter/` (includes `main.py` + `__init__.py`; + `presets/` ships as a non-code data dir)
+- **Total**: 118 `.py` files under `src/fastprompter/` (includes `main.py` + `__init__.py`; + `presets/` ships as a non-code data dir)

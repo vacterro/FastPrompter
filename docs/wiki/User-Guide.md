@@ -41,6 +41,8 @@ Independent markdown canvas slots. 100 per project. Auto-numbered 00-99.
 
 **Hierarchy:** Drag silo onto another to nest as child. Max depth 2 (1 → 1.1 → 1.1.1). Shift+drag swaps. Collapse arrow (▾/▸) on parent hides children.
 
+**Drag OUT to Explorer (T-738):** drag any silo OUT of the window into Explorer / Total Commander / any file manager — it lands as a real `.md` file. The name comes from the content: the silo's header if it has one, else the first three words, plus a timestamp (`Fix the parser_20260805_1730.md`). Windows-illegal characters are sanitised; the file is written to a scratch folder and swept after a day.
+
 **Recency heatmap:** Recently edited silos get warm background tint. Configurable via Settings → Silos.
 
 ### 4. Silo Layout: Sidebar or Horizontal Tabs (T-718)
@@ -138,7 +140,7 @@ See [Watcher Engine Architecture](Watcher-Engine-Architecture) for full details.
 
 ### 15. Timers & Pomodoro
 
-**Countdown timers:** Set via Ctrl+Shift+T or timer button. Configurable name, duration, sound, volume, color urgency. Timer toast notification with snooze (Win95 3D bevels).
+**Countdown timers:** Set via Ctrl+Shift+T or timer button. Configurable name, duration, sound, volume, color urgency. The dialog lists timers in a table — **Name | Time | Remaining** columns (T-733) — with edit/snooze/fire actions. Timer toast notification with snooze (Win95 3D bevels); **clicking the toast itself dismisses it** (T-736), and a fresh toast never lands off-screen.
 
 **One-click quick presets (T-726):** the dialog also offers `in 10m`, `in 1h`, `tonight` (22:00) and `tomorrow` (09:00) buttons that fill the when-field with a concrete moment — no typing needed. Free text still works for anything else (`18:30`, `tomorrow 9:00`, or a full `YYYY-MM-DD HH:MM`).
 
@@ -182,7 +184,11 @@ When header < 700px: hidden buttons collected in » popup. Every action still re
 
 **Double-click an image pill** — rename the file on disk and the markdown link together, one undo step.
 
-### 23. Backup
+### 23. Sound & Hotkey Sounds (T-706, T-707, T-735)
+
+Settings → **Sound** toggles the master switch, UI clicks and typewriter sounds. The **Sound Settings** dialog lists every sound event — including the **hotkey events** added in T-735: undo, redo, select-all, settings, help, new, save, and a generic `hotkey` fallback that every shortcut without a named event of its own resolves to. Each event can be enabled, re-mapped to any `.wav` from the shipped library, and have its volume previewed. Undo/redo are a two-pitch pair, so the direction is audible without looking. The generic `hotkey` event ships **switched OFF** — a sound on literally every shortcut would otherwise be a reason to turn sound off altogether; it is one tick box away. Existing custom mappings survive an upgrade.
+
+### 24. Backup
 
 **Layers:**
 1. SQLite WAL — crash-safe writes (synchronous=NORMAL)
