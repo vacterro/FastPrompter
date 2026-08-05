@@ -2292,6 +2292,48 @@ class FastPrompter(
     def play_tick_sound(self, on=True):
         self.sound_manager.play_tick(bool(on))
 
+    # Which shortcuts get a sound of their own. Everything else falls back to
+    # the generic `hotkey` event, which ships DISABLED — a sound on literally
+    # every shortcut, on by default, is a reason to switch sound off entirely.
+    HOTKEY_SOUND_EVENTS = {
+        "hk_undo": "undo",
+        "Ctrl+Y": "redo",
+        "Ctrl+Shift+Z": "redo",
+        "Ctrl+A": "select_all",
+        "hk_settings": "settings",
+        "hk_help": "help",
+        "F1": "help",
+        "hk_new_snippet": "new",
+        "hk_save_snippet": "save",
+        "hk_header": "click",
+        "hk_bold": "click",
+    }
+
+    def sound_event_for_hotkey(self, key):
+        """The sound event a shortcut should request. Never None: an action
+        with no event of its own is still a hotkey."""
+        return self.HOTKEY_SOUND_EVENTS.get(key, "hotkey")
+
+    def _with_hotkey_sound(self, key, slot):
+        """Wrap a shortcut's slot so pressing it makes a sound.
+
+        Wrapping at the ONE place shortcuts are registered is the difference
+        between "every hotkey has a sound" and "the eleven hotkeys somebody
+        remembered to edit" — the next shortcut anyone adds is covered
+        without them knowing this exists. The sound goes first so it is not
+        swallowed when the slot opens a modal.
+        """
+        event = self.sound_event_for_hotkey(key)
+
+        def _run():
+            try:
+                self.play_sound(event)
+            except Exception:
+                pass
+            return slot()
+
+        return _run
+
     def _deferred_silo_refresh(self):
         """Called once after the window layout is computed to set correct silo count."""
         if hasattr(self, "silos_widget") and self.silos_widget.height() > 0:
@@ -6020,10 +6062,20 @@ class FastPrompter(
         if doc is None:
             return True
         if top.get("_doc_id") != id(doc):
-            # Snapshot belongs to another document (silo/snippet/tab switch, or
-            # a stack reloaded from disk): its step count is not comparable, so
-            # the data action is the only thing we can honestly reverse.
-            return True
+            # The snapshot was stamped against a document we are not looking
+            # at. _switch_to_slot re-stamps its "Switch silo" entry to the
+            # TARGET document, so what reaches here is either a snippet edit
+            # or a stack reloaded from disk, where the stored _doc_id is a
+            # Python id() from another process and is garbage in this one.
+            # Any undo steps the ACTIVE document has right now were made
+            # AFTER that snapshot — they are the newest action, and firing a
+            # data undo over them restores the snapshot's stale text and
+            # wipes their history. The old unconditional `return True` did
+            # exactly that after every restart: type, Ctrl+Z, and the text
+            # was gone with nothing left to bring it back (T-734). Prefer
+            # text undo whenever the active document has steps; a bare
+            # document leaves the data action as the only honest reversal.
+            return not doc.isUndoAvailable()
         return self._text_undo_steps() <= top.get("_text_steps", 0)
 
     def _smart_undo(self):
@@ -6407,6 +6459,13 @@ class FastPrompter(
             self.data_redo_stack = []
 
     def add_data_undo_state(self, _action_name=""):
+        """Push a before-state snapshot of the current data.
+
+        Returns the pushed snapshot, or None when the new state equals the
+        top of the stack and nothing was pushed (dedup). `_switch_to_slot`
+        uses the return value to re-stamp its "Switch silo" entry against
+        the document it lands on; callers that do not care may ignore it.
+        """
         if not hasattr(self, "data_undo_stack"):
             self.data_undo_stack = []
         if not hasattr(self, "data_redo_stack"):
@@ -6416,7 +6475,7 @@ class FastPrompter(
         # the skip logic walk into unrelated (even cross-tab) history.
         # Compared without the ordering metadata, which differs every time.
         if self.data_undo_stack and self._same_snapshot(self.data_undo_stack[-1], state):
-            return
+            return None
         self._stamp_snapshot(state)
         self.data_undo_stack.append(state)
         
@@ -6449,6 +6508,7 @@ class FastPrompter(
         # Lets Ctrl+Z pick data undo over text undo when this action is newer
         self._last_data_action_time = state["_seq"]
         self._save_undo_state()
+        return state
 
     def build_categories(self):
         """Rebuild the tab bar from the VISIBLE projects.
@@ -7963,7 +8023,9 @@ class FastPrompter(
             return
 
         if not initial:
-            self.add_data_undo_state("Switch silo")
+            switch_snap = self.add_data_undo_state("Switch silo")
+        else:
+            switch_snap = None
 
         self._begin_batch_update()
         try:
@@ -8003,6 +8065,17 @@ class FastPrompter(
                     self._set_plain_text_clean(doc, new_text)
 
                 self.text_area.set_active_document(doc)
+                # The "Switch silo" snapshot was stamped against the document
+                # we were LEAVING (add_data_undo_state ran before the swap).
+                # Ctrl+Z routing compares the ACTIVE document's undo steps
+                # against the snapshot's, so the snapshot must carry the
+                # document we landed on and its step count at that moment —
+                # otherwise every Ctrl+Z after a switch+type fires a data
+                # undo that restores the pre-switch snapshot and wipes the
+                # text typed since (T-734: "half the text is gone").
+                if switch_snap is not None:
+                    switch_snap["_doc_id"] = id(doc)
+                    switch_snap["_text_steps"] = self._text_undo_steps()
                 # Text alignment must be re-applied per-document
                 self._apply_text_alignment()
                 self._restore_centered_blocks()
@@ -9389,6 +9462,7 @@ class FastPrompter(
             seq_str = self.data.get(key_name, default_seq)
             if not seq_str: return
             seq = QKeySequence(seq_str)
+            slot = self._with_hotkey_sound(key_name, slot)
             shortcut = QShortcut(seq, self, context=context)
             shortcut.activated.connect(slot)
             self._app_shortcuts.append(shortcut)
@@ -9427,6 +9501,7 @@ class FastPrompter(
                      Qt.ShortcutContext.ApplicationShortcut)
 
         def add_fixed(seq_str, slot, context=Qt.ShortcutContext.WindowShortcut):
+            slot = self._with_hotkey_sound(seq_str, slot)
             shortcut = QShortcut(QKeySequence(seq_str), self, context=context)
             shortcut.activated.connect(slot)
             self._app_shortcuts.append(shortcut)

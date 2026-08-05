@@ -22,8 +22,8 @@ from PyQt6.QtWidgets import (
     QDoubleSpinBox,
     QGridLayout,
     QHBoxLayout,
-    QLabel,
     QHeaderView,
+    QLabel,
     QLineEdit,
     QPushButton,
     QSpinBox,
@@ -699,6 +699,16 @@ class TimerDialog(QDialog):
         QCalendarWidget QSpinBox {{
             background: {bg}; color: {fg}; border: 1px solid {edge}; }}
         QCalendarWidget QMenu {{ background: {panel}; color: {fg}; }}
+        /* The weekday strip is a QHeaderView. A widget-level sheet REPLACES
+           the inherited app rules for that widget, so the shared
+           header_view_qss cannot reach inside this popup — which is exactly
+           why the calendar body themed correctly in T-725 and this one row
+           stayed white. */
+        QCalendarWidget QHeaderView {{ background: {panel}; border: none; }}
+        QCalendarWidget QHeaderView::section {{
+            background: {panel}; color: {fg}; border: none; padding: 2px; }}
+        QCalendarWidget QTableView {{
+            gridline-color: {edge}; selection-background-color: {accent}; }}
         """
         self.date_time_picker.setStyleSheet(sheet)
         cal = self.date_time_picker.calendarWidget()

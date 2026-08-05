@@ -669,6 +669,56 @@ def test_undo_after_typing_prefers_text_then_data(win):
     assert "!!!" not in win.text_area.toPlainText()
 
 
+def test_undo_after_silo_switch_then_typing_undoes_the_typing_first(win):
+    """T-734: switch silos, type there, Ctrl+Z — the typing is the newest
+    action and must be undone first. The "Switch silo" snapshot used to be
+    stamped against the document we were LEAVING, so Ctrl+Z routing saw a
+    doc mismatch and fired a DATA undo that restored the pre-switch snapshot
+    and wiped the text typed since ("half the text is gone")."""
+    win.data["temp_presets"] = ["aaa", "bbb"]
+    win.data["pinned_silos"] = []
+    win.silo_docs[:] = []
+    win.data_undo_stack = []
+    win.data_redo_stack = []
+    win._undo_kinds().clear()
+    win._switch_to_slot(0, initial=True)
+    _type_block(win, " one")          # text edit in silo A
+    win._switch_to_slot(1)            # data action: switch to silo B
+    _type_block(win, " two")          # text edit in silo B
+    assert win.text_area.toPlainText() == "bbb two"
+
+    _press_ctrl_z(win)                # newest is the typing in B
+    assert win.text_area.toPlainText() == "bbb", (
+        f"undo of typing in B wrong: {win.text_area.toPlainText()!r}")
+
+    _press_ctrl_z(win)                # next: undo the silo switch itself
+    assert win.text_area.toPlainText() == "aaa one", (
+        f"undo of switch wrong: {win.text_area.toPlainText()!r}")
+
+    win._smart_redo()                 # back to B
+    assert win.text_area.toPlainText() == "bbb"
+    win._smart_redo()                 # the typing returns too
+    assert win.text_area.toPlainText() == "bbb two"
+
+
+def test_undo_after_silo_switch_without_typing_undoes_the_switch(win):
+    """T-734 mirror: switch silos WITHOUT typing, Ctrl+Z — the switch itself
+    is the newest action and must be reversed (no text to protect)."""
+    win.data["temp_presets"] = ["aaa", "bbb"]
+    win.data["pinned_silos"] = []
+    win.silo_docs[:] = []
+    win.data_undo_stack = []
+    win.data_redo_stack = []
+    win._undo_kinds().clear()
+    win._switch_to_slot(0, initial=True)
+    win._switch_to_slot(1)
+    assert win.text_area.toPlainText() == "bbb"
+
+    _press_ctrl_z(win)
+    assert win.text_area.toPlainText() == "aaa", (
+        f"undo of bare switch wrong: {win.text_area.toPlainText()!r}")
+
+
 def test_undo_restores_pins_and_tints(win):
     win.data["temp_presets"] = ["a", "b", "c"]
     win.data["pinned_silos"] = [2]
@@ -4767,7 +4817,7 @@ def test_timer_end_to_end(win):
 
         # the dialog lists them and validates input live
         dlg = TimerDialog(win)
-        assert dlg.list.count() == len(win.timers)
+        assert dlg.list.topLevelItemCount() == len(win.timers)
         dlg.in_when.setText("2 hours")
         assert "(" in dlg.lbl_hint.text()   # shows the resolved countdown
         dlg.in_when.setText("qwerty")
@@ -4826,7 +4876,8 @@ def test_timer_description_edit_snooze_and_test_fire(win):
 
         # --- edit it in place: same id, new values, re-armed ---
         dlg.refresh()
-        dlg.list.setCurrentRow(0)
+        if dlg.list.topLevelItemCount():
+            dlg.list.setCurrentItem(dlg.list.topLevelItem(0))
         dlg.edit_selected()
         assert dlg._editing_id == t.id
         assert dlg.in_desc.text() == "5-hour window resets"
@@ -4845,7 +4896,8 @@ def test_timer_description_edit_snooze_and_test_fire(win):
         win.timers[0].fired = True
         before = win.timers[0].target
         dlg.refresh()
-        dlg.list.setCurrentRow(0)
+        if dlg.list.topLevelItemCount():
+            dlg.list.setCurrentItem(dlg.list.topLevelItem(0))
         dlg.snooze_selected()
         assert win.timers[0].target > before
         assert win.timers[0].fired is False
@@ -12364,3 +12416,177 @@ def test_old_window_preset_without_state_keys_applies_cleanly(win):
     assert win.data["theme"] == "Golden Vintage"
     assert win.data["font_size"] == "13"
     assert win.data["toolbar_position"] == "bottom"
+
+
+# --- T-736: the notification must be clickable and removable ---------------
+
+def _a_timer():
+    import datetime
+
+    from fastprompter.core.timers import Timer
+    return Timer(name="probe", description="probe",
+                 target=datetime.datetime.now() + datetime.timedelta(seconds=1))
+
+
+def test_clicking_the_toast_body_dismisses_it(win):
+    """The X and OK existed; clicking the toast ITSELF did nothing, which is
+    what everyone tries first — reported as "not clickable and removable"."""
+    from PyQt6.QtCore import QEvent, QPointF, Qt
+    from PyQt6.QtGui import QMouseEvent
+
+    from fastprompter.ui.timer_toast import TimerToast, show_toast
+
+    toast = show_toast(win, _a_timer())
+    assert toast is not None
+    try:
+        assert toast.isVisible()
+        toast.mousePressEvent(QMouseEvent(
+            QEvent.Type.MouseButtonPress, QPointF(4.0, 4.0),
+            Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier))
+        assert not toast.isVisible(), "clicking the toast did not dismiss it"
+        assert toast not in TimerToast._open
+    finally:
+        if toast is not None and toast.isVisible():
+            toast.close()
+
+
+def test_a_toast_never_lands_off_screen(win):
+    """The stack offset is a SUM over open toasts and nothing bounded it: a
+    few stale entries pushed the next one past the top edge, where it can be
+    neither seen nor clicked nor closed."""
+    from PyQt6.QtWidgets import QApplication
+
+    from fastprompter.ui.timer_toast import TimerToast, show_toast
+
+    made = []
+    try:
+        for _ in range(12):
+            t = show_toast(win, _a_timer())
+            if t is not None:
+                made.append(t)
+        assert made, "no toast could be shown"
+        area = QApplication.primaryScreen().availableGeometry()
+        for t in made:
+            g = t.geometry()
+            assert area.contains(g.topLeft()), f"toast at {g.topLeft()} is off-screen"
+            assert g.top() >= area.top(), f"toast pushed above the screen: {g}"
+    finally:
+        for t in made:
+            t.close()
+        TimerToast._open.clear()
+
+
+# --- T-738: dragging a silo out to a file manager --------------------------
+
+def test_silo_drag_carries_both_the_internal_ref_and_a_real_file(win, tmp_path, monkeypatch):
+    """The app's own drop targets read the `silo:<idx>` text and never look at
+    the urls, so the file exit is added without touching the reorder."""
+    import os
+
+    from PyQt6.QtCore import QMimeData
+
+    from fastprompter.core import silo_export
+
+    monkeypatch.setattr(silo_export, "scratch_dir", lambda: str(tmp_path))
+    win.data["temp_presets"] = ["# Drag me\n\nbody text", "other"]
+    win.data["pinned_silos"] = []
+    win.silo_docs[:] = []
+    win._switch_to_slot(1, initial=True)      # keep slot 0 out of the editor
+
+    btn = win.silo_buttons[0]
+    btn.global_idx = 0
+    btn.is_archive = False
+    mime = QMimeData()
+    mime.setText(f"silo:{btn.global_idx}")
+    btn._attach_file_url(mime)
+
+    assert mime.text() == "silo:0", "the internal reference must survive"
+    assert mime.hasUrls(), "no file offered to the file manager"
+    path = mime.urls()[0].toLocalFile()
+    assert os.path.exists(path), path
+    assert os.path.basename(path).startswith("Drag me_")
+    assert path.endswith(".md")
+    with open(path, encoding="utf-8") as fh:
+        assert fh.read() == "# Drag me\n\nbody text"
+
+
+def test_an_empty_silo_offers_no_file(win, tmp_path, monkeypatch):
+    from PyQt6.QtCore import QMimeData
+
+    from fastprompter.core import silo_export
+
+    monkeypatch.setattr(silo_export, "scratch_dir", lambda: str(tmp_path))
+    win.data["temp_presets"] = ["   \n  ", "other"]
+    win.silo_docs[:] = []
+    win._switch_to_slot(1, initial=True)
+
+    btn = win.silo_buttons[0]
+    btn.global_idx = 0
+    btn.is_archive = False
+    mime = QMimeData()
+    btn._attach_file_url(mime)
+    assert not mime.hasUrls(), "an empty silo should hand over nothing"
+
+
+# --- T-735: every hotkey can make a sound ----------------------------------
+
+def test_every_registered_hotkey_resolves_to_a_sound_event(win):
+    """Wrapping at the one place shortcuts are registered is the difference
+    between "every hotkey" and "the eleven somebody remembered to edit"."""
+    from fastprompter.core.sound_manager import _DEFAULT_SOUND_MAP
+
+    keys = list(win.HOTKEY_SOUND_EVENTS) + ["hk_find", "Ctrl+Shift+C", "whatever"]
+    for key in keys:
+        event = win.sound_event_for_hotkey(key)
+        assert event, f"{key} resolves to no event at all"
+        assert event in _DEFAULT_SOUND_MAP, f"{key} -> {event} has no default sound"
+
+
+def test_the_named_actions_have_their_own_event(win):
+    assert win.sound_event_for_hotkey("hk_undo") == "undo"
+    assert win.sound_event_for_hotkey("Ctrl+Y") == "redo"
+    assert win.sound_event_for_hotkey("Ctrl+Shift+Z") == "redo"
+    assert win.sound_event_for_hotkey("Ctrl+A") == "select_all"
+    assert win.sound_event_for_hotkey("hk_settings") == "settings"
+    # anything unnamed still gets the generic one, never silence-by-omission
+    assert win.sound_event_for_hotkey("hk_anything_new") == "hotkey"
+
+
+def test_the_wrapper_plays_then_runs(win):
+    asked, ran = [], []
+    real = win.play_sound
+    win.play_sound = lambda name: asked.append(name)
+    try:
+        wrapped = win._with_hotkey_sound("hk_undo", lambda: ran.append(1))
+        wrapped()
+        assert asked == ["undo"] and ran == [1]
+        # a slot that raises must not lose its sound, and vice versa
+        win.play_sound = lambda name: (_ for _ in ()).throw(RuntimeError("no audio"))
+        wrapped2 = win._with_hotkey_sound("hk_find", lambda: ran.append(2))
+        wrapped2()
+        assert ran == [1, 2], "a failing sound must not swallow the action"
+    finally:
+        win.play_sound = real
+
+
+def test_the_generic_hotkey_event_ships_disabled(win):
+    """It fires on EVERY shortcut; on by default it is a reason to switch
+    sound off altogether."""
+    from fastprompter.core.sound_manager import _DEFAULT_OFF, migrate_sound_settings
+
+    data = {"sound_ui": "True"}
+    migrate_sound_settings(data)
+    assert data["sound_events"]["hotkey"]["enabled"] == "False"
+    assert data["sound_events"]["undo"]["enabled"] == "True"
+    assert "hotkey" in _DEFAULT_OFF
+
+
+def test_migration_never_resets_a_custom_mapping(win):
+    from fastprompter.core.sound_manager import migrate_sound_settings
+
+    data = {"sound_events": {"undo": {"file": "pop.wav", "enabled": "False"}}}
+    migrate_sound_settings(data)
+    assert data["sound_events"]["undo"]["file"] == "pop.wav"
+    assert data["sound_events"]["undo"]["enabled"] == "False"
+    assert "redo" in data["sound_events"], "a new event must still be added"

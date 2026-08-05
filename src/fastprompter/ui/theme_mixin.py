@@ -20,6 +20,7 @@ from fastprompter.core.logging import logger
 from fastprompter.theme.themes import (
     THEMES,
     generate_custom_theme,
+    header_view_qss,
     scrollbar_qss,
 )
 from fastprompter.utils.paths import get_resource_path
@@ -129,6 +130,9 @@ class ThemeMixin:
         # apply_theme, so turning it off cleanly restores the OS default.
         if self.data.get("thin_scrollbars", "True") == "True":
             extra_qss += scrollbar_qss(raw)
+        # Not behind a setting: an unstyled header is a white bar across a
+        # dark dialog, which is a defect rather than a preference.
+        extra_qss += header_view_qss(raw)
         QApplication.instance().setStyleSheet(theme["stylesheet"] + extra_qss)
 
         # Header/toolbar bar gets its own per-theme tint instead of blending

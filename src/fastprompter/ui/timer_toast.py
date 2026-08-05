@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from PyQt6 import sip
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
@@ -231,6 +232,37 @@ class TimerToast(QWidget):
         TimerToast._open.append(self)
 
     # ------------------------------------------------------------------
+    def mousePressEvent(self, event):
+        """Click the toast to dismiss it.
+
+        Reported as "the test notification is not clickable and removable":
+        the ✕ and OK buttons existed, but nothing happened when the body
+        itself was clicked, which is what everyone tries first on a toast.
+        Child widgets get the event before this, so the buttons keep their
+        own behaviour — only the background dismisses.
+        """
+        self.close()
+        event.accept()
+
+    @classmethod
+    def _live_toasts(cls):
+        """Open toasts that still exist.
+
+        A toast destroyed without its closeEvent leaves a dangling entry, and
+        the stack offset below is a SUM over this list: a few stale entries
+        push the next toast up and off the screen, where it can be neither
+        seen nor clicked nor closed.
+        """
+        alive = []
+        for t in cls._open:
+            try:
+                if not sip.isdeleted(t) and not t.isHidden():
+                    alive.append(t)
+            except RuntimeError:
+                continue
+        cls._open[:] = [t for t in cls._open if not sip.isdeleted(t)]
+        return alive
+
     def _place(self):
         """Bottom-right of the screen, stacked above any toast already up."""
         screen = QApplication.primaryScreen()
@@ -243,9 +275,14 @@ class TimerToast(QWidget):
         if screen is None:
             return
         area = screen.availableGeometry()
-        offset = sum(t.height() + 8 for t in TimerToast._open if not t.isHidden())
-        self.move(area.right() - self.width() - _MARGIN,
-                  area.bottom() - self.height() - _MARGIN - offset)
+        offset = sum(t.height() + 8 for t in self._live_toasts())
+        x = area.right() - self.width() - _MARGIN
+        y = area.bottom() - self.height() - _MARGIN - offset
+        # Never off-screen: a toast the user cannot reach is a toast they
+        # cannot dismiss, and the stack offset is unbounded by nature.
+        x = max(area.left(), min(x, area.right() - self.width()))
+        y = max(area.top(), min(y, area.bottom() - self.height()))
+        self.move(x, y)
 
     def _snooze(self, minutes):
         try:

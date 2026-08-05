@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.8.18 — 2026-08-05
+
+- **Sound on every hotkey and toolbar action (T-735).** One wrapper at the single registration point gives every shortcut a sound event — named ones for undo/redo (a two-pitch pair), select-all, settings, help, new and save, with a generic `hotkey` fallback that ships switched off so the default stays quiet.
+- **The notification toast is clickable and removable (T-736).** Clicking the toast body dismisses it; stale open-toast entries no longer push new toasts off-screen, and the stack is clamped to the screen.
+- **No more white header bars and grid lines (T-737).** `QHeaderView` and table grid lines were unstyled in every theme, so Qt painted them near-white; one shared stylesheet rule now tints headers and grids from the active theme, including the calendar popup's weekday strip.
+- **Drag a silo out into Explorer as a real `.md` file (T-738).** The drag now carries a `text/uri-list` alongside the internal reorder text; the file is named from the silo's header (or first three words) with a timestamp, the open silo exports its live editor text, and the scratch folder is swept daily.
+- **Ctrl+Z after switching silos no longer wipes text (T-734).** The "Switch silo" undo snapshot is re-stamped to the document you land on, so undo routing sees the truth and prefers the text typed after the switch.
+
+
 ## v0.8.17 — 2026-08-05
 
 - **One-click timer presets (T-726).** The timer dialog's primary flow is now visible: **in 10m**, **in 1h**, **tonight**, **tomorrow** buttons write the moment and show a live preview, so a timer is created without typing a word. The free-text field stays as the power path above them, and the calendar picker stays in sync.

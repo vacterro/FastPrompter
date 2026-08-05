@@ -44,7 +44,22 @@ _DEFAULT_SOUND_MAP: dict[str, str] = {
     "error": "error.wav",
     "success": "success_levelup.wav",
     "timer": "timer_tick_pack.wav",
+    # T-735. Undo/redo are a PAIR on purpose, the same way tick_on/tick_off
+    # are: two pitches of one blip, so the direction is audible without
+    # looking. `hotkey` is the generic fallback every shortcut without a
+    # named event of its own falls back to.
+    "undo": "blip_b.wav",
+    "redo": "blip_c.wav",
+    "select_all": "pop.wav",
+    "settings": "panel_open.wav",
+    "help": "menu1.wav",
+    "hotkey": "menu_mnu_click.wav",
 }
+
+# Events that ship switched OFF. `hotkey` fires on EVERY shortcut in the app;
+# on by default that is not a feature, it is a reason to turn sound off
+# altogether. It is one tick box away for anyone who wants it.
+_DEFAULT_OFF: frozenset[str] = frozenset({"hotkey"})
 
 # What each event is, for the settings panel. Nothing is hardcoded about
 # WHICH sound plays — only what the event means.
@@ -60,6 +75,12 @@ EVENT_LABELS: dict[str, str] = {
     # glyph "✕" — which is what showed up in this list instead of a label.
     "delete": "Delete silo",
     "clear": "Clear the editor",
+    "undo": "Undo",
+    "redo": "Redo",
+    "select_all": "Select all",
+    "settings": "Settings",
+    "help": "Help",
+    "hotkey": "Any other hotkey",
     "type": "Typewriter",
     "backspace": "Typewriter: backspace",
     "click": "Click",
@@ -220,7 +241,7 @@ def migrate_sound_settings(data: dict[str, Any], sounds_dir: str = "") -> None:
                 os.path.join(sounds_dir, chosen)):
             chosen = ""                      # stale name: fall back to default
         cfg["file"] = chosen or default_file
-        cfg.setdefault("enabled", "True")
+        cfg.setdefault("enabled", "False" if event in _DEFAULT_OFF else "True")
         cfg.setdefault("volume", "")
         healed[event] = cfg
     # anything the user added for an event this build does not know stays put

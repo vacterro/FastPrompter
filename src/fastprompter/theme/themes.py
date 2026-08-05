@@ -67,6 +67,38 @@ QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
 """
 
 
+def header_view_qss(raw_colors):
+    """Table/list headers and grid lines, tinted from the active theme.
+
+    Nothing in any theme sheet mentioned `QHeaderView` or `gridline-color`
+    (measured: zero hits across themes.py), so Qt painted both with its own
+    near-white default — a bright bar across the top of every dark dialog and
+    pale grid between the cells. Reported on Sound Settings, on the Timers
+    alarm list, and on the calendar popup's weekday strip; that last one is
+    the giveaway that these are all one widget class rather than three
+    dialogs each needing their own patch.
+    """
+    bg = raw_colors.get("bg_main", "#1a1a1a")
+    view_bg = raw_colors.get("bg_text", "#2c2c2c")
+    fg = raw_colors.get("text_main", "#c0c0c0")
+    edge = raw_colors.get("border_light", "#4d4d4d")
+    return f"""
+QHeaderView {{ background-color: {bg}; border: none; }}
+QHeaderView::section {{
+    background-color: {bg}; color: {fg};
+    border: none; border-right: 1px solid {edge}; border-bottom: 1px solid {edge};
+    padding: 2px 4px;
+}}
+QHeaderView::section:last {{ border-right: none; }}
+QHeaderView::section:hover {{ background-color: {view_bg}; }}
+QTableView, QTableWidget, QTreeView, QTreeWidget, QListView, QListWidget {{
+    background-color: {view_bg}; color: {fg};
+    gridline-color: {edge}; border: 1px solid {edge};
+}}
+QTableCornerButton::section {{ background-color: {bg}; border: none; }}
+"""
+
+
 def generate_custom_theme(c):
     # copy first: this used to c.setdefault() straight into the caller's dict,
     # silently mutating shared config references

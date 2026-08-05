@@ -1,4 +1,4 @@
-from PyQt6.QtCore import QEvent, QMimeData, QObject, Qt, QTimer
+from PyQt6.QtCore import QEvent, QMimeData, QObject, Qt, QTimer, QUrl
 from PyQt6.QtGui import QDrag, QFontMetrics
 from PyQt6.QtWidgets import (
     QApplication,
@@ -968,10 +968,47 @@ class DraggableSiloButton(QWidget):
             drag, mime = QDrag(self), QMimeData()
             prefix = "arcsilo" if self.is_archive else "silo"
             mime.setText(f"{prefix}:{self.global_idx}")
+            # Also offer the silo as a real file, so the same drag can land in
+            # Explorer / Total Commander as a named .md. The app's own drop
+            # targets read the text above and never look at the urls, so this
+            # adds an exit without touching the internal reorder.
+            self._attach_file_url(mime)
             drag.setMimeData(mime)
-            drag.exec(Qt.DropAction.MoveAction)
+            drag.exec(Qt.DropAction.MoveAction | Qt.DropAction.CopyAction)
         finally:
             self._dragging = False
+
+    def _silo_text(self):
+        key = "archive_temp_presets" if self.is_archive else "temp_presets"
+        items = self.main_win.data.get(key) or []
+        idx = self.global_idx
+        if isinstance(items, list) and isinstance(idx, int) and 0 <= idx < len(items):
+            live = items[idx]
+            # The OPEN silo's text lives in the editor until something flushes
+            # it, so dragging out the silo you are typing in would otherwise
+            # export a stale copy — the same trap T-716 fixed for undo.
+            if (not self.is_archive
+                    and idx == getattr(self.main_win, "active_temp_slot", -1)
+                    and not getattr(self.main_win, "editing_snippet", None)):
+                try:
+                    return self.main_win.text_area.toPlainText()
+                except (AttributeError, RuntimeError):
+                    return live
+            return live
+        return ""
+
+    def _attach_file_url(self, mime):
+        from fastprompter.core.silo_export import write_drag_file
+
+        text = self._silo_text()
+        if not (text or "").strip():
+            return          # an empty silo has nothing to hand over
+        try:
+            path = write_drag_file(text)
+        except Exception:
+            path = None
+        if path:
+            mime.setUrls([QUrl.fromLocalFile(path)])
 
     def mouseReleaseEvent(self, e):
         if e.button() == Qt.MouseButton.LeftButton and not self._dragging:
