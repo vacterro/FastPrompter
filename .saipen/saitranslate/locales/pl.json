@@ -977,6 +977,8 @@
     "Horizontal tabs": "Zakładki poziome",
     "↳ Children": "↳ Dzieci",
     "Sidebar: the usual column down the left\nHorizontal tabs: a strip above the editor — child silos have no\nroom on a bar, so they move into the parent's right-click menu": "Pasek boczny: zwykła kolumna po lewej\nKarty poziome: pasek nad edytorem — silosy podrzędne nie mają\nmiejsca na pasku, więc przenoszą się do menu kontekstowego rodzica",
-    "▤ Fill from preset": "▤ Wypełnij z ustawienia wstępnego"
+    "▤ Fill from preset": "▤ Wypełnij z ustawienia wstępnego",
+    "Capture full app state (theme, font, scale, toolbar, zen, sidebar)": "Przechwyć cały stan aplikacji (motyw, czcionka, skala, pasek narzędzi, zen, pasek boczny)",
+    "On: the preset also restores theme, font size, UI scale, toolbar position, zen and sidebar. Off: geometry only.": "Wł.: ustawienie przywraca również motyw, rozmiar czcionki, skalę interfejsu, położenie paska narzędzi, zen i pasek boczny. Wył.: tylko geometria."
   }
 }

@@ -977,6 +977,8 @@
     "Horizontal tabs": "แท็บแนวนอน",
     "↳ Children": "↳ เด็ก ๆ",
     "Sidebar: the usual column down the left\nHorizontal tabs: a strip above the editor — child silos have no\nroom on a bar, so they move into the parent's right-click menu": "แถบด้านข้าง: คอลัมน์ปกติทางซ้าย\nแท็บแนวนอน: แถบเหนือตัวแก้ไข — ไซโลลูกไม่มีที่\nบนแถบ จึงย้ายไปที่เมนูคลิกขวาของไซโลแม่",
-    "▤ Fill from preset": "▤ เติมจากเทมเพลต"
+    "▤ Fill from preset": "▤ เติมจากเทมเพลต",
+    "Capture full app state (theme, font, scale, toolbar, zen, sidebar)": "บันทึกสถานะแอปทั้งหมด (ธีม, แบบอักษร, สเกล, แถบเครื่องมือ, zen, แถบด้านข้าง)",
+    "On: the preset also restores theme, font size, UI scale, toolbar position, zen and sidebar. Off: geometry only.": "เปิด: พรีเซ็ตจะคืนค่าธีม ขนาดแบบอักษร สเกล UI ตำแหน่งแถบเครื่องมือ zen และแถบด้านข้างด้วย ปิด: เฉพาะเรขาคณิต"
   }
 }

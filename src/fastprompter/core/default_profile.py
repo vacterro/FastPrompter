@@ -217,6 +217,7 @@ DEFAULT_PROFILE = {
     'window_locked': 'False',
     'window_presets': [{'name': 'Preset 1', 'x': 0.3338541666666667, 'y': 0.31851851851851853, 'w': 0.5, 'h': 0.6287037037037037, 'state': 'normal'}, {'name': 'Preset 2', 'x': 0.3338541666666667, 'y': 0.31851851851851853, 'w': 0.3338541666666667, 'h': 0.6287037037037037, 'state': 'normal'}, {'name': 'Preset 3', 'x': 0.2916666666666667, 'y': 0.0, 'w': 0.4166666666666667, 'h': 1.0, 'state': 'normal'}],
     'window_presets_enabled': 'True',
+    'window_presets_capture_state': 'True',
     'word_wrap': 'True',
     'zebra_lines': 'True',
     'zebra_stripes': 'False',

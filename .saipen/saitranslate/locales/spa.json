@@ -977,6 +977,8 @@
     "Horizontal tabs": "Pestañas horizontales",
     "↳ Children": "↳ Niños",
     "Sidebar: the usual column down the left\nHorizontal tabs: a strip above the editor — child silos have no\nroom on a bar, so they move into the parent's right-click menu": "Barra lateral: la columna habitual a la izquierda\nPestañas horizontales: una franja sobre el editor — los silos hijos no tienen\nsitio en la barra, así que pasan al menú contextual del silo padre",
-    "▤ Fill from preset": "▤ Rellenar desde plantilla"
+    "▤ Fill from preset": "▤ Rellenar desde plantilla",
+    "Capture full app state (theme, font, scale, toolbar, zen, sidebar)": "Capturar todo el estado de la aplicación (tema, fuente, escala, barra de herramientas, zen, barra lateral)",
+    "On: the preset also restores theme, font size, UI scale, toolbar position, zen and sidebar. Off: geometry only.": "Activado: el ajuste también restaura tema, tamaño de fuente, escala de interfaz, posición de la barra de herramientas, zen y barra lateral. Desactivado: solo geometría."
   }
 }

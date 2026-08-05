@@ -977,7 +977,9 @@
     "Horizontal tabs": "Horizontalne kartice",
     "↳ Children": "↳ Djeca",
     "Sidebar: the usual column down the left\nHorizontal tabs: a strip above the editor — child silos have no\nroom on a bar, so they move into the parent's right-click menu": "Bočna traka: uobičajeni stupac dolje lijevo\nHorizontalne kartice: traka iznad uređivača — dječji silosi nemaju br\nsobu na šanku, pa se pomaknu u roditeljev izbornik desnom tipkom miša",
-    "▤ Fill from preset": "▤ Ispunite iz unaprijed postavljenih postavki"
+    "▤ Fill from preset": "▤ Ispunite iz unaprijed postavljenih postavki",
+    "Capture full app state (theme, font, scale, toolbar, zen, sidebar)": "Snimi cijelo stanje aplikacije (tema, font, mjerilo, alatna traka, zen, bočna traka)",
+    "On: the preset also restores theme, font size, UI scale, toolbar position, zen and sidebar. Off: geometry only.": "Uključeno: predložak također vraća temu, veličinu fonta, mjerilo sučelja, položaj alatne trake, zen i bočnu traku. Isključeno: samo geometrija."
   },
   "coverage_pct": 100.0
 }

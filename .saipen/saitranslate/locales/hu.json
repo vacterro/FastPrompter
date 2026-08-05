@@ -977,7 +977,9 @@
     "Horizontal tabs": "Vízszintes fülek",
     "↳ Children": "↳ Gyermekek",
     "Sidebar: the usual column down the left\nHorizontal tabs: a strip above the editor — child silos have no\nroom on a bar, so they move into the parent's right-click menu": "Oldalsáv: a szokásos oszlop balra lent\nVízszintes fülek: egy csík a szerkesztő felett – a gyermeksilóknak nincs\nszoba egy bárban, így átkerülnek a szülő jobb gombbal történő menüjébe",
-    "▤ Fill from preset": "▤ Kitöltés előre beállítottból"
+    "▤ Fill from preset": "▤ Kitöltés előre beállítottból",
+    "Capture full app state (theme, font, scale, toolbar, zen, sidebar)": "A teljes alkalmazás-állapot rögzítése (téma, betűtípus, méretarány, eszköztár, zen, oldalsáv)",
+    "On: the preset also restores theme, font size, UI scale, toolbar position, zen and sidebar. Off: geometry only.": "Be: az előbeállítás visszaállítja a témát, a betűméretet, a felület méretarányát, az eszköztár helyét, a zen-t és az oldalsávot is. Ki: csak geometria."
   },
   "coverage_pct": 100.0
 }

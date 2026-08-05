@@ -12243,3 +12243,124 @@ def test_timer_created_end_to_end_without_typing(win):
         win.timers[:] = win.timers[:saved]
         win.save_timers_to_data()
         dlg.close()
+
+
+# --- T-728: Ctrl+Q presets are a real snapshot of the app state ------------
+
+def test_window_preset_full_state_round_trip(win):
+    """Capture with full state, reset everything, apply the preset — every
+    captured field must come back: theme, font, scale, toolbar, zen, sidebar."""
+    from PyQt6.QtCore import QRect
+
+    from fastprompter.ui.fancy_zones import FancyZoneOverlay, _load_presets, apply_ui_state
+
+    kept = {k: win.data.get(k) for k in
+            ("theme", "font_size", "ui_scale", "toolbar_position",
+             "window_presets_capture_state")}
+    kept_presets = win.data.get("window_presets", [])
+    kept_zen = getattr(win, "focus_mode", False)
+    kept_sb = getattr(win, "sidebar_visible", True)
+    try:
+        win.data["window_presets"] = []
+        win.data["window_presets_capture_state"] = "True"
+        win.data["theme"] = "Golden Vintage"
+        win.data["font_size"] = "14"
+        win.data["ui_scale"] = "0.9"
+        win.data["toolbar_position"] = "bottom"
+        if not getattr(win, "focus_mode", False):
+            win.toggle_focus_mode()
+        if getattr(win, "sidebar_visible", True):
+            win.toggle_sidebar_visibility()
+
+        # capture through the overlay's own S=save path
+        ov = FancyZoneOverlay(win)
+        ov._avail = QRect(0, 0, 1920, 1080)
+        ov._save_current_as_preset()
+        presets = _load_presets(win.data)
+        assert presets, "capture saved nothing"
+        p = presets[-1]
+        assert p["theme"] == "Golden Vintage"
+        assert p["font_size"] == "14"
+        assert p["ui_scale"] == "0.9"
+        assert p["toolbar_position"] == "bottom"
+        assert p["zen"] is True
+        assert p["sidebar"] is False
+
+        # now reset everything and apply the preset back
+        win.data["theme"] = "Default"
+        win.data["font_size"] = "11"
+        win.data["ui_scale"] = "0.5"
+        win.data["toolbar_position"] = "top"
+        if getattr(win, "focus_mode", False):
+            win.toggle_focus_mode()
+        if not getattr(win, "sidebar_visible", True):
+            win.toggle_sidebar_visibility()
+
+        apply_ui_state(win, p)
+        assert win.data["theme"] == "Golden Vintage"
+        assert int(win.data["font_size"]) == 14
+        assert float(win.data["ui_scale"]) == 0.9
+        assert win.data["toolbar_position"] == "bottom"
+        assert getattr(win, "focus_mode", False) is True
+        assert getattr(win, "sidebar_visible", True) is False
+    finally:
+        win.data["window_presets"] = kept_presets
+        for k, v in kept.items():
+            if v is None:
+                win.data.pop(k, None)
+            else:
+                win.data[k] = v
+        if getattr(win, "focus_mode", False) != kept_zen:
+            win.toggle_focus_mode()
+        if getattr(win, "sidebar_visible", True) != kept_sb:
+            win.toggle_sidebar_visibility()
+
+
+def test_window_preset_geometry_only_changes_nothing_but_the_box(win):
+    """With capture_state off, a preset carries no app state at all and
+    applying it must leave theme/font/scale/toolbar/zen/sidebar untouched."""
+    from fastprompter.ui.fancy_zones import _current_ui_state, apply_ui_state
+
+    kept = {k: win.data.get(k) for k in
+            ("theme", "font_size", "ui_scale", "toolbar_position",
+             "window_presets_capture_state")}
+    try:
+        win.data["window_presets_capture_state"] = "False"
+        state = _current_ui_state(win)
+        assert state == {}, "geometry-only capture must record no app state"
+
+        # a geometry-only preset applied over a distinctive setup changes nothing
+        win.data["theme"] = "Default"
+        win.data["font_size"] = "11"
+        win.data["ui_scale"] = "0.5"
+        win.data["toolbar_position"] = "top"
+        preset = {"name": "Geo", "x": 0.1, "y": 0.1, "w": 0.5, "h": 0.5,
+                  "state": "normal"}
+        apply_ui_state(win, preset)
+        assert win.data["theme"] == "Default"
+        assert win.data["font_size"] == "11"
+        assert float(win.data["ui_scale"]) == 0.5
+        assert win.data["toolbar_position"] == "top"
+    finally:
+        for k, v in kept.items():
+            if v is None:
+                win.data.pop(k, None)
+            else:
+                win.data[k] = v
+
+
+def test_old_window_preset_without_state_keys_applies_cleanly(win):
+    """A preset saved before full-state capture existed carries none of the
+    new keys; applying it must leave the current app state alone, never
+    force a default."""
+    from fastprompter.ui.fancy_zones import apply_ui_state
+
+    win.data["theme"] = "Golden Vintage"
+    win.data["font_size"] = "13"
+    win.data["toolbar_position"] = "bottom"
+    preset = {"name": "Old", "x": 0.25, "y": 0.25, "w": 0.5, "h": 0.5,
+              "state": "normal"}
+    apply_ui_state(win, preset)
+    assert win.data["theme"] == "Golden Vintage"
+    assert win.data["font_size"] == "13"
+    assert win.data["toolbar_position"] == "bottom"

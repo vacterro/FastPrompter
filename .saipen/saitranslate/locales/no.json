@@ -977,6 +977,8 @@
     "Horizontal tabs": "Horisontale faner",
     "↳ Children": "↳ Barn",
     "Sidebar: the usual column down the left\nHorizontal tabs: a strip above the editor — child silos have no\nroom on a bar, so they move into the parent's right-click menu": "Sidefelt: den vanlige kolonnen nede til venstre\nHorisontale faner: en stripe over editoren — barnesiloer har nr\nrom på en bar, slik at de flytter inn i foreldrenes høyreklikkmeny",
-    "▤ Fill from preset": "▤ Fyll fra forhåndsinnstilling"
+    "▤ Fill from preset": "▤ Fyll fra forhåndsinnstilling",
+    "Capture full app state (theme, font, scale, toolbar, zen, sidebar)": "Fang hele app-tilstanden (tema, skrift, skala, verktøylinje, zen, sidepanel)",
+    "On: the preset also restores theme, font size, UI scale, toolbar position, zen and sidebar. Off: geometry only.": "På: forhåndsinnstillingen gjenoppretter også tema, skriftstørrelse, UI-skalering, verktøylinjens plassering, zen og sidepanelet. Av: bare geometri."
   }
 }

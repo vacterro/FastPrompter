@@ -977,7 +977,9 @@
     "Horizontal tabs": "Οριζόντιες καρτέλες",
     "↳ Children": "↳ Παιδιά",
     "Sidebar: the usual column down the left\nHorizontal tabs: a strip above the editor — child silos have no\nroom on a bar, so they move into the parent's right-click menu": "Πλαϊνή γραμμή: η συνηθισμένη στήλη κάτω αριστερά\nΟριζόντιες καρτέλες: μια λωρίδα πάνω από το πρόγραμμα επεξεργασίας — τα παιδικά σιλό δεν έχουν\nδωμάτιο σε μια γραμμή, ώστε να μετακινούνται στο μενού δεξί κλικ του γονέα",
-    "▤ Fill from preset": "▤ Συμπληρώστε από προεπιλογή"
+    "▤ Fill from preset": "▤ Συμπληρώστε από προεπιλογή",
+    "Capture full app state (theme, font, scale, toolbar, zen, sidebar)": "Λήψη πλήρους κατάστασης εφαρμογής (θέμα, γραμματοσειρά, κλίμακα, γραμμή εργαλείων, zen, πλευρική γραμμή)",
+    "On: the preset also restores theme, font size, UI scale, toolbar position, zen and sidebar. Off: geometry only.": "Ενεργό: η προεπιλογή επαναφέρει επίσης θέμα, μέγεθος γραμματοσειράς, κλίμακα διεπαφής, θέση γραμμής εργαλείων, zen και πλευρική γραμμή. Ανενεργό: μόνο γεωμετρία."
   },
   "coverage_pct": 100.0
 }

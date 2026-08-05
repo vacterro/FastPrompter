@@ -140,6 +140,8 @@ See [Watcher Engine Architecture](Watcher-Engine-Architecture) for full details.
 
 **Countdown timers:** Set via Ctrl+Shift+T or timer button. Configurable name, duration, sound, volume, color urgency. Timer toast notification with snooze (Win95 3D bevels).
 
+**One-click quick presets (T-726):** the dialog also offers `in 10m`, `in 1h`, `tonight` (22:00) and `tomorrow` (09:00) buttons that fill the when-field with a concrete moment — no typing needed. Free text still works for anything else (`18:30`, `tomorrow 9:00`, or a full `YYYY-MM-DD HH:MM`).
+
 **Pomodoro:** Work/break state machine. Configurable intervals. Tray notification + sound on phase end. Timer label beside clock shows remaining time + urgency color.
 
 ### 16. Zen Mode (Ctrl+D)
@@ -151,7 +153,7 @@ See [Watcher Engine Architecture](Watcher-Engine-Architecture) for full details.
 
 ### 17. Window Snap (Ctrl+Q)
 
-Cycle through: Top-Left, Top-Right, Bottom-Left, Bottom-Right, Center, Full, Cursor Position. FancyZone overlay shows 7 visual zones on click. Window presets page saves up to 10 user-defined geometries (as screen fractions — survive monitor changes).
+Cycle through: Top-Left, Top-Right, Bottom-Left, Bottom-Right, Center, Full, Cursor Position. FancyZone overlay shows 7 visual zones on click. Window presets page saves up to 10 user-defined geometries (as screen fractions — survive monitor changes). A preset can also capture the **full app state** — theme, font size, UI scale, toolbar position, zen mode and sidebar visibility (T-728) — so applying it restores a whole setup, not just the window box. A capture toggle in the preset settings picks full state vs geometry-only; presets saved before this feature existed apply without touching any state field.
 
 ### 18. Finder & Archive
 

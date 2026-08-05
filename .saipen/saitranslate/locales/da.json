@@ -977,6 +977,8 @@
     "Horizontal tabs": "Vandrette faner",
     "↳ Children": "↳ Børn",
     "Sidebar: the usual column down the left\nHorizontal tabs: a strip above the editor — child silos have no\nroom on a bar, so they move into the parent's right-click menu": "Sidebjælke: den sædvanlige kolonne nede til venstre\nVandrette faner: en strimmel over editoren — børnesiloer har nr\nværelse på en bar, så de flytter ind i forældrenes højreklikmenu",
-    "▤ Fill from preset": "▤ Udfyld fra forudindstilling"
+    "▤ Fill from preset": "▤ Udfyld fra forudindstilling",
+    "Capture full app state (theme, font, scale, toolbar, zen, sidebar)": "Gem hele app-tilstanden (tema, skrifttype, skala, værktøjslinje, zen, sidepanel)",
+    "On: the preset also restores theme, font size, UI scale, toolbar position, zen and sidebar. Off: geometry only.": "Til: forudindstillingen gendanner også tema, skriftstørrelse, UI-skala, værktøjslinjens placering, zen og sidepanelet. Fra: kun geometri."
   }
 }

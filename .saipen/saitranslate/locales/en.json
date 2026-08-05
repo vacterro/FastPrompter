@@ -977,6 +977,8 @@
     "Horizontal tabs": "Horizontal tabs",
     "↳ Children": "↳ Children",
     "Sidebar: the usual column down the left\nHorizontal tabs: a strip above the editor — child silos have no\nroom on a bar, so they move into the parent's right-click menu": "Sidebar: the usual column down the left\nHorizontal tabs: a strip above the editor — child silos have no\nroom on a bar, so they move into the parent's right-click menu",
-    "▤ Fill from preset": "▤ Fill from preset"
+    "▤ Fill from preset": "▤ Fill from preset",
+    "Capture full app state (theme, font, scale, toolbar, zen, sidebar)": "Capture full app state (theme, font, scale, toolbar, zen, sidebar)",
+    "On: the preset also restores theme, font size, UI scale, toolbar position, zen and sidebar. Off: geometry only.": "On: the preset also restores theme, font size, UI scale, toolbar position, zen and sidebar. Off: geometry only."
   }
 }

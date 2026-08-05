@@ -62,16 +62,55 @@ def _rect_of(preset) -> tuple[float, float, float, float]:
 # UI state a preset can carry beyond its rectangle. None means "the preset
 # does not say", which is what every preset saved before this existed holds —
 # and it must leave the current window alone rather than force a default.
-_UI_STATE_KEYS = ("zen", "sidebar")
+# Booleans toggle; the valued keys (theme/font/scale/toolbar) are applied
+# only when present.
+_BOOL_STATE_KEYS = ("zen", "zen_solo", "sidebar")
+_STR_STATE_KEYS = ("theme", "font_size", "ui_scale", "toolbar_position")
+_UI_STATE_KEYS = _BOOL_STATE_KEYS + _STR_STATE_KEYS
 
 
 def _ui_state_of(item):
-    """The tri-state UI flags of a stored preset: True / False / None."""
+    """The tri-state UI flags of a stored preset: True / False / None for the
+    booleans, the raw string / None for the valued keys."""
     out = {}
-    for key in _UI_STATE_KEYS:
-        val = item.get(key) if isinstance(item, dict) else None
-        out[key] = None if val is None else bool(val)
+    if isinstance(item, dict):
+        for key in _BOOL_STATE_KEYS:
+            val = item.get(key)
+            out[key] = None if val is None else bool(val)
+        for key in _STR_STATE_KEYS:
+            val = item.get(key)
+            out[key] = None if val is None else str(val)
+    else:
+        for key in _UI_STATE_KEYS:
+            out[key] = None
     return out
+
+
+def _captures_ui_state(data) -> bool:
+    """The geometry-only toggle: False means a saved preset carries nothing
+    but its rectangle (plus the window state), so applying it cannot touch
+    any app state."""
+    if not data:
+        return True
+    return str(data.get("window_presets_capture_state", "True")) == "True"
+
+
+def _current_ui_state(main_win) -> dict:
+    """Snapshot the LIVE app state a preset should carry. Empty dict when the
+    geometry-only toggle is off — then a preset must change nothing but the
+    window's box."""
+    if not _captures_ui_state(getattr(main_win, "data", None)):
+        return {}
+    data = getattr(main_win, "data", None) or {}
+    return {
+        "zen": bool(getattr(main_win, "focus_mode", False)),
+        "zen_solo": bool(getattr(main_win, "zen_solo", False)),
+        "sidebar": bool(getattr(main_win, "sidebar_visible", True)),
+        "theme": str(data.get("theme", "Default")),
+        "font_size": str(data.get("font_size", "11")),
+        "ui_scale": str(data.get("ui_scale", "0.5")),
+        "toolbar_position": str(data.get("toolbar_position", "top")),
+    }
 
 
 def _load_presets(data):
@@ -157,17 +196,65 @@ def apply_ui_state(main_win, preset) -> None:
         if callable(toggle):
             toggle()
 
+    # The zen SOLO sub-state is a second stage of the same mode: record it
+    # too, so "I was in zen solo" comes back as zen solo, not plain zen.
+    want_solo = state["zen_solo"]
+    if want_solo is not None and bool(getattr(main_win, "focus_mode", False)):
+        is_solo = bool(getattr(main_win, "zen_solo", False))
+        if want_solo and not is_solo:
+            enter = getattr(main_win, "_enter_zen_solo", None)
+            if callable(enter):
+                enter()
+        elif not want_solo and is_solo:
+            leave = getattr(main_win, "exit_zen_solo", None)
+            if callable(leave):
+                leave()
+
     want_sidebar = state["sidebar"]
-    if want_sidebar is None:
-        return
     # In zen there is deliberately no sidebar; honouring the flag there would
     # put one back on screen inside the mode that exists to remove it.
-    if bool(getattr(main_win, "focus_mode", False)):
-        return
-    if bool(getattr(main_win, "sidebar_visible", True)) != want_sidebar:
-        toggle = getattr(main_win, "toggle_sidebar_visibility", None)
-        if callable(toggle):
-            toggle()
+    if (want_sidebar is not None
+            and not bool(getattr(main_win, "focus_mode", False))):
+        if bool(getattr(main_win, "sidebar_visible", True)) != want_sidebar:
+            toggle = getattr(main_win, "toggle_sidebar_visibility", None)
+            if callable(toggle):
+                toggle()
+
+    # The valued keys apply only when the preset actually carries them — a
+    # preset saved before these existed must not force any of them.
+    want_theme = state["theme"]
+    if want_theme:
+        change = getattr(main_win, "change_theme", None)
+        if callable(change):
+            change(want_theme)
+
+    want_font = state["font_size"]
+    if want_font:
+        try:
+            size = int(float(want_font))
+        except (TypeError, ValueError):
+            size = None
+        if size is not None:
+            change = getattr(main_win, "change_font_size", None)
+            if callable(change):
+                change(size)
+
+    want_scale = state["ui_scale"]
+    if want_scale:
+        try:
+            scale = float(want_scale)
+        except (TypeError, ValueError):
+            scale = None
+        if scale is not None:
+            setter = getattr(main_win, "_set_unified_scale", None)
+            if callable(setter):
+                setter(scale)
+
+    want_toolbar = state["toolbar_position"]
+    if want_toolbar in ("top", "bottom"):
+        apply = getattr(main_win, "apply_toolbar_position", None)
+        if callable(apply):
+            apply(bottom=(want_toolbar == "bottom"))
 
 
 class FancyZoneOverlay(QWidget):
@@ -426,11 +513,11 @@ class FancyZoneOverlay(QWidget):
             # the window STATE, not just its box: a maximized window has a
             # normal-geometry rect that says nothing about being maximized
             "state": "maximized" if mw.isMaximized() else "normal",
-            # …and the LAYOUT state, which is the half a rectangle cannot
-            # hold: a preset saved in zen with the sidebar away came back as
-            # a plain rect with all the chrome switched back on.
-            "zen": bool(getattr(mw, "focus_mode", False)),
-            "sidebar": bool(getattr(mw, "sidebar_visible", True)),
+            # …and the APP state, the half a rectangle cannot hold: theme,
+            # font, scale, toolbar position, zen (incl. its solo stage) and
+            # the sidebar. The geometry-only toggle makes this {} so a preset
+            # changes nothing but the window's box.
+            **_current_ui_state(mw),
         })
         _save_presets(data, presets)
         if hasattr(mw, "mark_dirty"):

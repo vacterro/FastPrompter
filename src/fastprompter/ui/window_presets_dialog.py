@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from PyQt6.QtWidgets import (
     QAbstractItemView,
+    QCheckBox,
     QDialog,
     QDialogButtonBox,
     QHBoxLayout,
@@ -21,7 +22,13 @@ from PyQt6.QtWidgets import (
 )
 
 from fastprompter.core.translations import tr
-from fastprompter.ui.fancy_zones import _MAX_PRESETS, _load_presets, _save_presets
+from fastprompter.ui.fancy_zones import (
+    _MAX_PRESETS,
+    _captures_ui_state,
+    _current_ui_state,
+    _load_presets,
+    _save_presets,
+)
 
 
 def _describe(p) -> str:
@@ -52,6 +59,20 @@ class WindowPresetsDialog(QDialog):
         lay.addWidget(QLabel(tr(
             "Order here is the order in the Ctrl+Q picker, and the number "
             "key that applies each one.", self.lang)))
+
+        # T-728: a preset can carry the whole app state or just the box. When
+        # off, capture is geometry-only and applying it changes nothing but
+        # the window's rectangle.
+        self.cb_capture_state = QCheckBox(tr(
+            "Capture full app state (theme, font, scale, toolbar, zen, sidebar)",
+            self.lang))
+        self.cb_capture_state.setChecked(
+            _captures_ui_state(getattr(main_win, "data", None)))
+        self.cb_capture_state.setToolTip(tr(
+            "On: the preset also restores theme, font size, UI scale, toolbar "
+            "position, zen and sidebar. Off: geometry only.", self.lang))
+        self.cb_capture_state.toggled.connect(self._capture_state_toggled)
+        lay.addWidget(self.cb_capture_state)
 
         self.list = QListWidget()
         self.list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
@@ -105,20 +126,29 @@ class WindowPresetsDialog(QDialog):
         if not a.isValid() or a.width() <= 0 or a.height() <= 0:
             return None
         g = mw.geometry()
-        return {
+        cap = {
             "x": max(0.0, (g.x() - a.x()) / a.width()),
             "y": max(0.0, (g.y() - a.y()) / a.height()),
             "w": max(0.05, g.width() / a.width()),
             "h": max(0.05, g.height() / a.height()),
             "state": "maximized" if mw.isMaximized() else "normal",
-            # Same layout state the picker's own S=save records — this is the
-            # second place a preset is born, and a preset that means different
-            # things depending on which surface made it is worse than neither.
-            "zen": bool(getattr(mw, "focus_mode", False)),
-            "sidebar": bool(getattr(mw, "sidebar_visible", True)),
         }
+        # Same app state the picker's own S=save records — this is the
+        # second place a preset is born, and a preset that means different
+        # things depending on which surface made it is worse than neither.
+        # The checkbox decides geometry-only vs full state.
+        cap.update(_current_ui_state(mw))
+        return cap
 
     # ---- actions ------------------------------------------------------
+    def _capture_state_toggled(self, checked):
+        data = getattr(self.main_win, "data", None)
+        if data is None:
+            return
+        data["window_presets_capture_state"] = "True" if checked else "False"
+        if hasattr(self.main_win, "mark_dirty"):
+            self.main_win.mark_dirty()
+
     def move_up(self):
         r = self._row()
         if r > 0:

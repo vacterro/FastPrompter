@@ -977,6 +977,8 @@
     "Horizontal tabs": "Tab ngang",
     "↳ Children": "↳ Con",
     "Sidebar: the usual column down the left\nHorizontal tabs: a strip above the editor — child silos have no\nroom on a bar, so they move into the parent's right-click menu": "Thanh bên: cột thông thường bên trái\nTab ngang: dải phía trên trình soạn thảo — silo con không có\nchỗ trên thanh, nên chúng chuyển vào menu chuột phải của silo cha",
-    "▤ Fill from preset": "▤ Điền từ cài sẵn"
+    "▤ Fill from preset": "▤ Điền từ cài sẵn",
+    "Capture full app state (theme, font, scale, toolbar, zen, sidebar)": "Chụp toàn bộ trạng thái ứng dụng (chủ đề, phông chữ, tỷ lệ, thanh công cụ, zen, thanh bên)",
+    "On: the preset also restores theme, font size, UI scale, toolbar position, zen and sidebar. Off: geometry only.": "Bật: cài đặt trước cũng khôi phục chủ đề, cỡ chữ, tỷ lệ giao diện, vị trí thanh công cụ, zen và thanh bên. Tắt: chỉ hình học."
   }
 }

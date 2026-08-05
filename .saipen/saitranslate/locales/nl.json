@@ -977,6 +977,8 @@
     "Horizontal tabs": "Horizontale tabbladen",
     "↳ Children": "↳ Kinderen",
     "Sidebar: the usual column down the left\nHorizontal tabs: a strip above the editor — child silos have no\nroom on a bar, so they move into the parent's right-click menu": "Zijbalk: de gebruikelijke kolom aan de linkerkant\nHorizontale tabbladen: een strook boven de editor; onderliggende silo's hebben geen\nkamer op een balk, zodat ze naar het rechtermuisknopmenu van de ouder gaan",
-    "▤ Fill from preset": "▤ Vullen vanuit voorinstelling"
+    "▤ Fill from preset": "▤ Vullen vanuit voorinstelling",
+    "Capture full app state (theme, font, scale, toolbar, zen, sidebar)": "Volledige app-status vastleggen (thema, lettertype, schaal, werkbalk, zen, zijbalk)",
+    "On: the preset also restores theme, font size, UI scale, toolbar position, zen and sidebar. Off: geometry only.": "Aan: de preset herstelt ook thema, lettergrootte, UI-schaal, werkbalkpositie, zen en zijbalk. Uit: alleen geometrie."
   }
 }

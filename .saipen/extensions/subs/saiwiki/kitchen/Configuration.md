@@ -45,6 +45,7 @@ Config lives in `settings` table key-value pairs. No INI file. All hot-reload on
 | `show_token_count` | bool | False | Token estimate (pill count) (T-614) |
 | `sync_mode` | string | Off | One-way silo sync to disk: Off/Silo/Hierarchy (T-591) |
 | `window_presets_enabled` | bool | True | Enable Ctrl+Q window presets page (T-608) |
+| `window_presets_capture_state` | bool | True | Ctrl+Q presets capture full app state (theme, font, scale, toolbar, zen, sidebar); off = geometry only (T-728) |
 | `image_paste_style` | string | `pill` | Pasted image markup: `pill` (clickable chip), `link` (markdown link), `path` (raw path) (T-724) |
 | **Sound** | | | |
 | `sound_enabled` | bool | True | Master sound toggle |

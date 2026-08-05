@@ -977,6 +977,8 @@
     "Horizontal tabs": "Schede orizzontali",
     "↳ Children": "↳ Bambini",
     "Sidebar: the usual column down the left\nHorizontal tabs: a strip above the editor — child silos have no\nroom on a bar, so they move into the parent's right-click menu": "Barra laterale: la solita colonna in basso a sinistra\nSchede orizzontali: una striscia sopra l'editor: i silos secondari non ne hanno\nstanza su una barra, quindi si spostano nel menu di scelta rapida del genitore",
-    "▤ Fill from preset": "▤ Riempi da preimpostazione"
+    "▤ Fill from preset": "▤ Riempi da preimpostazione",
+    "Capture full app state (theme, font, scale, toolbar, zen, sidebar)": "Cattura l'intero stato dell'app (tema, carattere, scala, barra degli strumenti, zen, barra laterale)",
+    "On: the preset also restores theme, font size, UI scale, toolbar position, zen and sidebar. Off: geometry only.": "Attivo: il preset ripristina anche tema, dimensione del carattere, scala dell'interfaccia, posizione della barra degli strumenti, zen e barra laterale. Spento: solo geometria."
   }
 }

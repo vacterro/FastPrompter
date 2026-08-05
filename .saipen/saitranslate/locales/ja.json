@@ -977,6 +977,8 @@
     "Horizontal tabs": "水平タブ",
     "↳ Children": "↳子供たち",
     "Sidebar: the usual column down the left\nHorizontal tabs: a strip above the editor — child silos have no\nroom on a bar, so they move into the parent's right-click menu": "サイドバー: 左下の通常の列\n水平タブ: エディターの上のストリップ — 子サイロには何もありません\nバーに部屋があるため、親の右クリック メニューに移動します",
-    "▤ Fill from preset": "▤ プリセットから塗りつぶす"
+    "▤ Fill from preset": "▤ プリセットから塗りつぶす",
+    "Capture full app state (theme, font, scale, toolbar, zen, sidebar)": "アプリ全体の状態をキャプチャ（テーマ、フォント、スケール、ツールバー、禅、サイドバー）",
+    "On: the preset also restores theme, font size, UI scale, toolbar position, zen and sidebar. Off: geometry only.": "オン: プリセットはテーマ、フォントサイズ、UIスケール、ツールバーの位置、禅モード、サイドバーも復元します。オフ: ジオメトリのみ。"
   }
 }

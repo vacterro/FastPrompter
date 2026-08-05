@@ -1,7 +1,7 @@
 ---
-phase: DONE
-task: none
-next_action: "PHASE SCOUT T-728"
+phase: BUILD
+task: T-728
+next_action: "PHASE BUILD T-728"
 blocker: ""
 agent: claude
 saipen_version: 7
@@ -13,11 +13,11 @@ requires:
  - shell
  - git
 schema_version: 3
-last_event: 1255
+last_event: 1260
 style_contract: ded-0d563e56
 goal_mode: true
 goal_waves: 1
 goal_tickets: 13
-updated: 2026-08-05T00:50:23Z
-transition_from: SHIP
+updated: 2026-08-05T12:20:00Z
+transition_from: SCOUT
 ---

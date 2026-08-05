@@ -23,12 +23,13 @@ from PyQt6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QHeaderView,
     QLineEdit,
-    QListWidget,
-    QListWidgetItem,
     QPushButton,
     QSpinBox,
     QTabWidget,
+    QTreeWidget,
+    QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -78,13 +79,18 @@ class TimerDialog(QDialog):
         self.tabs.addTab(alarms_page, tr("Alarms", self.lang))
 
         # ---- existing timers ----
-        self.list = QListWidget()
+        self.list = QTreeWidget()
+        self.list.setHeaderLabels([tr("Name", self.lang), tr("Time", self.lang), tr("Remaining", self.lang)])
         self.list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.list.setRootIsDecorated(False)
         self.list.setMinimumHeight(130)
+        self.list.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.list.setColumnWidth(1, 100)
+        self.list.setColumnWidth(2, 90)
         self.list.setToolTip(tr(
             "Double-click a timer to edit it.\nColour shows how close it is.",
             self.lang))
-        self.list.itemDoubleClicked.connect(lambda _i: self.edit_selected())
+        self.list.itemDoubleClicked.connect(lambda *_: self.edit_selected())
         self.list.currentItemChanged.connect(lambda *_: self._update_buttons())
         root.addWidget(self.list, 1)
 
@@ -784,7 +790,7 @@ class TimerDialog(QDialog):
         item = self.list.currentItem()
         if item is None:
             return None
-        tid = item.data(Qt.ItemDataRole.UserRole)
+        tid = item.data(0, Qt.ItemDataRole.UserRole)
         return next((t for t in self.main_win.timers if t.id == tid), None)
 
     def edit_selected(self):
@@ -862,7 +868,7 @@ class TimerDialog(QDialog):
         from PyQt6.QtGui import QColor
 
         keep = self.list.currentItem()
-        keep_id = keep.data(Qt.ItemDataRole.UserRole) if keep else None
+        keep_id = keep.data(0, Qt.ItemDataRole.UserRole) if keep else None
 
         self.list.blockSignals(True)
         self.list.clear()
@@ -877,23 +883,28 @@ class TimerDialog(QDialog):
             else:
                 tail = format_remaining(rem)
             repeat = "" if t.repeat == "once" else f" ({t.repeat})"
-            item = QListWidgetItem(f"{t.name}{repeat}  -  {when}  -  {tail}")
-            item.setData(Qt.ItemDataRole.UserRole, t.id)
+            item = QTreeWidgetItem([f"{t.name}{repeat}", when, tail])
+            item.setData(0, Qt.ItemDataRole.UserRole, t.id)
             tip = [t.name]
             if t.description:
                 tip.append(t.description)
             tip.append(f"{when}  ({tail})")
             tip.append(f"{tr('Sound', self.lang)}: {t.sound}  vol {t.volume}")
-            item.setToolTip("\n".join(tip))
+            item.setToolTip(0, "\n".join(tip))
+            item.setToolTip(1, item.toolTip(0))
+            item.setToolTip(2, item.toolTip(0))
             if t.enabled:
-                item.setForeground(QColor(t.display_color(now)))
-            self.list.addItem(item)
+                color = QColor(t.display_color(now))
+                item.setForeground(0, color)
+                item.setForeground(1, color)
+                item.setForeground(2, color)
+            self.list.addTopLevelItem(item)
             if t.id == keep_id:
                 self.list.setCurrentItem(item)
         self.list.blockSignals(False)
 
-        if keep_id is None and self.list.count():
-            self.list.setCurrentRow(0)
+        if keep_id is None and self.list.topLevelItemCount():
+            self.list.setCurrentItem(self.list.topLevelItem(0))
         self._update_buttons()
 
     def closeEvent(self, event):

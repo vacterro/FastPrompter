@@ -977,6 +977,8 @@
     "Horizontal tabs": "علامات التبويب الأفقية",
     "↳ Children": "↳ الأطفال",
     "Sidebar: the usual column down the left\nHorizontal tabs: a strip above the editor — child silos have no\nroom on a bar, so they move into the parent's right-click menu": "الشريط الجانبي: العمود المعتاد أسفل اليسار\nعلامات التبويب الأفقية: شريط فوق المحرر - لا توجد صوامع فرعية\nغرفة على الشريط، بحيث ينتقلون إلى قائمة النقر بزر الماوس الأيمن الخاصة بالوالدين",
-    "▤ Fill from preset": "▤ املأ من الإعداد المسبق"
+    "▤ Fill from preset": "▤ املأ من الإعداد المسبق",
+    "Capture full app state (theme, font, scale, toolbar, zen, sidebar)": "التقاط حالة التطبيق الكاملة (السمة، الخط، المقياس، شريط الأدوات، zen، الشريط الجانبي)",
+    "On: the preset also restores theme, font size, UI scale, toolbar position, zen and sidebar. Off: geometry only.": "تشغيل: يعيد الإعداد أيضًا السمة وحجم الخط ومقياس الواجهة وموضع شريط الأدوات وzen والشريط الجانبي. إيقاف: الهندسة فقط."
   }
 }

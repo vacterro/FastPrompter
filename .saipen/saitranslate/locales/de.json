@@ -977,6 +977,8 @@
     "Horizontal tabs": "Horizontale Registerkarten",
     "↳ Children": "↳ Kinder",
     "Sidebar: the usual column down the left\nHorizontal tabs: a strip above the editor — child silos have no\nroom on a bar, so they move into the parent's right-click menu": "Seitenleiste: die übliche Spalte links\nHorizontale Registerkarten: ein Streifen über dem Editor — Kind-Silos haben\nkeinen Platz auf einer Leiste, daher wandern sie ins Rechtsklick-Menü des übergeordneten Silo",
-    "▤ Fill from preset": "▤ Aus Voreinstellung füllen"
+    "▤ Fill from preset": "▤ Aus Voreinstellung füllen",
+    "Capture full app state (theme, font, scale, toolbar, zen, sidebar)": "Gesamten App-Zustand erfassen (Design, Schrift, Skalierung, Symbolleiste, Zen, Seitenleiste)",
+    "On: the preset also restores theme, font size, UI scale, toolbar position, zen and sidebar. Off: geometry only.": "Ein: Die Vorgabe stellt auch Design, Schriftgröße, UI-Skalierung, Symbolleistenposition, Zen und Seitenleiste wieder her. Aus: nur Geometrie."
   }
 }

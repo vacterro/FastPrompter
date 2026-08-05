@@ -2,6 +2,7 @@
 
 Generated: 2026-07-31 UTC (synced 01.08: 2-key drift closed)
 Updated: 2026-08-02 UTC (T-693 closed: 4 transform-menu keys added -> 943 keys/33 loc, wrapped in tr(), integrated + shipped v0.8.8; docs/guides unchanged)
+Updated: 2026-08-05 UTC (T-728 prepare: 2 window-preset full-state-capture keys added -> 973 keys/33 loc; validator PASSED 33/33 @ 973, 0 missing; docs/guides unchanged)
 Source: `src/fastprompter/` `tr()` call sites + `docs/wiki/` + root `GUIDE_EN.md` (read-only references)
 Bundle: `.saipen/saitranslate/locales/` (JSON, one file per language); docs in `kitchen/docs/{ru,est,ja,de}/`; guides in `kitchen/guides/`
 
@@ -43,12 +44,13 @@ Bundle: `.saipen/saitranslate/locales/` (JSON, one file per language); docs in `
 | TUR | Turkish | 🇹🇷 | 100.0% |
 | DED | Дед (Angry Grandpa) | 🇷🇺 | 100.0% |
 
-All 33 locales carry the same 971 keys; coverage is COMPUTED against en.json
+All 33 locales carry the same 973 keys; coverage is COMPUTED against en.json
 by `scratch/validate_saitranslate.py`, never read from the stored field.
 Missing keys fall back to English at runtime via the `tr()` engine.
 
 ## Drift log
 
+- 05.08.26 [v0.8.17 + T-728] ee prepare run: 2 new `tr()` keys from the uncommitted T-728 window-preset full-state capture (checkbox label + tooltip in window_presets_dialog.py) added to all 33 locales (971 -> 973). RU/EST/DED hand-translated per the Core split; the other 29 locales hand-translated by this run (short UI strings — no GoogleTranslator pass needed). Existing translations untouched (0 changed, 0 removed). Validator PASSED 33/33 @ 973 keys, 0 missing. T-728 uncommitted — bundle ready for its ship.
 - 04.08.26 [v0.8.10–v0.8.13 + T-715] T-731 closed: 11 new `tr()` keys wrapped in `main.py`/`editor.py` across v0.8.10–13 (image-paste style ×5 from T-724, silo tab-mode ×5 from T-718, `▤ Fill from preset` from T-715) added to all 32 non-EN locales (943 -> 971). RU/EST/DED hand-translated (Core split); 29 other locales via GoogleTranslator (same pipeline as prior runs) with 72 manual fixes for pass-through labels. Existing translations untouched (0 changed, 0 removed per locale — verified by git diff). Validator PASSED 33/33 @ 971 keys, 0 missing.
 - 02.08.26 [v0.8.8] T-693 closed: `✨ Transform to…`, `📄 Text`, `📊 Table`, `📋 Kanban Board` wrapped in `tr()` in main.py and added to every locale (939 -> 943). Bundle re-injected via `scratch/inject_translations.py`, shipped v0.8.8 (005d776, 99e0414). Validator 0 missing, 33/33 @ 943 keys (E-1160). No pending drift on any surface.
 - 01.08.26 [v0.8.7] bundle INTEGRATED: 33 i18n modules regenerated from these JSON files via `scratch/inject_translations.py` (the one script that does it — future bundle syncs run it, never hand-write modules). 939 keys each, 100% coverage. T-693 tracks 4 hardcoded transform-menu strings (main.py) still missing from the bundle.

@@ -977,7 +977,9 @@
     "Horizontal tabs": "क्षैतिज टैब",
     "↳ Children": "↳ बच्चे",
     "Sidebar: the usual column down the left\nHorizontal tabs: a strip above the editor — child silos have no\nroom on a bar, so they move into the parent's right-click menu": "साइडबार: बाईं ओर नीचे का सामान्य कॉलम\nक्षैतिज टैब: संपादक के ऊपर एक पट्टी - चाइल्ड साइलो में कोई नहीं है\nएक बार पर कमरा, इसलिए वे माता-पिता के राइट-क्लिक मेनू में चले जाते हैं",
-    "▤ Fill from preset": "▤ प्रीसेट से भरें"
+    "▤ Fill from preset": "▤ प्रीसेट से भरें",
+    "Capture full app state (theme, font, scale, toolbar, zen, sidebar)": "पूर्ण ऐप स्थिति कैप्चर करें (थीम, फ़ॉन्ट, स्केल, टूलबार, zen, साइडबार)",
+    "On: the preset also restores theme, font size, UI scale, toolbar position, zen and sidebar. Off: geometry only.": "चालू: प्रीसेट थीम, फ़ॉन्ट आकार, UI स्केल, टूलबार स्थिति, zen और साइडबार भी पुनर्स्थापित करता है। बंद: केवल ज्यामिति।"
   },
   "coverage_pct": 100.0
 }

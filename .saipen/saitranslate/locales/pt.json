@@ -977,6 +977,8 @@
     "Horizontal tabs": "Guias horizontais",
     "↳ Children": "↳ Crianças",
     "Sidebar: the usual column down the left\nHorizontal tabs: a strip above the editor — child silos have no\nroom on a bar, so they move into the parent's right-click menu": "Barra lateral: a coluna usual à esquerda\nGuias horizontais: uma faixa acima do editor — silos filhos não têm\nsala em um bar, então eles vão para o menu do botão direito do mouse",
-    "▤ Fill from preset": "▤ Preencher a partir da predefinição"
+    "▤ Fill from preset": "▤ Preencher a partir da predefinição",
+    "Capture full app state (theme, font, scale, toolbar, zen, sidebar)": "Capturar todo o estado do aplicativo (tema, fonte, escala, barra de ferramentas, zen, barra lateral)",
+    "On: the preset also restores theme, font size, UI scale, toolbar position, zen and sidebar. Off: geometry only.": "Ativado: a predefinição também restaura tema, tamanho da fonte, escala da interface, posição da barra de ferramentas, zen e barra lateral. Desativado: apenas geometria."
   }
 }

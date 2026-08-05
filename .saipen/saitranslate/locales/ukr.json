@@ -977,6 +977,8 @@
     "Horizontal tabs": "Горизонтальні вкладки",
     "↳ Children": "↳ Діти",
     "Sidebar: the usual column down the left\nHorizontal tabs: a strip above the editor — child silos have no\nroom on a bar, so they move into the parent's right-click menu": "Бічна панель: звичайний стовпець зліва\nГоризонтальні вкладки: смужка над редактором — дочірніх силосів немає\nкімнату на барі, тому вони переміщуються в батьківське меню, що натискається правою кнопкою миші",
-    "▤ Fill from preset": "▤ Заповнити з попереднього налаштування"
+    "▤ Fill from preset": "▤ Заповнити з попереднього налаштування",
+    "Capture full app state (theme, font, scale, toolbar, zen, sidebar)": "Захопити весь стан застосунку (тема, шрифт, масштаб, панель інструментів, дзен, бічна панель)",
+    "On: the preset also restores theme, font size, UI scale, toolbar position, zen and sidebar. Off: geometry only.": "Увімк.: пресет також відновлює тему, розмір шрифту, масштаб інтерфейсу, положення панелі інструментів, дзен і бічну панель. Вимк.: лише геометрія."
   }
 }

@@ -1757,24 +1757,24 @@ class VaultTextEdit(QTextEdit):
         count = end_num - start_num + 1
         last_num = doc.blockCount() - 1
 
-        with edit_block(self.textCursor(), self):
-            c = QTextCursor(doc)
-            c.setPosition(start_block.position())
+        cursor = self.textCursor()
+        with edit_block(cursor, self):
+            cursor.setPosition(start_block.position())
             # length() counts the block separator, so -1 lands on end-of-block
-            c.setPosition(end_block.position() + end_block.length() - 1,
-                          QTextCursor.MoveMode.KeepAnchor)
-            fragment = c.selection()
+            cursor.setPosition(end_block.position() + end_block.length() - 1,
+                               QTextCursor.MoveMode.KeepAnchor)
+            fragment = cursor.selection()
 
             # Swallow exactly ONE newline with the lines, or the move leaves a
             # blank line where they were. Prefer the one after; at the end of
             # the document there is none, so take the one before instead.
             if end_num < last_num:
-                c.setPosition(c.position() + 1, QTextCursor.MoveMode.KeepAnchor)
+                cursor.setPosition(cursor.position() + 1, QTextCursor.MoveMode.KeepAnchor)
             elif start_num > 0:
-                sel_end = c.position()
-                c.setPosition(start_block.position() - 1)
-                c.setPosition(sel_end, QTextCursor.MoveMode.KeepAnchor)
-            c.removeSelectedText()
+                sel_end = cursor.position()
+                cursor.setPosition(start_block.position() - 1)
+                cursor.setPosition(sel_end, QTextCursor.MoveMode.KeepAnchor)
+            cursor.removeSelectedText()
 
             # Blocks after the removed range shifted down by `count`
             new_target = target_num if target_num < start_num else target_num - count
@@ -1782,15 +1782,15 @@ class VaultTextEdit(QTextEdit):
             if not target_block.isValid():
                 target_block = doc.lastBlock()
 
-            ins = QTextCursor(target_block)
+            cursor.setPosition(target_block.position())
             if target_num > end_num:
-                ins.movePosition(QTextCursor.MoveOperation.EndOfBlock)
-                ins.insertText("\n")
-                ins.insertFragment(fragment)
+                cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock)
+                cursor.insertText("\n")
+                cursor.insertFragment(fragment)
             else:
-                ins.movePosition(QTextCursor.MoveOperation.StartOfBlock)
-                ins.insertFragment(fragment)
-                ins.insertText("\n")
+                cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
+                cursor.insertFragment(fragment)
+                cursor.insertText("\n")
 
     def mouseReleaseEvent(self, event):
         line_drag_source = getattr(self, "_line_drag_source_block", None)
