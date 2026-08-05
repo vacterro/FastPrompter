@@ -979,6 +979,9 @@
     "Sidebar: the usual column down the left\nHorizontal tabs: a strip above the editor — child silos have no\nroom on a bar, so they move into the parent's right-click menu": "Sidofält: den vanliga kolumnen till vänster\nHorisontella flikar: en remsa ovanför redigeraren — barnsilor har inget\nutrymme på en stapel, så de flyttas till förälderns högerklicksmeny",
     "▤ Fill from preset": "▤ Fyll från förinställning",
     "Capture full app state (theme, font, scale, toolbar, zen, sidebar)": "Fånga hela appens tillstånd (tema, teckensnitt, skala, verktygsfält, zen, sidofält)",
-    "On: the preset also restores theme, font size, UI scale, toolbar position, zen and sidebar. Off: geometry only.": "På: förinställningen återställer även tema, teckenstorlek, UI-skala, verktygsfältets position, zen och sidofältet. Av: endast geometri."
+    "On: the preset also restores theme, font size, UI scale, toolbar position, zen and sidebar. Off: geometry only.": "På: förinställningen återställer även tema, teckenstorlek, UI-skala, verktygsfältets position, zen och sidofältet. Av: endast geometri.",
+    "Name": "Namn",
+    "Time": "Tid",
+    "Remaining": "Återstår"
   }
 }

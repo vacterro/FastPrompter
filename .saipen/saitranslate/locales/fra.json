@@ -979,6 +979,9 @@
     "Sidebar: the usual column down the left\nHorizontal tabs: a strip above the editor — child silos have no\nroom on a bar, so they move into the parent's right-click menu": "Barre latérale : la colonne habituelle en bas à gauche\nOnglets horizontaux : une bande au-dessus de l'éditeur – les silos enfants n'en ont pas\nchambre sur un bar, ils se déplacent donc dans le menu contextuel du parent",
     "▤ Fill from preset": "▤ Remplir à partir du préréglage",
     "Capture full app state (theme, font, scale, toolbar, zen, sidebar)": "Capturer tout l'état de l'application (thème, police, échelle, barre d'outils, zen, barre latérale)",
-    "On: the preset also restores theme, font size, UI scale, toolbar position, zen and sidebar. Off: geometry only.": "Activé : le préréglage restaure aussi le thème, la taille de police, l'échelle de l'interface, la position de la barre d'outils, le zen et la barre latérale. Désactivé : géométrie seule."
+    "On: the preset also restores theme, font size, UI scale, toolbar position, zen and sidebar. Off: geometry only.": "Activé : le préréglage restaure aussi le thème, la taille de police, l'échelle de l'interface, la position de la barre d'outils, le zen et la barre latérale. Désactivé : géométrie seule.",
+    "Name": "Nom",
+    "Time": "Heure",
+    "Remaining": "Restant"
   }
 }

@@ -979,7 +979,10 @@
     "Sidebar: the usual column down the left\nHorizontal tabs: a strip above the editor — child silos have no\nroom on a bar, so they move into the parent's right-click menu": "Kenar çubuğu: soldaki normal sütun\nYatay sekmeler: düzenleyicinin üzerinde bir şerit — alt siloların\nbir çubuk üzerinde oda, böylece ebeveynin sağ tıklama menüsüne geçerler",
     "▤ Fill from preset": "▤ Ön ayardan doldurun",
     "Capture full app state (theme, font, scale, toolbar, zen, sidebar)": "Tüm uygulama durumunu yakala (tema, yazı tipi, ölçek, araç çubuğu, zen, kenar çubuğu)",
-    "On: the preset also restores theme, font size, UI scale, toolbar position, zen and sidebar. Off: geometry only.": "Açık: hazır ayar, temayı, yazı tipi boyutunu, arayüz ölçeğini, araç çubuğu konumunu, zen'i ve kenar çubuğunu da geri yükler. Kapalı: yalnızca geometri."
+    "On: the preset also restores theme, font size, UI scale, toolbar position, zen and sidebar. Off: geometry only.": "Açık: hazır ayar, temayı, yazı tipi boyutunu, arayüz ölçeğini, araç çubuğu konumunu, zen'i ve kenar çubuğunu da geri yükler. Kapalı: yalnızca geometri.",
+    "Name": "Ad",
+    "Time": "Saat",
+    "Remaining": "Kalan"
   },
   "coverage_pct": 100.0
 }

@@ -979,6 +979,9 @@
     "Sidebar: the usual column down the left\nHorizontal tabs: a strip above the editor — child silos have no\nroom on a bar, so they move into the parent's right-click menu": "סרגל צד: העמודה הרגילה למטה משמאל\nכרטיסיות אופקיות: רצועה מעל העורך - לממגורות ילדים אין\nחדר בבר, כך שהם עוברים לתפריט ההורה בלחיצה ימנית",
     "▤ Fill from preset": "▤ מילוי מהגדרה מראש",
     "Capture full app state (theme, font, scale, toolbar, zen, sidebar)": "לכידת כל מצב האפליקציה (ערכת נושא, גופן, קנה מידה, סרגל כלים, zen, סרגל צד)",
-    "On: the preset also restores theme, font size, UI scale, toolbar position, zen and sidebar. Off: geometry only.": "פועל: ההגדרה משחזרת גם ערכת נושא, גודל גופן, קנה מידה של הממשק, מיקום סרגל הכלים, zen וסרגל הצד. כבוי: רק גיאומטריה."
+    "On: the preset also restores theme, font size, UI scale, toolbar position, zen and sidebar. Off: geometry only.": "פועל: ההגדרה משחזרת גם ערכת נושא, גודל גופן, קנה מידה של הממשק, מיקום סרגל הכלים, zen וסרגל הצד. כבוי: רק גיאומטריה.",
+    "Name": "שם",
+    "Time": "זמן",
+    "Remaining": "נותר"
   }
 }

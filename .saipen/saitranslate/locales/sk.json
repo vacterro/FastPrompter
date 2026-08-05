@@ -979,7 +979,10 @@
     "Sidebar: the usual column down the left\nHorizontal tabs: a strip above the editor — child silos have no\nroom on a bar, so they move into the parent's right-click menu": "Bočný panel: obvyklý stĺpec vľavo dole\nHorizontálne záložky: pás nad editorom – podradené silá majú č\nmiestnosti na lište, takže sa presunú do ponuky rodiča kliknutím pravým tlačidlom myši",
     "▤ Fill from preset": "▤ Vyplňte z predvoľby",
     "Capture full app state (theme, font, scale, toolbar, zen, sidebar)": "Zachytiť celý stav aplikácie (téma, písmo, mierka, panel nástrojov, zen, bočný panel)",
-    "On: the preset also restores theme, font size, UI scale, toolbar position, zen and sidebar. Off: geometry only.": "Zapnuté: predvoľba obnoví aj tému, veľkosť písma, mierku rozhrania, umiestnenie panela nástrojov, zen a bočný panel. Vypnuté: iba geometria."
+    "On: the preset also restores theme, font size, UI scale, toolbar position, zen and sidebar. Off: geometry only.": "Zapnuté: predvoľba obnoví aj tému, veľkosť písma, mierku rozhrania, umiestnenie panela nástrojov, zen a bočný panel. Vypnuté: iba geometria.",
+    "Name": "Názov",
+    "Time": "Čas",
+    "Remaining": "Zostáva"
   },
   "coverage_pct": 100.0
 }

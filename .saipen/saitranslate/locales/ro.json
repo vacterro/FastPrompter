@@ -979,7 +979,10 @@
     "Sidebar: the usual column down the left\nHorizontal tabs: a strip above the editor — child silos have no\nroom on a bar, so they move into the parent's right-click menu": "Bară laterală: coloana obișnuită din stânga\nFile orizontale: o bandă deasupra editorului — silozurile copil nu au\nloc pe o bară, așa că se mută în meniul cu clic dreapta al părintelui",
     "▤ Fill from preset": "▤ Completați din presetare",
     "Capture full app state (theme, font, scale, toolbar, zen, sidebar)": "Capturați întreaga stare a aplicației (temă, font, scară, bară de instrumente, zen, bară laterală)",
-    "On: the preset also restores theme, font size, UI scale, toolbar position, zen and sidebar. Off: geometry only.": "Pornit: presetul restaurează și tema, dimensiunea fontului, scara interfeței, poziția barei de instrumente, zen și bara laterală. Oprit: doar geometrie."
+    "On: the preset also restores theme, font size, UI scale, toolbar position, zen and sidebar. Off: geometry only.": "Pornit: presetul restaurează și tema, dimensiunea fontului, scara interfeței, poziția barei de instrumente, zen și bara laterală. Oprit: doar geometrie.",
+    "Name": "Nume",
+    "Time": "Oră",
+    "Remaining": "Rămas"
   },
   "coverage_pct": 100.0
 }

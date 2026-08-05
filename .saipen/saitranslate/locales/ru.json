@@ -979,6 +979,9 @@
     "Sidebar: the usual column down the left\nHorizontal tabs: a strip above the editor — child silos have no\nroom on a bar, so they move into the parent's right-click menu": "Боковая панель: обычная колонка слева\nГоризонтальные вкладки: полоса над редактором — у дочерних сил\nнет места на панели, поэтому они переезжают в контекстное меню родителя",
     "▤ Fill from preset": "▤ Заполнить из шаблона",
     "Capture full app state (theme, font, scale, toolbar, zen, sidebar)": "Захватывать всё состояние приложения (тема, шрифт, масштаб, панель инструментов, дзен, боковая панель)",
-    "On: the preset also restores theme, font size, UI scale, toolbar position, zen and sidebar. Off: geometry only.": "Вкл.: пресет также восстанавливает тему, размер шрифта, масштаб интерфейса, положение панели инструментов, дзен и боковую панель. Выкл.: только геометрия."
+    "On: the preset also restores theme, font size, UI scale, toolbar position, zen and sidebar. Off: geometry only.": "Вкл.: пресет также восстанавливает тему, размер шрифта, масштаб интерфейса, положение панели инструментов, дзен и боковую панель. Выкл.: только геометрия.",
+    "Name": "Имя",
+    "Time": "Время",
+    "Remaining": "Осталось"
   }
 }

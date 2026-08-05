@@ -979,6 +979,9 @@
     "Sidebar: the usual column down the left\nHorizontal tabs: a strip above the editor — child silos have no\nroom on a bar, so they move into the parent's right-click menu": "Sivupalkki: tavallinen sarake vasemmalla\nVaakasuuntaiset välilehdet: nauha editorin yläpuolella — lapsisiloilla ei ole\ntilaa palkissa, joten ne siirtyvät vanhemman oikean painikkeen valikkoon",
     "▤ Fill from preset": "▤ Täytä esiasetuksesta",
     "Capture full app state (theme, font, scale, toolbar, zen, sidebar)": "Tallenna koko sovelluksen tila (teema, fontti, mittakaava, työkalupalkki, zen, sivupalkki)",
-    "On: the preset also restores theme, font size, UI scale, toolbar position, zen and sidebar. Off: geometry only.": "Päällä: esiasetus palauttaa myös teeman, fonttikoon, käyttöliittymän mittakaavan, työkalupalkin sijainnin, zenin ja sivupalkin. Pois: vain geometria."
+    "On: the preset also restores theme, font size, UI scale, toolbar position, zen and sidebar. Off: geometry only.": "Päällä: esiasetus palauttaa myös teeman, fonttikoon, käyttöliittymän mittakaavan, työkalupalkin sijainnin, zenin ja sivupalkin. Pois: vain geometria.",
+    "Name": "Nimi",
+    "Time": "Aika",
+    "Remaining": "Jäljellä"
   }
 }

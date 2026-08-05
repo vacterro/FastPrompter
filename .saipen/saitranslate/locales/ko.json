@@ -979,6 +979,9 @@
     "Sidebar: the usual column down the left\nHorizontal tabs: a strip above the editor — child silos have no\nroom on a bar, so they move into the parent's right-click menu": "사이드바: 왼쪽 아래의 일반적인 열\n수평 탭: 편집기 위의 스트립 - 하위 사일로에는\n바에 있는 방이므로 부모의 오른쪽 클릭 메뉴로 이동합니다.",
     "▤ Fill from preset": "▤ 사전 설정에서 채우기",
     "Capture full app state (theme, font, scale, toolbar, zen, sidebar)": "전체 앱 상태 캡처(테마, 글꼴, 배율, 도구 모음, zen, 사이드바)",
-    "On: the preset also restores theme, font size, UI scale, toolbar position, zen and sidebar. Off: geometry only.": "켜기: 프리셋이 테마, 글꼴 크기, UI 배율, 도구 모음 위치, zen, 사이드바도 복원합니다. 끄기: 지오메트리만."
+    "On: the preset also restores theme, font size, UI scale, toolbar position, zen and sidebar. Off: geometry only.": "켜기: 프리셋이 테마, 글꼴 크기, UI 배율, 도구 모음 위치, zen, 사이드바도 복원합니다. 끄기: 지오메트리만.",
+    "Name": "이름",
+    "Time": "시간",
+    "Remaining": "남은 시간"
   }
 }

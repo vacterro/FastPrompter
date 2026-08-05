@@ -979,7 +979,10 @@
     "Sidebar: the usual column down the left\nHorizontal tabs: a strip above the editor — child silos have no\nroom on a bar, so they move into the parent's right-click menu": "Postranní panel: obvyklý sloupec vlevo dole\nVodorovné záložky: pruh nad editorem – podřízená sila mají č\nmístnost na liště, takže se přesunou do rodičovské nabídky pravým tlačítkem myši",
     "▤ Fill from preset": "▤ Vyplnit ze šablony",
     "Capture full app state (theme, font, scale, toolbar, zen, sidebar)": "Uložit celý stav aplikace (téma, písmo, měřítko, panel nástrojů, zen, postranní panel)",
-    "On: the preset also restores theme, font size, UI scale, toolbar position, zen and sidebar. Off: geometry only.": "Zapnuto: předvolba také obnoví téma, velikost písma, měřítko rozhraní, umístění panelu nástrojů, zen a postranní panel. Vypnuto: pouze geometrie."
+    "On: the preset also restores theme, font size, UI scale, toolbar position, zen and sidebar. Off: geometry only.": "Zapnuto: předvolba také obnoví téma, velikost písma, měřítko rozhraní, umístění panelu nástrojů, zen a postranní panel. Vypnuto: pouze geometrie.",
+    "Name": "Název",
+    "Time": "Čas",
+    "Remaining": "Zbývá"
   },
   "coverage_pct": 100.0
 }

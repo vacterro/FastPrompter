@@ -979,7 +979,10 @@
     "Sidebar: the usual column down the left\nHorizontal tabs: a strip above the editor — child silos have no\nroom on a bar, so they move into the parent's right-click menu": "Странична лента: обичайната колона отляво\nХоризонтални раздели: лента над редактора — дъщерните силози нямат\nмясто на лента, затова се местят в менюто с десен бутон на родителя",
     "▤ Fill from preset": "▤ Попълнете от предварително зададени",
     "Capture full app state (theme, font, scale, toolbar, zen, sidebar)": "Запис на пълното състояние на приложението (тема, шрифт, мащаб, лента с инструменти, zen, странична лента)",
-    "On: the preset also restores theme, font size, UI scale, toolbar position, zen and sidebar. Off: geometry only.": "Включено: предварителната настройка възстановява също тема, размер на шрифта, мащаб на интерфейса, позиция на лентата с инструменти, zen и страничната лента. Изключено: само геометрия."
+    "On: the preset also restores theme, font size, UI scale, toolbar position, zen and sidebar. Off: geometry only.": "Включено: предварителната настройка възстановява също тема, размер на шрифта, мащаб на интерфейса, позиция на лентата с инструменти, zen и страничната лента. Изключено: само геометрия.",
+    "Name": "Име",
+    "Time": "Време",
+    "Remaining": "Оставащо"
   },
   "coverage_pct": 100.0
 }

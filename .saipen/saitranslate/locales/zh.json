@@ -979,6 +979,9 @@
     "Sidebar: the usual column down the left\nHorizontal tabs: a strip above the editor — child silos have no\nroom on a bar, so they move into the parent's right-click menu": "侧边栏：左侧的常规列\n水平标签页：编辑器上方的条带 — 子 silo 在条带上\n没有空间，因此移入父级的右键菜单",
     "▤ Fill from preset": "▤ 从预设填充",
     "Capture full app state (theme, font, scale, toolbar, zen, sidebar)": "捕获整个应用状态（主题、字体、缩放、工具栏、禅、侧边栏）",
-    "On: the preset also restores theme, font size, UI scale, toolbar position, zen and sidebar. Off: geometry only.": "开：预设还会恢复主题、字体大小、界面缩放、工具栏位置、禅模式和侧边栏。关：仅几何。"
+    "On: the preset also restores theme, font size, UI scale, toolbar position, zen and sidebar. Off: geometry only.": "开：预设还会恢复主题、字体大小、界面缩放、工具栏位置、禅模式和侧边栏。关：仅几何。",
+    "Name": "名称",
+    "Time": "时间",
+    "Remaining": "剩余"
   }
 }
