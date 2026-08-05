@@ -9,6 +9,7 @@ import re
 import shutil
 import sys
 import time
+import zlib
 
 from PyQt6 import sip
 from PyQt6.QtCore import (
@@ -750,6 +751,16 @@ class FastPrompter(
             entry["marks"] = {str(k): v for k, v in marks.items()}
         if heat:
             entry["heat"] = {str(k): v for k, v in heat.items()}
+        # Fingerprint the text this cursor belongs to: the saved offsets are
+        # only meaningful against the EXACT text they were captured from.
+        # restore_silo_state refuses to clamp them into a changed document
+        # (T-720), so capture must record what "the same text" means.
+        try:
+            text = ta.document().toPlainText()
+            entry["text_len"] = len(text)
+            entry["text_crc"] = zlib.crc32(text.encode("utf-8", "replace"))
+        except Exception:
+            pass
         # Collect fold state: text of each collapsed anchor block so folds
         # survive restart. Block text is stable across document reloads.
         try:
@@ -804,6 +815,20 @@ class FastPrompter(
             pass
 
         doc_len = ta.document().characterCount() - 1
+        # T-720: the saved offsets belong to the text they were captured
+        # against. If that text changed (an edit between sessions, a reload,
+        # an undo that rewrote the doc), clamping the OLD offset into the NEW
+        # document lands the caret mid-word. Fall back to the caller's own
+        # Start/End rule instead. Entries written before this fingerprint
+        # existed carry neither field and keep the old clamp behaviour.
+        if "text_len" in entry and "text_crc" in entry:
+            try:
+                text = ta.document().toPlainText()
+                if len(text) != entry["text_len"] or zlib.crc32(
+                        text.encode("utf-8", "replace")) != entry["text_crc"]:
+                    return False
+            except Exception:
+                pass
         try:
             anchor = max(0, min(int(entry.get("anchor", 0)), doc_len))
             pos = max(0, min(int(entry.get("pos", 0)), doc_len))

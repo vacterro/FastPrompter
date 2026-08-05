@@ -12127,3 +12127,67 @@ def test_file_panel_refresh_holds_the_focus_lock(win, tmp_path):
         panel.deleteLater()
         win._focus_lock_count = 0
         win.ignore_focus_loss = False
+
+
+# --- T-720: a stale saved cursor must not land mid-word in changed text ----
+
+def test_stale_cursor_restore_falls_back_to_start_or_end(win):
+    """T-720: capture stores the caret as an OFFSET into the old text. If the
+    silo's text changed before the restore (an edit between sessions, a
+    reload), clamping that offset into the NEW document plants the caret
+    mid-word. The restore must detect the text mismatch and fall back to the
+    caller's Start/End rule instead."""
+    win.cat_combo.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    win.data["silo_home"] = "False"
+    win.data["temp_presets"][:] = ["AAAA BBBB CCCC DDDD", "other"]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    ta = win.text_area
+
+    # caret mid-word: inside "BBBB" (offset 6)
+    c = ta.textCursor()
+    c.setPosition(6)
+    ta.setTextCursor(c)
+    win.capture_silo_state()
+    cat = win.get_current_category()
+    entry = win.data["silo_view_state_all"][cat]["s0"]
+    assert entry.get("pos") == 6, "capture must store the stale offset"
+
+    # simulate a restart: the silo text changed to same-length DIFFERENT text
+    win.data["temp_presets"][0] = "XXXX YYYY ZZZZ WWWW"
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+
+    pos = ta.textCursor().position()
+    end = ta.document().characterCount() - 1
+    assert pos in (0, end), (
+        f"caret landed at {pos} mid-word in changed text - should have "
+        "fallen back to Start/End"
+    )
+
+
+def test_matching_text_still_restores_the_saved_cursor(win):
+    """The fingerprint must not break the normal path: unchanged text restores
+    the exact saved caret position."""
+    win.cat_combo.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    win.data["silo_home"] = "False"
+    win.data["temp_presets"][:] = ["AAAA BBBB CCCC DDDD", "other"]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    ta = win.text_area
+
+    c = ta.textCursor()
+    c.setPosition(6)
+    ta.setTextCursor(c)
+    win.capture_silo_state()
+
+    # restart with IDENTICAL text
+    win.data["temp_presets"][0] = "AAAA BBBB CCCC DDDD"
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+
+    assert ta.textCursor().position() == 6, (
+        "identical text must restore the exact saved caret position"
+    )

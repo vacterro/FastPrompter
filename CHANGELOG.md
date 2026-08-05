@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.8.16 — 2026-08-05
+
+- **The caret no longer lands mid-word at startup (T-720).** When a silo's text changed between sessions, the saved cursor offset was clamped into the new text, dropping the caret in the middle of a word instead of where the user left it — or, for a never-visited silo, at the predictable end. The saved position now carries a fingerprint of the text it belongs to; if the text changed, the restore falls back to the usual Start/End rule instead of trusting a stale offset. Saved positions from older versions still restore as before.
+
+
 ## v0.8.15 — 2026-08-04
 
 - **Undo no longer hides the window after an image paste (T-732).** Pasting an image writes a PNG into the watched file folder, and the panel's watcher fired its refresh a moment later — landing under whatever the user pressed next, so the very next Ctrl+Z (or anything else) looked like it had clicked the window away and the app hid itself. The refresh now takes the same focus lock dialogs use while the panel is a floating window, and skips it when docked, so the paste → refresh → hide chain is broken at its source.
