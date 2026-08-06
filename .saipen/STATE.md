@@ -1,7 +1,7 @@
 ---
 phase: DONE
 task: none
-next_action: "WAIT: v0.8.21 tagged, board empty, suite 1658p/0f -- say the word to publish the GitHub release (tools/release.py); the v0.8.20 EXE in build/ predates this fix and would need a rebuild"
+next_action: "WAIT: v0.8.21 shipped and the EXE rebuilt from it; board empty, suite 1658p/0f. Only open item: publish the GitHub release with tools/release.py -- needs an explicit yes, ccc is not it"
 blocker: ""
 agent: claude
 saipen_version: 7
@@ -13,7 +13,7 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 1303
+last_event: 1304
 style_contract: ded-97af6dca
 goal_mode: true
 goal_waves: 1
