@@ -521,6 +521,8 @@ def undo_bed(win):
     win._undo_kinds().clear()
     win._switch_to_slot(min(saved[3], max(0, len(saved[0]) - 1)), initial=True)
     win._silo_gaps_list()[:] = saved[2]
+    win.text_area.verticalScrollBar().setValue(0)
+    win.text_area.repaint()
 
 
 def test_snapshot_carries_the_live_editor_text(undo_bed):
@@ -4233,9 +4235,10 @@ def test_middle_click_cycles_line_checkbox(win):
     assert "~~~~" not in ta.toPlainText()
 
 
-def test_line_marks_cycle_both_ways_and_persist_per_silo(win):
+def test_line_marks_cycle_both_ways_and_persist_per_silo(fresh_win):
     from PyQt6.QtCore import QEvent, QPointF, Qt
     from PyQt6.QtGui import QMouseEvent, QTextCursor
+    win = fresh_win
 
     win.cat_combo.setCurrentIndex(0)
     win.on_tab_changed(0)
@@ -12576,9 +12579,12 @@ def test_the_wrapper_plays_then_runs(win):
     real = win.play_sound
     win.play_sound = lambda name: asked.append(name)
     try:
-        wrapped = win._with_hotkey_sound("hk_undo", lambda: ran.append(1))
+        # NOT hk_undo: that one sounds itself from inside undo_action and is
+        # handed back unwrapped on purpose (HOTKEY_SOUND_SELF), or Ctrl+Z
+        # would play twice. Use a key the wrapper really owns.
+        wrapped = win._with_hotkey_sound("hk_settings", lambda: ran.append(1))
         wrapped()
-        assert asked == ["undo"] and ran == [1]
+        assert asked == ["settings"] and ran == [1]
         # a slot that raises must not lose its sound, and vice versa
         win.play_sound = lambda name: (_ for _ in ()).throw(RuntimeError("no audio"))
         wrapped2 = win._with_hotkey_sound("hk_find", lambda: ran.append(2))
@@ -12610,3 +12616,37 @@ def test_migration_never_resets_a_custom_mapping(win):
     assert "redo" in data["sound_events"], "a new event must still be added"
 
 
+
+
+def test_ctrl_z_makes_exactly_one_sound(win):
+    """T-735 gave the shortcut layer a sound while undo_action already played
+    its own, so one Ctrl+Z on the data stack played TWO. The sound belongs to
+    the action, not the key: Ctrl+Z also arrives straight from the editor's
+    keyPressEvent, which never passes through add_shortcut."""
+    asked = []
+    real = win.play_sound
+    win.play_sound = lambda name: asked.append(name)
+    try:
+        # the wrapper must hand these back untouched
+        for key in ("hk_undo", "Ctrl+Y", "Ctrl+Shift+Z"):
+            sentinel = object()
+            assert win._with_hotkey_sound(key, sentinel) is sentinel, key
+        # and a key that does NOT sound itself still gets wrapped
+        assert win._with_hotkey_sound("hk_find", lambda: None) is not None
+
+        win.data["temp_presets"][:] = ["alpha", "bravo"]
+        win.data["pinned_silos"] = []
+        win.silo_docs[:] = []
+        win._switch_to_slot(0, initial=True)
+        win.data_undo_stack = []
+        win.data_redo_stack = []
+        win._undo_kinds().clear()
+        win.add_data_undo_state("probe")
+        win.data["temp_presets"][1] = "changed"
+        asked.clear()
+
+        win._smart_undo()
+        assert asked.count("undo") <= 1, f"one Ctrl+Z played {asked}"
+        assert "tick" not in asked, f"undo still plays the old tick: {asked}"
+    finally:
+        win.play_sound = real

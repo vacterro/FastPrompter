@@ -2309,6 +2309,14 @@ class FastPrompter(
         "hk_bold": "click",
     }
 
+    # Actions that make their own sound from INSIDE, on every route they can
+    # be reached by — Ctrl+Z also arrives straight from the editor's
+    # keyPressEvent (editor.py:2796), which never passes through
+    # add_shortcut. Wrapping these as well played two sounds for one
+    # keystroke on the shortcut path and one on the editor path: the sound
+    # belongs to the action, not to the key.
+    HOTKEY_SOUND_SELF = frozenset({"hk_undo", "Ctrl+Y", "Ctrl+Shift+Z"})
+
     def sound_event_for_hotkey(self, key):
         """The sound event a shortcut should request. Never None: an action
         with no event of its own is still a hotkey."""
@@ -2323,6 +2331,8 @@ class FastPrompter(
         without them knowing this exists. The sound goes first so it is not
         swallowed when the slot opens a modal.
         """
+        if key in self.HOTKEY_SOUND_SELF:
+            return slot
         event = self.sound_event_for_hotkey(key)
 
         def _run():
@@ -6088,6 +6098,7 @@ class FastPrompter(
         doc = self._active_doc()
         if doc is not None and doc.isUndoAvailable():
             self.text_area.undo()
+            self.play_sound("undo")
             kinds.append("text")
         elif self.undo_action():
             kinds.append("data")
@@ -6107,6 +6118,7 @@ class FastPrompter(
         if kind == "text":
             if doc is not None and doc.isRedoAvailable():
                 self.text_area.redo()
+                self.play_sound("redo")
                 return
             self.redo_action()
             return
@@ -6116,6 +6128,7 @@ class FastPrompter(
         # data first, text as the fallback, so nothing is unreachable.
         if not self.redo_action() and doc is not None and doc.isRedoAvailable():
             self.text_area.redo()
+            self.play_sound("redo")
 
     def undo_action(self):
         if hasattr(self, "data_undo_stack") and self.data_undo_stack:
@@ -6163,7 +6176,7 @@ class FastPrompter(
             while len(self.data_redo_stack) > 1 and sum(_get_size(s) for s in self.data_redo_stack) > MAX_CHARS:
                 self.data_redo_stack.pop(0)
             self._apply_data_state(state)
-            self.play_sound("tick")
+            self.play_sound("undo")
             # NOT a fresh bump: latching the data stack "fresh" here is what
             # made every following Ctrl+Z overwrite newer text (see
             # _undo_prefers_data). Inherit the restored action's own position.
@@ -6181,7 +6194,7 @@ class FastPrompter(
             self.data_undo_stack.append(undo_state)
             state = self.data_redo_stack.pop()
             self._apply_data_state(state)
-            self.play_sound("tick")
+            self.play_sound("redo")
             self._last_data_action_time = undo_state["_seq"]
             self._save_undo_state()
             return True

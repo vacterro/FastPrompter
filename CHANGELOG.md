@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.8.21 — 2026-08-06
+
+- **Ctrl+Z makes one sound, not two.** v0.8.18 gave every hotkey a sound, but undo already played one of its own, so a single Ctrl+Z fired twice — while the same Ctrl+Z typed inside the editor took a different route and played only the old generic tick. The sound now belongs to the action rather than to the key: undo and redo play their own pair on every route, text undo and redo are no longer silent, and the hotkey layer stands aside for the handful of actions that sound themselves.
+
 ## v0.8.20 — 2026-08-06
 
 - **A `#`-headed snippet gets its bold sidebar title again.** The setting worked for silos and quietly did nothing for snippets. The bold was being applied and then thrown away inside the same refresh: the button sets its stylesheet last, and applying a stylesheet makes Qt rebuild the widget's font from the theme rules, discarding the weight set a moment earlier.
