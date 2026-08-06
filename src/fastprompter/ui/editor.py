@@ -1930,8 +1930,13 @@ class VaultTextEdit(QTextEdit):
         if self.main_win.data.get("hover_line", "True") != "True":
             return False
         if point is None:
-            if not self.underMouse():
-                return False
+            # Geometry, not underMouse(). `underMouse()` answers "has Qt seen
+            # an enter event for me", which is False whenever the enter was
+            # missed — an unfocused window, a cursor warped in by software, a
+            # widget scrolled under a stationary pointer. Every one of those
+            # is exactly when this method is worth calling, so it bailed out
+            # in the cases it exists for. The rect test below already answers
+            # the real question: is the pointer over my viewport.
             point = self.viewport().mapFromGlobal(QCursor.pos())
         if not self.viewport().rect().contains(point):
             return False

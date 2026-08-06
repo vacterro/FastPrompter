@@ -12609,3 +12609,4 @@ def test_migration_never_resets_a_custom_mapping(win):
     assert data["sound_events"]["undo"]["enabled"] == "False"
     assert "redo" in data["sound_events"], "a new event must still be added"
 
+

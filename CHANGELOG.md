@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.8.20 — 2026-08-06
+
+- **A `#`-headed snippet gets its bold sidebar title again.** The setting worked for silos and quietly did nothing for snippets. The bold was being applied and then thrown away inside the same refresh: the button sets its stylesheet last, and applying a stylesheet makes Qt rebuild the widget's font from the theme rules, discarding the weight set a moment earlier.
+- **The hover highlight follows the pointer when the text scrolls.** Scrolling under a stationary mouse left the wash on the line it started on. The scroll was already wired to recompute it — but the recompute asked Qt "is the mouse over me", which is answered *no* for an unfocused window or a widget scrolled under a still pointer, i.e. exactly the situations it was there to handle. It now checks where the pointer actually is.
+- *Under the hood:* the test suite is fully green for the first time in this stretch — 1657 passing, nothing skipped over, nothing weakened.
+
 ## v0.8.19 — 2026-08-06
 
 - *Housekeeping, one small fix.* Sidebar buttons now re-apply their font on every refresh instead of trusting a cached "already done" flag — a theme or scale pass could wipe a title's boldness while the cache still claimed it had been applied, leaving the button plain until something unrelated changed. Otherwise this release is test hygiene: three window-density tests that shared one window with five hundred others now build their own, which takes the suite from four long-standing failures down to one. That last one is a real defect (a `#`-headed snippet does not get its bold sidebar title) and is now tracked as such rather than filed under "known noise".

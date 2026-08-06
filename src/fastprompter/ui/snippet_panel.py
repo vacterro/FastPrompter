@@ -106,18 +106,14 @@ class DraggableButton(QPushButton):
         current_state = (text_label, cat, global_idx, full_text, color, font_family, scale,
                          is_editing, title_bold)
 
-        # The font is applied BEFORE the cache check, not after it. A theme or
-        # scale pass elsewhere calls setFont on these buttons and wipes the
-        # bold, while `_last_state` still says it was applied — so the next
-        # refresh took the early return and the '#'-header snippet never got
-        # its bold title back. The cache is there to skip the expensive
-        # stylesheet work, and a QFont per refresh is not that.
-        from PyQt6.QtGui import QFont
-        f = no_aa(QFont(font_family))
-        base_size = 10  # base size in points
-        f.setPointSizeF(max(8.0, base_size * scale))
-        f.setBold(title_bold)
-        self.setFont(f)
+        # MEASURED: update_data ran with title_bold=True and the button came
+        # back not bold. The cause is ordering, not the cache — this method
+        # ends with setStyleSheet(), and applying a sheet makes Qt re-resolve
+        # the widget's font from the QSS cascade (every theme sets
+        # `QWidget { font-size: ... }`), which throws away a setFont() made
+        # before it. So the font is applied on the cache-hit path here AND
+        # again after the sheet below; neither alone is enough.
+        self._apply_title_font(font_family, scale, title_bold)
 
         if getattr(self, '_last_state', None) == current_state:
             self.show()
@@ -173,6 +169,17 @@ class DraggableButton(QPushButton):
         }}
         """
         self.setStyleSheet(style)
+        # After the sheet, never before: see the note at the top of this
+        # method. Re-applying is cheap and it is the only application that
+        # actually survives.
+        self._apply_title_font(font_family, scale, title_bold)
+
+    def _apply_title_font(self, font_family, scale, title_bold):
+        from PyQt6.QtGui import QFont
+        f = no_aa(QFont(font_family))
+        f.setPointSizeF(max(8.0, 10 * scale))   # 10pt base
+        f.setBold(title_bold)
+        self.setFont(f)
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
