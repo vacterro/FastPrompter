@@ -12,6 +12,12 @@
 _(empty — T-702 was checkpointed and demoted to TODO by the 04.08 `/goal` pivot, E-1198. Its BUILD is done (E-1177) and VERIFY-triaged (E-1195); the full ticket text lives under "Wave 1".)_
 ## TODO
 
+### Wave 5 — 07.08 sound asks (user, repeated)
+
+- [x] T-741 (feat, user-asked) DONE 07.08 -- the timer alarm picker listed EIGHT event names out of 412 shipped files, so an alarm could only ever be one of eight sounds and wanting any other meant re-mapping a global event, which changes it everywhere else too. The combo now carries the named events first (existing timers keep resolving) then the whole library; a file is stored as `file:<name>` in itemData, and `_play_timer_sound` routes that straight to `play_file` at the timer's own volume so no settings change can move it under the timer's feet. A file that stops shipping falls back to `tick` instead of going blank. | verify: 2 smoke tests -- the combo offers exactly as many `file:` entries as `discover_sound_files` finds, and a `file:` timer reaches play_file while a named one still reaches play
+- [x] T-742 (feat, user-asked, REVERSES MY OWN CALL) DONE 07.08 -- "sound on all possible hotkeys" was asked twice and still looked broken, for two reasons. (1) I shipped the generic `hotkey` event DISABLED in T-735 on my own judgement that a sound on every shortcut would be obnoxious; the user asked for exactly that, twice, so `_DEFAULT_OFF` is now empty and a one-shot `_heal_hotkey_default` flips profiles that stored the old shipped `False` -- migration cannot tell "the app shipped it off" from "the user turned it off", and a marker makes the heal run once so it never fights someone who switches it off afterwards. (2) Qt's OWN editing shortcuts never pass through add_shortcut, so the T-735 wrapper could not reach them and Ctrl+A was silent while every registered hotkey had a sound; the editor now sounds Ctrl+A/C/V/X and falls through without accepting the event. | verify: 2 smoke tests -- a fresh profile ships `hotkey` enabled, an old one is healed once and stays off if switched off after, and Ctrl+A through the real keyPressEvent asks for `select_all`
+
+
 _(empty — all waves shipped; full records under ## DONE.)_
 ## DONE
 
