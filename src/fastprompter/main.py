@@ -1215,7 +1215,16 @@ class FastPrompter(
         try:
             self.data["sound_volume"] = str(timer.volume)
             self.data["sound_ui"] = "True"   # an alarm must be audible
-            self.play_sound(timer.sound)
+            sound = timer.sound or "tick"
+            if sound.startswith("file:"):
+                # A timer may point straight at any file in the library, not
+                # only at one of the eight named events: an alarm the user
+                # picked must not change under them because someone re-mapped
+                # a global event. play_file bypasses the toggles, which is
+                # right here for the same reason it is right for previews.
+                self.sound_manager.play_file(sound[5:], int(timer.volume))
+            else:
+                self.play_sound(sound)
         except Exception:
             from fastprompter.core.logging import logger
             logger.debug("timer sound failed")

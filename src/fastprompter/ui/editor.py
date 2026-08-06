@@ -2727,6 +2727,16 @@ class VaultTextEdit(QTextEdit):
     # gesture matches what the arrows already mean: direction.
     _KANBAN_ARROWS = None      # built lazily; Qt enums are not module-level
 
+    # Editing keys Qt handles itself. `hotkey` is the generic event, the same
+    # one every unnamed registered shortcut uses, so these are re-mappable in
+    # the Sound Settings dialog like everything else.
+    _BUILTIN_KEY_SOUNDS = {
+        Qt.Key.Key_A: "select_all",
+        Qt.Key.Key_C: "hotkey",
+        Qt.Key.Key_V: "hotkey",
+        Qt.Key.Key_X: "hotkey",
+    }
+
     def keyPressEvent(self, event):
         mods = event.modifiers()
 
@@ -2817,6 +2827,18 @@ class VaultTextEdit(QTextEdit):
             mw.apply_format("strike")
             event.accept()
             return
+
+        # Qt's own editing shortcuts never pass through add_shortcut, so the
+        # T-735 wrapper could not reach them and Ctrl+A was silent while every
+        # registered hotkey had a sound. Play and fall through — the event is
+        # NOT accepted here, Qt still does the editing.
+        if mods == Qt.KeyboardModifier.ControlModifier:
+            event_name = self._BUILTIN_KEY_SOUNDS.get(event.key())
+            if event_name:
+                try:
+                    mw.play_sound(event_name)
+                except Exception:
+                    pass
 
         if mods == Qt.KeyboardModifier.ControlModifier and event.key() in (Qt.Key.Key_Z, Qt.Key.Key_Y):
             super().keyPressEvent(event)

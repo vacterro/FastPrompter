@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.8.22 — 2026-08-07
+
+- **Timer alarm picks from all 412 shipped sounds, not just eight event names (T-741).** The combo lists the named events first (existing timers keep resolving), then every file in the sound library. A file is stored as `file:<name>` and routed straight to `play_file` at the timer's own volume, so no settings change can move it under the timer's feet. An unshipped file falls back to `tick` instead of going blank.
+- **Hotkey sound ships ON for every shortcut (T-742).** The generic `hotkey` event is now enabled by default — the user asked for "all possible hotkeys" twice. Profiles carrying the old shipped `False` are healed once. Ctrl+A/C/V/X, which Qt handles itself and never passes through the shortcut layer, now sound too from the editor's `keyPressEvent`.
+
 ## v0.8.21 — 2026-08-06
 
 - **Ctrl+Z makes one sound, not two.** v0.8.18 gave every hotkey a sound, but undo already played one of its own, so a single Ctrl+Z fired twice — while the same Ctrl+Z typed inside the editor took a different route and played only the old generic tick. The sound now belongs to the action rather than to the key: undo and redo play their own pair on every route, text undo and redo are no longer silent, and the hotkey layer stands aside for the handful of actions that sound themselves.

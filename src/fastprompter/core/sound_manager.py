@@ -56,10 +56,31 @@ _DEFAULT_SOUND_MAP: dict[str, str] = {
     "hotkey": "menu_mnu_click.wav",
 }
 
-# Events that ship switched OFF. `hotkey` fires on EVERY shortcut in the app;
-# on by default that is not a feature, it is a reason to turn sound off
-# altogether. It is one tick box away for anyone who wants it.
-_DEFAULT_OFF: frozenset[str] = frozenset({"hotkey"})
+# Events that ship switched OFF. `hotkey` used to be here on my judgement
+# that a sound on EVERY shortcut would be a reason to switch sound off
+# altogether. The user asked for exactly that twice, in those words -- "all
+# possible hotkeys in software and help" -- so it is their call, not mine,
+# and the set is empty. `_heal_hotkey_default` below flips it ON once for
+# profiles that already stored the old shipped `False`, because migration
+# cannot otherwise tell "the app shipped it off" from "the user turned it
+# off", and leaving those profiles silent would look like the feature simply
+# does not work.
+_DEFAULT_OFF: frozenset[str] = frozenset()
+_HOTKEY_DEFAULT_MARK = "sound_hotkey_on_by_default"
+
+
+def _heal_hotkey_default(data: dict[str, Any]) -> None:
+    """One-shot: adopt the new shipped default for `hotkey`.
+
+    Runs once per profile and leaves a marker, so a user who switches it off
+    afterwards keeps it off -- the heal must not fight the person.
+    """
+    if data.get(_HOTKEY_DEFAULT_MARK) == "True":
+        return
+    data[_HOTKEY_DEFAULT_MARK] = "True"
+    events = data.get("sound_events")
+    if isinstance(events, dict) and isinstance(events.get("hotkey"), dict):
+        events["hotkey"]["enabled"] = "True"
 
 # What each event is, for the settings panel. Nothing is hardcoded about
 # WHICH sound plays — only what the event means.
@@ -249,6 +270,7 @@ def migrate_sound_settings(data: dict[str, Any], sounds_dir: str = "") -> None:
         if event not in healed and isinstance(cfg, dict):
             healed[event] = cfg
     data["sound_events"] = healed
+    _heal_hotkey_default(data)
 
 
 def _volume_level(data: dict[str, Any]) -> int:

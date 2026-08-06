@@ -12594,16 +12594,16 @@ def test_the_wrapper_plays_then_runs(win):
         win.play_sound = real
 
 
-def test_the_generic_hotkey_event_ships_disabled(win):
-    """It fires on EVERY shortcut; on by default it is a reason to switch
-    sound off altogether."""
+def test_the_generic_hotkey_event_ships_enabled_now(win):
+    """T-742: user asked for "all possible hotkeys" twice — the generic
+    event ships ON and _DEFAULT_OFF is empty."""
     from fastprompter.core.sound_manager import _DEFAULT_OFF, migrate_sound_settings
 
     data = {"sound_ui": "True"}
     migrate_sound_settings(data)
-    assert data["sound_events"]["hotkey"]["enabled"] == "False"
+    assert data["sound_events"]["hotkey"]["enabled"] == "True"
     assert data["sound_events"]["undo"]["enabled"] == "True"
-    assert "hotkey" in _DEFAULT_OFF
+    assert _DEFAULT_OFF == frozenset()
 
 
 def test_migration_never_resets_a_custom_mapping(win):
@@ -12648,5 +12648,91 @@ def test_ctrl_z_makes_exactly_one_sound(win):
         win._smart_undo()
         assert asked.count("undo") <= 1, f"one Ctrl+Z played {asked}"
         assert "tick" not in asked, f"undo still plays the old tick: {asked}"
+    finally:
+        win.play_sound = real
+
+
+# --- timer alarms may pick any file; hotkeys are audible by default --------
+
+def test_timer_sound_picker_offers_the_whole_library(win):
+    """It listed eight event NAMES out of 412 files, so an alarm could only
+    ever be one of eight sounds."""
+    from fastprompter.core.sound_manager import discover_sound_files
+    from fastprompter.ui.timer_dialog import TimerDialog
+
+    dlg = TimerDialog(win)
+    try:
+        cb = dlg.cb_sound
+        data = [cb.itemData(i) for i in range(cb.count())]
+        files = [d for d in data if isinstance(d, str) and d.startswith("file:")]
+        shipped = discover_sound_files(win.sound_manager._sounds_dir)
+        assert len(shipped) > 300, f"only {len(shipped)} sounds shipped?"
+        assert len(files) == len(shipped), f"{len(files)} offered of {len(shipped)}"
+        # the named events are still first, so an existing timer still resolves
+        assert data[0] == "tick"
+        dlg._select_sound("file:" + shipped[0])
+        assert cb.currentData() == "file:" + shipped[0]
+        # a file that is no longer shipped falls back instead of going blank
+        dlg._select_sound("file:gone_forever.wav")
+        assert cb.currentData() == "tick"
+    finally:
+        dlg.deleteLater()
+
+
+def test_a_timer_can_point_straight_at_a_file(win):
+    import datetime
+
+    from fastprompter.core.timers import Timer
+
+    played = []
+    real_file, real_named = win.sound_manager.play_file, win.play_sound
+    win.sound_manager.play_file = lambda name, level=None: played.append(("file", name))
+    win.play_sound = lambda name: played.append(("event", name))
+    try:
+        t = Timer(name="p", target=datetime.datetime.now(), sound="file:alert_b.wav")
+        win._play_timer_sound(t)
+        assert played == [("file", "alert_b.wav")], played
+        played.clear()
+        win._play_timer_sound(Timer(name="p", target=datetime.datetime.now(), sound="tick"))
+        assert played == [("event", "tick")], played
+    finally:
+        win.sound_manager.play_file, win.play_sound = real_file, real_named
+
+
+def test_hotkey_sound_is_on_by_default_now(win):
+    """The user asked for "all possible hotkeys" twice; shipping the generic
+    event OFF made the feature look like it did nothing."""
+    from fastprompter.core.sound_manager import migrate_sound_settings
+
+    fresh = {"sound_ui": "True"}
+    migrate_sound_settings(fresh)
+    assert fresh["sound_events"]["hotkey"]["enabled"] == "True"
+
+    # a profile that stored the OLD shipped False is healed once...
+    old = {"sound_ui": "True", "sound_events": {"hotkey": {"file": "menu_mnu_click.wav",
+                                                           "enabled": "False"}}}
+    migrate_sound_settings(old)
+    assert old["sound_events"]["hotkey"]["enabled"] == "True"
+
+    # ...and a user who switches it off AFTER the heal keeps it off
+    old["sound_events"]["hotkey"]["enabled"] = "False"
+    migrate_sound_settings(old)
+    assert old["sound_events"]["hotkey"]["enabled"] == "False", "the heal fought the user"
+
+
+def test_ctrl_a_makes_a_sound(win):
+    """Qt's own editing shortcuts never pass through add_shortcut, so the
+    T-735 wrapper could not reach them and Ctrl+A was silent."""
+    from PyQt6.QtCore import QEvent, Qt
+    from PyQt6.QtGui import QKeyEvent
+
+    asked = []
+    real = win.play_sound
+    win.play_sound = lambda name: asked.append(name)
+    try:
+        win.text_area.keyPressEvent(QKeyEvent(
+            QEvent.Type.KeyPress, Qt.Key.Key_A,
+            Qt.KeyboardModifier.ControlModifier, "a"))
+        assert "select_all" in asked, asked
     finally:
         win.play_sound = real

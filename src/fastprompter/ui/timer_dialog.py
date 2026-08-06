@@ -254,9 +254,10 @@ class TimerDialog(QDialog):
         opts.addWidget(self.cb_repeat)
 
         self.cb_sound = QComboBox()
-        self.cb_sound.setToolTip(tr("Alarm sound", self.lang))
-        for s in _SOUNDS:
-            self.cb_sound.addItem(s)
+        self.cb_sound.setToolTip(tr(
+            "Alarm sound — the named events first, then every file in the "
+            "library", self.lang))
+        self._fill_sound_choices()
         opts.addWidget(self.cb_sound)
 
         self.spin_vol = QSpinBox()
@@ -517,7 +518,7 @@ class TimerDialog(QDialog):
             description=self.in_desc.text().strip(),
             target=target or datetime.datetime.now(),
             repeat=self.cb_repeat.currentData(),
-            sound=self.cb_sound.currentText(),
+            sound=self.cb_sound.currentData() or "tick",
             volume=self.spin_vol.value(),
             color_mode=COLOR_TEMPERATURE if self.cb_temp.isChecked() else COLOR_STATIC,
             interval_minutes=self._interval_minutes(),
@@ -556,7 +557,7 @@ class TimerDialog(QDialog):
             hours=self.spin_limit_hours.value(),
             anchor=anchor,
             description=self.in_desc.text().strip(),
-            sound=self.cb_sound.currentText(),
+            sound=self.cb_sound.currentData() or "tick",
             volume=self.spin_vol.value(),
             color_mode=COLOR_TEMPERATURE if self.cb_temp.isChecked() else COLOR_STATIC,
         )
@@ -619,7 +620,7 @@ class TimerDialog(QDialog):
                     hours=self.spin_limit_hours.value()),
                 description=(tr("assumed window", self.lang) if assumed
                              else res.state.matched[:60]),
-                sound=self.cb_sound.currentText(),
+                sound=self.cb_sound.currentData() or "tick",
                 volume=self.spin_vol.value(),
                 color_mode=COLOR_TEMPERATURE if self.cb_temp.isChecked()
                 else COLOR_STATIC,
@@ -660,6 +661,38 @@ class TimerDialog(QDialog):
         self.main_win.test_timer_notification(self._form_timer(), _TEST_DELAY_S)
         self.lbl_hint.setText(
             tr("Test fires in {} seconds", self.lang).format(_TEST_DELAY_S))
+
+    def _fill_sound_choices(self):
+        """Named events first, then the WHOLE shipped library.
+
+        The list used to be eight event NAMES out of 412 files, so an alarm
+        could only ever be one of eight sounds — and a user who wanted the
+        other 404 had to re-map a global event and change it everywhere it
+        was used. An event stays an event (so it follows whatever the Sound
+        Settings dialog maps it to) and a file is stored as `file:<name>`,
+        which nothing else in the settings can move under the timer's feet.
+        """
+        from fastprompter.core.sound_manager import discover_sound_files
+
+        self.cb_sound.setMaxVisibleItems(20)
+        for name in _SOUNDS:
+            self.cb_sound.addItem(name, name)
+        try:
+            files = discover_sound_files(self.main_win.sound_manager._sounds_dir)
+        except Exception:
+            files = []
+        if files:
+            self.cb_sound.insertSeparator(self.cb_sound.count())
+            for rel in files:
+                self.cb_sound.addItem(rel, f"file:{rel}")
+
+    def _select_sound(self, value):
+        """Point the combo at a stored value, event name or `file:` alike."""
+        idx = self.cb_sound.findData(value or "tick")
+        if idx < 0:                      # a file that is no longer shipped
+            idx = self.cb_sound.findData("tick")
+        if idx >= 0:
+            self.cb_sound.setCurrentIndex(idx)
 
     def _style_calendar_popup(self):
         """Theme the calendar popup, which the app stylesheet cannot reach.
@@ -818,9 +851,7 @@ class TimerDialog(QDialog):
         idx = self.cb_repeat.findData(t.repeat)
         if idx >= 0:
             self.cb_repeat.setCurrentIndex(idx)
-        s_idx = self.cb_sound.findText(t.sound)
-        if s_idx >= 0:
-            self.cb_sound.setCurrentIndex(s_idx)
+        self._select_sound(t.sound)
         self.spin_vol.setValue(t.volume)
         self.cb_temp.setChecked(t.color_mode == COLOR_TEMPERATURE)
         self.btn_commit.setText(tr("Save", self.lang))
