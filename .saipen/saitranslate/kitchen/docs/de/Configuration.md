@@ -41,6 +41,7 @@ Die Konfiguration lebt in den Schlüssel-Wert-Paaren der `settings`-Tabelle. Kei
 | `ctrl_e_center` | bool | True | Ctrl+E-Header zentrieren |
 | `customize_toolbar` | bool | False | Toolbar-Sortiermodus |
 | `snippets_hidden` | bool | True | Snippet-Panel ausblenden |
+| `bold_hash_titles` | bool | True | Silos und Snippets, deren Text mit `#` beginnt, erhalten einen fetten Sidebar-Titel (T-739) |
 | `sidebar_right` | bool | True | Seitenleiste rechts |
 | `show_token_count` | bool | False | Token-Schätzung (Pill-Anzahl) (T-614) |
 | `sync_mode` | string | Off | Einweg-Silo-Sync auf Disk: Off/Silo/Hierarchie (T-591) |

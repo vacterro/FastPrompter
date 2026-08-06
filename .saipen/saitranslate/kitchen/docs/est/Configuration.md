@@ -41,6 +41,7 @@ Konfiguratsioon elab `settings` tabeli võti-väärtus paarides. INI-faili pole.
 | `ctrl_e_center` | bool | True | Ctrl+E päiste tsentreerimine |
 | `customize_toolbar` | bool | False | Tööriistariba ümberjärjestamise režiim |
 | `snippets_hidden` | bool | True | Snippetide paneeli peitmine |
+| `bold_hash_titles` | bool | True | Silosi ja snippetide külgriba pealkiri paksus kirjas, kui tekst algab märgiga `#` (T-739) |
 | `sidebar_right` | bool | True | Külgriba paremal |
 | `show_token_count` | bool | False | Tokenite hinnang (pillide arv) (T-614) |
 | `sync_mode` | string | Off | Ühesuunaline silo sünkroonimine kettale: Off/Silo/Hierarchy (T-591) |

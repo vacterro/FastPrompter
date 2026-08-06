@@ -41,6 +41,7 @@ SQLite БД: `data/local_data_v15.db` (профиль 1) или `data/local_data
 | `ctrl_e_center` | bool | True | Центрировать заголовки Ctrl+E |
 | `customize_toolbar` | bool | False | Режим переупорядочивания тулбара |
 | `snippets_hidden` | bool | True | Скрыть панель сниппетов |
+| `bold_hash_titles` | bool | True | Жирным шрифтом заголовок сайдбара ячеек и сниппетов, текст которых начинается с `#` (T-739) |
 | `sidebar_right` | bool | True | Сайдбар справа |
 | `show_token_count` | bool | False | Оценка токенов (количество пилюль) (T-614) |
 | `sync_mode` | string | Off | Односторонняя синхронизация silo на диск: Off/Silo/Hierarchy (T-591) |

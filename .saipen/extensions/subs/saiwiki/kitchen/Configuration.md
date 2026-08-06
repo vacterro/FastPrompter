@@ -41,6 +41,7 @@ Config lives in `settings` table key-value pairs. No INI file. All hot-reload on
 | `ctrl_e_center` | bool | True | Center-align Ctrl+E headers |
 | `customize_toolbar` | bool | False | Toolbar reorder mode |
 | `snippets_hidden` | bool | True | Hide snippet panel |
+| `bold_hash_titles` | bool | True | Bold the sidebar title of silos and snippets whose text starts with `#` (T-739) |
 | `sidebar_right` | bool | True | Sidebar on right side |
 | `show_token_count` | bool | False | Token estimate (pill count) (T-614) |
 | `sync_mode` | string | Off | One-way silo sync to disk: Off/Silo/Hierarchy (T-591) |

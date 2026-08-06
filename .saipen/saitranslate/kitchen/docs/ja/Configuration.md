@@ -41,6 +41,7 @@ SQLite DB: `data/local_data_v15.db` (プロファイル 1) または `data/local
 | `ctrl_e_center` | bool | True | Ctrl+E ヘッダーを中央揃え |
 | `customize_toolbar` | bool | False | ツールバー並べ替えモード |
 | `snippets_hidden` | bool | True | スニペットパネル非表示 |
+| `bold_hash_titles` | bool | True | `#` で始まるサイロ・スニペットのサイドバータイトルを太字にする (T-739) |
 | `sidebar_right` | bool | True | サイドバーを右側に |
 | `show_token_count` | bool | False | トークン推定 (ピル数) (T-614) |
 | `sync_mode` | string | Off | サイロのディスク同期 (一方向): Off/Silo/Hierarchy (T-591) |
