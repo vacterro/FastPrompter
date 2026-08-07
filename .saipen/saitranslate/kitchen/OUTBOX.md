@@ -1,8 +1,8 @@
 # OUTBOX — saitranslate prepare handoff
 
-- **status**: ready (Core-owned in-app bundle; gaps named below)
+- **status**: reviewed (collected 07.08.26 22:56 -> src/fastprompter/core/i18n, 3-file payload)
 - **producer**: saitranslate
-- **source_head**: `715c893` (HEAD at prepare time)
+- **source_head**: `2cfb9b6` (HEAD after eee collect; source tree byte-identical to 715c893 plus the regenerated modules)
 - **source_tree_fingerprint**: `7bf28a7b25a078826bacbeec008bb74e77859aae` (HEAD tree)
 - **role_revision**: saitranslate role per `phases/translate.md` (no standalone charter file)
 - **generated**: 2026-08-08 (ee / `saipen prepare saitranslate`)

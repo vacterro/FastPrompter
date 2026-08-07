@@ -18,6 +18,10 @@ _(empty)_
 _(empty)_
 ## DONE
 
+### eee collect — 07.08.26 i18n ru/est/ded sync
+
+- [x] T-769 (i18n, from saitranslate OUTBOX) DONE 07.08.26 22:56 -- eee collect + ship: regenerated ru.py/est.py/ded.py from the bundle (+1 v0.8.26 key "Picking a sound plays it…", −5 dead Hide-on-Click-Out orphans), committed 2cfb9b6, pushed f3c597a..2cfb9b6. Gate: validate_saitranslate.py PASS (json↔module gate green, 30 documented-backlog warnings); 952 unit pass + 1 known pre-existing winsound (T-730 class); ruff clean; 37 modules import OK. | verify: validator PASS; translations spot-checked (ru/est/ded carry the key, 0 orphans); push landed | owner: opencode
+
 ### qqq collect — 07.08.26 wiki v0.8.28..30 sync
 
 - [x] T-768 (docs, from saiwiki T-027) DONE 07.08.26 22:26 -- qqq collect + ship: 2-file payload (User-Guide, UI-Components) applied to docs/wiki/ for v0.8.28..30 drift (sound icons back in the theme family with glyph-shape distinction; zebra rows never white via alternate-background-color), committed f3c597a, pushed 8ad58aa..f3c597a. Docs-only, no version bump. | verify: docs/wiki pages byte-identical to kitchen copies; push landed; validator active-state clean | owner: opencode
