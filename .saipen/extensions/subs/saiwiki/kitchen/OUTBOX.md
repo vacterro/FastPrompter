@@ -1,8 +1,8 @@
 # OUTBOX — saiwiki prepare handoff
 
-- **status**: ready
+- **status**: reviewed (collected 07.08.26 22:26 -> docs/wiki, 2-file payload)
 - **producer**: saiwiki
-- **source_head**: `8ad58aa` (v0.8.30 — HEAD at prepare time; source tree byte-identical to the qq base)
+- **source_head**: `21d4ad2` (HEAD after qq prepare; source tree byte-identical to 8ad58aa, the qq base)
 - **source_tree_fingerprint**: `ba571ad5241f4dbbba152f74421d6cf72d60fb8a` (HEAD tree)
 - **role_revision**: `sha256:54a42475a124ab0f27e83d600a284a9cc54d9668029c4828cfc48512b031df13` (saiwiki charter)
 - **generated**: 2026-08-08 (qq / `saipen prepare saiwiki`)

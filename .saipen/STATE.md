@@ -1,7 +1,7 @@
 ---
 phase: DONE
 task: none
-next_action: "WAIT: user brake -- wiki package ready for collect (qqq)"
+next_action: "WAIT: user brake -- v0.8.28..30 wiki sync shipped (qqq, f3c597a); T-764 open on board"
 blocker: ""
 agent: opencode
 saipen_version: 7
@@ -13,9 +13,9 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 1365
+last_event: 1366
 style_contract: ded-4ae736e4
 goal_mode: false
-updated: 2026-08-07T22:23:00Z
+updated: 2026-08-07T22:26:00Z
 transition_from: DONE
 ---

@@ -18,6 +18,10 @@ _(empty)_
 _(empty)_
 ## DONE
 
+### qqq collect — 07.08.26 wiki v0.8.28..30 sync
+
+- [x] T-768 (docs, from saiwiki T-027) DONE 07.08.26 22:26 -- qqq collect + ship: 2-file payload (User-Guide, UI-Components) applied to docs/wiki/ for v0.8.28..30 drift (sound icons back in the theme family with glyph-shape distinction; zebra rows never white via alternate-background-color), committed f3c597a, pushed 8ad58aa..f3c597a. Docs-only, no version bump. | verify: docs/wiki pages byte-identical to kitchen copies; push landed; validator active-state clean | owner: opencode
+
 ### v0.8.30 — 07.08.26 white zebra rows fixed
 
 - [x] T-767 (fix, user-reported) DONE 07.08.26 22:05 -- tables drew Qt's default WHITE AlternateBase under the theme's light text; the shared theme sheet now sets alternate-background-color blended from the table bg toward the theme text colour. | verify: test_zebra_rows_are_never_white green; rendered rows dark; ruff clean | owner: opencode
