@@ -1,11 +1,11 @@
 ---
 phase: DONE
-task: "prepare done 08.08.26 (ee): FORCE-FRESH re-verify vs HEAD 715c893. Core bundle repaired: RU/EST/DED closed the v0.8.26 gap (Picking a sound plays it...) + dropped 5 dead Hide-on-Click-Out orphans -> 1015 keys/100% each; coverage_pct honest in all 33 locales. Module gate delta = pending regeneration (payload). OUTBOX ready. 29-locale sound-label gap + docs-translation lag = named backlogs."
-next_action: 'WAIT: user brake -- saitranslate bundle ready for collect (eee)'
+task: "fresh EE re-cut 08.08.26 (ccc stage K): FORCE-FRESH re-verify vs shipped HEAD c513d50 (v0.8.31). Bundle already in sync: json<->module gate GREEN at the shipped revision (modules carry the 1015-key bundle, ru/est/ded regenerated at eee 2cfb9b6), so the fresh package is a verification, not a regeneration. Core locales 100%, 29-locale sound-label gap = named backlog. OUTBOX ready source_head c513d50."
+next_action: 'WAIT: user brake -- saitranslate package fresh at shipped HEAD, awaiting collect (eee)'
 blocker: ""
 agent: claude
 saipen_version: 7
 mode: full
-updated: 2026-08-07T22:51:00Z
+updated: 2026-08-07T23:14:00Z
 transition_from: DONE
 ---

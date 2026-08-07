@@ -1,37 +1,31 @@
 # OUTBOX — saiwiki prepare handoff
 
-- **status**: reviewed (collected 07.08.26 22:26 -> docs/wiki, 2-file payload)
+- **status**: ready
 - **producer**: saiwiki
-- **source_head**: `21d4ad2` (HEAD after qq prepare; source tree byte-identical to 8ad58aa, the qq base)
-- **source_tree_fingerprint**: `ba571ad5241f4dbbba152f74421d6cf72d60fb8a` (HEAD tree)
-- **role_revision**: `sha256:54a42475a124ab0f27e83d600a284a9cc54d9668029c4828cfc48512b031df13` (saiwiki charter)
-- **generated**: 2026-08-08 (qq / `saipen prepare saiwiki`)
+- **source_head**: `c513d50` (HEAD after ccc ship v0.8.31; the qqq-collected wiki pages f3c597a are ancestors, byte-identical in docs/wiki)
+- **source_tree_fingerprint**: `65e29acf403fd46bb8761307590c2fd8d2bda4cf` (HEAD tree)
+- **role_revision**: `sha256:a10b94acf2356fc930263be8a88ecadbbc302beed18742c5946914f8c1828fde` (saiwiki charter, re-synced in the ccc run's `sub sync`)
+- **generated**: 2026-08-08 (fresh QQ / ccc stage L, forced re-cut against the shipped HEAD)
 
 ## coverage
 
-All 16 maintained wiki pages (`docs/wiki/*.md`) re-verified against source at HEAD 8ad58aa. 14 pages are byte-identical to the previous payload; **2 pages carry drift from v0.8.28..v0.8.30**:
+All 16 maintained wiki pages (`docs/wiki/*.md`) re-verified against source at HEAD c513d50 (v0.8.31). **16/16 byte-identical to the previous payload** — the v0.8.28..30 drift (sound icons back in the theme family with glyph-shape distinction, zebra rows never white via alternate-background-color) is already live in the tree, and v0.8.31 is a translation-only release with no UI/source change. Module-Structure re-counted: still **118**, no change.
 
-| Page | Drift found | Fix |
-|---|---|---|
-| `User-Guide.md` | §23 Sound & Hotkey Sounds described the v0.8.26 pictograms but not the v0.8.28..30 churn: v0.8.28 gave every event its own rainbow hue (golden-angle rotation), v0.8.29 reverted it — icons are the theme's own colour, distinction now by GLYPH SHAPE (13 new pictograms split the confusable pairs), v0.8.30 made zebra rows never white (theme table sheet sets alternate-background-color blended from table bg toward theme text colour) | Updated the v0.8.26 pictogram sentence to the v0.8.28..30 state |
-| `UI-Components.md` | Sound Settings dialog row said "painted pictogram + zebra-striped, no grid" without the v0.8.28..30 details; Header/grid theming (T-737) bullet lacked the v0.8.30 alternate-background-color addition | Updated the Sound Settings row + extended the T-737 bullet |
+| Page | State |
+|---|---|
+| User-Guide.md, UI-Components.md + 14 others | **current** — no drift since the qqq sync (f3c597a) |
 
 ## payload
 
-Exact files to apply to `docs/wiki/` (already corrected in this kitchen):
-
-1. `User-Guide.md`
-2. `UI-Components.md`
+**No page changes needed.** The wiki is in sync with the shipped HEAD; a future `qqq` collect has no diff to apply, only re-verification and handoff close.
 
 ## verified
 
-- `docs/wiki/` pages diffed against these kitchen copies: only the 2 above differ, each differing for a documented v0.8.28..30 source change (T-765 rainbow experiment -> T-766 revert to theme family + glyph-shape distinction -> T-767 alternate-background-color in the shared theme table sheet).
-- Module-Structure re-counted: still 118 `.py` files — no update needed.
-- Watcher-Engine-Architecture and Configuration re-checked: no v0.8.28..30 source change touches them — no update.
-- No source file was touched by this prepare (kitchen-only edits).
+- all 16 kitchen mirrors byte-identical to `docs/wiki/`
+- module count 118 (unchanged, re-counted)
+- watcher/config surfaces untouched by v0.8.31 (translation-only release)
+- unit suite: 952 pass + 1 known pre-existing winsound (T-730 class) + 1 skipped
 
-## instructions
+## instructions (for collect)
 
-1. Copy the 2 payload files over `docs/wiki/` (preserving names).
-2. Commit + push the wiki sync via the normal collect + SHIP gates (`qqq`).
-3. Optionally re-run the GitHub-wiki mirror push with `kitchen/sync_wiki.py` after the collect lands.
+`qqq` → verify OUTBOX freshness (source tree byte-identical since c513d50, fingerprint unchanged) → re-diff kitchen vs docs/wiki (expect 16/16 identical) → claim ticket, mark OUTBOX reviewed, checkpoint.
