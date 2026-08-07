@@ -14,6 +14,7 @@ requires:
   - git
 schema_version: 3
 last_event: 1379
+style_contract: ded-4ae736e4
 execution_intent: converge
 updated: 2026-08-07T23:22:00Z
 transition_from: DONE
