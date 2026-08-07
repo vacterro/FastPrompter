@@ -16,7 +16,7 @@ import time
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "tools"))
 
 import pytest
-from write_guard import saipen_lock, is_locked
+from write_guard import is_locked, saipen_lock
 
 
 @pytest.fixture
@@ -72,7 +72,6 @@ class TestEventAllocation:
 
     def test_sequential_ids_are_monotonic(self, project_root):
         log_path = os.path.join(project_root, ".saipen", "LOG.md")
-        state_path = os.path.join(project_root, ".saipen", "STATE.md")
 
         ids = []
         for i in range(5):
@@ -99,7 +98,7 @@ class TestEventAllocation:
             for _ in range(10):
                 with saipen_lock(project_root, timeout=5.0):
                     # Read tail
-                    with open(log_path, "r", encoding="utf-8") as f:
+                    with open(log_path, encoding="utf-8") as f:
                         content = f.read()
                     import re
                     existing = [int(m.group(1)) for m in re.finditer(r'\[E-(\d+)\]', content)]
@@ -135,11 +134,11 @@ class TestEventAllocation:
             with open(state_path, "w", encoding="utf-8") as f:
                 f.write("last_event: 3003\n")
 
-        with open(state_path, "r", encoding="utf-8") as f:
+        with open(state_path, encoding="utf-8") as f:
             state_content = f.read()
         assert "last_event: 3003" in state_content
 
-        with open(log_path, "r", encoding="utf-8") as f:
+        with open(log_path, encoding="utf-8") as f:
             log_content = f.read()
 
         import re

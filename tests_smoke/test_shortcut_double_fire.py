@@ -16,9 +16,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../s
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PyQt6.QtCore import Qt, QEvent
+from PyQt6.QtCore import QEvent, Qt
 from PyQt6.QtGui import QKeyEvent
-from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication
 
 import fastprompter.core.state as state_mod
@@ -47,7 +46,6 @@ def win():
 
 def _send_ctrl_key(editor, key):
     """Send a Ctrl+<key> event directly to the editor's keyPressEvent."""
-    from PyQt6.QtGui import QKeyEvent
     ev = QKeyEvent(
         QEvent.Type.KeyPress, key, Qt.KeyboardModifier.ControlModifier,
         "x", False, 1)

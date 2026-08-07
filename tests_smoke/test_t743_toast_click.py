@@ -22,14 +22,14 @@ import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-import pytest
-from PyQt6.QtCore import QPoint, Qt, QTimer
-from PyQt6.QtTest import QTest
-from PyQt6.QtWidgets import QApplication, QWidget
-
-import fastprompter.core.state as state_mod
 import tempfile
 
+import pytest
+from PyQt6.QtCore import Qt
+from PyQt6.QtTest import QTest
+from PyQt6.QtWidgets import QApplication
+
+import fastprompter.core.state as state_mod
 from fastprompter.core.timers import Timer
 from fastprompter.main import FastPrompter
 
@@ -93,8 +93,9 @@ class TestToastClickNoModal:
         return sip.isdeleted(toast)
 
     def test_body_click_dismisses_toast(self, win, test_timer):
-        from fastprompter.ui.timer_toast import TimerToast, show_toast
         from PyQt6 import sip
+
+        from fastprompter.ui.timer_toast import TimerToast, show_toast
 
         toast = show_toast(win, test_timer)
         assert toast is not None, "toast must be created"
@@ -102,6 +103,7 @@ class TestToastClickNoModal:
 
         # Record _open before click
         in_open_before = toast in TimerToast._open
+        assert in_open_before, "toast must be in _open list before click"
 
         body_center = toast.rect().center()
         QTest.mouseClick(toast, Qt.MouseButton.LeftButton, pos=body_center)
@@ -114,9 +116,10 @@ class TestToastClickNoModal:
         assert toast not in TimerToast._open, "deleted toast must leave _open list"
 
     def test_close_button_dismisses_toast(self, win, test_timer):
-        from fastprompter.ui.timer_toast import TimerToast, show_toast
         from PyQt6 import sip
         from PyQt6.QtWidgets import QPushButton
+
+        from fastprompter.ui.timer_toast import TimerToast, show_toast
 
         toast = show_toast(win, test_timer)
         assert toast is not None
@@ -183,9 +186,10 @@ class TestToastClickWithModal:
 
     def test_toast_click_during_modal_deletes(self, win, test_timer):
         """Toast body click during active modal deletes the toast."""
-        from fastprompter.ui.timer_toast import TimerToast, show_toast
         from PyQt6 import sip
-        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel
+        from PyQt6.QtWidgets import QDialog, QLabel, QVBoxLayout
+
+        from fastprompter.ui.timer_toast import show_toast
 
         modal = QDialog(win)
         modal.setModal(True)
@@ -210,9 +214,10 @@ class TestToastClickWithModal:
 
     def test_toast_close_btn_during_modal(self, win, test_timer):
         """Close button works during active modal."""
-        from fastprompter.ui.timer_toast import TimerToast, show_toast
         from PyQt6 import sip
-        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton
+        from PyQt6.QtWidgets import QDialog, QLabel, QPushButton, QVBoxLayout
+
+        from fastprompter.ui.timer_toast import show_toast
 
         modal = QDialog(win)
         modal.setModal(True)
