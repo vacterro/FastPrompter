@@ -104,6 +104,26 @@ On `arm(target, queue_key)`, key is pinned. Switches project/silo mid-session �
 | `max_failures` | 3 | Consecutive failures → disarm with error |
 | `panic()` | — | Emergency stop: disarm + cancel all in-flight |
 
+### Safety Guards — v0.8.25 notes (T-757, T-756)
+
+- `[limits]` in `adapters.toml` — `min_gap_ms`, `max_sends`, `dry_run_new` —
+  are now **applied to the engine at arm** (clamped at parse), not just stored.
+  The dead `confirm_first`/`allow_focus_steal`/`restore_clipboard_ms` keys are
+  gone.
+- `blocker_pattern` (a permission-prompt guard) executes **only on the CDP
+  transport**, which is the one that can read the target's visible text. A
+  blocker declared on any other transport is flagged **inactive** in the
+  dialog rather than silently pretending to work.
+- A CDP adapter arms **without a window handle** — the Win32 window selector
+  is disabled for it.
+- Queue state machine: a queued item is anchored to its source **block**, and
+  its line number is re-stamped from that anchor when the silo is left or the
+  queue saved, so an inactive silo never fires at a stale line. A **detached**
+  item (source line gone) revives to pending the moment the source returns,
+  without opening the dialog. Moving an item to another silo's queue turns it
+  into a text snapshot (line 0), so the destination never binds it to its own
+  same-numbered line.
+
 ---
 
 ## 6. Skill System (`skills.py`)

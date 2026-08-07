@@ -1,19 +1,22 @@
 # OUTBOX — saiwiki prepare handoff
 
-- **status**: reviewed (collected 07.08.26 -> docs/wiki, 3-file payload)
+- **status**: ready
 - **producer**: saiwiki
-- **source_head**: `4f5ae12` (HEAD, v0.8.22, T-741/T-742 shipped)
+- **source_head**: `501acd0` (HEAD, v0.8.27 shipped)
+- **source_tree_fingerprint**: `393e89e9fe57ac7f567a75efa89229df331dfbd8` (HEAD tree)
+- **role_revision**: saiwiki role per `extensions/subs/PROTOCOL.md` § 6 (no standalone charter file; re-record exact charter revision at next adopt — validator WARN sub-role-revision-legacy)
 - **generated**: 2026-08-07 (qq / `saipen prepare saiwiki`)
 
 ## coverage
 
-All 16 maintained wiki pages (`docs/wiki/*.md`) re-verified against source at HEAD 4f5ae12. 13 pages byte-identical to the previous payload; **3 pages carry drift** from v0.8.21 and v0.8.22:
+All 16 maintained wiki pages (`docs/wiki/*.md`) re-verified against source at HEAD 501acd0. 12 pages are byte-identical to the previous payload; **4 pages carry drift from v0.8.23..v0.8.27**:
 
 | Page | Drift found | Fix |
 |---|---|---|
-| `User-Guide.md` | Timer alarms pick from 412 shipped sounds (T-741); Generic hotkey event ships ON by default and Ctrl+A/C/V/X sound (T-742); Ctrl+Z single sound (v0.8.21) | Updated sections 15 (Timers & Pomodoro) and 23 (Sound & Hotkey Sounds) with new capabilities and default state. |
-| `UI-Components.md` | Timer dialog sound picker expanded; Sound Settings generic hotkey default changed | Updated rows for Timer Dialog and Sound Settings. |
-| `Core-API-and-Classes.md` | `SoundManager` gained `play_file` method | Added `play_file(file_name)` to methods list. |
+| `User-Guide.md` | v0.8.26 Sound Settings now paints a pictogram per event and reads as a zebra table; v0.8.24 removed Hide on Click-Out (setting + Alt+A + hide-on-focus-loss machinery) | Updated § 23 (Sound & Hotkey Sounds) + added a "Hide on Click-Out is gone" note |
+| `UI-Components.md` | Sound Settings dialog gained painted pictograms + zebra/gridless table (v0.8.26) | Updated the `Sound Settings` dialog row |
+| `Watcher-Engine-Architecture.md` | v0.8.25: `[limits]` reach the engine at arm, blocker_pattern is CDP-only (visible text), CDP arms without an HWND, queue detach/revive + cross-silo-snapshot state machine | Added "Safety Guards — v0.8.25 notes" section |
+| `Configuration.md` | v0.8.24 removed `close_on_focus_loss`; v0.8.25 watcher `[limits]` applied + CDP-only blocker | Added removal note + watcher limits note |
 
 ## payload
 
@@ -21,20 +24,17 @@ Exact files to apply to `docs/wiki/` (already corrected in this kitchen):
 
 1. `User-Guide.md`
 2. `UI-Components.md`
-3. `Core-API-and-Classes.md`
-
-Copy over their `docs/wiki/` twins, commit docs-only, no version bump.
+3. `Watcher-Engine-Architecture.md`
+4. `Configuration.md`
 
 ## verified
 
-- 13/16 kitchen pages byte-identical to docs/wiki. 3 pages differ.
-- Features verified from v0.8.22 CHANGELOG and source `core/sound_manager.py`.
+- `docs/wiki/` pages diffed against these kitchen copies: only the 4 above differ, each differing for a documented v0.8.23..27 source change.
+- Module-Structure total re-counted: still 118 `.py` files — no update needed.
+- No source file was touched by this prepare (kitchen-only edits).
 
 ## instructions
 
-1. Copy `User-Guide.md`, `UI-Components.md`, and `Core-API-and-Classes.md` from `.saipen/extensions/subs/saiwiki/kitchen/` over `docs/wiki/` equivalents.
-2. Commit docs-only, no version bump.
-
-## history
-
-- T-024 (06.08, a679f9c) — superseded by this run. Its 1-page payload already integrated.
+1. Copy the 4 payload files over `docs/wiki/` (preserving names).
+2. Commit + push the wiki sync via the normal collect + SHIP gates (`qqq`).
+3. Optionally re-run the GitHub-wiki mirror push with `kitchen/sync_wiki.py` after the collect lands.
