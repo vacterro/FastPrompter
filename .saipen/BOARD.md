@@ -18,6 +18,10 @@ _(empty)_
 _(empty)_
 ## DONE
 
+### v0.8.28 — 07.08.26 Sound Settings per-event icons
+
+- [x] T-765 (feat, user-asked) DONE 07.08.26 21:39 -- every sound event gets its own individually-tinted icon. _event_color walks a golden-angle hue rotation from the theme's base colour, giving all 56 events distinct hues so no two rows look alike even when they share a glyph shape. | verify: 56 events -> 56 distinct hues; dialog opens; sound smoke green; ruff clean | owner: opencode
+
 ### dd all — 07.08.26 plan wave (T-761, T-762, T-763)
 
 - [x] T-761 (P2, dead code, flagged since T-751) DONE 07.08.26 19:43 -- the write-only focus-lock apparatus (ignore_focus_loss, _focus_lock_count, _increment/_decrement_focus_lock, 110 refs across 9 files) fully removed: helpers + init deleted, ~30 call sites dropped, file_container._modal_guard gone with its callers, refresh() unwrapped, tests updated to the new invariants. | verify: rg on the four names in src = ZERO; unit 951 pass + 1 known pre-existing winsound; 112 targeted smoke pass; ruff clean | owner: opencode

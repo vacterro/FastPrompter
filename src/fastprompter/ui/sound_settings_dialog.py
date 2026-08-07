@@ -70,8 +70,27 @@ _EVENT_GLYPHS: dict[str, str] = {
 _GLYPH_FALLBACK = "bell"
 
 
-def _event_icon(event: str, color: QColor) -> QIcon:
-    """A 20x20 painted pictogram for one sound event."""
+def _event_color(event: str, base: QColor) -> QColor:
+    """A stable per-event colour so every row's icon is individually
+    distinguishable, even when events share a glyph shape (tick/untick,
+    click/hover, find/search ...). The hue walks a golden-angle spread from
+    the theme's own base colour, so the palette stays in the theme's family
+    while no two adjacent events look alike."""
+    hue = base.hue()
+    if hue < 0:
+        hue = 40
+    try:
+        idx = sorted(_EVENT_GLYPHS).index(event)
+    except ValueError:
+        idx = 0
+    rotated = (hue + int((idx * 137.5) % 360)) % 360
+    return QColor.fromHsv(
+        rotated, max(80, base.saturation()), max(140, base.value()))
+
+
+def _event_icon(event: str, base: QColor) -> QIcon:
+    """A 20x20 painted pictogram for one sound event, tinted per event."""
+    color = _event_color(event, base)
     glyph = _EVENT_GLYPHS.get(event, _GLYPH_FALLBACK)
     pm = QPixmap(20, 20)
     pm.fill(Qt.GlobalColor.transparent)

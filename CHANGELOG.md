@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.8.28 — 2026-08-07
+
+- **Sound Settings — every event has its own icon.** Each of the 56 sound events now carries a pictogram tinted with its own stable colour, so no two rows look alike even when they share a shape (tick/untick, click/hover, find/search). The hues walk a golden-angle spread from the theme's base colour, so the palette stays in the theme's family.
+
 ## v0.8.27 — 2026-08-07
 
 - **Dead code removed (T-761).** The focus-lock apparatus — `ignore_focus_loss`, `_focus_lock_count` and the `_increment/_decrement_focus_lock` helpers — was left write-only when Hide-on-Click-Out went away in v0.8.24. All ~30 call sites and the helpers are gone; no behavior changed.
