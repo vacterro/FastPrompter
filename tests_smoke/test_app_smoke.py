@@ -5454,6 +5454,28 @@ def test_reordering_archived_silos_carries_their_state(win):
     assert store["s0"]["pos"] == 999
 
 
+def test_selection_to_new_archive_remaps_archive_state(win):
+    """HUNT: selection_to_new_archive inserted at archive[0] and skipped the
+    archive remap, so folders/paths/queues stayed on their old slots."""
+    win.data["temp_presets"][:] = ["N0"]
+    win.data["archive_temp_presets"][:] = ["A0", "A1"]
+    win.silo_docs[:] = []
+    win.archive_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    win.data["archive_project_paths"] = {"0": {"folder": "p0"}, "1": {"folder": "p1"}}
+    win.data["watcher_queues"] = {"a0": [{"text": "q0"}], "a1": [{"text": "q1"}]}
+    win.text_area.setPlainText("NEW ENTRY")
+    win.text_area.selectAll()
+
+    win.selection_to_new_archive()
+
+    assert win.data["archive_temp_presets"][0] == "NEW ENTRY"
+    # project paths are not re-derived — they prove the insert-at-0 remap
+    assert win.data["archive_project_paths"] == {"1": {"folder": "p0"}, "2": {"folder": "p1"}}
+    assert win.data["watcher_queues"]["a1"][0]["text"] == "q0"
+    assert win.data["watcher_queues"]["a2"][0]["text"] == "q1"
+
+
 def test_deleting_an_archive_silo_while_normal_is_active(win):
     """T-754: trash_silo dropped is_archive, so del_silo derived the target
     from the ACTIVE space and deleted the normal silo at the same index."""

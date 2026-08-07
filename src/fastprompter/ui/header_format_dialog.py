@@ -36,6 +36,7 @@ from PyQt6.QtWidgets import (
 )
 
 from fastprompter.core import header as header_core
+from fastprompter.core.ctrlw import render_preview
 from fastprompter.core.translations import tr
 from fastprompter.ui.flow_layout import FlowLayout
 
@@ -452,8 +453,8 @@ class HeaderFormatDialog(QDialog):
         before, after = header_core.simulate(
             cfg, title=tr("Sample title", self._lang),
             time_str=time_str, state=state)
-        self.pv_before.setText(header_core.render_preview(before))
-        self.pv_after.setText(header_core.render_preview(after))
+        self.pv_before.setText(render_preview(before))
+        self.pv_after.setText(render_preview(after))
         self._paint_alignment(cfg, time_str, state)
 
     def _paint_alignment(self, cfg, time_str, state):

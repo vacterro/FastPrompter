@@ -577,13 +577,3 @@ class WindowMixin:
         """Toggle silo-home behavior (silos open at startup)."""
         self.data["silo_home"] = "True" if checked else "False"
         self.mark_dirty()
-
-    def on_sound_toggled(self, checked: bool) -> None:
-        """Toggle UI sounds on/off."""
-        self.data["sound_ui"] = "True" if checked else "False"
-        self.mark_dirty()
-
-    def on_typewriter_toggled(self, checked: bool) -> None:
-        """Toggle typewriter sound effect on/off."""
-        self.data["sound_typewriter"] = "True" if checked else "False"
-        self.mark_dirty()

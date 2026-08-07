@@ -138,6 +138,9 @@ class SendSelectionMixin:
         doc.setDefaultFont(self.text_area.font())
         self._set_plain_text_clean(doc, text)
         self.archive_docs.insert(0, doc)
+        # the archive insert-at-0 is a structural mutation: its slot-keyed
+        # state (folders, project paths, queues) must shift with it (T-754).
+        self.open_silo_slot(0, is_archive=True)
         self._trim_archive()
         self.mark_dirty()
         self.refresh_archive_panel()

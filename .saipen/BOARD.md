@@ -18,6 +18,11 @@ _(empty)_
 _(empty)_
 ## DONE
 
+### 07.08.26 hunt-directive P2 + docs wave — T-759, T-760
+
+- [x] T-759 (P2, hunt-directive items 19-20) DONE 07.08.26 16:38 -- 5 orphan click-out i18n keys removed from en.json + all 33 modules regenerated (validator PASS @1014). Duplicates collapsed: _get_size x2 -> _snapshot_text_size, render_preview x2 -> one, dead on_sound/on_typewriter toggled removed from window_mixin. HUNT A found+fixed a missed archive insert remap in selection_to_new_archive. Item 18 (focus-lock apparatus) deferred as documented write-only debt. | verify: unit 951 pass, ruff clean | owner: opencode
+- [x] T-760 (P0, hunt-directive items 21-23) DONE 07.08.26 16:38 -- KNOWLEDGE/architecture.md rewritten from live code (H-301/H-304/H-305 corrected, invariants replace line numbers, hard-FAIL baseline documented). Final-state + validator semantics resolved at ship time. | verify: KNOWLEDGE reflects live code | owner: opencode
+
 ### 07.08.26 hunt-directive P1 wave — T-756, T-757, T-758
 
 - [x] T-756 (P1, hunt-directive items 9-12) DONE 07.08.26 16:27 -- queue state machine. _sync_active_queue_lines re-stamps line+text from the anchor before leaving/persisting (stale line was sending the WRONG text from an inactive silo); watcher refresh inspects PENDING+DETACHED and revives on source return; queue_item_live_text reports source-referenced-unresolved as DETACHED (never a live stale snapshot) while line-0 snapshots own their text; cross-silo moves become snapshots (line=0). | verify: 5 new smoke tests + 951 unit pass, ruff clean | owner: opencode

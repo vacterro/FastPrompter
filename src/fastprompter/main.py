@@ -135,6 +135,25 @@ class _SettingsGroupBox(QWidget):
         return self._chrome_h + self._inner.totalHeightForWidth(max(1, width - pad))
 
 
+def _snapshot_text_size(st):
+    """Chars of silo text a data snapshot holds, for the undo/redo size cap.
+
+    Snapshots store temp_presets/archive as flat LISTS of silo text, but a
+    per-category dict shape is handled too so a structure change can never
+    crash the undo push again. One helper for both the undo and redo caps
+    (T-759)."""
+    size = 0
+    for key in ("temp_presets", "archive_temp_presets"):
+        d = st.get(key)
+        if isinstance(d, dict):
+            for cats in d.values():
+                if isinstance(cats, (list, tuple)):
+                    size += sum(len(t) for t in cats if isinstance(t, str))
+        elif isinstance(d, (list, tuple)):
+            size += sum(len(t) for t in d if isinstance(t, str))
+    return size
+
+
 class FastPrompter(
     QMainWindow,
     FormattingMixin,
@@ -6320,23 +6339,8 @@ class FastPrompter(
             MAX_CHARS = 20_000_000
             while len(self.data_redo_stack) > 50:
                 self.data_redo_stack.pop(0)
-                
-            def _get_size(st):
-                # snapshots store temp_presets/archive as flat LISTS — handle
-                # both shapes so this can never crash the redo push (see the
-                # matching guard in add_data_undo_state)
-                size = 0
-                for key in ("temp_presets", "archive_temp_presets"):
-                    d = st.get(key)
-                    if isinstance(d, dict):
-                        for cats in d.values():
-                            if isinstance(cats, (list, tuple)):
-                                size += sum(len(t) for t in cats if isinstance(t, str))
-                    elif isinstance(d, (list, tuple)):
-                        size += sum(len(t) for t in d if isinstance(t, str))
-                return size
 
-            while len(self.data_redo_stack) > 1 and sum(_get_size(s) for s in self.data_redo_stack) > MAX_CHARS:
+            while len(self.data_redo_stack) > 1 and sum(_snapshot_text_size(s) for s in self.data_redo_stack) > MAX_CHARS:
                 self.data_redo_stack.pop(0)
             self._apply_data_state(state)
             self.play_sound("undo")
@@ -6669,23 +6673,8 @@ class FastPrompter(
         MAX_CHARS = 20_000_000
         while len(self.data_undo_stack) > 50:
             self.data_undo_stack.pop(0)
-            
-        def _get_size(st):
-            # Snapshots store temp_presets/archive as flat LISTS of silo text
-            # (not per-category dicts) — handle both shapes defensively so a
-            # structure change can never crash the undo push again.
-            size = 0
-            for key in ("temp_presets", "archive_temp_presets"):
-                d = st.get(key)
-                if isinstance(d, dict):
-                    for cats in d.values():
-                        if isinstance(cats, (list, tuple)):
-                            size += sum(len(t) for t in cats if isinstance(t, str))
-                elif isinstance(d, (list, tuple)):
-                    size += sum(len(t) for t in d if isinstance(t, str))
-            return size
 
-        while len(self.data_undo_stack) > 1 and sum(_get_size(s) for s in self.data_undo_stack) > MAX_CHARS:
+        while len(self.data_undo_stack) > 1 and sum(_snapshot_text_size(s) for s in self.data_undo_stack) > MAX_CHARS:
             self.data_undo_stack.pop(0)
         self.data_redo_stack.clear()
         # A new action invalidates the recorded undo order too, or Ctrl+Y would

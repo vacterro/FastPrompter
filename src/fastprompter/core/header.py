@@ -169,8 +169,3 @@ def simulate(cfg, title=SAMPLE_TITLE, tail=SAMPLE_TAIL, time_str="23.07 - 14:05"
     if tail:
         lines.append(tail)
     return before, "\n".join(lines)
-
-
-def render_preview(text):
-    """Blank lines drawn as dots — the gap is the thing being chosen."""
-    return "\n".join(line if line.strip() else "·" for line in text.split("\n"))
