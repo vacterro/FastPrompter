@@ -5,7 +5,7 @@
     "name_native": "English",
     "flag": "🇺🇸"
   },
-  "coverage_pct": 100.0,
+  "coverage_pct": 99300.0,
   "translations": {
     " h": " h",
     " min": " min",
@@ -997,6 +997,8 @@
     "🤍 Support developer": "🤍 Support developer",
     "🦓 Zebra Stripes": "🦓 Zebra Stripes",
     "🧹 Clear": "🧹 Clear",
-    "🪟 Normal Window": "🪟 Normal Window"
+    "🪟 Normal Window": "🪟 Normal Window",
+    "Backup the database": "Backup the database",
+    "Restore the database from a backup": "Restore the database from a backup"
   }
 }

@@ -5,7 +5,7 @@
     "name_native": "Русский",
     "flag": "🇷🇺"
   },
-  "coverage_pct": 100.0,
+  "coverage_pct": 99300.0,
   "translations": {
     " h": "час",
     " min": "мин",
@@ -997,6 +997,8 @@
     "🤍 Support developer": "🤍 Поддержать разработчика",
     "🦓 Zebra Stripes": "🦓 Зебра",
     "🧹 Clear": "🧹 Очистить",
-    "🪟 Normal Window": "🪟 Обычное окно"
+    "🪟 Normal Window": "🪟 Обычное окно",
+    "Backup the database": "Резервная копия базы данных",
+    "Restore the database from a backup": "Восстановить базу данных из резервной копии"
   }
 }

@@ -5,7 +5,7 @@
     "name_native": "«Дед»",
     "flag": "👴"
   },
-  "coverage_pct": 100.0,
+  "coverage_pct": 99300.0,
   "translations": {
     " h": "Эх, час",
     " min": "Эх, мин",
@@ -997,6 +997,8 @@
     "🤍 Support developer": "🤍 Задонать разрабу",
     "🦓 Zebra Stripes": "🦓 Зебра",
     "🧹 Clear": "🧹 Снести",
-    "🪟 Normal Window": "🪟 Обычное окно"
+    "🪟 Normal Window": "🪟 Обычное окно",
+    "Backup the database": "Бэкап базы",
+    "Restore the database from a backup": "Восстановить базу из бэкапа"
   }
 }

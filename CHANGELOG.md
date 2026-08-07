@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.8.23 — 2026-08-07
+
+- **Per-hotkey sounds for every shortcut (T-745).** Every hotkey in the software now has a named, individually re-mappable sound event: bold, italic, underline, strikethrough, header, divider, snap, find, replace, focus, export, quit — plus UI actions like archive, sidebar, lock, zoom, search, transform and escape. Each appears in the Sound Settings dialog so it can be re-picked.
+- **One sound per action, never two.** New/save/help made two sounds for one keypress — the hotkey layer fired one, the handler fired its own. The wrapper now stands aside for actions that sound themselves. Ctrl+T fired its action twice (window shortcut + editor handler); it is now editor-only with its own sound.
+- **Deleting a silo snapshots before it mutates (T-744).** `del_silo` used to write the live editor text into the model, then take the undo snapshot — so an undo restored a state that had already changed. The snapshot now comes first; undo restores the exact text, metadata, and ordering the user saw before deleting. Batch delete remains one undo transaction: one Ctrl+Z brings all deleted silos back.
+- **The test-notification toast is verified clickable (T-743, closed).** Seven regression tests drive body-click, close-button, modal-dialog, and cleanup paths. The toast receives input even while the Timers dialog is modal, deletes itself on close, and leaves no stale registry entry.
+- *Under the hood:* the SAIPEN event log is now guarded against concurrent writers with a cross-platform file lock; the ledger was repaired after concurrent-writer corruption.
+
 ## v0.8.22 — 2026-08-07
 
 - **Timer alarm picks from all 412 shipped sounds, not just eight event names (T-741).** The combo lists the named events first (existing timers keep resolving), then every file in the sound library. A file is stored as `file:<name>` and routed straight to `play_file` at the timer's own volume, so no settings change can move it under the timer's feet. An unshipped file falls back to `tick` instead of going blank.

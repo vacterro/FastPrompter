@@ -738,10 +738,17 @@ class SnippetOpsMixin:
             if not (0 <= idx < len(presets)):
                 return
 
-            if idx == self.active_temp_slot:
-                presets[idx] = self.text_area.toPlainText()
+            # Snapshot BEFORE any mutation — undo must represent the exact
+            # state the user saw before pressing delete. _live_text_into
+            # folds the live editor text into the snapshot, so the order here
+            # does not need a separate flush step.
             if not skip_undo:
                 self.add_data_undo_state("Delete silo")
+
+            # Flush live editor text into the data model so the trash content
+            # and metadata remap see what was actually on screen.
+            if idx == self.active_temp_slot:
+                presets[idx] = self.text_area.toPlainText()
             
             self._trash_silo_content(presets[idx])
 

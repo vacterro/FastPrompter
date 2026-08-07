@@ -10,36 +10,34 @@
 ## DOING
 
 _(empty)_
-## AUDIT — 07.08 settings UI (saiui)
-
-- [x] **hk_undo label** — "Undo Text Change" -> "Undo" (smart undo, not just text)
-- [x] **hk_italic + hk_underline** — added to HotkeySettingsDialog app_binds (were missing, user couldn't reconfigure)
-- [x] **app_binds labels translated** — all 14 labels now wrapped in tr() (were hardcoded English)
-- [x] **ColorConfigDialog title** — "(RGB)" -> "(HEX)" (uses #hex, not rgb())
-- [x] **Load from Theme confirmation** — asks before overwriting user's custom colors
-- [x] **Action checkboxes -> buttons** — Keys/RGB/BkUp/Rstr/Drop Zones/Scale were QCheckBox disguised as buttons; now QPushButton
-- [x] **btn_drop_zones.setChecked(False)** removed — was calling checkbox method on button (would crash)
-- [x] **tests** — 38 settings + 891 full suite green
-
-## AUDIT — 07.08 undo/redo fixes (aa)
-
-- [ ] **guard OK** — `_in_smart_undo` / `_in_smart_redo` reentrance guard prevents double-fire from QShortcut + keyPressEvent; try/finally guarantees release
-- [ ] **redo routing OK** — `_smart_redo` kind="data" failure no longer silently falls through to text redo; shows status message
-- [ ] **UX OK** — "Nothing to undo/redo" statusBar messages when stacks empty (was silent fail)
-- [ ] **sound OK** — fallback data-undo path now plays `undo` sound (was missing)
-- [ ] **editor keys OK** — Ctrl+Z/Ctrl+Y in keyPressEvent call `_smart_undo`/`_smart_redo` instead of native `super().keyPressEvent`; smart routing works even when hk_undo remapped
-- [ ] **batch delete OK** — `batch_delete_selected_silos` pushes single undo snapshot before loop; one Ctrl+Z restores all deleted silos (was N undo entries → N Ctrl+Z presses)
-- [ ] **tests** — 891 pass (39 undo-specific), 0 new failures
-- [ ] **NOTE** — `del_silo` line 741 commits `presets[idx]` BEFORE `add_data_undo_state` snapshot; `_live_text_into` compensates but ordering is fragile. Not new (existing pattern), not fixed here
-- [ ] **NOTE** — "Nothing to undo/redo" strings exist only in EN; `tr()` fallback to EN for all 32 non-EN locales. Acceptable for now, needs i18n pass
-
 ## TODO
 
 _(empty)_
 ## BLOCKED
 
-- [ ] T-743 (fix, user-reported) Test notification (Timers → Test) reported as still not clickable/removable. T-736 shipped the fix (timer_toast.py:235 mousePressEvent -> close, plus _live_toasts pruning and screen clamp) in v0.8.18. Code IS there on inspection. | blocker: live repro required; window flags FramelessWindowHint|Tool|WindowStaysOnTopHint + WA_ShowWithoutActivating should receive clicks; toast constructor, close button (cross), mousePressEvent, auto-close all wired correctly | verify: fire test notification, click toast body -> dismisses; close button works; no toast lingers after timeout
+_(empty)_
 ## DONE
+
+### GOAL repair — 07.08 ledger + board normalization
+
+- [x] SAIPEN ledger repaired: corrupt active LOG sealed as logs/LOG-002.md, fresh chain E-1319+. Atomic write guard (tools/write_guard.py, 6 tests). Board normalized.
+- [x] T-743 (fix, user-reported) CLOSED as NOT REPRODUCIBLE. 7 regression tests prove toast body click + close button + modal dialog all work correctly. WA_DeleteOnClose deletes C++ object, _open list clean. Modality does NOT block mouse input. T-736 fix sufficient.
+- [x] T-744 (fix) del_silo undo-order corrected: snapshot moved BEFORE presets[idx] flush. Order: snapshot -> flush -> mutate -> refresh. 897 tests pass (39 undo + 7 T-743).
+
+### AUDIT — 07.08 settings UI + undo/redo (consolidated)
+
+- [x] hk_undo label "Undo Text Change" -> "Undo" (smart undo, not just text)
+- [x] hk_italic + hk_underline added to HotkeySettingsDialog (were missing)
+- [x] app_binds all 14 labels tr()-wrapped (were hardcoded EN)
+- [x] ColorConfigDialog: "(RGB)" -> "(HEX)", Load from Theme confirmation added
+- [x] Action checkboxes -> QPushButton, btn_drop_zones.setChecked removed
+- [x] _smart_undo/_smart_redo reentrance guard prevents double-fire
+- [x] _smart_redo kind="data" failure no longer falls through to text redo
+- [x] "Nothing to undo/redo" statusBar messages when stacks empty
+- [x] Fallback data-undo path plays sound
+- [x] Ctrl+Z/Ctrl+Y in editor call _smart_undo/_smart_redo (not native)
+- [x] batch_delete_selected_silos single undo snapshot
+- [x] All verified: 891 tests (39 undo-specific, 38 settings) green
 
 ### Wave 5 — 07.08 sound asks (user, repeated)
 

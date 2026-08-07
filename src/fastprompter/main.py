@@ -2337,7 +2337,16 @@ class FastPrompter(
     # add_shortcut. Wrapping these as well played two sounds for one
     # keystroke on the shortcut path and one on the editor path: the sound
     # belongs to the action, not to the key.
-    HOTKEY_SOUND_SELF = frozenset({"hk_undo", "Ctrl+Y", "Ctrl+Shift+Z"})
+    HOTKEY_SOUND_SELF = frozenset({
+        "hk_undo", "Ctrl+Y", "Ctrl+Shift+Z",
+        # select_empty_silo and save_snippet play their own sounds ("new" /
+        # "snippet") internally — the wrapper's "new"/"save" event would fire
+        # on top of them and make one key press two sounds.
+        "hk_new_snippet", "hk_save_snippet",
+        # open_help_dialog plays its own tick internally; F1/hk_help would
+        # double it with the wrapper's "help" event.
+        "hk_help", "F1",
+    })
 
     def sound_event_for_hotkey(self, key):
         """The sound event a shortcut should request. Never None: an action
@@ -3040,7 +3049,9 @@ class FastPrompter(
         self.btn_colors = make_action_checkbox("RGB", self.open_color_settings)
         self.btn_colors.setToolTip(tr("Custom Theme Colors (Color Palette)", getattr(self, "_current_lang", "EN")))
         self.btn_backup = make_action_checkbox("BkUp", self.backup_db)
+        self.btn_backup.setToolTip(tr("Backup the database", getattr(self, "_current_lang", "EN")))
         self.btn_restore = make_action_checkbox("Rstr", self.restore_db)
+        self.btn_restore.setToolTip(tr("Restore the database from a backup", getattr(self, "_current_lang", "EN")))
 
         try:
             current_scale_pct = int(float(self.data.get("ui_scale", "0.5")) * 100)
@@ -6799,14 +6810,12 @@ class FastPrompter(
             self.ignore_focus_loss = False
 
     def backup_db(self):
-        self.play_sound("backup")
         from fastprompter.ui.backup_dialog import BackupDialog
 
         dlg = BackupDialog(self)
         dlg.exec()
 
     def restore_db(self):
-        self.play_sound("restore")
         path, _ = QFileDialog.getOpenFileName(
             self, "Restore Backup", "", "SQLite DB (*.db *.bak);;All Files (*)"
         )
@@ -9574,7 +9583,10 @@ class FastPrompter(
         add_fixed("Alt+Down", lambda: self.navigate_silo(1), Qt.ShortcutContext.WindowShortcut)
         add_shortcut("hk_italic", "Ctrl+I", lambda: self.apply_format("italic"))
         add_shortcut("hk_underline", "Ctrl+U", lambda: self.apply_format("underline"))
-        add_fixed("Ctrl+T", lambda: self.apply_format("strike"))
+        # Ctrl+T (strike) is handled inside the editor's keyPressEvent
+        # (editor.py:2825) — a shortcut here would fire a SECOND time on top
+        # of the editor path and toggle the strike twice for one keypress.
+        # The editor path plays its own "strike" sound.
 
         for i in range(1, 11):
             key_num = i % 10

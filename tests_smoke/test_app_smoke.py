@@ -9072,7 +9072,8 @@ def test_batch_delete_declined_keeps_selection(win, monkeypatch):
     win.toggle_silo_selection(0)
     win.toggle_silo_selection(1)
     calls = []
-    monkeypatch.setattr(win, "trash_silo", lambda i, is_archive=False: calls.append(i))
+    monkeypatch.setattr(win, "trash_silo",
+                        lambda i, is_archive=False, skip_undo=False: calls.append(i))
     monkeypatch.setattr(main_mod.QMessageBox, "question",
                         lambda *a, **k: main_mod.QMessageBox.StandardButton.No)
     win.batch_delete_selected_silos()
@@ -9086,7 +9087,8 @@ def test_batch_delete_confirmed_trashes_high_index_first(win, monkeypatch):
     for i in (0, 2, 5):
         win.toggle_silo_selection(i)
     calls = []
-    monkeypatch.setattr(win, "trash_silo", lambda i, is_archive=False: calls.append(i))
+    monkeypatch.setattr(win, "trash_silo",
+                        lambda i, is_archive=False, skip_undo=False: calls.append(i))
     monkeypatch.setattr(main_mod.QMessageBox, "question",
                         lambda *a, **k: main_mod.QMessageBox.StandardButton.Yes)
     win.batch_delete_selected_silos()

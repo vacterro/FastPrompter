@@ -2824,6 +2824,11 @@ class VaultTextEdit(QTextEdit):
 
         if mods == Qt.KeyboardModifier.ControlModifier and event.key() == Qt.Key.Key_T:
             # Strikethrough is non-configurable (not in hotkey settings)
+            try:
+                if hasattr(mw, "play_sound"):
+                    mw.play_sound("strike")
+            except Exception:
+                pass
             mw.apply_format("strike")
             event.accept()
             return
