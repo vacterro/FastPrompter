@@ -6116,6 +6116,7 @@ class FastPrompter(
         if getattr(self, "_in_smart_undo", False):
             return
         self._in_smart_undo = True
+        self._increment_focus_lock()
         try:
             kinds = self._undo_kinds()
             if self._undo_prefers_data():
@@ -6134,6 +6135,15 @@ class FastPrompter(
                 self.statusBar().showMessage(tr("Nothing to undo", getattr(self, "_current_lang", "EN")), 2000)
         finally:
             self._in_smart_undo = False
+            # A data undo rebuilds documents, switches silos and re-flows the
+            # list — any of which can queue a transient window deactivation.
+            # The deactivation event is DELIVERED asynchronously (next event
+            # loop pass), so releasing the focus lock synchronously here would
+            # let changeEvent -> hide_and_save run with the lock already gone
+            # ("Ctrl+Z closed the program"). Release it deferred, like every
+            # other undo-adjacent lock, so it covers the queued event.
+            from PyQt6.QtCore import QTimer
+            QTimer.singleShot(300, self._decrement_focus_lock)
 
     def _undo_kinds(self):
         """What each Ctrl+Z actually reversed, newest last — the only thing
@@ -6147,6 +6157,7 @@ class FastPrompter(
         if getattr(self, "_in_smart_redo", False):
             return
         self._in_smart_redo = True
+        self._increment_focus_lock()
         try:
             kinds = self._undo_kinds()
             kind = kinds.pop() if kinds else None
@@ -6176,6 +6187,8 @@ class FastPrompter(
             self.statusBar().showMessage(tr("Nothing to redo", getattr(self, "_current_lang", "EN")), 2000)
         finally:
             self._in_smart_redo = False
+            from PyQt6.QtCore import QTimer
+            QTimer.singleShot(300, self._decrement_focus_lock)
 
     def undo_action(self):
         if hasattr(self, "data_undo_stack") and self.data_undo_stack:
