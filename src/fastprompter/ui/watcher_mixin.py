@@ -137,10 +137,13 @@ class WatcherMixin:
             pass
         # The blocker runs only when the transport can read the target's
         # visible text (CDP). Anything else must not pretend to be armed with
-        # protection that cannot execute.
-        self._watcher_blocked_fn = (
-            adapter.blocked if (adapter.blocker_pattern
-                                and adapter.blocker_supported()) else None)
+        # protection that cannot execute. getattr-guarded: tests inject bare
+        # fake adapters that carry none of these.
+        if getattr(adapter, "blocker_pattern", ""):
+            supported = getattr(adapter, "blocker_supported", lambda: False)()
+            self._watcher_blocked_fn = adapter.blocked if supported else None
+        else:
+            self._watcher_blocked_fn = None
         self._watcher_engine.arm(
             self._watcher_target, self._queue_slot_key(), adapter.probes,
             adapter.skill_format or "", now=time.monotonic())

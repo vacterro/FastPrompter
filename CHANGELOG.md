@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.8.25 — 2026-08-07
+
+- **Silo/archive integrity (T-754).** Deleting an archive row no longer deletes the normal silo at the same index — the delete now carries its space explicitly. Archive reorders, deletes and insert-at-top mutations remap the archive's own folders, project paths and prompt queues (they used to move only the text). "Archive silo" is one transaction: text, document, files folder, project path and queued prompts move together. Swapping a silo across the normal/archive boundary carries all of that state too. The undo snapshot now restores all of it exactly.
+- **Queue state machine (T-756).** A queued prompt's line number is re-stamped from its anchor when the silo is left or the queue saved, so an inactive silo never fires at the wrong line. A detached prompt revives to pending the moment its source line comes back — no dialog needed. Moving a prompt to another silo's queue makes it a text snapshot, so the destination never binds it to its own same-numbered line.
+- **Watcher honesty (T-757).** The permission-prompt blocker now actually runs — but only for transports that can read the target's visible text (CDP); a blocker on any other transport is flagged inactive instead of pretending. `min_gap_ms`/`max_sends` from `adapters.toml` reach the engine, `dry_run_new` seeds the default, and dead limit keys are gone. CDP agents arm without a window handle.
+- **Per-category state (T-758).** Renaming or deleting a project now moves or removes every registered per-category store — project types, session and saved cursors no longer stay behind under the old name.
+- **Paste and dock fixes.** Pasting a copied file reads its content into the silo; closing the file manager no longer makes the silo sidebar grow every time.
+- *Under the hood:* one index-remap registry with per-namespace queue keys, one per-category registry, duplicate helpers collapsed, 5 orphan translation keys removed, and the architecture knowledge base rewritten to match the live code.
+
 ## v0.8.24 — 2026-08-07
 
 - **Hide on Click-Out removed (T-751).** The setting, its Alt+A global toggle, the settings checkbox, and the hide-on-focus-loss machinery are gone. It was the root cause of three P0/P1 "the window vanished" reports (Ctrl+Z hid it, Ctrl+Z closed it, the startup hid itself): `changeEvent` read every transient window deactivation as a click away and hid the window — a defect class no amount of focus-lock patching (T-732, T-750) could close for good. The window now never hides on its own. Existing profiles keep the dead setting harmlessly; the ~30 focus-lock call sites stay as a symmetric save/restore.
