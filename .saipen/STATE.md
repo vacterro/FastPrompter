@@ -1,7 +1,7 @@
 ---
 phase: DONE
 task: none
-next_action: "saipen ship"
+next_action: "WAIT: hunt-directive wave complete -- T-752..T-760 done, shipped v0.8.25 (afa9796). Follow-up flagged: dead focus-lock apparatus removal (hunt item 18, write-only). Next goal when you want it."
 blocker: ""
 agent: opencode
 saipen_version: 7
@@ -13,9 +13,9 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 1348
+last_event: 1349
 style_contract: ded-4ae736e4
 goal_mode: false
-updated: 2026-08-07T16:38:00Z
+updated: 2026-08-07T16:59:00Z
 transition_from: DONE
 ---
