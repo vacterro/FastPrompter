@@ -88,7 +88,7 @@ Pure-text markdown table. Tab/Shift+Tab walk cells. Tab off last cell grows row.
 | Dialog | Purpose |
 |---|---|
 | `Settings (Alt+`)` | Theme picker, hotkey rebind, sound, scale, toolbar reorder, silo tabs mode, image paste style, toolbar position |
-| `Sound Settings` | Per-event sound controls — enabled/file/volume/preview; includes the T-735 hotkey events (undo/redo/select-all/settings/help/new/save + generic `hotkey` which ships ON by default). Since v0.8.26 each row carries a painted pictogram and the table is zebra-striped with no grid |
+| `Sound Settings` | Per-event sound controls — enabled/file/volume/preview; includes the T-735 hotkey events (undo/redo/select-all/settings/help/new/save + generic `hotkey` which ships ON by default). Since v0.8.26 each row carries a painted pictogram (theme-coloured; 13 glyph-shape variants added in v0.8.29 split the confusable pairs after per-event hue tinting was reverted the same release) and the table is zebra-striped with no grid — zebra tones from the theme's alternate-background-color (v0.8.30), never Qt's default white |
 | `Snippet Manager (Ctrl+S)` | Edit F1-F10 snippet names + content |
 | `Timer Dialog (Ctrl+Shift+T)` | Pomodoro + countdown timer setup (sound picks from all 412 shipped sounds, T-741); one-click quick presets — in 10m / in 1h / tonight / tomorrow (T-726); timer list is a table with Name/Time/Remaining columns (T-733) |
 | `Queue Master (Alt+Shift+C)` | Watcher queue overview per silo |
@@ -107,5 +107,5 @@ Pure-text markdown table. Tab/Shift+Tab walk cells. Tab off last cell grows row.
 - **PieMenu (Shift+Alt+X)** — radial menu: themes, scale, tools
 - **Overflow menu (»)** — hidden buttons in ultra mode
 - **Resizers** — custom resize handles (T-629 fix: WS_CAPTION recompute)
-- **Header/grid theming (T-737)** — QHeaderView sections, view backgrounds, gridline-color and the table corner button come from the active theme's raw_colors (header_view_qss), so no near-white Qt default ever shows in a dark dialog; the calendar weekday strip gets its own copy
+- **Header/grid theming (T-737)** — QHeaderView sections, view backgrounds, gridline-color and the table corner button come from the active theme's raw_colors (header_view_qss), so no near-white Qt default ever shows in a dark dialog; the calendar weekday strip gets its own copy. Since v0.8.30 the same sheet also sets alternate-background-color — blended from the view background toward the theme's text colour — so zebra rows are never Qt's default white under the theme's light text
 - **ZenDesktop** — 3-stage Ctrl+D: Zen → Solo (minimise all) → back

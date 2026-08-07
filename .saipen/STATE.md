@@ -1,7 +1,7 @@
 ---
 phase: DONE
 task: none
-next_action: "WAIT: user brake -- v0.8.28 shipped (per-event sound icons). T-764 (delete _extract.txt?) still pending your call."
+next_action: "WAIT: user brake -- wiki package ready for collect (qqq)"
 blocker: ""
 agent: opencode
 saipen_version: 7
@@ -13,9 +13,9 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 1364
+last_event: 1365
 style_contract: ded-4ae736e4
 goal_mode: false
-updated: 2026-08-07T22:05:00Z
-transition_from: CLEAN
+updated: 2026-08-07T22:23:00Z
+transition_from: DONE
 ---
