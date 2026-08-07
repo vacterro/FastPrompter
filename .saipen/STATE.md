@@ -1,7 +1,7 @@
 ---
 phase: DONE
 task: none
-next_action: "WAIT: user brake -- fourth markhunt clean (E-1378, 0 new findings, tickets=none); prior T-770/771/772 [MARKHUNT] still in ## BLOCKED (unvetted audit); T-764 needs the human _extract.txt yes/no"
+next_action: "RUN: cc converge @2472cbe -- A-M plain converge (no ship)"
 blocker: ""
 agent: opencode
 saipen_version: 7
@@ -13,9 +13,8 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 1378
-style_contract: ded-4ae736e4
-execution_intent: normal
-updated: 2026-08-07T23:18:00Z
+last_event: 1379
+execution_intent: converge
+updated: 2026-08-07T23:22:00Z
 transition_from: DONE
 ---
