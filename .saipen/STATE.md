@@ -1,7 +1,7 @@
 ---
 phase: DONE
 task: none
-next_action: "RUN: cc converge @2472cbe -- A-M plain converge (no ship)"
+next_action: "WAIT: blocked -- untriaged MARKHUNT findings in ## BLOCKED; triage into ## TODO or dismiss"
 blocker: ""
 agent: opencode
 saipen_version: 7
@@ -13,9 +13,9 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 1379
+last_event: 1382
 style_contract: ded-4ae736e4
 execution_intent: converge
-updated: 2026-08-07T23:22:00Z
+updated: 2026-08-07T23:26:00Z
 transition_from: DONE
 ---
