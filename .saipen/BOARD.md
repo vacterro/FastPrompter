@@ -15,17 +15,13 @@ _(empty)_
 _(empty)_
 ## BLOCKED
 
-- [ ] T-743 (fix, user-reported) Test notification (Timers → Test) reported as still not clickable/removable. T-736 shipped the fix (timer_toast.py:235 mousePressEvent -> close, plus _live_toasts pruning and screen clamp) in v0.8.18. Code IS there on inspection. | blocker: live repro required; window flags FramelessWindowHint|Tool|WindowStaysOnTopHint + WA_ShowWithoutActivating should receive clicks; toast constructor, close button (✕), mousePressEvent, auto-close all wired correctly | verify: fire test notification, click toast body → dismisses; close button works; no toast lingers after timeout
-## TODO
+- [ ] T-743 (fix, user-reported) Test notification (Timers → Test) reported as still not clickable/removable. T-736 shipped the fix (timer_toast.py:235 mousePressEvent -> close, plus _live_toasts pruning and screen clamp) in v0.8.18. Code IS there on inspection. | blocker: live repro required; window flags FramelessWindowHint|Tool|WindowStaysOnTopHint + WA_ShowWithoutActivating should receive clicks; toast constructor, close button (cross), mousePressEvent, auto-close all wired correctly | verify: fire test notification, click toast body -> dismisses; close button works; no toast lingers after timeout
+## DONE
 
 ### Wave 5 — 07.08 sound asks (user, repeated)
 
 - [x] T-741 (feat, user-asked) DONE 07.08 -- the timer alarm picker listed EIGHT event names out of 412 shipped files, so an alarm could only ever be one of eight sounds and wanting any other meant re-mapping a global event, which changes it everywhere else too. The combo now carries the named events first (existing timers keep resolving) then the whole library; a file is stored as `file:<name>` in itemData, and `_play_timer_sound` routes that straight to `play_file` at the timer's own volume so no settings change can move it under the timer's feet. A file that stops shipping falls back to `tick` instead of going blank. | verify: 2 smoke tests -- the combo offers exactly as many `file:` entries as `discover_sound_files` finds, and a `file:` timer reaches play_file while a named one still reaches play
 - [x] T-742 (feat, user-asked, REVERSES MY OWN CALL) DONE 07.08 -- "sound on all possible hotkeys" was asked twice and still looked broken, for two reasons. (1) I shipped the generic `hotkey` event DISABLED in T-735 on my own judgement that a sound on every shortcut would be obnoxious; the user asked for exactly that, twice, so `_DEFAULT_OFF` is now empty and a one-shot `_heal_hotkey_default` flips profiles that stored the old shipped `False` -- migration cannot tell "the app shipped it off" from "the user turned it off", and a marker makes the heal run once so it never fights someone who switches it off afterwards. (2) Qt's OWN editing shortcuts never pass through add_shortcut, so the T-735 wrapper could not reach them and Ctrl+A was silent while every registered hotkey had a sound; the editor now sounds Ctrl+A/C/V/X and falls through without accepting the event. | verify: 2 smoke tests -- a fresh profile ships `hotkey` enabled, an old one is healed once and stays off if switched off after, and Ctrl+A through the real keyPressEvent asks for `select_all`
-
-
-_(empty — all waves shipped; full records under ## DONE.)_
-## DONE
 
 ### Wave 4 — 05.08 evening `/goal` (user's own order)
 
@@ -127,10 +123,6 @@ _(empty — all waves shipped; full records under ## DONE.)_
   HONEST LIMIT: the fuzz still flags orders the app cannot produce (serialising a HIDDEN widget, interleaved transforms). Not chased — that is the harness, not the app.
 - [x] T-645 (feat) Double-click a pasted image's pill to rename it — file on disk AND the link, one undo step. `paste-20260730_140826.png` records when it arrived and nothing about what it is. The pill's geometry existed only inside paintEvent, so there was nothing to hit-test; `_image_pill_rect` derives it from cursor rects the same way the paint pass does, so the two cannot disagree. Extension kept when omitted, illegal chars replaced, existing name not clobbered, a failed rename leaves the link alone rather than pointing at a missing file, and the focus lock is held across the dialog so the window does not hide mid-rename. Code landed in c04c3e8 (another agent's `add -A` swept my unstaged work), tests in 80d25ec | verify: 7 tests + live paste-and-rename
 - [x] T-295 (P2) DONE 06.08 -- the scoped conversion the ticket asked for, driven by evidence rather than a sweep: of the four failures this project has been calling 'pre-existing order pollution' for weeks, exactly TWO are that class (`header_fits_quarter_fullhd_with_full_clock`, `a_degenerate_box_width_still_takes_a_click` -- green alone, red in a full run). Both moved onto `fresh_win`, both now green. The other two fail in ISOLATION and are therefore real defects that were mislabelled: ticketed as T-739 and T-740. Cost of the conversion: ~4s, against the ~16min a wholesale function-scope suite would have cost, which is the trade the ticket explicitly refused. Original: UNBLOCKED 27.07, partially done. `tests_smoke` still shares ONE module-scoped `win`; the remaining work is converting tests that actually need isolation onto `fresh_win`. NOT doing a wholesale conversion: a full function-scope suite costs ~1.9s x 509 = ~16 min/run against 2:51 now. | verify: per-test, as tests are moved
-
-## BLOCKED
-
-_(empty — T-295 closed 06.08, moved to ## DONE.)_
 
 > CLEAN 01.08.26: 72 older DONE tickets pruned from the board (T-644..T-684).
 > Nothing is lost - every one of their events lives in the append-only
