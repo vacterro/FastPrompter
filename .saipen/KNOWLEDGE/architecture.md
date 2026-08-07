@@ -11,6 +11,13 @@
   assert on `not widget.isHidden()` instead.
 - Guard test `test_all_source_files_compile` compiles every src file — keep it
   green (it catches the i18n-style syntax-error class).
+- Test file naming: `tests_smoke/` files are named by FEATURE
+  (`test_toast_click.py`, `test_shortcut_double_fire.py`), never by ticket
+  number. A ticket's regression tests live in the feature file and the ticket
+  ref goes in the docstring (`"""T-743 regression: ..."""`); the ticket number
+  must NOT be part of the filename (T-749, 07.08). One exception that is now
+  only historical: `test_ctrlz_hide_regression.py` was filed during the same
+  cleanup and keeps its name as a live file — the rule is prospective.
 
 ## Per-category state: the `_all` alias pattern (READ THIS before touching silo state)
 Every per-slot silo attribute is stored per-category and *aliased* to the

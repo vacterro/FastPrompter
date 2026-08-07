@@ -1,9 +1,9 @@
 ---
 phase: DONE
-task: none
-next_action: "WAIT: markhunt recorded T-745..T-749 under ## BLOCKED, all unvetted -- tell me which to triage into ## TODO; nothing was fixed and nothing may be picked up automatically"
+task: T-748
+next_action: "PHASE SCOUT T-749"
 blocker: ""
-agent: claude
+agent: opencode
 saipen_version: 7
 saipen_home: "C:\\Users\\vac34\\.claude\\skills\\saipen"
 mode: full
@@ -13,11 +13,11 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 1327
-style_contract: ded-97af6dca
+last_event: 1332
+style_contract: ded-4ae736e4
 goal_mode: true
-goal_waves: 1
-goal_tickets: 5
-updated: 2026-08-07T06:30:00Z
-transition_from: MARKHUNT
+goal_waves: 2
+goal_tickets: 9
+updated: 2026-08-07T14:00:00Z
+transition_from: BUILD
 ---

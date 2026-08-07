@@ -45,7 +45,7 @@ Bundle: `.saipen/saitranslate/locales/` (JSON, one file per language); docs in `
 | DED | Дед (Angry Grandpa) | 🇷🇺 | 100.0% |
 
 All 33 locales carry the same 976 keys; coverage is COMPUTED against en.json
-by `scratch/validate_saitranslate.py`, never read from the stored field.
+by `tools/validate_saitranslate.py`, never read from the stored field.
 Missing keys fall back to English at runtime via the `tr()` engine.
 
 ## Drift log
@@ -81,4 +81,4 @@ Status 04.08 (ee): all four (ru, est, ja, de) re-synced to the wiki at HEAD 8199
 
 ## Integration
 
-Integrated at v0.8.8 (T-691/T-693): 33 i18n modules regenerated from these JSON files via `scratch/inject_translations.py`, support-button + transform-menu strings wrapped in `tr()`, guides copied to repo root. Bundle lives in `.saipen/saitranslate/kitchen/` per TRANSLATE phase isolation rules (`RFC.md § 2.1`); future bundle syncs re-run `scratch/inject_translations.py`, never hand-write modules.
+Integrated at v0.8.8 (T-691/T-693): 33 i18n modules regenerated from these JSON files via `tools/inject_translations.py`, support-button + transform-menu strings wrapped in `tr()`, guides copied to repo root. Bundle lives in `.saipen/saitranslate/kitchen/` per TRANSLATE phase isolation rules (`RFC.md § 2.1`); future bundle syncs re-run `tools/inject_translations.py`, never hand-write modules.
