@@ -238,6 +238,28 @@ class CdpTarget:
                 return True, "target confirmed"
         return False, "the page is gone"
 
+    def visible_text(self):
+        """The page's visible text, for the adapter's blocker_pattern.
+
+        A permission prompt is silent to the probes, and a send landing on
+        one is the exact failure the blocker exists to stop — but it can
+        only run when the transport can actually read what the user is
+        looking at. CDP can; window-post cannot (T-757).
+        """
+        try:
+            ws = WebSocket(self.ws_url)
+            try:
+                result = ws.call("Runtime.evaluate", {
+                    "expression": "document.body ? document.body.innerText : ''",
+                    "returnByValue": True,
+                })
+            finally:
+                ws.close()
+        except Exception:
+            return ""
+        value = result.get("result", {}).get("value") if isinstance(result, dict) else None
+        return value if isinstance(value, str) else ""
+
 
 # --------------------------------------------------------------- the sender
 

@@ -497,10 +497,13 @@ class QueueDialog(QDialog):
             return
         # the anchor belongs to the old silo's document; moving the item to
         # another silo leaves it pointing at a line that is not there, so the
-        # mark goes and the item carries its text from here on
+        # mark goes and the item becomes a text SNAPSHOT (T-756): line is
+        # reset to 0 so the destination runtime never binds it to the
+        # destination silo's same-numbered line, and it carries its text.
         editor = getattr(self.main_win, "text_area", None)
         if editor is not None and str(slot) == self.main_win._queue_slot_key():
             editor.clear_queue_marks(item.id)
+        item.line = 0
         move_between(self.main_win.prompt_queues, item.id, slot, target)
         self.main_win.save_prompt_queues()
         self.refresh()

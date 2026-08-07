@@ -1100,6 +1100,72 @@ def test_delete_category_is_undoable(win):
     assert win.cat_combo.count() == len(win.data["cats_order"])
 
 
+def test_rename_category_moves_every_registered_store(win, monkeypatch):
+    """T-758: renaming a project must move silo_type_all, silo_session_all and
+    silo_view_state_all too — the registry used to miss all three."""
+    from PyQt6.QtWidgets import QInputDialog
+
+    win.cat_combo.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    if win.cat_combo.count() < 1:
+        pytest.skip("needs a tab")
+    old = win.data["cats_order"][0]
+    monkeypatch.setattr(QInputDialog, "getText",
+                        staticmethod(lambda *a, **k: ("NEW", True)))
+
+    list_keys = {"pinned_silos_all", "silo_ticked_all", "silo_collapsed_all",
+                 "silo_gaps_all"}
+    for key in win._PER_CATEGORY_STATE_KEYS:
+        win.data.setdefault(key, {})[old] = (
+            [999] if key in list_keys else {"999": "marker"})
+    win.data["temp_presets_all"][old] = ["AAA", "BBB"]
+    win.data["archive_temp_presets_all"][old] = []
+    win.data["categories"].setdefault(old, [None] * 5)
+
+    win.rename_category()
+
+    assert "NEW" in win.data["cats_order"]
+    for key in win._PER_CATEGORY_STATE_KEYS:
+        assert old not in win.data.get(key, {}), (
+            f"{key} kept data under the old name after a rename")
+        assert "NEW" in win.data.get(key, {}), (
+            f"{key} lost its data in the rename")
+    assert old not in win.data["categories"]
+    assert "NEW" in win.data["categories"]
+
+
+def test_delete_category_removes_every_registered_store(win, monkeypatch):
+    """T-758: deleting a project must not leave an orphan behind in any
+    per-category store."""
+    from unittest.mock import patch
+
+    from PyQt6.QtWidgets import QMessageBox
+
+    win.cat_combo.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    if win.cat_combo.count() < 2:
+        pytest.skip("needs two tabs")
+    win.cat_combo.setCurrentIndex(1)
+    victim = win.data["cats_order"][1]
+
+    list_keys = {"pinned_silos_all", "silo_ticked_all", "silo_collapsed_all",
+                 "silo_gaps_all", "temp_presets_all", "archive_temp_presets_all"}
+    for key in win._PER_CATEGORY_STATE_KEYS:
+        store = win.data.setdefault(key, {})
+        store[victim] = (
+            ["MARKER"] if key in list_keys
+            else {"999": "marker"})
+    win.data["categories"].setdefault(victim, [None] * 5)
+
+    with patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes):
+        win.del_category()
+
+    assert victim not in win.data["cats_order"]
+    for key in win._PER_CATEGORY_STATE_KEYS:
+        assert victim not in win.data.get(key, {}), (
+            f"{key} left an orphan behind after a delete")
+
+
 def test_fuzz_ui_surfaces(win):
     """Fuzz round 3: themes, formatting ops on random selections,
     search/replace, unified scale, view modes, focus/sidebar toggles,
@@ -7467,6 +7533,129 @@ def test_rows_follow_edits_made_in_the_note(win):
         win.text_area.clear()
 
 
+def test_detached_item_revives_when_source_returns(win):
+    """T-756: the runtime watcher inspects DETACHED items too and revives
+    one whose source line came back — no queue dialog needed."""
+    from fastprompter.core.watcher.queue import DETACHED, PENDING
+
+    kept = dict(win.prompt_queues)
+    try:
+        win.prompt_queues.clear()
+        win.text_area.setPlainText("a\nqueued line\nb")
+        ed = win.text_area
+        c = ed.textCursor()
+        c.setPosition(ed.document().findBlockByNumber(1).position())
+        ed.setTextCursor(c)
+        win.queue_current_line()
+        item = win.prompt_queues[win._queue_slot_key()].items[0]
+        assert item.state == PENDING
+
+        item.mark_detached("source went away")
+        assert item.state == DETACHED
+
+        # the block still carries the anchor and the line exists again -> revive
+        win._watcher_refresh_texts(
+            win._queue_slot_key(), win.prompt_queues[win._queue_slot_key()])
+        assert item.state == PENDING, "a restored source must revive the item"
+        assert not item.reason
+    finally:
+        win.prompt_queues.clear()
+        win.prompt_queues.update(kept)
+        win.text_area.clear()
+
+
+def test_inactive_reference_item_is_detached_not_live(win):
+    """T-756: a source-referenced item whose line cannot be resolved must be
+    reported detached, so stale text is never sent as if it were live. A
+    snapshot item (line 0) owns its text and stays live."""
+    from fastprompter.core.watcher.queue import QueueItem
+
+    win.data["temp_presets"][:] = ["only one line"]
+
+    stale = QueueItem("stale snapshot", line=5)
+    _, detached = win.queue_item_live_text("0", stale)
+    assert detached is True, "a referenced line past the end is detached"
+
+    owned = QueueItem("owned text", line=0)
+    text, detached = win.queue_item_live_text("0", owned)
+    assert detached is False and text == "owned text"
+
+
+def test_move_between_queues_keeps_its_text(win):
+    """T-756: moving an item to another silo makes it a text SNAPSHOT — the
+    destination runtime must never bind it to the destination's same line."""
+    from fastprompter.ui.queue_panel import QueueDialog
+
+    kept = dict(win.prompt_queues)
+    try:
+        win.prompt_queues.clear()
+        win.data["temp_presets"][:] = [
+            "silo A\nlineA1\nlineA2\nlineA3\nlineA4",
+            "silo B\nB1\nB2\nB3\nB4",
+        ]
+        win.silo_docs[:] = []
+        win._switch_to_slot(0, initial=True)
+        ed = win.text_area
+        c = ed.textCursor()
+        c.setPosition(ed.document().findBlockByNumber(4).position())   # "lineA4"
+        ed.setTextCursor(c)
+        win.queue_current_line()
+
+        dlg = QueueDialog(win)
+        dlg.tabs.setCurrentIndex(dlg.tabs.count() - 1)   # the "All silos" master tab
+        dlg.refresh_master()
+        dlg.master_list.setCurrentRow(0)
+        dlg.cb_target.setCurrentIndex(1)                 # silo B
+        dlg.move_selected_to_target()
+
+        item = win.prompt_queues["1"].items[0]
+        assert item.line == 0, "a cross-silo move is a snapshot, not a reference"
+        text, detached = win.queue_item_live_text("1", item)
+        assert text == "lineA4", f"the item must keep its own text, got {text!r}"
+        assert detached is False
+        dlg.close()
+    finally:
+        win.prompt_queues.clear()
+        win.prompt_queues.update(kept)
+        win.text_area.clear()
+
+
+def test_queue_line_number_follows_edits_above(win):
+    """T-756: item.line is re-stamped from the anchor when the queue is
+    committed, so an inactive silo later fires at the RIGHT line."""
+    kept = dict(win.prompt_queues)
+    try:
+        win.prompt_queues.clear()
+        win.data["temp_presets"][:] = [
+            "# h\n1\n2\n3\n4\n5\n6\n7\n8\n9",
+            "other silo",
+        ]
+        win.silo_docs[:] = []
+        win._switch_to_slot(0, initial=True)
+        ed = win.text_area
+        c = ed.textCursor()
+        c.setPosition(ed.document().findBlockByNumber(5).position())   # "5"
+        ed.setTextCursor(c)
+        win.queue_current_line()
+        item = win.prompt_queues["0"].items[0]
+        assert item.line == 6
+
+        # insert three lines above the anchored block
+        c = ed.textCursor()
+        c.setPosition(ed.document().findBlockByNumber(0).position())
+        ed.setTextCursor(c)
+        ed.insertPlainText("X\nY\nZ\n")
+        assert item.line == 6, "stale until the sync runs"
+
+        # committing the queue re-stamps the line from the anchor
+        win.save_prompt_queues()
+        assert item.line == 9, f"expected line 9 after 3 lines inserted, got {item.line}"
+    finally:
+        win.prompt_queues.clear()
+        win.prompt_queues.update(kept)
+        win.text_area.clear()
+
+
 def test_deleting_the_line_detaches_but_keeps_the_text(win):
     from PyQt6.QtGui import QTextCursor
 
@@ -7992,6 +8181,39 @@ def test_the_watcher_dialog_opens_and_lists_its_agents(win):
         assert dlg.btn_arm.text()
     finally:
         dlg.close()
+
+
+def test_cdp_arm_needs_no_window(win, monkeypatch):
+    """T-757: a cdp adapter arms without a Win32 window selected; the hwnd
+    gate applies to window transports only."""
+    from fastprompter.core.watcher.adapter import Adapter
+    from fastprompter.ui.watcher_dialog import WatcherDialog
+
+    kept = dict(win.prompt_queues)
+    try:
+        win.prompt_queues.clear()
+        win.text_area.setPlainText("line to queue")
+        win.queue_current_line()
+
+        dlg = WatcherDialog(win)
+        cdp = Adapter("cdp-agent", probes=(), enabled=True, transport="cdp",
+                      cdp_port=9333, blocker_pattern="")
+        dlg.cmb_agent.addItem("cdp-agent", cdp)
+        dlg.cmb_agent.setCurrentIndex(dlg.cmb_agent.count() - 1)
+        dlg.lst_windows.clear()          # nothing selected
+
+        calls = []
+        monkeypatch.setattr(
+            win, "watcher_arm",
+            lambda hwnd, adapter, live=False: calls.append(hwnd) or (True, "ok"))
+        dlg.toggle_arm()
+        assert calls and calls[0] is None, (
+            "cdp must reach watcher_arm with hwnd=None, got the window gate")
+        dlg.close()
+    finally:
+        win.prompt_queues.clear()
+        win.prompt_queues.update(kept)
+        win.text_area.clear()
 
 
 def test_closing_the_dialog_leaves_a_run_going(win, monkeypatch):

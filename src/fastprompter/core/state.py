@@ -52,6 +52,21 @@ _JSON_SETTINGS = (
 _SETTINGS_SKIP = ("categories", "temp_presets_all", "archive_temp_presets_all",
                   "temp_presets", "archive_temp_presets")
 
+# Every per-CATEGORY store. rename_category / del_category (main.py) move or
+# delete the whole set in lockstep; a store left off this list keeps its data
+# under the OLD project name after a rename, or leaves an orphan behind after
+# a delete. Lives here (Qt-free) so the invariant test can assert it covers
+# every live *_all key (T-758).
+_PER_CATEGORY_STATE_KEYS = (
+    "temp_presets_all", "archive_temp_presets_all",
+    "pinned_silos_all", "silo_ticked_all", "silo_children_all",
+    "silo_collapsed_all", "silo_colors_all", "silo_folders_all",
+    "archive_silo_folders_all", "silo_last_edited_all",
+    "silo_project_paths_all", "archive_project_paths_all",
+    "watcher_queues_all", "silo_gaps_all",
+    "silo_type_all", "silo_session_all", "silo_view_state_all",
+)
+
 
 def _encode_settings(data):
     """{key: text} for the settings table, JSON where the value needs it."""

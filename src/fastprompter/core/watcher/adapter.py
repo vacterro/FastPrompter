@@ -20,11 +20,6 @@ DEFAULT_LIMITS = {
     "min_gap_ms": 4000,
     "max_sends": 25,
     "dry_run_new": True,
-    # The feature exists to drain a queue while the user works elsewhere.
-    # Anything that interrupts them defeats it.
-    "confirm_first": False,
-    "allow_focus_steal": False,
-    "restore_clipboard_ms": 400,
 }
 
 
@@ -129,6 +124,15 @@ class Adapter:
             return False
         return bool(self._blocker.search(text))
 
+    def blocker_supported(self):
+        """Whether a blocker_pattern can actually run for this transport.
+
+        The blocker matches the TARGET'S VISIBLE text. Only a transport that
+        can read it (CDP page text) may claim the safety; anything else would
+        silently advertise protection that never executes (T-757).
+        """
+        return self.transport == "cdp"
+
     def __repr__(self):
         return f"Adapter({self.name!r}, {len(self.probes)} probes)"
 
@@ -147,6 +151,11 @@ def _adapter_from(entry, project=None):
             probes.append(build_probe(spec, project=project))
         except Exception as exc:
             problems.append(f"bad probe: {exc}")
+    if entry.get("blocker_pattern") and entry.get("transport") != "cdp":
+        # Never advertise a blocker this transport cannot execute (T-757).
+        problems.append(
+            "blocker_pattern is set, but this transport cannot read the "
+            "target's visible text — the blocker is INACTIVE")
 
     return Adapter(
         name=name.strip(),
@@ -189,10 +198,23 @@ def parse_adapters(text, project=None):
 
     limits = dict(DEFAULT_LIMITS)
     for key, value in (data.get("limits") or {}).items():
-        if key in limits:
-            limits[key] = value
-        else:
+        if key not in limits:
             errors.append(f"unknown limit {key!r}")
+            continue
+        # Clamp at the parse boundary: a config typo must not disarm the
+        # engine's guards (T-757).
+        if key == "min_gap_ms":
+            try:
+                limits[key] = max(0, int(value))
+            except (TypeError, ValueError):
+                errors.append(f"min_gap_ms must be a number, got {value!r}")
+        elif key == "max_sends":
+            try:
+                limits[key] = max(1, int(value))
+            except (TypeError, ValueError):
+                errors.append(f"max_sends must be a number, got {value!r}")
+        elif key == "dry_run_new":
+            limits[key] = bool(value)
     return adapters, limits, errors
 
 

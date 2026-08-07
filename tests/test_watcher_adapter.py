@@ -85,9 +85,14 @@ def test_untouched_limits_keep_their_defaults():
 
 
 def test_the_defaults_do_not_interrupt_the_user():
-    """These two are the whole reason the feature is worth having."""
-    assert DEFAULT_LIMITS["confirm_first"] is False
-    assert DEFAULT_LIMITS["allow_focus_steal"] is False
+    """The limits are the drain-while-away contract: no prompt before the
+    first send, no focus stealing. The keys that implemented neither are
+    gone (T-757) — config may only carry what a consumer executes."""
+    assert "confirm_first" not in DEFAULT_LIMITS
+    assert "allow_focus_steal" not in DEFAULT_LIMITS
+    assert "restore_clipboard_ms" not in DEFAULT_LIMITS
+    assert DEFAULT_LIMITS["min_gap_ms"] >= 0
+    assert DEFAULT_LIMITS["max_sends"] >= 1
 
 
 def test_the_project_placeholder_is_filled_in():
@@ -151,6 +156,38 @@ def test_an_unknown_limit_is_reported_and_ignored():
     assert limits["min_gap_ms"] == 1
     assert "foo" not in limits
     assert errors and "foo" in errors[0]
+
+
+def test_limits_are_clamped_at_the_parse_boundary():
+    """A config typo must not disarm the engine's guards (T-757)."""
+    _a, limits, _e = parse_adapters("[limits]\nmin_gap_ms = -10\nmax_sends = 0")
+    assert limits["min_gap_ms"] == 0
+    assert limits["max_sends"] == 1
+    _a, limits, errors = parse_adapters("[limits]\nmin_gap_ms = 'soon'")
+    assert limits["min_gap_ms"] == 4000
+    assert errors, "a non-numeric limit must be reported"
+
+
+def test_blocker_supported_only_for_cdp_transport():
+    """The blocker matches the target's VISIBLE text; only a transport that
+    can read it may claim the safety (T-757)."""
+    from fastprompter.core.watcher.adapter import Adapter as A
+    assert A("cdp", blocker_pattern="allow", transport="cdp").blocker_supported() is True
+    assert A("post", blocker_pattern="allow", transport="post").blocker_supported() is False
+
+
+def test_a_blocker_on_a_transport_that_cannot_read_text_is_reported():
+    adapters, _l, _e = parse_adapters("""
+[[agent]]
+name = "cli"
+transport = "post"
+blocker_pattern = "(?i)allow"
+  [[agent.probe]]
+  kind = "file"
+  glob = "/tmp/x"
+""")
+    assert adapters[0].problems, "an unexecutable blocker must be flagged"
+    assert "INACTIVE" in adapters[0].problems[0]
 
 
 def test_a_nonsense_settle_falls_back_instead_of_crashing():
@@ -295,13 +332,16 @@ def test_the_shipped_example_actually_parses():
 
 
 def test_the_shipped_example_does_not_interrupt_the_user():
-    """Config that ships with confirm_first on would undo the silent default
-    for everyone who copies it."""
+    """Config that ships with interrupting keys would undo the silent default
+    for everyone who copies it. Dead keys must not appear at all (T-757)."""
     example = _shipped_example()
     with open(example, encoding="utf-8") as fh:
-        _adapters, limits, _errors = parse_adapters(fh.read())
-    assert limits["confirm_first"] is False
-    assert limits["allow_focus_steal"] is False
+        text = fh.read()
+    _adapters, limits, _errors = parse_adapters(text)
+    assert "confirm_first" not in limits
+    assert "allow_focus_steal" not in limits
+    assert "confirm_first" not in text
+    assert "restore_clipboard_ms" not in text
 
 
 # --------------------------------------------------------------- transport

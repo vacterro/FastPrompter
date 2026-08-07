@@ -96,6 +96,9 @@ class WatcherDialog(QDialog):
         self.chk_live = QCheckBox(
             tr("Actually send (otherwise it only records what it would send)",
                self.lang))
+        # dry_run_new is the configured default for a fresh run (T-757).
+        if not bool(self._limits.get("dry_run_new", True)):
+            self.chk_live.setChecked(True)
         root.addWidget(self.chk_live)
 
         row = QHBoxLayout()
@@ -212,10 +215,16 @@ class WatcherDialog(QDialog):
             self.main_win.watcher_disarm(tr("stopped by hand", self.lang))
             return
 
-        hwnd = self.current_hwnd()
-        if hwnd is None:
-            self.lbl_state.setText(tr("Pick the window to send to.", self.lang))
-            return
+        adapter = self.current_adapter()
+        # A cdp adapter is bound to a debuggable PAGE and needs no window
+        # handle (T-757); the window selector is for window transports only.
+        if adapter is None or getattr(adapter, "transport", "post") != "cdp":
+            hwnd = self.current_hwnd()
+            if hwnd is None:
+                self.lbl_state.setText(tr("Pick the window to send to.", self.lang))
+                return
+        else:
+            hwnd = None
 
         queue = queue_for(self.main_win.prompt_queues,
                           self.main_win._queue_slot_key())
@@ -226,7 +235,7 @@ class WatcherDialog(QDialog):
             return
 
         ok, reason = self.main_win.watcher_arm(
-            hwnd, self.current_adapter(), live=self.chk_live.isChecked())
+            hwnd, adapter, live=self.chk_live.isChecked())
         if not ok:
             self.lbl_state.setText(reason)
         self.refresh()
@@ -284,7 +293,10 @@ class WatcherDialog(QDialog):
         self.btn_panic.setEnabled(armed)
         # Locked while armed: both are pinned at arming, so letting them move
         # would show a target and a queue the run is not actually using.
-        self.lst_windows.setEnabled(not armed)
+        # A cdp adapter needs no window handle, so its selector is disabled.
+        cdp = (self.current_adapter() is not None
+               and getattr(self.current_adapter(), "transport", "post") == "cdp")
+        self.lst_windows.setEnabled(not armed and not cdp)
         self.cmb_agent.setEnabled(not armed)
         self.chk_live.setEnabled(not armed)
 

@@ -28,8 +28,9 @@ multiline   = "join"
 # disabled for it, with the reason shown. Dropping the skill silently would
 # send something other than what was queued.
 skill_format = "/{skill} {text}"
-# a permission prompt is silent, which is exactly when a send does damage
-blocker_pattern = "(?i)(do you want to proceed|allow this|\\[y/n\\])"
+# NOTE: blocker_pattern can only run for a transport that reads the target's
+# visible text (cdp). A file/window-probe agent cannot see a permission
+# prompt, so a pattern here would be INACTIVE safety - none is declared.
 
   [[agent.probe]]
   kind     = "file"
@@ -218,13 +219,3 @@ default = ""        # stamped onto new queue items; "" means no skill
 min_gap_ms       = 4000
 max_sends        = 25
 dry_run_new      = true     # a newly added adapter starts in dry run
-
-# The feature exists so the queue drains while the user is doing something
-# else. Anything that interrupts them defeats it, so:
-confirm_first     = false   # no prompt before the first send
-allow_focus_steal = false   # never pull the foreground window away; the
-                            # silent strategy posts input at the target
-                            # instead, and a target that will not accept
-                            # posted input is a fact for its adapter, not a
-                            # reason to grab focus behind the user's back
-restore_clipboard_ms = 400  # only used by the focus-stealing fallback

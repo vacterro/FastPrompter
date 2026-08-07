@@ -691,3 +691,52 @@ class TestDefaultProfile:
 
         state.reset_data()
         assert len(state.data["window_presets"]) == before
+
+    def test_every_structured_default_field_has_serializer_membership(self):
+        """T-758: a structured (dict/list) field with no JSON serializer is
+        written with str() and silently reloads as a string — the H-653 trap
+        that ate silo_type_all."""
+
+        from fastprompter.core import state as state_mod
+        from fastprompter.core.default_profile import DEFAULT_PROFILE
+
+        json_keys = set(state_mod._JSON_SETTINGS)
+        skip = set(state_mod._SETTINGS_SKIP)
+        for key, value in DEFAULT_PROFILE.items():
+            if isinstance(value, (dict, list, tuple)):
+                assert key in json_keys or key in skip, (
+                    f"{key!r} is structured but has no JSON serializer — "
+                    "it would reload as a str() and be silently lost")
+
+    def test_json_serializer_round_trips(self):
+        """Every key the JSON path writes must come back identical under
+        json.loads — otherwise the decoder and the encoder disagree."""
+        import json
+
+        from fastprompter.core import state as state_mod
+
+        sample = {
+            "silo_colors_all": {"Code": {"0": "#fff"}},
+            "watcher_queues_all": {"Code": {"a0": [{"id": "x", "text": "t", "line": 3}]}},
+            "silo_view_state_all": {"Code": {"s0": {"pos": 1, "scroll": 0}}},
+            "silo_gaps_all": {"Code": [1, 2]},
+            "archive_silo_folders_all": {"Code": {"0": "folder"}},
+            "sound_events": {"tick": {"file": "tick.wav", "enabled": True, "volume": 5}},
+        }
+        encoded = state_mod._encode_settings(sample)
+        for key, raw in encoded.items():
+            assert json.loads(raw) == sample[key], f"{key} did not round-trip"
+
+    def test_every_live_all_key_is_in_the_per_category_registry(self, state):
+        """T-758: the rename/delete registry must cover every *_all store the
+        defaults actually carry, or a project keeps data under its old name.
+        (silo_view_state_all is created lazily, so the registry may carry one
+        more key than a fresh state.)"""
+        from fastprompter.core import state as state_mod
+
+        live = {k for k in state.data if k.endswith("_all")}
+        registered = set(state_mod._PER_CATEGORY_STATE_KEYS)
+        missing = live - registered
+        assert not missing, f"unregistered *_all stores: {sorted(missing)}"
+        assert all(k.endswith("_all") for k in registered), (
+            "the registry must only carry per-category *_all keys")

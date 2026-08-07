@@ -26,7 +26,7 @@ from fastprompter.core.watcher import win32
 from fastprompter.core.watcher.adapter import load_adapters
 from fastprompter.core.watcher.engine import Engine
 from fastprompter.core.watcher.probes import combine
-from fastprompter.core.watcher.queue import queue_for
+from fastprompter.core.watcher.queue import DETACHED, PENDING, queue_for
 from fastprompter.core.watcher.sender import (
     PostMessageSender,
     SendLog,
@@ -87,8 +87,12 @@ class WatcherMixin:
         example = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             "core", "watcher", "adapters.example.toml")
-        return load_adapters(path=user, fallback=example,
-                             project=self._watcher_project())
+        adapters, limits, errors = load_adapters(
+            path=user, fallback=example, project=self._watcher_project())
+        # The dialog holds them for its own reading; the ARMED engine needs
+        # them too (min_gap_ms/max_sends), so keep the parsed set here (T-757).
+        self._watcher_limits = limits
+        return adapters, limits, errors
 
     def _watcher_project(self):
         """What `{project}` expands to in a probe path."""
@@ -120,6 +124,23 @@ class WatcherMixin:
                            "launch it with --remote-debugging-port")
         self._watcher_sender = self._build_sender(live)
         self._watcher_engine.settle_ms = adapter.settle_ms
+        # The parsed [limits] must actually reach the engine (T-757): a
+        # configured min_gap_ms/max_sends used to be stored and ignored.
+        limits = getattr(self, "_watcher_limits", None) or {}
+        try:
+            self._watcher_engine.min_gap_ms = max(0, int(limits.get("min_gap_ms", 4000)))
+        except (TypeError, ValueError):
+            pass
+        try:
+            self._watcher_engine.max_sends = max(1, int(limits.get("max_sends", 25)))
+        except (TypeError, ValueError):
+            pass
+        # The blocker runs only when the transport can read the target's
+        # visible text (CDP). Anything else must not pretend to be armed with
+        # protection that cannot execute.
+        self._watcher_blocked_fn = (
+            adapter.blocked if (adapter.blocker_pattern
+                                and adapter.blocker_supported()) else None)
         self._watcher_engine.arm(
             self._watcher_target, self._queue_slot_key(), adapter.probes,
             adapter.skill_format or "", now=time.monotonic())
@@ -238,7 +259,16 @@ class WatcherMixin:
         if self._watcher_target is not None:
             target_ok = self._watcher_target.matches()[0]
 
-        intent = engine.tick(now, queue, blocked=False, target_ok=target_ok)
+        blocked = False
+        blocked_fn = getattr(self, "_watcher_blocked_fn", None)
+        if blocked_fn is not None and self._watcher_target is not None:
+            try:
+                text = self._watcher_target.visible_text()
+                blocked = bool(blocked_fn(text))
+            except Exception:
+                blocked = False          # a read failure must not hang the tick
+
+        intent = engine.tick(now, queue, blocked=blocked, target_ok=target_ok)
         if intent is None:
             self._watcher_notify()
             if not engine.armed:
@@ -264,22 +294,34 @@ class WatcherMixin:
             self._watcher_stop_timer()
 
     def _watcher_refresh_texts(self, slot, queue):
-        """Re-read each pending item from the line it is anchored to.
+        """Re-read each pending or detached item from the line it is anchored
+        to.
 
         An item follows its source line rather than copying it, so the
         wording can change right up to the instant it goes. Reading here is
         what makes the send, and therefore the log, the truth rather than a
         snapshot from whenever Alt+C was pressed.
+
+        DETACHED items are inspected too: when the source line comes back
+        (undo of a delete, recreated text), the item revives to PENDING
+        without needing the queue dialog (T-756).
         """
-        for item in queue.pending():
+        for item in queue.items:
+            if item.state not in (PENDING, DETACHED):
+                continue
             try:
                 text, detached = self.queue_item_live_text(slot, item)
             except Exception:
                 continue
             if detached:
-                item.mark_detached()
-            elif text:
-                item.text = text
+                if item.state != DETACHED:
+                    item.mark_detached()
+            else:
+                if text:
+                    item.text = text
+                if item.state == DETACHED:
+                    # the source line is back: revive it
+                    item.reset()
 
     def _watcher_mark_sent(self, slot, item):
         """Tick the line in the gutter, when its silo is the open one."""

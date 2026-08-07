@@ -90,6 +90,29 @@ def test_the_queue_is_pinned_at_arm():
     assert engine.queue_key == "3"
 
 
+def test_blocked_forces_busy_even_when_probes_say_idle():
+    """A permission prompt is silent, so the probes call it idle — `blocked`
+    must override that or a send lands on the prompt (T-757)."""
+    engine, probe, queue = make()
+    probe.set(True)                       # the probes see an idle agent
+    engine._seen_busy = True
+
+    intent = engine.tick(10.0, queue, blocked=True)
+    assert intent is None
+    assert engine.state == WATCHING
+    assert "blocked" in engine.reason
+
+
+def test_blocked_item_stays_pending_until_unblocked():
+    """The blocked tick must not consume or fail the queued item."""
+    engine, probe, queue = make()
+    probe.set(True)
+    engine._seen_busy = True
+    engine.tick(10.0, queue, blocked=True)
+    assert queue.pending(), "a blocked tick must leave the item pending"
+    assert queue.pending()[0].state == "pending"
+
+
 # ------------------------------------------------------- seeing it work
 
 def test_idle_from_the_start_does_not_fire():

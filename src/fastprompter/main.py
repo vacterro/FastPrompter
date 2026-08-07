@@ -81,7 +81,7 @@ _ALIGN_FLAGS = {
 from fastprompter.core.i18n import NATIVE_NAMES as _LANG_NATIVE_NAMES
 from fastprompter.core.ipc_server import IpcServer, try_connect_to_server
 from fastprompter.core.sound_manager import SoundManager
-from fastprompter.core.state import FastPrompterState
+from fastprompter.core.state import _PER_CATEGORY_STATE_KEYS, FastPrompterState
 from fastprompter.core.translations import available_languages, get_language, tr
 from fastprompter.theme.themes import THEMES
 from fastprompter.ui.edit_guard import edit_block
@@ -724,6 +724,9 @@ class FastPrompter(
     def capture_silo_state(self, slot=None, is_archive=None):
         """Remember where the user was in this silo, so coming back lands
         exactly where they left instead of jumping to the top or bottom."""
+        # Re-stamp queue lines from their anchors while this document is still
+        # in front (T-756): a stale line would mis-fire after the switch.
+        self._sync_active_queue_lines()
         ta = getattr(self, "text_area", None)
         if ta is None or sip.isdeleted(ta):
             return
@@ -1029,6 +1032,9 @@ class FastPrompter(
         rebound on a tab change; a queue that skipped that would follow the
         user across categories and show another tab's backlog.
         """
+        # Re-stamp the active silo's item lines from their anchors BEFORE the
+        # numbers go stale in the store (T-756).
+        self._sync_active_queue_lines()
         from fastprompter.core.watcher.queue import save_queues
         raw = save_queues(self.prompt_queues)
         self.data["watcher_queues"] = raw
@@ -1050,6 +1056,29 @@ class FastPrompter(
         slot = getattr(self, "active_temp_slot", 0)
         prefix = "a" if getattr(self, "active_is_archive", False) else ""
         return f"{prefix}{slot}"
+
+    def _sync_active_queue_lines(self):
+        """Resolve every anchored queue item's LIVE line and text before the
+        document is left or persisted (T-756).
+
+        An item is anchored to its BLOCK, so editing above it does not break
+        the reference — but ``item.line`` is a 1-based snapshot that goes
+        stale the moment lines shift. An inactive silo resolves by line
+        number, so a stale line sends the WRONG text after a switch. The
+        block is the truth; re-stamp line + text from it while we still can.
+        """
+        try:
+            queue = self.prompt_queues.get(self._queue_slot_key())
+            if not queue:
+                return
+            for item in queue:
+                block = self.text_area.block_for_queue_item(item.id)
+                if block is not None:
+                    item.line = block.blockNumber() + 1
+                    item.text = block.text().strip()
+        except Exception:
+            from fastprompter.core.logging import logger
+            logger.debug("queue line sync failed", exc_info=True)
 
     def queue_current_line(self):
         """Alt+C: put the line under the caret into this silo's queue.
@@ -1107,7 +1136,10 @@ class FastPrompter(
             if block is not None:
                 text = block.text().strip()
                 return text or item.text, False
-            return item.text, True
+            # A snapshot item (line 0, e.g. one moved in from another silo)
+            # owns its text even with no anchor in the document; only a
+            # source-referenced item whose block is gone is detached (T-756).
+            return item.text, bool(item.line)
 
         presets = self.data.get(
             "archive_temp_presets" if str(slot).startswith("a") else "temp_presets") or []
@@ -1118,8 +1150,11 @@ class FastPrompter(
                 text = lines[item.line - 1].strip()
                 if text:
                     return text, False
-        # nothing to read it from: fall back rather than invent
-        return item.text, False
+        # Nothing to read it from. A source-referenced item (line > 0) that
+        # cannot be resolved is DETACHED — a stale snapshot is not live and
+        # must not be sent as if it were (T-756). A snapshot item (line 0,
+        # e.g. one moved across silos) owns its text and stays live.
+        return item.text, bool(item.line)
 
     def open_queue_dialog(self, master=False):
         """Open the prompt-queue panel.
@@ -5269,6 +5304,13 @@ class FastPrompter(
         ("watcher_queues", "str_dict", "a"),
     )
 
+    # Every per-CATEGORY store (defined in core.state so it is testable
+    # Qt-free). rename_category / del_category move or delete the whole set in
+    # lockstep; a store left off this list keeps its data under the OLD project
+    # name after a rename, or leaves an orphan behind after a delete (T-758).
+    # The invariant test asserts the registry covers every live *_all key.
+    _PER_CATEGORY_STATE_KEYS = _PER_CATEGORY_STATE_KEYS
+
     def drop_silo_state(self, idx, is_archive=False):
         """Slot `idx` is going away: forget its state, pull the rest up one.
 
@@ -7283,13 +7325,9 @@ class FastPrompter(
             except ValueError:
                 self.data["cats_order"][idx] = new_cat
             
-            _all_keys = [
-                "categories", "temp_presets_all", "archive_temp_presets_all", "pinned_silos_all",
-                "silo_ticked_all", "silo_children_all", "silo_collapsed_all",
-                "silo_colors_all", "silo_folders_all", "archive_silo_folders_all",
-                "silo_last_edited_all", "silo_project_paths_all", "archive_project_paths_all",
-                "watcher_queues_all", "silo_gaps_all",
-            ]
+            # "categories" holds the snippets themselves and must move with
+            # the tab; everything else is the per-category registry.
+            _all_keys = ["categories"] + list(self._PER_CATEGORY_STATE_KEYS)
             for key in _all_keys:
                 if key in self.data and old_cat in self.data[key]:
                     self.data[key][new_cat] = self.data[key].pop(old_cat)
@@ -7369,13 +7407,7 @@ class FastPrompter(
             self.data["cats_order"].pop(idx)
             self.data.get("categories", {}).pop(cat, None)
             
-            _all_keys = [
-                "temp_presets_all", "archive_temp_presets_all", "pinned_silos_all",
-                "silo_ticked_all", "silo_children_all", "silo_collapsed_all",
-                "silo_colors_all", "silo_folders_all", "archive_silo_folders_all",
-                "silo_last_edited_all", "silo_project_paths_all", "archive_project_paths_all",
-                "watcher_queues_all", "silo_gaps_all",
-            ]
+            _all_keys = list(self._PER_CATEGORY_STATE_KEYS)
             for key in _all_keys:
                 self.data.get(key, {}).pop(cat, None)
 
