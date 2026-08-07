@@ -75,19 +75,23 @@ class TrashDialog(QDialog):
         try:
             with open(filepath, encoding="utf-8") as f:
                 text = f.read()
-                
-            # Create a new silo with this text
-            if hasattr(self.main_win, "add_silo"):
-                self.main_win.add_silo(text)
-            elif hasattr(self.main_win, "data") and "temp_presets" in self.main_win.data:
+
+            # Restore through the canonical silo insertion primitive so the
+            # new slot shifts every slot-indexed store, docs stay aligned
+            # with presets, and undo sees one action (T-755). The old fallback
+            # was a bare temp_presets.insert(0, ...) that bypassed all of it.
+            if hasattr(self.main_win, "insert_silo_at"):
+                self.main_win.insert_silo_at(text)
+            else:
                 self.main_win.data["temp_presets"].insert(0, text)
                 self.main_win.mark_dirty()
                 if hasattr(self.main_win, "refresh_temp_presets"):
                     self.main_win.refresh_temp_presets()
-            
-            # Delete the restored file
+
+            # Delete the restored file ONLY after the insertion succeeded —
+            # an exception above keeps the trash copy.
             os.remove(filepath)
-            
+
             QMessageBox.information(self, self.tr("Success"), self.tr("Silo restored successfully."))
             self._load_trash()
             

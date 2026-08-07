@@ -631,7 +631,7 @@ class SnippetOpsMixin:
     def trash_silo(self, idx=None, is_archive=False, skip_undo=False):
         """Move a silo to the trash (called from context menu).
         Just calls del_silo which now handles the trashing of text."""
-        self.del_silo(idx, skip_undo=skip_undo)
+        self.del_silo(idx, skip_undo=skip_undo, is_archive=is_archive)
 
     def silo_text_at(self, idx, is_archive=False):
         """The stored text of silo ``idx``, or "" when the slot is empty."""
@@ -725,10 +725,17 @@ class SnippetOpsMixin:
         except Exception as e:
             logger.error(f"Open trash dialog failed: {e}")
 
-    def del_silo(self, idx=None, skip_undo=False):
-        """Delete a silo at the given index, or the active one."""
+    def del_silo(self, idx=None, skip_undo=False, is_archive=None):
+        """Delete a silo at the given index, or the active one.
+
+        `is_archive` names the target space EXPLICITLY when the caller knows
+        it (context menu, Delete key); None falls back to the active space so
+        a bare `del_silo(idx)` keeps its old meaning. trash_silo forwards it —
+        deleting an archive row while a normal silo is active must not delete
+        the normal silo at the same index (T-754).
+        """
         self.sound_manager.play("delete")
-        is_arc = getattr(self, "active_is_archive", False)
+        is_arc = getattr(self, "active_is_archive", False) if is_archive is None else is_archive
         presets = self.data["archive_temp_presets"] if is_arc else self.data["temp_presets"]
         docs = self.archive_docs if is_arc else self.silo_docs
         if len(presets) > 1:
@@ -745,11 +752,13 @@ class SnippetOpsMixin:
             if not skip_undo:
                 self.add_data_undo_state("Delete silo")
 
-            # Flush live editor text into the data model so the trash content
-            # and metadata remap see what was actually on screen.
-            if idx == self.active_temp_slot:
+            # Flush the live editor text only when deleting from the space the
+            # editor is actually showing; a non-active-space delete must not
+            # touch the active document.
+            active_in_space = is_arc == getattr(self, "active_is_archive", False)
+            if active_in_space and idx == self.active_temp_slot:
                 presets[idx] = self.text_area.toPlainText()
-            
+
             self._trash_silo_content(presets[idx])
 
             # resolve the folder via the per-slot map (unique per silo), then
@@ -769,23 +778,27 @@ class SnippetOpsMixin:
 
             if not is_arc:
                 self.silo_last_edited.pop(idx, None)
-                # One helper for every path that removes a silo. This was
-                # written out here, and the drag-to-snippets path did not do
-                # it at all — so the silo list shifted and the colours, types
-                # and project paths stayed on their old slot numbers.
-                if hasattr(self, "drop_silo_state"):
-                    self.drop_silo_state(idx)
 
-            if idx < self.active_temp_slot:
-                self.active_temp_slot -= 1
-            elif self.active_temp_slot >= len(presets):
-                self.active_temp_slot = len(presets) - 1
+            # One canonical remap for BOTH spaces (T-754). The archive used to
+            # pop text/doc and never remap, so its folders, project paths and
+            # queues stayed on the old slot and the next archived silo
+            # inherited them. drop_silo_state skips the normal-only lists
+            # (pins/ticks/children/gaps) for the archive half.
+            self.drop_silo_state(idx, is_archive=is_arc)
 
-            self.silo_page = self.active_temp_slot // max(1, self._visible_silos)
-            self._switch_to_slot(self.active_temp_slot, initial=True)
+            if active_in_space:
+                if idx < self.active_temp_slot:
+                    self.active_temp_slot -= 1
+                elif self.active_temp_slot >= len(presets):
+                    self.active_temp_slot = len(presets) - 1
+                self.silo_page = self.active_temp_slot // max(1, self._visible_silos)
+                self._switch_to_slot(self.active_temp_slot, initial=True, is_archive=is_arc)
+
             self.mark_dirty()
             self.cancel_editing()
             self.refresh_temp_presets()
+            if is_arc:
+                self.refresh_archive_panel()
 
     def select_empty_silo(self):
         """Insert a new empty silo at the top."""
@@ -840,15 +853,52 @@ class SnippetOpsMixin:
         # watcher_queues at all (every queue moved to the wrong silo). One
         # remap through _SILO_INDEX_STATE keeps all nine stores in step.
         # silo_gaps IS in that table since T-704 — a gap belongs to the silo
-        # it was placed under, so it rides along with the shift.
-        if not getattr(self, "active_is_archive", False) and hasattr(self, "_remap_silo_indices"):
-            self._remap_silo_indices(lambda i: i + 1)
+        # it was placed under, so it rides along with the shift. The archive
+        # half is the same structural mutation and gets the same remap (T-754).
+        if hasattr(self, "_remap_silo_indices"):
+            self._remap_silo_indices(
+                lambda i: i + 1,
+                is_archive=getattr(self, "active_is_archive", False))
 
         self.silo_page = 0
         self.active_temp_slot = 0
-        self._switch_to_slot(0, initial=True)
+        self._switch_to_slot(0, initial=True,
+                             is_archive=getattr(self, "active_is_archive", False))
         self.mark_dirty()
         self.refresh_temp_presets()
+
+    def insert_silo_at(self, text, pos=0, is_archive=False):
+        """Insert a silo holding ``text`` at ``pos`` — the canonical insertion
+        primitive (T-755). Every slot-indexed store shifts down with the
+        insert, docs stay aligned with presets, and undo sees ONE action.
+
+        The trash restore used to be a bare ``temp_presets.insert(0, ...)``
+        that left docs, colours, queues and the undo stack all behind.
+        """
+        presets = self.data["archive_temp_presets"] if is_archive else self.data["temp_presets"]
+        docs = self.archive_docs if is_archive else self.silo_docs
+        pos = max(0, min(pos, len(presets)))
+        self.add_data_undo_state("Restore silo")
+        presets.insert(pos, text)
+        from PyQt6.QtGui import QTextDocument
+        doc = QTextDocument()
+        doc.setDefaultFont(self.text_area.font())
+        doc.setPlainText(text)
+        docs.insert(pos, doc)
+        # docs is grown lazily elsewhere, so it can be shorter than presets;
+        # keep the invariant "docs count == preset count" (T-755). A topped-up
+        # tail doc is blank and self-heals from presets on load.
+        while len(docs) < len(presets):
+            d = QTextDocument()
+            d.setDefaultFont(self.text_area.font())
+            docs.append(d)
+        if hasattr(self, "open_silo_slot"):
+            self.open_silo_slot(pos, is_archive=is_archive)
+        self.mark_dirty()
+        self._switch_to_slot(pos, initial=True, is_archive=is_archive)
+        self.refresh_temp_presets()
+        if is_archive:
+            self.refresh_archive_panel()
 
     def append_empty_silo(self, pos=None):
         """Insert a new empty silo at the end or first empty slot."""
@@ -946,6 +996,10 @@ class SnippetOpsMixin:
         doc.setPlainText(item["text"])
         self.archive_docs.insert(0, doc)
 
+        # The archive insert-at-0 is a structural mutation: its slot-keyed
+        # state (folders, project paths, queues) must shift with it (T-754).
+        self.open_silo_slot(0, is_archive=True)
+
         slots[found_idx] = None
 
         self._trim_archive()
@@ -954,40 +1008,73 @@ class SnippetOpsMixin:
         self.refresh_archive_panel()
         self.cancel_editing()
 
-    def archive_active_silo(self):
-        """Move the current silo to archive."""
-        idx = self.active_temp_slot
+    def _archive_silo(self, idx):
+        """Move silo ``idx`` from the normal space to the archive as ONE
+        transaction, shared by the hover-button and the active-silo paths
+        (T-754).
 
+        The text, its document, its files folder, its project path and its
+        queued references move together, and the archive's insert-at-0 index
+        shift goes through the canonical remap. The normal slot stays behind,
+        emptied — the silo was archived, not deleted.
+        """
         if getattr(self, "active_is_archive", False):
             return
-        if not (0 <= idx < len(self.data.get("temp_presets", []))):
+        presets = self.data.get("temp_presets", [])
+        if not (0 <= idx < len(presets)):
             return
 
-        text = self.text_area.toPlainText().strip()
+        if idx == self.active_temp_slot:
+            text = self.text_area.toPlainText().strip()
+        else:
+            text = (presets[idx] or "").strip()
         if not text:
             return
+        if idx == self.active_temp_slot:
+            presets[idx] = text
 
-        self.data["temp_presets"][idx] = text
         self.add_data_undo_state("Archive silo")
 
         if "archive_temp_presets" not in self.data:
             self.data["archive_temp_presets"] = []
-
         self.data["archive_temp_presets"].insert(0, text)
 
+        from PyQt6.QtGui import QTextDocument
         doc = QTextDocument()
         doc.setDefaultFont(self.text_area.font())
         doc.setPlainText(text)
         self.archive_docs.insert(0, doc)
 
-        self.data["temp_presets"][idx] = ""
-        self._set_plain_text_clean(self.silo_docs[idx], "")
-        self.clear_text(internal=True)
+        # the archive insert-at-0 is a structural mutation: shift its slot state
+        self.open_silo_slot(0, is_archive=True)
+
+        # identity-owned state travels with the text
+        old_k = str(idx)
+        folders = self.data.get("silo_folders", {})
+        if isinstance(folders, dict) and old_k in folders:
+            self.data.setdefault("archive_silo_folders", {})["0"] = folders.pop(old_k)
+        paths = self.data.get("silo_project_paths", {})
+        if isinstance(paths, dict) and old_k in paths:
+            self.data.setdefault("archive_project_paths", {})["0"] = paths.pop(old_k)
+        queues = self.data.get("watcher_queues", {})
+        if isinstance(queues, dict) and old_k in queues:
+            queues["a0"] = queues.pop(old_k)
+
+        # the normal slot stays, emptied
+        presets[idx] = ""
+        if idx < len(self.silo_docs):
+            self._set_plain_text_clean(self.silo_docs[idx], "")
+        if idx == self.active_temp_slot:
+            self.clear_text(internal=True)
 
         self._trim_archive()
         self.mark_dirty()
-        self.refresh_archive_panel()
         self.refresh_temp_presets()
+        self.refresh_archive_panel()
+
+    def archive_active_silo(self):
+        """Move the current silo to archive."""
+        self._archive_silo(self.active_temp_slot)
 
     def convert_to_snippet(self):
         """Convert the active silo to a snippet in the current category."""

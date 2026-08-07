@@ -5301,8 +5301,8 @@ def test_every_slot_keyed_store_is_registered_for_remapping(win):
     silos start inheriting each other's settings — which is exactly the bug
     this registry exists to prevent.
     """
-    registered = {name for name, _kind in win._SILO_INDEX_STATE}
-    registered |= {name for name, _kind in win._ARCHIVE_INDEX_STATE}
+    registered = {entry[0] for entry in win._SILO_INDEX_STATE}
+    registered |= {entry[0] for entry in win._ARCHIVE_INDEX_STATE}
 
     # handled separately because of their shape / scope, not forgotten
     handled_elsewhere = {
@@ -5386,6 +5386,290 @@ def test_reordering_archived_silos_carries_their_state(win):
 
     # the active silos' saved state is untouched by an archive reorder
     assert store["s0"]["pos"] == 999
+
+
+def test_deleting_an_archive_silo_while_normal_is_active(win):
+    """T-754: trash_silo dropped is_archive, so del_silo derived the target
+    from the ACTIVE space and deleted the normal silo at the same index."""
+    win.data["temp_presets"][:] = ["N0", "N1", "N2"]
+    win.data["archive_temp_presets"][:] = ["A0", "A1", "A2"]
+    win.silo_docs[:] = []
+    win.archive_docs[:] = []
+    win._switch_to_slot(0, initial=True)          # normal active
+    win.data["archive_silo_folders"] = {"0": "fa0", "1": "fa1", "2": "fa2"}
+
+    win.del_silo(0, is_archive=True)              # delete archive[0]
+
+    assert win.data["temp_presets"] == ["N0", "N1", "N2"], (
+        "normal silos must be untouched by an archive delete")
+    assert win.data["archive_temp_presets"] == ["A1", "A2"]
+    assert win.active_is_archive is False, "deleting an archive row must not switch spaces"
+    # folders are re-derived from the title, but the KEY must follow the text:
+    # A1 (now slot 0) owns slot 0's folder, A2 owns slot 1's.
+    assert "a1" in win.data["archive_silo_folders"].get("0", "").lower(), (
+        win.data["archive_silo_folders"])
+    assert "a2" in win.data["archive_silo_folders"].get("1", "").lower(), (
+        win.data["archive_silo_folders"])
+
+
+def test_deleting_a_normal_silo_while_archive_is_active(win):
+    """The mirror direction: deleting a normal row from archive context."""
+    win.data["temp_presets"][:] = ["N0", "N1", "N2"]
+    win.data["archive_temp_presets"][:] = ["A0", "A1"]
+    win.silo_docs[:] = []
+    win.archive_docs[:] = []
+    win._switch_to_slot(0, initial=True, is_archive=True)   # archive active
+    win.data["silo_colors"] = {"0": "#111", "1": "#222", "2": "#333"}
+
+    win.del_silo(1, is_archive=False)             # delete normal[1]
+
+    assert win.data["temp_presets"] == ["N0", "N2"]
+    assert win.data["archive_temp_presets"] == ["A0", "A1"], (
+        "archive must be untouched by a normal delete")
+    assert win.active_is_archive is True
+    assert win.data["silo_colors"] == {"0": "#111", "1": "#333"}, (
+        "the normal-space remap must still apply")
+
+
+def test_archive_delete_remaps_folders_paths_and_queues(win):
+    """T-754: an archive delete used to pop text/doc and never remap, so
+    folders/paths/queues stayed on the old slot."""
+    win.data["temp_presets"][:] = ["N0"]
+    win.data["archive_temp_presets"][:] = ["A0", "A1", "A2"]
+    win.silo_docs[:] = []
+    win.archive_docs[:] = []
+    win._switch_to_slot(0, initial=True, is_archive=True)
+    win.data["archive_silo_folders"] = {"0": "fa", "1": "fb", "2": "fc"}
+    win.data["archive_project_paths"] = {str(i): {"folder": f"p{i}"} for i in range(3)}
+    win.data["watcher_queues"] = {
+        "0": [{"text": "normal q"}],
+        "a0": [{"text": "q0"}], "a1": [{"text": "q1"}], "a2": [{"text": "q2"}],
+    }
+
+    win.del_silo(1, is_archive=True)
+
+    assert win.data["archive_temp_presets"] == ["A0", "A2"]
+    # project paths are NOT re-derived — they prove the remap outright
+    assert win.data["archive_project_paths"] == {"0": {"folder": "p0"}, "1": {"folder": "p2"}}
+    assert win.data["watcher_queues"]["a0"][0]["text"] == "q0"
+    assert win.data["watcher_queues"]["a1"][0]["text"] == "q2", (
+        "the deleted archive silo's queue must not linger")
+    assert "a2" not in win.data["watcher_queues"]
+    assert win.data["watcher_queues"]["0"][0]["text"] == "normal q", (
+        "a normal queue must be untouched by an archive delete")
+
+
+def test_archive_snippet_insert_remaps_folders_and_queues(win):
+    """archive_active_snippet inserts at archive[0] — a structural mutation
+    that used to skip the archive remap entirely (T-754)."""
+    win.data["temp_presets"][:] = ["N0"]
+    win.data["archive_temp_presets"][:] = ["A0", "A1"]
+    win.silo_docs[:] = []
+    win.archive_docs[:] = []
+    cat = win.get_current_category()
+    win.data["categories"][cat] = [{"name": "snip", "text": "SNIP", "last_edited": 1}]
+    win.data["archive_project_paths"] = {"0": {"folder": "p0"}, "1": {"folder": "p1"}}
+    win.data["watcher_queues"] = {"a0": [{"text": "q0"}], "a1": [{"text": "q1"}],
+                                  "0": [{"text": "n0"}]}
+    win._switch_to_slot(0, initial=True)
+    win.text_area.setPlainText("SNIP")
+
+    win.archive_active_snippet()
+
+    assert win.data["archive_temp_presets"][0] == "SNIP"
+    # project paths are not re-derived — they prove the insert-at-0 remap
+    assert win.data["archive_project_paths"] == {"1": {"folder": "p0"}, "2": {"folder": "p1"}}
+    assert win.data["watcher_queues"]["a1"][0]["text"] == "q0"
+    assert win.data["watcher_queues"]["a2"][0]["text"] == "q1"
+    assert win.data["watcher_queues"]["0"][0]["text"] == "n0", (
+        "the normal queue must not be shifted by an archive insert")
+
+
+def test_archive_swap_remaps_folders_paths_and_queues(win):
+    """swap_temp_slots used to remap the archive only for the normal half."""
+    win.data["temp_presets"][:] = ["N0"]
+    win.data["archive_temp_presets"][:] = ["A0", "A1", "A2"]
+    win.silo_docs[:] = []
+    win.archive_docs[:] = []
+    win._switch_to_slot(0, initial=True, is_archive=True)
+    win.data["archive_silo_folders"] = {"0": "fa", "1": "fb", "2": "fc"}
+    win.data["archive_project_paths"] = {str(i): {"folder": f"p{i}"} for i in range(3)}
+    win.data["watcher_queues"] = {"a0": [{"text": "q0"}], "a1": [{"text": "q1"}],
+                                  "a2": [{"text": "q2"}]}
+
+    win.swap_temp_slots(0, 2, is_archive=True)
+
+    assert win.data["archive_temp_presets"] == ["A2", "A1", "A0"]
+    # project paths are not re-derived — they prove the swap remap outright
+    assert win.data["archive_project_paths"]["0"] == {"folder": "p2"}
+    assert win.data["archive_project_paths"]["2"] == {"folder": "p0"}
+    assert win.data["watcher_queues"]["a0"][0]["text"] == "q2"
+    assert win.data["watcher_queues"]["a2"][0]["text"] == "q0"
+    assert win.data["watcher_queues"]["a1"][0]["text"] == "q1"
+
+
+def test_archiving_a_silo_moves_folder_path_and_queue(win):
+    """T-754 canonical transaction: text, doc, folder, project path and queue
+    move together; the normal slot stays emptied."""
+    win.data["temp_presets"][:] = ["N0", "MOVEME", "N2"]
+    win.silo_docs[:] = []
+    win.archive_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    win.data["silo_folders"] = {"1": "fmove"}
+    win.data["silo_project_paths"] = {"1": {"folder": "pmove"}}
+    win.data["watcher_queues"] = {"1": [{"text": "qmove"}], "a0": [{"text": "existing"}]}
+
+    win._archive_silo(1)
+
+    assert win.data["archive_temp_presets"][0] == "MOVEME"
+    assert win.data["temp_presets"][1] == "", "the normal slot stays, emptied"
+    # project paths are not re-derived — they prove the transfer
+    assert win.data["archive_project_paths"]["0"] == {"folder": "pmove"}
+    assert win.data["watcher_queues"]["a0"][0]["text"] == "qmove", (
+        "the queue must follow the text into the archive")
+    assert win.data["watcher_queues"]["a1"][0]["text"] == "existing"
+    assert "1" not in win.data["watcher_queues"]
+
+
+def test_cross_space_swap_moves_identity_state(win):
+    """swap_cross_temp_slots used to swap text/docs only — the metadata stayed
+    on the old slot, so the swapped silo inherited a stranger's state."""
+    win.data["temp_presets"][:] = ["N0", "N1"]
+    win.data["archive_temp_presets"][:] = ["A0"]
+    win.silo_docs[:] = []
+    win.archive_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    win.data["silo_folders"] = {"1": "fn1"}
+    win.data["archive_silo_folders"] = {"0": "fa0"}
+    win.data["silo_project_paths"] = {"1": {"folder": "pn1"}}
+    win.data["archive_project_paths"] = {"0": {"folder": "pa0"}}
+    win.data["watcher_queues"] = {"1": [{"text": "qn1"}], "a0": [{"text": "qa0"}]}
+    cat = win.get_current_category()
+    store = win.data.setdefault("silo_view_state_all", {}).setdefault(cat, {})
+    store["s1"] = {"pos": 111}
+    store["a0"] = {"pos": 222}
+
+    win.swap_cross_temp_slots(1, 0, False, True)   # normal[1] <-> archive[0]
+
+    assert win.data["temp_presets"][1] == "A0"
+    assert win.data["archive_temp_presets"][0] == "N1"
+    # project paths are not re-derived — they prove the cross-space transfer
+    assert win.data["silo_project_paths"].get("1") == {"folder": "pa0"}
+    assert win.data["archive_project_paths"].get("0") == {"folder": "pn1"}
+    assert win.data["watcher_queues"]["1"][0]["text"] == "qa0"
+    assert win.data["watcher_queues"]["a0"][0]["text"] == "qn1"
+    assert store.get("s1", {}).get("pos") == 222, "view state follows the text"
+    assert store.get("a0", {}).get("pos") == 111
+
+
+def test_normal_reorder_leaves_archive_queues_alone(win):
+    """watcher_queues is dual-namespaced: a normal reorder must remap only
+    numeric keys and never the archive's aN keys."""
+    win.data["temp_presets"][:] = ["N0", "N1", "N2"]
+    win.data["archive_temp_presets"][:] = ["A0"]
+    win.silo_docs[:] = []
+    win.archive_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    win.data["watcher_queues"] = {"0": [{"text": "n0"}], "2": [{"text": "n2"}],
+                                  "a0": [{"text": "arch"}]}
+
+    win.move_temp_to_index(2, 0)
+
+    assert win.data["temp_presets"] == ["N2", "N0", "N1"]
+    assert win.data["watcher_queues"]["0"][0]["text"] == "n2"
+    assert win.data["watcher_queues"]["1"][0]["text"] == "n0"
+    assert win.data["watcher_queues"]["a0"][0]["text"] == "arch", (
+        "a normal reorder must never touch an archive queue")
+
+
+def test_archive_delete_undo_restores_text_and_metadata(win):
+    """T-755: undo of an archive delete used to restore the text but leave
+    folders, project paths and queues shifted."""
+    win.data["temp_presets"][:] = ["N0"]
+    win.data["archive_temp_presets"][:] = ["A0", "A1", "A2"]
+    win.silo_docs[:] = []
+    win.archive_docs[:] = []
+    win._switch_to_slot(0, initial=True, is_archive=True)
+    win.data["archive_project_paths"] = {str(i): {"folder": f"p{i}"} for i in range(3)}
+    win.data["watcher_queues"] = {"a0": [{"text": "q0"}], "a1": [{"text": "q1"}],
+                                  "a2": [{"text": "q2"}]}
+
+    win.del_silo(1, is_archive=True)
+    assert win.data["archive_temp_presets"] == ["A0", "A2"]
+
+    _press_ctrl_z(win)
+
+    assert win.data["archive_temp_presets"] == ["A0", "A1", "A2"]
+    assert win.data["archive_project_paths"]["1"] == {"folder": "p1"}, (
+        "undo must restore the deleted silo's project path")
+    assert win.data["watcher_queues"]["a1"][0]["text"] == "q1", (
+        "undo must restore the deleted silo's queue")
+
+
+def test_archive_swap_undo_redo_round_trip(win):
+    win.data["temp_presets"][:] = ["N0"]
+    win.data["archive_temp_presets"][:] = ["A0", "A1", "A2"]
+    win.silo_docs[:] = []
+    win.archive_docs[:] = []
+    win._switch_to_slot(0, initial=True, is_archive=True)
+    win.data["archive_project_paths"] = {str(i): {"folder": f"p{i}"} for i in range(3)}
+    win.data["watcher_queues"] = {"a0": [{"text": "q0"}], "a1": [{"text": "q1"}],
+                                  "a2": [{"text": "q2"}]}
+
+    win.swap_temp_slots(0, 2, is_archive=True)
+    assert win.data["archive_temp_presets"] == ["A2", "A1", "A0"]
+    assert win.data["archive_project_paths"]["0"] == {"folder": "p2"}
+
+    _press_ctrl_z(win)
+    assert win.data["archive_temp_presets"] == ["A0", "A1", "A2"]
+    assert win.data["archive_project_paths"]["0"] == {"folder": "p0"}
+
+    win._smart_redo()
+    assert win.data["archive_temp_presets"] == ["A2", "A1", "A0"]
+    assert win.data["archive_project_paths"]["0"] == {"folder": "p2"}
+
+
+def test_insert_silo_at_shifts_state_and_undoes(win):
+    """The trash-restore primitive: a silo lands at the top and every
+    slot-indexed store shifts down with it; undo sees one action."""
+    win.data["temp_presets"][:] = ["A", "B"]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    win.data["silo_colors"] = {"0": "#111", "1": "#222"}
+    win.data["watcher_queues"] = {"0": [{"text": "qa"}], "1": [{"text": "qb"}]}
+
+    win.insert_silo_at("RESTORED", 0)
+
+    assert win.data["temp_presets"] == ["RESTORED", "A", "B"]
+    assert len(win.silo_docs) == len(win.data["temp_presets"]), (
+        "docs must stay aligned with presets")
+    assert win.data["silo_colors"] == {"1": "#111", "2": "#222"}, (
+        "A's colour must follow A to slot 1")
+    assert win.data["watcher_queues"]["1"][0]["text"] == "qa"
+    assert win.data["watcher_queues"]["2"][0]["text"] == "qb"
+
+    _press_ctrl_z(win)
+    assert win.data["temp_presets"] == ["A", "B"], "undo restores the pre-insert list"
+    assert win.data["silo_colors"] == {"0": "#111", "1": "#222"}
+
+
+def test_undo_restores_per_category_view_state(win):
+    win.data["temp_presets"][:] = ["A", "B", "C"]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    cat = win.get_current_category()
+    store = win.data.setdefault("silo_view_state_all", {}).setdefault(cat, {})
+    store.clear()
+    for i in range(3):
+        store[f"s{i}"] = {"anchor": 0, "pos": i * 7, "scroll": 0}
+
+    win.del_silo(1)                    # delete B; view state s1/s2 remaps to s1
+
+    _press_ctrl_z(win)
+
+    for i in range(3):
+        assert store.get(f"s{i}", {}).get("pos") == i * 7, (
+            f"undo must restore {i}'s saved cursor, got {store}")
 
 
 def test_duplicate_silo_copies_text_colour_and_files(win, tmp_path):

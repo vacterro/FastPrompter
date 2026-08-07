@@ -1947,16 +1947,19 @@ class FastPrompter(
     def _restore_trashed_folders(self, cat):
         """Undo helper: for every silo folder the restored map expects, if it's
         missing on disk but was moved to _trash by a delete/clear, move it back.
-        Files are never lost — worst case they stay in _trash for manual rescue."""
+        Files are never lost — worst case they stay in _trash for manual rescue.
+        Both the normal and the archive folder maps count (T-755)."""
         from fastprompter.ui.file_container import silo_slug
         log = self.data.get("folder_trash_log", [])
         if not log:
             return
         cat_dir = os.path.join(self._files_root(), silo_slug(cat))
         fmap = self.data.get("silo_folders", {})
-        if not isinstance(fmap, dict):
+        amap = self.data.get("archive_silo_folders", {})
+        if not isinstance(fmap, dict) or not isinstance(amap, dict):
             return
         wanted = {os.path.abspath(os.path.join(cat_dir, name)) for name in fmap.values()}
+        wanted |= {os.path.abspath(os.path.join(cat_dir, name)) for name in amap.values()}
         remaining = []
         for original, trashed in log:
             if original in wanted and not os.path.exists(original) and os.path.isdir(trashed):
@@ -5190,8 +5193,10 @@ class FastPrompter(
                 self.active_temp_slot = idx2
             elif getattr(self, "active_temp_slot", -1) == idx2:
                 self.active_temp_slot = idx1
-        if not is_archive:
-            self._remap_silo_indices(lambda i: idx2 if i == idx1 else idx1 if i == idx2 else i)
+        # Both spaces: the archive used to swap TEXT only and left its folders
+        # and queues on the old slot (T-754).
+        self._remap_silo_indices(lambda i: idx2 if i == idx1 else idx1 if i == idx2 else i,
+                                 is_archive=is_archive)
         self._suspend_cache = False
         self.mark_dirty()
         self.refresh_temp_presets()
@@ -5222,20 +5227,26 @@ class FastPrompter(
     #   int_dict   : {3: v}                 -> int keys
     #   str_dict   : {"3": v}               -> stringified int keys
     #   parent_map : {"3": [4, 5]}          -> both key and values are indices
+    # The optional third element names the KEY NAMESPACE for a str_dict:
+    #   "numeric"  : keys are plain slot numbers ("3")
+    #   "a"        : keys are archive-prefixed ("a3")
+    # watcher_queues is DUAL-namespaced — normal silos own "N", archived silos
+    # own "aN" — so it is registered in BOTH tables with its own namespace and
+    # a remap never touches the other space's keys (T-754).
     _SILO_INDEX_STATE = (
         # {slot: [item, ...]} on purpose - the same shape as silo_colors, so
         # reordering or deleting silos remaps the queues through the existing
         # str_dict handling instead of needing code of its own.
-        ("watcher_queues", "str_dict"),
+        ("watcher_queues", "str_dict", "numeric"),
         ("silo_last_edited", "int_dict"),
         ("pinned_silos", "int_list"),
         ("silo_ticked", "int_list"),
         ("silo_collapsed", "int_list"),
         ("silo_children", "parent_map"),
-        ("silo_colors", "str_dict"),
-        ("silo_folders", "str_dict"),
-        ("silo_project_paths", "str_dict"),
-        ("silo_types", "str_dict"),
+        ("silo_colors", "str_dict", "numeric"),
+        ("silo_folders", "str_dict", "numeric"),
+        ("silo_project_paths", "str_dict", "numeric"),
+        ("silo_types", "str_dict", "numeric"),
         # T-704 reverses T-593's carve-out, by the user's own call. Leaving
         # silo_gaps out produced the WORST of both readings, not the
         # positional one it was aiming for: the gap is stored as a slot
@@ -5250,9 +5261,12 @@ class FastPrompter(
     # The archive is its own index space with its own slot-keyed stores.
     # Reordering archived silos used to move only the TEXT, leaving these
     # behind — an archived silo would inherit another one's files folder.
+    # watcher_queues here carries the "aN" half of the dual namespace, so an
+    # archive reorder/delete/insert follows the queue along with the text.
     _ARCHIVE_INDEX_STATE = (
-        ("archive_silo_folders", "str_dict"),
-        ("archive_project_paths", "str_dict"),
+        ("archive_silo_folders", "str_dict", "numeric"),
+        ("archive_project_paths", "str_dict", "numeric"),
+        ("watcher_queues", "str_dict", "a"),
     )
 
     def drop_silo_state(self, idx, is_archive=False):
@@ -5304,7 +5318,10 @@ class FastPrompter(
         Mutates in place: these containers are aliases into per-category
         stores, so rebinding them would orphan the data."""
         table = self._ARCHIVE_INDEX_STATE if is_archive else self._SILO_INDEX_STATE
-        for key, kind in table:
+        for entry in table:
+            key = entry[0]
+            kind = entry[1]
+            namespace = entry[2] if len(entry) > 2 else "numeric"
             # `silo_last_edited` is also exposed as an attribute, and callers
             # (including tests) sometimes REBIND that attribute rather than
             # mutating it — at which point it is no longer the same object as
@@ -5328,10 +5345,22 @@ class FastPrompter(
                     if isinstance(container, dict):
                         moved = {}
                         for k, v in container.items():
-                            try:
-                                moved[str(remap(int(k)))] = v
-                            except (TypeError, ValueError):
-                                moved[k] = v   # unparseable key: leave as-is
+                            if namespace == "a":
+                                # archive-namespaced: only "aN" keys move
+                                if isinstance(k, str) and k[:1] == "a" and k[1:].isdigit():
+                                    try:
+                                        moved["a" + str(remap(int(k[1:])))] = v
+                                        continue
+                                    except (TypeError, ValueError):
+                                        pass
+                            elif isinstance(k, int) or (isinstance(k, str) and k.lstrip("-").isdigit()):
+                                # normal-namespaced: only plain slot numbers move
+                                try:
+                                    moved[str(remap(int(k)))] = v
+                                    continue
+                                except (TypeError, ValueError):
+                                    pass
+                            moved[k] = v   # foreign-namespace or junk key: as-is
                         container.clear()
                         container.update(moved)
                 elif kind == "parent_map":
@@ -5727,6 +5756,53 @@ class FastPrompter(
             source_docs[source_idx],
         )
 
+        # Cross-space swap is a MOVE, not a copy: every piece of slot-indexed
+        # identity-owned state must travel with the text it describes, or a
+        # swapped silo inherits a stranger's folder/project path/queue (T-754).
+        s_key, t_key = str(source_idx), str(target_idx)
+        s_qkey = "a" + s_key if source_is_archive else s_key
+        t_qkey = "a" + t_key if target_is_archive else t_key
+
+        def _swap_between(source_map, source_key, target_map, target_key):
+            if not isinstance(source_map, dict) or not isinstance(target_map, dict):
+                return
+            if source_map is target_map:
+                if source_key in source_map or target_key in target_map:
+                    source_map[source_key], source_map[target_key] = (
+                        source_map[target_key], source_map[source_key])
+                return
+            s_val = source_map.pop(source_key, None)
+            t_val = target_map.pop(target_key, None)
+            if t_val is not None:
+                source_map[source_key] = t_val
+            if s_val is not None:
+                target_map[target_key] = s_val
+
+        _swap_between(
+            self.data.get("archive_silo_folders" if source_is_archive else "silo_folders", {}),
+            s_key,
+            self.data.get("archive_silo_folders" if target_is_archive else "silo_folders", {}),
+            t_key,
+        )
+        _swap_between(
+            self.data.get("archive_project_paths" if source_is_archive else "silo_project_paths", {}),
+            s_key,
+            self.data.get("archive_project_paths" if target_is_archive else "silo_project_paths", {}),
+            t_key,
+        )
+        _swap_between(self.data.get("watcher_queues", {}), s_qkey,
+                      self.data.get("watcher_queues", {}), t_qkey)
+
+        # Per-category view state: "sN" normal / "aN" archive, same dict.
+        store = self.data.get("silo_view_state_all")
+        if isinstance(store, dict):
+            cat = self.get_current_category()
+            entries = store.get(cat)
+            if isinstance(entries, dict):
+                s_vkey = "s" + s_key if not source_is_archive else "a" + s_key
+                t_vkey = "s" + t_key if not target_is_archive else "a" + t_key
+                _swap_between(entries, s_vkey, entries, t_vkey)
+
         self._trim_archive()
         self.mark_dirty()
         self.refresh_temp_presets()
@@ -6021,6 +6097,15 @@ class FastPrompter(
             "silo_project_paths": copy.deepcopy(self.data.get("silo_project_paths", {})),
             "silo_types": dict(self.data.get("silo_types", {})),
             "watcher_queues": copy.deepcopy(self.data.get("watcher_queues", {})),
+            # The archive's own index-keyed stores (T-754): an archive
+            # delete/reorder/transfer must undo back to the exact folders and
+            # project paths the text had, not just restore the text.
+            "archive_silo_folders": dict(self.data.get("archive_silo_folders", {})),
+            "archive_project_paths": copy.deepcopy(self.data.get("archive_project_paths", {})),
+            # Per-category cursor/view state (T-755): archive ops used to
+            # undo the text but leave the saved cursors shifted.
+            "view_state": copy.deepcopy(
+                self.data.get("silo_view_state_all", {}).get(self.get_current_category(), {})),
             # T-704 made gaps ride with their silo, but the undo snapshot never
             # carried them: a gap move had no undo entry at all, so Ctrl+Z after
             # one popped an UNRELATED older action instead.
@@ -6304,7 +6389,9 @@ class FastPrompter(
             for key, store in (("silo_colors", "silo_colors_all"),
                                ("silo_project_paths", "silo_project_paths_all"),
                                ("silo_types", "silo_type_all"),
-                               ("watcher_queues", "watcher_queues_all")):
+                               ("watcher_queues", "watcher_queues_all"),
+                               ("archive_silo_folders", "archive_silo_folders_all"),
+                               ("archive_project_paths", "archive_project_paths_all")):
                 saved = state.get(key)
                 if saved is None:
                     continue
@@ -6312,6 +6399,14 @@ class FastPrompter(
                 live.clear()
                 live.update(copy.deepcopy(saved))
                 self.data[key] = live
+            # Per-category cursor/view state. `is not None`: an undo entry from
+            # an older build has no such key, and clearing on a missing key
+            # would DELETE the user's saved cursors instead of leaving them.
+            saved_view = state.get("view_state")
+            if saved_view is not None:
+                vstore = self.data.setdefault("silo_view_state_all", {}).setdefault(snap_cat, {})
+                vstore.clear()
+                vstore.update(copy.deepcopy(saved_view))
         from PyQt6.QtGui import QTextDocument
 
         font = self.text_area.font()
@@ -9356,49 +9451,13 @@ class FastPrompter(
         self.mark_dirty()
 
     def archive_single_silo(self, idx):
-        """Archive a specific silo by index (called from hover button)."""
-        if getattr(self, "active_is_archive", False):
-            return
-        if not (0 <= idx < len(self.data.get("temp_presets", []))):
-            return
-        text = self.data["temp_presets"][idx]
-        if not text.strip():
-            return
-        if idx == self.active_temp_slot:
-            text = self.text_area.toPlainText().strip()
-            if not text:
-                return
-            self.data["temp_presets"][idx] = text
-        self.add_data_undo_state("Archive silo")
-        # Move to archive
-        if "archive_temp_presets" not in self.data:
-            self.data["archive_temp_presets"] = []
-        new_idx = len(self.data["archive_temp_presets"])
-        self.data["archive_temp_presets"].append(self.data["temp_presets"][idx])
-        self.data["temp_presets"][idx] = ""
-        
-        old_k = str(idx)
-        new_k = str(new_idx)
-        if old_k in self.data.get("silo_folders", {}):
-            self.data.setdefault("archive_silo_folders", {})[new_k] = self.data["silo_folders"].pop(old_k)
-        if old_k in self.data.get("silo_project_paths", {}):
-            self.data.setdefault("archive_project_paths", {})[new_k] = self.data["silo_project_paths"].pop(old_k)
-        # Sync docs
-        from PyQt6.QtGui import QTextDocument
-        font = self.text_area.font()
-        arc_doc = QTextDocument()
-        arc_doc.setDefaultFont(font)
-        arc_doc.setPlainText(text)
-        self.archive_docs.append(arc_doc)
-        if idx < len(self.silo_docs):
-            self.silo_docs[idx].setPlainText("")
-        # If archiving active silo, clear text area
-        if idx == self.active_temp_slot and not getattr(self, "active_is_archive", False):
-            self.clear_text(internal=True)
-        self._trim_archive()
-        self.mark_dirty()
-        self.refresh_temp_presets()
-        self.refresh_archive_panel()
+        """Archive a specific silo by index (called from hover button).
+
+        Routes through the ONE canonical silo->archive transaction (T-754)
+        shared with archive_active_silo, so the text, folder, project path
+        and queue always move as a unit regardless of which entry point
+        fired."""
+        self._archive_silo(idx)
 
     def safe_set_clipboard(self, text):
         if text:
