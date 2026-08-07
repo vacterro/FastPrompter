@@ -1,7 +1,7 @@
 ---
 phase: DONE
 task: none
-next_action: "GOAL: 8/8 — re-run canonical suite, EXE build, ship"
+next_action: "WAIT: markhunt recorded T-745..T-749 under ## BLOCKED, all unvetted -- tell me which to triage into ## TODO; nothing was fixed and nothing may be picked up automatically"
 blocker: ""
 agent: claude
 saipen_version: 7
@@ -13,11 +13,11 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 1325
+last_event: 1327
 style_contract: ded-97af6dca
 goal_mode: true
 goal_waves: 1
 goal_tickets: 5
-updated: 2026-08-07T05:45:00Z
-transition_from: DONE
+updated: 2026-08-07T06:30:00Z
+transition_from: MARKHUNT
 ---
