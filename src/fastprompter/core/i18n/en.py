@@ -558,6 +558,7 @@ TRANSLATIONS: dict[str, str] = {
     'Pick date and time (modern picker)': 'Pick date and time (modern picker)',
     'Pick the hover highlight colour.\nRight-click to go back to following the theme.': 'Pick the hover highlight colour.\nRight-click to go back to following the theme.',
     'Pick the window to send to.': 'Pick the window to send to.',
+    'Picking a sound plays it. Volume 0 = the global volume.': 'Picking a sound plays it. Volume 0 = the global volume.',
     'Pie Menu': 'Pie Menu',
     'Pie Menu: {}': 'Pie Menu: {}',
     'Pill (clickable)': 'Pill (clickable)',

@@ -1020,6 +1020,7 @@
     "Transform mode": "Transform mode",
     "Watcher start/stop": "Watcher start/stop",
     "Zoom in": "Zoom in",
-    "Zoom out": "Zoom out"
+    "Zoom out": "Zoom out",
+    "Picking a sound plays it. Volume 0 = the global volume.": "Picking a sound plays it. Volume 0 = the global volume."
   }
 }

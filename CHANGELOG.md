@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.8.26 — 2026-08-07
+
+- **Sound settings — scannable at a glance.** Every event now carries a small painted pictogram (bell, check, clock, folder, key, magnifier… — drawn, not emoji, so it follows the theme and needs no font). The table reads as a proper table: zebra stripes, no grid, tighter rows, fixed-width volume sliders, and the empty filler text is gone.
+
 ## v0.8.25 — 2026-08-07
 
 - **Silo/archive integrity (T-754).** Deleting an archive row no longer deletes the normal silo at the same index — the delete now carries its space explicitly. Archive reorders, deletes and insert-at-top mutations remap the archive's own folders, project paths and prompt queues (they used to move only the text). "Archive silo" is one transaction: text, document, files folder, project path and queued prompts move together. Swapping a silo across the normal/archive boundary carries all of that state too. The undo snapshot now restores all of it exactly.
