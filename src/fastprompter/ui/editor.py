@@ -48,6 +48,12 @@ TEXT_EXTENSIONS = {
 }
 
 
+def _read_text_file(path):
+    """Read a file as UTF-8 text for pasting into the editor."""
+    with open(path, encoding="utf-8", errors="replace") as f:
+        return f.read()
+
+
 def _draw_horizontal_rule(painter, hr_color, y_pos, width):
     """Draw a horizontal rule line at the given y position."""
     margin = 4
@@ -2466,28 +2472,6 @@ class VaultTextEdit(QTextEdit):
         self.main_win.set_auto_bullet(not cur)
         self.main_win.mark_dirty()
 
-    def _ask_text_drop_choice(self, name):
-        """Dropped a text-based file: insert as text, or store as a file?
-        Returns 'text', 'file', 'files_link', 'editor_link', or 'cancel'."""
-        from PyQt6.QtWidgets import QMessageBox
-        box = QMessageBox(self.main_win)
-        lang = getattr(self.main_win, '_current_lang', 'EN')
-        box.setWindowTitle(tr("Add dropped file", lang))
-        box.setText(tr("How should '{}' be added?", lang).format(name))
-        btn_text = box.addButton(tr("📄 Insert as Text", lang), QMessageBox.ButtonRole.AcceptRole)
-        btn_editor_link = box.addButton(tr("🔗 Link in Text", lang), QMessageBox.ButtonRole.ActionRole)
-        btn_file = box.addButton(tr("📥 Copy to Silo Files 📁", lang), QMessageBox.ButtonRole.ActionRole)
-        btn_files_link = box.addButton(tr("🔗 Link in Silo Files 📁", lang), QMessageBox.ButtonRole.ActionRole)
-        box.addButton(QMessageBox.StandardButton.Cancel)
-        box.setDefaultButton(btn_text)
-        box.exec()
-        clicked = box.clickedButton()
-        if clicked is btn_text: return "text"
-        if clicked is btn_editor_link: return "editor_link"
-        if clicked is btn_file: return "file"
-        if clicked is btn_files_link: return "files_link"
-        return "cancel"
-
     def _ask_binary_drop_choice(self, name):
         from PyQt6.QtWidgets import QMessageBox
         box = QMessageBox(self.main_win)
@@ -2605,29 +2589,20 @@ class VaultTextEdit(QTextEdit):
 
     def insertFromMimeData(self, source):
         if source.hasUrls():
-            # Paste of copied files (Ctrl+V from Explorer) — no drag overlay,
-            # ask per file like before
+            # Paste of copied files (Ctrl+V from Explorer) — no drag overlay.
+            # A text-based file lands as its CONTENT, no dialog (T-752): the
+            # user asked the silo to read files, so a copied .md/.py/.txt
+            # pastes what it holds. Binary files keep the file/link choice.
             for url in source.urls():
                 if url.isLocalFile():
                     path = url.toLocalFile()
                     ext = os.path.splitext(path)[1].lower()
                     if ext in TEXT_EXTENSIONS or not ext:
-                        choice = self._ask_text_drop_choice(os.path.basename(path))
-                        if choice == "file":
-                            self.main_win.add_files_to_active_silo([path])
-                        elif choice == "text":
-                            try:
-                                with open(path, encoding="utf-8", errors="replace") as f:
-                                    self.insertPlainText(f.read())
-                            except Exception:
-                                import traceback
-                                traceback.print_exc()
-                        elif choice == "files_link":
-                            self.main_win.add_links_to_active_silo([path])
-                        elif choice == "editor_link":
-                            name = os.path.basename(path)
-                            clean_path = path.replace("\\", "/")
-                            self.insertPlainText(f"[{name}](file:///{clean_path})")
+                        try:
+                            self.insertPlainText(_read_text_file(path))
+                        except Exception:
+                            import traceback
+                            traceback.print_exc()
                     else:
                         choice = self._ask_binary_drop_choice(os.path.basename(path))
                         if choice == "file":
@@ -2692,7 +2667,9 @@ class VaultTextEdit(QTextEdit):
                     selected = cursor.selectedText().replace(" ", "\n")
                     cursor.insertText(f"[{selected}]({text})")
                     return
-            # Plain text file path — insert as markdown link.
+            # Plain text file path — insert as markdown link, or READ the file
+            # when it is a text file (T-752). The link branch below stays for
+            # binary/image files; a text file path pastes its content.
             # exists_within, not os.path.exists: this runs on the GUI thread for
             # every short paste, and an unreachable UNC path froze the window for
             # a measured 93 seconds. See fastprompter.utils.paths.
@@ -2707,6 +2684,13 @@ class VaultTextEdit(QTextEdit):
                         # T-724 regression: it rendered as raw `[name](...)`
                         # text and could not be clicked.
                         self.insertPlainText(self.image_paste_markup(name, url))
+                    elif os.path.splitext(name)[1].lower() in TEXT_EXTENSIONS \
+                            or not os.path.splitext(name)[1]:
+                        try:
+                            self.insertPlainText(_read_text_file(normalized))
+                        except Exception:
+                            import traceback
+                            traceback.print_exc()
                     else:
                         self.insertPlainText(f"[{name}]({url})")
                     return

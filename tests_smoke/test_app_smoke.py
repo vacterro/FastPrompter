@@ -3529,6 +3529,78 @@ def test_ctrl_v_wraps_selection_as_hyperlink(win):
     assert ta.toPlainText() == "https://example.com/docs"
 
 
+def test_pasting_a_copied_text_file_reads_its_content(win, tmp_path):
+    from PyQt6.QtCore import QMimeData, QUrl
+
+    win.data["temp_presets"][:] = [""]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    ta = win.text_area
+
+    src = tmp_path / "note.md"
+    src.write_text("hello silo\nline two", encoding="utf-8")
+
+    mime = QMimeData()
+    mime.setUrls([QUrl.fromLocalFile(str(src))])
+    ta.insertFromMimeData(mime)
+    assert ta.toPlainText() == "hello silo\nline two"
+
+
+def test_pasting_a_text_file_path_reads_its_content(win, tmp_path):
+    from PyQt6.QtCore import QMimeData
+
+    win.data["temp_presets"][:] = [""]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    ta = win.text_area
+
+    src = tmp_path / "notes.txt"
+    src.write_text("clipboard content", encoding="utf-8")
+
+    mime = QMimeData()
+    mime.setText(str(src))
+    ta.insertFromMimeData(mime)
+    assert ta.toPlainText() == "clipboard content"
+
+
+def test_pasting_a_non_text_file_path_stays_a_link(win, tmp_path):
+    from PyQt6.QtCore import QMimeData
+
+    win.data["temp_presets"][:] = [""]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    ta = win.text_area
+
+    src = tmp_path / "archive.bin"
+    src.write_bytes(b"\x00\x01\x02")
+
+    mime = QMimeData()
+    mime.setText(str(src))
+    ta.insertFromMimeData(mime)
+    assert "[archive.bin](file:///" in ta.toPlainText()
+
+
+def test_pasting_a_copied_binary_file_still_asks(win, tmp_path, monkeypatch):
+    from PyQt6.QtCore import QMimeData, QUrl
+
+    win.data["temp_presets"][:] = [""]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    ta = win.text_area
+
+    src = tmp_path / "app.bin"
+    src.write_bytes(b"\x00\x01\x02")
+
+    asked = []
+    monkeypatch.setattr(
+        ta, "_ask_binary_drop_choice",
+        lambda name: asked.append(name) or "cancel")
+    mime = QMimeData()
+    mime.setUrls([QUrl.fromLocalFile(str(src))])
+    ta.insertFromMimeData(mime)
+    assert asked, "binary file paste must still ask how to add it"
+
+
 def test_pasting_an_unreachable_network_path_does_not_freeze_the_editor(win):
     r"""Ctrl+V must never hand the GUI thread to the network.
 
@@ -10779,6 +10851,32 @@ def test_files_button_toggles_the_dock(fresh_win):
     w.toggle_file_container()          # and closes
     QApplication.processEvents()
     assert w.files_dock.isHidden()
+
+
+def test_files_toggle_does_not_grow_the_sidebar(fresh_win):
+    """Closing the 📁 file manager must hand its width back to the CENTRE.
+
+    The old inline close let Qt give a hidden child's room to whoever had
+    stretch — the silo sidebar — which grew ~60px every single open/close
+    cycle (T-721 fixed the auto-hide path, but not the 📁 toggle)."""
+    w = fresh_win
+    w.data["file_panel_docked"] = "True"
+    w.data["files_dock_width"] = "180"
+    w.resize(1280, 800)
+    w.show()
+    QApplication.processEvents()
+    initial = list(w.splitter.sizes())
+    for _ in range(3):
+        w.toggle_file_container()   # open
+        QApplication.processEvents()
+        w.toggle_file_container()   # close
+        QApplication.processEvents()
+    after = list(w.splitter.sizes())
+    assert w.files_dock.isHidden(), "the dock must be hidden after the toggle cycle"
+    for i, (a, b) in enumerate(zip(initial, after)):
+        assert abs(a - b) <= 2, (
+            f"splitter child {i} drifted {a} -> {b} across 3 open/close cycles"
+        )
 
 
 def test_dock_gets_a_real_width_when_shown(fresh_win):

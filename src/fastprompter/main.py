@@ -2219,22 +2219,16 @@ class FastPrompter(
             # ancestor is hidden (window in the tray), which would turn the
             # toggle into "always open"
             if dock is not None and not dock.isHidden():
-                self._save_files_dock_width()
-                dock.setVisible(False)
-                self.data["files_dock_open"] = "False"
+                # _show_files_dock(False) saves the width AND hands the freed
+                # space to the CENTRE pane. The old inline close let Qt give
+                # a hidden child's room to whoever has stretch — the silo
+                # sidebar — which grew a little wider every single time the
+                # file manager was opened and closed (T-721 fixed the
+                # auto-hide path, but not the 📁 toggle).
+                self._show_files_dock(False)
                 self.mark_dirty()
                 return
         self.open_file_container()
-
-    def _save_files_dock_width(self):
-        dock = getattr(self, "files_dock", None)
-        if dock is None or sip.isdeleted(dock) or dock.isHidden():
-            return
-        idx = self.splitter.indexOf(dock)
-        sizes = self.splitter.sizes()
-        if 0 <= idx < len(sizes) and sizes[idx] > 0:
-            self.data["files_dock_width"] = str(sizes[idx])
-            self.mark_dirty()
 
     def _on_files_dock_toggled(self, checked):
         self.data["file_panel_docked"] = "True" if checked else "False"
