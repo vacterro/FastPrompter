@@ -13,9 +13,9 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 1356
+last_event: 1357
 style_contract: ded-4ae736e4
 goal_mode: false
-updated: 2026-08-07T19:56:00Z
-transition_from: SCOUT
+updated: 2026-08-07T20:06:00Z
+transition_from: SHIP
 ---
