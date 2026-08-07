@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.8.31 — 2026-08-08
+
+- **Translation backport for the v0.8.26 sound-settings text (T-769).** The long running note added in v0.8.26 — *"Picking a sound plays it. Volume 0 = the global volume."* — never made it into Russian, Estonian and Дед; they are back at 100% coverage (1015 keys, zero gaps). The five dead "Hide on Click-Out" keys removed from the English source in v0.8.25 are gone from those locales too.
+- *Under the hood:* the translation bundle's `coverage_pct` metadata now states the real numbers across all 33 locales, and the wiki pages were synced for the v0.8.28–v0.8.30 sound-icon and zebra-row changes.
+
 ## v0.8.30 — 2026-08-07
 
 - **No more white zebra rows.** Tables with alternating row colors drew Qt's unstyled WHITE AlternateBase under the theme's light text — "white on near-white" (reported on Sound Settings). The theme's table sheet now sets `alternate-background-color`, blended from the table background toward the theme's text colour: dark themes get a subtly lighter dark row, pale themes a subtly darker one. This is one fix in the shared theme sheet, so every table and list in the app (Sound Settings, Timers, the calendar popup) is covered. A regression test pins the zebra tone to the theme family.

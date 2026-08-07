@@ -13,7 +13,8 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 1369
+last_event: 1371
+style_contract: ded-4ae736e4
 execution_intent: converge
 converge_target: ship
 updated: 2026-08-07T22:58:00Z
