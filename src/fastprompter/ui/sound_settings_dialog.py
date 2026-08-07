@@ -318,16 +318,11 @@ class SoundSettingsDialog(QDialog):
         self.table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
         self.table.setAlternatingRowColors(True)
         self.table.setShowGrid(False)
-        # Give the zebra stripes a tone the theme can see: the app QSS does
-        # not set AlternateBase, so without this the alternating colors are
-        # both the same.
-        try:
-            pal = self.table.palette()
-            base = pal.color(pal.ColorRole.Base)
-            pal.setColor(pal.ColorRole.AlternateBase, QColor(base).lighter(106))
-            self.table.setPalette(pal)
-        except Exception:
-            pass
+        # Zebra tones come from the theme's alternate-background-color
+        # (themes.py), NOT from a palette tweak here — a widget palette is
+        # ignored while a stylesheet is active, so the old lighter(106) hack
+        # left AlternateBase at Qt's default WHITE (v0.8.29 regression:
+        # "white on near-white").
 
         events = list(EVENT_LABELS)
         self.table.setRowCount(len(events))

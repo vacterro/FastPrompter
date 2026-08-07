@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.8.30 — 2026-08-07
+
+- **No more white zebra rows.** Tables with alternating row colors drew Qt's unstyled WHITE AlternateBase under the theme's light text — "white on near-white" (reported on Sound Settings). The theme's table sheet now sets `alternate-background-color`, blended from the table background toward the theme's text colour: dark themes get a subtly lighter dark row, pale themes a subtly darker one. This is one fix in the shared theme sheet, so every table and list in the app (Sound Settings, Timers, the calendar popup) is covered. A regression test pins the zebra tone to the theme family.
+
 ## v0.8.29 — 2026-08-07
 
 - **Sound Settings icons back in the theme family.** v0.8.28 tinted each event icon with its own rainbow hue, which read as "the theme broke" inside the dark-golden app. Icons now keep the theme's own colour again — events are told apart by their glyph SHAPE, and the confusable pairs (tick/untick, click/hover, button press/release, save/backup, escape/quit, open/close folder) got distinct pictograms. A regression test pins the icon hues to the theme family so a rainbow can never come back.

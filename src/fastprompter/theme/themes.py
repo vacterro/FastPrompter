@@ -82,6 +82,14 @@ def header_view_qss(raw_colors):
     view_bg = raw_colors.get("bg_text", "#2c2c2c")
     fg = raw_colors.get("text_main", "#c0c0c0")
     edge = raw_colors.get("border_light", "#4d4d4d")
+    # Zebra rows must not be white. Qt's default AlternateBase is WHITE, so
+    # a table with alternating row colors and no alternate-background-color
+    # draws light rows under the light text — "white on near-white" (user
+    # report, v0.8.29). Blend view_bg toward the theme's TEXT colour by a
+    # little: dark themes get a subtly lighter dark row, and a pale theme
+    # (Vintage Classic has a white bg_text) gets a subtly darker one — never
+    # the unstyled white default either way.
+    alt_bg = blend_hex(view_bg, fg, 0.08)
     return f"""
 QHeaderView {{ background-color: {bg}; border: none; }}
 QHeaderView::section {{
@@ -93,6 +101,7 @@ QHeaderView::section:last {{ border-right: none; }}
 QHeaderView::section:hover {{ background-color: {view_bg}; }}
 QTableView, QTableWidget, QTreeView, QTreeWidget, QListView, QListWidget {{
     background-color: {view_bg}; color: {fg};
+    alternate-background-color: {alt_bg};
     gridline-color: {edge}; border: 1px solid {edge};
 }}
 QTableCornerButton::section {{ background-color: {bg}; border: none; }}

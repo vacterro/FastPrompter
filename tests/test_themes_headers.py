@@ -43,6 +43,30 @@ def test_the_rules_reach_the_application_sheet():
     assert "header_view_qss(raw)" in src, "header qss is never injected"
 
 
+def test_zebra_rows_are_never_white():
+    """Alternating row colors with Qt's default WHITE AlternateBase draws
+    light rows under the light text — "white on near-white" (user report,
+    v0.8.29). The table sheet must set a dark alternate-background-color
+    derived from the theme, never the unstyled default."""
+    import re
+
+    from fastprompter.theme.themes import THEMES, header_view_qss
+
+    for name, theme in THEMES.items():
+        raw = theme.get("raw_colors") or {}
+        qss = header_view_qss(raw)
+        assert "alternate-background-color:" in qss, (
+            f"{name}: no zebra tone in the table sheet")
+        alt = re.search(r"alternate-background-color:\s*(#[0-9a-fA-F]{6})", qss)
+        assert alt, f"{name}: alternate-background-color is not a hex"
+        value = int(alt.group(1)[1:], 16)
+        assert value != 0xFFFFFF, f"{name}: zebra rows would be white"
+        # a pale theme must NOT get a white zebra either (blend toward the
+        # theme's text colour keeps the contrast direction right)
+        if int((raw.get("bg_text") or "#2c2c2c")[1:], 16) == 0xFFFFFF:
+            assert value < 0xFFFFFF, f"{name}: pale theme zebra is not tinted"
+
+
 def test_the_calendar_popup_carries_its_own_copy():
     """A widget-level sheet REPLACES inherited rules, so the popup needs it."""
     import inspect

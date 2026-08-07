@@ -18,6 +18,10 @@ _(empty)_
 _(empty)_
 ## DONE
 
+### v0.8.30 — 07.08.26 white zebra rows fixed
+
+- [x] T-767 (fix, user-reported) DONE 07.08.26 22:05 -- tables drew Qt's default WHITE AlternateBase under the theme's light text; the shared theme sheet now sets alternate-background-color blended from the table bg toward the theme text colour. | verify: test_zebra_rows_are_never_white green; rendered rows dark; ruff clean | owner: opencode
+
 ### v0.8.29 — 07.08.26 Sound icons back in the theme family
 
 - [x] T-766 (fix, user-reported) DONE 07.08.26 21:44 -- v0.8.28 rainbow icons reverted to the theme colour; distinction now by glyph shape (13 new pictograms split the confusable pairs); regression test pins hues to the theme family. | verify: test_sound_icons_stay_in_the_theme_family green; sound tests green; ruff clean | owner: opencode
