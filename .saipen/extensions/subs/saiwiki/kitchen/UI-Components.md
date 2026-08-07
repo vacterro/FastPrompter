@@ -88,9 +88,9 @@ Pure-text markdown table. Tab/Shift+Tab walk cells. Tab off last cell grows row.
 | Dialog | Purpose |
 |---|---|
 | `Settings (Alt+`)` | Theme picker, hotkey rebind, sound, scale, toolbar reorder, silo tabs mode, image paste style, toolbar position |
-| `Sound Settings` | Per-event sound controls — enabled/file/volume/preview; includes the T-735 hotkey events (undo/redo/select-all/settings/help/new/save + generic `hotkey`) |
+| `Sound Settings` | Per-event sound controls — enabled/file/volume/preview; includes the T-735 hotkey events (undo/redo/select-all/settings/help/new/save + generic `hotkey` which ships ON by default) |
 | `Snippet Manager (Ctrl+S)` | Edit F1-F10 snippet names + content |
-| `Timer Dialog (Ctrl+Shift+T)` | Pomodoro + countdown timer setup; one-click quick presets — in 10m / in 1h / tonight / tomorrow (T-726); timer list is a table with Name/Time/Remaining columns (T-733) |
+| `Timer Dialog (Ctrl+Shift+T)` | Pomodoro + countdown timer setup (sound picks from all 412 shipped sounds, T-741); one-click quick presets — in 10m / in 1h / tonight / tomorrow (T-726); timer list is a table with Name/Time/Remaining columns (T-733) |
 | `Queue Master (Alt+Shift+C)` | Watcher queue overview per silo |
 | `Hashtag Dialog (Alt+Shift+T)` | Cross-silo tag search |
 | `Trash Dialog` | Browse/restore soft-deleted silos |

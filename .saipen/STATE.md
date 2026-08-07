@@ -13,11 +13,11 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 1313
+last_event: 1317
 style_contract: ded-97af6dca
 goal_mode: true
 goal_waves: 1
 goal_tickets: 9
-updated: 2026-08-07T12:15:00Z
-transition_from: SHIP
+updated: 2026-08-07T00:46:00Z
+transition_from: DONE
 ---

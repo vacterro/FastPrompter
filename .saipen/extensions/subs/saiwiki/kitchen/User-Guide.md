@@ -140,7 +140,7 @@ See [Watcher Engine Architecture](Watcher-Engine-Architecture) for full details.
 
 ### 15. Timers & Pomodoro
 
-**Countdown timers:** Set via Ctrl+Shift+T or timer button. Configurable name, duration, sound, volume, color urgency. The dialog lists timers in a table — **Name | Time | Remaining** columns (T-733) — with edit/snooze/fire actions. Timer toast notification with snooze (Win95 3D bevels); **clicking the toast itself dismisses it** (T-736), and a fresh toast never lands off-screen.
+**Countdown timers:** Set via Ctrl+Shift+T or timer button. Configurable name, duration, sound (picks from all 412 shipped sounds, not just events), volume, color urgency. The dialog lists timers in a table — **Name | Time | Remaining** columns (T-733) — with edit/snooze/fire actions. Timer toast notification with snooze (Win95 3D bevels); **clicking the toast itself dismisses it** (T-736), and a fresh toast never lands off-screen.
 
 **One-click quick presets (T-726):** the dialog also offers `in 10m`, `in 1h`, `tonight` (22:00) and `tomorrow` (09:00) buttons that fill the when-field with a concrete moment — no typing needed. Free text still works for anything else (`18:30`, `tomorrow 9:00`, or a full `YYYY-MM-DD HH:MM`).
 
@@ -186,7 +186,7 @@ When header < 700px: hidden buttons collected in » popup. Every action still re
 
 ### 23. Sound & Hotkey Sounds (T-706, T-707, T-735)
 
-Settings → **Sound** toggles the master switch, UI clicks and typewriter sounds. The **Sound Settings** dialog lists every sound event — including the **hotkey events** added in T-735: undo, redo, select-all, settings, help, new, save, and a generic `hotkey` fallback that every shortcut without a named event of its own resolves to. Each event can be enabled, re-mapped to any `.wav` from the shipped library, and have its volume previewed. Undo/redo are a two-pitch pair, so the direction is audible without looking. The generic `hotkey` event ships **switched OFF** — a sound on literally every shortcut would otherwise be a reason to turn sound off altogether; it is one tick box away. Existing custom mappings survive an upgrade.
+Settings → **Sound** toggles the master switch, UI clicks and typewriter sounds. The **Sound Settings** dialog lists every sound event — including the **hotkey events** added in T-735: undo, redo, select-all, settings, help, new, save, and a generic `hotkey` fallback that every shortcut without a named event of its own resolves to. Each event can be enabled, re-mapped to any `.wav` from the shipped library, and have its volume previewed. Undo/redo are a two-pitch pair, so the direction is audible without looking (and a single Ctrl+Z plays exactly one sound on any route). The generic `hotkey` event ships **switched ON** by default (T-742) — all possible hotkeys make a sound, including native Qt ones like Ctrl+A/C/V/X. Existing custom mappings survive an upgrade.
 
 ### 24. Backup
 

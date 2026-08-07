@@ -5,6 +5,7 @@
 ## TODO
 
 ## DONE
+- [x] T-025 Post-v0.8.22 drift repair (qq 07.08): 3 wiki pages re-synced to HEAD 4f5ae12 — User-Guide (timer picks any sound T-741, hotkey generic ships ON T-742, Ctrl+Z single sound), UI-Components (timer dialog sound picker, generic hotkey ON), Core-API-and-Classes (SoundManager play_file). Kitchen mirrored. OUTBOX ready source_head 4f5ae12, 3-file payload. Zero source modified. | verify: docs/wiki pages match kitchen copies after collect (3 files)
 - [x] T-023 Post-T-732..T-738 drift repair (qq 05.08, second run): 3 wiki pages re-synced to HEAD 60e3c20 + uncommitted T-734..T-738 — Module-Structure (core/silo_export.py added, core 17→18, total 117→118), User-Guide (§3 drag-OUT-to-Explorer T-738, §15 tabular Name/Time/Remaining list T-733 + clickable toast T-736, new §23 Sound & Hotkey Sounds T-735, Backup renumbered §24), UI-Components (Sound Settings hotkey events, Timer Dialog table row, header_view_qss T-737). Kitchen mirrored, OUTBOX ready source_head 60e3c20, 3-file payload. Zero source modified. | verify: docs/wiki pages match kitchen copies after collect (3 files)
 - [x] T-001 Create wiki index: architecture overview
 - [x] T-002 Document module structure

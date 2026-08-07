@@ -10,6 +10,18 @@
 ## DOING
 
 _(empty)_
+## AUDIT — 07.08 undo/redo fixes (aa)
+
+- [ ] **guard OK** — `_in_smart_undo` / `_in_smart_redo` reentrance guard prevents double-fire from QShortcut + keyPressEvent; try/finally guarantees release
+- [ ] **redo routing OK** — `_smart_redo` kind="data" failure no longer silently falls through to text redo; shows status message
+- [ ] **UX OK** — "Nothing to undo/redo" statusBar messages when stacks empty (was silent fail)
+- [ ] **sound OK** — fallback data-undo path now plays `undo` sound (was missing)
+- [ ] **editor keys OK** — Ctrl+Z/Ctrl+Y in keyPressEvent call `_smart_undo`/`_smart_redo` instead of native `super().keyPressEvent`; smart routing works even when hk_undo remapped
+- [ ] **batch delete OK** — `batch_delete_selected_silos` pushes single undo snapshot before loop; one Ctrl+Z restores all deleted silos (was N undo entries → N Ctrl+Z presses)
+- [ ] **tests** — 891 pass (39 undo-specific), 0 new failures
+- [ ] **NOTE** — `del_silo` line 741 commits `presets[idx]` BEFORE `add_data_undo_state` snapshot; `_live_text_into` compensates but ordering is fragile. Not new (existing pattern), not fixed here
+- [ ] **NOTE** — "Nothing to undo/redo" strings exist only in EN; `tr()` fallback to EN for all 32 non-EN locales. Acceptable for now, needs i18n pass
+
 ## TODO
 
 _(empty)_
