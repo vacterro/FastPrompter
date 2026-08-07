@@ -1,7 +1,7 @@
 ---
 phase: DONE
 task: none
-next_action: "RUN: ccc converge target -> ship @c79270c -- A-I, SHIP v0.8.31, then J-M (sub sync + fresh EE/QQ)"
+next_action: "RUN: ccc stage J-M -- sub sync, fresh EE, fresh QQ on shipped HEAD 732e3d8"
 blocker: ""
 agent: opencode
 saipen_version: 7
@@ -13,7 +13,7 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 1371
+last_event: 1372
 style_contract: ded-4ae736e4
 execution_intent: converge
 converge_target: ship
