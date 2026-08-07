@@ -9,7 +9,7 @@
 
 ## DOING
 
-- [/] T-745 [MARKHUNT] (quality gate) The shipped tree is LINT-RED, and it was green at v0.8.21 -- so the ruff gate stopped being run before ship rather than the code slowly rotting. All 20 errors are in the three test files the last wave added, none in `src`: `tests/test_write_guard.py` (I001 unsorted imports, F841 `state_path` assigned and never used at :75), `tests_smoke/test_shortcut_double_fire.py` (I001, F401 `QKeyEvent`, F401 `QTest`, F811 `QKeyEvent` redefined at :50), `tests_smoke/test_t743_toast_click.py` (I001, F401 `QPoint`/`QTimer`/`QWidget`). F841 and F811 are the interesting two: a redefined import and an unused local in a NEW test usually mean the test does not assert what its author thought. | verify: `python -m ruff check src tests tests_smoke` = 0 errors; the F841/F811 sites re-checked so the tests assert what they intend | owner: opencode | claim_time: 2026-08-07T12:27:00Z
+_(empty)_
 ## TODO
 
 _(empty)_
