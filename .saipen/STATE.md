@@ -1,7 +1,7 @@
 ---
 phase: DONE
 task: none
-next_action: "WAIT: user brake -- clean done @cdc7537; T-764 (delete _extract.txt?) + saiwiki re-sync (v0.8.23..27) pending your call."
+next_action: "WAIT: user brake -- qqq done: wiki synced to v0.8.27 (cc21ab8). T-764 (delete _extract.txt?) still pending your call."
 blocker: ""
 agent: opencode
 saipen_version: 7
@@ -13,9 +13,9 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 1359
+last_event: 1361
 style_contract: ded-4ae736e4
 goal_mode: false
-updated: 2026-08-07T20:50:00Z
+updated: 2026-08-07T21:09:00Z
 transition_from: CLEAN
 ---

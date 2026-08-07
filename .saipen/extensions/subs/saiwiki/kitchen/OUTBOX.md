@@ -1,6 +1,6 @@
 # OUTBOX — saiwiki prepare handoff
 
-- **status**: ready
+- **status**: reviewed (collected 07.08.26 21:09 -> docs/wiki, 4-file payload)
 - **producer**: saiwiki
 - **source_head**: `90b2ac3` (HEAD after qq prepare; source tree byte-identical to 501acd0, the qq base)
 - **source_tree_fingerprint**: `393e89e9fe57ac7f567a75efa89229df331dfbd8` (HEAD tree)
