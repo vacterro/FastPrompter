@@ -13,13 +13,6 @@ _(empty)_
 ## TODO
 
 _(empty)_
-## TODO
-### dd all — 07.08.26 plan (all flagged/outstanding work)
-
-- [x] T-761 (P2, dead code, flagged since T-751) remove the write-only focus-lock apparatus -- `ignore_focus_loss`, `_focus_lock_count`, `_increment_focus_lock`/`_decrement_focus_lock` and their ~30 call sites (main.py init + helpers + QTimer.singleShot pairs; editor.py, file_container.py, fancy_zones.py, watcher_mixin.py, snippet_panel.py, snippet_ops_mixin.py, theme_mixin.py, send_selection_mixin.py). The only reader (changeEvent hide path) was removed with Hide-on-Click-Out, so the flag is write-only. Delete writes/helpers/comments surgically; KEEP unrelated activateWindow/setFocus and the try/finally dialog structure; do NOT recreate focus-loss hiding. | verify: `rg -n "ignore_focus_loss|_focus_lock_count|_increment_focus_lock|_decrement_focus_lock" src` = ZERO; unit 951 pass + 1 known pre-existing winsound; 112 targeted smoke pass; ruff clean | needs: none
-
-- [ ] T-763 (P3, conformance) repair `saiwiki/LOG.md` -- it is UTF-16LE-encoded so the validator sees an append-target ending mid-line; normalize to UTF-8 with a trailing newline so the next append cannot corrupt it. | verify: validator append-target FAIL gone | needs: none
-
 ## BLOCKED
 
 _(empty)_
