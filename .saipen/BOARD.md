@@ -18,6 +18,10 @@ _(empty)_
 _(empty)_
 ## DONE
 
+### v0.8.29 — 07.08.26 Sound icons back in the theme family
+
+- [x] T-766 (fix, user-reported) DONE 07.08.26 21:44 -- v0.8.28 rainbow icons reverted to the theme colour; distinction now by glyph shape (13 new pictograms split the confusable pairs); regression test pins hues to the theme family. | verify: test_sound_icons_stay_in_the_theme_family green; sound tests green; ruff clean | owner: opencode
+
 ### v0.8.28 — 07.08.26 Sound Settings per-event icons
 
 - [x] T-765 (feat, user-asked) DONE 07.08.26 21:39 -- every sound event gets its own individually-tinted icon. _event_color walks a golden-angle hue rotation from the theme's base colour, giving all 56 events distinct hues so no two rows look alike even when they share a glyph shape. | verify: 56 events -> 56 distinct hues; dialog opens; sound smoke green; ruff clean | owner: opencode

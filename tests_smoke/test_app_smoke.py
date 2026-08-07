@@ -12268,6 +12268,29 @@ def test_a_moved_card_keeps_its_own_mark(fresh_win):
 # ---------------------------------------------------------------------------
 
 
+def test_sound_icons_stay_in_the_theme_family(win):
+    """The Sound Settings icons must never become a rainbow: a per-event hue
+    rotation inside the dark-golden app read as "the theme broke" (v0.8.28
+    regression). Every icon keeps the theme's own colour; distinction comes
+    from the glyph shape."""
+    from PyQt6.QtGui import QColor
+
+    from fastprompter.ui.sound_settings_dialog import _EVENT_GLYPHS as G
+    from fastprompter.ui.sound_settings_dialog import _event_color
+
+    base = QColor("#d0b060")
+    hues = {_event_color(event, base).hue() for event in G}
+    assert hues == {base.hue()}, (
+        "icon colours must stay in the theme family; got hues "
+        f"{sorted(hues)}")
+    # the glyph shapes must still differentiate the confusable pairs
+    # (find/search may share a shape — they are the same action)
+    pairs = [("tick", "untick"), ("click", "hover"),
+             ("button_click", "button_release"), ("save", "backup")]
+    for a, b in pairs:
+        assert G[a] != G[b], f"{a} and {b} must have distinct glyph shapes"
+
+
 def test_sound_settings_dialog_opens_and_edits(win):
     from fastprompter.core.sound_manager import _DEFAULT_SOUND_MAP, EVENT_LABELS
     from fastprompter.ui.sound_settings_dialog import SoundSettingsDialog

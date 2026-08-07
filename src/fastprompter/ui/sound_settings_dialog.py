@@ -47,23 +47,23 @@ _COL_EVENT, _COL_ON, _COL_FILE, _COL_VOL, _COL_PLAY = range(5)
 # the painted-language-flags approach used elsewhere in the app.
 _EVENT_GLYPHS: dict[str, str] = {
     "new": "plus", "save": "save", "silo": "swap", "snippet": "doc",
-    "tick": "check", "untick": "check", "delete": "cross", "clear": "cross",
-    "undo": "undo", "redo": "redo", "select_all": "check",
+    "tick": "check", "untick": "box", "delete": "cross", "clear": "cross",
+    "undo": "undo", "redo": "redo", "select_all": "check_list",
     "settings": "gear", "help": "question", "hotkey": "key",
     "bold": "bold", "italic": "italic", "underline": "underline",
     "strike": "strike", "header": "header", "divider": "line",
-    "snap": "corner", "find": "magnifier", "replace": "swap",
+    "snap": "corner", "find": "magnifier", "replace": "swap_r",
     "focus": "lock", "export": "export", "quit": "quit",
-    "archive": "folder", "snippets_toggle": "panel", "transform": "swap",
+    "archive": "folder", "snippets_toggle": "panel", "transform": "swap_t",
     "sidebar": "panel", "lock": "lock", "copy": "copy", "paste": "paste",
     "cut": "scissors", "zoom_in": "zoom_in", "zoom_out": "zoom_out",
-    "escape": "quit", "search": "magnifier", "backup": "save",
+    "escape": "esc", "search": "magnifier", "backup": "floppy_up",
     "restore": "restore", "reset": "reset", "timer_start": "clock",
-    "profile": "user", "watcher": "eye", "type": "key",
-    "backspace": "key", "click": "cursor", "hover": "cursor",
-    "button_click": "cursor", "button_release": "cursor",
-    "chest_open": "folder", "chest_close": "folder", "notify": "bell",
-    "error": "exclaim", "success": "check", "timer": "alarm",
+    "profile": "user", "watcher": "eye", "type": "keyboard",
+    "backspace": "key_b", "click": "cursor", "hover": "cursor_hover",
+    "button_click": "cursor_click", "button_release": "cursor_up",
+    "chest_open": "folder_open", "chest_close": "folder", "notify": "bell",
+    "error": "exclaim", "success": "check_circle", "timer": "alarm",
 }
 
 # Unknown glyph -> the bell, so a new event still gets a picture.
@@ -71,21 +71,13 @@ _GLYPH_FALLBACK = "bell"
 
 
 def _event_color(event: str, base: QColor) -> QColor:
-    """A stable per-event colour so every row's icon is individually
-    distinguishable, even when events share a glyph shape (tick/untick,
-    click/hover, find/search ...). The hue walks a golden-angle spread from
-    the theme's own base colour, so the palette stays in the theme's family
-    while no two adjacent events look alike."""
-    hue = base.hue()
-    if hue < 0:
-        hue = 40
-    try:
-        idx = sorted(_EVENT_GLYPHS).index(event)
-    except ValueError:
-        idx = 0
-    rotated = (hue + int((idx * 137.5) % 360)) % 360
-    return QColor.fromHsv(
-        rotated, max(80, base.saturation()), max(140, base.value()))
+    """The icon colour for one event.
+
+    DELIBERATELY the theme's own colour, never a per-event hue rotation:
+    a rainbow of icons inside the dark-golden app read as "the theme broke"
+    (user report, v0.8.28). Distinction between events comes from the GLYPH
+    SHAPE, not from colour, so the theme family is never violated."""
+    return base
 
 
 def _event_icon(event: str, base: QColor) -> QIcon:
@@ -216,6 +208,49 @@ def _event_icon(event: str, base: QColor) -> QIcon:
     elif glyph == "alarm":
         p.drawArc(QRect(4, 3, 12, 11), 0, 180 * 16); line(4, 14, 16, 14); line(10, 15, 10, 17)
         line(10, 6, 10, 10); line(10, 10, 13, 12)
+    elif glyph == "box":
+        p.drawRect(QRect(5, 5, 10, 10))
+    elif glyph == "check_circle":
+        circle(10, 10, 6.5); line(6.5, 10, 9, 12.5); line(9, 12.5, 14, 6.5)
+    elif glyph == "check_list":
+        line(3, 6, 17, 6); line(3, 11, 17, 11); line(3, 16, 17, 16)
+        line(4, 5, 6, 7); line(6, 7, 11, 3)
+    elif glyph == "esc":
+        p.setFont(QFont("Verdana", 6, QFont.Weight.Bold))
+        p.drawText(QRect(0, 3, 20, 14), Qt.AlignmentFlag.AlignCenter, "Esc")
+    elif glyph == "floppy_up":
+        p.drawRect(QRect(4, 4, 12, 12)); line(10, 6, 10, 13); line(10, 6, 7, 9); line(10, 6, 13, 9)
+    elif glyph == "cursor_click":
+        p.setBrush(QColor(color))
+        p.drawPolygon([QPoint(4, 3), QPoint(14, 9), QPoint(9, 10),
+                       QPoint(11, 15), QPoint(8, 15), QPoint(6, 10), QPoint(4, 3)])
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        circle(15, 4, 2.5)
+    elif glyph == "cursor_up":
+        p.setBrush(QColor(color))
+        p.drawPolygon([QPoint(5, 4), QPoint(14, 9), QPoint(9, 10),
+                       QPoint(11, 15), QPoint(8, 15), QPoint(6, 10), QPoint(5, 4)])
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        line(16, 3, 16, 5); line(16, 3, 14, 4); line(16, 3, 18, 4)
+    elif glyph == "cursor_hover":
+        p.setBrush(QColor(color))
+        p.drawPolygon([QPoint(5, 4), QPoint(14, 9), QPoint(9, 10),
+                       QPoint(11, 15), QPoint(8, 15), QPoint(6, 10), QPoint(5, 4)])
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        circle(12, 2.5, 1.6)
+    elif glyph == "swap_r":
+        arrow(15, 5, 7, 5); arrow(5, 15, 13, 15)
+    elif glyph == "swap_t":
+        arrow(13, 5, 15, 5); p.drawArc(QRect(4, 4, 12, 12), 60 * 16, 260 * 16)
+    elif glyph == "key_b":
+        circle(6, 10, 3.5); line(9, 10, 15, 10)
+        arrow(11, 7, 8, 7)
+    elif glyph == "keyboard":
+        p.drawRect(QRect(2, 7, 16, 8)); line(4, 9.5, 16, 9.5)
+        line(4, 12, 16, 12)
+    elif glyph == "folder_open":
+        p.drawLine(2, 8, 6, 4); p.drawLine(6, 4, 18, 4); p.drawLine(2, 8, 18, 8)
+        line(2, 8, 2, 17); line(2, 17, 18, 17); line(18, 8, 18, 17)
     else:
         p.drawArc(QRect(4, 3, 12, 11), 0, 180 * 16); line(4, 14, 16, 14)
     p.end()

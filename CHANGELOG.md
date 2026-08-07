@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.8.29 — 2026-08-07
+
+- **Sound Settings icons back in the theme family.** v0.8.28 tinted each event icon with its own rainbow hue, which read as "the theme broke" inside the dark-golden app. Icons now keep the theme's own colour again — events are told apart by their glyph SHAPE, and the confusable pairs (tick/untick, click/hover, button press/release, save/backup, escape/quit, open/close folder) got distinct pictograms. A regression test pins the icon hues to the theme family so a rainbow can never come back.
+
 ## v0.8.28 — 2026-08-07
 
 - **Sound Settings — every event has its own icon.** Each of the 56 sound events now carries a pictogram tinted with its own stable colour, so no two rows look alike even when they share a shape (tick/untick, click/hover, find/search). The hues walk a golden-angle spread from the theme's base colour, so the palette stays in the theme's family.
