@@ -10,6 +10,17 @@
 ## DOING
 
 _(empty)_
+## AUDIT — 07.08 settings UI (saiui)
+
+- [x] **hk_undo label** — "Undo Text Change" -> "Undo" (smart undo, not just text)
+- [x] **hk_italic + hk_underline** — added to HotkeySettingsDialog app_binds (were missing, user couldn't reconfigure)
+- [x] **app_binds labels translated** — all 14 labels now wrapped in tr() (were hardcoded English)
+- [x] **ColorConfigDialog title** — "(RGB)" -> "(HEX)" (uses #hex, not rgb())
+- [x] **Load from Theme confirmation** — asks before overwriting user's custom colors
+- [x] **Action checkboxes -> buttons** — Keys/RGB/BkUp/Rstr/Drop Zones/Scale were QCheckBox disguised as buttons; now QPushButton
+- [x] **btn_drop_zones.setChecked(False)** removed — was calling checkbox method on button (would crash)
+- [x] **tests** — 38 settings + 891 full suite green
+
 ## AUDIT — 07.08 undo/redo fixes (aa)
 
 - [ ] **guard OK** — `_in_smart_undo` / `_in_smart_redo` reentrance guard prevents double-fire from QShortcut + keyPressEvent; try/finally guarantees release

@@ -628,10 +628,10 @@ class SnippetOpsMixin:
         self.refresh_snippets_panel()
         self.refresh_archive_panel()
 
-    def trash_silo(self, idx=None, is_archive=False):
+    def trash_silo(self, idx=None, is_archive=False, skip_undo=False):
         """Move a silo to the trash (called from context menu).
         Just calls del_silo which now handles the trashing of text."""
-        self.del_silo(idx)
+        self.del_silo(idx, skip_undo=skip_undo)
 
     def silo_text_at(self, idx, is_archive=False):
         """The stored text of silo ``idx``, or "" when the slot is empty."""
@@ -725,7 +725,7 @@ class SnippetOpsMixin:
         except Exception as e:
             logger.error(f"Open trash dialog failed: {e}")
 
-    def del_silo(self, idx=None):
+    def del_silo(self, idx=None, skip_undo=False):
         """Delete a silo at the given index, or the active one."""
         self.sound_manager.play("delete")
         is_arc = getattr(self, "active_is_archive", False)
@@ -740,7 +740,8 @@ class SnippetOpsMixin:
 
             if idx == self.active_temp_slot:
                 presets[idx] = self.text_area.toPlainText()
-            self.add_data_undo_state("Delete silo")
+            if not skip_undo:
+                self.add_data_undo_state("Delete silo")
             
             self._trash_silo_content(presets[idx])
 

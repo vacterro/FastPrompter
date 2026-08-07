@@ -135,18 +135,20 @@ class HotkeySettingsDialog(QDialog):
         tab_app = QWidget()
         form_app = QFormLayout(tab_app)
         self.app_binds = [
-            ("hk_new_snippet", "Ctrl+N", "New Empty Snippet"),
-            ("hk_save_snippet", "Ctrl+S", "Save Snippet"),
-            ("hk_export_silo", "Ctrl+Shift+S", "Export Silo to file"),
-            ("hk_find", "Ctrl+F", "Find Text"),
-            ("hk_replace", "Ctrl+H", "Replace Text"),
-            ("hk_focus", "Ctrl+D", "Toggle Focus Mode"),
-            ("hk_header", "Ctrl+E", "Header+Bold+Underline+Timestamp"),
-            ("hk_bold", "Ctrl+B", "Bold / Unbold Line"),
-            ("hk_undo", "Ctrl+Z", "Undo Text Change"),
-            ("hk_divider", "Ctrl+W", "Insert Divider Line"),
-            ("hk_snap", "Ctrl+Q", "Cycle Snap Corners"),
-            ("hk_quit", "Ctrl+Alt+Shift+Q", "Quit Application")
+            ("hk_new_snippet", "Ctrl+N", tr("New Empty Snippet", self.lang)),
+            ("hk_save_snippet", "Ctrl+S", tr("Save Snippet", self.lang)),
+            ("hk_export_silo", "Ctrl+Shift+S", tr("Export Silo to file", self.lang)),
+            ("hk_find", "Ctrl+F", tr("Find Text", self.lang)),
+            ("hk_replace", "Ctrl+H", tr("Replace Text", self.lang)),
+            ("hk_focus", "Ctrl+D", tr("Toggle Focus Mode", self.lang)),
+            ("hk_header", "Ctrl+E", tr("Header+Bold+Underline+Timestamp", self.lang)),
+            ("hk_bold", "Ctrl+B", tr("Bold / Unbold Line", self.lang)),
+            ("hk_italic", "Ctrl+I", tr("Italic", self.lang)),
+            ("hk_underline", "Ctrl+U", tr("Underline", self.lang)),
+            ("hk_undo", "Ctrl+Z", tr("Undo", self.lang)),
+            ("hk_divider", "Ctrl+W", tr("Insert Divider Line", self.lang)),
+            ("hk_snap", "Ctrl+Q", tr("Cycle Snap Corners", self.lang)),
+            ("hk_quit", "Ctrl+Alt+Shift+Q", tr("Quit Application", self.lang))
         ]
         self.app_inputs = {}
         for key_name, default_hk, label in self.app_binds:
@@ -241,7 +243,7 @@ class ColorConfigDialog(QDialog):
         super().__init__(main_win)
         self.main_win = main_win
         self.lang = getattr(main_win, '_current_lang', 'EN')
-        self.setWindowTitle(tr("Custom Theme Colors (RGB)", self.lang))
+        self.setWindowTitle(tr("Custom Theme Colors (HEX)", self.lang))
         self.setMinimumWidth(350)
 
         layout = QVBoxLayout(self)
@@ -325,6 +327,13 @@ class ColorConfigDialog(QDialog):
 
     def load_from_theme(self):
         current_theme_name = self.main_win.data.get("theme", "Default")
+        from PyQt6.QtWidgets import QMessageBox
+        reply = QMessageBox.question(
+            self, tr("Load Theme Colors", self.lang),
+            tr("Replace your current colors with the {0} theme?", self.lang).format(current_theme_name),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if reply != QMessageBox.StandardButton.Yes:
+            return
         from PyQt6.QtGui import QColor
 
         from fastprompter.theme.themes import THEMES

@@ -2841,7 +2841,11 @@ class VaultTextEdit(QTextEdit):
                     pass
 
         if mods == Qt.KeyboardModifier.ControlModifier and event.key() in (Qt.Key.Key_Z, Qt.Key.Key_Y):
-            super().keyPressEvent(event)
+            if event.key() == Qt.Key.Key_Z:
+                if hasattr(mw, "_smart_undo"): mw._smart_undo()
+            else:
+                if hasattr(mw, "_smart_redo"): mw._smart_redo()
+            event.accept()
             return
 
         if mods & Qt.KeyboardModifier.ControlModifier and event.key() in (Qt.Key.Key_Home, Qt.Key.Key_End):

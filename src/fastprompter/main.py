@@ -3017,19 +3017,10 @@ class FastPrompter(
         # Removed broken preset_combo — it didn't work
 
         def make_action_checkbox(text, callback):
-            cb = QCheckBox(text)
-
-            def on_toggled(checked):
-                if checked:
-                    self.play_tick_sound()
-                    callback()
-                    cb.blockSignals(True)
-                    cb.setChecked(False)
-                    cb.blockSignals(False)
-
-            cb.toggled.connect(on_toggled)
-            cb._en_text = text
-            return cb
+            btn = QPushButton(text)
+            btn.clicked.connect(lambda: (self.play_tick_sound(), callback()))
+            btn._en_text = text
+            return btn
 
         self.btn_hotkeys = make_action_checkbox("Keys", self.open_hotkey_settings)
         self.btn_hotkeys.setToolTip(tr("Configure Global Hotkeys (Settings Cog)", getattr(self, "_current_lang", "EN")))
@@ -5025,7 +5016,7 @@ class FastPrompter(
                 if en_tip:
                     cb.setToolTip(tr(en_tip, lang))
 
-        # Translate action checkboxes
+        # Translate action buttons
         for ac_name in ("btn_hotkeys", "btn_colors", "btn_backup", "btn_restore"):
             ac = getattr(self, ac_name, None)
             if ac is not None and not sip.isdeleted(ac):
@@ -5159,8 +5150,6 @@ class FastPrompter(
         from fastprompter.ui.drop_overlay import DropZonesDialog
         dlg = DropZonesDialog(self)
         dlg.exec()
-        if hasattr(self, "btn_drop_zones"):
-            self.btn_drop_zones.setChecked(False)
 
     def swap_temp_slots(self, idx1, idx2, is_archive=False):
         if idx1 == idx2:
@@ -6099,18 +6088,27 @@ class FastPrompter(
 
     def _smart_undo(self):
         """Ctrl+Z: data undo (silo clear/delete/move/gap) or text undo."""
-        kinds = self._undo_kinds()
-        if self._undo_prefers_data():
-            if self.undo_action():
+        if getattr(self, "_in_smart_undo", False):
+            return
+        self._in_smart_undo = True
+        try:
+            kinds = self._undo_kinds()
+            if self._undo_prefers_data():
+                if self.undo_action():
+                    kinds.append("data")
+                    return
+            doc = self._active_doc()
+            if doc is not None and doc.isUndoAvailable():
+                self.text_area.undo()
+                self.play_sound("undo")
+                kinds.append("text")
+            elif self.undo_action():
                 kinds.append("data")
-                return
-        doc = self._active_doc()
-        if doc is not None and doc.isUndoAvailable():
-            self.text_area.undo()
-            self.play_sound("undo")
-            kinds.append("text")
-        elif self.undo_action():
-            kinds.append("data")
+                self.play_sound("undo")
+            else:
+                self.statusBar().showMessage(tr("Nothing to undo", getattr(self, "_current_lang", "EN")), 2000)
+        finally:
+            self._in_smart_undo = False
 
     def _undo_kinds(self):
         """What each Ctrl+Z actually reversed, newest last — the only thing
@@ -6121,23 +6119,38 @@ class FastPrompter(
 
     def _smart_redo(self):
         """Ctrl+Y / Ctrl+Shift+Z: mirror of `_smart_undo`, step for step."""
-        kinds = self._undo_kinds()
-        kind = kinds.pop() if kinds else None
-        doc = self._active_doc()
-        if kind == "text":
+        if getattr(self, "_in_smart_redo", False):
+            return
+        self._in_smart_redo = True
+        try:
+            kinds = self._undo_kinds()
+            kind = kinds.pop() if kinds else None
+            doc = self._active_doc()
+            if kind == "text":
+                if doc is not None and doc.isRedoAvailable():
+                    self.text_area.redo()
+                    self.play_sound("redo")
+                    return
+                if self.redo_action():
+                    return
+                self.statusBar().showMessage(tr("Nothing to redo", getattr(self, "_current_lang", "EN")), 2000)
+                return
+            if kind == "data":
+                if self.redo_action():
+                    return
+                self.statusBar().showMessage(tr("Nothing to redo", getattr(self, "_current_lang", "EN")), 2000)
+                return
+            # No recorded history (fresh session, or the stacks were trimmed):
+            # data first, text as the fallback, so nothing is unreachable.
+            if self.redo_action():
+                return
             if doc is not None and doc.isRedoAvailable():
                 self.text_area.redo()
                 self.play_sound("redo")
                 return
-            self.redo_action()
-            return
-        if kind == "data" and self.redo_action():
-            return
-        # No recorded history (fresh session, or the stacks were trimmed):
-        # data first, text as the fallback, so nothing is unreachable.
-        if not self.redo_action() and doc is not None and doc.isRedoAvailable():
-            self.text_area.redo()
-            self.play_sound("redo")
+            self.statusBar().showMessage(tr("Nothing to redo", getattr(self, "_current_lang", "EN")), 2000)
+        finally:
+            self._in_smart_redo = False
 
     def undo_action(self):
         if hasattr(self, "data_undo_stack") and self.data_undo_stack:
@@ -8672,9 +8685,10 @@ class FastPrompter(
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         if resp != QMessageBox.StandardButton.Yes:
             return
+        self.add_data_undo_state("Batch delete silos")
         for i in sel:
             try:
-                self.trash_silo(i, is_archive=False)
+                self.trash_silo(i, is_archive=False, skip_undo=True)
             except Exception:
                 logger.debug("batch delete failed for silo %s", i)
         self._silo_selection = set()
