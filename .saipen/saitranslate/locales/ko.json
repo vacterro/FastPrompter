@@ -5,7 +5,7 @@
     "name_native": "한국어",
     "flag": "🇰🇷"
   },
-  "coverage_pct": 100.0,
+  "coverage_pct": 95.7,
   "translations": {
     "**__{text}__** ({time})": "**__{text}__** ({time})",
     "+ Font": "+ 글꼴",

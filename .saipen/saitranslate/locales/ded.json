@@ -5,7 +5,7 @@
     "name_native": "«Дед»",
     "flag": "👴"
   },
-  "coverage_pct": 99300.0,
+  "coverage_pct": 100.0,
   "translations": {
     " h": "Эх, час",
     " min": "Эх, мин",
@@ -781,10 +781,6 @@
     "Toggle App Visibility: {}": "Toggle App Visibility: {}",
     "Toggle Archives": "Показать/спрятать чердак",
     "Toggle Focus Mode": "Toggle Focus Mode",
-    "Toggle Hide on Click-Out": "Toggle Hide on Click-Out",
-    "Toggle Hide on Click-Out:": "Toggle Hide on Click-Out:",
-    "Toggle Hide-on-Clickout": "Toggle Hide-on-Clickout",
-    "Toggle Hide-on-Clickout: Alt+A": "Toggle Hide-on-Clickout: Alt+A",
     "Toggle Lock Window:": "Toggle Lock Window:",
     "Toggle Sidebar": "Toggle Sidebar",
     "Toggle Sidebar (Alt+D)\nShow or hide the right/left sidebar containing snippets and silos.": "Toggle Sidebar (Alt+D)\nShow or hide the right/left sidebar containing snippets and silos.",
@@ -954,7 +950,6 @@
     "🌞 Day Word": "🌞 Слово дня",
     "🎨 Silo Color Box": "🎨 Цветной квадратик сило",
     "🏠 Silos at Start": "🏠 Банки на старте",
-    "👁 Hide on Click-Out": "👁 Прятаться при клике мимо",
     "💾 Auto Backup (.md)": "💾 Автобэкап (.md)",
     "💾 Save as Snippet #…": "💾 В штамп под номером…",
     "💾 Save selected": "Эх, 💾 Сохранить выбранное",
@@ -1025,6 +1020,7 @@
     "Transform mode": "Трансформ",
     "Watcher start/stop": "Вотчер",
     "Zoom in": "Зум+",
-    "Zoom out": "Зум-"
+    "Zoom out": "Зум-",
+    "Picking a sound plays it. Volume 0 = the global volume.": "Звук выбрал — играет. Громкость 0 = общая громкость."
   }
 }

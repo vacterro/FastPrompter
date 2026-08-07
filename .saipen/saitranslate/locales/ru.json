@@ -5,7 +5,7 @@
     "name_native": "Русский",
     "flag": "🇷🇺"
   },
-  "coverage_pct": 99300.0,
+  "coverage_pct": 100.0,
   "translations": {
     " h": "час",
     " min": "мин",
@@ -781,10 +781,6 @@
     "Toggle App Visibility: {}": "Показать/скрыть: {}",
     "Toggle Archives": "Переключить архив",
     "Toggle Focus Mode": "Режим фокуса",
-    "Toggle Hide on Click-Out": "Переключить скрытие при клике вне",
-    "Toggle Hide on Click-Out:": "Скрывать при клике вне:",
-    "Toggle Hide-on-Clickout": "Скрывать при клике вне",
-    "Toggle Hide-on-Clickout: Alt+A": "Скрывать при клике вне: Alt+A",
     "Toggle Lock Window:": "Зафиксировать окно:",
     "Toggle Sidebar": "Боковая панель",
     "Toggle Sidebar (Alt+D)\nShow or hide the right/left sidebar containing snippets and silos.": "Переключить боковую панель (Alt+D)\nПоказать или скрыть панель сниппетов и сил.",
@@ -954,7 +950,6 @@
     "🌞 Day Word": "🌞 Слово дня",
     "🎨 Silo Color Box": "🎨 Цветной квадратик сило",
     "🏠 Silos at Start": "🏠 Силы в начало",
-    "👁 Hide on Click-Out": "👁 Скрывать при клике вне",
     "💾 Auto Backup (.md)": "💾 Авторезерв (.md)",
     "💾 Save as Snippet #…": "💾 Сохранить как сниппет #…",
     "💾 Save selected": "💾 Сохранить выбранное",
@@ -1025,6 +1020,7 @@
     "Transform mode": "Режим трансформации",
     "Watcher start/stop": "Наблюдатель пуск/стоп",
     "Zoom in": "Приблизить",
-    "Zoom out": "Отдалить"
+    "Zoom out": "Отдалить",
+    "Picking a sound plays it. Volume 0 = the global volume.": "Выбор звука воспроизводит его. Громкость 0 = общая громкость."
   }
 }

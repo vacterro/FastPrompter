@@ -5,7 +5,7 @@
     "name_native": "Eesti",
     "flag": "🇪🇪"
   },
-  "coverage_pct": 99300.0,
+  "coverage_pct": 100.0,
   "translations": {
     " h": "h",
     " min": "min",
@@ -781,10 +781,6 @@
     "Toggle App Visibility: {}": "Lülita rakenduse nähtavus: {}",
     "Toggle Archives": "Lülita arhiivid",
     "Toggle Focus Mode": "Fookusrežiim",
-    "Toggle Hide on Click-Out": "Lülita peida klõpsates väljapoole",
-    "Toggle Hide on Click-Out:": "Lülita peida klõpsates väljapoole:",
-    "Toggle Hide-on-Clickout": "Lülita peida-klõpsates-väljapoole",
-    "Toggle Hide-on-Clickout: Alt+A": "Lülita peida-klõpsates-väljapoole: Alt+A",
     "Toggle Lock Window:": "Lülita akna lukustus:",
     "Toggle Sidebar": "Külgriba",
     "Toggle Sidebar (Alt+D)\nShow or hide the right/left sidebar containing snippets and silos.": "Lülita külgriba (Alt+D)\nNäita või peida parem/vasak külgriba, mis sisaldab snippeteid ja silosid.",
@@ -954,7 +950,6 @@
     "🌞 Day Word": "🌞 Päeva sõna",
     "🎨 Silo Color Box": "🎨 Silo värvikast",
     "🏠 Silos at Start": "🏠 Silod alguses",
-    "👁 Hide on Click-Out": "👁 Peida klõpsates väljapoole",
     "💾 Auto Backup (.md)": "💾 Automaatne varundus (.md)",
     "💾 Save as Snippet #…": "💾 Salvesta snippetina #…",
     "💾 Save selected": "💾 Salvesta valitud",
@@ -1025,6 +1020,7 @@
     "Transform mode": "Teisenduse režiim",
     "Watcher start/stop": "Vaataja start/stopp",
     "Zoom in": "Suurenda",
-    "Zoom out": "Vähenda"
+    "Zoom out": "Vähenda",
+    "Picking a sound plays it. Volume 0 = the global volume.": "Heli valimine mängib seda. Helitugevus 0 = üldine helitugevus."
   }
 }
