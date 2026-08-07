@@ -82,7 +82,7 @@ for lf in locale_files:
                 if not ru_val:
                     try:
                         ru_val = GoogleTranslator(source="en", target="ru").translate(key)
-                    except:
+                    except Exception:
                         ru_val = key
                 val = f"Эх, {ru_val}" if ru_val else key
             else:

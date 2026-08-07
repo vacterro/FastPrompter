@@ -1,7 +1,6 @@
 import ast
 import json
 import os
-import re
 import sys
 
 sys.stdout.reconfigure(encoding='utf-8')
@@ -111,7 +110,7 @@ if not os.path.exists(locales_dir):
     errors.append(f"Locales directory missing at {locales_dir}")
 else:
     files = [f.replace('.json', '') for f in os.listdir(locales_dir) if f.endswith('.json')]
-    missing_files = [l for l in REQUIRED_LANGS if l not in files]
+    missing_files = [lang for lang in REQUIRED_LANGS if lang not in files]
     if missing_files:
         errors.append(f"Missing locale JSON files: {missing_files}")
     
