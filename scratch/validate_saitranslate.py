@@ -218,6 +218,64 @@ else:
         except Exception as e:
             errors.append(f"[{lang}] Corrupt JSON: {e}")
 
+# 3b. JSON-vs-module gate: the source of truth and the generated runtime must
+# agree BOTH ways. The src-vs-en gate above proves every tr() key reaches
+# en.json; this one proves en.json reaches the modules -- otherwise a key
+# added straight to a module (or dropped from the JSON) regenerates into
+# silent data loss or dead weight. 07.08 T-747: 26 sound-event labels lived
+# only in en/ru/est/ded modules, 9 keys lived only in en.json, and the
+# validator PASSED because nothing compared the two sides.
+def _module_keys(lang: str) -> set[str]:
+    """AST-extract TRANSLATIONS keys from the generated <lang>.py module."""
+    path = os.path.join(src_dir, "core", "i18n", f"{lang}.py")
+    if not os.path.exists(path):
+        return set()
+    try:
+        with open(path, encoding="utf-8") as fh:
+            tree = ast.parse(fh.read(), filename=path)
+    except (SyntaxError, UnicodeDecodeError) as exc:
+        errors.append(f"module parse failed: {path}: {exc}")
+        return set()
+    for node in tree.body:
+        if isinstance(node, (ast.Assign, ast.AnnAssign)):
+            target = node.targets[0] if isinstance(node, ast.Assign) else node.target
+            if getattr(target, "id", "") != "TRANSLATIONS":
+                continue
+            keys = set()
+            for k in node.value.keys:
+                if isinstance(k, ast.Tuple):
+                    keys.add(ast.literal_eval(k.elts[0]))
+                else:
+                    keys.add(ast.literal_eval(k))
+            return keys
+    return set()
+
+
+if en_keys:
+    for lang in REQUIRED_LANGS:
+        lpath = os.path.join(locales_dir, f"{lang}.json")
+        if not os.path.exists(lpath):
+            continue
+        try:
+            with open(lpath, encoding="utf-8") as f:
+                json_keys_lang = set(json.load(f).get("translations", {}))
+        except Exception as e:
+            errors.append(f"[{lang}] json unreadable for module gate: {e}")
+            continue
+        mod_keys = _module_keys(lang)
+        only_in_module = sorted(mod_keys - json_keys_lang)
+        only_in_json = sorted(json_keys_lang - mod_keys)
+        if only_in_module:
+            errors.append(
+                f"[{lang}] {len(only_in_module)} key(s) in module but NOT in "
+                f"{lang}.json (next regeneration would DELETE them): "
+                f"{only_in_module[:6]}{' ...' if len(only_in_module) > 6 else ''}")
+        if only_in_json:
+            errors.append(
+                f"[{lang}] {len(only_in_json)} key(s) in {lang}.json but NOT "
+                f"in the generated module (dead weight / never shipped): "
+                f"{only_in_json[:6]}{' ...' if len(only_in_json) > 6 else ''}")
+
 # 4. Validate Kitchen Docs
 doc_langs = ["ru", "est", "ja", "de"]
 doc_stats = {}
