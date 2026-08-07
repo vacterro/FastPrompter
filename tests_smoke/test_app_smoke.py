@@ -12686,16 +12686,13 @@ def test_paste_image_fc_refresh_does_not_hide(win):
     """fc.refresh() touches the floating Qt.Tool file container, which can
     fire WindowDeactivate on the main window. Hide on Click-Out was removed,
     so a deactivate can never hide the window — guard that invariant."""
-    win.ignore_focus_loss = False
-
     # Simulate the undo path that fires after image paste:
     # add_data_undo_state -> _switch_to_slot(initial=True) -> refresh_temp_presets
     win.add_data_undo_state("test image paste")
     win.show()
 
-    # The fix: fc.refresh() is now wrapped in ignore_focus_loss, so
-    # changeEvent should NOT hide the window even if the tool window
-    # steals focus.
+    # fc.refresh() must not hide the window even if the tool window steals
+    # focus — there is no hide-on-deactivate at all since T-751.
     was_visible = win.isVisible()
     assert was_visible, "window must be visible before undo"
 
@@ -12705,61 +12702,48 @@ def test_paste_image_fc_refresh_does_not_hide(win):
     evt = QEvent(QEvent.Type.WindowDeactivate)
     win.changeEvent(evt)
 
-    # The window must STILL be visible — ignore_focus_loss should have
-    # suppressed the hide.
+    # The window must STILL be visible.
     assert win.isVisible(), (
-        "Window hidden after WindowDeactivate with ignore_focus_loss guard — "
-        "the T-732 fix is not working"
+        "Window hidden after WindowDeactivate — a deactivate must never hide it"
     )
 
 
-def test_fc_refresh_guard_in_code():
-    """The guard pattern must exist in the source — this is a structural
-    check that catches regressions if someone removes the try/finally."""
+def test_fc_refresh_call_in_paste_source():
+    """The paste path must still refresh the file container — the structural
+    invariant is now the CALL, not a focus-lock guard (which the removed
+    Hide-on-Click-Out feature took with it, T-751/T-761)."""
     import inspect
 
     from fastprompter.ui.editor import VaultTextEdit
     source = inspect.getsource(VaultTextEdit.insertFromMimeData)
-    assert "ignore_focus_loss" in source, (
-        "insertFromMimeData must guard fc.refresh() with ignore_focus_loss"
+    assert "fc.refresh()" in source, (
+        "insertFromMimeData must refresh the file container after an image paste"
+    )
+    assert "ignore_focus_loss" not in source, (
+        "the dead focus-lock apparatus must stay gone (T-761)"
     )
 
 
 # --- T-732: the window must not hide because a file panel refreshed --------
 
-def test_file_panel_refresh_holds_the_focus_lock(win, tmp_path):
-    """An undocked panel is a Qt.Tool window; touching one can hand the
-    foreground away, and the main window hides itself on focus loss. That is
-    how Ctrl+Z after an image paste made the window vanish — the paste writes
-    a PNG, the watcher fires a moment later, and the refresh lands under the
-    user's next keystroke."""
+def test_file_panel_refresh_calls_the_list_reload(win, tmp_path):
+    """refresh() must reach _refresh_list for both a floating and a docked
+    panel — the focus-lock wrapping it used to carry is gone (T-761)."""
     from fastprompter.ui.file_container import FileContainerPanel
 
     panel = FileContainerPanel(win)
     try:
-        panel.docked = False
         panel.folder = str(tmp_path)
-        seen = []
-        real = panel._refresh_list
-        panel._refresh_list = lambda: seen.append(
-            getattr(win, "ignore_focus_loss", False))
-        panel.refresh()
-        assert seen == [True], "refresh ran without the focus lock held"
-        panel._refresh_list = real
-
-        # a DOCKED panel is a child widget, not a window: no lock needed
-        panel.docked = True
-        win.ignore_focus_loss = False
-        win._focus_lock_count = 0
-        seen.clear()
-        panel._refresh_list = lambda: seen.append(
-            getattr(win, "ignore_focus_loss", False))
-        panel.refresh()
-        assert seen == [False], "a docked panel should not take a focus lock"
+        for docked in (False, True):
+            panel.docked = docked
+            seen = []
+            real = panel._refresh_list
+            panel._refresh_list = lambda: seen.append(True)
+            panel.refresh()
+            assert seen == [True], f"refresh did not reload the list (docked={docked})"
+            panel._refresh_list = real
     finally:
         panel.deleteLater()
-        win._focus_lock_count = 0
-        win.ignore_focus_loss = False
 
 
 # --- T-720: a stale saved cursor must not land mid-word in changed text ----

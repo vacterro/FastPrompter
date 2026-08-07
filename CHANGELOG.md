@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.8.27 — 2026-08-07
+
+- **Dead code removed (T-761).** The focus-lock apparatus — `ignore_focus_loss`, `_focus_lock_count` and the `_increment/_decrement_focus_lock` helpers — was left write-only when Hide-on-Click-Out went away in v0.8.24. All ~30 call sites and the helpers are gone; no behavior changed.
+- *Under the hood:* the subSaipen state files were brought into conformance and the saiwiki log's mixed-encoding corruption repaired.
+
 ## v0.8.26 — 2026-08-07
 
 - **Sound settings — scannable at a glance.** Every event now carries a small painted pictogram (bell, check, clock, folder, key, magnifier… — drawn, not emoji, so it follows the theme and needs no font). The table reads as a proper table: zebra stripes, no grid, tighter rows, fixed-width volume sliders, and the empty filler text is gone.

@@ -224,11 +224,7 @@ class DraggableButton(QPushButton):
             menu.addAction(tr("📁 Files…", le), lambda: self.main_win.open_file_container(self.global_idx))
             menu.addSeparator()
             menu.addAction(tr("🗑 Delete", le), lambda: self.main_win.prompt_delete_snippet(self.cat, self.global_idx))
-        self.main_win.ignore_focus_loss = True
-        try:
-            menu.exec(self.mapToGlobal(pos))
-        finally:
-            self.main_win.ignore_focus_loss = False
+        menu.exec(self.mapToGlobal(pos))
         self.main_win.activateWindow()
 
     def mousePressEvent(self, e):

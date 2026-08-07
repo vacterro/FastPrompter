@@ -304,13 +304,9 @@ class ThemeMixin:
     def load_custom_font(self):
         """Load a custom TTF/OTF font file and add it to the font combobox."""
         # json is already imported at module level
-        self.ignore_focus_loss = True
-        try:
-            path, _ = QFileDialog.getOpenFileName(
-                self, "Load Font File", "", "Font Files (*.ttf *.otf *.TTF *.OTF);;All Files (*.*)"
-            )
-        finally:
-            self.ignore_focus_loss = False
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Load Font File", "", "Font Files (*.ttf *.otf *.TTF *.OTF);;All Files (*.*)"
+        )
         self.activateWindow()
         if not path:
             return
@@ -343,16 +339,12 @@ class ThemeMixin:
 
     def clear_custom_fonts(self):
         """Remove all custom fonts from the combobox, reset to built-in list."""
-        self.ignore_focus_loss = True
-        try:
-            reply = QMessageBox.question(
-                self,
-                "Clear Custom Fonts",
-                "Remove all custom fonts from the font selector?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            )
-        finally:
-            self.ignore_focus_loss = False
+        reply = QMessageBox.question(
+            self,
+            "Clear Custom Fonts",
+            "Remove all custom fonts from the font selector?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
         self.activateWindow()
         if reply != QMessageBox.StandardButton.Yes:
             return

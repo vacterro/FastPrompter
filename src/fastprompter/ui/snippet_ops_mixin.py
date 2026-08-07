@@ -62,13 +62,9 @@ class SnippetOpsMixin:
         text = self.text_area.toPlainText()
         if not text:
             return
-        self.ignore_focus_loss = True
-        try:
-            path, _ = QFileDialog.getSaveFileName(
-                self, tr("Save Silo", getattr(self, "_current_lang", "EN")), "", tr("Text Files (*.txt)", getattr(self, "_current_lang", "EN")) + ";;" + tr("Markdown Files (*.md)", getattr(self, "_current_lang", "EN")) + ";;" + tr("All Files (*.*)", getattr(self, "_current_lang", "EN"))
-            )
-        finally:
-            self.ignore_focus_loss = False
+        path, _ = QFileDialog.getSaveFileName(
+            self, tr("Save Silo", getattr(self, "_current_lang", "EN")), "", tr("Text Files (*.txt)", getattr(self, "_current_lang", "EN")) + ";;" + tr("Markdown Files (*.md)", getattr(self, "_current_lang", "EN")) + ";;" + tr("All Files (*.*)", getattr(self, "_current_lang", "EN"))
+        )
         self.activateWindow()
 
         if path:
@@ -111,7 +107,6 @@ class SnippetOpsMixin:
 
         default_name = f"backup_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
 
-        self.ignore_focus_loss = True
         try:
             dlg = QDialog(self)
             dlg.setWindowTitle(tr("Backup Silo", getattr(self, "_current_lang", "EN")))
@@ -171,7 +166,6 @@ class SnippetOpsMixin:
                         self.sound_manager.play("clear")
                 self.play_tick_sound()
         finally:
-            self.ignore_focus_loss = False
             self.activateWindow()
 
     def load_snippet_for_edit(self, cat, global_idx, cursor_pos="end"):
@@ -192,7 +186,7 @@ class SnippetOpsMixin:
         if not slot_data:
             return
         self.mark_dirty()
-        self.ignore_focus_loss, self._suspend_cache = True, True
+        self._suspend_cache = True
 
         self._begin_batch_update()
         try:
@@ -218,7 +212,7 @@ class SnippetOpsMixin:
                     self.text_area.moveCursor(QTextCursor.MoveOperation.End)
             finally:
                 self.text_area.blockSignals(False)
-                self._suspend_cache, self.ignore_focus_loss = False, False
+                self._suspend_cache = False
             self.editing_snippet = (cat, global_idx)
             self.btn_save.setText(tr("Update", getattr(self, "_current_lang", "EN")))
             theme_name = self.data.get("theme", "Default")
@@ -251,17 +245,13 @@ class SnippetOpsMixin:
     def prompt_delete_snippet(self, cat, global_idx):
         """Prompt the user to confirm and delete a snippet."""
         self.sound_manager.play("delete")
-        self.ignore_focus_loss = True
         le = getattr(self, "_current_lang", "EN")
-        try:
-            title = tr("Delete Snippet", le) if cat != "Trash" else tr("Delete Permanently", le)
-            msg = tr("Delete this snippet?", le) if cat != "Trash" else tr("Delete this snippet permanently?", le)
-            reply = QMessageBox.question(
-                self, title, msg,
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            )
-        finally:
-            self.ignore_focus_loss = False
+        title = tr("Delete Snippet", le) if cat != "Trash" else tr("Delete Permanently", le)
+        msg = tr("Delete this snippet?", le) if cat != "Trash" else tr("Delete this snippet permanently?", le)
+        reply = QMessageBox.question(
+            self, title, msg,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
         self.activateWindow()
         if reply == QMessageBox.StandardButton.Yes:
             self.delete_preset_by_index(cat, global_idx)
@@ -298,11 +288,7 @@ class SnippetOpsMixin:
         if slots[global_idx] is None:
             return
         old_name = slots[global_idx]["name"]
-        self.ignore_focus_loss = True
-        try:
-            new_name, ok = QInputDialog.getText(self, tr("Rename Snippet", getattr(self, "_current_lang", "EN")), tr("New name:", getattr(self, "_current_lang", "EN")), text=old_name)
-        finally:
-            self.ignore_focus_loss = False
+        new_name, ok = QInputDialog.getText(self, tr("Rename Snippet", getattr(self, "_current_lang", "EN")), tr("New name:", getattr(self, "_current_lang", "EN")), text=old_name)
         self.activateWindow()
         if ok and new_name and new_name.strip():
             self.add_data_undo_state("Rename snippet")
@@ -428,11 +414,7 @@ class SnippetOpsMixin:
         auto_name = (
             (text.replace("\n", " ")[:22] + "...") if len(text) > 22 else text.replace("\n", " ")
         )
-        self.ignore_focus_loss = True
-        try:
-            name, ok = QInputDialog.getText(self, tr("Save Snippet", getattr(self, "_current_lang", "EN")), tr("Name:", getattr(self, "_current_lang", "EN")), text=auto_name)
-        finally:
-            self.ignore_focus_loss = False
+        name, ok = QInputDialog.getText(self, tr("Save Snippet", getattr(self, "_current_lang", "EN")), tr("Name:", getattr(self, "_current_lang", "EN")), text=auto_name)
         self.activateWindow()
         if ok and name:
             self.add_data_undo_state("Save snippet")
@@ -453,13 +435,9 @@ class SnippetOpsMixin:
             return
         max_slots = len(self.data["categories"][cat])
 
-        self.ignore_focus_loss = True
-        try:
-            num, ok = QInputDialog.getInt(
-                self, tr("Snippet Number", getattr(self, "_current_lang", "EN")), tr("Enter snippet number (1-{}):", getattr(self, "_current_lang", "EN")).format(max_slots), 1, 1, max_slots
-            )
-        finally:
-            self.ignore_focus_loss = False
+        num, ok = QInputDialog.getInt(
+            self, tr("Snippet Number", getattr(self, "_current_lang", "EN")), tr("Enter snippet number (1-{}):", getattr(self, "_current_lang", "EN")).format(max_slots), 1, 1, max_slots
+        )
         self.activateWindow()
 
         if not ok:
@@ -468,16 +446,12 @@ class SnippetOpsMixin:
         slots = self.data["categories"][cat]
 
         if slots[slot] is not None:
-            self.ignore_focus_loss = True
-            try:
-                reply = QMessageBox.question(
-                    self,
-                    tr("Overwrite Snippet", getattr(self, "_current_lang", "EN")),
-                    tr("Snippet #{} already exists. Overwrite?", getattr(self, "_current_lang", "EN")).format(num),
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                )
-            finally:
-                self.ignore_focus_loss = False
+            reply = QMessageBox.question(
+                self,
+                tr("Overwrite Snippet", getattr(self, "_current_lang", "EN")),
+                tr("Snippet #{} already exists. Overwrite?", getattr(self, "_current_lang", "EN")).format(num),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
             self.activateWindow()
             if reply != QMessageBox.StandardButton.Yes:
                 return
@@ -485,11 +459,7 @@ class SnippetOpsMixin:
         auto_name = (
             (text.replace("\n", " ")[:22] + "...") if len(text) > 22 else text.replace("\n", " ")
         )
-        self.ignore_focus_loss = True
-        try:
-            name, ok = QInputDialog.getText(self, tr("Save Snippet", getattr(self, "_current_lang", "EN")), tr("Name:", getattr(self, "_current_lang", "EN")), text=auto_name)
-        finally:
-            self.ignore_focus_loss = False
+        name, ok = QInputDialog.getText(self, tr("Save Snippet", getattr(self, "_current_lang", "EN")), tr("Name:", getattr(self, "_current_lang", "EN")), text=auto_name)
         self.activateWindow()
 
         if ok and name:
@@ -505,16 +475,12 @@ class SnippetOpsMixin:
             idx = self.editing_snippet[1]
             slots = self.data["categories"][cat]
             if slots[idx] and slots[idx].get("text", "").strip():
-                self.ignore_focus_loss = True
-                try:
-                    reply = QMessageBox.question(
-                        self,
-                        tr("Delete Snippet", getattr(self, "_current_lang", "EN")),
-                        tr("Are you sure you want to delete this snippet?", getattr(self, "_current_lang", "EN")),
-                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                    )
-                finally:
-                    self.ignore_focus_loss = False
+                reply = QMessageBox.question(
+                    self,
+                    tr("Delete Snippet", getattr(self, "_current_lang", "EN")),
+                    tr("Are you sure you want to delete this snippet?", getattr(self, "_current_lang", "EN")),
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                )
                 self.activateWindow()
                 if reply != QMessageBox.StandardButton.Yes:
                     return
@@ -524,16 +490,12 @@ class SnippetOpsMixin:
 
         current_text = self.text_area.toPlainText().strip()
         if current_text:
-            self.ignore_focus_loss = True
-            try:
-                reply = QMessageBox.question(
-                    self,
-                    tr("Delete Silo", getattr(self, "_current_lang", "EN")),
-                    tr("Are you sure you want to delete this silo and its content?", getattr(self, "_current_lang", "EN")),
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                )
-            finally:
-                self.ignore_focus_loss = False
+            reply = QMessageBox.question(
+                self,
+                tr("Delete Silo", getattr(self, "_current_lang", "EN")),
+                tr("Are you sure you want to delete this silo and its content?", getattr(self, "_current_lang", "EN")),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
             self.activateWindow()
             if reply != QMessageBox.StandardButton.Yes:
                 return
@@ -659,18 +621,12 @@ class SnippetOpsMixin:
             # the live editor is ahead of the stored copy for the open silo
             text = self.text_area.toPlainText() or text
         if text.strip():
-            # ignore_focus_loss around the dialog: legacy of the removed
-            # hide-on-focus-loss feature, kept as a focus-safe marker.
-            self.ignore_focus_loss = True
-            try:
-                reply = QMessageBox.question(
-                    self,
-                    tr("Delete Silo", lang),
-                    tr("Are you sure you want to delete this silo and its content?", lang),
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                )
-            finally:
-                self.ignore_focus_loss = False
+            reply = QMessageBox.question(
+                self,
+                tr("Delete Silo", lang),
+                tr("Are you sure you want to delete this silo and its content?", lang),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
             self.activateWindow()
             if reply != QMessageBox.StandardButton.Yes:
                 return False

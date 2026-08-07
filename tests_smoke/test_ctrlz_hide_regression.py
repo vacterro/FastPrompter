@@ -135,11 +135,9 @@ class TestCtrlZWindowHide:
         assert not hidden, "text undo hid the window"
 
     def test_real_ctrl_z_lives_through_the_deferred_lock_window(self, win):
-        """The real T-750 failure: a deactivation queued by the undo arrives
-        asynchronously, AFTER a synchronous lock release would have let it
-        through. The lock is released deferred (300ms); waiting longer than
-        that and then asserting visibility covers the actual event-loop path,
-        not a mocked hide_and_save."""
+        """The real T-750 failure: a deactivation queued by the undo used to
+        hide the window. The hide-on-focus-loss feature is gone, so a real
+        Ctrl+Z through the event loop must leave the window visible."""
         win.data["temp_presets"][:] = ["alpha", "bravo"]
         win.data["pinned_silos"] = []
         win.silo_docs[:] = []
@@ -171,6 +169,4 @@ class TestCtrlZWindowHide:
         for _ in range(8):
             _app.processEvents()
             _app.sendPostedEvents()
-        assert win._focus_lock_count == 0, (
-            f"focus lock leaked ({win._focus_lock_count})"
-        )
+        assert win.isVisible(), "the window must stay visible after the event loop settles"

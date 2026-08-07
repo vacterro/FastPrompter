@@ -403,14 +403,9 @@ class FancyZoneOverlay(QWidget):
         if mw is None:
             return
         if on and not self._focus_locked:
-            if hasattr(mw, "_increment_focus_lock"):
-                mw._increment_focus_lock()
                 self._focus_locked = True
         elif not on and self._focus_locked:
             self._focus_locked = False
-            if hasattr(mw, "_decrement_focus_lock"):
-                from PyQt6.QtCore import QTimer
-                QTimer.singleShot(300, mw._decrement_focus_lock)
 
     def closeEvent(self, event):
         self._lock_focus(False)

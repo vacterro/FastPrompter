@@ -12,16 +12,24 @@
 _(empty)_
 ## TODO
 
+_(empty)_
+## TODO
 ### dd all — 07.08.26 plan (all flagged/outstanding work)
 
-- [ ] T-761 (P2, dead code, flagged since T-751) remove the write-only focus-lock apparatus -- `ignore_focus_loss`, `_focus_lock_count`, `_increment_focus_lock`/`_decrement_focus_lock` and their ~30 call sites (main.py init + helpers + QTimer.singleShot pairs; editor.py, file_container.py, fancy_zones.py, watcher_mixin.py, snippet_panel.py, snippet_ops_mixin.py, theme_mixin.py, send_selection_mixin.py). The only reader (changeEvent hide path) was removed with Hide-on-Click-Out, so the flag is write-only. Delete writes/helpers/comments surgically; KEEP unrelated activateWindow/setFocus and the try/finally dialog structure; do NOT recreate focus-loss hiding. | verify: `rg -n "ignore_focus_loss|_focus_lock_count|_increment_focus_lock|_decrement_focus_lock" src` = zero; unit + smoke green | needs: none
-- [ ] T-762 (P3, conformance) repair subSaipen STATE files -- saihunt/saipython/saiwiki/TEMPLATE all miss `transition_from` and carry malformed `next_action` (free prose instead of a WAIT:/saipen /PHASE /RUN:/RESUME: form); fix per the schema so the validator's subSaipen FAILs clear. Do NOT touch the saiwiki LOG encoding in this ticket. | verify: validator subSaipen STATE FAIL count drops to zero | needs: none
+- [x] T-761 (P2, dead code, flagged since T-751) remove the write-only focus-lock apparatus -- `ignore_focus_loss`, `_focus_lock_count`, `_increment_focus_lock`/`_decrement_focus_lock` and their ~30 call sites (main.py init + helpers + QTimer.singleShot pairs; editor.py, file_container.py, fancy_zones.py, watcher_mixin.py, snippet_panel.py, snippet_ops_mixin.py, theme_mixin.py, send_selection_mixin.py). The only reader (changeEvent hide path) was removed with Hide-on-Click-Out, so the flag is write-only. Delete writes/helpers/comments surgically; KEEP unrelated activateWindow/setFocus and the try/finally dialog structure; do NOT recreate focus-loss hiding. | verify: `rg -n "ignore_focus_loss|_focus_lock_count|_increment_focus_lock|_decrement_focus_lock" src` = ZERO; unit 951 pass + 1 known pre-existing winsound; 112 targeted smoke pass; ruff clean | needs: none
+
 - [ ] T-763 (P3, conformance) repair `saiwiki/LOG.md` -- it is UTF-16LE-encoded so the validator sees an append-target ending mid-line; normalize to UTF-8 with a trailing newline so the next append cannot corrupt it. | verify: validator append-target FAIL gone | needs: none
 
 ## BLOCKED
 
 _(empty)_
 ## DONE
+
+### dd all — 07.08.26 plan wave (T-761, T-762, T-763)
+
+- [x] T-761 (P2, dead code, flagged since T-751) DONE 07.08.26 19:43 -- the write-only focus-lock apparatus (ignore_focus_loss, _focus_lock_count, _increment/_decrement_focus_lock, 110 refs across 9 files) fully removed: helpers + init deleted, ~30 call sites dropped, file_container._modal_guard gone with its callers, refresh() unwrapped, tests updated to the new invariants. | verify: rg on the four names in src = ZERO; unit 951 pass + 1 known pre-existing winsound; 112 targeted smoke pass; ruff clean | owner: opencode
+- [x] T-762 (P3, conformance) DONE 07.08.26 19:56 -- subSaipen STATE files repaired: transition_from added, next_action in legal WAIT:/RUN: form, TEMPLATE placeholder updated stamped. | verify: validator subSaipen STATE shape PASS (4 checked) | owner: opencode
+- [x] T-763 (P3, conformance) DONE 07.08.26 19:56 -- saiwiki/LOG.md mixed UTF-8+UTF-16 encoding repaired to one clean UTF-8 file. | verify: validator append targets PASS (18 checked), zero null bytes | owner: opencode
 
 ### 07.08.26 hunt-directive P2 + docs wave — T-759, T-760
 

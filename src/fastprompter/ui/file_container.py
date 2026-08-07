@@ -17,7 +17,7 @@ import shutil
 import subprocess
 import sys
 
-from PyQt6.QtCore import QFileSystemWatcher, QMimeData, QSize, Qt, QTimer, QUrl
+from PyQt6.QtCore import QFileSystemWatcher, QMimeData, QSize, Qt, QUrl
 from PyQt6.QtGui import QDrag, QIcon, QPixmap
 from PyQt6.QtWidgets import (
     QFileDialog,
@@ -414,25 +414,9 @@ class FileContainerPanel(QWidget):
         super().closeEvent(event)
 
     def refresh(self):
-        """Reload the list without letting the main window lose focus.
-
-        An UNDOCKED panel is a `Qt.Tool` window (see the class docstring), and
-        touching one can hand the foreground away for an instant. The lock is
-        the same counted one dialogs already take; it is legacy of the removed
-        "Hide on Click-Out" feature (which made "Ctrl+Z right after pasting an
-        image made the window vanish" — the paste writes a PNG into the watched
-        folder, `directoryChanged` fires a moment LATER, and the refresh lands
-        under the user's next keystroke).
-        """
-        mw = getattr(self, "main_win", None)
-        lock = (not self.docked) and mw is not None and hasattr(mw, "_increment_focus_lock")
-        if lock:
-            mw._increment_focus_lock()
-        try:
-            self._refresh_list()
-        finally:
-            if lock:
-                QTimer.singleShot(300, mw._decrement_focus_lock)
+        """Reload the list. (The counted focus lock that once wrapped this
+        was the removed Hide-on-Click-Out apparatus — T-761 — and is gone.)"""
+        self._refresh_list()
 
     def _refresh_list(self):
         self.file_list.clear()
@@ -721,11 +705,7 @@ class FileContainerPanel(QWidget):
         # Force the dialog to stay on top, fixing issues when opened in the collapsible sidebar
         dialog.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint)
         
-        restore = self._modal_guard()
-        try:
-            ok = dialog.exec()
-        finally:
-            restore()
+        ok = dialog.exec()
             
         return dialog.textValue(), bool(ok)
 
@@ -741,17 +721,6 @@ class FileContainerPanel(QWidget):
             logger.error(f"File container rename failed: {e}")
         self.refresh()
 
-    def _modal_guard(self):
-        """The main window is frameless + always-on-top and hides on focus
-        loss — an unguarded dialog opens BEHIND it and looks like a dead
-        button. Returns (restore_fn) after suppressing that behavior."""
-        prev = getattr(self.main_win, "ignore_focus_loss", False)
-        self.main_win.ignore_focus_loss = True
-
-        def restore():
-            self.main_win.ignore_focus_loss = prev
-        return restore
-
     def _delete(self, paths):
         if not paths:
             return
@@ -764,11 +733,7 @@ class FileContainerPanel(QWidget):
         box.setStandardButtons(
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         box.setDefaultButton(QMessageBox.StandardButton.No)
-        restore = self._modal_guard()
-        try:
-            ans = box.exec()
-        finally:
-            restore()
+        ans = box.exec()
         if ans != QMessageBox.StandardButton.Yes:
             return
         for p in paths:
