@@ -2,14 +2,14 @@
 
 - **status**: ready
 - **producer**: saiwiki
-- **source_head**: `501acd0` (HEAD, v0.8.27 shipped)
+- **source_head**: `90b2ac3` (HEAD after qq prepare; source tree byte-identical to 501acd0, the qq base)
 - **source_tree_fingerprint**: `393e89e9fe57ac7f567a75efa89229df331dfbd8` (HEAD tree)
 - **role_revision**: saiwiki role per `extensions/subs/PROTOCOL.md` § 6 (no standalone charter file; re-record exact charter revision at next adopt — validator WARN sub-role-revision-legacy)
 - **generated**: 2026-08-07 (qq / `saipen prepare saiwiki`)
 
 ## coverage
 
-All 16 maintained wiki pages (`docs/wiki/*.md`) re-verified against source at HEAD 501acd0. 12 pages are byte-identical to the previous payload; **4 pages carry drift from v0.8.23..v0.8.27**:
+All 16 maintained wiki pages (`docs/wiki/*.md`) re-verified against source at HEAD 90b2ac3. 12 pages are byte-identical to the previous payload; **4 pages carry drift from v0.8.23..v0.8.27**:
 
 | Page | Drift found | Fix |
 |---|---|---|
