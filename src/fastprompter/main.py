@@ -2314,8 +2314,21 @@ class FastPrompter(
         "F1": "help",
         "hk_new_snippet": "new",
         "hk_save_snippet": "save",
-        "hk_header": "click",
-        "hk_bold": "click",
+        "hk_bold": "bold",
+        "hk_italic": "italic",
+        "hk_underline": "underline",
+        "hk_header": "header",
+        "hk_divider": "divider",
+        "hk_snap": "snap",
+        "hk_find": "find",
+        "hk_replace": "replace",
+        "hk_focus": "focus",
+        "hk_export_silo": "export",
+        "hk_quit": "quit",
+        "Ctrl+T": "strike",
+        "lock_window_hotkey": "lock",
+        "always_on_top_hotkey": "lock",
+        "toggle_sidebar_hotkey": "sidebar",
     }
 
     # Actions that make their own sound from INSIDE, on every route they can
@@ -4581,6 +4594,7 @@ class FastPrompter(
         self.left_panel.installEventFilter(self)
 
     def change_profile(self, idx):
+        self.play_sound("profile")
         self.commit_current_text()
         self.save_data_to_db(force=True)
         self.data_undo_stack = []
@@ -6785,12 +6799,14 @@ class FastPrompter(
             self.ignore_focus_loss = False
 
     def backup_db(self):
+        self.play_sound("backup")
         from fastprompter.ui.backup_dialog import BackupDialog
 
         dlg = BackupDialog(self)
         dlg.exec()
 
     def restore_db(self):
+        self.play_sound("restore")
         path, _ = QFileDialog.getOpenFileName(
             self, "Restore Backup", "", "SQLite DB (*.db *.bak);;All Files (*)"
         )
@@ -6949,6 +6965,7 @@ class FastPrompter(
         self.archive_section.raise_()
 
     def on_archive_toggle(self, checked):
+        self.play_sound("archive")
         self.data["archive_visible"] = "True" if checked else "False"
         self.archive_section.setVisible(checked)
         if checked:
@@ -7322,6 +7339,7 @@ class FastPrompter(
 
     def _on_escape(self):
         """Esc closes the search bar first; a second Esc hides the window."""
+        self.play_sound("escape")
         if hasattr(self, "search_frame") and self.search_frame.isVisible():
             self.close_search()
             return
@@ -8987,6 +9005,7 @@ class FastPrompter(
         
         def make_transform(tgt_type):
             def _t():
+                self.play_sound("transform")
                 presets = self.data["archive_temp_presets"] if is_archive else self.data["temp_presets"]
                 text = presets[idx] if idx < len(presets) else ""
 

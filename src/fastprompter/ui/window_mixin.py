@@ -246,6 +246,7 @@ class WindowMixin:
         added a third pane, so on the right that index pointed at the CENTRE
         and the hamburger grew the sidebar instead of hiding it.
         """
+        self.play_sound("sidebar")
         sizes = self.splitter.sizes()
         idx = self.splitter.indexOf(self.left_panel)
         centre = self.splitter.indexOf(self.center_panel)
@@ -394,13 +395,8 @@ class WindowMixin:
         self.mark_dirty()
 
     def reset_ui_layout(self, confirm=True):
-        """Put every layout choice back to its default.
-
-        Toolbar order already had its own reset, but the splitter widths,
-        the sidebar side and the window size had no way back short of
-        deleting the database — a window dragged somewhere unusable stayed
-        that way.
-        """
+        """Put every layout choice back to its default."""
+        self.play_sound("reset")
         if confirm:
             from PyQt6.QtWidgets import QMessageBox
             answer = QMessageBox.question(

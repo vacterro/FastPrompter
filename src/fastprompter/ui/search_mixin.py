@@ -21,6 +21,8 @@ class SearchMixin:
 
     def show_find(self):
         """Show the find search bar."""
+        if hasattr(self, "play_sound"):
+            self.play_sound("search")
         self.search_frame.show()
         self.replace_input.hide()
         self.btn_replace.hide()

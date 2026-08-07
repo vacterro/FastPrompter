@@ -2732,9 +2732,9 @@ class VaultTextEdit(QTextEdit):
     # the Sound Settings dialog like everything else.
     _BUILTIN_KEY_SOUNDS = {
         Qt.Key.Key_A: "select_all",
-        Qt.Key.Key_C: "hotkey",
-        Qt.Key.Key_V: "hotkey",
-        Qt.Key.Key_X: "hotkey",
+        Qt.Key.Key_C: "copy",
+        Qt.Key.Key_V: "paste",
+        Qt.Key.Key_X: "cut",
     }
 
     def keyPressEvent(self, event):
@@ -2858,7 +2858,13 @@ class VaultTextEdit(QTextEdit):
 
         if mods & Qt.KeyboardModifier.ControlModifier and event.key() in (
                 Qt.Key.Key_Plus, Qt.Key.Key_Equal, Qt.Key.Key_Minus, Qt.Key.Key_Underscore):
-            self.main_win.adjust_ui_scale(0.05 if event.key() in (Qt.Key.Key_Plus, Qt.Key.Key_Equal) else -0.05)
+            zoom_in = event.key() in (Qt.Key.Key_Plus, Qt.Key.Key_Equal)
+            try:
+                if hasattr(mw, "play_sound"):
+                    mw.play_sound("zoom_in" if zoom_in else "zoom_out")
+            except Exception:
+                pass
+            self.main_win.adjust_ui_scale(0.05 if zoom_in else -0.05)
             event.accept()
             return
 
