@@ -9,7 +9,13 @@
 
 ## DOING
 
-- [ ] T-743 (fix, user-reported) Test notification (Timers → Test) reported as still not clickable/removable. T-736 shipped the fix (timer_toast.py:235 mousePressEvent -> close, plus _live_toasts pruning and screen clamp) in v0.8.18, so the code IS there. Needs live repro: does the toast appear at all? Does clicking it fail to close? Is a stale _open entry piling up? | verify: fire a test notification, click the toast body, it dismisses; the close button also works; no toast lingers after timeout
+_(empty)_
+## TODO
+
+_(empty)_
+## BLOCKED
+
+- [ ] T-743 (fix, user-reported) Test notification (Timers → Test) reported as still not clickable/removable. T-736 shipped the fix (timer_toast.py:235 mousePressEvent -> close, plus _live_toasts pruning and screen clamp) in v0.8.18. Code IS there on inspection. | blocker: live repro required; window flags FramelessWindowHint|Tool|WindowStaysOnTopHint + WA_ShowWithoutActivating should receive clicks; toast constructor, close button (✕), mousePressEvent, auto-close all wired correctly | verify: fire test notification, click toast body → dismisses; close button works; no toast lingers after timeout
 ## TODO
 
 ### Wave 5 — 07.08 sound asks (user, repeated)
