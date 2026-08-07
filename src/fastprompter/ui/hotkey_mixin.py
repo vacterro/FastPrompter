@@ -30,7 +30,6 @@ class HotkeyMixin:
         h_lock = self.data.get("lock_window_hotkey", "Alt+S")
         h_aot = self.data.get("always_on_top_hotkey", "Alt+E")
         h_sidebar = self.data.get("toggle_sidebar_hotkey", "Alt+D")
-        h_clickout = self.data.get("hide_on_clickout_hotkey", "Alt+A")
 
         lang = self._current_lang
         if hasattr(self, "cb_top") and not _is_deleted(self.cb_top):
@@ -49,7 +48,6 @@ class HotkeyMixin:
             f"{tr('Lock Window', lang)}: {h_lock}\n"
             f"{tr('Always On Top', lang)}: {h_aot}\n"
             f"{tr('Toggle Sidebar', lang)}: {h_sidebar}\n"
-            f"{tr('Toggle Hide-on-Clickout', lang)}: {h_clickout}\n"
             f"Ctrl+Q : {tr('Cycle Snap Corners (move across screens)', lang)}\n"
             f"Ctrl+N : {tr('New Empty Snippet', lang)}\n"
             f"Ctrl+S : {tr('Save Snippet', lang)}\n"

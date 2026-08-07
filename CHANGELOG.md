@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.8.24 — 2026-08-07
+
+- **Hide on Click-Out removed (T-751).** The setting, its Alt+A global toggle, the settings checkbox, and the hide-on-focus-loss machinery are gone. It was the root cause of three P0/P1 "the window vanished" reports (Ctrl+Z hid it, Ctrl+Z closed it, the startup hid itself): `changeEvent` read every transient window deactivation as a click away and hid the window — a defect class no amount of focus-lock patching (T-732, T-750) could close for good. The window now never hides on its own. Existing profiles keep the dead setting harmlessly; the ~30 focus-lock call sites stay as a symmetric save/restore.
+- **The Cyrillic gate covers the promoted i18n tools.** `tools/sync_saitranslate.py` injects the Russian grandpa-voice prefix into the ded locale; it is input data, not stray prose, so the codebase gate names it as an allowlist exception. The T-749 promotion only ever ran 7 targeted smoke tests, so the break only surfaced now.
+
 ## v0.8.23 — 2026-08-07
 
 - **Per-hotkey sounds for every shortcut (T-745).** Every hotkey in the software now has a named, individually re-mappable sound event: bold, italic, underline, strikethrough, header, divider, snap, find, replace, focus, export, quit — plus UI actions like archive, sidebar, lock, zoom, search, transform and escape. Each appears in the Sound Settings dialog so it can be re-picked.

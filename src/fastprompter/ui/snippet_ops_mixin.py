@@ -659,8 +659,8 @@ class SnippetOpsMixin:
             # the live editor is ahead of the stored copy for the open silo
             text = self.text_area.toPlainText() or text
         if text.strip():
-            # ignore_focus_loss around the dialog: without it the modal takes
-            # focus and close_on_focus_loss hides the whole window behind it.
+            # ignore_focus_loss around the dialog: legacy of the removed
+            # hide-on-focus-loss feature, kept as a focus-safe marker.
             self.ignore_focus_loss = True
             try:
                 reply = QMessageBox.question(

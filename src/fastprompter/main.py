@@ -205,9 +205,6 @@ class FastPrompter(
         # QApplication.instance().installEventFilter(self)
         self.ignore_focus_loss, self.registered_hotkeys, self._db_dirty = False, [], False
         self._focus_lock_count = 0
-        # False until the window has genuinely been in front once;
-        # see changeEvent - startup deactivation must not hide it.
-        self._ever_activated = False
 
         self.editing_snippet = None
         self.auto_save_timer = QTimer(self)
@@ -1544,15 +1541,11 @@ class FastPrompter(
             return "Evening"
         return "Night"
 
-    def toggle_hide_on_clickout(self):
-        """Alt+A: flip the Hide on Click-Out behavior from anywhere."""
-        if hasattr(self, "cb_focus"):
-            self.cb_focus.setChecked(not self.cb_focus.isChecked())
-            self.play_tick_sound(self.cb_focus.isChecked())
-
     def _increment_focus_lock(self):
-        """Counted ignore_focus_loss: overlapping dialogs each take a lock;
-        the flag drops only when the LAST 300ms release fires (no race)."""
+        """Counted modal-dialog lock, legacy of the removed hide-on-focus-
+        loss feature: each focus-stealing action takes a lock, the flag drops
+        only when the LAST 300ms release fires (no race). Write-only today;
+        kept so the ~30 call sites stay a symmetric save/restore."""
         self._focus_lock_count = getattr(self, "_focus_lock_count", 0) + 1
         self.ignore_focus_loss = True
 
@@ -2454,9 +2447,6 @@ class FastPrompter(
             "tray_visible": str(self.cb_tray.isChecked())
             if hasattr(self, "cb_tray")
             else self.data.get("tray_visible", "True"),
-            "close_on_focus_loss": str(self.cb_focus.isChecked())
-            if hasattr(self, "cb_focus")
-            else self.data.get("close_on_focus_loss", "True"),
             "ctrl_c_closes": str(self.cb_ctrl_c.isChecked())
             if hasattr(self, "cb_ctrl_c")
             else self.data.get("ctrl_c_closes", "True"),
@@ -3192,12 +3182,6 @@ class FastPrompter(
             "Animated cursors keep their default shape - Qt cannot read them.",
             self.data.get("custom_cursors", "False") == "True",
             self.toggle_custom_cursors,
-        )
-        self.cb_focus = create_footer_cb(
-            "👁 Hide on Click-Out",
-            "Hide the window when you click outside of it\nGlobal toggle: Alt+A",
-            self.data.get("close_on_focus_loss", "True") == "True",
-            self.mark_dirty,
         )
         self.cb_snippet_arrows = create_footer_cb(
             "↕ Snippet Arrows",
@@ -4171,7 +4155,7 @@ class FastPrompter(
                 div_row, ctrlw_btn_row, hdr_row, self.cb_hr_visual, self.cb_conceal,
             ]),
             _settings_group("Typing", [
-                self.cb_focus, self.cb_wrap, self.cb_ctrl_c,
+                self.cb_wrap, self.cb_ctrl_c,
                 self.cb_lock_cursor, self.cb_double_line, blink_row,
             ]),
             _settings_group("Lines", [
@@ -5025,7 +5009,7 @@ class FastPrompter(
 
         # Translate all checkboxes in the settings panel
         for cb_name in ("cb_top", "cb_lock_window", "cb_normal_window", "cb_tray",
-                        "cb_sidebar", "cb_focus", "cb_snippet_arrows", "cb_silo_ticks",
+                        "cb_sidebar", "cb_snippet_arrows", "cb_silo_ticks",
                         "cb_ctrl_c", "cb_lock_cursor", "cb_silo_home", "cb_portable_backup",
                         "cb_wrap", "cb_line_numbers", "cb_line_marks", "cb_zebra", "cb_hide_shortkeys",
                         "cb_double_line", "cb_bold_titles", "cb_silo_pinned_gap",
@@ -6136,12 +6120,10 @@ class FastPrompter(
         finally:
             self._in_smart_undo = False
             # A data undo rebuilds documents, switches silos and re-flows the
-            # list — any of which can queue a transient window deactivation.
-            # The deactivation event is DELIVERED asynchronously (next event
-            # loop pass), so releasing the focus lock synchronously here would
-            # let changeEvent -> hide_and_save run with the lock already gone
-            # ("Ctrl+Z closed the program"). Release it deferred, like every
-            # other undo-adjacent lock, so it covers the queued event.
+            # list, and the lock is released DEFERRED so the count stays
+            # balanced even if a modal re-entry queues another pass (legacy
+            # of the removed hide-on-focus-loss path: "Ctrl+Z closed the
+            # program"). Same shape as every other undo-adjacent lock.
             from PyQt6.QtCore import QTimer
             QTimer.singleShot(300, self._decrement_focus_lock)
 
@@ -7096,12 +7078,7 @@ class FastPrompter(
             event.accept()
 
     def showEvent(self, event):
-        """Stamp when the window became visible.
-
-        changeEvent uses it as a grace period: a foreground flicker right
-        after launch must not count as the user clicking away.
-        """
-        self._shown_at = time.time()
+        """Re-fit the settings tabs once the window has its real geometry."""
         super().showEvent(event)
         # The panel is measured against a WIDTH, and during construction the
         # tabs are still a few pixels wide — a wrapping row measured there
@@ -7122,41 +7099,6 @@ class FastPrompter(
                                    QEvent.Type.WindowDeactivate)
                     and not self.isActiveWindow()):
                 self.exit_zen_solo(grace=True)
-        if event.type() in (QEvent.Type.ActivationChange, QEvent.Type.WindowDeactivate):
-            if self.isActiveWindow():
-                # The user has it in front now; from here a deactivation is a
-                # real "clicked away" and hide-on-focus-loss means something.
-                self._ever_activated = True
-            if not self.isActiveWindow() and not self.isMinimized():
-                # Startup is NOT a focus loss. Windows refuses the foreground
-                # to a process launched in the background, so show() was
-                # followed straight away by a deactivation and the window hid
-                # itself about two seconds in - the app looked like it never
-                # started. Measured: visible at t+4s, gone by t+6s.
-                if not getattr(self, "_ever_activated", False):
-                    return super().changeEvent(event)
-                # The foreground can also flicker: the window takes focus for
-                # an instant at launch and Windows hands it straight back to
-                # whatever started it. That set _ever_activated and the next
-                # deactivation hid the window anyway, so a grace period after
-                # it is shown covers the flicker without weakening the real
-                # click-away behaviour.
-                shown_at = getattr(self, "_shown_at", 0.0)
-                if shown_at and (time.time() - shown_at) < 2.0:
-                    return super().changeEvent(event)
-                if getattr(self, "cb_focus", None) and self.cb_focus.isChecked():
-                    help_dlg = getattr(self, "_help_dialog", None)
-                    help_open = (
-                        help_dlg is not None
-                        and not sip.isdeleted(help_dlg)
-                        and help_dlg.isVisible()
-                    )
-                    if (
-                        not getattr(self, "ignore_focus_loss", False)
-                        and not getattr(self, "is_locked", False)
-                        and not help_open
-                    ):
-                        self.hide_and_save()
         super().changeEvent(event)
 
     def eventFilter(self, obj, event):
@@ -9554,7 +9496,6 @@ class FastPrompter(
         add_shortcut("lock_window_hotkey", "Alt+S", self.toggle_lock)
         add_shortcut("always_on_top_hotkey", "Alt+E", self.toggle_always_on_top)
         add_shortcut("toggle_sidebar_hotkey", "Alt+D", lambda: self.toggle_visibility(force_sidebar=True))
-        add_shortcut("hide_on_clickout_hotkey", "Alt+A", self.toggle_hide_on_clickout)
 
         shortcut = QShortcut(QKeySequence("Esc"), self)
         shortcut.activated.connect(self._on_escape)

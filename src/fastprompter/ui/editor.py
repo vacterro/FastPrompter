@@ -1285,7 +1285,7 @@ class VaultTextEdit(QTextEdit):
         mw = self.main_win
         lang = getattr(mw, "_current_lang", "EN")
         if hasattr(mw, "_increment_focus_lock"):
-            mw._increment_focus_lock()      # the window hides on focus loss
+            mw._increment_focus_lock()      # modal dialog, focus-safe marker
         try:
             new_stem, ok = QInputDialog.getText(
                 self, tr("Rename image", lang), tr("New name:", lang),

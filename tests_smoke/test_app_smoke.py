@@ -1743,12 +1743,6 @@ def test_delete_silo_is_offered_on_an_empty_silo_too(win, monkeypatch):
 
 
 def test_hide_on_clickout_toggle_and_header_mirrors(win):
-    before = win.cb_focus.isChecked()
-    win.toggle_hide_on_clickout()
-    assert win.cb_focus.isChecked() != before
-    win.toggle_hide_on_clickout()
-    assert win.cb_focus.isChecked() == before
-
     # header 📌 / # buttons mirror their checkboxes both ways
     win.cb_top.setChecked(True)
     assert win.btn_pin_top.isChecked() is True
@@ -3261,6 +3255,13 @@ def test_no_cyrillic_in_codebase():
             # their job (package has been named translations/ and i18n/)
             norm = f.replace("\\", "/")
             if "/translations/" in norm or "/i18n/" in norm or norm.endswith("translations.py"):
+                continue
+            # sync_saitranslate.py is the i18n pipeline's ded-voice generator:
+            # it injects a Russian "grandpa-voice" interjection prefix (codepoints
+            # U+042D U+0445) into the ded locale — same class of input data as
+            # the dictionaries above. Written as escapes so this file stays
+            # self-clean.
+            if norm.endswith("tools/sync_saitranslate.py"):
                 continue
             # duration.py holds the Russian unit words the parser must accept
             # (users type durations in either language) — that is input data,
@@ -5003,7 +5004,7 @@ def test_settings_panel_is_tabbed_and_fits_a_small_window(win):
     expected = [
         "cb_top", "cb_lock_window", "cb_normal_window", "cb_tray", "cb_sidebar",
         "cb_trash_vision", "cb_silo_color_box", "cb_customize_toolbar",
-        "cb_focus", "cb_wrap", "cb_ctrl_c", "cb_lock_cursor", "cb_line_numbers",
+        "cb_wrap", "cb_ctrl_c", "cb_lock_cursor", "cb_line_numbers",
         "cb_code_gutter", "cb_code_monospace", "cb_hover_line", "cb_line_marks",
         "cb_zebra", "cb_double_line", "cb_bold_titles",
         "cb_date_rect", "cb_date_seconds", "cb_date_daypart", "cb_date_emoji",
@@ -6599,19 +6600,16 @@ def test_zone_picker_has_two_pages_and_remembers_the_last(win):
         win.data["window_presets"] = kept_presets
 
 
-def test_snapping_does_not_hide_a_window_set_to_hide_on_click_out(win):
-    """Opening the picker takes focus off the main window, so with hide-on-
-    click-out enabled the window vanished the moment Ctrl+Q was pressed and
-    stayed gone after snapping."""
+def test_snapping_does_not_hide_the_window(win):
+    """Opening the picker takes focus off the main window; the window must
+    survive the snap regardless (hide-on-click-out was removed)."""
     from PyQt6.QtGui import QCursor
     from PyQt6.QtWidgets import QApplication
 
     from fastprompter.ui.fancy_zones import FancyZoneOverlay
 
-    kept_focus = win.data.get("close_on_focus_loss", "True")
     kept_layout = win.data.get("fancyzones_layout", "")
     try:
-        win.data["close_on_focus_loss"] = "True"
         win.show()
         QCursor.setPos(QApplication.primaryScreen().geometry().center())
 
@@ -6623,7 +6621,6 @@ def test_snapping_does_not_hide_a_window_set_to_hide_on_click_out(win):
         assert not win.isHidden(), "the window must survive the snap"
         assert ov._focus_locked is False, "and the hold must be released after"
     finally:
-        win.data["close_on_focus_loss"] = kept_focus
         win.data["fancyzones_layout"] = kept_layout
 
 def test_real_ctrl_e_reverses_a_header(win):
@@ -8899,69 +8896,6 @@ def test_an_agent_that_named_no_time_is_labelled_assumed(win, monkeypatch):
 
 
 # ---- startup must not hide itself, and a corpse must not block a launch ---
-
-
-def _deactivate(win, monkeypatch=None):
-    """The ActivationChange Qt sends when the window is not the active one.
-
-    isActiveWindow is forced False: offscreen, whether a window counts as
-    active depends on what an earlier test left focused, and this is about
-    the hide decision, not about Qt's focus bookkeeping.
-    """
-    from PyQt6.QtCore import QEvent
-
-    if monkeypatch is not None:
-        monkeypatch.setattr(type(win), "isActiveWindow", lambda self: False)
-    win.changeEvent(QEvent(QEvent.Type.ActivationChange))
-
-
-def test_startup_deactivation_does_not_hide_the_window(win, monkeypatch):
-    """Windows refuses the foreground to a process launched in the
-    background, so show() was followed by a deactivation and the window hid
-    itself ~2s in - the app looked like it never started. Measured before
-    the fix: visible at t+4s, gone by t+6s."""
-    win._ever_activated = False
-    win._shown_at = 0.0
-    win.show()
-    if getattr(win, "cb_focus", None):
-        win.cb_focus.setChecked(True)
-
-    _deactivate(win, monkeypatch)
-    assert not win.isHidden(), "a startup deactivation must not hide it"
-
-
-def test_a_focus_flicker_right_after_showing_is_forgiven(win, monkeypatch):
-    """The foreground can bounce: the window takes focus for an instant and
-    Windows hands it straight back to whatever launched it."""
-    import time
-
-    win._ever_activated = True          # the flicker set this
-    win._shown_at = time.time()         # ...but it only just appeared
-    win.show()
-    if getattr(win, "cb_focus", None):
-        win.cb_focus.setChecked(True)
-
-    _deactivate(win, monkeypatch)
-    assert not win.isHidden(), "a flicker within the grace period is not a click-away"
-
-
-def test_a_real_click_away_still_hides(win, monkeypatch):
-    """The grace period must not weaken the setting the user asked for."""
-    import time
-
-    win.show()
-    QApplication.processEvents()
-    assert not win.isHidden(), "precondition: it starts visible"
-    win._ever_activated = True
-    win._shown_at = time.time() - 10.0   # long past the grace period
-    if getattr(win, "cb_focus", None):
-        win.cb_focus.setChecked(True)
-    win.is_locked = False
-    win.ignore_focus_loss = False
-    win._help_dialog = None
-
-    _deactivate(win, monkeypatch)
-    assert win.isHidden(), "clicking away should still hide it"
 
 
 def test_the_ipc_server_never_exits_the_process(win):
@@ -12120,15 +12054,13 @@ def test_new_button_preset_menu_does_not_block(win):
         menu.close()
 
 
-# --- T-732: fc.refresh() must not trigger hide via changeEvent -----------
+# --- T-732: fc.refresh() must not hide the window -------------------------
 
 def test_paste_image_fc_refresh_does_not_hide(win):
     """fc.refresh() touches the floating Qt.Tool file container, which can
-    fire WindowDeactivate on the main window.  changeEvent then calls
-    hide_and_save().  The fix guards fc.refresh() with ignore_focus_loss."""
-    win.data["close_on_focus_loss"] = "True"
+    fire WindowDeactivate on the main window. Hide on Click-Out was removed,
+    so a deactivate can never hide the window — guard that invariant."""
     win.ignore_focus_loss = False
-    win._ever_activated = True
 
     # Simulate the undo path that fires after image paste:
     # add_data_undo_state -> _switch_to_slot(initial=True) -> refresh_temp_presets

@@ -112,8 +112,6 @@ class HotkeySettingsDialog(QDialog):
         form_global.addRow(tr("Toggle Always on Top:", self.lang), self.le_top)
         self.le_sidebar = DualHotkeyWidget(self.main_win, "toggle_sidebar_hotkey", "Alt+D")
         form_global.addRow(tr("Toggle Sidebar:", self.lang), self.le_sidebar)
-        self.le_hideout = DualHotkeyWidget(self.main_win, "hide_on_clickout_hotkey", "Alt+A")
-        form_global.addRow(tr("Toggle Hide on Click-Out:", self.lang), self.le_hideout)
 
         self.snippet_inputs = []
         for i in range(5):
