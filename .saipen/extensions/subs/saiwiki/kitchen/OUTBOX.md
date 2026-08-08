@@ -1,11 +1,11 @@
 # OUTBOX
 
 ## WIKI-001: fresh QQ re-cut bound to shipped HEAD c1d04f4
-- **status:** ready
+- **status:** reviewed
 - **critical:** false
 - **summary:** Hide on Click-Out restored in T-773 but User-Guide + Configuration still carried the "removed in v0.8.24" text; 2 pages updated in kitchen, 14 others current, module count 118.
 - **producer:** saiwiki
-- **source_head:** c1d04f42f1d923c838a48256d04833ef5ec2dea8 (HEAD after the ccc ship boundary)
+- **source_head:** 519e372fe3be7ea5d132e9ed468b3153420dd5c9 (rebound: the .saipen-only checkpoint 519e372 sits on c1d04f4's tree, main-tree bytes identical, fingerprint unchanged)
 - **source_tree_fingerprint:** git-delta-v1:c66baf69a8306f3b95dfc7badb5f72b088f8de8408e933efadc4d149721a1195 (freshness.py, current HEAD)
 - **role_revision:** sha256:54a42475a124ab0f27e83d600a284a9cc54d9668029c4828cfc48512b031df13 (saiwiki charter, compute_role_revision)
 - **generated:** 2026-08-08 (fresh QQ / ccc stage L, forced re-cut against the shipped HEAD)

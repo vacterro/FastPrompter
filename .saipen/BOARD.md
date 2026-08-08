@@ -18,6 +18,10 @@ _(empty)_
 _(empty)_
 ## DONE
 
+### qqq collect — 08.08.26 wiki Hide-on-Click-Out text sync
+
+- [x] T-776 (docs, from saiwiki WIKI-001) DONE 08.08.26 17:52 -- qqq collect + ship: 2-file payload applied to docs/wiki/ (User-Guide + Configuration carried the stale "removed in v0.8.24" text while T-773 restored the feature), committed 9912f6c, pushed 519e372..9912f6c. Docs-only, no version bump. | verify: docs/wiki pages byte-identical to kitchen mirrors (16/16); push landed | owner: opencode
+
 ### continue — 08.08.26 MARKHUNT brake cleared
 
 - [x] T-770 DONE 08.08.26 20:05 -- vetted + fixed: `clamp_byte`/`hex_to_rgb` unified in `theme/themes.py` (made public); timers.py imports `blend_hex` and dropped its private `_clamp_byte`/`_hex_to_rgb` copies and `_mix` (was byte-identical to `blend_hex`). cite: core/timers.py:44 vs theme/themes.py:1, core/timers.py:48 vs theme/themes.py:5; themes.py is import-free so core->theme is cycle-safe. | verify: one shared definition, both callers import it, unit green | owner: opencode
