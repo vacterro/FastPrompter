@@ -8306,7 +8306,11 @@ def test_arming_from_the_dialog_needs_something_queued(win):
     from fastprompter.ui.watcher_dialog import WatcherDialog
 
     queue = queue_for(win.prompt_queues, win._queue_slot_key())
-    saved = queue.to_list()
+    # The ITEMS, not to_list() — that returns dicts, and putting those back
+    # left raw dicts in a live queue for every later test in the file, which
+    # is how test_the_dialog_offers_watching_and_says_it_sends_nothing died
+    # on "'dict' object has no attribute 'state'" in a full-suite run only.
+    saved = list(queue.items)
     queue.items.clear()
 
     dlg = WatcherDialog(win)
