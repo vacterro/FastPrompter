@@ -165,8 +165,12 @@ class SendSelectionMixin:
         if not entries:
             return None
         labels = [silo_label(i, t, lang) for i, t in entries]
-        choice, ok = QInputDialog.getItem(
-            self, tr(title, lang), tr("Append to:", lang), labels, 0, False)
+        self.ignore_focus_loss = True
+        try:
+            choice, ok = QInputDialog.getItem(
+                self, tr(title, lang), tr("Append to:", lang), labels, 0, False)
+        finally:
+            self.ignore_focus_loss = False
         self.activateWindow()
         if not ok or not choice:
             return None

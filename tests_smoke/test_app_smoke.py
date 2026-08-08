@@ -1809,6 +1809,12 @@ def test_delete_silo_is_offered_on_an_empty_silo_too(win, monkeypatch):
 
 
 def test_hide_on_clickout_toggle_and_header_mirrors(win):
+    before = win.cb_focus.isChecked()
+    win.toggle_hide_on_clickout()
+    assert win.cb_focus.isChecked() != before
+    win.toggle_hide_on_clickout()
+    assert win.cb_focus.isChecked() == before
+
     # header 📌 / # buttons mirror their checkboxes both ways
     win.cb_top.setChecked(True)
     assert win.btn_pin_top.isChecked() is True
@@ -5142,7 +5148,7 @@ def test_settings_panel_is_tabbed_and_fits_a_small_window(win):
     expected = [
         "cb_top", "cb_lock_window", "cb_normal_window", "cb_tray", "cb_sidebar",
         "cb_trash_vision", "cb_silo_color_box", "cb_customize_toolbar",
-        "cb_wrap", "cb_ctrl_c", "cb_lock_cursor", "cb_line_numbers",
+        "cb_focus", "cb_wrap", "cb_ctrl_c", "cb_lock_cursor", "cb_line_numbers",
         "cb_code_gutter", "cb_code_monospace", "cb_hover_line", "cb_line_marks",
         "cb_zebra", "cb_double_line", "cb_bold_titles",
         "cb_date_rect", "cb_date_seconds", "cb_date_daypart", "cb_date_emoji",
@@ -7044,16 +7050,19 @@ def test_zone_picker_has_two_pages_and_remembers_the_last(win):
         win.data["window_presets"] = kept_presets
 
 
-def test_snapping_does_not_hide_the_window(win):
-    """Opening the picker takes focus off the main window; the window must
-    survive the snap regardless (hide-on-click-out was removed)."""
+def test_snapping_does_not_hide_a_window_set_to_hide_on_click_out(win):
+    """Opening the picker takes focus off the main window, so with hide-on-
+    click-out enabled the window vanished the moment Ctrl+Q was pressed and
+    stayed gone after snapping."""
     from PyQt6.QtGui import QCursor
     from PyQt6.QtWidgets import QApplication
 
     from fastprompter.ui.fancy_zones import FancyZoneOverlay
 
+    kept_focus = win.data.get("close_on_focus_loss", "True")
     kept_layout = win.data.get("fancyzones_layout", "")
     try:
+        win.data["close_on_focus_loss"] = "True"
         win.show()
         QCursor.setPos(QApplication.primaryScreen().geometry().center())
 
@@ -7065,6 +7074,7 @@ def test_snapping_does_not_hide_the_window(win):
         assert not win.isHidden(), "the window must survive the snap"
         assert ov._focus_locked is False, "and the hold must be released after"
     finally:
+        win.data["close_on_focus_loss"] = kept_focus
         win.data["fancyzones_layout"] = kept_layout
 
 def test_real_ctrl_e_reverses_a_header(win):
@@ -9496,6 +9506,181 @@ def test_an_agent_that_named_no_time_is_labelled_assumed(win, monkeypatch):
 
 
 # ---- startup must not hide itself, and a corpse must not block a launch ---
+
+
+def _deactivate(win, monkeypatch=None):
+    """The ActivationChange Qt sends when the window is not the active one.
+
+    isActiveWindow is forced False: offscreen, whether a window counts as
+    active depends on what an earlier test left focused, and this is about
+    the hide decision, not about Qt's focus bookkeeping.
+    """
+    from PyQt6.QtCore import QEvent
+
+    if monkeypatch is not None:
+        monkeypatch.setattr(type(win), "isActiveWindow", lambda self: False)
+    win.changeEvent(QEvent(QEvent.Type.ActivationChange))
+
+
+def test_startup_deactivation_does_not_hide_the_window(win, monkeypatch):
+    """Windows refuses the foreground to a process launched in the
+    background, so show() was followed by a deactivation and the window hid
+    itself ~2s in - the app looked like it never started. Measured before
+    the fix: visible at t+4s, gone by t+6s."""
+    win._ever_activated = False
+    win._shown_at = 0.0
+    win.show()
+    if getattr(win, "cb_focus", None):
+        win.cb_focus.setChecked(True)
+
+    _deactivate(win, monkeypatch)
+    assert not win.isHidden(), "a startup deactivation must not hide it"
+
+
+def test_a_focus_flicker_right_after_showing_is_forgiven(win, monkeypatch):
+    """The foreground can bounce: the window takes focus for an instant and
+    Windows hands it straight back to whatever launched it."""
+    import time
+
+    win._ever_activated = True          # the flicker set this
+    win._shown_at = time.time()         # ...but it only just appeared
+    win._user_summoned = False          # ...and nobody asked for it: launch
+    win._activated_at = 0.0
+    win.show()
+    if getattr(win, "cb_focus", None):
+        win.cb_focus.setChecked(True)
+
+    _deactivate(win, monkeypatch)
+    assert not win.isHidden(), "a flicker within the grace period is not a click-away"
+
+
+def test_a_real_click_away_still_hides(win, monkeypatch):
+    """The grace period must not weaken the setting the user asked for."""
+    import time
+
+    win.show()
+    QApplication.processEvents()
+    assert not win.isHidden(), "precondition: it starts visible"
+    win._ever_activated = True
+    win._shown_at = time.time() - 10.0   # long past the grace period
+    win._user_summoned = False
+    win._activated_at = time.time() - 10.0   # ...and the activation settled
+    if getattr(win, "cb_focus", None):
+        win.cb_focus.setChecked(True)
+    win.is_locked = False
+    win.ignore_focus_loss = False
+    win._help_dialog = None
+
+    _deactivate(win, monkeypatch)
+    assert win.isHidden(), "clicking away should still hide it"
+
+
+def test_a_summoned_window_hides_on_the_very_next_click_away(win, monkeypatch):
+    """The launch grace is for the LAUNCH show only.
+
+    `showEvent` stamps `_shown_at` on EVERY show, so Alt+X used to buy the
+    window two seconds of immunity — click away inside them and nothing
+    happened, which is most click-aways. A window the user asked for arms
+    the setting straight away.
+    """
+    import time
+
+    win.show()
+    QApplication.processEvents()
+    win.show_window()                    # the summon stamps _shown_at = now
+    assert win._user_summoned is True, "show_window must mark the summon"
+    win._ever_activated = True
+    win._activated_at = time.time() - 10.0   # active long enough to be real
+    if getattr(win, "cb_focus", None):
+        win.cb_focus.setChecked(True)
+    win.is_locked = False
+    win.ignore_focus_loss = False
+
+    _deactivate(win, monkeypatch)
+    assert win.isHidden(), (
+        "a summoned window must hide on the next click away, not two "
+        "seconds later"
+    )
+
+
+def test_an_activation_that_never_settled_is_not_a_click_away(win, monkeypatch):
+    """A summon skips the launch grace, so the settle window is all that is
+    left to absorb a foreground handed straight back by Windows."""
+    import time
+
+    win.show()
+    win.show_window()
+    win._ever_activated = True
+    win._activated_at = time.time()      # it took the foreground this instant
+    if getattr(win, "cb_focus", None):
+        win.cb_focus.setChecked(True)
+    win.is_locked = False
+    win.ignore_focus_loss = False
+
+    _deactivate(win, monkeypatch)
+    assert not win.isHidden(), "an activation that never settled is a flicker"
+
+
+def test_focus_moving_to_our_own_window_does_not_hide(win, monkeypatch):
+    """Clicking the undocked file container, the pie menu, Help or any
+    dialog deactivates the main window exactly like clicking Notepad does.
+    Hiding there dropped the window out from under what the user had just
+    opened, so only a foreground that left the APP counts as click-out."""
+    import time
+
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtWidgets import QWidget
+
+    win.show()
+    QApplication.processEvents()
+    win._ever_activated = True
+    win._user_summoned = True
+    win._activated_at = time.time() - 10.0
+    if getattr(win, "cb_focus", None):
+        win.cb_focus.setChecked(True)
+    win.is_locked = False
+    win.ignore_focus_loss = False
+
+    ours = QWidget(win, Qt.WindowType.Tool)   # stand-in for the file container
+
+    class _App:
+        """Only what _foreground_is_our_own_window asks the QApplication."""
+
+        active = None
+
+        @classmethod
+        def instance(cls):
+            return cls
+
+        @classmethod
+        def activePopupWidget(cls):
+            return None
+
+        @classmethod
+        def activeModalWidget(cls):
+            return None
+
+        @classmethod
+        def activeWindow(cls):
+            return cls.active
+
+    import fastprompter.main as main_mod
+
+    try:
+        _App.active = ours
+        monkeypatch.setattr(main_mod, "QApplication", _App)
+        _deactivate(win, monkeypatch)
+        assert not win.isHidden(), (
+            "focus moving to one of our own windows is not clicking out"
+        )
+    finally:
+        # hide_and_save below needs the real QApplication back
+        monkeypatch.undo()
+        ours.deleteLater()
+
+    # ...and the foreground actually leaving the app still hides it.
+    _deactivate(win, monkeypatch)
+    assert win.isHidden(), "the foreground leaving the app is a real click-out"
 
 
 def test_the_ipc_server_never_exits_the_process(win):
@@ -12703,70 +12888,109 @@ def test_new_button_preset_menu_does_not_block(win):
         menu.close()
 
 
-# --- T-732: fc.refresh() must not hide the window -------------------------
+# --- T-732: fc.refresh() must not trigger hide via changeEvent -----------
 
 def test_paste_image_fc_refresh_does_not_hide(win):
     """fc.refresh() touches the floating Qt.Tool file container, which can
-    fire WindowDeactivate on the main window. Hide on Click-Out was removed,
-    so a deactivate can never hide the window — guard that invariant."""
+    fire WindowDeactivate on the main window.  changeEvent then calls
+    hide_and_save().  The fix guards fc.refresh() with ignore_focus_loss.
+
+    Everything else is set up as a REAL click-away — summoned, settled, the
+    setting on — so the lock is the only thing standing between the
+    deactivation and the hide. It used to be set up inside the launch grace
+    period, which passed the test without the lock ever being consulted.
+    """
+    import time
+
+    from PyQt6.QtCore import QEvent
+
+    win.data["close_on_focus_loss"] = "True"
+    win.ignore_focus_loss = False
+    win._ever_activated = True
+    win._user_summoned = True
+    win._activated_at = time.time() - 10.0
+    win._shown_at = time.time() - 10.0
+    win.is_locked = False
+    win.show()
+    if getattr(win, "cb_focus", None):
+        win.cb_focus.setChecked(True)
+    assert win.isVisible(), "window must be visible before undo"
+
     # Simulate the undo path that fires after image paste:
     # add_data_undo_state -> _switch_to_slot(initial=True) -> refresh_temp_presets
     win.add_data_undo_state("test image paste")
-    win.show()
 
-    # fc.refresh() must not hide the window even if the tool window steals
-    # focus — there is no hide-on-deactivate at all since T-751.
-    was_visible = win.isVisible()
-    assert was_visible, "window must be visible before undo"
+    kept_docked = win.data.get("file_panel_docked", "False")
+    win.data["file_panel_docked"] = "False"   # undocked == its own Tool window
+    win.open_file_container()
+    fc = win._file_container
+    fc.set_docked(False)
+    assert fc.docked is False, "precondition: the panel is its own Tool window"
+    win.data["file_panel_docked"] = kept_docked
+    fc.refresh()
+    assert win.ignore_focus_loss is True, (
+        "fc.refresh() on an undocked panel must hold the counted lock"
+    )
 
     # Force a changeEvent with WindowDeactivate — this is what the OS
     # sends when the floating file container activates.
-    from PyQt6.QtCore import QEvent
-    evt = QEvent(QEvent.Type.WindowDeactivate)
-    win.changeEvent(evt)
+    win.changeEvent(QEvent(QEvent.Type.WindowDeactivate))
 
-    # The window must STILL be visible.
+    # The window must STILL be visible — ignore_focus_loss should have
+    # suppressed the hide.
     assert win.isVisible(), (
-        "Window hidden after WindowDeactivate — a deactivate must never hide it"
+        "Window hidden after WindowDeactivate with ignore_focus_loss guard — "
+        "the T-732 fix is not working"
     )
 
 
-def test_fc_refresh_call_in_paste_source():
-    """The paste path must still refresh the file container — the structural
-    invariant is now the CALL, not a focus-lock guard (which the removed
-    Hide-on-Click-Out feature took with it, T-751/T-761)."""
+def test_fc_refresh_guard_in_code():
+    """The guard pattern must exist in the source — this is a structural
+    check that catches regressions if someone removes the try/finally."""
     import inspect
 
     from fastprompter.ui.editor import VaultTextEdit
     source = inspect.getsource(VaultTextEdit.insertFromMimeData)
-    assert "fc.refresh()" in source, (
-        "insertFromMimeData must refresh the file container after an image paste"
-    )
-    assert "ignore_focus_loss" not in source, (
-        "the dead focus-lock apparatus must stay gone (T-761)"
+    assert "ignore_focus_loss" in source, (
+        "insertFromMimeData must guard fc.refresh() with ignore_focus_loss"
     )
 
 
 # --- T-732: the window must not hide because a file panel refreshed --------
 
-def test_file_panel_refresh_calls_the_list_reload(win, tmp_path):
-    """refresh() must reach _refresh_list for both a floating and a docked
-    panel — the focus-lock wrapping it used to carry is gone (T-761)."""
+def test_file_panel_refresh_holds_the_focus_lock(win, tmp_path):
+    """An undocked panel is a Qt.Tool window; touching one can hand the
+    foreground away, and the main window hides itself on focus loss. That is
+    how Ctrl+Z after an image paste made the window vanish — the paste writes
+    a PNG, the watcher fires a moment later, and the refresh lands under the
+    user's next keystroke."""
     from fastprompter.ui.file_container import FileContainerPanel
 
     panel = FileContainerPanel(win)
     try:
+        panel.docked = False
         panel.folder = str(tmp_path)
-        for docked in (False, True):
-            panel.docked = docked
-            seen = []
-            real = panel._refresh_list
-            panel._refresh_list = lambda: seen.append(True)
-            panel.refresh()
-            assert seen == [True], f"refresh did not reload the list (docked={docked})"
-            panel._refresh_list = real
+        seen = []
+        real = panel._refresh_list
+        panel._refresh_list = lambda: seen.append(
+            getattr(win, "ignore_focus_loss", False))
+        panel.refresh()
+        assert seen == [True], "refresh ran without the focus lock held"
+        panel._refresh_list = real
+
+        # a DOCKED panel is a child widget, not a window: no lock needed
+        panel.docked = True
+        win.ignore_focus_loss = False
+        win._focus_lock_count = 0
+        seen.clear()
+        panel._refresh_list = lambda: seen.append(
+            getattr(win, "ignore_focus_loss", False))
+        panel.refresh()
+        assert seen == [False], "a docked panel should not take a focus lock"
     finally:
         panel.deleteLater()
+        win._focus_lock_count = 0
+        win.ignore_focus_loss = False
 
 
 # --- T-720: a stale saved cursor must not land mid-word in changed text ----

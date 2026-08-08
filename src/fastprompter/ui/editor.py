@@ -1290,9 +1290,15 @@ class VaultTextEdit(QTextEdit):
 
         mw = self.main_win
         lang = getattr(mw, "_current_lang", "EN")
-        new_stem, ok = QInputDialog.getText(
-            self, tr("Rename image", lang), tr("New name:", lang),
-            text=stem)
+        if hasattr(mw, "_increment_focus_lock"):
+            mw._increment_focus_lock()      # the window hides on focus loss
+        try:
+            new_stem, ok = QInputDialog.getText(
+                self, tr("Rename image", lang), tr("New name:", lang),
+                text=stem)
+        finally:
+            if hasattr(mw, "_decrement_focus_lock"):
+                QTimer.singleShot(300, mw._decrement_focus_lock)
         new_stem = (new_stem or "").strip()
         if not ok or not new_stem or new_stem == stem:
             return False
@@ -1323,7 +1329,12 @@ class VaultTextEdit(QTextEdit):
             cursor.insertText(new_target)
         fc = getattr(mw, "_file_container", None)
         if fc is not None and not sip.isdeleted(fc):
-            fc.refresh()
+            prev = getattr(mw, "ignore_focus_loss", False)
+            mw.ignore_focus_loss = True
+            try:
+                fc.refresh()
+            finally:
+                mw.ignore_focus_loss = prev
         return True
 
     def _code_copy_block_at(self, pos):
@@ -2625,11 +2636,20 @@ class VaultTextEdit(QTextEdit):
                         markup = self.image_paste_markup(
                             os.path.basename(name), QUrl.fromLocalFile(name).toString())
                         self.insertPlainText(f"{prefix}{markup}\n")
-                        # Refresh the file container if it is open.
+                        # Refresh file container if open.
+                        # Guard with ignore_focus_loss: the file container
+                        # is a Qt.Tool window when undocked, and touching
+                        # it can fire WindowDeactivate on the main window,
+                        # which hides it via changeEvent (T-732).
                         try:
                             fc = getattr(self.main_win, "_file_container", None)
                             if fc is not None:
-                                fc.refresh()
+                                prev = getattr(self.main_win, "ignore_focus_loss", False)
+                                self.main_win.ignore_focus_loss = True
+                                try:
+                                    fc.refresh()
+                                finally:
+                                    self.main_win.ignore_focus_loss = prev
                         except Exception:
                             pass
                 except Exception:

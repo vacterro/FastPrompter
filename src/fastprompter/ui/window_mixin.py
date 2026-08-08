@@ -63,6 +63,12 @@ class WindowMixin:
 
     def show_window(self, by_hotkey: bool = False) -> None:
         """Show the window, reposition if lock-to-cursor, re-register hotkeys."""
+        # Every deliberate way in lands here: the global hotkey, the tray, a
+        # second launch over IPC. It is sticky on purpose — once the user has
+        # asked for the window even once, the launch flicker changeEvent
+        # guards against is long behind us, and Hide on Click-Out must react
+        # to the very next click away instead of sitting out a grace period.
+        self._user_summoned = True
         if (
             by_hotkey
             and hasattr(self, "cb_lock_cursor")

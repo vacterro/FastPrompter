@@ -222,7 +222,16 @@ class FastPrompter(
         super().__init__()
         self.setMouseTracking(True)
         # QApplication.instance().installEventFilter(self)
-        self.registered_hotkeys, self._db_dirty = [], False
+        self.ignore_focus_loss, self.registered_hotkeys, self._db_dirty = False, [], False
+        self._focus_lock_count = 0
+        # False until the window has genuinely been in front once;
+        # see changeEvent - startup deactivation must not hide it.
+        self._ever_activated = False
+        # When the window last took the foreground, and whether the user
+        # ASKED for it (hotkey / tray) rather than it appearing at launch.
+        # changeEvent reads both to tell a click-away from a flicker.
+        self._activated_at = 0.0
+        self._user_summoned = False
 
         self.editing_snippet = None
         self.auto_save_timer = QTimer(self)
@@ -1181,7 +1190,11 @@ class FastPrompter(
         reachable from inside the dialog.
         """
         from fastprompter.ui.queue_panel import QueueDialog
-        QueueDialog(self, start_tab=1 if master else 0).exec()
+        self._increment_focus_lock()
+        try:
+            QueueDialog(self, start_tab=1 if master else 0).exec()
+        finally:
+            QTimer.singleShot(300, self._decrement_focus_lock)
         self.save_prompt_queues()
 
     def open_queue_master(self):
@@ -1191,7 +1204,11 @@ class FastPrompter(
     # ---- hashtags -----------------------------------------------------
     def open_hashtag_dialog(self, tag=None):
         from fastprompter.ui.hashtag_dialog import HashtagDialog
-        HashtagDialog(self, tag).exec()
+        self._increment_focus_lock()
+        try:
+            HashtagDialog(self, tag).exec()
+        finally:
+            QTimer.singleShot(300, self._decrement_focus_lock)
 
     def jump_to_silo_line(self, silo_idx, line_no):
         """Open a silo and put the caret on a 1-based line."""
@@ -1211,7 +1228,11 @@ class FastPrompter(
 
     def open_timer_dialog(self):
         from fastprompter.ui.timer_dialog import TimerDialog
-        TimerDialog(self).exec()
+        self._increment_focus_lock()
+        try:
+            TimerDialog(self).exec()
+        finally:
+            QTimer.singleShot(300, self._decrement_focus_lock)
         self.save_timers_to_data()
         self.save_productivity_timer()
         self._update_date_label()
@@ -1369,8 +1390,12 @@ class FastPrompter(
 
         current = self.data.get("hover_line_color", "auto")
         start = QColor(current) if QColor(current).isValid() else QColor("#6aa9ff")
-        chosen = QColorDialog.getColor(start, self, tr(
-            "Hover line colour", getattr(self, "_current_lang", "EN")))
+        self._increment_focus_lock()
+        try:
+            chosen = QColorDialog.getColor(start, self, tr(
+                "Hover line colour", getattr(self, "_current_lang", "EN")))
+        finally:
+            QTimer.singleShot(300, self._decrement_focus_lock)
         if chosen.isValid():
             self.data["hover_line_color"] = chosen.name()
             self.mark_dirty()
@@ -1577,6 +1602,23 @@ class FastPrompter(
         if 17 <= hour < 23:
             return "Evening"
         return "Night"
+
+    def toggle_hide_on_clickout(self):
+        """Alt+A: flip the Hide on Click-Out behavior from anywhere."""
+        if hasattr(self, "cb_focus"):
+            self.cb_focus.setChecked(not self.cb_focus.isChecked())
+            self.play_tick_sound(self.cb_focus.isChecked())
+
+    def _increment_focus_lock(self):
+        """Counted ignore_focus_loss: overlapping dialogs each take a lock;
+        the flag drops only when the LAST 300ms release fires (no race)."""
+        self._focus_lock_count = getattr(self, "_focus_lock_count", 0) + 1
+        self.ignore_focus_loss = True
+
+    def _decrement_focus_lock(self):
+        self._focus_lock_count = max(0, getattr(self, "_focus_lock_count", 0) - 1)
+        if self._focus_lock_count == 0:
+            self.ignore_focus_loss = False
 
     def _pin_top_toggled(self, checked):
         """Header 📌 mirrors the Always-on-Top setting checkbox."""
@@ -2023,9 +2065,17 @@ class FastPrompter(
     def open_sound_settings_dialog(self):
         """Open the comprehensive sound settings dialog."""
         from fastprompter.ui.sound_settings_dialog import SoundSettingsDialog
-        
-        dialog = SoundSettingsDialog(self, self.data, self.sound_manager)
-        dialog.exec()
+
+        # The modal takes the foreground, which is a deactivation as far as
+        # the main window is concerned — without the lock, Hide on Click-Out
+        # hid everything behind the dialog and closing it left the user
+        # staring at a desktop where nothing reacted any more.
+        self._increment_focus_lock()
+        try:
+            dialog = SoundSettingsDialog(self, self.data, self.sound_manager)
+            dialog.exec()
+        finally:
+            QTimer.singleShot(300, self._decrement_focus_lock)
         # Force sync: ensure sound_manager sees updated data
         self.sound_manager._data = self.data
         self.refresh_temp_presets()
@@ -2111,7 +2161,12 @@ class FastPrompter(
             global_idx = self.active_temp_slot
         from fastprompter.ui.silo_settings_dialog import SiloSettingsDialog
         dlg = SiloSettingsDialog(self, global_idx)
-        if dlg.exec():
+        self._increment_focus_lock()
+        try:
+            accepted = dlg.exec()
+        finally:
+            QTimer.singleShot(300, self._decrement_focus_lock)
+        if accepted:
             # Trigger refresh to show/hide the buttons
             if global_idx == self.active_temp_slot:
                 self._update_project_buttons()
@@ -2468,6 +2523,9 @@ class FastPrompter(
             "tray_visible": str(self.cb_tray.isChecked())
             if hasattr(self, "cb_tray")
             else self.data.get("tray_visible", "True"),
+            "close_on_focus_loss": str(self.cb_focus.isChecked())
+            if hasattr(self, "cb_focus")
+            else self.data.get("close_on_focus_loss", "True"),
             "ctrl_c_closes": str(self.cb_ctrl_c.isChecked())
             if hasattr(self, "cb_ctrl_c")
             else self.data.get("ctrl_c_closes", "True"),
@@ -3203,6 +3261,12 @@ class FastPrompter(
             "Animated cursors keep their default shape - Qt cannot read them.",
             self.data.get("custom_cursors", "False") == "True",
             self.toggle_custom_cursors,
+        )
+        self.cb_focus = create_footer_cb(
+            "👁 Hide on Click-Out",
+            "Hide the window when you click outside of it\nGlobal toggle: Alt+A",
+            self.data.get("close_on_focus_loss", "True") == "True",
+            self.mark_dirty,
         )
         self.cb_snippet_arrows = create_footer_cb(
             "↕ Snippet Arrows",
@@ -3979,9 +4043,13 @@ class FastPrompter(
         self.btn_sync_path.setToolTip(self.data.get("sync_path", "") or tr("No folder chosen", self._current_lang))
 
         def _pick_sync_path():
-            d = QFileDialog.getExistingDirectory(
-                self, tr("Choose sync folder", self._current_lang),
-                self.data.get("sync_path", "") or "")
+            self.ignore_focus_loss = True
+            try:
+                d = QFileDialog.getExistingDirectory(
+                    self, tr("Choose sync folder", self._current_lang),
+                    self.data.get("sync_path", "") or "")
+            finally:
+                self.ignore_focus_loss = False
             if d:
                 self.data.update({"sync_path": d})
                 self.btn_sync_path.setToolTip(d)
@@ -4172,7 +4240,7 @@ class FastPrompter(
                 div_row, ctrlw_btn_row, hdr_row, self.cb_hr_visual, self.cb_conceal,
             ]),
             _settings_group("Typing", [
-                self.cb_wrap, self.cb_ctrl_c,
+                self.cb_focus, self.cb_wrap, self.cb_ctrl_c,
                 self.cb_lock_cursor, self.cb_double_line, blink_row,
             ]),
             _settings_group("Lines", [
@@ -4686,7 +4754,12 @@ class FastPrompter(
     def open_header_format_editor(self):
         """Open the comprehensive Ctrl+E header template editor."""
         from fastprompter.ui.header_format_dialog import HeaderFormatDialog
-        HeaderFormatDialog(self).exec()
+        prev = getattr(self, "ignore_focus_loss", False)
+        self.ignore_focus_loss = True
+        try:
+            HeaderFormatDialog(self).exec()
+        finally:
+            self.ignore_focus_loss = prev
 
     def open_ctrlw_settings(self, upward=False):
         """Open the per-scenario Smart Line dialog.
@@ -4695,8 +4768,13 @@ class FastPrompter(
         the two directions are tuned apart.
         """
         from fastprompter.ui.ctrlw_settings import CtrlWSettingsDialog
-        CtrlWSettingsDialog(
-            self, prefix="altw" if upward else "ctrlw", upward=upward).exec()
+        prev = getattr(self, "ignore_focus_loss", False)
+        self.ignore_focus_loss = True
+        try:
+            CtrlWSettingsDialog(
+                self, prefix="altw" if upward else "ctrlw", upward=upward).exec()
+        finally:
+            self.ignore_focus_loss = prev
 
     def open_altw_settings(self):
         """Open the Alt+W (upward Smart Line) dialog."""
@@ -5016,7 +5094,7 @@ class FastPrompter(
 
         # Translate all checkboxes in the settings panel
         for cb_name in ("cb_top", "cb_lock_window", "cb_normal_window", "cb_tray",
-                        "cb_sidebar", "cb_snippet_arrows", "cb_silo_ticks",
+                        "cb_sidebar", "cb_focus", "cb_snippet_arrows", "cb_silo_ticks",
                         "cb_ctrl_c", "cb_lock_cursor", "cb_silo_home", "cb_portable_backup",
                         "cb_wrap", "cb_line_numbers", "cb_line_marks", "cb_zebra", "cb_hide_shortkeys",
                         "cb_double_line", "cb_bold_titles", "cb_silo_pinned_gap",
@@ -5165,7 +5243,11 @@ class FastPrompter(
     def open_drop_zones_settings(self):
         from fastprompter.ui.drop_overlay import DropZonesDialog
         dlg = DropZonesDialog(self)
-        dlg.exec()
+        self._increment_focus_lock()
+        try:
+            dlg.exec()
+        finally:
+            QTimer.singleShot(300, self._decrement_focus_lock)
 
     def swap_temp_slots(self, idx1, idx2, is_archive=False):
         if idx1 == idx2:
@@ -5601,6 +5683,7 @@ class FastPrompter(
         # setWindowFlags recreates the native window; the resulting
         # activation-change would trigger the click-out auto-hide and make
         # the toggle look broken. Suppress it until the dust settles.
+        self._increment_focus_lock()
         geo = self.geometry()
         frame_before = self.frameGeometry()
         # Anti-flashbang: the recreated native window first paints with the
@@ -5641,6 +5724,7 @@ class FastPrompter(
                     )
                 except Exception:
                     pass
+        QTimer.singleShot(300, self._decrement_focus_lock)
         self.register_all_hotkeys()
         self.mark_dirty()
 
@@ -6005,13 +6089,19 @@ class FastPrompter(
         if dlg is None or sip.isdeleted(dlg):
             dlg = HelpDialog(self)
             self._help_dialog = dlg
+        self._increment_focus_lock()
         dlg.show()
         dlg.raise_()
         dlg.activateWindow()
+        QTimer.singleShot(300, self._decrement_focus_lock)
 
     def open_hotkey_settings(self):
         dlg = HotkeySettingsDialog(self)
-        dlg.exec()
+        self.ignore_focus_loss = True
+        try:
+            dlg.exec()
+        finally:
+            self.ignore_focus_loss = False
 
     # Snapshot keys that are bookkeeping, not user data. They MUST be left out
     # of every equality test, or each snapshot differs from every other one and
@@ -6188,6 +6278,7 @@ class FastPrompter(
         if getattr(self, "_in_smart_undo", False):
             return
         self._in_smart_undo = True
+        self._increment_focus_lock()
         try:
             kinds = self._undo_kinds()
             if self._undo_prefers_data():
@@ -6206,6 +6297,15 @@ class FastPrompter(
                 self.statusBar().showMessage(tr("Nothing to undo", getattr(self, "_current_lang", "EN")), 2000)
         finally:
             self._in_smart_undo = False
+            # A data undo rebuilds documents, switches silos and re-flows the
+            # list — any of which can queue a transient window deactivation.
+            # The deactivation event is DELIVERED asynchronously (next event
+            # loop pass), so releasing the focus lock synchronously here would
+            # let changeEvent -> hide_and_save run with the lock already gone
+            # ("Ctrl+Z closed the program"). Release it deferred, like every
+            # other undo-adjacent lock, so it covers the queued event.
+            from PyQt6.QtCore import QTimer
+            QTimer.singleShot(300, self._decrement_focus_lock)
 
     def _undo_kinds(self):
         """What each Ctrl+Z actually reversed, newest last — the only thing
@@ -6219,6 +6319,7 @@ class FastPrompter(
         if getattr(self, "_in_smart_redo", False):
             return
         self._in_smart_redo = True
+        self._increment_focus_lock()
         try:
             kinds = self._undo_kinds()
             kind = kinds.pop() if kinds else None
@@ -6248,6 +6349,8 @@ class FastPrompter(
             self.statusBar().showMessage(tr("Nothing to redo", getattr(self, "_current_lang", "EN")), 2000)
         finally:
             self._in_smart_redo = False
+            from PyQt6.QtCore import QTimer
+            QTimer.singleShot(300, self._decrement_focus_lock)
 
     def undo_action(self):
         if hasattr(self, "data_undo_stack") and self.data_undo_stack:
@@ -6759,12 +6862,14 @@ class FastPrompter(
 
     def open_window_presets(self):
         from fastprompter.ui.window_presets_dialog import WindowPresetsDialog
+        self._increment_focus_lock()
         try:
             WindowPresetsDialog(self).exec()
         finally:
             # the Presets page appears/disappears with the preset list, so the
             # Fast-mode page picker has to be refilled after this dialog
             self._reload_fast_zone_pages()
+            QTimer.singleShot(300, self._decrement_focus_lock)
 
     def _on_token_mode_changed(self, idx):
         mode = self.cb_token_mode.itemData(idx) or "chars"
@@ -6853,13 +6958,21 @@ class FastPrompter(
 
     def open_color_settings(self):
         dlg = ColorConfigDialog(self)
-        dlg.exec()
+        self.ignore_focus_loss = True
+        try:
+            dlg.exec()
+        finally:
+            self.ignore_focus_loss = False
 
     def backup_db(self):
         from fastprompter.ui.backup_dialog import BackupDialog
 
         dlg = BackupDialog(self)
-        dlg.exec()
+        self._increment_focus_lock()
+        try:
+            dlg.exec()
+        finally:
+            QTimer.singleShot(300, self._decrement_focus_lock)
 
     def restore_db(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -6867,6 +6980,7 @@ class FastPrompter(
         )
         if not path:
             return
+        self.ignore_focus_loss = True
         try:
             reply = QMessageBox.question(
                 self,
@@ -6898,6 +7012,8 @@ class FastPrompter(
             QMessageBox.critical(self, tr("Error", self._current_lang), tr("Failed to restore backup:\n{}", self._current_lang).format(e))
             self.state.init_db()
             self.conn = self.state.conn
+        finally:
+            self.ignore_focus_loss = False
 
     def fill_silo_from_preset(self, idx, text):
         """Drop a template into silo `idx`, as ONE undoable action."""
@@ -7126,7 +7242,14 @@ class FastPrompter(
             event.accept()
 
     def showEvent(self, event):
-        """Re-fit the settings tabs once the window has its real geometry."""
+        """Stamp when the window became visible.
+
+        changeEvent uses it as a grace period for the LAUNCH show: a
+        foreground flicker right after startup must not count as the user
+        clicking away. A show the user asked for skips it — see
+        `show_window`.
+        """
+        self._shown_at = time.time()
         super().showEvent(event)
         # The panel is measured against a WIDTH, and during construction the
         # tabs are still a few pixels wide — a wrapping row measured there
@@ -7147,7 +7270,79 @@ class FastPrompter(
                                    QEvent.Type.WindowDeactivate)
                     and not self.isActiveWindow()):
                 self.exit_zen_solo(grace=True)
+        if event.type() in (QEvent.Type.ActivationChange, QEvent.Type.WindowDeactivate):
+            if self.isActiveWindow():
+                # The user has it in front now; from here a deactivation is a
+                # real "clicked away" and hide-on-focus-loss means something.
+                self._ever_activated = True
+                self._activated_at = time.time()
+            if not self.isActiveWindow() and not self.isMinimized() and self.isVisible():
+                # Startup is NOT a focus loss. Windows refuses the foreground
+                # to a process launched in the background, so show() was
+                # followed straight away by a deactivation and the window hid
+                # itself about two seconds in - the app looked like it never
+                # started. Measured: visible at t+4s, gone by t+6s.
+                if not getattr(self, "_ever_activated", False):
+                    return super().changeEvent(event)
+                # The foreground can also flicker: the window takes focus for
+                # an instant at launch and Windows hands it straight back to
+                # whatever started it. That set _ever_activated and the next
+                # deactivation hid the window anyway, so a grace period after
+                # it is shown covers the flicker without weakening the real
+                # click-away behaviour.
+                #
+                # The grace is for the LAUNCH show only. A window the user
+                # summoned with Alt+X is one they are looking at on purpose,
+                # and clicking away a moment later has to hide it at once —
+                # the blanket grace made the setting look dead for the first
+                # two seconds of every summon, which is most of them.
+                shown_at = getattr(self, "_shown_at", 0.0)
+                if (
+                    not getattr(self, "_user_summoned", False)
+                    and shown_at
+                    and (time.time() - shown_at) < 2.0
+                ):
+                    return super().changeEvent(event)
+                # A summon still has to survive an activation that never
+                # settled: SetForegroundWindow can be handed back within a
+                # frame or two. No human clicks away that fast, so a short
+                # settle window costs nothing and keeps the flicker covered
+                # on the summon path too.
+                activated_at = getattr(self, "_activated_at", 0.0)
+                if activated_at and (time.time() - activated_at) < 0.25:
+                    return super().changeEvent(event)
+                if getattr(self, "cb_focus", None) and self.cb_focus.isChecked():
+                    if (
+                        not getattr(self, "ignore_focus_loss", False)
+                        and not getattr(self, "is_locked", False)
+                        and not self._foreground_is_our_own_window()
+                    ):
+                        self.hide_and_save()
         super().changeEvent(event)
+
+    def _foreground_is_our_own_window(self):
+        """True when the foreground went to another window of OURS.
+
+        "Click-Out" means the user left the app, not that they reached for
+        its own furniture. The undocked file container, the pie menu, the
+        zone overlay, Help, every dialog — taking focus there deactivates
+        the main window exactly like clicking on Notepad does, and hiding
+        it dropped the window out from under whatever the user had just
+        opened. The ~30 counted focus locks cover the call sites we drive
+        ourselves; this covers the ones the USER clicks on directly, and
+        anything added later without a lock.
+        """
+        app = QApplication.instance()
+        if app is None:
+            return False
+        # Menus and modal dialogs never become activeWindow().
+        if app.activePopupWidget() is not None or app.activeModalWidget() is not None:
+            return True
+        active = app.activeWindow()
+        if active is None or sip.isdeleted(active):
+            # Nothing of ours is in front — the foreground left the app.
+            return False
+        return active is not self
 
     def eventFilter(self, obj, event):
         if sip.isdeleted(self) or (obj and sip.isdeleted(obj)):
@@ -7222,7 +7417,11 @@ class FastPrompter(
         if old_cat is None:
             return
         
-        name, ok = QInputDialog.getText(self, "Rename Tab", "Enter new tab name:", text=old_cat)
+        self.ignore_focus_loss = True
+        try:
+            name, ok = QInputDialog.getText(self, "Rename Tab", "Enter new tab name:", text=old_cat)
+        finally:
+            self.ignore_focus_loss = False
         self.activateWindow()
         if ok and name and name.strip() and name.strip() != old_cat:
             new_cat = name.strip()
@@ -7261,7 +7460,11 @@ class FastPrompter(
                 self, tr("Tab Limit", self._current_lang), tr("Maximum of 100 projects. Remove one first.", self._current_lang)
             )
             return
-        name, ok = QInputDialog.getText(self, "New Tab", "Enter tab name:")
+        self.ignore_focus_loss = True
+        try:
+            name, ok = QInputDialog.getText(self, "New Tab", "Enter tab name:")
+        finally:
+            self.ignore_focus_loss = False
         self.activateWindow()
         if ok and name and name.strip() not in self.data["cats_order"]:
             self.add_data_undo_state("Add category")
@@ -7280,12 +7483,16 @@ class FastPrompter(
         cat = self._cat_at(idx)
         if cat is None:
             return
-        reply = QMessageBox.question(
-            self,
-            tr("Delete Tab", self._current_lang),
-            tr("Nuke '{}' and all snippets?", self._current_lang).format(cat),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
+        self.ignore_focus_loss = True
+        try:
+            reply = QMessageBox.question(
+                self,
+                tr("Delete Tab", self._current_lang),
+                tr("Nuke '{}' and all snippets?", self._current_lang).format(cat),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+        finally:
+            self.ignore_focus_loss = False
         self.activateWindow()
         if reply == QMessageBox.StandardButton.Yes:
             self.add_data_undo_state("Delete category")
@@ -7430,7 +7637,11 @@ class FastPrompter(
         bb.accepted.connect(dlg.accept)
         bb.rejected.connect(dlg.reject)
         lay.addWidget(bb)
-        ok = dlg.exec()
+        self.ignore_focus_loss = True
+        try:
+            ok = dlg.exec()
+        finally:
+            self.ignore_focus_loss = False
         if not ok:
             return
         new_hidden = [lst.item(i).text() for i in range(lst.count())
@@ -9031,7 +9242,11 @@ class FastPrompter(
         else: a_table.triggered.connect(make_transform("table"))
 
 
-        menu.exec(pos)
+        self.ignore_focus_loss = True
+        try:
+            menu.exec(pos)
+        finally:
+            self.ignore_focus_loss = False
         self.activateWindow()
 
 
@@ -9284,7 +9499,12 @@ class FastPrompter(
         box.setStandardButtons(
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         box.setDefaultButton(QMessageBox.StandardButton.Yes)
-        ans = box.exec()
+        prev = getattr(self, "ignore_focus_loss", False)
+        self.ignore_focus_loss = True
+        try:
+            ans = box.exec()
+        finally:
+            self.ignore_focus_loss = prev
         if ans != QMessageBox.StandardButton.Yes:
             return
         os.makedirs(dst, exist_ok=True)
@@ -9473,6 +9693,7 @@ class FastPrompter(
         add_shortcut("lock_window_hotkey", "Alt+S", self.toggle_lock)
         add_shortcut("always_on_top_hotkey", "Alt+E", self.toggle_always_on_top)
         add_shortcut("toggle_sidebar_hotkey", "Alt+D", lambda: self.toggle_visibility(force_sidebar=True))
+        add_shortcut("hide_on_clickout_hotkey", "Alt+A", self.toggle_hide_on_clickout)
 
         shortcut = QShortcut(QKeySequence("Esc"), self)
         shortcut.activated.connect(self._on_escape)

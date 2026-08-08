@@ -464,4 +464,8 @@ class WatcherMixin:
     def open_watcher_dialog(self):
         from fastprompter.ui.watcher_dialog import WatcherDialog
         self._watcher_init()
-        WatcherDialog(self).exec()
+        self._increment_focus_lock()
+        try:
+            WatcherDialog(self).exec()
+        finally:
+            QTimer.singleShot(300, self._decrement_focus_lock)

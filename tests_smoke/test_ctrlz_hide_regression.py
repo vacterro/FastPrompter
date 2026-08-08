@@ -1,11 +1,10 @@
 """Reproduce "Ctrl+Z closes the program".
 
-The window used to vanish on Ctrl+Z: a data undo queued a transient
-WindowDeactivate and the old changeEvent -> close_on_focus_loss path hid the
-window (hide_and_save), exactly like clicking away. The whole Hide on
-Click-Out feature has since been REMOVED — there is no hide-on-deactivate at
-all — so these tests guard the invariant that survives it: undo never hides
-the window, and Ctrl+Z fires _smart_undo exactly once.
+Symptom: pressing Ctrl+Z makes the window vanish (hide_and_save), exactly
+like clicking away when close_on_focus_loss is on. Hypothesis: a data undo
+touchs something that deactivates the main window, OR _smart_undo fires
+twice per keypress (QShortcut + editor keyPressEvent), and the second
+_apply_data_state triggers the focus loss path.
 """
 
 import os
@@ -36,8 +35,11 @@ def win():
     state_mod.run_portable_backup = lambda data: None
     FastPrompter.setup_single_instance_server = lambda self: None
     w = FastPrompter()
+    w.data["close_on_focus_loss"] = "True"
     w.resize(960, 540)
     w.show()
+    w._ever_activated = True
+    w._shown_at = 0.0  # past the 2s grace period
     _app.processEvents()
     yield w
     w.auto_save_timer.stop()
@@ -135,9 +137,11 @@ class TestCtrlZWindowHide:
         assert not hidden, "text undo hid the window"
 
     def test_real_ctrl_z_lives_through_the_deferred_lock_window(self, win):
-        """The real T-750 failure: a deactivation queued by the undo used to
-        hide the window. The hide-on-focus-loss feature is gone, so a real
-        Ctrl+Z through the event loop must leave the window visible."""
+        """The real T-750 failure: a deactivation queued by the undo arrives
+        asynchronously, AFTER a synchronous lock release would have let it
+        through. The lock is released deferred (300ms); waiting longer than
+        that and then asserting visibility covers the actual event-loop path,
+        not a mocked hide_and_save."""
         win.data["temp_presets"][:] = ["alpha", "bravo"]
         win.data["pinned_silos"] = []
         win.silo_docs[:] = []
@@ -169,4 +173,39 @@ class TestCtrlZWindowHide:
         for _ in range(8):
             _app.processEvents()
             _app.sendPostedEvents()
-        assert win.isVisible(), "the window must stay visible after the event loop settles"
+        assert win._focus_lock_count == 0, (
+            f"focus lock leaked ({win._focus_lock_count}), "
+            "window is now permanently immune to click-away"
+        )
+
+    def test_focus_lock_blocks_deactivate_hide_and_release_unblocks(self, win):
+        """The lock the undo path holds is what actually stops the hide: a
+        WindowDeactivate arriving while `_increment_focus_lock` is held must
+        NOT reach hide_and_save, and one arriving after the release must."""
+        win._shown_at = 0.0  # past the 2s grace period
+        win.isActiveWindow = lambda: False  # pretend the window lost focus
+
+        hidden = []
+        real_hide = win.hide_and_save
+        win.hide_and_save = lambda *a, **k: hidden.append(1)
+        deactivate = QEvent(QEvent.Type.WindowDeactivate)
+
+        try:
+            win.changeEvent(deactivate)
+            assert len(hidden) == 1, (
+                f"deactivate without lock must hide, got {len(hidden)}"
+            )
+
+            win._increment_focus_lock()
+            win.changeEvent(deactivate)
+            assert len(hidden) == 1, (
+                f"deactivate under lock must NOT hide, got {len(hidden)}"
+            )
+
+            win._decrement_focus_lock()
+            win.changeEvent(deactivate)
+            assert len(hidden) == 2, (
+                f"deactivate after release must hide again, got {len(hidden)}"
+            )
+        finally:
+            win.hide_and_save = real_hide
