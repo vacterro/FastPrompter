@@ -16,6 +16,8 @@ from __future__ import annotations
 import datetime
 import uuid
 
+from fastprompter.theme.themes import blend_hex
+
 REPEAT_NONE = "once"
 REPEAT_DAILY = "daily"
 REPEAT_WEEKLY = "weekly"
@@ -41,29 +43,6 @@ _TEMPERATURE_STOPS = (
 )
 
 
-def _clamp_byte(v):
-    return max(0, min(255, int(round(v))))
-
-
-def _hex_to_rgb(h):
-    h = (h or "").strip().lstrip("#")
-    if len(h) == 3:
-        h = "".join(c * 2 for c in h)
-    if len(h) != 6:
-        return (128, 128, 128)
-    try:
-        return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
-    except ValueError:
-        return (128, 128, 128)
-
-
-def _mix(c1, c2, t):
-    t = max(0.0, min(1.0, t))
-    r1, g1, b1 = _hex_to_rgb(c1)
-    r2, g2, b2 = _hex_to_rgb(c2)
-    return f"#{_clamp_byte(r1 + (r2 - r1) * t):02x}{_clamp_byte(g1 + (g2 - g1) * t):02x}{_clamp_byte(b1 + (b2 - b1) * t):02x}"
-
-
 def temperature_color(remaining_seconds: float) -> str:
     """Blend smoothly between the stops above, so it warms gradually."""
     rem = max(0.0, float(remaining_seconds))
@@ -76,7 +55,7 @@ def temperature_color(remaining_seconds: float) -> str:
         if lo_s <= rem <= hi_s:
             span = hi_s - lo_s
             t = 0.0 if span <= 0 else (hi_s - rem) / span
-            return _mix(hi_c, lo_c, t)
+            return blend_hex(hi_c, lo_c, t)
     return stops[-1][1]
 
 

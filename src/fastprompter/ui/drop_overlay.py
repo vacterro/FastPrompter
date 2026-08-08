@@ -13,7 +13,7 @@ from PyQt6.QtGui import QColor, QFont, QPainter, QPen
 from PyQt6.QtWidgets import QWidget
 
 from fastprompter.core.translations import tr
-from fastprompter.theme.themes import blend_hex
+from fastprompter.theme.themes import blend_hex, theme_raw_colors
 
 # Used only when the theme cache isn't reachable yet (very early paint).
 _FALLBACK = {
@@ -28,13 +28,7 @@ def _theme_palette(main_win):
     These were hardcoded to one dark-golden palette, so the drop zones
     looked wrong on every other theme.
     """
-    raw = _FALLBACK
-    try:
-        cached = getattr(main_win, "_theme_cache", None)
-        if cached and cached.get("raw_colors"):
-            raw = cached["raw_colors"]
-    except Exception:
-        pass
+    raw = theme_raw_colors(main_win, _FALLBACK)
     bg = raw.get("bg_main", _FALLBACK["bg_main"])
     panel = raw.get("bg_text", _FALLBACK["bg_text"])
     accent = raw.get("accent", _FALLBACK["accent"])

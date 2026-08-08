@@ -12,6 +12,8 @@ from PyQt6.QtCore import QPoint, Qt
 from PyQt6.QtGui import QColor, QPainter, QPen
 from PyQt6.QtWidgets import QSizePolicy, QWidget
 
+from fastprompter.theme.themes import theme_raw_colors
+
 # Used only when the theme cache isn't reachable yet.
 _FALLBACK = {"bg_text": "#1e1e1e", "border_light": "#5a4a2a", "accent": "#D9B340"}
 
@@ -19,13 +21,7 @@ _FALLBACK = {"bg_text": "#1e1e1e", "border_light": "#5a4a2a", "accent": "#D9B340
 def _theme_palette(main_win):
     """Face/rim/hands from the ACTIVE theme — these were hardcoded to one
     dark-golden palette and ignored the theme entirely."""
-    raw = _FALLBACK
-    try:
-        cached = getattr(main_win, "_theme_cache", None)
-        if cached and cached.get("raw_colors"):
-            raw = cached["raw_colors"]
-    except Exception:
-        pass
+    raw = theme_raw_colors(main_win, _FALLBACK)
     return {
         # What the widgets NEXT TO the clock actually paint. The header bar
         # itself is tinted lighter, but the labels sitting on it render

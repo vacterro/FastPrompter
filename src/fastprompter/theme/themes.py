@@ -1,8 +1,26 @@
-def _clamp_byte(v):
+def clamp_byte(v):
     return max(0, min(255, int(round(v))))
 
 
-def _hex_to_rgb(h):
+def theme_raw_colors(main_win, fallback):
+    """Resolve a widget's raw_colors from the ACTIVE theme cache.
+
+    Shared by widgets that derive their palette from the theme's raw_colors
+    (analog clock, drop overlay). Each widget used to keep its own copy of
+    this try/getattr dance with a private fallback dict. Returns the fallback
+    until the theme cache is reachable (very early paint).
+    """
+    raw = fallback
+    try:
+        cached = getattr(main_win, "_theme_cache", None)
+        if cached and cached.get("raw_colors"):
+            raw = cached["raw_colors"]
+    except Exception:
+        pass
+    return raw
+
+
+def hex_to_rgb(h):
     """#rgb or #rrggbb -> (r, g, b). Invalid input falls back to mid grey."""
     h = (h or "").strip().lstrip("#")
     if len(h) == 3:
@@ -23,9 +41,9 @@ def blend_hex(c1, c2, t):
     highlighter, header bar) — previously each kept its own private copy.
     """
     t = max(0.0, min(1.0, float(t)))
-    r1, g1, b1 = _hex_to_rgb(c1)
-    r2, g2, b2 = _hex_to_rgb(c2)
-    return f"#{_clamp_byte(r1 + (r2 - r1) * t):02x}{_clamp_byte(g1 + (g2 - g1) * t):02x}{_clamp_byte(b1 + (b2 - b1) * t):02x}"
+    r1, g1, b1 = hex_to_rgb(c1)
+    r2, g2, b2 = hex_to_rgb(c2)
+    return f"#{clamp_byte(r1 + (r2 - r1) * t):02x}{clamp_byte(g1 + (g2 - g1) * t):02x}{clamp_byte(b1 + (b2 - b1) * t):02x}"
 
 
 def header_tint(raw):
@@ -43,7 +61,7 @@ def header_tint(raw):
 
 def hex_to_rgba(h, alpha):
     """Hex color -> 'rgba(r, g, b, a)' for QSS. alpha is 0.0-1.0."""
-    r, g, b = _hex_to_rgb(h)
+    r, g, b = hex_to_rgb(h)
     return f"rgba({r}, {g}, {b}, {max(0.0, min(1.0, float(alpha))):.2f})"
 
 
