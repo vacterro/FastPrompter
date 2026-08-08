@@ -78,7 +78,7 @@ Config lives in `settings` table key-value pairs. No INI file. All hot-reload on
 | `productivity_timer` | JSON | — | Pomodoro timer state |
 | `watcher_queues` | JSON | `{}` | Per-silo prompt queues |
 
-**Removed in v0.8.24:** `close_on_focus_loss` / "Hide on Click-Out" — the whole hide-on-focus-loss feature is gone; the key survives in old profiles but nothing reads it.
+Restored in v0.8.32 (removed in v0.8.24, back with the launch grace and own-window click-out guards): `close_on_focus_loss` / "Hide on Click-Out" is read again — hides the window on focus loss unless the launch grace (2s) or the app's own undocked windows still hold it.
 
 **Watcher `[limits]` (applied at arm since v0.8.25, in `adapters.toml`):** `min_gap_ms`, `max_sends`, `dry_run_new`. `blocker_pattern` only works on the CDP transport (it needs the target's visible text); a blocker on any other transport is flagged inactive.
 
