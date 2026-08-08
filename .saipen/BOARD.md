@@ -12,13 +12,22 @@
 _(empty)_
 ## TODO
 
-- [ ] T-764 (P3, clean-orphan, needs confirm) `src/fastprompter/_extract.txt` is a gitignored stray extraction artifact: zero references, untracked, not mechanically regenerable -- the proof-of-recovery gate forbids deleting it outright, so it is ticketed for a human yes/no. | verify: file gone or explicitly kept with a reason | needs: none
+_(empty)_
 ## BLOCKED
 
-- [ ] T-770 [MARKHUNT] (unvetted audit -- duplicate color helpers x2: `core/timers.py:44` `_clamp_byte` is byte-identical to `theme/themes.py:1` (65b each), and `_hex_to_rgb` is near-identical (`core/timers.py:48` 293b vs `theme/themes.py:5` 373b, same logic + docstring/fallback). Copy-paste debt from the timer-color work; unify into one shared helper. | blocker: unvetted audit -- markhunt @21323ad (aa 08.08.26) | verify: one shared definition, both callers import it, unit green | needs: none
-- [ ] T-771 [MARKHUNT] (unvetted audit -- duplicate `_theme_palette` x1: `ui/analog_clock.py:19` and `ui/drop_overlay.py:25` both derive widget colors from the active theme's raw_colors with near-identical docstrings (894b vs 978b). Same extraction, two homes; unify. | blocker: unvetted audit -- markhunt @21323ad (aa 08.08.26) | verify: one shared palette helper, both widgets use it, theme/smoke tests green | needs: none
-- [ ] T-772 [MARKHUNT] (unvetted audit -- repo-root translation-wave leftovers x8: `_fix_vi.py`, `_translate.py`, `ruff_output.json`, `ruff_output.txt`, `tmp_vi_missing.txt`, `scratch/get_missing.py`, `scratch/missing_15.json`, `scratch/missing_keys.json` are all tracked at HEAD but referenced nowhere (only a recovery-board mention of `ruff_output`); one-off build scripts/outputs that should live in `i18n_build_scripts/` or be pruned by CLEAN (recoverable: tracked at HEAD). Also the 0-byte gitignored `nul` (01.08) is the same gitignored-junk class as T-764 and can ride the same human yes/no. | blocker: unvetted audit -- markhunt @21323ad (aa 08.08.26) | verify: leftovers relocated or pruned with a named CLEAN line | needs: none
+_(empty)_
 ## DONE
+
+### continue — 08.08.26 MARKHUNT brake cleared
+
+- [x] T-770 DONE 08.08.26 20:05 -- vetted + fixed: `clamp_byte`/`hex_to_rgb` unified in `theme/themes.py` (made public); timers.py imports `blend_hex` and dropped its private `_clamp_byte`/`_hex_to_rgb` copies and `_mix` (was byte-identical to `blend_hex`). cite: core/timers.py:44 vs theme/themes.py:1, core/timers.py:48 vs theme/themes.py:5; themes.py is import-free so core->theme is cycle-safe. | verify: one shared definition, both callers import it, unit green | owner: opencode
+- [x] T-771 DONE 08.08.26 20:05 -- vetted + fixed: new `theme_raw_colors(main_win, fallback)` in themes.py replaces the two near-identical try/getattr dances in ui/analog_clock.py:19 and ui/drop_overlay.py:25. | verify: one shared palette helper, both widgets use it, theme/smoke tests green | owner: opencode
+- [x] T-772 DONE 08.08.26 20:05 -- vetted + fixed: `_fix_vi.py` + `_translate.py` relocated to `i18n_build_scripts/`; 6 orphaned outputs pruned (`ruff_output.json` 0B, `ruff_output.txt`, `tmp_vi_missing.txt`, `scratch/get_missing.py`, `scratch/missing_15.json`, `scratch/missing_keys.json`). cite: git ls-files at 21323ad, rg across src/tests/tools = zero refs. `nul` file does not exist (checked). Recoverable: all tracked at HEAD. | verify: leftovers relocated or pruned with a named CLEAN line | owner: opencode
+
+### continue — 08.08.26 T-764 + T-775 closed
+
+- [x] T-764 (P3, clean-orphan, needs confirm) DONE 08.08.26 19:41 -- user confirmed the destructive-op WAIT (jah); `src/fastprompter/_extract.txt` deleted. Zero file references re-verified (only unrelated `_extract` substring hits remain); gitignored so the tree carries no diff. | verify: file gone | owner: opencode
+- [x] T-775 (P3, release drift, stage F HUNT finding) DONE 08.08.26 19:41 -- the re-lock fix was already committed as e9b2dd1 by a previous session but never checkpointed; verified uv.lock 0.8.31 == pyproject 0.8.31 and pushed d414701..e9b2dd1. | verify: lockfile == manifest, committed, pushed | owner: opencode
 
 ### cc converge — 08.08.26 stage E gate repair
 
