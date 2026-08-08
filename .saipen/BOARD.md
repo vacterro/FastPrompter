@@ -13,11 +13,16 @@ _(empty)_
 ## TODO
 
 - [ ] T-777 (P2, freshness, hh HUNT finding) The EE package `STATE.next_action` tells the user to collect is already stale: `.saipen/saitranslate/kitchen/OUTBOX.md` [TRANSLATE-001] carries `source_head c1d04f4` while current HEAD is `d6982f1`, so `validate.py --gate collect:saitranslate` FAILs "package is stale and MUST NOT be collected" and `eee` can only answer `Not ready: run ee first.` Cause: the ccc run prepared EE at stage K, then shipped T-776 (9912f6c) and checkpointed (d6982f1) after it -- CONVERGE.md's "nothing that mutates main source may run after K" binds to HEAD, so even a docs-only or `.saipen`-only commit invalidates the package. `src/` and `tools/` are byte-identical between the two commits, which is why nothing else noticed. | verify: `eee` either collects a package the gate accepts, or `next_action` stops naming a dead action | needs: none
-- [ ] T-778 (P3, test-harness, hh HUNT finding) The test suite is not safe to run as two concurrent pytest processes over one worktree: they share on-disk state (the sound cache, the DB, `data/`) and produce phantom failures. Observed: 51 failed / 1486 passed with `tests/test_sound_manager.py::TestVolumeOnTheWinsoundPath::test_cached_file_is_per_level` among them, while the identical selection run serially is 1537 passed and that file alone is 47 passed. Nothing warns; the failures look like real regressions. | verify: either the shared paths are per-process (tmp_path / PID-scoped), or CONTRIBUTING and the gate docs state the suite is serial-only | needs: none
+_(T-778, T-779 moved to ## DONE)_
 ## BLOCKED
 
 _(empty)_
 ## DONE
+
+### cc converge — 08.08.26 test isolation
+
+- [x] T-778 (P3, test-harness) DONE 08.08.26 19:20 -- `conftest.py` installs a per-PROCESS `tempfile.tempdir` at import time, so the machine-global scaled-volume cache `tempfile.gettempdir()/fastprompter_sound/<stem>_v<level>.wav` is no longer shared between concurrent pytest runs. The colliding sample is the shipped `click_soft.wav`, so the file names matched too. Production keeps the shared cache -- reuse across app runs is its whole point; only the tests get a private root, removed at `pytest_sessionfinish`. | verify: three concurrent `pytest tests/` processes 953 passed / 1 skipped each (previously 51 phantom failures incl. `test_cached_file_is_per_level`) | owner: claude
+- [x] T-779 (P2, test-integrity, found verifying T-778) DONE 08.08.26 19:21 -- `tests/test_sound_manager.py::TestVolumeOnTheWinsoundPath::test_play_uses_the_scaled_copy_and_stays_async` asserted on the REAL `_play_winsound` while conftest's session-wide mute had replaced it, so it passed only when an earlier test happened to restore the attribute: green whenever tests_smoke/ was in the selection, red running `tests/` alone, and asserting nothing in either case. The canonical gate never ran `tests/` on its own, so nobody saw it. New `real_play_winsound` fixture hands the captured function over directly -- going through `SoundManager` is unreliable because the unit tests re-import `sound_manager` behind PyQt6 stubs, so the class a test file bound is not the class anything else patches. Pre-existing: proved by reverting conftest.py and reproducing. | verify: `tests/` alone 953 passed / 1 skipped (was 1 failed); that file alone 47 passed; ruff clean | owner: claude
 
 ### qqq collect — 08.08.26 wiki Hide-on-Click-Out text sync
 

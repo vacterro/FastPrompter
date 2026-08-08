@@ -368,16 +368,20 @@ class TestVolumeOnTheWinsoundPath:
         # full volume has nothing to scale — the original file is used
         assert scaled_wav_path(src, 10) is None
 
-    def test_play_uses_the_scaled_copy_and_stays_async(self):
+    def test_play_uses_the_scaled_copy_and_stays_async(self, real_play_winsound):
+        # The session-wide mute in conftest replaces _play_winsound, and this
+        # test is about what the REAL one does — ask for it by fixture and
+        # call it directly, rather than going through SoundManager and hoping
+        # an earlier test happened to restore the attribute.
         played = []
         fake = MagicMock()
         fake.SND_FILENAME, fake.SND_ASYNC, fake.SND_MEMORY = 0x20000, 0x0001, 0x0004
         fake.PlaySound = lambda s, f: played.append((s, f))
         with patch.dict(sys.modules, {"winsound": fake}):
             src = self._sample()
-            SoundManager._play_winsound(src, 2)
-            SoundManager._play_winsound(src, 10)
-            SoundManager._play_winsound(src, 0)
+            real_play_winsound(src, 2)
+            real_play_winsound(src, 10)
+            real_play_winsound(src, 0)
 
         assert len(played) == 2, "level 0 must play nothing at all"
         quiet, loud = played
