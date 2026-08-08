@@ -100,3 +100,5 @@
 - 08.08.26 15:50 [E-1388] [parent: E-1387] [T-none] [agent: claude] RUN: stage E canonical gate @6def8eb+T-774 -> PASS -- test_app_smoke.py 584 pass 0 fail (was 583/1), tests/ + rest of tests_smoke/ 1139 pass 1 skipped, ruff clean, saipen validate.py: no new FAIL (144 remaining are sealed logs/LOG-001.md legacy, immutable by append-only).
 
 - 08.08.26 15:51 [E-1389] [parent: E-1388] [T-none] [agent: claude] DEC: cc converge halts at MARKHUNT brake -- closure bar fails on "no untriaged [MARKHUNT] finding": T-770/771/772 still sit unvetted in ## BLOCKED. Stages F-M not run: they cannot clear the bar, and K/L would bind packages to a HEAD that triage will move. Stale: EE + QQ both bound to 52ffe01, HEAD now past it. T-764 still parked on a human yes/no. execution_intent stays converge.
+
+- 08.08.26 15:52 [E-1390] [parent: E-1389] [T-774] [agent: claude] RUN: SHIP T-774 -> commit d907386, pushed 6def8eb..d907386. STATE was written once at the end of the chain rather than at each hop: SCOUT (E-1386 finding), BUILD+VERIFY (E-1387), REVIEW/gate (E-1388), SHIP (this line) all carry their own evidence above; transition_from records SHIP, not a hop nobody performed.
