@@ -12,7 +12,8 @@
 _(empty)_
 ## TODO
 
-_(empty)_
+- [ ] T-777 (P2, freshness, hh HUNT finding) The EE package `STATE.next_action` tells the user to collect is already stale: `.saipen/saitranslate/kitchen/OUTBOX.md` [TRANSLATE-001] carries `source_head c1d04f4` while current HEAD is `d6982f1`, so `validate.py --gate collect:saitranslate` FAILs "package is stale and MUST NOT be collected" and `eee` can only answer `Not ready: run ee first.` Cause: the ccc run prepared EE at stage K, then shipped T-776 (9912f6c) and checkpointed (d6982f1) after it -- CONVERGE.md's "nothing that mutates main source may run after K" binds to HEAD, so even a docs-only or `.saipen`-only commit invalidates the package. `src/` and `tools/` are byte-identical between the two commits, which is why nothing else noticed. | verify: `eee` either collects a package the gate accepts, or `next_action` stops naming a dead action | needs: none
+- [ ] T-778 (P3, test-harness, hh HUNT finding) The test suite is not safe to run as two concurrent pytest processes over one worktree: they share on-disk state (the sound cache, the DB, `data/`) and produce phantom failures. Observed: 51 failed / 1486 passed with `tests/test_sound_manager.py::TestVolumeOnTheWinsoundPath::test_cached_file_is_per_level` among them, while the identical selection run serially is 1537 passed and that file alone is 47 passed. Nothing warns; the failures look like real regressions. | verify: either the shared paths are per-process (tmp_path / PID-scoped), or CONTRIBUTING and the gate docs state the suite is serial-only | needs: none
 ## BLOCKED
 
 _(empty)_

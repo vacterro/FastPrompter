@@ -1,9 +1,9 @@
 ---
 phase: DONE
 task: none
-next_action: "RUN: QQ collected + shipped (T-776, 9912f6c) -- EE (saitranslate, c1d04f4) still awaiting explicit 'eee'"
+next_action: "PHASE SCOUT T-777"
 blocker: none
-agent: opencode
+agent: claude
 saipen_version: 7
 saipen_home: "C:\\Users\\vac34\\.claude\\skills\\saipen"
 mode: full
@@ -13,9 +13,9 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 1402
+last_event: 1405
 style_contract: ded-4ae736e4
 execution_intent: normal
-updated: 2026-08-08T17:52:00Z
-transition_from: SHIP
+updated: 2026-08-08T18:52:00Z
+transition_from: DONE
 ---
