@@ -1,34 +1,15 @@
-# OUTBOX — saitranslate prepare handoff
+# OUTBOX
 
-- **status**: ready
-- **producer**: saitranslate
-- **source_head**: `52ffe01` (HEAD after cc converge entry; the eee-collected modules 2cfb9b6 are ancestors, byte-identical in the i18n surface)
-- **source_tree_fingerprint**: `24e3964ec9b7e59e3fa1e26a9038fda01d74a70b` (HEAD tree)
-- **role_revision**: `sha256:7fdd78edab6d44ebdc4f1040206fa5444a14e65f28a8ced5b38b259eb6eda8b3` (saitranslate charter, sub-synced in the ccc run)
-- **generated**: 2026-08-08 (fresh EE / cc stage K, forced re-cut against the current HEAD)
-
-## coverage
-
-In-app surface re-verified against HEAD 52ffe01 (v0.8.31). 4 Core-owned locales at **100%**; 29 wider locales at **95.7%** (documented sound-label backlog — subSaipen pipeline work, E-1358).
-
-| Locale set | Keys | Coverage | State |
-|---|---|---|---|
-| EN / RU / EST / DED | 1015 each | 100.0% | **complete** — the v0.8.26 gap (`Picking a sound plays it…`) is closed and the 5 dead Hide-on-Click-Out orphans are gone in all four |
-| 29 wider locales | 976 each | 95.7% | documented TRANSLATE backlog (44 sound-event labels untranslated, fall back to EN) — subSaipen work, not Core's split |
-
-`coverage_pct` metadata is honest in all 33 locale files (repaired in the previous ee, no drift since).
-
-## payload
-
-**No module regeneration needed.** The json↔module gate is already GREEN at the current HEAD: `tools/validate_saitranslate.py` reports `VALIDATION PASSED` (30 documented-backlog warnings) — the modules in `src/fastprompter/core/i18n/` carry the full 1015-key bundle (ru/est/ded regenerated at the eee collect, commit 2cfb9b6, released as v0.8.31). A future `eee` collect has no diff to apply; it only re-verifies and closes the handoff.
-
-## verified
-
-- `validate_saitranslate.py`: PASS (30 warnings, all documented backlog) @ 52ffe01
-- unit suite: 952 pass + 1 known pre-existing winsound (T-730 class) + 1 skipped
-- ruff: clean
-- 37 i18n modules import OK; spot-checked ru/est/ded carry the key, zero orphans
-
-## instructions (for collect)
-
-`eee` → verify OUTBOX freshness (source tree byte-identical since 52ffe01, fingerprint unchanged) → re-run `tools/validate_saitranslate.py` → confirm zero module diff → claim ticket, mark OUTBOX reviewed, checkpoint.
+## TRANSLATE-001: fresh EE re-cut bound to shipped HEAD c1d04f4
+- **status:** ready
+- **critical:** false
+- **summary:** T-773's 5 Hide on Click-Out keys outran the JSON bundle (en 1020, ru/est/ded 1015); this re-cut added all 5 to ru/est/ded locales, re-inject idempotent, validator PASS.
+- **producer:** saitranslate
+- **source_head:** c1d04f42f1d923c838a48256d04833ef5ec2dea8 (HEAD after the ccc ship boundary)
+- **source_tree_fingerprint:** git-delta-v1:c66baf69a8306f3b95dfc7badb5f72b088f8de8408e933efadc4d149721a1195 (freshness.py, current HEAD)
+- **role_revision:** sha256:f241e6b83c39e9b46bfa586638efb0374bbb39889646f723b9189bbb4912c0c5 (saitranslate charter, compute_role_revision)
+- **generated:** 2026-08-08 (fresh EE / ccc stage K, forced re-cut against the shipped HEAD)
+- **coverage:** 4 Core-owned locales at 100% (1020 keys each); 29 wider locales at 95.7% (documented sound-label backlog, E-1358)
+- **payload:** bundle sync only — `locales/ru.json`, `locales/est.json`, `locales/ded.json` brought to 1020 keys (the 5 restored Hide on Click-Out strings, translations read from the shipped modules). No module regeneration needed; re-inject byte-identical.
+- **verified:** `tools/validate_saitranslate.py` VALIDATION PASSED (30 documented-backlog warnings) @ c1d04f4; re-inject idempotent; unit 952 pass + 1 known winsound (T-730 class) + 1 skip; ruff clean; 37 modules import OK.
+- **instructions:** `eee` → verify freshness (fingerprint `c66baf69` == current, role_revision == current charter) → re-run `tools/validate_saitranslate.py` → confirm zero module diff → claim ticket, mark OUTBOX reviewed, checkpoint.

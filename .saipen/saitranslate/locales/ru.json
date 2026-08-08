@@ -1021,6 +1021,11 @@
     "Watcher start/stop": "Наблюдатель пуск/стоп",
     "Zoom in": "Приблизить",
     "Zoom out": "Отдалить",
-    "Picking a sound plays it. Volume 0 = the global volume.": "Выбор звука воспроизводит его. Громкость 0 = общая громкость."
+    "Picking a sound plays it. Volume 0 = the global volume.": "Выбор звука воспроизводит его. Громкость 0 = общая громкость.",
+    "Toggle Hide on Click-Out": "Переключить скрытие при клике вне",
+    "Toggle Hide on Click-Out:": "Скрывать при клике вне:",
+    "Toggle Hide-on-Clickout": "Скрывать при клике вне",
+    "Toggle Hide-on-Clickout: Alt+A": "Скрывать при клике вне: Alt+A",
+    "👁 Hide on Click-Out": "👁 Скрывать при клике вне"
   }
 }

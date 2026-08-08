@@ -8,7 +8,7 @@ collect_policy: core-review
 done_condition: "OUTBOX entry `status: ready` with a verified patch and evidence against the canonical Golden Default spec"
 freshness_inputs: ["source_head", "source_tree_fingerprint", "role_revision"]
 output_contract: "PROTOCOL.md § 2 + § 9 complete package with unified diff patch"
-role_revision: "sha256:b3dcd50f5a85a5033a492a16d62600d02d8510784e26a4e32e53f7de77050076"
+role_revision: "sha256:f2e3685b908a3b9837917f12c5414628d847c35fb72567f0306e2c8b19a8dab8"
 ```
 
 A subSaipen (PROTOCOL.md), so everything there binds: `mode: read-only`,
@@ -225,24 +225,8 @@ rules:
 
 Patch entries use the current standard complete-package plus fixer
 fields exactly as defined in PROTOCOL.md § 2 and § 9. No invented
-fields.
-
-Required fields:
-
-- `status` -- `ready` or `blocked`
-- `summary` -- one-line description
-- `main_project_refs` -- affected files, tickets, or commits
-- `critical` -- `true` or `false`
-- `severity` -- from the currently valid taxonomy
-- `producer: saiui`
-- `source_head` -- commit or `no-git`
-- `coverage` -- what was tested
-- `payload` -- type and summary of deliverable
-- `verified` -- how the patch was verified
-- `instructions` -- how Core should apply and verify
-- `base_head` -- base commit the patch applies to
-- `patch` -- unified diff, the actual code change
-- `details` -- full analysis (see below)
+fields. This charter never restates that moving field set: PROTOCOL.md is
+the sole owner, and its current § 2 plus § 9 contract binds every entry.
 
 The `details` section must contain:
 

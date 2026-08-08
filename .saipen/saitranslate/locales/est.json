@@ -1021,6 +1021,11 @@
     "Watcher start/stop": "Vaataja start/stopp",
     "Zoom in": "Suurenda",
     "Zoom out": "Vähenda",
-    "Picking a sound plays it. Volume 0 = the global volume.": "Heli valimine mängib seda. Helitugevus 0 = üldine helitugevus."
+    "Picking a sound plays it. Volume 0 = the global volume.": "Heli valimine mängib seda. Helitugevus 0 = üldine helitugevus.",
+    "Toggle Hide on Click-Out": "Lülita peida klõpsates väljapoole",
+    "Toggle Hide on Click-Out:": "Lülita peida klõpsates väljapoole:",
+    "Toggle Hide-on-Clickout": "Lülita peida-klõpsates-väljapoole",
+    "Toggle Hide-on-Clickout: Alt+A": "Lülita peida-klõpsates-väljapoole: Alt+A",
+    "👁 Hide on Click-Out": "👁 Peida klõpsates väljapoole"
   }
 }
