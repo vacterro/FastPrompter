@@ -13,7 +13,7 @@ _(empty)_
 ## TODO
 
 - [ ] T-777 (P2, freshness, hh HUNT finding) The EE package `STATE.next_action` tells the user to collect is already stale: `.saipen/saitranslate/kitchen/OUTBOX.md` [TRANSLATE-001] carries `source_head c1d04f4` while current HEAD is `d6982f1`, so `validate.py --gate collect:saitranslate` FAILs "package is stale and MUST NOT be collected" and `eee` can only answer `Not ready: run ee first.` Cause: the ccc run prepared EE at stage K, then shipped T-776 (9912f6c) and checkpointed (d6982f1) after it -- CONVERGE.md's "nothing that mutates main source may run after K" binds to HEAD, so even a docs-only or `.saipen`-only commit invalidates the package. `src/` and `tools/` are byte-identical between the two commits, which is why nothing else noticed. | verify: `eee` either collects a package the gate accepts, or `next_action` stops naming a dead action | needs: none
-_(T-778, T-779 moved to ## DONE)_
+- [ ] T-780 (P3, clean-orphan, needs confirm) `src/fastprompter/nul` is a 567-byte gitignored stray dated 21.07 with zero references: a captured Python traceback (`UnicodeEncodeError` out of a cp1251 encode), left by a `2>nul` redirect run under Git Bash, where `nul` is an ordinary filename instead of the Windows device. T-772 recorded "`nul` file does not exist (checked)" -- it looked at the repo root; this one is inside the package. Untracked and not regenerable by a named command, so `phases/clean.md`'s proof-of-recovery gate forbids deleting it outright: human yes/no, same as T-764. | verify: file gone, or explicitly kept with a stated reason | needs: none
 ## BLOCKED
 
 _(empty)_
