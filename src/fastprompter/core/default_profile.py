@@ -1,7 +1,8 @@
 """Shipped defaults — the baked "current configuration" (T-695, T-696).
 
-Generated once from a live profile and then hand-maintained; regenerate with
-`scratch/gen_default_profile.py` if the shipped look is ever re-frozen.
+Generated once from a live profile (E-1169, scratchpad gen_defaults.py) and
+then hand-maintained; regenerate from a live database if the shipped look is
+ever re-frozen.
 
 This map is merged into `FastPrompterState.reset_data()`, which means it is
 BOTH the fresh-install configuration and the fallback an existing database
