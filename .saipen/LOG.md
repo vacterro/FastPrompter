@@ -174,3 +174,7 @@
 - 10.08.26 22:38 [E-1425] [parent: E-1424] [T-786] [agent: opencode] RUN: VERIFY T-786 -> PASS -- canonical suite on the final tree: 1726 passed, 1 skipped (19m39s; baseline 1723 + 3 new drift tests), ruff clean, tests/test_cheatsheet_drift.py 3 passed incl. 2 deliberate-stale negatives, 62 hotkey/hotkey_filter/cheatsheet tests pass. conf: high.
 
 - 10.08.26 22:38 [E-1426] [parent: E-1425] [T-786] [agent: opencode] RUN: REVIEW T-786 -> verdict SHIP -- re-ran the drift gate (3 passed); both handlers resolve (open_timer_dialog main.py:1115, open_hashtag_dialog main.py:1091); diff is main.py +5 / new test file; no eval/exec/shell, no secrets. P0/P1 clean, no P2/P3 ticket. STATE -> SHIP.
+
+- 10.08.26 22:43 [E-1427] [parent: E-1426] [T-786] [agent: opencode] RUN: ship v0.8.33 -> pushed 1d2e43e -- v0.8.33 covers the work since v0.8.32: T-786 cheatsheet drift guard + real Ctrl+Shift+T/Alt+Shift+T bindings, T-785 CursorMixin slice, T-784 first CI, T-783 deploy safety. CHANGELOG + pyproject + uv.lock bumped; README badge is dynamic. Gate 140 = sealed-log baseline; tag v0.8.33 pushed to origin. Branch push e4f800a..1d2e43e landed first.
+
+- 10.08.26 22:43 [E-1428] [parent: E-1427] [T-786] [agent: opencode] DEC: finish T-786 -> ## DONE @1d2e43e (SHIP -> DONE). Converge stage C closed: all four dd-plan tickets (T-783..T-786) shipped. Halt on the untriaged-MARKHUNT brake (T-781/T-782 in ## BLOCKED) and T-780 destructive-op confirm; T-777's fix stays at stage K by construction. digest.md rewritten.

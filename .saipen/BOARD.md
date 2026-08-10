@@ -9,7 +9,6 @@
 
 ## DOING
 
-- [/] T-786 (P3, doc-integrity, dd proposal) The wiki Keyboard-Shortcuts-and-Cheatsheet.md drifted once already (T-776: it said "Hide on Click-Out is gone" while T-773 had restored it), and the shipped `adapters.example.toml` still carries dev TODO markers (T-782). Neither was caught because no test pins docs against code. Add a test comparing the cheatsheet's hotkey rows against the actual defaults in `ui/settings.py` / `ui/hotkey_mixin.py` so doc drift fails the suite instead of shipping. | verify: test passes today, and a deliberately stale cheatsheet row fails it | needs: none | owner: opencode | claim_time: 2026-08-10T22:38:00Z | verify: PASS 10.08.26 22:38 -- canonical 1726 pass 1 skip, ruff clean, drift+stale negatives green (E-1425)
 ## TODO
 
 _(empty)_
@@ -22,6 +21,8 @@ _(empty)_
 ## DONE
 
 ### cc converge — 10.08.26 CI + deploy safety + monolith slice
+
+- [x] T-786 (P3, doc-integrity, dd proposal) DONE 10.08.26 22:43 @1d2e43e -- new `tests/test_cheatsheet_drift.py` pins every hotkey token in the wiki cheatsheet table to a binding in src/ (registered, editor-bound, or documented range/mouse variant). Building it surfaced REAL drift: the cheatsheet + User-Guide advertise Ctrl+Shift+T (Timer) and Alt+Shift+T (Hashtag) that nothing in src bound -- dialogs were click-only. Fixed by binding both via add_shortcut (main.py:9604-9605), so docs tell the truth instead of gutting 15 localized doc files. | verify: canonical suite 1726 passed 1 skipped (baseline 1723 + 3 drift tests), ruff clean, drift test 3 passed incl. 2 deliberate-stale negatives, 62 hotkey tests pass, committed e4f800a pushed, shipped in v0.8.33 | owner: opencode
 
 - [x] T-785 (P3, architecture, dd proposal) DONE 10.08.26 15:24 -- cursor block (6 methods, 114 lines) extracted from main.py into new `src/fastprompter/ui/cursor_mixin.py` `CursorMixin`, added to class bases. Byte-identical move verified 6/6; main.py 472KB -> 466.4KB (9309 -> 9202 lines). | verify: canonical suite 1723 passed 1 skipped (20m43s), cursor tests 40 passed, ruff clean, committed 8499a97 pushed | owner: opencode
 

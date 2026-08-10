@@ -1,8 +1,8 @@
 ---
-phase: SHIP
-task: T-786
-next_action: "PHASE SHIP T-786"
-blocker: "none"
+phase: DONE
+task: none
+next_action: "WAIT: blocked -- untriaged MARKHUNT findings in ## BLOCKED; triage into ## TODO or dismiss"
+blocker: "untriaged MARKHUNT: T-781, T-782; T-780 needs destructive-op confirm; T-777 waits stage K"
 agent: opencode
 saipen_version: 7
 saipen_home: "C:\\Users\\vac34\\.claude\\skills\\saipen"
@@ -13,9 +13,9 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 1426
+last_event: 1428
 style_contract: ded-4ae736e4
 execution_intent: converge
-updated: 2026-08-10T22:38:13Z
-transition_from: REVIEW
+updated: 2026-08-10T22:43:26Z
+transition_from: SHIP
 ---
