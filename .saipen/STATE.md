@@ -1,7 +1,7 @@
 ---
-phase: SHIP
-task: T-783
-next_action: "PHASE SHIP T-783"
+phase: DONE
+task: none
+next_action: "PHASE SCOUT T-784"
 blocker: "none"
 agent: opencode
 saipen_version: 7
@@ -13,9 +13,9 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 1417
+last_event: 1418
 style_contract: ded-4ae736e4
 execution_intent: converge
-updated: 2026-08-10T14:31:00Z
-transition_from: REVIEW
+updated: 2026-08-10T14:32:00Z
+transition_from: SHIP
 ---

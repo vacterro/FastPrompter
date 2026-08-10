@@ -9,7 +9,7 @@
 
 ## DOING
 
-- [/] T-783 (P2, bugfix, security, dd proposal) `deploy.ps1` stages with `git add -A` (deploy.ps1:11) and, on a rebase conflict, falls back to `git push --force-with-lease origin main` (deploy.ps1:22-25) -- both violate the project's own release discipline: ship.md step 6b forbids `git add .`/`git add -A` ("stage ONLY the reviewed files this ship owns, by explicit path"), and CORE.md § 1.1 puts force-push on the destructive list needing explicit user confirmation. The wiki even documents the force-push as intended behavior (Deployment-Guide.md:70-73, 91). An unattributed or unreviewed file -- a token, a stray -- would sail into a release, and the force-push can silently clobber a remote someone else moved. | verify: deploy.ps1 stages by explicit path (no `git add -A`), the force-push fallback is gone or gated on an explicit confirmation, Deployment-Guide.md updated to match | needs: none | owner: opencode | claim_time: 2026-08-10T14:32:00Z
+_(empty)_
 ## TODO
 
 - [ ] T-784 (P2, platform_convention, dd proposal) The project has a 1723-test suite plus ruff, `tools/validate.py` and `tools/validate_saitranslate.py`, but no CI at all: `.github/workflows/` does not exist. Every gate runs by hand on a dev machine, so a red tree can sit uncaught between sessions and nothing enforces the repo's own checks on push. | verify: a GitHub Actions workflow runs `pytest tests/ tests_smoke/` and `ruff check src/` on push/PR and shows green | needs: none
@@ -22,6 +22,10 @@
 - [ ] T-781 (P3, dead-tree, [MARKHUNT] x1) `i18n_build_scripts/` is a 115-file tracked graveyard of one-off i18n generator scripts with zero references anywhere: `rg "i18n_build_scripts" src/ tools/ tests/ pyproject.toml` = no hits, no git log change since 47a130d (08.08, T-772 relocated `_fix_vi.py`/`_translate.py` there as the dump bin), and `SAIPEN_PROTECT.txt` ("complete i18n language build system, DO NOT REMOVE", d53b9d7 21.07 restore point) is stale -- the real pipeline is now `tools/validate_saitranslate.py` + EE packages. Dead weight riding in the repo behind a protective marker written before its replacement existed. | blocker: unvetted audit -- i18n_build_scripts/ 115 files, zero refs, stale SAIPEN_PROTECT | needs: none
 - [ ] T-782 (P3, shipped-devtodo, [MARKHUNT] x1) `src/fastprompter/core/watcher/adapters.example.toml` ships 3 `# TODO:` markers (lines 89, 141, 180: "confirm this agent's skill syntax, or delete the key if it has none") in the file that becomes the user's DEFAULT adapters config -- `watcher_mixin.py:87-91` falls back to it when no user `adapters.toml` exists, so a fresh install reads dev-internal TODOs as guidance. HUNT C3 has never seen them because it greps `*.py` only. | blocker: unvetted audit -- adapters.example.toml:89/141/180 TODO markers in shipped default | needs: none
 ## DONE
+
+### cc converge — 10.08.26 deploy.ps1 release-safety
+
+- [x] T-783 (P2, bugfix, security, dd proposal) DONE 10.08.26 14:32 -- `deploy.ps1` no longer stages with `git add -A` and no longer force-pushes on any rebase conflict: `git add -u` stages tracked changes only, untracked files are listed and staged only on an explicit prompt, and the force-push fallback now requires an explicit y/N answer with a CORE.md § 1.1 destructive warning. `docs/wiki/Deployment-Guide.md` section 3 + troubleshooting row updated to match. Adjacent fix folded in: `uv.lock` was left at 0.8.31 by the v0.8.32 ship while pyproject says 0.8.32 (T-775 class) -- now synced to 0.8.32. | verify: no `git add -A` in script or wiki, force-push gated, untracked-guard present, PS parse clean, P0/P1 clean, committed 016a311 pushed | owner: opencode
 
 ### cc converge — 08.08.26 test isolation
 
