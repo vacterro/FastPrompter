@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.8.32 — 2026-08-10
+
+- **"Hide on Click-Out" is back, and it actually behaves.** The feature removed in v0.8.24 (21af95f) plus the machinery strip in v0.8.27 (fe76c94) is restored: the checkbox, the Alt+A toggle, `close_on_focus_loss`, the `changeEvent` hide path with its startup and flicker guards, the hotkey settings row, the help line, the i18n keys, and the ~30 counted focus locks around dialogs. The root cause of the original removal report — four dialogs added after v0.8.24 opening modal with no focus lock — is fixed, so the popup actually closes on outside click (T-773).
+- **Colour helpers unified.** `clamp_byte`/`hex_to_rgb` made public in `theme/themes.py`, and `blend_hex` is now shared: `timers.py` dropped its private byte-identical copies, and the two near-identical palette dances in `analog_clock.py` and `drop_overlay.py` became the one `theme_raw_colors(main_win, fallback)`. One definition, both callers import it (T-770, T-771, T-772).
+- *Under the hood:* the test suite runs on its own sound cache — a per-process `tempfile.tempdir` keeps concurrent pytest runs from colliding on the machine-global scaled-volume cache (T-778); one test that asserted on the real `_play_winsound` while a session mute had replaced it now grabs the captured function directly, so `tests/` alone goes green (T-779); a queue-restore test bypassing `SiloQueue` deserialisation is fixed (T-774); `uv.lock` re-locked to the shipped version (T-775); the wiki pages were synced to describe the restored feature instead of the removed one (T-776).
+
 ## v0.8.31 — 2026-08-08
 
 - **Translation backport for the v0.8.26 sound-settings text (T-769).** The long running note added in v0.8.26 — *"Picking a sound plays it. Volume 0 = the global volume."* — never made it into Russian, Estonian and Дед; they are back at 100% coverage (1015 keys, zero gaps). The five dead "Hide on Click-Out" keys removed from the English source in v0.8.25 are gone from those locales too.
