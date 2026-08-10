@@ -66,11 +66,12 @@ uv run python tools/release.py [release_notes.md]
 ## 3. One-Click Scripts
 
 ### deploy.cmd / deploy.ps1
-Commit + push all project changes:
-- Stage all (`git add -A`)
+Commit + push local changes:
+- Stage tracked changes (`git add -u`)
+- Untracked files are listed and only staged after an explicit yes (never auto-added)
 - Timestamped commit (`deploy: YYYY-MM-DD HH:mm`)
 - Pull rebase (`git pull --rebase --autostash origin main`)
-- Force push if conflicts (`git push --force-with-lease origin main`)
+- On conflict, ask for confirmation before force-pushing (`git push --force-with-lease` is used only after an explicit y)
 
 ### release.cmd
 Build + publish in one click:
@@ -88,4 +89,4 @@ uv run python tools\release.py %*
 | `ImportError: No module named fastprompter` | Nuitka didn't trace src/ | Ensure PYTHONPATH includes src/ (build.py does this) |
 | `No GitHub credential found` | Git token not in Credential Manager | Run `git push` once manually to store token |
 | Large EXE (>60MB) | UPX not found in PATH | Install UPX from https://upx.github.io/ |
-| Rebase conflict on deploy | Remote edited directly on GitHub | Force-with-lease push (deploy.ps1 does this automatically) |
+| Rebase conflict on deploy | Remote edited directly on GitHub | deploy.ps1 asks for confirmation before force-pushing (y/N); decline and resolve manually |
