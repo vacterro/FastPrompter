@@ -9598,6 +9598,11 @@ class FastPrompter(
         add_shortcut("hk_settings", "Alt+`", self.toggle_mini_settings)
         add_shortcut("hk_bold", "Ctrl+B", self.apply_bold_smart)
         add_shortcut("hk_undo", "Ctrl+Z", self._smart_undo)
+        # Timer and Hashtag dialogs were only reachable by clicking their
+        # labels, while the cheatsheet and User-Guide have always advertised
+        # Ctrl+Shift+T / Alt+Shift+T. Bind them so the docs tell the truth.
+        add_shortcut("hk_timers", "Ctrl+Shift+T", self.open_timer_dialog)
+        add_shortcut("hk_hashtags", "Alt+Shift+T", self.open_hashtag_dialog)
         # Alt+C queues the current line; Alt+Shift+C opens the this-silo queue.
         add_shortcut("hk_queue_master", "Alt+Shift+C", self.open_queue_master,
                      Qt.ShortcutContext.ApplicationShortcut)
