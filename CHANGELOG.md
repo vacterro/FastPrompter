@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.8.33 — 2026-08-11
+
+- **The hotkey cheatsheet can no longer silently drift (T-786).** A new test pins every shortcut the wiki's Keyboard-Shortcuts-and-Cheatsheet page advertises to a binding that actually exists in `src/` — a renamed or removed shortcut that nobody updates the sheet for now fails the suite instead of shipping. Building the guard surfaced the first real drift on day one: the cheatsheet and User-Guide have always advertised **Ctrl+Shift+T** (Timer Dialog) and **Alt+Shift+T** (Hashtag Dialog), but nothing in the app bound them — both dialogs were only reachable by clicking their labels. They are now registered shortcuts, so the docs finally tell the truth.
+- **Cursor code pulled out of the main monolith (T-785).** The six cursor methods — themed cursor, the Qt cursor map, custom-cursor install/toggle, cursor-set capture and system install — moved byte-identical into a new `ui/cursor_mixin.py` (`CursorMixin`). `main.py` dropped from ~472 KB to ~466 KB with no behavior change.
+- *Under the hood:* the project gets its first CI — a GitHub Actions workflow on `windows-latest` that syncs the dev group and runs `ruff` plus the whole `pytest tests/ tests_smoke/` suite on every push; pytest and ruff were finally declared in the dev group (T-784). `deploy.ps1` no longer stages with `git add -A` — tracked-only `git add -u`, untracked files staged only on an explicit prompt — and its force-push fallback on a rebase conflict now requires explicit confirmation (T-783).
+
 ## v0.8.32 — 2026-08-10
 
 - **"Hide on Click-Out" is back, and it actually behaves.** The feature removed in v0.8.24 (21af95f) plus the machinery strip in v0.8.27 (fe76c94) is restored: the checkbox, the Alt+A toggle, `close_on_focus_loss`, the `changeEvent` hide path with its startup and flicker guards, the hotkey settings row, the help line, the i18n keys, and the ~30 counted focus locks around dialogs. The root cause of the original removal report — four dialogs added after v0.8.24 opening modal with no focus lock — is fixed, so the popup actually closes on outside click (T-773).

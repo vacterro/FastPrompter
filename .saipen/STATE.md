@@ -1,7 +1,7 @@
 ---
-phase: BUILD
+phase: SHIP
 task: T-786
-next_action: "PHASE VERIFY T-786"
+next_action: "PHASE SHIP T-786"
 blocker: "none"
 agent: opencode
 saipen_version: 7
@@ -13,9 +13,9 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 1424
+last_event: 1426
 style_contract: ded-4ae736e4
 execution_intent: converge
-updated: 2026-08-10T15:29:00Z
-transition_from: SCOUT
+updated: 2026-08-10T22:38:13Z
+transition_from: REVIEW
 ---

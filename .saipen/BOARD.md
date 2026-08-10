@@ -9,7 +9,7 @@
 
 ## DOING
 
-- [/] T-786 (P3, doc-integrity, dd proposal) The wiki Keyboard-Shortcuts-and-Cheatsheet.md drifted once already (T-776: it said "Hide on Click-Out is gone" while T-773 had restored it), and the shipped `adapters.example.toml` still carries dev TODO markers (T-782). Neither was caught because no test pins docs against code. Add a test comparing the cheatsheet's hotkey rows against the actual defaults in `ui/settings.py` / `ui/hotkey_mixin.py` so doc drift fails the suite instead of shipping. | verify: test passes today, and a deliberately stale cheatsheet row fails it | needs: none | owner: opencode | claim_time: 2026-08-10T15:24:00Z
+- [/] T-786 (P3, doc-integrity, dd proposal) The wiki Keyboard-Shortcuts-and-Cheatsheet.md drifted once already (T-776: it said "Hide on Click-Out is gone" while T-773 had restored it), and the shipped `adapters.example.toml` still carries dev TODO markers (T-782). Neither was caught because no test pins docs against code. Add a test comparing the cheatsheet's hotkey rows against the actual defaults in `ui/settings.py` / `ui/hotkey_mixin.py` so doc drift fails the suite instead of shipping. | verify: test passes today, and a deliberately stale cheatsheet row fails it | needs: none | owner: opencode | claim_time: 2026-08-10T22:38:00Z | verify: PASS 10.08.26 22:38 -- canonical 1726 pass 1 skip, ruff clean, drift+stale negatives green (E-1425)
 ## TODO
 
 _(empty)_
