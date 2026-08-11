@@ -67,11 +67,176 @@ _PER_CATEGORY_STATE_KEYS = (
     "silo_type_all", "silo_session_all", "silo_view_state_all",
 )
 
+# Flat active-category alias -> the _all store it aliases. ONE source of
+# truth for rebinding: every category switch binds exactly this set, so a
+# store left off here (or a rebinding hand-written elsewhere) is a drift bug.
+# `silo_last_edited_all` is deliberately absent: its live alias is the
+# instance attribute `self.silo_last_edited`, not a data key.
+_PER_CATEGORY_ALIASES = (
+    ("temp_presets", "temp_presets_all"),
+    ("archive_temp_presets", "archive_temp_presets_all"),
+    ("pinned_silos", "pinned_silos_all"),
+    ("silo_ticked", "silo_ticked_all"),
+    ("silo_children", "silo_children_all"),
+    ("silo_collapsed", "silo_collapsed_all"),
+    ("silo_colors", "silo_colors_all"),
+    ("silo_gaps", "silo_gaps_all"),
+    ("silo_folders", "silo_folders_all"),
+    ("archive_silo_folders", "archive_silo_folders_all"),
+    ("silo_project_paths", "silo_project_paths_all"),
+    ("archive_project_paths", "archive_project_paths_all"),
+    ("watcher_queues", "watcher_queues_all"),
+    ("silo_types", "silo_type_all"),
+)
+
+# The natural empty value for a category's per-category store.
+_ALIAS_EMPTY = {
+    "temp_presets": [""] * 10,
+    "archive_temp_presets": [],
+    "pinned_silos": [],
+    "silo_ticked": [],
+    "silo_collapsed": [],
+    "silo_gaps": [],
+}
+
+
+def bind_active_category(data, category):
+    """Bind every flat alias to `category`'s entry in its _all store.
+
+    Mutates ``data`` in place and returns it. A missing per-category entry is
+    created with the store's natural empty value (a fresh deep copy, so two
+    categories can never share one list). A corrupted non-dict _all store is
+    replaced rather than raising, mirroring the old str(dict)-guard.
+    """
+    for flat, all_key in _PER_CATEGORY_ALIASES:
+        store = data.get(all_key)
+        if not isinstance(store, dict):
+            store = {}
+            data[all_key] = store
+        if category not in store:
+            store[category] = copy.deepcopy(_ALIAS_EMPTY.get(flat, {}))
+        data[flat] = store[category]
+    return data
+
 
 def _encode_settings(data):
     """{key: text} for the settings table, JSON where the value needs it."""
     return {k: (json.dumps(v) if k in _JSON_SETTINGS else str(v))
             for k, v in data.items() if k not in _SETTINGS_SKIP}
+
+
+# ---------------------------------------------------------------------------
+# Schema migrations — versioned via PRAGMA user_version.
+#
+# A failed migration must never be read as a successful one: each step runs
+# inside one transaction, bumps user_version only after every verification
+# passed, and a failure rolls back and raises (the app then refuses to start
+# loudly instead of operating on a half-migrated database).
+# ---------------------------------------------------------------------------
+
+CURRENT_SCHEMA_VERSION = 1
+
+
+class MigrationError(RuntimeError):
+    """The database schema could not be migrated and was left untouched."""
+
+
+def _has_table(cur, name):
+    return cur.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+        (name,)).fetchone() is not None
+
+
+def _has_column(cur, table, column):
+    for row in cur.execute(f"PRAGMA table_info({table})"):
+        if row[1] == column:
+            return True
+    return False
+
+
+def _ensure_base_tables(cur):
+    cur.execute("CREATE TABLE IF NOT EXISTS presets (category TEXT, slot INTEGER, name TEXT, content TEXT, PRIMARY KEY (category, slot))")
+    cur.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")
+    cur.execute("CREATE TABLE IF NOT EXISTS temp_presets_v2 (category TEXT, slot INTEGER, content TEXT, PRIMARY KEY (category, slot))")
+    cur.execute("CREATE TABLE IF NOT EXISTS archive_temp_presets_v2 (category TEXT, slot INTEGER, content TEXT, PRIMARY KEY (category, slot))")
+
+
+def _migrate_v0_to_v1(conn, first_category):
+    """Legacy (v0.8.x, unversioned) database -> version 1 schema.
+
+    Creates the base tables, folds the pre-tab global silo tables into the
+    per-category tables, adds the snippet ``last_edited`` column, then
+    verifies the result before the caller bumps user_version. Each migration
+    is deliberately self-contained so a later version bumps its own step.
+    """
+    cur = conn.cursor()
+    _ensure_base_tables(cur)
+
+    # Migration from global silos to Tab-based silos (defaulting to the first Tab)
+    if _has_table(cur, "temp_presets"):
+        cur.execute(
+            "INSERT OR IGNORE INTO temp_presets_v2 (category, slot, content) "
+            "SELECT ?, slot, content FROM temp_presets", (first_category,))
+        cur.execute("DROP TABLE temp_presets")
+
+    if _has_table(cur, "archive_temp_presets"):
+        cur.execute(
+            "INSERT OR IGNORE INTO archive_temp_presets_v2 (category, slot, content) "
+            "SELECT ?, slot, content FROM archive_temp_presets", (first_category,))
+        cur.execute("DROP TABLE archive_temp_presets")
+
+    if not _has_column(cur, "presets", "last_edited"):
+        cur.execute("ALTER TABLE presets ADD COLUMN last_edited INTEGER")
+
+    # Verify — a migration that did not actually produce the schema it claims
+    # must not be recorded as successful.
+    for table in ("presets", "settings", "temp_presets_v2",
+                  "archive_temp_presets_v2"):
+        if not _has_table(cur, table):
+            raise MigrationError(f"schema table {table} is missing after migration")
+    if not _has_column(cur, "presets", "last_edited"):
+        raise MigrationError("presets.last_edited is missing after migration")
+
+    cur.execute(f"PRAGMA user_version = {CURRENT_SCHEMA_VERSION}")
+
+
+def _migrate_schema(conn, first_category):
+    """Bring the connected database up to CURRENT_SCHEMA_VERSION.
+
+    Runs inside ONE explicit transaction. Python's sqlite3 opens implicit
+    transactions only for DML, not for DDL, so ``with conn:`` would let a
+    half-applied CREATE/ALTER commit on its own — hence the explicit
+    BEGIN/ROLLBACK. On any failure it rolls back, logs the exact error and
+    re-raises, so a half-migrated database is never used.
+    """
+    version = conn.execute("PRAGMA user_version").fetchone()[0]
+    if version >= CURRENT_SCHEMA_VERSION:
+        return
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        if version < 1:
+            _migrate_v0_to_v1(conn, first_category)
+        # chain future migrations here:
+        # if version < 2: _migrate_v1_to_v2(conn, ...)
+        conn.execute("COMMIT")
+    except MigrationError:
+        _rollback_quietly(conn)
+        logger.exception("database migration to schema v%d failed; the "
+                         "database was rolled back and left untouched",
+                         CURRENT_SCHEMA_VERSION)
+        raise
+    except Exception:
+        _rollback_quietly(conn)
+        logger.exception("database migration failed unexpectedly; the database "
+                         "was rolled back and left untouched")
+        raise
+
+
+def _rollback_quietly(conn):
+    try:
+        conn.execute("ROLLBACK")
+    except sqlite3.Error:
+        pass
 
 
 class FastPrompterState:
@@ -140,25 +305,13 @@ class FastPrompterState:
             self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
             self.conn.execute('PRAGMA journal_mode=WAL;')
             self.conn.execute('PRAGMA synchronous=NORMAL;')
-            cur = self.conn.cursor()
 
-            cur.execute("CREATE TABLE IF NOT EXISTS presets (category TEXT, slot INTEGER, name TEXT, content TEXT, PRIMARY KEY (category, slot))")
-            cur.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")
-            cur.execute("CREATE TABLE IF NOT EXISTS temp_presets_v2 (category TEXT, slot INTEGER, content TEXT, PRIMARY KEY (category, slot))")
-            cur.execute("CREATE TABLE IF NOT EXISTS archive_temp_presets_v2 (category TEXT, slot INTEGER, content TEXT, PRIMARY KEY (category, slot))")
-
-            # Migration from global silos to Tab-based silos (defaulting to the first Tab)
-            if cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='temp_presets'").fetchone():
-                cur.execute("INSERT OR IGNORE INTO temp_presets_v2 (category, slot, content) SELECT ?, slot, content FROM temp_presets", (self.data["cats_order"][0],))
-                cur.execute("DROP TABLE temp_presets")
-
-            if cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='archive_temp_presets'").fetchone():
-                cur.execute("INSERT OR IGNORE INTO archive_temp_presets_v2 (category, slot, content) SELECT ?, slot, content FROM archive_temp_presets", (self.data["cats_order"][0],))
-                cur.execute("DROP TABLE archive_temp_presets")
-
-            try: cur.execute("ALTER TABLE presets ADD COLUMN last_edited INTEGER")
-            except Exception as e: logger.warning(f"Error migrating DB schema (ADD COLUMN): {e}")
+            # Versioned, transactional schema migrations. A failure here
+            # raises (and rolls back), so a broken migration can never be
+            # mistaken for a working one — startup refuses loudly instead.
+            _migrate_schema(self.conn, self.data["cats_order"][0] if self.data.get("cats_order") else "Code")
             self.conn.commit()
+            cur = self.conn.cursor()
 
             for row in cur.execute('SELECT key, value FROM settings'):
                 if row[0] in ('last_tab_idx', 'active_temp_slot', 'font_size'):
@@ -275,6 +428,10 @@ class FastPrompterState:
 
             self._db_dirty = False
             self._snapshot_state()
+        except MigrationError:
+            # A failed migration must never be swallowed: refusing to start
+            # loudly is what protects the half-migrated database.
+            raise
         except Exception:
             import traceback
             traceback.print_exc()

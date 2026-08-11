@@ -36,6 +36,7 @@ from PyQt6.QtWidgets import (
 
 from fastprompter.core.logging import logger
 from fastprompter.core.translations import tr
+from fastprompter.utils.path_safety import safe_join, validate_component
 
 _IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".ico"}
 _SLUG_STRIP = re.compile(r"[#*_`•\[\]]+")
@@ -619,12 +620,15 @@ class FileContainerPanel(QWidget):
         if paths:
             self.import_links(paths)
 
-    def save_clipboard_as_file(self):
-        """Save clipboard text into the folder, prompting the user for a filename."""
+    def save_clipboard_as_file(self, filename=None):
+        """Save clipboard text into the folder, prompting the user for a filename.
+
+        `filename` is testable as an optional override; production prompts.
+        The name is validated by the canonical container-safety helper, so a
+        traversal or drive-qualified name can never escape the container."""
         if not self.folder:
             return
         import datetime
-        import re
 
         from PyQt6.QtWidgets import QApplication
 
@@ -633,34 +637,39 @@ class FileContainerPanel(QWidget):
             self.lbl_count.setText(tr("clipboard has no text", self.lang))
             return
 
-        stamp = datetime.datetime.now().strftime("%d.%m.%y-%H%M%S")
-        first_word = ""
+        if filename is None:
+            stamp = datetime.datetime.now().strftime("%d.%m.%y-%H%M%S")
+            first_word = ""
 
-        try:
-            if hasattr(self.main_win, "silo_docs"):
-                idx = getattr(self.main_win, "active_temp_slot", 0)
-                if 0 <= idx < len(self.main_win.silo_docs):
-                    doc = self.main_win.silo_docs[idx]
-                    first_line = doc.toPlainText().split('\n')[0].strip()
-                    # Strip markdown bold/italic markers to get a clean word
-                    clean_line = re.sub(r'[*_#]+', '', first_line).strip()
-                    if clean_line:
-                        first_word = clean_line.split()[0]
-                        # Remove non-alphanumeric chars
-                        first_word = re.sub(r'[^a-zA-Z0-9]', '', first_word)
-        except Exception:
-            pass
+            try:
+                if hasattr(self.main_win, "silo_docs"):
+                    idx = getattr(self.main_win, "active_temp_slot", 0)
+                    if 0 <= idx < len(self.main_win.silo_docs):
+                        doc = self.main_win.silo_docs[idx]
+                        first_line = doc.toPlainText().split('\n')[0].strip()
+                        import re as _re
+                        clean_line = _re.sub(r'[*_#]+', '', first_line).strip()
+                        if clean_line:
+                            first_word = clean_line.split()[0]
+                            first_word = _re.sub(r'[^a-zA-Z0-9]', '', first_word)
+            except Exception:
+                pass
 
-        default_name = f"clip-{first_word}" if first_word else f"clip-{stamp}"
+            default_name = f"clip-{first_word}" if first_word else f"clip-{stamp}"
+            name, ok = self._prompt_text(
+                tr("Save Clipboard", self.lang), tr("Enter filename (without .txt):", self.lang), default_name
+            )
+            if not ok or not name.strip():
+                return
+            filename = name
 
-        name, ok = self._prompt_text(
-            tr("Save Clipboard", self.lang), tr("Enter filename (without .txt):", self.lang), default_name
-        )
-        if not ok or not name.strip():
+        clean, reason = validate_component(filename)
+        if clean is None:
+            logger.warning("File container clipboard save rejected: %s", reason)
+            self.lbl_count.setText(tr("invalid filename", self.lang))
             return
 
-        filename = f"{name.strip()}.txt"
-        dest = _unique_dest(self.folder, filename)
+        dest = _unique_dest(self.folder, f"{clean}.txt")
         try:
             with open(dest, "w", encoding="utf-8") as f:
                 f.write(text)
@@ -731,14 +740,24 @@ class FileContainerPanel(QWidget):
             
         return dialog.textValue(), bool(ok)
 
-    def _rename(self, path):
+    def _rename(self, path, new_name=None):
         old = os.path.basename(path)
-        new, ok = self._prompt_text(tr("Rename", self.lang), tr("New name:", self.lang), old)
-        new = (new or "").strip()
-        if not ok or not new or new == old:
+        if new_name is None:
+            new, ok = self._prompt_text(tr("Rename", self.lang), tr("New name:", self.lang), old)
+            new_name = new
+            if not ok:
+                return
+        new_name = (new_name or "").strip()
+        if not new_name or new_name == old:
             return
+        clean, reason = validate_component(new_name)
+        if clean is None or not safe_join(self.folder, clean)[0]:
+            logger.warning("File container rename rejected: %s", reason)
+            self.lbl_count.setText(tr("invalid filename", self.lang))
+            return
+        dest = _unique_dest(self.folder, clean)
         try:
-            os.rename(path, _unique_dest(self.folder, new))
+            os.rename(path, dest)
         except OSError as e:
             logger.error(f"File container rename failed: {e}")
         self.refresh()
@@ -791,17 +810,25 @@ class FileContainerPanel(QWidget):
             QApplication.clipboard().setText("\n".join(paths))
             self.lbl_count.setText(tr("path copied", self.lang))
 
-    def new_folder(self):
-        """Create a subfolder in the container (Ctrl+N)."""
+    def new_folder(self, name=None):
+        """Create a subfolder in the container (Ctrl+N).
+
+        `name` is testable as an optional override; production prompts. The
+        name goes through the canonical container-safety helper, so a
+        traversal or drive-qualified name can never leave the container."""
         if not self.folder:
             return
-        name, ok = self._prompt_text(tr("New Folder", self.lang), tr("Folder name:", self.lang), tr("New Folder", self.lang))
-        name = (name or "").strip().strip(".")
-        if not ok or not name:
+        if name is None:
+            name, ok = self._prompt_text(tr("New Folder", self.lang), tr("Folder name:", self.lang), tr("New Folder", self.lang))
+            if not ok:
+                return
+        clean, reason = validate_component(name)
+        if clean is None or not safe_join(self.folder, clean)[0]:
+            logger.warning("File container new-folder rejected: %s", reason)
+            self.lbl_count.setText(tr("invalid filename", self.lang))
             return
-        safe = re.sub(r'[<>:"/\\|?*]', "_", name)
         try:
-            os.makedirs(_unique_dest(self.folder, safe), exist_ok=False)
+            os.makedirs(_unique_dest(self.folder, clean), exist_ok=False)
         except OSError as e:
             logger.error(f"File container new folder failed: {e}")
         self.refresh()
@@ -810,13 +837,36 @@ class FileContainerPanel(QWidget):
         self.main_win.data["folder_template"] = text
         self.main_win.mark_dirty()
 
-    def build_template_folders(self):
-        if not self.folder: return
-        template = self.main_win.data.get("folder_template", "ae, c4d, _output, _input")
-        folders = [f.strip() for f in template.split(",") if f.strip()]
+    def build_template_folders(self, template=None):
+        """Create the comma-separated template folders inside the container.
+
+        `template` is testable as an optional override; production reads the
+        saved setting. Each element is treated as ONE folder name (nested
+        paths are not a supported template feature) and must pass the
+        canonical container-safety helper — a malicious element is skipped
+        and reported, never allowed to leave the container root."""
+        if not self.folder:
+            return
+        if template is None:
+            template = self.main_win.data.get("folder_template", "ae, c4d, _output, _input")
+        folders = [f.strip() for f in str(template or "").split(",") if f.strip()]
+        rejected = []
+        made = 0
         for f in folders:
-            os.makedirs(os.path.join(self.folder, f), exist_ok=True)
-        self.refresh()
+            clean, reason = validate_component(f)
+            if clean is None or not safe_join(self.folder, clean)[0]:
+                rejected.append(f)
+                continue
+            try:
+                os.makedirs(os.path.join(self.folder, clean), exist_ok=True)
+                made += 1
+            except OSError as e:
+                logger.error(f"File container template build failed for {f}: {e}")
+        if rejected:
+            logger.warning("File container template skipped %d invalid name(s): %r",
+                           len(rejected), rejected)
+        if made:
+            self.refresh()
 
     def _show_menu(self, pos):
         item = self.file_list.itemAt(pos)

@@ -259,17 +259,23 @@ class TestIpcServerSetup:
 class TestIpcServerHandleCommand:
     """Verify IpcServer._handle_command."""
 
-    def test_show_command_calls_callback(self):
-        """Simple 'SHOW' command -> callback is invoked."""
+    def test_bare_show_is_rejected(self):
+        """Bare 'SHOW' (no token) is NOT a valid command anymore.
+
+        The old unauthenticated path was the second writer's open door: an
+        unknown process could summon the window, and a tokenless client was
+        indistinguishable from a hostile one. The contract is now
+        TOKEN:<correct-token>|SHOW only.
+        """
         cb = MagicMock()
         server = IpcServer(cb)
         server.setup()
 
-        # Simulate an incoming SHOW command via the shared pending socket
         server._server._pending._data = b"SHOW"
         server._handle_command()
 
-        cb.assert_called_once()
+        cb.assert_not_called()
+        assert server._server._pending._data == b"SHOW"  # no ACK was written
 
     def test_token_show_command_calls_callback(self):
         """'TOKEN:<tok>|SHOW' with correct token -> callback is invoked."""
@@ -281,6 +287,7 @@ class TestIpcServerHandleCommand:
         server._handle_command()
 
         cb.assert_called_once()
+        assert b"ACK" in server._server._pending._data
 
     def test_wrong_token_does_not_call_callback(self):
         """'TOKEN:<wrong>|SHOW' with wrong token -> callback NOT invoked."""
@@ -289,6 +296,30 @@ class TestIpcServerHandleCommand:
         server.setup()
 
         server._server._pending._data = b"TOKEN:wrong-token|SHOW"
+        server._handle_command()
+
+        cb.assert_not_called()
+        assert server._server._pending._data == b"TOKEN:wrong-token|SHOW"
+
+    def test_empty_token_is_rejected(self):
+        """'TOKEN:|SHOW' (empty token) -> callback NOT invoked."""
+        cb = MagicMock()
+        server = IpcServer(cb)
+        server.setup()
+
+        server._server._pending._data = b"TOKEN:|SHOW"
+        server._handle_command()
+
+        cb.assert_not_called()
+        assert server._server._pending._data == b"TOKEN:|SHOW"
+
+    def test_malformed_token_no_pipe_is_rejected(self):
+        """'TOKEN:abc' (no |SHOW) -> callback NOT invoked."""
+        cb = MagicMock()
+        server = IpcServer(cb)
+        server.setup()
+
+        server._server._pending._data = b"TOKEN:abc"
         server._handle_command()
 
         cb.assert_not_called()
@@ -303,6 +334,18 @@ class TestIpcServerHandleCommand:
         server._handle_command()
 
         cb.assert_not_called()
+
+    def test_valid_token_with_unknown_command_does_not_call_callback(self):
+        """Correct token but a command other than SHOW -> callback NOT invoked."""
+        cb = MagicMock()
+        server = IpcServer(cb)
+        server.setup()
+
+        server._server._pending._data = f"TOKEN:{server.token}|QUIT".encode()
+        server._handle_command()
+
+        cb.assert_not_called()
+        assert server._server._pending._data == f"TOKEN:{server.token}|QUIT".encode()
 
     def test_empty_data_does_not_call_callback(self):
         """Empty data -> callback NOT invoked."""
@@ -332,7 +375,7 @@ class TestIpcServerHandleCommand:
         server = IpcServer(cb)
         server.setup()
 
-        server._server._pending._data = b"SHOW"
+        server._server._pending._data = f"TOKEN:{server.token}|SHOW".encode()
         server._handle_command()
 
         # We can't easily check deleteLater on the stub,
@@ -340,13 +383,13 @@ class TestIpcServerHandleCommand:
         assert True
 
     def test_multiple_commands_sequentially(self):
-        """Multiple SHOW commands -> callback called each time."""
+        """Multiple valid SHOW commands -> callback called each time."""
         cb = MagicMock()
         server = IpcServer(cb)
         server.setup()
 
         for _ in range(3):
-            server._server._pending._data = b"SHOW"
+            server._server._pending._data = f"TOKEN:{server.token}|SHOW".encode()
             server._handle_command()
 
         assert cb.call_count == 3

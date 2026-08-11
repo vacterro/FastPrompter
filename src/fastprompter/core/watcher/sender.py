@@ -175,6 +175,11 @@ class ClipboardSender:
     mangles Unicode in some terminals. The clipboard is put back afterwards,
     because silently eating what the user had copied is its own small
     betrayal.
+
+    The restore is CONDITIONAL: ``restore_if_unchanged`` puts the old text
+    back only while the clipboard still holds FastPrompter's own write. If
+    the user copied something new during the restore delay, that newer copy
+    wins and is never overwritten.
     """
 
     dry = False
@@ -220,10 +225,28 @@ class ClipboardSender:
         finally:
             if saved is not None:
                 try:
-                    self.clipboard.restore_later(saved, self.restore_ms)
+                    # Only restore if the clipboard still holds OUR write.
+                    self.clipboard.restore_if_unchanged(saved, self.restore_ms)
                 except Exception:
                     pass
         return SendResult(True, "sent", text)
+
+
+def should_restore_clipboard(current, own_write):
+    """Should the old clipboard be put back right now?
+
+    Restore ONLY when the clipboard still represents FastPrompter's own
+    temporary write. If the user copied something new after our paste, the
+    two strings differ and we must leave the clipboard alone — restoring
+    would silently destroy the user's newer copy. ``own_write`` None (we
+    never wrote) is never restored.
+    """
+    if own_write is None:
+        return False
+    try:
+        return (current or "") == (own_write or "")
+    except Exception:
+        return False
 
 
 def build_sender(*, post=None, clipboard=None, keys=None, live=False,

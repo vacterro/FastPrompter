@@ -224,11 +224,17 @@ class CdpTarget:
                    page.get("url", ""), page.get("webSocketDebuggerUrl", ""),
                    discover_fn=discover_fn)
 
-    def matches(self):
-        """(ok, reason) — is this still the page that was armed?"""
+    def matches(self, discover_fn=None):
+        """(ok, reason) — is this still the page that was armed?
+
+        ``discover_fn`` may be injected with a SHORTER timeout for the tick's
+        periodic pre-check (the authoritative full-timeout recheck runs inside
+        the sender, off the GUI thread). The default keeps the module-level
+        discover.
+        """
         if not self.target_id:
             return False, "no page was armed"
-        live = self._discover(self.port)
+        live = (discover_fn or self._discover)(self.port)
         if not live:
             return False, "the debugger is no longer listening"
         for entry in live:

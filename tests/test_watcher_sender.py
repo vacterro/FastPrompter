@@ -32,7 +32,7 @@ class FakeClipboard:
     def set_text(self, text):
         self.text = text
 
-    def restore_later(self, text, delay_ms):
+    def restore_if_unchanged(self, text, delay_ms):
         self.restored = (text, delay_ms)
 
 

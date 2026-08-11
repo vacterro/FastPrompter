@@ -1,0 +1,149 @@
+﻿"""Tests for the single-instance writer-ownership model.
+
+Two layers:
+
+* ``bootstrap_ownership`` decision table вЂ” driven with fake locks so the
+  split-brain logic is deterministic without an OS mutex.
+* the real Windows named-mutex primitive вЂ” acquire/release in-process and a
+  genuine cross-process contention test using a subprocess that holds the
+  lock (a frozen first instance is simulated by a process that simply owns
+  the mutex and answers nothing).
+"""
+
+import subprocess
+import sys
+import textwrap
+import uuid
+
+import pytest
+
+from fastprompter.core.instance_lock import (
+    HANDED_OFF,
+    PRIMARY,
+    UNRESPONSIVE,
+    InstanceLock,
+    bootstrap_ownership,
+)
+
+
+class FakeLock:
+    """A lock whose acquire() answer the test controls."""
+
+    def __init__(self, owned=False, reason="", raise_on_acquire=False):
+        self.owned = owned
+        self.reason = reason
+        self.raise_on_acquire = raise_on_acquire
+        self.released = False
+
+    def acquire(self, timeout_ms=0):
+        if self.raise_on_acquire:
+            raise RuntimeError("boom")
+        return self.owned, self.reason
+
+    def release(self):
+        self.released = True
+
+
+class TestBootstrapOwnership:
+    """The decision table: who may write, and who must stand down."""
+
+    def test_first_instance_acquires_and_becomes_primary(self):
+        role, reason = bootstrap_ownership(FakeLock(owned=True), lambda: False)
+        assert role == PRIMARY
+
+    def test_second_instance_handed_off_when_owner_acks(self):
+        role, _ = bootstrap_ownership(FakeLock(owned=False), lambda: True)
+        assert role == HANDED_OFF
+
+    def test_second_instance_refused_when_owner_silent(self):
+        role, reason = bootstrap_ownership(
+            FakeLock(owned=False, reason="another FastPrompter instance owns the database"),
+            lambda: False)
+        assert role == UNRESPONSIVE
+        assert "another FastPrompter" in reason
+
+    def test_second_instance_refused_when_handover_raises(self):
+        def boom():
+            raise OSError("socket gone")
+
+        role, reason = bootstrap_ownership(FakeLock(owned=False), boom)
+        assert role == UNRESPONSIVE
+        assert "socket gone" in reason
+
+    def test_ownership_check_failure_is_failed_not_primary(self):
+        role, reason = bootstrap_ownership(
+            FakeLock(owned=False, raise_on_acquire=True), lambda: False)
+        assert role != PRIMARY
+        assert "boom" in reason
+
+    def test_acquire_error_never_falls_through_to_writer(self):
+        """An ownership-check exception must not let us proceed as primary."""
+        role, _ = bootstrap_ownership(
+            FakeLock(owned=False, raise_on_acquire=True), lambda: True)
+        assert role != PRIMARY
+
+
+def _hold_mutex_script(name):
+    return textwrap.dedent(f"""
+        import ctypes, time, sys
+        from ctypes import wintypes
+        k = ctypes.WinDLL("kernel32", use_last_error=True)
+        k.CreateMutexW.argtypes = [wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR]
+        k.CreateMutexW.restype = wintypes.HANDLE
+        k.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+        k.CloseHandle.argtypes = [wintypes.HANDLE]
+        h = k.CreateMutexW(None, False, {name!r})
+        status = k.WaitForSingleObject(h, 0)
+        print("LOCKED", flush=True)
+        time.sleep(10)
+    """)
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="named mutex is Windows-only")
+def test_real_mutex_acquire_release():
+    name = f"Local\\FastPrompter_Test_{uuid.uuid4()}"
+    lock = InstanceLock(name)
+    owned, reason = lock.acquire()
+    assert owned, reason
+    lock.release()
+    # after release the same name is free again
+    lock2 = InstanceLock(name)
+    owned, reason = lock2.acquire()
+    assert owned, reason
+    lock2.release()
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="named mutex is Windows-only")
+def test_real_mutex_held_by_other_process_cannot_be_acquired():
+    name = f"Local\\FastPrompter_Test_{uuid.uuid4()}"
+    proc = subprocess.Popen(
+        [sys.executable, "-c", _hold_mutex_script(name)],
+        stdout=subprocess.PIPE, text=True)
+    try:
+        assert proc.stdout.readline().strip() == "LOCKED"
+        lock = InstanceLock(name)
+        owned, reason = lock.acquire()
+        assert owned is False, "a live owner must block the second writer"
+        assert "another FastPrompter" in reason
+        lock.release()
+    finally:
+        proc.kill()
+        proc.wait()
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="named mutex is Windows-only")
+def test_real_mutex_freed_after_owner_dies():
+    name = f"Local\\FastPrompter_Test_{uuid.uuid4()}"
+    proc = subprocess.Popen(
+        [sys.executable, "-c", _hold_mutex_script(name)],
+        stdout=subprocess.PIPE, text=True)
+    try:
+        assert proc.stdout.readline().strip() == "LOCKED"
+    finally:
+        proc.kill()
+        proc.wait()
+    # OS released the mutex with the process вЂ” the next owner may acquire it
+    lock = InstanceLock(name)
+    owned, reason = lock.acquire()
+    assert owned, reason
+    lock.release()

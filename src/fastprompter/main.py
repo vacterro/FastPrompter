@@ -79,7 +79,7 @@ _ALIGN_FLAGS = {
     "justify": Qt.AlignmentFlag.AlignJustify,
 }
 from fastprompter.core.i18n import NATIVE_NAMES as _LANG_NATIVE_NAMES
-from fastprompter.core.ipc_server import IpcServer, try_connect_to_server
+from fastprompter.core.ipc_server import IpcServer
 from fastprompter.core.sound_manager import SoundManager
 from fastprompter.core.state import _PER_CATEGORY_STATE_KEYS, FastPrompterState
 from fastprompter.core.translations import available_languages, get_language, tr
@@ -7066,6 +7066,12 @@ class FastPrompter(
             from fastprompter.core.logging import logger
             logger.debug("closeEvent: failed to capture silo view state")
         self.save_data_to_db(force=True)
+        try:
+            if hasattr(self, "_watcher_shutdown"):
+                self._watcher_shutdown()
+        except Exception:
+            from fastprompter.core.logging import logger
+            logger.debug("closeEvent: watcher worker shutdown failed")
         super().closeEvent(event)
 
     def resizeEvent(self, event):
@@ -7661,54 +7667,13 @@ class FastPrompter(
         if cat is None:
             return
         if "temp_presets_all" in self.data:
-            if cat not in self.data["temp_presets_all"]:
-                self.data["temp_presets_all"][cat] = [""] * 10
-            if cat not in self.data["archive_temp_presets_all"]:
-                self.data["archive_temp_presets_all"][cat] = []
-            self.data["temp_presets"] = self.data["temp_presets_all"][cat]
-            self.data["archive_temp_presets"] = self.data["archive_temp_presets_all"][cat]
-            self.data["pinned_silos"] = self.data.setdefault("pinned_silos_all", {}).setdefault(
-                cat, []
-            )
-            self.data["silo_ticked"] = self.data.setdefault("silo_ticked_all", {}).setdefault(
-                cat, []
-            )
-            self.data["silo_children"] = self.data.setdefault("silo_children_all", {}).setdefault(
-                cat, {}
-            )
-            self.data["silo_collapsed"] = self.data.setdefault("silo_collapsed_all", {}).setdefault(
-                cat, []
-            )
-            self.data["silo_folders"] = self.data.setdefault("silo_folders_all", {}).setdefault(
-                cat, {}
-            )
-            self.data["silo_colors"] = self.data.setdefault("silo_colors_all", {}).setdefault(
-                cat, {}
-            )
-            self.data["silo_gaps"] = self.data.setdefault("silo_gaps_all", {}).setdefault(
-                cat, []
-            )
-            self.data["archive_silo_folders"] = self.data.setdefault("archive_silo_folders_all", {}).setdefault(
-                cat, {}
-            )
-            self.data["silo_project_paths"] = self.data.setdefault("silo_project_paths_all", {}).setdefault(
-                cat, {}
-            )
-            self.data["silo_types"] = self.data.setdefault("silo_type_all", {}).setdefault(
-                cat, {}
-            )
-            # same str(dict)-from-an-old-DB guard as save_prompt_queues: a
-            # string here would blow up on .setdefault a tab-switch later
-            wq_all = self.data.get("watcher_queues_all")
-            if not isinstance(wq_all, dict):
-                wq_all = {}
-                self.data["watcher_queues_all"] = wq_all
-            self.data["watcher_queues"] = wq_all.setdefault(cat, {})
+            # ONE authoritative alias binder: every per-category flat alias
+            # (silos, pins, ticks, children, colours, gaps, folders, project
+            # paths, watcher queues, types, ...) is re-bound to `cat` here.
+            from fastprompter.core.state import bind_active_category
+            bind_active_category(self.data, cat)
             from fastprompter.core.watcher.queue import load_queues
             self.prompt_queues = load_queues(self.data["watcher_queues"])
-            self.data["archive_project_paths"] = self.data.setdefault("archive_project_paths_all", {}).setdefault(
-                cat, {}
-            )
             self.silo_last_edited = self.data.setdefault("silo_last_edited_all", {}).setdefault(
                 cat, {}
             )
@@ -10064,26 +10029,30 @@ def setup_exception_hook():
 
 
 def main_entry():
-    # Connect to existing instance or start new
-    sock = try_connect_to_server()
-    if sock:
-        token = sock.property("ipc_token") or ""
-        cmd = f"TOKEN:{token}|SHOW" if token else "SHOW"
-        sock.write(cmd.encode())
-        sock.flush()
-        sock.waitForBytesWritten(500)
-        # Wait for the running instance to confirm it showed itself. A
-        # process that still owns the socket but has stopped pumping its
-        # event loop - a "corpse" - answers nothing, and exiting here left
-        # the user with no window, the global hotkey held by the dead one,
-        # and no way in short of Task Manager. Silence means take over.
-        acknowledged = sock.waitForReadyRead(1500) and b"ACK" in sock.readAll().data()
-        sock.disconnectFromServer()
-        if acknowledged:
+    from fastprompter.core.instance_lock import (
+        HANDED_OFF,
+        PRIMARY,
+        InstanceLock,
+        bootstrap_ownership,
+    )
+    from fastprompter.core.ipc_server import request_show
+
+    # Writer ownership is the process's, not the socket's. If a live instance
+    # already owns the database mutex we must NOT open a second writer no
+    # matter how quiet its event loop is — the best we may do is ask it to
+    # show itself, and exit when it answers or when it stays silent.
+    lock = InstanceLock()
+    role, reason = bootstrap_ownership(lock, request_show)
+    if role != PRIMARY:
+        lock.release()
+        if role == HANDED_OFF:
             return
+        # UNRESPONSIVE / FAILED: a live owner exists (or ownership could not
+        # be established). Refuse to become a second writer; say why.
         from fastprompter.core.logging import logger as _log
-        _log.warning("an instance holds the IPC socket but did not answer "
-                     "SHOW; taking over")
+        _log.warning("FastPrompter startup refused: %s", reason)
+        _show_startup_diagnostic(reason)
+        return
 
     setup_exception_hook()
 
@@ -10103,7 +10072,27 @@ def main_entry():
     filter_obj = HotkeyFilter(window)
     app.installNativeEventFilter(filter_obj)
 
-    sys.exit(app.exec())
+    try:
+        sys.exit(app.exec())
+    finally:
+        # Ownership must be released during normal shutdown; a process that
+        # dies without it abandons the mutex and the OS recovers it.
+        lock.release()
+
+
+def _show_startup_diagnostic(reason):
+    """A frozen instance is a diagnostic, never a license for a second writer."""
+    import ctypes
+    message = (
+        "FastPrompter is already running, but it is not responding.\n\n"
+        f"{reason}\n\n"
+        "Your data is not at risk: another writer was not started. "
+        "If the existing instance is stuck, close it in Task Manager "
+        "and start FastPrompter again.")
+    try:
+        ctypes.windll.user32.MessageBoxW(0, message, "FastPrompter", 0x10)
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":

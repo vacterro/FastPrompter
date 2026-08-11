@@ -1166,6 +1166,45 @@ def test_delete_category_removes_every_registered_store(win, monkeypatch):
             f"{key} left an orphan behind after a delete")
 
 
+def test_every_slot_indexed_store_is_registered_for_remap(win):
+    """Phase-6 invariant: no slot-indexed per-category store may be missing
+    from the reorder/delete/archive remap machinery.
+
+    A store left off the index tables keeps its values on the OLD slot number
+    after a reorder or delete — the exact bug class that scattered manual
+    remaps used to cause."""
+    from fastprompter.core.state import _PER_CATEGORY_ALIASES, _PER_CATEGORY_STATE_KEYS
+
+    silo_table = {e[0] for e in win._SILO_INDEX_STATE}
+    arch_table = {e[0] for e in win._ARCHIVE_INDEX_STATE}
+    # all-key -> flat alias (the registry itself is flat -> all)
+    aliased = {all_key: flat for flat, all_key in _PER_CATEGORY_ALIASES}
+
+    # _all stores that are NOT expected in the index tables, and why:
+    #  temp_presets_all / archive_temp_presets_all — the TEXT itself, remapped
+    #      by the caller's list insert/pop around _remap_silo_indices
+    #  silo_session_all — a single per-project entry (active slot is a VALUE,
+    #      clamped on restore), not a slot-keyed map
+    #  silo_view_state_all — remapped by the dedicated _remap_silo_view_state,
+    #      which _remap_silo_indices calls itself
+    exempt = {"temp_presets_all", "archive_temp_presets_all",
+              "silo_session_all", "silo_view_state_all"}
+
+    for all_key in _PER_CATEGORY_STATE_KEYS:
+        if all_key in exempt:
+            continue
+        # silo_last_edited_all aliases the flat "silo_last_edited" key (the
+        # live binding is the instance attribute, not a binder entry)
+        flat = ("silo_last_edited" if all_key == "silo_last_edited_all"
+                else aliased.get(all_key))
+        assert flat is not None, f"{all_key} has no flat alias to remap"
+        assert flat in silo_table or flat in arch_table, (
+            f"{flat} ({all_key}) is slot-indexed but not registered for remap")
+
+    assert hasattr(win, "_remap_silo_view_state"), (
+        "silo_view_state_all must have a dedicated remap path")
+
+
 def test_fuzz_ui_surfaces(win):
     """Fuzz round 3: themes, formatting ops on random selections,
     search/replace, unified scale, view modes, focus/sidebar toggles,

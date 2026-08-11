@@ -2,7 +2,17 @@
 
 Uses ``QLocalServer`` to ensure only one instance runs at a time.
 When a second instance starts, ``try_connect_to_server`` sends a
-SHOW command to the existing instance and then exits.
+TOKEN-authenticated SHOW command to the existing instance and then exits.
+
+Protocol contract (one way, and only one):
+
+* Valid: ``TOKEN:<correct-token>|SHOW``  -> window shown, ``ACK`` returned.
+* Invalid: bare ``SHOW``, wrong/empty token, malformed input, unknown
+  command -> nothing shown, NO ``ACK``.
+
+There is deliberately no unauthenticated command path: a client that cannot
+prove it knows this session's token is not answered, so "authenticated" is
+never a label on an open door.
 """
 
 import os
@@ -16,6 +26,8 @@ from PyQt6.QtNetwork import QLocalServer, QLocalSocket
 from fastprompter.core.logging import logger
 
 SERVER_NAME = "FastPrompter_Server_V15"
+
+_ACK_TIMEOUT_MS = 1500
 
 
 def try_connect_to_server(retries: int = 3, delay: float = 0.05) -> QLocalSocket | None:
@@ -42,6 +54,29 @@ def try_connect_to_server(retries: int = 3, delay: float = 0.05) -> QLocalSocket
             return sock
         time.sleep(delay)
     return None
+
+
+def request_show(ack_timeout: int = _ACK_TIMEOUT_MS) -> bool:
+    """Ask the live owner to show its window. True only on a real ACK.
+
+    The caller has already failed to acquire writer ownership, so a live
+    process exists. This handover is authentication-gated: the token must
+    match or the owner will not answer. No ACK (wrong token, frozen owner,
+    dead socket) returns False — the caller must NOT become a second writer.
+    """
+    sock = try_connect_to_server()
+    if sock is None:
+        return False
+    try:
+        token = sock.property("ipc_token") or ""
+        sock.write(f"TOKEN:{token}|SHOW".encode())
+        sock.flush()
+        sock.waitForBytesWritten(500)
+        acked = sock.waitForReadyRead(max(0, int(ack_timeout))) and \
+            b"ACK" in sock.readAll().data()
+        return bool(acked)
+    finally:
+        sock.disconnectFromServer()
 
 
 def _get_token() -> str:
@@ -105,10 +140,12 @@ class IpcServer:
     def _handle_command(self) -> None:
         """Process an incoming IPC command from a sibling instance.
 
-        Answers ACK once the window has actually been asked to show. The
-        sibling waits for that byte: a process that holds the socket but no
-        longer pumps its event loop never sends it, and the newcomer then
-        takes the socket over instead of exiting into nothing.
+        Only ``TOKEN:<this-session's-token>|SHOW`` is a command; everything
+        else is ignored without an ACK. Answers ACK once the window has
+        actually been asked to show. The sibling waits for that byte: a
+        process that holds the socket but no longer pumps its event loop
+        never sends it, and the newcomer must then exit unresponsive instead
+        of taking the socket over.
         """
         sock = self._server.nextPendingConnection()
         handled = False
@@ -124,9 +161,6 @@ class IpcServer:
                         if recv_token == self._token and cmd.strip() == "SHOW":
                             self._show_window()
                             handled = True
-                elif data_str.strip() == "SHOW":
-                    self._show_window()
-                    handled = True
             except Exception:
                 logger.exception("Failed to handle IPC command")
         if handled:

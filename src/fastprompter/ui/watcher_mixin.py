@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import time
 
-from PyQt6.QtCore import QTimer
+from PyQt6.QtCore import QObject, QThread, QTimer, pyqtSignal
 
 from fastprompter.core.logging import logger
 from fastprompter.core.watcher import win32
@@ -30,11 +30,44 @@ from fastprompter.core.watcher.queue import DETACHED, PENDING, queue_for
 from fastprompter.core.watcher.sender import (
     PostMessageSender,
     SendLog,
+    SendResult,
     Target,
     build_sender,
 )
 
 TICK_MS = 900
+
+# How long the tick's CDP discovery pre-check may wait. The authoritative
+# identity recheck (full timeout) happens inside the sender on the worker
+# thread, so a slow debugger can cost the GUI a bounded 500 ms, never many
+# seconds.
+_CDP_PROBE_TIMEOUT = 0.5
+
+
+class _WatcherSendWorker(QObject):
+    """Runs the actual send on its own thread so CDP socket I/O with
+    multi-second timeouts can never freeze the Qt event loop.
+
+    `dispatch` is invoked from the GUI thread and runs `_run` in this
+    object's thread (queued connection); `done` travels back to the GUI
+    thread the same way. `gen` is the run's generation token — the GUI drops
+    any result whose token is no longer current.
+    """
+
+    dispatch = pyqtSignal(object, object, object, int)   # sender, intent, target, gen
+    done = pyqtSignal(object, int, object)                # intent, gen, SendResult
+
+    def __init__(self):
+        super().__init__()
+        self.dispatch.connect(self._run)
+
+    def _run(self, sender, intent, target, gen):
+        try:
+            result = sender.send(intent, target)
+        except Exception as exc:
+            result = SendResult(False, f"send failed in worker: {exc}",
+                                getattr(intent, "text", ""))
+        self.done.emit(intent, gen, result)
 
 
 class WatcherMixin:
@@ -51,6 +84,11 @@ class WatcherMixin:
         self._watcher_adapter = None
         self._watcher_timer = None
         self._watcher_listeners = []
+        # generation token for in-flight sends: bumped on arm/disarm/panic so
+        # a result from an old run can never be reported against a new one
+        self._watcher_send_gen = 0
+        self._watcher_worker = None
+        self._watcher_worker_thread = None
         # observe mode: its own state, so it can never reach the sender
         self._observe_adapter = None
         self._observe_timer = None
@@ -124,6 +162,8 @@ class WatcherMixin:
                            "launch it with --remote-debugging-port")
         self._watcher_sender = self._build_sender(live)
         self._watcher_engine.settle_ms = adapter.settle_ms
+        # a fresh run: any result still in flight from an older run is stale
+        self._watcher_send_gen += 1
         # The parsed [limits] must actually reach the engine (T-757): a
         # configured min_gap_ms/max_sends used to be stored and ignored.
         limits = getattr(self, "_watcher_limits", None) or {}
@@ -183,6 +223,7 @@ class WatcherMixin:
 
     def watcher_disarm(self, reason="disarmed"):
         self._watcher_init()
+        self._watcher_send_gen += 1     # in-flight results become stale
         self._watcher_engine.disarm(reason)
         self._watcher_stop_timer()
         # A target exists only while armed. Leaving the old one behind is how
@@ -202,6 +243,7 @@ class WatcherMixin:
         self._watcher_init()
         if not self._watcher_engine.armed:
             return False
+        self._watcher_send_gen += 1     # whatever was in flight is now stale
         self._watcher_engine.panic()
         self._watcher_stop_timer()
         self._watcher_notify()
@@ -260,7 +302,19 @@ class WatcherMixin:
 
         target_ok = True
         if self._watcher_target is not None:
-            target_ok = self._watcher_target.matches()[0]
+            # The tick's identity pre-check is a fast bounded read on the GUI
+            # thread; the authoritative recheck happens inside the sender on
+            # the worker thread. A CDP target gets a short discover timeout so
+            # a slow debugger cannot stall the loop for many seconds.
+            if getattr(self._watcher_target, "ws_url", None):
+                from fastprompter.core.watcher import cdp as _cdp
+
+                def _bounded_discover(port):
+                    return _cdp.discover(port, timeout=_CDP_PROBE_TIMEOUT)
+
+                target_ok = self._watcher_target.matches(_bounded_discover)[0]
+            else:
+                target_ok = self._watcher_target.matches()[0]
 
         blocked = False
         blocked_fn = getattr(self, "_watcher_blocked_fn", None)
@@ -278,23 +332,87 @@ class WatcherMixin:
                 self._watcher_stop_timer()
             return
 
-        item = queue.find(intent.item_id)
-        result = self._watcher_sender.send(intent, self._watcher_target)
-        self._watcher_log.record(intent, result, self._watcher_target)
-        if result.ok:
-            engine.report_sent(item, now=now)
-            if item is not None:
-                self._watcher_mark_sent(engine.queue_key, item)
-        elif getattr(result, "hold", False):
-            # not a failure: the item stays pending and nothing is counted
-            engine.report_held(result.reason, now=now)
-        else:
-            engine.report_failed(item, result.reason, now=now)
+        # Hand the send to the worker thread. The engine is already in
+        # SENDING state, so no second send can be dispatched before this one
+        # reports back; a report that never arrives means the run just waits.
+        self._watcher_dispatch_send(intent)
 
-        self.save_prompt_queues()
-        self._watcher_notify()
-        if not engine.armed:
-            self._watcher_stop_timer()
+    def _watcher_dispatch_send(self, intent):
+        """Send off-thread; the GUI never blocks on CDP socket I/O."""
+        self._watcher_send_gen += 1
+        gen = self._watcher_send_gen
+        worker = self._watcher_ensure_worker()
+        worker.dispatch.emit(self._watcher_sender, intent,
+                             self._watcher_target, gen)
+
+    def _watcher_ensure_worker(self):
+        """The persistent worker thread, created once per window."""
+        if self._watcher_worker is None:
+            thread = QThread(self)
+            thread.setObjectName("fastprompter-watcher-send")
+            worker = _WatcherSendWorker()
+            worker.moveToThread(thread)
+            worker.done.connect(self._watcher_on_send_result)
+            thread.start()
+            self._watcher_worker = worker
+            self._watcher_worker_thread = thread
+        return self._watcher_worker
+
+    def _watcher_shutdown(self):
+        """Stop the send worker thread at window close.
+
+        A send already running inside a blocking socket read cannot be
+        interrupted cleanly, so the wait is bounded; at app exit a stuck
+        worker is a leak, not a hazard.
+        """
+        thread = self._watcher_worker_thread
+        self._watcher_worker_thread = None
+        self._watcher_worker = None
+        if thread is not None:
+            try:
+                thread.quit()
+                thread.wait(5000)
+            except Exception:
+                pass
+
+    def _watcher_on_send_result(self, intent, gen, result):
+        """The worker's answer, applied on the GUI thread.
+
+        A result is applied ONLY when its generation is still current and the
+        engine is still waiting on exactly this send. A panic, a disarm, an
+        arm of a new run, or a superseding dispatch bumps the token — the
+        stale result is dropped rather than reported as if it happened.
+        """
+        try:
+            if gen != self._watcher_send_gen:
+                return                    # stale: a newer run owns the watcher
+            engine = self._watcher_engine
+            if not engine.armed or engine.state != "sending":
+                return
+            now = time.monotonic()
+            queue = queue_for(self.prompt_queues, engine.queue_key)
+            item = queue.find(intent.item_id) if queue is not None else None
+            self._watcher_log.record(intent, result, self._watcher_target)
+            if result.ok:
+                engine.report_sent(item, now=now)
+                if item is not None:
+                    self._watcher_mark_sent(engine.queue_key, item)
+            elif getattr(result, "hold", False):
+                # not a failure: the item stays pending and nothing is counted
+                engine.report_held(result.reason, now=now)
+            else:
+                engine.report_failed(item, result.reason, now=now)
+            self.save_prompt_queues()
+            self._watcher_notify()
+            if not engine.armed:
+                self._watcher_stop_timer()
+        except Exception:
+            logger.exception("watcher send-result handling failed")
+            try:
+                self._watcher_engine.disarm("the watcher hit an error and stopped")
+                self._watcher_stop_timer()
+            except Exception:
+                pass
 
     def _watcher_refresh_texts(self, slot, queue):
         """Re-read each pending or detached item from the line it is anchored
