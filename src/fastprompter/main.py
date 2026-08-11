@@ -2867,11 +2867,28 @@ class FastPrompter(
         while self._sync_busy and time.monotonic() < deadline:
             QApplication.processEvents()
             time.sleep(0.01)
+
+        if self._sync_pending is not None:
+            # the worker could not drain in time (contention, a slow prior
+            # job): flush the final snapshot SYNCHRONOUSLY as the last
+            # guarantee. The window is closing; determinism beats async here,
+            # and the same reparse-checked atomic write path is used.
+            from fastprompter.core.logging import logger as _log
+            _log.warning("sync worker did not drain during shutdown; "
+                         "flushing the final snapshot synchronously")
+            snap = self._sync_pending
+            worker = _SYNC_SHARED_WORKER
+            if worker is not None:
+                worker._run(snap, snap.get("gen", 0))
+                for dest in snap["files"]:
+                    self._sync_written[dest] = snap["files"][dest]
+            self._sync_pending = None
+
         if self._sync_busy:
-            from fastprompter.core.logging import logger
-            logger.warning("sync flush timed out during shutdown; the disk "
-                           "mirror may be stale — the SQLite database is "
-                           "authoritative")
+            from fastprompter.core.logging import logger as _log2
+            _log2.warning("sync flush timed out during shutdown; the disk "
+                          "mirror may be stale — the SQLite database is "
+                          "authoritative")
         self._sync_pending = None
         self._sync_busy = False
     def init_ui(self):

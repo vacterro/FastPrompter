@@ -99,14 +99,17 @@ explicitly arm.
   transaction. Changed text is autosaved on a 10-second timer and on hide,
   close and silo/profile switches.
 - **Database backup** — a `.bak` copy is taken at startup and refreshed at
-  most once a minute after real changes; a fresh or empty database never
-  overwrites a healthy backup.
+  most once a minute after real changes; each new copy is validated before it
+  replaces the previous one, and a fresh or empty database never overwrites a
+  healthy backup.
 - **Daily Markdown snapshots** — every project's silos, snippets and archive
   are exported as plain `.md` to `Documents\.fastprompter\YYYY-MM-DD\`
-  (on by default, at most every 2 minutes, last 7 days kept). Readable without
-  FastPrompter.
+  (on by default, at most every 2 minutes, last 7 days kept). A snapshot is
+  only marked complete after every export succeeded; a failed snapshot keeps
+  the previous day's copy. Readable without FastPrompter.
 - **Optional one-way mirror** — point Settings at any folder and silos are
-  mirrored there as `.md` as you save. It never reads back and never deletes.
+  mirrored there as `.md` shortly after you save (and flushed when you close).
+  It never reads back and never deletes.
 - **Undo across restarts** — the latest undo snapshots are written to
   `<database>_undo.json` and reloaded on the next launch.
 - **Trash, not destruction** — clearing or trashing a silo moves its text and
