@@ -237,9 +237,9 @@ uv run ruff check src/ tests/ tests_smoke/
 uv run pytest tests/ tests_smoke/ -q
 ```
 
-- The suite at v0.8.35 collects **1936 tests** — **1116 unit tests** in
-  `tests/` plus **820 offscreen real-app integration/smoke tests** in
-  `tests_smoke/` — and runs **1935 passed, 1 skipped** (about 20 minutes).
+- The suite at v0.8.36 collects **1975 tests** — **1134 unit tests** in
+  `tests/` plus **841 offscreen real-app integration/smoke tests** in
+  `tests_smoke/` — and runs **1973 passed, 2 skipped** (about 20 minutes).
   The count changes with every release; get the live number with
   `uv run pytest tests/ tests_smoke/ --collect-only -q`.
 - CI (GitHub Actions on `windows-latest`) runs ruff and the full test suite on
