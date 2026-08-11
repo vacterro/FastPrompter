@@ -6964,12 +6964,24 @@ class FastPrompter(
                 
                 # Serialize the save and make it atomic (H-301)
                 with getattr(self, "_undo_save_lock", threading.Lock()):
-                    with open(tmp_path, "w", encoding="utf-8") as f:
-                        json.dump({
-                            "undo": undo_data,
-                            "redo": redo_data
-                        }, f)
-                    os.replace(tmp_path, undo_path)
+                    # Windows transient handles (AV scan, a concurrent
+                    # reader) turn os.replace's rename into an access
+                    # violation class of OSError 5. Undo is secondary
+                    # data, so a few bounded retries beat a lost write.
+                    _attempts = 3
+                    for _i in range(_attempts):
+                        try:
+                            with open(tmp_path, "w", encoding="utf-8") as f:
+                                json.dump({
+                                    "undo": undo_data,
+                                    "redo": redo_data
+                                }, f)
+                            os.replace(tmp_path, undo_path)
+                            break
+                        except OSError:
+                            if _i == _attempts - 1:
+                                raise
+                            time.sleep(0.05)
             except Exception as e:
                 from fastprompter.core.logging import logger
                 logger.error(f"Failed to save undo state: {e}")
@@ -10233,6 +10245,13 @@ class FastPrompter(
         self._active_silo_slug = new_slug
 
     def _on_text_changed(self):
+        # A save must never persist pre-edit text: _last_cached_text holds the
+        # editor snapshot from the LAST cache tick, and a save between a text
+        # change and the next tick would otherwise read STALE content (a
+        # keystroke's data-loss window). Every edit invalidates the cache so a
+        # save falls through to the live editor text; the cache still serves
+        # the common no-edit case.
+        self._last_cached_text = None
         self._last_text_edit_time = self._bump_action_seq()
         self._update_line_count_label()
         self._live_folder_sync()
@@ -10533,6 +10552,17 @@ def main_entry():
         # Ownership must be released during normal shutdown; a process that
         # dies without it abandons the mutex and the OS recovers it.
         lock.release()
+        # Destroy the window C++ side while QApplication is still alive. A
+        # window that survives to interpreter teardown races the retired sync
+        # worker's destruction and aborts the process with an access violation
+        # (0xC0000005 under full-suite load). deleteLater + processEvents
+        # unmounts the whole object tree deterministically here.
+        try:
+            window.close()
+            window.deleteLater()
+            app.processEvents()
+        except Exception:
+            pass
         # the process-wide workers get explicit, bounded shutdowns
         sync_shutdown_global()
         try:

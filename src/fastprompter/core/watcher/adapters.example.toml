@@ -86,7 +86,6 @@ enabled   = true
 settle_ms = 4000
 submit    = "enter"
 multiline = "join"
-# TODO: confirm this agent's skill syntax, or delete the key if it has none
 skill_format = "/{skill} {text}"
 
 # Driven through CodeNomad, the desktop app that runs `opencode serve` as a
@@ -138,7 +137,6 @@ enabled   = true
 settle_ms = 4000
 submit    = "enter"
 multiline = "join"
-# TODO: confirm this agent's skill syntax, or delete the key if it has none
 skill_format = "/{skill} {text}"
 
 # Proven 21.07 against the running app. Posting Win32 messages at an
@@ -177,7 +175,6 @@ enabled   = true
 settle_ms = 4000
 submit    = "enter"
 multiline = "join"
-# TODO: confirm this agent's skill syntax, or delete the key if it has none
 skill_format = "/{skill} {text}"
 
   [[agent.probe]]

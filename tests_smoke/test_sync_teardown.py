@@ -79,7 +79,10 @@ def test_process_exit_after_global_shutdown_is_clean():
     """A child process that dispatches a sync and then calls the global
     shutdown hook must exit WITHOUT an access violation. The hook's QThread
     wait is MILLISECONDS-bounded (a seconds/ms unit bug let the thread stay
-    running past process exit — 0xC0000005 under full-suite load)."""
+    running past process exit — 0xC0000005 under full-suite load), and the
+    window must be destroyed on the C++ side before the process exits (a
+    window that survives to interpreter teardown races the retired worker
+    and aborts the same way)."""
     import subprocess
     src = os.path.abspath(os.path.join(os.path.dirname(__file__), "../src"))
     child = r'''
@@ -116,8 +119,13 @@ w.data["sync_mode"] = "Off"
 w.auto_save_timer.stop()
 w.topmost_timer.stop()
 w.close()
+# Destroy the window C++ side BEFORE the retired-worker hook quits the
+# thread. A window that survives to interpreter teardown races the retired
+# worker's destruction and aborts with 0xC0000005.
+w.deleteLater()
 app.processEvents()
 sync_shutdown_global()
+app.processEvents()                 # deliver any trailing queued results
 print("CLEAN_EXIT")
 '''
     proc = subprocess.run([sys.executable, "-c", child.format(src=src)],

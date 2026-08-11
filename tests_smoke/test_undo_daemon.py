@@ -10,6 +10,7 @@ old or complete new file.
 import json
 import os
 import sys
+import threading
 import time
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
@@ -61,6 +62,17 @@ def test_interrupted_undo_write_keeps_the_previous_file(win, monkeypatch):
     _seed(win)
     before = open(_undo_path(win), "rb").read()
 
+    # record daemon threads so the test can JOIN them: the save runs on a
+    # daemon thread, and an orphan that outlives this test would race the
+    # next test's os.replace (Windows: destination-in-use -> WinError 5).
+    started = []
+    real_start = threading.Thread.start
+
+    def _record_start(self):
+        started.append(self)
+        return real_start(self)
+
+    monkeypatch.setattr(threading.Thread, "start", _record_start)
 
     def _boom(*a, **k):
         raise OSError("disk full during dump")
@@ -70,11 +82,9 @@ def test_interrupted_undo_write_keeps_the_previous_file(win, monkeypatch):
     win._save_undo_state()
 
     deadline = time.monotonic() + 3
-    while time.monotonic() < deadline:
+    while time.monotonic() < deadline and any(t.is_alive() for t in started):
         _app.processEvents()
-        # the daemon thread either finishes (logs the error) or is gone
         time.sleep(0.05)
-        break   # single pass: the write either happened or not atomically
 
     # whatever the daemon did, the final file must be the complete seed
     assert open(_undo_path(win), "rb").read() == before
@@ -93,7 +103,8 @@ def test_undo_write_round_trips(win):
     while time.monotonic() < deadline:
         _app.processEvents()
         try:
-            data = json.load(open(_undo_path(win), encoding="utf-8"))
+            with open(_undo_path(win), encoding="utf-8") as fh:
+                data = json.load(fh)
         except (OSError, ValueError):
             data = None
         if data and data.get("undo") == [{"marker": "new"}]:

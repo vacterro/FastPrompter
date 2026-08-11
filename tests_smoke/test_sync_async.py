@@ -265,7 +265,20 @@ class TestShutdownFlush:
         win.text_area.setPlainText("# t\nfinal edit")   # the editor is the save source
         win.data["temp_presets"][0] = "# t\nfinal edit"  # belt-and-braces: the capture
         win.save_data_to_db(force=True)          # queues sync on the debounce
+        assert win.data["temp_presets"][0] == "# t\nfinal edit", \
+            "capture source wiped before shutdown: %r" % (
+                win.data["temp_presets"][:3],)
         win._sync_shutdown(timeout_s=10)         # immediate close
+        if "# t\nfinal edit" not in self._mirror_text(root):
+            _diag = ("sync_path=%r sync_mode=%r slot=%r presets=%r "
+                     "busy=%r pending=%r gen=%r shutting=%r")
+            raise AssertionError(
+                _diag % (win.data.get("sync_path"), win.data.get("sync_mode"),
+                         win.active_temp_slot, win.data.get("temp_presets"),
+                         getattr(win, "_sync_busy", None),
+                         getattr(win, "_sync_pending", None),
+                         getattr(win, "_sync_gen", None),
+                         getattr(win, "_sync_shutting_down", None)))
         assert "# t\nfinal edit" in self._mirror_text(root)
 
     def test_shutdown_with_pending_flushes_newest(self, win, tmp_path):
