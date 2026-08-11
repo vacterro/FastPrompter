@@ -176,19 +176,24 @@ def sync_shutdown_global():
     worker stuck in a write cannot be interrupted, so a timeout is accepted
     at app exit (a leak, never a hang).
 
-    The references are deliberately KEPT: a window may still hold the worker
-    via its done-connection, and tearing the worker's C++ object down while
-    the Python process is unwinding is the access-violation class this module
-    hit. A stopped thread object that lives until process exit is clean.
+    The globals are nulled so a mid-session teardown can spawn a fresh worker
+    next time; the retired wrappers are kept for the process lifetime so
+    Python teardown cannot destroy a worker whose thread was stopped
+    mid-reference (an access-violation class).
     """
     global _SYNC_SHARED_WORKER, _SYNC_SHARED_THREAD
     thread = _SYNC_SHARED_THREAD
+    worker = _SYNC_SHARED_WORKER
+    _SYNC_SHARED_WORKER = None
+    _SYNC_SHARED_THREAD = None
     if thread is not None and thread.isRunning():
         try:
             thread.quit()
             thread.wait(_SYNC_SHUTDOWN_TIMEOUT_S)
         except Exception:
             pass
+    if worker is not None or thread is not None:
+        _RETIRED_WORKERS.append((worker, thread))
 
 
 class _SyncWorker(QObject):
@@ -235,6 +240,125 @@ class _SyncWorker(QObject):
             except OSError as exc:
                 errors.append((dest, str(exc)))
         self.done.emit(gen, snapshot, written, errors)
+
+
+class _PortableBackupWorker(QObject):
+    """Exports a portable Markdown snapshot on its own thread.
+
+    The snapshot is IMMUTABLE (deep-copied at capture). The connection to the
+    run slot is made AFTER moveToThread so the export really happens off the
+    GUI save path."""
+
+    dispatch = pyqtSignal(object, int)             # snapshot, generation
+    done = pyqtSignal(int, object, bool, object)   # gen, snapshot, ok, error
+
+    def __init__(self):
+        super().__init__()
+
+    def _run(self, snapshot, gen):
+        from fastprompter.utils import portable_backup as _pb
+        try:
+            _pb._do_export(snapshot)
+            self.done.emit(gen, snapshot, True, None)
+        except Exception as exc:
+            self.done.emit(gen, snapshot, False, str(exc))
+
+
+# Process-wide portable-backup worker + coalescing state.
+_BACKUP_WORKER = None
+_BACKUP_THREAD = None
+_BACKUP_PENDING = None
+_BACKUP_BUSY = False
+_BACKUP_GEN = 0
+_BACKUP_SINK_INSTALLED = False
+
+# Retired worker/thread wrappers kept alive for the process lifetime: Python
+# teardown destroying a worker whose thread was stopped mid-reference is an
+# access-violation class, and a stopped-thread wrapper that lives until exit
+# is clean.
+_RETIRED_WORKERS = []
+
+
+def _backup_ensure_worker():
+    global _BACKUP_WORKER, _BACKUP_THREAD
+    if _BACKUP_WORKER is None:
+        thread = QThread()
+        thread.setObjectName("fastprompter-backup")
+        worker = _PortableBackupWorker()
+        worker.moveToThread(thread)
+        worker.dispatch.connect(worker._run)   # AFTER moveToThread: queued
+        thread.start()
+        _BACKUP_WORKER = worker
+        _BACKUP_THREAD = thread
+    return _BACKUP_WORKER
+
+
+def _backup_drain():
+    global _BACKUP_PENDING, _BACKUP_BUSY
+    if _BACKUP_PENDING is None or _BACKUP_BUSY:
+        return
+    snap = _BACKUP_PENDING
+    _BACKUP_PENDING = None
+    _BACKUP_BUSY = True
+    _backup_ensure_worker().dispatch.emit(snap, snap.get("_gen", 0))
+
+
+def _backup_on_done(gen, snapshot, ok, err):
+    """A snapshot finished. Advances the throttle on success; a stale or
+    failed completion still drains the newest pending (the sync lesson)."""
+    global _BACKUP_BUSY
+    from fastprompter.core.logging import logger as _log
+    from fastprompter.utils import portable_backup as _pb
+    if ok:
+        _pb.mark_backup_success()
+    else:
+        _log.error("portable backup failed in the worker: %s", err)
+    _BACKUP_BUSY = False
+    _backup_drain()
+
+
+def _portable_backup_dispatch(snapshot):
+    """The sink installed into portable_backup: coalesce + dispatch async."""
+    global _BACKUP_PENDING, _BACKUP_GEN
+    _BACKUP_GEN += 1
+    snapshot["_gen"] = _BACKUP_GEN
+    _BACKUP_PENDING = snapshot
+    _backup_drain()
+
+
+def _install_portable_backup_sink():
+    """Route portable backups through the shared worker, once per process."""
+    global _BACKUP_SINK_INSTALLED
+    if _BACKUP_SINK_INSTALLED:
+        return
+    from fastprompter.utils import portable_backup as _pb
+    _pb.set_backup_sink(_portable_backup_dispatch)
+    _BACKUP_SINK_INSTALLED = True
+
+
+def backup_worker_shutdown_global():
+    """Bounded shutdown of the portable-backup worker at app exit.
+
+    The globals are nulled so a mid-session teardown can spawn a fresh worker
+    next time, and the retired wrappers are kept in a process-lifetime list:
+    Python teardown destroying a worker whose thread was stopped mid-reference
+    is an access-violation class, and a stopped-thread wrapper that lives
+    until exit is clean.
+    """
+    global _BACKUP_WORKER, _BACKUP_THREAD, _BACKUP_PENDING
+    thread = _BACKUP_THREAD
+    worker = _BACKUP_WORKER
+    _BACKUP_WORKER = None
+    _BACKUP_THREAD = None
+    _BACKUP_PENDING = None
+    if thread is not None and thread.isRunning():
+        try:
+            thread.quit()
+            thread.wait(5.0)
+        except Exception:
+            pass
+    if worker is not None or thread is not None:
+        _RETIRED_WORKERS.append((worker, thread))
 
 
 class FastPrompter(
@@ -10325,6 +10449,12 @@ def main_entry():
 
     setup_exception_hook()
 
+    # portable Markdown snapshots run on a worker thread, off the save path
+    try:
+        _install_portable_backup_sink()
+    except Exception:
+        pass
+
     app = QApplication(sys.argv)
     from fastprompter.utils.fonts import no_aa, resolve_family
     global_font = no_aa(QFont(resolve_family("Verdana"), 10))
@@ -10349,6 +10479,10 @@ def main_entry():
         lock.release()
         # the process-wide workers get explicit, bounded shutdowns
         sync_shutdown_global()
+        try:
+            backup_worker_shutdown_global()
+        except Exception:
+            pass
         try:
             from fastprompter.ui.file_container import (
                 container_worker_shutdown_global,

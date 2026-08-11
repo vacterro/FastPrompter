@@ -250,3 +250,47 @@ class TestPublicationRollback:
 
         assert self._tree(day) == good   # untouched
         assert not any("rollback" in e for e in os.listdir(backup_dir))
+
+
+class TestAsyncDispatch:
+    """Phase-9: portable backup can be dispatched async via an installed sink;
+    the snapshot handed over is an immutable deep copy."""
+
+    def test_snapshot_is_a_deep_copy(self, backup_dir):
+        data = _data()
+        snap = pb.capture_snapshot(data)
+        data["temp_presets_all"]["Alpha"][0] = "MUTATED AFTER CAPTURE"
+        data["categories"]["Alpha"][0]["text"] = "mutated"
+        data["cats_order"].append("NEW")
+        assert snap["temp_presets_all"]["Alpha"][0] == "alpha text"
+        assert snap["categories"]["Alpha"][0]["text"] == "snippet-one"
+        assert "NEW" not in snap["cats_order"]
+
+    def test_sink_receives_immutable_snapshot(self, backup_dir):
+        received = []
+
+        def fake_sink(snapshot):
+            received.append(snapshot)
+
+        pb.set_backup_sink(fake_sink)
+        try:
+            pb._last_backup_time = 0.0
+            pb.run_portable_backup(_data())
+            assert len(received) == 1
+            assert received[0]["temp_presets_all"]["Alpha"][0] == "alpha text"
+            # dispatch alone must NOT advance the success throttle
+            assert pb._last_backup_time == 0.0
+        finally:
+            pb.set_backup_sink(None)
+
+    def test_without_sink_runs_synchronously(self, backup_dir):
+        pb.set_backup_sink(None)
+        pb._last_backup_time = 0.0
+        pb.run_portable_backup(_data())
+        assert _complete(_day_dir(backup_dir))
+        assert pb._last_backup_time > 0.0
+
+    def test_mark_success_advances_throttle(self, backup_dir):
+        pb._last_backup_time = 0.0
+        pb.mark_backup_success()
+        assert pb._last_backup_time > 0.0

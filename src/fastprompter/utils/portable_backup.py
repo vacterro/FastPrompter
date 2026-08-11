@@ -30,16 +30,68 @@ _BACKUP_THROTTLE = 120  # seconds between backups
 
 _COMPLETE_MARKER = "_COMPLETE"
 
+# The app installs a Qt-backed ASYNC dispatcher here; without one the backup
+# runs synchronously (tests, headless use). The sink receives an IMMUTABLE
+# deep-copied snapshot, never the live data dict.
+_backup_sink = None
+
+
+def set_backup_sink(sink):
+    """Install the app's async portable-backup dispatcher (or None to go
+    back to synchronous). The sink is called with an immutable snapshot."""
+    global _backup_sink
+    _backup_sink = sink
+
+
+def capture_snapshot(data):
+    """Deep-copy ONLY the exact fields portable export needs.
+
+    Never hands the worker a reference to the live, mutable data dict: a
+    save happening after capture cannot alter what the worker writes.
+    """
+    import copy as _copy
+    return {
+        "cats_order": list(data.get("cats_order", []) or []),
+        "categories": {
+            k: [_copy.deepcopy(s) if isinstance(s, dict) else None
+                for s in (v or [])]
+            for k, v in (data.get("categories") or {}).items()},
+        "temp_presets_all": {
+            k: list(v) for k, v in (data.get("temp_presets_all") or {}).items()},
+        "archive_temp_presets_all": {
+            k: list(v)
+            for k, v in (data.get("archive_temp_presets_all") or {}).items()},
+    }
+
+
+def mark_backup_success(now=None):
+    """The async worker reports a completed snapshot; the throttle advances
+    only on success (matching the synchronous path)."""
+    global _last_backup_time
+    _last_backup_time = now if now is not None else time.time()
+
 
 def run_portable_backup(data: dict) -> None:
-    """Export all data as structured .md files. Throttled to prevent I/O storms."""
+    """Export all data as structured .md files. Throttled to prevent I/O storms.
+
+    With an installed async sink, the immutable snapshot is dispatched to the
+    worker (which owns throttle advancement on success); otherwise the
+    synchronous path below runs."""
     global _last_backup_time
     now = time.time()
     if now - _last_backup_time < _BACKUP_THROTTLE:
         return
 
+    snapshot = capture_snapshot(data)
+    if _backup_sink is not None:
+        try:
+            _backup_sink(snapshot)
+        except Exception:
+            logger.exception("portable backup dispatch failed")
+        return
+
     try:
-        _do_export(data)
+        _do_export(snapshot)
     except Exception:
         # A backup that fails silently is worse than no backup: the user
         # believes the snapshot exists. Reach the log file, keep the previous

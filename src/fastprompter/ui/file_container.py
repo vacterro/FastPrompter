@@ -116,15 +116,29 @@ def container_worker():
 
 
 def container_worker_shutdown_global():
-    """Stop the shared container worker at application exit (bounded)."""
+    """Stop the shared container worker at application exit (bounded).
+
+    The globals are nulled (mid-session teardown can spawn a fresh worker)
+    and the retired wrappers are kept for the process lifetime: Python
+    teardown destroying a worker whose thread was stopped mid-reference is an
+    access-violation class.
+    """
     global _CONTAINER_WORKER, _CONTAINER_THREAD
     thread = _CONTAINER_THREAD
+    worker = _CONTAINER_WORKER
+    _CONTAINER_WORKER = None
+    _CONTAINER_THREAD = None
     if thread is not None and thread.isRunning():
         try:
             thread.quit()
             thread.wait(5.0)
         except Exception:
-            pass# ascii + lowercase cyrillic (U+0430-044F, U+0451) survive in slugs
+            pass
+    if worker is not None or thread is not None:
+        _RETIRED_CONTAINER_WORKERS.append((worker, thread))
+
+
+_RETIRED_CONTAINER_WORKERS = []# ascii + lowercase cyrillic (U+0430-044F, U+0451) survive in slugs
 _SLUG_BAD = re.compile(
     "[^a-z0-9" + chr(0x0430) + "-" + chr(0x044F) + chr(0x0451) + "\\- ]+"
 )
