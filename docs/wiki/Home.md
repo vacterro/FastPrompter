@@ -1,8 +1,12 @@
 # FastPrompter Wiki
 
-FastPrompter — ultra-fast keyboard-driven scratchpad + prompt workbench for Windows. Python 3.11+, PyQt6. SQLite WAL persistence. Nuitka-built self-contained EXE.
+FastPrompter — keyboard-first, local-first scratchpad + snippet workspace for Windows. Python 3.11+, PyQt6. SQLite WAL persistence. Nuitka-built self-contained EXE.
 
-> **Alt+X** summons 100-slot scratchpad at cursor. Zero install, zero cloud, zero telemetry. All state syncs instantly to local DB.
+> **Alt+X** summons a 100-silo workspace at the cursor. Zero install, zero cloud, zero telemetry. Changed state is written to the local DB automatically.
+
+> **Freshness policy:** the README and `src/` are canonical; wiki pages
+> describe the v0.8.x codebase they were written against. Where a page and
+> the code disagree, the code wins.
 
 ---
 
@@ -33,7 +37,7 @@ FastPrompter — ultra-fast keyboard-driven scratchpad + prompt workbench for Wi
 ## Project
 
 - **Repo**: [vacterro/FastPrompter](https://github.com/vacterro/FastPrompter)
-- **Stack**: Python 3.11+, PyQt6, SQLite WAL, Nuitka ≥4.1.2, pynput
+- **Stack**: Python 3.11+, PyQt6, SQLite WAL, Nuitka ≥4.1.2
 - **License**: MIT
 
 ---

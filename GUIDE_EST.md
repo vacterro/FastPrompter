@@ -57,8 +57,8 @@ install ühe liigutusega.
 - Paremklõps projektiloendil — lisa, nimeta ümber või kustuta projektikaarte.
 
 Täielik funktsioonide loend, ekraanipildid ja iga nupu lahtiseletus on
-[README.md](README.md#инструкция--instruction) — terve vanaisa-hääles
-peatükk nii inglise kui vene keeles.
+[README.md](README.md) ja [Wiki](https://github.com/vacterro/FastPrompter/wiki/User-Guide).
+See juhend ongi vanaisa-hääles selgitus.
 
 ## Lõppkokkuvõte
 

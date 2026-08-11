@@ -32,7 +32,7 @@ FastPrompter — ultra-fast keyboard-driven scratchpad + prompt workbench for Wi
 
 ## Project Info & Links
 - **Repository**: [vacterro/FastPrompter](https://github.com/vacterro/FastPrompter)
-- **Tech Stack**: Python 3.11+, PyQt6, SQLite (WAL mode), Nuitka 4.1+, pynput
+- **Tech Stack**: Python 3.11+, PyQt6, SQLite (WAL mode), Nuitka 4.1+
 - **License**: MIT
 
 ---

@@ -1,5 +1,9 @@
 # FastPrompter Module Structure
 
+> **Freshness policy:** the README and `src/` are canonical; this page
+> describes the v0.8.x codebase it was written against. Where a page and the
+> code disagree, the code wins.
+
 ## Codebase Map (`src/fastprompter/`)
 
 ```
@@ -14,8 +18,8 @@ src/fastprompter/
 │   ├── duration.py             # Time parsing, human-readable duration format
 │   ├── hashtags.py             # Hashtag extraction + cross-silo indexing
 │   ├── header.py               # Ctrl+E header formatting core
-│   ├── hotkey_filter.py        # Win32 WH_KEYBOARD_LL hook for VK dispatch
-│   ├── hotkeys.py              # pynput global hotkey listener thread
+│   ├── hotkey_filter.py        # QAbstractNativeEventFilter: WM_HOTKEY/WM_SYSCOMMAND dispatch
+│   ├── hotkeys.py              # Win32 RegisterHotKey + layout-aware VK resolution
 │   ├── ipc_server.py           # QLocalServer single-instance IPC
 │   ├── limits.py               # Agent reset-limit scanner + timer creation
 │   ├── logging.py              # Logger setup, rotating file handler
@@ -100,7 +104,7 @@ src/fastprompter/
 └── utils/                      # Low-level helpers
     ├── fonts.py                # System font loader, fallback resolver, no-AA
     ├── paths.py                # Portable path resolver (exe + user data)
-    ├── portable_backup.py      # Portable ZIP backup builder
+    ├── portable_backup.py      # Daily Markdown snapshot exporter (silos/snippets/archive)
     └── textfit.py              # Dynamic text truncation + label fitting
 ```
 
@@ -109,7 +113,7 @@ src/fastprompter/
 | Package | Responsibility |
 |---|---|
 | `core.state` | SQLite WAL persistence, state sync, undo stack, per-category aliased stores |
-| `core.hotkey*` | Global hotkey listener + Win32 VK filter, layout-independent dispatch |
+| `core.hotkey*` | Win32 RegisterHotKey + native event filter, layout-independent dispatch |
 | `core.watcher` | Prompt queue, CDP/Win32 automation, skill wrappers, limit scanner |
 | `core.i18n` | 33-locale translation pack + proxy delegation from translations.py |
 | `core.ctrlw` | Divider template engine (Ctrl+W / Alt+W) |

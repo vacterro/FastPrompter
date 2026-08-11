@@ -1,5 +1,13 @@
 # SAIPEN Protocol v7 & SubSaipen Architecture
 
+> **This page documents the SAIPEN *protocol project*, not a FastPrompter
+> feature.** FastPrompter shipped a small `.saipen/` state viewer
+> (STATE/BOARD/LOG) that was removed in v0.8.4; the app does not currently
+> speak this protocol. The canonical, authoritative protocol lives in its own
+> repository: **[github.com/vacterro/saipen](https://github.com/vacterro/saipen)**.
+> This page is kept here as a FastPrompter-Wiki-hosted spec copy and may lag
+> the canonical repo — when in doubt, the repo wins.
+
 ## Overview
 
 SAIPEN (v7) — lightweight structured protocol for persistent AI agent task tracking, state management, event logging, and multi-agent delegation. Zero context-drift across long sessions via machine-readable files in `.saipen/`.

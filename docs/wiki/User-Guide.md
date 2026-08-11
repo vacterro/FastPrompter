@@ -1,5 +1,9 @@
 # FastPrompter User Guide
 
+> **Freshness policy:** the README and `src/` are canonical; this page
+> describes the v0.8.x codebase it was written against. Where a page and the
+> code disagree, the code wins.
+
 ## Overview
 
 High-speed keyboard-driven scratchpad + prompt workbench. Alt+X summons at cursor. Write. Close (Esc). Zero manual save — SQLite syncs every 10s.
@@ -114,7 +118,8 @@ Insert Table creates a markdown table. Tab/Shift+Tab walks cells. Tab off last c
 
 ### 12. File Container
 
-Each silo gets `data/silo_files/<project>/<slot_idx>/` on disk.
+Each silo gets `data/files/<project>/<silo-title>/` on disk (a stable, unique
+folder per slot; the root can be moved in Settings).
 
 - Drag files onto drawer overlay → copy into silo folder
 - Drop overlay (4 options): Insert Text, Insert Link, Copy to Files, Shortcut

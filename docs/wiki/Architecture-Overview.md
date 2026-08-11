@@ -1,8 +1,12 @@
 # FastPrompter Architecture Overview
 
+> **Freshness policy:** the README and `src/` are canonical; this page
+> describes the v0.8.x codebase it was written against. Where a page and the
+> code disagree, the code wins.
+
 ## Overview
 
-Portable scratchpad + prompt workbench. Python 3.11+, PyQt6. SQLite WAL persistence. Zero-install Nuitka EXE. Summon via Alt+X global hotkey, write, close — state persists instantly.
+Portable scratchpad + snippet workspace. Python 3.11+, PyQt6. SQLite WAL persistence. Zero-install Nuitka EXE. Summon via Alt+X global hotkey, write, close — state persists automatically.
 
 ## High-Level Diagram
 
@@ -25,8 +29,10 @@ Portable scratchpad + prompt workbench. Python 3.11+, PyQt6. SQLite WAL persiste
       v         v          v          v            v
 +--------+ +---------+ +--------+ +---------+ +-----------+
 |Hotkeys | | IPC     | | Sound  | | Watcher | | File      |
-|(pynput)| |(QLocal) | |Manager | |Engine   | | Container |
-+--------+ +---------+ +--------+ +---------+ +-----------+
+|(Win32  | |(QLocal) | |Manager | |Engine   | | Container |
+| Register| +---------+ +--------+ +---------+ +-----------+
+|HotKey) |
++--------+
 ```
 
 ## Core Subsystems
@@ -58,7 +64,7 @@ Auto-backup on startup (full DB copy to `.bak`). Throttled incremental backup ev
 
 ### 4. Hotkey System (`core/hotkeys.py`, `core/hotkey_filter.py`)
 
-Two-layer: (1) pynput global listener thread for summon/emergency quit; (2) PyQt6 QShortcut for window-local bindings. `HotkeyFilter` (Win32 WH_KEYBOARD_LL) intercepts physical VK codes — layout-independent. Works on QWERTY, JCUKEN, AZERTY, QWERTZ.
+Two-layer: (1) Win32 `RegisterHotKey` via `core/hotkeys.py` for the global summon/quick-list/panic keys, dispatched from a `QAbstractNativeEventFilter` (`HotkeyFilter`, `core/hotkey_filter.py`) on `WM_HOTKEY`/`WM_SYSCOMMAND`; (2) PyQt6 `QShortcut` for window-local bindings. `core/hotkeys.py` resolves key names to virtual-key codes with `VkKeyScanW`, so physical keys work on QWERTY, JCUKEN, AZERTY, QWERTZ.
 
 ### 5. Editor Engine (`ui/editor.py`)
 
@@ -80,7 +86,7 @@ Up to 100 silos per project tab. Features:
 - Recency heatmap — warm tint on recently edited
 - Sidebar gaps — user-defined spacers (Ctrl+drag to move)
 - Multi-select — Shift=range, Ctrl=toggle, batch ops
-- File containers — per-silo disk folder (`data/silo_files/<cat>/<idx>/`)
+- File containers — per-silo disk folder (`data/files/<category-slug>/<silo-title-slug>/`, unique per slot)
 - Kanban (Alt+arrows move cards) + Table builder (Tab walk cells) — T-630
 
 ### 7. Watcher Engine (`core/watcher/`)

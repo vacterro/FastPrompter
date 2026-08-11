@@ -1,389 +1,295 @@
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/vacterro/FastPrompter/main/_res/fastprompter_logo1.png" width="120" alt="FastPrompter logo">
+<img src="_res/fastprompter_logo1.png" width="120" alt="FastPrompter logo">
 
 # FastPrompter
 
-**A tiny, portable scratchpad & snippet manager for Windows**
+**Keyboard-first, local-first scratchpad & snippet workspace for Windows.**
 
-One hotkey. Instant window. Your prompts, notes and drafts — always one keystroke away.
+One global hotkey opens the same local workspace — notes, prompts, commands,
+snippets, project scratchpads and small file bundles. No browser, no cloud,
+no account.
 
-<a href="https://github.com/vacterro/FastPrompter/releases"><img src="https://img.shields.io/github/v/release/vacterro/FastPrompter?style=for-the-badge&label=Download&color=brightgreen" alt="Download"></a>
-<a href="LICENSE"><img src="https://img.shields.io/github/license/vacterro/FastPrompter?style=for-the-badge&color=blue" alt="MIT"></a>
-<img src="https://img.shields.io/badge/Windows-0078D6?style=for-the-badge&logoColor=white" alt="Windows">
-<img src="https://img.shields.io/badge/~27_MB-Portable_EXE-important?style=for-the-badge" alt="Portable">
-[🤍 Support Developer](https://buymeacoffee.com/vacuum34)
+[Download portable EXE →](https://github.com/vacterro/FastPrompter/releases)
+<img src="https://img.shields.io/github/v/tag/vacterro/FastPrompter?style=flat-square&label=source%20version" alt="version">
+<a href="LICENSE"><img src="https://img.shields.io/github/license/vacterro/FastPrompter?style=flat-square&color=blue" alt="MIT"></a>
+<img src="https://img.shields.io/badge/Windows-0078D6?style=flat-square&logoColor=white" alt="Windows">
+<img src="https://img.shields.io/badge/Portable%20EXE-%E2%89%8828%20MB-important?style=flat-square" alt="Portable">
 
-<br>
+Guides: [English](GUIDE_EN.md) · [Русский](GUIDE_RU.md) · [Deutsch](GUIDE_DE.md) · [Eesti](GUIDE_EST.md) · [日本語](GUIDE_JA.md)
 
-[English](GUIDE_EN.md) · [Русский](GUIDE_RU.md)
-<img alt="Main interface" src="docs/images/141228_main.png" />
-<br><em>The main workspace. Your hierarchical notes on the left, a full Markdown editor on the right. Everything is saved instantly and stays exactly where you left it.</em>
+<img alt="FastPrompter main workspace" src="docs/images/141228_main.png">
+<br><em>The main workspace: hierarchical scratchpads on the left, a full Markdown editor on the right, project tabs on top.</em>
 
 </div>
-
-### 📖 [Full documentation → GitHub Wiki](https://github.com/vacterro/FastPrompter/wiki)
-
-Complete technical docs: [architecture](https://github.com/vacterro/FastPrompter/wiki/Architecture-Overview), [module tree](https://github.com/vacterro/FastPrompter/wiki/Module-Structure), [API reference](https://github.com/vacterro/FastPrompter/wiki/Core-API-and-Classes), [configuration](https://github.com/vacterro/FastPrompter/wiki/Configuration), [UI components](https://github.com/vacterro/FastPrompter/wiki/UI-Components), [keyboard shortcuts](https://github.com/vacterro/FastPrompter/wiki/Keyboard-Shortcuts-and-Cheatsheet), [user guide](https://github.com/vacterro/FastPrompter/wiki/User-Guide), [watcher engine](https://github.com/vacterro/FastPrompter/wiki/Watcher-Engine-Architecture), [deployment guide](https://github.com/vacterro/FastPrompter/wiki/Deployment-Guide), [plugin dev](https://github.com/vacterro/FastPrompter/wiki/Plugin-and-Skill-Development), [SAIPEN protocol](https://github.com/vacterro/FastPrompter/wiki/SAIPEN-Protocol), [troubleshooting](https://github.com/vacterro/FastPrompter/wiki/Troubleshooting-and-FAQ).
 
 ---
 
-Press `Alt+X` anywhere — in your browser, IDE, terminal — and FastPrompter pops up at your cursor with everything you keep: auto-saved scratchpads (**silos**), reusable **snippets** on `F1`–`F10`, per-project tabs, and an archive. Press `Esc`, it vanishes. Everything lives in one folder, saved in real time. No cloud, no accounts, no telemetry.
+## Why FastPrompter
 
-## ✨ What it does
-<img alt="What it does preview" src="docs/images/141255_second.png" />
-<br><em>Writing in action. Enjoy real checkboxes, code highlighting, and clean visual structure in a lightweight, instant scratchpad.</em>
+FastPrompter is for text you repeatedly need while working: temporary notes,
+prompts, commands, snippets, project scratchpads and small file bundles.
+One global hotkey (`Alt+X`) opens the same local workspace from anywhere —
+a browser, an IDE, a terminal — without switching to a cloud notebook.
+Changed text is saved automatically; there is no save button to remember.
 
-[_Cursor_](https://www.deviantart.com/potatoddas/art/Simple-Perfect-Cursors-946177131)
+Your data stays yours: primary state lives beside the executable, and nothing
+leaves your machine unless you ask it to.
 
-| | |
-|---|---|
-| 🗄️ **Silos** | Up to 100 auto-saved scratch slots per project — kill the app, your text survives |
-| 📋 **Snippets** | Named text blocks, pasted instantly with `F1`–`F10` |
-| 🗂️ **Projects** | Up to 100 independent tabs, each with its own silos, snippets and archive |
-| 📦 **Archive** | One click stores the current silo or snippet out of the way |
-| 📌 **Pin, tick & tint** | Hover a silo for tick/files/pin/archive buttons; silos tint by how recently you edited them. Silo line counters are separated by `│` for quick reading |
-| 🌳 **Hierarchy** | Drag a silo onto another to nest it as a child; right-click to collapse parents |
-| 🖱️ **Wheel everything** | Wheel flips pages & switches tabs, `Ctrl+wheel` walks silos or zooms text |
-| ✍️ **Markdown editor** | Live highlighting, real checkboxes, auto-bullets, `---` dividers, `Ctrl+E` headers with timestamp |
-| 💻 **Code blocks** | ``` fences render monospace with syntax tints, auto line numbers, one-click copy and folding |
-| 📁 **File container** | Per-silo asset drawer: drop *any* files in, drag them out, preview images, link originals, Explorer-style views — plain folders you can read without the app |
-| 🗂️ **Folder Templates** | Build predefined folder structures inside your silo's file container with a single click |
-| 💾 **Silo backup** | `Ctrl+Click` the 📁 button to save the silo text as a file — Copy, Copy + Clear, or Cancel |
-| 🗃️ **Fold sections** | Collapse `#` headers and code blocks like a real Markdown editor |
-| 🔍 **Smart search** | Multi-word AND matching — type `foo bar` to find silos containing both words in any order |
-| 🦓 **Readability** | Zebra stripes, line numbers with clickable margin marks, word wrap, zen mode |
-| 🎨 **6 vintage themes** | Win95-style bevels, warm amber-on-black, OLED — plus a full custom color editor |
-| 🎵 **Sounds** | Optional UI clicks and a typewriter tick, with volume control |
-| 📄 **Drop Zones** | Drag files to the editor to choose from 4 actions: insert text, insert clickable link, copy to silo Files, or create shortcut in silo Files |
-| 🕒 **Clock & Timer** | Optional mini analog clock, date/time widget, and a built-in Pomodoro-style timer with snooze and adjustment controls |
-| 🧠 **[SAIPEN](https://github.com/vacterro/saipen) Integration** | Auto-detects `.saipen` folders in your projects and adds a compact toolbar viewer for STATE, BOARD, and LOG |
-| ⌨️ **Bindable shortcuts** | Rebind every in-app hotkey from the Settings panel — two slots per action, with dynamic tooltips |
-| 🌍 **32 languages + flags** | English, Russian, Ukrainian, German, French, Spanish, Italian, Portuguese, Dutch, Polish, Swedish, Danish, Finnish, Norwegian, Japanese, Chinese, Korean, Thai, Vietnamese, Arabic, Hebrew, Estonian, Czech, Slovak, Hungarian, Romanian, Bulgarian, Croatian, Greek, Turkish, Hindi, Indonesian — each with a drawn flag icon, switchable live in Settings. Plus a bonus **«Дед»** angry-grandpa voice 👴 |
-| 🗑️ **Trash** | Middle-click to trash a silo — text and files are safely moved to `_trash`, never permanently deleted |
-| ↩️ **Undo everything** | `Ctrl+Z` covers text *and* silo operations (clear, trash, move) |
+## At a glance
 
-## ИНСТРУКЦИЯ / INSTRUCTION
+- **Global summon hotkey** — `Alt+X` / `F15` (rebindable, two slots) pops the
+  window up at your cursor from any application.
+- **Project-oriented organization** — up to 100 project tabs; each holds up to
+  100 auto-saved scratchpads ("silos"), 10 `F1`–`F10` snippets, and an archive.
+- **Auto-saved hierarchical scratchpads** — silos nest into a tree and support
+  pins, completion ticks, recency tints and multi-select; `Ctrl+Z` undoes text
+  *and* silo operations.
+- **Markdown & code editing** — live highlighting, clickable checkboxes,
+  folding, code fences with syntax tints, line numbers and one-click copy.
+- **Per-silo file containers** — drop any files into a silo's drawer; it is a
+  plain folder on disk, browsable in Explorer without the app.
+- **Local-first portable storage** — SQLite (WAL) database, `.bak` rotation,
+  daily Markdown snapshots, an optional one-way mirror and a restorable trash.
+  No cloud, no account, no telemetry.
+- **Optional local automation** — a watcher can queue prompts from a silo and
+  send them into a target app when the app is idle.
 
-<details>
-<summary><b>🇬🇧 English</b></summary>
+## Quick start
 
-> Sit down, pour some tea. Here's what this little program actually does, no computer talk.
+**Portable EXE (recommended).** Download `FastPrompter.exe` from the
+[Releases page](https://github.com/vacterro/FastPrompter/releases), run it,
+press `Alt+X`. No install, no Python, no admin rights. Data lives in a `data/`
+folder next to the EXE — copy that folder and you have your backup and your
+install in one move.
 
-- **The magic knock (`Alt+X`)** — you press one key combo and the notepad appears right where your mouse is. Press `Esc` — it's gone. Like a cuckoo clock, but useful.
-- **Silos** — imagine a shelf with 100 labeled jars. Every jar holds one piece of text. You never press "save" — the moment you stop typing, it's already in the jar. Power goes out? The jar's still full.
-- **Snippets** — your favorite phrases on speed-dial. Press `F1`–`F10` and the whole text pastes itself wherever you are. Like rubber stamps, but for words.
-- **Projects (tabs)** — up to a hundred separate shelves. One for work, one for the novel, one for the shopping lists. Each shelf has its own jars, stamps and attic.
-- **Archive** — the attic. One click and a jar goes up there, out of sight but never thrown away.
-- **Pin 📌** — nail a jar to the top of the shelf so it never wanders off.
-- **Tick ✅** — put a "done" sticker on a jar. Click again — sticker's off.
-- **Color tint** — jars you touched recently glow warmer, old ones fade cooler. You see at a glance what's fresh.
-- **Family jars (hierarchy)** — drop one jar onto another and it becomes its child: sits underneath, shifted right. Fold the parent to hide the kids. Drag the kid out — it grows up again.
-- **Trash, not fire** — middle-click a jar and it moves to a trash folder as a plain text file. Nothing in this program ever burns; you can always dig it back out.
-- **The writing desk (editor)** — write with `**bold**`, checkboxes you can click, bullet lists that continue themselves, `---` divider lines, and `Ctrl+E` turns a line into a dated title.
-- **Code blocks** — put \`\`\` around code and it becomes a proper terminal window: typewriter font, line numbers, a copy button, and a fold arrow to tuck it away.
-- **Folding ▾** — big text? Click the arrow next to a title and the whole section hides under it, like folding a map.
-- **The drawer (📁 Files)** — every jar has a real drawer for files. Throw ANY files in — pictures, videos, whatever. It's just a normal folder on your disk; open it in Explorer anytime, the program doesn't hold your stuff hostage. Rename the jar — the drawer follows.
-- **Drop zones** — drag a file onto the desk and four big buttons appear asking what to do: paste the text, paste a link, copy into the drawer, or leave a shortcut. Like a butler asking "where shall I put this, sir?"
-- **Folder templates** — one click builds your usual folder skeleton (IN, OUT, temp...) inside the drawer. For people who start every project the same way.
-- **Search 🔍** — type `red car` and it finds jars containing both "red" AND "car", in any order.
-- **Themes** — six coats of paint, all vintage Windows 95 style: dark gold, amber, pitch black. Or mix your own colors.
-- **Sounds** — optional clicks and a typewriter tick-tick-tick, with a volume knob.
-- **The clock & timer** — date and time in the corner, with seconds, a "Morning/Night" word, a tiny real analog clock, and a built-in Pomodoro-style timer with snooze controls.
-- **[SAIPEN](https://github.com/vacterro/saipen) Integration** — automatically detects `.saipen` tracking folders in your projects and gives you instant read-only access to STATE, BOARD, and LOG files right from the toolbar.
-- **Scale** — one knob makes the WHOLE program bigger or smaller, 50–150%. For young eyes and old.
-- **Shortcuts** — every key combo can be re-taught in Settings. Two slots each, so `Alt+X` and `F15` can do the same thing.
-- **Two languages** — the whole interface speaks English or Russian; switch in Settings.
-- **Undo everything** — `Ctrl+Z` un-does not just typing but silo operations too: cleared a jar by accident? Un-clear it.
-- **Your stuff stays yours** — everything lives in one `data/` folder next to the program. Copy the folder to a USB stick — that's your backup, that's the whole install. No cloud, no accounts, nobody watching.
-
-</details>
-
-<details>
-<summary><b>🇷🇺 По-русски»</b></summary>
-
-> Садись, наливай чай. Рассказываю, что эта программка делает, без компьютерной зауми.
-
-- **Волшебный стук (`Alt+X`)** — нажал комбинацию, и блокнот выскочил прямо у мышки. Нажал `Esc` — исчез. Как кукушка из часов, только полезная.
-- **Сило (ячейки)** — полка со ста подписанными банками. В каждой банке — один текст. Кнопку «сохранить» жать не надо: перестал печатать — оно уже в банке. Свет вырубили? Банка целая.
-- **Снипеты** — любимые фразы на быстром наборе. Жмёшь `F1`–`F10` — и весь текст сам вставился, где бы ты ни был. Как печати-штампы, только для слов.
-- **Проекты (вкладки)** — до ста отдельных полок. Одна для работы, одна для романа, одна для списков в магазин. У каждой полки свои банки, штампы и чердак.
-- **Архив** — чердак. Один клик — банка уехала наверх: с глаз долой, но не выброшена.
-- **Пин 📌** — прибил банку к верху полки, чтоб не уползала.
-- **Галка ✅** — наклейка «сделано» на банку. Кликнул ещё раз — снял.
-- **Подкраска** — банки, которые трогал недавно, светятся теплее, старые остывают. Сразу видно, где свежее.
-- **Семейные банки (иерархия)** — бросил банку НА другую — стала дочкой: сидит под ней, сдвинута вправо. Родителя можно сложить — дети спрячутся. Вытащил дочку — снова взрослая.
-- **Корзина, не костёр** — средняя кнопка мыши по банке — и она уехала в папку-корзину обычным текстовым файлом. Тут ничего не горит: всегда можно достать обратно.
-- **Письменный стол (редактор)** — пишешь с `**жирным**`, кликабельные чекбоксы, списки сами продолжаются, линии-разделители `---`, а `Ctrl+E` делает из строки заголовок с датой.
-- **Код-блоки** — обернул код в \`\`\` — и он стал как в терминале: машинописный шрифт, номера строк, кнопка «скопировать» и стрелка, чтоб свернуть.
-- **Сворачивание ▾** — текста много? Клик по стрелке у заголовка — вся секция спряталась под него, как карта сложилась.
-- **Ящик (📁 файлы)** — у каждой банки есть настоящий ящик для файлов. Кидай ЧТО угодно: картинки, видео, черновики. Это обычная папка на диске — открывай в проводнике когда хочешь, программа твоё добро в заложниках не держит. Переименовал банку — ящик переехал следом.
-- **Зоны броска** — тащишь файл на стол, и выскакивают четыре больших кнопки: вставить текстом, вставить ссылкой, положить в ящик или оставить ярлык. Как дворецкий: «куда изволите?»
-- **Шаблоны папок** — один клик — и в ящике построился твой привычный скелет папок (IN, OUT, temp...). Для тех, кто каждый проект начинает одинаково.
-- **Поиск 🔍** — набрал `красная машина` — найдёт банки, где есть И «красная», И «машина», в любом порядке.
-- **Темы** — шесть покрасок, все под старый Windows 95: тёмное золото, янтарь, чистый чёрный. Или намешай свои цвета.
-- **Звуки** — по желанию щелчки и печатная машинка тык-тык-тык, с ручкой громкости.
-- **Часы и таймер** — дата и время в углу: с секундами, словом «Утро/Ночь», крохотными стрелочными часами и встроенным помодоро-таймером.
-- **Интеграция [SAIPEN](https://github.com/vacterro/saipen)** — сама находит папки `.saipen` в проекте и выводит кнопки STATE, BOARD и LOG для быстрого просмотра прямо на панель.
-- **Масштаб** — одна ручка делает ВСЮ программу крупнее или мельче, 50–150%. И для молодых глаз, и для наших.
-- **Горячие клавиши** — любую комбинацию можно переучить в настройках. По два слота: пусть `Alt+X` и `F15` делают одно и то же.
-- **Два языка** — весь интерфейс говорит по-русски или по-английски; переключается в настройках.
-- **Отмена всего** — `Ctrl+Z` отменяет не только буквы, но и дела с банками: случайно очистил — верни как было.
-- **Твоё добро — твоё** — всё лежит в одной папке `data/` рядом с программой. Скопировал папку на флешку — вот тебе и бэкап, и вся установка. Без облаков, без аккаунтов, никто не подглядывает.
-
-</details>
-
-## 📸 Screenshots
-
-<div align="center">
-<img width="960" height="907" alt="2026-07-30_115642" src="https://github.com/user-attachments/assets/7c596dfc-f232-4084-94d7-bf9de0103dc6" />
-<br><em>A distraction-free text area with red pins to keep your most important notes glued to the top of the list.</em><br><br>
-
-<img alt="Screenshot 2" src="docs/images/2026-07-19_054734.png" />
-<br><em>Smart Drop Zones. Drag a file in and choose exactly what happens next: embed it, link it, or safely tuck it away in the note's dedicated folder.</em><br><br>
-</div>
-
-<details>
-<summary><b>More screenshots</b></summary>
-<div align="center">
-
-<img alt="Old Main interface" src="docs/images/2026-07-19_054929.png" />
-<br><em>Old main interface.</em><br><br>
-
-<img alt="Old What it does preview" src="docs/images/2026-07-19_054806.png" />
-<br><em>Old what it does preview.</em><br><br>
-
-<img alt="Additional screenshot 1" src="docs/images/141423_more1.png" />
-<br><em>Additional view.</em><br><br>
-
-<img alt="Additional screenshot 2" src="docs/images/133015_more2.png" />
-<br><em>Additional view.</em><br><br>
-
-<img alt="Little window 1" src="docs/images/2026-07-19_054908.png" />
-<br><em>No data lock-in. Export your entire database for safekeeping or convert your notes to readable `.txt` files with one click.</em><br><br>
-
-<img alt="Little window 2" src="docs/images/2026-07-19_054903.png" />
-<br><em>Global Hotkeys. Rebind any action to fit your exact workflow and avoid clashes with other software.</em><br><br>
-
-<img alt="Little window 3" src="docs/images/2026-07-19_054854.png" />
-<br><em>Custom Timestamps. Tell the `Ctrl+E` shortcut exactly how to format your dates. Perfect for uniform journaling.</em><br><br>
-
-<img alt="Little window 4" src="docs/images/2026-07-19_054846.png" />
-<br><em>Project Bridges. Link a project tab directly to its real-world folder and executable so you can launch your work right from your notes.</em><br><br>
-
-<img alt="Screenshot 3" src="docs/images/2026-07-19_054658.png" />
-<br><em>Pure OLED Black. One of six vintage themes, designed to completely eliminate eye strain in the dark.</em><br><br>
-
-<img alt="Screenshot 4" src="docs/images/2026-07-19_054643.png" />
-<br><em>The Settings panel. Build the exact interface you want by toggling everything from line numbers to the tiny analog clock.</em><br><br>
-
-<img alt="Screenshot 5" src="docs/images/2026-07-19_054617.png" />
-<br><em>Built for heavy lifting. The app effortlessly handles huge walls of dense text without ever slowing you down.</em><br><br>
-
-<img alt="Screenshot 6" src="docs/images/2026-07-19_055445.png" />
-<br><em>Instant tweaks. Switch languages, swap themes, or scale the entire UI up to 150% right from the top bar.</em><br><br>
-
-<img alt="Screenshot 7" src="docs/images/2026-07-19_055431.png" />
-<br><em>Zen Mode. Hide the sidebars and settings to get a pure, focused canvas for long-form writing.</em><br><br>
-
-<img alt="Screenshot 8" src="docs/images/2026-07-23_105047.png" />
-<br><em>Additional view.</em><br><br>
-
-<img alt="Screenshot 12" src="docs/images/2026-07-23_104633.png" />
-<br><em>Additional view.</em><br><br>
-
-<img alt="Screenshot 13" src="docs/images/2026-07-23_104611.png" />
-<br><em>Additional view.</em><br><br>
-
-<img alt="Screenshot 14" src="docs/images/2026-07-23_104603.png" />
-<br><em>Additional view.</em><br><br>
-
-<img alt="Screenshot 16" src="docs/images/2026-07-23_104523.png" />
-<br><em>Additional view.</em><br><br>
-
-
-</div>
-</details>
-
-## 🚀 Quick start
-
-**Portable EXE** — grab it from [Releases](https://github.com/vacterro/FastPrompter/releases), run it, press `Alt+X`. No install, no Python, no admin rights. The database lives in a `data/` folder next to the EXE — run it from a USB stick if you like.
-
-**From source:**
+**From source** (Python 3.11+):
 
 ```powershell
 git clone https://github.com/vacterro/FastPrompter.git
 cd FastPrompter
-uv sync && uv run python FastPrompter.pyw    # or: pip install -r requirements.txt
+uv sync
+uv run python FastPrompter.pyw     # or: pip install -r requirements.txt; python FastPrompter.pyw
 ```
 
-**Build your own EXE** (~27 MB — unused Qt modules are stripped):
+**Build your own portable EXE** (≈28 MB, unused Qt modules stripped):
 
 ```powershell
-python tools/build.py
+uv run python tools/build.py
 ```
 
-## ⌨️ Shortcuts
+## Local-first data & recovery
 
-**Global** (rebindable, two slots each): `Alt+X` / `F15` toggle window · `Shift+Alt+X` quick list · `Alt+D` sidebar · `Alt+S` lock window · `Alt+E` always on top · `Alt+A` hide on click-out
+**Where your data lives.** Primary state is a SQLite database
+(`data/local_data_v15.db`) in a `data/` folder beside the executable (falling
+back to `%LOCALAPPDATA%\FastPrompter\` if that folder is not writable). Silo
+file containers are plain folders under `data/files/<project>/<silo>/`, and
+the trash lives at `data/files/_trash/`. There is no cloud, no account and no
+telemetry; the core app makes no network calls.
 
-<details>
-<summary><b>In-app keys (all customizable via Settings)</b></summary>
+**What leaves the machine.** Nothing by default — no network calls, no
+telemetry, no account. Two opt-in features extend beyond the app: the daily
+Markdown snapshot folder (written to your local Documents, see below) and the
+watcher, which sends queued prompts into a target application you choose and
+explicitly arm.
 
-| Key | Action |
-|-----|--------|
-| `Ctrl+N` | New empty silo |
-| `Alt+Up` / `Alt+Down` | Previous / next silo |
-| `Ctrl+1`–`Ctrl+0` | Jump to silo 1–10 |
-| `F1`–`F10` | Paste snippet 1–10 |
-| `Ctrl+S` | Save / update snippet |
-| `Ctrl+W` | Insert `---` divider line |
-| `Ctrl+E` | Header + timestamp on current line |
-| `Ctrl+Return` | Toggle checkboxes |
-| `Ctrl+B` / `I` / `U` | Bold / Italic / Underline |
-| `Ctrl+F` / `Ctrl+H` | Find / Replace |
-| `Ctrl+Z` / `Ctrl+Shift+Z` | Undo / Redo (text **and** silo actions) |
-| `Ctrl+Q` | Cycle window through screen corners |
-| `Ctrl+D` | Focus (zen) mode |
-| `Ctrl+Shift+S` | Export silo to file |
-| `Esc` | Close search → hide & save |
-| `Ctrl+Alt+Shift+Q` | Quit completely |
+**How it survives.**
 
-</details>
+- **Transactional saves** — SQLite in WAL mode; every save is a single
+  transaction. Changed text is autosaved on a 10-second timer and on hide,
+  close and silo/profile switches.
+- **Database backup** — a `.bak` copy is taken at startup and refreshed at
+  most once a minute after real changes; a fresh or empty database never
+  overwrites a healthy backup.
+- **Daily Markdown snapshots** — every project's silos, snippets and archive
+  are exported as plain `.md` to `Documents\.fastprompter\YYYY-MM-DD\`
+  (on by default, at most every 2 minutes, last 7 days kept). Readable without
+  FastPrompter.
+- **Optional one-way mirror** — point Settings at any folder and silos are
+  mirrored there as `.md` as you save. It never reads back and never deletes.
+- **Undo across restarts** — the latest undo snapshots are written to
+  `<database>_undo.json` and reloaded on the next launch.
+- **Trash, not destruction** — clearing or trashing a silo moves its text and
+  files into `data/files/_trash/`; the Trash dialog restores them.
 
-<details>
-<summary><b>Mouse gestures</b></summary>
+The honest failure model lives under [Known limits](#known-limits).
 
-| Gesture | Action |
-|---------|--------|
-| Drag any empty space / header | Move the window |
-| Drag the bottom-right corner | Resize the window |
-| Wheel over silos / snippets / archive | Flip pages |
-| `Ctrl+wheel` over silos | Select previous / next silo |
-| Wheel over tab bar | Switch project |
-| `Ctrl+wheel` in editor | Zoom font |
-| Middle-click a silo | Move it to the trash (text + files land in `data/files/_trash/`) |
-| Hover a silo | ✅ tick, 📁 files, 📌 pin and 📥 archive buttons appear |
-| `Ctrl+Click` 📁 button | Save silo text as a backup file (Copy / Copy + Clear / Cancel) |
-| Drag files over editor | Four drop zones: insert as text, insert as link, copy to Files, or create shortcut in Files |
-| Right-click a silo | Transfer to project, replace from, move to bottom… |
-| Drop a silo ONTO another | Nest it as a child (1 level; its files can merge into the parent) |
-| Shift+drop a silo onto another | Swap their places |
-| Drag a silo between others | Reorder — dragging a child out promotes it back to top level |
-| Right-click a parent silo | Collapse / expand its children |
+## Engineering evidence
 
-</details>
+Mechanisms, not marketing:
 
-## 📁 Your data
+- **Stack** — Python 3.11, PyQt6, SQLite (standard library), Win32 APIs;
+  packaged as a portable single-file EXE with Nuitka.
+- **Persistence** — SQLite in WAL mode (`synchronous=NORMAL`) with
+  transactional delta saves: only changed rows are written, and snapshots are
+  only taken after a commit succeeds (`core/state.py`,
+  `utils/portable_backup.py`).
+- **Single-instance IPC** — a `QLocalServer` named pipe
+  (`FastPrompter_Server_V15`) with a temp-file token and an ACK handshake; a
+  second launch hands off to the running instance instead of stacking
+  (`core/ipc_server.py`).
+- **Two hotkey layers** — Win32 `RegisterHotKey` plus a native event filter
+  dispatches global keys with layout-independent VK resolution (QWERTY,
+  JCUKEN, AZERTY, QWERTZ); in-app keys are Qt `QShortcut`s. Both layers are
+  rebindable with two slots per action (`core/hotkeys.py`,
+  `core/hotkey_filter.py`).
+- **Custom editor stack** — a `QPlainTextEdit` subclass with a live Markdown
+  highlighter, a line gutter with fold arrows, section folding, code-fence
+  copy, clickable checkboxes, collapsible image pills, a four-zone file drop
+  overlay and hide-markup mode (`ui/editor.py`, `ui/markdown_highlighter.py`).
+- **Filesystem-backed containers** — each silo owns a stable, unique folder
+  under `data/files/`; rename-safe and recoverable through the trash
+  (`ui/file_container.py`).
+- **Multi-layer recovery model** — transactional DB + startup/throttled `.bak`
+  + daily plain-Markdown snapshots + optional one-way mirror + persisted undo
+  + soft-delete trash. Each layer catches a different failure class.
+- **Watcher as a finite-state machine** — explicit
+  `DISARMED → ARMED → WATCHING → SENDING` states with settle, rate and
+  failure boundaries (`core/watcher/engine.py`).
+- **Tests** — a unit suite plus a smoke/integration suite that boots the real
+  application offscreen; CI runs ruff and the full suite on `windows-latest`
+  (see [Development](#development)).
 
-Everything is local and yours:
+## Core features
 
-- **Database** — `data/local_data_v15.db` next to the EXE, saved in real time
-- **File containers** — silo assets are plain folders under `data/files/<project>/<silo-title>/`, browsable in Explorer
-- **Markdown mirror** — silos, snippets & archive exported daily as plain `.md` files to `Documents\.fastprompter\` (on by default, toggleable), readable without FastPrompter
-- **Crash log** — written next to the EXE; crashes are loud, never silent
+### Notes, snippets, projects
 
-See [`CHANGELOG.md`](CHANGELOG.md) for version history.
+- **Silos** — up to 100 auto-saved scratchpads per project; nest into a
+  hierarchy, pin, tick, tint by recency, multi-select, middle-click to trash.
+- **Snippets** — named text blocks pasted with `F1`–`F10` (or
+  `Ctrl+Shift+1`–`0`), with variable placeholders.
+- **Projects** — up to 100 tabs, each with its own silos, snippets, archive
+  and files; right-click to add/rename/delete, wheel to switch.
+- **Search** — multi-word AND matching across silos (`foo bar` finds both).
+- **Archive** — one click stores a silo or snippet out of the way, restorable.
 
-## 🛡️ Reliability & data safety
+### Files & organization
 
-FastPrompter uses **several independent protection layers instead of relying on a single backup mechanism**. Each one catches a different class of failure, so no single thing going wrong takes your text with it.
+- **File containers** — per-silo plain folders under `data/files/`; drag files
+  in/out, preview images, link originals, Explorer-style views.
+- **Drop zones** — dragging a file onto the editor offers insert-as-text,
+  insert-link, copy-to-Files, or shortcut.
+- **Folder templates** — build a predefined structure (IN/OUT, assets, …)
+  inside a silo's container with one click.
+- **Trash** — middle-click moves a silo (text *and* files) to
+  `data/files/_trash/`; nothing is destroyed behind your back.
 
-<details>
-<summary><b>How your data is protected</b></summary>
+### Workspace & UI
 
-<br>
+- **Global hotkeys** (rebindable, two slots each): `Alt+X`/`F15` toggle
+  window, `Shift+Alt+X` pie menu, `Alt+E` lock position, `Alt+S` always on
+  top, `Alt+D` sidebar, `Alt+A` hide on click-out, `Ctrl+Alt+Shift+Q` quit.
+- **Window modes** — frameless, lock-in-place, always-on-top, `Ctrl+Q` snap
+  to corners/zones, three-stage zen mode.
+- **Themes** — 9 built-in (Win95-style dark-golden, OLED, Dracula, Nord,
+  Solarized Dark, …) plus a full custom color editor.
+- **Scaling** — the whole UI scales 50–150% (`Ctrl+Plus`/`Ctrl+Minus` for
+  fine steps).
+- **Extras** — analog clock, date widget, Pomodoro-style timer, optional UI
+  sounds with per-event sound settings, and 33 interface languages with
+  flag icons (including the bonus «Дед» grandpa voice).
 
-**Atomic storage**
+### Optional automation
 
-- SQLite runs in WAL mode.
-- Every save is a single transaction.
-- The "already saved" snapshot is updated **only after** a successful commit, so an interrupted write can never leave the app disagreeing with the database.
+- **Watcher** — queue prompts from a silo and have them typed into a target
+  app when the app is idle. This is a local workflow automation, not a bot:
+  you arm it per session against one target you choose. It waits until the
+  target is observed idle, sends one prompt at a time with a minimum gap, a
+  per-session send cap and a consecutive-failure cutoff, and never persists
+  its armed state across restarts. Targets are declared as TOML adapters
+  (Claude Code, opencode, freebuff, Antigravity, …) over Win32 message or
+  Chromium CDP transports (`core/watcher/`, see the
+  [Watcher Engine wiki](https://github.com/vacterro/FastPrompter/wiki/Watcher-Engine-Architecture)).
+- **SAIPEN** — FastPrompter previously shipped a small viewer for `.saipen/`
+  state files (STATE/BOARD/LOG); it was removed in v0.8.4. The canonical
+  SAIPEN protocol lives in its own repository:
+  [github.com/vacterro/saipen](https://github.com/vacterro/saipen). The
+  watcher above is generic and does not depend on SAIPEN.
 
-**Automatic saving**
+## Screenshots
 
-Your text is written out:
+<div align="center">
 
-- every 10 seconds — only when something actually changed
-- when the window is hidden (click-out, hotkey, tray)
-- when FastPrompter closes
-- when you switch silo
-- when you switch profile
+<img alt="Main workspace" src="docs/images/141228_main.png">
+<br><em>Main workspace — project tabs, silo sidebar and the Markdown editor.</em><br><br>
 
-Worst case after a forced process kill is roughly **10 seconds** of unsaved typing.
+<img alt="Drop zones" src="docs/images/2026-07-19_054734.png">
+<br><em>Drop zones — dragging a file onto the editor lets you embed it, link it, or copy it into the silo's folder.</em><br><br>
 
-**Layer 1 — database backup**
+<img alt="Settings panel" src="docs/images/2026-07-19_054643.png">
+<br><em>Settings — toggle everything from line numbers to the analog clock.</em><br><br>
 
-- A `.bak` copy of the database, next to it.
-- Taken at startup *before* the app connects.
-- Refreshed after real changes, at most once a minute.
-- A fresh or empty database is never allowed to overwrite a healthy backup.
+<img alt="Global hotkeys" src="docs/images/2026-07-19_054903.png">
+<br><em>Global hotkeys — rebind any action to fit your workflow and avoid clashes with other software.</em><br><br>
 
-**Layer 2 — portable Markdown snapshots**
+</div>
 
-```
-Documents\.fastprompter\YYYY-MM-DD\
-    silos\<project>\    archive\<project>\    snippets\    _meta.json
-```
+More images live in the [Wiki gallery](https://github.com/vacterro/FastPrompter/wiki).
 
-- Plain `.md` files — readable, greppable and restorable **without FastPrompter**.
-- Every project, not only the one you had open.
-- Written at most once every 120 seconds, last 7 days kept, each day carrying a small manifest of what it holds.
-- On by default, switchable off in Settings.
-
-**Layer 3 — optional one-way disk mirror**
-
-- Point Settings at any folder and your silos are mirrored there as you save.
-- Strictly one-way: it **never reads back** and **never deletes**. A leftover file from a renamed silo is left alone rather than risking your data.
-
-**Undo that survives a restart**
-
-- 50 snapshots of silo/snippet operations in memory (capped at 20 MB).
-- The latest 10 are written to `<database>_undo.json` and reloaded on the next launch, so `Ctrl+Z` still works after a crash.
-
-**Deletion is not destruction**
-
-- Deleting a silo moves it — text *and* its file folder — into `_trash`.
-- Trashed silos are restorable; nothing is destroyed behind your back.
-
-**Every file written atomically**
-
-- Temporary file first, then an atomic rename over the target.
-- A half-written file cannot exist, even if the machine dies mid-save.
-
-**Crashes are loud**
-
-- Uncaught errors on the main thread *and* on worker threads are logged to a crash log next to the EXE, with a dialog. Nothing fails silently.
-
-</details>
-
-<details>
-<summary><b>Known limits — the honest list</b></summary>
-
-<br>
-
-- **SQLite uses `synchronous=NORMAL`.** A sudden power loss can cost the most recent transaction. Database corruption is not expected, and the WAL journal is what makes that true.
-- **The `.bak` is a single generation.** It is a rollback, not an archive — the Markdown snapshots are the archive.
-- **Markdown snapshots keep 7 days.** Older day folders are pruned.
-
-</details>
-
-## 🛠️ Under the hood
-
-Python 3.11 + PyQt6, SQLite via the standard library, Win32 `RegisterHotKey` for global hotkeys, Nuitka for the single-file EXE. Sounds use `QSoundEffect` with a stdlib `winsound` fallback, which keeps the FFmpeg payload (~100 MB) out of the build entirely.
+## Development
 
 ```powershell
-uv run pytest tests/         # 880 unit tests
-uv run pytest tests_smoke/   # 589 integration tests — boots the real app offscreen
+uv sync --group dev
+uv run ruff check src/ tests/ tests_smoke/
+uv run pytest tests/ tests_smoke/ -q
 ```
 
-## 📜 License
+- The suite at v0.8.33 collects **1727 tests** — **957 unit tests** in
+  `tests/` plus **770 offscreen real-app integration/smoke tests** in
+  `tests_smoke/` — and runs **1726 passed, 1 skipped** (about 20 minutes).
+  The count changes with every release; get the live number with
+  `uv run pytest tests/ tests_smoke/ --collect-only -q`.
+- CI (GitHub Actions on `windows-latest`) runs ruff and the full test suite on
+  every push and pull request; pre-commit runs ruff on commit.
+- `mypy`, `pyright` and `bandit` are declared dev dependencies but are not
+  currently gating CI or pre-commit.
+
+## Documentation & Wiki
+
+- **Guides** — [English](GUIDE_EN.md) · [Русский](GUIDE_RU.md) ·
+  [Deutsch](GUIDE_DE.md) · [Eesti](GUIDE_EST.md) · [日本語](GUIDE_JA.md) — the
+  friendly, grandpa-voiced explanation of every feature.
+- **[CHANGELOG](CHANGELOG.md)** — version history with the reasoning behind
+  each release.
+- **[GitHub Wiki](https://github.com/vacterro/FastPrompter/wiki)** —
+  [Architecture](https://github.com/vacterro/FastPrompter/wiki/Architecture-Overview),
+  [Module Structure](https://github.com/vacterro/FastPrompter/wiki/Module-Structure),
+  [Core API](https://github.com/vacterro/FastPrompter/wiki/Core-API-and-Classes),
+  [Configuration](https://github.com/vacterro/FastPrompter/wiki/Configuration),
+  [Keyboard Shortcuts](https://github.com/vacterro/FastPrompter/wiki/Keyboard-Shortcuts-and-Cheatsheet),
+  [User Guide](https://github.com/vacterro/FastPrompter/wiki/User-Guide),
+  [Watcher Engine](https://github.com/vacterro/FastPrompter/wiki/Watcher-Engine-Architecture),
+  [Deployment](https://github.com/vacterro/FastPrompter/wiki/Deployment-Guide).
+
+**Freshness policy:** the README and the code in `src/` are canonical. Wiki
+pages describe the v0.8.x codebase they were written against; when a page
+and the code disagree, the code wins.
+
+## Versioning & releases
+
+The version lives in `pyproject.toml`; every release is tagged `v<version>`.
+Portable EXE builds are published to the
+[Releases page](https://github.com/vacterro/FastPrompter/releases) via
+`tools/release.py`. The last published EXE can lag the latest source tag —
+check the release date before downloading.
+
+## Known limits
+
+- **Autosave window** — text is written on a 10-second timer plus lifecycle
+  events; a forced process kill can lose up to ~10 seconds of typing.
+- **Power loss** — SQLite runs with `synchronous=NORMAL`; a sudden power cut
+  can cost the most recent transaction. The WAL journal bounds the damage,
+  and the daily Markdown snapshots are the archive.
+- **`.bak` is a single generation** — a rollback point, not an archive.
+- **Snapshots keep 7 days** — older day folders are pruned.
+- **Watcher** — detection is best-effort (file/sqlite/window/process probes);
+  a wrong reading can cost at most one prompt within a rate-limit window.
+  It only ever sends into a target you armed.
+
+## License
 
 MIT — see [`LICENSE`](LICENSE).
 
 ---
-<img width="1920" height="1080" alt="2026-07-19_190732" src="https://github.com/user-attachments/assets/526bc4f5-45e3-4c92-ac39-4bd2e3dc6065" />
 
-<div align="center">
-<sub>Built with Python, PyQt6 and ❤️ by <a href="https://github.com/vacterro">vacterro</a></sub>
-</div>
+<sub>Built with Python, PyQt6 and ❤️ by [vacterro](https://github.com/vacterro)</sub>

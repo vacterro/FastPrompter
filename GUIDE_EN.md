@@ -55,9 +55,9 @@ entire install, in one move.
 - Hover a silo — buttons appear: tick ✅, files 📁, pin 📌, archive 📥.
 - Right-click the project dropdown — add, rename, or delete project tabs.
 
-The full feature list, screenshots and a walkthrough of every button
-live in [README.md](README.md#инструкция--instruction) — a whole
-grandpa-voiced chapter in both English and Russian.
+The full feature list, screenshots and every keyboard shortcut live in
+[README.md](README.md) and the
+[GitHub Wiki](https://github.com/vacterro/FastPrompter/wiki/User-Guide).
 
 ## Bottom line
 

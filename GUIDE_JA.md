@@ -55,8 +55,8 @@
 - プロジェクトのドロップダウンを右クリック — タブの追加、名前変更、削除。
 
 全機能リスト、スクリーンショット、各ボタンの説明は
-[README.md](README.md#инструкция--instruction) — 英語とロシア語の両方に
-じいちゃん口調の章がある。
+[README.md](README.md) と [Wiki](https://github.com/vacterro/FastPrompter/wiki/User-Guide) にある。
+このガイド自体がおじいちゃん口調の説明だ。
 
 ## 結論
 

@@ -1,30 +1,44 @@
 # Plugin, Skill & Extension Development Guide
 
-## 1. Custom Skills (`core/watcher/skills.py`)
+> **Freshness policy:** the README and `src/` are canonical; this page
+> describes the v0.8.x codebase it was written against. Where a page and the
+> code disagree, the code wins.
 
-Skills are prompt wrappers applied when items send via watcher.
+## 1. Watcher Skills (`core/watcher/skills.py`)
 
-### Definition
+Skills are the token prepended to a queued prompt before it is sent. They are
+discovered from the skill folders the target agent already reads, then
+curated by hand in Settings → Watcher.
 
-```python
-# Skill entry dict
-{
-    "name": "Code Review",
-    "prefix": "/review",
-    "template": "Review this code:\n\n{text}",
-    "description": "Standard code review prompt wrapper"
-}
+### Discovery
+
+```
+~/.claude/skills/*/SKILL.md
+{project}/.claude/skills/*/SKILL.md
 ```
 
-### Template Variables
-- `{text}` — the queued item text
-- `{timestamp}` — current time
-- `{project}` — active project name
+Each `SKILL.md`'s frontmatter carries `name` and `description`
+(`core/watcher/skills.py:parse_frontmatter`). Hand-added chips and dismissed
+ones survive a rescan; a rescan only ever adds entries.
+
+### Composition at send time
+
+A queued item stores its skill *beside* the prompt; the final text is
+composed only when the item is about to be sent, using the target adapter's
+`skill_format` (default `/ {skill} {text}`). Changing the skill is never a
+retype. A target with no `skill_format` has no skills: an item already
+carrying one is skipped with a reason rather than sent stripped.
 
 ### Applying
-Set default skill in Settings → Watcher → Default Skill. Override per-item in Queue Master dialog.
+
+Set the default skill in Settings → Watcher, or override per item in the
+Queue Master dialog (`Alt+Shift+C`).
 
 ## 2. SAIPEN SubAgents
+
+> This section documents the SAIPEN protocol project's subagent feature, not
+> a FastPrompter feature — FastPrompter's `.saipen/` viewer was removed in
+> v0.8.4. Canonical protocol: [github.com/vacterro/saipen](https://github.com/vacterro/saipen).
 
 Subagents live in `.saipen/extensions/subs/<name>/` (not project-root `subs/`).
 
