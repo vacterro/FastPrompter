@@ -158,11 +158,37 @@ def _snapshot_text_size(st):
 
 
 _SYNC_DEBOUNCE_MS = 200
+# bounded final-flush wait at window close; after this the mirror may be
+# stale but the SQLite database stays authoritative and shutdown continues
+_SYNC_SHUTDOWN_TIMEOUT_S = 5.0
 
 # Process-wide shared sync worker (see _sync_ensure_worker): one thread for
 # the whole process, never torn down per-window.
 _SYNC_SHARED_WORKER = None
 _SYNC_SHARED_THREAD = None
+
+
+def sync_shutdown_global():
+    """Stop the process-wide sync worker thread at application exit.
+
+    Explicit, bounded, and never reliant on interpreter destruction: the
+    thread's event loop is asked to quit and we wait a bounded window. A
+    worker stuck in a write cannot be interrupted, so a timeout is accepted
+    at app exit (a leak, never a hang).
+
+    The references are deliberately KEPT: a window may still hold the worker
+    via its done-connection, and tearing the worker's C++ object down while
+    the Python process is unwinding is the access-violation class this module
+    hit. A stopped thread object that lives until process exit is clean.
+    """
+    global _SYNC_SHARED_WORKER, _SYNC_SHARED_THREAD
+    thread = _SYNC_SHARED_THREAD
+    if thread is not None and thread.isRunning():
+        try:
+            thread.quit()
+            thread.wait(_SYNC_SHUTDOWN_TIMEOUT_S)
+        except Exception:
+            pass
 
 
 class _SyncWorker(QObject):
@@ -2612,9 +2638,12 @@ class FastPrompter(
             thread.start()
             _SYNC_SHARED_WORKER = worker
             _SYNC_SHARED_THREAD = thread
-        if not getattr(self, "_sync_done_connected", False):
+        # a window reconnects when the shared worker was torn down and
+        # recreated (global shutdown), otherwise its done slot would never fire
+        if (getattr(self, "_sync_done_worker", None)
+                is not _SYNC_SHARED_WORKER):
             _SYNC_SHARED_WORKER.done.connect(self._sync_on_done)
-            self._sync_done_connected = True
+            self._sync_done_worker = _SYNC_SHARED_WORKER
         return _SYNC_SHARED_WORKER
 
     def _sync_on_done(self, gen, snapshot, written, errors):
@@ -2625,27 +2654,39 @@ class FastPrompter(
         changed, or the app is shutting down -> the stale result is dropped.
         (Other windows' snapshots carry different generations and are dropped
         here the same way.)
+
+        Whether or not the result is stale, the NEWEST pending snapshot must
+        be dispatched once the worker frees up: a stale completion must never
+        strand newer work. The drain lives OUTSIDE the stale guard so no early
+        return can bypass it.
         """
+        is_current = gen == self._sync_gen
+        if is_current:
+            cache = getattr(self, "_sync_written", None)
+            if cache is None:
+                cache = self._sync_written = {}
+            for dest in written:
+                cache[dest] = snapshot["files"].get(dest, "")
+            for dest, err in errors:
+                from fastprompter.core.logging import logger
+                logger.warning("sync_to_disk failed for %s: %s", dest, err)
         self._sync_busy = False
-        if gen != self._sync_gen:
-            return                    # stale: never update the current cache
-        cache = getattr(self, "_sync_written", None)
-        if cache is None:
-            cache = self._sync_written = {}
-        for dest in written:
-            cache[dest] = snapshot["files"].get(dest, "")
-        for dest, err in errors:
-            from fastprompter.core.logging import logger
-            logger.warning("sync_to_disk failed for %s: %s", dest, err)
         if self._sync_pending is not None:
             self._sync_dispatch_pending()
 
-    def _sync_shutdown(self):
-        """Stop THIS window's sync activity at close.
+    def _sync_shutdown(self, timeout_s=_SYNC_SHUTDOWN_TIMEOUT_S):
+        """Flush the FINAL mirror at window close, then retire.
 
-        The worker thread is process-wide and stays alive; only this window's
-        timer, pending job and cache updates are retired, so no window teardown
-        can destroy a running thread.
+        The window's save path calls sync_to_disk() one last time BEFORE this,
+        so the final committed DB state has a pending mirror. A normal close
+        must NOT discard it: stop accepting new jobs, capture the final
+        committed snapshot, coalesce it with whatever is pending, flush the
+        newest through the worker with a bounded wait, then retire.
+
+        The flush is bounded: a slow or hung filesystem yields a logged
+        degraded mirror AFTER the deadline — the SQLite database remains
+        authoritative and shutdown continues. Forced process kill stays
+        outside this guarantee.
         """
         self._sync_init()
         self._sync_shutting_down = True
@@ -2654,6 +2695,28 @@ class FastPrompter(
                 self._sync_timer.stop()
         except Exception:
             pass
+
+        # final committed snapshot, coalesced over any pending job
+        final = self._capture_sync_snapshot(force=True)
+        if final is not None:
+            self._sync_gen += 1
+            final["gen"] = self._sync_gen
+            self._sync_pending = final
+        if not self._sync_busy and self._sync_pending is not None:
+            self._sync_dispatch_pending()
+
+        # bounded wait for the flush; the worker's completion drains anything
+        # still queued, and this pump lets that happen
+        from PyQt6.QtWidgets import QApplication
+        deadline = time.monotonic() + max(0.0, float(timeout_s))
+        while self._sync_busy and time.monotonic() < deadline:
+            QApplication.processEvents()
+            time.sleep(0.01)
+        if self._sync_busy:
+            from fastprompter.core.logging import logger
+            logger.warning("sync flush timed out during shutdown; the disk "
+                           "mirror may be stale — the SQLite database is "
+                           "authoritative")
         self._sync_pending = None
         self._sync_busy = False
     def init_ui(self):
@@ -10270,6 +10333,8 @@ def main_entry():
         # Ownership must be released during normal shutdown; a process that
         # dies without it abandons the mutex and the OS recovers it.
         lock.release()
+        # the process-wide sync worker gets an explicit, bounded shutdown
+        sync_shutdown_global()
 
 
 def _show_startup_diagnostic(reason):

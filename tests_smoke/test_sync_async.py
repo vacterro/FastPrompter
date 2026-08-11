@@ -73,6 +73,7 @@ def _setup(win, tmp_path, root=None):
         pass
     win._sync_pending = None
     win._sync_busy = False
+    win._sync_shutting_down = False
     win.data["sync_path"] = root
     win.data["sync_mode"] = "Silo"
     win.data["active_temp_slot"] = 0
@@ -131,6 +132,40 @@ class TestCoalescing:
         win._sync_gen += 1                        # a newer run superseded it
         win._sync_on_done(gen1, snap1, list(snap1["files"]), [])
         assert win._sync_written == {}
+
+    def test_stale_completion_still_drains_newest_pending(self, win, tmp_path, fake_worker):
+        """Phase-1 regression: a stale completion must NOT strand the newest
+        pending snapshot. gen1 is stale by the time it completes; gen2 was
+        captured while busy and must be dispatched BY THE STALE COMPLETION
+        itself, not by an external nudge."""
+        _setup(win, tmp_path)
+        win.sync_to_disk(force=True)
+        win._sync_dispatch_pending()              # gen1 enters the worker
+        snap1, gen1 = fake_worker.dispatch.calls[0]
+        assert win._sync_busy is True
+
+        win.data["temp_presets"][0] = "# t\nv2"   # newer content while busy
+        win.sync_to_disk(force=True)              # gen2 becomes pending
+        assert win._sync_pending is not None
+        assert gen1 != win._sync_gen
+
+        # gen1 completes STALE
+        win._sync_on_done(gen1, snap1, list(snap1["files"]), [])
+
+        # THE CONTRACT: the stale completion still drains the newest pending
+        assert len(fake_worker.dispatch.calls) == 2, \
+            "a stale completion must dispatch the newest pending snapshot"
+        snap2, gen2 = fake_worker.dispatch.calls[1]
+        assert gen2 == win._sync_gen
+        assert win._sync_pending is None
+        assert win._sync_busy is True             # gen2 is now in flight
+        assert list(snap2["files"].values()) == ["# t\nv2"]
+        assert win._sync_written == {}, "the stale gen1 result touched no cache"
+
+        win._sync_on_done(gen2, snap2, list(snap2["files"]), [])
+        assert any(v == "# t\nv2" for v in win._sync_written.values())
+        assert win._sync_pending is None
+        assert win._sync_busy is False
 
 
 class TestRootIsolation:
@@ -195,3 +230,123 @@ class TestRootIsolation:
             assert not any(f.endswith(".tmp") for _, _, fs in os.walk(r) for f in fs)
         win.data["sync_path"] = ""
         win.data["sync_mode"] = "Off"
+
+
+class TestShutdownFlush:
+    """Phase-2: a normal shutdown must flush the final mirror, not discard it."""
+
+    def _mirror_text(self, root):
+        texts = []
+        for base, _d, files in os.walk(root):
+            for f in files:
+                if f.endswith(".md"):
+                    texts.append(open(os.path.join(base, f), encoding="utf-8").read())
+        return "\n".join(texts)
+
+    def test_edit_then_immediate_shutdown_flushes_mirror(self, win, tmp_path):
+        """Test A: edit -> quit immediately (before the debounce fires) ->
+        the final mirror still contains the edit."""
+        root = _setup(win, tmp_path)
+        win.text_area.setPlainText("# t\nfinal edit")   # the editor is the save source
+        win.save_data_to_db(force=True)          # queues sync on the debounce
+        win._sync_shutdown(timeout_s=5)          # immediate close
+        assert "# t\nfinal edit" in self._mirror_text(root)
+
+    def test_shutdown_with_pending_flushes_newest(self, win, tmp_path):
+        """Test B: newer content queued behind an older job -> shutdown
+        coalesces and flushes the NEWEST content."""
+        root = _setup(win, tmp_path)
+        win.data["temp_presets"][0] = "# t\nnewest"
+        win.sync_to_disk(force=True)             # pending on the debounce
+        win._sync_shutdown(timeout_s=5)
+        assert "# t\nnewest" in self._mirror_text(root)
+
+    def test_shutdown_with_no_pending_returns_cleanly(self, win, tmp_path):
+        """Test C: nothing to mirror -> shutdown returns quickly and cleanly."""
+        _setup(win, tmp_path)
+        win.data["sync_path"] = ""
+        win.data["sync_mode"] = "Off"
+        t0 = time.monotonic()
+        win._sync_shutdown(timeout_s=0.5)
+        assert time.monotonic() - t0 < 5.0
+        assert win._sync_pending is None and win._sync_busy is False
+
+    def test_shutdown_timeout_is_bounded(self, win, tmp_path, fake_worker):
+        """Test E: a busy/hung worker must not block shutdown past the bound."""
+        _setup(win, tmp_path)
+        win.data["temp_presets"][0] = "# t\nstuck"
+        win.sync_to_disk(force=True)
+        win._sync_dispatch_pending()             # 'in flight' (fake never completes)
+        assert win._sync_busy is True
+        t0 = time.monotonic()
+        win._sync_shutdown(timeout_s=0.2)
+        assert time.monotonic() - t0 < 5.0       # bounded, not a hang
+        assert win._sync_pending is None and win._sync_busy is False
+        # the real worker thread is still usable for the next test
+        win._sync_shutting_down = False
+
+    def test_global_shutdown_is_bounded_and_explicit(self):
+        """Test F: the process-wide worker has an explicit bounded shutdown.
+
+        Run in a CHILD process so the module's shared worker is never touched:
+        a fresh process builds a window + worker, dispatches a sync, then
+        calls sync_shutdown_global() and must exit cleanly (the QThread is not
+        left running after the hook)."""
+        import subprocess
+        child = r'''
+import sys, os, tempfile, time
+sys.path.insert(0, r"{src}")
+os.environ["QT_QPA_PLATFORM"] = "offscreen"
+import fastprompter.core.state as st
+st.get_db_path = lambda p=1: os.path.join(tempfile.mkdtemp(), "d.db")
+st.run_portable_backup = lambda d: None
+from fastprompter.main import FastPrompter, sync_shutdown_global
+FastPrompter.setup_single_instance_server = lambda s: None
+FastPrompter.register_all_hotkeys = lambda s: None
+FastPrompter.unregister_all_hotkeys = lambda s: None
+from PyQt6.QtWidgets import QApplication
+app = QApplication([])
+w = FastPrompter()
+w.show()
+root = tempfile.mkdtemp()
+w.data["sync_path"] = root
+w.data["sync_mode"] = "Silo"
+w.data["active_temp_slot"] = 0
+w.data["temp_presets"][0] = "# t\nworker"
+w._sync_written = {{}}
+w.sync_to_disk(force=True)
+w._sync_dispatch_pending()            # create + use the shared worker
+w.data["sync_path"] = ""
+w.data["sync_mode"] = "Off"
+w.auto_save_timer.stop()
+w.topmost_timer.stop()
+w.close()
+app.processEvents()
+t0 = time.monotonic()
+sync_shutdown_global()                # explicit, bounded
+assert time.monotonic() - t0 < 5.0
+print("CLEAN_EXIT")
+'''
+        src = os.path.abspath(os.path.join(os.path.dirname(__file__), "../src"))
+        proc = subprocess.run([sys.executable, "-c", child.format(src=src)],
+                              capture_output=True, text=True, timeout=30)
+        assert proc.returncode == 0, proc.stderr
+        assert "CLEAN_EXIT" in proc.stdout
+
+
+class TestWorkerReuseAfterShutdown:
+    def test_worker_recovers_after_shutdown(self, win, tmp_path):
+        """After a shutdown flush, a new sync on a new window state works."""
+        _setup(win, tmp_path)
+        win._sync_shutdown(timeout_s=0.5)        # retire this window's activity
+        win._sync_shutting_down = False
+        win._sync_written = {}
+        win.data["temp_presets"][0] = "# t\nreborn"
+        win.sync_to_disk(force=True)
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            _app.processEvents()
+            if win._sync_written:
+                break
+            time.sleep(0.01)
+        assert any(v == "# t\nreborn" for v in win._sync_written.values())
