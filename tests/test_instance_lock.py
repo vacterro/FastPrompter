@@ -21,6 +21,7 @@ from fastprompter.core.instance_lock import (
     HANDED_OFF,
     PRIMARY,
     UNRESPONSIVE,
+    WAIT_OBJECT_0,
     InstanceLock,
     bootstrap_ownership,
 )
@@ -147,3 +148,78 @@ def test_real_mutex_freed_after_owner_dies():
     owned, reason = lock.acquire()
     assert owned, reason
     lock.release()
+
+
+class TestReleaseMutexSemantics:
+    """Phase-7: normal release is EXPLICIT ReleaseMutex, not process death."""
+
+    @pytest.mark.skipif(sys.platform != "win32", reason="named mutex is Windows-only")
+    def test_waiter_acquires_after_explicit_release_while_owner_alive(self):
+        name = f"Local\\FastPrompter_Test_{uuid.uuid4()}"
+        owner = InstanceLock(name)
+        owned, _ = owner.acquire()
+        assert owned
+
+        import ctypes
+        import threading
+        import time
+        from ctypes import wintypes
+
+        started = threading.Event()
+        result = {}
+
+        def waiter():
+            k = ctypes.WinDLL("kernel32", use_last_error=True)
+            k.CreateMutexW.argtypes = [wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR]
+            k.CreateMutexW.restype = wintypes.HANDLE
+            k.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+            k.WaitForSingleObject.restype = wintypes.DWORD
+            h = k.CreateMutexW(None, False, name)
+            started.set()
+            st = k.WaitForSingleObject(h, 5000)
+            result["status"] = st
+            k.CloseHandle(h)
+
+        t = threading.Thread(target=waiter)
+        t.start()
+        started.wait()
+        time.sleep(0.3)
+        # the waiter must still be blocked while the owner is alive
+        assert "status" not in result, "waiter acquired while owner was alive"
+
+        owner.release()               # the owner's PROCESS stays alive here
+        t.join(5)
+        assert not t.is_alive()
+        assert result["status"] == WAIT_OBJECT_0, \
+            "waiter must acquire only after ReleaseMutex, not before"
+
+    @pytest.mark.skipif(sys.platform != "win32", reason="named mutex is Windows-only")
+    def test_abandoned_ownership_is_recorded(self):
+        """A dead owner (thread terminated without release) must be recorded
+        as abandoned, NOT as a clean handoff."""
+        name = f"Local\\FastPrompter_Test_{uuid.uuid4()}"
+        import ctypes
+        import threading
+        from ctypes import wintypes
+
+        def holder():
+            k = ctypes.WinDLL("kernel32", use_last_error=True)
+            k.CreateMutexW.argtypes = [wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR]
+            k.CreateMutexW.restype = wintypes.HANDLE
+            k.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+            k.WaitForSingleObject.restype = wintypes.DWORD
+            h = k.CreateMutexW(None, False, name)
+            k.WaitForSingleObject(h, 0)   # owns it, then the thread dies
+            # no ReleaseMutex, no CloseHandle -> abandoned
+
+        t = threading.Thread(target=holder)
+        t.start()
+        t.join()
+
+        lock = InstanceLock(name)
+        owned, reason = lock.acquire()
+        assert owned, reason
+        assert lock.abandoned is True, "abandoned recovery must be recorded"
+        assert "dead instance" in reason
+        lock.release()
+

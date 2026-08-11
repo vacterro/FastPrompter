@@ -9984,6 +9984,39 @@ def _sync_setup(win, tmp_path, mode):
     return tmp_path
 
 
+def _pump_sync(tmp_path, timeout=5.0):
+    """Wait for the async sync worker to land its writes."""
+    import time as _t
+
+    from PyQt6.QtWidgets import QApplication as _QA
+    deadline = _t.monotonic() + timeout
+    while _t.monotonic() < deadline:
+        _QA.processEvents()
+        if list(tmp_path.rglob("*.md")):
+            _QA.processEvents()
+            return
+        _t.sleep(0.01)
+    raise AssertionError("sync worker never wrote the files")
+
+
+def _wait_file_text(path, expected, timeout=5.0):
+    """Wait until a sync worker has rewritten `path` to the new content."""
+    import time as _t
+
+    from PyQt6.QtWidgets import QApplication as _QA
+    deadline = _t.monotonic() + timeout
+    while _t.monotonic() < deadline:
+        _QA.processEvents()
+        try:
+            if path.read_text(encoding="utf-8") == expected:
+                _QA.processEvents()
+                return
+        except OSError:
+            pass
+        _t.sleep(0.01)
+    raise AssertionError(f"sync never rewrote {path} to {expected!r}")
+
+
 def test_sync_off_writes_nothing(win, tmp_path):
     _sync_setup(win, tmp_path, "Off")
     win.sync_to_disk(force=True)
@@ -10002,6 +10035,7 @@ def test_sync_silo_mode_mirrors_active_slot(win, tmp_path):
     win.data["temp_presets"][0] = "# hello sync\nbody line"
     win.active_temp_slot = 0
     win.sync_to_disk(force=True)
+    _pump_sync(tmp_path)
     files = list(tmp_path.rglob("*.md"))
     assert len(files) == 1
     assert files[0].read_text(encoding="utf-8") == "# hello sync\nbody line"
@@ -10014,6 +10048,7 @@ def test_sync_hierarchy_mirrors_every_nonempty_silo(win, tmp_path):
         presets.append("")
     presets[0], presets[1], presets[2] = "# one", "# two", ""
     win.sync_to_disk(force=True)
+    _pump_sync(tmp_path)
     files = list(tmp_path.rglob("*.md"))
     assert len(files) == 2          # the empty silo is skipped
     assert {f.read_text(encoding="utf-8") for f in files} == {"# one", "# two"}
@@ -10026,12 +10061,15 @@ def test_sync_skips_unchanged_text(win, tmp_path):
     win.data["temp_presets"][0] = "# stable\nbody v1"
     win.active_temp_slot = 0
     win.sync_to_disk(force=True)
+    _pump_sync(tmp_path)
     target = list(tmp_path.rglob("*.md"))[0]
     target.write_text("TOUCHED", encoding="utf-8")
     win.sync_to_disk()              # unchanged -> must not rewrite
+    _pump_sync(tmp_path)
     assert target.read_text(encoding="utf-8") == "TOUCHED"
     win.data["temp_presets"][0] = "# stable\nbody v2"
     win.sync_to_disk()              # body changed -> same file, rewritten
+    _wait_file_text(target, "# stable\nbody v2")
     assert target.read_text(encoding="utf-8") == "# stable\nbody v2"
     assert len(list(tmp_path.rglob("*.md"))) == 1
 

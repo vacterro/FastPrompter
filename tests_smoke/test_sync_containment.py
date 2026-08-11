@@ -68,6 +68,20 @@ def root(win, tmp_path):
     win.data["sync_mode"] = "Off"
 
 
+def _pump_sync(win, root, timeout=5.0):
+    """Wait for THIS sync's writes to land: the worker's done must have
+    updated the written cache (root may already hold older entries)."""
+    import time as _t
+    deadline = _t.monotonic() + timeout
+    while _t.monotonic() < deadline:
+        _app.processEvents()
+        if win._sync_written:
+            _app.processEvents()
+            return
+        _t.sleep(0.01)
+    raise AssertionError("sync worker never landed this snapshot")
+
+
 def _sync_with_project(win, cat, root):
     """Point the active project at `cat` (as a UI string) and sync a silo."""
     if cat not in win.data["cats_order"]:
@@ -82,6 +96,7 @@ def _sync_with_project(win, cat, root):
     win.data["temp_presets"][0] = "# Hostile\nbody"
     win._sync_written = {}
     win.sync_to_disk(force=True)
+    _pump_sync(win, root)
 
 
 class TestTraversalNames:

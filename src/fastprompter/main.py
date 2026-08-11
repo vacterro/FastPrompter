@@ -13,9 +13,12 @@ import zlib
 from PyQt6 import sip
 from PyQt6.QtCore import (
     QEvent,
+    QObject,
     Qt,
+    QThread,
     QTimer,
     QUrl,
+    pyqtSignal,
 )
 from PyQt6.QtGui import (
     QColor,
@@ -152,6 +155,47 @@ def _snapshot_text_size(st):
         elif isinstance(d, (list, tuple)):
             size += sum(len(t) for t in d if isinstance(t, str))
     return size
+
+
+_SYNC_DEBOUNCE_MS = 200
+
+# Process-wide shared sync worker (see _sync_ensure_worker): one thread for
+# the whole process, never torn down per-window.
+_SYNC_SHARED_WORKER = None
+_SYNC_SHARED_THREAD = None
+
+
+class _SyncWorker(QObject):
+    """Writes a captured sync snapshot on its own thread.
+
+    The snapshot is IMMUTABLE: every containment and identity decision (safe
+    filesystem names, canonical root check, skip-unchanged) was made on the
+    GUI thread at capture time. The worker performs only mechanical atomic
+    file writes and reports which paths it wrote; a stale generation is never
+    merged into the current cache by the GUI side.
+    """
+
+    dispatch = pyqtSignal(object, int)             # snapshot, generation
+    done = pyqtSignal(int, object, object, object)  # gen, snapshot, written, errors
+
+    def __init__(self):
+        super().__init__()
+        self.dispatch.connect(self._run)
+
+    def _run(self, snapshot, gen):
+        written = []
+        errors = []
+        for dest, text in snapshot["files"].items():
+            try:
+                os.makedirs(os.path.dirname(dest), exist_ok=True)
+                tmp = dest + ".tmp"
+                with open(tmp, "w", encoding="utf-8") as fh:
+                    fh.write(text)
+                os.replace(tmp, dest)
+                written.append(dest)
+            except OSError as exc:
+                errors.append((dest, str(exc)))
+        self.done.emit(gen, snapshot, written, errors)
 
 
 class FastPrompter(
@@ -2455,20 +2499,32 @@ class FastPrompter(
             out[i] = os.path.join(*reversed(parts))
         return out
 
-    def sync_to_disk(self, force=False):
-        """Mirror the current silo (or the whole hierarchy) to sync_path.
+    def _sync_init(self):
+        if getattr(self, "_sync_gen", None) is not None:
+            return
+        self._sync_gen = 0
+        self._sync_pending = None
+        self._sync_busy = False
+        self._sync_shutting_down = False
+        self._sync_worker = None
+        self._sync_thread = None
+        self._sync_timer = QTimer(self)
+        self._sync_timer.setSingleShot(True)
+        self._sync_timer.setInterval(_SYNC_DEBOUNCE_MS)
+        self._sync_timer.timeout.connect(self._sync_dispatch_pending)
 
-        One-way, app -> disk. Never reads back, never deletes: a stale file
-        from a renamed silo is left alone rather than risking user data.
+    def _capture_sync_snapshot(self, force=False):
+        """Build the immutable write list for one sync run.
 
-        Every path written is a SAFE filesystem component of its logical
-        name (see path_safety.alloc_fs_names) and is containment-checked
-        against the resolved sync root before the write, so a hostile
-        project name can never escape the root."""
+        Fast (no disk writes) and the ONLY place containment/identity is
+        decided: safe filesystem components for project names, canonical
+        sync-root check, skip-unchanged against the written cache. The result
+        is handed to the worker untouched.
+        """
         mode = self.data.get("sync_mode", "Off")
         root = str(self.data.get("sync_path", "") or "").strip()
         if mode not in ("Silo", "Hierarchy") or not root:
-            return
+            return None
         from fastprompter.utils.path_safety import alloc_fs_names, is_within
         presets = self.data.get("temp_presets", [])
         if mode == "Silo":
@@ -2480,10 +2536,9 @@ class FastPrompter(
         if cache is None:
             cache = self._sync_written = {}
         cat = self.get_current_category() or ""
-        # one deterministic, collision-free filesystem name per project
         cat_comps = alloc_fs_names(self.data.get("cats_order", []) or [])
         cat_comp = cat_comps.get(cat, cat)
-        from fastprompter.core.logging import logger
+        files = {}
         for i in slots:
             if not (0 <= i < len(presets)):
                 continue
@@ -2494,22 +2549,113 @@ class FastPrompter(
             dest = os.path.join(root, cat_comp, rel + ".md")
             # canonical containment, never a prefix check
             if not is_within(root, dest):
+                from fastprompter.core.logging import logger
                 logger.warning("sync_to_disk rejected %r: outside the sync root",
                                dest)
                 continue
             if not force and cache.get(dest) == text:
                 continue           # unchanged since the last mirror
-            try:
-                os.makedirs(os.path.dirname(dest), exist_ok=True)
-                # temp + atomic replace: a torn write is never a sync file
-                tmp = dest + ".tmp"
-                with open(tmp, "w", encoding="utf-8") as fh:
-                    fh.write(text)
-                os.replace(tmp, dest)
-                cache[dest] = text
-            except OSError as e:
-                logger.warning("sync_to_disk failed for %s: %s", dest, e)
+            files[dest] = text
+        if not files:
+            return None
+        return {"files": files, "root": root}
 
+    def sync_to_disk(self, force=False):
+        """Mirror the current silo (or the whole hierarchy) to sync_path.
+
+        One-way, app -> disk. Never reads back, never deletes: a stale file
+        from a renamed silo is left alone rather than risking user data.
+
+        The write list is captured synchronously (containment + identity
+        decided here), then written on the sync worker thread, coalesced: a
+        newer snapshot supersedes an older pending one, and a stale result is
+        never merged into the current cache. During shutdown no new work is
+        queued — the close path must not leave a worker touching a dying
+        window."""
+        if getattr(self, "_sync_shutting_down", False):
+            return
+        snap = self._capture_sync_snapshot(force)
+        if snap is None:
+            return
+        self._sync_init()
+        self._sync_gen += 1
+        snap["gen"] = self._sync_gen
+        self._sync_pending = snap
+        self._sync_timer.start()
+
+    def _sync_dispatch_pending(self):
+        """Push the newest pending snapshot to the worker (one at a time)."""
+        self._sync_init()
+        if self._sync_pending is None or self._sync_busy:
+            return
+        snap = self._sync_pending
+        self._sync_pending = None
+        self._sync_busy = True
+        self._sync_ensure_worker().dispatch.emit(snap, snap["gen"])
+
+    def _sync_ensure_worker(self):
+        """The process-wide sync worker, created once per process.
+
+        A per-WINDOW worker thread died with its window, and destroying a
+        QThread while its event loop is winding down is an abort class of its
+        own. One shared thread, started lazily and left running for the
+        process lifetime, never has to survive a window teardown: each window
+        connects its own result slot, and the generation token in every
+        snapshot already makes cross-window results stale-safe.
+        """
+        global _SYNC_SHARED_WORKER, _SYNC_SHARED_THREAD
+        if _SYNC_SHARED_WORKER is None:
+            thread = QThread()
+            thread.setObjectName("fastprompter-sync")
+            worker = _SyncWorker()
+            worker.moveToThread(thread)
+            thread.start()
+            _SYNC_SHARED_WORKER = worker
+            _SYNC_SHARED_THREAD = thread
+        if not getattr(self, "_sync_done_connected", False):
+            _SYNC_SHARED_WORKER.done.connect(self._sync_on_done)
+            self._sync_done_connected = True
+        return _SYNC_SHARED_WORKER
+
+    def _sync_on_done(self, gen, snapshot, written, errors):
+        """The worker's result, applied on the GUI thread.
+
+        A result is merged into the written cache ONLY when its generation is
+        still current; a newer snapshot superseded this one, or the root
+        changed, or the app is shutting down -> the stale result is dropped.
+        (Other windows' snapshots carry different generations and are dropped
+        here the same way.)
+        """
+        self._sync_busy = False
+        if gen != self._sync_gen:
+            return                    # stale: never update the current cache
+        cache = getattr(self, "_sync_written", None)
+        if cache is None:
+            cache = self._sync_written = {}
+        for dest in written:
+            cache[dest] = snapshot["files"].get(dest, "")
+        for dest, err in errors:
+            from fastprompter.core.logging import logger
+            logger.warning("sync_to_disk failed for %s: %s", dest, err)
+        if self._sync_pending is not None:
+            self._sync_dispatch_pending()
+
+    def _sync_shutdown(self):
+        """Stop THIS window's sync activity at close.
+
+        The worker thread is process-wide and stays alive; only this window's
+        timer, pending job and cache updates are retired, so no window teardown
+        can destroy a running thread.
+        """
+        self._sync_init()
+        self._sync_shutting_down = True
+        try:
+            if self._sync_timer is not None:
+                self._sync_timer.stop()
+        except Exception:
+            pass
+        self._sync_pending = None
+        self._sync_busy = False
     def init_ui(self):
         flags = Qt.WindowType.Window
         if self.data.get("normal_window", "False") != "True":
@@ -7091,9 +7237,11 @@ class FastPrompter(
         try:
             if hasattr(self, "_watcher_shutdown"):
                 self._watcher_shutdown()
+            if hasattr(self, "_sync_shutdown"):
+                self._sync_shutdown()
         except Exception:
             from fastprompter.core.logging import logger
-            logger.debug("closeEvent: watcher worker shutdown failed")
+            logger.debug("closeEvent: worker shutdown failed")
         super().closeEvent(event)
 
     def resizeEvent(self, event):
@@ -10075,6 +10223,28 @@ def main_entry():
         _log.warning("FastPrompter startup refused: %s", reason)
         _show_startup_diagnostic(reason)
         return
+
+    # Abandoned ownership means the previous owner died mid-run: its database
+    # write may have been interrupted. Run a lightweight read-only consistency
+    # check before opening the DB for normal use — fail closed, never repair
+    # speculatively.
+    if lock.abandoned:
+        from fastprompter.core.state import RestoreError, validate_database
+        from fastprompter.utils.paths import get_db_path
+        try:
+            validate_database(get_db_path())
+        except RestoreError as exc:
+            lock.release()
+            from fastprompter.core.logging import logger as _log
+            _log.error("previous FastPrompter died mid-run and its database "
+                       "does not pass a consistency check: %s", exc)
+            _show_startup_diagnostic(
+                "A previous FastPrompter instance ended unexpectedly, and "
+                f"its database does not pass a consistency check.\n\n{exc}\n\n"
+                "Your database was not modified. Restore it from the .bak or "
+                "the Documents\\\\.fastprompter snapshot, or run a SQLite "
+                "repair, then start FastPrompter again.")
+            return
 
     setup_exception_hook()
 
