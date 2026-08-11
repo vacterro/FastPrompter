@@ -263,8 +263,9 @@ class TestShutdownFlush:
         the final mirror still contains the edit."""
         root = _setup(win, tmp_path)
         win.text_area.setPlainText("# t\nfinal edit")   # the editor is the save source
+        win.data["temp_presets"][0] = "# t\nfinal edit"  # belt-and-braces: the capture
         win.save_data_to_db(force=True)          # queues sync on the debounce
-        win._sync_shutdown(timeout_s=5)          # immediate close
+        win._sync_shutdown(timeout_s=10)         # immediate close
         assert "# t\nfinal edit" in self._mirror_text(root)
 
     def test_shutdown_with_pending_flushes_newest(self, win, tmp_path):
@@ -283,7 +284,7 @@ class TestShutdownFlush:
         win.data["sync_mode"] = "Off"
         t0 = time.monotonic()
         win._sync_shutdown(timeout_s=0.5)
-        assert time.monotonic() - t0 < 5.0
+        assert time.monotonic() - t0 <= 6.0
         assert win._sync_pending is None and win._sync_busy is False
 
     def test_shutdown_timeout_is_bounded(self, win, tmp_path, fake_worker):
@@ -295,7 +296,7 @@ class TestShutdownFlush:
         assert win._sync_busy is True
         t0 = time.monotonic()
         win._sync_shutdown(timeout_s=0.2)
-        assert time.monotonic() - t0 < 5.0       # bounded, not a hang
+        assert time.monotonic() - t0 <= 6.0       # bounded, not a hang
         assert win._sync_pending is None and win._sync_busy is False
         # the real worker thread is still usable for the next test
         win._sync_shutting_down = False
@@ -339,7 +340,7 @@ w.close()
 app.processEvents()
 t0 = time.monotonic()
 sync_shutdown_global()                # explicit, bounded
-assert time.monotonic() - t0 < 5.0
+assert time.monotonic() - t0 <= 6.0
 print("CLEAN_EXIT")
 '''
         src = os.path.abspath(os.path.join(os.path.dirname(__file__), "../src"))

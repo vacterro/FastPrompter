@@ -160,7 +160,8 @@ def _snapshot_text_size(st):
 _SYNC_DEBOUNCE_MS = 200
 # bounded final-flush wait at window close; after this the mirror may be
 # stale but the SQLite database stays authoritative and shutdown continues
-_SYNC_SHUTDOWN_TIMEOUT_S = 5.0
+# (with a synchronous last-resort flush of the final snapshot)
+_SYNC_SHUTDOWN_TIMEOUT_S = 8.0
 
 # Process-wide shared sync worker (see _sync_ensure_worker): one thread for
 # the whole process, never torn down per-window.
@@ -2868,21 +2869,27 @@ class FastPrompter(
             QApplication.processEvents()
             time.sleep(0.01)
 
-        if self._sync_pending is not None:
-            # the worker could not drain in time (contention, a slow prior
-            # job): flush the final snapshot SYNCHRONOUSLY as the last
+        if self._sync_busy:
+            # the worker did not finish within the bound (contention, a slow
+            # prior job): flush the final snapshot SYNCHRONOUSLY as the last
             # guarantee. The window is closing; determinism beats async here,
-            # and the same reparse-checked atomic write path is used.
+            # and the same reparse-checked atomic write path is used. A
+            # genuinely hung filesystem makes this write fail fast and log;
+            # the SQLite database stays authoritative.
             from fastprompter.core.logging import logger as _log
             _log.warning("sync worker did not drain during shutdown; "
                          "flushing the final snapshot synchronously")
-            snap = self._sync_pending
             worker = _SYNC_SHARED_WORKER
-            if worker is not None:
-                worker._run(snap, snap.get("gen", 0))
-                for dest in snap["files"]:
-                    self._sync_written[dest] = snap["files"][dest]
-            self._sync_pending = None
+            if final is not None and worker is not None:
+                worker._run(final, final.get("gen", 0))
+                for dest in final["files"]:
+                    self._sync_written[dest] = final["files"][dest]
+            elif self._sync_pending is not None:
+                snap = self._sync_pending
+                if worker is not None:
+                    worker._run(snap, snap.get("gen", 0))
+                    for dest in snap["files"]:
+                        self._sync_written[dest] = snap["files"][dest]
 
         if self._sync_busy:
             from fastprompter.core.logging import logger as _log2
