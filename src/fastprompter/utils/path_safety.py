@@ -146,7 +146,10 @@ _FS_MAX_PREFIX = 60
 def _digest(name, length=8):
     import hashlib
 
-    return hashlib.sha1(name.encode("utf-8", "replace")).hexdigest()[:length]
+    # collision-prevention digest for FILESYSTEM names, never security: the
+    # truncated output could not survive a security claim anyway
+    return hashlib.sha1(name.encode("utf-8", "replace"),
+                        usedforsecurity=False).hexdigest()[:length]
 
 
 def _readable_prefix(name):
