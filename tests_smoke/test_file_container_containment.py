@@ -349,3 +349,41 @@ class TestNewFileNoClobber:
             _write_text_atomic(dest, "new content")
         assert open(dest, encoding="utf-8").read() == "appeared"
         assert _no_tmp_left(root)
+
+
+class TestAsyncContainerOps:
+    """Phase-8: large File Container operations run on the shared worker so
+    an artificially slow copy cannot block the GUI event loop."""
+
+    def test_large_import_does_not_block_the_gui(self, panel, monkeypatch):
+        import time as _t
+
+        from fastprompter.ui import file_container as fc
+
+        root, p = panel
+        monkeypatch.setattr(fc, "_async_eligible", lambda items: True)
+        src = os.path.join(_tmpdir, "big_src.txt")
+        _write(src, "x" * 1000)
+
+        calls = {"n": 0}
+        real_copy = fc._copy_atomic
+
+        def slow_copy(s, d, is_dir):
+            calls["n"] += 1
+            _t.sleep(0.5)
+            return real_copy(s, d, is_dir)
+
+        monkeypatch.setattr(fc, "_copy_atomic", slow_copy)
+        t0 = _t.monotonic()
+        p.import_paths([src])                # must dispatch, not block
+        elapsed = _t.monotonic() - t0
+        assert elapsed < 0.3, f"large import blocked the GUI: {elapsed:.2f}s"
+
+        deadline = _t.monotonic() + 5
+        while _t.monotonic() < deadline:
+            _app.processEvents()
+            if os.path.exists(os.path.join(root, "big_src.txt")):
+                break
+            _t.sleep(0.01)
+        assert os.path.exists(os.path.join(root, "big_src.txt"))
+        assert calls["n"] == 1

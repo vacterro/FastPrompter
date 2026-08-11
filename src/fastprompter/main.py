@@ -199,6 +199,10 @@ class _SyncWorker(QObject):
     GUI thread at capture time. The worker performs only mechanical atomic
     file writes and reports which paths it wrote; a stale generation is never
     merged into the current cache by the GUI side.
+
+    The dispatch->run connection is made by the factory AFTER moveToThread:
+    PyQt captures the receiver's thread affinity at CONNECT time, and a
+    self-connection made before moveToThread runs ``_run`` on the GUI thread.
     """
 
     dispatch = pyqtSignal(object, int)             # snapshot, generation
@@ -206,7 +210,6 @@ class _SyncWorker(QObject):
 
     def __init__(self):
         super().__init__()
-        self.dispatch.connect(self._run)
 
     def _run(self, snapshot, gen):
         written = []
@@ -2645,6 +2648,7 @@ class FastPrompter(
             thread.setObjectName("fastprompter-sync")
             worker = _SyncWorker()
             worker.moveToThread(thread)
+            worker.dispatch.connect(worker._run)   # AFTER moveToThread: queued
             thread.start()
             _SYNC_SHARED_WORKER = worker
             _SYNC_SHARED_THREAD = thread
@@ -10343,8 +10347,15 @@ def main_entry():
         # Ownership must be released during normal shutdown; a process that
         # dies without it abandons the mutex and the OS recovers it.
         lock.release()
-        # the process-wide sync worker gets an explicit, bounded shutdown
+        # the process-wide workers get explicit, bounded shutdowns
         sync_shutdown_global()
+        try:
+            from fastprompter.ui.file_container import (
+                container_worker_shutdown_global,
+            )
+            container_worker_shutdown_global()
+        except Exception:
+            pass
 
 
 def _show_startup_diagnostic(reason):

@@ -18,7 +18,17 @@ import subprocess
 import sys
 import uuid
 
-from PyQt6.QtCore import QFileSystemWatcher, QMimeData, QSize, Qt, QTimer, QUrl
+from PyQt6.QtCore import (
+    QFileSystemWatcher,
+    QMimeData,
+    QObject,
+    QSize,
+    Qt,
+    QThread,
+    QTimer,
+    QUrl,
+    pyqtSignal,
+)
 from PyQt6.QtGui import QDrag, QIcon, QPixmap
 from PyQt6.QtWidgets import (
     QFileDialog,
@@ -41,7 +51,80 @@ from fastprompter.utils.path_safety import safe_join, validate_component
 
 _IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".ico"}
 _SLUG_STRIP = re.compile(r"[#*_`•\[\]]+")
-# ascii + lowercase cyrillic (U+0430-044F, U+0451) survive in slugs
+
+
+# Threshold above which a File Container import/export is handed to the
+# shared worker instead of running synchronously on the GUI thread. Small
+# operations (a few KB text files) stay synchronous — an industrial scheduler
+# for a 20-byte file is noise.
+_ASYNC_THRESHOLD_BYTES = 512 * 1024
+_ASYNC_THRESHOLD_FILES = 20
+
+# Process-wide shared container-operation worker (same pattern as the sync
+# worker: one thread, never torn down per-window, explicit global shutdown).
+_CONTAINER_WORKER = None
+_CONTAINER_THREAD = None
+
+
+class _ContainerOpWorker(QObject):
+    """Runs File Container copy/move requests on its own thread.
+
+    The request is IMMUTABLE: every containment/no-clobber decision was made
+    by the caller (the same _copy_atomic / _move_into_container primitives
+    used synchronously for small ops). The worker reports which destinations
+    landed and which failed, with exact source paths.
+
+    The dispatch->run connection is made by the factory AFTER moveToThread:
+    PyQt captures the receiver's thread affinity at CONNECT time, and a
+    self-connection made before moveToThread runs ``_run`` on the GUI thread.
+    """
+
+    dispatch = pyqtSignal(object, int)                # request, generation
+    done = pyqtSignal(int, object, object, object)    # gen, request, done, errors
+
+    def __init__(self):
+        super().__init__()
+
+    def _run(self, request, gen):
+        done = []
+        errors = []
+        for op, src, dest, is_dir in request["items"]:
+            try:
+                if op == "move":
+                    _move_into_container(src, dest)
+                else:
+                    _copy_atomic(src, dest, is_dir)
+                done.append(dest)
+            except OSError as exc:
+                errors.append((src, str(exc)))
+        self.done.emit(gen, request, done, errors)
+
+
+def container_worker():
+    """The shared container-op worker, created once per process."""
+    global _CONTAINER_WORKER, _CONTAINER_THREAD
+    if _CONTAINER_WORKER is None:
+        thread = QThread()
+        thread.setObjectName("fastprompter-container")
+        worker = _ContainerOpWorker()
+        worker.moveToThread(thread)
+        worker.dispatch.connect(worker._run)   # AFTER moveToThread: queued
+        thread.start()
+        _CONTAINER_WORKER = worker
+        _CONTAINER_THREAD = thread
+    return _CONTAINER_WORKER
+
+
+def container_worker_shutdown_global():
+    """Stop the shared container worker at application exit (bounded)."""
+    global _CONTAINER_WORKER, _CONTAINER_THREAD
+    thread = _CONTAINER_THREAD
+    if thread is not None and thread.isRunning():
+        try:
+            thread.quit()
+            thread.wait(5.0)
+        except Exception:
+            pass# ascii + lowercase cyrillic (U+0430-044F, U+0451) survive in slugs
 _SLUG_BAD = re.compile(
     "[^a-z0-9" + chr(0x0430) + "-" + chr(0x044F) + chr(0x0451) + "\\- ]+"
 )
@@ -249,6 +332,31 @@ def _copy_atomic(src, dest, is_dir):
         except OSError:
             pass
         raise
+
+
+def _async_eligible(items):
+    """Should these container ops go to the worker instead of the GUI thread?
+
+    Heuristic: many entries, or a total payload above the size threshold.
+    Small text-file copies stay synchronous — no scheduler for a 20-byte file.
+    """
+    if len(items) > _ASYNC_THRESHOLD_FILES:
+        return True
+    total = 0
+    for _op, src, _dest, is_dir in items:
+        try:
+            if is_dir:
+                for _base, _dirs, files in os.walk(src):
+                    total += sum(
+                        os.path.getsize(os.path.join(_base, f)) or 0
+                        for f in files[:100])
+            else:
+                total += os.path.getsize(src) or 0
+        except OSError:
+            continue
+        if total > _ASYNC_THRESHOLD_BYTES:
+            return True
+    return False
 
 
 def _write_text_atomic(path, content):
@@ -677,34 +785,75 @@ class FileContainerPanel(QWidget):
                 event.accept()
 
     def import_paths(self, paths, do_move=False):
-        """Copy or move files (or whole folders) into the silo folder."""
+        """Copy or move files (or whole folders) into the silo folder.
+
+        Small operations run synchronously (no scheduler for a 20-byte text
+        file); large ones are handed to the shared container worker so the
+        GUI never freezes on a big drop or export."""
         if not self.folder:
             return
-        copied = 0
+        items = []
         for src in paths:
             if not os.path.exists(src):
                 continue
             # Never swallow our own folder into itself
             if os.path.abspath(src) == os.path.abspath(self.folder):
                 continue
-            
+
             # If the file is already in this exact folder
             if os.path.dirname(os.path.abspath(src)) == os.path.abspath(self.folder):
                 if do_move:
                     continue  # Moving to same folder is a no-op
-            
+
             dest = _unique_dest(self.folder, os.path.basename(src.rstrip("\\/")))
+            items.append(("move" if do_move else "copy", src, dest,
+                          os.path.isdir(src)))
+        if not items:
+            return
+        self._run_container_ops(items)
+
+    def _run_container_ops(self, items):
+        """Synchronous for small ops, worker-dispatched for large ones."""
+        if _async_eligible(items):
+            self._dispatch_container_ops(items)
+            return
+        done = []
+        errors = []
+        for op, src, dest, is_dir in items:
             try:
-                if do_move:
+                if op == "move":
                     _move_into_container(src, dest)
-                elif os.path.isdir(src):
-                    _copy_atomic(src, dest, is_dir=True)
                 else:
-                    _copy_atomic(src, dest, is_dir=False)
-                copied += 1
+                    _copy_atomic(src, dest, is_dir)
+                done.append(dest)
             except OSError as e:
                 logger.error(f"File container import failed for {src}: {e}")
-        if copied and hasattr(self.main_win, "sound_manager"):
+                errors.append((src, str(e)))
+        self._finish_container_ops(done, errors)
+
+    def _dispatch_container_ops(self, items):
+        """Send a large op to the shared worker; refresh exactly once on done."""
+        self._container_gen = getattr(self, "_container_gen", 0) + 1
+        gen = self._container_gen
+        request = {"items": items}
+        worker = container_worker()
+        if getattr(self, "_container_done_worker", None) is not worker:
+            worker.done.connect(self._on_container_done)
+            self._container_done_worker = worker
+        worker.dispatch.emit(request, gen)
+
+    def _on_container_done(self, gen, request, done, errors):
+        """The worker's result, applied on the GUI thread (refresh once)."""
+        if gen != getattr(self, "_container_gen", 0):
+            return                      # stale: a newer op superseded this one
+        for src, err in errors:
+            logger.error(f"File container op failed for {src}: {err}")
+        if done and hasattr(self.main_win, "sound_manager"):
+            self.main_win.sound_manager.play_tick()
+        self.refresh()
+
+    def _finish_container_ops(self, done, errors):
+        if done and hasattr(self.main_win, "sound_manager"):
             self.main_win.sound_manager.play_tick()
         self.refresh()
 
@@ -849,15 +998,24 @@ class FileContainerPanel(QWidget):
             ]
         except OSError:
             return
-        for src in names:
+        items = [("copy", src, _unique_dest(target, os.path.basename(src)),
+                  os.path.isdir(src)) for src in names]
+        if not items:
+            return
+        if _async_eligible(items):
+            self._dispatch_container_ops(items)
+            return
+        done = []
+        errors = []
+        for op, src, dest, is_dir in items:
             try:
-                dest = _unique_dest(target, os.path.basename(src))
-                if os.path.isdir(src):
-                    _copy_atomic(src, dest, is_dir=True)
-                else:
-                    _copy_atomic(src, dest, is_dir=False)
+                _copy_atomic(src, dest, is_dir)
+                done.append(dest)
             except OSError as e:
                 logger.error(f"File container export failed for {src}: {e}")
+                errors.append((src, str(e)))
+        if done and hasattr(self.main_win, "sound_manager"):
+            self.main_win.sound_manager.play_tick()
 
     def _prompt_text(self, title, label, default_text=""):
         from PyQt6.QtCore import Qt
