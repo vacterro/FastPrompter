@@ -56,27 +56,61 @@ def try_connect_to_server(retries: int = 3, delay: float = 0.05) -> QLocalSocket
     return None
 
 
-def request_show(ack_timeout: int = _ACK_TIMEOUT_MS) -> bool:
+def request_show(ack_timeout_ms=_ACK_TIMEOUT_MS, grace_ms=3000) -> bool:
     """Ask the live owner to show its window. True only on a real ACK.
 
     The caller has already failed to acquire writer ownership, so a live
-    process exists. This handover is authentication-gated: the token must
-    match or the owner will not answer. No ACK (wrong token, frozen owner,
-    dead socket) returns False — the caller must NOT become a second writer.
+    process exists — the mutex is authoritative, never this function. This
+    handover is authentication-gated: the token must match or the owner will
+    not answer.
+
+    Startup grace: a freshly started owner holds the mutex before its IPC
+    server is listening, so the FIRST few attempts may find no socket at all.
+    Connection attempts and the token are re-read for a bounded window, so a
+    slow STARTING owner is not mistaken for a FROZEN one. No ACK within the
+    grace (frozen event loop, replaced token that never catches up) returns
+    False — the caller must exit, never become a second writer.
     """
-    sock = try_connect_to_server()
-    if sock is None:
-        return False
-    try:
-        token = sock.property("ipc_token") or ""
-        sock.write(f"TOKEN:{token}|SHOW".encode())
-        sock.flush()
-        sock.waitForBytesWritten(500)
-        acked = sock.waitForReadyRead(max(0, int(ack_timeout))) and \
-            b"ACK" in sock.readAll().data()
-        return bool(acked)
-    finally:
-        sock.disconnectFromServer()
+    deadline = time.monotonic() + max(0, int(grace_ms)) / 1000.0
+    attempt = 0
+    saw_server = False
+    while True:
+        attempt += 1
+        # the first attempt may afford a long ACK wait; retries are bounded
+        # so the whole handover stays inside the grace window
+        timeout = ack_timeout_ms if attempt == 1 else min(ack_timeout_ms, 500)
+        sock = try_connect_to_server()          # re-reads the token each call
+        if sock is not None:
+            saw_server = True
+            try:
+                token = sock.property("ipc_token") or ""
+                sock.write(f"TOKEN:{token}|SHOW".encode())
+                sock.flush()
+                sock.waitForBytesWritten(500)
+                acked = sock.waitForReadyRead(max(0, int(timeout))) and \
+                    b"ACK" in sock.readAll().data()
+                if acked:
+                    return True
+                # a live socket that does not ACK: the owner's event loop is
+                # not pumping, or a stale token is in play — retry until the
+                # grace window closes, then give up (never become a writer)
+            finally:
+                sock.disconnectFromServer()
+        if time.monotonic() >= deadline:
+            break
+        time.sleep(0.05)
+    # distinguish the two failure shapes in the log: the owner was never seen
+    # (still starting / crashed before its server) vs was seen but never
+    # acknowledged (frozen event loop or stale token)
+    if saw_server:
+        logger.warning("IPC handover: the owner's socket was seen but never "
+                       "ACKed within the startup grace; treating it as "
+                       "unresponsive")
+    else:
+        logger.warning("IPC handover: no server appeared within the startup "
+                       "grace; the owner is starting very slowly or is not "
+                       "serving IPC")
+    return False
 
 
 def _get_token() -> str:
