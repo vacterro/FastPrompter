@@ -79,7 +79,6 @@ class BackupDialog(QDialog):
                 RestoreError,
                 _backup_atomically,
                 _same_file,
-                validate_database,
             )
 
             db_path = self.main_win.state.db_path
@@ -91,13 +90,12 @@ class BackupDialog(QDialog):
             src = sqlite3.connect(db_path)
             try:
                 # the shared safe primitive: SQLite backup API into a temp
-                # sibling, validated, swapped over the final name atomically —
-                # a partial backup is never exposed under the requested name
+                # sibling, the candidate VALIDATED before the swap, then
+                # atomically published — a partial or corrupt backup is never
+                # exposed under the requested name
                 _backup_atomically(src, path)
             finally:
                 src.close()
-            # the completed destination must itself be a valid database
-            validate_database(path)
             QMessageBox.information(self, tr("Success", self.lang),
                                     tr("Database backed up to:\n{}", self.lang).format(path))
         except RestoreError as e:

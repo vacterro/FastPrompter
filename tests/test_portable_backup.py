@@ -184,3 +184,69 @@ class TestCollisionResistantIdentity:
         comps = sorted(os.listdir(os.path.join(day, "silos")))
         assert len(comps) == 2
         assert _complete(day)
+
+
+class TestPublicationRollback:
+    """Phase-3: a failed publication must never lose the previous known-good
+    COMPLETE generation."""
+
+    def _tree(self, day):
+        return sorted(
+            os.path.relpath(os.path.join(r, f), day)
+            for r, _d, fs in os.walk(day) for f in fs)
+
+    def test_new_publish_failure_restores_previous_generation(self, backup_dir, monkeypatch):
+        pb._do_export(_data())
+        day = _day_dir(backup_dir)
+        good = self._tree(day)
+        assert _complete(day)
+
+        real_rename = os.rename
+        calls = {"n": 0}
+
+        def _flaky(src, dst):
+            calls["n"] += 1
+            if calls["n"] == 2:          # old relocated OK, new->day fails
+                raise OSError("rename failed mid-publish")
+            return real_rename(src, dst)
+
+        monkeypatch.setattr("os.rename", _flaky)
+        with pytest.raises(OSError):
+            pb._do_export(_data())
+
+        # the previous known-good generation must be back at day_dir
+        assert os.path.isdir(day)
+        assert _complete(day)
+        assert self._tree(day) == good, "previous COMPLETE snapshot lost"
+        # no rollback sibling is left behind
+        assert not any("rollback" in e for e in os.listdir(backup_dir))
+
+    def test_first_publish_with_no_previous_day(self, backup_dir):
+        pb._do_export(_data())
+        day = _day_dir(backup_dir)
+        assert _complete(day)
+        assert self._tree(day)
+
+    def test_successful_republication_leaves_no_rollback(self, backup_dir):
+        pb._do_export(_data())
+        pb._do_export(_data())          # a second, successful generation
+        day = _day_dir(backup_dir)
+        assert _complete(day)
+        leftovers = [e for e in os.listdir(backup_dir)
+                     if "rollback" in e or e.endswith(".partial")]
+        assert leftovers == [], leftovers
+
+    def test_failed_old_relocation_keeps_previous_and_drops_new(self, backup_dir, monkeypatch):
+        pb._do_export(_data())
+        day = _day_dir(backup_dir)
+        good = self._tree(day)
+
+        def _flaky(src, dst):
+            raise OSError("cannot relocate the old generation")
+
+        monkeypatch.setattr("os.rename", _flaky)
+        with pytest.raises(OSError):
+            pb._do_export(_data())
+
+        assert self._tree(day) == good   # untouched
+        assert not any("rollback" in e for e in os.listdir(backup_dir))

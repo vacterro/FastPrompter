@@ -241,3 +241,136 @@ class TestUnreadableDatabase:
             assert s.data["cats_order"] == ["Code"]    # good rows kept
         finally:
             s.conn.close()
+
+
+class TestBackupValidatedBeforePublish:
+    """Phase-4: a recovery artifact is validated BEFORE it replaces the
+    known-good destination; any failure up to the swap leaves the previous
+    destination intact and no fake final backup behind."""
+
+    def test_valid_backup_replaces_previous(self, make_state):
+        s = make_state()
+        _write_silo(s, "v1")
+        s._last_backup_time = 0.0
+        s.data["temp_presets_all"]["Code"][0] = "v2"
+        s.mark_dirty()
+        s.save_data_to_db("v2", force=True)
+        assert _valid_bak(s.db_path + ".bak")
+        conn = sqlite3.connect(s.db_path + ".bak")
+        try:
+            rows = conn.execute(
+                "SELECT content FROM temp_presets_v2 WHERE category='Code'").fetchall()
+            assert ("v2",) in rows
+        finally:
+            conn.close()
+        s.conn.close()
+
+    def test_validation_failure_keeps_previous_backup(self, make_state, monkeypatch):
+        s = make_state()
+        _write_silo(s, "kept")
+        # seed a good .bak
+        src = sqlite3.connect(s.db_path)
+        bak = sqlite3.connect(s.db_path + ".bak")
+        with bak:
+            src.backup(bak)
+        src.close()
+        bak.close()
+        before = open(s.db_path + ".bak", "rb").read()
+
+        def _boom(path, max_user_version=None):
+            raise state_mod.RestoreError("corrupt candidate")
+
+        monkeypatch.setattr(state_mod, "validate_database", _boom)
+        s._last_backup_time = 0.0
+        s.data["temp_presets_all"]["Code"][0] = "new"
+        s.mark_dirty()
+        s.save_data_to_db("new", force=True)     # must not raise
+
+        after = open(s.db_path + ".bak", "rb").read()
+        assert after == before, "failed validation must keep the good backup"
+        assert not os.path.exists(s.db_path + ".bak.tmp")
+        s.conn.close()
+
+    def test_replace_failure_keeps_previous_backup(self, make_state, monkeypatch):
+        s = make_state()
+        _write_silo(s, "kept")
+        src = sqlite3.connect(s.db_path)
+        bak = sqlite3.connect(s.db_path + ".bak")
+        with bak:
+            src.backup(bak)
+        src.close()
+        bak.close()
+        before = open(s.db_path + ".bak", "rb").read()
+
+        def _boom(*a, **k):
+            raise OSError("replace failed")
+
+        monkeypatch.setattr(os, "replace", _boom)
+        s._last_backup_time = 0.0
+        s.data["temp_presets_all"]["Code"][0] = "new"
+        s.mark_dirty()
+        s.save_data_to_db("new", force=True)     # must not raise
+
+        assert open(s.db_path + ".bak", "rb").read() == before
+        assert not os.path.exists(s.db_path + ".bak.tmp")
+        s.conn.close()
+
+    def test_failed_backup_leaves_no_fake_final(self, make_state, monkeypatch):
+        """No pre-existing backup: a failed attempt must not leave any file
+        at the final name or a temp sibling."""
+        s = make_state()
+        _write_silo(s, "kept")               # this seeds a .bak
+        os.remove(s.db_path + ".bak")        # simulate "no prior backup"
+
+        def _boom(path, max_user_version=None):
+            raise state_mod.RestoreError("corrupt candidate")
+
+        monkeypatch.setattr(state_mod, "validate_database", _boom)
+        s._last_backup_time = 0.0
+        s.data["temp_presets_all"]["Code"][0] = "new"
+        s.mark_dirty()
+        s.save_data_to_db("new", force=True)
+
+        assert not os.path.exists(s.db_path + ".bak"), "no fake final backup"
+        assert not os.path.exists(s.db_path + ".bak.tmp")
+        s.conn.close()
+
+
+class TestBackupThrottleSuccessBased:
+    """Phase-5: a failed backup does not consume the throttle interval."""
+
+    def test_failed_backup_retries_immediately(self, make_state, monkeypatch):
+        s = make_state()
+        calls = {"n": 0}
+
+        def _failing(src, dest, validate=True):
+            calls["n"] += 1
+            raise OSError("disk full")
+
+        monkeypatch.setattr(state_mod, "_backup_atomically", _failing)
+        s._last_backup_time = 0.0
+        _write_silo(s, "a")
+        assert calls["n"] == 1
+        assert s._last_backup_time == 0.0, "failed backup must not advance throttle"
+
+        _write_silo(s, "b")                # immediately retried
+        assert calls["n"] == 2, "a failed backup must stay eligible for retry"
+        s.conn.close()
+
+    def test_successful_backup_throttles_the_next(self, make_state, monkeypatch):
+        s = make_state()
+        calls = {"n": 0}
+
+        def _ok(src, dest, validate=True):
+            calls["n"] += 1
+            return None
+
+        monkeypatch.setattr(state_mod, "_backup_atomically", _ok)
+        s._last_backup_time = 0.0
+        _write_silo(s, "a")
+        assert calls["n"] == 1
+        assert s._last_backup_time > 0.0
+
+        _write_silo(s, "b")                # inside the throttle -> no retry
+        assert calls["n"] == 1
+        s.conn.close()

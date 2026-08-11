@@ -27,6 +27,21 @@ _app = QApplication.instance() or QApplication([])
 _tmpdir = tempfile.mkdtemp(prefix="fastprompter_sync_async_")
 
 
+def _junction_ok():
+    """Can we create a directory junction/symlink on this machine?"""
+    try:
+        base = tempfile.mkdtemp()
+        target = tempfile.mkdtemp()
+        link = os.path.join(base, "j")
+        os.symlink(target, link, target_is_directory=True)
+        os.rmdir(link)
+        os.rmdir(base)
+        os.rmdir(target)
+        return True
+    except (OSError, NotImplementedError):
+        return False
+
+
 @pytest.fixture(scope="module")
 def win():
     state_mod.get_db_path = lambda profile_id=1: os.path.join(_tmpdir, f"a_{profile_id}.db")
@@ -350,3 +365,55 @@ class TestWorkerReuseAfterShutdown:
                 break
             time.sleep(0.01)
         assert any(v == "# t\nreborn" for v in win._sync_written.values())
+
+
+@pytest.mark.skipif(not _junction_ok(), reason="cannot create junctions/symlinks")
+class TestWorkerReparseContainment:
+    """Phase-6: the sync worker revalidates every destination against the
+    captured root at MUTATION time — a junction swapped in after capture must
+    not redirect the write outside the root."""
+
+    def test_junction_swapped_after_capture_is_rejected(self):
+        from fastprompter.main import _SyncWorker
+
+        results = []
+        worker = _SyncWorker()
+        worker.done.connect(
+            lambda gen, snap, written, errors: results.append((written, errors)))
+
+        root = tempfile.mkdtemp()
+        outside = tempfile.mkdtemp()
+        cat = os.path.join(root, "cat")             # not a dir yet
+        dest = os.path.join(cat, "01_t.md")         # capture-time lexical dest
+
+        # the junction appears AFTER the snapshot was conceptually captured
+        os.symlink(outside, cat, target_is_directory=True)
+
+        worker._run({"root": root, "files": {dest: "# t\nbody"}}, 1)
+
+        assert results, "the worker must report the outcome"
+        written, errors = results[0]
+        assert written == []
+        assert errors and "junction" in errors[0][1]
+        assert not os.path.exists(os.path.join(outside, "01_t.md")), \
+            "the write must not land outside the root"
+        assert not os.path.exists(dest)
+
+    def test_ordinary_nested_destination_writes(self):
+        from fastprompter.main import _SyncWorker
+
+        results = []
+        worker = _SyncWorker()
+        worker.done.connect(
+            lambda gen, snap, written, errors: results.append((written, errors)))
+
+        root = tempfile.mkdtemp()
+        dest = os.path.join(root, "cat", "01_t.md")
+        worker._run({"root": root, "files": {dest: "# t\nbody"}}, 1)
+
+        written, errors = results[0]
+        assert errors == []
+        assert dest in written
+        assert open(dest, encoding="utf-8").read() == "# t\nbody"
+        import shutil as _sh
+        _sh.rmtree(root)

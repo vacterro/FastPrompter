@@ -14,6 +14,7 @@ from fastprompter.utils.path_safety import (
     alloc_fs_names,
     fs_component,
     is_within,
+    is_within_resolved,
     safe_join,
     validate_component,
 )
@@ -245,3 +246,60 @@ class TestAllocFsNames:
         for comp in out.values():
             os.makedirs(os.path.join(root, comp), exist_ok=True)
         assert sorted(os.listdir(parent)) == before
+
+
+def _junction_ok():
+    """Can we create a directory junction/symlink on this machine?"""
+    import tempfile
+    try:
+        base = tempfile.mkdtemp()
+        target = tempfile.mkdtemp()
+        link = os.path.join(base, "j")
+        os.symlink(target, link, target_is_directory=True)
+        os.rmdir(link)
+        os.rmdir(base)
+        os.rmdir(target)
+        return True
+    except (OSError, NotImplementedError):
+        return False
+
+
+_JUNCTION_OK = _junction_ok()
+
+
+@pytest.mark.skipif(not _JUNCTION_OK, reason="cannot create junctions/symlinks")
+class TestReparseContainment:
+    """Phase-6: lexical containment must not report a junction that resolves
+    outside the root as 'inside'."""
+
+    def test_junction_escape_is_rejected(self, tmp_path):
+        root = str(tmp_path / "root")
+        os.makedirs(root)
+        outside = str(tmp_path / "outside")
+        os.makedirs(outside)
+        os.symlink(outside, os.path.join(root, "jump"),
+                   target_is_directory=True)
+        cand = os.path.join(root, "jump", "file.md")
+        assert is_within(root, cand) is True         # lexical: yes
+        assert is_within_resolved(root, cand) is False  # real: escaped
+
+    def test_ordinary_nested_directory_passes(self, tmp_path):
+        root = str(tmp_path / "root")
+        sub = os.path.join(root, "a", "b")
+        os.makedirs(sub)
+        assert is_within_resolved(root, os.path.join(sub, "file.md"))
+
+    def test_junction_inside_root_passes(self, tmp_path):
+        root = str(tmp_path / "root")
+        real = os.path.join(root, "real")
+        os.makedirs(real)
+        os.symlink(real, os.path.join(root, "alias"),
+                   target_is_directory=True)
+        assert is_within_resolved(root, os.path.join(root, "alias", "file.md"))
+
+    def test_root_chosen_through_an_alias(self, tmp_path):
+        real = os.path.join(str(tmp_path), "real")
+        os.makedirs(real)
+        alias = os.path.join(str(tmp_path), "alias_root")
+        os.symlink(real, alias, target_is_directory=True)
+        assert is_within_resolved(alias, os.path.join(alias, "file.md"))

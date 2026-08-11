@@ -276,3 +276,76 @@ def test_stale_temp_does_not_poison_the_next_copy(panel):
     for base, _dirs, files in os.walk(root):
         for f in files:
             assert ".fptmp-" not in f, f"unexpected fresh temp {f}"
+
+
+class TestNewFileNoClobber:
+    """Phase-7: create-new operations must never overwrite a destination that
+    appeared after the unique name was selected."""
+
+    def test_publish_new_file_refuses_when_destination_appeared(self, panel):
+        from fastprompter.ui.file_container import _publish_new_file
+
+        root, p = panel
+        tmp = os.path.join(root, "tmpfile")
+        dest = os.path.join(root, "target.txt")
+        _write(tmp, "content")
+        _write(dest, "user's file")
+        with pytest.raises(OSError):
+            _publish_new_file(tmp, dest)
+        assert open(dest, encoding="utf-8").read() == "user's file"
+        assert not os.path.exists(tmp)
+
+    def test_move_refuses_when_destination_already_exists(self, panel):
+        from fastprompter.ui.file_container import _move_into_container
+
+        root, p = panel
+        src = os.path.join(_tmpdir, "move_src.txt")
+        _write(src, "move me")
+        dest = os.path.join(root, "moved.txt")
+        _write(dest, "appeared")
+        with pytest.raises(OSError):
+            _move_into_container(src, dest)
+        assert os.path.exists(src), "source must survive a refused move"
+        assert open(dest, encoding="utf-8").read() == "appeared"
+        assert _no_tmp_left(root)
+
+    def test_move_race_during_rename_keeps_both(self, panel, monkeypatch):
+        from fastprompter.ui.file_container import _move_into_container
+
+        root, p = panel
+        src = os.path.join(_tmpdir, "move_race.txt")
+        _write(src, "move me")
+        dest = os.path.join(root, "moved.txt")
+        real_rename = os.rename
+
+        def _race_rename(s, d):
+            _write(d, "appeared mid-rename")
+            return real_rename(s, d)   # Windows: fails, dest now exists
+
+        monkeypatch.setattr(os, "rename", _race_rename)
+        with pytest.raises(OSError):
+            _move_into_container(src, dest)
+        assert os.path.exists(src), "source must survive a raced move"
+        assert open(dest, encoding="utf-8").read() == "appeared mid-rename"
+
+    def test_move_success_removes_source(self, panel):
+        from fastprompter.ui.file_container import _move_into_container
+
+        root, p = panel
+        src = os.path.join(_tmpdir, "move_ok.txt")
+        _write(src, "move me")
+        dest = os.path.join(root, "moved.txt")
+        _move_into_container(src, dest)
+        assert not os.path.exists(src)
+        assert open(dest, encoding="utf-8").read() == "move me"
+
+    def test_write_text_atomic_refuses_when_dest_appeared(self, panel):
+        from fastprompter.ui.file_container import _write_text_atomic
+
+        root, p = panel
+        dest = os.path.join(root, "link.url")
+        _write(dest, "appeared")
+        with pytest.raises(OSError):
+            _write_text_atomic(dest, "new content")
+        assert open(dest, encoding="utf-8").read() == "appeared"
+        assert _no_tmp_left(root)

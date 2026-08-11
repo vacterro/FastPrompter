@@ -94,13 +94,36 @@ def is_within(root, candidate):
 
     Both paths are normalized, absolutized and case-folded before the
     comparison, so ``..`` escapes, aliases and drive-letter case differences
-    cannot defeat it.
+    cannot defeat it. This is LEXICAL containment: it does not resolve
+    junctions/symlinks/reparse points. For a mutation destination, use
+    ``is_within_resolved``.
     """
     try:
         root_c = os.path.normcase(os.path.abspath(os.path.normpath(root)))
         cand_c = os.path.normcase(os.path.abspath(os.path.normpath(candidate)))
         common = os.path.commonpath([root_c, cand_c])
         return common == root_c
+    except (OSError, ValueError):
+        return False
+
+
+def is_within_resolved(root, candidate):
+    """Reparse/junction-aware containment: is candidate inside root after
+    every junction/symlink ancestor is fully resolved?
+
+    On Windows ``os.path.realpath`` resolves directory junctions and
+    symlinks, so ``root\\inside-junction\\file`` whose junction points
+    outside root is NOT reported inside. This is the correct check for a
+    path that is about to be MUTATED by the app. Call it as late as
+    possible (worker-side, immediately before the write) to shrink the
+    swap window; a junction changed between this check and the write remains
+    a small residual TOCTOU that only a handle-based sandbox could close.
+    """
+    try:
+        root_real = os.path.normcase(os.path.realpath(root))
+        cand_real = os.path.normcase(os.path.realpath(candidate))
+        common = os.path.commonpath([root_real, cand_real])
+        return common == root_real
     except (OSError, ValueError):
         return False
 

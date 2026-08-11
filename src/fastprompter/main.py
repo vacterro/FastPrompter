@@ -211,7 +211,17 @@ class _SyncWorker(QObject):
     def _run(self, snapshot, gen):
         written = []
         errors = []
+        # Revalidate EVERY destination against the captured root AT MUTATION
+        # TIME: a containment decision made at capture can be minutes old, and
+        # a junction/symlink swapped in between could otherwise redirect the
+        # write outside the root. Reparse-aware, not lexical.
+        from fastprompter.utils.path_safety import is_within_resolved
+        root = snapshot.get("root") or ""
         for dest, text in snapshot["files"].items():
+            if not is_within_resolved(root, dest):
+                errors.append((dest, "destination resolves outside the sync "
+                                     "root (junction/reparse point)"))
+                continue
             try:
                 os.makedirs(os.path.dirname(dest), exist_ok=True)
                 tmp = dest + ".tmp"

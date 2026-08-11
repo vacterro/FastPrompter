@@ -254,16 +254,22 @@ def _rollback_quietly(conn):
         pass
 
 
-def _backup_atomically(source_conn, dest_path):
-    """Copy ``source_conn`` to ``dest_path`` atomically.
+def _backup_atomically(source_conn, dest_path, validate=True):
+    """Copy ``source_conn`` to ``dest_path`` atomically and validated.
 
     ``sqlite3.Connection.backup`` writes into the destination connection
     directly, so an interruption (disk full, IO error) mid-copy leaves a
     truncated file that a later restore would trust. The copy therefore goes
     to a temp sibling first and is swapped over the real one only when it has
-    fully succeeded — a failed backup never becomes the recovery copy.
+    fully succeeded.
+
+    The temp candidate is VALIDATED (opens, integrity, supported schema,
+    mandatory tables) BEFORE the swap — a recovery artifact is never
+    published in a state that a restore could not trust, and the previous
+    destination survives any failure up to the swap.
     """
     tmp = dest_path + ".tmp"
+    _remove_quietly(tmp)
     try:
         dest_conn = sqlite3.connect(tmp)
         try:
@@ -271,13 +277,11 @@ def _backup_atomically(source_conn, dest_path):
                 source_conn.backup(dest_conn)
         finally:
             dest_conn.close()
+        if validate:
+            validate_database(tmp)
         os.replace(tmp, dest_path)
     except Exception:
-        try:
-            if os.path.exists(tmp):
-                os.remove(tmp)
-        except OSError:
-            pass
+        _remove_quietly(tmp)
         raise
 
 
@@ -729,14 +733,17 @@ class FastPrompterState:
             if changed:
                 now = time.time()
                 if now - self._last_backup_time >= 60:
-                    self._last_backup_time = now
                     try:
-                        # atomic temp+replace: a failed backup never becomes
-                        # the recovery copy
+                        # atomic temp+replace + pre-publish validation: a
+                        # failed backup never becomes the recovery copy
                         _backup_atomically(self.conn, self.db_path + ".bak")
                     except Exception:
                         logger.exception("throttled database backup failed; "
                                          "the previous .bak was kept intact")
+                    else:
+                        # the throttle advances ONLY on success: a failed
+                        # backup stays eligible for an immediate retry
+                        self._last_backup_time = now
                 # The portable Markdown layer is independent: a .bak failure
                 # must not suppress it (it has its own failure handling).
                 if self.data.get("portable_backup_enabled", "True") == "True":

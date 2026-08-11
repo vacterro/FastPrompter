@@ -146,6 +146,73 @@ def _unique_dest(folder, name):
     return os.path.join(folder, f"{stem} ({n}){ext}")
 
 
+def _publish_new_file(tmp, dest):
+    """Publish a temp file as a NEW file WITHOUT clobbering anything.
+
+    ``os.replace`` is correct when replacing a file FastPrompter already
+    owns, but dangerous for a create-new operation: a file that appeared at
+    ``dest`` after ``_unique_dest()`` selected it must never be silently
+    overwritten. ``os.rename`` fails atomically on Windows when the
+    destination exists; the pre-check covers platforms where it replaces. A
+    refused publish removes its own temp.
+    """
+    if os.path.lexists(dest):
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise OSError(
+            f"destination {dest!r} appeared; refusing to overwrite it")
+    os.rename(tmp, dest)
+
+
+def _move_into_container(src, dest):
+    """Move src to dest without ever clobbering a destination that appeared.
+
+    Same-volume: os.rename is atomic AND fails on Windows when dest exists
+    (source preserved). Cross-volume: copy to a unique temp sibling, publish
+    no-clobber, and only then remove the source — a failure before
+    publication keeps the source; a failure after publication prefers a
+    duplicate over a lost source.
+    """
+    if os.path.lexists(dest):
+        raise OSError(f"destination {dest!r} appeared; refusing to overwrite it")
+    try:
+        os.rename(src, dest)      # same-volume: atomic, no-clobber
+        return
+    except OSError:
+        # a destination appeared between the check and the rename, or the
+        # rename crossed volumes — in both cases go through the copy path
+        if os.path.lexists(dest):
+            raise OSError(
+                f"destination {dest!r} appeared; refusing to overwrite it")
+        tmp = f"{dest}.fptmp-{uuid.uuid4().hex[:8]}"
+        try:
+            if os.path.isdir(src):
+                shutil.copytree(src, tmp)
+            else:
+                shutil.copy2(src, tmp)
+            _publish_new_file(tmp, dest)
+        except Exception:
+            shutil.rmtree(tmp, ignore_errors=True)
+            try:
+                if os.path.lexists(tmp):
+                    os.remove(tmp)
+            except OSError:
+                pass
+            raise
+    # publication succeeded: remove the source; if removal fails a duplicate
+    # remains, which is preferred over a lost source
+    try:
+        if os.path.isdir(src):
+            shutil.rmtree(src)
+        else:
+            os.remove(src)
+    except OSError:
+        logger.warning("move published %s but could not remove the source %s",
+                       dest, src)
+
+
 def _copy_atomic(src, dest, is_dir):
     """Copy src to dest so a partial copy is never presented as the result.
 
@@ -185,12 +252,18 @@ def _copy_atomic(src, dest, is_dir):
 
 
 def _write_text_atomic(path, content):
-    """Write a small text file atomically (temp + replace)."""
-    tmp = path + ".fptmp"
+    """Write a small NEW text file atomically and no-clobber.
+
+    A .url link or similar NEW item must never overwrite a file that appeared
+    at `path` while the write was in progress — os.replace would clobber it,
+    so publication goes through _publish_new_file (os.rename, which fails on
+    Windows when the destination exists).
+    """
+    tmp = f"{path}.fptmp-{uuid.uuid4().hex[:8]}"
     try:
         with open(tmp, "w", encoding="utf-8") as f:
             f.write(content)
-        os.replace(tmp, path)
+        _publish_new_file(tmp, path)
     except Exception:
         try:
             if os.path.exists(tmp):
@@ -623,9 +696,7 @@ class FileContainerPanel(QWidget):
             dest = _unique_dest(self.folder, os.path.basename(src.rstrip("\\/")))
             try:
                 if do_move:
-                    # shutil.move is source-safe: the source is only removed
-                    # after the destination copy completed.
-                    shutil.move(src, dest)
+                    _move_into_container(src, dest)
                 elif os.path.isdir(src):
                     _copy_atomic(src, dest, is_dir=True)
                 else:
@@ -726,13 +797,23 @@ class FileContainerPanel(QWidget):
             return
 
         dest = _unique_dest(self.folder, f"{clean}.txt")
+        tmp = f"{dest}.fptmp-{uuid.uuid4().hex[:8]}"
         try:
-            with open(dest, "w", encoding="utf-8") as f:
+            with open(tmp, "w", encoding="utf-8") as f:
                 f.write(text)
+            # no-clobber: a file that appeared at `dest` since _unique_dest
+            # is never silently overwritten
+            _publish_new_file(tmp, dest)
             if hasattr(self.main_win, "sound_manager"):
                 self.main_win.sound_manager.play_tick()
         except OSError as e:
             logger.error(f"File container clipboard save failed: {e}")
+        finally:
+            try:
+                if os.path.exists(tmp):
+                    os.remove(tmp)
+            except OSError:
+                pass
         self.refresh()
 
     # ---- file verbs ------------------------------------------------------

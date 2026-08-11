@@ -152,14 +152,69 @@ def _do_export(data: dict) -> None:
         shutil.rmtree(tmp_dir, ignore_errors=True)
         raise
 
-    # Publish: the old day_dir is the last known-good snapshot and is only
-    # replaced now that the new one is fully written.
-    if os.path.isdir(day_dir):
-        shutil.rmtree(day_dir, ignore_errors=True)
-    os.rename(tmp_dir, day_dir)
+    # Publish with rollback: the old day_dir is the last known-good snapshot
+    # and must survive ANY intermediate failure. The old generation is
+    # relocated to a unique sibling, the new one is renamed in, and only then
+    # is the relocated old one discarded.
+    _publish_snapshot(tmp_dir, day_dir)
 
     # Cleanup: keep last 7 day dirs
     _cleanup_old_backups(backup_dir, max_days=7)
+
+
+def _publish_snapshot(tmp_dir, day_dir):
+    """Swap a freshly-built snapshot in WITHOUT ever losing the previous
+    known-good generation.
+
+    Sequence (all renames on the same volume):
+      1. rename previous day_dir -> unique rollback sibling
+      2. rename new tmp_dir -> day_dir
+      3. only after 2 succeeds, remove the rollback sibling
+
+    If step 1 fails the previous generation is untouched and the new temp is
+    discarded. If step 2 fails the previous generation is restored to day_dir
+    and the failed new generation is preserved under a distinct name for
+    manual recovery rather than silently lost. A failure after step 1 but
+    before step 2 is exactly the window delete-then-rename used to lose data
+    in.
+    """
+    rollback = f"{day_dir}.rollback-{_gen_suffix()}"
+    if os.path.isdir(day_dir):
+        try:
+            os.rename(day_dir, rollback)
+        except OSError:
+            # cannot relocate the old generation: keep it, drop the new one
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+            raise
+    try:
+        os.rename(tmp_dir, day_dir)
+    except OSError:
+        restored = False
+        if os.path.isdir(rollback):
+            try:
+                os.rename(rollback, day_dir)
+                restored = True
+            except OSError:
+                pass
+        if not restored:
+            # the previous generation could not be put back; keep the failed
+            # new one under a distinct name so nothing is silently lost
+            failed = f"{day_dir}.partial"
+            shutil.rmtree(failed, ignore_errors=True)
+            try:
+                os.rename(tmp_dir, failed)
+            except OSError:
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+        else:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+        raise
+    if os.path.isdir(rollback):
+        shutil.rmtree(rollback, ignore_errors=True)
+
+
+def _gen_suffix():
+    import uuid
+    return uuid.uuid4().hex[:8]
 
 
 def _write_manifest(tmp_dir, data, cats, categories):
