@@ -3383,6 +3383,15 @@ def test_no_cyrillic_in_codebase():
             # exercised with a real Russian tag. Input data, not prose.
             if norm.endswith("tests/test_hashtags.py"):
                 continue
+            # the container/clipboard safety suites exercise REAL Unicode
+            # filenames and clipboard text on Windows - that is their test
+            # data, not stray prose, and ASCII-only would not test it.
+            if norm.endswith("tests/test_path_safety.py"):
+                continue
+            if norm.endswith("tests/test_clipboard_safe.py"):
+                continue
+            if norm.endswith("tests_smoke/test_file_container_containment.py"):
+                continue
             with open(f, encoding="utf-8") as fh:
                 for i, line in enumerate(fh, 1):
                     if cyr.search(line):
@@ -9741,17 +9750,25 @@ def test_the_ipc_server_never_exits_the_process(win):
     assert "logger.warning" in body
 
 
-def test_show_is_acknowledged_so_a_corpse_can_be_detected(win):
-    """A process that holds the socket but no longer pumps its event loop
-    answers nothing; the newcomer waits for ACK and takes over on silence."""
+def test_show_is_acknowledged_so_a_frozen_owner_can_be_detected(win):
+    """A process that holds the DB mutex but no longer pumps its event loop
+    answers nothing; the newcomer waits for ACK and — instead of the old
+    "take over on silence" — REFUSES to become a second writer and reports
+    the owner unresponsive."""
     import inspect
 
     from fastprompter import main as main_mod
     from fastprompter.core import ipc_server
 
+    # the server ACKs only authenticated SHOW; the ACK byte is what tells the
+    # newcomer the window was really shown
     assert "ACK" in inspect.getsource(ipc_server.IpcServer._handle_command)
+    assert "TOKEN:" in inspect.getsource(ipc_server.IpcServer._handle_command)
+    request = inspect.getsource(ipc_server.request_show)
+    assert "ACK" in request and "waitForReadyRead" in request
     entry = inspect.getsource(main_mod.main_entry)
-    assert "ACK" in entry and "waitForReadyRead" in entry
+    assert "bootstrap_ownership" in entry and "request_show" in entry
+    assert "taking over" not in entry     # the second-writer path is gone
 
 
 # ---------------------------------------------------------------------------

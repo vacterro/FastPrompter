@@ -2,9 +2,9 @@
 
 Two layers:
 
-* ``bootstrap_ownership`` decision table вЂ” driven with fake locks so the
+* ``bootstrap_ownership`` decision table - driven with fake locks so the
   split-brain logic is deterministic without an OS mutex.
-* the real Windows named-mutex primitive вЂ” acquire/release in-process and a
+* the real Windows named-mutex primitive - acquire/release in-process and a
   genuine cross-process contention test using a subprocess that holds the
   lock (a frozen first instance is simulated by a process that simply owns
   the mutex and answers nothing).
@@ -142,7 +142,7 @@ def test_real_mutex_freed_after_owner_dies():
     finally:
         proc.kill()
         proc.wait()
-    # OS released the mutex with the process вЂ” the next owner may acquire it
+    # OS released the mutex with the process - the next owner may acquire it
     lock = InstanceLock(name)
     owned, reason = lock.acquire()
     assert owned, reason

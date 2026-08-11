@@ -3,7 +3,7 @@
 Proves the Phase-6 invariants:
 
 * ``bind_active_category`` re-binds EVERY per-category flat alias to the
-  given category вЂ” a category switch can never leave an alias bound to
+  given category - a category switch can never leave an alias bound to
   another category's ``_all`` entry.
 * switching A -> B -> A repeatedly does not leak state across categories,
   including through a save/reload round trip.
