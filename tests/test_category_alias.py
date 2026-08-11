@@ -96,9 +96,12 @@ class TestBindActiveCategory:
     def test_corrupt_all_store_is_replaced(self):
         data = _data_with_sentinels()
         data["watcher_queues_all"] = "{not a dict}"   # str(dict) from an old DB
+        data["pinned_silos_all"] = [1, 2]             # valid JSON, wrong type
         bind_active_category(data, "A")
         assert isinstance(data["watcher_queues_all"], dict)
         assert data["watcher_queues"] is data["watcher_queues_all"]["A"]
+        assert isinstance(data["pinned_silos_all"], dict)
+        assert data["pinned_silos"] == []
 
     def test_registry_covers_every_per_category_store(self):
         # every store that HAS a flat alias must be a real per-category store

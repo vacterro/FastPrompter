@@ -573,5 +573,9 @@ class FastPrompterState:
                     return True
             return False
         except sqlite3.Error:
-            import traceback
-            traceback.print_exc()
+            # The save failed: the snapshots were NOT advanced and _db_dirty
+            # was NOT cleared, so a retry re-writes the change. The error must
+            # be visible in the log file (stderr is invisible in a windowed
+            # build), never silently dropped.
+            logger.exception("database save failed; the change was not "
+                             "recorded and will be retried")
