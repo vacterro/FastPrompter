@@ -16,6 +16,7 @@ import re
 import shutil
 import subprocess
 import sys
+import uuid
 
 from PyQt6.QtCore import QFileSystemWatcher, QMimeData, QSize, Qt, QTimer, QUrl
 from PyQt6.QtGui import QDrag, QIcon, QPixmap
@@ -150,21 +151,33 @@ def _copy_atomic(src, dest, is_dir):
 
     A direct ``copytree``/``copy2`` interrupted mid-way (disk full, IO error)
     leaves a half file or half folder inside the container that looks real.
-    The copy therefore lands in a temp sibling first and is swapped over only
-    when it is complete; on failure the temp is removed and the error
-    propagates, leaving the container exactly as it was.
+    The copy therefore lands in a UNIQUE sibling temp (never a predictable
+    name a crashed previous attempt could have left behind) and is swapped
+    over the final name only when it is complete.
+
+    Destination race: if a file appears at ``dest`` between the caller's
+    ``_unique_dest()`` and this publication (a long copy), it is NOT
+    silently overwritten — on Windows ``os.rename`` fails atomically when the
+    destination exists, so the copy refuses, the temp is removed and the
+    error propagates, leaving the caller's state intact.
     """
-    tmp = dest + ".fptmp"
+    tmp = f"{dest}.fptmp-{uuid.uuid4().hex[:8]}"
     try:
         if is_dir:
             shutil.copytree(src, tmp)
         else:
             shutil.copy2(src, tmp)
-        os.replace(tmp, dest)
+        # os.rename refuses to clobber an existing destination atomically on
+        # Windows; the pre-check catches it early on platforms where it does
+        if os.path.lexists(dest):
+            raise OSError(
+                f"destination {dest!r} appeared during the copy; "
+                f"refusing to overwrite it")
+        os.rename(tmp, dest)
     except Exception:
         shutil.rmtree(tmp, ignore_errors=True)
         try:
-            if os.path.exists(tmp):
+            if os.path.lexists(tmp):
                 os.remove(tmp)
         except OSError:
             pass

@@ -11,6 +11,14 @@ automatically when the owning process dies, and that cannot be "stale" the
 way a text file can. One process holds it for its whole lifetime; anyone who
 fails to acquire it knows a live owner exists and must not touch the DB.
 
+Namespace decision (Phase 13, second pass): the mutex name is FIXED and
+session-global, exactly like the IPC server name. Intended product invariant:
+only ONE FastPrompter process may run per Windows session, regardless of how
+many portable copies/data roots exist — two copies pointing at DIFFERENT
+data roots still contend for the single writer, and the second hands off to
+the first via IPC instead of running. Names are deliberately NOT derived
+from a data root.
+
 ``bootstrap_ownership`` is Qt-free and lock-injected so the decision table is
 unit-testable without a mutex or a socket:
 

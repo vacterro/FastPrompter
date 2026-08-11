@@ -216,3 +216,63 @@ def test_successful_import_leaves_no_temp_files(panel):
     p.import_paths([src])
     assert os.path.isfile(os.path.join(root, "clean_src.txt"))
     assert _no_tmp_left(root)
+
+
+def test_destination_race_is_not_overwritten(panel, monkeypatch):
+    """If a file appears at the destination during a copy, the copy must
+    refuse rather than silently clobber it."""
+    from fastprompter.ui.file_container import _copy_atomic
+
+    root, p = panel
+    src = os.path.join(_tmpdir, "race_src.txt")
+    _write(src, "copied content")
+    dest = os.path.join(root, "target.txt")
+
+    # something (the user, another tool) lands at the destination mid-copy
+    import fastprompter.ui.file_container as fc
+    real_rename = os.rename
+
+    def _race_rename(tmp, final):
+        _write(dest, "user's own file")
+        return real_rename(tmp, final)   # Windows: refuses, dest now exists
+
+    monkeypatch.setattr(fc.os, "rename", _race_rename)
+    with pytest.raises(OSError):
+        _copy_atomic(src, dest, is_dir=False)
+
+    # the user's file survived, and no temp garbage was left
+    assert open(dest, encoding="utf-8").read() == "user's own file"
+    assert _no_tmp_left(root)
+
+
+def test_pre_existing_destination_is_refused(panel):
+    from fastprompter.ui.file_container import _copy_atomic
+
+    root, p = panel
+    src = os.path.join(_tmpdir, "pre_src.txt")
+    _write(src, "content")
+    dest = os.path.join(root, "existing.txt")
+    _write(dest, "keep me")
+    with pytest.raises(OSError):
+        _copy_atomic(src, dest, is_dir=False)
+    assert open(dest, encoding="utf-8").read() == "keep me"
+
+
+def test_stale_temp_does_not_poison_the_next_copy(panel):
+    """A predictable temp name left by a crashed attempt must not break the
+    next copy — the temp is now unique per attempt."""
+    from fastprompter.ui.file_container import _copy_atomic
+
+    root, p = panel
+    src = os.path.join(_tmpdir, "stale_src.txt")
+    _write(src, "content")
+    dest = os.path.join(root, "result.txt")
+    # a stale partial temp from a crashed run, named like the old scheme
+    _write(dest + ".fptmp", "poisoned")
+    _copy_atomic(src, dest, is_dir=False)
+    assert open(dest, encoding="utf-8").read() == "content"
+    # our own unique temp was cleaned up; the stale one is the crashed
+    # attempt's leftover and stays (only uuid-suffixed temps must be gone)
+    for base, _dirs, files in os.walk(root):
+        for f in files:
+            assert ".fptmp-" not in f, f"unexpected fresh temp {f}"

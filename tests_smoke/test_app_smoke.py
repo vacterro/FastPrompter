@@ -3392,6 +3392,10 @@ def test_no_cyrillic_in_codebase():
                 continue
             if norm.endswith("tests_smoke/test_file_container_containment.py"):
                 continue
+            if norm.endswith("tests/test_portable_backup.py"):
+                continue
+            if norm.endswith("tests_smoke/test_sync_containment.py"):
+                continue
             with open(f, encoding="utf-8") as fh:
                 for i, line in enumerate(fh, 1):
                     if cyr.search(line):

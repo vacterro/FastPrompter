@@ -223,3 +223,58 @@ class TestReleaseMutexSemantics:
         assert "dead instance" in reason
         lock.release()
 
+
+
+class TestNamespaceDecision:
+    """Phase-13: one FastPrompter per Windows session.
+
+    The mutex (and IPC server) names are FIXED and session-global, NOT derived
+    from a data root: two portable copies pointing at different data roots
+    still contend for one writer, and the second hands off via IPC."""
+
+    @pytest.mark.skipif(sys.platform != "win32", reason="named mutex is Windows-only")
+    def test_mutex_name_is_fixed_and_global(self):
+        from fastprompter.core.instance_lock import MUTEX_NAME
+        assert MUTEX_NAME == r"Local\FastPrompter_Write_V15"
+        assert InstanceLock().name == MUTEX_NAME
+
+    @pytest.mark.skipif(sys.platform != "win32", reason="named mutex is Windows-only")
+    def test_two_locks_on_the_fixed_name_contend(self):
+        import threading
+        lock1 = InstanceLock()
+        owned, reason = lock1.acquire()
+        if not owned:
+            pytest.skip("a real FastPrompter instance holds the session mutex")
+        result = {}
+
+        def waiter():
+            lock_w = InstanceLock()
+            ok, why = lock_w.acquire()
+            result["ok"] = ok
+            result["reason"] = why
+
+        # a different THREAD on the same fixed name cannot acquire while the
+        # owning thread holds it (Windows mutexes are reentrant per-thread,
+        # so same-thread would wrongly succeed)
+        t = threading.Thread(target=waiter)
+        t.start()
+        t.join(5)
+        assert result["ok"] is False
+        assert "another FastPrompter" in result["reason"]
+        lock1.release()
+
+        # after the explicit release, a new thread acquires
+        result2 = {}
+
+        def waiter2():
+            lock_w = InstanceLock()
+            ok, _ = lock_w.acquire()
+            result2["ok"] = ok
+            if ok:
+                lock_w.release()
+
+        t2 = threading.Thread(target=waiter2)
+        t2.start()
+        t2.join(5)
+        assert result2["ok"] is True
+
