@@ -75,6 +75,58 @@ def test_sync_roundtrip_then_plain_close(win, tmp_path):
     assert any(f.endswith(".md") for _, _, fs in os.walk(root) for f in fs)
 
 
+def test_process_exit_after_global_shutdown_is_clean():
+    """A child process that dispatches a sync and then calls the global
+    shutdown hook must exit WITHOUT an access violation. The hook's QThread
+    wait is MILLISECONDS-bounded (a seconds/ms unit bug let the thread stay
+    running past process exit — 0xC0000005 under full-suite load)."""
+    import subprocess
+    src = os.path.abspath(os.path.join(os.path.dirname(__file__), "../src"))
+    child = r'''
+import sys, os, tempfile, time
+sys.path.insert(0, r"{src}")
+os.environ["QT_QPA_PLATFORM"] = "offscreen"
+import fastprompter.core.state as st
+st.get_db_path = lambda p=1: os.path.join(tempfile.mkdtemp(), "d.db")
+st.run_portable_backup = lambda d: None
+from fastprompter.main import FastPrompter, sync_shutdown_global
+FastPrompter.setup_single_instance_server = lambda s: None
+FastPrompter.register_all_hotkeys = lambda s: None
+FastPrompter.unregister_all_hotkeys = lambda s: None
+from PyQt6.QtWidgets import QApplication
+app = QApplication([])
+w = FastPrompter()
+w.show()
+root = tempfile.mkdtemp()
+w.data["sync_path"] = root
+w.data["sync_mode"] = "Silo"
+w.data["active_temp_slot"] = 0
+w.data["temp_presets"][0] = "# t\nworker"
+w._sync_written = {{}}
+w.sync_to_disk(force=True)
+w._sync_dispatch_pending()
+deadline = time.monotonic() + 5
+while time.monotonic() < deadline:
+    app.processEvents()
+    if w._sync_written:
+        break
+    time.sleep(0.01)
+w.data["sync_path"] = ""
+w.data["sync_mode"] = "Off"
+w.auto_save_timer.stop()
+w.topmost_timer.stop()
+w.close()
+app.processEvents()
+sync_shutdown_global()
+print("CLEAN_EXIT")
+'''
+    proc = subprocess.run([sys.executable, "-c", child.format(src=src)],
+                          capture_output=True, text=True, timeout=60)
+    assert proc.returncode == 0, proc.stderr
+    assert "CLEAN_EXIT" in proc.stdout
+
+
+
 def test_sync_roundtrip_then_deferred_delete_teardown(win, tmp_path):
     root = _sync_once(win, tmp_path, "two")
     assert any(f.endswith(".md") for _, _, fs in os.walk(root) for f in fs)

@@ -190,7 +190,11 @@ def sync_shutdown_global():
     if thread is not None and thread.isRunning():
         try:
             thread.quit()
-            thread.wait(_SYNC_SHUTDOWN_TIMEOUT_S)
+            # QThread.wait takes MILLISECONDS; _SYNC_SHUTDOWN_TIMEOUT_S is
+            # seconds. Passing the raw value turned the bounded wait into a
+            # few milliseconds, so the worker thread could still be running
+            # at process exit (an access-violation class at teardown).
+            thread.wait(int(_SYNC_SHUTDOWN_TIMEOUT_S * 1000))
         except Exception:
             pass
     if worker is not None or thread is not None:

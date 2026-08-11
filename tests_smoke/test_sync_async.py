@@ -301,53 +301,50 @@ class TestShutdownFlush:
         # the real worker thread is still usable for the next test
         win._sync_shutting_down = False
 
-    def test_global_shutdown_is_bounded_and_explicit(self):
+    def test_global_shutdown_is_bounded_and_explicit(self, win):
         """Test F: the process-wide worker has an explicit bounded shutdown.
 
-        Run in a CHILD process so the module's shared worker is never touched:
-        a fresh process builds a window + worker, dispatches a sync, then
-        calls sync_shutdown_global() and must exit cleanly (the QThread is not
-        left running after the hook)."""
-        import subprocess
-        child = r'''
-import sys, os, tempfile, time
-sys.path.insert(0, r"{src}")
-os.environ["QT_QPA_PLATFORM"] = "offscreen"
-import fastprompter.core.state as st
-st.get_db_path = lambda p=1: os.path.join(tempfile.mkdtemp(), "d.db")
-st.run_portable_backup = lambda d: None
-from fastprompter.main import FastPrompter, sync_shutdown_global
-FastPrompter.setup_single_instance_server = lambda s: None
-FastPrompter.register_all_hotkeys = lambda s: None
-FastPrompter.unregister_all_hotkeys = lambda s: None
-from PyQt6.QtWidgets import QApplication
-app = QApplication([])
-w = FastPrompter()
-w.show()
-root = tempfile.mkdtemp()
-w.data["sync_path"] = root
-w.data["sync_mode"] = "Silo"
-w.data["active_temp_slot"] = 0
-w.data["temp_presets"][0] = "# t\nworker"
-w._sync_written = {{}}
-w.sync_to_disk(force=True)
-w._sync_dispatch_pending()            # create + use the shared worker
-w.data["sync_path"] = ""
-w.data["sync_mode"] = "Off"
-w.auto_save_timer.stop()
-w.topmost_timer.stop()
-w.close()
-app.processEvents()
-t0 = time.monotonic()
-sync_shutdown_global()                # explicit, bounded
-assert time.monotonic() - t0 <= 6.0
-print("CLEAN_EXIT")
-'''
-        src = os.path.abspath(os.path.join(os.path.dirname(__file__), "../src"))
-        proc = subprocess.run([sys.executable, "-c", child.format(src=src)],
-                              capture_output=True, text=True, timeout=30)
-        assert proc.returncode == 0, proc.stderr
-        assert "CLEAN_EXIT" in proc.stdout
+        The shutdown hook must stop the shared QThread (no longer running),
+        and a later dispatch must recreate a fresh worker. Teardown safety is
+        pinned by the sync-teardown suite; this is the in-process contract."""
+        from fastprompter import main as m
+
+        root = _setup(win, None, root=_tmp_path_for(win))
+        win.sync_to_disk(force=True)
+        win._sync_dispatch_pending()
+        assert m._SYNC_SHARED_THREAD is not None
+        t0 = time.monotonic()
+        m.sync_shutdown_global()
+        assert time.monotonic() - t0 <= 6.0
+        assert m._SYNC_SHARED_THREAD is None, \
+            "the globals are nulled so a fresh worker can spawn"
+        # the retired wrapper keeps the stopped thread alive for teardown
+        assert m._RETIRED_WORKERS, "the shutdown must retire the worker"
+        _, retired_thread = m._RETIRED_WORKERS[-1]
+        assert retired_thread.isRunning() is False, \
+            "the shutdown hook must stop the shared QThread"
+
+        # the window still believes a job was in flight; clear it so a fresh
+        # dispatch can spawn the recreated worker
+        win._sync_pending = None
+        win._sync_busy = False
+        win._sync_written = {}
+        win.sync_to_disk(force=True)
+        win._sync_dispatch_pending()
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            _app.processEvents()
+            if win._sync_written:
+                break
+            time.sleep(0.01)
+        assert win._sync_written
+        win._sync_pending = None
+        win._sync_busy = False
+
+
+def _tmp_path_for(win):
+    import tempfile
+    return tempfile.mkdtemp(prefix="fastprompter_gshutdown_")
 
 
 class TestWorkerReuseAfterShutdown:
