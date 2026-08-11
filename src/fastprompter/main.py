@@ -2721,7 +2721,24 @@ class FastPrompter(
             files[dest] = text
         if not files:
             return None
-        return {"files": files, "root": root}
+        return {"files": files, "root": root,
+                "profile": getattr(getattr(self, "state", None),
+                                   "profile_id", None)}
+
+    def _sync_on_profile_change(self):
+        """The active profile switched: any in-flight snapshot belongs to the
+        OLD profile and must not be interpreted as the new one's generation;
+        the new profile must not inherit the old one's written-cache."""
+        self._sync_init()
+        self._sync_gen += 1
+        try:
+            if self._sync_timer is not None:
+                self._sync_timer.stop()
+        except Exception:
+            pass
+        self._sync_pending = None
+        self._sync_busy = False
+        self._sync_written = {}
 
     def sync_to_disk(self, force=False):
         """Mirror the current silo (or the whole hierarchy) to sync_path.
@@ -4931,6 +4948,9 @@ class FastPrompter(
         self.data_redo_stack = []
         self._undo_kinds().clear()
         self.state.switch_profile(idx + 1)
+        # a profile switch retires any in-flight sync of the OLD profile and
+        # clears its written-cache; the new profile's mirror starts fresh
+        self._sync_on_profile_change()
         self.data = self.state.data
         cat = self.data["cats_order"][0] if self.data.get("cats_order") else "Text"
         # the new profile's data came straight from JSON, so int-keyed maps
@@ -6889,6 +6909,14 @@ class FastPrompter(
         self.mark_dirty()
 
     def _save_undo_state(self):
+        """Persist the undo stack to `<db>_undo.json` on a DAEMON thread.
+
+        Deliberate design (Phase-11 inventory): undo history is SECONDARY
+        data. The write is atomic (temp + os.replace), so an interrupted
+        write can never corrupt the file — a forced exit mid-write loses at
+        most the latest PERSISTED UNDO HISTORY, never primary data. The
+        SQLite database and the daily Markdown snapshots remain authoritative.
+        No QWidget is touched from the thread."""
         import json
         import os
         import threading

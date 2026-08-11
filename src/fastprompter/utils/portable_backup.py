@@ -61,6 +61,10 @@ def capture_snapshot(data):
         "archive_temp_presets_all": {
             k: list(v)
             for k, v in (data.get("archive_temp_presets_all") or {}).items()},
+        # flat aliases too: _per_project falls back to them for legacy data
+        # that only ever wrote the active-project alias
+        "temp_presets": list(data.get("temp_presets", []) or []),
+        "archive_temp_presets": list(data.get("archive_temp_presets", []) or []),
     }
 
 

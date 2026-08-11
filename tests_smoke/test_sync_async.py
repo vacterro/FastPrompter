@@ -417,3 +417,35 @@ class TestWorkerReparseContainment:
         assert open(dest, encoding="utf-8").read() == "# t\nbody"
         import shutil as _sh
         _sh.rmtree(root)
+
+
+class TestProfileLifecycle:
+    """Phase-10: a profile switch retires the old profile's in-flight sync;
+    its stale result cannot update the new profile's cache or generation."""
+
+    def test_profile_switch_makes_old_generation_stale(self, win, tmp_path, fake_worker):
+        root = _setup(win, tmp_path)
+        win.sync_to_disk(force=True)
+        win._sync_dispatch_pending()
+        snap_a, gen_a = fake_worker.dispatch.calls[0]
+        assert win._sync_busy is True
+
+        win._sync_on_profile_change()       # profile A -> B while A in flight
+        assert gen_a != win._sync_gen
+        assert win._sync_pending is None
+
+        win._sync_on_done(gen_a, snap_a, list(snap_a["files"]), [])
+        assert win._sync_written == {}, "A's stale result must not touch the cache"
+        assert win._sync_pending is None
+        assert win._sync_busy is False
+
+        # B's first mirror is NOT skipped by A's cache (it was cleared)
+        win.sync_to_disk(force=True)
+        win._sync_dispatch_pending()
+        snap_b, gen_b = fake_worker.dispatch.calls[-1]
+        assert gen_b == win._sync_gen
+        assert snap_b["root"] == root
+        win._sync_on_done(gen_b, snap_b, list(snap_b["files"]), [])
+        assert any(v == "# t\nv1" for v in win._sync_written.values())
+        win._sync_pending = None
+        win._sync_busy = False
