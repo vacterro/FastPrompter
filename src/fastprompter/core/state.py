@@ -1,7 +1,6 @@
-import copy
+﻿import copy
 import json
 import os
-import re
 import sqlite3
 import threading
 import time
@@ -12,7 +11,7 @@ from fastprompter.utils.paths import get_db_path
 
 # Settings whose value is a list or a dict and must therefore be written as
 # JSON. Everything else goes through str(), and a dict written that way comes
-# back with single quotes — not valid JSON, so it reloads as a raw string and
+# back with single quotes вЂ” not valid JSON, so it reloads as a raw string and
 # the setting is silently lost. That is what happened to `silo_type_all`: a
 # silo's Table/Kanban type never survived a restart.
 #
@@ -33,7 +32,7 @@ _JSON_SETTINGS = (
     "archive_project_paths", "archive_project_paths_all",
     "silo_gaps", "silo_gaps_all",
     "silo_view_state_all", "silo_type_all", "silo_session_all",
-    # {event: {file, enabled, volume}} — a dict, so it MUST be here. Written
+    # {event: {file, enabled, volume}} вЂ” a dict, so it MUST be here. Written
     # with str() it comes back single-quoted, json.loads rejects it, and the
     # whole sound panel silently forgets every choice on restart (the exact
     # way silo_type_all was lost, H-653).
@@ -41,7 +40,7 @@ _JSON_SETTINGS = (
     # Same trap, three more keys that were written with str(): silo_types is
     # the per-category dict behind silo_type_all, saved_sound_mappings is what
     # the CS-style toggle restores from, watcher_skills_extra is a list of
-    # dicts (a list survives str() only while its ELEMENTS do — dicts do not),
+    # dicts (a list survives str() only while its ELEMENTS do вЂ” dicts do not),
     # and custom_font_ids is a list of ints that survived on luck alone.
     "silo_types", "watcher_skills_extra", "custom_font_ids",
     "watcher_queues", "watcher_queues_all",
@@ -126,7 +125,7 @@ def _encode_settings(data):
 
 
 # ---------------------------------------------------------------------------
-# Schema migrations — versioned via PRAGMA user_version.
+# Schema migrations вЂ” versioned via PRAGMA user_version.
 #
 # A failed migration must never be read as a successful one: each step runs
 # inside one transaction, bumps user_version only after every verification
@@ -166,7 +165,8 @@ def _migrate_v0_to_v1(conn, first_category):
 
     Creates the base tables, folds the pre-tab global silo tables into the
     per-category tables, adds the snippet ``last_edited`` column, then
-    verifies the result before the caller bumps user_version. Each migration
+    verifies the result and records schema version **1** вЂ” this migration's
+    own edge, never a blindly-copied CURRENT_SCHEMA_VERSION. Each migration
     is deliberately self-contained so a later version bumps its own step.
     """
     cur = conn.cursor()
@@ -188,7 +188,7 @@ def _migrate_v0_to_v1(conn, first_category):
     if not _has_column(cur, "presets", "last_edited"):
         cur.execute("ALTER TABLE presets ADD COLUMN last_edited INTEGER")
 
-    # Verify — a migration that did not actually produce the schema it claims
+    # Verify вЂ” a migration that did not actually produce the schema it claims
     # must not be recorded as successful.
     for table in ("presets", "settings", "temp_presets_v2",
                   "archive_temp_presets_v2"):
@@ -197,7 +197,11 @@ def _migrate_v0_to_v1(conn, first_category):
     if not _has_column(cur, "presets", "last_edited"):
         raise MigrationError("presets.last_edited is missing after migration")
 
-    cur.execute(f"PRAGMA user_version = {CURRENT_SCHEMA_VERSION}")
+    cur.execute("PRAGMA user_version = 1")
+
+
+class UnsupportedSchemaVersion(MigrationError):
+    """The database was written by a NEWER FastPrompter. Refused, untouched."""
 
 
 def _migrate_schema(conn, first_category):
@@ -205,15 +209,26 @@ def _migrate_schema(conn, first_category):
 
     Runs inside ONE explicit transaction. Python's sqlite3 opens implicit
     transactions only for DML, not for DDL, so ``with conn:`` would let a
-    half-applied CREATE/ALTER commit on its own — hence the explicit
+    half-applied CREATE/ALTER commit on its own вЂ” hence the explicit
     BEGIN/ROLLBACK. On any failure it rolls back, logs the exact error and
     re-raises, so a half-migrated database is never used.
+
+    A database at a version NEWER than this app understands is NOT "already
+    migrated": it was written by a future FastPrompter, and this build must
+    not read or write it. The dispatcher refuses it before any transaction
+    opens, so the future database is never touched.
     """
     version = conn.execute("PRAGMA user_version").fetchone()[0]
-    if version >= CURRENT_SCHEMA_VERSION:
+    if version == CURRENT_SCHEMA_VERSION:
         return
+    if version > CURRENT_SCHEMA_VERSION:
+        raise UnsupportedSchemaVersion(
+            f"database schema v{version} is newer than this build supports "
+            f"(v{CURRENT_SCHEMA_VERSION}); refusing to open or write it")
     conn.execute("BEGIN IMMEDIATE")
     try:
+        # each migration has its own exact edge and records its own version;
+        # the dispatcher walks version -> version+1, monotonically
         if version < 1:
             _migrate_v0_to_v1(conn, first_category)
         # chain future migrations here:
@@ -239,17 +254,16 @@ def _rollback_quietly(conn):
         pass
 
 
-def _backup_atomically(source_conn, db_path):
-    """Copy the database to ``<db_path>.bak`` atomically.
+def _backup_atomically(source_conn, dest_path):
+    """Copy ``source_conn`` to ``dest_path`` atomically.
 
     ``sqlite3.Connection.backup`` writes into the destination connection
     directly, so an interruption (disk full, IO error) mid-copy leaves a
-    truncated ``.bak`` that a later restore would trust. The backup therefore
-    goes to a temp file first and is swapped over the real one only when the
-    copy has fully succeeded — a failed backup never becomes the recovery
-    copy.
+    truncated file that a later restore would trust. The copy therefore goes
+    to a temp sibling first and is swapped over the real one only when it has
+    fully succeeded вЂ” a failed backup never becomes the recovery copy.
     """
-    tmp = db_path + ".bak.tmp"
+    tmp = dest_path + ".tmp"
     try:
         dest_conn = sqlite3.connect(tmp)
         try:
@@ -257,7 +271,7 @@ def _backup_atomically(source_conn, db_path):
                 source_conn.backup(dest_conn)
         finally:
             dest_conn.close()
-        os.replace(tmp, db_path + ".bak")
+        os.replace(tmp, dest_path)
     except Exception:
         try:
             if os.path.exists(tmp):
@@ -265,6 +279,152 @@ def _backup_atomically(source_conn, db_path):
         except OSError:
             pass
         raise
+
+
+# Mandatory tables for a database this app can load (the pre-migration v0.8.x
+# schema carried `temp_presets`, the current schema carries `temp_presets_v2`).
+_MANDATORY_TABLES = {"presets", "settings"}
+_SILO_TABLES = ("temp_presets_v2", "temp_presets")
+
+
+class RestoreError(RuntimeError):
+    """A database could not be validated or restored; the live DB is intact."""
+
+
+def _remove_quietly(path):
+    try:
+        if os.path.exists(path):
+            os.remove(path)
+    except OSError:
+        pass
+
+
+def _same_file(a, b):
+    try:
+        return os.path.samefile(a, b)
+    except OSError:
+        return (os.path.normcase(os.path.abspath(a))
+                == os.path.normcase(os.path.abspath(b)))
+
+
+def _open_read_only(path):
+    return sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=2.0)
+
+
+def validate_database(path, max_user_version=CURRENT_SCHEMA_VERSION):
+    """Open a candidate database read-only and prove it is restorable.
+
+    Returns ``(user_version, tables)``. Raises ``RestoreError`` when the file
+    is not a database, fails integrity, is a schema version newer than this
+    app supports, or lacks the mandatory tables. Never mutates the file.
+    """
+    if not isinstance(path, str) or not os.path.isfile(path):
+        raise RestoreError("the backup file does not exist")
+    try:
+        conn = _open_read_only(path)
+    except sqlite3.Error as exc:
+        raise RestoreError(f"cannot open the backup as SQLite: {exc}")
+    try:
+        conn.execute("PRAGMA query_only=ON")
+        try:
+            row = conn.execute("PRAGMA integrity_check").fetchone()
+        except sqlite3.DatabaseError as exc:
+            raise RestoreError(f"integrity check failed: {exc}")
+        if not row or (row[0] != "ok"):
+            raise RestoreError(f"integrity check failed: {row}")
+        try:
+            version = conn.execute("PRAGMA user_version").fetchone()[0]
+        except sqlite3.DatabaseError as exc:
+            raise RestoreError(f"cannot read the schema version: {exc}")
+        if version > max_user_version:
+            raise RestoreError(
+                f"backup schema v{version} is newer than this app supports "
+                f"(v{max_user_version}); refusing to downgrade the live data")
+        tables = {r[0] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'")}
+        missing = _MANDATORY_TABLES - tables
+        if missing:
+            raise RestoreError(f"backup is missing mandatory tables: "
+                               f"{sorted(missing)}")
+        if not (tables & set(_SILO_TABLES)):
+            raise RestoreError("backup has no silo table "
+                               f"({', '.join(_SILO_TABLES)})")
+        return int(version), tables
+    finally:
+        conn.close()
+
+
+def restore_database(source, destination):
+    """Validate and atomically replace ``destination`` with ``source``.
+
+    On ANY failure before the atomic replace, ``destination`` is left
+    byte-for-byte untouched and a ``RestoreError`` is raised. The caller must
+    have closed any live connection to ``destination`` first (SQLite keeps
+    the file locked while a connection is open).
+
+    Pipeline: same-file guard -> validate source -> safety snapshot of the
+    current destination -> build candidate via the SQLite backup API into a
+    temp sibling -> validate the candidate -> atomic replace -> drop stale
+    -wal/-shm of the old incarnation.
+    """
+    if not os.path.isfile(source):
+        raise RestoreError("the backup file does not exist")
+    if _same_file(source, destination):
+        raise RestoreError("source and destination are the same file")
+    if not os.path.isfile(destination):
+        raise RestoreError("the live database does not exist")
+
+    version, _ = validate_database(source)
+
+    # pre-restore safety snapshot of the CURRENT (valid) live database вЂ” the
+    # SQLite backup API so a not-yet-checkpointed WAL is included
+    safety = destination + ".prerestore.bak"
+    try:
+        src = _open_read_only(destination)
+        try:
+            _backup_atomically(src, safety)
+        finally:
+            src.close()
+    except Exception as exc:
+        raise RestoreError(
+            f"could not snapshot the current database before restore: {exc}")
+
+    # build the candidate into a unique temp sibling
+    temp = destination + ".restoretmp"
+    _remove_quietly(temp)
+    try:
+        sconn = _open_read_only(source)
+        try:
+            dconn = sqlite3.connect(temp)
+            try:
+                with dconn:
+                    sconn.backup(dconn)
+            finally:
+                dconn.close()
+        finally:
+            sconn.close()
+    except sqlite3.Error as exc:
+        _remove_quietly(temp)
+        raise RestoreError(f"could not build the restore candidate: {exc}")
+
+    # validate the CANDIDATE, not just the source: the copy is what lands
+    try:
+        validate_database(temp, max_user_version=CURRENT_SCHEMA_VERSION)
+    except RestoreError:
+        _remove_quietly(temp)
+        raise
+
+    try:
+        os.replace(temp, destination)
+    except OSError as exc:
+        _remove_quietly(temp)
+        raise RestoreError(f"could not replace the live database: {exc}")
+
+    # drop stale WAL/SHM of the old incarnation вЂ” in this order, after the
+    # replace, so no old journal can be replayed into the new database
+    for ext in ("-wal", "-shm"):
+        _remove_quietly(destination + ext)
+    return int(version)
 
 
 class FastPrompterState:
@@ -299,7 +459,7 @@ class FastPrompterState:
         # literals above, which stay as the last-resort skeleton. copy.deepcopy
         # because the values are mutable and a module-level dict handed out by
         # reference would let one profile's edits leak into the next
-        # reset_data() — and into every test that touches them.
+        # reset_data() вЂ” and into every test that touches them.
         self.data.update(copy.deepcopy(DEFAULT_PROFILE))
 
     def switch_profile(self, new_profile_id):
@@ -315,12 +475,12 @@ class FastPrompterState:
 
     def init_db(self):
         try:
-            # Backup existing DB before connecting — prevents empty/new DB from destroying backup
+            # Backup existing DB before connecting вЂ” prevents empty/new DB from destroying backup
             if os.path.exists(self.db_path) and os.path.getsize(self.db_path) > 24576:
                 try:
                     src = sqlite3.connect(self.db_path)
                     try:
-                        _backup_atomically(src, self.db_path)
+                        _backup_atomically(src, self.db_path + ".bak")
                     finally:
                         src.close()
                 except Exception:
@@ -333,7 +493,7 @@ class FastPrompterState:
 
             # Versioned, transactional schema migrations. A failure here
             # raises (and rolls back), so a broken migration can never be
-            # mistaken for a working one — startup refuses loudly instead.
+            # mistaken for a working one вЂ” startup refuses loudly instead.
             _migrate_schema(self.conn, self.data["cats_order"][0] if self.data.get("cats_order") else "Code")
             self.conn.commit()
             cur = self.conn.cursor()
@@ -374,14 +534,14 @@ class FastPrompterState:
                             logger.warning(f"Failed to parse {row[0]}: {e}")
                             self.data[row[0]] = _empty
                 elif row[0] == 'timers':
-                    # a LIST of timer dicts — falling back to {} would make
+                    # a LIST of timer dicts вЂ” falling back to {} would make
                     # load_timers see a mapping and silently drop them all
                     try: self.data[row[0]] = json.loads(row[1])
                     except Exception as e: logger.warning(f"Failed to parse {row[0]}: {e}"); self.data[row[0]] = []
                 elif row[0] in ('watcher_queues', 'watcher_queues_all'):
                     # Both are dicts. They were absent from the save list
                     # below for a while, so early builds wrote them as
-                    # str(dict) — single-quoted, which json.loads rejects.
+                    # str(dict) вЂ” single-quoted, which json.loads rejects.
                     # ast.literal_eval recovers those; a real corruption
                     # still falls back to {} rather than crashing Alt+C.
                     try:
@@ -476,13 +636,19 @@ class FastPrompterState:
         self._db_dirty = True
 
     def _sanitize_cat_name(self, name: str) -> str:
-        """Sanitize a category name for use as a directory name."""
-        return re.sub(r'[^a-zA-Z0-9_ -]+', '', name).strip() or 'Unnamed'
+        """One safe filesystem component for a category name.
+
+        Delegates to the shared codec so every export path uses the SAME
+        deterministic, collision-resistant naming: a hostile or ambiguous
+        name becomes a readable prefix plus a stable digest of the original,
+        so two different project names can never overwrite each other."""
+        from fastprompter.utils.path_safety import fs_component
+        return fs_component(name, fallback="unnamed")[0]
 
     # _export_md_backup and its _safe_write helper lived here: a flat
     # ~/.fastprompter/ mirror of every snippet, silo and archive entry. It had
     # nine unit tests and NOT ONE production caller, which is worse than no
-    # backup — it read like a safety net, in review and in the test list, while
+    # backup вЂ” it read like a safety net, in review and in the test list, while
     # writing nothing, ever. The dated per-project snapshots in
     # utils/portable_backup.py are the real thing and ARE wired into
     # save_data_to_db. `_sanitize_cat_name` above stays: backup_dialog borrows
@@ -563,7 +729,7 @@ class FastPrompterState:
                     try:
                         # atomic temp+replace: a failed backup never becomes
                         # the recovery copy
-                        _backup_atomically(self.conn, self.db_path)
+                        _backup_atomically(self.conn, self.db_path + ".bak")
                     except Exception:
                         logger.exception("throttled database backup failed; "
                                          "the previous .bak was kept intact")
@@ -579,3 +745,4 @@ class FastPrompterState:
             # build), never silently dropped.
             logger.exception("database save failed; the change was not "
                              "recorded and will be retried")
+

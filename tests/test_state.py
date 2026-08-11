@@ -15,13 +15,20 @@ from fastprompter.core.state import FastPrompterState
 
 
 @pytest.fixture
-def state(tmp_path):
-    """Fixture that provides an isolated FastPrompterState for testing."""
+def state(tmp_path, monkeypatch):
+    """Fixture that provides an isolated FastPrompterState for testing.
+
+    get_db_path is patched to a temp file BEFORE construction so the real
+    `data/` directory is never touched or read — the assertions here depend
+    on the database being fresh, and the real profile DB accumulates state
+    across runs."""
+    monkeypatch.setattr(
+        "fastprompter.core.state.get_db_path",
+        lambda profile_id=1: str(tmp_path / f"state_{profile_id}.db"))
+    monkeypatch.setattr(
+        "fastprompter.utils.portable_backup.run_portable_backup",
+        lambda data: None)
     state = FastPrompterState(profile_id=999)
-    if state.conn:
-        state.conn.close()
-    state.db_path = str(tmp_path / "test_state.db")
-    state.init_db()
 
     yield state
 
@@ -487,10 +494,19 @@ class TestPortableBackupCoversEveryProject:
         assert (day / "silos" / "Text" / "silo_001.md").exists()
 
     def test_project_names_are_made_filesystem_safe(self, tmp_path, monkeypatch):
-        data = {"cats_order": ["a/b:c"],
-                "temp_presets_all": {"a/b:c": ["x"]}, "categories": {}}
+        """A hostile project name becomes a SAFE single component; different
+        hostile names never collapse onto the same path (Phase-5 second pass)."""
+        data = {"cats_order": ["a/b:c", "a?b:c"],
+                "temp_presets_all": {"a/b:c": ["x"], "a?b:c": ["y"]},
+                "categories": {}}
         day = self._run(tmp_path, data, monkeypatch)
-        assert (day / "silos" / "a_b_c" / "silo_001.md").exists()
+        silos = sorted(os.listdir(day / "silos"))
+        assert len(silos) == 2, silos
+        for comp in silos:
+            # a safe single component with no separators or traversal
+            from fastprompter.utils.path_safety import validate_component
+            assert validate_component(comp)[0] == comp, comp
+            assert (day / "silos" / comp / "silo_001.md").exists()
 
 
 class TestSettingsSurviveAReload:

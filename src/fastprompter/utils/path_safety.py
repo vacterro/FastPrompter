@@ -103,3 +103,79 @@ def is_within(root, candidate):
         return common == root_c
     except (OSError, ValueError):
         return False
+
+
+# ---------------------------------------------------------------------------
+# Filesystem-name codec: DISPLAY name -> safe FILESYSTEM component.
+#
+# A project/category name is UI data and may be hostile on purpose (Unicode,
+# punctuation, `..`, drive letters, reserved names, 100+ chars). This codec
+# keeps the name readable where Windows allows it and encodes it with a
+# stable short digest of the ORIGINAL name otherwise, so a lossy sanitizer can
+# never alias two different logical names onto one path.
+# ---------------------------------------------------------------------------
+
+# Readable-prefix cap; the digest suffix is always added on top and never
+# truncated away, so the identity part survives the cap.
+_FS_MAX_PREFIX = 60
+
+
+def _digest(name, length=8):
+    import hashlib
+
+    return hashlib.sha1(name.encode("utf-8", "replace")).hexdigest()[:length]
+
+
+def _readable_prefix(name):
+    """A readable, safe-ish prefix of a hostile name. Empty when unusable."""
+    prefix = _CONTROL_RE.sub("_", _ILLEGAL_RE.sub("_", str(name))).strip()
+    prefix = prefix.rstrip(" .")
+    # a reserved name stays reserved after sanitizing ("CON" -> "CON"); give
+    # it a marker so it can never become a device name
+    if _RESERVED_RE.match(prefix):
+        prefix = "_" + prefix
+    if len(prefix) > _FS_MAX_PREFIX:
+        prefix = prefix[:_FS_MAX_PREFIX].rstrip(" ._")
+    return prefix
+
+
+def fs_component(name, fallback="unnamed", digest_len=8):
+    """(component, needed_transform) for one logical name.
+
+    A name that is already a valid plain component is preserved verbatim
+    (Unicode included). Anything else is encoded as ``readable_prefix_<digest>``
+    where the digest is of the ORIGINAL logical name — two different logical
+    names can never collapse onto the same path.
+    """
+    clean, _ = validate_component(name)
+    if clean is not None:
+        return clean, False
+    readable = _readable_prefix(name) or fallback
+    return f"{readable}_{_digest(name, digest_len)}", True
+
+
+def alloc_fs_names(names, fallback="unnamed", digest_len=8):
+    """Map logical names to collision-free filesystem components.
+
+    Deterministic for a given input set: the same names in the same order
+    produce the same components. Every distinct logical name gets a distinct
+    component even where Windows compares case-insensitively — names that
+    collide (case-only differences, or a lossy encode) get a stable short
+    digest of the ORIGINAL name appended, so the first name keeps the clean
+    form and the later one never silently overwrites it.
+    """
+    result = {}
+    claimed = {}          # normcase(component) -> logical name that holds it
+    for name in names:
+        base, _ = fs_component(name, fallback, digest_len)
+        comp = base
+        key = os.path.normcase(comp)
+        if key in claimed and claimed[key] != name:
+            comp = f"{base}_{_digest(name, digest_len)}"
+            key = os.path.normcase(comp)
+        if key in claimed and claimed[key] != name:   # identical-digest guard
+            comp = _digest(name, 12)
+            key = os.path.normcase(comp)
+        claimed[key] = name
+        result[name] = comp
+    return result

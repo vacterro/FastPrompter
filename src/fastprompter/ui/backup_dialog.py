@@ -72,17 +72,47 @@ class BackupDialog(QDialog):
     def backup_database(self):
         self.main_win.save_data_to_db(force=True)
         path, _ = QFileDialog.getSaveFileName(self, tr("Backup Database", self.lang), "prompts_backup.db", "SQLite DB (*.db)")
-        if path:
+        if not path:
+            return
+        try:
+            from fastprompter.core.state import (
+                RestoreError,
+                _backup_atomically,
+                _same_file,
+                validate_database,
+            )
+
+            db_path = self.main_win.state.db_path
+            if _same_file(db_path, path):
+                QMessageBox.warning(self, tr("Error", self.lang),
+                                    tr("Source and destination are the same file.", self.lang))
+                return
+            import sqlite3
+            src = sqlite3.connect(db_path)
             try:
-                import sqlite3
-                source_conn = sqlite3.connect(self.main_win.state.db_path)
-                dest_conn = sqlite3.connect(path)
-                source_conn.backup(dest_conn)
-                dest_conn.close()
-                source_conn.close()
-                QMessageBox.information(self, tr("Success", self.lang), tr("Database backed up to:\n{}", self.lang).format(path))
-            except Exception as e:
-                QMessageBox.critical(self, tr("Error", self.lang), tr("Failed to backup:\n{}", self.lang).format(e))
+                # the shared safe primitive: SQLite backup API into a temp
+                # sibling, validated, swapped over the final name atomically —
+                # a partial backup is never exposed under the requested name
+                _backup_atomically(src, path)
+            finally:
+                src.close()
+            # the completed destination must itself be a valid database
+            validate_database(path)
+            QMessageBox.information(self, tr("Success", self.lang),
+                                    tr("Database backed up to:\n{}", self.lang).format(path))
+        except RestoreError as e:
+            from fastprompter.core.logging import logger
+            logger.exception("manual database backup failed validation: %s", e)
+            QMessageBox.critical(self, tr("Error", self.lang),
+                                 tr("Backup failed validation and was removed:\n{}", self.lang).format(e))
+            try:
+                if os.path.exists(path):
+                    os.remove(path)
+            except OSError:
+                pass
+        except Exception as e:
+            QMessageBox.critical(self, tr("Error", self.lang),
+                                 tr("Failed to backup:\n{}", self.lang).format(e))
 
     def export_silos(self):
         fmt = self.combo_format.currentText()
@@ -92,11 +122,21 @@ class BackupDialog(QDialog):
 
         try:
             self.main_win.save_data_to_db(force=True)
+            from fastprompter.utils.path_safety import alloc_fs_names
+
+            data = self.main_win.data
+            # one collision-free filesystem component per project name, so
+            # two logical names that differ only by case or hostile
+            # characters can never silently share an export directory
+            all_cats = [c for c in data.get("cats_order", []) if isinstance(c, str)]
+            comps = alloc_fs_names(all_cats)
+
+            def comp_for(cat):
+                return comps.get(cat, self.main_win.state._sanitize_cat_name(cat))
 
             # Export Temp Presets (Silos)
-            for cat, slots in self.main_win.data.get("temp_presets_all", {}).items():
-                safe_cat = self.main_win.state._sanitize_cat_name(cat)
-                cat_dir = os.path.join(path, safe_cat)
+            for cat, slots in data.get("temp_presets_all", {}).items():
+                cat_dir = os.path.join(path, comp_for(cat))
                 os.makedirs(cat_dir, exist_ok=True)
                 for i, text in enumerate(slots):
                     if text.strip():
@@ -105,9 +145,8 @@ class BackupDialog(QDialog):
                             f.write(text)
 
             # Export Archive Temp Presets
-            for cat, slots in self.main_win.data.get("archive_temp_presets_all", {}).items():
-                safe_cat = self.main_win.state._sanitize_cat_name(cat)
-                cat_dir = os.path.join(path, safe_cat)
+            for cat, slots in data.get("archive_temp_presets_all", {}).items():
+                cat_dir = os.path.join(path, comp_for(cat))
                 os.makedirs(cat_dir, exist_ok=True)
                 for i, text in enumerate(slots):
                     if text.strip():

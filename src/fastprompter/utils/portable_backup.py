@@ -3,17 +3,32 @@
 Destination: ~/.fastprompter/YYYY-MM-DD/
 Creates per-category snippet files, silo files, and archive files.
 Runs throttled during save_data_to_db (max once per 120s).
+
+Completion semantics (Phase 6, second pass):
+
+* a snapshot is COMPLETE only if every mandatory export succeeded — the
+  ``_COMPLETE`` marker is written LAST, after silos, archive, snippets and
+  the manifest.
+* the export is built in a ``<date>.partial`` temp directory and published
+  atomically only on success; a failed export leaves the previous known-good
+  day directory untouched.
+* ``_last_backup_time`` advances only after a successful snapshot, so a
+  failed export stays eligible for an immediate retry.
 """
 
 import json
 import os
+import shutil
 import time
 
 from fastprompter.core.logging import logger
+from fastprompter.utils.path_safety import alloc_fs_names, fs_component
 from fastprompter.utils.paths import get_portable_backup_dir
 
 _last_backup_time = 0.0
 _BACKUP_THROTTLE = 120  # seconds between backups
+
+_COMPLETE_MARKER = "_COMPLETE"
 
 
 def run_portable_backup(data: dict) -> None:
@@ -22,22 +37,29 @@ def run_portable_backup(data: dict) -> None:
     now = time.time()
     if now - _last_backup_time < _BACKUP_THROTTLE:
         return
-    _last_backup_time = now
 
     try:
         _do_export(data)
     except Exception:
         # A backup that fails silently is worse than no backup: the user
-        # believes the snapshot exists. print_exc() goes to a console nobody
-        # sees in a windowed build, so this has to reach the log file.
-        logger.exception("portable backup failed")
+        # believes the snapshot exists. Reach the log file, keep the previous
+        # good snapshot, and DO NOT advance the throttle — the next save may
+        # retry.
+        logger.exception("portable backup FAILED; the previous good snapshot "
+                         "is kept and the next save may retry")
+        return
+
+    _last_backup_time = now
 
 
 def _safe_name(name: str) -> str:
-    """A project name that is legal as a folder name on Windows."""
-    import re
-    cleaned = re.sub(r'[\\/:*?"<>|]+', "_", str(name)).strip(" .")
-    return cleaned[:60] or "Unnamed"
+    """One safe, deterministic filesystem component for a project name.
+
+    A thin wrapper over the shared codec: hostile names get a readable
+    prefix plus a stable digest, so two different logical names can never
+    collapse onto the same path.
+    """
+    return fs_component(name)[0]
 
 
 def _per_project(data: dict, key: str) -> dict:
@@ -60,77 +82,103 @@ def _per_project(data: dict, key: str) -> dict:
 
 def _do_export(data: dict) -> None:
     backup_dir = get_portable_backup_dir()
-    # Per-day subdirectory
+    # Per-day subdirectory, built as an exact snapshot in a temp sibling and
+    # published atomically only when every write succeeded.
     date_str = time.strftime("%Y-%m-%d")
     day_dir = os.path.join(backup_dir, date_str)
-    os.makedirs(day_dir, exist_ok=True)
+    tmp_dir = day_dir + ".partial"
+    shutil.rmtree(tmp_dir, ignore_errors=True)
 
-    # 1. Silos — EVERY project, not just the open one.
-    #
-    # This used to read data["temp_presets"], which is an alias for the
-    # ACTIVE category. A user with five projects therefore had four of them
-    # missing from the daily snapshot and no way to know: the folder looked
-    # full. Snippets were already exported per project; silos now match.
-    silos_dir = os.path.join(day_dir, "silos")
-    os.makedirs(silos_dir, exist_ok=True)
-    for cat, presets in _per_project(data, "temp_presets").items():
-        out_dir = os.path.join(silos_dir, _safe_name(cat))
-        for i, text in enumerate(presets):
-            if text and text.strip():
-                os.makedirs(out_dir, exist_ok=True)
-                fname = f"silo_{i+1:03d}.md"
-                _write_md(os.path.join(out_dir, fname), text, f"{cat} · Silo {i+1}")
-
-    # 2. Archive silos, same rule
-    arc_dir = os.path.join(day_dir, "archive")
-    for cat, presets in _per_project(data, "archive_temp_presets").items():
-        out_dir = os.path.join(arc_dir, _safe_name(cat))
-        for i, text in enumerate(presets):
-            if text and text.strip():
-                os.makedirs(out_dir, exist_ok=True)
-                fname = f"archive_{i+1:03d}.md"
-                _write_md(os.path.join(out_dir, fname), text,
-                          f"{cat} · Archive Silo {i+1}")
-
-    # 3. Snippets (by category)
-    cats = data.get("cats_order", [])
+    cats = data.get("cats_order", []) or []
+    # one collision-free filesystem component per logical project name,
+    # consistent across silos/archive/snippets within this snapshot
+    comps = alloc_fs_names([c for c in cats if isinstance(c, str)])
     categories = data.get("categories", {})
-    if cats and categories:
-        snips_dir = os.path.join(day_dir, "snippets")
-        os.makedirs(snips_dir, exist_ok=True)
-        for cat in cats:
-            slots = categories.get(cat, [])
-            cat_snippets = [(i, s) for i, s in enumerate(slots) if s and s.get("text", "").strip()]
-            if cat_snippets:
-                fname = f"{cat.lower().replace(' ', '_')}.md"
-                lines = [f"# {cat} Snippets\n", f"_Exported: {time.strftime('%Y-%m-%d %H:%M:%S')}_\n\n"]
-                for idx, slot in cat_snippets:
-                    name = slot.get("name", f"Snippet {idx+1}")
-                    text = slot["text"]
-                    lines.append(f"## {idx+1}. {name}\n\n{text}\n\n---\n\n")
-                _write_raw(os.path.join(snips_dir, fname), "".join(lines))
 
-    # Write metadata file
-    meta_path = os.path.join(day_dir, "_meta.json")
     try:
-        with open(meta_path, "w", encoding="utf-8") as f:
-            json.dump({
-                "exported_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-                # counted over every project, like the export itself
-                "silo_count": sum(
-                    1 for slots in _per_project(data, "temp_presets").values()
-                    for p in slots if p and p.strip()),
-                "archive_count": sum(
-                    1 for slots in _per_project(data, "archive_temp_presets").values()
-                    for p in slots if p and p.strip()),
-                "snippet_count": sum(1 for cat in cats for s in categories.get(cat, []) if s and s.get("text", "").strip())
-            }, f, indent=2)
+        os.makedirs(tmp_dir, exist_ok=True)
+
+        # 1. Silos — EVERY project, not just the open one.
+        silos_dir = os.path.join(tmp_dir, "silos")
+        os.makedirs(silos_dir, exist_ok=True)
+        for cat, presets in _per_project(data, "temp_presets").items():
+            out_dir = os.path.join(silos_dir, comps.get(cat, _safe_name(cat)))
+            for i, text in enumerate(presets):
+                if text and text.strip():
+                    os.makedirs(out_dir, exist_ok=True)
+                    fname = f"silo_{i+1:03d}.md"
+                    _write_md(os.path.join(out_dir, fname), text,
+                              f"{cat} · Silo {i+1}")
+
+        # 2. Archive silos, same rule
+        arc_dir = os.path.join(tmp_dir, "archive")
+        os.makedirs(arc_dir, exist_ok=True)
+        for cat, presets in _per_project(data, "archive_temp_presets").items():
+            out_dir = os.path.join(arc_dir, comps.get(cat, _safe_name(cat)))
+            for i, text in enumerate(presets):
+                if text and text.strip():
+                    os.makedirs(out_dir, exist_ok=True)
+                    fname = f"archive_{i+1:03d}.md"
+                    _write_md(os.path.join(out_dir, fname), text,
+                              f"{cat} · Archive Silo {i+1}")
+
+        # 3. Snippets (by category) — one distinct file per project
+        if cats and categories:
+            snips_dir = os.path.join(tmp_dir, "snippets")
+            os.makedirs(snips_dir, exist_ok=True)
+            for cat in cats:
+                slots = categories.get(cat, []) or []
+                cat_snippets = [(i, s) for i, s in enumerate(slots)
+                                if s and s.get("text", "").strip()]
+                if cat_snippets:
+                    fname = comps.get(cat, _safe_name(cat)) + ".md"
+                    lines = [f"# {cat} Snippets\n",
+                             f"_Exported: {time.strftime('%Y-%m-%d %H:%M:%S')}_\n\n"]
+                    for idx, slot in cat_snippets:
+                        name = slot.get("name", f"Snippet {idx+1}")
+                        text = slot["text"]
+                        lines.append(f"## {idx+1}. {name}\n\n{text}\n\n---\n\n")
+                    _write_raw(os.path.join(snips_dir, fname), "".join(lines))
+
+        # 4. Manifest — written before the COMPLETE marker, still mandatory:
+        #   a failure here aborts the snapshot
+        _write_manifest(tmp_dir, data, cats, categories)
+
+        # 5. The COMPLETE marker — LAST, so a partial snapshot can never carry
+        #    it; its absence is how a partial snapshot is recognised.
+        _write_raw(os.path.join(tmp_dir, _COMPLETE_MARKER),
+                   f"complete {time.strftime('%Y-%m-%dT%H:%M:%S')}\n")
     except Exception:
-        logger.warning("portable backup: could not write the day manifest",
-                       exc_info=True)
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        raise
+
+    # Publish: the old day_dir is the last known-good snapshot and is only
+    # replaced now that the new one is fully written.
+    if os.path.isdir(day_dir):
+        shutil.rmtree(day_dir, ignore_errors=True)
+    os.rename(tmp_dir, day_dir)
 
     # Cleanup: keep last 7 day dirs
     _cleanup_old_backups(backup_dir, max_days=7)
+
+
+def _write_manifest(tmp_dir, data, cats, categories):
+    meta_path = os.path.join(tmp_dir, "_meta.json")
+    _write_raw(meta_path, json.dumps({
+        "exported_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "complete": True,
+        # counted over every project, like the export itself
+        "silo_count": sum(
+            1 for slots in _per_project(data, "temp_presets").values()
+            for p in slots if p and p.strip()),
+        "archive_count": sum(
+            1 for slots in _per_project(data, "archive_temp_presets").values()
+            for p in slots if p and p.strip()),
+        "snippet_count": sum(
+            1 for cat in cats
+            for s in (categories.get(cat, []) or [])
+            if s and s.get("text", "").strip())
+    }, indent=2))
 
 
 def _write_md(path: str, text: str, title: str) -> None:
@@ -140,14 +188,24 @@ def _write_md(path: str, text: str, title: str) -> None:
 
 
 def _write_raw(path: str, content: str) -> None:
-    """Atomically write a file using temp + rename."""
+    """Atomically write a file using temp + rename. RAISES on failure.
+
+    A portable snapshot is all-or-nothing: a failed write must propagate so
+    the snapshot is never labelled complete. The partial temp file is
+    removed and the error surfaces to run_portable_backup's failure path.
+    """
     tmp_path = path + ".tmp"
     try:
         with open(tmp_path, "w", encoding="utf-8") as f:
             f.write(content)
         os.replace(tmp_path, path)
     except Exception:
-        logger.exception("portable backup: could not write %s", path)
+        try:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+        except OSError:
+            pass
+        raise
 
 
 def _cleanup_old_backups(backup_dir: str, max_days: int = 7) -> None:
@@ -160,7 +218,6 @@ def _cleanup_old_backups(backup_dir: str, max_days: int = 7) -> None:
                 try:
                     dir_time = time.mktime(time.strptime(entry, "%Y-%m-%d"))
                     if now - dir_time > max_days * 86400:
-                        import shutil
                         shutil.rmtree(entry_path, ignore_errors=True)
                 except (ValueError, OSError):
                     # not a date-named folder, or it is busy: leave it alone

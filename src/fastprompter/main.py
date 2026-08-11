@@ -6,7 +6,6 @@ import json
 import math
 import os
 import re
-import shutil
 import sys
 import time
 import zlib
@@ -2460,11 +2459,17 @@ class FastPrompter(
         """Mirror the current silo (or the whole hierarchy) to sync_path.
 
         One-way, app -> disk. Never reads back, never deletes: a stale file
-        from a renamed silo is left alone rather than risking user data."""
+        from a renamed silo is left alone rather than risking user data.
+
+        Every path written is a SAFE filesystem component of its logical
+        name (see path_safety.alloc_fs_names) and is containment-checked
+        against the resolved sync root before the write, so a hostile
+        project name can never escape the root."""
         mode = self.data.get("sync_mode", "Off")
         root = str(self.data.get("sync_path", "") or "").strip()
         if mode not in ("Silo", "Hierarchy") or not root:
             return
+        from fastprompter.utils.path_safety import alloc_fs_names, is_within
         presets = self.data.get("temp_presets", [])
         if mode == "Silo":
             slots = [self.active_temp_slot]
@@ -2475,6 +2480,9 @@ class FastPrompter(
         if cache is None:
             cache = self._sync_written = {}
         cat = self.get_current_category() or ""
+        # one deterministic, collision-free filesystem name per project
+        cat_comps = alloc_fs_names(self.data.get("cats_order", []) or [])
+        cat_comp = cat_comps.get(cat, cat)
         from fastprompter.core.logging import logger
         for i in slots:
             if not (0 <= i < len(presets)):
@@ -2482,13 +2490,22 @@ class FastPrompter(
             text = presets[i]
             if mode == "Hierarchy" and not text.strip():
                 continue
-            dest = os.path.join(root, cat, rels.get(i, self._sync_name_for(i, presets)) + ".md")
+            rel = rels.get(i, self._sync_name_for(i, presets))
+            dest = os.path.join(root, cat_comp, rel + ".md")
+            # canonical containment, never a prefix check
+            if not is_within(root, dest):
+                logger.warning("sync_to_disk rejected %r: outside the sync root",
+                               dest)
+                continue
             if not force and cache.get(dest) == text:
                 continue           # unchanged since the last mirror
             try:
                 os.makedirs(os.path.dirname(dest), exist_ok=True)
-                with open(dest, "w", encoding="utf-8") as fh:
+                # temp + atomic replace: a torn write is never a sync file
+                tmp = dest + ".tmp"
+                with open(tmp, "w", encoding="utf-8") as fh:
                     fh.write(text)
+                os.replace(tmp, dest)
                 cache[dest] = text
             except OSError as e:
                 logger.warning("sync_to_disk failed for %s: %s", dest, e)
@@ -6876,23 +6893,28 @@ class FastPrompter(
             )
             if reply == QMessageBox.StandardButton.Yes:
                 db_path = self.state.db_path
-                if os.path.abspath(path) == os.path.abspath(db_path):
-                    QMessageBox.warning(self, tr("Error", self._current_lang), tr("Source and destination are the same file.", self._current_lang))
-                    return
+                # close the live connection FIRST: SQLite keeps the file
+                # locked while a connection is open
                 if self.state.conn:
                     self.state.conn.close()
                     self.state.conn = None
                 self.conn = None
                 time.sleep(0.1)
-                shutil.copy2(path, db_path)
-                for ext in ["-wal", "-shm"]:
-                    if os.path.exists(db_path + ext):
-                        try:
-                            os.remove(db_path + ext)
-                        except Exception:
-                            import traceback
-
-                            traceback.print_exc()
+                from fastprompter.core.state import RestoreError, restore_database
+                try:
+                    restore_database(path, db_path)
+                except RestoreError as e:
+                    # the live database was left untouched; reopen it and tell
+                    # the user what to recover from
+                    from fastprompter.core.logging import logger as _log
+                    _log.exception("restore refused: %s", e)
+                    QMessageBox.critical(
+                        self, tr("Error", self._current_lang),
+                        tr("Restore refused — your current database was left "
+                           "untouched:\n{}", self._current_lang).format(e))
+                    self.state.init_db()
+                    self.conn = self.state.conn
+                    return
                 self.quit_app()
         except Exception as e:
             QMessageBox.critical(self, tr("Error", self._current_lang), tr("Failed to restore backup:\n{}", self._current_lang).format(e))

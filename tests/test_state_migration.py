@@ -1,6 +1,6 @@
 """Regression tests for versioned, transactional schema migrations.
 
-Proves the Phase-5 invariants:
+Proves the Phase-5/Phase-4 invariants:
 
 * fresh databases reach CURRENT_SCHEMA_VERSION with the full schema
 * unversioned legacy databases migrate in place (legacy tables folded in)
@@ -10,6 +10,8 @@ Proves the Phase-5 invariants:
 * a retried migration after the failure succeeds
 * the pre-migration ``.bak`` stays a usable pre-migration snapshot
 * a full save/reload round trip loses nothing
+* a FUTURE schema version is refused before any transaction, untouched
+* each migration records its OWN exact version edge
 """
 
 import sqlite3
@@ -227,3 +229,82 @@ class TestRoundTrip:
             assert s2.data["last_text"] == "round trip silo"
         finally:
             s2.conn.close()
+
+
+class TestFutureSchemaRejected:
+    """Phase-4: a database from a NEWER FastPrompter is refused, untouched."""
+
+    def _future_db(self, db_path, version, marker="future data"):
+        s = FastPrompterState(profile_id=1)
+        s.conn.close()
+        conn = sqlite3.connect(db_path)
+        # the base schema exists (fresh from the state above); bump the version
+        # as a newer build would have done
+        conn.execute(f"PRAGMA user_version = {version}")
+        conn.execute("INSERT INTO settings (key, value) VALUES ('marker', ?)",
+                     (marker,))
+        conn.commit()
+        conn.close()
+        return marker
+
+    def test_current_plus_one_is_rejected(self, make_state, db_path):
+        from fastprompter.core.state import (
+            CURRENT_SCHEMA_VERSION,
+            UnsupportedSchemaVersion,
+        )
+        self._future_db(db_path, CURRENT_SCHEMA_VERSION + 1)
+        with pytest.raises(UnsupportedSchemaVersion):
+            make_state()
+
+    def test_version_999_is_rejected(self, make_state, db_path):
+        from fastprompter.core.state import UnsupportedSchemaVersion
+        self._future_db(db_path, 999)
+        with pytest.raises(UnsupportedSchemaVersion):
+            make_state()
+
+    def test_rejected_db_is_left_unchanged(self, make_state, db_path):
+        from fastprompter.core.state import (
+            CURRENT_SCHEMA_VERSION,
+            UnsupportedSchemaVersion,
+        )
+        self._future_db(db_path, CURRENT_SCHEMA_VERSION + 1, marker="future")
+        before = open(db_path, "rb").read()
+        with pytest.raises(UnsupportedSchemaVersion):
+            make_state()
+        assert open(db_path, "rb").read() == before
+        conn = sqlite3.connect(db_path)
+        try:
+            assert conn.execute("PRAGMA user_version").fetchone()[0] \
+                == CURRENT_SCHEMA_VERSION + 1
+            assert conn.execute(
+                "SELECT value FROM settings WHERE key='marker'").fetchone()[0] \
+                == "future"
+        finally:
+            conn.close()
+
+    def test_current_version_is_a_no_op(self, make_state, db_path):
+        from fastprompter.core.state import CURRENT_SCHEMA_VERSION
+        s = make_state()           # fresh -> current
+        assert s.conn.execute("PRAGMA user_version").fetchone()[0] \
+            == CURRENT_SCHEMA_VERSION
+        s.conn.execute("INSERT OR REPLACE INTO settings (key, value) "
+                       "VALUES ('marker', 'kept')")
+        s.conn.commit()
+        s.conn.close()
+        s2 = make_state()          # reopen at current -> no migration
+        try:
+            assert s2.conn.execute(
+                "SELECT value FROM settings WHERE key='marker'").fetchone()[0] \
+                == "kept"
+        finally:
+            s2.conn.close()
+
+    def test_v0_migration_records_exactly_version_1(self, make_state, db_path):
+        """migrate_v0_to_v1 must record its OWN edge (1), not a copy of the
+        current constant."""
+        _legacy_fixture(db_path)
+        s = make_state()
+        try:
+            assert s.conn.execute("PRAGMA user_version").fetchone()[0] == 1
+        finally:
+            s.conn.close()
