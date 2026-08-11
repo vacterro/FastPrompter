@@ -260,6 +260,30 @@ def test_max_rowid_without_a_table_is_busy():
     assert probe.poll(0.0)[0] == BUSY
 
 
+def test_max_rowid_rejects_a_hostile_table_name():
+    """The table name is interpolated into SQL; a non-identifier (from a
+    malformed or hostile adapters.toml) must be refused, never executed."""
+    folder = tempfile.mkdtemp()
+    path = os.path.join(folder, "d.db")
+    conn = sqlite3.connect(path)
+    conn.execute("CREATE TABLE t (v TEXT)")
+    conn.execute("INSERT INTO t VALUES ('a')")
+    conn.commit()
+    conn.close()
+
+    for bad in ("t; DROP TABLE t", "t' --", "t]", "t (x)", "../evil", "t,2"):
+        probe = SqliteProbe(path, quiet_ms=0, watch="max_rowid", table=bad)
+        assert probe.poll(0.0)[0] == BUSY, f"table name {bad!r} must be refused"
+
+    # the database is untouched by the refused names
+    check = sqlite3.connect(path)
+    try:
+        rows = check.execute("SELECT COUNT(*) FROM t").fetchone()[0]
+        assert rows == 1
+    finally:
+        check.close()
+
+
 # ------------------------------------------------------------- unsupported
 
 def test_a_probe_without_its_dependency_says_so():

@@ -239,6 +239,34 @@ def _rollback_quietly(conn):
         pass
 
 
+def _backup_atomically(source_conn, db_path):
+    """Copy the database to ``<db_path>.bak`` atomically.
+
+    ``sqlite3.Connection.backup`` writes into the destination connection
+    directly, so an interruption (disk full, IO error) mid-copy leaves a
+    truncated ``.bak`` that a later restore would trust. The backup therefore
+    goes to a temp file first and is swapped over the real one only when the
+    copy has fully succeeded — a failed backup never becomes the recovery
+    copy.
+    """
+    tmp = db_path + ".bak.tmp"
+    try:
+        dest_conn = sqlite3.connect(tmp)
+        try:
+            with dest_conn:
+                source_conn.backup(dest_conn)
+        finally:
+            dest_conn.close()
+        os.replace(tmp, db_path + ".bak")
+    except Exception:
+        try:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+        except OSError:
+            pass
+        raise
+
+
 class FastPrompterState:
     def __init__(self, profile_id=1):
         self.profile_id = profile_id
@@ -291,13 +319,10 @@ class FastPrompterState:
             if os.path.exists(self.db_path) and os.path.getsize(self.db_path) > 24576:
                 try:
                     src = sqlite3.connect(self.db_path)
-                    dest = sqlite3.connect(self.db_path + ".bak")
                     try:
-                        with dest:
-                            src.backup(dest)
+                        _backup_atomically(src, self.db_path)
                     finally:
                         src.close()
-                        dest.close()
                 except Exception:
                     import traceback
                     traceback.print_exc()
@@ -433,8 +458,13 @@ class FastPrompterState:
             # loudly is what protects the half-migrated database.
             raise
         except Exception:
-            import traceback
-            traceback.print_exc()
+            # The startup .bak (taken before connecting) is preserved, and
+            # the app refuses to boot on defaults that could then be saved
+            # over a recoverable database. A DB we cannot read is a loud
+            # failure, never a silent reset.
+            logger.exception("database load failed; refusing to run on a "
+                             "database that could not be read")
+            raise
 
     def _snapshot_state(self):
         self._last_saved_presets = {(cat, i, item["name"], item["text"], item.get("last_edited", 0)) for cat, slots in self.data["categories"].items() for i, item in enumerate(slots) if item}
@@ -524,26 +554,23 @@ class FastPrompterState:
             self._db_dirty = False
 
             # Backup throttled: max once per 60s to prevent I/O dominating saves
-            if settings_to_save or to_insert_presets or to_delete_presets or to_update_temp or temp_to_delete or arc_to_update or arc_to_delete:
+            changed = bool(settings_to_save or to_insert_presets or to_delete_presets
+                           or to_update_temp or temp_to_delete or arc_to_update or arc_to_delete)
+            if changed:
                 now = time.time()
                 if now - self._last_backup_time >= 60:
                     self._last_backup_time = now
-                    dest_conn = None
                     try:
-                        dest_conn = sqlite3.connect(self.db_path + ".bak")
-                        with dest_conn:
-                            self.conn.backup(dest_conn)
+                        # atomic temp+replace: a failed backup never becomes
+                        # the recovery copy
+                        _backup_atomically(self.conn, self.db_path)
                     except Exception:
-                        import traceback
-                        traceback.print_exc()
-                    finally:
-                        if dest_conn:
-                            try: dest_conn.close()
-                            except Exception as e: logger.warning(f"Failed to close dest_conn in backup: {e}")
-                        
-                        # Portable file backup (throttled internally)
-                        if self.data.get("portable_backup_enabled", "True") == "True":
-                            return True
+                        logger.exception("throttled database backup failed; "
+                                         "the previous .bak was kept intact")
+                # The portable Markdown layer is independent: a .bak failure
+                # must not suppress it (it has its own failure handling).
+                if self.data.get("portable_backup_enabled", "True") == "True":
+                    return True
             return False
         except sqlite3.Error:
             import traceback

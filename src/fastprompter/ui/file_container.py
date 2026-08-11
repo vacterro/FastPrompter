@@ -145,6 +145,48 @@ def _unique_dest(folder, name):
     return os.path.join(folder, f"{stem} ({n}){ext}")
 
 
+def _copy_atomic(src, dest, is_dir):
+    """Copy src to dest so a partial copy is never presented as the result.
+
+    A direct ``copytree``/``copy2`` interrupted mid-way (disk full, IO error)
+    leaves a half file or half folder inside the container that looks real.
+    The copy therefore lands in a temp sibling first and is swapped over only
+    when it is complete; on failure the temp is removed and the error
+    propagates, leaving the container exactly as it was.
+    """
+    tmp = dest + ".fptmp"
+    try:
+        if is_dir:
+            shutil.copytree(src, tmp)
+        else:
+            shutil.copy2(src, tmp)
+        os.replace(tmp, dest)
+    except Exception:
+        shutil.rmtree(tmp, ignore_errors=True)
+        try:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def _write_text_atomic(path, content):
+    """Write a small text file atomically (temp + replace)."""
+    tmp = path + ".fptmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(content)
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+        except OSError:
+            pass
+        raise
+
+
 class _FileList(QListWidget):
     """Icon grid whose items drag out as real file URLs."""
 
@@ -568,11 +610,13 @@ class FileContainerPanel(QWidget):
             dest = _unique_dest(self.folder, os.path.basename(src.rstrip("\\/")))
             try:
                 if do_move:
+                    # shutil.move is source-safe: the source is only removed
+                    # after the destination copy completed.
                     shutil.move(src, dest)
                 elif os.path.isdir(src):
-                    shutil.copytree(src, dest)
+                    _copy_atomic(src, dest, is_dir=True)
                 else:
-                    shutil.copy2(src, dest)
+                    _copy_atomic(src, dest, is_dir=False)
                 copied += 1
             except OSError as e:
                 logger.error(f"File container import failed for {src}: {e}")
@@ -605,8 +649,7 @@ class FileContainerPanel(QWidget):
             dest = _unique_dest(self.folder, name)
             url = QUrl.fromLocalFile(os.path.abspath(src)).toString()
             try:
-                with open(dest, "w", encoding="utf-8") as f:
-                    f.write(f"[InternetShortcut]\nURL={url}\n")
+                _write_text_atomic(dest, f"[InternetShortcut]\nURL={url}\n")
                 made += 1
             except OSError as e:
                 logger.error(f"File container link failed for {src}: {e}")
@@ -716,9 +759,9 @@ class FileContainerPanel(QWidget):
             try:
                 dest = _unique_dest(target, os.path.basename(src))
                 if os.path.isdir(src):
-                    shutil.copytree(src, dest)
+                    _copy_atomic(src, dest, is_dir=True)
                 else:
-                    shutil.copy2(src, dest)
+                    _copy_atomic(src, dest, is_dir=False)
             except OSError as e:
                 logger.error(f"File container export failed for {src}: {e}")
 

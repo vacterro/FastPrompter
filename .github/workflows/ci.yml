@@ -25,8 +25,18 @@ jobs:
       - name: Install dependencies
         run: uv sync --group dev
 
+      - name: Compile
+        # catches import-time syntax errors before the long test run
+        run: uv run python -m compileall -q src FastPrompter.pyw
+
       - name: Lint
         run: uv run ruff check src/ tests/ tests_smoke/
+
+      - name: Security scan (Medium+ only)
+        # Low findings are intentional local desktop operations (startfile,
+        # try/except noise); Medium+ has a scoped # nosec per finding with a
+        # reason, so a new real finding turns this red.
+        run: uv run bandit -q -r src/fastprompter -ll
 
       - name: Test
         run: uv run pytest tests/ tests_smoke/ -q

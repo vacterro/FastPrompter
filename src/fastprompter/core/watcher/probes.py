@@ -18,6 +18,7 @@ from __future__ import annotations
 import glob
 import json
 import os
+import re
 
 IDLE = "idle"
 BUSY = "busy"
@@ -198,6 +199,11 @@ class SqliteProbe(Probe):
         self.path = path or ""
         self.watch = watch or "wal_mtime"
         self.table = table or ""
+        # the table name is interpolated into SQL below; it comes from the
+        # user's own adapters.toml, so a malformed or hostile value must be
+        # refused rather than interpolated into a query
+        self._table_ok = bool(re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*",
+                                           self.table))
 
     def _read(self):
         path = os.path.expanduser(os.path.expandvars(self.path))
@@ -211,14 +217,17 @@ class SqliteProbe(Probe):
             return tuple(stats) or None
 
         if self.watch == "max_rowid":
-            if not self.table or not os.path.isfile(path):
+            if not self._table_ok or not os.path.isfile(path):
                 return None
             import sqlite3
             # read-only, and never block the app that owns the file
             uri = f"file:{path}?mode=ro&immutable=0"
             with sqlite3.connect(uri, uri=True, timeout=0.5) as conn:
-                row = conn.execute(
-                    f"SELECT COALESCE(MAX(rowid), 0) FROM {self.table}").fetchone()
+                # self.table was validated as a plain SQLite identifier in
+                # __init__ (_table_ok) before it can be interpolated.
+                sql = (
+                    f"SELECT COALESCE(MAX(rowid), 0) FROM {self.table}")  # nosec B608 -- identifier validated in __init__
+                row = conn.execute(sql).fetchone()
             return ("rowid", row[0] if row else 0)
 
         return None

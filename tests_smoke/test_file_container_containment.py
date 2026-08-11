@@ -157,3 +157,62 @@ def test_unicode_and_spaces_stay_inside(panel):
         os.path.isfile(os.path.join(root, "Р·Р°РјРµС‚РєР° СЃ РїСЂРѕР±РµР»Р°РјРё"))
     p.new_folder(name="РїР°РїРєР° 1")
     assert os.path.isdir(os.path.join(root, "РїР°РїРєР° 1"))
+
+def _no_tmp_left(root):
+    for base, _dirs, files in os.walk(root):
+        for f in files:
+            if f.endswith(".fptmp"):
+                return False
+    return True
+
+
+def test_import_failure_leaves_no_partial_in_the_container(panel, monkeypatch):
+    root, p = panel
+    import shutil as _sh
+
+    src = os.path.join(_tmpdir, "partial_src.txt")
+    _write(src, "full content")
+
+    def _flaky_copy2(s, dst, *a, **k):
+        with open(dst, "w", encoding="utf-8") as f:
+            f.write("partial")
+        raise OSError("disk full mid-copy")
+
+    monkeypatch.setattr(_sh, "copy2", _flaky_copy2)
+    p.import_paths([src])
+
+    assert os.listdir(root) == []          # no partial file, no temp
+    assert _no_tmp_left(root)
+
+
+def test_export_failure_leaves_no_partial_in_the_target(panel, monkeypatch):
+    root, p = panel
+    import shutil as _sh
+
+    from PyQt6.QtWidgets import QFileDialog
+
+    _write(os.path.join(root, "to_export.txt"), "data")
+    target = os.path.join(_tmpdir, "export_target")
+    os.makedirs(target, exist_ok=True)
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory",
+                        staticmethod(lambda *a, **k: target))
+
+    def _flaky_copy2(s, dst, *a, **k):
+        with open(dst, "w", encoding="utf-8") as f:
+            f.write("partial")
+        raise OSError("disk full mid-copy")
+
+    monkeypatch.setattr(_sh, "copy2", _flaky_copy2)
+    p._export_all()
+
+    assert os.listdir(target) == []        # no partial export file
+    assert _no_tmp_left(target)
+
+
+def test_successful_import_leaves_no_temp_files(panel):
+    root, p = panel
+    src = os.path.join(_tmpdir, "clean_src.txt")
+    _write(src, "clean")
+    p.import_paths([src])
+    assert os.path.isfile(os.path.join(root, "clean_src.txt"))
+    assert _no_tmp_left(root)

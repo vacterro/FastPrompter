@@ -142,9 +142,13 @@ def read_agent_text_on_disk(adapter, tail=400, max_age_hours=6.0, now=None):
                     "SELECT name FROM sqlite_master WHERE type='table'")]
                 for table in tables:
                     try:
-                        rows = conn.execute(
-                            f'SELECT * FROM "{table}" '
-                            f"ORDER BY rowid DESC LIMIT {int(tail)}").fetchall()
+                        # `table` is read from this DB's own sqlite_master
+                        # catalog, so it is a genuine SQLite identifier, and
+                        # it is quoted on both sides.
+                        sql = (
+                            f'SELECT * FROM "{table}" '  # nosec B608 -- catalog identifier, quoted
+                            f"ORDER BY rowid DESC LIMIT {int(tail)}")
+                        rows = conn.execute(sql).fetchall()
                     except Exception:
                         continue
                     for row in rows:
