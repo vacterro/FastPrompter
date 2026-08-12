@@ -368,12 +368,15 @@ class WatcherMixin:
         thread = self._watcher_worker_thread
         self._watcher_worker_thread = None
         self._watcher_worker = None
+        success = True
         if thread is not None:
             try:
                 thread.quit()
-                thread.wait(5000)
+                from fastprompter.main import wait_thread_seconds
+                success = wait_thread_seconds(thread, 5.0)
             except Exception:
-                pass
+                success = False
+        return success
 
     def _watcher_on_send_result(self, intent, gen, result):
         """The worker's answer, applied on the GUI thread.
