@@ -128,6 +128,33 @@ def is_within_resolved(root, candidate):
         return False
 
 
+def capture_resolved_root(root):
+    """Canonical root identity captured before asynchronous dispatch."""
+    try:
+        return os.path.normcase(os.path.abspath(os.path.realpath(root)))
+    except (OSError, ValueError, TypeError):
+        return ""
+
+
+def is_within_captured_root(root, captured_root, candidate):
+    """Validate current root identity and candidate at mutation time.
+
+    Resolving both root and candidate only at mutation time is insufficient:
+    replacing root itself with a junction makes both resolve to the same
+    outside directory. ``captured_root`` pins the intended pre-dispatch root.
+    """
+    if not captured_root:
+        return False
+    intended = os.path.normcase(os.path.abspath(os.path.normpath(captured_root)))
+    if capture_resolved_root(root) != intended:
+        return False
+    try:
+        candidate_real = os.path.normcase(os.path.abspath(os.path.realpath(candidate)))
+        return os.path.commonpath([intended, candidate_real]) == intended
+    except (OSError, ValueError, TypeError):
+        return False
+
+
 # ---------------------------------------------------------------------------
 # Filesystem-name codec: DISPLAY name -> safe FILESYSTEM component.
 #

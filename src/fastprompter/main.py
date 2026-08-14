@@ -169,10 +169,31 @@ _SYNC_SHARED_WORKER = None
 _SYNC_SHARED_THREAD = None
 
 
-def wait_thread_seconds(thread, seconds):
-    """Safely wait for a QThread using milliseconds to prevent wait-unit drift.
-    Returns the boolean result of thread.wait()."""
-    return thread.wait(max(0, int(seconds * 1000)))
+def wait_thread_seconds(thread, timeout_s, label="QThread"):
+    """Wait for a QThread in seconds and log an explicit shutdown outcome."""
+    from fastprompter.core.logging import logger as _log
+
+    try:
+        timeout_ms = max(0, int(float(timeout_s) * 1000))
+    except (TypeError, ValueError):
+        _log.error("%s shutdown FAILED: invalid timeout %r", label, timeout_s)
+        return False
+    try:
+        stopped = bool(thread.wait(timeout_ms))
+    except Exception:
+        _log.exception("%s shutdown FAILED", label)
+        return False
+    if stopped:
+        _log.info("%s shutdown STOPPED", label)
+    else:
+        _log.error("%s shutdown TIMED_OUT after %.3f seconds", label, float(timeout_s))
+    return stopped
+
+
+def is_gui_thread():
+    """Whether current callback executes on QApplication's owner thread."""
+    app = QApplication.instance()
+    return app is None or QThread.currentThread() is app.thread()
 
 
 def sync_shutdown_global():
@@ -191,55 +212,102 @@ def sync_shutdown_global():
     global _SYNC_SHARED_WORKER, _SYNC_SHARED_THREAD
     thread = _SYNC_SHARED_THREAD
     worker = _SYNC_SHARED_WORKER
-    _SYNC_SHARED_WORKER = None
-    _SYNC_SHARED_THREAD = None
     success = True
     if thread is not None and thread.isRunning():
-        try:
-            thread.quit()
-            # QThread.wait takes MILLISECONDS; _SYNC_SHUTDOWN_TIMEOUT_S is
-            # seconds. Passing the raw value turned the bounded wait into a
-            # few milliseconds, so the worker thread could still be running
-            # at process exit (an access-violation class at teardown).
-            success = wait_thread_seconds(thread, _SYNC_SHUTDOWN_TIMEOUT_S)
-        except Exception:
-            success = False
-    if worker is not None or thread is not None:
-        _RETIRED_WORKERS.append((worker, thread))
+        thread.quit()
+        success = wait_thread_seconds(
+            thread, _SYNC_SHUTDOWN_TIMEOUT_S, "Sync worker"
+        )
+    if success:
+        _SYNC_SHARED_WORKER = None
+        _SYNC_SHARED_THREAD = None
+        if worker is not None or thread is not None:
+            _RETIRED_WORKERS.append((worker, thread))
     return success
 
 
 import threading
 
 _SYNC_WRITE_LOCK = threading.RLock()
+_SYNC_REQUEST_LOCK = threading.Lock()
+_SYNC_WRITE_SEQ = 0
+_SYNC_LATEST_REQUESTED = {}
 
-def _sync_mechanical_write(snapshot):
+
+def _sync_register_snapshot(snapshot):
+    """Give a snapshot physical publication ownership for its destinations."""
+    global _SYNC_WRITE_SEQ
+    with _SYNC_REQUEST_LOCK:
+        if snapshot.get("_write_seq") is None:
+            _SYNC_WRITE_SEQ += 1
+            snapshot["_write_seq"] = _SYNC_WRITE_SEQ
+        seq = snapshot["_write_seq"]
+        for dest in snapshot.get("files", ()):
+            key = os.path.normcase(os.path.abspath(dest))
+            _SYNC_LATEST_REQUESTED[key] = max(
+                seq, _SYNC_LATEST_REQUESTED.get(key, 0)
+            )
+    return snapshot
+
+
+def _sync_snapshot_is_latest(snapshot, dest):
+    seq = snapshot.get("_write_seq")
+    key = os.path.normcase(os.path.abspath(dest))
+    with _SYNC_REQUEST_LOCK:
+        return seq is not None and _SYNC_LATEST_REQUESTED.get(key) == seq
+
+
+def _sync_mechanical_write(snapshot, lock_timeout_s=None):
     """Mechanically writes a sync snapshot, protected by a process-level lock.
     Returns (written: list, errors: list)."""
+    _sync_register_snapshot(snapshot)
     written = []
     errors = []
     # Revalidate EVERY destination against the captured root AT MUTATION
     # TIME: a containment decision made at capture can be minutes old, and
     # a junction/symlink swapped in between could otherwise redirect the
     # write outside the root. Reparse-aware, not lexical.
-    from fastprompter.utils.path_safety import is_within_resolved
+    from fastprompter.utils.path_safety import is_within_captured_root
     root = snapshot.get("root") or ""
-    
-    with _SYNC_WRITE_LOCK:
+    root_identity = snapshot.get("root_identity") or ""
+
+    if lock_timeout_s is None:
+        acquired = _SYNC_WRITE_LOCK.acquire()
+    else:
+        acquired = _SYNC_WRITE_LOCK.acquire(
+            timeout=max(0.0, float(lock_timeout_s))
+        )
+    if not acquired:
+        return [], [("", "physical Sync write lock timed out")]
+    try:
         for dest, text in snapshot["files"].items():
-            if not is_within_resolved(root, dest):
+            if not is_within_captured_root(root, root_identity, dest):
                 errors.append((dest, "destination resolves outside the sync "
-                                     "root (junction/reparse point)"))
+                                     "root or the captured root changed"))
+                continue
+            if not _sync_snapshot_is_latest(snapshot, dest):
                 continue
             try:
                 os.makedirs(os.path.dirname(dest), exist_ok=True)
                 tmp = dest + ".tmp"
                 with open(tmp, "w", encoding="utf-8") as fh:
                     fh.write(text)
-                os.replace(tmp, dest)
+                # A newer generation may have arrived while this temp file was
+                # written. Stale physical writers may never publish over it.
+                key = os.path.normcase(os.path.abspath(dest))
+                with _SYNC_REQUEST_LOCK:
+                    if _SYNC_LATEST_REQUESTED.get(key) != snapshot.get("_write_seq"):
+                        try:
+                            os.remove(tmp)
+                        except OSError:
+                            pass
+                        continue
+                    os.replace(tmp, dest)
                 written.append(dest)
             except OSError as exc:
                 errors.append((dest, str(exc)))
+    finally:
+        _SYNC_WRITE_LOCK.release()
     return written, errors
 
 class _SyncWorker(QObject):
@@ -289,13 +357,24 @@ class _PortableBackupWorker(QObject):
             self.done.emit(gen, snapshot, False, str(exc))
 
 
+class _PortableBackupCompletionRelay(QObject):
+    """GUI-affine owner for portable-backup scheduler completion state."""
+
+    def complete(self, gen, snapshot, ok, err):
+        _backup_on_done(gen, snapshot, ok, err)
+
+
 # Process-wide portable-backup worker + coalescing state.
 _BACKUP_WORKER = None
 _BACKUP_THREAD = None
+_BACKUP_COMPLETION_RELAY = None
 _BACKUP_PENDING = None
 _BACKUP_INFLIGHT_GEN = 0
 _BACKUP_GEN = 0
+_BACKUP_LAST_SUCCESS_GEN = 0
+_BACKUP_LAST_FAILED_GEN = 0
 _BACKUP_SINK_INSTALLED = False
+_BACKUP_SHUTDOWN_TIMEOUT_S = 5.0
 
 # Retired worker/thread wrappers kept alive for the process lifetime: Python
 # teardown destroying a worker whose thread was stopped mid-reference is an
@@ -305,17 +384,19 @@ _RETIRED_WORKERS = []
 
 
 def _backup_ensure_worker():
-    global _BACKUP_WORKER, _BACKUP_THREAD
+    global _BACKUP_COMPLETION_RELAY, _BACKUP_WORKER, _BACKUP_THREAD
     if _BACKUP_WORKER is None:
         thread = QThread()
         thread.setObjectName("fastprompter-backup")
         worker = _PortableBackupWorker()
+        relay = _PortableBackupCompletionRelay()
         worker.moveToThread(thread)
         worker.dispatch.connect(worker._run)   # AFTER moveToThread: queued
-        worker.done.connect(_backup_on_done)
+        worker.done.connect(relay.complete)
         thread.start()
         _BACKUP_WORKER = worker
         _BACKUP_THREAD = thread
+        _BACKUP_COMPLETION_RELAY = relay
     return _BACKUP_WORKER
 
 
@@ -332,17 +413,23 @@ def _backup_drain():
 def _backup_on_done(gen, snapshot, ok, err):
     """A snapshot finished. Advances the throttle on success; a stale or
     failed completion still drains the newest pending (the sync lesson)."""
-    global _BACKUP_INFLIGHT_GEN, _BACKUP_GEN
+    global _BACKUP_INFLIGHT_GEN, _BACKUP_LAST_FAILED_GEN, _BACKUP_LAST_SUCCESS_GEN
     from fastprompter.core.logging import logger as _log
     from fastprompter.utils import portable_backup as _pb
+
+    if not is_gui_thread():
+        _log.critical("portable backup completion rejected outside GUI thread")
+        return
     
     if gen == _BACKUP_INFLIGHT_GEN:
         _BACKUP_INFLIGHT_GEN = 0
         
     if ok:
+        _BACKUP_LAST_SUCCESS_GEN = max(_BACKUP_LAST_SUCCESS_GEN, gen)
         if gen == _BACKUP_GEN:
             _pb.mark_backup_success()
     else:
+        _BACKUP_LAST_FAILED_GEN = max(_BACKUP_LAST_FAILED_GEN, gen)
         _log.error("portable backup failed in the worker: %s", err)
         # If the newest generation failed, clear the throttle so it is immediately retryable
         if gen == _BACKUP_GEN:
@@ -373,31 +460,34 @@ def _install_portable_backup_sink():
 def backup_worker_shutdown_global():
     """Bounded shutdown of the portable-backup worker at app exit.
 
-    The globals are nulled so a mid-session teardown can spawn a fresh worker
-    next time, and the retired wrappers are kept in a process-lifetime list:
+    On clean shutdown globals are nulled so a mid-session teardown can spawn a
+    fresh worker. On timeout the live owner remains installed and the caller
+    keeps the writer mutex. Retired wrappers are kept process-lifetime:
     Python teardown destroying a worker whose thread was stopped mid-reference
     is an access-violation class, and a stopped-thread wrapper that lives
     until exit is clean.
 
-    Portable backup is secondary; any pending snapshot is intentionally dropped
-    at exit. The primary SQLite database is already committed.
+    Portable backup is secondary; on clean shutdown any pending snapshot is
+    intentionally dropped. The primary SQLite database is already committed.
     """
-    global _BACKUP_WORKER, _BACKUP_THREAD, _BACKUP_PENDING, _BACKUP_INFLIGHT_GEN
+    global _BACKUP_COMPLETION_RELAY, _BACKUP_WORKER, _BACKUP_THREAD
+    global _BACKUP_PENDING, _BACKUP_INFLIGHT_GEN
     thread = _BACKUP_THREAD
     worker = _BACKUP_WORKER
-    _BACKUP_WORKER = None
-    _BACKUP_THREAD = None
-    _BACKUP_PENDING = None
-    _BACKUP_INFLIGHT_GEN = 0
     success = True
     if thread is not None and thread.isRunning():
-        try:
-            thread.quit()
-            success = wait_thread_seconds(thread, 5.0)
-        except Exception:
-            success = False
-    if worker is not None or thread is not None:
-        _RETIRED_WORKERS.append((worker, thread))
+        thread.quit()
+        success = wait_thread_seconds(
+            thread, _BACKUP_SHUTDOWN_TIMEOUT_S, "portable backup worker"
+        )
+    if success:
+        _BACKUP_WORKER = None
+        _BACKUP_THREAD = None
+        _BACKUP_COMPLETION_RELAY = None
+        _BACKUP_PENDING = None
+        _BACKUP_INFLIGHT_GEN = 0
+        if worker is not None or thread is not None:
+            _RETIRED_WORKERS.append((worker, thread))
     return success
 
 
@@ -514,6 +604,7 @@ class FastPrompter(
         self.conn = self.state.conn
         import threading
         self._undo_save_lock = threading.Lock()
+        self._undo_save_threads = set()
         self._load_undo_state()
         self.sound_manager = SoundManager(self, self.data)
         # One owner for the sound-event mapping. This was written out here as
@@ -2706,10 +2797,18 @@ class FastPrompter(
         if getattr(self, "_sync_gen", None) is not None:
             return
         self._sync_gen = 0
+        self._sync_owner = object()
         self._sync_inflight_gen = 0
+        self._sync_inflight_profile = None
+        self._sync_inflight_root = None
+        self._sync_completed_gen = 0
         self._sync_pending = None
         self._sync_shutting_down = False
         self._sync_worker = None
+        self._sync_timer = QTimer(self)
+        self._sync_timer.setSingleShot(True)
+        self._sync_timer.setInterval(_SYNC_DEBOUNCE_MS)
+        self._sync_timer.timeout.connect(self._sync_dispatch_pending)
 
     @property
     def _sync_busy(self):
@@ -2723,11 +2822,6 @@ class FastPrompter(
                 self._sync_inflight_gen = self._sync_gen or 1
         else:
             self._sync_inflight_gen = 0
-        self._sync_thread = None
-        self._sync_timer = QTimer(self)
-        self._sync_timer.setSingleShot(True)
-        self._sync_timer.setInterval(_SYNC_DEBOUNCE_MS)
-        self._sync_timer.timeout.connect(self._sync_dispatch_pending)
 
     def _capture_sync_snapshot(self, force=False):
         """Build the immutable write list for one sync run.
@@ -2741,7 +2835,11 @@ class FastPrompter(
         root = str(self.data.get("sync_path", "") or "").strip()
         if mode not in ("Silo", "Hierarchy") or not root:
             return None
-        from fastprompter.utils.path_safety import alloc_fs_names, is_within
+        from fastprompter.utils.path_safety import (
+            alloc_fs_names,
+            capture_resolved_root,
+            is_within,
+        )
         presets = self.data.get("temp_presets", [])
         if mode == "Silo":
             slots = [self.active_temp_slot]
@@ -2775,8 +2873,9 @@ class FastPrompter(
         if not files:
             return None
         return {"files": files, "root": root,
+                "root_identity": capture_resolved_root(root),
                 "profile": getattr(getattr(self, "state", None),
-                                   "profile_id", None)}
+                                    "profile_id", None)}
 
     def _sync_on_profile_change(self):
         """The active profile switched: any in-flight snapshot belongs to the
@@ -2813,6 +2912,8 @@ class FastPrompter(
         self._sync_init()
         self._sync_gen += 1
         snap["gen"] = self._sync_gen
+        snap["owner"] = self._sync_owner
+        _sync_register_snapshot(snap)
         self._sync_pending = snap
         self._sync_timer.start()
 
@@ -2826,6 +2927,8 @@ class FastPrompter(
         if self._sync_inflight_gen != 0:
             raise RuntimeError("attempted dispatch while physical job inflight")
         self._sync_inflight_gen = snap["gen"]
+        self._sync_inflight_profile = snap.get("profile")
+        self._sync_inflight_root = snap.get("root")
         self._sync_ensure_worker().dispatch.emit(snap, snap["gen"])
 
     def _sync_ensure_worker(self):
@@ -2870,7 +2973,20 @@ class FastPrompter(
         strand newer work. The drain lives OUTSIDE the stale guard so no early
         return can bypass it.
         """
-        is_current = gen == self._sync_gen
+        if not is_gui_thread():
+            from fastprompter.core.logging import logger as _log
+            _log.critical("Sync completion rejected outside GUI thread")
+            return
+        if snapshot.get("owner") is not self._sync_owner:
+            return
+        current_profile = getattr(getattr(self, "state", None), "profile_id", None)
+        current_root = str(self.data.get("sync_path", "") or "").strip()
+        is_current = (
+            gen == self._sync_gen
+            and snapshot.get("profile") == current_profile
+            and os.path.normcase(os.path.abspath(snapshot.get("root") or ""))
+            == os.path.normcase(os.path.abspath(current_root))
+        )
         if is_current:
             cache = getattr(self, "_sync_written", None)
             if cache is None:
@@ -2880,9 +2996,17 @@ class FastPrompter(
             for dest, err in errors:
                 from fastprompter.core.logging import logger
                 logger.warning("sync_to_disk failed for %s: %s", dest, err)
-        if gen == self._sync_inflight_gen:
+        owns_inflight = (
+            gen == self._sync_inflight_gen
+            and snapshot.get("profile") == self._sync_inflight_profile
+            and snapshot.get("root") == self._sync_inflight_root
+        )
+        if owns_inflight:
+            self._sync_completed_gen = gen
             self._sync_inflight_gen = 0
-        if self._sync_pending is not None:
+            self._sync_inflight_profile = None
+            self._sync_inflight_root = None
+        if owns_inflight and self._sync_pending is not None:
             self._sync_dispatch_pending()
 
     def _sync_shutdown(self, timeout_s=_SYNC_SHUTDOWN_TIMEOUT_S):
@@ -2912,6 +3036,8 @@ class FastPrompter(
         if final is not None:
             self._sync_gen += 1
             final["gen"] = self._sync_gen
+            final["owner"] = self._sync_owner
+            _sync_register_snapshot(final)
             self._sync_pending = final
         if not self._sync_busy and self._sync_pending is not None:
             self._sync_dispatch_pending()
@@ -2934,25 +3060,14 @@ class FastPrompter(
             from fastprompter.core.logging import logger as _log
             snap = final if final is not None else self._sync_pending
             if snap is not None:
-                # The fallback may attempt the same lock within a bounded deadline (0.0 means non-blocking, but we can wait briefly)
-                # Wait, we already waited in the event pump, so we'll just try to acquire the lock. If it's held by a genuinely hung
-                # filesystem thread, we skip and keep SQLite authoritative.
-                acquired = _SYNC_WRITE_LOCK.acquire(timeout=0.5)
-                if acquired:
-                    try:
-                        _log.warning("sync worker did not drain during shutdown; "
-                                     "flushing the final snapshot synchronously")
-                        written, errors = _sync_mechanical_write(snap)
-                        for dest in written:
-                            self._sync_written[dest] = snap["files"][dest]
-                        if errors:
-                            _log.error("sync fallback encountered errors: %s", errors)
-                    finally:
-                        _SYNC_WRITE_LOCK.release()
-                else:
-                    _log.warning("sync fallback could not acquire write lock "
-                                 "(filesystem genuinely hung); LOG DEGRADED MIRROR, "
-                                 "KEEP SQLITE AUTHORITATIVE, DO NOT START A SECOND CONCURRENT WRITER.")
+                _log.warning("sync worker did not drain during shutdown; "
+                             "attempting the final snapshot synchronously")
+                written, errors = _sync_mechanical_write(snap, lock_timeout_s=0.5)
+                for dest in written:
+                    self._sync_written[dest] = snap["files"][dest]
+                if errors:
+                    _log.error("sync fallback encountered errors; DEGRADED MIRROR, "
+                               "SQLite remains authoritative: %s", errors)
 
         if self._sync_busy:
             from fastprompter.core.logging import logger as _log2
@@ -2960,7 +3075,9 @@ class FastPrompter(
                           "mirror may be stale — the SQLite database is "
                           "authoritative")
         self._sync_pending = None
-        self._sync_busy = False
+        # Never falsify physical ownership. A timed-out worker remains inflight
+        # until its real done signal arrives (or global shutdown stops it).
+        return not self._sync_busy
     def init_ui(self):
         flags = Qt.WindowType.Window
         if self.data.get("normal_window", "False") != "True":
@@ -7044,7 +7161,20 @@ class FastPrompter(
             except Exception as e:
                 from fastprompter.core.logging import logger
                 logger.error(f"Failed to save undo state: {e}")
-        threading.Thread(target=save, args=(u_copy, r_copy), daemon=True).start()
+            finally:
+                self._undo_save_threads.discard(threading.current_thread())
+        thread = threading.Thread(target=save, args=(u_copy, r_copy), daemon=True)
+        self._undo_save_threads.add(thread)
+        thread.start()
+
+    def _wait_for_undo_saves(self, timeout_s=2.0):
+        """Wait bounded time for app-owned undo-file mutations to retire."""
+        deadline = time.monotonic() + max(0.0, float(timeout_s))
+        for thread in list(getattr(self, "_undo_save_threads", ())):
+            thread.join(max(0.0, deadline - time.monotonic()))
+        threads = getattr(self, "_undo_save_threads", set())
+        threads.difference_update(t for t in threads if not t.is_alive())
+        return not threads
 
     def _load_undo_state(self):
         import json
@@ -7562,14 +7692,17 @@ class FastPrompter(
             from fastprompter.core.logging import logger
             logger.debug("closeEvent: failed to capture silo view state")
         self.save_data_to_db(force=True)
+        self._close_workers_clean = True
         try:
             if hasattr(self, "_watcher_shutdown"):
-                self._watcher_shutdown()
+                if self._watcher_shutdown() is False:
+                    self._close_workers_clean = False
             if hasattr(self, "_sync_shutdown"):
                 self._sync_shutdown()
         except Exception:
             from fastprompter.core.logging import logger
             logger.debug("closeEvent: worker shutdown failed")
+            self._close_workers_clean = False
         super().closeEvent(event)
 
     def resizeEvent(self, event):
@@ -10608,35 +10741,94 @@ def main_entry():
     try:
         sys.exit(app.exec())
     finally:
-        # Destroy the window C++ side while QApplication is still alive. A
-        # window that survives to interpreter teardown races the retired sync
-        # worker's destruction and aborts the process with an access violation
-        # (0xC0000005 under full-suite load). deleteLater + processEvents
-        # unmounts the whole object tree deterministically here.
+        _shutdown_application(window, app, lock)
+
+
+def _shutdown_application(window, app, lock):
+    """Retire every app-owned writer before releasing process ownership.
+
+    A timeout is fail-closed: the mutex remains owned until process death, when
+    Windows marks it abandoned. That is safer than allowing a new primary to
+    start while an old worker can still publish files.
+    """
+    from fastprompter.core.logging import logger as _log
+
+    clean = True
+
+    # closeEvent performs final state capture, final DB commit, watcher stop,
+    # and final per-window Sync handling while the writer mutex is held.
+    try:
+        window.close()
+        if getattr(window, "_close_workers_clean", True) is False:
+            clean = False
+    except Exception:
+        _log.exception("application final state capture failed")
+        clean = False
+
+    # Retire IPC and live SQLite on every event-loop exit, not only Quit-menu.
+    try:
+        ipc = getattr(window, "ipc", None)
+        if ipc is not None:
+            ipc.close()
+    except Exception:
+        _log.exception("IPC shutdown failed")
+        clean = False
+    try:
+        conn = getattr(window, "conn", None)
+        state = getattr(window, "state", None)
+        if conn is None and state is not None:
+            conn = getattr(state, "conn", None)
+        if conn is not None:
+            conn.close()
+        window.conn = None
+        if state is not None:
+            state.conn = None
+    except Exception:
+        _log.exception("database retirement failed")
+        clean = False
+
+    try:
+        if getattr(window, "_wait_for_undo_saves", lambda: True)() is False:
+            _log.error("undo writer shutdown TIMED_OUT")
+            clean = False
+    except Exception:
+        _log.exception("undo writer shutdown FAILED")
+        clean = False
+
+    shutdowns = [
+        ("Sync", sync_shutdown_global),
+        ("portable backup", backup_worker_shutdown_global),
+    ]
+    try:
+        from fastprompter.ui.file_container import container_worker_shutdown_global
+        shutdowns.append(("File Container", container_worker_shutdown_global))
+    except Exception:
+        _log.exception("File Container shutdown import FAILED")
+        clean = False
+
+    for name, shutdown in shutdowns:
         try:
-            window.close()
+            if shutdown() is False:
+                _log.error("%s worker shutdown TIMED_OUT", name)
+                clean = False
+        except Exception:
+            _log.exception("%s worker shutdown FAILED", name)
+            clean = False
+
+    if clean:
+        # C++ destruction is non-mutating and happens while QApplication lives.
+        try:
             window.deleteLater()
             app.processEvents()
         except Exception:
-            pass
-        # the process-wide workers get explicit, bounded shutdowns
-        sync_shutdown_global()
-        try:
-            backup_worker_shutdown_global()
-        except Exception:
-            pass
-        try:
-            from fastprompter.ui.file_container import (
-                container_worker_shutdown_global,
-            )
-            container_worker_shutdown_global()
-        except Exception:
-            pass
+            _log.exception("window destruction FAILED")
+            clean = False
 
-        # Ownership must be released during normal shutdown; a process that
-        # dies without it abandons the mutex and the OS recovers it.
-        # This MUST be the last thing we do, as it releases writer ownership.
+    if clean:
         lock.release()
+    else:
+        _log.critical("writer mutex retained: mutating teardown did not stop cleanly")
+    return clean
 
 
 def _show_startup_diagnostic(reason):

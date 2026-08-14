@@ -7,7 +7,9 @@ os.path.join cannot be tricked into discarding the root).
 """
 
 import os
+import shutil
 import sys
+import threading
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -15,6 +17,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import tempfile
 
 import pytest
+from PyQt6.QtCore import QThread
 from PyQt6.QtWidgets import QApplication
 
 import fastprompter.core.state as state_mod
@@ -73,6 +76,20 @@ def _write(path, text="payload"):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         f.write(text)
+
+
+def _reparse_ok():
+    try:
+        base = tempfile.mkdtemp()
+        target = tempfile.mkdtemp()
+        link = os.path.join(base, "link")
+        os.symlink(target, link, target_is_directory=True)
+        os.rmdir(link)
+        os.rmdir(base)
+        os.rmdir(target)
+        return True
+    except (OSError, NotImplementedError):
+        return False
 
 
 @pytest.mark.parametrize("bad", ["..\\evil.txt", "C:\\evil.txt", "c:/evil.txt", "..", "CON.txt"])
@@ -368,10 +385,10 @@ class TestAsyncContainerOps:
         calls = {"n": 0}
         real_copy = fc._copy_atomic
 
-        def slow_copy(s, d, is_dir):
+        def slow_copy(s, d, is_dir, root=None, root_identity=None):
             calls["n"] += 1
             _t.sleep(0.5)
-            return real_copy(s, d, is_dir)
+            return real_copy(s, d, is_dir, root, root_identity)
 
         monkeypatch.setattr(fc, "_copy_atomic", slow_copy)
         t0 = _t.monotonic()
@@ -387,3 +404,258 @@ class TestAsyncContainerOps:
             _t.sleep(0.01)
         assert os.path.exists(os.path.join(root, "big_src.txt"))
         assert calls["n"] == 1
+
+    def test_explicit_commands_finish_fifo_and_report_every_result(
+        self, panel, monkeypatch, caplog
+    ):
+        import threading
+        import time as _t
+
+        from fastprompter.ui import file_container as fc
+
+        root, p = panel
+        src_a = os.path.join(_tmpdir, "command_a.txt")
+        src_b = os.path.join(_tmpdir, "command_b.txt")
+        dest_a = os.path.join(root, "command_a.txt")
+        dest_b = os.path.join(root, "command_b.txt")
+        _write(src_a, "A")
+        _write(src_b, "B")
+
+        started = threading.Event()
+        release = threading.Event()
+        events = []
+        real_copy = fc._copy_atomic
+
+        def command_copy(
+            src, dest, is_dir, intended_root=None, root_identity=None
+        ):
+            events.append(("start", os.path.basename(src)))
+            if src == src_a:
+                started.set()
+                assert release.wait(5.0), "test did not release command A"
+                events.append(("fail", os.path.basename(src)))
+                raise RuntimeError("command A exploded")
+            result = real_copy(
+                src, dest, is_dir, intended_root, root_identity
+            )
+            events.append(("done", os.path.basename(src)))
+            return result
+
+        monkeypatch.setattr(fc, "_copy_atomic", command_copy)
+        request_a = p._dispatch_container_ops(
+            [("copy", src_a, dest_a, False)]
+        )
+        assert started.wait(2.0), "command A never reached worker"
+        request_b = p._dispatch_container_ops(
+            [("copy", src_b, dest_b, False)]
+        )
+        release.set()
+
+        deadline = _t.monotonic() + 5.0
+        while _t.monotonic() < deadline:
+            _app.processEvents()
+            if os.path.isfile(dest_b):
+                break
+            _t.sleep(0.01)
+
+        assert request_a != request_b
+        assert request_a and request_b
+        assert not os.path.exists(dest_a)
+        assert open(dest_b, encoding="utf-8").read() == "B"
+        assert events == [
+            ("start", "command_a.txt"),
+            ("fail", "command_a.txt"),
+            ("start", "command_b.txt"),
+            ("done", "command_b.txt"),
+        ]
+        assert request_a in caplog.text
+        assert "command A exploded" in caplog.text
+
+    def test_completion_is_delivered_only_to_originating_panel(
+        self, panel, monkeypatch
+    ):
+        import time as _t
+
+        from fastprompter.ui import file_container as fc
+
+        root, origin = panel
+        other_root = os.path.join(_tmpdir, "other_panel")
+        os.makedirs(other_root, exist_ok=True)
+        other = FileContainerPanel(origin.main_win)
+        other.open_for(other_root)
+        monkeypatch.setattr(fc, "_async_eligible", lambda items: True)
+        worker = fc.container_worker()
+        worker.done.connect(other._on_container_done)
+        other._container_done_worker = worker
+
+        origin_refreshes = []
+        other_refreshes = []
+        monkeypatch.setattr(origin, "refresh", lambda: origin_refreshes.append(1))
+        monkeypatch.setattr(other, "refresh", lambda: other_refreshes.append(1))
+
+        src = os.path.join(_tmpdir, "owned_command.txt")
+        _write(src, "owned")
+        origin.import_paths([src])
+
+        deadline = _t.monotonic() + 5.0
+        while _t.monotonic() < deadline:
+            _app.processEvents()
+            if origin_refreshes:
+                break
+            _t.sleep(0.01)
+
+        assert os.path.isfile(os.path.join(root, "owned_command.txt"))
+        assert origin_refreshes
+        assert other_refreshes == []
+        other.close()
+
+    def test_real_worker_completion_returns_to_gui_thread(
+        self, panel, monkeypatch
+    ):
+        import time as _t
+
+        from fastprompter.ui import file_container as fc
+
+        root, p = panel
+        src = os.path.join(_tmpdir, "affinity_source.txt")
+        _write(src, "affinity")
+        worker_threads = []
+        completion_threads = []
+        real_copy = fc._copy_atomic
+        real_done = p._on_container_done
+
+        def record_copy(*args, **kwargs):
+            worker_threads.append(QThread.currentThread())
+            return real_copy(*args, **kwargs)
+
+        def record_done(*args):
+            completion_threads.append(QThread.currentThread())
+            return real_done(*args)
+
+        monkeypatch.setattr(fc, "_async_eligible", lambda items: True)
+        monkeypatch.setattr(fc, "_copy_atomic", record_copy)
+        monkeypatch.setattr(p, "_on_container_done", record_done)
+        p._container_done_worker = None
+        p.import_paths([src])
+        deadline = _t.monotonic() + 5.0
+        while _t.monotonic() < deadline:
+            _app.processEvents()
+            if completion_threads:
+                break
+            _t.sleep(0.01)
+
+        assert os.path.isfile(os.path.join(root, "affinity_source.txt"))
+        assert worker_threads == [fc._CONTAINER_THREAD]
+        assert completion_threads == [_app.thread()]
+
+    @pytest.mark.skipif(not _reparse_ok(), reason="cannot create junctions/symlinks")
+    @pytest.mark.parametrize("operation", ["copy", "move"])
+    def test_root_swap_fails_closed_and_move_keeps_source(
+        self, panel, monkeypatch, tmp_path, caplog, operation
+    ):
+        import time as _t
+
+        from fastprompter.ui import file_container as fc
+
+        root, p = panel
+        outside = str(tmp_path / "outside-swap")
+        os.makedirs(outside)
+        src = str(tmp_path / f"source-{operation}.txt")
+        _write(src, operation)
+
+        entered = threading.Event()
+        release = threading.Event()
+        real_copy = fc._copy_atomic
+        real_move = fc._move_into_container
+
+        def blocked_copy(*args, **kwargs):
+            entered.set()
+            assert release.wait(5.0), "test did not release copy"
+            return real_copy(*args, **kwargs)
+
+        def blocked_move(*args, **kwargs):
+            entered.set()
+            assert release.wait(5.0), "test did not release move"
+            return real_move(*args, **kwargs)
+
+        monkeypatch.setattr(fc, "_async_eligible", lambda items: True)
+        monkeypatch.setattr(fc, "_copy_atomic", blocked_copy)
+        monkeypatch.setattr(fc, "_move_into_container", blocked_move)
+        p.import_paths([src], do_move=operation == "move")
+        assert entered.wait(2.0), f"{operation} never reached worker"
+
+        shutil.rmtree(root)
+        os.symlink(outside, root, target_is_directory=True)
+        release.set()
+
+        deadline = _t.monotonic() + 5.0
+        while _t.monotonic() < deadline:
+            _app.processEvents()
+            if "captured container root" in caplog.text:
+                break
+            _t.sleep(0.01)
+
+        assert os.listdir(outside) == []
+        assert os.path.isfile(src), "MOVE source must survive failed publication"
+        assert "captured container root" in caplog.text
+
+    @pytest.mark.skipif(not _reparse_ok(), reason="cannot create junctions/symlinks")
+    def test_export_policy_allows_external_destination(self, panel, tmp_path):
+        from fastprompter.ui.file_container import _copy_atomic
+
+        _root, _panel = panel
+        target = str(tmp_path / "user-selected-export")
+        os.makedirs(target)
+        src = str(tmp_path / "export-source.txt")
+        dest = os.path.join(target, "exported.txt")
+        _write(src, "external export")
+
+        _copy_atomic(src, dest, False, root=None, root_identity=None)
+        assert open(dest, encoding="utf-8").read() == "external export"
+
+    @pytest.mark.skipif(not _reparse_ok(), reason="cannot create junctions/symlinks")
+    def test_async_export_rejects_swapped_user_destination(
+        self, panel, monkeypatch, tmp_path, caplog
+    ):
+        import time as _t
+
+        from fastprompter.ui import file_container as fc
+
+        _root, p = panel
+        target = str(tmp_path / "selected-export-target")
+        outside = str(tmp_path / "outside-export-target")
+        os.makedirs(target)
+        os.makedirs(outside)
+        src = str(tmp_path / "export-swap-source.txt")
+        dest = os.path.join(target, "exported.txt")
+        _write(src, "export payload")
+
+        entered = threading.Event()
+        release = threading.Event()
+        real_copy = fc._copy_atomic
+
+        def blocked_copy(*args, **kwargs):
+            entered.set()
+            assert release.wait(5.0), "test did not release export"
+            return real_copy(*args, **kwargs)
+
+        monkeypatch.setattr(fc, "_copy_atomic", blocked_copy)
+        p._dispatch_container_ops(
+            [("copy", src, dest, False)], is_export=True
+        )
+        assert entered.wait(2.0), "export never reached worker"
+
+        os.rmdir(target)
+        os.symlink(outside, target, target_is_directory=True)
+        release.set()
+
+        deadline = _t.monotonic() + 5.0
+        while _t.monotonic() < deadline:
+            _app.processEvents()
+            if "captured container root" in caplog.text:
+                break
+            _t.sleep(0.01)
+
+        assert os.listdir(outside) == []
+        assert os.path.isfile(src)
+        assert "captured container root" in caplog.text

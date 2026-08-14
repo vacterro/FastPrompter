@@ -42,6 +42,7 @@ TICK_MS = 900
 # thread, so a slow debugger can cost the GUI a bounded 500 ms, never many
 # seconds.
 _CDP_PROBE_TIMEOUT = 0.5
+_WATCHER_SHUTDOWN_TIMEOUT_S = 5.0
 
 
 class _WatcherSendWorker(QObject):
@@ -59,7 +60,6 @@ class _WatcherSendWorker(QObject):
 
     def __init__(self):
         super().__init__()
-        self.dispatch.connect(self._run)
 
     def _run(self, sender, intent, target, gen):
         try:
@@ -352,6 +352,7 @@ class WatcherMixin:
             thread.setObjectName("fastprompter-watcher-send")
             worker = _WatcherSendWorker()
             worker.moveToThread(thread)
+            worker.dispatch.connect(worker._run)  # AFTER moveToThread: queued
             worker.done.connect(self._watcher_on_send_result)
             thread.start()
             self._watcher_worker = worker
@@ -366,16 +367,16 @@ class WatcherMixin:
         worker is a leak, not a hazard.
         """
         thread = self._watcher_worker_thread
-        self._watcher_worker_thread = None
-        self._watcher_worker = None
         success = True
-        if thread is not None:
-            try:
-                thread.quit()
-                from fastprompter.main import wait_thread_seconds
-                success = wait_thread_seconds(thread, 5.0)
-            except Exception:
-                success = False
+        if thread is not None and thread.isRunning():
+            thread.quit()
+            from fastprompter.main import wait_thread_seconds
+            success = wait_thread_seconds(
+                thread, _WATCHER_SHUTDOWN_TIMEOUT_S, "watcher worker"
+            )
+        if success:
+            self._watcher_worker_thread = None
+            self._watcher_worker = None
         return success
 
     def _watcher_on_send_result(self, intent, gen, result):
@@ -386,6 +387,10 @@ class WatcherMixin:
         arm of a new run, or a superseding dispatch bumps the token — the
         stale result is dropped rather than reported as if it happened.
         """
+        from fastprompter.main import is_gui_thread
+        if not is_gui_thread():
+            logger.critical("watcher completion rejected outside GUI thread")
+            return
         try:
             if gen != self._watcher_send_gen:
                 return                    # stale: a newer run owns the watcher

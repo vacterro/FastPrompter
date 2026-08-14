@@ -24,6 +24,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import tempfile
 
 import pytest
+from PyQt6.QtCore import QThread
 from PyQt6.QtWidgets import QApplication
 
 import fastprompter.core.state as state_mod
@@ -280,4 +281,41 @@ class TestRealWorker:
             time.sleep(0.01)
         assert engine.sent_count == 1, "the worker result never arrived"
         assert win.watcher_log().to_list(), "the send must be logged"
+        win.watcher_disarm("done")
+
+    def test_worker_send_and_completion_use_expected_threads(self, win, monkeypatch):
+        _arm(win, monkeypatch)
+        slot, item = _queue_with_item(win, "hello")
+        intent = _intent_for(item, slot)
+        engine = win.watcher_engine()
+        engine.state = "sending"
+        engine.pending = intent
+        worker_threads = []
+        completion_threads = []
+
+        class Sender:
+            def send(self, _intent, _target):
+                worker_threads.append(QThread.currentThread())
+                return SendResult(True, "sent", "hello")
+
+        real_done = win._watcher_on_send_result
+
+        def record_done(*args):
+            completion_threads.append(QThread.currentThread())
+            return real_done(*args)
+
+        assert win._watcher_shutdown() is True
+        monkeypatch.setattr(win, "_watcher_sender", Sender())
+        monkeypatch.setattr(win, "_watcher_on_send_result", record_done)
+        win._watcher_dispatch_send(intent)
+
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline:
+            _app.processEvents()
+            if completion_threads:
+                break
+            time.sleep(0.01)
+
+        assert worker_threads == [win._watcher_worker_thread]
+        assert completion_threads == [_app.thread()]
         win.watcher_disarm("done")

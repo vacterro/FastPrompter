@@ -12,8 +12,10 @@ import pytest
 
 from fastprompter.utils.path_safety import (
     alloc_fs_names,
+    capture_resolved_root,
     fs_component,
     is_within,
+    is_within_captured_root,
     is_within_resolved,
     safe_join,
     validate_component,
@@ -144,6 +146,12 @@ def test_no_file_is_written_outside_root(tmp_path):
         joined, reason = safe_join(root, name)
         assert joined is None, (name, joined)
     assert os.listdir(outside) == []
+
+
+def test_empty_captured_root_identity_fails_closed(tmp_path):
+    root = str(tmp_path / "root")
+    os.makedirs(root)
+    assert is_within_captured_root(root, "", os.path.join(root, "file.txt")) is False
 
 
 # ---------------------------------------------------------------------------
@@ -303,3 +311,16 @@ class TestReparseContainment:
         alias = os.path.join(str(tmp_path), "alias_root")
         os.symlink(real, alias, target_is_directory=True)
         assert is_within_resolved(alias, os.path.join(alias, "file.md"))
+
+    def test_replacing_root_itself_invalidates_captured_identity(self, tmp_path):
+        root = str(tmp_path / "root")
+        outside = str(tmp_path / "outside")
+        os.makedirs(root)
+        os.makedirs(outside)
+        identity = capture_resolved_root(root)
+        os.rmdir(root)
+        os.symlink(outside, root, target_is_directory=True)
+
+        candidate = os.path.join(root, "escaped.txt")
+        assert is_within_resolved(root, candidate) is True
+        assert is_within_captured_root(root, identity, candidate) is False

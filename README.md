@@ -150,8 +150,8 @@ Mechanisms, not marketing:
   `DISARMED → ARMED → WATCHING → SENDING` states with settle, rate and
   failure boundaries (`core/watcher/engine.py`).
 - **Tests** — a unit suite plus a smoke/integration suite that boots the real
-  application offscreen; CI runs ruff and the full suite on `windows-latest`
-  (see [Development](#development)).
+  application offscreen; CI gates compilation, ruff, Bandit Medium+, and the
+  full suite on `windows-latest` (see [Development](#development)).
 
 ## Core features
 
@@ -233,19 +233,23 @@ More images live in the [Wiki gallery](https://github.com/vacterro/FastPrompter/
 
 ```powershell
 uv sync --group dev
+uv run python -m compileall -q src FastPrompter.pyw
 uv run ruff check src/ tests/ tests_smoke/
+uv run bandit -q -r src/fastprompter -ll
 uv run pytest tests/ tests_smoke/ -q
 ```
 
-- The suite at v0.8.36 collects **1975 tests** — **1134 unit tests** in
-  `tests/` plus **841 offscreen real-app integration/smoke tests** in
-  `tests_smoke/` — and runs **1973 passed, 2 skipped** (about 20 minutes).
-  The count changes with every release; get the live number with
+- The current suite collects **2016 tests** across `tests/` and the offscreen
+  real-app integration suite in `tests_smoke/`; the latest full run completed
+  **2014 passed, 2 skipped** in 25 minutes. The count changes with every
+  release; get the live number with
   `uv run pytest tests/ tests_smoke/ --collect-only -q`.
-- CI (GitHub Actions on `windows-latest`) runs ruff and the full test suite on
-  every push and pull request; pre-commit runs ruff on commit.
-- `mypy`, `pyright` and `bandit` are declared dev dependencies but are not
-  currently gating CI or pre-commit.
+- CI (GitHub Actions on `windows-latest`) runs all four commands above on every
+  push to `main` and every pull request. Any failure blocks the job.
+- Pre-commit runs ruff with fixes, YAML validation, merge-conflict detection,
+  and a 500 KB added-file limit. It does not run the full CI matrix.
+- `mypy` and `pyright` are declared dev dependencies but do not currently gate
+  CI or pre-commit. Bandit does gate CI at Medium severity and above (`-ll`).
 
 ## Documentation & Wiki
 

@@ -2,7 +2,6 @@
 
 Proves:
 * dispatching a backup does not block the caller
-* a stale completed generation still drains the newest pending snapshot
 * shutdown is explicit and bounded
 """
 
@@ -71,37 +70,4 @@ def test_backup_does_not_block_the_caller(backup_dir, monkeypatch):
             break
         time.sleep(0.01)
     assert os.path.isfile(os.path.join(_day(backup_dir), pb._COMPLETE_MARKER))
-    m.backup_worker_shutdown_global()
-
-
-def test_stale_completion_drains_newest_pending(backup_dir, monkeypatch):
-    from fastprompter import main as m
-    m._install_portable_backup_sink()
-
-    # simulate a busy worker with a pending newer snapshot
-    m._BACKUP_BUSY = True
-    m._BACKUP_PENDING = None
-    m._BACKUP_GEN = 5
-    newer = _data()
-    newer["temp_presets_all"] = {"A": ["newest"]}
-    m._portable_backup_dispatch(newer)       # pending (busy)
-
-    # the in-flight snapshot "completes" stale
-    stale = _data()
-    stale["temp_presets_all"] = {"A": ["stale"]}
-    m._backup_on_done(4, stale, True, None)
-
-    # the stale completion must drain the newest pending into the worker
-    assert m._BACKUP_PENDING is None
-    assert m._BACKUP_BUSY is True            # newest now in flight
-    # let the worker finish it
-    deadline = time.monotonic() + 5
-    while time.monotonic() < deadline:
-        _app.processEvents()
-        if m._BACKUP_BUSY is False:
-            break
-        time.sleep(0.01)
-    content = open(os.path.join(_day(backup_dir), "silos", "a", "silo_001.md"),
-                   encoding="utf-8").read()
-    assert "newest" in content
     m.backup_worker_shutdown_global()

@@ -61,6 +61,11 @@ def _teardown_window(w):
     if getattr(w, "state", None) is not None:
         w.state.conn = None      # skip final DB write on close
     w.conn = None
+    if hasattr(w, "tray_icon") and w.tray_icon and not sip.isdeleted(w.tray_icon):
+        w.tray_icon.hide()
+        w.tray_icon.setVisible(False)
+        w.tray_icon.setParent(None)
+        w.tray_icon.deleteLater()
     w.close()                    # close BEFORE scheduling the delete
     w.deleteLater()
     QApplication.processEvents()
@@ -9988,7 +9993,7 @@ def _sync_setup(win, tmp_path, mode):
     return tmp_path
 
 
-def _pump_sync(tmp_path, timeout=5.0):
+def _pump_sync(win, tmp_path, timeout=5.0):
     """Wait for the async sync worker to land its writes."""
     import time as _t
 
@@ -9996,7 +10001,9 @@ def _pump_sync(tmp_path, timeout=5.0):
     deadline = _t.monotonic() + timeout
     while _t.monotonic() < deadline:
         _QA.processEvents()
-        if list(tmp_path.rglob("*.md")):
+        if (list(tmp_path.rglob("*.md"))
+                and not win._sync_busy
+                and win._sync_pending is None):
             _QA.processEvents()
             return
         _t.sleep(0.01)
@@ -10039,7 +10046,7 @@ def test_sync_silo_mode_mirrors_active_slot(win, tmp_path):
     win.data["temp_presets"][0] = "# hello sync\nbody line"
     win.active_temp_slot = 0
     win.sync_to_disk(force=True)
-    _pump_sync(tmp_path)
+    _pump_sync(win, tmp_path)
     files = list(tmp_path.rglob("*.md"))
     assert len(files) == 1
     assert files[0].read_text(encoding="utf-8") == "# hello sync\nbody line"
@@ -10052,7 +10059,7 @@ def test_sync_hierarchy_mirrors_every_nonempty_silo(win, tmp_path):
         presets.append("")
     presets[0], presets[1], presets[2] = "# one", "# two", ""
     win.sync_to_disk(force=True)
-    _pump_sync(tmp_path)
+    _pump_sync(win, tmp_path)
     files = list(tmp_path.rglob("*.md"))
     assert len(files) == 2          # the empty silo is skipped
     assert {f.read_text(encoding="utf-8") for f in files} == {"# one", "# two"}
@@ -10065,11 +10072,11 @@ def test_sync_skips_unchanged_text(win, tmp_path):
     win.data["temp_presets"][0] = "# stable\nbody v1"
     win.active_temp_slot = 0
     win.sync_to_disk(force=True)
-    _pump_sync(tmp_path)
+    _pump_sync(win, tmp_path)
     target = list(tmp_path.rglob("*.md"))[0]
     target.write_text("TOUCHED", encoding="utf-8")
     win.sync_to_disk()              # unchanged -> must not rewrite
-    _pump_sync(tmp_path)
+    _pump_sync(win, tmp_path)
     assert target.read_text(encoding="utf-8") == "TOUCHED"
     win.data["temp_presets"][0] = "# stable\nbody v2"
     win.sync_to_disk()              # body changed -> same file, rewritten

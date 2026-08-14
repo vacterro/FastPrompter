@@ -16,6 +16,8 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
+import time
 import uuid
 
 from PyQt6.QtCore import (
@@ -47,7 +49,12 @@ from PyQt6.QtWidgets import (
 
 from fastprompter.core.logging import logger
 from fastprompter.core.translations import tr
-from fastprompter.utils.path_safety import safe_join, validate_component
+from fastprompter.utils.path_safety import (
+    capture_resolved_root,
+    is_within_captured_root,
+    safe_join,
+    validate_component,
+)
 
 _IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".ico"}
 _SLUG_STRIP = re.compile(r"[#*_`•\[\]]+")
@@ -64,6 +71,9 @@ _ASYNC_THRESHOLD_FILES = 20
 # worker: one thread, never torn down per-window, explicit global shutdown).
 _CONTAINER_WORKER = None
 _CONTAINER_THREAD = None
+_CONTAINER_SHUTDOWN_TIMEOUT_S = 5.0
+_CONTAINER_PENDING = 0
+_CONTAINER_PENDING_CONDITION = threading.Condition()
 
 
 class _ContainerOpWorker(QObject):
@@ -79,26 +89,53 @@ class _ContainerOpWorker(QObject):
     self-connection made before moveToThread runs ``_run`` on the GUI thread.
     """
 
-    dispatch = pyqtSignal(object, int)                # request, generation
-    done = pyqtSignal(int, object, object, object)    # gen, request, done, errors
+    dispatch = pyqtSignal(object, object)              # request, request_id
+    done = pyqtSignal(object, object, object, object)  # id, request, done, errors
 
     def __init__(self):
         super().__init__()
 
-    def _run(self, request, req_id):
+    def _run(self, request, request_id):
+        global _CONTAINER_PENDING
         done = []
         errors = []
         root = request.get("root")
-        for op, src, dest, is_dir in request["items"]:
-            try:
-                if op == "move":
-                    _move_into_container(src, dest, root)
-                else:
-                    _copy_atomic(src, dest, is_dir, root)
-                done.append(dest)
-            except OSError as exc:
-                errors.append((src, str(exc)))
-        self.done.emit(req_id, request, done, errors)
+        root_identity = request.get("root_identity")
+        try:
+            for item in request.get("items", ()):
+                try:
+                    op, src, dest, is_dir = item
+                    mutation_root = root
+                    mutation_identity = root_identity
+                    if request.get("policy") == "EXTERNAL_EXPORT":
+                        mutation_root = os.path.dirname(dest)
+                        key = os.path.normcase(os.path.abspath(mutation_root))
+                        mutation_identity = request["destination_identities"].get(key)
+                    if op == "move":
+                        _move_into_container(
+                            src, dest, mutation_root, mutation_identity
+                        )
+                    else:
+                        _copy_atomic(
+                            src, dest, is_dir, mutation_root, mutation_identity
+                        )
+                    done.append(dest)
+                except Exception as exc:
+                    src = item[1] if len(item) > 1 else repr(item)
+                    errors.append((src, str(exc)))
+                    logger.error(
+                        "File Container command %s (%s) failed for %s: %s",
+                        request_id, request.get("kind", "unknown"), src, exc,
+                    )
+            logger.info(
+                "File Container command %s completed: %d succeeded, %d failed",
+                request_id, len(done), len(errors),
+            )
+            self.done.emit(request_id, request, done, errors)
+        finally:
+            with _CONTAINER_PENDING_CONDITION:
+                _CONTAINER_PENDING -= 1
+                _CONTAINER_PENDING_CONDITION.notify_all()
 
 
 def container_worker():
@@ -116,6 +153,22 @@ def container_worker():
     return _CONTAINER_WORKER
 
 
+def dispatch_container_command(request, request_id):
+    """Queue one FIFO command and track its complete physical lifetime."""
+    global _CONTAINER_PENDING
+    worker = container_worker()
+    with _CONTAINER_PENDING_CONDITION:
+        _CONTAINER_PENDING += 1
+    try:
+        worker.dispatch.emit(request, request_id)
+    except Exception:
+        with _CONTAINER_PENDING_CONDITION:
+            _CONTAINER_PENDING -= 1
+            _CONTAINER_PENDING_CONDITION.notify_all()
+        raise
+    return worker
+
+
 def container_worker_shutdown_global():
     """Stop the shared container worker at application exit (bounded).
 
@@ -127,18 +180,30 @@ def container_worker_shutdown_global():
     global _CONTAINER_WORKER, _CONTAINER_THREAD
     thread = _CONTAINER_THREAD
     worker = _CONTAINER_WORKER
-    _CONTAINER_WORKER = None
-    _CONTAINER_THREAD = None
     success = True
+    deadline = time.monotonic() + _CONTAINER_SHUTDOWN_TIMEOUT_S
+    with _CONTAINER_PENDING_CONDITION:
+        while _CONTAINER_PENDING and time.monotonic() < deadline:
+            _CONTAINER_PENDING_CONDITION.wait(
+                max(0.0, deadline - time.monotonic())
+            )
+        if _CONTAINER_PENDING:
+            logger.error(
+                "File Container worker shutdown TIMED_OUT with %d command(s) pending",
+                _CONTAINER_PENDING,
+            )
+            return False
     if thread is not None and thread.isRunning():
-        try:
-            thread.quit()
-            from fastprompter.main import wait_thread_seconds
-            success = wait_thread_seconds(thread, 5.0)
-        except Exception:
-            success = False
-    if worker is not None or thread is not None:
-        _RETIRED_CONTAINER_WORKERS.append((worker, thread))
+        thread.quit()
+        from fastprompter.main import wait_thread_seconds
+        success = wait_thread_seconds(
+            thread, max(0.0, deadline - time.monotonic()), "File Container worker"
+        )
+    if success:
+        _CONTAINER_WORKER = None
+        _CONTAINER_THREAD = None
+        if worker is not None or thread is not None:
+            _RETIRED_CONTAINER_WORKERS.append((worker, thread))
     return success
 
 
@@ -247,7 +312,19 @@ def _unique_dest(folder, name):
     return os.path.join(folder, f"{stem} ({n}){ext}")
 
 
-def _publish_new_file(tmp, dest):
+def _require_container_destination(root, root_identity, candidate):
+    if root is None:
+        return
+    identity = (
+        capture_resolved_root(root) if root_identity is None else root_identity
+    )
+    if not is_within_captured_root(root, identity, candidate):
+        raise OSError(
+            "destination no longer resolves inside the captured container root"
+        )
+
+
+def _publish_new_file(tmp, dest, root=None, root_identity=None):
     """Publish a temp file as a NEW file WITHOUT clobbering anything.
 
     ``os.replace`` is correct when replacing a file FastPrompter already
@@ -257,6 +334,7 @@ def _publish_new_file(tmp, dest):
     destination exists; the pre-check covers platforms where it replaces. A
     refused publish removes its own temp.
     """
+    _require_container_destination(root, root_identity, dest)
     if os.path.lexists(dest):
         try:
             os.remove(tmp)
@@ -267,21 +345,21 @@ def _publish_new_file(tmp, dest):
     os.rename(tmp, dest)
 
 
-def _move_into_container(src, dest, root=None):
+def _move_into_container(src, dest, root=None, root_identity=None):
     """Move src to dest without ever clobbering a destination that appeared.
 
     Same-volume: os.rename is atomic AND fails on Windows when dest exists
     (source preserved). Cross-volume: copy to a unique temp sibling, publish
     no-clobber, and only then remove the source.
     """
-    if root is not None:
-        from fastprompter.utils.path_safety import is_within_resolved
-        if not is_within_resolved(root, dest):
-            raise OSError("destination resolves outside the container root (junction/reparse point)")
+    if root is not None and root_identity is None:
+        root_identity = capture_resolved_root(root)
+    _require_container_destination(root, root_identity, dest)
 
     if os.path.lexists(dest):
         raise OSError(f"destination {dest!r} appeared; refusing to overwrite it")
     try:
+        _require_container_destination(root, root_identity, dest)
         os.rename(src, dest)      # same-volume: atomic, no-clobber
         return
     except OSError:
@@ -292,8 +370,7 @@ def _move_into_container(src, dest, root=None):
             
         tmp = f"{dest}.fptmp-{uuid.uuid4().hex[:8]}"
         
-        if root is not None and not is_within_resolved(root, tmp):
-            raise OSError("temp file resolves outside the container root")
+        _require_container_destination(root, root_identity, tmp)
             
         try:
             if os.path.isdir(src):
@@ -301,10 +378,7 @@ def _move_into_container(src, dest, root=None):
             else:
                 shutil.copy2(src, tmp)
                 
-            if root is not None and not is_within_resolved(root, dest):
-                raise OSError("destination resolves outside the container root immediately before publication")
-                
-            _publish_new_file(tmp, dest)
+            _publish_new_file(tmp, dest, root, root_identity)
         except Exception:
             shutil.rmtree(tmp, ignore_errors=True)
             try:
@@ -316,6 +390,7 @@ def _move_into_container(src, dest, root=None):
     
     # publication succeeded: remove the source
     try:
+        _require_container_destination(root, root_identity, dest)
         if os.path.isdir(src):
             shutil.rmtree(src)
         else:
@@ -325,24 +400,20 @@ def _move_into_container(src, dest, root=None):
                        dest, src)
 
 
-def _copy_atomic(src, dest, is_dir, root=None):
+def _copy_atomic(src, dest, is_dir, root=None, root_identity=None):
     """Copy src to dest so a partial copy is never presented as the result.
 
     A direct ``copytree``/``copy2`` interrupted mid-way (disk full, IO error)
     leaves a half file or half folder inside the container that looks real.
     The copy therefore lands in a UNIQUE sibling temp.
     """
-    if root is not None:
-        from fastprompter.utils.path_safety import is_within_resolved
-        if not is_within_resolved(root, dest):
-            raise OSError("destination resolves outside the container root (junction/reparse point)")
+    if root is not None and root_identity is None:
+        root_identity = capture_resolved_root(root)
+    _require_container_destination(root, root_identity, dest)
 
     tmp = f"{dest}.fptmp-{uuid.uuid4().hex[:8]}"
     
-    if root is not None:
-        from fastprompter.utils.path_safety import is_within_resolved
-        if not is_within_resolved(root, tmp):
-            raise OSError("temp file resolves outside the container root")
+    _require_container_destination(root, root_identity, tmp)
             
     try:
         if is_dir:
@@ -350,10 +421,7 @@ def _copy_atomic(src, dest, is_dir, root=None):
         else:
             shutil.copy2(src, tmp)
             
-        if root is not None:
-            if not is_within_resolved(root, dest):
-                raise OSError("destination resolves outside the container root immediately before publication")
-                
+        _require_container_destination(root, root_identity, dest)
         # os.rename refuses to clobber an existing destination atomically on
         # Windows; the pre-check catches it early on platforms where it does
         if os.path.lexists(dest):
@@ -396,7 +464,7 @@ def _async_eligible(items):
     return False
 
 
-def _write_text_atomic(path, content):
+def _write_text_atomic(path, content, root=None, root_identity=None):
     """Write a small NEW text file atomically and no-clobber.
 
     A .url link or similar NEW item must never overwrite a file that appeared
@@ -406,9 +474,10 @@ def _write_text_atomic(path, content):
     """
     tmp = f"{path}.fptmp-{uuid.uuid4().hex[:8]}"
     try:
+        _require_container_destination(root, root_identity, tmp)
         with open(tmp, "w", encoding="utf-8") as f:
             f.write(content)
-        _publish_new_file(tmp, path)
+        _publish_new_file(tmp, path, root, root_identity)
     except Exception:
         try:
             if os.path.exists(tmp):
@@ -482,11 +551,15 @@ class FileContainerPanel(QWidget):
     """
 
     def __init__(self, main_win):
+        import uuid
+
         super().__init__(main_win, Qt.WindowType.Tool)
         self.main_win = main_win
+        self._container_owner_id = uuid.uuid4().hex
         self.docked = False
         self.lang = getattr(main_win, "_current_lang", "EN")
         self.folder = ""
+        self._folder_root_identity = ""
         self._icon_provider = QFileIconProvider()
         self._thumb_cache = {}  # path -> (mtime, QIcon)
         self.setAcceptDrops(True)
@@ -629,6 +702,7 @@ class FileContainerPanel(QWidget):
             self._watcher.removePaths(self._watcher.directories())
         self._watcher.addPath(folder)
         self.folder = folder
+        self._folder_root_identity = capture_resolved_root(folder)
         self.setWindowTitle(tr("Files — {}", self.lang).format(title))
         self.refresh()
         self.show()
@@ -859,44 +933,69 @@ class FileContainerPanel(QWidget):
         for op, src, dest, is_dir in items:
             try:
                 if op == "move":
-                    _move_into_container(src, dest, self.folder)
+                    _move_into_container(
+                        src, dest, self.folder, self._folder_root_identity
+                    )
                 else:
-                    _copy_atomic(src, dest, is_dir, self.folder)
+                    _copy_atomic(
+                        src, dest, is_dir, self.folder,
+                        self._folder_root_identity,
+                    )
                 done.append(dest)
-            except OSError as e:
+            except Exception as e:
                 logger.error(f"File container import failed for {src}: {e}")
                 errors.append((src, str(e)))
         self._finish_container_ops(done, errors)
 
     def _dispatch_container_ops(self, items, is_export=False):
-        """Send a large op to the shared worker; refresh exactly once on done."""
+        """Queue one explicit FIFO command with immutable origin context."""
         import uuid
-        req_id = uuid.uuid4().hex
+        request_id = uuid.uuid4().hex
+        origin = os.path.realpath(os.path.abspath(self.folder)) if self.folder else ""
         request = {
-            "id": req_id,
-            "items": items,
-            "root": None if is_export else self.folder
+            "request_id": request_id,
+            "owner_id": self._container_owner_id,
+            "kind": "export" if is_export else "import",
+            "origin": origin,
+            "refresh_identity": os.path.normcase(os.path.abspath(self.folder)),
+            "items": tuple(items),
+            "root": None if is_export else origin,
+            "root_identity": None if is_export else self._folder_root_identity,
+            "policy": "EXTERNAL_EXPORT" if is_export else "IMPORT_TO_CONTAINER",
         }
+        if is_export:
+            request["destination_identities"] = {
+                os.path.normcase(os.path.abspath(os.path.dirname(dest))):
+                    capture_resolved_root(os.path.dirname(dest))
+                for _op, _src, dest, _is_dir in items
+            }
         worker = container_worker()
         if getattr(self, "_container_done_worker", None) is not worker:
             worker.done.connect(self._on_container_done)
             self._container_done_worker = worker
-        self._container_req_counter = getattr(self, "_container_req_counter", 0) + 1
-        req_id_int = self._container_req_counter
-        request["req_id"] = req_id_int
-        worker.dispatch.emit(request, req_id_int)
+        dispatch_container_command(request, request_id)
+        return request_id
 
-    def _on_container_done(self, req_id, request, done, errors):
+    def _on_container_done(self, request_id, request, done, errors):
         """The worker's result, applied on the GUI thread (refresh once)."""
-        # A later command does NOT erase the outcome/error of an earlier command.
-        # We process ALL completions.
-        for src, err in errors:
-            logger.error(f"File container op (req {req_id}) failed for {src}: {err}")
+        from fastprompter.main import is_gui_thread
+        if not is_gui_thread():
+            logger.critical("File Container completion rejected outside GUI thread")
+            return
+        if request.get("owner_id") != self._container_owner_id:
+            return
+        if errors:
+            logger.info(
+                "File Container command %s completed with %d error(s)",
+                request_id, len(errors),
+            )
         if done and hasattr(self.main_win, "sound_manager"):
             self.main_win.sound_manager.play_tick()
-        
-        # Refresh current panel only when the completed request belongs to the currently displayed folder.
-        if request.get("root") == self.folder:
+
+        # Command result is always processed above. UI refresh is separate and
+        # only relevant if panel still displays command's origin folder.
+        current = os.path.normcase(os.path.abspath(self.folder))
+        if request.get("refresh_identity") == current:
             self.refresh()
 
     def _finish_container_ops(self, done, errors):
@@ -929,7 +1028,10 @@ class FileContainerPanel(QWidget):
             dest = _unique_dest(self.folder, name)
             url = QUrl.fromLocalFile(os.path.abspath(src)).toString()
             try:
-                _write_text_atomic(dest, f"[InternetShortcut]\nURL={url}\n")
+                _write_text_atomic(
+                    dest, f"[InternetShortcut]\nURL={url}\n", self.folder,
+                    self._folder_root_identity,
+                )
                 made += 1
             except OSError as e:
                 logger.error(f"File container link failed for {src}: {e}")
@@ -994,12 +1096,14 @@ class FileContainerPanel(QWidget):
 
         dest = _unique_dest(self.folder, f"{clean}.txt")
         tmp = f"{dest}.fptmp-{uuid.uuid4().hex[:8]}"
+        root_identity = self._folder_root_identity
         try:
+            _require_container_destination(self.folder, root_identity, tmp)
             with open(tmp, "w", encoding="utf-8") as f:
                 f.write(text)
             # no-clobber: a file that appeared at `dest` since _unique_dest
             # is never silently overwritten
-            _publish_new_file(tmp, dest)
+            _publish_new_file(tmp, dest, self.folder, root_identity)
             if hasattr(self.main_win, "sound_manager"):
                 self.main_win.sound_manager.play_tick()
         except OSError as e:
@@ -1054,9 +1158,10 @@ class FileContainerPanel(QWidget):
             return
         done = []
         errors = []
+        target_identity = capture_resolved_root(target)
         for op, src, dest, is_dir in items:
             try:
-                _copy_atomic(src, dest, is_dir)
+                _copy_atomic(src, dest, is_dir, target, target_identity)
                 done.append(dest)
             except OSError as e:
                 logger.error(f"File container export failed for {src}: {e}")
@@ -1170,7 +1275,11 @@ class FileContainerPanel(QWidget):
             self.lbl_count.setText(tr("invalid filename", self.lang))
             return
         try:
-            os.makedirs(_unique_dest(self.folder, clean), exist_ok=False)
+            dest = _unique_dest(self.folder, clean)
+            _require_container_destination(
+                self.folder, self._folder_root_identity, dest
+            )
+            os.makedirs(dest, exist_ok=False)
         except OSError as e:
             logger.error(f"File container new folder failed: {e}")
         self.refresh()
@@ -1200,7 +1309,11 @@ class FileContainerPanel(QWidget):
                 rejected.append(f)
                 continue
             try:
-                os.makedirs(os.path.join(self.folder, clean), exist_ok=True)
+                dest = os.path.join(self.folder, clean)
+                _require_container_destination(
+                    self.folder, self._folder_root_identity, dest
+                )
+                os.makedirs(dest, exist_ok=True)
                 made += 1
             except OSError as e:
                 logger.error(f"File container template build failed for {f}: {e}")

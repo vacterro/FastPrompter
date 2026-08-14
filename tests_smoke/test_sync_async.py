@@ -18,6 +18,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import tempfile
 
 import pytest
+from PyQt6.QtCore import QThread
 from PyQt6.QtWidgets import QApplication
 
 import fastprompter.core.state as state_mod
@@ -215,6 +216,38 @@ class TestRootIsolation:
         win._sync_pending = None
         win._sync_busy = False
 
+    def test_real_worker_completion_returns_to_gui_thread(self, win, tmp_path, monkeypatch):
+        from fastprompter import main as m
+
+        _setup(win, tmp_path)
+        worker_threads = []
+        completion_threads = []
+        real_write = m._sync_mechanical_write
+        real_done = win._sync_on_done
+
+        def record_write(snapshot, lock_timeout_s=None):
+            worker_threads.append(QThread.currentThread())
+            return real_write(snapshot, lock_timeout_s)
+
+        def record_done(*args):
+            completion_threads.append(QThread.currentThread())
+            return real_done(*args)
+
+        monkeypatch.setattr(m, "_sync_mechanical_write", record_write)
+        monkeypatch.setattr(win, "_sync_on_done", record_done)
+        win._sync_done_worker = None
+        win.sync_to_disk(force=True)
+        win._sync_dispatch_pending()
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline:
+            _app.processEvents()
+            if not win._sync_busy:
+                break
+            time.sleep(0.01)
+
+        assert worker_threads == [m._SYNC_SHARED_THREAD]
+        assert completion_threads == [_app.thread()]
+
     def test_real_worker_writes_each_root(self, win, tmp_path):
         import time as _t
         root_a = _setup(win, tmp_path, str(tmp_path / "rootA"))
@@ -265,9 +298,9 @@ class TestShutdownFlush:
         win.text_area.setPlainText("# t\nfinal edit")   # the editor is the save source
         win.data["temp_presets"][0] = "# t\nfinal edit"  # belt-and-braces: the capture
         win.save_data_to_db(force=True)          # queues sync on the debounce
-        assert win.data["temp_presets"][0] == "# t\nfinal edit", \
-            "capture source wiped before shutdown: %r" % (
-                win.data["temp_presets"][:3],)
+        assert win.data["temp_presets"][0] == "# t\nfinal edit", (
+            f"capture source wiped before shutdown: {win.data['temp_presets'][:3]!r}"
+        )
         win._sync_shutdown(timeout_s=10)         # immediate close
         if "# t\nfinal edit" not in self._mirror_text(root):
             _diag = ("sync_path=%r sync_mode=%r slot=%r presets=%r "
@@ -310,8 +343,10 @@ class TestShutdownFlush:
         t0 = time.monotonic()
         win._sync_shutdown(timeout_s=0.2)
         assert time.monotonic() - t0 <= 6.0       # bounded, not a hang
-        assert win._sync_pending is None and win._sync_busy is False
+        assert win._sync_pending is None
+        assert win._sync_busy is True, "timeout must not falsify physical idleness"
         # the real worker thread is still usable for the next test
+        win._sync_inflight_gen = 0
         win._sync_shutting_down = False
 
     def test_global_shutdown_is_bounded_and_explicit(self, win):
@@ -322,7 +357,7 @@ class TestShutdownFlush:
         pinned by the sync-teardown suite; this is the in-process contract."""
         from fastprompter import main as m
 
-        root = _setup(win, None, root=_tmp_path_for(win))
+        _setup(win, None, root=_tmp_path_for(win))
         win.sync_to_disk(force=True)
         win._sync_dispatch_pending()
         assert m._SYNC_SHARED_THREAD is not None
@@ -386,6 +421,7 @@ class TestWorkerReparseContainment:
 
     def test_junction_swapped_after_capture_is_rejected(self):
         from fastprompter.main import _SyncWorker
+        from fastprompter.utils.path_safety import capture_resolved_root
 
         results = []
         worker = _SyncWorker()
@@ -400,18 +436,20 @@ class TestWorkerReparseContainment:
         # the junction appears AFTER the snapshot was conceptually captured
         os.symlink(outside, cat, target_is_directory=True)
 
-        worker._run({"root": root, "files": {dest: "# t\nbody"}}, 1)
+        worker._run({"root": root, "root_identity": capture_resolved_root(root),
+                     "files": {dest: "# t\nbody"}}, 1)
 
         assert results, "the worker must report the outcome"
         written, errors = results[0]
         assert written == []
-        assert errors and "junction" in errors[0][1]
+        assert errors and "captured root" in errors[0][1]
         assert not os.path.exists(os.path.join(outside, "01_t.md")), \
             "the write must not land outside the root"
         assert not os.path.exists(dest)
 
     def test_ordinary_nested_destination_writes(self):
         from fastprompter.main import _SyncWorker
+        from fastprompter.utils.path_safety import capture_resolved_root
 
         results = []
         worker = _SyncWorker()
@@ -420,7 +458,8 @@ class TestWorkerReparseContainment:
 
         root = tempfile.mkdtemp()
         dest = os.path.join(root, "cat", "01_t.md")
-        worker._run({"root": root, "files": {dest: "# t\nbody"}}, 1)
+        worker._run({"root": root, "root_identity": capture_resolved_root(root),
+                     "files": {dest: "# t\nbody"}}, 1)
 
         written, errors = results[0]
         assert errors == []
