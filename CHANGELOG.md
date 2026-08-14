@@ -1,5 +1,35 @@
 # Changelog
 
+## v0.8.37 — 2026-08-14
+
+- **Sync-to-Disk publishes when the worker is really done.** The sync pump
+  treated the destination file's existence as completion, so a read between
+  the file write and the worker's cache publication could see stale bytes —
+  the "same text skips unchanged target" test timed out exactly there (and
+  passed alone). The pump now waits for the file *and* zero in-flight/pending
+  jobs, and mechanical writes serialize behind a lock with a timeout.
+- **Shutdown ownership is explicit and fail-closed.** QThread teardown uses
+  labelled waits with named timeouts (the watcher worker gets its own
+  5-second budget and is only cleared after it actually stopped),
+  portable-backup completion is relayed to the GUI thread through a dedicated
+  relay object, undo-daemon saves are awaited at teardown, and the
+  application shutdown path owns the instance-mutex release.
+- **File Container commands run FIFO and answer only their caller.**
+  Container operations dispatch through one queue in order, every result is
+  reported back to the panel that requested it, and captured root identity
+  is re-validated at mutation time — a swapped root, junction, or destination
+  fails closed instead of writing outside the container.
+- **The watcher send worker is connected to its own thread.** `dispatch` is
+  wired *after* `moveToThread`, so queued sends and completions actually
+  execute on the worker thread, and GUI-thread completion guards are asserted
+  through a named `is_gui_thread()` helper.
+- **Authenticated IPC wiring is proven end-to-end.** A real-server test
+  drives the token-only SHOW signal through a subprocess and verifies the
+  callback plus ack round-trip.
+- *Under the hood:* the `markdown` dependency (used by the formatting mixin)
+  is now declared in `pyproject.toml` and the lockfile. The suite now
+  collects **2016 tests — 2014 passing, 2 skipped** in about 25 minutes.
+
 ## v0.8.36 — 2026-08-12
 
 - **A save between keystrokes could persist the pre-edit text.** `save_data_to_db` preferred `_last_cached_text` — the editor snapshot from the last cache tick — so a save (manual, auto-save timer, or window close) landing between a text change and the next tick dropped the latest keystrokes from both the database and the sync mirror. Every text change now invalidates the cache, so a save falls through to the live editor text; the cache still serves the common no-edit case.
