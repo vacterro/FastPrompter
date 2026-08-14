@@ -5,7 +5,7 @@
     "name_native": "Norsk",
     "flag": "🇳🇴"
   },
-  "coverage_pct": 95.7,
+  "coverage_pct": 95.2,
   "translations": {
     "**__{text}__** ({time})": "**__{text}__** ({time})",
     "+ Font": "+ Skrift",

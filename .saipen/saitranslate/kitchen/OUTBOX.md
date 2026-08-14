@@ -1,15 +1,17 @@
 # OUTBOX
 
-## TRANSLATE-001: fresh EE re-cut bound to shipped HEAD c1d04f4
-- **status:** ready
+## TRANSLATE-002: fresh EE re-cut bound to shipped HEAD 0f3c5e4 (v0.8.37)
+- **status:** reviewed
 - **critical:** false
-- **summary:** T-773's 5 Hide on Click-Out keys outran the JSON bundle (en 1020, ru/est/ded 1015); this re-cut added all 5 to ru/est/ded locales, re-inject idempotent, validator PASS.
+- **collected:** 14.08.26 08:20 -> T-798 (E-1459/E-1460, eee)
+- **summary:** FORCE-FRESH re-cut of the translation bundle against v0.8.37 (HEAD 0f3c5e4): 5 new `tr()` keys from v0.8.34..37 (backup/restore validation diagnostics T-789, "invalid filename" T-788, 2 help-dialog feature strings) added to the 4 Core-owned locales (en/ru/est/ded, 1020 -> 1025 keys, RU/EST/DED hand-translated); stored `coverage_pct` corrected to the computed 95.2 in the 29 subSaipen-owned locales (was 95.7). Validator: 0 missing from en.json; the only errors are the expected json<->module pending delta (5 keys x 4 Core modules) = the `eee` regeneration payload (E-1367 precedent). 29-locale translation gap + docs-translation lag remain named backlogs (E-1358).
 - **producer:** saitranslate
-- **source_head:** c1d04f42f1d923c838a48256d04833ef5ec2dea8 (HEAD after the ccc ship boundary)
-- **source_tree_fingerprint:** git-delta-v1:c66baf69a8306f3b95dfc7badb5f72b088f8de8408e933efadc4d149721a1195 (freshness.py, current HEAD)
+- **source_head:** 0f3c5e43752ad335ed48de4891391b080443be16 (HEAD after the qqq ship boundary)
+- **source_tree_fingerprint:** git-delta-v1:f43f10d298a38fceda4e4c9821becaf5542d0c8fb25b0fa8141dc5137743c2e0 (freshness.py, current HEAD)
 - **role_revision:** sha256:f241e6b83c39e9b46bfa586638efb0374bbb39889646f723b9189bbb4912c0c5 (saitranslate charter, compute_role_revision)
-- **generated:** 2026-08-08 (fresh EE / ccc stage K, forced re-cut against the shipped HEAD)
-- **coverage:** 4 Core-owned locales at 100% (1020 keys each); 29 wider locales at 95.7% (documented sound-label backlog, E-1358)
-- **payload:** bundle sync only — `locales/ru.json`, `locales/est.json`, `locales/ded.json` brought to 1020 keys (the 5 restored Hide on Click-Out strings, translations read from the shipped modules). No module regeneration needed; re-inject byte-identical.
-- **verified:** `tools/validate_saitranslate.py` VALIDATION PASSED (30 documented-backlog warnings) @ c1d04f4; re-inject idempotent; unit 952 pass + 1 known winsound (T-730 class) + 1 skip; ruff clean; 37 modules import OK.
-- **instructions:** `eee` → verify freshness (fingerprint `c66baf69` == current, role_revision == current charter) → re-run `tools/validate_saitranslate.py` → confirm zero module diff → claim ticket, mark OUTBOX reviewed, checkpoint.
+- **generated:** 2026-08-14 (fresh EE / forced re-cut against the shipped v0.8.37 HEAD)
+- **coverage:** 4 Core-owned locales at 100% (1025 keys each); 29 wider locales at 95.2% (49-key gap = legacy sound-label backlog + these 5 new keys, subSaipen pipeline E-1358). Docs translation lag vs wiki re-syncs 4b7109c/414e92a/6bf25c1 = named backlog, unchanged.
+- **payload:** bundle sync only — `locales/en.json` (+5 source keys) and `locales/ru.json` / `locales/est.json` / `locales/ded.json` (+5 translated keys each, 1020 -> 1025), plus the stored `coverage_pct` 95.7 -> 95.2 in the other 29 locales. No module regeneration yet: en/ru/est/ded modules lag by exactly the 5 new keys — that is the `eee` regeneration payload (E-1367 precedent). Existing translations untouched (0 changed, 0 removed — diff is +20 key lines in 4 Core files and 29 one-line coverage_pct fixes).
+- **verified:** `tools/validate_saitranslate.py` — 0 missing from en.json; errors limited to the expected 4-line json<->module pending delta; warnings at the documented backlog (283 unused-in-src advisory + 29 x 49 untranslated). All 33 locale JSONs parse; keys placed alphabetically; source escape form (`\n` real-newline, not `\\n`) matches the neighbouring live keys.
+- **instructions:** `eee` → verify freshness (source_head 0f3c5e4, fingerprint f43f10d2, role_revision f241e6b8 == current) → run `tools/inject_translations.py` (regenerates en/ru/est/ded modules from the bundle, idempotent for the rest) → re-run `tools/validate_saitranslate.py` (expect module gate GREEN, same documented-backlog warnings) → claim ticket, mark OUTBOX reviewed, checkpoint, ship.
+- **details:** The previous package (TRANSLATE-001, bound to c1d04f4, 08.08) was never collected and is superseded by this re-cut — its payload additions (the 5 Hide on Click-Out keys) are already inside this bundle, so nothing is lost. TRANSLATE-002 replaces it. Zero main-tree writes.
