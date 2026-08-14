@@ -37,7 +37,7 @@ Win32 WH_KEYBOARD_LL hook. Intercepts physical VK codes — layout-independent. 
 
 ### `IpcServer` (`core/ipc_server.py`)
 
-QLocalServer on named pipe `FastPrompter_Server_V15`. UUID token auth via `%TEMP%/fastprompter_ipc.token`.
+QLocalServer on named pipe `FastPrompter_Server_V15`. Token-only auth via `%TEMP%/fastprompter_ipc.token` — the SHOW command is accepted only with the token; there is no unauthenticated path (T-788).
 
 **Methods:**
 - `setup()` — start listening (recovers stale socket names with removeServer)
@@ -46,6 +46,15 @@ QLocalServer on named pipe `FastPrompter_Server_V15`. UUID token auth via `%TEMP
 
 **Helper:**
 - `try_connect_to_server()` — probe running instance (returns QLocalSocket or None)
+
+---
+
+### `InstanceLock` (`core/instance_lock.py`)
+
+Win32 named mutex (`Local\FastPrompter_Instance_...`) — single-instance
+ownership. A frozen/lost owner is detected at startup and reported with a
+diagnostic; the mutex can never be taken over by a second writer, so
+split-brain instances are impossible by design (T-788).
 
 ---
 

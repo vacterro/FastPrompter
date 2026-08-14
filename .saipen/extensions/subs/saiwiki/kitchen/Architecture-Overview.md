@@ -1,8 +1,12 @@
 # FastPrompter Architecture Overview
 
+> **Freshness policy:** the README and `src/` are canonical; this page
+> describes the v0.8.x codebase it was written against. Where a page and the
+> code disagree, the code wins.
+
 ## Overview
 
-Portable scratchpad + prompt workbench. Python 3.11+, PyQt6. SQLite WAL persistence. Zero-install Nuitka EXE. Summon via Alt+X global hotkey, write, close — state persists instantly.
+Portable scratchpad + snippet workspace. Python 3.11+, PyQt6. SQLite WAL persistence. Zero-install Nuitka EXE. Summon via Alt+X global hotkey, write, close — state persists automatically.
 
 ## High-Level Diagram
 
@@ -25,8 +29,10 @@ Portable scratchpad + prompt workbench. Python 3.11+, PyQt6. SQLite WAL persiste
       v         v          v          v            v
 +--------+ +---------+ +--------+ +---------+ +-----------+
 |Hotkeys | | IPC     | | Sound  | | Watcher | | File      |
-|(pynput)| |(QLocal) | |Manager | |Engine   | | Container |
-+--------+ +---------+ +--------+ +---------+ +-----------+
+|(Win32  | |(QLocal) | |Manager | |Engine   | | Container |
+| Register| +---------+ +--------+ +---------+ +-----------+
+|HotKey) |
++--------+
 ```
 
 ## Core Subsystems
@@ -54,11 +60,11 @@ QLocalServer on named pipe `FastPrompter_Server_V15`. Second instance sends SHOW
 
 SQLite DB (`data/local_data_v15.db`) with WAL + synchronous=NORMAL. Key tables: `presets` (snippets), `settings` (k/v), `temp_presets_v2` (silo text), `archive_temp_presets_v2` (archived silos). 
 
-Auto-backup on startup (full DB copy to `.bak`). Throttled incremental backup every 60s. Per-category data stores: `silo_colors_all`, `pinned_silos_all`, `silo_ticked_all`, `silo_children_all`, `silo_gaps_all`, `silo_project_paths_all`, etc. All aliased to flat keys (`temp_presets`) for active category.
+Auto-backup is validated backup-before-publish: a `.bak` copy is written before any publish and the throttle advances only on success, so the previous good copy survives every intermediate failure. Restore is atomic and validated (same-file guard, integrity + schema checks, future-schema fail-closed); DB migrations are versioned and transactional (v0.8.34/35). Per-category data stores: `silo_colors_all`, `pinned_silos_all`, `silo_ticked_all`, `silo_children_all`, `silo_gaps_all`, `silo_project_paths_all`, etc. All aliased to flat keys (`temp_presets`) for active category.
 
 ### 4. Hotkey System (`core/hotkeys.py`, `core/hotkey_filter.py`)
 
-Two-layer: (1) pynput global listener thread for summon/emergency quit; (2) PyQt6 QShortcut for window-local bindings. `HotkeyFilter` (Win32 WH_KEYBOARD_LL) intercepts physical VK codes — layout-independent. Works on QWERTY, JCUKEN, AZERTY, QWERTZ.
+Two-layer: (1) Win32 `RegisterHotKey` via `core/hotkeys.py` for the global summon/quick-list/panic keys, dispatched from a `QAbstractNativeEventFilter` (`HotkeyFilter`, `core/hotkey_filter.py`) on `WM_HOTKEY`/`WM_SYSCOMMAND`; (2) PyQt6 `QShortcut` for window-local bindings. `core/hotkeys.py` resolves key names to virtual-key codes with `VkKeyScanW`, so physical keys work on QWERTY, JCUKEN, AZERTY, QWERTZ.
 
 ### 5. Editor Engine (`ui/editor.py`)
 
@@ -80,7 +86,7 @@ Up to 100 silos per project tab. Features:
 - Recency heatmap — warm tint on recently edited
 - Sidebar gaps — user-defined spacers (Ctrl+drag to move)
 - Multi-select — Shift=range, Ctrl=toggle, batch ops
-- File containers — per-silo disk folder (`data/silo_files/<cat>/<idx>/`)
+- File containers — per-silo disk folder (`data/files/<category-slug>/<silo-title-slug>/`, unique per slot)
 - Kanban (Alt+arrows move cards) + Table builder (Tab walk cells) — T-630
 
 ### 7. Watcher Engine (`core/watcher/`)
@@ -97,4 +103,12 @@ Countdown timers with color-coded urgency, snooze, toast notifications (Win95 3D
 
 ### 10. Backup & Recovery
 
-Multi-layer: (1) SQLite WAL — crash-safe writes; (2) `.bak` on startup + every 60s; (3) daily Markdown mirror to `~/Documents/.fastprompter/` (silos + snippets + archive per project); (4) portable backup ZIP builder.
+Multi-layer: (1) SQLite WAL — crash-safe writes; (2) validated `.bak`
+backup-before-publish with a success-based throttle (the previous good copy
+survives); (3) daily Markdown snapshot mirror to
+`~/Documents/.fastprompter/` (silos + snippets + archive per project) — a
+portable snapshot completes only when the `_COMPLETE` marker lands last, so
+a partial export never looks finished; (4) atomic validated DB restore
+(same-file guard, integrity + schema validation, atomic swap, future-schema
+fail-closed). All backup writes go through the unified safe primitive
+(temp sibling + atomic rename).

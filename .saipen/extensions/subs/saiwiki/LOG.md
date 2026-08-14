@@ -21,3 +21,5 @@
 - 07.08.26 22:23 [E-027] [parent: E-026] [T-027] [agent: saiwiki] RUN: prepare (qq) -- re-cut wiki package vs HEAD 8ad58aa; v0.8.28..30 sound-icon/theme churn documented on 2 pages (User-Guide, UI-Components); OUTBOX ready 2-file payload, fingerprint ba571ad5.
 
 - 08.08.26 17:51 [E-028] [parent: E-027] RUN: collected by main agent -> T-776
+- 14.08.26 08:03 [E-029] [parent: E-028] [T-028] [agent: saiwiki] RUN: prepare (qq) -- re-cut wiki package vs HEAD 575a143 (v0.8.37); T-787 docs-truth edits (10 pages) absorbed from docs/wiki; 5 pages updated for v0.8.33..37 drift (Module-Structure 118->122, Watcher v0.8.34..37 notes, Architecture backup/restore truth, Deployment CI section, Core-API token-only IPC + InstanceLock); OUTBOX ready 5-file payload, fingerprint f43f10d2.
+- 14.08.26 08:06 [E-030] [parent: E-029] [T-028] [agent: saiwiki] RUN: collected by main agent -> T-797 (qqq) -- 5-file payload applied to docs/wiki/, pushed 6bf25c1, OUTBOX WIKI-002 marked reviewed.

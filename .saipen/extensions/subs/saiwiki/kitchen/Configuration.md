@@ -1,5 +1,9 @@
 # FastPrompter Configuration & Settings
 
+> **Freshness policy:** the README and `src/` are canonical; this page
+> describes the v0.8.x codebase it was written against. Where a page and the
+> code disagree, the code wins.
+
 ## DB Schema
 
 SQLite DB: `data/local_data_v15.db` (profile 1) or `data/local_data_v15_p<ID>.db` (profiles >1). Portable `data/` dir sits beside EXE. Falls back to `%LOCALAPPDATA%/FastPrompter/` if exe dir not writable.
@@ -70,7 +74,7 @@ Config lives in `settings` table key-value pairs. No INI file. All hot-reload on
 | **Other** | | | |
 | `language` | string | EN | UI language (33 locales) |
 | `hover_line_color` | string | `#0059ff` | Line highlight color (auto = theme accent) |
-| `portable_backup_enabled` | bool | True | Auto .bak on startup |
+| `portable_backup_enabled` | bool | True | Daily Markdown snapshot mirror to `Documents\.fastprompter\` |
 | `watcher_skill` | string | (empty) | Default skill for watcher queue items |
 | `cats_order` | JSON list | `["Code","Text","Misc"]` | Category tab order + names |
 | `hidden_categories` | JSON list | [] | Hidden categories (visible in project manager) |
@@ -98,20 +102,18 @@ data/
 ├── local_data_v15.db.bak       # Throttled backup (60s min interval)
 ├── local_data_v15.db-wal       # WAL write-ahead log
 ├── local_data_v15.db-shm       # WAL shared memory
+├── local_data_v15_undo.json    # Latest undo snapshots (reloaded on launch)
 ├── local_data_v15_p2.db        # Profile 2 DB
-├── silo_files/                 # File container attachments
-│   ├── Code/                   # Category folder
-│   │   ├── 0/                  # Silo slot 0 files
-│   │   └── 1/                  # Silo slot 1 files
-│   └── Text/
-├── _trash/                     # Soft-deleted silos + files
-│   └── 2026-07-22_153022_Silo0/# Timestamped trash entry
+├── files/                      # File container attachments
+│   ├── <category-slug>/        # Project/category folder
+│   │   └── <silo-title-slug>/  # Per-silo folder (unique per slot)
+│   └── _trash/                 # Soft-deleted silos + files
 └── custom_theme.json           # User-defined color palette
 ```
 
 **Daily mirror:** `%USERPROFILE%/Documents/.fastprompter/` — timestamps, per-project silos/archive/snippets as flat .md
 
-**Undo store:** `data/data_undo_stack.json` + `data/data_redo_stack.json` (auto-compacted, 20MB cap)
+**Undo store:** `<database>_undo.json` (e.g. `local_data_v15_undo.json`) — latest 10 undo snapshots, reloaded at startup.
 
 ## Custom Themes
 

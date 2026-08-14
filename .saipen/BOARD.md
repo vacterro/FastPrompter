@@ -24,6 +24,8 @@
 
 ## DONE
 
+- [x] T-797 (P3, docs, from saiwiki WIKI-002) DONE 14.08.26 08:06 @6bf25c1 -- qqq collect + ship: v0.8.33..37 wiki sync, 5 pages applied to docs/wiki/ (Module-Structure 118->122, Watcher-Engine v0.8.34..37 notes, Architecture-Overview backup/restore truth, Deployment-Guide CI section, Core-API token-only IPC + InstanceLock); 16/16 kitchen mirrors byte-identical, cheatsheet drift 3 passed, validate at baseline. Docs-only, no version bump. | verify: docs/wiki pages byte-identical to kitchen mirrors (16/16); push landed | owner: opencode
+
 - [x] T-795 (P1, correctness, user audit mission) Fifth-pass lifecycle and production-wiring audit: portable backup completion, mutex teardown ownership, QThread shutdown semantics, sync publication serialization, File Container FIFO/containment, watcher affinity, and authenticated IPC wiring. SHIPPED 14.08.26 07:56 as v0.8.37 @cabf329 (branch e88007c..cabf329 + tag pushed). VERIFIED 14.08.26 07:16: canonical pytest 2014 passed / 2 skipped / 0 failed (25m16s), ruff clean, bandit -ll 0, compileall 0, README count updated. REVIEWED: SHIP, P0/P1 clean. | owner: opencode | verify: uv run pytest tests/ tests_smoke/ -q; uv run ruff check src/ tests/ tests_smoke/; uv run bandit -r src/ -ll; uv run python -m compileall -q src tests tests_smoke
 
 - [x] T-782 (P3, shipped-devtodo) DONE 12.08.26 00:49 -- 3 stale dev-TODO markers deleted from `adapters.example.toml` (the vetted lines 89/141/180 "confirm this agent's skill syntax"; every tagged agent HAS a working `skill_format`). Swept into f359716 with the stale-cache fix. | verify: adapters.example.toml has zero `TODO:` markers, suite green | owner: opencode

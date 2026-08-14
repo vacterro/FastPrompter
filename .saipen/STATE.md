@@ -1,6 +1,6 @@
 ---
 phase: DONE
-task: T-795
+task: none
 next_action: "WAIT: blocked -- untriaged MARKHUNT findings in ## BLOCKED; triage into ## TODO or dismiss"
 blocker: ""
 agent: opencode
@@ -13,9 +13,9 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 1452
+last_event: 1457
 style_contract: ded-4ae736e4
 execution_intent: converge
-updated: 2026-08-14T07:56:30Z
-transition_from: SHIP
+updated: 2026-08-14T08:06:30Z
+transition_from: DONE
 ---

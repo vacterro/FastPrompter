@@ -20,7 +20,7 @@
 Layout-independent VK dispatch handles this. If still fails:
 1. Open Settings (Alt+`)
 2. Re-bind failing hotkey using physical key detection
-3. Ensure pynput global hook has permissions in Windows Security
+3. Check no other application has registered the same global hotkey
 
 ## 2. Crash Logs
 

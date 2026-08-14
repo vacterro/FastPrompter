@@ -1,172 +1,102 @@
-# saicrew -- run a 3-agent crew with one command each
+# saicrew -- the serial full-platoon convergence circuit
 
-**Bonus layer, zero Core changes.** Everything here is the subSaipen
-extension (CORE.md §1.9) plus a launcher script. No RFC rule, no phase doc, no
-`validate.py` field, no schema is touched -- the crew is built entirely from
-mechanisms Core already ships. If any line here ever fights Core, Core wins.
+**`sc` (`saipen crew`) is the whole built-in crew walked in a FIXED ORDER by
+one agent until the system reaches a fixed point: another fresh pass has
+nothing real left to change.** It is not a window layout, not a parallel
+runtime, not a macro that calls `cc`/`eee`/`qqq` once. It is an orchestrator
+over the primitives the protocol already defines, and it adds exactly one
+mechanism of its own -- the durable orchestration target
+(`execution_intent: converge` with `converge_target: crew`) that makes the
+circuit resumable across crashes and derivable from evidence rather than from
+a dumb stage counter.
 
-The picture the operator asked for: you dig the tunnel (the Core agent),
-two workers set the beams and run the wiring behind you (the subSaipens).
-You don't remind them. Each one has a task -> does it -> reports. Harmony is
-not "the agents are friends" -- it's the contract below.
+The built-in crew registry is defined ONCE, in
+`tools/saipen_engine/subs.py` (`CREW_ROLES` / `CREW_STAGES`), and consumed by
+`saipen crew --dry-run`, `saipen crew`, the
+`--gate crew` validator gate, docs parity and the tests -- never duplicated
+in five files. Custom subs are standalone by default; `sc` never runs every
+arbitrary `sai*` worker.
 
----
+## The built-in registry (one source of truth)
 
-## The three roles (a triangle -- stable, not a crowd)
+| Role | Class | What it does |
+|---|---|---|
+| **Core** | the writer | the only main-tree writer; converges work, tests, HUNT, CLEAN |
+| **saihunt** | sensor | finds bugs (HUNT signals -> findings in its OUTBOX) |
+| **saitest** | sensor | independently reproduces hypotheses (REPRODUCED / NOT_REPRODUCED / BLOCKED) |
+| **saipython** | sensor | tail fixer: clones targets into its pen, verifies, hands ready patches through OUTBOX |
+| **saiui** | sensor | UI designer: audits against `saipen/UI.md`, redesigns in its pen, hands patches through OUTBOX |
+| **saitranslate** | producer | canonical specialized translation runtime (`.saipen/saitranslate/`, one role, one lifecycle, one OUTBOX) |
+| **saiwiki** | producer | documentation factory (`.saipen/extensions/subs/saiwiki/`) |
 
-| Agent | Role | mode | Writes to | Does, on loop |
-|---|---|---|---|---|
-| **Core** | the writer -- digs the tunnel | `full` | `.saipen/` + the real code | pick TODO -> BUILD -> VERIFY -> REVIEW -> SHIP -> **collect** -> next |
-| **saihunt** | the sensor -- finds bugs | `read-only` | only `subs/saihunt/` | HUNT 6 signals -> write findings to its OUTBOX -> HUNT again |
-| **saipython** | the fixer -- clears the tail | `read-only` | only `subs/saipython/pen/` + its OUTBOX | clone target -> fix in pen -> VERIFY -> ready patch in OUTBOX -> next |
-| **saiui** | the UI designer -- audits and redesigns interfaces | `read-only` | only `subs/saiui/pen/` + its OUTBOX | audit against saipen/UI.md -> redesign in pen -> VERIFY -> patch in OUTBOX -> next |
+Sensors are the core-review platoon; producers are the handoff factories.
+Core remains the sole main-tree writer -- every worker is `read-only` toward
+the project, and their only door out is `kitchen/OUTBOX.md`; Core pulls
+through the collect primitive.
 
-Three is the right crew size: two is a pair (one drops, all stops); five is a
-crowd (coordination eats more tokens than work). Three is a triangle -- one
-buckles, two carry. Additional built-in roles (saiui, saitest) and
-domain-specific subs are available on demand, one at a time.
+## Two execution shapes, two different mechanisms
 
-**Only Core writes the main project.** The subSaipens never touch the main
-tree (enforced: `mode: read-only`, `tools/validate.py` rejects a sub in
-`BUILD`/`SHIP`). Their only door out is `kitchen/OUTBOX.md`; Core pulls
-through `saipen sub collect`. That is what keeps the soup from spoiling --
-each cook chops on their own board, the sauce is passed through the OUTBOX,
-never over the rim of the pot.
+**The launcher is OPTIONAL and is never `saipen crew`.** The legacy manual
+multi-window helper (`bootstrap/saipen_crew.bat` / `saipen_crew.sh`) opens
+separate terminals, one per role, so several agents can work the same factory
+in parallel -- a convenience for platforms that cannot run one agent through
+the whole circuit. Nothing it does defines what `saipen crew` means.
 
----
+**`sc` / `saipen crew` is the serial circuit.** One agent walks every stage
+in fixed order, re-evaluating mechanical truth after each stage, until a
+fresh pass has nothing real left to change or a genuine blocker/safety valve
+stops it. `cc` while the crew target is active resumes the crew, not ordinary
+convergence.
 
-## Start the crew (one command per window)
-
-No agent-chat platform today spawns three independent sessions from one
-window (Core's own § 1.4: one agent writes `.saipen/` at a time -- by
-design). So: **three terminals/windows, but each is one line.**
-
-Fastest -- the launcher (`bootstrap/saipen_crew.bat` on Windows,
-`saipen_crew.sh` on Unix): one click opens three windows, each with its
-command already typed. Hit Enter in each.
-
-Or by hand, one line per window:
+## Start the circuit
 
 ```
-window 1 (Core):       saipen continue
-window 2 (sensor):     saihunt
-window 3 (fixer):      saipython
+saipen crew --dry-run --json    # read-only: derive the full circuit, show every
+                                # role's mechanical health, name the first
+                                # unsatisfied stage. Zero writes.
+saipen crew                     # persist execution_intent: converge +
+                                # converge_target: crew, run the mechanical
+                                # transitions it owns (sub sync, required
+                                # instance assurance), and resume the circuit.
 ```
 
-A bare subSaipen name (`saihunt`, `saipython`, `saiwiki`) is a **role-adopt**
-command (PROTOCOL.md § 7): the agent spawns that sub if it doesn't exist
-yet, becomes it, and starts its loop -- no second command needed. A trailing
-`init`/`start` (`saiwiki init`) means exactly the same thing -- and any one
-of the three works standalone, alone, with no crew and no other window
-running. Want it
-fully autonomous between tickets? After adopting, it runs
-`saipen goal "process my board, verify each, report through OUTBOX"` and
-doesn't stop until its wave/ticket valve trips (MAINTENANCE.md §2.4).
+A bare subSaipen name (`saihunt`, `saitest`, `saipython`, `saiui`) is a
+**role-adopt** command (PROTOCOL.md § 7): the agent spawns that sub if it
+doesn't exist yet, becomes it, and starts its loop -- no second command
+needed. A trailing `init`/`start` means exactly the same thing, and any one
+of them works standalone, with no crew and no other window running.
 
-That's the whole ask: **type one word -> the agent knows its job -> it works.**
+## The circuit -- fixed order, fixed-point semantics
 
----
-
-## Zones -- draw the boundary on the ticket (a contract, not a promise)
-
-Three cooks salting blind is chemical warfare. The fix is not "agree how much
-salt" -- it's a **zone written on the ticket**: this file-glob is yours, that
-one isn't. Because zones live inside the ticket **description** (not as new
-`|` pipe-fields -- those would need a Core/`validate.py` change), they cost
-nothing and break nothing:
-
-```markdown
-## TODO
-- [ ] T-101 [zone: src/auth/**] Fix auth flow | owner: alpha | claim_time: 2026-07-24T10:00:00Z
-- [ ] T-102 [zone: src/ui/**] Settings rework | owner: beta  | claim_time: 2026-07-24T10:00:00Z
-- [ ] T-103 [zone: tests/**] Coverage for auth+settings | needs: T-101,T-102 | owner: gamma
-```
-
-Checkable, not trust-based: `git diff --name-only` on an agent's work shows
-instantly if it left its zone. Overlapping zones aren't two zones -- they're
-one, done by one agent, or split by file. Self-signature goes in the
-description too, on completion: `[done_by: alpha] [verify: PASS]`, and
-delegation as `[delegated_from: T-101] [by: alpha]`. Full audit, zero new
-fields, zero Core touch.
-
----
-
-## The auto-collect gate (Core never leaves the beams lying)
-
-Core, while running as a crew, collects every cycle -- this is crew guidance
-to the Core operator, not a change to `phases/ship.md`:
-
-> After each SHIP (and at the top of each `saipen continue`), run
-> `saipen sub collect`: read every OUTBOX, `critical: true` -> a `T-###` on
-> the main board immediately, `critical: false` -> `_shared/inbox.md`, mark
-> the entry `reviewed`, LOG the `collect` line. Only then pick the next
-> ticket.
-
-So Core never races ahead of the workers, and the workers never pile an
-OUTBOX nobody reads (backpressure: a sub with >10 unreviewed `ready` entries
-parks itself `BLOCKED`, PROTOCOL.md § 2).
-
----
-
-## The ten pitfalls -> the mechanism that already kills each (nothing new)
-
-| Pitfall | Killed by (all pre-existing Core) |
-|---|---|
-| Amnesia ("what do I do?") | State on disk: STATE -> BOARD -> LOG tail -> execute `next_action` (BOOT.md, TEST-001). Never asks. |
-| Two agents grab one ticket | Claim lock + **re-read after write** (CORE.md §1.4). Lost the write -> take another ticket, never overwrite. In a crew only Core writes the main board, so this can't even arise there. |
-| Zombie ticket (agent crashed) | A `DOING` ticket with a stale/absent claim is adoptable: LOG the takeover, check `kitchen/`, continue (§ 1.4). No "maybe it'll come back". |
-| Fake green | VERIFY is mandatory, real harness only; cap 3 dead hypotheses / 2 fix cycles -> `BLOCKED` (verify.md). A fixer with no toolchain marks `unverified`, never fakes `ready` (PROTOCOL.md § 9). |
-| Infinite "what else?" | Safety valve: 3 waves / 20 tickets per `goal` run, then stop + report (§ 2.4). ADD is evolution not invention. |
-| Dirty tree panic | Dirty tree is NORMAL (commits at SHIP). Attribute before acting; never revert/commit another agent's uncommitted work (§ 1.5). |
-| No accounting | LOG append-only, `[agent: <id>]` self-signs each line; checkpoint after every ticket LOG->BOARD->STATE (§ 1.5). |
-| Stale patch (base_head moved) | Fixer re-checks HEAD in PREPARE, re-cuts or marks `stale`; Core re-checks `base_head` before `git apply` (PROTOCOL.md § 9). |
-| Valve trips mid-run, subs pile up | Valve-sync: when Core hits the valve it `saipen sub pause`s the crew; `saipen goal` (bare) resets counters and `saipen sub resume`s them. |
-| Forgot to launch one window | Graceful degradation: `saipen sub list` WARNs on a sub gone quiet; Core just skips it at collect and works with who's alive. Never stops. |
-
----
-
-## Honest limits
-
-- One chat is not three agents -- platforms don't spawn parallel sessions
-  from one window. The crew is three windows; the launcher just makes each
-  a single keystroke.
-- No real-time cross-window sync and no auto-apply without Core's gates --
-  by design. The OUTBOX + freshness check is the sync; Core's
-  VERIFY/REVIEW/SHIP is the gate. That is the safety, not a limitation to
-  paper over.
-
----
-
-## `sc` -- the circuit (saicrew, serial mode)
-
-The three windows above run in PARALLEL. `sc` is the same crew walked in
-ORDER by one agent: hunt, reproduce, fix, translate, document, ship, in a
-fixed sequence, with each stage handing the next stage its evidence.
-
-**It adds no mechanism.** Every stage is a command that already exists, the
-ledger is the `BOARD.md`/`LOG.md`/`OUTBOX.md` that already exist, and a
-multi-command chain behind one key is precedented -- `ccc` is
-`saipen continue` then `saipen ship`, `qqq` is collect then ship. `sc` is a
-longer chain of the same kind. If it ever needs a new phase, a new field or a
-new file format, that is the signal it was designed wrong.
-
-### The order, and it is fixed
-
-| # | Stage | Command | Hands forward |
+| # | Machine stage | Owns | Satisfied when |
 |---|---|---|---|
-| 1 | sense | `saipen hunt` | signals -- suspicions, not facts |
-| 2 | reproduce | `saipen sub spawn saitest`, then its pass | REPRODUCED cases with the minimal input, or NOT_REPRODUCED |
-| 3 | intake | `saipen collect saitest` | tickets on `BOARD.md`, each carrying its reproduction |
-| 4 | build | `SCOUT -> BUILD -> VERIFY -> REVIEW` per ticket | a passed `verify:` re-run by REVIEW, not VERIFY's word for it |
-| 5 | translate | `saipen prepare saitranslate`, then `saipen collect saitranslate` | locale surfaces matching the source digest |
-| 6 | document | `saipen prepare saiwiki`, then `saipen collect saiwiki` | wiki pages mirroring canonical IDs |
-| 7 | publish | `saipen ship` | a pushed release, or a named refusal |
+| SC-0 | `recover-sync` | recovery, sync, contract | no pending operation; installed home is proven; source identity, strict MANIFEST, and inherited contract are current |
+| SC-1 | `instances` | durable generic roles | saihunt, saitest, saipython, saiui, and saiwiki exist with current project-local role revisions |
+| SC-2 | `saihunt` | saihunt | terminal valid board plus complete current-source OUTBOX evidence |
+| SC-3 | `saitest` | saitest | terminal valid board plus complete current-source OUTBOX evidence |
+| SC-4 | `saipython` | saipython | terminal valid board plus complete current-source OUTBOX evidence |
+| SC-5 | `saiui` | saiui | terminal valid board plus complete current-source OUTBOX evidence |
+| SC-6 | `core-collect` | Core | each core-review READY package was atomically ingested as one ordinary Core review hypothesis and marked reviewed |
+| SC-7 | `core-converge` | Core | canonical closure predicate says DONE, no active/workable present work, no unresolved blocker |
+| SC-8 | `saitranslate` | saitranslate | current pre-ship package was prepared and integrated, or the epoch-bound release receipt proves that integration |
+| SC-9 | `saiwiki` | saiwiki | current pre-ship package was prepared and integrated, or the epoch-bound release receipt proves that integration |
+| SC-10 | `final-fixed-point` | Core + sensors | Core closure still holds and every sensor is CURRENT after producer integration |
+| SC-11 | `ship` | canonical release executor | one COMMITTED, REMOTE_VERIFIED release receipt binds this crew epoch and closure commit |
+| SC-12 | `post-ship` | saitranslate + saiwiki | final EE and QQ packages remain READY/current against shipped HEAD/tree |
+| SC-13 | `finalize` | canonical crew finalizer | one final LOG/STATE mutation returns to targetless `execution_intent: normal`, `phase: DONE`; fresh `--gate crew` has zero problems |
 
-A stage may be EMPTY -- a clean `hunt` hands nothing to stage 2, and the
-circuit skips to the next stage that has input. Empty is a result and is
-recorded as one; skipping a stage because it looked quiet is not.
+If the source changed at any point, worker evidence produced before the
+mutation is stale by definition -- the circuit returns to SC-2 rather than
+trusting timestamps. Every stage re-evaluates mechanical truth from
+STATE + BOARD + OUTBOX + charter + source identity; a crash resumes by
+deriving the first unsatisfied stage from that same evidence.
 
-### The hand-off contract -- the whole point
+Producer integration mutates the source, so after SC-8/SC-9 the required Core
+convergence evidence is re-run before anything ships. There is exactly ONE
+final ship (SC-11); the post-ship EE/QQ passes are left READY/current for the
+shipped HEAD, never collected and shipped again.
+
+## The hand-off contract -- the whole point
 
 **A stage passes the next stage a reproduction or a verdict. Never a claim.**
 
@@ -201,14 +131,67 @@ So, concretely, at every hand-off:
   cross-factory hint. A note with no artifact under it is a claim wearing a
   hint's clothes.
 
-### What `sc` does not do
+## Zones -- draw the boundary on the ticket (a contract, not a promise)
 
-- It does not waive a gate. Stage 4 is the ordinary phase chain, stage 7 is
+Three cooks salting blind is chemical warfare. The fix is not "agree how much
+salt" -- it's a **zone written on the ticket**: this file-glob is yours, that
+one isn't. Because zones live inside the ticket **description** (not as new
+`|` pipe-fields -- those would need a Core/`validate.py` change), they cost
+nothing and break nothing:
+
+```markdown
+## TODO
+- [ ] T-101 [zone: src/auth/**] Fix auth flow | owner: alpha | claim_time: 2026-07-24T10:00:00Z
+- [ ] T-102 [zone: src/ui/**] Settings rework | owner: beta  | claim_time: 2026-07-24T10:00:00Z
+- [ ] T-103 [zone: tests/**] Coverage for auth+settings | needs: T-101,T-102 | owner: gamma
+```
+
+Checkable, not trust-based: `git diff --name-only` on an agent's work shows
+instantly if it left its zone. Overlapping zones aren't two zones -- they're
+one, done by one agent, or split by file. Self-signature goes in the
+description too, on completion: `[done_by: alpha] [verify: PASS]`, and
+delegation as `[delegated_from: T-101] [by: alpha]`. Full audit, zero new
+fields, zero Core touch.
+
+## The collect gate (Core never leaves the beams lying)
+
+SC-6 runs `saipen sub collect`. Registry policy decides eligibility:
+`core-review` and `automatic` packages enter; `explicit` producers stay for
+their named SC-8/SC-9 integration stages. Each eligible complete, current
+READY package becomes one ordinary Core TODO review ticket carrying immutable
+package identity and provenance. Intake never applies a patch or accepts a
+finding as fact. LOG/BOARD/STATE, OUTBOX `ready -> reviewed`, and MANIFEST
+`last_collect` commit in one journaled operation; retry deduplicates by package
+identity.
+
+## The ten pitfalls -> the mechanism that already kills each (nothing new)
+
+| Pitfall | Killed by (all pre-existing Core) |
+|---|---|
+| Amnesia ("what do I do?") | State on disk: STATE -> BOARD -> LOG tail -> execute `next_action` (BOOT.md, TEST-001). Never asks. |
+| Two agents grab one ticket | Claim lock + **re-read after write** (CORE.md §1.4). Lost the write -> take another ticket, never overwrite. In a crew only Core writes the main board, so this can't even arise there. |
+| Zombie ticket (agent crashed) | A `DOING` ticket with a stale/absent claim is adoptable: LOG the takeover, check `kitchen/`, continue (§ 1.4). No "maybe it'll come back". |
+| Fake green | VERIFY is mandatory, real harness only; cap 3 dead hypotheses / 2 fix cycles -> `BLOCKED` (verify.md). A fixer with no toolchain marks `unverified`, never fakes `ready` (PROTOCOL.md § 9). |
+| Infinite "what else?" | Safety valve: 3 waves / 20 tickets per `goal` run, then stop + report (§ 2.4). ADD is evolution not invention. |
+| Dirty tree panic | Dirty tree is NORMAL (commits at SHIP). Attribute before acting; never revert/commit another agent's uncommitted work (§ 1.5). |
+| No accounting | LOG append-only, `[agent: <id>]` self-signs each line; checkpoint after every ticket LOG->BOARD->STATE (§ 1.5). |
+| Stale patch (base_head moved) | Fixer re-checks HEAD in PREPARE, re-cuts or marks `stale`; Core re-checks `base_head` before `git apply` (PROTOCOL.md § 9). |
+| Valve trips mid-run, subs pile up | Valve-sync: when Core hits the valve it `saipen sub pause`s the crew; `saipen goal` (bare) resets counters and `saipen sub resume`s them. |
+| Forgot to launch one window | Graceful degradation: `saipen sub list` WARNs on a sub gone quiet; Core just skips it at collect and works with who's alive. Never stops. |
+
+## Honest limits
+
+- `sc` is ONE agent walking the circuit in order. It is not three agents in
+  parallel -- that is what the optional launcher is for, and mixing the two
+  is how two agents end up writing `.saipen/` at once, which is outside
+  Core's envelope.
+- No real-time cross-window sync and no auto-apply without Core's gates -- by
+  design. The OUTBOX + freshness check is the sync; Core's
+  VERIFY/REVIEW/SHIP is the gate. That is the safety, not a limitation to
+  paper over.
+- `sc` does not waive a gate. Every stage reuses the ordinary phase chain and
   the ordinary `SHIP` with its first-publish confirmation and its
   branch-before-tag ordering.
-- It does not run the stages in parallel. That is what the three windows
-  above are for, and mixing the two is how two agents end up writing
-  `.saipen/` at once, which is outside Core's envelope.
-- It does not decide that a stage is unnecessary. Empty input skips a stage;
-  a judgement that a stage "probably isn't needed this time" is the
+- `sc` does not decide that a stage is unnecessary. Empty input skips a
+  stage; a judgement that a stage "probably isn't needed this time" is the
   hedging the hand-off contract exists to remove.

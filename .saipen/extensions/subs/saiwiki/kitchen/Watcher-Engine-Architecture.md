@@ -124,6 +124,21 @@ On `arm(target, queue_key)`, key is pinned. Switches project/silo mid-session �
   into a text snapshot (line 0), so the destination never binds it to its own
   same-numbered line.
 
+### Safety Guards — v0.8.34..37 notes (T-788, T-790, T-795)
+
+- **Sends run off the GUI thread.** The CDP dispatch executes on a worker
+  thread, and every result carries a **generation token** — a stale
+  completion (a slow send that finishes after the queue moved on) is dropped
+  rather than reported as if it happened now (v0.8.34).
+- **Thread affinity is explicit.** The send worker wires its `dispatch`
+  signal *after* `moveToThread`, so the queued connection really runs on the
+  worker thread, and completions are asserted back on the GUI thread through
+  a dedicated relay object (v0.8.36/37).
+- **Shutdown owns the worker.** `quit()` is issued only while the thread is
+  running, waited with a labelled 5-second timeout, and the worker references
+  are cleared only after the thread actually stopped — a slow worker never
+  outlives the app process (v0.8.36/37).
+
 ---
 
 ## 6. Skill System (`skills.py`)

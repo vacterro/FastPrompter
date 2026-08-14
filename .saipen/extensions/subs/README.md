@@ -110,25 +110,33 @@ saipen sub collect
 |---|---|
 | `saipen sub list` | Show active subSaipen and their current phase. |
 | `saipen sub spawn <name>` | Create a new subSaipen from `TEMPLATE/`. |
-| `saipen sub collect` | Process every subSaipen's `OUTBOX.md`. |
-| `saipen sub clean <name>` | Remove a finished subSaipen. |
+| `saipen sub collect` | Journal complete current core-review packages into ordinary Core review tickets; explicit producers stay with their named integration stages. |
+| `saipen sub clean <name>` | Evidence-gated journaled removal: archive every byte, unregister, then delete exact instance tree; `--dry-run` writes nothing. |
 | `<subname>` (bare, e.g. `saihunt`, or any `sai*`-named subSaipen) | Adopt that role and start working, spawning it first if needed -- one word (crew, `crew.md`, PROTOCOL.md § 7). |
-| `saipen crew` | Show the 3-window crew layout + the one command per window. |
+| `saipen crew` (`sc`) | The serial full-platoon convergence circuit -- one agent walks the fixed-order circuit (SC-0..SC-13) until another fresh pass has nothing real left to change. `--dry-run --json` derives the circuit read-only. |
 
-## Crew -- run three at once (`crew.md`)
+## Crew (`crew.md`)
 
-You dig the tunnel (the Core agent); two workers set the beams behind you
-(saihunt finds bugs, saipython fixes tails). One command per window:
+**`sc` / `saipen crew` is the serial full-platoon convergence circuit** -- the
+whole built-in crew (sensors saihunt/saitest/saipython/saiui, producers
+saitranslate/saiwiki, Core the sole main-tree writer) walked in a FIXED order
+by one agent until another fresh pass has nothing real left to change:
 
 ```
-window 1:  saipen continue      # Core, the writer
-window 2:  saihunt              # sensor -- spawns+adopts, hunts on loop
-window 3:  saipython            # fixer -- spawns+adopts, patches via OUTBOX
+saipen crew --dry-run --json   # read-only: derive the circuit, show every
+                               # role's mechanical health, name the first
+                               # unsatisfied stage
+saipen crew                    # persist the converge target, run the
+                               # mechanical transitions, resume the circuit
 ```
 
-One-click launcher: `bootstrap/saipen_crew.bat` (Windows) /
-`bootstrap/saipen_crew.sh` (Unix) opens all three. Collect the workers from
-the Core window any time with `saipen sub collect`. Full contract, roles,
-pitfall->mechanism table, and the zone/handoff conventions: **`crew.md`**.
+An OPTIONAL manual multi-window helper (`bootstrap/saipen_crew.bat` /
+`saipen_crew.sh`) opens separate terminals, one per role, for platforms that
+cannot run one agent through the whole circuit -- it is never what
+`saipen crew` means. A bare subSaipen name (`saihunt`, `saipython`, ...)
+adopts that role and starts its own loop, standalone or inside a crew.
+Collect workers from the Core session any time with `saipen sub collect`.
+Full contract, roles, pitfall->mechanism table, and the zone/handoff
+conventions: **`crew.md`**.
 
 Full rules, OUTBOX format, ticket namespace -- `PROTOCOL.md`.
