@@ -60,7 +60,7 @@ QLocalServer on named pipe `FastPrompter_Server_V15`. Second instance sends SHOW
 
 SQLite DB (`data/local_data_v15.db`) with WAL + synchronous=NORMAL. Key tables: `presets` (snippets), `settings` (k/v), `temp_presets_v2` (silo text), `archive_temp_presets_v2` (archived silos). 
 
-Auto-backup on startup (full DB copy to `.bak`). Throttled incremental backup every 60s. Per-category data stores: `silo_colors_all`, `pinned_silos_all`, `silo_ticked_all`, `silo_children_all`, `silo_gaps_all`, `silo_project_paths_all`, etc. All aliased to flat keys (`temp_presets`) for active category.
+Auto-backup is validated backup-before-publish: a `.bak` copy is written before any publish and the throttle advances only on success, so the previous good copy survives every intermediate failure. Restore is atomic and validated (same-file guard, integrity + schema checks, future-schema fail-closed); DB migrations are versioned and transactional (v0.8.34/35). Per-category data stores: `silo_colors_all`, `pinned_silos_all`, `silo_ticked_all`, `silo_children_all`, `silo_gaps_all`, `silo_project_paths_all`, etc. All aliased to flat keys (`temp_presets`) for active category.
 
 ### 4. Hotkey System (`core/hotkeys.py`, `core/hotkey_filter.py`)
 
@@ -103,4 +103,12 @@ Countdown timers with color-coded urgency, snooze, toast notifications (Win95 3D
 
 ### 10. Backup & Recovery
 
-Multi-layer: (1) SQLite WAL — crash-safe writes; (2) `.bak` on startup + every 60s; (3) daily Markdown mirror to `~/Documents/.fastprompter/` (silos + snippets + archive per project); (4) portable backup ZIP builder.
+Multi-layer: (1) SQLite WAL — crash-safe writes; (2) validated `.bak`
+backup-before-publish with a success-based throttle (the previous good copy
+survives); (3) daily Markdown snapshot mirror to
+`~/Documents/.fastprompter/` (silos + snippets + archive per project) — a
+portable snapshot completes only when the `_COMPLETE` marker lands last, so
+a partial export never looks finished; (4) atomic validated DB restore
+(same-file guard, integrity + schema validation, atomic swap, future-schema
+fail-closed). All backup writes go through the unified safe primitive
+(temp sibling + atomic rename).

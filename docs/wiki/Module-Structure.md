@@ -13,6 +13,7 @@ src/fastprompter/
 │
 ├── core/                       # Backend logic, state, subsystems
 │   ├── config.py               # Theme color extractors, tray icon generators
+│   ├── clipboard_safe.py       # Conditional clipboard save/restore guard (T-788)
 │   ├── ctrlw.py                # Ctrl+W / Alt+W divider insertion engine
 │   ├── default_profile.py      # Shipped defaults map, merged into state.reset_data()
 │   ├── duration.py             # Time parsing, human-readable duration format
@@ -20,6 +21,7 @@ src/fastprompter/
 │   ├── header.py               # Ctrl+E header formatting core
 │   ├── hotkey_filter.py        # QAbstractNativeEventFilter: WM_HOTKEY/WM_SYSCOMMAND dispatch
 │   ├── hotkeys.py              # Win32 RegisterHotKey + layout-aware VK resolution
+│   ├── instance_lock.py        # Win32 named-mutex single-instance ownership (T-788)
 │   ├── ipc_server.py           # QLocalServer single-instance IPC
 │   ├── limits.py               # Agent reset-limit scanner + timer creation
 │   ├── logging.py              # Logger setup, rotating file handler
@@ -52,6 +54,7 @@ src/fastprompter/
 │   ├── analog_clock.py         # Custom-painted analog clock widget
 │   ├── backup_dialog.py        # DB export/import + backup snapshot dialog
 │   ├── ctrlw_settings.py       # Ctrl+W/Alt+W template config UI
+│   ├── cursor_mixin.py         # Cursor set capture/apply + system install (T-785)
 │   ├── cursor_theme.py         # Retro cursor theme overlay manager
 │   ├── drop_overlay.py         # Drag-and-drop 4-option target overlay
 │   ├── edit_guard.py           # Read-only edit lock guard wrapper
@@ -104,6 +107,7 @@ src/fastprompter/
 └── utils/                      # Low-level helpers
     ├── fonts.py                # System font loader, fallback resolver, no-AA
     ├── paths.py                # Portable path resolver (exe + user data)
+    ├── path_safety.py          # Path containment + collision-safe name codec (T-788/T-789)
     ├── portable_backup.py      # Daily Markdown snapshot exporter (silos/snippets/archive)
     └── textfit.py              # Dynamic text truncation + label fitting
 ```
@@ -139,8 +143,8 @@ src/fastprompter/
 
 ## Module Count Summary
 
-- **core/**: 18 modules + i18n/ (33 locales + 5 infra files = 38) + watcher/ (10 modules)
-- **ui/**: 45 modules
+- **core/**: 20 modules + i18n/ (33 locales + 5 infra files = 38) + watcher/ (10 modules)
+- **ui/**: 46 modules
 - **theme/**: 1 module
-- **utils/**: 4 modules
-- **Total**: 118 `.py` files under `src/fastprompter/` (includes `main.py` + `__init__.py`; + `presets/` ships as a non-code data dir)
+- **utils/**: 5 modules
+- **Total**: 122 `.py` files under `src/fastprompter/` (includes `main.py` + `__init__.py`; + `presets/` ships as a non-code data dir)

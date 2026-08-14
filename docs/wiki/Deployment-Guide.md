@@ -82,6 +82,28 @@ uv run python tools\release.py %*
 
 ---
 
+## 4. Continuous Integration (CI)
+
+`.github/workflows/ci.yml` runs on `windows-latest` for every push to
+`main` and every pull request, executing the same gates a release must pass
+(any failure blocks the job):
+
+```powershell
+uv sync --group dev
+uv run python -m compileall -q src FastPrompter.pyw
+uv run ruff check src/ tests/ tests_smoke/
+uv run bandit -q -r src/fastprompter -ll
+uv run pytest tests/ tests_smoke/ -q
+```
+
+`compileall` catches import-time syntax errors before the long test run;
+Bandit gates at Medium severity and above (`-ll`), with each Medium+
+finding carrying a scoped `# nosec` reason so a new real finding turns the
+job red. Pre-commit runs ruff with fixes, YAML validation, merge-conflict
+detection and a 500 KB added-file limit; it does not run the full CI matrix.
+
+---
+
 ## Troubleshooting
 
 | Issue | Cause | Fix |
