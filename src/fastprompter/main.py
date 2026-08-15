@@ -116,6 +116,25 @@ from fastprompter.utils.paths import get_data_dir
 from fastprompter.utils.textfit import clip_safe_width
 
 
+class _PreviewTextEdit(QTextEdit):
+    """Read-only markdown preview whose links open in the browser.
+
+    This PyQt6 build ships a QTextEdit without setOpenExternalLinks(), so the
+    preview cannot rely on Qt's built-in link-following; a left click on an
+    anchor opens it directly instead. Dragging to select text is unaffected.
+    """
+
+    def mouseReleaseEvent(self, event):
+        if (event.button() == Qt.MouseButton.LeftButton
+                and not self.textCursor().hasSelection()):
+            href = self.anchorAt(event.position().toPoint())
+            if href:
+                QDesktopServices.openUrl(QUrl(href))
+                event.accept()
+                return
+        super().mouseReleaseEvent(event)
+
+
 class _SettingsGroupBox(QWidget):
     """A settings group that can say how tall it is at a given width.
 
@@ -5073,7 +5092,8 @@ class FastPrompter(
         
         self.text_area_layout.addWidget(self.text_area, 1)
 
-        self.preview_area = QTextEdit(readOnly=True)
+        self.preview_area = _PreviewTextEdit()
+        self.preview_area.setReadOnly(True)
         self.preview_area.setVisible(False)
         self.preview_area.setFont(font)
         self.text_area_layout.addWidget(self.preview_area, 1)

@@ -256,7 +256,10 @@ class ColorConfigDialog(QDialog):
             "btn_bg": "#2b2b2b", "btn_pressed": "#141414", "btn_text": "#c0c0c0",
             "accent": "#5a7a96", "edit_bg": "#2a3330",
             "overlay_new": "#6a5555", "overlay_recent": "#6a5a40",
-            "overlay_day": "#5a5a30", "overlay_old": "#40506a"
+            "overlay_day": "#5a5a30", "overlay_old": "#40506a",
+            "notif_bg": "#1a1a1a", "notif_header": "#2b2b2b",
+            "notif_title": "#5a7a96", "notif_text": "#c0c0c0",
+            "notif_accent": "#5a7a96", "notif_border": "#4d4d4d"
         })
         if isinstance(cc, str):
             import ast
@@ -265,10 +268,10 @@ class ColorConfigDialog(QDialog):
                 from fastprompter.core.logging import logger
                 logger.debug(f"Failed to parse custom_colors: {e}")
         if not isinstance(cc, dict):
-            cc = {"bg_main": "#1a1a1a", "bg_text": "#000000", "text_main": "#c0c0c0", "border_light": "#4d4d4d", "border_dark": "#0a0a0a", "btn_bg": "#2b2b2b", "btn_pressed": "#141414", "btn_text": "#c0c0c0", "accent": "#5a7a96", "edit_bg": "#2a3330", "overlay_new": "#6a5555", "overlay_recent": "#6a5a40", "overlay_day": "#5a5a30", "overlay_old": "#40506a"}
+            cc = {"bg_main": "#1a1a1a", "bg_text": "#000000", "text_main": "#c0c0c0", "border_light": "#4d4d4d", "border_dark": "#0a0a0a", "btn_bg": "#2b2b2b", "btn_pressed": "#141414", "btn_text": "#c0c0c0", "accent": "#5a7a96", "edit_bg": "#2a3330", "overlay_new": "#6a5555", "overlay_recent": "#6a5a40", "overlay_day": "#5a5a30", "overlay_old": "#40506a", "notif_bg": "#1a1a1a", "notif_header": "#2b2b2b", "notif_title": "#5a7a96", "notif_text": "#c0c0c0", "notif_accent": "#5a7a96", "notif_border": "#4d4d4d"}
 
         # Ensure all keys exist if loading an old config or empty dict
-        for fallback_key, fallback_val in {"bg_main": "#1a1a1a", "bg_text": "#000000", "text_main": "#c0c0c0", "border_light": "#4d4d4d", "border_dark": "#0a0a0a", "btn_bg": "#2b2b2b", "btn_pressed": "#141414", "btn_text": "#c0c0c0", "accent": "#5a7a96", "edit_bg": "#2a3330", "overlay_new": "#6a5555", "overlay_recent": "#6a5a40", "overlay_day": "#5a5a30", "overlay_old": "#40506a"}.items():
+        for fallback_key, fallback_val in {"bg_main": "#1a1a1a", "bg_text": "#000000", "text_main": "#c0c0c0", "border_light": "#4d4d4d", "border_dark": "#0a0a0a", "btn_bg": "#2b2b2b", "btn_pressed": "#141414", "btn_text": "#c0c0c0", "accent": "#5a7a96", "edit_bg": "#2a3330", "overlay_new": "#6a5555", "overlay_recent": "#6a5a40", "overlay_day": "#5a5a30", "overlay_old": "#40506a", "notif_bg": "#1a1a1a", "notif_header": "#2b2b2b", "notif_title": "#5a7a96", "notif_text": "#c0c0c0", "notif_accent": "#5a7a96", "notif_border": "#4d4d4d"}.items():
             if fallback_key not in cc:
                 cc[fallback_key] = fallback_val
 
@@ -290,6 +293,12 @@ class ColorConfigDialog(QDialog):
             "overlay_recent": tr("Last Edited < 1 hr", self.lang),
             "overlay_day": tr("Last Edited < 1 day", self.lang),
             "overlay_old": tr("Last Edited < 49 days", self.lang),
+            "notif_bg": tr("Notification Background", self.lang),
+            "notif_header": tr("Notification Header", self.lang),
+            "notif_title": tr("Notification Title", self.lang),
+            "notif_text": tr("Notification Text", self.lang),
+            "notif_accent": tr("Notification Accent", self.lang),
+            "notif_border": tr("Notification Border", self.lang),
         }
 
         for key, name in labels.items():
@@ -356,7 +365,10 @@ class ColorConfigDialog(QDialog):
             "btn_bg": "#2b2b2b", "btn_pressed": "#141414", "btn_text": "#c0c0c0",
             "accent": "#5a7a96", "edit_bg": "#2a3330",
             "overlay_new": "#6a5555", "overlay_recent": "#6a5a40",
-            "overlay_day": "#5a5a30", "overlay_old": "#40506a"
+            "overlay_day": "#5a5a30", "overlay_old": "#40506a",
+            "notif_bg": "#1a1a1a", "notif_header": "#2b2b2b",
+            "notif_title": "#5a7a96", "notif_text": "#c0c0c0",
+            "notif_accent": "#5a7a96", "notif_border": "#4d4d4d"
         }
         self.custom_colors = defaults
         for k, btn in self.color_buttons.items():

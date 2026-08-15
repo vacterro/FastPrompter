@@ -133,6 +133,20 @@ def generate_custom_theme(c):
     _defaults = {"bg_main":"#1a1a1a","bg_text":"#2c2c2c","text_main":"#c0c0c0","border_light":"#4d4d4d","border_dark":"#0a0a0a","btn_bg":"#3a3a3a","btn_text":"#d0d0d0","btn_pressed":"#4a4a4a","accent":"#bfa65e"}
     for k, v in _defaults.items():
         c.setdefault(k, v)
+    # Notification colour tokens. Every theme carries them so the toast and
+    # other notification chrome read a dedicated palette instead of borrowing
+    # the generic one. Derived from the base colours so a custom theme gets a
+    # coherent notification look without being forced to set six more values;
+    # each can still be overridden in the Custom Theme Colors dialog.
+    for k, v in {
+        "notif_bg": c["bg_main"],
+        "notif_header": c["btn_bg"],
+        "notif_title": c["accent"],
+        "notif_text": c["text_main"],
+        "notif_accent": c["accent"],
+        "notif_border": c["border_light"],
+    }.items():
+        c.setdefault(k, v)
     return {
         "stylesheet": f"""
 QWidget {{ background-color: {c['bg_main']}; color: {c['text_main']}; font-size: 11px; }}
@@ -216,7 +230,10 @@ QDockWidget::title { padding: 2px; border: 1px outset #4a4a4a; background-color:
             "bg_main": "#1a1a1a", "bg_text": "#0f0f0f", "text_main": "#c4ba9f",
             "border_light": "#4a4a4a", "border_dark": "#050505",
             "btn_bg": "#2b2b2b", "btn_pressed": "#1c1c1c", "btn_text": "#bfa65e",
-            "accent": "#d6be76"
+            "accent": "#d6be76",
+            "notif_bg": "#1a1a1a", "notif_header": "#2b2b2b",
+            "notif_title": "#d6be76", "notif_text": "#c4ba9f",
+            "notif_accent": "#d6be76", "notif_border": "#4a4a4a"
         }
     },
     "Golden Default": {
@@ -254,7 +271,10 @@ QDockWidget::title { padding: 2px; border: 1px outset #5a5040; background-color:
             "bg_main": "#232018", "bg_text": "#1a1810", "text_main": "#d4c89a",
             "border_light": "#5a5040", "border_dark": "#100e08",
             "btn_bg": "#332e22", "btn_pressed": "#232018", "btn_text": "#c9a84c",
-            "accent": "#f0d060"
+            "accent": "#f0d060",
+            "notif_bg": "#232018", "notif_header": "#332e22",
+            "notif_title": "#f0d060", "notif_text": "#d4c89a",
+            "notif_accent": "#f0d060", "notif_border": "#5a5040"
         }
     },
     "Vintage Dark": {
@@ -292,7 +312,10 @@ QDockWidget::title { padding: 1px; border: 2px solid; border-top-color: #4d4d4d;
             "bg_main": "#1b1b1b", "bg_text": "#181818", "text_main": "#c0c0c0",
             "border_light": "#4d4d4d", "border_dark": "#0a0a0a",
             "btn_bg": "#2b2b2b", "btn_pressed": "#141414", "btn_text": "#c0c0c0",
-            "accent": "#5a7a96"
+            "accent": "#5a7a96",
+            "notif_bg": "#1b1b1b", "notif_header": "#2b2b2b",
+            "notif_title": "#5a7a96", "notif_text": "#c0c0c0",
+            "notif_accent": "#5a7a96", "notif_border": "#4d4d4d"
         }
     },
     "Vintage Classic": {
@@ -330,7 +353,10 @@ QDockWidget::title { padding: 2px; border: 2px outset #ffffff; background-color:
             "bg_main": "#c0c0c0", "bg_text": "#ffffff", "text_main": "#000000",
             "border_light": "#ffffff", "border_dark": "#808080",
             "btn_bg": "#c0c0c0", "btn_pressed": "#e6e6e6", "btn_text": "#000000",
-            "accent": "#5e7a7a"
+            "accent": "#5e7a7a",
+            "notif_bg": "#c0c0c0", "notif_header": "#c0c0c0",
+            "notif_title": "#5e7a7a", "notif_text": "#000000",
+            "notif_accent": "#5e7a7a", "notif_border": "#ffffff"
         }
     },
     "Dark 2 (OLED)": {
@@ -368,11 +394,14 @@ QDockWidget::title { padding: 1px; border: 1px solid #1a1a1a; background-color: 
             "bg_main": "#000000", "bg_text": "#000000", "text_main": "#a0a0a0",
             "border_light": "#333333", "border_dark": "#1a1a1a",
             "btn_bg": "#0a0a0a", "btn_pressed": "#141414", "btn_text": "#a0a0a0",
-            "accent": "#ffffff"
+            "accent": "#ffffff",
+            "notif_bg": "#000000", "notif_header": "#0a0a0a",
+            "notif_title": "#ffffff", "notif_text": "#a0a0a0",
+            "notif_accent": "#ffffff", "notif_border": "#333333"
         }
     },
     # Popular community palettes. Built through generate_custom_theme() so
-    # they carry the same 9-key raw_colors schema every theme-aware widget
+    # they carry the same 15-key raw_colors schema every theme-aware widget
     # reads — no extra wiring needed for any of them.
     "Dracula": generate_custom_theme({
         "bg_main": "#282a36", "bg_text": "#21222c", "text_main": "#f8f8f2",

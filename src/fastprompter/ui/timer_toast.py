@@ -21,7 +21,12 @@ _SNOOZE_CHOICES = (5, 10, 30)
 
 
 def _get_toast_palette(main_win):
-    """Derive palette from active theme's raw_colors with Win95 dark-golden fallbacks."""
+    """Derive palette from the active theme's notification tokens.
+
+    Every theme carries a dedicated notif_* token set; a theme that predates
+    them falls back to its generic colours. Win95 dark-golden fallbacks cover
+    a theme cache that isn't reachable yet (very early paint).
+    """
     raw = {}
     try:
         if main_win is not None:
@@ -30,26 +35,26 @@ def _get_toast_palette(main_win):
     except Exception:
         pass
 
-    bg_main = raw.get("bg_main", "#1A0F05")
-    bg_text = raw.get("bg_text", "#2C1C0A")
-    text_main = raw.get("text_main", "#D4B87A")
-    btn_bg = raw.get("btn_bg", "#362812")
-    btn_text = raw.get("btn_text", "#D4B87A")
-    btn_pressed = raw.get("btn_pressed", "#2A1C0A")
-    border_light = raw.get("border_light", "#C0A060")
+    bg = raw.get("notif_bg", raw.get("bg_main", "#1A0F05"))
+    header = raw.get("notif_header", raw.get("btn_bg", "#362812"))
+    title = raw.get("notif_title", raw.get("accent", "#D9B340"))
+    text = raw.get("notif_text", raw.get("text_main", "#D4B87A"))
+    accent = raw.get("notif_accent", raw.get("accent", "#D9B340"))
+    border = raw.get("notif_border", raw.get("border_light", "#C0A060"))
     border_dark = raw.get("border_dark", "#0E0803")
-    accent = raw.get("accent", "#D9B340")
 
     return {
-        "bg_main": bg_main,
-        "bg_text": bg_text,
-        "text_main": text_main,
-        "btn_bg": btn_bg,
-        "btn_text": btn_text,
-        "btn_pressed": btn_pressed,
-        "border_light": border_light,
-        "border_dark": border_dark,
+        "bg": bg,
+        "header": header,
+        "title": title,
+        "text": text,
         "accent": accent,
+        "border": border,
+        "border_dark": border_dark,
+        "info": blend_hex(text, border, 0.30),
+        "btn_bg": header,
+        "btn_text": accent,
+        "btn_pressed": blend_hex(header, border, 0.45),
     }
 
 
@@ -76,20 +81,20 @@ class TimerToast(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
 
         p = _get_toast_palette(main_win)
-        accent = timer.display_color() if hasattr(timer, "display_color") else p["accent"]
+        accent = timer.display_color() if hasattr(timer, "display_color") else p["title"]
 
         self.setObjectName("TimerToast")
         self.setStyleSheet(f"""
             QWidget#TimerToast {{
-                background-color: {p['bg_main']};
-                color: {p['text_main']};
-                border-top: 2px solid {p['border_light']};
-                border-left: 2px solid {p['border_light']};
+                background-color: {p['bg']};
+                color: {p['text']};
+                border-top: 2px solid {p['border']};
+                border-left: 2px solid {p['border']};
                 border-right: 2px solid {p['border_dark']};
                 border-bottom: 2px solid {p['border_dark']};
             }}
             QWidget#HeaderBar {{
-                background-color: {p['btn_bg']};
+                background-color: {p['header']};
                 border-bottom: 1px solid {p['border_dark']};
             }}
             QLabel#HeaderTitle {{
@@ -100,8 +105,8 @@ class TimerToast(QWidget):
             QPushButton#CloseBtn {{
                 background-color: {p['btn_bg']};
                 color: {p['btn_text']};
-                border-top: 1px solid {p['border_light']};
-                border-left: 1px solid {p['border_light']};
+                border-top: 1px solid {p['border']};
+                border-left: 1px solid {p['border']};
                 border-right: 1px solid {p['border_dark']};
                 border-bottom: 1px solid {p['border_dark']};
                 font-weight: bold;
@@ -112,8 +117,8 @@ class TimerToast(QWidget):
             QPushButton#CloseBtn:pressed {{
                 border-top: 1px solid {p['border_dark']};
                 border-left: 1px solid {p['border_dark']};
-                border-right: 1px solid {p['border_light']};
-                border-bottom: 1px solid {p['border_light']};
+                border-right: 1px solid {p['border']};
+                border-bottom: 1px solid {p['border']};
                 background-color: {p['btn_pressed']};
             }}
             QLabel#TitleLbl {{
@@ -122,18 +127,18 @@ class TimerToast(QWidget):
                 font-size: 12px;
             }}
             QLabel#DescLbl {{
-                color: {p['text_main']};
+                color: {p['text']};
                 font-size: 11px;
             }}
             QLabel#InfoLbl {{
-                color: {p['border_light']};
+                color: {p['info']};
                 font-size: 10px;
             }}
             QPushButton.toast-btn {{
                 background-color: {p['btn_bg']};
                 color: {p['btn_text']};
-                border-top: 2px solid {p['border_light']};
-                border-left: 2px solid {p['border_light']};
+                border-top: 2px solid {p['border']};
+                border-left: 2px solid {p['border']};
                 border-right: 2px solid {p['border_dark']};
                 border-bottom: 2px solid {p['border_dark']};
                 padding: 2px 7px;
@@ -141,13 +146,13 @@ class TimerToast(QWidget):
                 border-radius: 0px;
             }}
             QPushButton.toast-btn:hover {{
-                background-color: {blend_hex(p['btn_bg'], p['border_light'], 0.18)};
+                background-color: {blend_hex(p['btn_bg'], p['border'], 0.18)};
             }}
             QPushButton.toast-btn:pressed {{
                 border-top: 2px solid {p['border_dark']};
                 border-left: 2px solid {p['border_dark']};
-                border-right: 2px solid {p['border_light']};
-                border-bottom: 2px solid {p['border_light']};
+                border-right: 2px solid {p['border']};
+                border-bottom: 2px solid {p['border']};
                 background-color: {p['btn_pressed']};
             }}
         """)

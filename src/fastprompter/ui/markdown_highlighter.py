@@ -224,6 +224,15 @@ class MarkdownHighlighter(QSyntaxHighlighter):
         self._link_pattern = re.compile(r'\[([^\]]+)\]\(([^)]+)\)')
         self._highlighting_rules.append((self._link_pattern, link_format))
 
+        # Bare http(s) URLs — clickable without markdown syntax. The lookbehind
+        # skips the URL inside [text](url), which the rule above owns.
+        url_format = QTextCharFormat()
+        url_format.setForeground(QColor("#61afef"))
+        url_format.setFontUnderline(True)
+        url_format.setAnchor(True)
+        self._url_pattern = re.compile(r'(?<![\w(])https?://[^\s<>"\')\]]+')
+        self._highlighting_rules.append((self._url_pattern, url_format))
+
         # Markdown Images: ![alt](url) — visually collapse to a tiny invisible dot
         # 1. The '!' keeps normal height (preventing vertical overlap) and gets 150px letter spacing
         #    to guarantee minimum width for the drawn pill.
@@ -341,7 +350,13 @@ class MarkdownHighlighter(QSyntaxHighlighter):
                         link_fmt.setAnchorHref(url_match.group(2))
                         self._apply(start, length, link_fmt)
                     else:
-                        self._apply(start, length, format)
+                        url_match = self._url_pattern.match(match.group())
+                        if url_match:
+                            link_fmt = QTextCharFormat(format)
+                            link_fmt.setAnchorHref(url_match.group(0))
+                            self._apply(start, length, link_fmt)
+                        else:
+                            self._apply(start, length, format)
                 else:
                     self._apply(start, length, format)
 

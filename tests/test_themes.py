@@ -102,7 +102,7 @@ class TestGenerateCustomTheme:
         assert "#001122" in ss
 
     def test_raw_colors_has_all_expected_keys(self):
-        """raw_colors should have all 9 default color keys."""
+        """raw_colors should have all default color keys."""
         theme = generate_custom_theme({})
         expected_keys = {
             "bg_main",
@@ -114,8 +114,38 @@ class TestGenerateCustomTheme:
             "btn_text",
             "btn_pressed",
             "accent",
+            "notif_bg",
+            "notif_header",
+            "notif_title",
+            "notif_text",
+            "notif_accent",
+            "notif_border",
         }
         assert set(theme["raw_colors"].keys()) == expected_keys
+
+    def test_notif_defaults_derive_from_base(self):
+        """Notification tokens default from the base palette unless overridden."""
+        theme = generate_custom_theme({
+            "bg_main": "#111111", "btn_bg": "#222222",
+            "accent": "#33cc33", "text_main": "#cccccc",
+            "border_light": "#444444",
+        })
+        rc = theme["raw_colors"]
+        assert rc["notif_bg"] == "#111111"
+        assert rc["notif_header"] == "#222222"
+        assert rc["notif_title"] == "#33cc33"
+        assert rc["notif_text"] == "#cccccc"
+        assert rc["notif_accent"] == "#33cc33"
+        assert rc["notif_border"] == "#444444"
+
+    def test_notif_overrides_are_respected(self):
+        theme = generate_custom_theme({
+            "bg_main": "#111111",
+            "notif_bg": "#999999", "notif_header": "#888888",
+        })
+        rc = theme["raw_colors"]
+        assert rc["notif_bg"] == "#999999"
+        assert rc["notif_header"] == "#888888"
 
     def test_custom_theme_type(self):
         """The result should be coercible to dict (structural check)."""
@@ -164,6 +194,17 @@ class TestThemesDict:
         for name, theme in THEMES.items():
             assert "stylesheet" in theme, f"Theme '{name}' missing stylesheet"
             assert len(theme["stylesheet"]) > 100, f"Theme '{name}' stylesheet too short"
+
+    def test_each_theme_has_notification_tokens(self):
+        """Every theme must carry the six notif_* tokens for the toast."""
+        notif_keys = {
+            "notif_bg", "notif_header", "notif_title", "notif_text",
+            "notif_accent", "notif_border",
+        }
+        for name, theme in THEMES.items():
+            raw = theme.get("raw_colors", {})
+            missing = notif_keys - set(raw.keys())
+            assert not missing, f"Theme '{name}' missing notification tokens: {missing}"
 
     def test_each_theme_has_preset_colors(self):
         """Every theme should have preset_colors list."""

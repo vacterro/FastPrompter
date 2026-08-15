@@ -131,6 +131,7 @@ _RE_ITALIC = _mod._RE_ITALIC
 _RE_LINK = _mod._RE_LINK
 _RE_LIST_ITEM = _mod._RE_LIST_ITEM
 _RE_LIST_SUB = _mod._RE_LIST_SUB
+_RE_URL = _mod._RE_URL
 FormattingMixin = _mod.FormattingMixin
 
 
@@ -246,6 +247,18 @@ class TestRegexPatterns:
         assert m.group(1) == "text"
         assert m.group(2) == "https://example.com"
 
+    def test_re_url_matches_bare_http(self):
+        m = _RE_URL.search("see https://example.com here")
+        assert m
+        assert m.group(0) == "https://example.com"
+
+    def test_re_url_matches_bare_https(self):
+        assert _RE_URL.search("visit https://example.org now")
+
+    def test_re_url_skips_url_inside_markdown_link(self):
+        """The URL inside [text](url) belongs to _RE_LINK, not _RE_URL."""
+        assert _RE_URL.search("[text](https://example.com)") is None
+
 
 # ---------------------------------------------------------------------------
 # simple_markdown_to_html tests
@@ -325,6 +338,18 @@ class TestSimpleMarkdownToHtml:
         result = self._call("[click](https://example.com)")
         assert 'href="https://example.com"' in result
         assert "click" in result
+
+    def test_bare_url(self):
+        result = self._call("see https://example.com now")
+        assert 'href="https://example.com"' in result
+
+    def test_bare_url_in_bullet(self):
+        result = self._call("- see https://example.com now")
+        assert 'href="https://example.com"' in result
+
+    def test_markdown_link_not_double_wrapped(self):
+        result = self._call("[click](https://example.com)")
+        assert result.count("<a ") == 1
 
     def test_html_escaping(self):
         result = self._call("<script>alert('xss')</script>")

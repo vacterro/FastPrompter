@@ -1,8 +1,8 @@
 ---
 phase: DONE
 task: none
-next_action: "WAIT: blocked -- untriaged MARKHUNT findings in ## BLOCKED; triage into ## TODO or dismiss"
-blocker: ""
+next_action: "Two user UI tasks DONE+verified (E-1472): clickable links + notification color customization. Uncommitted in tree. Remaining: human-confirm T-780 (nul)/T-781 (i18n_build_scripts)/T-796 (measure_sqlite.py)/T-799 (clipboard_safe wire-vs-remove); then pick T-794/T-800/T-801/T-803. Decide commit scope (tree carries unrelated prior-session work)."
+blocker: "none -- MARKHUNT brake released: zero [MARKHUNT] tickets in ## BLOCKED (E-1470 triage DEC). Standing user decisions still gate convergence: T-799/T-780/T-781/T-796 need human confirm."
 agent: opencode
 saipen_version: 7
 saipen_home: "C:\\Users\\vac34\\.claude\\skills\\saipen"
@@ -13,9 +13,10 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 1460
+last_event: 1472
 style_contract: ded-4ae736e4
+updated: "2026-08-15T21:40:00Z"
+transition_from: BLOCKED
 execution_intent: converge
-updated: 2026-08-14T08:21:30Z
-transition_from: DONE
+converge_target: ship
 ---

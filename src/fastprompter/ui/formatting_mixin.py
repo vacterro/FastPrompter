@@ -21,6 +21,11 @@ _RE_BOLD = re.compile(r"\*\*(.*?)\*\*")
 _RE_ITALIC = re.compile(r"\*(?!\*)(.*?)\*")
 _RE_INLINE_CODE = re.compile(r"`([^`]+)`")
 _RE_LINK = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
+# Bare http(s) URLs, so a pasted link is clickable without markdown syntax.
+# The lookbehind skips the URL inside [text](url) — there it is handled by
+# _RE_LINK — and the trailing-char class keeps a sentence's punctuation out
+# of the href.
+_RE_URL = re.compile(r"(?<![\w(])https?://[^\s<>\"')\]]+")
 _RE_BULLET = re.compile(r"^\s*•")
 # Fenced/inline code spans, split out so simple_markdown_to_html can skip
 # escaping them (markdown escapes code content itself — see its docstring)
@@ -526,9 +531,16 @@ class FormattingMixin:
             # literal text "a &amp;lt; b").
             parts = _RE_CODE_SPAN.split(text)
             escaped = "".join(
-                part if part.startswith("`") else html.escape(part) for part in parts
+                part if part.startswith("`") else _RE_URL.sub(
+                    lambda m: f'<a href="{m.group(0)}" style="color:#61afef">{m.group(0)}</a>',
+                    html.escape(part),
+                )
+                for part in parts
             )
-            # Full markdown renderer using standard Python markdown library if available
+            # Full markdown renderer using standard Python markdown library if
+            # available. Bare URLs are pre-wrapped above (the installed markdown
+            # build has no autolink extension); code spans are left for markdown
+            # so a URL inside backticks renders as code, not a live anchor.
             body = markdown.markdown(escaped, extensions=["fenced_code", "tables"])
         except Exception:
             # Fallback to simple regex renderer if markdown library not available
@@ -579,6 +591,10 @@ class FormattingMixin:
                         r'<code style="background:#1a1a1a;padding:0 2px;color:#e06c75">\1</code>',
                         content,
                     )
+                    content = _RE_URL.sub(
+                        lambda m: f'<a href="{m.group(0)}" style="color:#61afef">{m.group(0)}</a>',
+                        content,
+                    )
                     content = _RE_LINK.sub(lambda m: f'<a href="{__import__("html").unescape(m.group(2))}" style="color:#61afef">{m.group(1)}</a>', content)
                     html_lines.append(f"<li style='margin:1px 0'>{content}</li>")
                 else:
@@ -588,6 +604,10 @@ class FormattingMixin:
                     line_text = _RE_ITALIC.sub(r"<i>\1</i>", line_text)
                     line_text = _RE_INLINE_CODE.sub(
                         r'<code style="background:#1a1a1a;padding:0 2px;color:#e06c75">\1</code>',
+                        line_text,
+                    )
+                    line_text = _RE_URL.sub(
+                        lambda m: f'<a href="{m.group(0)}" style="color:#61afef">{m.group(0)}</a>',
                         line_text,
                     )
                     line_text = _RE_LINK.sub(

@@ -247,8 +247,8 @@ class TestInit:
 
     def test_rules_populated_after_init(self):
         h = make_highlighter()
-        assert len(h._highlighting_rules) == 19, (
-            f"Expected 19 rules, got {len(h._highlighting_rules)}"
+        assert len(h._highlighting_rules) == 20, (
+            f"Expected 20 rules, got {len(h._highlighting_rules)}"
         )
 
     def test_each_rule_is_pattern_format_tuple(self):
@@ -405,6 +405,22 @@ class TestHighlightBlock:
         h.highlightBlock("click [link](url) here")
         found = any(start == 6 and length == 11 for start, length, fmt in h._format_calls)
         assert found, f"Expected link format at (6,11), got calls: {h._format_calls}"
+
+    def test_bare_url_anchored(self):
+        h = make_highlighter()
+        h.highlightBlock("see https://example.com now")
+        calls = [(s, ln, f) for s, ln, f in h._format_calls
+                 if f._anchor and f._anchor_href == "https://example.com"]
+        assert calls, f"Expected anchored URL format, got calls: {h._format_calls}"
+
+    def test_bare_url_not_reanchored_inside_markdown_link(self):
+        h = make_highlighter()
+        h.highlightBlock("[x](https://example.com)")
+        anchored = [f for _, _, f in h._format_calls if f._anchor]
+        assert anchored, "expected the markdown link anchored"
+        assert all(f._anchor_href == "https://example.com" for f in anchored), (
+            f"URL rule must not re-anchor inside markdown links: {h._format_calls}"
+        )
 
     def test_horizontal_rule(self):
         h = make_highlighter()
