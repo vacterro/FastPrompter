@@ -12,11 +12,12 @@
 ## TODO
 
 - [ ] T-800 (P3, i18n-doc-drift, triaged MARKHUNT E-1469) localization-doc drift cluster x6: translated docs ru/est/ja/de @3bd99c8 vs wiki +186/-57; root `GUIDE_EN.md` @4b7109c vs wiki +65/-7; 29-locale gap 95.2% (49 missing keys x 29 = 1421 strings). Fix via the saiwiki + saitranslate re-cut pipeline (kitchen sources own these), NOT an inline edit -- `docs/wiki/` and the locale trees are pipeline-owned. | verify: kitchen mirrors re-cut and collected; coverage gap tracked as standing debt | needs: sub-sync
-- [ ] T-801 (P3, doc-drift, triaged MARKHUNT E-1469) `docs/wiki/SAIPEN-Protocol.md:49-58` "Phase Machine" lists 7 phases but the real machine has 16 (`phases/`: add, blocked, build, clean, done, hunt, init, markhunt, plan, prepare, review, scout, ship, translate, validate, verify). Fix via saiwiki kitchen re-cut (`docs/wiki/` is pipeline-owned). | verify: wiki phase list matches skill `phases/` | needs: sub-sync
 - [ ] T-803 (P3, log-contract, triaged MARKHUNT E-1469) crew engine journaled `[op: converge_intent-bce5cd6b]` into `.saipen/LOG.md:226`, breaking `validate.py`'s LOG_LINE skeleton (tax must be RUN/DEC/H) so E-1467 is unparsed and E-1468's `parent: E-1467` dangles. Fix: engine must write skeleton-conformant lines, OR the validator must accept `[op: ...]` op-journal lines. Lives in the saipen skill (`tools/saipen_engine`), not the project tree. | verify: `validate.py` no longer flags malformed lines; E-1467 parses | needs: skill-owner
 ## BLOCKED
 
 ## DONE
+
+- [x] T-801 (P3, doc-drift, triaged MARKHUNT E-1469) DONE 15.08.26 22:45 -- saiwiki re-cut + qqq collect (WIKI-003, fp 21116912 @6cb2394): SAIPEN-Protocol "Phase Machine" now 16 phases matching skill `phases/` (INIT SCOUT PLAN HUNT MARKHUNT PREPARE TRANSLATE BUILD VERIFY REVIEW ADD VALIDATE CLEAN SHIP BLOCKED DONE) + STATE.md phase enum; Module-Structure re-cut for T-799 (clipboard_safe line dropped, core 20→19, total 122→121, live-counted 19/46/5/121). 16/16 kitchen mirrors byte-identical to docs/wiki. | verify: wiki phase list matches skill `phases/` | owner: opencode
 
 - [x] T-799 (P3, dead-code, hh HUNT) DONE 15.08.26 22:25 @ddc47fe -- user confirmed REMOVE; `src/fastprompter/core/clipboard_safe.py` dead module + `tests/test_clipboard_safe.py` deleted; live `ClipboardSender`/`should_restore_clipboard` in `core/watcher/sender.py` untouched. `docs/wiki/Module-Structure.md` line left stale for the saiwiki re-cut (T-800 sub-sync). | verify: zero clipboard_safe src/tests refs; sender tests 29 pass; unit 1135 pass | owner: opencode
 - [x] T-796 (P3, clean-orphan) DONE 15.08.26 22:25 @ddc47fe -- user confirmed delete; root `measure_sqlite.py` scratch probe removed (untracked). | verify: file gone | owner: opencode

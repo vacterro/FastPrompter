@@ -1,0 +1,68 @@
+{
+  "op_id": "sub-spawn-a1fbc251",
+  "operation": "sub_spawn",
+  "created_at": "2026-08-14T09:31:18Z",
+  "agent": "saitest",
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "semantic_payload_hash": "b699bcd5e4031c99",
+  "preconditions": {
+    ".saipen/extensions/subs/saitest/STATE.md": "",
+    ".saipen/extensions/subs/saitest/BOARD.md": "",
+    ".saipen/extensions/subs/saitest/LOG.md": "",
+    ".saipen/extensions/subs/saitest/kitchen/OUTBOX.md": "",
+    ".saipen/extensions/subs/MANIFEST.md": "5a08f63d98cbd195"
+  },
+  "read_preconditions": {
+    "C:\\Users\\vac34\\.claude\\skills\\saipen\\extensions\\subs": "tree-sha256:6fd89c466a8949305072239ac24a09be0323aff01644b51c5d52b82c9d193893",
+    "C:\\Users\\vac34\\.claude\\skills\\saipen\\extensions\\subs\\TEMPLATE\\STATE.md": "68bc0383162168fc",
+    "C:\\Users\\vac34\\.claude\\skills\\saipen\\extensions\\subs\\TEMPLATE\\BOARD.md": "2f404b252fd85214",
+    "C:\\Users\\vac34\\.claude\\skills\\saipen\\extensions\\subs\\TEMPLATE\\LOG.md": "c99f90eaabc29aee",
+    "C:\\Users\\vac34\\.claude\\skills\\saipen\\extensions\\subs\\TEMPLATE\\kitchen\\OUTBOX.md": "02feec7cb8582577",
+    "C:\\Users\\vac34\\.claude\\skills\\saipen\\extensions\\subs\\saitest.md": "c96ebff8c7c36eed"
+  },
+  "verification_policy": "sub_lifecycle",
+  "status": "COMMITTED",
+  "progress_index": 5,
+  "targets": [
+    {
+      "path": ".saipen/extensions/subs/saitest/STATE.md",
+      "role": "state",
+      "action": "write",
+      "before_hash": "",
+      "after_hash": "819d287e7bb9dc08",
+      "applied": true
+    },
+    {
+      "path": ".saipen/extensions/subs/saitest/BOARD.md",
+      "role": "board",
+      "action": "write",
+      "before_hash": "",
+      "after_hash": "2f404b252fd85214",
+      "applied": true
+    },
+    {
+      "path": ".saipen/extensions/subs/saitest/LOG.md",
+      "role": "log",
+      "action": "write",
+      "before_hash": "",
+      "after_hash": "c99f90eaabc29aee",
+      "applied": true
+    },
+    {
+      "path": ".saipen/extensions/subs/saitest/kitchen/OUTBOX.md",
+      "role": "report",
+      "action": "write",
+      "before_hash": "",
+      "after_hash": "02feec7cb8582577",
+      "applied": true
+    },
+    {
+      "path": ".saipen/extensions/subs/MANIFEST.md",
+      "role": "manifest",
+      "action": "write",
+      "before_hash": "5a08f63d98cbd195",
+      "after_hash": "ff2a9921971f2bb3",
+      "applied": true
+    }
+  ]
+}

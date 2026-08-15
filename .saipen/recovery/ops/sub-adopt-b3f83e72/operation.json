@@ -1,0 +1,31 @@
+{
+  "op_id": "sub-adopt-b3f83e72",
+  "operation": "sub_adopt",
+  "created_at": "2026-08-14T09:31:49Z",
+  "agent": "saipen-cli",
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "semantic_payload_hash": "8bc46c23251deb6e",
+  "preconditions": {
+    ".saipen/extensions/subs/saiwiki/STATE.md": "5a8551643bc60ccc"
+  },
+  "read_preconditions": {
+    ".saipen/extensions/subs/MANIFEST.md": "51e18da5236cc353",
+    ".saipen/extensions/subs/saiwiki/BOARD.md": "6682f4216ca46aab",
+    ".saipen/extensions/subs/saiwiki.md": "a10b94acf2356fc9",
+    ".saipen/extensions/subs/PROTOCOL.md": "026d5242835fe856",
+    "C:\\Users\\vac34\\.claude\\skills\\saipen\\extensions\\subs\\saiwiki.md": "a10b94acf2356fc9"
+  },
+  "verification_policy": "sub_lifecycle",
+  "status": "COMMITTED",
+  "progress_index": 1,
+  "targets": [
+    {
+      "path": ".saipen/extensions/subs/saiwiki/STATE.md",
+      "role": "state",
+      "action": "write",
+      "before_hash": "5a8551643bc60ccc",
+      "after_hash": "884a75b37d05b089",
+      "applied": true
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+---
+phase: BLOCKED
+task: none
+next_action: "saipen continue"
+blocker: "crew circuit: SC-0/SC-1 green (fleet format-migrated, saitest/saiui spawned); SC-2 sensor certifications require role runs; downstream SC-7/SC-8/SC-9 gated on user decisions + fresh producer packages"
+agent: opencode
+saipen_version: 7
+saipen_home: "C:\\Users\\vac34\\.claude\\skills\\saipen"
+mode: full
+requires:
+  - filesystem
+  - python
+  - shell
+  - git
+schema_version: 3
+last_event: 1467
+style_contract: ded-4ae736e4
+updated: "2026-08-14T09:33:32Z"
+transition_from: DONE
+execution_intent: converge
+converge_target: ship
+---

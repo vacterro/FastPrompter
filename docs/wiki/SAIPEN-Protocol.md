@@ -33,7 +33,7 @@ SAIPEN (v7) — lightweight structured protocol for persistent AI agent task tra
 
 ```yaml
 ---
-phase: SCOUT | PLAN | BUILD | VERIFY | REVIEW | DONE | BLOCKED
+phase: INIT | SCOUT | PLAN | HUNT | MARKHUNT | PREPARE | TRANSLATE | BUILD | VERIFY | REVIEW | ADD | VALIDATE | CLEAN | SHIP | BLOCKED | DONE
 task: "Active task description"
 next_action: "Immediate next step"
 blocker: ""  # Reason if BLOCKED
@@ -48,13 +48,24 @@ updated: 2026-07-30T12:00:00Z
 
 ### Phase Machine
 
-1. **SCOUT** — inspect codebase, check deps, read logs
-2. **PLAN** — create tickets on BOARD.md, design
-3. **BUILD** — implement code/config/docs
-4. **VERIFY** — run tests, linters, manual checks
-5. **REVIEW** — diff review, LOG entry
-6. **DONE** — all tickets complete
-7. **BLOCKED** — stuck, blocker field explains why
+The canonical phase set has 16 phases, one doc each in the saipen repo's `phases/`:
+
+1. **INIT** — bootstrap `.saipen/`, bind project root, cold-start read
+2. **SCOUT** — inspect codebase, check deps, read logs
+3. **PLAN** — create tickets on BOARD.md, design
+4. **HUNT** — systematic finding sweep, file `HUNT-` tickets
+5. **MARKHUNT** — triage hunt findings into `T-###` tickets
+6. **PREPARE** — producer subSaipen packaging into `kitchen/OUTBOX.md`
+7. **TRANSLATE** — locale/translation contract run
+8. **BUILD** — implement code/config/docs
+9. **VERIFY** — run tests, linters, manual checks
+10. **REVIEW** — diff review, LOG entry
+11. **ADD** — register a new sub/extension
+12. **VALIDATE** — run `tools/validate.py`, fix state schema drift
+13. **CLEAN** — remove dead code, stale artifacts, unused deps
+14. **SHIP** — release readiness gates, version bump, changelog
+15. **BLOCKED** — stuck, blocker field explains why
+16. **DONE** — all tickets complete
 
 ### Event Log (LOG.md)
 

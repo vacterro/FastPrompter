@@ -13,7 +13,6 @@ src/fastprompter/
 │
 ├── core/                       # Backend logic, state, subsystems
 │   ├── config.py               # Theme color extractors, tray icon generators
-│   ├── clipboard_safe.py       # Conditional clipboard save/restore guard (T-788)
 │   ├── ctrlw.py                # Ctrl+W / Alt+W divider insertion engine
 │   ├── default_profile.py      # Shipped defaults map, merged into state.reset_data()
 │   ├── duration.py             # Time parsing, human-readable duration format
@@ -143,8 +142,7 @@ src/fastprompter/
 
 ## Module Count Summary
 
-- **core/**: 20 modules + i18n/ (33 locales + 5 infra files = 38) + watcher/ (10 modules)
+- **core/**: 19 modules + i18n/ (33 locales + 5 infra files = 38) + watcher/ (10 modules)
 - **ui/**: 46 modules
-- **theme/**: 1 module
 - **utils/**: 5 modules
-- **Total**: 122 `.py` files under `src/fastprompter/` (includes `main.py` + `__init__.py`; + `presets/` ships as a non-code data dir)
+- **Total**: 121 `.py` files under `src/fastprompter/` (includes `main.py` + `__init__.py`; + `presets/` ships as a non-code data dir)

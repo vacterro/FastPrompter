@@ -1,11 +1,12 @@
 ---
 phase: DONE
-task: "fresh QQ re-cut 14.08.26 (qq): FORCE-FRESH re-verify vs shipped HEAD 575a143 (v0.8.37). Drift fixed (5 pages): Module-Structure (118->122 modules), Watcher-Engine v0.8.34..37 notes, Architecture-Overview backup/restore truth, Deployment-Guide CI section, Core-API token-only IPC + InstanceLock. T-787 docs-truth edits (10 pages) absorbed from docs/wiki into kitchen. OUTBOX ready source_head 575a143, fingerprint f43f10d2."
-next_action: 'WAIT: user brake -- wiki package fresh at shipped HEAD 575a143, awaiting collect (qqq)'
+task: "Post-cleanup drift repair 15.08.26 (qq): 2 pages re-cut vs HEAD 6cb2394 -- Module-Structure (T-799 clipboard_safe removal, counts 19/46/5/121 verified live) + SAIPEN-Protocol (phase machine 7->16 canonical set, STATE phase enum). OUTBOX WIKI-003 ready source_head 6cb2394, fingerprint 21116912."
+next_action: "WAIT: user brake -- WIKI-003 collected (qqq 15.08, docs/wiki updated, 16/16 mirrors byte-identical)"
 blocker: ""
 agent: saiwiki
 saipen_version: 7
 mode: read-only
-updated: 2026-08-14T08:03:00Z
+updated: "2026-08-15T22:40:00Z"
 transition_from: 'DONE'
+role_revision: "sha256:54a42475a124ab0f27e83d600a284a9cc54d9668029c4828cfc48512b031df13"
 ---

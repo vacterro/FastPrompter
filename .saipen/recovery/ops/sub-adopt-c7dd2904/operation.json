@@ -1,0 +1,31 @@
+{
+  "op_id": "sub-adopt-c7dd2904",
+  "operation": "sub_adopt",
+  "created_at": "2026-08-14T09:25:01Z",
+  "agent": "saipen-cli",
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "semantic_payload_hash": "956dbfeb77abda0b",
+  "preconditions": {
+    ".saipen/extensions/subs/saihunt/STATE.md": "66b3e935c79a0f63"
+  },
+  "read_preconditions": {
+    ".saipen/extensions/subs/MANIFEST.md": "5a08f63d98cbd195",
+    ".saipen/extensions/subs/saihunt/BOARD.md": "6b86c68e8ad570a4",
+    ".saipen/extensions/subs/saihunt.md": "5927e8c0ace9d76b",
+    ".saipen/extensions/subs/PROTOCOL.md": "026d5242835fe856",
+    "C:\\Users\\vac34\\.claude\\skills\\saipen\\extensions\\subs\\saihunt.md": "5927e8c0ace9d76b"
+  },
+  "verification_policy": "sub_lifecycle",
+  "status": "COMMITTED",
+  "progress_index": 1,
+  "targets": [
+    {
+      "path": ".saipen/extensions/subs/saihunt/STATE.md",
+      "role": "state",
+      "action": "write",
+      "before_hash": "66b3e935c79a0f63",
+      "after_hash": "a6cfb8dab3648b2d",
+      "applied": true
+    }
+  ]
+}
