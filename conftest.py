@@ -20,6 +20,10 @@ import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "src")))
 
+# Shared test helpers (tests/_helpers.py) must be importable from tests_smoke/
+# too, at collection time — skipif markers evaluate before any fixture exists.
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "tests")))
+
 # One temp root per pytest PROCESS, installed at import time so it is in place
 # before any test module runs its own mkdtemp.
 #

@@ -18,6 +18,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import tempfile
 
 import pytest
+from _helpers import junction_ok
 from PyQt6.QtCore import QThread
 from PyQt6.QtWidgets import QApplication
 
@@ -28,25 +29,10 @@ _app = QApplication.instance() or QApplication([])
 _tmpdir = tempfile.mkdtemp(prefix="fastprompter_sync_async_")
 
 
-def _junction_ok():
-    """Can we create a directory junction/symlink on this machine?"""
-    try:
-        base = tempfile.mkdtemp()
-        target = tempfile.mkdtemp()
-        link = os.path.join(base, "j")
-        os.symlink(target, link, target_is_directory=True)
-        os.rmdir(link)
-        os.rmdir(base)
-        os.rmdir(target)
-        return True
-    except (OSError, NotImplementedError):
-        return False
-
-
 @pytest.fixture(scope="module")
 def win():
     state_mod.get_db_path = lambda profile_id=1: os.path.join(_tmpdir, f"a_{profile_id}.db")
-    state_mod.run_portable_backup = lambda data: None
+    state_mod.run_portable_backup = lambda data, profile_id=1: None
     FastPrompter.setup_single_instance_server = lambda self: None
     FastPrompter.register_all_hotkeys = lambda self: None
     FastPrompter.unregister_all_hotkeys = lambda self: None
@@ -413,7 +399,7 @@ class TestWorkerReuseAfterShutdown:
         assert any(v == "# t\nreborn" for v in win._sync_written.values())
 
 
-@pytest.mark.skipif(not _junction_ok(), reason="cannot create junctions/symlinks")
+@pytest.mark.skipif(not junction_ok(), reason="cannot create junctions/symlinks")
 class TestWorkerReparseContainment:
     """Phase-6: the sync worker revalidates every destination against the
     captured root at MUTATION time — a junction swapped in after capture must

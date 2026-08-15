@@ -9,6 +9,7 @@ Windows names must never be written.
 import os
 
 import pytest
+from _helpers import junction_ok as _junction_ok
 
 from fastprompter.utils.path_safety import (
     alloc_fs_names,
@@ -254,22 +255,6 @@ class TestAllocFsNames:
         for comp in out.values():
             os.makedirs(os.path.join(root, comp), exist_ok=True)
         assert sorted(os.listdir(parent)) == before
-
-
-def _junction_ok():
-    """Can we create a directory junction/symlink on this machine?"""
-    import tempfile
-    try:
-        base = tempfile.mkdtemp()
-        target = tempfile.mkdtemp()
-        link = os.path.join(base, "j")
-        os.symlink(target, link, target_is_directory=True)
-        os.rmdir(link)
-        os.rmdir(base)
-        os.rmdir(target)
-        return True
-    except (OSError, NotImplementedError):
-        return False
 
 
 _JUNCTION_OK = _junction_ok()
