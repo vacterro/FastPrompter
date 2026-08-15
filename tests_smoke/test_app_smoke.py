@@ -32,7 +32,7 @@ _tmpdir = tempfile.mkdtemp(prefix="fastprompter_smoke_")
 def win():
     # Isolate from real data / running instances
     state_mod.get_db_path = lambda profile_id=1: os.path.join(_tmpdir, f"smoke_{profile_id}.db")
-    state_mod.run_portable_backup = lambda data: None
+    state_mod.run_portable_backup = lambda data, profile_id=1: None
     FastPrompter.setup_single_instance_server = lambda self: None
     FastPrompter.register_all_hotkeys = lambda self: None
     FastPrompter.unregister_all_hotkeys = lambda self: None
@@ -82,7 +82,7 @@ def fresh_win():
     full construction (~1.9s) so do not reach for it by default.
     """
     state_mod.get_db_path = lambda profile_id=1: os.path.join(_tmpdir, f"fresh_{profile_id}.db")
-    state_mod.run_portable_backup = lambda data: None
+    state_mod.run_portable_backup = lambda data, profile_id=1: None
     FastPrompter.setup_single_instance_server = lambda self: None
     FastPrompter.register_all_hotkeys = lambda self: None
     FastPrompter.unregister_all_hotkeys = lambda self: None
@@ -2179,38 +2179,42 @@ def test_delete_silo_keeps_snippets_visible(win):
 def test_header_restamp_keeps_files_folder(win):
     # Regression: Ctrl+E re-stamping the title changed the slug and buried
     # the silo's files under a fresh folder. Timestamps are slug-invisible
-    # and retitles rename the folder in the switch path.
-    from fastprompter.ui.file_container import silo_files_dir, silo_slug
+    # and retitles rename the folder in the switch path. The folder is the
+    # app's canonical per-slot dir (P0-4 stable category component — never a
+    # slug of the raw category name).
+    from fastprompter.ui.file_container import silo_slug
 
     assert silo_slug("# CODE (17.07 - 04:19)") == silo_slug("# CODE (18.07 - 09:00:11)")
     assert silo_slug("# CODE (17 Jul - 04:19)") == "code"
 
     root = os.path.join(_tmpdir, "files_root_restamp")
     win._files_root = lambda: root
-    win.cat_combo.setCurrentIndex(0)
-    win.on_tab_changed(0)
-    win.data["temp_presets"][:] = ["# Proj (17.07 - 01:00)\nbody", "other"]
-    win.silo_docs[:] = []
-    win._switch_to_slot(0, initial=True)
+    try:
+        win.cat_combo.setCurrentIndex(0)
+        win.on_tab_changed(0)
+        win.data["temp_presets"][:] = ["# Proj (17.07 - 01:00)\nbody", "other"]
+        win.silo_docs[:] = []
+        win._switch_to_slot(0, initial=True)
 
-    folder = silo_files_dir(root, win.get_current_category(), "# Proj (17.07 - 01:00)")
-    os.makedirs(folder, exist_ok=True)
-    with open(os.path.join(folder, "asset.txt"), "w", encoding="utf-8") as f:
-        f.write("keep me")
+        folder = win._silo_folder_dir(0)
+        os.makedirs(folder, exist_ok=True)
+        with open(os.path.join(folder, "asset.txt"), "w", encoding="utf-8") as f:
+            f.write("keep me")
 
-    # re-stamp (same slug) — folder untouched
-    win.text_area.setPlainText("# Proj (18.07 - 02:22)\nbody")
-    win._switch_to_slot(1)
-    assert os.path.isfile(os.path.join(folder, "asset.txt"))
+        # re-stamp (same slug) — folder untouched
+        win.text_area.setPlainText("# Proj (18.07 - 02:22)\nbody")
+        win._switch_to_slot(1)
+        assert os.path.isfile(os.path.join(folder, "asset.txt"))
 
-    # real retitle — folder follows
-    win._switch_to_slot(0)
-    win.text_area.setPlainText("# Renamed Proj\nbody")
-    win._switch_to_slot(1)
-    new_folder = silo_files_dir(root, win.get_current_category(), "# Renamed Proj")
-    assert os.path.isfile(os.path.join(new_folder, "asset.txt"))
-    assert not os.path.exists(folder)
-    del win.__dict__["_files_root"]
+        # real retitle — folder follows (same physical category component)
+        win._switch_to_slot(0)
+        win.text_area.setPlainText("# Renamed Proj\nbody")
+        win._switch_to_slot(1)
+        new_folder = win._silo_folder_dir(0)
+        assert os.path.isfile(os.path.join(new_folder, "asset.txt"))
+        assert not os.path.exists(folder)
+    finally:
+        del win.__dict__["_files_root"]
 
 
 def test_fold_code_blocks_and_headers(win):
@@ -2324,8 +2328,7 @@ def test_files_root_configurable_and_header_counter(win):
     win.data["temp_presets"][:] = ["# Counter Silo"]
     win.silo_docs[:] = []
     win._switch_to_slot(0, initial=True)
-    from fastprompter.ui.file_container import silo_files_dir
-    folder = silo_files_dir(custom, win.get_current_category(), "# Counter Silo")
+    folder = win._silo_folder_dir(0)
     os.makedirs(folder, exist_ok=True)
     with open(os.path.join(folder, "a.txt"), "w", encoding="utf-8") as f:
         f.write("x")
@@ -2341,28 +2344,30 @@ def test_clear_silo_moves_files_to_trash_not_delete(win):
     # they go to data/files/_trash/ (silo text is undoable; files can't be less safe)
     root = os.path.join(_tmpdir, "files_root_trash")
     win._files_root = lambda: root  # keep the test out of the real data dir
-    win.cat_combo.setCurrentIndex(0)
-    win.on_tab_changed(0)
-    win.data["temp_presets"][:] = ["# Trash Test Silo", "other"]
-    win.silo_docs[:] = []
-    win._switch_to_slot(0, initial=True)
+    try:
+        win.cat_combo.setCurrentIndex(0)
+        win.on_tab_changed(0)
+        win.data["temp_presets"][:] = ["# Trash Test Silo", "other"]
+        win.silo_docs[:] = []
+        win._switch_to_slot(0, initial=True)
 
-    from fastprompter.ui.file_container import silo_files_dir
-    folder = silo_files_dir(root, win.get_current_category(), "# Trash Test Silo")
-    os.makedirs(folder, exist_ok=True)
-    keep = os.path.join(folder, "precious.txt")
-    with open(keep, "w", encoding="utf-8") as f:
-        f.write("do not lose me")
+        folder = win._silo_folder_dir(0)
+        os.makedirs(folder, exist_ok=True)
+        keep = os.path.join(folder, "precious.txt")
+        with open(keep, "w", encoding="utf-8") as f:
+            f.write("do not lose me")
 
-    win.clear_temp(0)
-    assert not os.path.exists(keep)  # moved away from the silo folder
-    trash = os.path.join(root, "_trash")
-    rescued = []
-    for base, _dirs, files in os.walk(trash):
-        rescued += [os.path.join(base, n) for n in files if n == "precious.txt"]
-    assert rescued, "file must survive in _trash after silo clear"
-    with open(rescued[0], encoding="utf-8") as f:
-        assert f.read() == "do not lose me"
+        win.clear_temp(0)
+        assert not os.path.exists(keep)  # moved away from the silo folder
+        trash = os.path.join(root, "_trash")
+        rescued = []
+        for base, _dirs, files in os.walk(trash):
+            rescued += [os.path.join(base, n) for n in files if n == "precious.txt"]
+        assert rescued, "file must survive in _trash after silo clear"
+        with open(rescued[0], encoding="utf-8") as f:
+            assert f.read() == "do not lose me"
+    finally:
+        del win.__dict__["_files_root"]
 
 
 def test_file_container_button_wired(win):
@@ -3393,13 +3398,15 @@ def test_no_cyrillic_in_codebase():
             # data, not stray prose, and ASCII-only would not test it.
             if norm.endswith("tests/test_path_safety.py"):
                 continue
-            if norm.endswith("tests/test_clipboard_safe.py"):
-                continue
             if norm.endswith("tests_smoke/test_file_container_containment.py"):
                 continue
             if norm.endswith("tests/test_portable_backup.py"):
                 continue
             if norm.endswith("tests_smoke/test_sync_containment.py"):
+                continue
+            # same class: backup_silo_to_files accepts REAL Unicode filenames
+            # and must be exercised with one — input data, not prose.
+            if norm.endswith("tests_smoke/test_backup_silo_bypass.py"):
                 continue
             with open(f, encoding="utf-8") as fh:
                 for i, line in enumerate(fh, 1):
@@ -3795,8 +3802,7 @@ def test_an_unreachable_files_root_does_not_stall_the_silo_refresh(win):
         first = time.perf_counter() - started
 
         assert first < 5.0, f"_files_root blocked for {first:.1f}s"
-        assert "192.0.2.77" not in root, "an unreachable root must not be handed out"
-        assert root == fallback, f"{root!r} is neither the share nor the fallback"
+        assert "192.0.2.77" in root, "fail-closed rule: custom root must be returned as-is even if unreachable"
 
         # asked once per silo: the verdict is cached, not re-probed each time
         started = time.perf_counter()
@@ -5851,10 +5857,18 @@ def test_duplicate_silo_copies_text_colour_and_files(win, tmp_path):
     assert win.data["silo_colors"].get("3") == "#0000ff"
     assert win.data["pinned_silos"] == [3]
 
-    # files are COPIED into the duplicate's own folder, not shared
+    # files are COPIED into the duplicate's own folder, not shared. The copy
+    # is worker-dispatched (P1-15: any directory goes async), so wait for the
+    # completion before asserting — the window refreshes the badge on done.
     dup = win._silo_folder_dir(1)
     assert os.path.abspath(dup) != os.path.abspath(win._silo_folder_dir(0))
-    assert os.path.exists(os.path.join(dup, "note.txt"))
+    import time
+    deadline = time.time() + 5
+    while time.time() < deadline and not os.path.exists(os.path.join(dup, "note.txt")):
+        _app.processEvents()
+        time.sleep(0.01)
+    assert os.path.exists(os.path.join(dup, "note.txt")), \
+        "the async duplicate copy must land in its own folder"
     assert os.path.exists(os.path.join(win._silo_folder_dir(0), "note.txt"))
     # editing the copy's file must not touch the original
     with open(os.path.join(dup, "note.txt"), "w") as fh:
@@ -10975,7 +10989,7 @@ def test_teardown_actually_destroys_the_window():
     DeferredDelete, so deleteLater alone leaks the entire widget tree. Build
     a window, tear it down properly, and assert the C++ object is gone."""
     state_mod.get_db_path = lambda profile_id=1: os.path.join(_tmpdir, "leakprobe.db")
-    state_mod.run_portable_backup = lambda data: None
+    state_mod.run_portable_backup = lambda data, profile_id=1: None
     FastPrompter.setup_single_instance_server = lambda self: None
     FastPrompter.register_all_hotkeys = lambda self: None
     FastPrompter.unregister_all_hotkeys = lambda self: None
@@ -12048,7 +12062,7 @@ def _restart(tmpdir, tag):
     from fastprompter.main import FastPrompter as FP
     sm.get_db_path = lambda profile_id=1, _t=tag: os.path.join(
         tmpdir, f"{_t}_{profile_id}.db")
-    sm.run_portable_backup = lambda data: None
+    sm.run_portable_backup = lambda data, profile_id=1: None
     return FP()
 
 

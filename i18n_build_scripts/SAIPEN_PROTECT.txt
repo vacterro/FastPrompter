@@ -1,1 +1,0 @@
-﻿SAIPEN-PROTECT: This directory contains the complete i18n language build system and temporary scripts. DO NOT REMOVE.
