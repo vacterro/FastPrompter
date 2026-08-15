@@ -188,13 +188,14 @@ class _BlockData(QTextBlockUserData):
     field the caller did not know about.
     """
 
-    __slots__ = ("ts", "queue_id", "fold_count")
+    __slots__ = ("ts", "queue_id", "fold_count", "word_count")
 
     def __init__(self, ts=None, queue_id=""):
         super().__init__()
         self.ts = ts
         self.queue_id = queue_id
         self.fold_count = 0
+        self.word_count = -1
 
 
 # Kept so existing callers and tests can still say _LineHeat(ts).
@@ -2599,7 +2600,8 @@ class VaultTextEdit(QTextEdit):
                     ext = os.path.splitext(path)[1].lower()
                     if ext in TEXT_EXTENSIONS or not ext:
                         try:
-                            self.insertPlainText(_read_text_file(path))
+                            text_to_insert = _read_text_file(path)
+                            QTimer.singleShot(0, lambda t=text_to_insert: self.insertPlainText(t))
                         except Exception:
                             import traceback
                             traceback.print_exc()
@@ -2612,7 +2614,8 @@ class VaultTextEdit(QTextEdit):
                         elif choice == "editor_link":
                             name = os.path.basename(path)
                             clean_path = path.replace("\\", "/")
-                            self.insertPlainText(f"[{name}](file:///{clean_path})")
+                            text_to_insert = f"[{name}](file:///{clean_path})"
+                            QTimer.singleShot(0, lambda t=text_to_insert: self.insertPlainText(t))
             return
         if source.hasImage():
             # Paste image from clipboard (FastCapture, screenshot, etc.)
@@ -2635,7 +2638,8 @@ class VaultTextEdit(QTextEdit):
                         prefix = "" if (cursor.positionInBlock() == 0 and not block.text().strip()) else "\n"
                         markup = self.image_paste_markup(
                             os.path.basename(name), QUrl.fromLocalFile(name).toString())
-                        self.insertPlainText(f"{prefix}{markup}\n")
+                        text_to_insert = f"{prefix}{markup}\n"
+                        QTimer.singleShot(0, lambda t=text_to_insert: self.insertPlainText(t))
                         # Refresh file container if open.
                         # Guard with ignore_focus_loss: the file container
                         # is a Qt.Tool window when undocked, and touching
@@ -2665,7 +2669,8 @@ class VaultTextEdit(QTextEdit):
                 url = QUrl(text)
                 if url.isValid() and url.scheme() in ("http", "https", "ftp", "file"):
                     selected = cursor.selectedText().replace(" ", "\n")
-                    cursor.insertText(f"[{selected}]({text})")
+                    text_to_insert = f"[{selected}]({text})"
+                    QTimer.singleShot(0, lambda t=text_to_insert: self.textCursor().insertText(t))
                     return
             # Plain text file path — insert as markdown link, or READ the file
             # when it is a text file (T-752). The link branch below stays for
@@ -2683,18 +2688,22 @@ class VaultTextEdit(QTextEdit):
                         # An image path pasted as a plain link is the whole
                         # T-724 regression: it rendered as raw `[name](...)`
                         # text and could not be clicked.
-                        self.insertPlainText(self.image_paste_markup(name, url))
+                        text_to_insert = self.image_paste_markup(name, url)
+                        QTimer.singleShot(0, lambda t=text_to_insert: self.insertPlainText(t))
                     elif os.path.splitext(name)[1].lower() in TEXT_EXTENSIONS \
                             or not os.path.splitext(name)[1]:
                         try:
-                            self.insertPlainText(_read_text_file(normalized))
+                            text_to_insert = _read_text_file(normalized)
+                            QTimer.singleShot(0, lambda t=text_to_insert: self.insertPlainText(t))
                         except Exception:
                             import traceback
                             traceback.print_exc()
                     else:
-                        self.insertPlainText(f"[{name}]({url})")
+                        text_to_insert = f"[{name}]({url})"
+                        QTimer.singleShot(0, lambda t=text_to_insert: self.insertPlainText(t))
                     return
-            self.insertPlainText(source.text())
+            text_to_insert = source.text()
+            QTimer.singleShot(0, lambda t=text_to_insert: self.insertPlainText(t))
 
     def wheelEvent(self, event):
         if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
@@ -3136,7 +3145,7 @@ class VaultTextEdit(QTextEdit):
         except Exception:
             return False
 
-    def _on_contents_change(self, *_args):
+    def _on_contents_change(self, position, removed, added):
         """Document changed — rebuild the background tints.
 
         A named method, not a lambda, so `set_active_document` can disconnect
@@ -3145,6 +3154,18 @@ class VaultTextEdit(QTextEdit):
         """
         if sip.isdeleted(self):
             return
+        doc = self.document()
+        if doc and not sip.isdeleted(doc):
+            first = doc.findBlock(position)
+            last = doc.findBlock(max(position, position + added))
+            block = first
+            while block.isValid():
+                data = block.userData()
+                if hasattr(data, 'word_count'):
+                    data.word_count = -1
+                if block == last:
+                    break
+                block = block.next()
         self.refresh_extra_selections()
 
     def _stamp_edited_blocks(self, position, removed, added):
