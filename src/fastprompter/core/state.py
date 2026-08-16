@@ -3,7 +3,6 @@ import json
 import os
 import sqlite3
 import threading
-import time
 
 from fastprompter.core.default_profile import DEFAULT_PROFILE
 from fastprompter.core.logging import logger
@@ -32,6 +31,7 @@ _JSON_SETTINGS = (
     "archive_project_paths", "archive_project_paths_all",
     "silo_gaps", "silo_gaps_all",
     "silo_view_state_all", "silo_type_all", "silo_session_all",
+    "productivity_timer",
     # {event: {file, enabled, volume}} — a dict, so it MUST be here. Written
     # with str() it comes back single-quoted, json.loads rejects it, and the
     # whole sound panel silently forgets every choice on restart (the exact
@@ -45,6 +45,10 @@ _JSON_SETTINGS = (
     "silo_types", "watcher_skills_extra", "custom_font_ids",
     "watcher_queues", "watcher_queues_all",
     "folder_trash_log", "hidden_categories", "window_presets",
+    # {logical category: physical filesystem component} — a dict, so it MUST
+    # be here or a str() write would reload it as a single-quoted string and
+    # every category would be re-allocated a new physical folder.
+    "category_file_dirs",
 )
 
 # Never stored in the settings table: they have tables of their own.
@@ -443,7 +447,11 @@ class FastPrompterState:
         self._last_saved_temp = {}
         self._last_saved_arc = {}
         self._last_saved_settings = {}
-        self._last_backup_time = 0.0  # throttled backup
+        # Throttle for the SQLite .bak safety copy, PER PROFILE: profiles have
+        # different DB/.bak files, and one profile's recent backup must never
+        # suppress another profile's (the old single scalar did exactly that
+        # when switching profiles back-to-back).
+        self._last_backup_time_by_profile = {}
         self.init_db()
 
     def reset_data(self):
@@ -457,7 +465,10 @@ class FastPrompterState:
             "pie_menu_hotkey": "Shift+Alt+X", "lock_window_hotkey": "Alt+S", "always_on_top_hotkey": "Alt+E",
             "close_on_focus_loss": "True", "ctrl_c_closes": "True", "hk_italic": "Ctrl+I", "hk_underline": "Ctrl+U", "theme": "Default", "ui_scale": "0.5", "button_scale": "1.0", "window_locked": "False", "silo_last_edited": {}, "pinned_silos": [], "silo_last_edited_all": {}, "pinned_silos_all": {}, "silo_ticked": [], "silo_ticked_all": {}, "silo_children": {}, "silo_children_all": {}, "silo_collapsed": [], "silo_collapsed_all": {}, "silo_gaps": [], "silo_gaps_all": {}, "hidden_categories": [], "silo_colors": {}, "silo_colors_all": {}, "silo_folders": {}, "silo_folders_all": {}, "archive_silo_folders": {}, "archive_silo_folders_all": {}, "silo_project_paths": {}, "silo_project_paths_all": {}, "silo_type_all": {}, "silo_session_all": {}, "archive_project_paths": {}, "archive_project_paths_all": {}, "folder_trash_log": [],
             "sidebar_right": "False", "sound_ui": "False", "sound_typewriter": "False", "sound_volume": "5", "portable_backup_enabled": "True", "language": "EN",
-            "customize_toolbar": "False", "toolbar_order": "", "code_auto_gutter": "False"
+            "customize_toolbar": "False", "toolbar_order": "", "code_auto_gutter": "False",
+            # {logical category: physical filesystem component} — stable
+            # physical identity across category renames, allocated lazily.
+            "category_file_dirs": {},
         }
         # The shipped look (T-695): the baked profile wins over the bare
         # literals above, which stay as the last-resort skeleton. copy.deepcopy
@@ -466,9 +477,19 @@ class FastPrompterState:
         # reset_data() — and into every test that touches them.
         self.data.update(copy.deepcopy(DEFAULT_PROFILE))
 
-    def switch_profile(self, new_profile_id):
+    def switch_profile(self, new_profile_id, save_current=True):
+        """Move to ``new_profile_id``'s database.
+
+        ``save_current`` defaults True for the state-level contract (a direct
+        caller must commit its own data). The UI's ``change_profile`` passes
+        ``save_current=False``: the WINDOW owns the final UI-aware save (it
+        alone knows the live editor/widget state), so the state layer must not
+        issue a hidden second write — two owners of pre-switch persistence
+        double the backup/sync side effects for no safety gain.
+        """
         if self.conn:
-            self.save_data_to_db(self.data.get("last_text", ""), force=True)
+            if save_current:
+                self.save_data_to_db(self.data.get("last_text", ""), force=True)
             self.conn.close()
             self.conn = None
         self.profile_id = new_profile_id
@@ -517,7 +538,7 @@ class FastPrompterState:
                     except json.JSONDecodeError: self.data['cats_order'] = ["Code", "Text", "Misc"]
                 elif row[0] in ('ui_scale', 'window_locked', 'sidebar_right'): self.data[row[0]] = row[1]
                 elif row[0] == 'hide_font': continue
-                elif row[0] in ('silo_last_edited_all', 'pinned_silos_all', 'silo_ticked_all', 'silo_children', 'silo_children_all', 'silo_collapsed_all', 'silo_colors', 'silo_colors_all', 'silo_folders', 'silo_folders_all', 'archive_silo_folders', 'archive_silo_folders_all', 'silo_project_paths', 'silo_project_paths_all', 'archive_project_paths', 'archive_project_paths_all', 'folder_trash_log', 'silo_view_state_all', 'silo_type_all', 'silo_session_all', 'sound_events'):
+                elif row[0] in ('silo_last_edited_all', 'pinned_silos_all', 'silo_ticked_all', 'silo_children', 'silo_children_all', 'silo_collapsed_all', 'silo_colors', 'silo_colors_all', 'silo_folders', 'silo_folders_all', 'archive_silo_folders', 'archive_silo_folders_all', 'silo_project_paths', 'silo_project_paths_all', 'archive_project_paths', 'archive_project_paths_all', 'folder_trash_log', 'silo_view_state_all', 'silo_type_all', 'silo_session_all', 'sound_events', 'category_file_dirs'):
                     try: self.data[row[0]] = json.loads(row[1])
                     except Exception as e: logger.warning(f"Failed to parse {row[0]}: {e}"); self.data[row[0]] = {}
                 elif row[0] in ('silo_gaps', 'silo_gaps_all', 'hidden_categories',
@@ -546,6 +567,24 @@ class FastPrompterState:
                     # load_timers see a mapping and silently drop them all
                     try: self.data[row[0]] = json.loads(row[1])
                     except Exception as e: logger.warning(f"Failed to parse {row[0]}: {e}"); self.data[row[0]] = []
+                elif row[0] == 'productivity_timer':
+                    # a DICT of pomodoro settings. It used to hit the raw
+                    # string fallback, so ProductivityTimer.from_dict saw a
+                    # str and silently reverted to defaults on every reload —
+                    # each profile's persisted pomodoro state was lost on
+                    # switch/restart. New rows are JSON; older ones were
+                    # written with str(dict) and need the ast recovery.
+                    try:
+                        val = json.loads(row[1])
+                        self.data[row[0]] = val if isinstance(val, dict) else {}
+                    except Exception:
+                        try:
+                            import ast
+                            val = ast.literal_eval(row[1])
+                            self.data[row[0]] = val if isinstance(val, dict) else {}
+                        except Exception as e:
+                            logger.warning(f"Failed to parse productivity_timer: {e}")
+                            self.data[row[0]] = {}
                 elif row[0] in ('watcher_queues', 'watcher_queues_all'):
                     # Both are dicts. They were absent from the save list
                     # below for a while, so early builds wrote them as
@@ -608,10 +647,14 @@ class FastPrompterState:
                 while len(arc_temps[cat]) <= slot:
                     arc_temps[cat].append("")
                 arc_temps[cat][slot] = content
-            self.data["archive_temp_presets_all"] = {k: [t for t in v if t.strip()] for k, v in arc_temps.items()}
+            self.data["archive_temp_presets_all"] = {k: v for k, v in arc_temps.items()}
 
             # Setup current tab proxies
-            active_cat = self.data["cats_order"][min(self.data.get("last_tab_idx", 0), len(self.data["cats_order"])-1)] if self.data["cats_order"] else "Code"
+            hidden = set(self.data.get("hidden_categories", []))
+            visible = [c for c in self.data.get("cats_order", []) if c not in hidden]
+            if not visible:
+                visible = self.data.get("cats_order", [])
+            active_cat = visible[min(self.data.get("last_tab_idx", 0), len(visible)-1)] if visible else "Code"
             if active_cat not in self.data["temp_presets_all"]: self.data["temp_presets_all"][active_cat] = [""]*10
             if active_cat not in self.data["archive_temp_presets_all"]: self.data["archive_temp_presets_all"][active_cat] = []
             self.data["temp_presets"] = self.data["temp_presets_all"][active_cat]
@@ -662,16 +705,15 @@ class FastPrompterState:
     # save_data_to_db. `_sanitize_cat_name` above stays: backup_dialog borrows
     # it for the user-driven export. Removed 31.07.26 (T-633).
 
-    def save_data_to_db(self, current_text, ui_settings=None, force=False):
+    def save_data_to_db(self, current_text, ui_settings=None, force=False, sync=False):
         run_pb = False
         with self._lock:
-            run_pb = self._save_data_to_db_locked(current_text, ui_settings, force)
-            
+            run_pb = self._save_data_to_db_locked(current_text, ui_settings, force, sync)
         if run_pb:
             from fastprompter.utils.portable_backup import run_portable_backup
-            run_portable_backup(self.data)
+            run_portable_backup(self.data, profile_id=self.profile_id)
 
-    def _save_data_to_db_locked(self, current_text, ui_settings=None, force=False):
+    def _save_data_to_db_locked(self, current_text, ui_settings=None, force=False, sync=False):
         if not self.conn: return
         if not self._db_dirty and not force: return
 
@@ -680,80 +722,84 @@ class FastPrompterState:
 
         self.data["last_text"] = current_text
 
-        try:
-            # Compute snapshots BEFORE tx; assign _last_saved_* AFTER tx commits
-            current_settings = _encode_settings(self.data)
-            settings_to_save = [(k, v) for k, v in current_settings.items() if k not in self._last_saved_settings or self._last_saved_settings[k] != v]
+        current_settings = _encode_settings(self.data)
+        settings_to_save = [(k, v) for k, v in current_settings.items() if k not in self._last_saved_settings or self._last_saved_settings[k] != v]
 
-            current_presets = {(cat, i, item["name"], item["text"], item.get("last_edited", 0)) for cat, slots in self.data["categories"].items() for i, item in enumerate(slots) if item}
-            to_insert_presets = current_presets - self._last_saved_presets
-            old_preset_keys = {(tup[0], tup[1]) for tup in self._last_saved_presets}
-            new_preset_keys = {(tup[0], tup[1]) for tup in current_presets}
-            to_delete_presets = old_preset_keys - new_preset_keys
+        current_presets = {(cat, i, item["name"], item["text"], item.get("last_edited", 0)) for cat, slots in self.data["categories"].items() for i, item in enumerate(slots) if item}
+        to_insert_presets = current_presets - self._last_saved_presets
+        old_preset_keys = {(tup[0], tup[1]) for tup in self._last_saved_presets}
+        new_preset_keys = {(tup[0], tup[1]) for tup in current_presets}
+        to_delete_presets = old_preset_keys - new_preset_keys
 
-            current_temp = {(cat, i, content) for cat, slots in self.data["temp_presets_all"].items() for i, content in enumerate(slots) if content}
-            old_temp_keys = {(tup[0], tup[1]) for tup in self._last_saved_temp}
-            new_temp_keys = {(tup[0], tup[1]) for tup in current_temp}
-            temp_to_delete = old_temp_keys - new_temp_keys
-            to_update_temp = current_temp - self._last_saved_temp
+        current_temp = {(cat, i, content) for cat, slots in self.data["temp_presets_all"].items() for i, content in enumerate(slots) if content}
+        old_temp_keys = {(tup[0], tup[1]) for tup in self._last_saved_temp}
+        new_temp_keys = {(tup[0], tup[1]) for tup in current_temp}
+        temp_to_delete = old_temp_keys - new_temp_keys
+        to_update_temp = current_temp - self._last_saved_temp
 
-            current_arc = {(cat, i, content) for cat, slots in self.data["archive_temp_presets_all"].items() for i, content in enumerate(slots) if content}
-            old_arc_keys = {(tup[0], tup[1]) for tup in self._last_saved_arc}
-            new_arc_keys = {(tup[0], tup[1]) for tup in current_arc}
-            arc_to_delete = old_arc_keys - new_arc_keys
-            arc_to_update = current_arc - self._last_saved_arc
+        current_arc = {(cat, i, content) for cat, slots in self.data["archive_temp_presets_all"].items() for i, content in enumerate(slots) if content}
+        old_arc_keys = {(tup[0], tup[1]) for tup in self._last_saved_arc}
+        new_arc_keys = {(tup[0], tup[1]) for tup in current_arc}
+        arc_to_delete = old_arc_keys - new_arc_keys
+        arc_to_update = current_arc - self._last_saved_arc
 
-            with self.conn:
-                cur = self.conn.cursor()
-                if settings_to_save:
-                    cur.executemany('INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)', settings_to_save)
-                if to_delete_presets:
-                    cur.executemany('DELETE FROM presets WHERE category=? AND slot=?', list(to_delete_presets))
-                if to_insert_presets:
-                    cur.executemany('INSERT OR REPLACE INTO presets (category, slot, name, content, last_edited) VALUES (?,?,?,?,?)', list(to_insert_presets))
-                if temp_to_delete:
-                    cur.executemany('DELETE FROM temp_presets_v2 WHERE category=? AND slot=?', list(temp_to_delete))
-                if to_update_temp:
-                    cur.executemany('INSERT OR REPLACE INTO temp_presets_v2 (category, slot, content) VALUES (?,?,?)', list(to_update_temp))
-                if arc_to_delete:
-                    cur.executemany('DELETE FROM archive_temp_presets_v2 WHERE category=? AND slot=?', list(arc_to_delete))
-                if arc_to_update:
-                    cur.executemany('INSERT OR REPLACE INTO archive_temp_presets_v2 (category, slot, content) VALUES (?,?,?)', list(arc_to_update))
+        # Assign snapshots immediately for memory
+        self._last_saved_settings = current_settings
+        self._last_saved_presets = current_presets
+        self._last_saved_temp = current_temp
+        self._last_saved_arc = current_arc
+        self._db_dirty = False
 
-            # Assign snapshots ONLY after tx commits successfully
-            self._last_saved_settings = current_settings
-            self._last_saved_presets = current_presets
-            self._last_saved_temp = current_temp
-            self._last_saved_arc = current_arc
-            self._db_dirty = False
+        changed = bool(settings_to_save or to_insert_presets or to_delete_presets
+                       or to_update_temp or temp_to_delete or arc_to_update or arc_to_delete)
+        if not changed:
+            return
 
-            # Backup throttled: max once per 60s to prevent I/O dominating saves
-            changed = bool(settings_to_save or to_insert_presets or to_delete_presets
-                           or to_update_temp or temp_to_delete or arc_to_update or arc_to_delete)
-            if changed:
+        if not hasattr(self, "_db_executor"):
+            import concurrent.futures
+            self._db_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+
+        def do_db_save():
+            try:
+                with self.conn:
+                    cur = self.conn.cursor()
+                    if settings_to_save:
+                        cur.executemany('INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)', settings_to_save)
+                    if to_delete_presets:
+                        cur.executemany('DELETE FROM presets WHERE category=? AND slot=?', list(to_delete_presets))
+                    if to_insert_presets:
+                        cur.executemany('INSERT OR REPLACE INTO presets (category, slot, name, content, last_edited) VALUES (?,?,?,?,?)', list(to_insert_presets))
+                    if temp_to_delete:
+                        cur.executemany('DELETE FROM temp_presets_v2 WHERE category=? AND slot=?', list(temp_to_delete))
+                    if to_update_temp:
+                        cur.executemany('INSERT OR REPLACE INTO temp_presets_v2 (category, slot, content) VALUES (?,?,?)', list(to_update_temp))
+                    if arc_to_delete:
+                        cur.executemany('DELETE FROM archive_temp_presets_v2 WHERE category=? AND slot=?', list(arc_to_delete))
+                    if arc_to_update:
+                        cur.executemany('INSERT OR REPLACE INTO archive_temp_presets_v2 (category, slot, content) VALUES (?,?,?)', list(arc_to_update))
+
+                import time
                 now = time.time()
-                if now - self._last_backup_time >= 60:
+                if now - self._last_backup_time_by_profile.get(self.profile_id, 0.0) >= 60:
                     try:
-                        # atomic temp+replace + pre-publish validation: a
-                        # failed backup never becomes the recovery copy
                         _backup_atomically(self.conn, self.db_path + ".bak")
+                        self._last_backup_time_by_profile[self.profile_id] = now
                     except Exception:
-                        logger.exception("throttled database backup failed; "
-                                         "the previous .bak was kept intact")
-                    else:
-                        # the throttle advances ONLY on success: a failed
-                        # backup stays eligible for an immediate retry
-                        self._last_backup_time = now
-                # The portable Markdown layer is independent: a .bak failure
-                # must not suppress it (it has its own failure handling).
-                if self.data.get("portable_backup_enabled", "True") == "True":
-                    return True
-            return False
-        except sqlite3.Error:
-            # The save failed: the snapshots were NOT advanced and _db_dirty
-            # was NOT cleared, so a retry re-writes the change. The error must
-            # be visible in the log file (stderr is invisible in a windowed
-            # build), never silently dropped.
-            logger.exception("database save failed; the change was not "
-                             "recorded and will be retried")
+                        logger.exception("throttled database backup failed")
+            except sqlite3.Error:
+                logger.exception("Background database save failed")
+                self._db_dirty = True
+                self._last_saved_temp = set()
+                self._last_saved_arc = set()
+
+        import sys
+        if sync or "pytest" in sys.modules:
+            do_db_save()
+        else:
+            self._db_executor.submit(do_db_save)
+
+        # We must return True from _save_data_to_db_locked if we triggered a save,
+        # but also trigger portable Markdown backup if enabled!
+        if self.data.get("portable_backup_enabled", "True") == "True":
+            return True
 

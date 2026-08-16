@@ -26,11 +26,12 @@ def make_state(tmp_path, monkeypatch):
                         lambda profile_id=1: str(tmp_path / "f.db"))
     monkeypatch.setattr(
         "fastprompter.utils.portable_backup.run_portable_backup",
-        lambda data: None)
+        lambda data, profile_id=1: None)
 
     def _make():
         s = FastPrompterState(profile_id=1)
-        s._last_backup_time = 0.0     # force the throttled .bak next save
+        # force the throttled .bak next save (per-profile throttle dict)
+        s._last_backup_time_by_profile.clear()
         return s
 
     return _make
@@ -176,7 +177,7 @@ class TestFailedBackup:
             raise OSError("disk full during backup")
 
         monkeypatch.setattr(state_mod, "_backup_atomically", _boom)
-        s._last_backup_time = 0.0
+        s._last_backup_time_by_profile.clear()
         s.data["temp_presets_all"]["Code"][1] = "new"
         s.mark_dirty()
         s.save_data_to_db("new", force=True)   # must not raise
@@ -189,7 +190,7 @@ class TestFailedBackup:
     def test_successful_bak_is_atomic_and_valid(self, make_state):
         s = make_state()
         _write_silo(s, "for the backup")
-        s._last_backup_time = 0.0
+        s._last_backup_time_by_profile.clear()
         s.data["temp_presets_all"]["Code"][0] = "updated"
         s.mark_dirty()
         s.save_data_to_db("updated", force=True)
@@ -251,7 +252,7 @@ class TestBackupValidatedBeforePublish:
     def test_valid_backup_replaces_previous(self, make_state):
         s = make_state()
         _write_silo(s, "v1")
-        s._last_backup_time = 0.0
+        s._last_backup_time_by_profile.clear()
         s.data["temp_presets_all"]["Code"][0] = "v2"
         s.mark_dirty()
         s.save_data_to_db("v2", force=True)
@@ -281,7 +282,7 @@ class TestBackupValidatedBeforePublish:
             raise state_mod.RestoreError("corrupt candidate")
 
         monkeypatch.setattr(state_mod, "validate_database", _boom)
-        s._last_backup_time = 0.0
+        s._last_backup_time_by_profile.clear()
         s.data["temp_presets_all"]["Code"][0] = "new"
         s.mark_dirty()
         s.save_data_to_db("new", force=True)     # must not raise
@@ -306,7 +307,7 @@ class TestBackupValidatedBeforePublish:
             raise OSError("replace failed")
 
         monkeypatch.setattr(os, "replace", _boom)
-        s._last_backup_time = 0.0
+        s._last_backup_time_by_profile.clear()
         s.data["temp_presets_all"]["Code"][0] = "new"
         s.mark_dirty()
         s.save_data_to_db("new", force=True)     # must not raise
@@ -326,7 +327,7 @@ class TestBackupValidatedBeforePublish:
             raise state_mod.RestoreError("corrupt candidate")
 
         monkeypatch.setattr(state_mod, "validate_database", _boom)
-        s._last_backup_time = 0.0
+        s._last_backup_time_by_profile.clear()
         s.data["temp_presets_all"]["Code"][0] = "new"
         s.mark_dirty()
         s.save_data_to_db("new", force=True)
@@ -348,10 +349,11 @@ class TestBackupThrottleSuccessBased:
             raise OSError("disk full")
 
         monkeypatch.setattr(state_mod, "_backup_atomically", _failing)
-        s._last_backup_time = 0.0
+        s._last_backup_time_by_profile.clear()
         _write_silo(s, "a")
         assert calls["n"] == 1
-        assert s._last_backup_time == 0.0, "failed backup must not advance throttle"
+        assert s._last_backup_time_by_profile.get(s.profile_id, 0.0) == 0.0, \
+            "failed backup must not advance throttle"
 
         _write_silo(s, "b")                # immediately retried
         assert calls["n"] == 2, "a failed backup must stay eligible for retry"
@@ -366,10 +368,10 @@ class TestBackupThrottleSuccessBased:
             return None
 
         monkeypatch.setattr(state_mod, "_backup_atomically", _ok)
-        s._last_backup_time = 0.0
+        s._last_backup_time_by_profile.clear()
         _write_silo(s, "a")
         assert calls["n"] == 1
-        assert s._last_backup_time > 0.0
+        assert s._last_backup_time_by_profile.get(s.profile_id, 0.0) > 0.0
 
         _write_silo(s, "b")                # inside the throttle -> no retry
         assert calls["n"] == 1

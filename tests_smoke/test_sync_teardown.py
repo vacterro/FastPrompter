@@ -32,7 +32,7 @@ _tmpdir = tempfile.mkdtemp(prefix="fastprompter_sync_teardown_")
 @pytest.fixture(scope="module")
 def win():
     state_mod.get_db_path = lambda profile_id=1: os.path.join(_tmpdir, f"t_{profile_id}.db")
-    state_mod.run_portable_backup = lambda data: None
+    state_mod.run_portable_backup = lambda data, profile_id=1: None
     FastPrompter.setup_single_instance_server = lambda self: None
     FastPrompter.register_all_hotkeys = lambda self: None
     FastPrompter.unregister_all_hotkeys = lambda self: None
@@ -91,7 +91,7 @@ sys.path.insert(0, r"{src}")
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 import fastprompter.core.state as st
 st.get_db_path = lambda p=1: os.path.join(tempfile.mkdtemp(), "d.db")
-st.run_portable_backup = lambda d: None
+st.run_portable_backup = lambda d, profile_id=1: None
 from fastprompter.main import FastPrompter, sync_shutdown_global
 FastPrompter.setup_single_instance_server = lambda s: None
 FastPrompter.register_all_hotkeys = lambda s: None

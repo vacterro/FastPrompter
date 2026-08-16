@@ -29,7 +29,7 @@ _tmpdir = tempfile.mkdtemp(prefix="fastprompter_folder_id_")
 @pytest.fixture(scope="module")
 def win():
     state_mod.get_db_path = lambda profile_id=1: os.path.join(_tmpdir, f"i_{profile_id}.db")
-    state_mod.run_portable_backup = lambda data: None
+    state_mod.run_portable_backup = lambda data, profile_id=1: None
     FastPrompter.setup_single_instance_server = lambda self: None
     FastPrompter.register_all_hotkeys = lambda self: None
     FastPrompter.unregister_all_hotkeys = lambda self: None
@@ -174,7 +174,7 @@ class TestPersistence:
     def test_folder_mapping_survives_a_save_reload(self, win, root, monkeypatch):
         monkeypatch.setattr(
             "fastprompter.utils.portable_backup.run_portable_backup",
-            lambda data: None)
+            lambda data, profile_id=1: None)
         win.data["temp_presets"][:] = ["# Persisted"]
         win.silo_docs[:] = []
         win._switch_to_slot(0, initial=True)

@@ -32,7 +32,7 @@ _tmpdir = tempfile.mkdtemp(prefix="fastprompter_altw_")
 @pytest.fixture(scope="module")
 def win():
     state_mod.get_db_path = lambda profile_id=1: os.path.join(_tmpdir, f"a_{profile_id}.db")
-    state_mod.run_portable_backup = lambda data: None
+    state_mod.run_portable_backup = lambda data, profile_id=1: None
     FastPrompter.setup_single_instance_server = lambda self: None
     FastPrompter.register_all_hotkeys = lambda self: None
     FastPrompter.unregister_all_hotkeys = lambda self: None

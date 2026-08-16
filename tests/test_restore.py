@@ -36,7 +36,7 @@ def _make_db(path, marker):
     s.data["temp_presets_all"]["Code"][0] = marker
     s.data["categories"]["Code"][0] = {"name": "snip", "text": marker}
     s.mark_dirty()
-    s.save_data_to_db(marker, force=True)
+    s.save_data_to_db(marker, force=True, sync=True)
     s.conn.close()
     return s
 
@@ -188,7 +188,7 @@ class TestRestoreDatabase:
                             lambda profile_id=1: live)
         monkeypatch.setattr(
             "fastprompter.utils.portable_backup.run_portable_backup",
-            lambda data: None)
+            lambda data, profile_id=1: None)
         s = FastPrompterState(profile_id=1)
         try:
             assert s.data["temp_presets_all"]["Code"][0] == "round trip"

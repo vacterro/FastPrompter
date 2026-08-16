@@ -1,4 +1,4 @@
-﻿"""Regression: File Container operations cannot escape the container root.
+"""Regression: File Container operations cannot escape the container root.
 
 Drives the REAL panel methods (rename / clipboard->file / new folder /
 template build) with malicious names and proves no file or directory appears
@@ -31,7 +31,7 @@ _tmpdir = tempfile.mkdtemp(prefix="fastprompter_containment_")
 @pytest.fixture(scope="module")
 def win():
     state_mod.get_db_path = lambda profile_id=1: os.path.join(_tmpdir, f"c_{profile_id}.db")
-    state_mod.run_portable_backup = lambda data: None
+    state_mod.run_portable_backup = lambda data, profile_id=1: None
     FastPrompter.setup_single_instance_server = lambda self: None
     FastPrompter.register_all_hotkeys = lambda self: None
     FastPrompter.unregister_all_hotkeys = lambda self: None
@@ -169,11 +169,11 @@ def test_unicode_and_spaces_stay_inside(panel):
     root, p = panel
     _write(os.path.join(root, "unicode.txt"))
     p.refresh()
-    p._rename(os.path.join(root, "unicode.txt"), new_name="Р·Р°РјРµС‚РєР° СЃ РїСЂРѕР±РµР»Р°РјРё")
-    assert os.path.isdir(os.path.join(root, "Р·Р°РјРµС‚РєР° СЃ РїСЂРѕР±РµР»Р°РјРё")) or \
-        os.path.isfile(os.path.join(root, "Р·Р°РјРµС‚РєР° СЃ РїСЂРѕР±РµР»Р°РјРё"))
-    p.new_folder(name="РїР°РїРєР° 1")
-    assert os.path.isdir(os.path.join(root, "РїР°РїРєР° 1"))
+    p._rename(os.path.join(root, "unicode.txt"), new_name="заметка с пробелами")
+    assert os.path.isdir(os.path.join(root, "заметка с пробелами")) or \
+        os.path.isfile(os.path.join(root, "заметка с пробелами"))
+    p.new_folder(name="папка 1")
+    assert os.path.isdir(os.path.join(root, "папка 1"))
 
 def _no_tmp_left(root):
     for base, _dirs, files in os.walk(root):
@@ -277,7 +277,7 @@ def test_pre_existing_destination_is_refused(panel):
 
 def test_stale_temp_does_not_poison_the_next_copy(panel):
     """A predictable temp name left by a crashed attempt must not break the
-    next copy — the temp is now unique per attempt."""
+    next copy � the temp is now unique per attempt."""
     from fastprompter.ui.file_container import _copy_atomic
 
     root, p = panel
@@ -659,3 +659,47 @@ class TestAsyncContainerOps:
         assert os.listdir(outside) == []
         assert os.path.isfile(src)
         assert "captured container root" in caplog.text
+
+
+def test_stale_owner_command_error_stays_observable(win, monkeypatch):
+    """P1-18: an explicit File Container command that fails AFTER the panel's
+    owner changed must still report its error.
+
+    The old ordering returned on the owner check BEFORE errors were logged,
+    so a command started on the old profile/panel could fail and leave zero
+    trace. The failure of an explicit user command is a fact that must
+    survive the switch; only the UI side effects (sound, refresh) belong to
+    the CURRENT owner, and a new owner must never refresh with old paths.
+    """
+    from fastprompter.ui import file_container as fc_mod
+
+    panel = FileContainerPanel(win)
+    try:
+        panel.folder = os.path.join(os.path.dirname(__file__), "stale-folder")
+        old_owner = panel._container_owner_id
+        panel._container_owner_id = "NEW-OWNER"   # panel/profile switched mid-command
+
+        logged = []
+        monkeypatch.setattr(fc_mod.logger, "error",
+                            lambda *a, **k: logged.append((a, k)))
+        refreshed = []
+        monkeypatch.setattr(panel, "refresh", lambda: refreshed.append(1))
+        sounds = []
+        monkeypatch.setattr(panel.main_win.sound_manager, "play_tick",
+                            lambda: sounds.append(1))
+
+        request = {
+            "request_id": "req-1",
+            "owner_id": old_owner,
+            "refresh_identity": os.path.normcase(os.path.abspath(panel.folder)),
+            "kind": "import",
+        }
+        panel._on_container_done(
+            "req-1", request, done=[], errors=[(r"C:\src\a.txt", "boom")])
+
+        assert logged, "the failed command's error must remain observable"
+        assert any("req-1" in str(a) for a in logged), logged
+        assert refreshed == [], "a new owner must not refresh with old paths"
+        assert sounds == [], "a new owner must not play the old command's tick"
+    finally:
+        panel.close()

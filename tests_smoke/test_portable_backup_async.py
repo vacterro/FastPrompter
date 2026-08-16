@@ -1,4 +1,4 @@
-﻿"""Phase-9 (third pass): portable backup runs on a shared worker thread.
+"""Phase-9 (third pass): portable backup runs on a shared worker thread.
 
 Proves:
 * dispatching a backup does not block the caller
@@ -27,7 +27,7 @@ _tmpdir = tempfile.mkdtemp(prefix="fastprompter_backup_async_")
 def backup_dir(tmp_path, monkeypatch):
     d = str(tmp_path / "portable")
     monkeypatch.setattr(pb, "get_portable_backup_dir", lambda: d)
-    pb._last_backup_time = 0.0
+    pb.last_success_by_profile.clear()
     pb.set_backup_sink(None)
     yield d
     pb.set_backup_sink(None)
@@ -57,7 +57,7 @@ def test_backup_does_not_block_the_caller(backup_dir, monkeypatch):
         return real_export(snap)
 
     monkeypatch.setattr(pb, "_do_export", slow_export)
-    pb._last_backup_time = 0.0
+    pb.last_success_by_profile.clear()
     t0 = time.monotonic()
     pb.run_portable_backup(_data())         # dispatch, must not block
     assert time.monotonic() - t0 < 0.3, "portable backup blocked the caller"

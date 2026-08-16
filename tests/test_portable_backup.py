@@ -22,7 +22,7 @@ def backup_dir(tmp_path, monkeypatch):
     d = str(tmp_path / "portable")
     os.makedirs(d, exist_ok=True)
     monkeypatch.setattr(pb, "get_portable_backup_dir", lambda: d)
-    pb._last_backup_time = 0.0
+    pb.last_success_by_profile.clear()
     yield d
 
 
@@ -140,10 +140,10 @@ class TestCompletionSemantics:
         pb.run_portable_backup(_data())     # first attempt fails internally
         # run_portable_backup swallows the failure, so assert the throttle:
         # it must NOT have advanced, so a retry is eligible immediately
-        assert pb._last_backup_time == 0.0
+        assert pb.last_success_by_profile.get(1, 0.0) == 0.0
         pb.run_portable_backup(_data())     # retry succeeds
         assert _complete(_day_dir(backup_dir))
-        assert pb._last_backup_time > 0.0
+        assert pb.last_success_by_profile.get(1, 0.0) > 0.0
 
 
 class TestCollisionResistantIdentity:
@@ -173,7 +173,7 @@ class TestCollisionResistantIdentity:
         d = str(tmp_path / "uni")
         os.makedirs(d, exist_ok=True)
         monkeypatch.setattr(pb, "get_portable_backup_dir", lambda: d)
-        pb._last_backup_time = 0.0
+        pb.last_success_by_profile.clear()
         data = _data()
         data["cats_order"] = ["Проект", "Проект 2"]
         data["temp_presets_all"] = {"Проект": ["one"], "Проект 2": ["two"]}
@@ -274,23 +274,24 @@ class TestAsyncDispatch:
 
         pb.set_backup_sink(fake_sink)
         try:
-            pb._last_backup_time = 0.0
+            pb.last_success_by_profile.clear()
             pb.run_portable_backup(_data())
             assert len(received) == 1
             assert received[0]["temp_presets_all"]["Alpha"][0] == "alpha text"
+            assert received[0]["profile_id"] == 1
             # dispatch alone must NOT advance the success throttle
-            assert pb._last_backup_time == 0.0
+            assert pb.last_success_by_profile.get(1, 0.0) == 0.0
         finally:
             pb.set_backup_sink(None)
 
     def test_without_sink_runs_synchronously(self, backup_dir):
         pb.set_backup_sink(None)
-        pb._last_backup_time = 0.0
+        pb.last_success_by_profile.clear()
         pb.run_portable_backup(_data())
         assert _complete(_day_dir(backup_dir))
-        assert pb._last_backup_time > 0.0
+        assert pb.last_success_by_profile.get(1, 0.0) > 0.0
 
     def test_mark_success_advances_throttle(self, backup_dir):
-        pb._last_backup_time = 0.0
+        pb.last_success_by_profile.clear()
         pb.mark_backup_success()
-        assert pb._last_backup_time > 0.0
+        assert pb.last_success_by_profile.get(1, 0.0) > 0.0

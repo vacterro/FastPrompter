@@ -239,9 +239,9 @@ uv run bandit -q -r src/fastprompter -ll
 uv run pytest tests/ tests_smoke/ -q
 ```
 
-- The current suite collects **2016 tests** across `tests/` and the offscreen
+- The current suite collects **2058 tests** across `tests/` and the offscreen
   real-app integration suite in `tests_smoke/`; the latest full run completed
-  **2014 passed, 2 skipped** in 25 minutes. The count changes with every
+  **2058 passed, 0 skipped** in 25 minutes. The count changes with every
   release; get the live number with
   `uv run pytest tests/ tests_smoke/ --collect-only -q`.
 - CI (GitHub Actions on `windows-latest`) runs all four commands above on every

@@ -270,14 +270,41 @@ def _dir_size(path, _cap=2000):
     return total
 
 
+# P2-24: the header tooltip used to re-walk the folder tree on the GUI
+# thread on every refresh, so an HDD/NAS silo with subfolders froze the
+# window on each switch. The summary is now cached per
+# (folder, direct-listing signature, lang): a change IN this folder
+# (drop/remove) invalidates immediately via the signature; a change inside
+# a SUBfolder is bounded by the short TTL (stale tooltip at most
+# _SUMMARY_TTL seconds — the live 📁 count badge never caches).
+_SUMMARY_TTL = 2.0
+_folder_summary_cache = {}
+
+
+def _summary_now():
+    return time.monotonic()
+
+
 def folder_summary(d, lang="EN"):
-    """Tooltip text for a resolved folder: item count + total size + per-ext."""
+    """Tooltip text for a resolved folder: item count + total size + per-ext.
+
+    Cached (P2-24): the expensive recursive walk only runs when the folder's
+    own listing changed or the short TTL expired — never on every refresh.
+    """
     try:
         names = os.listdir(d)
     except OSError:
         names = []
+    key = (os.path.normcase(os.path.abspath(d)),
+           tuple(sorted(names)), lang)
+    now = _summary_now()
+    hit = _folder_summary_cache.get(key)
+    if hit is not None and now - hit[0] < _SUMMARY_TTL:
+        return hit[1]
     if not names:
-        return tr("No files yet", lang)
+        text = tr("No files yet", lang)
+        _folder_summary_cache[key] = (now, text)
+        return text
     counts, sizes, total = {}, {}, 0
     for n in names:
         p = os.path.join(d, n)
@@ -297,7 +324,14 @@ def folder_summary(d, lang="EN"):
         lines.append(f"  {ext} ×{counts[ext]} · {_fmt_size(sizes[ext])}")
     if len(lines) > 13:
         lines = lines[:13] + [f"  … and {len(counts) - 12} more types"]
-    return "\n".join(lines)
+    text = "\n".join(lines)
+    _folder_summary_cache[key] = (now, text)
+    # bounded cache: drop expired entries when it outgrows its working set
+    if len(_folder_summary_cache) > 64:
+        for stale in [k for k, (t, _v) in _folder_summary_cache.items()
+                      if now - t >= _SUMMARY_TTL]:
+            _folder_summary_cache.pop(stale, None)
+    return text
 
 
 def _unique_dest(folder, name):
@@ -367,17 +401,17 @@ def _move_into_container(src, dest, root=None, root_identity=None):
         # rename crossed volumes
         if os.path.lexists(dest):
             raise OSError(f"destination {dest!r} appeared; refusing to overwrite it")
-            
+
         tmp = f"{dest}.fptmp-{uuid.uuid4().hex[:8]}"
-        
+
         _require_container_destination(root, root_identity, tmp)
-            
+
         try:
             if os.path.isdir(src):
                 shutil.copytree(src, tmp)
             else:
                 shutil.copy2(src, tmp)
-                
+
             _publish_new_file(tmp, dest, root, root_identity)
         except Exception:
             shutil.rmtree(tmp, ignore_errors=True)
@@ -387,7 +421,7 @@ def _move_into_container(src, dest, root=None, root_identity=None):
             except OSError:
                 pass
             raise
-    
+
     # publication succeeded: remove the source
     try:
         _require_container_destination(root, root_identity, dest)
@@ -412,15 +446,15 @@ def _copy_atomic(src, dest, is_dir, root=None, root_identity=None):
     _require_container_destination(root, root_identity, dest)
 
     tmp = f"{dest}.fptmp-{uuid.uuid4().hex[:8]}"
-    
+
     _require_container_destination(root, root_identity, tmp)
-            
+
     try:
         if is_dir:
             shutil.copytree(src, tmp)
         else:
             shutil.copy2(src, tmp)
-            
+
         _require_container_destination(root, root_identity, dest)
         # os.rename refuses to clobber an existing destination atomically on
         # Windows; the pre-check catches it early on platforms where it does
@@ -442,21 +476,24 @@ def _copy_atomic(src, dest, is_dir, root=None, root_identity=None):
 def _async_eligible(items):
     """Should these container ops go to the worker instead of the GUI thread?
 
-    Heuristic: many entries, or a total payload above the size threshold.
-    Small text-file copies stay synchronous — no scheduler for a 20-byte file.
+    Heuristic: many entries, any DIRECTORY, or a total file payload above the
+    size threshold. Small text-file copies stay synchronous — no scheduler
+    for a 20-byte file.
+
+    This decision must NEVER walk a directory tree: ``os.walk`` here would
+    hand the GUI thread the exact recursive scan (and its cost — a slow or
+    network folder) that the worker exists to absorb. Any directory item is
+    therefore dispatched immediately; only plain files get a cheap
+    ``getsize``.
     """
     if len(items) > _ASYNC_THRESHOLD_FILES:
         return True
     total = 0
     for _op, src, _dest, is_dir in items:
+        if is_dir:
+            return True       # recursive work: the worker walks it, never us
         try:
-            if is_dir:
-                for _base, _dirs, files in os.walk(src):
-                    total += sum(
-                        os.path.getsize(os.path.join(_base, f)) or 0
-                        for f in files[:100])
-            else:
-                total += os.path.getsize(src) or 0
+            total += os.path.getsize(src) or 0
         except OSError:
             continue
         if total > _ASYNC_THRESHOLD_BYTES:
@@ -634,9 +671,32 @@ class FileContainerPanel(QWidget):
         self.lbl_hint.setWordWrap(True)
         layout.addWidget(self.lbl_hint)
 
+        self._refresh_timer = QTimer(self)
+        self._refresh_timer.setSingleShot(True)
+        self._refresh_timer.setInterval(100)
+        self._refresh_timer.timeout.connect(self.refresh)
+
         self._watcher = QFileSystemWatcher(self)
-        self._watcher.directoryChanged.connect(lambda _: self.refresh())
+        self._watcher.directoryChanged.connect(lambda _: self._refresh_timer.start())
         self._apply_view_mode()
+
+    def set_language(self, lang):
+        self.lang = lang
+        self.retranslate_ui()
+
+    def retranslate_ui(self):
+        self.btn_import.setToolTip(tr("Import Files...\nCopy files into this silo's folder\n(or just drop files anywhere on this window)", self.lang))
+        self.btn_import_folder.setToolTip(tr("Import Folder...\nCopy an entire folder into this silo's folder", self.lang))
+        self.btn_open_folder.setToolTip(tr("Open Folder\nOpen this silo's folder in Explorer", self.lang))
+        self.btn_export.setToolTip(tr("Export All...\nCopy every file here to a folder you pick", self.lang))
+        self.btn_clip.setToolTip(tr("Clip→File\nSave the clipboard text into this folder as a .txt file", self.lang))
+        self.btn_view.setToolTip(tr("View\nCycle view: Icons → List → Details (like Explorer)", self.lang))
+        self.le_tpl.setPlaceholderText(tr("Folder template (e.g. src, docs, assets)", self.lang))
+        self.btn_build_tpl.setText(tr("Build Template", self.lang))
+        self.btn_build_tpl.setToolTip(tr("Create these folders in the current silo", self.lang))
+        self.lbl_hint.setText(
+            tr("Drop files here — copied into a plain folder you own. "
+               "Hold Alt while dropping to add links instead of copies.", self.lang))
 
     # ---- view modes (Explorer-like) ---------------------------------------
 
@@ -693,16 +753,21 @@ class FileContainerPanel(QWidget):
             self.resize(420, 320)
 
     def open_for(self, folder, title=""):
-        """Point the panel at a resolved (unique) folder, creating it, and show."""
-        # tidy the folder we're leaving if nothing was ever put in it —
-        # closeEvent isn't guaranteed to have fired (hidden window, reuse)
+        """Point the panel at a resolved (unique) folder without creating it, and show."""
         self._discard_if_empty()
-        os.makedirs(folder, exist_ok=True)
+
         if self._watcher.directories():
             self._watcher.removePaths(self._watcher.directories())
-        self._watcher.addPath(folder)
+
+        if os.path.isdir(folder):
+            self._watcher.addPath(folder)
+
         self.folder = folder
         self._folder_root_identity = capture_resolved_root(folder)
+
+        import uuid
+        self._container_owner_id = str(uuid.uuid4())
+
         self.setWindowTitle(tr("Files — {}", self.lang).format(title))
         self.refresh()
         self.show()
@@ -717,6 +782,24 @@ class FileContainerPanel(QWidget):
         elif hasattr(self.main_win, "_show_files_dock"):
             self.main_win._show_files_dock(True, title=title)
 
+    def _ensure_folder(self):
+        """Create the folder if it doesn't exist and ensure it is watched."""
+        if self.folder and not os.path.isdir(self.folder):
+            try:
+                os.makedirs(self.folder, exist_ok=True)
+                self._watcher.addPath(self.folder)
+            except OSError as e:
+                logger.error(f"File container folder creation failed: {e}")
+                return False
+        return True
+
+    def detach_session(self):
+        """Detach from the current filesystem location and ownership session."""
+        self.hide()
+        if self._watcher.directories():
+            self._watcher.removePaths(self._watcher.directories())
+        self.folder = None
+        self._container_owner_id = None
     def _discard_if_empty(self):
         """Remove the current folder if it is still completely empty."""
         folder = getattr(self, "folder", None)
@@ -779,63 +862,283 @@ class FileContainerPanel(QWidget):
         if lock:
             mw._increment_focus_lock()
         try:
+            if mw and hasattr(mw, "invalidate_file_count_cache"):
+                mw.invalidate_file_count_cache(self.folder)
+                if hasattr(self, "slot_idx"):
+                    mw._silo_file_count(self.slot_idx, is_archive=getattr(self, "is_archive", False))
             self._refresh_list()
         finally:
             if lock:
                 QTimer.singleShot(300, mw._decrement_focus_lock)
 
     def _refresh_list(self):
-        self.file_list.clear()
-        try:
-            names = sorted(os.listdir(self.folder), key=str.lower)
-        except OSError:
-            names = []
-        details = self._view_mode() == "Details"
-        for name in names:
-            path = os.path.join(self.folder, name)
-            label = name
-            if details:
+        if not hasattr(self, "folder") or not self.folder:
+            return
+
+        import weakref
+        from PyQt6.QtCore import QRunnable, QThreadPool, pyqtSignal
+        if not hasattr(self, "refresh_loaded"):
+            from PyQt6.QtCore import QObject
+            class Signals(QObject):
+                refresh_loaded = pyqtSignal(list, int)
+            self._refresh_signals = Signals()
+            self.refresh_loaded = self._refresh_signals.refresh_loaded
+            self.refresh_loaded.connect(self._on_refresh_list_result)
+
+        class Worker(QRunnable):
+            def __init__(self, p, s, panel_ref):
+                super().__init__()
+                self.p = p
+                self.s = s
+                self.panel_ref = panel_ref
+
+            def run(self):
+                import datetime
+                import os
+                from fastprompter.ui.file_container import _IMAGE_EXTS, _dir_size, _fmt_size
+
                 try:
-                    size = _dir_size(path) if os.path.isdir(path) else os.path.getsize(path)
-                    import datetime
-                    mtime = datetime.datetime.fromtimestamp(os.path.getmtime(path))
-                    label = f"{name}  —  {_fmt_size(size)}  —  {mtime.strftime('%d.%m.%y %H:%M')}"
+                    names = sorted(os.listdir(self.p), key=str.lower)
                 except OSError:
-                    pass
-            item = QListWidgetItem(self._icon_for(path), label)
-            item.setData(Qt.ItemDataRole.UserRole, path)
-            item.setToolTip(path)
-            self.file_list.addItem(item)
-        self.lbl_count.setText(tr("{} file(s)", self.lang).format(len(names)))
+                    names = []
+
+                items = []
+                for name in names:
+                    if name.endswith(".lnk"): continue
+                    path = os.path.join(self.p, name)
+                    label = name
+                    if self.s:
+                        try:
+                            s = _dir_size(path) if os.path.isdir(path) else os.path.getsize(path)
+                            mtime = datetime.datetime.fromtimestamp(os.path.getmtime(path))
+                            label = f"{name}  —  {_fmt_size(s)}  —  {mtime.strftime('%d.%m.%y %H:%M')}"
+                        except OSError:
+                            pass
+
+                    img = None
+                    mtime_val = 0
+                    ext = os.path.splitext(path)[1].lower()
+                    needs_thumb = ext in _IMAGE_EXTS
+                    if needs_thumb:
+                        try:
+                            mtime_val = os.path.getmtime(path)
+                        except OSError:
+                            pass
+                    items.append((path, label, img, mtime_val, needs_thumb))
+
+                panel = self.panel_ref()
+                if panel:
+                    from PyQt6 import sip
+                    if not sip.isdeleted(panel):
+                        try:
+                            panel.refresh_loaded.emit(items, len(names))
+                        except RuntimeError:
+                            pass
+
+        worker = Worker(self.folder, self._view_mode() == "Details", weakref.ref(self))
+        QThreadPool.globalInstance().start(worker)
+
+    def _on_refresh_list_result(self, items, count):
+        from PyQt6 import sip
+        from PyQt6.QtCore import Qt
+        if sip.isdeleted(self): return
+
+        if not hasattr(self, "_thumb_lru"):
+            from collections import OrderedDict
+            class LRUCache:
+                def __init__(self, capacity=200):
+                    self.cache = OrderedDict()
+                    self.capacity = capacity
+                def get(self, key):
+                    if key not in self.cache: return None
+                    self.cache.move_to_end(key)
+                    return self.cache[key]
+                def put(self, key, value):
+                    self.cache[key] = value
+                    self.cache.move_to_end(key)
+                    if len(self.cache) > self.capacity:
+                        self.cache.popitem(last=False)
+            self._thumb_lru = LRUCache(200)
+
+        existing = {}
+        for i in range(self.file_list.count()):
+            item = self.file_list.item(i)
+            existing[item.data(Qt.ItemDataRole.UserRole)] = item
+
+        new_paths = set()
+
+        for idx, (path, label, img, mtime_val, needs_thumb) in enumerate(items):
+            new_paths.add(path)
+            icon = None
+            if needs_thumb:
+                cached = self._thumb_lru.get(path)
+                if cached and cached[0] == mtime_val:
+                    icon = cached[1]
+                else:
+                    from PyQt6.QtCore import QFileInfo
+                    icon = self._icon_provider.icon(QFileInfo(path))
+            else:
+                from PyQt6.QtCore import QFileInfo
+                icon = self._icon_provider.icon(QFileInfo(path))
+
+            if path in existing:
+                item = existing[path]
+                if item.text() != label:
+                    item.setText(label)
+                item.setIcon(icon)
+                if self.file_list.row(item) != idx:
+                    taken = self.file_list.takeItem(self.file_list.row(item))
+                    self.file_list.insertItem(idx, taken)
+            else:
+                item = QListWidgetItem(icon, label)
+                item.setData(Qt.ItemDataRole.UserRole, path)
+                item.setToolTip(path)
+                self.file_list.insertItem(idx, item)
+
+        for i in range(self.file_list.count() - 1, -1, -1):
+            item = self.file_list.item(i)
+            if item.data(Qt.ItemDataRole.UserRole) not in new_paths:
+                self.file_list.takeItem(i)
+
+        self.lbl_count.setText(tr("{} file(s)", getattr(self, "lang", "EN")).format(count))
         self._update_preview()
-        if hasattr(self.main_win, "_update_files_button"):
-            self.main_win._update_files_button()
-        if hasattr(self.main_win, "refresh_temp_presets"):
-            self.main_win.refresh_temp_presets()  # keep silo 📁N badges live
+        mw = getattr(self, "main_win", None)
+        if hasattr(mw, "_update_files_button"):
+            mw._update_files_button()
+        if hasattr(mw, "refresh_temp_presets"):
+            mw.refresh_temp_presets()
+
+        self._queue_thumbnail_fetch()
 
     def selected_paths(self):
+        from PyQt6.QtCore import Qt
         return [i.data(Qt.ItemDataRole.UserRole) for i in self.file_list.selectedItems()]
 
-    def _icon_for(self, path):
-        ext = os.path.splitext(path)[1].lower()
-        if ext in _IMAGE_EXTS:
+    def _queue_thumbnail_fetch(self):
+        if not hasattr(self, "_thumb_timer"):
+            from PyQt6.QtCore import QTimer
+            self._thumb_timer = QTimer(self)
+            self._thumb_timer.setSingleShot(True)
+            self._thumb_timer.timeout.connect(self._fetch_visible_thumbnails)
+            self.file_list.verticalScrollBar().valueChanged.connect(self._on_scroll)
+        self._thumb_timer.start(250)
+
+    def _on_scroll(self):
+        self._fetch_visible_thumbnails(immediate_only=True)
+        if hasattr(self, "_thumb_timer"):
+            self._thumb_timer.start(250)
+
+    def _fetch_visible_thumbnails(self, immediate_only=False):
+        import os
+
+        from PyQt6.QtCore import Qt
+
+        from fastprompter.ui.file_container import _IMAGE_EXTS
+        viewport = self.file_list.viewport().rect()
+
+        to_fetch = []
+        for i in range(self.file_list.count()):
+            item = self.file_list.item(i)
+            path = item.data(Qt.ItemDataRole.UserRole)
+            if not path: continue
+            ext = os.path.splitext(path)[1].lower()
+            if ext not in _IMAGE_EXTS: continue
+
             try:
-                mtime = os.path.getmtime(path)
-                cached = self._thumb_cache.get(path)
-                if cached and cached[0] == mtime:
-                    return cached[1]
-                pix = QPixmap(path)
-                if not pix.isNull():
-                    icon = QIcon(pix.scaled(
-                        48, 48, Qt.AspectRatioMode.KeepAspectRatio,
-                        Qt.TransformationMode.SmoothTransformation))
-                    if len(self._thumb_cache) > 200: self._thumb_cache.clear()
-                    self._thumb_cache[path] = (mtime, icon)
-                    return icon
+                mtime_val = os.path.getmtime(path)
             except OSError:
-                pass
-        from PyQt6.QtCore import QFileInfo
-        return self._icon_provider.icon(QFileInfo(path))
+                continue
+
+            cached = self._thumb_lru.get(path)
+            if cached and cached[0] == mtime_val:
+                continue
+
+            rect = self.file_list.visualItemRect(item)
+            if rect.intersects(viewport):
+                to_fetch.insert(0, (path, mtime_val)) # visible first
+            elif not immediate_only:
+                to_fetch.append((path, mtime_val))
+
+        if not to_fetch:
+            return
+
+        if not hasattr(self, "_fetching_thumbs"):
+            self._fetching_thumbs = set()
+
+        filtered = []
+        for path, mtime in to_fetch:
+            if path not in self._fetching_thumbs:
+                self._fetching_thumbs.add(path)
+                filtered.append((path, mtime))
+
+        if not filtered:
+            return
+
+        import weakref
+        from PyQt6.QtCore import QRunnable, QThreadPool, pyqtSignal
+        if not hasattr(self, "thumb_loaded"):
+            from PyQt6.QtCore import QObject
+            class Signals(QObject):
+                thumb_loaded = pyqtSignal(str, int, object)
+            self._thumb_signals = Signals()
+            self.thumb_loaded = self._thumb_signals.thumb_loaded
+            self.thumb_loaded.connect(self._on_thumb_loaded)
+
+        class ThumbWorker(QRunnable):
+            def __init__(self, to_fetch, panel_ref):
+                super().__init__()
+                self.to_fetch = to_fetch
+                self.panel_ref = panel_ref
+
+            def run(self):
+                from PyQt6.QtGui import QImageReader
+                from PyQt6.QtCore import Qt
+                for path, mtime in self.to_fetch:
+                    img = None
+                    try:
+                        reader = QImageReader(path)
+                        reader.setAutoTransform(True)
+                        sz = reader.size()
+                        if not sz.isNull():
+                            sz.scale(48, 48, Qt.AspectRatioMode.KeepAspectRatio)
+                            reader.setScaledSize(sz)
+                            read_img = reader.read()
+                            if not read_img.isNull():
+                                img = read_img
+                    except Exception:
+                        pass
+
+                    panel = self.panel_ref()
+                    if panel:
+                        from PyQt6 import sip
+                        if not sip.isdeleted(panel):
+                            try:
+                                panel.thumb_loaded.emit(path, mtime, img)
+                            except RuntimeError:
+                                pass
+
+        worker = ThumbWorker(filtered, weakref.ref(self))
+        QThreadPool.globalInstance().start(worker)
+
+    def _on_thumb_loaded(self, path, mtime, img):
+        from PyQt6 import sip
+        if sip.isdeleted(self): return
+        if hasattr(self, "_fetching_thumbs") and path in self._fetching_thumbs:
+            self._fetching_thumbs.discard(path)
+
+        if not img:
+            return
+
+        from PyQt6.QtCore import Qt
+        from PyQt6.QtGui import QIcon, QPixmap
+        icon = QIcon(QPixmap.fromImage(img))
+        self._thumb_lru.put(path, (mtime, icon))
+
+        for i in range(self.file_list.count()):
+            item = self.file_list.item(i)
+            if item.data(Qt.ItemDataRole.UserRole) == path:
+                item.setIcon(icon)
+                break
 
     # ---- drop in ---------------------------------------------------------
 
@@ -882,7 +1185,7 @@ class FileContainerPanel(QWidget):
             is_internal = event.source() is not None
             is_ctrl = QApplication.keyboardModifiers() & Qt.KeyboardModifier.ControlModifier
             is_alt = QApplication.keyboardModifiers() & Qt.KeyboardModifier.AltModifier
-            
+
             if is_alt:
                 self.import_links(paths)
                 event.acceptProposedAction()
@@ -902,6 +1205,8 @@ class FileContainerPanel(QWidget):
         file); large ones are handed to the shared container worker so the
         GUI never freezes on a big drop or export."""
         if not self.folder:
+            return
+        if not self._ensure_folder():
             return
         items = []
         for src in paths:
@@ -977,23 +1282,38 @@ class FileContainerPanel(QWidget):
         return request_id
 
     def _on_container_done(self, request_id, request, done, errors):
-        """The worker's result, applied on the GUI thread (refresh once)."""
+        """The worker's result, applied on the GUI thread (refresh once).
+
+        The command RESULT is processed first and unconditionally: an explicit
+        user command that failed is a fact, and it must survive a profile or
+        panel switch that happened while the worker was running. The old
+        ordering returned on the owner check BEFORE errors were logged, so an
+        old-owner failure vanished without a trace. Only the UI side effects
+        — sound and refresh — belong to the CURRENT owner.
+        """
         from fastprompter.main import is_gui_thread
         if not is_gui_thread():
             logger.critical("File Container completion rejected outside GUI thread")
             return
+        # 1. Command result, always: the outcome of an explicit command is not
+        #    a superseding snapshot — a stale completion must never refresh
+        #    the panel, but its failure must still be observable.
+        if errors:
+            for entry in errors:
+                if isinstance(entry, (tuple, list)) and len(entry) >= 2:
+                    src, err = entry[0], entry[1]
+                else:
+                    src, err = "?", entry
+                logger.error("File Container command %s failed for %s: %s",
+                             request_id, src, err)
+        elif done:
+            logger.info("File Container command %s completed (%d item(s))",
+                        request_id, len(done))
+        # 2. UI side effects only for the CURRENT owner and origin folder.
         if request.get("owner_id") != self._container_owner_id:
             return
-        if errors:
-            logger.info(
-                "File Container command %s completed with %d error(s)",
-                request_id, len(errors),
-            )
         if done and hasattr(self.main_win, "sound_manager"):
             self.main_win.sound_manager.play_tick()
-
-        # Command result is always processed above. UI refresh is separate and
-        # only relevant if panel still displays command's origin folder.
         current = os.path.normcase(os.path.abspath(self.folder))
         if request.get("refresh_identity") == current:
             self.refresh()
@@ -1019,6 +1339,8 @@ class FileContainerPanel(QWidget):
         Plain-text InternetShortcut files: double-click opens the target,
         readable and portable without FastPrompter."""
         if not self.folder:
+            return
+        if not self._ensure_folder():
             return
         made = 0
         for src in paths:
@@ -1052,6 +1374,8 @@ class FileContainerPanel(QWidget):
         The name is validated by the canonical container-safety helper, so a
         traversal or drive-qualified name can never escape the container."""
         if not self.folder:
+            return
+        if not self._ensure_folder():
             return
         import datetime
 
@@ -1140,7 +1464,11 @@ class FileContainerPanel(QWidget):
             self._open_folder()
 
     def _export_all(self):
-        target = QFileDialog.getExistingDirectory(self, tr("Export all files to…", self.lang))
+        target, _ = QFileDialog.getSaveFileName(
+            self, tr("Export all files to ZIP…", self.lang),
+            os.path.join(os.path.expanduser("~"), "Desktop", "export.zip"),
+            "ZIP Archives (*.zip)"
+        )
         if not target:
             return
         try:
@@ -1149,25 +1477,46 @@ class FileContainerPanel(QWidget):
             ]
         except OSError:
             return
-        items = [("copy", src, _unique_dest(target, os.path.basename(src)),
-                  os.path.isdir(src)) for src in names]
-        if not items:
+
+        if not names:
             return
-        if _async_eligible(items):
-            self._dispatch_container_ops(items, is_export=True)
-            return
-        done = []
-        errors = []
-        target_identity = capture_resolved_root(target)
-        for op, src, dest, is_dir in items:
+
+        from PyQt6.QtCore import Qt
+        from PyQt6.QtWidgets import QProgressDialog
+        progress = QProgressDialog(tr("Zipping files...", self.lang), tr("Cancel", self.lang), 0, len(names), self)
+        progress.setWindowTitle(tr("Exporting", self.lang))
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setMinimumDuration(500)
+
+        # Run zipping in a background thread
+        import threading
+        import zipfile
+
+        def do_zip():
             try:
-                _copy_atomic(src, dest, is_dir, target, target_identity)
-                done.append(dest)
-            except OSError as e:
-                logger.error(f"File container export failed for {src}: {e}")
-                errors.append((src, str(e)))
-        if done and hasattr(self.main_win, "sound_manager"):
-            self.main_win.sound_manager.play_tick()
+                with zipfile.ZipFile(target, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                    for i, src in enumerate(names):
+                        if progress.wasCanceled():
+                            break
+                        if os.path.isdir(src):
+                            for root, _, files in os.walk(src):
+                                for file in files:
+                                    fpath = os.path.join(root, file)
+                                    arcname = os.path.relpath(fpath, self.folder)
+                                    zipf.write(fpath, arcname)
+                        else:
+                            zipf.write(src, os.path.basename(src))
+
+                        # Use QMetaObject.invokeMethod to safely update progress from background thread
+                        from PyQt6.QtCore import Q_ARG, QMetaObject
+                        QMetaObject.invokeMethod(progress, "setValue", Qt.ConnectionType.QueuedConnection, Q_ARG(int, i + 1))
+            except Exception as e:
+                logger.error(f"ZIP export failed: {e}")
+            finally:
+                from PyQt6.QtCore import QMetaObject
+                QMetaObject.invokeMethod(progress, "cancel", Qt.ConnectionType.QueuedConnection)
+
+        threading.Thread(target=do_zip, daemon=True).start()
 
     def _prompt_text(self, title, label, default_text=""):
         from PyQt6.QtCore import Qt
@@ -1178,13 +1527,13 @@ class FileContainerPanel(QWidget):
         dialog.setTextValue(default_text)
         # Force the dialog to stay on top, fixing issues when opened in the collapsible sidebar
         dialog.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint)
-        
+
         restore = self._modal_guard()
         try:
             ok = dialog.exec()
         finally:
             restore()
-            
+
         return dialog.textValue(), bool(ok)
 
     def _rename(self, path, new_name=None):
@@ -1265,6 +1614,8 @@ class FileContainerPanel(QWidget):
         traversal or drive-qualified name can never leave the container."""
         if not self.folder:
             return
+        if not self._ensure_folder():
+            return
         if name is None:
             name, ok = self._prompt_text(tr("New Folder", self.lang), tr("Folder name:", self.lang), tr("New Folder", self.lang))
             if not ok:
@@ -1297,6 +1648,8 @@ class FileContainerPanel(QWidget):
         canonical container-safety helper — a malicious element is skipped
         and reported, never allowed to leave the container root."""
         if not self.folder:
+            return
+        if not self._ensure_folder():
             return
         if template is None:
             template = self.main_win.data.get("folder_template", "ae, c4d, _output, _input")

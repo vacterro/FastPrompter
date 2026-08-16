@@ -56,6 +56,21 @@ class HotkeyFilter(QAbstractNativeEventFilter):
                 elif msg.message == 0x0112:  # WM_SYSCOMMAND
                     if (msg.wParam & 0xFFF0) == 0xF100:  # SC_KEYMENU
                         return True, 0
+                elif msg.message in (0x0101, 0x0105):  # WM_KEYUP, WM_SYSKEYUP
+                    # P1-7 Fix: Windows natively broadcasts the release, but Qt ignores it
+                    # if the window lacks focus, leaving modifier states stuck. Map it here.
+                    from PyQt6.QtGui import QKeyEvent
+                    from PyQt6.QtCore import QEvent, Qt
+                    from PyQt6.QtWidgets import QApplication
+                    vk = msg.wParam
+                    key = 0
+                    if vk == 0x10: key = Qt.Key.Key_Shift
+                    elif vk == 0x11: key = Qt.Key.Key_Control
+                    elif vk == 0x12: key = Qt.Key.Key_Alt
+                    elif vk in (0x5B, 0x5C): key = Qt.Key.Key_Meta
+                    if key:
+                        evt = QKeyEvent(QEvent.Type.KeyRelease, key, Qt.KeyboardModifier.NoModifier)
+                        QApplication.postEvent(self.window, evt)
         except Exception:
             logger.exception("Error in native event filter")
         return False, 0

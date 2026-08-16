@@ -2,6 +2,7 @@
 
 import os
 import sys
+import threading
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
@@ -209,3 +210,98 @@ class TestExistsWithin:
 
         assert result is False
         assert elapsed < 2.0, f"caller was held for {elapsed:.1f}s"
+
+
+class TestBoundedProbePool:
+    """P1-16: a dead share can never accumulate unbounded probe threads.
+
+    exists_within/isdir_within used to spawn one daemon thread per call, so a
+    dead SMB host could pile up an unlimited number of stuck stacks. The pool
+    is now strictly bounded: at most _MAX_STUCK_PROBES OS calls in flight,
+    one probe per path while a probe is running, and a short negative cache.
+    """
+
+    def _hanging_path(self, started, release):
+        """A path object whose __fspath__ blocks until ``release`` fires."""
+        class _Hangs:
+            def __fspath__(self):
+                started.set()
+                release.wait(30)
+                return "/definitely/not/here"
+        return _Hangs()
+
+    def test_100_calls_cannot_spawn_more_than_max_probes(self):
+        import fastprompter.utils.paths as paths_mod
+
+        max_probes = paths_mod._MAX_STUCK_PROBES
+        assert max_probes >= 1
+        with paths_mod._PROBE_LOCK:
+            paths_mod._PROBE_NEGATIVE.clear()
+        blockers = []
+        try:
+            for _ in range(100):
+                started = threading.Event()
+                release = threading.Event()
+                blockers.append((started, release))
+                paths_mod.exists_within(
+                    self._hanging_path(started, release), timeout=0.05)
+
+            started_count = sum(1 for s, _r in blockers if s.is_set())
+            assert started_count <= max_probes, (
+                f"{started_count} probe threads started, cap is {max_probes}")
+        finally:
+            for _s, release in blockers:
+                release.set()
+
+    def test_duplicate_path_does_not_spawn_duplicate_probes(self):
+        import time
+
+        import fastprompter.utils.paths as paths_mod
+
+        with paths_mod._PROBE_LOCK:
+            paths_mod._PROBE_NEGATIVE.clear()
+        started = threading.Event()
+        release = threading.Event()
+        path = self._hanging_path(started, release)
+        try:
+            # first call: probe starts and hangs inside the OS call
+            assert paths_mod.exists_within(path, timeout=0.6) is False
+            # second call while the first is STILL running: in-flight dedupe
+            t = time.perf_counter()
+            assert paths_mod.exists_within(path, timeout=0.6) is False
+            assert time.perf_counter() - t < 0.3, "dup probe was not refused"
+            assert started.is_set()
+        finally:
+            release.set()
+
+    def test_capacity_recovers_when_probes_complete(self):
+        import time
+
+        import fastprompter.utils.paths as paths_mod
+
+        with paths_mod._PROBE_LOCK:
+            paths_mod._PROBE_NEGATIVE.clear()
+        blockers = []
+        try:
+            for _ in range(paths_mod._MAX_STUCK_PROBES + 2):
+                started = threading.Event()
+                release = threading.Event()
+                blockers.append((started, release))
+                paths_mod.exists_within(
+                    self._hanging_path(started, release), timeout=0.05)
+            assert sum(1 for s, _r in blockers if s.is_set()) == \
+                paths_mod._MAX_STUCK_PROBES
+        finally:
+            for _s, release in blockers:
+                release.set()
+        # wait until every stuck probe actually returned and released its slot
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline:
+            with paths_mod._PROBE_LOCK:
+                if not paths_mod._PROBE_INFLIGHT:
+                    break
+            time.sleep(0.02)
+        with paths_mod._PROBE_LOCK:
+            assert not paths_mod._PROBE_INFLIGHT, "probe slots never released"
+        # a fresh probe now answers again: capacity recovered
+        assert paths_mod.exists_within(os.path.dirname(__file__), timeout=2.0) is True

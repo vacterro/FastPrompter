@@ -3,8 +3,6 @@
 import os
 import sys
 
-import pytest
-
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
 from unittest.mock import MagicMock, patch
@@ -464,20 +462,5 @@ class TestKeyPressEvent:
         with patch.object(_MockWidget, "keyPressEvent") as mock_super:
             widget.keyPressEvent(event)
             mock_super.assert_called_once_with(event)
-
-
-# ---------------------------------------------------------------------------
-# Focus events
-# ---------------------------------------------------------------------------
-
-
-class TestFocusOutEvent:
-    @pytest.mark.skip(reason="refactored to eventFilter")
-    def test_focus_out_closes_widget(self):
-        mw = make_main_win()
-        widget = QuickListWidget(mw)
-        widget._visible = True
-        widget.focusOutEvent(MagicMock())
-        assert widget._visible is False
 
 

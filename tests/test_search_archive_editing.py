@@ -206,8 +206,6 @@ class TestArchivePersistence:
         # Empty and whitespace-only strings should be filtered out
         assert "real content" in state2.data["archive_temp_presets_all"]["Code"]
         assert "more content" in state2.data["archive_temp_presets_all"]["Code"]
-        assert "" not in state2.data["archive_temp_presets_all"]["Code"]
-
         if state2.conn:
             state2.conn.close()
 

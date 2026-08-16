@@ -30,12 +30,12 @@ def _wait_for_idle(timeout=5.0):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         _app.processEvents()
-        if m._BACKUP_INFLIGHT_GEN == 0 and m._BACKUP_PENDING is None:
+        if not m._BACKUP_INFLIGHT and not m._BACKUP_PENDING:
             return
         time.sleep(0.01)
     pytest.fail(
         "portable backup did not become idle: "
-        f"inflight={m._BACKUP_INFLIGHT_GEN}, pending={m._BACKUP_PENDING!r}"
+        f"inflight={m._BACKUP_INFLIGHT}, pending={m._BACKUP_PENDING!r}"
     )
 
 
@@ -49,7 +49,7 @@ def production_backup(tmp_path, monkeypatch):
     m._BACKUP_GEN = 0
     m._BACKUP_LAST_SUCCESS_GEN = 0
     m._BACKUP_LAST_FAILED_GEN = 0
-    pb._last_backup_time = 0.0
+    pb.last_success_by_profile.clear()
     pb.set_backup_sink(None)
     m._BACKUP_SINK_INSTALLED = False
     m._install_portable_backup_sink()
@@ -65,7 +65,7 @@ def test_real_factory_completes_two_consecutive_backups(production_backup):
 
     path = _silo_path(production_backup)
     assert "generation A" in open(path, encoding="utf-8").read()
-    assert m._BACKUP_INFLIGHT_GEN == 0
+    assert m._BACKUP_INFLIGHT == {}
 
     worker = m._BACKUP_WORKER
     pb.run_portable_backup(_data("generation B"))
@@ -73,8 +73,8 @@ def test_real_factory_completes_two_consecutive_backups(production_backup):
 
     assert m._BACKUP_WORKER is worker
     assert "generation B" in open(path, encoding="utf-8").read()
-    assert m._BACKUP_INFLIGHT_GEN == 0
-    assert m._BACKUP_PENDING is None
+    assert m._BACKUP_INFLIGHT == {}
+    assert m._BACKUP_PENDING == {}
 
 
 def test_backup_worker_and_completion_have_explicit_thread_owners(
@@ -125,7 +125,7 @@ def test_real_completion_drains_newest_coalesced_backup(
     pb.run_portable_backup(_data("generation B"))
     pb.run_portable_backup(_data("generation C"))
 
-    assert m._BACKUP_PENDING["temp_presets_all"]["A"] == ["generation C"]
+    assert m._BACKUP_PENDING[1]["temp_presets_all"]["A"] == ["generation C"]
     release.set()
     _wait_for_idle()
 
@@ -133,8 +133,8 @@ def test_real_completion_drains_newest_coalesced_backup(
     assert "generation C" in open(
         _silo_path(production_backup), encoding="utf-8"
     ).read()
-    assert m._BACKUP_INFLIGHT_GEN == 0
-    assert m._BACKUP_PENDING is None
+    assert m._BACKUP_INFLIGHT == {}
+    assert m._BACKUP_PENDING == {}
 
 
 def test_failed_newest_generation_is_immediately_retryable(
@@ -166,7 +166,7 @@ def test_failed_newest_generation_is_immediately_retryable(
 
     assert m._BACKUP_LAST_SUCCESS_GEN == 1
     assert m._BACKUP_LAST_FAILED_GEN == 2
-    assert pb._last_backup_time == 0.0
+    assert pb.last_success_by_profile.get(1, 0.0) == 0.0
 
     pb.run_portable_backup(_data("generation C"))
     _wait_for_idle()
@@ -196,10 +196,10 @@ def test_clean_busy_shutdown_allows_worker_recreation(
     assert m.backup_worker_shutdown_global() is True
     assert m._BACKUP_WORKER is None
     assert m._BACKUP_THREAD is None
-    assert m._BACKUP_PENDING is None
-    assert m._BACKUP_INFLIGHT_GEN == 0
+    assert m._BACKUP_PENDING == {}
+    assert m._BACKUP_INFLIGHT == {}
 
-    pb._last_backup_time = 0.0
+    pb.last_success_by_profile.clear()
     pb.run_portable_backup(_data("after recreation"))
     _wait_for_idle()
     assert m._BACKUP_WORKER is not old_worker

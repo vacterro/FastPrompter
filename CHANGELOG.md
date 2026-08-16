@@ -1,5 +1,53 @@
 # Changelog
 
+## v0.8.38 — 2026-08-15
+
+- **Links are clickable everywhere (user request).** The preview widget opens
+  anchors through `QDesktopServices` (this PyQt6 build ships a `QTextEdit`
+  without `setOpenExternalLinks`, so the click handling is manual: a
+  `mouseReleaseEvent` on an anchor hit with no text selection). Bare
+  `http(s)` URLs are now anchored and clickable in the editor highlighter and
+  in both markdown render paths — the primary path pre-wraps URLs because the
+  installed markdown build has no autolink extension, and code spans stay
+  code.
+- **Notification colors are customizable (user request).** Six new theme
+  tokens (`notif_bg`/`notif_header`/`notif_title`/`notif_text`/
+  `notif_accent`/`notif_border`) are derived from the base colors in
+  `generate_custom_theme` and explicit in the five hand-written themes; the
+  timer-toast palette reads them with a generic-key fallback, and six new
+  rows under Settings > Colors edit them. Eleven i18n keys were registered
+  (six notification + five pre-existing export/token gaps missing from
+  `en.json`) across en/ru/est/ded.
+- **Test helper dedup (T-794).** `_junction_ok()` had been copy-pasted into
+  `tests/test_path_safety.py` and `tests_smoke/test_sync_async.py`; it now
+  lives once in `tests/_helpers.py` and both suites import it.
+- *Under the hood:* dead code and stray files removed (T-780/T-781/T-796/
+  T-799) — a captured-traceback `nul` stray, the 115-file `i18n_build_scripts/`
+  graveyard, a DB-sizing scratch probe, and the dead `clipboard_safe.py`
+  module plus its test (the live clipboard logic in the watcher sender is
+  untouched). Wiki pages re-cut to match: phase machine 7→16 in
+  `SAIPEN-Protocol.md`, Module-Structure drops the deleted module.
+- **Productivity timer (Pomodoro).** A new `core/pomodoro.py` `ProductivityTimer`
+  drives work/break cycles, persisted as the `productivity_timer` setting and
+  wired into the state load/save path (fail-closed on a malformed stored value).
+- **Stable category folder identity.** Each logical category now owns a physical
+  filesystem component via a persistent `category_file_dirs` map, so renaming a
+  category no longer re-allocates a fresh folder and loses its files.
+- **Profile switching rework.** `switch_profile` plus per-profile backup
+  throttling (`_last_backup_time_by_profile`, fixing one profile's recent backup
+  silently suppressing another's) and runtime widget resync
+  (`_apply_profile_runtime_state` / `_resync_profile_widgets`). Data-dir
+  resolution moved to `utils/paths.py` (`get_data_dir`, `profile_files_root`)
+  with portable-root detection (`_portable_dir_holds_user_data`,
+  `_probe_dir_writable`).
+- **Snippet / File Container polish.** Visible-only thumbnail fetching backed by
+  an LRU cache and a scroll-driven worker; duplicate-folder copy into a container
+  (`_copy_folder_into_container`); folder trash with stamped backups and a pruned
+  trash log; file-count caching (`invalidate_file_count_cache` /
+  `_on_file_count_result`); deferred silo refresh on profile switches.
+- **Large `main.py` / `file_container.py` rework.** Wiring for the above plus
+  general structure cleanup (`main.py` ~+1483, `file_container.py` ~+527).
+
 ## v0.8.37 — 2026-08-14
 
 - **Sync-to-Disk publishes when the worker is really done.** The sync pump

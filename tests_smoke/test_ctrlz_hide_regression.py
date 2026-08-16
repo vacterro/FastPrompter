@@ -32,7 +32,7 @@ _tmpdir = tempfile.mkdtemp(prefix="fastprompter_ctrlz_")
 @pytest.fixture(scope="module")
 def win():
     state_mod.get_db_path = lambda profile_id=1: os.path.join(_tmpdir, f"z_{profile_id}.db")
-    state_mod.run_portable_backup = lambda data: None
+    state_mod.run_portable_backup = lambda data, profile_id=1: None
     FastPrompter.setup_single_instance_server = lambda self: None
     w = FastPrompter()
     w.data["close_on_focus_loss"] = "True"

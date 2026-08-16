@@ -1,8 +1,9 @@
 """Portable backup: exports all silos, snippets, and archive as structured .md files.
 
-Destination: ~/.fastprompter/YYYY-MM-DD/
+Destination: ~/.fastprompter/YYYY-MM-DD/ (profile 1, legacy layout) or
+~/.fastprompter/profiles/p<id>/YYYY-MM-DD/ (profile 2+, isolated).
 Creates per-category snippet files, silo files, and archive files.
-Runs throttled during save_data_to_db (max once per 120s).
+Runs throttled during save_data_to_db (max once per 120s PER PROFILE).
 
 Completion semantics (Phase 6, second pass):
 
@@ -12,8 +13,12 @@ Completion semantics (Phase 6, second pass):
 * the export is built in a ``<date>.partial`` temp directory and published
   atomically only on success; a failed export leaves the previous known-good
   day directory untouched.
-* ``_last_backup_time`` advances only after a successful snapshot, so a
-  failed export stays eligible for an immediate retry.
+* ``last_success_by_profile[profile_id]`` advances only after a successful
+  snapshot of that profile, so a failed export stays eligible for an
+  immediate retry. Throttle/coalescing are PER PROFILE: profile A's save
+  can never suppress profile B's backup.
+* every snapshot carries an immutable ``profile_id`` so the async scheduler
+  can namespace, throttle and coalesce each profile independently.
 """
 
 import json
@@ -23,10 +28,12 @@ import time
 
 from fastprompter.core.logging import logger
 from fastprompter.utils.path_safety import alloc_fs_names, fs_component
-from fastprompter.utils.paths import get_portable_backup_dir
+from fastprompter.utils.paths import get_portable_backup_dir, profile_files_root
 
-_last_backup_time = 0.0
-_BACKUP_THROTTLE = 120  # seconds between backups
+# Throttle state, one entry PER PROFILE. The old single scalar let one
+# profile's recent save silently suppress another profile's backup.
+last_success_by_profile: dict = {}
+_BACKUP_THROTTLE = 120  # seconds between backups (per profile)
 
 _COMPLETE_MARKER = "_COMPLETE"
 
@@ -43,14 +50,17 @@ def set_backup_sink(sink):
     _backup_sink = sink
 
 
-def capture_snapshot(data):
+def capture_snapshot(data, profile_id=1):
     """Deep-copy ONLY the exact fields portable export needs.
 
     Never hands the worker a reference to the live, mutable data dict: a
-    save happening after capture cannot alter what the worker writes.
+    save happening after capture cannot alter what the worker writes. The
+    snapshot carries an immutable ``profile_id`` so the async scheduler can
+    route/throttle/coalesce each profile independently.
     """
     import copy as _copy
     return {
+        "profile_id": int(profile_id or 1),
         "cats_order": list(data.get("cats_order", []) or []),
         "categories": {
             k: [_copy.deepcopy(s) if isinstance(s, dict) else None
@@ -68,25 +78,33 @@ def capture_snapshot(data):
     }
 
 
-def mark_backup_success(now=None):
+def mark_backup_success(now=None, profile_id=1):
     """The async worker reports a completed snapshot; the throttle advances
-    only on success (matching the synchronous path)."""
-    global _last_backup_time
-    _last_backup_time = now if now is not None else time.time()
+    only on success (matching the synchronous path). Per profile: a success
+    in one profile never touches another profile's throttle."""
+    pid = int(profile_id or 1)
+    last_success_by_profile[pid] = now if now is not None else time.time()
 
 
-def run_portable_backup(data: dict) -> None:
-    """Export all data as structured .md files. Throttled to prevent I/O storms.
+def clear_throttle(profile_id=1):
+    """Forget a profile's last-success stamp so its next backup is eligible
+    immediately (used when the NEWEST snapshot for that profile failed)."""
+    last_success_by_profile.pop(int(profile_id or 1), None)
 
-    With an installed async sink, the immutable snapshot is dispatched to the
-    worker (which owns throttle advancement on success); otherwise the
-    synchronous path below runs."""
-    global _last_backup_time
+
+def run_portable_backup(data: dict, profile_id=1) -> None:
+    """Export all data as structured .md files. Throttled per profile.
+
+    With an installed async sink, the immutable snapshot (carrying
+    ``profile_id``) is dispatched to the worker, which owns throttle
+    advancement on success; otherwise the synchronous path below runs.
+    """
+    pid = int(profile_id or 1)
     now = time.time()
-    if now - _last_backup_time < _BACKUP_THROTTLE:
+    if now - last_success_by_profile.get(pid, 0.0) < _BACKUP_THROTTLE:
         return
 
-    snapshot = capture_snapshot(data)
+    snapshot = capture_snapshot(data, profile_id=pid)
     if _backup_sink is not None:
         try:
             _backup_sink(snapshot)
@@ -95,7 +113,7 @@ def run_portable_backup(data: dict) -> None:
         return
 
     try:
-        _do_export(snapshot)
+        _do_export(snapshot, profile_id=pid)
     except Exception:
         # A backup that fails silently is worse than no backup: the user
         # believes the snapshot exists. Reach the log file, keep the previous
@@ -105,7 +123,7 @@ def run_portable_backup(data: dict) -> None:
                          "is kept and the next save may retry")
         return
 
-    _last_backup_time = now
+    last_success_by_profile[pid] = now
 
 
 def _safe_name(name: str) -> str:
@@ -136,10 +154,19 @@ def _per_project(data: dict, key: str) -> dict:
     return {}
 
 
-def _do_export(data: dict) -> None:
+def _profile_backup_dir(backup_dir: str, profile_id) -> str:
+    """Backup root a profile owns. Profile 1 keeps the legacy flat layout;
+    profiles 2+ get an explicit ``profiles/p<id>`` namespace so a backup of
+    one profile can never overwrite another's day directory."""
+    return profile_files_root(backup_dir, profile_id)
+
+
+def _do_export(data: dict, profile_id=1) -> None:
     backup_dir = get_portable_backup_dir()
     # Per-day subdirectory, built as an exact snapshot in a temp sibling and
-    # published atomically only when every write succeeded.
+    # published atomically only when every write succeeded. Namespaced per
+    # profile (profile 1 = legacy flat layout).
+    backup_dir = _profile_backup_dir(backup_dir, profile_id)
     date_str = time.strftime("%Y-%m-%d")
     day_dir = os.path.join(backup_dir, date_str)
     tmp_dir = day_dir + ".partial"
@@ -229,10 +256,15 @@ def _publish_snapshot(tmp_dir, day_dir):
 
     If step 1 fails the previous generation is untouched and the new temp is
     discarded. If step 2 fails the previous generation is restored to day_dir
-    and the failed new generation is preserved under a distinct name for
-    manual recovery rather than silently lost. A failure after step 1 but
-    before step 2 is exactly the window delete-then-rename used to lose data
-    in.
+    and the failed new generation is preserved under a distinct
+    ``.failed-<suffix>`` name for manual recovery rather than silently lost.
+    Double failure (step 2 AND the restore of step 1) keeps BOTH recoverable
+    generations on disk: the old one under ``.rollback-<suffix>`` and the new
+    COMPLETE one under ``.failed-<suffix>``. This is NOT an atomic swap — it
+    is a rollback-safe multi-rename whose guarantee is "no generation is ever
+    deleted before its successor is safely published". A failure after step 1
+    but before step 2 is exactly the window delete-then-rename used to lose
+    data in.
     """
     rollback = f"{day_dir}.rollback-{_gen_suffix()}"
     if os.path.isdir(day_dir):
@@ -253,10 +285,14 @@ def _publish_snapshot(tmp_dir, day_dir):
             except OSError:
                 pass
         if not restored:
-            # the previous generation could not be put back; keep the failed
-            # new one under a distinct name so nothing is silently lost
-            failed = f"{day_dir}.partial"
-            shutil.rmtree(failed, ignore_errors=True)
+            # The previous generation could not be put back. The failed NEW
+            # generation must NEVER be destroyed here: it is a complete,
+            # recoverable snapshot. It is preserved under a UNIQUE
+            # ``.failed-<suffix>`` name — never the ``.partial`` temp path,
+            # which is the SAME path the new generation was just built at
+            # (rmtree on it would delete the new generation itself, and a
+            # second failure would then have nothing left to rename).
+            failed = f"{day_dir}.failed-{_gen_suffix()}"
             try:
                 os.rename(tmp_dir, failed)
             except OSError:

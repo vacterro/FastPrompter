@@ -16,6 +16,30 @@ from fastprompter.core.translations import tr
 
 _is_deleted = sip.isdeleted
 
+# folder_trash_log retention (P2-23). The log is the physical recovery
+# mapping for undoable retirements. _restore_trashed_folders only restores
+# an entry whose original folder is referenced by the CURRENT per-slot maps
+# (undo restores the maps from the snapshot BEFORE folders), so an entry is
+# restorable exactly while its folder name appears in a live undo snapshot
+# or the current maps — referenced entries are therefore ALWAYS kept. The
+# numeric floor only sweeps UNREFERENCED orphans (failed-restore leftovers
+# would otherwise re-accumulate forever). It is DERIVED, not magic: undo
+# capacity (50 actions, main.py) times the per-category slot model
+# (10 normal + 10 archive), never an arbitrary 500 that could prune the
+# recovery mapping of an action the user can still undo.
+_UNDO_MAX_ACTIONS = 50
+_MAX_FOLDERS_PER_CATEGORY = 20   # 10 normal + 10 archive slots
+_FOLDER_TRASH_LOG_FLOOR = _UNDO_MAX_ACTIONS * _MAX_FOLDERS_PER_CATEGORY
+
+
+def _trash_stamp():
+    """Readable timestamp for a trash filename, ``dd.mm.yy-HHMMSS``.
+
+    Module-level so tests can freeze it deterministically (the trash
+    no-clobber regression pins two writes in the SAME second)."""
+    import datetime
+    return datetime.datetime.now().strftime("%d.%m.%y-%H%M%S")
+
 
 class SnippetOpsMixin:
     """Mixin providing snippet CRUD, archive, clipboard, and file operations.
@@ -79,10 +103,43 @@ class SnippetOpsMixin:
             except Exception as e:
                 QMessageBox.critical(self, tr("Error", getattr(self, "_current_lang", "EN")), tr("Failed to save file:\n{}", getattr(self, "_current_lang", "EN")).format(e))
 
+    def _write_backup_file(self, folder, name, text):
+        """Publish ``text`` as ``name`` inside ``folder`` (container-owned).
+
+        The name must pass the shared component validator (single component,
+        no separators / ``..`` / drive / UNC / device / trailing dot-space),
+        the destination is unique no-clobber, and publication goes through the
+        container's atomic ``_write_text_atomic`` — never a raw ``open()``.
+        Returns (dest_path, "") or (None, error_reason).
+        """
+        from fastprompter.ui.file_container import (
+            _unique_dest,
+            _write_text_atomic,
+            capture_resolved_root,
+        )
+        from fastprompter.utils.path_safety import validate_component
+        clean, reason = validate_component(name)
+        if clean is None:
+            return None, reason
+        try:
+            os.makedirs(folder, exist_ok=True)
+            root_identity = capture_resolved_root(folder)
+            dest = _unique_dest(folder, clean)
+            _write_text_atomic(dest, text, folder, root_identity)
+            return dest, ""
+        except OSError as e:
+            return None, str(e)
+
     def backup_silo_to_files(self, idx, is_archive=False):
-        """Save the current silo text as a file in its own file container."""
+        """Save the current silo text as a file in its own file container.
+
+        The folder is resolved ONLY through the canonical per-slot helper
+        (``_silo_folder_dir``), never by string-building a path from the raw
+        category/silo names — a hostile name could otherwise escape the
+        container. The user filename goes through the shared validator and is
+        published atomically without clobbering an existing file.
+        """
         import datetime
-        import os
 
         from PyQt6.QtWidgets import (
             QDialog,
@@ -101,13 +158,7 @@ class SnippetOpsMixin:
         if not silo_text.strip():
             return
 
-        from fastprompter.ui.file_container import silo_slug
-        safe = silo_slug(silo_text)
-        if not safe:
-            safe = "_blank"
-        folder = os.path.join(self._files_root(), self.get_current_category(), safe)
-        if not folder:
-            return
+        folder = self._silo_folder_dir(idx, is_archive=False)
 
         default_name = f"backup_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
 
@@ -149,13 +200,9 @@ class SnippetOpsMixin:
                 name = le.text().strip()
                 if not name: return
 
-                os.makedirs(folder, exist_ok=True)
-                path = os.path.join(folder, name)
-                try:
-                    with open(path, "w", encoding="utf-8") as f:
-                        f.write(silo_text)
-                except Exception as e:
-                    QMessageBox.warning(self, tr("Error", getattr(self, "_current_lang", "EN")), tr("Failed to save backup:\n{}", getattr(self, "_current_lang", "EN")).format(e))
+                dest, err = self._write_backup_file(folder, name, silo_text)
+                if dest is None:
+                    QMessageBox.warning(self, tr("Error", getattr(self, "_current_lang", "EN")), tr("Failed to save backup:\n{}", getattr(self, "_current_lang", "EN")).format(err))
                     return
 
                 if result[0] == "clear":
@@ -272,23 +319,23 @@ class SnippetOpsMixin:
         item = self.data["categories"]["Trash"][global_idx]
         if not item:
             return
-            
+
         self.add_data_undo_state("Restore snippet")
-        
+
         target_cat = "Default"
         for c in self.data.get("cats_order", []):
             if c != "Trash":
                 target_cat = c
                 break
-                
+
         if target_cat not in self.data["categories"]:
             self.data["categories"][target_cat] = []
             if target_cat not in self.data.get("cats_order", []):
                 self.data.setdefault("cats_order", []).insert(0, target_cat)
-                
+
         self.data["categories"][target_cat].append(item)
         self.data["categories"]["Trash"][global_idx] = None
-        
+
         self.mark_dirty()
         self.refresh_snippets_panel()
 
@@ -547,23 +594,52 @@ class SnippetOpsMixin:
 
         Never destroys user assets: the folder is MOVED to
         data/files/_trash/<slug>-<n>/ so it survives an accidental clear
-        (silo text is undoable via Ctrl+Z; files must not be less safe)."""
+        (silo text is undoable via Ctrl+Z; files must not be less safe).
+
+        Returns an explicit status so callers can decide whether the
+        per-slot ownership mapping may be dropped:
+
+        "MOVED_TO_TRASH"   folder had assets and was moved to _trash
+        "EMPTY_REMOVED"    folder existed but was empty; removed
+        "CONFIRMED_ABSENT" no folder exists at the resolved path (root
+                           was reachable, so absence is a real fact)
+        "FAILED"           filesystem error; the folder is exactly where
+                           it was — the caller must keep ownership
+        "ROOT_UNAVAILABLE" a configured custom root is unreachable, so
+                           "isdir -> False" proves NOTHING; assets may
+                           still be on the share — keep ownership
+        """
         import os
-        import shutil
         import time
 
-        from fastprompter.ui.file_container import silo_files_dir
         if not hasattr(self, "_files_root"):
-            return
+            return "FAILED"
+        # A configured custom root that is temporarily unreachable must not be
+        # read as "the folder is gone": on a dead share isdir() returns False
+        # while the assets still exist on the NAS. Fail closed instead of
+        # dropping the ownership mapping.
+        custom = (self.data.get("files_root") or "").strip()
+        if custom and not self._custom_files_root_usable(custom):
+            from fastprompter.core.logging import logger as _lg
+            _lg.warning("file retirement skipped: custom files root %r is "
+                        "unreachable; ownership mapping preserved", custom)
+            return "ROOT_UNAVAILABLE"
         # `text` may be an already-resolved folder path (silos, via the
-        # per-slot map) or a silo/snippet title (fallback, title-slug).
-        d = text if (isinstance(text, str) and os.path.isabs(text)) \
-            else silo_files_dir(self._files_root(), cat, text)
+        # per-slot map) or a silo/snippet title (fallback, title-slug). The
+        # title fallback resolves through the category's PERSISTENT physical
+        # component, not a lossy slug of the raw name.
+        from fastprompter.ui.file_container import silo_slug
+        if isinstance(text, str) and os.path.isabs(text):
+            d = text
+        else:
+            d = os.path.join(self._files_root(),
+                             self._category_files_dir(cat), silo_slug(text))
         try:
-            if not os.path.isdir(d) or not os.listdir(d):
-                if os.path.isdir(d):
-                    os.rmdir(d)  # empty folder: no assets to keep
-                return
+            if not os.path.isdir(d):
+                return "CONFIRMED_ABSENT"
+            if not os.listdir(d):
+                os.rmdir(d)  # empty folder: no assets to keep
+                return "EMPTY_REMOVED"
             trash = os.path.join(self._files_root(), "_trash")
             os.makedirs(trash, exist_ok=True)
             dest = os.path.join(trash, f"{os.path.basename(d)}-{int(time.time())}")
@@ -571,16 +647,63 @@ class SnippetOpsMixin:
             while os.path.exists(dest):
                 dest = os.path.join(trash, f"{os.path.basename(d)}-{int(time.time())}-{n}")
                 n += 1
-            shutil.move(d, dest)
+            # route through the same safe move primitive as the file panel:
+            # containment-checked at mutation time, no-clobber by construction
+            from fastprompter.ui.file_container import _move_into_container, capture_resolved_root
+            root = self._files_root()
+            _move_into_container(d, dest, root, capture_resolved_root(root))
             # remember original->trash so undoing the delete/clear can bring
             # the files back to where they belong (files never vanish: they're
             # in _trash even if the restore ever misses)
             log = self.data.setdefault("folder_trash_log", [])
             log.append((os.path.abspath(d), os.path.abspath(dest)))
-            del log[:-500]  # keep the log bounded
-            self.mark_dirty()
+            self._prune_folder_trash_log(log)
+            return "MOVED_TO_TRASH"
         except OSError as e:
             logger.warning(f"Could not retire file container {d}: {e}")
+            return "FAILED"
+
+    def _prune_folder_trash_log(self, log):
+        """Retention contract (P2-23): a recovery entry survives exactly
+        while some still-restorable action can use it.
+
+        ``_restore_trashed_folders`` only restores an entry whose original
+        folder is referenced by the CURRENT per-slot maps, and undo restores
+        the maps from the snapshot before it restores folders — so an entry
+        whose folder name appears in no live undo snapshot and no current
+        map can never be restored and is dead weight. Referenced entries are
+        ALWAYS kept (above the floor they are the reason the log exists);
+        the derived floor only sweeps unreferenced orphans so the log cannot
+        grow without bound. See the module constants for the derivation.
+        """
+        if len(log) <= _FOLDER_TRASH_LOG_FLOOR:
+            return
+        names = set()
+        for key in ("silo_folders_all", "archive_silo_folders_all"):
+            stores = self.data.get(key) or {}
+            if not isinstance(stores, dict):
+                continue
+            for m in stores.values():
+                if isinstance(m, dict):
+                    for v in m.values():
+                        if isinstance(v, str) and v:
+                            names.add(v)
+        for snap in (getattr(self, "data_undo_stack", None) or []):
+            if not isinstance(snap, dict):
+                continue
+            for key in ("silo_folders_all", "archive_silo_folders_all"):
+                stores = snap.get(key) or {}
+                if not isinstance(stores, dict):
+                    continue
+                for m in stores.values():
+                    if isinstance(m, dict):
+                        for v in m.values():
+                            if isinstance(v, str) and v:
+                                names.add(v)
+        kept = [(o, t) for (o, t) in log if os.path.basename(o) in names]
+        if len(kept) != len(log):
+            log[:] = kept
+            self.mark_dirty()
 
     def delete_preset_by_index(self, cat, global_idx):
         """Delete a snippet at the given category and index."""
@@ -678,29 +801,40 @@ class SnippetOpsMixin:
         return True
 
     def _trash_silo_content(self, text):
-        """Write text to _trash folder and to Trash category if enabled."""
+        """Write text to _trash folder and to Trash category if enabled.
+
+        P1-10 no-clobber: the destination name keeps the readable
+        ``<slug>-<timestamp>`` form, but the FINAL path is allocated via the
+        shared ``_unique_dest`` allocator and published through
+        ``_write_text_atomic`` (temp + no-clobber rename). Two deletes in the
+        same second with the same or colliding slug each get their OWN file;
+        no deleted text is ever silently overwritten."""
         if not text.strip():
             return
-            
-        import datetime
 
-        from fastprompter.ui.file_container import silo_slug
-        trash = os.path.join(self._files_root(), "_trash")
+        from fastprompter.ui.file_container import (
+            _unique_dest,
+            _write_text_atomic,
+            capture_resolved_root,
+            silo_slug,
+        )
+        root = self._files_root()
+        trash = os.path.join(root, "_trash")
         try:
             os.makedirs(trash, exist_ok=True)
-            stamp = datetime.datetime.now().strftime("%d.%m.%y-%H%M%S")
-            name = f"{silo_slug(text)}-{stamp}.md"
-            with open(os.path.join(trash, name), "w", encoding="utf-8") as f:
-                f.write(text)
+            stamp = _trash_stamp()
+            wanted = f"{silo_slug(text)}-{stamp}.md"
+            dest = _unique_dest(trash, wanted)
+            _write_text_atomic(dest, text, root, capture_resolved_root(root))
         except OSError as e:
             logger.warning(f"Trash write failed: {e}")
-            
+
         if self.data.get("trash_vision", "False") == "True":
             if "Trash" not in self.data.get("categories", {}):
                 self.data.setdefault("categories", {})["Trash"] = []
             if "Trash" not in self.data.get("cats_order", []):
                 self.data.setdefault("cats_order", []).append("Trash")
-                
+
             title = text.strip().split('\n')[0][:40].strip()
             if not title:
                 title = "Untitled"
@@ -764,13 +898,19 @@ class SnippetOpsMixin:
             # resolve the folder via the per-slot map (unique per silo), then
             # drop its map entry so the freed slot doesn't inherit it
             folder = self._silo_folder_dir(idx, is_archive=is_arc)
-            self._delete_file_container(self.get_current_category(), folder)
-            if not is_arc:
-                self.data.get("silo_folders", {}).pop(str(idx), None)
-                self.data.get("silo_project_paths", {}).pop(str(idx), None)
-            else:
-                self.data.get("archive_silo_folders", {}).pop(str(idx), None)
-                self.data.get("archive_project_paths", {}).pop(str(idx), None)
+            retire = self._delete_file_container(self.get_current_category(), folder)
+            # P1-9: the ownership mapping is dropped ONLY for a confirmed
+            # retirement. FAILED / ROOT_UNAVAILABLE leave the physical folder
+            # exactly where the map says it is; dropping the map would orphan
+            # the user's assets ("files never vanish" is a promise, not a
+            # comment).
+            if retire in ("MOVED_TO_TRASH", "EMPTY_REMOVED", "CONFIRMED_ABSENT"):
+                if not is_arc:
+                    self.data.get("silo_folders", {}).pop(str(idx), None)
+                    self.data.get("silo_project_paths", {}).pop(str(idx), None)
+                else:
+                    self.data.get("archive_silo_folders", {}).pop(str(idx), None)
+                    self.data.get("archive_project_paths", {}).pop(str(idx), None)
 
             presets.pop(idx)
             if idx < len(docs):

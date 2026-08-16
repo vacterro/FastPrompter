@@ -1,4 +1,4 @@
-﻿"""Invariant tests for per-category state aliasing.
+"""Invariant tests for per-category state aliasing.
 
 Proves the Phase-6 invariants:
 
@@ -117,7 +117,7 @@ class TestAliasPersistence:
         monkeypatch.setattr(state_mod, "get_db_path", lambda profile_id=1: str(tmp_path / "alias.db"))
         monkeypatch.setattr(
             "fastprompter.utils.portable_backup.run_portable_backup",
-            lambda data: None)
+            lambda data, profile_id=1: None)
 
         s = FastPrompterState(profile_id=1)
         try:

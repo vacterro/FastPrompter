@@ -447,7 +447,7 @@ class TestTransformSeedsStructure:
         import fastprompter.core.state as sm
         from fastprompter.main import FastPrompter
         sm.get_db_path = lambda profile_id=1, _p=tmp_path: str(_p / f"s_{profile_id}.db")
-        sm.run_portable_backup = lambda data: None
+        sm.run_portable_backup = lambda data, profile_id=1: None
         FastPrompter.setup_single_instance_server = lambda self: None
         FastPrompter.register_all_hotkeys = lambda self: None
         FastPrompter.unregister_all_hotkeys = lambda self: None
@@ -546,7 +546,7 @@ class TestRenamePastedImage:
         import fastprompter.core.state as sm
         from fastprompter.main import FastPrompter
         sm.get_db_path = lambda profile_id=1, _p=tmp_path: str(_p / f"r_{profile_id}.db")
-        sm.run_portable_backup = lambda data: None
+        sm.run_portable_backup = lambda data, profile_id=1: None
         FastPrompter.setup_single_instance_server = lambda self: None
         FastPrompter.register_all_hotkeys = lambda self: None
         FastPrompter.unregister_all_hotkeys = lambda self: None
@@ -692,7 +692,7 @@ class TestNumboxFollowsTheProjects:
         import fastprompter.core.state as sm
         from fastprompter.main import FastPrompter
         sm.get_db_path = lambda profile_id=1, _p=tmp_path: str(_p / f"n_{profile_id}.db")
-        sm.run_portable_backup = lambda data: None
+        sm.run_portable_backup = lambda data, profile_id=1: None
         FastPrompter.setup_single_instance_server = lambda self: None
         FastPrompter.register_all_hotkeys = lambda self: None
         FastPrompter.unregister_all_hotkeys = lambda self: None
@@ -781,7 +781,7 @@ class TestSiloTypeFollowsTheContent:
         import fastprompter.core.state as sm
         from fastprompter.main import FastPrompter
         sm.get_db_path = lambda profile_id=1, _p=tmp_path: str(_p / f"t_{profile_id}.db")
-        sm.run_portable_backup = lambda data: None
+        sm.run_portable_backup = lambda data, profile_id=1: None
         FastPrompter.setup_single_instance_server = lambda self: None
         FastPrompter.register_all_hotkeys = lambda self: None
         FastPrompter.unregister_all_hotkeys = lambda self: None

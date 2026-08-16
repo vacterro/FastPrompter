@@ -34,14 +34,22 @@ class TrayMixin:
         tray_menu = QMenu(self)
 
         lang = getattr(self, "_current_lang", "EN")
-        show_action = tray_menu.addAction(tr("Show/Hide", lang))
-        show_action.triggered.connect(self.toggle_visibility)
+        self._tray_show_action = tray_menu.addAction(tr("Show/Hide", lang))
+        self._tray_show_action.triggered.connect(self.toggle_visibility)
         tray_menu.addSeparator()
-        quit_action = tray_menu.addAction(tr("Quit", lang))
-        quit_action.triggered.connect(self.quit_app)
+        self._tray_quit_action = tray_menu.addAction(tr("Quit", lang))
+        self._tray_quit_action.triggered.connect(self.quit_app)
 
         self.tray_icon.setContextMenu(tray_menu)
         self.tray_icon.activated.connect(self.on_tray_activated)
+
+    def retranslate_tray(self):
+        """Update tray menu texts for the new language."""
+        lang = getattr(self, "_current_lang", "EN")
+        if hasattr(self, "_tray_show_action") and not _is_deleted(self._tray_show_action):
+            self._tray_show_action.setText(tr("Show/Hide", lang))
+        if hasattr(self, "_tray_quit_action") and not _is_deleted(self._tray_quit_action):
+            self._tray_quit_action.setText(tr("Quit", lang))
         self.tray_icon.setVisible(self._tray_visible)
 
         # Set window icon too

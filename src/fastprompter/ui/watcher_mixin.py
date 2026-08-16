@@ -140,6 +140,8 @@ class WatcherMixin:
     def watcher_arm(self, hwnd, adapter, live=False):
         """Bind to one target and this silo's queue. Returns (ok, reason)."""
         self._watcher_init()
+        if getattr(self, "_observe_timer", None) is not None and self._observe_timer.isActive():
+            return False, "already observing - stop watching first"
         ok, reason = adapter.supported() if adapter else (False, "no agent chosen")
         if not ok:
             return False, reason
@@ -484,6 +486,7 @@ class WatcherMixin:
         self._observe_trace = []
         self._observe_last = None
         self._observe_started = time.monotonic()
+        self._observe_bytes = 0
         for probe in adapter.probes:
             probe.reset()
         if self._observe_timer is None:

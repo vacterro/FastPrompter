@@ -27,7 +27,7 @@ def state(tmp_path, monkeypatch):
         lambda profile_id=1: str(tmp_path / f"state_{profile_id}.db"))
     monkeypatch.setattr(
         "fastprompter.utils.portable_backup.run_portable_backup",
-        lambda data: None)
+        lambda data, profile_id=1: None)
     state = FastPrompterState(profile_id=999)
 
     yield state
@@ -451,7 +451,7 @@ class TestPortableBackupCoversEveryProject:
     def _run(self, tmp_path, data, monkeypatch):
         from fastprompter.utils import portable_backup as pb
         monkeypatch.setattr(pb, "get_portable_backup_dir", lambda: str(tmp_path))
-        pb._last_backup_time = 0.0
+        pb.last_success_by_profile.clear()
         pb.run_portable_backup(data)
         import time as _t
         return tmp_path / _t.strftime("%Y-%m-%d")
