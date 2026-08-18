@@ -46,6 +46,25 @@ def pytest_sessionfinish(session, exitstatus):
     shutil.rmtree(_TEST_TMP_ROOT, ignore_errors=True)
 
 
+def pytest_sessionstart(session):
+    """P1-9 gate: every test module must COMPILE before any test runs.
+
+    The CI compileall step only covers `src` + FastPrompter.pyw, so a broken
+    tests file used to surface in the middle of a run as a cryptic
+    ImportError inside an unrelated test — the non-UTF-8 smoke files and a
+    dedented block in test_close_reopen.py each failed exactly that way.
+    Walk both test trees up front; the session is aborted with the failing
+    module named by compileall on the first miss."""
+    import compileall
+    root = os.path.dirname(__file__)
+    for tree in ("tests", "tests_smoke"):
+        if not compileall.compile_dir(os.path.join(root, tree),
+                                      quiet=1, legacy=False):
+            raise SystemExit(
+                f"compileall gate FAILED under {tree}/ - fix the syntax "
+                f"error first, then rerun (P1-9)")
+
+
 # Filled in by `_mute_sound` at session start, from the value it displaces.
 # It cannot be captured at import time: importing sound_manager here would
 # cache the real PyQt6-backed module before the Qt-less unit tests install

@@ -66,24 +66,48 @@ class HotkeyMixin:
             self.btn_hotkeys.setToolTip(shortcuts_info)
 
     def unregister_all_hotkeys(self):
-        """Unregister all Win32 global hotkeys."""
+        """Unregister all Win32 global hotkeys.
+
+        Reports the truth about the operation: False when any id could not
+        be unregistered (or was never registered). Every failure is logged —
+        a silent best-effort call let a shutdown believe the keys were
+        released when they were still live (P1-8).
+
+        Only OS-CONFIRMED releases are dropped from ``registered_hotkeys``;
+        an id the OS refused to release (or that was never registered) is
+        RETAINED so the local tracking model keeps parity with the real OS
+        state. Clearing it would let a later re-registration believe the key
+        is free and create an untracked live binding."""
         hwnd = ctypes.wintypes.HWND(int(self.winId()))
-        for hk_id in self.registered_hotkeys:
-            ctypes.windll.user32.UnregisterHotKey(hwnd, hk_id)
-        self.registered_hotkeys.clear()
+        failed = []
+        retained = []
+        for hk_id in list(self.registered_hotkeys):
+            if ctypes.windll.user32.UnregisterHotKey(hwnd, hk_id):
+                continue  # OS confirmed release: drop from tracking
+            failed.append(hk_id)
+            retained.append(hk_id)  # OS still owns it: keep tracked
+        if failed:
+            from fastprompter.core.logging import logger
+            logger.error("hotkey unregister FAILED for ids %s", failed)
+        self.registered_hotkeys = retained
+        return not failed
 
     def register_all_hotkeys(self):
         """Register all global hotkeys from config.
-        
+
         Only toggle_visibility and pie_menu are global. All other hotkeys
         are handled as QShortcut (local to app window) to avoid conflicts.
-        """
+
+        Returns False when any registration was attempted but rejected — a
+        conflict with another app, an invalid combo. A failed registration
+        is REPORTED, never silently skipped (P1-8)."""
         self.unregister_all_hotkeys()
+        ok = True
         # Global hotkeys only
-        self._register_single(self.data.get("global_hotkey", "Alt+X"), 1)
-        self._register_single(self.data.get("global_hotkey_alt", "F15"), 101)
-        self._register_single(self.data.get("pie_menu_hotkey", "Shift+Alt+X"), 2)
-        self._register_single(self.data.get("pie_menu_hotkey_alt", ""), 102)
+        ok = self._register_single(self.data.get("global_hotkey", "Alt+X"), 1) and ok
+        ok = self._register_single(self.data.get("global_hotkey_alt", "F15"), 101) and ok
+        ok = self._register_single(self.data.get("pie_menu_hotkey", "Shift+Alt+X"), 2) and ok
+        ok = self._register_single(self.data.get("pie_menu_hotkey_alt", ""), 102) and ok
         # The watcher types into another application, so its stop key is
         # global: it has to work from whatever window the user is in when
         # they decide it is going wrong, not only from FastPrompter.
@@ -91,19 +115,37 @@ class HotkeyMixin:
         # Ids 3 and 103 are lock, and a test pins them as NOT globally
         # handled - taking one would have re-created the bug where a
         # window-local key fired system-wide.
-        self._register_single(
-            self.data.get("watcher_panic_hotkey", "Ctrl+Alt+Shift+P"), 300)
+        ok = self._register_single(
+            self.data.get("watcher_panic_hotkey", "Ctrl+Alt+Shift+P"),
+            300) and ok
         self._apply_tooltips()
+        return ok
 
     def _register_single(self, hotkey_str, hk_id):
-        """Register a single hotkey if the string is non-empty."""
+        """Register a single hotkey if the string is non-empty.
+
+        Returns True when the id is now registered (or nothing was asked:
+        empty string), False when the OS rejected the registration."""
         if not hotkey_str:
-            return
+            return True
         try:
             modifiers, vk = parse_hotkey(hotkey_str)
         except Exception:
-            return
+            # P2: one deterministic, observable error for a malformed config
+            # string — identical in observability to an OS rejection, so a
+            # weak agent/test cannot mistake an invalid spec for an
+            # unattempted optional binding.
+            from fastprompter.core.logging import logger
+            logger.error("hotkey spec invalid for %r (id %s): parse failed",
+                         hotkey_str, hk_id)
+            return False
         if vk:
             hwnd = ctypes.wintypes.HWND(int(self.winId()))
             if ctypes.windll.user32.RegisterHotKey(hwnd, hk_id, modifiers, vk):
                 self.registered_hotkeys.append(hk_id)
+                return True
+            from fastprompter.core.logging import logger
+            logger.error("hotkey registration FAILED for %r (id %s)",
+                         hotkey_str, hk_id)
+            return False
+        return False

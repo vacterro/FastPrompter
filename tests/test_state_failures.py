@@ -376,3 +376,36 @@ class TestBackupThrottleSuccessBased:
         _write_silo(s, "b")                # inside the throttle -> no retry
         assert calls["n"] == 1
         s.conn.close()
+
+
+class TestSynchronousSave:
+    """P0-1: the transactional save is SYNCHRONOUS on the caller thread.
+
+    The old implementation pushed the write onto a background executor, so a
+    profile switch right after save_data_to_db could commit Profile-1's data
+    over Profile-2's rows (the switch raced the executor). The fix runs the
+    transaction in-line under the state lock; these tests pin that contract —
+    a fresh connection must already see the committed row the moment the
+    save returns, and no background executor may exist.
+    """
+
+    def test_save_commits_before_returning_to_the_caller(self, make_state):
+        s = make_state()
+        _write_silo(s, "alpha")
+        rows = _silo_rows(s.db_path)
+        assert rows == [("Code", 0, "alpha")]
+        s.conn.close()
+
+    def test_no_background_executor_is_created(self, make_state):
+        s = make_state()
+        _write_silo(s, "alpha")
+        assert not hasattr(s, "_db_executor") or s._db_executor is None
+        s.conn.close()
+
+    def test_snapshot_markers_advance_only_after_commit(self, make_state):
+        s = make_state()
+        _write_silo(s, "alpha")
+        assert s._last_saved_temp == {
+            ("Code", 0, "alpha")}, "markers must reflect the committed row"
+        assert s._db_dirty is False
+        s.conn.close()

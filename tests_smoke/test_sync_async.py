@@ -74,6 +74,7 @@ def _setup(win, tmp_path, root=None):
     except Exception:
         pass
     win._sync_pending = None
+    win._sync_pending_hold.clear()
     win._sync_busy = False
     win._sync_shutting_down = False
     win.data["sync_path"] = root

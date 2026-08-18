@@ -1,8 +1,11 @@
 """Tests for deep undo/redo conditions.
 
-Since FastPrompter requires a running QApplication, these tests verify the undo
-logic at the data-structure level by inlining the core snapshot and apply
-patterns from `main.py`.
+FastPrompter's undo logic lives on the QMainWindow class, which needs a
+running QApplication — but the snapshot COPY rules are pure data. These
+tests verify them at the data-structure level against the PRODUCTION
+`fastprompter.main._copy_category_slots` helper, imported with the Qt-stub
+trick so no display is needed. The helper inlines nothing: if production
+ever regresses to a shallow copy, the deep-copy tests below go red.
 """
 
 import copy
@@ -14,14 +17,105 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../s
 import pytest
 
 # ---------------------------------------------------------------------------
-# Helpers — replicated from main.py undo logic
+# Import the PRODUCTION snapshot-copy helper with PyQt6 stubbed out.
+#
+# fastprompter.main pulls the whole widget tree, so the stubs must provide
+# REAL classes for every Qt base used in a class statement (MagicMock bases
+# raise "metaclass conflict"); everything else is a MagicMock. The stubs
+# live only for the duration of this import — see _qt_stub.py for why
+# assigning into sys.modules permanently breaks tests_smoke at collection.
+# ---------------------------------------------------------------------------
+
+class _StubQObject:
+    pass
+
+class _StubQWidget(_StubQObject):
+    pass
+
+class _StubQMainWindow(_StubQWidget):
+    pass
+
+class _StubQDialog(_StubQWidget):
+    pass
+
+class _StubQLayout(_StubQObject):
+    pass
+
+class _StubQFrame(_StubQWidget):
+    pass
+
+class _StubQScrollArea(_StubQFrame):
+    pass
+
+class _StubQPushButton(_StubQWidget):
+    pass
+
+class _StubQTextEdit(_StubQWidget):
+    pass
+
+class _StubQTextBlockUserData:
+    pass
+
+class _StubQAbstractNativeEventFilter:
+    pass
+
+
+import _qt_stub
+
+_before_stubs = _qt_stub.snapshot()
+from unittest.mock import MagicMock
+
+_qtcore = MagicMock()
+_qtcore.QObject = _StubQObject
+_qtcore.QAbstractNativeEventFilter = _StubQAbstractNativeEventFilter
+_qtgui = MagicMock()
+_qtgui.QTextBlockUserData = _StubQTextBlockUserData
+_qtw = MagicMock()
+_qtw.QWidget = _StubQWidget
+_qtw.QMainWindow = _StubQMainWindow
+_qtw.QDialog = _StubQDialog
+_qtw.QLayout = _StubQLayout
+_qtw.QFrame = _StubQFrame
+_qtw.QScrollArea = _StubQScrollArea
+_qtw.QPushButton = _StubQPushButton
+_qtw.QTextEdit = _StubQTextEdit
+
+sys.modules["PyQt6"] = MagicMock()
+sys.modules["PyQt6.QtCore"] = _qtcore
+sys.modules["PyQt6.QtGui"] = _qtgui
+sys.modules["PyQt6.QtWidgets"] = _qtw
+sys.modules["PyQt6.QtNetwork"] = MagicMock()
+
+_imported_any = False
+for _attempt in range(60):
+    try:
+        from fastprompter.main import _copy_category_slots
+        _imported_any = True
+        break
+    except ModuleNotFoundError as _exc:
+        _name = _exc.name or ""
+        if _name.startswith("PyQt6"):
+            sys.modules[_name] = MagicMock()
+            continue
+        raise
+
+if not _imported_any:
+    raise SystemExit("could not import fastprompter.main with Qt stubs")
+
+_qt_stub.restore(_before_stubs)
+del _qtcore, _qtgui, _qtw, _before_stubs
+
+# ---------------------------------------------------------------------------
+# Helpers — data-level shapes of the main.py undo logic. The category slot
+# copy delegates to PRODUCTION code; everything else is replicated like the
+# real FastPrompter._snapshot_current does (shallow top-level copies).
 # ---------------------------------------------------------------------------
 
 
 def _snapshot_current(data, active_temp_slot=0, active_is_archive=False):
-    """Replicate FastPrompter._snapshot_current()."""
+    """Data-level shape of FastPrompter._snapshot_current()."""
     categories_snap = {
-        cat: [None if s is None else dict(s) for s in slots]
+        cat: _copy_category_slots(slots)
         for cat, slots in data["categories"].items()
     }
     return {
@@ -139,6 +233,24 @@ class TestSnapshotApplyRoundtrip:
         populated_data["categories"]["Code"][0]["name"] = "MUTATED"
         assert snap["categories"]["Code"][0]["name"] == "Snip A"
 
+    def test_harness_tracks_production_copy_helper(self, populated_data, monkeypatch):
+        """Wiring check for the P0-1 fix.
+
+        The snapshot harness must delegate to the PRODUCTION
+        `_copy_category_slots` symbol — patching it with a shallow
+        ``list(slots)`` copy must corrupt the snapshot exactly like the old
+        production bug did. If this passes, `test_snapshot_categories_deep_copies`
+        and `test_rename_after_snapshot_undo_redo` are REAL guards: they go
+        red the moment production regresses to a shallow copy.
+        """
+        from unittest.mock import MagicMock
+
+        shallow = MagicMock(side_effect=lambda slots: list(slots))
+        monkeypatch.setattr(sys.modules[__name__], "_copy_category_slots", shallow)
+        snap = _snapshot_current(populated_data)
+        populated_data["categories"]["Code"][0]["name"] = "MUTATED"
+        assert snap["categories"]["Code"][0]["name"] == "MUTATED"
+
     def test_apply_restores_presets(self, populated_data):
         snap = _snapshot_current(populated_data)
         populated_data["temp_presets"][0] = "CLOBBERED"
@@ -248,6 +360,28 @@ class TestUndoRedoStack:
         redo_stack.clear()
         data["temp_presets"][0] = "mod2"
         assert len(redo_stack) == 0
+
+    def test_rename_after_snapshot_undo_redo(self, populated_data):
+        """P0-1 scenario: a snippet is renamed AFTER the undo snapshot was
+        taken. Undo must restore the captured name, redo must re-apply the
+        rename — a shallow category copy aliases the live slot dict, so the
+        rename would corrupt the snapshot and undo would return the NEW
+        name (or worse, a mid-edit state)."""
+        data = copy.deepcopy(populated_data)
+        undo_stack = []
+        redo_stack = []
+
+        undo_stack.append(_snapshot_current(data))
+        redo_stack.clear()
+        data["categories"]["Code"][0]["name"] = "Renamed A"
+
+        redo_stack.append(_snapshot_current(data))
+        _apply_data_state(data, undo_stack.pop())
+        assert data["categories"]["Code"][0]["name"] == "Snip A"
+
+        undo_stack.append(_snapshot_current(data))
+        _apply_data_state(data, redo_stack.pop())
+        assert data["categories"]["Code"][0]["name"] == "Renamed A"
 
     def test_multiple_undo_sequential(self, populated_data):
         data = copy.deepcopy(populated_data)

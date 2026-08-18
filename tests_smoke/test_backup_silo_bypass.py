@@ -6,8 +6,8 @@ The old implementation built its folder by hand:
     path = os.path.join(folder, name)
     open(path, "w")
 
-which (a) used the RAW category name ó ``..\\outside`` escapes the files
-root entirely ó (b) accepted ANY user filename, so ``..\\evil.txt`` or
+which (a) used the RAW category name –≤–Ç‚Äù ``..\\outside`` escapes the files
+root entirely –≤–Ç‚Äù (b) accepted ANY user filename, so ``..\\evil.txt`` or
 ``C:\\evil.txt`` escaped the folder, and (c) silently overwrote an existing
 destination with a plain ``open(..., "w")``.
 
@@ -131,12 +131,12 @@ def test_unicode_filename_stays_inside(hostile_win, tmp_path):
     win.backup_silo_to_files.__self__  # sanity: method exists
     from fastprompter.ui.snippet_ops_mixin import SnippetOpsMixin
     dest, err = SnippetOpsMixin._write_backup_file(
-        win, win._silo_folder_dir(0), "Á‡ÏÂÚÍ‡.txt", "silo payload")
+        win, win._silo_folder_dir(0), "–∑–∞–º–µ—Ç–∫–∞.txt", "silo payload")
     assert dest is not None, err
     assert os.path.dirname(dest) == win._silo_folder_dir(0)
     with open(dest, encoding="utf-8") as f:
         assert f.read() == "silo payload"
-    assert not os.path.exists(os.path.join(_outside_dir(tmp_path), "Á‡ÏÂÚÍ‡.txt"))
+    assert not os.path.exists(os.path.join(_outside_dir(tmp_path), "–∑–∞–º–µ—Ç–∫–∞.txt"))
 
 
 def test_existing_destination_is_never_overwritten(hostile_win):
@@ -173,7 +173,7 @@ def test_batch_save_goes_through_the_same_safe_path(hostile_win, tmp_path, monke
 
 def test_hostile_category_name_still_resolves_inside_the_root(hostile_win):
     """The canonical helper must map the hostile category to a SAFE component
-    inside the files root ó never use the raw name as a path segment."""
+    inside the files root –≤–Ç‚Äù never use the raw name as a path segment."""
     win, root = hostile_win
     comp = win._category_files_dir("..\\outside")
     assert os.path.sep not in comp and "\\" not in comp and "/" not in comp

@@ -102,6 +102,95 @@ _ALIAS_EMPTY = {
     "silo_gaps": [],
 }
 
+# ONE decode codec contract per structured persisted key (P1-15):
+# ``{key: (expected_top_level_type, correct_default, legacy_ast)}``.
+#
+# * ``expected`` — the ONLY top-level type a decoded value may have.
+#   Syntactically valid JSON of the wrong type is REJECTED (folder_trash_log
+#   is a list of (original, trashed) pairs; a dict would make every consumer
+#   unpack a string and raise mid-restore) and the correct default is adopted
+#   as a deep copy, so no two adoptions can ever share mutable state.
+# * ``legacy_ast`` — rows written by old builds with str(dict)/str(list)
+#   (single quotes, not JSON) additionally try ast.literal_eval, then fall
+#   back to the default.
+#
+# Every key in the write-side ``_JSON_SETTINGS`` tuple MUST have exactly one
+# entry here (an invariant test pins the two sets equal) — one codec truth,
+# never duplicated per branch.
+_STRUCTURED_CODECS = {
+    "cats_order": (list, ["Code", "Text", "Misc"], False),
+    "custom_colors": (dict, {}, True),
+    "timers": (list, [], False),
+    "silo_last_edited": (dict, {}, False),
+    "silo_last_edited_all": (dict, {}, False),
+    "pinned_silos": (list, [], False),
+    "pinned_silos_all": (dict, {}, False),
+    "silo_ticked": (list, [], False),
+    "silo_ticked_all": (dict, {}, False),
+    "silo_children": (dict, {}, False),
+    "silo_children_all": (dict, {}, False),
+    "silo_collapsed": (list, [], False),
+    "silo_collapsed_all": (dict, {}, False),
+    "silo_colors": (dict, {}, False),
+    "silo_colors_all": (dict, {}, False),
+    "silo_folders": (dict, {}, False),
+    "silo_folders_all": (dict, {}, False),
+    "archive_silo_folders": (dict, {}, False),
+    "archive_silo_folders_all": (dict, {}, False),
+    "silo_project_paths": (dict, {}, False),
+    "silo_project_paths_all": (dict, {}, False),
+    "archive_project_paths": (dict, {}, False),
+    "archive_project_paths_all": (dict, {}, False),
+    "silo_gaps": (list, [], True),
+    "silo_gaps_all": (dict, {}, True),
+    "silo_view_state_all": (dict, {}, False),
+    "silo_type_all": (dict, {}, False),
+    "silo_session_all": (dict, {}, False),
+    "productivity_timer": (dict, {}, True),
+    "sound_events": (dict, {}, False),
+    "saved_sound_mappings": (dict, {}, True),
+    "silo_types": (dict, {}, True),
+    "watcher_skills_extra": (list, [], True),
+    "custom_font_ids": (list, [], True),
+    "watcher_queues": (dict, {}, True),
+    "watcher_queues_all": (dict, {}, True),
+    "folder_trash_log": (list, [], False),
+    "hidden_categories": (list, [], False),
+    "window_presets": (list, [], False),
+    "category_file_dirs": (dict, {}, False),
+}
+
+
+def _decode_structured_setting(key, raw, expected, default, legacy_ast):
+    """Decode one structured persisted row under its single codec contract.
+
+    JSON first (the current write format). A syntactically valid JSON value
+    of the WRONG top-level type is rejected and the correct deep-copied
+    default is adopted — wrong-typed values corrupt every consumer.
+    ``legacy_ast`` keys additionally try ast.literal_eval for rows written
+    with str(dict)/str(list) by older builds. A fully undecodable row also
+    adopts the default; the row is never promoted to a wrong type.
+    """
+    import ast
+    try:
+        parsed = json.loads(raw)
+        if isinstance(parsed, expected):
+            return parsed
+        logger.warning("structured setting %r is valid JSON of the wrong "
+                       "top-level type (%s); adopting the correct default",
+                       key, type(parsed).__name__)
+    except Exception as e:
+        if legacy_ast:
+            try:
+                val = ast.literal_eval(raw)
+                if isinstance(val, expected):
+                    return val
+            except Exception:
+                pass
+        logger.warning("failed to parse structured setting %r (%s); adopting "
+                       "the correct default", key, e)
+    return copy.deepcopy(default)
+
 
 def bind_active_category(data, category):
     """Bind every flat alias to `category`'s entry in its _all store.
@@ -142,6 +231,18 @@ CURRENT_SCHEMA_VERSION = 1
 
 class MigrationError(RuntimeError):
     """The database schema could not be migrated and was left untouched."""
+
+
+class DatabaseOverflowError(RuntimeError):
+    """A loaded silo/archive table carries a slot index >= 100.
+
+    The persistence contract is exactly 100 slots per category (0..99). A row
+    at slot 100+ is legacy corruption: clamping it onto slot 99 would silently
+    COALESCE two distinct silos. We therefore fail closed — the in-memory state
+    is never built and the on-disk database is left untouched (startup already
+    took a .bak and nothing has been written yet), so the user can recover the
+    file instead of losing a silo to a silent merge.
+    """
 
 
 def _has_table(cur, name):
@@ -478,7 +579,7 @@ class FastPrompterState:
         self.data.update(copy.deepcopy(DEFAULT_PROFILE))
 
     def switch_profile(self, new_profile_id, save_current=True):
-        """Move to ``new_profile_id``'s database.
+        """Move to ``new_profile_id``'s database, transactionally.
 
         ``save_current`` defaults True for the state-level contract (a direct
         caller must commit its own data). The UI's ``change_profile`` passes
@@ -486,17 +587,59 @@ class FastPrompterState:
         alone knows the live editor/widget state), so the state layer must not
         issue a hidden second write — two owners of pre-switch persistence
         double the backup/sync side effects for no safety gain.
+
+        Atomicity (P0-1): the OLD profile must be left entirely intact
+        (connection, id, path, data, dirty flag) whenever the transition
+        cannot complete. A failed final A save REFUSES the switch and returns
+        False having changed nothing. A corrupt/loading B RESTORES A before
+        re-raising, so State is never stranded bound to a half-initialised B
+        while Main still holds A's data. Ownership of A's connection is only
+        retired after B has loaded successfully.
         """
         if self.conn:
             if save_current:
-                self.save_data_to_db(self.data.get("last_text", ""), force=True)
-            self.conn.close()
-            self.conn = None
-        self.profile_id = new_profile_id
-        self.db_path = get_db_path(self.profile_id)
-        self._db_dirty = False
-        self.reset_data()
-        self.init_db()
+                if not self.save_data_to_db(self.data.get("last_text", ""), force=True):
+                    # Old-profile save failed: refuse to leave A at all.
+                    return False
+            old_conn = self.conn
+            old_profile_id = self.profile_id
+            old_db_path = self.db_path
+            old_data = self.data
+            old_dirty = self._db_dirty
+            # Tentatively point at B, but keep A's objects so we can restore.
+            self.profile_id = new_profile_id
+            self.db_path = get_db_path(new_profile_id)
+            self._db_dirty = False
+            self.reset_data()
+            try:
+                self.init_db()
+            except Exception:
+                # Restore A entirely before re-raising: State must never be
+                # left bound to a B that failed to load.
+                if self.conn is not old_conn:
+                    try:
+                        self.conn.close()
+                    except Exception:
+                        pass
+                self.conn = old_conn
+                self.profile_id = old_profile_id
+                self.db_path = old_db_path
+                self.data = old_data
+                self._db_dirty = old_dirty
+                raise
+            # Success: only now retire A's connection.
+            try:
+                old_conn.close()
+            except Exception:
+                pass
+            return True
+        else:
+            self.profile_id = new_profile_id
+            self.db_path = get_db_path(self.profile_id)
+            self._db_dirty = False
+            self.reset_data()
+            self.init_db()
+            return True
 
     def init_db(self):
         try:
@@ -528,96 +671,21 @@ class FastPrompterState:
             cur = self.conn.cursor()
 
             for row in cur.execute('SELECT key, value FROM settings'):
-                if row[0] in ('last_tab_idx', 'active_temp_slot', 'font_size'):
-                    try: self.data[row[0]] = int(row[1]) if row[1] else 0
-                    except (ValueError, TypeError): self.data[row[0]] = 0
-                elif row[0] == 'cats_order':
-                    try:
-                        parsed = json.loads(row[1])
-                        self.data['cats_order'] = parsed if isinstance(parsed, list) else ["Code", "Text", "Misc"]
-                    except json.JSONDecodeError: self.data['cats_order'] = ["Code", "Text", "Misc"]
-                elif row[0] in ('ui_scale', 'window_locked', 'sidebar_right'): self.data[row[0]] = row[1]
-                elif row[0] == 'hide_font': continue
-                elif row[0] in ('silo_last_edited_all', 'pinned_silos_all', 'silo_ticked_all', 'silo_children', 'silo_children_all', 'silo_collapsed_all', 'silo_colors', 'silo_colors_all', 'silo_folders', 'silo_folders_all', 'archive_silo_folders', 'archive_silo_folders_all', 'silo_project_paths', 'silo_project_paths_all', 'archive_project_paths', 'archive_project_paths_all', 'folder_trash_log', 'silo_view_state_all', 'silo_type_all', 'silo_session_all', 'sound_events', 'category_file_dirs'):
-                    try: self.data[row[0]] = json.loads(row[1])
-                    except Exception as e: logger.warning(f"Failed to parse {row[0]}: {e}"); self.data[row[0]] = {}
-                elif row[0] in ('silo_gaps', 'silo_gaps_all', 'hidden_categories',
-                                'silo_types', 'saved_sound_mappings',
-                                'watcher_skills_extra', 'custom_font_ids'):
-                    # silo_gaps is a LIST of slot indices, silo_gaps_all a
-                    # dict of them per category. Both were missing from the
-                    # save list below at first, so early builds wrote them
-                    # with str(): a list survives that (valid JSON), a dict
-                    # does not (single quotes), which silently emptied every
-                    # saved gap on reload. ast recovers those older rows.
-                    _empty = ({} if row[0] in ('silo_gaps_all', 'silo_types',
-                                               'saved_sound_mappings') else [])
-                    try:
-                        self.data[row[0]] = json.loads(row[1])
-                    except Exception:
-                        try:
-                            import ast
-                            val = ast.literal_eval(row[1])
-                            self.data[row[0]] = val if isinstance(val, type(_empty)) else _empty
-                        except Exception as e:
-                            logger.warning(f"Failed to parse {row[0]}: {e}")
-                            self.data[row[0]] = _empty
-                elif row[0] == 'timers':
-                    # a LIST of timer dicts — falling back to {} would make
-                    # load_timers see a mapping and silently drop them all
-                    try: self.data[row[0]] = json.loads(row[1])
-                    except Exception as e: logger.warning(f"Failed to parse {row[0]}: {e}"); self.data[row[0]] = []
-                elif row[0] == 'productivity_timer':
-                    # a DICT of pomodoro settings. It used to hit the raw
-                    # string fallback, so ProductivityTimer.from_dict saw a
-                    # str and silently reverted to defaults on every reload —
-                    # each profile's persisted pomodoro state was lost on
-                    # switch/restart. New rows are JSON; older ones were
-                    # written with str(dict) and need the ast recovery.
-                    try:
-                        val = json.loads(row[1])
-                        self.data[row[0]] = val if isinstance(val, dict) else {}
-                    except Exception:
-                        try:
-                            import ast
-                            val = ast.literal_eval(row[1])
-                            self.data[row[0]] = val if isinstance(val, dict) else {}
-                        except Exception as e:
-                            logger.warning(f"Failed to parse productivity_timer: {e}")
-                            self.data[row[0]] = {}
-                elif row[0] in ('watcher_queues', 'watcher_queues_all'):
-                    # Both are dicts. They were absent from the save list
-                    # below for a while, so early builds wrote them as
-                    # str(dict) — single-quoted, which json.loads rejects.
-                    # ast.literal_eval recovers those; a real corruption
-                    # still falls back to {} rather than crashing Alt+C.
-                    try:
-                        self.data[row[0]] = json.loads(row[1])
-                    except Exception:
-                        try:
-                            import ast
-                            val = ast.literal_eval(row[1])
-                            self.data[row[0]] = val if isinstance(val, dict) else {}
-                        except Exception as e:
-                            logger.warning(f"Failed to parse {row[0]}: {e}")
-                            self.data[row[0]] = {}
-                elif row[0] == 'silo_last_edited':
-                    try: self.data[row[0]] = json.loads(row[1])
-                    except Exception as e: logger.warning(f"Failed to parse {row[0]}: {e}"); self.data[row[0]] = {}
-                elif row[0] in ('pinned_silos', 'silo_ticked', 'silo_collapsed', 'window_presets'):
-                    try: self.data[row[0]] = json.loads(row[1])
-                    except Exception as e: logger.warning(f"Failed to parse {row[0]}: {e}"); self.data[row[0]] = []
-                elif row[0] == 'custom_colors':
-                    try:
-                        self.data[row[0]] = json.loads(row[1])
-                    except (json.JSONDecodeError, SyntaxError) as e:
-                        logger.warning(f"Failed to parse custom_colors via json: {e}")
-                        import ast
-                        try:
-                            self.data[row[0]] = ast.literal_eval(row[1])
-                        except Exception as e2:
-                            logger.warning(f"Failed to parse custom_colors using ast: {e2}")
-                else: self.data[row[0]] = row[1]
+                key, raw = row[0], row[1]
+                if key in _STRUCTURED_CODECS:
+                    # one codec contract per structured key (P1-15): wrong-
+                    # type valid JSON and undecodable rows both fall back to
+                    # the key's own correct default, never a foreign type
+                    expected, default, legacy_ast = _STRUCTURED_CODECS[key]
+                    self.data[key] = _decode_structured_setting(
+                        key, raw, expected, default, legacy_ast)
+                elif key in ('last_tab_idx', 'active_temp_slot', 'font_size'):
+                    try: self.data[key] = int(raw) if raw else 0
+                    except (ValueError, TypeError): self.data[key] = 0
+                elif key in ('ui_scale', 'window_locked', 'sidebar_right'):
+                    self.data[key] = raw
+                elif key == 'hide_font': continue
+                else: self.data[key] = raw
 
             for cat in self.data['cats_order']:
                  if cat not in self.data['categories']: self.data['categories'][cat] = [None]*100
@@ -628,26 +696,47 @@ class FastPrompterState:
                     self.data["categories"][cat][slot] = {"name": name, "text": content, "last_edited": last_edited or 0}
 
             temps = {cat: [""]*10 for cat in self.data["cats_order"]}
+            overflow = []
             for row in cur.execute('SELECT category, slot, content FROM temp_presets_v2 ORDER BY slot ASC'):
                 cat, slot, content = row
                 if cat not in temps: temps[cat] = [""]*10
                 if not isinstance(slot, int): continue
-                slot = min(max(slot, 0), 99)
+                # A slot outside 0..99 is legacy corruption. Clamping a
+                # negative slot onto slot 0 (or slot 99 onto a distinct silo)
+                # would silently ALIAS two distinct rows, so any out-of-range
+                # slot is refused and the on-disk database is left untouched
+                # (fail closed, one strict range validator for every loader).
+                if slot < 0 or slot >= 100:
+                    overflow.append((cat, slot))
+                    continue
                 while len(temps[cat]) <= slot:
                     temps[cat].append("")
                 temps[cat][slot] = content
+            if overflow:
+                raise DatabaseOverflowError(
+                    "temp_presets_v2 carries slot index >= 100 (legacy corruption); "
+                    "refusing to merge rows onto slot 99. Offending rows: "
+                    + ", ".join(f"{c}@{s}" for c, s in overflow[:20]))
             self.data["temp_presets_all"] = {k: v[:100] for k, v in temps.items()}
 
             arc_temps = {cat: [] for cat in self.data["cats_order"]}
+            arc_overflow = []
             for row in cur.execute('SELECT category, slot, content FROM archive_temp_presets_v2 ORDER BY slot ASC'):
                 cat, slot, content = row
                 if cat not in arc_temps: arc_temps[cat] = []
                 if not isinstance(slot, int): continue
-                slot = min(max(slot, 0), 99)
+                if slot < 0 or slot >= 100:
+                    arc_overflow.append((cat, slot))
+                    continue
                 while len(arc_temps[cat]) <= slot:
                     arc_temps[cat].append("")
                 arc_temps[cat][slot] = content
-            self.data["archive_temp_presets_all"] = {k: v for k, v in arc_temps.items()}
+            if arc_overflow:
+                raise DatabaseOverflowError(
+                    "archive_temp_presets_v2 carries slot index >= 100 (legacy "
+                    "corruption); refusing to merge rows onto slot 99. Offending "
+                    "rows: " + ", ".join(f"{c}@{s}" for c, s in arc_overflow[:20]))
+            self.data["archive_temp_presets_all"] = {k: v[:100] for k, v in arc_temps.items()}
 
             # Setup current tab proxies
             hidden = set(self.data.get("hidden_categories", []))
@@ -706,16 +795,25 @@ class FastPrompterState:
     # it for the user-driven export. Removed 31.07.26 (T-633).
 
     def save_data_to_db(self, current_text, ui_settings=None, force=False, sync=False):
-        run_pb = False
+        """Persist the current state; returns True ONLY on a clean result.
+
+        Contract (P0-6): True means the database holds the latest state
+        (either committed just now, or nothing had changed and the DB was
+        already current). False means the write FAILED and the change is
+        still dirty — the caller must not report a clean shutdown or release
+        the ownership lock. The portable Markdown backup runs only after a
+        clean commit, never after a failed one.
+        """
         with self._lock:
-            run_pb = self._save_data_to_db_locked(current_text, ui_settings, force, sync)
-        if run_pb:
+            ok = self._save_data_to_db_locked(current_text, ui_settings, force, sync)
+        if ok and self.data.get("portable_backup_enabled", "True") == "True":
             from fastprompter.utils.portable_backup import run_portable_backup
             run_portable_backup(self.data, profile_id=self.profile_id)
+        return bool(ok)
 
     def _save_data_to_db_locked(self, current_text, ui_settings=None, force=False, sync=False):
-        if not self.conn: return
-        if not self._db_dirty and not force: return
+        if not self.conn: return False
+        if not self._db_dirty and not force: return True
 
         if ui_settings:
             self.data.update(ui_settings)
@@ -743,63 +841,65 @@ class FastPrompterState:
         arc_to_delete = old_arc_keys - new_arc_keys
         arc_to_update = current_arc - self._last_saved_arc
 
-        # Assign snapshots immediately for memory
-        self._last_saved_settings = current_settings
-        self._last_saved_presets = current_presets
-        self._last_saved_temp = current_temp
-        self._last_saved_arc = current_arc
-        self._db_dirty = False
-
         changed = bool(settings_to_save or to_insert_presets or to_delete_presets
                        or to_update_temp or temp_to_delete or arc_to_update or arc_to_delete)
         if not changed:
-            return
-
-        if not hasattr(self, "_db_executor"):
-            import concurrent.futures
-            self._db_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-
-        def do_db_save():
-            try:
-                with self.conn:
-                    cur = self.conn.cursor()
-                    if settings_to_save:
-                        cur.executemany('INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)', settings_to_save)
-                    if to_delete_presets:
-                        cur.executemany('DELETE FROM presets WHERE category=? AND slot=?', list(to_delete_presets))
-                    if to_insert_presets:
-                        cur.executemany('INSERT OR REPLACE INTO presets (category, slot, name, content, last_edited) VALUES (?,?,?,?,?)', list(to_insert_presets))
-                    if temp_to_delete:
-                        cur.executemany('DELETE FROM temp_presets_v2 WHERE category=? AND slot=?', list(temp_to_delete))
-                    if to_update_temp:
-                        cur.executemany('INSERT OR REPLACE INTO temp_presets_v2 (category, slot, content) VALUES (?,?,?)', list(to_update_temp))
-                    if arc_to_delete:
-                        cur.executemany('DELETE FROM archive_temp_presets_v2 WHERE category=? AND slot=?', list(arc_to_delete))
-                    if arc_to_update:
-                        cur.executemany('INSERT OR REPLACE INTO archive_temp_presets_v2 (category, slot, content) VALUES (?,?,?)', list(arc_to_update))
-
-                import time
-                now = time.time()
-                if now - self._last_backup_time_by_profile.get(self.profile_id, 0.0) >= 60:
-                    try:
-                        _backup_atomically(self.conn, self.db_path + ".bak")
-                        self._last_backup_time_by_profile[self.profile_id] = now
-                    except Exception:
-                        logger.exception("throttled database backup failed")
-            except sqlite3.Error:
-                logger.exception("Background database save failed")
-                self._db_dirty = True
-                self._last_saved_temp = set()
-                self._last_saved_arc = set()
-
-        import sys
-        if sync or "pytest" in sys.modules:
-            do_db_save()
-        else:
-            self._db_executor.submit(do_db_save)
-
-        # We must return True from _save_data_to_db_locked if we triggered a save,
-        # but also trigger portable Markdown backup if enabled!
-        if self.data.get("portable_backup_enabled", "True") == "True":
             return True
+
+        # The transactional delta runs SYNCHRONOUSLY under the caller-held
+        # state lock. There is deliberately NO background executor: an async
+        # writer dereferences self.conn / self.profile_id / self.db_path only
+        # when its closure eventually executes, so a profile switch that
+        # closes and replaces those objects before the executor drains lets
+        # an old profile's save land in the NEW profile's database. Executing
+        # here means the write is complete before switch_profile can touch
+        # the connection (P0-1). The saved-snapshot markers and the dirty
+        # flag advance ONLY after the transaction commits: on any failure the
+        # previous snapshots and the dirty state are preserved unchanged, so
+        # a retry recomputes every failed change and the previously committed
+        # database stays valid (P0-2).
+        try:
+            with self.conn:
+                cur = self.conn.cursor()
+                if settings_to_save:
+                    cur.executemany('INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)', settings_to_save)
+                if to_delete_presets:
+                    cur.executemany('DELETE FROM presets WHERE category=? AND slot=?', list(to_delete_presets))
+                if to_insert_presets:
+                    cur.executemany('INSERT OR REPLACE INTO presets (category, slot, name, content, last_edited) VALUES (?,?,?,?,?)', list(to_insert_presets))
+                if temp_to_delete:
+                    cur.executemany('DELETE FROM temp_presets_v2 WHERE category=? AND slot=?', list(temp_to_delete))
+                if to_update_temp:
+                    cur.executemany('INSERT OR REPLACE INTO temp_presets_v2 (category, slot, content) VALUES (?,?,?)', list(to_update_temp))
+                if arc_to_delete:
+                    cur.executemany('DELETE FROM archive_temp_presets_v2 WHERE category=? AND slot=?', list(arc_to_delete))
+                if arc_to_update:
+                    cur.executemany('INSERT OR REPLACE INTO archive_temp_presets_v2 (category, slot, content) VALUES (?,?,?)', list(arc_to_update))
+
+            # commit succeeded: the in-memory delta is now the DB truth
+            self._last_saved_settings = current_settings
+            self._last_saved_presets = current_presets
+            self._last_saved_temp = current_temp
+            self._last_saved_arc = current_arc
+            self._db_dirty = False
+
+            import time
+            now = time.time()
+            if now - self._last_backup_time_by_profile.get(self.profile_id, 0.0) >= 60:
+                try:
+                    _backup_atomically(self.conn, self.db_path + ".bak")
+                    self._last_backup_time_by_profile[self.profile_id] = now
+                except Exception:
+                    logger.exception("throttled database backup failed")
+        except Exception:
+            # ANY write failure (sqlite error or otherwise) must leave the
+            # saved-snapshot markers and the dirty flag EXACTLY as they were:
+            # the change stays eligible for a retry and no failed write is
+            # ever reported as already persisted.
+            logger.exception("database save failed; the change stays dirty "
+                             "and will be retried")
+            self._db_dirty = True
+            return False
+
+        return True
 

@@ -19,9 +19,12 @@ import sys
 import threading
 import time
 import uuid
+import zipfile
 
 from PyQt6.QtCore import (
+    Q_ARG,
     QFileSystemWatcher,
+    QMetaObject,
     QMimeData,
     QObject,
     QSize,
@@ -75,6 +78,13 @@ _CONTAINER_SHUTDOWN_TIMEOUT_S = 5.0
 _CONTAINER_PENDING = 0
 _CONTAINER_PENDING_CONDITION = threading.Condition()
 
+# Process-wide set of live ZIP-export worker threads (P1-7). Tracked so a
+# clean shutdown can wait bounded for an in-flight export to finish instead
+# of abandoning a half-written archive or racing its os.replace.
+_EXPORT_THREADS = set()
+_EXPORT_CANCEL = set()           # active export cancel Events, cleared on exit
+_EXPORT_SHUTDOWN_TIMEOUT_S = 5.0
+
 
 class _ContainerOpWorker(QObject):
     """Runs File Container copy/move requests on its own thread.
@@ -90,7 +100,8 @@ class _ContainerOpWorker(QObject):
     """
 
     dispatch = pyqtSignal(object, object)              # request, request_id
-    done = pyqtSignal(object, object, object, object)  # id, request, done, errors
+    # id, request, done (clean MOVED/COPIED), partial (SOURCE_REMAINS), errors
+    done = pyqtSignal(object, object, object, object, object)
 
     def __init__(self):
         super().__init__()
@@ -98,6 +109,7 @@ class _ContainerOpWorker(QObject):
     def _run(self, request, request_id):
         global _CONTAINER_PENDING
         done = []
+        partial = []
         errors = []
         root = request.get("root")
         root_identity = request.get("root_identity")
@@ -112,14 +124,27 @@ class _ContainerOpWorker(QObject):
                         key = os.path.normcase(os.path.abspath(mutation_root))
                         mutation_identity = request["destination_identities"].get(key)
                     if op == "move":
-                        _move_into_container(
+                        status = _move_into_container(
                             src, dest, mutation_root, mutation_identity
                         )
                     else:
                         _copy_atomic(
                             src, dest, is_dir, mutation_root, mutation_identity
                         )
-                    done.append(dest)
+                        status = "COPIED"
+                    if status == "SOURCE_REMAINS":
+                        # P1-3: the destination IS published (the move's goal
+                        # was reached) but the source stayed behind. Carried
+                        # as its own outcome — never collapsed into a clean
+                        # `done`, and never reported as a hard error.
+                        partial.append(dest)
+                        logger.warning(
+                            "File Container command %s (%s): published %s "
+                            "but the source %s could not be removed",
+                            request_id, request.get("kind", "unknown"),
+                            dest, src)
+                    else:
+                        done.append(dest)
                 except Exception as exc:
                     src = item[1] if len(item) > 1 else repr(item)
                     errors.append((src, str(exc)))
@@ -128,10 +153,11 @@ class _ContainerOpWorker(QObject):
                         request_id, request.get("kind", "unknown"), src, exc,
                     )
             logger.info(
-                "File Container command %s completed: %d succeeded, %d failed",
-                request_id, len(done), len(errors),
+                "File Container command %s completed: %d done, %d partial, "
+                "%d failed",
+                request_id, len(done), len(partial), len(errors),
             )
-            self.done.emit(request_id, request, done, errors)
+            self.done.emit(request_id, request, done, partial, errors)
         finally:
             with _CONTAINER_PENDING_CONDITION:
                 _CONTAINER_PENDING -= 1
@@ -205,6 +231,32 @@ def container_worker_shutdown_global():
         if worker is not None or thread is not None:
             _RETIRED_CONTAINER_WORKERS.append((worker, thread))
     return success
+
+
+def export_worker_shutdown_global():
+    """Stop every in-flight ZIP-export worker at application exit (bounded).
+
+    P1-7: the export threads are daemon but publish via ``os.replace``; a hard
+    exit mid-publish would leave a half archive. Cancel them, then wait
+    bounded for the in-flight ones to finish."""
+    global _EXPORT_THREADS, _EXPORT_CANCEL
+    for ev in _EXPORT_CANCEL:
+        ev.set()
+    _EXPORT_CANCEL.clear()
+    deadline = time.monotonic() + _EXPORT_SHUTDOWN_TIMEOUT_S
+    pending = list(_EXPORT_THREADS)
+    for thread in pending:
+        if thread.is_alive():
+            from fastprompter.main import wait_thread_seconds
+            wait_thread_seconds(thread, max(0.0, deadline - time.monotonic()),
+                                "File Container export")
+    _EXPORT_THREADS.difference_update(t for t in _EXPORT_THREADS if not t.is_alive())
+    if _EXPORT_THREADS:
+        logger.error(
+            "File Container export shutdown TIMED_OUT with %d export(s) pending",
+            len(_EXPORT_THREADS))
+        return False
+    return True
 
 
 _RETIRED_CONTAINER_WORKERS = []# ascii + lowercase cyrillic (U+0430-044F, U+0451) survive in slugs
@@ -385,6 +437,11 @@ def _move_into_container(src, dest, root=None, root_identity=None):
     Same-volume: os.rename is atomic AND fails on Windows when dest exists
     (source preserved). Cross-volume: copy to a unique temp sibling, publish
     no-clobber, and only then remove the source.
+
+    Returns "MOVED" when the source is gone, "SOURCE_REMAINS" when the
+    destination was published but the source could not be removed (P1-3) —
+    the caller classifies the two outcomes separately instead of reporting
+    the move as failed while the copy is already inside the container.
     """
     if root is not None and root_identity is None:
         root_identity = capture_resolved_root(root)
@@ -395,7 +452,7 @@ def _move_into_container(src, dest, root=None, root_identity=None):
     try:
         _require_container_destination(root, root_identity, dest)
         os.rename(src, dest)      # same-volume: atomic, no-clobber
-        return
+        return "MOVED"
     except OSError:
         # a destination appeared between the check and the rename, or the
         # rename crossed volumes
@@ -432,6 +489,8 @@ def _move_into_container(src, dest, root=None, root_identity=None):
     except OSError:
         logger.warning("move published %s but could not remove the source %s",
                        dest, src)
+        return "SOURCE_REMAINS"
+    return "MOVED"
 
 
 def _copy_atomic(src, dest, is_dir, root=None, root_identity=None):
@@ -767,6 +826,7 @@ class FileContainerPanel(QWidget):
 
         import uuid
         self._container_owner_id = str(uuid.uuid4())
+        self._container_gen = (getattr(self, "_container_gen", 0) or 0) + 1
 
         self.setWindowTitle(tr("Files — {}", self.lang).format(title))
         self.refresh()
@@ -800,6 +860,9 @@ class FileContainerPanel(QWidget):
             self._watcher.removePaths(self._watcher.directories())
         self.folder = None
         self._container_owner_id = None
+        # bump the generation so every in-flight listing from the PREVIOUS
+        # session is recognized as stale and discarded (P0-5)
+        self._container_gen = (getattr(self, "_container_gen", 0) or 0) + 1
     def _discard_if_empty(self):
         """Remove the current folder if it is still completely empty."""
         folder = getattr(self, "folder", None)
@@ -876,25 +939,29 @@ class FileContainerPanel(QWidget):
             return
 
         import weakref
+
         from PyQt6.QtCore import QRunnable, QThreadPool, pyqtSignal
         if not hasattr(self, "refresh_loaded"):
             from PyQt6.QtCore import QObject
             class Signals(QObject):
-                refresh_loaded = pyqtSignal(list, int)
+                refresh_loaded = pyqtSignal(str, str, int, list, int)
             self._refresh_signals = Signals()
             self.refresh_loaded = self._refresh_signals.refresh_loaded
             self.refresh_loaded.connect(self._on_refresh_list_result)
 
         class Worker(QRunnable):
-            def __init__(self, p, s, panel_ref):
+            def __init__(self, p, s, owner, gen, panel_ref):
                 super().__init__()
                 self.p = p
                 self.s = s
+                self.owner = owner
+                self.gen = gen
                 self.panel_ref = panel_ref
 
             def run(self):
                 import datetime
                 import os
+
                 from fastprompter.ui.file_container import _IMAGE_EXTS, _dir_size, _fmt_size
 
                 try:
@@ -931,17 +998,33 @@ class FileContainerPanel(QWidget):
                     from PyQt6 import sip
                     if not sip.isdeleted(panel):
                         try:
-                            panel.refresh_loaded.emit(items, len(names))
+                            panel.refresh_loaded.emit(
+                                self.owner, self.p, self.gen, items, len(names))
                         except RuntimeError:
                             pass
 
-        worker = Worker(self.folder, self._view_mode() == "Details", weakref.ref(self))
+        worker = Worker(self.folder, self._view_mode() == "Details",
+                        getattr(self, "_container_owner_id", None),
+                        getattr(self, "_container_gen", 0),
+                        weakref.ref(self))
         QThreadPool.globalInstance().start(worker)
 
-    def _on_refresh_list_result(self, items, count):
+    def _on_refresh_list_result(self, owner, folder, gen, items, count):
         from PyQt6 import sip
         from PyQt6.QtCore import Qt
         if sip.isdeleted(self): return
+
+        # P0-5: only the CURRENT ownership session, on the CURRENT folder,
+        # at the CURRENT generation may paint the panel. A result from a
+        # previous open_for/detach_session — the user switched silos while
+        # the listing thread was still walking the old folder — must never
+        # overwrite the new listing with the old one.
+        if owner != getattr(self, "_container_owner_id", None):
+            return
+        if gen != getattr(self, "_container_gen", 0):
+            return
+        if folder != self.folder:
+            return
 
         if not hasattr(self, "_thumb_lru"):
             from collections import OrderedDict
@@ -1075,6 +1158,7 @@ class FileContainerPanel(QWidget):
             return
 
         import weakref
+
         from PyQt6.QtCore import QRunnable, QThreadPool, pyqtSignal
         if not hasattr(self, "thumb_loaded"):
             from PyQt6.QtCore import QObject
@@ -1091,8 +1175,8 @@ class FileContainerPanel(QWidget):
                 self.panel_ref = panel_ref
 
             def run(self):
-                from PyQt6.QtGui import QImageReader
                 from PyQt6.QtCore import Qt
+                from PyQt6.QtGui import QImageReader
                 for path, mtime in self.to_fetch:
                     img = None
                     try:
@@ -1234,11 +1318,12 @@ class FileContainerPanel(QWidget):
             self._dispatch_container_ops(items)
             return
         done = []
+        partial = []
         errors = []
         for op, src, dest, is_dir in items:
             try:
                 if op == "move":
-                    _move_into_container(
+                    status = _move_into_container(
                         src, dest, self.folder, self._folder_root_identity
                     )
                 else:
@@ -1246,11 +1331,21 @@ class FileContainerPanel(QWidget):
                         src, dest, is_dir, self.folder,
                         self._folder_root_identity,
                     )
-                done.append(dest)
+                    status = "COPIED"
+                if status == "SOURCE_REMAINS":
+                    # P1-3: the destination IS published — the move's goal was
+                    # reached — but the source stayed behind. Carried as its
+                    # own outcome, never collapsed into a clean `done`.
+                    partial.append(dest)
+                    logger.warning(
+                        "File Container import: published %s but the source "
+                        "%s could not be removed", dest, src)
+                else:
+                    done.append(dest)
             except Exception as e:
                 logger.error(f"File container import failed for {src}: {e}")
                 errors.append((src, str(e)))
-        self._finish_container_ops(done, errors)
+        self._finish_container_ops(done, partial, errors)
 
     def _dispatch_container_ops(self, items, is_export=False):
         """Queue one explicit FIFO command with immutable origin context."""
@@ -1281,7 +1376,7 @@ class FileContainerPanel(QWidget):
         dispatch_container_command(request, request_id)
         return request_id
 
-    def _on_container_done(self, request_id, request, done, errors):
+    def _on_container_done(self, request_id, request, done, partial, errors):
         """The worker's result, applied on the GUI thread (refresh once).
 
         The command RESULT is processed first and unconditionally: an explicit
@@ -1306,22 +1401,34 @@ class FileContainerPanel(QWidget):
                     src, err = "?", entry
                 logger.error("File Container command %s failed for %s: %s",
                              request_id, src, err)
+        if partial:
+            logger.warning(
+                "File Container command %s PARTIAL (%d item(s)): destination "
+                "published but source remains",
+                request_id, len(partial))
         elif done:
             logger.info("File Container command %s completed (%d item(s))",
                         request_id, len(done))
         # 2. UI side effects only for the CURRENT owner and origin folder.
         if request.get("owner_id") != self._container_owner_id:
             return
-        if done and hasattr(self.main_win, "sound_manager"):
-            self.main_win.sound_manager.play_tick()
+        # Refresh when anything landed (done OR partial) — the destination
+        # exists and the panel must show it. A partial move (destination
+        # published, source remains) must NOT earn the clean-success tick.
         current = os.path.normcase(os.path.abspath(self.folder))
-        if request.get("refresh_identity") == current:
+        if (done or partial) and request.get("refresh_identity") == current:
             self.refresh()
-
-    def _finish_container_ops(self, done, errors):
-        if done and hasattr(self.main_win, "sound_manager"):
+        if done and not partial and not errors and hasattr(self.main_win, "sound_manager"):
             self.main_win.sound_manager.play_tick()
-        self.refresh()
+
+    def _finish_container_ops(self, done, partial, errors):
+        # Refresh when anything landed (done OR partial) — the destination
+        # exists and the panel must show it. A partial move never earns the
+        # unconditional full-success tick.
+        if done or partial:
+            self.refresh()
+        if done and not partial and not errors and hasattr(self.main_win, "sound_manager"):
+            self.main_win.sound_manager.play_tick()
 
     def _pick_import(self):
         paths, _ = QFileDialog.getOpenFileNames(self, tr("Import files", self.lang), "", tr("All files (*.*)", self.lang))
@@ -1464,12 +1571,28 @@ class FileContainerPanel(QWidget):
             self._open_folder()
 
     def _export_all(self):
+        """Export the folder's files to a ZIP, off the GUI thread.
+
+        P1-7: the worker is CANCELLABLE (a thread-safe Event, not a QWidget
+        query), builds into a UNIQUE temp sibling and publishes atomically via
+        ``os.replace`` so a partial archive never appears at the target. No
+        QWidget is touched from the worker — progress/cancel drive the
+        QProgressDialog only through queued ``invokeMethod`` calls. The thread
+        is tracked process-wide so shutdown can wait for it bounded."""
         target, _ = QFileDialog.getSaveFileName(
             self, tr("Export all files to ZIP…", self.lang),
             os.path.join(os.path.expanduser("~"), "Desktop", "export.zip"),
             "ZIP Archives (*.zip)"
         )
         if not target:
+            return
+        if not target.lower().endswith(".zip"):
+            target += ".zip"
+        out_dir = os.path.dirname(target) or "."
+        try:
+            os.makedirs(out_dir, exist_ok=True)
+        except OSError as e:
+            logger.error("File container export target dir unavailable: %s", e)
             return
         try:
             names = self.selected_paths() or [
@@ -1483,40 +1606,79 @@ class FileContainerPanel(QWidget):
 
         from PyQt6.QtCore import Qt
         from PyQt6.QtWidgets import QProgressDialog
-        progress = QProgressDialog(tr("Zipping files...", self.lang), tr("Cancel", self.lang), 0, len(names), self)
+
+        progress = QProgressDialog(
+            tr("Zipping files…", self.lang), tr("Cancel", self.lang),
+            0, len(names), self)
         progress.setWindowTitle(tr("Exporting", self.lang))
         progress.setWindowModality(Qt.WindowModality.WindowModal)
-        progress.setMinimumDuration(500)
+        progress.setMinimumDuration(300)
 
-        # Run zipping in a background thread
-        import threading
-        import zipfile
+        cancel = threading.Event()
+        _EXPORT_CANCEL.add(cancel)
+        self._export_cancel = cancel
+
+        def on_cancel():
+            cancel.set()
+
+        progress.canceled.connect(on_cancel)
+
+        tmp = f"{target}.fpbak-{uuid.uuid4().hex[:8]}"
 
         def do_zip():
             try:
-                with zipfile.ZipFile(target, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zipf:
                     for i, src in enumerate(names):
-                        if progress.wasCanceled():
+                        if cancel.is_set():
                             break
+                        src = os.path.abspath(src)
                         if os.path.isdir(src):
-                            for root, _, files in os.walk(src):
+                            for root, _dirs, files in os.walk(src):
                                 for file in files:
                                     fpath = os.path.join(root, file)
                                     arcname = os.path.relpath(fpath, self.folder)
                                     zipf.write(fpath, arcname)
                         else:
                             zipf.write(src, os.path.basename(src))
-
-                        # Use QMetaObject.invokeMethod to safely update progress from background thread
-                        from PyQt6.QtCore import Q_ARG, QMetaObject
-                        QMetaObject.invokeMethod(progress, "setValue", Qt.ConnectionType.QueuedConnection, Q_ARG(int, i + 1))
+                        QMetaObject.invokeMethod(
+                            progress, "setValue",
+                            Qt.ConnectionType.QueuedConnection, Q_ARG(int, i + 1))
+                if cancel.is_set():
+                    # Cancelled mid-build: drop the partial temp, leave the
+                    # target untouched.
+                    try:
+                        if os.path.exists(tmp):
+                            os.remove(tmp)
+                    except OSError:
+                        pass
+                else:
+                    # Success: publish atomically (unique sibling -> target).
+                    # os.replace is atomic on the same volume and cannot leave
+                    # a half archive at the target.
+                    try:
+                        os.replace(tmp, target)
+                    except OSError as e:
+                        logger.error("File container export publish failed: %s", e)
+                        try:
+                            if os.path.exists(tmp):
+                                os.remove(tmp)
+                        except OSError:
+                            pass
             except Exception as e:
-                logger.error(f"ZIP export failed: {e}")
+                logger.error("ZIP export failed: %s", e)
+                try:
+                    if os.path.exists(tmp):
+                        os.remove(tmp)
+                except OSError:
+                    pass
             finally:
-                from PyQt6.QtCore import QMetaObject
-                QMetaObject.invokeMethod(progress, "cancel", Qt.ConnectionType.QueuedConnection)
+                _EXPORT_THREADS.discard(threading.current_thread())
+                QMetaObject.invokeMethod(
+                    progress, "cancel", Qt.ConnectionType.QueuedConnection)
 
-        threading.Thread(target=do_zip, daemon=True).start()
+        thread = threading.Thread(target=do_zip, daemon=True)
+        _EXPORT_THREADS.add(thread)
+        thread.start()
 
     def _prompt_text(self, title, label, default_text=""):
         from PyQt6.QtCore import Qt
@@ -1553,6 +1715,15 @@ class FileContainerPanel(QWidget):
             return
         dest = _unique_dest(self.folder, clean)
         try:
+            # P1-2: the listed path and the destination are revalidated
+            # against the CURRENT captured root at MUTATION time — the panel
+            # can be re-bound to a different container while a stale list
+            # still shows the old one, and a rename must never drag a file
+            # across container roots.
+            _require_container_destination(
+                self.folder, self._folder_root_identity, path)
+            _require_container_destination(
+                self.folder, self._folder_root_identity, dest)
             os.rename(path, dest)
         except OSError as e:
             logger.error(f"File container rename failed: {e}")
@@ -1590,6 +1761,11 @@ class FileContainerPanel(QWidget):
             return
         for p in paths:
             try:
+                # P1-2: mutation-time revalidation — a stale path from a
+                # panel that was re-bound to a different container must
+                # never be deleted outside the CURRENT captured root.
+                _require_container_destination(
+                    self.folder, self._folder_root_identity, p)
                 if os.path.isdir(p):
                     shutil.rmtree(p)
                 else:

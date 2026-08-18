@@ -81,15 +81,26 @@ class TrashDialog(QDialog):
             # with presets, and undo sees one action (T-755). The old fallback
             # was a bare temp_presets.insert(0, ...) that bypassed all of it.
             if hasattr(self.main_win, "insert_silo_at"):
-                self.main_win.insert_silo_at(text)
+                inserted = self.main_win.insert_silo_at(text)
             else:
                 self.main_win.data["temp_presets"].insert(0, text)
                 self.main_win.mark_dirty()
                 if hasattr(self.main_win, "refresh_temp_presets"):
                     self.main_win.refresh_temp_presets()
+                inserted = 0
+
+            # P0: the trash source is deleted ONLY when the insertion actually
+            # succeeded. insert_silo_at returns the slot on success and None
+            # when every slot is occupied, so a full workspace must keep the
+            # only trash copy instead of destroying it while restoring nothing.
+            if inserted is None:
+                QMessageBox.warning(
+                    self, self.tr("Restore failed"),
+                    self.tr("Could not restore the silo: the workspace is full."))
+                return
 
             # Delete the restored file ONLY after the insertion succeeded —
-            # an exception above keeps the trash copy.
+            # a refused/None insertion above keeps the trash copy.
             os.remove(filepath)
 
             QMessageBox.information(self, self.tr("Success"), self.tr("Silo restored successfully."))
@@ -115,12 +126,38 @@ class TrashDialog(QDialog):
         delete_all = (reply == QMessageBox.StandardButton.Yes)
         
         try:
+            changed_log = False
             for f in os.listdir(self.trash_dir):
                 path = os.path.join(self.trash_dir, f)
                 if os.path.isfile(path) and f.endswith(".md"):
                     os.remove(path)
                 elif delete_all and os.path.isdir(path):
-                    shutil.rmtree(path)
+                    try:
+                        shutil.rmtree(path)
+                    except Exception as rm_err:
+                        from fastprompter.core.logging import logger
+                        logger.warning(
+                            "Empty Trash: could not remove %s: %s", path, rm_err)
+                        # keep the recovery record: the directory still exists
+                        continue
+                    # P1: the directory was genuinely destroyed, so drop only
+                    # the recovery records whose trashed path equals it. Keep
+                    # every other entry (other silos, or one we failed to
+                    # delete) — an impossible original->trash mapping must not
+                    # survive a real deletion.
+                    log = self.main_win.data.get("folder_trash_log", [])
+                    if log:
+                        norm = os.path.normcase(os.path.abspath(path))
+                        kept = [
+                            e for e in log
+                            if not (isinstance(e, (list, tuple)) and len(e) >= 2
+                                    and os.path.normcase(os.path.abspath(e[1])) == norm)
+                        ]
+                        if len(kept) != len(log):
+                            self.main_win.data["folder_trash_log"] = kept
+                            changed_log = True
+            if changed_log:
+                self.main_win.mark_dirty()
             self._load_trash()
             QMessageBox.information(self, self.tr("Success"), self.tr("Trash emptied."))
         except Exception as e:

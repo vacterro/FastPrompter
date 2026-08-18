@@ -172,6 +172,19 @@ def _snapshot_text_size(st):
     return size
 
 
+def _copy_category_slots(slots):
+    """Deep-copy ONE category's slot list for undo/redo snapshots.
+
+    A shallow ``list(...)`` copy would alias the slot DICTS: the live
+    category keeps mutating them (snippet edits), so a later undo/redo
+    would restore a mid-edit state instead of the captured one. ``None``
+    entries stay ``None``.
+    """
+    if slots is None:
+        return None
+    return [None if s is None else dict(s) for s in slots]
+
+
 _SYNC_DEBOUNCE_MS = 200
 # bounded final-flush wait at window close; after this the mirror may be
 # stale but the SQLite database stays authoritative and shutdown continues
@@ -366,7 +379,13 @@ class _PortableBackupWorker(QObject):
     def _run(self, snapshot, gen):
         from fastprompter.utils import portable_backup as _pb
         try:
-            _pb._do_export(snapshot)
+            # The snapshot carries the immutable profile_id; the export MUST
+            # be namespaced by it, or every Profile-2+ snapshot would publish
+            # into Profile-1's legacy flat day directory. Never derive the
+            # profile from a second source that could disagree with the
+            # snapshot (P0-4).
+            profile_id = int(snapshot.get("profile_id", 1))
+            _pb._do_export(snapshot, profile_id=profile_id)
             self.done.emit(gen, snapshot, True, None)
         except Exception as exc:
             self.done.emit(gen, snapshot, False, str(exc))
@@ -643,6 +662,9 @@ class FastPrompter(
         import threading
         self._undo_save_lock = threading.Lock()
         self._undo_save_threads = set()
+        self._undo_save_jobs = {}
+        self._undo_pending_jobs = {}
+        self._undo_save_failed = False
         self._load_undo_state()
         self.sound_manager = SoundManager(self, self.data)
         # One owner for the sound-event mapping. This was written out here as
@@ -2247,13 +2269,27 @@ class FastPrompter(
         Ambiguous legacy dirs are never auto-merged: they stay on disk, and
         the category gets a fresh component (recovery is logged, files are
         preserved).
-        """
+
+        Returns None when the configured custom root is currently
+        unreachable AND the category has no persisted component yet: a fresh
+        allocation would only persist a component for a folder that cannot
+        be created, and on a dead share isdir() lies. Callers must treat
+        None as "no filesystem access right now" (fail closed, never create
+        or claim). An already-persisted component is returned even while the
+        root is down: it is identity data, not a filesystem probe (P1-4)."""
         mapping = self.data.setdefault("category_file_dirs", {})
         if not isinstance(mapping, dict):
             mapping = self.data["category_file_dirs"] = {}
         comp = mapping.get(cat)
         if comp:
             return comp
+        custom = (self.data.get("files_root") or "").strip()
+        if custom and not self._custom_files_root_usable(custom):
+            from fastprompter.core.logging import logger
+            logger.warning(
+                "files root %s unreachable; refusing to allocate a folder "
+                "component for category %r", custom, cat)
+            return None
         comp = self._allocate_category_dir(cat, mapping)
         mapping[cat] = comp
         self.mark_dirty()
@@ -2270,15 +2306,19 @@ class FastPrompter(
         root = self._files_root()
         # components already owned by the persistent map, plus every OTHER
         # category's legacy slug (a live claim even without a folder yet —
-        # two slug-colliding categories make the dir ambiguous for both)
-        claimed = set(mapping.values())
+        # two slug-colliding categories make the dir ambiguous for both).
+        # All claims are compared NORMALIZED (P1-5): Windows treats "Case"
+        # and "case" as the same directory, and a case-sensitive set would
+        # let the second component escape the collision loop and alias the
+        # first on disk.
+        claimed = {os.path.normcase(v) for v in mapping.values()}
         for other in self.data.get("cats_order", []) or []:
             if other == cat or mapping.get(other):
                 continue
-            claimed.add(silo_slug(other))
+            claimed.add(os.path.normcase(silo_slug(other)))
 
         legacy = silo_slug(cat)
-        if (legacy and legacy not in claimed
+        if (legacy and os.path.normcase(legacy) not in claimed
                 and isdir_within(os.path.join(root, legacy))):
             return legacy          # unambiguous adoption of the legacy dir
 
@@ -2296,7 +2336,7 @@ class FastPrompter(
         comps = alloc_fs_names(cats)
         base = comps.get(cat) or fs_component(cat, fallback="unnamed")[0]
         comp, n = base, 2
-        while comp in claimed:
+        while os.path.normcase(comp) in claimed:
             comp = f"{base}-{n}"
             n += 1
         return comp
@@ -2359,8 +2399,10 @@ class FastPrompter(
         return name
 
     def _folder_on_disk(self, cat, name):
-        return os.path.isdir(os.path.join(self._files_root(),
-                                          self._category_files_dir(cat), name))
+        comp = self._category_files_dir(cat)
+        if comp is None:
+            return False   # root unreachable: no folder claim is answerable
+        return os.path.isdir(os.path.join(self._files_root(), comp, name))
 
     def _rename_silo_folder(self, cat, old_name, new_name):
         """Rename a silo's physical folder; returns an explicit status so the
@@ -2373,14 +2415,16 @@ class FastPrompter(
         "FAILED"      OSError, destination appeared, or the custom root is
                       unreachable — the OLD mapping must be kept exactly
         """
-        base = os.path.join(self._files_root(), self._category_files_dir(cat))
-        old_dir, new_dir = os.path.join(base, old_name), os.path.join(base, new_name)
         # A configured custom root that is temporarily unreachable must NOT be
         # read as "old folder absent": on a dead share isdir() lies, and the
-        # rename would silently detach the mapping from the real folder.
+        # rename would silently detach the mapping from the real folder. The
+        # guard runs BEFORE any filesystem probe or component allocation
+        # (P1-4).
         custom = (self.data.get("files_root") or "").strip()
         if custom and not self._custom_files_root_usable(custom):
             return "FAILED"
+        base = os.path.join(self._files_root(), self._category_files_dir(cat))
+        old_dir, new_dir = os.path.join(base, old_name), os.path.join(base, new_name)
         try:
             if not os.path.isdir(old_dir):
                 return "NOT_NEEDED"
@@ -2396,9 +2440,13 @@ class FastPrompter(
 
     def _silo_folder_dir(self, slot_idx, is_archive=False):
         """Absolute path to a silo's files folder (unique per slot), inside
-        the CURRENT category's physical directory."""
-        return os.path.join(self._files_root(),
-                            self._category_files_dir(self.get_current_category()),
+        the CURRENT category's physical directory. None when the custom root
+        is unreachable and no component exists — callers must treat it as
+        "no filesystem access right now" (P1-4)."""
+        comp = self._category_files_dir(self.get_current_category())
+        if comp is None:
+            return None
+        return os.path.join(self._files_root(), comp,
                             self._silo_folder_name(slot_idx, is_archive))
 
     def _restore_trashed_folders(self, cat):
@@ -2409,7 +2457,12 @@ class FastPrompter(
         log = self.data.get("folder_trash_log", [])
         if not log:
             return
-        cat_dir = os.path.join(self._files_root(), self._category_files_dir(cat))
+        comp = self._category_files_dir(cat)
+        if comp is None:
+            # root down: the trash entries stay in the log untouched and are
+            # retried when the root is reachable again
+            return
+        cat_dir = os.path.join(self._files_root(), comp)
         fmap = self.data.get("silo_folders", {})
         amap = self.data.get("archive_silo_folders", {})
         if not isinstance(fmap, dict) or not isinstance(amap, dict):
@@ -2435,16 +2488,40 @@ class FastPrompter(
         if hasattr(self, "_file_count_cache") and path in self._file_count_cache:
             del self._file_count_cache[path]
 
-    def _on_file_count_result(self, path, count, slot_idx):
+    def _on_file_count_result(self, path, count, slot_idx, is_archive, category,
+                              profile_id):
         if hasattr(self, "_pending_file_counts"):
             self._pending_file_counts.discard(path)
         if not hasattr(self, "_file_count_cache"):
             self._file_count_cache = {}
         self._file_count_cache[path] = count
 
-        if not hasattr(self, "silo_buttons"):
+        # P1-5/P1-4: the label is applied ONLY when the ownership context at
+        # dispatch time still matches at result time. The cache is keyed by
+        # the unique folder path, so it is safe either way — but the BUTTON
+        # is addressed by slot index, and a slow count from silo A's folder
+        # landing after the user switched category (or space, or PROFILE)
+        # would paint silo B's button with silo A's number. The profile id
+        # is immutable, so it can never be claimed by a later profile.
+        if profile_id != getattr(getattr(self, "state", None), "profile_id", None):
             return
-        for btn in self.silo_buttons:
+        if category != self.get_current_category():
+            return
+        if is_archive != getattr(self, "active_is_archive", False):
+            return
+        # folder-level revalidation: the same slot+category+profile can still
+        # own a DIFFERENT folder after a slot shuffle — the counted path must
+        # be exactly what the slot owns right now
+        if path != self._silo_folder_dir(slot_idx, is_archive):
+            return
+
+        # P1-4: archive results target the ARCHIVE button row, silo results
+        # the silo row — they used to share the silo row and painted archive
+        # counts onto matching silo buttons.
+        buttons = getattr(self, "archive_buttons" if is_archive else "silo_buttons", None)
+        if buttons is None:
+            return
+        for btn in buttons:
             if getattr(btn, "global_idx", -1) == slot_idx and not btn.isHidden():
                 lbl = getattr(btn, "_lbl_file_count", None)
                 if lbl:
@@ -2457,6 +2534,9 @@ class FastPrompter(
 
     def _silo_file_count(self, slot_idx, is_archive=False):
         path = self._silo_folder_dir(slot_idx, is_archive)
+        if not path:
+            # P0-5: offline custom root — nothing to count, no worker
+            return 0
         if not hasattr(self, "_file_count_cache"):
             self._file_count_cache = {}
             self._pending_file_counts = set()
@@ -2468,20 +2548,32 @@ class FastPrompter(
             self._pending_file_counts.add(path)
 
             import weakref
+
             from PyQt6.QtCore import QRunnable, QThreadPool, pyqtSignal
             if not hasattr(self, "file_count_loaded"):
                 from PyQt6.QtCore import QObject
                 class Signals(QObject):
-                    file_count_loaded = pyqtSignal(str, int, int)
+                    file_count_loaded = pyqtSignal(str, int, int, bool, str, int)
                 self._file_count_signals = Signals()
                 self.file_count_loaded = self._file_count_signals.file_count_loaded
                 self.file_count_loaded.connect(self._on_file_count_result)
 
+            # the ownership context is captured HERE, on the GUI thread; the
+            # worker must never dereference the window (P1-5). Profile id is
+            # immutable (never reused across profiles), so a result can never
+            # be claimed by a later profile that happens to have the same
+            # slot indices (P1-4).
+            category = self.get_current_category()
+            profile_id = getattr(getattr(self, "state", None), "profile_id", None)
+
             class Worker(QRunnable):
-                def __init__(self, p, s, app_ref):
+                def __init__(self, p, s, cat, is_arc, prof, app_ref):
                     super().__init__()
                     self.p = p
                     self.s = s
+                    self.cat = cat
+                    self.is_arc = is_arc
+                    self.prof = prof
                     self.app_ref = app_ref
                 def run(self):
                     import os
@@ -2495,11 +2587,14 @@ class FastPrompter(
                         from PyQt6 import sip
                         if not sip.isdeleted(app):
                             try:
-                                app.file_count_loaded.emit(self.p, c, self.s)
+                                app.file_count_loaded.emit(
+                                    self.p, c, self.s, self.is_arc, self.cat,
+                                    self.prof)
                             except RuntimeError:
                                 pass
 
-            worker = Worker(path, slot_idx, weakref.ref(self))
+            worker = Worker(path, slot_idx, category, is_archive, profile_id,
+                            weakref.ref(self))
             QThreadPool.globalInstance().start(worker)
 
         return 0
@@ -2570,13 +2665,18 @@ class FastPrompter(
         is_archive = getattr(self, "active_is_archive", False)
         idx = self.active_temp_slot
         folder = self._silo_folder_dir(idx, is_archive)
+        lang = getattr(self, '_current_lang', 'EN')
+        base_tt = tr("Files—asset drawer for the active silo (drop in / drag out /\npreview / export; plain folder in data/files)\n\n", lang)
+        if not folder:
+            # P0-5: offline custom root — no async summary, no worker
+            self.btn_files.setText("📁")
+            self.btn_files.setToolTip(base_tt + "0 item(s)")
+            return
         n = self._silo_file_count(idx, is_archive)
         self.btn_files.setText(f"📁{n}" if n else "📁")
         if getattr(self, "_header_dense", False):
             self.btn_files.setFixedWidth(
                 self.btn_files.fontMetrics().horizontalAdvance(self.btn_files.text()) + 8)
-        lang = getattr(self, '_current_lang', 'EN')
-        base_tt = tr("Files—asset drawer for the active silo (drop in / drag out /\npreview / export; plain folder in data/files)\n\n", lang)
 
         self.btn_files.setToolTip(base_tt + f"{n} item(s)")
 
@@ -2597,21 +2697,30 @@ class FastPrompter(
             self._pending_tooltips.add(folder)
 
             import weakref
+
             from PyQt6.QtCore import QRunnable, QThreadPool, pyqtSignal
             if not hasattr(self, "tooltip_loaded"):
                 from PyQt6.QtCore import QObject
                 class Signals(QObject):
-                    tooltip_loaded = pyqtSignal(str, str, int)
+                    tooltip_loaded = pyqtSignal(str, str, int, bool, str, int)
                 self._tooltip_signals = Signals()
                 self.tooltip_loaded = self._tooltip_signals.tooltip_loaded
                 self.tooltip_loaded.connect(self._on_tooltip_result)
 
+            # ownership context captured HERE on the GUI thread (P1-6);
+            # profile id captured too (P1-4)
+            category = self.get_current_category()
+            profile_id = getattr(getattr(self, "state", None), "profile_id", None)
+
             class Worker(QRunnable):
-                def __init__(self, p, s, l, app_ref):
+                def __init__(self, p, s, l, cat, is_arc, prof, app_ref):
                     super().__init__()
                     self.p = p
                     self.s = s
                     self.l = l
+                    self.cat = cat
+                    self.is_arc = is_arc
+                    self.prof = prof
                     self.app_ref = app_ref
                 def run(self):
                     from fastprompter.ui.file_container import folder_summary
@@ -2624,20 +2733,36 @@ class FastPrompter(
                         from PyQt6 import sip
                         if not sip.isdeleted(app):
                             try:
-                                app.tooltip_loaded.emit(self.p, res, self.s)
+                                app.tooltip_loaded.emit(
+                                    self.p, res, self.s, self.is_arc, self.cat,
+                                    self.prof)
                             except RuntimeError:
                                 pass
 
-            worker = Worker(folder, idx, lang, weakref.ref(self))
+            worker = Worker(folder, idx, lang, category, is_archive, profile_id,
+                            weakref.ref(self))
             QThreadPool.globalInstance().start(worker)
 
-    def _on_tooltip_result(self, folder, res, slot_idx):
+    def _on_tooltip_result(self, folder, res, slot_idx, is_archive, category,
+                           profile_id):
         if hasattr(self, "_pending_tooltips"):
             self._pending_tooltips.discard(folder)
         if not hasattr(self, "_tooltip_cache"):
             self._tooltip_cache = {}
         import time
         self._tooltip_cache[folder] = (time.time(), res)
+        # P1-6/P1-4: apply the tooltip ONLY when the ownership context at
+        # dispatch time still matches: a slow summary from silo A must not
+        # paint silo B's (or another category's, or another PROFILE's) button
+        # after the user switched away.
+        if profile_id != getattr(getattr(self, "state", None), "profile_id", None):
+            return
+        if category != self.get_current_category():
+            return
+        if is_archive != getattr(self, "active_is_archive", False):
+            return
+        if folder != self._silo_folder_dir(slot_idx, is_archive):
+            return
         if getattr(self, "active_temp_slot", -1) == slot_idx and hasattr(self, "btn_files"):
             lang = getattr(self, '_current_lang', 'EN')
             base_tt = tr("Files—asset drawer for the active silo (drop in / drag out /\npreview / export; plain folder in data/files)\n\n", lang)
@@ -2848,8 +2973,16 @@ class FastPrompter(
         presets = self.data.get("archive_temp_presets" if is_archive else "temp_presets", [])
         text = presets[global_idx] if 0 <= global_idx < len(presets) else ""
         panel = self._ensure_file_container()
-        panel.open_for(
-            self._silo_folder_dir(global_idx, is_archive), title=silo_slug(text))
+        folder = self._silo_folder_dir(global_idx, is_archive)
+        if folder is None:
+            # P0-5: the custom files root is offline and the category has no
+            # persisted component — fail closed, never bind a dead path.
+            from fastprompter.core.logging import logger as _log
+            _log.warning("file container cannot open: files root unavailable "
+                         "for slot %d (archive=%s)", global_idx, is_archive)
+            panel.detach_session()
+            return
+        panel.open_for(folder, title=silo_slug(text))
 
     def _begin_batch_update(self):
         """Suppress paints + snapshot overlay as backup."""
@@ -3104,8 +3237,15 @@ class FastPrompter(
             "silo_last_edited": getattr(self, "silo_last_edited", {}),
         }
 
-        self.state.save_data_to_db(current_text, ui_settings, force=force)
-        self.sync_to_disk()
+        ok = bool(self.state.save_data_to_db(current_text, ui_settings,
+                                              force=force))
+        # P0-2: the filesystem mirror must only be published when the
+        # authoritative SQLite save SUCCEEDED. A failed commit stays dirty and
+        # retryable; dispatching a mirror snapshot would let the disk copy
+        # become newer than the DB it is documented to mirror.
+        if ok:
+            self.sync_to_disk()
+        return ok
 
     # -- T-591: one-way mirror of silo text onto disk -------------------------
     def _sync_name_for(self, idx, presets):
@@ -3152,6 +3292,7 @@ class FastPrompter(
         self._sync_inflight_root = None
         self._sync_completed_gen = 0
         self._sync_pending = None
+        self._sync_pending_hold = {}
         self._sync_shutting_down = False
         self._sync_worker = None
         self._sync_timer = QTimer(self)
@@ -3249,11 +3390,17 @@ class FastPrompter(
         self._sync_pending = None
         # Do NOT touch _sync_inflight_gen: a physical worker might still be writing.
         self._sync_written = {}
-        if pending is not None and not self._sync_busy:
-            self._sync_inflight_gen = pending["gen"]
-            self._sync_inflight_profile = pending.get("profile")
-            self._sync_inflight_root = pending.get("root")
-            self._sync_ensure_worker().dispatch.emit(pending, pending["gen"])
+        if pending is not None:
+            if self._sync_busy:
+                # The worker is mid-write for the OLD profile. The final
+                # old-profile snapshot is held keyed by ITS profile instead
+                # of being dropped (P0-2): _sync_on_done drains the hold for
+                # the profile that just completed FIRST, then plain pending,
+                # so the old profile's last typed text still reaches its
+                # mirror after the switch.
+                self._sync_pending_hold[pending.get("profile")] = pending
+            else:
+                self._sync_dispatch_snapshot(pending)
 
     def sync_to_disk(self, force=False):
         """Mirror the current silo (or the whole hierarchy) to sync_path.
@@ -3280,6 +3427,27 @@ class FastPrompter(
         self._sync_pending = snap
         self._sync_timer.start()
 
+    def _sync_dispatch_snapshot(self, snap):
+        """Dispatch one specific snapshot to the worker (one at a time).
+
+        Unlike `_sync_dispatch_pending`, the snapshot is not taken from
+        `_sync_pending` — the caller (profile switch drain, shutdown hold)
+        may already hold it elsewhere. Returns False when the worker is
+        busy and the caller must keep the snapshot for later.
+        """
+        if snap is None:
+            return False
+        self._sync_init()
+        if self._sync_busy:
+            return False
+        if self._sync_inflight_gen != 0:
+            raise RuntimeError("attempted dispatch while physical job inflight")
+        self._sync_inflight_gen = snap["gen"]
+        self._sync_inflight_profile = snap.get("profile")
+        self._sync_inflight_root = snap.get("root")
+        self._sync_ensure_worker().dispatch.emit(snap, snap["gen"])
+        return True
+
     def _sync_dispatch_pending(self):
         """Push the newest pending snapshot to the worker (one at a time)."""
         self._sync_init()
@@ -3287,12 +3455,7 @@ class FastPrompter(
             return
         snap = self._sync_pending
         self._sync_pending = None
-        if self._sync_inflight_gen != 0:
-            raise RuntimeError("attempted dispatch while physical job inflight")
-        self._sync_inflight_gen = snap["gen"]
-        self._sync_inflight_profile = snap.get("profile")
-        self._sync_inflight_root = snap.get("root")
-        self._sync_ensure_worker().dispatch.emit(snap, snap["gen"])
+        self._sync_dispatch_snapshot(snap)
 
     def _sync_ensure_worker(self):
         """The process-wide sync worker, created once per process.
@@ -3369,8 +3532,25 @@ class FastPrompter(
             self._sync_inflight_gen = 0
             self._sync_inflight_profile = None
             self._sync_inflight_root = None
-        if owns_inflight and self._sync_pending is not None:
-            self._sync_dispatch_pending()
+        if owns_inflight:
+            # Drain the hold for the profile that JUST completed first: its
+            # final snapshot predates any newer pending one and must reach
+            # the disk even when a profile switch caught the worker busy
+            # (P0-2). Only then fall back to the plain newest pending — and
+            # finally to the newest REMAINING held snapshot, so a profile we
+            # switched away from (A→B→A) still mirrors its last text instead
+            # of sitting in the hold until shutdown.
+            self._sync_init()
+            held = self._sync_pending_hold.pop(snapshot.get("profile"), None)
+            if held is not None:
+                self._sync_dispatch_snapshot(held)
+            elif self._sync_pending is not None:
+                self._sync_dispatch_pending()
+            elif self._sync_pending_hold:
+                newest = max(self._sync_pending_hold.items(),
+                             key=lambda kv: kv[1]["gen"])
+                self._sync_pending_hold.pop(newest[0])
+                self._sync_dispatch_snapshot(newest[1])
 
     def _sync_shutdown(self, timeout_s=_SYNC_SHUTDOWN_TIMEOUT_S):
         """Flush the FINAL mirror at window close, then retire.
@@ -5504,7 +5684,13 @@ class FastPrompter(
         # knows the live editor/widget state. The state layer is told NOT to
         # issue its own hidden second save (save_current=False): two owners of
         # pre-switch persistence would double the backup/sync side effects.
-        self.save_data_to_db(force=True)
+        if not self.save_data_to_db(force=True):
+            # P0-1: the old profile's final save FAILED — refuse to leave it.
+            # A must stay entirely active and dirty; do not touch the DB path
+            # or rebind any runtime/UI object.
+            from fastprompter.core.logging import logger as _plog
+            _plog.error("profile switch aborted: old profile save failed")
+            return
         # Bound-retire any old-profile undo writer still in flight BEFORE the
         # db path changes, so its captured target is still the old profile's
         # (P0-2: the path is captured pre-thread; this just lets it finish).
@@ -5644,6 +5830,12 @@ class FastPrompter(
         self.register_all_hotkeys()
 
         # -- watcher: fail closed; do NOT auto-arm ----------------------------
+        # Observe mode is a separate loop from arming: disarming only stops the
+        # SEND engine, it does NOT stop an in-progress Observe. Switching
+        # profiles must stop BOTH so a Profile-A adapter/probes/timer cannot
+        # survive into Profile B (W-09/P1). No auto-restart in the new profile.
+        if hasattr(self, "watcher_stop_observing"):
+            self.watcher_stop_observing()
         self.watcher_disarm("profile switch")
 
     def _resync_profile_widgets(self):
@@ -6432,6 +6624,92 @@ class FastPrompter(
     # The invariant test asserts the registry covers every live *_all key.
     _PER_CATEGORY_STATE_KEYS = _PER_CATEGORY_STATE_KEYS
 
+    # Maximum number of silos per category across BOTH index spaces. Slots
+    # are 0..MAX_SILOS_PER_CATEGORY-1. This is a hard persistence contract:
+    # the DB stores temp_presets_v2 / archive_temp_presets_v2 with slot < 100,
+    # categories[cat] is a fixed [None]*100 list, and temp_presets_all is
+    # truncated to this length on load. EVERY insertion path must obey it
+    # through the single canonical boundary below — never an ad-hoc
+    # `if len(...) < 100`, never a silent `pop()` eviction of another silo.
+    MAX_SILOS_PER_CATEGORY = 100
+
+    # -- canonical capacity boundary -------------------------------------
+    # One place that decides WHERE a silo may be created and whether it may be
+    # created at all. Used by every insert/duplicate/child/archive/transfer/
+    # restore path so the 100-slot invariant has exactly one implementation.
+    def _silo_capacity(self, is_archive=False):
+        key = "archive_temp_presets" if is_archive else "temp_presets"
+        return len(self.data.get(key) or [])
+
+    def _silo_at_capacity(self, is_archive=False):
+        return self._silo_capacity(is_archive) >= self.MAX_SILOS_PER_CATEGORY
+
+    def _acquire_silo_slot(self, is_archive=False, allow_reuse_empty=True):
+        """The ONE canonical insertion boundary.
+
+        Returns the slot index a new silo may occupy, or ``None`` if the
+        insertion must be REFUSED (space full and no reusable empty slot).
+
+        When ``allow_reuse_empty`` is True an existing blank slot is preferred
+        over growing the list, so callers never implicitly evict another
+        silo's data. The returned slot is the index to insert at / reuse; it
+        never mutates any existing slot or its state, and it never removes a
+        silo to make room. Callers must refuse (without touching the source)
+        when this returns ``None``.
+
+        This is the only place that understands the 100-slot limit.
+        """
+        key = "archive_temp_presets" if is_archive else "temp_presets"
+        presets = self.data.get(key) or []
+        if allow_reuse_empty:
+            for i, p in enumerate(presets):
+                if not (p or "").strip():
+                    return i
+        if len(presets) >= self.MAX_SILOS_PER_CATEGORY:
+            return None
+        return len(presets)
+
+    def _remove_silo_view_key(self, idx, is_archive=False):
+        """Forget the deleted slot's saved cursor/view state before any remap."""
+        store = self.data.get("silo_view_state_all")
+        if not isinstance(store, dict):
+            return
+        entries = store.get(self.get_current_category())
+        if not isinstance(entries, dict):
+            return
+        entries.pop(("a" if is_archive else "s") + str(idx), None)
+
+    def _remove_silo_index_key(self, idx, is_archive=False):
+        """Drop the DELETED slot's own key from every slot-index-keyed store
+        BEFORE any remap runs.
+
+        The delete remap maps the deleted slot and its successor onto the
+        SAME key; which survives then depends on dict insertion order, so a
+        deleted silo's colour/queue/type could resurrect over its successor
+        (or the successor's data could be lost). Removing the deleted key
+        first turns the remap into a clean down-shift with no collision —
+        identical results regardless of dictionary order. Shared by every
+        deletion path through drop_silo_state (P0-4)."""
+        table = self._ARCHIVE_INDEX_STATE if is_archive else self._SILO_INDEX_STATE
+        skey = str(idx)
+        akey = "a" + skey
+        for entry in table:
+            key = entry[0]
+            kind = entry[1]
+            namespace = entry[2] if len(entry) > 2 else "numeric"
+            container = getattr(self, key, None) if key == "silo_last_edited" else None
+            if not isinstance(container, dict):
+                container = self.data.get(key)
+            if container is None:
+                continue
+            if kind in ("str_dict", "int_dict"):
+                if namespace == "a":
+                    container.pop(akey, None)
+                else:
+                    container.pop(idx, None)
+                    container.pop(skey, None)
+        self._remove_silo_view_key(idx, is_archive=is_archive)
+
     def drop_silo_state(self, idx, is_archive=False):
         """Slot `idx` is going away: forget its state, pull the rest up one.
 
@@ -6467,6 +6745,9 @@ class FastPrompter(
             gaps = self.data.get("silo_gaps", [])
             if isinstance(gaps, list) and idx in gaps:
                 gaps.remove(idx)
+        # remove the deleted slot's OWN dict keys before the down-shift so the
+        # remap cannot collide the deleted entry with its successor (P0-4)
+        self._remove_silo_index_key(idx, is_archive=is_archive)
         self._remap_silo_indices(lambda i: i - 1 if i > idx else i,
                                  is_archive=is_archive)
 
@@ -6803,32 +7084,65 @@ class FastPrompter(
         self.refresh_snippets_panel()
 
     def move_preset_cross_category(self, from_cat, from_idx, to_cat, to_idx):
+        # -- validate source, destination, target index AND capacity BEFORE
+        #    any undo snapshot or source mutation. A stale target category, an
+        #    invalid index, or a full destination must refuse with the source
+        #    and destination left byte-identical and no undo entry written.
+        if from_cat == "silo":
+            src_arr = self.data["temp_presets"]
+            src_docs = self.silo_docs
+            src_arc = False
+            if not (0 <= from_idx < len(src_arr)):
+                return
+        elif from_cat == "arcsilo":
+            src_arr = self.data.get("archive_temp_presets", [])
+            src_docs = self.archive_docs
+            src_arc = True
+            if not (0 <= from_idx < len(src_arr)):
+                return
+        else:
+            cats = self.data.get("categories", {})
+            if from_cat not in cats or not (0 <= from_idx < len(cats[from_cat])):
+                return
+            src_arr = None
+            src_docs = None
+            src_arc = None
+
+        if to_cat == "silo":
+            dst_arr = self.data["temp_presets"]
+        elif to_cat == "arcsilo":
+            dst_arr = self.data.setdefault("archive_temp_presets", [])
+        else:
+            cats = self.data.get("categories", {})
+            if to_cat not in cats:
+                return
+            dst_arr = cats[to_cat]
+
+        # a silo/arcsilo destination may not exceed the 100-slot contract
+        if to_cat in ("silo", "arcsilo"):
+            if len(dst_arr) >= self.MAX_SILOS_PER_CATEGORY:
+                return
+        # target index must be in range for the chosen destination
+        if not (0 <= to_idx <= len(dst_arr)):
+            return
+
+        # -- all validated: now take the undo snapshot and mutate ----------
         self.add_data_undo_state("Move preset cross category")
 
-        if from_cat == "silo":
-            if not (0 <= from_idx < len(self.data["temp_presets"])):
-                return
-            text = self.data["temp_presets"].pop(from_idx)
-            if from_idx < len(self.silo_docs):
-                self.silo_docs.pop(from_idx)
-            self.drop_silo_state(from_idx)
+        if from_cat in ("silo", "arcsilo"):
+            text = src_arr.pop(from_idx)
+            if from_idx < len(src_docs):
+                src_docs.pop(from_idx)
+            self.drop_silo_state(from_idx, is_archive=src_arc)
             item = {"name": text[:20], "text": text}
-            if not getattr(self, "active_is_archive", False):
+            if src_arc is False and not getattr(self, "active_is_archive", False):
                 if from_idx < self.active_temp_slot:
                     self.active_temp_slot -= 1
                 elif from_idx == self.active_temp_slot:
                     self.active_temp_slot = (
                         max(0, self.active_temp_slot - 1) if self.data["temp_presets"] else 0
                     )
-        elif from_cat == "arcsilo":
-            if not (0 <= from_idx < len(self.data.get("archive_temp_presets", []))):
-                return
-            text = self.data["archive_temp_presets"].pop(from_idx)
-            if from_idx < len(self.archive_docs):
-                self.archive_docs.pop(from_idx)
-            self.drop_silo_state(from_idx, is_archive=True)
-            item = {"name": text[:20], "text": text}
-            if getattr(self, "active_is_archive", False):
+            elif src_arc is True and getattr(self, "active_is_archive", False):
                 if from_idx < self.active_temp_slot:
                     self.active_temp_slot -= 1
                 elif from_idx == self.active_temp_slot:
@@ -7239,8 +7553,10 @@ class FastPrompter(
     def _snapshot_current(self):
         pinned = self.data.get("pinned_silos", [])
 
-        # O(1) Shallow copy for categories since they rarely change, deepcopy is too slow
-        cats_copy = {k: list(v) for k, v in self.data.get("categories", {}).items()}
+        # O(1) per-slot deep copy for categories since they rarely change;
+        # deepcopy is too slow, but the slot DICTS must not be aliased
+        cats_copy = {k: _copy_category_slots(v)
+                     for k, v in self.data.get("categories", {}).items()}
 
         # Fast 2-level copy for {str: list/dict} maps — avoids copy.deepcopy overhead
         def _copy2(d):
@@ -7315,7 +7631,7 @@ class FastPrompter(
         if now is None:
             now = self._snapshot_current()
         for key, value in now.items():
-            if key in self._SNAPSHOT_META or key in ("category", "active_temp_slot", "active_is_archive"):
+            if key in self._SNAPSHOT_META or key == "category":
                 continue
             if key not in state or state[key] != value:
                 return False
@@ -7510,7 +7826,18 @@ class FastPrompter(
         snap_cat = state.get("category")
         if snap_cat and snap_cat in self.data.get("cats_order", []):
             idx = self.combo_index_for_category(snap_cat)
-            if self.cat_combo.currentIndex() != idx:
+            if idx < 0:
+                # P1-1: the undo target is HIDDEN, so the combo cannot show
+                # it. One explicit policy instead of binding a different
+                # visible project to the restored stores: unhide it — an
+                # undo is a user-visible restore and the project must be
+                # reachable again.
+                hidden = self.hidden_categories()
+                if snap_cat in hidden:
+                    hidden.remove(snap_cat)
+                self.rebuild_cat_combo(keep=snap_cat)
+                idx = self.combo_index_for_category(snap_cat)
+            if idx >= 0 and self.cat_combo.currentIndex() != idx:
                 self.cat_combo.blockSignals(True)
                 self.cat_combo.setCurrentIndex(idx)
                 self.cat_combo.blockSignals(False)
@@ -7738,31 +8065,56 @@ class FastPrompter(
             self._undo_timer.setSingleShot(True)
             self._undo_timer.setInterval(1000)
             self._undo_timer.timeout.connect(self._dispatch_undo_save)
-        self._undo_timer.start()
+        # P0-2/P1-8: the target path AND the stacks are captured HERE, at ARM
+        # time, coalesced per undo file. The old code captured the path at
+        # dispatch (1s later), so a profile switch inside the debounce window
+        # filed the outgoing profile's undo snapshot into the INCOMING
+        # profile's undo file. Re-arming for the same path replaces the
+        # pending snapshot (debounce coalescing preserved); a switch arms a
+        # different path and gets its own snapshot.
+        db_path = getattr(self.state, "db_path", "")
+        if not db_path:
+            return
+        undo_path = os.path.splitext(db_path)[0] + "_undo.json"
+        self._undo_pending_jobs[undo_path] = {
+            "undo": list(getattr(self, "data_undo_stack", [])),
+            "redo": list(getattr(self, "data_redo_stack", [])),
+        }
+        if not self._undo_timer.isActive():
+            self._undo_timer.start()
 
     def _dispatch_undo_save(self):
-        """Persist the undo stack to `<db>_undo.json` on a DAEMON thread.
+        """Persist the undo stack to `<db>_undo.json` on a TRACKED thread.
 
         Deliberate design (Phase-11 inventory): undo history is SECONDARY
         data. The write is atomic (temp + os.replace), so an interrupted
         write can never corrupt the file — a forced exit mid-write loses at
         most the latest PERSISTED UNDO HISTORY, never primary data. The
         SQLite database and the daily Markdown snapshots remain authoritative.
-        No QWidget is touched from the thread."""
+        No QWidget is touched from the thread.
+
+        The thread is registered in ``_undo_save_threads`` BEFORE start and
+        removes itself in ``finally``, so ``_wait_for_undo_saves`` observes
+        every real writer and a clean drain is a fact, not an empty-set
+        coincidence (P1-2). A publication failure is recorded on the window
+        so a shutdown cannot claim a clean undo drain that never happened
+        (P1-3)."""
         import json
         import os
         import threading
-        u_copy = list(getattr(self, "data_undo_stack", []))
-        r_copy = list(getattr(self, "data_redo_stack", []))
-        # The target path is captured HERE, on the caller (GUI) thread, BEFORE
-        # the background thread starts. The worker must never dereference
-        # self.state.db_path / self.state.profile_id / self.data: a profile
-        # switch racing the thread would otherwise make profile A's undo
-        # snapshot overwrite profile B's undo file.
-        db_path = getattr(self.state, "db_path", "")
-        if not db_path:
+        if self._undo_timer is not None:
+            self._undo_timer.stop()
+        pending = getattr(self, "_undo_pending_jobs", {})
+        if not pending:
             return
-        undo_path = os.path.splitext(db_path)[0] + "_undo.json"
+        self._undo_pending_jobs = {}
+        # P1-8: failure is tracked PER JOB, not on one window-wide flag. The
+        # old shared ``_undo_save_failed`` was reset by every new dispatch,
+        # so a writer still in flight from the PREVIOUS batch could fail
+        # after the reset and the drain would report clean. ``_undo_save_jobs``
+        # keys the in-flight result by thread; the flag stays as a compat
+        # backstop for ``_shutdown_application``.
+        self._undo_save_failed = False
 
         def save(undo_data, redo_data, undo_path):
             try:
@@ -7784,21 +8136,75 @@ class FastPrompter(
                         json.dump({"undo": undo_data, "redo": redo_data}, f)
                     try:
                         os.replace(tmp_path, undo_path)
-                    except OSError:
-                        pass
+                    except OSError as exc:
+                        # The previous final undo file stays untouched; the
+                        # temp is removed so no stray file can be mistaken
+                        # for published state. The failure is recorded and
+                        # logged — a silent `pass` made callers believe the
+                        # drain succeeded (P1-3).
+                        try:
+                            if os.path.exists(tmp_path):
+                                os.remove(tmp_path)
+                        except OSError:
+                            pass
+                        job = self._undo_save_jobs.get(threading.current_thread())
+                        if job is not None:
+                            job["ok"] = False
+                        self._undo_save_failed = True
+                        from fastprompter.core.logging import logger
+                        logger.error(
+                            "Failed to publish undo state to %s: %s; the "
+                            "previous undo file is untouched",
+                            undo_path, exc)
             except Exception:
+                job = self._undo_save_jobs.get(threading.current_thread())
+                if job is not None:
+                    job["ok"] = False
+                self._undo_save_failed = True
                 from fastprompter.core.logging import logger
                 logger.exception("Failed to save undo state.")
-        threading.Thread(target=save, args=(u_copy, r_copy, undo_path), daemon=True).start()
+            finally:
+                threads = getattr(self, "_undo_save_threads", None)
+                if threads is not None:
+                    threads.discard(threading.current_thread())
+                # The job record is LEFT in place (pruned by
+                # _wait_for_undo_saves): popping it here would erase the
+                # very failure a later dispatch's flag reset depends on.
+
+        for undo_path, job in pending.items():
+            thread = threading.Thread(
+                target=save, args=(job["undo"], job["redo"], undo_path),
+                daemon=True, name="fastprompter-undo-write")
+            self._undo_save_threads.add(thread)
+            self._undo_save_jobs[thread] = {"ok": True}
+            thread.start()
 
     def _wait_for_undo_saves(self, timeout_s=2.0):
-        """Wait bounded time for app-owned undo-file mutations to retire."""
+        """Force the newest pending undo snapshot out, then wait bounded
+        time for every tracked undo-file writer to retire.
+
+        A pending 1s debounce timer is force-dispatched HERE so the latest
+        undo history cannot be dropped by an immediate switch/exit. The wait
+        joins the REAL tracked writers (the threads were never registered
+        before, so the old wait observed an empty set); the result is False
+        when a writer is still alive after the deadline OR any tracked writer
+        reported a publication failure (P1-2/P1-3)."""
         deadline = time.monotonic() + max(0.0, float(timeout_s))
+        timer = getattr(self, "_undo_timer", None)
+        if timer is not None and timer.isActive():
+            self._dispatch_undo_save()
         for thread in list(getattr(self, "_undo_save_threads", ())):
             thread.join(max(0.0, deadline - time.monotonic()))
         threads = getattr(self, "_undo_save_threads", set())
         threads.difference_update(t for t in threads if not t.is_alive())
-        return not threads
+        if threads:
+            return False
+        jobs = getattr(self, "_undo_save_jobs", {})
+        if any(not job.get("ok", True) for job in jobs.values()):
+            return False
+        for t in [t for t in jobs if not t.is_alive()]:
+            jobs.pop(t, None)
+        return not getattr(self, "_undo_save_failed", False)
 
     def _load_undo_state(self):
         """Load THIS profile's persisted undo file (keyed off the CURRENT
@@ -7869,9 +8275,13 @@ class FastPrompter(
         return state
 
     def combo_index_for_category(self, name):
-        """Return the QComboBox row index for a given category identity."""
+        """Return the QComboBox row index for a given category identity.
+
+        -1 when the category is NOT in the combo (hidden or unknown) — the
+        old ``0`` fallback silently bound a DIFFERENT visible project
+        (P1-1)."""
         idx = self.cat_combo.findData(name)
-        return idx if idx >= 0 else 0
+        return idx if idx >= 0 else -1
 
     def build_categories(self):
         """Rebuild the tab bar from the VISIBLE projects.
@@ -8147,6 +8557,15 @@ class FastPrompter(
                     self.state.init_db()
                     self.conn = self.state.conn
                     return
+                # P0: successful restore is a terminal, already-committed
+                # transition. The on-disk DB is now the restored copy and the
+                # in-memory state is stale with its connection closed. Do NOT
+                # run the normal final-save path — it would rewrite the old
+                # memory over the restored file, or refuse and strand the app
+                # running on stale data against a replaced database. Mark
+                # logical persistence finalized and quit straight through the
+                # physical teardown without any further save.
+                self._logical_finalized = True
                 self.quit_app()
         except Exception as e:
             QMessageBox.critical(self, tr("Error", self._current_lang), tr("Failed to restore backup:\n{}", self._current_lang).format(e))
@@ -8157,12 +8576,15 @@ class FastPrompter(
 
     def fill_silo_from_preset(self, idx, text):
         """Drop a template into silo `idx`, as ONE undoable action."""
-        self.add_data_undo_state("Silo preset")
         presets = self.data.get("temp_presets", [])
         if not (0 <= idx < len(presets)):
             return
+        # P2: validate the slot bounds BEFORE pushing undo history. A stale
+        # menu/action index must not create and persist an undo step that
+        # perturbs Ctrl+Z ordering when no application state changes.
+        self.add_data_undo_state("Silo preset")
         presets[idx] = text
-        if 0 <= idx < len(self.silo_docs):
+        if 0 <= idx < len(self.silo_docs) and self.silo_docs[idx] is not None:
             self._set_plain_text_clean(self.silo_docs[idx], text)
         if idx == self.active_temp_slot and not getattr(self, "active_is_archive", False):
             self._set_plain_text_clean(self.text_area, text)
@@ -8319,18 +8741,22 @@ class FastPrompter(
         except Exception:
             from fastprompter.core.logging import logger
             logger.debug("closeEvent: failed to capture silo view state")
-        self.save_data_to_db(force=True)
-        self._close_workers_clean = True
-        try:
-            if hasattr(self, "_watcher_shutdown"):
-                if self._watcher_shutdown() is False:
-                    self._close_workers_clean = False
-            if hasattr(self, "_sync_shutdown"):
-                self._sync_shutdown()
-        except Exception:
-            from fastprompter.core.logging import logger
-            logger.debug("closeEvent: worker shutdown failed")
-            self._close_workers_clean = False
+        # P0-6: quit_app already ran the final save while the event loop was
+        # alive (watcher quiesced first); a second save here would race the
+        # post-loop teardown, so it is skipped when the pre-quit finalize
+        # succeeded.
+        if not getattr(self, "_logical_finalized", False):
+            try:
+                self.save_data_to_db(force=True)
+            except Exception:
+                from fastprompter.core.logging import logger
+                logger.exception("closeEvent: final save failed")
+        # configured to survive the loss of its last window
+        # (setQuitOnLastWindowClosed(False)) and the tray reopens it, so
+        # retiring the watcher worker and the Sync writer here would leave a
+        # reopened resident process permanently retired. Worker retirement
+        # belongs exclusively to _shutdown_application, which runs the same
+        # close as part of the single canonical quiesce path.
         super().closeEvent(event)
 
     def resizeEvent(self, event):
@@ -8579,14 +9005,20 @@ class FastPrompter(
             if new_cat in self.data["cats_order"]:
                 QMessageBox.information(self, tr("Error", self._current_lang), tr("A tab with this name already exists.", self._current_lang))
                 return
+            if old_cat not in self.data["cats_order"]:
+                # P0-3: the combo row and cats_order may diverge (hidden
+                # categories). Renaming by ROW used to hit a different
+                # project; rename by IDENTITY only, and refuse when the
+                # identity is gone instead of guessing a row.
+                from fastprompter.core.logging import logger as _lg
+                _lg.error("rename_category: %r not found in cats_order; "
+                          "rename aborted", old_cat)
+                return
 
             self.add_data_undo_state("Rename category")
             # position of the OLD name, not the combo row: the two are no
             # longer guaranteed to line up (see _cat_at)
-            try:
-                self.data["cats_order"][self.data["cats_order"].index(old_cat)] = new_cat
-            except ValueError:
-                self.data["cats_order"][idx] = new_cat
+            self.data["cats_order"][self.data["cats_order"].index(old_cat)] = new_cat
 
             # "categories" holds the snippets themselves and must move with
             # the tab; everything else is the per-category registry.
@@ -8680,16 +9112,23 @@ class FastPrompter(
 
             retired = []
             failed = []
-            for folder_name in set(trash_targets):
-                if not folder_name:
-                    continue
-                d = os.path.join(root, cat_dir, folder_name)
-                status = self._delete_file_container(cat, d)
-                if status in ("MOVED_TO_TRASH", "EMPTY_REMOVED",
-                              "CONFIRMED_ABSENT"):
-                    retired.append(d)
-                else:
-                    failed.append((d, status))
+            if cat_dir is None and trash_targets:
+                # P0-5: the category's physical folder cannot be resolved
+                # (custom root offline, no persisted component) while folder
+                # mappings still exist — fail closed: nothing is retired and
+                # nothing is deleted, the ownership knowledge stays.
+                failed.append(("<unresolved>", "ROOT_UNAVAILABLE"))
+            elif cat_dir is not None:
+                for folder_name in set(trash_targets):
+                    if not folder_name:
+                        continue
+                    d = os.path.join(root, cat_dir, folder_name)
+                    status = self._delete_file_container(cat, d)
+                    if status in ("MOVED_TO_TRASH", "EMPTY_REMOVED",
+                                  "CONFIRMED_ABSENT"):
+                        retired.append(d)
+                    else:
+                        failed.append((d, status))
             from fastprompter.core.logging import logger as _lg
             if not retired and not failed:
                 _lg.info("category delete: no file containers found for %r "
@@ -8699,15 +9138,31 @@ class FastPrompter(
                 # retirement could not be secured must not be removed —
                 # dropping the logical state would silently discard the
                 # ownership knowledge that says where the surviving assets
-                # live. Nothing is removed: the tab stays, the per-category
-                # maps stay (assets recoverable), and the just-pushed undo
-                # snapshot is popped so Ctrl+Z does not replay a deletion
-                # that never happened. Folders already retired stay in _trash
-                # with their log entries; the maps still reference them, so
-                # the next undo touching this category brings them back.
+                # live. Folders already retired are ROLLED BACK out of
+                # _trash first (P0-4); entries that cannot be restored stay
+                # in the log and maps so recovery still knows where the
+                # assets are. Nothing is removed: the tab stays, the
+                # just-pushed undo snapshot is popped so Ctrl+Z does not
+                # replay a deletion that never happened.
                 _lg.warning("category delete ABORTED: %d folder(s) not "
-                            "retired (%s) for %r; nothing was removed",
-                            len(failed), failed, cat)
+                            "retired (%s) for %r; rolling back %d already "
+                            "retired folder(s)",
+                            len(failed), failed, cat, len(retired))
+                stuck = 0
+                if retired:
+                    try:
+                        _restored, stuck = self._rollback_category_retirements(
+                            os.path.join(root, cat_dir) if cat_dir else None)
+                    except Exception:
+                        _lg.exception("category rollback itself failed for "
+                                      "%r; its log entries and maps were "
+                                      "kept", cat)
+                        stuck = len(retired)
+                if stuck:
+                    _lg.error("category delete ABORTED with %d folder(s) "
+                              "still in _trash for %r; their log entries "
+                              "and maps were kept so recovery still knows "
+                              "where the assets are", stuck, cat)
                 if pushed is not None and self.data_undo_stack and \
                         self.data_undo_stack[-1] is pushed:
                     self.data_undo_stack.pop()
@@ -8715,23 +9170,99 @@ class FastPrompter(
                 return
 
             # 2. Cleanup all category state from DB (AFTER retirement resolved
-            # the physical paths, so nothing is left half-retired)
-            self.data["cats_order"].pop(idx)
-            self.data.get("categories", {}).pop(cat, None)
+            # the physical paths, so nothing is left half-retired). A failure
+            # here — between the physical retirement and the state removal —
+            # rolls the ALREADY-RETIRED folders back out of _trash instead of
+            # leaving them stranded: the undo snapshot can then restore the
+            # category with its files already home (P0-8).
+            try:
+                # P0-3: remove by IDENTITY, never by combo row — the row and
+                # cats_order diverge when categories are hidden, and pop(idx)
+                # used to delete the WRONG project.
+                self.data["cats_order"].remove(cat)
+                self.data.get("categories", {}).pop(cat, None)
 
-            _all_keys = list(self._PER_CATEGORY_STATE_KEYS)
-            for key in _all_keys:
-                self.data.get(key, {}).pop(cat, None)
-            # the physical-dir mapping is dropped ONLY when every folder was
-            # retired (or confirmed absent); a failed retirement keeps it so
-            # recovery still knows where the assets are
-            if not failed:
-                self.data.get("category_file_dirs", {}).pop(cat, None)
+                _all_keys = list(self._PER_CATEGORY_STATE_KEYS)
+                for key in _all_keys:
+                    self.data.get(key, {}).pop(cat, None)
+                # the physical-dir mapping is dropped ONLY when every folder was
+                # retired (or confirmed absent); a failed retirement keeps it so
+                # recovery still knows where the assets are
+                if not failed:
+                    self.data.get("category_file_dirs", {}).pop(cat, None)
 
-            if cat in self.current_pages:
-                del self.current_pages[cat]
-            self.cat_combo.removeItem(idx)
-            self.mark_dirty()
+                if cat in self.current_pages:
+                    del self.current_pages[cat]
+                self.cat_combo.removeItem(idx)
+                self.mark_dirty()
+            except Exception:
+                from fastprompter.core.logging import logger as _lg
+                _lg.exception(
+                    "category delete of %r failed during state cleanup; "
+                    "rolling back the physical retirement of its folders",
+                    cat)
+                try:
+                    # The rollback matches log entries by ABSOLUTE prefix, so
+                    # the component must be joined to the root before the
+                    # call; the bare component never matched anything and the
+                    # rollback silently did nothing (P0-8).
+                    self._rollback_category_retirements(
+                        os.path.join(root, cat_dir) if cat_dir else None)
+                except Exception:
+                    _lg.exception("category rollback itself failed for %r",
+                                  cat)
+                raise
+
+    def _rollback_category_retirements(self, cat_dir):
+        """P0-8: move every _trash entry that belongs to a category's physical
+        directory back to its original path, when that category's deletion
+        failed after the folders were retired.
+
+        Returns (restored, stuck). Entries whose trash copy is gone and whose
+        original is still missing — or whose restore raises — STAY in the log
+        (recovery still knows where the assets were) and the rollback is
+        logged as partial."""
+        log = self.data.get("folder_trash_log", [])
+        if not log or not cat_dir:
+            return 0, 0
+        root = os.path.abspath(cat_dir).rstrip("\\/") + os.sep
+        remaining, restored, stuck = [], 0, 0
+        for original, trashed in log:
+            if not os.path.abspath(original).startswith(root):
+                remaining.append((original, trashed))
+                continue
+            if not os.path.isdir(trashed):
+                if os.path.exists(original):
+                    restored += 1          # already back; drop the entry
+                    continue
+                stuck += 1                 # trash copy vanished; keep entry
+                remaining.append((original, trashed))
+                continue
+            if os.path.exists(original):
+                restored += 1              # already in place; drop the entry
+                continue
+            try:
+                os.makedirs(os.path.dirname(original), exist_ok=True)
+                os.rename(trashed, original)
+                restored += 1
+            except OSError as e:
+                from fastprompter.core.logging import logger
+                logger.warning("category rollback: could not restore %s -> "
+                               "%s: %s", trashed, original, e)
+                stuck += 1
+                remaining.append((original, trashed))
+        if stuck:
+            from fastprompter.core.logging import logger
+            logger.error("category rollback PARTIAL: %d folder(s) restored, "
+                         "%d still in _trash (%s); their log entries were "
+                         "kept", restored, stuck, cat_dir)
+        elif restored:
+            from fastprompter.core.logging import logger
+            logger.info("category rollback: %d folder(s) moved back from "
+                        "_trash", restored)
+        self.data["folder_trash_log"] = remaining
+        self.mark_dirty()
+        return restored, stuck
 
     def _wheel_switch_tab(self, direction):
         """Mouse wheel over the tab bar switches projects."""
@@ -8778,7 +9309,7 @@ class FastPrompter(
         finally:
             combo.blockSignals(False)
         self._rebuild_cat_numbox()
-        self.on_tab_changed(combo.currentIndex())
+        self.on_tab_changed(combo.currentIndex(), prev_identity=keep)
 
     def open_projects_manager(self):
         """Check/uncheck which projects appear in the combo, and reorder them."""
@@ -8961,14 +9492,21 @@ class FastPrompter(
             return None
         return cats[idx] if 0 <= idx < len(cats) else None
 
-    def on_tab_changed(self, index):
+    def on_tab_changed(self, index, prev_identity=None):
         if index < 0:
             return
         # Record where the project being LEFT was, before the aliases move.
         # Not get_current_category(): the combo has already been set to the new
         # row by the time this signal fires, so that would file the outgoing
-        # slot under the incoming project. last_tab_idx is still the old row.
-        prev_cat = self._cat_at(self.data.get("last_tab_idx", -1))
+        # slot under the incoming project. last_tab_idx is still the old row —
+        # unless the caller knows the old project by IDENTITY: after a combo
+        # rebuild the old ROW is gone, and _cat_at(last_tab_idx) would resolve
+        # a DIFFERENT project (P1-1), so rebuild_cat_combo passes the kept
+        # project's name instead.
+        if prev_identity is not None:
+            prev_cat = prev_identity
+        else:
+            prev_cat = self._cat_at(self.data.get("last_tab_idx", -1))
         if prev_cat:
             self.capture_silo_session(prev_cat)
         self.data["last_tab_idx"] = index
@@ -9275,6 +9813,39 @@ class FastPrompter(
         # or it keeps the height it had before the rows grew.
         self._position_archive_overlay()
 
+    def _rollback_file_retirement(self, rec):
+        """Undo a single folder retirement recorded by ``_trim_archive``.
+
+        Only a MOVED_TO_TRASH move needs reversing (EMPTY_REMOVED /
+        CONFIRMED_ABSENT touched nothing). The folder is moved back from its
+        trash location to the original path and the matching recovery-log
+        entry is dropped, so a failed trim leaves the archive exactly as it
+        found it. Rollback failure is logged and the recovery record is kept,
+        never swallowed."""
+        idx, folder, trash_entry, retire = rec
+        if retire != "MOVED_TO_TRASH" or not trash_entry:
+            return
+        original, dest = trash_entry
+        from fastprompter.core.logging import logger
+        try:
+            import os
+            if os.path.isdir(dest):
+                from fastprompter.ui.file_container import (
+                    _move_into_container,
+                    capture_resolved_root,
+                )
+                root = self._files_root()
+                _move_into_container(dest, original, root, capture_resolved_root(root))
+        except Exception:
+            logger.exception("archive trim rollback FAILED moving %s back to %s",
+                             dest, original)
+        log = self.data.get("folder_trash_log", [])
+        if trash_entry in log:
+            try:
+                log.remove(trash_entry)
+            except ValueError:
+                pass
+
     def _trim_archive(self):
         entries = self.data.get("archive_temp_presets", [])
         if not entries:
@@ -9283,6 +9854,44 @@ class FastPrompter(
         empty_indices = [i for i, item in enumerate(entries) if not item.strip()]
         if not empty_indices:
             return
+
+        # One trim == one retirement transaction. Retire EVERY empty slot's
+        # folder first, but DO NOT drop the slot's mappings yet. Record each
+        # successful original->trash action so a later failure can roll the
+        # prior ones back. Only after ALL retirements succeed do we drop the
+        # slots and their mappings (P0-3).
+        retired = []  # (idx, folder, trash_entry_or_None, status)
+        for idx in empty_indices:
+            folder = self._silo_folder_dir(idx, is_archive=True)
+            if folder is None:
+                retire = "ROOT_UNAVAILABLE"
+                trash_entry = None
+            else:
+                log_before = len(self.data.get("folder_trash_log", []))
+                retire = self._delete_file_container(
+                    self.get_current_category(), folder)
+                trash_entry = None
+                if retire == "MOVED_TO_TRASH":
+                    log = self.data.get("folder_trash_log", [])
+                    if len(log) > log_before:
+                        trash_entry = log[-1]
+                        # rename for clarity in the record
+                        trash_entry = (log[-1][0], log[-1][1])
+            if retire in ("FAILED", "ROOT_UNAVAILABLE"):
+                for rec in reversed(retired):
+                    self._rollback_file_retirement(rec)
+                from fastprompter.core.logging import logger
+                logger.warning(
+                    "archive trim ABORTED at slot %d: folder retirement %s; "
+                    "rolled back %d prior move(s), no archive slot dropped",
+                    idx, retire, len(retired))
+                return
+            retired.append((idx, folder, trash_entry, retire))
+
+        # all retired cleanly: now drop the slots, mappings and docs together
+        for idx, _f, _t, _r in retired:
+            self.data.get("archive_silo_folders", {}).pop(str(idx), None)
+            self.data.get("archive_project_paths", {}).pop(str(idx), None)
 
         for idx in reversed(empty_indices):
             self.drop_silo_state(idx, is_archive=True)
@@ -9671,6 +10280,13 @@ class FastPrompter(
             self.data["cats_order"].append("Trash")
             self.cat_combo.addItem("Trash", "Trash")
         idx = self.combo_index_for_category("Trash")
+        if idx < 0:
+            # P1-1: Trash is hidden — it was just appended to cats_order but
+            # the combo only shows visible projects. Rebuild with Trash kept.
+            self.rebuild_cat_combo(keep="Trash")
+            idx = self.combo_index_for_category("Trash")
+        if idx < 0:
+            return
         if self.cat_combo.currentIndex() == idx:
             # We are already in Trash; toggle back
             prev_idx = getattr(self, "_pre_trash_cat_idx", 0)
@@ -9923,13 +10539,44 @@ class FastPrompter(
         Goes through _remap_silo_indices so colours, pins, ticks, children,
         folders, project paths and saved cursors all move with their silos
         instead of being left on the slot numbers they used to occupy.
+
+        Honours the single 100-slot capacity boundary: if the space is already
+        full of content the insert is refused (returns None) before anything is
+        mutated, so no silo is silently evicted and nothing is lost. A blank
+        slot, if one exists, is reused in place rather than growing the list
+        past the persistence contract.
         """
         from PyQt6.QtGui import QTextDocument
 
         presets = self.data["temp_presets"]
+        self.capture_silo_state()
+
+        blank = next((i for i, p in enumerate(presets) if not (p or "").strip()), None)
+        if len(presets) >= self.MAX_SILOS_PER_CATEGORY and blank is None:
+            # full of content: refuse BEFORE mutating anything; lose nothing
+            return None
+        if blank is not None and len(presets) >= self.MAX_SILOS_PER_CATEGORY:
+            # reuse the blank instead of exceeding the 100-slot contract
+            self.add_data_undo_state("Insert silo")
+            presets[blank] = text
+            doc = QTextDocument()
+            doc.setDefaultFont(self.text_area.font())
+            self._set_plain_text_clean(doc, text)
+            while len(self.silo_docs) <= blank:
+                spare = QTextDocument()
+                spare.setDefaultFont(self.text_area.font())
+                self.silo_docs.append(spare)
+            if self.silo_docs[blank] is None:
+                self.silo_docs[blank] = doc
+            else:
+                self._set_plain_text_clean(self.silo_docs[blank], text)
+            if getattr(self, "active_temp_slot", 0) >= blank:
+                self.active_temp_slot += 1
+            self.mark_dirty()
+            return blank
+
         pos = max(0, min(pos, len(presets)))
 
-        self.capture_silo_state()
         self.add_data_undo_state("Insert silo")
 
         # shift every index at or after pos BEFORE the new slot exists
@@ -9961,6 +10608,8 @@ class FastPrompter(
         src_dir = self._silo_folder_dir(idx)
         text = presets[idx]
         new_idx = self._insert_silo_at(idx + 1, text)
+        if new_idx is None:
+            return  # capacity refused: lose nothing
 
         # carry the visual identity across, but NOT the pin/tick state —
         # a copy shouldn't silently inherit "pinned" or "done"
@@ -10049,6 +10698,8 @@ class FastPrompter(
             # instead of silently making a silo that cannot be seen
             return
         new_idx = self._insert_silo_at(idx + 1, "")
+        if new_idx is None:
+            return  # capacity refused: lose nothing
 
         cmap = self.data.setdefault("silo_children", {})
         if isinstance(cmap, dict):
@@ -10103,7 +10754,13 @@ class FastPrompter(
 
     def batch_delete_selected_silos(self):
         """Trash every selected silo (recoverable). Deletes high index first
-        so the earlier indices stay valid as the list shrinks."""
+        so the earlier indices stay valid as the list shrinks.
+
+        A per-item failure (a silo whose files cannot be retired) no longer
+        silently leaves the batch half-applied: each result is checked, failed
+        silos are kept selected/owned, and a PARTIAL outcome is reported
+        instead of pretending completion. One pre-batch undo snapshot keeps
+        the successful subset recoverable (P1-6)."""
         from fastprompter.core.logging import logger
         sel = sorted(self._silo_sel(), reverse=True)
         if not sel:
@@ -10115,13 +10772,26 @@ class FastPrompter(
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         if resp != QMessageBox.StandardButton.Yes:
             return
+        # single snapshot: the successful subset must stay recoverable
         self.add_data_undo_state("Batch delete silos")
+        failures = []
         for i in sel:
             try:
-                self.trash_silo(i, is_archive=False, skip_undo=True)
+                ok = self.trash_silo(i, is_archive=False, skip_undo=True)
             except Exception:
-                logger.debug("batch delete failed for silo %s", i)
-        self._silo_selection = set()
+                ok = False
+                logger.debug("batch delete raised for silo %s", i)
+            if not ok:
+                failures.append(i)
+        # preserve the failed/unprocessed silos in the selection so they stay
+        # owned and can be retried; only the successfully deleted ones leave.
+        self._silo_selection = set(failures)
+        if failures:
+            from fastprompter.core.logging import logger as _lg
+            _lg.warning(
+                "batch delete PARTIAL: %d of %d silo(s) not deleted "
+                "(assets could not be retired); selection preserved for %s",
+                len(failures), len(sel), failures)
         self.refresh_temp_presets()
 
     @staticmethod
@@ -10466,16 +11136,106 @@ class FastPrompter(
 
 
 
+    def _move_silo_identity(self, src_cat, src_idx, dst_cat, dst_idx, is_archive_src):
+        """Move every identity-owned, slot-keyed store for ONE silo from
+        (src_cat, src_idx[/archive namespace]) to (dst_cat, dst_idx).
+
+        Identity-owned means the data describes THIS silo wherever it lives:
+        its files folder, project link, watcher queue, type, last-edited
+        recency and saved cursor/view state (plus colour and done-tick).
+        Positional layout (parent/children, collapse, pin-gap) is intentionally
+        NOT moved — it is source-local and only an explicit re-parent would
+        transfer it. Archive->normal translation rewrites the ``aN`` queue and
+        view keys to the normal ``N`` / ``sN`` form.
+
+        All moves are in-memory ``pop``/``set`` pairs; on failure the caller
+        restores via the undo snapshot it already took, so this need not roll
+        back per-key. Returned True if at least the text moved."""
+        skey = str(src_idx)
+        dkey = str(dst_idx)
+
+        # files folder + project path: per-category *_all stores
+        if is_archive_src:
+            src_folders = self.data.setdefault("archive_silo_folders_all", {})
+            src_paths = self.data.setdefault("archive_project_paths_all", {})
+        else:
+            src_folders = self.data.setdefault("silo_folders_all", {})
+            src_paths = self.data.setdefault("silo_project_paths_all", {})
+        dst_folders = self.data.setdefault("silo_folders_all", {})
+        dst_paths = self.data.setdefault("silo_project_paths_all", {})
+        sfold = src_folders.get(src_cat)
+        dfold = dst_folders.setdefault(dst_cat, {})
+        if isinstance(sfold, dict) and isinstance(dfold, dict) and skey in sfold:
+            dfold[dkey] = sfold.pop(skey)
+        spath = src_paths.get(src_cat)
+        dpath = dst_paths.setdefault(dst_cat, {})
+        if isinstance(spath, dict) and isinstance(dpath, dict) and skey in spath:
+            dpath[dkey] = spath.pop(skey)
+
+        # colour + type: per-category *_all stores
+        for store in ("silo_colors_all", "silo_types_all"):
+            sm = self.data.get(store)
+            if not isinstance(sm, dict):
+                continue
+            ssm = sm.get(src_cat)
+            ddm = sm.setdefault(dst_cat, {})
+            if isinstance(ssm, dict) and isinstance(ddm, dict) and skey in ssm:
+                ddm[dkey] = ssm.pop(skey)
+
+        # last-edited recency: per-category int-keyed store
+        le = self.data.get("silo_last_edited_all")
+        if isinstance(le, dict):
+            sle = le.get(src_cat)
+            dle = le.setdefault(dst_cat, {})
+            if isinstance(sle, dict) and isinstance(dle, dict) and src_idx in sle:
+                dle[dst_idx] = sle.pop(src_idx)
+
+        # watcher queue: GLOBAL dict, dual namespace. Archive source owns "aN",
+        # normal destination owns "N", so translate the key on the way over.
+        queues = self.data.get("watcher_queues")
+        if isinstance(queues, dict):
+            qsrc = ("a" + skey) if is_archive_src else skey
+            if qsrc in queues:
+                queues[dkey] = queues.pop(qsrc)
+
+        # saved silo view/cursor state: per-category "sN"/"aN" keys
+        vstore = self.data.get("silo_view_state_all")
+        if isinstance(vstore, dict):
+            sv = vstore.get(src_cat)
+            dv = vstore.setdefault(dst_cat, {})
+            if isinstance(sv, dict) and isinstance(dv, dict):
+                vsrc = ("a" + skey) if is_archive_src else ("s" + skey)
+                vdst = "s" + dkey
+                if vsrc in sv:
+                    dv[vdst] = sv.pop(vsrc)
+
+        # done-tick: per-category membership list (identity, not layout)
+        tstore = self.data.get("silo_ticked_all")
+        if isinstance(tstore, dict):
+            st = tstore.get(src_cat)
+            dt = tstore.setdefault(dst_cat, [])
+            if isinstance(st, list) and src_idx in st:
+                st.remove(src_idx)
+                if isinstance(dt, list) and dst_idx not in dt:
+                    dt.append(dst_idx)
+
     def transfer_silo_to_project(self, idx, target_cat, is_archive=False):
         """Move a silo into another project's SILO list (T-595).
 
         The old 'Transfer to Project' menu entry called _transfer_to_snippet,
         so the silo landed in the target project's SNIPPETS instead: it
         vanished from the silo list and looked deleted. This moves silo to
-        silo, and carries the colour/tick across so the destination looks
-        like the source did."""
-        presets = self.data["archive_temp_presets"] if is_archive else self.data["temp_presets"]
-        if not (0 <= idx < len(presets)) or not str(presets[idx]).strip():
+        silo, and carries the silo's COMPLETE identity (files folder, project
+        link, watcher queue, type, recency, saved cursor/view state, colour
+        and done-tick) across the per-category stores, so the destination
+        owns everything the source did and the emptied source owns nothing.
+
+        The destination slot is reserved FIRST and the capacity boundary is
+        checked BEFORE any source mutation, so a full destination refuses with
+        nothing lost and no partial transfer.
+        """
+        src_presets = self.data["archive_temp_presets"] if is_archive else self.data["temp_presets"]
+        if not (0 <= idx < len(src_presets)) or not str(src_presets[idx]).strip():
             return False
         if target_cat not in self.data.get("categories", {}):
             return False
@@ -10486,35 +11246,32 @@ class FastPrompter(
         dest = self.data.setdefault("temp_presets_all", {}).setdefault(target_cat, [])
         if not isinstance(dest, list):
             return False
-        text = presets[idx]
-        self.add_data_undo_state("Transfer silo to project")
-        # reuse a blank row if there is one, otherwise grow the list
+
+        # canonical capacity boundary: refuse BEFORE touching the source
+        if self._silo_at_capacity(False) and not any((p or "").strip() for p in dest):
+            return False
+        if len(dest) >= self.MAX_SILOS_PER_CATEGORY and "" not in dest:
+            return False
+
+        text = src_presets[idx]
+
+        # reserve the destination slot (reuse a blank, else grow — bounded)
         try:
             dslot = dest.index("")
         except ValueError:
+            if len(dest) >= self.MAX_SILOS_PER_CATEGORY:
+                return False
             dest.append("")
             dslot = len(dest) - 1
         dest[dslot] = text
 
-        # carry the colour box over, and take it off the row being emptied —
-        # leaving it behind is what made colours "disappear" on transfer
-        if not is_archive:
-            src_colors = self.data.get("silo_colors")
-            if isinstance(src_colors, dict):
-                moved = src_colors.pop(str(idx), "")
-                if moved:
-                    dst_colors = self.data.setdefault("silo_colors_all", {}).setdefault(target_cat, {})
-                    if isinstance(dst_colors, dict):
-                        dst_colors[str(dslot)] = moved
-            ticked = self.data.get("silo_ticked")
-            if isinstance(ticked, list) and idx in ticked:
-                ticked.remove(idx)
-                dst_t = self.data.setdefault("silo_ticked_all", {}).setdefault(target_cat, [])
-                if isinstance(dst_t, list) and dslot not in dst_t:
-                    dst_t.append(dslot)
+        self.add_data_undo_state("Transfer silo to project")
 
-        presets[idx] = ""
-        # the emptied row must not keep pointing at anything
+        # move the silo's full identity across the per-category stores
+        self._move_silo_identity(cur_cat, idx, target_cat, dslot, is_archive)
+
+        # empty the source row and drop its source-local positional membership
+        src_presets[idx] = ""
         for key in ("pinned_silos", "silo_collapsed"):
             lst = self.data.get(key)
             if isinstance(lst, list) and idx in lst:
@@ -10677,9 +11434,17 @@ class FastPrompter(
     def unnest_silo(self, idx):
         """Promote a child back to top level (dragging it out does this)."""
         changed = False
-        for kids in self._children_map().values():
+        cmap = self._children_map()
+        if not isinstance(cmap, dict):
+            return False
+        for parent, kids in list(cmap.items()):
             if idx in kids:
                 kids.remove(idx)
+                if not kids:
+                    # a parent whose last child left must not linger as an
+                    # empty key: the index remap then carries the corpse to
+                    # the wrong slot and exact-equality readers see ghosts
+                    del cmap[parent]
                 changed = True
         if changed:
             self.mark_dirty()
@@ -10795,24 +11560,44 @@ class FastPrompter(
         ):
             self.del_silo(idx)
             return
-        self.add_data_undo_state("Clear silo")
+        pushed_undo = self.add_data_undo_state("Clear silo")
         self.play_sound("clear")
 
         if 0 <= idx < len(presets):
             self._trash_silo_content(presets[idx])
             if hasattr(self, "_delete_file_container"):
                 folder = self._silo_folder_dir(idx, is_archive=is_archive)
-                retire = self._delete_file_container(self.get_current_category(), folder)
+                if folder is None:
+                    retire = "ROOT_UNAVAILABLE"
+                else:
+                    retire = self._delete_file_container(
+                        self.get_current_category(), folder)
+                if retire in ("FAILED", "ROOT_UNAVAILABLE"):
+                    # P0-7: ABORT — the slot is NOT wiped. Dropping the
+                    # content while the physical assets could not be secured
+                    # would leave the folder map pointing at assets whose
+                    # logical owner is gone. The just-pushed undo snapshot is
+                    # popped so Ctrl+Z cannot replay a clear that never
+                    # happened.
+                    from fastprompter.core.logging import logger as _lg
+                    _lg.warning("silo clear ABORTED (slot %d, archive=%s): "
+                                "folder retirement %s; the slot was NOT "
+                                "wiped", idx, is_archive, retire)
+                    if self.data_undo_stack and \
+                            self.data_undo_stack[-1] is pushed_undo:
+                        self.data_undo_stack.pop()
+                    self._save_undo_state()
+                    return
                 # P1-9: drop the ownership mapping ONLY for a confirmed
                 # retirement; FAILED / ROOT_UNAVAILABLE keep it so the assets
-                # stay recoverable and the map never lies.
-                if retire in ("MOVED_TO_TRASH", "EMPTY_REMOVED", "CONFIRMED_ABSENT"):
-                    if not is_archive:
-                        self.data.get("silo_folders", {}).pop(str(idx), None)
-                        self.data.get("silo_project_paths", {}).pop(str(idx), None)
-                    else:
-                        self.data.get("archive_silo_folders", {}).pop(str(idx), None)
-                        self.data.get("archive_project_paths", {}).pop(str(idx), None)
+                # stay recoverable and the map never lies. By the time we are
+                # here the retirement is confirmed, so the maps are dropped.
+                if not is_archive:
+                    self.data.get("silo_folders", {}).pop(str(idx), None)
+                    self.data.get("silo_project_paths", {}).pop(str(idx), None)
+                else:
+                    self.data.get("archive_silo_folders", {}).pop(str(idx), None)
+                    self.data.get("archive_project_paths", {}).pop(str(idx), None)
 
         if is_archive:
             self.data["archive_temp_presets"][idx] = ""
@@ -11312,7 +12097,18 @@ class FastPrompter(
         except Exception:
             from fastprompter.core.logging import logger
             logger.debug("hide_and_save: failed to capture silo view state")
-        self.save_data_to_db(force=True)
+        ok = self.save_data_to_db(force=True)
+        if not ok:
+            # P1: a known failed autosave must NOT hide the window and silently
+            # drop the user's data. Keep it visible/active and report the
+            # failure so the dirty state stays retryable.
+            from fastprompter.core.logging import logger as _log
+            _log.error("hide_and_save: autosave failed; window kept visible so "
+                       "the change stays retryable")
+            self.show()
+            self.raise_()
+            self.activateWindow()
+            return
         if getattr(self, "is_locked", False):
             self.show()
             self.raise_()
@@ -11321,28 +12117,51 @@ class FastPrompter(
         self.hide()
 
     def quit_app(self):
-        self.save_data_to_db(force=True)
-        try:
-            if hasattr(self, "ipc"):
-                self.ipc.close()
-        except Exception:
-            pass
-        try:
-            if hasattr(self, "conn") and self.conn:
-                self.conn.close()
-        except Exception:
-            pass
-        # Null out every reference so the closeEvent save triggered by
-        # QApplication.quit() doesn't touch the closed connection.
-        self.conn = None
-        if hasattr(self, "state"):
-            self.state.conn = None
+        """Request process quit — the SINGLE canonical quit entry point.
+
+        P0-12/P0-6: everything that must land in the FINAL save is settled
+        HERE, while the event loop is still alive (watcher quiesce + final
+        DB save), and only a clean result calls QApplication.quit(). A
+        failed final save refuses the quit: the window stays open instead of
+        closing with unsaved state and releasing the ownership lock.
+        ``_shutdown_application`` still owns worker retirement, SQLite close
+        and the mutex release; closeEvent skips the final save when this
+        method already performed it.
+        """
         try:
             if hasattr(self, "tray_icon"):
                 self.tray_icon.hide()
         except Exception:
             pass
+        if not self._pre_quit_logical_finalize():
+            from fastprompter.core.logging import logger as _log
+            _log.error("Quit refused: the final state save failed; the "
+                       "window stays open so the data can still be saved")
+            return
         QApplication.quit()
+
+    def _pre_quit_logical_finalize(self):
+        """Settle watcher + DB BEFORE the event loop dies (P0-6).
+
+        The old close path saved after QApplication.quit(): closeEvent runs
+        when the event loop is gone, so a watcher send still in the air
+        could complete on the worker thread but never apply its queued GUI
+        result, and the final save raced it. Here the watcher is quiesced
+        first (its queue state is persisted), then the DB save runs exactly
+        once. Returns True only when the final state is safely on disk.
+        """
+        if getattr(self, "_logical_finalized", False):
+            return True
+        try:
+            if hasattr(self, "_watcher_begin_quiesce"):
+                self._watcher_begin_quiesce()
+        except Exception:
+            from fastprompter.core.logging import logger as _log
+            _log.exception("watcher quiesce failed during quit; continuing")
+        ok = bool(self.save_data_to_db(force=True))
+        if ok:
+            self._logical_finalized = True
+        return ok
 
 
 _QT_MESSAGE_HANDLER = None
@@ -11528,14 +12347,34 @@ def _shutdown_application(window, app, lock):
 
     clean = True
 
-    # closeEvent performs final state capture, final DB commit, watcher stop,
-    # and final per-window Sync handling while the writer mutex is held.
+    # closeEvent performs the final state capture and the final DB commit
+    # while the writer mutex is held. It deliberately does NOT retire
+    # workers (P0-11): a plain window close must leave the resident process
+    # usable, and the single owner of worker retirement is THIS function.
     try:
         window.close()
-        if getattr(window, "_close_workers_clean", True) is False:
-            clean = False
     except Exception:
         _log.exception("application final state capture failed")
+        clean = False
+
+    # Retire the window's own workers here and ONLY here, after the final
+    # save: the Sync flush captures the newest committed snapshot, and the
+    # watcher worker is stopped exactly once per process.
+    try:
+        watcher_shutdown = getattr(window, "_watcher_shutdown", None)
+        if watcher_shutdown is not None and watcher_shutdown() is False:
+            clean = False
+    except Exception:
+        _log.exception("watcher shutdown FAILED")
+        clean = False
+    try:
+        sync_shutdown = getattr(window, "_sync_shutdown", None)
+        if sync_shutdown is not None:
+            sync_shutdown()
+    except Exception:
+        _log.exception("Sync final flush FAILED")
+        clean = False
+    if getattr(window, "_close_workers_clean", True) is False:
         clean = False
 
     # Retire IPC and live SQLite on every event-loop exit, not only Quit-menu.
@@ -11562,7 +12401,15 @@ def _shutdown_application(window, app, lock):
 
     try:
         if getattr(window, "_wait_for_undo_saves", lambda: True)() is False:
-            _log.error("undo writer shutdown TIMED_OUT")
+            # P1-8: a failed drain is either a writer still alive after the
+            # deadline OR a tracked writer that reported a publication
+            # failure — the two have different meanings, so they get
+            # different messages.
+            if getattr(window, "_undo_save_failed", False):
+                _log.error("undo PERSISTENCE FAILED: a tracked undo writer "
+                           "reported a publication failure")
+            else:
+                _log.error("undo writer shutdown TIMED_OUT")
             clean = False
     except Exception:
         _log.exception("undo writer shutdown FAILED")
@@ -11573,8 +12420,12 @@ def _shutdown_application(window, app, lock):
         ("portable backup", backup_worker_shutdown_global),
     ]
     try:
-        from fastprompter.ui.file_container import container_worker_shutdown_global
+        from fastprompter.ui.file_container import (
+            container_worker_shutdown_global,
+            export_worker_shutdown_global,
+        )
         shutdowns.append(("File Container", container_worker_shutdown_global))
+        shutdowns.append(("File Container Export", export_worker_shutdown_global))
     except Exception:
         _log.exception("File Container shutdown import FAILED")
         clean = False

@@ -85,9 +85,9 @@ def test_backup_worker_and_completion_have_explicit_thread_owners(
     real_export = pb._do_export
     real_complete = m._backup_on_done
 
-    def record_export(snapshot):
+    def record_export(snapshot, profile_id=1):
         worker_threads.append(QThread.currentThread())
-        return real_export(snapshot)
+        return real_export(snapshot, profile_id=profile_id)
 
     def record_completion(*args):
         completion_threads.append(QThread.currentThread())
@@ -110,13 +110,13 @@ def test_real_completion_drains_newest_coalesced_backup(
     exported = []
     real_export = pb._do_export
 
-    def blocking_export(snapshot):
+    def blocking_export(snapshot, profile_id=1):
         text = snapshot["temp_presets_all"]["A"][0]
         exported.append(text)
         if text == "generation A":
             started.set()
             assert release.wait(5.0), "test did not release generation A"
-        return real_export(snapshot)
+        return real_export(snapshot, profile_id=profile_id)
 
     monkeypatch.setattr(pb, "_do_export", blocking_export)
 
@@ -145,7 +145,7 @@ def test_failed_newest_generation_is_immediately_retryable(
     exported = []
     real_export = pb._do_export
 
-    def export_with_newest_failure(snapshot):
+    def export_with_newest_failure(snapshot, profile_id=1):
         text = snapshot["temp_presets_all"]["A"][0]
         exported.append(text)
         if text == "generation A":
@@ -153,7 +153,7 @@ def test_failed_newest_generation_is_immediately_retryable(
             assert release.wait(5.0), "test did not release generation A"
         if text == "generation B":
             raise OSError("disk full")
-        return real_export(snapshot)
+        return real_export(snapshot, profile_id=profile_id)
 
     monkeypatch.setattr(pb, "_do_export", export_with_newest_failure)
     monkeypatch.setattr(pb, "_BACKUP_THROTTLE", 120)
@@ -183,10 +183,10 @@ def test_clean_busy_shutdown_allows_worker_recreation(
     started = threading.Event()
     real_export = pb._do_export
 
-    def slow_export(snapshot):
+    def slow_export(snapshot, profile_id=1):
         started.set()
         time.sleep(0.1)
-        return real_export(snapshot)
+        return real_export(snapshot, profile_id=profile_id)
 
     monkeypatch.setattr(pb, "_do_export", slow_export)
     pb.run_portable_backup(_data("before shutdown"))

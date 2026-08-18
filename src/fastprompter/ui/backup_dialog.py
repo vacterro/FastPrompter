@@ -70,7 +70,16 @@ class BackupDialog(QDialog):
         self.setStyleSheet(self.main_win.styleSheet())
 
     def backup_database(self):
-        self.main_win.save_data_to_db(force=True)
+        # P0: the manual backup must capture the AUTHORITATIVE current state.
+        # If the SQLite save fails, abort before opening/publishing any
+        # destination — otherwise the backup would omit the visible unsaved
+        # edits while the UI reports success. No destination is created.
+        if not self.main_win.save_data_to_db(force=True):
+            QMessageBox.critical(
+                self, tr("Error", self.lang),
+                tr("Cannot back up: the current state could not be saved to "
+                   "the database.", self.lang))
+            return
         path, _ = QFileDialog.getSaveFileName(self, tr("Backup Database", self.lang), "prompts_backup.db", "SQLite DB (*.db)")
         if not path:
             return

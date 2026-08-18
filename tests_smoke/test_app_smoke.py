@@ -491,6 +491,70 @@ def _type_block(win, text):
     win.text_area.setTextCursor(cur)
 
 
+def _pump_paste(ta, mime):
+    """insertFromMimeData defers the actual insertion to the event loop
+    (QTimer.singleShot(0) so a filesystem probe never freezes the GUI), so
+    the test must let the deferred paste land before asserting."""
+    import time
+
+    ta.insertFromMimeData(mime)
+    for _ in range(5):
+        QApplication.processEvents()
+        time.sleep(0.02)
+
+
+def _wait_files_button_tooltip(win, needle, timeout=4.0):
+    """The header Files button's summary tooltip loads on a QRunnable."""
+    import time
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        QApplication.processEvents()
+        tip = win.btn_files.toolTip()
+        if needle in tip:
+            return tip
+        time.sleep(0.05)
+    return win.btn_files.toolTip()
+
+
+def _wait_silo_count(win, idx, expected, timeout=4.0, is_archive=False):
+    """_silo_file_count runs its count on a QRunnable and caches the result.
+
+    The tests write files straight into the folder, which the app's own
+    mutation paths would invalidate; pop the stale cache AND the pending flag
+    first (a pending request returns 0 without re-counting), then poll.
+    """
+    import time
+
+    path = win._silo_folder_dir(idx, is_archive)
+    if hasattr(win, "_file_count_cache"):
+        win._file_count_cache.pop(path, None)
+    if hasattr(win, "_pending_file_counts"):
+        win._pending_file_counts.discard(path)
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        got = win._silo_file_count(idx, is_archive)
+        if got == expected:
+            return got
+        QApplication.processEvents()
+        time.sleep(0.05)
+    return win._silo_file_count(idx, is_archive)
+
+
+def _wait_panel_list(panel, expected, timeout=4.0):
+    """The file panel's list reloads on a QRunnable; poll it."""
+    import time
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        QApplication.processEvents()
+        got = panel.file_list.count()
+        if got == expected:
+            return got
+        time.sleep(0.05)
+    return panel.file_list.count()
+
+
 @pytest.fixture
 def undo_bed(win):
     """A silo open in the editor with an empty undo history and known gaps.
@@ -1621,20 +1685,21 @@ def test_file_container_import_export_delete(win):
     from fastprompter.ui.file_container import silo_files_dir as _sfd
     panel = FileContainerPanel(win)
     panel.open_for(_sfd(root, "Main", "# Asset Silo"))
-    assert os.path.isdir(panel.folder)
+    assert not os.path.isdir(panel.folder), "open_for must not create the folder"
 
     panel.import_paths([src])
+    assert os.path.isdir(panel.folder)
     assert os.path.isfile(os.path.join(panel.folder, "note.txt"))
-    assert panel.file_list.count() == 1
+    assert _wait_panel_list(panel, 1) == 1
     # same name again -> collision-safe copy, not overwrite
     panel.import_paths([src])
     assert os.path.isfile(os.path.join(panel.folder, "note (2).txt"))
-    assert panel.file_list.count() == 2
+    assert _wait_panel_list(panel, 2) == 2
     assert silo_file_count(root, "Main", "# Asset Silo") == 2
 
     # reopening for the same title lands in the same folder (reorder-stable)
     panel.open_for(_sfd(root, "Main", "# Asset Silo\nnew body text"))
-    assert panel.file_list.count() == 2
+    assert _wait_panel_list(panel, 2) == 2
 
     export_dir = os.path.join(_tmpdir, "files_export")
     os.makedirs(export_dir, exist_ok=True)
@@ -1970,20 +2035,20 @@ def test_undo_delete_and_clear_restore_silo_files(win):
     os.makedirs(d, exist_ok=True)
     with open(os.path.join(d, "precious.txt"), "w", encoding="utf-8") as f:
         f.write("save me")
-    assert win._silo_file_count(1) == 1
+    assert _wait_silo_count(win, 1, 1) == 1
 
     # DELETE B, then undo -> B and its file come back
     win.del_silo(1)
-    assert win._silo_file_count(1) in (0, win._silo_file_count(1))  # B gone from that slot
+    assert _wait_silo_count(win, 1, 0) == 0  # B gone from that slot
     win.undo_action()
     assert win.data["temp_presets"] == ["# A", "# B", "# C"]
-    assert win._silo_file_count(1) == 1, "files must return with the restored silo"
+    assert _wait_silo_count(win, 1, 1) == 1, "files must return with the restored silo"
 
     # CLEAR B, then undo -> file restored again
     win.clear_temp(1)
-    assert win._silo_file_count(1) == 0
+    assert _wait_silo_count(win, 1, 0) == 0
     win.undo_action()
-    assert win._silo_file_count(1) == 1
+    assert _wait_silo_count(win, 1, 1) == 1
 
     del win.__dict__["_files_root"]
 
@@ -2013,13 +2078,13 @@ def test_same_title_silos_get_separate_folders(win):
 
     dirs = [win._silo_folder_dir(i) for i in range(3)]
     assert len(set(dirs)) == 3, "identical-title silos must not share a folder"
-    assert [win._silo_file_count(i) for i in range(3)] == [1, 1, 1]
+    assert [_wait_silo_count(win, i, 1) for i in range(3)] == [1, 1, 1]
 
     # moving a silo carries its folder (index remap keeps the binding)
     b_name = os.path.basename(win._silo_folder_dir(1))
     win.move_temp_to_index(1, 2)
     assert os.path.basename(win._silo_folder_dir(2)) == b_name
-    assert [win._silo_file_count(i) for i in range(3)] == [1, 1, 1]
+    assert [_wait_silo_count(win, i, 1) for i in range(3)] == [1, 1, 1]
     del win.__dict__["_files_root"]
 
 
@@ -2085,48 +2150,60 @@ def test_silo_hierarchy_nest_collapse_promote(win):
     win.silo_docs[:] = []
     win._switch_to_slot(0, initial=True)
 
-    # nest two children under parent (no files -> no dialog)
-    win.make_silo_child(1, 0)
-    win.make_silo_child(3, 0)
-    assert win.data["silo_children"] == {0: [1, 3]}
-    # alias holds
-    cat = win.get_current_category()
-    assert win.data["silo_children_all"][cat] is win.data["silo_children"]
+    # fully hermetic files root: make_silo_child asks a MODAL "merge files?"
+    # dialog whenever the child folder holds files, and a modal exec() offscreen
+    # hangs the whole run. The real app data dir is not empty on this machine.
+    root = os.path.join(_tmpdir, "files_root_hierarchy")
+    win._files_root = lambda: root
+    merge_patch = patch.object(win, "_merge_child_files", lambda child, parent: None)
+    merge_patch.start()
+    try:
 
-    # Grandchildren ARE allowed now (1 -> 1.1 -> 1.1.1); this used to assert
-    # the old 1-level rule. The third-level refusal is covered separately by
-    # test_silo_nesting_allows_two_levels_and_renders_grandchildren.
-    win.make_silo_child(2, 1)
-    assert win.silo_parent_of(2) == 1
-    assert win.silo_depth(2) == 2
-    win.unnest_silo(2)          # back to a flat tree for the checks below
-    assert win.silo_parent_of(2) is None
+        # nest two children under parent (no files -> no dialog)
+        win.make_silo_child(1, 0)
+        win.make_silo_child(3, 0)
+        assert win.data["silo_children"] == {0: [1, 3]}
+        # alias holds
+        cat = win.get_current_category()
+        assert win.data["silo_children_all"][cat] is win.data["silo_children"]
 
-    # display order: parent, kids, then loner
-    win.refresh_temp_presets()
-    shown = [b.global_idx for b in win.silo_buttons if not b.isHidden()]
-    assert shown[:4] == [0, 1, 3, 2]
-    assert win.silo_buttons[0]._btn_collapse.text().startswith("▾")
-    assert win.silo_buttons[1].full_name.startswith("↳")
+        # Grandchildren ARE allowed now (1 -> 1.1 -> 1.1.1); this used to assert
+        # the old 1-level rule. The third-level refusal is covered separately by
+        # test_silo_nesting_allows_two_levels_and_renders_grandchildren.
+        win.make_silo_child(2, 1)
+        assert win.silo_parent_of(2) == 1
+        assert win.silo_depth(2) == 2
+        win.unnest_silo(2)          # back to a flat tree for the checks below
+        assert win.silo_parent_of(2) is None
 
-    # collapse hides children
-    win.toggle_silo_collapse(0)
-    shown = [b.global_idx for b in win.silo_buttons if not b.isHidden()]
-    assert shown[:2] == [0, 2] and 1 not in shown and 3 not in shown
-    win.toggle_silo_collapse(0)
+        # display order: parent, kids, then loner
+        win.refresh_temp_presets()
+        shown = [b.global_idx for b in win.silo_buttons if not b.isHidden()]
+        assert shown[:4] == [0, 1, 3, 2]
+        assert win.silo_buttons[0]._btn_collapse.text().startswith("▾")
+        assert win.silo_buttons[1].full_name.startswith("↳")
 
-    # deleting the parent promotes the children
-    with patch.object(_QMB, "question", return_value=_QMB.StandardButton.Yes):
-        win.del_silo(0)
-    assert win.data["silo_children"] == {}
-    assert win.data["temp_presets"] == ["childA", "loner", "childB"]
+        # collapse hides children
+        win.toggle_silo_collapse(0)
+        shown = [b.global_idx for b in win.silo_buttons if not b.isHidden()]
+        assert shown[:2] == [0, 2] and 1 not in shown and 3 not in shown
+        win.toggle_silo_collapse(0)
 
-    # unnest by hand
-    win.make_silo_child(1, 0)
-    assert win.silo_parent_of(1) == 0
-    win.unnest_silo(1)
-    assert win.silo_parent_of(1) is None
-    win.data["silo_children"].clear()
+        # deleting the parent promotes the children
+        with patch.object(_QMB, "question", return_value=_QMB.StandardButton.Yes):
+            win.del_silo(0)
+        assert win.data["silo_children"] == {}
+        assert win.data["temp_presets"] == ["childA", "loner", "childB"]
+
+        # unnest by hand
+        win.make_silo_child(1, 0)
+        assert win.silo_parent_of(1) == 0
+        win.unnest_silo(1)
+        assert win.silo_parent_of(1) is None
+        win.data["silo_children"].clear()
+    finally:
+        merge_patch.stop()
+        del win.__dict__["_files_root"]
 
 
 def test_silo_tick_toggle_persists_and_remaps(win):
@@ -2332,9 +2409,16 @@ def test_files_root_configurable_and_header_counter(win):
     os.makedirs(folder, exist_ok=True)
     with open(os.path.join(folder, "a.txt"), "w", encoding="utf-8") as f:
         f.write("x")
+    _wait_silo_count(win, 0, 1)
+    # the tooltip is a 30s-TTL cache; the app's own mutation paths invalidate
+    # it, and the test writes the file by hand, so invalidate like they do
+    if hasattr(win, "_tooltip_cache"):
+        win._tooltip_cache.pop(folder, None)
+    if hasattr(win, "_pending_tooltips"):
+        win._pending_tooltips.discard(folder)
     win._update_files_button()
     assert win.btn_files.text() == "📁1"
-    assert "1 item(s)" in win.btn_files.toolTip()
+    assert _wait_files_button_tooltip(win, "1 item(s)") is not None
     win.data["files_root"] = ""
     win._update_files_button()
 
@@ -3651,7 +3735,7 @@ def test_ctrl_v_wraps_selection_as_hyperlink(win):
 
     mime = QMimeData()
     mime.setText("https://example.com/docs")
-    ta.insertFromMimeData(mime)
+    _pump_paste(ta, mime)
     assert ta.toPlainText() == "[click here](https://example.com/docs) for docs"
 
     # no selection -> ordinary paste, unchanged
@@ -3661,7 +3745,7 @@ def test_ctrl_v_wraps_selection_as_hyperlink(win):
     ta = win.text_area
     mime2 = QMimeData()
     mime2.setText("https://example.com/docs")
-    ta.insertFromMimeData(mime2)
+    _pump_paste(ta, mime2)
     assert ta.toPlainText() == "https://example.com/docs"
 
 
@@ -3678,7 +3762,7 @@ def test_pasting_a_copied_text_file_reads_its_content(win, tmp_path):
 
     mime = QMimeData()
     mime.setUrls([QUrl.fromLocalFile(str(src))])
-    ta.insertFromMimeData(mime)
+    _pump_paste(ta, mime)
     assert ta.toPlainText() == "hello silo\nline two"
 
 
@@ -3695,7 +3779,7 @@ def test_pasting_a_text_file_path_reads_its_content(win, tmp_path):
 
     mime = QMimeData()
     mime.setText(str(src))
-    ta.insertFromMimeData(mime)
+    _pump_paste(ta, mime)
     assert ta.toPlainText() == "clipboard content"
 
 
@@ -3712,7 +3796,7 @@ def test_pasting_a_non_text_file_path_stays_a_link(win, tmp_path):
 
     mime = QMimeData()
     mime.setText(str(src))
-    ta.insertFromMimeData(mime)
+    _pump_paste(ta, mime)
     assert "[archive.bin](file:///" in ta.toPlainText()
 
 
@@ -3764,7 +3848,7 @@ def test_pasting_an_unreachable_network_path_does_not_freeze_the_editor(win):
     mime.setText(unreachable)
 
     started = time.perf_counter()
-    ta.insertFromMimeData(mime)
+    _pump_paste(ta, mime)
     elapsed = time.perf_counter() - started
 
     assert elapsed < 5.0, f"paste held the GUI thread for {elapsed:.1f}s"
@@ -3792,7 +3876,6 @@ def test_an_unreachable_files_root_does_not_stall_the_silo_refresh(win):
         # "falls back to whatever normal is", not a particular path.
         win.data["files_root"] = ""
         win._files_root_probe = None
-        fallback = win._files_root()
 
         win.data["files_root"] = "\\\\192.0.2.77\\share\\files"
         win._files_root_probe = None
@@ -5909,17 +5992,18 @@ def test_files_folder_is_not_created_just_by_looking(win, tmp_path):
 
     win.open_file_container()
     folder = win._file_container.folder
-    assert os.path.isdir(folder), "panel should have a folder while open"
-    assert os.listdir(folder) == [], "fixture is not clean"
+    assert not os.path.isdir(folder), "opening the panel must not create the folder"
     win._file_container.close()
-    assert not os.path.isdir(folder), "empty folder left behind after closing"
+    assert not os.path.isdir(folder), "still nothing after closing"
 
     # but a folder with content is never removed
+    src = tmp_path / "keep.txt"
+    src.write_text("x", encoding="utf-8")
     win.open_file_container()
     folder = win._file_container.folder
+    win._file_container.import_paths([str(src)])
     assert os.path.isdir(folder)
-    with open(os.path.join(folder, "keep.txt"), "w") as fh:
-        fh.write("x")
+    assert os.path.exists(os.path.join(folder, "keep.txt"))
     win._file_container.close()
     assert os.path.isdir(folder)
     assert os.path.exists(os.path.join(folder, "keep.txt"))
@@ -9890,7 +9974,7 @@ def test_batch_delete_confirmed_trashes_high_index_first(win, monkeypatch):
         win.toggle_silo_selection(i)
     calls = []
     monkeypatch.setattr(win, "trash_silo",
-                        lambda i, is_archive=False, skip_undo=False: calls.append(i))
+                        lambda i, is_archive=False, skip_undo=False: (calls.append(i) or True))
     monkeypatch.setattr(main_mod.QMessageBox, "question",
                         lambda *a, **k: main_mod.QMessageBox.StandardButton.Yes)
     win.batch_delete_selected_silos()
@@ -11750,8 +11834,11 @@ def test_docked_panel_follows_the_active_silo(fresh_win):
     """A floating drawer left on the old silo is merely stale; a docked one
     is what a drop lands in, so it must follow the switch."""
     w = fresh_win
+    w.data["temp_presets"][:] = ["silo A", "silo B", "silo C", "silo D"]
+    w.silo_docs[:] = []
     w.data["file_panel_docked"] = "True"
     w.open_file_container()
+    w._show_files_dock(True)  # the follow only runs for a VISIBLE dock
     QApplication.processEvents()
     first = w._file_container.folder
     w._switch_to_slot(3)
@@ -12984,6 +13071,45 @@ def test_silo_preset_fill_is_one_undo_step(win):
     assert win.data["temp_presets"][1] == "# TODO\n\n- [ ] \n"
     win._smart_undo()
     assert win.data["temp_presets"][1] == "target"
+
+
+def test_silo_preset_invalid_index_is_no_undo_step(win):
+    """P2: a stale/out-of-range preset index must NOT create an undo step or
+    change state. Only a real application may pollute Ctrl+Z ordering."""
+    win.data["temp_presets"] = ["keep", "target"]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    win.data_undo_stack = []
+    win.data_redo_stack = []
+    win._undo_kinds().clear()
+    before = len(win.data_undo_stack)
+
+    win.fill_silo_from_preset(-1, "stale")
+    win.fill_silo_from_preset(99, "stale")
+    assert len(win.data_undo_stack) == before, "no undo step for bad index"
+    assert win.data["temp_presets"] == ["keep", "target"], "state unchanged"
+
+    win.fill_silo_from_preset(1, "# TODO")
+    assert win.data["temp_presets"][1] == "# TODO"
+    assert len(win.data_undo_stack) == before + 1, "valid index = one undo step"
+
+
+def test_insert_silo_at_return_contract(win):
+    """P0: insert_silo_at returns the slot on success and None when the
+    workspace is full, so callers can tell a real restore from a no-op."""
+    win.data["temp_presets"] = ["keep", "target"]
+    win.silo_docs[:] = [None, None]
+    win._switch_to_slot(0, initial=True)
+    assert win.insert_silo_at("fresh", pos=1) == 1
+    assert win.data["temp_presets"][1] == "fresh"
+
+    n = win.MAX_SILOS_PER_CATEGORY
+    win.data["temp_presets"] = ["x"] * n
+    win.silo_docs[:] = [None] * n
+    assert win.insert_silo_at("extra") is None, "full workspace refuses"
+    win.data["temp_presets"][5] = ""
+    assert win.insert_silo_at("restored") == 5
+    assert win.data["temp_presets"][5] == "restored"
 
 
 def test_new_button_offers_the_templates(win):

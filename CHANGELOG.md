@@ -1,5 +1,42 @@
 # Changelog
 
+## v0.8.40 — 2026-08-18
+
+- **Invariant audit pass (T-806).** A second round of correctness hardening on
+  top of v0.8.39, covering the preset/silo state machine, save/load contract,
+  undo daemon, and File-Container / portable-backup workers.
+- **Preset & silo state machine (P0-1..P0-5, P1-1..P1-5).** Deep-copy snapshot
+  isolation for cross-category preset moves; sync pending holds while a profile
+  switch finalizes; rename/delete validation and del-category rollback now match
+  the stored category dir; `None`-folder guards on containment paths; 6-argument
+  slot signals wired; previous-identity tab-switch, `-1` combo and hidden-undo
+  unhide handled; `normcase` claims in `_allocate_category_dir` for case-only
+  renames on case-insensitive filesystems.
+- **Save / watcher / quit contract (P0-6).** `save()` returns a real bool; the
+  watcher quiesces before the pre-quit finalize; a quit refused by a failed save
+  no longer corrupts state.
+- **Undo & tooltip ownership (P1-6, P1-8).** Per-job undo results captured at
+  arm time; tooltip ownership context captured on the GUI thread.
+- **Tracked export worker (P1-7).** Export runs on the tracked async worker with
+  per-profile `.bak` throttle independence; double-failure publish preserves the
+  good generation; abandoned profile lock is treated as a full-app death.
+- **First-round production bug fixes (carried into this release).** Adapter
+  `blocker_pattern` is now persisted (was never stored, so P0-9 refusal was
+  dead); `del_category` rollback uses the real category dir; `tray_mixin` no
+  longer references an undefined `icon` (F821).
+- **Regression suites.** 135 new unit/regression tests across
+  `test_undo.py`, `test_state_failures.py`, `test_audit_overflow.py`,
+  `test_portable_backup_publish.py`, `test_profile_switch_atomic.py`,
+  `test_save_contract.py`, `test_state_codec.py`, `test_second_wave_regressions.py`,
+  `test_audit_regressions.py`, `test_audit_second_wave.py`, `test_close_reopen.py`,
+  `test_quit_finalize.py`, and `test_file_container_containment.py`. Full `tests/`
+  gate: 1177 passed, 1 skipped.
+- **Known limits (documented, not a regression).** `tests_smoke/app_smoke` still
+  shows 18 pre-existing failures that also fail on the v0.8.39 `HEAD` baseline
+  itself (including a `silo_hierarchy` crash in the baseline run); they predate
+  this audit and are unattributable to the 19 fixes. `main.py:2716` carries one
+  grandfathered `ruff` `E741`.
+
 ## v0.8.39 — 2026-08-16
 
 - **Productivity timer (Pomodoro).** A new `core/pomodoro.py` `ProductivityTimer`

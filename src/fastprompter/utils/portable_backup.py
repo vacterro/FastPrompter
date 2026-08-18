@@ -295,10 +295,41 @@ def _publish_snapshot(tmp_dir, day_dir):
             failed = f"{day_dir}.failed-{_gen_suffix()}"
             try:
                 os.rename(tmp_dir, failed)
-            except OSError:
-                shutil.rmtree(tmp_dir, ignore_errors=True)
+            except OSError as exc:
+                # Last resort: the rename failed AND the restore failed. The
+                # COMPLETE generation under tmp_dir must still survive — it
+                # is the only new snapshot that exists. Leaving it in place
+                # costs nothing (the next export removes the .partial dir
+                # before rebuilding) and deleting it would destroy the only
+                # complete recovery copy. Log both recovery paths loudly so
+                # a human can rescue them (P1-7).
+                logger.error(
+                    "portable backup publish: could not restore the old "
+                    "generation (%s) and could not preserve the new one at "
+                    "%s (%s). Leaving the COMPLETE new generation at %s for "
+                    "manual recovery; the old generation is recoverable from "
+                    "%s.",
+                    rollback, failed, exc, tmp_dir, rollback)
         else:
-            shutil.rmtree(tmp_dir, ignore_errors=True)
+            # The previous generation was restored to day_dir, but the NEW
+            # one failed to publish. It is a COMPLETE snapshot (the .partial
+            # path held a finished build) — deleting it would destroy the
+            # user's newest state on a transient volume error. Preserve it
+            # under a unique ``.failed-<suffix>`` name (P1-6).
+            failed = f"{day_dir}.failed-{_gen_suffix()}"
+            try:
+                os.rename(tmp_dir, failed)
+            except OSError as exc:
+                logger.error(
+                    "portable backup publish: the previous generation was "
+                    "restored but the new one could not be preserved at %s "
+                    "(%s); leaving it at %s for manual recovery",
+                    failed, exc, tmp_dir)
+            else:
+                logger.warning(
+                    "portable backup publish: the previous generation was "
+                    "restored but the new snapshot could not be published; "
+                    "the complete new generation is preserved at %s", failed)
         raise
     if os.path.isdir(rollback):
         shutil.rmtree(rollback, ignore_errors=True)

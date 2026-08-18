@@ -251,20 +251,23 @@ class CdpTarget:
         one is the exact failure the blocker exists to stop — but it can
         only run when the transport can actually read what the user is
         looking at. CDP can; window-post cannot (T-757).
+
+        RAISES on any read failure instead of returning "": an unreadable
+        blocker check must HOLD the watcher (fail closed), never read as
+        "nothing blocking" (P1-1).
         """
+        ws = WebSocket(self.ws_url)
         try:
-            ws = WebSocket(self.ws_url)
-            try:
-                result = ws.call("Runtime.evaluate", {
-                    "expression": "document.body ? document.body.innerText : ''",
-                    "returnByValue": True,
-                })
-            finally:
-                ws.close()
-        except Exception:
-            return ""
+            result = ws.call("Runtime.evaluate", {
+                "expression": "document.body ? document.body.innerText : ''",
+                "returnByValue": True,
+            })
+        finally:
+            ws.close()
         value = result.get("result", {}).get("value") if isinstance(result, dict) else None
-        return value if isinstance(value, str) else ""
+        if not isinstance(value, str):
+            raise CdpError("visible text was not a string")
+        return value
 
 
 # --------------------------------------------------------------- the sender

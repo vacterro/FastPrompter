@@ -52,9 +52,9 @@ def test_backup_does_not_block_the_caller(backup_dir, monkeypatch):
 
     real_export = pb._do_export
 
-    def slow_export(snap):
+    def slow_export(snap, profile_id=1):
         time.sleep(0.5)
-        return real_export(snap)
+        return real_export(snap, profile_id=profile_id)
 
     monkeypatch.setattr(pb, "_do_export", slow_export)
     pb.last_success_by_profile.clear()

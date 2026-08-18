@@ -230,7 +230,10 @@ class TestUndoPathCapture:
             return real_dump(obj, f, **kw)
 
         monkeypatch.setattr(json, "dump", blocking_dump)
-        w._save_undo_state()            # worker captures A's path, blocks
+        w._save_undo_state()            # A's path + stacks captured at ARM time
+        if w._undo_timer is not None:
+            w._undo_timer.stop()
+        w._dispatch_undo_save()         # force the pending snapshot out NOW
         time.sleep(0.4)                 # let the worker reach the block
 
         # profile identity changes BEFORE the worker's write lands

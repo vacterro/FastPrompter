@@ -80,12 +80,19 @@ uv run python tools/build.py
 
 ## Local-first data & recovery
 
-**Where your data lives.** Primary state is a SQLite database
-(`data/local_data_v15.db`) in a `data/` folder beside the executable (falling
-back to `%LOCALAPPDATA%\FastPrompter\` if that folder is not writable). Silo
-file containers are plain folders under `data/files/<project>/<silo>/`, and
-the trash lives at `data/files/_trash/`. There is no cloud, no account and no
-telemetry; the core app makes no network calls.
+**Where your data lives.** Primary state is a per-profile SQLite database —
+`local_data_v15.db` for profile 1, `local_data_v15_pN.db` for profile N — in a
+`data/` folder beside the executable (falling back to
+`%LOCALAPPDATA%\FastPrompter\` if that folder is not writable). Each profile
+owns an independent **File Container root**: profile 1 keeps the legacy
+layout, while profile 2+ are namespaced under `data/_profiles/pN/`, so one
+profile can never read, adopt or delete another profile's folders. Inside that
+root, every project/category maps to a **stable physical folder component**
+(a sanitized, collision-resistant derivative recorded in `category_file_dirs`)
+— the on-disk name is *not* the raw UI category name, and a renamed category
+keeps its physical folder. Each silo's files live in a sub-folder derived from
+its content; the trash lives under the same profile root. There is no cloud,
+no account and no telemetry; the core app makes no network calls.
 
 **What leaves the machine.** Nothing by default — no network calls, no
 telemetry, no account. Two opt-in features extend beyond the app: the daily
@@ -113,7 +120,8 @@ explicitly arm.
 - **Undo across restarts** — the latest undo snapshots are written to
   `<database>_undo.json` and reloaded on the next launch.
 - **Trash, not destruction** — clearing or trashing a silo moves its text and
-  files into `data/files/_trash/`; the Trash dialog restores them.
+  files into the trash under the active profile's File Container root; the
+  Trash dialog restores them.
 
 The honest failure model lives under [Known limits](#known-limits).
 
@@ -141,8 +149,9 @@ Mechanisms, not marketing:
   copy, clickable checkboxes, collapsible image pills, a four-zone file drop
   overlay and hide-markup mode (`ui/editor.py`, `ui/markdown_highlighter.py`).
 - **Filesystem-backed containers** — each silo owns a stable, unique folder
-  under `data/files/`; rename-safe and recoverable through the trash
-  (`ui/file_container.py`).
+  under its profile's File Container root; the physical category component is
+  the sanitized `category_file_dirs` entry (independent of the UI name), so it
+  is rename-safe and recoverable through the trash (`ui/file_container.py`).
 - **Multi-layer recovery model** — transactional DB + startup/throttled `.bak`
   + daily plain-Markdown snapshots + optional one-way mirror + persisted undo
   + soft-delete trash. Each layer catches a different failure class.
@@ -239,10 +248,12 @@ uv run bandit -q -r src/fastprompter -ll
 uv run pytest tests/ tests_smoke/ -q
 ```
 
-- The current suite collects **2058 tests** across `tests/` and the offscreen
-  real-app integration suite in `tests_smoke/`; the latest full run completed
-  **2058 passed, 0 skipped** in 25 minutes. The count changes with every
-  release; get the live number with
+- The suite spans the headless unit tree in `tests/` and the offscreen
+  real-app integration suite in `tests_smoke/` (which builds the actual
+  window). The authoritative test count and pass/fail state are produced by the
+  full gate run on the target Windows build at the exact revision under test —
+  **do not assume a specific total or an all-green result without that run.**
+  The live collection count can be obtained with
   `uv run pytest tests/ tests_smoke/ --collect-only -q`.
 - CI (GitHub Actions on `windows-latest`) runs all four commands above on every
   push to `main` and every pull request. Any failure blocks the job.

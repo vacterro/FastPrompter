@@ -57,9 +57,12 @@ class WindowMixin:
         elif force_sidebar:
             self.toggle_sidebar_visibility()
         else:
-            if hasattr(self, "topmost_timer") and not _is_deleted(self.topmost_timer):
-                self.topmost_timer.stop()
-            self.hide_and_save()
+            if hasattr(self, "cb_focus") and not _is_deleted(self.cb_focus) and self.cb_focus.isChecked():
+                self.show_window(by_hotkey=True)
+            else:
+                if hasattr(self, "topmost_timer") and not _is_deleted(self.topmost_timer):
+                    self.topmost_timer.stop()
+                self.hide_and_save()
 
     def show_window(self, by_hotkey: bool = False) -> None:
         """Show the window, reposition if lock-to-cursor, re-register hotkeys."""

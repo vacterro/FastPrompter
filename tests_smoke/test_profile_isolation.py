@@ -244,7 +244,6 @@ class TestCategoryPhysicalIdentity:
         ("A:B", "AB"),
         ("A?B", "A:B"),
         ("??", "???"),
-        ("??", "??"),
         ("Case", "case"),
         ("x" * 40 + "prefix-one", "x" * 40 + "prefix-two"),
         ("x" * 60 + "AAAA", "x" * 60 + "BBBB"),
@@ -299,7 +298,7 @@ class TestCategoryPhysicalIdentity:
         assert win.data["category_file_dirs"].get("Old Name") is None
 
     def test_category_slug_lossy_pairs_never_share(self, win, private_root):
-        """silo_slug alone WOULD collapse these — the mapping must not."""
+        """silo_slug alone WOULD collapse these â€” the mapping must not."""
         win.data["category_file_dirs"].clear()
         for a, b in self.COLLISIONS:
             if silo_slug(a) == silo_slug(b):
@@ -376,7 +375,7 @@ class TestCategoryDeleteRetirement:
 
     def test_delete_aborts_when_trash_move_fails(self, win, private_root, monkeypatch):
         """P0-1: a retirement that fails (simulated trash-move OSError) must
-        ABORT the category deletion — the tab, the maps and the assets all
+        ABORT the category deletion â€” the tab, the maps and the assets all
         survive, and no fake undo entry lingers."""
         import fastprompter.ui.file_container as fc
         cat = self._seed_category(win, "Keep")

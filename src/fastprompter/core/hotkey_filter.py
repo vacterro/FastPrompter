@@ -59,8 +59,8 @@ class HotkeyFilter(QAbstractNativeEventFilter):
                 elif msg.message in (0x0101, 0x0105):  # WM_KEYUP, WM_SYSKEYUP
                     # P1-7 Fix: Windows natively broadcasts the release, but Qt ignores it
                     # if the window lacks focus, leaving modifier states stuck. Map it here.
-                    from PyQt6.QtGui import QKeyEvent
                     from PyQt6.QtCore import QEvent, Qt
+                    from PyQt6.QtGui import QKeyEvent
                     from PyQt6.QtWidgets import QApplication
                     vk = msg.wParam
                     key = 0

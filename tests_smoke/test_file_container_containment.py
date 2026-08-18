@@ -10,6 +10,7 @@ import os
 import shutil
 import sys
 import threading
+import time
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -175,6 +176,193 @@ def test_unicode_and_spaces_stay_inside(panel):
     p.new_folder(name="папка 1")
     assert os.path.isdir(os.path.join(root, "папка 1"))
 
+
+# ===================== P1-2: mutation-time root revalidation ================
+
+
+def test_rename_revalidates_against_current_root(panel, tmp_path):
+    """A stale path listed before the panel was re-bound to a DIFFERENT
+    container must never be renamed across container roots."""
+    root, p = panel
+    _write(os.path.join(root, "note.txt"))
+    p.refresh()
+    other = os.path.join(str(tmp_path), "other_root")
+    os.makedirs(other, exist_ok=True)
+    p.open_for(other)                 # panel re-bound to another container
+    p._rename(os.path.join(root, "note.txt"), new_name="moved")
+    assert os.path.isfile(os.path.join(root, "note.txt")), \
+        "a stale path must not be renamed across container roots"
+    assert os.listdir(other) == []
+
+
+def test_delete_revalidates_against_current_root(panel, tmp_path, monkeypatch):
+    """A stale path must never be deleted outside the CURRENT captured root."""
+    from PyQt6.QtWidgets import QMessageBox
+
+    root, p = panel
+    _write(os.path.join(root, "note.txt"))
+    p.refresh()
+    other = os.path.join(str(tmp_path), "other_root")
+    os.makedirs(other, exist_ok=True)
+    p.open_for(other)
+    monkeypatch.setattr(QMessageBox, "exec",
+                        lambda self: QMessageBox.StandardButton.Yes)
+    p._delete([os.path.join(root, "note.txt")])
+    assert os.path.isfile(os.path.join(root, "note.txt")), \
+        "a stale path must not be deleted outside the current root"
+    assert os.listdir(other) == []
+
+
+# ==================== P1-3: SOURCE_REMAINS partial outcome ==================
+
+
+def test_move_returns_source_remains_when_source_removal_fails(
+        panel, monkeypatch):
+    from fastprompter.ui import file_container as fc
+
+    root, p = panel
+    src = os.path.join(_tmpdir, "move_src.txt")
+    _write(src, "payload")
+    dest = os.path.join(root, "moved.txt")
+    real_rename = os.rename
+
+    def flaky_rename(a, b):
+        if a == src and b == dest:
+            raise OSError("cross-volume")
+        return real_rename(a, b)
+
+    monkeypatch.setattr(os, "rename", flaky_rename)
+    real_remove = os.remove
+
+    def flaky_remove(path):
+        if path == src:
+            raise OSError("source locked")
+        return real_remove(path)
+
+    monkeypatch.setattr(os, "remove", flaky_remove)
+
+    status = fc._move_into_container(src, dest, root, p._folder_root_identity)
+    assert status == "SOURCE_REMAINS"
+    assert os.path.isfile(dest), "the destination is published"
+    assert open(dest, encoding="utf-8").read() == "payload"
+    assert os.path.isfile(src), "the source stayed behind"
+
+
+def test_move_returns_moved_when_source_is_gone(panel, monkeypatch):
+    from fastprompter.ui import file_container as fc
+
+    root, p = panel
+    src = os.path.join(_tmpdir, "move_src2.txt")
+    _write(src, "payload2")
+    dest = os.path.join(root, "moved2.txt")
+    real_rename = os.rename
+
+    def flaky_rename(a, b):
+        if a == src and b == dest:
+            raise OSError("cross-volume")
+        return real_rename(a, b)
+
+    monkeypatch.setattr(os, "rename", flaky_rename)
+    status = fc._move_into_container(src, dest, root, p._folder_root_identity)
+    assert status == "MOVED"
+    assert os.path.isfile(dest)
+    assert not os.path.exists(src)
+
+
+def test_sync_move_partial_is_classified_not_failed(
+        panel, monkeypatch, caplog):
+    """A published-but-source-stuck move counts as DONE (with a warning),
+    never as a plain failure."""
+    from fastprompter.ui import file_container as fc
+
+    root, p = panel
+    src = os.path.join(_tmpdir, "classify_src.txt")
+    _write(src, "payload")
+    dest = os.path.join(root, "classify_src.txt")   # _unique_dest keeps the name
+    monkeypatch.setattr(fc, "_async_eligible", lambda items: False)
+    real_rename = os.rename
+
+    def flaky_rename(a, b):
+        if a == src and b == dest:
+            raise OSError("cross-volume")
+        return real_rename(a, b)
+
+    monkeypatch.setattr(os, "rename", flaky_rename)
+    real_remove = os.remove
+
+    def flaky_remove(path):
+        if path == src:
+            raise OSError("source locked")
+        return real_remove(path)
+
+    monkeypatch.setattr(os, "remove", flaky_remove)
+    ref = []
+    monkeypatch.setattr(p, "refresh", lambda: ref.append(1))
+
+    p.import_paths([src], do_move=True)
+
+    assert os.path.isfile(dest), "the destination is published"
+    assert os.path.isfile(src), "the source stayed behind"
+    assert ref, "the panel refreshed: the command was classified as done"
+    assert "could not be removed" in caplog.text
+
+
+# ============================ P1-7: tracked export worker ====================
+
+
+def test_export_all_writes_a_zip_and_cleans_its_temp(panel, monkeypatch, tmp_path):
+    import zipfile as _zf
+
+    from PyQt6.QtWidgets import QFileDialog
+
+    from fastprompter.ui import file_container as fc
+
+    root, p = panel
+    for i in range(5):
+        _write(os.path.join(root, f"f{i}.txt"), f"data{i}")
+    target = os.path.join(str(tmp_path), "out.zip")
+    monkeypatch.setattr(QFileDialog, "getSaveFileName",
+                        staticmethod(lambda *a, **k: (target, "")))
+
+    p._export_all()
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        _app.processEvents()
+        live = [t for t in fc._EXPORT_THREADS if t.is_alive()]
+        if not live:
+            break
+        time.sleep(0.01)
+
+    assert os.path.isfile(target), "the zip was published"
+    assert os.path.isfile(target)
+    with _zf.ZipFile(target) as z:
+        assert set(z.namelist()) == {f"f{i}.txt" for i in range(5)}
+    assert not list(tmp_path.glob("out.zip.fpbak-*")), "temp cleaned"
+
+
+def test_export_cancel_leaves_no_partial(panel, monkeypatch, tmp_path):
+    from PyQt6.QtWidgets import QFileDialog
+
+    from fastprompter.ui import file_container as fc
+
+    root, p = panel
+    for i in range(50):
+        _write(os.path.join(root, f"f{i}.txt"), f"data{i}")
+    target = os.path.join(str(tmp_path), "cancel.zip")
+    monkeypatch.setattr(QFileDialog, "getSaveFileName",
+                        staticmethod(lambda *a, **k: (target, "")))
+
+    p._export_all()
+    p._export_cancel.set()                 # cancel immediately
+    threads = list(fc._EXPORT_THREADS)
+    for t in threads:
+        t.join(5)
+    _app.processEvents()
+
+    assert not os.path.exists(target), "a cancelled export leaves no zip"
+    assert not list(tmp_path.glob("cancel.zip.fpbak-*")), "no temp left behind"
+
+
 def _no_tmp_left(root):
     for base, _dirs, files in os.walk(root):
         for f in files:
@@ -211,8 +399,11 @@ def test_export_failure_leaves_no_partial_in_the_target(panel, monkeypatch):
     _write(os.path.join(root, "to_export.txt"), "data")
     target = os.path.join(_tmpdir, "export_target")
     os.makedirs(target, exist_ok=True)
-    monkeypatch.setattr(QFileDialog, "getExistingDirectory",
-                        staticmethod(lambda *a, **k: target))
+    # _export_all asks for a SAVE-FILE path (returns (name, filter)); the
+    # old export implementation asked for a directory, and the stale patch
+    # silently opened a real modal dialog that hung the suite.
+    monkeypatch.setattr(QFileDialog, "getSaveFileName",
+                        staticmethod(lambda *a, **k: (target, "")))
 
     def _flaky_copy2(s, dst, *a, **k):
         with open(dst, "w", encoding="utf-8") as f:
@@ -277,7 +468,7 @@ def test_pre_existing_destination_is_refused(panel):
 
 def test_stale_temp_does_not_poison_the_next_copy(panel):
     """A predictable temp name left by a crashed attempt must not break the
-    next copy � the temp is now unique per attempt."""
+    next copy — the temp is now unique per attempt."""
     from fastprompter.ui.file_container import _copy_atomic
 
     root, p = panel
@@ -695,7 +886,7 @@ def test_stale_owner_command_error_stays_observable(win, monkeypatch):
             "kind": "import",
         }
         panel._on_container_done(
-            "req-1", request, done=[], errors=[(r"C:\src\a.txt", "boom")])
+            "req-1", request, done=[], partial=[], errors=[(r"C:\src\a.txt", "boom")])
 
         assert logged, "the failed command's error must remain observable"
         assert any("req-1" in str(a) for a in logged), logged

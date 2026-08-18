@@ -43,6 +43,10 @@ TICK_MS = 900
 # seconds.
 _CDP_PROBE_TIMEOUT = 0.5
 _WATCHER_SHUTDOWN_TIMEOUT_S = 5.0
+# A verified CDP verdict is cached this long; the blocker exists to catch a
+# prompt that APPEARS mid-run, so the cached "not blocked" must go stale
+# and re-verify every few seconds (the re-check runs on the worker thread).
+_VERIFY_INTERVAL_S = 5.0
 
 
 class _WatcherSendWorker(QObject):
@@ -70,6 +74,65 @@ class _WatcherSendWorker(QObject):
         self.done.emit(intent, gen, result)
 
 
+class _WatcherVerifyWorker(QObject):
+    """CDP identity probe + blocker visible-text read, on the worker thread.
+
+    Both are SOCKET I/O. The tick's old in-line pre-check ran a 0.5s
+    discovery timeout on the Qt timer thread and read the page's innerText
+    over the socket there too — every tick could freeze the window for
+    half a second or more. This worker moves both reads off the GUI thread
+    entirely (P1-1).
+
+    The result is TYPED, and every status is fail-closed:
+
+    * "ready"        the page is confirmed and the blocker was readable;
+                     ``target_ok``/``blocked`` carry the verdicts.
+    * "hold_target"  the page is gone or not listening — the engine must
+                     disarm exactly like a vanished win32 window.
+    * "hold_blocked" the blocker could not be read (socket error, no
+                     page text). The run must HOLD — never send, never
+                     count a failure.
+    """
+
+    verify = pyqtSignal(object, object, int)   # target, blocked_fn, gen
+    verified = pyqtSignal(str, int, bool, bool, str)
+    #                                    status, gen, target_ok, blocked, reason
+
+    def __init__(self):
+        super().__init__()
+
+    def _run(self, target, blocked_fn, gen):
+        try:
+            from fastprompter.core.watcher import cdp as _cdp
+            target_ok, reason = target.matches(
+                lambda port: _cdp.discover(port, timeout=_CDP_PROBE_TIMEOUT))
+            if not target_ok:
+                self.verified.emit("hold_target", gen, False, False, reason)
+                return
+            if blocked_fn is not None:
+                try:
+                    text = target.visible_text()
+                except Exception as exc:
+                    self.verified.emit(
+                        "hold_blocked", gen, True, True,
+                        f"blocker could not read the page: {exc}")
+                    return
+                try:
+                    blocked = bool(blocked_fn(text))
+                except Exception as exc:
+                    self.verified.emit(
+                        "hold_blocked", gen, True, True,
+                        f"blocker check failed: {exc}")
+                    return
+                self.verified.emit("ready", gen, True, blocked, "")
+                return
+            self.verified.emit("ready", gen, True, False, "")
+        except Exception as exc:
+            self.verified.emit(
+                "hold_target", gen, False, False,
+                f"target verification failed: {exc}")
+
+
 class WatcherMixin:
     """Arm/disarm, the tick loop, the panic key, and the send log."""
 
@@ -87,8 +150,23 @@ class WatcherMixin:
         # generation token for in-flight sends: bumped on arm/disarm/panic so
         # a result from an old run can never be reported against a new one
         self._watcher_send_gen = 0
+        # a send is physically in the air (worker dispatched, result not yet
+        # applied); used by the pre-quit quiesce (P0-6)
+        self._watcher_send_active = False
+        self._watcher_quiescing = False
         self._watcher_worker = None
         self._watcher_worker_thread = None
+        # CDP verification runs on the worker thread (P1-1); the GUI holds
+        # the tick while a verification is pending. States: "unverified"
+        # (no fresh answer) or "ready" (cached verdicts). hold_* results
+        # revert to "unverified" so the next tick re-checks.
+        self._watcher_verify_worker = None
+        self._watcher_verify_gen = 0
+        self._watcher_verify_state = "unverified"
+        self._watcher_verify_inflight = False
+        self._watcher_verify_target_ok = True
+        self._watcher_verify_blocked = False
+        self._watcher_verify_at = 0.0
         # observe mode: its own state, so it can never reach the sender
         self._observe_adapter = None
         self._observe_timer = None
@@ -166,6 +244,10 @@ class WatcherMixin:
         self._watcher_engine.settle_ms = adapter.settle_ms
         # a fresh run: any result still in flight from an older run is stale
         self._watcher_send_gen += 1
+        # ... and so is any verification still in flight from an older run
+        self._watcher_verify_gen += 1
+        self._watcher_verify_state = "unverified"
+        self._watcher_verify_inflight = False
         # The parsed [limits] must actually reach the engine (T-757): a
         # configured min_gap_ms/max_sends used to be stored and ignored.
         limits = getattr(self, "_watcher_limits", None) or {}
@@ -183,7 +265,16 @@ class WatcherMixin:
         # fake adapters that carry none of these.
         if getattr(adapter, "blocker_pattern", ""):
             supported = getattr(adapter, "blocker_supported", lambda: False)()
-            self._watcher_blocked_fn = adapter.blocked if supported else None
+            if not supported:
+                # P0-9: refuse to arm. A blocker that CANNOT run must not be
+                # silently replaced by nothing — the old code armed with
+                # _watcher_blocked_fn=None and the user believed the agent
+                # was protected while every send was unprotected.
+                return False, (
+                    "this agent cannot read its visible text, so the "
+                    "blocker cannot run - fix blocker_supported in the "
+                    "adapter first")
+            self._watcher_blocked_fn = adapter.blocked
         else:
             self._watcher_blocked_fn = None
         self._watcher_engine.arm(
@@ -226,6 +317,9 @@ class WatcherMixin:
     def watcher_disarm(self, reason="disarmed"):
         self._watcher_init()
         self._watcher_send_gen += 1     # in-flight results become stale
+        self._watcher_verify_gen += 1   # in-flight verifications too
+        self._watcher_verify_state = "unverified"
+        self._watcher_verify_inflight = False
         self._watcher_engine.disarm(reason)
         self._watcher_stop_timer()
         # A target exists only while armed. Leaving the old one behind is how
@@ -246,6 +340,9 @@ class WatcherMixin:
         if not self._watcher_engine.armed:
             return False
         self._watcher_send_gen += 1     # whatever was in flight is now stale
+        self._watcher_verify_gen += 1   # in-flight verifications too
+        self._watcher_verify_state = "unverified"
+        self._watcher_verify_inflight = False
         self._watcher_engine.panic()
         self._watcher_stop_timer()
         self._watcher_notify()
@@ -303,29 +400,25 @@ class WatcherMixin:
         self._watcher_refresh_texts(engine.queue_key, queue)
 
         target_ok = True
+        blocked = False
         if self._watcher_target is not None:
             # The tick's identity pre-check is a fast bounded read on the GUI
-            # thread; the authoritative recheck happens inside the sender on
-            # the worker thread. A CDP target gets a short discover timeout so
-            # a slow debugger cannot stall the loop for many seconds.
+            # thread for WIN32 transports; the authoritative recheck happens
+            # inside the sender on the worker thread. A CDP target's identity
+            # probe and blocker text are SOCKET I/O and run on the worker
+            # thread (P1-1): while the answer is pending, the tick HOLDS —
+            # no engine.tick() runs, so the baseline tick counter is never
+            # advanced by an unverified decision and a held run looks exactly
+            # like a freshly armed one.
             if getattr(self._watcher_target, "ws_url", None):
-                from fastprompter.core.watcher import cdp as _cdp
-
-                def _bounded_discover(port):
-                    return _cdp.discover(port, timeout=_CDP_PROBE_TIMEOUT)
-
-                target_ok = self._watcher_target.matches(_bounded_discover)[0]
+                if not self._watcher_dispatch_verify():
+                    return
+                if self._watcher_verify_state != "ready":
+                    return
+                target_ok = self._watcher_verify_target_ok
+                blocked = self._watcher_verify_blocked
             else:
                 target_ok = self._watcher_target.matches()[0]
-
-        blocked = False
-        blocked_fn = getattr(self, "_watcher_blocked_fn", None)
-        if blocked_fn is not None and self._watcher_target is not None:
-            try:
-                text = self._watcher_target.visible_text()
-                blocked = bool(blocked_fn(text))
-            except Exception:
-                blocked = False          # a read failure must not hang the tick
 
         intent = engine.tick(now, queue, blocked=blocked, target_ok=target_ok)
         if intent is None:
@@ -339,25 +432,145 @@ class WatcherMixin:
         # reports back; a report that never arrives means the run just waits.
         self._watcher_dispatch_send(intent)
 
+    def _watcher_dispatch_verify(self):
+        """Start a CDP verification on the worker thread when none is
+        pending. Returns True when a verified answer is ALREADY cached (the
+        tick may proceed), False while the answer is pending."""
+        if self._watcher_verify_state == "ready":
+            if time.monotonic() < self._watcher_verify_at:
+                return True
+            # the cached verdict is stale: re-verify on the next dispatch
+            self._watcher_verify_state = "unverified"
+        if self._watcher_verify_inflight:
+            return False
+        self._watcher_verify_inflight = True
+        self._watcher_verify_gen += 1
+        gen = self._watcher_verify_gen
+        if self._watcher_verify_worker is None:
+            self._watcher_ensure_worker()
+        self._watcher_verify_worker.verify.emit(
+            self._watcher_target,
+            getattr(self, "_watcher_blocked_fn", None), gen)
+        return False
+
+    def _watcher_on_verify_result(self, status, gen, target_ok, blocked,
+                                  reason):
+        """The verification's answer, applied on the GUI thread.
+
+        Only the CURRENT generation may be applied. "hold_target" disarms —
+        the same consequence as a win32 window vanishing mid-run.
+        "hold_blocked" ticks the engine ONCE with blocked=True: the run
+        shows WATCHING and holds, no send fires and nothing is counted as a
+        failure; the verify state reverts to unverified so the next tick
+        re-checks. "ready" caches the verdicts for the next tick."""
+        from fastprompter.main import is_gui_thread
+        if not is_gui_thread():
+            logger.critical("watcher verification rejected outside GUI thread")
+            return
+        try:
+            if gen != self._watcher_verify_gen:
+                return                    # stale: a newer run owns the watcher
+            self._watcher_verify_inflight = False
+            engine = self._watcher_engine
+            if not engine.armed:
+                return
+            if status == "hold_target":
+                engine.disarm(reason or "the target window is gone")
+                self._watcher_stop_timer()
+                self._watcher_notify()
+                return
+            if status == "hold_blocked":
+                logger.warning("watcher blocked, holding: %s", reason)
+                now = time.monotonic()
+                queue = queue_for(self.prompt_queues, engine.queue_key)
+                engine.tick(now, queue, blocked=True, target_ok=True)
+                self._watcher_verify_state = "unverified"
+                self._watcher_notify()
+                return
+            # "ready"
+            self._watcher_verify_target_ok = target_ok
+            self._watcher_verify_blocked = blocked
+            self._watcher_verify_at = time.monotonic() + _VERIFY_INTERVAL_S
+            self._watcher_verify_state = "ready"
+        except Exception:
+            logger.exception("watcher verification handling failed")
+            try:
+                self._watcher_engine.disarm(
+                    "the watcher hit an error and stopped")
+                self._watcher_stop_timer()
+            except Exception:
+                pass
+
     def _watcher_dispatch_send(self, intent):
         """Send off-thread; the GUI never blocks on CDP socket I/O."""
+        if getattr(self, "_watcher_quiescing", False):
+            # P0-6: the app is quitting — no new sends. The item stays
+            # PENDING and the final DB save persists it; nothing is marked
+            # sent that never went out.
+            return
         self._watcher_send_gen += 1
         gen = self._watcher_send_gen
+        self._watcher_send_active = True
         worker = self._watcher_ensure_worker()
         worker.dispatch.emit(self._watcher_sender, intent,
                              self._watcher_target, gen)
 
+    def _watcher_begin_quiesce(self, timeout_s=1.5):
+        """P0-6: quiesce the watcher BEFORE the event loop dies.
+
+        Called from quit_app while the loop is still alive. New sends are
+        refused, an in-flight send is boundedly awaited (its result travels
+        back as a queued signal, so the caller must pump the event loop),
+        and the engine is disarmed. Anything still unresolved at the
+        deadline stays PENDING — never marked sent — and the queue state is
+        persisted by the caller's final DB save.
+
+        Returns True when no send is unresolved (fully quiescent).
+        """
+        if getattr(self, "_watcher_quiescing", False):
+            return not getattr(self, "_watcher_send_active", False)
+        self._watcher_quiescing = True
+        try:
+            try:
+                if self._watcher_timer is not None:
+                    self._watcher_timer.stop()
+            except Exception:
+                pass
+            deadline = time.monotonic() + max(0.0, float(timeout_s))
+            while self._watcher_send_active and time.monotonic() < deadline:
+                from PyQt6.QtWidgets import QApplication
+                QApplication.processEvents()
+                time.sleep(0.01)
+            try:
+                self._watcher_engine.disarm("application is quitting")
+            except Exception:
+                logger.exception("watcher disarm failed during quiesce")
+            self.save_prompt_queues()
+            return not self._watcher_send_active
+        finally:
+            self._watcher_quiescing = False
+
     def _watcher_ensure_worker(self):
-        """The persistent worker thread, created once per window."""
+        """The persistent worker thread, created once per window.
+
+        Carries BOTH workers: the sender (socket writes with multi-second
+        timeouts) and the verifier (CDP discovery + visible-text reads).
+        Queued signals serialize them on the same thread — a verification
+        waits for a stuck send, never blocks the GUI."""
         if self._watcher_worker is None:
             thread = QThread(self)
             thread.setObjectName("fastprompter-watcher-send")
             worker = _WatcherSendWorker()
+            verify = _WatcherVerifyWorker()
             worker.moveToThread(thread)
+            verify.moveToThread(thread)
             worker.dispatch.connect(worker._run)  # AFTER moveToThread: queued
             worker.done.connect(self._watcher_on_send_result)
+            verify.verify.connect(verify._run)
+            verify.verified.connect(self._watcher_on_verify_result)
             thread.start()
             self._watcher_worker = worker
+            self._watcher_verify_worker = verify
             self._watcher_worker_thread = thread
         return self._watcher_worker
 
@@ -396,6 +609,7 @@ class WatcherMixin:
         try:
             if gen != self._watcher_send_gen:
                 return                    # stale: a newer run owns the watcher
+            self._watcher_send_active = False
             engine = self._watcher_engine
             if not engine.armed or engine.state != "sending":
                 return

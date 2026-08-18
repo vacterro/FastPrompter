@@ -57,7 +57,7 @@ class TrayMixin:
         if os.path.exists(icon_path):
             self.setWindowIcon(QIcon(icon_path))
         else:
-            self.setWindowIcon(icon)
+            self.setWindowIcon(QIcon())
 
     def on_tray_activated(self, reason):
         """Handle double-click on tray icon."""

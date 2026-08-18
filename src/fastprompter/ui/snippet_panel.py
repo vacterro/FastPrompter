@@ -15,6 +15,50 @@ from fastprompter.core.translations import tr
 from fastprompter.theme.themes import THEMES
 from fastprompter.utils.fonts import no_aa
 
+# One custom MIME type for internal silo/snippet reordering. The old protocol
+# sent "<category>:<slot>" as plain text and parsed it with an unrestricted
+# str.split(':') + int(), which broke on category names containing ':' and let
+# arbitrary external text raise ValueError in the drop handler. Internal moves
+# are now carried ONLY through this validated payload; URLs/plain text remain
+# available for genuine external export (e.g. dragging a silo into Explorer).
+FP_INTERNAL_DRAG_MIME = "application/x-fastprompter-internal"
+
+
+def _encode_internal_drag(kind, category, slot):
+    import json
+    return json.dumps(
+        {"kind": kind, "category": category, "slot": int(slot)}
+    ).encode("utf-8")
+
+
+def _decode_internal_drag(mime):
+    """Validate and parse an internal drag payload.
+
+    Returns (kind, category, slot) or None when the MIME is absent or the
+    payload is malformed (wrong kind, non-int/negative slot, unknown
+    category). Never raises, never mutates — malformed input is simply
+    ignored so external drags and junk payloads cannot crash the drop.
+    """
+    import json
+    if mime is None or not mime.hasFormat(FP_INTERNAL_DRAG_MIME):
+        return None
+    try:
+        data = json.loads(bytes(mime.data(FP_INTERNAL_DRAG_MIME)).decode("utf-8"))
+    except Exception:
+        return None
+    if not isinstance(data, dict):
+        return None
+    kind = data.get("kind")
+    category = data.get("category")
+    slot = data.get("slot")
+    if kind not in ("snippet", "silo", "arcsilo"):
+        return None
+    if not isinstance(category, str) or not isinstance(slot, int):
+        return None
+    if slot < 0 or slot > 100000:
+        return None
+    return kind, category, slot
+
 
 class WheelPager(QObject):
     """Maps mouse-wheel over a widget (and its wheel-ignoring children) to
@@ -250,7 +294,10 @@ class DraggableButton(QPushButton):
         self._dragging = True
         try:
             drag, mime = QDrag(self), QMimeData()
-            mime.setText(f"{self.cat}:{self.global_idx}")
+            mime.setData(
+                FP_INTERNAL_DRAG_MIME,
+                _encode_internal_drag("snippet", self.cat, self.global_idx),
+            )
             drag.setMimeData(mime)
             drag.exec(Qt.DropAction.MoveAction)
         finally:
@@ -362,7 +409,7 @@ class DropVerticalWidget(QWidget):
         self.layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
     def dragEnterEvent(self, e):
-        if e.mimeData().hasText() and ":" in e.mimeData().text(): e.acceptProposedAction()
+        if _decode_internal_drag(e.mimeData()) is not None: e.acceptProposedAction()
 
     def dragMoveEvent(self, e):
         pos = e.position().toPoint()
@@ -417,10 +464,13 @@ class DropVerticalWidget(QWidget):
     def dropEvent(self, e):
         self._drop_indicator_index = -1
         self.update()
+        payload = _decode_internal_drag(e.mimeData())
+        if payload is None:
+            e.ignore()
+            return
+        source_cat, source_idx = payload[1], payload[2]
         my_cat = self.target_category or self.main_win.get_current_category()
-        pos, source_data = e.position().toPoint(), e.mimeData().text().split(':')
-        if len(source_data) != 2: e.ignore(); return
-        source_cat, source_idx = source_data[0], int(source_data[1])
+        pos = e.position().toPoint()
 
         page = self.main_win.arc_page if my_cat == "__Archive__" else self.main_win.current_pages.get(my_cat, 0)
 
@@ -980,11 +1030,16 @@ class DraggableSiloButton(QWidget):
         try:
             drag, mime = QDrag(self), QMimeData()
             prefix = "arcsilo" if self.is_archive else "silo"
-            mime.setText(f"{prefix}:{self.global_idx}")
+            # Internal reorder carries a validated payload through the custom
+            # MIME type; plain text is no longer parsed for moves.
+            mime.setData(
+                FP_INTERNAL_DRAG_MIME,
+                _encode_internal_drag(prefix, "", self.global_idx),
+            )
             # Also offer the silo as a real file, so the same drag can land in
             # Explorer / Total Commander as a named .md. The app's own drop
-            # targets read the text above and never look at the urls, so this
-            # adds an exit without touching the internal reorder.
+            # targets read the custom MIME above and never look at the urls, so
+            # this adds an external exit without touching the internal reorder.
             self._attach_file_url(mime)
             drag.setMimeData(mime)
             drag.exec(Qt.DropAction.MoveAction | Qt.DropAction.CopyAction)
@@ -1182,7 +1237,8 @@ class SiloDropWidget(QWidget):
         return rect.top(), rect.bottom(), rect.height()
 
     def dragEnterEvent(self, e):
-        if e.mimeData().hasText() and (e.mimeData().text().startswith("silo:") or e.mimeData().text().startswith("arcsilo:")):
+        payload = _decode_internal_drag(e.mimeData())
+        if payload is not None and payload[0] in ("silo", "arcsilo"):
             e.acceptProposedAction()
 
     def _visible_buttons(self):
@@ -1289,15 +1345,12 @@ class SiloDropWidget(QWidget):
     def dropEvent(self, e):
         self._drop_state = None
         self.update()
-        mime = e.mimeData()
-        if not mime.hasText():
+        payload = _decode_internal_drag(e.mimeData())
+        if payload is None or payload[0] not in ("silo", "arcsilo"):
             return
-        data, pos = mime.text().split(':'), e.position().toPoint()
-        if len(data) != 2 or data[0] not in ("silo", "arcsilo"):
-            return
-
-        source_is_archive = (data[0] == "arcsilo")
-        source_idx = int(data[1])
+        source_is_archive = (payload[0] == "arcsilo")
+        source_idx = payload[2]
+        pos = e.position().toPoint()
 
         mode, target = self._drop_target_at(pos)
         btns = self._visible_buttons()

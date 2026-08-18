@@ -632,8 +632,17 @@ class SnippetOpsMixin:
         if isinstance(text, str) and os.path.isabs(text):
             d = text
         else:
-            d = os.path.join(self._files_root(),
-                             self._category_files_dir(cat), silo_slug(text))
+            comp = self._category_files_dir(cat)
+            if comp is None:
+                # P1-4: a category with no persisted component on an
+                # unreachable root resolves to NOTHING — a title-slug guess
+                # could point at another category's real folder.
+                from fastprompter.core.logging import logger as _lg
+                _lg.warning("file retirement skipped: no physical component "
+                            "resolvable for %r (root unreachable); ownership "
+                            "mapping preserved", cat)
+                return "ROOT_UNAVAILABLE"
+            d = os.path.join(self._files_root(), comp, silo_slug(text))
         try:
             if not os.path.isdir(d):
                 return "CONFIRMED_ABSENT"
@@ -751,10 +760,12 @@ class SnippetOpsMixin:
         self.refresh_snippets_panel()
         self.refresh_archive_panel()
 
-    def trash_silo(self, idx=None, is_archive=False, skip_undo=False):
+    def trash_silo(self, idx=None, is_archive=False, *args, **kwargs):
         """Move a silo to the trash (called from context menu).
-        Just calls del_silo which now handles the trashing of text."""
-        self.del_silo(idx, skip_undo=skip_undo, is_archive=is_archive)
+        Just calls del_silo which now handles the trashing of text.
+        Returns the explicit success/failure result from del_silo so batch
+        callers can tell a real deletion from an aborted one (P1-6)."""
+        return self.del_silo(idx, *args, is_archive=is_archive, **kwargs)
 
     def silo_text_at(self, idx, is_archive=False):
         """The stored text of silo ``idx``, or "" when the slot is empty."""
@@ -797,8 +808,11 @@ class SnippetOpsMixin:
             self.activateWindow()
             if reply != QMessageBox.StandardButton.Yes:
                 return False
-        self.trash_silo(idx, is_archive)
-        return True
+        # P1: propagate the real deletion outcome. trash_silo returns
+        # del_silo's boolean — a physical-retirement failure must surface as
+        # False, not as a "delete succeeded" while the silo intentionally
+        # remains.
+        return self.trash_silo(idx, is_archive)
 
     def _trash_silo_content(self, text):
         """Write text to _trash folder and to Trash category if enabled.
@@ -877,14 +891,15 @@ class SnippetOpsMixin:
                 idx = self.active_temp_slot
 
             if not (0 <= idx < len(presets)):
-                return
+                return False
 
             # Snapshot BEFORE any mutation — undo must represent the exact
             # state the user saw before pressing delete. _live_text_into
             # folds the live editor text into the snapshot, so the order here
             # does not need a separate flush step.
+            pushed_undo = None
             if not skip_undo:
-                self.add_data_undo_state("Delete silo")
+                pushed_undo = self.add_data_undo_state("Delete silo")
 
             # Flush the live editor text only when deleting from the space the
             # editor is actually showing; a non-active-space delete must not
@@ -893,24 +908,50 @@ class SnippetOpsMixin:
             if active_in_space and idx == self.active_temp_slot:
                 presets[idx] = self.text_area.toPlainText()
 
-            self._trash_silo_content(presets[idx])
-
-            # resolve the folder via the per-slot map (unique per silo), then
-            # drop its map entry so the freed slot doesn't inherit it
+            # RETIRE the physical assets BEFORE any logical mutation: a silo
+            # whose assets cannot be secured is not deleted at all. The live
+            # text is already flushed into the slot, so the retirement
+            # decision is made on the real content. The folder is resolved
+            # via the per-slot map (unique per silo); a None component (root
+            # unreachable, P1-4) is the same failure as ROOT_UNAVAILABLE.
             folder = self._silo_folder_dir(idx, is_archive=is_arc)
-            retire = self._delete_file_container(self.get_current_category(), folder)
+            if folder is None:
+                retire = "ROOT_UNAVAILABLE"
+            else:
+                retire = self._delete_file_container(
+                    self.get_current_category(), folder)
+            if retire in ("FAILED", "ROOT_UNAVAILABLE"):
+                # P0-6: ABORT. The physical assets could not be secured:
+                # dropping the silo would silently discard the ownership
+                # knowledge that says where the surviving files live. The
+                # just-pushed undo snapshot is popped so Ctrl+Z cannot replay
+                # a deletion that never happened; the silo stays exactly as
+                # it was.
+                from fastprompter.core.logging import logger as _lg
+                _lg.warning("silo delete ABORTED (slot %d, archive=%s): "
+                            "folder retirement %s; nothing was removed",
+                            idx, is_arc, retire)
+                if pushed_undo is not None and self.data_undo_stack and \
+                        self.data_undo_stack[-1] is pushed_undo:
+                    self.data_undo_stack.pop()
+                self._save_undo_state()
+                return False
             # P1-9: the ownership mapping is dropped ONLY for a confirmed
             # retirement. FAILED / ROOT_UNAVAILABLE leave the physical folder
             # exactly where the map says it is; dropping the map would orphan
             # the user's assets ("files never vanish" is a promise, not a
-            # comment).
-            if retire in ("MOVED_TO_TRASH", "EMPTY_REMOVED", "CONFIRMED_ABSENT"):
-                if not is_arc:
-                    self.data.get("silo_folders", {}).pop(str(idx), None)
-                    self.data.get("silo_project_paths", {}).pop(str(idx), None)
-                else:
-                    self.data.get("archive_silo_folders", {}).pop(str(idx), None)
-                    self.data.get("archive_project_paths", {}).pop(str(idx), None)
+            # comment). By the time we are here the retirement is confirmed,
+            # so the map entries are dropped unconditionally.
+            if not is_arc:
+                self.data.get("silo_folders", {}).pop(str(idx), None)
+                self.data.get("silo_project_paths", {}).pop(str(idx), None)
+            else:
+                self.data.get("archive_silo_folders", {}).pop(str(idx), None)
+                self.data.get("archive_project_paths", {}).pop(str(idx), None)
+
+            # Assets are secured; NOW the logical delete proceeds: the text
+            # goes to _trash, the slot is popped and the state remapped.
+            self._trash_silo_content(presets[idx])
 
             presets.pop(idx)
             if idx < len(docs):
@@ -939,16 +980,20 @@ class SnippetOpsMixin:
             self.refresh_temp_presets()
             if is_arc:
                 self.refresh_archive_panel()
+            return True
+        # guard not met (only one silo left, or nothing to delete): no-op
+        return False
 
     def select_empty_silo(self):
         """Insert a new empty silo at the top."""
+        is_arc = bool(getattr(self, "active_is_archive", False))
         self.sound_manager.play("new")
         if getattr(self, "editing_snippet", None):
             self.save_snippet(silent=True)
         else:
             target = (
                 self.data["archive_temp_presets"]
-                if getattr(self, "active_is_archive", False)
+                if is_arc
                 else self.data["temp_presets"]
             )
             if 0 <= self.active_temp_slot < len(target):
@@ -956,30 +1001,29 @@ class SnippetOpsMixin:
 
         presets = (
             self.data["archive_temp_presets"]
-            if getattr(self, "active_is_archive", False)
+            if is_arc
             else self.data["temp_presets"]
         )
-        docs = self.archive_docs if getattr(self, "active_is_archive", False) else self.silo_docs
+        docs = self.archive_docs if is_arc else self.silo_docs
 
         # Cap empty silos at 5: jump to the first existing empty one instead
-        # of letting the user spam unlimited blanks.
+        # of letting the user spam unlimited blanks. This is navigation, not a
+        # data action, so it must not push an undo entry.
         if sum(1 for p in presets if not p.strip()) >= 5:
             for i, p in enumerate(presets):
                 if not p.strip():
                     self.silo_page = i // max(1, self._visible_silos)
-                    self._switch_to_slot(
-                        i, initial=True, is_archive=getattr(self, "active_is_archive", False)
-                    )
+                    self._switch_to_slot(i, initial=True, is_archive=is_arc)
                     self.refresh_temp_presets()
                     return
             return
 
-        self.add_data_undo_state("New silo (top)")
-        if len(presets) >= 100:
-            presets.pop()
-            if len(docs) >= 100:
-                docs.pop()
+        # canonical capacity boundary: never evict another silo implicitly. If
+        # the space is full of content, refuse BEFORE any mutation (lose nothing).
+        if self._silo_at_capacity(is_arc):
+            return
 
+        self.add_data_undo_state("New silo (top)")
         presets.insert(0, "")
 
         doc = QTextDocument()
@@ -997,13 +1041,11 @@ class SnippetOpsMixin:
         # half is the same structural mutation and gets the same remap (T-754).
         if hasattr(self, "_remap_silo_indices"):
             self._remap_silo_indices(
-                lambda i: i + 1,
-                is_archive=getattr(self, "active_is_archive", False))
+                lambda i: i + 1, is_archive=is_arc)
 
         self.silo_page = 0
         self.active_temp_slot = 0
-        self._switch_to_slot(0, initial=True,
-                             is_archive=getattr(self, "active_is_archive", False))
+        self._switch_to_slot(0, initial=True, is_archive=is_arc)
         self.mark_dirty()
         self.refresh_temp_presets()
 
@@ -1014,9 +1056,43 @@ class SnippetOpsMixin:
 
         The trash restore used to be a bare ``temp_presets.insert(0, ...)``
         that left docs, colours, queues and the undo stack all behind.
+
+        Honours the 100-slot capacity boundary: a full space is refused before
+        any mutation (the 101st restore loses nothing); a blank slot, if one
+        exists, is reused in place rather than growing the list past the
+        persistence contract.
+
+        Return contract: the inserted slot index on success, or ``None`` when
+        every slot is occupied (refused). Callers MUST treat ``None`` as
+        failure and preserve the source.
         """
         presets = self.data["archive_temp_presets"] if is_archive else self.data["temp_presets"]
         docs = self.archive_docs if is_archive else self.silo_docs
+        blank = next((i for i, p in enumerate(presets) if not (p or "").strip()), None)
+        if len(presets) >= self.MAX_SILOS_PER_CATEGORY and blank is None:
+            return  # full of content: refuse, lose nothing
+        if blank is not None and len(presets) >= self.MAX_SILOS_PER_CATEGORY:
+            # reuse the blank rather than grow past the 100-slot contract
+            self.add_data_undo_state("Restore silo")
+            presets[blank] = text
+            from PyQt6.QtGui import QTextDocument
+            while len(docs) <= blank:
+                d = QTextDocument()
+                d.setDefaultFont(self.text_area.font())
+                docs.append(d)
+            if docs[blank] is None:
+                d = QTextDocument()
+                d.setDefaultFont(self.text_area.font())
+                d.setPlainText(text)
+                docs[blank] = d
+            else:
+                docs[blank].setPlainText(text)
+            self.mark_dirty()
+            self._switch_to_slot(blank, initial=True, is_archive=is_archive)
+            self.refresh_temp_presets()
+            if is_archive:
+                self.refresh_archive_panel()
+            return blank
         pos = max(0, min(pos, len(presets)))
         self.add_data_undo_state("Restore silo")
         presets.insert(pos, text)
@@ -1039,46 +1115,60 @@ class SnippetOpsMixin:
         self.refresh_temp_presets()
         if is_archive:
             self.refresh_archive_panel()
+        # Success contract: return the slot index. A full workspace refuses and
+        # returns None (P0), so callers can tell a real restore from a no-op.
+        return pos
 
     def append_empty_silo(self, pos=None):
         """Insert a new empty silo at the end or first empty slot."""
+        is_arc = bool(getattr(self, "active_is_archive", False))
         self.sound_manager.play("new")
         if getattr(self, "editing_snippet", None):
             self.save_snippet(silent=True)
         else:
             target = (
                 self.data["archive_temp_presets"]
-                if getattr(self, "active_is_archive", False)
+                if is_arc
                 else self.data["temp_presets"]
             )
             if 0 <= self.active_temp_slot < len(target):
                 target[self.active_temp_slot] = self.text_area.toPlainText()
-        self.add_data_undo_state("New silo (end)")
 
         presets = (
             self.data["archive_temp_presets"]
-            if getattr(self, "active_is_archive", False)
+            if is_arc
             else self.data["temp_presets"]
         )
-        docs = self.archive_docs if getattr(self, "active_is_archive", False) else self.silo_docs
+        docs = self.archive_docs if is_arc else self.silo_docs
 
+        # Navigate to an existing empty slot first: that is navigation, not a
+        # data action, so it must not push an undo entry and the editor must
+        # stay in the SAME index space (archive stays archive).
         for i, content_val in enumerate(presets):
             if not content_val.strip():
                 self.silo_page = i // max(1, self._visible_silos)
-                self._switch_to_slot(i, initial=True)
+                self._switch_to_slot(i, initial=True, is_archive=is_arc)
                 return
-        if len(presets) < 100:
-            i = len(presets)
-            presets.append("")
 
-            doc = QTextDocument()
-            doc.setDefaultFont(self.text_area.font())
-            docs.append(doc)
+        # Only a real insertion is a data action, and only if capacity allows.
+        # A full space is refused before any mutation (lose nothing).
+        if self._silo_at_capacity(is_arc):
+            return
+        self.add_data_undo_state("New silo (end)")
 
-            self.silo_page = i // max(1, self._visible_silos)
-            self._switch_to_slot(i, initial=True)
-            self.mark_dirty()
-            self.refresh_temp_presets()
+        i = len(presets)
+        presets.append("")
+
+        doc = QTextDocument()
+        doc.setDefaultFont(self.text_area.font())
+        docs.append(doc)
+
+        self.silo_page = i // max(1, self._visible_silos)
+        self._switch_to_slot(i, initial=True, is_archive=is_arc)
+        self.mark_dirty()
+        self.refresh_temp_presets()
+        if is_arc:
+            self.refresh_archive_panel()
 
     def archive_active_item(self):
         """Archive the current snippet or silo."""
@@ -1129,6 +1219,9 @@ class SnippetOpsMixin:
         if "archive_temp_presets" not in self.data:
             self.data["archive_temp_presets"] = []
 
+        # canonical archive capacity: refuse to exceed the 100-slot contract
+        if self._silo_at_capacity(True):
+            return
         self.data["archive_temp_presets"].insert(0, item["text"])
 
         doc = QTextDocument()
@@ -1173,6 +1266,9 @@ class SnippetOpsMixin:
         if idx == self.active_temp_slot:
             presets[idx] = text
 
+        # canonical archive capacity: refuse to exceed the 100-slot contract
+        if self._silo_at_capacity(True):
+            return
         self.add_data_undo_state("Archive silo")
 
         if "archive_temp_presets" not in self.data:
@@ -1202,7 +1298,7 @@ class SnippetOpsMixin:
 
         # the normal slot stays, emptied
         presets[idx] = ""
-        if idx < len(self.silo_docs):
+        if idx < len(self.silo_docs) and self.silo_docs[idx] is not None:
             self._set_plain_text_clean(self.silo_docs[idx], "")
         if idx == self.active_temp_slot:
             self.clear_text(internal=True)

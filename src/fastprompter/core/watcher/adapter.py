@@ -66,8 +66,13 @@ class Adapter:
                 "cdp transport needs a cdp_port or a cdp_port_file"]
         self.problems = list(problems)
 
+        # Public so the arming path can ask "does this adapter CLAIM a
+        # blocker" without touching the compiled pattern (the mixin's arm
+        # guard reads it and refuses to arm when the claimed blocker cannot
+        # run — a dead getattr here silently disabled that refusal, P0-9).
+        self.blocker_pattern = blocker_pattern or ""
         self._blocker = None
-        if blocker_pattern:
+        if self.blocker_pattern:
             try:
                 self._blocker = re.compile(blocker_pattern)
             except re.error as exc:
