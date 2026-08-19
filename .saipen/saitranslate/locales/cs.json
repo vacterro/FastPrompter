@@ -1049,7 +1049,14 @@
     "Zipping files…": "Zipping files…",
     "invalid filename": "invalid filename",
     "queue prompts from a silo and have them typed into a target app when it is idle (Alt+C)": "queue prompts from a silo and have them typed into a target app when it is idle (Alt+C)",
-    "up to 100 tabs, each with its own silos, snippets, archive": "up to 100 tabs, each with its own silos, snippets, archive"
+    "up to 100 tabs, each with its own silos, snippets, archive": "up to 100 tabs, each with its own silos, snippets, archive",
+    "Cannot back up: the current state could not be saved to the database.": "Cannot back up: the current state could not be saved to the database.",
+    "Event time is in the past; pick a future time or disable the event.": "Event time is in the past; pick a future time or disable the event.",
+    "Event time is in the past; pick a future time to enable it.": "Event time is in the past; pick a future time to enable it.",
+    "Play a random sound from a pool of rules, each with its own\ntime window and volume. Off: the single sound above is used.": "Play a random sound from a pool of rules, each with its own\ntime window and volume. Off: the single sound above is used.",
+    "Restore aborted — the watcher was still busy; try again once it settles.": "Restore aborted — the watcher was still busy; try again once it settles.",
+    "Restore failed and the live database could not be left consistent. It has been repaired from the automatic safety snapshot on disk — restart FastPrompter to reload it.": "Restore failed and the live database could not be left consistent. It has been repaired from the automatic safety snapshot on disk — restart FastPrompter to reload it.",
+    "{n} file(s) already exist in the export directory. Overwrite them?": "{n} file(s) already exist in the export directory. Overwrite them?"
   },
   "coverage_pct": 100.0
 }
