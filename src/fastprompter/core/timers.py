@@ -213,7 +213,7 @@ class Timer:
                  "volume", "color_mode", "color", "enabled", "fired",
                  "interval_minutes", "kind", "show_notification",
                  "show_in_top_bar", "repeat_anchor", "sound_mode",
-                 "sound_rules")
+                 "sound_rules", "auto_limit_key")
 
     def __init__(self, name, target, repeat=REPEAT_NONE, sound="tick",
                  volume=5, color_mode=COLOR_TEMPERATURE, color=DEFAULT_COLOR,
@@ -221,7 +221,7 @@ class Timer:
                  interval_minutes=DEFAULT_INTERVAL_MINUTES, kind=KIND_ALARM,
                  show_notification=True, show_in_top_bar=True,
                  repeat_anchor=None, sound_mode=SOUND_MODE_SINGLE,
-                 sound_rules=None):
+                 sound_rules=None, auto_limit_key=None):
         self.id = id or uuid.uuid4().hex[:12]
         self.name = (name or "Timer").strip() or "Timer"
         self.description = (description or "").strip()
@@ -236,6 +236,7 @@ class Timer:
         self.color = color or DEFAULT_COLOR
         self.enabled = _heal_bool(enabled, True)
         self.fired = _heal_bool(fired, False)
+        self.auto_limit_key = auto_limit_key
         try:
             # a zero or negative period would make advance() spin forever
             self.interval_minutes = max(1, int(interval_minutes))
@@ -274,6 +275,7 @@ class Timer:
             # deep copy: a saved snapshot must never alias the live rules,
             # or mutating one profile's rules would rewrite the other's
             "sound_rules": [dict(r) for r in self.sound_rules],
+            "auto_limit_key": getattr(self, "auto_limit_key", None),
         }
 
     @classmethod
@@ -321,6 +323,7 @@ class Timer:
                 repeat_anchor=anchor,
                 sound_mode=sound_mode,
                 sound_rules=d.get("sound_rules"),
+                auto_limit_key=d.get("auto_limit_key"),
             )
         except (TypeError, ValueError, AttributeError):
             return None

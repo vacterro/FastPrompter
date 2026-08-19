@@ -387,7 +387,7 @@ def test_scan_limits_never_hijack_calendar_event():
         name="Claude",
         reachable=True,
         state=types.SimpleNamespace(
-            resets_at=None, matched="assumed", reached=False),
+            resets_at=None, matched="assumed", reached=True),
     )
     d.main_win.watcher_adapters = lambda: ([], [], [])
     limit_scan_mod.scan_all = lambda adapters: [hit]
@@ -853,3 +853,96 @@ def test_dialog_open_close_hundred_times_no_residue():
     assert len(fake.timers) == timers_before      # no model mutation
     assert fake.saved == saved_before
     assert fake.label_updates == labels_before
+
+def test_t1014_scan_only_makes_timers_for_limited_agents():
+    from fastprompter.ui.timer_dialog import TimerDialog
+    from fastprompter.core.timers import KIND_ALARM
+    import types
+    
+    # We mock limit_scan.scan_all to return 3 results:
+    # 1. Clear (reachable, reached=False)
+    # 2. Capped (reachable, reached=True)
+    # 3. Unreachable (reachable=False)
+    
+    res_clear = types.SimpleNamespace(
+        name="ClearAgent", reachable=True,
+        state=types.SimpleNamespace(resets_at=None, matched="", reached=False)
+    )
+    res_capped = types.SimpleNamespace(
+        name="CappedAgent", reachable=True,
+        state=types.SimpleNamespace(resets_at=None, matched="capped", reached=True)
+    )
+    res_unreachable = types.SimpleNamespace(
+        name="UnreachableAgent", reachable=False,
+        state=types.SimpleNamespace(resets_at=None, matched="", reached=False)
+    )
+    
+    app = _FakeMain()
+    d = TimerDialog(app)
+    d.main_win.watcher_adapters = lambda: ([], [], [])
+    
+    from fastprompter.core.watcher import limit_scan as limit_scan_mod
+    original_scan_all = limit_scan_mod.scan_all
+    limit_scan_mod.scan_all = lambda adapters: [res_clear, res_capped, res_unreachable]
+    
+    try:
+        d.scan_agent_limits()
+    finally:
+        limit_scan_mod.scan_all = original_scan_all
+        
+    alarms = [t for t in d.main_win.timers if t.kind == KIND_ALARM]
+    
+    # Only the CappedAgent should result in an alarm
+    assert len(alarms) == 1
+    assert alarms[0].name == "CappedAgent limit"
+
+def test_t1015_scan_agent_locale_independent_identity():
+    from fastprompter.ui.timer_dialog import TimerDialog
+    from fastprompter.core.timers import KIND_ALARM, save_timers, load_timers
+    import types
+    
+    res = types.SimpleNamespace(
+        name="Claude", reachable=True,
+        state=types.SimpleNamespace(resets_at=None, matched="capped", reached=True)
+    )
+    
+    app = _FakeMain()
+    d = TimerDialog(app)
+    d.main_win.watcher_adapters = lambda: ([], [], [])
+    
+    from fastprompter.core.watcher import limit_scan as limit_scan_mod
+    original_scan_all = limit_scan_mod.scan_all
+    limit_scan_mod.scan_all = lambda adapters: [res]
+    
+    try:
+        # 1. EN Scan
+        d.lang = "EN"
+        d.scan_agent_limits()
+        alarms = [t for t in d.main_win.timers if t.kind == KIND_ALARM]
+        assert len(alarms) == 1
+        timer_id = alarms[0].id
+        assert alarms[0].name == "Claude limit"
+        
+        # 2. Simulate Save/Load round trip
+        saved = save_timers(app.timers)
+        app.timers = load_timers(saved)
+        print('Keys after load:', [t.auto_limit_key for t in app.timers])
+        
+        # 3. RU Scan
+        d.lang = "RU"
+        d.scan_agent_limits()
+        alarms = [t for t in d.main_win.timers if t.kind == KIND_ALARM]
+        # Should not duplicate!
+        assert len(alarms) == 1
+        assert alarms[0].id == timer_id
+        # Note: Name updates to the localized version, or at least it's matched by key
+        
+        # 4. EST Scan
+        d.lang = "EST"
+        d.scan_agent_limits()
+        alarms = [t for t in d.main_win.timers if t.kind == KIND_ALARM]
+        assert len(alarms) == 1
+        assert alarms[0].id == timer_id
+        
+    finally:
+        limit_scan_mod.scan_all = original_scan_all

@@ -1304,7 +1304,7 @@ class TimerDialog(QDialog):
         must not leave two countdowns for the same reset.
         """
         from fastprompter.core.limits import assume_window
-        from fastprompter.core.watcher.limit_scan import scan_all
+        from fastprompter.core.watcher.limit_scan import scan_all, limited
 
         try:
             adapters, _limits, _errors = self.main_win.watcher_adapters()
@@ -1330,7 +1330,7 @@ class TimerDialog(QDialog):
             self.btn_scan.setEnabled(True)
             self.btn_scan.setText(tr("Scan agents", self.lang))
 
-        hit = [r for r in results if r.reachable]
+        hit = limited(results)
         made = []
         for res in hit:
             assumed = res.state.resets_at is None
@@ -1338,13 +1338,21 @@ class TimerDialog(QDialog):
                 hours=self.spin_limit_hours.value())
             name = tr("{} limit", self.lang).format(res.name) \
                 if "{}" in tr("{} limit", self.lang) else f"{res.name} limit"
+            
+            limit_key = res.name
             existing = next(
                 (t for t in self.main_win.timers
-                 if t.kind == KIND_ALARM and t.name == name), None)
+                 if t.kind == KIND_ALARM and (
+                     t.auto_limit_key == limit_key or 
+                     (t.auto_limit_key is None and t.name == name)
+                 )), None)
+            
             if existing is not None:
                 if res.state.resets_at:
                     existing.target = res.state.resets_at
                     existing.enabled = True
+                    existing.auto_limit_key = limit_key
+                    existing.name = name
                     made.append(existing)
                 continue
             timer = limit_window(
@@ -1356,6 +1364,7 @@ class TimerDialog(QDialog):
                              else res.state.matched[:60]),
                 **self._behavior.timer_kwargs(),
             )
+            timer.auto_limit_key = limit_key
             self.main_win.timers.append(timer)
             made.append(timer)
 

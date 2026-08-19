@@ -902,8 +902,9 @@ def test_t1013_from_dict_corrupt_entries_skipped():
     assert len(timers) == 1
     assert timers[0].name == "Healthy"
 
-def test_t1005_sound_rule_boolean_healing():
-    from fastprompter.core.timers import Timer, load_timers
+def test_t1013_all_day_boolean_healing():
+    from fastprompter.core.timers import load_timers, save_timers, eligible_sound_rules
+    import datetime
     
     t = {
         "target": "2026-08-19T10:00:00",
@@ -911,15 +912,26 @@ def test_t1005_sound_rule_boolean_healing():
         "sound_rules": [
             {
                 "sound": "tick",
-                "enabled": "False",
+                "enabled": "1",
                 "all_day": "False",
-                "start_minute": 360, # 06:00
-                "end_minute": 719    # 11:59
+                "start_minute": 60,  # 01:00
+                "end_minute": 120    # 02:00
             }
         ]
     }
-    timers = load_timers([t])
+    
+    # Load and save to prove canonical serialization
+    loaded = load_timers([t])
+    saved = save_timers(loaded)[0]
+    
+    # Reload
+    timers = load_timers([saved])
     assert len(timers) == 1
     rule = timers[0].sound_rules[0]
-    assert rule["enabled"] is False
+    assert rule["enabled"] is True
     assert rule["all_day"] is False
+    
+    # Prove it's ineligible at 12:00
+    noon = datetime.datetime(2026, 8, 19, 12, 0)
+    eligible = eligible_sound_rules(timers[0], noon)
+    assert not eligible, "Rule should be ineligible at 12:00"

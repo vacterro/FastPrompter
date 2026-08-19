@@ -1683,7 +1683,7 @@ class VaultTextEdit(QTextEdit):
                         self.open_containing_folder(url)
                         self._suppress_context_menu = True
                     elif event.button() == Qt.MouseButton.LeftButton:
-                        QDesktopServices.openUrl(url)
+                        VaultTextEdit.authorize_and_open_url(url, self, getattr(self.main_win, '_current_lang', 'EN'))
                     else:
                         return
                     event.accept()
@@ -1705,7 +1705,7 @@ class VaultTextEdit(QTextEdit):
                         self.open_containing_folder(url)
                         self._suppress_context_menu = True
                     elif event.button() == Qt.MouseButton.LeftButton:
-                        QDesktopServices.openUrl(url)
+                        VaultTextEdit.authorize_and_open_url(url, self, getattr(self.main_win, '_current_lang', 'EN'))
                     else:
                         return      # Ctrl+right on a web link: let the menu open
                     event.accept()
@@ -1945,7 +1945,7 @@ class VaultTextEdit(QTextEdit):
         if wants_folder and release_url.isLocalFile():
             self.open_containing_folder(release_url)
         else:
-            QDesktopServices.openUrl(release_url)
+            VaultTextEdit.authorize_and_open_url(release_url, self, getattr(self.main_win, '_current_lang', 'EN'))
         return True
 
     def leaveEvent(self, event):
@@ -1981,6 +1981,27 @@ class VaultTextEdit(QTextEdit):
     # anything from a `javascript:` exploit to a typo'd scheme; we never turn
     # those into a launch request.
     _SAFE_LINK_SCHEMES = ("http", "https", "ftp", "mailto", "file")
+
+    @staticmethod
+    def authorize_and_open_url(url, parent, lang="EN"):
+        """Prompt before running local executables; otherwise just open."""
+        if not url.isLocalFile():
+            return QDesktopServices.openUrl(url)
+            
+        path = url.toLocalFile()
+        import os
+        ext = os.path.splitext(path)[1].lower()
+        if ext in {".exe", ".cmd", ".bat", ".ps1", ".vbs", ".js", ".lnk", ".wsf", ".msc"}:
+            from fastprompter.core.i18n import tr
+            from PyQt6.QtWidgets import QMessageBox
+            msg = tr("This link points to an executable file or script:\n\n{}\n\nAre you sure you want to run it?", lang).format(path)
+            if "{}" not in tr("This link points to an executable file or script:\n\n{}\n\nAre you sure you want to run it?", lang):
+                msg = tr("This link points to an executable file or script:\n\n{}\n\nAre you sure you want to run it?", lang) + f"\n\n{path}"
+            reply = QMessageBox.warning(parent, tr("Security Warning", lang), msg, QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            if reply != QMessageBox.StandardButton.Yes:
+                return False
+                
+        return QDesktopServices.openUrl(url)
 
     @staticmethod
     def _safe_link_url(url):

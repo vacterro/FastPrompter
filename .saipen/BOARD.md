@@ -117,3 +117,12 @@
 
 - [x] T-774 (P2, bug, stage E gate failure) DONE 08.08.26 15:50 -- `test_app_smoke.py:8309` saved `queue.to_list()` (dicts) and restored it with `queue.items.extend(saved)`, bypassing the ctor/append that deserialise, so every later test in the file read raw dicts out of a live `SiloQueue`. `SiloQueue.pending()` then died on `AttributeError: 'dict' object has no attribute 'state'` in full-suite order only -- the test passed alone, which is why it survived. Found with an env-gated type trap on the ctor and append, whose NOT firing was the finding: the write went through neither. Fixed to `list(queue.items)`; the sibling restore at :8634 already used `QueueItem.from_dict`. Zero production diff. | verify: test_app_smoke.py 584 pass 0 fail (was 583/1); trap removed, `git diff` on queue.py empty; ruff clean | owner: claude
 
+
+### cc converge ?'?? SECOND WAVE (19.08.26)
+
+- [x] T-1013 (timers.py _heal_sound_rules) DONE 19.08.26 -- fixed ll_day to use _heal_bool instead of ool(). Added specific regression test 	est_t1013_all_day_boolean_healing.
+- [x] T-1014 (timer_dialog.py scan_agent_limits) DONE 19.08.26 -- filtered agent timer creation using limited(results) (reachable + reached). Added regression test 	est_t1014_scan_only_makes_timers_for_limited_agents.
+- [x] T-1015 (timer_dialog.py auto-limit key) DONE 19.08.26 -- added uto_limit_key to Timer for locale-independent limit identity. Adopt legacy timers if names match, serialize properly. Added regression test 	est_t1015_scan_agent_locale_independent_identity.
+- [x] T-1016 (editor.py + main.py safe links) DONE 19.08.26 -- implemented VaultTextEdit.authorize_and_open_url prompting confirmation for executables/scripts while passing through web links and local folder reveal. Added 	est_t1016_executable_links_require_approval.
+- [x] T-1017 (sync_saitranslate.py isolation) DONE 19.08.26 -- added --root argument and cross-root target prevention in sync_saitranslate.py. Added regression test 	est_t1017_translation_sync_path_isolation pointing to isolated tmp clone.
+

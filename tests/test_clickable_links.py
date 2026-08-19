@@ -134,3 +134,50 @@ def test_reading_links(app, mock_open_url, monkeypatch):
     _mouse_click(editor, pos, Qt.MouseButton.LeftButton)
     assert len(mock_open_url) == 1 # unchanged
 
+
+def test_t1016_executable_links_require_approval(app, mock_open_url, mock_open_folder, monkeypatch):
+    from fastprompter.ui.editor import VaultTextEdit
+    from PyQt6.QtWidgets import QMessageBox
+    main_win = _FakeMainForPreview()
+    main_win._current_lang = "EN"
+    editor = VaultTextEdit(main_win)
+    
+    current_url = "file:///C:/malware.exe"
+    monkeypatch.setattr(editor, 'anchor_url_at', lambda pos: QUrl(current_url) if current_url else None)
+    pos = QPoint(10, 10)
+    
+    # 1. Reject approval
+    responses = [QMessageBox.StandardButton.No]
+    def mock_warning(*args, **kwargs):
+        return responses.pop(0)
+    monkeypatch.setattr(QMessageBox, 'warning', mock_warning)
+    
+    _mouse_click(editor, pos, Qt.MouseButton.LeftButton)
+    assert len(mock_open_url) == 0  # blocked by No
+    
+    # 2. Accept approval
+    responses = [QMessageBox.StandardButton.Yes]
+    _mouse_click(editor, pos, Qt.MouseButton.LeftButton)
+    assert len(mock_open_url) == 1  # allowed by Yes
+    
+    # 3. Normal web link bypasses approval
+    current_url = "https://example.com"
+    _mouse_click(editor, pos, Qt.MouseButton.LeftButton)
+    assert len(mock_open_url) == 2  # allowed immediately
+    
+    # 4. Normal local-folder reveal bypasses approval
+    current_url = "file:///C:/malware.exe"
+    # shift-click reveals folder instead of running it
+    _mouse_click(editor, pos, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.ShiftModifier)
+    assert len(mock_open_folder) == 1
+    assert len(mock_open_url) == 2  # unchanged openUrl
+    
+    # Test reading mode (main.py)
+    editor_read = _PreviewTextEdit()
+    editor_read.main_win = main_win
+    monkeypatch.setattr(editor_read, 'anchorAt', lambda pos: current_url if current_url else "")
+    
+    responses = [QMessageBox.StandardButton.No]
+    _mouse_click(editor_read, pos, Qt.MouseButton.LeftButton)
+    assert len(mock_open_url) == 2  # blocked by No
+

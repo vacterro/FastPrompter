@@ -305,3 +305,79 @@ class TestBoundedProbePool:
             assert not paths_mod._PROBE_INFLIGHT, "probe slots never released"
         # a fresh probe now answers again: capacity recovered
         assert paths_mod.exists_within(os.path.dirname(__file__), timeout=2.0) is True
+import pytest
+import os
+import subprocess
+from pathlib import Path
+
+def test_t1017_translation_sync_path_isolation(tmp_path):
+    # Simulate pointing to a temporary clone worktree but trying to write to a hardcoded host path
+    # We will create a fake root at tmp_path, and run sync_saitranslate.py with --root tmp_path
+    # We'll patch sync_saitranslate.py so it tries to write outside the root.
+    
+    script_path = Path("tools/sync_saitranslate.py").resolve()
+    assert script_path.exists()
+    
+    # Create fake project root structure
+    src_dir = tmp_path / "src" / "fastprompter"
+    src_dir.mkdir(parents=True)
+    
+    locales_dir = tmp_path / ".saipen" / "saitranslate" / "locales"
+    locales_dir.mkdir(parents=True)
+    
+    # We will modify the script execution environment by running it through python
+    # We'll use a wrapper script that imports sync_saitranslate and tries to call ensure_inside_root on an outside path.
+    
+    wrapper = tmp_path / "wrapper.py"
+    wrapper.write_text(f'''
+import sys
+import os
+sys.path.insert(0, "{script_path.parent.as_posix()}")
+import sync_saitranslate
+from pathlib import Path
+
+# We fake the sys.argv to pass the root
+sys.argv = ["sync_saitranslate.py", "--root", r"{tmp_path.as_posix()}"]
+try:
+    sync_saitranslate.main()
+except SystemExit as e:
+    sys.exit(e.code)
+''', encoding="utf-8")
+    
+    # Running normally should succeed (it finds nothing to process, or processes the fake dir)
+    res = subprocess.run(["python", str(wrapper)], capture_output=True, text=True)
+    assert res.returncode == 0, res.stderr
+    
+    # Now we inject an outside path into locales_dir
+    outside_dir = tmp_path.parent / "outside_locales"
+    outside_dir.mkdir(exist_ok=True)
+    
+    wrapper2 = tmp_path / "wrapper2.py"
+    wrapper2.write_text(f'''
+import sys
+import os
+sys.path.insert(0, "{script_path.parent.as_posix()}")
+import sync_saitranslate
+from pathlib import Path
+
+# Monkeypatch os.path.join so that when it computes locales_dir it returns the outside directory
+original_join = os.path.join
+def fake_join(*args):
+    if ".saipen" in args and "saitranslate" in args and "locales" in args:
+        return r"{outside_dir.as_posix()}"
+    return original_join(*args)
+
+os.path.join = fake_join
+
+sys.argv = ["sync_saitranslate.py", "--root", r"{tmp_path.as_posix()}"]
+try:
+    sync_saitranslate.main()
+except SystemExit as e:
+    sys.exit(e.code)
+''', encoding="utf-8")
+    
+    res2 = subprocess.run(["python", str(wrapper2)], capture_output=True, text=True)
+    assert res2.returncode == 1
+    assert "Security Error" in res2.stderr
+    assert "resolves outside the project root" in res2.stderr
+

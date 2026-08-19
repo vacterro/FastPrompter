@@ -130,7 +130,7 @@ class _PreviewTextEdit(QTextEdit):
                 from fastprompter.ui.editor import VaultTextEdit
                 url = VaultTextEdit._safe_link_url(QUrl(href))
                 if url:
-                    QDesktopServices.openUrl(url)
+                    VaultTextEdit.authorize_and_open_url(url, self, getattr(self.window(), '_current_lang', 'EN'))
                     event.accept()
                     return
         super().mouseReleaseEvent(event)
