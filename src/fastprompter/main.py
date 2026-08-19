@@ -127,9 +127,12 @@ class _PreviewTextEdit(QTextEdit):
                 and not self.textCursor().hasSelection()):
             href = self.anchorAt(event.position().toPoint())
             if href:
-                QDesktopServices.openUrl(QUrl(href))
-                event.accept()
-                return
+                from fastprompter.ui.editor import VaultTextEdit
+                url = VaultTextEdit._safe_link_url(QUrl(href))
+                if url:
+                    QDesktopServices.openUrl(url)
+                    event.accept()
+                    return
         super().mouseReleaseEvent(event)
 
 

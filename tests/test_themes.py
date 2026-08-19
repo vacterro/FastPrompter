@@ -120,6 +120,12 @@ class TestGenerateCustomTheme:
             "notif_text",
             "notif_accent",
             "notif_border",
+            "notif_header_text",
+            "notif_info",
+            "notif_border_dark",
+            "notif_btn_bg",
+            "notif_btn_text",
+            "notif_btn_pressed",
         }
         assert set(theme["raw_colors"].keys()) == expected_keys
 

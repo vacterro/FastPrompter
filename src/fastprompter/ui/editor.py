@@ -1696,7 +1696,7 @@ class VaultTextEdit(QTextEdit):
                     event.accept()
                     return
             if mods & Qt.KeyboardModifier.ControlModifier:
-                url = self.anchor_url_at(event.pos())
+                url = self._safe_link_url(self.anchor_url_at(event.pos()))
                 if url is not None:
                     wants_folder = (
                         event.button() == Qt.MouseButton.RightButton
@@ -2018,7 +2018,6 @@ class VaultTextEdit(QTextEdit):
         if event.button() != Qt.MouseButton.LeftButton:
             return
         if event.modifiers() & (Qt.KeyboardModifier.ControlModifier
-                                | Qt.KeyboardModifier.ShiftModifier
                                 | Qt.KeyboardModifier.AltModifier):
             return
         url = self._safe_link_url(self.anchor_url_at(event.pos()))

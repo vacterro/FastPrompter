@@ -125,27 +125,74 @@ QTableView, QTableWidget, QTreeView, QTreeWidget, QListView, QListWidget {{
 QTableCornerButton::section {{ background-color: {bg}; border: none; }}
 """
 
+CUSTOM_COLOR_DEFAULTS = {
+    "bg_main": "#1a1a1a",
+    "bg_text": "#2c2c2c",
+    "text_main": "#c0c0c0",
+    "border_light": "#4d4d4d",
+    "border_dark": "#0a0a0a",
+    "btn_bg": "#3a3a3a",
+    "btn_text": "#d0d0d0",
+    "btn_pressed": "#4a4a4a",
+    "accent": "#bfa65e",
+    "notif_bg": "#1a1a1a",
+    "notif_header": "#3a3a3a",
+    "notif_header_text": "#bfa65e",
+    "notif_title": "#bfa65e",
+    "notif_text": "#c0c0c0",
+    "notif_info": "#868686",
+    "notif_accent": "#bfa65e",
+    "notif_border": "#4d4d4d",
+    "notif_border_dark": "#0a0a0a",
+    "notif_btn_bg": "#3a3a3a",
+    "notif_btn_text": "#bfa65e",
+    "notif_btn_pressed": "#434343",
+}
 
 def generate_custom_theme(c):
     # copy first: this used to c.setdefault() straight into the caller's dict,
     # silently mutating shared config references
     c = dict(c or {})
-    _defaults = {"bg_main":"#1a1a1a","bg_text":"#2c2c2c","text_main":"#c0c0c0","border_light":"#4d4d4d","border_dark":"#0a0a0a","btn_bg":"#3a3a3a","btn_text":"#d0d0d0","btn_pressed":"#4a4a4a","accent":"#bfa65e"}
-    for k, v in _defaults.items():
-        c.setdefault(k, v)
-    # Notification colour tokens. Every theme carries them so the toast and
-    # other notification chrome read a dedicated palette instead of borrowing
-    # the generic one. Derived from the base colours so a custom theme gets a
-    # coherent notification look without being forced to set six more values;
-    # each can still be overridden in the Custom Theme Colors dialog.
-    for k, v in {
+    
+    # 1. Base tokens defaults (only those that notification tokens might derive from)
+    for k in ["bg_main", "bg_text", "text_main", "border_light", "border_dark", "btn_bg", "btn_text", "btn_pressed", "accent"]:
+        c.setdefault(k, CUSTOM_COLOR_DEFAULTS[k])
+
+    # 2. Derive missing notification tokens from base tokens
+    derived = {
         "notif_bg": c["bg_main"],
         "notif_header": c["btn_bg"],
+        "notif_header_text": c["accent"],
         "notif_title": c["accent"],
         "notif_text": c["text_main"],
+        "notif_info": blend_hex(c["text_main"], c["border_light"], 0.5),
         "notif_accent": c["accent"],
         "notif_border": c["border_light"],
-    }.items():
+        "notif_border_dark": c["border_dark"],
+        "notif_btn_bg": c["btn_bg"],
+        "notif_btn_text": c["accent"],
+        "notif_btn_pressed": blend_hex(c["btn_bg"], c["border_light"], 0.5),
+    }
+
+    # Backward heal missing 6 new tokens if the old 6 were present
+    if "notif_header_text" not in c and "notif_accent" in c:
+        c["notif_header_text"] = c["notif_accent"]
+    if "notif_info" not in c and "notif_text" in c and "notif_border" in c:
+        c["notif_info"] = blend_hex(c["notif_text"], c["notif_border"], 0.5)
+    if "notif_border_dark" not in c and "border_dark" in c:
+        c["notif_border_dark"] = c["border_dark"]
+    if "notif_btn_bg" not in c and "notif_header" in c:
+        c["notif_btn_bg"] = c["notif_header"]
+    if "notif_btn_text" not in c and "notif_accent" in c:
+        c["notif_btn_text"] = c["notif_accent"]
+    if "notif_btn_pressed" not in c and "notif_header" in c and "notif_border" in c:
+        c["notif_btn_pressed"] = blend_hex(c["notif_header"], c["notif_border"], 0.5)
+
+    for k, v in derived.items():
+        c.setdefault(k, v)
+        
+    # 3. Any remaining from defaults
+    for k, v in CUSTOM_COLOR_DEFAULTS.items():
         c.setdefault(k, v)
     return {
         "stylesheet": f"""

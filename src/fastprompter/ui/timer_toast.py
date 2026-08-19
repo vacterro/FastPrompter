@@ -37,24 +37,30 @@ def _get_toast_palette(main_win):
 
     bg = raw.get("notif_bg", raw.get("bg_main", "#1A0F05"))
     header = raw.get("notif_header", raw.get("btn_bg", "#362812"))
+    header_text = raw.get("notif_header_text", raw.get("notif_accent", raw.get("accent", "#D9B340")))
     title = raw.get("notif_title", raw.get("accent", "#D9B340"))
     text = raw.get("notif_text", raw.get("text_main", "#D4B87A"))
     accent = raw.get("notif_accent", raw.get("accent", "#D9B340"))
     border = raw.get("notif_border", raw.get("border_light", "#C0A060"))
-    border_dark = raw.get("border_dark", "#0E0803")
+    border_dark = raw.get("notif_border_dark", raw.get("border_dark", "#0E0803"))
+    info = raw.get("notif_info", blend_hex(text, border, 0.30))
+    btn_bg = raw.get("notif_btn_bg", header)
+    btn_text = raw.get("notif_btn_text", accent)
+    btn_pressed = raw.get("notif_btn_pressed", blend_hex(header, border, 0.45))
 
     return {
         "bg": bg,
         "header": header,
+        "header_text": header_text,
         "title": title,
         "text": text,
         "accent": accent,
         "border": border,
         "border_dark": border_dark,
-        "info": blend_hex(text, border, 0.30),
-        "btn_bg": header,
-        "btn_text": accent,
-        "btn_pressed": blend_hex(header, border, 0.45),
+        "info": info,
+        "btn_bg": btn_bg,
+        "btn_text": btn_text,
+        "btn_pressed": btn_pressed,
     }
 
 
@@ -98,7 +104,7 @@ class TimerToast(QWidget):
                 border-bottom: 1px solid {p['border_dark']};
             }}
             QLabel#HeaderTitle {{
-                color: {p['accent']};
+                color: {p['header_text']};
                 font-weight: bold;
                 font-size: 11px;
             }}

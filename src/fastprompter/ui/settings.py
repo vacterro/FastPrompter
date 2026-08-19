@@ -250,17 +250,14 @@ class ColorConfigDialog(QDialog):
         self.form_layout = QFormLayout()
 
         # Default custom colors
-        cc = self.main_win.data.get("custom_colors", {
-            "bg_main": "#1a1a1a", "bg_text": "#000000", "text_main": "#c0c0c0",
-            "border_light": "#4d4d4d", "border_dark": "#0a0a0a",
-            "btn_bg": "#2b2b2b", "btn_pressed": "#141414", "btn_text": "#c0c0c0",
-            "accent": "#5a7a96", "edit_bg": "#2a3330",
+        from fastprompter.theme.themes import CUSTOM_COLOR_DEFAULTS
+        fallback_colors = dict(CUSTOM_COLOR_DEFAULTS)
+        fallback_colors.update({
+            "edit_bg": "#2a3330",
             "overlay_new": "#6a5555", "overlay_recent": "#6a5a40",
-            "overlay_day": "#5a5a30", "overlay_old": "#40506a",
-            "notif_bg": "#1a1a1a", "notif_header": "#2b2b2b",
-            "notif_title": "#5a7a96", "notif_text": "#c0c0c0",
-            "notif_accent": "#5a7a96", "notif_border": "#4d4d4d"
+            "overlay_day": "#5a5a30", "overlay_old": "#40506a"
         })
+        cc = self.main_win.data.get("custom_colors", fallback_colors)
         if isinstance(cc, str):
             import ast
             try: cc = ast.literal_eval(cc)
@@ -268,10 +265,10 @@ class ColorConfigDialog(QDialog):
                 from fastprompter.core.logging import logger
                 logger.debug(f"Failed to parse custom_colors: {e}")
         if not isinstance(cc, dict):
-            cc = {"bg_main": "#1a1a1a", "bg_text": "#000000", "text_main": "#c0c0c0", "border_light": "#4d4d4d", "border_dark": "#0a0a0a", "btn_bg": "#2b2b2b", "btn_pressed": "#141414", "btn_text": "#c0c0c0", "accent": "#5a7a96", "edit_bg": "#2a3330", "overlay_new": "#6a5555", "overlay_recent": "#6a5a40", "overlay_day": "#5a5a30", "overlay_old": "#40506a", "notif_bg": "#1a1a1a", "notif_header": "#2b2b2b", "notif_title": "#5a7a96", "notif_text": "#c0c0c0", "notif_accent": "#5a7a96", "notif_border": "#4d4d4d"}
+            cc = dict(fallback_colors)
 
         # Ensure all keys exist if loading an old config or empty dict
-        for fallback_key, fallback_val in {"bg_main": "#1a1a1a", "bg_text": "#000000", "text_main": "#c0c0c0", "border_light": "#4d4d4d", "border_dark": "#0a0a0a", "btn_bg": "#2b2b2b", "btn_pressed": "#141414", "btn_text": "#c0c0c0", "accent": "#5a7a96", "edit_bg": "#2a3330", "overlay_new": "#6a5555", "overlay_recent": "#6a5a40", "overlay_day": "#5a5a30", "overlay_old": "#40506a", "notif_bg": "#1a1a1a", "notif_header": "#2b2b2b", "notif_title": "#5a7a96", "notif_text": "#c0c0c0", "notif_accent": "#5a7a96", "notif_border": "#4d4d4d"}.items():
+        for fallback_key, fallback_val in fallback_colors.items():
             if fallback_key not in cc:
                 cc[fallback_key] = fallback_val
 
@@ -295,10 +292,16 @@ class ColorConfigDialog(QDialog):
             "overlay_old": tr("Last Edited < 49 days", self.lang),
             "notif_bg": tr("Notification Background", self.lang),
             "notif_header": tr("Notification Header", self.lang),
+            "notif_header_text": tr("Notification Header Text", self.lang),
             "notif_title": tr("Notification Title", self.lang),
             "notif_text": tr("Notification Text", self.lang),
+            "notif_info": tr("Notification Info", self.lang),
             "notif_accent": tr("Notification Accent", self.lang),
-            "notif_border": tr("Notification Border", self.lang),
+            "notif_border": tr("Notification Border (Light)", self.lang),
+            "notif_border_dark": tr("Notification Border (Dark)", self.lang),
+            "notif_btn_bg": tr("Notification Button Background", self.lang),
+            "notif_btn_text": tr("Notification Button Text", self.lang),
+            "notif_btn_pressed": tr("Notification Button Pressed", self.lang),
         }
 
         for key, name in labels.items():
