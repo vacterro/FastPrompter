@@ -206,7 +206,7 @@ QTabBar::tab:selected {{ background: {c['bg_main']}; border: 1px solid {c['accen
 QTabBar::scroller {{ width: 36px; }}
 QMenu {{ background-color: {c['btn_bg']}; border: 1px solid {c['border_dark']}; }}
 QMenu::item:selected {{ background-color: {c['accent']}; color: {c['bg_main']}; }}
-QSpinBox, QComboBox, QLineEdit {{ background-color: {c['bg_text']}; color: {c['text_main']}; border: 1px solid {c['border_dark']}; padding: 1px; }}
+QSpinBox, QDoubleSpinBox, QDateTimeEdit, QComboBox, QLineEdit {{ background-color: {c['bg_text']}; color: {c['text_main']}; border: 1px solid {c['border_dark']}; padding: 1px; }}
 QCheckBox {{ color: {c['text_main']}; spacing: 4px; padding: 0px; margin: 0px; }}
 QCheckBox::indicator {{ width: 10px; height: 10px; background: {c['bg_main']}; border: 1px solid {c['border_dark']}; }}
 QCheckBox::indicator:checked {{ background: {c['accent']}; border: 1px solid {c['border_dark']}; }}
@@ -254,7 +254,7 @@ QTabBar::tab:selected { background: #1c1c1c; border: 1px inset #050505; font-wei
 QTabBar::scroller { width: 36px; }
 QMenu { background-color: #1c1c1c; border: 1px outset #4a4a4a; }
 QMenu::item:selected { background-color: #bfa65e; color: #000000; }
-QSpinBox, QComboBox, QLineEdit { background-color: #0f0f0f; color: #c4ba9f; border: 1px inset #050505; padding: 2px; }
+QSpinBox, QDoubleSpinBox, QDateTimeEdit, QComboBox, QLineEdit { background-color: #0f0f0f; color: #c4ba9f; border: 1px inset #050505; padding: 2px; }
 QCheckBox { color: #c4ba9f; }
 QCheckBox::indicator { width: 12px; height: 12px; background: #0f0f0f; border: 1px inset #050505; }
 QCheckBox::indicator:checked { background: #bfa65e; }
@@ -295,7 +295,7 @@ QTabBar::tab:selected { background: #232018; border: 1px inset #100e08; font-wei
 QTabBar::scroller { width: 36px; }
 QMenu { background-color: #232018; border: 1px outset #5a5040; }
 QMenu::item:selected { background-color: #c9a84c; color: #000000; }
-QSpinBox, QComboBox, QLineEdit { background-color: #1a1810; color: #d4c89a; border: 1px inset #100e08; padding: 2px; }
+QSpinBox, QDoubleSpinBox, QDateTimeEdit, QComboBox, QLineEdit { background-color: #1a1810; color: #d4c89a; border: 1px inset #100e08; padding: 2px; }
 QCheckBox { color: #d4c89a; }
 QCheckBox::indicator { width: 12px; height: 12px; background: #1a1810; border: 1px inset #100e08; }
 QCheckBox::indicator:checked { background: #c9a84c; }
@@ -336,7 +336,7 @@ QTabBar::tab:selected { background: #1b1b1b; border: 2px solid; border-top-color
 QTabBar::scroller { width: 36px; }
 QMenu { background-color: #2b2b2b; border: 2px solid #4d4d4d; }
 QMenu::item:selected { background-color: #5a7a96; color: #000000; }
-QSpinBox, QComboBox, QLineEdit { background-color: #181818; color: #c0c0c0; border: 2px solid; border-top-color: #0a0a0a; border-left-color: #0a0a0a; border-right-color: #4d4d4d; border-bottom-color: #4d4d4d; padding: 1px; }
+QSpinBox, QDoubleSpinBox, QDateTimeEdit, QComboBox, QLineEdit { background-color: #181818; color: #c0c0c0; border: 2px solid; border-top-color: #0a0a0a; border-left-color: #0a0a0a; border-right-color: #4d4d4d; border-bottom-color: #4d4d4d; padding: 1px; }
 QCheckBox { color: #c0c0c0; spacing: 4px; padding: 0px; margin: 0px; }
 QCheckBox::indicator { width: 10px; height: 10px; background: #181818; border: 2px solid; border-top-color: #0a0a0a; border-left-color: #0a0a0a; border-right-color: #4d4d4d; border-bottom-color: #4d4d4d; }
 QCheckBox::indicator:checked { background: #5a7a96; border: 2px solid; border-top-color: #0a0a0a; border-left-color: #0a0a0a; border-right-color: #4d4d4d; border-bottom-color: #4d4d4d; }
@@ -377,7 +377,7 @@ QTabBar::tab:selected { background: #e6e6e6; border: 2px inset #808080; font-wei
 QTabBar::scroller { width: 36px; }
 QMenu { background-color: #c0c0c0; border: 2px outset #ffffff; }
 QMenu::item:selected { background-color: #5e7a7a; color: #ffffff; }
-QSpinBox, QComboBox, QLineEdit { background-color: #ffffff; color: #000000; border: 2px inset #808080; padding: 2px; }
+QSpinBox, QDoubleSpinBox, QDateTimeEdit, QComboBox, QLineEdit { background-color: #ffffff; color: #000000; border: 2px inset #808080; padding: 2px; }
 QCheckBox { color: #000000; }
 QCheckBox::indicator { width: 12px; height: 12px; background: #ffffff; border: 2px inset #808080; }
 QCheckBox::indicator:checked { background: #5e7a7a; }
@@ -395,7 +395,7 @@ QDockWidget::title { padding: 2px; border: 2px outset #ffffff; background-color:
         "btn_save": "background-color: #c0c0c0; color: #000000; font-weight: bold; font-size: 12px; padding: 6px; border: 2px outset #ffffff;",
         "lbl_help": "font-size: 14px; color: #505050;",
         "lbl_title": "font-weight: bold; color: #000000;",
-        "mini_settings": "QFrame { background-color: #c0c0c0; border: 2px solid #ffffff; border-bottom-color: #808080; border-right-color: #808080; } QLabel { color: #000000; } QCheckBox { color: #000000; } QComboBox, QSpinBox { background-color: #ffffff; color: #000000; border: 2px solid #808080; border-bottom-color: #ffffff; border-right-color: #ffffff; } QPushButton { background-color: #c0c0c0; color: #000000; border: 2px solid #ffffff; border-bottom-color: #808080; border-right-color: #808080; }",
+        "mini_settings": "QFrame { background-color: #c0c0c0; border: 2px solid #ffffff; border-bottom-color: #808080; border-right-color: #808080; } QLabel { color: #000000; } QCheckBox { color: #000000; } QComboBox, QSpinBox, QDoubleSpinBox, QDateTimeEdit { background-color: #ffffff; color: #000000; border: 2px solid #808080; border-bottom-color: #ffffff; border-right-color: #ffffff; } QPushButton { background-color: #c0c0c0; color: #000000; border: 2px solid #ffffff; border-bottom-color: #808080; border-right-color: #808080; }",
         "raw_colors": {
             "bg_main": "#c0c0c0", "bg_text": "#ffffff", "text_main": "#000000",
             "border_light": "#ffffff", "border_dark": "#808080",
@@ -418,7 +418,7 @@ QTabBar::tab:selected { background: #000000; border: 1px solid #333333; font-wei
 QTabBar::scroller { width: 36px; }
 QMenu { background-color: #050505; border: 1px solid #1a1a1a; }
 QMenu::item:selected { background-color: #1a1a1a; color: #ffffff; }
-QSpinBox, QComboBox, QLineEdit { background-color: #050505; color: #a0a0a0; border: 1px solid #1a1a1a; padding: 1px; }
+QSpinBox, QDoubleSpinBox, QDateTimeEdit, QComboBox, QLineEdit { background-color: #050505; color: #a0a0a0; border: 1px solid #1a1a1a; padding: 1px; }
 QCheckBox { color: #a0a0a0; spacing: 4px; padding: 0px; margin: 0px; }
 QCheckBox::indicator { width: 10px; height: 10px; background: #000000; border: 1px solid #1a1a1a; }
 QCheckBox::indicator:checked { background: #1a1a1a; border: 1px solid #333333; }
