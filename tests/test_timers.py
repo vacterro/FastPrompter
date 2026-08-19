@@ -871,3 +871,55 @@ class TestProfileRoundtripEveryField:
             t = Timer("r", NOW, repeat=repeat, repeat_anchor=anchor)
             back = load_timers(save_timers([t]))[0]
             assert back.repeat_anchor == anchor
+
+def test_t1013_from_dict_corrupt_entries_skipped():
+    from fastprompter.core.timers import Timer, load_timers
+    
+    t_healthy = {
+        "target": "2026-08-19T10:00:00",
+        "name": "Healthy",
+        "description": "A healthy timer"
+    }
+    t_numeric_name = {
+        "target": "2026-08-19T10:00:00",
+        "name": 123,
+        "description": "Numeric name"
+    }
+    t_numeric_desc = {
+        "target": "2026-08-19T10:00:00",
+        "name": "Numeric desc",
+        "description": 123
+    }
+    t_aware_target = {
+        "target": "2026-08-19T10:00:00+03:00",
+        "name": "Aware target",
+        "description": "Timezone aware"
+    }
+    
+    raw = [t_healthy, t_numeric_name, t_numeric_desc, t_aware_target]
+    timers = load_timers(raw)
+    
+    assert len(timers) == 1
+    assert timers[0].name == "Healthy"
+
+def test_t1005_sound_rule_boolean_healing():
+    from fastprompter.core.timers import Timer, load_timers
+    
+    t = {
+        "target": "2026-08-19T10:00:00",
+        "sound_mode": "pool",
+        "sound_rules": [
+            {
+                "sound": "tick",
+                "enabled": "False",
+                "all_day": "False",
+                "start_minute": 360, # 06:00
+                "end_minute": 719    # 11:59
+            }
+        ]
+    }
+    timers = load_timers([t])
+    assert len(timers) == 1
+    rule = timers[0].sound_rules[0]
+    assert rule["enabled"] is False
+    assert rule["all_day"] is False

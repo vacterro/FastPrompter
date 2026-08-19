@@ -70,7 +70,16 @@ def test_zebra_rows_are_never_white():
 def test_the_calendar_popup_carries_its_own_copy():
     """A widget-level sheet REPLACES inherited rules, so the popup needs it."""
     import inspect
-
     from fastprompter.ui.timer_dialog import TimerDialog
+    from fastprompter.main import FastPrompter
+    from PyQt6.QtWidgets import QApplication
+    qapp = QApplication.instance() or QApplication([])
+
+    app = FastPrompter()
+    dialog = TimerDialog(app)
+    
     src = inspect.getsource(TimerDialog._style_calendar_popup)
-    assert "QCalendarWidget QHeaderView::section" in src
+    assert "self._calendar_sheet()" in src, "_style_calendar_popup must apply _calendar_sheet"
+    
+    sheet = dialog._calendar_sheet()
+    assert "QCalendarWidget QHeaderView::section" in sheet

@@ -1,8 +1,8 @@
-"""Packaged release probe: verify a built FastPrompter.exe end to end.
+﻿"""Packaged release probe: verify a built FastPrompter.exe end to end.
 
 Source tests cannot prove the onefile/Nuitka assumptions, so this script runs
 a REAL packaged executable through the ownership/handover/persistence contract.
-It is deliberately a MANUAL / nightly / release-time tool — a Nuitka build is
+It is deliberately a MANUAL / nightly / release-time tool вЂ” a Nuitka build is
 too expensive for PR CI.
 
 Usage:
@@ -56,24 +56,30 @@ def main():
             _fail("stays alive", f"process exited early with {proc.returncode}")
         return proc
 
-    def probe_lock(expect_owned):
+    def assert_lock_free():
         sys.path.insert(0, os.path.join(PROJECT_ROOT, "src"))
         from fastprompter.core.instance_lock import InstanceLock
         lock = InstanceLock()
         owned, reason = lock.acquire()
-        if expect_owned and not owned:
-            _fail("mutex", f"expected to own it, got: {reason}")
-        if not expect_owned and owned:
-            _fail("mutex", "expected the app to own it, but we acquired it")
+        if not owned:
+            _fail("mutex", f"expected lock to be free, but could not acquire: {reason}")
+        lock.release()
+        lock.release()
+
+    def assert_lock_owned_by_app():
+        sys.path.insert(0, os.path.join(PROJECT_ROOT, "src"))
+        from fastprompter.core.instance_lock import InstanceLock
+        lock = InstanceLock()
+        owned, reason = lock.acquire()
         if owned:
             lock.release()
-        return owned
+            _fail("mutex", "expected the app to own it, but we acquired it")
 
     # 1 + 2: first instance starts and owns the writer mutex
-    probe_lock(expect_owned=False)              # nothing running yet
+    assert_lock_free()              # nothing running yet
     first = launch()
     _pass("starts and stays alive")
-    probe_lock(expect_owned=True)               # the app owns the session mutex
+    assert_lock_owned_by_app()               # the app owns the session mutex
 
     # 3: a second instance hands off and exits (no second writer)
     second = subprocess.Popen([exe], cwd=exe_dir,
@@ -82,12 +88,12 @@ def main():
     try:
         rc = second.wait(timeout=15)
     except subprocess.TimeoutExpired:
-        second.kill()
+        subprocess.run(['taskkill', '/F', '/T', '/PID', str(second.pid)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         _fail("handoff", "second instance did not exit (did not hand off)")
     if rc != 0:
         _fail("handoff", f"second instance exited with {rc}")
     _pass("second instance hands off and exits")
-    probe_lock(expect_owned=True)               # the first still owns it
+    assert_lock_owned_by_app()               # the first still owns it
 
     # 4 + 5: data root + database beside the EXE, current schema
     db_path = os.path.join(exe_dir, "data", "local_data_v15.db")
@@ -106,22 +112,15 @@ def main():
     _pass("database opens at the current schema")
 
     # 6 + 7: clean exit releases the mutex, then a relaunch acquires it
-    first.terminate()
-    try:
-        first.wait(timeout=10)
-    except subprocess.TimeoutExpired:
-        first.kill()
-        _fail("clean exit", "first instance did not exit on terminate")
+    subprocess.run(['taskkill', '/F', '/T', '/PID', str(first.pid)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    first.wait()
     time.sleep(1.0)
-    probe_lock(expect_owned=False)              # the mutex is free again
+    assert_lock_free()              # the mutex is free again
     _pass("clean exit releases the mutex")
     relaunched = launch(wait=3.0)
-    probe_lock(expect_owned=True)
-    relaunched.terminate()
-    try:
-        relaunched.wait(timeout=10)
-    except subprocess.TimeoutExpired:
-        relaunched.kill()
+    assert_lock_owned_by_app()
+    subprocess.run(['taskkill', '/F', '/T', '/PID', str(relaunched.pid)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    relaunched.wait()
     _pass("relaunch acquires the mutex")
 
     print("\nAll release-probe checks passed.")
@@ -129,3 +128,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

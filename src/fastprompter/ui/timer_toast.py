@@ -128,7 +128,7 @@ class TimerToast(QWidget):
                 background-color: {p['btn_pressed']};
             }}
             QLabel#TitleLbl {{
-                color: {accent};
+                color: {p['title']};
                 font-weight: bold;
                 font-size: 12px;
             }}
@@ -189,24 +189,36 @@ class TimerToast(QWidget):
 
         # --- Body Area ---
         body = QWidget()
-        b_lay = QVBoxLayout(body)
-        b_lay.setContentsMargins(10, 8, 10, 8)
-        b_lay.setSpacing(4)
+        b_lay = QHBoxLayout(body)
+        b_lay.setContentsMargins(0, 0, 0, 0)
+        b_lay.setSpacing(0)
+
+        # Urgency Indicator
+        ind = QWidget()
+        ind.setFixedWidth(6)
+        ind.setStyleSheet(f"background-color: {accent}; border-right: 1px solid {p['border_dark']};")
+        b_lay.addWidget(ind)
+
+        main_body = QWidget()
+        mb_lay = QVBoxLayout(main_body)
+        mb_lay.setContentsMargins(10, 8, 10, 8)
+        mb_lay.setSpacing(4)
 
         title = QLabel(timer.name)
         title.setObjectName("TitleLbl")
-        b_lay.addWidget(title)
+        mb_lay.addWidget(title)
 
         if timer.description:
             desc = QLabel(timer.description)
             desc.setObjectName("DescLbl")
             desc.setWordWrap(True)
             desc.setMaximumWidth(320)
-            b_lay.addWidget(desc)
+            mb_lay.addWidget(desc)
 
         when = QLabel(tr("Time's up", lang))
         when.setObjectName("InfoLbl")
-        b_lay.addWidget(when)
+        when.setStyleSheet(f"color: {p['accent']};")
+        mb_lay.addWidget(when)
 
         row = QHBoxLayout()
         row.setSpacing(4)
@@ -221,7 +233,8 @@ class TimerToast(QWidget):
         btn_ok.setProperty("class", "toast-btn")
         btn_ok.clicked.connect(self.close)
         row.addWidget(btn_ok)
-        b_lay.addLayout(row)
+        mb_lay.addLayout(row)
+        b_lay.addWidget(main_body)
 
         root.addWidget(body)
 

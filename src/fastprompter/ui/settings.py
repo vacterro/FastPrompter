@@ -257,22 +257,20 @@ class ColorConfigDialog(QDialog):
             "overlay_new": "#6a5555", "overlay_recent": "#6a5a40",
             "overlay_day": "#5a5a30", "overlay_old": "#40506a"
         })
-        cc = self.main_win.data.get("custom_colors", fallback_colors)
-        if isinstance(cc, str):
+        self.canonical_defaults = dict(fallback_colors)
+        cc_raw = self.main_win.data.get("custom_colors")
+        if isinstance(cc_raw, str):
             import ast
-            try: cc = ast.literal_eval(cc)
+            try: cc_raw = ast.literal_eval(cc_raw)
             except Exception as e:
                 from fastprompter.core.logging import logger
                 logger.debug(f"Failed to parse custom_colors: {e}")
-        if not isinstance(cc, dict):
-            cc = dict(fallback_colors)
+                cc_raw = {}
+        if not isinstance(cc_raw, dict):
+            cc_raw = {}
 
-        # Ensure all keys exist if loading an old config or empty dict
-        for fallback_key, fallback_val in fallback_colors.items():
-            if fallback_key not in cc:
-                cc[fallback_key] = fallback_val
-
-        self.custom_colors = cc
+        self.custom_colors = copy.deepcopy(self.canonical_defaults)
+        self.custom_colors.update(cc_raw)
 
         self.color_buttons = {}
         labels = {
@@ -352,14 +350,16 @@ class ColorConfigDialog(QDialog):
         theme_data = THEMES.get(current_theme_name, THEMES["Default"])
         raw = theme_data.get("raw_colors", None)
         if not raw: return
-        self.custom_colors = raw.copy()
+        import copy
+        cc = copy.deepcopy(self.canonical_defaults)
+        cc.update(raw)
+        self.custom_colors = cc
         for k, btn in self.color_buttons.items():
-            if k in self.custom_colors:
-                hex_c = self.custom_colors[k]
-                btn.setText(hex_c)
-                col = QColor(hex_c)
-                text_color = "black" if col.lightness() > 128 else "white"
-                btn.setStyleSheet(f"background-color: {hex_c}; color: {text_color}; font-weight: bold;")
+            hex_c = self.custom_colors.get(k, "#000000")
+            btn.setText(hex_c)
+            col = QColor(hex_c)
+            text_color = "black" if col.lightness() > 128 else "white"
+            btn.setStyleSheet(f"background-color: {hex_c}; color: {text_color}; font-weight: bold;")
 
     def reset_colors(self):
         defaults = {
@@ -380,7 +380,8 @@ class ColorConfigDialog(QDialog):
             btn.setStyleSheet(f"background-color: {hex_c}; color: white; font-weight: bold;")
 
     def save_colors(self):
-        self.main_win.data["custom_colors"] = self.custom_colors
+        import copy
+        self.main_win.data["custom_colors"] = copy.deepcopy(self.custom_colors)
         self.main_win.data["theme"] = "Custom"
         self.main_win.mark_dirty()
         self.main_win.apply_theme()

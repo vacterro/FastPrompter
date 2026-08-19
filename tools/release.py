@@ -6,7 +6,7 @@ Usage:
 Reads the version from pyproject.toml, creates (or updates) the release
 tagged v<version> on GitHub, and uploads build/FastPrompter.exe as the
 downloadable asset (replacing any previous one). Uses the GitHub token
-stored by git's credential helper — the same one `git push` uses.
+stored by git's credential helper вЂ” the same one `git push` uses.
 
 Run tools/build.py first, or use release.cmd which does both.
 """
@@ -63,20 +63,41 @@ def read_version() -> str:
     return m.group(1)
 
 
+def check_tag_provenance(version):
+    # Get current HEAD
+    p = subprocess.run(['git', 'rev-parse', 'HEAD'], capture_output=True, text=True)
+    if p.returncode != 0:
+        return
+    head_commit = p.stdout.strip()
+    
+    # Check if tag exists
+    tag = f"v{version}"
+    p = subprocess.run(['git', 'rev-parse', f'{tag}^{{commit}}'], capture_output=True, text=True)
+    if p.returncode != 0:
+        p = subprocess.run(['git', 'rev-parse', tag], capture_output=True, text=True)
+        if p.returncode != 0:
+            return # tag does not exist
+            
+    tag_commit = p.stdout.strip()
+    
+    if head_commit != tag_commit:
+        raise SystemExit(f"version already tagged at different commit; bump VERSION and run sync_release_version.py")
+
 def main():
     root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     os.chdir(root)
     exe = os.path.join("build", ASSET)
     if not os.path.exists(exe):
-        raise SystemExit("build/FastPrompter.exe missing — run tools/build.py first")
+        raise SystemExit("build/FastPrompter.exe missing вЂ” run tools/build.py first")
 
     version = read_version()
+    check_tag_provenance(version)
     tag = f"v{version}"
     if len(sys.argv) > 1 and os.path.exists(sys.argv[1]):
         notes = open(sys.argv[1], encoding="utf-8").read()
     else:
         notes = (
-            f"FastPrompter {tag} — portable single-file EXE for Windows.\n\n"
+            f"FastPrompter {tag} вЂ” portable single-file EXE for Windows.\n\n"
             "Download `FastPrompter.exe`, run it, press `Alt+X`. "
             "No install, no Python, no admin rights; your data lives in a "
             "`data/` folder next to the EXE.\n\n"
@@ -130,3 +151,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+

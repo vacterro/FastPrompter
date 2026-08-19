@@ -139,7 +139,7 @@ def _heal_sound_rules(raw):
         if not isinstance(sound, str) or not sound:
             continue
         enabled = _heal_bool(entry.get("enabled", True), True)
-        all_day = bool(entry.get("all_day", True))
+        all_day = _heal_bool(entry.get("all_day", True), True)
         start = entry.get("start_minute", 0)
         end = entry.get("end_minute", 0)
         try:
@@ -284,6 +284,12 @@ class Timer:
             return None
         try:
             target = datetime.datetime.fromisoformat(d["target"])
+            if target.utcoffset() is not None:
+                return None
+            name = d.get("name", "Timer")
+            description = d.get("description", "")
+            if not isinstance(name, str) or not isinstance(description, str):
+                return None
         except (KeyError, TypeError, ValueError):
             return None
         kind = d.get("kind", KIND_ALARM)
@@ -295,26 +301,29 @@ class Timer:
             sound_mode = SOUND_MODE_SINGLE
         # booleans pass through raw: __init__ runs the canonical healer, so
         # legacy string flags ("False") cannot silently invert themselves
-        return cls(
-            name=d.get("name", "Timer"),
-            description=d.get("description", ""),
-            target=target,
-            repeat=d.get("repeat", REPEAT_NONE),
-            sound=d.get("sound", "tick"),
-            volume=d.get("volume", 5),
-            color_mode=d.get("color_mode", COLOR_TEMPERATURE),
-            color=d.get("color", DEFAULT_COLOR),
-            enabled=d.get("enabled", True),
-            id=d.get("id"),
-            fired=d.get("fired", False),
-            interval_minutes=d.get("interval_minutes", DEFAULT_INTERVAL_MINUTES),
-            kind=kind,
-            show_notification=d.get("show_notification", True),
-            show_in_top_bar=d.get("show_in_top_bar", True),
-            repeat_anchor=anchor,
-            sound_mode=sound_mode,
-            sound_rules=d.get("sound_rules"),
-        )
+        try:
+            return cls(
+                name=name,
+                description=description,
+                target=target,
+                repeat=d.get("repeat", REPEAT_NONE),
+                sound=d.get("sound", "tick"),
+                volume=d.get("volume", 5),
+                color_mode=d.get("color_mode", COLOR_TEMPERATURE),
+                color=d.get("color", DEFAULT_COLOR),
+                enabled=d.get("enabled", True),
+                id=d.get("id"),
+                fired=d.get("fired", False),
+                interval_minutes=d.get("interval_minutes", DEFAULT_INTERVAL_MINUTES),
+                kind=kind,
+                show_notification=d.get("show_notification", True),
+                show_in_top_bar=d.get("show_in_top_bar", True),
+                repeat_anchor=anchor,
+                sound_mode=sound_mode,
+                sound_rules=d.get("sound_rules"),
+            )
+        except (TypeError, ValueError, AttributeError):
+            return None
 
     # ---- state --------------------------------------------------------
     def remaining(self, now=None):
