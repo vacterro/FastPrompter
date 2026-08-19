@@ -15,7 +15,6 @@ from types import SimpleNamespace
 
 from PyQt6.QtWidgets import QApplication
 
-import fastprompter.ui.editor as editor_mod
 from fastprompter.ui.editor import VaultTextEdit
 
 

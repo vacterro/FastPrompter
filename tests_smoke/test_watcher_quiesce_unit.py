@@ -13,9 +13,7 @@ import time
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtCore import QObject, QTimer
-
-import pytest
+from PyQt6.QtCore import QObject
 
 from fastprompter.core.watcher.engine import SendIntent
 from fastprompter.core.watcher.queue import QueueItem, SiloQueue

@@ -15,8 +15,6 @@ import os
 import threading
 import time
 
-import pytest
-
 
 def _make():
     from types import SimpleNamespace

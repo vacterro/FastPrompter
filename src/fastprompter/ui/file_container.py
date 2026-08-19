@@ -1257,7 +1257,6 @@ class FileContainerPanel(QWidget):
         if not img:
             return
 
-        from PyQt6.QtCore import Qt
         from PyQt6.QtGui import QIcon, QPixmap
         icon = QIcon(QPixmap.fromImage(img))
         self._thumb_lru.put(path, (mtime, icon))

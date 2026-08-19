@@ -9,8 +9,6 @@ import sqlite3
 import threading
 import time
 
-import pytest
-
 import fastprompter.core.state as state_mod
 
 

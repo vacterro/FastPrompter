@@ -1,10 +1,11 @@
 import pytest
-from PyQt6.QtCore import Qt, QUrl, QPoint, QPointF
-from PyQt6.QtGui import QMouseEvent, QDesktopServices, QTextCursor, QGuiApplication
+from PyQt6.QtCore import QPoint, QPointF, Qt, QUrl
+from PyQt6.QtGui import QDesktopServices, QMouseEvent
 from PyQt6.QtWidgets import QApplication
 
-from fastprompter.ui.editor import VaultTextEdit
 from fastprompter.main import _PreviewTextEdit
+from fastprompter.ui.editor import VaultTextEdit
+
 
 @pytest.fixture
 def app():
