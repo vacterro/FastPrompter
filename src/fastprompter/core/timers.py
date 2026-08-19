@@ -99,6 +99,28 @@ def _heal_anchor_date(repeat_anchor, target):
     return target.date().isoformat()
 
 
+def _heal_bool(value, default=True):
+    """One canonical boolean healer for persisted timer fields.
+
+    Python truthiness is NOT the persistence contract: ``bool("False")`` is
+    True, so a legacy string field would silently invert itself. Accepts
+    real bools, the strings "True"/"False" and numeric 1/0; anything else
+    falls back to the explicit field default.
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        s = value.strip().lower()
+        if s in ("true", "1"):
+            return True
+        if s in ("false", "0"):
+            return False
+        return default
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return default
+
+
 def _heal_sound_rules(raw):
     """Coerce stored sound rules into a safe list.
 
@@ -116,7 +138,7 @@ def _heal_sound_rules(raw):
         sound = entry.get("sound")
         if not isinstance(sound, str) or not sound:
             continue
-        enabled = (entry.get("enabled", True) is not False)
+        enabled = _heal_bool(entry.get("enabled", True), True)
         all_day = bool(entry.get("all_day", True))
         start = entry.get("start_minute", 0)
         end = entry.get("end_minute", 0)
@@ -212,8 +234,8 @@ class Timer:
             self.volume = 5
         self.color_mode = color_mode if color_mode in (COLOR_STATIC, COLOR_TEMPERATURE) else COLOR_TEMPERATURE
         self.color = color or DEFAULT_COLOR
-        self.enabled = bool(enabled)
-        self.fired = bool(fired)
+        self.enabled = _heal_bool(enabled, True)
+        self.fired = _heal_bool(fired, False)
         try:
             # a zero or negative period would make advance() spin forever
             self.interval_minutes = max(1, int(interval_minutes))
@@ -221,9 +243,9 @@ class Timer:
             self.interval_minutes = DEFAULT_INTERVAL_MINUTES
         # ---- T-1004 behaviour flags (legacy-safe defaults) -------------
         self.kind = kind if kind in KIND_CHOICES else KIND_ALARM
-        # only an explicit False disables; anything malformed heals to ON
-        self.show_notification = (show_notification is not False)
-        self.show_in_top_bar = (show_in_top_bar is not False)
+        # any malformed value heals to the ON default (never a silent flip)
+        self.show_notification = _heal_bool(show_notification, True)
+        self.show_in_top_bar = _heal_bool(show_in_top_bar, True)
         self.repeat_anchor = _heal_anchor_date(repeat_anchor, target)
         # ---- T-1005 sound policy (legacy-safe: single + empty pool) ----
         self.sound_mode = sound_mode if sound_mode in SOUND_MODE_CHOICES else SOUND_MODE_SINGLE
@@ -249,7 +271,9 @@ class Timer:
             "show_in_top_bar": self.show_in_top_bar,
             "repeat_anchor": self.repeat_anchor,
             "sound_mode": self.sound_mode,
-            "sound_rules": self.sound_rules,
+            # deep copy: a saved snapshot must never alias the live rules,
+            # or mutating one profile's rules would rewrite the other's
+            "sound_rules": [dict(r) for r in self.sound_rules],
         }
 
     @classmethod
@@ -265,13 +289,12 @@ class Timer:
         kind = d.get("kind", KIND_ALARM)
         if kind not in KIND_CHOICES:
             kind = KIND_ALARM
-        show_notification = (d.get("show_notification", True) is not False)
-        show_in_top_bar = (d.get("show_in_top_bar", True) is not False)
         anchor = _heal_anchor_date(d.get("repeat_anchor"), target)
         sound_mode = d.get("sound_mode", SOUND_MODE_SINGLE)
         if sound_mode not in SOUND_MODE_CHOICES:
             sound_mode = SOUND_MODE_SINGLE
-        sound_rules = _heal_sound_rules(d.get("sound_rules"))
+        # booleans pass through raw: __init__ runs the canonical healer, so
+        # legacy string flags ("False") cannot silently invert themselves
         return cls(
             name=d.get("name", "Timer"),
             description=d.get("description", ""),
@@ -286,11 +309,11 @@ class Timer:
             fired=d.get("fired", False),
             interval_minutes=d.get("interval_minutes", DEFAULT_INTERVAL_MINUTES),
             kind=kind,
-            show_notification=show_notification,
-            show_in_top_bar=show_in_top_bar,
+            show_notification=d.get("show_notification", True),
+            show_in_top_bar=d.get("show_in_top_bar", True),
             repeat_anchor=anchor,
             sound_mode=sound_mode,
-            sound_rules=sound_rules,
+            sound_rules=d.get("sound_rules"),
         )
 
     # ---- state --------------------------------------------------------
@@ -425,6 +448,40 @@ def limit_window(name, hours=5, anchor=None, now=None, **kw):
     return timer
 
 
+def snooze_clone(timer, minutes=10, now=None):
+    """A one-shot reminder for THIS occurrence of a fired repeating timer.
+
+    A fired repeating timer has already advanced to its NEXT occurrence by
+    the time the user clicks Snooze (``collect_due`` rolls it before the
+    toast shows); snoozing the object itself would shift the whole series.
+    This builds a fresh one-shot Timer at ``now + minutes`` carrying the
+    fired timer's full behaviour, with a brand-new ID, and leaves the
+    original on its advanced schedule.
+    """
+    now = now or datetime.datetime.now()
+    try:
+        minutes = max(1, int(minutes))
+    except (TypeError, ValueError):
+        minutes = 10
+    return Timer(
+        name=timer.name,
+        description=timer.description,
+        target=now + datetime.timedelta(minutes=minutes),
+        repeat=REPEAT_NONE,
+        sound=timer.sound,
+        volume=timer.volume,
+        color_mode=timer.color_mode,
+        color=timer.color,
+        enabled=True,
+        fired=False,
+        kind=timer.kind,
+        show_notification=timer.show_notification,
+        show_in_top_bar=timer.show_in_top_bar,
+        sound_mode=timer.sound_mode,
+        sound_rules=[dict(r) for r in timer.sound_rules],
+    )
+
+
 def describe(timer, now=None):
     """Plain words for the row/tooltip: what it is and when it lands.
 
@@ -458,14 +515,25 @@ def describe(timer, now=None):
 
 
 def load_timers(raw):
-    """Parse the stored list, skipping anything corrupt."""
+    """Parse the stored list, skipping anything corrupt.
+
+    Duplicate, empty or non-string IDs are replaced with a fresh one: two
+    timers sharing an id would make "delete the alarm" take the wrong timer
+    (or both), and an id the dialog cannot round-trip is a permanent
+    non-edit. Content is preserved, only the id changes.
+    """
     if not isinstance(raw, list):
         return []
     out = []
+    seen = set()
     for entry in raw:
         t = Timer.from_dict(entry)
-        if t is not None:
-            out.append(t)
+        if t is None:
+            continue
+        if not isinstance(t.id, str) or not t.id.strip() or t.id in seen:
+            t.id = uuid.uuid4().hex[:12]
+        seen.add(t.id)
+        out.append(t)
     return out
 
 

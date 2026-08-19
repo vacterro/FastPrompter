@@ -428,6 +428,8 @@ class TimerDialog(QDialog):
         self.main_win = main_win
         self.lang = getattr(main_win, "_current_lang", "EN")
         self._editing_id = None
+        self._editing_original_target = None
+        self._editing_original_anchor = None
 
         self.setWindowTitle(tr("Timers", self.lang))
         self.setMinimumWidth(460)
@@ -884,6 +886,7 @@ class TimerDialog(QDialog):
             tr("Time", self.lang), tr("Name", self.lang),
             tr("Repeat", self.lang), tr("Sound", self.lang),
             tr("Notify", self.lang), tr("Top bar", self.lang),
+            tr("Status", self.lang),
         ])
         self.cal_list.setRootIsDecorated(False)
         self.cal_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
@@ -959,6 +962,7 @@ class TimerDialog(QDialog):
         self._cal_new()
         self._cal_refresh_markers()
         self._cal_refresh_list()
+        self._cal_last_signature = self._cal_signature()
 
     # -- calendar helpers ---------------------------------------------------
     def _cal_visible_timers(self):
@@ -969,7 +973,9 @@ class TimerDialog(QDialog):
 
     def _cal_refresh_markers(self):
         """Mark visible-month dates that have a calendar event. Bounded: only
-        the dates we formatted last time are cleared, never every date."""
+        the dates we formatted last time are cleared, never every date.
+        A day whose events are ALL disabled is marked dimmed, never left
+        indistinguishable from the background."""
         from PyQt6.QtCore import QDate
         from PyQt6.QtGui import QColor, QTextCharFormat
 
@@ -980,24 +986,32 @@ class TimerDialog(QDialog):
         self._cal_formatted.clear()
 
         y, m = self.cal.yearShown(), self.cal.monthShown()
-        fmt = QTextCharFormat()
         try:
             from fastprompter.theme.themes import THEMES
             theme = THEMES.get(self.main_win.data.get("theme", "Default")) or {}
-            accent = QColor(theme.get("raw_colors", {}).get("accent", "#f0d060"))
+            raw = theme.get("raw_colors", {}) or {}
         except Exception:
-            accent = QColor("#f0d060")
-        fmt.setForeground(accent)
-        # build a set of marked days from all calendar timers
-        marked = set()
+            raw = {}
+        accent = QColor(raw.get("accent", "#f0d060"))
+        muted = QColor(raw.get("text_dim", "#7a7468"))
+        # a date's marker is ACCENT if any of its events is enabled, dimmed
+        # if every event on it is disabled
+        states = {}
         for t in self._cal_visible_timers():
             for date in occurrences_in_month(t, y, m):
-                marked.add((date.year, date.month, date.day))
-        for (yy, mm, dd) in marked:
+                key = (date.year, date.month, date.day)
+                states.setdefault(key, False)
+                if t.enabled:
+                    states[key] = True
+        for (yy, mm, dd), any_enabled in states.items():
+            fmt = QTextCharFormat()
+            fmt.setForeground(accent if any_enabled else muted)
             self.cal.setDateTextFormat(QDate(yy, mm, dd), fmt)
             self._cal_formatted.add((yy, mm, dd))
 
     def _cal_refresh_list(self):
+        keep = self.cal_list.currentItem()
+        keep_id = keep.data(0, Qt.ItemDataRole.UserRole) if keep else None
         self.cal_list.blockSignals(True)
         self.cal_list.clear()
         sel = self._cal_selected_date()
@@ -1007,13 +1021,24 @@ class TimerDialog(QDialog):
             repeat = tr(t.repeat.capitalize(), self.lang)
             sound = (tr("Random pool", self.lang) if t.sound_mode == SOUND_MODE_POOL
                      else t.sound)
+            status = tr("On", self.lang) if t.enabled else tr("Paused", self.lang)
             item = QTreeWidgetItem([
                 t.target.strftime("%H:%M"), t.name, repeat, sound,
                 "On" if t.show_notification else "Off",
                 "On" if t.show_in_top_bar else "Off",
+                status,
             ])
             item.setData(0, Qt.ItemDataRole.UserRole, t.id)
+            if not t.enabled:
+                from PyQt6.QtGui import QColor
+                muted = QColor("#8a8371")
+                for col in range(item.columnCount()):
+                    item.setForeground(col, muted)
             self.cal_list.addTopLevelItem(item)
+            if t.id == keep_id:
+                self.cal_list.setCurrentItem(item)
+        if keep_id is None and self.cal_list.topLevelItemCount():
+            self.cal_list.setCurrentItem(self.cal_list.topLevelItem(0))
         self.cal_list.blockSignals(False)
         self._cal_update_buttons()
 
@@ -1028,6 +1053,36 @@ class TimerDialog(QDialog):
         has = item is not None
         for b in (self.cal_btn_edit, self.cal_btn_toggle, self.cal_btn_delete):
             b.setEnabled(has)
+        if has:
+            t = self._cal_selected()
+            if t is not None:
+                self.cal_btn_toggle.setText(
+                    tr("Disable", self.lang) if t.enabled
+                    else tr("Enable", self.lang))
+
+    def _cal_signature(self):
+        """Snapshot of everything the calendar tab mirrors from the model.
+
+        The dialog re-renders the month markers and the event list only when
+        this changes, so an open dialog tracks scheduler advances (collect_due
+        rolling a timer) without rebuilding widgets on every idle tick.
+        """
+        sig = []
+        for t in sorted(self._cal_visible_timers(),
+                        key=lambda x: (x.id, x.target)):
+            sig.append((t.id, t.target, t.repeat, t.repeat_anchor, t.enabled,
+                        t.name, t.sound_mode, t.show_notification,
+                        t.show_in_top_bar))
+        return sig
+
+    def _cal_refresh_if_changed(self):
+        """Re-render the calendar tab when the model moved under it."""
+        sig = self._cal_signature()
+        if sig == self._cal_last_signature:
+            return
+        self._cal_last_signature = sig
+        self._cal_refresh_markers()
+        self._cal_refresh_list()
 
     def _cal_new(self):
         self._cal_editing_id = None
@@ -1130,10 +1185,8 @@ class TimerDialog(QDialog):
             if normalize_past:
                 timer.advance(now)
             self.main_win.timers.append(timer)
-        self.main_win.save_timers_to_data()
         self._cal_new()
-        self._cal_refresh_markers()
-        self._cal_refresh_list()
+        self._timer_changed(alarm=False, calendar=True)
 
     def _cal_toggle_selected(self):
         t = self._cal_selected()
@@ -1151,8 +1204,7 @@ class TimerDialog(QDialog):
         t.enabled = not t.enabled
         if t.enabled:
             t.fired = False
-        self.main_win.save_timers_to_data()
-        self._cal_refresh_list()
+        self._timer_changed(alarm=False, calendar=True)
 
     def _cal_delete_selected(self):
         t = self._cal_selected()
@@ -1161,9 +1213,7 @@ class TimerDialog(QDialog):
         if self._cal_editing_id == t.id:
             self._cal_new()
         self.main_win.timers = [x for x in self.main_win.timers if x.id != t.id]
-        self.main_win.save_timers_to_data()
-        self._cal_refresh_markers()
-        self._cal_refresh_list()
+        self._timer_changed(alarm=False, calendar=True)
 
     # ------------------------------------------------------------------
     def _preset_picked(self, idx):
@@ -1241,9 +1291,8 @@ class TimerDialog(QDialog):
             **self._behavior.timer_kwargs(),
         )
         self.main_win.timers.append(timer)
-        self.main_win.save_timers_to_data()
         self.clear_form()
-        self.refresh()
+        self._timer_changed(alarm=True, calendar=False)
         self.lbl_limit_hint.setText(describe(timer))
         return timer
 
@@ -1311,8 +1360,7 @@ class TimerDialog(QDialog):
             made.append(timer)
 
         if made:
-            self.main_win.save_timers_to_data()
-            self.refresh()
+            self._timer_changed(alarm=True, calendar=False)
 
         self.lbl_limit_hint.setText(self._scan_summary(results, made))
         return made
@@ -1496,6 +1544,15 @@ class TimerDialog(QDialog):
                              if t.kind == KIND_ALARM and t.id == self._editing_id), None)
             if existing is not None:
                 form = self._form_timer(target)
+                # A monthly/yearly timer whose SCHEDULING DATE did not change
+                # keeps its original series anchor: changing the name of a
+                # 31-Jan series from its 28-Feb occurrence must not re-anchor
+                # the series to 28 Feb. A deliberately new date re-anchors.
+                if (form.repeat in (REPEAT_MONTHLY, REPEAT_YEARLY)
+                        and self._editing_original_target is not None
+                        and form.target.date() == self._editing_original_target.date()):
+                    form.repeat_anchor = (self._editing_original_anchor
+                                          or form.repeat_anchor)
                 existing.name = form.name
                 existing.description = form.description
                 existing.target = target
@@ -1510,17 +1567,47 @@ class TimerDialog(QDialog):
                 existing.sound_mode = form.sound_mode
                 existing.sound_rules = form.sound_rules
                 existing.repeat_anchor = form.repeat_anchor
-                existing.advance()
+                if form.repeat == REPEAT_INTERVAL:
+                    # the edit text names the window START; the timer's
+                    # target is the first FUTURE reset (start + k*period),
+                    # never the start itself — name-only edits keep the
+                    # series exactly where it was
+                    step = datetime.timedelta(minutes=existing.interval_minutes)
+                    existing.target = target + step
+                    while existing.target <= datetime.datetime.now():
+                        existing.target += step
+                else:
+                    existing.target = target
+                    existing.advance()
                 existing.fired = False        # re-arm after an edit
         else:
             self.main_win.timers.append(self._form_timer(target))
 
-        self.main_win.save_timers_to_data()
         self.clear_form()
-        self.refresh()
+        self._timer_changed(alarm=True, calendar=False)
+
+    def _timer_changed(self, *, alarm=True, calendar=True):
+        """One canonical post-mutation path: persist + refresh + top bar.
+
+        Every mutation previously repeated the save/refresh glue in its own
+        way — one refreshed the list but not the markers, another saved while
+        the top-bar label waited for the next 1s tick. Everything lands here.
+        """
+        self.main_win.save_timers_to_data()
+        if alarm:
+            self.refresh()
+        if calendar:
+            self._cal_last_signature = self._cal_signature()
+            self._cal_refresh_markers()
+            self._cal_refresh_list()
+        upd = getattr(self.main_win, "_update_timer_label", None)
+        if callable(upd):
+            upd()
 
     def clear_form(self):
         self._editing_id = None
+        self._editing_original_target = None
+        self._editing_original_anchor = None
         self.in_name.clear()
         self.in_desc.clear()
         self.in_when.clear()
@@ -1542,13 +1629,19 @@ class TimerDialog(QDialog):
         if t is None:
             return
         self._editing_id = t.id
+        self._editing_original_target = t.target
+        self._editing_original_anchor = t.repeat_anchor
         self.in_name.setText(t.name)
         self.in_desc.setText(t.description)
         if t.repeat == REPEAT_INTERVAL and getattr(t, "interval_minutes", 0):
+            self.spin_limit_hours.setValue(t.interval_minutes / 60.0)
             start_time = t.target - datetime.timedelta(minutes=t.interval_minutes)
-            self.in_when.setText(start_time.strftime("%H:%M"))
+            self.in_when.setText(start_time.strftime("%Y-%m-%d %H:%M"))
         else:
-            self.in_when.setText(t.target.strftime("%H:%M"))
+            # an absolute date+time, never a bare HH:MM: on commit the bare
+            # form re-resolves to today/tomorrow and silently drags a
+            # months-away alarm back into this week
+            self.in_when.setText(t.target.strftime("%Y-%m-%d %H:%M"))
         idx = self.cb_repeat.findData(t.repeat)
         if idx >= 0:
             self.cb_repeat.setCurrentIndex(idx)
@@ -1564,24 +1657,21 @@ class TimerDialog(QDialog):
         t.enabled = not t.enabled
         if t.enabled:
             t.fired = False
-        self.main_win.save_timers_to_data()
-        self.refresh()
+        self._timer_changed(alarm=True, calendar=False)
 
     def snooze_selected(self):
         t = self._selected()
         if t is None:
             return
         t.snooze(10)
-        self.main_win.save_timers_to_data()
-        self.refresh()
+        self._timer_changed(alarm=True, calendar=False)
 
     def subtract_selected(self):
         t = self._selected()
         if t is None:
             return
         t.shift(-10)
-        self.main_win.save_timers_to_data()
-        self.refresh()
+        self._timer_changed(alarm=True, calendar=False)
 
     def remove_selected(self):
         t = self._selected()
@@ -1590,8 +1680,7 @@ class TimerDialog(QDialog):
         if self._editing_id == t.id:
             self.clear_form()
         self.main_win.timers = [x for x in self.main_win.timers if x.id != t.id]
-        self.main_win.save_timers_to_data()
-        self.refresh()
+        self._timer_changed(alarm=True, calendar=False)
 
     def _update_buttons(self):
         t = self._selected()
@@ -1655,6 +1744,7 @@ class TimerDialog(QDialog):
         if keep_id is None and self.list.topLevelItemCount():
             self.list.setCurrentItem(self.list.topLevelItem(0))
         self._update_buttons()
+        self._cal_refresh_if_changed()
 
     def closeEvent(self, event):
         self._tick.stop()

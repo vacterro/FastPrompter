@@ -10,10 +10,13 @@ from fastprompter.core import timers  # noqa: E402
 from fastprompter.core.timers import (  # noqa: E402
     COLOR_STATIC,
     COLOR_TEMPERATURE,
+    KIND_CALENDAR,
     MAX_TIMER_SOUND_RULES,
     REPEAT_DAILY,
+    REPEAT_MONTHLY,
     REPEAT_NONE,
     REPEAT_WEEKLY,
+    REPEAT_YEARLY,
     SOUND_MODE_POOL,
     Timer,
     choose_timer_sound,
@@ -22,6 +25,7 @@ from fastprompter.core.timers import (  # noqa: E402
     load_timers,
     next_due,
     save_timers,
+    snooze_clone,
     temperature_color,
 )
 
@@ -613,3 +617,257 @@ def test_next_due_default_still_sees_hidden_timers():
     due = timers.next_due([hidden, visible], NOW)
     assert due.name == "hidden"   # nearest, hidden or not
     assert timers.next_due([hidden], NOW).name == "hidden"
+
+
+class TestBoolHealing:
+    """T-1004: legacy string booleans must never silently invert.
+
+    The pre-fix contract was ``bool("False")`` -> True, so a stored string
+    flag flipped the feature on; the canonical healer accepts real bools,
+    "True"/"False" (any case) and 1/0, and falls back to the field default.
+    """
+
+    def test_real_bools_pass_through(self):
+        t = mk(enabled=False, fired=True,
+               show_notification=False, show_in_top_bar=False)
+        assert (t.enabled, t.fired) == (False, True)
+        assert (t.show_notification, t.show_in_top_bar) == (False, False)
+
+    def test_string_false_stays_false(self):
+        t = mk(enabled="False", fired="True",
+               show_notification="False", show_in_top_bar="False")
+        assert t.enabled is False
+        assert t.fired is True
+        assert t.show_notification is False
+        assert t.show_in_top_bar is False
+
+    def test_string_true_and_case_insensitive(self):
+        for flag in ("True", "true", "TRUE", "1"):
+            assert Timer("t", NOW, enabled=flag).enabled is True
+        for flag in ("False", "false", "FALSE", "0"):
+            assert Timer("t", NOW, enabled=flag).enabled is False
+
+    def test_numeric_one_and_zero(self):
+        assert Timer("t", NOW, enabled=1).enabled is True
+        assert Timer("t", NOW, enabled=0).enabled is False
+        assert Timer("t", NOW, fired=0).fired is False
+
+    def test_malformed_falls_back_to_field_default(self):
+        for junk in ("yes", "on", None, [True], {"x": 1}):
+            t = Timer("t", NOW, enabled=junk, fired=junk,
+                      show_notification=junk, show_in_top_bar=junk)
+            assert t.enabled is True
+            assert t.fired is False
+            assert t.show_notification is True
+            assert t.show_in_top_bar is True
+
+    def test_legacy_string_flags_survive_round_trip(self):
+        raw = [{
+            "name": "legacy",
+            "target": NOW.isoformat(),
+            "enabled": "False",
+            "fired": "True",
+            "show_notification": "False",
+            "show_in_top_bar": "True",
+        }]
+        t = load_timers(raw)[0]
+        assert t.enabled is False
+        assert t.fired is True
+        assert t.show_notification is False
+        assert t.show_in_top_bar is True
+
+    def test_sound_rule_string_false_is_not_eligible(self):
+        raw = [{
+            "name": "pool",
+            "target": NOW.isoformat(),
+            "sound_mode": SOUND_MODE_POOL,
+            "sound_rules": [{"sound": "bells", "enabled": "False"}],
+        }]
+        t = load_timers(raw)[0]
+        assert t.sound_rules[0]["enabled"] is False
+        assert eligible_sound_rules(t, NOW) == []
+
+    def test_sound_rule_missing_enabled_defaults_on(self):
+        t = Timer("pool", NOW, sound_mode=SOUND_MODE_POOL,
+                  sound_rules=[{"sound": "bells"}])
+        assert t.sound_rules[0]["enabled"] is True
+        assert eligible_sound_rules(t, NOW) == [t.sound_rules[0]]
+
+
+class TestUniqueIdsOnLoad:
+    """T-1011: duplicate/empty/numeric stored ids get a fresh one."""
+
+    def _raw(self, tid, name="t"):
+        return {"name": name, "id": tid,
+                "target": (NOW + datetime.timedelta(minutes=5)).isoformat()}
+
+    def test_duplicate_ids_are_distinct_after_load(self):
+        a, b = load_timers([self._raw("dup"), self._raw("dup")])
+        assert a.id != b.id
+        assert {a.name, b.name} == {"t"}
+        assert isinstance(a.id, str) and isinstance(b.id, str)
+
+    def test_numeric_id_becomes_string(self):
+        (t,) = load_timers([self._raw(42)])
+        assert isinstance(t.id, str) and t.id
+
+    def test_duplicate_with_valid_one_replaces_only_the_dup(self):
+        a, b = load_timers([self._raw("keep"), self._raw("keep")])
+        assert a.id == "keep"
+        assert b.id != "keep"
+
+    def test_triplet_all_distinct(self):
+        a, b, c = load_timers([self._raw("x"), self._raw("x"), self._raw("x")])
+        assert len({a.id, b.id, c.id}) == 3
+
+    def test_deleting_first_dup_does_not_delete_second(self):
+        raw = [self._raw("dup", "first"), self._raw("dup", "second")]
+        a, b = load_timers(raw)
+        remaining = [t for t in load_timers(raw) if t.id != a.id]
+        assert len(remaining) == 1 and remaining[0].name == "second"
+
+    def test_ids_do_not_collide_with_an_existing_valid_one(self):
+        a, b = load_timers([self._raw("keep"), self._raw("keep")])
+        assert b.id != a.id
+        assert b.id not in ("keep",)
+
+    def test_whitespace_id_heals(self):
+        (t,) = load_timers([self._raw("   ")])
+        assert isinstance(t.id, str) and t.id.strip()
+
+
+class TestDetachedSaveSnapshots:
+    """T-1011: saved data must not alias the live sound-rule dicts."""
+
+    def test_to_dict_rules_are_a_copy(self):
+        t = mk(sound_mode=SOUND_MODE_POOL,
+               sound_rules=[{"sound": "bells", "enabled": True}])
+        d = t.to_dict()
+        d["sound_rules"][0]["enabled"] = False
+        assert t.sound_rules[0]["enabled"] is True
+
+    def test_saved_list_rules_are_a_copy(self):
+        t = mk(sound_mode=SOUND_MODE_POOL,
+               sound_rules=[{"sound": "bells", "enabled": True}])
+        raw = save_timers([t])
+        raw[0]["sound_rules"][0]["enabled"] = False
+        assert t.sound_rules[0]["enabled"] is True
+
+    def test_live_mutation_does_not_touch_saved_snapshot(self):
+        t = mk(sound_mode=SOUND_MODE_POOL,
+               sound_rules=[{"sound": "bells", "enabled": True}])
+        raw = save_timers([t])
+        t.sound_rules[0]["enabled"] = False
+        assert raw[0]["sound_rules"][0]["enabled"] is True
+
+    def test_reloaded_rules_are_owned_by_the_timer(self):
+        t = mk(sound_mode=SOUND_MODE_POOL,
+               sound_rules=[{"sound": "bells", "enabled": True}])
+        back = load_timers(save_timers([t]))[0]
+        back.sound_rules[0]["enabled"] = False
+        assert t.sound_rules[0]["enabled"] is True
+
+
+class TestSnoozeClone:
+    """T-1007: snoozing a fired repeating timer must not shift its series."""
+
+    def test_clone_is_one_shot_with_fresh_id(self):
+        base = mk("daily", 5, repeat=REPEAT_DAILY,
+                  sound_mode=SOUND_MODE_POOL,
+                  sound_rules=[{"sound": "bells", "enabled": True}])
+        clone = snooze_clone(base, 10, now=NOW)
+        assert clone.repeat == REPEAT_NONE
+        assert clone.id != base.id
+        assert clone.target == NOW + datetime.timedelta(minutes=10)
+        assert clone.enabled is True and clone.fired is False
+
+    def test_clone_carries_full_behaviour(self):
+        base = Timer("daily", NOW, repeat=REPEAT_DAILY, description="d",
+                     sound="bells", volume=3, color_mode=COLOR_STATIC,
+                     color="#123456", kind=KIND_CALENDAR,
+                     show_notification=False, show_in_top_bar=False,
+                     sound_mode=SOUND_MODE_POOL,
+                     sound_rules=[{"sound": "gong", "enabled": True,
+                                   "volume": 4}])
+        clone = snooze_clone(base, 10, now=NOW)
+        assert (clone.name, clone.description) == ("daily", "d")
+        assert (clone.sound, clone.volume) == ("bells", 3)
+        assert (clone.color_mode, clone.color) == (COLOR_STATIC, "#123456")
+        assert clone.kind == KIND_CALENDAR
+        assert clone.show_notification is False
+        assert clone.show_in_top_bar is False
+        assert clone.sound_mode == SOUND_MODE_POOL
+        assert clone.sound_rules == [{"sound": "gong", "enabled": True,
+                                      "all_day": True, "start_minute": 0,
+                                      "end_minute": 0, "volume": 4}]
+
+    def test_clone_rules_are_not_aliased(self):
+        base = mk(sound_mode=SOUND_MODE_POOL,
+                  sound_rules=[{"sound": "bells", "enabled": True}])
+        clone = snooze_clone(base, 10, now=NOW)
+        clone.sound_rules[0]["enabled"] = False
+        assert base.sound_rules[0]["enabled"] is True
+
+    def test_original_untouched_on_advanced_schedule(self):
+        base = Timer("daily", NOW, repeat=REPEAT_DAILY,
+                     sound_mode=SOUND_MODE_POOL,
+                     sound_rules=[{"sound": "bells", "enabled": True}])
+        base.advance(NOW)
+        target_before = base.target
+        snooze_clone(base, 10, now=NOW)
+        assert base.target == target_before
+        assert base.repeat == REPEAT_DAILY
+
+    def test_minutes_are_clamped(self):
+        clone = snooze_clone(mk(), 0, now=NOW)
+        assert clone.target > NOW
+        bad = snooze_clone(mk(), "abc", now=NOW)
+        assert bad.target > NOW
+
+
+class TestProfileRoundtripEveryField:
+    """T-1011: every new field must survive a profile switch + restart."""
+
+    def test_full_featured_timer_survives_switch_and_restart(self):
+        t = Timer("profile", NOW, repeat=REPEAT_MONTHLY, sound="bells",
+                  volume=9, color_mode=COLOR_STATIC, color="#ff0000",
+                  enabled=False, fired=True, description="desc",
+                  interval_minutes=90, kind=KIND_CALENDAR,
+                  show_notification=False, show_in_top_bar=False,
+                  repeat_anchor="2026-01-31", sound_mode=SOUND_MODE_POOL,
+                  sound_rules=[{"sound": "gong", "enabled": True,
+                                "all_day": False, "start_minute": 60,
+                                "end_minute": 120, "volume": 5}])
+        profile_a = save_timers([t])
+        back = load_timers(profile_a)[0]
+        d = back.to_dict()
+        assert d["repeat"] == REPEAT_MONTHLY
+        assert d["repeat_anchor"] == "2026-01-31"
+        assert d["sound"] == "bells" and d["volume"] == 9
+        assert d["enabled"] is False and d["fired"] is True
+        assert d["show_notification"] is False
+        assert d["show_in_top_bar"] is False
+        assert d["kind"] == KIND_CALENDAR and d["interval_minutes"] == 90
+        assert d["sound_mode"] == SOUND_MODE_POOL
+        assert d["sound_rules"][0]["volume"] == 5
+
+    def test_profiles_do_not_share_live_rules(self):
+        a = mk("A", sound_mode=SOUND_MODE_POOL,
+               sound_rules=[{"sound": "bells", "enabled": True}])
+        b = mk("B", sound_mode=SOUND_MODE_POOL,
+               sound_rules=[{"sound": "gong", "enabled": True}])
+        raw_a, raw_b = save_timers([a]), save_timers([b])
+        live_a, live_b = load_timers(raw_a)[0], load_timers(raw_b)[0]
+        live_a.sound_rules[0]["enabled"] = False
+        live_b.sound_rules[0]["volume"] = 3
+        reload_a = load_timers(save_timers([live_a]))[0]
+        reload_b = load_timers(raw_b)[0]
+        assert reload_a.sound_rules[0]["enabled"] is False
+        assert reload_b.sound_rules[0]["volume"] is None
+
+    def test_repeat_anchor_survives_save_load(self):
+        for anchor, repeat in (("2026-01-31", REPEAT_MONTHLY),
+                               ("2024-02-29", REPEAT_YEARLY)):
+            t = Timer("r", NOW, repeat=repeat, repeat_anchor=anchor)
+            back = load_timers(save_timers([t]))[0]
+            assert back.repeat_anchor == anchor

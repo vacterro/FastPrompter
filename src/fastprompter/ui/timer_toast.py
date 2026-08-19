@@ -268,6 +268,20 @@ class TimerToast(QWidget):
         cls._open[:] = [t for t in cls._open if not sip.isdeleted(t)]
         return alive
 
+    @classmethod
+    def close_for_main(cls, main_win):
+        """Close every open toast owned by ``main_win`` (profile switch).
+
+        An old profile's toast must not stay up mutating the new profile's
+        data when its Snooze button is clicked.
+        """
+        for t in list(cls._open):
+            try:
+                if not sip.isdeleted(t) and t.main_win is main_win:
+                    t.close()
+            except RuntimeError:
+                continue
+
     def _place(self):
         """Bottom-right of the screen, stacked above any toast already up."""
         screen = QApplication.primaryScreen()
@@ -280,9 +294,25 @@ class TimerToast(QWidget):
         if screen is None:
             return
         area = screen.availableGeometry()
-        offset = sum(t.height() + 8 for t in self._live_toasts())
+        # Bound the stack: once the toasts would exceed the screen height,
+        # retire the OLDEST first — overlapping toasts hide each other's
+        # Snooze/Dismiss controls and become impossible to dismiss.
+        live = self._live_toasts()
+        need = self.height() + 8
+        available = area.height() - 2 * _MARGIN
+        while live and sum(t.height() + 8 for t in live) + need > available:
+            oldest = live.pop(0)
+            oldest.close()
+        # Collapse: surviving toasts shift DOWN to fill the retired slots, so
+        # the new toast lands above the one below it instead of on top of it.
+        y_cursor = area.bottom() - _MARGIN
+        for t in reversed(live):
+            y_cursor -= t.height()
+            t.move(t.x(), max(area.top(), y_cursor))
+            y_cursor -= 8
         x = area.right() - self.width() - _MARGIN
-        y = area.bottom() - self.height() - _MARGIN - offset
+        y = area.bottom() - self.height() - _MARGIN \
+            - sum(t.height() + 8 for t in live)
         # Never off-screen: a toast the user cannot reach is a toast they
         # cannot dismiss, and the stack offset is unbounded by nature.
         x = max(area.left(), min(x, area.right() - self.width()))

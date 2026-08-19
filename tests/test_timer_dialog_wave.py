@@ -26,8 +26,13 @@ from fastprompter.core.sound_manager import SoundManager  # noqa: E402
 from fastprompter.core.timers import (  # noqa: E402
     KIND_ALARM,
     KIND_CALENDAR,
+    REPEAT_INTERVAL,
     REPEAT_MONTHLY,
+    REPEAT_NONE,
+    REPEAT_YEARLY,
     SOUND_MODE_POOL,
+    Timer,
+    load_timers,
 )
 from fastprompter.ui.timer_dialog import TimerDialog, _TimerBehaviorEditor  # noqa: E402
 
@@ -74,12 +79,16 @@ class _FakeMain(QWidget):
         self.productivity_timer = _FakePomo()
         self.saved = 0
         self.tested = []
+        self.label_updates = 0
 
     def styleSheet(self):
         return ""
 
     def save_timers_to_data(self):
         self.saved += 1
+
+    def _update_timer_label(self):
+        self.label_updates += 1
 
     def save_productivity_timer(self):
         pass
@@ -531,3 +540,316 @@ def test_disabled_past_repeating_enable_normalizes():
     d._cal_toggle_selected()
     assert cals[0].enabled is True
     assert cals[0].target > datetime.datetime.now()   # normalized, no retro-fire
+
+
+# ---------------------------------------------------------------------------
+# Second wave: T-1004 edit fidelity, T-1006 calendar mirror, T-1011 lifecycle
+# ---------------------------------------------------------------------------
+
+def _select_alarm(d, tid):
+    for i in range(d.list.topLevelItemCount()):
+        it = d.list.topLevelItem(i)
+        if it.data(0, Qt.ItemDataRole.UserRole) == tid:
+            d.list.setCurrentItem(it)
+            return it
+    return None
+
+
+def test_alarm_edit_writes_absolute_datetime_and_preserves_it():
+    d = _dlg()
+    target = datetime.datetime.now() + datetime.timedelta(days=40)
+    target = target.replace(minute=30, second=0, microsecond=0)
+    alarm = Timer("Distant", target, repeat=REPEAT_NONE)
+    d.main_win.timers.append(alarm)
+    d.refresh()
+    _select_alarm(d, alarm.id)
+    d.edit_selected()
+    assert d.in_when.text() == target.strftime("%Y-%m-%d %H:%M")
+    d.in_name.setText("Distant v2")
+    d.commit()
+    alarm = next(t for t in d.main_win.timers if t.kind == KIND_ALARM)
+    assert alarm.target == target        # date AND time preserved
+    assert alarm.name == "Distant v2"
+
+
+def test_monthly_alarm_name_only_edit_keeps_series_anchor():
+    d = _dlg()
+    y = datetime.date.today().year + 1
+    alarm = Timer("Payday", datetime.datetime(y, 2, 28, 9, 0),
+                  repeat=REPEAT_MONTHLY, repeat_anchor=f"{y}-01-31")
+    d.main_win.timers.append(alarm)
+    d.refresh()
+    _select_alarm(d, alarm.id)
+    d.edit_selected()
+    assert d.in_when.text() == f"{y}-02-28 09:00"
+    d.in_name.setText("Payday v2")
+    d.commit()
+    alarm = next(t for t in d.main_win.timers if t.kind == KIND_ALARM)
+    assert alarm.repeat_anchor == f"{y}-01-31"          # series NOT re-anchored
+    assert alarm.target == datetime.datetime(y, 2, 28, 9, 0)
+    from fastprompter.core.timers import occurrences_in_month
+    assert occurrences_in_month(alarm, y, 3) == [datetime.date(y, 3, 31)]
+
+
+def test_yearly_feb29_alarm_edit_keeps_anchor_on_non_leap_occurrence():
+    d = _dlg()
+    y = datetime.date.today().year
+    while (y % 4 != 0) or (y % 100 == 0 and y % 400 != 0):
+        y += 1
+    alarm = Timer("Leapday", datetime.datetime(y + 1, 2, 28, 9, 0),
+                  repeat=REPEAT_YEARLY, repeat_anchor=f"{y}-02-29")
+    d.main_win.timers.append(alarm)
+    d.refresh()
+    _select_alarm(d, alarm.id)
+    d.edit_selected()
+    d.in_name.setText("Leapday v2")
+    d.commit()
+    alarm = next(t for t in d.main_win.timers if t.kind == KIND_ALARM)
+    assert alarm.repeat_anchor == f"{y}-02-29"
+    assert alarm.target == datetime.datetime(y + 1, 2, 28, 9, 0)
+
+
+def test_monthly_alarm_date_change_reanchors():
+    d = _dlg()
+    y = datetime.date.today().year + 1
+    alarm = Timer("Payday", datetime.datetime(y, 2, 28, 9, 0),
+                  repeat=REPEAT_MONTHLY, repeat_anchor=f"{y}-01-31")
+    d.main_win.timers.append(alarm)
+    d.refresh()
+    _select_alarm(d, alarm.id)
+    d.edit_selected()
+    d.in_when.setText(f"{y}-03-15 09:00")       # deliberately new date
+    d.commit()
+    alarm = next(t for t in d.main_win.timers if t.kind == KIND_ALARM)
+    assert alarm.repeat_anchor == f"{y}-03-15"  # series follows the user
+    assert alarm.target == datetime.datetime(y, 3, 15, 9, 0)
+
+
+def test_interval_alarm_name_only_edit_preserves_period_and_reset():
+    d = _dlg()
+    reset = (datetime.datetime.now() + datetime.timedelta(hours=2)).replace(
+        second=0, microsecond=0)
+    start = reset - datetime.timedelta(minutes=90)
+    alarm = Timer("Rolling", reset, repeat=REPEAT_INTERVAL,
+                  interval_minutes=90)
+    d.main_win.timers.append(alarm)
+    d.refresh()
+    _select_alarm(d, alarm.id)
+    d.edit_selected()
+    assert d.spin_limit_hours.value() == 1.5       # period synced into the spin
+    assert d.in_when.text() == start.strftime("%Y-%m-%d %H:%M")
+    d.in_name.setText("Rolling v2")
+    d.commit()
+    alarm = next(t for t in d.main_win.timers if t.kind == KIND_ALARM)
+    assert alarm.interval_minutes == 90
+    assert alarm.target == reset                    # same future reset, unchanged
+
+
+def test_calendar_tracks_runtime_advance_on_tick():
+    d = _dlg()
+    y = datetime.date.today().year + 1
+    d.cal.setSelectedDate(QDate(y, 9, 15))
+    d.cal_name.setText("Daily")
+    d.cal_time.setTime(QTime(9, 0))
+    d.cal_repeat.setCurrentIndex(d.cal_repeat.findData("daily"))
+    d._cal_commit()
+    ev = [t for t in d.main_win.timers if t.kind == KIND_CALENDAR][0]
+    old_row = d.cal_list.topLevelItem(0).text(0)
+
+    # the scheduler rolls the timer while the dialog is open; a plain tick
+    # (refresh) must pick it up WITHOUT any list selection change
+    ev.target += datetime.timedelta(hours=3)
+    d.refresh()
+    assert d.cal_list.topLevelItem(0).text(0) == ev.target.strftime("%H:%M")
+    assert d.cal_list.topLevelItem(0).text(0) != old_row
+
+
+def test_no_change_tick_does_not_rebuild_calendar():
+    d = _dlg()
+    y = datetime.date.today().year + 1
+    d.cal.setSelectedDate(QDate(y, 9, 15))
+    d.cal_name.setText("Daily")
+    d.cal_time.setTime(QTime(9, 0))
+    d.cal_repeat.setCurrentIndex(d.cal_repeat.findData("daily"))
+    d._cal_commit()
+    calls = []
+    orig = d._cal_refresh_markers
+    def spy():
+        calls.append(1)
+        return orig()
+    d._cal_refresh_markers = spy
+    d.refresh()                                   # tick, nothing changed
+    assert calls == []                            # markers not rebuilt
+    ev = [t for t in d.main_win.timers if t.kind == KIND_CALENDAR][0]
+    ev.target += datetime.timedelta(days=1)
+    d.refresh()                                   # model moved -> rebuilt once
+    assert calls == [1]
+
+
+def test_disabled_event_shows_paused_and_muted():
+    d = _dlg()
+    y = datetime.date.today().year + 1
+    d.cal.setSelectedDate(QDate(y, 9, 15))
+    d.cal_name.setText("Enabled")
+    d.cal_time.setTime(QTime(9, 0))
+    d.cal_repeat.setCurrentIndex(d.cal_repeat.findData("daily"))
+    d._cal_commit()
+    d.cal_name.setText("Disabled")
+    d.cal_enabled.setChecked(False)
+    d._cal_commit()
+    enabled_item = next(d.cal_list.topLevelItem(i)
+                        for i in range(d.cal_list.topLevelItemCount())
+                        if d.cal_list.topLevelItem(i).text(1) == "Enabled")
+    disabled_item = next(d.cal_list.topLevelItem(i)
+                         for i in range(d.cal_list.topLevelItemCount())
+                         if d.cal_list.topLevelItem(i).text(1) == "Disabled")
+    assert enabled_item.text(6) == "On"
+    assert disabled_item.text(6) == "Paused"
+    assert (enabled_item.foreground(0).color().name()
+            != disabled_item.foreground(0).color().name())
+
+
+def test_cal_toggle_refreshes_markers_and_button_text():
+    d = _dlg()
+    y = datetime.date.today().year + 1
+    d.cal.setSelectedDate(QDate(y, 9, 15))
+    d.cal_name.setText("Daily")
+    d.cal_time.setTime(QTime(9, 0))
+    d.cal_repeat.setCurrentIndex(d.cal_repeat.findData("daily"))
+    d.cal_enabled.setChecked(False)
+    d._cal_commit()
+    ev = [t for t in d.main_win.timers if t.kind == KIND_CALENDAR][0]
+    for i in range(d.cal_list.topLevelItemCount()):
+        it = d.cal_list.topLevelItem(i)
+        if it.data(0, Qt.ItemDataRole.UserRole) == ev.id:
+            d.cal_list.setCurrentItem(it)
+            break
+    assert d.cal_btn_toggle.text() == "Enable"
+    d._cal_toggle_selected()
+    assert ev.enabled is True
+    assert d.cal_btn_toggle.text() == "Disable"
+    assert d.cal_list.topLevelItem(0).text(6) == "On"
+
+
+def test_malformed_calendar_timers_do_not_crash_dialog():
+    now = datetime.datetime.now()
+    raw = [
+        {"name": "junk-repeat", "kind": "calendar", "repeat": "garbage",
+         "repeat_anchor": "not-a-date", "enabled": "False",
+         "target": (now + datetime.timedelta(days=1)).isoformat()},
+        {"name": "junk-notif", "kind": "calendar", "repeat": "monthly",
+         "repeat_anchor": "bad", "show_notification": "False",
+         "target": (now + datetime.timedelta(days=1)).isoformat()},
+    ]
+    healthy = Timer("Healthy", now + datetime.timedelta(days=1),
+                    kind=KIND_CALENDAR, repeat=REPEAT_MONTHLY)
+    d = TimerDialog(_FakeMain())
+    d.main_win.timers = load_timers(raw) + [healthy]
+    tomorrow = datetime.date.today() + datetime.timedelta(days=1)
+    d.cal.setSelectedDate(QDate(tomorrow.year, tomorrow.month, tomorrow.day))
+    d.refresh()                                   # must not raise
+    names = [d.cal_list.topLevelItem(i).text(1)
+             for i in range(d.cal_list.topLevelItemCount())]
+    assert "Healthy" in names
+    assert "Paused" in [d.cal_list.topLevelItem(i).text(6)
+                        for i in range(d.cal_list.topLevelItemCount())]
+
+
+def test_alarm_edit_cancel_is_true_noop():
+    d = _dlg()
+    target = datetime.datetime.now() + datetime.timedelta(days=5)
+    alarm = Timer("A", target, repeat=REPEAT_NONE, sound_mode=SOUND_MODE_POOL,
+                  sound_rules=[{"sound": "bells", "enabled": True}])
+    d.main_win.timers.append(alarm)
+    d.refresh()
+    before = alarm.to_dict()
+    _select_alarm(d, alarm.id)
+    d.edit_selected()
+    d.in_name.setText("Should not stick")
+    d.in_when.setText("tomorrow 03:00")
+    d._behavior.cb_show_notif.setChecked(False)
+    d.clear_form()
+    assert alarm.to_dict() == before
+
+
+def test_calendar_edit_cancel_is_true_noop():
+    d = _dlg()
+    y = datetime.date.today().year + 1
+    d.cal.setSelectedDate(QDate(y, 9, 15))
+    d.cal_name.setText("Cal")
+    d.cal_time.setTime(QTime(9, 0))
+    d.cal_repeat.setCurrentIndex(d.cal_repeat.findData("daily"))
+    d._cal_commit()
+    ev = [t for t in d.main_win.timers if t.kind == KIND_CALENDAR][0]
+    before = ev.to_dict()
+    for i in range(d.cal_list.topLevelItemCount()):
+        it = d.cal_list.topLevelItem(i)
+        if it.data(0, Qt.ItemDataRole.UserRole) == ev.id:
+            d.cal_list.setCurrentItem(it)
+            break
+    d._cal_edit_selected()
+    d.cal_name.setText("Should not stick")
+    d.cal_time.setTime(QTime(23, 59))
+    d.cal_enabled.setChecked(False)
+    d._cal_new()
+    assert ev.to_dict() == before
+
+
+def test_mutations_update_timer_label_immediately():
+    d = _dlg()
+    y = datetime.date.today().year + 1
+    d.cal.setSelectedDate(QDate(y, 9, 15))
+    d.cal_name.setText("Daily")
+    d.cal_time.setTime(QTime(9, 0))
+    d.cal_repeat.setCurrentIndex(d.cal_repeat.findData("daily"))
+    d._cal_commit()
+    assert d.main_win.label_updates >= 1          # calendar commit
+    ev = [t for t in d.main_win.timers if t.kind == KIND_CALENDAR][0]
+    for i in range(d.cal_list.topLevelItemCount()):
+        it = d.cal_list.topLevelItem(i)
+        if it.data(0, Qt.ItemDataRole.UserRole) == ev.id:
+            d.cal_list.setCurrentItem(it)
+            break
+    before = d.main_win.label_updates
+    d._cal_toggle_selected()                      # calendar toggle
+    assert d.main_win.label_updates > before
+
+    alarm = Timer("A", datetime.datetime.now() + datetime.timedelta(hours=1),
+                  repeat=REPEAT_NONE)
+    d.main_win.timers.append(alarm)
+    d.refresh()
+    _select_alarm(d, alarm.id)
+    before = d.main_win.label_updates
+    d.toggle_selected()                           # alarm toggle
+    assert d.main_win.label_updates > before
+    _select_alarm(d, alarm.id)
+    d.edit_selected()
+    d.in_name.setText("Renamed")
+    before = d.main_win.label_updates
+    d.commit()
+    assert d.main_win.label_updates > before      # alarm edit
+
+
+def test_dialog_open_close_hundred_times_no_residue():
+    import gc
+    import weakref
+
+    fake = _FakeMain()
+    timers_before = len(fake.timers)
+    saved_before = fake.saved
+    labels_before = fake.label_updates
+    refs = []
+    for _ in range(100):
+        d = _dlg()
+        d.show()
+        d.close()
+        d.deleteLater()
+        refs.append(weakref.ref(d))
+    del d
+    QApplication.processEvents()
+    gc.collect()
+    alive = [r for r in refs if r() is not None]
+    assert alive == []                            # every dialog fully destroyed
+    assert len(fake.timers) == timers_before      # no model mutation
+    assert fake.saved == saved_before
+    assert fake.label_updates == labels_before

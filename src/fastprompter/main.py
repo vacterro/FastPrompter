@@ -636,6 +636,7 @@ class FastPrompter(
         self._preview_connected = False
         self._fancy_zones = FancyZoneOverlay(self)
         self.timers = []
+        self._timer_test_jobs = {}   # parented QTimers for Test-notification probes
         self.current_pages, self.silo_page, self.ui_scale = {}, 0, 0.5
         self.arc_silo_page, self.arc_page = 0, 0
         self.is_locked, self._suspend_cache, self._locked_geometry = False, False, None
@@ -1548,7 +1549,13 @@ class FastPrompter(
             # The SAME clock sample drives sound-time selection and firing,
             # so a repeating timer (already advanced to its NEXT occurrence by
             # collect_due) is judged against the moment it actually went off.
-            self._notify_timer(t, fired_at=now)
+            try:
+                self._notify_timer(t, fired_at=now)
+            except Exception:
+                # T-1007: one bad timer must never swallow the rest of the
+                # due batch — its sound/notification failing is its problem.
+                from fastprompter.core.logging import logger
+                logger.debug("timer notification failed for %s", t.name)
 
     def _notify_timer(self, timer, fired_at=None):
         """Sound + an actionable popup. Never steals focus mid-typing.
@@ -1597,7 +1604,25 @@ class FastPrompter(
         return self.sound_manager.play_sound_ref(ref, level)
 
     def _snooze_timer(self, timer, minutes):
-        timer.snooze(minutes)
+        """Snooze a fired timer from its toast.
+
+        A fired REPEATING timer has already advanced to its NEXT occurrence
+        (collect_due rolls it before the toast shows), so snoozing the object
+        itself would shift the whole series. A one-shot reminder is created
+        for THIS occurrence and the series is left alone; one-shot timers
+        keep the legacy re-arm behaviour.
+
+        Refuses timers that are no longer owned by the current profile: an
+        old profile's toast must never mutate the new profile's data.
+        """
+        if timer not in self.timers:
+            return
+        from fastprompter.core.timers import REPEAT_NONE, snooze_clone
+        if timer.repeat != REPEAT_NONE:
+            clone = snooze_clone(timer, minutes)
+            self.timers.append(clone)
+        else:
+            timer.snooze(minutes)
         self.save_timers_to_data()
         self._update_date_label()
 
@@ -1633,9 +1658,42 @@ class FastPrompter(
         )
         # deliberately NOT added to self.timers — a test must not survive a
         # restart or show up in the countdown beside the clock
-        QTimer.singleShot(max(0, int(delay_seconds * 1000)),
-                          lambda: self._notify_timer(probe))
+        delay_ms = max(0, int(delay_seconds * 1000))
+        job = QTimer(self)                 # parented: destroyed with the window
+        job.setSingleShot(True)
+        job.timeout.connect(lambda: self._fire_timer_test_job(job))
+        job.start(delay_ms)
+        # the probe's identity is bound to the PROFILE that pressed Test: if
+        # the profile switches before the job fires, the notification must
+        # not land in the new profile
+        self._timer_test_jobs[job] = (probe, id(self.data))
         return probe
+
+    def _fire_timer_test_job(self, job):
+        """Deliver a Test notification, unless the profile moved on."""
+        entry = self._timer_test_jobs.pop(job, None)
+        if entry is None:
+            return
+        probe, data_id = entry
+        if data_id != id(self.data):
+            return                    # profile switched since Test was pressed
+        try:
+            self._notify_timer(probe)
+        except Exception:
+            from fastprompter.core.logging import logger
+            logger.debug("timer test notification failed")
+
+    def _cancel_timer_test_jobs(self):
+        """Retire every pending Test notification (profile switch, shutdown)."""
+        jobs = getattr(self, "_timer_test_jobs", None)
+        if not jobs:
+            return
+        for job in list(jobs):
+            try:
+                job.stop()
+            except RuntimeError:
+                pass
+        jobs.clear()
 
     def _fit_settings_tabs(self, index=None):
         """Size the settings tabs to the page actually on screen."""
@@ -5732,6 +5790,15 @@ class FastPrompter(
         # so it doesn't leak its watchers or folder identity across the switch.
         if hasattr(self, "_file_container") and self._file_container:
             self._file_container.detach_session()
+
+        # T-1007: old-profile delayed Test notifications and open toasts must
+        # not leak into the next profile — cancel the jobs, close the toasts.
+        self._cancel_timer_test_jobs()
+        try:
+            from fastprompter.ui.timer_toast import TimerToast
+            TimerToast.close_for_main(self)
+        except Exception:
+            pass
 
         self.state.switch_profile(idx + 1, save_current=False)
         # The final old-profile mirror snapshot is dispatched immediately (not
@@ -12300,6 +12367,10 @@ class FastPrompter(
         """
         if getattr(self, "_logical_finalized", False):
             return True
+        try:
+            self._cancel_timer_test_jobs()
+        except Exception:
+            pass
         try:
             if hasattr(self, "_watcher_begin_quiesce"):
                 quiesced = self._watcher_begin_quiesce()

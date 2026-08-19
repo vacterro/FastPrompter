@@ -10,7 +10,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import datetime  # noqa: E402
 
-from PyQt6.QtWidgets import QApplication  # noqa: E402
+from PyQt6.QtWidgets import QApplication, QWidget  # noqa: E402
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
@@ -18,6 +18,8 @@ import fastprompter.ui.timer_toast as toast_mod  # noqa: E402
 from fastprompter.core.sound_manager import SoundManager  # noqa: E402
 from fastprompter.core.timers import (  # noqa: E402
     KIND_CALENDAR,
+    REPEAT_DAILY,
+    REPEAT_NONE,
     SOUND_MODE_POOL,
     Timer,
 )
@@ -36,8 +38,12 @@ class _Tray:
         return None
 
 
-class _FakeFire:
+class _FakeFire(QWidget):
+    """QWidget so Test-notification jobs can be parented to it, like the
+    real main window."""
+
     def __init__(self):
+        super().__init__()
         self.data = {"sound_volume": "5", "sound_ui": "False", "theme": "Default"}
         self.sound_manager = SoundManager(None, self.data)
         self.timers = []
@@ -46,6 +52,7 @@ class _FakeFire:
         self.saved = 0
         self._toasts = []
         self._sound_calls = []
+        self._timer_test_jobs = {}
 
     def save_timers_to_data(self):
         self.saved += 1
@@ -60,6 +67,9 @@ class _FakeFire:
         self._sound_calls.append((ref, level))
         return self.sound_manager.play_sound_ref(ref, level)
 
+    def _update_date_label(self):
+        pass
+
 
 def _bind(fake):
     # Lazy: importing fastprompter.main at module level caches the real
@@ -72,6 +82,11 @@ def _bind(fake):
     fake._play_timer_sound = main_mod.FastPrompter._play_timer_sound.__get__(fake)
     fake.test_timer_notification = \
         main_mod.FastPrompter.test_timer_notification.__get__(fake)
+    fake._fire_timer_test_job = \
+        main_mod.FastPrompter._fire_timer_test_job.__get__(fake)
+    fake._cancel_timer_test_jobs = \
+        main_mod.FastPrompter._cancel_timer_test_jobs.__get__(fake)
+    fake._snooze_timer = main_mod.FastPrompter._snooze_timer.__get__(fake)
     orig = SoundManager.play_sound_ref
 
     def spy(ref, level):
@@ -186,3 +201,137 @@ def test_test_notification_deep_copies_behavior():
     assert probe.sound_rules == t.sound_rules
     assert probe.sound_rules is not t.sound_rules
     assert probe.color == "#123456"
+
+
+# ---- second wave: snooze ownership/clones, test-job lifecycle, isolation ---
+
+def test_snooze_repeating_creates_one_shot_clone_and_keeps_series():
+    fake = _bind(_FakeFire())
+    now = datetime.datetime(2026, 7, 21, 12, 0, 0)
+    t = Timer("daily", now - datetime.timedelta(seconds=1),
+              repeat=REPEAT_DAILY, sound_mode=SOUND_MODE_POOL,
+              sound_rules=[{"sound": "bells", "enabled": True}])
+    from fastprompter.core.timers import collect_due
+    collect_due([t], now)                    # fired -> advanced to next day
+    series_target = t.target
+    fake.timers = [t]
+    fake._snooze_timer(t, 10)
+    assert len(fake.timers) == 2             # original + one-shot reminder
+    clone = fake.timers[1]
+    assert clone.repeat == REPEAT_NONE
+    assert clone.id != t.id
+    assert clone.target > now                # this occurrence, now + 10m
+    assert t.target == series_target         # series NOT shifted
+    assert fake.saved == 1
+
+
+def test_snooze_one_shot_rearms_legacy():
+    fake = _bind(_FakeFire())
+    now = datetime.datetime(2026, 7, 21, 12, 0, 0)
+    t = Timer("once", now - datetime.timedelta(seconds=1))
+    t.fired = True
+    fake.timers = [t]
+    fake._snooze_timer(t, 10)
+    assert len(fake.timers) == 1             # no clone for one-shot
+    assert t.target > now
+    assert t.fired is False
+
+
+def test_snooze_refuses_timer_not_owned_by_current_profile():
+    fake = _bind(_FakeFire())
+    now = datetime.datetime(2026, 7, 21, 12, 0, 0)
+    stale = Timer("old-profile", now - datetime.timedelta(seconds=1))
+    stale.fired = True
+    live = Timer("live", now + datetime.timedelta(hours=1))
+    fake.timers = [live]
+    saved_before = fake.saved
+    fake._snooze_timer(stale, 10)
+    assert len(fake.timers) == 1             # nothing appended, nothing moved
+    assert fake.saved == saved_before
+    assert stale.fired is True               # not re-armed either
+
+
+def test_check_timers_isolates_one_bad_timer():
+    fake = _bind(_FakeFire())
+    now = datetime.datetime(2026, 7, 21, 12, 0, 0)
+    bad = Timer("bad", now - datetime.timedelta(seconds=1))
+    good = Timer("good", now - datetime.timedelta(seconds=1))
+    fake.timers = [bad, good]
+    fired = []
+
+    def notify(t, fired_at=None):
+        if t is bad:
+            raise RuntimeError("boom")
+        fired.append(t)
+
+    fake._notify_timer = notify
+    fake._check_timers()                     # one raise must not eat the batch
+    assert fired == [good]
+
+
+def test_check_timers_still_saves_when_a_timer_raises():
+    fake = _bind(_FakeFire())
+    now = datetime.datetime(2026, 7, 21, 12, 0, 0)
+    fake.timers = [Timer("bad", now - datetime.timedelta(seconds=1))]
+    fake._notify_timer = lambda t, fired_at=None: (_ for _ in ()).throw(
+        RuntimeError("boom"))
+    fake._check_timers()
+    assert fake.saved == 1                   # the due-batch save still ran
+
+
+def test_test_notification_job_is_registered_and_fires():
+    fake = _bind(_FakeFire())
+    t = Timer("probe", datetime.datetime.now(), sound="notify", volume=3,
+              show_notification=False)
+    seen = []
+    fake._notify_timer = lambda timer, fired_at=None: seen.append(timer)
+    fake.test_timer_notification(t, delay_seconds=0.05)
+    assert len(fake._timer_test_jobs) == 1
+    QApplication.processEvents()
+    from PyQt6.QtTest import QTest
+    QTest.qWait(150)
+    assert len(seen) == 1                    # fired exactly once
+    assert seen[0].name == "probe"
+    assert seen[0].volume == 3
+    assert seen[0].show_notification is False
+    assert fake._timer_test_jobs == {}       # and retired from the registry
+
+
+def test_test_notification_jobs_cancelled_on_shutdown():
+    fake = _bind(_FakeFire())
+    t = Timer("probe", datetime.datetime.now(), sound="notify", volume=3)
+    seen = []
+    fake._notify_timer = lambda timer, fired_at=None: seen.append(timer)
+    fake.test_timer_notification(t, delay_seconds=0.05)
+    fake.test_timer_notification(t, delay_seconds=0.05)
+    assert len(fake._timer_test_jobs) == 2
+    fake._cancel_timer_test_jobs()
+    assert fake._timer_test_jobs == {}
+    from PyQt6.QtTest import QTest
+    QTest.qWait(200)
+    assert seen == []                        # nothing fired after the cancel
+
+
+def test_test_notification_stale_profile_never_fires():
+    fake = _bind(_FakeFire())
+    t = Timer("probe", datetime.datetime.now(), sound="notify", volume=3)
+    seen = []
+    fake._notify_timer = lambda timer, fired_at=None: seen.append(timer)
+    fake.test_timer_notification(t, delay_seconds=0.05)
+    fake.data = {"sound_volume": "5", "sound_ui": "False", "theme": "Default"}
+    from PyQt6.QtTest import QTest
+    QTest.qWait(200)
+    assert seen == []                        # profile moved on -> job dropped
+    assert fake._timer_test_jobs == {}
+
+
+def test_test_notification_hundred_jobs_cancel_clean():
+    fake = _bind(_FakeFire())
+    t = Timer("probe", datetime.datetime.now(), sound="notify", volume=3)
+    for _ in range(100):
+        fake.test_timer_notification(t, delay_seconds=0.05)
+    assert len(fake._timer_test_jobs) == 100
+    fake._cancel_timer_test_jobs()
+    assert fake._timer_test_jobs == {}
+    from PyQt6.QtTest import QTest
+    QTest.qWait(200)                         # nothing still queued to fire
