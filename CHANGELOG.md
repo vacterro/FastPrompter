@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.8.41 - 2026-08-19
+
+- **Timer & limits:** Fixed boolean healing for all_day timer rules. Timer dialog scanner now filters correctly for limited agents and uses locale-independent identity tracking for timers.
+- **Link security:** Implemented explicit confirmation prompts for local executable and script links in editor previews.
+- **i18n tooling isolation:** Refactored translation sync, injection, and validation tools to explicitly respect project roots, resolving paths cleanly.
+
 ## v0.8.40 — 2026-08-18
 
 - **Invariant audit pass (T-806).** A second round of correctness hardening on
