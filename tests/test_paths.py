@@ -381,3 +381,82 @@ except SystemExit as e:
     assert "Security Error" in res2.stderr
     assert "resolves outside the project root" in res2.stderr
 
+
+
+def test_t1017_inject_translations_path_isolation(tmp_path):
+    script_path = Path("tools/inject_translations.py").resolve()
+    assert script_path.exists()
+    
+    src_dir = tmp_path / "src" / "fastprompter" / "core" / "i18n"
+    src_dir.mkdir(parents=True)
+    locales_dir = tmp_path / ".saipen" / "saitranslate" / "locales"
+    locales_dir.mkdir(parents=True)
+    
+    en_json = locales_dir / "en.json"
+    en_json.write_text('{"translations": {"key": "val"}}', encoding="utf-8")
+    
+    (src_dir / "_container.py").write_text('_BUILTIN_LANGS: Final[list[str]] = []', encoding="utf-8")
+    (src_dir / "__init__.py").write_text('NATIVE_NAMES: dict[str, str] = {}', encoding="utf-8")
+    
+    wrapper = tmp_path / "wrapper_inject.py"
+    wrapper.write_text(f"""
+import sys
+import os
+sys.path.insert(0, "{script_path.parent.as_posix()}")
+import inject_translations
+from pathlib import Path
+
+original_join = os.path.join
+def fake_join(*args):
+    if "en.py" in args:
+        return r"{(tmp_path.parent / 'outside_en.py').as_posix()}"
+    return original_join(*args)
+
+os.path.join = fake_join
+sys.argv = ["inject_translations.py", "--root", r"{tmp_path.as_posix()}"]
+try:
+    inject_translations.main()
+except SystemExit as e:
+    sys.exit(e.code)
+""", encoding="utf-8")
+    
+    res = subprocess.run(["python", str(wrapper)], capture_output=True, text=True)
+    assert res.returncode == 1
+    assert "Security Error" in res.stderr
+    assert "resolves outside the project root" in res.stderr
+
+def test_t1017_validate_saitranslate_path_isolation(tmp_path):
+    script_path = Path("tools/validate_saitranslate.py").resolve()
+    assert script_path.exists()
+    
+    src_dir = tmp_path / "src" / "fastprompter"
+    src_dir.mkdir(parents=True)
+    locales_dir = tmp_path / ".saipen" / "saitranslate" / "locales"
+    locales_dir.mkdir(parents=True)
+    
+    wrapper = tmp_path / "wrapper_validate.py"
+    wrapper.write_text(f"""
+import sys
+import os
+sys.path.insert(0, "{script_path.parent.as_posix()}")
+import validate_saitranslate
+from pathlib import Path
+
+original_join = os.path.join
+def fake_join(*args):
+    if ".saipen" in args and "saitranslate" in args and "STATE.md" in args:
+        return r"{(tmp_path.parent / 'outside_STATE.md').as_posix()}"
+    return original_join(*args)
+
+os.path.join = fake_join
+sys.argv = ["validate_saitranslate.py", "--root", r"{tmp_path.as_posix()}"]
+try:
+    validate_saitranslate.main()
+except SystemExit as e:
+    sys.exit(e.code)
+""", encoding="utf-8")
+    
+    res = subprocess.run(["python", str(wrapper)], capture_output=True, text=True)
+    assert res.returncode == 1
+    assert "Security Error" in res.stderr
+    assert "resolves outside the project root" in res.stderr
