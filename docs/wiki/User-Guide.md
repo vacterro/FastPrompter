@@ -143,11 +143,34 @@ See [Watcher Engine Architecture](Watcher-Engine-Architecture) for full details.
 
 `#tag` in silo text indexed for cross-silo search. Alt+Shift+T opens Hashtag Dialog — search by tag, see all matching silos, click to jump.
 
-### 15. Timers & Pomodoro
+### 15. Timers, Calendar & Pomodoro
 
-**Countdown timers:** Set via Ctrl+Shift+T or timer button. Configurable name, duration, sound (picks from all 412 shipped sounds, not just events), volume, color urgency. The dialog lists timers in a table — **Name | Time | Remaining** columns (T-733) — with edit/snooze/fire actions. Timer toast notification with snooze (Win95 3D bevels); **clicking the toast itself dismisses it** (T-736), and a fresh toast never lands off-screen.
+**Alarm vs Calendar:**
+The app provides two kinds of scheduled events:
+- **Alarms:** Short-term reminders (e.g., `in 10m`, `18:30`). Managed in the Alarms tab.
+- **Calendar:** Long-term recurring dates (e.g., daily standup, monthly bills, yearly birthdays). Managed in the Calendar tab.
 
-**One-click quick presets (T-726):** the dialog also offers `in 10m`, `in 1h`, `tonight` (22:00) and `tomorrow` (09:00) buttons that fill the when-field with a concrete moment — no typing needed. Free text still works for anything else (`18:30`, `tomorrow 9:00`, or a full `YYYY-MM-DD HH:MM`).
+**Recurrence:**
+Calendar events support Daily, Weekly, Monthly, and Yearly recurrence.
+- **Monthly/Yearly:** Automatically advance to the next future occurrence without firing multiple times for past skipped dates.
+- Calendar series edits preserve the original anchor date unless you explicitly select a new date.
+
+**Sounds & Random Pool:**
+- You can select a single sound, or switch to **Random Pool**.
+- **Pool Mode:** Assigns multiple sounds, each with its own enabled state and **Time Window**.
+- **Time Windows:** Exact boundaries (e.g., `06:00` to `12:00` includes `06:00` but not `12:00`). Supports **overnight windows** (e.g., `22:00` to `06:00`).
+- **Volume Inheritance:** Pool sounds can specify a distinct volume, or inherit the parent timer's volume setting.
+- **Missing Sounds:** If a referenced sound file is deleted, the scheduler survives and still displays the visual notification.
+
+**Notifications & Topbar:**
+- **Notification Toggle:** You can disable visual toasts for any timer (it will still play sound).
+- **Topbar Toggle:** You can hide any timer from the top-bar countdown.
+- **Notification Palette:** Rich notification colors (bg, header, title, text, info, accent, borders, buttons) can be customized in Settings > Colors.
+
+**Clickable Links:**
+- **Source Mode:** Ctrl+Click to open safe links (http/https/ftp/mailto/file). Ctrl+Shift+Click local files to reveal containing folder.
+- **Live Preview:** Plain click opens safe links. Shift+Click local files reveals folder. Drag selection never accidentally opens links.
+- **Reading Mode:** Plain click opens safe links.
 
 **Pomodoro:** Work/break state machine. Configurable intervals. Tray notification + sound on phase end. Timer label beside clock shows remaining time + urgency color.
 
