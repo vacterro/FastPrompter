@@ -191,7 +191,8 @@ DEFAULT_PROFILE = {
     'snippet_arrows': 'False',
     'snippets_hidden': 'True',
     'snippets_visible': 'False',
-    'sound_enabled': 'True',
+    # NOTE: the obsolete `sound_enabled` alias was removed — the canonical key
+    # is `sound_ui` (see _resync_profile_widgets / cb_sound construction).
     'sound_typewriter': 'False',
     'sound_ui': 'True',
     'sound_volume': '1',

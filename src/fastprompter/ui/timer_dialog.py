@@ -11,10 +11,11 @@ from __future__ import annotations
 
 import datetime
 
-from PyQt6.QtCore import QDateTime, Qt, QTimer
+from PyQt6.QtCore import QDate, QDateTime, Qt, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QApplication,
+    QCalendarWidget,
     QCheckBox,
     QComboBox,
     QDateTimeEdit,
@@ -27,7 +28,9 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QSpinBox,
+    QTableWidget,
     QTabWidget,
+    QTimeEdit,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -39,16 +42,384 @@ from fastprompter.core.duration import PRESETS, format_remaining, resolve_target
 from fastprompter.core.timers import (
     COLOR_STATIC,
     COLOR_TEMPERATURE,
+    KIND_ALARM,
+    KIND_CALENDAR,
+    MAX_TIMER_SOUND_RULES,
     REPEAT_CHOICES,
+    REPEAT_DAILY,
     REPEAT_INTERVAL,
+    REPEAT_MONTHLY,
+    REPEAT_NONE,
+    REPEAT_WEEKLY,
+    REPEAT_YEARLY,
+    SOUND_MODE_POOL,
+    SOUND_MODE_SINGLE,
     Timer,
     describe,
     limit_window,
+    occurrences_in_month,
+    occurs_on_date,
 )
 from fastprompter.core.translations import tr
 
 _SOUNDS = ("tick", "click", "new", "save", "delete", "clear", "silo", "snippet")
 _TEST_DELAY_S = 5
+
+
+# ---------------------------------------------------------------------------
+# T-1005 / T-1006. One reusable block of "how this timer behaves" controls.
+#
+# Alarm and Calendar forms differ in time/repeat/name fields, but the behaviour
+# knobs (show notification, show in top bar, heat/static colour, default volume,
+# single vs random-pool sound) are identical truth. This widget owns them once
+# so the two forms never duplicate 150 lines of sound/notify/topbar form.
+# ---------------------------------------------------------------------------
+
+class _TimerBehaviorEditor(QWidget):
+    """Reusable timer-behaviour editor: notify / top-bar / colour / sound."""
+
+    # (sound_ref, volume) the host should audition immediately
+    previewRequested = pyqtSignal(str, int)
+
+    def __init__(self, main_win, lang, parent=None):
+        super().__init__(parent)
+        self.main_win = main_win
+        self.lang = lang
+        self._sound_choices = []  # [(display, ref), ...] built once per dialog
+
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(4)
+
+        # ---- notify / top-bar toggles ----
+        toggles = QHBoxLayout()
+        toggles.setSpacing(4)
+        self.cb_show_notif = QCheckBox(tr("Show notification", lang))
+        self.cb_show_notif.setChecked(True)
+        self.cb_show_topbar = QCheckBox(tr("Show in top bar", lang))
+        self.cb_show_topbar.setChecked(True)
+        toggles.addWidget(self.cb_show_notif)
+        toggles.addWidget(self.cb_show_topbar)
+        toggles.addStretch(1)
+        lay.addLayout(toggles)
+
+        # ---- colour + default volume ----
+        basics = QHBoxLayout()
+        basics.setSpacing(4)
+        self.cb_temp = QCheckBox(tr("Heat colour", lang))
+        self.cb_temp.setChecked(True)
+        self.cb_temp.setToolTip(tr(
+            "Colour warms from blue to red as the deadline nears.\n"
+            "Off: always the same colour.", lang))
+        basics.addWidget(self.cb_temp)
+
+        self.spin_vol = QSpinBox()
+        self.spin_vol.setRange(0, 10)
+        self.spin_vol.setValue(5)
+        self.spin_vol.setToolTip(tr("Alarm volume (0-10)", lang))
+        basics.addWidget(QLabel(tr("Vol", lang)))
+        basics.addWidget(self.spin_vol)
+        basics.addStretch(1)
+        lay.addLayout(basics)
+
+        # ---- single sound vs random pool ----
+        self.cb_pool = QCheckBox(tr("Random sound pool", lang))
+        self.cb_pool.setToolTip(tr(
+            "Play a random sound from a pool of rules, each with its own\n"
+            "time window and volume. Off: the single sound above is used.", lang))
+        lay.addWidget(self.cb_pool)
+
+        self.cb_sound = QComboBox()
+        self.cb_sound.setToolTip(tr(
+            "Alarm sound — the named events first, then every file in the "
+            "library", lang))
+        self._fill_sound_choices()
+        lay.addWidget(self.cb_sound)
+
+        # ---- pool editor ----
+        self.pool = QTableWidget()
+        self.pool.setColumnCount(6)
+        self.pool.setHorizontalHeaderLabels([
+            tr("On", lang), tr("Sound", lang), tr("All day", lang),
+            tr("From", lang), tr("To", lang), tr("Volume", lang),
+        ])
+        self.pool.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.pool.horizontalHeader().setStretchLastSection(True)
+        self.pool.setVisible(False)
+        lay.addWidget(self.pool)
+
+        pool_btns = QHBoxLayout()
+        pool_btns.setSpacing(4)
+        self.btn_pool_add = QPushButton(tr("Add sound", lang))
+        self.btn_pool_add.clicked.connect(self._pool_add)
+        self.btn_pool_remove = QPushButton(tr("Remove sound", lang))
+        self.btn_pool_remove.clicked.connect(self._pool_remove)
+        pool_btns.addWidget(self.btn_pool_add)
+        pool_btns.addWidget(self.btn_pool_remove)
+        pool_btns.addStretch(1)
+        lay.addLayout(pool_btns)
+
+        self.cb_pool.toggled.connect(self._on_pool_toggled)
+        # preview ONLY on real user activation, never on programmatic set
+        self.cb_sound.activated.connect(lambda _i: self._preview_single())
+
+    # -- cached sound choices ------------------------------------------------
+    def _fill_sound_choices(self):
+        """Build the sound combo ONCE. Named events first, then every file.
+
+        Reads the SoundManager's own cached inventory so Alarm and Calendar
+        editors always derive their choices from the SAME library listing.
+        """
+        self.cb_sound.setMaxVisibleItems(20)
+        self._sound_choices = []
+        for name in _SOUNDS:
+            self._sound_choices.append((name, name))
+            self.cb_sound.addItem(name, name)
+        try:
+            files = self.main_win.sound_manager.get_available_sounds()
+        except Exception:
+            files = []
+        if files:
+            self.cb_sound.insertSeparator(self.cb_sound.count())
+            for rel in files:
+                self._sound_choices.append((rel, f"file:{rel}"))
+                self.cb_sound.addItem(rel, f"file:{rel}")
+
+    def select_sound(self, value):
+        idx = self.cb_sound.findData(value or "tick")
+        if idx < 0:
+            idx = self.cb_sound.findData("tick")
+        if idx >= 0:
+            self.cb_sound.setCurrentIndex(idx)
+
+    # -- pool table ----------------------------------------------------------
+    def _on_pool_toggled(self, on):
+        self.cb_sound.setVisible(not on)
+        self.pool.setVisible(on)
+        self.btn_pool_add.setVisible(on)
+        self.btn_pool_remove.setVisible(on)
+        self._refresh_pool_buttons()
+
+    def _refresh_pool_buttons(self):
+        at_cap = self.pool.rowCount() >= MAX_TIMER_SOUND_RULES
+        self.btn_pool_add.setEnabled(not at_cap)
+
+    def _default_rule(self):
+        ref = self.cb_sound.currentData() or "tick"
+        return {"sound": ref, "enabled": True, "all_day": True,
+                "start_minute": 0, "end_minute": 0, "volume": None}
+
+    def _pool_add(self):
+        if self.pool.rowCount() >= MAX_TIMER_SOUND_RULES:
+            return
+        self._pool_append_row(self._default_rule())
+        self._refresh_pool_buttons()
+        self._preview_pool_row(self.pool.rowCount() - 1)
+
+    def _pool_remove(self):
+        row = self.pool.currentRow()
+        if row < 0:
+            return
+        self.pool.removeRow(row)
+        self._refresh_pool_buttons()
+
+    def _pool_append_row(self, rule):
+        r = self.pool.rowCount()
+        self.pool.insertRow(r)
+        self._pool_set_row(r, rule)
+
+    def _pool_set_row(self, r, rule):
+        en = QCheckBox()
+        en.setChecked(bool(rule.get("enabled", True)))
+        self.pool.setCellWidget(r, 0, en)
+
+        sound = QComboBox()
+        sound.setMaxVisibleItems(20)
+        for disp, ref in self._sound_choices:
+            sound.addItem(disp, ref)
+        idx = sound.findData(rule.get("sound") or "tick")
+        sound.setCurrentIndex(idx if idx >= 0 else 0)
+        self.pool.setCellWidget(r, 1, sound)
+
+        allday = QCheckBox()
+        allday.setChecked(bool(rule.get("all_day", True)))
+        self.pool.setCellWidget(r, 2, allday)
+
+        frm = QTimeEdit()
+        frm.setDisplayFormat("HH:mm")
+        frm.setTime(_minute_to_time(rule.get("start_minute", 0)))
+        self.pool.setCellWidget(r, 3, frm)
+
+        to = QTimeEdit()
+        to.setDisplayFormat("HH:mm")
+        to.setTime(_minute_to_time(rule.get("end_minute", 0)))
+        self.pool.setCellWidget(r, 4, to)
+
+        vol = QSpinBox()
+        vol.setRange(-1, 10)
+        vol.setSpecialValueText(tr("Timer", self.lang))
+        v = rule.get("volume", None)
+        vol.setValue(-1 if v is None else max(-1, min(10, int(v))))
+        self.pool.setCellWidget(r, 5, vol)
+
+        # Signals capture the WIDGETS, never the table row: removing an
+        # earlier row shifts every later one, so a captured row number would
+        # point at the wrong sound / the wrong From-To pair after any
+        # remove/add sequence.
+        sound.activated.connect(
+            lambda _i, s=sound, v=vol: self._preview_pool_widgets(s, v))
+        allday.toggled.connect(
+            lambda _c, a=allday, f=frm, t=to: self._sync_window_widgets(a, f, t))
+        self._sync_window_widgets(allday, frm, to)
+
+    def _sync_window_widgets(self, allday, frm, to):
+        """Enable/disable a row's From/To edits straight from its widgets."""
+        on = not allday.isChecked()
+        frm.setEnabled(on)
+        to.setEnabled(on)
+
+    def _read_pool_rules(self):
+        out = []
+        for r in range(self.pool.rowCount()):
+            en = self.pool.cellWidget(r, 0)
+            sound = self.pool.cellWidget(r, 1)
+            allday = self.pool.cellWidget(r, 2)
+            frm = self.pool.cellWidget(r, 3)
+            to = self.pool.cellWidget(r, 4)
+            vol = self.pool.cellWidget(r, 5)
+            ref = sound.currentData() or "tick"
+            all_day = allday.isChecked()
+            start = _time_to_minute(frm.time()) if not all_day else 0
+            end = _time_to_minute(to.time()) if not all_day else 0
+            v = vol.value()
+            out.append({
+                "sound": ref,
+                "enabled": en.isChecked(),
+                "all_day": all_day,
+                "start_minute": start,
+                "end_minute": end,
+                "volume": None if v < 0 else v,
+            })
+        return out
+
+    # -- preview (user activation only) -------------------------------------
+    def _preview_single(self):
+        if self.cb_pool.isChecked():
+            return
+        self.previewRequested.emit(self.cb_sound.currentData() or "tick",
+                                   self.spin_vol.value())
+
+    def _preview_pool_row(self, row):
+        if not self.cb_pool.isChecked():
+            return
+        if row < 0 or row >= self.pool.rowCount():
+            return
+        sound = self.pool.cellWidget(row, 1)
+        vol = self.pool.cellWidget(row, 5)
+        self._preview_pool_widgets(sound, vol)
+
+    def _preview_pool_widgets(self, sound, vol):
+        """Preview one pool row straight from its widgets.
+
+        Emits the EFFECTIVE volume: a rule whose volume says "inherit the
+        timer default" resolves to THIS editor's volume spin, so the host
+        never has to guess which editor a preview request came from.
+        """
+        if not self.cb_pool.isChecked():
+            return
+        v = vol.value()
+        ref = sound.currentData() or "tick"
+        self.previewRequested.emit(ref, self.spin_vol.value() if v < 0 else v)
+
+    # -- validation --------------------------------------------------------
+    def validate(self):
+        """First pool-row problem as a user message, or None.
+
+        One rule, enforced by every form that can save a timer: a
+        non-all-day row whose start equals end matches nothing, ever, so it
+        must not be saved as an apparently active rule.
+        """
+        for i in range(self.pool.rowCount()):
+            allday = self.pool.cellWidget(i, 2)
+            if allday.isChecked():
+                continue
+            frm = self.pool.cellWidget(i, 3)
+            to = self.pool.cellWidget(i, 4)
+            if _time_to_minute(frm.time()) == _time_to_minute(to.time()):
+                return tr("Sound rule {} has an empty time range.", self.lang) \
+                    .format(i + 1)
+        return None
+
+    def select_bad_row(self):
+        """Highlight the first offending pool row, if any."""
+        for i in range(self.pool.rowCount()):
+            allday = self.pool.cellWidget(i, 2)
+            if allday.isChecked():
+                continue
+            frm = self.pool.cellWidget(i, 3)
+            to = self.pool.cellWidget(i, 4)
+            if _time_to_minute(frm.time()) == _time_to_minute(to.time()):
+                self.pool.setCurrentCell(i, 0)
+                return True
+        return False
+
+    # -- public API used by the forms ---------------------------------------
+    def load_timer(self, timer):
+        self.cb_show_notif.setChecked(timer.show_notification)
+        self.cb_show_topbar.setChecked(timer.show_in_top_bar)
+        self.cb_temp.setChecked(timer.color_mode == COLOR_TEMPERATURE)
+        self.spin_vol.setValue(timer.volume)
+        self.select_sound(timer.sound)
+        is_pool = timer.sound_mode == SOUND_MODE_POOL
+        self.cb_pool.setChecked(is_pool)
+        self.pool.setRowCount(0)
+        for rule in timer.sound_rules:
+            self._pool_append_row(rule)
+        self._refresh_pool_buttons()
+
+    def reset_defaults(self):
+        self.cb_show_notif.setChecked(True)
+        self.cb_show_topbar.setChecked(True)
+        self.cb_temp.setChecked(True)
+        self.spin_vol.setValue(5)
+        self.select_sound("tick")
+        self.cb_pool.setChecked(False)
+        self.pool.setRowCount(0)
+        self._refresh_pool_buttons()
+
+    def timer_kwargs(self):
+        """Validated behaviour kwargs for Timer(...) / Timer mutation."""
+        if self.cb_pool.isChecked():
+            return {
+                "show_notification": self.cb_show_notif.isChecked(),
+                "show_in_top_bar": self.cb_show_topbar.isChecked(),
+                "color_mode": COLOR_TEMPERATURE if self.cb_temp.isChecked()
+                else COLOR_STATIC,
+                "volume": self.spin_vol.value(),
+                "sound_mode": SOUND_MODE_POOL,
+                "sound_rules": self._read_pool_rules(),
+                "sound": self.cb_sound.currentData() or "tick",
+            }
+        return {
+            "show_notification": self.cb_show_notif.isChecked(),
+            "show_in_top_bar": self.cb_show_topbar.isChecked(),
+            "color_mode": COLOR_TEMPERATURE if self.cb_temp.isChecked()
+            else COLOR_STATIC,
+            "volume": self.spin_vol.value(),
+            "sound_mode": SOUND_MODE_SINGLE,
+            "sound_rules": [],
+            "sound": self.cb_sound.currentData() or "tick",
+        }
+
+
+def _minute_to_time(minute):
+    from PyQt6.QtCore import QTime
+    minute = max(0, min(1439, int(minute)))
+    return QTime(minute // 60, minute % 60)
+
+
+def _time_to_minute(t):
+    return t.hour() * 60 + t.minute()
 
 
 class TimerDialog(QDialog):
@@ -253,25 +624,12 @@ class TimerDialog(QDialog):
             self.cb_repeat.addItem(tr(r.capitalize(), self.lang), r)
         opts.addWidget(self.cb_repeat)
 
-        self.cb_sound = QComboBox()
-        self.cb_sound.setToolTip(tr(
-            "Alarm sound — the named events first, then every file in the "
-            "library", self.lang))
-        self._fill_sound_choices()
-        opts.addWidget(self.cb_sound)
-
-        self.spin_vol = QSpinBox()
-        self.spin_vol.setRange(0, 10)
-        self.spin_vol.setValue(5)
-        self.spin_vol.setToolTip(tr("Alarm volume (0-10)", self.lang))
-        opts.addWidget(self.spin_vol)
-
-        self.cb_temp = QCheckBox(tr("Heat colour", self.lang))
-        self.cb_temp.setChecked(True)
-        self.cb_temp.setToolTip(tr(
-            "Colour warms from blue to red as the deadline nears.\n"
-            "Off: always the same colour.", self.lang))
-        opts.addWidget(self.cb_temp)
+        # T-1005/T-1006: one shared behaviour editor owns notify / top-bar /
+        # colour / volume / single-sound / random-pool. Alarm and Calendar forms
+        # both instantiate it, so the behaviour truth lives in exactly one place.
+        self._behavior = _TimerBehaviorEditor(self.main_win, self.lang, self)
+        self._behavior.previewRequested.connect(self._preview_sound)
+        opts.addWidget(self._behavior)
 
         self.btn_test = QPushButton(tr("Test", self.lang))
         self.btn_test.setToolTip(tr(
@@ -285,6 +643,12 @@ class TimerDialog(QDialog):
         self.btn_commit.clicked.connect(self.commit)
         opts.addWidget(self.btn_commit)
         root.addLayout(opts)
+
+        # Keep the legacy attribute names working for callers/tests that
+        # reached the Alarm sound controls directly.
+        self.cb_sound = self._behavior.cb_sound
+        self.spin_vol = self._behavior.spin_vol
+        self.cb_temp = self._behavior.cb_temp
 
         # ---- live feedback ----
         self.lbl_hint = QLabel("")
@@ -330,6 +694,7 @@ class TimerDialog(QDialog):
         root.addLayout(actions)
 
         self._build_productivity_tab()
+        self._build_calendar_tab()
 
         # keep the countdown column honest while the dialog is open
         self._tick = QTimer(self)
@@ -493,6 +858,314 @@ class TimerDialog(QDialog):
             f"font-size: 26px; font-weight: bold; color: {colour};")
 
     # ------------------------------------------------------------------
+    # T-1006. Calendar tab: events ARE timers (kind="calendar"), stored in
+    # the one timers list with the one scheduler. No second dialog, no second
+    # persistence, no interval recurrence here.
+
+    _CAL_REPEATS = (REPEAT_NONE, REPEAT_DAILY, REPEAT_WEEKLY,
+                    REPEAT_MONTHLY, REPEAT_YEARLY)
+
+    def _build_calendar_tab(self):
+        page = QWidget()
+        v = QVBoxLayout(page)
+        v.setContentsMargins(6, 6, 6, 6)
+        v.setSpacing(6)
+
+        self.cal = QCalendarWidget()
+        self.cal.setGridVisible(True)
+        self.cal.setSelectionMode(QCalendarWidget.SelectionMode.SingleSelection)
+        self.cal.currentPageChanged.connect(self._cal_page_changed)
+        self.cal.selectionChanged.connect(self._cal_selection_changed)
+        self._style_calendar_widget(self.cal)
+        v.addWidget(self.cal)
+
+        self.cal_list = QTreeWidget()
+        self.cal_list.setHeaderLabels([
+            tr("Time", self.lang), tr("Name", self.lang),
+            tr("Repeat", self.lang), tr("Sound", self.lang),
+            tr("Notify", self.lang), tr("Top bar", self.lang),
+        ])
+        self.cal_list.setRootIsDecorated(False)
+        self.cal_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.cal_list.itemDoubleClicked.connect(lambda *_: self._cal_edit_selected())
+        self.cal_list.currentItemChanged.connect(lambda *_: self._cal_update_buttons())
+        v.addWidget(self.cal_list, 1)
+
+        acts = QHBoxLayout()
+        acts.setSpacing(4)
+        self.cal_btn_new = QPushButton(tr("New event", self.lang))
+        self.cal_btn_new.clicked.connect(self._cal_new)
+        self.cal_btn_edit = QPushButton(tr("Edit", self.lang))
+        self.cal_btn_edit.clicked.connect(self._cal_edit_selected)
+        self.cal_btn_toggle = QPushButton(tr("Enable/Disable", self.lang))
+        self.cal_btn_toggle.clicked.connect(self._cal_toggle_selected)
+        self.cal_btn_delete = QPushButton(tr("Delete", self.lang))
+        self.cal_btn_delete.clicked.connect(self._cal_delete_selected)
+        acts.addWidget(self.cal_btn_new)
+        acts.addWidget(self.cal_btn_edit)
+        acts.addWidget(self.cal_btn_toggle)
+        acts.addWidget(self.cal_btn_delete)
+        acts.addStretch(1)
+        v.addLayout(acts)
+
+        # ---- event editor ----
+        self.cal_name = QLineEdit()
+        self.cal_name.setPlaceholderText(tr("Event name", self.lang))
+        v.addWidget(self.cal_name)
+        self.cal_desc = QLineEdit()
+        self.cal_desc.setPlaceholderText(tr("Description (optional)", self.lang))
+        v.addWidget(self.cal_desc)
+
+        when_row = QHBoxLayout()
+        when_row.setSpacing(4)
+        self.cal_time = QTimeEdit()
+        self.cal_time.setDisplayFormat("HH:mm")
+        self.cal_time.setTime(QDateTime.currentDateTime().time())
+        self.cal_repeat = QComboBox()
+        for r in self._CAL_REPEATS:
+            self.cal_repeat.addItem(tr(r.capitalize(), self.lang), r)
+        self.cal_enabled = QCheckBox(tr("Enabled", self.lang))
+        self.cal_enabled.setChecked(True)
+        when_row.addWidget(QLabel(tr("Time", self.lang)))
+        when_row.addWidget(self.cal_time)
+        when_row.addWidget(QLabel(tr("Repeat", self.lang)))
+        when_row.addWidget(self.cal_repeat)
+        when_row.addWidget(self.cal_enabled)
+        when_row.addStretch(1)
+        v.addLayout(when_row)
+
+        self._cal_behavior = _TimerBehaviorEditor(self.main_win, self.lang, self)
+        self._cal_behavior.previewRequested.connect(self._preview_sound)
+        v.addWidget(self._cal_behavior)
+
+        cal_commit_row = QHBoxLayout()
+        cal_commit_row.setSpacing(4)
+        self.btn_cal_commit = QPushButton(tr("Add event", self.lang))
+        self.btn_cal_commit.clicked.connect(self._cal_commit)
+        self.btn_cal_cancel = QPushButton(tr("New", self.lang))
+        self.btn_cal_cancel.clicked.connect(self._cal_new)
+        cal_commit_row.addWidget(self.btn_cal_commit)
+        cal_commit_row.addWidget(self.btn_cal_cancel)
+        cal_commit_row.addStretch(1)
+        v.addLayout(cal_commit_row)
+
+        self.cal_hint = QLabel("")
+        self.cal_hint.setWordWrap(True)
+        v.addWidget(self.cal_hint)
+
+        self.tabs.addTab(page, tr("Calendar", self.lang))
+        self._cal_formatted = set()      # dates currently marked (to clear lazily)
+        self._cal_editing_id = None
+        self._cal_new()
+        self._cal_refresh_markers()
+        self._cal_refresh_list()
+
+    # -- calendar helpers ---------------------------------------------------
+    def _cal_visible_timers(self):
+        return [t for t in self.main_win.timers if t.kind == KIND_CALENDAR]
+
+    def _cal_selected_date(self):
+        return self.cal.selectedDate().toPyDate()
+
+    def _cal_refresh_markers(self):
+        """Mark visible-month dates that have a calendar event. Bounded: only
+        the dates we formatted last time are cleared, never every date."""
+        from PyQt6.QtCore import QDate
+        from PyQt6.QtGui import QColor, QTextCharFormat
+
+        # clear only previously-set formats
+        for d in list(self._cal_formatted):
+            self.cal.setDateTextFormat(QDate(d[0], d[1], d[2]),
+                                        QTextCharFormat())
+        self._cal_formatted.clear()
+
+        y, m = self.cal.yearShown(), self.cal.monthShown()
+        fmt = QTextCharFormat()
+        try:
+            from fastprompter.theme.themes import THEMES
+            theme = THEMES.get(self.main_win.data.get("theme", "Default")) or {}
+            accent = QColor(theme.get("raw_colors", {}).get("accent", "#f0d060"))
+        except Exception:
+            accent = QColor("#f0d060")
+        fmt.setForeground(accent)
+        # build a set of marked days from all calendar timers
+        marked = set()
+        for t in self._cal_visible_timers():
+            for date in occurrences_in_month(t, y, m):
+                marked.add((date.year, date.month, date.day))
+        for (yy, mm, dd) in marked:
+            self.cal.setDateTextFormat(QDate(yy, mm, dd), fmt)
+            self._cal_formatted.add((yy, mm, dd))
+
+    def _cal_refresh_list(self):
+        self.cal_list.blockSignals(True)
+        self.cal_list.clear()
+        sel = self._cal_selected_date()
+        for t in sorted(self._cal_visible_timers(), key=lambda x: x.target):
+            if not occurs_on_date(t, sel):
+                continue
+            repeat = tr(t.repeat.capitalize(), self.lang)
+            sound = (tr("Random pool", self.lang) if t.sound_mode == SOUND_MODE_POOL
+                     else t.sound)
+            item = QTreeWidgetItem([
+                t.target.strftime("%H:%M"), t.name, repeat, sound,
+                "On" if t.show_notification else "Off",
+                "On" if t.show_in_top_bar else "Off",
+            ])
+            item.setData(0, Qt.ItemDataRole.UserRole, t.id)
+            self.cal_list.addTopLevelItem(item)
+        self.cal_list.blockSignals(False)
+        self._cal_update_buttons()
+
+    def _cal_page_changed(self, _y, _m):
+        self._cal_refresh_markers()
+
+    def _cal_selection_changed(self):
+        self._cal_refresh_list()
+
+    def _cal_update_buttons(self):
+        item = self.cal_list.currentItem()
+        has = item is not None
+        for b in (self.cal_btn_edit, self.cal_btn_toggle, self.cal_btn_delete):
+            b.setEnabled(has)
+
+    def _cal_new(self):
+        self._cal_editing_id = None
+        self.cal_name.clear()
+        self.cal_desc.clear()
+        self.cal_time.setTime(QDateTime.currentDateTime().time())
+        self.cal_repeat.setCurrentIndex(0)
+        self.cal_enabled.setChecked(True)
+        self._cal_behavior.reset_defaults()
+        self.cal_hint.setText("")
+        self.btn_cal_commit.setText(tr("Add event", self.lang))
+
+    def _cal_selected(self):
+        item = self.cal_list.currentItem()
+        if item is None:
+            return None
+        tid = item.data(0, Qt.ItemDataRole.UserRole)
+        return next((t for t in self._cal_visible_timers() if t.id == tid), None)
+
+    def _cal_edit_selected(self):
+        t = self._cal_selected()
+        if t is None:
+            return
+        self._cal_editing_id = t.id
+        # Bind the editor to the SERIES base date, not the occurrence row the
+        # user happened to be viewing: editing a 31-Jan monthly series from
+        # its 28-Feb occurrence must not re-anchor the series to 28 Feb.
+        try:
+            base = datetime.date.fromisoformat(t.repeat_anchor)
+        except (TypeError, ValueError):
+            base = t.target.date()
+        self.cal.setSelectedDate(QDate(base.year, base.month, base.day))
+        self.cal_name.setText(t.name)
+        self.cal_desc.setText(t.description)
+        self.cal_time.setTime(QDateTime.fromString(
+            t.target.strftime("%H:%M"), "HH:mm").time())
+        idx = self.cal_repeat.findData(t.repeat)
+        if idx >= 0:
+            self.cal_repeat.setCurrentIndex(idx)
+        self.cal_enabled.setChecked(t.enabled)
+        self._cal_behavior.load_timer(t)
+        self.cal_hint.setText("")
+        self.btn_cal_commit.setText(tr("Save event", self.lang))
+
+    def _cal_commit(self):
+        err = self._cal_behavior.validate()
+        if err is not None:
+            self._cal_behavior.select_bad_row()
+            self.cal_hint.setText(err)
+            return
+        sel = self._cal_selected_date()
+        h, mi = self.cal_time.time().hour(), self.cal_time.time().minute()
+        target = datetime.datetime(sel.year, sel.month, sel.day, h, mi, 0)
+        repeat = self.cal_repeat.currentData()
+        kw = self._cal_behavior.timer_kwargs()
+        if repeat in (REPEAT_MONTHLY, REPEAT_YEARLY):
+            kw["repeat_anchor"] = sel.isoformat()
+        kw["kind"] = KIND_CALENDAR
+        kw["enabled"] = self.cal_enabled.isChecked()
+        now = datetime.datetime.now()
+        # Past-schedule rule: an ENABLED repeating event is rolled forward to
+        # its next future occurrence (no retro-fire); an ENABLED one-shot in
+        # the past is refused. Disabled events may stay historical.
+        if self.cal_enabled.isChecked() and target <= now:
+            if repeat == REPEAT_NONE:
+                self.cal_hint.setText(tr(
+                    "Event time is in the past; pick a future time or "
+                    "disable the event.", self.lang))
+                return
+            kw["_normalize_past"] = True
+        else:
+            kw["_normalize_past"] = False
+        if self._cal_editing_id:
+            existing = next((t for t in self.main_win.timers
+                            if t.id == self._cal_editing_id), None)
+            if existing is not None:
+                existing.name = self.cal_name.text().strip() or tr("Event", self.lang)
+                existing.description = self.cal_desc.text().strip()
+                existing.target = target
+                existing.repeat = repeat
+                existing.kind = KIND_CALENDAR
+                existing.show_notification = kw["show_notification"]
+                existing.show_in_top_bar = kw["show_in_top_bar"]
+                existing.sound_mode = kw["sound_mode"]
+                existing.sound_rules = kw["sound_rules"]
+                existing.sound = kw["sound"]
+                existing.volume = kw["volume"]
+                existing.color_mode = kw["color_mode"]
+                existing.enabled = kw["enabled"]
+                existing.repeat_anchor = kw.get("repeat_anchor") or target.date().isoformat()
+                existing.fired = False
+                if kw["_normalize_past"]:
+                    existing.advance(now)
+        else:
+            normalize_past = kw.pop("_normalize_past", False)
+            timer = Timer(
+                name=self.cal_name.text().strip() or tr("Event", self.lang),
+                description=self.cal_desc.text().strip(),
+                target=target, repeat=repeat, **kw)
+            if normalize_past:
+                timer.advance(now)
+            self.main_win.timers.append(timer)
+        self.main_win.save_timers_to_data()
+        self._cal_new()
+        self._cal_refresh_markers()
+        self._cal_refresh_list()
+
+    def _cal_toggle_selected(self):
+        t = self._cal_selected()
+        if t is None:
+            return
+        if not t.enabled:
+            now = datetime.datetime.now()
+            if t.repeat == REPEAT_NONE and t.target <= now:
+                self.cal_hint.setText(tr(
+                    "Event time is in the past; pick a future time to "
+                    "enable it.", self.lang))
+                return
+            if t.repeat != REPEAT_NONE and t.target <= now:
+                t.advance(now)
+        t.enabled = not t.enabled
+        if t.enabled:
+            t.fired = False
+        self.main_win.save_timers_to_data()
+        self._cal_refresh_list()
+
+    def _cal_delete_selected(self):
+        t = self._cal_selected()
+        if t is None:
+            return
+        if self._cal_editing_id == t.id:
+            self._cal_new()
+        self.main_win.timers = [x for x in self.main_win.timers if x.id != t.id]
+        self.main_win.save_timers_to_data()
+        self._cal_refresh_markers()
+        self._cal_refresh_list()
+
+    # ------------------------------------------------------------------
     def _preset_picked(self, idx):
         value = self.cb_preset.itemData(idx)
         if value:
@@ -513,16 +1186,19 @@ class TimerDialog(QDialog):
 
     def _form_timer(self, target=None):
         """Build a Timer from the current form values."""
-        return Timer(
+        kw = self._behavior.timer_kwargs()
+        repeat = self.cb_repeat.currentData()
+        t = Timer(
             name=self.in_name.text().strip() or tr("Timer", self.lang),
             description=self.in_desc.text().strip(),
             target=target or datetime.datetime.now(),
-            repeat=self.cb_repeat.currentData(),
-            sound=self.cb_sound.currentData() or "tick",
-            volume=self.spin_vol.value(),
-            color_mode=COLOR_TEMPERATURE if self.cb_temp.isChecked() else COLOR_STATIC,
+            repeat=repeat,
             interval_minutes=self._interval_minutes(),
+            **kw,
         )
+        if repeat in (REPEAT_MONTHLY, REPEAT_YEARLY):
+            t.repeat_anchor = t.target.date().isoformat()
+        return t
 
     def _interval_minutes(self):
         return max(1, int(round(self.spin_limit_hours.value() * 60)))
@@ -547,6 +1223,11 @@ class TimerDialog(QDialog):
         self.lbl_limit_hint.setText(describe(preview))
 
     def add_limit_window(self):
+        err = self._behavior.validate()
+        if err is not None:
+            self._behavior.select_bad_row()
+            self.lbl_limit_hint.setText(err)
+            return
         anchor, ok = self._limit_anchor()
         if not ok:
             self.lbl_limit_hint.setText(tr("Not a time I understand", self.lang))
@@ -557,9 +1238,7 @@ class TimerDialog(QDialog):
             hours=self.spin_limit_hours.value(),
             anchor=anchor,
             description=self.in_desc.text().strip(),
-            sound=self.cb_sound.currentData() or "tick",
-            volume=self.spin_vol.value(),
-            color_mode=COLOR_TEMPERATURE if self.cb_temp.isChecked() else COLOR_STATIC,
+            **self._behavior.timer_kwargs(),
         )
         self.main_win.timers.append(timer)
         self.main_win.save_timers_to_data()
@@ -585,6 +1264,11 @@ class TimerDialog(QDialog):
                 tr("Could not read the agent config: {}", self.lang).format(exc))
             return []
 
+        err = self._behavior.validate()
+        if err is not None:
+            self._behavior.select_bad_row()
+            self.lbl_limit_hint.setText(err)
+            return []
         self.btn_scan.setEnabled(False)
         self.btn_scan.setText(tr("Scanning…", self.lang))
         QApplication.processEvents()
@@ -606,7 +1290,8 @@ class TimerDialog(QDialog):
             name = tr("{} limit", self.lang).format(res.name) \
                 if "{}" in tr("{} limit", self.lang) else f"{res.name} limit"
             existing = next(
-                (t for t in self.main_win.timers if t.name == name), None)
+                (t for t in self.main_win.timers
+                 if t.kind == KIND_ALARM and t.name == name), None)
             if existing is not None:
                 if res.state.resets_at:
                     existing.target = res.state.resets_at
@@ -620,10 +1305,7 @@ class TimerDialog(QDialog):
                     hours=self.spin_limit_hours.value()),
                 description=(tr("assumed window", self.lang) if assumed
                              else res.state.matched[:60]),
-                sound=self.cb_sound.currentData() or "tick",
-                volume=self.spin_vol.value(),
-                color_mode=COLOR_TEMPERATURE if self.cb_temp.isChecked()
-                else COLOR_STATIC,
+                **self._behavior.timer_kwargs(),
             )
             self.main_win.timers.append(timer)
             made.append(timer)
@@ -657,52 +1339,48 @@ class TimerDialog(QDialog):
         return " · ".join(bits) or tr("Nothing to report.", self.lang)
 
     def test_now(self):
-        """Fire a throwaway copy in 5s — sound and popup, nothing saved."""
+        """Fire a throwaway copy in 5s — sound and popup, nothing saved.
+
+        Copies ALL behaviour the test needs (sound, volume, sound_mode, pool
+        rules, show_notification, colour) so the preview is honest. It is
+        never persisted. If Show notification is OFF the test still exercises
+        sound-only behaviour — it does not force a popup on.
+        """
+        err = self._behavior.validate()
+        if err is not None:
+            self._behavior.select_bad_row()
+            self.lbl_hint.setText(err)
+            return
         self.main_win.test_timer_notification(self._form_timer(), _TEST_DELAY_S)
         self.lbl_hint.setText(
             tr("Test fires in {} seconds", self.lang).format(_TEST_DELAY_S))
 
-    def _fill_sound_choices(self):
-        """Named events first, then the WHOLE shipped library.
+    def _preview_sound(self, ref, volume):
+        """Audition a sound immediately, through the real alarm path.
 
-        The list used to be eight event NAMES out of 412 files, so an alarm
-        could only ever be one of eight sounds — and a user who wanted the
-        other 404 had to re-map a global event and change it everywhere it
-        was used. An event stays an event (so it follows whatever the Sound
-        Settings dialog maps it to) and a file is stored as `file:<name>`,
-        which nothing else in the settings can move under the timer's feet.
+        The behaviour editor already emitted the EFFECTIVE volume (a pool
+        row's "inherit" resolved against its own volume spin), so the host
+        never guesses which editor a request came from. Never throws; a
+        missing file is the scheduler's problem, not the dialog's.
         """
-        from fastprompter.core.sound_manager import discover_sound_files
-
-        self.cb_sound.setMaxVisibleItems(20)
-        for name in _SOUNDS:
-            self.cb_sound.addItem(name, name)
+        if volume is None:
+            return
         try:
-            files = discover_sound_files(self.main_win.sound_manager._sounds_dir)
+            self.main_win.sound_manager.play_sound_ref(ref, volume)
         except Exception:
-            files = []
-        if files:
-            self.cb_sound.insertSeparator(self.cb_sound.count())
-            for rel in files:
-                self.cb_sound.addItem(rel, f"file:{rel}")
+            pass
+
+    def _fill_sound_choices(self):
+        """Delegates to the shared behaviour editor (built once per dialog)."""
+        self._behavior._fill_sound_choices()
 
     def _select_sound(self, value):
         """Point the combo at a stored value, event name or `file:` alike."""
-        idx = self.cb_sound.findData(value or "tick")
-        if idx < 0:                      # a file that is no longer shipped
-            idx = self.cb_sound.findData("tick")
-        if idx >= 0:
-            self.cb_sound.setCurrentIndex(idx)
+        self._behavior.select_sound(value)
 
-    def _style_calendar_popup(self):
-        """Theme the calendar popup, which the app stylesheet cannot reach.
-
-        `setCalendarPopup(True)` builds a QCalendarWidget in its OWN top-level
-        window, with its own QTableView, nav-bar buttons and month/year spin.
-        None of those inherit the sheet this dialog copies from the main
-        window, so the popup came up stock white inside a dark golden app —
-        and so did the up/down arrows on the field itself.
-        """
+    def _calendar_sheet(self):
+        """One theme rule for every QCalendarWidget — the picker popup and the
+        Calendar tab share it so the two giant QSS strings never drift."""
         try:
             from fastprompter.theme.themes import THEMES
 
@@ -716,10 +1394,7 @@ class TimerDialog(QDialog):
         btn = c.get("btn_bg", "#332e22")
         edge = c.get("border_light", "#5a5040")
         accent = c.get("accent", "#f0d060")
-        sheet = f"""
-        QDateTimeEdit {{ background: {bg}; color: {fg}; border: 1px solid {edge}; }}
-        QDateTimeEdit::up-button, QDateTimeEdit::down-button {{
-            background: {btn}; border: 1px solid {edge}; }}
+        return f"""
         QCalendarWidget QWidget {{ background: {panel}; color: {fg}; }}
         QCalendarWidget QAbstractItemView {{
             background: {bg}; color: {fg};
@@ -732,17 +1407,30 @@ class TimerDialog(QDialog):
         QCalendarWidget QSpinBox {{
             background: {bg}; color: {fg}; border: 1px solid {edge}; }}
         QCalendarWidget QMenu {{ background: {panel}; color: {fg}; }}
-        /* The weekday strip is a QHeaderView. A widget-level sheet REPLACES
-           the inherited app rules for that widget, so the shared
-           header_view_qss cannot reach inside this popup — which is exactly
-           why the calendar body themed correctly in T-725 and this one row
-           stayed white. */
         QCalendarWidget QHeaderView {{ background: {panel}; border: none; }}
         QCalendarWidget QHeaderView::section {{
             background: {panel}; color: {fg}; border: none; padding: 2px; }}
         QCalendarWidget QTableView {{
             gridline-color: {edge}; selection-background-color: {accent}; }}
         """
+
+    def _style_calendar_widget(self, cal):
+        """Theme the Calendar-tab QCalendarWidget with the shared rule."""
+        try:
+            cal.setStyleSheet(self._calendar_sheet())
+        except Exception:
+            pass
+
+    def _style_calendar_popup(self):
+        """Theme the calendar popup, which the app stylesheet cannot reach.
+
+        `setCalendarPopup(True)` builds a QCalendarWidget in its OWN top-level
+        window, with its own QTableView, nav-bar buttons and month/year spin.
+        None of those inherit the sheet this dialog copies from the main
+        window, so the popup came up stock white inside a dark golden app —
+        and so did the up/down arrows on the field itself.
+        """
+        sheet = self._calendar_sheet()
         self.date_time_picker.setStyleSheet(sheet)
         cal = self.date_time_picker.calendarWidget()
         if cal is not None:
@@ -791,6 +1479,11 @@ class TimerDialog(QDialog):
 
     def commit(self):
         """Add a new timer, or save the one being edited."""
+        err = self._behavior.validate()
+        if err is not None:
+            self._behavior.select_bad_row()
+            self.lbl_hint.setText(err)
+            return
         text = self.in_when.text().strip()
         target = resolve_target(text)
         if target is None:
@@ -800,7 +1493,7 @@ class TimerDialog(QDialog):
 
         if self._editing_id:
             existing = next((t for t in self.main_win.timers
-                             if t.id == self._editing_id), None)
+                             if t.kind == KIND_ALARM and t.id == self._editing_id), None)
             if existing is not None:
                 form = self._form_timer(target)
                 existing.name = form.name
@@ -811,6 +1504,12 @@ class TimerDialog(QDialog):
                 existing.volume = form.volume
                 existing.color_mode = form.color_mode
                 existing.interval_minutes = form.interval_minutes
+                existing.kind = form.kind
+                existing.show_notification = form.show_notification
+                existing.show_in_top_bar = form.show_in_top_bar
+                existing.sound_mode = form.sound_mode
+                existing.sound_rules = form.sound_rules
+                existing.repeat_anchor = form.repeat_anchor
                 existing.advance()
                 existing.fired = False        # re-arm after an edit
         else:
@@ -826,6 +1525,7 @@ class TimerDialog(QDialog):
         self.in_desc.clear()
         self.in_when.clear()
         self.lbl_hint.setText("")
+        self._behavior.reset_defaults()
         self.btn_commit.setText(tr("Add", self.lang))
         self.in_name.setFocus()
 
@@ -834,7 +1534,8 @@ class TimerDialog(QDialog):
         if item is None:
             return None
         tid = item.data(0, Qt.ItemDataRole.UserRole)
-        return next((t for t in self.main_win.timers if t.id == tid), None)
+        return next((t for t in self.main_win.timers
+                     if t.kind == KIND_ALARM and t.id == tid), None)
 
     def edit_selected(self):
         t = self._selected()
@@ -851,9 +1552,7 @@ class TimerDialog(QDialog):
         idx = self.cb_repeat.findData(t.repeat)
         if idx >= 0:
             self.cb_repeat.setCurrentIndex(idx)
-        self._select_sound(t.sound)
-        self.spin_vol.setValue(t.volume)
-        self.cb_temp.setChecked(t.color_mode == COLOR_TEMPERATURE)
+        self._behavior.load_timer(t)
         self.btn_commit.setText(tr("Save", self.lang))
         self.lbl_hint.setText(
             tr("Editing '{}' - change the time and press Save", self.lang).format(t.name))
@@ -914,7 +1613,8 @@ class TimerDialog(QDialog):
         self.list.blockSignals(True)
         self.list.clear()
         now = datetime.datetime.now()
-        for t in sorted(self.main_win.timers, key=lambda x: x.target):
+        alarm_timers = [t for t in self.main_win.timers if t.kind == KIND_ALARM]
+        for t in sorted(alarm_timers, key=lambda x: x.target):
             rem = t.remaining(now)
             when = t.target.strftime("%d.%m %H:%M")
             if not t.enabled:
@@ -930,7 +1630,15 @@ class TimerDialog(QDialog):
             if t.description:
                 tip.append(t.description)
             tip.append(f"{when}  ({tail})")
-            tip.append(f"{tr('Sound', self.lang)}: {t.sound}  vol {t.volume}")
+            if t.sound_mode == SOUND_MODE_POOL:
+                tip.append(tr("Random pool: {} rules", self.lang).format(
+                    len(t.sound_rules)))
+            else:
+                tip.append(f"{tr('Sound', self.lang)}: {t.sound}  vol {t.volume}")
+            tip.append(f"{tr('Notification', self.lang)}: "
+                       f"{'On' if t.show_notification else 'Off'}")
+            tip.append(f"{tr('Top bar', self.lang)}: "
+                       f"{'On' if t.show_in_top_bar else 'Off'}")
             item.setToolTip(0, "\n".join(tip))
             item.setToolTip(1, item.toolTip(0))
             item.setToolTip(2, item.toolTip(0))

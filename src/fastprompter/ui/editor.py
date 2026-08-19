@@ -280,8 +280,14 @@ class VaultTextEdit(QTextEdit):
         self._gutter_anchor_block = None
         self._doc_has_checkbox = False
         self._doc_has_code = False
+        self._code_sel_dirty = True  # code-panel selections need a (re)build
         self._opener_cache = None  # set of opener block numbers, invalidated on text change
-        self.textChanged.connect(self._invalidate_opener_cache)
+        self._pending_link = None  # (QUrl, QPoint) recorded on press in Live Preview
+        # T-815: instead of invalidating the whole opener cache on EVERY
+        # keystroke (which forces a full rescan on the next fence query),
+        # reconcile edits incrementally and only drop the cache when a fence
+        # line is actually touched.
+        self.document().contentsChange.connect(self._reconcile_edits)
         QTimer.singleShot(0, self._refresh_checkbox_flag)
 
         # Debounced state capture: scroll-only browsing (no typing) also
@@ -303,7 +309,7 @@ class VaultTextEdit(QTextEdit):
         blk = cursor.block()
         return blk if blk.isValid() else None
 
-    def _refresh_checkbox_flag(self):
+    def _refresh_checkbox_flag(self, first=None, last=None):
         """Update checkbox/code flags. Early-exit when both already True.
 
         These flags control gutter auto-show for code blocks. Once a
@@ -312,10 +318,15 @@ class VaultTextEdit(QTextEdit):
         marginally wider than needed until reload, which is invisible in
         practice and saves scanning ~200 blocks on every keystroke for the
         lifetime of the edit session.
+
+        T-815: when ``first``/``last`` block numbers are supplied (from the
+        incremental ``_reconcile_edits`` path) only that changed range is
+        scanned — an ordinary keystroke no longer walks O(total blocks). A
+        full scan still runs on document attach (the no-arg SingleShot(0)).
         """
         # Guard SELF first: this runs from QTimer.singleShot(0, ...) and from
-        # textChanged, so the editor can be gone by the time it fires and
-        # self.document() would then touch a dead C++ object.
+        # the contentsChange reconcile, so the editor can be gone by the time
+        # it fires and self.document() would then touch a dead C++ object.
         if sip.isdeleted(self):
             return
         doc = self.document()
@@ -327,14 +338,18 @@ class VaultTextEdit(QTextEdit):
         if self._doc_has_checkbox and self._doc_has_code:
             return
 
-        scan_limit = doc.blockCount()
-        if scan_limit > 2000:
-            scan_limit = 200
+        if first is None or last is None:
+            first = 0
+            last = doc.blockCount() - 1
+        else:
+            last = min(last, doc.blockCount() - 1)
 
         has_cb = self._doc_has_checkbox  # continue from current state
         has_code = self._doc_has_code
 
-        for i in range(scan_limit):
+        for i in range(first, last + 1):
+            if i >= doc.blockCount():
+                break
             txt = doc.findBlockByNumber(i).text()
             if not has_cb and "[" in txt:
                 has_cb = True
@@ -352,6 +367,37 @@ class VaultTextEdit(QTextEdit):
             changed = True
         if changed:
             self.update_line_number_area_width()
+
+    def _reconcile_edits(self, position, removed, added):
+        """T-815: incrementally maintain derived block metadata.
+
+        ``contentsChange`` already reports the affected character range
+        (``position``/``removed``/``added``), so only the touched blocks need
+        re-derivation — not the whole document. A plain edit inside a line
+        updates the checkbox/code flags for its block and leaves the opener
+        cache and code-panel selections untouched."""
+        if sip.isdeleted(self):
+            return
+        doc = self.document()
+        if not doc or sip.isdeleted(doc):
+            return
+        first = doc.findBlock(position)
+        last = doc.findBlock(max(position, position + added))
+        self._refresh_checkbox_flag(first.blockNumber(), last.blockNumber())
+
+        # A fence line (```` ``` ````) is the only edit that can change code
+        # membership or opener parity, so only a fence-touching edit must
+        # invalidate them. Everything else keeps the cached state valid.
+        fb = first.blockNumber()
+        lb = min(last.blockNumber(), doc.blockCount() - 1)
+        fence_touched = False
+        for i in range(fb, lb + 1):
+            if doc.findBlockByNumber(i).text().lstrip().startswith("```"):
+                fence_touched = True
+                break
+        if fence_touched:
+            self._opener_cache = None
+            self._code_sel_dirty = True
 
     def _sync_conceal_reveal(self):
         """Tell the highlighter which block the caret is on, so Obsidian-style
@@ -395,6 +441,10 @@ class VaultTextEdit(QTextEdit):
                 cur_doc.contentsChange.disconnect(self._on_contents_change)
             except Exception:
                 pass
+            try:
+                cur_doc.contentsChange.disconnect(self._reconcile_edits)
+            except Exception:
+                pass
         self.setDocument(doc)
         self.document().setUndoRedoEnabled(True)
         # Each silo is its own QTextDocument, so the heat hook has to follow
@@ -408,6 +458,10 @@ class VaultTextEdit(QTextEdit):
         # and the connection also outlived the editor itself (a dead C++ object
         # reached from a document signal is an access violation, H-406 class).
         self.document().contentsChange.connect(self._on_contents_change)
+        # T-815: the incremental reconcile must follow the swap too, and a
+        # swapped-in document needs a fresh code-panel rebuild.
+        self.document().contentsChange.connect(self._reconcile_edits)
+        self._code_sel_dirty = True
         self.refresh_extra_selections()
         self.document().documentLayout().documentSizeChanged.connect(self.update_line_number_area_width)
         self.update_line_number_area_width()
@@ -416,6 +470,13 @@ class VaultTextEdit(QTextEdit):
         self.document().setDefaultFont(font)
         if hl and not sip.isdeleted(hl) and hl.document() != doc:
             hl.setDocument(doc)
+        # T-1008: every silo swap must resynchronise the highlighter state
+        # (large-doc degradation + reveal block) for THIS document, or a big
+        # document inherits the previous one's skip state and loses headers.
+        if hl and not sip.isdeleted(hl):
+            sync = getattr(self.main_win, "_sync_live_preview_highlighter", None)
+            if callable(sync):
+                sync()
         self._opener_cache = None
         # sticky-True flags are only valid for the document they were found
         # on — a fresh document needs a fresh scan, not the old one's state.
@@ -1576,6 +1637,9 @@ class VaultTextEdit(QTextEdit):
         if sip.isdeleted(self):
             return
         try:
+            # Live Preview: remember a link under the press (open is deferred to
+            # release, so a drag/selection that starts on a link still works).
+            self._record_pending_link(event)
             if event.button() == Qt.MouseButton.LeftButton:
                 fold_block = self._fold_block_at(event.pos())
                 if fold_block is not None:
@@ -1843,6 +1907,46 @@ class VaultTextEdit(QTextEdit):
             event.accept()
             return
         super().mouseReleaseEvent(event)
+        # Live Preview: a plain click that landed on a link (and didn't turn
+        # into a drag/selection) opens it. Deferred from press so dragging
+        # across a link still selects text.
+        if self._open_pending_link_if_click(event):
+            return
+
+    def _open_pending_link_if_click(self, event):
+        """Open a link recorded on press, but only if it was a real click.
+
+        Guards (all required): left button, same link under press and release,
+        the pointer barely moved (under the drag threshold), no text got
+        selected by the press, and we are still in Live Preview. A drag that
+        began on a link must select text, never launch a browser.
+        """
+        pending = getattr(self, "_pending_link", None)
+        self._pending_link = None
+        if pending is None:
+            return False
+        if self._preview_mode() != "Live Preview":
+            return False
+        if event.button() != Qt.MouseButton.LeftButton:
+            return False
+        press_url, press_pos = pending
+        if self.textCursor().hasSelection():
+            return False  # a real selection was made — do not navigate
+        if (event.pos() - press_pos).manhattanLength() > QApplication.startDragDistance():
+            return False
+        release_url = self._safe_link_url(self.anchor_url_at(event.pos()))
+        if release_url != press_url:
+            return False
+        mods = event.modifiers()
+        if mods & (Qt.KeyboardModifier.ControlModifier
+                   | Qt.KeyboardModifier.AltModifier):
+            return False
+        wants_folder = bool(mods & Qt.KeyboardModifier.ShiftModifier)
+        if wants_folder and release_url.isLocalFile():
+            self.open_containing_folder(release_url)
+        else:
+            QDesktopServices.openUrl(release_url)
+        return True
 
     def leaveEvent(self, event):
         # otherwise the wash stays stuck on whatever line the mouse left from
@@ -1872,6 +1976,56 @@ class VaultTextEdit(QTextEdit):
         except Exception:
             logger.debug("anchor lookup failed", exc_info=True)
             return None
+
+    # Only these schemes are ever handed to the OS. A markdown link can carry
+    # anything from a `javascript:` exploit to a typo'd scheme; we never turn
+    # those into a launch request.
+    _SAFE_LINK_SCHEMES = ("http", "https", "ftp", "mailto", "file")
+
+    @staticmethod
+    def _safe_link_url(url):
+        """Return ``url`` if its scheme is one we will actually open, else None."""
+        if url is None or not isinstance(url, QUrl) or not url.isValid():
+            return None
+        scheme = (url.scheme() or "").lower()
+        if scheme not in VaultTextEdit._SAFE_LINK_SCHEMES:
+            return None
+        # A `file:` href with no path (or a bare `mailto:` with no address) is
+        # not something we can usefully hand to the shell.
+        if scheme in ("file", "mailto") and not url.path() and not url.encodedPath():
+            return None
+        return url
+
+    def _preview_mode(self):
+        """The current Source / Live Preview / Reading mode, or '' if unknown."""
+        combo = getattr(getattr(self, "main_win", None), "preview_combo", None)
+        if combo is None:
+            return ""
+        try:
+            return combo.currentData() or combo.currentText()
+        except Exception:
+            return ""
+
+    def _record_pending_link(self, event):
+        """Live Preview only: remember a link under the press, but do NOT open.
+
+        Opening is deferred to the release so a drag/selection that starts on a
+        link still works. Plain Source-view clicks are never recorded here —
+        there a link opens only on Ctrl+click (handled in mousePressEvent).
+        """
+        if self._preview_mode() != "Live Preview":
+            return
+        if event.button() != Qt.MouseButton.LeftButton:
+            return
+        if event.modifiers() & (Qt.KeyboardModifier.ControlModifier
+                                | Qt.KeyboardModifier.ShiftModifier
+                                | Qt.KeyboardModifier.AltModifier):
+            return
+        url = self._safe_link_url(self.anchor_url_at(event.pos()))
+        if url is None:
+            self._pending_link = None
+            return
+        self._pending_link = (url, event.pos())
 
     def open_containing_folder(self, url):
         """Reveal a local file in the file manager.
@@ -3420,6 +3574,13 @@ class VaultTextEdit(QTextEdit):
         doc = self.document()
         if doc is None or sip.isdeleted(doc) or doc.blockCount() > 2000:
             return
+        # T-815: the code-panel scan walks every block. It only needs to run
+        # when code-region membership actually changed (a fence edit or a
+        # document (re)attach) — `_reconcile_edits` and `set_active_document`
+        # set the dirty flag for exactly those moments. An ordinary keystroke
+        # leaves the flag clear, so a 2000-line plain document never rescan.
+        if not getattr(self, "_code_sel_dirty", True):
+            return
         try:
             # ONLY code-block panels go through extra selections. Hover and
             # heat are painted directly (see _paint_line_tints): a selection
@@ -3429,6 +3590,8 @@ class VaultTextEdit(QTextEdit):
             self.setExtraSelections(self._code_block_selections(doc))
         except Exception:
             logger.debug("failed to refresh extra selections")
+        finally:
+            self._code_sel_dirty = False
 
     def paintEvent(self, event):
         doc = self.document()

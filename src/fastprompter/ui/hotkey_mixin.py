@@ -27,8 +27,8 @@ class HotkeyMixin:
         """Update tooltip for hotkey-related buttons."""
         h_global = self.data.get("global_hotkey", "Alt+X")
         h_pie = self.data.get("pie_menu_hotkey", "Shift+Alt+X")
-        h_lock = self.data.get("lock_window_hotkey", "Alt+S")
-        h_aot = self.data.get("always_on_top_hotkey", "Alt+E")
+        h_lock = self.data.get("lock_window_hotkey", "Alt+E")
+        h_aot = self.data.get("always_on_top_hotkey", "Alt+S")
         h_sidebar = self.data.get("toggle_sidebar_hotkey", "Alt+D")
         h_clickout = self.data.get("hide_on_clickout_hotkey", "Alt+A")
 

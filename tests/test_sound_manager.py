@@ -45,6 +45,10 @@ class _MockQSoundEffect:
 import _qt_stub
 
 _before_stubs = _qt_stub.snapshot()
+# Drop any real copy cached by an earlier module (e.g. a dialog test file that
+# imports SoundManager at collection time) so the import below actually
+# re-runs against the stubs. Same eviction import_with_stubs does.
+sys.modules.pop("fastprompter.core.sound_manager", None)
 sys.modules["PyQt6"] = MagicMock()
 sys.modules["PyQt6.QtMultimedia"] = MagicMock()
 sys.modules["PyQt6.QtMultimedia"].QSoundEffect = _MockQSoundEffect
@@ -420,3 +424,66 @@ class TestTickDirection:
     def test_both_events_resolve_to_different_files(self):
         from fastprompter.core.sound_manager import _DEFAULT_SOUND_MAP
         assert _DEFAULT_SOUND_MAP["tick"] != _DEFAULT_SOUND_MAP["untick"]
+
+
+class TestPlaySoundRef:
+    """T-1005. One canonical explicit-volume playback path for timer sounds.
+
+    A ``file:`` ref must resolve ONLY inside the sound library; nothing else
+    must turn the library into an arbitrary-file player. Returns bool, never
+    raises into the scheduler.
+    """
+
+    def _mgr(self, tmp):
+        sm = SoundManager(_MockQObject(), {})
+        sm._sounds_dir = str(tmp)
+        return sm
+
+    def test_named_event_plays_through_configured_file(self, tmp_path):
+        (tmp_path / "click_soft.wav").write_bytes(b"RIFF")
+        sm = self._mgr(tmp_path)
+        assert sm.play_sound_ref("click", 5) is True
+
+    def test_file_ref_inside_library_plays(self, tmp_path):
+        (tmp_path / "foo.wav").write_bytes(b"RIFF")
+        sm = self._mgr(tmp_path)
+        assert sm.play_sound_ref("file:foo.wav", 5) is True
+
+    def test_file_ref_subfolder_plays(self, tmp_path):
+        sub = tmp_path / "cs_style"
+        sub.mkdir()
+        (sub / "b.wav").write_bytes(b"RIFF")
+        sm = self._mgr(tmp_path)
+        assert sm.play_sound_ref("file:cs_style/b.wav", 5) is True
+
+    def test_file_ref_parent_traversal_rejected(self, tmp_path):
+        sm = self._mgr(tmp_path)
+        assert sm.play_sound_ref("file:../evil.wav", 5) is False
+        assert sm.play_sound_ref("file:cs_style/../../evil.wav", 5) is False
+
+    def test_file_ref_absolute_rejected(self, tmp_path):
+        sm = self._mgr(tmp_path)
+        assert sm.play_sound_ref("file:C:/windows/evil.wav", 5) is False
+        assert sm.play_sound_ref("file:/abs/evil.wav", 5) is False
+
+    def test_file_ref_missing_returns_false(self, tmp_path):
+        sm = self._mgr(tmp_path)
+        assert sm.play_sound_ref("file:none.wav", 5) is False
+
+    def test_empty_or_invalid_ref_returns_false(self, tmp_path):
+        sm = self._mgr(tmp_path)
+        assert sm.play_sound_ref("", 5) is False
+        assert sm.play_sound_ref(None, 5) is False
+        assert sm.play_sound_ref("javascript:alert(1)", 5) is False
+
+    def test_unknown_event_returns_false(self, tmp_path):
+        sm = self._mgr(tmp_path)
+        assert sm.play_sound_ref("nonexistent_event", 5) is False
+
+    def test_resolve_library_path_accepts_internal_only(self, tmp_path):
+        (tmp_path / "a.wav").write_bytes(b"x")
+        sd = str(tmp_path)
+        assert SoundManager._resolve_library_path("a.wav", sd) == os.path.join(sd, "a.wav")
+        assert SoundManager._resolve_library_path("../a.wav", sd) is None
+        assert SoundManager._resolve_library_path("C:/a.wav", sd) is None
+        assert SoundManager._resolve_library_path("a.txt", sd) is None

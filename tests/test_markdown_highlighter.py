@@ -187,12 +187,22 @@ class _MockQSyntaxHighlighter:
     def setCurrentBlockState(self, state):
         self._cur_state = state
 
+    def currentBlock(self):
+        return _MockTextBlock()
+
 
 class _MockTextDocument:
     """Stand-in for QTextDocument."""
 
     def __init__(self, parent=None):
         self._parent = parent
+
+
+class _MockTextBlock:
+    """Stand-in for QTextBlock — enough for _conceal_markers' caret probe."""
+
+    def blockNumber(self):
+        return 0
 
 
 # Stubs live only for the duration of this import — see tests/_qt_stub.py.
@@ -315,14 +325,17 @@ class TestUpdateTheme:
 
 class TestSetSkipLarge:
     def test_skip_true(self):
+        # T-1008: large documents DEGRADE (essentials kept) instead of being
+        # skipped wholesale; the legacy _skip_highlighting flag stays off.
         h = make_highlighter()
         h.set_skip_large(True)
-        assert h._skip_highlighting is True
+        assert h._degraded is True
+        assert h._skip_highlighting is False
 
     def test_skip_false(self):
         h = make_highlighter()
         h.set_skip_large(False)
-        assert h._skip_highlighting is False
+        assert h._degraded is False
 
 
 # ---------------------------------------------------------------------------
@@ -465,10 +478,33 @@ class TestHighlightBlock:
         assert len(h._format_calls) == 0
 
     def test_skip_highlighting_skips(self):
+        # T-1008: degraded mode keeps the ESSENTIALS — headers must still
+        # format on a "skipped" (large) document; only the expensive extras
+        # (code sub-highlighting, conceal markers) drop out.
         h = make_highlighter()
         h.set_skip_large(True)
         h.highlightBlock("**bold**")
-        assert len(h._format_calls) == 0, "Should not highlight when skip is True"
+        assert len(h._format_calls) > 0, (
+            "Degraded mode must keep formatting essentials, not blank them"
+        )
+
+    def test_degraded_skips_conceal_markers(self):
+        # conceal markers are one of the dropped extras in degraded mode;
+        # bold itself must still format (the hidden-marker format is the
+        # 1pt transparent one)
+        h = make_highlighter()
+        h.set_skip_large(True)
+        h.conceal = True
+        h.reveal_block = -1
+        h.highlightBlock("plain **bold** text")
+        hidden = [c for c in h._format_calls
+                  if getattr(c[2], "_font_point_size", None) == 1]
+        assert hidden == [], (
+            "Degraded mode must skip conceal-marker hiding"
+        )
+        assert len(h._format_calls) > 0, (
+            "Degraded mode must keep formatting essentials, not blank them"
+        )
 
     def test_multiple_matches_same_line(self):
         h = make_highlighter()

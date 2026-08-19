@@ -658,6 +658,10 @@ class FileContainerPanel(QWidget):
         self._folder_root_identity = ""
         self._icon_provider = QFileIconProvider()
         self._thumb_cache = {}  # path -> (mtime, QIcon)
+        # T-816: refresh-time index so scrolling never has to stat the disk.
+        self._thumb_mtimes = {}  # path -> mtime captured at last listing
+        self._item_by_path = {}  # path -> QListWidgetItem (O(1) completion)
+        self._thumb_gen = 0      # thumbnail generation; bumped per listing
         self.setAcceptDrops(True)
         self.setMinimumSize(300, 220)
         self.resize(420, 320)
@@ -1007,6 +1011,9 @@ class FileContainerPanel(QWidget):
                         getattr(self, "_container_owner_id", None),
                         getattr(self, "_container_gen", 0),
                         weakref.ref(self))
+        # T-816: a new listing starts a new thumbnail generation; any thumbnail
+        # result from the previous folder/listing is discarded on arrival.
+        self._thumb_gen = getattr(self, "_thumb_gen", 0) + 1
         QThreadPool.globalInstance().start(worker)
 
     def _on_refresh_list_result(self, owner, folder, gen, items, count):
@@ -1049,9 +1056,14 @@ class FileContainerPanel(QWidget):
             existing[item.data(Qt.ItemDataRole.UserRole)] = item
 
         new_paths = set()
-
+        # T-816: persist the refresh-time mtime + path->item index so thumbnail
+        # fetches can resolve without re-statting the disk or scanning the
+        # widget on every scroll event.
+        thumb_mtimes = {}
         for idx, (path, label, img, mtime_val, needs_thumb) in enumerate(items):
             new_paths.add(path)
+            if needs_thumb:
+                thumb_mtimes[path] = mtime_val
             icon = None
             if needs_thumb:
                 cached = self._thumb_lru.get(path)
@@ -1082,6 +1094,10 @@ class FileContainerPanel(QWidget):
             item = self.file_list.item(i)
             if item.data(Qt.ItemDataRole.UserRole) not in new_paths:
                 self.file_list.takeItem(i)
+
+        # T-816: publish the persisted indexes for the thumbnail subsystem.
+        self._item_by_path = existing
+        self._thumb_mtimes = thumb_mtimes
 
         self.lbl_count.setText(tr("{} file(s)", getattr(self, "lang", "EN")).format(count))
         self._update_preview()
@@ -1119,18 +1135,30 @@ class FileContainerPanel(QWidget):
         from fastprompter.ui.file_container import _IMAGE_EXTS
         viewport = self.file_list.viewport().rect()
 
+        # T-816: use the refresh-time mtime index — a scroll event must NOT
+        # stat the disk and must NOT rescan the whole list for misses.
+        mtimes = self._thumb_mtimes
+        gen = self._thumb_gen
+        owner = getattr(self, "_container_owner_id", None)
+        folder = self.folder
+
         to_fetch = []
+        # Bounded off-screen prefetch: scroll fetches only the visible rows;
+        # the deferred pass may pull a capped number of unresolved rows rather
+        # than enqueuing the entire uncached directory.
+        offscreen_budget = 0 if immediate_only else 256
         for i in range(self.file_list.count()):
             item = self.file_list.item(i)
             path = item.data(Qt.ItemDataRole.UserRole)
-            if not path: continue
-            ext = os.path.splitext(path)[1].lower()
-            if ext not in _IMAGE_EXTS: continue
-
-            try:
-                mtime_val = os.path.getmtime(path)
-            except OSError:
+            if not path:
                 continue
+            ext = os.path.splitext(path)[1].lower()
+            if ext not in _IMAGE_EXTS:
+                continue
+
+            mtime_val = mtimes.get(path)
+            if mtime_val is None:
+                continue  # not part of the current listing — skip, do not stat
 
             cached = self._thumb_lru.get(path)
             if cached and cached[0] == mtime_val:
@@ -1138,9 +1166,10 @@ class FileContainerPanel(QWidget):
 
             rect = self.file_list.visualItemRect(item)
             if rect.intersects(viewport):
-                to_fetch.insert(0, (path, mtime_val)) # visible first
-            elif not immediate_only:
+                to_fetch.insert(0, (path, mtime_val))  # visible first
+            elif offscreen_budget > 0:
                 to_fetch.append((path, mtime_val))
+                offscreen_budget -= 1
 
         if not to_fetch:
             return
@@ -1163,16 +1192,19 @@ class FileContainerPanel(QWidget):
         if not hasattr(self, "thumb_loaded"):
             from PyQt6.QtCore import QObject
             class Signals(QObject):
-                thumb_loaded = pyqtSignal(str, int, object)
+                thumb_loaded = pyqtSignal(str, int, object, int, object, str)
             self._thumb_signals = Signals()
             self.thumb_loaded = self._thumb_signals.thumb_loaded
             self.thumb_loaded.connect(self._on_thumb_loaded)
 
         class ThumbWorker(QRunnable):
-            def __init__(self, to_fetch, panel_ref):
+            def __init__(self, to_fetch, panel_ref, gen, owner, folder):
                 super().__init__()
                 self.to_fetch = to_fetch
                 self.panel_ref = panel_ref
+                self.gen = gen
+                self.owner = owner
+                self.folder = folder
 
             def run(self):
                 from PyQt6.QtCore import Qt
@@ -1197,16 +1229,28 @@ class FileContainerPanel(QWidget):
                         from PyQt6 import sip
                         if not sip.isdeleted(panel):
                             try:
-                                panel.thumb_loaded.emit(path, mtime, img)
+                                panel.thumb_loaded.emit(
+                                    path, mtime, img, self.gen,
+                                    self.owner, self.folder)
                             except RuntimeError:
                                 pass
 
-        worker = ThumbWorker(filtered, weakref.ref(self))
+        worker = ThumbWorker(filtered, weakref.ref(self), gen, owner, folder)
         QThreadPool.globalInstance().start(worker)
 
-    def _on_thumb_loaded(self, path, mtime, img):
+    def _on_thumb_loaded(self, path, mtime, img, gen, owner, folder):
         from PyQt6 import sip
-        if sip.isdeleted(self): return
+        if sip.isdeleted(self):
+            return
+        # T-816: stale generation / owner / folder — a silo switch while thumbs
+        # were still decoding must not paint obsolete results or consume the
+        # backlog for the current view.
+        if gen != getattr(self, "_thumb_gen", 0):
+            return
+        if owner != getattr(self, "_container_owner_id", None):
+            return
+        if folder != self.folder:
+            return
         if hasattr(self, "_fetching_thumbs") and path in self._fetching_thumbs:
             self._fetching_thumbs.discard(path)
 
@@ -1218,11 +1262,10 @@ class FileContainerPanel(QWidget):
         icon = QIcon(QPixmap.fromImage(img))
         self._thumb_lru.put(path, (mtime, icon))
 
-        for i in range(self.file_list.count()):
-            item = self.file_list.item(i)
-            if item.data(Qt.ItemDataRole.UserRole) == path:
-                item.setIcon(icon)
-                break
+        # O(1) index lookup instead of scanning the whole list per completion
+        item = self._item_by_path.get(path)
+        if item is not None:
+            item.setIcon(icon)
 
     # ---- drop in ---------------------------------------------------------
 

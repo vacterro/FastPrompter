@@ -518,19 +518,36 @@ class WatcherMixin:
     def _watcher_begin_quiesce(self, timeout_s=1.5):
         """P0-6: quiesce the watcher BEFORE the event loop dies.
 
-        Called from quit_app while the loop is still alive. New sends are
-        refused, an in-flight send is boundedly awaited (its result travels
-        back as a queued signal, so the caller must pump the event loop),
-        and the engine is disarmed. Anything still unresolved at the
-        deadline stays PENDING — never marked sent — and the queue state is
-        persisted by the caller's final DB save.
+        Two-phase, so an in-flight send is never lost or silently disarmed
+        (T-811):
 
-        Returns True when no send is unresolved (fully quiescent).
+        Phase 1 — PAUSE: new dispatch is refused (``_watcher_quiescing`` is
+        set) and the tick timer is stopped, but the engine stays ARMED. A send
+        result that arrives now is still the current generation and is applied
+        normally, so a prompt that actually went out becomes SENT exactly
+        once. The old code disarmed the engine first and then discarded the
+        late success, leaving the prompt PENDING and eligible for a duplicate
+        resend. The in-flight send is boundedly awaited by pumping the loop.
+
+        Phase 2 — COMMIT: only once the current send has RESOLVED (its result
+        was applied by the worker callback and ``_watcher_send_active`` was
+        cleared) do we disarm and persist the queue's terminal state.
+
+        If the send does not resolve within the timeout the quiesce REFUSES:
+        the watcher runtime is rolled back to exactly its prior state (timer
+        restarted, engine still armed) so a refused quit/restore does not
+        strand it paused, and the prompt stays in flight as it was.
+
+        Returns True when the watcher is fully quiesced.
         """
         if getattr(self, "_watcher_quiescing", False):
             return not getattr(self, "_watcher_send_active", False)
         self._watcher_quiescing = True
+        was_armed = bool(getattr(self, "_watcher_engine", None)
+                         and self._watcher_engine.armed)
         try:
+            # Phase 1: pause new dispatch + stop the tick loop, but KEEP the
+            # engine armed so an in-flight result is still applied.
             try:
                 if self._watcher_timer is not None:
                     self._watcher_timer.stop()
@@ -541,12 +558,23 @@ class WatcherMixin:
                 from PyQt6.QtWidgets import QApplication
                 QApplication.processEvents()
                 time.sleep(0.01)
+            if self._watcher_send_active:
+                # Phase 2 refused: the in-flight send never resolved. Roll the
+                # watcher runtime back to its prior state and refuse the
+                # quiesce. Nothing is marked sent or lost; the prompt stays in
+                # flight exactly as it was (the engine is still ARMED).
+                if was_armed and getattr(self, "_watcher_engine", None) \
+                        and self._watcher_engine.armed:
+                    self._watcher_start_timer()
+                return False
+            # The in-flight send has resolved (success/held/failure applied by
+            # the worker callback). Disarm now and persist the terminal state.
             try:
                 self._watcher_engine.disarm("application is quitting")
             except Exception:
                 logger.exception("watcher disarm failed during quiesce")
             self.save_prompt_queues()
-            return not self._watcher_send_active
+            return True
         finally:
             self._watcher_quiescing = False
 

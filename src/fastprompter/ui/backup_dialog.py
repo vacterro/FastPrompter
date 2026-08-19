@@ -141,26 +141,66 @@ class BackupDialog(QDialog):
             def comp_for(cat):
                 return comps.get(cat, self.main_win.state._sanitize_cat_name(cat))
 
-            # Export Temp Presets (Silos)
+            # Precompute the ENTIRE export plan before touching anything on
+            # disk (T-813). A destination is opened for write only AFTER the
+            # plan and any collision are resolved, so we never start mutating
+            # and then discover a problem partway.
+            plan = []  # (dest_path, content)
             for cat, slots in data.get("temp_presets_all", {}).items():
                 cat_dir = os.path.join(path, comp_for(cat))
-                os.makedirs(cat_dir, exist_ok=True)
                 for i, text in enumerate(slots):
                     if text.strip():
-                        filename = os.path.join(cat_dir, f"Silo_{i+1}{fmt}")
-                        with open(filename, 'w', encoding='utf-8') as f:
-                            f.write(text)
-
-            # Export Archive Temp Presets
+                        plan.append((os.path.join(cat_dir, f"Silo_{i+1}{fmt}"), text))
             for cat, slots in data.get("archive_temp_presets_all", {}).items():
                 cat_dir = os.path.join(path, comp_for(cat))
-                os.makedirs(cat_dir, exist_ok=True)
                 for i, text in enumerate(slots):
                     if text.strip():
-                        filename = os.path.join(cat_dir, f"Archive_Silo_{i+1}{fmt}")
-                        with open(filename, 'w', encoding='utf-8') as f:
-                            f.write(text)
+                        plan.append((os.path.join(cat_dir, f"Archive_Silo_{i+1}{fmt}"), text))
 
+            if not plan:
+                QMessageBox.information(self, tr("Success", self.lang),
+                                         tr("Nothing to export.", self.lang))
+                return
+
+            # Collision check BEFORE the first mutation. Existing files are
+            # only ever overwritten when the user explicitly consents, so a
+            # pre-existing user file is never truncated by surprise.
+            collisions = [dst for dst, _ in plan if os.path.exists(dst)]
+            if collisions:
+                ans = QMessageBox.question(
+                    self, tr("Overwrite existing files?", self.lang),
+                    tr("{n} file(s) already exist in the export directory. "
+                       "Overwrite them?", self.lang).format(n=len(collisions)),
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+                if ans != QMessageBox.StandardButton.Yes:
+                    # No consent: leave every existing file exactly as it is.
+                    QMessageBox.information(
+                        self, tr("Export cancelled", self.lang),
+                        tr("No files were changed.", self.lang))
+                    return
+
+            # Publish atomically: each file is written to a temp sibling and
+            # only moved into place once it is COMPLETE, so a failure mid-
+            # export never truncates an existing file (its old bytes survive)
+            # and a partially written temp is discarded — the export is never
+            # left half-published with truncated targets.
+            created_dirs = set()
+            for dst, text in plan:
+                cat_dir = os.path.dirname(dst)
+                if cat_dir not in created_dirs:
+                    os.makedirs(cat_dir, exist_ok=True)
+                    created_dirs.add(cat_dir)
+                tmp = dst + ".export.tmp"
+                try:
+                    with open(tmp, 'w', encoding='utf-8') as f:
+                        f.write(text)
+                    os.replace(tmp, dst)
+                except OSError:
+                    try:
+                        os.remove(tmp)
+                    except OSError:
+                        pass
+                    raise
             QMessageBox.information(self, tr("Success", self.lang), tr("Silos exported to:\n{}", self.lang).format(path))
         except Exception as e:
             QMessageBox.critical(self, tr("Error", self.lang), tr("Failed to export:\n{}", self.lang).format(e))

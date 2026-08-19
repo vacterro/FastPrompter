@@ -591,3 +591,138 @@ def test_hotkey_unregister_failure_is_reported(win, monkeypatch):
                         fake_register)
     assert win.register_all_hotkeys() is False
     assert 2 in win.registered_hotkeys
+
+
+# ============================ T-811: watcher quiesce =========================
+
+
+def _arm_post(win, monkeypatch):
+    """Arm the watcher against a fake win32 (post) target, CDP-free."""
+    from fastprompter.core.watcher import win32 as win32_mod
+    from fastprompter.core.watcher.adapter import Adapter
+
+    fake = _FakeWin32()
+    monkeypatch.setattr(win32_mod, "window_info",
+                        lambda hwnd, api=None: fake.info(hwnd))
+    monkeypatch.setattr(win32_mod, "probe_for",
+                        lambda api=None: (lambda h: fake.info(h)))
+    adapter = Adapter("ok", probes=[_steady_probe()], transport="post")
+    ok, reason = win.watcher_arm(fake.hwnd, adapter)
+    assert ok is True
+
+
+def _simulate_inflight_send(win, text="hello"):
+    """Put the watcher into a believable in-flight SENDING state with one
+    pending queue item, and return (item, intent)."""
+    from fastprompter.core.watcher.engine import SendIntent
+    from fastprompter.core.watcher.queue import QueueItem, SiloQueue
+
+    slot = win._queue_slot_key()
+    item = QueueItem(text=text)
+    queue = SiloQueue([item])
+    win.prompt_queues[slot] = queue
+    win._watcher_engine.queue_key = slot
+    intent = SendIntent(item.id, text, slot, "", time.monotonic())
+    win._watcher_engine.pending = intent
+    win._watcher_engine.state = "sending"
+    win._watcher_send_gen = 1
+    win._watcher_send_active = True
+    win._watcher_start_timer()
+    return item, intent
+
+
+def test_quiesce_timeout_keeps_watcher_armed_and_later_send_becomes_sent(
+        win, monkeypatch):
+    """T-811: a quiesce that times out while a send is in flight must NOT
+    disarm the engine; the late success (which arrives after the timeout)
+    must still be applied and the prompt becomes SENT exactly once — never
+    left PENDING for a duplicate resend."""
+    from fastprompter.core.watcher.sender import SendResult
+
+    _arm_post(win, monkeypatch)
+    try:
+        item, intent = _simulate_inflight_send(win)
+        refused = win._watcher_begin_quiesce(timeout_s=0.05)
+        # refused: watcher runtime rolled back, still armed, send still active
+        assert refused is False
+        assert win._watcher_engine.armed is True
+        assert win._watcher_timer.isActive() is True
+        assert win._watcher_send_active is True
+        assert item.state == "pending"
+        # the late success arrives now (engine still armed)
+        win._watcher_on_send_result(intent, 1, SendResult(True, "ok", "hello"))
+        assert item.state == "sent"
+        assert win._watcher_send_active is False
+        assert win._watcher_engine.sent_count == 1
+    finally:
+        win.watcher_disarm()
+
+
+def test_quiesce_success_disarms_after_send_resolves(win, monkeypatch):
+    """T-811: when the in-flight send resolves before the timeout, the quiesce
+    commits the disarm and the prompt is marked sent."""
+    from fastprompter.core.watcher.sender import SendResult
+
+    _arm_post(win, monkeypatch)
+    try:
+        item, intent = _simulate_inflight_send(win)
+        # resolve the send immediately, before quiescing
+        win._watcher_on_send_result(intent, 1, SendResult(True, "ok", "hello"))
+        assert item.state == "sent"
+        ok = win._watcher_begin_quiesce(timeout_s=0.2)
+        assert ok is True
+        assert win._watcher_engine.armed is False
+        assert win._watcher_engine.sent_count == 1
+    finally:
+        win.watcher_disarm()
+
+
+def test_quiesce_success_blocks_new_sends(win, monkeypatch):
+    """T-811: after a successful quiesce the watcher is disarmed, so no new
+    send can be dispatched even though the event loop still lives."""
+    _arm_post(win, monkeypatch)
+    try:
+        ok = win._watcher_begin_quiesce(timeout_s=0.2)
+        assert ok is True
+        assert win._watcher_engine.armed is False
+        before = win._watcher_send_active
+        win._watcher_tick_inner()   # engine disarmed -> no dispatch
+        assert win._watcher_send_active == before
+    finally:
+        win.watcher_disarm()
+
+
+def test_quiesce_refusal_does_not_reopen_live_db(win, monkeypatch):
+    """T-808/T-811 overlap: a restore that hits the fatal path must not reopen
+    the live database in-process. We inject FatalRestoreError and assert
+    restore_db does NOT call state.init_db() (which would reopen the live
+    connection)."""
+    from fastprompter.core.state import FatalRestoreError
+
+    init_calls = {"n": 0}
+    real_init = win.state.init_db
+
+    def counting_init():
+        init_calls["n"] += 1
+        return real_init()
+
+    monkeypatch.setattr(win.state, "init_db", counting_init)
+    monkeypatch.setattr(
+        "PyQt6.QtWidgets.QFileDialog.getOpenFileName",
+        lambda *a, **k: ("/some/backup.db", ""))
+    monkeypatch.setattr(
+        QMessageBox, "question",
+        lambda *a, **k: QMessageBox.StandardButton.Yes)
+    monkeypatch.setattr(
+        "fastprompter.core.state.restore_database",
+        lambda *a, **k: (_ for _ in ()).throw(FatalRestoreError("fatal")))
+
+    had_conn = win.state.conn is not None
+    win.restore_db()
+    # fatal path: never reopened in-process
+    assert init_calls["n"] == 0
+    # the connection was closed by restore_db before the restore call
+    assert win.state.conn is None
+    # and `had_conn` documents the prior state for clarity (no assertion)
+    _ = had_conn
+

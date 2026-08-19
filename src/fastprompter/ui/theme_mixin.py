@@ -381,6 +381,56 @@ class ThemeMixin:
         self.data["custom_font_ids"] = []
         self.mark_dirty()
 
+    def _sync_live_preview_highlighter(self):
+        """One place that (re)binds the markdown highlighter to the live doc.
+
+        Called from both ``change_preview_mode`` (Source <-> Live Preview) and
+        ``VaultTextEdit.set_active_document`` (silo swap). It owns ALL the
+        state that used to live in two divergent spots — and, critically,
+        recomputes the large-document policy for the document it is about to
+        attach, so a big document cannot inherit a previous document's skip
+        state and lose its headers.
+
+        Live Preview:
+          * compute large-doc state for THIS document (degraded, not skipped)
+          * attach THIS document
+          * re-arm conceal
+          * exactly one rehighlight (headers/formatting appear immediately)
+          * schedule one viewport repaint after the swap
+        Source View: highlighter detached.
+        """
+        hl = getattr(self, "highlighter", None)
+        if hl is None or _is_deleted(hl):
+            return
+        mode = (self.preview_combo.currentData()
+                if hasattr(self, "preview_combo") else None) \
+            or (self.preview_combo.currentText()
+                if hasattr(self, "preview_combo") else "")
+        if mode != "Live Preview":
+            if mode == "Source View":
+                hl.setDocument(None)
+            return
+        doc = self.text_area.document() if hasattr(self, "text_area") else None
+        if doc is None or _is_deleted(doc):
+            return
+        # never fully skip — degrade instead, so headers/links/URLs survive
+        large = doc.blockCount() > 500
+        if large and self.data.get("live_preview_keep_rich_on_large", "False") != "True":
+            hl.set_degraded(True)
+        else:
+            hl.set_degraded(False)
+        hl.setDocument(doc)
+        if hasattr(self, "_apply_conceal_mode"):
+            # conceal ON rehighlights itself; anything else needs exactly one
+            if not self._apply_conceal_mode():
+                hl.rehighlight()      # exactly one — no scroll band-aid
+        else:
+            hl.rehighlight()
+        try:
+            self.text_area.viewport().update()
+        except Exception:
+            pass
+
     def change_preview_mode(self, index):
         """Switch between Source View, Live Preview, and Reading modes."""
         # Read the English mode key from itemData — currentText() is localized
@@ -417,15 +467,7 @@ class ThemeMixin:
             self.text_area.setVisible(True)
             self.text_area.setReadOnly(False)
             self.preview_area.setVisible(False)
-            large = self.text_area.document().blockCount() > 500
-            self.highlighter.set_skip_large(large)
-            self.highlighter.setDocument(self.text_area.document())
-            # re-arm Hide Markup for this document: conceal has to know the
-            # caret's block, and a fresh setDocument() drops the old one
-            if hasattr(self, "_apply_conceal_mode"):
-                self._apply_conceal_mode()
-            if not large:
-                self.highlighter.rehighlight()
+            self._sync_live_preview_highlighter()
 
         elif mode == "Reading":
             self.text_area.setVisible(False)

@@ -228,6 +228,71 @@ def _encode_settings(data):
 
 CURRENT_SCHEMA_VERSION = 1
 
+# Required on-disk schema per version, enforced by validate_database (for the
+# version actually found) and re-checked as a postcondition after migration.
+# Legacy-v0 is intentionally LOOSE: it only needs the base tables, because the
+# migration PRODUCES the rest (last_edited column, temp_presets_v2,
+# archive_temp_presets_v2). A v1 file that already claims version 1 but is
+# missing those artifacts is malformed and must be rejected BEFORE it can be
+# trusted as a restore/backup target — otherwise the validator passes, the load
+# then throws OperationalError, and a startup backup can overwrite a good .bak
+# with the broken file.
+_REQUIRED_SCHEMA = {
+    0: {
+        # The base tables a legacy (unversioned) database must carry. The
+        # migration PRODUCES temp_presets_v2 / archive_temp_presets_v2 and the
+        # presets.last_edited column, so those are NOT required here; what IS
+        # required is every column the migration and the loader actually READ
+        # (T-807). A v0 whose silo table is missing the migration-required
+        # slot/content columns must be rejected here rather than crashing the
+        # migration at startup (or, once restored, the next startup).
+        #
+        # Note: a freshly built v1 database is still at user_version 0 before
+        # its first migration, and carries temp_presets_v2 (not the legacy
+        # temp_presets) — so the legacy silo tables below are OPTIONAL (checked
+        # only when present), and the presence check is satisfied by either the
+        # legacy or the _v2 silo table.
+        "tables": {"presets", "settings"},
+        "columns": {
+            "presets": {"category", "slot", "name", "content"},
+            "settings": {"key", "value"},
+        },
+        # Optional legacy silo tables: if present, they must carry the columns
+        # the v0->v1 migration actually READS (slot, content), so a malformed
+        # legacy silo table is rejected here instead of crashing the migration.
+        # (The _v2 silo tables are PRODUCED by the migration and are not read
+        # at v0.)
+        "optional_columns": {
+            "temp_presets": {"slot", "content"},
+            "archive_temp_presets": {"slot", "content"},
+        },
+        "silo_tables": ("temp_presets", "temp_presets_v2"),
+    },
+    1: {
+        "tables": {"presets", "settings", "temp_presets_v2",
+                   "archive_temp_presets_v2"},
+        "columns": {
+            "presets": {"category", "slot", "name", "content", "last_edited"},
+            "settings": {"key", "value"},
+            "temp_presets_v2": {"category", "slot", "content"},
+            "archive_temp_presets_v2": {"category", "slot", "content"},
+        },
+        # PRIMARY KEY invariants (T-807): a malformed v1 (e.g. a settings
+        # table built without `key PRIMARY KEY`) passes the table/column check
+        # but then lets `INSERT OR REPLACE INTO settings` create duplicate
+        # logical keys, and the per-(category,slot) uniqueness the whole
+        # persistence contract relies on is gone. Require the PK to cover
+        # exactly these columns for every accepted v1 file.
+        "primary_key": {
+            "presets": {"category", "slot"},
+            "settings": {"key"},
+            "temp_presets_v2": {"category", "slot"},
+            "archive_temp_presets_v2": {"category", "slot"},
+        },
+        "silo_tables": ("temp_presets_v2", "archive_temp_presets_v2"),
+    },
+}
+
 
 class MigrationError(RuntimeError):
     """The database schema could not be migrated and was left untouched."""
@@ -303,6 +368,9 @@ def _migrate_v0_to_v1(conn, first_category):
         raise MigrationError("presets.last_edited is missing after migration")
 
     cur.execute("PRAGMA user_version = 1")
+    # Postcondition: the migrated database must satisfy the v1 requirement set,
+    # or the migration silently produced a schema the loader cannot read.
+    _assert_schema_requirements(cur, 1)
 
 
 class UnsupportedSchemaVersion(MigrationError):
@@ -392,12 +460,112 @@ def _backup_atomically(source_conn, dest_path, validate=True):
 
 # Mandatory tables for a database this app can load (the pre-migration v0.8.x
 # schema carried `temp_presets`, the current schema carries `temp_presets_v2`).
+# Superseded by the version-aware _assert_schema_requirements; kept only as a
+# documentation anchor for the legacy v0.8.x shape.
 _MANDATORY_TABLES = {"presets", "settings"}
 _SILO_TABLES = ("temp_presets_v2", "temp_presets")
 
 
 class RestoreError(RuntimeError):
     """A database could not be validated or restored; the live DB is intact."""
+
+
+class FatalRestoreError(RestoreError):
+    """The live database could not be left in a known-good state in-process.
+
+    Raised when a restore cannot be published AND the live sidecars (WAL/SHM)
+    cannot be rolled back. The caller must NOT reopen the live database (must
+    not call init_db on it); the on-disk file is repaired out-of-band from the
+    pre-restore safety snapshot, and the process should restart to reload it
+    (T-808)."""
+
+
+def _restore_live_from_safety(destination, safety):
+    """Best-effort repair of the live database from the pre-restore safety
+    snapshot after a fatal rollback (T-808).
+
+    The snapshot is a fully-consistent, validated copy (the SQLite backup API
+    checkpoints the WAL into it), so moving it over the live destination
+    yields a usable database for the next launch, even though this process
+    will not reopen it. Any stranded quarantined sidecars are cleared first.
+    """
+    try:
+        if not safety or not os.path.isfile(safety):
+            return False
+        # Clear any stranded live sidecars (the quarantine uses a `.` prefix:
+        # `<db>.wal.quarantine`, `<db>.shm.quarantine`).
+        _remove_quietly(destination + "-wal")
+        _remove_quietly(destination + "-shm")
+        _remove_quietly(destination + ".wal.quarantine")
+        _remove_quietly(destination + ".shm.quarantine")
+        os.replace(safety, destination)
+        return True
+    except OSError:
+        return False
+
+
+def _pk_columns(cur, table):
+    """The set of column names that are part of ``table``'s PRIMARY KEY.
+
+    ``PRAGMA table_info`` returns the pk flag in column 5 (1-based): zero for
+    a non-key column, non-zero (1,2,3... for composite keys) for each PK
+    column. The names are collected unordered — a PK is a set, not a sequence.
+    """
+    pk = set()
+    for row in cur.execute(f"PRAGMA table_info({table})"):
+        if row[5]:
+            pk.add(row[1])
+    return pk
+
+
+def _assert_schema_requirements(cur, version):
+    """Raise RestoreError unless ``cur`` satisfies the required schema for ``version``.
+
+    Version-aware (T-807): a v0 (unversioned) database is required to carry
+    the base tables and every column the migration+loader actually READ, so a
+    v0 whose silo table is missing the migration-required slot/content columns
+    is rejected here instead of crashing the migration (or, once restored, the
+    next startup); a v1 file is additionally required to carry the PRIMARY KEY
+    invariants, so a hand-trimmed v1 that lost `settings.key PRIMARY KEY` is
+    rejected rather than silently duplicating logical settings keys at runtime.
+    """
+    req = _REQUIRED_SCHEMA.get(version)
+    if req is None:
+        return
+    tables = {r[0] for r in cur.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'")}
+    missing = req["tables"] - tables
+    if missing:
+        raise RestoreError(
+            f"database (schema v{version}) is missing required tables: "
+            f"{sorted(missing)}")
+    # Optional tables: only checked when present.
+    for table, cols in req.get("optional_columns", {}).items():
+        if table not in tables:
+            continue
+        present = {r[1] for r in cur.execute(f"PRAGMA table_info({table})")}
+        missing_cols = cols - present
+        if missing_cols:
+            raise RestoreError(
+                f"database (schema v{version}) table {table!r} is present but "
+                f"missing required columns: {sorted(missing_cols)}")
+    if "silo_tables" in req and not (tables & set(req["silo_tables"])):
+        raise RestoreError(
+            f"database (schema v{version}) has no silo table "
+            f"({', '.join(req['silo_tables'])})")
+    for table, cols in req.get("columns", {}).items():
+        present = {r[1] for r in cur.execute(f"PRAGMA table_info({table})")}
+        missing_cols = cols - present
+        if missing_cols:
+            raise RestoreError(
+                f"database (schema v{version}) table {table!r} is missing "
+                f"required columns: {sorted(missing_cols)}")
+    for table, pk in req.get("primary_key", {}).items():
+        actual = _pk_columns(cur, table)
+        if actual != pk:
+            raise RestoreError(
+                f"database (schema v{version}) table {table!r} has the wrong "
+                f"PRIMARY KEY: expected {sorted(pk)}, found {sorted(actual)}")
 
 
 def _remove_quietly(path):
@@ -451,13 +619,9 @@ def validate_database(path, max_user_version=CURRENT_SCHEMA_VERSION):
                 f"(v{max_user_version}); refusing to downgrade the live data")
         tables = {r[0] for r in conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table'")}
-        missing = _MANDATORY_TABLES - tables
-        if missing:
-            raise RestoreError(f"backup is missing mandatory tables: "
-                               f"{sorted(missing)}")
-        if not (tables & set(_SILO_TABLES)):
-            raise RestoreError("backup has no silo table "
-                               f"({', '.join(_SILO_TABLES)})")
+        # version-aware: a v1 file missing v1 columns/tables is malformed and
+        # must be rejected here, not discovered as an OperationalError at load.
+        _assert_schema_requirements(conn, version)
         return int(version), tables
     finally:
         conn.close()
@@ -523,16 +687,77 @@ def restore_database(source, destination):
         _remove_quietly(temp)
         raise
 
+    # Quarantine the live destination's WAL/SHM BEFORE the main-file swap. The
+    # old -wal/-shm still carry the previous incarnation's uncheckpointed frames
+    # and would replay INTO the freshly-swapped database (reverting it to old
+    # data) if left under the live name. Rename, do not delete: a locked or
+    # unremovable WAL must REFUSE publication, not be silently swallowed (the old
+    # _remove_quietly here dropped the sidecar and returned success while a stale
+    # WAL replayed source changes back into the restored DB).
+    wal_path = destination + "-wal"
+    shm_path = destination + "-shm"
+    wal_q = destination + ".wal.quarantine"
+    shm_q = destination + ".shm.quarantine"
+    _remove_quietly(wal_q)
+    _remove_quietly(shm_q)
+    quarantined = []
+    for live, q in ((wal_path, wal_q), (shm_path, shm_q)):
+        if os.path.exists(live):
+            try:
+                os.replace(live, q)
+                quarantined.append((live, q))
+            except OSError as exc:
+                # restore any already-quarantined sidecar so the old incarnation
+                # stays usable, then refuse the publication
+                for live2, q2 in quarantined:
+                    try:
+                        os.replace(q2, live2)
+                    except OSError:
+                        pass
+                _remove_quietly(temp)
+                raise RestoreError(f"could not quarantine live WAL/SHM: {exc}")
+
     try:
         os.replace(temp, destination)
     except OSError as exc:
+        # Main swap failed. The previous main file is untouched, but its
+        # WAL/SHM were quarantined under the live name. Restore them EXACTLY
+        # so the previous incarnation is fully usable again — this is the
+        # ordinary, recoverable failure path (the caller reopens the intact
+        # live DB). The rollback is CHECKED (T-808): if ANY sidecar cannot be
+        # restored we must not silently swallow it, because the live
+        # incarnation would then be left without its WAL/SHM and could replay
+        # or lose frames — the exact bug the quarantine was added to prevent.
+        rollback_failed = False
+        for live2, q2 in quarantined:
+            try:
+                os.replace(q2, live2)
+            except OSError:
+                rollback_failed = True
         _remove_quietly(temp)
+        if rollback_failed:
+            # The live WAL/SHM could not be restored, so the live incarnation
+            # is no longer guaranteed consistent. Do NOT pretend it is intact:
+            # attempt an out-of-band repair from the pre-restore safety
+            # snapshot (a fully-consistent, validated copy), then refuse to
+            # reopen the live database in-process. The caller must NOT call
+            # init_db on it — a restart reloads the repaired file.
+            _restore_live_from_safety(destination, safety)
+            raise FatalRestoreError(
+                f"the live database could not be replaced and its WAL/SHM "
+                f"could not be restored; the on-disk database was repaired "
+                f"from the safety snapshot ({safety or 'unavailable'}) where "
+                f"possible — restart to reload a consistent database")
         raise RestoreError(f"could not replace the live database: {exc}")
 
-    # drop stale WAL/SHM of the old incarnation — in this order, after the
-    # replace, so no old journal can be replayed into the new database
-    for ext in ("-wal", "-shm"):
-        _remove_quietly(destination + ext)
+    # success: the new main file is in place and no old WAL/SHM remains under the
+    # live name. Drop the quarantined old sidecars and the candidate's own orphan
+    # sidecars best-effort (a leftover WAL here cannot replay into the swapped
+    # main file because it is named after the temp, not the live destination).
+    for _, q in quarantined:
+        _remove_quietly(q)
+    _remove_quietly(temp + "-wal")
+    _remove_quietly(temp + "-shm")
     return int(version)
 
 
@@ -553,6 +778,13 @@ class FastPrompterState:
         # suppress another profile's (the old single scalar did exactly that
         # when switching profiles back-to-back).
         self._last_backup_time_by_profile = {}
+        # T-818: for an already-current-schema DB the validated startup safety
+        # snapshot is produced on ONE tracked background job; `None` means no
+        # gate is in force (small DB, old schema, or already launched). The
+        # first mutating save waits on this event so it can never outrun the
+        # snapshot. The flag records a background failure truthfully.
+        self._startup_backup_ready = None
+        self._startup_backup_failed = False
         self.init_db()
 
     def reset_data(self):
@@ -563,7 +795,7 @@ class FastPrompterState:
             "archive_temp_presets_all": {"Code": [], "Text": [], "Misc": []},
             "last_text": "", "last_tab_idx": 0, "last_geometry": "", "active_temp_slot": 0,
             "font_size": 11, "preview_mode": "None", "paste_mode": "Plain", "tray_visible": "True", "global_hotkey": "Alt+X",
-            "pie_menu_hotkey": "Shift+Alt+X", "lock_window_hotkey": "Alt+S", "always_on_top_hotkey": "Alt+E",
+            "pie_menu_hotkey": "Shift+Alt+X", "lock_window_hotkey": "Alt+E", "always_on_top_hotkey": "Alt+S",
             "close_on_focus_loss": "True", "ctrl_c_closes": "True", "hk_italic": "Ctrl+I", "hk_underline": "Ctrl+U", "theme": "Default", "ui_scale": "0.5", "button_scale": "1.0", "window_locked": "False", "silo_last_edited": {}, "pinned_silos": [], "silo_last_edited_all": {}, "pinned_silos_all": {}, "silo_ticked": [], "silo_ticked_all": {}, "silo_children": {}, "silo_children_all": {}, "silo_collapsed": [], "silo_collapsed_all": {}, "silo_gaps": [], "silo_gaps_all": {}, "hidden_categories": [], "silo_colors": {}, "silo_colors_all": {}, "silo_folders": {}, "silo_folders_all": {}, "archive_silo_folders": {}, "archive_silo_folders_all": {}, "silo_project_paths": {}, "silo_project_paths_all": {}, "silo_type_all": {}, "silo_session_all": {}, "archive_project_paths": {}, "archive_project_paths_all": {}, "folder_trash_log": [],
             "sidebar_right": "False", "sound_ui": "False", "sound_typewriter": "False", "sound_volume": "5", "portable_backup_enabled": "True", "language": "EN",
             "customize_toolbar": "False", "toolbar_order": "", "code_auto_gutter": "False",
@@ -641,23 +873,86 @@ class FastPrompterState:
             self.init_db()
             return True
 
+    def _is_current_schema(self, path):
+        """Read-only probe: is ``path`` already CURRENT_SCHEMA_VERSION with the
+        mandatory tables? Returns False on any read error (treat an unknown
+        file as needing a synchronous validated backup, never as skip-safe)."""
+        try:
+            conn = _open_read_only(path)
+            try:
+                version = conn.execute("PRAGMA user_version").fetchone()[0]
+                if version != CURRENT_SCHEMA_VERSION:
+                    return False
+                tables = {r[0] for r in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'")}
+                return _MANDATORY_TABLES <= tables
+            finally:
+                conn.close()
+        except Exception:
+            return False
+
+    def _start_safety_snapshot_async(self, dest):
+        """T-818: produce the identical validated startup `.bak` snapshot on a
+        single tracked background job instead of the startup thread. The first
+        mutating save is gated on ``_startup_backup_ready`` (see
+        `_save_data_to_db_locked`), so a current-schema DB starts without a
+        full synchronous backup/integrity pass on the UI thread while its
+        safety copy is still guaranteed before any mutation."""
+        if getattr(self, "_startup_backup_ready", None) is not None:
+            return
+        import threading
+
+        self._startup_backup_ready = threading.Event()
+        self._startup_backup_failed = False
+        src = self.db_path
+
+        def run():
+            try:
+                import sqlite3
+
+                c = sqlite3.connect(src)
+                try:
+                    _backup_atomically(c, dest)
+                finally:
+                    c.close()
+            except Exception:
+                self._startup_backup_failed = True
+                # the live DB is still valid and already on the current schema;
+                # log degraded recovery and let the gate proceed
+                logger.exception("startup database backup (background) failed; "
+                                 "the live database is unaffected")
+            finally:
+                self._startup_backup_ready.set()
+
+        threading.Thread(target=run, daemon=True,
+                         name="fp-startup-backup").start()
+
     def init_db(self):
         try:
-            # Backup existing DB before connecting — prevents empty/new DB from destroying backup
+            backup_dest = self.db_path + ".bak"
+            # T-818: a pre-connect safety copy is only mandatory BEFORE a
+            # migration writes to a file whose schema we are about to change.
+            # For an already-current-schema DB we move that validated snapshot
+            # off the startup thread (see _start_safety_snapshot_async) without
+            # weakening migration safety or recoverability.
             if os.path.exists(self.db_path) and os.path.getsize(self.db_path) > 24576:
-                try:
-                    src = sqlite3.connect(self.db_path)
+                if self._is_current_schema(self.db_path):
+                    self._start_safety_snapshot_async(backup_dest)
+                else:
                     try:
-                        _backup_atomically(src, self.db_path + ".bak")
-                    finally:
-                        src.close()
-                except Exception:
-                    # the live DB is still valid; only the optional pre-connect
-                    # safety copy failed — log it to the file (a windowed build
-                    # has no console) and continue per the degraded-recovery
-                    # policy, never abort startup over a backup we can retry
-                    logger.exception("startup database backup failed; the live "
-                                     "database is unaffected")
+                        src = sqlite3.connect(self.db_path)
+                        try:
+                            _backup_atomically(src, backup_dest)
+                        finally:
+                            src.close()
+                    except Exception:
+                        # the live DB is still valid; only the optional
+                        # pre-connect safety copy failed — log it to the file
+                        # (a windowed build has no console) and continue per
+                        # the degraded-recovery policy, never abort startup
+                        # over a backup we can retry
+                        logger.exception("startup database backup failed; the "
+                                         "live database is unaffected")
 
             self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
             self.conn.execute('PRAGMA journal_mode=WAL;')
@@ -814,6 +1109,13 @@ class FastPrompterState:
     def _save_data_to_db_locked(self, current_text, ui_settings=None, force=False, sync=False):
         if not self.conn: return False
         if not self._db_dirty and not force: return True
+
+        # T-818: the first mutation of a current-schema DB must not outrun the
+        # background startup safety snapshot. The snapshot job does not hold
+        # ``_lock``, so waiting here for it to finish cannot deadlock.
+        ready = self._startup_backup_ready
+        if ready is not None and not ready.is_set():
+            ready.wait()
 
         if ui_settings:
             self.data.update(ui_settings)

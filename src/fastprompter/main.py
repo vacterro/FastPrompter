@@ -665,6 +665,15 @@ class FastPrompter(
         self._undo_save_jobs = {}
         self._undo_pending_jobs = {}
         self._undo_save_failed = False
+        # T-817: ONE coalescing undo writer. Dispatches feed the newest
+        # snapshot per path into `_undo_save_backlog`; a single persistent
+        # thread drains it. The condition serializes backlog updates with the
+        # writer's wait/exit so a dispatch can never race a dying writer into
+        # losing a snapshot.
+        self._undo_save_backlog = {}
+        self._undo_save_cv = threading.Condition()
+        self._undo_save_writer = None
+        self._undo_save_quit = False
         self._load_undo_state()
         self.sound_manager = SoundManager(self, self.data)
         # One owner for the sound-event mapping. This was written out here as
@@ -922,7 +931,7 @@ class FastPrompter(
             lbl.setVisible(True)
             return
 
-        nxt = next_due(getattr(self, "timers", []))
+        nxt = next_due(getattr(self, "timers", []), topbar_only=True)
         if nxt is None or getattr(self, "_header_ultra", False):
             lbl.setVisible(False)
             return
@@ -1527,18 +1536,36 @@ class FastPrompter(
         self._tick_productivity()
         """Fire anything due. Called from the same 1s tick as the clock."""
         from fastprompter.core.timers import collect_due
+
         if not getattr(self, "timers", None):
             return
-        due = collect_due(self.timers)
+        now = datetime.datetime.now()
+        due = collect_due(self.timers, now)
         if not due:
             return
         self.save_timers_to_data()
         for t in due:
-            self._notify_timer(t)
+            # The SAME clock sample drives sound-time selection and firing,
+            # so a repeating timer (already advanced to its NEXT occurrence by
+            # collect_due) is judged against the moment it actually went off.
+            self._notify_timer(t, fired_at=now)
 
-    def _notify_timer(self, timer):
-        """Sound + an actionable popup. Never steals focus mid-typing."""
-        self._play_timer_sound(timer)
+    def _notify_timer(self, timer, fired_at=None):
+        """Sound + an actionable popup. Never steals focus mid-typing.
+
+        The two behaviour toggles are independent:
+          * show_notification False -> no toast AND no tray fallback (one
+            switch means the visual notification is off everywhere).
+          * show_in_top_bar False -> still fires and may still notify; only
+            the top-bar countdown is suppressed.
+        Sound is chosen by the timer's own policy and played through the
+        explicit-volume path, so it never mutates the global sound settings.
+        """
+        fired_at = fired_at or datetime.datetime.now()
+        self._play_timer_sound(timer, fired_at)
+        if not timer.show_notification:
+            # visual notification intentionally off — no popup, no tray
+            return
         from fastprompter.ui.timer_toast import show_toast
         toast = show_toast(self, timer, on_snooze=self._snooze_timer)
         if toast is None:
@@ -1553,29 +1580,21 @@ class FastPrompter(
                 from fastprompter.core.logging import logger
                 logger.debug("timer tray notification failed")
 
-    def _play_timer_sound(self, timer):
-        """Play at the timer's own volume, then restore the user's setting."""
-        prev_vol = self.data.get("sound_volume", "5")
-        prev_ui = self.data.get("sound_ui", "False")
-        try:
-            self.data["sound_volume"] = str(timer.volume)
-            self.data["sound_ui"] = "True"   # an alarm must be audible
-            sound = timer.sound or "tick"
-            if sound.startswith("file:"):
-                # A timer may point straight at any file in the library, not
-                # only at one of the eight named events: an alarm the user
-                # picked must not change under them because someone re-mapped
-                # a global event. play_file bypasses the toggles, which is
-                # right here for the same reason it is right for previews.
-                self.sound_manager.play_file(sound[5:], int(timer.volume))
-            else:
-                self.play_sound(sound)
-        except Exception:
-            from fastprompter.core.logging import logger
-            logger.debug("timer sound failed")
-        finally:
-            self.data["sound_volume"] = prev_vol
-            self.data["sound_ui"] = prev_ui
+    def _play_timer_sound(self, timer, fired_at=None) -> bool:
+        """Select and play the timer's sound through the ONE canonical path.
+
+        Picks the sound with ``choose_timer_sound`` (single sound or the
+        random pool) and plays it via the explicit-volume ``play_sound_ref``,
+        which never mutates the global sound settings. Returns False when the
+        timer is silent (empty pool / no eligible rule) or playback failed.
+        """
+        fired_at = fired_at or datetime.datetime.now()
+        from fastprompter.core.timers import choose_timer_sound
+        choice = choose_timer_sound(timer, fired_at)
+        if choice is None:
+            return False
+        ref, level = choice
+        return self.sound_manager.play_sound_ref(ref, level)
 
     def _snooze_timer(self, timer, minutes):
         timer.snooze(minutes)
@@ -1584,7 +1603,14 @@ class FastPrompter(
 
     def test_timer_notification(self, timer, delay_seconds=5):
         """Fire a throwaway copy shortly, so the user can check sound and
-        popup before trusting a real timer to it."""
+        popup before trusting a real timer to it.
+
+        Copies the FULL behaviour (sound, volume, sound_mode, pool rules,
+        show_notification, colour) so the preview is honest. It is never
+        persisted. If Show notification is OFF the probe is still built — the
+        timer's own toggle decides whether the test pops a window, exactly as
+        a real fire would: a notification-off test is a sound-only check.
+        """
         import datetime
 
         from fastprompter.core.timers import Timer
@@ -1594,10 +1620,16 @@ class FastPrompter(
             name=timer.name or tr("Test", lang),
             description=timer.description or tr("Test notification", lang),
             target=datetime.datetime.now() + datetime.timedelta(seconds=delay_seconds),
+            repeat=timer.repeat,
             sound=timer.sound,
             volume=timer.volume,
             color_mode=timer.color_mode,
             color=timer.color,
+            kind=timer.kind,
+            show_notification=timer.show_notification,
+            show_in_top_bar=timer.show_in_top_bar,
+            sound_mode=timer.sound_mode,
+            sound_rules=[dict(r) for r in timer.sound_rules],
         )
         # deliberately NOT added to self.timers — a test must not survive a
         # restart or show up in the countdown beside the clock
@@ -5882,24 +5914,24 @@ class FastPrompter(
             ("cb_line_numbers", "show_line_numbers", "False"),
             ("cb_code_gutter", "code_auto_gutter", "False"),
             ("cb_line_marks", "line_marks", "False"),
-            ("cb_token_count", "token_count", "False"),
-            ("cb_zebra", "zebra", "False"),
+            ("cb_token_count", "show_token_count", "False"),
+            ("cb_zebra", "zebra_lines", "False"),
             ("cb_hide_shortkeys", "hide_shortkeys", "False"),
-            ("cb_double_line", "double_line", "False"),
-            ("cb_bold_titles", "bold_titles", "False"),
+            ("cb_double_line", "bullet_double_line", "False"),
+            ("cb_bold_titles", "bold_hash_titles", "False"),
             ("cb_silo_pinned_gap", "silo_pinned_gap", "False"),
-            ("cb_conceal", "conceal", "False"),
+            ("cb_conceal", "live_preview_conceal", "False"),
             ("cb_hr_visual", "hr_visual_line", "True"),
-            ("cb_date_rect", "date_rect", "True"),
-            ("cb_timer_minutes", "timer_minutes", "False"),
+            ("cb_date_rect", "show_date_rect", "True"),
+            ("cb_timer_minutes", "timer_show_minutes", "False"),
             ("cb_date_seconds", "date_seconds", "False"),
             ("cb_analog_clock", "analog_clock", "False"),
             ("cb_date_daypart", "date_daypart", "False"),
             ("cb_date_emoji", "date_emoji", "True"),
             ("cb_date_text_month", "date_text_month", "False"),
             ("cb_date_ampm", "date_ampm", "False"),
-            ("cb_sound", "sound_enabled", "True"),
-            ("cb_typewriter", "typewriter", "False"),
+            ("cb_sound", "sound_ui", "True"),
+            ("cb_typewriter", "sound_typewriter", "False"),
             ("cb_trash_vision", "trash_vision", "False"),
             ("cb_silo_color_box", "silo_color_box", "False"),
             ("cb_cs_style", "cs_style", "False"),
@@ -8084,7 +8116,7 @@ class FastPrompter(
             self._undo_timer.start()
 
     def _dispatch_undo_save(self):
-        """Persist the undo stack to `<db>_undo.json` on a TRACKED thread.
+        """Persist pending undo snapshots through ONE coalescing writer.
 
         Deliberate design (Phase-11 inventory): undo history is SECONDARY
         data. The write is atomic (temp + os.replace), so an interrupted
@@ -8093,14 +8125,23 @@ class FastPrompter(
         SQLite database and the daily Markdown snapshots remain authoritative.
         No QWidget is touched from the thread.
 
+        T-817: the old code spawned a fresh daemon thread per dispatch; when
+        JSON/disk work outran the 1 s debounce the threads piled up, each
+        carrying its own snapshot, all serialized behind ``_undo_save_lock``.
+        Every dispatch now coalesces into ``_undo_save_backlog`` — the newest
+        pending snapshot per undo path (arm-time capture preserved, P1-8) —
+        and hands the whole backlog to AT MOST ONE physical writer thread
+        (``fastprompter-undo-write``), which is persistent: it waits on
+        ``_undo_save_cv`` and only exits after ``_wait_for_undo_saves`` has
+        signalled quit with an empty backlog, so a snapshot can never be lost
+        to a dying-writer race.
+
         The thread is registered in ``_undo_save_threads`` BEFORE start and
         removes itself in ``finally``, so ``_wait_for_undo_saves`` observes
         every real writer and a clean drain is a fact, not an empty-set
         coincidence (P1-2). A publication failure is recorded on the window
         so a shutdown cannot claim a clean undo drain that never happened
         (P1-3)."""
-        import json
-        import os
         import threading
         if self._undo_timer is not None:
             self._undo_timer.stop()
@@ -8109,75 +8150,95 @@ class FastPrompter(
             return
         self._undo_pending_jobs = {}
         # P1-8: failure is tracked PER JOB, not on one window-wide flag. The
-        # old shared ``_undo_save_failed`` was reset by every new dispatch,
-        # so a writer still in flight from the PREVIOUS batch could fail
-        # after the reset and the drain would report clean. ``_undo_save_jobs``
-        # keys the in-flight result by thread; the flag stays as a compat
-        # backstop for ``_shutdown_application``.
+        # flag stays as a compat backstop for ``_shutdown_application``; the
+        # writer's job record in ``_undo_save_jobs`` carries the truth.
         self._undo_save_failed = False
+        cv = getattr(self, "_undo_save_cv", None)
+        with cv:
+            self._undo_save_backlog.update(pending)
+            writer = getattr(self, "_undo_save_writer", None)
+            if writer is None or not writer.is_alive():
+                self._undo_save_quit = False
+                self._undo_save_writer = threading.Thread(
+                    target=self._undo_writer_loop, daemon=True,
+                    name="fastprompter-undo-write")
+                self._undo_save_threads.add(self._undo_save_writer)
+                self._undo_save_jobs[self._undo_save_writer] = {"ok": True}
+                self._undo_save_writer.start()
+            else:
+                cv.notify_all()
 
-        def save(undo_data, redo_data, undo_path):
+    def _undo_writer_loop(self):
+        """Single physical undo writer: pops the newest snapshot per path,
+        publishes it atomically, waits for more work until told to quit."""
+        import threading
+        cv = getattr(self, "_undo_save_cv", None)
+        try:
+            while True:
+                with cv:
+                    backlog = self._undo_save_backlog
+                    if not backlog:
+                        if getattr(self, "_undo_save_quit", False):
+                            break
+                        cv.wait()
+                        continue
+                    path, job = backlog.popitem()
+                self._write_undo_file(path, job)
+        finally:
+            threads = getattr(self, "_undo_save_threads", None)
+            if threads is not None:
+                threads.discard(threading.current_thread())
+            # The job record is LEFT in place (pruned by
+            # _wait_for_undo_saves): popping it here would erase the
+            # very failure a later dispatch's flag reset depends on.
+
+    def _write_undo_file(self, undo_path, job):
+        """Publish one snapshot atomically; record failure per job (P1-3)."""
+        import json
+        import os
+        import threading
+        try:
+            # Cap the persisted snapshots to prevent bloat (H-302)
+            undo_data = job["undo"][-10:]
+            redo_data = job["redo"][-10:]
+            tmp_path = undo_path + ".tmp"
+
+            # Serialize the save and make it atomic (H-301)
+            if os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump({"undo": undo_data, "redo": redo_data}, f)
             try:
-                # Cap the persisted snapshots to prevent bloat (H-302)
-                undo_data = undo_data[-10:]
-                redo_data = redo_data[-10:]
-                tmp_path = undo_path + ".tmp"
-
-                # Serialize the save and make it atomic (H-301)
-                if not hasattr(self, "_undo_save_lock"):
-                    self._undo_save_lock = threading.Lock()
-                with self._undo_save_lock:
+                os.replace(tmp_path, undo_path)
+            except OSError as exc:
+                # The previous final undo file stays untouched; the temp is
+                # removed so no stray file can be mistaken for published
+                # state. The failure is recorded and logged — a silent `pass`
+                # made callers believe the drain succeeded (P1-3).
+                try:
                     if os.path.exists(tmp_path):
-                        try:
-                            os.remove(tmp_path)
-                        except OSError:
-                            pass
-                    with open(tmp_path, "w", encoding="utf-8") as f:
-                        json.dump({"undo": undo_data, "redo": redo_data}, f)
-                    try:
-                        os.replace(tmp_path, undo_path)
-                    except OSError as exc:
-                        # The previous final undo file stays untouched; the
-                        # temp is removed so no stray file can be mistaken
-                        # for published state. The failure is recorded and
-                        # logged — a silent `pass` made callers believe the
-                        # drain succeeded (P1-3).
-                        try:
-                            if os.path.exists(tmp_path):
-                                os.remove(tmp_path)
-                        except OSError:
-                            pass
-                        job = self._undo_save_jobs.get(threading.current_thread())
-                        if job is not None:
-                            job["ok"] = False
-                        self._undo_save_failed = True
-                        from fastprompter.core.logging import logger
-                        logger.error(
-                            "Failed to publish undo state to %s: %s; the "
-                            "previous undo file is untouched",
-                            undo_path, exc)
-            except Exception:
-                job = self._undo_save_jobs.get(threading.current_thread())
-                if job is not None:
-                    job["ok"] = False
+                        os.remove(tmp_path)
+                except OSError:
+                    pass
+                job_rec = self._undo_save_jobs.get(threading.current_thread())
+                if job_rec is not None:
+                    job_rec["ok"] = False
                 self._undo_save_failed = True
                 from fastprompter.core.logging import logger
-                logger.exception("Failed to save undo state.")
-            finally:
-                threads = getattr(self, "_undo_save_threads", None)
-                if threads is not None:
-                    threads.discard(threading.current_thread())
-                # The job record is LEFT in place (pruned by
-                # _wait_for_undo_saves): popping it here would erase the
-                # very failure a later dispatch's flag reset depends on.
-
-        for undo_path, job in pending.items():
-            thread = threading.Thread(
-                target=save, args=(job["undo"], job["redo"], undo_path),
-                daemon=True, name="fastprompter-undo-write")
-            self._undo_save_threads.add(thread)
-            self._undo_save_jobs[thread] = {"ok": True}
-            thread.start()
+                logger.error(
+                    "Failed to publish undo state to %s: %s; the "
+                    "previous undo file is untouched",
+                    undo_path, exc)
+        except Exception:
+            job_rec = self._undo_save_jobs.get(threading.current_thread())
+            if job_rec is not None:
+                job_rec["ok"] = False
+            self._undo_save_failed = True
+            from fastprompter.core.logging import logger
+            logger.exception("Failed to save undo state.")
 
     def _wait_for_undo_saves(self, timeout_s=2.0):
         """Force the newest pending undo snapshot out, then wait bounded
@@ -8193,8 +8254,13 @@ class FastPrompter(
         timer = getattr(self, "_undo_timer", None)
         if timer is not None and timer.isActive():
             self._dispatch_undo_save()
-        for thread in list(getattr(self, "_undo_save_threads", ())):
-            thread.join(max(0.0, deadline - time.monotonic()))
+        writer = getattr(self, "_undo_save_writer", None)
+        cv = getattr(self, "_undo_save_cv", None)
+        if writer is not None and writer.is_alive() and cv is not None:
+            with cv:
+                self._undo_save_quit = True
+                cv.notify_all()
+            writer.join(max(0.0, deadline - time.monotonic()))
         threads = getattr(self, "_undo_save_threads", set())
         threads.difference_update(t for t in threads if not t.is_alive())
         if threads:
@@ -8535,6 +8601,25 @@ class FastPrompter(
             )
             if reply == QMessageBox.StandardButton.Yes:
                 db_path = self.state.db_path
+                # T-809: the watcher must quiesce BEFORE we close the live DB or
+                # replace it. A failed quiesce aborts the restore (the restored
+                # file is already on disk, but we must not strand the app running
+                # on stale in-memory state against it, nor bypass the barrier).
+                if hasattr(self, "_watcher_begin_quiesce"):
+                    try:
+                        restored_quiesced = self._watcher_begin_quiesce()
+                    except Exception:
+                        restored_quiesced = False
+                else:
+                    restored_quiesced = True
+                if not restored_quiesced:
+                    from fastprompter.core.logging import logger as _log
+                    _log.error("Restore aborted: watcher did not quiesce; the live database is unchanged")
+                    QMessageBox.critical(
+                        self, tr("Error", self._current_lang),
+                        tr("Restore aborted — the watcher was still busy; try "
+                           "again once it settles.", self._current_lang))
+                    return
                 # close the live connection FIRST: SQLite keeps the file
                 # locked while a connection is open
                 if self.state.conn:
@@ -8542,9 +8627,30 @@ class FastPrompter(
                     self.state.conn = None
                 self.conn = None
                 time.sleep(0.1)
-                from fastprompter.core.state import RestoreError, restore_database
+                from fastprompter.core.state import (
+                    FatalRestoreError,
+                    RestoreError,
+                    restore_database,
+                )
                 try:
                     restore_database(path, db_path)
+                except FatalRestoreError as e:
+                    # The live database could not be left consistent in-process
+                    # (the swap failed AND the WAL/SHM could not be rolled
+                    # back). It was repaired from the safety snapshot on disk,
+                    # but per T-808 we must NOT reopen the live incarnation
+                    # here — a restart reloads the repaired file. Do not call
+                    # init_db; keep the connection closed and let the user
+                    # restart on a known-good database.
+                    from fastprompter.core.logging import logger as _log
+                    _log.exception("restore failed fatally: %s", e)
+                    QMessageBox.critical(
+                        self, tr("Error", self._current_lang),
+                        tr("Restore failed and the live database could not be "
+                           "left consistent. It has been repaired from the "
+                           "automatic safety snapshot on disk — restart "
+                           "FastPrompter to reload it.", self._current_lang))
+                    return
                 except RestoreError as e:
                     # the live database was left untouched; reopen it and tell
                     # the user what to recover from
@@ -8563,8 +8669,9 @@ class FastPrompter(
                 # run the normal final-save path — it would rewrite the old
                 # memory over the restored file, or refuse and strand the app
                 # running on stale data against a replaced database. Mark
-                # logical persistence finalized and quit straight through the
-                # physical teardown without any further save.
+                # logical persistence finalized ONLY AFTER the successful restore
+                # (the quiesce barrier above already passed) and quit straight
+                # through the physical teardown without any further save.
                 self._logical_finalized = True
                 self.quit_app()
         except Exception as e:
@@ -10828,15 +10935,20 @@ class FastPrompter(
         """Push the Hide-Markup setting into the highlighter.
 
         Only meaningful while a highlighter is attached, i.e. in a preview
-        mode; in Source View there is nothing to conceal."""
+        mode; in Source View there is nothing to conceal. Returns True when
+        this call itself rehighlighted (conceal ON), so a caller like the
+        live-preview sync can avoid a second full rehighlight.
+        """
         hl = getattr(self, "highlighter", None)
         if hl is None or sip.isdeleted(hl):
-            return
+            return False
         on = self.data.get("live_preview_conceal", "False") == "True"
         hl.set_conceal(on)
         if on and hasattr(self, "text_area"):
             hl.reveal_block = self.text_area.textCursor().blockNumber()
             hl.rehighlight()
+            return True
+        return False
 
     def _normalise_int_keys(self, all_key):
         """Coerce every category map under ``data[all_key]`` to int keys.
@@ -11707,11 +11819,20 @@ class FastPrompter(
         add_shortcut("hk_replace", "Ctrl+H", self.show_replace)
         add_shortcut("hk_export_silo", "Ctrl+Shift+S", self.save_silo_to_file)
 
-        # Previously global hotkeys, now local to app window
-        add_shortcut("lock_window_hotkey", "Alt+S", self.toggle_lock)
-        add_shortcut("always_on_top_hotkey", "Alt+E", self.toggle_always_on_top)
+        # Previously global hotkeys, now local to app window.
+        # Canonical map (per profile, T-814): Alt+E = lock, Alt+S = always on
+        # top. The _alt slots are the user's second combo from the settings
+        # dialog and are bound exactly like the primary ones (a configured
+        # _alt that went nowhere was the migration bug this wires up).
+        add_shortcut("lock_window_hotkey", "Alt+E", self.toggle_lock)
+        add_shortcut("always_on_top_hotkey", "Alt+S", self.toggle_always_on_top)
         add_shortcut("toggle_sidebar_hotkey", "Alt+D", lambda: self.toggle_visibility(force_sidebar=True))
         add_shortcut("hide_on_clickout_hotkey", "Alt+A", self.toggle_hide_on_clickout)
+        add_shortcut("lock_window_hotkey_alt", "", self.toggle_lock)
+        add_shortcut("always_on_top_hotkey_alt", "", self.toggle_always_on_top)
+        add_shortcut("toggle_sidebar_hotkey_alt", "",
+                     lambda: self.toggle_visibility(force_sidebar=True))
+        add_shortcut("hide_on_clickout_hotkey_alt", "", self.toggle_hide_on_clickout)
 
         shortcut = QShortcut(QKeySequence("Esc"), self)
         shortcut.activated.connect(self._on_escape)
@@ -11777,6 +11898,12 @@ class FastPrompter(
             seq_str = self.data.get(f"silo_{i}_hotkey", f"Alt+Shift+Numpad{i + 1}")
             if seq_str:
                 add_fixed(seq_str, lambda i=i: self.fire_global_silo(i))
+            # the dialog's second combo for each row must be bound too, or a
+            # user who sets it gets a setting that silently does nothing
+            add_shortcut(f"snippet_{i}_hotkey_alt", "",
+                         lambda i=i: self.fire_global_snippet(i))
+            add_shortcut(f"silo_{i}_hotkey_alt", "",
+                         lambda i=i: self.fire_global_silo(i))
 
     def fire_shortcut(self, idx):
         self.play_sound("snippet")
@@ -12127,17 +12254,33 @@ class FastPrompter(
         ``_shutdown_application`` still owns worker retirement, SQLite close
         and the mutex release; closeEvent skips the final save when this
         method already performed it.
+
+        T-810: the tray icon is withdrawn only AFTER the finalize succeeds. On a
+        refused quit it stays (or is restored to) visible and the window is
+        raised, so a hidden tray-resident window plus a failed save can never
+        leave the process alive with both the window and the tray hidden.
         """
+        if not self._pre_quit_logical_finalize():
+            from fastprompter.core.logging import logger as _log
+            _log.error("Quit refused: the final state save failed; the "
+                       "window stays open so the data can still be saved")
+            try:
+                if hasattr(self, "tray_icon"):
+                    self.tray_icon.show()
+            except Exception:
+                pass
+            try:
+                self.show()
+                self.raise_()
+                self.activateWindow()
+            except Exception:
+                pass
+            return
         try:
             if hasattr(self, "tray_icon"):
                 self.tray_icon.hide()
         except Exception:
             pass
-        if not self._pre_quit_logical_finalize():
-            from fastprompter.core.logging import logger as _log
-            _log.error("Quit refused: the final state save failed; the "
-                       "window stays open so the data can still be saved")
-            return
         QApplication.quit()
 
     def _pre_quit_logical_finalize(self):
@@ -12149,15 +12292,29 @@ class FastPrompter(
         result, and the final save raced it. Here the watcher is quiesced
         first (its queue state is persisted), then the DB save runs exactly
         once. Returns True only when the final state is safely on disk.
+
+        T-809: quiescence is a MANDATORY terminal barrier. A False return or an
+        exception from the quiesce aborts the quit BEFORE the final save/quit, so
+        an in-flight watcher send can never be lost or applied against a dead
+        loop, and the window stays open for a retry.
         """
         if getattr(self, "_logical_finalized", False):
             return True
         try:
             if hasattr(self, "_watcher_begin_quiesce"):
-                self._watcher_begin_quiesce()
+                quiesced = self._watcher_begin_quiesce()
+            else:
+                quiesced = True
         except Exception:
             from fastprompter.core.logging import logger as _log
-            _log.exception("watcher quiesce failed during quit; continuing")
+            _log.exception("watcher quiesce failed during quit; refusing to finalize")
+            return False
+        if not quiesced:
+            from fastprompter.core.logging import logger as _log
+            _log.error("Quit refused: the watcher did not quiesce within the "
+                       "timeout; the final state save is skipped so no in-flight "
+                       "send is lost")
+            return False
         ok = bool(self.save_data_to_db(force=True))
         if ok:
             self._logical_finalized = True

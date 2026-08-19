@@ -44,6 +44,11 @@ class MarkdownHighlighter(QSyntaxHighlighter):
         self.code_font_family = None
         self._highlighting_rules = []
         self._skip_highlighting = False
+        # Degraded mode for large documents: keep the essentials (headers,
+        # links, bare URLs, basic formatting) but skip the expensive fenced
+        # code sub-highlighting and the conceal extras. Replaces the old
+        # all-or-nothing >500 skip that made headers vanish entirely.
+        self._degraded = False
         self.hr_as_line = False   # when True, --- text is hidden (painted as a visual line)
         # Obsidian-style Live Preview: the emphasis markers themselves are
         # hidden so the text reads as rendered, and reappear on the block the
@@ -113,7 +118,17 @@ class MarkdownHighlighter(QSyntaxHighlighter):
         self.rehighlight()
 
     def set_skip_large(self, skip):
-        self._skip_highlighting = skip
+        # Kept for call-site compatibility: a "large" document now degrades
+        # (essentials only) rather than turning highlighting fully off.
+        self.set_degraded(bool(skip))
+
+    def set_degraded(self, degraded):
+        """Large-document mode: essentials kept, expensive work skipped.
+
+        Unlike the old skip guard this never blanks headers/links/URLs — it
+        only drops fenced-code sub-highlighting and conceal extras.
+        """
+        self._degraded = bool(degraded)
 
     def _theme_color(self, key, fallback):
         """Read one key out of the active theme's raw_colors.
@@ -329,9 +344,11 @@ class MarkdownHighlighter(QSyntaxHighlighter):
                     self.setFormat(0, len(text), self._code_fence_format)
                 else:
                     self.setFormat(0, len(text), self._code_block_format)
-                    for pattern, fmt in self._code_sub_rules:
-                        for match in pattern.finditer(text):
-                            self.setFormat(match.start(), match.end() - match.start(), fmt)
+                    if not self._degraded:
+                        for pattern, fmt in self._code_sub_rules:
+                            for match in pattern.finditer(text):
+                                self.setFormat(match.start(),
+                                               match.end() - match.start(), fmt)
             return
         if is_fence:
             # opening fence (``` or ```lang)
@@ -360,7 +377,8 @@ class MarkdownHighlighter(QSyntaxHighlighter):
                 else:
                     self._apply(start, length, format)
 
-        self._conceal_markers(text)
+        if not self._degraded:
+            self._conceal_markers(text)
 
     def _conceal_markers(self, text):
         """Hide the emphasis markers themselves (Obsidian-style preview).

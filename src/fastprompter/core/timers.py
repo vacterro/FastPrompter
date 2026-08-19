@@ -13,16 +13,39 @@ Colour has two modes:
 
 from __future__ import annotations
 
+import calendar
 import datetime
+import random
 import uuid
 
 from fastprompter.theme.themes import blend_hex
+
+# One shared generator for the whole app: never spin up a fresh Random() per
+# fire, and let tests inject a seeded one for determinism.
+_RNG = random.Random()
+
+
+def _minute_of_day(when: datetime.datetime) -> int:
+    return when.hour * 60 + when.minute
 
 REPEAT_NONE = "once"
 REPEAT_DAILY = "daily"
 REPEAT_WEEKLY = "weekly"
 REPEAT_INTERVAL = "interval"
-REPEAT_CHOICES = (REPEAT_NONE, REPEAT_INTERVAL, REPEAT_DAILY, REPEAT_WEEKLY)
+REPEAT_MONTHLY = "monthly"
+REPEAT_YEARLY = "yearly"
+REPEAT_CHOICES = (REPEAT_NONE, REPEAT_INTERVAL, REPEAT_DAILY, REPEAT_WEEKLY,
+                  REPEAT_MONTHLY, REPEAT_YEARLY)
+
+KIND_ALARM = "alarm"
+KIND_CALENDAR = "calendar"
+KIND_CHOICES = (KIND_ALARM, KIND_CALENDAR)
+
+# Sound policy: a timer plays ONE fixed sound, or picks from a random pool.
+SOUND_MODE_SINGLE = "single"
+SOUND_MODE_POOL = "pool"
+SOUND_MODE_CHOICES = (SOUND_MODE_SINGLE, SOUND_MODE_POOL)
+MAX_TIMER_SOUND_RULES = 10
 
 # The case this was built for: an agent platform hands out a fresh quota
 # every N hours from the moment the window opened, so the anchor matters as
@@ -59,17 +82,124 @@ def temperature_color(remaining_seconds: float) -> str:
     return stops[-1][1]
 
 
+def _heal_anchor_date(repeat_anchor, target):
+    """Return an ISO date string for ``repeat_anchor``.
+
+    - explicit valid ISO date -> kept
+    - missing / malformed -> derived from ``target.date()``
+
+    Must never raise: malformed data heals to a legacy-safe anchor.
+    """
+    if isinstance(repeat_anchor, str):
+        try:
+            datetime.date.fromisoformat(repeat_anchor)
+            return repeat_anchor
+        except ValueError:
+            pass
+    return target.date().isoformat()
+
+
+def _heal_sound_rules(raw):
+    """Coerce stored sound rules into a safe list.
+
+    - missing / non-list -> empty pool
+    - each entry is a dict with the documented schema
+    - over the cap -> truncated
+    - malformed entries are dropped (never fatal)
+    """
+    if not isinstance(raw, list):
+        return []
+    out = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        sound = entry.get("sound")
+        if not isinstance(sound, str) or not sound:
+            continue
+        enabled = (entry.get("enabled", True) is not False)
+        all_day = bool(entry.get("all_day", True))
+        start = entry.get("start_minute", 0)
+        end = entry.get("end_minute", 0)
+        try:
+            start = max(0, min(1439, int(start)))
+            end = max(0, min(1439, int(end)))
+        except (TypeError, ValueError):
+            start, end = 0, 0
+        vol = entry.get("volume", None)
+        if vol is not None:
+            try:
+                vol = max(0, min(10, int(vol)))
+            except (TypeError, ValueError):
+                vol = None
+        out.append({
+            "sound": sound,
+            "enabled": enabled,
+            "all_day": all_day,
+            "start_minute": start,
+            "end_minute": end,
+            "volume": vol,
+        })
+        if len(out) >= MAX_TIMER_SOUND_RULES:
+            break
+    return out
+
+
+def _anchor_date(timer) -> datetime.date:
+    """The recurrence anchor as a date, falling back to the target date."""
+    if isinstance(timer.repeat_anchor, str):
+        try:
+            return datetime.date.fromisoformat(timer.repeat_anchor)
+        except ValueError:
+            return timer.target.date()
+    return timer.target.date()
+
+
+def _next_monthly_after(timer, after):
+    """Next monthly occurrence strictly after ``after`` (anchor-aware clamp)."""
+    anchor = _anchor_date(timer)
+    h, mi, s = timer.target.hour, timer.target.minute, timer.target.second
+    anchor_mi = anchor.year * 12 + (anchor.month - 1)
+    after_mi = after.year * 12 + (after.month - 1)
+    k = max(0, after_mi - anchor_mi)
+    while True:
+        mi_idx = anchor_mi + k
+        y, mo = divmod(mi_idx, 12)
+        day = min(anchor.day, calendar.monthrange(y, mo + 1)[1])
+        cand = datetime.datetime(y, mo + 1, day, h, mi, s)
+        if cand > after:
+            return cand
+        k += 1
+
+
+def _next_yearly_after(timer, after):
+    """Next yearly occurrence strictly after ``after`` (anchor-aware clamp)."""
+    anchor = _anchor_date(timer)
+    h, mi, s = timer.target.hour, timer.target.minute, timer.target.second
+    for k in range(0, 4000):
+        y = anchor.year + k
+        day = min(anchor.day, calendar.monthrange(y, anchor.month)[1])
+        cand = datetime.datetime(y, anchor.month, day, h, mi, s)
+        if cand > after:
+            return cand
+    return after + datetime.timedelta(days=366)
+
+
 class Timer:
     """One countdown. `target` is always an absolute local datetime."""
 
     __slots__ = ("id", "name", "description", "target", "repeat", "sound",
                  "volume", "color_mode", "color", "enabled", "fired",
-                 "interval_minutes")
+                 "interval_minutes", "kind", "show_notification",
+                 "show_in_top_bar", "repeat_anchor", "sound_mode",
+                 "sound_rules")
 
     def __init__(self, name, target, repeat=REPEAT_NONE, sound="tick",
                  volume=5, color_mode=COLOR_TEMPERATURE, color=DEFAULT_COLOR,
                  enabled=True, id=None, fired=False, description="",
-                 interval_minutes=DEFAULT_INTERVAL_MINUTES):
+                 interval_minutes=DEFAULT_INTERVAL_MINUTES, kind=KIND_ALARM,
+                 show_notification=True, show_in_top_bar=True,
+                 repeat_anchor=None, sound_mode=SOUND_MODE_SINGLE,
+                 sound_rules=None):
         self.id = id or uuid.uuid4().hex[:12]
         self.name = (name or "Timer").strip() or "Timer"
         self.description = (description or "").strip()
@@ -89,6 +219,15 @@ class Timer:
             self.interval_minutes = max(1, int(interval_minutes))
         except (TypeError, ValueError):
             self.interval_minutes = DEFAULT_INTERVAL_MINUTES
+        # ---- T-1004 behaviour flags (legacy-safe defaults) -------------
+        self.kind = kind if kind in KIND_CHOICES else KIND_ALARM
+        # only an explicit False disables; anything malformed heals to ON
+        self.show_notification = (show_notification is not False)
+        self.show_in_top_bar = (show_in_top_bar is not False)
+        self.repeat_anchor = _heal_anchor_date(repeat_anchor, target)
+        # ---- T-1005 sound policy (legacy-safe: single + empty pool) ----
+        self.sound_mode = sound_mode if sound_mode in SOUND_MODE_CHOICES else SOUND_MODE_SINGLE
+        self.sound_rules = _heal_sound_rules(sound_rules)
 
     # ---- serialisation ------------------------------------------------
     def to_dict(self):
@@ -105,6 +244,12 @@ class Timer:
             "enabled": self.enabled,
             "fired": self.fired,
             "interval_minutes": self.interval_minutes,
+            "kind": self.kind,
+            "show_notification": self.show_notification,
+            "show_in_top_bar": self.show_in_top_bar,
+            "repeat_anchor": self.repeat_anchor,
+            "sound_mode": self.sound_mode,
+            "sound_rules": self.sound_rules,
         }
 
     @classmethod
@@ -117,6 +262,16 @@ class Timer:
             target = datetime.datetime.fromisoformat(d["target"])
         except (KeyError, TypeError, ValueError):
             return None
+        kind = d.get("kind", KIND_ALARM)
+        if kind not in KIND_CHOICES:
+            kind = KIND_ALARM
+        show_notification = (d.get("show_notification", True) is not False)
+        show_in_top_bar = (d.get("show_in_top_bar", True) is not False)
+        anchor = _heal_anchor_date(d.get("repeat_anchor"), target)
+        sound_mode = d.get("sound_mode", SOUND_MODE_SINGLE)
+        if sound_mode not in SOUND_MODE_CHOICES:
+            sound_mode = SOUND_MODE_SINGLE
+        sound_rules = _heal_sound_rules(d.get("sound_rules"))
         return cls(
             name=d.get("name", "Timer"),
             description=d.get("description", ""),
@@ -130,6 +285,12 @@ class Timer:
             id=d.get("id"),
             fired=d.get("fired", False),
             interval_minutes=d.get("interval_minutes", DEFAULT_INTERVAL_MINUTES),
+            kind=kind,
+            show_notification=show_notification,
+            show_in_top_bar=show_in_top_bar,
+            repeat_anchor=anchor,
+            sound_mode=sound_mode,
+            sound_rules=sound_rules,
         )
 
     # ---- state --------------------------------------------------------
@@ -198,11 +359,48 @@ class Timer:
             step = datetime.timedelta(days=1)
         elif self.repeat == REPEAT_WEEKLY:
             step = datetime.timedelta(weeks=1)
+        elif self.repeat == REPEAT_MONTHLY:
+            return self._advance_monthly(now)
+        elif self.repeat == REPEAT_YEARLY:
+            return self._advance_yearly(now)
         else:
             self.fired = True
             return False
         while self.target <= now:
             self.target += step
+        self.fired = False
+        return True
+
+    def _advance_monthly(self, now):
+        """Roll a monthly timer to its next occurrence past ``now``.
+
+        The anchor day is preserved and clamped per month (31 Jan -> 28 Feb ->
+        31 Mar), so we never derive March from the clamped February target.
+        Like the plain repeat kinds, a target already in the future is a
+        no-op: advance() must never skip the next occurrence.
+        """
+        if self.target > now:
+            self.fired = False
+            return True
+        nxt = _next_monthly_after(self, self.target)
+        while nxt <= now:
+            nxt = _next_monthly_after(self, nxt)
+        self.target = nxt
+        self.fired = False
+        return True
+
+    def _advance_yearly(self, now):
+        """Roll a yearly timer to its next occurrence past ``now``.
+
+        Future target is a no-op, matching the daily/weekly/interval kinds.
+        """
+        if self.target > now:
+            self.fired = False
+            return True
+        nxt = _next_yearly_after(self, self.target)
+        while nxt <= now:
+            nxt = _next_yearly_after(self, nxt)
+        self.target = nxt
         self.fired = False
         return True
 
@@ -275,10 +473,17 @@ def save_timers(timers):
     return [t.to_dict() for t in timers]
 
 
-def next_due(timers, now=None):
-    """The soonest enabled, unfired timer — the one worth showing."""
+def next_due(timers, now=None, *, topbar_only=False):
+    """The soonest enabled, unfired timer — the one worth showing.
+
+    With ``topbar_only=True`` timers whose ``show_in_top_bar`` is False are
+    ignored: a hidden timer keeps firing, but the top bar shows the nearest
+    visible one.
+    """
     now = now or datetime.datetime.now()
     live = [t for t in timers if t.enabled and not t.fired]
+    if topbar_only:
+        live = [t for t in live if t.show_in_top_bar]
     if not live:
         return None
     return min(live, key=lambda t: t.target)
@@ -293,3 +498,114 @@ def collect_due(timers, now=None):
             fired.append(t)
             t.advance(now)
     return fired
+
+
+# ----------------------------------------------------- calendar query helpers
+
+def occurs_on_date(timer, date):
+    """Does ``timer`` recur on ``date``? Pure: never mutates the timer.
+
+    Recurrence basis for daily/weekly/monthly/yearly is anchored at the
+    timer's creation date, so occurrences never appear before it.
+    """
+    if not isinstance(date, datetime.date):
+        return False
+    target_date = timer.target.date()
+    if date < target_date:
+        return False
+    if timer.repeat == REPEAT_NONE:
+        return date == target_date
+    if timer.repeat == REPEAT_DAILY:
+        return True
+    if timer.repeat == REPEAT_WEEKLY:
+        return (date - target_date).days % 7 == 0
+    if timer.repeat == REPEAT_MONTHLY:
+        anchor = _anchor_date(timer)
+        day = min(anchor.day, calendar.monthrange(date.year, date.month)[1])
+        return date.day == day
+    if timer.repeat == REPEAT_YEARLY:
+        anchor = _anchor_date(timer)
+        day = min(anchor.day, calendar.monthrange(date.year, anchor.month)[1])
+        return date.month == anchor.month and date.day == day
+    return False
+
+
+def occurrences_in_month(timer, year, month):
+    """All dates in ``(year, month)`` on which ``timer`` recurs.
+
+    Pure and bounded: a visible month has at most 31 date markers, so the
+    loop is inherently small and never runs unbounded.
+    """
+    if not (isinstance(year, int) and isinstance(month, int)):
+        return []
+    if not (1 <= month <= 12):
+        return []
+    last = calendar.monthrange(year, month)[1]
+    out = []
+    for d in range(1, last + 1):
+        date = datetime.date(year, month, d)
+        if occurs_on_date(timer, date):
+            out.append(date)
+    return out
+
+
+# --------------------------------------------------------- T-1005 sound policy
+
+def _rule_matches_window(rule, minute):
+    """Does a pool rule's time window include ``minute`` (minute-of-day)?"""
+    if rule.get("all_day"):
+        return True
+    start = rule.get("start_minute", 0)
+    end = rule.get("end_minute", 0)
+    # start == end with all_day=False is an invalid zero-length window; the UI
+    # refuses to save one, but if one slipped through it matches nothing rather
+    # than collapsing to "always on".
+    if start == end:
+        return False
+    if start < end:
+        return start <= minute < end          # normal window
+    return minute >= start or minute < end      # overnight window
+
+
+def eligible_sound_rules(timer, when):
+    """Pool rows that are enabled AND whose time window covers ``when``.
+
+    Pure: never mutates the timer. Two overlapping rows using the same sound
+    count as two candidates on purpose (the spec forbids silent dedupe).
+    """
+    if timer.sound_mode != SOUND_MODE_POOL:
+        return []
+    minute = _minute_of_day(when)
+    out = []
+    for rule in timer.sound_rules:
+        if not rule.get("enabled"):
+            continue
+        if _rule_matches_window(rule, minute):
+            out.append(rule)
+    return out
+
+
+def choose_timer_sound(timer, when, rng=None):
+    """Pick the sound to play at ``when``.
+
+    Returns ``(sound_ref, effective_volume)`` or ``None``.
+
+    * SINGLE: the timer's own ``sound`` / ``volume``.
+    * POOL:   a random eligible row's sound, with its explicit volume or the
+      timer's volume when the rule inherits.
+
+    In POOL mode, if no rule is eligible the timer is SILENT (returns None).
+    There is deliberately no fallback to ``timer.sound`` — time-specific silence
+    must be expressible.
+    """
+    rng = rng or _RNG
+    if timer.sound_mode == SOUND_MODE_SINGLE:
+        return (timer.sound, timer.volume)
+    eligible = eligible_sound_rules(timer, when)
+    if not eligible:
+        return None
+    rule = rng.choice(eligible)
+    volume = rule.get("volume")
+    if volume is None:
+        volume = timer.volume
+    return (rule.get("sound"), volume)

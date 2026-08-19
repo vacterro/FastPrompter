@@ -13725,18 +13725,17 @@ def test_a_timer_can_point_straight_at_a_file(win):
     from fastprompter.core.timers import Timer
 
     played = []
-    real_file, real_named = win.sound_manager.play_file, win.play_sound
-    win.sound_manager.play_file = lambda name, level=None: played.append(("file", name))
-    win.play_sound = lambda name: played.append(("event", name))
+    real = win.sound_manager.play_sound_ref
+    win.sound_manager.play_sound_ref = lambda ref, level: played.append((ref, level))
     try:
         t = Timer(name="p", target=datetime.datetime.now(), sound="file:alert_b.wav")
         win._play_timer_sound(t)
-        assert played == [("file", "alert_b.wav")], played
+        assert played == [("file:alert_b.wav", 5)], played
         played.clear()
         win._play_timer_sound(Timer(name="p", target=datetime.datetime.now(), sound="tick"))
-        assert played == [("event", "tick")], played
+        assert played == [("tick", 5)], played
     finally:
-        win.sound_manager.play_file, win.play_sound = real_file, real_named
+        win.sound_manager.play_sound_ref = real
 
 
 def test_hotkey_sound_is_on_by_default_now(win):

@@ -21,6 +21,7 @@ import fastprompter.core.state as state_mod
 from fastprompter.core.state import (
     CURRENT_SCHEMA_VERSION,
     FastPrompterState,
+    FatalRestoreError,
     RestoreError,
     _same_file,
     restore_database,
@@ -101,6 +102,89 @@ class TestValidateDatabase:
         conn.close()
         version, _ = validate_database(p)   # migration handles it on startup
         assert version == 0
+
+
+class TestSchemaInvariants:
+    """T-807: validation must reject malformed v0/v1 BEFORE they are published
+    as a restore target (or migrate at startup), and a canonical v1 must
+    enforce its PRIMARY KEY so repeated writes of one settings key collapse to
+    exactly one row.
+    """
+
+    def test_legacy_v0_missing_silo_columns_rejected(self, tmp_path):
+        p = str(tmp_path / "v0.db")
+        conn = sqlite3.connect(p)
+        conn.execute("CREATE TABLE presets (category TEXT, slot INTEGER, name TEXT, content TEXT, PRIMARY KEY (category, slot))")
+        conn.execute("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT)")
+        conn.execute("CREATE TABLE temp_presets (content TEXT)")  # missing slot
+        conn.commit()
+        conn.close()
+        with pytest.raises(RestoreError):
+            validate_database(p)
+
+    def test_legacy_v0_missing_archive_columns_rejected_if_present(self, tmp_path):
+        p = str(tmp_path / "v0.db")
+        conn = sqlite3.connect(p)
+        conn.execute("CREATE TABLE presets (category TEXT, slot INTEGER, name TEXT, content TEXT, PRIMARY KEY (category, slot))")
+        conn.execute("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT)")
+        conn.execute("CREATE TABLE temp_presets (slot INTEGER, content TEXT)")
+        # present but missing the migration-read `content` column
+        conn.execute("CREATE TABLE archive_temp_presets (slot INTEGER)")
+        conn.commit()
+        conn.close()
+        with pytest.raises(RestoreError):
+            validate_database(p)
+
+    def test_v1_missing_settings_pk_rejected(self, tmp_path):
+        p = str(tmp_path / "v1.db")
+        conn = sqlite3.connect(p)
+        conn.execute("CREATE TABLE presets (category TEXT, slot INTEGER, name TEXT, content TEXT, last_edited INTEGER, PRIMARY KEY (category, slot))")
+        conn.execute("CREATE TABLE settings (key TEXT, value TEXT)")  # no PK
+        conn.execute("CREATE TABLE temp_presets_v2 (category TEXT, slot INTEGER, content TEXT, PRIMARY KEY (category, slot))")
+        conn.execute("CREATE TABLE archive_temp_presets_v2 (category TEXT, slot INTEGER, content TEXT, PRIMARY KEY (category, slot))")
+        conn.execute("PRAGMA user_version = 1")
+        conn.commit()
+        conn.close()
+        with pytest.raises(RestoreError) as ei:
+            validate_database(p)
+        assert "PRIMARY KEY" in str(ei.value)
+
+    def test_v1_missing_presets_pk_rejected(self, tmp_path):
+        p = str(tmp_path / "v1.db")
+        conn = sqlite3.connect(p)
+        conn.execute("CREATE TABLE presets (category TEXT, slot INTEGER, name TEXT, content TEXT, last_edited INTEGER)")  # no PK
+        conn.execute("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT)")
+        conn.execute("CREATE TABLE temp_presets_v2 (category TEXT, slot INTEGER, content TEXT, PRIMARY KEY (category, slot))")
+        conn.execute("CREATE TABLE archive_temp_presets_v2 (category TEXT, slot INTEGER, content TEXT, PRIMARY KEY (category, slot))")
+        conn.execute("PRAGMA user_version = 1")
+        conn.commit()
+        conn.close()
+        with pytest.raises(RestoreError):
+            validate_database(p)
+
+    def test_canonical_v1_accepted_after_strengthening(self, tmp_path):
+        p = str(tmp_path / "ok.db")
+        _make_db(p, "marker")
+        version, _ = validate_database(p)
+        assert version == CURRENT_SCHEMA_VERSION
+
+    def test_repeated_settings_write_leaves_one_row(self, tmp_path):
+        # A properly-keyed v1 settings table must collapse repeated writes of
+        # the same logical key into exactly one row. The regression was a v1
+        # whose settings table lacked the PK, so INSERT OR REPLACE duplicated
+        # keys; validation now refuses such a file.
+        p = str(tmp_path / "ok.db")
+        _make_db(p, "marker")
+        conn = sqlite3.connect(p)
+        for _ in range(5):
+            conn.execute(
+                "INSERT OR REPLACE INTO settings (key, value) VALUES ('x', 'v')")
+        conn.commit()
+        n = conn.execute(
+            "SELECT COUNT(*) FROM settings WHERE key='x'").fetchone()[0]
+        conn.close()
+        assert n == 1
+
 
 
 class TestSameFile:
@@ -241,3 +325,71 @@ def _rows(path):
         return row[0] if row else None
     finally:
         conn.close()
+
+
+class TestRestoreSidecarRollback:
+    """T-808: the WAL/SHM quarantine + main swap must be transactional. An
+    ordinary swap failure restores every sidecar exactly (the live DB is
+    intact and the caller reopens it); a swap failure whose sidecar rollback
+    ALSO fails enters the fatal recovery path (live repaired from the safety
+    snapshot, never reopened in-process)."""
+
+    def _injure_wal(self, live):
+        with open(live + "-wal", "wb") as f:
+            f.write(b"wal-frames")
+
+    def test_ordinary_swap_failure_restores_all_sidecars(self, tmp_path,
+                                                         monkeypatch):
+        live = str(tmp_path / "live.db")
+        _make_db(live, "live data")
+        before = _bytes(live)
+        backup = str(tmp_path / "backup.db")
+        _make_db(backup, "other")
+        self._injure_wal(live)
+        real_replace = state_mod.os.replace
+
+        def fake_replace(src, dst):
+            # main swap (temp -> live) fails; everything else proceeds
+            if dst == live and src.endswith(".restoretmp"):
+                raise OSError("swap boom")
+            return real_replace(src, dst)
+
+        monkeypatch.setattr(state_mod.os, "replace", fake_replace)
+        with pytest.raises(RestoreError):
+            restore_database(backup, live)
+        # live main untouched; WAL restored exactly; nothing stranded
+        assert _bytes(live) == before
+        assert os.path.isfile(live + "-wal")
+        assert not os.path.exists(live + ".wal.quarantine")
+        # the live DB is still a valid v1 with its original content
+        assert validate_database(live)[0] == CURRENT_SCHEMA_VERSION
+        assert _rows(live) == "live data"
+
+    def test_fatal_swap_and_rollback_failure_recovers(self, tmp_path,
+                                                      monkeypatch):
+        live = str(tmp_path / "live.db")
+        _make_db(live, "live data")
+        backup = str(tmp_path / "backup.db")
+        _make_db(backup, "other")
+        self._injure_wal(live)
+        real_replace = state_mod.os.replace
+
+        def fake_replace(src, dst):
+            # main swap fails ...
+            if dst == live and src.endswith(".restoretmp"):
+                raise OSError("swap boom")
+            # ... AND the sidecar rollback (quarantine -> live) also fails
+            if src.endswith(".wal.quarantine") or src.endswith(".shm.quarantine"):
+                raise OSError("rollback boom")
+            return real_replace(src, dst)
+
+        monkeypatch.setattr(state_mod.os, "replace", fake_replace)
+        with pytest.raises(FatalRestoreError):
+            restore_database(backup, live)
+        # No stranded quarantined sidecars; the on-disk live DB was repaired
+        # from the safety snapshot, so it is a valid v1 carrying the ORIGINAL
+        # data — and the process must never reopen it (the caller's contract).
+        assert not os.path.exists(live + ".wal.quarantine")
+        assert not os.path.exists(live + ".shm.quarantine")
+        assert validate_database(live)[0] == CURRENT_SCHEMA_VERSION
+        assert _rows(live) == "live data"

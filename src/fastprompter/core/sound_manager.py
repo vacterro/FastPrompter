@@ -522,20 +522,88 @@ class SoundManager(QObject):
         if not file_name:
             return
         path = os.path.join(self._sounds_dir, file_name)
-        if not os.path.exists(path):
-            logger.warning("preview: missing sound file %s", path)
-            return
-        vol = _volume_level(self._data) if level is None else max(0, min(10, level))
+        self._emit_file(path, level)
+
+    def _emit_file(self, path: str, level: int | None) -> bool:
+        """Play a resolved sound-library file at an EXPLICIT volume level.
+
+        Returns True on a successful playback attempt, False on a missing file
+        or a playback failure. Never raises into the timer scheduler.
+        """
+        if not path or not os.path.exists(path):
+            return False
+        try:
+            vol = _volume_level(self._data) if level is None else max(0, min(10, int(level)))
+        except (TypeError, ValueError):
+            vol = _volume_level(self._data)
         if QSoundEffect is None:
             self._play_winsound(path, vol)
-            return
+            return True
         try:
-            player = self._players.setdefault("__preview__", QSoundEffect(self))
+            player = self._players.setdefault("__timer__", QSoundEffect(self))
             player.setVolume(vol / 10.0)
             player.setSource(QUrl.fromLocalFile(path))
             player.play()
+            return True
         except Exception:
-            logger.exception("Failed to preview sound")
+            logger.exception("Failed to play timer sound ref")
+            return False
+
+    @staticmethod
+    def _resolve_library_path(rel: str, sounds_dir: str) -> str | None:
+        """Resolve a ``file:`` timer ref to a sound-library path, or None.
+
+        A timer's stored JSON must never turn the sound library into an
+        arbitrary-file player: reject parent traversal (``../``), absolute
+        paths, drive-qualified paths and UNC escapes. Only ``.wav`` files
+        inside ``sounds_dir`` are accepted.
+        """
+        if not rel or not rel.lower().endswith(".wav"):
+            return None
+        cand = rel.replace("\\", "/")
+        parts = cand.split("/")
+        if any(p == ".." for p in parts):
+            return None
+        first = parts[0]
+        if first == "" or ":" in first or first.startswith("\\\\") or cand.startswith("//"):
+            return None
+        base = os.path.normpath(sounds_dir)
+        full = os.path.normpath(os.path.join(sounds_dir, rel))
+        if full != base and not full.startswith(base + os.sep):
+            return None
+        if not os.path.isfile(full):
+            return None
+        return full
+
+    def play_sound_ref(self, ref: str, level: int) -> bool:
+        """One canonical explicit playback path for timer sounds.
+
+        ``ref`` is either ``file:<rel>`` (a sound-library file, contained) or a
+        named SoundManager event (resolved through the current settings, at the
+        timer's explicit volume). Timer playback ignores the ``sound_ui`` toggle
+        — the timer's own sound policy owns audibility — and never mutates the
+        global sound settings.
+
+        Returns False (never raises) on a missing file, an invalid ref, or a
+        playback failure, so a vanished WAV cannot crash the scheduler.
+        """
+        if not isinstance(ref, str) or not ref:
+            return False
+        if ref.startswith("file:"):
+            path = self._resolve_library_path(ref[len("file:"):], self._sounds_dir)
+            if path is None:
+                return False
+            return self._emit_file(path, level)
+        file_name = get_sound_file_for_event(ref, self._data, self._sounds_dir)
+        if not file_name:
+            return False
+        # The named-event resolution must obey the SAME library containment
+        # rule as ``file:`` refs: a stored user mapping such as "../outside.wav"
+        # would otherwise turn the sound library into an arbitrary-file player.
+        path = self._resolve_library_path(file_name, self._sounds_dir)
+        if path is None:
+            return False
+        return self._emit_file(path, level)
 
     def play_click(self) -> None:
         """Convenience method for click sounds."""
