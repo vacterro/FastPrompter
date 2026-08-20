@@ -42,13 +42,13 @@ def main():
 
     en_py_path = ensure_inside_root(os.path.join(i18n_dir, "en.py"))
     with open(en_py_path, 'w', encoding='utf-8') as f:
-        f.write('"""English source keys - master list of all translatable strings."""\\n\\n')
-        f.write('from __future__ import annotations\\n\\n')
-        f.write('TRANSLATIONS: dict[str, str] = {\\n')
+        f.write('"""English source keys - master list of all translatable strings."""\n\n')
+        f.write('from __future__ import annotations\n\n')
+        f.write('TRANSLATIONS: dict[str, str] = {\n')
         for k in sorted(master_keys.keys()):
             v = master_keys[k]
-            f.write(f'    {repr(k)}: {repr(v)},\\n')
-        f.write('}\\n')
+            f.write(f'    {repr(k)}: {repr(v)},\n')
+        f.write('}\n')
 
     print("Updated en.py")
 
@@ -74,13 +74,13 @@ def main():
         lang_name = meta.get('name', lang_code.upper())
         
         with open(py_path, 'w', encoding='utf-8') as f:
-            f.write(f'"""{lang_name} translations."""\\n\\n')
-            f.write('from __future__ import annotations\\n\\n')
-            f.write('TRANSLATIONS: dict[str, str] = {\\n')
+            f.write(f'"""{lang_name} translations."""\n\n')
+            f.write('from __future__ import annotations\n\n')
+            f.write('TRANSLATIONS: dict[str, str] = {\n')
             for k in sorted(trans.keys()):
                 v = trans[k]
-                f.write(f'    {repr(k)}: {repr(v)},\\n')
-            f.write('}\\n')
+                f.write(f'    {repr(k)}: {repr(v)},\n')
+            f.write('}\n')
 
     print(f"Generated {len(all_builtin_codes)} language .py modules in i18n package.")
 
@@ -88,8 +88,8 @@ def main():
     with open(container_py_path, encoding='utf-8') as f:
         container_code = f.read()
 
-    formatted_langs = ",\\n    ".join([f'"{code}"' for code in sorted(all_builtin_codes)])
-    new_builtin_langs = f"_BUILTIN_LANGS: Final[list[str]] = [\\n    {formatted_langs},\\n]"
+    formatted_langs = ",\n    ".join([f'"{code}"' for code in sorted(all_builtin_codes)])
+    new_builtin_langs = f"_BUILTIN_LANGS: Final[list[str]] = [\n    {formatted_langs},\n]"
 
     container_code = re.sub(
         r'_BUILTIN_LANGS: Final\\[list\\[str\\]\\] = \\[.*?\\]',
@@ -125,8 +125,8 @@ def main():
                 
             native_names_dict[code_upper] = display
 
-    formatted_names = ",\\n    ".join([f'{repr(k)}: {repr(v)}' for k, v in sorted(native_names_dict.items())])
-    new_native_names = f"NATIVE_NAMES: dict[str, str] = {{\\n    {formatted_names},\\n}}"
+    formatted_names = ",\n    ".join([f'{repr(k)}: {repr(v)}' for k, v in sorted(native_names_dict.items())])
+    new_native_names = f"NATIVE_NAMES: dict[str, str] = {{\n    {formatted_names},\n}}"
 
     init_code = re.sub(
         r'NATIVE_NAMES: dict\\[str, str\\] = \\{.*?\\}',
@@ -139,7 +139,8 @@ def main():
         f.write(init_code)
 
     print("Updated __init__.py with NATIVE_NAMES.")
-    print("\\n=== INJECTION PREPARATION COMPLETE ===")
+    print("\n=== INJECTION PREPARATION COMPLETE ===")
 
 if __name__ == '__main__':
     main()
+

@@ -5,7 +5,7 @@
     "name_native": "«Дед»",
     "flag": "👴"
   },
-  "coverage_pct": 100.0,
+  "coverage_pct": 74.8,
   "translations": {
     " h": "Эх, час",
     " min": "Эх, мин",
@@ -1089,6 +1089,15 @@
     "Play a random sound from a pool of rules, each with its own\ntime window and volume. Off: the single sound above is used.": "Play a random sound from a pool of rules, each with its own\ntime window and volume. Off: the single sound above is used.",
     "Restore aborted — the watcher was still busy; try again once it settles.": "Restore aborted — the watcher was still busy; try again once it settles.",
     "Restore failed and the live database could not be left consistent. It has been repaired from the automatic safety snapshot on disk — restart FastPrompter to reload it.": "Restore failed and the live database could not be left consistent. It has been repaired from the automatic safety snapshot on disk — restart FastPrompter to reload it.",
-    "{n} file(s) already exist in the export directory. Overwrite them?": "{n} file(s) already exist in the export directory. Overwrite them?"
+    "{n} file(s) already exist in the export directory. Overwrite them?": "{n} file(s) already exist in the export directory. Overwrite them?",
+    "00:00 to 00:00 means All Day": "Дед, с 00:00 до 00:00 это Весь День, запомни!",
+    "Ctrl+drag to move this gap. Double-click to rename.": "Зажми Ctrl и тащи чтоб двинуть. Кликай дважды чтоб обозвать.",
+    "Favorite this sound": "В избранное эту пиликалку",
+    "Gap Name": "Как обозвать дыру",
+    "Name for this group:": "Как обзовем эту кучу:",
+    "Security Warning": "Алярма! Безопасность!",
+    "Backup failed validation; the previous backup is unchanged:\n{}": "Backup failed validation; the previous backup is unchanged:\n{}",
+    "Export would overwrite itself at:\n{}": "Export would overwrite itself at:\n{}",
+    "This link points to a file on your computer:\n\n{}\n\nOpening it may run a program. Are you sure you want to open it?": "This link points to a file on your computer:\n\n{}\n\nOpening it may run a program. Are you sure you want to open it?"
   }
 }

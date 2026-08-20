@@ -1089,6 +1089,15 @@
     "Play a random sound from a pool of rules, each with its own\ntime window and volume. Off: the single sound above is used.": "Play a random sound from a pool of rules, each with its own\ntime window and volume. Off: the single sound above is used.",
     "Restore aborted — the watcher was still busy; try again once it settles.": "Restore aborted — the watcher was still busy; try again once it settles.",
     "Restore failed and the live database could not be left consistent. It has been repaired from the automatic safety snapshot on disk — restart FastPrompter to reload it.": "Restore failed and the live database could not be left consistent. It has been repaired from the automatic safety snapshot on disk — restart FastPrompter to reload it.",
-    "{n} file(s) already exist in the export directory. Overwrite them?": "{n} file(s) already exist in the export directory. Overwrite them?"
+    "{n} file(s) already exist in the export directory. Overwrite them?": "{n} file(s) already exist in the export directory. Overwrite them?",
+    "00:00 to 00:00 means All Day": "00:00 to 00:00 means All Day",
+    "Ctrl+drag to move this gap. Double-click to rename.": "Ctrl+drag to move this gap. Double-click to rename.",
+    "Favorite this sound": "Favorite this sound",
+    "Gap Name": "Gap Name",
+    "Name for this group:": "Name for this group:",
+    "Security Warning": "Security Warning",
+    "Backup failed validation; the previous backup is unchanged:\n{}": "Backup failed validation; the previous backup is unchanged:\n{}",
+    "Export would overwrite itself at:\n{}": "Export would overwrite itself at:\n{}",
+    "This link points to a file on your computer:\n\n{}\n\nOpening it may run a program. Are you sure you want to open it?": "This link points to a file on your computer:\n\n{}\n\nOpening it may run a program. Are you sure you want to open it?"
   }
 }
