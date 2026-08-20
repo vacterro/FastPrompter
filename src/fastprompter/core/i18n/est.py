@@ -1086,4 +1086,9 @@ TRANSLATIONS: dict[str, str] = {
     '🦓 Zebra Stripes': '🦓 Seebratriibud',
     '🧹 Clear': '🧹 Tühjenda',
     '🪟 Normal Window': '🪟 Tavaline aken',
+    'Ctrl+drag to move this gap. Double-click to rename.': 'Liigutage Ctrl-klahv all, et nihutada seda vaheruumi. Topeltklõps — nimetage ümber.',
+    'Gap Name': 'Vaheruumi nimi',
+    'Name for this group:': 'Selle grupi nimi:',
+    'Backup failed validation; the previous backup is unchanged:\n{}': 'Varukoopia ei läbinud valideerimist; eelmine varukoopia on muutmata:\n{}',
+    'Export would overwrite itself at:\n{}': 'Eksport kattleks iseennast asukohas:\n{}',
 }

@@ -29,7 +29,7 @@ _JSON_SETTINGS = (
     "archive_silo_folders", "archive_silo_folders_all",
     "silo_project_paths", "silo_project_paths_all",
     "archive_project_paths", "archive_project_paths_all",
-    "silo_gaps", "silo_gaps_all",
+    "silo_gaps", "silo_gaps_all", "silo_gap_names", "silo_gap_names_all",
     "silo_view_state_all", "silo_type_all", "silo_session_all",
     "productivity_timer",
     # {event: {file, enabled, volume}} — a dict, so it MUST be here. Written
@@ -66,7 +66,7 @@ _PER_CATEGORY_STATE_KEYS = (
     "silo_collapsed_all", "silo_colors_all", "silo_folders_all",
     "archive_silo_folders_all", "silo_last_edited_all",
     "silo_project_paths_all", "archive_project_paths_all",
-    "watcher_queues_all", "silo_gaps_all",
+    "watcher_queues_all", "silo_gaps_all", "silo_gap_names_all",
     "silo_type_all", "silo_session_all", "silo_view_state_all",
 )
 
@@ -84,6 +84,7 @@ _PER_CATEGORY_ALIASES = (
     ("silo_collapsed", "silo_collapsed_all"),
     ("silo_colors", "silo_colors_all"),
     ("silo_gaps", "silo_gaps_all"),
+    ("silo_gap_names", "silo_gap_names_all"),
     ("silo_folders", "silo_folders_all"),
     ("archive_silo_folders", "archive_silo_folders_all"),
     ("silo_project_paths", "silo_project_paths_all"),
@@ -100,6 +101,7 @@ _ALIAS_EMPTY = {
     "silo_ticked": [],
     "silo_collapsed": [],
     "silo_gaps": [],
+    "silo_gap_names": {},
 }
 
 # ONE decode codec contract per structured persisted key (P1-15):
@@ -143,6 +145,8 @@ _STRUCTURED_CODECS = {
     "archive_project_paths_all": (dict, {}, False),
     "silo_gaps": (list, [], True),
     "silo_gaps_all": (dict, {}, True),
+    "silo_gap_names": (dict, {}, False),
+    "silo_gap_names_all": (dict, {}, False),
     "silo_view_state_all": (dict, {}, False),
     "silo_type_all": (dict, {}, False),
     "silo_session_all": (dict, {}, False),
@@ -161,6 +165,41 @@ _STRUCTURED_CODECS = {
 }
 
 
+# String-list settings whose MEMBERS must all be strings. Other list codecs
+# (timers, silo_gaps, custom_font_ids, watcher_skills_extra, window_presets)
+# legitimately carry dicts/numbers, so this is deliberately key-specific — a
+# generic string filter would corrupt them.
+_STRING_LIST_KEYS = ("cats_order", "hidden_categories")
+
+# Integer slot-index list settings (silo layout stores). Each member must be a
+# non-negative int slot index, exactly as the per-silo index remap contract
+# (main._SILO_INDEX_STATE "int_list") expects. A dict/string member here would
+# make ``set(gaps)`` in prune_silo_gaps raise, so drop anything that is not a
+# valid non-negative int.
+_INT_LIST_KEYS = ("silo_gaps", "pinned_silos", "silo_ticked", "silo_collapsed")
+
+
+def _normalize_structured_list(key, parsed, default):
+    """Keep only members that match the setting's established element contract.
+
+    * ``cats_order`` / ``hidden_categories``: keep string members; an empty
+      ``cats_order`` falls back to a deep copy of its canonical default so a
+      fully corrupt order never becomes empty/lost.
+    * ``silo_gaps`` / ``pinned_silos`` / ``silo_ticked`` / ``silo_collapsed``:
+      keep only valid non-negative integer slot indices.
+    * anything else: returned untouched (heterogeneous lists such as
+      ``window_presets`` / ``watcher_skills_extra`` keep their members).
+    """
+    if key in _STRING_LIST_KEYS:
+        members = [m for m in parsed if isinstance(m, str)]
+        if key == "cats_order" and not members:
+            return copy.deepcopy(default)
+        return members
+    if key in _INT_LIST_KEYS:
+        return [m for m in parsed if isinstance(m, int) and m >= 0]
+    return parsed
+
+
 def _decode_structured_setting(key, raw, expected, default, legacy_ast):
     """Decode one structured persisted row under its single codec contract.
 
@@ -170,25 +209,35 @@ def _decode_structured_setting(key, raw, expected, default, legacy_ast):
     ``legacy_ast`` keys additionally try ast.literal_eval for rows written
     with str(dict)/str(list) by older builds. A fully undecodable row also
     adopts the default; the row is never promoted to a wrong type.
+
+    After a successful top-level decode, key-specific MEMBER normalization
+    runs (string-list settings drop non-string members, see
+    ``_normalize_structured_list``): corrupt/partially-migrated/manually
+    edited data is repaired to a usable value instead of crossing the
+    recovery boundary as trusted-but-malformed state.
     """
     import ast
+    parsed = None
     try:
         parsed = json.loads(raw)
-        if isinstance(parsed, expected):
-            return parsed
+    except Exception:
+        parsed = None
+    if parsed is None and legacy_ast:
+        try:
+            val = ast.literal_eval(raw)
+            if isinstance(val, expected):
+                return _normalize_structured_list(key, val, default)
+        except Exception:
+            pass
+    elif parsed is not None and isinstance(parsed, expected):
+        return _normalize_structured_list(key, parsed, default)
+    if parsed is not None:
         logger.warning("structured setting %r is valid JSON of the wrong "
                        "top-level type (%s); adopting the correct default",
                        key, type(parsed).__name__)
-    except Exception as e:
-        if legacy_ast:
-            try:
-                val = ast.literal_eval(raw)
-                if isinstance(val, expected):
-                    return val
-            except Exception:
-                pass
-        logger.warning("failed to parse structured setting %r (%s); adopting "
-                       "the correct default", key, e)
+    else:
+        logger.warning("failed to parse structured setting %r; adopting "
+                       "the correct default", key)
     return copy.deepcopy(default)
 
 
@@ -761,6 +810,32 @@ def restore_database(source, destination):
     return int(version)
 
 
+class _StartupBackupContext:
+    """The safety-snapshot gate bound to ONE active database/profile.
+
+    Owned by the active database generation, not by the ``FastPrompterState``
+    object (T-818 follow-up, CORE-002). Each profile switch creates a fresh
+    context so every profile gets its own ``ready`` Event and failure flag, and
+    a late background worker can only release/flag the exact context it was
+    spawned for — never another (newer) profile's gate.
+
+    Attributes:
+        db_path: the database the snapshot is being taken of.
+        gen:     a monotonically increasing generation id, set once at creation.
+        ready:   Event released when the snapshot job finishes (success or not).
+        failed:  True when the snapshot itself raised; the live DB is still
+                 valid, so the gate still releases and saving proceeds.
+    """
+
+    __slots__ = ("db_path", "gen", "ready", "failed")
+
+    def __init__(self, db_path, gen):
+        self.db_path = db_path
+        self.gen = gen
+        self.ready = threading.Event()
+        self.failed = False
+
+
 class FastPrompterState:
     def __init__(self, profile_id=1):
         self.profile_id = profile_id
@@ -770,22 +845,40 @@ class FastPrompterState:
         self.conn = None
         self._db_dirty = False
         self._last_saved_presets = set()
-        self._last_saved_temp = {}
-        self._last_saved_arc = {}
+        self._last_saved_temp = set()
+        self._last_saved_arc = set()
         self._last_saved_settings = {}
+        
+        self._dirty_settings = 1
+        self._dirty_snippets = 1
+        self._dirty_temp = 1
+        self._dirty_arc = 1
+        
+        self._saved_settings_gen = 0
+        self._saved_snippets_gen = 0
+        self._saved_temp_gen = 0
+        self._saved_arc_gen = 0
         # Throttle for the SQLite .bak safety copy, PER PROFILE: profiles have
         # different DB/.bak files, and one profile's recent backup must never
         # suppress another profile's (the old single scalar did exactly that
         # when switching profiles back-to-back).
         self._last_backup_time_by_profile = {}
-        # T-818: for an already-current-schema DB the validated startup safety
-        # snapshot is produced on ONE tracked background job; `None` means no
-        # gate is in force (small DB, old schema, or already launched). The
-        # first mutating save waits on this event so it can never outrun the
-        # snapshot. The flag records a background failure truthfully.
-        self._startup_backup_ready = None
-        self._startup_backup_failed = False
+        # CORE-002: the startup safety-snapshot gate is bound to the ACTIVE
+        # database generation, not to this state object. `None` means no gate is
+        # in force (small DB, old schema, or already launched). The first
+        # mutating save waits on the current context's Event.
+        self._startup_backup_ctx = None
+        self._startup_backup_gen = 0
         self.init_db()
+
+    @property
+    def _startup_backup_ready(self):
+        """Compatibility view: the current context's ``ready`` Event, or None."""
+        return self._startup_backup_ctx.ready if self._startup_backup_ctx else None
+
+    @property
+    def _startup_backup_failed(self):
+        return self._startup_backup_ctx.failed if self._startup_backup_ctx else False
 
     def reset_data(self):
         self.data = {
@@ -796,7 +889,7 @@ class FastPrompterState:
             "last_text": "", "last_tab_idx": 0, "last_geometry": "", "active_temp_slot": 0,
             "font_size": 11, "preview_mode": "None", "paste_mode": "Plain", "tray_visible": "True", "global_hotkey": "Alt+X",
             "pie_menu_hotkey": "Shift+Alt+X", "lock_window_hotkey": "Alt+E", "always_on_top_hotkey": "Alt+S",
-            "close_on_focus_loss": "True", "ctrl_c_closes": "True", "hk_italic": "Ctrl+I", "hk_underline": "Ctrl+U", "theme": "Default", "ui_scale": "0.5", "button_scale": "1.0", "window_locked": "False", "silo_last_edited": {}, "pinned_silos": [], "silo_last_edited_all": {}, "pinned_silos_all": {}, "silo_ticked": [], "silo_ticked_all": {}, "silo_children": {}, "silo_children_all": {}, "silo_collapsed": [], "silo_collapsed_all": {}, "silo_gaps": [], "silo_gaps_all": {}, "hidden_categories": [], "silo_colors": {}, "silo_colors_all": {}, "silo_folders": {}, "silo_folders_all": {}, "archive_silo_folders": {}, "archive_silo_folders_all": {}, "silo_project_paths": {}, "silo_project_paths_all": {}, "silo_type_all": {}, "silo_session_all": {}, "archive_project_paths": {}, "archive_project_paths_all": {}, "folder_trash_log": [],
+            "close_on_focus_loss": "True", "ctrl_c_closes": "True", "hk_italic": "Ctrl+I", "hk_underline": "Ctrl+U", "theme": "Default", "ui_scale": "0.5", "button_scale": "1.0", "window_locked": "False", "silo_last_edited": {}, "pinned_silos": [], "silo_last_edited_all": {}, "pinned_silos_all": {}, "silo_ticked": [], "silo_ticked_all": {}, "silo_children": {}, "silo_children_all": {}, "silo_collapsed": [], "silo_collapsed_all": {}, "silo_gaps": [], "silo_gaps_all": {}, "silo_gap_names": {}, "silo_gap_names_all": {}, "hidden_categories": [], "silo_colors": {}, "silo_colors_all": {}, "silo_folders": {}, "silo_folders_all": {}, "archive_silo_folders": {}, "archive_silo_folders_all": {}, "silo_project_paths": {}, "silo_project_paths_all": {}, "silo_type_all": {}, "silo_session_all": {}, "archive_project_paths": {}, "archive_project_paths_all": {}, "folder_trash_log": [],
             "sidebar_right": "False", "sound_ui": "False", "sound_typewriter": "False", "sound_volume": "5", "portable_backup_enabled": "True", "language": "EN",
             "customize_toolbar": "False", "toolbar_order": "", "code_auto_gutter": "False",
             # {logical category: physical filesystem component} — stable
@@ -838,6 +931,10 @@ class FastPrompterState:
             old_db_path = self.db_path
             old_data = self.data
             old_dirty = self._db_dirty
+            # CORE-002: the startup-backup gate is per-profile; keep A's context
+            # so a failed B transition can restore A's gate and keep saving.
+            old_ctx = self._startup_backup_ctx
+            old_gen = self._startup_backup_gen
             # Tentatively point at B, but keep A's objects so we can restore.
             self.profile_id = new_profile_id
             self.db_path = get_db_path(new_profile_id)
@@ -858,6 +955,8 @@ class FastPrompterState:
                 self.db_path = old_db_path
                 self.data = old_data
                 self._db_dirty = old_dirty
+                self._startup_backup_ctx = old_ctx
+                self._startup_backup_gen = old_gen
                 raise
             # Success: only now retire A's connection.
             try:
@@ -892,18 +991,23 @@ class FastPrompterState:
             return False
 
     def _start_safety_snapshot_async(self, dest):
-        """T-818: produce the identical validated startup `.bak` snapshot on a
+        """T-818 + CORE-002: produce the validated startup `.bak` snapshot on a
         single tracked background job instead of the startup thread. The first
-        mutating save is gated on ``_startup_backup_ready`` (see
-        `_save_data_to_db_locked`), so a current-schema DB starts without a
-        full synchronous backup/integrity pass on the UI thread while its
-        safety copy is still guaranteed before any mutation."""
-        if getattr(self, "_startup_backup_ready", None) is not None:
-            return
+        mutating save is gated on the CURRENT context's Event (see
+        `_save_data_to_db_locked`), so a current-schema DB starts without a full
+        synchronous backup/integrity pass on the UI thread while its safety copy
+        is still guaranteed before any mutation.
+
+        Each call creates a FRESH context bound to the current database/path, so
+        every profile gets its own gate. The worker captures that context and
+        only ever releases/flags it — a stale worker from an earlier profile can
+        never publish into a newer profile's gate.
+        """
         import threading
 
-        self._startup_backup_ready = threading.Event()
-        self._startup_backup_failed = False
+        self._startup_backup_gen += 1
+        ctx = _StartupBackupContext(self.db_path, self._startup_backup_gen)
+        self._startup_backup_ctx = ctx
         src = self.db_path
 
         def run():
@@ -916,19 +1020,23 @@ class FastPrompterState:
                 finally:
                     c.close()
             except Exception:
-                self._startup_backup_failed = True
+                ctx.failed = True
                 # the live DB is still valid and already on the current schema;
                 # log degraded recovery and let the gate proceed
                 logger.exception("startup database backup (background) failed; "
                                  "the live database is unaffected")
             finally:
-                self._startup_backup_ready.set()
+                ctx.ready.set()
 
         threading.Thread(target=run, daemon=True,
                          name="fp-startup-backup").start()
 
     def init_db(self):
         try:
+            # CORE-002: each database generation owns its own startup-backup
+            # gate; clear any carried-over context so only THIS init_db's
+            # snapshot (if any) binds a gate for the now-active profile.
+            self._startup_backup_ctx = None
             backup_dest = self.db_path + ".bak"
             # T-818: a pre-connect safety copy is only mandatory BEFORE a
             # migration writes to a file whose schema we are about to change.
@@ -1067,8 +1175,27 @@ class FastPrompterState:
         self._last_saved_arc = {(cat, i, content) for cat, slots in self.data["archive_temp_presets_all"].items() for i, content in enumerate(slots) if content}
         self._last_saved_settings = _encode_settings(self.data)
 
-    def mark_dirty(self):
-        self._db_dirty = True
+    def mark_dirty(self, domain=None):
+        if domain == "settings":
+            self._dirty_settings = getattr(self, "_dirty_settings", 0) + 1
+        elif domain == "snippets":
+            self._dirty_snippets = getattr(self, "_dirty_snippets", 0) + 1
+        elif domain == "temp":
+            self._dirty_temp = getattr(self, "_dirty_temp", 0) + 1
+        elif domain == "arc":
+            self._dirty_arc = getattr(self, "_dirty_arc", 0) + 1
+        else:
+            self._db_dirty = True
+
+    @property
+    def has_pending_changes(self):
+        return (
+            self._db_dirty
+            or getattr(self, "_dirty_settings", 1) > getattr(self, "_saved_settings_gen", 0)
+            or getattr(self, "_dirty_snippets", 1) > getattr(self, "_saved_snippets_gen", 0)
+            or getattr(self, "_dirty_temp", 1) > getattr(self, "_saved_temp_gen", 0)
+            or getattr(self, "_dirty_arc", 1) > getattr(self, "_saved_arc_gen", 0)
+        )
 
     def _sanitize_cat_name(self, name: str) -> str:
         """One safe filesystem component for a category name.
@@ -1108,7 +1235,15 @@ class FastPrompterState:
 
     def _save_data_to_db_locked(self, current_text, ui_settings=None, force=False, sync=False):
         if not self.conn: return False
-        if not self._db_dirty and not force: return True
+
+        full_scan = self._db_dirty or force
+        scan_settings = full_scan or self._dirty_settings > self._saved_settings_gen or ui_settings
+        scan_snippets = full_scan or self._dirty_snippets > self._saved_snippets_gen
+        scan_temp = full_scan or self._dirty_temp > self._saved_temp_gen
+        scan_arc = full_scan or self._dirty_arc > self._saved_arc_gen
+
+        if not (scan_settings or scan_snippets or scan_temp or scan_arc):
+            return True
 
         # T-818: the first mutation of a current-schema DB must not outrun the
         # background startup safety snapshot. The snapshot job does not hold
@@ -1122,30 +1257,46 @@ class FastPrompterState:
 
         self.data["last_text"] = current_text
 
-        current_settings = _encode_settings(self.data)
-        settings_to_save = [(k, v) for k, v in current_settings.items() if k not in self._last_saved_settings or self._last_saved_settings[k] != v]
+        settings_to_save = []
+        if scan_settings:
+            current_settings = _encode_settings(self.data)
+            settings_to_save = [(k, v) for k, v in current_settings.items() if k not in self._last_saved_settings or self._last_saved_settings[k] != v]
 
-        current_presets = {(cat, i, item["name"], item["text"], item.get("last_edited", 0)) for cat, slots in self.data["categories"].items() for i, item in enumerate(slots) if item}
-        to_insert_presets = current_presets - self._last_saved_presets
-        old_preset_keys = {(tup[0], tup[1]) for tup in self._last_saved_presets}
-        new_preset_keys = {(tup[0], tup[1]) for tup in current_presets}
-        to_delete_presets = old_preset_keys - new_preset_keys
+        to_insert_presets = set()
+        to_delete_presets = set()
+        if scan_snippets:
+            current_presets = {(cat, i, item["name"], item["text"], item.get("last_edited", 0)) for cat, slots in self.data["categories"].items() for i, item in enumerate(slots) if item}
+            to_insert_presets = current_presets - self._last_saved_presets
+            old_preset_keys = {(tup[0], tup[1]) for tup in self._last_saved_presets}
+            new_preset_keys = {(tup[0], tup[1]) for tup in current_presets}
+            to_delete_presets = old_preset_keys - new_preset_keys
 
-        current_temp = {(cat, i, content) for cat, slots in self.data["temp_presets_all"].items() for i, content in enumerate(slots) if content}
-        old_temp_keys = {(tup[0], tup[1]) for tup in self._last_saved_temp}
-        new_temp_keys = {(tup[0], tup[1]) for tup in current_temp}
-        temp_to_delete = old_temp_keys - new_temp_keys
-        to_update_temp = current_temp - self._last_saved_temp
+        to_update_temp = set()
+        temp_to_delete = set()
+        if scan_temp:
+            current_temp = {(cat, i, content) for cat, slots in self.data["temp_presets_all"].items() for i, content in enumerate(slots) if content}
+            old_temp_keys = {(tup[0], tup[1]) for tup in self._last_saved_temp}
+            new_temp_keys = {(tup[0], tup[1]) for tup in current_temp}
+            temp_to_delete = old_temp_keys - new_temp_keys
+            to_update_temp = current_temp - self._last_saved_temp
 
-        current_arc = {(cat, i, content) for cat, slots in self.data["archive_temp_presets_all"].items() for i, content in enumerate(slots) if content}
-        old_arc_keys = {(tup[0], tup[1]) for tup in self._last_saved_arc}
-        new_arc_keys = {(tup[0], tup[1]) for tup in current_arc}
-        arc_to_delete = old_arc_keys - new_arc_keys
-        arc_to_update = current_arc - self._last_saved_arc
+        arc_to_update = set()
+        arc_to_delete = set()
+        if scan_arc:
+            current_arc = {(cat, i, content) for cat, slots in self.data["archive_temp_presets_all"].items() for i, content in enumerate(slots) if content}
+            old_arc_keys = {(tup[0], tup[1]) for tup in self._last_saved_arc}
+            new_arc_keys = {(tup[0], tup[1]) for tup in current_arc}
+            arc_to_delete = old_arc_keys - new_arc_keys
+            arc_to_update = current_arc - self._last_saved_arc
 
         changed = bool(settings_to_save or to_insert_presets or to_delete_presets
                        or to_update_temp or temp_to_delete or arc_to_update or arc_to_delete)
         if not changed:
+            if scan_settings: self._saved_settings_gen = self._dirty_settings
+            if scan_snippets: self._saved_snippets_gen = self._dirty_snippets
+            if scan_temp: self._saved_temp_gen = self._dirty_temp
+            if scan_arc: self._saved_arc_gen = self._dirty_arc
+            self._db_dirty = False
             return True
 
         # The transactional delta runs SYNCHRONOUSLY under the caller-held
@@ -1179,10 +1330,18 @@ class FastPrompterState:
                     cur.executemany('INSERT OR REPLACE INTO archive_temp_presets_v2 (category, slot, content) VALUES (?,?,?)', list(arc_to_update))
 
             # commit succeeded: the in-memory delta is now the DB truth
-            self._last_saved_settings = current_settings
-            self._last_saved_presets = current_presets
-            self._last_saved_temp = current_temp
-            self._last_saved_arc = current_arc
+            if scan_settings:
+                self._last_saved_settings = current_settings
+                self._saved_settings_gen = self._dirty_settings
+            if scan_snippets:
+                self._last_saved_presets = current_presets
+                self._saved_snippets_gen = self._dirty_snippets
+            if scan_temp:
+                self._last_saved_temp = current_temp
+                self._saved_temp_gen = self._dirty_temp
+            if scan_arc:
+                self._last_saved_arc = current_arc
+                self._saved_arc_gen = self._dirty_arc
             self._db_dirty = False
 
             import time

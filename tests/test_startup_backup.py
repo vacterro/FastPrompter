@@ -140,3 +140,132 @@ def test_migration_takes_one_synchronous_backup_before_schema_write(
     state_mod.FastPrompterState(profile_id=1)
     assert order == ["backup", "migrate"], \
         "exactly one validated backup before the migration"
+
+
+# ----------------------------------------------------------- CORE-002: per-profile
+def _make_large_current_db(tmp_path, name):
+    """A current-schema DB that exceeds the snapshot-size threshold."""
+    db = tmp_path / name
+    _make_db(str(db), user_version=1)
+    # pad so os.path.getsize reports > 24576 and the background path triggers
+    with open(str(db) + ".pad", "wb") as f:
+        f.write(b"\0" * 30000)
+    return str(db)
+
+
+def test_each_profile_gets_its_own_startup_backup_gate(
+        tmp_path, monkeypatch):
+    db_a = _make_large_current_db(tmp_path, "a.db")
+    db_b = _make_large_current_db(tmp_path, "b.db")
+
+    paths = {1: db_a, 2: db_b}
+    monkeypatch.setattr(state_mod, "get_db_path",
+                        lambda profile_id=1: paths[profile_id])
+
+    real_getsize = os.path.getsize
+
+    def gs(p):
+        if str(p) in (db_a, db_b):
+            return 1_000_000
+        return real_getsize(p)
+
+    monkeypatch.setattr(os.path, "getsize", gs)
+
+    state = state_mod.FastPrompterState(profile_id=1)
+    a_ctx = state._startup_backup_ctx
+    assert a_ctx is not None, "profile A must get a startup-backup gate"
+    # wait for A's snapshot to actually land
+    deadline = time.monotonic() + 5
+    while not os.path.exists(db_a + ".bak") and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert os.path.exists(db_a + ".bak")
+    assert state._startup_backup_ready.is_set()
+
+    # switch to B (also large/current) — must build a DISTINCT gate
+    state.switch_profile(2, save_current=False)
+    b_ctx = state._startup_backup_ctx
+    assert b_ctx is not None
+    assert b_ctx is not a_ctx, "profile B must not reuse A's gate"
+    assert b_ctx.gen != a_ctx.gen
+
+    # B's snapshot must complete before B's first mutating save can proceed.
+    # Force the save to run inline (no background gap): the gate must already be
+    # set by the time this returns.
+    state.save_data_to_db("b text", force=True)
+    assert os.path.exists(db_b + ".bak"), \
+        "profile B must receive its own .bak before mutations proceed"
+
+
+def test_stale_old_profile_worker_cannot_release_new_profile_gate(
+        tmp_path, monkeypatch):
+    db_a = _make_large_current_db(tmp_path, "a.db")
+    db_b = _make_large_current_db(tmp_path, "b.db")
+    paths = {1: db_a, 2: db_b}
+    monkeypatch.setattr(state_mod, "get_db_path",
+                        lambda profile_id=1: paths[profile_id])
+    real_getsize = os.path.getsize
+
+    def gs(p):
+        if str(p) in (db_a, db_b):
+            return 1_000_000
+        return real_getsize(p)
+
+    monkeypatch.setattr(os.path, "getsize", gs)
+
+    state = state_mod.FastPrompterState(profile_id=1)
+    a_ctx = state._startup_backup_ctx
+    deadline = time.monotonic() + 5
+    while not a_ctx.ready.is_set() and time.monotonic() < deadline:
+        time.sleep(0.01)
+
+    # Simulate A's background worker finishing AFTER the profile transition:
+    # it can only release its own captured context.
+    state.switch_profile(2, save_current=False)
+    b_ctx = state._startup_backup_ctx
+    assert b_ctx is not a_ctx
+    a_ctx.ready.set()           # stale A worker "finishes"
+    assert not b_ctx.ready.is_set(), \
+        "a stale old-profile worker must not release the new profile's gate"
+
+
+def test_failed_profile_init_restores_old_backup_context(
+        tmp_path, monkeypatch):
+    db_a = _make_large_current_db(tmp_path, "a.db")
+    db_b = _make_large_current_db(tmp_path, "b.db")
+    paths = {1: db_a, 2: db_b}
+    monkeypatch.setattr(state_mod, "get_db_path",
+                        lambda profile_id=1: paths[profile_id])
+    real_getsize = os.path.getsize
+
+    def gs(p):
+        if str(p) in (db_a, db_b):
+            return 1_000_000
+        return real_getsize(p)
+
+    monkeypatch.setattr(os.path, "getsize", gs)
+
+    state = state_mod.FastPrompterState(profile_id=1)
+    a_ctx = state._startup_backup_ctx
+    deadline = time.monotonic() + 5
+    while not a_ctx.ready.is_set() and time.monotonic() < deadline:
+        time.sleep(0.01)
+
+    # Make B's initialization fail AFTER the gate reset.
+    real_init = state_mod.FastPrompterState.init_db
+
+    def broken_init(self):
+        if self.profile_id == 2:
+            raise RuntimeError("simulated B load failure")
+        return real_init(self)
+
+    monkeypatch.setattr(state_mod.FastPrompterState, "init_db", broken_init)
+
+    import pytest
+    with pytest.raises(RuntimeError):
+        state.switch_profile(2, save_current=False)
+
+    # A's context and generation are restored; A is still usable.
+    assert state._startup_backup_ctx is a_ctx, \
+        "failed B init must restore A's backup context"
+    assert state.profile_id == 1
+    assert state.save_data_to_db("a text", force=True) is True

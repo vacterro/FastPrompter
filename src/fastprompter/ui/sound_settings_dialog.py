@@ -338,13 +338,39 @@ class SoundSettingsDialog(QDialog):
             on.toggled.connect(lambda checked, e=event: self._set_enabled(e, checked))
             self.table.setCellWidget(row, _COL_ON, on)
 
+            file_widget = QWidget()
+            file_layout = QHBoxLayout(file_widget)
+            file_layout.setContentsMargins(0, 0, 0, 0)
+            file_layout.setSpacing(4)
+            
             combo = QComboBox()
             combo.setMaxVisibleItems(20)
-            for name in self._available:
-                combo.addItem(name, name)
+            self._populate_combo(combo)
             combo.currentIndexChanged.connect(
                 lambda _idx, e=event, c=combo: self._set_file(e, c))
-            self.table.setCellWidget(row, _COL_FILE, combo)
+                
+            fav_btn = QPushButton("☆")
+            fav_btn.setCheckable(True)
+            fav_btn.setFixedSize(24, 24)
+            fav_btn.setToolTip(tr("Favorite this sound", self.lang))
+            fav_btn.toggled.connect(lambda checked, c=combo: self._toggle_favorite(checked, c))
+            def _update_btn(idx, c=combo, btn=fav_btn):
+                is_fav = c.currentData() in self._data.get("sound_favorites", [])
+                btn.blockSignals(True)
+                btn.setChecked(is_fav)
+                btn.setText("★" if is_fav else "☆")
+                btn.blockSignals(False)
+            combo.currentIndexChanged.connect(_update_btn)
+            
+            file_layout.addWidget(combo, 1)
+            file_layout.addWidget(fav_btn, 0)
+            self.table.setCellWidget(row, _COL_FILE, file_widget)
+            
+            if not hasattr(self, "_combos"):
+                self._combos = {}
+                self._fav_btns = {}
+            self._combos[event] = combo
+            self._fav_btns[event] = fav_btn
 
             vol = QSlider(Qt.Orientation.Horizontal)
             vol.setRange(0, 10)
@@ -386,6 +412,43 @@ class SoundSettingsDialog(QDialog):
         layout.addLayout(buttons)
 
     # ---- settings <-> widgets -----------------------------------------
+    def _populate_combo(self, combo: QComboBox):
+        favs = self._data.get("sound_favorites", [])
+        combo.clear()
+        for name in self._available:
+            text = f"★ {name}" if name in favs else name
+            combo.addItem(text, name)
+
+    def _toggle_favorite(self, is_fav, combo):
+        filename = combo.currentData()
+        if not filename: return
+        
+        favs = list(self._data.get("sound_favorites", []))
+        changed = False
+        if is_fav and filename not in favs:
+            favs.append(filename)
+            changed = True
+            combo.parentWidget().layout().itemAt(1).widget().setText("★")
+        elif not is_fav and filename in favs:
+            favs.remove(filename)
+            changed = True
+            combo.parentWidget().layout().itemAt(1).widget().setText("☆")
+            
+        if changed:
+            self._data["sound_favorites"] = favs
+            if hasattr(self.main_win, "state"):
+                self.main_win.state.mark_dirty()
+            # Update all combos with the new favorite state and sorting
+            self._available = self._sound_manager.get_available_sounds()
+            was_loading = self._loading
+            self._loading = True
+            for event, c in getattr(self, "_combos", {}).items():
+                old_val = c.currentData()
+                self._populate_combo(c)
+                idx = c.findData(old_val)
+                if idx >= 0:
+                    c.setCurrentIndex(idx)
+            self._loading = was_loading
     def _events(self):
         events = self._data.get("sound_events")
         if not isinstance(events, dict):

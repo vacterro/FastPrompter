@@ -447,6 +447,8 @@ class VaultTextEdit(QTextEdit):
                 pass
         self.setDocument(doc)
         self.document().setUndoRedoEnabled(True)
+        self._words_dirty = True
+        self._aggregate_word_count = None
         # Each silo is its own QTextDocument, so the heat hook has to follow
         # the swap — connecting once in __init__ only ever stamped the very
         # first document.
@@ -769,41 +771,42 @@ class VaultTextEdit(QTextEdit):
             block = block.next()
 
     # ---- margin marks: persistence ------------------------------------
-    def collect_line_marks(self):
-        """{block number: mark} for every marked line, for saving."""
-        marks = {}
-        doc = self.document()
-        block = doc.begin()
-        while block.isValid():
-            mark = max(0, block.userState()) & 0xFF
-            if mark:
-                marks[block.blockNumber()] = mark
-            block = block.next()
-        return marks
-
-    def collect_line_heat(self):
-        """{block number: timestamp} for lines still within the heat window.
-
-        Block user data lives only in memory — a reload rebuilds the document
-        from plain text and every mark is gone. Persisting the timestamps is
-        what makes "where was I working" survive a restart.
-        """
+    def collect_view_metadata(self):
+        """Collect marks, heat and folded anchors in one pass for view-state persistence."""
         import time as _t
-
-        out = {}
+        marks = {}
+        heat = {}
+        folded = []
+        
         try:
             span = self._heat_window()
         except Exception:
             span = 24 * 3600
         now = _t.time()
+        
         doc = self.document()
-        block = doc.firstBlock()
+        block = doc.begin()
         while block.isValid():
+            # Marks
+            state = max(0, block.userState())
+            mark = state & 0xFF
+            if mark:
+                marks[block.blockNumber()] = mark
+                
+            # Heat
             ts = getattr(block.userData(), "ts", None)
             if ts is not None and (now - ts) < span:
-                out[block.blockNumber()] = round(float(ts), 1)
+                heat[block.blockNumber()] = round(float(ts), 1)
+                
+            # Folded anchors
+            if state & self.FOLD_BIT:
+                text = block.text().strip()
+                if text:
+                    folded.append(text)
+                    
             block = block.next()
-        return out
+            
+        return marks, heat, folded
 
     def apply_line_heat(self, heat):
         """Restore saved edit timestamps onto their blocks."""
@@ -973,6 +976,24 @@ class VaultTextEdit(QTextEdit):
                 return block
             block = block.next()
         return None
+
+    def blocks_for_queue_items(self, item_ids):
+        """Find the blocks for multiple queue items in one pass."""
+        if not item_ids:
+            return {}
+        ids = set(item_ids)
+        result = {}
+        doc = self.document()
+        block = doc.begin()
+        while block.isValid():
+            data = block.userData()
+            qid = getattr(data, "queue_id", "")
+            if qid in ids:
+                result[qid] = block
+                if len(result) == len(ids):
+                    break
+            block = block.next()
+        return result
 
     def mark_queue_sent(self, item_id):
         """Tick the gutter for a line whose prompt has gone out."""
@@ -1982,25 +2003,41 @@ class VaultTextEdit(QTextEdit):
     # those into a launch request.
     _SAFE_LINK_SCHEMES = ("http", "https", "ftp", "mailto", "file")
 
+    # A local file handed to the OS shell is executed according to the user's
+    # file-type associations: .py launches the interpreter, .cpl opens Control
+    # Panel, .msi/.msp run installers, .js/.vbs/.wsf/.jse/.vbe run script hosts,
+    # .lnk/.url resolve to whatever they point at, and so on. An extension
+    # denylist is the wrong shape for this — every class left out silently
+    # bypasses the prompt and is handed straight to the shell. The central
+    # authorization below therefore fails CLOSED: ANY local file requires
+    # explicit confirmation before the shell sees it, independent of suffix.
+
     @staticmethod
     def authorize_and_open_url(url, parent, lang="EN"):
-        """Prompt before running local executables; otherwise just open."""
+        """Pass web links straight through; confirm EVERY local file launch.
+
+        A local file opened through ``QDesktopServices.openUrl`` is executed by
+        the OS per the user's file-type associations, so regardless of suffix
+        it can run code. We therefore prompt before opening any local file.
+        Web links (http/https/ftp/mailto) never execute local code and pass
+        through untouched. Folder-reveal is a separate, non-launching path
+        (``open_containing_folder``) and is unaffected by this gate."""
         if not url.isLocalFile():
             return QDesktopServices.openUrl(url)
-            
+
+        from fastprompter.core.i18n import tr
+        from PyQt6.QtWidgets import QMessageBox
+
         path = url.toLocalFile()
-        import os
-        ext = os.path.splitext(path)[1].lower()
-        if ext in {".exe", ".cmd", ".bat", ".ps1", ".vbs", ".js", ".lnk", ".wsf", ".msc"}:
-            from fastprompter.core.i18n import tr
-            from PyQt6.QtWidgets import QMessageBox
-            msg = tr("This link points to an executable file or script:\n\n{}\n\nAre you sure you want to run it?", lang).format(path)
-            if "{}" not in tr("This link points to an executable file or script:\n\n{}\n\nAre you sure you want to run it?", lang):
-                msg = tr("This link points to an executable file or script:\n\n{}\n\nAre you sure you want to run it?", lang) + f"\n\n{path}"
-            reply = QMessageBox.warning(parent, tr("Security Warning", lang), msg, QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-            if reply != QMessageBox.StandardButton.Yes:
-                return False
-                
+        msg = tr("This link points to a file on your computer:\n\n{}\n\n"
+                 "Opening it may run a program. Are you sure you want to open it?",
+                 lang).format(path)
+        reply = QMessageBox.warning(
+            parent, tr("Security Warning", lang), msg,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if reply != QMessageBox.StandardButton.Yes:
+            return False
+
         return QDesktopServices.openUrl(url)
 
     @staticmethod
@@ -3319,27 +3356,67 @@ class VaultTextEdit(QTextEdit):
         except Exception:
             return False
 
-    def _on_contents_change(self, position, removed, added):
-        """Document changed — rebuild the background tints.
+    def invalidate_word_count(self):
+        self._words_dirty = True
+        self._aggregate_word_count = None
+        
+    def document_word_count(self):
+        """O(1) total word count, or O(B) fallback if dirty."""
+        doc = self.document()
+        if not doc:
+            return 0
+        if getattr(self, "_words_dirty", True) or getattr(self, "_aggregate_word_count", None) is None:
+            total = 0
+            block = doc.begin()
+            while block.isValid():
+                data = block.userData()
+                if data is None:
+                    data = _BlockData()
+                    block.setUserData(data)
+                wc = getattr(data, 'word_count', -1)
+                if wc == -1:
+                    wc = len(block.text().split())
+                    data.word_count = wc
+                total += wc
+                block = block.next()
+            self._aggregate_word_count = total
+            self._words_dirty = False
+            return total
+        return self._aggregate_word_count
 
-        A named method, not a lambda, so `set_active_document` can disconnect
-        it from the outgoing document. Guarded because a QTextDocument can
-        outlive the editor that connected to it.
-        """
+    def _on_contents_change(self, position, removed, added):
+        """Document changed — rebuild the background tints and word count."""
         if sip.isdeleted(self):
             return
         doc = self.document()
         if doc and not sip.isdeleted(doc):
             first = doc.findBlock(position)
             last = doc.findBlock(max(position, position + added))
-            block = first
-            while block.isValid():
-                data = block.userData()
-                if hasattr(data, 'word_count'):
-                    data.word_count = -1
-                if block == last:
-                    break
-                block = block.next()
+            
+            # Fast path: single-block edit
+            if first == last and not getattr(self, "_words_dirty", False):
+                data = first.userData()
+                if data:
+                    old_wc = getattr(data, 'word_count', -1)
+                    if old_wc != -1:
+                        new_wc = len(first.text().split())
+                        data.word_count = new_wc
+                        if hasattr(self, "_aggregate_word_count") and self._aggregate_word_count is not None:
+                            self._aggregate_word_count += (new_wc - old_wc)
+                    else:
+                        self._words_dirty = True
+                else:
+                    self._words_dirty = True
+            else:
+                self._words_dirty = True
+                block = first
+                while block.isValid():
+                    data = block.userData()
+                    if hasattr(data, 'word_count'):
+                        data.word_count = -1
+                    if block == last:
+                        break
+                    block = block.next()
         self.refresh_extra_selections()
 
     def _stamp_edited_blocks(self, position, removed, added):

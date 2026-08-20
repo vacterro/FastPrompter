@@ -71,27 +71,33 @@ _initialized = False
 
 
 def ensure_initialized() -> None:
-    """Load the translation pack into the registry exactly once (idempotent).
-
-    Cheap to call repeatedly; the first call imports the language modules and
-    registers them, later calls are a no-op. Safe under threads.
-    """
+    """Load the EN translation pack into the registry exactly once (idempotent)."""
     global _initialized
     if _initialized:
         return
     with _init_lock:
         if _initialized:
             return
-        _container.initialize()
+        _container.initialize_core()
         _initialized = True
+
+def ensure_loaded(code: str) -> None:
+    """Lazily load a specific language into the registry."""
+    _container.load_language(code)
+
+def available_codes() -> list[str]:
+    """List all available language codes without loading them."""
+    return _container.available_codes()
 
 
 __all__ = [
     "NATIVE_NAMES",
     "available_langs",
+    "available_codes",
     "coverage_report",
     "current_lang",
     "ensure_initialized",
+    "ensure_loaded",
     "get_language",
     "missing_keys",
     "set_language",

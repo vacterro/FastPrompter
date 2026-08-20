@@ -948,18 +948,30 @@ class FileContainerPanel(QWidget):
         if not hasattr(self, "refresh_loaded"):
             from PyQt6.QtCore import QObject
             class Signals(QObject):
-                refresh_loaded = pyqtSignal(str, str, int, list, int)
+                refresh_loaded = pyqtSignal(str, str, int, list, int, int)
             self._refresh_signals = Signals()
             self.refresh_loaded = self._refresh_signals.refresh_loaded
             self.refresh_loaded.connect(self._on_refresh_list_result)
+            self._refresh_inflight = False
+            self._refresh_pending = False
+            self._refresh_seq = 0
+
+        self._refresh_seq = getattr(self, "_refresh_seq", 0) + 1
+        if getattr(self, "_refresh_inflight", False):
+            self._refresh_pending = True
+            return
+            
+        self._refresh_inflight = True
+        self._refresh_pending = False
 
         class Worker(QRunnable):
-            def __init__(self, p, s, owner, gen, panel_ref):
+            def __init__(self, p, s, owner, gen, seq, panel_ref):
                 super().__init__()
                 self.p = p
                 self.s = s
                 self.owner = owner
                 self.gen = gen
+                self.seq = seq
                 self.panel_ref = panel_ref
 
             def run(self):
@@ -1003,23 +1015,32 @@ class FileContainerPanel(QWidget):
                     if not sip.isdeleted(panel):
                         try:
                             panel.refresh_loaded.emit(
-                                self.owner, self.p, self.gen, items, len(names))
+                                self.owner, self.p, self.gen, items, len(names), self.seq)
                         except RuntimeError:
                             pass
 
         worker = Worker(self.folder, self._view_mode() == "Details",
                         getattr(self, "_container_owner_id", None),
                         getattr(self, "_container_gen", 0),
+                        self._refresh_seq,
                         weakref.ref(self))
         # T-816: a new listing starts a new thumbnail generation; any thumbnail
         # result from the previous folder/listing is discarded on arrival.
         self._thumb_gen = getattr(self, "_thumb_gen", 0) + 1
         QThreadPool.globalInstance().start(worker)
 
-    def _on_refresh_list_result(self, owner, folder, gen, items, count):
+    def _on_refresh_list_result(self, owner, folder, gen, items, count, seq=0):
         from PyQt6 import sip
         from PyQt6.QtCore import Qt
         if sip.isdeleted(self): return
+        
+        if owner == getattr(self, "_container_owner_id", None) and folder == getattr(self, "folder", None):
+            self._refresh_inflight = False
+            if getattr(self, "_refresh_pending", False):
+                self._refresh_list()
+                
+        if seq < getattr(self, "_refresh_seq", 0):
+            return
 
         # P0-5: only the CURRENT ownership session, on the CURRENT folder,
         # at the CURRENT generation may paint the panel. A result from a
@@ -1028,9 +1049,9 @@ class FileContainerPanel(QWidget):
         # overwrite the new listing with the old one.
         if owner != getattr(self, "_container_owner_id", None):
             return
-        if gen != getattr(self, "_container_gen", 0):
+        if folder != getattr(self, "folder", None):
             return
-        if folder != self.folder:
+        if gen != getattr(self, "_container_gen", 0):
             return
 
         if not hasattr(self, "_thumb_lru"):
@@ -1050,10 +1071,10 @@ class FileContainerPanel(QWidget):
                         self.cache.popitem(last=False)
             self._thumb_lru = LRUCache(200)
 
-        existing = {}
+        current_items = {}
         for i in range(self.file_list.count()):
             item = self.file_list.item(i)
-            existing[item.data(Qt.ItemDataRole.UserRole)] = item
+            current_items[item.data(Qt.ItemDataRole.UserRole)] = item
 
         new_paths = set()
         # T-816: persist the refresh-time mtime + path->item index so thumbnail
@@ -1076,8 +1097,8 @@ class FileContainerPanel(QWidget):
                 from PyQt6.QtCore import QFileInfo
                 icon = self._icon_provider.icon(QFileInfo(path))
 
-            if path in existing:
-                item = existing[path]
+            if path in current_items:
+                item = current_items[path]
                 if item.text() != label:
                     item.setText(label)
                 item.setIcon(icon)
@@ -1089,14 +1110,17 @@ class FileContainerPanel(QWidget):
                 item.setData(Qt.ItemDataRole.UserRole, path)
                 item.setToolTip(path)
                 self.file_list.insertItem(idx, item)
+                current_items[path] = item
 
         for i in range(self.file_list.count() - 1, -1, -1):
             item = self.file_list.item(i)
-            if item.data(Qt.ItemDataRole.UserRole) not in new_paths:
+            path = item.data(Qt.ItemDataRole.UserRole)
+            if path not in new_paths:
                 self.file_list.takeItem(i)
+                current_items.pop(path, None)
 
         # T-816: publish the persisted indexes for the thumbnail subsystem.
-        self._item_by_path = existing
+        self._item_by_path = current_items
         self._thumb_mtimes = thumb_mtimes
 
         self.lbl_count.setText(tr("{} file(s)", getattr(self, "lang", "EN")).format(count))
@@ -1179,8 +1203,8 @@ class FileContainerPanel(QWidget):
 
         filtered = []
         for path, mtime in to_fetch:
-            if path not in self._fetching_thumbs:
-                self._fetching_thumbs.add(path)
+            if (gen, path) not in self._fetching_thumbs:
+                self._fetching_thumbs.add((gen, path))
                 filtered.append((path, mtime))
 
         if not filtered:
@@ -1242,6 +1266,10 @@ class FileContainerPanel(QWidget):
         from PyQt6 import sip
         if sip.isdeleted(self):
             return
+            
+        if hasattr(self, "_fetching_thumbs") and (gen, path) in self._fetching_thumbs:
+            self._fetching_thumbs.discard((gen, path))
+
         # T-816: stale generation / owner / folder — a silo switch while thumbs
         # were still decoding must not paint obsolete results or consume the
         # backlog for the current view.
@@ -1251,8 +1279,6 @@ class FileContainerPanel(QWidget):
             return
         if folder != self.folder:
             return
-        if hasattr(self, "_fetching_thumbs") and path in self._fetching_thumbs:
-            self._fetching_thumbs.discard(path)
 
         if not img:
             return
@@ -1715,6 +1741,7 @@ class FileContainerPanel(QWidget):
                     pass
             finally:
                 _EXPORT_THREADS.discard(threading.current_thread())
+                _EXPORT_CANCEL.discard(cancel)
                 QMetaObject.invokeMethod(
                     progress, "cancel", Qt.ConnectionType.QueuedConnection)
 

@@ -110,13 +110,14 @@ class BackupDialog(QDialog):
         except RestoreError as e:
             from fastprompter.core.logging import logger
             logger.exception("manual database backup failed validation: %s", e)
+            # The candidate is a *.tmp sibling; _backup_atomically already
+            # removes it on validation failure and never touches the requested
+            # `path`. The previous destination is therefore intact and must
+            # stay that way — deleting it here would destroy a good backup
+            # because a NEW candidate failed validation. Report only.
             QMessageBox.critical(self, tr("Error", self.lang),
-                                 tr("Backup failed validation and was removed:\n{}", self.lang).format(e))
-            try:
-                if os.path.exists(path):
-                    os.remove(path)
-            except OSError:
-                pass
+                                 tr("Backup failed validation; the previous "
+                                    "backup is unchanged:\n{}", self.lang).format(e))
         except Exception as e:
             QMessageBox.critical(self, tr("Error", self.lang),
                                  tr("Failed to backup:\n{}", self.lang).format(e))
@@ -132,10 +133,20 @@ class BackupDialog(QDialog):
             from fastprompter.utils.path_safety import alloc_fs_names
 
             data = self.main_win.data
-            # one collision-free filesystem component per project name, so
-            # two logical names that differ only by case or hostile
-            # characters can never silently share an export directory
-            all_cats = [c for c in data.get("cats_order", []) if isinstance(c, str)]
+            # Allocate one collision-free filesystem component from EVERY
+            # logical category actually exported — not only cats_order. DB
+            # recovery intentionally preserves unknown categories in the
+            # per-category stores, so a category absent from cats_order (e.g. an
+            # orphan "Foo." or "Foo ") would otherwise fall back to its raw
+            # name and collide with another that sanitises to the same string,
+            # silently dropping one category's export.
+            export_cat_names = set()
+            for store in (data.get("temp_presets_all", {}),
+                          data.get("archive_temp_presets_all", {})):
+                if isinstance(store, dict):
+                    export_cat_names.update(store.keys())
+            all_cats = [c for c in (list(data.get("cats_order", [])) + list(export_cat_names))
+                        if isinstance(c, str)]
             comps = alloc_fs_names(all_cats)
 
             def comp_for(cat):
@@ -156,6 +167,18 @@ class BackupDialog(QDialog):
                 for i, text in enumerate(slots):
                     if text.strip():
                         plan.append((os.path.join(cat_dir, f"Archive_Silo_{i+1}{fmt}"), text))
+
+            # Reject duplicate planned destinations BEFORE any write: two
+            # distinct logical categories must never map to the same file —
+            # that would silently drop one category's export.
+            seen_dst = set()
+            for dst, _ in plan:
+                if dst in seen_dst:
+                    QMessageBox.critical(
+                        self, tr("Error", self.lang),
+                        tr("Export would overwrite itself at:\n{}", self.lang).format(dst))
+                    return
+                seen_dst.add(dst)
 
             if not plan:
                 QMessageBox.information(self, tr("Success", self.lang),

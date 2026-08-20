@@ -181,3 +181,52 @@ def test_t1016_executable_links_require_approval(app, mock_open_url, mock_open_f
     _mouse_click(editor_read, pos, Qt.MouseButton.LeftButton)
     assert len(mock_open_url) == 2  # blocked by No
 
+
+# ----------------------------------------------------------------- centralised
+# CORE-003: every local file launch must be confirmed before the OS shell
+# sees it, regardless of suffix. The extension denylist is gone — confirmation
+# is the only gate. Web links pass straight through; folder-reveal is a
+# separate, non-launching path and is unaffected.
+
+@pytest.mark.parametrize("ext", [
+    # previously-denied Windows-launchable classes
+    ".exe", ".com", ".scr", ".hta", ".cmd", ".bat", ".ps1", ".vbs",
+    ".js", ".wsf", ".msc", ".lnk", ".url",
+    # previously-PASSIVE types the OS still launches per association
+    ".py", ".pyw", ".cpl", ".msi", ".msp", ".vbe", ".jse", ".jar",
+    ".reg", ".pif",
+    # ordinary "safe" documents and unknown types — still a user decision
+    ".txt", ".md", ".png", ".pdf", ".docx", "", ".unknown",
+])
+def test_core003_every_local_type_requires_confirmation(app, monkeypatch, ext):
+    from PyQt6.QtWidgets import QMessageBox
+    opened = []
+    monkeypatch.setattr(QDesktopServices, "openUrl",
+                        lambda u: (opened.append(u), True)[1])
+
+    # refused -> the file is never handed to the shell
+    responses = [QMessageBox.StandardButton.No]
+    monkeypatch.setattr(QMessageBox, "warning",
+                        lambda *a, **k: responses.pop(0))
+    url = QUrl(f"file:///C:/payload{ext}")
+    result = VaultTextEdit.authorize_and_open_url(url, None, "EN")
+    assert result is False
+    assert opened == [], f"{ext!r} must not launch without approval"
+
+    # confirmed -> exactly one launch
+    responses = [QMessageBox.StandardButton.Yes]
+    result = VaultTextEdit.authorize_and_open_url(url, None, "EN")
+    assert result is True
+    assert len(opened) == 1 and opened[0] == url
+
+
+def test_core003_web_links_bypass_confirmation(app, monkeypatch):
+    opened = []
+    monkeypatch.setattr(QDesktopServices, "openUrl",
+                        lambda u: (opened.append(u), True)[1])
+    url = QUrl("https://example.com")
+    result = VaultTextEdit.authorize_and_open_url(url, None, "EN")
+    assert result is True
+    assert opened == [url]
+
+

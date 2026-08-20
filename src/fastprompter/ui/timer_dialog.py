@@ -138,9 +138,9 @@ class _TimerBehaviorEditor(QWidget):
 
         # ---- pool editor ----
         self.pool = QTableWidget()
-        self.pool.setColumnCount(6)
+        self.pool.setColumnCount(5)
         self.pool.setHorizontalHeaderLabels([
-            tr("On", lang), tr("Sound", lang), tr("All day", lang),
+            tr("On", lang), tr("Sound", lang),
             tr("From", lang), tr("To", lang), tr("Volume", lang),
         ])
         self.pool.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -180,10 +180,12 @@ class _TimerBehaviorEditor(QWidget):
         except Exception:
             files = []
         if files:
+            favs = set(self.main_win.data.get("sound_favorites", [])) if self.main_win else set()
             self.cb_sound.insertSeparator(self.cb_sound.count())
             for rel in files:
-                self._sound_choices.append((rel, f"file:{rel}"))
-                self.cb_sound.addItem(rel, f"file:{rel}")
+                text = f"★ {rel}" if rel in favs else rel
+                self._sound_choices.append((text, f"file:{rel}"))
+                self.cb_sound.addItem(text, f"file:{rel}")
 
     def select_sound(self, value):
         idx = self.cb_sound.findData(value or "tick")
@@ -241,63 +243,52 @@ class _TimerBehaviorEditor(QWidget):
         sound.setCurrentIndex(idx if idx >= 0 else 0)
         self.pool.setCellWidget(r, 1, sound)
 
-        allday = QCheckBox()
-        allday.setChecked(bool(rule.get("all_day", True)))
-        self.pool.setCellWidget(r, 2, allday)
-
         frm = QTimeEdit()
         frm.setDisplayFormat("HH:mm")
-        frm.setTime(_minute_to_time(rule.get("start_minute", 0)))
-        self.pool.setCellWidget(r, 3, frm)
+        frm.setToolTip(tr("00:00 to 00:00 means All Day", self.lang))
+        # Support legacy "all_day" flag if it exists, translating to 00:00-00:00
+        is_all_day = bool(rule.get("all_day", True))
+        st = 0 if is_all_day else rule.get("start_minute", 0)
+        en_m = 0 if is_all_day else rule.get("end_minute", 0)
+        frm.setTime(_minute_to_time(st))
+        self.pool.setCellWidget(r, 2, frm)
 
         to = QTimeEdit()
         to.setDisplayFormat("HH:mm")
-        to.setTime(_minute_to_time(rule.get("end_minute", 0)))
-        self.pool.setCellWidget(r, 4, to)
+        to.setToolTip(tr("00:00 to 00:00 means All Day", self.lang))
+        to.setTime(_minute_to_time(en_m))
+        self.pool.setCellWidget(r, 3, to)
 
         vol = QSpinBox()
         vol.setRange(-1, 10)
         vol.setSpecialValueText(tr("Timer", self.lang))
         v = rule.get("volume", None)
         vol.setValue(-1 if v is None else max(-1, min(10, int(v))))
-        self.pool.setCellWidget(r, 5, vol)
+        self.pool.setCellWidget(r, 4, vol)
 
-        # Signals capture the WIDGETS, never the table row: removing an
-        # earlier row shifts every later one, so a captured row number would
-        # point at the wrong sound / the wrong From-To pair after any
-        # remove/add sequence.
         sound.activated.connect(
             lambda _i, s=sound, v=vol: self._preview_pool_widgets(s, v))
-        allday.toggled.connect(
-            lambda _c, a=allday, f=frm, t=to: self._sync_window_widgets(a, f, t))
-        self._sync_window_widgets(allday, frm, to)
-
-    def _sync_window_widgets(self, allday, frm, to):
-        """Enable/disable a row's From/To edits straight from its widgets."""
-        on = not allday.isChecked()
-        frm.setEnabled(on)
-        to.setEnabled(on)
 
     def _read_pool_rules(self):
         out = []
         for r in range(self.pool.rowCount()):
             en = self.pool.cellWidget(r, 0)
             sound = self.pool.cellWidget(r, 1)
-            allday = self.pool.cellWidget(r, 2)
-            frm = self.pool.cellWidget(r, 3)
-            to = self.pool.cellWidget(r, 4)
-            vol = self.pool.cellWidget(r, 5)
+            frm = self.pool.cellWidget(r, 2)
+            to = self.pool.cellWidget(r, 3)
+            vol = self.pool.cellWidget(r, 4)
             ref = sound.currentData() or "tick"
-            all_day = allday.isChecked()
-            start = _time_to_minute(frm.time()) if not all_day else 0
-            end = _time_to_minute(to.time()) if not all_day else 0
+            start = _time_to_minute(frm.time())
+            end = _time_to_minute(to.time())
+            # If 0 to 0, it means all_day = True in the config
+            all_day = (start == 0 and end == 0)
             v = vol.value()
             out.append({
                 "sound": ref,
                 "enabled": en.isChecked(),
                 "all_day": all_day,
-                "start_minute": start,
-                "end_minute": end,
+                "start_minute": start if not all_day else 0,
+                "end_minute": end if not all_day else 0,
                 "volume": None if v < 0 else v,
             })
         return out
@@ -315,7 +306,7 @@ class _TimerBehaviorEditor(QWidget):
         if row < 0 or row >= self.pool.rowCount():
             return
         sound = self.pool.cellWidget(row, 1)
-        vol = self.pool.cellWidget(row, 5)
+        vol = self.pool.cellWidget(row, 4)
         self._preview_pool_widgets(sound, vol)
 
     def _preview_pool_widgets(self, sound, vol):
@@ -340,12 +331,11 @@ class _TimerBehaviorEditor(QWidget):
         must not be saved as an apparently active rule.
         """
         for i in range(self.pool.rowCount()):
-            allday = self.pool.cellWidget(i, 2)
-            if allday.isChecked():
-                continue
-            frm = self.pool.cellWidget(i, 3)
-            to = self.pool.cellWidget(i, 4)
-            if _time_to_minute(frm.time()) == _time_to_minute(to.time()):
+            frm = self.pool.cellWidget(i, 2)
+            to = self.pool.cellWidget(i, 3)
+            start = _time_to_minute(frm.time())
+            end = _time_to_minute(to.time())
+            if start == end and start != 0:
                 return tr("Sound rule {} has an empty time range.", self.lang) \
                     .format(i + 1)
         return None
@@ -353,12 +343,11 @@ class _TimerBehaviorEditor(QWidget):
     def select_bad_row(self):
         """Highlight the first offending pool row, if any."""
         for i in range(self.pool.rowCount()):
-            allday = self.pool.cellWidget(i, 2)
-            if allday.isChecked():
-                continue
-            frm = self.pool.cellWidget(i, 3)
-            to = self.pool.cellWidget(i, 4)
-            if _time_to_minute(frm.time()) == _time_to_minute(to.time()):
+            frm = self.pool.cellWidget(i, 2)
+            to = self.pool.cellWidget(i, 3)
+            start = _time_to_minute(frm.time())
+            end = _time_to_minute(to.time())
+            if start == end and start != 0:
                 self.pool.setCurrentCell(i, 0)
                 return True
         return False
@@ -1348,12 +1337,18 @@ class TimerDialog(QDialog):
                  )), None)
             
             if existing is not None:
-                if res.state.resets_at:
-                    existing.target = res.state.resets_at
-                    existing.enabled = True
-                    existing.auto_limit_key = limit_key
-                    existing.name = name
-                    made.append(existing)
+                # Adopt/refresh the matched timer unconditionally — both the
+                # exact-reset path (resets_at known) and the assumed-window
+                # path (resets_at is None). Skipping the update on the assumed
+                # path left a legacy keyless timer stale, keyless and
+                # duplicable after a language switch: it matched only by name,
+                # which is localized and changes with the UI language, so a
+                # re-scan could not find it and created a second countdown.
+                existing.target = target
+                existing.enabled = True
+                existing.auto_limit_key = limit_key
+                existing.name = name
+                made.append(existing)
                 continue
             timer = limit_window(
                 name,

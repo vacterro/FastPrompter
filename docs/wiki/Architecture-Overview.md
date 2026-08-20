@@ -58,7 +58,7 @@ QLocalServer on named pipe `FastPrompter_Server_V15`. Second instance sends SHOW
 
 ### 3. State & Storage (`core/state.py`)
 
-SQLite DB (`data/local_data_v15.db`) with WAL + synchronous=NORMAL. Key tables: `presets` (snippets), `settings` (k/v), `temp_presets_v2` (silo text), `archive_temp_presets_v2` (archived silos). 
+SQLite DB (`data/local_data_v15.db`) with WAL + synchronous=NORMAL. Key tables: `presets` (snippets), `settings` (k/v), `temp_presets_v2` (silo text), `archive_temp_presets_v2` (archived silos). State uses granular domain dirty-tracking (`settings`, `snippets`, `temp`, `arc`) to bypass expensive full-set DB diffs on high-frequency view/text edits.
 
 Auto-backup is validated backup-before-publish: a `.bak` copy is written before any publish and the throttle advances only on success, so the previous good copy survives every intermediate failure. Restore is atomic and validated (same-file guard, integrity + schema checks, future-schema fail-closed); DB migrations are versioned and transactional (v0.8.34/35). Per-category data stores: `silo_colors_all`, `pinned_silos_all`, `silo_ticked_all`, `silo_children_all`, `silo_gaps_all`, `silo_project_paths_all`, etc. All aliased to flat keys (`temp_presets`) for active category.
 

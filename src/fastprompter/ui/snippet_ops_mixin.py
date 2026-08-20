@@ -8,6 +8,7 @@ import os
 import time
 
 from PyQt6 import sip
+from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QTextCursor, QTextDocument
 from PyQt6.QtWidgets import QApplication, QFileDialog, QInputDialog, QMessageBox
 
@@ -209,13 +210,10 @@ class SnippetOpsMixin:
                     if is_archive == getattr(self, "active_is_archive", False) and idx == getattr(self, "active_temp_slot", -1):
                         self.clear_text(internal=False)
                     else:
-                        presets = self.data["archive_temp_presets"] if is_archive else self.data["temp_presets"]
-                        docs = self.archive_docs if is_archive else self.silo_docs
-                        if 0 <= idx < len(presets):
-                            presets[idx] = ""
-                        if 0 <= idx < len(docs):
-                            self._set_plain_text_clean(docs[idx], "")
-                        self.sound_manager.play("clear")
+                        # Canonical non-active silo clear: update data + doc,
+                        # mark dirty, push undo, refresh — never bypass the
+                        # shared path (CORE-001 / W2-008).
+                        self.clear_silo(idx, is_archive=is_archive)
                 self.play_tick_sound()
         finally:
             self.ignore_focus_loss = False
@@ -775,6 +773,42 @@ class SnippetOpsMixin:
             return presets[idx] or ""
         return ""
 
+    def clear_silo(self, idx=None, is_archive=False):
+        """Empty a silo's text without deleting the slot or touching its files.
+
+        Shift+middle-click on a silo clears it (a pure wipe) instead of
+        trash_silo, which retires both text AND files into _trash. The slot,
+        its colours, gaps, children and any on-disk files are left untouched;
+        only the in-memory text becomes empty. Recoverable via undo."""
+        if idx is None:
+            idx = self.active_temp_slot
+        key = "archive_temp_presets" if is_archive else "temp_presets"
+        presets = self.data.get(key) or []
+        if not (0 <= idx < len(presets)):
+            return False
+        self.add_data_undo_state("Clear silo")
+        presets[idx] = ""
+        docs = self.archive_docs if is_archive else self.silo_docs
+        if idx < len(docs) and docs[idx] is not None:
+            self._set_plain_text_clean(docs[idx], "")
+        if (
+            idx == getattr(self, "active_temp_slot", None)
+            and is_archive == getattr(self, "active_is_archive", False)
+        ):
+            # the live editor shows this slot — reload it to the wiped doc
+            self._switch_to_slot(idx, initial=True, is_archive=is_archive)
+        else:
+            if is_archive:
+                self.refresh_archive_panel()
+            else:
+                self.refresh_temp_presets()
+        self.mark_dirty()
+        try:
+            self.play_sound("clear")
+        except Exception:
+            pass
+        return True
+
     def prompt_delete_silo(self, idx=None, is_archive=False):
         """Delete a silo from the UI, asking first when it holds text.
 
@@ -985,7 +1019,13 @@ class SnippetOpsMixin:
         return False
 
     def select_empty_silo(self):
-        """Insert a new empty silo at the top."""
+        """Insert a new empty silo.
+
+        Plain NEW  -> top.
+        Shift+NEW  -> an empty silo ABOVE the currently selected one (selected
+                     shifts down with everything after it).
+        Ctrl+NEW   -> an empty silo BELOW the currently selected one.
+        """
         is_arc = bool(getattr(self, "active_is_archive", False))
         self.sound_manager.play("new")
         if getattr(self, "editing_snippet", None):
@@ -1006,10 +1046,27 @@ class SnippetOpsMixin:
         )
         docs = self.archive_docs if is_arc else self.silo_docs
 
+        # Where to drop the new empty silo. Plain click keeps the old "top"
+        # behaviour; modifiers let the user append neatly next to the selected
+        # silo instead of always jumping to the very top.
+        mods = QApplication.keyboardModifiers()
+        shift = bool(mods & Qt.KeyboardModifier.ShiftModifier)
+        ctrl = bool(mods & Qt.KeyboardModifier.ControlModifier)
+        if shift:
+            pos = max(0, min(self.active_temp_slot, len(presets)))
+        elif ctrl:
+            pos = max(0, min(self.active_temp_slot + 1, len(presets)))
+        else:
+            pos = 0
+
+        # The silo we are inserting relative to, before any mutation. Used to
+        # detect a gap hugging it on the insert side (see gap relocation below).
+        orig_sel = self.active_temp_slot
+
         # Cap empty silos at 5: jump to the first existing empty one instead
         # of letting the user spam unlimited blanks. This is navigation, not a
         # data action, so it must not push an undo entry.
-        if sum(1 for p in presets if not p.strip()) >= 5:
+        if not (shift or ctrl) and sum(1 for p in presets if not p.strip()) >= 5:
             for i, p in enumerate(presets):
                 if not p.strip():
                     self.silo_page = i // max(1, self._visible_silos)
@@ -1023,29 +1080,47 @@ class SnippetOpsMixin:
         if self._silo_at_capacity(is_arc):
             return
 
-        self.add_data_undo_state("New silo (top)")
-        presets.insert(0, "")
+        self.add_data_undo_state("New silo")
+        presets.insert(pos, "")
 
         doc = QTextDocument()
         doc.setDefaultFont(self.text_area.font())
-        docs.insert(0, doc)
+        docs.insert(pos, doc)
 
-        # Insert-at-top shifts every slot index down by one. This used to be
-        # a hand-rolled copy of that shift, which drifted from the canonical
-        # table twice: it wrote str() children keys (orphaning whole subtrees,
-        # so a child silo vanished from the sidebar) and it never shifted
-        # watcher_queues at all (every queue moved to the wrong silo). One
-        # remap through _SILO_INDEX_STATE keeps all nine stores in step.
+        # Insert at `pos` shifts every slot index >= pos down by one. This used
+        # to be a hand-rolled copy of that shift, which drifted from the
+        # canonical table twice: it wrote str() children keys (orphaning whole
+        # subtrees, so a child silo vanished from the sidebar) and it never
+        # shifted watcher_queues at all (every queue moved to the wrong silo).
+        # One remap through _SILO_INDEX_STATE keeps all nine stores in step.
         # silo_gaps IS in that table since T-704 — a gap belongs to the silo
         # it was placed under, so it rides along with the shift. The archive
         # half is the same structural mutation and gets the same remap (T-754).
         if hasattr(self, "_remap_silo_indices"):
             self._remap_silo_indices(
-                lambda i: i + 1, is_archive=is_arc)
+                lambda i: i + 1 if i >= pos else i, is_archive=is_arc)
 
-        self.silo_page = 0
-        self.active_temp_slot = 0
-        self._switch_to_slot(0, initial=True, is_archive=is_arc)
+        # Gap that hugs the selected silo on the insert side must ride to the
+        # FAR side of the new silo, else the new silo lands BEYOND the divider
+        # ("jumped over" it). Shift (above) already keeps the new silo below an
+        # above-gap; the only crossing case is Ctrl (below) with a gap directly
+        # under the selected: relocate that gap to sit under the new silo, name
+        # included, so the group stays intact and shifts cleanly.
+        if ctrl and not is_arc:
+            gaps = self.data.get("silo_gaps") or []
+            if orig_sel in gaps:
+                gaps[gaps.index(orig_sel)] = pos
+                names = self.data.setdefault(
+                    "silo_gap_names_all", {}).setdefault(
+                    self.get_current_category(), {})
+                old_key = str(orig_sel)
+                if old_key in names:
+                    names[str(pos)] = names.pop(old_key)
+                self.data["silo_gap_names"] = names
+
+        self.silo_page = pos // max(1, self._visible_silos)
+        self.active_temp_slot = pos
+        self._switch_to_slot(pos, initial=True, is_archive=is_arc)
         self.mark_dirty()
         self.refresh_temp_presets()
 
@@ -1258,10 +1333,10 @@ class SnippetOpsMixin:
             return
 
         if idx == self.active_temp_slot:
-            text = self.text_area.toPlainText().strip()
+            text = self.text_area.toPlainText()
         else:
-            text = (presets[idx] or "").strip()
-        if not text:
+            text = presets[idx] or ""
+        if not text.strip():
             return
         if idx == self.active_temp_slot:
             presets[idx] = text

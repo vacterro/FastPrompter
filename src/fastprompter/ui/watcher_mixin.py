@@ -246,6 +246,11 @@ class WatcherMixin:
         self._watcher_send_gen += 1
         # ... and so is any verification still in flight from an older run
         self._watcher_verify_gen += 1
+        # the prior run's in-flight send (if any) is logically discarded with
+        # it; its late callback returns early on the stale gen, so drop active
+        # ownership here to avoid quiesce waiting on a result that will never
+        # apply (a newer dispatch re-sets this flag)
+        self._watcher_send_active = False
         self._watcher_verify_state = "unverified"
         self._watcher_verify_inflight = False
         # The parsed [limits] must actually reach the engine (T-757): a
@@ -320,6 +325,12 @@ class WatcherMixin:
         self._watcher_verify_gen += 1   # in-flight verifications too
         self._watcher_verify_state = "unverified"
         self._watcher_verify_inflight = False
+        # The dispatched send is logically discarded with the run. Its worker
+        # callback will arrive with the OLD generation and return early, so it
+        # must NOT clear a newer dispatch's active flag — but the flag for THIS
+        # (now stale) send must be dropped here, or quiesce would wait on a
+        # result that can never be applied. A newer dispatch re-sets it.
+        self._watcher_send_active = False
         self._watcher_engine.disarm(reason)
         self._watcher_stop_timer()
         # A target exists only while armed. Leaving the old one behind is how
@@ -343,11 +354,14 @@ class WatcherMixin:
         self._watcher_verify_gen += 1   # in-flight verifications too
         self._watcher_verify_state = "unverified"
         self._watcher_verify_inflight = False
+        # See watcher_disarm: drop active-send ownership so a stale callback
+        # cannot strand quiesce waiting on it.
+        self._watcher_send_active = False
         self._watcher_engine.panic()
         self._watcher_stop_timer()
         self._watcher_notify()
         self._watcher_announce("Watcher stopped",
-                               "The queue will not send anything else.")
+                                "The queue will not send anything else.")
         return True
 
     def _watcher_announce(self, title, body):
@@ -679,13 +693,17 @@ class WatcherMixin:
         (undo of a delete, recreated text), the item revives to PENDING
         without needing the queue dialog (T-756).
         """
-        for item in queue.items:
-            if item.state not in (PENDING, DETACHED):
-                continue
-            try:
-                text, detached = self.queue_item_live_text(slot, item)
-            except Exception:
-                continue
+        items_to_resolve = [item for item in queue.items if item.state in (PENDING, DETACHED)]
+        if not items_to_resolve:
+            return
+            
+        try:
+            live_texts = self.queue_items_live_text(slot, items_to_resolve)
+        except Exception:
+            return
+            
+        for item in items_to_resolve:
+            text, detached = live_texts.get(item, (item.text, True))
             if detached:
                 if item.state != DETACHED:
                     item.mark_detached()

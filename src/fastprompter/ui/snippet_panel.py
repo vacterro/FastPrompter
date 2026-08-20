@@ -982,6 +982,7 @@ class DraggableSiloButton(QWidget):
         self.main_win.show_temp_menu(self.global_idx, self.mapToGlobal(pos), is_archive=self.is_archive)
 
     def mousePressEvent(self, e):
+        self._press_action_consumed = False
         if e.button() == Qt.MouseButton.LeftButton:
             # Ctrl+Shift+click toggles the done-tick — works even when the
             # ✅ hover button is disabled in Settings (ticks off by default)
@@ -991,6 +992,7 @@ class DraggableSiloButton(QWidget):
                     and not self.is_archive):
                 if hasattr(self.main_win, "_toggle_tick_silo"):
                     self.main_win._toggle_tick_silo(self.global_idx)
+                self._press_action_consumed = True
                 e.accept()
                 return
             # Alt+click folds a parent's children away (T-714). The ▾ button
@@ -1004,6 +1006,7 @@ class DraggableSiloButton(QWidget):
                 kids = self.main_win._children_map().get(self.global_idx, [])
                 if kids:
                     self.main_win.toggle_silo_collapse(self.global_idx)
+                self._press_action_consumed = True
                 e.accept()
                 return
             # Play click sound if CS style is enabled
@@ -1017,8 +1020,13 @@ class DraggableSiloButton(QWidget):
         elif e.button() == Qt.MouseButton.MiddleButton:
             super().mousePressEvent(e)
             # middle-click retires the silo into the trash (text + files
-            # both land in data/files/_trash — recoverable, not a wipe)
-            self.main_win.trash_silo(self.global_idx, is_archive=self.is_archive)
+            # both land in data/files/_trash — recoverable, not a wipe).
+            # Shift+middle-click only CLEARS the silo (empties its text) and
+            # leaves the slot and its files completely untouched.
+            if e.modifiers() & Qt.KeyboardModifier.ShiftModifier:
+                self.main_win.clear_silo(self.global_idx, is_archive=self.is_archive)
+            else:
+                self.main_win.trash_silo(self.global_idx, is_archive=self.is_archive)
             e.accept()
             return
         super().mousePressEvent(e)
@@ -1094,6 +1102,13 @@ class DraggableSiloButton(QWidget):
                 super().mouseReleaseEvent(e)
                 e.accept()
                 return
+            # If the press already consumed this gesture (Ctrl+Shift tick or
+            # Alt collapse), release must not re-interpret it as a plain click.
+            if getattr(self, "_press_action_consumed", False):
+                self._press_action_consumed = False
+                super().mouseReleaseEvent(e)
+                e.accept()
+                return
             # Plain click drops any selection and switches to the silo.
             if not self.is_archive:
                 self.main_win.clear_silo_selection()
@@ -1110,7 +1125,7 @@ class DraggableSiloButton(QWidget):
         super().mouseReleaseEvent(e)
 
 
-class SiloGapBar(QFrame):
+class SiloGapBar(QLabel):
     """A user-placed separator in the silo list (T-590), draggable with
     Ctrl+LeftButton to re-park it under a different row (T-593).
 
@@ -1126,9 +1141,47 @@ class SiloGapBar(QFrame):
         self.slot_idx = -1
         self._press_pos = None
         self.setCursor(Qt.CursorShape.SizeVerCursor)
-        self.setToolTip(tr("Ctrl+drag to move this gap",
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setToolTip(tr("Ctrl+drag to move this gap. Double-click to rename.",
                            getattr(main_win, "_current_lang", "EN")))
 
+    def mouseDoubleClickEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton:
+            from PyQt6.QtWidgets import QInputDialog
+            names = self.main_win.data.get("silo_gap_names") or {}
+            old_name = names.get(str(self.slot_idx), "")
+            
+            self.main_win.ignore_focus_loss = True
+            try:
+                new_name, ok = QInputDialog.getText(
+                    self.main_win,
+                    tr("Gap Name", getattr(self.main_win, "_current_lang", "EN")),
+                    tr("Name for this group:", getattr(self.main_win, "_current_lang", "EN")),
+                    text=old_name
+                )
+            finally:
+                self.main_win.ignore_focus_loss = False
+            self.main_win.activateWindow()
+            
+            if ok:
+                if new_name.strip():
+                    self.main_win.add_data_undo_state("Rename gap")
+                    names = self.main_win.data.setdefault("silo_gap_names_all", {}).setdefault(self.main_win.get_current_category(), {})
+                    names[str(self.slot_idx)] = new_name.strip()
+                    self.main_win.data["silo_gap_names"] = names
+                    self.main_win.mark_dirty()
+                    self.main_win.refresh_temp_presets()
+                elif old_name:
+                    self.main_win.add_data_undo_state("Clear gap name")
+                    names = self.main_win.data.setdefault("silo_gap_names_all", {}).setdefault(self.main_win.get_current_category(), {})
+                    if str(self.slot_idx) in names:
+                        del names[str(self.slot_idx)]
+                    self.main_win.data["silo_gap_names"] = names
+                    self.main_win.mark_dirty()
+                    self.main_win.refresh_temp_presets()
+            e.accept()
+            return
+        super().mouseDoubleClickEvent(e)
     def mousePressEvent(self, e):
         if (e.button() == Qt.MouseButton.LeftButton
                 and e.modifiers() & Qt.KeyboardModifier.ControlModifier):

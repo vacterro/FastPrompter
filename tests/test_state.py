@@ -585,7 +585,14 @@ class TestSettingsSurviveAReload:
         for key, value in list(state.data.items()):
             if key in _SETTINGS_SKIP or not isinstance(value, (dict, list)):
                 continue
-            marker = {"probe": [key, 1]} if isinstance(value, dict) else [key, "x"]
+            if key in ("silo_gaps", "pinned_silos", "silo_ticked", "silo_collapsed"):
+                # Integer-list settings: marker must contain only valid ints so
+                # _normalize_structured_list does not drop every member.
+                marker = [1, 2, 3]
+            elif isinstance(value, dict):
+                marker = {"probe": [key, 1]}
+            else:
+                marker = [key, "x"]
             state.data[key] = marker
             expected[key] = marker
         assert expected, "no structured settings found — the probe is wrong"

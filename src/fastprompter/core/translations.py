@@ -70,6 +70,7 @@ def tr(text: str, lang: str = "EN") -> str:
     if target == "DED":
         # Дед is a partial overlay: speak grandpa where ded.py has a line,
         # otherwise fall through to full Russian so the UI stays coherent.
+        _i18n.ensure_loaded("DED")
         ded = _i18n.tr(text, lang="DED")
         if ded != text:
             return ded
@@ -84,11 +85,13 @@ def tr(text: str, lang: str = "EN") -> str:
         legacy = _DATA.get(text)
         if legacy is not None and legacy != text:
             return legacy
+        _i18n.ensure_loaded("RU")
         packed = _i18n.tr(text, lang="RU")
         if packed != text:
             return packed
         return legacy if legacy is not None else text
 
+    _i18n.ensure_loaded(target)
     return _i18n.tr(text, lang=target)
 
 
@@ -98,6 +101,7 @@ def set_language(state_data: dict, lang: str):
     current_lang = lang
     state_data["language"] = lang
     _i18n.ensure_initialized()
+    _i18n.ensure_loaded(lang)
     _i18n.set_language(state_data, lang)
 
 
@@ -108,7 +112,6 @@ def get_language(state_data: dict, default: str = "EN") -> str:
 
 def available_languages() -> list[str]:
     """All language codes the pack can serve, EN first, then the rest sorted."""
-    _i18n.ensure_initialized()
-    langs = _i18n.available_langs()  # includes 'EN'
+    langs = _i18n.available_codes()
     rest = sorted(c for c in langs if c != "EN")
     return ["EN", *rest]

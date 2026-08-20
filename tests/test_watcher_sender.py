@@ -341,6 +341,47 @@ def test_a_target_that_ignores_posted_input_says_so():
     assert "WriteConsoleInput" in result.reason
 
 
+class FakePostPressFail:
+    """Posts text fine but rejects the submit keystroke (CORE-005)."""
+
+    def __init__(self, last_reason="unknown key 'frob'"):
+        self.last_reason = ""
+        self.last_reason_wanted = last_reason
+        self.actions = []
+
+    def type_text(self, hwnd, text):
+        self.actions.append(("type", hwnd, text))
+        return True
+
+    def press(self, hwnd, key):
+        self.actions.append(("press", hwnd, key))
+        self.last_reason = self.last_reason_wanted
+        return False
+
+
+def test_press_failure_makes_the_whole_send_fail():
+    """The text landed but the submit keystroke was rejected, so the prompt
+    may still be sitting unsent in the target. The send must NOT report a
+    silent success (CORE-005)."""
+    post = FakePostPressFail()
+    sender = PostMessageSender(post)
+    result = sender.send(intent(), make_target())
+    assert result.ok is False, result
+    assert "submit" in result.reason or "frob" in result.reason, result.reason
+    assert post.actions == [
+        ("type", 1234, "/saipen continue"),
+        ("press", 1234, "enter"),
+    ]
+
+
+def test_unknown_submit_key_fails_the_send():
+    post = FakePostPressFail(last_reason="unknown key 'frob'")
+    sender = PostMessageSender(post, submit="frob")
+    result = sender.send(intent(), make_target())
+    assert result.ok is False
+    assert "frob" in result.reason
+
+
 def test_the_silent_path_joins_multiline_too():
     post = FakePost()
     PostMessageSender(post).send(intent("one\ntwo"), make_target())

@@ -1053,4 +1053,9 @@ TRANSLATIONS: dict[str, str] = {
     '🦓 Zebra Stripes': '🦓 Zebra pruhy',
     '🧹 Clear': '🧹 Jasné',
     '🪟 Normal Window': '🪟 Normální okno',
+    'Ctrl+drag to move this gap. Double-click to rename.': 'Ctrl+drag to move this gap. Double-click to rename.',
+    'Gap Name': 'Gap Name',
+    'Name for this group:': 'Name for this group:',
+    'Backup failed validation; the previous backup is unchanged:\n{}': 'Backup failed validation; the previous backup is unchanged:\n{}',
+    'Export would overwrite itself at:\n{}': 'Export would overwrite itself at:\n{}',
 }

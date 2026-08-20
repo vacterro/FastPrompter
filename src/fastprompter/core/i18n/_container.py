@@ -120,45 +120,51 @@ def _load_external_slot() -> dict[str, dict[str, str]]:
     return result
 
 
-def initialize(*, load_external: bool = True) -> None:
-    """Load all built-in + external languages. Validates integrity. Freezes."""
-    en_keys = _extract_key_source()
+def available_codes(*, load_external: bool = True) -> list[str]:
+    """Return all available language codes without loading the modules."""
+    codes = set(code.upper() for code in _BUILTIN_LANGS)
+    if load_external:
+        slot_path = os.environ.get(EXTERNAL_SLOT)
+        if slot_path:
+            slot_dir = Path(slot_path)
+            if slot_dir.is_dir():
+                for fpath in slot_dir.glob("*.json"):
+                    codes.add(fpath.stem.upper())
+    return sorted(list(codes))
 
+
+def initialize_core() -> None:
+    """Initialize the English master list exactly once."""
+    if "EN" in _engine.available_langs():
+        return
+    en_keys = _extract_key_source()
     _engine.register_language("EN", {k: k for k in en_keys})
 
-    builtin_codes = list(_BUILTIN_LANGS)
 
-    loaded: set[str] = set()
-
-    for code in builtin_codes:
-        # Resilient per-language load: a single broken/ drifted module must
-        # never take down startup — the app has to boot even if one language
-        # pack is malformed. Validate NON-strict (drop unknown keys, log)
-        # rather than raising, and swallow any unexpected load error.
+def load_language(code: str, *, load_external: bool = True) -> None:
+    """Lazily load a specific language module or external file."""
+    code = code.upper()
+    if code in _engine.available_langs():
+        return
+        
+    initialize_core()
+    en_keys = _extract_key_source()
+    
+    code_lower = code.lower()
+    if code_lower in _BUILTIN_LANGS:
         try:
-            data = _load_lang_module(code)
+            data = _load_lang_module(code_lower)
             if data is not None:
                 _validate_translations(code, data, en_keys, strict=False)
-                _engine.register_language(code.upper(), data)
-                loaded.add(code.upper())
-        except Exception as exc:  # noqa: BLE001 — startup must survive any lang
+                _engine.register_language(code, data)
+        except Exception as exc:
             log.error("Skipping language %s (load failed): %s", code, exc)
-
-    if load_external:
+    elif load_external:
         external = _load_external_slot()
-        for code, data in external.items():
+        if code in external:
+            data = external[code]
             _validate_translations(code, data, en_keys, strict=False)
             _engine.register_language(code, data)
-            loaded.add(code)
-
-    _engine.set_language("EN")
-
-    n_registered = len(_engine.available_langs()) - 1
-    log.info(
-        "Translation container initialized: %d languages, %d EN keys",
-        n_registered,
-        len(en_keys),
-    )
 
 
 def _validate_translations(

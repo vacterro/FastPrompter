@@ -14,6 +14,8 @@ monitor, and automatically avoids the taskbar.
 
 from __future__ import annotations
 
+import math
+
 from PyQt6.QtCore import QRect, QRectF, Qt
 from PyQt6.QtGui import QColor, QCursor, QFont, QPainter, QPen
 from PyQt6.QtWidgets import QApplication, QWidget
@@ -59,6 +61,30 @@ def _rect_of(preset) -> tuple[float, float, float, float]:
     return (preset["x"], preset["y"], preset["w"], preset["h"])
 
 
+def _heal_fraction(value, default=0.0):
+    """A window-rectangle coordinate as a FRACTION of the available screen.
+
+    Must be finite and within [0, 1]; width/height also take a positive floor
+    so a zero/negative/NaN/Inf value (a corrupt preset, a window spanning
+    every monitor, or legacy junk) can never be applied as a real geometry that
+    places the window off-screen or collapses it to nothing (T-1025).
+    """
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return default
+    if not math.isfinite(f):
+        return default
+    return max(0.0, min(1.0, f))
+
+
+def _heal_size_fraction(value):
+    """A width/height fraction: finite, in (0, 1], with a small positive floor
+    so the window never collapses to zero size."""
+    f = _heal_fraction(value, default=0.1)
+    return f if f > 0.02 else 0.1
+
+
 # UI state a preset can carry beyond its rectangle. None means "the preset
 # does not say", which is what every preset saved before this existed holds —
 # and it must leave the current window alone rather than force a default.
@@ -71,12 +97,25 @@ _UI_STATE_KEYS = _BOOL_STATE_KEYS + _STR_STATE_KEYS
 
 def _ui_state_of(item):
     """The tri-state UI flags of a stored preset: True / False / None for the
-    booleans, the raw string / None for the valued keys."""
+    booleans, the raw string / None for the valued keys.
+
+    Booleans are HEALED, not coerced: a persisted string "False" must stay
+    False, never become True via ``bool("False")``. Only a genuine True, or an
+    explicit "true"/"yes" string, is True. A missing key stays None ("the
+    preset does not say").
+    """
     out = {}
     if isinstance(item, dict):
         for key in _BOOL_STATE_KEYS:
             val = item.get(key)
-            out[key] = None if val is None else bool(val)
+            if val is None:
+                out[key] = None
+            elif isinstance(val, bool):
+                out[key] = val
+            elif isinstance(val, str):
+                out[key] = val.strip().lower() in ("true", "1", "yes")
+            else:
+                out[key] = bool(val)
         for key in _STR_STATE_KEYS:
             val = item.get(key)
             out[key] = None if val is None else str(val)
@@ -128,21 +167,32 @@ def _load_presets(data):
     for i, item in enumerate(raw):
         try:
             if isinstance(item, dict):
+                x = _heal_fraction(item["x"])
+                y = _heal_fraction(item["y"])
+                w = _heal_size_fraction(item["w"])
+                h = _heal_size_fraction(item["h"])
                 p = {
                     "name": str(item.get("name") or f"Preset {i + 1}"),
-                    "x": float(item["x"]), "y": float(item["y"]),
-                    "w": float(item["w"]), "h": float(item["h"]),
+                    "x": x, "y": y, "w": w, "h": h,
                     "state": "maximized"
                     if item.get("state") == "maximized" else "normal",
                     **_ui_state_of(item),
                 }
             elif isinstance(item, (list, tuple)) and len(item) >= 4:
-                x, y, w, h = (float(v) for v in item[:4])
+                x = _heal_fraction(item[0])
+                y = _heal_fraction(item[1])
+                w = _heal_size_fraction(item[2])
+                h = _heal_size_fraction(item[3])
                 p = {"name": f"Preset {i + 1}", "x": x, "y": y,
                      "w": w, "h": h, "state": "normal", **_ui_state_of(None)}
             else:
                 continue
         except (TypeError, ValueError, KeyError):
+            continue
+        # a non-finite or collapsed geometry cannot be applied safely; drop the
+        # whole preset rather than let it place the window off-screen
+        if not (math.isfinite(p["x"]) and math.isfinite(p["y"])
+                and p["w"] > 0 and p["h"] > 0):
             continue
         out.append(p)
     return out
@@ -500,10 +550,13 @@ class FancyZoneOverlay(QWidget):
         if data is None:
             return
         g = mw.geometry()
-        fx = max(0.0, (g.x() - a.x()) / a.width())
-        fy = max(0.0, (g.y() - a.y()) / a.height())
-        fw = max(0.05, g.width() / a.width())
-        fh = max(0.05, g.height() / a.height())
+        # Fractions must stay finite and within [0, 1] (a window larger than the
+        # available area, or an odd screen config, must not store NaN/Inf or an
+        # out-of-range value that later places the window off-screen).
+        fx = _heal_fraction((g.x() - a.x()) / a.width())
+        fy = _heal_fraction((g.y() - a.y()) / a.height())
+        fw = _heal_size_fraction((g.width() / a.width()))
+        fh = _heal_size_fraction((g.height() / a.height()))
         presets = _load_presets(data)
         if len(presets) >= _MAX_PRESETS:
             return

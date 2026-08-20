@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 import re
+import string
 import tomllib
 
 from fastprompter.core.watcher.probes import build as build_probe
@@ -21,6 +22,92 @@ DEFAULT_LIMITS = {
     "max_sends": 25,
     "dry_run_new": True,
 }
+
+# The only fields skill_format may interpolate. `compose()` in queue.py formats
+# with exactly these keyword names, so any other field, or malformed braces,
+# can only fail there at runtime — after the adapter was already advertised as
+# ready and armed. Validate at parse/readiness instead (CORE-011).
+_SKILL_FORMAT_FIELDS = ("skill", "text")
+
+# The transports a sender can actually be built for (watcher_mixin reads
+# `transport == "cdp"` and posts for everything else, so anything but these
+# two would silently arm the post sender), and the multiline policies
+# sender._flatten implements - an unknown one falls into `join` without a
+# word (CORE-011).
+_TRANSPORTS = ("post", "cdp")
+_MULTILINE = ("join", "refuse", "bracketed")
+
+
+def validate_skill_format(fmt):
+    """(ok, reason) — does ``skill_format`` format with ``skill``/``text`` only?
+
+    An empty/None format is the intentional "this adapter has no skills" state
+    and is always valid. Anything else must parse as a Python format string
+    whose only field names are ``skill`` and ``text``: an unknown field raises
+    ``KeyError`` at ``QueueItem.compose`` and an unmatched brace raises
+    ``ValueError``, both of which would stop the watcher the first time a
+    skill-bearing item reached this adapter.
+    """
+    if not fmt:
+        return True, ""
+    try:
+        for _literal, field_name, _spec, _conv in string.Formatter().parse(fmt):
+            if field_name is None:
+                continue
+            name = field_name.split("[", 1)[0].split(".", 1)[0]
+            if name not in _SKILL_FORMAT_FIELDS:
+                return False, f"unknown field {{{field_name}}} in skill_format"
+        # authoritative: catches unmatched braces and confirms it formats
+        fmt.format(skill="x", text="y")
+    except Exception as exc:
+        return False, f"malformed skill_format: {exc}"
+    return True, ""
+
+
+def validate_submit_key(submit, transport):
+    """(ok, reason) — can this transport actually press this key?
+
+    An invalid submit key used to surface only at send time: PostLayer.press
+    returns False for a key it cannot map, and CdpSender raises AFTER the
+    composer already holds the inserted text. Readiness is the place to
+    catch it (CORE-011). Both key tables are read from the modules that do
+    the pressing, so this cannot drift from what the senders accept.
+    """
+    from fastprompter.core.watcher.cdp import _KEYS
+    from fastprompter.core.watcher.win32 import VK
+
+    if not isinstance(submit, str) or not submit.strip():
+        return False, f"submit must be a key name, got {submit!r}"
+    key = submit.strip().lower()
+    if transport == "cdp":
+        if key in _KEYS:
+            return True, ""
+        return False, f"the cdp transport cannot press submit {submit!r}"
+    # The post layer maps the final part through VK, or takes a single
+    # character; every modifier must be a VK name.
+    parts = [p.strip() for p in key.split("+") if p.strip()]
+    if not parts:
+        return False, f"submit must be a key name, got {submit!r}"
+    mods, main = parts[:-1], parts[-1]
+    if main not in VK and len(main) != 1:
+        return False, f"unknown submit key {submit!r}"
+    if any(mod not in VK for mod in mods):
+        return False, f"unknown submit key {submit!r}"
+    return True, ""
+
+
+def _str_field(label, value, problems):
+    """The value when it is a string, else "" — a non-string is a problem.
+
+    These fields reach os.path (the port file) or a JS selector; an int in
+    cdp_port_file used to get as far as os.path.expandvars inside a live
+    tick before raising TypeError (CORE-011).
+    """
+    if isinstance(value, str):
+        return value
+    if value not in (None, ""):
+        problems.append(f"{label} must be a string, got {value!r}")
+    return ""
 
 
 class Adapter:
@@ -38,32 +125,77 @@ class Adapter:
             self.settle_ms = max(0, int(settle_ms))
         except (TypeError, ValueError):
             self.settle_ms = 2500
-        self.submit = submit or "enter"
-        self.multiline = multiline or "join"
+        problems = list(problems)
+        # CORE-011: readiness has to vouch for everything the sender will
+        # run. A config that only fails at send time — an unknown transport
+        # that quietly becomes post, a submit key the transport cannot
+        # press, a multiline policy that silently becomes join — is a config
+        # that can type into a live composer and only then discover it
+        # cannot finish the send. Each bad value is a problem on THIS
+        # adapter: never an exception, never a silent default.
+        if not isinstance(submit, str):
+            if submit not in (None, ""):
+                problems.append(f"submit must be a string, got {submit!r}")
+            submit = ""
+        self.submit = (submit.strip() or "enter").lower()
+        if not isinstance(multiline, str):
+            if multiline not in (None, ""):
+                problems.append(
+                    f"multiline must be a string, got {multiline!r}")
+            multiline = ""
+        self.multiline = (multiline.strip() or "join").lower()
+        if self.multiline not in _MULTILINE:
+            problems.append(f"unknown multiline {multiline.strip()!r} "
+                            f"(expected {', '.join(_MULTILINE)})")
         # absent means the agent has no skills at all - the palette hides
         # them for it, and an item carrying one is skipped rather than sent
         # stripped of it
+        if skill_format not in (None, "") and not isinstance(skill_format,
+                                                             str):
+            problems.append(
+                f"skill_format must be a string, got {skill_format!r}")
+            skill_format = ""
         self.skill_format = skill_format or None
         # How to talk to it. Posting Win32 messages does nothing to a
         # Chromium window, so this is per agent rather than one mechanism
         # for all of them - see PLAN.md section 10b.
-        self.transport = (transport or "post").lower()
+        if not isinstance(transport, str):
+            if transport not in (None, ""):
+                problems.append(
+                    f"transport must be a string, got {transport!r}")
+            transport = ""
+        self.transport = (transport.strip() or "post").lower()
+        if self.transport not in _TRANSPORTS:
+            problems.append(f"unknown transport {transport.strip()!r} "
+                            f"(expected {' or '.join(_TRANSPORTS)})")
+        else:
+            ok_key, key_reason = validate_submit_key(self.submit,
+                                                     self.transport)
+            if not ok_key:
+                problems.append(key_reason)
         try:
             self.cdp_port = int(cdp_port or 0)
         except (TypeError, ValueError):
             self.cdp_port = 0
-        self.cdp_title = cdp_title or ""
+        self.cdp_title = _str_field("cdp_title", cdp_title, problems)
         # Chromium picks a fresh debug port every launch, so a fixed one
         # works until the app restarts. The port file is where it records
         # the live one.
-        self.cdp_port_file = cdp_port_file or ""
+        self.cdp_port_file = _str_field("cdp_port_file", cdp_port_file,
+                                        problems)
         # Which field on the page is the composer. Left empty the
         # sender uses its own default; named when a page has
         # several and the guess would pick the wrong one.
-        self.cdp_selector = cdp_selector or ""
+        self.cdp_selector = _str_field("cdp_selector", cdp_selector, problems)
         if self.transport == "cdp" and not (self.cdp_port or self.cdp_port_file):
-            problems = list(problems) + [
-                "cdp transport needs a cdp_port or a cdp_port_file"]
+            problems.append("cdp transport needs a cdp_port or a cdp_port_file")
+        # A malformed skill_format is a per-entry problem, not a runtime surprise
+        # at QueueItem.compose (CORE-011): surface it now so supported() refuses
+        # to arm an adapter whose format template cannot actually format.
+        if skill_format:
+            ok_fmt, fmt_reason = validate_skill_format(skill_format)
+            if not ok_fmt:
+                problems.append(fmt_reason)
         self.problems = list(problems)
 
         # Public so the arming path can ask "does this adapter CLAIM a
@@ -162,10 +294,21 @@ def _adapter_from(entry, project=None):
             "blocker_pattern is set, but this transport cannot read the "
             "target's visible text — the blocker is INACTIVE")
 
+    # A TOML boolean is a real bool. Anything else (a quoted "false" string,
+    # a 0/1) must NOT be silently coerced by bool(): bool("false") is True,
+    # so a deliberately-disabled adapter would be enabled and armed. Reject
+    # the entry so the typo surfaces instead of inverting the intent.
+    enabled_raw = entry.get("enabled", True)
+    if isinstance(enabled_raw, bool):
+        enabled = enabled_raw
+    else:
+        raise ValueError(
+            f"enabled must be a boolean (true/false), got {enabled_raw!r}")
+
     return Adapter(
         name=name.strip(),
         probes=probes,
-        enabled=entry.get("enabled", True),
+        enabled=enabled,
         settle_ms=entry.get("settle_ms", 2500),
         submit=entry.get("submit", "enter"),
         multiline=entry.get("multiline", "join"),
@@ -219,7 +362,16 @@ def parse_adapters(text, project=None):
             except (TypeError, ValueError):
                 errors.append(f"max_sends must be a number, got {value!r}")
         elif key == "dry_run_new":
-            limits[key] = bool(value)
+            # Require a native TOML boolean. bool("false") is True, so a
+            # quoted "false" would silently flip dry-run OFF (or "true"
+            # would keep it on but mean nothing) — the launcher would then
+            # actually send, which is the unsafe behaviour we must never
+            # derive from a malformed config. A bad value keeps the safe
+            # default (True) and is reported.
+            if isinstance(value, bool):
+                limits[key] = value
+            else:
+                errors.append(f"dry_run_new must be a boolean, got {value!r}")
     return adapters, limits, errors
 
 

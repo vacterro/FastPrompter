@@ -162,7 +162,13 @@ class PostMessageSender:
                     False,
                     "the target did not accept posted input "
                     "(a console may need WriteConsoleInput)", text)
-            self.post.press(target.hwnd, self.submit)
+            # The submit keystroke is part of the atomic send: a rejected press
+            # means the text may be sitting unsent in the target, so the whole
+            # send must fail rather than report a silent success.
+            if not self.post.press(target.hwnd, self.submit):
+                reason = self.post.last_reason or \
+                    "the submit keystroke was not posted"
+                return SendResult(False, f"send failed: {reason}", text)
         except Exception as exc:
             return SendResult(False, f"send failed: {exc}", text)
         return SendResult(True, "sent silently", text)

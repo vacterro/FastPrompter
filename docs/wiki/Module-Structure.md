@@ -115,10 +115,10 @@ src/fastprompter/
 
 | Package | Responsibility |
 |---|---|
-| `core.state` | SQLite WAL persistence, state sync, undo stack, per-category aliased stores |
+| `core.state` | SQLite WAL persistence, domain-scoped dirty tracking, state sync, undo stack, per-category aliased stores |
 | `core.hotkey*` | Win32 RegisterHotKey + native event filter, layout-independent dispatch |
 | `core.watcher` | Prompt queue, CDP/Win32 automation, skill wrappers, limit scanner |
-| `core.i18n` | 33-locale translation pack + proxy delegation from translations.py |
+| `core.i18n` | 33-locale translation pack + proxy delegation from translations.py (with lazy loading) |
 | `core.ctrlw` | Divider template engine (Ctrl+W / Alt+W) |
 | `core.timers` | Timer model, due detection, serialization |
 | `core.pomodoro` | Work/break state machine, focus timer |

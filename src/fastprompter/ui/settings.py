@@ -1,5 +1,6 @@
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QKeySequence
+import copy
 from PyQt6.QtWidgets import (
     QDialog,
     QFormLayout,
@@ -362,20 +363,15 @@ class ColorConfigDialog(QDialog):
             btn.setStyleSheet(f"background-color: {hex_c}; color: {text_color}; font-weight: bold;")
 
     def reset_colors(self):
-        defaults = {
-            "bg_main": "#1a1a1a", "bg_text": "#000000", "text_main": "#c0c0c0",
-            "border_light": "#4d4d4d", "border_dark": "#0a0a0a",
-            "btn_bg": "#2b2b2b", "btn_pressed": "#141414", "btn_text": "#c0c0c0",
-            "accent": "#5a7a96", "edit_bg": "#2a3330",
-            "overlay_new": "#6a5555", "overlay_recent": "#6a5a40",
-            "overlay_day": "#5a5a30", "overlay_old": "#40506a",
-            "notif_bg": "#1a1a1a", "notif_header": "#2b2b2b",
-            "notif_title": "#5a7a96", "notif_text": "#c0c0c0",
-            "notif_accent": "#5a7a96", "notif_border": "#4d4d4d"
-        }
-        self.custom_colors = defaults
+        # The single source of truth for every theme colour is
+        # ``canonical_defaults`` (built from CUSTOM_COLOR_DEFAULTS plus the
+        # edit/overlay fallbacks). The Reset map must never diverge from it:
+        # a key missing here raises KeyError the moment a control added later
+        # (e.g. the notification palette) is reset. Index the canonical map,
+        # not a hand-maintained copy.
+        self.custom_colors = dict(self.canonical_defaults)
         for k, btn in self.color_buttons.items():
-            hex_c = defaults[k]
+            hex_c = self.canonical_defaults.get(k, "#000000")
             btn.setText(hex_c)
             btn.setStyleSheet(f"background-color: {hex_c}; color: white; font-weight: bold;")
 

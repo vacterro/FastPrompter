@@ -294,6 +294,77 @@ def test_the_skill_format_is_per_agent():
     assert adapters[0].skill_format == "/{skill} {text}"
 
 
+# ------------------------------------------------------------------ CORE-011
+def _adapter_with_skill_format(fmt):
+    # skill_format must sit on the agent table, BEFORE the [[agent.probe]]
+    # sub-table, so parsing keeps it off the probe. A supported file probe lets
+    # readiness hinge only on the skill_format validation under test.
+    text = (
+        '[[agent]]\nname = "x"\n'
+        f'skill_format = "{fmt}"\n'
+        '  [[agent.probe]]\n  kind = "file"\n  glob = "{project}/x/*.jsonl"\n')
+    return parse_adapters(text, project="proj")
+
+
+def test_valid_skill_format_is_armable():
+    adapters, _limits, errors = _adapter_with_skill_format("/{skill} {text}")
+    assert errors == []
+    ok, reason = adapters[0].supported()
+    assert ok, reason
+    assert adapters[0].problems == []
+    # and it composes normally
+    from fastprompter.core.watcher.queue import QueueItem
+    item = QueueItem("hello", skill="/saipen")
+    assert adapters[0].skill_format is not None
+    assert item.compose(adapters[0].skill_format) == "/saipen hello"
+
+
+def test_unknown_field_in_skill_format_is_rejected():
+    adapters, _limits, errors = _adapter_with_skill_format("/{skill} {oops}")
+    assert errors == []
+    # surfaced as a per-entry problem; not armable as ready
+    assert any("skill_format" in p for p in adapters[0].problems)
+    ok, reason = adapters[0].supported()
+    assert ok is False
+    assert "oops" in reason or "skill_format" in reason
+
+
+def test_malformed_braces_in_skill_format_is_rejected():
+    adapters, _limits, errors = _adapter_with_skill_format("/{skill} {text")
+    assert errors == []
+    assert any("skill_format" in p for p in adapters[0].problems)
+    ok, reason = adapters[0].supported()
+    assert ok is False
+
+
+def test_absent_skill_format_still_means_no_skills():
+    adapters, _limits, errors = _adapter_with_skill_format("")
+    assert errors == []
+    assert adapters[0].skill_format is None
+    ok, _reason = adapters[0].supported()
+    assert ok
+    from fastprompter.core.watcher.queue import QueueItem
+    item = QueueItem("hi", skill="/saipen")
+    assert item.compose(adapters[0].skill_format) is None
+
+
+def test_malformed_adapter_does_not_block_a_valid_one():
+    text = (
+        '[[agent]]\nname = "bad"\n'
+        'skill_format = "/{skill} {oops}"\n'
+        '  [[agent.probe]]\n  kind = "file"\n  glob = "{project}/x/*.jsonl"\n'
+        '[[agent]]\nname = "good"\n'
+        'skill_format = "/{skill} {text}"\n'
+        '  [[agent.probe]]\n  kind = "file"\n  glob = "{project}/x/*.jsonl"\n')
+    adapters, _limits, errors = parse_adapters(text, project="proj")
+    assert errors == []
+    names = [a.name for a in adapters]
+    assert names == ["bad", "good"]
+    ok, _reason = adapters[1].supported()
+    assert ok, "the valid adapter must still load and arm"
+    assert not adapters[0].supported()[0]
+
+
 # ------------------------------------------------------------------ files
 
 def test_loading_falls_back_to_the_shipped_example(tmp_path):
@@ -385,4 +456,41 @@ def test_the_shipped_antigravity_entry_uses_the_proven_transport():
     ag = next(a for a in adapters if a.name == "antigravity")
     assert ag.transport == "cdp"
     assert ag.cdp_port_file, "the port must be discovered, not pinned"
+
+
+# -------------------------------------------------- native boolean parsing
+
+def test_a_native_disabled_flag_stays_disabled():
+    """A real TOML false must be honoured, never coerced to True."""
+    adapters, _limits, errors = parse_adapters(
+        '[[agent]]\nname = "off"\nenabled = false\n')
+    assert [a.name for a in adapters] == ["off"]
+    assert adapters[0].enabled is False
+    assert errors == []
+
+
+def test_a_quoted_enabled_flag_is_rejected_not_enabled():
+    """bool("false") is True in Python, so a quoted "false" would silently
+    ARM a disabled adapter. Require a native boolean and surface the typo."""
+    adapters, _limits, errors = parse_adapters(
+        '[[agent]]\nname = "trap"\nenabled = "false"\n')
+    assert [a.name for a in adapters] == []
+    assert errors, "a non-boolean enabled must be reported"
+    assert "enabled must be a boolean" in errors[0]
+
+
+def test_a_native_dry_run_false_is_honoured():
+    _a, limits, errors = parse_adapters("[limits]\ndry_run_new = false")
+    assert limits["dry_run_new"] is False
+    assert errors == []
+
+
+def test_a_quoted_dry_run_false_keeps_the_safe_default():
+    """A malformed (string) value must not flip dry-run OFF. Keep the safe
+    default (True) and report the typo."""
+    _a, limits, errors = parse_adapters('[limits]\ndry_run_new = "false"')
+    assert limits["dry_run_new"] is True
+    assert errors, "a non-boolean dry_run_new must be reported"
+    assert "dry_run_new must be a boolean" in errors[0]
+
 

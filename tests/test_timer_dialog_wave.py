@@ -139,10 +139,10 @@ def test_pool_rule_roundtrip_reads_back():
     b._pool_add()
     row = 0
     b.pool.cellWidget(row, 0).setChecked(True)
-    b.pool.cellWidget(row, 2).setChecked(False)  # all_day off
-    b.pool.cellWidget(row, 3).setTime(QTime(6, 0))
-    b.pool.cellWidget(row, 4).setTime(QTime(12, 0))
-    b.pool.cellWidget(row, 5).setValue(3)
+    # b.pool.cellWidget(row, 2) is frm, 3 is to, 4 is vol
+    b.pool.cellWidget(row, 2).setTime(QTime(6, 0))
+    b.pool.cellWidget(row, 3).setTime(QTime(12, 0))
+    b.pool.cellWidget(row, 4).setValue(3)
     rules = b._read_pool_rules()
     assert len(rules) == 1
     r = rules[0]
@@ -273,16 +273,8 @@ def test_pool_row_signals_survive_row_removal():
     assert seen == [("click", 4)], seen
     seen.clear()
 
-    # old row2 (file) is now row1; its all-day toggle must drive ITS From/To
-    # and never touch row0's widgets
-    row1_frm = b.pool.cellWidget(1, 3)
-    row1_to = b.pool.cellWidget(1, 4)
-    b.pool.cellWidget(1, 2).setChecked(False)
-    assert row1_frm.isEnabled() and row1_to.isEnabled()
-    assert b.pool.cellWidget(0, 3).isEnabled() is True    # row0 unaffected
-    b.pool.cellWidget(1, 2).setChecked(True)
-    assert not row1_frm.isEnabled() and not row1_to.isEnabled()
-    assert b.pool.cellWidget(0, 3).isEnabled() is True    # row0 still unaffected
+    # The all-day checkbox is removed, but we keep the row removal test to ensure
+    # the combo box signal still fires correctly after a removal (tested above).
 
 
 def test_calendar_inherited_volume_uses_calendar_editor_volume():
@@ -301,9 +293,9 @@ def test_calendar_inherited_volume_uses_calendar_editor_volume():
     assert seen == [("tick", 9)], seen   # inherited -> Calendar editor volume
 
     seen.clear()
-    d._cal_behavior.pool.cellWidget(0, 5).setValue(6)
+    d._cal_behavior.pool.cellWidget(0, 4).setValue(6)
     d._cal_behavior._preview_pool_row(0)
-    assert seen == [("tick", 6)], seen   # explicit row volume wins
+    assert seen == [("tick", 6)], seen   # overridden volume wins
 
 
 def test_zero_length_window_refused_at_alarm_commit():
@@ -943,6 +935,47 @@ def test_t1015_scan_agent_locale_independent_identity():
         alarms = [t for t in d.main_win.timers if t.kind == KIND_ALARM]
         assert len(alarms) == 1
         assert alarms[0].id == timer_id
-        
+
     finally:
         limit_scan_mod.scan_all = original_scan_all
+
+
+def test_t1015_legacy_keyless_timer_is_adopted_and_not_duplicated():
+    """A pre-existing timer with no ``auto_limit_key`` and a localized name
+    (the legacy shape) must be adopted — given a stable key, enabled, and an
+    assumed target — and must never be duplicated when the UI language
+    changes. This is the bug: the assumed-window path used to skip the
+    update, so a re-scan could not find the keyless timer by its localized
+    name and created a second countdown."""
+    from fastprompter.core.timers import KIND_ALARM, Timer
+    import types
+
+    res = types.SimpleNamespace(
+        name="Claude", reachable=True,
+        state=types.SimpleNamespace(resets_at=None, matched="capped", reached=True),
+    )
+
+    app = _FakeMain()
+    legacy = Timer(name="Claude limit", target=datetime.datetime(2030, 1, 1),
+                   kind=KIND_ALARM, auto_limit_key=None)
+    app.timers = [legacy]
+    d = TimerDialog(app)
+    d.main_win.watcher_adapters = lambda: ([], [], [])
+
+    from fastprompter.core.watcher import limit_scan as limit_scan_mod
+    original = limit_scan_mod.scan_all
+    limit_scan_mod.scan_all = lambda adapters: [res]
+    try:
+        for lang in ("EN", "RU", "EST", "JA"):
+            d.lang = lang
+            d.scan_agent_limits()
+            alarms = [t for t in app.timers if t.kind == KIND_ALARM]
+            # exactly one timer, same identity, stable adopted key
+            assert len(alarms) == 1, (lang, len(alarms))
+            assert alarms[0].id == legacy.id, lang
+            assert alarms[0].auto_limit_key == "Claude", lang
+            assert alarms[0].enabled is True, lang
+            # assumed target is deterministic: now + the configured window
+            assert alarms[0].target is not None
+    finally:
+        limit_scan_mod.scan_all = original

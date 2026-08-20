@@ -179,6 +179,19 @@ def _digest(name, length=8):
                         usedforsecurity=False).hexdigest()[:length]
 
 
+def _ci_component_key(component):
+    """Windows case-insensitive filesystem identity, host-independent.
+
+    Windows compares path components case-insensitively, so two logical
+    names that differ only by case map to the SAME component there. The
+    allocator can run on any host (not only Windows), so this identity must
+    be reproduced everywhere — a plain lowercase, not ``os.path.normcase``
+    (a no-op on POSIX that would let a case-only collision slip through and
+    have one logical name silently overwrite another).
+    """
+    return component.lower()
+
+
 def _readable_prefix(name):
     """A readable, safe-ish prefix of a hostile name. Empty when unusable."""
     prefix = _CONTROL_RE.sub("_", _ILLEGAL_RE.sub("_", str(name))).strip()
@@ -218,17 +231,17 @@ def alloc_fs_names(names, fallback="unnamed", digest_len=8):
     form and the later one never silently overwrites it.
     """
     result = {}
-    claimed = {}          # normcase(component) -> logical name that holds it
+    claimed = {}          # _ci_component_key(component) -> logical name that holds it
     for name in names:
         base, _ = fs_component(name, fallback, digest_len)
         comp = base
-        key = os.path.normcase(comp)
+        key = _ci_component_key(comp)
         if key in claimed and claimed[key] != name:
             comp = f"{base}_{_digest(name, digest_len)}"
-            key = os.path.normcase(comp)
+            key = _ci_component_key(comp)
         if key in claimed and claimed[key] != name:   # identical-digest guard
             comp = _digest(name, 12)
-            key = os.path.normcase(comp)
+            key = _ci_component_key(comp)
         claimed[key] = name
         result[name] = comp
     return result

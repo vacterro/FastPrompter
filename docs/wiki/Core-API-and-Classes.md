@@ -1,20 +1,20 @@
-# FastPrompter Core API & Class Reference
+﻿# FastPrompter Core API & Class Reference
 
 ## Core Classes (`src/fastprompter/core/`)
 
 ### `FastPrompterState` (`core/state.py`)
 
-Thread-safe SQLite data model. Central state hub — all silos, snippets, settings, theme, queues go through this.
+Thread-safe SQLite data model. Central state hub вЂ” all silos, snippets, settings, theme, queues go through this.
 
 **Methods:**
-- `__init__(profile_id=1)` — open SQLite conn, WAL mode, load cached settings
-- `init_db()` — create/upgrade schema (presets, settings, temp_presets_v2, archive_temp_presets_v2), run startup .bak backup
-- `switch_profile(new_profile_id)` — close current DB, switch path, reload
-- `save_data_to_db(text, ui_settings, force)` — atomic dirty-state flush
-- `mark_dirty()` — flag state as needing a save (async via auto-save timer)
-- `reset_data()` — reinit in-memory defaults
+- `__init__(profile_id=1)` вЂ” open SQLite conn, WAL mode, load cached settings
+- `init_db()` вЂ” create/upgrade schema (presets, settings, temp_presets_v2, archive_temp_presets_v2), run startup .bak backup
+- `switch_profile(new_profile_id)` вЂ” close current DB, switch path, reload
+- `save_data_to_db(text, ui_settings, force)` вЂ” atomic dirty-state flush
+- `mark_dirty()` вЂ” flag state as needing a save (async via auto-save timer)
+- `reset_data()` вЂ” reinit in-memory defaults
 
-**Data model:** Single `self.data` dict. Per-category stores aliased: `temp_presets` → `temp_presets_all[active_cat]`, `silo_colors` → `silo_colors_all[active_cat]`, etc. All `_all` keys auto-migrate on first access.
+**Data model:** Single `self.data` dict. Per-category stores aliased: `temp_presets` в†’ `temp_presets_all[active_cat]`, `silo_colors` в†’ `silo_colors_all[active_cat]`, etc. All `_all` keys auto-migrate on first access.
 
 ---
 
@@ -23,35 +23,35 @@ Thread-safe SQLite data model. Central state hub — all silos, snippets, settin
 Threaded pynput keyboard listener for system-wide hotkeys.
 
 **Methods:**
-- `start()` — spawn pynput listener thread
-- `stop()` — halt listener
-- `update_hotkeys(hk_dict)` — re-register hotkey map
+- `start()` вЂ” spawn pynput listener thread
+- `stop()` вЂ” halt listener
+- `update_hotkeys(hk_dict)` вЂ” re-register hotkey map
 
 ---
 
 ### `HotkeyFilter` (`core/hotkey_filter.py`)
 
-Win32 WH_KEYBOARD_LL hook. Intercepts physical VK codes — layout-independent. Works cross-layout (QWERTY/JCUKEN/AZERTY). Used for layout_shortcuts.py dispatch.
+Win32 WH_KEYBOARD_LL hook. Intercepts physical VK codes вЂ” layout-independent. Works cross-layout (QWERTY/JCUKEN/AZERTY). Used for layout_shortcuts.py dispatch.
 
 ---
 
 ### `IpcServer` (`core/ipc_server.py`)
 
-QLocalServer on named pipe `FastPrompter_Server_V15`. Token-only auth via `%TEMP%/fastprompter_ipc.token` — the SHOW command is accepted only with the token; there is no unauthenticated path (T-788).
+QLocalServer on named pipe `FastPrompter_Server_V15`. Token-only auth via `%TEMP%/fastprompter_ipc.token` вЂ” the SHOW command is accepted only with the token; there is no unauthenticated path (T-788).
 
 **Methods:**
-- `setup()` — start listening (recovers stale socket names with removeServer)
-- `close()` — stop server
-- `_handle_command()` — process SHOW command from second instance
+- `setup()` вЂ” start listening (recovers stale socket names with removeServer)
+- `close()` вЂ” stop server
+- `_handle_command()` вЂ” process SHOW command from second instance
 
 **Helper:**
-- `try_connect_to_server()` — probe running instance (returns QLocalSocket or None)
+- `try_connect_to_server()` вЂ” probe running instance (returns QLocalSocket or None)
 
 ---
 
 ### `InstanceLock` (`core/instance_lock.py`)
 
-Win32 named mutex (`Local\FastPrompter_Instance_...`) — single-instance
+Win32 named mutex (`Local\FastPrompter_Instance_...`) вЂ” single-instance
 ownership. A frozen/lost owner is detected at startup and reported with a
 diagnostic; the mutex can never be taken over by a second writer, so
 split-brain instances are impossible by design (T-788).
@@ -76,10 +76,10 @@ Work/break state machine with configurable intervals.
 **Constants:** `PHASE_WORK`, `PHASE_BREAK`
 
 **Methods:**
-- `start_work()`, `start_break()`, `pause()`, `reset()` — lifecycle
-- `tick(elapsed)` — advance timer, yield phase transitions
-- `describe()` — human-readable state string
-- `from_dict(data)` / `to_dict()` — JSON serialization
+- `start_work()`, `start_break()`, `pause()`, `reset()` вЂ” lifecycle
+- `tick(elapsed)` вЂ” advance timer, yield phase transitions
+- `describe()` вЂ” human-readable state string
+- `from_dict(data)` / `to_dict()` вЂ” JSON serialization
 
 ---
 
@@ -90,12 +90,12 @@ Generic countdown timer. Color-coded urgency, sound on fire, snooze.
 **Timer attributes:** `name`, `description`, `target` (datetime), `sound`, `volume`, `color_mode`, `color`
 
 **Methods:**
-- `remaining()` — seconds until target
-- `snooze(minutes)` — push target forward
-- `display_color()` — urgency color (green/yellow/red)
-- `collect_due(timers)` — return due timer list
-- `next_due(timers)` — soonest timer
-- `save_timers(data)` / `load_timers(data)` — serialization
+- `remaining()` вЂ” seconds until target
+- `snooze(minutes)` вЂ” push target forward
+- `display_color()` вЂ” urgency color (green/yellow/red)
+- `collect_due(timers)` вЂ” return due timer list
+- `next_due(timers)` вЂ” soonest timer
+- `save_timers(data)` / `load_timers(data)` вЂ” serialization
 
 ---
 
@@ -103,9 +103,9 @@ Generic countdown timer. Color-coded urgency, sound on fire, snooze.
 
 Human-readable duration parsing.
 
-- `parse_duration(text)` — "2h 30m" → seconds
-- `format_remaining(seconds, short=False, minutes=False)` — "2h 30m" → "2h" or "4d 11h 05m"
-- `format_duration(seconds)` — full format string
+- `parse_duration(text)` вЂ” "2h 30m" в†’ seconds
+- `format_remaining(seconds, short=False, minutes=False)` вЂ” "2h 30m" в†’ "2h" or "4d 11h 05m"
+- `format_duration(seconds)` вЂ” full format string
 
 ---
 
@@ -113,9 +113,9 @@ Human-readable duration parsing.
 
 Cross-silo hashtag extraction + search.
 
-- `extract_tags(text)` — return set of `#tag` strings
-- `index_silo(cat, slot, text)` — tag → silo index
-- `search(tag)` — all silos containing tag across categories
+- `extract_tags(text)` вЂ” return set of `#tag` strings
+- `index_silo(cat, slot, text)` вЂ” tag в†’ silo index
+- `search(tag)` вЂ” all silos containing tag across categories
 
 ---
 
@@ -123,8 +123,8 @@ Cross-silo hashtag extraction + search.
 
 Ctrl+W / Alt+W template insertion.
 
-- `insert_divider(editor, template, upward)` — insert horizontal rule, strip duplicate bullets on split
-- `simulate(editor, upward)` — preview insert position
+- `insert_divider(editor, template, upward)` вЂ” insert horizontal rule, strip duplicate bullets on split
+- `simulate(editor, upward)` вЂ” preview insert position
 
 ---
 
@@ -132,7 +132,7 @@ Ctrl+W / Alt+W template insertion.
 
 Ctrl+E header insertion. Configurable: rule line, gap, bullet, alignment, timestamp stamp.
 
-- `format_header(editor, config)` — format current line as header
+- `format_header(editor, config)` вЂ” format current line as header
 
 ---
 
@@ -140,9 +140,9 @@ Ctrl+E header insertion. Configurable: rule line, gap, bullet, alignment, timest
 
 `.md` template loader for the "Fill from preset" feature (T-715).
 
-- `presets_dir()` — resolved path to the shipped `presets/` data dir (exe or src)
-- `label_for(filename)` — `03_Bullet list.md` → `Bullet list` (leading `NN_` stripped, underscores to spaces)
-- `load_presets(force=False)` — ordered `[(label, text)]` list; missing/unreadable folder yields `[]`
+- `presets_dir()` вЂ” resolved path to the shipped `presets/` data dir (exe or src)
+- `label_for(filename)` вЂ” `03_Bullet list.md` в†’ `Bullet list` (leading `NN_` stripped, underscores to spaces)
+- `load_presets(force=False)` вЂ” ordered `[(label, text)]` list; missing/unreadable folder yields `[]`
 
 ---
 
@@ -150,13 +150,13 @@ Ctrl+E header insertion. Configurable: rule line, gap, bullet, alignment, timest
 
 | Module | Role |
 |---|---|
-| `engine.py` | Finite state machine: DISARMED → ARMED → WATCHING → SENDING |
+| `engine.py` | Finite state machine: DISARMED в†’ ARMED в†’ WATCHING в†’ SENDING |
 | `cdp.py` | Chrome CDP attach + evaluate + read-back verification (Electron apps) |
-| `win32.py` | Win32 window probe — foreground, caret, focus detection |
+| `win32.py` | Win32 window probe вЂ” foreground, caret, focus detection |
 | `probes.py` | Multi-probe state combinators + combined matrix |
 | `queue.py` | QueueItem, SendIntent, pinning, per-queue key, persistence |
 | `sender.py` | CDP + Win32 keystroke injection with read-back verification |
-| `skills.py` | Prompt skill wrappers — prefix/template transforms |
+| `skills.py` | Prompt skill wrappers вЂ” prefix/template transforms |
 | `adapter.py` | Abstract probe adapter interface |
 | `limit_scan.py` | Cross-agent limit scanner + auto-timer creation |
 
@@ -167,27 +167,27 @@ Ctrl+E header insertion. Configurable: rule line, gap, bullet, alignment, timest
 ### `FastPrompter` (`main.py`)
 
 QMainWindow. Mixin composition (declaration order):
-1. FormattingMixin — markdown formatting shortcuts
-2. HotkeyMixin — hotkey binding interface
-3. ScalingMixin — DPI/font scaling
-4. SearchMixin — search bar over silos
-5. SendSelectionMixin — send text via watcher
-6. SnippetOpsMixin — silo ops (trash, duplicate, reorder)
-7. ThemeMixin — app stylesheet, vintage presets
-8. TrayMixin — system tray icon + menu
-9. WatcherMixin — watcher engine integration
-10. WindowMixin — frameless window + snapping
+1. FormattingMixin вЂ” markdown formatting shortcuts
+2. HotkeyMixin вЂ” hotkey binding interface
+3. ScalingMixin вЂ” DPI/font scaling
+4. SearchMixin вЂ” search bar over silos
+5. SendSelectionMixin вЂ” send text via watcher
+6. SnippetOpsMixin вЂ” silo ops (trash, duplicate, reorder)
+7. ThemeMixin вЂ” app stylesheet, vintage presets
+8. TrayMixin вЂ” system tray icon + menu
+9. WatcherMixin вЂ” watcher engine integration
+10. WindowMixin вЂ” frameless window + snapping
 
 **Key properties:** `_font_size`, `_font_family`, `_ui_scale`, `_button_scale`, `_sidebar_right`, `_always_on_top`, `_normal_window`
 
 **Key methods:**
-- `init_ui()` — build window, header toolbar, splitter, editor, sidebar, status bar
-- `setup_single_instance_server()` — IPC init
-- `register_all_hotkeys()` — bind pynput + PyQt shortcuts
-- `apply_font()` / `apply_theme()` — cascade font/theme changes
-- `place_window()` — restore saved geometry or apply default snap
-- `_switch_to_slot(slot, initial)` — load silo into editor, save cursor state
-- `capture_silo_state()` / `restore_silo_state()` — per-silo cursor/scroll/fold/heat persistence
+- `init_ui()` вЂ” build window, header toolbar, splitter, editor, sidebar, status bar
+- `setup_single_instance_server()` вЂ” IPC init
+- `register_all_hotkeys()` вЂ” bind pynput + PyQt shortcuts
+- `apply_font()` / `apply_theme()` вЂ” cascade font/theme changes
+- `place_window()` вЂ” restore saved geometry or apply default snap
+- `_switch_to_slot(slot, initial)` вЂ” load silo into editor, save cursor state
+- `capture_silo_state()` / `restore_silo_state()` вЂ” per-silo cursor/scroll/fold/heat persistence
 
 ---
 
@@ -196,17 +196,17 @@ QMainWindow. Mixin composition (declaration order):
 Extended QPlainTextEdit. Markdown editing canvas.
 
 **Features:**
-- MarkdownHighlighter — live syntax coloring
-- LineNumberArea — gutter: line numbers + fold arrows (▾) + margin marks
-- `fold_header(block_num)` / `unfold_header(block_num)` — section collapse
-- `queue_current_line()` — anchor watcher item to block
-- `set_queue_anchor(block, id)` — queue line anchoring
-- `collect_line_marks()` / `apply_line_marks()` — per-line margin mark persistence
-- `collect_line_heat()` / `apply_line_heat()` — recency heatmap
-- `block_for_queue_item(id)` — find block by queue anchor
-- `toggle_checkbox()` — `- [ ]` ↔ `- [x]`
-- `toggle_hide_markup(checked)` — conceal ** * ~~ ` markers (T-603)
-- Image pills — `![alt](url)` → 150px clickable button
+- MarkdownHighlighter вЂ” live syntax coloring
+- LineNumberArea вЂ” gutter: line numbers + fold arrows (в–ѕ) + margin marks
+- `fold_header(block_num)` / `unfold_header(block_num)` вЂ” section collapse
+- `queue_current_line()` вЂ” anchor watcher item to block
+- `set_queue_anchor(block, id)` вЂ” queue line anchoring
+- `collect_view_metadata()` — consolidated marks, heat, and folds capture
+- `block_for_queue_item(id)` / `blocks_for_queue_items(ids)` вЂ” find block by queue anchor
+- `document_word_count()` вЂ” O(1) cached word count
+- `toggle_checkbox()` вЂ” `- [ ]` в†” `- [x]`
+- `toggle_hide_markup(checked)` вЂ” conceal ** * ~~ ` markers (T-603)
+- Image pills вЂ” `![alt](url)` в†’ 150px clickable button
 
 ---
 
@@ -215,17 +215,17 @@ Extended QPlainTextEdit. Markdown editing canvas.
 Sidebar silo list + F1-F10 buttons.
 
 **Classes:**
-- `SnippetWidget` — sidebar panel: category tabs + silo list
-- `DraggableSiloButton` — individual silo button (pin, tick, color, file icon, drag)
-- `WheelPager` — scroll-synced pager for silo list
-- `DropVerticalWidget` — drop zone for hierarchy nesting
+- `SnippetWidget` вЂ” sidebar panel: category tabs + silo list
+- `DraggableSiloButton` вЂ” individual silo button (pin, tick, color, file icon, drag)
+- `WheelPager` вЂ” scroll-synced pager for silo list
+- `DropVerticalWidget` вЂ” drop zone for hierarchy nesting
 
 **Features:**
 - Up to 100 silos per tab
 - Pins, ticks, recency heatmap, hierarchy (drag to nest)
-- Sidebar gaps — user-defined spacer bars (Ctrl+drag to move)
-- Multi-select — Shift=range, Ctrl=toggle, batch delete/save/clear
-- Number-box mode — project switcher as numbered button row (T-607)
+- Sidebar gaps вЂ” user-defined spacer bars (Ctrl+drag to move)
+- Multi-select вЂ” Shift=range, Ctrl=toggle, batch delete/save/clear
+- Number-box mode вЂ” project switcher as numbered button row (T-607)
 
 ---
 
@@ -233,19 +233,19 @@ Sidebar silo list + F1-F10 buttons.
 
 Per-silo file drawer. Opens below editor.
 
-- `load_files(cat, slot)` — read folder contents
-- `add_files(paths)` — copy external files into silo folder
-- `apply_template(name)` — create folder structure (IN/OUT/DOCS/Assets/Drafts)
+- `load_files(cat, slot)` вЂ” read folder contents
+- `add_files(paths)` вЂ” copy external files into silo folder
+- `apply_template(name)` вЂ” create folder structure (IN/OUT/DOCS/Assets/Drafts)
 - Image preview, link mode, drag-and-drop
-- Silo backup — Ctrl+click 📁 exports silo text
+- Silo backup вЂ” Ctrl+click рџ“Ѓ exports silo text
 
 ---
 
 ### `SiloTable` (`ui/silo_table.py`)
 
-Pure-text markdown table builder. No Qt tables — works on plain markdown.
+Pure-text markdown table builder. No Qt tables вЂ” works on plain markdown.
 
-- Tab/Shift+Tab: walk cells; Tab off last → new row
+- Tab/Shift+Tab: walk cells; Tab off last в†’ new row
 - Enter: new row (not split)
 - Cell editing via inline markdown
 
@@ -255,8 +255,8 @@ Pure-text markdown table builder. No Qt tables — works on plain markdown.
 
 Pure-text markdown kanban board. Cards are markdown list items.
 
-- Alt+↑/↓: move card up/down
-- Alt+←/→: move card to adjacent column
+- Alt+в†‘/в†“: move card up/down
+- Alt+в†ђ/в†’: move card to adjacent column
 - Enter on empty board line: new card
 - Click checkbox: toggle done
 
@@ -288,7 +288,7 @@ Drag-and-drop toolbar customization. Visible gap widgets. Reset button.
 
 ### `Overflow Menu` (`main.py`)
 
-When header < 700px: hidden buttons collected in » popup. Every formatting, navigation, tool still reachable.
+When header < 700px: hidden buttons collected in В» popup. Every formatting, navigation, tool still reachable.
 
 ### `EditGuard` (`ui/edit_guard.py`)
 

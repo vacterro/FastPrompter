@@ -173,9 +173,18 @@ def _do_export(data: dict, profile_id=1) -> None:
     shutil.rmtree(tmp_dir, ignore_errors=True)
 
     cats = data.get("cats_order", []) or []
-    # one collision-free filesystem component per logical project name,
-    # consistent across silos/archive/snippets within this snapshot
-    comps = alloc_fs_names([c for c in cats if isinstance(c, str)])
+    # One collision-free filesystem component per logical project name,
+    # consistent across silos/archive/snippets within this snapshot. Build it
+    # from EVERY category actually exported — not only cats_order. DB recovery
+    # preserves unknown categories in the per-category stores, so an orphan
+    # ("Foo." / "Foo ") would otherwise fall back to its raw name, collide with
+    # another, and silently drop one category's export.
+    export_cats = set(cats)
+    for key in ("temp_presets_all", "archive_temp_presets_all", "categories"):
+        store = data.get(key)
+        if isinstance(store, dict):
+            export_cats.update(store.keys())
+    comps = alloc_fs_names([c for c in export_cats if isinstance(c, str)])
     categories = data.get("categories", {})
 
     try:

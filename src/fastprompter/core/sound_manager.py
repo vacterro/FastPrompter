@@ -472,8 +472,19 @@ class SoundManager(QObject):
         self._available_sounds: list[str] = discover_sound_files(self._sounds_dir)
 
     def get_available_sounds(self) -> list[str]:
-        """Get list of available sound files."""
-        return self._available_sounds.copy()
+        """Get list of available sound files, sorting favorites and defaults to top."""
+        favs = set(self._data.get("sound_favorites", []))
+        defaults = ["newday.wav", "newweek.wav", "newmonth.wav"]
+        
+        def sort_key(name):
+            is_fav = name in favs
+            try:
+                def_idx = defaults.index(name)
+            except ValueError:
+                def_idx = 999
+            return (not is_fav, def_idx, name)
+            
+        return sorted(self._available_sounds, key=sort_key)
 
     def play(self, name: str) -> None:
         """Play a named sound effect.

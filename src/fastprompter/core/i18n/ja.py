@@ -1053,4 +1053,9 @@ TRANSLATIONS: dict[str, str] = {
     '🦓 Zebra Stripes': '🦓 ゼブラストライプ',
     '🧹 Clear': '🧹 クリア',
     '🪟 Normal Window': '🪟 通常ウィンドウ',
+    'Ctrl+drag to move this gap. Double-click to rename.': 'Ctrl を押しながらドラッグでこの間隔を移動。ダブルクリックで名前を変更。',
+    'Gap Name': '間隔の名前',
+    'Name for this group:': 'このグループの名前：',
+    'Backup failed validation; the previous backup is unchanged:\n{}': 'バックアップの検証に失敗しました。以前のバックアップは変更されていません:\n{}',
+    'Export would overwrite itself at:\n{}': 'エクスポートは自身を上書きします:\n{}',
 }

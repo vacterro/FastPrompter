@@ -1,0 +1,19 @@
+audit(T-806): invariant hardening pass + release v0.8.40
+
+Second-round correctness audit (P0-1..P1-8) over v0.8.39:
+- preset/silo state machine: deep-copy snapshot isolation, sync pending
+  hold, rename/del validation, del_category rollback path, None-folder
+  guards, 6-arg slot signals, prev_identity tab switch, normcase claims
+- save/watcher/quit contract: save() returns a real bool, watcher quiesces
+  before pre-quit finalize, refused quit no longer corrupts state
+- undo & tooltip ownership captured at arm time / on the GUI thread (P1-6/P1-8)
+- tracked export worker with per-profile .bak throttle (P1-7); double-failure
+  publish preserves the good generation; abandoned lock = full-app death
+- carries first-round prod fixes: adapter blocker_pattern now persisted,
+  del_category rollback uses the real category dir, tray_mixin F821 undefined
+  icon fixed
+- 135 new regression tests; tests/ 1177 passed / 1 skipped
+- win fixture shared to tests_smoke/conftest.py; ruff clean (one pre-existing
+  E741 grandfathered)
+- documented red baseline: app_smoke 18 pre-existing failures also fail on the
+  v0.8.39 HEAD baseline itself; unattributable to this audit

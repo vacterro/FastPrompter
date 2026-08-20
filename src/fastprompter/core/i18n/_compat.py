@@ -12,7 +12,10 @@ from . import _engine
 
 
 def tr(text: str, lang: str | None = None) -> str:
-    return _engine.tr(text, lang=lang)
+    target = lang or _engine.get_language()
+    from . import _container
+    _container.load_language(target)
+    return _engine.tr(text, lang=target)
 
 
 def set_language(state_data: dict[str, Any], lang: str) -> None:

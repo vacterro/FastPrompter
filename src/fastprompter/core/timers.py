@@ -117,7 +117,14 @@ def _heal_bool(value, default=True):
             return False
         return default
     if isinstance(value, (int, float)):
-        return bool(value)
+        # Accept only exact numeric 0/1. Values like 2, -1, 0.5 or NaN
+        # must NOT be coerced into meaning; they fall back to the field
+        # default so corrupt persistence never silently flips behaviour.
+        if isinstance(value, float) and (value != value or value == float("inf") or value == -float("inf")):
+            return default
+        if value in (0, 1):
+            return bool(value)
+        return default
     return default
 
 
@@ -585,26 +592,31 @@ def collect_due(timers, now=None):
 def occurs_on_date(timer, date):
     """Does ``timer`` recur on ``date``? Pure: never mutates the timer.
 
-    Recurrence basis for daily/weekly/monthly/yearly is anchored at the
-    timer's creation date, so occurrences never appear before it.
+    Recurrence basis for daily/weekly/monthly/yearly is the immutable
+    recurrence ANCHOR (the timer's creation date), NOT the mutable
+    next-fire ``target``. Using ``target`` here meant that as soon as a
+    recurring timer was advanced by ``collect_due``/``advance`` its apparent
+    calendar history got rewritten and previously valid occurrences vanished.
+
+    ``REPEAT_NONE`` keeps comparing against the current (one-shot) target.
     """
     if not isinstance(date, datetime.date):
         return False
     target_date = timer.target.date()
-    if date < target_date:
-        return False
     if timer.repeat == REPEAT_NONE:
         return date == target_date
+    # Recurring: bound by the immutable anchor, never the mutable target.
+    anchor = _anchor_date(timer)
+    if date < anchor:
+        return False
     if timer.repeat == REPEAT_DAILY:
         return True
     if timer.repeat == REPEAT_WEEKLY:
-        return (date - target_date).days % 7 == 0
+        return (date - anchor).days % 7 == 0
     if timer.repeat == REPEAT_MONTHLY:
-        anchor = _anchor_date(timer)
         day = min(anchor.day, calendar.monthrange(date.year, date.month)[1])
         return date.day == day
     if timer.repeat == REPEAT_YEARLY:
-        anchor = _anchor_date(timer)
         day = min(anchor.day, calendar.monthrange(date.year, anchor.month)[1])
         return date.month == anchor.month and date.day == day
     return False

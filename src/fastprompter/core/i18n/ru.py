@@ -1086,4 +1086,9 @@ TRANSLATIONS: dict[str, str] = {
     '🦓 Zebra Stripes': '🦓 Зебра',
     '🧹 Clear': '🧹 Очистить',
     '🪟 Normal Window': '🪟 Обычное окно',
+    'Ctrl+drag to move this gap. Double-click to rename.': 'Перетащите с Ctrl, чтобы переместить этот раздел. Двойной клик — переименовать.',
+    'Gap Name': 'Имя раздела',
+    'Name for this group:': 'Имя для этой группы:',
+    'Backup failed validation; the previous backup is unchanged:\n{}': 'Резервная копия не прошла проверку; прежняя копия не изменена:\n{}',
+    'Export would overwrite itself at:\n{}': 'Экспорт перезаписал бы сам себя по адресу:\n{}',
 }

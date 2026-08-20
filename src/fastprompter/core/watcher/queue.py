@@ -107,21 +107,57 @@ class QueueItem:
         }
 
     @classmethod
-    def from_dict(cls, d):
+    def from_dict(cls, d, seen=None):
         """None for anything malformed — one corrupt entry must not take the
-        whole queue (or the app) down with it."""
+        whole queue (or the app) down with it.
+
+        ``seen`` is a shared id set across the whole load: a duplicate,
+        numeric, empty or whitespace id is replaced with a fresh globally
+        unique one, and any id already consumed (even in another slot) yields a
+        new one — so two items never end up sharing an identity and becoming
+        indistinguishable to find/move/remove.
+        """
         if not isinstance(d, dict):
             return None
         text = d.get("text")
         if not isinstance(text, str):
             return None
+
+        # skill is a str in storage; a stray int (e.g. ``skill=123``) must be
+        # coerced, not passed to str.lstrip, which would crash the loader.
+        skill = d.get("skill", "")
+        skill = "" if skill is None else str(skill)
+
+        state = d.get("state", PENDING)
+        if state not in STATES:
+            state = PENDING
+
+        raw_id = d.get("id")
+        if isinstance(raw_id, str) and raw_id.strip():
+            item_id = raw_id.strip()
+        else:
+            item_id = uuid.uuid4().hex[:12]
+        if seen is not None:
+            if item_id in seen:
+                item_id = uuid.uuid4().hex[:12]
+            seen.add(item_id)
+
+        reason = d.get("reason", "")
+        reason = "" if reason is None else str(reason)
+
+        line = d.get("line", 0)
+        try:
+            line = max(0, int(line))
+        except (TypeError, ValueError):
+            line = 0
+
         return cls(
             text=text,
-            skill=d.get("skill", ""),
-            line=d.get("line", 0),
-            id=d.get("id"),
-            state=d.get("state", PENDING),
-            reason=d.get("reason", ""),
+            skill=skill,
+            line=line,
+            id=item_id,
+            state=state,
+            reason=reason,
             created=d.get("created"),
             sent_at=d.get("sent_at"),
         )
@@ -186,20 +222,33 @@ class SiloQueue:
 
 
 def load_queues(raw):
-    """{slot key: SiloQueue} from stored data, skipping anything corrupt."""
+    """{slot key: SiloQueue} from stored data, skipping anything corrupt.
+
+    The id-heal in ``QueueItem.from_dict`` is driven by ONE shared set across
+    every slot, so a duplicate/numeric/whitespace id collides with nothing. A
+    legacy numeric slot key (``1``) and its string alias (``"1"`` normalise to
+    the same key: their items are MERGED, never silently discarded.
+    """
     out = {}
     if not isinstance(raw, dict):
         return out
+    seen = set()
     for slot, entries in raw.items():
         if not isinstance(entries, list):
             continue
+        key = str(slot)
         items = []
         for entry in entries:
-            item = QueueItem.from_dict(entry)
+            item = QueueItem.from_dict(entry, seen)
             if item is not None:
                 items.append(item)
-        if items:
-            out[str(slot)] = SiloQueue(items)
+        if not items:
+            continue
+        if key in out:
+            # same logical slot reached via two raw keys (e.g. 1 / "1")
+            out[key].items.extend(items)
+        else:
+            out[key] = SiloQueue(items)
     return out
 
 

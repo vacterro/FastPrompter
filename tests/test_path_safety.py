@@ -12,6 +12,7 @@ import pytest
 from _helpers import junction_ok as _junction_ok
 
 from fastprompter.utils.path_safety import (
+    _ci_component_key,
     alloc_fs_names,
     capture_resolved_root,
     fs_component,
@@ -221,7 +222,7 @@ class TestFsComponent:
 class TestAllocFsNames:
     def test_case_only_names_are_disambiguated(self):
         out = alloc_fs_names(["Project", "project"])
-        assert len(set(os.path.normcase(v) for v in out.values())) == 2
+        assert len(set(_ci_component_key(v) for v in out.values())) == 2
         assert out["Project"] == "Project"
         assert out["project"] != "project"      # hashed, never overwrites
 
@@ -236,7 +237,7 @@ class TestAllocFsNames:
                  "project", "Project", "Проект", "ПРОЕКТ",
                  "x" * 200 + "1", "x" * 200 + "2"]
         out = alloc_fs_names(names)
-        comps = [os.path.normcase(v) for v in out.values()]
+        comps = [_ci_component_key(v) for v in out.values()]
         assert len(comps) == len(set(comps)), "silent collision in allocator"
         assert len(out) == len(names)
 

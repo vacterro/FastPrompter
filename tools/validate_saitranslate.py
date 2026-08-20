@@ -94,26 +94,45 @@ def main():
                 
             trans = ldata.get("translations", {})
             lkeys = set(trans.keys())
-            
-            # Dead keys
-            dead = sorted([k for k in lkeys if k not in source_keys])
+
+            # The canonical source-key universe is the set of keys the app
+            # actually ships — i.e. en.json, which is generated from the runtime
+            # module and therefore ALREADY includes the 224 data-driven and the
+            # docs/wiki keys that never appear as a static tr() first-arg. A key
+            # present in en.json is NOT dead merely because no static tr() call
+            # names it; comparing against the static-only set produced the false
+            # "never shipped" diagnostics. Compare against the canonical set.
+            canonical = en_keys or source_keys  # en.json wins when present
+
+            # Dead keys: present in this locale but absent from the canonical
+            # shipped key set — genuinely removable.
+            dead = sorted([k for k in lkeys if k not in canonical])
             if dead:
-                errors.append(f"[{lang}] {len(dead)} key(s) in {lang}.json but NOT in the generated module (dead weight / never shipped): {dead[:6]}{' ...' if len(dead)>6 else ''}")
-                
-            # Untranslated keys (same as english key, missing, or empty)
+                errors.append(f"[{lang}] {len(dead)} key(s) in {lang}.json but NOT in the canonical source (dead weight / never shipped): {dead[:6]}{' ...' if len(dead)>6 else ''}")
+
+            # Missing keys: canonical keys absent from this locale (e.g. FI's
+            # module-only keys). These are the real reconciliation gap, not dead.
+            missing_in_locale = sorted([k for k in canonical if k not in lkeys])
+            if missing_in_locale:
+                errors.append(f"[{lang}] {len(missing_in_locale)} canonical key(s) MISSING from {lang}.json: {missing_in_locale[:6]}{' ...' if len(missing_in_locale)>6 else ''}")
+
+            # Untranslated keys: present but a placeholder (empty or equal to the
+            # key itself). EN/DED legitimately keep the key as value.
             untranslated = 0
-            for k in source_keys:
+            for k in canonical:
                 if k not in trans or trans[k] == k or not trans[k]:
-                    # In EN and DED, the value CAN be the key, but in others it shouldn't be (mostly)
                     if lang not in ("en", "ded", "ru"):
                         untranslated += 1
-            
+
             if untranslated > 0 and lang not in ("en", "ded"):
                 warnings.append(f"[{lang}] {untranslated} key(s) untranslated (falls back to EN)")
-                
-            # Coverage mismatch
+
+            # Coverage mismatch — computed from genuinely translated, non-placeholder
+            # values against the canonical key count, never a hard-coded 100.0.
             cov_claimed = ldata.get("coverage_pct", 0.0)
-            cov_actual = round(100.0 if not source_keys else ((len(source_keys) - untranslated) / len(source_keys)) * 100, 1)
+            cov_actual = round(
+                100.0 if not canonical
+                else ((len(canonical) - untranslated) / len(canonical)) * 100, 1)
             if abs(cov_claimed - cov_actual) > 0.1 and lang not in ("en", "ded"):
                 warnings.append(f"[{lang}] coverage_pct says {cov_claimed} but the keys say {cov_actual}")
                 

@@ -468,6 +468,60 @@ def test_occurrences_in_month_bounded_and_correct():
     assert datetime.date(2026, 1, 31) not in feb_d  # never before target
 
 
+# ----------------------------------------------------------------- T-1026 / CORE-004
+def test_recurring_history_survives_collect_due_advance():
+    """Advancing a recurring timer (via collect_due) must NOT rewrite its
+    apparent calendar history: dates at/after the anchor that already occurred
+    must still report as recurring, and pre-anchor dates must stay False."""
+    # Daily anchored 2026-08-01, drive it forward through 2026-08-05.
+    d = timers.Timer("d", datetime.datetime(2026, 8, 1, 9, 0, 0),
+                     repeat=timers.REPEAT_DAILY)
+    now = datetime.datetime(2026, 8, 5, 12, 0, 0)
+    timers.collect_due([d], now)
+    assert d.target.date() > datetime.date(2026, 8, 5)
+    # historical date must remain visible
+    assert timers.occurs_on_date(d, datetime.date(2026, 8, 3)) is True
+    # pre-anchor must stay False
+    assert timers.occurs_on_date(d, datetime.date(2026, 7, 31)) is False
+    # the whole month carries every day from the anchor
+    aug = timers.occurrences_in_month(d, 2026, 8)
+    assert datetime.date(2026, 8, 1) in aug
+    assert datetime.date(2026, 8, 3) in aug
+    assert datetime.date(2026, 8, 31) in aug
+    assert datetime.date(2026, 7, 31) not in aug
+
+
+def test_weekly_history_uses_anchor_after_advance():
+    wk = timers.Timer("w", datetime.datetime(2026, 7, 21, 9, 0, 0),
+                      repeat=timers.REPEAT_WEEKLY)
+    timers.collect_due([wk], datetime.datetime(2026, 8, 20, 12, 0, 0))
+    # anchor is 2026-07-21 (Tuesday); weekly days stay tied to the anchor
+    assert timers.occurs_on_date(wk, datetime.date(2026, 7, 28)) is True
+    assert timers.occurs_on_date(wk, datetime.date(2026, 8, 4)) is True
+    assert timers.occurs_on_date(wk, datetime.date(2026, 7, 27)) is False
+
+
+def test_monthly_feb29_clamp_history_after_advance():
+    mo = timers.Timer("m", datetime.datetime(2026, 1, 31, 9, 0, 0),
+                      repeat=timers.REPEAT_MONTHLY, repeat_anchor="2026-01-31")
+    timers.collect_due([mo], datetime.datetime(2027, 6, 1, 0, 0, 0))
+    # February's clamped occurrence is still part of the recurrence history
+    assert datetime.date(2026, 2, 28) in timers.occurrences_in_month(mo, 2026, 2)
+    assert timers.occurs_on_date(mo, datetime.date(2026, 2, 28)) is True
+    # the anchor day itself remains visible even after many advances
+    assert timers.occurs_on_date(mo, datetime.date(2026, 1, 31)) is True
+
+
+def test_oneshot_only_visible_on_target_date():
+    once = timers.Timer("o", datetime.datetime(2026, 7, 21, 9, 0, 0),
+                        repeat=timers.REPEAT_NONE)
+    timers.collect_due([once], datetime.datetime(2026, 7, 22, 0, 0, 0))
+    assert once.target.date() == datetime.date(2026, 7, 21)
+    assert timers.occurs_on_date(once, datetime.date(2026, 7, 21)) is True
+    assert timers.occurs_on_date(once, datetime.date(2026, 7, 22)) is False
+
+
+
 def test_new_repeat_choices_are_valid_and_preserved():
     for r in (timers.REPEAT_MONTHLY, timers.REPEAT_YEARLY):
         assert r in timers.REPEAT_CHOICES

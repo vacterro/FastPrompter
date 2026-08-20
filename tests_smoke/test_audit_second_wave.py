@@ -140,10 +140,12 @@ def test_transfer_moves_full_identity(win):
     win.data["watcher_queues"] = {"0": ["q"]}
     win.data.setdefault("silo_folders_all", {})[CUR] = {"0": "F"}
     win.data.setdefault("silo_project_paths_all", {})[CUR] = {"0": "P"}
-    win.data.setdefault("silo_types_all", {})[CUR] = {"0": "kanban"}
+    # W2-003: use canonical store names, never the nonexistent silo_types_all
+    win.data.setdefault("silo_type_all", {})[CUR] = {"0": "kanban"}
     win.data.setdefault("silo_colors_all", {})[CUR] = {"0": "C"}
     win.data.setdefault("silo_last_edited_all", {})[CUR] = {0: 123}
     win.data.setdefault("silo_view_state_all", {})[CUR] = {"s0": {"cursor": 5}}
+    win.data.setdefault("watcher_queues_all", {})[CUR] = {"0": ["q"]}
 
     ok = win.transfer_silo_to_project(0, "B")
     assert ok is True
@@ -152,19 +154,21 @@ def test_transfer_moves_full_identity(win):
     assert win.data["temp_presets_all"]["B"][1] == "SRC"
     assert win.data["silo_folders_all"]["B"].get("1") == "F"
     assert win.data["silo_project_paths_all"]["B"].get("1") == "P"
-    assert win.data["silo_types_all"]["B"].get("1") == "kanban"
+    # W2-003: read from canonical store
+    assert win.data["silo_type_all"]["B"].get("1") == "kanban"
     assert win.data["silo_colors_all"]["B"].get("1") == "C"
     assert win.data["silo_last_edited_all"]["B"].get(1) == 123
-    assert win.data["watcher_queues"].get("1") == ["q"]
+    assert win.data["watcher_queues_all"]["B"].get("1") == ["q"]
     assert win.data["silo_view_state_all"]["B"].get("s1", {}).get("cursor") == 5
 
     # source owns none
     assert "0" not in win.data["silo_folders_all"][CUR]
     assert "0" not in win.data["silo_project_paths_all"][CUR]
-    assert "0" not in win.data["silo_types_all"][CUR]
+    # W2-003: source canonical stores cleared
+    assert "0" not in win.data["silo_type_all"][CUR]
     assert "0" not in win.data["silo_colors_all"][CUR]
     assert 0 not in win.data["silo_last_edited_all"][CUR]
-    assert "0" not in win.data["watcher_queues"]
+    assert "0" not in win.data["watcher_queues_all"][CUR]
     assert win.data["temp_presets"][0] == ""
 
 

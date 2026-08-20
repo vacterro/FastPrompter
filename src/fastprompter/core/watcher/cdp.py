@@ -89,7 +89,10 @@ def port_from_file(path):
         with open(os.path.expanduser(os.path.expandvars(path)),
                   encoding="utf-8") as fh:
             return int((fh.readline() or "").strip() or 0)
-    except (OSError, ValueError):
+    except (OSError, ValueError, TypeError):
+        # TypeError too: a non-string path (a TOML integer in
+        # cdp_port_file) reaches expandvars before anything can check it
+        # (CORE-011).
         return 0
 
 
@@ -353,6 +356,13 @@ class CdpSender:
         text, why = _flatten(intent.text, self.multiline)
         if text is None:
             return SendResult(False, why, intent.text)
+
+        # The submit key is checked BEFORE anything is typed: discovering it
+        # at _press time would leave the prompt sitting in the composer,
+        # inserted and verified but never submitted (CORE-011).
+        if (self.submit or "enter").strip().lower() not in _KEYS:
+            return SendResult(False, f"unknown submit key {self.submit!r}",
+                              intent.text)
 
         ws = None
         try:
