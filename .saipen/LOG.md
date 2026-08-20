@@ -1,4 +1,5 @@
-﻿- 2026-08-20T08:39:17+03:00 [E-9006] [parent: none] RUN: ship -> skipped publish (no-publish: policy)
+﻿- 2026-08-20T08:43:41+03:00 [E-9007] [parent: none] RUN: crew -> fixed point reached, circuit closed
+- 2026-08-20T08:39:17+03:00 [E-9006] [parent: none] RUN: ship -> skipped publish (no-publish: policy)
 - 2026-08-20T08:36:53+03:00 [E-9005] [parent: none] RUN: converge -> complete
 - 2026-08-20T08:35:51+03:00 [E-9004] [parent: none] RUN: hunt -> clean @e28d571
 - 2026-08-20T08:34:16+03:00 [T-1012] [parent: none] RUN: ship -> skipped publish (no-publish: policy)
@@ -200,6 +201,7 @@
 - 19.08.26 08:30 [E-773] [T-1018] [agent: opencode] RUN: Shift+MButton on a silo clears (empties text only) instead of trashing -- clear_silo() added (wipes in-memory text; slot/colours/gaps/children/files untouched; undoable); snippet_panel middle-click branches on ShiftModifier. py_compile clean. Uncommitted.
 - 19.08.26 08:45 [E-774] [T-1018] [agent: opencode] RUN: fix Ctrl+Drag gap loses its name -- main.py move_silo_gap now moves the silo_gap_names entry (keyed by anchor slot) from old slot to new slot alongside the gap anchor; delete (drop_silo_state) and reorder (_SILO_INDEX_STATE remap, silo_gap_names is str_dict numeric) already carried names, so this was the only path that bypassed the remap. py_compile clean. Uncommitted.
 - 19.08.26 08:55 [E-775] [T-1018] [agent: opencode] RUN: Shift/Ctrl+NEW no longer lands a new silo BEYOND a hugging gap -- snippet_ops_mixin.select_empty_silo relocates a gap that sits directly under the selected silo (Ctrl/below case) to sit under the new silo (name moved too), so the group stays intact instead of the silo jumping over the divider. Shift/above already keeps the new silo below an above-gap. py_compile clean. Uncommitted.
+
 
 
 
