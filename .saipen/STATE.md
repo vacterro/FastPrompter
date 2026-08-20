@@ -1,7 +1,7 @@
 ﻿---
 phase: DONE
-task: "CONVERGE closure sequence complete"
-next_action: "WAIT: converge closed"
+task: "shipped v0.8.42"
+next_action: "WAIT: ready for next task"
 blocker: ""
 agent: opencode
 saipen_version: 7
@@ -13,10 +13,10 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 9005
+last_event: 9006
 style_contract: ded-4ae736e4
-updated: "2026-08-20T08:36:58Z"
-transition_from: CONVERGE
+updated: "2026-08-20T08:39:25Z"
+transition_from: SHIP
 execution_intent: normal
 converge_target: ""
 ---
