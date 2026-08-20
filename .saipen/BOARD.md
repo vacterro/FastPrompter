@@ -23,6 +23,8 @@
 
 ## TODO
 
+- [x] T-1018 (P2, user-request, ui) DONE 20.08.26 -- UX fixes from user: (1) Ctrl+Z no longer drops FastPrompter behind other windows; (2) Shift+NEW inserts empty silo ABOVE selected, Ctrl+NEW BELOW selected; (3) Shift+MiddleClick on a silo clears it; (4) Ctrl+Drag gap keeps its name; (5) Shift/Ctrl+NEW no longer lands a new silo BEYOND a hugging gap. | verify: code verified in commit 09343c8 | owner: opencode
+
 - [x] T-1012 (P2, docs, translate) DONE 20.08.26 -- integrate TRANSLATE-003: 10 missing UI keys translated. | verify: validate_saitranslate passes | owner: opencode
 
 - [x] T-1009 (P2, feature, timer-wave) DONE 19.08.26 -- clickable links contract -- Live Preview plain-click links, Source stays Ctrl+click, drag selection never launches link. Safe URL scheme validator applies to all paths. | verify: test_clickable_links.py pass | owner: opencode
@@ -129,5 +131,6 @@
 - [x] T-1015 (timer_dialog.py auto-limit key) DONE 19.08.26 -- added uto_limit_key to Timer for locale-independent limit identity. Adopt legacy timers if names match, serialize properly. Added regression test 	est_t1015_scan_agent_locale_independent_identity.
 - [x] T-1016 (editor.py + main.py safe links) DONE 19.08.26 -- implemented VaultTextEdit.authorize_and_open_url prompting confirmation for executables/scripts while passing through web links and local folder reveal. Added 	est_t1016_executable_links_require_approval.
 - [x] T-1017 (sync_saitranslate.py isolation) DONE 19.08.26 -- added --root argument and cross-root target prevention in sync_saitranslate.py. Added regression test 	est_t1017_translation_sync_path_isolation pointing to isolated tmp clone.
+
 
 
