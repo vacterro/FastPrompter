@@ -10,3 +10,5 @@
 - 21.08.26 21:12 [E-790] [parent: E-789] RUN: clean -> done @d6afeba
 - 21.08.26 21:30 [E-791] [parent: E-790] [T-1024] RUN: ship v0.8.45 -> pushed
 - 21.08.26 21:30 [E-792] [parent: E-791] [T-1024] RUN: ship complete -> v0.8.45 pushed + tagged, T-1024 DONE, STATE DONE
+- 22.08.26 01:20 [E-793] [parent: E-792] [T-1025] RUN: ship v0.8.46 -> pushed
+- 22.08.26 01:20 [E-794] [parent: E-793] [T-1025] RUN: ship complete -> v0.8.46 pushed + tagged, T-1025 DONE, STATE DONE

@@ -139,6 +139,73 @@ def test_state_saver_never_writes_snippet_slot_100(tmp_path):
         s.conn.close()
 
 
+# ----------------------------------------------------------------- CORE-001 loader safe recovery
+def _mk_state_db(path):
+    import sqlite3
+    conn = sqlite3.connect(path)
+    conn.execute("CREATE TABLE IF NOT EXISTS presets (category TEXT, slot INTEGER, name TEXT, content TEXT, last_edited INTEGER, PRIMARY KEY (category, slot))")
+    conn.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")
+    conn.execute("CREATE TABLE IF NOT EXISTS temp_presets_v2 (category TEXT, slot INTEGER, content TEXT, PRIMARY KEY (category, slot))")
+    conn.execute("CREATE TABLE IF NOT EXISTS archive_temp_presets_v2 (category TEXT, slot INTEGER, content TEXT, PRIMARY KEY (category, slot))")
+    conn.commit()
+    return conn
+
+
+def test_loader_migrates_overflow_snippet_to_empty_slot(tmp_path):
+    import sqlite3
+    from fastprompter.core import state as state_mod
+
+    path = str(tmp_path / "db.db")
+    conn = _mk_state_db(path)
+    conn.execute("INSERT INTO settings (key,value) VALUES ('cats_order','[\"Code\"]')")
+    conn.execute("INSERT INTO presets VALUES ('Code',1,'one','hello1',0)")
+    conn.execute("INSERT INTO presets VALUES ('Code',100,'overflow','OVERFLOWDATA',5)")
+    conn.commit(); conn.close()
+
+    old_get = state_mod.get_db_path
+    state_mod.get_db_path = lambda pid=1: path
+    try:
+        s = state_mod.FastPrompterState(profile_id=1)
+        items = [(i, it["name"] if it else None) for i, it in enumerate(s.data["categories"]["Code"]) if it]
+        names = [n for _, n in items]
+        assert "overflow" in names and "one" in names, items
+        assert items[0][0] == 0, "overflow row must be recovered into empty slot 0"
+        assert items[0][1] == "overflow"
+        s.conn.close()
+    finally:
+        state_mod.get_db_path = old_get
+    conn = sqlite3.connect(path)
+    rows = sorted(conn.execute("SELECT slot, name FROM presets").fetchall())
+    conn.close()
+    assert all(0 <= r[0] < 100 for r in rows), rows
+    assert "overflow" in [r[1] for r in rows], "content must survive migration"
+
+
+def test_loader_refuses_when_category_full(tmp_path):
+    from fastprompter.core import state as state_mod
+
+    path = str(tmp_path / "db.db")
+    conn = _mk_state_db(path)
+    conn.execute("INSERT INTO settings (key,value) VALUES ('cats_order','[\"Code\"]')")
+    for i in range(100):
+        conn.execute("INSERT INTO presets VALUES (?,?,?,?,?)", ('Code', i, f'n{i}', f't{i}', 0))
+    conn.execute("INSERT INTO presets VALUES ('Code',100,'overflow','OVF',0)")
+    conn.commit(); conn.close()
+
+    old_get = state_mod.get_db_path
+    state_mod.get_db_path = lambda pid=1: path
+    try:
+        with pytest.raises(state_mod.DatabaseOverflowError):
+            state_mod.FastPrompterState(profile_id=1)
+    finally:
+        state_mod.get_db_path = old_get
+    import sqlite3
+    conn = sqlite3.connect(path)
+    cnt = conn.execute("SELECT COUNT(*) FROM presets WHERE slot>=100").fetchone()[0]
+    conn.close()
+    assert cnt == 1, "full category must fail closed with DB untouched"
+
+
 # ----------------------------------------------------------------- W2-012
 def test_copy_atomic_aborts_when_publish_guard_rejects(tmp_path):
     from fastprompter.ui.file_container import _copy_atomic

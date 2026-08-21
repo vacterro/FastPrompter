@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.8.46 - 2026-08-22
+
+- **CORE-001 loader safe recovery (follow-up):** A real database written by the old buggy saver carries a snippet row at slot 100, which the fail-closed loader refused to open. Snippet slots are pure array indexes — nothing cross-references them — so an out-of-range row is now migrated transactionally into the first FREE 0..99 slot (preserving the data, never aliasing a distinct snippet). `DatabaseOverflowError` is raised only when the category is genuinely full and placement would require merging. Silo/archive tables keep the hard fail-closed behaviour because their slots carry identity (folders, queues, colours) that a blind move would orphan. Two loader regressions added (migrates when room, refuses when full with DB untouched).
+
 ## v0.8.45 - 2026-08-22
 
 - **Audit handoff 22-08 – 11 fixes across CORE/SECOND WAVE/PERFORMANCE (4+3+4)**

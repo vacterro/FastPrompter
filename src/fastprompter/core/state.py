@@ -1189,7 +1189,58 @@ class FastPrompterState:
             for cat in self.data['cats_order']:
                  if cat not in self.data['categories']: self.data['categories'][cat] = [None]*100
 
-            overflow_presets = []
+            # Safe recovery of out-of-range snippet rows (presets). Snippet
+            # slots are pure array indexes — nothing cross-references them —
+            # so moving an overflow row to a FREE 0..99 slot preserves the
+            # data without aliasing (a free target can never coalesce two
+            # distinct snippets). This is what the old buggy saver's
+            # slot-100 writes need: without it the app refuses to start on
+            # any DB that ever hit the bug. We only fail closed when the
+            # category is genuinely full — then placement would require
+            # coalescing and the DB is left untouched.
+            _raw_presets = list(cur.execute(
+                'SELECT rowid, category, slot, name, content, last_edited FROM presets'))
+            _occupied_by_cat = {}
+            for row in _raw_presets:
+                _rowid, cat, slot, name, content, last_edited = row
+                if not isinstance(slot, int) or slot < 0 or slot >= 100:
+                    continue
+                _occupied_by_cat.setdefault(cat, set()).add(slot)
+            _unmigratable = []
+            _preset_moves = []   # (rowid, cat, target_slot)
+            _used_targets = {}
+            for row in _raw_presets:
+                _rowid, cat, slot, name, content, last_edited = row
+                if isinstance(slot, int) and 0 <= slot < 100:
+                    continue
+                if cat not in self.data["categories"]:
+                    self.data["categories"][cat] = [None]*100
+                occupied = _occupied_by_cat.setdefault(cat, set())
+                used = _used_targets.setdefault(cat, set())
+                target = next((i for i in range(100)
+                               if i not in occupied and i not in used), None)
+                if target is None:
+                    _unmigratable.append((cat, slot))
+                    continue
+                _preset_moves.append((_rowid, cat, target))
+                used.add(target)
+            if _unmigratable:
+                raise DatabaseOverflowError(
+                    "presets carries slot index >= 100 or <0 and the category is "
+                    "full (0..99) — placement would require merging two distinct "
+                    "snippets, so the database is left untouched. Offending rows: "
+                    + ", ".join(f"{c}@{s}" for c, s in _unmigratable[:20]))
+            if _preset_moves:
+                logger.warning(
+                    "recovering %d out-of-range snippet row(s) into empty slots: %s",
+                    len(_preset_moves),
+                    ", ".join(f"{cat}@{target}" for _rid, cat, target in _preset_moves))
+                with self.conn:
+                    for _rowid, _cat, _target in _preset_moves:
+                        cur.execute(
+                            'UPDATE presets SET slot=? WHERE rowid=?',
+                            (_target, _rowid))
+
             for row in cur.execute('SELECT category, slot, name, content, last_edited FROM presets'):
                 cat, slot, name, content, last_edited = row
                 # CORE-004: a persisted snippet category is authoritative for
@@ -1200,14 +1251,8 @@ class FastPrompterState:
                 if cat not in self.data["categories"]:
                     self.data["categories"][cat] = [None]*100
                 if not isinstance(slot, int) or slot < 0 or slot >= 100:
-                    overflow_presets.append((cat, slot))
                     continue
                 self.data["categories"][cat][slot] = {"name": name, "text": content, "last_edited": last_edited or 0}
-            if overflow_presets:
-                raise DatabaseOverflowError(
-                    "presets carries slot index >= 100 or <0 (legacy corruption); "
-                    "refusing to merge rows onto slot 99. Offending rows: "
-                    + ", ".join(f"{c}@{s}" for c, s in overflow_presets[:20]))
 
             temps = {cat: [""]*10 for cat in self.data["cats_order"]}
             overflow = []
