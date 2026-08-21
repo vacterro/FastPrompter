@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.8.45 - 2026-08-22
+
+- **Audit handoff 22-08 – 11 fixes across CORE/SECOND WAVE/PERFORMANCE (4+3+4)**
+- **CORE-001:** Normal snippet (presets) now fail-closed like silos: loader raises DatabaseOverflowError on slot <0 or ≥100, saver returns False and keeps dirty without touching DB; `_snapshot_is_valid` rejects 101-slot categories.
+- **CORE-002:** Portable backup coalescing now stores immutable snapshot at request time, not live dict; coalesced generation dispatched is exactly the committed state that requested it, never uncommitted future edits.
+- **CORE-003:** Full-cap silo reuse now checks pristine: empty text + no identity in _SILO_INDEX_STATE/_ARCHIVE_INDEX_STATE/view state; non-pristine blank refused, pristine reused without index shift or inherited folder/queue/type.
+- **CORE-004:** Release parity enforced: VERSION canonical, pyproject.toml/FastPrompter.pyw/uv.lock synced via sync_release_version.py; release.py reads VERSION and preflights parity before build; release.cmd fails fast if drifted.
+- **W2-001:** Portable backup restart recovery: if canonical day_dir missing after crash window, best complete .rollback-/.failed-/.recovered-/.partial sibling (COMPLETE+manifest) promoted before fresh build.
+- **W2-002:** Sync shutdown: final pending not cleared while busy and fallback didn't publish; _shutdown_application now treats sync_shutdown False as not clean, keeps writer mutex.
+- **W2-003:** Hierarchy normalizer two-level: _normalise_int_keys and _children_map both normalize parent keys and every child member regardless of prior int status; single canonical path.
+- **PERF-001:** Editor: removed duplicate textChanged→_refresh_checkbox_flag; only contentsChange→_reconcile_edits→ranged flag remains.
+- **PERF-002:** Silo folder: _folder_on_disk now bounded via isdir_within for custom roots, custom unavailable fails fast, same-candidate memoized.
+- **PERF-003:** Kanban/table structure check coalesced to 300 ms timer; typing bursts parse once; sync flush via _flush_silo_type_recheck_sync for explicit switches.
+- **PERF-004:** Probe negative cache: expired entries evicted on read, opportunistic sweep when >500, bounded to 500 + drop 100 oldest.
+
 ## v0.8.44 - 2026-08-21
 
 - **Audit handoff 21-08 – 10 fixes across CORE/SECOND WAVE/PERFORMANCE (3+3+4)**

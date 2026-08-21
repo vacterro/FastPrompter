@@ -1,7 +1,7 @@
----
+﻿---
 phase: DONE
 task: "none"
-next_action: "WAIT: user brake -- v0.8.44 shipped, 10-ticket audit closed"
+next_action: "WAIT: user brake -- v0.8.45 shipped, 11-ticket audit closed"
 blocker: ""
 agent: opencode
 saipen_version: 7
@@ -13,9 +13,10 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 789
+last_event: 792
 style_contract: ded-4ae736e4
-updated: "2026-08-21T18:09:29Z"
+updated: "2026-08-21T21:30:17Z"
 transition_from: SHIP
 execution_intent: normal
 ---
+

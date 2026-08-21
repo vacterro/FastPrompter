@@ -56,11 +56,45 @@ def api(path, tok, data=None, method=None, ctype="application/json", host="api.g
 
 def read_version() -> str:
     root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    # canonical VERSION is the single source of truth (sync_release_version.py)
+    vfile = os.path.join(root, "VERSION")
+    try:
+        v = open(vfile, encoding="utf-8").read().strip()
+        if re.fullmatch(r"\d+\.\d+\.\d+", v):
+            return v
+    except FileNotFoundError:
+        pass
+    # fallback for legacy callers
     text = open(os.path.join(root, "pyproject.toml"), encoding="utf-8").read()
     m = re.search(r'^version\s*=\s*"([^"]+)"', text, re.M)
     if not m:
         raise SystemExit("version not found in pyproject.toml")
     return m.group(1)
+
+
+def check_version_parity(version: str) -> None:
+    root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    # pyproject
+    pyproject_text = open(os.path.join(root, "pyproject.toml"), encoding="utf-8").read()
+    m = re.search(r'^version\s*=\s*"([^"]+)"', pyproject_text, re.M)
+    pyproject_ver = m.group(1) if m else None
+    # pyw
+    pyw_text = open(os.path.join(root, "FastPrompter.pyw"), encoding="utf-8").read()
+    m2 = re.search(r"--product-version=(\S+)", pyw_text)
+    pyw_ver = m2.group(1) if m2 else None
+    # uv.lock
+    lock_text = open(os.path.join(root, "uv.lock"), encoding="utf-8").read()
+    m3 = re.search(r'name = "fastprompter"\s+version = "([^"]+)"', lock_text)
+    lock_ver = m3.group(1) if m3 else None
+    mism = []
+    if pyproject_ver != version:
+        mism.append(f"pyproject.toml {pyproject_ver} != VERSION {version}")
+    if pyw_ver != version:
+        mism.append(f"FastPrompter.pyw {pyw_ver} != VERSION {version}")
+    if lock_ver != version:
+        mism.append(f"uv.lock {lock_ver} != VERSION {version}")
+    if mism:
+        raise SystemExit("version parity failed: " + "; ".join(mism) + " -- run python tools/sync_release_version.py")
 
 
 def check_tag_provenance(version):
@@ -86,12 +120,12 @@ def check_tag_provenance(version):
 def main():
     root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     os.chdir(root)
+    version = read_version()
+    check_version_parity(version)
+    check_tag_provenance(version)
     exe = os.path.join("build", ASSET)
     if not os.path.exists(exe):
-        raise SystemExit("build/FastPrompter.exe missing вЂ” run tools/build.py first")
-
-    version = read_version()
-    check_tag_provenance(version)
+        raise SystemExit("build/FastPrompter.exe missing — run tools/build.py first")
     tag = f"v{version}"
     if len(sys.argv) > 1 and os.path.exists(sys.argv[1]):
         notes = open(sys.argv[1], encoding="utf-8").read()

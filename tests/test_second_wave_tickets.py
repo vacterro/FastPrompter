@@ -110,7 +110,7 @@ def test_incomplete_partial_is_cleanable(backup_dir):
     assert not os.path.exists(tmp)
 
 
-# ----------------------------------------------------------------- W2-002
+# ----------------------------------------------------------------- W2-002 (updated to CORE-001 fail-closed)
 def test_state_saver_never_writes_snippet_slot_100(tmp_path):
     import sqlite3
     from fastprompter.core import state as state_mod
@@ -120,12 +120,13 @@ def test_state_saver_never_writes_snippet_slot_100(tmp_path):
     state_mod.get_db_path = lambda profile_id=1: path
     s = state_mod.FastPrompterState(profile_id=1)
     try:
-        # inject a 101st item (slot 100) directly into memory
+        # inject a 101st item (slot 100) directly into memory — must fail closed
         s.data["categories"]["Code"].append(
             {"name": "overflow", "text": "x"})
         s._dirty_snippets = getattr(s, "_dirty_snippets", 0) + 1
         s.mark_dirty()
-        assert s.save_data_to_db(None, force=True, sync=True)
+        assert not s.save_data_to_db(None, force=True, sync=True)
+        assert s._db_dirty is True
 
         conn = sqlite3.connect(path)
         try:

@@ -2516,6 +2516,11 @@ class FastPrompter(
         else:
             fmap = self.data.setdefault("silo_folders", {})
         key = str(slot_idx)
+        probe_memo = {}
+        def _probe_exists(n):
+            if n not in probe_memo:
+                probe_memo[n] = self._folder_on_disk(cat, n)
+            return probe_memo[n]
         if key in fmap and fmap[key]:
             # keep the assigned name, but follow a genuine retitle when the
             # new title's slug is free (readability) — otherwise stay put
@@ -2523,7 +2528,7 @@ class FastPrompter(
             cur_base = cur.rsplit("-", 1)[0] if cur[-1:].isdigit() and "-" in cur else cur
             if base != cur_base:
                 taken = {v for k, v in fmap.items() if k != key}
-                if base not in taken and not self._folder_on_disk(cat, base):
+                if base not in taken and not _probe_exists(base):
                     # P0-6: mapping follows the PHYSICAL rename, never leads
                     # it. Only a confirmed rename (or a genuinely absent old
                     # folder on a reachable root) advances the map; a failed
@@ -2536,7 +2541,7 @@ class FastPrompter(
         # first assignment: adopt an existing on-disk folder if it's unclaimed,
         # else pick a unique name
         taken = set(fmap.values())
-        if base not in taken and self._folder_on_disk(cat, base):
+        if base not in taken and _probe_exists(base):
             fmap[key] = base
             self.mark_dirty()
             return base
@@ -2549,7 +2554,7 @@ class FastPrompter(
         # visible slot (tooltips, file counters, empty rows), and recording
         # those filled the map with untitled-4..untitled-10 for silos that
         # do not exist yet. Answer the question, just don't write it down.
-        if not in_range or not (text.strip() or self._folder_on_disk(cat, name)):
+        if not in_range or not (text.strip() or _probe_exists(name)):
             return name
         fmap[key] = name
         self.mark_dirty()
@@ -2559,7 +2564,14 @@ class FastPrompter(
         comp = self._category_files_dir(cat)
         if comp is None:
             return False   # root unreachable: no folder claim is answerable
-        return os.path.isdir(os.path.join(self._files_root(), comp, name))
+        child = os.path.join(self._files_root(), comp, name)
+        custom = (self.data.get("files_root") or "").strip()
+        if custom:
+            if not self._custom_files_root_usable(custom):
+                return False
+            from fastprompter.utils.paths import isdir_within
+            return isdir_within(child)
+        return os.path.isdir(child)
 
     def _rename_silo_folder(self, cat, old_name, new_name):
         """Rename a silo's physical folder; returns an explicit status so the
@@ -3816,10 +3828,13 @@ class FastPrompter(
             _log2.warning("sync flush timed out during shutdown; the disk "
                           "mirror may be stale — the SQLite database is "
                           "authoritative")
+            # W2-002: do not discard final pending while busy and fallback
+            # did not publish; retain for drain after old writer retires
+            return False
         self._sync_pending = None
         # Never falsify physical ownership. A timed-out worker remains inflight
         # until its real done signal arrives (or global shutdown stops it).
-        return not self._sync_busy
+        return True
     def init_ui(self):
         flags = Qt.WindowType.Window
         if self.data.get("normal_window", "False") != "True":
@@ -6856,6 +6871,49 @@ class FastPrompter(
     def _silo_at_capacity(self, is_archive=False):
         return self._silo_capacity(is_archive) >= self.MAX_SILOS_PER_CATEGORY
 
+    def _slot_has_identity(self, idx, is_archive=False):
+        """Whether slot idx owns any identity-bearing entry (CORE-003)."""
+        table = self._ARCHIVE_INDEX_STATE if is_archive else self._SILO_INDEX_STATE
+        for entry in table:
+            key, kind = entry[0], entry[1]
+            ns = entry[2] if len(entry) > 2 else "numeric"
+            container = getattr(self, key, None) if key == "silo_last_edited" else self.data.get(key)
+            if container is None:
+                continue
+            if kind == "int_list":
+                if isinstance(container, list) and idx in container:
+                    return True
+            elif kind == "int_dict":
+                if isinstance(container, dict) and (idx in container or str(idx) in container):
+                    return True
+            elif kind == "str_dict":
+                if not isinstance(container, dict):
+                    continue
+                if ns == "a":
+                    if f"a{idx}" in container:
+                        return True
+                else:
+                    if str(idx) in container:
+                        return True
+            elif kind == "parent_map":
+                if not isinstance(container, dict):
+                    continue
+                if idx in container:
+                    return True
+                for kids in container.values():
+                    if isinstance(kids, (list, tuple)) and idx in kids:
+                        return True
+        view = self.data.get("silo_view_state_all")
+        if isinstance(view, dict):
+            cat = self.get_current_category()
+            entries = view.get(cat) if isinstance(view.get(cat), dict) else None
+            if isinstance(entries, dict) and f"{'a' if is_archive else 's'}{idx}" in entries:
+                return True
+        return False
+
+    def _slot_is_pristine(self, idx, is_archive=False):
+        return not self._slot_has_identity(idx, is_archive)
+
     def _acquire_silo_slot(self, is_archive=False, allow_reuse_empty=True):
         """The ONE canonical insertion boundary.
 
@@ -6875,7 +6933,7 @@ class FastPrompter(
         presets = self.data.get(key) or []
         if allow_reuse_empty:
             for i, p in enumerate(presets):
-                if not (p or "").strip():
+                if not (p or "").strip() and self._slot_is_pristine(i, is_archive):
                     return i
         if len(presets) >= self.MAX_SILOS_PER_CATEGORY:
             return None
@@ -8012,6 +8070,8 @@ class FastPrompter(
                 return False
         for cat, slots in state["categories"].items():
             if not isinstance(cat, str) or not isinstance(slots, list):
+                return False
+            if len(slots) > 100:
                 return False
             for item in slots:
                 if item is None:
@@ -11066,26 +11126,45 @@ class FastPrompter(
     def _schedule_silo_type_recheck(self):
         """Re-pick the view when the text stops matching the silo's type.
 
-        The page used to be decided only on a silo SWITCH, so replacing the
-        text under an open board — a paste over everything, an undo, a
-        replace-from-another-silo — left the board widget on screen showing an
-        empty board over the user's prose. Only structure-PRESENCE flips act;
-        ordinary typing changes nothing and costs one scan.
+        PERF-003: coalesced — typing bursts restart a single-shot timer and
+        only the newest text after the burst is parsed, matching
+        _schedule_visual_rebuild's 300 ms window.
         """
+        from PyQt6.QtCore import QTimer
+        t = getattr(self, "_silo_type_recheck_timer", None)
+        if t is None or sip.isdeleted(t):
+            t = QTimer(self)
+            t.setSingleShot(True)
+            t.setInterval(300)
+            t.timeout.connect(self._flush_silo_type_recheck)
+            self._silo_type_recheck_timer = t
+        t.start()
+
+    def _flush_silo_type_recheck(self):
         if sip.isdeleted(self) or getattr(self, "_syncing_from_visual", False):
-            return          # the widget is writing its own text: not a flip
+            return
         idx = getattr(self, "active_temp_slot", -1)
         if idx < 0 or getattr(self, "active_is_archive", False):
             return
         stype = self.data.get("silo_types", {}).get(str(idx), "text")
         if stype not in ("kanban", "table"):
-            return          # a text silo has nothing to lose
+            return
         text = self.text_area.toPlainText()
         ok = self._silo_has_structure(stype, text)
         if ok == getattr(self, "_silo_structure_ok", None):
-            return          # nothing flipped
+            return
         self._silo_structure_ok = ok
         self._apply_silo_type(idx, False, text=text)
+
+    def _flush_silo_type_recheck_sync(self):
+        """Synchronous flush for explicit transitions needing immediate view."""
+        t = getattr(self, "_silo_type_recheck_timer", None)
+        if t is not None:
+            try:
+                t.stop()
+            except Exception:
+                pass
+        self._flush_silo_type_recheck()
 
     @staticmethod
     def _silo_has_structure(stype, text):
@@ -11408,12 +11487,12 @@ class FastPrompter(
         presets = self.data["temp_presets"]
         self.capture_silo_state()
 
-        blank = next((i for i, p in enumerate(presets) if not (p or "").strip()), None)
+        blank = next((i for i, p in enumerate(presets) if not (p or "").strip() and self._slot_is_pristine(i, False)), None)
         if len(presets) >= self.MAX_SILOS_PER_CATEGORY and blank is None:
-            # full of content: refuse BEFORE mutating anything; lose nothing
+            # full of content or no pristine blank: refuse BEFORE mutating anything; lose nothing
             return None
         if blank is not None and len(presets) >= self.MAX_SILOS_PER_CATEGORY:
-            # reuse the blank instead of exceeding the 100-slot contract
+            # reuse the pristine blank instead of exceeding the 100-slot contract
             self.add_data_undo_state("Insert silo")
             presets[blank] = text
             doc = QTextDocument()
@@ -11427,8 +11506,6 @@ class FastPrompter(
                 self.silo_docs[blank] = doc
             else:
                 self._set_plain_text_clean(self.silo_docs[blank], text)
-            if getattr(self, "active_temp_slot", 0) >= blank:
-                self.active_temp_slot += 1
             self.mark_dirty()
             return blank
 
@@ -11749,6 +11826,30 @@ class FastPrompter(
         maps are aliased, rebinding them would orphan the alias."""
         store = self.data.get(all_key)
         if not isinstance(store, dict):
+            return
+        if all_key == "silo_children_all":
+            # W2-003: canonical two-level normalizer for hierarchy
+            for cat, cmap in list(store.items()):
+                if not isinstance(cmap, dict):
+                    continue
+                fixed = {}
+                for k, v in cmap.items():
+                    try:
+                        ik = int(k)
+                    except (TypeError, ValueError):
+                        continue
+                    if not isinstance(v, (list, tuple)):
+                        continue
+                    childs = []
+                    for x in v:
+                        try:
+                            childs.append(int(x))
+                        except (TypeError, ValueError):
+                            continue
+                    if childs:
+                        fixed[ik] = childs
+                cmap.clear()
+                cmap.update(fixed)
             return
         for cmap in store.values():
             if not isinstance(cmap, dict) or all(isinstance(k, int) for k in cmap):
@@ -12446,13 +12547,26 @@ class FastPrompter(
         # still counted as somebody's kid, so it is excluded from the top
         # level and then never emitted under its parent — the silo disappears
         # from the sidebar. Normalise in place, at the single read point.
-        if any(not isinstance(k, int) for k in cmap):
+        # W2-003: always normalize both levels, not only when parent keys are strings
+        need = any(not isinstance(k, int) for k in cmap) or any(
+            not isinstance(x, int) for v in cmap.values() if isinstance(v, (list, tuple)) for x in v)
+        if need:
             fixed = {}
             for k, v in cmap.items():
                 try:
-                    fixed[int(k)] = [int(x) for x in v]
+                    ik = int(k)
                 except (TypeError, ValueError):
                     continue
+                if not isinstance(v, (list, tuple)):
+                    continue
+                childs = []
+                for x in v:
+                    try:
+                        childs.append(int(x))
+                    except (TypeError, ValueError):
+                        continue
+                if childs:
+                    fixed[ik] = childs
             cmap.clear()
             cmap.update(fixed)
         self._cmap_norm_id = cmap_id
@@ -13593,7 +13707,8 @@ def _shutdown_application(window, app, lock):
     try:
         sync_shutdown = getattr(window, "_sync_shutdown", None)
         if sync_shutdown is not None:
-            sync_shutdown()
+            if sync_shutdown() is False:
+                clean = False
     except Exception:
         _log.exception("Sync final flush FAILED")
         clean = False

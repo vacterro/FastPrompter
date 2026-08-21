@@ -7,3 +7,6 @@
 - 21.08.26 16:34 [E-787] [parent: E-786] [T-1019] RUN: ship complete -> v0.8.43 pushed + tagged, T-1019 DONE, STATE DONE
 - 21.08.26 21:09 [E-788] [parent: E-787] [T-1023] RUN: ship v0.8.44 -> pushed
 - 21.08.26 21:09 [E-789] [parent: E-788] [T-1023] RUN: ship complete -> v0.8.44 pushed + tagged, T-1023 DONE, STATE DONE
+- 21.08.26 21:12 [E-790] [parent: E-789] RUN: clean -> done @d6afeba
+- 21.08.26 21:30 [E-791] [parent: E-790] [T-1024] RUN: ship v0.8.45 -> pushed
+- 21.08.26 21:30 [E-792] [parent: E-791] [T-1024] RUN: ship complete -> v0.8.45 pushed + tagged, T-1024 DONE, STATE DONE

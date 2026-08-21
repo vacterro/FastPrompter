@@ -1189,6 +1189,7 @@ class FastPrompterState:
             for cat in self.data['cats_order']:
                  if cat not in self.data['categories']: self.data['categories'][cat] = [None]*100
 
+            overflow_presets = []
             for row in cur.execute('SELECT category, slot, name, content, last_edited FROM presets'):
                 cat, slot, name, content, last_edited = row
                 # CORE-004: a persisted snippet category is authoritative for
@@ -1198,8 +1199,15 @@ class FastPrompterState:
                 # cats_order, so recovery never silently re-orders projects.
                 if cat not in self.data["categories"]:
                     self.data["categories"][cat] = [None]*100
-                if 0 <= slot < 100:
-                    self.data["categories"][cat][slot] = {"name": name, "text": content, "last_edited": last_edited or 0}
+                if not isinstance(slot, int) or slot < 0 or slot >= 100:
+                    overflow_presets.append((cat, slot))
+                    continue
+                self.data["categories"][cat][slot] = {"name": name, "text": content, "last_edited": last_edited or 0}
+            if overflow_presets:
+                raise DatabaseOverflowError(
+                    "presets carries slot index >= 100 or <0 (legacy corruption); "
+                    "refusing to merge rows onto slot 99. Offending rows: "
+                    + ", ".join(f"{c}@{s}" for c, s in overflow_presets[:20]))
 
             temps = {cat: [""]*10 for cat in self.data["cats_order"]}
             overflow = []
@@ -1389,12 +1397,17 @@ class FastPrompterState:
         to_insert_presets = set()
         to_delete_presets = set()
         if scan_snippets:
-            # W2-002: the persisted snippet model is exactly 100 slots (0..99).
-            # An out-of-range in-memory entry (which a refused mutation must
-            # never create, but which is defended here regardless) is NOT
-            # reported as durable -- the loader drops slot 100+ on read, so the
-            # saver must never write it either, or restart would silently
-            # discard the row.
+            # CORE-001: fail-closed 0..99 for normal snippets
+            for cat, slots in self.data["categories"].items():
+                for i, item in enumerate(slots):
+                    if item is not None and (i < 0 or i >= 100):
+                        logger.error("categories[%r][%d] outside 0..99; refusing save", cat, i)
+                        self._db_dirty = True
+                        return False
+                if len(slots) > 100 and any(s is not None for s in slots[100:]):
+                    logger.error("categories[%r] has >100 slots with data; refusing save", cat)
+                    self._db_dirty = True
+                    return False
             current_presets = {
                 (cat, i, item["name"], item["text"], item.get("last_edited", 0))
                 for cat, slots in self.data["categories"].items()

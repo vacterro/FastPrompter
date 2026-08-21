@@ -43,9 +43,9 @@ _BACKUP_THROTTLE = 120  # seconds between backups (per profile)
 # throttle so the newest state is exported on the next eligible run.
 _backup_active: set = set()
 _backup_newer_wanted: set = set()
-# CORE-003: retain the newest pending data reference per profile instead of
-# only a boolean, so the latest generation can be captured once the current
-# job completes without repeated deep copies while active.
+# CORE-002/CORE-003: retain the newest pending IMMUTABLE snapshot per
+# profile instead of a boolean or live data reference, so the latest
+# committed generation can be dispatched once the current job completes.
 _backup_pending_data: dict = {}
 
 _COMPLETE_MARKER = "_COMPLETE"
@@ -132,11 +132,11 @@ def run_portable_backup(data: dict, profile_id=1) -> None:
         return
 
     if pid in _backup_active:
-        # a request for this profile is already pending/in-flight; just
-        # record that a newer state is desired — no deep copy here, but
-        # retain the newest data reference so completion can capture it once
+        # CORE-002: capture immutable committed snapshot immediately, not
+        # live mutable dict. Deferred generation must be exactly the state
+        # that belonged to the successful save that requested it.
         _backup_newer_wanted.add(pid)
-        _backup_pending_data[pid] = data
+        _backup_pending_data[pid] = capture_snapshot(data, profile_id=pid)
         return
     _backup_active.add(pid)
 
@@ -187,16 +187,11 @@ def backup_finished(profile_id=1):
     if has_newer:
         _backup_newer_wanted.discard(pid)
         last_success_by_profile.pop(pid, None)
-        pending_data = _backup_pending_data.pop(pid, None)
-        if pending_data is not None and _backup_sink is not None:
-            try:
-                snapshot = capture_snapshot(pending_data, profile_id=pid)
-            except Exception:
-                logger.exception("portable backup newest capture failed")
-                return
+        pending_snapshot = _backup_pending_data.pop(pid, None)
+        if pending_snapshot is not None and _backup_sink is not None:
             _backup_active.add(pid)
             try:
-                _backup_sink(snapshot)
+                _backup_sink(pending_snapshot)
             except Exception:
                 logger.exception("portable backup dispatch failed for newest")
                 _backup_active.discard(pid)
@@ -250,6 +245,10 @@ def _do_export(data: dict, profile_id=1) -> None:
     backup_dir = _profile_backup_dir(backup_dir, profile_id)
     date_str = time.strftime("%Y-%m-%d")
     day_dir = os.path.join(backup_dir, date_str)
+    # W2-001: if canonical is missing after a crash window, recover best
+    # complete sibling before starting a fresh build
+    if not os.path.isdir(day_dir):
+        _recover_canonical_day(backup_dir, day_dir, date_str)
     tmp_dir = day_dir + ".partial"
     # W2-009: if a prior build at this .partial path holds a COMPLETE
     # generation (left behind by a double-failure publish, intentionally
@@ -462,6 +461,50 @@ def _has_complete_marker(directory: str) -> bool:
         return os.path.isfile(os.path.join(directory, _COMPLETE_MARKER))
     except OSError:
         return False
+
+
+def _recover_canonical_day(backup_root: str, day_dir: str, date_str: str) -> None:
+    """If canonical day_dir is missing, promote best complete sibling (W2-001)."""
+    if os.path.isdir(day_dir):
+        return
+    try:
+        entries = os.listdir(backup_root)
+    except OSError:
+        return
+    candidates = []
+    prefix = date_str + "."
+    for e in entries:
+        if not e.startswith(prefix):
+            continue
+        # only recognized sibling types
+        if not (e.startswith(date_str + ".rollback-") or e.startswith(date_str + ".failed-") or e.startswith(date_str + ".recovered-") or e == date_str + ".partial"):
+            continue
+        cand = os.path.join(backup_root, e)
+        if not os.path.isdir(cand) or not _has_complete_marker(cand):
+            continue
+        # also require valid manifest
+        meta = os.path.join(cand, "_meta.json")
+        try:
+            if not os.path.isfile(meta):
+                continue
+            with open(meta, encoding="utf-8") as f:
+                j = json.load(f)
+            if not isinstance(j, dict) or not j.get("complete"):
+                continue
+            exported = j.get("exported_at", "")
+        except Exception:
+            continue
+        candidates.append((exported, cand))
+    if not candidates:
+        return
+    # pick latest exported_at
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    best = candidates[0][1]
+    try:
+        os.rename(best, day_dir)
+        logger.info("portable backup: recovered canonical day from %s", best)
+    except OSError:
+        logger.error("portable backup: failed to recover canonical day from %s", best)
 
 
 def _write_manifest(tmp_dir, data, cats, categories):

@@ -233,6 +233,7 @@ _PROBE_LOCK = threading.Lock()
 _PROBE_INFLIGHT = {}          # key -> started-at (monotonic)
 _PROBE_NEGATIVE = {}          # key -> expiry (monotonic)
 _PROBE_NEGATIVE_TTL = 5.0
+_PROBE_NEGATIVE_MAX = 500
 
 
 def _probe_key(check, path):
@@ -249,7 +250,13 @@ def _probe_key(check, path):
 
 def _probe_cached_negative(key, now):
     with _PROBE_LOCK:
-        return key in _PROBE_NEGATIVE and now < _PROBE_NEGATIVE[key]
+        exp = _PROBE_NEGATIVE.get(key)
+        if exp is None:
+            return False
+        if now < exp:
+            return True
+        _PROBE_NEGATIVE.pop(key, None)
+        return False
 
 
 def exists_within(path: str, timeout: float = 0.25) -> bool:
@@ -329,5 +336,15 @@ def _probe_within(check, path, timeout):
         # negative (either genuinely absent, or the caller gave up): cache
         # the conservative verdict briefly so repeat lookups do not churn
         with _PROBE_LOCK:
+            # opportunistic bounded sweep for expired entries
+            if len(_PROBE_NEGATIVE) > _PROBE_NEGATIVE_MAX:
+                now2 = time.monotonic()
+                dead = [k for k, exp in list(_PROBE_NEGATIVE.items()) if now2 >= exp]
+                for k in dead:
+                    _PROBE_NEGATIVE.pop(k, None)
+                if len(_PROBE_NEGATIVE) > _PROBE_NEGATIVE_MAX:
+                    # still over bound (unique never-revisited keys)
+                    for k in list(_PROBE_NEGATIVE.keys())[:100]:
+                        _PROBE_NEGATIVE.pop(k, None)
             _PROBE_NEGATIVE[key] = time.monotonic() + _PROBE_NEGATIVE_TTL
     return ok

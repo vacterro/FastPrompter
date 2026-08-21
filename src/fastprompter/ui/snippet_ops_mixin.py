@@ -1258,9 +1258,12 @@ class SnippetOpsMixin:
         """
         presets = self.data["archive_temp_presets"] if is_archive else self.data["temp_presets"]
         docs = self.archive_docs if is_archive else self.silo_docs
-        blank = next((i for i, p in enumerate(presets) if not (p or "").strip()), None)
+        has_pristine = getattr(self, "_slot_is_pristine", None)
+        def _is_pristine(idx):
+            return has_pristine(idx, is_archive) if has_pristine else True
+        blank = next((i for i, p in enumerate(presets) if not (p or "").strip() and _is_pristine(i)), None)
         if len(presets) >= self.MAX_SILOS_PER_CATEGORY and blank is None:
-            return  # full of content: refuse, lose nothing
+            return  # full of content or no pristine blank: refuse, lose nothing
         if blank is not None and len(presets) >= self.MAX_SILOS_PER_CATEGORY:
             # reuse the blank rather than grow past the 100-slot contract
             self.add_data_undo_state("Restore silo")

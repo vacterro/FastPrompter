@@ -271,7 +271,6 @@ class VaultTextEdit(QTextEdit):
             lambda _v: self.rehover_from_pointer())
         self.document().contentsChange.connect(self._stamp_edited_blocks)
         self.textChanged.connect(self.refresh_extra_selections)
-        self.textChanged.connect(self._refresh_checkbox_flag)
         self.textChanged.connect(self.line_number_area.update)
         self.cursorPositionChanged.connect(self.line_number_area.update)
         self.cursorPositionChanged.connect(self._sync_conceal_reveal)
