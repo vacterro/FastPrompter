@@ -26,7 +26,7 @@ from fastprompter.core.watcher import win32
 from fastprompter.core.watcher.adapter import load_adapters
 from fastprompter.core.watcher.engine import Engine
 from fastprompter.core.watcher.probes import combine
-from fastprompter.core.watcher.queue import DETACHED, PENDING, queue_for
+from fastprompter.core.watcher.queue import DETACHED, PENDING, SENT, queue_for
 from fastprompter.core.watcher.sender import (
     PostMessageSender,
     SendLog,
@@ -59,19 +59,20 @@ class _WatcherSendWorker(QObject):
     any result whose token is no longer current.
     """
 
-    dispatch = pyqtSignal(object, object, object, int)   # sender, intent, target, gen
-    done = pyqtSignal(object, int, object)                # intent, gen, SendResult
+    dispatch = pyqtSignal(object, object, object, int, int)
+    #                               sender, intent, target, gen, token
+    done = pyqtSignal(object, int, object, int)          # intent, gen, SendResult, token
 
     def __init__(self):
         super().__init__()
 
-    def _run(self, sender, intent, target, gen):
+    def _run(self, sender, intent, target, gen, token):
         try:
             result = sender.send(intent, target)
         except Exception as exc:
             result = SendResult(False, f"send failed in worker: {exc}",
                                 getattr(intent, "text", ""))
-        self.done.emit(intent, gen, result)
+        self.done.emit(intent, gen, result, token)
 
 
 class _WatcherVerifyWorker(QObject):
@@ -133,6 +134,49 @@ class _WatcherVerifyWorker(QObject):
                 f"target verification failed: {exc}")
 
 
+class _WatcherProbeWorker(QObject):
+    """Samples the configured probes OFF the GUI thread (PERF-003).
+
+    FileProbe does glob/stat (tens of milliseconds on large transcript
+    directories) and SqliteProbe opens/queries a database with a 0.5s
+    timeout. Running that inside the Qt timer callback froze the window
+    every ~900 ms even when nothing was being sent. `sample` is emitted
+    from the GUI thread and runs `_run` in this object's thread; `sampled`
+    carries only the verdict (idle? reasons) and the observe-size payload
+    back to the GUI thread, where the engine's state machine still runs.
+    """
+
+    sample = pyqtSignal(object, int)          # probes, gen
+    sampled = pyqtSignal(int, bool, object, int)   # gen, idle, reasons, size
+
+    def __init__(self):
+        super().__init__()
+
+    def _run(self, probes, gen):
+        try:
+            now = time.monotonic()
+            idle, reasons = combine(probes, now)
+            size = _probe_bytes(probes)
+        except Exception as exc:
+            idle, reasons = False, [f"probe sampling failed: {exc}"]
+            size = 0
+        self.sampled.emit(gen, idle, reasons, size)
+
+
+def _probe_bytes(probes):
+    """Total bytes across the probes' stores — the response arriving."""
+    total = 0
+    for probe in probes:
+        token = getattr(probe, "_last_token", None)
+        if isinstance(token, tuple):
+            total += sum(p for p in token if isinstance(p, int))
+        elif isinstance(token, (list, tuple)):
+            for part in token:
+                if isinstance(part, tuple):
+                    total += sum(p for p in part if isinstance(p, int))
+    return total
+
+
 class WatcherMixin:
     """Arm/disarm, the tick loop, the panic key, and the send log."""
 
@@ -150,9 +194,32 @@ class WatcherMixin:
         # generation token for in-flight sends: bumped on arm/disarm/panic so
         # a result from an old run can never be reported against a new one
         self._watcher_send_gen = 0
-        # a send is physically in the air (worker dispatched, result not yet
-        # applied); used by the pre-quit quiesce (P0-6)
+        # a send is logically owned by the current run (generation-gated); the
+        # pre-quit quiesce must NOT treat this as the physical barrier.
         self._watcher_send_active = False
+        # CORE-006: a send is physically in the air (worker dispatched, socket
+        # result not yet returned). This is SEPARATE from logical generation
+        # ownership: a disarm/panic may discard a stale result, but it cannot
+        # claim the physical I/O has finished until the worker callback
+        # actually returns. The quiesce barrier waits on THIS, never on the
+        # logical flag.
+        #
+        # CORE-003: physical ownership is PER-DISPATCH. A single boolean was
+        # wrong — a stale dispatch's late completion cleared the only barrier
+        # while a NEWER dispatch was still physically in the air. Each
+        # dispatch registers a unique token before emission and removes ONLY
+        # its own token on completion; the barrier is empty only when every
+        # physical dispatch has resolved.
+        self._watcher_send_physical_tokens = set()
+        self._watcher_send_token_seq = 0
+        # CORE-002: the queue an armed run drains is owned by (category, slot),
+        # not by the slot key alone. The live UI alias `prompt_queues` is
+        # rebound on every project switch, so resolving the queue against it
+        # would drain the NEW project's slot while armed on the old one. Pin
+        # the category and the queue map at arm; all watcher resolution uses
+        # these, never the current UI alias.
+        self._watcher_pinned_category = None
+        self._watcher_pinned_queues = None
         self._watcher_quiescing = False
         self._watcher_worker = None
         self._watcher_worker_thread = None
@@ -174,6 +241,17 @@ class WatcherMixin:
         self._observe_last = None
         self._observe_bytes = 0
         self._observe_started = 0.0
+        # PERF-003: probe sampling runs on its own worker thread. The GUI
+        # holds the tick while a sample is in flight and caches exactly one
+        # verdict per generation; a stale sample (rearm/disarm/panic) is
+        # dropped by the generation token. ``_watcher_sample_verdict`` is
+        # (idle, reasons, size) or None.
+        self._watcher_probe_worker = None
+        self._watcher_probe_thread = None
+        self._watcher_probe_gen = 0
+        self._watcher_probe_inflight = False
+        self._watcher_sample_verdict = None
+        self._watcher_sample_size = 0
 
     def watcher_engine(self):
         self._watcher_init()
@@ -216,7 +294,15 @@ class WatcherMixin:
 
     # ---- arming -------------------------------------------------------
     def watcher_arm(self, hwnd, adapter, live=False):
-        """Bind to one target and this silo's queue. Returns (ok, reason)."""
+        """Bind to one target and this silo's queue. Returns (ok, reason).
+
+        CORE-005: every candidate arm field is built and VALIDATED in locals
+        before a single live field or generation token is touched. A failed
+        candidate arm (unsupported blocker, missing window, dead CDP target)
+        therefore leaves the existing run, its target/sender/pacing and ALL
+        generations exactly as they were — the next dispatch still drives the
+        old run, not a half-replaced one.
+        """
         self._watcher_init()
         if getattr(self, "_observe_timer", None) is not None and self._observe_timer.isActive():
             return False, "already observing - stop watching first"
@@ -235,39 +321,18 @@ class WatcherMixin:
             if info is None:
                 return False, "that window is gone"
 
-        self._watcher_adapter = adapter
-        self._watcher_target = self._build_target(adapter, hwnd, info)
-        if self._watcher_target is None:
+        # --- VALIDATE the whole candidate in locals first ---
+        target = self._build_target(adapter, hwnd, info)
+        if target is None:
             return False, ("that agent is not listening on its debug port - "
                            "launch it with --remote-debugging-port")
-        self._watcher_sender = self._build_sender(live)
-        self._watcher_engine.settle_ms = adapter.settle_ms
-        # a fresh run: any result still in flight from an older run is stale
-        self._watcher_send_gen += 1
-        # ... and so is any verification still in flight from an older run
-        self._watcher_verify_gen += 1
-        # the prior run's in-flight send (if any) is logically discarded with
-        # it; its late callback returns early on the stale gen, so drop active
-        # ownership here to avoid quiesce waiting on a result that will never
-        # apply (a newer dispatch re-sets this flag)
-        self._watcher_send_active = False
-        self._watcher_verify_state = "unverified"
-        self._watcher_verify_inflight = False
-        # The parsed [limits] must actually reach the engine (T-757): a
-        # configured min_gap_ms/max_sends used to be stored and ignored.
-        limits = getattr(self, "_watcher_limits", None) or {}
-        try:
-            self._watcher_engine.min_gap_ms = max(0, int(limits.get("min_gap_ms", 4000)))
-        except (TypeError, ValueError):
-            pass
-        try:
-            self._watcher_engine.max_sends = max(1, int(limits.get("max_sends", 25)))
-        except (TypeError, ValueError):
-            pass
+        sender = self._build_sender(live, adapter)
+
         # The blocker runs only when the transport can read the target's
         # visible text (CDP). Anything else must not pretend to be armed with
         # protection that cannot execute. getattr-guarded: tests inject bare
         # fake adapters that carry none of these.
+        blocked_fn = None
         if getattr(adapter, "blocker_pattern", ""):
             supported = getattr(adapter, "blocker_supported", lambda: False)()
             if not supported:
@@ -279,12 +344,57 @@ class WatcherMixin:
                     "this agent cannot read its visible text, so the "
                     "blocker cannot run - fix blocker_supported in the "
                     "adapter first")
-            self._watcher_blocked_fn = adapter.blocked
-        else:
-            self._watcher_blocked_fn = None
+            blocked_fn = adapter.blocked
+
+        # The parsed [limits] must actually reach the engine (T-757): a
+        # configured min_gap_ms/max_sends used to be stored and ignored.
+        limits = getattr(self, "_watcher_limits", None) or {}
+        try:
+            min_gap_ms = max(0, int(limits.get("min_gap_ms", 4000)))
+        except (TypeError, ValueError):
+            min_gap_ms = 0
+        try:
+            max_sends = max(1, int(limits.get("max_sends", 25)))
+        except (TypeError, ValueError):
+            max_sends = 1
+
+        # --- all validations passed: publish atomically ---
+        self._watcher_adapter = adapter
+        self._watcher_target = target
+        self._watcher_sender = sender
+        self._watcher_blocked_fn = blocked_fn
+        self._watcher_engine.settle_ms = adapter.settle_ms
+        self._watcher_engine.min_gap_ms = min_gap_ms
+        self._watcher_engine.max_sends = max_sends
+        # CORE-002: pin the queue owner BEFORE arming the engine. While this
+        # category is the open one, `prompt_queues` IS the working map for
+        # `pinned_category`; once the user switches projects that alias is
+        # rebound to another map, but these references keep draining the
+        # silo that was armed. Resolve nothing against `prompt_queues` from
+        # here on in the watcher path.
+        pinned_category = self.get_current_category() or ""
+        self._watcher_pinned_category = pinned_category
+        self._watcher_pinned_queues = self.prompt_queues
+        # a fresh run: any result still in flight from an older run is stale
+        self._watcher_send_gen += 1
+        # ... and so is any verification still in flight from an older run
+        self._watcher_verify_gen += 1
+        # the prior run's in-flight send (if any) is logically discarded with
+        # it; its late callback returns early on the stale gen, so drop active
+        # ownership here to avoid quiesce waiting on a result that will never
+        # apply (a newer dispatch re-sets this flag)
+        self._watcher_send_active = False
+        self._watcher_verify_state = "unverified"
+        self._watcher_verify_inflight = False
+        # PERF-003: probe sampling off the GUI thread — see
+        # ``_watcher_dispatch_sample`` / ``_watcher_on_probe_sampled``.
+        self._watcher_probe_gen += 1
+        self._watcher_probe_inflight = False
+        self._watcher_sample_verdict = None
         self._watcher_engine.arm(
             self._watcher_target, self._queue_slot_key(), adapter.probes,
-            adapter.skill_format or "", now=time.monotonic())
+            adapter.skill_format or "", now=time.monotonic(),
+            queue_category=pinned_category)
         self._watcher_start_timer()
         self._watcher_notify()
         return True, ("armed, live" if live else "armed, dry run")
@@ -297,14 +407,18 @@ class WatcherMixin:
                                        adapter.cdp_title)
         return Target(hwnd, info["title"], info["cls"], probe=win32.probe_for())
 
-    def _build_sender(self, live):
+    def _build_sender(self, live, adapter):
         """The transport the adapter asks for. Silent or nothing.
+
+        CORE-001: built from the validated CANDIDATE ``adapter`` passed in,
+        never from ``self._watcher_adapter`` — that field is only published
+        AFTER every validation passes, so during a candidate arm it would
+        still hold the previous run's adapter (stale sender state).
 
         `build_sender` can still produce the focus-stealing one, but only
         for a caller that sets allow_focus_steal, and nothing in the UI
         does. Interrupting the user is what this feature exists to avoid.
         """
-        adapter = self._watcher_adapter
         if not live:
             return build_sender()
         submit = getattr(adapter, "submit", "enter")
@@ -323,8 +437,17 @@ class WatcherMixin:
         self._watcher_init()
         self._watcher_send_gen += 1     # in-flight results become stale
         self._watcher_verify_gen += 1   # in-flight verifications too
+        # PERF-003: any probe sample in flight is stale for the next run
+        self._watcher_probe_gen += 1
+        self._watcher_probe_inflight = False
+        self._watcher_sample_verdict = None
         self._watcher_verify_state = "unverified"
         self._watcher_verify_inflight = False
+        # CORE-002: an armed run's queue owner is no longer relevant once
+        # disarmed; drop the pin so a later unarmed resolution never touches a
+        # stale (category, slot) map.
+        self._watcher_pinned_category = None
+        self._watcher_pinned_queues = None
         # The dispatched send is logically discarded with the run. Its worker
         # callback will arrive with the OLD generation and return early, so it
         # must NOT clear a newer dispatch's active flag — but the flag for THIS
@@ -352,6 +475,9 @@ class WatcherMixin:
             return False
         self._watcher_send_gen += 1     # whatever was in flight is now stale
         self._watcher_verify_gen += 1   # in-flight verifications too
+        self._watcher_probe_gen += 1    # PERF-003: in-flight probe sample too
+        self._watcher_probe_inflight = False
+        self._watcher_sample_verdict = None
         self._watcher_verify_state = "unverified"
         self._watcher_verify_inflight = False
         # See watcher_disarm: drop active-send ownership so a stale callback
@@ -403,6 +529,56 @@ class WatcherMixin:
             except Exception:
                 pass
 
+    def _watcher_armed_queue_map(self):
+        """The queue map for the PINNED armed-run category (CORE-002).
+
+        Never the live UI alias `prompt_queues`, which is rebound on every
+        project switch. Falls back to the current alias when nothing is
+        armed, so callers that run outside an armed run stay correct.
+        """
+        if self._watcher_pinned_queues is not None:
+            return self._watcher_pinned_queues
+        return self.prompt_queues
+
+    def _watcher_current_category(self):
+        """Defensive current-category getter for mixin-only test stubs that
+        do not implement the full main window."""
+        getter = getattr(self, "get_current_category", None)
+        if getter is None:
+            return ""
+        return getter() or ""
+
+    def _watcher_write_queues(self, cat, queues):
+        """Serialize ``queues`` (a {slot: SiloQueue} map) into
+        ``watcher_queues_all[cat]`` (CORE-002).
+
+        The flat `watcher_queues` alias is kept in sync only when ``cat`` is
+        still the open project, so writing a non-current owner never disturbs
+        the live UI's store.
+        """
+        from fastprompter.core.watcher.queue import save_queues
+
+        data = getattr(self, "data", None)
+        if not isinstance(data, dict):
+            return
+        raw = save_queues(queues) if isinstance(queues, dict) else {}
+        bucket = data.get("watcher_queues_all")
+        if not isinstance(bucket, dict):
+            bucket = {}
+            data["watcher_queues_all"] = bucket
+        bucket[cat] = raw
+        if cat == self._watcher_current_category():
+            data["watcher_queues"] = raw
+        if hasattr(self, "mark_dirty"):
+            self.mark_dirty()
+
+    def _watcher_persist_queues(self):
+        """Persist the armed run's queue under its OWN pinned category
+        (CORE-002), never under the live UI alias.
+        """
+        cat = self._watcher_pinned_category or self._watcher_current_category() or ""
+        self._watcher_write_queues(cat, self._watcher_armed_queue_map())
+
     def _watcher_tick_inner(self):
         engine = self._watcher_engine
         if not engine.armed:
@@ -410,7 +586,7 @@ class WatcherMixin:
             return
 
         now = time.monotonic()
-        queue = queue_for(self.prompt_queues, engine.queue_key)
+        queue = queue_for(self._watcher_armed_queue_map(), engine.queue_key)
         self._watcher_refresh_texts(engine.queue_key, queue)
 
         target_ok = True
@@ -434,7 +610,22 @@ class WatcherMixin:
             else:
                 target_ok = self._watcher_target.matches()[0]
 
-        intent = engine.tick(now, queue, blocked=blocked, target_ok=target_ok)
+        # PERF-003: probe sampling (glob/stat/SQLite) runs on the probe
+        # worker thread, never inside this Qt timer callback. The GUI holds
+        # the tick while a sample is in flight and consumes exactly ONE
+        # cached verdict per decision. A sample that a newer run has
+        # superseded is dropped by the generation token.
+        if self._watcher_sample_verdict is None:
+            self._watcher_dispatch_sample(engine.probes)
+            # An adapter with NO probes gets its verdict inline (still BUSY);
+            # a real sample is in flight and the tick holds until it lands.
+            if self._watcher_sample_verdict is None:
+                return                     # HOLD: the sample is on the worker
+        idle, reasons = self._watcher_sample_verdict
+        self._watcher_sample_verdict = None
+
+        intent = engine.tick(now, queue, blocked=blocked, target_ok=target_ok,
+                             idle=idle, reasons=reasons)
         if intent is None:
             self._watcher_notify()
             if not engine.armed:
@@ -496,7 +687,8 @@ class WatcherMixin:
             if status == "hold_blocked":
                 logger.warning("watcher blocked, holding: %s", reason)
                 now = time.monotonic()
-                queue = queue_for(self.prompt_queues, engine.queue_key)
+                queue = queue_for(self._watcher_armed_queue_map(),
+                                  engine.queue_key)
                 engine.tick(now, queue, blocked=True, target_ok=True)
                 self._watcher_verify_state = "unverified"
                 self._watcher_notify()
@@ -515,6 +707,11 @@ class WatcherMixin:
             except Exception:
                 pass
 
+    @property
+    def _watcher_send_physical_active(self):
+        """Compatibility alias: True while ANY physical dispatch is unresolved."""
+        return bool(self._watcher_send_physical_tokens)
+
     def _watcher_dispatch_send(self, intent):
         """Send off-thread; the GUI never blocks on CDP socket I/O."""
         if getattr(self, "_watcher_quiescing", False):
@@ -525,9 +722,15 @@ class WatcherMixin:
         self._watcher_send_gen += 1
         gen = self._watcher_send_gen
         self._watcher_send_active = True
+        # CORE-003: register this dispatch's OWN physical token BEFORE the
+        # worker is asked to act, so the barrier is up the instant the send
+        # leaves and only this token's completion can take it down.
+        self._watcher_send_token_seq += 1
+        token = self._watcher_send_token_seq
+        self._watcher_send_physical_tokens.add(token)
         worker = self._watcher_ensure_worker()
         worker.dispatch.emit(self._watcher_sender, intent,
-                             self._watcher_target, gen)
+                             self._watcher_target, gen, token)
 
     def _watcher_begin_quiesce(self, timeout_s=1.5):
         """P0-6: quiesce the watcher BEFORE the event loop dies.
@@ -555,7 +758,7 @@ class WatcherMixin:
         Returns True when the watcher is fully quiesced.
         """
         if getattr(self, "_watcher_quiescing", False):
-            return not getattr(self, "_watcher_send_active", False)
+            return not getattr(self, "_watcher_send_physical_active", False)
         self._watcher_quiescing = True
         was_armed = bool(getattr(self, "_watcher_engine", None)
                          and self._watcher_engine.armed)
@@ -568,15 +771,18 @@ class WatcherMixin:
             except Exception:
                 pass
             deadline = time.monotonic() + max(0.0, float(timeout_s))
-            while self._watcher_send_active and time.monotonic() < deadline:
+            # CORE-006: wait on the PHYSICAL send barrier, not the logical
+            # generation flag — a disarm/panic may have already dropped the
+            # logical flag while the worker is still on the socket.
+            while self._watcher_send_physical_active and time.monotonic() < deadline:
                 from PyQt6.QtWidgets import QApplication
                 QApplication.processEvents()
                 time.sleep(0.01)
-            if self._watcher_send_active:
-                # Phase 2 refused: the in-flight send never resolved. Roll the
-                # watcher runtime back to its prior state and refuse the
-                # quiesce. Nothing is marked sent or lost; the prompt stays in
-                # flight exactly as it was (the engine is still ARMED).
+            if self._watcher_send_physical_active:
+                # Phase 2 refused: the in-flight physical send never resolved.
+                # Roll the watcher runtime back to its prior state and refuse
+                # the quiesce. Nothing is marked sent or lost; the prompt stays
+                # in flight exactly as it was (the engine is still ARMED).
                 if was_armed and getattr(self, "_watcher_engine", None) \
                         and self._watcher_engine.armed:
                     self._watcher_start_timer()
@@ -587,7 +793,7 @@ class WatcherMixin:
                 self._watcher_engine.disarm("application is quitting")
             except Exception:
                 logger.exception("watcher disarm failed during quiesce")
-            self.save_prompt_queues()
+            self._watcher_persist_queues()
             return True
         finally:
             self._watcher_quiescing = False
@@ -634,9 +840,81 @@ class WatcherMixin:
         if success:
             self._watcher_worker_thread = None
             self._watcher_worker = None
+        # PERF-003: stop the probe-sampling thread too.
+        probe_thread = getattr(self, "_watcher_probe_thread", None)
+        if probe_thread is not None and probe_thread.isRunning():
+            probe_thread.quit()
+            from fastprompter.main import wait_thread_seconds
+            success = wait_thread_seconds(
+                probe_thread, _WATCHER_SHUTDOWN_TIMEOUT_S,
+                "watcher probe worker") and success
+        if probe_thread is not None:
+            self._watcher_probe_thread = None
+            self._watcher_probe_worker = None
         return success
 
-    def _watcher_on_send_result(self, intent, gen, result):
+    def _watcher_ensure_probe_worker(self):
+        """The probe-sampling worker thread (PERF-003), separate from the
+        send/verify thread so a slow glob/stat or a locked SQLite never
+        queues behind a stuck socket send."""
+        if self._watcher_probe_worker is None:
+            thread = QThread(self)
+            thread.setObjectName("fastprompter-watcher-probe")
+            worker = _WatcherProbeWorker()
+            worker.moveToThread(thread)
+            worker.sample.connect(worker._run)
+            worker.sampled.connect(self._watcher_on_probe_sampled)
+            thread.start()
+            self._watcher_probe_worker = worker
+            self._watcher_probe_thread = thread
+        return self._watcher_probe_worker
+
+    def _watcher_dispatch_sample(self, probes):
+        """PERF-003: ask the probe worker for one verdict for this run.
+
+        Never overlaps: a sample is dispatched only when none is already in
+        flight for the current generation. The result re-enters through
+        ``_watcher_on_probe_sampled``, which re-runs the held tick."""
+        if getattr(self, "_watcher_probe_inflight", False):
+            return False
+        probes = list(probes or ())
+        if not probes:
+            # An adapter with no probes must still be BUSY (uncertainty is
+            # not idleness) — decide inline, nothing to sample.
+            self._watcher_sample_verdict = (False, ["no probes configured"])
+            return True
+        worker = self._watcher_ensure_probe_worker()
+        self._watcher_probe_gen += 1
+        gen = self._watcher_probe_gen
+        self._watcher_probe_inflight = True
+        worker.sample.emit(probes, gen)
+        return True
+
+    def _watcher_on_probe_sampled(self, gen, idle, reasons, size):
+        """PERF-003: the probe verdict, applied on the GUI thread.
+
+        Only the CURRENT generation may be applied. The sample is cached for
+        the next tick (which consumes exactly one verdict), then the held
+        tick is re-run so a decision is not delayed until the next timer
+        fire. Observe mode consumes the same cached verdict."""
+        from fastprompter.main import is_gui_thread
+        if not is_gui_thread():
+            logger.critical("watcher probe sample rejected outside GUI thread")
+            return
+        self._watcher_probe_inflight = False
+        if gen != self._watcher_probe_gen:
+            return                     # stale: a newer run owns the sampler
+        self._watcher_sample_verdict = (idle, list(reasons))
+        self._watcher_sample_size = size
+        try:
+            if getattr(self, "_watcher_engine", None) and self._watcher_engine.armed:
+                self._watcher_tick_inner()
+            elif getattr(self, "_observe_adapter", None) is not None:
+                self._observe_tick_inner()
+        except Exception:
+            logger.exception("watcher probe verdict handling failed")
+
+    def _watcher_on_send_result(self, intent, gen, result, token):
         """The worker's answer, applied on the GUI thread.
 
         A result is applied ONLY when its generation is still current and the
@@ -649,14 +927,44 @@ class WatcherMixin:
             logger.critical("watcher completion rejected outside GUI thread")
             return
         try:
+            # CORE-006/CORE-003: THIS dispatch's physical send has resolved.
+            # Remove exactly its own token — never a sibling's — so an older
+            # dispatch's late completion cannot clear the barrier while a
+            # newer one is still physically in the air. Whether the result
+            # may MUTATE the current run is a separate, generation-gated
+            # question below.
+            self._watcher_send_physical_tokens.discard(token)
             if gen != self._watcher_send_gen:
-                return                    # stale: a newer run owns the watcher
+                # Stale: a newer run owns the watcher. A send that actually
+                # went out must still be recorded so it is never re-sent
+                # (CORE-006 duplication guard); a failed one stays retryable.
+                # Neither path touches the newer run's engine.
+                if result.ok:
+                    # CORE-002: a stale success belongs to the run that
+                    # launched it, identified by the intent's OWN (category,
+                    # slot) — never the live UI alias, which now points at a
+                    # different project/owner. Resolve the original owner's
+                    # store and mark ITS item SENT exactly once; the newer
+                    # engine's state is left untouched.
+                    from fastprompter.core.watcher.queue import load_queues
+                    owner_raw = self.data.get("watcher_queues_all")
+                    owner = (owner_raw.get(intent.queue_category)
+                             if isinstance(owner_raw, dict) else None)
+                    queues = load_queues(owner) if owner else {}
+                    queue = queue_for(queues, intent.queue_key)
+                    item = queue.find(intent.item_id) if queue is not None else None
+                    if item is not None and item.state != SENT:
+                        item.state = SENT
+                        self._watcher_mark_sent(intent.queue_key, item)
+                        self._watcher_write_queues(intent.queue_category, queues)
+                        self._watcher_notify()
+                return
             self._watcher_send_active = False
             engine = self._watcher_engine
             if not engine.armed or engine.state != "sending":
                 return
             now = time.monotonic()
-            queue = queue_for(self.prompt_queues, engine.queue_key)
+            queue = queue_for(self._watcher_armed_queue_map(), engine.queue_key)
             item = queue.find(intent.item_id) if queue is not None else None
             self._watcher_log.record(intent, result, self._watcher_target)
             if result.ok:
@@ -668,7 +976,7 @@ class WatcherMixin:
                 engine.report_held(result.reason, now=now)
             else:
                 engine.report_failed(item, result.reason, now=now)
-            self.save_prompt_queues()
+            self._watcher_persist_queues()
             self._watcher_notify()
             if not engine.armed:
                 self._watcher_stop_timer()
@@ -749,6 +1057,13 @@ class WatcherMixin:
         self._observe_bytes = 0
         for probe in adapter.probes:
             probe.reset()
+        # PERF-003: a fresh observe run owns the probe sampler. Any sample a
+        # prior armed run left in flight is stale; bump the generation and
+        # drop the cached verdict so this run's first sample is authoritative.
+        self._watcher_probe_gen += 1
+        self._watcher_probe_inflight = False
+        self._watcher_sample_verdict = None
+        self._watcher_sample_size = 0
         if self._observe_timer is None:
             self._observe_timer = QTimer(self)
             self._observe_timer.setInterval(500)
@@ -762,6 +1077,9 @@ class WatcherMixin:
         if self._observe_timer is not None:
             self._observe_timer.stop()
         self._observe_adapter = None
+        self._watcher_probe_gen += 1
+        self._watcher_probe_inflight = False
+        self._watcher_sample_verdict = None
         self._watcher_notify()
 
     @property
@@ -790,10 +1108,18 @@ class WatcherMixin:
                 self._observe_timer.stop()
             return
 
-        now = time.monotonic()
-        idle, reasons = combine(adapter.probes, now)
-        size = self._observe_size(adapter)
+        # PERF-003: sample the probes on the worker thread, like the armed
+        # tick. The verdict (idle/reasons/size) is cached by the probe
+        # worker; one cached verdict is consumed per observation pass.
+        verdict = getattr(self, "_watcher_sample_verdict", None)
+        if verdict is None:
+            self._watcher_dispatch_sample(adapter.probes)
+            return
+        self._watcher_sample_verdict = None
+        idle, reasons = verdict
+        size = self._watcher_sample_size
 
+        now = time.monotonic()
         # Only transitions are recorded. Polling twice a second, a line per
         # poll would bury the two moments that matter - when it started
         # working and when it stopped - under hundreds of identical rows.
@@ -817,16 +1143,7 @@ class WatcherMixin:
 
     def _observe_size(self, adapter):
         """Total bytes across the probes' stores — the response arriving."""
-        total = 0
-        for probe in adapter.probes:
-            token = getattr(probe, "_last_token", None)
-            if isinstance(token, tuple):
-                total += sum(p for p in token if isinstance(p, int))
-            elif isinstance(token, (list, tuple)):
-                for part in token:
-                    if isinstance(part, tuple):
-                        total += sum(p for p in part if isinstance(p, int))
-        return total
+        return _probe_bytes(adapter.probes)
 
     # ---- listeners ----------------------------------------------------
     def watcher_listen(self, fn):

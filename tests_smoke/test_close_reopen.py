@@ -162,6 +162,10 @@ def test_shutdown_application_retires_window_workers_exactly_once(monkeypatch):
         def close(self):
             events.append("FINAL_CLOSE")
 
+        def _pre_quit_logical_finalize(self):
+            events.append("LOGICAL_FINALIZE")
+            return True
+
         def _watcher_shutdown(self):
             events.append("WATCHER_RETIRED")
             return True

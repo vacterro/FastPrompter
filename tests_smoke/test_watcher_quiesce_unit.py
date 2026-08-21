@@ -55,14 +55,20 @@ def _setup_inflight(q, text="hello"):
     eng.pending = intent
     q._watcher_send_gen = 1
     q._watcher_send_active = True
+    # CORE-003: a real dispatch registers a PHYSICAL token; the quiesce
+    # barrier waits on outstanding physical tokens, so the simulated
+    # in-flight send must register one too.
+    q._watcher_send_token_seq += 1
+    token = q._watcher_send_token_seq
+    q._watcher_send_physical_tokens.add(token)
     q._watcher_start_timer()
-    return item, intent
+    return item, intent, token
 
 
 def test_quiesce_timeout_keeps_watcher_armed_and_late_send_succeeds():
     q = _MinimalWatcher()
     try:
-        item, intent = _setup_inflight(q)
+        item, intent, token = _setup_inflight(q)
         refused = q._watcher_begin_quiesce(timeout_s=0.05)
         # refused: watcher runtime rolled back, still armed, send still active
         assert refused is False
@@ -71,7 +77,7 @@ def test_quiesce_timeout_keeps_watcher_armed_and_late_send_succeeds():
         assert q._watcher_send_active is True
         assert item.state == "pending"
         # the late success arrives now (engine still armed) -> applied once
-        q._watcher_on_send_result(intent, 1, SendResult(True, "ok", "hello"))
+        q._watcher_on_send_result(intent, 1, SendResult(True, "ok", "hello"), token)
         assert item.state == "sent"
         assert q._watcher_send_active is False
         assert q._watcher_engine.sent_count == 1
@@ -83,9 +89,9 @@ def test_quiesce_timeout_keeps_watcher_armed_and_late_send_succeeds():
 def test_quiesce_success_disarms_after_send_resolves():
     q = _MinimalWatcher()
     try:
-        item, intent = _setup_inflight(q)
+        item, intent, token = _setup_inflight(q)
         # resolve the send immediately, before quiescing
-        q._watcher_on_send_result(intent, 1, SendResult(True, "ok", "hello"))
+        q._watcher_on_send_result(intent, 1, SendResult(True, "ok", "hello"), token)
         assert item.state == "sent"
         ok = q._watcher_begin_quiesce(timeout_s=0.2)
         assert ok is True

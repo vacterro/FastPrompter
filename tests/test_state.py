@@ -585,12 +585,20 @@ class TestSettingsSurviveAReload:
         for key, value in list(state.data.items()):
             if key in _SETTINGS_SKIP or not isinstance(value, (dict, list)):
                 continue
-            if key in ("silo_gaps", "pinned_silos", "silo_ticked", "silo_collapsed"):
-                # Integer-list settings: marker must contain only valid ints so
-                # _normalize_structured_list does not drop every member.
-                marker = [1, 2, 3]
+            _base = key[:-4] if key.endswith("_all") else key
+            if _base in ("silo_gaps", "pinned_silos", "silo_ticked", "silo_collapsed"):
+                if key.endswith("_all"):
+                    # Per-category *_all store: top-level must be a dict, and
+                    # each category value is a list of ints (CORE-003 keeps it).
+                    marker = {"probe": [1, 2, 3]}
+                else:
+                    # Flat alias: a plain integer list.
+                    marker = [1, 2, 3]
             elif isinstance(value, dict):
-                marker = {"probe": [key, 1]}
+                # Dict settings (including the per-category *_all stores):
+                # CORE-003 validates each per-category member against its
+                # natural type, so the member must itself be a dict, not a list.
+                marker = {"probe": {"inner": key}}
             else:
                 marker = [key, "x"]
             state.data[key] = marker

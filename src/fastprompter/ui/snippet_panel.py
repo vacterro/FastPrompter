@@ -265,7 +265,9 @@ class DraggableButton(QPushButton):
         else:
             menu.addAction(tr("📋 Copy", le), lambda: self.main_win.copy_snippet_to_clipboard(self.full_text))
             menu.addAction(tr("✏ Rename", le), lambda: self.main_win.rename_snippet(self.cat, self.global_idx))
-            menu.addAction(tr("📁 Files…", le), lambda: self.main_win.open_file_container(self.global_idx))
+            # W2-003: snippets have NO File Container attachment ownership.
+            # The numeric index would alias an unrelated normal silo's files;
+            # never expose Files on a snippet.
             menu.addSeparator()
             menu.addAction(tr("🗑 Delete", le), lambda: self.main_win.prompt_delete_snippet(self.cat, self.global_idx))
         self.main_win.ignore_focus_loss = True
@@ -699,7 +701,7 @@ class DraggableSiloButton(QWidget):
             return
         if mods & Qt.KeyboardModifier.ShiftModifier:
             if hasattr(self.main_win, 'open_silo_settings'):
-                self.main_win.open_silo_settings(self.global_idx)
+                self.main_win.open_silo_settings(self.global_idx, is_archive=self.is_archive)
             return
 
         if hasattr(self.main_win, 'open_file_container'):

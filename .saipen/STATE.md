@@ -1,7 +1,7 @@
-﻿---
-phase: DONE
-task: "crew fixed point reached"
-next_action: "WAIT: crew closed"
+---
+phase: REVIEW
+task: "T-1019..T-1022"
+next_action: "RUN: ship v0.8.43"
 blocker: ""
 agent: opencode
 saipen_version: 7
@@ -13,10 +13,9 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 9007
+last_event: 785
 style_contract: ded-4ae736e4
-updated: "2026-08-20T08:43:46Z"
-transition_from: CREW
+updated: "2026-08-21T00:00:00Z"
+transition_from: VERIFY
 execution_intent: normal
-converge_target: ""
 ---

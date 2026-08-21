@@ -1344,10 +1344,23 @@ class TimerDialog(QDialog):
                 # duplicable after a language switch: it matched only by name,
                 # which is localized and changes with the UI language, so a
                 # re-scan could not find it and created a second countdown.
+                # CORE-011: refresh the SCHEDULING state too, not just the
+                # identity/target. A legacy or previously-fired one-shot adopted
+                # as a new auto-limit must become an active rolling interval
+                # timer on the CURRENT configured window: clear fired, install
+                # interval recurrence and the refreshed interval_minutes. Only
+                # the user's intended notification/sound prefs are preserved.
                 existing.target = target
                 existing.enabled = True
                 existing.auto_limit_key = limit_key
                 existing.name = name
+                existing.fired = False
+                existing.repeat = REPEAT_INTERVAL
+                existing.interval_minutes = self._interval_minutes()
+                if getattr(existing, "repeat_anchor", None) is not None \
+                        and existing.repeat != REPEAT_MONTHLY \
+                        and existing.repeat != REPEAT_YEARLY:
+                    existing.repeat_anchor = None
                 made.append(existing)
                 continue
             timer = limit_window(

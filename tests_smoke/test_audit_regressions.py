@@ -393,7 +393,15 @@ def test_cdp_tick_holds_until_verify_cached(win):
         time.sleep(0.02)
     assert win._watcher_verify_state == "ready"
 
+    # PERF-003: the tick now also dispatches a probe sample to the worker
+    # thread and HOLDS until it lands; pump events so the verdict arrives and
+    # the engine tick actually runs.
     win._watcher_tick_inner()
+    for _ in range(100):
+        _app.processEvents()
+        if eng._ticks == 1:
+            break
+        time.sleep(0.02)
     assert eng._ticks == 1
     win.watcher_disarm()
 
@@ -627,8 +635,15 @@ def _simulate_inflight_send(win, text="hello"):
     win._watcher_engine.state = "sending"
     win._watcher_send_gen = 1
     win._watcher_send_active = True
+    # CORE-003: a real dispatch registers a PHYSICAL token before emission;
+    # the quiesce barrier waits on outstanding physical tokens, so the
+    # simulated in-flight send must register one too or quiesce would
+    # wrongly succeed with the worker still on the socket.
+    win._watcher_send_token_seq += 1
+    token = win._watcher_send_token_seq
+    win._watcher_send_physical_tokens.add(token)
     win._watcher_start_timer()
-    return item, intent
+    return item, intent, token
 
 
 def test_quiesce_timeout_keeps_watcher_armed_and_later_send_becomes_sent(
@@ -641,7 +656,7 @@ def test_quiesce_timeout_keeps_watcher_armed_and_later_send_becomes_sent(
 
     _arm_post(win, monkeypatch)
     try:
-        item, intent = _simulate_inflight_send(win)
+        item, intent, token = _simulate_inflight_send(win)
         refused = win._watcher_begin_quiesce(timeout_s=0.05)
         # refused: watcher runtime rolled back, still armed, send still active
         assert refused is False
@@ -650,7 +665,7 @@ def test_quiesce_timeout_keeps_watcher_armed_and_later_send_becomes_sent(
         assert win._watcher_send_active is True
         assert item.state == "pending"
         # the late success arrives now (engine still armed)
-        win._watcher_on_send_result(intent, 1, SendResult(True, "ok", "hello"))
+        win._watcher_on_send_result(intent, 1, SendResult(True, "ok", "hello"), token)
         assert item.state == "sent"
         assert win._watcher_send_active is False
         assert win._watcher_engine.sent_count == 1
@@ -665,9 +680,9 @@ def test_quiesce_success_disarms_after_send_resolves(win, monkeypatch):
 
     _arm_post(win, monkeypatch)
     try:
-        item, intent = _simulate_inflight_send(win)
+        item, intent, token = _simulate_inflight_send(win)
         # resolve the send immediately, before quiescing
-        win._watcher_on_send_result(intent, 1, SendResult(True, "ok", "hello"))
+        win._watcher_on_send_result(intent, 1, SendResult(True, "ok", "hello"), token)
         assert item.state == "sent"
         ok = win._watcher_begin_quiesce(timeout_s=0.2)
         assert ok is True
@@ -714,8 +729,12 @@ def test_quiesce_refusal_does_not_reopen_live_db(win, monkeypatch):
         QMessageBox, "question",
         lambda *a, **k: QMessageBox.StandardButton.Yes)
     monkeypatch.setattr(
+        QMessageBox, "critical",
+        lambda *a, **k: QMessageBox.StandardButton.Ok)
+    monkeypatch.setattr(
         "fastprompter.core.state.restore_database",
         lambda *a, **k: (_ for _ in ()).throw(FatalRestoreError("fatal")))
+    monkeypatch.setattr(win, "quit_app", lambda: None)
 
     had_conn = win.state.conn is not None
     win.restore_db()

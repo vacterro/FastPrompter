@@ -129,7 +129,8 @@ class _ContainerOpWorker(QObject):
                         )
                     else:
                         _copy_atomic(
-                            src, dest, is_dir, mutation_root, mutation_identity
+                            src, dest, is_dir, mutation_root, mutation_identity,
+                            publish_guard=request.get("publish_guard"),
                         )
                         status = "COPIED"
                     if status == "SOURCE_REMAINS":
@@ -398,6 +399,31 @@ def _unique_dest(folder, name):
     return os.path.join(folder, f"{stem} ({n}){ext}")
 
 
+def _path_is_under(ancestor, descendant):
+    """True when ``descendant`` lies inside ``ancestor`` (or equals it).
+
+    Resolved through ``realpath`` and case-folded, so Windows junctions and
+    symlinks (including the in-root ``root/link -> outside`` escape) cannot
+    slip a container-relative check: a descendant whose physical target is
+    OUTSIDE the ancestor returns False and is refused (CORE-007)."""
+    ancestor = os.path.normcase(
+        os.path.realpath(os.path.abspath(ancestor)))
+    descendant = os.path.normcase(
+        os.path.realpath(os.path.abspath(descendant)))
+    return descendant == ancestor or descendant.startswith(ancestor + os.sep)
+
+
+def _is_alias(path):
+    """True when ``path`` resolves to a DIFFERENT physical location than its
+    lexical name (symlink or Windows junction/reparse point). Used to prune
+    directory aliases during ZIP export so an escaped subtree is never
+    descended into (CORE-007)."""
+    try:
+        return os.path.realpath(os.path.abspath(path)) != os.path.abspath(path)
+    except OSError:
+        return False
+
+
 def _require_container_destination(root, root_identity, candidate):
     if root is None:
         return
@@ -493,12 +519,19 @@ def _move_into_container(src, dest, root=None, root_identity=None):
     return "MOVED"
 
 
-def _copy_atomic(src, dest, is_dir, root=None, root_identity=None):
+def _copy_atomic(src, dest, is_dir, root=None, root_identity=None,
+                  publish_guard=None):
     """Copy src to dest so a partial copy is never presented as the result.
 
     A direct ``copytree``/``copy2`` interrupted mid-way (disk full, IO error)
     leaves a half file or half folder inside the container that looks real.
     The copy therefore lands in a UNIQUE sibling temp.
+
+    ``publish_guard`` (W2-012): an optional callable revalidated immediately
+    before the final rename. When it returns False the publication is
+    ABORTED and the temp is removed -- used by async duplicate-silo copies so
+    a destination whose logical owner was deleted/moved while the copy ran
+    can never resurrect as an orphan asset directory.
     """
     if root is not None and root_identity is None:
         root_identity = capture_resolved_root(root)
@@ -521,6 +554,10 @@ def _copy_atomic(src, dest, is_dir, root=None, root_identity=None):
             raise OSError(
                 f"destination {dest!r} appeared during the copy; "
                 f"refusing to overwrite it")
+        # W2-012: revalidate logical ownership immediately before publish.
+        if publish_guard is not None and not publish_guard():
+            raise OSError(
+                f"publication aborted: the owner of {dest!r} no longer exists")
         os.rename(tmp, dest)
     except Exception:
         shutil.rmtree(tmp, ignore_errors=True)
@@ -952,16 +989,19 @@ class FileContainerPanel(QWidget):
             self._refresh_signals = Signals()
             self.refresh_loaded = self._refresh_signals.refresh_loaded
             self.refresh_loaded.connect(self._on_refresh_list_result)
-            self._refresh_inflight = False
+            self._refresh_inflight_seq = None
             self._refresh_pending = False
             self._refresh_seq = 0
 
         self._refresh_seq = getattr(self, "_refresh_seq", 0) + 1
-        if getattr(self, "_refresh_inflight", False):
+        # W2-010: a request is already in flight. Defer this one as pending
+        # rather than starting a competing worker; the in-flight token stays
+        # authoritative so its completion can retire itself cleanly.
+        if self._refresh_inflight_seq is not None:
             self._refresh_pending = True
             return
-            
-        self._refresh_inflight = True
+
+        self._refresh_inflight_seq = self._refresh_seq
         self._refresh_pending = False
 
         class Worker(QRunnable):
@@ -1034,13 +1074,21 @@ class FileContainerPanel(QWidget):
         from PyQt6.QtCore import Qt
         if sip.isdeleted(self): return
         
-        if owner == getattr(self, "_container_owner_id", None) and folder == getattr(self, "folder", None):
-            self._refresh_inflight = False
+        # W2-010: retire the matching PHYSICAL request token unconditionally.
+        # The panel tracks the in-flight request by its unique token (not a
+        # single boolean tied to the current owner), so a stale completion
+        # can never strand the panel's refresh state. Whatever the paint
+        # outcome, the request that just landed is the one we were waiting on
+        # (or an older one already superseded).
+        if seq == getattr(self, "_refresh_inflight_seq", None):
+            self._refresh_inflight_seq = None
+            # launch any refresh that was deferred while this one flew
             if getattr(self, "_refresh_pending", False):
+                self._refresh_pending = False
                 self._refresh_list()
-                
-        if seq < getattr(self, "_refresh_seq", 0):
-            return
+                return
+        elif seq < getattr(self, "_refresh_seq", 0):
+            return  # an even older superseded result: nothing to retire
 
         # P0-5: only the CURRENT ownership session, on the CURRENT folder,
         # at the CURRENT generation may paint the panel. A result from a
@@ -1171,7 +1219,20 @@ class FileContainerPanel(QWidget):
         # the deferred pass may pull a capped number of unresolved rows rather
         # than enqueuing the entire uncached directory.
         offscreen_budget = 0 if immediate_only else 256
-        for i in range(self.file_list.count()):
+        # PERF-007: an immediate (per-scrollbar-event) request derives the
+        # VISIBLE row range from the viewport and iterates only that range,
+        # so cost scales with visible rows, not total listed files.
+        if immediate_only:
+            top_item = self.file_list.itemAt(viewport.topLeft())
+            bottom_item = self.file_list.itemAt(viewport.bottomRight())
+            start = self.file_list.row(top_item) if top_item is not None else 0
+            end = self.file_list.count()
+            if bottom_item is not None:
+                end = min(end, self.file_list.row(bottom_item) + 1)
+            row_iter = range(max(0, start), max(0, end))
+        else:
+            row_iter = range(self.file_list.count())
+        for i in row_iter:
             item = self.file_list.item(i)
             path = item.data(Qt.ItemDataRole.UserRole)
             if not path:
@@ -1350,32 +1411,67 @@ class FileContainerPanel(QWidget):
                     event.setDropAction(Qt.DropAction.CopyAction)
                 event.accept()
 
+    def _plan_dest(self, name, planned):
+        """Reserve a unique destination name inside the container, checking
+        BOTH the existing filesystem AND every name already chosen earlier in
+        the same batch (CORE-009). Two distinct ``foo.txt`` sources must not
+        collide on the second one, so the second resolves to ``foo (2).txt``
+        deterministically."""
+        base = os.path.join(self.folder, name)
+        if not os.path.exists(base) and name not in planned:
+            planned.add(name)
+            return base
+        stem, ext = os.path.splitext(name)
+        n = 2
+        while True:
+            cand = f"{stem} ({n}){ext}"
+            if not os.path.exists(os.path.join(self.folder, cand)) and cand not in planned:
+                planned.add(cand)
+                return os.path.join(self.folder, cand)
+            n += 1
+
     def import_paths(self, paths, do_move=False):
         """Copy or move files (or whole folders) into the silo folder.
 
         Small operations run synchronously (no scheduler for a 20-byte text
         file); large ones are handed to the shared container worker so the
-        GUI never freezes on a big drop or export."""
+        GUI never freezes on a big drop or export.
+
+        CORE-009: every destination is planned up front against BOTH the
+        current filesystem and the names already reserved in this batch, so a
+        collision between two same-named sources resolves deterministically.
+        A source that is the container itself, or resolves (through a
+        symlink/junction alias) to the container or an ancestor of it, is
+        refused — importing it would recursively copy the operation's own
+        destination into itself."""
         if not self.folder:
             return
         if not self._ensure_folder():
             return
+        folder_real = os.path.realpath(os.path.abspath(self.folder))
+        folder_abs = os.path.abspath(self.folder)
+        planned = set()
         items = []
         for src in paths:
             if not os.path.exists(src):
                 continue
-            # Never swallow our own folder into itself
-            if os.path.abspath(src) == os.path.abspath(self.folder):
+            src_abs = os.path.abspath(src)
+            src_real = os.path.realpath(src_abs)
+            # refuse the container itself, or any source that resolves (via
+            # alias) onto / inside the container folder
+            if src_real == folder_real or _path_is_under(src_real, folder_real):
+                logger.warning(
+                    "File Container import rejected: source %s resolves into "
+                    "the container folder", src)
                 continue
-
-            # If the file is already in this exact folder
-            if os.path.dirname(os.path.abspath(src)) == os.path.abspath(self.folder):
+            # already inside this exact folder
+            if os.path.dirname(src_abs) == folder_abs:
                 if do_move:
                     continue  # Moving to same folder is a no-op
-
-            dest = _unique_dest(self.folder, os.path.basename(src.rstrip("\\/")))
-            items.append(("move" if do_move else "copy", src, dest,
-                          os.path.isdir(src)))
+            name = os.path.basename(src.rstrip("\\/"))
+            dest = self._plan_dest(name, planned)
+            items.append(("move" if do_move else "copy", src_abs, dest,
+                          os.path.isdir(src_abs)))
         if not items:
             return
         self._run_container_ops(items)
@@ -1672,6 +1768,22 @@ class FileContainerPanel(QWidget):
         if not names:
             return
 
+        # CORE-010: capture the immutable export root NOW, before any session
+        # drift. The worker must compute every archive member relative to THIS
+        # root and validate every descendant against it — never against the
+        # mutable `self.folder`, which a profile/silo rebind could change while
+        # the thread runs.
+        export_root = os.path.realpath(os.path.abspath(self.folder))
+        # Refuse an output target (or its temp) that lives beneath the export
+        # source: a self-archiving loop is never allowed.
+        target_real = os.path.realpath(os.path.abspath(target))
+        if _path_is_under(export_root, target_real):
+            logger.error(
+                "File Container export refused: target %s is inside the "
+                "export source %s", target, export_root)
+            self.lbl_count.setText(tr("export target is inside the folder", self.lang))
+            return
+
         from PyQt6.QtCore import Qt
         from PyQt6.QtWidgets import QProgressDialog
 
@@ -1700,14 +1812,34 @@ class FileContainerPanel(QWidget):
                         if cancel.is_set():
                             break
                         src = os.path.abspath(src)
+                        # CORE-007: a top-level entry that is a symlink/junction
+                        # escaping the captured root must be refused wholesale.
+                        if os.path.islink(src) or _is_alias(src):
+                            if not _path_is_under(export_root, src):
+                                continue
                         if os.path.isdir(src):
-                            for root, _dirs, files in os.walk(src):
+                            for root, dirs, files in os.walk(src):
+                                # Prune directory aliases (symlink/junction)
+                                # during traversal so an escaped subtree is
+                                # never descended into (CORE-007).
+                                for d in list(dirs):
+                                    dp = os.path.join(root, d)
+                                    if os.path.islink(dp) or _is_alias(dp):
+                                        dirs.remove(d)
                                 for file in files:
                                     fpath = os.path.join(root, file)
-                                    arcname = os.path.relpath(fpath, self.folder)
+                                    # Resolve physically and refuse descendants
+                                    # that escape the captured root through an
+                                    # alias; archive names stay logical.
+                                    if not _path_is_under(export_root, fpath):
+                                        continue
+                                    arcname = os.path.relpath(fpath, export_root)
                                     zipf.write(fpath, arcname)
                         else:
-                            zipf.write(src, os.path.basename(src))
+                            if not _path_is_under(export_root, src):
+                                continue
+                            arcname = os.path.relpath(src, export_root)
+                            zipf.write(src, arcname)
                         QMetaObject.invokeMethod(
                             progress, "setValue",
                             Qt.ConnectionType.QueuedConnection, Q_ARG(int, i + 1))

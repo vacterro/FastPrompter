@@ -103,7 +103,53 @@ class TrashDialog(QDialog):
             # a refused/None insertion above keeps the trash copy.
             os.remove(filepath)
 
-            QMessageBox.information(self, self.tr("Success"), self.tr("Silo restored successfully."))
+            # W2-005: also restore the File Container folder, if one was
+            # retired into _trash alongside this text. The trash log
+            # records (original, trashed) pairs; match by slug-normalised
+            # basename of the original path (which is the folder name derived
+            # from the same silo text). Do NOT report full success if the
+            # folder restore fails (the text was restored; the message below
+            # warns about the folder).
+            folder_restored = True
+            try:
+                from fastprompter.ui.file_container import silo_slug
+                slug = silo_slug(text)
+                log = self.main_win.data.get("folder_trash_log", [])
+                for entry in list(log):
+                    if not isinstance(entry, (tuple, list)) or len(entry) < 2:
+                        continue
+                    orig, trashed = entry[0], entry[1]
+                    if os.path.basename(orig) == slug:
+                        if os.path.isdir(trashed) and not os.path.exists(orig):
+                            os.makedirs(os.path.dirname(orig), exist_ok=True)
+                            os.rename(trashed, orig)
+                            cat = self.main_win.get_current_category() or ""
+                            self.main_win.data.setdefault(
+                                "silo_folders_all", {}).setdefault(
+                                cat, {})[str(inserted)] = os.path.basename(orig)
+                            if cat == self.main_win.get_current_category():
+                                self.main_win.data["silo_folders"] = \
+                                    self.main_win.data.get(
+                                        "silo_folders_all", {}).get(cat, {})
+                            log.remove(entry)
+                            self.main_win.mark_dirty()
+                        break
+            except Exception:
+                folder_restored = False
+
+            # Delete the restored file ONLY after the insertion succeeded
+            os.remove(filepath)
+
+            if folder_restored:
+                QMessageBox.information(
+                    self, self.tr("Success"),
+                    self.tr("Silo restored successfully."))
+            else:
+                QMessageBox.warning(
+                    self, self.tr("Partial restore"),
+                    self.tr("Text restored, but the File Container folder could "
+                            "not be restored. You can find the files in the "
+                            "trash folder."))
             self._load_trash()
             
         except Exception as e:

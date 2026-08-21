@@ -161,11 +161,12 @@ def test_container_shutdown_drains_two_queued_commands(monkeypatch):
     executed = []
     real_copy = file_container._copy_atomic
 
-    def command_copy(src, dest, is_dir, root=None, root_identity=None):
+    def command_copy(src, dest, is_dir, root=None, root_identity=None,
+                     publish_guard=None):
         executed.append(src)
         if len(executed) == 1:
             assert release.wait(5.0), "test did not release first command"
-        return real_copy(src, dest, is_dir, root, root_identity)
+        return real_copy(src, dest, is_dir, root, root_identity, publish_guard)
 
     monkeypatch.setattr(file_container, "_copy_atomic", command_copy)
     monkeypatch.setattr(file_container, "_CONTAINER_SHUTDOWN_TIMEOUT_S", 2.0)

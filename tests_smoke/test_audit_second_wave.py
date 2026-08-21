@@ -125,7 +125,13 @@ def test_drop_silo_state_order_independent(win):
     assert "1" not in win.data["silo_colors"]
 
 
-def test_transfer_moves_full_identity(win):
+def test_transfer_moves_full_identity(win, tmp_path, monkeypatch):
+    # Point the files root at a PRIVATE temp dir so the transfer's physical
+    # folder move (CORE-004) never touches the real data/files tree and no
+    # F/F-2/F-3 residue accumulates across runs.
+    files_root = str(tmp_path / "files")
+    os.makedirs(files_root, exist_ok=True)
+    monkeypatch.setattr(win, "_files_root", lambda: files_root)
     if "B" not in win.data["categories"]:
         win.data["categories"]["B"] = [None] * 100
         win.data["cats_order"].append("B")
@@ -146,6 +152,10 @@ def test_transfer_moves_full_identity(win):
     win.data.setdefault("silo_last_edited_all", {})[CUR] = {0: 123}
     win.data.setdefault("silo_view_state_all", {})[CUR] = {"s0": {"cursor": 5}}
     win.data.setdefault("watcher_queues_all", {})[CUR] = {"0": ["q"]}
+    # CORE-004: the mapped source folder must exist on disk or transfer refuses
+    comp = win._category_files_dir(CUR)
+    src_dir = os.path.join(win._files_root(), comp, "F")
+    os.makedirs(src_dir, exist_ok=True)
 
     ok = win.transfer_silo_to_project(0, "B")
     assert ok is True

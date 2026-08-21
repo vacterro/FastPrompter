@@ -31,6 +31,61 @@ _is_deleted = sip.isdeleted
 _UNDO_MAX_ACTIONS = 50
 _MAX_FOLDERS_PER_CATEGORY = 20   # 10 normal + 10 archive slots
 _FOLDER_TRASH_LOG_FLOOR = _UNDO_MAX_ACTIONS * _MAX_FOLDERS_PER_CATEGORY
+# W2-006: journal file name for crash-consistent folder retirement.
+_RETIREMENT_JOURNAL = ".retirement_journal.json"
+
+
+def _journal_path(root):
+    return os.path.join(root, "_trash", _RETIREMENT_JOURNAL)
+
+
+def _write_retirement_journal(root, entry):
+    """Durably record a planned retirement before the physical move."""
+    import json
+    try:
+        jp = _journal_path(root)
+        os.makedirs(os.path.dirname(jp), exist_ok=True)
+        with open(jp, "w", encoding="utf-8") as f:
+            json.dump(entry, f)
+    except OSError as e:
+        from fastprompter.core.logging import logger
+        logger.warning("retirement journal write failed: %s", e)
+
+
+def _clear_retirement_journal(root):
+    """Remove the journal after the retirement and log append succeeded."""
+    try:
+        jp = _journal_path(root)
+        if os.path.isfile(jp):
+            os.remove(jp)
+    except OSError as e:
+        from fastprompter.core.logging import logger
+        logger.warning("retirement journal clear failed: %s", e)
+
+
+def _reconcile_retirement_journal(root, data):
+    """Called at startup: if a retirement journal exists, a crash occurred
+    after the physical move but before the in-memory log was persisted.
+    Reconcile by appending the record to the live log."""
+    import json
+    try:
+        jp = _journal_path(root)
+        if not os.path.isfile(jp):
+            return
+        with open(jp, encoding="utf-8") as f:
+            entry = json.load(f)
+        orig = entry.get("original")
+        trashed = entry.get("trashed")
+        if not (orig and trashed):
+            return
+        log = data.setdefault("folder_trash_log", [])
+        # guard against duplicates
+        if not any(e[1] == trashed for e in log if isinstance(e, (tuple, list)) and len(e) >= 2):
+            log.append((orig, trashed))
+        os.remove(jp)
+    except Exception as e:
+        from fastprompter.core.logging import logger
+        logger.warning("retirement journal reconciliation failed: %s", e)
 
 
 def _trash_stamp():
@@ -331,7 +386,19 @@ class SnippetOpsMixin:
             if target_cat not in self.data.get("cats_order", []):
                 self.data.setdefault("cats_order", []).insert(0, target_cat)
 
-        self.data["categories"][target_cat].append(item)
+        target_slots = self.data["categories"][target_cat]
+        # W2-002: the snippet model is fixed at 100 slots. Restore into a
+        # free (None) slot and refuse atomically when the destination is
+        # full -- never grow the list (a 101st slot is silently dropped by
+        # the loader on restart). The undo snapshot already pushed above is
+        # withdrawn on refusal so Ctrl+Z cannot replay a non-event.
+        if None not in target_slots:
+            if getattr(self, "data_undo_stack", None):
+                self.data_undo_stack.pop()
+            self._save_undo_state()
+            return
+        free = target_slots.index(None)
+        target_slots[free] = item
         self.data["categories"]["Trash"][global_idx] = None
 
         self.mark_dirty()
@@ -654,10 +721,18 @@ class SnippetOpsMixin:
             while os.path.exists(dest):
                 dest = os.path.join(trash, f"{os.path.basename(d)}-{int(time.time())}-{n}")
                 n += 1
-            # route through the same safe move primitive as the file panel:
-            # containment-checked at mutation time, no-clobber by construction
+            # W2-006: journal the retirement BEFORE the physical move so a
+            # crash between the rename and the in-memory log append can be
+            # reconciled on the next startup (the log entry is the recovery
+            # record that links the trashed path to the original owner).
             from fastprompter.ui.file_container import _move_into_container, capture_resolved_root
             root = self._files_root()
+            _journal_entry = {
+                "original": os.path.abspath(d),
+                "trashed": os.path.abspath(dest),
+                "ts": _trash_stamp(),
+            }
+            _write_retirement_journal(root, _journal_entry)
             _move_into_container(d, dest, root, capture_resolved_root(root))
             # remember original->trash so undoing the delete/clear can bring
             # the files back to where they belong (files never vanish: they're
@@ -665,6 +740,9 @@ class SnippetOpsMixin:
             log = self.data.setdefault("folder_trash_log", [])
             log.append((os.path.abspath(d), os.path.abspath(dest)))
             self._prune_folder_trash_log(log)
+            # W2-006: remove the journal entry; the durable log now owns
+            # the recovery mapping.
+            _clear_retirement_journal(root)
             return "MOVED_TO_TRASH"
         except OSError as e:
             logger.warning(f"Could not retire file container {d}: {e}")
@@ -717,14 +795,22 @@ class SnippetOpsMixin:
         if self.data["categories"][cat][global_idx] is not None:
             self.add_data_undo_state("Delete snippet")
             target_item = self.data["categories"][cat][global_idx]
-            if self.data.get("trash_vision", "False") == "True" and cat != "Trash":
-                if "Trash" not in self.data["categories"]:
-                    self.data["categories"]["Trash"] = []
-                if "Trash" not in self.data["cats_order"]:
-                    self.data["cats_order"].append("Trash")
+        if self.data.get("trash_vision", "False") == "True" and cat != "Trash":
+            if "Trash" not in self.data["categories"]:
+                self.data["categories"]["Trash"] = []
+            if "Trash" not in self.data["cats_order"]:
+                self.data["cats_order"].append("Trash")
+            # W2-002: the snippet model is fixed at 100 slots and the Trash
+            # category persists through that same model (the loader drops
+            # slot 100+ on read). A full Trash refuses the snippet append --
+            # the item is then PERMANENTLY deleted instead of being written
+            # to a slot that would silently vanish on restart.
+            if len(self.data["categories"]["Trash"]) < 100:
                 self.data["categories"]["Trash"].append(target_item)
-            else:
-                self._delete_file_container(cat, target_item["text"])
+            # else: permanent snippet deletion mutates SNIPPET state only
+            # (W2-003). Snippets carry no File Container attachment
+            # ownership; retiring a folder here would alias an unrelated
+            # silo's assets by index/title-slug coincidence.
         if getattr(self, "editing_snippet", None) == (cat, global_idx):
             self.editing_snippet = None
             self.btn_save.setText(tr("Save", getattr(self, "_current_lang", "EN")))
@@ -802,6 +888,13 @@ class SnippetOpsMixin:
                 self.refresh_archive_panel()
             else:
                 self.refresh_temp_presets()
+        
+        # If this silo was ticked, un-tick it
+        ticked = self.data.get("silo_ticked", [])
+        if not is_archive and isinstance(ticked, list) and idx in ticked:
+            ticked.remove(idx)
+            self.refresh_temp_presets()
+        
         self.mark_dirty()
         try:
             self.play_sound("clear")
@@ -889,11 +982,16 @@ class SnippetOpsMixin:
             # Must match the snippet schema (name/text/last_edited) — this
             # list is rendered by the normal snippet panel, which crashes
             # with KeyError: 'name' on any other shape.
-            self.data["categories"]["Trash"].append({
-                "name": title,
-                "text": text,
-                "last_edited": int(time.time()),
-            })
+            # W2-002: the Trash category persists through the fixed 100-slot
+            # snippet model; a slot 100+ row is silently dropped by the loader
+            # on restart, so a full Trash refuses the append (the physical
+            # text already landed in the _trash folder above).
+            if len(self.data["categories"]["Trash"]) < 100:
+                self.data["categories"]["Trash"].append({
+                    "name": title,
+                    "text": text,
+                    "last_edited": int(time.time()),
+                })
             if hasattr(self, "get_current_category") and self.get_current_category() == "Trash":
                 self.refresh_snippets_panel()
 
@@ -1018,13 +1116,17 @@ class SnippetOpsMixin:
         # guard not met (only one silo left, or nothing to delete): no-op
         return False
 
-    def select_empty_silo(self):
+    def select_empty_silo(self, insertion="top"):
         """Insert a new empty silo.
 
-        Plain NEW  -> top.
-        Shift+NEW  -> an empty silo ABOVE the currently selected one (selected
-                     shifts down with everything after it).
-        Ctrl+NEW   -> an empty silo BELOW the currently selected one.
+        ``insertion`` is the EXPLICIT intent and must be passed by every
+        keyboard route (the canonical NEW = "top"). When omitted/None the
+        position is derived from the pointer's own event modifiers (the mouse
+        path): plain -> top, Shift -> above the selected silo, Ctrl -> below.
+        CORE-013: inferring intent from ambient ``QApplication.keyboardModifiers()``
+        is wrong for ``Ctrl+N`` — the modifier that triggers the shortcut is
+        mistaken for a gesture modifier, so a canonical NEW landed BELOW instead
+        of at the top. Keyboard callers therefore pass intent explicitly.
         """
         is_arc = bool(getattr(self, "active_is_archive", False))
         self.sound_manager.play("new")
@@ -1046,15 +1148,28 @@ class SnippetOpsMixin:
         )
         docs = self.archive_docs if is_arc else self.silo_docs
 
-        # Where to drop the new empty silo. Plain click keeps the old "top"
-        # behaviour; modifiers let the user append neatly next to the selected
-        # silo instead of always jumping to the very top.
-        mods = QApplication.keyboardModifiers()
-        shift = bool(mods & Qt.KeyboardModifier.ShiftModifier)
-        ctrl = bool(mods & Qt.KeyboardModifier.ControlModifier)
-        if shift:
+        # Where to drop the new empty silo. Keyboard routes pass ``insertion``
+        # explicitly (canonical = "top"). Mouse paths that omit it derive the
+        # position from the live event modifiers.
+        if insertion is None:
+            mods = QApplication.keyboardModifiers()
+            shift = bool(mods & Qt.KeyboardModifier.ShiftModifier)
+            ctrl = bool(mods & Qt.KeyboardModifier.ControlModifier)
+            if shift:
+                insertion = "above"
+            elif ctrl:
+                insertion = "below"
+            else:
+                insertion = "top"
+        else:
+            # A keyboard route names the insertion point explicitly; the cap
+            # check below must still know whether this is an explicit
+            # above/below request (which bypasses the empty-silo cap).
+            shift = insertion == "above"
+            ctrl = insertion == "below"
+        if insertion == "above":
             pos = max(0, min(self.active_temp_slot, len(presets)))
-        elif ctrl:
+        elif insertion == "below":
             pos = max(0, min(self.active_temp_slot + 1, len(presets)))
         else:
             pos = 0

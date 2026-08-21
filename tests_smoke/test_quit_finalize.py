@@ -148,5 +148,10 @@ def test_send_result_clears_active_flag(win, monkeypatch):
     win._watcher_engine.state = "sending"
 
     from fastprompter.core.watcher.sender import SendResult
-    win._watcher_on_send_result(object(), 7, SendResult(False, "gone"))
+    # CORE-003: a physical send result carries its dispatch token; remove it
+    # before the generation check so the barrier is cleared for THIS send.
+    win._watcher_send_token_seq += 1
+    token = win._watcher_send_token_seq
+    win._watcher_send_physical_tokens.add(token)
+    win._watcher_on_send_result(object(), 7, SendResult(False, "gone"), token)
     assert win._watcher_send_active is False

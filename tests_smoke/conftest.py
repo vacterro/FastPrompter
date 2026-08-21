@@ -10,3 +10,47 @@ collects -- no duplicate fixture.
 """
 
 from test_app_smoke import win  # noqa: F401
+
+# Also mute every sound exit at the device level, so running tests from
+# tests_smoke/ (or any subdirectory) never plays audio even when the root
+# conftest is not loaded.
+_FIXTURE_LOADED = False
+
+
+def _mute_sound_at_device():
+    global _FIXTURE_LOADED
+    if _FIXTURE_LOADED:
+        return
+    _FIXTURE_LOADED = True
+    try:
+        from fastprompter.core import sound_manager as _sm
+        from fastprompter.core.sound_manager import SoundManager as _SM
+
+        SoundManager._play_winsound = staticmethod(
+            lambda path, level=10: None)
+
+        class _Silent:
+            def __init__(self, *a, **k):
+                self._volume = 0.0
+            def setVolume(self, v):
+                self._volume = v
+            def setSource(self, src):
+                pass
+            def play(self):
+                pass
+
+        _sm.QSoundEffect = _Silent
+    except Exception:
+        pass
+
+
+import pytest
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _smoke_mute_sound():
+    _mute_sound_at_device()
+    try:
+        yield
+    finally:
+        pass

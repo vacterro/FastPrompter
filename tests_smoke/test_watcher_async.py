@@ -128,7 +128,7 @@ class TestResultApplication:
         gen = win._watcher_send_gen
 
         win._watcher_on_send_result(
-            intent, gen, SendResult(True, "sent", "hello"))
+            intent, gen, SendResult(True, "sent", "hello"), 0)
 
         assert win.watcher_engine().sent_count == 1
         assert item.state == "sent" or item.state != "pending"
@@ -144,7 +144,7 @@ class TestResultApplication:
 
         win._watcher_on_send_result(
             intent, win._watcher_send_gen,
-            SendResult(False, "target refused", "hello"))
+            SendResult(False, "target refused", "hello"), 0)
 
         assert engine.consecutive_failures == 1
         win.watcher_disarm("done")
@@ -159,7 +159,7 @@ class TestResultApplication:
 
         win._watcher_on_send_result(
             intent, win._watcher_send_gen,
-            SendResult(False, "waiting", "hello", hold=True))
+            SendResult(False, "waiting", "hello", hold=True), 0)
 
         assert engine.consecutive_failures == 0
         assert engine.sent_count == 0
@@ -176,7 +176,7 @@ class TestStaleRejection:
         win.watcher_panic()          # bumps the generation
 
         win._watcher_on_send_result(
-            intent, old_gen, SendResult(True, "sent", "hello"))
+            intent, old_gen, SendResult(True, "sent", "hello"), 0)
 
         assert win.watcher_engine().sent_count == 0
         assert item.state == "pending"      # nothing was marked sent
@@ -189,7 +189,7 @@ class TestStaleRejection:
         win.watcher_disarm("stopped")   # bumps the generation
 
         win._watcher_on_send_result(
-            intent, old_gen, SendResult(True, "sent", "hello"))
+            intent, old_gen, SendResult(True, "sent", "hello"), 0)
 
         assert win.watcher_engine().sent_count == 0
         assert item.state == "pending"
@@ -203,7 +203,7 @@ class TestStaleRejection:
         _arm(win, monkeypatch)              # G3 — a brand new run
 
         win._watcher_on_send_result(
-            intent, old_gen, SendResult(True, "sent", "hello"))
+            intent, old_gen, SendResult(True, "sent", "hello"), 0)
 
         assert win.watcher_engine().sent_count == 0
         assert item.state == "pending"
@@ -219,7 +219,7 @@ class TestStaleRejection:
         win.watcher_engine().pending = None
 
         win._watcher_on_send_result(
-            intent, gen, SendResult(True, "sent", "hello"))
+            intent, gen, SendResult(True, "sent", "hello"), 0)
 
         assert win.watcher_engine().sent_count == 0
 
@@ -247,10 +247,19 @@ class TestDispatch:
 
         win._watcher_tick_inner()
 
+        # PERF-003: the tick dispatches a probe sample to the worker thread
+        # and holds until the verdict lands; pump events so the sample
+        # arrives and the send is then handed to the fake worker.
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline and not fake_worker.dispatch.calls:
+            _app.processEvents()
+            time.sleep(0.01)
+
         assert len(fake_worker.dispatch.calls) == 1
-        sender, sent_intent, target, gen = fake_worker.dispatch.calls[0]
+        sender, sent_intent, target, gen, token = fake_worker.dispatch.calls[0]
         assert sent_intent.item_id == intent.item_id
         assert gen == win._watcher_send_gen
+        assert token in win._watcher_send_physical_tokens
         assert sent_directly == []          # the GUI thread never sent
         assert win._watcher_engine.state == "sending"
         win.watcher_disarm("done")

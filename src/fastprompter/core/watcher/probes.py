@@ -122,13 +122,22 @@ class FileProbe(Probe):
         self.ignore_types = tuple(ignore_types or ())
 
     def _path(self):
+        # PERF-003: ONE candidate-discovery pass per poll sample. poll()
+        # resets the cache at the top, so _read() and the tail check reuse
+        # the same resolved winning path instead of globbing/statting twice.
+        cached = getattr(self, "_path_cache", None)
+        if cached is not None:
+            return cached
         expanded = os.path.expanduser(os.path.expandvars(self.pattern))
         matches = [p for p in glob.glob(expanded) if os.path.isfile(p)]
         if not matches:
+            self._path_cache = None
             return None
         if self.newest:
-            return max(matches, key=os.path.getmtime)
-        return sorted(matches)[0]
+            self._path_cache = max(matches, key=os.path.getmtime)
+        else:
+            self._path_cache = sorted(matches)[0]
+        return self._path_cache
 
     def _read(self):
         path = self._path()
@@ -138,6 +147,8 @@ class FileProbe(Probe):
         return (path, stat.st_size, round(stat.st_mtime, 3))
 
     def poll(self, now):
+        # PERF-003: one candidate-discovery pass for this sample
+        self._path_cache = None
         state, reason = super().poll(now)
         if state != IDLE or not self.last_line_json:
             return state, reason

@@ -26,6 +26,38 @@ src/test_dir/
 .freebuff/
 src/fastprompter/_extract.txt
 
+# one-off repair/scratch scripts at the repo root — never release
+/fix_*.py
+/patch_*.py
+/patch.py
+/scratch.py
+/bump.py
+/bump_changelog.py
+/log_ship.py
+/mark_board.py
+/prune_board.py
+/rm_converge.py
+/remove_bom.py
+/write_digest.py
+/update_state.py
+/update_state2.py
+/finish_state.py
+/smoke_coverage.py
+/append_path_tests.py
+/original.py
+/test_lock.py
+/test_palette.py
+/test_timer_debug.py
+/test_timer_load.py
+/test_timer_to_dict.py
+/test_timers_patch.py
+/diff.txt
+/fh_dump.txt
+/sc_shortcut.txt
+/validate_out.txt
+/baseline_failures.txt
+/smoke_coverage.log
+
 # saipen working memory IS tracked (the 24.07 wipe had no git fallback because
 # it wasn't). Only the snapshot generations stay out: they are regenerated on
 # every run and git now provides the history they stood in for.

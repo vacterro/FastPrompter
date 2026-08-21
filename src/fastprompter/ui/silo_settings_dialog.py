@@ -12,15 +12,22 @@ from fastprompter.core.translations import tr
 
 
 class SiloSettingsDialog(QDialog):
-    def __init__(self, main_win, global_idx):
+    def __init__(self, main_win, global_idx, is_archive=False):
         super().__init__(main_win)
         self.main_win = main_win
         self.global_idx = str(global_idx)
+        self.is_archive = bool(is_archive)
         self.lang = getattr(main_win, "_current_lang", "EN")
         self.setWindowTitle(tr("Configure Project Paths", self.lang))
         self.setMinimumWidth(400)
-        
-        self.paths = self.main_win.data.get("silo_project_paths", {}).get(self.global_idx, {})
+
+        # CORE-012: normal and archive keep SEPARATE project-path namespaces.
+        # The dialog edits the namespace captured at open time, never the
+        # numeric slot alone, so an archive slot never edits the normal slot's
+        # configured project/executable.
+        all_paths = self.main_win.data.get(
+            "archive_project_paths" if self.is_archive else "silo_project_paths", {})
+        self.paths = all_paths.get(self.global_idx, {}) if isinstance(all_paths, dict) else {}
         if not isinstance(self.paths, dict):
             self.paths = {}
             
@@ -83,9 +90,13 @@ class SiloSettingsDialog(QDialog):
         folder = self.edit_folder.text().strip()
         exe = self.edit_exe.text().strip()
         
-        # mutate in place — this dict is aliased into silo_project_paths_all
-        # for the active category; rebinding it would orphan that alias
-        all_paths = self.main_win.data.setdefault("silo_project_paths", {})
+        # mutate in place — this dict is aliased into the active namespace
+        # store for the current category; rebinding it would orphan that alias
+        all_paths = self.main_win.data.setdefault(
+            "archive_project_paths" if self.is_archive else "silo_project_paths", {})
+        if not isinstance(all_paths, dict):
+            all_paths = self.main_win.data[
+                "archive_project_paths" if self.is_archive else "silo_project_paths"] = {}
         if not folder and not exe:
             all_paths.pop(self.global_idx, None)
         else:

@@ -343,6 +343,12 @@ def _sync_mechanical_write(snapshot, lock_timeout_s=None):
                             pass
                         continue
                     os.replace(tmp, dest)
+                    # PERF-009: this snapshot is still the newest owner of
+                    # the destination and has now physically published;
+                    # retire the registry entry so the process-global map
+                    # stays bounded by current destinations + active work.
+                    if _SYNC_LATEST_REQUESTED.get(key) == snapshot.get("_write_seq"):
+                        _SYNC_LATEST_REQUESTED.pop(key, None)
                 written.append(dest)
             except OSError as exc:
                 errors.append((dest, str(exc)))
@@ -487,6 +493,17 @@ def _backup_on_done(gen, snapshot, ok, err):
     profile_id = int(snapshot.get("profile_id", 1))
     if _BACKUP_INFLIGHT.get(profile_id) == gen:
         del _BACKUP_INFLIGHT[profile_id]
+
+    # PERF-008: the profile request is retired here; if a newer state was
+    # requested while this snapshot ran (run_portable_backup coalesced the
+    # capture away), the throttle is cleared so the next eligible save
+    # exports the newest data.
+    try:
+        from fastprompter.utils import portable_backup as _pb2
+        _pb2.backup_finished(profile_id=profile_id)
+    except Exception:
+        from fastprompter.core.logging import logger as _log2
+        _log2.exception("portable backup finish hook failed")
 
     if ok:
         _BACKUP_LAST_SUCCESS_GEN = max(_BACKUP_LAST_SUCCESS_GEN, gen)
@@ -661,6 +678,16 @@ class FastPrompter(
         self.setup_single_instance_server()
         self.state = FastPrompterState()
         self.data = self.state.data
+        # W2-006: reconcile any crash-consistent retirement journal left
+        # by a process death between a folder rename and its in-memory log
+        # append. Idempotent; runs before any UI is built.
+        try:
+            from fastprompter.ui.snippet_ops_mixin import _reconcile_retirement_journal
+            _reconcile_retirement_journal(self._files_root(), self.data)
+        except Exception:
+            from fastprompter.core.logging import logger
+            logger.warning("retirement journal reconciliation skipped",
+                           exc_info=True)
         from fastprompter.core.timers import load_timers
         self.timers = load_timers(self.data.get("timers"))
         from fastprompter.core.watcher.queue import load_queues
@@ -1379,7 +1406,8 @@ class FastPrompter(
             bucket = {}
             self.data["watcher_queues_all"] = bucket
         bucket[cat] = raw
-        self.mark_dirty()
+        # PERF-002: queue data is in the settings JSON domain
+        self.mark_dirty("settings")
 
     def _queue_slot_key(self):
         """Which silo's queue Alt+C fills. Archive silos keep their own."""
@@ -1827,7 +1855,8 @@ class FastPrompter(
     def save_line_marks(self):
         """Called by the editor whenever a margin mark changes."""
         self.capture_silo_state()
-        self.mark_dirty()
+        # PERF-002: line marks are view metadata (settings domain)
+        self.mark_dirty("settings")
 
     def _apply_code_font(self):
         """Code blocks default to Consolas; opt out to use the editor font.
@@ -2771,8 +2800,15 @@ class FastPrompter(
         self.open_file_container(is_archive=is_archive)
         self._file_container.import_links(paths)
 
-    def _update_project_buttons(self):
-        paths = self.data.get("silo_project_paths", {}).get(str(self.active_temp_slot), {})
+    def _update_project_buttons(self, is_archive=None):
+        if is_archive is None:
+            is_archive = getattr(self, "active_is_archive", False)
+        # CORE-012: normal and archive keep separate project-path namespaces;
+        # the buttons reflect the active namespace, never a numeric slot alone.
+        store = self.data.get("archive_project_paths" if is_archive else "silo_project_paths", {})
+        paths = store.get(str(self.active_temp_slot), {}) if isinstance(store, dict) else {}
+        if not isinstance(paths, dict):
+            paths = {}
 
         has_folder = bool(paths.get("folder"))
         has_exe = bool(paths.get("executable"))
@@ -2892,12 +2928,15 @@ class FastPrompter(
             base_tt = tr("Files—asset drawer for the active silo (drop in / drag out /\npreview / export; plain folder in data/files)\n\n", lang)
             self.btn_files.setToolTip(base_tt + res)
 
-    def _launch_silo_executable(self):
+    def _launch_silo_executable(self, is_archive=None):
         import os
 
         from fastprompter.core.logging import logger
-        paths = self.data.get("silo_project_paths", {}).get(str(self.active_temp_slot), {})
-        exe = paths.get("executable")
+        if is_archive is None:
+            is_archive = getattr(self, "active_is_archive", False)
+        store = self.data.get("archive_project_paths" if is_archive else "silo_project_paths", {})
+        paths = store.get(str(self.active_temp_slot), {}) if isinstance(store, dict) else {}
+        exe = paths.get("executable") if isinstance(paths, dict) else None
         if not exe or not os.path.exists(exe):
             logger.info("No executable configured or file does not exist.")
             return
@@ -2909,12 +2948,15 @@ class FastPrompter(
         except OSError as e:
             logger.error(f"Failed to launch executable: {e}")
 
-    def _open_silo_project_folder(self):
+    def _open_silo_project_folder(self, is_archive=None):
         import os
 
         from fastprompter.core.logging import logger
-        paths = self.data.get("silo_project_paths", {}).get(str(self.active_temp_slot), {})
-        folder = paths.get("folder")
+        if is_archive is None:
+            is_archive = getattr(self, "active_is_archive", False)
+        store = self.data.get("archive_project_paths" if is_archive else "silo_project_paths", {})
+        paths = store.get(str(self.active_temp_slot), {}) if isinstance(store, dict) else {}
+        folder = paths.get("folder") if isinstance(paths, dict) else None
         if not folder or not os.path.isdir(folder):
             logger.info("No project folder configured or directory does not exist.")
             return
@@ -2924,11 +2966,13 @@ class FastPrompter(
         except OSError as e:
             logger.error(f"Failed to open project folder: {e}")
 
-    def open_silo_settings(self, global_idx=None):
+    def open_silo_settings(self, global_idx=None, is_archive=None):
         if global_idx is None:
             global_idx = self.active_temp_slot
+        if is_archive is None:
+            is_archive = getattr(self, "active_is_archive", False)
         from fastprompter.ui.silo_settings_dialog import SiloSettingsDialog
-        dlg = SiloSettingsDialog(self, global_idx)
+        dlg = SiloSettingsDialog(self, global_idx, is_archive)
         self._increment_focus_lock()
         try:
             accepted = dlg.exec()
@@ -2936,8 +2980,8 @@ class FastPrompter(
             QTimer.singleShot(300, self._decrement_focus_lock)
         if accepted:
             # Trigger refresh to show/hide the buttons
-            if global_idx == self.active_temp_slot:
-                self._update_project_buttons()
+            if global_idx == self.active_temp_slot and is_archive == getattr(self, "active_is_archive", False):
+                self._update_project_buttons(is_archive)
 
     def files_docked(self):
         """Files panel lives in the splitter rather than in its own window."""
@@ -3327,19 +3371,17 @@ class FastPrompter(
             current_text = self.data.get("last_text", "")
         self._last_saved_text = current_text
 
+        # CORE-001: the live editor owner must be flushed synchronously before
+        # EVERY authoritative save. Snippet mode copies the exact editor text
+        # into the referenced snippet (updating last-edited metadata and the
+        # snippets domain dirty flag); silo mode keeps the established
+        # per-slot behaviour under its suspension guards.
         if (
             not getattr(self, "_suspend_cache", False)
             and not getattr(self, "_initializing_ui", False)
             and not getattr(self, "_suspend_temp_sync", False)
-            and not self.editing_snippet
         ):
-            is_arc = getattr(self, "active_is_archive", False)
-            target = self.data["archive_temp_presets"] if is_arc else self.data["temp_presets"]
-            if 0 <= self.active_temp_slot < len(target):
-                old_text = target[self.active_temp_slot]
-                target[self.active_temp_slot] = current_text
-                if current_text != old_text:
-                    self._update_active_silo_ui()
+            self._flush_live_editor(current_text)
 
         self.data["window_locked"] = "True" if getattr(self, "is_locked", False) else "False"
 
@@ -3648,6 +3690,14 @@ class FastPrompter(
                 cache = self._sync_written = {}
             for dest in written:
                 cache[dest] = snapshot["files"].get(dest, "")
+            # PERF-009: prune the written-cache to the CURRENT destination
+            # set. Historical destinations (renamed silos, changed
+            # hierarchy) no longer addressable must not keep full text in
+            # RAM; the one-way disk mirrors themselves are intentionally
+            # never deleted.
+            current_dests = set(snapshot.get("files", ()))
+            for stale in [k for k in cache if k not in current_dests]:
+                del cache[stale]
             for dest, err in errors:
                 from fastprompter.core.logging import logger
                 logger.warning("sync_to_disk failed for %s: %s", dest, err)
@@ -3839,7 +3889,7 @@ class FastPrompter(
             + "\n" + tr("Right-click: new silo at the bottom", self._current_lang))
         self.apply_button_size(self.btn_new, 24)
         self.btn_new.setMinimumWidth(80)
-        self.btn_new.clicked.connect(self.select_empty_silo)
+        self.btn_new.clicked.connect(lambda: self.select_empty_silo(insertion=None))
         # Middle-click is a shortcut, not a second way to do the same thing:
         # it skips the empty silo and offers the templates straight away.
         self.btn_new.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -7215,6 +7265,39 @@ class FastPrompter(
         self.register_all_hotkeys()
         self.mark_dirty()
 
+    def _remap_snippet_owner(self, cat, remap):
+        """W2-001: after a structural snippet move/rename, keep the live
+        editor owner and its cached QTextDocument pointing at the SAME
+        logical object.
+
+        ``remap(old_index)`` returns the new index for a snippet that
+        stayed in ``cat``, or None when that snippet left this collection
+        (its cached doc is dropped / editing is exited).
+        """
+        es = getattr(self, "editing_snippet", None)
+        if es and es[0] == cat:
+            new_i = remap(es[1])
+            if new_i is None:
+                self.cancel_editing()
+            else:
+                self.editing_snippet = (cat, new_i)
+                self.btn_save.setText(
+                    tr("Update", getattr(self, "_current_lang", "EN")))
+        docs = getattr(self, "snippet_docs", {})
+        prefix = cat + "_"
+        for k in list(docs.keys()):
+            if not k.startswith(prefix):
+                continue
+            try:
+                i = int(k[len(prefix):])
+            except ValueError:
+                continue
+            new_i = remap(i)
+            if new_i is None:
+                del docs[k]
+            elif new_i != i:
+                docs[f"{cat}_{new_i}"] = docs.pop(k)
+
     def move_preset_to_index(self, category, from_idx, to_idx):
         if from_idx == to_idx:
             return
@@ -7222,6 +7305,19 @@ class FastPrompter(
         slots = self.data["categories"][category]
         item = slots.pop(from_idx)
         slots.insert(to_idx, item)
+        # W2-001: remap the live editor owner + snippet doc cache with the
+        # reorder so a later debounce/save addresses the same logical
+        # snippet, never a neighbour.
+        def _shift(i):
+            if i == from_idx:
+                return to_idx
+            if from_idx < to_idx:
+                if from_idx < i <= to_idx:
+                    return i - 1
+            elif to_idx <= i < from_idx:
+                return i + 1
+            return i
+        self._remap_snippet_owner(category, _shift)
         self.mark_dirty()
         self.refresh_snippets_panel()
 
@@ -7236,12 +7332,34 @@ class FastPrompter(
             src_arc = False
             if not (0 <= from_idx < len(src_arr)):
                 return
+            # W2-004: refuse silo -> SNIPPET conversion when the source
+            # silo owns a mapped File Container that actually exists on disk.
+            # Snippets have no attachment ownership; dropping the silo
+            # identity would orphan the assets. A name-only reservation
+            # (auto-assigned by _silo_folder_name) does not count — it's
+            # the directory with bytes that must not be orphaned.
+            # (Silo -> silo/archive moves keep the identity and stay allowed.)
+            if to_cat not in ("silo", "arcsilo"):
+                cur_cat = self.get_current_category() or ""
+                folder_map = self.data.get("silo_folders_all", {}).get(cur_cat, {})
+                if isinstance(folder_map, dict) and str(from_idx) in folder_map:
+                    folder_dir = self._silo_folder_dir(from_idx)
+                    if folder_dir is not None and os.path.isdir(folder_dir):
+                        return
         elif from_cat == "arcsilo":
             src_arr = self.data.get("archive_temp_presets", [])
             src_docs = self.archive_docs
             src_arc = True
             if not (0 <= from_idx < len(src_arr)):
                 return
+            # W2-004: same guard for archive silos
+            if to_cat not in ("silo", "arcsilo"):
+                cur_cat = self.get_current_category() or ""
+                folder_map = self.data.get("archive_silo_folders_all", {}).get(cur_cat, {})
+                if isinstance(folder_map, dict) and str(from_idx) in folder_map:
+                    folder_dir = self._silo_folder_dir(from_idx, is_archive=True)
+                    if folder_dir is not None and os.path.isdir(folder_dir):
+                        return
         else:
             cats = self.data.get("categories", {})
             if from_cat not in cats or not (0 <= from_idx < len(cats[from_cat])):
@@ -7259,6 +7377,11 @@ class FastPrompter(
             if to_cat not in cats:
                 return
             dst_arr = cats[to_cat]
+            # W2-002: snippet categories are fixed at 100 slots. A full
+            # destination (no free slot) cannot accept a move, so refuse
+            # BEFORE any undo snapshot or source/destination mutation.
+            if None not in dst_arr:
+                return
 
         # a silo/arcsilo destination may not exceed the 100-slot contract
         if to_cat in ("silo", "arcsilo"):
@@ -7318,10 +7441,39 @@ class FastPrompter(
             self.archive_docs.insert(to_idx, doc)
         else:
             slots = self.data["categories"][to_cat]
-            slots.insert(to_idx, item)
-            # Only pop if the last item is None (empty). Otherwise, let the array grow so we don't lose data!
-            if slots[-1] is None:
-                slots.pop()
+            # W2-002: canonical 100-slot snippet invariant. A snippet
+            # destination never grows past 100. Place the item into a free
+            # (None) slot -- to_idx when it is free, else the first free
+            # slot -- so the array length is unchanged. (Validation above
+            # already refused a destination with no free slot.)
+            if None not in slots:
+                # defensive: should not happen post-validation
+                if self.data_undo_stack:
+                    self.data_undo_stack.pop()
+                self._save_undo_state()
+                return
+            if 0 <= to_idx < len(slots) and slots[to_idx] is None:
+                target = to_idx
+            else:
+                target = slots.index(None)
+            slots[target] = item
+            # W2-001: keep the live editor owner + doc cache with the
+            # moved snippet. The source collection shifts down above the
+            # popped index; the edited doc relocates to (to_cat, target).
+            if from_cat not in ("silo", "arcsilo"):
+                self._remap_snippet_owner(
+                    from_cat,
+                    lambda i: None if i == from_idx
+                    else (i - 1 if i > from_idx else i))
+                es = getattr(self, "editing_snippet", None)
+                if es and es[0] == from_cat and es[1] == from_idx:
+                    old_key = f"{from_cat}_{from_idx}"
+                    docs = getattr(self, "snippet_docs", {})
+                    if old_key in docs:
+                        docs[f"{to_cat}_{target}"] = docs.pop(old_key)
+                    self.editing_snippet = (to_cat, target)
+                    self.btn_save.setText(
+                        tr("Update", getattr(self, "_current_lang", "EN")))
 
         self._trim_archive()
         self.mark_dirty()
@@ -7421,6 +7573,22 @@ class FastPrompter(
                 s_vkey = "s" + s_key if not source_is_archive else "a" + s_key
                 t_vkey = "s" + t_key if not target_is_archive else "a" + t_key
                 _swap_between(entries, s_vkey, entries, t_vkey)
+
+        # W2-001: if the ACTIVE document participated in the swap, rebind
+        # the active space/index so persistence writes to the same logical
+        # silo instead of following the old slot coordinates.
+        active_arc = bool(getattr(self, "active_is_archive", False))
+        active_slot = getattr(self, "active_temp_slot", 0)
+        if (active_arc, active_slot) == (source_is_archive, source_idx):
+            self.active_is_archive = target_is_archive
+            self.active_temp_slot = target_idx
+            self._switch_to_slot(target_idx, initial=True,
+                                 is_archive=target_is_archive)
+        elif (active_arc, active_slot) == (target_is_archive, target_idx):
+            self.active_is_archive = source_is_archive
+            self.active_temp_slot = source_idx
+            self._switch_to_slot(source_idx, initial=True,
+                                 is_archive=source_is_archive)
 
         self._trim_archive()
         self.mark_dirty()
@@ -7757,7 +7925,10 @@ class FastPrompter(
             "category_file_dirs": dict(self.data.get("category_file_dirs") or {}),
         }
         self._live_text_into(snap)
-        snap["_text_size"] = sum(len(t) for t in snap["temp_presets"] if isinstance(t, str)) + sum(len(t) for t in snap["archive_temp_presets"] if isinstance(t, str))
+        # PERF-006: the size cap must count the WHOLE snapshot -- including
+        # category snippet text, which the old partial sum omitted, making
+        # the 20M cap ineffective for the largest duplicated component.
+        snap["_text_size"] = _snapshot_text_size(snap)
         return snap
 
     def _snapshot_is_noop(self, state, now=None):
@@ -7771,6 +7942,9 @@ class FastPrompter(
         the incoming state does not carry at all (an entry written by an older
         build) counts as different, so it is restored rather than thrown away:
         never discard a snapshot on a guess."""
+        if state.get("_switch"):
+            # PERF-006: a navigation record always moves the active slot
+            return False
         if now is None:
             now = self._snapshot_current()
         for key, value in now.items():
@@ -7778,6 +7952,76 @@ class FastPrompter(
                 continue
             if key not in state or state[key] != value:
                 return False
+        return True
+
+    def _snapshot_is_valid(self, state):
+        """Executable-snapshot schema check (CORE-014).
+
+        A persisted undo entry may be valid JSON of the right container shape
+        and still not be executable: ``_apply_data_state`` indexes mandatory
+        keys and binds editing state, so a truncated/foreign entry must never
+        reach apply. Requires the mandatory fields with their outer types, a
+        well-formed categories map (str keys, slot lists of None or
+        name/text-carrying dicts), and well-typed editing/active-slot state.
+        Entries failing this are discarded by the ONE quarantine policy at
+        load/apply time, never partially applied."""
+        if not isinstance(state, dict):
+            return False
+        if state.get("_switch"):
+            # PERF-006 compact navigation record
+            return (isinstance(state.get("active_temp_slot"), int)
+                    and isinstance(state.get("active_is_archive"), bool))
+        for key, expected in (("categories", dict),
+                              ("temp_presets", list),
+                              ("archive_temp_presets", list)):
+            if not isinstance(state.get(key), expected):
+                return False
+        for cat, slots in state["categories"].items():
+            if not isinstance(cat, str) or not isinstance(slots, list):
+                return False
+            for item in slots:
+                if item is None:
+                    continue
+                if not isinstance(item, dict):
+                    return False
+                if not isinstance(item.get("name"), str) or not isinstance(item.get("text"), str):
+                    return False
+        edit = state.get("editing_snippet")
+        if edit is not None:
+            if not (isinstance(edit, (list, tuple)) and len(edit) == 2
+                    and isinstance(edit[0], str) and isinstance(edit[1], int)):
+                return False
+            # CORE-008: the editing category must exist and the slot index
+            # must be IN RANGE. A negative index survives the old `< len`
+            # check via Python's wrap-around and indexes the WRONG silo; an
+            # out-of-range index raises IndexError at apply time. Reject both.
+            cat = edit[0]
+            cdata = state.get("categories", {}).get(cat)
+            if not isinstance(cdata, list) or not (0 <= edit[1] < len(cdata)):
+                return False
+        slot = state.get("active_temp_slot", 0)
+        # CORE-008: a negative active slot wraps around in `categories[cat]`
+        # / `temp_presets[slot]` indexing and mutates another silo. Non-negative
+        # is the only safe value; the apply path already guards the upper bound
+        # with `< len`.
+        if not isinstance(slot, int) or slot < 0:
+            return False
+        # CORE-008: a composite transfer entry must carry a valid destination
+        # identity and a transfer-store namespace that is a strict subset of
+        # the canonical `_TRANSFER_STORE_KEYS`, with per-category value shapes
+        # (None / dict / list) — never a foreign top-level key or scalar that
+        # would replace an unrelated application store at apply time.
+        if state.get("_transfer"):
+            if not isinstance(state.get("_transfer_dst_cat"), str):
+                return False
+            dst_stores = state.get("_transfer_dst_before")
+            if not isinstance(dst_stores, dict):
+                return False
+            for key, value in dst_stores.items():
+                if key not in self._TRANSFER_STORE_KEYS:
+                    return False
+                if value is not None and not isinstance(value, (dict, list)):
+                    return False
         return True
 
     def _bump_action_seq(self):
@@ -7928,13 +8172,45 @@ class FastPrompter(
             state = self.data_undo_stack.pop()
             while (
                 self.data_undo_stack
-                and state.get("category") == cur_cat
-                and self._snapshot_is_noop(state, now)
+                and (state.get("category") == cur_cat
+                     and self._snapshot_is_noop(state, now)
+                     or not self._snapshot_is_valid(state))
             ):
                 state = self.data_undo_stack.pop()
+            if not self._snapshot_is_valid(state):
+                self._save_undo_state()
+                return False
             if state.get("category") == cur_cat and self._snapshot_is_noop(state, now):
                 return False
-            redo_state = self._stamp_snapshot(now)
+            # PERF-006: a redo of a Switch-silo action is itself a COMPACT
+            # navigation record targeting the CURRENT (post-undo) slot, so
+            # Ctrl+Y never deep-copies the whole data universe either.
+            if state.get("_switch"):
+                redo_state = self._stamp_snapshot({
+                    "_switch": True,
+                    "category": self.get_current_category(),
+                    "active_temp_slot": self.active_temp_slot,
+                    "active_is_archive": bool(
+                        getattr(self, "active_is_archive", False)),
+                })
+            else:
+                redo_state = self._stamp_snapshot(now)
+                if state.get("_transfer"):
+                    # CORE-008: the redo entry is the AFTER half of the same
+                    # composite — source-side current state plus the captured
+                    # post-transfer destination stores — so one Ctrl+Y recreates
+                    # exactly one transfer.
+                    redo_state["_transfer"] = True
+                    redo_state["_transfer_dst_cat"] = state.get("_transfer_dst_cat")
+                    redo_state["_transfer_dst_before"] = copy.deepcopy(
+                        state.get("_transfer_dst_after") or {})
+                    # CORE-004: invert the folder orientation back to FORWARD
+                    # (src -> dst) so the redo re-performs the physical move.
+                    fp = state.get("_transfer_folder")
+                    redo_state["_transfer_folder"] = (
+                        (fp[1], fp[0], fp[3], fp[2])
+                        if isinstance(fp, (tuple, list)) and len(fp) == 4
+                        else None)
             self.data_redo_stack.append(redo_state)
 
             MAX_CHARS = 20_000_000
@@ -7958,6 +8234,12 @@ class FastPrompter(
         if hasattr(self, "data_redo_stack") and self.data_redo_stack:
             if not hasattr(self, "data_undo_stack"):
                 self.data_undo_stack = []
+            while self.data_redo_stack and not self._snapshot_is_valid(self.data_redo_stack[-1]):
+                from fastprompter.core.logging import logger
+                logger.error("discarding invalid redo snapshot (CORE-014)")
+                self.data_redo_stack.pop()
+            if not self.data_redo_stack:
+                return False
             undo_state = self._stamp_snapshot(self._snapshot_current())
             self.data_undo_stack.append(undo_state)
             state = self.data_redo_stack.pop()
@@ -7970,6 +8252,21 @@ class FastPrompter(
         return False
 
     def _apply_data_state(self, state):
+        if not self._snapshot_is_valid(state):
+            # CORE-014: never partially apply a foreign/truncated entry. One
+            # explicit policy: discard with a log line, live data untouched.
+            from fastprompter.core.logging import logger
+            logger.error("refusing to apply invalid undo snapshot (CORE-014); live data untouched")
+            return
+        if state.get("_switch"):
+            # PERF-006: a compact navigation record reverses ONLY the switch
+            # -- it never mutates text, stores or per-category state.
+            self.active_temp_slot = state.get("active_temp_slot", 0)
+            self.active_is_archive = bool(state.get("active_is_archive", False))
+            self._switch_to_slot(self.active_temp_slot, initial=True,
+                                 is_archive=self.active_is_archive)
+            self.refresh_temp_presets()
+            return
         self.data["categories"] = state["categories"]
         if state.get("cats_order"):
             self.data["cats_order"] = list(state["cats_order"])
@@ -8081,6 +8378,42 @@ class FastPrompter(
             # it early left archive folders stranded in _trash — text came
             # back but the archive's files stayed gone.
             self._restore_trashed_folders(snap_cat)
+        # CORE-008: composite cross-project entry — restore the DESTINATION
+        # half symmetrically. The entry carries the destination stores to
+        # restore: pre-transfer in the undo stack, post-transfer in the redo
+        # stack (undo_action stamps the after half into the redo entry).
+        if state.get("_transfer"):
+            dst_cat = state.get("_transfer_dst_cat")
+            dst_stores = state.get("_transfer_dst_before")
+            if isinstance(dst_cat, str) and isinstance(dst_stores, dict):
+                for all_key, value in dst_stores.items():
+                    store = self.data.setdefault(all_key, {})
+                    if not isinstance(store, dict):
+                        store = self.data[all_key] = {}
+                    if value is None:
+                        store.pop(dst_cat, None)
+                    else:
+                        store[dst_cat] = copy.deepcopy(value)
+                # The flat aliases never point at the destination (it is not
+                # the current category by construction), so no rebinding here;
+                # a later category switch binds the restored stores.
+                # CORE-004: the physical folder move is part of the SAME
+                # transaction. The folder tuple is oriented for the move this
+                # apply performs (reversed for UNDO, forward for REDO), so the
+                # bytes follow the store state exactly. Best-effort: a missing
+                # source or an already-present destination is left untouched
+                # rather than clobbered.
+                folder = state.get("_transfer_folder")
+                if isinstance(folder, (tuple, list)) and len(folder) == 4:
+                    from_dir, to_dir = folder[0], folder[1]
+                    if os.path.isdir(from_dir) and not os.path.exists(to_dir):
+                        try:
+                            os.rename(from_dir, to_dir)
+                        except OSError as e:
+                            from fastprompter.core.logging import logger
+                            logger.error(
+                                "transfer folder restore %s -> %s failed: %s",
+                                from_dir, to_dir, e)
         from PyQt6.QtGui import QTextDocument
 
         while len(self.silo_docs) < len(self.data["temp_presets"]):
@@ -8423,8 +8756,13 @@ class FastPrompter(
                 redo = raw.get("redo", []) if isinstance(raw, dict) else []
                 if not isinstance(undo, list) or not isinstance(redo, list):
                     raise ValueError("undo file has non-list stacks")
-                self.data_undo_stack = [s for s in undo if isinstance(s, dict)]
-                self.data_redo_stack = [s for s in redo if isinstance(s, dict)]
+                # CORE-014: one quarantine policy — entries that pass the JSON
+                # container check but fail the executable-snapshot schema are
+                # discarded here, never handed to apply.
+                self.data_undo_stack = [s for s in undo
+                                        if isinstance(s, dict) and self._snapshot_is_valid(s)]
+                self.data_redo_stack = [s for s in redo
+                                        if isinstance(s, dict) and self._snapshot_is_valid(s)]
             else:
                 self.data_undo_stack = []
                 self.data_redo_stack = []
@@ -8446,7 +8784,23 @@ class FastPrompter(
             self.data_undo_stack = []
         if not hasattr(self, "data_redo_stack"):
             self.data_redo_stack = []
-        state = self._snapshot_current()
+        if _action_name == "Switch silo":
+            # PERF-006: navigation undo is a COMPACT record, not a deep
+            # copy of the whole data universe. It carries only the
+            # coordinates needed to reverse the switch plus routing metadata;
+            # Ctrl+Z of a pure switch must never depend on unrelated
+            # snippet/silo content. Full mutation snapshots are reserved for
+            # operations that actually change data.
+            state = {
+                "_switch": True,
+                "category": self.get_current_category(),
+                "active_temp_slot": self.active_temp_slot,
+                "active_is_archive": bool(
+                    getattr(self, "active_is_archive", False)),
+                "editing_snippet": getattr(self, "editing_snippet", None),
+            }
+        else:
+            state = self._snapshot_current()
         # Never push a snapshot identical to the top — no-op pileups make
         # the skip logic walk into unrelated (even cross-tab) history.
         # Compared without the ordering metadata, which differs every time.
@@ -8454,7 +8808,17 @@ class FastPrompter(
             return None
         self._stamp_snapshot(state)
         self.data_undo_stack.append(state)
+        self._push_undo_state(state, _action_name)
+        return state
 
+    def _push_undo_state(self, state, _action_name=""):
+        """Shared undo-stack housekeeping: enforce caps, invalidate redo and
+        the recorded undo order, bump routing metadata, persist.
+
+        CORE-008: composite cross-project entries (which carry both owners)
+        are pushed through this same helper so every stack gets exactly ONE
+        logical entry and identical cap/redo semantics.
+        """
         # Enforce caps (50 items max, ~20MB max)
         MAX_CHARS = 20_000_000
         while len(self.data_undo_stack) > 50:
@@ -8678,28 +9042,40 @@ class FastPrompter(
         Kept only because callers still invoke it on the retitle path."""
         return
 
+    def _flush_live_editor(self, current_text):
+        """Copy the live editor text into its owning store.
+
+        Snippet mode writes the exact editor text into the referenced
+        snippet, refreshes its last-edited metadata and marks the snippets
+        domain dirty when the value changed. Silo mode keeps the established
+        per-slot alias behaviour. This is the single synchronous owner flush
+        used by every authoritative save and owner transition."""
+        if self.editing_snippet:
+            cat_snip, idx = self.editing_snippet
+            if cat_snip in self.data["categories"] and self.data["categories"][cat_snip][idx]:
+                item = self.data["categories"][cat_snip][idx]
+                old_text = item.get("text")
+                if old_text != current_text:
+                    item["text"] = current_text
+                    item["last_edited"] = int(time.time())
+                    self.mark_dirty("snippets")
+        else:
+            is_arc = getattr(self, "active_is_archive", False)
+            target = self.data["archive_temp_presets"] if is_arc else self.data["temp_presets"]
+            if 0 <= self.active_temp_slot < len(target):
+                old_text = target[self.active_temp_slot]
+                target[self.active_temp_slot] = current_text
+                if current_text != old_text:
+                    self.mark_dirty("arc" if is_arc else "temp")
+                    self.silo_last_edited[self.active_temp_slot] = int(time.time())
+                    self._update_active_silo_ui()
+
     def commit_current_text(self):
         """Commit the current text to the active slot."""
         if getattr(self, "_initializing_ui", False):
             return
         current_text = self.text_area.toPlainText()
-        cat = self.get_current_category()
-
-        if not self.editing_snippet:
-            is_arc = getattr(self, "active_is_archive", False)
-            target = self.data["archive_temp_presets"] if is_arc else self.data["temp_presets"]
-            if 0 <= self.active_temp_slot < len(target):
-                old_text = target[self.active_temp_slot]
-                self._sync_silo_folder(cat, old_text, current_text)
-                target[self.active_temp_slot] = current_text
-                if current_text != old_text:
-                    self._update_active_silo_ui()
-        else:
-            cat_snip, idx = self.editing_snippet
-            if cat_snip in self.data["categories"] and self.data["categories"][cat_snip][idx]:
-                old_text = self.data["categories"][cat_snip][idx]["text"]
-                self._sync_silo_folder(cat_snip, old_text, current_text)
-                self.data["categories"][cat_snip][idx]["text"] = current_text
+        self._flush_live_editor(current_text)
 
     def open_color_settings(self):
         from fastprompter.ui.settings import ColorConfigDialog
@@ -8736,6 +9112,21 @@ class FastPrompter(
             )
             if reply == QMessageBox.StandardButton.Yes:
                 db_path = self.state.db_path
+                # CORE-002: a refused restore leaves the ORIGINAL file untouched,
+                # so the safest recovery of the user's unsaved edits is to commit
+                # the current memory to that same file BEFORE any destructive
+                # runtime change. If that commit fails, abort the restore while
+                # the live connection is still open — never strand a failed
+                # save behind a closed connection.
+                if not self.save_data_to_db(force=True):
+                    from fastprompter.core.logging import logger as _log
+                    _log.error("Restore aborted: live save failed; the live "
+                               "database is unchanged")
+                    QMessageBox.critical(
+                        self, tr("Error", self._current_lang),
+                        tr("Restore aborted — your current data could not be "
+                           "saved; nothing was touched.", self._current_lang))
+                    return
                 # T-809: the watcher must quiesce BEFORE we close the live DB or
                 # replace it. A failed quiesce aborts the restore (the restored
                 # file is already on disk, but we must not strand the app running
@@ -8775,8 +9166,14 @@ class FastPrompter(
                     # back). It was repaired from the safety snapshot on disk,
                     # but per T-808 we must NOT reopen the live incarnation
                     # here — a restart reloads the repaired file. Do not call
-                    # init_db; keep the connection closed and let the user
-                    # restart on a known-good database.
+                    # init_db; keep the connection closed.
+                    #
+                    # CORE-009: follow the state contract — this is a TERMINAL
+                    # transition. The in-memory (RAM) edits must NOT be written
+                    # back over the now-repaired on-disk DB, so mark logical
+                    # persistence finalized (the controlled quit path then skips
+                    # the final save) and exit through quit_app(), leaving the
+                    # user to restart on the known-good database.
                     from fastprompter.core.logging import logger as _log
                     _log.exception("restore failed fatally: %s", e)
                     QMessageBox.critical(
@@ -8785,18 +9182,40 @@ class FastPrompter(
                            "left consistent. It has been repaired from the "
                            "automatic safety snapshot on disk — restart "
                            "FastPrompter to reload it.", self._current_lang))
+                    self._logical_finalized = True
+                    self.quit_app()
                     return
                 except RestoreError as e:
-                    # the live database was left untouched; reopen it and tell
-                    # the user what to recover from
+                    # CORE-002: the original file is untouched. The in-memory
+                    # state we just committed is the authoritative latest — do
+                    # NOT reload disk via init_db (that would discard the RAM
+                    # edits and clear dirty).
+                    #
+                    # CORE-009: regaining a valid persistence connection is
+                    # mandatory before resuming an editable runtime. Only
+                    # reopen-then-resume when the reopen SUCCEEDED; a failed
+                    # reopen leaves conn=None and must NOT resume editing
+                    # (which would then run disconnected and silently lose
+                    # work). On failure enter the same terminal/exit path.
                     from fastprompter.core.logging import logger as _log
                     _log.exception("restore refused: %s", e)
+                    if not self._reopen_live_connection():
+                        _log.error("restore refused but live connection could "
+                                   "not be reopened; entering terminal state")
+                        QMessageBox.critical(
+                            self, tr("Error", self._current_lang),
+                            tr("Restore refused and the database connection "
+                               "could not be reopened. FastPrompter will close "
+                               "to avoid losing data — restart it.",
+                               self._current_lang))
+                        self._logical_finalized = True
+                        self.quit_app()
+                        return
+                    self._resume_watcher_runtime()
                     QMessageBox.critical(
                         self, tr("Error", self._current_lang),
                         tr("Restore refused — your current database was left "
                            "untouched:\n{}", self._current_lang).format(e))
-                    self.state.init_db()
-                    self.conn = self.state.conn
                     return
                 # P0: successful restore is a terminal, already-committed
                 # transition. The on-disk DB is now the restored copy and the
@@ -8811,10 +9230,61 @@ class FastPrompter(
                 self.quit_app()
         except Exception as e:
             QMessageBox.critical(self, tr("Error", self._current_lang), tr("Failed to restore backup:\n{}", self._current_lang).format(e))
-            self.state.init_db()
-            self.conn = self.state.conn
+            # CORE-002/CORE-009: a hard failure must also roll the runtime back
+            # to the pre-restore state — keep the live memory and reopen the
+            # connection. Only resume the watcher when the reopen actually
+            # succeeded; a failed reopen is a terminal transition that must not
+            # leave the app editable against a disconnected database.
+            if not self._reopen_live_connection():
+                from fastprompter.core.logging import logger as _log
+                _log.error("restore hard-failure and live connection could not "
+                           "be reopened; entering terminal state")
+                self._logical_finalized = True
+                self.quit_app()
+                return
+            self._resume_watcher_runtime()
         finally:
             self.ignore_focus_loss = False
+
+    def _reopen_live_connection(self):
+        """Reopen the live SQLite connection to the SAME db_path without
+        reloading disk (CORE-002). Use after a refused/failed restore where
+        the original file is untouched and the in-memory state is still
+        authoritative — reloading via init_db would discard the RAM edits.
+
+        Returns True only when a usable connection was established; callers
+        must NOT resume an editable runtime (CORE-009) on False.
+        """
+        import sqlite3
+        try:
+            conn = sqlite3.connect(self.state.db_path, check_same_thread=False)
+            conn.execute('PRAGMA journal_mode=WAL;')
+            conn.execute('PRAGMA synchronous=NORMAL;')
+            self.state.conn = conn
+            self.conn = conn
+            return True
+        except Exception as e:
+            from fastprompter.core.logging import logger as _log
+            _log.exception("failed to reopen live connection after restore "
+                           "refusal: %s", e)
+            self.state.conn = None
+            self.conn = None
+            return False
+
+    def _resume_watcher_runtime(self):
+        """Resume the watcher loop after a refused/failed restore (CORE-002).
+
+        The quiesce barrier stopped the tick timer but left the engine armed;
+        bring the timer back so the run that was in flight continues, instead
+        of leaving the watcher paused against live memory it still owns."""
+        try:
+            engine = getattr(self, "_watcher_engine", None)
+            if engine is not None and getattr(engine, "armed", False):
+                self._watcher_start_timer()
+        except Exception:
+            from fastprompter.core.logging import logger as _log
+            _log.exception("failed to resume watcher runtime after restore "
+                           "refusal")
 
     def fill_silo_from_preset(self, idx, text):
         """Drop a template into silo `idx`, as ONE undoable action."""
@@ -8859,7 +9329,7 @@ class FastPrompter(
         menu.popup(pos if pos is not None else QCursor.pos())
 
     def _new_silo_with_text(self, text):
-        self.select_empty_silo()
+        self.select_empty_silo(insertion="top")
         self.fill_silo_from_preset(self.active_temp_slot, text)
 
     def toolbar_at_bottom(self):
@@ -9286,6 +9756,16 @@ class FastPrompter(
             # the row carries its own name for lookups — leaving the old one
             # here would make _cat_at resolve a project that no longer exists
             self.cat_combo.setItemData(idx, new_cat)
+            # W2-001: the live editor owner and its doc cache follow the
+            # rename, so continuing to type still addresses the same snippet.
+            es = getattr(self, "editing_snippet", None)
+            if es and es[0] == old_cat:
+                self.editing_snippet = (new_cat, es[1])
+            docs = getattr(self, "snippet_docs", {})
+            old_prefix = old_cat + "_"
+            for k in list(docs.keys()):
+                if k.startswith(old_prefix):
+                    docs[new_cat + "_" + k[len(old_prefix):]] = docs.pop(k)
             self.mark_dirty()
 
     def add_category(self):
@@ -9421,6 +9901,22 @@ class FastPrompter(
             # rolls the ALREADY-RETIRED folders back out of _trash instead of
             # leaving them stranded: the undo snapshot can then restore the
             # category with its files already home (P0-8).
+            # W2-007: capture the exact pre-cleanup logical/UI state so a
+            # failure mid-cleanup can restore every field (never persist a
+            # half-deleted category). Only discard the undo snapshot after
+            # both physical rollback AND logical restore have succeeded.
+            _before_cleanup = {
+                "cats_order": list(self.data.get("cats_order", [])),
+                "category": copy.deepcopy(
+                    self.data.get("categories", {}).get(cat)),
+                "per_cat": {
+                    k: copy.deepcopy(self.data.get(k, {}).get(cat))
+                    for k in self._PER_CATEGORY_STATE_KEYS
+                },
+                "cat_file_dirs": copy.deepcopy(
+                    self.data.get("category_file_dirs", {}).get(cat)),
+                "current_page": copy.deepcopy(self.current_pages.get(cat)),
+            }
             try:
                 # P0-3: remove by IDENTITY, never by combo row — the row and
                 # cats_order diverge when categories are hidden, and pop(idx)
@@ -9448,18 +9944,45 @@ class FastPrompter(
                     "rolling back the physical retirement of its folders",
                     cat)
                 try:
-                    # The rollback matches log entries by ABSOLUTE prefix, so
-                    # the component must be joined to the root before the
-                    # call; the bare component never matched anything and the
-                    # rollback silently did nothing (P0-8).
                     self._rollback_category_retirements(
                         os.path.join(root, cat_dir) if cat_dir else None)
                 except Exception:
                     _lg.exception("category rollback itself failed for %r",
                                   cat)
-                # W2-006: logical state was partially mutated — restore it so
-                # the project is not left in a half-deleted mess. Pop the undo
-                # entry we pushed for an operation that never committed.
+                # W2-007: restore the EXACT pre-cleanup logical/UI state.
+                # The undo snapshot must NOT be discarded until the before-
+                # state has been demonstrably restored (the audit requires
+                # rollback-then-restore-then-pop, not a silent pop on any
+                # failure).
+                try:
+                    bc = _before_cleanup
+                    # cats_order: restore cat to its original position
+                    co = bc["cats_order"]
+                    self.data["cats_order"] = co
+                    cats = self.data.setdefault("categories", {})
+                    if bc["category"] is not None:
+                        cats[cat] = bc["category"]
+                    elif cat in cats:
+                        cats.pop(cat, None)
+                    for k, v in bc["per_cat"].items():
+                        store = self.data.setdefault(k, {})
+                        if v is None:
+                            store.pop(cat, None)
+                        else:
+                            store[cat] = v
+                    cfd = self.data.setdefault("category_file_dirs", {})
+                    if bc["cat_file_dirs"] is not None:
+                        cfd[cat] = bc["cat_file_dirs"]
+                    if bc["current_page"] is not None:
+                        self.current_pages[cat] = bc["current_page"]
+                    # combo: re-insert the removed row at its original index
+                    if self.cat_combo.findData(cat) < 0 and \
+                            0 <= idx < self.cat_combo.count():
+                        self.cat_combo.insertItem(idx, cat, cat)
+                except Exception:
+                    _lg.exception(
+                        "W2-007: category restore FAILED for %r", cat)
+                # undo snapshot is popped ONLY after the restore attempt
                 if pushed is not None and self.data_undo_stack and \
                         self.data_undo_stack[-1] is pushed:
                     self.data_undo_stack.pop()
@@ -9799,7 +10322,8 @@ class FastPrompter(
 
         self._update_cat_numbox_active()
         self.refresh_snippets_panel()
-        self.mark_dirty()
+        # PERF-002: project switch is settings-domain navigation
+        self.mark_dirty("settings")
         self.text_area.setFocus()
 
     def change_page(self, delta):
@@ -10244,12 +10768,16 @@ class FastPrompter(
                 if new_txt.strip() and 0 <= self.active_temp_slot < len(
                     self.data.get("archive_temp_presets", [])
                 ):
+                    old_arc_txt = self.data["archive_temp_presets"][self.active_temp_slot]
                     self._sync_silo_folder(
                         self.get_current_category(),
-                        self.data["archive_temp_presets"][self.active_temp_slot],
+                        old_arc_txt,
                         new_txt,
                     )
                     self.data["archive_temp_presets"][self.active_temp_slot] = new_txt
+                    # PERF-002: mark the archive domain when text changed
+                    if new_txt != old_arc_txt:
+                        self.mark_dirty("arc")
             else:
                 old_slot = self.active_temp_slot
                 new_text = self.text_area.toPlainText()
@@ -10259,6 +10787,8 @@ class FastPrompter(
                     self.data["temp_presets"][old_slot] = new_text
                     if new_text != old_text:
                         self.silo_last_edited[old_slot] = int(time.time())
+                        # PERF-002: the text changed, mark the silo domain
+                        self.mark_dirty("temp")
 
         if not is_archive:
             if "temp_presets" not in self.data or not self.data["temp_presets"]:
@@ -10375,7 +10905,7 @@ class FastPrompter(
             self._update_line_count_label()
             self._update_files_button()
             self._sync_files_dock_to_active_silo()
-            self._update_project_buttons()
+            self._update_project_buttons(is_archive)
             cur_text = new_text
             self._apply_silo_type(idx, is_archive, cur_text)
             # seed the live folder-sync baseline for the new silo
@@ -10385,7 +10915,8 @@ class FastPrompter(
             self.text_area.setFocus()
             self.text_area.ensureCursorVisible()
             if not initial:
-                self.mark_dirty()
+                # PERF-002: navigation is settings-domain state
+                self.mark_dirty("settings")
         finally:
             self._end_batch_update()
 
@@ -10486,11 +11017,14 @@ class FastPrompter(
         if stype == "kanban":
             self.silo_view.setCurrentIndex(1)
             self.kanban_widget.load_markdown(text)
+            self._rendered_visual_text = text
         elif stype == "table":
             self.silo_view.setCurrentIndex(2)
             self.table_widget.load_markdown(text)
+            self._rendered_visual_text = text
         else:
             self.silo_view.setCurrentIndex(0)
+            self._rendered_visual_text = None
 
     def _schedule_silo_type_recheck(self):
         """Re-pick the view when the text stops matching the silo's type.
@@ -10914,7 +11448,26 @@ class FastPrompter(
             if os.path.isdir(src_dir) and os.listdir(src_dir):
                 dst_dir = self._silo_folder_dir(new_idx)
                 if os.path.abspath(dst_dir) != os.path.abspath(src_dir):
-                    self._copy_folder_into_container(src_dir, dst_dir)
+                    def _publish_guard():
+                        # W2-012: the duplicate slot must STILL exist and
+                        # still resolve to dst_dir at publish time. A delete
+                        # (or structural move) of the duplicate while the
+                        # copy runs makes this false and aborts publication,
+                        # removing the temp instead of resurrecting an
+                        # orphan asset directory.
+                        try:
+                            presets = self.data.get("temp_presets", [])
+                            if not (0 <= new_idx < len(presets)):
+                                return False
+                            resolved = self._silo_folder_dir(new_idx)
+                            if resolved is None:
+                                return False
+                            return os.path.abspath(resolved) == \
+                                os.path.abspath(dst_dir)
+                        except Exception:
+                            return False
+                    self._copy_folder_into_container(
+                        src_dir, dst_dir, publish_guard=_publish_guard)
         except OSError as e:
             from fastprompter.core.logging import logger
             logger.warning("duplicate_silo: copying files failed: %s", e)
@@ -10922,10 +11475,16 @@ class FastPrompter(
         self.refresh_temp_presets()
         self._switch_to_slot(new_idx)
 
-    def _copy_folder_into_container(self, src_dir, dst_dir):
+    def _copy_folder_into_container(self, src_dir, dst_dir, publish_guard=None):
         """Copy a silo folder into the container via the SAME primitives the
         file panel uses: atomic no-clobber copy, worker-dispatched when the
-        tree is large so the GUI thread never walks/copies it."""
+        tree is large so the GUI thread never walks/copies it.
+
+        ``publish_guard`` (W2-012): revalidated immediately before the final
+        rename so an async copy whose destination silo was deleted/moved
+        while the worker ran aborts instead of resurrecting an orphan
+        directory.
+        """
         import uuid
 
         from fastprompter.ui.file_container import (
@@ -10942,6 +11501,7 @@ class FastPrompter(
                 "request_id": uuid.uuid4().hex,
                 "owner_id": uuid.uuid4().hex,
                 "kind": "dup-copy",
+                "publish_guard": publish_guard,
                 "origin": os.path.realpath(os.path.abspath(cat_dir)),
                 "refresh_identity": os.path.normcase(os.path.abspath(cat_dir)),
                 "items": tuple(items),
@@ -10958,7 +11518,8 @@ class FastPrompter(
                 worker.done.connect(self._on_duplicate_copy_done)
                 self._dup_copy_worker = worker
         else:
-            _copy_atomic(src_dir, dst_dir, True, cat_dir, identity)
+            _copy_atomic(src_dir, dst_dir, True, cat_dir, identity,
+                         publish_guard=publish_guard)
 
     def _on_duplicate_copy_done(self, request_id, request, done, errors):
         """The async duplicate copy landed on the worker: report any error
@@ -11325,7 +11886,7 @@ class FastPrompter(
                 lambda i=idx: self.toggle_silo_gap(i))
             menu.addSeparator()
         menu.addAction(tr("📁 Files…", getattr(self, "_current_lang", "EN")), lambda i=idx, a=is_archive: self.open_file_container(i, a))
-        menu.addAction(tr("⚙ Configure Project Paths...", getattr(self, "_current_lang", "EN")), lambda i=idx: self.open_silo_settings(i))
+        menu.addAction(tr("⚙ Configure Project Paths...", getattr(self, "_current_lang", "EN")), lambda i=idx, a=is_archive: self.open_silo_settings(i, a))
 
         # -- save ---------------------------------------------------------------
         if cur:
@@ -11405,49 +11966,57 @@ class FastPrompter(
             replace_menu.setEnabled(False)
 
         # Transform to...
-        transform_menu = menu.addMenu(tr("✨ Transform to…", getattr(self, "_current_lang", "EN")))
-        current_type = self.data.get("silo_types", {}).get(str(idx), "text")
+        # CORE-010: silo TYPE is normal-silo state only. The runtime treats
+        # archives as text-only (`_apply_silo_type` returns early for them), so
+        # offering a Transform on an archive slot would write through the
+        # SAME numeric `silo_type_all[category]` namespace used by normal
+        # silos — mutating the type of the normal silo at that slot while
+        # nothing is rendered for the archive. Do NOT expose the transform for
+        # archive slots.
+        if not is_archive:
+            transform_menu = menu.addMenu(tr("✨ Transform to…", getattr(self, "_current_lang", "EN")))
+            current_type = self.data.get("silo_types", {}).get(str(idx), "text")
 
-        def make_transform(tgt_type):
-            def _t():
-                self.play_sound("transform")
-                presets = self.data["archive_temp_presets"] if is_archive else self.data["temp_presets"]
-                text = presets[idx] if idx < len(presets) else ""
+            def make_transform(tgt_type):
+                def _t():
+                    self.play_sound("transform")
+                    presets = self.data["archive_temp_presets"] if is_archive else self.data["temp_presets"]
+                    text = presets[idx] if idx < len(presets) else ""
 
-                # An EMPTY silo is the main way into this: make a new silo,
-                # right-click, turn it into a board. The old prompt asked
-                # "Format as one first?" and then formatted nothing whatever
-                # you answered, so Yes and No did the same thing and the user
-                # landed in an empty widget either way. Seed a real starter
-                # instead, and only ask when there is text that would be left
-                # sitting beside the new structure.
-                seeded = self._seed_silo_structure(idx, tgt_type, text, is_archive)
-                if seeded is None:
-                    return
+                    # An EMPTY silo is the main way into this: make a new silo,
+                    # right-click, turn it into a board. The old prompt asked
+                    # "Format as one first?" and then formatted nothing whatever
+                    # you answered, so Yes and No did the same thing and the user
+                    # landed in an empty widget either way. Seed a real starter
+                    # instead, and only ask when there is text that would be left
+                    # sitting beside the new structure.
+                    seeded = self._seed_silo_structure(idx, tgt_type, text, is_archive)
+                    if seeded is None:
+                        return
 
-                cat = self.get_current_category() or ""
-                types = self.data.setdefault("silo_type_all", {}).setdefault(cat, {})
-                # write through the SAME dict the alias points at: rebinding
-                # data["silo_types"] is what orphans a per-category store
-                if self.data.get("silo_types") is not types:
-                    self.data["silo_types"] = types
-                self.data["silo_types"][str(idx)] = tgt_type
-                if self.active_temp_slot == idx and not is_archive:
-                    self._apply_silo_type(idx, is_archive)
-                self.mark_dirty()
-            return _t
+                    cat = self.get_current_category() or ""
+                    types = self.data.setdefault("silo_type_all", {}).setdefault(cat, {})
+                    # write through the SAME dict the alias points at: rebinding
+                    # data["silo_types"] is what orphans a per-category store
+                    if self.data.get("silo_types") is not types:
+                        self.data["silo_types"] = types
+                    self.data["silo_types"][str(idx)] = tgt_type
+                    if self.active_temp_slot == idx and not is_archive:
+                        self._apply_silo_type(idx, is_archive)
+                    self.mark_dirty()
+                return _t
 
-        a_text = transform_menu.addAction(tr("📄 Text", getattr(self, "_current_lang", "EN")))
-        if current_type == "text": a_text.setEnabled(False)
-        else: a_text.triggered.connect(make_transform("text"))
+            a_text = transform_menu.addAction(tr("📄 Text", getattr(self, "_current_lang", "EN")))
+            if current_type == "text": a_text.setEnabled(False)
+            else: a_text.triggered.connect(make_transform("text"))
 
-        a_kanban = transform_menu.addAction(tr("📋 Kanban Board", getattr(self, "_current_lang", "EN")))
-        if current_type == "kanban": a_kanban.setEnabled(False)
-        else: a_kanban.triggered.connect(make_transform("kanban"))
+            a_kanban = transform_menu.addAction(tr("📋 Kanban Board", getattr(self, "_current_lang", "EN")))
+            if current_type == "kanban": a_kanban.setEnabled(False)
+            else: a_kanban.triggered.connect(make_transform("kanban"))
 
-        a_table = transform_menu.addAction(tr("📊 Table", getattr(self, "_current_lang", "EN")))
-        if current_type == "table": a_table.setEnabled(False)
-        else: a_table.triggered.connect(make_transform("table"))
+            a_table = transform_menu.addAction(tr("📊 Table", getattr(self, "_current_lang", "EN")))
+            if current_type == "table": a_table.setEnabled(False)
+            else: a_table.triggered.connect(make_transform("table"))
 
 
         self.ignore_focus_loss = True
@@ -11459,7 +12028,7 @@ class FastPrompter(
 
 
 
-    def _move_silo_identity(self, src_cat, src_idx, dst_cat, dst_idx, is_archive_src):
+    def _move_silo_identity(self, src_cat, src_idx, dst_cat, dst_idx, is_archive_src, folder_plan=None):
         """Move every identity-owned, slot-keyed store for ONE silo from
         (src_cat, src_idx[/archive namespace]) to (dst_cat, dst_idx).
 
@@ -11475,6 +12044,12 @@ class FastPrompter(
         restores via the undo snapshot it already took, so this need not roll
         back per-key. Returned True if at least the text moved.
 
+        CORE-007: ``folder_plan`` is the (src_dir, dst_dir, src_name,
+        dst_name) tuple resolved and physically published by the caller
+        BEFORE this method runs; the folder mapping follows the physical
+        move and records the reserved destination name. The caller must
+        never hand a plan whose physical move did not succeed.
+
         W2-003: uses canonical per-category stores from _PER_CATEGORY_ALIASES,
         never hand-written aliases like ``silo_types_all`` (which does not exist
         in production schema).
@@ -11482,6 +12057,7 @@ class FastPrompter(
         from fastprompter.core.state import _PER_CATEGORY_ALIASES
         skey = str(src_idx)
         dkey = str(dst_idx)
+        dst_folder_name = folder_plan[3] if folder_plan else None
 
         # files folder + project path: per-category *_all stores
         if is_archive_src:
@@ -11495,7 +12071,8 @@ class FastPrompter(
         sfold = src_folders.get(src_cat)
         dfold = dst_folders.setdefault(dst_cat, {})
         if isinstance(sfold, dict) and isinstance(dfold, dict) and skey in sfold:
-            dfold[dkey] = sfold.pop(skey)
+            src_name = sfold.pop(skey)
+            dfold[dkey] = dst_folder_name if dst_folder_name and src_name == folder_plan[2] else src_name
         spath = src_paths.get(src_cat)
         dpath = dst_paths.setdefault(dst_cat, {})
         if isinstance(spath, dict) and isinstance(dpath, dict) and skey in spath:
@@ -11553,6 +12130,35 @@ class FastPrompter(
                 if isinstance(dt, list) and dst_idx not in dt:
                     dt.append(dst_idx)
 
+    _TRANSFER_STORE_KEYS = (
+        "temp_presets_all", "archive_temp_presets_all",
+        "pinned_silos_all", "silo_ticked_all", "silo_children_all",
+        "silo_collapsed_all", "silo_colors_all", "silo_gaps_all",
+        "silo_gap_names_all", "silo_folders_all", "archive_silo_folders_all",
+        "silo_project_paths_all", "archive_project_paths_all",
+        "watcher_queues_all", "silo_type_all", "silo_last_edited_all",
+        "silo_view_state_all",
+    )
+
+    def _capture_category_stores(self, cat):
+        """Deep-copied per-category stores of ONE category, for composite
+        cross-project undo entries (CORE-008). Missing stores are recorded as
+        None so apply can remove what the transfer created."""
+        out = {}
+        for key in self._TRANSFER_STORE_KEYS:
+            store = self.data.get(key)
+            if isinstance(store, dict) and cat in store:
+                value = store[cat]
+                if isinstance(value, dict):
+                    out[key] = {k: copy.deepcopy(v) for k, v in value.items()}
+                elif isinstance(value, list):
+                    out[key] = list(value)
+                else:
+                    out[key] = None
+            else:
+                out[key] = None
+        return out
+
     def transfer_silo_to_project(self, idx, target_cat, is_archive=False):
         """Move a silo into another project's SILO list (T-595).
 
@@ -11584,22 +12190,47 @@ class FastPrompter(
         # W2-005: destination capacity uses TARGET state only, with consistent
         # blank semantics and identity-awareness. Source capacity is irrelevant.
         # A slot is reusable only when semantically blank AND free of identity.
-        def _slot_free(identity_map, slot_idx):
-            """True when the slot has no content and no owned metadata."""
+        def _slot_free(slot_idx):
+            """True when the destination slot holds NO identity-owned metadata
+            of any namespace (CORE-006).
+
+            The free-slot predicate and ``_move_silo_identity`` must agree on
+            which stores describe a silo. The canonical set below mirrors
+            exactly what ``_move_silo_identity`` moves (colour, type, last
+            edited, watcher queue, view/cursor state, done-tick, folder,
+            project path), so a destination slot that still carries another
+            silo's metadata is REJECTED rather than allowed to contaminate the
+            transferred silo.
+            """
             text = (dest[slot_idx] or "").strip() if 0 <= slot_idx < len(dest) else ""
             if text:
                 return False
-            folder = identity_map.get(target_cat, {})
-            if isinstance(folder, dict) and str(slot_idx) in folder:
+            folders = self.data.get("silo_folders_all", {}).get(target_cat, {})
+            if isinstance(folders, dict) and str(slot_idx) in folders:
+                return False
+            afolders = self.data.get("archive_silo_folders_all", {}).get(target_cat, {})
+            if isinstance(afolders, dict) and str(slot_idx) in afolders:
                 return False
             ppath = self.data.get("silo_project_paths_all", {}).get(target_cat, {})
             if isinstance(ppath, dict) and str(slot_idx) in ppath:
                 return False
-            q = self.data.get("watcher_queues_all", {}).get(target_cat, {})
-            if isinstance(q, dict) and str(slot_idx) in q:
+            colors = self.data.get("silo_colors_all", {}).get(target_cat, {})
+            if isinstance(colors, dict) and str(slot_idx) in colors:
                 return False
-            t = self.data.get("silo_type_all", {}).get(target_cat, {})
-            if isinstance(t, dict) and str(slot_idx) in t:
+            types = self.data.get("silo_type_all", {}).get(target_cat, {})
+            if isinstance(types, dict) and str(slot_idx) in types:
+                return False
+            last_edited = self.data.get("silo_last_edited_all", {}).get(target_cat, {})
+            if isinstance(last_edited, dict) and slot_idx in last_edited:
+                return False
+            queues = self.data.get("watcher_queues_all", {}).get(target_cat, {})
+            if isinstance(queues, dict) and str(slot_idx) in queues:
+                return False
+            view = self.data.get("silo_view_state_all", {}).get(target_cat, {})
+            if isinstance(view, dict) and ("s" + str(slot_idx)) in view:
+                return False
+            ticked = self.data.get("silo_ticked_all", {}).get(target_cat, [])
+            if isinstance(ticked, list) and slot_idx in ticked:
                 return False
             return True
 
@@ -11607,35 +12238,107 @@ class FastPrompter(
         # Find first reusable blank slot; if none, grow bounded by max.
         dslot = None
         for i in range(len(dest)):
-            if _slot_free(self.data.get("silo_folders_all", {}), i):
+            if _slot_free(i):
                 dslot = i
                 break
+        appending = False
         if dslot is None and len(dest) < max_slots:
-            # Target has room but every existing slot holds identity — append.
-            dest.append("")
-            dslot = len(dest) - 1
+            # Target has room but every existing slot holds identity — reserve a
+            # NEW slot index WITHOUT mutating `dest` yet (CORE-005). The list is
+            # only grown in the atomic commit phase, AFTER every preflight and
+            # the physical folder move have succeeded, so a refused transfer can
+            # never leave a phantom blank slot eating the capacity.
+            dslot = len(dest)
+            appending = True
         elif dslot is None:
             return False                          # truly full: lose nothing
 
         text = src_presets[idx]
 
-        # W2-004: capture a cross-project undo snapshot BEFORE any mutation.
-        # The active-category-only snapshot cannot restore a two-owner op.
-        snap = self._snapshot_current()
-        snap["_transfer_src_cat"] = cur_cat
-        snap["_transfer_src_idx"] = idx
-        snap["_transfer_dst_cat"] = target_cat
-        snap["_transfer_dst_idx"] = dslot
-        snap["_transfer_is_archive"] = is_archive
-        self.add_data_undo_state("Transfer silo to project")
-        self._stamp_snapshot(snap)
-        self.data_undo_stack.append(snap)
+        # CORE-007: resolve the physical folder relocation BEFORE any
+        # mutation. The source category root and the destination root are
+        # resolved now; a down/unreachable custom root refuses the transfer
+        # (fail closed: a folder mapping must never detach from the physical
+        # folder it identifies). The destination name is reserved against
+        # both the destination mapping and the destination directory, so a
+        # name collision renames the incoming folder instead of clobbering.
+        folder_plan = None
+        fsrc = self.data.setdefault(
+            "archive_silo_folders_all" if is_archive else "silo_folders_all", {})
+        fmap_src = fsrc.get(cur_cat)
+        if isinstance(fmap_src, dict) and str(idx) in fmap_src and fmap_src[str(idx)]:
+            src_name = fmap_src[str(idx)]
+            comp_src = self._category_files_dir(cur_cat)
+            comp_dst = self._category_files_dir(target_cat)
+            if comp_src is None or comp_dst is None:
+                return False
+            root = self._files_root()
+            src_dir = os.path.join(root, comp_src, src_name)
+            dfold = self.data.setdefault("silo_folders_all", {}).setdefault(target_cat, {})
+            taken = set(dfold.values())
+            dst_comp_dir = os.path.join(root, comp_dst)
+            dst_name, n = src_name, 2
+            while dst_name in taken or os.path.isdir(os.path.join(dst_comp_dir, dst_name)):
+                dst_name = f"{src_name}-{n}"
+                n += 1
+            folder_plan = (src_dir, os.path.join(dst_comp_dir, dst_name), src_name, dst_name)
 
-        # reserve the destination slot
-        dest[dslot] = text
+        # W2-004/CORE-008: ONE composite before-state covering both owners —
+        # the source (standard snapshot keys) and the destination (captured
+        # per-category stores). Exactly one undo entry per transfer; the old
+        # duplicate generic snapshot and the unused _transfer_* fields are
+        # gone.
+        snap = self._snapshot_current()
+        snap["_transfer"] = True
+        snap["_transfer_dst_cat"] = target_cat
+        snap["_transfer_dst_before"] = self._capture_category_stores(target_cat)
+        # CORE-004: record the physical folder transaction so undo/redo can
+        # reverse it symmetrically with the store transaction. Stored in the
+        # REVERSED orientation (dst -> src): the snapshot is applied by UNDO,
+        # which reverses the transfer; the REDO entry inverts it back to
+        # forward (src -> dst).
+        snap["_transfer_folder"] = (
+            (folder_plan[1], folder_plan[0], folder_plan[3], folder_plan[2])
+            if folder_plan else None)
+
+        # The only fallible step runs FIRST, before any in-memory mutation:
+        # a failed physical move must leave text, mapping and files exactly
+        # as they were (no partial transfer, no orphaned folder).
+        if folder_plan is not None:
+            # CORE-004: a mapped source folder must actually exist on disk. If
+            # the mapping names a directory that is missing, refuse the whole
+            # transfer (fail closed) instead of committing a detached mapping
+            # while leaving the bytes behind.
+            if not os.path.isdir(folder_plan[0]):
+                from fastprompter.core.logging import logger
+                logger.warning("silo folder transfer refused: mapped source "
+                               "%s does not exist; nothing changed",
+                               folder_plan[0])
+                return False
+            try:
+                # CORE-004: the destination category's physical directory may
+                # not exist yet (a fresh category with no files); create it
+                # before the rename or the move fails with WinError 3.
+                os.makedirs(os.path.dirname(folder_plan[1]), exist_ok=True)
+                os.rename(folder_plan[0], folder_plan[1])
+            except OSError as e:
+                from fastprompter.core.logging import logger
+                logger.warning("silo folder transfer %s -> %s failed: %s; "
+                               "transfer refused, nothing changed",
+                               folder_plan[0], folder_plan[1], e)
+                return False
+
+        # CORE-005: reserve the destination slot ONLY now — after every
+        # preflight and the physical folder move have succeeded. A refused
+        # transfer (missing source dir, rename failure) returns above without
+        # ever touching `dest`, so capacity is preserved exactly.
+        if appending:
+            dest.append(text)
+        else:
+            dest[dslot] = text
 
         # move the silo's full identity across the per-category stores
-        self._move_silo_identity(cur_cat, idx, target_cat, dslot, is_archive)
+        self._move_silo_identity(cur_cat, idx, target_cat, dslot, is_archive, folder_plan)
 
         # empty the source row and drop its source-local positional membership
         src_presets[idx] = ""
@@ -11648,6 +12351,14 @@ class FastPrompter(
 
         if idx == self.active_temp_slot and not getattr(self, "editing_snippet", None):
             self.clear_text(internal=True)
+
+        # stamp the AFTER half into the same composite entry and push it as
+        # ONE logical undo record
+        snap["_transfer_dst_after"] = self._capture_category_stores(target_cat)
+        self._stamp_snapshot(snap)
+        self.data_undo_stack.append(snap)
+        self._push_undo_state(snap, "Transfer silo to project")
+
         self.mark_dirty()
         self.refresh_temp_presets()
         self.play_sound("snippet")
@@ -12094,7 +12805,7 @@ class FastPrompter(
         self._app_shortcuts.append(shortcut)
 
         add_shortcut("hk_save_snippet", "Ctrl+S", self.save_snippet)
-        add_shortcut("hk_new_snippet", "Ctrl+N", self.select_empty_silo, Qt.ShortcutContext.ApplicationShortcut)
+        add_shortcut("hk_new_snippet", "Ctrl+N", lambda: self.select_empty_silo(insertion="top"), Qt.ShortcutContext.ApplicationShortcut)
         add_shortcut("hk_divider", "Ctrl+W", self.insert_divider_line, Qt.ShortcutContext.ApplicationShortcut)
         add_shortcut("hk_snap", "Ctrl+Q", self.cycle_snap_corner)
         add_shortcut("hk_quit", "Ctrl+Alt+Shift+Q", self.quit_app)
@@ -12356,6 +13067,47 @@ class FastPrompter(
         on every keystroke; the body is deliberately empty."""
         return
 
+    def _schedule_visual_rebuild(self):
+        """PERF-001: coalesce text->visual rebuilds during a typing burst.
+
+        Single-shot 300 ms timer matching the visual->text coalescing
+        direction; only the newest pending document revision is rebuilt.
+        """
+        from PyQt6.QtCore import QTimer
+        t = getattr(self, "_visual_rebuild_timer", None)
+        if t is None or sip.isdeleted(t):
+            t = QTimer(self)
+            t.setSingleShot(True)
+            t.setInterval(300)
+            t.timeout.connect(self._flush_visual_rebuild)
+            self._visual_rebuild_timer = t
+        t.start()
+
+    def _flush_visual_rebuild(self):
+        """Rebuild the active visual widget from the CURRENT document text
+        only when it differs from what is already rendered (PERF-001).
+        Loop prevention via _syncing_from_visual stays intact."""
+        if getattr(self, "_syncing_from_visual", False):
+            return
+        try:
+            idx = self.silo_view.currentIndex()
+        except Exception:
+            return
+        if idx not in (1, 2):
+            self._rendered_visual_text = None
+            return
+        try:
+            text = self.text_area.toPlainText()
+        except Exception:
+            return
+        if text == getattr(self, "_rendered_visual_text", None):
+            return
+        if idx == 1:
+            self.kanban_widget.load_markdown(text)
+        else:
+            self.table_widget.load_markdown(text)
+        self._rendered_visual_text = text
+
     def _on_text_changed(self):
         # A save must never persist pre-edit text: _last_cached_text holds the
         # editor snapshot from the LAST cache tick, and a save between a text
@@ -12366,12 +13118,18 @@ class FastPrompter(
         self._last_cached_text = None
         self._last_text_edit_time = self._bump_action_seq()
         self._update_line_count_label()
+        # PERF-005: an edit can change heat/fold ownership -- invalidate the
+        # cached view metadata so the next capture rebuilds it once.
+        try:
+            self.text_area._invalidate_view_metadata()
+        except Exception:
+            pass
         if not getattr(self, "_syncing_from_visual", False):
-            idx = self.silo_view.currentIndex()
-            if idx == 1:
-                self.kanban_widget.load_markdown(self.text_area.toPlainText())
-            elif idx == 2:
-                self.table_widget.load_markdown(self.text_area.toPlainText())
+            # PERF-001: text->visual rebuilds are DEBOUNCED -- a typing
+            # burst parses/rebuilds the board/table once when the timer
+            # fires, not on every keystroke. The explicit entry into a
+            # visual view flushes synchronously in _apply_silo_type.
+            self._schedule_visual_rebuild()
 
         doc = self.text_area.document()
         count = doc.characterCount()
@@ -12749,15 +13507,41 @@ def _shutdown_application(window, app, lock):
 
     clean = True
 
-    # closeEvent performs the final state capture and the final DB commit
-    # while the writer mutex is held. It deliberately does NOT retire
-    # workers (P0-11): a plain window close must leave the resident process
-    # usable, and the single owner of worker retirement is THIS function.
+    # W2-011: every graceful event-loop exit must run the SAME canonical
+    # quiesce -> final-save finalization as quit_app(). The old code relied
+    # on window.close() as a post-loop "final state capture", but closeEvent
+    # only saves when _logical_finalized is False and silently swallows a
+    # refused/ignored close -- so a non-quit_app event-loop exit could bypass
+    # logical finalization and still retire writers/DB/locks as if clean.
+    try:
+        finalize = getattr(window, "_pre_quit_logical_finalize", None)
+        if finalize is not None:
+            finalized = finalize()
+        else:
+            # no canonical hook: attempt a direct save as a last resort
+            try:
+                finalized = bool(window.save_data_to_db(force=True))
+            except Exception:
+                finalized = False
+    except Exception:
+        _log.exception("application final state capture failed")
+        finalized = False
+    if not finalized:
+        # Refused: dirty state or an in-flight watcher result must NOT be
+        # torn down as a clean shutdown. Do not retire workers, do not close
+        # the DB, do not release the ownership lock -- the process ends via
+        # OS reaping, keeping the mutex fail-closed.
+        _log.error(
+            "application shutdown refused: logical finalization did not "
+            "complete; skipping writer/DB/lock retirement")
+        clean = False
+        return clean
+    # finalize succeeded: perform the window UI close (hide etc.) WITHOUT
+    # re-saving (closeEvent sees _logical_finalized True and skips the save).
     try:
         window.close()
     except Exception:
-        _log.exception("application final state capture failed")
-        clean = False
+        _log.exception("application window close failed")
 
     # Retire the window's own workers here and ONLY here, after the final
     # save: the Sync flush captures the newest committed snapshot, and the

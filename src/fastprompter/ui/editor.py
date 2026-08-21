@@ -449,6 +449,8 @@ class VaultTextEdit(QTextEdit):
         self.document().setUndoRedoEnabled(True)
         self._words_dirty = True
         self._aggregate_word_count = None
+        # PERF-005: the metadata cache belongs to the new document
+        self._invalidate_view_metadata()
         # Each silo is its own QTextDocument, so the heat hook has to follow
         # the swap — connecting once in __init__ only ever stamped the very
         # first document.
@@ -700,9 +702,28 @@ class VaultTextEdit(QTextEdit):
             painter.end()
 
     def _block_at_y(self, y):
-        """Which block is under this gutter y, or None past the last one."""
+        """Which block is under this gutter y, or None past the last one.
+
+        PERF-010: gutter drag fires on every pointermove, so the lookup
+        must NOT walk from doc.begin() through an arbitrary document prefix.
+        Qt's direct position lookup maps the viewport y to the block under
+        it in O(visible region); the visible-block walk below is only a
+        fallback."""
         doc = self.document()
-        block = doc.begin()
+        try:
+            cursor = self.cursorForPosition(QPoint(0, int(y)))
+            block = cursor.block()
+            if block.isValid() and block.isVisible():
+                # cursorForPosition CLAMPS an out-of-range y to the last
+                # block; verify the point is actually within this block's
+                # viewport band before accepting it (PERF-010 guardrail:
+                # a Y below the last line must still read as "no block").
+                rect = self.cursorRect(QTextCursor(block))
+                if rect.top() <= y <= rect.top() + max(1, rect.height()):
+                    return block
+        except Exception:
+            pass
+        block = doc.firstBlock()
         while block.isValid():
             if block.isVisible():
                 rect = self.cursorRect(QTextCursor(block))
@@ -766,13 +787,27 @@ class VaultTextEdit(QTextEdit):
                 new_mark = (mark + step) % 5
                 block.setUserState((state & ~0xFF) | new_mark)
                 self.line_number_area.update()
+                self._invalidate_view_metadata()
                 self.main_win.save_line_marks()
                 break
             block = block.next()
 
     # ---- margin marks: persistence ------------------------------------
+    def _invalidate_view_metadata(self):
+        """PERF-005: the cached view metadata is stale -- the next
+        collect_view_metadata rebuilds from scratch."""
+        self._view_metadata_cache = None
+        self._view_metadata_dirty = True
+
     def collect_view_metadata(self):
-        """Collect marks, heat and folded anchors in one pass for view-state persistence."""
+        """Collect marks, heat and folded anchors in one pass for view-state
+        persistence. PERF-005: the result is cached and invalidated only when
+        marks/folds/heat actually change, so a scroll-idle capture reuses the
+        cached data instead of walking the full document again."""
+        if not getattr(self, "_view_metadata_dirty", True):
+            cached = getattr(self, "_view_metadata_cache", None)
+            if cached is not None:
+                return cached
         import time as _t
         marks = {}
         heat = {}
@@ -805,7 +840,9 @@ class VaultTextEdit(QTextEdit):
                     folded.append(text)
                     
             block = block.next()
-            
+        
+        self._view_metadata_cache = (marks, heat, folded)
+        self._view_metadata_dirty = False
         return marks, heat, folded
 
     def apply_line_heat(self, heat):
@@ -961,6 +998,12 @@ class VaultTextEdit(QTextEdit):
         data = block_data(block, create=True)
         if data is not None:
             data.queue_id = item_id or ""
+        # PERF-004: populate the per-document anchor index so periodic
+        # watcher ticks do not repeatedly scan from doc.begin().
+        if not hasattr(self, "_queue_anchor_index"):
+            self._queue_anchor_index = {}
+        if item_id:
+            self._queue_anchor_index[item_id] = block
         return data
 
     def block_for_queue_item(self, item_id):
@@ -968,6 +1011,15 @@ class VaultTextEdit(QTextEdit):
         was deleted - which is what makes an item `detached`."""
         if not item_id:
             return None
+        # PERF-004: consult the index first; validate the cached block
+        idx = getattr(self, "_queue_anchor_index", None)
+        if idx is not None and item_id in idx:
+            block = idx[item_id]
+            if block.isValid() and block.blockNumber() >= 0:
+                data = block.userData()
+                if getattr(data, "queue_id", "") == item_id:
+                    return block
+            del idx[item_id]  # stale: remove from index
         doc = self.document()
         block = doc.begin()
         while block.isValid():
@@ -978,20 +1030,36 @@ class VaultTextEdit(QTextEdit):
         return None
 
     def blocks_for_queue_items(self, item_ids):
-        """Find the blocks for multiple queue items in one pass."""
+        """Find the blocks for multiple queue items in one pass.
+
+        PERF-004: consult the index first; fall back to a full scan only
+        for any remaining items the index did not resolve."""
         if not item_ids:
             return {}
         ids = set(item_ids)
         result = {}
+        idx = getattr(self, "_queue_anchor_index", None)
+        if idx is not None:
+            for item_id in list(ids):
+                block = idx.get(item_id)
+                if block is not None and block.isValid() and block.blockNumber() >= 0:
+                    data = block.userData()
+                    if getattr(data, "queue_id", "") == item_id:
+                        result[item_id] = block
+                        ids.discard(item_id)
+                        continue
+                if item_id in idx:
+                    del idx[item_id]  # stale
+            if not ids:
+                return result
         doc = self.document()
         block = doc.begin()
-        while block.isValid():
+        while block.isValid() and ids:
             data = block.userData()
             qid = getattr(data, "queue_id", "")
             if qid in ids:
                 result[qid] = block
-                if len(result) == len(ids):
-                    break
+                ids.discard(qid)
             block = block.next()
         return result
 
@@ -1000,6 +1068,11 @@ class VaultTextEdit(QTextEdit):
         block = self.block_for_queue_item(item_id)
         if block is None:
             return False
+        # PERF-004: remove from the index; a sent anchor is no longer
+        # needed by the periodic watcher scans.
+        idx = getattr(self, "_queue_anchor_index", None)
+        if idx is not None:
+            idx.pop(item_id, None)
         state = max(0, block.userState())
         block.setUserState((state | SENT_BIT) & ~QUEUED_BIT)
         self.line_number_area.update()
@@ -1229,6 +1302,7 @@ class VaultTextEdit(QTextEdit):
                 break
             b = b.next()
         anchor.setUserState(state | self.FOLD_BIT if collapse else state & ~self.FOLD_BIT)
+        self._invalidate_view_metadata()
         # Store hidden line count on the anchor block for the gutter badge
         data = block_data(anchor, create=True)
         if data is not None:
@@ -2025,8 +2099,9 @@ class VaultTextEdit(QTextEdit):
         if not url.isLocalFile():
             return QDesktopServices.openUrl(url)
 
-        from fastprompter.core.i18n import tr
         from PyQt6.QtWidgets import QMessageBox
+
+        from fastprompter.core.i18n import tr
 
         path = url.toLocalFile()
         msg = tr("This link points to a file on your computer:\n\n{}\n\n"
@@ -2136,7 +2211,8 @@ class VaultTextEdit(QTextEdit):
         mw = getattr(self, "main_win", None)
         if mw is not None:
             mw.capture_silo_state()
-            mw.mark_dirty()
+            # PERF-002: scroll-idle capture is view metadata (settings)
+            mw.mark_dirty("settings")
 
     def rehover_from_pointer(self, point=None):
         """Re-derive the hovered line without the mouse having moved.
@@ -3010,7 +3086,7 @@ class VaultTextEdit(QTextEdit):
                 if hasattr(mw, "_smart_undo"): mw._smart_undo()
                 event.accept(); return
             if matches("hk_new_snippet", "Ctrl+N"):
-                mw.select_empty_silo(); event.accept(); return
+                mw.select_empty_silo(insertion="top"); event.accept(); return
             if matches("hk_save_snippet", "Ctrl+S"):
                 mw.save_snippet(); event.accept(); return
             if matches("hk_export_silo", "Ctrl+Shift+S"):

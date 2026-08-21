@@ -131,9 +131,39 @@ def _mute_sound():
 
         sound_manager.QSoundEffect = _SilentEffect
 
+    # SoundManager._play_winsound
+    import winsound as _winsound_mod
+    _real_winsound_play = _winsound_mod.PlaySound
+
+    def _silent_device_ws(src, flags):
+        played.append(("device_ws", os.path.basename(str(src))))
+        return 1
+
+    _winsound_mod.PlaySound = _silent_device_ws
+
+    # ... and the real QSoundEffect.play at the Qt level, so even a direct
+    # import of PyQt6.QtMultimedia.QSoundEffect never reaches the device.
+    try:
+        from PyQt6.QtMultimedia import QSoundEffect as _real_qse_cls
+        _real_qse_play = _real_qse_cls.play
+
+        def _silent_device_qse(self):
+            played.append(("device_qse", str(self.source())))
+            return
+
+        _real_qse_cls.play = _silent_device_qse
+    except Exception:
+        pass
+
     try:
         yield played
     finally:
         sound_manager.SoundManager._play_winsound = real_winsound
         if real_effect is not None:
             sound_manager.QSoundEffect = real_effect
+        _winsound_mod.PlaySound = _real_winsound_play
+        try:
+            from PyQt6.QtMultimedia import QSoundEffect as _restore_qse
+            _restore_qse.play = _real_qse_play
+        except Exception:
+            pass

@@ -178,6 +178,61 @@ _STRING_LIST_KEYS = ("cats_order", "hidden_categories")
 # valid non-negative int.
 _INT_LIST_KEYS = ("silo_gaps", "pinned_silos", "silo_ticked", "silo_collapsed")
 
+# Natural per-category VALUE type of every dict-valued *_all store. A
+# syntactically valid outer dict is not enough: each category member must
+# itself carry the store's natural type before bind_active_category can
+# safely alias it. List-backed stores are listed here with their member
+# contract; everything else is dict-backed.
+_PER_CATEGORY_VALUE_TYPES = {
+    "temp_presets_all": (list, "str"),
+    "archive_temp_presets_all": (list, "str"),
+    "pinned_silos_all": (list, "int"),
+    "silo_ticked_all": (list, "int"),
+    "silo_collapsed_all": (list, "int"),
+    "silo_gaps_all": (list, "int"),
+    "silo_children_all": (dict, None),
+    "silo_colors_all": (dict, None),
+    "silo_gap_names_all": (dict, None),
+    "silo_folders_all": (dict, None),
+    "archive_silo_folders_all": (dict, None),
+    "silo_project_paths_all": (dict, None),
+    "archive_project_paths_all": (dict, None),
+    "watcher_queues_all": (dict, None),
+    "silo_type_all": (dict, None),
+    "silo_session_all": (dict, None),
+    "silo_view_state_all": (dict, None),
+    "silo_last_edited_all": (dict, None),
+}
+
+
+def _normalize_per_category_store(key, parsed, default):
+    """Nested per-category normalization for dict-valued ``*_all`` stores.
+
+    Every category member is validated against that store's natural
+    per-category value type (list-backed stores get lists with their member
+    contract, dict-backed stores get dicts); malformed members are dropped
+    instead of crossing recovery as trusted-but-wrong-typed state. The outer
+    container itself is left untouched, so intentionally heterogeneous stores
+    keep their structure.
+    """
+    contract = _PER_CATEGORY_VALUE_TYPES.get(key)
+    if contract is None or not isinstance(parsed, dict):
+        return parsed
+    value_type, member_type = contract
+    cleaned = {}
+    for cat, value in parsed.items():
+        if not isinstance(value, value_type):
+            logger.warning("per-category store %r carries a %s value for "
+                           "category %r; dropping the member",
+                           key, type(value).__name__, cat)
+            continue
+        if value_type == "list" and member_type == "str":
+            value = [m for m in value if isinstance(m, str)]
+        elif value_type == "list" and member_type == "int":
+            value = [m for m in value if isinstance(m, int) and m >= 0]
+        cleaned[cat] = value
+    return cleaned
+
 
 def _normalize_structured_list(key, parsed, default):
     """Keep only members that match the setting's established element contract.
@@ -226,11 +281,11 @@ def _decode_structured_setting(key, raw, expected, default, legacy_ast):
         try:
             val = ast.literal_eval(raw)
             if isinstance(val, expected):
-                return _normalize_structured_list(key, val, default)
+                return _normalize_decoded(key, val, default)
         except Exception:
             pass
     elif parsed is not None and isinstance(parsed, expected):
-        return _normalize_structured_list(key, parsed, default)
+        return _normalize_decoded(key, parsed, default)
     if parsed is not None:
         logger.warning("structured setting %r is valid JSON of the wrong "
                        "top-level type (%s); adopting the correct default",
@@ -241,13 +296,22 @@ def _decode_structured_setting(key, raw, expected, default, legacy_ast):
     return copy.deepcopy(default)
 
 
+def _normalize_decoded(key, parsed, default):
+    """Member + nested per-category normalization for a decoded setting."""
+    return _normalize_per_category_store(
+        key, _normalize_structured_list(key, parsed, default), default)
+
+
 def bind_active_category(data, category):
     """Bind every flat alias to `category`'s entry in its _all store.
 
     Mutates ``data`` in place and returns it. A missing per-category entry is
     created with the store's natural empty value (a fresh deep copy, so two
     categories can never share one list). A corrupted non-dict _all store is
-    replaced rather than raising, mirroring the old str(dict)-guard.
+    replaced rather than raising, mirroring the old str(dict)-guard. A
+    malformed per-category VALUE (wrong natural type, or a list store whose
+    members violate the member contract) is normalized to the store's natural
+    empty value instead of being bound as a wrong-typed alias (CORE-003).
     """
     for flat, all_key in _PER_CATEGORY_ALIASES:
         store = data.get(all_key)
@@ -256,6 +320,26 @@ def bind_active_category(data, category):
             data[all_key] = store
         if category not in store:
             store[category] = copy.deepcopy(_ALIAS_EMPTY.get(flat, {}))
+        else:
+            natural = _ALIAS_EMPTY.get(flat, {})
+            contract = _PER_CATEGORY_VALUE_TYPES.get(all_key)
+            value = store[category]
+            if contract is not None:
+                value_type, member_type = contract
+                if isinstance(value, value_type):
+                    if value_type == "list" and member_type == "str":
+                        value = [m for m in value if isinstance(m, str)]
+                    elif value_type == "list" and member_type == "int":
+                        value = [m for m in value if isinstance(m, int) and m >= 0]
+                else:
+                    value = None
+                if value is None:
+                    logger.warning("per-category store %r carries a %s value "
+                                   "for category %r; binding the natural "
+                                   "empty value instead",
+                                   all_key, type(store[category]).__name__, category)
+                    value = copy.deepcopy(natural)
+                store[category] = value
         data[flat] = store[category]
     return data
 
@@ -1095,7 +1179,14 @@ class FastPrompterState:
 
             for row in cur.execute('SELECT category, slot, name, content, last_edited FROM presets'):
                 cat, slot, name, content, last_edited = row
-                if cat in self.data["categories"] and 0 <= slot < 100:
+                # CORE-004: a persisted snippet category is authoritative for
+                # its own rows even when it is missing from cats_order (the
+                # ordering metadata is not existence authority). Create a
+                # backing category; visibility/order stay governed by
+                # cats_order, so recovery never silently re-orders projects.
+                if cat not in self.data["categories"]:
+                    self.data["categories"][cat] = [None]*100
+                if 0 <= slot < 100:
                     self.data["categories"][cat][slot] = {"name": name, "text": content, "last_edited": last_edited or 0}
 
             temps = {cat: [""]*10 for cat in self.data["cats_order"]}
@@ -1265,7 +1356,18 @@ class FastPrompterState:
         to_insert_presets = set()
         to_delete_presets = set()
         if scan_snippets:
-            current_presets = {(cat, i, item["name"], item["text"], item.get("last_edited", 0)) for cat, slots in self.data["categories"].items() for i, item in enumerate(slots) if item}
+            # W2-002: the persisted snippet model is exactly 100 slots (0..99).
+            # An out-of-range in-memory entry (which a refused mutation must
+            # never create, but which is defended here regardless) is NOT
+            # reported as durable -- the loader drops slot 100+ on read, so the
+            # saver must never write it either, or restart would silently
+            # discard the row.
+            current_presets = {
+                (cat, i, item["name"], item["text"], item.get("last_edited", 0))
+                for cat, slots in self.data["categories"].items()
+                for i, item in enumerate(slots)
+                if item and 0 <= i < 100
+            }
             to_insert_presets = current_presets - self._last_saved_presets
             old_preset_keys = {(tup[0], tup[1]) for tup in self._last_saved_presets}
             new_preset_keys = {(tup[0], tup[1]) for tup in current_presets}

@@ -87,11 +87,9 @@ def _bind(fake):
     fake._cancel_timer_test_jobs = \
         main_mod.FastPrompter._cancel_timer_test_jobs.__get__(fake)
     fake._snooze_timer = main_mod.FastPrompter._snooze_timer.__get__(fake)
-    orig = SoundManager.play_sound_ref
-
     def spy(ref, level):
         fake._sound_calls.append((ref, level))
-        return orig(fake.sound_manager, ref, level)
+        return True
 
     fake.sound_manager.play_sound_ref = spy
     return fake

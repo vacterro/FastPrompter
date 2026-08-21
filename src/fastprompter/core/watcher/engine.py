@@ -24,12 +24,14 @@ STATES = (DISARMED, ARMED, WATCHING, SENDING)
 class SendIntent:
     """What the sender is being asked to do. Not a promise that it worked."""
 
-    __slots__ = ("item_id", "text", "queue_key", "skill", "at")
+    __slots__ = ("item_id", "text", "queue_key", "queue_category", "skill", "at")
 
-    def __init__(self, item_id, text, queue_key, skill="", at=0.0):
+    def __init__(self, item_id, text, queue_key, skill="", at=0.0,
+                 queue_category=""):
         self.item_id = item_id
         self.text = text
         self.queue_key = queue_key
+        self.queue_category = queue_category
         self.skill = skill
         self.at = at
 
@@ -50,6 +52,7 @@ class Engine:
         self.state = DISARMED
         self.target = None
         self.queue_key = None       # pinned at arm; see arm()
+        self.queue_category = ""    # the project the pinned queue belongs to
         self.skill_format = "/{skill} {text}"
         self.probes = []
         self.reason = ""
@@ -64,17 +67,22 @@ class Engine:
 
     # ---- arming -------------------------------------------------------
     def arm(self, target, queue_key, probes, skill_format="/{skill} {text}",
-            now=0.0):
+             now=0.0, queue_category=""):
         """Bind to one target and ONE queue.
 
-        The queue key is pinned here on purpose. If the draining queue
-        followed whatever silo happened to be open, switching silos while
-        armed would start feeding a different backlog into a live agent.
+        The queue key and its owning CATEGORY are pinned here on purpose. If
+        the draining queue followed whatever silo happened to be open,
+        switching silos (or projects) while armed would start feeding a
+        different backlog into a live agent (CORE-002). ``queue_category`` is
+        the project that owns ``queue_key``; it travels with the intent so a
+        late/stale success can be applied to the correct owner even after the
+        UI has switched away.
         """
         if not target:
             return self._disarm("no target to arm")
         self.target = target
         self.queue_key = queue_key
+        self.queue_category = queue_category
         self.probes = list(probes or [])
         self.skill_format = skill_format
         self.state = ARMED
@@ -116,12 +124,19 @@ class Engine:
         return self.state != DISARMED
 
     # ---- the tick -----------------------------------------------------
-    def tick(self, now, queue, blocked=False, target_ok=True):
+    def tick(self, now, queue, blocked=False, target_ok=True,
+             idle=None, reasons=None):
         """Advance, and return a SendIntent when one is due.
 
         `blocked` is the adapter's blocker_pattern having matched - a
         permission prompt, say. It forces busy no matter what the probes
         think, because that silence is the worst moment to interrupt.
+
+        PERF-003: ``idle``/``reasons`` are the PRE-SAMPLED probe verdict,
+        produced OFF the GUI thread (the mixin's probe worker). When they are
+        None the engine falls back to sampling the probes synchronously — the
+        direct, Qt-free engine tests keep working, and nothing that calls
+        ``tick`` off the mixin path is forced onto a worker.
         """
         if self.state == DISARMED:
             return None
@@ -147,7 +162,10 @@ class Engine:
         baseline = self._ticks == 0
         self._ticks += 1
 
-        idle, reasons = combine(self.probes, now)
+        if idle is None:
+            idle, reasons = combine(self.probes, now)
+        else:
+            reasons = list(reasons or [])
         if blocked:
             idle = False
             reasons = list(reasons) + ["blocked by the adapter"]
@@ -205,7 +223,7 @@ class Engine:
             return None
 
         self.pending = SendIntent(item.id, text, self.queue_key,
-                                  item.skill, now)
+                                  item.skill, now, self.queue_category)
         self.state = SENDING
         self.reason = "sending"
         return self.pending

@@ -35,6 +35,15 @@ from fastprompter.utils.paths import get_portable_backup_dir, profile_files_root
 last_success_by_profile: dict = {}
 _BACKUP_THROTTLE = 120  # seconds between backups (per profile)
 
+# PERF-008: per-profile backup-request state used to coalesce BEFORE the
+# expensive deep copy in capture_snapshot(). `_backup_active` marks a
+# profile that already has a pending/in-flight request; while it is set,
+# run_portable_backup() records a newer state is wanted and returns WITHOUT
+# deep-copying. The completion hook (backup_finished) then clears the
+# throttle so the newest state is exported on the next eligible run.
+_backup_active: set = set()
+_backup_newer_wanted: set = set()
+
 _COMPLETE_MARKER = "_COMPLETE"
 
 # The app installs a Qt-backed ASYNC dispatcher here; without one the backup
@@ -48,6 +57,12 @@ def set_backup_sink(sink):
     back to synchronous). The sink is called with an immutable snapshot."""
     global _backup_sink
     _backup_sink = sink
+    if sink is None:
+        # PERF-008: returning to synchronous mode retires any outstanding
+        # coalescing markers (a request left 'active' by an async sink that
+        # never completed must not suppress the next run).
+        _backup_active.clear()
+        _backup_newer_wanted.clear()
 
 
 def capture_snapshot(data, profile_id=1):
@@ -98,11 +113,25 @@ def run_portable_backup(data: dict, profile_id=1) -> None:
     With an installed async sink, the immutable snapshot (carrying
     ``profile_id``) is dispatched to the worker, which owns throttle
     advancement on success; otherwise the synchronous path below runs.
+
+    PERF-008: the expensive ``capture_snapshot`` deep copy is COALESCED.
+    While a request for this profile is already active (pending or in
+    flight), repeated eligible saves only record that a newer state is
+    wanted -- they never deep-copy the full data universe just to replace
+    a pending snapshot. ``backup_finished`` clears the throttle for a
+    wanted-newer profile so the newest state is exported on the next run.
     """
     pid = int(profile_id or 1)
     now = time.time()
     if now - last_success_by_profile.get(pid, 0.0) < _BACKUP_THROTTLE:
         return
+
+    if pid in _backup_active:
+        # a request for this profile is already pending/in-flight; just
+        # record that a newer state is desired — no deep copy here
+        _backup_newer_wanted.add(pid)
+        return
+    _backup_active.add(pid)
 
     snapshot = capture_snapshot(data, profile_id=pid)
     if _backup_sink is not None:
@@ -110,6 +139,7 @@ def run_portable_backup(data: dict, profile_id=1) -> None:
             _backup_sink(snapshot)
         except Exception:
             logger.exception("portable backup dispatch failed")
+            _backup_active.discard(pid)
         return
 
     try:
@@ -121,9 +151,31 @@ def run_portable_backup(data: dict, profile_id=1) -> None:
         # retry.
         logger.exception("portable backup FAILED; the previous good snapshot "
                          "is kept and the next save may retry")
+        _backup_active.discard(pid)
         return
 
     last_success_by_profile[pid] = now
+    _backup_active.discard(pid)
+    _finish_newer_wanted(pid)
+
+
+def _finish_newer_wanted(pid):
+    """A completed synchronous backup: if a newer state was requested while
+    it ran, clear the throttle so the very next eligible save captures and
+    exports the newest state immediately."""
+    if pid in _backup_newer_wanted:
+        _backup_newer_wanted.discard(pid)
+        last_success_by_profile.pop(pid, None)
+
+
+def backup_finished(profile_id=1):
+    """Called by the async worker on completion of a snapshot. Retires the
+    active marker for the profile and, when a newer state was requested
+    while it ran, clears the throttle so the next eligible save re-exports
+    the newest data (PERF-008)."""
+    pid = int(profile_id or 1)
+    _backup_active.discard(pid)
+    _finish_newer_wanted(pid)
 
 
 def _safe_name(name: str) -> str:
@@ -170,6 +222,22 @@ def _do_export(data: dict, profile_id=1) -> None:
     date_str = time.strftime("%Y-%m-%d")
     day_dir = os.path.join(backup_dir, date_str)
     tmp_dir = day_dir + ".partial"
+    # W2-009: if a prior build at this .partial path holds a COMPLETE
+    # generation (left behind by a double-failure publish, intentionally
+    # preserved for manual recovery), do NOT destroy it. Rename it to a
+    # unique recovered sibling first so the next export can run safely
+    # without deleting the last known-good candidate.
+    if os.path.isdir(tmp_dir) and _has_complete_marker(tmp_dir):
+        recovered = f"{day_dir}.recovered-{_gen_suffix()}"
+        try:
+            os.rename(tmp_dir, recovered)
+        except OSError:
+            # cannot even preserve it: do NOT then rmtree it away
+            logger.error(
+                "portable backup: COMPLETE recovery generation at %s could "
+                "not be preserved; aborting new export rather than destroy it",
+                tmp_dir)
+            raise
     shutil.rmtree(tmp_dir, ignore_errors=True)
 
     cats = data.get("cats_order", []) or []
@@ -214,11 +282,17 @@ def _do_export(data: dict, profile_id=1) -> None:
                     _write_md(os.path.join(out_dir, fname), text,
                               f"{cat} · Archive Silo {i+1}")
 
-        # 3. Snippets (by category) — one distinct file per project
+        # 3. Snippets (by category) — one distinct file per project.
+        # W2-008: iterate the AUTHORITATIVE category keys, not only
+        # cats_order. DB recovery deliberately preserves categories that are
+        # missing from cats_order, so an orphan ("Visible" + "Orphan" both
+        # populated) must still be exported and included in the manifest.
         if cats and categories:
             snips_dir = os.path.join(tmp_dir, "snippets")
             os.makedirs(snips_dir, exist_ok=True)
-            for cat in cats:
+            for cat in categories:
+                if not isinstance(cat, str):
+                    continue
                 slots = categories.get(cat, []) or []
                 cat_snippets = [(i, s) for i, s in enumerate(slots)
                                 if s and s.get("text", "").strip()]
@@ -349,6 +423,18 @@ def _gen_suffix():
     return uuid.uuid4().hex[:8]
 
 
+def _has_complete_marker(directory: str) -> bool:
+    """True when `directory` carries the immutable COMPLETE marker left by a
+    finished snapshot build.
+
+    Used by the next export to recognise a recovery generation that must be
+    preserved, never blindly removed (W2-009)."""
+    try:
+        return os.path.isfile(os.path.join(directory, _COMPLETE_MARKER))
+    except OSError:
+        return False
+
+
 def _write_manifest(tmp_dir, data, cats, categories):
     meta_path = os.path.join(tmp_dir, "_meta.json")
     _write_raw(meta_path, json.dumps({
@@ -362,8 +448,10 @@ def _write_manifest(tmp_dir, data, cats, categories):
             1 for slots in _per_project(data, "archive_temp_presets").values()
             for p in slots if p and p.strip()),
         "snippet_count": sum(
-            1 for cat in cats
-            for s in (categories.get(cat, []) or [])
+            # W2-008: count every category actually exported above, not
+            # only the cats_order subset.
+            1 for cat, slots in categories.items()
+            for s in (slots or [])
             if s and s.get("text", "").strip())
     }, indent=2))
 

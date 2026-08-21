@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.8.43 - 2026-08-21
+
+- **Watcher (Core audit):** Fixed a TypeError that made every arm attempt unusable; the queue an armed run drains is now pinned to its (category, slot) owner, so project switching can no longer feed a different silo's backlog; physical sends are tracked per dispatch so a stale completion can never clear the quiesce barrier early.
+- **File Container (Core audit):** ZIP export now resolves real paths before writing, so a symlink/junction inside the container cannot smuggle data from outside; archive trim is transactional and rolls back cleanly on failure.
+- **Silo transfers:** Physical folder moves are now part of the undo/redo transaction (Ctrl+Z restores bytes and mappings together); a mapped-but-missing source folder refuses the transfer instead of committing a detached mapping; destination slots are reserved only after all preflight and the physical move succeed; free-slot checks and identity movement use one canonical store set.
+- **Snippets (Second-Wave audit):** The live editor owner is remapped across reorder/move/rename/swap/conversion, so saves can no longer overwrite a neighbour; the 100-slot snippet capacity is one invariant across mutations, Trash restore and the saver; snippet deletion no longer touches silo attachment folders; silo-to-snippet conversion refuses when the source owns a real File Container folder.
+- **Performance:** Text-to-Kanban/Table rebuilds are debounced (one rebuild per settled typing burst); settings-only autosaves no longer scan snippets/silos; watcher probes (glob/stat/SQLite) run on a worker thread, never in the GUI timer callback; queue-anchor and view-metadata lookups are cached; silo-switch undo records are compact navigation entries; thumbnail scheduling and gutter drag hit-testing scale with the visible region; portable backup coalesces before deep-copying; Sync RAM registries are pruned to current destinations.
+- **Watcher probe worker:** probe sampling moved to its own thread (`_WatcherProbeWorker`), keeping tens-of-milliseconds file/database I/O out of GUI timer callbacks while preserving conservative BUSY semantics.
+
 ## v0.8.42 - 2026-08-20
 
 - **i18n:** Updated UI translations for 10 missing keys (export overwrite, all day calendar, gap name) across all supported locales.
