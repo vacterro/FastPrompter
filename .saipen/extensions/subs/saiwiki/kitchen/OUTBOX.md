@@ -1,7 +1,7 @@
 ﻿# OUTBOX
 
 ## WIKI-005: v0.8.43–v0.8.46 audit-hardening docs + User-Guide absorb (22.08.26)
-- **status:** ready
+- **status:** reviewed
 - **critical:** false
 - **summary:** FORCE-FRESH re-cut of the 16-page wiki against HEAD 440b6dbfa29a39c760076d9e52acd5701419c30f (v0.8.46). 3 pages updated for the T-1019..T-1025 audit waves: Architecture-Overview (queue ownership pinned to category/slot, per-dispatch send tokens, `_WatcherProbeWorker`; immutable-snapshot backup coalescing + bounded probe negative cache), Watcher-Engine-Architecture (v0.8.43 safety-guards subsection), Core-API-and-Classes (new `portable_backup` API + loader overflow recovery section). User-Guide absorbed from `docs/wiki` (the v0.8.x freshness-policy edition was ahead of kitchen). 12 other pages byte-identical to `docs/wiki`. Module counts unchanged (core 19 / ui 46 / utils 5 / total 121).
 - **producer:** saiwiki
@@ -12,7 +12,7 @@
 - **payload:** 3 files prepared in `kitchen/` (Architecture-Overview.md, Core-API-and-Classes.md, Watcher-Engine-Architecture.md); applied to `docs/wiki/` only by an explicit `qqq` collect. User-Guide is identical to docs/wiki and is not part of the payload.
 - **verified:** payload 3 pages; module counts re-counted vs `src/fastprompter/` (19/46/5/121 — matches); fingerprint `62c72580` is the empty working-tree delta (no uncommitted non-`.saipen` change); kitchen vs docs/wiki = 13 SAME + 3 DIFF (the payload). `validate.py` rerun not required (docs-only, no schema change).
 - **instructions:** `qqq` → verify freshness (source_head 440b6dbfa29a39c760076d9e52acd5701419c30f, fingerprint 62c72580, role_revision 54a42475 == current) → apply the 3 payload files to `docs/wiki/` → re-diff kitchen vs docs/wiki (expect 16/16 identical) → claim ticket (T-800/T-803 doc-drift cluster follow-up), mark OUTBOX reviewed, checkpoint.
-- **details:** Source of truth = `CHANGELOG.md` v0.8.43–v0.8.46. Absorbed the pre-existing User-Guide divergence (docs/wiki carried a newer v0.8.x freshness-policy edition that was never absorbed into kitchen after WIKI-004). Documented: v0.8.43 queue-ownership pinning + per-dispatch send tokens + probe worker; v0.8.43–45 immutable-snapshot backup coalescing (PERF-008 / CORE-002 / CORE-003) + bounded probe negative cache (PERF-004); v0.8.46 loader overflow recovery (out-of-range snippet row migrated to first free 0..99 slot, `DatabaseOverflowError` only when full; silo/archive remain fail-closed). Zero main-tree or wiki-remote writes.
+- **details:** Source of truth = `CHANGELOG.md` v0.8.43–v0.8.46. Absorbed the pre-existing User-Guide divergence (docs/wiki carried a newer v0.8.x freshness-policy edition that was never absorbed into kitchen after WIKI-004). Documented: v0.8.43 queue-ownership pinning + per-dispatch send tokens + probe worker; v0.8.43–45 immutable-snapshot backup coalescing (PERF-008 / CORE-002 / CORE-003) + bounded probe negative cache (PERF-004); v0.8.46 loader overflow recovery (out-of-range snippet row migrated to first free 0..99 slot, `DatabaseOverflowError` only when full; silo/archive remain fail-closed). Zero main-tree writes. Collected by main agent (qqq): 3-page payload applied to docs/wiki and committed locally as `1b7862e` (ahead of origin/main by 1). The `git push` is BLOCKED in this non-interactive environment by the GCM `helper-selector` credential helper (no interactive auth) — run `git push origin main` from a normal terminal to complete the remote sync.
 
 ## WIKI-004: Performance optimization audit (20.08.26) — domains, words, i18n
 - **status:** reviewed

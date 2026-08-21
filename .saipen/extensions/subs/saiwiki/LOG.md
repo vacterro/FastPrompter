@@ -26,3 +26,4 @@
 
 - 2026-08-20T08:28:17+03:00 [E-9000] [parent: E-8999] RUN: prepare saiwiki -> done
 - 22.08.26 01:40 [E-9001] [parent: E-9000] [WIKI-005] [agent: saiwiki] RUN: prepare (qq) -- FORCE-FRESH re-cut vs HEAD 440b6dbfa29a39c760076d9e52acd5701419c30f (v0.8.46); User-Guide absorbed from docs/wiki (v0.8.x freshness-policy edition was ahead of kitchen); 3 pages updated for T-1019..T-1025 audit waves (Architecture-Overview, Core-API, Watcher-Engine); fingerprint 62c72580 (empty working-tree delta). OUTBOX ready 3-file payload. Zero source modified.
+- 22.08.26 01:51 [E-9002] [parent: E-9001] [WIKI-005] [agent: main] RUN: collected by main agent (qqq) -- 3-page payload applied to docs/wiki/, re-diff 16/16 identical; committed locally 1b7862e (ahead of origin/main by 1). PUSH BLOCKED: GCM `helper-selector` credential helper requires interactive auth unavailable in non-interactive shell; remote sync pending `git push origin main`. OUTBOX marked reviewed.

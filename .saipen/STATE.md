@@ -13,9 +13,9 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 795
+last_event: 796
 style_contract: ded-4ae736e4
-updated: "2026-08-21T22:40:04Z"
+updated: "2026-08-21T22:51:08Z"
 transition_from: SHIP
 execution_intent: normal
 ---
