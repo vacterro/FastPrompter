@@ -139,6 +139,18 @@ On `arm(target, queue_key)`, key is pinned. Switches project/silo mid-session �
   are cleared only after the thread actually stopped — a slow worker never
   outlives the app process (v0.8.36/37).
 
+### Safety Guards — v0.8.43 audit hardening (T-1019)
+
+- **Queue ownership is pinned to `(category, slot)`.** The backlog an armed run
+  drains belongs to the silo that armed it; switching projects or silos mid-run
+  can no longer inject a different silo's items into the active drain.
+- **Physical sends are tracked per dispatch.** Each injection carries its own
+  completion token, so a slow send that finishes after the queue has moved on is
+  dropped as stale and can never clear the quiesce barrier prematurely.
+- **Probe sampling is off the GUI thread.** Glob/stat/SQLite probing runs on
+  `_WatcherProbeWorker`, keeping file and database I/O out of the GUI timer
+  callback; BUSY semantics stay conservative.
+
 ---
 
 ## 6. Skill System (`skills.py`)

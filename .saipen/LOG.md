@@ -12,3 +12,4 @@
 - 21.08.26 21:30 [E-792] [parent: E-791] [T-1024] RUN: ship complete -> v0.8.45 pushed + tagged, T-1024 DONE, STATE DONE
 - 22.08.26 01:20 [E-793] [parent: E-792] [T-1025] RUN: ship v0.8.46 -> pushed
 - 22.08.26 01:20 [E-794] [parent: E-793] [T-1025] RUN: ship complete -> v0.8.46 pushed + tagged, T-1025 DONE, STATE DONE
+- 22.08.26 01:40 [E-795] [parent: E-794] RUN: prepare saiwiki -> done -- v0.8.43..v0.8.46 audit-hardening docs + User-Guide absorb; 3-page payload (Architecture-Overview, Core-API, Watcher-Engine), 13/16 byte-identical; OUTBOX WIKI-005 ready source_head 440b6dbfa29a39c760076d9e52acd5701419c30f.

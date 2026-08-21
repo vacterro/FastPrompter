@@ -25,3 +25,4 @@
 - 14.08.26 08:06 [E-030] [parent: E-029] [T-028] [agent: saiwiki] RUN: collected by main agent -> T-797 (qqq) -- 5-file payload applied to docs/wiki/, pushed 6bf25c1, OUTBOX WIKI-002 marked reviewed.
 
 - 2026-08-20T08:28:17+03:00 [E-9000] [parent: E-8999] RUN: prepare saiwiki -> done
+- 22.08.26 01:40 [E-9001] [parent: E-9000] [WIKI-005] [agent: saiwiki] RUN: prepare (qq) -- FORCE-FRESH re-cut vs HEAD 440b6dbfa29a39c760076d9e52acd5701419c30f (v0.8.46); User-Guide absorbed from docs/wiki (v0.8.x freshness-policy edition was ahead of kitchen); 3 pages updated for T-1019..T-1025 audit waves (Architecture-Overview, Core-API, Watcher-Engine); fingerprint 62c72580 (empty working-tree delta). OUTBOX ready 3-file payload. Zero source modified.

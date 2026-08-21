@@ -162,6 +162,23 @@ Ctrl+E header insertion. Configurable: rule line, gap, bullet, alignment, timest
 
 ---
 
+## Portable Backup (`utils/portable_backup.py`)
+
+Immutable-snapshot Markdown export with coalescing (v0.8.43–v0.8.45 audit hardening).
+
+- `capture_snapshot(data, profile_id=1)` — deep-copy a committed state dict for export
+- `run_portable_backup(data, profile_id=1)` — synchronous or async (sink) capture; coalesces when a job is already active for the profile
+- `backup_finished(profile_id=1)` — async worker completion hook; retires the active marker and dispatches the newest pending snapshot when one was requested (CORE-003)
+- Coalescing rule (PERF-008 / CORE-002 / CORE-003): the immutable snapshot is taken at request time, not from the live dict, and a profile already mid-backup only records that a newer state is wanted — the newest state ships on the next eligible run.
+
+## Loader Overflow Recovery (`core/state.py`)
+
+- Snippet slots are pure array indexes (0..99). A row written by a buggy saver at slot ≥100 is migrated transactionally into the first free 0..99 slot, preserving its data without aliasing a distinct snippet (v0.8.46, T-1025).
+- `DatabaseOverflowError` is raised only when the category is genuinely full (placement would require merging).
+- Silo and archive tables keep the hard fail-closed behaviour — their slots carry identity (folders, queues, colours) that a blind move would orphan.
+
+---
+
 ## UI Components (`src/fastprompter/ui/`)
 
 ### `FastPrompter` (`main.py`)

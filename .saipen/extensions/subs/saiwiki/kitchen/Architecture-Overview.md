@@ -93,6 +93,8 @@ Up to 100 silos per project tab. Features:
 
 Prompt drainage + target automation. Finite state machine: DISARMED → ARMED → WATCHING → SENDING. Chrome CDP (Electron apps) + Win32 window probes. Queue pinning per target. Rate limits: settle_ms=2500, min_gap_ms=4000, max_sends=25, max_failures=3.
 
+**v0.8.43 audit hardening (T-1019):** the queue an armed run drains is now pinned to its owning `(category, slot)`, so a project/silo switch mid-session can no longer feed a different silo's backlog. Physical sends are tracked per dispatch, so a stale (slow) completion can't clear the quiesce barrier early. Glob/stat/SQLite probe sampling runs on a dedicated worker thread (`_WatcherProbeWorker`), keeping tens-of-milliseconds file and database I/O out of the GUI timer callback while preserving conservative BUSY semantics.
+
 ### 8. Window Management (`ui/window_mixin.py`, `ui/zen_desktop.py`)
 
 Frameless window, Win95 dark-gold aesthetic. Ctrl+Q cycles snap positions (7 zones + FancyZone picker + user presets). 3-stage Ctrl+D: Zen (minimal editor), Solo (minimise other windows), back. Overflow menu (») collects hidden buttons in ultra-narrow mode (<700px). Header density tiers auto-adjust (dense <1280px, ultra <700px).
@@ -112,3 +114,5 @@ a partial export never looks finished; (4) atomic validated DB restore
 (same-file guard, integrity + schema validation, atomic swap, future-schema
 fail-closed). All backup writes go through the unified safe primitive
 (temp sibling + atomic rename).
+
+**v0.8.43–v0.8.45 audit hardening:** the portable Markdown snapshot captures an *immutable* copy of state at request time rather than the live mutable dict, so the generation dispatched after a save is exactly the committed state that requested it — never uncommitted future edits. While a profile's backup job is active, repeated eligible saves only record that a newer state is wanted and coalesce; the newest state is exported on the next eligible run (PERF-008 / CORE-002 / CORE-003). The filesystem probe negative cache is bounded (≤500 entries) and swept on read, so repeated absent-path lookups don't churn or grow without limit (PERF-004).
