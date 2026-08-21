@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.8.44 - 2026-08-21
+
+- **Audit handoff 21-08 – 10 fixes across CORE/SECOND WAVE/PERFORMANCE (3+3+4)**
+- **CORE-001:** SQLite saver now refuses slot ≥100 (loader already fails closed at 100); non-empty temp/archive outside 0..99 returns False without touching DB, dirty kept.
+- **CORE-002:** Send Selection → New Silo/Archive now canonical 100-cap; full silo: None → clean False, full archive: no insert → no undo/dirty/switch; 99 + blank reuses blank.
+- **CORE-003:** Portable backup coalescing keeps newest data, not bool; obsolete success never throttles; completion auto-dispatches C after A (120s throttle only after newest succeeds); per-profile isolated; failed newest retryable; B discarded.
+- **W2-001:** `change_profile` no longer tears down File Container / timer toasts before `switch_profile` succeeds; failed B leaves A intact.
+- **W2-002:** Per-category `*_all` list validation compared `list` type object, not `"list"` string; shared `_normalize_member_list` now filters `str`/`int` correctly; remap per-element so one bad member cannot abort whole pin/tick/collapse/gap shift.
+- **W2-003:** Undo drain prunes dead job records before return; one transient publish failure no longer poisons every later drain; successful retry restores clean shutdown.
+- **PERF-001:** Sync delta vs full dest: `current_dests` separate from `files`; cache pruned only against full set, zero redundant writes after single-silo edit.
+- **PERF-002:** `save_productivity_timer` / `save_timers_to_data` / `_watcher_write_queues` → `mark_dirty("settings")`; 900 slot visits → 0 on hot path.
+- **PERF-003:** Non-empty `ui_settings` with clean settings gen now partial-encodes only supplied keys via canonical codec; full encode only when generation dirty/force.
+- **PERF-004:** File Container listings/thumbnails get cancel token; `open_for`/`detach`/superseding refresh signals prior token; `_dir_size` and `ThumbWorker` check before each entry/decode; bulk retire `_fetching_thumbs`.
+
 ## v0.8.43 - 2026-08-21
 
 - **Watcher (Core audit):** Fixed a TypeError that made every arm attempt unusable; the queue an armed run drains is now pinned to its (category, slot) owner, so project switching can no longer feed a different silo's backlog; physical sends are tracked per dispatch so a stale completion can never clear the quiesce barrier early.

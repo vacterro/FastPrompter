@@ -205,6 +205,15 @@ _PER_CATEGORY_VALUE_TYPES = {
 }
 
 
+def _normalize_member_list(value, member_type):
+    """Filter a per-category list value by its declared member contract."""
+    if member_type == "str":
+        return [m for m in value if isinstance(m, str)]
+    if member_type == "int":
+        return [m for m in value if isinstance(m, int) and m >= 0]
+    return value
+
+
 def _normalize_per_category_store(key, parsed, default):
     """Nested per-category normalization for dict-valued ``*_all`` stores.
 
@@ -226,10 +235,8 @@ def _normalize_per_category_store(key, parsed, default):
                            "category %r; dropping the member",
                            key, type(value).__name__, cat)
             continue
-        if value_type == "list" and member_type == "str":
-            value = [m for m in value if isinstance(m, str)]
-        elif value_type == "list" and member_type == "int":
-            value = [m for m in value if isinstance(m, int) and m >= 0]
+        if value_type is list:
+            value = _normalize_member_list(value, member_type)
         cleaned[cat] = value
     return cleaned
 
@@ -327,10 +334,8 @@ def bind_active_category(data, category):
             if contract is not None:
                 value_type, member_type = contract
                 if isinstance(value, value_type):
-                    if value_type == "list" and member_type == "str":
-                        value = [m for m in value if isinstance(m, str)]
-                    elif value_type == "list" and member_type == "int":
-                        value = [m for m in value if isinstance(m, int) and m >= 0]
+                    if value_type is list:
+                        value = _normalize_member_list(value, member_type)
                 else:
                     value = None
                 if value is None:
@@ -344,9 +349,16 @@ def bind_active_category(data, category):
     return data
 
 
+def _encode_setting_value(key, value):
+    """Single-key canonical codec, shared by full and partial settings paths."""
+    if key in _JSON_SETTINGS:
+        return json.dumps(value)
+    return str(value)
+
+
 def _encode_settings(data):
     """{key: text} for the settings table, JSON where the value needs it."""
-    return {k: (json.dumps(v) if k in _JSON_SETTINGS else str(v))
+    return {k: _encode_setting_value(k, v)
             for k, v in data.items() if k not in _SETTINGS_SKIP}
 
 
@@ -1349,9 +1361,30 @@ class FastPrompterState:
         self.data["last_text"] = current_text
 
         settings_to_save = []
+        current_settings = None
+        _settings_was_full = False
         if scan_settings:
-            current_settings = _encode_settings(self.data)
-            settings_to_save = [(k, v) for k, v in current_settings.items() if k not in self._last_saved_settings or self._last_saved_settings[k] != v]
+            settings_gen_dirty = self._dirty_settings > self._saved_settings_gen
+            need_full = full_scan or settings_gen_dirty
+            if need_full:
+                _settings_was_full = True
+                current_settings = _encode_settings(self.data)
+                settings_to_save = [(k, v) for k, v in current_settings.items() if k not in self._last_saved_settings or self._last_saved_settings[k] != v]
+            elif ui_settings:
+                # PERF-003: small UI patch while settings generation is clean —
+                # encode only the supplied keys with the canonical codec.
+                for k in ui_settings.keys():
+                    if k in _SETTINGS_SKIP:
+                        continue
+                    if k not in self.data:
+                        continue
+                    enc = _encode_setting_value(k, self.data[k])
+                    if k not in self._last_saved_settings or self._last_saved_settings[k] != enc:
+                        settings_to_save.append((k, enc))
+                # current_settings stays None to signal partial path
+            else:
+                current_settings = _encode_settings(self.data)
+                settings_to_save = [(k, v) for k, v in current_settings.items() if k not in self._last_saved_settings or self._last_saved_settings[k] != v]
 
         to_insert_presets = set()
         to_delete_presets = set()
@@ -1376,7 +1409,15 @@ class FastPrompterState:
         to_update_temp = set()
         temp_to_delete = set()
         if scan_temp:
-            current_temp = {(cat, i, content) for cat, slots in self.data["temp_presets_all"].items() for i, content in enumerate(slots) if content}
+            # CORE-001: enforce 0..99 invariant BEFORE building the txn.
+            # Any non-empty slot outside that range is save-side corruption.
+            for cat, slots in self.data["temp_presets_all"].items():
+                for i, content in enumerate(slots):
+                    if content and (i < 0 or i >= 100):
+                        logger.error("temp_presets_all[%r][%d] outside 0..99; refusing save", cat, i)
+                        self._db_dirty = True
+                        return False
+            current_temp = {(cat, i, content) for cat, slots in self.data["temp_presets_all"].items() for i, content in enumerate(slots) if content and 0 <= i < 100}
             old_temp_keys = {(tup[0], tup[1]) for tup in self._last_saved_temp}
             new_temp_keys = {(tup[0], tup[1]) for tup in current_temp}
             temp_to_delete = old_temp_keys - new_temp_keys
@@ -1385,7 +1426,13 @@ class FastPrompterState:
         arc_to_update = set()
         arc_to_delete = set()
         if scan_arc:
-            current_arc = {(cat, i, content) for cat, slots in self.data["archive_temp_presets_all"].items() for i, content in enumerate(slots) if content}
+            for cat, slots in self.data["archive_temp_presets_all"].items():
+                for i, content in enumerate(slots):
+                    if content and (i < 0 or i >= 100):
+                        logger.error("archive_temp_presets_all[%r][%d] outside 0..99; refusing save", cat, i)
+                        self._db_dirty = True
+                        return False
+            current_arc = {(cat, i, content) for cat, slots in self.data["archive_temp_presets_all"].items() for i, content in enumerate(slots) if content and 0 <= i < 100}
             old_arc_keys = {(tup[0], tup[1]) for tup in self._last_saved_arc}
             new_arc_keys = {(tup[0], tup[1]) for tup in current_arc}
             arc_to_delete = old_arc_keys - new_arc_keys
@@ -1433,7 +1480,11 @@ class FastPrompterState:
 
             # commit succeeded: the in-memory delta is now the DB truth
             if scan_settings:
-                self._last_saved_settings = current_settings
+                if _settings_was_full and current_settings is not None:
+                    self._last_saved_settings = current_settings
+                elif settings_to_save:
+                    for k, v in settings_to_save:
+                        self._last_saved_settings[k] = v
                 self._saved_settings_gen = self._dirty_settings
             if scan_snippets:
                 self._last_saved_presets = current_presets

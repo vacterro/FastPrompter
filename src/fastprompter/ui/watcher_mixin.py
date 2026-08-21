@@ -570,7 +570,7 @@ class WatcherMixin:
         if cat == self._watcher_current_category():
             data["watcher_queues"] = raw
         if hasattr(self, "mark_dirty"):
-            self.mark_dirty()
+            self.mark_dirty("settings")
 
     def _watcher_persist_queues(self):
         """Persist the armed run's queue under its OWN pinned category

@@ -110,6 +110,8 @@ class SendSelectionMixin:
             return False
         presets = self.data.get("temp_presets", [])
         new_idx = self._insert_silo_at(len(presets), text)
+        if new_idx is None:
+            return False
         self.mark_dirty()
         self.refresh_temp_presets()
         self._switch_to_slot(new_idx)
@@ -131,6 +133,34 @@ class SendSelectionMixin:
         text = self.selected_text()
         if not text:
             return False
+        # canonical archive capacity: use single insertion primitive, handle None
+        if hasattr(self, "_silo_at_capacity") and self._silo_at_capacity(True):
+            return False
+        if hasattr(self, "_acquire_silo_slot"):
+            slot = self._acquire_silo_slot(is_archive=True)
+            if slot is None:
+                return False
+            # honour blank reuse contract when full; otherwise insert at 0
+            archive = self.data.setdefault("archive_temp_presets", [])
+            if len(archive) >= getattr(self, "MAX_SILOS_PER_CATEGORY", 100) and slot is not None and not (archive[slot] or "").strip():
+                # reuse blank slot for archive path: place at that slot
+                self.add_data_undo_state("Selection to new archive entry")
+                archive[slot] = text
+                from PyQt6.QtGui import QTextDocument
+                doc = QTextDocument()
+                doc.setDefaultFont(self.text_area.font())
+                self._set_plain_text_clean(doc, text)
+                while len(self.archive_docs) <= slot:
+                    spare = QTextDocument()
+                    spare.setDefaultFont(self.text_area.font())
+                    self.archive_docs.append(spare)
+                if self.archive_docs[slot] is None:
+                    self.archive_docs[slot] = doc
+                else:
+                    self._set_plain_text_clean(self.archive_docs[slot], text)
+                self.mark_dirty()
+                self.refresh_archive_panel()
+                return True
         self.add_data_undo_state("Selection to new archive entry")
         archive = self.data.setdefault("archive_temp_presets", [])
         archive.insert(0, text)

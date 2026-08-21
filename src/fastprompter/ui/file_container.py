@@ -307,12 +307,16 @@ def _fmt_size(n):
     return f"{n / 1024 / 1024 / 1024:.2f} GB"
 
 
-def _dir_size(path, _cap=2000):
+def _dir_size(path, _cap=2000, cancel_check=None):
     """Recursive size, capped at _cap files so a giant dropped folder
     can't stall silo switching (tooltip precision isn't worth a freeze)."""
     total, seen = 0, 0
     for base, _dirs, files in os.walk(path):
+        if cancel_check is not None and cancel_check():
+            return total
         for f in files:
+            if cancel_check is not None and cancel_check():
+                return total
             try:
                 total += os.path.getsize(os.path.join(base, f))
             except OSError:
@@ -868,6 +872,9 @@ class FileContainerPanel(QWidget):
         import uuid
         self._container_owner_id = str(uuid.uuid4())
         self._container_gen = (getattr(self, "_container_gen", 0) or 0) + 1
+        # PERF-004: bulk retire old thumbnail generations on folder switch
+        if hasattr(self, "_fetching_thumbs"):
+            self._fetching_thumbs.clear()
 
         self.setWindowTitle(tr("Files — {}", self.lang).format(title))
         self.refresh()
@@ -904,6 +911,10 @@ class FileContainerPanel(QWidget):
         # bump the generation so every in-flight listing from the PREVIOUS
         # session is recognized as stale and discarded (P0-5)
         self._container_gen = (getattr(self, "_container_gen", 0) or 0) + 1
+        # PERF-004: bulk retire old thumbnail generations on detach
+        if hasattr(self, "_fetching_thumbs"):
+            self._fetching_thumbs.clear()
+        self._thumb_gen = getattr(self, "_thumb_gen", 0) + 1
     def _discard_if_empty(self):
         """Remove the current folder if it is still completely empty."""
         folder = getattr(self, "folder", None)
@@ -1020,6 +1031,21 @@ class FileContainerPanel(QWidget):
 
                 from fastprompter.ui.file_container import _IMAGE_EXTS, _dir_size, _fmt_size
 
+                def _is_cancelled():
+                    p = self.panel_ref()
+                    if p is None:
+                        return True
+                    from PyQt6 import sip
+                    if sip.isdeleted(p):
+                        return True
+                    if p._container_gen != self.gen:
+                        return True
+                    if p._refresh_seq != self.seq:
+                        return True
+                    if p._container_owner_id != self.owner:
+                        return True
+                    return False
+
                 try:
                     names = sorted(os.listdir(self.p), key=str.lower)
                 except OSError:
@@ -1027,12 +1053,17 @@ class FileContainerPanel(QWidget):
 
                 items = []
                 for name in names:
+                    if _is_cancelled():
+                        break
                     if name.endswith(".lnk"): continue
                     path = os.path.join(self.p, name)
                     label = name
                     if self.s:
                         try:
-                            s = _dir_size(path) if os.path.isdir(path) else os.path.getsize(path)
+                            cancel_cb = lambda: _is_cancelled()
+                            s = _dir_size(path, cancel_check=cancel_cb) if os.path.isdir(path) else os.path.getsize(path)
+                            if _is_cancelled():
+                                break
                             mtime = datetime.datetime.fromtimestamp(os.path.getmtime(path))
                             label = f"{name}  —  {_fmt_size(s)}  —  {mtime.strftime('%d.%m.%y %H:%M')}"
                         except OSError:
@@ -1067,6 +1098,12 @@ class FileContainerPanel(QWidget):
         # T-816: a new listing starts a new thumbnail generation; any thumbnail
         # result from the previous folder/listing is discarded on arrival.
         self._thumb_gen = getattr(self, "_thumb_gen", 0) + 1
+        # PERF-004: bulk retire old thumbnail fetching entries that will never
+        # be emitted because the previous generation was cancelled
+        if hasattr(self, "_fetching_thumbs"):
+            cur = self._thumb_gen
+            # keep only entries for the new generation (none yet) — old gen bulk removed
+            self._fetching_thumbs = {k for k in self._fetching_thumbs if k[0] == cur}
         QThreadPool.globalInstance().start(worker)
 
     def _on_refresh_list_result(self, owner, folder, gen, items, count, seq=0):
@@ -1295,6 +1332,18 @@ class FileContainerPanel(QWidget):
                 from PyQt6.QtCore import Qt
                 from PyQt6.QtGui import QImageReader
                 for path, mtime in self.to_fetch:
+                    # PERF-004: check cancellation before each decode
+                    panel = self.panel_ref()
+                    if panel is not None:
+                        from PyQt6 import sip
+                        if sip.isdeleted(panel):
+                            break
+                        if panel._thumb_gen != self.gen:
+                            break
+                        if panel._container_owner_id != self.owner:
+                            break
+                        if panel.folder != self.folder:
+                            break
                     img = None
                     try:
                         reader = QImageReader(path)

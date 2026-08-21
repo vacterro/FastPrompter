@@ -494,10 +494,9 @@ def _backup_on_done(gen, snapshot, ok, err):
     if _BACKUP_INFLIGHT.get(profile_id) == gen:
         del _BACKUP_INFLIGHT[profile_id]
 
-    # PERF-008: the profile request is retired here; if a newer state was
-    # requested while this snapshot ran (run_portable_backup coalesced the
-    # capture away), the throttle is cleared so the next eligible save
-    # exports the newest data.
+    # CORE-003: retire active marker and, if a newer request was coalesced
+    # while this snapshot ran, dispatch the newest snapshot immediately and
+    # do NOT establish throttle for the obsolete generation.
     try:
         from fastprompter.utils import portable_backup as _pb2
         _pb2.backup_finished(profile_id=profile_id)
@@ -505,19 +504,24 @@ def _backup_on_done(gen, snapshot, ok, err):
         from fastprompter.core.logging import logger as _log2
         _log2.exception("portable backup finish hook failed")
 
+    # Whether this completed gen is still the newest outstanding request:
+    # check both the worker's newest-gen and any pending queue (including the
+    # portable layer's pending data) — an obsolete success must not throttle.
+    has_pending_newer = (
+        profile_id in _BACKUP_PENDING
+        or profile_id in _pb._backup_newer_wanted
+        or profile_id in getattr(_pb, "_backup_pending_data", {})
+    )
+    is_newest = _BACKUP_NEWEST_GEN.get(profile_id) == gen and not has_pending_newer
+
     if ok:
         _BACKUP_LAST_SUCCESS_GEN = max(_BACKUP_LAST_SUCCESS_GEN, gen)
-        # advance the throttle only when this was the profile's newest request
-        if _BACKUP_NEWEST_GEN.get(profile_id) == gen:
+        if is_newest:
             _pb.mark_backup_success(profile_id=profile_id)
     else:
         _BACKUP_LAST_FAILED_GEN = max(_BACKUP_LAST_FAILED_GEN, gen)
         _log.error("portable backup failed in the worker: %s", err)
-        # If the newest generation for THIS profile failed, clear only its
-        # throttle so it is immediately retryable — another profile's
-        # throttle/state is untouched.
-        if _BACKUP_NEWEST_GEN.get(profile_id) == gen and \
-                profile_id not in _BACKUP_PENDING:
+        if is_newest:
             _pb.clear_throttle(profile_id=profile_id)
 
     _backup_drain()
@@ -1329,11 +1333,11 @@ class FastPrompter(
     def save_timers_to_data(self):
         from fastprompter.core.timers import save_timers
         self.data["timers"] = save_timers(self.timers)
-        self.mark_dirty()
+        self.mark_dirty("settings")
 
     def save_productivity_timer(self):
         self.data["productivity_timer"] = self.productivity_timer.to_dict()
-        self.mark_dirty()
+        self.mark_dirty("settings")
 
     def on_productivity_changed(self):
         """Anything that starts, pauses or resets it lands here."""
@@ -3514,6 +3518,7 @@ class FastPrompter(
         cat_comps = alloc_fs_names(self.data.get("cats_order", []) or [])
         cat_comp = cat_comps.get(cat, cat)
         files = {}
+        current_dests = set()
         for i in slots:
             if not (0 <= i < len(presets)):
                 continue
@@ -3528,12 +3533,19 @@ class FastPrompter(
                 logger.warning("sync_to_disk rejected %r: outside the sync root",
                                dest)
                 continue
+            current_dests.add(dest)
             if not force and cache.get(dest) == text:
                 continue           # unchanged since the last mirror
             files[dest] = text
         if not files:
-            return None
-        return {"files": files, "root": root,
+            if not current_dests or set(cache.keys()) == current_dests:
+                return None
+            # need metadata-only snapshot to prune stale cache entries
+            return {"files": {}, "current_dests": current_dests, "root": root,
+                    "root_identity": capture_resolved_root(root),
+                    "profile": getattr(getattr(self, "state", None),
+                                        "profile_id", None)}
+        return {"files": files, "current_dests": current_dests, "root": root,
                 "root_identity": capture_resolved_root(root),
                 "profile": getattr(getattr(self, "state", None),
                                     "profile_id", None)}
@@ -3690,12 +3702,20 @@ class FastPrompter(
                 cache = self._sync_written = {}
             for dest in written:
                 cache[dest] = snapshot["files"].get(dest, "")
-            # PERF-009: prune the written-cache to the CURRENT destination
-            # set. Historical destinations (renamed silos, changed
-            # hierarchy) no longer addressable must not keep full text in
-            # RAM; the one-way disk mirrors themselves are intentionally
-            # never deleted.
-            current_dests = set(snapshot.get("files", ()))
+            # PERF-009/PERF-001: prune the written-cache to the COMPLETE
+            # current destination set, not the delta. Historical
+            # destinations (renamed silos, changed hierarchy) no longer
+            # addressable must not keep full text in RAM; the one-way disk
+            # mirrors themselves are intentionally never deleted.
+            current_dests = snapshot.get("current_dests")
+            if current_dests is None:
+                # backward compat: older snapshots without current_dests
+                current_dests = set(snapshot.get("files", ()))
+            else:
+                current_dests = set(current_dests)
+                # ensure successfully written dests are considered current
+                # even if the snapshot was a delta
+                current_dests.update(snapshot.get("files", {}).keys())
             for stale in [k for k in cache if k not in current_dests]:
                 del cache[stale]
             for dest, err in errors:
@@ -5874,21 +5894,25 @@ class FastPrompter(
         # (P0-2: the path is captured pre-thread; this just lets it finish).
         self._wait_for_undo_saves()
 
-        # P0-3 Fix: Detach the file container panel before switching profiles
-        # so it doesn't leak its watchers or folder identity across the switch.
+        # W2-001: do NOT teardown old-profile runtime before the state switch
+        # succeeds. The File Container, timer jobs and toasts stay alive while
+        # the switch is tentative; they are torn down only after State has
+        # atomically moved to B.
+        try:
+            self.state.switch_profile(idx + 1, save_current=False)
+        except Exception:
+            raise
+
+        # State is now on B — safe to detach old-profile runtime.
         if hasattr(self, "_file_container") and self._file_container:
             self._file_container.detach_session()
 
-        # T-1007: old-profile delayed Test notifications and open toasts must
-        # not leak into the next profile — cancel the jobs, close the toasts.
         self._cancel_timer_test_jobs()
         try:
             from fastprompter.ui.timer_toast import TimerToast
             TimerToast.close_for_main(self)
         except Exception:
             pass
-
-        self.state.switch_profile(idx + 1, save_current=False)
         # The final old-profile mirror snapshot is dispatched immediately (not
         # dropped) here; the new profile's mirror starts with a fresh cache.
         self._sync_on_profile_change()
@@ -6971,7 +6995,17 @@ class FastPrompter(
             try:
                 if kind == "int_list":
                     if isinstance(container, list):
-                        container[:] = [remap(i) for i in container]
+                        # W2-002: filter invalid members per-element so one bad
+                        # entry cannot abort the whole valid remap; valid ints
+                        # still shift correctly.
+                        cleaned = []
+                        for i in container:
+                            if isinstance(i, int) and i >= 0:
+                                try:
+                                    cleaned.append(remap(i))
+                                except Exception:
+                                    cleaned.append(i)
+                        container[:] = cleaned
                 elif kind == "int_dict":
                     if isinstance(container, dict):
                         moved = {remap(k): v for k, v in container.items()}
@@ -8730,10 +8764,13 @@ class FastPrompter(
         if threads:
             return False
         jobs = getattr(self, "_undo_save_jobs", {})
-        if any(not job.get("ok", True) for job in jobs.values()):
-            return False
-        for t in [t for t in jobs if not t.is_alive()]:
+        had_failure = any(not job.get("ok", True) for job in jobs.values())
+        # prune dead job records regardless of failure, so a later successful
+        # retry can report clean (W2-003). Live writer's record is kept.
+        for t in [t for t in list(jobs.keys()) if not t.is_alive()]:
             jobs.pop(t, None)
+        if had_failure:
+            return False
         return not getattr(self, "_undo_save_failed", False)
 
     def _load_undo_state(self):

@@ -43,6 +43,10 @@ _BACKUP_THROTTLE = 120  # seconds between backups (per profile)
 # throttle so the newest state is exported on the next eligible run.
 _backup_active: set = set()
 _backup_newer_wanted: set = set()
+# CORE-003: retain the newest pending data reference per profile instead of
+# only a boolean, so the latest generation can be captured once the current
+# job completes without repeated deep copies while active.
+_backup_pending_data: dict = {}
 
 _COMPLETE_MARKER = "_COMPLETE"
 
@@ -63,6 +67,7 @@ def set_backup_sink(sink):
         # never completed must not suppress the next run).
         _backup_active.clear()
         _backup_newer_wanted.clear()
+        _backup_pending_data.clear()
 
 
 def capture_snapshot(data, profile_id=1):
@@ -128,8 +133,10 @@ def run_portable_backup(data: dict, profile_id=1) -> None:
 
     if pid in _backup_active:
         # a request for this profile is already pending/in-flight; just
-        # record that a newer state is desired — no deep copy here
+        # record that a newer state is desired — no deep copy here, but
+        # retain the newest data reference so completion can capture it once
         _backup_newer_wanted.add(pid)
+        _backup_pending_data[pid] = data
         return
     _backup_active.add(pid)
 
@@ -140,6 +147,7 @@ def run_portable_backup(data: dict, profile_id=1) -> None:
         except Exception:
             logger.exception("portable backup dispatch failed")
             _backup_active.discard(pid)
+            _backup_pending_data.pop(pid, None)
         return
 
     try:
@@ -171,11 +179,32 @@ def _finish_newer_wanted(pid):
 def backup_finished(profile_id=1):
     """Called by the async worker on completion of a snapshot. Retires the
     active marker for the profile and, when a newer state was requested
-    while it ran, clears the throttle so the next eligible save re-exports
-    the newest data (PERF-008)."""
+    while it ran, clears the throttle and dispatches the newest pending
+    snapshot immediately (CORE-003) without waiting for another save."""
     pid = int(profile_id or 1)
+    has_newer = pid in _backup_newer_wanted
     _backup_active.discard(pid)
-    _finish_newer_wanted(pid)
+    if has_newer:
+        _backup_newer_wanted.discard(pid)
+        last_success_by_profile.pop(pid, None)
+        pending_data = _backup_pending_data.pop(pid, None)
+        if pending_data is not None and _backup_sink is not None:
+            try:
+                snapshot = capture_snapshot(pending_data, profile_id=pid)
+            except Exception:
+                logger.exception("portable backup newest capture failed")
+                return
+            _backup_active.add(pid)
+            try:
+                _backup_sink(snapshot)
+            except Exception:
+                logger.exception("portable backup dispatch failed for newest")
+                _backup_active.discard(pid)
+                _backup_pending_data.pop(pid, None)
+        # sync path: throttle already cleared, next save will capture newest
+    else:
+        _backup_pending_data.pop(pid, None)
+        _finish_newer_wanted(pid)
 
 
 def _safe_name(name: str) -> str:
