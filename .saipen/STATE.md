@@ -1,7 +1,7 @@
 ---
-phase: REVIEW
-task: "T-1019..T-1022"
-next_action: "RUN: ship v0.8.43"
+phase: DONE
+task: "none"
+next_action: "WAIT: user brake -- v0.8.43 shipped, audit closed"
 blocker: ""
 agent: opencode
 saipen_version: 7
@@ -13,9 +13,9 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 785
+last_event: 787
 style_contract: ded-4ae736e4
-updated: "2026-08-21T00:00:00Z"
-transition_from: VERIFY
+updated: "2026-08-21T16:34:00Z"
+transition_from: SHIP
 execution_intent: normal
 ---
