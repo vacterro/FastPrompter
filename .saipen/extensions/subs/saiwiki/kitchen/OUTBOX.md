@@ -118,3 +118,16 @@
 - **payload:** none.
 - **verified:** rg sweep zero stale refs; module count 125 stable.
 - **instructions:** Stage M evidence for the QQ half.
+
+## WIKI-009: qq force-fresh re-cut vs HEAD 28a4d5f (22.08.26)
+- **status:** ready
+- **critical:** false
+- **summary:** FORCE-FRESH saiwiki preparation (explicit qq). Source delta since the WIKI-008 audit (3702ab4) is commit 28a4d5f only -- a .saipen OUTBOX-history repair with zero main-tree bytes. Module count re-derived 125 (.py files under src/fastprompter incl main.py + __init__.py), unchanged. Doc-symbol sweep (undo_group, error.wav) zero stale references. All 16 maintained pages remain content-equivalent to the shipped source.
+- **producer:** saiwiki
+- **source_head:** 28a4d5f24ec6c2d1c0518b3671e783ba342b3ec8
+- **source_tree_fingerprint:** git-delta-v1:c66baf69a8306f3b95dfc7badb5f72b088f8de8408e933efadc4d149721a1195
+- **role_revision:** sha256:54a42475a124ab0f27e83d600a284a9cc54d9668029c4828cfc48512b031df13
+- **coverage:** 16/16 maintained pages audited against HEAD 28a4d5f24ec6; Module-Structure counts re-derived.
+- **payload:** none -- zero page changes; docs/wiki/ remains byte-identical to kitchen mirrors (16/16 per E-815 re-diff).
+- **verified:** module re-count 125; rg sweep of removed/renamed symbols zero hits; freshness triple computed via tools/freshness.py at this HEAD.
+- **instructions:** qqq-equivalent is a no-op (nothing to integrate); this entry attests the wiki half is fresh at the current identity.

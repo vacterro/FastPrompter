@@ -4,3 +4,4 @@
 - 22.08.26 10:20 [E-9005] [parent: E-9004] RUN: prepare saitranslate -> done -- T5 ready, 59 new keys added to all 33 locale JSONs (1092->1151); Core4 (en/ru/est/ded) synced from .py modules (all 100%); 29 non-Core locales have English-fallback for new keys (standing backlog); zero missing from en.json; zero structural errors; code fix confirmed done (T-1031 void, zero tr("..."+ concat); OUTBOX ready for eee.
 
 
+- 22.08.26 14:41 [T-E12] RUN: prepare -> TRANSLATE-008 ready -- zero-delta re-cut vs 28a4d5f for explicit ee.
