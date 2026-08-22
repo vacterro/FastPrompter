@@ -62,11 +62,11 @@
 
 
 ## TRANSLATE-006: converge stage-K re-cut -- 7 post-v0.8.47 source keys (22.08.26)
-- **status:** ready
+- **status:** reviewed
 - **critical:** false
-- **summary:** FORCE-FRESH re-cut for convergence stage K against HEAD 58dcb632f0abee0b86f8c87621644fb22975d909. Found 7 source tr() keys (restore-abort/restore-refuse/Silo/Sync-Link/typo-checker words/word/export-target) that predate the cut but were never bundled, plus restored the 59-key E-814 additions to ja.json/ded.json that a working-tree revert had dropped. All 33 locale JSONs now carry 1158 keys; en.json complete; validator PASSED (0 structural errors, 61 documented backlog warnings). Locale .py modules deliberately NOT touched -- regeneration is the collect payload.
+- **summary:** FORCE-FRESH re-cut for convergence stage K, producer-rebound to HEAD f7f758681c7ee6a7b18bc61cbb448c84f2d73fd8 (bundle bytes unchanged since the 58dcb63 cut; only .saipen bookkeeping commits moved HEAD; fingerprint identical). Found 7 source tr() keys (restore-abort/restore-refuse/Silo/Sync-Link/typo-checker words/word/export-target) that predate the cut but were never bundled, plus restored the 59-key E-814 additions to ja.json/ded.json that a working-tree revert had dropped. All 33 locale JSONs now carry 1158 keys; en.json complete; validator PASSED (0 structural errors, 61 documented backlog warnings). Locale .py modules deliberately NOT touched -- regeneration is the collect payload.
 - **producer:** saitranslate
-- **source_head:** 58dcb632f0abee0b86f8c87621644fb22975d909
+- **source_head:** f7f758681c7ee6a7b18bc61cbb448c84f2d73fd8
 - **source_tree_fingerprint:** git-delta-v1:4b9dd246f83d6cf6695e6d20875febfe09e36635fc964e24045ebad3ff3bd4b7
 - **role_revision:** sha256:f241e6b83c39e9b46bfa586638efb0374bbb39889646f723b9189bbb4912c0c5
 - **coverage:** 33 locale JSONs x 1158 keys (1151+7). Core4 (EN/RU/EST/DED) + JA carry real translations for all 7 new keys; 28 non-Core locales English-fallback. Docs surfaces unchanged since TRANSLATE-005 (16/16 x {ru,est,ja,de}, 6 pages stale vs English = named backlog).
