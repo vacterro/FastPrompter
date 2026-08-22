@@ -362,11 +362,13 @@ class FakePostPressFail:
 def test_press_failure_makes_the_whole_send_fail():
     """The text landed but the submit keystroke was rejected, so the prompt
     may still be sitting unsent in the target. The send must NOT report a
-    silent success (CORE-005)."""
+    silent success (CORE-005) and must be marked PARTIAL (W2-001): the
+    queue must never auto-retry it."""
     post = FakePostPressFail()
     sender = PostMessageSender(post)
     result = sender.send(intent(), make_target())
     assert result.ok is False, result
+    assert result.partial is True, "text landed, so delivery is uncertain"
     assert "submit" in result.reason or "frob" in result.reason, result.reason
     assert post.actions == [
         ("type", 1234, "/saipen continue"),
@@ -392,3 +394,77 @@ def test_the_silent_submit_key_is_per_target():
     post = FakePost()
     PostMessageSender(post, submit="ctrl+enter").send(intent(), make_target())
     assert ("press", 1234, "ctrl+enter") in post.actions
+
+
+# ----------------------------------------------------------------- W2-001
+class FakePostRaisesOnPress:
+    def __init__(self):
+        self.actions = []
+        self.last_reason = ""
+
+    def type_text(self, hwnd, text):
+        self.actions.append(("type", hwnd, text))
+        return True
+
+    def press(self, hwnd, key):
+        self.actions.append(("press", hwnd, key))
+        raise RuntimeError("input thread vanished")
+
+
+def test_press_exception_after_type_is_partial():
+    post = FakePostRaisesOnPress()
+    result = PostMessageSender(post).send(intent(), make_target())
+    assert result.ok is False
+    assert result.partial is True, "text typed, submit raised -> uncertain"
+
+
+class FakeKeysPasteRaises:
+    def __init__(self):
+        self.focus_ok = True
+        self.actions = []
+
+    def focus(self, hwnd):
+        self.actions.append(("focus", hwnd))
+        return self.focus_ok
+
+    def paste(self):
+        self.actions.append(("paste",))
+        raise RuntimeError("clipboard service died")
+
+
+def test_clipboard_paste_exception_is_partial():
+    keys = FakeKeysPasteRaises()
+    result = ClipboardSender(FakeClipboard(), keys).send(intent(), make_target())
+    assert result.ok is False
+    assert result.partial is True, "paste attempted, submit uncertain"
+
+
+class FakeKeysPasteButPressFails:
+    def __init__(self):
+        self.actions = []
+
+    def focus(self, hwnd):
+        self.actions.append(("focus", hwnd))
+        return True
+
+    def paste(self):
+        self.actions.append(("paste",))
+
+    def press(self, key):
+        self.actions.append(("press", key))
+        raise RuntimeError("submit key not posted")
+
+
+def test_clipboard_press_failure_after_paste_is_partial():
+    keys = FakeKeysPasteButPressFails()
+    result = ClipboardSender(FakeClipboard(), keys).send(intent(), make_target())
+    assert result.ok is False
+    assert result.partial is True
+
+
+def test_ordinary_pre_injection_failure_is_not_partial():
+    # focus fails BEFORE paste: target untouched, ordinary retryable failure
+    keys = FakeKeys(focus_ok=False)
+    result = ClipboardSender(FakeClipboard(), keys).send(intent(), make_target())
+    assert result.ok is False
+    assert result.partial is False

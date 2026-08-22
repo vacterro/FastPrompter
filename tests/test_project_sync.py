@@ -94,6 +94,16 @@ def test_read_text_file_binary_and_huge_are_skipped(tmp_path):
     assert ps.read_text_file(str(big), max_bytes=100) is None
 
 
+def test_read_text_file_non_utf8_fails_closed_and_preserves_bytes(tmp_path):
+    """W2-002: a cp1251 file is not silently lossy-decoded into U+FFFD and
+    later rewritten as UTF-8. It must be skipped, leaving the bytes intact."""
+    p = tmp_path / "legacy.txt"
+    original = "Привет\r\nмир\r\n".encode("cp1251")
+    p.write_bytes(original)
+    assert ps.read_text_file(str(p)) is None
+    assert p.read_bytes() == original, "source bytes must stay untouched"
+
+
 def test_write_text_file_applies_eol_and_roundtrips(tmp_path):
     p = tmp_path / "out.txt"
     written = ps.write_text_file(str(p), "one\ntwo\n", eol="\r\n")

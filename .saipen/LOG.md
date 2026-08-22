@@ -85,3 +85,4 @@
 - 22.08.26 14:35 [E-861] [parent: E-860] RUN: prepare saiwiki -> done -- qq force-fresh bound to HEAD 28a4d5f (c66baf69, role 54a42475); zero page drift since 3702ab4 audit (bookkeeping-only commit). OUTBOX WIKI-009 ready.
 
 - 22.08.26 14:47 [E-862] [parent: E-861] RUN: prepare saitranslate -> done -- ee force-fresh bound to HEAD 28a4d5f (c66baf69, role f241e6b8); validator re-run PASSED; zero delta since 3702ab4 (bookkeeping-only commit). OUTBOX TRANSLATE-008 ready.
+- 22.08.26 15:17 [E-863] DEC: audit handoff cc (acb-mt4fdng2) -- 9/17 tickets verified TRUE and fixed: CORE-001..005, W2-001, W2-002, W2-005 full; W2-003/W2-004/PERF studies pending. Repaired: validate_database row-invariants, schema+row preflight init_db, startup snapshot gate for presets recovery, load_queues slot canonicalization, portable_backup redispatch retry, SendResult partial state, read_text_file fail-closed, wait_thread_seconds Python-Thread join. Checkpointed.

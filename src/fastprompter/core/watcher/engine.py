@@ -285,6 +285,20 @@ class Engine:
         self.reason = f"failed: {reason}"
         return True
 
+    def report_uncertain(self, item=None, reason="", now=None):
+        """W2-001: a delivery that MAY have mutated the target (text injected
+        or pasted, submit failed/uncertain). A hard barrier: the item is
+        persisted as FAILED/UNCERTAIN and the engine is disarmed immediately —
+        never retried, never advanced, because the next prompt would be typed
+        into the same possibly-contaminated input field.
+        """
+        if item is not None:
+            item.mark_failed(reason)
+        self.pending = None
+        self._disarm(
+            f"uncertain delivery (target may already contain the prompt): "
+            f"{reason}")
+
     # ---- for the UI ---------------------------------------------------
     def status(self):
         return {

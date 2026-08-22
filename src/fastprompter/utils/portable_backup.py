@@ -142,6 +142,10 @@ def run_portable_backup(data: dict, profile_id=1) -> None:
     _backup_active.add(pid)
 
     snapshot = capture_snapshot(data, profile_id=pid)
+    # A fresh snapshot of the CURRENT state supersedes any stale coalesced
+    # pending state left by a CORE-005 redispatch failure.
+    _backup_pending_data.pop(pid, None)
+    _backup_newer_wanted.discard(pid)
     if _backup_sink is not None:
         try:
             _backup_sink(snapshot)
@@ -196,7 +200,13 @@ def backup_finished(profile_id=1):
             except Exception:
                 logger.exception("portable backup dispatch failed for newest")
                 _backup_active.discard(pid)
-                _backup_pending_data.pop(pid, None)
+                # CORE-005: failure while redispatching the coalesced newest
+                # snapshot must NOT destroy the retry state. Restore the exact
+                # pending snapshot and re-arm the newer marker atomically, so
+                # an obsolete worker completion can never advance the throttle
+                # and the next eligible save/drain retries this snapshot.
+                _backup_pending_data[pid] = pending_snapshot
+                _backup_newer_wanted.add(pid)
         # sync path: throttle already cleared, next save will capture newest
     else:
         _backup_pending_data.pop(pid, None)

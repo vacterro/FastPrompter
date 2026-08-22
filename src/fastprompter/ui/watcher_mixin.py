@@ -938,7 +938,8 @@ class WatcherMixin:
                 # Stale: a newer run owns the watcher. A send that actually
                 # went out must still be recorded so it is never re-sent
                 # (CORE-006 duplication guard); a failed one stays retryable.
-                # Neither path touches the newer run's engine.
+                # A PARTIAL delivery is never retryable and never dropped:
+                # resolve the original owner's item and persist it as failed.
                 if result.ok:
                     # CORE-002: a stale success belongs to the run that
                     # launched it, identified by the intent's OWN (category,
@@ -958,6 +959,31 @@ class WatcherMixin:
                         self._watcher_mark_sent(intent.queue_key, item)
                         self._watcher_write_queues(intent.queue_category, queues)
                         self._watcher_notify()
+                elif getattr(result, "partial", False):
+                    # W2-001 stale uncertain: the original owner's item may
+                    # already be in the target — persist FAILED/UNCERTAIN so
+                    # it can never be re-sent, and stop the newer run that
+                    # would share the contaminated physical target.
+                    from fastprompter.core.watcher.queue import load_queues as _lq
+                    owner_raw = self.data.get("watcher_queues_all")
+                    owner = (owner_raw.get(intent.queue_category)
+                             if isinstance(owner_raw, dict) else None)
+                    queues = _lq(owner) if owner else {}
+                    queue = queue_for(queues, intent.queue_key)
+                    item = queue.find(intent.item_id) if queue is not None else None
+                    if item is not None and item.state == PENDING:
+                        item.mark_failed(
+                            "uncertain delivery — the target may already "
+                            "contain the prompt: " + result.reason)
+                        self._watcher_write_queues(
+                            intent.queue_category, queues)
+                        self._watcher_notify()
+                    engine = self._watcher_engine
+                    if engine is not None and engine.armed:
+                        engine.disarm(
+                            "uncertain delivery — the target may already "
+                            "contain the prompt; no further sends allowed")
+                        self._watcher_stop_timer()
                 return
             self._watcher_send_active = False
             engine = self._watcher_engine
@@ -971,6 +997,11 @@ class WatcherMixin:
                 engine.report_sent(item, now=now)
                 if item is not None:
                     self._watcher_mark_sent(engine.queue_key, item)
+            elif getattr(result, "partial", False):
+                # W2-001: uncertain delivery. Hard barrier: persist the item
+                # as failed, disarm immediately, never retry. report_uncertain
+                # calls item.mark_failed() and disarms the engine.
+                engine.report_uncertain(item, result.reason, now=now)
             elif getattr(result, "hold", False):
                 # not a failure: the item stays pending and nothing is counted
                 engine.report_held(result.reason, now=now)

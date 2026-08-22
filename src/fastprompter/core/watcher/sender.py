@@ -34,16 +34,25 @@ class SendResult:
     the user is currently typing in is a moment to wait for, not a broken
     target: counting it as a failure burns the prompt and, three of them in
     a row, ends the whole run.
+
+    `partial` (W2-001) marks a delivery that MAY have mutated the target
+    (text injected or pasted) even though the whole send is considered
+    failed. The queue handler MUST treat this as a hard barrier: persist
+    the originating item as FAILED/UNCERTAIN, disarm the engine, and never
+    auto-retry — the next prompt would otherwise be typed into the same
+    contaminated input field.
     """
 
-    __slots__ = ("ok", "reason", "text", "dry", "at", "hold")
+    __slots__ = ("ok", "reason", "text", "dry", "at", "hold", "partial")
 
-    def __init__(self, ok, reason="", text="", dry=False, at=None, hold=False):
+    def __init__(self, ok, reason="", text="", dry=False, at=None,
+                 hold=False, partial=False):
         self.ok = bool(ok)
         self.reason = reason or ""
         self.text = text or ""
         self.dry = bool(dry)
         self.hold = bool(hold)
+        self.partial = bool(partial)
         self.at = at or datetime.datetime.now().isoformat(timespec="seconds")
 
     def __repr__(self):
@@ -156,21 +165,29 @@ class PostMessageSender:
         if text is None:
             return SendResult(False, why, intent.text)
 
+        typed = False
         try:
             if not self.post.type_text(target.hwnd, text):
                 return SendResult(
                     False,
                     "the target did not accept posted input "
                     "(a console may need WriteConsoleInput)", text)
+            typed = True
             # The submit keystroke is part of the atomic send: a rejected press
             # means the text may be sitting unsent in the target, so the whole
-            # send must fail rather than report a silent success.
+            # send must fail rather than report a silent success. Because the
+            # text ALREADY landed in the target, this is a PARTIAL delivery
+            # (W2-001): the queue must treat it as a hard barrier, not retry.
             if not self.post.press(target.hwnd, self.submit):
                 reason = self.post.last_reason or \
                     "the submit keystroke was not posted"
-                return SendResult(False, f"send failed: {reason}", text)
+                return SendResult(False, f"send failed: {reason}", text,
+                                  partial=True)
         except Exception as exc:
-            return SendResult(False, f"send failed: {exc}", text)
+            # type_text may have already mutated the target before the submit
+            # raised — uncertain delivery, same hard barrier.
+            return SendResult(False, f"send failed: {exc}", text,
+                              partial=typed)
         return SendResult(True, "sent silently", text)
 
 
@@ -215,6 +232,7 @@ class ClipboardSender:
             return SendResult(False, why, intent.text)
 
         saved = None
+        pasted = False
         try:
             saved = self.clipboard.get_text()
         except Exception:
@@ -224,10 +242,12 @@ class ClipboardSender:
             self.clipboard.set_text(text)
             if not self.keys.focus(target.hwnd):
                 return SendResult(False, "could not focus the target", text)
+            pasted = True
             self.keys.paste()
             self.keys.press(self.submit)
         except Exception as exc:
-            return SendResult(False, f"send failed: {exc}", text)
+            return SendResult(False, f"send failed: {exc}", text,
+                              partial=pasted)
         finally:
             if saved is not None:
                 try:

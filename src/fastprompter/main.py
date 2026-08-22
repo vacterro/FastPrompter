@@ -211,16 +211,32 @@ _SYNC_SHARED_THREAD = None
 
 
 def wait_thread_seconds(thread, timeout_s, label="QThread"):
-    """Wait for a QThread in seconds and log an explicit shutdown outcome."""
+    """Wait for a thread in seconds and log an explicit shutdown outcome.
+
+    Works for both QThread (``.wait(ms)``) and Python ``threading.Thread``
+    (``.join(s)``) — the caller's thread contract determines the API used
+    (W2-005).
+    """
     from fastprompter.core.logging import logger as _log
 
     try:
-        timeout_ms = max(0, int(float(timeout_s) * 1000))
+        timeout_s = max(0.0, float(timeout_s))
     except (TypeError, ValueError):
         _log.error("%s shutdown FAILED: invalid timeout %r", label, timeout_s)
         return False
     try:
-        stopped = bool(thread.wait(timeout_ms))
+        if hasattr(thread, "wait"):
+            stopped = bool(thread.wait(int(timeout_s * 1000)))
+        elif hasattr(thread, "join"):
+            # W2-005: Python threading.Thread uses join(seconds), not
+            # wait(milliseconds). The caller must have already cancelled
+            # the thread before calling this.
+            thread.join(timeout=timeout_s)
+            stopped = not thread.is_alive()
+        else:
+            _log.error("%s shutdown FAILED: unknown thread type %r",
+                        label, type(thread).__name__)
+            return False
     except Exception:
         _log.exception("%s shutdown FAILED", label)
         return False

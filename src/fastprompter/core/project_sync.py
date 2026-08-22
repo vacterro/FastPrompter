@@ -194,10 +194,12 @@ def read_text_file(path: str, max_bytes: int = DEFAULT_MAX_BYTES):
         try:
             text = data.decode("utf-8-sig")
         except UnicodeDecodeError:
-            # Not UTF-8 (e.g. legacy cp1251/win-1251 notes): still a text
-            # file the user may legitimately edit. Decode lossily rather
-            # than refusing the file.
-            text = data.decode("utf-8", errors="replace")
+            # W2-002: not UTF-8. A lossy decode (errors="replace") would
+            # silently replace undecodable bytes with U+FFFD, and the
+            # UTF-8-only writer would then publish those replacement
+            # characters back to disk — a permanent corruption of the
+            # source file. Fail closed: skip the file instead.
+            return None
     eol = detect_eol(text)
     return text.replace("\r\n", "\n"), eol
 

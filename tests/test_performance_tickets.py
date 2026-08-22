@@ -201,6 +201,69 @@ def test_backup_capture_coalesced_while_active(tmp_path, monkeypatch):
         pb.set_backup_sink(None)
 
 
+# ----------------------------------------------------------------- CORE-005
+def test_deferred_redispatch_failure_keeps_newest_retryable(tmp_path, monkeypatch):
+    import fastprompter.utils.portable_backup as pb
+
+    backup_dir = str(tmp_path / "portable")
+    os.makedirs(backup_dir, exist_ok=True)
+    monkeypatch.setattr(pb, "get_portable_backup_dir", lambda: backup_dir)
+    pb.last_success_by_profile.clear()
+    pb._backup_active.clear()
+    pb._backup_newer_wanted.clear()
+    pb._backup_pending_data.clear()
+
+    calls = {"n": 0, "boom_on": 2}
+    real_capture = pb.capture_snapshot
+    captured = []
+
+    def counting_capture(data, profile_id=1):
+        calls["n"] += 1
+        snap = real_capture(data, profile_id=profile_id)
+        captured.append(snap)
+        return snap
+
+    monkeypatch.setattr(pb, "capture_snapshot", counting_capture)
+
+    received = []
+
+    def flaky_sink(snapshot):
+        received.append(snapshot)
+        if len(received) == calls["boom_on"]:
+            raise RuntimeError("sink gone")
+
+    pb.set_backup_sink(flaky_sink)
+    try:
+        # first dispatch succeeds (worker 1)
+        pb.run_portable_backup({"tag": "v1"}, profile_id=1)
+        assert len(received) == 1
+        assert 1 in pb._backup_active
+
+        # a newer save coalesces while active (worker 1 still running)
+        pb.run_portable_backup({"tag": "v2"}, profile_id=1)
+        assert 1 in pb._backup_newer_wanted
+        assert calls["n"] == 2
+
+        # worker 1 finishes -> deferred redispatch of newest -> sink RAISES
+        pb.backup_finished(profile_id=1)
+
+        # CORE-005: retry state must survive the failed redispatch
+        assert 1 not in pb._backup_active
+        assert 1 in pb._backup_newer_wanted, "newest must stay re-armed"
+        assert 1 in pb._backup_pending_data, "newest snapshot must stay pending"
+        assert pb._backup_pending_data[1] is captured[1], "exact newest snapshot restored"
+        # throttle must NOT be established by the obsolete worker
+        assert 1 not in pb.last_success_by_profile
+
+        # next eligible save retries a fresh snapshot, clearing stale markers
+        pb.run_portable_backup({"tag": "v3"}, profile_id=1)
+        assert 1 not in pb._backup_newer_wanted
+        assert 1 not in pb._backup_pending_data
+        assert calls["n"] == 3
+    finally:
+        pb.set_backup_sink(None)
+
+
 # ----------------------------------------------------------------- PERF-009
 def test_sync_latest_requested_retired_after_publish(tmp_path, monkeypatch):
     import fastprompter.main as main_mod

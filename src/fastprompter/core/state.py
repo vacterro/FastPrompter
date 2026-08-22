@@ -558,6 +558,12 @@ def _migrate_schema(conn, first_category):
     """
     version = conn.execute("PRAGMA user_version").fetchone()[0]
     if version == CURRENT_SCHEMA_VERSION:
+        # CORE-003: a current user_version is NOT proof of a complete current
+        # schema. A hand-trimmed or corrupted v1 can be missing required
+        # tables/columns/PKs; without this preflight init_db would perform
+        # loader-side writes before an incidental OperationalError surfaced
+        # the structural invalidity. Assert the full contract before returning.
+        _assert_schema_requirements(conn, version)
         return
     if version > CURRENT_SCHEMA_VERSION:
         raise UnsupportedSchemaVersion(
@@ -733,6 +739,77 @@ def _assert_schema_requirements(cur, version):
                 f"PRIMARY KEY: expected {sorted(pk)}, found {sorted(actual)}")
 
 
+def _assert_loader_rows(conn, exc=RestoreError):
+    """Raise ``exc`` unless ``conn``'s persisted rows are loadable.
+
+    The ONE read-only loadability contract shared by ``validate_database``
+    (so a backup/restore candidate is rejected before it can replace a
+    known-good artifact) and by normal startup (``exc`` = RestoreError from a
+    restore/backup path, DatabaseOverflowError from the live loader). It
+    mirrors the exact fatal invariants ``init_db`` enforces:
+
+    * ``presets`` rows whose ``slot`` is not an int or is out of 0..99 are
+      fatal only when the category has no free 0..99 slot to recover into
+      (the loader relocates them; fatal only when full);
+    * ``temp_presets_v2`` / ``archive_temp_presets_v2`` rows whose ``slot``
+      is out of 0..99 are always fatal (the loader refuses to alias them).
+
+    Never mutates ``conn``. Returns the number of recoverable presets moves
+    on success.
+    """
+    try:
+        rows = list(conn.execute(
+            "SELECT rowid, category, slot, name, content FROM presets"))
+    except sqlite3.Error as e:
+        raise exc(f"cannot read presets rows: {e}")
+    occupied = {}
+    for _rid, cat, slot, _n, _c in rows:
+        if isinstance(slot, int) and 0 <= slot < 100:
+            occupied.setdefault(cat, set()).add(slot)
+    used = {}
+    unmigratable = []
+    moves = 0
+    for _rid, cat, slot, _n, _c in rows:
+        if isinstance(slot, int) and 0 <= slot < 100:
+            continue
+        occ = occupied.setdefault(cat, set())
+        usd = used.setdefault(cat, set())
+        target = next((i for i in range(100) if i not in occ and i not in usd),
+                      None)
+        if target is None:
+            unmigratable.append(f"{cat}@{slot}")
+        else:
+            usd.add(target)
+            moves += 1
+    if unmigratable:
+        raise exc(
+            "presets carries slot index >= 100 or <0 and the category is "
+            "full (0..99) — placement would require merging two distinct "
+            "snippets, so the database cannot load. Offending rows: "
+            + ", ".join(unmigratable[:20]))
+    for table in ("temp_presets_v2", "archive_temp_presets_v2"):
+        # Version-aware: a legacy v0 file may not carry these tables yet — the
+        # migration creates them empty. Only present tables are validated.
+        present = {r[0] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'")}
+        if table not in present:
+            continue
+        try:
+            overflow = [
+                f"{cat}@{slot}" for cat, slot in conn.execute(
+                    "SELECT category, slot FROM " + table
+                    + " WHERE slot < 0 OR slot >= 100")
+            ]
+        except sqlite3.Error as e:
+            raise exc(f"cannot read {table} rows: {e}")
+        if overflow:
+            raise exc(
+                f"{table} carries slot index >= 100 or <0 (legacy corruption); "
+                "refusing to alias rows. Offending rows: "
+                + ", ".join(overflow[:20]))
+    return moves
+
+
 def _remove_quietly(path):
     try:
         if os.path.exists(path):
@@ -787,6 +864,12 @@ def validate_database(path, max_user_version=CURRENT_SCHEMA_VERSION):
         # version-aware: a v1 file missing v1 columns/tables is malformed and
         # must be rejected here, not discovered as an OperationalError at load.
         _assert_schema_requirements(conn, version)
+        # CORE-001: the schema contract is not the whole loadability contract.
+        # A structurally valid current-version database can still carry rows
+        # (presets/temp/archive out-of-range slots) that init_db determinis-
+        # tically refuses. Such a candidate must never be published over a
+        # known-good backup, so the row invariants are enforced here too.
+        _assert_loader_rows(conn)
         return int(version), tables
     finally:
         conn.close()
@@ -1106,6 +1189,20 @@ class FastPrompterState:
         except Exception:
             return False
 
+    def _await_startup_safety_snapshot(self):
+        """Block until the startup safety snapshot for THIS database generation
+        has either completed or degraded to failure.
+
+        ``_save_data_to_db_locked`` already gates ordinary first saves on the
+        same primitive; this helper exists so loader-side startup mutations
+        (CORE-002: presets overflow recovery) share it instead of duplicating
+        the event logic. Non-blocking for healthy databases: the snapshot is
+        only awaited when an actual startup write is about to happen.
+        """
+        ready = self._startup_backup_ready
+        if ready is not None and not ready.is_set():
+            ready.wait()
+
     def _start_safety_snapshot_async(self, dest):
         """T-818 + CORE-002: produce the validated startup `.bak` snapshot on a
         single tracked background job instead of the startup thread. The first
@@ -1187,6 +1284,15 @@ class FastPrompterState:
             # mistaken for a working one — startup refuses loudly instead.
             _migrate_schema(self.conn, self.data["cats_order"][0] if self.data.get("cats_order") else "Code")
             self.conn.commit()
+
+            # CORE-003: the live schema may be structurally complete but still
+            # carry rows that init_db deterministically refuses (fatal temp/archive
+            # slot overflows). Catch that BEFORE any loader-side mutation writes
+            # to the database — otherwise the recovery UPDATE below can race the
+            # safety snapshot and the first mutation may land on a database that
+            # the loader will then refuse.
+            _assert_loader_rows(self.conn, exc=DatabaseOverflowError)
+
             cur = self.conn.cursor()
 
             for row in cur.execute('SELECT key, value FROM settings'):
@@ -1251,6 +1357,11 @@ class FastPrompterState:
                     "snippets, so the database is left untouched. Offending rows: "
                     + ", ".join(f"{c}@{s}" for c, s in _unmigratable[:20]))
             if _preset_moves:
+                # CORE-002: recovery writes are mutations of the live copy and
+                # must not outrun the promised pre-mutation safety snapshot --
+                # otherwise the eventual .bak can hold the already-repaired
+                # state instead of the recoverable original.
+                self._await_startup_safety_snapshot()
                 logger.warning(
                     "recovering %d out-of-range snippet row(s) into empty slots: %s",
                     len(_preset_moves),

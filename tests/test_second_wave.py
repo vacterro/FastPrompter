@@ -152,7 +152,8 @@ def test_queue_heals_malformed_fields_and_unique_ids():
     d = next(i for i in items if i.text == "d")
     assert d.state == "pending"
 
-    assert "x" in queues and [i.text for i in queues["x"].items] == ["f"]
+    assert "x" not in queues, "CORE-004: malformed slot keys must be dropped"
+    assert all(k in ("0", "1", "2", "3", "4", "5", "6", "7", "8", "9") or k.startswith("a") for k in queues)
 
 
 # ----------------------------------------------------------------- T-1024
@@ -467,3 +468,32 @@ def test_malformed_cats_order_and_hidden_recover_from_db(tmp_path, monkeypatch):
 
 
 import time  # noqa: E402  (used by portable_backup call above)
+
+
+# ----------------------------------------------------------------- CORE-004
+def test_load_queues_canonicalizes_slot_keys():
+    """CORE-004: load_queues accepts only canonical 0..99 / a0..a99 keys and
+    merges numeric aliases, so runtime consumers never see a key whose int()
+    conversion would fail."""
+    from fastprompter.core.watcher.queue import load_queues
+
+    raw = {
+        "x": [{"text": "bad"}],      # non-numeric -> dropped
+        -1: [{"text": "neg"}],       # negative -> dropped
+        100: [{"text": "big"}],      # out of range -> dropped
+        "a100": [{"text": "biga"}],  # archive out of range -> dropped
+        1: [{"text": "one"}],        # int alias
+        "1": [{"text": "one-str"}],  # string alias merges
+        "a1": [{"text": "arch"}],    # valid archive stays distinct
+        0: [{"text": "zero"}],       # valid normal
+    }
+    queues = load_queues(raw)
+
+    assert set(queues) == {"0", "1", "a1"}, set(queues)
+    assert {i.text for i in queues["1"].items} == {"one", "one-str"}
+    assert [i.text for i in queues["a1"].items] == ["arch"]
+    assert [i.text for i in queues["0"].items] == ["zero"]
+
+    # every remaining key must survive the master-view int() conversion
+    for k in queues:
+        int(str(k).lstrip("a") or 0)

@@ -228,6 +228,11 @@ def load_queues(raw):
     every slot, so a duplicate/numeric/whitespace id collides with nothing. A
     legacy numeric slot key (``1``) and its string alias (``"1"`` normalise to
     the same key: their items are MERGED, never silently discarded.
+
+    CORE-004: only canonical slot keys 0..99 (``"0"``..``"99"``) and archive
+    ``"a0"``..``"a99"`` are accepted. Integers, strings, legacy aliases all
+    normalize to the canonical form. Out-of-range, negative, malformed and
+    non-numeric keys are dropped.
     """
     out = {}
     if not isinstance(raw, dict):
@@ -236,7 +241,24 @@ def load_queues(raw):
     for slot, entries in raw.items():
         if not isinstance(entries, list):
             continue
-        key = str(slot)
+        # Canonicalize key
+        if isinstance(slot, bool):
+            continue
+        raw_key = str(slot)
+        norm = raw_key.strip().lower()
+        if norm.startswith("a"):
+            raw_n = norm[1:]
+            is_archive = True
+        else:
+            raw_n = norm
+            is_archive = False
+        try:
+            n = int(raw_n)
+        except (ValueError, TypeError):
+            continue
+        if n < 0 or n >= 100:
+            continue
+        key = ("a" if is_archive else "") + str(n)
         items = []
         for entry in entries:
             item = QueueItem.from_dict(entry, seen)
