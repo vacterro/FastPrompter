@@ -1,7 +1,7 @@
 ---
 phase: DONE
 task: none
-next_action: "WAIT: user brake -- convergence re-run closed at v0.8.51; board clean"
+next_action: "WAIT: user brake -- proposal plan is on the board (T-1035..T-1038); say continue or name a ticket to take the top one"
 blocker: ""
 agent: workbuddy
 saipen_version: 7
@@ -13,9 +13,9 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 864
+last_event: 865
 style_contract: ded-4ae736e4
-updated: "2026-08-22T18:27:46Z"
+updated: "2026-08-22T19:15:42Z"
 transition_from: VALIDATE
 execution_intent: normal
 ---
