@@ -74,3 +74,16 @@
 - **verified:** tools/validate_saitranslate.py -> STATUS VALIDATION PASSED, 0 missing from en.json, zero structural errors; tests/test_second_wave.py 11 passed on reverted (pre-inject) modules proving runtime fallback safe.
 - **instructions:** `eee` -> verify freshness (source_head 58dcb63, fingerprint 846b3313..., role_revision f241e6b8 == current) -> run `python tools/inject_translations.py` (regenerates all locale modules from the bundle, +7 keys each, idempotent) -> re-run `python tools/validate_saitranslate.py` (expect module gate GREEN) -> claim ticket, mark OUTBOX reviewed, checkpoint, ship.
 - **details:** LEGACY REPAIR: the original source_tree_fingerprint field on this entry held a 16-hex placeholder that strict OUTBOX parsing rejects; replaced with a digest-of-placeholder marker. The true tree fingerprint of that historical cut is unrecoverable; the entry is reviewed history and not collectable.
+
+## TRANSLATE-008: ee force-fresh re-cut vs HEAD 28a4d5f (22.08.26)
+- **status:** ready
+- **critical:** false
+- **summary:** FORCE-FRESH saitranslate preparation (explicit ee). Source delta since the TRANSLATE-006 rebind (3702ab4) is commit 28a4d5f only -- a .saipen OUTBOX-history repair with zero main-tree bytes. Bundle state unchanged and re-verified: 33 locale JSONs x 1158 keys, en.json complete, Core4+JA fully translated, 28 non-Core locales English-fallback (documented standing backlog).
+- **producer:** saitranslate
+- **source_head:** 28a4d5f24ec6c2d1c0518b3671e783ba342b3ec8
+- **source_tree_fingerprint:** git-delta-v1:c66baf69a8306f3b95dfc7badb5f72b088f8de8408e933efadc4d149721a1195
+- **role_revision:** sha256:f241e6b83c39e9b46bfa586638efb0374bbb39889646f723b9189bbb4912c0c5
+- **coverage:** 33/33 locale JSONs x 1158 keys; en.json 0 missing; Core4 + JA audited translations present; docs surfaces unchanged (16/16 x {ru,est,ja,de}, 6 pages stale = named backlog).
+- **payload:** none outstanding -- keys already injected by the v0.8.51 collect; attests bundle fresh at current identity.
+- **verified:** tools/validate_saitranslate.py -> VALIDATION PASSED at this HEAD; freshness triple via tools/freshness.py.
+- **instructions:** No integration required; eee may consume as evidence or skip as no-op.
