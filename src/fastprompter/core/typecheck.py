@@ -95,21 +95,21 @@ def iter_tokens(text: str):
         skip.append((m.start(), m.end()))
     skip.sort()
 
-    def skipped(pos: int) -> bool:
-        for s, e in skip:
-            if pos < s:
-                return False
-            if s <= pos < e:
-                return True
-        return False
-
     fence = False
     i = 0
+    skip_idx = 0
+    nskip = len(skip)
     while i < n:
-        ch = text[i]
-        if skipped(i):
-            i += 1
+        # PERF-002: consume skip ranges with ONE monotonic cursor. Advance it
+        # past ranges that ended, then if we are inside the current range jump
+        # straight to its end (overlapping ranges are handled naturally: the
+        # cursor stops on the longest still-open range).
+        while skip_idx < nskip and i >= skip[skip_idx][1]:
+            skip_idx += 1
+        if skip_idx < nskip and skip[skip_idx][0] <= i < skip[skip_idx][1]:
+            i = skip[skip_idx][1]
             continue
+        ch = text[i]
         if ch == "`":
             j = i
             while j < n and text[j] == "`":
@@ -190,23 +190,41 @@ class Dictionary:
         if user_words:
             self.pool.update(w.lower() for w in user_words if isinstance(w, str))
         self._words = None  # list cache for difflib suggestions
+        self._rebuild_script_counts()
+
+    def _rebuild_script_counts(self):
+        """PERF-001: one pass over the pool, cached per-script counts capped
+        at the coverage threshold. ``unknown`` must be O(1) per token, not a
+        rescan of up to ~20k entries for every word."""
+        counts: dict[str, int] = {}
+        for w in self.pool:
+            if w:
+                script = _script_of(w[0])
+                n = counts.get(script, 0) + 1
+                if n >= _MIN_SCRIPT_WORDS:
+                    counts[script] = n
+                else:
+                    counts[script] = n
+        self._script_counts = counts
 
     def add(self, word: str) -> None:
-        """Add a word (lowercased) and invalidate the suggestion cache."""
+        """Add a word (lowercased) and invalidate the suggestion cache.
+
+        PERF-001: only a genuinely NEW unique word may raise a script's
+        coverage count; duplicates must not increment it."""
         word = word.strip().lower()
-        if word:
+        if word and word not in self.pool:
             self.pool.add(word)
             self._words = None
+            script = _script_of(word[0])
+            n = self._script_counts.get(script, 0) + 1
+            if n >= _MIN_SCRIPT_WORDS:
+                n = _MIN_SCRIPT_WORDS
+            self._script_counts[script] = n
 
     def _script_count(self, script: str) -> int:
-        """Distinct words of ``script`` in the pool (capped at the minimum)."""
-        count = 0
-        for w in self.pool:
-            if w and _script_of(w[0]) == script:
-                count += 1
-                if count >= _MIN_SCRIPT_WORDS:
-                    return count
-        return count
+        """Distinct words of ``script`` in the pool, O(1) (PERF-001)."""
+        return self._script_counts.get(script, 0)
 
     def unknown(self, word: str) -> bool:
         """Is ``word`` worth flagging? False for anything unjudgeable."""

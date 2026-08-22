@@ -132,3 +132,25 @@ def test_ui_vocabulary_accepts_foreign_ui_words():
 def test_common_words_are_in_the_shipped_dictionary(word):
     from fastprompter.core.typecheck_words import BASE_WORDS
     assert word in BASE_WORDS, word
+
+
+# ----------------------------------------------------------------- PERF-001
+def test_script_coverage_is_cached():
+    from fastprompter.core.typecheck import Dictionary
+    d = Dictionary({"hello", "world", "привет", "мир"})
+    # _script_counts built once at construction
+    assert "latin" in d._script_counts
+    assert "cyrillic" in d._script_counts
+    before = dict(d._script_counts)
+    # repeated unknown() calls must NOT rescan the pool
+    d.unknown("hello")
+    d.unknown("foo")
+    d.unknown("бар")
+    assert d._script_counts == before
+    # adding a new word increases only its script's count
+    d.add("новый")
+    assert d._script_counts["cyrillic"] == before["cyrillic"] + 1
+    assert d._script_counts["latin"] == before["latin"]
+    # duplicate add does not bump
+    d.add("hello")
+    assert d._script_counts["latin"] == before["latin"]
