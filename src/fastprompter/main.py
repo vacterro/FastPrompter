@@ -3614,7 +3614,10 @@ class FastPrompter(
         word = (word or "").strip().lower()
         if not word:
             return
-        words = self.data.get("typo_user_words") or []
+        # NB: no ``or []`` here — when the stored list is empty it is falsy
+        # and the ``or`` would hand us a throwaway copy, so the append below
+        # would never reach the persisted store.
+        words = self.data.get("typo_user_words")
         if not isinstance(words, list):
             words = []
             self.data["typo_user_words"] = words
@@ -3944,7 +3947,9 @@ class FastPrompter(
         """
         self._sync_pending_apply = False
         try:
-            if not self._sync_config():
+            # Per-silo links work WITHOUT a Sync-Project folder, so the
+            # guard must not bail just because there is no folder config.
+            if not self._sync_config() and not (self.data.get("silo_links") or {}):
                 return
             from fastprompter.core import project_sync as ps
             presets = self.data.get("temp_presets") or []
@@ -4243,7 +4248,7 @@ class FastPrompter(
         self.activateWindow()
         if not path:
             return
-        from fastpromptp.core import project_sync as ps
+        from fastprompter.core import project_sync as ps
         path = os.path.abspath(path)
         read = ps.read_text_file(path, self._sync_max_bytes())
         if read is None:

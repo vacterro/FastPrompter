@@ -9,12 +9,21 @@ names, watcher not re-armed) fail here instead of at the user's desk.
 import datetime
 import os
 
-from fastprompter.core.timers import REPEAT_NONE, Timer
+from fastprompter.core.timers import Timer
 
 
 def _set_silo(win, text):
     win.data["temp_presets"][0] = text
     win._switch_to_slot(0, initial=True, is_archive=False)
+
+
+def _edit_silo(win, idx, text):
+    """Simulate the user editing a silo in the app: the editor is the live
+    source of truth for the ACTIVE slot (that is what ``_push_sync_files``
+    reads), and the cache timer keeps ``temp_presets`` in sync with it."""
+    win.data["temp_presets"][idx] = text
+    if idx == getattr(win, "active_temp_slot", -1):
+        win.text_area.setPlainText(text)
 
 
 # ---------------------------------------------------------------- typecheck
@@ -79,6 +88,9 @@ def _convert_project(win, folder):
         mapping[str(slot)] = rel
         win._sync_last_applied[path] = text
     win._start_project_watcher()
+    # load silo 0 into the editor so the ACTIVE slot reflects the converted
+    # content (the editor is the live source for app->file pushes)
+    win._switch_to_slot(0, initial=True, is_archive=False)
     return cfg
 
 
@@ -87,7 +99,7 @@ def test_sync_project_app_to_file(win, tmp_path):
     (tmp_path / "b.md").write_text("two", encoding="utf-8")
     _convert_project(win, str(tmp_path))
     # edit silo 0 in the app -> push -> the FILE changes
-    win.data["temp_presets"][0] = "one edited"
+    _edit_silo(win, 0, "one edited")
     win._push_sync_files()
     assert (tmp_path / "a.txt").read_text(encoding="utf-8") == "one edited"
     # and the OTHER silo's file is untouched
@@ -133,14 +145,18 @@ def test_sync_project_new_file_becomes_a_silo(win, tmp_path):
     assert len(presets) >= n_before
 
 
-def test_unlink_project_keeps_silos_and_stops_mapping(win, tmp_path):
+def test_unlink_project_keeps_silos_and_stops_mapping(win, tmp_path, monkeypatch):
+    from PyQt6.QtWidgets import QMessageBox
+    monkeypatch.setattr(
+        "fastprompter.main.QMessageBox.question",
+        staticmethod(lambda *a, **k: QMessageBox.StandardButton.Yes))
     (tmp_path / "a.txt").write_text("one", encoding="utf-8")
     _convert_project(win, str(tmp_path))
     win._unlink_project_sync()
     assert win.data["temp_presets"][0] == "one"
     assert not (win.data.get("project_sync_map") or {})
     # app edits no longer reach the file
-    win.data["temp_presets"][0] = "after unlink"
+    _edit_silo(win, 0, "after unlink")
     win._push_sync_files()
     assert (tmp_path / "a.txt").read_text(encoding="utf-8") == "one"
 
@@ -161,7 +177,7 @@ def test_silo_link_and_unlink(win, tmp_path, monkeypatch):
     assert win.data["temp_presets"][0] == "file content"
     assert win._link_file_for_slot(0) == os.path.abspath(str(linked))
     # app edit -> file
-    win.data["temp_presets"][0] = "edited in app"
+    _edit_silo(win, 0, "edited in app")
     win._push_sync_files()
     assert linked.read_text(encoding="utf-8") == "edited in app"
     # external edit -> silo
@@ -184,6 +200,7 @@ def _seed_missed(win, minutes_ago=30):
     t = Timer(name="rent", kind="calendar",
               target=datetime.datetime.now()
               - datetime.timedelta(minutes=minutes_ago))
+    t.fired = True  # a one-shot that already fired (as _notify_timer leaves it)
     win.timers.append(t)
     win._missed_timer_ids.add(t.id)
     return t
