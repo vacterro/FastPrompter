@@ -109,10 +109,10 @@ def test_sync_project_app_to_file(win, tmp_path):
 def test_sync_project_file_to_app(win, tmp_path):
     (tmp_path / "a.txt").write_text("one", encoding="utf-8")
     _convert_project(win, str(tmp_path))
-    # external edit -> apply -> the SILO changes
+    # external edit -> apply -> the SILO changes. The session baseline
+    # (what we last wrote) stays in place: a normal external edit is only a
+    # conflict when there is NO baseline (e.g. after an app restart).
     (tmp_path / "a.txt").write_text("one external", encoding="utf-8")
-    win._sync_last_applied.pop(
-        os.path.join(str(tmp_path), "a.txt"), None)
     win._apply_external_sync()
     assert win.data["temp_presets"][0] == "one external"
 
@@ -180,9 +180,8 @@ def test_silo_link_and_unlink(win, tmp_path, monkeypatch):
     _edit_silo(win, 0, "edited in app")
     win._push_sync_files()
     assert linked.read_text(encoding="utf-8") == "edited in app"
-    # external edit -> silo
+    # external edit -> silo (baseline stays: not a restart conflict)
     linked.write_text("edited outside", encoding="utf-8")
-    win._sync_last_applied.pop(os.path.abspath(str(linked)), None)
     win._apply_external_sync()
     assert win.data["temp_presets"][0] == "edited outside"
     # unlink: silo keeps its text, file untouched afterwards
@@ -191,6 +190,114 @@ def test_silo_link_and_unlink(win, tmp_path, monkeypatch):
     win.data["temp_presets"][0] = "post unlink"
     win._push_sync_files()
     assert linked.read_text(encoding="utf-8") == "edited outside"
+
+
+# ------------------------------------------------------------- sync conflicts
+
+
+def _seed_conflict(win, tmp_path, silo_text="app edited", file_text="file edited"):
+    """Convert a one-file project, then simulate an app restart (no session
+    baselines) with BOTH sides edited differently."""
+    (tmp_path / "a.txt").write_text("one", encoding="utf-8")
+    _convert_project(win, str(tmp_path))
+    win._sync_last_applied.clear()  # fresh session: no baselines
+    _edit_silo(win, 0, silo_text)
+    (tmp_path / "a.txt").write_text(file_text, encoding="utf-8")
+    return tmp_path / "a.txt"
+
+
+def test_conflict_file_wins_on_external_apply(win, tmp_path, monkeypatch):
+    _seed_conflict(win, tmp_path)
+    calls = []
+    monkeypatch.setattr(
+        win, "_sync_ask_conflict",
+        lambda path, slot, ft, st: calls.append((path, slot, ft, st)) or "file")
+    win._apply_external_sync()
+    # the file version wins: the silo takes the file text, file untouched
+    assert win.data["temp_presets"][0] == "file edited"
+    assert (tmp_path / "a.txt").read_text(encoding="utf-8") == "file edited"
+    assert calls and calls[0][2] == "file edited" and calls[0][3] == "app edited"
+
+
+def test_conflict_app_wins_on_external_apply(win, tmp_path, monkeypatch):
+    _seed_conflict(win, tmp_path)
+    monkeypatch.setattr(win, "_sync_ask_conflict",
+                        lambda path, slot, ft, st: "app")
+    win._apply_external_sync()
+    # the app version wins: the FILE takes the silo text
+    assert win.data["temp_presets"][0] == "app edited"
+    assert (tmp_path / "a.txt").read_text(encoding="utf-8") == "app edited"
+
+
+def test_conflict_skip_leaves_both_untouched(win, tmp_path, monkeypatch):
+    _seed_conflict(win, tmp_path)
+    monkeypatch.setattr(win, "_sync_ask_conflict",
+                        lambda path, slot, ft, st: None)
+    win._apply_external_sync()
+    assert win.data["temp_presets"][0] == "app edited"
+    assert (tmp_path / "a.txt").read_text(encoding="utf-8") == "file edited"
+
+
+def test_conflict_app_wins_on_push(win, tmp_path, monkeypatch):
+    _seed_conflict(win, tmp_path)
+    monkeypatch.setattr(win, "_sync_ask_conflict",
+                        lambda path, slot, ft, st: "app")
+    win._push_sync_files()
+    # the app version wins: the FILE takes the silo text
+    assert (tmp_path / "a.txt").read_text(encoding="utf-8") == "app edited"
+    assert win.data["temp_presets"][0] == "app edited"
+
+
+def test_conflict_file_wins_on_push(win, tmp_path, monkeypatch):
+    _seed_conflict(win, tmp_path)
+    monkeypatch.setattr(win, "_sync_ask_conflict",
+                        lambda path, slot, ft, st: "file")
+    win._push_sync_files()
+    # the file version wins: the silo takes the file text, file untouched
+    assert win.data["temp_presets"][0] == "file edited"
+    assert (tmp_path / "a.txt").read_text(encoding="utf-8") == "file edited"
+
+
+def test_no_conflict_when_sides_are_equal(win, tmp_path, monkeypatch):
+    # fresh session, but neither side changed: no prompt, no clobber
+    (tmp_path / "a.txt").write_text("one", encoding="utf-8")
+    _convert_project(win, str(tmp_path))
+    win._sync_last_applied.clear()
+    called = []
+    monkeypatch.setattr(win, "_sync_ask_conflict",
+                        lambda *a, **k: called.append(1) or "app")
+    win._apply_external_sync()
+    assert not called
+    assert win.data["temp_presets"][0] == "one"
+    assert (tmp_path / "a.txt").read_text(encoding="utf-8") == "one"
+
+
+def test_skip_is_remembered_for_the_same_conflict(win, tmp_path, monkeypatch):
+    _seed_conflict(win, tmp_path)
+    calls = []
+    monkeypatch.setattr(
+        win, "_sync_ask_conflict",
+        lambda path, slot, ft, st: calls.append(1) or None)
+    win._apply_external_sync()
+    assert len(calls) == 1
+    # second pass with the SAME sides: the skip is remembered, no re-prompt
+    win._apply_external_sync()
+    assert len(calls) == 1
+    assert win.data["temp_presets"][0] == "app edited"
+    assert (tmp_path / "a.txt").read_text(encoding="utf-8") == "file edited"
+
+
+def test_skip_reprompts_after_a_side_changes(win, tmp_path, monkeypatch):
+    _seed_conflict(win, tmp_path)
+    calls = []
+    monkeypatch.setattr(win, "_sync_ask_conflict",
+                        lambda path, slot, ft, st: calls.append(1) or None)
+    win._apply_external_sync()
+    assert len(calls) == 1
+    # the user edits the silo again -> the conflict tuple changed -> re-prompt
+    _edit_silo(win, 0, "app edited v2")
+    win._apply_external_sync()
+    assert len(calls) == 2
 
 
 # ------------------------------------------------------------- passed events

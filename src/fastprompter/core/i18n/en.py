@@ -1172,6 +1172,16 @@ TRANSLATIONS: dict[str, str] = {
     'That file cannot be read as text (too large or binary).': 'That file cannot be read as text (too large or binary).',
     'Text files (*.txt *.md *.markdown *.py *.js *.ts *.json *.yaml *.yml *.toml *.ini *.cfg *.csv *.html *.css *.xml *.log *.sh *.bat *.ps1 *.sql);;All files (*.*)': 'Text files (*.txt *.md *.markdown *.py *.js *.ts *.json *.yaml *.yml *.toml *.ini *.cfg *.csv *.html *.css *.xml *.log *.sh *.bat *.ps1 *.sql);;All files (*.*)',
 
+    # --- sync conflict ------------------------------------------------------
+    'Sync conflict': 'Sync conflict',
+    'The file and its silo were both changed and cannot be merged '
+    'automatically.\n\n{}\n\nWhich version should win?': 'The file and its silo were both changed and cannot be merged '
+    'automatically.\n\n{}\n\nWhich version should win?',
+    'App version (silo {}):\n{}\n\nFile version:\n{}': 'App version (silo {}):\n{}\n\nFile version:\n{}',
+    'Keep app version': 'Keep app version',
+    'Keep file version': 'Keep file version',
+    'Skip for now': 'Skip for now',
+
     # --- passed events ------------------------------------------------------
     '⚠ Passed-event alert': '⚠ Passed-event alert',
     'Colour the date/time counter when a calendar event\'s time has passed and was not acknowledged — so a missed event is not forgotten. Right-click the date label to clear it.': 'Colour the date/time counter when a calendar event\'s time has passed and was not acknowledged — so a missed event is not forgotten. Right-click the date label to clear it.',

@@ -918,6 +918,10 @@ class FastPrompter(
         # tell OUR writes apart from external edits
         self._sync_last_applied = {}
         self._sync_pending_apply = False
+        # session-scoped "skip for now" set for two-sided edit conflicts:
+        # (path, file_text, silo_text) tuples the user chose not to resolve.
+        # As long as neither side changes, no nagging; a change re-prompts.
+        self._sync_conflict_skipped: set = set()
 
         # --- passed-event attention (red date label) ----------------------
         # One-shot timers that fired and were NOT acknowledged (Dismiss).
@@ -3826,6 +3830,63 @@ class FastPrompter(
             return presets[slot] == applied
         return True
 
+    def _sync_conflict_choice(self, path, slot, file_text, silo_text):
+        """Resolve a two-sided edit conflict, remembering "skip for now".
+
+        A conflict is a bound file whose content differs from its silo while
+        we have NO session baseline for it (e.g. both were edited while the
+        app was closed) — neither side can be judged newer, so silently
+        picking one would lose the other's work.
+
+        Returns ``'app'`` (the silo text wins), ``'file'`` (the file text
+        wins) or ``None`` when the user chose to skip for now. A skipped
+        conflict is recorded as ``(path, file_text, silo_text)`` so it stops
+        nagging until one of the two sides changes.
+        """
+        key = (path, file_text, silo_text)
+        if key in getattr(self, "_sync_conflict_skipped", ()):
+            return None
+        choice = self._sync_ask_conflict(path, slot, file_text, silo_text)
+        if choice is None:
+            self._sync_conflict_skipped.add(key)
+        return choice
+
+    def _sync_ask_conflict(self, path, slot, file_text, silo_text):
+        """The modal "which side wins?" dialog. Returns 'app' | 'file' | None."""
+        lang = getattr(self, "_current_lang", "EN")
+
+        def _preview(s):
+            s = (s or "").replace("\r\n", "\n").replace("\r", "\n")
+            s = "\n".join(line for line in s.split("\n") if line.strip())
+            return (s[:200] + "…") if len(s) > 200 else (s or "—")
+
+        box = QMessageBox(self)
+        box.setWindowTitle(tr("Sync conflict", lang))
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setText(tr(
+            "The file and its silo were both changed and cannot be merged "
+            "automatically.\n\n{}\n\nWhich version should win?", lang)
+            .format(os.path.basename(path)))
+        box.setInformativeText(tr(
+            "App version (silo {}):\n{}\n\nFile version:\n{}", lang)
+            .format(slot + 1, _preview(silo_text), _preview(file_text)))
+        btn_app = box.addButton(tr("Keep app version", lang),
+                                QMessageBox.ButtonRole.AcceptRole)
+        btn_file = box.addButton(tr("Keep file version", lang),
+                                 QMessageBox.ButtonRole.AcceptRole)
+        # the skip button needs no reference: any click that is neither
+        # "app" nor "file" (skip, or the dialog was dismissed) means None
+        box.addButton(tr("Skip for now", lang),
+                      QMessageBox.ButtonRole.RejectRole)
+        box.setDefaultButton(btn_app)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked is btn_app:
+            return "app"
+        if clicked is btn_file:
+            return "file"
+        return None
+
     def _drop_slot_bindings(self, idx):
         """Unbind a silo from its file(s) WITHOUT touching the files.
 
@@ -3876,6 +3937,26 @@ class FastPrompter(
                 read = ps.read_text_file(path, self._sync_max_bytes())
                 if read is not None:
                     eol = read[1]
+                    if (self._sync_last_applied.get(path) is None
+                            and read[0] != text):
+                        # no session baseline + the file disagrees with the
+                        # silo: a two-sided conflict (e.g. both edited while
+                        # the app was closed) — ask before overwriting
+                        choice = self._sync_conflict_choice(
+                            path, slot, read[0], text)
+                        if choice == "file":
+                            # the file text wins: pull it into the silo
+                            self._sync_last_applied[path] = read[0]
+                            presets[slot] = read[0]
+                            if (slot == active and not editing_snippet
+                                    and not getattr(self, "active_is_archive",
+                                                    False)):
+                                self._set_plain_text_clean(self.text_area,
+                                                           read[0])
+                            continue
+                        if choice != "app":
+                            continue  # skipped for now — leave both sides
+                        # "app": fall through and write the silo text
                 written = ps.write_text_file(path, text, eol)
                 if written is not None:
                     self._sync_last_applied[path] = written
@@ -3935,6 +4016,53 @@ class FastPrompter(
         self._start_project_watcher()
         self._on_sync_file_changed(_path)
 
+    def _apply_external_change(self, slot, path, text, eol, presets, active,
+                               editing_snippet, applied):
+        """Apply ONE external file change to its silo, resolving conflicts.
+
+        Shared by the Sync-Project map and the per-silo link branches of
+        ``_apply_external_sync``. Rules:
+        * content equal to what we last wrote/applied is OUR OWN write — no-op;
+        * a silo with newer app-side text is skipped (the app side wins
+          while it is being typed; the next external change retries);
+        * NO session baseline + differing file/silo text is a two-sided
+          conflict: the user picks a winner instead of one side silently
+          clobbering the other (``_sync_resolve_conflict``).
+        """
+        if self._sync_last_applied.get(path) == text:
+            return
+        if not self._silo_clean(slot, path):
+            return  # the app side is newer (typing) — retry later
+        if self._sync_last_applied.get(path) is None:
+            # No baseline this session: a difference between the file and the
+            # silo is a two-sided conflict (e.g. both edited while the app
+            # was closed), not a normal external edit.
+            silo_text = presets[slot] if 0 <= slot < len(presets) else ""
+            if (slot == active and not editing_snippet
+                    and not getattr(self, "active_is_archive", False)):
+                try:
+                    if self.text_area.toPlainText() != silo_text:
+                        return  # the user is typing — app side wins for now
+                except Exception:
+                    pass
+            if silo_text != text:
+                choice = self._sync_conflict_choice(
+                    path, slot, text, silo_text)
+                if choice == "app":
+                    # the silo text wins: write it back to the file
+                    self._sync_last_applied[path] = silo_text
+                    try:
+                        from fastprompter.core import project_sync as ps
+                        ps.write_text_file(path, silo_text, eol)
+                    except Exception:
+                        pass
+                    return
+                if choice != "file":
+                    return  # skipped for now — leave both sides alone
+                # "file": fall through and pull the file text into the silo
+        self._sync_last_applied[path] = text
+        applied[slot] = text
+
     def _apply_external_sync(self):
         """File -> app: pull external edits from disk into the silos.
 
@@ -3943,7 +4071,9 @@ class FastPrompter(
         * a silo with newer app-side text is skipped (the app side wins
           while it is being typed; the next external change retries);
         * new files matching the filters claim the first free slot;
-        * files deleted on disk drop their mapping entry (silo text stays).
+        * files deleted on disk drop their mapping entry (silo text stays);
+        * no baseline + differing file/silo text is a two-sided conflict
+          resolved by the user (``_sync_resolve_conflict``).
         """
         self._sync_pending_apply = False
         try:
@@ -3976,12 +4106,9 @@ class FastPrompter(
                     if read is None:
                         continue
                     text, _eol = read
-                    if self._sync_last_applied.get(path) == text:
-                        continue
-                    if not self._silo_clean(slot, path):
-                        continue
-                    self._sync_last_applied[path] = text
-                    applied[slot] = text
+                    self._apply_external_change(
+                        slot, path, text, _eol, presets, active,
+                        editing_snippet, applied)
 
                 # --- new files -> new silos --------------------------------
                 files = ps.scan_folder(root, self._sync_include(),
@@ -4017,16 +4144,13 @@ class FastPrompter(
                 if read is None:
                     continue
                 text, _eol = read
-                if self._sync_last_applied.get(path) == text:
-                    continue
                 try:
                     slot = int(slot_key)
                 except (TypeError, ValueError):
                     continue
-                if not self._silo_clean(slot, path):
-                    continue
-                self._sync_last_applied[path] = text
-                applied[slot] = text
+                self._apply_external_change(
+                    slot, path, text, _eol, presets, active,
+                    editing_snippet, applied)
 
             # --- publish into the silos -------------------------------------
             if not applied:
