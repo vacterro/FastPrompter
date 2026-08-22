@@ -934,6 +934,8 @@ class FastPrompter(
         # tell OUR writes apart from external edits
         self._sync_last_applied = {}
         self._sync_pending_apply = False
+        self._sync_changed_files = set()
+        self._sync_dir_changed = False
         # session-scoped "skip for now" set for two-sided edit conflicts:
         # (path, file_text, silo_text) tuples the user chose not to resolve.
         # As long as neither side changes, no nagging; a change re-prompts.
@@ -4069,17 +4071,23 @@ class FastPrompter(
             from fastprompter.core.logging import logger
             logger.debug("start project watcher failed", exc_info=True)
 
-    def _on_sync_file_changed(self, _path):
-        """Any file in the watched set changed: debounce ONE apply pass."""
-        if self._sync_pending_apply:
-            return
-        self._sync_pending_apply = True
-        self._sync_apply_timer.start()
+    def _on_sync_file_changed(self, path):
+        """Any file in the watched set changed: debounce ONE apply pass.
 
-    def _on_sync_dir_changed(self, _path):
-        """A directory changed (new/removed subfolder): re-arm, then apply."""
-        self._start_project_watcher()
-        self._on_sync_file_changed(_path)
+        PERF-003: the changed path is retained (not discarded) so the apply
+        pass can read ONLY the affected bound files instead of rescanning the
+        whole project."""
+        if not self._sync_pending_apply:
+            self._sync_pending_apply = True
+            self._sync_apply_timer.start()
+        if isinstance(path, str) and path:
+            self._sync_changed_files.add(os.path.normcase(path))
+
+    def _on_sync_dir_changed(self, path):
+        """A directory changed (new/removed subfolder): coalesce watcher
+        rebuild + discovery into the apply pass (PERF-003)."""
+        self._sync_dir_changed = True
+        self._on_sync_file_changed(path)
 
     def _apply_external_change(self, slot, path, text, eol, presets, active,
                                editing_snippet, applied):
@@ -4152,6 +4160,10 @@ class FastPrompter(
           resolved by the user (``_sync_resolve_conflict``).
         """
         self._sync_pending_apply = False
+        changed = self._sync_changed_files
+        self._sync_changed_files = set()
+        dir_changed = self._sync_dir_changed
+        self._sync_dir_changed = False
         try:
             # Per-silo links work WITHOUT a Sync-Project folder, so the
             # guard must not bail just because there is no folder config.
@@ -4163,6 +4175,12 @@ class FastPrompter(
             editing_snippet = getattr(self, "editing_snippet", None)
             applied: dict[int, str] = {}
 
+            # PERF-003: a directory-structure change forces a full discovery
+            # pass; a plain file-change batch does NOT. When only files
+            # changed, restrict the project-map read to exactly the affected
+            # bound files instead of rescanning the whole project.
+            file_only = bool(changed) and not dir_changed
+
             # --- project map: external edits to bound files ---------------
             root = self._sync_root()
             if root and os.path.isdir(root):
@@ -4173,6 +4191,8 @@ class FastPrompter(
                     try:
                         slot = int(slot_key)
                     except (TypeError, ValueError):
+                        continue
+                    if file_only and os.path.normcase(path) not in changed:
                         continue
                     if not os.path.exists(path):
                         mapping.pop(slot_key, None)
@@ -4214,6 +4234,8 @@ class FastPrompter(
             links = self.data.get("silo_links") or {}
             for slot_key, path in list(links.items()):
                 if not isinstance(path, str) or not path:
+                    continue
+                if file_only and os.path.normcase(path) not in changed:
                     continue
                 if not os.path.exists(path):
                     continue
