@@ -2349,6 +2349,13 @@ class VaultTextEdit(QTextEdit):
         self._add_kanban_menu(menu, lang)
         state = tr("ON", lang) if self.main_win.data.get("auto_bullet", "False") == "True" else tr("OFF", lang)
         menu.addAction(f"{tr('Auto-Bullet:', lang)} {state}", self._toggle_auto_bullet)
+        # Typecheck: suggestions + "add to dictionary" for the flagged word
+        # under the cursor. Built by main.py so the dictionary lives there.
+        if hasattr(self.main_win, "build_spelling_menu"):
+            try:
+                self.main_win.build_spelling_menu(menu, event.pos())
+            except Exception:
+                pass
         menu.exec(event.globalPos())
 
     def _add_table_menu(self, menu, lang):
@@ -4029,6 +4036,8 @@ class VaultTextEdit(QTextEdit):
                                 painter.strokePath(path, QColor("#666666"))
                     block = block.next()
 
+            self._paint_typo_underlines(painter, doc, y_off)
+
             self._paint_line_tints(painter, doc, doc_layout, y_off, vp_rect)
 
             # Line-blocking drag: translucent box over the candidate drop
@@ -4052,6 +4061,74 @@ class VaultTextEdit(QTextEdit):
 
         finally:
             painter.end()
+
+    def _paint_typo_underlines(self, painter, doc, y_off):
+        """Wavy underlines under flagged words (painted directly).
+
+        Deliberately NOT routed through setExtraSelections: that channel is
+        owned by the code-panel tinting path (``_apply_extra_selections``),
+        which skips its pass unless the fence membership changed. Sharing it
+        would couple the two features and re-enter the layout pass from the
+        checker. Drawing here is independent — no recursion, no conflicts
+        (this is the checker's "never recursive" contract, kept on the paint
+        side as well).
+
+        ``_typo_spans`` is ``[(start, end)]`` in ABSOLUTE document offsets,
+        set by main.py after each debounced check; ``_typo_color`` is the
+        user-chosen underline colour.
+        """
+        spans = getattr(self, "_typo_spans", None)
+        if not spans:
+            return
+        color = getattr(self, "_typo_color", None)
+        if not color:
+            return
+        qcolor = QColor(color)
+        if not qcolor.isValid():
+            return
+        by_block: dict[int, list[tuple[int, int]]] = {}
+        for start, end in spans:
+            block = doc.findBlock(start)
+            if block.isValid():
+                by_block.setdefault(block.blockNumber(), []).append(
+                    (start - block.position(), end - block.position()))
+        block = self._first_visible_block()
+        if not block:
+            return
+        painter.save()
+        painter.setPen(QPen(qcolor, 1))
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+        doc_layout = doc.documentLayout()
+        vp_h = self.viewport().height()
+        while block.isValid():
+            br = doc_layout.blockBoundingRect(block).translated(0, y_off)
+            if br.top() > vp_h:
+                break
+            spans_b = by_block.get(block.blockNumber())
+            if spans_b and br.bottom() >= 0:
+                layout = block.layout()
+                for local_s, local_e in spans_b:
+                    line = layout.lineForTextPosition(local_s)
+                    if not line.isValid():
+                        continue
+                    ts = line.textStart()
+                    ls = max(local_s, ts)
+                    le = min(local_e, ts + line.textLength())
+                    if le <= ls:
+                        continue
+                    x = br.left() + line.x() + line.horizontalAdvance(ls - ts)
+                    w = line.horizontalAdvance(ls - ts, le - ls)
+                    y = br.top() + line.y() + line.ascent() + 1
+                    segs = max(2, int(w / 5))
+                    for k in range(segs):
+                        sx = x + w * k / segs
+                        ex = x + w * (k + 1) / segs
+                        if k % 2 == 0:
+                            painter.drawLine(QPointF(sx, y - 1), QPointF(ex, y + 1))
+                        else:
+                            painter.drawLine(QPointF(sx, y + 1), QPointF(ex, y - 1))
+            block = block.next()
+        painter.restore()
 
     def _toggle_checkboxes(self):
         doc = self.document()

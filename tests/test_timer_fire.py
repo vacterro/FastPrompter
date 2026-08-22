@@ -98,7 +98,7 @@ def _bind(fake):
 def _patch_toast(monkeypatch, truthy=True):
     seen = []
 
-    def fake(main_win, timer, on_snooze=None):
+    def fake(main_win, timer, on_snooze=None, on_dismiss=None):
         seen.append(timer)
         return object() if truthy else None
 

@@ -49,6 +49,12 @@ _JSON_SETTINGS = (
     # be here or a str() write would reload it as a single-quoted string and
     # every category would be re-allocated a new physical folder.
     "category_file_dirs",
+    # Sync-Project + per-silo file links: per-category dicts (config,
+    # slot->file maps) and the user typecheck dictionary (a list).
+    "project_sync", "project_sync_all",
+    "project_sync_map", "project_sync_map_all",
+    "silo_links", "silo_links_all",
+    "typo_user_words",
 )
 
 # Never stored in the settings table: they have tables of their own.
@@ -68,6 +74,7 @@ _PER_CATEGORY_STATE_KEYS = (
     "silo_project_paths_all", "archive_project_paths_all",
     "watcher_queues_all", "silo_gaps_all", "silo_gap_names_all",
     "silo_type_all", "silo_session_all", "silo_view_state_all",
+    "project_sync_all", "project_sync_map_all", "silo_links_all",
 )
 
 # Flat active-category alias -> the _all store it aliases. ONE source of
@@ -91,6 +98,9 @@ _PER_CATEGORY_ALIASES = (
     ("archive_project_paths", "archive_project_paths_all"),
     ("watcher_queues", "watcher_queues_all"),
     ("silo_types", "silo_type_all"),
+    ("project_sync", "project_sync_all"),
+    ("project_sync_map", "project_sync_map_all"),
+    ("silo_links", "silo_links_all"),
 )
 
 # The natural empty value for a category's per-category store.
@@ -162,6 +172,13 @@ _STRUCTURED_CODECS = {
     "hidden_categories": (list, [], False),
     "window_presets": (list, [], False),
     "category_file_dirs": (dict, {}, False),
+    "project_sync": (dict, {}, False),
+    "project_sync_all": (dict, {}, False),
+    "project_sync_map": (dict, {}, False),
+    "project_sync_map_all": (dict, {}, False),
+    "silo_links": (dict, {}, False),
+    "silo_links_all": (dict, {}, False),
+    "typo_user_words": (list, [], False),
 }
 
 
@@ -202,6 +219,9 @@ _PER_CATEGORY_VALUE_TYPES = {
     "silo_session_all": (dict, None),
     "silo_view_state_all": (dict, None),
     "silo_last_edited_all": (dict, None),
+    "project_sync_all": (dict, None),
+    "project_sync_map_all": (dict, None),
+    "silo_links_all": (dict, None),
 }
 
 

@@ -1095,4 +1095,91 @@ TRANSLATIONS: dict[str, str] = {
     '🦓 Zebra Stripes': '🦓 Zebra Stripes',
     '🧹 Clear': '🧹 Clear',
     '🪟 Normal Window': '🪟 Normal Window',
+
+    # --- typecheck (typo checker) -------------------------------------------
+    '✏ Typo check (dictionary)': '✏ Typo check (dictionary)',
+    'Underline words the built-in dictionary does not know, with '
+    'right-click suggestions and an \'add to dictionary\' entry.\n'
+    'Off by default. Smart skips: code fences, URLs, identifiers, '
+    'acronyms; non-Latin scripts are only judged once the '
+    'dictionary covers them.': 'Underline words the built-in dictionary does not know, with '
+    'right-click suggestions and an \'add to dictionary\' entry.\n'
+    'Off by default. Smart skips: code fences, URLs, identifiers, '
+    'acronyms; non-Latin scripts are only judged once the '
+    'dictionary covers them.',
+    'Underline colour': 'Underline colour',
+    'Pick the colour of the typo underlines': 'Pick the colour of the typo underlines',
+    'Clear my words': 'Clear my words',
+    'Forget every word you added to the dictionary?': 'Forget every word you added to the dictionary?',
+    'Forget every word you added to the dictionary': 'Forget every word you added to the dictionary',
+    '✏ Typo:': '✏ Typo:',
+    '✓ Add to dictionary': '✓ Add to dictionary',
+    'Typecheck — this project': 'Typecheck — this project',
+    '✓ Add selected to dictionary': '✓ Add selected to dictionary',
+    'No unknown words found. 🎉': 'No unknown words found. 🎉',
+    '{} unknown word(s) in this project. Select one or more and add them to your dictionary, or fix them in the silos.': '{} unknown word(s) in this project. Select one or more and add them to your dictionary, or fix them in the silos.',
+    '🔍 Check Typos in this project…': '🔍 Check Typos in this project…',
+    'Typos': 'Typos',
+
+    # --- Sync-Project -------------------------------------------------------
+    'Sync-Project': 'Sync-Project',
+    '📁 Convert to Sync-Project…': '📁 Convert to Sync-Project…',
+    '🔄 Re-scan folder': '🔄 Re-scan folder',
+    '📂 Change folder…': '📂 Change folder…',
+    '🔌 Unlink Sync-Project (keep silos)': '🔌 Unlink Sync-Project (keep silos)',
+    'Convert to Sync-Project': 'Convert to Sync-Project',
+    'Make this project a Sync-Project?\n\n'
+    'Each text file in a folder you choose becomes a silo, edited on both '
+    'sides in real time (folder → silo and silo → folder).\n\n'
+    '• the first silos bind to the folder\'s files (name order);\n'
+    '• extra files become new silos (up to 100);\n'
+    '• silos without a matching file keep their text.\n\n'
+    'The folder can be changed later, and the project can be unlinked any '
+    'time — silos keep their text.': 'Make this project a Sync-Project?\n\n'
+    'Each text file in a folder you choose becomes a silo, edited on both '
+    'sides in real time (folder → silo and silo → folder).\n\n'
+    '• the first silos bind to the folder\'s files (name order);\n'
+    '• extra files become new silos (up to 100);\n'
+    '• silos without a matching file keep their text.\n\n'
+    'The folder can be changed later, and the project can be unlinked any '
+    'time — silos keep their text.',
+    'No text files found in that folder with the current include/exclude settings.': 'No text files found in that folder with the current include/exclude settings.',
+    'This project is now a Sync-Project.\n{} file(s) bound to silos — changes now sync both ways in real time.': 'This project is now a Sync-Project.\n{} file(s) bound to silos — changes now sync both ways in real time.',
+    'Unlink Sync-Project': 'Unlink Sync-Project',
+    'Stop syncing this project with its folder?\n\n'
+    'The silos and their text stay exactly as they are; only the live '
+    'two-way sync is turned off.': 'Stop syncing this project with its folder?\n\n'
+    'The silos and their text stay exactly as they are; only the live '
+    'two-way sync is turned off.',
+    'Sync-Project: {}\n{} file(s) bound — edits sync both ways in real time.': 'Sync-Project: {}\n{} file(s) bound — edits sync both ways in real time.',
+    '👁 Watch live': '👁 Watch live',
+    'Apply external file changes in real time. Off: the folder is only read when you convert or re-scan the project.': 'Apply external file changes in real time. Off: the folder is only read when you convert or re-scan the project.',
+    '📁 Include subfolders': '📁 Include subfolders',
+    'Watch the whole folder tree (on) or only the top folder (off)': 'Watch the whole folder tree (on) or only the top folder (off)',
+    'Max file size:': 'Max file size:',
+    'Files larger than this are not synced': 'Files larger than this are not synced',
+    'Include extensions:': 'Include extensions:',
+    'File extensions treated as text, separated by spaces or commas': 'File extensions treated as text, separated by spaces or commas',
+    'Exclude names/patterns:': 'Exclude names/patterns:',
+    'Names or patterns never synced: directories by name, files via wildcards (e.g. *.min.js)': 'Names or patterns never synced: directories by name, files via wildcards (e.g. *.min.js)',
+
+    # --- per-silo file link -------------------------------------------------
+    '🔗 Sync/Link this silo with a file…': '🔗 Sync/Link this silo with a file…',
+    '🔗 Sync/Link this silo with…': '🔗 Sync/Link this silo with…',
+    '🔗 Linked to: ': '🔗 Linked to: ',
+    '🔓 Unlink this silo (stop syncing)': '🔓 Unlink this silo (stop syncing)',
+    'Link silo': 'Link silo',
+    'That file cannot be read as text (too large or binary).': 'That file cannot be read as text (too large or binary).',
+    'Text files (*.txt *.md *.markdown *.py *.js *.ts *.json *.yaml *.yml *.toml *.ini *.cfg *.csv *.html *.css *.xml *.log *.sh *.bat *.ps1 *.sql);;All files (*.*)': 'Text files (*.txt *.md *.markdown *.py *.js *.ts *.json *.yaml *.yml *.toml *.ini *.cfg *.csv *.html *.css *.xml *.log *.sh *.bat *.ps1 *.sql);;All files (*.*)',
+
+    # --- passed events ------------------------------------------------------
+    '⚠ Passed-event alert': '⚠ Passed-event alert',
+    'Colour the date/time counter when a calendar event\'s time has passed and was not acknowledged — so a missed event is not forgotten. Right-click the date label to clear it.': 'Colour the date/time counter when a calendar event\'s time has passed and was not acknowledged — so a missed event is not forgotten. Right-click the date label to clear it.',
+    'Alert colour': 'Alert colour',
+    'Colour of the date counter when an event has passed\n(right-click to reset to the default red)': 'Colour of the date counter when an event has passed\n(right-click to reset to the default red)',
+    '⚠ {0} passed event(s) not acknowledged — click to manage, right-click to clear': '⚠ {0} passed event(s) not acknowledged — click to manage, right-click to clear',
+    '⏰ Manage timers…': '⏰ Manage timers…',
+    '✓ Clear passed-event alert': '✓ Clear passed-event alert',
+    'Passed events': 'Passed events',
+    'Acknowledge the passed event — the red passed-event alert clears.': 'Acknowledge the passed event — the red passed-event alert clears.',
 }

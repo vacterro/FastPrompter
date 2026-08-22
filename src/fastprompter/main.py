@@ -13,6 +13,7 @@ import zlib
 from PyQt6 import sip
 from PyQt6.QtCore import (
     QEvent,
+    QFileSystemWatcher,
     QObject,
     Qt,
     QThread,
@@ -885,6 +886,46 @@ class FastPrompter(
         self.date_timer.start(1000)
         self._update_date_label()
 
+        # --- typecheck (typo checker) ------------------------------------
+        # Default OFF (see Settings > Editor > Typos). Debounced so a typing
+        # burst runs the dictionary scan once, never per keystroke.
+        self._typo_timer = QTimer(self)
+        self._typo_timer.setSingleShot(True)
+        self._typo_timer.setInterval(450)
+        self._typo_timer.timeout.connect(self._typo_check_tick)
+        self._typo_dict_cache = None
+
+        # --- Sync-Project / per-silo file links ---------------------------
+        # ONE QFileSystemWatcher serves both: the active category's sync
+        # folder (project_sync + project_sync_map) and every per-silo linked
+        # file (silo_links). Only the ACTIVE category is watched; switching
+        # tabs re-arms the path set (_start_project_watcher).
+        self._project_sync_watcher = QFileSystemWatcher(self)
+        self._project_sync_watcher.fileChanged.connect(self._on_sync_file_changed)
+        self._project_sync_watcher.directoryChanged.connect(self._on_sync_dir_changed)
+        # external changes are debounced: editors write files in chunks, so a
+        # burst of fileChanged signals must coalesce into ONE apply pass
+        self._sync_apply_timer = QTimer(self)
+        self._sync_apply_timer.setSingleShot(True)
+        self._sync_apply_timer.setInterval(350)
+        self._sync_apply_timer.timeout.connect(self._apply_external_sync)
+        # app->file pushes are debounced too (1.5s after the last keystroke)
+        self._sync_push_timer = QTimer(self)
+        self._sync_push_timer.setSingleShot(True)
+        self._sync_push_timer.setInterval(1500)
+        self._sync_push_timer.timeout.connect(self._push_sync_files)
+        # absolute path -> text we last wrote/applied to that file; used to
+        # tell OUR writes apart from external edits
+        self._sync_last_applied = {}
+        self._sync_pending_apply = False
+
+        # --- passed-event attention (red date label) ----------------------
+        # One-shot timers that fired and were NOT acknowledged (Dismiss).
+        # Snoozing, deleting, disabling or acknowledging removes them;
+        # otherwise the date label stays red so a missed event is not
+        # forgotten (see missed_attention in core/timers.py).
+        self._missed_timer_ids: set = set()
+
         self.place_window()
 
     def _clock_time_fmt(self, show_secs=False):
@@ -946,7 +987,75 @@ class FastPrompter(
                 self.lbl_date.setAlignment(Qt.AlignmentFlag.AlignCenter)
             self.lbl_date.setText(dt_str)
 
+        self._apply_date_alert_style()
         self._update_timer_label()
+
+    def _missed_attention(self):
+        """One-shot timers that passed and were not acknowledged yet."""
+        missed_ids = getattr(self, "_missed_timer_ids", None)
+        if missed_ids is None:
+            return []  # early init: the alert set does not exist yet
+        if not self.data.get("passed_alert_enabled", "True") == "True":
+            return []
+        try:
+            from fastprompter.core.timers import missed_attention
+            return missed_attention(getattr(self, "timers", []), missed_ids)
+        except Exception:
+            return []
+
+    def _apply_date_alert_style(self):
+        """Colour the date/time label when a passed event needs attention.
+
+        The colour is user-controllable (``passed_event_color``, default
+        reddish). The alert survives density re-layouts because this runs on
+        every 1s tick (and after any density flip). Right-click the label to
+        clear the alert without touching the timers.
+        """
+        lbl = getattr(self, "lbl_date", None)
+        if lbl is None or sip.isdeleted(lbl):
+            return
+        pad = "1px" if getattr(self, "_header_dense", False) else "4px"
+        missed = self._missed_attention()
+        if missed:
+            color = self.data.get("passed_event_color", "#e05555") or "#e05555"
+            lbl.setStyleSheet(
+                f"padding: 0 {pad}; color: {color}; font-weight: bold;")
+            tip = tr("Current date and time\nClick to manage timers and limit resets",
+                     getattr(self, "_current_lang", "EN"))
+            n = len(missed)
+            tip += "\n" + tr("⚠ {0} passed event(s) not acknowledged — click to manage, right-click to clear",
+                             getattr(self, "_current_lang", "EN")).format(n)
+            if lbl.toolTip() != tip:
+                lbl.setToolTip(tip)
+        else:
+            lbl.setStyleSheet(f"padding: 0 {pad};")
+            base = tr("Current date and time\nClick to manage timers and limit resets",
+                      getattr(self, "_current_lang", "EN"))
+            if lbl.toolTip() != base:
+                lbl.setToolTip(base)
+
+    def _date_label_menu(self, pos):
+        """Right-click on the date label: manage timers / clear the alert."""
+        menu = QMenu(self)
+        menu.setFont(QApplication.font())
+        lang = getattr(self, "_current_lang", "EN")
+        menu.addAction(tr("⏰ Manage timers…", lang), self.open_timer_dialog)
+        if self._missed_attention():
+            menu.addSeparator()
+            menu.addAction(tr("✓ Clear passed-event alert", lang),
+                           self._clear_missed_alert)
+        menu.exec(self.lbl_date.mapToGlobal(pos))
+
+    def _clear_missed_alert(self):
+        """Acknowledge every passed event at once (right-click escape hatch)."""
+        self._missed_timer_ids.clear()
+        self._apply_date_alert_style()
+
+    def _ack_missed(self, timer):
+        """The toast's Dismiss button: acknowledge THIS passed event."""
+        if timer is not None:
+            self._missed_timer_ids.discard(timer.id)
+        self._apply_date_alert_style()
 
     def _update_timer_label(self):
         """Show the soonest timer beside the clock, coloured by urgency."""
@@ -1250,8 +1359,9 @@ class FastPrompter(
                 ta._last_fingerprint_rev = current_rev
                 entry["text_len"] = ta._last_fingerprint_len
                 entry["text_crc"] = ta._last_fingerprint_crc
-        except Exception:
-            pass
+        except Exception as exc:
+            from fastprompter.core.logging import logger as _log
+            _log.warning("silo state fingerprint update failed: %s", exc)
         m = self._silo_state_map()
         cat_map = m.setdefault(cat, {})
         if cat_map.get(key) != entry:
@@ -1624,8 +1734,19 @@ class FastPrompter(
         if not timer.show_notification:
             # visual notification intentionally off — no popup, no tray
             return
+        from fastprompter.core.timers import REPEAT_NONE
         from fastprompter.ui.timer_toast import show_toast
-        toast = show_toast(self, timer, on_snooze=self._snooze_timer)
+        # A fired ONE-SHOT timer whose moment passed enters the "missed" set:
+        # the date label turns red (user-chosen colour) until the event is
+        # snoozed, deleted, disabled or explicitly acknowledged (Dismiss).
+        # Repeating timers are never "missed" — they roll to their next
+        # occurrence and the top bar shows that instead.
+        if timer.repeat == REPEAT_NONE:
+            missed = getattr(self, "_missed_timer_ids", None)
+            if missed is not None:
+                missed.add(timer.id)
+        toast = show_toast(self, timer, on_snooze=self._snooze_timer,
+                           on_dismiss=getattr(self, "_ack_missed", None))
         if toast is None:
             # popup unavailable (no screen / teardown) — fall back to the tray
             try:
@@ -1673,6 +1794,10 @@ class FastPrompter(
             clone = snooze_clone(timer, minutes)
             self.timers.append(clone)
         else:
+            # re-arming the SAME timer: it is no longer a missed passed event
+            missed = getattr(self, "_missed_timer_ids", None)
+            if missed is not None:
+                missed.discard(timer.id)
             timer.snooze(minutes)
         self.save_timers_to_data()
         self._update_date_label()
@@ -3432,7 +3557,730 @@ class FastPrompter(
         # become newer than the DB it is documented to mirror.
         if ok:
             self.sync_to_disk()
+            # Sync-Project / per-silo links: publish silo text to disk after
+            # the authoritative save succeeded (same rule as the mirror).
+            self._push_sync_files()
         return ok
+
+    # =====================================================================
+    # Typecheck (typo checker) — core/typecheck.py holds the logic, this
+    # is the UI wiring: debounced scan, underline spans, context menu,
+    # whole-project report, user dictionary.
+    # =====================================================================
+
+    def _typo_dictionary(self):
+        """The dictionary for the current profile: base words + UI vocab of
+        every app language + the user's own words. Cached until it grows."""
+        if self._typo_dict_cache is None:
+            from fastprompter.core import typecheck as tc
+            from fastprompter.core.typecheck_words import BASE_WORDS
+            user_words = self.data.get("typo_user_words") or []
+            if not isinstance(user_words, list):
+                user_words = []
+            self._typo_dict_cache = tc.Dictionary(
+                base_words=BASE_WORDS,
+                ui_words=tc.ui_vocabulary(),
+                user_words=user_words,
+            )
+        return self._typo_dict_cache
+
+    def _typo_check_tick(self):
+        """Debounced: scan the ACTIVE document and paint underline spans.
+
+        Runs on a 450ms timer after typing and on silo/tab switches. When
+        the feature is off the spans are cleared so no stale underlines
+        linger after a settings toggle."""
+        spans = []
+        if self.data.get("typo_check_enabled", "False") == "True":
+            try:
+                from fastprompter.core import typecheck as tc
+                text = self.text_area.toPlainText()
+                if len(text) <= 500000:
+                    spans = [(s, e) for _w, s, e in
+                             tc.find_unknown(text, self._typo_dictionary())]
+            except Exception:
+                spans = []
+        editor = getattr(self, "text_area", None)
+        if editor is not None and not sip.isdeleted(editor):
+            editor._typo_spans = spans
+            editor._typo_color = self.data.get("typo_color", "#e05555")
+            try:
+                editor.viewport().update()
+            except Exception:
+                pass
+
+    def _add_typo_word(self, word):
+        """Remember a word (lowercased) so the checker never flags it again."""
+        word = (word or "").strip().lower()
+        if not word:
+            return
+        words = self.data.get("typo_user_words") or []
+        if not isinstance(words, list):
+            words = []
+            self.data["typo_user_words"] = words
+        if word not in words:
+            words.append(word)
+        self._typo_dict_cache = None  # the pool grew — rebuild on next use
+        self.mark_dirty()
+        self._typo_check_tick()
+
+    def clear_typo_words(self):
+        """Settings button: forget every word the user added."""
+        lang = getattr(self, "_current_lang", "EN")
+        reply = QMessageBox.question(
+            self, tr("Clear my words", lang),
+            tr("Forget every word you added to the dictionary?", lang),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        self.data["typo_user_words"] = []
+        self._typo_dict_cache = None
+        self.mark_dirty()
+        self._typo_check_tick()
+
+    def _save_sync_include(self):
+        self.data.update({"sync_include": self.ed_sync_include.text().strip()})
+        self.mark_dirty()
+
+    def _save_sync_exclude(self):
+        self.data.update({"sync_exclude": self.ed_sync_exclude.text().strip()})
+        self.mark_dirty()
+
+    def pick_passed_colour(self):
+        from PyQt6.QtWidgets import QColorDialog
+        lang = getattr(self, "_current_lang", "EN")
+        col = QColorDialog.getColor(
+            QColor(self.data.get("passed_event_color", "#e05555")),
+            self, tr("Pick Color", lang))
+        if col.isValid():
+            self.data["passed_event_color"] = col.name()
+            btn = getattr(self, "btn_passed_colour", None)
+            if btn is not None and not sip.isdeleted(btn):
+                btn.setText(col.name())
+            self.mark_dirty()
+            self._apply_date_alert_style()
+
+    def reset_passed_colour(self):
+        self.data["passed_event_color"] = "#e05555"
+        btn = getattr(self, "btn_passed_colour", None)
+        if btn is not None and not sip.isdeleted(btn):
+            btn.setText("#e05555")
+        self.mark_dirty()
+        self._apply_date_alert_style()
+
+    def pick_typo_colour(self):
+        from PyQt6.QtWidgets import QColorDialog
+        lang = getattr(self, "_current_lang", "EN")
+        col = QColorDialog.getColor(
+            QColor(self.data.get("typo_color", "#e05555")),
+            self, tr("Pick Color", lang))
+        if col.isValid():
+            self.data["typo_color"] = col.name()
+            btn = getattr(self, "btn_typo_colour", None)
+            if btn is not None and not sip.isdeleted(btn):
+                btn.setText(col.name())
+            self.mark_dirty()
+            self._typo_check_tick()
+
+    def build_spelling_menu(self, menu, pos):
+        """Editor right-click: suggestions + add-to-dictionary for the word
+        under the cursor. Adds nothing when the feature is off or the cursor
+        is not on a flagged word."""
+        if self.data.get("typo_check_enabled", "False") != "True":
+            return False
+        spans = getattr(self.text_area, "_typo_spans", None)
+        if not spans:
+            return False
+        pos_abs = self.text_area.textCursor().position()
+        hit = None
+        for s, e in spans:
+            if s <= pos_abs <= e:
+                hit = (s, e)
+                break
+        if hit is None:
+            return False
+        start, end = hit
+        word = self.text_area.toPlainText()[start:end]
+        if not word:
+            return False
+        lang = getattr(self, "_current_lang", "EN")
+        menu.addSeparator()
+        head = menu.addAction(tr("✏ Typo:", lang) + f" «{word}»")
+        head.setEnabled(False)
+        for sug in self._typo_dictionary().suggest(word):
+            menu.addAction(
+                f"    {sug}",
+                lambda _c=False, s=sug: self._replace_typo_word(start, end, s))
+        act = menu.addAction(tr("✓ Add to dictionary", lang))
+        act.triggered.connect(lambda _c=False: self._add_typo_word(word))
+        return True
+
+    def _replace_typo_word(self, start, end, replacement):
+        """Swap a flagged word for a suggestion (one undo step)."""
+        editor = self.text_area
+        cursor = editor.textCursor()
+        cursor.setPosition(start)
+        cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
+        from fastprompter.ui.edit_guard import edit_block
+        with edit_block(cursor, editor):
+            cursor.insertText(replacement)
+        self._typo_check_tick()
+
+    def check_project_typos(self):
+        """Project context menu: typecheck EVERY silo of this project."""
+        from fastprompter.ui.typo_check_dialog import TypoCheckDialog
+        self.ignore_focus_loss = True
+        try:
+            TypoCheckDialog(self).exec()
+        finally:
+            self.ignore_focus_loss = False
+        self.activateWindow()
+
+    # =====================================================================
+    # Sync-Project + per-silo file links.
+    # core/project_sync.py holds the pure logic (scan, match, EOL, atomic
+    # write); this is the Qt wiring: QFileSystemWatcher, debounce timers,
+    # the slot<->file mapping, push (app->file) and apply (file->app).
+    # =====================================================================
+
+    def _sync_config(self):
+        """The active category's Sync-Project config dict, or None."""
+        cfg = self.data.get("project_sync")
+        if not isinstance(cfg, dict) or not cfg.get("root"):
+            return None
+        return cfg
+
+    def _sync_root(self):
+        cfg = self._sync_config()
+        return os.path.abspath(cfg["root"]) if cfg else None
+
+    def _sync_include(self):
+        from fastprompter.core import project_sync as ps
+        cfg = self._sync_config() or {}
+        inc = cfg.get("include")
+        if not isinstance(inc, list):
+            inc = ps.parse_ext_list(self.data.get("sync_include", ""))
+        return inc or list(ps.DEFAULT_INCLUDE)
+
+    def _sync_exclude(self):
+        from fastprompter.core import project_sync as ps
+        cfg = self._sync_config() or {}
+        exc = cfg.get("exclude")
+        if not isinstance(exc, list):
+            exc = ps.parse_exclude_list(self.data.get("sync_exclude", ""))
+        return exc or list(ps.DEFAULT_EXCLUDE)
+
+    def _sync_recursive(self):
+        cfg = self._sync_config() or {}
+        if "recursive" in cfg:
+            return bool(cfg["recursive"])
+        return self.data.get("sync_recursive", "True") == "True"
+
+    def _sync_max_bytes(self):
+        try:
+            return max(1024, int(self.data.get("sync_max_kb", "512"))) * 1024
+        except (TypeError, ValueError):
+            return 512 * 1024
+
+    def _sync_file_for_slot(self, slot):
+        """Absolute path of the Sync-Project file bound to ``slot``."""
+        root = self._sync_root()
+        if not root:
+            return None
+        rel = (self.data.get("project_sync_map") or {}).get(str(slot))
+        if not rel:
+            return None
+        return os.path.join(root, rel.replace("/", os.sep))
+
+    def _link_file_for_slot(self, slot):
+        """Absolute path of the per-silo linked file, or None."""
+        path = (self.data.get("silo_links") or {}).get(str(slot))
+        return path if isinstance(path, str) and path else None
+
+    def _silo_is_synced(self, slot):
+        return (self._sync_file_for_slot(slot) is not None
+                or self._link_file_for_slot(slot) is not None)
+
+    def _silo_clean(self, slot, path):
+        """True when ``slot`` holds NO app-side text newer than what we last
+        wrote to ``path`` — i.e. an external change may be applied safely.
+
+        The active silo's live editor text is the authority; for inactive
+        silos the stored text is. If we never touched the path, the silo is
+        considered clean (a fresh binding)."""
+        applied = self._sync_last_applied.get(path)
+        if applied is None:
+            return True
+        if (slot == getattr(self, "active_temp_slot", -1)
+                and not getattr(self, "editing_snippet", None)
+                and not getattr(self, "active_is_archive", False)):
+            try:
+                return self.text_area.toPlainText() == applied
+            except Exception:
+                return False
+        presets = self.data.get("temp_presets") or []
+        if 0 <= slot < len(presets):
+            return presets[slot] == applied
+        return True
+
+    def _drop_slot_bindings(self, idx):
+        """Unbind a silo from its file(s) WITHOUT touching the files.
+
+        Used when a silo's text is about to be replaced by something that is
+        not an edit (archiving): the file on disk must survive untouched."""
+        links = self.data.get("silo_links") or {}
+        path = links.pop(str(idx), None)
+        if path:
+            self._sync_last_applied.pop(path, None)
+        mapping = self.data.get("project_sync_map") or {}
+        rel = mapping.pop(str(idx), None)
+        if rel and self._sync_root():
+            self._sync_last_applied.pop(
+                os.path.join(self._sync_root(), rel.replace("/", os.sep)),
+                None)
+
+    def _push_sync_files(self):
+        """App -> file: write every bound silo's text to its file.
+
+        Runs on the 1.5s typing debounce and after every successful DB save
+        (hide / close / tab switch / profile switch). The ACTIVE silo's live
+        editor text wins over the cached copy. Every write updates
+        ``_sync_last_applied`` so the watcher recognises it as our own."""
+        if not hasattr(self, "_sync_last_applied"):
+            return
+        if getattr(self, "_initializing_ui", False):
+            return
+        try:
+            presets = self.data.get("temp_presets") or []
+            active = getattr(self, "active_temp_slot", -1)
+            editing_snippet = getattr(self, "editing_snippet", None)
+            from fastprompter.core import project_sync as ps
+            for slot in range(len(presets)):
+                path = self._link_file_for_slot(slot) or self._sync_file_for_slot(slot)
+                if not path:
+                    continue
+                text = presets[slot] or ""
+                if (slot == active and not editing_snippet
+                        and not getattr(self, "active_is_archive", False)):
+                    try:
+                        text = self.text_area.toPlainText()
+                    except Exception:
+                        pass
+                if (self._sync_last_applied.get(path) == text
+                        and os.path.exists(path)):
+                    continue  # nothing new to write
+                eol = "\n"
+                read = ps.read_text_file(path, self._sync_max_bytes())
+                if read is not None:
+                    eol = read[1]
+                written = ps.write_text_file(path, text, eol)
+                if written is not None:
+                    self._sync_last_applied[path] = written
+        except Exception:
+            from fastprompter.core.logging import logger
+            logger.debug("push sync files failed", exc_info=True)
+
+    def _start_project_watcher(self):
+        """Re-arm the QFileSystemWatcher for the ACTIVE category: the sync
+        folder (recursively, per settings) plus every per-silo linked file."""
+        if not hasattr(self, "_project_sync_watcher"):
+            return
+        try:
+            watcher = self._project_sync_watcher
+            for p in watcher.directories():
+                watcher.removePath(p)
+            for p in watcher.files():
+                watcher.removePath(p)
+            root = self._sync_root()
+            live = self.data.get("sync_live_watch", "True") == "True"
+            if root and live and os.path.isdir(root):
+                from fastprompter.core import project_sync as ps
+                dirs = [root]
+                if self._sync_recursive():
+                    for dirpath, dirnames, _files in os.walk(root):
+                        dirnames[:] = [d for d in dirnames
+                                       if not ps.match_exclude(
+                                           os.path.relpath(
+                                               os.path.join(dirpath, d),
+                                               root).replace("\\", "/"),
+                                           self._sync_exclude())]
+                        dirs.append(dirpath)
+                try:
+                    watcher.addPaths(dirs)
+                except Exception:
+                    pass
+            for slot in range(len(self.data.get("temp_presets") or [])):
+                p = self._link_file_for_slot(slot)
+                if p:
+                    try:
+                        watcher.addPath(p)
+                    except Exception:
+                        pass
+        except Exception:
+            from fastprompter.core.logging import logger
+            logger.debug("start project watcher failed", exc_info=True)
+
+    def _on_sync_file_changed(self, _path):
+        """Any file in the watched set changed: debounce ONE apply pass."""
+        if self._sync_pending_apply:
+            return
+        self._sync_pending_apply = True
+        self._sync_apply_timer.start()
+
+    def _on_sync_dir_changed(self, _path):
+        """A directory changed (new/removed subfolder): re-arm, then apply."""
+        self._start_project_watcher()
+        self._on_sync_file_changed(_path)
+
+    def _apply_external_sync(self):
+        """File -> app: pull external edits from disk into the silos.
+
+        Debounced (350ms). Rules:
+        * content equal to what we last wrote/applied is OUR OWN write — no-op;
+        * a silo with newer app-side text is skipped (the app side wins
+          while it is being typed; the next external change retries);
+        * new files matching the filters claim the first free slot;
+        * files deleted on disk drop their mapping entry (silo text stays).
+        """
+        self._sync_pending_apply = False
+        try:
+            if not self._sync_config():
+                return
+            from fastprompter.core import project_sync as ps
+            presets = self.data.get("temp_presets") or []
+            active = getattr(self, "active_temp_slot", -1)
+            editing_snippet = getattr(self, "editing_snippet", None)
+            applied: dict[int, str] = {}
+
+            # --- project map: external edits to bound files ---------------
+            root = self._sync_root()
+            if root and os.path.isdir(root):
+                mapping = self.data.get("project_sync_map") or {}
+                for slot_key in list(mapping.keys()):
+                    rel = mapping[slot_key]
+                    path = os.path.join(root, rel.replace("/", os.sep))
+                    try:
+                        slot = int(slot_key)
+                    except (TypeError, ValueError):
+                        continue
+                    if not os.path.exists(path):
+                        mapping.pop(slot_key, None)
+                        self._sync_last_applied.pop(path, None)
+                        continue
+                    read = ps.read_text_file(path, self._sync_max_bytes())
+                    if read is None:
+                        continue
+                    text, _eol = read
+                    if self._sync_last_applied.get(path) == text:
+                        continue
+                    if not self._silo_clean(slot, path):
+                        continue
+                    self._sync_last_applied[path] = text
+                    applied[slot] = text
+
+                # --- new files -> new silos --------------------------------
+                files = ps.scan_folder(root, self._sync_include(),
+                                       self._sync_exclude(),
+                                       recursive=self._sync_recursive(),
+                                       max_bytes=self._sync_max_bytes())
+                mapped = set(mapping.values())
+                new_files = [f for f in files if f not in mapped]
+                if new_files:
+                    for rel, slot in zip(
+                            new_files,
+                            ps.free_slots(mapping, len(presets), len(new_files))):
+                        path = os.path.join(root, rel.replace("/", os.sep))
+                        read = ps.read_text_file(path, self._sync_max_bytes())
+                        if read is None:
+                            continue
+                        text, _eol = read
+                        while len(presets) <= slot:
+                            presets.append("")
+                        presets[slot] = text
+                        mapping[str(slot)] = rel
+                        self._sync_last_applied[path] = text
+                        applied[slot] = text
+
+            # --- per-silo links --------------------------------------------
+            links = self.data.get("silo_links") or {}
+            for slot_key, path in list(links.items()):
+                if not isinstance(path, str) or not path:
+                    continue
+                if not os.path.exists(path):
+                    continue
+                read = ps.read_text_file(path, self._sync_max_bytes())
+                if read is None:
+                    continue
+                text, _eol = read
+                if self._sync_last_applied.get(path) == text:
+                    continue
+                try:
+                    slot = int(slot_key)
+                except (TypeError, ValueError):
+                    continue
+                if not self._silo_clean(slot, path):
+                    continue
+                self._sync_last_applied[path] = text
+                applied[slot] = text
+
+            # --- publish into the silos -------------------------------------
+            if not applied:
+                return
+            for slot, text in applied.items():
+                if 0 <= slot < len(presets):
+                    presets[slot] = text
+                    if (slot == active and not editing_snippet
+                            and not getattr(self, "active_is_archive", False)):
+                        self._set_plain_text_clean(self.text_area, text)
+            self.mark_dirty()
+            self.refresh_temp_presets()
+        except Exception:
+            from fastprompter.core.logging import logger
+            logger.debug("apply external sync failed", exc_info=True)
+
+    # ---- Sync-Project user actions (project tab context menu) -------------
+
+    def _convert_project_to_sync(self):
+        """Bind this project tab to a folder: each text file becomes a silo."""
+        lang = getattr(self, "_current_lang", "EN")
+        self.ignore_focus_loss = True
+        try:
+            reply = QMessageBox.question(
+                self, tr("Convert to Sync-Project", lang),
+                tr("Make this project a Sync-Project?\n\n"
+                   "Each text file in a folder you choose becomes a silo, "
+                   "edited on both sides in real time (folder → silo and "
+                   "silo → folder).\n\n"
+                   "• the first silos bind to the folder's files (name order);\n"
+                   "• extra files become new silos (up to 100);\n"
+                   "• silos without a matching file keep their text.\n\n"
+                   "The folder can be changed later, and the project can be "
+                   "unlinked any time — silos keep their text.", lang),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        finally:
+            self.ignore_focus_loss = False
+        self.activateWindow()
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        self._change_project_sync_folder()
+
+    def _change_project_sync_folder(self):
+        """Pick the sync folder and (re)bind every file to a silo."""
+        lang = getattr(self, "_current_lang", "EN")
+        cfg = self._sync_config() or {}
+        start = cfg.get("root") or self.data.get("sync_path", "") \
+            or os.path.expanduser("~")
+        self.ignore_focus_loss = True
+        try:
+            d = QFileDialog.getExistingDirectory(
+                self, tr("Choose sync folder", lang), start)
+        finally:
+            self.ignore_focus_loss = False
+        self.activateWindow()
+        if not d:
+            return
+        from fastprompter.core import project_sync as ps
+        root = os.path.abspath(d)
+        files = ps.scan_folder(root, self._sync_include(), self._sync_exclude(),
+                               recursive=self._sync_recursive(),
+                               max_bytes=self._sync_max_bytes())
+        if not files:
+            QMessageBox.information(
+                self, tr("Sync-Project", lang),
+                tr("No text files found in that folder with the current "
+                   "include/exclude settings.", lang))
+            return
+        cat = self.get_current_category() or ""
+        cfg = {
+            "root": root,
+            "recursive": self._sync_recursive(),
+            "include": self._sync_include(),
+            "exclude": self._sync_exclude(),
+            "enabled": True,
+        }
+        self.data["project_sync"] = cfg
+        self.data.setdefault("project_sync_all", {})[cat] = cfg
+        presets = self.data.get("temp_presets") or []
+        mapping = self.data.setdefault("project_sync_map", {})
+        self.data.setdefault("project_sync_map_all", {})[cat] = mapping
+        mapping.clear()
+        for slot, rel in enumerate(files):
+            if slot >= self.MAX_SILOS_PER_CATEGORY:
+                break
+            path = os.path.join(root, rel.replace("/", os.sep))
+            read = ps.read_text_file(path, self._sync_max_bytes())
+            if read is None:
+                continue
+            text, _eol = read
+            while len(presets) <= slot:
+                presets.append("")
+            presets[slot] = text
+            mapping[str(slot)] = rel
+            self._sync_last_applied[path] = text
+        self.mark_dirty()
+        self.save_data_to_db(force=True)
+        self._start_project_watcher()
+        self._update_project_tooltip()
+        self.refresh_temp_presets()
+        # the ACTIVE silo's editor may hold text the folder just replaced
+        active = getattr(self, "active_temp_slot", -1)
+        if (0 <= active < len(presets)
+                and not getattr(self, "editing_snippet", None)
+                and not getattr(self, "active_is_archive", False)):
+            self._set_plain_text_clean(self.text_area, presets[active] or "")
+        n = len(mapping)
+        QMessageBox.information(
+            self, tr("Sync-Project", lang),
+            tr("This project is now a Sync-Project.\n"
+               "{} file(s) bound to silos — changes now sync both ways in "
+               "real time.", lang).format(n))
+
+    def _rescan_project_sync(self):
+        """Re-read the folder: bind new files, drop deleted ones."""
+        if not self._sync_config():
+            return
+        try:
+            from fastprompter.core import project_sync as ps
+            root = self._sync_root()
+            if not root or not os.path.isdir(root):
+                return
+            files = ps.scan_folder(root, self._sync_include(),
+                                   self._sync_exclude(),
+                                   recursive=self._sync_recursive(),
+                                   max_bytes=self._sync_max_bytes())
+            mapping = self.data.get("project_sync_map") or {}
+            for key in list(mapping.keys()):
+                rel = mapping[key]
+                if rel not in files:
+                    path = os.path.join(root, rel.replace("/", os.sep))
+                    mapping.pop(key, None)
+                    self._sync_last_applied.pop(path, None)
+            mapped = set(mapping.values())
+            new_files = [f for f in files if f not in mapped]
+            if new_files:
+                presets = self.data.get("temp_presets") or []
+                for rel, slot in zip(
+                        new_files,
+                        ps.free_slots(mapping, len(presets), len(new_files))):
+                    path = os.path.join(root, rel.replace("/", os.sep))
+                    read = ps.read_text_file(path, self._sync_max_bytes())
+                    if read is None:
+                        continue
+                    text, _eol = read
+                    while len(presets) <= slot:
+                        presets.append("")
+                    presets[slot] = text
+                    mapping[str(slot)] = rel
+                    self._sync_last_applied[path] = text
+            self.mark_dirty()
+            self.refresh_temp_presets()
+            self._start_project_watcher()
+            self._update_project_tooltip()
+        except Exception:
+            from fastprompter.core.logging import logger
+            logger.debug("rescan project sync failed", exc_info=True)
+
+    def _unlink_project_sync(self):
+        """Stop syncing this project. Silos and their text stay as they are."""
+        lang = getattr(self, "_current_lang", "EN")
+        reply = QMessageBox.question(
+            self, tr("Unlink Sync-Project", lang),
+            tr("Stop syncing this project with its folder?\n\n"
+               "The silos and their text stay exactly as they are; only the "
+               "live two-way sync is turned off.", lang),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        cat = self.get_current_category() or ""
+        cfg = self._sync_config()
+        if cfg:
+            root = os.path.abspath(cfg["root"])
+            for rel in (self.data.get("project_sync_map") or {}).values():
+                self._sync_last_applied.pop(
+                    os.path.join(root, rel.replace("/", os.sep)), None)
+        self.data["project_sync"] = {}
+        self.data.setdefault("project_sync_all", {})[cat] = {}
+        mapping = self.data.get("project_sync_map")
+        if isinstance(mapping, dict):
+            mapping.clear()
+        self.data.setdefault("project_sync_map_all", {})[cat] = {}
+        self.mark_dirty()
+        self._start_project_watcher()
+        self._update_project_tooltip()
+        self.refresh_temp_presets()
+
+    def _update_project_tooltip(self):
+        """The project combo tooltip announces an active Sync-Project."""
+        combo = getattr(self, "cat_combo", None)
+        if combo is None or sip.isdeleted(combo):
+            return
+        lang = getattr(self, "_current_lang", "EN")
+        base = tr("Projects — mouse wheel switches tabs", lang)
+        cfg = self._sync_config()
+        if cfg:
+            n = len(self.data.get("project_sync_map") or {})
+            combo.setToolTip(
+                tr("Sync-Project: {}\n{} file(s) bound — edits sync both "
+                   "ways in real time.", lang).format(cfg.get("root", ""), n)
+                + "\n" + base)
+        else:
+            combo.setToolTip(base)
+
+    # ---- per-silo file link (silo context menu) ----------------------------
+
+    def _link_silo_to_file(self, idx):
+        """Bind ONE silo to ONE file, both sides, live."""
+        lang = getattr(self, "_current_lang", "EN")
+        self.ignore_focus_loss = True
+        try:
+            path, _f = QFileDialog.getOpenFileName(
+                self, tr("Sync/Link this silo with…", lang), "",
+                tr("Text files (*.txt *.md *.markdown *.py *.js *.ts *.json "
+                   "*.yaml *.yml *.toml *.ini *.cfg *.csv *.html *.css *.xml "
+                   "*.log *.sh *.bat *.ps1 *.sql);;All files (*.*)", lang))
+        finally:
+            self.ignore_focus_loss = False
+        self.activateWindow()
+        if not path:
+            return
+        from fastpromptp.core import project_sync as ps
+        path = os.path.abspath(path)
+        read = ps.read_text_file(path, self._sync_max_bytes())
+        if read is None:
+            QMessageBox.information(
+                self, tr("Link silo", lang),
+                tr("That file cannot be read as text (too large or binary).",
+                   lang))
+            return
+        text, _eol = read
+        presets = self.data.get("temp_presets") or []
+        if not (0 <= idx < len(presets)):
+            return
+        cat = self.get_current_category() or ""
+        links = self.data.setdefault("silo_links", {})
+        self.data.setdefault("silo_links_all", {})[cat] = links
+        links[str(idx)] = path
+        # the file is the source of truth at link time
+        presets[idx] = text
+        self._sync_last_applied[path] = text
+        self.mark_dirty()
+        self.refresh_temp_presets()
+        if idx == getattr(self, "active_temp_slot", -1):
+            self._set_plain_text_clean(self.text_area, text)
+        self._start_project_watcher()
+        self._typo_check_tick()
+
+    def _unlink_silo_file(self, idx):
+        """Stop syncing ONE silo with its file. The silo text stays."""
+        links = self.data.get("silo_links")
+        if not isinstance(links, dict):
+            return
+        path = links.pop(str(idx), None)
+        if path:
+            self._sync_last_applied.pop(path, None)
+        self.mark_dirty()
+        self.refresh_temp_presets()
+        self._start_project_watcher()
 
     # -- T-591: one-way mirror of silo text onto disk -------------------------
     def _sync_name_for(self, idx, presets):
@@ -4191,6 +5039,10 @@ class FastPrompter(
         self.lbl_date.setStyleSheet("padding: 0 4px;")
         self.lbl_date.setCursor(Qt.CursorShape.PointingHandCursor)
         self.lbl_date.mousePressEvent = lambda _e: self.open_timer_dialog()
+        # Right-click: acknowledge/clear the passed-event red alert, or open
+        # the timer manager (see _apply_date_alert_style).
+        self.lbl_date.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.lbl_date.customContextMenuRequested.connect(self._date_label_menu)
         self.header_layout.addWidget(self.lbl_date)
 
         # nearest live timer, right beside the clock
@@ -5364,6 +6216,123 @@ class FastPrompter(
         self.btn_hover_colour.customContextMenuRequested.connect(
             lambda _p: self.reset_hover_colour())
 
+        # --- typecheck (typo checker): dictionary underlines, default OFF ---
+        self.cb_typo_check = create_footer_cb(
+            "✏ Typo check (dictionary)",
+            "Underline words the built-in dictionary does not know, with "
+            "right-click suggestions and an 'add to dictionary' entry.\n"
+            "Off by default. Smart skips: code fences, URLs, identifiers, "
+            "acronyms; non-Latin scripts are only judged once the "
+            "dictionary covers them.",
+            self.data.get("typo_check_enabled", "False") == "True",
+            lambda checked: (self.data.update(
+                {"typo_check_enabled": "True" if checked else "False"})
+                or self.mark_dirty()
+                or self._typo_check_tick()),
+        )
+        self.btn_typo_colour = QPushButton(tr("Underline colour", self._current_lang))
+        self.btn_typo_colour.setToolTip(tr(
+            "Pick the colour of the typo underlines", self._current_lang))
+        self.btn_typo_colour.clicked.connect(self.pick_typo_colour)
+        self.btn_typo_colour._en_text = "Underline colour"
+        self.btn_typo_colour._en_tooltip = "Pick the colour of the typo underlines"
+        self.btn_typo_clear = QPushButton(tr("Clear my words", self._current_lang))
+        self.btn_typo_clear.setToolTip(tr(
+            "Forget every word you added to the dictionary", self._current_lang))
+        self.btn_typo_clear.clicked.connect(self.clear_typo_words)
+        self.btn_typo_clear._en_text = "Clear my words"
+        self.btn_typo_clear._en_tooltip = "Forget every word you added to the dictionary"
+
+        # --- passed events: the date counter turns red when a set event's
+        # time has passed and was not acknowledged (colour is user-pickable)
+        self.cb_passed_alert = create_footer_cb(
+            "⚠ Passed-event alert",
+            "Colour the date/time counter when a calendar event's time has "
+            "passed and was not acknowledged — so a missed event is not "
+            "forgotten. Right-click the date label to clear it.",
+            self.data.get("passed_alert_enabled", "True") == "True",
+            lambda checked: (self.data.update(
+                {"passed_alert_enabled": "True" if checked else "False"})
+                or self.mark_dirty()
+                or self._apply_date_alert_style()),
+        )
+        self.btn_passed_colour = QPushButton(
+            tr("Alert colour", self._current_lang))
+        self.btn_passed_colour.setToolTip(tr(
+            "Colour of the date counter when an event has passed\n"
+            "(right-click to reset to the default red)", self._current_lang))
+        self.btn_passed_colour.clicked.connect(self.pick_passed_colour)
+        self.btn_passed_colour.setContextMenuPolicy(
+            Qt.ContextMenuPolicy.CustomContextMenu)
+        self.btn_passed_colour.customContextMenuRequested.connect(
+            lambda _p: self.reset_passed_colour())
+        self.btn_passed_colour._en_text = "Alert colour"
+        self.btn_passed_colour._en_tooltip = (
+            "Colour of the date counter when an event has passed\n"
+            "(right-click to reset to the default red)")
+
+        # --- Sync-Project settings: include/exclude + live behaviour -------
+        self.cb_sync_recursive = create_footer_cb(
+            "📁 Include subfolders",
+            "Watch the whole folder tree (on) or only the top folder (off)",
+            self.data.get("sync_recursive", "True") == "True",
+            lambda checked: (self.data.update(
+                {"sync_recursive": "True" if checked else "False"})
+                or self.mark_dirty()),
+        )
+        self.cb_sync_live = create_footer_cb(
+            "👁 Watch live",
+            "Apply external file changes in real time. Off: the folder is "
+            "only read when you convert or re-scan the project.",
+            self.data.get("sync_live_watch", "True") == "True",
+            lambda checked: (self.data.update(
+                {"sync_live_watch": "True" if checked else "False"})
+                or self.mark_dirty()
+                or self._start_project_watcher()),
+        )
+        self.spin_sync_max_kb = QSpinBox()
+        self.spin_sync_max_kb.setRange(8, 10240)
+        self.spin_sync_max_kb.setSuffix(" KB")
+        self.spin_sync_max_kb.setToolTip(tr(
+            "Files larger than this are not synced", self._current_lang))
+        try:
+            self.spin_sync_max_kb.setValue(int(self.data.get("sync_max_kb", "512")))
+        except (TypeError, ValueError):
+            self.spin_sync_max_kb.setValue(512)
+
+        def _upd_sync_max(v):
+            self.data.update({"sync_max_kb": str(v)})
+            self.mark_dirty()
+
+        self.spin_sync_max_kb.valueChanged.connect(_upd_sync_max)
+        lbl_sync_max = QLabel(tr("Max file size:", self._current_lang))
+        lbl_sync_max._en_text = "Max file size:"
+
+        self.ed_sync_include = QLineEdit(self.data.get("sync_include", ""))
+        self.ed_sync_include.setPlaceholderText(".txt .md .py .js …")
+        self.ed_sync_include.setToolTip(tr(
+            "File extensions treated as text, separated by spaces or commas",
+            self._current_lang))
+        self.ed_sync_include.setMaximumWidth(360)
+        self.ed_sync_include.editingFinished.connect(self._save_sync_include)
+        self.ed_sync_include._en_tooltip = (
+            "File extensions treated as text, separated by spaces or commas")
+        lbl_sync_inc = QLabel(tr("Include extensions:", self._current_lang))
+        lbl_sync_inc._en_text = "Include extensions:"
+
+        self.ed_sync_exclude = QLineEdit(self.data.get("sync_exclude", ""))
+        self.ed_sync_exclude.setPlaceholderText("node_modules, .git, *.min.js …")
+        self.ed_sync_exclude.setToolTip(tr(
+            "Names or patterns never synced: directories by name, files via "
+            "wildcards (e.g. *.min.js)", self._current_lang))
+        self.ed_sync_exclude.setMaximumWidth(360)
+        self.ed_sync_exclude.editingFinished.connect(self._save_sync_exclude)
+        self.ed_sync_exclude._en_tooltip = (
+            "Names or patterns never synced: directories by name, files via "
+            "wildcards (e.g. *.min.js)")
+        lbl_sync_exc = QLabel(tr("Exclude names/patterns:", self._current_lang))
+        lbl_sync_exc._en_text = "Exclude names/patterns:"
+
 
         # Tabs instead of three side-by-side columns. Three columns need the
         # full panel width to be readable at all; one tab at a time stays
@@ -5490,6 +6459,10 @@ class FastPrompter(
             _settings_group("Code blocks", [
                 self.cb_code_gutter, self.cb_code_monospace,
             ]),
+            _settings_group("Typos", [
+                self.cb_typo_check, self.btn_typo_colour,
+                self.btn_typo_clear,
+            ]),
         ]), tr("Editor", self._current_lang))
 
         # Clock/date settings used to be buried in "Window" — seven of them,
@@ -5502,6 +6475,9 @@ class FastPrompter(
             _settings_group("Date", [
                 self.cb_date_daypart, self.cb_date_emoji,
                 self.cb_date_text_month,
+            ]),
+            _settings_group("Passed events", [
+                self.cb_passed_alert, self.btn_passed_colour,
             ]),
         ]), tr("Clock", self._current_lang))
 
@@ -5517,6 +6493,12 @@ class FastPrompter(
             ]),
             _settings_group("Files & backup", [
                 self.cb_portable_backup, files_row, sync_row,
+            ]),
+            _settings_group("Sync-Project", [
+                self.cb_sync_live, self.cb_sync_recursive,
+                lbl_sync_max, self.spin_sync_max_kb,
+                lbl_sync_inc, self.ed_sync_include,
+                lbl_sync_exc, self.ed_sync_exclude,
             ]),
         ]), tr("Data", self._current_lang))
 
@@ -6064,6 +7046,20 @@ class FastPrompter(
             self.watcher_stop_observing()
         self.watcher_disarm("profile switch")
 
+        # -- profile-scoped runtime state -------------------------------------
+        # The missed-event alert, the typecheck dictionary cache and the
+        # sync "last applied" baselines all belong to ONE profile's data;
+        # the sync watcher paths are re-derived from the new profile's
+        # active category below. Guarded: at startup this runs BEFORE the
+        # attributes are created (they are made at the end of __init__).
+        if hasattr(self, "_missed_timer_ids"):
+            self._missed_timer_ids.clear()
+        if hasattr(self, "_typo_dict_cache"):
+            self._typo_dict_cache = None
+        if hasattr(self, "_sync_last_applied"):
+            self._sync_last_applied.clear()
+        self._start_project_watcher()
+
     def _resync_profile_widgets(self):
         """Re-stamp persisted widget values from the active profile's data.
 
@@ -6129,6 +7125,10 @@ class FastPrompter(
             ("cb_trash_vision", "trash_vision", "False"),
             ("cb_silo_color_box", "silo_color_box", "False"),
             ("cb_cs_style", "cs_style", "False"),
+            ("cb_typo_check", "typo_check_enabled", "False"),
+            ("cb_passed_alert", "passed_alert_enabled", "True"),
+            ("cb_sync_recursive", "sync_recursive", "True"),
+            ("cb_sync_live", "sync_live_watch", "True"),
         )
         for attr, key, default in _CHECKS:
             w = getattr(self, attr, None)
@@ -6576,7 +7576,9 @@ class FastPrompter(
                         "cb_double_line", "cb_bold_titles", "cb_silo_pinned_gap",
                         "cb_date_rect", "cb_date_seconds", "cb_analog_clock",
                         "cb_date_daypart", "cb_date_emoji", "cb_date_text_month", "cb_date_ampm", "cb_sound",
-                        "cb_typewriter", "cb_trash_vision", "cb_silo_color_box"):
+                        "cb_typewriter", "cb_trash_vision", "cb_silo_color_box",
+                        "cb_typo_check", "cb_passed_alert", "cb_sync_recursive",
+                        "cb_sync_live"):
             cb = getattr(self, cb_name, None)
             if cb is not None and not sip.isdeleted(cb):
                 en_text = getattr(cb, "_en_text", None)
@@ -6587,7 +7589,8 @@ class FastPrompter(
                     cb.setToolTip(tr(en_tip, lang))
 
         # Translate action buttons
-        for ac_name in ("btn_hotkeys", "btn_colors", "btn_backup", "btn_restore"):
+        for ac_name in ("btn_hotkeys", "btn_colors", "btn_backup", "btn_restore",
+                        "btn_typo_colour", "btn_typo_clear", "btn_passed_colour"):
             ac = getattr(self, ac_name, None)
             if ac is not None and not sip.isdeleted(ac):
                 en_text = getattr(ac, "_en_text", None)
@@ -6831,6 +7834,10 @@ class FastPrompter(
         # "bravo" and it stays under "bravo".
         ("silo_gaps", "int_list"),
         ("silo_gap_names", "str_dict", "numeric"),
+        # per-silo file link (single file) and Sync-Project slot->file map:
+        # both follow the silo's identity through reorder/delete/undo
+        ("silo_links", "str_dict", "numeric"),
+        ("project_sync_map", "str_dict", "numeric"),
     )
 
     # The archive is its own index space with its own slot-keyed stores.
@@ -7998,6 +9005,10 @@ class FastPrompter(
             "silo_project_paths": _copy2(self.data.get("silo_project_paths", {})),
             "silo_types": dict(self.data.get("silo_types", {})),
             "watcher_queues": _copy2(self.data.get("watcher_queues", {})),
+            # per-silo file link + Sync-Project slot map: identity-owned, so
+            # a delete/undo must restore them exactly like colours/types
+            "silo_links": dict(self.data.get("silo_links", {})),
+            "project_sync_map": _copy2(self.data.get("project_sync_map", {})),
             # The archive's own index-keyed stores (T-754): an archive
             # delete/reorder/transfer must undo back to the exact folders and
             # project paths the text had, not just restore the text.
@@ -8450,7 +9461,9 @@ class FastPrompter(
                                ("silo_types", "silo_type_all"),
                                ("watcher_queues", "watcher_queues_all"),
                                ("archive_silo_folders", "archive_silo_folders_all"),
-                               ("archive_project_paths", "archive_project_paths_all")):
+                               ("archive_project_paths", "archive_project_paths_all"),
+                               ("silo_links", "silo_links_all"),
+                               ("project_sync_map", "project_sync_map_all")):
                 saved = state.get(key)
                 if saved is None:
                     continue
@@ -9792,9 +10805,25 @@ class FastPrompter(
         from PyQt6.QtWidgets import QMenu
         menu = QMenu(self)
         menu.setFont(QApplication.font())
-        menu.addAction(tr("➕ Add New Project Tab", getattr(self, "_current_lang", "EN")), self.add_category)
-        menu.addAction(tr("✏️ Rename Project Tab", getattr(self, "_current_lang", "EN")), self.rename_category)
-        menu.addAction(tr("❌ Delete Project Tab", getattr(self, "_current_lang", "EN")), self.del_category)
+        lang = getattr(self, "_current_lang", "EN")
+        menu.addAction(tr("➕ Add New Project Tab", lang), self.add_category)
+        menu.addAction(tr("✏️ Rename Project Tab", lang), self.rename_category)
+        menu.addAction(tr("❌ Delete Project Tab", lang), self.del_category)
+        menu.addSeparator()
+        # Sync-Project: bind this project tab to a folder and read it as
+        # silos, two-way, in real time (revertable via Unlink).
+        if self._sync_config():
+            menu.addAction(tr("🔄 Re-scan folder", lang), self._rescan_project_sync)
+            menu.addAction(tr("📂 Change folder…", lang), self._change_project_sync_folder)
+            menu.addAction(tr("🔌 Unlink Sync-Project (keep silos)", lang),
+                           self._unlink_project_sync)
+        else:
+            menu.addAction(tr("📁 Convert to Sync-Project…", lang),
+                           self._convert_project_to_sync)
+        # whole-project typecheck report (same dictionary as the live
+        # underlines — see Settings > Editor > Typos)
+        menu.addAction(tr("🔍 Check Typos in this project…", lang),
+                       self.check_project_typos)
         menu.exec((anchor or self.cat_combo).mapToGlobal(pos))
 
     def rename_category(self):
@@ -10389,6 +11418,9 @@ class FastPrompter(
             self.save_prompt_queues()
         self.data["last_tab_idx"] = index
         self.commit_current_text()
+        # Flush the project we are LEAVING to its synced files while its
+        # per-category aliases are still bound to it.
+        self._push_sync_files()
         self.cancel_editing()
 
         # Switch Silos to the new Tab's hierarchy
@@ -10416,6 +11448,14 @@ class FastPrompter(
             self._switch_to_slot(slot, initial=True,
                                  is_archive=getattr(self, "active_is_archive", False))
             self.refresh_temp_presets()
+
+        # The sync watcher follows the ACTIVE category: stop watching the
+        # old project's folder, watch the new one's. The typo dictionary
+        # follows the UI language, so it is shared — but the new document
+        # needs a fresh check pass.
+        self._start_project_watcher()
+        self._update_project_tooltip()
+        self._typo_timer.start()
 
         self._update_cat_numbox_active()
         self.refresh_snippets_panel()
@@ -11009,6 +12049,12 @@ class FastPrompter(
             from fastprompter.ui.file_container import silo_slug as _sl2
             self._active_silo_slug = _sl2(
                 cur_text[:cur_text.index("\n")] if "\n" in cur_text else cur_text)
+            # the silo we just LEFT was flushed into temp_presets above —
+            # push it to its file now (Sync-Project / per-silo links) and
+            # re-run the typo check on the silo we landed on
+            self._push_sync_files()
+            if hasattr(self, "_typo_timer"):
+                self._typo_timer.start()
             self.text_area.setFocus()
             self.text_area.ensureCursorVisible()
             if not initial:
@@ -11340,6 +12386,10 @@ class FastPrompter(
                 label = f"↳ {display_idx}: {text}" if text else f"↳ {display_idx}"
             else:
                 label = f"{display_idx}: {text}" if text else f"{display_idx}"
+            # a silo bound to a file (Sync-Project or per-silo link) shows a
+            # 🔗 so it reads as "this row is synced" at a glance
+            if self._silo_is_synced(slot_idx):
+                label += " 🔗"
             is_active = (
                 (not getattr(self, "active_is_archive", False))
                 and (slot_idx == self.active_temp_slot)
@@ -12026,6 +13076,25 @@ class FastPrompter(
         menu.addAction(tr("📁 Files…", getattr(self, "_current_lang", "EN")), lambda i=idx, a=is_archive: self.open_file_container(i, a))
         menu.addAction(tr("⚙ Configure Project Paths...", getattr(self, "_current_lang", "EN")), lambda i=idx, a=is_archive: self.open_silo_settings(i, a))
 
+        # Sync/Link this silo with a single file — both sides, live,
+        # revertable (Unlink keeps the silo text).
+        if not is_archive:
+            linked = self._link_file_for_slot(idx)
+            if linked:
+                act = menu.addAction(
+                    tr("🔗 Linked to: ", getattr(self, "_current_lang", "EN"))
+                    + os.path.basename(linked))
+                act.setEnabled(False)
+                menu.addAction(
+                    tr("🔓 Unlink this silo (stop syncing)",
+                       getattr(self, "_current_lang", "EN")),
+                    lambda i=idx: self._unlink_silo_file(i))
+            else:
+                menu.addAction(
+                    tr("🔗 Sync/Link this silo with a file…",
+                       getattr(self, "_current_lang", "EN")),
+                    lambda i=idx: self._link_silo_to_file(i))
+
         # -- save ---------------------------------------------------------------
         if cur:
             menu.addSeparator()
@@ -12216,9 +13285,12 @@ class FastPrompter(
         if isinstance(spath, dict) and isinstance(dpath, dict) and skey in spath:
             dpath[dkey] = spath.pop(skey)
 
-        # colour + type: canonical per-category *_all stores (W2-003)
+        # colour + type + per-silo file link + Sync-Project map: canonical
+        # per-category *_all stores (W2-003). Links/maps are identity-owned:
+        # a silo that moves keeps the file it is bound to.
         for flat, all_key in _PER_CATEGORY_ALIASES:
-            if flat not in ("silo_colors", "silo_types"):
+            if flat not in ("silo_colors", "silo_types",
+                            "silo_links", "project_sync_map"):
                 continue
             sm = self.data.setdefault(all_key, {})
             ssm = sm.get(src_cat)
@@ -12276,6 +13348,7 @@ class FastPrompter(
         "silo_project_paths_all", "archive_project_paths_all",
         "watcher_queues_all", "silo_type_all", "silo_last_edited_all",
         "silo_view_state_all",
+        "silo_links_all", "project_sync_map_all", "project_sync_all",
     )
 
     def _capture_category_stores(self, cat):
@@ -12369,6 +13442,12 @@ class FastPrompter(
                 return False
             ticked = self.data.get("silo_ticked_all", {}).get(target_cat, [])
             if isinstance(ticked, list) and slot_idx in ticked:
+                return False
+            links = self.data.get("silo_links_all", {}).get(target_cat, {})
+            if isinstance(links, dict) and str(slot_idx) in links:
+                return False
+            sync_map = self.data.get("project_sync_map_all", {}).get(target_cat, {})
+            if isinstance(sync_map, dict) and str(slot_idx) in sync_map:
                 return False
             return True
 
@@ -12835,6 +13914,10 @@ class FastPrompter(
             self._trim_archive()
             self.refresh_archive_panel()
         else:
+            # archiving is NOT an edit of the silo's text, so a synced silo
+            # must not push its now-empty text into its file: drop the
+            # bindings first (the file on disk survives untouched)
+            self._drop_slot_bindings(idx)
             self.data["temp_presets"][idx] = ""
             if idx == self.active_temp_slot and not getattr(self, "active_is_archive", False):
                 self.clear_text(internal=True)
@@ -13294,6 +14377,14 @@ class FastPrompter(
             self._cache_timer_interval = interval
             self._cache_timer.setInterval(interval)
         self._cache_timer.start()
+        # typecheck + app->file sync ride the same debounce pattern: a burst
+        # of keystrokes runs each exactly once, after the typing settles.
+        # Guarded: these timers are created late in __init__, while text
+        # changes can already fire during UI construction.
+        if hasattr(self, "_typo_timer"):
+            self._typo_timer.start()
+        if hasattr(self, "_sync_push_timer"):
+            self._sync_push_timer.start()
 
     def _on_cache_timer(self):
         self.cache_current_text()

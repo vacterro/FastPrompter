@@ -576,6 +576,34 @@ def next_due(timers, now=None, *, topbar_only=False):
     return min(live, key=lambda t: t.target)
 
 
+def missed_attention(timers, missed_ids, now=None):
+    """One-shot timers from ``missed_ids`` that still deserve a red alert.
+
+    A one-shot timer that FIRED (its moment passed) lands in ``missed_ids``
+    until it is dealt with. This helper decides which of those ids still
+    warrant the "passed event" attention indicator:
+
+    * unknown ids and timers that no longer exist are skipped,
+    * disabled timers are skipped (the user turned the event off),
+    * re-armed (snoozed) timers are skipped: ``snooze()`` moved the target
+      into the future and cleared ``fired``, so ``fired and target < now``
+      is False again.
+
+    Repeating timers are never candidates — they roll to their next
+    occurrence and are not "missed", they are merely next.
+    """
+    now = now or datetime.datetime.now()
+    by_id = {t.id: t for t in timers}
+    out = []
+    for tid in missed_ids or ():
+        t = by_id.get(tid)
+        if t is None or not t.enabled:
+            continue
+        if t.repeat == REPEAT_NONE and t.fired and t.target < now:
+            out.append(t)
+    return out
+
+
 def collect_due(timers, now=None):
     """Every timer that has come due, advancing repeats past `now`."""
     now = now or datetime.datetime.now()

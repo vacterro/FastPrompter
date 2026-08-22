@@ -71,11 +71,12 @@ class TimerToast(QWidget):
 
     _open: list[TimerToast] = []
 
-    def __init__(self, main_win, timer, on_snooze=None):
+    def __init__(self, main_win, timer, on_snooze=None, on_dismiss=None):
         super().__init__(None)
         self.main_win = main_win
         self.timer_obj = timer
         self.on_snooze = on_snooze
+        self.on_dismiss = on_dismiss
         lang = getattr(main_win, "_current_lang", "EN")
 
         self.setWindowFlags(
@@ -231,7 +232,10 @@ class TimerToast(QWidget):
         row.addStretch(1)
         btn_ok = QPushButton(tr("Dismiss", lang))
         btn_ok.setProperty("class", "toast-btn")
-        btn_ok.clicked.connect(self.close)
+        btn_ok.setToolTip(tr(
+            "Acknowledge the passed event — the red passed-event alert clears.",
+            lang))
+        btn_ok.clicked.connect(self._dismiss)
         row.addWidget(btn_ok)
         mb_lay.addLayout(row)
         b_lay.addWidget(main_body)
@@ -338,6 +342,20 @@ class TimerToast(QWidget):
         y = max(area.top(), min(y, area.bottom() - self.height()))
         self.move(x, y)
 
+    def _dismiss(self):
+        """The explicit Dismiss button: acknowledge, then close.
+
+        Deliberately different from the ✕ / body-click / auto-close paths:
+        those only remove the popup, while the passed-event red alert on the
+        date label keeps nagging ("do not forget"). Dismiss is the
+        acknowledgement that clears it — wired through ``on_dismiss``.
+        """
+        try:
+            if self.on_dismiss:
+                self.on_dismiss(self.timer_obj)
+        finally:
+            self.close()
+
     def _snooze(self, minutes):
         try:
             if self.on_snooze:
@@ -353,10 +371,11 @@ class TimerToast(QWidget):
         super().closeEvent(event)
 
 
-def show_toast(main_win, timer, on_snooze=None):
+def show_toast(main_win, timer, on_snooze=None, on_dismiss=None):
     """Create and show a toast; returns it (or None if the UI can't)."""
     try:
-        toast = TimerToast(main_win, timer, on_snooze=on_snooze)
+        toast = TimerToast(main_win, timer, on_snooze=on_snooze,
+                           on_dismiss=on_dismiss)
         toast.show()
         toast.raise_()
         return toast
