@@ -119,12 +119,13 @@ def run_portable_backup(data: dict, profile_id=1) -> None:
     ``profile_id``) is dispatched to the worker, which owns throttle
     advancement on success; otherwise the synchronous path below runs.
 
-    PERF-008: the expensive ``capture_snapshot`` deep copy is COALESCED.
-    While a request for this profile is already active (pending or in
-    flight), repeated eligible saves only record that a newer state is
-    wanted -- they never deep-copy the full data universe just to replace
-    a pending snapshot. ``backup_finished`` clears the throttle for a
-    wanted-newer profile so the newest state is exported on the next run.
+    PERF-008 (as amended by CORE-002): while a request for this profile is
+    already active, repeated eligible saves never dispatch to the sink again
+    -- but each one DOES refresh the pending snapshot with an immutable
+    committed copy of its own state, because deferred generation must be
+    exactly the state that belonged to the successful save that requested it.
+    ``backup_finished`` retires the active marker and dispatches the newest
+    pending snapshot immediately.
     """
     pid = int(profile_id or 1)
     now = time.time()

@@ -109,6 +109,10 @@ sys.modules["PyQt6.QtWidgets"] = MagicMock()
 sys.modules["PyQt6.QtWidgets"].QPushButton = _MockQPushButton
 sys.modules["PyQt6.QtWidgets"].QApplication = _MockQApplication
 
+# T-1032: drop any real copy so the import rebuilds against the stubs (see
+# test_pie_menu.py) -- a cache hit would hand these tests the real mixin.
+sys.modules.pop("fastprompter.ui.scaling_mixin", None)
+
 from fastprompter.ui.scaling_mixin import _BTN_BASE_HEIGHTS, _BTN_WIDTH_SCALE_NAMES, ScalingMixin
 
 _qt_stub.restore(_before_stubs)

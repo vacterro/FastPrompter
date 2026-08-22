@@ -57,6 +57,10 @@ sys.modules["PyQt6.QtCore"].QObject = _MockQObject
 sys.modules["PyQt6.QtCore"].QUrl = MagicMock()
 sys.modules["PyQt6.QtCore"].QUrl.fromLocalFile = lambda p: f"file:///{p}"
 
+# T-1032: drop any real copy so the import rebuilds against the stubs (see
+# test_pie_menu.py) -- a cache hit would hand these tests the real classes.
+sys.modules.pop("fastprompter.core.sound_manager", None)
+
 from fastprompter.core.sound_manager import (
     _DEFAULT_SOUND_MAP,
     SoundManager,

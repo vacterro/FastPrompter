@@ -235,6 +235,10 @@ sys.modules["PyQt6.QtWidgets"].QLineEdit = _MockQLineEdit
 sys.modules["PyQt6.QtWidgets"].QFrame = _MockQFrame
 sys.modules["PyQt6.QtCore"] = MagicMock()
 
+# T-1032: drop any real copy so the import rebuilds against the stubs (see
+# test_pie_menu.py) -- a cache hit would hand these tests the real mixin.
+sys.modules.pop("fastprompter.ui.search_mixin", None)
+
 from fastprompter.ui.search_mixin import SearchMixin
 
 _qt_stub.restore(_before_stubs)

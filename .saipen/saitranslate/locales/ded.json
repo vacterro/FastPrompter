@@ -1096,8 +1096,8 @@
     "Gap Name": "Как обозвать дыру",
     "Name for this group:": "Как обзовем эту кучу:",
     "Security Warning": "Алярма! Безопасность!",
-    "Backup failed validation; the previous backup is unchanged:\n{}": "Backup failed validation; the previous backup is unchanged:\n{}",
-    "Export would overwrite itself at:\n{}": "Export would overwrite itself at:\n{}",
+    "Backup failed validation; the previous backup is unchanged:\n{}": "Backup-Validierung fehlgeschlagen; das vorherige Backup blieb unverändert:\n{}",
+    "Export would overwrite itself at:\n{}": "Export würde sich selbst überschreiben unter:\n{}",
     "This link points to a file on your computer:\n\n{}\n\nOpening it may run a program. Are you sure you want to open it?": "This link points to a file on your computer:\n\n{}\n\nOpening it may run a program. Are you sure you want to open it?"
   }
 }

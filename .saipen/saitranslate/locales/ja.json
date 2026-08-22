@@ -1058,10 +1058,10 @@
     "Restore failed and the live database could not be left consistent. It has been repaired from the automatic safety snapshot on disk — restart FastPrompter to reload it.": "Restore failed and the live database could not be left consistent. It has been repaired from the automatic safety snapshot on disk — restart FastPrompter to reload it.",
     "{n} file(s) already exist in the export directory. Overwrite them?": "{n} file(s) already exist in the export directory. Overwrite them?",
     "00:00 to 00:00 means All Day": "00:00 to 00:00 means All Day",
-    "Ctrl+drag to move this gap. Double-click to rename.": "Ctrl+drag to move this gap. Double-click to rename.",
+    "Ctrl+drag to move this gap. Double-click to rename.": "Ctrlキーを押しながらドラッグしてこのギャップを移動します。ダブルクリックで名前を変更できます。",
     "Favorite this sound": "Favorite this sound",
-    "Gap Name": "Gap Name",
-    "Name for this group:": "Name for this group:",
+    "Gap Name": "ギャップ名",
+    "Name for this group:": "このグループの名前:",
     "Security Warning": "Security Warning",
     "Bold": "Bold",
     "Replace": "Replace",
@@ -1096,8 +1096,8 @@
     "Strikethrough": "Strikethrough",
     "Zipping files...": "Zipping files...",
     "Restore refused — your current database was left untouched:\n{}": "Restore refused — your current database was left untouched:\n{}",
-    "Backup failed validation; the previous backup is unchanged:\n{}": "Backup failed validation; the previous backup is unchanged:\n{}",
-    "Export would overwrite itself at:\n{}": "Export would overwrite itself at:\n{}",
+    "Backup failed validation; the previous backup is unchanged:\n{}": "バックアップの検証に失敗しました。前回のバックアップは変更されていません:\n{}",
+    "Export would overwrite itself at:\n{}": "エクスポートが自分自身を上書きします:\n{}",
     "This link points to a file on your computer:\n\n{}\n\nOpening it may run a program. Are you sure you want to open it?": "This link points to a file on your computer:\n\n{}\n\nOpening it may run a program. Are you sure you want to open it?"
   }
 }

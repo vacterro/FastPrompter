@@ -173,12 +173,30 @@ def test_backup_capture_coalesced_while_active(tmp_path, monkeypatch):
         pb.run_portable_backup({}, profile_id=1)
         assert calls["n"] == 1  # first dispatch captures
         assert 1 in pb._backup_active
+        assert len(received) == 1
 
-        # repeated eligible saves while a request is active must NOT capture
+        # PERF-008 as amended by CORE-002: while a request is active the
+        # worker owns the export, so repeated eligible saves must NOT reach
+        # the sink again -- but each one DOES refresh the pending snapshot
+        # (an immutable committed copy), because deferred generation must be
+        # exactly the state of the save that requested it.
         for _ in range(20):
             pb.run_portable_backup({}, profile_id=1)
-        assert calls["n"] == 1, "coalescing must prevent repeated deep copies"
+        assert len(received) == 1, "coalescing must prevent repeated dispatches"
+        assert calls["n"] == 21, "each eligible save refreshes its own snapshot"
         assert 1 in pb._backup_newer_wanted
+
+        # worker finished: retire the active marker and deliver the NEWEST
+        # pending snapshot immediately (CORE-003)
+        pb.backup_finished(profile_id=1)
+        assert len(received) == 2, "newest pending snapshot dispatched on finish"
+        # the newest dispatch is itself in flight -> marker re-armed until
+        # the worker reports that one done too
+        assert 1 in pb._backup_active
+        # throttle cleared for the wanted-newer profile -> next save captures
+        assert 1 not in pb.last_success_by_profile
+        pb.backup_finished(profile_id=1)
+        assert 1 not in pb._backup_active
     finally:
         pb.set_backup_sink(None)
 

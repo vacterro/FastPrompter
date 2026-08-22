@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.8.49 - 2026-08-22
+
+- **Test isolation fixed at root (T-1032):** the four stub-based suites (pie menu, scaling mixin, search mixin, sound manager) imported their module-under-test after installing fake `PyQt6` modules in `sys.modules`, but a cached real copy from an earlier suite turned the import into a cache hit — the tests then exercised the real Qt-bound classes (and the stub-built copies leaked into every later suite). Each file now drops the cached module before the stubbed import; the existing `_qt_stub.restore()` puts the real copy back or evicts the stub-built one cleanly. Full suite is green in one run: 1502 passed.
+- **PERF-008 test reconciled with CORE-002:** while a backup dispatch is active, repeated eligible saves refresh their own immutable pending snapshot (capture-fidelity contract) instead of skipping the deep copy; the test now asserts single dispatch, newest-pending delivery on `backup_finished`, and throttle clearing. Docstring updated to match.
+- **i18n gap keys translated (RU/EST/JA/DED):** the two backup-validation strings got real translations in `ru`/`est` (pulled from the translation bundle), `ja` gained translations for all five audited keys, and `ded` for the two backup strings — module and bundle JSON kept in parity.
+
 ## v0.8.48 - 2026-08-22
 
 - **Silent-failure hygiene (T-1030):** audited all 84 broad `except Exception: pass` sites across `src/`; 80 idiomatic best-effort guards documented and kept. Converted the 4 state-critical ones in `main.py`: an unreadable caret fingerprint now counts as a mismatch instead of applying stale offsets (holds the T-720 guard); a failed editor read in the sync loop skips the slot instead of writing from a stale buffer; a failed typing-check in external apply skips the round instead of guessing the app side is clean; a failed conflict-resolution write now logs a warning and only records the baseline when the write actually landed.

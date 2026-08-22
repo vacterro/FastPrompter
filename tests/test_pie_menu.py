@@ -262,6 +262,13 @@ _pynput_mock.keyboard.Key.esc = "Escape"
 sys.modules["pynput"] = _pynput_mock
 sys.modules["pynput.keyboard"] = _pynput_mock.keyboard  # keep in sync
 
+# T-1032: an earlier suite may already have imported this module against the
+# REAL PyQt6 -- a plain import would then be a cache hit and hand these tests
+# the real widget instead of the stub-built one. Drop the cached copy so the
+# import below genuinely rebuilds against the mocks (_qt_stub.restore puts
+# the real copy back afterwards).
+sys.modules.pop("fastprompter.ui.pie_menu", None)
+
 from fastprompter.ui.pie_menu import QuickListWidget
 
 _qt_stub.restore(_before_stubs)
