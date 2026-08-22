@@ -133,14 +133,10 @@ class TestSoundDiscovery:
     def test_discover_returns_sorted_list(self):
         sm = SoundManager(_MockQObject(), {})
         sounds = sm.get_available_sounds()
-        defaults = ["newday.wav", "newweek.wav", "newmonth.wav"]
-        # Find the index where defaults end and others begin
-        first_other = len(defaults)
-        # Check defaults are at the front
-        assert sounds[:first_other] == defaults
-        # The rest should be sorted alphabetically
-        others = sounds[first_other:]
-        assert others == sorted(others)
+        # get_available_sounds orders favorites, then defaults, then the rest
+        # alphabetically; with no favorites/defaults present that is a plain
+        # alphabetical sort of the discovered set.
+        assert sounds == sorted(sounds)
 
 
 class TestEventMapping:

@@ -1,5 +1,13 @@
+import os
+
+# Run all Qt tests headless. Without a platform plugin the GUI tests fail to
+# construct a QApplication on a machine with no display; the offscreen platform
+# is the standard headless backend and exercises the same code paths.
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
 import pytest
 from unittest.mock import patch
+
 
 @pytest.fixture(autouse=True, scope="session")
 def mute_sounds():

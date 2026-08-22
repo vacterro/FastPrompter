@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.8.47 - 2026-08-22
+
+- **Two-sided sync conflict resolution:** syncing a vault whose entries changed on both sides no longer silently clobbers one copy — conflicts are resolved explicitly instead (19acd47).
+- **Silent-failure hygiene (T-1027):** `theme_raw_colors` swallowed every resolve exception and returned the stale fallback silently; it now logs a warning with the cause.
+- **Dead code removal (T-1028):** `edit_guard.undo_group()` had zero references repo-wide; removed.
+- **Test-debt triage (T-1029):** `_DEFAULT_SOUND_MAP["error"]` pointed at `error.wav`, but the shipped file is `Error.wav` (case mismatch from the T-705 rename) — the error event was a silent silence. Repointed to `Error.wav`. `tests/test_debug.py::test_debug` constructed `VaultTextEdit()` although the constructor now requires `main_win` — pass `None`. `tests/test_sound_manager.py::test_discover_returns_sorted_list` asserted three `new*.wav` files are pinned to the front, but those files no longer ship (T-705); now asserts the discovered list is sorted. `tests/conftest.py` now sets `QT_QPA_PLATFORM=offscreen` so GUI tests run headless in CI. The 26 remaining baseline failures are test-isolation pollution (cumulative global-state leak across the full suite), tracked as T-1032.
+- **Docs & i18n collects:** wiki re-synced to v0.8.46..47 content (WIKI-006, commit 3fdd621); 59 new `tr()` keys injected into all 32 locale modules (TRANSLATE-005, commit 051f634).
+
 ## v0.8.46 - 2026-08-22
 
 - **CORE-001 loader safe recovery (follow-up):** A real database written by the old buggy saver carries a snippet row at slot 100, which the fail-closed loader refused to open. Snippet slots are pure array indexes — nothing cross-references them — so an out-of-range row is now migrated transactionally into the first FREE 0..99 slot (preserving the data, never aliasing a distinct snippet). `DatabaseOverflowError` is raised only when the category is genuinely full and placement would require merging. Silo/archive tables keep the hard fail-closed behaviour because their slots carry identity (folders, queues, colours) that a blind move would orphan. Two loader regressions added (migrates when room, refuses when full with DB untouched).

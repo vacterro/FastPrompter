@@ -41,7 +41,7 @@ _DEFAULT_SOUND_MAP: dict[str, str] = {
     "chest_open": "chest_open.wav",
     "chest_close": "chest_closed.wav",
     "notify": "notify.wav",
-    "error": "error.wav",
+    "error": "Error.wav",
     "success": "success_levelup.wav",
     "timer": "timer_tick_pack.wav",
     # T-735. Undo/redo are a PAIR on purpose, the same way tick_on/tick_off

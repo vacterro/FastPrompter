@@ -60,14 +60,3 @@ def keep_view(editor):
         if sb.value() != before:
             sb.setValue(min(before, sb.maximum()))
         editor.ensureCursorVisible()
-
-
-@contextmanager
-def undo_group(text_edit):
-    """Same, for when you only have the widget to hand."""
-    cursor = text_edit.textCursor()
-    cursor.beginEditBlock()
-    try:
-        yield cursor
-    finally:
-        cursor.endEditBlock()

@@ -13,7 +13,7 @@ def app():
     return app
 
 def test_debug(app):
-    editor = VaultTextEdit()
+    editor = VaultTextEdit(None)
     url = QUrl('javascript:alert(1)')
     safe_url = editor._safe_link_url(url)
     print('unsafe returned:', safe_url)

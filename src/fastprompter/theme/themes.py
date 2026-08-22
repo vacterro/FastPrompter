@@ -15,8 +15,9 @@ def theme_raw_colors(main_win, fallback):
         cached = getattr(main_win, "_theme_cache", None)
         if cached and cached.get("raw_colors"):
             raw = cached["raw_colors"]
-    except Exception:
-        pass
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("theme_raw_colors resolve failed: %s", exc)
     return raw
 
 
