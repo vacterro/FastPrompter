@@ -25,12 +25,15 @@ src/fastprompter/
 │   ├── limits.py               # Agent reset-limit scanner + timer creation
 │   ├── logging.py              # Logger setup, rotating file handler
 │   ├── pomodoro.py             # Pomodoro state machine (work/break)
+│   ├── project_sync.py         # Sync-Project folder↔silo two-way sync, pure logic (Qt-free)
 │   ├── silo_presets.py         # .md template loader — Fill from preset (T-715)
 │   ├── silo_export.py          # Drag a silo OUT to Explorer as a content-named .md (T-738)
 │   ├── sound_manager.py        # Audio playback (clicks, typewriter, alarms)
 │   ├── state.py                # SQLite DB interface + state management
 │   ├── timers.py               # Countdown timer model, due detection
 │   ├── translations.py         # Legacy proxy → i18n package (33 locales)
+│   ├── typecheck.py            # Dictionary-based typo checker for silo text (non-recursive, script-aware)
+│   ├── typecheck_words.py      # Built-in English word list for the typo checker (~10k words)
 │   │
 │   ├── i18n/                   # 33-locale resource pack (32 languages + Дед)
 │   │   ├── __init__.py, _compat.py, _container.py, _context.py, _engine.py
@@ -91,6 +94,7 @@ src/fastprompter/
 │   ├── toolbar_reorder.py      # Drag-and-drop toolbar button reorder
 │   ├── trash_dialog.py         # Trash bin + restore dialog
 │   ├── tray_mixin.py           # Systray icon + context menu
+│   ├── typo_check_dialog.py    # Whole-project typo report dialog (right-click project tab)
 │   ├── watcher_dialog.py       # Watcher config + script manager UI
 │   ├── watcher_mixin.py        # Watcher engine window integration
 │   ├── window_mixin.py         # Frameless move, snap, borderless controls
@@ -122,6 +126,8 @@ src/fastprompter/
 | `core.ctrlw` | Divider template engine (Ctrl+W / Alt+W) |
 | `core.timers` | Timer model, due detection, serialization |
 | `core.pomodoro` | Work/break state machine, focus timer |
+| `core.typecheck` | Dictionary-based typo checker (non-recursive, script-aware, Qt-free for unit testing) |
+| `core.project_sync` | Sync-Project: folder↔silo two-way sync, include/exclude filters, EOL detection, atomic file I/O |
 | `ui.editor` | VaultTextEdit — folding, gutter, checkboxes, heatmap, margin marks, hide-markup |
 | `ui.snippet_panel` | Silo tree, hierarchy, category tabs, F1-F10 slots, sidebar gaps, multi-select |
 | `ui.silo_kanban` | Pure-text kanban board (Alt+arrows move cards, Enter new row) |
@@ -142,7 +148,7 @@ src/fastprompter/
 
 ## Module Count Summary
 
-- **core/**: 19 modules + i18n/ (33 locales + 5 infra files = 38) + watcher/ (10 modules)
-- **ui/**: 46 modules
+- **core/**: 22 modules + i18n/ (33 locales + 5 infra files = 38) + watcher/ (10 modules)
+- **ui/**: 47 modules
 - **utils/**: 5 modules
-- **Total**: 121 `.py` files under `src/fastprompter/` (includes `main.py` + `__init__.py`; + `presets/` ships as a non-code data dir)
+- **Total**: 125 `.py` files under `src/fastprompter/` (includes `main.py` + `__init__.py`; + `presets/` ships as a non-code data dir)

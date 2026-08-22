@@ -116,3 +116,19 @@ fail-closed). All backup writes go through the unified safe primitive
 (temp sibling + atomic rename).
 
 **v0.8.43–v0.8.45 audit hardening:** the portable Markdown snapshot captures an *immutable* copy of state at request time rather than the live mutable dict, so the generation dispatched after a save is exactly the committed state that requested it — never uncommitted future edits. While a profile's backup job is active, repeated eligible saves only record that a newer state is wanted and coalesce; the newest state is exported on the next eligible run (PERF-008 / CORE-002 / CORE-003). The filesystem probe negative cache is bounded (≤500 entries) and swept on read, so repeated absent-path lookups don't churn or grow without limit (PERF-004).
+
+### 11. Typecheck / Typo Checker (`core/typecheck.py`)
+
+A dictionary-based, non-recursive typo checker for silo text. Single linear scan per pass — a word is visited exactly once, no re-entrancy conflicts with the editor's own highlighting passes. Stays smart instead of noisy: skips code fences, inline code, URLs, e-mails, hashtags, @mentions, hex colours, and any word glued to an identifier character (`foo.bar`, `snake_case`, `camelCase`, `#tag`). Acronyms and mixed-case identifiers are never flagged. Contractions are checked in contracted form with de-contracted fallback. Only flags words in scripts the dictionary covers (Latin/English ~10k words + UI vocabulary of every app language); stays silent for Cyrillic, CJK, etc. — flagging what you cannot judge is the "dumb" behaviour this module avoids. The user dictionary (`typo_user_words` setting) extends the pool; suggestions come from difflib over the whole pool. The module is Qt-free for unit-testability.
+
+### 12. Sync-Project (`core/project_sync.py`)
+
+Folder↔silo two-way sync. A Sync-Project binds a project tab to a folder; every text file that passes the include/exclude filters becomes a silo (slot 0..N-1 in file-name order; extra files become new silos up to the 100-silo cap). Two-way and live: app edits are pushed to the file (debounced, and on every DB save), external file changes are applied back into the silo unless the silo holds unsaved app-side text (the app side wins while it is being typed). Exclude patterns match the file name (fnmatch-style) or any path component (substring). Pure logic (Qt-free) — the UI wiring (QFileSystemWatcher, debounce timers) lives in `main.py`.
+
+### 13. Per-Silo File Links
+
+Each silo can have an associated file link target (`silo_links` / `silo_links_all` settings), opening the linked file in its default application. This complements the Sync-Project feature: while Sync-Project auto-binds a whole folder, per-silo links let the user manually pin a single file to a single silo.
+
+### 14. Passed-Event Alert
+
+Timer silos whose countdown has elapsed (passed) are highlighted with a configurable color (`passed_event_color`), making it visually obvious which deadlines have passed at a glance. Toggled via `passed_alert_enabled`.

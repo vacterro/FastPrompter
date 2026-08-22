@@ -225,3 +225,27 @@ Settings → **Sound** toggles the master switch, UI clicks and typewriter sound
 2. .bak — at startup + every 60s (full SQLite backup to .bak file)
 3. Daily markdown mirror — `~/Documents/.fastprompter/` (silos per project + archive + snippets)
 4. Portable ZIP — manual backup via Backup dialog
+
+### 25. Typecheck / Typo Checker
+
+A built-in dictionary-based typo checker that works on silo text. Non-recursive and smart: it skips code blocks, URLs, hashtags, identifiers (`snake_case`, `camelCase`, file paths), acronyms, and any script the dictionary doesn't cover (Cyrillic, CJK, etc. — flagging what it can't judge would be noise). Contractions are checked in both forms. The shipped dictionary is English (~10k words) plus the UI vocabulary of every app language; the user dictionary (`typo_user_words` setting) extends the pool, and suggestions come from difflib closest matches.
+
+**Live underline:** enable in Settings (toggle `typo_check_enabled`). Flagged words get a colored underline (`typo_color`).
+
+**Whole-project scan:** right-click the project tab → **"Check Typos in this project…"** opens a dialog that scans every silo, groups unknown words per silo, and lets you add words to the dictionary from the report.
+
+### 26. Sync-Project (Folder↔Silo Two-Way Sync)
+
+A Sync-Project binds a project tab to a folder on disk. Every text file in the folder that passes the include/exclude filters becomes a silo (slot 0..N-1 in file-name order; extra files become new silos up to the 100-silo cap).
+
+**Two-way and live:** app edits are pushed to the file (debounced, and on every DB save). External file changes are applied back into the silo — unless the silo holds unsaved app-side text, in which case the app side wins while it is being typed. A live watcher (`sync_live_watch`) picks up external changes.
+
+**Filters:** `sync_include` (space-separated extensions: .txt .md .py .js ...), `sync_exclude` (comma-separated patterns — `node_modules`, `.git`, `*.exe`, etc.). Exclude patterns match the file name (fnmatch-style) or any path component (substring). `sync_recursive` controls subdirectory scanning, `sync_max_kb` caps file size.
+
+### 27. Per-Silo File Links
+
+Each silo can have an associated file link — opening the linked file in its default application. This complements Sync-Project: while Sync-Project auto-binds a whole folder, per-silo links let the user manually pin a single file to a single silo. Configured via the silo's right-click menu or settings (`silo_links` / `silo_links_all`).
+
+### 28. Passed-Event Alert
+
+Timer silos whose countdown has elapsed (passed) are highlighted with a configurable color (`passed_event_color`), making it visually obvious which deadlines have passed at a glance. Toggled via `passed_alert_enabled` in Settings.
