@@ -4076,9 +4076,15 @@ class VaultTextEdit(QTextEdit):
         ``_typo_spans`` is ``[(start, end)]`` in ABSOLUTE document offsets,
         set by main.py after each debounced check; ``_typo_color`` is the
         user-chosen underline colour.
+
+        PERF-005: the absolute->block-local grouping is cached and reused
+        across paints of an unchanged document. Rebuilding it on every
+        paintEvent would re-run up to 2,000 findBlock lookups per repaint
+        (scrolling, hover, selection) for analysis that did not change.
         """
         spans = getattr(self, "_typo_spans", None)
         if not spans:
+            self._typo_blocks_cache = None
             return
         color = getattr(self, "_typo_color", None)
         if not color:
@@ -4086,12 +4092,19 @@ class VaultTextEdit(QTextEdit):
         qcolor = QColor(color)
         if not qcolor.isValid():
             return
-        by_block: dict[int, list[tuple[int, int]]] = {}
-        for start, end in spans:
-            block = doc.findBlock(start)
-            if block.isValid():
-                by_block.setdefault(block.blockNumber(), []).append(
-                    (start - block.position(), end - block.position()))
+        rev = doc.revision()
+        cache_key = (id(spans), tuple(spans), rev)
+        cached = getattr(self, "_typo_blocks_cache", None)
+        if cached and cached[0] == cache_key:
+            by_block = cached[1]
+        else:
+            by_block: dict[int, list[tuple[int, int]]] = {}
+            for start, end in spans:
+                block = doc.findBlock(start)
+                if block.isValid():
+                    by_block.setdefault(block.blockNumber(), []).append(
+                        (start - block.position(), end - block.position()))
+            self._typo_blocks_cache = (cache_key, by_block)
         block = self._first_visible_block()
         if not block:
             return
