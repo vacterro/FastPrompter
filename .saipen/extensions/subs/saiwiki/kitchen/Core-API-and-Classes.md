@@ -179,6 +179,51 @@ Immutable-snapshot Markdown export with coalescing (v0.8.43–v0.8.45 audit hard
 
 ---
 
+### `TypecheckEngine` (`core/typecheck.py`)
+
+Dictionary-based, non-recursive typo checker for silo text (Qt-free for unit testing).
+
+**Design:** single linear scan per pass — a word is visited exactly once. No re-entrancy with the editor's highlighting passes.
+
+**Smart filtering:** skips code fences, inline code, URLs, e-mails, hashtags, @mentions, hex colours, and identifier-glued words (`foo.bar`, `snake_case`, `camelCase`, `#tag`). Acronyms (ALL-CAPS) and mixed-case identifiers never flagged. Contractions checked in contracted form with de-contracted fallback. Only flags words in scripts the dictionary covers (Latin/English ~10k words + UI vocabulary of every app language); stays silent for Cyrillic, CJK, etc.
+
+**Key functions:**
+- `check_text(text, user_words=None)` — single-pass scan, returns list of (word, suggestions) for flagged words
+- `_script_of(ch)` — rough script family: 'latin' or block name
+- `suggestions(word, pool)` — difflib closest matches from the whole dictionary pool
+
+**Settings:** `typo_check_enabled` (live underline toggle), `typo_color` (underline color), `typo_user_words` (user-added dictionary words list).
+
+---
+
+### `ProjectSync` (`core/project_sync.py`)
+
+Folder↔silo two-way sync, pure logic (Qt-free). UI wiring (QFileSystemWatcher, debounce timers) lives in `main.py`.
+
+**Semantics:** a Sync-Project binds a project tab to a folder. Every text file that passes the include/exclude filters becomes a silo (slot 0..N-1 in file-name order; extra files become new silos up to the 100-silo cap). Two-way and live: app edits are pushed to the file (debounced, on every DB save), external file changes are applied back into the silo unless it holds unsaved app-side text (app side wins while being typed).
+
+**Key constants:**
+- `DEFAULT_INCLUDE` — tuple of text file extensions (.txt, .md, .py, .js, .json, ...)
+- `DEFAULT_EXCLUDE` — tuple of junk/build/VCS directory names and binary patterns
+
+**Key functions:**
+- `scan_folder(path, include, exclude, recursive, max_kb)` — sorted list of relative file paths that pass filters
+- `is_text_file(path, include)` — extension match against include list
+- `should_exclude(path, exclude)` — fnmatch name or path-component substring match
+- `read_file_safe(path, max_kb)` — size-capped, binary-sniffed safe read
+- `write_file_atomic(path, content)` — temp sibling + atomic rename
+- `detect_eol(raw_bytes)` — `\r\n` (Windows) or `\n` (Unix) preservation
+
+**Settings:** `project_sync` / `project_sync_all` (per-profile/cross-profile bindings), `project_sync_map` / `project_sync_map_all` (silo↔file slot mapping), `sync_include` / `sync_exclude` / `sync_live_watch` / `sync_max_kb` / `sync_recursive`.
+
+---
+
+### `TypoCheckDialog` (`ui/typo_check_dialog.py`)
+
+Whole-project typecheck report dialog. Right-click project tab → "Check Typos in this project…". Scans every silo with the same dictionary the live underline uses, groups unknown words per silo, and lets the user add words to the dictionary from the report.
+
+---
+
 ## UI Components (`src/fastprompter/ui/`)
 
 ### `FastPrompter` (`main.py`)

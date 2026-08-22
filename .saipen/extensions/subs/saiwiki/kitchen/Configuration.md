@@ -93,6 +93,25 @@ Restored in v0.8.32 (removed in v0.8.24, back with the launch grace and own-wind
 | `silo_tabs_mode` | string | `sidebar` | Silo layout: `sidebar` (left column) or `tabs` (horizontal bar above editor) (T-718) |
 | `toolbar_position` | string | `top` | Toolbar placement: `top` (above editor) or `bottom` (below splitter) (T-719) |
 | `silo_view_state_all` | JSON dict | `{}` | Per-silo cursor/scroll/fold state |
+| **Typecheck (Typo Checker)** | | | |
+| `typo_check_enabled` | bool | False | Enable live typo underline in silo text (dictionary-based, non-recursive) |
+| `typo_color` | string | `#e05555` | Underline color for flagged typo words |
+| `typo_user_words` | JSON list | `[]` | User-added dictionary words (extends the built-in English pool) |
+| **Sync-Project (Folder↔Silo Sync)** | | | |
+| `project_sync` | JSON dict | `{}` | Per-profile sync-project bindings (project tab → folder path) |
+| `project_sync_all` | JSON dict | `{}` | Cross-profile sync-project bindings |
+| `project_sync_map` | JSON dict | `{}` | Per-profile silo↔file slot mapping |
+| `project_sync_map_all` | JSON dict | `{}` | Cross-profile silo↔file slot mapping |
+| `silo_links` | JSON dict | `{}` | Per-profile per-silo file link targets |
+| `silo_links_all` | JSON dict | `{}` | Cross-profile per-silo file link targets |
+| `sync_include` | string | `.txt .md .py ...` | Space-separated text file extensions to include in sync |
+| `sync_exclude` | string | `node_modules, .git, ...` | Comma-separated exclude patterns (fnmatch name or path substring) |
+| `sync_live_watch` | bool | True | Live-watch folder for external changes (QFileSystemWatcher) |
+| `sync_max_kb` | int | 512 | Max file size in KB to sync (larger files are skipped) |
+| `sync_recursive` | bool | True | Recursively scan subdirectories in the sync folder |
+| **Passed-Event Alert** | | | |
+| `passed_alert_enabled` | bool | True | Highlight timer silos whose countdown has elapsed (passed) |
+| `passed_event_color` | string | `#e05555` | Color for passed-event silo highlight |
 
 ## File System Layout
 

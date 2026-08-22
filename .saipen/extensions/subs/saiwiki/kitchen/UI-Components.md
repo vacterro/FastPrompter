@@ -94,6 +94,7 @@ Pure-text markdown table. Tab/Shift+Tab walk cells. Tab off last cell grows row.
 | `Queue Master (Alt+Shift+C)` | Watcher queue overview per silo |
 | `Hashtag Dialog (Alt+Shift+T)` | Cross-silo tag search |
 | `Trash Dialog` | Browse/restore soft-deleted silos |
+| `Typo Check Dialog` | Right-click project tab → "Check Typos in this project…"; scans every silo with the dictionary, groups unknown words per silo, add-to-dictionary from the report |
 | `Backup Dialog` | DB export/import, backup snapshot |
 | `Help Dialog` | Interactive shortcut reference |
 | `Window Presets` | Save/rename/reorder/move window geometry presets; optional full-state capture — theme, font, scale, toolbar, zen, sidebar (T-728) |
