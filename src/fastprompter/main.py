@@ -1419,7 +1419,10 @@ class FastPrompter(
                         text.encode("utf-8", "replace")) != entry["text_crc"]:
                     return False
             except Exception:
-                pass
+                # T-1030: an unreadable fingerprint is a mismatch, not a
+                # free pass -- falling through here would apply stale
+                # offsets against changed text, the exact bug T-720 guards.
+                return False
         try:
             anchor = max(0, min(int(entry.get("anchor", 0)), doc_len))
             pos = max(0, min(int(entry.get("pos", 0)), doc_len))
@@ -3929,7 +3932,10 @@ class FastPrompter(
                     try:
                         text = self.text_area.toPlainText()
                     except Exception:
-                        pass
+                        # T-1030: editor unavailable -- keep the preset text
+                        # out of the comparison and skip this slot this
+                        # round instead of writing from a stale buffer.
+                        continue
                 if (self._sync_last_applied.get(path) == text
                         and os.path.exists(path)):
                     continue  # nothing new to write
@@ -4044,18 +4050,29 @@ class FastPrompter(
                     if self.text_area.toPlainText() != silo_text:
                         return  # the user is typing — app side wins for now
                 except Exception:
-                    pass
+                    # T-1030: editor unavailable -- app side is unknown, so
+                    # skip this external apply instead of guessing it is
+                    # clean; the next external change retries.
+                    return
             if silo_text != text:
                 choice = self._sync_conflict_choice(
                     path, slot, text, silo_text)
                 if choice == "app":
                     # the silo text wins: write it back to the file
-                    self._sync_last_applied[path] = silo_text
                     try:
                         from fastprompter.core import project_sync as ps
-                        ps.write_text_file(path, silo_text, eol)
-                    except Exception:
-                        pass
+                        written = ps.write_text_file(path, silo_text, eol)
+                    except Exception as exc:
+                        # T-1030: the user picked a winner -- a silent write
+                        # failure would leave the file on the loser text
+                        # while the baseline claims it resolved.
+                        from fastprompter.core.logging import logger
+                        logger.warning(
+                            "sync: failed to write silo text back to %s: %s",
+                            path, exc)
+                        return
+                    if written is not None:
+                        self._sync_last_applied[path] = written
                     return
                 if choice != "file":
                     return  # skipped for now — leave both sides alone

@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.8.48 - 2026-08-22
+
+- **Silent-failure hygiene (T-1030):** audited all 84 broad `except Exception: pass` sites across `src/`; 80 idiomatic best-effort guards documented and kept. Converted the 4 state-critical ones in `main.py`: an unreadable caret fingerprint now counts as a mismatch instead of applying stale offsets (holds the T-720 guard); a failed editor read in the sync loop skips the slot instead of writing from a stale buffer; a failed typing-check in external apply skips the round instead of guessing the app side is clean; a failed conflict-resolution write now logs a warning and only records the baseline when the write actually landed.
+
 ## v0.8.47 - 2026-08-22
 
 - **Two-sided sync conflict resolution:** syncing a vault whose entries changed on both sides no longer silently clobbers one copy — conflicts are resolved explicitly instead (19acd47).
