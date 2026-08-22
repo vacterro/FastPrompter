@@ -65,3 +65,6 @@ src/fastprompter/_extract.txt
 
 # saipen scratch — per-session caches, never committed
 .saipen/kitchen/
+
+# agent runtime dir (workbuddy skill host)
+.workbuddy-ai/

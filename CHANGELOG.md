@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.8.50 - 2026-08-22
+
+- **Repo hygiene (T-1033):** agent runtime dir `.workbuddy-ai/` gitignored; saipen conformance recovery records and the producer-side translation log are now tracked instead of sitting in limbo; scratch inject script removed (superseded by `tools/inject_translations.py`).
+
 ## v0.8.49 - 2026-08-22
 
 - **Test isolation fixed at root (T-1032):** the four stub-based suites (pie menu, scaling mixin, search mixin, sound manager) imported their module-under-test after installing fake `PyQt6` modules in `sys.modules`, but a cached real copy from an earlier suite turned the import into a cache hit — the tests then exercised the real Qt-bound classes (and the stub-built copies leaked into every later suite). Each file now drops the cached module before the stubbed import; the existing `_qt_stub.restore()` puts the real copy back or evicts the stub-built one cleanly. Full suite is green in one run: 1502 passed.
