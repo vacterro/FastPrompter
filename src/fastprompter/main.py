@@ -3827,6 +3827,22 @@ class FastPrompter(
         return (self._sync_file_for_slot(slot) is not None
                 or self._link_file_for_slot(slot) is not None)
 
+    def _sync_baseline_key(self, slot, path, cat=None):
+        """W2-004: the logical owner of a sync baseline, not just the path.
+
+        ``_sync_last_applied`` is a process-wide dict. Keying it by path alone
+        lets a baseline produced by project/silo A leak into project/silo B:
+        B then classifies A's write as its own and silently overwrites a
+        real two-sided conflict. The owner is ``(category, slot,
+        canonical_path)`` — category resolves to the active category when the
+        caller has no explicit one.
+        """
+        if cat is None:
+            cat = self.get_current_category() or ""
+        canonical = os.path.normcase(os.path.abspath(path))
+        return (cat, int(slot) if isinstance(slot, int) else str(slot),
+                canonical)
+
     def _silo_clean(self, slot, path):
         """True when ``slot`` holds NO app-side text newer than what we last
         wrote to ``path`` — i.e. an external change may be applied safely.
@@ -3834,7 +3850,7 @@ class FastPrompter(
         The active silo's live editor text is the authority; for inactive
         silos the stored text is. If we never touched the path, the silo is
         considered clean (a fresh binding)."""
-        applied = self._sync_last_applied.get(path)
+        applied = self._sync_last_applied.get(self._sync_baseline_key(slot, path))
         if applied is None:
             return True
         if (slot == getattr(self, "active_temp_slot", -1)
@@ -3849,7 +3865,7 @@ class FastPrompter(
             return presets[slot] == applied
         return True
 
-    def _sync_conflict_choice(self, path, slot, file_text, silo_text):
+    def _sync_conflict_choice(self, path, slot, file_text, silo_text, cat=None):
         """Resolve a two-sided edit conflict, remembering "skip for now".
 
         A conflict is a bound file whose content differs from its silo while
@@ -3859,10 +3875,13 @@ class FastPrompter(
 
         Returns ``'app'`` (the silo text wins), ``'file'`` (the file text
         wins) or ``None`` when the user chose to skip for now. A skipped
-        conflict is recorded as ``(path, file_text, silo_text)`` so it stops
-        nagging until one of the two sides changes.
+        conflict is recorded as ``(owner, path, file_text, silo_text)`` so it
+        stops nagging until one of the two sides changes — and W2-004 scopes
+        the skip to its logical owner, so one category's "skip" can never
+        suppress another category's conflict on the same physical file.
         """
-        key = (path, file_text, silo_text)
+        owner = self._sync_baseline_key(slot, path, cat)
+        key = (owner, path, file_text, silo_text)
         if key in getattr(self, "_sync_conflict_skipped", ()):
             return None
         choice = self._sync_ask_conflict(path, slot, file_text, silo_text)
@@ -3914,12 +3933,16 @@ class FastPrompter(
         links = self.data.get("silo_links") or {}
         path = links.pop(str(idx), None)
         if path:
-            self._sync_last_applied.pop(path, None)
+            self._sync_last_applied.pop(
+                self._sync_baseline_key(idx, path), None)
         mapping = self.data.get("project_sync_map") or {}
         rel = mapping.pop(str(idx), None)
         if rel and self._sync_root():
             self._sync_last_applied.pop(
-                os.path.join(self._sync_root(), rel.replace("/", os.sep)),
+                self._sync_baseline_key(
+                    idx,
+                    os.path.join(self._sync_root(),
+                                 rel.replace("/", os.sep))),
                 None)
 
     def _push_sync_files(self):
@@ -3952,14 +3975,14 @@ class FastPrompter(
                         # out of the comparison and skip this slot this
                         # round instead of writing from a stale buffer.
                         continue
-                if (self._sync_last_applied.get(path) == text
+                if (self._sync_last_applied.get(self._sync_baseline_key(slot, path)) == text
                         and os.path.exists(path)):
                     continue  # nothing new to write
                 eol = "\n"
                 read = ps.read_text_file(path, self._sync_max_bytes())
                 if read is not None:
                     eol = read[1]
-                    if (self._sync_last_applied.get(path) is None
+                    if (self._sync_last_applied.get(self._sync_baseline_key(slot, path)) is None
                             and read[0] != text):
                         # no session baseline + the file disagrees with the
                         # silo: a two-sided conflict (e.g. both edited while
@@ -3968,7 +3991,7 @@ class FastPrompter(
                             path, slot, read[0], text)
                         if choice == "file":
                             # the file text wins: pull it into the silo
-                            self._sync_last_applied[path] = read[0]
+                            self._sync_last_applied[self._sync_baseline_key(slot, path)] = read[0]
                             presets[slot] = read[0]
                             if (slot == active and not editing_snippet
                                     and not getattr(self, "active_is_archive",
@@ -3981,7 +4004,7 @@ class FastPrompter(
                         # "app": fall through and write the silo text
                 written = ps.write_text_file(path, text, eol)
                 if written is not None:
-                    self._sync_last_applied[path] = written
+                    self._sync_last_applied[self._sync_baseline_key(slot, path)] = written
         except Exception:
             from fastprompter.core.logging import logger
             logger.debug("push sync files failed", exc_info=True)
@@ -4051,11 +4074,11 @@ class FastPrompter(
           conflict: the user picks a winner instead of one side silently
           clobbering the other (``_sync_resolve_conflict``).
         """
-        if self._sync_last_applied.get(path) == text:
+        if self._sync_last_applied.get(self._sync_baseline_key(slot, path)) == text:
             return
         if not self._silo_clean(slot, path):
             return  # the app side is newer (typing) — retry later
-        if self._sync_last_applied.get(path) is None:
+        if self._sync_last_applied.get(self._sync_baseline_key(slot, path)) is None:
             # No baseline this session: a difference between the file and the
             # silo is a two-sided conflict (e.g. both edited while the app
             # was closed), not a normal external edit.
@@ -4088,12 +4111,12 @@ class FastPrompter(
                             path, exc)
                         return
                     if written is not None:
-                        self._sync_last_applied[path] = written
+                        self._sync_last_applied[self._sync_baseline_key(slot, path)] = written
                     return
                 if choice != "file":
                     return  # skipped for now — leave both sides alone
                 # "file": fall through and pull the file text into the silo
-        self._sync_last_applied[path] = text
+        self._sync_last_applied[self._sync_baseline_key(slot, path)] = text
         applied[slot] = text
 
     def _apply_external_sync(self):
@@ -4133,7 +4156,8 @@ class FastPrompter(
                         continue
                     if not os.path.exists(path):
                         mapping.pop(slot_key, None)
-                        self._sync_last_applied.pop(path, None)
+                        self._sync_last_applied.pop(
+                            self._sync_baseline_key(slot, path), None)
                         continue
                     read = ps.read_text_file(path, self._sync_max_bytes())
                     if read is None:
@@ -4163,7 +4187,7 @@ class FastPrompter(
                             presets.append("")
                         presets[slot] = text
                         mapping[str(slot)] = rel
-                        self._sync_last_applied[path] = text
+                        self._sync_last_applied[self._sync_baseline_key(slot, path)] = text
                         applied[slot] = text
 
             # --- per-silo links --------------------------------------------
@@ -4278,7 +4302,7 @@ class FastPrompter(
                 presets.append("")
             presets[slot] = text
             mapping[str(slot)] = rel
-            self._sync_last_applied[path] = text
+            self._sync_last_applied[self._sync_baseline_key(slot, path)] = text
         self.mark_dirty()
         self.save_data_to_db(force=True)
         self._start_project_watcher()
@@ -4316,7 +4340,12 @@ class FastPrompter(
                 if rel not in files:
                     path = os.path.join(root, rel.replace("/", os.sep))
                     mapping.pop(key, None)
-                    self._sync_last_applied.pop(path, None)
+                    try:
+                        _sk = int(key)
+                    except (TypeError, ValueError):
+                        _sk = key
+                    self._sync_last_applied.pop(
+                        self._sync_baseline_key(_sk, path), None)
             mapped = set(mapping.values())
             new_files = [f for f in files if f not in mapped]
             if new_files:
@@ -4333,7 +4362,7 @@ class FastPrompter(
                         presets.append("")
                     presets[slot] = text
                     mapping[str(slot)] = rel
-                    self._sync_last_applied[path] = text
+                    self._sync_last_applied[self._sync_baseline_key(slot, path)] = text
             self.mark_dirty()
             self.refresh_temp_presets()
             self._start_project_watcher()
@@ -4358,8 +4387,10 @@ class FastPrompter(
         if cfg:
             root = os.path.abspath(cfg["root"])
             for rel in (self.data.get("project_sync_map") or {}).values():
-                self._sync_last_applied.pop(
-                    os.path.join(root, rel.replace("/", os.sep)), None)
+                p2 = os.path.join(root, rel.replace("/", os.sep))
+                for _k in [k for k in self._sync_last_applied
+                           if isinstance(k, tuple) and k[2] == os.path.normcase(p2)]:
+                    self._sync_last_applied.pop(_k, None)
         self.data["project_sync"] = {}
         self.data.setdefault("project_sync_all", {})[cat] = {}
         mapping = self.data.get("project_sync_map")
@@ -4424,7 +4455,7 @@ class FastPrompter(
         links[str(idx)] = path
         # the file is the source of truth at link time
         presets[idx] = text
-        self._sync_last_applied[path] = text
+        self._sync_last_applied[self._sync_baseline_key(idx, path)] = text
         self.mark_dirty()
         self.refresh_temp_presets()
         if idx == getattr(self, "active_temp_slot", -1):
@@ -4439,7 +4470,7 @@ class FastPrompter(
             return
         path = links.pop(str(idx), None)
         if path:
-            self._sync_last_applied.pop(path, None)
+            self._sync_last_applied.pop(self._sync_baseline_key(idx, path), None)
         self.mark_dirty()
         self.refresh_temp_presets()
         self._start_project_watcher()
@@ -13447,18 +13478,53 @@ class FastPrompter(
         if isinstance(spath, dict) and isinstance(dpath, dict) and skey in spath:
             dpath[dkey] = spath.pop(skey)
 
-        # colour + type + per-silo file link + Sync-Project map: canonical
-        # per-category *_all stores (W2-003). Links/maps are identity-owned:
-        # a silo that moves keeps the file it is bound to.
+        # colour + type + per-silo file link: canonical per-category *_all
+        # stores (W2-003). Per-silo links are ABSOLUTE paths and are
+        # self-contained identities, safe to move across projects. Sync-Project
+        # map entries are handled SEPARATELY below because their identity is
+        # (project root, relative path), not the relative path alone.
         for flat, all_key in _PER_CATEGORY_ALIASES:
-            if flat not in ("silo_colors", "silo_types",
-                            "silo_links", "project_sync_map"):
+            if flat not in ("silo_colors", "silo_types", "silo_links"):
                 continue
             sm = self.data.setdefault(all_key, {})
             ssm = sm.get(src_cat)
             ddm = sm.setdefault(dst_cat, {})
             if isinstance(ssm, dict) and isinstance(ddm, dict) and skey in ssm:
                 ddm[dkey] = ssm.pop(skey)
+
+        # W2-003: Sync-Project map identity is (project root, relative path),
+        # NOT the relative path alone. A map entry moved across projects whose
+        # roots differ would be reinterpreted under the destination root and
+        # silently bind to a DIFFERENT physical file (and later two-way sync
+        # could overwrite it). Resolve the source entry to its exact absolute
+        # path and preserve it as a per-silo absolute link when the roots
+        # differ; keep the relative map move only when both categories share
+        # the same project root.
+        smap = self.data.get("project_sync_map_all")
+        if isinstance(smap, dict):
+            ssm = smap.get(src_cat)
+            if isinstance(ssm, dict) and skey in ssm:
+                rel = ssm[skey]
+                def _cfg_root(cat):
+                    cfg = (self.data.get("project_sync_all") or {}).get(cat)
+                    if isinstance(cfg, dict) and cfg.get("root"):
+                        return os.path.normcase(os.path.abspath(cfg["root"]))
+                    return None
+                src_root = _cfg_root(src_cat)
+                dst_root = _cfg_root(dst_cat)
+                if src_root and dst_root and src_root == dst_root:
+                    dsm = smap.setdefault(dst_cat, {})
+                    if isinstance(dsm, dict):
+                        dsm[dkey] = ssm.pop(skey)
+                else:
+                    ssm.pop(skey)
+                    if isinstance(rel, str) and rel and src_root:
+                        abs_path = os.path.join(
+                            src_root, rel.replace("/", os.sep))
+                        links = self.data.setdefault(
+                            "silo_links_all", {}).setdefault(dst_cat, {})
+                        if isinstance(links, dict):
+                            links[dkey] = abs_path
 
         # last-edited recency: per-category int-keyed store
         le = self.data.get("silo_last_edited_all")

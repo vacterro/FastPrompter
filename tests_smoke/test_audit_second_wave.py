@@ -193,3 +193,126 @@ def test_cross_category_refuses_full_without_source_pop(win):
     assert r is None  # refused
     assert win.data["temp_presets"] == before  # source untouched
     assert win.data["categories"]["X"][0]["text"] == "t"
+
+
+# ----------------------------------------------------------------- W2-003
+def test_transfer_sync_map_resolves_absolute_file_identity(win, tmp_path, monkeypatch):
+    """W2-003: a Sync-Project map entry's identity is (root, relative path).
+    Cross-project transfer with DIFFERENT roots must preserve the EXACT
+    physical file as an absolute link, never reinterpret the relative path
+    under the destination root."""
+    files_root = str(tmp_path / "files")
+    os.makedirs(files_root, exist_ok=True)
+    monkeypatch.setattr(win, "_files_root", lambda: files_root)
+
+    rootA = str(tmp_path / "projA")
+    rootB = str(tmp_path / "projB")
+    os.makedirs(rootA, exist_ok=True)
+    os.makedirs(rootB, exist_ok=True)
+    with open(os.path.join(rootA, "same.txt"), "w", encoding="utf-8") as f:
+        f.write("CONTENT-A")
+    with open(os.path.join(rootB, "same.txt"), "w", encoding="utf-8") as f:
+        f.write("CONTENT-B")
+
+    if "B" not in win.data["categories"]:
+        win.data["categories"]["B"] = [None] * 100
+        win.data["cats_order"].append("B")
+        win.data["temp_presets_all"]["B"] = ["", "", ""]
+    _set_silos(win, ["SRC", "", ""])
+    win.active_is_archive = False
+
+    win.data.setdefault("project_sync_all", {})[CUR] = {"root": rootA}
+    win.data.setdefault("project_sync_all", {})["B"] = {"root": rootB}
+    win.data.setdefault("project_sync_map_all", {})[CUR] = {"0": "same.txt"}
+    # the physical source file must exist (transfer preflight resolves it)
+    src_dir = os.path.join(files_root, win._category_files_dir(CUR), "F") \
+        if os.path.isdir(os.path.join(files_root, win._category_files_dir(CUR))) \
+        else os.path.join(files_root)
+    os.makedirs(os.path.join(files_root), exist_ok=True)
+
+    ok = win.transfer_silo_to_project(0, "B")
+    assert ok is True
+
+    # destination must NOT carry a stale relative map under B's root
+    assert "0" not in (win.data.get("project_sync_map_all", {}).get("B") or {})
+    # the source map entry is gone
+    assert "0" not in (win.data.get("project_sync_map_all", {}).get(CUR) or {})
+    # the EXACT physical file is preserved as an absolute link
+    links = win.data.get("silo_links_all", {}).get("B", {})
+    assert links, "expected an absolute per-silo link in destination"
+    link = next(iter(links.values()))
+    assert os.path.normcase(link) == os.path.normcase(
+        os.path.join(rootA, "same.txt")), link
+    assert open(link, encoding="utf-8").read() == "CONTENT-A"
+
+
+def test_transfer_sync_map_same_root_keeps_relative_map(win, tmp_path, monkeypatch):
+    """W2-003: when both projects share the SAME root, the relative map entry
+    stays a project map entry (the path keeps its meaning)."""
+    files_root = str(tmp_path / "files")
+    os.makedirs(files_root, exist_ok=True)
+    monkeypatch.setattr(win, "_files_root", lambda: files_root)
+
+    rootX = str(tmp_path / "projX")
+    os.makedirs(rootX, exist_ok=True)
+    with open(os.path.join(rootX, "file.txt"), "w", encoding="utf-8") as f:
+        f.write("X")
+
+    # isolate from prior tests sharing the session `win` fixture
+    for store in ("temp_presets_all", "silo_links_all", "project_sync_map_all",
+                  "project_sync_all"):
+        if isinstance(win.data.get(store), dict):
+            win.data[store].pop("B", None)
+
+    if "B" not in win.data["categories"]:
+        win.data["categories"]["B"] = [None] * 100
+        win.data["cats_order"].append("B")
+        win.data["temp_presets_all"]["B"] = ["", "", ""]
+    _set_silos(win, ["SRC", "", ""])
+    win.active_is_archive = False
+
+    win.data.setdefault("project_sync_all", {})[CUR] = {"root": rootX}
+    win.data.setdefault("project_sync_all", {})["B"] = {"root": rootX}
+    win.data.setdefault("project_sync_map_all", {})[CUR] = {"0": "file.txt"}
+
+    ok = win.transfer_silo_to_project(0, "B")
+    assert ok is True
+    assert (win.data.get("project_sync_map_all", {}).get("B") or {}).get("0") == "file.txt"
+
+
+# ----------------------------------------------------------------- W2-004
+def test_sync_baseline_scoped_to_owner(win, tmp_path, monkeypatch):
+    """W2-004: a sync baseline written under one category must not leak into
+    another category sharing the same physical file."""
+    files_root = str(tmp_path / "files")
+    os.makedirs(files_root, exist_ok=True)
+    monkeypatch.setattr(win, "_files_root", lambda: files_root)
+
+    shared = os.path.join(str(tmp_path), "shared.txt")
+    with open(shared, "w", encoding="utf-8") as f:
+        f.write("FILE")
+
+    if "B" not in win.data["categories"]:
+        win.data["categories"]["B"] = [None] * 100
+        win.data["cats_order"].append("B")
+    win.data.setdefault("temp_presets_all", {}).setdefault("B", ["", "", ""])
+    _set_silos(win, ["A-TEXT", "", ""])
+
+    # category A: slot 0 binds the shared file, baseline = FILE content
+    win.data.setdefault("silo_links", {})["0"] = shared
+    win.data.setdefault("silo_links_all", {})[CUR] = {"0": shared}
+    win._sync_last_applied[win._sync_baseline_key(0, shared, CUR)] = "FILE"
+
+    # category B: slot 0 binds the SAME file, B has written a newer version
+    win.data.setdefault("silo_links_all", {})["B"] = {"0": shared}
+    win._sync_last_applied[win._sync_baseline_key(0, shared, "B")] = "B-TEXT"
+
+    # A must NOT see B's baseline as its own
+    assert win._sync_last_applied.get(
+        win._sync_baseline_key(0, shared, CUR)) == "FILE"
+    assert win._sync_last_applied.get(
+        win._sync_baseline_key(0, shared, "B")) == "B-TEXT"
+    # the path alone resolves to nothing: every baseline is owner-scoped
+    assert not any(
+        (isinstance(k, tuple) and k[2] == os.path.normcase(shared)
+         and k[0] not in (CUR, "B")) for k in win._sync_last_applied)
