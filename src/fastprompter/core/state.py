@@ -1057,6 +1057,7 @@ class FastPrompterState:
         self._saved_snippets_gen = 0
         self._saved_temp_gen = 0
         self._saved_arc_gen = 0
+        self._last_save_had_silo_text = False
         # Throttle for the SQLite .bak safety copy, PER PROFILE: profiles have
         # different DB/.bak files, and one profile's recent backup must never
         # suppress another profile's (the old single scalar did exactly that
@@ -1528,6 +1529,10 @@ class FastPrompterState:
         scan_snippets = full_scan or self._dirty_snippets > self._saved_snippets_gen
         scan_temp = full_scan or self._dirty_temp > self._saved_temp_gen
         scan_arc = full_scan or self._dirty_arc > self._saved_arc_gen
+        # PERF-004: expose whether THIS save touched a silo-text domain, so
+        # the caller can skip app->file sync on a settings-only persistence.
+        self._last_save_had_silo_text = bool(
+            scan_snippets or scan_temp or scan_arc)
 
         if not (scan_settings or scan_snippets or scan_temp or scan_arc):
             return True

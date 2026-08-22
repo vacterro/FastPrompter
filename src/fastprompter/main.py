@@ -3582,9 +3582,15 @@ class FastPrompter(
         # become newer than the DB it is documented to mirror.
         if ok:
             self.sync_to_disk()
-            # Sync-Project / per-silo links: publish silo text to disk after
-            # the authoritative save succeeded (same rule as the mirror).
-            self._push_sync_files()
+            # PERF-004: Sync-Project / per-silo links publish silo text to disk
+            # only when THIS save actually touched a silo-text domain, or a
+            # forced save demands it. A settings-only persistence (font size,
+            # geometry, a checkbox) must not traverse every bound file and
+            # perform stat/read work on the GUI thread for no text to publish.
+            # App-side text edits are covered independently by the 1.5s typing
+            # debounce (_sync_push_timer / _on_text_changed).
+            if force or getattr(self.state, "last_save_had_silo_text", False):
+                self._push_sync_files()
         return ok
 
     # =====================================================================
