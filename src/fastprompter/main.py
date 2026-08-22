@@ -3843,6 +3843,17 @@ class FastPrompter(
         return (cat, int(slot) if isinstance(slot, int) else str(slot),
                 canonical)
 
+    @staticmethod
+    def _sync_side_digest(text):
+        """PERF-007: compact, stable content digest for skip-cache identity.
+
+        Length + a small cryptographic digest: collision-resistant enough for
+        conflict identity while never retaining the full document body in
+        session metadata."""
+        import hashlib
+        data = (text or "").encode("utf-8", "replace")
+        return (len(data), hashlib.blake2b(data, digest_size=16).digest())
+
     def _silo_clean(self, slot, path):
         """True when ``slot`` holds NO app-side text newer than what we last
         wrote to ``path`` — i.e. an external change may be applied safely.
@@ -3881,12 +3892,21 @@ class FastPrompter(
         suppress another category's conflict on the same physical file.
         """
         owner = self._sync_baseline_key(slot, path, cat)
-        key = (owner, path, file_text, silo_text)
-        if key in getattr(self, "_sync_conflict_skipped", ()):
+        # PERF-007: at most ONE skipped-conflict record per logical owner.
+        # A dict keyed by owner holds the compact digests of the two sides;
+        # re-skipping the SAME unchanged conflict is a hit, and any change on
+        # either side replaces the record instead of accumulating history.
+        skipped = getattr(self, "_sync_conflict_skipped", None)
+        if not isinstance(skipped, dict):
+            self._sync_conflict_skipped = {}
+            skipped = self._sync_conflict_skipped
+        digest = self._sync_side_digest
+        entry = (digest(file_text), digest(silo_text))
+        if skipped.get(owner) == entry:
             return None
         choice = self._sync_ask_conflict(path, slot, file_text, silo_text)
         if choice is None:
-            self._sync_conflict_skipped.add(key)
+            skipped[owner] = entry
         return choice
 
     def _sync_ask_conflict(self, path, slot, file_text, silo_text):
