@@ -1,7 +1,7 @@
 ---
 phase: DONE
 task: none
-next_action: "WAIT: user brake -- eee collected and shipped as v0.8.51; board clean, T-800/T-803 BLOCKED"
+next_action: "WAIT: user brake -- convergence re-run closed at v0.8.51; board clean"
 blocker: ""
 agent: workbuddy
 saipen_version: 7
@@ -13,9 +13,9 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 846
+last_event: 853
 style_contract: ded-4ae736e4
-updated: "2026-08-22T13:42:00Z"
-transition_from: SHIP
+updated: "2026-08-22T13:45:00Z"
+transition_from: VALIDATE
+execution_intent: normal
 ---
-
