@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.8.51 - 2026-08-22
+
+- **i18n collect (T-1034):** TRANSLATE-006 injected — the 7 previously unbundled source keys (restore-aborted, restore-refused, Silo, Sync/Link this silo, typo-checker word list, Word, export-target-inside-folder) are now registered in all 33 locale modules with real translations for EN/RU/EST/DED/JA and English fallback elsewhere; ja/ded bundles restored to full key parity with their modules.
+
 ## v0.8.50 - 2026-08-22
 
 - **Repo hygiene (T-1033):** agent runtime dir `.workbuddy-ai/` gitignored; saipen conformance recovery records and the producer-side translation log are now tracked instead of sitting in limbo; scratch inject script removed (superseded by `tools/inject_translations.py`).
