@@ -321,17 +321,26 @@ class TestShutdownFlush:
         assert win._sync_pending is None and win._sync_busy is False
 
     def test_shutdown_timeout_is_bounded(self, win, tmp_path, fake_worker):
-        """Test E: a busy/hung worker must not block shutdown past the bound."""
+        """Test E: a busy/hung worker must not block shutdown past the bound.
+
+        T-1038: the final pending snapshot is deliberately RETAINED while the
+        worker is still inflight (W2-002 serialization contract -- a delayed
+        old writer must be superseded by a drain of the retained newest), so
+        this test asserts bounded time, un-falsified physical idleness, and
+        that the fallback published the mirror -- NOT a cleared pending."""
         _setup(win, tmp_path)
         win.data["temp_presets"][0] = "# t\nstuck"
         win.sync_to_disk(force=True)
         win._sync_dispatch_pending()             # 'in flight' (fake never completes)
         assert win._sync_busy is True
         t0 = time.monotonic()
-        win._sync_shutdown(timeout_s=0.2)
+        result = win._sync_shutdown(timeout_s=0.2)
         assert time.monotonic() - t0 <= 6.0       # bounded, not a hang
-        assert win._sync_pending is None
+        assert result is False                    # degraded shutdown reported
         assert win._sync_busy is True, "timeout must not falsify physical idleness"
+        # W2-002: unpublished-by-worker work is retained for drain; the
+        # synchronous fallback already wrote the mirror to disk
+        assert win._sync_pending is not None or win._sync_written
         # the real worker thread is still usable for the next test
         win._sync_inflight_gen = 0
         win._sync_shutting_down = False
