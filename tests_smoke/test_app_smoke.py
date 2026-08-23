@@ -3501,6 +3501,20 @@ def test_no_cyrillic_in_codebase():
             # and must be exercised with one — input data, not prose.
             if norm.endswith("tests_smoke/test_backup_silo_bypass.py"):
                 continue
+            # test_project_sync.py exercises a cp1251-encoded legacy file
+            # (Russian bytes written via .encode("cp1251")) — input data.
+            if norm.endswith("tests/test_project_sync.py"):
+                continue
+            # test_typecheck.py feeds real Russian words into the script-count
+            # dictionary — the cyrillic script must be exercised with them.
+            if norm.endswith("tests/test_typecheck.py"):
+                continue
+            # release tooling writes Russian release notes / RU release text —
+            # the same ded-voice class as sync_saitranslate.py above.
+            if norm.endswith("tools/release.py") or norm.endswith(
+                    "tools/probe_release.py") or norm.endswith(
+                    "tools/sync_saitranslate_fast.py"):
+                continue
             with open(f, encoding="utf-8") as fh:
                 for i, line in enumerate(fh, 1):
                     if cyr.search(line):
