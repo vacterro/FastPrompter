@@ -1,7 +1,7 @@
 ---
 phase: SCOUT
-task: "T-1038 sync shutdown timeout robustness (_sync_pending contract)"
-next_action: "PHASE SCOUT T-1038"
+task: none
+next_action: "WAIT: user brake -- proposal wave done (T-1035..T-1038 closed); T-1039 worker-I/O remains on TODO"
 blocker: ""
 agent: workbuddy
 saipen_version: 7
@@ -13,9 +13,9 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 869
+last_event: 870
 style_contract: ded-4ae736e4
-updated: "2026-08-23T09:28:20Z"
+updated: "2026-08-23T09:41:39Z"
 transition_from: VALIDATE
 execution_intent: normal
 ---
