@@ -1527,8 +1527,52 @@ class VaultTextEdit(QTextEdit):
         except Exception:
             pass
 
-    def _checkbox_at_pos(self, pos):
-        """Which checkbox, if any, is under this viewport point.
+    def _interactive_target_at(self, pos):
+        """W2-006/PERF-006: ONE visible-block walk answering every hover
+        target. Returns True when ``pos`` hits a checkbox, timestamp glyph,
+        fold anchor or code-copy button.
+
+        The four features used to run four independent visible-region walks
+        per qualifying pointer movement; the geometry question is the same,
+        so it is answered once here. Click handlers keep their specific
+        helpers (clicks are not high-frequency).
+        """
+        doc = self.document()
+        if not doc or sip.isdeleted(doc):
+            return False
+        try:
+            block = self._first_visible_block()
+            vp_h = self.viewport().height()
+        except Exception:
+            return False
+        if not block:
+            return False
+        big = doc.blockCount() > 2000
+        check_cb = self._doc_has_checkbox
+        while block is not None and block.isValid():
+            if not block.isVisible():
+                block = block.next()
+                continue
+            r = self.cursorRect(QTextCursor(block))
+            if r.top() > vp_h:
+                break
+            g = self._ts_glyph_rect(block)
+            if g is not None and g.contains(pos):
+                return True
+            if check_cb and r.bottom() >= 0 and self._checkbox_hit_in_block(block, pos):
+                return True
+            if not big:
+                if self._is_fold_anchor(block) and self._fold_rect(block).contains(pos):
+                    return True
+                if (block.text().strip().startswith("```")
+                        and self._fence_is_opener(block)
+                        and self._code_copy_rect(block).contains(pos)):
+                    return True
+            block = block.next()
+        return False
+
+    def _checkbox_hit_in_block(self, block, pos):
+        """W2-006 helper: does ``pos`` hit THIS block's task checkbox?
 
         The guard is PER BLOCK, not around the whole walk. It used to wrap
         the entire loop, so one block that upset the layout maths aborted
@@ -1537,6 +1581,38 @@ class VaultTextEdit(QTextEdit):
         document impossible to hit. A bad block is skipped now; the ones
         after it still answer.
         """
+        try:
+            text = block.text()
+            stripped = text.lstrip()
+            indent = len(text) - len(stripped)
+            if stripped.startswith(("[ ] ", "[x] ", "[X] ")):
+                cursor = QTextCursor(block)
+                cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
+                cursor.movePosition(QTextCursor.MoveOperation.Right,
+                                    QTextCursor.MoveMode.MoveAnchor, indent)
+                r_start = self.cursorRect(cursor)
+                cursor.movePosition(QTextCursor.MoveOperation.Right,
+                                    QTextCursor.MoveMode.MoveAnchor, 4)
+                r_end = self.cursorRect(cursor)
+                b_w = int(r_end.x() - r_start.x())
+                # A wrapped line can put the closing bracket on the
+                # next visual row, which makes the width negative and
+                # QRect.contains() false for every point - the
+                # checkbox would simply stop responding. Fall back to
+                # the line height, which is close enough to the glyph
+                # box to stay clickable.
+                if b_w <= 0:
+                    b_w = int(r_start.height())
+                if QRect(int(r_start.x()), int(r_start.top()),
+                         b_w, int(r_start.height())).contains(pos):
+                    return True
+        except Exception as exc:
+            logger.debug("checkbox hit test skipped block %s: %s",
+                         block.blockNumber(), exc)
+        return False
+
+    def _checkbox_at_pos(self, pos):
+        """Which checkbox, if any, is under this viewport point."""
         if not self._doc_has_checkbox:
             return None
         doc = self.document()
@@ -1552,38 +1628,11 @@ class VaultTextEdit(QTextEdit):
             return None
 
         while block.isValid():
-            try:
-                r = self.cursorRect(QTextCursor(block))
-                if r.top() > vp_h:
-                    break
-                if r.bottom() >= 0:
-                    text = block.text()
-                    stripped = text.lstrip()
-                    indent = len(text) - len(stripped)
-                    if stripped.startswith(("[ ] ", "[x] ", "[X] ")):
-                        cursor = QTextCursor(block)
-                        cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
-                        cursor.movePosition(QTextCursor.MoveOperation.Right,
-                                            QTextCursor.MoveMode.MoveAnchor, indent)
-                        r_start = self.cursorRect(cursor)
-                        cursor.movePosition(QTextCursor.MoveOperation.Right,
-                                            QTextCursor.MoveMode.MoveAnchor, 4)
-                        r_end = self.cursorRect(cursor)
-                        b_w = int(r_end.x() - r_start.x())
-                        # A wrapped line can put the closing bracket on the
-                        # next visual row, which makes the width negative and
-                        # QRect.contains() false for every point - the
-                        # checkbox would simply stop responding. Fall back to
-                        # the line height, which is close enough to the glyph
-                        # box to stay clickable.
-                        if b_w <= 0:
-                            b_w = int(r_start.height())
-                        if QRect(int(r_start.x()), int(r_start.top()),
-                                 b_w, int(r_start.height())).contains(pos):
-                            return block
-            except Exception as exc:
-                logger.debug("checkbox hit test skipped block %s: %s",
-                             block.blockNumber(), exc)
+            r = self.cursorRect(QTextCursor(block))
+            if r.top() > vp_h:
+                break
+            if r.bottom() >= 0 and self._checkbox_hit_in_block(block, pos):
+                return block
             block = block.next()
         return None
 
@@ -2276,12 +2325,9 @@ class VaultTextEdit(QTextEdit):
                             # (and over 2000 blocks that path bails out
                             # entirely, so it never repainted at all).
                             self.viewport().update()
-                    over_cb = self._checkbox_at_pos(p)
-                    over_ts = self._ts_glyph_block_at(p) is not None
-                    over_fold = self._fold_block_at(p) is not None
-                    over_copy = self._code_copy_block_at(p) is not None
+                    over_target = self._interactive_target_at(p)
                     is_link = bool(self.anchorAt(p)) or bool(self.hashtag_at(p))
-                    target = Qt.CursorShape.PointingHandCursor if (over_cb or over_ts or over_fold or over_copy or is_link) else Qt.CursorShape.IBeamCursor
+                    target = Qt.CursorShape.PointingHandCursor if (over_target or is_link) else Qt.CursorShape.IBeamCursor
                     cur = self.viewport().cursor()
                     if cur.shape() != target:
                         # through the main window so the user's own cursor
