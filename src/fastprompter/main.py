@@ -433,6 +433,33 @@ class _PortableBackupCompletionRelay(QObject):
         _backup_on_done(gen, snapshot, ok, err)
 
 
+class _SyncPushWorker(QObject):
+    """T-1039/PERF-004: performs the mechanical Sync-Project app->file
+    writes (encode, temp file, atomic replace) on its own thread.
+
+    Jobs are IMMUTABLE at capture: ``(baseline_key, path, text, eol)``. The
+    worker only touches files; every ownership/generation decision (does the
+    binding still point at this path, does the silo still want this text)
+    stays on the GUI completion side.
+    """
+
+    dispatch = pyqtSignal(object)   # list of (key, path, text, eol) jobs
+    done = pyqtSignal(object)       # list of (key, path, text, written|None)
+
+    def _run(self, jobs):
+        from fastprompter.core import project_sync as ps
+        results = []
+        for key, path, text, eol in jobs:
+            try:
+                written = ps.write_text_file(path, text, eol)
+                results.append((key, path, text, written))
+            except Exception as exc:
+                from fastprompter.core.logging import logger
+                logger.warning("sync push write failed for %s: %s", path, exc)
+                results.append((key, path, text, None))
+        self.done.emit(results)
+
+
 # Process-wide portable-backup worker + per-profile coalescing state.
 #
 # Coalescing and throttle are PER PROFILE: a newer snapshot of profile A may
@@ -936,6 +963,13 @@ class FastPrompter(
         self._sync_pending_apply = False
         self._sync_changed_files = set()
         self._sync_dir_changed = False
+        # T-1039/PERF-004: mechanical app->file writes run on a dedicated
+        # worker thread; EOL learned at read/apply time is cached per owner.
+        self._sync_eol_cache = {}
+        self._push_worker = None
+        self._push_thread = None
+        self._push_inflight = False
+        self._push_jobs_pending = {}
         # session-scoped "skip for now" set for two-sided edit conflicts:
         # (path, file_text, silo_text) tuples the user chose not to resolve.
         # As long as neither side changes, no nagging; a change re-prompts.
@@ -3977,10 +4011,17 @@ class FastPrompter(
     def _push_sync_files(self):
         """App -> file: write every bound silo's text to its file.
 
-        Runs on the 1.5s typing debounce and after every successful DB save
-        (hide / close / tab switch / profile switch). The ACTIVE silo's live
-        editor text wins over the cached copy. Every write updates
-        ``_sync_last_applied`` so the watcher recognises it as our own."""
+        Runs on the 1.5s typing debounce and after every silo-text DB save
+        (PERF-004: a settings-only save never reaches here). The ACTIVE
+        silo's live editor text wins over the cached copy.
+
+        T-1039: plain changed writes (baseline already established) are
+        handed to the dedicated worker thread -- encode/temp/replace never
+        block the GUI. Fresh bindings (no baseline yet) keep the synchronous
+        read+conflict path, because the conflict dialog is inherently a GUI
+        decision and such bindings are rare. Unchanged bindings are skipped
+        by digest equality alone, with no per-file stat.
+        """
         if not hasattr(self, "_sync_last_applied"):
             return
         if getattr(self, "_initializing_ui", False):
@@ -4004,39 +4045,167 @@ class FastPrompter(
                         # out of the comparison and skip this slot this
                         # round instead of writing from a stale buffer.
                         continue
-                if (self._sync_last_applied.get(self._sync_baseline_key(slot, path)) == self._sync_side_digest(text)
-                        and os.path.exists(path)):
-                    continue  # nothing new to write
-                eol = "\n"
-                read = ps.read_text_file(path, self._sync_max_bytes())
-                if read is not None:
-                    eol = read[1]
-                    if (self._sync_last_applied.get(self._sync_baseline_key(slot, path)) is None
-                            and read[0] != text):
-                        # no session baseline + the file disagrees with the
-                        # silo: a two-sided conflict (e.g. both edited while
-                        # the app was closed) — ask before overwriting
-                        choice = self._sync_conflict_choice(
-                            path, slot, read[0], text)
-                        if choice == "file":
-                            # the file text wins: pull it into the silo
-                            self._sync_last_applied[self._sync_baseline_key(slot, path)] = self._sync_side_digest(read[0])
-                            presets[slot] = read[0]
-                            if (slot == active and not editing_snippet
-                                    and not getattr(self, "active_is_archive",
-                                                    False)):
-                                self._set_plain_text_clean(self.text_area,
-                                                           read[0])
-                            continue
-                        if choice != "app":
-                            continue  # skipped for now — leave both sides
-                        # "app": fall through and write the silo text
+                key = self._sync_baseline_key(slot, path)
+                digest = self._sync_side_digest(text)
+                baseline = self._sync_last_applied.get(key)
+                if baseline == digest:
+                    # PERF-004/T-1039: digest equality alone proves we wrote
+                    # exactly this content; no per-file stat is needed.
+                    continue
+                if baseline is None:
+                    # Fresh binding: read + possible two-sided conflict. This
+                    # needs the GUI (dialog), so it stays on this thread; it
+                    # happens once per binding, not per keystroke.
+                    eol = "\n"
+                    read = ps.read_text_file(path, self._sync_max_bytes())
+                    if read is not None:
+                        eol = read[1]
+                        self._sync_eol_cache[key] = eol
+                        if read[0] != text:
+                            choice = self._sync_conflict_choice(
+                                path, slot, read[0], text)
+                            if choice == "file":
+                                # the file text wins: pull it into the silo
+                                self._sync_last_applied[key] = \
+                                    self._sync_side_digest(read[0])
+                                presets[slot] = read[0]
+                                if (slot == active and not editing_snippet
+                                        and not getattr(self, "active_is_archive",
+                                                        False)):
+                                    self._set_plain_text_clean(
+                                        self.text_area, read[0])
+                                continue
+                            if choice != "app":
+                                continue  # skipped for now — leave both sides
+                            # "app": fall through and write the silo text
+                else:
+                    # Established binding whose app side changed: use the EOL
+                    # learned when this file was last read/applied.
+                    eol = self._sync_eol_cache.get(key, "\n")
+                    self._push_jobs_pending[key] = (
+                        key, path, text, eol)
+                    continue
                 written = ps.write_text_file(path, text, eol)
                 if written is not None:
-                    self._sync_last_applied[self._sync_baseline_key(slot, path)] = self._sync_side_digest(written)
+                    self._sync_last_applied[key] = self._sync_side_digest(written)
+            self._dispatch_push_jobs()
         except Exception:
             from fastprompter.core.logging import logger
             logger.debug("push sync files failed", exc_info=True)
+
+    def _push_wait_idle(self, timeout_s: float = 5.0):
+        """T-1039 test/shutdown helper: pump Qt events until the push worker
+        has drained every pending and inflight batch (or timeout)."""
+        import time as _time
+        from PyQt6.QtWidgets import QApplication
+        deadline = _time.monotonic() + max(0.0, float(timeout_s))
+        while (self._push_inflight or self._push_jobs_pending) \
+                and _time.monotonic() < deadline:
+            QApplication.processEvents()
+            _time.sleep(0.01)
+        QApplication.processEvents()
+
+    def _ensure_push_worker(self):
+        """T-1039: lazily start the single Sync-Project push worker thread."""
+        if self._push_worker is None:
+            thread = QThread()
+            thread.setObjectName("fastprompter-sync-push")
+            worker = _SyncPushWorker()
+            worker.moveToThread(thread)
+            worker.dispatch.connect(worker._run)   # AFTER moveToThread: queued
+            worker.done.connect(self._on_push_done)
+            thread.start()
+            self._push_worker = worker
+            self._push_thread = thread
+        return self._push_worker
+
+    def _dispatch_push_jobs(self):
+        """Hand the newest pending jobs to the worker, coalescing while a
+        previous batch is still in flight (the newest desired text always
+        wins for a given binding key)."""
+        if self._push_inflight or not self._push_jobs_pending:
+            return
+        jobs = list(self._push_jobs_pending.values())
+        self._push_jobs_pending.clear()
+        self._push_inflight = True
+        self._ensure_push_worker().dispatch.emit(jobs)
+
+    def _on_push_done(self, results):
+        """Worker finished one batch (GUI thread via queued signal).
+
+        A result updates the session baseline ONLY when the binding still
+        resolves to the same physical path AND the silo still wants exactly
+        the text that was sent -- anything else means the world moved under
+        the worker, and the next push round owns the truth."""
+        self._push_inflight = False
+        try:
+            for key, path, text, written in results:
+                if written is None:
+                    continue
+                cat, slot, canon = key
+                cur_path = (self._link_file_for_slot(slot)
+                            or self._sync_file_for_slot(slot))
+                if cur_path is None or os.path.normcase(
+                        os.path.abspath(cur_path)) != canon:
+                    continue  # binding moved/re-pointed mid-flight
+                cur_text = ""
+                if (slot == getattr(self, "active_temp_slot", -1)
+                        and not getattr(self, "editing_snippet", None)
+                        and not getattr(self, "active_is_archive", False)):
+                    try:
+                        cur_text = self.text_area.toPlainText()
+                    except Exception:
+                        continue
+                else:
+                    presets = self.data.get("temp_presets") or []
+                    if isinstance(slot, int) and 0 <= slot < len(presets):
+                        cur_text = presets[slot] or ""
+                    else:
+                        continue
+                if self._sync_side_digest(cur_text) != self._sync_side_digest(text):
+                    continue  # edited again since dispatch -- next push owns it
+                self._sync_last_applied[key] = self._sync_side_digest(written)
+            self._dispatch_push_jobs()
+        except Exception:
+            from fastprompter.core.logging import logger
+            logger.debug("sync push completion failed", exc_info=True)
+
+    def _push_shutdown(self, timeout_s=_SYNC_SHUTDOWN_TIMEOUT_S):
+        """T-1039: drain then retire the Sync-Project push worker thread.
+
+        Runs at application exit after the final save. Pending and in-flight
+        app->file writes are pumped to completion (bounded) so the newest
+        silo text is not silently lost, then the worker thread is asked to
+        quit and joined within the bound. A worker stuck in a write cannot be
+        interrupted, so a timeout is accepted at exit (a leak, never a hang),
+        matching ``sync_shutdown_global``.
+        """
+        if self._push_thread is None or not self._push_thread.isRunning():
+            self._push_worker = None
+            self._push_thread = None
+            return True
+        try:
+            if not self._push_inflight and self._push_jobs_pending:
+                self._dispatch_push_jobs()
+            self._push_wait_idle(timeout_s=float(timeout_s))
+        except Exception:
+            from fastprompter.core.logging import logger
+            logger.debug("sync push drain during shutdown failed", exc_info=True)
+        thread = self._push_thread
+        worker = self._push_worker
+        if thread.isRunning():
+            thread.quit()
+            stopped = wait_thread_seconds(
+                thread, timeout_s, "Sync push worker")
+        else:
+            stopped = True
+        self._push_worker = None
+        self._push_thread = None
+        if not stopped:
+            from fastprompter.core.logging import logger
+            logger.warning("sync push worker shutdown TIMED_OUT; "
+                           "leaked at process exit")
+        return stopped
 
     def _start_project_watcher(self):
         """Re-arm the QFileSystemWatcher for the ACTIVE category: the sync
@@ -4111,6 +4280,9 @@ class FastPrompter(
         """
         if self._sync_last_applied.get(self._sync_baseline_key(slot, path)) == self._sync_side_digest(text):
             return
+        # T-1039: remember this file's EOL so a later app->file push never
+        # needs a full read just to rediscover it.
+        self._sync_eol_cache[self._sync_baseline_key(slot, path)] = eol
         if not self._silo_clean(slot, path):
             return  # the app side is newer (typing) — retry later
         if self._sync_last_applied.get(self._sync_baseline_key(slot, path)) is None:
@@ -15079,6 +15251,14 @@ def _shutdown_application(window, app, lock):
                 clean = False
     except Exception:
         _log.exception("Sync final flush FAILED")
+        clean = False
+    try:
+        push_shutdown = getattr(window, "_push_shutdown", None)
+        if push_shutdown is not None:
+            if push_shutdown() is False:
+                clean = False
+    except Exception:
+        _log.exception("Sync push worker shutdown FAILED")
         clean = False
     if getattr(window, "_close_workers_clean", True) is False:
         clean = False

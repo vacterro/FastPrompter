@@ -43,6 +43,12 @@ def win():
         w._watcher_shutdown()
     except Exception:
         pass
+    try:
+        push_shutdown = getattr(w, "_push_shutdown", None)
+        if push_shutdown is not None:
+            push_shutdown(timeout_s=2.0)
+    except Exception:
+        pass
     w.auto_save_timer.stop()
     w.topmost_timer.stop()
     w.close()
@@ -336,3 +342,46 @@ def test_sync_baseline_stores_digest_not_body(win, tmp_path):
     # self-write recognition still works through the digest
     assert stored == win._sync_side_digest(big_text)
     assert stored != win._sync_side_digest("different")
+
+
+# ----------------------------------------------------------------- T-1039
+def test_push_worker_writes_async_and_updates_baseline(win, tmp_path, monkeypatch):
+    """T-1039/PERF-004: a changed binding's write runs on the worker thread;
+    after the GUI pumps events, the file is updated and the digest baseline
+    matches. An unchanged binding triggers zero reads."""
+    from fastprompter.core import project_sync as ps
+
+    f = tmp_path / "worker.txt"
+    f.write_text("v1\n", encoding="utf-8")
+
+    _set_silos(win, ["v1\n", "", ""])
+    win.text_area.setPlainText("v1\n")
+    win.data.setdefault("silo_links", {})["0"] = str(f)
+    win.data.setdefault("silo_links_all", {})[CUR] = {"0": str(f)}
+    # establish baseline via one synchronous fresh-binding push
+    win._push_sync_files()
+    win._push_wait_idle()
+    assert f.read_text(encoding="utf-8") == "v1\n"
+    key = win._sync_baseline_key(0, str(f), CUR)
+    assert key in win._sync_last_applied
+
+    # instrument reads: an unchanged binding must not trigger any
+    reads = {"n": 0}
+    real_read = ps.read_text_file
+
+    def counting_read(path, max_bytes=None):
+        reads["n"] += 1
+        return real_read(path, max_bytes if max_bytes is not None else 512 * 1024)
+
+    monkeypatch.setattr(ps, "read_text_file", counting_read)
+
+    # edit the silo -> changed binding goes through the worker
+    win.data["temp_presets"][0] = "v2 edited"
+    win.text_area.setPlainText("v2 edited")
+    win._push_sync_files()
+    win._push_wait_idle(timeout_s=10)
+
+    assert f.read_text(encoding="utf-8") == "v2 edited"
+    assert win._sync_last_applied[key] == win._sync_side_digest("v2 edited")
+    # no read was needed for this established write (EOL came from cache)
+    assert reads["n"] == 0, reads

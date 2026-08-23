@@ -61,6 +61,14 @@ def _teardown_window(w):
     if getattr(w, "state", None) is not None:
         w.state.conn = None      # skip final DB write on close
     w.conn = None
+    # T-1039: retire the lazily-started Sync-Project push worker thread so a
+    # window that used it does not leak a live QThread into process teardown.
+    try:
+        push_shutdown = getattr(w, "_push_shutdown", None)
+        if push_shutdown is not None:
+            push_shutdown(timeout_s=2.0)
+    except Exception:
+        pass
     if hasattr(w, "tray_icon") and w.tray_icon and not sip.isdeleted(w.tray_icon):
         w.tray_icon.hide()
         w.tray_icon.setVisible(False)
@@ -1257,7 +1265,8 @@ def test_every_slot_indexed_store_is_registered_for_remap(win):
     #  silo_view_state_all — remapped by the dedicated _remap_silo_view_state,
     #      which _remap_silo_indices calls itself
     exempt = {"temp_presets_all", "archive_temp_presets_all",
-              "silo_session_all", "silo_view_state_all"}
+              "silo_session_all", "silo_view_state_all",
+              "project_sync_all"}
 
     for all_key in _PER_CATEGORY_STATE_KEYS:
         if all_key in exempt:

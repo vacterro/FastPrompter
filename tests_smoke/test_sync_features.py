@@ -100,7 +100,7 @@ def test_sync_project_app_to_file(win, tmp_path):
     _convert_project(win, str(tmp_path))
     # edit silo 0 in the app -> push -> the FILE changes
     _edit_silo(win, 0, "one edited")
-    win._push_sync_files()
+    win._push_sync_files(); win._push_wait_idle()
     assert (tmp_path / "a.txt").read_text(encoding="utf-8") == "one edited"
     # and the OTHER silo's file is untouched
     assert (tmp_path / "b.md").read_text(encoding="utf-8") == "two"
@@ -157,7 +157,7 @@ def test_unlink_project_keeps_silos_and_stops_mapping(win, tmp_path, monkeypatch
     assert not (win.data.get("project_sync_map") or {})
     # app edits no longer reach the file
     _edit_silo(win, 0, "after unlink")
-    win._push_sync_files()
+    win._push_sync_files(); win._push_wait_idle()
     assert (tmp_path / "a.txt").read_text(encoding="utf-8") == "one"
 
 
@@ -178,7 +178,7 @@ def test_silo_link_and_unlink(win, tmp_path, monkeypatch):
     assert win._link_file_for_slot(0) == os.path.abspath(str(linked))
     # app edit -> file
     _edit_silo(win, 0, "edited in app")
-    win._push_sync_files()
+    win._push_sync_files(); win._push_wait_idle()
     assert linked.read_text(encoding="utf-8") == "edited in app"
     # external edit -> silo (baseline stays: not a restart conflict)
     linked.write_text("edited outside", encoding="utf-8")
@@ -188,7 +188,7 @@ def test_silo_link_and_unlink(win, tmp_path, monkeypatch):
     win._unlink_silo_file(0)
     assert win.data["temp_presets"][0] == "edited outside"
     win.data["temp_presets"][0] = "post unlink"
-    win._push_sync_files()
+    win._push_sync_files(); win._push_wait_idle()
     assert linked.read_text(encoding="utf-8") == "edited outside"
 
 
@@ -242,7 +242,7 @@ def test_conflict_app_wins_on_push(win, tmp_path, monkeypatch):
     _seed_conflict(win, tmp_path)
     monkeypatch.setattr(win, "_sync_ask_conflict",
                         lambda path, slot, ft, st: "app")
-    win._push_sync_files()
+    win._push_sync_files(); win._push_wait_idle()
     # the app version wins: the FILE takes the silo text
     assert (tmp_path / "a.txt").read_text(encoding="utf-8") == "app edited"
     assert win.data["temp_presets"][0] == "app edited"
@@ -252,7 +252,7 @@ def test_conflict_file_wins_on_push(win, tmp_path, monkeypatch):
     _seed_conflict(win, tmp_path)
     monkeypatch.setattr(win, "_sync_ask_conflict",
                         lambda path, slot, ft, st: "file")
-    win._push_sync_files()
+    win._push_sync_files(); win._push_wait_idle()
     # the file version wins: the silo takes the file text, file untouched
     assert win.data["temp_presets"][0] == "file edited"
     assert (tmp_path / "a.txt").read_text(encoding="utf-8") == "file edited"

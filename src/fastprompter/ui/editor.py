@@ -4175,8 +4175,8 @@ class VaultTextEdit(QTextEdit):
                     le = min(local_e, ts + line.textLength())
                     if le <= ls:
                         continue
-                    x = br.left() + line.x() + line.horizontalAdvance(ls - ts)
-                    w = line.horizontalAdvance(ls - ts, le - ls)
+                    x = br.left() + line.x() + line.cursorToX(ls - ts)[0]
+                    w = line.cursorToX(le - ts)[0] - line.cursorToX(ls - ts)[0]
                     y = br.top() + line.y() + line.ascent() + 1
                     segs = max(2, int(w / 5))
                     for k in range(segs):
