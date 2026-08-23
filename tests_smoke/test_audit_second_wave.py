@@ -316,3 +316,23 @@ def test_sync_baseline_scoped_to_owner(win, tmp_path, monkeypatch):
     assert not any(
         (isinstance(k, tuple) and k[2] == os.path.normcase(shared)
          and k[0] not in (CUR, "B")) for k in win._sync_last_applied)
+
+
+# ----------------------------------------------------------------- T-1037
+def test_sync_baseline_stores_digest_not_body(win, tmp_path):
+    """T-1037 (PERF-007 remainder): _sync_last_applied values are compact
+    digests, never full document bodies."""
+    shared = os.path.join(str(tmp_path), "digest.txt")
+    with open(shared, "w", encoding="utf-8") as f:
+        f.write("x" * 100000)
+    big_text = "y" * 100000
+    key = win._sync_baseline_key(0, shared, CUR)
+    win._sync_last_applied[key] = win._sync_side_digest(big_text)
+    stored = win._sync_last_applied[key]
+    # compact: a (len, digest) tuple, not the 100k body
+    assert isinstance(stored, tuple) and len(stored) == 2
+    assert stored[0] == 100000
+    assert len(stored[1]) == 16  # blake2b digest_size=16
+    # self-write recognition still works through the digest
+    assert stored == win._sync_side_digest(big_text)
+    assert stored != win._sync_side_digest("different")

@@ -3872,16 +3872,17 @@ class FastPrompter(
         applied = self._sync_last_applied.get(self._sync_baseline_key(slot, path))
         if applied is None:
             return True
+        # T-1037: baselines are compact (len, blake2b) digests, not bodies.
         if (slot == getattr(self, "active_temp_slot", -1)
                 and not getattr(self, "editing_snippet", None)
                 and not getattr(self, "active_is_archive", False)):
             try:
-                return self.text_area.toPlainText() == applied
+                return self._sync_side_digest(self.text_area.toPlainText()) == applied
             except Exception:
                 return False
         presets = self.data.get("temp_presets") or []
         if 0 <= slot < len(presets):
-            return presets[slot] == applied
+            return self._sync_side_digest(presets[slot]) == applied
         return True
 
     def _sync_conflict_choice(self, path, slot, file_text, silo_text, cat=None):
@@ -4003,7 +4004,7 @@ class FastPrompter(
                         # out of the comparison and skip this slot this
                         # round instead of writing from a stale buffer.
                         continue
-                if (self._sync_last_applied.get(self._sync_baseline_key(slot, path)) == text
+                if (self._sync_last_applied.get(self._sync_baseline_key(slot, path)) == self._sync_side_digest(text)
                         and os.path.exists(path)):
                     continue  # nothing new to write
                 eol = "\n"
@@ -4019,7 +4020,7 @@ class FastPrompter(
                             path, slot, read[0], text)
                         if choice == "file":
                             # the file text wins: pull it into the silo
-                            self._sync_last_applied[self._sync_baseline_key(slot, path)] = read[0]
+                            self._sync_last_applied[self._sync_baseline_key(slot, path)] = self._sync_side_digest(read[0])
                             presets[slot] = read[0]
                             if (slot == active and not editing_snippet
                                     and not getattr(self, "active_is_archive",
@@ -4032,7 +4033,7 @@ class FastPrompter(
                         # "app": fall through and write the silo text
                 written = ps.write_text_file(path, text, eol)
                 if written is not None:
-                    self._sync_last_applied[self._sync_baseline_key(slot, path)] = written
+                    self._sync_last_applied[self._sync_baseline_key(slot, path)] = self._sync_side_digest(written)
         except Exception:
             from fastprompter.core.logging import logger
             logger.debug("push sync files failed", exc_info=True)
@@ -4108,7 +4109,7 @@ class FastPrompter(
           conflict: the user picks a winner instead of one side silently
           clobbering the other (``_sync_resolve_conflict``).
         """
-        if self._sync_last_applied.get(self._sync_baseline_key(slot, path)) == text:
+        if self._sync_last_applied.get(self._sync_baseline_key(slot, path)) == self._sync_side_digest(text):
             return
         if not self._silo_clean(slot, path):
             return  # the app side is newer (typing) — retry later
@@ -4145,12 +4146,12 @@ class FastPrompter(
                             path, exc)
                         return
                     if written is not None:
-                        self._sync_last_applied[self._sync_baseline_key(slot, path)] = written
+                        self._sync_last_applied[self._sync_baseline_key(slot, path)] = self._sync_side_digest(written)
                     return
                 if choice != "file":
                     return  # skipped for now — leave both sides alone
                 # "file": fall through and pull the file text into the silo
-        self._sync_last_applied[self._sync_baseline_key(slot, path)] = text
+        self._sync_last_applied[self._sync_baseline_key(slot, path)] = self._sync_side_digest(text)
         applied[slot] = text
 
     def _apply_external_sync(self):
@@ -4233,7 +4234,7 @@ class FastPrompter(
                             presets.append("")
                         presets[slot] = text
                         mapping[str(slot)] = rel
-                        self._sync_last_applied[self._sync_baseline_key(slot, path)] = text
+                        self._sync_last_applied[self._sync_baseline_key(slot, path)] = self._sync_side_digest(text)
                         applied[slot] = text
 
             # --- per-silo links --------------------------------------------
@@ -4350,7 +4351,7 @@ class FastPrompter(
                 presets.append("")
             presets[slot] = text
             mapping[str(slot)] = rel
-            self._sync_last_applied[self._sync_baseline_key(slot, path)] = text
+            self._sync_last_applied[self._sync_baseline_key(slot, path)] = self._sync_side_digest(text)
         self.mark_dirty()
         self.save_data_to_db(force=True)
         self._start_project_watcher()
@@ -4410,7 +4411,7 @@ class FastPrompter(
                         presets.append("")
                     presets[slot] = text
                     mapping[str(slot)] = rel
-                    self._sync_last_applied[self._sync_baseline_key(slot, path)] = text
+                    self._sync_last_applied[self._sync_baseline_key(slot, path)] = self._sync_side_digest(text)
             self.mark_dirty()
             self.refresh_temp_presets()
             self._start_project_watcher()
