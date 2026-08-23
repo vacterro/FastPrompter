@@ -1,7 +1,7 @@
 ---
 phase: SCOUT
-task: "T-1037 PERF-007 remainder -- compact fingerprint baselines"
-next_action: "PHASE SCOUT T-1037"
+task: "T-1038 sync shutdown timeout robustness (_sync_pending contract)"
+next_action: "PHASE SCOUT T-1038"
 blocker: ""
 agent: workbuddy
 saipen_version: 7
@@ -13,9 +13,9 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 868
+last_event: 869
 style_contract: ded-4ae736e4
-updated: "2026-08-23T09:18:20Z"
+updated: "2026-08-23T09:28:20Z"
 transition_from: VALIDATE
 execution_intent: normal
 ---
