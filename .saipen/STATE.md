@@ -1,7 +1,7 @@
 ---
-phase: DONE
-task: none
-next_action: "WAIT: user brake -- proposal plan is on the board (T-1035..T-1038); say continue or name a ticket to take the top one"
+phase: SCOUT
+task: "T-1036 PERF-006 -- single hover hit-test path"
+next_action: "PHASE SCOUT T-1036"
 blocker: ""
 agent: workbuddy
 saipen_version: 7
@@ -13,9 +13,9 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 865
+last_event: 867
 style_contract: ded-4ae736e4
-updated: "2026-08-22T19:15:42Z"
+updated: "2026-08-23T09:14:03Z"
 transition_from: VALIDATE
 execution_intent: normal
 ---
