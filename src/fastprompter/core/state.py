@@ -1036,6 +1036,13 @@ class _StartupBackupContext:
 
 
 class FastPrompterState:
+
+    @property
+    def last_save_had_silo_text(self):
+        """PERF-004: whether the most recent save touched a silo-text domain
+        (snippets/temp/archive). A settings-only persistence reports False so
+        the caller can skip app->file sync for it."""
+        return bool(getattr(self, "_last_save_had_silo_text", False))
     def __init__(self, profile_id=1):
         self.profile_id = profile_id
         self._lock = threading.Lock()

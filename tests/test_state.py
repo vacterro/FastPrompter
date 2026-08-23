@@ -301,6 +301,25 @@ class TestSaveToDB:
         preset_count = cur.execute("SELECT COUNT(*) FROM presets").fetchone()[0]
         assert preset_count == 0  # No presets were saved
 
+    def test_last_save_had_silo_text_flag(self, state):
+        """PERF-004: a settings-only save must NOT report silo-text change, so
+        the caller can skip app->file sync for it."""
+        # prime: the first save after construction flushes every domain
+        state.save_data_to_db("text", force=True)
+        assert state.last_save_had_silo_text is True
+
+        state.data["theme"] = "Vintage Dark"
+        state.mark_dirty(domain="settings")
+        state.save_data_to_db("text", ui_settings={"font_size": 13})
+        # only a setting changed this run -> flag False
+        assert state.last_save_had_silo_text is False
+
+        state.data["temp_presets_all"] = {"Code": ["# new silo text"]}
+        state.mark_dirty()
+        state.save_data_to_db("# new silo text")
+        # full dirty -> silo domains scanned -> flag True
+        assert state.last_save_had_silo_text is True
+
     def test_save_with_ui_settings(self, state):
         """save_data_to_db with ui_settings dict should merge settings."""
         ui_settings = {"font_size": 14, "theme": "Dark 2 (OLED)"}
