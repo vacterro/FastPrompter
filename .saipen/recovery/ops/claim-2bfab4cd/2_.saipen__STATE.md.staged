@@ -1,0 +1,22 @@
+---
+phase: SCOUT
+task: T-1043
+next_action: "PHASE SCOUT T-1043"
+blocker: ""
+agent: workbuddy
+saipen_version: 7
+saipen_home: "C:\\Users\\vac34\\.config\\opencode\\skills\\saipen"
+mode: full
+requires:
+  - filesystem
+  - python
+  - shell
+  - git
+schema_version: 3
+last_event: 886
+style_contract: ded-4ae736e4
+updated: "2026-08-23T13:37:12Z"
+transition_from: DONE
+execution_intent: converge
+converge_target: crew
+---

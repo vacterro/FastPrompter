@@ -1,0 +1,14 @@
+﻿# OUTBOX
+
+## HUNT-007: crew SC-2 re-sweep @ 3232878 (23.08.26)
+- **status:** reviewed
+- **summary:** Re-sweep after source mutation (f3801af→3232878: T-1043 theme token compliance + T-1041 Cyrillic test exemption). Delta audited — theme QSS + test exemptions only, no new defect signals. All six signals still clean at the new HEAD: unit 1511 green, zero TODO/FIXME/HACK in src, no orphan files, no unverified commits, no new silent-failure or symmetry candidates beyond the already-fixed ones.
+- **critical:** false
+- **producer:** saihunt
+- **source_head:** 32328787efe6596b8ca6de774a791d786815fa1e
+- **source_tree_fingerprint:** git-delta-v1:c66baf69a8306f3b95dfc7badb5f72b088f8de8408e933efadc4d149721a1195
+- **role_revision:** sha256:4edb04181cb07e0946afd06fbe711166fa9dcc403e56b52e9be3844f0a71b0a5
+- **coverage:** 6 signals x delta audit of 3232878 vs f3801af
+- **payload:** none
+- **verified:** delta commits enumerated (3232878 = themes.py QSS + test_app_smoke exemptions); pytest tests/ 1511 pass 1 skip; rg sweep clean
+- **instructions:** Evidence for SC-2 at 3232878. Prior finding T-1043/T-1041 shipped; no new work required.

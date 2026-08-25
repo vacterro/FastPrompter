@@ -22,5 +22,6 @@
 ## TODO
 
 ## DONE
+- [x] UI-003 (P2, settings-layout) split the 182px Editor Lines group into appearance/metadata groups in kitchen/pen @3d0d79e | verify: baseline 42 passed/1 failed; patched pen harness 14 passed | next: Core review/apply
 
 ## BLOCKED

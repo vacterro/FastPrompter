@@ -1,0 +1,42 @@
+﻿# OUTBOX
+
+## UI-001: crew SC-5 saiui — Golden Default theme token compliance (23.08.26)
+- **status:** reviewed
+- **summary:** Golden Default theme in src/fastprompter/theme/themes.py violated UI.md: `#SearchFrame { border-radius: 2px }` broke iron law 2 (zero rounded corners), and non-token colors #e8dbb0/#c9a84c/#8a8070/#ffffff were outside the 21-value closed set. Patch replaces them with canonical tokens (#d4c89a textPrimary, #f0d060 link/borderHighlight, #6e674e textMuted, #000000 selection fg) and zeroes the radius. Metadata keys lbl_title/btn_text also token-corrected.
+- **main_project_refs:** [src/fastprompter/theme/themes.py]
+- **critical:** false
+- **severity:** P3
+- **producer:** saiui
+- **base_head:** f3801af
+- **source_head:** f3801af269cd26acd35f8f3ec57e4af3d37ff182
+- **source_tree_fingerprint:** git-delta-v1:c66baf69a8306f3b95dfc7badb5f72b088f8de8408e933efadc4d149721a1195
+- **role_revision:** sha256:f2e3685b908a3b9837917f12c5414628d847c35fb72567f0306e2c8b19a8dab8
+- **coverage:** Golden Default theme stylesheet + raw_colors/lbl_title/btn_text metadata
+- **payload:** 1 patched file (kitchen/pen/themes.py) — 18 changed lines in the Golden Default block
+- **verified:** pen import OK, THEMES dict intact (9 themes); `border-radius: 2px`/`#c9a84c`/`#e8dbb0` absent; tests/test_cursor_theme.py + test_color_reset.py + test_markdown_highlighter.py + tests_smoke/test_font_survives_theme.py = 55 passed
+- **instructions:** Apply the diff to src/fastprompter/theme/themes.py Golden Default block. Verify: `python -m pytest tests/test_cursor_theme.py tests/test_color_reset.py tests/test_markdown_highlighter.py tests_smoke/test_font_survives_theme.py -q` → 55 passed.
+- **patch:**
+  ```diff
+  --- src/fastprompter/theme/themes.py
+  +++ src/fastprompter/theme/themes.py
+  @@ Golden Default stylesheet @@
+  -QTextEdit { background-color: #1a1810; color: #e8dbb0; ... }
+  +QTextEdit { background-color: #1a1810; color: #d4c89a; ... }
+  -QPushButton { background-color: #332e22; color: #c9a84c; ... }
+  +QPushButton { background-color: #332e22; color: #f0d060; ... }
+  -QTabBar::tab { ... color: #8a8070; }
+  +QTabBar::tab { ... color: #6e674e; }
+  -QMenu::item:selected { background-color: #c9a84c; color: #000000; }
+  +QMenu::item:selected { background-color: #f0d060; color: #000000; }
+  -QCheckBox::indicator:checked { background: #c9a84c; }
+  +QCheckBox::indicator:checked { background: #f0d060; }
+  -QToolTip { color: #ffffff; background-color: #332e22; border: 1px solid #c9a84c; ... }
+  +QToolTip { color: #d4c89a; background-color: #332e22; border: 1px solid #f0d060; ... }
+  -#SearchFrame { ... border-radius: 2px; }
+  +#SearchFrame { ... border-radius: 0px; }
+  -"lbl_title": "font-weight: bold; color: #c9a84c;"
+  +"lbl_title": "font-weight: bold; color: #f0d060;"
+  -"btn_text": "#c9a84c",
+  +"btn_text": "#f0d060",
+  ```
+- **details:** User task: user reads/edits text under the Golden Default theme; the 2px radius and off-palette golds were decorative drift from the canonical spec. Golden Default violations by rule: UI.md iron law 2 (zero rounded corners) for #SearchFrame; token-only colors (iron law 5) for the non-token values. Exact patch boundary: Golden Default block only — other 8 themes untouched (they are their own palettes, not Golden Default). Backend contracts: none, QSS-only. Residual risk: minimal; #f0d060 on QPushButton may be slightly brighter than the old #c9a84c, but it is the canonical link/borderHighlight token and matches selected-tab already.

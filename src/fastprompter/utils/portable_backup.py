@@ -566,20 +566,80 @@ def _write_raw(path: str, content: str) -> None:
         raise
 
 
+# Recovery-generation markers produced by _publish_snapshot's rollback-safe
+# multi-rename. A complete recoverable generation carries one of these suffixes
+# after the canonical YYYY-MM-DD day; the grammar must be recognised by
+# retention so a complete snapshot tree is never silently kept forever (W2-006).
+_RECOVERY_SUFFIXES = ("failed", "rollback", "recovered")
+
+
 def _cleanup_old_backups(backup_dir: str, max_days: int = 7) -> None:
-    """Remove day directories older than max_days."""
+    """Remove day directories older than max_days.
+
+    W2-006: retention understands the project's recovery-generation naming. A
+    canonical ``YYYY-MM-DD`` day dir follows normal retention. The first-class
+    complete generations ``YYYY-MM-DD.failed-<s>``, ``.rollback-<s>`` and
+    ``.recovered-<s>`` are pruned only when a safe canonical generation for the
+    same date exists (or, for ``.partial`` temps, always when old) — an old
+    suffix that is the ONLY valid backup is preserved, never blindly deleted.
+    Unrelated digit-prefixed directories outside this grammar are left alone.
+    """
     try:
         now = time.time()
-        for entry in os.listdir(backup_dir):
+        entries = os.listdir(backup_dir)
+        # Parse every candidate once. A date dir may be the canonical day, a
+        # recognised recovery generation, a transient ``.partial`` build dir,
+        # or unrelated — only the first three are touched here.
+        parsed = []          # (entry, entry_path, date_str, suffix_or_None)
+        canonical_days = set()
+        for entry in entries:
             entry_path = os.path.join(backup_dir, entry)
-            if os.path.isdir(entry_path) and entry[0].isdigit():
-                try:
-                    dir_time = time.mktime(time.strptime(entry, "%Y-%m-%d"))
-                    if now - dir_time > max_days * 86400:
-                        shutil.rmtree(entry_path, ignore_errors=True)
-                except (ValueError, OSError):
-                    # not a date-named folder, or it is busy: leave it alone
-                    logger.debug("backup cleanup skipped %s", entry_path,
-                                 exc_info=True)
+            if not (os.path.isdir(entry_path) and entry and entry[0].isdigit()):
+                continue
+            date_str = entry
+            suffix = None
+            if "." in entry:
+                cand, _, suf = entry.partition(".")
+                if suf.startswith(_RECOVERY_SUFFIXES):
+                    date_str, suffix = cand, suf
+                elif suf == "partial":
+                    date_str, suffix = cand, "partial"
+                else:
+                    # unrelated digit-prefixed dir outside the grammar
+                    continue
+            try:
+                dir_time = time.mktime(time.strptime(date_str, "%Y-%m-%d"))
+            except (ValueError, OSError):
+                # not a date-named folder, or it is busy: leave it alone
+                logger.debug("backup cleanup skipped %s", entry_path,
+                             exc_info=True)
+                continue
+            if suffix is None:
+                canonical_days.add(date_str)
+            parsed.append((entry, entry_path, date_str, suffix, dir_time))
+
+        for entry, entry_path, date_str, suffix, dir_time in parsed:
+            old = (now - dir_time) > max_days * 86400
+            if suffix is None:
+                # canonical day dir: normal retention
+                if old:
+                    shutil.rmtree(entry_path, ignore_errors=True)
+                continue
+            if not old:
+                continue
+            if suffix == "partial":
+                # incomplete transient build dir: bound disk growth
+                shutil.rmtree(entry_path, ignore_errors=True)
+                continue
+            # failed/rollback/recovered: a complete recovery generation. Prune
+            # only when a safe canonical generation for the same date exists;
+            # if the canonical day is missing this is the ONLY valid backup and
+            # must be preserved (or recovered) rather than deleted.
+            if date_str in canonical_days:
+                shutil.rmtree(entry_path, ignore_errors=True)
+            else:
+                logger.info(
+                    "portable backup: kept old recovery generation %s "
+                    "(canonical day %s missing)", entry, date_str)
     except Exception:
         logger.warning("portable backup: cleanup pass failed", exc_info=True)

@@ -433,30 +433,156 @@ class _PortableBackupCompletionRelay(QObject):
         _backup_on_done(gen, snapshot, ok, err)
 
 
-class _SyncPushWorker(QObject):
-    """T-1039/PERF-004: performs the mechanical Sync-Project app->file
-    writes (encode, temp file, atomic replace) on its own thread.
+class _TypoScanWorker(QObject):
+    """PERF-005: runs the O(document) typo tokenization + dictionary pass
+    on its own thread. The GUI captures an immutable text snapshot plus the
+    document revision and silo identity; only a result whose identity AND
+    document revision still match may ever paint spans."""
 
-    Jobs are IMMUTABLE at capture: ``(baseline_key, path, text, eol)``. The
-    worker only touches files; every ownership/generation decision (does the
-    binding still point at this path, does the silo still want this text)
-    stays on the GUI completion side.
+    scan = pyqtSignal(int, str, object)   # request_id, text, dictionary
+    scanned = pyqtSignal(int, list)       # request_id, [(start, end), ...]
+
+    def _run(self, request_id, text, dictionary):
+        from fastprompter.core import typecheck as tc
+        spans = []
+        try:
+            if len(text) <= 500000:
+                spans = [(s, e) for _w, s, e in
+                         tc.find_unknown(text, dictionary)]
+        except Exception:
+            spans = []
+        self.scanned.emit(request_id, spans)
+
+
+class _WatcherArmWorker(QObject):
+    """PERF-004: enumerates the recursive watch-directory list OFF the GUI
+    thread. The walk + exclude matching is O(project tree); running it
+    inline used to hitch every project/profile switch on large trees.
+
+    The result carries the generation token captured at dispatch; a stale
+    completion (a newer arm happened meanwhile) is dropped by the GUI side.
     """
 
-    dispatch = pyqtSignal(object)   # list of (key, path, text, eol) jobs
-    done = pyqtSignal(object)       # list of (key, path, text, written|None)
+    enumerate = pyqtSignal(int, str, list)   # gen, root, exclude patterns
+    enumerated = pyqtSignal(int, str, list)  # gen, root, dirs
 
-    def _run(self, jobs):
+    def _run(self, gen, root, exclude):
         from fastprompter.core import project_sync as ps
+        dirs = [root]
+        try:
+            for dirpath, dirnames, _files in os.walk(root):
+                # PERF-002: cooperative cancellation at directory boundaries. A
+                # stale/aborted walk can stop early instead of finishing a whole
+                # O(tree) traversal whose result will be discarded anyway.
+                if getattr(self, "_cancel", False):
+                    return
+                dirnames[:] = [d for d in dirnames
+                               if not ps.match_exclude(
+                                   os.path.relpath(
+                                       os.path.join(dirpath, d),
+                                       root).replace("\\", "/"),
+                                   exclude)]
+                dirs.append(dirpath)
+        except Exception:
+            from fastprompter.core.logging import logger
+            logger.debug("watcher arm enumeration failed", exc_info=True)
+        if getattr(self, "_cancel", False):
+            return
+        self.enumerated.emit(gen, root, dirs)
+
+
+class _SyncPushWorker(QObject):
+    """T-1039/PERF-004 + CORE-001: performs the mechanical Sync-Project
+
+    Jobs are IMMUTABLE at capture:
+        ``(key, path, text, eol, expect_digest, lease, max_bytes)``
+    where ``expect_digest`` is the digest of the content the disk was last
+    known to hold and ``lease`` is the binding lease captured at queue time.
+
+    CORE-001: a queued job is a stale captured intent. Before ANY mutation
+    the worker re-reads the file ON THIS THREAD (never the GUI thread) and:
+
+    * rejects the job when its lease is no longer current (unlink/archive/
+      repoint/folder change happened meanwhile);
+    * skips the write when the disk already equals the desired text
+      (PERF-003: equality must not become a physical rewrite);
+    * refuses to overwrite and reports ``conflict`` when the disk differs
+      from BOTH the expected baseline and the desired text — a two-sided
+      edit that only the user may resolve;
+    * otherwise performs the atomic replace.
+
+    Ownership decisions that need widgets stay on the GUI completion side.
+    """
+
+    dispatch = pyqtSignal(object, object, object)  # jobs, leases dict, commit gate
+    done = pyqtSignal(object)       # list of (key, path, text, status, detail)
+
+    def _run(self, jobs, leases, gate):
+        from fastprompter.core import project_sync as ps
+        # W2-003: a terminal DB restore has committed and the in-memory state
+        # is stale. Any job still in flight must NOT publish the stale text to
+        # disk — mark it stale (no write) so the restored DB stays authoritative.
+        suppress = bool(getattr(self, "_suppress", False))
         results = []
-        for key, path, text, eol in jobs:
+        for key, path, text, eol, expect, lease, max_bytes in jobs:
             try:
-                written = ps.write_text_file(path, text, eol)
-                results.append((key, path, text, written))
+                current_lease = leases.get(key, 0) if leases else 0
+                if current_lease != (lease or 0):
+                    results.append((key, path, text, "stale", None))
+                    continue
+                if suppress:
+                    # W2-003: do not mutate the filesystem with stale RAM.
+                    results.append((key, path, text, "stale", None))
+                    continue
+                cur = ps.read_text_file(path, max_bytes)
+                if cur is None:
+                    if os.path.exists(path):
+                        # binary or unreadable: never overwrite blindly
+                        results.append((key, path, text, "gone", None))
+                        continue
+                    # destination vanished: recreate it with the silo text,
+                    # exactly like the historical unconditional write did.
+                    # CORE-003: the recreate is itself a filesystem mutation,
+                    # so it must pass through the commit gate and re-validate
+                    # the lease one final time (invalidating the binding bumps
+                    # the lease under the same gate, so a stale job can never
+                    # begin/complete the recreate after invalidation).
+                    with gate:
+                        if leases.get(key, 0) != (lease or 0):
+                            results.append(
+                                (key, path, text, "stale", None))
+                            continue
+                        written = ps.write_text_file(path, text, eol)
+                    results.append(
+                        (key, path, text,
+                         "ok" if written is not None else "error", written))
+                    continue
+                dtxt, deol = cur
+                if dtxt == text:
+                    results.append((key, path, text, "equal", deol))
+                    continue
+                ddigest = FastPrompter._sync_side_digest(dtxt)
+                if expect is not None and ddigest != expect:
+                    # two-sided edit: disk moved away from our baseline while
+                    # this job was in flight — no silent overwrite
+                    results.append((key, path, text, "conflict", (dtxt, deol)))
+                    continue
+                # CORE-003: the physical replace is merged with the final lease
+                # check into one ownership operation. A binding invalidation
+                # bumps the lease under this same gate; if it already did, no
+                # older lease may begin the write once invalidation completes.
+                with gate:
+                    if leases.get(key, 0) != (lease or 0):
+                        results.append((key, path, text, "stale", None))
+                        continue
+                    written = ps.write_text_file(path, text, eol)
+                results.append(
+                    (key, path, text,
+                     "ok" if written is not None else "error", written))
             except Exception as exc:
                 from fastprompter.core.logging import logger
                 logger.warning("sync push write failed for %s: %s", path, exc)
-                results.append((key, path, text, None))
+                results.append((key, path, text, "error", None))
         self.done.emit(results)
 
 
@@ -956,7 +1082,7 @@ class FastPrompter(
         self._sync_push_timer = QTimer(self)
         self._sync_push_timer.setSingleShot(True)
         self._sync_push_timer.setInterval(1500)
-        self._sync_push_timer.timeout.connect(self._push_sync_files)
+        self._sync_push_timer.timeout.connect(self._push_sync_files_active)
         # absolute path -> text we last wrote/applied to that file; used to
         # tell OUR writes apart from external edits
         self._sync_last_applied = {}
@@ -970,10 +1096,37 @@ class FastPrompter(
         self._push_thread = None
         self._push_inflight = False
         self._push_jobs_pending = {}
+        # CORE-001: binding lease per baseline key. A queued/running push job
+        # carries the lease captured at queue time; an ownership transition
+        # (unlink, archive, repoint, folder change) bumps the lease so a
+        # stale in-flight job is rejected BEFORE it mutates the file.
+        self._sync_leases: dict = {}
+        # CORE-001: destinations that exist but were rejected as unsafe text
+        # (binary, over the size cap, or invalid UTF-8). A fresh binding must
+        # never silently overwrite them, so they are flagged and skipped until
+        # the file becomes a safe text target again or the binding is replaced.
+        self._sync_unsafe_bindings: set = set()
+        # CORE-003 commit gate is installed immediately after this block by the
+        # audit implementation (see _sync_commit_gate).
+        # PERF-004: recursive watch-list enumeration runs on its own worker
+        # CORE-003: the single ownership/commit gate shared by the push
+        # worker's final filesystem mutation and every binding invalidation.
+        import threading as _threading
+        self._sync_commit_gate = _threading.Lock()
+        self._pw_gen = 0
+        self._pw_worker = None
+        self._pw_thread = None
+        # PERF-002: one-inflight / one-latest-pending arming. A newer re-arm
+        # while an enumeration is still walking the tree overwrites the single
+        # pending request instead of queuing a whole extra O(tree) walk; the
+        # completed walk (if stale) is dropped by the gen check and only the
+        # newest pending generation is ever dispatched.
+        self._pw_inflight = False
+        self._pw_pending = None
         # session-scoped "skip for now" set for two-sided edit conflicts:
-        # (path, file_text, silo_text) tuples the user chose not to resolve.
+        # (owner -> (file_digest, silo_digest)) the user chose not to resolve.
         # As long as neither side changes, no nagging; a change re-prompts.
-        self._sync_conflict_skipped: set = set()
+        self._sync_conflict_skipped: dict = {}
 
         # --- passed-event attention (red date label) ----------------------
         # One-shot timers that fired and were NOT acknowledged (Dismiss).
@@ -1076,7 +1229,9 @@ class FastPrompter(
             color = self.data.get("passed_event_color", "#e05555") or "#e05555"
             lbl.setStyleSheet(
                 f"padding: 0 {pad}; color: {color}; font-weight: bold;")
-            tip = tr("Current date and time\nClick to manage timers and limit resets",
+            tip = tr("Current date and time\nClick to manage timers and limit resets\n"
+                     "Shift+Click: add Temp Timer time\n"
+                     "Ctrl+Shift+Click: remove Temp Timer",
                      getattr(self, "_current_lang", "EN"))
             n = len(missed)
             tip += "\n" + tr("⚠ {0} passed event(s) not acknowledged — click to manage, right-click to clear",
@@ -1085,7 +1240,9 @@ class FastPrompter(
                 lbl.setToolTip(tip)
         else:
             lbl.setStyleSheet(f"padding: 0 {pad};")
-            base = tr("Current date and time\nClick to manage timers and limit resets",
+            base = tr("Current date and time\nClick to manage timers and limit resets\n"
+                      "Shift+Click: add Temp Timer time\n"
+                      "Ctrl+Shift+Click: remove Temp Timer",
                       getattr(self, "_current_lang", "EN"))
             if lbl.toolTip() != base:
                 lbl.setToolTip(base)
@@ -1101,6 +1258,20 @@ class FastPrompter(
             menu.addAction(tr("✓ Clear passed-event alert", lang),
                            self._clear_missed_alert)
         menu.exec(self.lbl_date.mapToGlobal(pos))
+
+    def _clock_label_clicked(self, event):
+        """Route clock clicks to timer management or Temp Timer actions."""
+        if event.button() != Qt.MouseButton.LeftButton:
+            return
+        modifiers = event.modifiers()
+        if (modifiers & Qt.KeyboardModifier.ControlModifier
+                and modifiers & Qt.KeyboardModifier.ShiftModifier):
+            self.remove_temp_timer()
+            return
+        if modifiers & Qt.KeyboardModifier.ShiftModifier:
+            self.add_temp_timer()
+            return
+        self.open_timer_dialog()
 
     def _clear_missed_alert(self):
         """Acknowledge every passed event at once (right-click escape hatch)."""
@@ -1120,6 +1291,31 @@ class FastPrompter(
             return
         from fastprompter.core.duration import format_remaining
         from fastprompter.core.timers import next_due
+
+        # A temporary focus timer is an explicit user activity and owns the
+        # countdown spot while it is alive.  It must not mutate or hide the
+        # normal alarm that happened to be there before Shift+Click.
+        temp = self._temp_timer()
+        if (temp is not None and temp.enabled and not temp.fired
+                and temp.show_in_top_bar
+                and not getattr(self, "_header_ultra", False)):
+            rem = temp.remaining()
+            text = format_remaining(
+                rem, short=getattr(self, "_header_dense", False),
+                minutes=self.data.get("timer_show_minutes", "False") == "True")
+            if not getattr(self, "_header_dense", False):
+                name = temp.name if len(temp.name) <= 14 else temp.name[:13] + "…"
+                text = f"{name} {text}"
+            lbl.setText(text)
+            lbl.setToolTip(
+                f"{temp.summary()}\n{temp.target.strftime('%d.%m %H:%M')}\n"
+                + tr("Shift+Click the clock to add time\n"
+                     "Ctrl+Shift+Click the clock to remove Temp Timer",
+                     getattr(self, "_current_lang", "EN")))
+            lbl.setStyleSheet(
+                f"padding: 0 4px; font-weight: bold; color: {temp.display_color()};")
+            lbl.setVisible(True)
+            return
 
         # a running work/break phase outranks a distant alarm: it is the one
         # counting down right now, and it is the one being watched
@@ -1165,6 +1361,147 @@ class FastPrompter(
         lbl.setStyleSheet(
             f"padding: 0 4px; font-weight: bold; color: {nxt.display_color()};")
         lbl.setVisible(True)
+
+    def _temp_timer(self):
+        """Return the one persisted express/focus timer, if any."""
+        return next((t for t in getattr(self, "timers", [])
+                     if getattr(t, "temporary", False)), None)
+
+    def temp_timer_template(self):
+        """Settings used when Shift+Click creates a fresh temp timer."""
+        raw = self.data.get("temp_timer_settings")
+        if not isinstance(raw, dict):
+            raw = {}
+
+        def flag(key, default):
+            value = raw.get(key, default)
+            if isinstance(value, bool):
+                return value
+            if isinstance(value, str):
+                return value.strip().lower() not in {"", "0", "false", "no", "off"}
+            return bool(value)
+
+        try:
+            increment = max(1, int(raw.get("increment_minutes", 15)))
+        except (TypeError, ValueError):
+            increment = 15
+        try:
+            volume = max(0, min(10, int(raw.get("volume", 5))))
+        except (TypeError, ValueError):
+            volume = 5
+        name = raw.get("name")
+        description = raw.get("description")
+        sound = raw.get("sound")
+        color_mode = raw.get("color_mode")
+        sound_mode = raw.get("sound_mode")
+        rules = raw.get("sound_rules")
+        return {
+            "name": str(name or "Temp Timer"),
+            "description": str(description or ""),
+            "increment_minutes": increment,
+            "delete_after_fire": flag("delete_after_fire", False),
+            "sound": sound if isinstance(sound, str) and sound else "tick",
+            "volume": volume,
+            "color_mode": color_mode if isinstance(color_mode, str)
+            and color_mode in {"temperature", "static"} else "temperature",
+            "show_notification": flag("show_notification", True),
+            "show_in_top_bar": flag("show_in_top_bar", True),
+            "sound_mode": sound_mode if isinstance(sound_mode, str)
+            and sound_mode in {"single", "pool"} else "single",
+            "sound_rules": [dict(r) for r in (rules if isinstance(rules, list) else [])
+                            if isinstance(r, dict)],
+        }
+
+    def configure_temp_timer(self, settings):
+        """Persist the express timer template and update its live instance."""
+        current = self.temp_timer_template()
+        current.update(settings or {})
+        try:
+            current["increment_minutes"] = max(
+                1, int(current.get("increment_minutes", 15)))
+        except (TypeError, ValueError):
+            current["increment_minutes"] = 15
+        current["name"] = str(current.get("name") or "Temp Timer")
+        current["description"] = str(current.get("description") or "")
+        for key, default in (("delete_after_fire", False),
+                             ("show_notification", True),
+                             ("show_in_top_bar", True)):
+            value = current.get(key, default)
+            if isinstance(value, str):
+                value = value.strip().lower() not in {"", "0", "false", "no", "off"}
+            current[key] = bool(value)
+        self.data["temp_timer_settings"] = current
+        temp = self._temp_timer()
+        if temp is not None:
+            for key in ("name", "description", "sound", "volume", "color_mode",
+                        "show_notification", "show_in_top_bar", "sound_mode",
+                        "sound_rules", "delete_after_fire"):
+                if key in current:
+                    setattr(temp, key, current[key])
+            self.save_timers_to_data()
+        else:
+            self.mark_dirty("settings")
+
+    def add_temp_timer(self, minutes=None, settings=None):
+        """Create or extend the one-shot focus timer by *minutes*.
+
+        Existing future time is extended, never replaced. A fired/done temp
+        timer is re-armed from now, which makes a later Shift+Click useful.
+        """
+        from fastprompter.core.timers import Timer
+        import datetime as _datetime
+
+        cfg = self.temp_timer_template()
+        if settings:
+            cfg.update(settings)
+            self.configure_temp_timer(cfg)
+            cfg = self.temp_timer_template()
+        try:
+            minutes = max(1, int(minutes or cfg["increment_minutes"]))
+        except (TypeError, ValueError):
+            minutes = 15
+        now = _datetime.datetime.now()
+        temp = self._temp_timer()
+        if temp is None:
+            temp = Timer(
+                name=cfg["name"],
+                description=cfg["description"],
+                target=now + _datetime.timedelta(minutes=minutes),
+                repeat="once",
+                sound=cfg["sound"],
+                volume=cfg["volume"],
+                color_mode=cfg["color_mode"],
+                show_notification=cfg["show_notification"],
+                show_in_top_bar=cfg["show_in_top_bar"],
+                sound_mode=cfg["sound_mode"],
+                sound_rules=cfg["sound_rules"],
+                temporary=True,
+                delete_after_fire=cfg["delete_after_fire"],
+            )
+            self.timers.append(temp)
+        elif temp.fired or not temp.enabled:
+            temp.target = now + _datetime.timedelta(minutes=minutes)
+            temp.fired = False
+            temp.enabled = True
+        else:
+            temp.snooze(minutes, now=now)
+        self.save_timers_to_data()
+        self._update_timer_label()
+        try:
+            self.play_sound("timer_start")
+        except Exception:
+            pass
+        return temp
+
+    def remove_temp_timer(self):
+        """Remove the express timer, including a completed one."""
+        temp = self._temp_timer()
+        if temp is None:
+            return False
+        self.timers = [t for t in self.timers if t is not temp]
+        self.save_timers_to_data()
+        self._update_timer_label()
+        return True
 
     # (button, normal label, dense label) — dense squeezes into a
     # Ctrl+Q quarter-FullHD window without hiding anything
@@ -1776,6 +2113,18 @@ class FastPrompter(
                 # due batch — its sound/notification failing is its problem.
                 from fastprompter.core.logging import logger
                 logger.debug("timer notification failed for %s", t.name)
+            if (getattr(t, "temporary", False)
+                    and getattr(t, "delete_after_fire", False)):
+                self.timers = [live for live in self.timers if live.id != t.id]
+                self._missed_timer_ids.discard(t.id)
+        if any(getattr(t, "temporary", False)
+               and getattr(t, "delete_after_fire", False) for t in due):
+            self.save_timers_to_data()
+        # Tiny timer fakes and headless integrations may implement firing
+        # without the top-bar widget; firing must not depend on that view.
+        updater = getattr(self, "_update_timer_label", None)
+        if updater is not None:
+            updater()
 
     def _notify_timer(self, timer, fired_at=None):
         """Sound + an actionable popup. Never steals focus mid-typing.
@@ -1790,20 +2139,23 @@ class FastPrompter(
         """
         fired_at = fired_at or datetime.datetime.now()
         self._play_timer_sound(timer, fired_at)
+        from fastprompter.core.timers import REPEAT_NONE
+        # The red date alert is a state indicator, not a duplicate of the
+        # popup. A calendar event still needs attention when the user chose
+        # silent notifications, so register it before the popup early-return.
+        if timer.repeat == REPEAT_NONE:
+            missed = getattr(self, "_missed_timer_ids", None)
+            if missed is not None:
+                missed.add(timer.id)
         if not timer.show_notification:
             # visual notification intentionally off — no popup, no tray
             return
-        from fastprompter.core.timers import REPEAT_NONE
         from fastprompter.ui.timer_toast import show_toast
         # A fired ONE-SHOT timer whose moment passed enters the "missed" set:
         # the date label turns red (user-chosen colour) until the event is
         # snoozed, deleted, disabled or explicitly acknowledged (Dismiss).
         # Repeating timers are never "missed" — they roll to their next
         # occurrence and the top bar shows that instead.
-        if timer.repeat == REPEAT_NONE:
-            missed = getattr(self, "_missed_timer_ids", None)
-            if missed is not None:
-                missed.add(timer.id)
         toast = show_toast(self, timer, on_snooze=self._snooze_timer,
                            on_dismiss=getattr(self, "_ack_missed", None))
         if toast is None:
@@ -2757,6 +3109,78 @@ class FastPrompter(
             return isdir_within(child)
         return os.path.isdir(child)
 
+    def _restore_trash_file_container(self, md_basename, text, inserted_slot):
+        """CORE-006: restore the File Container folder for a trashed silo using
+        its EXACT delete-time association (never a ``silo_slug`` guess).
+
+        Returns the allocated physical folder name on success, or ``None`` when
+        there is no recoverable folder for this text (the caller then reports a
+        partial/no-folder restore rather than a false success).
+
+        The recovered directory is moved into the CURRENT category's physical
+        component under a COLLISION-SAFE name (the same contract a normal silo
+        uses) and that exact name is written into the inserted slot's map.
+        """
+        link = self.data.get("trash_text_folder") or {}
+        folder_name = link.get(md_basename)
+        if not folder_name:
+            return None
+        log = self.data.get("folder_trash_log") or []
+        trashed = None
+        remaining = []
+        for entry in log:
+            if not isinstance(entry, (tuple, list)) or len(entry) < 2:
+                remaining.append(entry)
+                continue
+            orig, tr = entry[0], entry[1]
+            if os.path.basename(orig) == folder_name and os.path.isdir(tr):
+                trashed = tr
+                continue
+            remaining.append(entry)
+        if trashed is None:
+            return None  # no recoverable folder for this exact association
+
+        cat = self.get_current_category() or ""
+        comp = self._category_files_dir(cat)
+        if comp is None:
+            from fastprompter.core.logging import logger
+            logger.warning("trash folder restore skipped: no component for %r",
+                           cat)
+            return None
+        cat_dir = os.path.join(self._files_root(), comp)
+        try:
+            os.makedirs(cat_dir, exist_ok=True)
+        except OSError:
+            return None
+        # CORE-006: collision-safe allocation reuses the original folder name
+        # but suffixes (-2/-3) when that name is already taken on disk or
+        # claimed by another slot in this category.
+        taken = {v for v in (self.data.get("silo_folders_all", {})
+                             .get(cat, {}) or {}).values()}
+        name = folder_name
+        n = 2
+        while name in taken or os.path.isdir(os.path.join(cat_dir, name)):
+            name = f"{folder_name}-{n}"
+            n += 1
+        dest = os.path.join(cat_dir, name)
+        try:
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            os.rename(trashed, dest)
+        except OSError as e:
+            from fastprompter.core.logging import logger
+            logger.warning("trash folder restore failed for %r: %s",
+                           folder_name, e)
+            return None
+        # commit the exact allocated name into the inserted slot's map
+        fmap_all = self.data.setdefault("silo_folders_all", {}).setdefault(cat, {})
+        fmap_all[str(inserted_slot)] = name
+        if cat == self.get_current_category():
+            self.data.setdefault("silo_folders", {})[str(inserted_slot)] = name
+        # drop the consumed retirement entry
+        self.data["folder_trash_log"] = remaining
+        self.mark_dirty()
+        return name
+
     def _rename_silo_folder(self, cat, old_name, new_name):
         """Rename a silo's physical folder; returns an explicit status so the
         caller can make the mapping update TRANSACTIONAL:
@@ -3654,17 +4078,39 @@ class FastPrompter(
 
         Runs on a 450ms timer after typing and on silo/tab switches. When
         the feature is off the spans are cleared so no stale underlines
-        linger after a settings toggle."""
-        spans = []
-        if self.data.get("typo_check_enabled", "False") == "True":
-            try:
-                from fastprompter.core import typecheck as tc
-                text = self.text_area.toPlainText()
-                if len(text) <= 500000:
-                    spans = [(s, e) for _w, s, e in
-                             tc.find_unknown(text, self._typo_dictionary())]
-            except Exception:
-                spans = []
+        linger after a settings toggle.
+
+        PERF-005: the tokenization/dictionary pass is O(document) and used
+        to run right here, on the GUI thread — a ~500k-character document
+        hitched the UI for ~100ms on every typing pause. The scan now runs
+        on a worker over an immutable text snapshot; the result paints only
+        when the document revision, silo identity and feature flag are all
+        still current. A stale result is discarded, never applied to newer
+        text or another silo/profile."""
+        editor = getattr(self, "text_area", None)
+        if editor is None or sip.isdeleted(editor):
+            return
+        if self.data.get("typo_check_enabled", "False") != "True":
+            self._typo_apply_spans([])
+            return
+        try:
+            from fastprompter.core import typecheck as _tc  # noqa: F401
+            text = editor.toPlainText()
+            doc_rev = editor.document().revision()
+            ident = (self.get_current_category() or "",
+                     getattr(self, "active_temp_slot", -1),
+                     bool(getattr(self, "active_is_archive", False)))
+            self._typo_request_seq = getattr(self, "_typo_request_seq", 0) + 1
+            request_id = self._typo_request_seq
+            worker = self._ensure_typo_worker()
+            worker.scan.emit(request_id, text, self._typo_dictionary())
+            # remember what this in-flight scan was taken against
+            self._typo_inflight = (request_id, ident, doc_rev)
+        except Exception:
+            self._typo_apply_spans([])
+
+    def _typo_apply_spans(self, spans):
+        """Paint spans onto the live editor (GUI thread)."""
         editor = getattr(self, "text_area", None)
         if editor is not None and not sip.isdeleted(editor):
             editor._typo_spans = spans
@@ -3673,6 +4119,73 @@ class FastPrompter(
                 editor.viewport().update()
             except Exception:
                 pass
+
+    def _ensure_typo_worker(self):
+        """PERF-005: the persistent typo-scan worker thread."""
+        if getattr(self, "_typo_worker", None) is None:
+            thread = QThread()
+            thread.setObjectName("fastprompter-typo-scan")
+            worker = _TypoScanWorker()
+            worker.moveToThread(thread)
+            worker.scan.connect(worker._run)   # AFTER moveToThread: queued
+            worker.scanned.connect(self._on_typo_scanned)
+            thread.start()
+            self._typo_worker = worker
+            self._typo_thread = thread
+        return self._typo_worker
+
+    def _on_typo_scanned(self, request_id, spans):
+        """A scan finished. Apply it ONLY when it is still the newest
+        request AND the world it was captured against has not moved: same
+        silo identity, same document revision, feature still enabled."""
+        from fastprompter.main import is_gui_thread
+        if not is_gui_thread():
+            from fastprompter.core.logging import logger
+            logger.critical("typo scan completion rejected outside GUI "
+                            "thread")
+            return
+        inflight = getattr(self, "_typo_inflight", None)
+        if inflight is None or inflight[0] != request_id:
+            return  # superseded by a newer scan
+        _rid, ident, doc_rev = inflight
+        self._typo_inflight = None
+        if self.data.get("typo_check_enabled", "False") != "True":
+            return
+        cur_ident = (self.get_current_category() or "",
+                     getattr(self, "active_temp_slot", -1),
+                     bool(getattr(self, "active_is_archive", False)))
+        if cur_ident != ident:
+            return  # the user switched silos/projects meanwhile
+        editor = getattr(self, "text_area", None)
+        if editor is None or sip.isdeleted(editor):
+            return
+        try:
+            if editor.document().revision() != doc_rev:
+                return  # typed again since the snapshot — next tick owns it
+        except Exception:
+            return
+        self._typo_apply_spans(spans)
+
+    def typo_worker_shutdown(self, timeout_s=2.0):
+        """Bounded stop of the typo-scan thread at exit."""
+        thread = getattr(self, "_typo_thread", None)
+        if thread is None or not thread.isRunning():
+            self._typo_thread = None
+            self._typo_worker = None
+            return True
+        thread.quit()
+        stopped = wait_thread_seconds(thread, timeout_s,
+                                      "typo scan worker")
+        if stopped:
+            _RETIRED_WORKERS.append(getattr(self, "_typo_worker", None))
+            _RETIRED_WORKERS.append(thread)
+            self._typo_thread = None
+            self._typo_worker = None
+        else:
+            from fastprompter.core.logging import logger
+            logger.warning("typo scan worker shutdown TIMED_OUT; live "
+                           "worker/thread retained")
+        return stopped
 
     def _add_typo_word(self, word):
         """Remember a word (lowercased) so the checker never flags it again."""
@@ -3707,11 +4220,39 @@ class FastPrompter(
         self._typo_check_tick()
 
     def _save_sync_include(self):
-        self.data.update({"sync_include": self.ed_sync_include.text().strip()})
+        raw = self.ed_sync_include.text().strip()
+        self.data.update({"sync_include": raw})
+        cfg = self._sync_config()
+        if cfg is not None:
+            from fastprompter.core import project_sync as ps
+            cfg["include"] = ps.parse_ext_list(raw)
+            self.data.setdefault("project_sync_all", {})[
+                self.get_current_category() or ""] = cfg
+            self._rescan_project_sync()
         self.mark_dirty()
 
     def _save_sync_exclude(self):
-        self.data.update({"sync_exclude": self.ed_sync_exclude.text().strip()})
+        raw = self.ed_sync_exclude.text().strip()
+        self.data.update({"sync_exclude": raw})
+        cfg = self._sync_config()
+        if cfg is not None:
+            from fastprompter.core import project_sync as ps
+            cfg["exclude"] = ps.parse_exclude_list(raw)
+            self.data.setdefault("project_sync_all", {})[
+                self.get_current_category() or ""] = cfg
+            self._rescan_project_sync()
+        self.mark_dirty()
+
+    def _save_sync_recursive(self, checked):
+        """Apply the folder-depth setting to the active Sync-Project too."""
+        self.data.update({"sync_recursive": "True" if checked else "False"})
+        cfg = self._sync_config()
+        if cfg is not None:
+            cfg["recursive"] = bool(checked)
+            self.data.setdefault("project_sync_all", {})[
+                self.get_current_category() or ""] = cfg
+            self._rescan_project_sync()
+            self._start_project_watcher()
         self.mark_dirty()
 
     def pick_passed_colour(self):
@@ -3811,6 +4352,19 @@ class FastPrompter(
     # the slot<->file mapping, push (app->file) and apply (file->app).
     # =====================================================================
 
+    def _ensure_temp_presets(self):
+        """The ACTIVE category's silo-text list, guaranteed stored.
+
+        ``self.data.get("temp_presets") or []`` silently fabricates a
+        throwaway list whenever the store is empty — every mutation then
+        lands in an orphan and the silo text vanishes. Callers that MUTATE
+        must hold the persisted container, so create-and-store instead."""
+        presets = self.data.get("temp_presets")
+        if not isinstance(presets, list):
+            presets = []
+            self.data["temp_presets"] = presets
+        return presets
+
     def _sync_config(self):
         """The active category's Sync-Project config dict, or None."""
         cfg = self.data.get("project_sync")
@@ -3836,12 +4390,19 @@ class FastPrompter(
         exc = cfg.get("exclude")
         if not isinstance(exc, list):
             exc = ps.parse_exclude_list(self.data.get("sync_exclude", ""))
+        # An explicit [] in an active project means the user intentionally
+        # cleared the exclude field; do not silently restore the defaults.
+        if isinstance(cfg.get("exclude"), list):
+            return list(exc)
         return exc or list(ps.DEFAULT_EXCLUDE)
 
     def _sync_recursive(self):
         cfg = self._sync_config() or {}
         if "recursive" in cfg:
-            return bool(cfg["recursive"])
+            value = cfg["recursive"]
+            if isinstance(value, str):
+                return value.strip().lower() in {"true", "1", "yes", "on"}
+            return bool(value)
         return self.data.get("sync_recursive", "True") == "True"
 
     def _sync_max_bytes(self):
@@ -3858,12 +4419,56 @@ class FastPrompter(
         rel = (self.data.get("project_sync_map") or {}).get(str(slot))
         if not rel:
             return None
-        return os.path.join(root, rel.replace("/", os.sep))
+        from fastprompter.core import project_sync as ps
+        return ps.resolve_relative_path(root, rel)
 
     def _link_file_for_slot(self, slot):
         """Absolute path of the per-silo linked file, or None."""
         path = (self.data.get("silo_links") or {}).get(str(slot))
         return path if isinstance(path, str) and path else None
+
+    def _sync_binding_path_for_cat(self, cat, slot):
+        """CORE-004: resolve the bound file for an IMMUTABLE captured category.
+
+        Completion handlers must never use the active-category flat aliases
+        (``silo_links`` / ``project_sync_map``) as ownership proof for an
+        asynchronous push result: the user may have switched category while
+        the job was in flight. Resolve from the per-category stores instead."""
+        links = (self.data.get("silo_links_all") or {}).get(cat, {})
+        path = links.get(str(slot))
+        if isinstance(path, str) and path:
+            return path
+        rel = (self.data.get("project_sync_map_all") or {}).get(cat, {}).get(
+            str(slot))
+        if not rel:
+            return None
+        pscfg = (self.data.get("project_sync_all") or {}).get(cat) or {}
+        root = pscfg.get("root")
+        if not root:
+            return None
+        from fastprompter.core import project_sync as ps
+        return ps.resolve_relative_path(os.path.abspath(root), rel)
+
+    def _sync_current_text_for_cat(self, cat, slot):
+        """CORE-004: the silo text that currently owns ``(cat, slot)``.
+
+        Returns the live editor text when the binding is the active category's
+        active, non-archive, non-snippet slot; otherwise the stored preset for
+        that captured category. Returns ``None`` only when the slot is absent —
+        callers treat ``None`` as "ownership moved, skip"."""
+        active = getattr(self, "active_temp_slot", -1)
+        editing = getattr(self, "editing_snippet", None)
+        arc = getattr(self, "active_is_archive", False)
+        if (cat == self.get_current_category() and slot == active
+                and not editing and not arc):
+            try:
+                return self.text_area.toPlainText()
+            except Exception:
+                return None
+        presets = (self.data.get("temp_presets_all") or {}).get(cat, [])
+        if isinstance(slot, int) and 0 <= slot < len(presets):
+            return presets[slot] or ""
+        return None
 
     def _silo_is_synced(self, slot):
         return (self._sync_file_for_slot(slot) is not None
@@ -3896,6 +4501,62 @@ class FastPrompter(
         data = (text or "").encode("utf-8", "replace")
         return (len(data), hashlib.blake2b(data, digest_size=16).digest())
 
+    def _sync_baseline_value(self, slot, path):
+        """Return a canonical baseline, healing legacy raw-text entries.
+
+        Older sessions and early link code stored the full text here. Keep
+        those sessions safe: convert the value once instead of treating a
+        raw string as a digest and incorrectly declaring the silo dirty.
+        """
+        key = self._sync_baseline_key(slot, path)
+        value = self._sync_last_applied.get(key)
+        if isinstance(value, str):
+            value = self._sync_side_digest(value)
+            self._sync_last_applied[key] = value
+        return value
+
+    def _sync_lease(self, key):
+        """CORE-001: the current binding lease for a baseline key."""
+        return self._sync_leases.get(key, 0)
+
+    def _sync_invalidate_binding(self, idx, path):
+        """CORE-001: an ownership transition on (idx, path).
+
+        Drops the session baseline/EOL metadata, bumps the binding lease so
+        any queued or in-flight push job carrying the old lease is rejected
+        before it can mutate the file, and removes any pending job for the
+        same owner."""
+        links = self.data.get("silo_links") or {}
+        mapping = self.data.setdefault("project_sync_map", {})
+        if str(idx) not in links and str(idx) not in mapping:
+            # only invalidate when this slot still owns the path
+            pass
+        key = self._sync_baseline_key(idx, path)
+        self._sync_last_applied.pop(key, None)
+        self._sync_eol_cache.pop(key, None)
+        self._sync_unsafe_bindings.discard(key)
+        # CORE-003: bump the lease under the shared commit gate so the
+        # transition is atomic with the worker's final mutation. Once this
+        # block completes, no in-flight job carrying the old lease can begin
+        # (or finish) a write, because the worker re-checks the lease inside
+        # the same gate immediately before its filesystem mutation.
+        with self._sync_commit_gate:
+            self._sync_leases[key] = self._sync_leases.get(key, 0) + 1
+        self._push_jobs_pending.pop(key, None)
+
+    def _sync_flag_unsafe_binding(self, key, path):
+        """CORE-001: a fresh-binding read found the destination exists but is
+        not safe text (binary/over-limit/invalid UTF-8). Record it so the next
+        push round (and this one) never silently overwrites it, but do NOT
+        establish a baseline that would legitimise the overwrite."""
+        self._sync_unsafe_bindings.add(key)
+        # Drop any pending job that would try to recreate the file; the
+        # established-binding worker also refuses to overwrite an existing
+        # unsafe target, so the flag is the authoritative fresh-binding guard.
+        self._push_jobs_pending.pop(key, None)
+        from fastprompter.core.logging import logger
+        logger.debug("sync unsafe binding flagged: %s", os.path.basename(path))
+
     def _silo_clean(self, slot, path):
         """True when ``slot`` holds NO app-side text newer than what we last
         wrote to ``path`` — i.e. an external change may be applied safely.
@@ -3903,7 +4564,7 @@ class FastPrompter(
         The active silo's live editor text is the authority; for inactive
         silos the stored text is. If we never touched the path, the silo is
         considered clean (a fresh binding)."""
-        applied = self._sync_last_applied.get(self._sync_baseline_key(slot, path))
+        applied = self._sync_baseline_value(slot, path)
         if applied is None:
             return True
         # T-1037: baselines are compact (len, blake2b) digests, not bodies.
@@ -3914,7 +4575,7 @@ class FastPrompter(
                 return self._sync_side_digest(self.text_area.toPlainText()) == applied
             except Exception:
                 return False
-        presets = self.data.get("temp_presets") or []
+        presets = self._ensure_temp_presets()
         if 0 <= slot < len(presets):
             return self._sync_side_digest(presets[slot]) == applied
         return True
@@ -3996,20 +4657,32 @@ class FastPrompter(
         links = self.data.get("silo_links") or {}
         path = links.pop(str(idx), None)
         if path:
-            self._sync_last_applied.pop(
-                self._sync_baseline_key(idx, path), None)
-        mapping = self.data.get("project_sync_map") or {}
+            self._sync_invalidate_binding(idx, path)
+        mapping = self.data.setdefault("project_sync_map", {})
         rel = mapping.pop(str(idx), None)
         if rel and self._sync_root():
-            self._sync_last_applied.pop(
-                self._sync_baseline_key(
-                    idx,
-                    os.path.join(self._sync_root(),
-                                 rel.replace("/", os.sep))),
-                None)
+            from fastprompter.core import project_sync as ps
+            path = ps.resolve_relative_path(self._sync_root(), rel)
+            if path:
+                self._sync_invalidate_binding(idx, path)
 
-    def _push_sync_files(self):
-        """App -> file: write every bound silo's text to its file.
+    def _push_sync_files_active(self):
+        """PERF-002: the 1.5s typing debounce publishes ONLY the active
+        silo's binding — the slot the keystrokes actually landed in — not
+        every bound silo in the project."""
+        try:
+            active = getattr(self, "active_temp_slot", -1)
+        except Exception:
+            active = -1
+        self._push_sync_files(slots=None if active < 0 else {active})
+
+    def _push_sync_files(self, slots=None):
+        """App -> file: write bound silos' text to their files.
+
+        ``slots=None`` reconciles EVERY bound silo (force saves, project
+        switches, shutdown); a set of slots publishes only those owners
+        (PERF-002: the typing debounce and silo navigation must not pay
+        CPU proportional to the whole project's bound bytes).
 
         Runs on the 1.5s typing debounce and after every silo-text DB save
         (PERF-004: a settings-only save never reaches here). The ACTIVE
@@ -4017,21 +4690,33 @@ class FastPrompter(
 
         T-1039: plain changed writes (baseline already established) are
         handed to the dedicated worker thread -- encode/temp/replace never
-        block the GUI. Fresh bindings (no baseline yet) keep the synchronous
-        read+conflict path, because the conflict dialog is inherently a GUI
-        decision and such bindings are rare. Unchanged bindings are skipped
-        by digest equality alone, with no per-file stat.
+        block the GUI. Each job carries the expected disk digest and the
+        binding lease captured NOW; the worker re-validates both before it
+        mutates anything (CORE-001). Fresh bindings (no baseline yet) keep
+        the synchronous read+conflict path, because the conflict dialog is
+        inherently a GUI decision and such bindings are rare. Unchanged
+        bindings are skipped by digest equality alone, with no per-file stat.
         """
         if not hasattr(self, "_sync_last_applied"):
             return
         if getattr(self, "_initializing_ui", False):
             return
+        if getattr(self, "_suppress_sync_push", False):
+            # W2-001: during a category-delete ownership transition the flat
+            # aliases may still point at the dying category's structures;
+            # publishing them must be impossible.
+            return
         try:
-            presets = self.data.get("temp_presets") or []
+            presets = self._ensure_temp_presets()
             active = getattr(self, "active_temp_slot", -1)
             editing_snippet = getattr(self, "editing_snippet", None)
             from fastprompter.core import project_sync as ps
-            for slot in range(len(presets)):
+            max_bytes = self._sync_max_bytes()
+            all_slots = range(len(presets)) if slots is None else sorted(
+                s for s in set(slots) if isinstance(s, int))
+            for slot in all_slots:
+                if not (0 <= slot < len(presets)):
+                    continue
                 path = self._link_file_for_slot(slot) or self._sync_file_for_slot(slot)
                 if not path:
                     continue
@@ -4047,7 +4732,7 @@ class FastPrompter(
                         continue
                 key = self._sync_baseline_key(slot, path)
                 digest = self._sync_side_digest(text)
-                baseline = self._sync_last_applied.get(key)
+                baseline = self._sync_baseline_value(slot, path)
                 if baseline == digest:
                     # PERF-004/T-1039: digest equality alone proves we wrote
                     # exactly this content; no per-file stat is needed.
@@ -4057,8 +4742,12 @@ class FastPrompter(
                     # needs the GUI (dialog), so it stays on this thread; it
                     # happens once per binding, not per keystroke.
                     eol = "\n"
-                    read = ps.read_text_file(path, self._sync_max_bytes())
+                    read = ps.read_text_file(path, max_bytes)
                     if read is not None:
+                        # CORE-001: a previously-flagged unsafe target is now
+                        # safe text again; clear the flag so it participates
+                        # normally in future fresh-binding rounds.
+                        self._sync_unsafe_bindings.discard(key)
                         eol = read[1]
                         self._sync_eol_cache[key] = eol
                         if read[0] != text:
@@ -4078,16 +4767,65 @@ class FastPrompter(
                             if choice != "app":
                                 continue  # skipped for now — leave both sides
                             # "app": fall through and write the silo text
+                        else:
+                            # PERF-003: fresh revalidation found the file
+                            # ALREADY equal to the silo. Establish the
+                            # baseline (digest + EOL) and stop — equality
+                            # must never become a physical rewrite.
+                            self._sync_leases.setdefault(key, 0)
+                            self._sync_last_applied[key] = digest
+                            continue
+                    else:
+                        # read_text_file returned None. This collapses several
+                        # materially different states — missing/inaccessible,
+                        # over-limit, binary/NUL, or invalid UTF-8 — into one.
+                        # The established-binding worker already distinguishes
+                        # them (see _SyncPushWorker._run): it refuses to
+                        # overwrite a *file that exists* but was rejected as
+                        # unsafe text. Mirror that here so an external file
+                        # that became binary/oversized/invalid while FastPrompter
+                        # was closed is NOT silently clobbered by the silo text.
+                        self._sync_leases.setdefault(key, 0)
+                        if os.path.exists(path):
+                            # CORE-001: destination exists but is an unsafe
+                            # text target (binary, over the size cap, or invalid
+                            # UTF-8). Do NOT overwrite it and do NOT establish an
+                            # optimistic baseline that would legitimise the next
+                            # push. Surface the unsafe binding through the
+                            # existing sync-failure path and leave the file
+                            # byte-for-byte intact.
+                            from fastprompter.core.logging import logger
+                            logger.warning(
+                                "sync fresh binding refused: destination exists "
+                                "but is not safe text (%s); left unchanged",
+                                os.path.basename(path))
+                            self._sync_flag_unsafe_binding(key, path)
+                            continue
+                        # Genuinely missing destination: recreate it with the
+                        # silo text, exactly like the historical write did.
+                        written = ps.write_text_file(path, text, eol)
+                        if written is not None:
+                            self._sync_last_applied[key] = \
+                                self._sync_side_digest(written)
+                        continue
+                    self._sync_leases.setdefault(key, 0)
+                    lease = self._sync_lease(key)
+                    written = ps.write_text_file(path, text, eol)
+                    if written is not None:
+                        self._sync_leases[key] = lease + 1
+                        self._sync_last_applied[key] = \
+                            self._sync_side_digest(written)
                 else:
                     # Established binding whose app side changed: use the EOL
-                    # learned when this file was last read/applied.
+                    # learned when this file was last read/applied. The job
+                    # carries the CURRENT baseline digest as its expectation
+                    # plus the CURRENT lease — CORE-001's mutation-time gate.
                     eol = self._sync_eol_cache.get(key, "\n")
+                    expect = baseline
+                    lease = self._sync_lease(key)
                     self._push_jobs_pending[key] = (
-                        key, path, text, eol)
+                        key, path, text, eol, expect, lease, max_bytes)
                     continue
-                written = ps.write_text_file(path, text, eol)
-                if written is not None:
-                    self._sync_last_applied[key] = self._sync_side_digest(written)
             self._dispatch_push_jobs()
         except Exception:
             from fastprompter.core.logging import logger
@@ -4095,15 +4833,33 @@ class FastPrompter(
 
     def _push_wait_idle(self, timeout_s: float = 5.0):
         """T-1039 test/shutdown helper: pump Qt events until the push worker
-        has drained every pending and inflight batch (or timeout)."""
+        has drained every pending and inflight batch (or timeout).
+
+        Returns ``True`` only when BOTH no in-flight worker job AND no pending
+        (GUI-owned) batch remain after completion callbacks have been pumped.
+        A timed-out drain returns ``False`` — the caller must not treat a
+        stopped thread as a clean drain when work is still queued."""
         import time as _time
         from PyQt6.QtWidgets import QApplication
+        if not self._push_inflight and not self._push_jobs_pending:
+            return True
         deadline = _time.monotonic() + max(0.0, float(timeout_s))
         while (self._push_inflight or self._push_jobs_pending) \
                 and _time.monotonic() < deadline:
             QApplication.processEvents()
             _time.sleep(0.01)
         QApplication.processEvents()
+        return not self._push_inflight and not self._push_jobs_pending
+
+    def _wait_for_push_idle(self, timeout_s: float = 5.0):
+        """CORE-005: bounded drain of the Sync-Project push pipeline.
+
+        Returns ``True`` when the pipeline reached idle. ``change_profile``
+        uses the result to decide whether it may safely replace ``self.data``:
+        an old-profile push that cannot drain keeps the old profile active
+        rather than letting its completion be evaluated against the new
+        profile's aliases."""
+        return self._push_wait_idle(timeout_s=timeout_s)
 
     def _ensure_push_worker(self):
         """T-1039: lazily start the single Sync-Project push worker thread."""
@@ -4111,6 +4867,9 @@ class FastPrompter(
             thread = QThread()
             thread.setObjectName("fastprompter-sync-push")
             worker = _SyncPushWorker()
+            # W2-003: a terminal restore sets this so any in-flight job refuses
+            # to publish stale pre-restore memory to disk.
+            worker._suppress = False
             worker.moveToThread(thread)
             worker.dispatch.connect(worker._run)   # AFTER moveToThread: queued
             worker.done.connect(self._on_push_done)
@@ -4122,53 +4881,136 @@ class FastPrompter(
     def _dispatch_push_jobs(self):
         """Hand the newest pending jobs to the worker, coalescing while a
         previous batch is still in flight (the newest desired text always
-        wins for a given binding key)."""
+        wins for a given binding key). The live leases dict travels with the
+        batch so the worker can reject a stale binding at mutation time."""
         if self._push_inflight or not self._push_jobs_pending:
             return
         jobs = list(self._push_jobs_pending.values())
         self._push_jobs_pending.clear()
         self._push_inflight = True
-        self._ensure_push_worker().dispatch.emit(jobs)
+        self._ensure_push_worker().dispatch.emit(
+            jobs, self._sync_leases, self._sync_commit_gate)
 
     def _on_push_done(self, results):
         """Worker finished one batch (GUI thread via queued signal).
 
-        A result updates the session baseline ONLY when the binding still
-        resolves to the same physical path AND the silo still wants exactly
-        the text that was sent -- anything else means the world moved under
-        the worker, and the next push round owns the truth."""
+        CORE-001 completion rules per job status:
+        * ``ok``      — a physical write happened. The session baseline moves
+          ONLY when the binding still resolves to the same path AND the silo
+          still wants exactly the text that was sent.
+        * ``equal``   — the disk already held the desired text; record the
+          baseline without any write (PERF-003).
+        * ``conflict``— a two-sided edit was detected BEFORE mutation. Route
+          it through the normal GUI conflict resolution; nothing was
+          overwritten.
+        * ``stale``/``gone``/``error`` — drop silently (logged); the next
+          push round or external-apply pass owns the truth.
+        """
         self._push_inflight = False
         try:
-            for key, path, text, written in results:
-                if written is None:
-                    continue
-                cat, slot, canon = key
-                cur_path = (self._link_file_for_slot(slot)
-                            or self._sync_file_for_slot(slot))
-                if cur_path is None or os.path.normcase(
-                        os.path.abspath(cur_path)) != canon:
-                    continue  # binding moved/re-pointed mid-flight
-                cur_text = ""
-                if (slot == getattr(self, "active_temp_slot", -1)
-                        and not getattr(self, "editing_snippet", None)
-                        and not getattr(self, "active_is_archive", False)):
-                    try:
-                        cur_text = self.text_area.toPlainText()
-                    except Exception:
+            for key, path, text, status, detail in results:
+                if status == "ok":
+                    written = detail
+                    if written is None:
                         continue
+                    cat, slot, canon = key
+                    # CORE-004: resolve the binding through the IMMUTABLE
+                    # captured category, never the currently active flat aliases.
+                    cur_path = self._sync_binding_path_for_cat(cat, slot)
+                    if cur_path is None or os.path.normcase(
+                            os.path.abspath(cur_path)) != canon:
+                        continue  # binding moved/re-pointed mid-flight
+                    cur_text = self._sync_current_text_for_cat(cat, slot)
+                    if cur_text is None:
+                        continue
+                    if self._sync_side_digest(cur_text) != self._sync_side_digest(text):
+                        continue  # edited again since dispatch -- next push owns it
+                    self._sync_last_applied[key] = self._sync_side_digest(written)
+                elif status == "equal":
+                    deol = detail or "\n"
+                    cat, slot, canon = key
+                    # CORE-004: resolve through the immutable captured category.
+                    cur_path = self._sync_binding_path_for_cat(cat, slot)
+                    if cur_path is None or os.path.normcase(
+                            os.path.abspath(cur_path)) != canon:
+                        continue
+                    cur_text = self._sync_current_text_for_cat(cat, slot)
+                    if cur_text is None:
+                        continue
+                    if self._sync_side_digest(cur_text) != self._sync_side_digest(text):
+                        continue
+                    self._sync_eol_cache[key] = deol
+                    self._sync_last_applied[key] = self._sync_side_digest(text)
+                elif status == "conflict":
+                    dtxt, deol = detail
+                    self._resolve_push_conflict(key, path, text, dtxt, deol)
                 else:
-                    presets = self.data.get("temp_presets") or []
-                    if isinstance(slot, int) and 0 <= slot < len(presets):
-                        cur_text = presets[slot] or ""
-                    else:
-                        continue
-                if self._sync_side_digest(cur_text) != self._sync_side_digest(text):
-                    continue  # edited again since dispatch -- next push owns it
-                self._sync_last_applied[key] = self._sync_side_digest(written)
+                    from fastprompter.core.logging import logger
+                    logger.debug("sync push job dropped (%s): %s",
+                                 status, os.path.basename(path))
             self._dispatch_push_jobs()
         except Exception:
             from fastprompter.core.logging import logger
             logger.debug("sync push completion failed", exc_info=True)
+
+    def _resolve_push_conflict(self, key, path, text, disk_text, disk_eol):
+        """CORE-001: resolve a worker-detected two-sided edit on the GUI
+        thread. Nothing was overwritten by the worker; this mirrors the
+        fresh-binding conflict flow so both paths share one decision."""
+        try:
+            cat, slot, canon = key
+            # CORE-004: resolve through the immutable captured category, never
+            # the active flat aliases; a category switch while in flight must
+            # not apply another category's conflict result to the visible silo.
+            cur_path = self._sync_binding_path_for_cat(cat, slot)
+            if cur_path is None or os.path.normcase(
+                    os.path.abspath(cur_path)) != canon:
+                return  # ownership moved while we were in flight
+            presets = (self.data.get("temp_presets_all") or {}).get(cat, [])
+            if not (isinstance(slot, int) and 0 <= slot < len(presets)):
+                return
+            active = getattr(self, "active_temp_slot", -1)
+            editing_snippet = getattr(self, "editing_snippet", None)
+            is_active = (cat == self.get_current_category() and slot == active
+                         and not editing_snippet
+                         and not getattr(self, "active_is_archive", False))
+            if is_active:
+                try:
+                    silo_text = self.text_area.toPlainText()
+                except Exception:
+                    return
+            else:
+                silo_text = presets[slot] or ""
+            if self._sync_side_digest(silo_text) != self._sync_side_digest(text):
+                return  # the silo moved on — the next push round owns it
+            choice = self._sync_conflict_choice(path, slot, disk_text, silo_text,
+                                                cat)
+            if choice == "file":
+                presets[slot] = disk_text
+                if is_active:
+                    self._set_plain_text_clean(self.text_area, disk_text)
+                self._sync_eol_cache[key] = disk_eol
+                self._sync_last_applied[key] = \
+                    self._sync_side_digest(disk_text)
+                if is_active:
+                    self.refresh_temp_presets()
+                return
+            if choice != "app":
+                return  # skipped for now — leave both sides alone
+            # "app": the silo text wins. Re-baseline onto the CURRENT disk
+            # content and queue an authorised rewrite of exactly that delta.
+            self._sync_eol_cache[key] = disk_eol
+            self._sync_last_applied[key] = self._sync_side_digest(disk_text)
+            expect = self._sync_last_applied[key]
+            lease = self._sync_lease(key)
+            self._push_jobs_pending[key] = (
+                key, path, silo_text, disk_eol, expect, lease,
+                self._sync_max_bytes())
+            self._dispatch_push_jobs()
+        except Exception:
+            from fastprompter.core.logging import logger
+            logger.debug("sync push conflict resolution failed",
+                         exc_info=True)
 
     def _push_shutdown(self, timeout_s=_SYNC_SHUTDOWN_TIMEOUT_S):
         """T-1039: drain then retire the Sync-Project push worker thread.
@@ -4176,21 +5018,55 @@ class FastPrompter(
         Runs at application exit after the final save. Pending and in-flight
         app->file writes are pumped to completion (bounded) so the newest
         silo text is not silently lost, then the worker thread is asked to
-        quit and joined within the bound. A worker stuck in a write cannot be
-        interrupted, so a timeout is accepted at exit (a leak, never a hang),
-        matching ``sync_shutdown_global``.
+        quit and joined within the bound.
+
+        CORE-005: a worker stuck in a write cannot be interrupted. On
+        timeout the live worker/thread references are RETAINED (never
+        dropped) — destroying the Python wrappers while the native QThread
+        still runs is an access-violation class failure — and failure is
+        reported so the caller refuses clean retirement. A confirmed stop
+        retires the wrappers into the process-lifetime leak list first.
         """
         if self._push_thread is None or not self._push_thread.isRunning():
+            if self._push_worker is not None:
+                _RETIRED_WORKERS.append(self._push_worker)
+            if self._push_thread is not None:
+                _RETIRED_WORKERS.append(self._push_thread)
             self._push_worker = None
             self._push_thread = None
             return True
         try:
+            if getattr(self, "_restore_stale_memory", False):
+                # W2-003: a restored DB is authoritative; the pre-restore
+                # memory must not be published. Drop any queued stale jobs and
+                # tell the worker to refuse in-flight writes, then drain.
+                self._push_jobs_pending = {}
+                if self._push_worker is not None:
+                    self._push_worker._suppress = True
             if not self._push_inflight and self._push_jobs_pending:
                 self._dispatch_push_jobs()
-            self._push_wait_idle(timeout_s=float(timeout_s))
+            # W2-004: _push_wait_idle returns a TRUTHFUL boolean. A stopped
+            # thread is NOT equivalent to a logical drain: the queue's next-
+            # dispatch transition is owned by the GUI-thread completion
+            # callback, so the shutdown boundary can terminate the worker
+            # between an older batch's physical completion and the newest
+            # coalesced batch's dispatch — silently leaving the linked file
+            # stale while SQLite holds newer text.
+            drained = self._push_wait_idle(timeout_s=float(timeout_s))
         except Exception:
             from fastprompter.core.logging import logger
             logger.debug("sync push drain during shutdown failed", exc_info=True)
+            drained = False
+        # W2-004: if work is still queued/pending after the bounded drain, do
+        # NOT report clean retirement. Retain the live worker/thread references
+        # and return False so the caller never treats stale pending work as
+        # committed.
+        if not drained or self._push_jobs_pending or self._push_inflight:
+            from fastprompter.core.logging import logger
+            logger.warning(
+                "sync push shutdown did not fully drain (pending/in-flight "
+                "work remains); worker/thread retained (leak, never lose data)")
+            return False
         thread = self._push_thread
         worker = self._push_worker
         if thread.isRunning():
@@ -4199,17 +5075,128 @@ class FastPrompter(
                 thread, timeout_s, "Sync push worker")
         else:
             stopped = True
+        if not stopped:
+            # CORE-005: keep the exact live objects referenced on the owner.
+            # Nulling them here would let teardown destroy a running QThread.
+            from fastprompter.core.logging import logger
+            logger.warning("sync push worker shutdown TIMED_OUT; live "
+                           "worker/thread retained (leak, never hang)")
+            return False
+        _RETIRED_WORKERS.append(worker)
+        _RETIRED_WORKERS.append(thread)
         self._push_worker = None
         self._push_thread = None
-        if not stopped:
+        return True
+
+    def _ensure_watcher_arm_worker(self):
+        """PERF-004: the persistent watcher-arming worker thread."""
+        if getattr(self, "_pw_worker", None) is None:
+            thread = QThread()
+            thread.setObjectName("fastprompter-watcher-arm")
+            worker = _WatcherArmWorker()
+            worker.moveToThread(thread)
+            worker.enumerate.connect(worker._run)  # AFTER moveToThread
+            worker.enumerated.connect(self._on_watcher_arm_enumerated)
+            thread.start()
+            self._pw_worker = worker
+            self._pw_thread = thread
+        return self._pw_worker
+
+    def _request_watcher_arm(self, gen, root, exclude):
+        """PERF-002: dispatch a recursive arm enumeration with one-inflight /
+        one-latest-pending semantics. If an enumeration is already running, the
+        newest (gen, root, exclude) overwrites a single pending request instead
+        of queuing another full-tree walk. The next completion dispatches only
+        the newest pending generation."""
+        if self._pw_inflight:
+            self._pw_pending = (gen, root, exclude)
+            return
+        worker = self._ensure_watcher_arm_worker()
+        if worker is not None:
+            worker._cancel = False
+        self._pw_inflight = True
+        worker.enumerate.emit(gen, root, exclude)
+
+    def _on_watcher_arm_enumerated(self, gen, root, dirs):
+        """The recursive watch list is ready. Apply it ONLY when still
+        current (no newer arm happened meanwhile), then trigger one
+        coalesced reconciliation so a change that occurred during the walk
+        cannot be lost (the root itself was watched synchronously)."""
+        # PERF-002: this completion frees the inflight slot; dispatch the single
+        # newest pending re-arm (if any) before any further arming.
+        self._pw_inflight = False
+        if gen != getattr(self, "_pw_gen", 0):
+            self._dispatch_pending_watcher_arm()
+            return  # stale: a newer arm owns the watcher
+        if not hasattr(self, "_project_sync_watcher"):
+            self._dispatch_pending_watcher_arm()
+            return
+        try:
+            if dirs:
+                self._project_sync_watcher.addPaths(dirs)
+            self._on_sync_dir_changed(root)
+        except Exception:
             from fastprompter.core.logging import logger
-            logger.warning("sync push worker shutdown TIMED_OUT; "
-                           "leaked at process exit")
+            logger.debug("watcher arm completion failed", exc_info=True)
+        self._dispatch_pending_watcher_arm()
+
+    def _dispatch_pending_watcher_arm(self):
+        """PERF-002: fire the single newest pending re-arm, if one was coalesced
+        while the previous enumeration was still walking the tree."""
+        pending = self._pw_pending
+        self._pw_pending = None
+        if pending is None:
+            return
+        gen, root, exclude = pending
+        worker = self._ensure_watcher_arm_worker()
+        if worker is not None:
+            worker._cancel = False
+        self._pw_inflight = True
+        worker.enumerate.emit(gen, root, exclude)
+
+    def _watcher_arm_shutdown(self, timeout_s=2.0):
+        """Bounded stop of the watcher-arm enumeration thread at exit.
+
+        PERF-002: signal cooperative cancellation first so a stale in-flight
+        traversal stops at its next directory boundary instead of forcing the
+        shutdown to hit its timeout."""
+        thread = getattr(self, "_pw_thread", None)
+        if thread is None or not thread.isRunning():
+            self._pw_thread = None
+            self._pw_worker = None
+            self._pw_pending = None
+            self._pw_inflight = False
+            return True
+        worker = getattr(self, "_pw_worker", None)
+        if worker is not None:
+            worker._cancel = True
+        self._pw_pending = None
+        thread.quit()
+        stopped = wait_thread_seconds(thread, timeout_s,
+                                      "watcher arm worker")
+        if stopped:
+            _RETIRED_WORKERS.append(worker)
+            _RETIRED_WORKERS.append(thread)
+            self._pw_thread = None
+            self._pw_worker = None
+            self._pw_inflight = False
+        else:
+            from fastprompter.core.logging import logger
+            logger.warning("watcher arm worker shutdown TIMED_OUT; live "
+                           "worker/thread retained")
         return stopped
 
     def _start_project_watcher(self):
         """Re-arm the QFileSystemWatcher for the ACTIVE category: the sync
-        folder (recursively, per settings) plus every per-silo linked file."""
+        folder (recursively, per settings) plus every per-silo linked file.
+
+        PERF-004: the root and the per-silo links are armed synchronously
+        (cheap, and the root must be watched immediately); the recursive
+        directory expansion — an O(project tree) walk with exclude matching
+        that used to hitch project/profile switches on large trees — runs on
+        the arm worker under a generation token. A stale completion (a newer
+        re-arm happened meanwhile) never replaces a newer path set.
+        """
         if not hasattr(self, "_project_sync_watcher"):
             return
         try:
@@ -4218,24 +5205,21 @@ class FastPrompter(
                 watcher.removePath(p)
             for p in watcher.files():
                 watcher.removePath(p)
+            self._pw_gen = getattr(self, "_pw_gen", 0) + 1
             root = self._sync_root()
             live = self.data.get("sync_live_watch", "True") == "True"
             if root and live and os.path.isdir(root):
-                from fastprompter.core import project_sync as ps
-                dirs = [root]
-                if self._sync_recursive():
-                    for dirpath, dirnames, _files in os.walk(root):
-                        dirnames[:] = [d for d in dirnames
-                                       if not ps.match_exclude(
-                                           os.path.relpath(
-                                               os.path.join(dirpath, d),
-                                               root).replace("\\", "/"),
-                                           self._sync_exclude())]
-                        dirs.append(dirpath)
                 try:
-                    watcher.addPaths(dirs)
+                    watcher.addPath(root)
                 except Exception:
                     pass
+                if self._sync_recursive():
+                    gen = self._pw_gen
+                    # PERF-002: one-inflight / one-latest-pending arming so a
+                    # burst of category/profile switches cannot queue full-tree
+                    # walks faster than they complete.
+                    self._request_watcher_arm(
+                        gen, root, list(self._sync_exclude()))
             for slot in range(len(self.data.get("temp_presets") or [])):
                 p = self._link_file_for_slot(slot)
                 if p:
@@ -4278,14 +5262,15 @@ class FastPrompter(
           conflict: the user picks a winner instead of one side silently
           clobbering the other (``_sync_resolve_conflict``).
         """
-        if self._sync_last_applied.get(self._sync_baseline_key(slot, path)) == self._sync_side_digest(text):
+        key = self._sync_baseline_key(slot, path)
+        if self._sync_baseline_value(slot, path) == self._sync_side_digest(text):
             return
         # T-1039: remember this file's EOL so a later app->file push never
         # needs a full read just to rediscover it.
-        self._sync_eol_cache[self._sync_baseline_key(slot, path)] = eol
+        self._sync_eol_cache[key] = eol
         if not self._silo_clean(slot, path):
             return  # the app side is newer (typing) — retry later
-        if self._sync_last_applied.get(self._sync_baseline_key(slot, path)) is None:
+        if self._sync_baseline_value(slot, path) is None:
             # No baseline this session: a difference between the file and the
             # silo is a two-sided conflict (e.g. both edited while the app
             # was closed), not a normal external edit.
@@ -4318,12 +5303,12 @@ class FastPrompter(
                             path, exc)
                         return
                     if written is not None:
-                        self._sync_last_applied[self._sync_baseline_key(slot, path)] = self._sync_side_digest(written)
+                        self._sync_last_applied[key] = self._sync_side_digest(written)
                     return
                 if choice != "file":
                     return  # skipped for now — leave both sides alone
                 # "file": fall through and pull the file text into the silo
-        self._sync_last_applied[self._sync_baseline_key(slot, path)] = self._sync_side_digest(text)
+        self._sync_last_applied[key] = self._sync_side_digest(text)
         applied[slot] = text
 
     def _apply_external_sync(self):
@@ -4349,10 +5334,11 @@ class FastPrompter(
             if not self._sync_config() and not (self.data.get("silo_links") or {}):
                 return
             from fastprompter.core import project_sync as ps
-            presets = self.data.get("temp_presets") or []
+            presets = self._ensure_temp_presets()
             active = getattr(self, "active_temp_slot", -1)
             editing_snippet = getattr(self, "editing_snippet", None)
             applied: dict[int, str] = {}
+            mapping_changed = False
 
             # PERF-003: a directory-structure change forces a full discovery
             # pass; a plain file-change batch does NOT. When only files
@@ -4363,10 +5349,17 @@ class FastPrompter(
             # --- project map: external edits to bound files ---------------
             root = self._sync_root()
             if root and os.path.isdir(root):
-                mapping = self.data.get("project_sync_map") or {}
+                mapping = self.data.setdefault("project_sync_map", {})
                 for slot_key in list(mapping.keys()):
                     rel = mapping[slot_key]
-                    path = os.path.join(root, rel.replace("/", os.sep))
+                    path = ps.resolve_relative_path(root, rel)
+                    if path is None:
+                        # A stale/corrupt mapping must never escape the
+                        # selected root. Keep the silo text, drop only the
+                        # unsafe binding.
+                        mapping.pop(slot_key, None)
+                        mapping_changed = True
+                        continue
                     try:
                         slot = int(slot_key)
                     except (TypeError, ValueError):
@@ -4375,8 +5368,8 @@ class FastPrompter(
                         continue
                     if not os.path.exists(path):
                         mapping.pop(slot_key, None)
-                        self._sync_last_applied.pop(
-                            self._sync_baseline_key(slot, path), None)
+                        mapping_changed = True
+                        self._sync_invalidate_binding(slot, path)
                         continue
                     read = ps.read_text_file(path, self._sync_max_bytes())
                     if read is None:
@@ -4387,27 +5380,36 @@ class FastPrompter(
                         editing_snippet, applied)
 
                 # --- new files -> new silos --------------------------------
-                files = ps.scan_folder(root, self._sync_include(),
-                                       self._sync_exclude(),
-                                       recursive=self._sync_recursive(),
-                                       max_bytes=self._sync_max_bytes())
-                mapped = set(mapping.values())
-                new_files = [f for f in files if f not in mapped]
-                if new_files:
-                    for rel, slot in zip(
-                            new_files,
-                            ps.free_slots(mapping, len(presets), len(new_files))):
-                        path = os.path.join(root, rel.replace("/", os.sep))
-                        read = ps.read_text_file(path, self._sync_max_bytes())
-                        if read is None:
-                            continue
-                        text, _eol = read
-                        while len(presets) <= slot:
-                            presets.append("")
-                        presets[slot] = text
-                        mapping[str(slot)] = rel
-                        self._sync_last_applied[self._sync_baseline_key(slot, path)] = self._sync_side_digest(text)
-                        applied[slot] = text
+                # PERF-001: discovery is O(project tree). Run it only for a
+                # directory-structure event (or a defensive empty batch);
+                # a plain file-change batch already knows the affected path.
+                if dir_changed or not changed:
+                    files = ps.scan_folder(root, self._sync_include(),
+                                           self._sync_exclude(),
+                                           recursive=self._sync_recursive(),
+                                           max_bytes=self._sync_max_bytes())
+                    mapped = set(mapping.values())
+                    new_files = [f for f in files if f not in mapped]
+                    if new_files:
+                        for rel, slot in zip(
+                                new_files,
+                                ps.free_slots(mapping, len(presets), len(new_files))):
+                            path = ps.resolve_relative_path(root, rel)
+                            if path is None:
+                                continue
+                            read = ps.read_text_file(path, self._sync_max_bytes())
+                            if read is None:
+                                continue
+                            text, eol = read
+                            while len(presets) <= slot:
+                                presets.append("")
+                            presets[slot] = text
+                            mapping[str(slot)] = rel
+                            key = self._sync_baseline_key(slot, path)
+                            self._sync_eol_cache[key] = eol
+                            self._sync_last_applied[key] = \
+                                self._sync_side_digest(text)
+                            applied[slot] = text
 
             # --- per-silo links --------------------------------------------
             links = self.data.get("silo_links") or {}
@@ -4432,6 +5434,9 @@ class FastPrompter(
 
             # --- publish into the silos -------------------------------------
             if not applied:
+                if mapping_changed:
+                    self.mark_dirty()
+                    self.refresh_temp_presets()
                 return
             for slot, text in applied.items():
                 if 0 <= slot < len(presets):
@@ -4475,6 +5480,7 @@ class FastPrompter(
         """Pick the sync folder and (re)bind every file to a silo."""
         lang = getattr(self, "_current_lang", "EN")
         cfg = self._sync_config() or {}
+        old_root = cfg.get("root") or self.data.get("sync_path", "") or None
         start = cfg.get("root") or self.data.get("sync_path", "") \
             or os.path.expanduser("~")
         self.ignore_focus_loss = True
@@ -4507,23 +5513,43 @@ class FastPrompter(
         }
         self.data["project_sync"] = cfg
         self.data.setdefault("project_sync_all", {})[cat] = cfg
-        presets = self.data.get("temp_presets") or []
+        presets = self._ensure_temp_presets()
         mapping = self.data.setdefault("project_sync_map", {})
+        # CORE-001: repointing the folder invalidates every OLD binding's
+        # lease so a queued/running job cannot write into the previous root.
+        if old_root:
+            for old_slot, old_rel in list(mapping.items()):
+                old_path = ps.resolve_relative_path(old_root, old_rel)
+                if old_path is None:
+                    continue
+                try:
+                    _sk = int(old_slot)
+                except (TypeError, ValueError):
+                    _sk = old_slot
+                key = self._sync_baseline_key(_sk, old_path)
+                self._sync_leases[key] = self._sync_leases.get(key, 0) + 1
+        for old_key in list(self._push_jobs_pending):
+            self._push_jobs_pending.pop(old_key, None)
+            self._sync_leases[old_key] = self._sync_leases.get(old_key, 0) + 1
         self.data.setdefault("project_sync_map_all", {})[cat] = mapping
         mapping.clear()
         for slot, rel in enumerate(files):
             if slot >= self.MAX_SILOS_PER_CATEGORY:
                 break
-            path = os.path.join(root, rel.replace("/", os.sep))
+            path = ps.resolve_relative_path(root, rel)
+            if path is None:
+                continue
             read = ps.read_text_file(path, self._sync_max_bytes())
             if read is None:
                 continue
-            text, _eol = read
+            text, eol = read
             while len(presets) <= slot:
                 presets.append("")
             presets[slot] = text
             mapping[str(slot)] = rel
-            self._sync_last_applied[self._sync_baseline_key(slot, path)] = self._sync_side_digest(text)
+            key = self._sync_baseline_key(slot, path)
+            self._sync_eol_cache[key] = eol
+            self._sync_last_applied[key] = self._sync_side_digest(text)
         self.mark_dirty()
         self.save_data_to_db(force=True)
         self._start_project_watcher()
@@ -4555,35 +5581,40 @@ class FastPrompter(
                                    self._sync_exclude(),
                                    recursive=self._sync_recursive(),
                                    max_bytes=self._sync_max_bytes())
-            mapping = self.data.get("project_sync_map") or {}
+            mapping = self.data.setdefault("project_sync_map", {})
             for key in list(mapping.keys()):
                 rel = mapping[key]
                 if rel not in files:
-                    path = os.path.join(root, rel.replace("/", os.sep))
+                    path = ps.resolve_relative_path(root, rel)
                     mapping.pop(key, None)
+                    if path is None:
+                        continue
                     try:
                         _sk = int(key)
                     except (TypeError, ValueError):
                         _sk = key
-                    self._sync_last_applied.pop(
-                        self._sync_baseline_key(_sk, path), None)
+                    self._sync_invalidate_binding(_sk, path)
             mapped = set(mapping.values())
             new_files = [f for f in files if f not in mapped]
             if new_files:
-                presets = self.data.get("temp_presets") or []
+                presets = self._ensure_temp_presets()
                 for rel, slot in zip(
                         new_files,
                         ps.free_slots(mapping, len(presets), len(new_files))):
-                    path = os.path.join(root, rel.replace("/", os.sep))
+                    path = ps.resolve_relative_path(root, rel)
+                    if path is None:
+                        continue
                     read = ps.read_text_file(path, self._sync_max_bytes())
                     if read is None:
                         continue
-                    text, _eol = read
+                    text, eol = read
                     while len(presets) <= slot:
                         presets.append("")
                     presets[slot] = text
                     mapping[str(slot)] = rel
-                    self._sync_last_applied[self._sync_baseline_key(slot, path)] = self._sync_side_digest(text)
+                    key = self._sync_baseline_key(slot, path)
+                    self._sync_eol_cache[key] = eol
+                    self._sync_last_applied[key] = self._sync_side_digest(text)
             self.mark_dirty()
             self.refresh_temp_presets()
             self._start_project_watcher()
@@ -4608,10 +5639,19 @@ class FastPrompter(
         if cfg:
             root = os.path.abspath(cfg["root"])
             for rel in (self.data.get("project_sync_map") or {}).values():
-                p2 = os.path.join(root, rel.replace("/", os.sep))
+                from fastprompter.core import project_sync as ps
+                p2 = ps.resolve_relative_path(root, rel)
+                if p2 is None:
+                    continue
                 for _k in [k for k in self._sync_last_applied
                            if isinstance(k, tuple) and k[2] == os.path.normcase(p2)]:
                     self._sync_last_applied.pop(_k, None)
+                    self._sync_eol_cache.pop(_k, None)
+                # CORE-001: kill any queued/running write to this path
+                for _pk in [k for k in self._push_jobs_pending
+                            if isinstance(k, tuple) and k[2] == os.path.normcase(p2)]:
+                    self._push_jobs_pending.pop(_pk, None)
+                    self._sync_leases[_pk] = self._sync_leases.get(_pk, 0) + 1
         self.data["project_sync"] = {}
         self.data.setdefault("project_sync_all", {})[cat] = {}
         mapping = self.data.get("project_sync_map")
@@ -4666,7 +5706,7 @@ class FastPrompter(
                 tr("That file cannot be read as text (too large or binary).",
                    lang))
             return
-        text, _eol = read
+        text, eol = read
         presets = self.data.get("temp_presets") or []
         if not (0 <= idx < len(presets)):
             return
@@ -4676,7 +5716,9 @@ class FastPrompter(
         links[str(idx)] = path
         # the file is the source of truth at link time
         presets[idx] = text
-        self._sync_last_applied[self._sync_baseline_key(idx, path)] = text
+        key = self._sync_baseline_key(idx, path)
+        self._sync_eol_cache[key] = eol
+        self._sync_last_applied[key] = self._sync_side_digest(text)
         self.mark_dirty()
         self.refresh_temp_presets()
         if idx == getattr(self, "active_temp_slot", -1):
@@ -4691,7 +5733,7 @@ class FastPrompter(
             return
         path = links.pop(str(idx), None)
         if path:
-            self._sync_last_applied.pop(self._sync_baseline_key(idx, path), None)
+            self._sync_invalidate_binding(idx, path)
         self.mark_dirty()
         self.refresh_temp_presets()
         self._start_project_watcher()
@@ -4743,6 +5785,13 @@ class FastPrompter(
         self._sync_pending = None
         self._sync_pending_hold = {}
         self._sync_shutting_down = False
+        # W2-003: a process-wide "restored DB committed, RAM is stale" teardown
+        # state. restore_backup sets this the instant a DB restore commits (or
+        # a terminal connection-reopen failure occurs) so every external writer
+        # — the sync mirror and the Sync-Project push pipeline — can suppress
+        # publishing the stale pre-restore memory instead of overwriting the
+        # authoritative restored state.
+        self._restore_stale_memory = False
         self._sync_worker = None
         self._sync_timer = QTimer(self)
         self._sync_timer.setSingleShot(True)
@@ -5046,6 +6095,18 @@ class FastPrompter(
                 self._sync_timer.stop()
         except Exception:
             pass
+
+        # W2-003: a restored DB has been committed and the in-memory (RAM)
+        # state is stale. Never publish the stale memory back to the mirror —
+        # the restored DB is authoritative and any post-restore publication
+        # must not receive the pre-restore text. Retire the worker cleanly
+        # without capturing/sending a final snapshot.
+        if getattr(self, "_restore_stale_memory", False):
+            from fastprompter.core.logging import logger as _log
+            _log.info("sync shutdown skipped final mirror: restore committed, "
+                      "RAM is stale")
+            self._sync_pending = None
+            return True
 
         # final committed snapshot, coalesced over any pending job
         final = self._capture_sync_snapshot(force=True)
@@ -5448,11 +6509,13 @@ class FastPrompter(
 
         self.lbl_date = QLabel("")
         self.lbl_date.setToolTip(tr(
-            "Current date and time\nClick to manage timers and limit resets",
+            "Current date and time\nClick to manage timers and limit resets\n"
+            "Shift+Click: add Temp Timer time\n"
+            "Ctrl+Shift+Click: remove Temp Timer",
             getattr(self, "_current_lang", "EN")))
         self.lbl_date.setStyleSheet("padding: 0 4px;")
         self.lbl_date.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.lbl_date.mousePressEvent = lambda _e: self.open_timer_dialog()
+        self.lbl_date.mousePressEvent = self._clock_label_clicked
         # Right-click: acknowledge/clear the passed-event red alert, or open
         # the timer manager (see _apply_date_alert_style).
         self.lbl_date.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -5463,7 +6526,7 @@ class FastPrompter(
         self.lbl_timer = QLabel("")
         self.lbl_timer.setStyleSheet("padding: 0 4px; font-weight: bold;")
         self.lbl_timer.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.lbl_timer.mousePressEvent = lambda _e: self.open_timer_dialog()
+        self.lbl_timer.mousePressEvent = self._clock_label_clicked
         self.lbl_timer.setVisible(False)
         self.header_layout.addWidget(self.lbl_timer)
 
@@ -6690,9 +7753,7 @@ class FastPrompter(
             "📁 Include subfolders",
             "Watch the whole folder tree (on) or only the top folder (off)",
             self.data.get("sync_recursive", "True") == "True",
-            lambda checked: (self.data.update(
-                {"sync_recursive": "True" if checked else "False"})
-                or self.mark_dirty()),
+            self._save_sync_recursive,
         )
         self.cb_sync_live = create_footer_cb(
             "👁 Watch live",
@@ -6716,6 +7777,8 @@ class FastPrompter(
 
         def _upd_sync_max(v):
             self.data.update({"sync_max_kb": str(v)})
+            if self._sync_config():
+                self._rescan_project_sync()
             self.mark_dirty()
 
         self.spin_sync_max_kb.valueChanged.connect(_upd_sync_max)
@@ -6853,9 +7916,11 @@ class FastPrompter(
                 self.cb_focus, self.cb_wrap, self.cb_ctrl_c,
                 self.cb_lock_cursor, self.cb_double_line, blink_row,
             ]),
-            _settings_group("Lines", [
+            _settings_group("Line appearance", [
                 self.cb_line_numbers, self.cb_line_marks, self.cb_zebra,
                 self.cb_bold_titles, self.lbl_align, self.cb_align_combo,
+            ]),
+            _settings_group("Line metadata", [
                 self.lbl_img_paste, self.cb_img_paste,
                 self.cb_token_count, token_row,
             ]),
@@ -7288,6 +8353,22 @@ class FastPrompter(
 
     def change_profile(self, idx):
         self.play_sound("profile")
+        # W2-002: an armed watcher with a send physically in the air must
+        # reach a terminal state BEFORE the outgoing profile's final save.
+        # A success arriving after ``self.data`` moved to profile B would
+        # otherwise update only abandoned memory while disk kept PENDING —
+        # and switching back would resend an already-delivered prompt. The
+        # quiesce is bounded and refuses (leaving A fully active) when the
+        # send does not resolve; nothing is disarmed mid-send on refusal.
+        _weng = getattr(self, "_watcher_engine", None)
+        if _weng is not None and (
+                _weng.armed or getattr(self, "_watcher_send_physical_tokens",
+                                       None)):
+            if not self._watcher_begin_quiesce():
+                from fastprompter.core.logging import logger as _wlog
+                _wlog.warning("profile switch refused: watcher send still "
+                              "in flight after the quiesce bound")
+                return
         self.commit_current_text()
         # MAIN owns the final UI-aware save of the OLD profile — it alone
         # knows the live editor/widget state. The state layer is told NOT to
@@ -7304,6 +8385,21 @@ class FastPrompter(
         # db path changes, so its captured target is still the old profile's
         # (P0-2: the path is captured pre-thread; this just lets it finish).
         self._wait_for_undo_saves()
+
+        # CORE-005: the forced save above may have dispatched Sync-Project
+        # push jobs that carry the OLD profile's binding ownership. Quiesce the
+        # push pipeline BEFORE replacing self.data: an old-profile job that is
+        # still in flight when switch_profile() swaps the data would be
+        # evaluated against the new profile's aliases (the per-category stores
+        # are themselves per-profile). Require a truthful idle; on timeout keep
+        # the old profile fully active rather than risking a cross-profile
+        # mutation.
+        if not self._wait_for_push_idle(timeout_s=5.0):
+            from fastprompter.core.logging import logger as _plog
+            _plog.warning(
+                "profile switch refused: Sync-Project push did not drain "
+                "within the bound; old profile kept active")
+            return
 
         # W2-001: do NOT teardown old-profile runtime before the state switch
         # succeeds. The File Container, timer jobs and toasts stay alive while
@@ -10706,6 +11802,7 @@ class FastPrompter(
                            "left consistent. It has been repaired from the "
                            "automatic safety snapshot on disk — restart "
                            "FastPrompter to reload it.", self._current_lang))
+                    self._restore_stale_memory = True
                     self._logical_finalized = True
                     self.quit_app()
                     return
@@ -10732,6 +11829,7 @@ class FastPrompter(
                                "could not be reopened. FastPrompter will close "
                                "to avoid losing data — restart it.",
                                self._current_lang))
+                        self._restore_stale_memory = True
                         self._logical_finalized = True
                         self.quit_app()
                         return
@@ -10763,6 +11861,7 @@ class FastPrompter(
                 from fastprompter.core.logging import logger as _log
                 _log.error("restore hard-failure and live connection could not "
                            "be reopened; entering terminal state")
+                self._restore_stale_memory = True
                 self._logical_finalized = True
                 self.quit_app()
                 return
@@ -11457,6 +12556,18 @@ class FastPrompter(
                     self.data.get("category_file_dirs", {}).get(cat)),
                 "current_page": copy.deepcopy(self.current_pages.get(cat)),
             }
+            # W2-001: flush the VICTIM while its identity AND runtime aliases
+            # are still valid — after the structural mutation below a generic
+            # selection signal would persist victim-owned objects under the
+            # survivor's name.
+            try:
+                self.commit_current_text()
+                self.capture_silo_session(cat)
+                self.save_prompt_queues()
+            except Exception:
+                from fastprompter.core.logging import logger as _fl
+                _fl.debug("victim flush before category delete failed",
+                          exc_info=True)
             try:
                 # P0-3: remove by IDENTITY, never by combo row — the row and
                 # cats_order diverge when categories are hidden, and pop(idx)
@@ -11475,7 +12586,16 @@ class FastPrompter(
 
                 if cat in self.current_pages:
                     del self.current_pages[cat]
-                self.cat_combo.removeItem(idx)
+                # W2-001: removing the SELECTED row would synchronously emit
+                # currentIndexChanged, running the generic switch handler in
+                # the window where identity is half-mutated (survivor name,
+                # victim-owned aliases). Block the signal, then bind the
+                # survivor EXPLICITLY through the normal ownership path below.
+                self.cat_combo.blockSignals(True)
+                try:
+                    self.cat_combo.removeItem(idx)
+                finally:
+                    self.cat_combo.blockSignals(False)
                 self.mark_dirty()
             except Exception:
                 from fastprompter.core.logging import logger as _lg
@@ -11484,16 +12604,21 @@ class FastPrompter(
                     "rolling back the physical retirement of its folders",
                     cat)
                 try:
-                    self._rollback_category_retirements(
+                    # CORE-007: capture the physical rollback outcome. Physical
+                    # recovery is half of the transaction; a partial rollback
+                    # (stuck > 0) that leaves folders stranded in _trash must
+                    # NOT discard the durable pre-delete undo snapshot.
+                    _restored, _stuck = self._rollback_category_retirements(
                         os.path.join(root, cat_dir) if cat_dir else None)
                 except Exception:
                     _lg.exception("category rollback itself failed for %r",
                                   cat)
-                # W2-007: restore the EXACT pre-cleanup logical/UI state.
-                # The undo snapshot must NOT be discarded until the before-
-                # state has been demonstrably restored (the audit requires
-                # rollback-then-restore-then-pop, not a silent pop on any
-                # failure).
+                    _restored, _stuck = 0, -1
+                # W2-007/W2-005: restore the EXACT pre-cleanup logical/UI
+                # state. The undo snapshot must NOT be discarded until the
+                # before-state has been demonstrably restored (rollback ->
+                # restore -> verify -> pop; never a silent pop on failure).
+                restored_ok = False
                 try:
                     bc = _before_cleanup
                     # cats_order: restore cat to its original position
@@ -11515,19 +12640,58 @@ class FastPrompter(
                         cfd[cat] = bc["cat_file_dirs"]
                     if bc["current_page"] is not None:
                         self.current_pages[cat] = bc["current_page"]
-                    # combo: re-insert the removed row at its original index
+                    # combo: re-insert the removed row at its original index.
+                    # W2-005: deleting the LAST row makes idx == count, and
+                    # Qt insertion AT count is valid — the old strict `<`
+                    # guard silently dropped the row there.
                     if self.cat_combo.findData(cat) < 0 and \
-                            0 <= idx < self.cat_combo.count():
+                            0 <= idx <= self.cat_combo.count():
                         self.cat_combo.insertItem(idx, cat, cat)
+                    # W2-005: declare rollback complete only when every
+                    # essential invariant really holds again. CORE-007: physical
+                    # recovery is the other half of the transaction, so a
+                    # partial filesystem rollback (stuck > 0) keeps the snapshot
+                    # retained even when the logical/UI facts look fine.
+                    restored_ok = (
+                        cat in self.data.get("cats_order", [])
+                        and cat in self.data.setdefault("categories", {})
+                        and self.cat_combo.findData(cat) >= 0
+                        and _stuck == 0
+                    )
                 except Exception:
                     _lg.exception(
                         "W2-007: category restore FAILED for %r", cat)
-                # undo snapshot is popped ONLY after the restore attempt
-                if pushed is not None and self.data_undo_stack and \
-                        self.data_undo_stack[-1] is pushed:
-                    self.data_undo_stack.pop()
+                    restored_ok = False
+                if restored_ok:
+                    # undo snapshot is popped ONLY after a verified restore
+                    if pushed is not None and self.data_undo_stack and \
+                            self.data_undo_stack[-1] is pushed:
+                        self.data_undo_stack.pop()
+                else:
+                    # fail closed: keep the durable pre-delete snapshot so
+                    # Ctrl+Z can still fully recover the partial rollback
+                    _lg.error(
+                        "W2-005: category %r rollback INCOMPLETE; the "
+                        "pre-delete undo snapshot was RETAINED for recovery",
+                        cat)
                 self._save_undo_state()
                 raise
+
+            # W2-001: bind the surviving category EXPLICITLY by stable
+            # identity through the normal ownership path. last_tab_idx is
+            # neutralised first so the generic prev-flush cannot resolve a
+            # WRONG outgoing project from the stale row index (the victim's
+            # state was already flushed above while its aliases were valid).
+            new_idx = self.cat_combo.currentIndex()
+            if new_idx < 0:
+                new_idx = min(idx, max(0, self.cat_combo.count() - 1))
+                self.cat_combo.setCurrentIndex(new_idx)
+            self.data["last_tab_idx"] = -1
+            self._suppress_sync_push = True
+            try:
+                self.on_tab_changed(new_idx)
+            finally:
+                self._suppress_sync_push = False
 
     def _rollback_category_retirements(self, cat_dir):
         """P0-8: move every _trash entry that belongs to a category's physical
@@ -11869,7 +13033,11 @@ class FastPrompter(
         # needs a fresh check pass.
         self._start_project_watcher()
         self._update_project_tooltip()
-        self._typo_timer.start()
+        # The combo can emit currentIndexChanged while init_ui is still
+        # constructing the window. The typo timer is created immediately
+        # after init_ui, so an early tab switch must not crash startup.
+        if hasattr(self, "_typo_timer"):
+            self._typo_timer.start()
 
         self._update_cat_numbox_active()
         self.refresh_snippets_panel()
@@ -12304,6 +13472,8 @@ class FastPrompter(
 
         was_editing_snippet = bool(getattr(self, "editing_snippet", None))
         was_archive = getattr(self, "active_is_archive", False)
+        # PERF-002: the owner we are leaving (valid before any reassignment)
+        outgoing_slot = getattr(self, "active_temp_slot", -1)
 
         # remember where we were before the document underneath us changes
         if not initial and not was_editing_snippet:
@@ -12465,8 +13635,11 @@ class FastPrompter(
                 cur_text[:cur_text.index("\n")] if "\n" in cur_text else cur_text)
             # the silo we just LEFT was flushed into temp_presets above —
             # push it to its file now (Sync-Project / per-silo links) and
-            # re-run the typo check on the silo we landed on
-            self._push_sync_files()
+            # re-run the typo check on the silo we landed on.
+            # PERF-002: publish ONLY the outgoing owner — navigation must
+            # not reconcile every bound silo in the project.
+            self._push_sync_files(
+                slots=None if outgoing_slot < 0 else {outgoing_slot})
             if hasattr(self, "_typo_timer"):
                 self._typo_timer.start()
             self.text_area.setFocus()
@@ -13005,6 +14178,13 @@ class FastPrompter(
 
         src_dir = self._silo_folder_dir(idx)
         text = presets[idx]
+        # W2-005: capture the IMMUTABLE originating ownership at dispatch —
+        # the category this duplicate belongs to. The async copy validates its
+        # destination against THIS captured owner, never the mutable current
+        # category, so navigating to another category during the copy cannot
+        # invalidate a still-valid duplicate (which would otherwise leave the
+        # duplicated silo permanently missing its File Container assets).
+        dup_cat = self.get_current_category() or ""
         new_idx = self._insert_silo_at(idx + 1, text)
         if new_idx is None:
             return  # capacity refused: lose nothing
@@ -13027,21 +14207,37 @@ class FastPrompter(
                 dst_dir = self._silo_folder_dir(new_idx)
                 if os.path.abspath(dst_dir) != os.path.abspath(src_dir):
                     def _publish_guard():
-                        # W2-012: the duplicate slot must STILL exist and
-                        # still resolve to dst_dir at publish time. A delete
-                        # (or structural move) of the duplicate while the
-                        # copy runs makes this false and aborts publication,
-                        # removing the temp instead of resurrecting an
-                        # orphan asset directory.
+                        # W2-005: validate against the IMMUTABLE originating
+                        # category/root captured at dispatch, not the current
+                        # category. A delete (or structural move) of the
+                        # duplicate while the copy runs makes this false and
+                        # aborts publication, removing the temp instead of
+                        # resurrecting an orphan asset directory — but mere
+                        # navigation to another category must NOT cancel a
+                        # valid duplicate.
                         try:
-                            presets = self.data.get("temp_presets", [])
-                            if not (0 <= new_idx < len(presets)):
+                            presets_all = self.data.get("temp_presets_all", {})
+                            cat_presets = presets_all.get(dup_cat)
+                            if not isinstance(cat_presets, list):
                                 return False
-                            resolved = self._silo_folder_dir(new_idx)
-                            if resolved is None:
+                            if not (0 <= new_idx < len(cat_presets)):
                                 return False
-                            return os.path.abspath(resolved) == \
-                                os.path.abspath(dst_dir)
+                            fmap = self.data.get(
+                                "silo_folders_all", {}).get(dup_cat, {})
+                            expected = fmap.get(str(new_idx))
+                            if expected:
+                                cat_comp = self._category_files_dir(dup_cat)
+                                if cat_comp is None:
+                                    return False
+                                resolved = os.path.join(
+                                    self._files_root(), cat_comp, expected)
+                                return os.path.abspath(resolved) == \
+                                    os.path.abspath(dst_dir)
+                            # folder not yet committed: the slot still exists in
+                            # the originating category, so the deterministic name
+                            # would recompute to dst_dir — the copy target is
+                            # still valid.
+                            return True
                         except Exception:
                             return False
                     self._copy_folder_into_container(
@@ -15240,6 +16436,20 @@ def _shutdown_application(window, app, lock):
     try:
         watcher_shutdown = getattr(window, "_watcher_shutdown", None)
         if watcher_shutdown is not None and watcher_shutdown() is False:
+            clean = False
+        try:
+            arm_shutdown = getattr(window, "_watcher_arm_shutdown", None)
+            if arm_shutdown is not None and arm_shutdown() is False:
+                clean = False
+        except Exception:
+            _log.exception("watcher arm worker shutdown FAILED")
+            clean = False
+        try:
+            typo_shutdown = getattr(window, "typo_worker_shutdown", None)
+            if typo_shutdown is not None and typo_shutdown() is False:
+                clean = False
+        except Exception:
+            _log.exception("typo scan worker shutdown FAILED")
             clean = False
     except Exception:
         _log.exception("watcher shutdown FAILED")

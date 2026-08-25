@@ -68,10 +68,11 @@ class TrashDialog(QDialog):
         items = self.list_widget.selectedItems()
         if not items:
             return
-            
+
         item = items[0]
         filepath = item.data(Qt.ItemDataRole.UserRole)
-        
+        md_basename = os.path.basename(filepath)
+
         try:
             with open(filepath, encoding="utf-8") as f:
                 text = f.read()
@@ -89,7 +90,7 @@ class TrashDialog(QDialog):
                     self.main_win.refresh_temp_presets()
                 inserted = 0
 
-            # P0: the trash source is deleted ONLY when the insertion actually
+            # The trash source is deleted ONLY when the insertion actually
             # succeeded. insert_silo_at returns the slot on success and None
             # when every slot is occupied, so a full workspace must keep the
             # only trash copy instead of destroying it while restoring nothing.
@@ -99,46 +100,51 @@ class TrashDialog(QDialog):
                     self.tr("Could not restore the silo: the workspace is full."))
                 return
 
-            # Delete the restored file ONLY after the insertion succeeded —
-            # a refused/None insertion above keeps the trash copy.
-            os.remove(filepath)
+            # CORE-006: restore the File Container folder using the EXACT
+            # delete-time association, not a slug guess. This survives
+            # duplicate titles, collision-suffixed folders and cross-category
+            # restores. Returns the allocated folder name, or None when there
+            # is no recoverable folder (a real no-folder state, NOT success).
+            folder_restored = False
+            allocated = None
+            if hasattr(self.main_win, "_restore_trash_file_container"):
+                try:
+                    allocated = self.main_win._restore_trash_file_container(
+                        md_basename, text, inserted)
+                    folder_restored = allocated is not None
+                except Exception:
+                    folder_restored = False
 
-            # W2-005: also restore the File Container folder, if one was
-            # retired into _trash alongside this text. The trash log
-            # records (original, trashed) pairs; match by slug-normalised
-            # basename of the original path (which is the folder name derived
-            # from the same silo text). Do NOT report full success if the
-            # folder restore fails (the text was restored; the message below
-            # warns about the folder).
-            folder_restored = True
+            # CORE-002: the trash source is destroyed as the FINAL commit step.
+            # The restored silo text and its File Container state must be
+            # durably persisted before the recovery source is removed; if the
+            # save fails the .md is kept so nothing is lost (recoverable
+            # failure). The delete happens exactly once here.
+            saved = True
+            if hasattr(self.main_win, "save_data_to_db"):
+                try:
+                    saved = bool(self.main_win.save_data_to_db(force=True))
+                except Exception:
+                    saved = False
+            else:
+                self.main_win.mark_dirty()
+
+            if not saved:
+                QMessageBox.warning(
+                    self, self.tr("Restore incomplete"),
+                    self.tr("The silo was restored but could not be saved "
+                            "persistently. The trash copy was kept so you can "
+                            "try again."))
+                self._load_trash()
+                return
+
+            # FINAL commit step: delete the recovery source exactly once.
             try:
-                from fastprompter.ui.file_container import silo_slug
-                slug = silo_slug(text)
-                log = self.main_win.data.get("folder_trash_log", [])
-                for entry in list(log):
-                    if not isinstance(entry, (tuple, list)) or len(entry) < 2:
-                        continue
-                    orig, trashed = entry[0], entry[1]
-                    if os.path.basename(orig) == slug:
-                        if os.path.isdir(trashed) and not os.path.exists(orig):
-                            os.makedirs(os.path.dirname(orig), exist_ok=True)
-                            os.rename(trashed, orig)
-                            cat = self.main_win.get_current_category() or ""
-                            self.main_win.data.setdefault(
-                                "silo_folders_all", {}).setdefault(
-                                cat, {})[str(inserted)] = os.path.basename(orig)
-                            if cat == self.main_win.get_current_category():
-                                self.main_win.data["silo_folders"] = \
-                                    self.main_win.data.get(
-                                        "silo_folders_all", {}).get(cat, {})
-                            log.remove(entry)
-                            self.main_win.mark_dirty()
-                        break
-            except Exception:
-                folder_restored = False
-
-            # Delete the restored file ONLY after the insertion succeeded
-            os.remove(filepath)
+                os.remove(filepath)
+            except OSError:
+                # The restore already landed durably; a missing source file is
+                # not a failure of the restore itself.
+                pass
 
             if folder_restored:
                 QMessageBox.information(
@@ -151,7 +157,7 @@ class TrashDialog(QDialog):
                             "not be restored. You can find the files in the "
                             "trash folder."))
             self._load_trash()
-            
+
         except Exception as e:
             QMessageBox.warning(self, self.tr("Error"), f"{self.tr('Failed to restore:')}\n{e}")
 

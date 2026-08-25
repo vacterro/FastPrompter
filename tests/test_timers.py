@@ -989,3 +989,21 @@ def test_t1013_all_day_boolean_healing():
     noon = datetime.datetime(2026, 8, 19, 12, 0)
     eligible = eligible_sound_rules(timers[0], noon)
     assert not eligible, "Rule should be ineligible at 12:00"
+
+
+def test_temporary_timer_roundtrips_and_keeps_delete_policy():
+    t = mk("focus", 15, temporary=True, delete_after_fire=True)
+    back = load_timers(save_timers([t]))[0]
+    assert back.temporary is True
+    assert back.delete_after_fire is True
+
+
+def test_temporary_timer_can_be_extended_additively():
+    t = mk("focus", 15, temporary=True)
+    t.snooze(30, now=NOW)
+    assert t.target == NOW + datetime.timedelta(minutes=45)
+    t.fired = True
+    t.target = NOW - datetime.timedelta(minutes=1)
+    t.snooze(15, now=NOW)
+    assert t.target == NOW + datetime.timedelta(minutes=15)
+    assert t.fired is False

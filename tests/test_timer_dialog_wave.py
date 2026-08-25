@@ -165,8 +165,22 @@ def test_preview_only_on_user_activation():
 
 def test_dialog_constructs_with_calendar_tab():
     d = _dlg()
-    assert d.tabs.count() == 3  # Alarms, Calendar, Productivity
+    assert d.tabs.count() == 4  # Alarms, Temp Timer, Productivity, Calendar
+    assert "Temp Timer" in [d.tabs.tabText(i) for i in range(d.tabs.count())]
     assert d.cal is not None
+
+
+def test_temp_tab_keeps_description_and_has_real_test_button():
+    d = _dlg()
+    d.in_temp_name.setText("Focus")
+    d.in_temp_desc.setText("Finish the current task")
+    d._test_temp()
+    assert len(d.main_win.tested) == 1
+    probe, delay = d.main_win.tested[0]
+    assert probe.name == "Focus"
+    assert probe.description == "Finish the current task"
+    assert probe.temporary is True
+    assert delay == 5
 
 
 def test_calendar_add_edit_delete_event():
@@ -227,6 +241,34 @@ def test_alarm_commit_carries_behavior_flags():
     assert t.show_in_top_bar is False
     assert t.sound_mode == SOUND_MODE_POOL
     assert len(t.sound_rules) == 2
+
+
+def test_vol_spin_drives_timer_volume_end_to_end():
+    """The dialog's Vol spin must reach the sound the timer actually plays.
+
+    Closed loop: spin_vol -> committed Timer.volume -> choose_timer_sound's
+    effective level. The final playback honours that level in the fire path
+    (test_timer_fire.test_notify_on_plays_sound_and_shows_toast); this ties
+    the dialog's own spin to that stored volume.
+    """
+    from fastprompter.core.timers import choose_timer_sound
+
+    d = _dlg()
+    d._behavior.spin_vol.setValue(9)
+    d.in_name.setText("Loud")
+    d.in_when.setText("06:00")
+    d.commit()
+    t = d.main_win.timers[-1]
+    assert t.volume == 9
+    assert choose_timer_sound(t, datetime.datetime.now()) == ("tick", 9)
+
+    d.edit_selected()
+    assert d._behavior.spin_vol.value() == 9      # edit round-trips the level
+    d._behavior.spin_vol.setValue(2)
+    d.commit()
+    t = d.main_win.timers[-1]
+    assert t.volume == 2
+    assert choose_timer_sound(t, datetime.datetime.now()) == ("tick", 2)
 
 
 # ==================================================== T-1005 stabilization

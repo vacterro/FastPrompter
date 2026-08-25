@@ -3,12 +3,9 @@
 ## DOING
 
 ## TODO
-- [ ] PY-001 lint + type hygiene (ruff findings, mypy gaps on public API)
-- [ ] PY-002 small correctness bugs (off-by-one, wrong default arg, boundary/empty-input)
-- [ ] PY-003 missing error paths (narrow, low-risk -- silent except, unchecked IO result)
-- [ ] PY-004 dead code (unused imports/vars, unreachable branch, orphan helper)
-- [ ] PY-005 docstring + type-hint gaps on public functions/classes
 
 ## DONE
+- [x] PY-001 Cyrillic test exemption list (crew SC-4 @ f3801af, ready in OUTBOX)
+- [x] PY-003 (P1, collection-blocker) repaired root timer test copy in kitchen/pen @3d0d79e | verify: focused pen test 1 passed; AST parse passes | next: Core review/apply or orphan disposition
 
 ## BLOCKED

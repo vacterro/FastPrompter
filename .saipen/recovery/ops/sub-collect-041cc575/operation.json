@@ -1,0 +1,98 @@
+{
+  "op_id": "sub-collect-041cc575",
+  "operation": "sub_collect",
+  "created_at": "2026-08-23T13:34:03Z",
+  "agent": "saipen-cli",
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "semantic_payload_hash": "34c62ec73737c91c",
+  "preconditions": {
+    ".saipen/LOG.md": "fa5e428b5be21892",
+    ".saipen/BOARD.md": "5219f85f1c0eb4b6",
+    ".saipen/STATE.md": "fdab84d71ac1a55c",
+    ".saipen/extensions/subs/MANIFEST.md": "51e18da5236cc353",
+    ".saipen/extensions/subs/saihunt/kitchen/OUTBOX.md": "22fba8a6c7c44afc",
+    ".saipen/extensions/subs/saipython/kitchen/OUTBOX.md": "9d807d0f9585f5ae",
+    ".saipen/extensions/subs/saitest/kitchen/OUTBOX.md": "e035078b05aaf2e2",
+    ".saipen/extensions/subs/saiui/kitchen/OUTBOX.md": "b3d7e7fa2598d356"
+  },
+  "read_preconditions": {
+    ".": "source-identity-v1:f9a2eaec402a8a9af2637fe806d8d1ad3a46223c70cbdc451283625bc16856ff",
+    ".saipen/logs/LOG-001.md": "02341832b552017c",
+    ".saipen/logs/LOG-002.md": "1ee19811fb75ee16",
+    ".saipen/logs/LOG-003.md": "35e266a10e8b3daa",
+    "V:\\___VAC\\__K\\__CODE\\_PY\\_FastPrompter\\.saipen\\extensions\\subs\\saihunt.md": "5927e8c0ace9d76b",
+    "V:\\___VAC\\__K\\__CODE\\_PY\\_FastPrompter\\.saipen\\extensions\\subs\\saipython.md": "d77dcb3b84f293ca",
+    "V:\\___VAC\\__K\\__CODE\\_PY\\_FastPrompter\\.saipen\\extensions\\subs\\saitest.md": "c96ebff8c7c36eed",
+    "V:\\___VAC\\__K\\__CODE\\_PY\\_FastPrompter\\.saipen\\extensions\\subs\\saiui.md": "75b31ee6f18d3d7e",
+    "V:\\___VAC\\__K\\__CODE\\_PY\\_FastPrompter\\.saipen\\extensions\\subs\\saiwiki.md": "a10b94acf2356fc9"
+  },
+  "verification_policy": "sub_collect",
+  "status": "COMMITTED",
+  "progress_index": 8,
+  "targets": [
+    {
+      "path": ".saipen/LOG.md",
+      "role": "log",
+      "action": "write",
+      "before_hash": "fa5e428b5be21892",
+      "after_hash": "5761c8304ac7a8d9",
+      "applied": true
+    },
+    {
+      "path": ".saipen/BOARD.md",
+      "role": "board",
+      "action": "write",
+      "before_hash": "5219f85f1c0eb4b6",
+      "after_hash": "bdc254cd6c78fe6e",
+      "applied": true
+    },
+    {
+      "path": ".saipen/STATE.md",
+      "role": "state",
+      "action": "write",
+      "before_hash": "fdab84d71ac1a55c",
+      "after_hash": "9642b2b3acec40c0",
+      "applied": true
+    },
+    {
+      "path": ".saipen/extensions/subs/saihunt/kitchen/OUTBOX.md",
+      "role": "report",
+      "action": "write",
+      "before_hash": "22fba8a6c7c44afc",
+      "after_hash": "8f54d41434d8ce6c",
+      "applied": true
+    },
+    {
+      "path": ".saipen/extensions/subs/saipython/kitchen/OUTBOX.md",
+      "role": "report",
+      "action": "write",
+      "before_hash": "9d807d0f9585f5ae",
+      "after_hash": "fc6262afe48be5ff",
+      "applied": true
+    },
+    {
+      "path": ".saipen/extensions/subs/saitest/kitchen/OUTBOX.md",
+      "role": "report",
+      "action": "write",
+      "before_hash": "e035078b05aaf2e2",
+      "after_hash": "aabeab10c589136f",
+      "applied": true
+    },
+    {
+      "path": ".saipen/extensions/subs/saiui/kitchen/OUTBOX.md",
+      "role": "report",
+      "action": "write",
+      "before_hash": "b3d7e7fa2598d356",
+      "after_hash": "6b6770a7f92609f8",
+      "applied": true
+    },
+    {
+      "path": ".saipen/extensions/subs/MANIFEST.md",
+      "role": "manifest",
+      "action": "write",
+      "before_hash": "51e18da5236cc353",
+      "after_hash": "f08ad7fe15a360b5",
+      "applied": true
+    }
+  ]
+}

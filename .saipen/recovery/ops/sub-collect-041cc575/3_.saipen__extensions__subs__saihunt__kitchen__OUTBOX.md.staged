@@ -1,0 +1,14 @@
+﻿# OUTBOX
+
+## HUNT-006: crew SC-2 saihunt sweep @ f3801af (23.08.26)
+- **status:** reviewed
+- **summary:** 6-signal scan on HEAD f3801af — unit tests 1511 green, app_smoke has 2 pre-existing test-data false positives (Cyrillic fixture in test_project_sync.py/test_typecheck.py; remap test fix included in this commit); zero stale TODO/FIXME/HACK in src; instance_lock.py:143 bare `except Exception: pass` is a potential silent failure candidate; duration.py:137 ValueError→return None eats parse errors without logging. No orphan files, no unverified commits, no symmetry gaps found.
+- **critical:** false
+- **producer:** saihunt
+- **source_head:** f3801af269cd26acd35f8f3ec57e4af3d37ff182
+- **source_tree_fingerprint:** git-delta-v1:c66baf69a8306f3b95dfc7badb5f72b088f8de8408e933efadc4d149721a1195
+- **role_revision:** sha256:4edb04181cb07e0946afd06fbe711166fa9dcc403e56b52e9be3844f0a71b0a5
+- **coverage:** 6 signals x src/fastprompter/ + tests/ + tests_smoke/ + tools/
+- **payload:** none — findings only, no patches
+- **verified:** pytest tests/ 1511 pass 1 skip; rg sweep for TODO/FIXME/HACK/HACK/XXX zero; silent-catch audit 8 candidates (5 defensive OSError/IO, 1 ValueError→None, 1 bare Exception, 1 project_sync continue); orphan scan zero; git log 15 commits unbroken
+- **instructions:** Review findings: instance_lock.py:143 + duration.py:137 may need logging. The app_smoke test_no_cyrillic_in_codebase needs exemption for test fixture data (cp1251 encoded Russian strings in test_project_sync.py, Russian words in test_typecheck.py). Both are pre-existing, not regressions from T-1039.

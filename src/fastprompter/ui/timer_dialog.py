@@ -450,9 +450,9 @@ class TimerDialog(QDialog):
         self.list.setColumnWidth(1, 100)
         self.list.setColumnWidth(2, 90)
         self.list.setToolTip(tr(
-            "Double-click a timer to edit it.\nColour shows how close it is.",
+            "Click a timer to edit it.\nColour shows how close it is.",
             self.lang))
-        self.list.itemDoubleClicked.connect(lambda *_: self.edit_selected())
+        self.list.itemClicked.connect(lambda *_: self.edit_selected())
         self.list.currentItemChanged.connect(lambda *_: self._update_buttons())
         root.addWidget(self.list, 1)
 
@@ -684,6 +684,7 @@ class TimerDialog(QDialog):
         actions.addWidget(btn_close)
         root.addLayout(actions)
 
+        self._build_temp_tab()
         self._build_productivity_tab()
         self._build_calendar_tab()
 
@@ -693,6 +694,181 @@ class TimerDialog(QDialog):
         self._tick.start(1000)
 
         self.refresh()
+
+    # ------------------------------------------------------------------
+    def _build_temp_tab(self):
+        """One-shot focus timer for Shift+Click and additive quick taps."""
+        page = QWidget()
+        lay = QVBoxLayout(page)
+        lay.setContentsMargins(6, 6, 6, 6)
+        lay.setSpacing(6)
+
+        intro = QLabel(tr(
+            "Shift+Click the clock for a quick timer. Each press adds time "
+            "to the same countdown; normal alarms stay untouched.", self.lang))
+        intro.setWordWrap(True)
+        lay.addWidget(intro)
+
+        cfg_factory = getattr(self.main_win, "temp_timer_template", None)
+        cfg = cfg_factory() if callable(cfg_factory) else {
+            "name": "Temp Timer", "increment_minutes": 15,
+            "description": "",
+            "delete_after_fire": False, "sound": "tick", "volume": 5,
+            "color_mode": COLOR_TEMPERATURE,
+            "show_notification": True, "show_in_top_bar": True,
+            "sound_mode": SOUND_MODE_SINGLE, "sound_rules": [],
+        }
+        row = QHBoxLayout()
+        row.addWidget(QLabel(tr("Default add", self.lang)))
+        self.spin_temp_increment = QSpinBox()
+        self.spin_temp_increment.setRange(1, 24 * 60)
+        self.spin_temp_increment.setSuffix(tr(" min", self.lang))
+        self.spin_temp_increment.setValue(cfg["increment_minutes"])
+        self.spin_temp_increment.valueChanged.connect(self._temp_settings_changed)
+        row.addWidget(self.spin_temp_increment)
+        self.in_temp_name = QLineEdit(cfg["name"])
+        self.in_temp_name.setToolTip(tr("Name shown beside the countdown", self.lang))
+        self.in_temp_name.editingFinished.connect(self._temp_settings_changed)
+        row.addWidget(self.in_temp_name, 1)
+        self.cb_temp_delete = QCheckBox(tr("Delete after fire", self.lang))
+        self.cb_temp_delete.setChecked(cfg["delete_after_fire"])
+        self.cb_temp_delete.setToolTip(tr(
+            "Remove this temporary timer after its sound and notification. "
+            "Off keeps it visible as done until you remove it.", self.lang))
+        self.cb_temp_delete.toggled.connect(self._temp_settings_changed)
+        row.addWidget(self.cb_temp_delete)
+        lay.addLayout(row)
+
+        desc_row = QHBoxLayout()
+        desc_row.addWidget(QLabel(tr("Description", self.lang)))
+        self.in_temp_desc = QLineEdit(cfg.get("description", ""))
+        self.in_temp_desc.setPlaceholderText(tr("Optional notification text", self.lang))
+        self.in_temp_desc.setToolTip(tr(
+            "Shown in the notification popup when Temp Timer fires", self.lang))
+        self.in_temp_desc.editingFinished.connect(self._temp_settings_changed)
+        desc_row.addWidget(self.in_temp_desc, 1)
+        lay.addLayout(desc_row)
+
+        quick = QHBoxLayout()
+        quick.addWidget(QLabel(tr("Add now", self.lang)))
+        for minutes, label in ((15, "+15m"), (30, "+30m"),
+                               (45, "+45m"), (60, "+1h"), (75, "+1h15m")):
+            button = QPushButton(label)
+            button.setToolTip(tr("Add {} minutes to Temp Timer", self.lang).format(minutes))
+            button.clicked.connect(lambda _checked=False, m=minutes: self._add_temp(m))
+            quick.addWidget(button)
+        quick.addStretch(1)
+        lay.addLayout(quick)
+
+        self.lbl_temp_status = QLabel("")
+        self.lbl_temp_status.setWordWrap(True)
+        lay.addWidget(self.lbl_temp_status)
+
+        self._temp_behavior = _TimerBehaviorEditor(self.main_win, self.lang, self)
+        self._temp_behavior.previewRequested.connect(self._preview_sound)
+        temp_factory = getattr(self.main_win, "_temp_timer", None)
+        existing = temp_factory() if callable(temp_factory) else None
+        if existing is not None:
+            self.in_temp_name.setText(existing.name)
+            self.in_temp_desc.setText(existing.description)
+            self.cb_temp_delete.blockSignals(True)
+            self.cb_temp_delete.setChecked(existing.delete_after_fire)
+            self.cb_temp_delete.blockSignals(False)
+            self._temp_behavior.load_timer(existing)
+        else:
+            from fastprompter.core.timers import Timer
+            self._temp_behavior.load_timer(Timer(
+                cfg["name"], datetime.datetime.now(),
+                sound=cfg["sound"], volume=cfg["volume"],
+                color_mode=cfg["color_mode"],
+                show_notification=cfg["show_notification"],
+                show_in_top_bar=cfg["show_in_top_bar"],
+                sound_mode=cfg["sound_mode"], sound_rules=cfg["sound_rules"],
+            ))
+        lay.addWidget(self._temp_behavior)
+
+        actions = QHBoxLayout()
+        self.btn_temp_test = QPushButton(tr("Test", self.lang))
+        self.btn_temp_test.setToolTip(tr(
+            "Test these settings in 5 seconds; nothing is saved as a timer.",
+            self.lang))
+        self.btn_temp_test.clicked.connect(self._test_temp)
+        actions.addWidget(self.btn_temp_test)
+        self.btn_temp_add = QPushButton(tr("Start / Add", self.lang))
+        self.btn_temp_add.clicked.connect(lambda: self._add_temp())
+        actions.addWidget(self.btn_temp_add)
+        self.btn_temp_remove = QPushButton(tr("Remove Temp Timer", self.lang))
+        self.btn_temp_remove.clicked.connect(self._remove_temp)
+        actions.addWidget(self.btn_temp_remove)
+        actions.addStretch(1)
+        lay.addLayout(actions)
+        self.tabs.addTab(page, tr("Temp Timer", self.lang))
+        self._refresh_temp_tab()
+
+    def _temp_settings(self):
+        values = self._temp_behavior.timer_kwargs()
+        values.update({
+            "name": self.in_temp_name.text().strip() or tr("Temp Timer", self.lang),
+            "description": self.in_temp_desc.text().strip(),
+            "increment_minutes": self.spin_temp_increment.value(),
+            "delete_after_fire": self.cb_temp_delete.isChecked(),
+        })
+        return values
+
+    def _temp_settings_changed(self, _value=None):
+        if (hasattr(self, "_temp_behavior")
+                and hasattr(self.main_win, "configure_temp_timer")):
+            self.main_win.configure_temp_timer(self._temp_settings())
+
+    def _add_temp(self, minutes=None):
+        settings = self._temp_settings()
+        if hasattr(self.main_win, "add_temp_timer"):
+            self.main_win.add_temp_timer(minutes, settings)
+        self._refresh_temp_tab()
+
+    def _test_temp(self):
+        """Test the current Temp Timer behaviour without creating a timer."""
+        if not hasattr(self.main_win, "test_timer_notification"):
+            return
+        err = self._temp_behavior.validate()
+        if err is not None:
+            self.lbl_temp_status.setText(err)
+            self._temp_behavior.select_bad_row()
+            return
+        values = self._temp_settings()
+        probe = Timer(
+            name=values["name"],
+            description=values["description"],
+            target=datetime.datetime.now(),
+            repeat=REPEAT_NONE,
+            temporary=True,
+            delete_after_fire=values["delete_after_fire"],
+            **{key: values[key] for key in (
+                "sound", "volume", "color_mode", "show_notification",
+                "show_in_top_bar", "sound_mode", "sound_rules")},
+        )
+        self.main_win.test_timer_notification(probe, _TEST_DELAY_S)
+        self.lbl_temp_status.setText(
+            tr("Test fires in {} seconds", self.lang).format(_TEST_DELAY_S))
+
+    def _remove_temp(self):
+        if hasattr(self.main_win, "remove_temp_timer"):
+            self.main_win.remove_temp_timer()
+        self._refresh_temp_tab()
+
+    def _refresh_temp_tab(self):
+        if not hasattr(self, "lbl_temp_status"):
+            return
+        temp_factory = getattr(self.main_win, "_temp_timer", None)
+        temp = temp_factory() if callable(temp_factory) else None
+        if temp is None:
+            self.lbl_temp_status.setText(tr("No Temp Timer running.", self.lang))
+            self.btn_temp_remove.setEnabled(False)
+            return
+        state = tr("done", self.lang) if temp.fired else format_remaining(temp.remaining())
+        self.lbl_temp_status.setText(
+            tr("{} — {}", self.lang).format(temp.name, state))
+        self.btn_temp_remove.setEnabled(True)
 
     # ------------------------------------------------------------------
     def _build_productivity_tab(self):
@@ -1719,7 +1895,9 @@ class TimerDialog(QDialog):
         self.list.blockSignals(True)
         self.list.clear()
         now = datetime.datetime.now()
-        alarm_timers = [t for t in self.main_win.timers if t.kind == KIND_ALARM]
+        alarm_timers = [t for t in self.main_win.timers
+                        if t.kind == KIND_ALARM
+                        and not getattr(t, "temporary", False)]
         for t in sorted(alarm_timers, key=lambda x: x.target):
             rem = t.remaining(now)
             when = t.target.strftime("%d.%m %H:%M")
@@ -1762,7 +1940,11 @@ class TimerDialog(QDialog):
             self.list.setCurrentItem(self.list.topLevelItem(0))
         self._update_buttons()
         self._cal_refresh_if_changed()
+        self._refresh_temp_tab()
 
     def closeEvent(self, event):
+        if (hasattr(self, "_temp_behavior")
+                and hasattr(self.main_win, "configure_temp_timer")):
+            self.main_win.configure_temp_timer(self._temp_settings())
         self._tick.stop()
         super().closeEvent(event)

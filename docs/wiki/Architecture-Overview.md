@@ -127,7 +127,7 @@ Folder↔silo two-way sync. A Sync-Project binds a project tab to a folder; ever
 
 ### 13. Per-Silo File Links
 
-Each silo can have an associated file link target (`silo_links` / `silo_links_all` settings), opening the linked file in its default application. This complements the Sync-Project feature: while Sync-Project auto-binds a whole folder, per-silo links let the user manually pin a single file to a single silo.
+Each silo can have an associated two-way file link target (`silo_links` / `silo_links_all` settings). The link loads the file into the silo and keeps both sides synchronized live; unlinking stops the exchange while preserving the silo. This complements the Sync-Project feature: while Sync-Project auto-binds a whole folder, per-silo links let the user manually pin a single file to a single silo.
 
 ### 14. Passed-Event Alert
 

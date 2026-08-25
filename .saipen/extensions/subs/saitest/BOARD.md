@@ -23,4 +23,6 @@
 
 ## DONE
 
+- [x] TEST-003 (P1, HUNT-008/HUNT-009 reproduction) default pytest root collection fails and 18 ignored patch scripts are unreferenced @3d0d79e | verify: AST BOM SyntaxError; pytest collect 2535 collected/1 error; all 18 refs=0 tracked=False | next: Core collect
+
 ## BLOCKED

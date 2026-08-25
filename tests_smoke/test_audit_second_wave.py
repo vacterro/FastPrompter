@@ -365,12 +365,15 @@ def test_push_worker_writes_async_and_updates_baseline(win, tmp_path, monkeypatc
     key = win._sync_baseline_key(0, str(f), CUR)
     assert key in win._sync_last_applied
 
-    # instrument reads: an unchanged binding must not trigger any
-    reads = {"n": 0}
+    # instrument reads: an established write must not read on the GUI
+    reads = {"n": 0, "threads": set()}
     real_read = ps.read_text_file
 
     def counting_read(path, max_bytes=None):
+        import threading
+
         reads["n"] += 1
+        reads["threads"].add(threading.get_ident())
         return real_read(path, max_bytes if max_bytes is not None else 512 * 1024)
 
     monkeypatch.setattr(ps, "read_text_file", counting_read)
@@ -383,5 +386,10 @@ def test_push_worker_writes_async_and_updates_baseline(win, tmp_path, monkeypatc
 
     assert f.read_text(encoding="utf-8") == "v2 edited"
     assert win._sync_last_applied[key] == win._sync_side_digest("v2 edited")
-    # no read was needed for this established write (EOL came from cache)
-    assert reads["n"] == 0, reads
+    # CORE-001: the mutation-time precondition read happens on the WORKER
+    # thread — the GUI thread itself never performs a read for an
+    # established write (EOL came from cache).
+    import threading
+
+    gui_tid = threading.get_ident()
+    assert reads["threads"].isdisjoint({gui_tid}), reads

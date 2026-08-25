@@ -1,0 +1,14 @@
+﻿# OUTBOX
+
+## PY-002: crew SC-4 re-fix @ 3232878 (23.08.26)
+- **status:** reviewed
+- **summary:** Re-certification after source mutation (f3801af→3232878). Delta = T-1043/T-1041 patches (already shipped). No new fixer targets: PY-001 (Cyrillic exemption) landed as T-1041; PY-002..005 template backlog deliberately cleared (not real tickets).
+- **critical:** false
+- **producer:** saipython
+- **source_head:** 32328787efe6596b8ca6de774a791d786815fa1e
+- **source_tree_fingerprint:** git-delta-v1:c66baf69a8306f3b95dfc7badb5f72b088f8de8408e933efadc4d149721a1195
+- **role_revision:** sha256:3069120b1a83291867c000dd5d7edb141d5fedf7895e5dc8f07d06624d05d9ff
+- **coverage:** delta audit; PY-001 verification re-run at new HEAD
+- **payload:** none
+- **verified:** test_no_cyrillic_in_codebase PASS at 3232878; ruff clean on changed files
+- **instructions:** Evidence for SC-4 at 3232878. No new patches.

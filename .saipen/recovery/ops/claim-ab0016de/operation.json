@@ -1,0 +1,43 @@
+{
+  "op_id": "claim-ab0016de",
+  "operation": "claim",
+  "created_at": "2026-08-23T13:40:58Z",
+  "agent": "workbuddy",
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "semantic_payload_hash": "a3856165a0447ec2",
+  "preconditions": {
+    ".saipen/STATE.md": "9c42ca3528566327",
+    ".saipen/BOARD.md": "d24c0f954b24f1d6",
+    ".saipen/LOG.md": "d1edacb0ba3e143e"
+  },
+  "read_preconditions": {},
+  "verification_policy": "core_fast",
+  "status": "COMMITTED",
+  "progress_index": 3,
+  "targets": [
+    {
+      "path": ".saipen/LOG.md",
+      "role": "log",
+      "action": "write",
+      "before_hash": "d1edacb0ba3e143e",
+      "after_hash": "52ec7fa769d8d885",
+      "applied": true
+    },
+    {
+      "path": ".saipen/BOARD.md",
+      "role": "board",
+      "action": "write",
+      "before_hash": "d24c0f954b24f1d6",
+      "after_hash": "0762c8f52c1b5aca",
+      "applied": true
+    },
+    {
+      "path": ".saipen/STATE.md",
+      "role": "state",
+      "action": "write",
+      "before_hash": "9c42ca3528566327",
+      "after_hash": "e0cb0854efd8c29b",
+      "applied": true
+    }
+  ]
+}

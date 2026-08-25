@@ -212,6 +212,11 @@ class WatcherMixin:
         # physical dispatch has resolved.
         self._watcher_send_physical_tokens = set()
         self._watcher_send_token_seq = 0
+        # W2-003: one authoritative LIVE owner per dispatch. token -> (category,
+        # queue map object, data dict reference) captured when the send left;
+        # a stale completion reconciles THIS object instead of deserializing a
+        # second mutable copy that the next live save would overwrite.
+        self._watcher_send_owners = {}
         # CORE-002: the queue an armed run drains is owned by (category, slot),
         # not by the slot key alone. The live UI alias `prompt_queues` is
         # rebound on every project switch, so resolving the queue against it
@@ -405,7 +410,10 @@ class WatcherMixin:
             from fastprompter.core.watcher.cdp import CdpTarget
             return CdpTarget.from_port(adapter.live_cdp_port(),
                                        adapter.cdp_title)
-        return Target(hwnd, info["title"], info["cls"], probe=win32.probe_for())
+        # W2-002: pass the arm-time PID through so the safety recheck can
+        # reject a reused HWND owned by a different process.
+        return Target(hwnd, info["title"], info["cls"], probe=win32.probe_for(),
+                      pid=info.get("pid"))
 
     def _build_sender(self, live, adapter):
         """The transport the adapter asks for. Silent or nothing.
@@ -433,6 +441,20 @@ class WatcherMixin:
         return PostMessageSender(win32.PostLayer(), submit=submit,
                                  multiline=multiline)
 
+    def _watcher_release_run_ownership(self):
+        """W2-004: end-of-run ownership cleanup, shared by disarm, panic and
+        the fail-closed error paths.
+
+        A run's mutable lease is (pinned category, pinned queue map, target,
+        sender). Leaving it registered after the run died makes the dead run
+        persistence-authoritative: ``_watcher_persist_queues`` would happily
+        serialize a stale pin over newer queue state during shutdown or
+        quiescence."""
+        self._watcher_pinned_category = None
+        self._watcher_pinned_queues = None
+        self._watcher_target = None
+        self._watcher_sender = build_sender()
+
     def watcher_disarm(self, reason="disarmed"):
         self._watcher_init()
         self._watcher_send_gen += 1     # in-flight results become stale
@@ -443,11 +465,10 @@ class WatcherMixin:
         self._watcher_sample_verdict = None
         self._watcher_verify_state = "unverified"
         self._watcher_verify_inflight = False
-        # CORE-002: an armed run's queue owner is no longer relevant once
-        # disarmed; drop the pin so a later unarmed resolution never touches a
-        # stale (category, slot) map.
-        self._watcher_pinned_category = None
-        self._watcher_pinned_queues = None
+        # CORE-002/W2-004: an armed run's queue owner is no longer relevant
+        # once disarmed; drop the pin so a later unarmed resolution never
+        # touches a stale (category, slot) map.
+        self._watcher_release_run_ownership()
         # The dispatched send is logically discarded with the run. Its worker
         # callback will arrive with the OLD generation and return early, so it
         # must NOT clear a newer dispatch's active flag — but the flag for THIS
@@ -456,11 +477,6 @@ class WatcherMixin:
         self._watcher_send_active = False
         self._watcher_engine.disarm(reason)
         self._watcher_stop_timer()
-        # A target exists only while armed. Leaving the old one behind is how
-        # "it sent to the wrong window" bugs start: the next thing to consult
-        # it would find a handle nobody chose for this run.
-        self._watcher_target = None
-        self._watcher_sender = build_sender()
         self._watcher_notify()
 
     def watcher_panic(self):
@@ -483,6 +499,12 @@ class WatcherMixin:
         # See watcher_disarm: drop active-send ownership so a stale callback
         # cannot strand quiesce waiting on it.
         self._watcher_send_active = False
+        # W2-004: panic terminates EXECUTION but must also terminate the
+        # run's mutable OWNERSHIP lease. A pinned queue left behind here used
+        # to stay eligible as a persistence source and could overwrite queue
+        # edits made after the panic. A physical send that still needs its
+        # owner carries it in the dispatch token (W2-003), never in the pin.
+        self._watcher_release_run_ownership()
         self._watcher_engine.panic()
         self._watcher_stop_timer()
         self._watcher_notify()
@@ -524,6 +546,9 @@ class WatcherMixin:
             logger.exception("watcher tick failed")
             try:
                 self._watcher_engine.disarm("the watcher hit an error and stopped")
+                # W2-004: an error-ended run must not leave a persistence-
+                # authoritative pin behind either.
+                self._watcher_release_run_ownership()
                 self._watcher_stop_timer()
                 self._watcher_notify()
             except Exception:
@@ -556,9 +581,19 @@ class WatcherMixin:
         still the open project, so writing a non-current owner never disturbs
         the live UI's store.
         """
+        data = getattr(self, "data", None)
+        if isinstance(data, dict):
+            self._watcher_write_queues_into(data, cat, queues)
+
+    def _watcher_write_queues_into(self, data, cat, queues):
+        """W2-003: serialize ``queues`` into a SPECIFIC data dict.
+
+        A stale completion must write its reconciled owner back to the
+        profile the dispatch came FROM — ``self.data`` may already belong to
+        another profile by then. The flat alias is touched only when that
+        dict is still the live one and the category is still open."""
         from fastprompter.core.watcher.queue import save_queues
 
-        data = getattr(self, "data", None)
         if not isinstance(data, dict):
             return
         raw = save_queues(queues) if isinstance(queues, dict) else {}
@@ -567,10 +602,14 @@ class WatcherMixin:
             bucket = {}
             data["watcher_queues_all"] = bucket
         bucket[cat] = raw
-        if cat == self._watcher_current_category():
+        if data is getattr(self, "data", None) \
+                and cat == self._watcher_current_category():
             data["watcher_queues"] = raw
         if hasattr(self, "mark_dirty"):
-            self.mark_dirty("settings")
+            try:
+                self.mark_dirty("settings")
+            except TypeError:
+                self.mark_dirty()
 
     def _watcher_persist_queues(self):
         """Persist the armed run's queue under its OWN pinned category
@@ -681,6 +720,8 @@ class WatcherMixin:
                 return
             if status == "hold_target":
                 engine.disarm(reason or "the target window is gone")
+                # W2-004: the run ended — release its ownership lease too.
+                self._watcher_release_run_ownership()
                 self._watcher_stop_timer()
                 self._watcher_notify()
                 return
@@ -703,6 +744,7 @@ class WatcherMixin:
             try:
                 self._watcher_engine.disarm(
                     "the watcher hit an error and stopped")
+                self._watcher_release_run_ownership()
                 self._watcher_stop_timer()
             except Exception:
                 pass
@@ -728,6 +770,16 @@ class WatcherMixin:
         self._watcher_send_token_seq += 1
         token = self._watcher_send_token_seq
         self._watcher_send_physical_tokens.add(token)
+        # W2-003: bind THIS dispatch to its authoritative LIVE owner — the
+        # pinned queue map object the engine is draining, plus the data dict
+        # it belongs to. A completion that arrives after the run ended
+        # mutates exactly this object, so a delivered prompt can never flip
+        # back to PENDING when a later live save re-serializes it.
+        self._watcher_send_owners[token] = (
+            self._watcher_pinned_category or self._watcher_current_category(),
+            self._watcher_armed_queue_map(),
+            getattr(self, "data", None),
+        )
         worker = self._watcher_ensure_worker()
         worker.dispatch.emit(self._watcher_sender, intent,
                              self._watcher_target, gen, token)
@@ -793,7 +845,11 @@ class WatcherMixin:
                 self._watcher_engine.disarm("application is quitting")
             except Exception:
                 logger.exception("watcher disarm failed during quiesce")
-            self._watcher_persist_queues()
+            # W2-004: persist ONLY a run that was actually live — never
+            # serialize a dead-run pin (or an unrelated alias) over newer
+            # queue state.
+            if was_armed or self._watcher_pinned_category is not None:
+                self._watcher_persist_queues()
             return True
         finally:
             self._watcher_quiescing = False
@@ -828,30 +884,48 @@ class WatcherMixin:
         A send already running inside a blocking socket read cannot be
         interrupted cleanly, so the wait is bounded; at app exit a stuck
         worker is a leak, not a hazard.
+
+        W2-006: the probe worker follows the same rule as the send worker —
+        its Python/Qt owner references are cleared only after a CONFIRMED
+        stop. On timeout the exact live objects stay strongly referenced
+        (a destroyed-while-running QThread is an access-violation class
+        failure) and the shutdown reports failure.
         """
+        from fastprompter.main import wait_thread_seconds
         thread = self._watcher_worker_thread
         success = True
         if thread is not None and thread.isRunning():
             thread.quit()
-            from fastprompter.main import wait_thread_seconds
             success = wait_thread_seconds(
                 thread, _WATCHER_SHUTDOWN_TIMEOUT_S, "watcher worker"
             )
         if success:
             self._watcher_worker_thread = None
             self._watcher_worker = None
+            owners = getattr(self, "_watcher_send_owners", None)
+            if isinstance(owners, dict):
+                owners.clear()
+        else:
+            logger.warning("watcher send worker shutdown TIMED_OUT; live "
+                           "worker/thread retained (leak, never hang)")
         # PERF-003: stop the probe-sampling thread too.
         probe_thread = getattr(self, "_watcher_probe_thread", None)
+        probe_ok = True
         if probe_thread is not None and probe_thread.isRunning():
             probe_thread.quit()
-            from fastprompter.main import wait_thread_seconds
-            success = wait_thread_seconds(
+            probe_ok = wait_thread_seconds(
                 probe_thread, _WATCHER_SHUTDOWN_TIMEOUT_S,
-                "watcher probe worker") and success
+                "watcher probe worker")
         if probe_thread is not None:
-            self._watcher_probe_thread = None
-            self._watcher_probe_worker = None
-        return success
+            if probe_ok:
+                self._watcher_probe_thread = None
+                self._watcher_probe_worker = None
+            else:
+                # W2-006: keep the exact live references; never destroy a
+                # running QThread wrapper during teardown.
+                logger.warning("watcher probe worker shutdown TIMED_OUT; "
+                               "live worker/thread retained")
+        return success and probe_ok
 
     def _watcher_ensure_probe_worker(self):
         """The probe-sampling worker thread (PERF-003), separate from the
@@ -934,6 +1008,7 @@ class WatcherMixin:
             # may MUTATE the current run is a separate, generation-gated
             # question below.
             self._watcher_send_physical_tokens.discard(token)
+            owner = self._watcher_send_owners.pop(token, None)
             if gen != self._watcher_send_gen:
                 # Stale: a newer run owns the watcher. A send that actually
                 # went out must still be recorded so it is never re-sent
@@ -941,42 +1016,71 @@ class WatcherMixin:
                 # A PARTIAL delivery is never retryable and never dropped:
                 # resolve the original owner's item and persist it as failed.
                 if result.ok:
-                    # CORE-002: a stale success belongs to the run that
-                    # launched it, identified by the intent's OWN (category,
-                    # slot) — never the live UI alias, which now points at a
-                    # different project/owner. Resolve the original owner's
-                    # store and mark ITS item SENT exactly once; the newer
-                    # engine's state is left untouched.
-                    from fastprompter.core.watcher.queue import load_queues
-                    owner_raw = self.data.get("watcher_queues_all")
-                    owner = (owner_raw.get(intent.queue_category)
-                             if isinstance(owner_raw, dict) else None)
-                    queues = load_queues(owner) if owner else {}
-                    queue = queue_for(queues, intent.queue_key)
-                    item = queue.find(intent.item_id) if queue is not None else None
-                    if item is not None and item.state != SENT:
-                        item.state = SENT
-                        self._watcher_mark_sent(intent.queue_key, item)
-                        self._watcher_write_queues(intent.queue_category, queues)
-                        self._watcher_notify()
+                    # CORE-002/W2-003: a stale success belongs to the run
+                    # that launched it. Reconcile the dispatch's OWN live
+                    # owner object — never a freshly deserialized clone that
+                    # the next live save would overwrite — and persist THAT
+                    # object under the dispatch's original category/profile.
+                    queue_key = getattr(intent, "queue_key", None)
+                    if owner is not None:
+                        _ocat, _omap, _odata = owner
+                        queues = _omap if isinstance(_omap, dict) else {}
+                        queue = queue_for(queues, queue_key)
+                        item = (queue.find(intent.item_id)
+                                if queue is not None else None)
+                        if item is not None and item.state != SENT:
+                            item.state = SENT
+                            self._watcher_mark_sent(queue_key, item)
+                            self._watcher_write_queues_into(
+                                _odata if isinstance(_odata, dict)
+                                else getattr(self, "data", {}),
+                                _ocat, queues)
+                            self._watcher_notify()
+                    else:
+                        # legacy fallback: no captured owner (pre-token
+                        # dispatch), resolve from persisted state as before
+                        from fastprompter.core.watcher.queue import load_queues
+                        owner_raw = self.data.get("watcher_queues_all")
+                        own = (owner_raw.get(intent.queue_category)
+                               if isinstance(owner_raw, dict) else None)
+                        queues = load_queues(own) if own else {}
+                        queue = queue_for(queues, intent.queue_key)
+                        item = (queue.find(intent.item_id)
+                                if queue is not None else None)
+                        if item is not None and item.state != SENT:
+                            item.state = SENT
+                            self._watcher_mark_sent(intent.queue_key, item)
+                            self._watcher_write_queues(
+                                intent.queue_category, queues)
+                            self._watcher_notify()
                 elif getattr(result, "partial", False):
                     # W2-001 stale uncertain: the original owner's item may
                     # already be in the target — persist FAILED/UNCERTAIN so
                     # it can never be re-sent, and stop the newer run that
                     # would share the contaminated physical target.
-                    from fastprompter.core.watcher.queue import load_queues as _lq
-                    owner_raw = self.data.get("watcher_queues_all")
-                    owner = (owner_raw.get(intent.queue_category)
-                             if isinstance(owner_raw, dict) else None)
-                    queues = _lq(owner) if owner else {}
-                    queue = queue_for(queues, intent.queue_key)
+                    queue_key = intent.queue_key
+                    if owner is not None:
+                        _ocat, _omap, _odata = owner
+                        queues = _omap if isinstance(_omap, dict) else {}
+                        data_ref = (_odata if isinstance(_odata, dict)
+                                    else getattr(self, "data", {}))
+                    else:
+                        from fastprompter.core.watcher.queue import (
+                            load_queues as _lq,)
+                        _ocat = intent.queue_category
+                        owner_raw = self.data.get("watcher_queues_all")
+                        own = (owner_raw.get(_ocat)
+                               if isinstance(owner_raw, dict) else None)
+                        queues = _lq(own) if own else {}
+                        data_ref = self.data
+                    queue = queue_for(queues, queue_key)
                     item = queue.find(intent.item_id) if queue is not None else None
                     if item is not None and item.state == PENDING:
                         item.mark_failed(
                             "uncertain delivery — the target may already "
                             "contain the prompt: " + result.reason)
-                        self._watcher_write_queues(
-                            intent.queue_category, queues)
+                        self._watcher_write_queues_into(data_ref, _ocat,
+                                                        queues)
                         self._watcher_notify()
                     engine = self._watcher_engine
                     if engine is not None and engine.armed:
@@ -1015,6 +1119,7 @@ class WatcherMixin:
             logger.exception("watcher send-result handling failed")
             try:
                 self._watcher_engine.disarm("the watcher hit an error and stopped")
+                self._watcher_release_run_ownership()
                 self._watcher_stop_timer()
             except Exception:
                 pass

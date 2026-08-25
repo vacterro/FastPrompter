@@ -1,6 +1,7 @@
 import copy
 import json
 import os
+import re
 import sqlite3
 import threading
 
@@ -55,6 +56,14 @@ _JSON_SETTINGS = (
     "project_sync_map", "project_sync_map_all",
     "silo_links", "silo_links_all",
     "typo_user_words",
+    # CORE-008: Temp Timer configuration is a dict. Without this it is written
+    # with str() and reloads as a single-quoted string, discarding the user's
+    # customisation on restart/profile reload.
+    "temp_timer_settings",
+    # CORE-006: the exact trashed-text -> File-Container folder association
+    # (md basename -> folder name). A dict; without this it round-trips as a
+    # single-quoted string and the restore-time linkage is lost.
+    "trash_text_folder",
 )
 
 # Never stored in the settings table: they have tables of their own.
@@ -179,6 +188,14 @@ _STRUCTURED_CODECS = {
     "silo_links": (dict, {}, False),
     "silo_links_all": (dict, {}, False),
     "typo_user_words": (list, [], False),
+    # CORE-008: Temp Timer settings — a dict. legacy_ast=True so the 0.8.52
+    # rows written as Python str(dict) (single-quoted) recover via
+    # ast.literal_eval; a clean save then rewrites canonical JSON. Malformed or
+    # wrong-type rows fall closed to {} without evaluation.
+    "temp_timer_settings": (dict, {}, True),
+    # CORE-006: trashed-text -> folder association. A dict keyed by trashed
+    # .md basename; legacy_ast for safety, default {} on any failure.
+    "trash_text_folder": (dict, {}, True),
 }
 
 
@@ -234,6 +251,27 @@ def _normalize_member_list(value, member_type):
     return value
 
 
+def _is_safe_sync_rel(value) -> bool:
+    """CORE-002: can ``value`` be a safe project-relative sync mapping?
+
+    A mapping value is persisted state that later becomes a filesystem
+    write target, so the codec rejects anything that is not a plain
+    relative path: absolute, drive-qualified, backslash-separated, or
+    containing ``..``/empty segments. Containment against the LIVE root is
+    re-validated at resolution time (``project_sync.resolve_relative_path``);
+    this pass only stops malformed data from crossing recovery as usable."""
+    if not isinstance(value, str) or not value:
+        return False
+    if "\\" in value or value.startswith("/"):
+        return False
+    if re.match(r"^[A-Za-z]:", value):
+        return False
+    for seg in value.split("/"):
+        if seg in ("", ".", ".."):
+            return False
+    return True
+
+
 def _normalize_per_category_store(key, parsed, default):
     """Nested per-category normalization for dict-valued ``*_all`` stores.
 
@@ -257,6 +295,19 @@ def _normalize_per_category_store(key, parsed, default):
             continue
         if value_type is list:
             value = _normalize_member_list(value, member_type)
+        elif key in ("project_sync_map", "project_sync_map_all"):
+            # CORE-002: mapping values become write targets. Quarantine
+            # entries that are not plain safe relative paths instead of
+            # letting traversal/absolute/drive data normalize into a
+            # usable outside path.
+            safe = {k: v for k, v in value.items()
+                    if _is_safe_sync_rel(v)}
+            if len(safe) != len(value):
+                logger.warning(
+                    "per-category store %r carries %d unsafe path "
+                    "mapping(s) for category %r; quarantining them",
+                    key, len(value) - len(safe), cat)
+                value = safe
         cleaned[cat] = value
     return cleaned
 

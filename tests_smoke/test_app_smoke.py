@@ -5178,6 +5178,101 @@ def test_timer_label_hides_in_ultra_and_with_no_timers(win):
         win.timers[:] = saved
 
 
+def test_temp_timer_shift_style_addition_and_delete_policy(win):
+    import datetime
+    from PyQt6.QtCore import QEvent, QPoint, Qt
+    from PyQt6.QtGui import QMouseEvent
+
+    saved = list(win.timers)
+    saved_template = win.data.get("temp_timer_settings")
+    original_open = win.open_timer_dialog
+    original_dense = getattr(win, "_header_dense", None)
+    original_ultra = getattr(win, "_header_ultra", None)
+    try:
+        win.timers.clear()
+        win.configure_temp_timer({
+            "increment_minutes": 15,
+            "name": "Focus",
+            "description": "Current task",
+            "sound": "click",
+            "volume": 2,
+            "show_notification": False,
+            "show_in_top_bar": True,
+        })
+        win._clock_label_clicked(QMouseEvent(
+            QEvent.Type.MouseButtonPress, QPoint(5, 5).toPointF(),
+            Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.ShiftModifier))
+        first = win._temp_timer()
+        assert first is not None
+        assert first.name == "Focus"
+        assert first.description == "Current task"
+        assert first.sound == "click"
+        assert first.volume == 2
+        assert first.show_notification is False
+        first_target = first.target
+        win._clock_label_clicked(QMouseEvent(
+            QEvent.Type.MouseButtonPress, QPoint(5, 5).toPointF(),
+            Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.ShiftModifier))
+        assert first.target >= first_target + datetime.timedelta(minutes=14)
+        win.add_temp_timer(30)
+        assert first.target >= first_target + datetime.timedelta(minutes=44)
+        assert win._temp_timer() is first
+        win._header_dense = False
+        win._header_ultra = False
+        win._update_timer_label()
+        assert "Focus" in win.lbl_timer.text()
+
+        win._clock_label_clicked(QMouseEvent(
+            QEvent.Type.MouseButtonPress, QPoint(5, 5).toPointF(),
+            Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.ControlModifier
+            | Qt.KeyboardModifier.ShiftModifier))
+        assert win._temp_timer() is None
+        win._clock_label_clicked(QMouseEvent(
+            QEvent.Type.MouseButtonPress, QPoint(5, 5).toPointF(),
+            Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.ShiftModifier))
+        first = win._temp_timer()
+        assert first is not None
+
+        opened = []
+        win.open_timer_dialog = lambda: opened.append(True)
+        win._clock_label_clicked(QMouseEvent(
+            QEvent.Type.MouseButtonPress, QPoint(5, 5).toPointF(),
+            Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier))
+        assert opened == [True]
+
+        win.configure_temp_timer({"delete_after_fire": False})
+        first.target = datetime.datetime.now() - datetime.timedelta(seconds=1)
+        win._notify_timer = lambda *_a, **_k: None
+        win._check_timers()
+        assert win._temp_timer() is first
+        assert first.fired is True
+
+        win._clock_label_clicked(QMouseEvent(
+            QEvent.Type.MouseButtonPress, QPoint(5, 5).toPointF(),
+            Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.ShiftModifier))
+        assert first.fired is False
+        win.configure_temp_timer({"delete_after_fire": True})
+        first.target = datetime.datetime.now() - datetime.timedelta(seconds=1)
+        win._check_timers()
+        assert win._temp_timer() is None
+    finally:
+        win.open_timer_dialog = original_open
+        win._header_dense = original_dense
+        win._header_ultra = original_ultra
+        win.timers[:] = saved
+        if saved_template is None:
+            win.data.pop("temp_timer_settings", None)
+        else:
+            win.data["temp_timer_settings"] = saved_template
+        win.save_timers_to_data()
+
+
 def test_timer_description_edit_snooze_and_test_fire(win):
     # The "comprehensive" half: description, editing an existing timer,
     # snoozing, and a test fire that must never become a real timer.
@@ -6876,8 +6971,10 @@ def test_productivity_timer_tab_drives_the_model(win):
     saved_state = win.productivity_timer.to_dict()
     try:
         dlg = TimerDialog(win)
-        assert [dlg.tabs.tabText(i) for i in range(dlg.tabs.count())] == [
-            "Alarms", "Productivity"]
+        assert "Temp Timer" in [
+            dlg.tabs.tabText(i) for i in range(dlg.tabs.count())]
+        assert "Productivity" in [
+            dlg.tabs.tabText(i) for i in range(dlg.tabs.count())]
 
         t = win.productivity_timer
         dlg.spin_work_min.setValue(0)

@@ -1,7 +1,7 @@
 ---
-phase: SCOUT
+phase: DONE
 task: none
-next_action: "WAIT: user brake -- proposal wave done (T-1035..T-1038 closed); T-1039 worker-I/O remains on TODO"
+next_action: "saipen crew"
 blocker: ""
 agent: workbuddy
 saipen_version: 7
@@ -13,9 +13,10 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 870
+last_event: 959
 style_contract: ded-4ae736e4
-updated: "2026-08-23T09:41:39Z"
-transition_from: VALIDATE
-execution_intent: normal
+updated: "2026-08-25T00:05:00Z"
+transition_from: DONE
+execution_intent: converge
+converge_target: ship
 ---

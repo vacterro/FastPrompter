@@ -1,0 +1,67 @@
+{
+  "op_id": "sub-collect-91cb3faa",
+  "operation": "sub_collect",
+  "created_at": "2026-08-24T11:13:09Z",
+  "agent": "saipen-cli",
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "semantic_payload_hash": "339f9232c59fa08a",
+  "preconditions": {
+    ".saipen/LOG.md": "b81b14c657984524",
+    ".saipen/BOARD.md": "e1ab0d8962f2d7b4",
+    ".saipen/STATE.md": "9e3a5ee4e5b3378f",
+    ".saipen/extensions/subs/MANIFEST.md": "57e0c5d99ef35cf2",
+    ".saipen/extensions/subs/saipython/kitchen/OUTBOX.md": "7d57be188ac80320"
+  },
+  "read_preconditions": {
+    ".": "source-identity-v1:29514fff9b199db6b53636633874580cf4a6ddb22bfe60f750004abafd5f04c5",
+    ".saipen/logs/LOG-001.md": "02341832b552017c",
+    ".saipen/logs/LOG-002.md": "1ee19811fb75ee16",
+    ".saipen/logs/LOG-003.md": "35e266a10e8b3daa",
+    "V:\\___VAC\\__K\\__CODE\\_PY\\_FastPrompter\\.saipen\\extensions\\subs\\saipython.md": "d77dcb3b84f293ca"
+  },
+  "verification_policy": "sub_collect",
+  "status": "COMMITTED",
+  "progress_index": 5,
+  "targets": [
+    {
+      "path": ".saipen/LOG.md",
+      "role": "log",
+      "action": "write",
+      "before_hash": "b81b14c657984524",
+      "after_hash": "d757a29b608e662c",
+      "applied": true
+    },
+    {
+      "path": ".saipen/BOARD.md",
+      "role": "board",
+      "action": "write",
+      "before_hash": "e1ab0d8962f2d7b4",
+      "after_hash": "fee520c1b513c5d2",
+      "applied": true
+    },
+    {
+      "path": ".saipen/STATE.md",
+      "role": "state",
+      "action": "write",
+      "before_hash": "9e3a5ee4e5b3378f",
+      "after_hash": "8f83c3423b0518ae",
+      "applied": true
+    },
+    {
+      "path": ".saipen/extensions/subs/saipython/kitchen/OUTBOX.md",
+      "role": "report",
+      "action": "write",
+      "before_hash": "7d57be188ac80320",
+      "after_hash": "2a7825485a9c6ab1",
+      "applied": true
+    },
+    {
+      "path": ".saipen/extensions/subs/MANIFEST.md",
+      "role": "manifest",
+      "action": "write",
+      "before_hash": "57e0c5d99ef35cf2",
+      "after_hash": "7ac937767d443552",
+      "applied": true
+    }
+  ]
+}

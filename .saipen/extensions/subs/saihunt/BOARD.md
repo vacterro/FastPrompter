@@ -6,6 +6,10 @@
 
 ## DONE
 
+- [x] HUNT-008 (P1, collection-blocker) reproduce root `test_timers_patch.py:32` syntax error under current source @3d0d79e; delivered ready evidence in kitchen/OUTBOX.md | verify: `python -m py_compile test_timers_patch.py` -> SyntaxError | next: saitest independent reproduction
+- [x] HUNT-009 (P2, orphan-artifacts) reproduce 18 unreferenced root `patch*.py` scripts @3d0d79e; delivered ready evidence in kitchen/OUTBOX.md | verify: zero repository references, all ignored/untracked, no execution | next: Core disposition
+- [x] HUNT-010 (P2, sweep-close) remaining four signals NOT_REPRODUCED in bounded pass @3d0d79e; delivered ready evidence in kitchen/OUTBOX.md | verify: source identity stable, focused feature tests previously green | next: downstream crew roles
+
 ## BLOCKED
 
 ### HUNT-001: 8 tests_smoke metaclass conflict during full-suite collection

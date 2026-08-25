@@ -1,0 +1,15 @@
+﻿# OUTBOX
+
+## TEST-002: crew SC-3 re-reproduction @ 3232878 (23.08.26)
+- **status:** reviewed
+- **summary:** Re-certification after source mutation (f3801af→3232878). Delta = theme QSS + Cyrillic test exemptions (T-1043/T-1041) — no new hypotheses to reproduce. Prior verdicts stand: instance_lock.py:143 and duration.py:137 NOT_REPRODUCED (contract-correct), Cyrillic test exemption gap fixed by PY-001.
+- **critical:** false
+- **severity:** P2
+- **producer:** saitest
+- **source_head:** 32328787efe6596b8ca6de774a791d786815fa1e
+- **source_tree_fingerprint:** git-delta-v1:c66baf69a8306f3b95dfc7badb5f72b088f8de8408e933efadc4d149721a1195
+- **role_revision:** sha256:801fbfdc4be680d87b18cd21e6246d83fad5b474ebd7fe82efa83918cecf2f08
+- **coverage:** delta audit 3232878 vs f3801af; prior HUNT-006 hypotheses re-checked against new HEAD
+- **payload:** none
+- **verified:** unit suite 1511 pass 1 skip at 3232878; theme tests 55 pass; Cyrillic test 1 pass (exemption applied)
+- **instructions:** Evidence for SC-3 at 3232878. No new hypotheses.

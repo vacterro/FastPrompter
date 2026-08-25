@@ -365,6 +365,7 @@ class CdpSender:
                               intent.text)
 
         ws = None
+        injected = False
         try:
             ws = self._connect(target.ws_url)
             ws.call("Runtime.enable")
@@ -385,21 +386,32 @@ class CdpSender:
 
             ws.call("Runtime.evaluate",
                     {"expression": self.FOCUS_JS, "returnByValue": True})
+            # W2-001: an injection-attempt boundary. Once insertText has run,
+            # the prompt text already exists in the target field. Any failure
+            # or unverifiable result after this point is an UNCERTAIN (partial)
+            # delivery that MUST NOT auto-retry.
             ws.call("Input.insertText", {"text": text})
+            injected = True
 
             after = self._read_field(ws)
             if after is None or text not in after:
+                # W2-001: insertText ran but the field no longer matches — the
+                # text MAY already be partially/fully present, so report partial.
                 return SendResult(
                     False,
                     "the text did not reach the field, so nothing was sent",
-                    text)
+                    text, partial=injected)
 
             self._press(ws, self.submit)
             return SendResult(True, "sent silently over the debugger", text)
         except CdpError as exc:
-            return SendResult(False, f"debugger refused: {exc}", text)
+            # W2-001: if we had already injected the text, the field is
+            # contaminated — treat as uncertain, never auto-retry.
+            return SendResult(False, f"debugger refused: {exc}", text,
+                              partial=injected)
         except OSError as exc:
-            return SendResult(False, f"could not reach the debugger: {exc}", text)
+            return SendResult(False, f"could not reach the debugger: {exc}", text,
+                              partial=injected)
         finally:
             if ws is not None:
                 ws.close()

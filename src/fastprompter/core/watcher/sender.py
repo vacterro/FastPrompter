@@ -63,18 +63,27 @@ class SendResult:
 class Target:
     """The window a run is bound to, and how to tell it is still that window.
 
-    `probe` is injected: on Windows it reads the live title and class for a
-    handle. Without one, `matches()` cannot confirm anything and therefore
+    `probe` is injected: on Windows it reads the live title, class and PID for
+    a handle. Without one, `matches()` cannot confirm anything and therefore
     refuses - an unverifiable target is not a safe one.
+
+    `pid` (W2-002) is the process identity observed when the target was ARMED.
+    Windows can reuse an HWND after a process/window dies; if the replacement
+    exposes the same generic class and title, checking only those would treat
+    the new window as the originally armed destination and silently send
+    queued prompts to a different process. The arm-time PID is therefore part
+    of the immutable ownership state and must still match at send time.
     """
 
-    __slots__ = ("hwnd", "title", "cls", "probe")
+    __slots__ = ("hwnd", "title", "cls", "probe", "pid")
 
-    def __init__(self, hwnd, title="", cls="", probe=None):
+    def __init__(self, hwnd, title="", cls="", probe=None, pid=None):
         self.hwnd = hwnd
         self.title = title or ""
         self.cls = cls or ""
         self.probe = probe
+        # captured process identity; None means "not known at arm time"
+        self.pid = pid
 
     def matches(self):
         """(ok, reason) — is this still the window that was armed?"""
@@ -89,6 +98,18 @@ class Target:
         if not live:
             return False, "the target window is gone"
         title, cls = live.get("title", ""), live.get("cls", "")
+        # W2-002: when an arm-time PID exists, the live PID MUST still match.
+        # A captured PID whose live PID cannot be read is a fail-closed case:
+        # the handle may have been reused by another process, so we must not
+        # silently fall back to title/class alone.
+        live_pid = live.get("pid")
+        if self.pid is not None:
+            if live_pid is None:
+                return False, "the target process is unreadable"
+            if live_pid != self.pid:
+                return False, (
+                    f"a different process now: pid {live_pid!r} "
+                    f"(armed {self.pid!r})")
         if self.cls and cls and cls != self.cls:
             return False, f"a different window now: class {cls!r}"
         if self.title and title and title != self.title:
@@ -167,11 +188,20 @@ class PostMessageSender:
 
         typed = False
         try:
+            # W2-001: type_text posts one character at a time. A False return
+            # means a post was ATTEMPTED and at least one earlier character MAY
+            # already have reached the target. We cannot prove zero characters
+            # landed, so this is a PARTIAL (uncertain) delivery — the queue
+            # must treat it as a hard barrier and never auto-retry (a retry
+            # would append a duplicate prefix into the same field). Pre-injection
+            # failures (no target, unverifiable target) are handled above with
+            # partial=False.
             if not self.post.type_text(target.hwnd, text):
                 return SendResult(
                     False,
                     "the target did not accept posted input "
-                    "(a console may need WriteConsoleInput)", text)
+                    "(a console may need WriteConsoleInput)", text,
+                    partial=True)
             typed = True
             # The submit keystroke is part of the atomic send: a rejected press
             # means the text may be sitting unsent in the target, so the whole

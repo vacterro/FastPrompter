@@ -35,6 +35,27 @@ def test_is_text_file():
     assert ps.is_text_file("notes.txt", include=[".txt", ".md"])
 
 
+def test_resolve_relative_path_rejects_escape_and_accepts_nested(tmp_path):
+    root = str(tmp_path)
+    assert ps.resolve_relative_path(root, "src/main.py") == os.path.realpath(
+        str(tmp_path / "src" / "main.py"))
+    assert ps.resolve_relative_path(root, "../outside.txt") is None
+    assert ps.resolve_relative_path(root, "/outside.txt") is None
+
+
+def test_resolve_relative_path_rejects_symlink_escape(tmp_path):
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    root = tmp_path / "root"
+    root.mkdir()
+    link = root / "linked"
+    try:
+        link.symlink_to(outside, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        return  # symlinks may be disabled on the test host
+    assert ps.resolve_relative_path(str(root), "linked/file.txt") is None
+
+
 # -------------------------------------------------------------- scanning
 
 
@@ -83,6 +104,12 @@ def test_read_text_file_normalises_eol(tmp_path):
     text, eol = ps.read_text_file(str(p))
     assert text == "one\ntwo\nthree\n"
     assert eol == "\r\n"
+
+
+def test_read_text_file_removes_utf8_bom(tmp_path):
+    p = tmp_path / "bom.txt"
+    p.write_bytes(b"\xef\xbb\xbfhello\n")
+    assert ps.read_text_file(str(p)) == ("hello\n", "\n")
 
 
 def test_read_text_file_binary_and_huge_are_skipped(tmp_path):

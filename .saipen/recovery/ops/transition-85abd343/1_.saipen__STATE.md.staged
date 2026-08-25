@@ -1,0 +1,22 @@
+---
+phase: VERIFY
+task: T-1047
+next_action: "PHASE VERIFY T-1047"
+blocker: ""
+agent: workbuddy
+saipen_version: 7
+saipen_home: "C:\\Users\\vac34\\.config\\opencode\\skills\\saipen"
+mode: full
+requires:
+  - filesystem
+  - python
+  - shell
+  - git
+schema_version: 3
+last_event: 916
+style_contract: ded-4ae736e4
+updated: "2026-08-23T13:41:04Z"
+transition_from: BUILD
+execution_intent: converge
+converge_target: crew
+---

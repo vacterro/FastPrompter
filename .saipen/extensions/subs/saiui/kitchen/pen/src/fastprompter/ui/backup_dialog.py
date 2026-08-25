@@ -1,0 +1,229 @@
+import os
+
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import (
+    QComboBox,
+    QDialog,
+    QFileDialog,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QMessageBox,
+    QPushButton,
+    QVBoxLayout,
+)
+
+from fastprompter.core.translations import tr
+
+
+class BackupDialog(QDialog):
+    def __init__(self, main_win):
+        super().__init__(main_win)
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        self.main_win = main_win
+        self.lang = getattr(self.main_win, "_current_lang", "EN")
+        self.setWindowTitle(tr("Backup & Export Settings", self.lang))
+        self.setMinimumWidth(350)
+
+        layout = QVBoxLayout(self)
+
+        # Backup Database Group
+        db_group = QGroupBox(tr("Backup Full Database", self.lang))
+        db_layout = QVBoxLayout(db_group)
+        lbl_db = QLabel(tr("Creates an exact copy of the local_data_v15.db file containing all settings, silos, and snippets.", self.lang))
+        lbl_db.setWordWrap(True)
+        db_layout.addWidget(lbl_db)
+
+        btn_backup_db = QPushButton(tr("Backup Database (.db)", self.lang))
+        btn_backup_db.clicked.connect(self.backup_database)
+        db_layout.addWidget(btn_backup_db)
+        layout.addWidget(db_group)
+
+        # Export Silos Group
+        export_group = QGroupBox(tr("Export Silos & Text", self.lang))
+        export_layout = QVBoxLayout(export_group)
+
+        lbl_export = QLabel(tr("Export all Silo contents to readable text formats.", self.lang))
+        lbl_export.setWordWrap(True)
+        export_layout.addWidget(lbl_export)
+
+        format_layout = QHBoxLayout()
+        format_layout.addWidget(QLabel(tr("Format:", self.lang)))
+        self.combo_format = QComboBox()
+        self.combo_format.addItems([".txt", ".md"])
+        format_layout.addWidget(self.combo_format)
+        format_layout.addStretch()
+        export_layout.addLayout(format_layout)
+
+        btn_export = QPushButton(tr("Export All Silos", self.lang))
+        btn_export.clicked.connect(self.export_silos)
+        export_layout.addWidget(btn_export)
+
+        layout.addWidget(export_group)
+
+        # Close button
+        btn_close = QPushButton(tr("Close", self.lang))
+        btn_close.clicked.connect(self.close)
+        layout.addWidget(btn_close)
+
+        # Apply theme
+        self.setStyleSheet(self.main_win.styleSheet())
+
+    def backup_database(self):
+        # P0: the manual backup must capture the AUTHORITATIVE current state.
+        # If the SQLite save fails, abort before opening/publishing any
+        # destination — otherwise the backup would omit the visible unsaved
+        # edits while the UI reports success. No destination is created.
+        if not self.main_win.save_data_to_db(force=True):
+            QMessageBox.critical(
+                self, tr("Error", self.lang),
+                tr("Cannot back up: the current state could not be saved to "
+                   "the database.", self.lang))
+            return
+        path, _ = QFileDialog.getSaveFileName(self, tr("Backup Database", self.lang), "prompts_backup.db", "SQLite DB (*.db)")
+        if not path:
+            return
+        try:
+            from fastprompter.core.state import (
+                RestoreError,
+                _backup_atomically,
+                _same_file,
+            )
+
+            db_path = self.main_win.state.db_path
+            if _same_file(db_path, path):
+                QMessageBox.warning(self, tr("Error", self.lang),
+                                    tr("Source and destination are the same file.", self.lang))
+                return
+            import sqlite3
+            src = sqlite3.connect(db_path)
+            try:
+                # the shared safe primitive: SQLite backup API into a temp
+                # sibling, the candidate VALIDATED before the swap, then
+                # atomically published — a partial or corrupt backup is never
+                # exposed under the requested name
+                _backup_atomically(src, path)
+            finally:
+                src.close()
+            QMessageBox.information(self, tr("Success", self.lang),
+                                    tr("Database backed up to:\n{}", self.lang).format(path))
+        except RestoreError as e:
+            from fastprompter.core.logging import logger
+            logger.exception("manual database backup failed validation: %s", e)
+            # The candidate is a *.tmp sibling; _backup_atomically already
+            # removes it on validation failure and never touches the requested
+            # `path`. The previous destination is therefore intact and must
+            # stay that way — deleting it here would destroy a good backup
+            # because a NEW candidate failed validation. Report only.
+            QMessageBox.critical(self, tr("Error", self.lang),
+                                 tr("Backup failed validation; the previous "
+                                    "backup is unchanged:\n{}", self.lang).format(e))
+        except Exception as e:
+            QMessageBox.critical(self, tr("Error", self.lang),
+                                 tr("Failed to backup:\n{}", self.lang).format(e))
+
+    def export_silos(self):
+        fmt = self.combo_format.currentText()
+        path = QFileDialog.getExistingDirectory(self, tr("Select Export Directory", self.lang))
+        if not path:
+            return
+
+        try:
+            self.main_win.save_data_to_db(force=True)
+            from fastprompter.utils.path_safety import alloc_fs_names
+
+            data = self.main_win.data
+            # Allocate one collision-free filesystem component from EVERY
+            # logical category actually exported — not only cats_order. DB
+            # recovery intentionally preserves unknown categories in the
+            # per-category stores, so a category absent from cats_order (e.g. an
+            # orphan "Foo." or "Foo ") would otherwise fall back to its raw
+            # name and collide with another that sanitises to the same string,
+            # silently dropping one category's export.
+            export_cat_names = set()
+            for store in (data.get("temp_presets_all", {}),
+                          data.get("archive_temp_presets_all", {})):
+                if isinstance(store, dict):
+                    export_cat_names.update(store.keys())
+            all_cats = [c for c in (list(data.get("cats_order", [])) + list(export_cat_names))
+                        if isinstance(c, str)]
+            comps = alloc_fs_names(all_cats)
+
+            def comp_for(cat):
+                return comps.get(cat, self.main_win.state._sanitize_cat_name(cat))
+
+            # Precompute the ENTIRE export plan before touching anything on
+            # disk (T-813). A destination is opened for write only AFTER the
+            # plan and any collision are resolved, so we never start mutating
+            # and then discover a problem partway.
+            plan = []  # (dest_path, content)
+            for cat, slots in data.get("temp_presets_all", {}).items():
+                cat_dir = os.path.join(path, comp_for(cat))
+                for i, text in enumerate(slots):
+                    if text.strip():
+                        plan.append((os.path.join(cat_dir, f"Silo_{i+1}{fmt}"), text))
+            for cat, slots in data.get("archive_temp_presets_all", {}).items():
+                cat_dir = os.path.join(path, comp_for(cat))
+                for i, text in enumerate(slots):
+                    if text.strip():
+                        plan.append((os.path.join(cat_dir, f"Archive_Silo_{i+1}{fmt}"), text))
+
+            # Reject duplicate planned destinations BEFORE any write: two
+            # distinct logical categories must never map to the same file —
+            # that would silently drop one category's export.
+            seen_dst = set()
+            for dst, _ in plan:
+                if dst in seen_dst:
+                    QMessageBox.critical(
+                        self, tr("Error", self.lang),
+                        tr("Export would overwrite itself at:\n{}", self.lang).format(dst))
+                    return
+                seen_dst.add(dst)
+
+            if not plan:
+                QMessageBox.information(self, tr("Success", self.lang),
+                                         tr("Nothing to export.", self.lang))
+                return
+
+            # Collision check BEFORE the first mutation. Existing files are
+            # only ever overwritten when the user explicitly consents, so a
+            # pre-existing user file is never truncated by surprise.
+            collisions = [dst for dst, _ in plan if os.path.exists(dst)]
+            if collisions:
+                ans = QMessageBox.question(
+                    self, tr("Overwrite existing files?", self.lang),
+                    tr("{n} file(s) already exist in the export directory. "
+                       "Overwrite them?", self.lang).format(n=len(collisions)),
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+                if ans != QMessageBox.StandardButton.Yes:
+                    # No consent: leave every existing file exactly as it is.
+                    QMessageBox.information(
+                        self, tr("Export cancelled", self.lang),
+                        tr("No files were changed.", self.lang))
+                    return
+
+            # Publish atomically: each file is written to a temp sibling and
+            # only moved into place once it is COMPLETE, so a failure mid-
+            # export never truncates an existing file (its old bytes survive)
+            # and a partially written temp is discarded — the export is never
+            # left half-published with truncated targets.
+            created_dirs = set()
+            for dst, text in plan:
+                cat_dir = os.path.dirname(dst)
+                if cat_dir not in created_dirs:
+                    os.makedirs(cat_dir, exist_ok=True)
+                    created_dirs.add(cat_dir)
+                tmp = dst + ".export.tmp"
+                try:
+                    with open(tmp, 'w', encoding='utf-8') as f:
+                        f.write(text)
+                    os.replace(tmp, dst)
+                except OSError:
+                    try:
+                        os.remove(tmp)
+                    except OSError:
+                        pass
+                    raise
+            QMessageBox.information(self, tr("Success", self.lang), tr("Silos exported to:\n{}", self.lang).format(path))
+        except Exception as e:
+            QMessageBox.critical(self, tr("Error", self.lang), tr("Failed to export:\n{}", self.lang).format(e))

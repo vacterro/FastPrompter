@@ -1,0 +1,733 @@
+"""The prompt queue for the current silo.
+
+Shows what Alt+C has collected, in the order it will go out. Reordering,
+editing and deleting live here; sending does not — there is deliberately no
+control in this dialog that types into an agent.
+
+Rows show the text read back from the line the item is anchored to, so what
+is listed is what would actually be sent.
+"""
+
+from __future__ import annotations
+
+from PyQt6.QtCore import QEvent, QObject, Qt
+from PyQt6.QtWidgets import (
+    QAbstractItemView,
+    QCheckBox,
+    QComboBox,
+    QDialog,
+    QHBoxLayout,
+    QInputDialog,
+    QLabel,
+    QListWidget,
+    QListWidgetItem,
+    QPushButton,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
+)
+
+from fastprompter.core.translations import tr
+from fastprompter.core.watcher import skills as skills_mod
+from fastprompter.core.watcher.engine import (
+    ARMED,
+    DISARMED,
+    SENDING,
+    WATCHING,
+)
+from fastprompter.core.watcher.queue import (
+    DETACHED,
+    FAILED,
+    PENDING,
+    SENT,
+    SKIPPED,
+    all_items,
+    move_between,
+    queue_for,
+)
+
+# state -> (lamp, tooltip). The lamp is text, not an icon, so it survives
+# every theme without a second asset to keep in step.
+_LAMPS = {
+    PENDING: ("●", "waiting to be sent"),
+    SENT: ("✓", "sent"),
+    FAILED: ("✗", "failed"),
+    SKIPPED: ("–", "skipped"),
+    DETACHED: ("⚠", "its line was deleted"),
+}
+# How wide the click zone for the expand chevron is. A row's whole width
+# would swallow ordinary selection clicks, so it is deliberately narrow and
+# sits left of the lamp.
+CHEVRON_PX = 18
+
+
+class _ChevronFilter(QObject):
+    """Turns a click in the row's left strip into an expand/collapse.
+
+    A QListWidget hands out itemClicked without an x, so the zone has to be
+    read off the raw press. Anything outside the strip falls straight
+    through to normal selection - the list must not stop behaving like a
+    list just because rows can be expanded.
+    """
+
+    def __init__(self, dialog):
+        super().__init__(dialog)
+        self.dialog = dialog
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Type.MouseButtonPress:
+            if event.position().x() <= CHEVRON_PX:
+                row = self.dialog.list.itemAt(event.position().toPoint())
+                if row is not None:
+                    self.dialog.toggle_expanded(
+                        row.data(Qt.ItemDataRole.UserRole))
+                    return True
+        return False
+
+
+_LAMP_COLORS = {
+    PENDING: "#6aa9ff",
+    SENT: "#46b98a",
+    FAILED: "#e05555",
+    SKIPPED: "#888888",
+    DETACHED: "#e0a03c",
+}
+
+
+class QueueDialog(QDialog):
+    def __init__(self, main_win, start_tab=0):
+        super().__init__(main_win)
+        self.main_win = main_win
+        self.lang = getattr(main_win, "_current_lang", "EN")
+        self._start_tab = start_tab
+
+        self.setWindowTitle(tr("Prompt queue", self.lang))
+        self.setMinimumSize(520, 380)
+        try:
+            self.setStyleSheet(main_win.styleSheet())
+        except Exception:
+            pass
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(6, 6, 6, 6)
+        outer.setSpacing(4)
+        
+        # ---- watcher status ----
+        watcher_box = QHBoxLayout()
+        watcher_box.setContentsMargins(4, 4, 4, 4)
+        watcher_box.setSpacing(8)
+        
+        self.lbl_watcher = QLabel(tr("Watcher:", self.lang))
+        watcher_box.addWidget(self.lbl_watcher)
+        
+        self.lbl_watcher_status = QLabel("")
+        self.lbl_watcher_status.setStyleSheet("font-weight: bold;")
+        watcher_box.addWidget(self.lbl_watcher_status)
+        
+        self.lbl_watcher_target = QLabel("")
+        watcher_box.addWidget(self.lbl_watcher_target, 1)
+        
+        self.btn_arm_watcher = QPushButton(tr("Arm Watcher...", self.lang))
+        self.btn_arm_watcher.setToolTip(tr("Configure which agent to send prompts to", self.lang))
+        self.btn_arm_watcher.clicked.connect(self.open_watcher_dialog)
+        watcher_box.addWidget(self.btn_arm_watcher)
+        
+        outer.addLayout(watcher_box)
+
+        self.tabs = QTabWidget()
+        self.tabs.setDocumentMode(True)
+        outer.addWidget(self.tabs)
+        # currentChanged is connected at the END of __init__: adding the very
+        # first tab fires it, and a refresh() that early reaches for widgets
+        # this constructor has not built yet. The exception lands inside a Qt
+        # slot, which takes the process down without a traceback.
+
+        page = QWidget()
+        root = QVBoxLayout(page)
+        root.setContentsMargins(4, 4, 4, 4)
+        root.setSpacing(6)
+        self.tabs.addTab(page, tr("This silo", self.lang))
+
+        self.lbl_head = QLabel("")
+        root.addWidget(self.lbl_head)
+
+        # ---- skills palette ----
+        chips = QHBoxLayout()
+        chips.setSpacing(3)
+        chips.addWidget(QLabel(tr("Skill:", self.lang)))
+        self.chip_box = QHBoxLayout()
+        self.chip_box.setSpacing(3)
+        chips.addLayout(self.chip_box, 1)
+
+        self.btn_add_skill = QPushButton("+")
+        self.btn_add_skill.setFixedWidth(24)
+        self.btn_add_skill.setToolTip(tr(
+            "Add a skill this machine cannot discover.\n"
+            "Hand-added chips survive a rescan.", self.lang))
+        self.btn_add_skill.clicked.connect(self.add_skill_chip)
+        chips.addWidget(self.btn_add_skill)
+
+        self.btn_drop_skill = QPushButton("\u2715")
+        self.btn_drop_skill.setFixedWidth(24)
+        self.btn_drop_skill.setToolTip(tr(
+            "Hide the selected skill from the palette", self.lang))
+        self.btn_drop_skill.clicked.connect(self.hide_current_skill)
+        chips.addWidget(self.btn_drop_skill)
+        root.addLayout(chips)
+
+        self.list = QListWidget()
+        # Rows that are showing their whole prompt rather than one line.
+        self._expanded = set()
+        self._saw_work = False
+        self._chevrons = _ChevronFilter(self)
+        self.list.viewport().installEventFilter(self._chevrons)
+        self.list.setSelectionMode(
+            QAbstractItemView.SelectionMode.SingleSelection)
+        # dragging is the natural way to reorder, and the order IS the
+        # sending order - so the drop has to be written back to the queue
+        self.list.setDragDropMode(
+            QAbstractItemView.DragDropMode.InternalMove)
+        self.list.model().rowsMoved.connect(lambda *_: self._apply_row_order())
+        self.list.itemDoubleClicked.connect(lambda _i: self.edit_selected())
+        root.addWidget(self.list, 1)
+
+        row = QHBoxLayout()
+        row.setSpacing(4)
+
+        self.btn_next = QPushButton(tr("Send next", self.lang))
+        self.btn_next.setToolTip(tr(
+            "Move to the front of the queue.\n"
+            "It still waits for the agent to be idle - nothing here types\n"
+            "into a running agent.", self.lang))
+        self.btn_next.clicked.connect(self.to_front_selected)
+        row.addWidget(self.btn_next)
+
+        self.btn_up = QPushButton("▲")
+        self.btn_up.setToolTip(tr("Move up", self.lang))
+        self.btn_up.clicked.connect(lambda: self.nudge(-1))
+        row.addWidget(self.btn_up)
+
+        self.btn_down = QPushButton("▼")
+        self.btn_down.setToolTip(tr("Move down", self.lang))
+        self.btn_down.clicked.connect(lambda: self.nudge(1))
+        row.addWidget(self.btn_down)
+
+        self.btn_edit = QPushButton(tr("Edit", self.lang))
+        self.btn_edit.setToolTip(tr(
+            "Edit the queued text. The note itself is not touched.", self.lang))
+        self.btn_edit.clicked.connect(self.edit_selected)
+        row.addWidget(self.btn_edit)
+
+        self.btn_remove = QPushButton(tr("Remove", self.lang))
+        self.btn_remove.clicked.connect(self.remove_selected)
+        row.addWidget(self.btn_remove)
+
+        row.addStretch(1)
+        self.btn_clear_done = QPushButton(tr("Clear finished", self.lang))
+        self.btn_clear_done.setToolTip(tr(
+            "Drop everything that has been sent, failed or skipped.", self.lang))
+        self.btn_clear_done.clicked.connect(self.clear_finished)
+        row.addWidget(self.btn_clear_done)
+
+        btn_close = QPushButton(tr("Close", self.lang))
+        btn_close.clicked.connect(self.accept)
+        row.addWidget(btn_close)
+
+        # Closes THIS panel when the queue drains, and disarms the run with
+        # it. Never touches the application - a queue finishing is not a
+        # reason to quit the thing the user is writing in.
+        self.chk_close_done = QCheckBox(
+            tr("Close this panel when the queue is done", self.lang))
+        self.chk_close_done.setToolTip(tr(
+            "Disarms the watcher and closes the panel. Leaves the app running.",
+            self.lang))
+        root.addWidget(self.chk_close_done)
+        root.addLayout(row)
+
+        self._build_master_tab()
+        # Select the requested tab BEFORE wiring currentChanged: both tabs
+        # exist by now, and setting it after the connect would fire an extra
+        # refresh into a half-set-up state.
+        if 0 <= self._start_tab < self.tabs.count():
+            self.tabs.setCurrentIndex(self._start_tab)
+        self.refresh()
+        self.tabs.currentChanged.connect(lambda _i: self.refresh())
+        
+        self.refresh_watcher_status()
+        try:
+            self.main_win.watcher_listen(self.refresh_watcher_status)
+        except Exception:
+            pass
+
+    def open_watcher_dialog(self):
+        from fastprompter.ui.watcher_dialog import WatcherDialog
+        WatcherDialog(self.main_win).show()
+
+    def refresh_watcher_status(self):
+        try:
+            engine = self.main_win.watcher_engine()
+            state = engine.state
+            target = engine.target.name if engine.target else ""
+        except Exception:
+            state = DISARMED
+            target = ""
+            
+        colors = {
+            DISARMED: "#888888",
+            ARMED: "#6aa9ff",
+            WATCHING: "#e0a03c",
+            SENDING: "#46b98a",
+        }
+        color = colors.get(state, "#888888")
+        self.lbl_watcher_status.setText(tr(state.upper(), self.lang))
+        self.lbl_watcher_status.setStyleSheet(f"font-weight: bold; color: {color};")
+        
+        if state == DISARMED:
+            self.lbl_watcher_target.setText(tr("Prompts are queued. Arm the Watcher to automatically send them to your AI agent.", self.lang))
+            self.lbl_watcher_target.setStyleSheet("color: #a0a0a0; font-style: italic;")
+            self.btn_arm_watcher.setText(tr("Arm Watcher...", self.lang))
+        else:
+            self.lbl_watcher_target.setText(f"[{target}]")
+            self.lbl_watcher_target.setStyleSheet("")
+            self.btn_arm_watcher.setText(tr("Watcher Settings...", self.lang))
+
+    def closeEvent(self, event):
+        try:
+            self.main_win.watcher_unlisten(self.refresh_watcher_status)
+        except Exception:
+            pass
+        super().closeEvent(event)
+
+    # ---- skills -------------------------------------------------------
+    def toggle_expanded(self, item_id):
+        """Show the whole prompt, or just its first line again."""
+        if not item_id:
+            return
+        if item_id in self._expanded:
+            self._expanded.discard(item_id)
+        else:
+            self._expanded.add(item_id)
+        self.refresh()
+
+    def current_skill(self):
+        return (self.main_win.data.get("watcher_skill", "") or "").strip()
+
+    def set_current_skill(self, name):
+        """Which skill Alt+C stamps onto the next prompt."""
+        self.main_win.data["watcher_skill"] = (name or "").lstrip("/").strip()
+        self.main_win.mark_dirty()
+        self.refresh_chips()
+
+    def palette(self):
+        project = ""
+        try:
+            project = self.main_win.data.get("last_project_dir", "") or ""
+        except Exception:
+            project = ""
+        return skills_mod.load_palette(self.main_win.data, project=project or None)
+
+    def refresh_chips(self):
+        """Rebuild the palette row. A `none` chip is always first: a prompt
+        with no skill is a legitimate choice, not the absence of one."""
+        while self.chip_box.count():
+            item = self.chip_box.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.setParent(None)
+
+        current = self.current_skill()
+        entries = [("", tr("none", self.lang), tr("Send the prompt as it is", self.lang))]
+        for skill in self.palette():
+            entries.append((skill.name, f"/{skill.name}",
+                            skill.description or skill.name))
+
+        for name, label, hint in entries:
+            chip = QPushButton(label)
+            chip.setCheckable(True)
+            chip.setChecked(name == current)
+            chip.setToolTip(hint)
+            chip.clicked.connect(
+                lambda _checked=False, n=name: self.set_current_skill(n))
+            self.chip_box.addWidget(chip)
+        self.chip_box.addStretch(1)
+
+    def add_skill_chip(self):
+        name, ok = QInputDialog.getText(
+            self, tr("Add skill", self.lang),
+            tr("Skill name (without the slash):", self.lang))
+        if not ok:
+            return
+        name = (name or "").lstrip("/").strip()
+        if not name:
+            return
+        palette = self.palette()
+        if all(s.name != name for s in palette):
+            palette.append(skills_mod.Skill(name, source="manual"))
+            skills_mod.save_palette(self.main_win.data, palette)
+        # un-hide it, in case this is the same name that was dismissed before
+        hidden = [h for h in (self.main_win.data.get("watcher_skills_hidden") or [])
+                  if (h or "").lstrip("/").strip() != name]
+        self.main_win.data["watcher_skills_hidden"] = hidden
+        self.set_current_skill(name)
+
+    def hide_current_skill(self):
+        """Drop a chip from the palette without touching the skill itself."""
+        name = self.current_skill()
+        if not name:
+            return
+        hidden = list(self.main_win.data.get("watcher_skills_hidden") or [])
+        if name not in hidden:
+            hidden.append(name)
+        self.main_win.data["watcher_skills_hidden"] = hidden
+        # a hand-added chip is also dropped from `extra`, or it would come
+        # straight back on the next load and look like the hide did nothing
+        palette = [s for s in self.palette() if s.name != name]
+        skills_mod.save_palette(self.main_win.data, palette)
+        self.set_current_skill("")
+
+    # ------------------------------------------------------------------
+    def _build_master_tab(self):
+        """Every queue in the category at once, and a way to move items."""
+        page = QWidget()
+        lay = QVBoxLayout(page)
+        lay.setContentsMargins(4, 4, 4, 4)
+        lay.setSpacing(6)
+
+        self.lbl_master = QLabel("")
+        lay.addWidget(self.lbl_master)
+
+        self.master_list = QListWidget()
+        self.master_list.setSelectionMode(
+            QAbstractItemView.SelectionMode.SingleSelection)
+        self.master_list.setToolTip(tr(
+            "Every silo's queue in this category. The silo each prompt came\n"
+            "from is named on the left.", self.lang))
+        lay.addWidget(self.master_list, 1)
+
+        row = QHBoxLayout()
+        row.setSpacing(4)
+        row.addWidget(QLabel(tr("Move to:", self.lang)))
+        self.cb_target = QComboBox()
+        self.cb_target.setToolTip(tr("Which silo's queue to move it into", self.lang))
+        row.addWidget(self.cb_target, 1)
+
+        self.btn_move = QPushButton(tr("Move", self.lang))
+        self.btn_move.clicked.connect(self.move_selected_to_target)
+        row.addWidget(self.btn_move)
+
+        self.btn_master_front = QPushButton(tr("Send next", self.lang))
+        self.btn_master_front.setToolTip(tr(
+            "Move to the front of its own queue. Still waits for the agent.",
+            self.lang))
+        self.btn_master_front.clicked.connect(self.master_to_front)
+        row.addWidget(self.btn_master_front)
+
+        self.btn_master_remove = QPushButton(tr("Remove", self.lang))
+        self.btn_master_remove.clicked.connect(self.master_remove)
+        row.addWidget(self.btn_master_remove)
+        row.addStretch(1)
+        lay.addLayout(row)
+
+        self.tabs.addTab(page, tr("All silos", self.lang))
+
+    # ---- master view --------------------------------------------------
+    def _master_selected(self):
+        row = self.master_list.currentItem()
+        if row is None:
+            return None, None
+        slot, item_id = row.data(Qt.ItemDataRole.UserRole)
+        queue = self.main_win.prompt_queues.get(slot)
+        return slot, (queue.find(item_id) if queue else None)
+
+    def refresh_master(self):
+        queues = self.main_win.prompt_queues
+        labels = self.main_win.silo_queue_labels()
+
+        keep = None
+        current = self.master_list.currentItem()
+        if current is not None:
+            keep = current.data(Qt.ItemDataRole.UserRole)
+
+        self.master_list.clear()
+        total = 0
+        for slot, label, item in all_items(queues, labels):
+            text, detached = self.main_win.queue_item_live_text(slot, item)
+            if detached and item.state == PENDING:
+                item.mark_detached()
+            elif not detached and item.state == DETACHED:
+                item.state, item.reason = PENDING, ""
+            if text and text != item.text and item.state not in (SENT, FAILED, SKIPPED):
+                item.text = text
+
+            lamp, hint = _LAMPS.get(item.state, ("?", item.state))
+            skill = f"/{item.skill} " if item.skill else ""
+            row = QListWidgetItem(f"{lamp}  [{label}]  {skill}{item.text}")
+            row.setData(Qt.ItemDataRole.UserRole, (slot, item.id))
+            tip = [hint]
+            if item.reason:
+                tip.append(item.reason)
+            row.setToolTip("\n".join(tip))
+            from PyQt6.QtGui import QColor
+            row.setForeground(QColor(_LAMP_COLORS.get(item.state, "#c0c0c0")))
+            self.master_list.addItem(row)
+            if keep == (slot, item.id):
+                self.master_list.setCurrentItem(row)
+            total += 1
+
+        self.lbl_master.setText(
+            f"{total} " + tr("prompts across", self.lang)
+            + f" {len(queues)} " + tr("silos", self.lang))
+
+        self.cb_target.clear()
+        presets = self.main_win.data.get("temp_presets") or []
+        for index in range(len(presets)):
+            slot = str(index)
+            self.cb_target.addItem(
+                f"{index + 1}: {self.main_win.silo_queue_label(slot)}", slot)
+
+        for btn in (self.btn_move, self.btn_master_front, self.btn_master_remove):
+            btn.setEnabled(total > 0)
+
+    def move_selected_to_target(self):
+        slot, item = self._master_selected()
+        if item is None:
+            return
+        target = self.cb_target.currentData()
+        if target is None or str(target) == str(slot):
+            return
+        # the anchor belongs to the old silo's document; moving the item to
+        # another silo leaves it pointing at a line that is not there, so the
+        # mark goes and the item becomes a text SNAPSHOT (T-756): line is
+        # reset to 0 so the destination runtime never binds it to the
+        # destination silo's same-numbered line, and it carries its text.
+        editor = getattr(self.main_win, "text_area", None)
+        if editor is not None and str(slot) == self.main_win._queue_slot_key():
+            editor.clear_queue_marks(item.id)
+        item.line = 0
+        move_between(self.main_win.prompt_queues, item.id, slot, target)
+        self.main_win.save_prompt_queues()
+        self.refresh()
+
+    def master_to_front(self):
+        slot, item = self._master_selected()
+        if item is None:
+            return
+        self.main_win.prompt_queues[slot].to_front(item.id)
+        self.main_win.save_prompt_queues()
+        self.refresh()
+
+    def master_remove(self):
+        slot, item = self._master_selected()
+        if item is None:
+            return
+        editor = getattr(self.main_win, "text_area", None)
+        if editor is not None and str(slot) == self.main_win._queue_slot_key():
+            editor.clear_queue_marks(item.id)
+        self.main_win.prompt_queues[slot].remove(item.id)
+        self.main_win.save_prompt_queues()
+        self.refresh()
+
+    # ------------------------------------------------------------------
+    def _queue(self):
+        return queue_for(self.main_win.prompt_queues,
+                         self.main_win._queue_slot_key())
+
+    def _selected(self):
+        item = self.list.currentItem()
+        if item is None:
+            return None
+        return self._queue().find(item.data(Qt.ItemDataRole.UserRole))
+
+    # ---- keeping the rows honest --------------------------------------
+    def refresh_from_document(self):
+        """Read each item's text back from the line it is anchored to.
+
+        Items are references, not copies: this is what makes an edit in the
+        note show up here. An anchor that no longer resolves means the line
+        was deleted, which is what `detached` records - the last known text
+        is kept rather than thrown away.
+        """
+        editor = getattr(self.main_win, "text_area", None)
+        if editor is None:
+            return
+        for item in self._queue():
+            if item.state in (SENT, FAILED, SKIPPED):
+                continue          # it has had its turn; freeze what it said
+            block = editor.block_for_queue_item(item.id)
+            if block is None:
+                if item.state != DETACHED:
+                    item.mark_detached()
+                continue
+            text = block.text().strip()
+            if text and text != item.text:
+                item.text = text
+            if item.state == DETACHED:
+                item.state = PENDING      # the line came back (undo)
+                item.reason = ""
+
+    def refresh(self):
+        if getattr(self, "chip_box", None) is not None:
+            self.refresh_chips()
+        if getattr(self, "master_list", None) is not None:
+            self.refresh_master()
+        self.refresh_from_document()
+        queue = self._queue()
+        selected = self.list.currentItem()
+        keep = selected.data(Qt.ItemDataRole.UserRole) if selected else None
+
+        self.list.blockSignals(True)
+        self.list.clear()
+        for item in queue:
+            lamp, hint = _LAMPS.get(item.state, ("?", item.state))
+            skill = f"/{item.skill} " if item.skill else ""
+            body = f"{skill}{item.text}"
+            first = body.splitlines()[0] if body else ""
+            has_more = len(body) > 72 or "\n" in body
+            expanded = item.id in self._expanded
+            # A chevron only where there is something behind it; a row that
+            # is already showing everything must not advertise a fold.
+            chev = ("v " if expanded else "> ") if has_more else "  "
+            shown = body if expanded else (
+                first[:72] + ("..." if has_more else ""))
+            row = QListWidgetItem(f"{chev}{lamp}  {shown}")
+            row.setData(Qt.ItemDataRole.UserRole, item.id)
+            tip = [hint]
+            if item.reason:
+                tip.append(item.reason)
+            if item.line:
+                tip.append(tr("from line {}", self.lang).format(item.line)
+                           if "{}" in tr("from line {}", self.lang)
+                           else f"line {item.line}")
+            row.setToolTip("\n".join(tip))
+            from PyQt6.QtGui import QColor
+            row.setForeground(QColor(_LAMP_COLORS.get(item.state, "#c0c0c0")))
+            self.list.addItem(row)
+            if item.id == keep:
+                self.list.setCurrentItem(row)
+        self.list.blockSignals(False)
+
+        # Ids that are no longer in the queue would otherwise accumulate
+        # forever and re-expand a recycled id.
+        live = {item.id for item in queue}
+        self._expanded &= live
+
+        pending = len(queue.pending())
+        self.lbl_head.setText(
+            f"{self._silo_label()} — {pending}/{len(queue)} "
+            + tr("waiting", self.lang))
+        for btn in (self.btn_next, self.btn_up, self.btn_down,
+                    self.btn_edit, self.btn_remove):
+            btn.setEnabled(bool(len(queue)))
+
+        self._maybe_close_when_done(queue)
+
+    def _maybe_close_when_done(self, queue):
+        """Drain, disarm, collapse - in that order, and only that far.
+
+        Guarded on the queue having held something: an empty queue at the
+        moment the panel opens is not a run that finished, and closing on it
+        would make the checkbox impossible to tick.
+        """
+        if not getattr(self, "chk_close_done", None):
+            return
+        if not self.chk_close_done.isChecked():
+            return
+        if queue.pending():
+            self._saw_work = True
+            return
+        if not getattr(self, "_saw_work", False):
+            return
+        try:
+            if self.main_win.watcher_engine().armed:
+                self.main_win.watcher_disarm(tr("the queue is done", self.lang))
+        except Exception:
+            pass
+        self.accept()
+
+    def _silo_label(self):
+        """The silo's name: its first non-empty line, minus a leading `#`.
+
+        The sidebar flattens the first 100 CHARACTERS, which suits a narrow
+        button but reads as run-on text in a header — notes open with a
+        title, so the first line is the name.
+        """
+        try:
+            raw = self.main_win.text_area.toPlainText()
+        except Exception:
+            raw = ""
+        first = next((ln.strip() for ln in raw.splitlines() if ln.strip()), "")
+        if first.startswith("#"):
+            first = first.lstrip("#").lstrip()
+        return first[:48] or tr("This silo", self.lang)
+
+    # ---- actions ------------------------------------------------------
+    def _apply_row_order(self):
+        """A drag reordered the rows; the queue is the thing that matters."""
+        queue = self._queue()
+        by_id = {i.id: i for i in queue}
+        ordered = []
+        for row in range(self.list.count()):
+            item_id = self.list.item(row).data(Qt.ItemDataRole.UserRole)
+            if item_id in by_id:
+                ordered.append(by_id.pop(item_id))
+        ordered.extend(by_id.values())     # anything unmatched keeps its place
+        queue.items[:] = ordered
+        self.main_win.save_prompt_queues()
+
+    def nudge(self, delta):
+        item = self._selected()
+        if item is None:
+            return
+        queue = self._queue()
+        index = queue.items.index(item)
+        queue.move(item.id, index + delta)
+        self.main_win.save_prompt_queues()
+        self.refresh()
+
+    def to_front_selected(self):
+        item = self._selected()
+        if item is None:
+            return
+        self._queue().to_front(item.id)
+        self.main_win.save_prompt_queues()
+        self.refresh()
+
+    def edit_selected(self):
+        item = self._selected()
+        if item is None:
+            return
+        text, ok = QInputDialog.getText(
+            self, tr("Edit prompt", self.lang),
+            tr("Text to send:", self.lang), text=item.text)
+        if not ok:
+            return
+        text = text.strip()
+        if not text:
+            return
+        item.text = text
+        # the note keeps its own text: editing here changes what is sent,
+        # not what is written down
+        self.main_win.save_prompt_queues()
+        self.refresh()
+
+    def remove_selected(self):
+        item = self._selected()
+        if item is None:
+            return
+        editor = getattr(self.main_win, "text_area", None)
+        if editor is not None:
+            editor.clear_queue_marks(item.id)
+        self._queue().remove(item.id)
+        self.main_win.save_prompt_queues()
+        self.refresh()
+
+    def clear_finished(self):
+        queue = self._queue()
+        editor = getattr(self.main_win, "text_area", None)
+        for item in list(queue):
+            if item.state in (SENT, FAILED, SKIPPED):
+                if editor is not None:
+                    editor.clear_queue_marks(item.id)
+                queue.remove(item.id)
+        self.main_win.save_prompt_queues()
+        self.refresh()

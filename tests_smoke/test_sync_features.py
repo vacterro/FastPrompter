@@ -81,12 +81,14 @@ def _convert_project(win, folder):
     presets = win.data["temp_presets"]
     for slot, rel in enumerate(files):
         path = os.path.join(cfg["root"], rel)
-        text, _eol = ps.read_text_file(path)
+        text, eol = ps.read_text_file(path)
         while len(presets) <= slot:
             presets.append("")
         presets[slot] = text
         mapping[str(slot)] = rel
-        win._sync_last_applied[path] = text
+        key = win._sync_baseline_key(slot, path)
+        win._sync_eol_cache[key] = eol
+        win._sync_last_applied[key] = win._sync_side_digest(text)
     win._start_project_watcher()
     # load silo 0 into the editor so the ACTIVE slot reflects the converted
     # content (the editor is the live source for app->file pushes)
@@ -95,13 +97,16 @@ def _convert_project(win, folder):
 
 
 def test_sync_project_app_to_file(win, tmp_path):
-    (tmp_path / "a.txt").write_text("one", encoding="utf-8")
+    (tmp_path / "a.txt").write_bytes(b"one\r\n")
     (tmp_path / "b.md").write_text("two", encoding="utf-8")
     _convert_project(win, str(tmp_path))
     # edit silo 0 in the app -> push -> the FILE changes
-    _edit_silo(win, 0, "one edited")
+    _edit_silo(win, 0, "one edited\n")
     win._push_sync_files(); win._push_wait_idle()
-    assert (tmp_path / "a.txt").read_text(encoding="utf-8") == "one edited"
+    key = win._sync_baseline_key(0, str(tmp_path / "a.txt"))
+    assert (tmp_path / "a.txt").read_bytes() == b"one edited\r\n", (
+        repr(win._sync_eol_cache.get(key)), repr(key),
+    )
     # and the OTHER silo's file is untouched
     assert (tmp_path / "b.md").read_text(encoding="utf-8") == "two"
 
@@ -176,6 +181,11 @@ def test_silo_link_and_unlink(win, tmp_path, monkeypatch):
     # linking loads the file into the silo (the file is the source)
     assert win.data["temp_presets"][0] == "file content"
     assert win._link_file_for_slot(0) == os.path.abspath(str(linked))
+    # an external edit must work immediately, before the app has made its
+    # first push (the initial baseline is already canonical).
+    linked.write_text("external before push", encoding="utf-8")
+    win._apply_external_sync()
+    assert win.data["temp_presets"][0] == "external before push"
     # app edit -> file
     _edit_silo(win, 0, "edited in app")
     win._push_sync_files(); win._push_wait_idle()
@@ -340,3 +350,15 @@ def test_snooze_clears_the_missed_alert(win):
     assert win._missed_attention()
     win._snooze_timer(t, 10)
     assert not win._missed_attention()
+
+
+def test_silent_calendar_event_still_marks_passed_attention(win, monkeypatch):
+    win.data["passed_alert_enabled"] = "True"
+    t = _seed_missed(win, minutes_ago=1)
+    t.show_notification = False
+    win._missed_timer_ids.clear()
+    monkeypatch.setattr(win, "_play_timer_sound", lambda *args: None)
+    win._notify_timer(t, fired_at=datetime.datetime.now())
+    assert t.id in win._missed_timer_ids
+    assert win._missed_attention()
+    win._ack_missed(t)

@@ -230,6 +230,11 @@ DEFAULT_PROFILE = {
     'toolbar_order': 'btn_settings_toggle,btn_pin_top,btn_line_nums,cat_combo,cat_numbox,btn_new,btn_save,btn_home,btn_end,btn_trash,btn_toggle_search,btn_toggle_snippets,btn_arc_snip,btn_toggle_archive,btn_project_folder,btn_project_run,btn_files,btn_vision,<stretch>,btn_bold,btn_italic,btn_under,btn_strike,btn_header,btn_quote,btn_align_left,btn_align_center,btn_align_right,btn_overflow,btn_clear_fmt,btn_add_line,btn_bullet_toggle,btn_copy,btn_clear,<stretch>,analog_clock,lbl_date,lbl_timer,<sep>,lbl_line_count,lbl_token_count,btn_settings_toggle_right,btn_help',
     'trash_vision': 'False',
     'tray_visible': 'True',
+    # CORE-008: Temp Timer owns structured persisted state. It MUST participate
+    # in the structured-state codec (a dict) so the 0.8.52 str(dict) rows load
+    # back as a dict rather than a single-quoted string that temp_timer_template
+    # then silently discards.
+    'temp_timer_settings': {},
     'two_sided_buttons': 'True',
     'ui_scale': '0.5',
     'window_locked': 'False',

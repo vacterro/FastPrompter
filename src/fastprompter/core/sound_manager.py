@@ -470,6 +470,31 @@ class SoundManager(QObject):
         self._players: dict[str, QSoundEffect] = {}
         self._sounds_dir: str = get_resource_path("sound")
         self._available_sounds: list[str] = discover_sound_files(self._sounds_dir)
+        # PERF-004: the typewriter sound fires on every keystroke, so all
+        # filesystem probing (file resolution, scaled-WAV cache validation)
+        # must be cached after the first resolution of a configuration and
+        # reused until the configuration changes or a playback actually fails.
+        self._file_cache: dict[str, str | None] = {}
+        self._file_sig: dict[str, Any] = {}
+        self._scaled_cache: dict[tuple[str, int], tuple[bool, str | None]] = {}
+        self._data_id: int = id(self._data)
+
+    def invalidate_cache(self) -> None:
+        """PERF-004: drop cached resolution when the sound configuration
+        changes (mapping, volume, or a replaced profile data dict). The next
+        play()/preview rebuilds it lazily."""
+        self._file_cache.clear()
+        self._file_sig.clear()
+        self._scaled_cache.clear()
+        self._data_id = id(self._data)
+
+    def _file_resolution_sig(self, name: str) -> Any:
+        """Cheap (no-stat) signature of the bits that affect file resolution
+        for ``name``: the user-mapped file name. Defaults are static."""
+        events = self._data.get("sound_events")
+        if isinstance(events, dict) and isinstance(events.get(name), dict):
+            return events[name].get("file")
+        return None
 
     def get_available_sounds(self) -> list[str]:
         """Get list of available sound files, sorting favorites and defaults to top."""
@@ -497,16 +522,29 @@ class SoundManager(QObject):
         if not is_event_enabled(name, self._data):
             return
 
-        file_name = get_sound_file_for_event(name, self._data, self._sounds_dir)
+        # PERF-004: reuse the cached file resolution for this configuration
+        # generation instead of re-probing the filesystem on every keystroke.
+        if id(self._data) != self._data_id:
+            self.invalidate_cache()
+        sig = self._file_resolution_sig(name)
+        cached = self._file_cache.get(name)
+        if cached is not None and self._file_sig.get(name) == sig:
+            file_name, path, path_exists = cached
+        else:
+            file_name = get_sound_file_for_event(
+                name, self._data, self._sounds_dir)
+            path = os.path.join(self._sounds_dir, file_name) if file_name else ""
+            path_exists = bool(path) and os.path.exists(path)
+            self._file_cache[name] = (file_name, path, path_exists)
+            self._file_sig[name] = sig
         if not file_name:
             logger.debug("No sound file found for event: %s", name)
             return
 
-        path: str = os.path.join(self._sounds_dir, file_name)
         volume = get_event_volume(name, self._data)
 
         if QSoundEffect is None:
-            self._play_winsound(path, volume)
+            self._play_winsound(path, volume, self._scaled_cache)
             return
 
         # Cache players for frequently used sounds
@@ -517,7 +555,7 @@ class SoundManager(QObject):
         try:
             player.setVolume(volume / 10.0)
 
-            if os.path.exists(path):
+            if path_exists:
                 player.setSource(QUrl.fromLocalFile(path))
                 player.play()
         except Exception:
@@ -548,7 +586,7 @@ class SoundManager(QObject):
         except (TypeError, ValueError):
             vol = _volume_level(self._data)
         if QSoundEffect is None:
-            self._play_winsound(path, vol)
+            self._play_winsound(path, vol, self._scaled_cache)
             return True
         try:
             player = self._players.setdefault("__timer__", QSoundEffect(self))
@@ -640,7 +678,7 @@ class SoundManager(QObject):
         self.play("button_release")
 
     @staticmethod
-    def _play_winsound(path: str, level: int = 10) -> None:
+    def _play_winsound(path: str, level: int = 10, cache: dict | None = None) -> None:
         """Fallback WAV playback without QtMultimedia.
 
         This is the path the SHIPPED build takes — QtMultimedia is not in the
@@ -652,9 +690,35 @@ class SoundManager(QObject):
         try:
             import winsound
 
-            if level <= 0 or not os.path.exists(path):
+            # PERF-004: cache the (source-exists, scaled-path) resolution so the
+            # per-keystroke path never re-stats the source or the scaled cache.
+            # The cache is trusted once built; an actual playback failure
+            # invalidates it (handled in the except below).
+            if cache is None:
+                cache = {}
+            key = (path, int(level))
+            cached = cache.get(key)
+            if cached is not None:
+                src_exists, scaled = cached
+                if src_exists and scaled is not None:
+                    winsound.PlaySound(
+                        scaled, winsound.SND_FILENAME | winsound.SND_ASYNC)
+                    return
+                # previously resolved as missing: respect the cached verdict
+                # (a silent no-op) without re-probing the filesystem
                 return
-            src = scaled_wav_path(path, level) or path
-            winsound.PlaySound(src, winsound.SND_FILENAME | winsound.SND_ASYNC)
+            if level <= 0 or not os.path.exists(path):
+                cache[key] = (False, None)
+                return
+            scaled = scaled_wav_path(path, int(level)) or path
+            cache[key] = (True, scaled)
+            winsound.PlaySound(
+                scaled, winsound.SND_FILENAME | winsound.SND_ASYNC)
         except Exception:
+            # a real playback failure invalidates the cached path so the next
+            # attempt re-resolves (e.g. the source WAV was replaced/deleted)
+            try:
+                cache.pop((path, int(level)), None)
+            except Exception:
+                pass
             logger.exception("Failed to play sound via winsound")

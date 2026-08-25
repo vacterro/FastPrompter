@@ -267,22 +267,32 @@ def ui_vocabulary() -> frozenset[str]:
 
     This is the "dictionary for all languages" part: a German "Anzeige" or
     a French "sélection" that appears in the app's own UI is accepted even
-    though the base list is English. Loaded lazily once and cached; the i18n
-    pack is imported here on purpose (not at module import) so the typecheck
-    module stays cheap to import standalone.
+    though the base list is English.
+
+    PERF-006: the vocabulary is a static build input, so the generated
+    module (``tools/gen_typecheck_ui_vocab.py`` output) is returned when it
+    exists — importing every translation module at first use defeated
+    localization laziness and retained ~10 MiB for the process lifetime.
+    The dynamic extraction stays as the fallback for source checkouts that
+    have not run the generator, producing the identical set.
     """
     global _UI_VOCAB_CACHE
     if _UI_VOCAB_CACHE is None:
-        import importlib
-
-        from fastprompter.core import i18n as _i18n
+        try:
+            from fastprompter.core.typecheck_ui_vocab import WORDS
+            _UI_VOCAB_CACHE = frozenset(WORDS)
+            return _UI_VOCAB_CACHE
+        except ImportError:
+            pass
         words: set[str] = set()
+        from fastprompter.core import i18n as _i18n
         for code in _i18n.available_codes():
             if code == "EN":
                 continue
             try:
-                mod = importlib.import_module(
-                    f"fastprompter.core.i18n.{code.lower()}")
+                mod = __import__(
+                    f"fastprompter.core.i18n.{code.lower()}",
+                    fromlist=["TRANSLATIONS"])
             except Exception:
                 continue
             for value in getattr(mod, "TRANSLATIONS", {}).values():

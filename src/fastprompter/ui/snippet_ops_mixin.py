@@ -941,7 +941,7 @@ class SnippetOpsMixin:
         # remains.
         return self.trash_silo(idx, is_archive)
 
-    def _trash_silo_content(self, text):
+    def _trash_silo_content(self, text, folder_name=None):
         """Write text to _trash folder and to Trash category if enabled.
 
         P1-10 no-clobber: the destination name keeps the readable
@@ -949,7 +949,13 @@ class SnippetOpsMixin:
         shared ``_unique_dest`` allocator and published through
         ``_write_text_atomic`` (temp + no-clobber rename). Two deletes in the
         same second with the same or colliding slug each get their OWN file;
-        no deleted text is ever silently overwritten."""
+        no deleted text is ever silently overwritten.
+
+        ``folder_name`` (CORE-006) is the EXACT File Container folder name that
+        was retired alongside this text. When supplied it is recorded against
+        the trashed .md's basename so restore can recover the right assets
+        without rediscovering ownership from a lossy ``silo_slug`` guess
+        (which collapses duplicate titles and collision-suffixed folders)."""
         if not text.strip():
             return
 
@@ -967,6 +973,11 @@ class SnippetOpsMixin:
             wanted = f"{silo_slug(text)}-{stamp}.md"
             dest = _unique_dest(trash, wanted)
             _write_text_atomic(dest, text, root, capture_resolved_root(root))
+            # CORE-006: bind this exact .md to its retired folder while the
+            # identity is still unambiguous (before any slug-based guessing).
+            if folder_name:
+                link = self.data.setdefault("trash_text_folder", {})
+                link[os.path.basename(dest)] = folder_name
         except OSError as e:
             logger.warning(f"Trash write failed: {e}")
 
@@ -1082,8 +1093,11 @@ class SnippetOpsMixin:
                 self.data.get("archive_project_paths", {}).pop(str(idx), None)
 
             # Assets are secured; NOW the logical delete proceeds: the text
-            # goes to _trash, the slot is popped and the state remapped.
-            self._trash_silo_content(presets[idx])
+            # goes to _trash, the slot is popped and the state remapped. Pass
+            # the exact retired folder name so restore can recover the right
+            # assets (CORE-006) instead of guessing from a slug.
+            folder_basename = os.path.basename(folder) if folder else None
+            self._trash_silo_content(presets[idx], folder_name=folder_basename)
 
             presets.pop(idx)
             if idx < len(docs):

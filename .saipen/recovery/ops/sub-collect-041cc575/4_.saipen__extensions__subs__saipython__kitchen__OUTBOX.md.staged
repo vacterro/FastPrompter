@@ -1,0 +1,43 @@
+﻿# OUTBOX
+
+## PY-001: crew SC-4 fixer — Cyrillic test exemption list (23.08.26)
+- **status:** reviewed
+- **summary:** test_no_cyrillic_in_codebase exemption list incomplete — 5 files carrying Russian input data flagged as false positives. Add exemptions for tests/test_project_sync.py (cp1251 test data), tests/test_typecheck.py (Russian words for script-count), tools/release.py, tools/probe_release.py, tools/sync_saitranslate_fast.py (Russian release notes, same class as existing sync_saitranslate.py exemption).
+- **main_project_refs:** [tests_smoke/test_app_smoke.py]
+- **critical:** false
+- **severity:** P2
+- **producer:** saipython
+- **base_head:** f3801af
+- **source_head:** f3801af269cd26acd35f8f3ec57e4af3d37ff182
+- **source_tree_fingerprint:** git-delta-v1:c66baf69a8306f3b95dfc7badb5f72b088f8de8408e933efadc4d149721a1195
+- **role_revision:** sha256:3069120b1a83291867c000dd5d7edb141d5fedf7895e5dc8f07d06624d05d9ff
+- **coverage:** 1 file (test_app_smoke.py), 5 new exemption blocks
+- **payload:** 1 patched file (kitchen/pen/test_app_smoke.py) — 5 exemption blocks added after the existing backup_silo_bypass exemption
+- **verified:** test_no_cyrillic_in_codebase PASS on patched copy (self-contained test, no fixtures needed)
+- **instructions:** Apply the diff (5 new exemption blocks) to tests_smoke/test_app_smoke.py at line 3503 (after the backup_silo_bypass exemption). Verify: `python -m pytest tests_smoke/test_app_smoke.py::test_no_cyrillic_in_codebase -q` → PASS.
+- **patch:**
+  ```diff
+  --- tests_smoke/test_app_smoke.py
+  +++ tests_smoke/test_app_smoke.py
+  @@ -3499,6 +3499,22 @@
+               if norm.endswith("tests_smoke/test_backup_silo_bypass.py"):
+                   continue
+  +            # test_project_sync.py exercises a cp1251-encoded legacy file
+  +            # (Russian bytes written via .encode("cp1251")) — input data.
+  +            if norm.endswith("tests/test_project_sync.py"):
+  +                continue
+  +            # test_typecheck.py feeds real Russian words into the script-count
+  +            # dictionary — the cyrillic script must be exercised with them.
+  +            if norm.endswith("tests/test_typecheck.py"):
+  +                continue
+  +            # release tooling writes Russian release notes / RU release text —
+  +            # the same ded-voice class as sync_saitranslate.py above.
+  +            if norm.endswith("tools/release.py") or norm.endswith(
+  +                    "tools/probe_release.py") or norm.endswith(
+  +                    "tools/sync_saitranslate_fast.py"):
+  +                continue
+               with open(f, encoding="utf-8") as fh:
+                   for i, line in enumerate(fh, 1):
+                       if cyr.search(line):
+  ```
+- **details:** Root cause: test_no_cyrillic_in_codebase was added in the timer-wave commit (33e4e37) with a fixed exemption list. It was never updated for the pre-existing Russian input-data files in tests/ and tools/. This is a pre-existing gap, not a T-1039 regression.
