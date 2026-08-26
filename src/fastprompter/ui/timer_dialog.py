@@ -182,6 +182,8 @@ class _TimerBehaviorEditor(QWidget):
         pool_btns.addWidget(self.btn_pool_remove)
         pool_btns.addStretch(1)
         lay.addLayout(pool_btns)
+        self.btn_pool_add.setVisible(False)
+        self.btn_pool_remove.setVisible(False)
 
         self.cb_pool.toggled.connect(self._on_pool_toggled)
         # preview ONLY on real user activation, never on programmatic set
@@ -598,10 +600,10 @@ class TimerDialog(QDialog):
         form_split.setSpacing(6)
 
         # Left Group: Timing & Details
-        group_timing = QGroupBox(tr("⏰ Alarm Details & Timing", self.lang))
+        group_timing = QGroupBox(tr("⏰ Alarm Details && Timing", self.lang))
         timing_lay = QVBoxLayout(group_timing)
         timing_lay.setContentsMargins(6, 6, 6, 6)
-        timing_lay.setSpacing(3)
+        timing_lay.setSpacing(4)
 
         # Name & Description
         name_desc_lay = QHBoxLayout()
@@ -638,7 +640,7 @@ class TimerDialog(QDialog):
         quick_row.addWidget(self.btn_quick_tomorrow)
         timing_lay.addLayout(quick_row)
 
-        # Time Input + Preset Combo
+        # Time Input + Preset Combo + Repeat
         when_row = QHBoxLayout()
         when_row.setSpacing(4)
         self.in_when = QLineEdit()
@@ -648,7 +650,7 @@ class TimerDialog(QDialog):
             "or a clock time: 18:30, tomorrow 9:00\n"
             "Russian works too. Press Enter to add.", self.lang))
         self.in_when.returnPressed.connect(self.commit)
-        when_row.addWidget(self.in_when, 2)
+        when_row.addWidget(self.in_when, 3)
 
         self.cb_preset = QComboBox()
         self.cb_preset.setToolTip(tr("Ready-made delays", self.lang))
@@ -656,7 +658,13 @@ class TimerDialog(QDialog):
         for label, value in PRESETS:
             self.cb_preset.addItem(label, value)
         self.cb_preset.currentIndexChanged.connect(self._preset_picked)
-        when_row.addWidget(self.cb_preset, 1)
+        when_row.addWidget(self.cb_preset, 2)
+
+        self.cb_repeat = QComboBox()
+        self.cb_repeat.setToolTip(tr("How often it repeats", self.lang))
+        for r in REPEAT_CHOICES:
+            self.cb_repeat.addItem(tr(r.capitalize(), self.lang), r)
+        when_row.addWidget(self.cb_repeat, 2)
         timing_lay.addLayout(when_row)
 
         # Picker Row
@@ -668,40 +676,22 @@ class TimerDialog(QDialog):
         self.date_time_picker.setTimeSpec(Qt.TimeSpec.LocalTime)
         self.date_time_picker.setDateTime(QDateTime.currentDateTime().addSecs(3600))
         self._style_calendar_popup()
-        picker_row.addWidget(self.date_time_picker, 2)
+        picker_row.addWidget(self.date_time_picker, 3)
 
         self.btn_pick_now = QPushButton(tr("Now", self.lang))
         self.btn_pick_now.clicked.connect(lambda: self.date_time_picker.setDateTime(QDateTime.currentDateTime()))
-        picker_row.addWidget(self.btn_pick_now)
+        picker_row.addWidget(self.btn_pick_now, 1)
 
         self.btn_use_picker = QPushButton(tr("Use Picker", self.lang))
         self.btn_use_picker.clicked.connect(self._use_picker_value)
-        picker_row.addWidget(self.btn_use_picker)
+        picker_row.addWidget(self.btn_use_picker, 1)
         timing_lay.addLayout(picker_row)
 
-        # Analog clock for fast time picking — beautiful, precise, draggable
-        try:
-            clock_row = QHBoxLayout()
-            clock_row.setSpacing(4)
-            self.alarm_clock = BigAnalogClock(self.main_win, self, size=130)
-            self.alarm_clock.setToolTip(tr("Drag the hands to pick time exactly", self.lang))
-            self.alarm_clock.timeSelected.connect(self._on_alarm_clock_picked)
-            self.alarm_clock.intervalChanged.connect(self._on_alarm_clock_picked_interval)
-            clock_row.addWidget(self.alarm_clock, 0, Qt.AlignmentFlag.AlignCenter)
-            # sync clock interval display with current repeat/interval
-            self.alarm_clock.set_interval(self._interval_minutes(), self.cb_repeat.currentData() or "once")
-            timing_lay.addLayout(clock_row)
-        except Exception:
-            self.alarm_clock = None
-
-        # Recurrence + Limit Quota Row
-        rec_row = QHBoxLayout()
-        rec_row.setSpacing(4)
+        # Limit Quota Row (Inputs)
+        limit_row = QHBoxLayout()
+        limit_row.setSpacing(4)
         self.lbl_limit = QLabel(tr("Limit window:", self.lang))
-        self.cb_repeat = QComboBox()
-        for r in REPEAT_CHOICES:
-            self.cb_repeat.addItem(tr(r.capitalize(), self.lang), r)
-        rec_row.addWidget(self.cb_repeat, 1)
+        limit_row.addWidget(self.lbl_limit)
 
         self.spin_limit_hours = QDoubleSpinBox()
         self.spin_limit_hours.setRange(0.25, 72.0)
@@ -709,22 +699,25 @@ class TimerDialog(QDialog):
         self.spin_limit_hours.setDecimals(2)
         self.spin_limit_hours.setValue(5.0)
         self.spin_limit_hours.setSuffix(tr(" h", self.lang))
-        rec_row.addWidget(self.lbl_limit)
-        rec_row.addWidget(self.spin_limit_hours)
+        limit_row.addWidget(self.spin_limit_hours)
 
         self.in_limit_start = QLineEdit()
         self.in_limit_start.setPlaceholderText(tr("started (blank = now)", self.lang))
         self.in_limit_start.returnPressed.connect(self.add_limit_window)
-        rec_row.addWidget(self.in_limit_start)
+        limit_row.addWidget(self.in_limit_start, 1)
+        timing_lay.addLayout(limit_row)
 
+        # Limit Buttons Row
+        limit_btns = QHBoxLayout()
+        limit_btns.setSpacing(4)
         self.btn_limit = QPushButton(tr("Catch limit", self.lang))
         self.btn_limit.clicked.connect(self.add_limit_window)
-        rec_row.addWidget(self.btn_limit)
+        limit_btns.addWidget(self.btn_limit, 1)
 
         self.btn_scan = QPushButton(tr("Scan agents", self.lang))
         self.btn_scan.clicked.connect(self.scan_agent_limits)
-        rec_row.addWidget(self.btn_scan)
-        timing_lay.addLayout(rec_row)
+        limit_btns.addWidget(self.btn_scan, 1)
+        timing_lay.addLayout(limit_btns)
 
         self.lbl_limit_hint = QLabel("")
         self.lbl_limit_hint.setWordWrap(True)
@@ -737,7 +730,7 @@ class TimerDialog(QDialog):
         form_split.addWidget(group_timing, 1)
 
         # Right Group: Sound & Notification
-        group_sound = QGroupBox(tr("🔔 Notification & Sound", self.lang))
+        group_sound = QGroupBox(tr("🔔 Notification && Sound", self.lang))
         sound_lay = QVBoxLayout(group_sound)
         sound_lay.setContentsMargins(6, 6, 6, 6)
         sound_lay.setSpacing(3)
@@ -1860,29 +1853,6 @@ class TimerDialog(QDialog):
         self.in_when.setText(text)
         self.in_when.setFocus()
 
-    def _on_alarm_clock_picked(self, hour, minute):
-        """Analog clock drag -> set alarm picker time exactly."""
-        try:
-            from PyQt6.QtCore import QTime
-            dt = self.date_time_picker.dateTime()
-            # keep the picker's date, replace time with clock's hour/minute
-            qtime = QTime(int(hour) % 24, int(minute) % 60)
-            dt.setTime(qtime)
-            self.date_time_picker.setDateTime(dt)
-            text = dt.toString("yyyy-MM-dd HH:mm")
-            self.in_when.setText(text)
-            self._preview(text)
-        except Exception:
-            pass
-
-    def _on_alarm_clock_picked_interval(self, mins):
-        """Interval clock drag -> update interval length when in interval mode."""
-        try:
-            if self.cb_repeat.currentData() == "interval":
-                self.spin_limit_hours.setValue(max(0.25, float(mins) / 60.0))
-        except Exception:
-            pass
-
     def _quick_when(self, kind):
         """Resolve a quick-preset label to a concrete ISO moment."""
         now = datetime.datetime.now()
@@ -2085,11 +2055,6 @@ class TimerDialog(QDialog):
             self._refresh_pomo()
         if hasattr(self, "interval_clock"):
             self.interval_clock.sync()
-        if hasattr(self, "alarm_clock") and self.alarm_clock is not None:
-            try:
-                self.alarm_clock.sync()
-            except Exception:
-                pass
         from PyQt6.QtGui import QColor
 
         keep = self.list.currentItem()
@@ -2200,7 +2165,7 @@ class TimerDialog(QDialog):
         mid_layout.setSpacing(6)
 
         # Left Column: Periodic Rules List + Analog Clock + Presets
-        clock_box = QGroupBox(tr("⏰ Periodic Reminders & Dial", self.lang))
+        clock_box = QGroupBox(tr("⏰ Periodic Reminders && Dial", self.lang))
         clock_box_lay = QVBoxLayout(clock_box)
         clock_box_lay.setContentsMargins(6, 6, 6, 6)
         clock_box_lay.setSpacing(3)

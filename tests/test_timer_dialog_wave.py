@@ -879,6 +879,7 @@ def test_dialog_open_close_hundred_times_no_residue():
         d.close()
         d.deleteLater()
         refs.append(weakref.ref(d))
+        QApplication.processEvents()
     del d
     QApplication.processEvents()
     gc.collect()
