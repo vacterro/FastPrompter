@@ -69,6 +69,73 @@ from fastprompter.ui.analog_clock import BigAnalogClock
 _SOUNDS = ("tick", "click", "new", "save", "delete", "clear", "silo", "snippet")
 _TEST_DELAY_S = 5
 
+DEFAULT_INTERVAL_RULES = [
+    {
+        "id": "interval_default_noon",
+        "name": "Noon (12:00)",
+        "minutes": 60,
+        "enabled": True,
+        "sound": "file:GENIE.wav",
+        "volume": 0.05,
+        "show_notification": True,
+        "show_in_top_bar": False,
+        "align_mode": "clock",
+        "all_day": False,
+        "start_minute": 720,
+        "end_minute": 779,
+        "last_fired": 0.0,
+        "last_fired_minute": "",
+    },
+    {
+        "id": "interval_default_morning",
+        "name": "Morning (07:00 - 11:00)",
+        "minutes": 60,
+        "enabled": True,
+        "sound": "file:newday.wav",
+        "volume": 0.05,
+        "show_notification": True,
+        "show_in_top_bar": False,
+        "align_mode": "clock",
+        "all_day": False,
+        "start_minute": 420,
+        "end_minute": 719,
+        "last_fired": 0.0,
+        "last_fired_minute": "",
+    },
+    {
+        "id": "interval_default_day",
+        "name": "Day & Evening (13:00 - 21:00)",
+        "minutes": 60,
+        "enabled": True,
+        "sound": "file:newday.wav",
+        "volume": 0.05,
+        "show_notification": True,
+        "show_in_top_bar": False,
+        "align_mode": "clock",
+        "all_day": False,
+        "start_minute": 780,
+        "end_minute": 1319,
+        "last_fired": 0.0,
+        "last_fired_minute": "",
+    },
+    {
+        "id": "interval_default_night",
+        "name": "Night (22:00 - 06:00)",
+        "minutes": 60,
+        "enabled": True,
+        "sound": "file:alert_owl2.wav",
+        "volume": 0.05,
+        "show_notification": True,
+        "show_in_top_bar": False,
+        "align_mode": "clock",
+        "all_day": False,
+        "start_minute": 1320,
+        "end_minute": 419,
+        "last_fired": 0.0,
+        "last_fired_minute": "",
+    },
+]
+
 
 # ---------------------------------------------------------------------------
 # T-1005 / T-1006. One reusable block of "how this timer behaves" controls.
@@ -186,9 +253,15 @@ class _TimerBehaviorEditor(QWidget):
         self.btn_pool_remove.setVisible(False)
 
         self.cb_pool.toggled.connect(self._on_pool_toggled)
-        # preview ONLY on real user activation, never on programmatic set
+        self._suppress_preview = False
+        self.cb_sound.currentIndexChanged.connect(self._on_sound_index_changed)
         self.cb_sound.activated.connect(lambda _i: self._preview_single())
         lay.addStretch(1)
+
+    def _on_sound_index_changed(self, index):
+        if getattr(self, "_suppress_preview", False):
+            return
+        self._preview_single()
 
     def _quick_bar_slots(self):
         saved = getattr(self.main_win, "data", {}).get("sound_quick_bar")
@@ -268,11 +341,15 @@ class _TimerBehaviorEditor(QWidget):
                 self.cb_sound.addItem(text, f"file:{rel}")
 
     def select_sound(self, value):
-        idx = self.cb_sound.findData(value or "tick")
-        if idx < 0:
-            idx = self.cb_sound.findData("tick")
-        if idx >= 0:
-            self.cb_sound.setCurrentIndex(idx)
+        self._suppress_preview = True
+        try:
+            idx = self.cb_sound.findData(value or "tick")
+            if idx < 0:
+                idx = self.cb_sound.findData("tick")
+            if idx >= 0:
+                self.cb_sound.setCurrentIndex(idx)
+        finally:
+            self._suppress_preview = False
 
     # -- pool table ----------------------------------------------------------
     def _on_pool_toggled(self, on):
@@ -360,8 +437,15 @@ class _TimerBehaviorEditor(QWidget):
         vol.setValue(-1.0 if v is None else float(v))
         self.pool.setCellWidget(r, 4, vol)
 
+        sound.currentIndexChanged.connect(
+            lambda _i, s=sound, v=vol: self._on_pool_sound_changed(s, v))
         sound.activated.connect(
             lambda _i, s=sound, v=vol: self._preview_pool_widgets(s, v))
+
+    def _on_pool_sound_changed(self, sound, vol):
+        if getattr(self, "_suppress_preview", False):
+            return
+        self._preview_pool_widgets(sound, vol)
 
     def _read_pool_rules(self):
         out = []
@@ -448,26 +532,35 @@ class _TimerBehaviorEditor(QWidget):
 
     # -- public API used by the forms ---------------------------------------
     def load_timer(self, timer):
-        self.cb_show_notif.setChecked(timer.show_notification)
-        self.cb_show_topbar.setChecked(timer.show_in_top_bar)
-        self.cb_temp.setChecked(timer.color_mode == COLOR_TEMPERATURE)
-        self.spin_vol.setValue(timer.volume)
-        self.select_sound(timer.sound)
-        is_pool = timer.sound_mode == SOUND_MODE_POOL
-        self.cb_pool.setChecked(is_pool)
-        self.pool.setRowCount(0)
-        for rule in timer.sound_rules:
-            self._pool_append_row(rule)
-        self._refresh_pool_buttons()
+        self._suppress_preview = True
+        try:
+            self.cb_show_notif.setChecked(timer.show_notification)
+            self.cb_show_topbar.setChecked(timer.show_in_top_bar)
+            self.cb_temp.setChecked(timer.color_mode == COLOR_TEMPERATURE)
+            self.spin_vol.setValue(timer.volume)
+            self.select_sound(timer.sound)
+            is_pool = timer.sound_mode == SOUND_MODE_POOL
+            self.cb_pool.setChecked(is_pool)
+            self.pool.setRowCount(0)
+            for rule in timer.sound_rules:
+                self._pool_append_row(rule)
+            self._refresh_pool_buttons()
+        finally:
+            self._suppress_preview = False
 
     def reset_defaults(self):
-        self.cb_show_notif.setChecked(True)
-        self.cb_show_topbar.setChecked(True)
-        self.cb_temp.setChecked(True)
-        self.spin_vol.setValue(5)
-        self.select_sound("tick")
-        self.cb_pool.setChecked(False)
-        self.pool.setRowCount(0)
+        self._suppress_preview = True
+        try:
+            self.cb_show_notif.setChecked(True)
+            self.cb_show_topbar.setChecked(True)
+            self.cb_temp.setChecked(True)
+            self.spin_vol.setValue(0.5)
+            self.select_sound("tick")
+            self.cb_pool.setChecked(False)
+            self.pool.setRowCount(0)
+            self._refresh_pool_buttons()
+        finally:
+            self._suppress_preview = False
         self._refresh_pool_buttons()
 
     def timer_kwargs(self):
@@ -2254,7 +2347,16 @@ class TimerDialog(QDialog):
         self.interval_btn_delete = QPushButton(tr("Delete", self.lang))
         self.interval_btn_delete.clicked.connect(self._interval_delete)
         list_btns.addWidget(self.interval_btn_delete)
-        list_btns.addStretch(1)
+
+        self.interval_btn_defaults = QPushButton(tr("Defaults", self.lang))
+        self.interval_btn_defaults.setToolTip(tr("Reset to default 24h chime schedule (0.05 volume)", self.lang))
+        self.interval_btn_defaults.clicked.connect(self._interval_reset_defaults)
+        list_btns.addWidget(self.interval_btn_defaults)
+
+        self.interval_btn_presets = QPushButton(tr("Presets…", self.lang))
+        self.interval_btn_presets.setToolTip(tr("Choose from predefined interval schedule presets", self.lang))
+        self.interval_btn_presets.clicked.connect(self._interval_show_presets_menu)
+        list_btns.addWidget(self.interval_btn_presets)
         clock_box_lay.addLayout(list_btns)
 
         self.interval_clock = BigAnalogClock(self.main_win, self, size=120)
@@ -2346,14 +2448,17 @@ class TimerDialog(QDialog):
         self.interval_in_sound = QComboBox()
         self.interval_in_sound.setMaxVisibleItems(20)
         self._fill_interval_sound_choices()
+        self._suppress_interval_preview = False
+        self.interval_in_sound.currentIndexChanged.connect(self._on_interval_sound_changed)
+        self.interval_in_sound.activated.connect(lambda _i: self._interval_test_sound())
         r4.addWidget(self.interval_in_sound, 1)
 
         r4.addWidget(QLabel(tr("Vol:", self.lang)))
         self.interval_in_volume = QDoubleSpinBox()
         self.interval_in_volume.setRange(0.0, 1.0)
         self.interval_in_volume.setDecimals(2)
-        self.interval_in_volume.setSingleStep(0.05)
-        self.interval_in_volume.setValue(0.5)
+        self.interval_in_volume.setSingleStep(0.01)
+        self.interval_in_volume.setValue(0.05)
         r4.addWidget(self.interval_in_volume)
 
         self.interval_btn_test = QPushButton(tr("Test", self.lang))
@@ -2487,6 +2592,11 @@ class TimerDialog(QDialog):
         align = self.interval_cb_align.currentData() or "clock"
         self.interval_clock.set_interval(mins, align)
 
+    def _on_interval_sound_changed(self, _i):
+        if getattr(self, "_suppress_interval_preview", False):
+            return
+        self._interval_test_sound()
+
     def _interval_test_sound(self):
         ref = self.interval_in_sound.currentData() or "newday"
         vol = self.interval_in_volume.value()
@@ -2496,11 +2606,15 @@ class TimerDialog(QDialog):
             pass
 
     def _interval_set_sound(self, ref):
-        idx = self.interval_in_sound.findData(ref)
-        if idx < 0:
-            idx = self.interval_in_sound.findData("newday")
-        if idx >= 0:
-            self.interval_in_sound.setCurrentIndex(idx)
+        self._suppress_interval_preview = True
+        try:
+            idx = self.interval_in_sound.findData(ref)
+            if idx < 0:
+                idx = self.interval_in_sound.findData("newday")
+            if idx >= 0:
+                self.interval_in_sound.setCurrentIndex(idx)
+        finally:
+            self._suppress_interval_preview = False
 
     def _interval_rules(self):
         rules = getattr(self.main_win, "data", {}).get("interval_notifs")
@@ -2515,29 +2629,33 @@ class TimerDialog(QDialog):
         return rules
 
     def _interval_reload(self):
-        cur = getattr(self, "_interval_cur", None)
-        self.interval_list.clear()
-        rules = self._interval_rules()
-        for rule in rules:
-            state = tr("ON", self.lang) if rule.get("enabled") else tr("OFF", self.lang)
-            name = str(rule.get("name") or tr("Hourly Reminder", self.lang))
-            mins = int(rule.get("minutes") or 60)
-            if mins % 60 == 0:
-                interval_str = f"{mins // 60} h"
-            else:
-                interval_str = f"{mins} m"
-            item = QTreeWidgetItem([state, name, interval_str])
-            item.setData(0, Qt.ItemDataRole.UserRole, rule.get("id"))
-            if rule.get("enabled"):
-                from PyQt6.QtGui import QColor
-                gold = QColor(217, 179, 64)
-                item.setForeground(0, gold)
-                item.setForeground(1, gold)
-            self.interval_list.addTopLevelItem(item)
-            if cur is not None and rule.get("id") == cur:
-                self.interval_list.setCurrentItem(item)
-        if cur is None and self.interval_list.topLevelItemCount():
-            self.interval_list.setCurrentItem(self.interval_list.topLevelItem(0))
+        self._suppress_interval_preview = True
+        try:
+            cur = getattr(self, "_interval_cur", None)
+            self.interval_list.clear()
+            rules = self._interval_rules()
+            for rule in rules:
+                state = tr("ON", self.lang) if rule.get("enabled") else tr("OFF", self.lang)
+                name = str(rule.get("name") or tr("Hourly Reminder", self.lang))
+                mins = int(rule.get("minutes") or 60)
+                if mins % 60 == 0:
+                    interval_str = f"{mins // 60} h"
+                else:
+                    interval_str = f"{mins} m"
+                item = QTreeWidgetItem([state, name, interval_str])
+                item.setData(0, Qt.ItemDataRole.UserRole, rule.get("id"))
+                if rule.get("enabled"):
+                    from PyQt6.QtGui import QColor
+                    gold = QColor(217, 179, 64)
+                    item.setForeground(0, gold)
+                    item.setForeground(1, gold)
+                self.interval_list.addTopLevelItem(item)
+                if cur is not None and rule.get("id") == cur:
+                    self.interval_list.setCurrentItem(item)
+            if cur is None and self.interval_list.topLevelItemCount():
+                self.interval_list.setCurrentItem(self.interval_list.topLevelItem(0))
+        finally:
+            self._suppress_interval_preview = False
 
     def _interval_reorder(self, *args):
         """Draggable priority: topmost wins on collision. Persist UI order to data."""
@@ -2562,35 +2680,130 @@ class TimerDialog(QDialog):
     def _interval_load(self, item):
         if item is None:
             return
-        rid = item.data(0, Qt.ItemDataRole.UserRole)
-        for rule in self._interval_rules():
-            if rule.get("id") == rid:
-                self._interval_cur = rid
-                self.interval_in_name.setText(str(rule.get("name") or ""))
-                mins = int(rule.get("minutes") or 60)
-                self.interval_in_minutes.setValue(mins)
-                self.interval_in_enabled.setChecked(bool(rule.get("enabled", True)))
-                align = str(rule.get("align_mode", "clock"))
-                idx = self.interval_cb_align.findData(align)
-                if idx >= 0:
-                    self.interval_cb_align.setCurrentIndex(idx)
-                self.interval_cb_allday.setChecked(bool(rule.get("all_day", True)))
-                self.interval_time_start.setTime(_minute_to_time(rule.get("start_minute", 0)))
-                self.interval_time_end.setTime(_minute_to_time(rule.get("end_minute", 1439)))
-                self._interval_set_sound(str(rule.get("sound") or "newday"))
-                v = rule.get("volume", 0.5)
-                try:
-                    fv = float(v)
-                    if fv > 1.0 and fv <= 10.0 and float(fv).is_integer():
-                        fv = fv / 10.0
-                    v = max(0.0, min(1.0, fv))
-                except (TypeError, ValueError):
-                    v = 0.5
-                self.interval_in_volume.setValue(float(v))
-                self.interval_in_notify.setChecked(bool(rule.get("show_notification", False)))
-                self.interval_in_topbar.setChecked(bool(rule.get("show_in_top_bar", False)))
-                self.interval_clock.set_interval(mins, align)
-                return
+        self._suppress_interval_preview = True
+        try:
+            rid = item.data(0, Qt.ItemDataRole.UserRole)
+            for rule in self._interval_rules():
+                if rule.get("id") == rid:
+                    self._interval_cur = rid
+                    self.interval_in_name.setText(str(rule.get("name") or ""))
+                    mins = int(rule.get("minutes") or 60)
+                    self.interval_in_minutes.setValue(mins)
+                    self.interval_in_enabled.setChecked(bool(rule.get("enabled", True)))
+                    align = str(rule.get("align_mode", "clock"))
+                    idx = self.interval_cb_align.findData(align)
+                    if idx >= 0:
+                        self.interval_cb_align.setCurrentIndex(idx)
+                    self.interval_cb_allday.setChecked(bool(rule.get("all_day", True)))
+                    self.interval_time_start.setTime(_minute_to_time(rule.get("start_minute", 0)))
+                    self.interval_time_end.setTime(_minute_to_time(rule.get("end_minute", 1439)))
+                    self._interval_set_sound(str(rule.get("sound") or "newday"))
+                    v = rule.get("volume", 0.05)
+                    try:
+                        fv = float(v)
+                        if fv > 1.0 and fv <= 10.0 and float(fv).is_integer():
+                            fv = fv / 10.0
+                        v = max(0.0, min(1.0, fv))
+                    except (TypeError, ValueError):
+                        v = 0.05
+                    self.interval_in_volume.setValue(float(v))
+                    self.interval_in_notify.setChecked(bool(rule.get("show_notification", True)))
+                    self.interval_in_topbar.setChecked(bool(rule.get("show_in_top_bar", False)))
+                    self.interval_clock.set_interval(mins, align)
+                    return
+        finally:
+            self._suppress_interval_preview = False
+
+    def _interval_reset_defaults(self):
+        import copy
+        self.main_win.data["interval_notifs"] = copy.deepcopy(DEFAULT_INTERVAL_RULES)
+        self._interval_cur = None
+        self.main_win.mark_dirty()
+        self._interval_reload()
+
+    def _interval_show_presets_menu(self):
+        from PyQt6.QtWidgets import QMenu
+        from PyQt6.QtCore import QPoint
+        import copy
+        menu = QMenu(self)
+        
+        a_default = menu.addAction(tr("Default 24h Chime (Genie / NewDay / Owl @ 0.05)", self.lang))
+        a_workday = menu.addAction(tr("Workday Hours (09:00 - 18:00 @ 0.05)", self.lang))
+        a_hourly = menu.addAction(tr("Hourly Bell (24/7 @ 0.05)", self.lang))
+        a_pomo = menu.addAction(tr("Pomodoro Focus (Every 25m @ 0.05)", self.lang))
+        a_night = menu.addAction(tr("Night Owl (22:00 - 06:00 @ 0.05)", self.lang))
+
+        pos = self.interval_btn_presets.mapToGlobal(QPoint(0, self.interval_btn_presets.height()))
+        act = menu.exec(pos)
+        if not act:
+            return
+
+        if act == a_default:
+            self.main_win.data["interval_notifs"] = copy.deepcopy(DEFAULT_INTERVAL_RULES)
+        elif act == a_workday:
+            self.main_win.data["interval_notifs"] = [{
+                "id": "interval_workday",
+                "name": tr("Workday (09:00 - 18:00)", self.lang),
+                "minutes": 60,
+                "enabled": True,
+                "sound": "file:newday.wav",
+                "volume": 0.05,
+                "show_notification": True,
+                "show_in_top_bar": False,
+                "align_mode": "clock",
+                "all_day": False,
+                "start_minute": 540,
+                "end_minute": 1079,
+            }]
+        elif act == a_hourly:
+            self.main_win.data["interval_notifs"] = [{
+                "id": "interval_hourly",
+                "name": tr("Hourly Bell (24/7)", self.lang),
+                "minutes": 60,
+                "enabled": True,
+                "sound": "file:newday.wav",
+                "volume": 0.05,
+                "show_notification": True,
+                "show_in_top_bar": False,
+                "align_mode": "clock",
+                "all_day": True,
+                "start_minute": 0,
+                "end_minute": 1439,
+            }]
+        elif act == a_pomo:
+            self.main_win.data["interval_notifs"] = [{
+                "id": "interval_pomo",
+                "name": tr("Pomodoro Focus (25m)", self.lang),
+                "minutes": 25,
+                "enabled": True,
+                "sound": "file:QUEST.wav",
+                "volume": 0.05,
+                "show_notification": True,
+                "show_in_top_bar": True,
+                "align_mode": "elapsed",
+                "all_day": True,
+                "start_minute": 0,
+                "end_minute": 1439,
+            }]
+        elif act == a_night:
+            self.main_win.data["interval_notifs"] = [{
+                "id": "interval_night",
+                "name": tr("Night Owl (22:00 - 06:00)", self.lang),
+                "minutes": 60,
+                "enabled": True,
+                "sound": "file:alert_owl2.wav",
+                "volume": 0.05,
+                "show_notification": True,
+                "show_in_top_bar": False,
+                "align_mode": "clock",
+                "all_day": False,
+                "start_minute": 1320,
+                "end_minute": 419,
+            }]
+
+        self._interval_cur = None
+        self.main_win.mark_dirty()
+        self._interval_reload()
 
     def _interval_new(self):
         import uuid

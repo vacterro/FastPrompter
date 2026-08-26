@@ -261,7 +261,7 @@ sdist = { url = "https://files.pythonhosted.org/packages/a5/f5/397b61091120a9ca5
 
 [[package]]
 name = "fastprompter"
-version = "0.8.54"
+version = "0.8.55"
 source = { editable = "." }
 dependencies = [
     { name = "markdown" },
