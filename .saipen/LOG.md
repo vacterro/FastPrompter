@@ -198,3 +198,4 @@
 - 26.08.26 04:10 [E-972] [parent: E-971] RUN: build exe -> nuitka onefile 0.8.54 build/FastPrompter.exe OK (36.37% payload compression, 47.7MB)
 - 26.08.26 04:35 [E-973] [parent: E-972] [T-1056] DEC: hunt finding -- previewRequested signal typed (str,int) but emitted float; volume preview emitted garbage int (pointer-sized). Fixed signal to (str,float); tests test_timer_dialog_wave updated to float expectations
 - 26.08.26 04:40 [E-974] [T-none] RUN: hunt -> clean @4e6d943
+- 26.08.26 10:16 [E-975] [T-1057] RUN: acb-mat audit 12 tickets -> 11/12 implemented (CORE-001..003, W2-001..003, PERF-001..005); CORE-004 pre-fixed; W2-002 forward write-ahead journal documented as remaining; full suite 1572 passed 1 skipped

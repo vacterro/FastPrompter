@@ -1,7 +1,7 @@
 ---
 phase: DONE
 task: none
-next_action: "WAIT: v0.8.54 shipped, HUNT clean @4e6d943. Signal fix + exe rebuilt. Nothing workable on board."
+next_action: "WAIT: acb-mat audit 11/12 landed (T-1057), pushed; W2-002 forward merge journal documented as remaining"
 blocker: ""
 agent: workbuddy
 saipen_version: 7
@@ -13,9 +13,9 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 974
+last_event: 975
 style_contract: ded-4ae736e4
-updated: "2026-08-26T04:40:00Z"
-transition_from: HUNT
+updated: "2026-08-26T10:16:00Z"
+transition_from: DONE
 execution_intent: normal
 ---
