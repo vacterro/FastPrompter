@@ -112,6 +112,12 @@ Restored in v0.8.32 (removed in v0.8.24, back with the launch grace and own-wind
 | **Passed-Event Alert** | | | |
 | `passed_alert_enabled` | bool | True | Highlight timer silos whose countdown has elapsed (passed) |
 | `passed_event_color` | string | `#e05555` | Color for passed-event silo highlight |
+| **Interval Notifications (24h Schedule)** | | | |
+| `interval_notifs` | JSON list | 4 defaults | Time-of-day scheduled reminders with clock-aligned or elapsed firing, per-rule sound/volume/notification, and configurable active hours (morning/noon/day/night presets) |
+| **Sound Quick Bar** | | | |
+| `sound_quick_bar` | JSON list | 10 entries | Favorite sound shortcuts for quick-pick in Timer Dialog (click to select, right-click to store current sound) |
+| **Temp Timer** | | | |
+| `temp_timer_settings` | JSON dict | defaults | Temporary timer configuration: increment minutes, delete-after-fire, sound mode (single/random pool), color mode (temperature), sound rules for pool mode |
 
 ## File System Layout
 

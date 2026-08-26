@@ -2,11 +2,13 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QKeySequence
 import copy
 from PyQt6.QtWidgets import (
+    QComboBox,
     QDialog,
     QFormLayout,
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )

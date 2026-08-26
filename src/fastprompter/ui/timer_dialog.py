@@ -28,7 +28,6 @@ from PyQt6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
-    QScrollArea,
     QSizePolicy,
     QSpinBox,
     QTableWidget,
@@ -1233,6 +1232,54 @@ class TimerDialog(QDialog):
         opts.addStretch(1)
         lay.addLayout(opts)
 
+        # Sound configuration
+        sound_group = QGroupBox(tr("Phase Completion Sounds", self.lang))
+        s_lay = QGridLayout(sound_group)
+        s_lay.setContentsMargins(6, 6, 6, 6)
+        s_lay.setSpacing(4)
+
+        self.cb_pomo_sound_en = QCheckBox(tr("Play sound on phase complete", self.lang))
+        self.cb_pomo_sound_en.toggled.connect(self._pomo_sound_settings_changed)
+        s_lay.addWidget(self.cb_pomo_sound_en, 0, 0, 1, 3)
+
+        s_lay.addWidget(QLabel(tr("Work Sound:", self.lang)), 1, 0)
+        self.cb_pomo_work_sound = QComboBox()
+        self.cb_pomo_work_sound.setMaxVisibleItems(20)
+        self._fill_pomo_sound_choices(self.cb_pomo_work_sound)
+        self.cb_pomo_work_sound.currentIndexChanged.connect(self._on_pomo_work_sound_changed)
+        s_lay.addWidget(self.cb_pomo_work_sound, 1, 1)
+
+        btn_test_work = QPushButton(tr("Test", self.lang))
+        btn_test_work.setFixedWidth(50)
+        btn_test_work.clicked.connect(lambda: self._test_pomo_sound(self.cb_pomo_work_sound))
+        s_lay.addWidget(btn_test_work, 1, 2)
+
+        s_lay.addWidget(QLabel(tr("Break Sound:", self.lang)), 2, 0)
+        self.cb_pomo_break_sound = QComboBox()
+        self.cb_pomo_break_sound.setMaxVisibleItems(20)
+        self._fill_pomo_sound_choices(self.cb_pomo_break_sound)
+        self.cb_pomo_break_sound.currentIndexChanged.connect(self._on_pomo_break_sound_changed)
+        s_lay.addWidget(self.cb_pomo_break_sound, 2, 1)
+
+        btn_test_break = QPushButton(tr("Test", self.lang))
+        btn_test_break.setFixedWidth(50)
+        btn_test_break.clicked.connect(lambda: self._test_pomo_sound(self.cb_pomo_break_sound))
+        s_lay.addWidget(btn_test_break, 2, 2)
+
+        vol_row = QHBoxLayout()
+        vol_row.addWidget(QLabel(tr("Volume:", self.lang)))
+        self.spin_pomo_vol = QDoubleSpinBox()
+        self.spin_pomo_vol.setRange(0.0, 1.0)
+        self.spin_pomo_vol.setSingleStep(0.01)
+        self.spin_pomo_vol.setDecimals(2)
+        self.spin_pomo_vol.setValue(0.05)
+        self.spin_pomo_vol.valueChanged.connect(self._pomo_sound_settings_changed)
+        vol_row.addWidget(self.spin_pomo_vol)
+        vol_row.addStretch(1)
+        s_lay.addLayout(vol_row, 3, 0, 1, 3)
+
+        lay.addWidget(sound_group)
+
         buttons = QHBoxLayout()
         buttons.setSpacing(4)
         self.btn_pomo_action = QPushButton(tr("Start", self.lang))
@@ -1258,12 +1305,29 @@ class TimerDialog(QDialog):
     def _pomo(self):
         return self.main_win.productivity_timer
 
+    def _fill_pomo_sound_choices(self, combo):
+        combo.clear()
+        for name in _SOUNDS:
+            combo.addItem(name, name)
+        try:
+            files = self.main_win.sound_manager.get_available_sounds() or []
+        except Exception:
+            files = []
+        if files:
+            favs = set(self.main_win.data.get("sound_favorites", [])) if self.main_win else set()
+            combo.insertSeparator(combo.count())
+            for rel in files:
+                text = f"★ {rel}" if rel in favs else rel
+                combo.addItem(text, f"file:{rel}")
+
     def _load_pomo_into_form(self):
         """Fill the form from the model without echoing back into it."""
         t = self._pomo()
+        self._suppress_pomo_preview = True
         widgets = (self.spin_work_min, self.spin_work_sec,
                    self.spin_break_min, self.spin_break_sec,
-                   self.cb_pomo_breaks, self.cb_pomo_repeat)
+                   self.cb_pomo_breaks, self.cb_pomo_repeat,
+                   self.cb_pomo_sound_en, self.spin_pomo_vol)
         for w in widgets:
             w.blockSignals(True)
         self.spin_work_min.setValue(t.work_seconds // 60)
@@ -1272,9 +1336,49 @@ class TimerDialog(QDialog):
         self.spin_break_sec.setValue(t.break_seconds % 60)
         self.cb_pomo_breaks.setChecked(t.breaks_enabled)
         self.cb_pomo_repeat.setChecked(t.repeat_alarm)
+        self.cb_pomo_sound_en.setChecked(getattr(t, "sound_enabled", True))
+        self.spin_pomo_vol.setValue(getattr(t, "volume", 0.05))
+
+        w_idx = _find_sound_index(self.cb_pomo_work_sound, getattr(t, "work_sound", "file:QUEST.wav"))
+        if w_idx >= 0:
+            self.cb_pomo_work_sound.setCurrentIndex(w_idx)
+
+        b_idx = _find_sound_index(self.cb_pomo_break_sound, getattr(t, "break_sound", "file:NEWDAY.wav"))
+        if b_idx >= 0:
+            self.cb_pomo_break_sound.setCurrentIndex(b_idx)
+
         for w in widgets:
             w.blockSignals(False)
+        self._suppress_pomo_preview = False
         self._refresh_pomo()
+
+    def _on_pomo_work_sound_changed(self, _i):
+        if getattr(self, "_suppress_pomo_preview", False):
+            return
+        self._pomo_sound_settings_changed()
+        self._test_pomo_sound(self.cb_pomo_work_sound)
+
+    def _on_pomo_break_sound_changed(self, _i):
+        if getattr(self, "_suppress_pomo_preview", False):
+            return
+        self._pomo_sound_settings_changed()
+        self._test_pomo_sound(self.cb_pomo_break_sound)
+
+    def _test_pomo_sound(self, combo):
+        ref = combo.currentData() or "QUEST"
+        vol = self.spin_pomo_vol.value()
+        try:
+            self.main_win.sound_manager.play_sound_ref(ref, vol)
+        except Exception:
+            pass
+
+    def _pomo_sound_settings_changed(self):
+        t = self._pomo()
+        t.sound_enabled = self.cb_pomo_sound_en.isChecked()
+        t.volume = self.spin_pomo_vol.value()
+        t.work_sound = self.cb_pomo_work_sound.currentData() or "file:QUEST.wav"
+        t.break_sound = self.cb_pomo_break_sound.currentData() or "file:NEWDAY.wav"
+        self.main_win.save_productivity_timer()
 
     def _pomo_durations_changed(self):
         self._pomo().apply_durations(
@@ -1805,7 +1909,7 @@ class TimerDialog(QDialog):
         must not leave two countdowns for the same reset.
         """
         from fastprompter.core.limits import assume_window
-        from fastprompter.core.watcher.limit_scan import scan_all, limited
+        from fastprompter.core.watcher.limit_scan import limited, scan_all
 
         try:
             adapters, _limits, _errors = self.main_win.watcher_adapters()
@@ -1839,12 +1943,12 @@ class TimerDialog(QDialog):
                 hours=self.spin_limit_hours.value())
             name = tr("{} limit", self.lang).format(res.name) \
                 if "{}" in tr("{} limit", self.lang) else f"{res.name} limit"
-            
+
             limit_key = res.name
             existing = next(
                 (t for t in self.main_win.timers
                  if t.kind == KIND_ALARM and (
-                     t.auto_limit_key == limit_key or 
+                     t.auto_limit_key == limit_key or
                      (t.auto_limit_key is None and t.name == name)
                  )), None)
             
@@ -2761,9 +2865,10 @@ class TimerDialog(QDialog):
         self._interval_reload()
 
     def _interval_show_presets_menu(self):
-        from PyQt6.QtWidgets import QMenu
-        from PyQt6.QtCore import QPoint
         import copy
+
+        from PyQt6.QtCore import QPoint
+        from PyQt6.QtWidgets import QMenu
         menu = QMenu(self)
         
         a_default = menu.addAction(tr("Default 24h Chime (Genie / NewDay / Owl @ 0.05)", self.lang))

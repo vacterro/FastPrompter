@@ -58,8 +58,8 @@ class TestInit:
         assert d["last_text"] == ""
         assert d["last_tab_idx"] == 0
         assert d["active_temp_slot"] == 0
-        # T-696: the shipped default is 18, baked in by DEFAULT_PROFILE
-        assert d["font_size"] == 18
+        # T-696: the shipped default is 13, baked in by DEFAULT_PROFILE
+        assert d["font_size"] == 13
 
     def test_default_categories_have_100_slots(self, state):
         """Each category should have 100 None slots."""
@@ -658,7 +658,7 @@ class TestDefaultProfile:
     def test_baked_values_reach_the_data_dict(self, state):
         from fastprompter.core.default_profile import DEFAULT_PROFILE
 
-        assert state.data["font_size"] == 18
+        assert state.data["font_size"] == 13
         assert state.data["ui_scale"] == DEFAULT_PROFILE["ui_scale"]
         assert state.data["language"] == "EN"
         assert state.data["theme"] == DEFAULT_PROFILE["theme"]

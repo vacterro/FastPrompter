@@ -1,14 +1,18 @@
 # OUTBOX
 
-## WIKI-011: qq re-cut @ 3d0d79ed (24.08.26)
+## W-007: v0.8.55-56 interval notifications + typecheck_ui_vocab + periodic backup docs
 - **status:** ready
+- **summary:** 6 wiki pages updated in kitchen vs HEAD 9489083 — Module-Structure (typecheck_ui_vocab.py added, core 22→23, total 125→126), Configuration (interval_notifs, sound_quick_bar, temp_timer_settings), User-Guide (§29 Interval Notifications 24h schedule, §30 Temp Timer), Core-API-and-Classes (typecheck_ui_vocab module, SoundManager.play_sound_ref + case-insensitive matching), UI-Components (Timer Dialog interval/temp tabs + sound quick bar), Architecture-Overview (§15 Interval Notifications, §16 Periodic Backup). 10 others byte-identical. Module counts (23/47/5/126). Zero source modified.
+- **main_project_refs:** [src/fastprompter/core/typecheck_ui_vocab.py, src/fastprompter/core/state.py, src/fastprompter/core/sound_manager.py, src/fastprompter/ui/timer_dialog.py, src/fastprompter/main.py, src/fastprompter/core/default_profile.py]
 - **critical:** false
-- **summary:** FORCE-FRESH re-cut for qq against HEAD 3d0d79ed11b3e257892440ce3994a4bbbfa86cef. Audit of delta since WIKI-010 (3232878): T-1048 (Temp Timer Shift+Click express one-shot, delete-after-fire, Ctrl+Shift+Click removal), T-1049 (Typecheck + Sync-Project/date-alert hardening: safe path resolution, EOL/BOM, canonical baselines, per-silo sync audit). Source diff in src/ between 32328787..HEAD: empty (all changes are test/settings-only, no new modules, no settings schema changes). Kitchen-vs-docs/wiki drift detected in 2 files — manual silo_links description edits in docs/wiki/ (two-way sync wording) not reflected in kitchen mirrors; synced kitchen from docs/wiki/. All 16 pages verified identical post-sync. Module-Structure counts re-verified (22 core + 38 i18n + 10 watcher + 47 UI + 5 utils + 3 other = 125 .py). Zero new settings in default_profile.py. Zero new modules. Zero source-modified pages.
+- **severity:** P3
 - **producer:** saiwiki
-- **source_head:** 3d0d79ed11b3e257892440ce3994a4bbbfa86cef
-- **source_tree_fingerprint:** git-delta-v1:6165aeeda389e4f72e3675a2b7def0dddbe09a2b
+- **source_head:** 94890831171f6448d48b56b29b31f64549edca6d
+- **source_tree_fingerprint:** git-delta-v1:pending
 - **role_revision:** sha256:54a42475a124ab0f27e83d600a284a9cc54d9668029c4828cfc48512b031df13
-- **coverage:** 16/16 maintained pages audited against HEAD 3d0d79ed; delta enumerated commit-by-commit (T-1048, T-1049, v0.8.52); Module-Structure counts re-derived from src tree (125 .py); 2 drifted pages synced from docs/wiki/ to kitchen
-- **payload:** Architecture-Overview.md, User-Guide.md (silo_links two-way sync description correction); remaining 14 pages byte-identical to docs/wiki/
-- **verified:** kitchen == docs/wiki (16/16 ✓); rg sweep of kitchen for stale symbols in delta -> zero; module count 125 matches documented
-- **instructions:** qqq collects payload (2 files) into docs/wiki/; zero source modifications needed. Both files are description-only edits (silo_links two-way sync wording) already present in docs/wiki/ and now mirrored in kitchen for freshness binding.
+- **coverage:** Module-Structure, Configuration, User-Guide, Core-API-and-Classes, UI-Components, Architecture-Overview
+- **payload:** Module-Structure.md, Configuration.md, User-Guide.md, Core-API-and-Classes.md, UI-Components.md, Architecture-Overview.md
+- **verified:** kitchen files differ from docs/wiki only by the new additions; no stale content from prior versions
+- **instructions:** 1. Replace docs/wiki/Module-Structure.md with kitchen/Module-Structure.md (adds typecheck_ui_vocab.py, updates counts). 2. Replace docs/wiki/Configuration.md with kitchen/Configuration.md (adds interval_notifs, sound_quick_bar, temp_timer_settings). 3. Replace docs/wiki/User-Guide.md with kitchen/User-Guide.md (adds §29-30). 4. Replace docs/wiki/Core-API-and-Classes.md with kitchen/Core-API-and-Classes.md (adds typecheck_ui_vocab, updates SoundManager). 5. Replace docs/wiki/UI-Components.md with kitchen/UI-Components.md (updates Timer Dialog entry). 6. Replace docs/wiki/Architecture-Overview.md with kitchen/Architecture-Overview.md (adds §15-16). 7. Commit with message: docs(wiki): v0.8.55-56 interval notifications, typecheck_ui_vocab, periodic backup
+- **details:**
+  v0.8.55 added interval notifications (24h clock-aligned/elapsed scheduled reminders with per-rule sound/volume/active hours, 4 default presets for morning/noon/day/night), sound quick bar (10 favorite sound slots for quick-pick in Timer Dialog), and temp timer settings (increment, color mode, random pool sound rules). v0.8.56 fixed case-insensitive sound matching and selection sync in TimerDialog. New generated module typecheck_ui_vocab.py (~19k Latin words from all i18n packs) extends the typecheck dictionary. Periodic .bak backup on daemon thread (PERF-001) with coalescing per profile.

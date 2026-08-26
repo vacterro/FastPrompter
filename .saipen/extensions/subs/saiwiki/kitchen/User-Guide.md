@@ -249,3 +249,25 @@ Each silo can have an associated two-way file link. The file is loaded into the 
 ### 28. Passed-Event Alert
 
 Timer silos whose countdown has elapsed (passed) are highlighted with a configurable color (`passed_event_color`), making it visually obvious which deadlines have passed at a glance. Toggled via `passed_alert_enabled` in Settings.
+
+### 29. Interval Notifications (24h Schedule)
+
+Time-of-day scheduled reminders that fire automatically on a 24-hour clock. Managed in the Timer Dialog (Ctrl+Shift+T) under the **Interval** tab.
+
+**How it works:** Each rule defines a sound, volume, interval (in minutes), and optional active hours (start/end minute of day). Rules fire when the clock reaches the aligned minute (clock mode) or after the interval elapses (elapsed mode). Only the highest-priority rule fires per tick when multiple collide.
+
+**Default presets:**
+- Morning (07:00–11:00) — every 60 min, NEWDAY.wav
+- Noon (12:00) — every 60 min, GENIE.wav
+- Day & Evening (13:00–21:00) — every 60 min, NEWDAY.wav
+- Night (22:00–06:00) — every 60 min, alert_owl2.wav
+
+**Sound Quick Bar:** 10 favorite sound slots shown as buttons below the sound picker. Click to select and preview; right-click to store the current sound into that slot.
+
+**Notifications:** Each rule can show a system tray notification and/or play a sound. Volume is independent per rule (0.05 default for quiet hourly pings).
+
+### 30. Temp Timer
+
+A temporary countdown timer with configurable increment, color mode, and sound rules. Created from the Timer Dialog (Ctrl+Shift+T) under the **Temp** tab.
+
+**Features:** set increment in minutes, choose temperature-based or fixed color, enable/disable delete-after-fire. In **Random Pool** sound mode, multiple sounds can be assigned with time windows (e.g., different sounds for morning vs night).

@@ -473,7 +473,7 @@ class SoundSettingsDialog(QDialog):
                 self.table.cellWidget(row, _COL_ON).setChecked(
                     cfg.get("enabled", "True") == "True")
 
-                combo = self.table.cellWidget(row, _COL_FILE)
+                combo = self._combos[event]
                 wanted = cfg.get("file") or _DEFAULT_SOUND_MAP.get(event, "")
                 idx = combo.findData(wanted)
                 if idx < 0 and wanted:

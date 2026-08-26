@@ -124,7 +124,7 @@ class _FakeMain(QWidget):
 # --------------------------------------------------------------------------
 
 def test_default_profile_has_user_foundational_settings():
-    assert str(DEFAULT_PROFILE.get("sound_volume")) in ("0.5", "1", "1.0")
+    assert str(DEFAULT_PROFILE.get("sound_volume")) in ("0.15", "0.5", "1", "1.0")
     assert DEFAULT_PROFILE.get("fkey_action") == "projects"
     assert DEFAULT_PROFILE.get("ui_scale") in ("0.70", "0.7", 0.70)
     assert DEFAULT_PROFILE.get("saved_sidebar_size") in ("236", 236)

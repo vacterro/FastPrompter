@@ -70,6 +70,9 @@ _JSON_SETTINGS = (
     "trash_consumed",
     "sound_quick_bar",
     "interval_notifs",
+    # Splitter geometries are lists in the shipped profile (and the live DB
+    # stores them as JSON arrays), so they must round-trip as JSON, not str().
+    "splitter_sizes", "splitter_sizes_left", "splitter_sizes_right",
 )
 
 # Never stored in the settings table: they have tables of their own.
@@ -202,6 +205,11 @@ _STRUCTURED_CODECS = {
     # CORE-006: trashed-text -> folder association. A dict keyed by trashed
     # .md basename; legacy_ast for safety, default {} on any failure.
     "trash_text_folder": (dict, {}, True),
+    # Splitter geometries ship as lists (and live DBs store them as JSON
+    # arrays), so they need canonical list codecs, not str() writes.
+    "splitter_sizes": (list, [178, 1257], True),
+    "splitter_sizes_left": (list, [], True),
+    "splitter_sizes_right": (list, [], True),
     # CORE-002: durable trash-restore consumed markers. A dict keyed by .md
     # basename; legacy_ast so already-written single-quoted rows recover.
     "trash_consumed": (dict, {}, True),

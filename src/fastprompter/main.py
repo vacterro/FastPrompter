@@ -49,6 +49,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QSizePolicy,
+    QSlider,
     QSpinBox,
     QSplitter,
     QTabWidget,
@@ -1958,11 +1959,18 @@ class FastPrompter(
         lang = getattr(self, "_current_lang", "EN")
         title = (tr("Work phase over", lang) if phase == PHASE_WORK
                  else tr("Break over", lang))
-        try:
-            self.play_sound("clear")
-        except Exception:
-            from fastprompter.core.logging import logger
-            logger.debug("productivity sound failed")
+        timer = getattr(self, "productivity_timer", None)
+        if timer and getattr(timer, "sound_enabled", True):
+            sound_ref = getattr(timer, "work_sound", "file:QUEST.wav") if phase == PHASE_WORK else getattr(timer, "break_sound", "file:NEWDAY.wav")
+            vol = getattr(timer, "volume", 0.05)
+            try:
+                if hasattr(self, "sound_manager") and self.sound_manager:
+                    self.sound_manager.play_sound_ref(sound_ref, vol)
+                else:
+                    self.play_sound(sound_ref)
+            except Exception:
+                from fastprompter.core.logging import logger
+                logger.debug("productivity sound failed")
         try:
             if hasattr(self, "tray_icon") and not sip.isdeleted(self.tray_icon):
                 self.tray_icon.showMessage(
@@ -7212,17 +7220,18 @@ class FastPrompter(
         self.btn_clear_fonts.setToolTip(tr("Clear all custom fonts from combo (reset to defaults)", getattr(self, "_current_lang", "EN")))
         self.btn_clear_fonts.clicked.connect(self.clear_custom_fonts)
 
-        # Volume control
-        self.spin_volume = QSpinBox()
-        self.spin_volume.setRange(1, 10)
+        # Volume slider
+        self.spin_volume = QSlider(Qt.Orientation.Horizontal)
+        self.spin_volume.setRange(0, 100)
         try:
-            self.spin_volume.setValue(int(self.data.get("sound_volume", "5")))
+            vol = float(self.data.get("sound_volume", "0.15"))
+            self.spin_volume.setValue(max(0, min(100, int(vol * 100))))
         except Exception:
-            self.spin_volume.setValue(5)
-        self.spin_volume.setFixedWidth(42)
-        self.spin_volume.setToolTip(tr("Click sound volume (1-10)", getattr(self, "_current_lang", "EN")))
+            self.spin_volume.setValue(15)
+        self.spin_volume.setFixedWidth(100)
+        self.spin_volume.setToolTip(tr("Global volume (0-100)", getattr(self, "_current_lang", "EN")))
         self.spin_volume.valueChanged.connect(
-            lambda v: (self.data.update({"sound_volume": str(v)}), self.mark_dirty())
+            lambda v: (self.data.update({"sound_volume": f"{v/100:.2f}"}), self.mark_dirty())
         )
 
         # --- Settings panel: hidden by default, toggled by the gear button. ---
@@ -9710,7 +9719,7 @@ class FastPrompter(
                 "• Blank-line spacing (global or per scenario)\n"
                 "• Action when pressing on an existing divider", lang))
         if hasattr(self, "spin_volume") and not sip.isdeleted(self.spin_volume):
-            self.spin_volume.setToolTip(tr("Click sound volume (1-10)", lang))
+            self.spin_volume.setToolTip(tr("Global volume (0-100)", lang))
 
         # Translate files_row buttons
         if hasattr(self, "btn_files_root") and not sip.isdeleted(self.btn_files_root):

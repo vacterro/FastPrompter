@@ -253,3 +253,32 @@ def test_corrupt_saved_state_does_not_take_the_timer_down():
 def test_module_exposes_its_defaults():
     assert pomodoro.DEFAULT_WORK_SECONDS == 45 * 60 + 30
     assert pomodoro.DEFAULT_BREAK_SECONDS == 15 * 60 + 30
+    assert pomodoro.DEFAULT_WORK_SOUND == "file:QUEST.wav"
+    assert pomodoro.DEFAULT_BREAK_SOUND == "file:NEWDAY.wav"
+    assert pomodoro.DEFAULT_VOLUME == 0.05
+
+
+def test_productivity_sound_settings_and_persistence():
+    t = ProductivityTimer(
+        work_sound="file:OBELISK.wav",
+        break_sound="file:alert_owl2.wav",
+        volume=0.25,
+        sound_enabled=False,
+    )
+    assert t.work_sound == "file:OBELISK.wav"
+    assert t.break_sound == "file:alert_owl2.wav"
+    assert abs(t.volume - 0.25) < 1e-6
+    assert t.sound_enabled is False
+
+    d = t.to_dict()
+    assert d["work_sound"] == "file:OBELISK.wav"
+    assert d["break_sound"] == "file:alert_owl2.wav"
+    assert d["volume"] == 0.25
+    assert d["sound_enabled"] is False
+
+    t2 = ProductivityTimer.from_dict(d)
+    assert t2.work_sound == "file:OBELISK.wav"
+    assert t2.break_sound == "file:alert_owl2.wav"
+    assert abs(t2.volume - 0.25) < 1e-6
+    assert t2.sound_enabled is False
+

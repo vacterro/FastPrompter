@@ -21,6 +21,9 @@ STATE_PAUSED = "paused"
 
 DEFAULT_WORK_SECONDS = 45 * 60 + 30      # my_timer2's defaults
 DEFAULT_BREAK_SECONDS = 15 * 60 + 30
+DEFAULT_WORK_SOUND = "file:QUEST.wav"
+DEFAULT_BREAK_SOUND = "file:NEWDAY.wav"
+DEFAULT_VOLUME = 0.05
 
 
 def format_clock(seconds):
@@ -42,11 +45,21 @@ class ProductivityTimer:
 
     def __init__(self, work_seconds=DEFAULT_WORK_SECONDS,
                  break_seconds=DEFAULT_BREAK_SECONDS, breaks_enabled=True,
-                 repeat_alarm=True):
+                 repeat_alarm=True, work_sound=DEFAULT_WORK_SOUND,
+                 break_sound=DEFAULT_BREAK_SOUND, volume=DEFAULT_VOLUME,
+                 sound_enabled=True):
         self.work_seconds = self._sane(work_seconds, DEFAULT_WORK_SECONDS)
         self.break_seconds = self._sane(break_seconds, DEFAULT_BREAK_SECONDS)
         self.breaks_enabled = bool(breaks_enabled)
         self.repeat_alarm = bool(repeat_alarm)
+        self.work_sound = str(work_sound or DEFAULT_WORK_SOUND)
+        self.break_sound = str(break_sound or DEFAULT_BREAK_SOUND)
+        try:
+            fv = float(volume)
+            self.volume = max(0.0, min(1.0, fv))
+        except (TypeError, ValueError):
+            self.volume = DEFAULT_VOLUME
+        self.sound_enabled = bool(sound_enabled)
 
         self.phase = PHASE_WORK
         self.state = STATE_IDLE
@@ -213,6 +226,10 @@ class ProductivityTimer:
             "breaks_enabled": self.breaks_enabled,
             "repeat_alarm": self.repeat_alarm,
             "completed_cycles": self.completed_cycles,
+            "work_sound": self.work_sound,
+            "break_sound": self.break_sound,
+            "volume": self.volume,
+            "sound_enabled": self.sound_enabled,
         }
 
     @classmethod
@@ -227,6 +244,10 @@ class ProductivityTimer:
             break_seconds=d.get("break_seconds", DEFAULT_BREAK_SECONDS),
             breaks_enabled=d.get("breaks_enabled", True),
             repeat_alarm=d.get("repeat_alarm", True),
+            work_sound=d.get("work_sound", DEFAULT_WORK_SOUND),
+            break_sound=d.get("break_sound", DEFAULT_BREAK_SOUND),
+            volume=d.get("volume", DEFAULT_VOLUME),
+            sound_enabled=d.get("sound_enabled", True),
         )
         try:
             timer.completed_cycles = max(0, int(d.get("completed_cycles", 0)))
