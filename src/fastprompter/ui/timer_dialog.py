@@ -928,14 +928,14 @@ class TimerDialog(QDialog):
         0: (740, 460),  # Alarms
         1: (740, 390),  # Interval Notifications
         2: (640, 300),  # Temp Timer
-        3: (480, 220),  # Productivity
+        3: (640, 480),  # Productivity
         4: (740, 480),  # Calendar
     }
     _TAB_MIN_SIZES = {
         0: (640, 390),
         1: (620, 340),
         2: (500, 220),
-        3: (380, 160),
+        3: (560, 380),
         4: (640, 390),
     }
 
@@ -1251,7 +1251,7 @@ class TimerDialog(QDialog):
 
         btn_test_work = QPushButton(tr("Test", self.lang))
         btn_test_work.setFixedWidth(50)
-        btn_test_work.clicked.connect(lambda: self._test_pomo_sound(self.cb_pomo_work_sound))
+        btn_test_work.clicked.connect(lambda: self._test_pomo_notification("work"))
         s_lay.addWidget(btn_test_work, 1, 2)
 
         s_lay.addWidget(QLabel(tr("Break Sound:", self.lang)), 2, 0)
@@ -1263,7 +1263,7 @@ class TimerDialog(QDialog):
 
         btn_test_break = QPushButton(tr("Test", self.lang))
         btn_test_break.setFixedWidth(50)
-        btn_test_break.clicked.connect(lambda: self._test_pomo_sound(self.cb_pomo_break_sound))
+        btn_test_break.clicked.connect(lambda: self._test_pomo_notification("break"))
         s_lay.addWidget(btn_test_break, 2, 2)
 
         vol_row = QHBoxLayout()
@@ -1356,21 +1356,23 @@ class TimerDialog(QDialog):
         if getattr(self, "_suppress_pomo_preview", False):
             return
         self._pomo_sound_settings_changed()
-        self._test_pomo_sound(self.cb_pomo_work_sound)
+        self._test_pomo_notification("work")
 
     def _on_pomo_break_sound_changed(self, _i):
         if getattr(self, "_suppress_pomo_preview", False):
             return
         self._pomo_sound_settings_changed()
-        self._test_pomo_sound(self.cb_pomo_break_sound)
+        self._test_pomo_notification("break")
 
-    def _test_pomo_sound(self, combo):
-        ref = combo.currentData() or "QUEST"
-        vol = self.spin_pomo_vol.value()
-        try:
-            self.main_win.sound_manager.play_sound_ref(ref, vol)
-        except Exception:
-            pass
+    def _test_pomo_notification(self, phase):
+        """Simulate a real phase-completion notification (sound + tray popup)
+        using the current form settings, so the user sees how it looks."""
+        self._pomo_sound_settings_changed()
+        notify = getattr(self.main_win, "_notify_productivity", None)
+        if notify is None:
+            return
+        from fastprompter.core.pomodoro import PHASE_WORK
+        notify(PHASE_WORK if phase == "work" else "break")
 
     def _pomo_sound_settings_changed(self):
         t = self._pomo()

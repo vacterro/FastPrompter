@@ -1,11 +1,11 @@
-﻿# nuitka-project: --standalone
+# nuitka-project: --standalone
 # nuitka-project: --onefile
 # nuitka-project: --enable-plugin=pyqt6
 # nuitka-project: --include-package=fastprompter
 # nuitka-project: --windows-console-mode=disable
 # nuitka-project: --windows-icon-from-ico=_res/fastprompter.ico
 # nuitka-project: --product-name=FastPrompter
-# nuitka-project: --product-version=0.8.57
+# nuitka-project: --product-version=0.8.58
 # nuitka-project: --file-description=FastPrompter portable snippet manager
 # nuitka-project: --python-flag=no_docstrings
 # nuitka-project: --python-flag=no_asserts

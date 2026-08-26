@@ -5,4 +5,5 @@
 
 
 - 22.08.26 14:41 [T-E12] RUN: prepare -> TRANSLATE-008 ready -- zero-delta re-cut vs 28a4d5f for explicit ee.
-- 24.08.26 11:37 [T-E13] RUN: prepare saitranslate -> done -- TRANSLATE-009 ready, zero-delta re-cut vs HEAD 3d0d79ed; en.py 1158 keys == en.json 1158; Core4 synced; Non-Core29 100% (33582/33582); git diff i18n/ since last prepare empty; OUTBOX ready no-payload.
+- 24.08.26 11:37 [T-E13] RUN: prepare saitranslate -> done -- TRANSLATE-009 ready, zero-delta re-cut vs HEAD 3d0d79ed; en.py 1158 keys == en.json 1158; Core4 synced; Non-Core29 100% (33582/33582); git diff i1n/ since last prepare empty; OUTBOX ready no-payload.
+- 26.08.26 17:55 [E-9007] [T-E14] RUN: prepare (ee) -- TRANSLATE-010 ready, FORCE-FRESH re-cut vs HEAD ef017ec; 52 new keys (49 interval notification UI + 4 pomodoro phase sounds + 1 extra) added to all 33 locale JSONs (1158->1210); Core4 (en/ru/est/ded) professional translations inline; Non-Core29 English placeholders pending native review; _container.py ISO-2 alias support (ET/EE->EST etc.); en.py <-> en.json delta = 0; OUTBOX ready 33-file payload.

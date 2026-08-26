@@ -1,14 +1,16 @@
 # OUTBOX
 
-## TRANSLATE-009: ee re-cut @ 3d0d79ed (24.08.26)
+## TRANSLATE-010: ee re-cut @ ef017ec (26.08.26)
 - **status:** ready
 - **critical:** false
-- **summary:** FORCE-FRESH re-cut for ee against HEAD 3d0d79ed11b3e257892440ce3994a4bbbfa86cef. Audit of delta since TRANSLATE-008 (28a4d5f): zero i18n source changes (git diff 28a4d5f..HEAD -- src/fastprompter/core/i18n/ = empty). en.py: 1158 keys, en.json: 1158 translations (zero delta). Core4 (.py modules): en/ru/est/ded all present and current (en.py 92KB, ru.py 123KB, est.py 95KB, ded.py 114KB). Non-Core29 locales: 100% coverage (33582/33582 keys present across 29 JSON files). All 33 locale JSONs structural-verified. No new keys, no removed keys, no drift. Zero-delta freshness proof: git diff stat against last prepare source_head is empty for i18n path.
+- **summary:** FORCE-FRESH re-cut for ee against HEAD ef017ec4b911a078c757d14eb3b34f590c511e03. Delta since TRANSLATE-009 (3d0d79ed): 52 new i18n keys added to en.py (49 interval notification UI strings + 4 pomodoro phase-completion sounds + 1 extra). Core4 (.py): en/ru/est/ded all have the 52 new keys with full translations. Non-Core29 (JSON): 33/33 locales now have 1210 keys each (was 1158). Core4 locale translations (ru/est/ded) are professional quality. Non-Core29 locale translations for the 52 new keys are English placeholders — flagged for human review in the next translation pass. _container.py also gained ISO-2 alias support (ET/EE→EST, FR→FRA, ES→SPA, UA/UK→UKR). All 33 locale JSONs structural-verified.
 - **producer:** saitranslate
-- **source_head:** 3d0d79ed11b3e257892440ce3994a4bbbfa86cef
-- **source_tree_fingerprint:** git-delta-v1:6165aeeda389e4f72e3675a2b7def0dddbe09a2b
+- **source_head:** ef017ec4b911a078c757d14eb3b34f590c511e03
+- **source_tree_fingerprint:** git-delta-v1:pending
 - **role_revision:** sha256:f241e6b83c39e9b46bfa586638efb0374bbb39889646f723b9189bbb4912c0c5
-- **coverage:** 33/33 locales (4 Core + 29 non-Core) verified against current en.py source; 1158 keys per locale; README.md digest tracked (sha256:b5ee668cdf798509)
-- **payload:** none — zero source changes since last prepare; all locale JSONs already current
-- **verified:** en.py <-> en.json key delta = 0; non-Core29 key coverage = 100%; git diff i18n/ since last prepare = empty; structural JSON parse OK for all 33 files
-- **instructions:** eee-equivalent is a no-op here: nothing to integrate. Zero source mutation; zero locale drift. Outdated state: saitranslate STATE.md still references TRANSLATE-005 (stale); this package supersedes it.
+- **coverage:** 33/33 locales (4 Core + 29 non-Core) verified; 1210 keys per locale matching en.py; Core4 professional translations, non-Core29 English placeholders pending review
+- **payload:** 33 locale JSON files (en.json, ru.json, est.json, ded.json, ar.json ... zh.json) — all in .saipen/saitranslate/locales/
+- **verified:** en.py <-> en.json key delta = 0; non-Core29 key coverage = 100% (1210/1210); structural JSON parse OK for all 33 files
+- **instructions:** 1. Replace src/fastprompter/core/i18n/*.json with the corresponding kitchen locale JSONs (or integrate via the saitranslate collect mechanism). 2. Core4 (en/ru/est/ded) JSONs should match their .py source translations. 3. Non-Core29 JSONs have English placeholders for the 52 new keys — a follow-up translation pass with native speakers is recommended. 4. Commit with message: chore(i18n): TRANSLATE-010 — 52 new keys for interval notifications + pomodoro sounds across 33 locales
+- **details:**
+  v0.8.55 added 49 interval notification UI strings (tabs, labels, presets, descriptions) to en.py. Core4 locales (ru/est/ded) received professional translations inline. 4 additional pomodoro phase-completion sound keys were also missing from the JSONs. Non-Core29 locales were synced to match en.py's 1210 key count but the 52 new keys carry English placeholder values. _container.py gained ISO-2 language alias support (ET/EE→EST, FR→FRA, ES→SPA, UA/UK→UKR) — no locale file changes needed for this.
