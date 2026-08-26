@@ -141,30 +141,46 @@ def initialize_core() -> None:
     _engine.register_language("EN", {k: k for k in en_keys})
 
 
+_NORM_MAP: Final[dict[str, str]] = {
+    "ET": "EST", "EE": "EST",
+    "FR": "FRA",
+    "ES": "SPA",
+    "UA": "UKR", "UK": "UKR",
+}
+
+
 def load_language(code: str, *, load_external: bool = True) -> None:
     """Lazily load a specific language module or external file."""
-    code = code.upper()
-    if code in _engine.available_langs():
+    raw_code = code.upper()
+    norm_code = _NORM_MAP.get(raw_code, raw_code)
+    if norm_code in _engine.available_langs():
+        if raw_code != norm_code and raw_code not in _engine.available_langs():
+            with _engine._registry_lock:
+                _engine._registry[raw_code] = _engine._registry[norm_code]
         return
         
     initialize_core()
     en_keys = _extract_key_source()
     
-    code_lower = code.lower()
+    code_lower = norm_code.lower()
     if code_lower in _BUILTIN_LANGS:
         try:
             data = _load_lang_module(code_lower)
             if data is not None:
-                _validate_translations(code, data, en_keys, strict=False)
-                _engine.register_language(code, data)
+                _validate_translations(norm_code, data, en_keys, strict=False)
+                _engine.register_language(norm_code, data)
+                if raw_code != norm_code:
+                    _engine.register_language(raw_code, data)
         except Exception as exc:
-            log.error("Skipping language %s (load failed): %s", code, exc)
+            log.error("Skipping language %s (load failed): %s", norm_code, exc)
     elif load_external:
         external = _load_external_slot()
-        if code in external:
-            data = external[code]
-            _validate_translations(code, data, en_keys, strict=False)
-            _engine.register_language(code, data)
+        if norm_code in external:
+            data = external[norm_code]
+            _validate_translations(norm_code, data, en_keys, strict=False)
+            _engine.register_language(norm_code, data)
+            if raw_code != norm_code:
+                _engine.register_language(raw_code, data)
 
 
 def _validate_translations(

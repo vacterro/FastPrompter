@@ -600,7 +600,7 @@ class TimerDialog(QDialog):
         form_split.setSpacing(6)
 
         # Left Group: Timing & Details
-        group_timing = QGroupBox(tr("⏰ Alarm Details && Timing", self.lang))
+        group_timing = QGroupBox(tr("Alarm Details & Timing", self.lang).replace("&", "&&"))
         timing_lay = QVBoxLayout(group_timing)
         timing_lay.setContentsMargins(6, 6, 6, 6)
         timing_lay.setSpacing(4)
@@ -623,19 +623,19 @@ class TimerDialog(QDialog):
         # Quick Delays Bar
         quick_row = QHBoxLayout()
         quick_row.setSpacing(3)
-        self.btn_quick_10m = QPushButton("in 10m")
+        self.btn_quick_10m = QPushButton(tr("in 10m", self.lang))
         self.btn_quick_10m.clicked.connect(lambda: self._quick_pick("10m"))
         quick_row.addWidget(self.btn_quick_10m)
 
-        self.btn_quick_1h = QPushButton("in 1h")
+        self.btn_quick_1h = QPushButton(tr("in 1h", self.lang))
         self.btn_quick_1h.clicked.connect(lambda: self._quick_pick("1h"))
         quick_row.addWidget(self.btn_quick_1h)
 
-        self.btn_quick_tonight = QPushButton("tonight")
+        self.btn_quick_tonight = QPushButton(tr("tonight", self.lang))
         self.btn_quick_tonight.clicked.connect(lambda: self._quick_pick("tonight"))
         quick_row.addWidget(self.btn_quick_tonight)
 
-        self.btn_quick_tomorrow = QPushButton("tomorrow")
+        self.btn_quick_tomorrow = QPushButton(tr("tomorrow", self.lang))
         self.btn_quick_tomorrow.clicked.connect(lambda: self._quick_pick("tomorrow"))
         quick_row.addWidget(self.btn_quick_tomorrow)
         timing_lay.addLayout(quick_row)
@@ -730,7 +730,7 @@ class TimerDialog(QDialog):
         form_split.addWidget(group_timing, 1)
 
         # Right Group: Sound & Notification
-        group_sound = QGroupBox(tr("🔔 Notification && Sound", self.lang))
+        group_sound = QGroupBox(tr("Notification & Sound", self.lang).replace("&", "&&"))
         sound_lay = QVBoxLayout(group_sound)
         sound_lay.setContentsMargins(6, 6, 6, 6)
         sound_lay.setSpacing(3)
@@ -2165,7 +2165,7 @@ class TimerDialog(QDialog):
         mid_layout.setSpacing(6)
 
         # Left Column: Periodic Rules List + Analog Clock + Presets
-        clock_box = QGroupBox(tr("⏰ Periodic Reminders && Dial", self.lang))
+        clock_box = QGroupBox(tr("Periodic Reminders & Dial", self.lang).replace("&", "&&"))
         clock_box_lay = QVBoxLayout(clock_box)
         clock_box_lay.setContentsMargins(6, 6, 6, 6)
         clock_box_lay.setSpacing(3)
