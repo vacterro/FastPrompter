@@ -193,3 +193,6 @@
 - 26.08.26 01:37 [E-967] DEC: structural repair -- E-965 wording contained bare word matching provenance marker regex; reworded same content; remaining known-red: E-964 lacks [op:] marker (historical manual entry, retroactive marker would forge provenance)
 - 26.08.26 01:43 [E-968] [parent: E-967] [T-1055] [agent: workbuddy] [op: ticket-f07151188b7d44c2987a2094dd1d073f] DEC: ticket added via SAIOPS
 - 26.08.26 01:43 [E-969] [parent: E-968] [T-1055] [agent: workbuddy] [op: claim-dc4855671cc84c7ba023a1010ed97668] DEC: claimed via SAIOPS -- owner workbuddy
+- 26.08.26 03:45 [E-970] [parent: E-969] [T-1055] RUN: ship -> audit 16 + interval/volume/clock shipped (draggable priority topmost, sound preview, volume 0.0-1.0, analog clock)
+- 26.08.26 03:45 [E-971] [T-1056] RUN: interval/volume/clock done -> verified, ready for exe
+- 26.08.26 04:10 [E-972] [parent: E-971] RUN: build exe -> nuitka onefile 0.8.54 build/FastPrompter.exe OK (36.37% payload compression, 47.7MB)
