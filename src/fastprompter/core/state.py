@@ -1221,6 +1221,12 @@ class FastPrompterState:
         self._exported_content_gen = 0
         # The settings keys THIS save committed (PERF-004 mirror dirty probe).
         self.last_save_settings_keys = []
+        # PERF-002: the normal-temp SLOT INDICES this save changed, per
+        # category. Sync-Project/per-silo links publish normal temp_presets;
+        # a precise owner set lets the caller push only the affected slots
+        # instead of re-digesting every bound silo after a single edit.
+        self.last_save_temp_slots = {}
+        self.last_save_had_temp_text = False
         # Throttle for the SQLite .bak safety copy, PER PROFILE: profiles have
         # different DB/.bak files, and one profile's recent backup must never
         # suppress another profile's (the old single scalar did exactly that
@@ -1837,6 +1843,19 @@ class FastPrompterState:
         # PERF-004: expose WHICH settings keys this save committed so the
         # one-way mirror can decide dirty routing without re-deriving it.
         self.last_save_settings_keys = [k for k, _v in settings_to_save]
+        # PERF-002: the precise normal-temp owner set, per category. Snippet
+        # and archive changes must NOT cause a normal-silo push.
+        if scan_temp:
+            by_cat = {}
+            for cat, i, _c in to_update_temp:
+                by_cat.setdefault(cat, set()).add(i)
+            for cat, i in temp_to_delete:
+                by_cat.setdefault(cat, set()).add(i)
+            self.last_save_temp_slots = by_cat
+            self.last_save_had_temp_text = bool(by_cat)
+        else:
+            self.last_save_temp_slots = {}
+            self.last_save_had_temp_text = False
         if not changed:
             if scan_settings: self._saved_settings_gen = self._dirty_settings
             if scan_snippets: self._saved_snippets_gen = self._dirty_snippets

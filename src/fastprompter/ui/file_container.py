@@ -329,9 +329,31 @@ def _fmt_size(n):
     return f"{n / 1024 / 1024 / 1024:.2f} GB"
 
 
+# PERF-005: per-directory recursive-size cache for Details listings. A root
+# with N large child directories would otherwise re-walk every unchanged
+# subtree on each coalesced listing generation. Keyed by canonical path plus
+# a signature of the DIRECT listing (children mutate a subtree without
+# changing the parent's direct listing, so the short TTL covers nested
+# changes, matching the folder_summary contract). LRU-bounded.
+_DIR_SIZE_TTL = 2.0
+_dir_size_cache = {}
+
+
 def _dir_size(path, _cap=2000, cancel_check=None):
     """Recursive size, capped at _cap files so a giant dropped folder
-    can't stall silo switching (tooltip precision isn't worth a freeze)."""
+    can't stall silo switching (tooltip precision isn't worth a freeze).
+
+    PERF-005: cached per canonical path + direct-listing signature; an
+    unchanged subtree is not re-walked on every Details refresh."""
+    try:
+        names = sorted(os.listdir(path))
+    except OSError:
+        names = []
+    now = _summary_now()
+    key = (os.path.normcase(os.path.abspath(path)), tuple(names))
+    hit = _dir_size_cache.get(key)
+    if hit is not None and now - hit[0] < _DIR_SIZE_TTL:
+        return hit[1]
     total, seen = 0, 0
     for base, _dirs, files in os.walk(path):
         if cancel_check is not None and cancel_check():
@@ -345,7 +367,14 @@ def _dir_size(path, _cap=2000, cancel_check=None):
                 pass
             seen += 1
             if seen >= _cap:
-                return total
+                break
+        if seen >= _cap:
+            break
+    _dir_size_cache[key] = (now, total)
+    if len(_dir_size_cache) > 256:
+        for stale in [k for k, (t, _v) in _dir_size_cache.items()
+                      if now - t >= _DIR_SIZE_TTL]:
+            _dir_size_cache.pop(stale, None)
     return total
 
 
@@ -1380,11 +1409,24 @@ class FileContainerPanel(QWidget):
         if not hasattr(self, "_fetching_thumbs"):
             self._fetching_thumbs = set()
 
+        # PERF-003: bound the outstanding decode backlog. Rapid scrollbar
+        # drags through a large image dir must not enqueue an unlimited
+        # sequence of same-generation workers; a pending-budget cap plus a
+        # per-submission batch cap keeps the tail bounded and the final
+        # viewport first (visible paths were inserted at the front).
+        pending_budget = 512
+        batch_cap = 96
+        cur_gen = gen
+        pending_count = sum(1 for k in self._fetching_thumbs if k[0] == cur_gen)
         filtered = []
         for path, mtime in to_fetch:
-            if (gen, path) not in self._fetching_thumbs:
-                self._fetching_thumbs.add((gen, path))
-                filtered.append((path, mtime))
+            if (gen, path) in self._fetching_thumbs:
+                continue
+            if pending_count >= pending_budget or len(filtered) >= batch_cap:
+                break
+            self._fetching_thumbs.add((gen, path))
+            filtered.append((path, mtime))
+            pending_count += 1
 
         if not filtered:
             return

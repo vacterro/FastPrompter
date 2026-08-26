@@ -2085,17 +2085,33 @@ class FastPrompter(
         presets = self.data.get(
             "archive_temp_presets" if str(slot).startswith("a") else "temp_presets") or []
         index = int(str(slot).lstrip("a") or 0)
-        lines = None
+        raw = ""
         if 0 <= index < len(presets):
-            lines = (presets[index] or "").splitlines()
-            
+            raw = presets[index] or ""
+        # PERF-001: never materialize the full splitlines() of an unchanged
+        # inactive silo on every 900ms Watcher tick. Cache per (slot, raw-id)
+        # the exact requested line numbers, extracted by a sequential scan
+        # that stops after the highest requested line.
+        if not hasattr(self, "_queue_live_line_cache"):
+            self._queue_live_line_cache = {}
+        wanted = sorted({item.line for item in items if item.line})
+        if not wanted:
+            lines_map = {}
+        else:
+            cache = self._queue_live_line_cache
+            entry = cache.get(str(slot))
+            if entry is None or entry[0] != id(raw):
+                lines_map = self._extract_requested_lines(raw, set(wanted))
+                cache[str(slot)] = (id(raw), lines_map)
+            else:
+                lines_map = entry[1]
+
         for item in items:
-            if lines is not None and item.line:
-                if 0 < item.line <= len(lines):
-                    text = lines[item.line - 1].strip()
-                    if text:
-                        result[item] = (text, False)
-                        continue
+            if item.line and item.line in lines_map:
+                text = lines_map[item.line].strip()
+                if text:
+                    result[item] = (text, False)
+                    continue
             # Nothing to read it from. A source-referenced item (line > 0) that
             # cannot be resolved is DETACHED — a stale snapshot is not live and
             # must not be sent as if it were (T-756). A snapshot item (line 0,
@@ -2103,6 +2119,28 @@ class FastPrompter(
             result[item] = (item.text, bool(item.line))
             
         return result
+
+    @staticmethod
+    def _extract_requested_lines(raw, wanted):
+        """Extract only ``wanted`` 1-based line numbers without building the
+        full splitlines() list. Stops after the highest requested line."""
+        if not wanted:
+            return {}
+        max_line = max(wanted)
+        wanted = set(wanted)
+        out = {}
+        line_no = 1
+        i = 0
+        n = len(raw)
+        while i < n and line_no <= max_line:
+            j = raw.find("\n", i)
+            if j < 0:
+                j = n
+            if line_no in wanted:
+                out[line_no] = raw[i:j]
+            i = j + 1
+            line_no += 1
+        return out
 
     def queue_item_live_text(self, slot, item):
         """The text this item would send right now."""
@@ -4393,20 +4431,26 @@ class FastPrompter(
             # PERF-004: the one-way mirror gets its own dirty routing,
             # separate from generic DB dirtiness. A settings-only save must
             # not rebuild the whole hierarchy snapshot; mirror-visible
-            # settings changes (root/mode/topology maps) still do.
+            # settings changes (root/mode/topology maps) still do. PERF-002:
+            # the mirror publishes NORMAL temp silos, so a snippet-only or
+            # archive-only save must not trigger a capture either.
             if (force
-                    or getattr(self.state, "last_save_had_silo_text", False)
+                    or getattr(self.state, "last_save_had_temp_text", False)
                     or self._mirror_settings_dirty()):
                 self.sync_to_disk()
             # PERF-004: Sync-Project / per-silo links publish silo text to disk
-            # only when THIS save actually touched a silo-text domain, or a
-            # forced save demands it. A settings-only persistence (font size,
-            # geometry, a checkbox) must not traverse every bound file and
-            # perform stat/read work on the GUI thread for no text to publish.
-            # App-side text edits are covered independently by the 1.5s typing
-            # debounce (_sync_push_timer / _on_text_changed).
-            if force or getattr(self.state, "last_save_had_silo_text", False):
+            # only when THIS save actually touched the NORMAL temp-silo domain,
+            # or a forced save demands it. A settings-only persistence (font
+            # size, geometry, a checkbox) must not traverse every bound file,
+            # and a snippet-only or archive-only save must not re-digest
+            # unrelated normal bindings (PERF-002). App-side text edits are
+            # covered independently by the 1.5s typing debounce.
+            if force:
                 self._push_sync_files()
+            elif getattr(self.state, "last_save_had_temp_text", False):
+                cat = self.get_current_category() or ""
+                slots = getattr(self.state, "last_save_temp_slots", {}).get(cat)
+                self._push_sync_files(slots=slots)
         return ok
 
     # =====================================================================
@@ -4456,7 +4500,7 @@ class FastPrompter(
             return
         try:
             from fastprompter.core import typecheck as _tc  # noqa: F401
-            text = editor.toPlainText()
+            text = self._editor_text_snapshot() or ""
             doc_rev = editor.document().revision()
             ident = (self.get_current_category() or "",
                      getattr(self, "active_temp_slot", -1),
@@ -5117,7 +5161,7 @@ class FastPrompter(
                 if (slot == active and not editing_snippet
                         and not getattr(self, "active_is_archive", False)):
                     try:
-                        text = self.text_area.toPlainText()
+                        text = self._editor_text_snapshot() or ""
                     except Exception:
                         # T-1030: editor unavailable -- keep the preset text
                         # out of the comparison and skip this slot this
@@ -16863,7 +16907,7 @@ class FastPrompter(
             self._rendered_visual_text = None
             return
         try:
-            text = self.text_area.toPlainText()
+            text = self._editor_text_snapshot() or ""
         except Exception:
             return
         if text == getattr(self, "_rendered_visual_text", None):
@@ -16874,6 +16918,42 @@ class FastPrompter(
             self.table_widget.load_markdown(text)
         self._rendered_visual_text = text
 
+    def _editor_text_snapshot(self):
+        """PERF-004: one canonical immutable whole-document snapshot.
+
+        Keyed by (document identity, revision): every settled-edit consumer
+        (visual rebuild, typo scan, Sync push, cache tick) that reads the
+        SAME revision shares ONE O(document) toPlainText() instead of each
+        materializing a fresh full string on the GUI thread. A document
+        switch changes the identity key; any revision change re-extracts.
+        """
+        ta = getattr(self, "text_area", None)
+        if ta is None or sip.isdeleted(ta):
+            return None
+        try:
+            doc = ta.document()
+            if doc is None or sip.isdeleted(doc):
+                return None
+            ident = id(doc)
+            rev = doc.revision()
+        except Exception:
+            return None
+        cache = getattr(self, "_editor_text_snaps", None)
+        if cache is None:
+            cache = self._editor_text_snaps = {}
+        entry = cache.get(ident)
+        if entry is not None and entry[0] == rev:
+            return entry[1]
+        try:
+            text = ta.toPlainText()
+        except Exception:
+            return None
+        cache[ident] = (rev, text)
+        if len(cache) > 4:
+            for stale in [k for k in cache if k != ident]:
+                cache.pop(stale, None)
+        return text
+
     def _on_text_changed(self):
         # A save must never persist pre-edit text: _last_cached_text holds the
         # editor snapshot from the LAST cache tick, and a save between a text
@@ -16882,6 +16962,12 @@ class FastPrompter(
         # save falls through to the live editor text; the cache still serves
         # the common no-edit case.
         self._last_cached_text = None
+        # PERF-004: revision-aware snapshots are keyed by document revision;
+        # an edit bumps the revision so every later consumer re-extracts.
+        try:
+            self._editor_text_snaps = None
+        except Exception:
+            pass
         self._last_text_edit_time = self._bump_action_seq()
         self._update_line_count_label()
         # PERF-005: an edit can change heat/fold ownership -- invalidate the
@@ -16934,7 +17020,7 @@ class FastPrompter(
             return
         self._cache_in_progress = True
         try:
-            current_text = self.text_area.toPlainText()
+            current_text = self._editor_text_snapshot() or ""
             self._last_cached_text = current_text
             if not self.editing_snippet:
                 is_arc = getattr(self, "active_is_archive", False)
