@@ -188,10 +188,6 @@ class _TimerBehaviorEditor(QWidget):
         self.cb_pool.toggled.connect(self._on_pool_toggled)
         # preview ONLY on real user activation, never on programmatic set
         self.cb_sound.activated.connect(lambda _i: self._preview_single())
-        try:
-            self.cb_sound.highlighted.connect(lambda _i: self._preview_single())
-        except Exception:
-            pass
         lay.addStretch(1)
 
     def _quick_bar_slots(self):
@@ -366,11 +362,6 @@ class _TimerBehaviorEditor(QWidget):
 
         sound.activated.connect(
             lambda _i, s=sound, v=vol: self._preview_pool_widgets(s, v))
-        try:
-            sound.highlighted.connect(
-                lambda _i, s=sound, v=vol: self._preview_pool_widgets(s, v))
-        except Exception:
-            pass
 
     def _read_pool_rules(self):
         out = []
@@ -523,8 +514,8 @@ class TimerDialog(QDialog):
         self._editing_original_target = None
         self._editing_original_anchor = None
         self.setWindowTitle(tr("Timers", self.lang))
-        self.resize(740, 460)
-        self.setMinimumSize(480, 220)
+        self.resize(780, 520)
+        self.setMinimumSize(560, 360)
         try:
             self.setStyleSheet(main_win.styleSheet())
         except Exception:
@@ -715,6 +706,7 @@ class TimerDialog(QDialog):
         limit_btns.addWidget(self.btn_limit, 1)
 
         self.btn_scan = QPushButton(tr("Scan agents", self.lang))
+        self.btn_scan.setToolTip(tr("Scan agents for usage and rate limits", self.lang))
         self.btn_scan.clicked.connect(self.scan_agent_limits)
         limit_btns.addWidget(self.btn_scan, 1)
         timing_lay.addLayout(limit_btns)
@@ -781,7 +773,7 @@ class TimerDialog(QDialog):
             want = cal_page.sizeHint().height() + bar_h + 20
             screen = QApplication.primaryScreen()
             max_h = int(screen.availableGeometry().height() * 0.85) if screen else 820
-            self.resize(740, min(max(460, want), max_h))
+            self.resize(780, min(max(520, want), max_h))
 
         self.tabs.currentChanged.connect(self._on_tab_changed)
         target_tab = 0
@@ -846,17 +838,26 @@ class TimerDialog(QDialog):
             self.edit_selected()
 
     def _build_temp_tab(self):
-        """One-shot focus timer for Shift+Click and additive quick taps."""
+        """Temporary countdown timer that doesn't need to be saved as an alarm."""
         page = QWidget()
         lay = QVBoxLayout(page)
-        lay.setContentsMargins(4, 4, 4, 4)
-        lay.setSpacing(3)
+        lay.setContentsMargins(6, 6, 6, 6)
+        lay.setSpacing(4)
 
         intro = QLabel(tr(
-            "Shift+Click the clock for a quick timer. Each press adds time "
-            "to the same countdown; normal alarms stay untouched.", self.lang))
+            "Shift+Click the clock for a quick timer. Each press adds time to the same countdown; "
+            "normal alarms stay untouched.", self.lang))
         intro.setWordWrap(True)
         lay.addWidget(intro)
+
+        mid_lay = QHBoxLayout()
+        mid_lay.setSpacing(6)
+
+        # Left Group: Controls & Actions
+        left_group = QGroupBox(tr("Alarm Details & Timing", self.lang).replace("&", "&&"))
+        left_lay = QVBoxLayout(left_group)
+        left_lay.setContentsMargins(6, 6, 6, 6)
+        left_lay.setSpacing(4)
 
         cfg_factory = getattr(self.main_win, "temp_timer_template", None)
         cfg = cfg_factory() if callable(cfg_factory) else {
@@ -867,51 +868,84 @@ class TimerDialog(QDialog):
             "show_notification": True, "show_in_top_bar": True,
             "sound_mode": SOUND_MODE_SINGLE, "sound_rules": [],
         }
-        row = QHBoxLayout()
-        row.addWidget(QLabel(tr("Default add", self.lang)))
-        self.spin_temp_increment = QSpinBox()
-        self.spin_temp_increment.setRange(1, 24 * 60)
-        self.spin_temp_increment.setSuffix(tr(" min", self.lang))
-        self.spin_temp_increment.setValue(cfg["increment_minutes"])
-        self.spin_temp_increment.valueChanged.connect(self._temp_settings_changed)
-        row.addWidget(self.spin_temp_increment)
+
+        # Name & Description
         self.in_temp_name = QLineEdit(cfg["name"])
+        self.in_temp_name.setPlaceholderText(tr("Name (e.g. Temp Timer)", self.lang))
         self.in_temp_name.setToolTip(tr("Name shown beside the countdown", self.lang))
         self.in_temp_name.editingFinished.connect(self._temp_settings_changed)
-        row.addWidget(self.in_temp_name, 1)
-        self.cb_temp_delete = QCheckBox(tr("Delete after fire", self.lang))
-        self.cb_temp_delete.setChecked(cfg["delete_after_fire"])
-        self.cb_temp_delete.setToolTip(tr(
-            "Remove this temporary timer after its sound and notification. "
-            "Off keeps it visible as done until you remove it.", self.lang))
-        self.cb_temp_delete.toggled.connect(self._temp_settings_changed)
-        row.addWidget(self.cb_temp_delete)
-        lay.addLayout(row)
+        left_lay.addWidget(self.in_temp_name)
 
-        desc_row = QHBoxLayout()
-        desc_row.addWidget(QLabel(tr("Description", self.lang)))
         self.in_temp_desc = QLineEdit(cfg.get("description", ""))
         self.in_temp_desc.setPlaceholderText(tr("Optional notification text", self.lang))
         self.in_temp_desc.setToolTip(tr(
             "Shown in the notification popup when Temp Timer fires", self.lang))
         self.in_temp_desc.editingFinished.connect(self._temp_settings_changed)
-        desc_row.addWidget(self.in_temp_desc, 1)
-        lay.addLayout(desc_row)
+        left_lay.addWidget(self.in_temp_desc)
 
+        # Quick Add Buttons
+        quick_lbl = QLabel(tr("Add now", self.lang))
+        left_lay.addWidget(quick_lbl)
         quick = QHBoxLayout()
-        quick.addWidget(QLabel(tr("Add now", self.lang)))
+        quick.setSpacing(3)
         for minutes, label in ((15, "+15m"), (30, "+30m"),
                                (45, "+45m"), (60, "+1h"), (75, "+1h15m")):
             button = QPushButton(label)
             button.setToolTip(tr("Add {} minutes to Temp Timer", self.lang).format(minutes))
             button.clicked.connect(lambda _checked=False, m=minutes: self._add_temp(m))
             quick.addWidget(button)
-        quick.addStretch(1)
-        lay.addLayout(quick)
+        left_lay.addLayout(quick)
+
+        # Default increment & Delete after fire
+        inc_row = QHBoxLayout()
+        inc_row.setSpacing(4)
+        inc_row.addWidget(QLabel(tr("Default add:", self.lang)))
+        self.spin_temp_increment = QSpinBox()
+        self.spin_temp_increment.setRange(1, 24 * 60)
+        self.spin_temp_increment.setSuffix(tr(" min", self.lang))
+        self.spin_temp_increment.setValue(cfg["increment_minutes"])
+        self.spin_temp_increment.valueChanged.connect(self._temp_settings_changed)
+        inc_row.addWidget(self.spin_temp_increment)
+        inc_row.addStretch(1)
+        left_lay.addLayout(inc_row)
+
+        self.cb_temp_delete = QCheckBox(tr("Delete after fire", self.lang))
+        self.cb_temp_delete.setChecked(cfg["delete_after_fire"])
+        self.cb_temp_delete.setToolTip(tr(
+            "Remove this temporary timer after its sound and notification. "
+            "Off keeps it visible as done until you remove it.", self.lang))
+        self.cb_temp_delete.toggled.connect(self._temp_settings_changed)
+        left_lay.addWidget(self.cb_temp_delete)
 
         self.lbl_temp_status = QLabel("")
         self.lbl_temp_status.setWordWrap(True)
-        lay.addWidget(self.lbl_temp_status)
+        left_lay.addWidget(self.lbl_temp_status)
+
+        left_lay.addStretch(1)
+
+        actions = QHBoxLayout()
+        actions.setSpacing(4)
+        self.btn_temp_test = QPushButton(tr("Test", self.lang))
+        self.btn_temp_test.setToolTip(tr(
+            "Test these settings in 5 seconds; nothing is saved as a timer.",
+            self.lang))
+        self.btn_temp_test.clicked.connect(self._test_temp)
+        actions.addWidget(self.btn_temp_test)
+        self.btn_temp_add = QPushButton(tr("Start / Add", self.lang))
+        self.btn_temp_add.clicked.connect(lambda: self._add_temp())
+        actions.addWidget(self.btn_temp_add)
+        self.btn_temp_remove = QPushButton(tr("Remove Temp Timer", self.lang))
+        self.btn_temp_remove.clicked.connect(self._remove_temp)
+        actions.addWidget(self.btn_temp_remove)
+        left_lay.addLayout(actions)
+
+        mid_lay.addWidget(left_group, 1)
+
+        # Right Group: Behavior & Sound
+        right_group = QGroupBox(tr("Notification & Sound", self.lang).replace("&", "&&"))
+        right_lay = QVBoxLayout(right_group)
+        right_lay.setContentsMargins(6, 6, 6, 6)
+        right_lay.setSpacing(3)
 
         self._temp_behavior = _TimerBehaviorEditor(self.main_win, self.lang, self)
         self._temp_behavior.previewRequested.connect(self._preview_sound)
@@ -934,23 +968,11 @@ class TimerDialog(QDialog):
                 show_in_top_bar=cfg["show_in_top_bar"],
                 sound_mode=cfg["sound_mode"], sound_rules=cfg["sound_rules"],
             ))
-        lay.addWidget(self._temp_behavior)
+        right_lay.addWidget(self._temp_behavior)
+        mid_lay.addWidget(right_group, 1)
 
-        actions = QHBoxLayout()
-        self.btn_temp_test = QPushButton(tr("Test", self.lang))
-        self.btn_temp_test.setToolTip(tr(
-            "Test these settings in 5 seconds; nothing is saved as a timer.",
-            self.lang))
-        self.btn_temp_test.clicked.connect(self._test_temp)
-        actions.addWidget(self.btn_temp_test)
-        self.btn_temp_add = QPushButton(tr("Start / Add", self.lang))
-        self.btn_temp_add.clicked.connect(lambda: self._add_temp())
-        actions.addWidget(self.btn_temp_add)
-        self.btn_temp_remove = QPushButton(tr("Remove Temp Timer", self.lang))
-        self.btn_temp_remove.clicked.connect(self._remove_temp)
-        actions.addWidget(self.btn_temp_remove)
-        actions.addStretch(1)
-        lay.addLayout(actions)
+        lay.addLayout(mid_lay)
+
         self.tabs.addTab(page, tr("Temp Timer", self.lang))
         self._refresh_temp_tab()
 
@@ -1179,8 +1201,15 @@ class TimerDialog(QDialog):
     def _build_calendar_tab(self):
         page = QWidget()
         v = QVBoxLayout(page)
-        v.setContentsMargins(4, 4, 4, 4)
-        v.setSpacing(3)
+        v.setContentsMargins(6, 6, 6, 6)
+        v.setSpacing(4)
+
+        mid_lay = QHBoxLayout()
+        mid_lay.setSpacing(6)
+
+        # Left Column: Calendar + Events List + Actions
+        left_col = QVBoxLayout()
+        left_col.setSpacing(3)
 
         self.cal = QCalendarWidget()
         self.cal.setGridVisible(True)
@@ -1188,7 +1217,7 @@ class TimerDialog(QDialog):
         self.cal.currentPageChanged.connect(self._cal_page_changed)
         self.cal.selectionChanged.connect(self._cal_selection_changed)
         self._style_calendar_widget(self.cal)
-        v.addWidget(self.cal)
+        left_col.addWidget(self.cal)
 
         self.cal_list = QTreeWidget()
         self.cal_list.setHeaderLabels([
@@ -1201,11 +1230,11 @@ class TimerDialog(QDialog):
         self.cal_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.cal_list.itemDoubleClicked.connect(lambda *_: self._cal_edit_selected())
         self.cal_list.currentItemChanged.connect(lambda *_: self._cal_update_buttons())
-        self.cal_list.setMaximumHeight(85)
-        v.addWidget(self.cal_list, 0)
+        self.cal_list.setMaximumHeight(90)
+        left_col.addWidget(self.cal_list, 1)
 
         acts = QHBoxLayout()
-        acts.setSpacing(4)
+        acts.setSpacing(3)
         self.cal_btn_new = QPushButton(tr("New event", self.lang))
         self.cal_btn_new.clicked.connect(self._cal_new)
         self.cal_btn_edit = QPushButton(tr("Edit", self.lang))
@@ -1222,15 +1251,25 @@ class TimerDialog(QDialog):
         acts.addWidget(self.cal_btn_delete)
         acts.addWidget(self.cal_btn_today)
         acts.addStretch(1)
-        v.addLayout(acts)
+        left_col.addLayout(acts)
 
-        # ---- event editor ----
+        mid_lay.addLayout(left_col, 1)
+
+        # Right Column: Event Editor & Behavior
+        right_col = QVBoxLayout()
+        right_col.setSpacing(3)
+
+        group_event = QGroupBox(tr("Alarm Details & Timing", self.lang).replace("&", "&&"))
+        group_event_lay = QVBoxLayout(group_event)
+        group_event_lay.setContentsMargins(6, 6, 6, 6)
+        group_event_lay.setSpacing(3)
+
         self.cal_name = QLineEdit()
         self.cal_name.setPlaceholderText(tr("Event name", self.lang))
-        v.addWidget(self.cal_name)
+        group_event_lay.addWidget(self.cal_name)
         self.cal_desc = QLineEdit()
         self.cal_desc.setPlaceholderText(tr("Description (optional)", self.lang))
-        v.addWidget(self.cal_desc)
+        group_event_lay.addWidget(self.cal_desc)
 
         when_row = QHBoxLayout()
         when_row.setSpacing(4)
@@ -1248,11 +1287,18 @@ class TimerDialog(QDialog):
         when_row.addWidget(self.cal_repeat)
         when_row.addWidget(self.cal_enabled)
         when_row.addStretch(1)
-        v.addLayout(when_row)
+        group_event_lay.addLayout(when_row)
+        right_col.addWidget(group_event)
+
+        group_sound = QGroupBox(tr("Notification & Sound", self.lang).replace("&", "&&"))
+        group_sound_lay = QVBoxLayout(group_sound)
+        group_sound_lay.setContentsMargins(6, 6, 6, 6)
+        group_sound_lay.setSpacing(3)
 
         self._cal_behavior = _TimerBehaviorEditor(self.main_win, self.lang, self)
         self._cal_behavior.previewRequested.connect(self._preview_sound)
-        v.addWidget(self._cal_behavior)
+        group_sound_lay.addWidget(self._cal_behavior)
+        right_col.addWidget(group_sound)
 
         cal_commit_row = QHBoxLayout()
         cal_commit_row.setSpacing(4)
@@ -1263,16 +1309,17 @@ class TimerDialog(QDialog):
         cal_commit_row.addWidget(self.btn_cal_commit)
         cal_commit_row.addWidget(self.btn_cal_cancel)
         cal_commit_row.addStretch(1)
-        v.addLayout(cal_commit_row)
+        right_col.addLayout(cal_commit_row)
 
         self.cal_hint = QLabel("")
         self.cal_hint.setWordWrap(True)
-        v.addWidget(self.cal_hint)
+        right_col.addWidget(self.cal_hint)
+        right_col.addStretch(1)
 
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setWidget(page)
-        self.tabs.addTab(scroll, tr("Calendar", self.lang))
+        mid_lay.addLayout(right_col, 1)
+        v.addLayout(mid_lay)
+
+        self.tabs.addTab(page, tr("Calendar", self.lang))
         self._cal_formatted = set()      # dates currently marked (to clear lazily)
         self._cal_editing_id = None
         self._cal_new()
@@ -1939,13 +1986,16 @@ class TimerDialog(QDialog):
                     existing.target = target
                     existing.advance()
                 existing.fired = False        # re-arm after an edit
+            target_id = self._editing_id
         else:
-            self.main_win.timers.append(self._form_timer(target))
+            new_timer = self._form_timer(target)
+            self.main_win.timers.append(new_timer)
+            target_id = new_timer.id
 
         self.clear_form()
-        self._timer_changed(alarm=True, calendar=False)
+        self._timer_changed(alarm=True, calendar=False, select_id=target_id)
 
-    def _timer_changed(self, *, alarm=True, calendar=True):
+    def _timer_changed(self, *, alarm=True, calendar=True, select_id=None):
         """One canonical post-mutation path: persist + refresh + top bar.
 
         Every mutation previously repeated the save/refresh glue in its own
@@ -1954,7 +2004,7 @@ class TimerDialog(QDialog):
         """
         self.main_win.save_timers_to_data()
         if alarm:
-            self.refresh()
+            self.refresh(select_id=select_id)
         if calendar:
             self._cal_last_signature = self._cal_signature()
             self._cal_refresh_markers()
@@ -2050,7 +2100,7 @@ class TimerDialog(QDialog):
             self.btn_toggle.setText(
                 tr("Enable", self.lang) if not t.enabled else tr("Disable", self.lang))
 
-    def refresh(self):
+    def refresh(self, select_id=None):
         if hasattr(self, "lbl_pomo_clock"):
             self._refresh_pomo()
         if hasattr(self, "interval_clock"):
@@ -2058,7 +2108,7 @@ class TimerDialog(QDialog):
         from PyQt6.QtGui import QColor
 
         keep = self.list.currentItem()
-        keep_id = keep.data(0, Qt.ItemDataRole.UserRole) if keep else None
+        keep_id = select_id or (keep.data(0, Qt.ItemDataRole.UserRole) if keep else None)
 
         now = datetime.datetime.now()
         alarm_timers = [t for t in self.main_win.timers
@@ -2115,8 +2165,6 @@ class TimerDialog(QDialog):
                 if t.id == keep_id:
                     self.list.setCurrentItem(item)
             self.list.blockSignals(False)
-            if keep_id is None and self.list.topLevelItemCount():
-                self.list.setCurrentItem(self.list.topLevelItem(0))
         else:
             for t in sorted_timers:
                 item = existing_items.get(t.id)
@@ -2139,6 +2187,8 @@ class TimerDialog(QDialog):
                     item.setForeground(0, color)
                     item.setForeground(1, color)
                     item.setForeground(2, color)
+            if select_id and select_id in existing_items:
+                self.list.setCurrentItem(existing_items[select_id])
 
         self._update_buttons()
         self._cal_refresh_if_changed()
@@ -2224,7 +2274,7 @@ class TimerDialog(QDialog):
         mid_layout.addWidget(clock_box, 1)
 
         # Right Column: Rich Interval Settings Form
-        form_box = QGroupBox(tr("⚙️ Interval Configuration", self.lang))
+        form_box = QGroupBox(tr("Interval Configuration", self.lang))
         form_lay = QVBoxLayout(form_box)
         form_lay.setContentsMargins(6, 6, 6, 6)
         form_lay.setSpacing(3)
@@ -2296,12 +2346,6 @@ class TimerDialog(QDialog):
         self.interval_in_sound = QComboBox()
         self.interval_in_sound.setMaxVisibleItems(20)
         self._fill_interval_sound_choices()
-        # preview on user select/scroll (hover) — like _TimerBehaviorEditor
-        try:
-            self.interval_in_sound.activated.connect(lambda _i: self._interval_test_sound())
-            self.interval_in_sound.highlighted.connect(lambda _i: self._interval_test_sound())
-        except Exception:
-            pass
         r4.addWidget(self.interval_in_sound, 1)
 
         r4.addWidget(QLabel(tr("Vol:", self.lang)))
