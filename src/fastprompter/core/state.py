@@ -64,6 +64,8 @@ _JSON_SETTINGS = (
     # (md basename -> folder name). A dict; without this it round-trips as a
     # single-quoted string and the restore-time linkage is lost.
     "trash_text_folder",
+    "sound_quick_bar",
+    "interval_notifs",
 )
 
 # Never stored in the settings table: they have tables of their own.
@@ -196,6 +198,26 @@ _STRUCTURED_CODECS = {
     # CORE-006: trashed-text -> folder association. A dict keyed by trashed
     # .md basename; legacy_ast for safety, default {} on any failure.
     "trash_text_folder": (dict, {}, True),
+    "sound_quick_bar": (list, [
+        'file:NEWDAY.wav', 'file:NEWMONTH.wav', 'file:NEWWEEK.wav',
+        'file:NOMAD.wav', 'file:OBELISK.wav', 'file:PARALYZE.wav',
+        'file:PICKUP01.wav', 'file:PICKUP03.wav', 'file:QUEST.wav',
+        'file:ROGUE.wav'
+    ], True),
+    "interval_notifs": (list, [{
+        'id': 'interval_default_1',
+        'name': 'Hourly Reminder',
+        'minutes': 60,
+        'enabled': True,
+        'sound': 'newday',
+        'volume': 1,
+        'show_notification': False,
+        'show_in_top_bar': False,
+        'align_mode': 'clock',
+        'all_day': True,
+        'start_minute': 0,
+        'end_minute': 1439,
+    }], True),
 }
 
 
@@ -680,6 +702,74 @@ def _backup_atomically(source_conn, dest_path, validate=True):
         raise
 
 
+# PERF-001: periodic .bak refresh runs OFF the GUI/save critical path.
+# One in-flight job per profile; a request arriving while a job runs sets the
+# pending flag and the finishing job drains it (only the newest committed
+# generation needs a refresh). Jobs never touch the caller's live connection:
+# each opens its own short-lived source connection to the captured db_path,
+# so a profile switch or concurrent save cannot corrupt the copy.
+_BACKUP_INFLIGHT = {}
+_BACKUP_PENDING = {}
+_BACKUP_LOCK = None  # lazy threading.Lock (module stays import-safe pre-threading)
+
+
+def _schedule_periodic_backup(db_path, profile_id, on_published=None):
+    """Refresh ``<db>.bak`` on a daemon thread; returns immediately.
+
+    Coalesced per profile: at most one job in flight, a request arriving
+    mid-job marks pending and the finishing job drains it. The job opens its
+    OWN short-lived source connection — the caller's live ``self.conn`` is
+    never shared across threads. Publication still goes through
+    :func:`_backup_atomically` (atomic temp-swap, validate-before-swap), so
+    the previous good ``.bak`` survives any failure. ``on_published`` fires
+    ONLY after a successful swap — the throttle may advance on success alone."""
+    import threading
+
+    global _BACKUP_LOCK
+    if _BACKUP_LOCK is None:
+        _BACKUP_LOCK = threading.Lock()
+    key = str(profile_id)
+    with _BACKUP_LOCK:
+        if _BACKUP_INFLIGHT.get(key):
+            _BACKUP_PENDING[key] = True
+            return
+        _BACKUP_INFLIGHT[key] = True
+
+    dest = db_path + ".bak"
+
+    def _job():
+        try:
+            while True:
+                _BACKUP_PENDING[key] = False
+                published = False
+                try:
+                    src = sqlite3.connect(db_path)
+                    try:
+                        _backup_atomically(src, dest)
+                    finally:
+                        src.close()
+                    published = True
+                except Exception:
+                    logger.exception(
+                        "background database backup failed (%s)", dest)
+                if published and on_published is not None:
+                    try:
+                        on_published()
+                    except Exception:
+                        logger.exception("backup publish callback failed")
+                with _BACKUP_LOCK:
+                    more = _BACKUP_PENDING.get(key, False)
+                if not more:
+                    return
+        finally:
+            with _BACKUP_LOCK:
+                _BACKUP_INFLIGHT.pop(key, None)
+                _BACKUP_PENDING.pop(key, None)
+
+    threading.Thread(target=_job, daemon=True,
+                     name="fastprompter-db-backup").start()
+
+
 # Mandatory tables for a database this app can load (the pre-migration v0.8.x
 # schema carried `temp_presets`, the current schema carries `temp_presets_v2`).
 # Superseded by the version-aware _assert_schema_requirements; kept only as a
@@ -1116,6 +1206,14 @@ class FastPrompterState:
         self._saved_temp_gen = 0
         self._saved_arc_gen = 0
         self._last_save_had_silo_text = False
+        # PERF-003: exported-content generation for the portable Markdown
+        # backup. Bumped only when a committed save changed a domain the
+        # portable format actually exports (snippets/silos/archives, or the
+        # project order); settings-only churn never bumps it, so the backup
+        # scheduler can skip re-copying an unchanged project.
+        self._exported_content_gen = 0
+        # The settings keys THIS save committed (PERF-004 mirror dirty probe).
+        self.last_save_settings_keys = []
         # Throttle for the SQLite .bak safety copy, PER PROFILE: profiles have
         # different DB/.bak files, and one profile's recent backup must never
         # suppress another profile's (the old single scalar did exactly that
@@ -1576,8 +1674,45 @@ class FastPrompterState:
             ok = self._save_data_to_db_locked(current_text, ui_settings, force, sync)
         if ok and self.data.get("portable_backup_enabled", "True") == "True":
             from fastprompter.utils.portable_backup import run_portable_backup
-            run_portable_backup(self.data, profile_id=self.profile_id)
+            # PERF-003: the scheduler receives this profile's exported-content
+            # generation so a settings-only save (unchanged export content,
+            # already-represented generation, same calendar day) skips the
+            # whole O(project) immutable snapshot instead of exporting
+            # nothing that changed.
+            run_portable_backup(self.data, profile_id=self.profile_id,
+                                content_gen=self._exported_content_gen)
         return bool(ok)
+
+    def _dispatch_periodic_backup(self):
+        """PERF-001: run the throttled .bak refresh, synchronously by default
+        or on the background worker when the GUI opted in via
+        ``self.background_backups = True``. The throttle timestamp advances
+        ONLY on a successful publication in both modes.
+
+        CORE-006: the completion callback is bound to the profile id
+        CAPTURED at dispatch time, never to the mutable current profile at
+        completion time — a background job for profile A finishing after the
+        State switched to B must advance A's throttle, not stamp A's success
+        under B."""
+        if getattr(self, "background_backups", False):
+            captured_profile_id = self.profile_id
+            _schedule_periodic_backup(
+                self.db_path, captured_profile_id,
+                on_published=lambda pid=captured_profile_id:
+                    self._on_backup_published(pid))
+            return
+        _backup_atomically(self.conn, self.db_path + ".bak")
+        import time as _time
+        self._last_backup_time_by_profile[self.profile_id] = _time.time()
+
+    def _on_backup_published(self, profile_id=None):
+        """Background-worker completion hook: the .bak swap succeeded.
+
+        CORE-006: ``profile_id`` is the immutable key captured when the job
+        was scheduled; only that profile's throttle advances."""
+        import time as _time
+        pid = self.profile_id if profile_id is None else profile_id
+        self._last_backup_time_by_profile[pid] = _time.time()
 
     def _save_data_to_db_locked(self, current_text, ui_settings=None, force=False, sync=False):
         if not self.conn: return False
@@ -1692,6 +1827,9 @@ class FastPrompterState:
 
         changed = bool(settings_to_save or to_insert_presets or to_delete_presets
                        or to_update_temp or temp_to_delete or arc_to_update or arc_to_delete)
+        # PERF-004: expose WHICH settings keys this save committed so the
+        # one-way mirror can decide dirty routing without re-deriving it.
+        self.last_save_settings_keys = [k for k, _v in settings_to_save]
         if not changed:
             if scan_settings: self._saved_settings_gen = self._dirty_settings
             if scan_snippets: self._saved_snippets_gen = self._dirty_snippets
@@ -1749,12 +1887,24 @@ class FastPrompterState:
                 self._saved_arc_gen = self._dirty_arc
             self._db_dirty = False
 
+            # PERF-003: advance the exported-content generation ONLY for
+            # domains the portable Markdown format actually exports.
+            if scan_snippets or scan_temp or scan_arc or any(
+                    k == "cats_order" for k in self.last_save_settings_keys):
+                self._exported_content_gen += 1
+
             import time
             now = time.time()
             if now - self._last_backup_time_by_profile.get(self.profile_id, 0.0) >= 60:
+                # PERF-001: the full copy + validation is secondary to the
+                # already-committed authoritative save above. GUI builds opt
+                # into background dispatch (State.background_backups=True) so
+                # a 12 MB copy+validate never stalls this save or State._lock.
+                # Default stays the legacy SYNCHRONOUS path — identical
+                # semantics, success-based throttle, deterministic for tests
+                # and non-GUI consumers.
                 try:
-                    _backup_atomically(self.conn, self.db_path + ".bak")
-                    self._last_backup_time_by_profile[self.profile_id] = now
+                    self._dispatch_periodic_backup()
                 except Exception:
                     logger.exception("throttled database backup failed")
         except Exception:

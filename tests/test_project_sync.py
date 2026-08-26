@@ -43,6 +43,23 @@ def test_resolve_relative_path_rejects_escape_and_accepts_nested(tmp_path):
     assert ps.resolve_relative_path(root, "/outside.txt") is None
 
 
+def test_resolve_relative_path_preserves_whitespace_filenames(tmp_path):
+    # CORE-006: leading/trailing whitespace is a legal filename character and
+    # must NOT be stripped. " lead.txt" and "lead.txt" are distinct entries.
+    root = str(tmp_path)
+    (tmp_path / "lead.txt").write_text("plain", encoding="utf-8")
+    (tmp_path / " lead.txt").write_text("spaced", encoding="utf-8")
+    plain = ps.resolve_relative_path(root, "lead.txt")
+    spaced = ps.resolve_relative_path(root, " lead.txt")
+    assert plain is not None and spaced is not None
+    assert plain != spaced
+    assert os.path.basename(plain) == "lead.txt"
+    assert os.path.basename(spaced) == " lead.txt"
+    # Each resolves to its own file and writes affect only that file.
+    assert os.path.samefile(plain, str(tmp_path / "lead.txt"))
+    assert os.path.samefile(spaced, str(tmp_path / " lead.txt"))
+
+
 def test_resolve_relative_path_rejects_symlink_escape(tmp_path):
     outside = tmp_path / "outside"
     outside.mkdir()
@@ -101,15 +118,17 @@ def test_scan_folder_skips_huge_files(tmp_path):
 def test_read_text_file_normalises_eol(tmp_path):
     p = tmp_path / "crlf.txt"
     p.write_bytes(b"one\r\ntwo\r\nthree\n")
-    text, eol = ps.read_text_file(str(p))
+    text, eol, had_bom = ps.read_text_file(str(p))
     assert text == "one\ntwo\nthree\n"
     assert eol == "\r\n"
+    assert had_bom is False
 
 
 def test_read_text_file_removes_utf8_bom(tmp_path):
     p = tmp_path / "bom.txt"
     p.write_bytes(b"\xef\xbb\xbfhello\n")
-    assert ps.read_text_file(str(p)) == ("hello\n", "\n")
+    text, eol, had_bom = ps.read_text_file(str(p))
+    assert (text, eol, had_bom) == ("hello\n", "\n", True)
 
 
 def test_read_text_file_binary_and_huge_are_skipped(tmp_path):
@@ -136,8 +155,29 @@ def test_write_text_file_applies_eol_and_roundtrips(tmp_path):
     written = ps.write_text_file(str(p), "one\ntwo\n", eol="\r\n")
     assert written == "one\r\ntwo\r\n"
     assert p.read_bytes() == b"one\r\ntwo\r\n"
-    text, eol = ps.read_text_file(str(p))
-    assert (text, eol) == ("one\ntwo\n", "\r\n")
+    text, eol, had_bom = ps.read_text_file(str(p))
+    assert (text, eol, had_bom) == ("one\ntwo\n", "\r\n", False)
+
+
+def test_write_text_file_preserves_utf8_bom(tmp_path):
+    """CORE-007: a FastPrompter edit must not silently drop a UTF-8 BOM."""
+    p = tmp_path / "bom.txt"
+    p.write_bytes(b"\xef\xbb\xbfalpha\r\n")
+    text, eol, had_bom = ps.read_text_file(str(p))
+    assert (had_bom, eol) == (True, "\r\n")
+    # App-side edit appended, written back with the original BOM + CRLF.
+    written = ps.write_text_file(str(p), text + "beta\n", eol=eol,
+                                 write_bom=had_bom)
+    assert written == "alpha\r\nbeta\r\n"
+    assert p.read_bytes() == b"\xef\xbb\xbfalpha\r\nbeta\r\n"
+
+
+def test_write_text_file_adds_no_bom_by_default(tmp_path):
+    p = tmp_path / "plain.txt"
+    ps.write_text_file(str(p), "hi\n", write_bom=True)
+    assert p.read_bytes().startswith(b"\xef\xbb\xbf")
+    ps.write_text_file(str(p), "hi\n", write_bom=False)
+    assert not p.read_bytes().startswith(b"\xef\xbb\xbf")
 
 
 def test_write_text_file_leaves_no_temp_file(tmp_path):

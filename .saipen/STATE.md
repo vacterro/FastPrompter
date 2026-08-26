@@ -1,7 +1,7 @@
 ---
 phase: DONE
 task: none
-next_action: "saipen continue"
+next_action: "WAIT: ship done — audit 16 + interval/volume/clock shipped, exe next"
 blocker: ""
 agent: workbuddy
 saipen_version: 7
@@ -13,10 +13,9 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 963
+last_event: 970
 style_contract: ded-4ae736e4
-updated: "2026-08-25T00:30:00Z"
-transition_from: SHIP
+updated: "2026-08-26T03:45:00Z"
+transition_from: SCOUT
 execution_intent: normal
-converge_target: ""
 ---

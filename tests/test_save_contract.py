@@ -18,7 +18,7 @@ def make_state(tmp_path, monkeypatch):
                         lambda profile_id=1: str(tmp_path / "f.db"))
     monkeypatch.setattr(
         "fastprompter.utils.portable_backup.run_portable_backup",
-        lambda data, profile_id=1: None)
+        lambda data, profile_id=1, **_kw: None)
 
     def _make():
         s = FastPrompterState(profile_id=1)
@@ -72,7 +72,7 @@ def test_failed_save_never_triggers_portable_backup(make_state, monkeypatch):
     calls = []
     monkeypatch.setattr(
         "fastprompter.utils.portable_backup.run_portable_backup",
-        lambda data, profile_id=1: calls.append(profile_id))
+        lambda data, profile_id=1, **_kw: calls.append(profile_id))
     s = make_state()
     s.conn.close()
     s.conn = None
@@ -84,7 +84,7 @@ def test_successful_save_triggers_portable_backup(make_state, monkeypatch):
     calls = []
     monkeypatch.setattr(
         "fastprompter.utils.portable_backup.run_portable_backup",
-        lambda data, profile_id=1: calls.append(profile_id))
+        lambda data, profile_id=1, **_kw: calls.append(profile_id))
     s = make_state()
     s.data["temp_presets_all"]["Code"][0] = "hello"
     s.mark_dirty()

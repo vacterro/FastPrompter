@@ -26,7 +26,7 @@ def make_state(tmp_path, monkeypatch):
                         lambda profile_id=1: str(tmp_path / "f.db"))
     monkeypatch.setattr(
         "fastprompter.utils.portable_backup.run_portable_backup",
-        lambda data, profile_id=1: None)
+        lambda data, profile_id=1, **_kw: None)
 
     def _make():
         s = FastPrompterState(profile_id=1)
@@ -213,7 +213,7 @@ class TestUnreadableDatabase:
                             lambda profile_id=1: str(tmp_path / "corrupt.db"))
         monkeypatch.setattr(
             "fastprompter.utils.portable_backup.run_portable_backup",
-            lambda data: None)
+            lambda data, **_kw: None)
         # a file that is NOT a database
         with open(str(tmp_path / "corrupt.db"), "wb") as f:
             f.write(b"\x00" * 4096)
@@ -227,7 +227,7 @@ class TestUnreadableDatabase:
                             lambda profile_id=1: str(tmp_path / "badjson.db"))
         monkeypatch.setattr(
             "fastprompter.utils.portable_backup.run_portable_backup",
-            lambda data: None)
+            lambda data, **_kw: None)
         # valid DB, one corrupt JSON setting value
         conn = sqlite3.connect(str(tmp_path / "badjson.db"))
         conn.execute("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT)")

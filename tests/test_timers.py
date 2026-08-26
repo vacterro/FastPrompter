@@ -43,7 +43,7 @@ class TestRoundTrip:
         back = load_timers(save_timers([t]))
         assert len(back) == 1
         b = back[0]
-        assert (b.name, b.repeat, b.volume) == ("Claude limit", REPEAT_DAILY, 7)
+        assert (b.name, b.repeat, b.volume) == ("Claude limit", REPEAT_DAILY, 0.7)
         assert (b.color_mode, b.color) == (COLOR_STATIC, "#ff8800")
         assert b.target == t.target
         assert b.id == t.id
@@ -56,9 +56,9 @@ class TestRoundTrip:
         assert load_timers(None) == []
 
     def test_bad_volume_is_clamped_not_crashing(self):
-        assert Timer("t", NOW, volume=99).volume == 10
-        assert Timer("t", NOW, volume=-4).volume == 0
-        assert Timer("t", NOW, volume="abc").volume == 5
+        assert Timer("t", NOW, volume=99).volume == 1.0
+        assert Timer("t", NOW, volume=-4).volume == 0.0
+        assert Timer("t", NOW, volume="abc").volume == 0.5
 
     def test_blank_name_gets_a_fallback(self):
         assert Timer("   ", NOW).name == "Timer"
@@ -540,8 +540,8 @@ def _pool(rules, sound="tick", volume=5):
 
 
 def test_single_mode_returns_own_sound_and_volume():
-    t = timers.Timer("s", NOW, sound="notify", volume=8)
-    assert choose_timer_sound(t, NOW) == ("notify", 8)
+    t = timers.Timer("s", NOW, sound="notify", volume=0.8)
+    assert choose_timer_sound(t, NOW) == ("notify", 0.8)
 
 
 def test_pool_with_no_eligible_rule_is_silent():
@@ -559,16 +559,16 @@ def test_pool_picks_an_eligible_rule_with_volume_inheritance():
     ])
     ref, vol = choose_timer_sound(t, datetime.datetime(2026, 7, 21, 9, 0))
     assert ref == "tick"
-    assert vol == 5  # inherited from timer.volume
+    assert vol == 0.5  # inherited from timer.volume
 
 
 def test_pool_rule_explicit_volume_overrides_inheritance():
     t = _pool([
         {"sound": "notify", "enabled": True, "all_day": False,
-         "start_minute": 360, "end_minute": 720, "volume": 2},
+         "start_minute": 360, "end_minute": 720, "volume": 0.2},
     ])
     ref, vol = choose_timer_sound(t, datetime.datetime(2026, 7, 21, 9, 0))
-    assert (ref, vol) == ("notify", 2)
+    assert (ref, vol) == ("notify", 0.2)
 
 
 def test_pool_boundaries_start_inclusive_end_exclusive():
@@ -648,7 +648,7 @@ def test_malformed_pool_rule_dropped_on_load():
 
 def test_pool_mode_does_not_fall_back_to_single_sound():
     # even when the pool has no eligible rule, never play timer.sound
-    t = _pool([], sound="notify", volume=9)
+    t = _pool([], sound="notify", volume=0.9)
     assert choose_timer_sound(t, NOW) is None
 
 
@@ -837,15 +837,15 @@ class TestSnoozeClone:
 
     def test_clone_carries_full_behaviour(self):
         base = Timer("daily", NOW, repeat=REPEAT_DAILY, description="d",
-                     sound="bells", volume=3, color_mode=COLOR_STATIC,
+                     sound="bells", volume=0.3, color_mode=COLOR_STATIC,
                      color="#123456", kind=KIND_CALENDAR,
                      show_notification=False, show_in_top_bar=False,
                      sound_mode=SOUND_MODE_POOL,
                      sound_rules=[{"sound": "gong", "enabled": True,
-                                   "volume": 4}])
+                                   "volume": 0.4}])
         clone = snooze_clone(base, 10, now=NOW)
         assert (clone.name, clone.description) == ("daily", "d")
-        assert (clone.sound, clone.volume) == ("bells", 3)
+        assert (clone.sound, clone.volume) == ("bells", 0.3)
         assert (clone.color_mode, clone.color) == (COLOR_STATIC, "#123456")
         assert clone.kind == KIND_CALENDAR
         assert clone.show_notification is False
@@ -853,7 +853,7 @@ class TestSnoozeClone:
         assert clone.sound_mode == SOUND_MODE_POOL
         assert clone.sound_rules == [{"sound": "gong", "enabled": True,
                                       "all_day": True, "start_minute": 0,
-                                      "end_minute": 0, "volume": 4}]
+                                      "end_minute": 0, "volume": 0.4}]
 
     def test_clone_rules_are_not_aliased(self):
         base = mk(sound_mode=SOUND_MODE_POOL,
@@ -884,26 +884,26 @@ class TestProfileRoundtripEveryField:
 
     def test_full_featured_timer_survives_switch_and_restart(self):
         t = Timer("profile", NOW, repeat=REPEAT_MONTHLY, sound="bells",
-                  volume=9, color_mode=COLOR_STATIC, color="#ff0000",
+                  volume=0.9, color_mode=COLOR_STATIC, color="#ff0000",
                   enabled=False, fired=True, description="desc",
                   interval_minutes=90, kind=KIND_CALENDAR,
                   show_notification=False, show_in_top_bar=False,
                   repeat_anchor="2026-01-31", sound_mode=SOUND_MODE_POOL,
                   sound_rules=[{"sound": "gong", "enabled": True,
                                 "all_day": False, "start_minute": 60,
-                                "end_minute": 120, "volume": 5}])
+                                "end_minute": 120, "volume": 0.5}])
         profile_a = save_timers([t])
         back = load_timers(profile_a)[0]
         d = back.to_dict()
         assert d["repeat"] == REPEAT_MONTHLY
         assert d["repeat_anchor"] == "2026-01-31"
-        assert d["sound"] == "bells" and d["volume"] == 9
+        assert d["sound"] == "bells" and d["volume"] == 0.9
         assert d["enabled"] is False and d["fired"] is True
         assert d["show_notification"] is False
         assert d["show_in_top_bar"] is False
         assert d["kind"] == KIND_CALENDAR and d["interval_minutes"] == 90
         assert d["sound_mode"] == SOUND_MODE_POOL
-        assert d["sound_rules"][0]["volume"] == 5
+        assert d["sound_rules"][0]["volume"] == 0.5
 
     def test_profiles_do_not_share_live_rules(self):
         a = mk("A", sound_mode=SOUND_MODE_POOL,
@@ -913,7 +913,7 @@ class TestProfileRoundtripEveryField:
         raw_a, raw_b = save_timers([a]), save_timers([b])
         live_a, live_b = load_timers(raw_a)[0], load_timers(raw_b)[0]
         live_a.sound_rules[0]["enabled"] = False
-        live_b.sound_rules[0]["volume"] = 3
+        live_b.sound_rules[0]["volume"] = 0.3
         reload_a = load_timers(save_timers([live_a]))[0]
         reload_b = load_timers(raw_b)[0]
         assert reload_a.sound_rules[0]["enabled"] is False

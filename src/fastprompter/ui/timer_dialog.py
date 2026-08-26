@@ -22,11 +22,14 @@ from PyQt6.QtWidgets import (
     QDialog,
     QDoubleSpinBox,
     QGridLayout,
+    QGroupBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
     QLineEdit,
     QPushButton,
+    QScrollArea,
+    QSizePolicy,
     QSpinBox,
     QTableWidget,
     QTabWidget,
@@ -61,6 +64,7 @@ from fastprompter.core.timers import (
     occurs_on_date,
 )
 from fastprompter.core.translations import tr
+from fastprompter.ui.analog_clock import BigAnalogClock
 
 _SOUNDS = ("tick", "click", "new", "save", "delete", "clear", "silo", "snippet")
 _TEST_DELAY_S = 5
@@ -113,10 +117,12 @@ class _TimerBehaviorEditor(QWidget):
             "Off: always the same colour.", lang))
         basics.addWidget(self.cb_temp)
 
-        self.spin_vol = QSpinBox()
-        self.spin_vol.setRange(0, 10)
-        self.spin_vol.setValue(5)
-        self.spin_vol.setToolTip(tr("Alarm volume (0-10)", lang))
+        self.spin_vol = QDoubleSpinBox()
+        self.spin_vol.setRange(0.0, 1.0)
+        self.spin_vol.setDecimals(2)
+        self.spin_vol.setSingleStep(0.05)
+        self.spin_vol.setValue(0.5)
+        self.spin_vol.setToolTip(tr("Alarm volume (0.00-1.00)", lang))
         basics.addWidget(QLabel(tr("Vol", lang)))
         basics.addWidget(self.spin_vol)
         basics.addStretch(1)
@@ -129,12 +135,30 @@ class _TimerBehaviorEditor(QWidget):
             "time window and volume. Off: the single sound above is used.", lang))
         lay.addWidget(self.cb_pool)
 
+        sound_row = QHBoxLayout()
+        sound_row.setSpacing(4)
         self.cb_sound = QComboBox()
+        self.cb_sound.setMaxVisibleItems(20)
         self.cb_sound.setToolTip(tr(
             "Alarm sound — the named events first, then every file in the "
             "library", lang))
         self._fill_sound_choices()
-        lay.addWidget(self.cb_sound)
+        sound_row.addWidget(self.cb_sound, 1)
+
+        self.btn_preview_sound = QPushButton(tr("Test", lang))
+        self.btn_preview_sound.setToolTip(tr("Preview currently selected sound", lang))
+        self.btn_preview_sound.clicked.connect(self._preview_single)
+        sound_row.addWidget(self.btn_preview_sound)
+        lay.addLayout(sound_row)
+
+        # Quick Sound bar (10 buttons, 2x5 grid)
+        self.quick_bar = QWidget()
+        qb_lay = QGridLayout(self.quick_bar)
+        qb_lay.setContentsMargins(0, 0, 0, 0)
+        qb_lay.setSpacing(2)
+        lay.addWidget(self.quick_bar)
+        self._quick_buttons = []
+        self._rebuild_quick_bar()
 
         # ---- pool editor ----
         self.pool = QTableWidget()
@@ -162,6 +186,64 @@ class _TimerBehaviorEditor(QWidget):
         self.cb_pool.toggled.connect(self._on_pool_toggled)
         # preview ONLY on real user activation, never on programmatic set
         self.cb_sound.activated.connect(lambda _i: self._preview_single())
+        try:
+            self.cb_sound.highlighted.connect(lambda _i: self._preview_single())
+        except Exception:
+            pass
+        lay.addStretch(1)
+
+    def _quick_bar_slots(self):
+        saved = getattr(self.main_win, "data", {}).get("sound_quick_bar")
+        if isinstance(saved, list) and len(saved) == 10:
+            return list(saved)
+        return [
+            "file:NEWDAY.wav", "file:NEWMONTH.wav", "file:NEWWEEK.wav",
+            "file:NOMAD.wav", "file:OBELISK.wav", "file:PARALYZE.wav",
+            "file:PICKUP01.wav", "file:PICKUP03.wav", "file:QUEST.wav",
+            "file:ROGUE.wav",
+        ]
+
+    def _save_quick_bar_slots(self, slots):
+        if hasattr(self.main_win, "data") and isinstance(self.main_win.data, dict):
+            self.main_win.data["sound_quick_bar"] = list(slots)
+            self.main_win.mark_dirty()
+
+    def _rebuild_quick_bar(self):
+        lay = self.quick_bar.layout()
+        while self._quick_buttons:
+            self._quick_buttons.pop().deleteLater()
+        for idx, ref in enumerate(self._quick_bar_slots()):
+            label = ref[5:] if ref.startswith("file:") else ref
+            if label.lower().endswith(".wav"):
+                label = label[:-4]
+            btn = QPushButton(label or "-")
+            btn.setFixedHeight(20)
+            btn.setToolTip(tr(
+                "Click: pick '{}' & preview.\nRight-click: store current sound here.",
+                self.lang).format(label))
+            btn.clicked.connect(lambda _=False, i=idx: self._quick_pick(i))
+            btn.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+            btn.customContextMenuRequested.connect(
+                lambda _pos, i=idx: self._quick_store(i))
+            lay.addWidget(btn, idx // 5, idx % 5)
+            self._quick_buttons.append(btn)
+
+    def _quick_pick(self, idx):
+        slots = self._quick_bar_slots()
+        if 0 <= idx < len(slots):
+            ref = slots[idx]
+            self.select_sound(ref)
+            self._preview_single()
+
+    def _quick_store(self, idx):
+        ref = self.cb_sound.currentData()
+        if not ref:
+            return
+        slots = self._quick_bar_slots()
+        if 0 <= idx < len(slots):
+            slots[idx] = ref
+            self._save_quick_bar_slots(slots)
+            self._rebuild_quick_bar()
 
     # -- cached sound choices ------------------------------------------------
     def _fill_sound_choices(self):
@@ -259,15 +341,34 @@ class _TimerBehaviorEditor(QWidget):
         to.setTime(_minute_to_time(en_m))
         self.pool.setCellWidget(r, 3, to)
 
-        vol = QSpinBox()
-        vol.setRange(-1, 10)
+        vol = QDoubleSpinBox()
+        vol.setRange(-1.0, 1.0)
+        vol.setDecimals(2)
+        vol.setSingleStep(0.05)
         vol.setSpecialValueText(tr("Timer", self.lang))
         v = rule.get("volume", None)
-        vol.setValue(-1 if v is None else max(-1, min(10, int(v))))
+        # legacy int 0-10 -> 0.0-1.0
+        if v is not None:
+            try:
+                if isinstance(v, bool):
+                    v = None
+                else:
+                    fv = float(v)
+                    if fv > 1.0 and fv <= 10.0 and float(fv).is_integer():
+                        fv = fv / 10.0
+                    v = max(0.0, min(1.0, fv))
+            except (TypeError, ValueError):
+                v = None
+        vol.setValue(-1.0 if v is None else float(v))
         self.pool.setCellWidget(r, 4, vol)
 
         sound.activated.connect(
             lambda _i, s=sound, v=vol: self._preview_pool_widgets(s, v))
+        try:
+            sound.highlighted.connect(
+                lambda _i, s=sound, v=vol: self._preview_pool_widgets(s, v))
+        except Exception:
+            pass
 
     def _read_pool_rules(self):
         out = []
@@ -412,16 +513,16 @@ def _time_to_minute(t):
 
 
 class TimerDialog(QDialog):
-    def __init__(self, main_win):
+    def __init__(self, main_win, initial_tab: int | str = 0):
         super().__init__(main_win)
         self.main_win = main_win
         self.lang = getattr(main_win, "_current_lang", "EN")
         self._editing_id = None
         self._editing_original_target = None
         self._editing_original_anchor = None
-
         self.setWindowTitle(tr("Timers", self.lang))
-        self.setMinimumWidth(460)
+        self.resize(740, 460)
+        self.setMinimumSize(480, 220)
         try:
             self.setStyleSheet(main_win.styleSheet())
         except Exception:
@@ -437,217 +538,28 @@ class TimerDialog(QDialog):
         alarms_page = QWidget()
         root = QVBoxLayout(alarms_page)
         root.setContentsMargins(4, 4, 4, 4)
-        root.setSpacing(6)
+        root.setSpacing(4)
         self.tabs.addTab(alarms_page, tr("Alarms", self.lang))
+        self._build_interval_tab()
 
-        # ---- existing timers ----
+        # ---- existing timers tree ----
         self.list = QTreeWidget()
         self.list.setHeaderLabels([tr("Name", self.lang), tr("Time", self.lang), tr("Remaining", self.lang)])
         self.list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.list.setRootIsDecorated(False)
-        self.list.setMinimumHeight(130)
+        self.list.setMinimumHeight(100)
+        self.list.setMaximumHeight(135)
         self.list.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        self.list.setColumnWidth(1, 100)
-        self.list.setColumnWidth(2, 90)
+        self.list.setColumnWidth(1, 110)
+        self.list.setColumnWidth(2, 95)
         self.list.setToolTip(tr(
             "Click a timer to edit it.\nColour shows how close it is.",
             self.lang))
         self.list.itemClicked.connect(lambda *_: self.edit_selected())
-        self.list.currentItemChanged.connect(lambda *_: self._update_buttons())
-        root.addWidget(self.list, 1)
+        self.list.currentItemChanged.connect(self._on_timer_current_changed)
+        root.addWidget(self.list, 0)
 
-        # ---- what and when ----
-        row = QHBoxLayout()
-        row.setSpacing(4)
-        self.in_name = QLineEdit()
-        self.in_name.setPlaceholderText(tr("Name (e.g. Claude limit)", self.lang))
-        self.in_name.setToolTip(tr("What is resetting", self.lang))
-        row.addWidget(self.in_name, 2)
-
-        self.in_when = QLineEdit()
-        self.in_when.setPlaceholderText(tr("4 days 11 hours / 18:30", self.lang))
-        self.in_when.setToolTip(tr(
-            "A delay: 4 days 11 hours, 4d 11h, 90m, 1h30, 1.5h\n"
-            "or a clock time: 18:30, tomorrow 9:00\n"
-            "Russian works too. Press Enter to add.", self.lang))
-        self.in_when.returnPressed.connect(self.commit)
-        row.addWidget(self.in_when, 2)
-
-        self.cb_preset = QComboBox()
-        self.cb_preset.setToolTip(tr("Ready-made delays", self.lang))
-        self.cb_preset.addItem(tr("Preset", self.lang), "")
-        for label, value in PRESETS:
-            self.cb_preset.addItem(label, value)
-        self.cb_preset.currentIndexChanged.connect(self._preset_picked)
-        row.addWidget(self.cb_preset, 1)
-        root.addLayout(row)
-
-        # ---- modern date/time picker (T-711) ----
-        picker_row = QHBoxLayout()
-        picker_row.setSpacing(4)
-        
-        self.date_time_picker = QDateTimeEdit()
-        self.date_time_picker.setDisplayFormat("yyyy-MM-dd HH:mm")
-        self.date_time_picker.setCalendarPopup(True)
-        self.date_time_picker.setTimeSpec(Qt.TimeSpec.LocalTime)
-        self.date_time_picker.setToolTip(tr("Pick date and time (modern picker)", self.lang))
-        self.date_time_picker.setDateTime(QDateTime.currentDateTime().addSecs(3600))  # Default: 1 hour from now
-        self._style_calendar_popup()
-        picker_row.addWidget(self.date_time_picker, 2)
-        
-        self.btn_pick_now = QPushButton(tr("Now", self.lang))
-        self.btn_pick_now.setToolTip(tr("Set to current time", self.lang))
-        self.btn_pick_now.clicked.connect(lambda: self.date_time_picker.setDateTime(QDateTime.currentDateTime()))
-        picker_row.addWidget(self.btn_pick_now)
-        
-        self.btn_use_picker = QPushButton(tr("Use Picker", self.lang))
-        self.btn_use_picker.setToolTip(tr("Use the picker date/time instead of text", self.lang))
-        self.btn_use_picker.clicked.connect(self._use_picker_value)
-        picker_row.addWidget(self.btn_use_picker)
-        
-        root.addLayout(picker_row)
-
-        # ---- one-click quick presets (T-726) ----
-        # The primary flow must be visible, not typed: a click writes a
-        # concrete ISO moment into in_when, so commit() needs no typing and
-        # no new parsing. Free text stays the POWER path above it.
-        quick_row = QHBoxLayout()
-        quick_row.setSpacing(4)
-        self.btn_quick_10m = QPushButton("in 10m")
-        self.btn_quick_10m.setToolTip("10 minutes from now")
-        self.btn_quick_10m.clicked.connect(lambda: self._quick_pick("10m"))
-        quick_row.addWidget(self.btn_quick_10m)
-
-        self.btn_quick_1h = QPushButton("in 1h")
-        self.btn_quick_1h.setToolTip("1 hour from now")
-        self.btn_quick_1h.clicked.connect(lambda: self._quick_pick("1h"))
-        quick_row.addWidget(self.btn_quick_1h)
-
-        self.btn_quick_tonight = QPushButton("tonight")
-        self.btn_quick_tonight.setToolTip("Tonight at 22:00")
-        self.btn_quick_tonight.clicked.connect(lambda: self._quick_pick("tonight"))
-        quick_row.addWidget(self.btn_quick_tonight)
-
-        self.btn_quick_tomorrow = QPushButton("tomorrow")
-        self.btn_quick_tomorrow.setToolTip("Tomorrow at 09:00")
-        self.btn_quick_tomorrow.clicked.connect(lambda: self._quick_pick("tomorrow"))
-        quick_row.addWidget(self.btn_quick_tomorrow)
-
-        quick_row.addStretch(1)
-        root.addLayout(quick_row)
-
-        # ---- the 5-hour limit catcher ----
-        # An agent quota is a rolling window, not a one-off alarm: it opened
-        # at some moment and comes back every N hours from THAT moment. The
-        # generic "when" box can express the first reset but not the roll,
-        # and getting the anchor right by hand is exactly the fiddly part.
-        limit = QHBoxLayout()
-        limit.setSpacing(4)
-
-        self.lbl_limit = QLabel(tr("Limit window:", self.lang))
-        limit.addWidget(self.lbl_limit)
-
-        self.spin_limit_hours = QDoubleSpinBox()
-        self.spin_limit_hours.setRange(0.25, 72.0)
-        self.spin_limit_hours.setSingleStep(0.5)
-        self.spin_limit_hours.setDecimals(2)
-        self.spin_limit_hours.setValue(5.0)
-        self.spin_limit_hours.setSuffix(tr(" h", self.lang))
-        self.spin_limit_hours.setToolTip(tr(
-            "How long the window lasts. 5 hours is the usual agent quota.",
-            self.lang))
-        limit.addWidget(self.spin_limit_hours)
-
-        self.in_limit_start = QLineEdit()
-        self.in_limit_start.setPlaceholderText(tr("started (blank = now)", self.lang))
-        self.in_limit_start.setToolTip(tr(
-            "When the window OPENED, e.g. 09:20 - the countdown is that\n"
-            "moment plus the hours on the left. Leave empty to start now.\n"
-            "A start already in the past rolls forward to the next reset.",
-            self.lang))
-        self.in_limit_start.returnPressed.connect(self.add_limit_window)
-        limit.addWidget(self.in_limit_start, 1)
-
-        self.btn_limit = QPushButton(tr("Catch limit", self.lang))
-        self.btn_limit.setToolTip(tr(
-            "Add a repeating timer for a rolling usage window.\n"
-            "It re-arms itself every period, so it keeps telling you\n"
-            "when the NEXT reset lands - even after days offline.",
-            self.lang))
-        self.btn_limit.clicked.connect(self.add_limit_window)
-        limit.addWidget(self.btn_limit)
-
-        # Ask the agents instead of watching for the banner by hand. Reads
-        # their chat text over the debugger and fills the form from whatever
-        # they actually say - it types nothing, so it is safe mid-work.
-        self.btn_scan = QPushButton(tr("Scan agents", self.lang))
-        self.btn_scan.setToolTip(tr(
-            "Read every debuggable agent and see which are rate-limited.\n"
-            "A reset time in their own words fills the form; when they name\n"
-            "none, the window length above is used and labelled assumed.",
-            self.lang))
-        self.btn_scan.clicked.connect(self.scan_agent_limits)
-        limit.addWidget(self.btn_scan)
-        root.addLayout(limit)
-
-        self.lbl_limit_hint = QLabel("")
-        self.lbl_limit_hint.setWordWrap(True)
-        root.addWidget(self.lbl_limit_hint)
-        self.in_limit_start.textChanged.connect(self._preview_limit)
-        self.spin_limit_hours.valueChanged.connect(
-            lambda _v: self._preview_limit(self.in_limit_start.text()))
-
-        # ---- description ----
-        self.in_desc = QLineEdit()
-        self.in_desc.setPlaceholderText(tr("Description (optional)", self.lang))
-        self.in_desc.setToolTip(tr(
-            "Shown in the notification popup when it fires", self.lang))
-        self.in_desc.returnPressed.connect(self.commit)
-        root.addWidget(self.in_desc)
-
-        # ---- options ----
-        opts = QHBoxLayout()
-        opts.setSpacing(4)
-
-        self.cb_repeat = QComboBox()
-        self.cb_repeat.setToolTip(tr("How often it repeats", self.lang))
-        for r in REPEAT_CHOICES:
-            self.cb_repeat.addItem(tr(r.capitalize(), self.lang), r)
-        opts.addWidget(self.cb_repeat)
-
-        # T-1005/T-1006: one shared behaviour editor owns notify / top-bar /
-        # colour / volume / single-sound / random-pool. Alarm and Calendar forms
-        # both instantiate it, so the behaviour truth lives in exactly one place.
-        self._behavior = _TimerBehaviorEditor(self.main_win, self.lang, self)
-        self._behavior.previewRequested.connect(self._preview_sound)
-        opts.addWidget(self._behavior)
-
-        self.btn_test = QPushButton(tr("Test", self.lang))
-        self.btn_test.setToolTip(tr(
-            "Fire these settings in 5 seconds so you can check the sound\n"
-            "and the popup. Nothing is saved.", self.lang))
-        self.btn_test.clicked.connect(self.test_now)
-        opts.addWidget(self.btn_test)
-
-        opts.addStretch(1)
-        self.btn_commit = QPushButton(tr("Add", self.lang))
-        self.btn_commit.clicked.connect(self.commit)
-        opts.addWidget(self.btn_commit)
-        root.addLayout(opts)
-
-        # Keep the legacy attribute names working for callers/tests that
-        # reached the Alarm sound controls directly.
-        self.cb_sound = self._behavior.cb_sound
-        self.spin_vol = self._behavior.spin_vol
-        self.cb_temp = self._behavior.cb_temp
-
-        # ---- live feedback ----
-        self.lbl_hint = QLabel("")
-        self.lbl_hint.setWordWrap(True)
-        root.addWidget(self.lbl_hint)
-        self.in_when.textChanged.connect(self._preview)
-
-        # ---- row actions ----
+        # ---- row actions directly under list ----
         actions = QHBoxLayout()
         actions.setSpacing(4)
         self.btn_edit = QPushButton(tr("Edit", self.lang))
@@ -670,6 +582,7 @@ class TimerDialog(QDialog):
         actions.addWidget(self.btn_subtract)
 
         self.btn_remove = QPushButton(tr("Remove", self.lang))
+        self.btn_remove.setToolTip(tr("Delete the selected timer", self.lang))
         self.btn_remove.clicked.connect(self.remove_selected)
         actions.addWidget(self.btn_remove)
 
@@ -678,15 +591,217 @@ class TimerDialog(QDialog):
         self.btn_cancel_edit.setToolTip(tr("Clear the form", self.lang))
         self.btn_cancel_edit.clicked.connect(self.clear_form)
         actions.addWidget(self.btn_cancel_edit)
+        root.addLayout(actions)
 
+        # ---- Grouped Form Panels ----
+        form_split = QHBoxLayout()
+        form_split.setSpacing(6)
+
+        # Left Group: Timing & Details
+        group_timing = QGroupBox(tr("⏰ Alarm Details & Timing", self.lang))
+        timing_lay = QVBoxLayout(group_timing)
+        timing_lay.setContentsMargins(6, 6, 6, 6)
+        timing_lay.setSpacing(3)
+
+        # Name & Description
+        name_desc_lay = QHBoxLayout()
+        name_desc_lay.setSpacing(4)
+        self.in_name = QLineEdit()
+        self.in_name.setPlaceholderText(tr("Name (e.g. Claude limit)", self.lang))
+        self.in_name.setToolTip(tr("What is resetting", self.lang))
+        name_desc_lay.addWidget(self.in_name, 2)
+
+        self.in_desc = QLineEdit()
+        self.in_desc.setPlaceholderText(tr("Description (optional)", self.lang))
+        self.in_desc.setToolTip(tr("Shown in notification popup", self.lang))
+        self.in_desc.returnPressed.connect(self.commit)
+        name_desc_lay.addWidget(self.in_desc, 2)
+        timing_lay.addLayout(name_desc_lay)
+
+        # Quick Delays Bar
+        quick_row = QHBoxLayout()
+        quick_row.setSpacing(3)
+        self.btn_quick_10m = QPushButton("in 10m")
+        self.btn_quick_10m.clicked.connect(lambda: self._quick_pick("10m"))
+        quick_row.addWidget(self.btn_quick_10m)
+
+        self.btn_quick_1h = QPushButton("in 1h")
+        self.btn_quick_1h.clicked.connect(lambda: self._quick_pick("1h"))
+        quick_row.addWidget(self.btn_quick_1h)
+
+        self.btn_quick_tonight = QPushButton("tonight")
+        self.btn_quick_tonight.clicked.connect(lambda: self._quick_pick("tonight"))
+        quick_row.addWidget(self.btn_quick_tonight)
+
+        self.btn_quick_tomorrow = QPushButton("tomorrow")
+        self.btn_quick_tomorrow.clicked.connect(lambda: self._quick_pick("tomorrow"))
+        quick_row.addWidget(self.btn_quick_tomorrow)
+        timing_lay.addLayout(quick_row)
+
+        # Time Input + Preset Combo
+        when_row = QHBoxLayout()
+        when_row.setSpacing(4)
+        self.in_when = QLineEdit()
+        self.in_when.setPlaceholderText(tr("4 days 11 hours / 18:30", self.lang))
+        self.in_when.setToolTip(tr(
+            "A delay: 4 days 11 hours, 4d 11h, 90m, 1h30, 1.5h\n"
+            "or a clock time: 18:30, tomorrow 9:00\n"
+            "Russian works too. Press Enter to add.", self.lang))
+        self.in_when.returnPressed.connect(self.commit)
+        when_row.addWidget(self.in_when, 2)
+
+        self.cb_preset = QComboBox()
+        self.cb_preset.setToolTip(tr("Ready-made delays", self.lang))
+        self.cb_preset.addItem(tr("Preset", self.lang), "")
+        for label, value in PRESETS:
+            self.cb_preset.addItem(label, value)
+        self.cb_preset.currentIndexChanged.connect(self._preset_picked)
+        when_row.addWidget(self.cb_preset, 1)
+        timing_lay.addLayout(when_row)
+
+        # Picker Row
+        picker_row = QHBoxLayout()
+        picker_row.setSpacing(4)
+        self.date_time_picker = QDateTimeEdit()
+        self.date_time_picker.setDisplayFormat("yyyy-MM-dd HH:mm")
+        self.date_time_picker.setCalendarPopup(True)
+        self.date_time_picker.setTimeSpec(Qt.TimeSpec.LocalTime)
+        self.date_time_picker.setDateTime(QDateTime.currentDateTime().addSecs(3600))
+        self._style_calendar_popup()
+        picker_row.addWidget(self.date_time_picker, 2)
+
+        self.btn_pick_now = QPushButton(tr("Now", self.lang))
+        self.btn_pick_now.clicked.connect(lambda: self.date_time_picker.setDateTime(QDateTime.currentDateTime()))
+        picker_row.addWidget(self.btn_pick_now)
+
+        self.btn_use_picker = QPushButton(tr("Use Picker", self.lang))
+        self.btn_use_picker.clicked.connect(self._use_picker_value)
+        picker_row.addWidget(self.btn_use_picker)
+        timing_lay.addLayout(picker_row)
+
+        # Analog clock for fast time picking — beautiful, precise, draggable
+        try:
+            clock_row = QHBoxLayout()
+            clock_row.setSpacing(4)
+            self.alarm_clock = BigAnalogClock(self.main_win, self, size=130)
+            self.alarm_clock.setToolTip(tr("Drag the hands to pick time exactly", self.lang))
+            self.alarm_clock.timeSelected.connect(self._on_alarm_clock_picked)
+            self.alarm_clock.intervalChanged.connect(self._on_alarm_clock_picked_interval)
+            clock_row.addWidget(self.alarm_clock, 0, Qt.AlignmentFlag.AlignCenter)
+            # sync clock interval display with current repeat/interval
+            self.alarm_clock.set_interval(self._interval_minutes(), self.cb_repeat.currentData() or "once")
+            timing_lay.addLayout(clock_row)
+        except Exception:
+            self.alarm_clock = None
+
+        # Recurrence + Limit Quota Row
+        rec_row = QHBoxLayout()
+        rec_row.setSpacing(4)
+        self.lbl_limit = QLabel(tr("Limit window:", self.lang))
+        self.cb_repeat = QComboBox()
+        for r in REPEAT_CHOICES:
+            self.cb_repeat.addItem(tr(r.capitalize(), self.lang), r)
+        rec_row.addWidget(self.cb_repeat, 1)
+
+        self.spin_limit_hours = QDoubleSpinBox()
+        self.spin_limit_hours.setRange(0.25, 72.0)
+        self.spin_limit_hours.setSingleStep(0.5)
+        self.spin_limit_hours.setDecimals(2)
+        self.spin_limit_hours.setValue(5.0)
+        self.spin_limit_hours.setSuffix(tr(" h", self.lang))
+        rec_row.addWidget(self.lbl_limit)
+        rec_row.addWidget(self.spin_limit_hours)
+
+        self.in_limit_start = QLineEdit()
+        self.in_limit_start.setPlaceholderText(tr("started (blank = now)", self.lang))
+        self.in_limit_start.returnPressed.connect(self.add_limit_window)
+        rec_row.addWidget(self.in_limit_start)
+
+        self.btn_limit = QPushButton(tr("Catch limit", self.lang))
+        self.btn_limit.clicked.connect(self.add_limit_window)
+        rec_row.addWidget(self.btn_limit)
+
+        self.btn_scan = QPushButton(tr("Scan agents", self.lang))
+        self.btn_scan.clicked.connect(self.scan_agent_limits)
+        rec_row.addWidget(self.btn_scan)
+        timing_lay.addLayout(rec_row)
+
+        self.lbl_limit_hint = QLabel("")
+        self.lbl_limit_hint.setWordWrap(True)
+        timing_lay.addWidget(self.lbl_limit_hint)
+        timing_lay.addStretch(1)
+        self.in_limit_start.textChanged.connect(self._preview_limit)
+        self.spin_limit_hours.valueChanged.connect(
+            lambda _v: self._preview_limit(self.in_limit_start.text()))
+
+        form_split.addWidget(group_timing, 1)
+
+        # Right Group: Sound & Notification
+        group_sound = QGroupBox(tr("🔔 Notification & Sound", self.lang))
+        sound_lay = QVBoxLayout(group_sound)
+        sound_lay.setContentsMargins(6, 6, 6, 6)
+        sound_lay.setSpacing(3)
+
+        self._behavior = _TimerBehaviorEditor(self.main_win, self.lang, self)
+        self._behavior.previewRequested.connect(self._preview_sound)
+        sound_lay.addWidget(self._behavior)
+
+        form_split.addWidget(group_sound, 1)
+        root.addLayout(form_split)
+
+        # Legacy aliases for tests/callers
+        self.cb_sound = self._behavior.cb_sound
+        self.spin_vol = self._behavior.spin_vol
+        self.cb_temp = self._behavior.cb_temp
+        self.btn_test = getattr(self._behavior, "btn_preview_sound", None)
+
+        # Feedback label
+        self.lbl_hint = QLabel("")
+        self.lbl_hint.setWordWrap(True)
+        root.addWidget(self.lbl_hint)
+        self.in_when.textChanged.connect(self._preview)
+
+        # Bottom master actions
+        bottom_bar = QHBoxLayout()
+        bottom_bar.setSpacing(6)
+        self.btn_commit = QPushButton(tr("Add", self.lang))
+        self.btn_commit.clicked.connect(self.commit)
+        bottom_bar.addWidget(self.btn_commit)
+
+        bottom_bar.addStretch(1)
         btn_close = QPushButton(tr("Close", self.lang))
         btn_close.clicked.connect(self.accept)
-        actions.addWidget(btn_close)
-        root.addLayout(actions)
+        bottom_bar.addWidget(btn_close)
+        root.addLayout(bottom_bar)
 
         self._build_temp_tab()
         self._build_productivity_tab()
         self._build_calendar_tab()
+
+        # Size to the Calendar tab's natural height so it fits without a
+        # scrollbar by default; smaller screens still scroll via the
+        # QScrollArea fallback inside _build_calendar_tab.
+        cal_page = self.cal.parent()
+        if cal_page is not None:
+            bar = self.tabs.tabBar()
+            bar_h = bar.height() if bar is not None else 30
+            want = cal_page.sizeHint().height() + bar_h + 20
+            screen = QApplication.primaryScreen()
+            max_h = int(screen.availableGeometry().height() * 0.85) if screen else 820
+            self.resize(740, min(max(460, want), max_h))
+
+        self.tabs.currentChanged.connect(self._on_tab_changed)
+        target_tab = 0
+        if isinstance(initial_tab, int):
+            if 0 <= initial_tab < self.tabs.count():
+                target_tab = initial_tab
+        elif isinstance(initial_tab, str):
+            for idx in range(self.tabs.count()):
+                if initial_tab.lower() in self.tabs.tabText(idx).lower():
+                    target_tab = idx
+                    break
+        self.tabs.setCurrentIndex(target_tab)
+        self._on_tab_changed(target_tab)
 
         # keep the countdown column honest while the dialog is open
         self._tick = QTimer(self)
@@ -695,13 +810,54 @@ class TimerDialog(QDialog):
 
         self.refresh()
 
-    # ------------------------------------------------------------------
+    _TAB_SIZES = {
+        0: (740, 460),  # Alarms
+        1: (740, 390),  # Interval Notifications
+        2: (640, 300),  # Temp Timer
+        3: (480, 220),  # Productivity
+        4: (740, 480),  # Calendar
+    }
+    _TAB_MIN_SIZES = {
+        0: (640, 390),
+        1: (620, 340),
+        2: (500, 220),
+        3: (380, 160),
+        4: (640, 390),
+    }
+
+    def _on_tab_changed(self, idx):
+        """Dynamically fit dialog dimensions to the active tab's content."""
+        for i in range(self.tabs.count()):
+            widget = self.tabs.widget(i)
+            if widget is not None:
+                if i == idx:
+                    widget.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
+                else:
+                    widget.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
+        min_w, min_h = self._TAB_MIN_SIZES.get(idx, (480, 220))
+        target_w, target_h = self._TAB_SIZES.get(idx, (680, 380))
+        self.setMinimumSize(min_w, min_h)
+        self.resize(target_w, target_h)
+        self.adjustSize()
+        self.resize(max(target_w, min_w), max(target_h, min_h))
+
+    def _on_timer_current_changed(self, current, _previous=None):
+        """Keep row actions in sync with the list view and load it into the editor form."""
+        self._update_buttons()
+        if current is not None:
+            try:
+                self.list.scrollToItem(
+                    current, QAbstractItemView.ScrollHint.EnsureVisible)
+            except Exception:
+                pass
+            self.edit_selected()
+
     def _build_temp_tab(self):
         """One-shot focus timer for Shift+Click and additive quick taps."""
         page = QWidget()
         lay = QVBoxLayout(page)
-        lay.setContentsMargins(6, 6, 6, 6)
-        lay.setSpacing(6)
+        lay.setContentsMargins(4, 4, 4, 4)
+        lay.setSpacing(3)
 
         intro = QLabel(tr(
             "Shift+Click the clock for a quick timer. Each press adds time "
@@ -872,16 +1028,11 @@ class TimerDialog(QDialog):
 
     # ------------------------------------------------------------------
     def _build_productivity_tab(self):
-        """Work/break timer, the my_timer2 model as a first-class feature.
-
-        Separate from the alarms tab because it is a different kind of
-        thing: alarms are deadlines that arrive on their own, this is a
-        stopwatch the user drives and can pause for as long as they like.
-        """
+        """Work/break timer, the my_timer2 model as a first-class feature."""
         page = QWidget()
         lay = QVBoxLayout(page)
-        lay.setContentsMargins(6, 6, 6, 6)
-        lay.setSpacing(6)
+        lay.setContentsMargins(6, 4, 6, 4)
+        lay.setSpacing(3)
 
         self.lbl_pomo_clock = QLabel("")
         self.lbl_pomo_clock.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -1035,8 +1186,8 @@ class TimerDialog(QDialog):
     def _build_calendar_tab(self):
         page = QWidget()
         v = QVBoxLayout(page)
-        v.setContentsMargins(6, 6, 6, 6)
-        v.setSpacing(6)
+        v.setContentsMargins(4, 4, 4, 4)
+        v.setSpacing(3)
 
         self.cal = QCalendarWidget()
         self.cal.setGridVisible(True)
@@ -1057,7 +1208,8 @@ class TimerDialog(QDialog):
         self.cal_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.cal_list.itemDoubleClicked.connect(lambda *_: self._cal_edit_selected())
         self.cal_list.currentItemChanged.connect(lambda *_: self._cal_update_buttons())
-        v.addWidget(self.cal_list, 1)
+        self.cal_list.setMaximumHeight(85)
+        v.addWidget(self.cal_list, 0)
 
         acts = QHBoxLayout()
         acts.setSpacing(4)
@@ -1069,10 +1221,13 @@ class TimerDialog(QDialog):
         self.cal_btn_toggle.clicked.connect(self._cal_toggle_selected)
         self.cal_btn_delete = QPushButton(tr("Delete", self.lang))
         self.cal_btn_delete.clicked.connect(self._cal_delete_selected)
+        self.cal_btn_today = QPushButton(tr("Today", self.lang))
+        self.cal_btn_today.clicked.connect(self._cal_goto_today)
         acts.addWidget(self.cal_btn_new)
         acts.addWidget(self.cal_btn_edit)
         acts.addWidget(self.cal_btn_toggle)
         acts.addWidget(self.cal_btn_delete)
+        acts.addWidget(self.cal_btn_today)
         acts.addStretch(1)
         v.addLayout(acts)
 
@@ -1121,7 +1276,10 @@ class TimerDialog(QDialog):
         self.cal_hint.setWordWrap(True)
         v.addWidget(self.cal_hint)
 
-        self.tabs.addTab(page, tr("Calendar", self.lang))
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(page)
+        self.tabs.addTab(scroll, tr("Calendar", self.lang))
         self._cal_formatted = set()      # dates currently marked (to clear lazily)
         self._cal_editing_id = None
         self._cal_new()
@@ -1211,6 +1369,14 @@ class TimerDialog(QDialog):
         self._cal_refresh_markers()
 
     def _cal_selection_changed(self):
+        self._cal_refresh_list()
+
+    def _cal_goto_today(self):
+        """Jump the calendar back to today's month/date."""
+        from PyQt6.QtCore import QDate
+
+        self.cal.setSelectedDate(QDate.currentDate())
+        self.cal.showToday()
         self._cal_refresh_list()
 
     def _cal_update_buttons(self):
@@ -1635,8 +1801,14 @@ class TimerDialog(QDialog):
         btn = c.get("btn_bg", "#332e22")
         edge = c.get("border_light", "#5a5040")
         accent = c.get("accent", "#f0d060")
+        # Muted, non-acidic accent for strips/grid — the bright `accent` reads
+        # as neon on a dark golden theme, so the calendar uses the softer
+        # border tone instead of the raw highlight colour.
+        soft = c.get("border_light", "#5a5040")
         return f"""
         QCalendarWidget QWidget {{ background: {panel}; color: {fg}; }}
+        QCalendarWidget #qt_calendar_navigationbar {{
+            background: {panel}; border: none; }}
         QCalendarWidget QAbstractItemView {{
             background: {bg}; color: {fg};
             selection-background-color: {accent}; selection-color: {panel};
@@ -1650,9 +1822,10 @@ class TimerDialog(QDialog):
         QCalendarWidget QMenu {{ background: {panel}; color: {fg}; }}
         QCalendarWidget QHeaderView {{ background: {panel}; border: none; }}
         QCalendarWidget QHeaderView::section {{
-            background: {panel}; color: {fg}; border: none; padding: 2px; }}
+            background: {panel}; color: {fg};
+            border: none; border-bottom: 1px solid {soft}; padding: 2px; }}
         QCalendarWidget QTableView {{
-            gridline-color: {edge}; selection-background-color: {accent}; }}
+            gridline-color: {soft}; selection-background-color: {accent}; }}
         """
 
     def _style_calendar_widget(self, cal):
@@ -1686,6 +1859,29 @@ class TimerDialog(QDialog):
         text = dt.toString("yyyy-MM-dd HH:mm")
         self.in_when.setText(text)
         self.in_when.setFocus()
+
+    def _on_alarm_clock_picked(self, hour, minute):
+        """Analog clock drag -> set alarm picker time exactly."""
+        try:
+            from PyQt6.QtCore import QTime
+            dt = self.date_time_picker.dateTime()
+            # keep the picker's date, replace time with clock's hour/minute
+            qtime = QTime(int(hour) % 24, int(minute) % 60)
+            dt.setTime(qtime)
+            self.date_time_picker.setDateTime(dt)
+            text = dt.toString("yyyy-MM-dd HH:mm")
+            self.in_when.setText(text)
+            self._preview(text)
+        except Exception:
+            pass
+
+    def _on_alarm_clock_picked_interval(self, mins):
+        """Interval clock drag -> update interval length when in interval mode."""
+        try:
+            if self.cb_repeat.currentData() == "interval":
+                self.spin_limit_hours.setValue(max(0.25, float(mins) / 60.0))
+        except Exception:
+            pass
 
     def _quick_when(self, kind):
         """Resolve a quick-preset label to a concrete ISO moment."""
@@ -1887,57 +2083,98 @@ class TimerDialog(QDialog):
     def refresh(self):
         if hasattr(self, "lbl_pomo_clock"):
             self._refresh_pomo()
+        if hasattr(self, "interval_clock"):
+            self.interval_clock.sync()
+        if hasattr(self, "alarm_clock") and self.alarm_clock is not None:
+            try:
+                self.alarm_clock.sync()
+            except Exception:
+                pass
         from PyQt6.QtGui import QColor
 
         keep = self.list.currentItem()
         keep_id = keep.data(0, Qt.ItemDataRole.UserRole) if keep else None
 
-        self.list.blockSignals(True)
-        self.list.clear()
         now = datetime.datetime.now()
         alarm_timers = [t for t in self.main_win.timers
                         if t.kind == KIND_ALARM
                         and not getattr(t, "temporary", False)]
-        for t in sorted(alarm_timers, key=lambda x: x.target):
-            rem = t.remaining(now)
-            when = t.target.strftime("%d.%m %H:%M")
-            if not t.enabled:
-                tail = tr("paused", self.lang)
-            elif rem <= 0:
-                tail = tr("done", self.lang)
-            else:
-                tail = format_remaining(rem)
-            repeat = "" if t.repeat == "once" else f" ({t.repeat})"
-            item = QTreeWidgetItem([f"{t.name}{repeat}", when, tail])
-            item.setData(0, Qt.ItemDataRole.UserRole, t.id)
-            tip = [t.name]
-            if t.description:
-                tip.append(t.description)
-            tip.append(f"{when}  ({tail})")
-            if t.sound_mode == SOUND_MODE_POOL:
-                tip.append(tr("Random pool: {} rules", self.lang).format(
-                    len(t.sound_rules)))
-            else:
-                tip.append(f"{tr('Sound', self.lang)}: {t.sound}  vol {t.volume}")
-            tip.append(f"{tr('Notification', self.lang)}: "
-                       f"{'On' if t.show_notification else 'Off'}")
-            tip.append(f"{tr('Top bar', self.lang)}: "
-                       f"{'On' if t.show_in_top_bar else 'Off'}")
-            item.setToolTip(0, "\n".join(tip))
-            item.setToolTip(1, item.toolTip(0))
-            item.setToolTip(2, item.toolTip(0))
-            if t.enabled:
-                color = QColor(t.display_color(now))
-                item.setForeground(0, color)
-                item.setForeground(1, color)
-                item.setForeground(2, color)
-            self.list.addTopLevelItem(item)
-            if t.id == keep_id:
-                self.list.setCurrentItem(item)
-        self.list.blockSignals(False)
+        sorted_timers = sorted(alarm_timers, key=lambda x: x.target)
+        sorted_ids = [t.id for t in sorted_timers]
 
-        if keep_id is None and self.list.topLevelItemCount():
-            self.list.setCurrentItem(self.list.topLevelItem(0))
+        existing_items = {}
+        for i in range(self.list.topLevelItemCount()):
+            it = self.list.topLevelItem(i)
+            existing_items[it.data(0, Qt.ItemDataRole.UserRole)] = it
+
+        existing_ids = [self.list.topLevelItem(i).data(0, Qt.ItemDataRole.UserRole)
+                        for i in range(self.list.topLevelItemCount())]
+
+        if existing_ids != sorted_ids:
+            self.list.blockSignals(True)
+            self.list.clear()
+            for t in sorted_timers:
+                rem = t.remaining(now)
+                when = t.target.strftime("%d.%m %H:%M")
+                if not t.enabled:
+                    tail = tr("paused", self.lang)
+                elif rem <= 0:
+                    tail = tr("done", self.lang)
+                else:
+                    tail = format_remaining(rem)
+                repeat = "" if t.repeat == "once" else f" ({t.repeat})"
+                item = QTreeWidgetItem([f"{t.name}{repeat}", when, tail])
+                item.setData(0, Qt.ItemDataRole.UserRole, t.id)
+                tip = [t.name]
+                if t.description:
+                    tip.append(t.description)
+                tip.append(f"{when}  ({tail})")
+                if t.sound_mode == SOUND_MODE_POOL:
+                    tip.append(tr("Random pool: {} rules", self.lang).format(
+                        len(t.sound_rules)))
+                else:
+                    tip.append(f"{tr('Sound', self.lang)}: {t.sound}  vol {t.volume}")
+                tip.append(f"{tr('Notification', self.lang)}: "
+                           f"{'On' if t.show_notification else 'Off'}")
+                tip.append(f"{tr('Top bar', self.lang)}: "
+                           f"{'On' if t.show_in_top_bar else 'Off'}")
+                item.setToolTip(0, "\n".join(tip))
+                item.setToolTip(1, item.toolTip(0))
+                item.setToolTip(2, item.toolTip(0))
+                if t.enabled:
+                    color = QColor(t.display_color(now))
+                    item.setForeground(0, color)
+                    item.setForeground(1, color)
+                    item.setForeground(2, color)
+                self.list.addTopLevelItem(item)
+                if t.id == keep_id:
+                    self.list.setCurrentItem(item)
+            self.list.blockSignals(False)
+            if keep_id is None and self.list.topLevelItemCount():
+                self.list.setCurrentItem(self.list.topLevelItem(0))
+        else:
+            for t in sorted_timers:
+                item = existing_items.get(t.id)
+                if not item:
+                    continue
+                rem = t.remaining(now)
+                when = t.target.strftime("%d.%m %H:%M")
+                if not t.enabled:
+                    tail = tr("paused", self.lang)
+                elif rem <= 0:
+                    tail = tr("done", self.lang)
+                else:
+                    tail = format_remaining(rem)
+                repeat = "" if t.repeat == "once" else f" ({t.repeat})"
+                item.setText(0, f"{t.name}{repeat}")
+                item.setText(1, when)
+                item.setText(2, tail)
+                if t.enabled:
+                    color = QColor(t.display_color(now))
+                    item.setForeground(0, color)
+                    item.setForeground(1, color)
+                    item.setForeground(2, color)
+
         self._update_buttons()
         self._cal_refresh_if_changed()
         self._refresh_temp_tab()
@@ -1948,3 +2185,457 @@ class TimerDialog(QDialog):
             self.main_win.configure_temp_timer(self._temp_settings())
         self._tick.stop()
         super().closeEvent(event)
+
+
+    # ------------------------------------------------------------------
+    # Shared interval notification tab methods
+    def _build_interval_tab(self):
+        page = QWidget()
+        lay = QVBoxLayout(page)
+        lay.setContentsMargins(4, 4, 4, 4)
+        lay.setSpacing(4)
+
+        # Split into Left Column (Rules + Dial) and Right Column (Settings Form)
+        mid_layout = QHBoxLayout()
+        mid_layout.setSpacing(6)
+
+        # Left Column: Periodic Rules List + Analog Clock + Presets
+        clock_box = QGroupBox(tr("⏰ Periodic Reminders & Dial", self.lang))
+        clock_box_lay = QVBoxLayout(clock_box)
+        clock_box_lay.setContentsMargins(6, 6, 6, 6)
+        clock_box_lay.setSpacing(3)
+
+        self.interval_list = QTreeWidget()
+        self.interval_list.setHeaderLabels([
+            tr("State", self.lang),
+            tr("Name", self.lang),
+            tr("Every", self.lang),
+        ])
+        self.interval_list.setRootIsDecorated(False)
+        self.interval_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.interval_list.setMinimumHeight(60)
+        self.interval_list.setMaximumHeight(85)
+        self.interval_list.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.interval_list.setColumnWidth(0, 50)
+        self.interval_list.setColumnWidth(2, 60)
+        self.interval_list.setDragEnabled(True)
+        self.interval_list.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
+        self.interval_list.setDefaultDropAction(Qt.DropAction.MoveAction)
+        self.interval_list.setDropIndicatorShown(True)
+        self.interval_list.itemClicked.connect(lambda item, *_: self._interval_load(item))
+        self.interval_list.currentItemChanged.connect(lambda cur, *_: self._interval_load(cur) if cur else None)
+        try:
+            self.interval_list.model().rowsMoved.connect(self._interval_reorder)
+        except Exception:
+            pass
+        clock_box_lay.addWidget(self.interval_list)
+
+        list_btns = QHBoxLayout()
+        list_btns.setSpacing(3)
+        self.interval_btn_new = QPushButton(tr("+ New", self.lang))
+        self.interval_btn_new.clicked.connect(self._interval_new)
+        list_btns.addWidget(self.interval_btn_new)
+
+        self.interval_btn_delete = QPushButton(tr("Delete", self.lang))
+        self.interval_btn_delete.clicked.connect(self._interval_delete)
+        list_btns.addWidget(self.interval_btn_delete)
+        list_btns.addStretch(1)
+        clock_box_lay.addLayout(list_btns)
+
+        self.interval_clock = BigAnalogClock(self.main_win, self, size=120)
+        self.interval_clock.intervalChanged.connect(self._on_clock_interval_picked)
+        clock_box_lay.addWidget(self.interval_clock, 0, Qt.AlignmentFlag.AlignCenter)
+
+        pills_grid = QGridLayout()
+        pills_grid.setSpacing(2)
+        quick_intervals = [(15, "15m"), (30, "30m"), (45, "45m"), (60, "🔔 1h (:00)"), (120, "2h (:00)"), (240, "4h (:00)")]
+        for idx, (mins, lbl) in enumerate(quick_intervals):
+            btn = QPushButton(lbl)
+            btn.setFixedHeight(20)
+            btn.clicked.connect(lambda _=False, m=mins: self._set_interval_minutes(m))
+            pills_grid.addWidget(btn, idx // 3, idx % 3)
+        clock_box_lay.addLayout(pills_grid)
+        clock_box_lay.addStretch(1)
+        mid_layout.addWidget(clock_box, 1)
+
+        # Right Column: Rich Interval Settings Form
+        form_box = QGroupBox(tr("⚙️ Interval Configuration", self.lang))
+        form_lay = QVBoxLayout(form_box)
+        form_lay.setContentsMargins(6, 6, 6, 6)
+        form_lay.setSpacing(3)
+
+        # Row 1: Name + Enabled checkbox
+        r1 = QHBoxLayout()
+        r1.setSpacing(4)
+        r1.addWidget(QLabel(tr("Name:", self.lang)))
+        self.interval_in_name = QLineEdit()
+        self.interval_in_name.setPlaceholderText(tr("Every New Hour", self.lang))
+        r1.addWidget(self.interval_in_name, 1)
+
+        self.interval_in_enabled = QCheckBox(tr("Enabled", self.lang))
+        self.interval_in_enabled.setChecked(True)
+        r1.addWidget(self.interval_in_enabled)
+        form_lay.addLayout(r1)
+
+        # Row 2: Duration + Mode
+        r2 = QHBoxLayout()
+        r2.setSpacing(4)
+        r2.addWidget(QLabel(tr("Interval:", self.lang)))
+        self.interval_in_minutes = QSpinBox()
+        self.interval_in_minutes.setRange(1, 10080)
+        self.interval_in_minutes.setValue(60)
+        self.interval_in_minutes.setSuffix(tr(" min", self.lang))
+        self.interval_in_minutes.valueChanged.connect(self._on_spin_interval_changed)
+        r2.addWidget(self.interval_in_minutes)
+
+        r2.addWidget(QLabel(tr("Mode:", self.lang)))
+        self.interval_cb_align = QComboBox()
+        self.interval_cb_align.addItem(tr("Exact New Hour / Clock Boundary (:00)", self.lang), "clock")
+        self.interval_cb_align.addItem(tr("Elapsed Timer from Start", self.lang), "elapsed")
+        self.interval_cb_align.currentIndexChanged.connect(
+            lambda *_: self.interval_clock.set_interval(self.interval_in_minutes.value(), self.interval_cb_align.currentData() or "clock"))
+        r2.addWidget(self.interval_cb_align, 1)
+        form_lay.addLayout(r2)
+
+        # Row 3: Active Hours Window
+        r3 = QHBoxLayout()
+        r3.setSpacing(4)
+        self.interval_cb_allday = QCheckBox(tr("All Day (24/7)", self.lang))
+        self.interval_cb_allday.setChecked(True)
+        r3.addWidget(self.interval_cb_allday)
+
+        r3.addWidget(QLabel(tr("From:", self.lang)))
+        self.interval_time_start = QTimeEdit()
+        self.interval_time_start.setDisplayFormat("HH:mm")
+        self.interval_time_start.setTime(_minute_to_time(0))
+        self.interval_time_start.setEnabled(False)
+        r3.addWidget(self.interval_time_start)
+
+        r3.addWidget(QLabel(tr("To:", self.lang)))
+        self.interval_time_end = QTimeEdit()
+        self.interval_time_end.setDisplayFormat("HH:mm")
+        self.interval_time_end.setTime(_minute_to_time(1439))
+        self.interval_time_end.setEnabled(False)
+        r3.addWidget(self.interval_time_end)
+
+        self.interval_cb_allday.toggled.connect(lambda on: (
+            self.interval_time_start.setEnabled(not on),
+            self.interval_time_end.setEnabled(not on)
+        ))
+        form_lay.addLayout(r3)
+
+        # Row 4: Sound + Volume + Test Sound
+        r4 = QHBoxLayout()
+        r4.setSpacing(4)
+        r4.addWidget(QLabel(tr("Sound:", self.lang)))
+        self.interval_in_sound = QComboBox()
+        self.interval_in_sound.setMaxVisibleItems(20)
+        self._fill_interval_sound_choices()
+        # preview on user select/scroll (hover) — like _TimerBehaviorEditor
+        try:
+            self.interval_in_sound.activated.connect(lambda _i: self._interval_test_sound())
+            self.interval_in_sound.highlighted.connect(lambda _i: self._interval_test_sound())
+        except Exception:
+            pass
+        r4.addWidget(self.interval_in_sound, 1)
+
+        r4.addWidget(QLabel(tr("Vol:", self.lang)))
+        self.interval_in_volume = QDoubleSpinBox()
+        self.interval_in_volume.setRange(0.0, 1.0)
+        self.interval_in_volume.setDecimals(2)
+        self.interval_in_volume.setSingleStep(0.05)
+        self.interval_in_volume.setValue(0.5)
+        r4.addWidget(self.interval_in_volume)
+
+        self.interval_btn_test = QPushButton(tr("Test", self.lang))
+        self.interval_btn_test.clicked.connect(self._interval_test_sound)
+        r4.addWidget(self.interval_btn_test)
+        form_lay.addLayout(r4)
+
+        # Row 5: 10 Quick Favorite Sounds Bar
+        form_lay.addWidget(QLabel(tr("Quick Sounds:", self.lang)))
+        self.interval_quick_bar = QWidget()
+        iqb_lay = QGridLayout(self.interval_quick_bar)
+        iqb_lay.setContentsMargins(0, 0, 0, 0)
+        iqb_lay.setSpacing(2)
+        form_lay.addWidget(self.interval_quick_bar)
+        self._interval_quick_buttons = []
+        self._rebuild_interval_quick_bar()
+
+        # Row 6: Popups / Top bar toggles
+        r6 = QHBoxLayout()
+        r6.setSpacing(6)
+        self.interval_in_notify = QCheckBox(tr("Show notification popup", self.lang))
+        self.interval_in_notify.setChecked(False)
+        r6.addWidget(self.interval_in_notify)
+
+        self.interval_in_topbar = QCheckBox(tr("Show in top bar", self.lang))
+        self.interval_in_topbar.setChecked(False)
+        r6.addWidget(self.interval_in_topbar)
+        r6.addStretch(1)
+        form_lay.addLayout(r6)
+
+        self.interval_btn_save = QPushButton(tr("Save Changes", self.lang))
+        self.interval_btn_save.clicked.connect(self._interval_save)
+        form_lay.addWidget(self.interval_btn_save)
+        form_lay.addStretch(1)
+
+        mid_layout.addWidget(form_box, 1)
+        lay.addLayout(mid_layout)
+
+        # Bottom Actions Bar
+        btns = QHBoxLayout()
+        btns.addStretch(1)
+        btn_close = QPushButton(tr("Close", self.lang))
+        btn_close.clicked.connect(self.accept)
+        btns.addWidget(btn_close)
+        lay.addLayout(btns)
+
+        self.tabs.addTab(page, tr("Interval Notifications", self.lang))
+        self._interval_reload()
+
+    def _fill_interval_sound_choices(self):
+        self.interval_in_sound.clear()
+        for name in _SOUNDS:
+            self.interval_in_sound.addItem(name, name)
+        try:
+            files = self.main_win.sound_manager.get_available_sounds() or []
+        except Exception:
+            files = []
+        if files:
+            favs = set(self.main_win.data.get("sound_favorites", [])) if self.main_win else set()
+            self.interval_in_sound.insertSeparator(self.interval_in_sound.count())
+            for rel in files:
+                text = f"★ {rel}" if rel in favs else rel
+                self.interval_in_sound.addItem(text, f"file:{rel}")
+
+    def _quick_bar_slots(self):
+        saved = getattr(self.main_win, "data", {}).get("sound_quick_bar")
+        if isinstance(saved, list) and len(saved) == 10:
+            return list(saved)
+        return [
+            "file:NEWDAY.wav", "file:NEWMONTH.wav", "file:NEWWEEK.wav",
+            "file:NOMAD.wav", "file:OBELISK.wav", "file:PARALYZE.wav",
+            "file:PICKUP01.wav", "file:PICKUP03.wav", "file:QUEST.wav",
+            "file:ROGUE.wav",
+        ]
+
+    def _save_quick_bar_slots(self, slots):
+        if hasattr(self.main_win, "data") and isinstance(self.main_win.data, dict):
+            self.main_win.data["sound_quick_bar"] = list(slots)
+            self.main_win.mark_dirty()
+
+    def _rebuild_interval_quick_bar(self):
+        lay = self.interval_quick_bar.layout()
+        while self._interval_quick_buttons:
+            self._interval_quick_buttons.pop().deleteLater()
+        slots = self._quick_bar_slots()
+        for idx, ref in enumerate(slots):
+            label = ref[5:] if ref.startswith("file:") else ref
+            if label.lower().endswith(".wav"):
+                label = label[:-4]
+            btn = QPushButton(label or "-")
+            btn.setFixedHeight(20)
+            btn.setToolTip(tr(
+                "Click: pick '{}' & preview.\nRight-click: store current sound here.",
+                self.lang).format(label))
+            btn.clicked.connect(lambda _=False, r=ref: self._interval_quick_pick(r))
+            btn.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+            btn.customContextMenuRequested.connect(
+                lambda _pos, i=idx: self._interval_quick_store(i))
+            lay.addWidget(btn, idx // 5, idx % 5)
+            self._interval_quick_buttons.append(btn)
+
+    def _interval_quick_pick(self, ref):
+        self._interval_set_sound(ref)
+        self._interval_test_sound()
+
+    def _interval_quick_store(self, idx):
+        ref = self.interval_in_sound.currentData()
+        if not ref:
+            return
+        slots = self._quick_bar_slots()
+        if 0 <= idx < len(slots):
+            slots[idx] = ref
+            self._save_quick_bar_slots(slots)
+            if hasattr(self, "_behavior") and hasattr(self._behavior, "_rebuild_quick_bar"):
+                self._behavior._rebuild_quick_bar()
+            self._rebuild_interval_quick_bar()
+
+    def _on_clock_interval_picked(self, mins):
+        self.interval_in_minutes.setValue(mins)
+
+    def _set_interval_minutes(self, mins):
+        self.interval_in_minutes.setValue(mins)
+        if mins >= 60 and mins % 60 == 0:
+            idx = self.interval_cb_align.findData("clock")
+            if idx >= 0:
+                self.interval_cb_align.setCurrentIndex(idx)
+        align = self.interval_cb_align.currentData() or "clock"
+        self.interval_clock.set_interval(mins, align)
+
+    def _on_spin_interval_changed(self, mins):
+        align = self.interval_cb_align.currentData() or "clock"
+        self.interval_clock.set_interval(mins, align)
+
+    def _interval_test_sound(self):
+        ref = self.interval_in_sound.currentData() or "newday"
+        vol = self.interval_in_volume.value()
+        try:
+            self.main_win.sound_manager.play_sound_ref(ref, vol)
+        except Exception:
+            pass
+
+    def _interval_set_sound(self, ref):
+        idx = self.interval_in_sound.findData(ref)
+        if idx < 0:
+            idx = self.interval_in_sound.findData("newday")
+        if idx >= 0:
+            self.interval_in_sound.setCurrentIndex(idx)
+
+    def _interval_rules(self):
+        rules = getattr(self.main_win, "data", {}).get("interval_notifs")
+        if not isinstance(rules, list):
+            meth = getattr(self.main_win, "_interval_notifs", None)
+            if callable(meth):
+                rules = meth()
+            else:
+                rules = []
+                if hasattr(self.main_win, "data") and isinstance(self.main_win.data, dict):
+                    self.main_win.data["interval_notifs"] = rules
+        return rules
+
+    def _interval_reload(self):
+        cur = getattr(self, "_interval_cur", None)
+        self.interval_list.clear()
+        rules = self._interval_rules()
+        for rule in rules:
+            state = tr("ON", self.lang) if rule.get("enabled") else tr("OFF", self.lang)
+            name = str(rule.get("name") or tr("Hourly Reminder", self.lang))
+            mins = int(rule.get("minutes") or 60)
+            if mins % 60 == 0:
+                interval_str = f"{mins // 60} h"
+            else:
+                interval_str = f"{mins} m"
+            item = QTreeWidgetItem([state, name, interval_str])
+            item.setData(0, Qt.ItemDataRole.UserRole, rule.get("id"))
+            if rule.get("enabled"):
+                from PyQt6.QtGui import QColor
+                gold = QColor(217, 179, 64)
+                item.setForeground(0, gold)
+                item.setForeground(1, gold)
+            self.interval_list.addTopLevelItem(item)
+            if cur is not None and rule.get("id") == cur:
+                self.interval_list.setCurrentItem(item)
+        if cur is None and self.interval_list.topLevelItemCount():
+            self.interval_list.setCurrentItem(self.interval_list.topLevelItem(0))
+
+    def _interval_reorder(self, *args):
+        """Draggable priority: topmost wins on collision. Persist UI order to data."""
+        try:
+            new_ids = []
+            for i in range(self.interval_list.topLevelItemCount()):
+                it = self.interval_list.topLevelItem(i)
+                if it is not None:
+                    new_ids.append(it.data(0, Qt.ItemDataRole.UserRole))
+            rules = self._interval_rules()
+            id_to_rule = {r.get("id"): r for r in rules if isinstance(r, dict)}
+            reordered = [id_to_rule[rid] for rid in new_ids if rid in id_to_rule]
+            # keep any not in UI (defensive)
+            remaining = [r for r in rules if r.get("id") not in new_ids]
+            reordered.extend(remaining)
+            if len(reordered) == len(rules):
+                rules[:] = reordered
+                self.main_win.mark_dirty()
+        except Exception:
+            pass
+
+    def _interval_load(self, item):
+        if item is None:
+            return
+        rid = item.data(0, Qt.ItemDataRole.UserRole)
+        for rule in self._interval_rules():
+            if rule.get("id") == rid:
+                self._interval_cur = rid
+                self.interval_in_name.setText(str(rule.get("name") or ""))
+                mins = int(rule.get("minutes") or 60)
+                self.interval_in_minutes.setValue(mins)
+                self.interval_in_enabled.setChecked(bool(rule.get("enabled", True)))
+                align = str(rule.get("align_mode", "clock"))
+                idx = self.interval_cb_align.findData(align)
+                if idx >= 0:
+                    self.interval_cb_align.setCurrentIndex(idx)
+                self.interval_cb_allday.setChecked(bool(rule.get("all_day", True)))
+                self.interval_time_start.setTime(_minute_to_time(rule.get("start_minute", 0)))
+                self.interval_time_end.setTime(_minute_to_time(rule.get("end_minute", 1439)))
+                self._interval_set_sound(str(rule.get("sound") or "newday"))
+                v = rule.get("volume", 0.5)
+                try:
+                    fv = float(v)
+                    if fv > 1.0 and fv <= 10.0 and float(fv).is_integer():
+                        fv = fv / 10.0
+                    v = max(0.0, min(1.0, fv))
+                except (TypeError, ValueError):
+                    v = 0.5
+                self.interval_in_volume.setValue(float(v))
+                self.interval_in_notify.setChecked(bool(rule.get("show_notification", False)))
+                self.interval_in_topbar.setChecked(bool(rule.get("show_in_top_bar", False)))
+                self.interval_clock.set_interval(mins, align)
+                return
+
+    def _interval_new(self):
+        import uuid
+        rule = {
+            "id": f"interval_{uuid.uuid4().hex[:8]}",
+            "name": self.interval_in_name.text().strip() or tr("Reminder", self.lang),
+            "minutes": self.interval_in_minutes.value(),
+            "enabled": self.interval_in_enabled.isChecked(),
+            "align_mode": self.interval_cb_align.currentData() or "clock",
+            "all_day": self.interval_cb_allday.isChecked(),
+            "start_minute": _time_to_minute(self.interval_time_start.time()),
+            "end_minute": _time_to_minute(self.interval_time_end.time()),
+            "sound": self.interval_in_sound.currentData() or "newday",
+            "volume": self.interval_in_volume.value(),
+            "show_notification": self.interval_in_notify.isChecked(),
+            "show_in_top_bar": self.interval_in_topbar.isChecked(),
+            "last_fired": 0.0,
+            "last_fired_minute": "",
+        }
+        self._interval_rules().append(rule)
+        self._interval_cur = rule["id"]
+        self.main_win.mark_dirty()
+        self._interval_reload()
+
+    def _interval_save(self):
+        rid = getattr(self, "_interval_cur", None)
+        if rid is None:
+            items = self.interval_list.selectedItems()
+            if items:
+                rid = items[0].data(0, Qt.ItemDataRole.UserRole)
+        for rule in self._interval_rules():
+            if rule.get("id") == rid:
+                rule["name"] = self.interval_in_name.text().strip() or tr("Reminder", self.lang)
+                rule["minutes"] = self.interval_in_minutes.value()
+                rule["enabled"] = self.interval_in_enabled.isChecked()
+                rule["align_mode"] = self.interval_cb_align.currentData() or "clock"
+                rule["all_day"] = self.interval_cb_allday.isChecked()
+                rule["start_minute"] = _time_to_minute(self.interval_time_start.time())
+                rule["end_minute"] = _time_to_minute(self.interval_time_end.time())
+                rule["sound"] = self.interval_in_sound.currentData() or "newday"
+                rule["volume"] = self.interval_in_volume.value()
+                rule["show_notification"] = self.interval_in_notify.isChecked()
+                rule["show_in_top_bar"] = self.interval_in_topbar.isChecked()
+                self.main_win.mark_dirty()
+                self._interval_reload()
+                return
+
+    def _interval_delete(self):
+        rid = getattr(self, "_interval_cur", None)
+        if rid is None:
+            return
+        rules = self._interval_rules()
+        self.main_win.data["interval_notifs"] = [
+            r for r in rules if r.get("id") != rid]
+        self._interval_cur = None
+        self.main_win.mark_dirty()
+        self._interval_reload()

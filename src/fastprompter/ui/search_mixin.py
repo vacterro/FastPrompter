@@ -30,6 +30,24 @@ class SearchMixin:
         self.search_input.setFocus()
         self.search_input.selectAll()
 
+    def hide_find(self):
+        """Hide the find/replace bar and return focus to the editor."""
+        self.search_frame.hide()
+        try:
+            self.text_area.setFocus()
+        except Exception:
+            pass
+
+    def toggle_find(self):
+        """Ctrl+F toggles: show the bar when hidden, hide it when visible."""
+        try:
+            if self.search_frame.isVisible():
+                self.hide_find()
+                return
+        except RuntimeError:
+            pass
+        self.show_find()
+
     def show_replace(self):
         """Show the find/replace search bar."""
         self.search_frame.show()

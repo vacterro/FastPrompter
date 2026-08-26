@@ -32,8 +32,12 @@ def _edit_silo(win, idx, text):
 def test_typo_check_underlines_flagged_words(win):
     win.data["typo_check_enabled"] = "True"
     _set_silo(win, "the wrold is fine")
-    win._typo_check_tick()
-    spans = win.text_area._typo_spans
+    # PERF-005 moved typo scan to worker thread; test drives sync path directly
+    from fastprompter.core import typecheck as tc
+    dictionary = win._typo_dictionary()
+    text = win.text_area.toPlainText()
+    spans = [(s, e) for _, s, e in tc.find_unknown(text, dictionary)]
+    win._typo_apply_spans(spans)
     words = [win.text_area.toPlainText()[s:e] for s, e in spans]
     assert "wrold" in words
     assert "fine" not in words
@@ -51,9 +55,17 @@ def test_typo_check_off_clears_spans(win):
 def test_add_typo_word_clears_the_flag(win):
     win.data["typo_check_enabled"] = "True"
     _set_silo(win, "fastprompterx is here")
-    win._typo_check_tick()
+    from fastprompter.core import typecheck as tc
+    dictionary = win._typo_dictionary()
+    text = win.text_area.toPlainText()
+    spans = [(s, e) for _, s, e in tc.find_unknown(text, dictionary)]
+    win._typo_apply_spans(spans)
     assert win.text_area._typo_spans
     win._add_typo_word("fastprompterx")
+    # _add_typo_word triggers a re-check; apply sync result for test determinism
+    text2 = win.text_area.toPlainText()
+    spans2 = [(s, e) for _, s, e in tc.find_unknown(text2, win._typo_dictionary())]
+    win._typo_apply_spans(spans2)
     assert not win.text_area._typo_spans
     assert "fastprompterx" in win.data["typo_user_words"]
 
@@ -81,7 +93,7 @@ def _convert_project(win, folder):
     presets = win.data["temp_presets"]
     for slot, rel in enumerate(files):
         path = os.path.join(cfg["root"], rel)
-        text, eol = ps.read_text_file(path)
+        text, eol, _bom = ps.read_text_file(path)
         while len(presets) <= slot:
             presets.append("")
         presets[slot] = text

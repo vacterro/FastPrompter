@@ -59,7 +59,7 @@ class HotkeyMixin:
             f"Ctrl+H : {tr('Replace Text', lang)}\n"
             f"Ctrl+Shift+S : {tr('Export/Save Silo to File', lang)}\n"
             f"Esc : {tr('Hide Window & Auto-save', lang)}\n"
-            f"F1 - F10 : {tr('Execute Snippet 1-10', lang)}\n"
+            f"F1 - F10 : {tr('Switch to Project 1-10 (set fkey_action=snippets for Snippet 1-10)', lang)}\n"
             f"Ctrl+Alt+Shift+Q : {tr('Quit Application Completely', lang)}"
         )
         if hasattr(self, "btn_hotkeys") and not _is_deleted(self.btn_hotkeys):

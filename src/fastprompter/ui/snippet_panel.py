@@ -1166,19 +1166,27 @@ class SiloGapBar(QLabel):
             self.main_win.activateWindow()
             
             if ok:
+                cat = self.main_win.get_current_category()
                 if new_name.strip():
-                    self.main_win.add_data_undo_state("Rename gap")
-                    names = self.main_win.data.setdefault("silo_gap_names_all", {}).setdefault(self.main_win.get_current_category(), {})
+                    # PERF-002: one gap-name string flip is a compact undo
+                    # record, never a whole-project snapshot.
+                    rec = self.main_win.add_compact_meta_undo(
+                        "gap_name", (cat, self.slot_idx), old_name or None)
+                    names = self.main_win.data.setdefault("silo_gap_names_all", {}).setdefault(cat, {})
                     names[str(self.slot_idx)] = new_name.strip()
                     self.main_win.data["silo_gap_names"] = names
+                    self.main_win._finish_compact_meta_undo(
+                        rec, new_name.strip())
                     self.main_win.mark_dirty()
                     self.main_win.refresh_temp_presets()
                 elif old_name:
-                    self.main_win.add_data_undo_state("Clear gap name")
-                    names = self.main_win.data.setdefault("silo_gap_names_all", {}).setdefault(self.main_win.get_current_category(), {})
+                    rec = self.main_win.add_compact_meta_undo(
+                        "gap_name", (cat, self.slot_idx), old_name)
+                    names = self.main_win.data.setdefault("silo_gap_names_all", {}).setdefault(cat, {})
                     if str(self.slot_idx) in names:
                         del names[str(self.slot_idx)]
                     self.main_win.data["silo_gap_names"] = names
+                    self.main_win._finish_compact_meta_undo(rec, None)
                     self.main_win.mark_dirty()
                     self.main_win.refresh_temp_presets()
             e.accept()

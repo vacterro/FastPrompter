@@ -109,28 +109,28 @@ def _patch_toast(monkeypatch, truthy=True):
 def test_notify_on_plays_sound_and_shows_toast(monkeypatch):
     fake = _bind(_FakeFire())
     seen = _patch_toast(monkeypatch, truthy=True)
-    t = Timer("a", datetime.datetime.now(), sound="tick", volume=7)
+    t = Timer("a", datetime.datetime.now(), sound="tick", volume=0.7)
     fake._notify_timer(t, fired_at=datetime.datetime.now())
     assert seen and seen[0] is t
-    assert fake._sound_calls == [("tick", 7)]
+    assert fake._sound_calls == [("tick", 0.7)]
 
 
 def test_notify_off_no_toast_no_tray_but_sound(monkeypatch):
     fake = _bind(_FakeFire())
     seen = _patch_toast(monkeypatch, truthy=True)
-    t = Timer("a", datetime.datetime.now(), sound="tick", volume=7,
+    t = Timer("a", datetime.datetime.now(), sound="tick", volume=0.7,
               show_notification=False)
     fake._notify_timer(t, fired_at=datetime.datetime.now())
     assert seen == []                       # no popup
     assert fake.tray_icon.messages == []    # no tray fallback either
-    assert fake._sound_calls == [("tick", 7)]  # sound still plays
+    assert fake._sound_calls == [("tick", 0.7)]  # sound still plays
 
 
 def test_global_sound_settings_not_mutated(monkeypatch):
     fake = _bind(_FakeFire())
     _patch_toast(monkeypatch, truthy=True)
     before = dict(fake.data)
-    t = Timer("a", datetime.datetime.now(), sound="notify", volume=9)
+    t = Timer("a", datetime.datetime.now(), sound="notify", volume=0.9)
     fake._notify_timer(t, fired_at=datetime.datetime.now())
     assert fake.data == before             # sound_ui/volume untouched
 
@@ -180,15 +180,15 @@ def test_missing_sound_ref_scheduler_survives(monkeypatch):
     fake = _bind(_FakeFire())
     seen = _patch_toast(monkeypatch, truthy=True)
     t = Timer("gone", datetime.datetime.now(), sound="file:no_such.wav",
-              volume=5)
+              volume=0.5)
     fake._notify_timer(t, fired_at=datetime.datetime.now())
     assert seen and seen[0] is t           # visual path unaffected
-    assert fake._sound_calls == [("file:no_such.wav", 5)]
+    assert fake._sound_calls == [("file:no_such.wav", 0.5)]
 
 
 def test_test_notification_deep_copies_behavior():
     fake = _bind(_FakeFire())
-    t = Timer("orig", datetime.datetime.now(), sound="notify", volume=3,
+    t = Timer("orig", datetime.datetime.now(), sound="notify", volume=0.3,
               sound_mode=SOUND_MODE_POOL,
               sound_rules=[{"sound": "tick", "enabled": True, "all_day": True,
                             "volume": None, "start_minute": 0, "end_minute": 0}],
@@ -279,7 +279,7 @@ def test_check_timers_still_saves_when_a_timer_raises():
 
 def test_test_notification_job_is_registered_and_fires():
     fake = _bind(_FakeFire())
-    t = Timer("probe", datetime.datetime.now(), sound="notify", volume=3,
+    t = Timer("probe", datetime.datetime.now(), sound="notify", volume=0.3,
               show_notification=False)
     seen = []
     fake._notify_timer = lambda timer, fired_at=None: seen.append(timer)
@@ -290,14 +290,14 @@ def test_test_notification_job_is_registered_and_fires():
     QTest.qWait(150)
     assert len(seen) == 1                    # fired exactly once
     assert seen[0].name == "probe"
-    assert seen[0].volume == 3
+    assert seen[0].volume == 0.3
     assert seen[0].show_notification is False
     assert fake._timer_test_jobs == {}       # and retired from the registry
 
 
 def test_test_notification_jobs_cancelled_on_shutdown():
     fake = _bind(_FakeFire())
-    t = Timer("probe", datetime.datetime.now(), sound="notify", volume=3)
+    t = Timer("probe", datetime.datetime.now(), sound="notify", volume=0.3)
     seen = []
     fake._notify_timer = lambda timer, fired_at=None: seen.append(timer)
     fake.test_timer_notification(t, delay_seconds=0.05)
@@ -312,7 +312,7 @@ def test_test_notification_jobs_cancelled_on_shutdown():
 
 def test_test_notification_stale_profile_never_fires():
     fake = _bind(_FakeFire())
-    t = Timer("probe", datetime.datetime.now(), sound="notify", volume=3)
+    t = Timer("probe", datetime.datetime.now(), sound="notify", volume=0.3)
     seen = []
     fake._notify_timer = lambda timer, fired_at=None: seen.append(timer)
     fake.test_timer_notification(t, delay_seconds=0.05)
@@ -325,7 +325,7 @@ def test_test_notification_stale_profile_never_fires():
 
 def test_test_notification_hundred_jobs_cancel_clean():
     fake = _bind(_FakeFire())
-    t = Timer("probe", datetime.datetime.now(), sound="notify", volume=3)
+    t = Timer("probe", datetime.datetime.now(), sound="notify", volume=0.3)
     for _ in range(100):
         fake.test_timer_notification(t, delay_seconds=0.05)
     assert len(fake._timer_test_jobs) == 100

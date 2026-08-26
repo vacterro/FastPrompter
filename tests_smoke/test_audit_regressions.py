@@ -675,7 +675,7 @@ def test_quiesce_timeout_keeps_watcher_armed_and_later_send_becomes_sent(
 
 def test_quiesce_success_disarms_after_send_resolves(win, monkeypatch):
     """T-811: when the in-flight send resolves before the timeout, the quiesce
-    commits the disarm and the prompt is marked sent."""
+    pauses (still armed) and the commit disarms; prompt is marked sent."""
     from fastprompter.core.watcher.sender import SendResult
 
     _arm_post(win, monkeypatch)
@@ -686,6 +686,10 @@ def test_quiesce_success_disarms_after_send_resolves(win, monkeypatch):
         assert item.state == "sent"
         ok = win._watcher_begin_quiesce(timeout_s=0.2)
         assert ok is True
+        # W2-001 two-phase: begin is reversible pause (still armed)
+        assert win._watcher_engine.armed is True
+        assert win._watcher_quiescing is True
+        win._watcher_commit_quiesce()
         assert win._watcher_engine.armed is False
         assert win._watcher_engine.sent_count == 1
     finally:
@@ -693,12 +697,15 @@ def test_quiesce_success_disarms_after_send_resolves(win, monkeypatch):
 
 
 def test_quiesce_success_blocks_new_sends(win, monkeypatch):
-    """T-811: after a successful quiesce the watcher is disarmed, so no new
-    send can be dispatched even though the event loop still lives."""
+    """T-811: after a successful quiesce+commit the watcher is disarmed, so no
+    new send can be dispatched even though the event loop still lives."""
     _arm_post(win, monkeypatch)
     try:
         ok = win._watcher_begin_quiesce(timeout_s=0.2)
         assert ok is True
+        # W2-001 two-phase: begin pauses, commit disarms
+        assert win._watcher_engine.armed is True
+        win._watcher_commit_quiesce()
         assert win._watcher_engine.armed is False
         before = win._watcher_send_active
         win._watcher_tick_inner()   # engine disarmed -> no dispatch

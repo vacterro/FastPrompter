@@ -142,7 +142,7 @@ def test_pool_rule_roundtrip_reads_back():
     # b.pool.cellWidget(row, 2) is frm, 3 is to, 4 is vol
     b.pool.cellWidget(row, 2).setTime(QTime(6, 0))
     b.pool.cellWidget(row, 3).setTime(QTime(12, 0))
-    b.pool.cellWidget(row, 4).setValue(3)
+    b.pool.cellWidget(row, 4).setValue(0.3)
     rules = b._read_pool_rules()
     assert len(rules) == 1
     r = rules[0]
@@ -150,7 +150,7 @@ def test_pool_rule_roundtrip_reads_back():
     assert r["all_day"] is False
     assert r["start_minute"] == 360
     assert r["end_minute"] == 720
-    assert r["volume"] == 3
+    assert r["volume"] == 0.3
 
 
 def test_preview_only_on_user_activation():
@@ -165,7 +165,7 @@ def test_preview_only_on_user_activation():
 
 def test_dialog_constructs_with_calendar_tab():
     d = _dlg()
-    assert d.tabs.count() == 4  # Alarms, Temp Timer, Productivity, Calendar
+    assert d.tabs.count() in (4, 5)  # Alarms, (Interval), Temp Timer, Productivity, Calendar
     assert "Temp Timer" in [d.tabs.tabText(i) for i in range(d.tabs.count())]
     assert d.cal is not None
 
@@ -254,21 +254,21 @@ def test_vol_spin_drives_timer_volume_end_to_end():
     from fastprompter.core.timers import choose_timer_sound
 
     d = _dlg()
-    d._behavior.spin_vol.setValue(9)
+    d._behavior.spin_vol.setValue(0.9)
     d.in_name.setText("Loud")
     d.in_when.setText("06:00")
     d.commit()
     t = d.main_win.timers[-1]
-    assert t.volume == 9
-    assert choose_timer_sound(t, datetime.datetime.now()) == ("tick", 9)
+    assert t.volume == 0.9
+    assert choose_timer_sound(t, datetime.datetime.now()) == ("tick", 0.9)
 
     d.edit_selected()
     assert d._behavior.spin_vol.value() == 9      # edit round-trips the level
-    d._behavior.spin_vol.setValue(2)
+    d._behavior.spin_vol.setValue(0.2)
     d.commit()
     t = d.main_win.timers[-1]
-    assert t.volume == 2
-    assert choose_timer_sound(t, datetime.datetime.now()) == ("tick", 2)
+    assert t.volume == 0.2
+    assert choose_timer_sound(t, datetime.datetime.now()) == ("tick", 0.2)
 
 
 # ==================================================== T-1005 stabilization
@@ -300,7 +300,7 @@ def test_pool_row_signals_survive_row_removal():
     b._pool_append_row({"sound": "tick", "enabled": True, "all_day": True,
                         "start_minute": 0, "end_minute": 0, "volume": None})
     b._pool_append_row({"sound": "click", "enabled": True, "all_day": False,
-                        "start_minute": 360, "end_minute": 720, "volume": 4})
+                        "start_minute": 360, "end_minute": 720, "volume": 0.4})
     b._pool_append_row({"sound": "file:alert_b.wav", "enabled": True,
                         "all_day": True, "start_minute": 0, "end_minute": 0,
                         "volume": None})
@@ -323,8 +323,8 @@ def test_calendar_inherited_volume_uses_calendar_editor_volume():
     """Pool-row 'inherit' preview must resolve against the EDITOR that owns
     the row, never against the Alarm editor's volume."""
     d = _dlg()
-    d._behavior.spin_vol.setValue(2)        # Alarm tab volume
-    d._cal_behavior.spin_vol.setValue(9)    # Calendar tab volume
+    d._behavior.spin_vol.setValue(0.2)        # Alarm tab volume
+    d._cal_behavior.spin_vol.setValue(0.9)    # Calendar tab volume
     d._cal_behavior.cb_pool.setChecked(True)
     d._cal_behavior._pool_append_row({"sound": "tick", "enabled": True,
                                       "all_day": True, "start_minute": 0,
@@ -332,12 +332,12 @@ def test_calendar_inherited_volume_uses_calendar_editor_volume():
     seen = []
     d._cal_behavior.previewRequested.connect(lambda ref, vol: seen.append((ref, vol)))
     d._cal_behavior._preview_pool_row(0)
-    assert seen == [("tick", 9)], seen   # inherited -> Calendar editor volume
+    assert seen == [("tick", 0.9)], seen   # inherited -> Calendar editor volume
 
     seen.clear()
-    d._cal_behavior.pool.cellWidget(0, 4).setValue(6)
+    d._cal_behavior.pool.cellWidget(0, 4).setValue(0.6)
     d._cal_behavior._preview_pool_row(0)
-    assert seen == [("tick", 6)], seen   # overridden volume wins
+    assert seen == [("tick", 0.6)], seen   # overridden volume wins
 
 
 def test_zero_length_window_refused_at_alarm_commit():

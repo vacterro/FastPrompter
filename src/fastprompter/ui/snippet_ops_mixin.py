@@ -39,21 +39,90 @@ def _journal_path(root):
     return os.path.join(root, "_trash", _RETIREMENT_JOURNAL)
 
 
-def _write_retirement_journal(root, entry):
-    """Durably record a planned retirement before the physical move."""
+def _journal_load_records(root):
+    """Load every outstanding retirement record from the journal.
+
+    Returns a list of dicts with at least ``original``/``trashed`` keys.
+    A legacy v1 journal (a single overwrite slot holding one dict, CORE-002)
+    is migrated transparently so old crash leftovers stay recoverable.
+    Unreadable/corrupt payloads yield an empty list — callers then behave
+    exactly as if no journal existed (the physical layout is untouched).
+    """
+    import json
+    jp = _journal_path(root)
+    if not os.path.isfile(jp):
+        return []
+    try:
+        with open(jp, encoding="utf-8") as f:
+            payload = json.load(f)
+    except (OSError, ValueError):
+        return []
+    records = []
+    if isinstance(payload, dict) and isinstance(payload.get("records"), list):
+        for r in payload["records"]:
+            if isinstance(r, dict) and r.get("original") and r.get("trashed"):
+                records.append(r)
+    elif isinstance(payload, dict) and payload.get("original") \
+            and payload.get("trashed"):
+        records.append({
+            "id": str(payload.get("ts") or "legacy"),
+            "original": payload["original"],
+            "trashed": payload["trashed"],
+            "ts": str(payload.get("ts") or ""),
+            "merged": True,
+        })
+    return records
+
+
+def _journal_store_records(root, records):
+    """Durably rewrite the journal with exactly ``records`` (atomic).
+
+    A multi-record model (CORE-002/W2-001): one retirement must never
+    overwrite another uncommitted record, so every mutation rewrites the
+    FULL outstanding set through temp + os.replace.
+    """
     import json
     try:
         jp = _journal_path(root)
         os.makedirs(os.path.dirname(jp), exist_ok=True)
-        with open(jp, "w", encoding="utf-8") as f:
-            json.dump(entry, f)
+        tmp = jp + f".tmp{int(time.time() * 1000)}"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({"version": 2, "records": list(records)}, f)
+        os.replace(tmp, jp)
+        return True
     except OSError as e:
         from fastprompter.core.logging import logger
         logger.warning("retirement journal write failed: %s", e)
+        return False
+
+
+def _write_retirement_journal(root, entry):
+    """Append ONE planned retirement record before the physical move.
+
+    Kept as the single-record entry point (existing tests monkeypatch this
+    symbol): under the v2 multi-record model it appends to the outstanding
+    set instead of overwriting it, so repeated retirements inside one
+    uncommitted transaction each keep their own durable recovery record.
+
+    Returns True on success, False on OSError (CORE-002: the caller MUST
+    treat a False result as a fatal precondition and refuse the physical
+    move — the journal is the only thing that can reconstruct the
+    original->trash ownership after a crash)."""
+    records = _journal_load_records(root)
+    record = {
+        "id": f"{entry.get('ts', '')}-{len(records)}-{int(time.time() * 1000)}",
+        "original": entry.get("original"),
+        "trashed": entry.get("trashed"),
+        "ts": entry.get("ts", ""),
+    }
+    if not record["original"] or not record["trashed"]:
+        return False
+    records.append(record)
+    return _journal_store_records(root, records)
 
 
 def _clear_retirement_journal(root):
-    """Remove the journal after the retirement and log append succeeded."""
+    """Remove the journal once every record it held is durably acknowledged."""
     try:
         jp = _journal_path(root)
         if os.path.isfile(jp):
@@ -63,29 +132,209 @@ def _clear_retirement_journal(root):
         logger.warning("retirement journal clear failed: %s", e)
 
 
-def _reconcile_retirement_journal(root, data):
-    """Called at startup: if a retirement journal exists, a crash occurred
-    after the physical move but before the in-memory log was persisted.
-    Reconcile by appending the record to the live log."""
-    import json
-    try:
-        jp = _journal_path(root)
-        if not os.path.isfile(jp):
-            return
-        with open(jp, encoding="utf-8") as f:
-            entry = json.load(f)
-        orig = entry.get("original")
-        trashed = entry.get("trashed")
+def _norm_pair(original, trashed):
+    return (os.path.normcase(os.path.abspath(str(original))),
+            os.path.normcase(os.path.abspath(str(trashed))))
+
+
+def _reconcile_retirement_journal(root, data, owner_is_live=None):
+    """Startup reconciliation (CORE-002 / W2-001), transaction-aware.
+
+    The journal records that a PHYSICAL retirement happened, but the logical
+    deletion may never have been durably committed (the mutator only calls
+    ``mark_dirty``; SQLite lags). For every outstanding record:
+
+    * the durable state still maps the original path to a LIVE silo/category
+      (``owner_is_live`` truthy) — the logical deletion was NOT committed, so
+      the physical side effect is rolled back and the record is retired;
+    * the logical deletion IS durably committed (or the owner cannot be
+      resolved) — the ``(original, trashed)`` recovery pair merges into the
+      in-memory log, and the record STAYS in the journal flagged ``merged``
+      until ``_ack_retirement_journal`` observes the pair in a SUCCESSFUL
+      SQLite save (never acknowledge durability that does not exist yet).
+
+    Idempotent by construction: repeated runs dedup on the normalised pair
+    and never resurrect a rolled-back retirement. Paths outside the current
+    files root are left untouched (unknowable ownership context) and retried
+    on a later startup instead of being guessed about.
+    """
+    records = _journal_load_records(root)
+    if not records:
+        return
+    root_abs = os.path.abspath(root)
+    log = data.setdefault("folder_trash_log", [])
+    existing = {_norm_pair(e[0], e[1]) for e in log
+                if isinstance(e, (tuple, list)) and len(e) >= 2}
+    remaining = []
+    for rec in records:
+        orig, trashed = rec.get("original"), rec.get("trashed")
         if not (orig and trashed):
-            return
-        log = data.setdefault("folder_trash_log", [])
-        # guard against duplicates
-        if not any(e[1] == trashed for e in log if isinstance(e, (tuple, list)) and len(e) >= 2):
-            log.append((orig, trashed))
-        os.remove(jp)
-    except Exception as e:
-        from fastprompter.core.logging import logger
-        logger.warning("retirement journal reconciliation failed: %s", e)
+            continue
+        try:
+            inside = os.path.abspath(str(orig)).startswith(
+                root_abs + os.sep)
+        except Exception:
+            inside = False
+        if not inside:
+            # different/unreachable storage context: do not guess, retry later
+            remaining.append(rec)
+            continue
+        live = False
+        if owner_is_live is not None:
+            try:
+                live = bool(owner_is_live(orig))
+            except Exception:
+                live = False
+        if live:
+            # COMMIT/ROLLBACK arbitration: the DB still owns this folder, so
+            # the physical rename must be undone before the workspace shows.
+            if not os.path.exists(orig) and os.path.isdir(trashed):
+                try:
+                    os.makedirs(os.path.dirname(orig), exist_ok=True)
+                    os.rename(trashed, orig)
+                    # fully reversed: retire journal record and remove stale
+                    # recovery mapping from the in-memory log
+                    _pair = _norm_pair(orig, trashed)
+                    log[:] = [e for e in log
+                              if isinstance(e, (tuple, list)) and len(e) >= 2
+                              and _norm_pair(e[0], e[1]) != _pair]
+                    existing.discard(_pair)
+                    continue          # fully reversed: retire the record
+                except OSError as e:
+                    from fastprompter.core.logging import logger
+                    logger.warning(
+                        "retirement rollback %s -> %s failed: %s",
+                        trashed, orig, e)
+            elif os.path.exists(orig):
+                # already home (prior partial run): ensure stale mapping is
+                # cleared from the log and retire the journal record
+                _pair = _norm_pair(orig, trashed)
+                log[:] = [e for e in log
+                          if isinstance(e, (tuple, list)) and len(e) >= 2
+                          and _norm_pair(e[0], e[1]) != _pair]
+                existing.discard(_pair)
+                continue              # already home (prior partial run)
+            # could not reverse: keep BOTH the journal record and the
+            # recovery mapping so nothing is lost
+            pair = _norm_pair(orig, trashed)
+            if pair not in existing:
+                log.append((os.path.abspath(orig), os.path.abspath(trashed)))
+                existing.add(pair)
+            remaining.append(rec)
+        else:
+            # logical deletion committed (or unknowable): adopt the record
+            pair = _norm_pair(orig, trashed)
+            if pair not in existing:
+                log.append((os.path.abspath(orig), os.path.abspath(trashed)))
+                existing.add(pair)
+            rec["merged"] = True
+            remaining.append(rec)
+    if remaining:
+        _journal_store_records(root, remaining)
+    else:
+        _clear_retirement_journal(root)
+
+
+def _ack_retirement_journal(root, data):
+    """Retire journal records whose recovery pairs are now DURABLE.
+
+    Called after a successful SQLite commit (main.save_data_to_db): a
+    ``merged`` record may be dropped ONLY once the same pair exists in the
+    state that just committed — closing W2-001's second crash window where
+    the old reconciliation deleted the journal before the log was persisted.
+    Records whose trashed folder is gone AND whose original is back were
+    rolled back and are equally done."""
+    records = _journal_load_records(root)
+    if not records:
+        return
+    log_pairs = {_norm_pair(e[0], e[1]) for e in
+                 (data.get("folder_trash_log") or [])
+                 if isinstance(e, (tuple, list)) and len(e) >= 2}
+    kept = []
+    for rec in records:
+        orig, trashed = rec.get("original"), rec.get("trashed")
+        if not (orig and trashed):
+            continue
+        pair = _norm_pair(orig, trashed)
+        if pair in log_pairs:
+            continue                  # durably represented: acknowledged
+        if os.path.exists(orig) and not os.path.exists(trashed):
+            continue                  # rolled back physically: done
+        kept.append(rec)
+    if kept:
+        _journal_store_records(root, kept)
+    else:
+        _clear_retirement_journal(root)
+
+
+def resolve_trash_link(val, log):
+    """CORE-001: the ONE canonical ``trash_text_folder`` resolver.
+
+    ``val`` is what ``data["trash_text_folder"][md_basename]`` holds:
+
+    * NEW format — the exact absolute original folder path recorded at
+      delete time. Matched against ``folder_trash_log`` originals by exact
+      (case-normalised, absolute) path equality;
+    * LEGACY format — a bare folder basename from older builds. Matched by
+      basename equality ONLY when no exact interpretation applies.
+
+    Exactly ONE deterministic recoverable record is selected (first match
+    whose trashed directory still exists); EVERY other entry survives in
+    ``remaining``, so duplicate basenames across categories can never steal
+    each other's recovery records. ``log`` itself is not mutated.
+
+    Returns ``(selected, remaining)``; ``selected`` is None when nothing
+    recoverable matches.
+    """
+    entries = list(log or [])
+    if not val:
+        return None, entries
+    val_s = str(val)
+    want_exact = os.path.isabs(val_s)
+    picked = -1
+    if want_exact:
+        target = os.path.normcase(os.path.abspath(val_s))
+        for i, e in enumerate(entries):
+            if not (isinstance(e, (tuple, list)) and len(e) >= 2):
+                continue
+            if not os.path.isdir(e[1]):
+                continue
+            if os.path.normcase(os.path.abspath(str(e[0]))) == target:
+                picked = i
+                break
+    else:
+        base = os.path.basename(val_s)
+        for i, e in enumerate(entries):
+            if not (isinstance(e, (tuple, list)) and len(e) >= 2):
+                continue
+            if not os.path.isdir(e[1]):
+                continue
+            if os.path.basename(str(e[0])) == base:
+                picked = i
+                break
+    if picked < 0:
+        return None, entries
+    selected = entries[picked]
+    return selected, [e for j, e in enumerate(entries) if j != picked]
+
+
+def _purge_retirement_record(root, trashed_path):
+    """Drop the journal record(s) for a retirement that was rolled back.
+
+    W2-001: a rolled-back move must never be resurrected by a later startup
+    reconciliation, so its durable claim is retired together with the
+    in-memory log entry."""
+    records = _journal_load_records(root)
+    if not records:
+        return
+    norm = os.path.normcase(os.path.abspath(str(trashed_path)))
+    kept = [r for r in records
+            if os.path.normcase(os.path.abspath(str(r.get("trashed")))) != norm]
+    if len(kept) != len(records):
+        if kept:
+            _journal_store_records(root, kept)
+        else:
+            _clear_retirement_journal(root)
 
 
 def _trash_stamp():
@@ -732,7 +981,12 @@ class SnippetOpsMixin:
                 "trashed": os.path.abspath(dest),
                 "ts": _trash_stamp(),
             }
-            _write_retirement_journal(root, _journal_entry)
+            # CORE-002: the journal is a MANDATORY precondition. If it cannot
+            # be written durably, refuse the physical move entirely — moving
+            # the folder without a recovery record would orphan the assets on
+            # a crash. The caller sees "FAILED" and keeps the silo intact.
+            if not _write_retirement_journal(root, _journal_entry):
+                return "FAILED"
             _move_into_container(d, dest, root, capture_resolved_root(root))
             # remember original->trash so undoing the delete/clear can bring
             # the files back to where they belong (files never vanish: they're
@@ -740,9 +994,12 @@ class SnippetOpsMixin:
             log = self.data.setdefault("folder_trash_log", [])
             log.append((os.path.abspath(d), os.path.abspath(dest)))
             self._prune_folder_trash_log(log)
-            # W2-006: remove the journal entry; the durable log now owns
-            # the recovery mapping.
-            _clear_retirement_journal(root)
+            # CORE-002: DO NOT clear the journal here. The in-memory log is
+            # not yet durably persisted to SQLite, so deleting the journal now
+            # would reopen the crash window it was meant to close. The journal
+            # survives until startup reconciliation commits the record (the
+            # reconciliation is idempotent and de-duplicates), which is the
+            # only correct moment to retire it.
             return "MOVED_TO_TRASH"
         except OSError as e:
             logger.warning(f"Could not retire file container {d}: {e}")
@@ -942,7 +1199,7 @@ class SnippetOpsMixin:
         return self.trash_silo(idx, is_archive)
 
     def _trash_silo_content(self, text, folder_name=None):
-        """Write text to _trash folder and to Trash category if enabled.
+        """Write text to _trash as a durable recovery copy.
 
         P1-10 no-clobber: the destination name keeps the readable
         ``<slug>-<timestamp>`` form, but the FINAL path is allocated via the
@@ -955,9 +1212,16 @@ class SnippetOpsMixin:
         was retired alongside this text. When supplied it is recorded against
         the trashed .md's basename so restore can recover the right assets
         without rediscovering ownership from a lossy ``silo_slug`` guess
-        (which collapses duplicate titles and collision-suffixed folders)."""
+        (which collapses duplicate titles and collision-suffixed folders).
+
+        Returns (CORE-001 fail-closed contract):
+          * ``True``  — blank text: a successful no-op, nothing written.
+          * ``str``   — the written ``.md`` path: the durable copy exists.
+          * ``False`` — the durable write FAILED. Callers must NOT proceed
+            with the destructive delete/clear; the live silo must stay intact.
+        """
         if not text.strip():
-            return
+            return True
 
         from fastprompter.ui.file_container import (
             _unique_dest,
@@ -967,19 +1231,26 @@ class SnippetOpsMixin:
         )
         root = self._files_root()
         trash = os.path.join(root, "_trash")
+        dest = None
         try:
             os.makedirs(trash, exist_ok=True)
             stamp = _trash_stamp()
             wanted = f"{silo_slug(text)}-{stamp}.md"
             dest = _unique_dest(trash, wanted)
             _write_text_atomic(dest, text, root, capture_resolved_root(root))
-            # CORE-006: bind this exact .md to its retired folder while the
-            # identity is still unambiguous (before any slug-based guessing).
+            # CORE-003: bind this exact .md to the EXACT retired folder
+            # identity (its full original path), NOT merely the folder
+            # basename. Category-local File Container names can repeat across
+            # categories, so a basename key would alias distinct retirements
+            # and let one silo's restore steal another's assets. The full
+            # original path is unique per retirement and matches the
+            # folder_trash_log entry one-to-one on restore.
             if folder_name:
                 link = self.data.setdefault("trash_text_folder", {})
-                link[os.path.basename(dest)] = folder_name
+                link[os.path.basename(dest)] = os.path.abspath(folder_name)
         except OSError as e:
             logger.warning(f"Trash write failed: {e}")
+            return False
 
         if self.data.get("trash_vision", "False") == "True":
             if "Trash" not in self.data.get("categories", {}):
@@ -1005,6 +1276,7 @@ class SnippetOpsMixin:
                 })
             if hasattr(self, "get_current_category") and self.get_current_category() == "Trash":
                 self.refresh_snippets_panel()
+        return dest
 
     def open_trash_folder(self):
         trash = os.path.join(self._files_root(), "_trash")
@@ -1051,25 +1323,47 @@ class SnippetOpsMixin:
             if active_in_space and idx == self.active_temp_slot:
                 presets[idx] = self.text_area.toPlainText()
 
-            # RETIRE the physical assets BEFORE any logical mutation: a silo
-            # whose assets cannot be secured is not deleted at all. The live
-            # text is already flushed into the slot, so the retirement
-            # decision is made on the real content. The folder is resolved
-            # via the per-slot map (unique per silo); a None component (root
-            # unreachable, P1-4) is the same failure as ROOT_UNAVAILABLE.
+            # CORE-001: stage the durable text recovery copy FIRST, then retire
+            # the physical assets, then mutate. A recovery-write failure must
+            # NOT proceed to any destructive step — the live silo stays intact.
             folder = self._silo_folder_dir(idx, is_archive=is_arc)
+            # CORE-003: pass the EXACT original folder path so the trashed .md
+            # can be bound to a unique retirement identity.
+            folder_path = os.path.abspath(folder) if folder else None
+            staged = self._trash_silo_content(
+                presets[idx], folder_name=folder_path)
+            if staged is False:
+                # P0-6: the recovery copy could not be written durably, so the
+                # destructive delete is REFUSED. The text, assets, maps and
+                # undo snapshot are all left untouched.
+                from fastprompter.core.logging import logger as _lg
+                _lg.warning(
+                    "silo delete ABORTED (slot %d, archive=%s): trash write "
+                    "failed; live silo kept intact", idx, is_arc)
+                if pushed_undo is not None and self.data_undo_stack and \
+                        self.data_undo_stack[-1] is pushed_undo:
+                    self.data_undo_stack.pop()
+                self._save_undo_state()
+                return False
+            # NOW retire the physical assets. A silo whose assets cannot be
+            # secured is not deleted at all; the staged recovery copy is
+            # redundant and removed so trash does not lie about what was lost.
             if folder is None:
                 retire = "ROOT_UNAVAILABLE"
             else:
                 retire = self._delete_file_container(
                     self.get_current_category(), folder)
             if retire in ("FAILED", "ROOT_UNAVAILABLE"):
-                # P0-6: ABORT. The physical assets could not be secured:
-                # dropping the silo would silently discard the ownership
-                # knowledge that says where the surviving files live. The
-                # just-pushed undo snapshot is popped so Ctrl+Z cannot replay
-                # a deletion that never happened; the silo stays exactly as
-                # it was.
+                # P0-6: ABORT. Remove the staged recovery copy (it records a
+                # delete that did not happen) and keep the silo exactly as it
+                # was. The just-pushed undo snapshot is popped.
+                if isinstance(staged, str):
+                    try:
+                        os.remove(staged)
+                        self.data.get("trash_text_folder", {}).pop(
+                            os.path.basename(staged), None)
+                    except OSError:
+                        pass
                 from fastprompter.core.logging import logger as _lg
                 _lg.warning("silo delete ABORTED (slot %d, archive=%s): "
                             "folder retirement %s; nothing was removed",
@@ -1080,10 +1374,7 @@ class SnippetOpsMixin:
                 self._save_undo_state()
                 return False
             # P1-9: the ownership mapping is dropped ONLY for a confirmed
-            # retirement. FAILED / ROOT_UNAVAILABLE leave the physical folder
-            # exactly where the map says it is; dropping the map would orphan
-            # the user's assets ("files never vanish" is a promise, not a
-            # comment). By the time we are here the retirement is confirmed,
+            # retirement. By the time we are here the retirement is confirmed,
             # so the map entries are dropped unconditionally.
             if not is_arc:
                 self.data.get("silo_folders", {}).pop(str(idx), None)
@@ -1092,13 +1383,18 @@ class SnippetOpsMixin:
                 self.data.get("archive_silo_folders", {}).pop(str(idx), None)
                 self.data.get("archive_project_paths", {}).pop(str(idx), None)
 
-            # Assets are secured; NOW the logical delete proceeds: the text
-            # goes to _trash, the slot is popped and the state remapped. Pass
-            # the exact retired folder name so restore can recover the right
-            # assets (CORE-006) instead of guessing from a slug.
-            folder_basename = os.path.basename(folder) if folder else None
-            self._trash_silo_content(presets[idx], folder_name=folder_basename)
+            # W2-002: a File Container drawer still bound to this retired
+            # folder loses its mutation lease here — its next import must
+            # never _ensure_folder the deleted path back into existence.
+            if hasattr(self, "_detach_file_container_for"):
+                try:
+                    self._detach_file_container_for(folder)
+                except Exception:
+                    pass
 
+            # Assets are secured; NOW the logical delete proceeds: the slot is
+            # popped and the state remapped. The recovery copy is already in
+            # _trash (CORE-006 link recorded inside _trash_silo_content).
             presets.pop(idx)
             if idx < len(docs):
                 docs.pop(idx)
@@ -1189,8 +1485,10 @@ class SnippetOpsMixin:
             pos = 0
 
         # The silo we are inserting relative to, before any mutation. Used to
-        # detect a gap hugging it on the insert side (see gap relocation below).
+        # detect a gap hugging it on the insert side (see gap relocation below),
+        # and to preserve child hierarchy if a child silo was selected.
         orig_sel = self.active_temp_slot
+        orig_parent = self.silo_parent_of(orig_sel) if hasattr(self, "silo_parent_of") else None
 
         # Cap empty silos at 5: jump to the first existing empty one instead
         # of letting the user spam unlimited blanks. This is navigation, not a
@@ -1228,6 +1526,22 @@ class SnippetOpsMixin:
         if hasattr(self, "_remap_silo_indices"):
             self._remap_silo_indices(
                 lambda i: i + 1 if i >= pos else i, is_archive=is_arc)
+
+        # If inserting above/below a child silo, keep the new silo within the
+        # hierarchy as a child of the same parent at the target position.
+        if (shift or ctrl) and orig_parent is not None and not is_arc:
+            remapped_parent = orig_parent + 1 if orig_parent >= pos else orig_parent
+            cmap = self.data.setdefault("silo_children", {})
+            if isinstance(cmap, dict):
+                parent_key = next((k for k in cmap if str(k) == str(remapped_parent)), remapped_parent)
+                kids = cmap.setdefault(parent_key, [])
+                if isinstance(kids, list):
+                    target_sibling = orig_sel + 1 if shift else orig_sel
+                    if target_sibling in kids:
+                        insert_idx = kids.index(target_sibling) + (0 if shift else 1)
+                        kids.insert(insert_idx, pos)
+                    elif pos not in kids:
+                        kids.append(pos)
 
         # Gap that hugs the selected silo on the insert side must ride to the
         # FAR side of the new silo, else the new silo lands BEYOND the divider

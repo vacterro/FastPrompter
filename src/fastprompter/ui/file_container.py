@@ -125,7 +125,8 @@ class _ContainerOpWorker(QObject):
                         mutation_identity = request["destination_identities"].get(key)
                     if op == "move":
                         status = _move_into_container(
-                            src, dest, mutation_root, mutation_identity
+                            src, dest, mutation_root, mutation_identity,
+                            publish_guard=request.get("publish_guard"),
                         )
                     else:
                         _copy_atomic(
@@ -272,11 +273,32 @@ _SLUG_BAD = re.compile(
 _SLUG_TIMESTAMP = re.compile(r"\([^()]*\d{1,2}[:.]\d{2}[^()]*\)")
 
 
+def _first_meaningful_line(text):
+    """The first non-empty line of ``text``, equivalent to
+    ``(text or "").strip().splitlines()[0]`` but WITHOUT scanning/allocating
+    the entire body (PERF-002: a 600k-character silo must not cost an
+    O(body) splitlines just to derive a short title). Skips leading Unicode
+    whitespace and blank lines, then stops at the first line terminator."""
+    if not text:
+        return ""
+    n = len(text)
+    i = 0
+    # skip leading whitespace and blank lines
+    while i < n and text[i].isspace():
+        i += 1
+    if i >= n:
+        return ""
+    j = i
+    while j < n and text[j] not in "\n\r":
+        j += 1
+    return text[i:j]
+
+
 def silo_slug(text):
     """Folder-safe slug from a silo's first line. Keyed by title, not slot
     index, so the folder follows the silo through reorders. Timestamps in
     the title are ignored (they change on every Ctrl+E refresh)."""
-    first = (text or "").strip().splitlines()[0] if (text or "").strip() else ""
+    first = _first_meaningful_line(text)
     first = _SLUG_TIMESTAMP.sub("", first)
     first = _SLUG_STRIP.sub("", first).strip().lower()
     first = _SLUG_BAD.sub("", first)
@@ -461,12 +483,19 @@ def _publish_new_file(tmp, dest, root=None, root_identity=None):
     os.rename(tmp, dest)
 
 
-def _move_into_container(src, dest, root=None, root_identity=None):
+def _move_into_container(src, dest, root=None, root_identity=None,
+                         publish_guard=None):
     """Move src to dest without ever clobbering a destination that appeared.
 
     Same-volume: os.rename is atomic AND fails on Windows when dest exists
     (source preserved). Cross-volume: copy to a unique temp sibling, publish
     no-clobber, and only then remove the source.
+
+    ``publish_guard`` (W2-002): an optional callable revalidated immediately
+    before publication — same-volume renames and cross-volume publishes
+    alike. When it returns False the mutation is ABORTED with the source
+    untouched, so a queued move whose logical owner/session was revoked
+    mid-flight can never publish into retired storage.
 
     Returns "MOVED" when the source is gone, "SOURCE_REMAINS" when the
     destination was published but the source could not be removed (P1-3) —
@@ -479,6 +508,9 @@ def _move_into_container(src, dest, root=None, root_identity=None):
 
     if os.path.lexists(dest):
         raise OSError(f"destination {dest!r} appeared; refusing to overwrite it")
+    if publish_guard is not None and not publish_guard():
+        raise OSError(
+            f"publication aborted: the owner of {dest!r} no longer exists")
     try:
         _require_container_destination(root, root_identity, dest)
         os.rename(src, dest)      # same-volume: atomic, no-clobber
@@ -499,6 +531,10 @@ def _move_into_container(src, dest, root=None, root_identity=None):
             else:
                 shutil.copy2(src, tmp)
 
+            if publish_guard is not None and not publish_guard():
+                raise OSError(
+                    f"publication aborted: the owner of {dest!r} "
+                    "no longer exists")
             _publish_new_file(tmp, dest, root, root_identity)
         except Exception:
             shutil.rmtree(tmp, ignore_errors=True)
@@ -693,6 +729,11 @@ class FileContainerPanel(QWidget):
         super().__init__(main_win, Qt.WindowType.Tool)
         self.main_win = main_win
         self._container_owner_id = uuid.uuid4().hex
+        # W2-002: the mutation lease. UI-paint identity (_container_owner_id)
+        # filters stale completions; `_session_valid` is the PHYSICAL write
+        # authority, revoked by the main window whenever this folder's
+        # logical owner is deleted/retired/transferred/re-rooted.
+        self._session_valid = False
         self.docked = False
         self.lang = getattr(main_win, "_current_lang", "EN")
         self.folder = ""
@@ -868,6 +909,9 @@ class FileContainerPanel(QWidget):
 
         self.folder = folder
         self._folder_root_identity = capture_resolved_root(folder)
+        # W2-002: a fresh open_for mints BOTH the paint identity and the
+        # physical mutation lease for the resolved storage location.
+        self._session_valid = True
 
         import uuid
         self._container_owner_id = str(uuid.uuid4())
@@ -890,8 +934,21 @@ class FileContainerPanel(QWidget):
         elif hasattr(self.main_win, "_show_files_dock"):
             self.main_win._show_files_dock(True, title=title)
 
+    def session_alive(self):
+        """W2-002: True while this panel may mutate its bound folder."""
+        return bool(getattr(self, "folder", None)
+                    and getattr(self, "_session_valid", False))
+
     def _ensure_folder(self):
-        """Create the folder if it doesn't exist and ensure it is watched."""
+        """Create the folder if it doesn't exist and ensure it is watched.
+
+        W2-002: a revoked session never recreates anything. This is the
+        exact hazard that motivated the lease — after a silo delete retired
+        this folder into _trash, an import through a still-open drawer used
+        to ``makedirs`` the retired path back into existence and write new
+        files into a directory no live silo maps to."""
+        if not self.session_alive():
+            return False
         if self.folder and not os.path.isdir(self.folder):
             try:
                 os.makedirs(self.folder, exist_ok=True)
@@ -908,6 +965,8 @@ class FileContainerPanel(QWidget):
             self._watcher.removePaths(self._watcher.directories())
         self.folder = None
         self._container_owner_id = None
+        # W2-002: the mutation lease dies with the session.
+        self._session_valid = False
         # bump the generation so every in-flight listing from the PREVIOUS
         # session is recognized as stale and discarded (P0-5)
         self._container_gen = (getattr(self, "_container_gen", 0) or 0) + 1
@@ -1166,27 +1225,39 @@ class FileContainerPanel(QWidget):
         # fetches can resolve without re-statting the disk or scanning the
         # widget on every scroll event.
         thumb_mtimes = {}
+        _icon_state = getattr(self, "_icon_state", {})
         for idx, (path, label, img, mtime_val, needs_thumb) in enumerate(items):
             new_paths.add(path)
             if needs_thumb:
                 thumb_mtimes[path] = mtime_val
+            ext = os.path.splitext(path)[1].lower()
+            icon_key = (bool(needs_thumb), ext)
+            is_new = path not in current_items
+            need_icon = is_new or _icon_state.get(path) != icon_key
             icon = None
-            if needs_thumb:
-                cached = self._thumb_lru.get(path)
-                if cached and cached[0] == mtime_val:
-                    icon = cached[1]
+            if need_icon:
+                # PERF-004: only (re)resolve the shell/provider icon when the
+                # item is new or its icon-relevant identity changed. Stable
+                # entries keep their existing icon (including a rendered
+                # thumbnail) instead of forcing a native provider lookup and
+                # a setIcon repaint on every refresh of a live folder.
+                if needs_thumb:
+                    cached = self._thumb_lru.get(path)
+                    if cached and cached[0] == mtime_val:
+                        icon = cached[1]
+                    else:
+                        from PyQt6.QtCore import QFileInfo
+                        icon = self._icon_provider.icon(QFileInfo(path))
                 else:
                     from PyQt6.QtCore import QFileInfo
                     icon = self._icon_provider.icon(QFileInfo(path))
-            else:
-                from PyQt6.QtCore import QFileInfo
-                icon = self._icon_provider.icon(QFileInfo(path))
 
             if path in current_items:
                 item = current_items[path]
                 if item.text() != label:
                     item.setText(label)
-                item.setIcon(icon)
+                if icon is not None:
+                    item.setIcon(icon)
                 if self.file_list.row(item) != idx:
                     taken = self.file_list.takeItem(self.file_list.row(item))
                     self.file_list.insertItem(idx, taken)
@@ -1196,6 +1267,12 @@ class FileContainerPanel(QWidget):
                 item.setToolTip(path)
                 self.file_list.insertItem(idx, item)
                 current_items[path] = item
+            _icon_state[path] = icon_key
+        # prune icon state for paths that are no longer present
+        for _p in list(_icon_state.keys()):
+            if _p not in new_paths:
+                _icon_state.pop(_p, None)
+        self._icon_state = _icon_state
 
         for i in range(self.file_list.count() - 1, -1, -1):
             item = self.file_list.item(i)
@@ -1213,8 +1290,12 @@ class FileContainerPanel(QWidget):
         mw = getattr(self, "main_win", None)
         if hasattr(mw, "_update_files_button"):
             mw._update_files_button()
-        if hasattr(mw, "refresh_temp_presets"):
-            mw.refresh_temp_presets()
+        # PERF-005: the ownership-checked `_on_file_count_result` already
+        # updates exactly the row that owns this folder (and `refresh()`
+        # primes its count request), so the old unconditional global
+        # `refresh_temp_presets()` rebuilt every visible silo row for no
+        # observable state change. Text/hierarchy/style mutations keep the
+        # broad refresh; a file-list completion does not earn one.
 
         self._queue_thumbnail_fetch()
 
@@ -1479,6 +1560,26 @@ class FileContainerPanel(QWidget):
                 return os.path.join(self.folder, cand)
             n += 1
 
+    def _make_publish_guard(self):
+        """W2-002: capture THIS session's lease for one async command.
+
+        The guard is revalidated on the worker thread immediately before
+        every physical publication: if the owner/session was revoked (silo
+        deleted, category deleted, transfer, files-root change) or rebound
+        meanwhile, the queued write must never publish into storage that no
+        longer belongs to the command's original owner."""
+        owner = getattr(self, "_container_owner_id", None)
+        folder = self.folder
+        valid = self._session_valid
+
+        def guard():
+            return (getattr(self, "_session_valid", False) is valid
+                    and valid
+                    and getattr(self, "_container_owner_id", None) == owner
+                    and getattr(self, "folder", None) == folder)
+
+        return guard
+
     def import_paths(self, paths, do_move=False):
         """Copy or move files (or whole folders) into the silo folder.
 
@@ -1499,6 +1600,10 @@ class FileContainerPanel(QWidget):
             return
         folder_real = os.path.realpath(os.path.abspath(self.folder))
         folder_abs = os.path.abspath(self.folder)
+        # W2-002: every item in this command publishes under ONE captured
+        # lease; async dispatches carry the guard so a mid-flight revocation
+        # refuses publication at mutation time.
+        publish_guard = self._make_publish_guard()
         planned = set()
         items = []
         for src in paths:
@@ -1523,12 +1628,12 @@ class FileContainerPanel(QWidget):
                           os.path.isdir(src_abs)))
         if not items:
             return
-        self._run_container_ops(items)
+        self._run_container_ops(items, publish_guard=publish_guard)
 
-    def _run_container_ops(self, items):
+    def _run_container_ops(self, items, publish_guard=None):
         """Synchronous for small ops, worker-dispatched for large ones."""
         if _async_eligible(items):
-            self._dispatch_container_ops(items)
+            self._dispatch_container_ops(items, publish_guard=publish_guard)
             return
         done = []
         partial = []
@@ -1537,12 +1642,14 @@ class FileContainerPanel(QWidget):
             try:
                 if op == "move":
                     status = _move_into_container(
-                        src, dest, self.folder, self._folder_root_identity
+                        src, dest, self.folder, self._folder_root_identity,
+                        publish_guard=publish_guard,
                     )
                 else:
                     _copy_atomic(
                         src, dest, is_dir, self.folder,
                         self._folder_root_identity,
+                        publish_guard=publish_guard,
                     )
                     status = "COPIED"
                 if status == "SOURCE_REMAINS":
@@ -1560,7 +1667,8 @@ class FileContainerPanel(QWidget):
                 errors.append((src, str(e)))
         self._finish_container_ops(done, partial, errors)
 
-    def _dispatch_container_ops(self, items, is_export=False):
+    def _dispatch_container_ops(self, items, is_export=False,
+                                publish_guard=None):
         """Queue one explicit FIFO command with immutable origin context."""
         import uuid
         request_id = uuid.uuid4().hex
@@ -1575,6 +1683,9 @@ class FileContainerPanel(QWidget):
             "root": None if is_export else origin,
             "root_identity": None if is_export else self._folder_root_identity,
             "policy": "EXTERNAL_EXPORT" if is_export else "IMPORT_TO_CONTAINER",
+            # W2-002: the session lease travels with the command and is
+            # revalidated on the worker immediately before publication.
+            "publish_guard": publish_guard,
         }
         if is_export:
             request["destination_identities"] = {

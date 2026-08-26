@@ -85,8 +85,13 @@ class ThemeMixin:
 
     def change_theme(self, theme_name):
         """Switch to a different theme."""
-        self.add_data_undo_state("Change theme")
+        # PERF-002: replacing one settings value is a compact undo record —
+        # snapshotting every project's text for a theme click made the
+        # action cost proportional to unrelated content.
+        old_theme = self.data.get("theme", "Default")
+        rec = self.add_compact_meta_undo("theme", None, old_theme)
         self.data["theme"] = theme_name
+        self._finish_compact_meta_undo(rec, theme_name)
         self.mark_dirty()
         self._refresh_theme_cache()
         self.apply_theme()

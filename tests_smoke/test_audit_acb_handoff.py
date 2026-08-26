@@ -39,7 +39,7 @@ CUR = "Text"
 @pytest.fixture(scope="module")
 def win():
     state_mod.get_db_path = lambda *a, **k: os.path.join(_tmpdir, "a.db")
-    state_mod.run_portable_backup = lambda data, profile_id=1: None
+    state_mod.run_portable_backup = lambda data, profile_id=1, **_kw: None
     FastPrompter.setup_single_instance_server = lambda self: None
     FastPrompter.register_all_hotkeys = lambda self: None
     FastPrompter.unregister_all_hotkeys = lambda self: None
@@ -123,7 +123,7 @@ def _link(win, slot, path, text=None):
     if text is None:
         read = ps.read_text_file(path)
         assert read is not None
-        text, eol = read
+        text, eol = read[0], read[1]
     else:
         eol = "\n"
     links = win.data.setdefault("silo_links", {})
@@ -134,6 +134,16 @@ def _link(win, slot, path, text=None):
     win._sync_eol_cache[key] = eol
     win._sync_last_applied[key] = win._sync_side_digest(text)
     return key
+
+
+class _Gate:
+    """CORE-004: the commit gate is part of the worker dispatch contract."""
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
 
 
 # ======================================================================
@@ -153,15 +163,15 @@ class TestCore001:
         w.text_area.setPlainText("A")
         w._push_sync_files(slots={0})
         assert len(fake.dispatch.calls) == 1
-        jobs, leases = fake.dispatch.calls[0]
-        key, path, text, eol, expect, lease, maxb = jobs[0]
+        jobs, leases, _gate = fake.dispatch.calls[0]
+        key, path, text, eol, expect, lease, maxb, had_bom = jobs[0]
         assert expect == w._sync_side_digest("B\n")
         # an external edit lands BEFORE the worker mutates
         f.write_text("EXT\n", encoding="utf-8")
         worker = main_mod._SyncPushWorker()
         results = []
         worker.done.connect(lambda r: results.extend(r))
-        worker._run(jobs, leases)
+        worker._run(jobs, leases, _Gate())
         status = [r for r in results if r[0] == key][0][3]
         detail = [r for r in results if r[0] == key][0][4]
         assert status == "conflict"
@@ -174,7 +184,8 @@ class TestCore001:
         monkeypatch.setattr(
             w, "_sync_conflict_choice",
             lambda *a, **k: "file")
-        w._resolve_push_conflict(key, path, text, detail[0], detail[1])
+        w._resolve_push_conflict(key, path, text,
+                                 detail[0], detail[1], detail[2])
         assert w.data["temp_presets"][0] == "EXT\n"
         assert w._sync_last_applied[key] == w._sync_side_digest("EXT\n")
         # resolution "app": a NEW job is authorized against the CURRENT disk.
@@ -188,9 +199,10 @@ class TestCore001:
         w._push_jobs_pending.clear()
         w._push_inflight = False            # the fake batch "completed"
         fake.dispatch.calls.clear()
-        w._on_push_done([(key, path, "A", "conflict", ("EXT\n", "\n"))])
+        w._on_push_done([(key, path, "A", "conflict",
+                          ("EXT\n", "\n", False))])
         assert not w._push_jobs_pending      # consumed by the dispatch below
-        jobs2, leases2 = fake.dispatch.calls[-1]
+        jobs2, leases2, _g2 = fake.dispatch.calls[-1]
         assert jobs2[0][4] == w._sync_side_digest("EXT\n")
 
     def test_stale_lease_rejects_inflight_write(self, sync_clean, tmp_path,
@@ -204,7 +216,7 @@ class TestCore001:
         monkeypatch.setattr(w, "_ensure_push_worker", lambda: fake)
         w.text_area.setPlainText("new text")
         w._push_sync_files(slots={0})
-        jobs, leases = fake.dispatch.calls[0]
+        jobs, leases, _gate = fake.dispatch.calls[0]
         key = jobs[0][0]
         # ownership transition AFTER queueing (unlink/archive/repoint shape)
         leases[key] = leases.get(key, 0) + 1
@@ -212,7 +224,7 @@ class TestCore001:
         worker = main_mod._SyncPushWorker()
         results = []
         worker.done.connect(lambda r: results.extend(r))
-        worker._run(jobs, leases)
+        worker._run(jobs, leases, _Gate())
         assert results[0][3] == "stale"
         assert f.read_bytes() == before
 
@@ -278,7 +290,7 @@ class TestPerf002:
         w.text_area.setPlainText("zero EDITED")
         w.data["temp_presets"][0] = "zero EDITED"
         w._push_sync_files(slots={0})
-        jobs, _leases = fake.dispatch.calls[-1]
+        jobs, _leases, _gate = fake.dispatch.calls[-1]
         keys = {j[0] for j in jobs}
         slot1_key = w._sync_baseline_key(1, str(f1))
         assert keys and all(k[1] == 0 for k in keys), keys
@@ -287,7 +299,7 @@ class TestPerf002:
         w._push_inflight = False             # fake batch completed
         fake.dispatch.calls.clear()
         w._push_sync_files_active()
-        jobs, _leases = fake.dispatch.calls[-1]
+        jobs, _leases, _gate = fake.dispatch.calls[-1]
         assert all(j[0][1] == 0 for j in jobs)
 
     def test_navigation_publishes_only_outgoing_slot(self, sync_clean,
@@ -519,7 +531,7 @@ class TestCore005:
         w = sync_clean
         release = threading.Event()
 
-        def blocking_write(path, text, eol="\n"):
+        def blocking_write(path, text, eol="\n", write_bom=False):
             release.wait(5.0)
             return ps.write_text_file(path, text, eol)
 
@@ -528,7 +540,7 @@ class TestCore005:
         key = ("Text", 0, os.path.normcase(f))
         w.data.setdefault("silo_links", {})["0"] = f
         w._push_jobs_pending[key] = (
-            key, f, "x", "\n", None, 0, 512 * 1024)
+            key, f, "x", "\n", None, 0, 512 * 1024, False)
         w._push_inflight = False
         w._dispatch_push_jobs()
         assert w._push_inflight

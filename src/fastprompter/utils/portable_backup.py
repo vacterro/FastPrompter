@@ -48,6 +48,14 @@ _backup_newer_wanted: set = set()
 # committed generation can be dispatched once the current job completes.
 _backup_pending_data: dict = {}
 
+# PERF-003 (audit acb-mt9141yi): per-profile record of what was already
+# exported, keyed by the caller's exported-content generation and calendar
+# day. A save that changed only non-exported domains (settings churn) with
+# an already-represented generation skips the O(project) snapshot entirely;
+# a new calendar day re-arms one unchanged-content snapshot per profile.
+_last_exported_gen_by_profile: dict = {}
+_last_exported_day_by_profile: dict = {}
+
 _COMPLETE_MARKER = "_COMPLETE"
 
 # The app installs a Qt-backed ASYNC dispatcher here; without one the backup
@@ -112,7 +120,7 @@ def clear_throttle(profile_id=1):
     last_success_by_profile.pop(int(profile_id or 1), None)
 
 
-def run_portable_backup(data: dict, profile_id=1) -> None:
+def run_portable_backup(data: dict, profile_id=1, content_gen=None) -> None:
     """Export all data as structured .md files. Throttled per profile.
 
     With an installed async sink, the immutable snapshot (carrying
@@ -126,10 +134,27 @@ def run_portable_backup(data: dict, profile_id=1) -> None:
     exactly the state that belonged to the successful save that requested it.
     ``backup_finished`` retires the active marker and dispatches the newest
     pending snapshot immediately.
+
+    PERF-003: when the caller supplies ``content_gen`` (the profile's
+    exported-content generation), a save whose generation was already
+    exported AND whose calendar day matches the last export skips the whole
+    capture — settings-only churn can no longer periodically copy and write
+    an unchanged project. Any silo/snippet/archive/category-content change
+    bumps the generation and re-arms; a new calendar day re-arms exactly one
+    unchanged-content snapshot; explicit backup paths call without
+    ``content_gen`` and always capture.
     """
     pid = int(profile_id or 1)
     now = time.time()
     if now - last_success_by_profile.get(pid, 0.0) < _BACKUP_THROTTLE:
+        return
+
+    # PERF-003: unchanged-exported-content short-circuit. Evaluated AFTER the
+    # throttle so a throttled save costs nothing either way, and BEFORE any
+    # deep copy / coalescing bookkeeping.
+    if content_gen is not None \
+            and _last_exported_gen_by_profile.get(pid) == content_gen \
+            and _last_exported_day_by_profile.get(pid) == _today():
         return
 
     if pid in _backup_active:
@@ -142,6 +167,10 @@ def run_portable_backup(data: dict, profile_id=1) -> None:
     _backup_active.add(pid)
 
     snapshot = capture_snapshot(data, profile_id=pid)
+    if content_gen is not None:
+        # PERF-003: the async completion path reads the generation back off
+        # the immutable snapshot to mark what a success represented.
+        snapshot["_content_gen"] = content_gen
     # A fresh snapshot of the CURRENT state supersedes any stale coalesced
     # pending state left by a CORE-005 redispatch failure.
     _backup_pending_data.pop(pid, None)
@@ -168,8 +197,20 @@ def run_portable_backup(data: dict, profile_id=1) -> None:
         return
 
     last_success_by_profile[pid] = now
+    _mark_exported(pid, content_gen)
     _backup_active.discard(pid)
     _finish_newer_wanted(pid)
+
+
+def _today():
+    return time.strftime("%Y-%m-%d")
+
+
+def _mark_exported(pid, content_gen=None):
+    """Record what this profile's latest successful export represented."""
+    if content_gen is not None:
+        _last_exported_gen_by_profile[pid] = content_gen
+    _last_exported_day_by_profile[pid] = _today()
 
 
 def _finish_newer_wanted(pid):

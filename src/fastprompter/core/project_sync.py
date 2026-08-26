@@ -72,7 +72,12 @@ def resolve_relative_path(root: str, relpath: str) -> str | None:
     """
     if not isinstance(root, str) or not isinstance(relpath, str):
         return None
-    relpath = relpath.strip().replace("\\", "/")
+    # Normalize only the path SEPARATOR. Do NOT strip() the filename: leading
+    # and trailing whitespace are legal characters in a filesystem name, so
+    # stripping would alias distinct Sync-Project entries (" lead.txt" vs
+    # "lead.txt") onto one target. Only the Windows backslash -> POSIX slash
+    # conversion is applied here; the filename is preserved byte-for-character.
+    relpath = relpath.replace("\\", "/")
     if not relpath or relpath.startswith("/") or re.match(r"^[A-Za-z]:/", relpath):
         return None
     root_real = os.path.realpath(os.path.abspath(root))
@@ -196,12 +201,14 @@ def looks_binary(data: bytes) -> bool:
 
 
 def read_text_file(path: str, max_bytes: int = DEFAULT_MAX_BYTES):
-    """Read ``path`` as text. Returns ``(text, eol)`` or None (skip it).
+    """Read ``path`` as text. Returns ``(text, eol, had_utf8_bom)`` or None.
 
     None means: missing, too large, or binary — the caller must treat it as
     "not a syncable text file right now". The returned text is EOL-
-    NORMALISED (\n only); ``eol`` is the file's dominant line ending, to be
-    re-applied on write-back.
+    NORMALISED (\n only); ``eol`` is the file's dominant line ending and
+    ``had_utf8_bom`` records whether the source carried a UTF-8 byte-order
+    mark, both to be re-applied on write-back (CORE-007: BOM must survive a
+    FastPrompter-originated edit instead of being silently dropped).
     """
     try:
         size = os.path.getsize(path)
@@ -213,6 +220,7 @@ def read_text_file(path: str, max_bytes: int = DEFAULT_MAX_BYTES):
         return None
     if looks_binary(data):
         return None
+    had_utf8_bom = data[:3] == b"\xef\xbb\xbf"
     try:
         # utf-8-sig is also valid plain UTF-8 and removes a BOM when present;
         # decoding as plain utf-8 first would leak U+FEFF into the first silo.
@@ -225,22 +233,27 @@ def read_text_file(path: str, max_bytes: int = DEFAULT_MAX_BYTES):
         # source file. Fail closed: skip the file instead.
         return None
     eol = detect_eol(text)
-    return text.replace("\r\n", "\n"), eol
+    return text.replace("\r\n", "\n"), eol, had_utf8_bom
 
 
-def write_text_file(path: str, text: str, eol: str = "\n") -> str | None:
+def write_text_file(path: str, text: str, eol: str = "\n",
+                    write_bom: bool = False) -> str | None:
     """Write ``text`` with the file's EOL, atomically (temp + rename).
 
-    Returns the text ACTUALLY written (EOL-normalised) so callers can store
-    it as the "last applied" baseline — comparing a \\n-only silo text
-    against a \\r\\n file would otherwise look like an external edit.
-    Returns None on failure."""
+    ``write_bom`` re-emits a UTF-8 byte-order mark when the source file
+    carried one (CORE-007). New, BOM-less files stay BOM-less by default.
+    Returns the text ACTUALLY written (EOL-normalised, BOM excluded from the
+    returned string) so callers can store it as the "last applied" baseline —
+    comparing a \\n-only silo text against a \\r\\n file would otherwise look
+    like an external edit. Returns None on failure."""
     if eol != "\n":
         text = text.replace("\n", eol)
     tmp = path + ".fp-sync-tmp"
     try:
-        with open(tmp, "w", encoding="utf-8", newline="") as fh:
-            fh.write(text)
+        with open(tmp, "wb") as fh:
+            if write_bom:
+                fh.write(b"\xef\xbb\xbf")
+            fh.write(text.encode("utf-8"))
         os.replace(tmp, path)
         return text
     except OSError:

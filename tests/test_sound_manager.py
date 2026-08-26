@@ -112,8 +112,8 @@ class TestSoundFileMap:
         spelling, so this asserts the thing that matters — the file is there.
         """
         sm = SoundManager(_MockQObject(), {})
-        available = set(sm.get_available_sounds())
-        missing = {e: f for e, f in _DEFAULT_SOUND_MAP.items() if f not in available}
+        available = {s.lower() for s in sm.get_available_sounds()}
+        missing = {e: f for e, f in _DEFAULT_SOUND_MAP.items() if f.lower() not in available}
         assert not missing, f"defaults with no file: {missing}"
 
     def test_has_backspace(self):
@@ -175,7 +175,7 @@ class TestEventVolume:
     def test_global_volume_used_when_per_event_empty(self):
         data = {"sound_volume": "7"}
         vol = get_event_volume("click", data)
-        assert vol == 7
+        assert vol == 0.7
 
     def test_per_event_volume_overrides_global(self):
         data = {
@@ -185,7 +185,7 @@ class TestEventVolume:
             }
         }
         vol = get_event_volume("click", data)
-        assert vol == 8
+        assert vol == 0.8
 
     def test_invalid_volume_falls_back_to_global(self):
         data = {
@@ -195,7 +195,7 @@ class TestEventVolume:
             }
         }
         vol = get_event_volume("click", data)
-        assert vol == 5
+        assert vol == 0.5
 
 
 class TestSoundManagerToggle:
@@ -336,12 +336,12 @@ class TestVolumeOnTheWinsoundPath:
     """
 
     def test_level_is_clamped_and_junk_reads_as_five(self):
-        assert _volume_level({"sound_volume": "7"}) == 7
-        assert _volume_level({"sound_volume": "0"}) == 0
-        assert _volume_level({"sound_volume": "99"}) == 10
-        assert _volume_level({"sound_volume": "-3"}) == 0
-        assert _volume_level({"sound_volume": "loud"}) == 5
-        assert _volume_level({}) == 5
+        assert _volume_level({"sound_volume": "7"}) == 0.7
+        assert _volume_level({"sound_volume": "0"}) == 0.0
+        assert _volume_level({"sound_volume": "99"}) == 1.0
+        assert _volume_level({"sound_volume": "-3"}) == 0.0
+        assert _volume_level({"sound_volume": "loud"}) == 0.5
+        assert _volume_level({}) == 0.5
 
     def _sample(self):
         sm = SoundManager(_MockQObject(), {})
@@ -371,13 +371,13 @@ class TestVolumeOnTheWinsoundPath:
 
     def test_cached_file_is_per_level(self, tmp_path):
         src = self._sample()
-        a = scaled_wav_path(src, 3)
-        b = scaled_wav_path(src, 7)
+        a = scaled_wav_path(src, 0.3)
+        b = scaled_wav_path(src, 0.7)
         assert a and b and a != b
         assert os.path.exists(a) and os.path.exists(b)
-        assert scaled_wav_path(src, 3) == a  # reused, not rewritten
+        assert scaled_wav_path(src, 0.3) == a  # reused, not rewritten
         # full volume has nothing to scale — the original file is used
-        assert scaled_wav_path(src, 10) is None
+        assert scaled_wav_path(src, 1.0) is None
 
     def test_play_uses_the_scaled_copy_and_stays_async(self, real_play_winsound):
         # The session-wide mute in conftest replaces _play_winsound, and this
@@ -390,13 +390,13 @@ class TestVolumeOnTheWinsoundPath:
         fake.PlaySound = lambda s, f: played.append((s, f))
         with patch.dict(sys.modules, {"winsound": fake}):
             src = self._sample()
-            real_play_winsound(src, 2)
-            real_play_winsound(src, 10)
-            real_play_winsound(src, 0)
+            real_play_winsound(src, 0.2)
+            real_play_winsound(src, 1.0)
+            real_play_winsound(src, 0.0)
 
         assert len(played) == 2, "level 0 must play nothing at all"
         quiet, loud = played
-        assert quiet[0] != src and quiet[0].endswith("_v2.wav")
+        assert quiet[0] != src and "_v20" in quiet[0]
         assert loud[0] == src
         # SND_MEMORY is refused by winsound together with SND_ASYNC
         # ("Cannot play asynchronously from memory"), and playing a click
@@ -447,9 +447,13 @@ class TestPlaySoundRef:
         return sm
 
     def test_named_event_plays_through_configured_file(self, tmp_path):
-        (tmp_path / "click_soft.wav").write_bytes(b"RIFF")
+        from fastprompter.core.sound_manager import _DEFAULT_SOUND_MAP
+        target = _DEFAULT_SOUND_MAP.get("click", "click_soft.wav")
+        p = tmp_path / target
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(b"RIFF")
         sm = self._mgr(tmp_path)
-        assert sm.play_sound_ref("click", 5) is True
+        assert sm.play_sound_ref("click", 0.5) is True
 
     def test_file_ref_inside_library_plays(self, tmp_path):
         (tmp_path / "foo.wav").write_bytes(b"RIFF")

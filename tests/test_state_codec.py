@@ -33,7 +33,7 @@ def state_from(tmp_path, monkeypatch):
                             lambda profile_id=1, _db=db: _db)
         monkeypatch.setattr(
             "fastprompter.utils.portable_backup.run_portable_backup",
-            lambda data, profile_id=1: None)
+            lambda data, profile_id=1, **_kw: None)
         conn = sqlite3.connect(db)
         conn.execute("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT)")
         for key, value in rows:

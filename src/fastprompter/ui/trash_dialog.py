@@ -53,16 +53,38 @@ class TrashDialog(QDialog):
             return self.main_win.tr(text, getattr(self.main_win, "_current_lang", "EN"))
         return text
 
+    def _consumed_map(self):
+        return self.main_win.data.setdefault("trash_consumed", {})
+
     def _load_trash(self):
+        """List restorable .md sources.
+
+        W2-005: a source whose consumed identity was already durably
+        committed is NEVER offered again — the restore it belongs to lives
+        in SQLite, and re-listing the .md would let a second click insert a
+        duplicate without its folder. The stale file (left behind by a
+        source-delete permission error or a crash before removal) is removed
+        opportunistically; if deletion keeps failing it simply stays
+        invisible."""
         self.list_widget.clear()
+        consumed = self.main_win.data.get("trash_consumed") or {}
         if not os.path.isdir(self.trash_dir):
             return
-            
+
         for f in sorted(os.listdir(self.trash_dir), reverse=True):
-            if f.endswith(".md"):
-                item = QListWidgetItem(f)
-                item.setData(Qt.ItemDataRole.UserRole, os.path.join(self.trash_dir, f))
-                self.list_widget.addItem(item)
+            if not f.endswith(".md"):
+                continue
+            if consumed.get(f):
+                # already durably restored: retry the physical cleanup once
+                try:
+                    os.remove(os.path.join(self.trash_dir, f))
+                except OSError:
+                    pass
+                continue
+            item = QListWidgetItem(f)
+            item.setData(Qt.ItemDataRole.UserRole,
+                         os.path.join(self.trash_dir, f))
+            self.list_widget.addItem(item)
 
     def _restore_selected(self):
         items = self.list_widget.selectedItems()
@@ -77,17 +99,42 @@ class TrashDialog(QDialog):
             with open(filepath, encoding="utf-8") as f:
                 text = f.read()
 
+            mw = self.main_win
+            data = mw.data
+            # CORE-003/W2-001: capture the COMPLETE pre-restore state through
+            # the canonical snapshot primitive — every slot-indexed store
+            # (watcher queues, colours, pins, ticks, children, gaps, project
+            # paths, links, Sync-Project mappings, view state) plus docs and
+            # navigation — so a failed durable save can roll back to an
+            # identity-equivalent runtime instead of a hand-picked subset.
+            pre_snapshot = mw._snapshot_current() \
+                if hasattr(mw, "_snapshot_current") else None
+            pre_undo = list(getattr(mw, "data_undo_stack", []) or [])
+            pre_redo = list(getattr(mw, "data_redo_stack", []) or [])
+            from fastprompter.ui.snippet_ops_mixin import resolve_trash_link
+            pre_link_val = (data.get("trash_text_folder") or {}).get(md_basename)
+            pre_log = list(data.get("folder_trash_log") or [])
+            _sel, _rem = resolve_trash_link(pre_link_val, pre_log)
+            pre_trashed = _sel[1] if _sel else None
+            pre_consumed = dict(data.get("trash_consumed") or {})
+
+            # W2-005: the consumed identity is recorded BEFORE the durable
+            # save and committed IN THE SAME SQLite transaction as the
+            # inserted silo — there is never a restart interval where both
+            # "restored durably" and "actionable .md" are true.
+            self._consumed_map()[md_basename] = True
+
             # Restore through the canonical silo insertion primitive so the
             # new slot shifts every slot-indexed store, docs stay aligned
             # with presets, and undo sees one action (T-755). The old fallback
             # was a bare temp_presets.insert(0, ...) that bypassed all of it.
-            if hasattr(self.main_win, "insert_silo_at"):
-                inserted = self.main_win.insert_silo_at(text)
+            if hasattr(mw, "insert_silo_at"):
+                inserted = mw.insert_silo_at(text)
             else:
-                self.main_win.data["temp_presets"].insert(0, text)
-                self.main_win.mark_dirty()
-                if hasattr(self.main_win, "refresh_temp_presets"):
-                    self.main_win.refresh_temp_presets()
+                data["temp_presets"].insert(0, text)
+                mw.mark_dirty()
+                if hasattr(mw, "refresh_temp_presets"):
+                    mw.refresh_temp_presets()
                 inserted = 0
 
             # The trash source is deleted ONLY when the insertion actually
@@ -95,55 +142,94 @@ class TrashDialog(QDialog):
             # when every slot is occupied, so a full workspace must keep the
             # only trash copy instead of destroying it while restoring nothing.
             if inserted is None:
+                self._consumed_map().pop(md_basename, None)
                 QMessageBox.warning(
                     self, self.tr("Restore failed"),
                     self.tr("Could not restore the silo: the workspace is full."))
                 return
 
             # CORE-006: restore the File Container folder using the EXACT
-            # delete-time association, not a slug guess. This survives
-            # duplicate titles, collision-suffixed folders and cross-category
-            # restores. Returns the allocated folder name, or None when there
-            # is no recoverable folder (a real no-folder state, NOT success).
+            # delete-time association, not a slug guess. Returns the allocated
+            # folder name, or None when there is no recoverable folder.
             folder_restored = False
             allocated = None
-            if hasattr(self.main_win, "_restore_trash_file_container"):
+            if hasattr(mw, "_restore_trash_file_container"):
                 try:
-                    allocated = self.main_win._restore_trash_file_container(
+                    allocated = mw._restore_trash_file_container(
                         md_basename, text, inserted)
                     folder_restored = allocated is not None
                 except Exception:
                     folder_restored = False
 
-            # CORE-002: the trash source is destroyed as the FINAL commit step.
-            # The restored silo text and its File Container state must be
-            # durably persisted before the recovery source is removed; if the
-            # save fails the .md is kept so nothing is lost (recoverable
-            # failure). The delete happens exactly once here.
+            # CORE-004: attempt the durable commit BEFORE deleting the recovery
+            # source. On failure, roll EVERY mutation back — logical state via
+            # the canonical snapshot apply, undo/redo stacks by truncation,
+            # physical container by moving it back to its exact trash path —
+            # and keep the .md so a retry reproduces the same transaction.
             saved = True
-            if hasattr(self.main_win, "save_data_to_db"):
+            if hasattr(mw, "save_data_to_db"):
                 try:
-                    saved = bool(self.main_win.save_data_to_db(force=True))
+                    saved = bool(mw.save_data_to_db(force=True))
                 except Exception:
                     saved = False
             else:
-                self.main_win.mark_dirty()
+                mw.mark_dirty()
 
             if not saved:
+                # ---- compensating rollback ---------------------------------
+                if allocated and pre_trashed:
+                    cat = mw.get_current_category() if hasattr(
+                        mw, "get_current_category") else ""
+                    comp = (mw._category_files_dir(cat)
+                            if hasattr(mw, "_category_files_dir") else None)
+                    if comp:
+                        dest = os.path.join(mw._files_root(), comp, allocated)
+                        if os.path.isdir(dest):
+                            try:
+                                os.rename(dest, pre_trashed)
+                            except OSError:
+                                pass
+                # complete logical state back to the pre-insertion boundary
+                if pre_snapshot is not None and hasattr(mw, "_apply_data_state"):
+                    try:
+                        mw._apply_data_state(pre_snapshot)
+                    except Exception:
+                        pass
+                    # the insertion pushed ONE undo entry ("Restore silo");
+                    # restore both stacks to their exact pre-operation shape
+                    # so Ctrl+Z cannot replay a transaction that never committed.
+                    stack = getattr(mw, "data_undo_stack", None)
+                    if isinstance(stack, list):
+                        del stack[len(pre_undo):]
+                    rstack = getattr(mw, "data_redo_stack", None)
+                    if isinstance(rstack, list):
+                        rstack[:] = pre_redo
+                    if hasattr(mw, "_save_undo_state"):
+                        mw._save_undo_state()
+                # restore the recovery records exactly as they were
+                data["folder_trash_log"] = pre_log
+                ttf = data.setdefault("trash_text_folder", {})
+                if pre_link_val is not None:
+                    ttf[md_basename] = pre_link_val
+                else:
+                    ttf.pop(md_basename, None)
+                data["trash_consumed"] = pre_consumed
+                mw.mark_dirty()
                 QMessageBox.warning(
                     self, self.tr("Restore incomplete"),
-                    self.tr("The silo was restored but could not be saved "
-                            "persistently. The trash copy was kept so you can "
-                            "try again."))
+                    self.tr("The restore could not be saved persistently. "
+                            "Everything was rolled back and the trash copy "
+                            "was kept so you can try again."))
                 self._load_trash()
                 return
 
             # FINAL commit step: delete the recovery source exactly once.
+            # W2-005: failure here is harmless by construction — the consumed
+            # identity committed above already hides this .md from every later
+            # listing, so the restore can never replay.
             try:
                 os.remove(filepath)
             except OSError:
-                # The restore already landed durably; a missing source file is
-                # not a failure of the restore itself.
                 pass
 
             if folder_restored:
@@ -179,10 +265,18 @@ class TrashDialog(QDialog):
         
         try:
             changed_log = False
+            link = self.main_win.data.get("trash_text_folder") or {}
+            # W2-005: consumed identities die with their sources.
+            consumed = self.main_win.data.get("trash_consumed") or {}
             for f in os.listdir(self.trash_dir):
                 path = os.path.join(self.trash_dir, f)
                 if os.path.isfile(path) and f.endswith(".md"):
                     os.remove(path)
+                    # CORE-003: the text->folder association is stale once the
+                    # text is gone — drop it so it can't mislink a later restore.
+                    link.pop(f, None)
+                    if consumed.pop(f, None) is not None:
+                        self.main_win.mark_dirty()
                 elif delete_all and os.path.isdir(path):
                     try:
                         shutil.rmtree(path)

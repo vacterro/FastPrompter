@@ -157,6 +157,15 @@ class HotkeySettingsDialog(QDialog):
             self.app_inputs[key_name] = le
             form_app.addRow(label + ":", le)
 
+        self.cb_fkey_action = QComboBox()
+        self.cb_fkey_action.addItem(tr("Projects / Tabs (F1..F12)", self.lang), "projects")
+        self.cb_fkey_action.addItem(tr("Snippets Execution (F1..F10)", self.lang), "snippets")
+        cur_fkey = self.main_win.data.get("fkey_action", "projects")
+        idx_fkey = self.cb_fkey_action.findData(cur_fkey)
+        if idx_fkey >= 0:
+            self.cb_fkey_action.setCurrentIndex(idx_fkey)
+        form_app.addRow(tr("F-Keys Navigation:", self.lang), self.cb_fkey_action)
+
         scroll_app = QScrollArea()
         scroll_app.setWidgetResizable(True)
         scroll_app.setWidget(tab_app)
@@ -211,6 +220,10 @@ class HotkeySettingsDialog(QDialog):
         for key_name, default_hk, _ in getattr(self, "app_binds", []):
             if key_name in self.app_inputs:
                 self.app_inputs[key_name].setText(default_hk)
+        if hasattr(self, "cb_fkey_action"):
+            idx = self.cb_fkey_action.findData("projects")
+            if idx >= 0:
+                self.cb_fkey_action.setCurrentIndex(idx)
 
     def save_hotkeys(self):
         self.le_global.save_to_data(self.main_win)
@@ -225,6 +238,8 @@ class HotkeySettingsDialog(QDialog):
             self.main_win.data[key_name] = le.text()
         for key_name, cb in getattr(self, "drop_combos", {}).items():
             self.main_win.data[key_name] = cb.currentData()
+        if hasattr(self, "cb_fkey_action"):
+            self.main_win.data["fkey_action"] = self.cb_fkey_action.currentData()
         self.main_win.setup_global_shortcuts()
         self.main_win.mark_dirty()
         self.main_win.save_data_to_db(force=True)

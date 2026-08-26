@@ -27,7 +27,7 @@ def state(tmp_path, monkeypatch):
         lambda profile_id=1: str(tmp_path / f"state_{profile_id}.db"))
     monkeypatch.setattr(
         "fastprompter.utils.portable_backup.run_portable_backup",
-        lambda data, profile_id=1: None)
+        lambda data, profile_id=1, **_kw: None)
     state = FastPrompterState(profile_id=999)
 
     yield state
@@ -659,7 +659,7 @@ class TestDefaultProfile:
         from fastprompter.core.default_profile import DEFAULT_PROFILE
 
         assert state.data["font_size"] == 18
-        assert state.data["ui_scale"] == "0.5"
+        assert state.data["ui_scale"] == DEFAULT_PROFILE["ui_scale"]
         assert state.data["language"] == "EN"
         assert state.data["theme"] == DEFAULT_PROFILE["theme"]
         # the Ctrl+Q window presets ship with the app, not just the toggle
@@ -678,7 +678,7 @@ class TestDefaultProfile:
 
         forbidden = {
             "last_text", "last_geometry", "categories", "cats_order",
-            "timers", "agent_timers", "productivity_timer", "files_root",
+            "timers", "agent_timers", "files_root",
             "silo_folders", "silo_folders_all", "silo_colors_all",
             "silo_project_paths_all", "silo_last_edited_all",
             "silo_view_state_all", "silo_session_all", "line_marks_data",

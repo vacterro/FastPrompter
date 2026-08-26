@@ -272,7 +272,7 @@ class TestRestoreDatabase:
                             lambda profile_id=1: live)
         monkeypatch.setattr(
             "fastprompter.utils.portable_backup.run_portable_backup",
-            lambda data, profile_id=1: None)
+            lambda data, profile_id=1, **_kw: None)
         s = FastPrompterState(profile_id=1)
         try:
             assert s.data["temp_presets_all"]["Code"][0] == "round trip"

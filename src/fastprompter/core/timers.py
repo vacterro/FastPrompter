@@ -128,6 +128,28 @@ def _heal_bool(value, default=True):
     return default
 
 
+def _heal_volume(raw_vol):
+    """Volume 0.0-1.0, legacy int 0-10 -> float. None stays None (inherit)."""
+    if raw_vol is None:
+        return None
+    try:
+        if isinstance(raw_vol, bool):
+            return None
+        # string digit without decimal is legacy int scale
+        if isinstance(raw_vol, str) and raw_vol.strip().isdigit():
+            iv = int(raw_vol.strip())
+            if 0 <= iv <= 10:
+                return max(0.0, min(1.0, iv / 10.0))
+        v = float(raw_vol)
+    except (TypeError, ValueError):
+        return None
+    if isinstance(raw_vol, int) and 0 <= raw_vol <= 10:
+        return max(0.0, min(1.0, raw_vol / 10.0))
+    if v > 1.0 and v <= 10.0 and float(v).is_integer():
+        return max(0.0, min(1.0, v / 10.0))
+    return max(0.0, min(1.0, v))
+
+
 def _heal_sound_rules(raw):
     """Coerce stored sound rules into a safe list.
 
@@ -154,12 +176,7 @@ def _heal_sound_rules(raw):
             end = max(0, min(1439, int(end)))
         except (TypeError, ValueError):
             start, end = 0, 0
-        vol = entry.get("volume", None)
-        if vol is not None:
-            try:
-                vol = max(0, min(10, int(vol)))
-            except (TypeError, ValueError):
-                vol = None
+        vol = _heal_volume(entry.get("volume", None))
         out.append({
             "sound": sound,
             "enabled": enabled,
@@ -224,7 +241,7 @@ class Timer:
                  "delete_after_fire")
 
     def __init__(self, name, target, repeat=REPEAT_NONE, sound="tick",
-                 volume=5, color_mode=COLOR_TEMPERATURE, color=DEFAULT_COLOR,
+                 volume=0.5, color_mode=COLOR_TEMPERATURE, color=DEFAULT_COLOR,
                  enabled=True, id=None, fired=False, description="",
                  interval_minutes=DEFAULT_INTERVAL_MINUTES, kind=KIND_ALARM,
                  show_notification=True, show_in_top_bar=True,
@@ -237,10 +254,8 @@ class Timer:
         self.target = target
         self.repeat = repeat if repeat in REPEAT_CHOICES else REPEAT_NONE
         self.sound = sound or "tick"
-        try:
-            self.volume = max(0, min(10, int(volume)))
-        except (TypeError, ValueError):
-            self.volume = 5
+        hv = _heal_volume(volume)
+        self.volume = hv if hv is not None else 0.5
         self.color_mode = color_mode if color_mode in (COLOR_STATIC, COLOR_TEMPERATURE) else COLOR_TEMPERATURE
         self.color = color or DEFAULT_COLOR
         self.enabled = _heal_bool(enabled, True)

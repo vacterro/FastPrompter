@@ -26,7 +26,7 @@ _DEFAULT_SOUND_MAP: dict[str, str] = {
     # which is exactly what the library rename produced the first time.
     "new": "ui_new.wav",
     "save": "ui_save.wav",
-    "silo": "click_soft.wav",
+    "silo": "button1.wav",
     "snippet": "click_double.wav",
     "tick": "tick_on.wav",
     "untick": "tick_off.wav",
@@ -34,14 +34,14 @@ _DEFAULT_SOUND_MAP: dict[str, str] = {
     "clear": "ui_clear.wav",
     "type": "type_key_1.wav",
     "backspace": "type_key_3.wav",
-    "click": "click_soft.wav",
+    "click": "button1.wav",
     "hover": "cs_style/buttonrollover.wav",
     "button_click": "cs_style/buttonclick.wav",
     "button_release": "cs_style/buttonclickrelease.wav",
     "chest_open": "chest_open.wav",
     "chest_close": "chest_closed.wav",
     "notify": "notify.wav",
-    "error": "Error.wav",
+    "error": "newday.wav",
     "success": "success_levelup.wav",
     "timer": "timer_tick_pack.wav",
     # T-735. Undo/redo are a PAIR on purpose, the same way tick_on/tick_off
@@ -57,8 +57,8 @@ _DEFAULT_SOUND_MAP: dict[str, str] = {
     # Per-shortcut named events — one event per hotkey so every key is
     # individually re-mappable in the Sound Settings dialog.
     "bold": "click_soft.wav",
-    "italic": "click_soft.wav",
-    "underline": "click_soft.wav",
+    "italic": "click_mouse_click3.wav",
+    "underline": "click_mouse_click3.wav",
     "strike": "click_tactile_click.wav",
     "header": "click_double.wav",
     "divider": "menu_mnu_next.wav",
@@ -282,29 +282,44 @@ def is_event_enabled(event: str, data: dict[str, Any]) -> bool:
     return True
 
 
-def get_event_volume(event: str, data: dict[str, Any]) -> int:
-    """Get the volume for a specific event (0-10).
-    
-    Falls back to global sound_volume if no per-event volume set.
-    """
+def _parse_volume_value(raw) -> float | None:
+    """Parse 0.0-1.0 float, legacy 0-10 int/str -> float, None on bad."""
+    if raw is None or raw == "":
+        return None
+    if isinstance(raw, bool):
+        return None
+    # legacy int 0-10 without decimal
+    if isinstance(raw, int) and 0 <= raw <= 10:
+        return max(0.0, min(1.0, raw / 10.0))
+    if isinstance(raw, str) and raw.strip().isdigit():
+        try:
+            iv = int(raw.strip())
+            if 0 <= iv <= 10:
+                return max(0.0, min(1.0, iv / 10.0))
+        except (TypeError, ValueError):
+            pass
+    try:
+        v = float(str(raw).strip())
+    except (TypeError, ValueError):
+        return None
+    if v > 1.0 and v <= 10.0 and float(v).is_integer():
+        v = v / 10.0
+    return max(0.0, min(1.0, v))
+
+
+def get_event_volume(event: str, data: dict[str, Any]) -> float:
+    """Get the volume for a specific event 0.0-1.0, fallback to global."""
     sound_events = data.get("sound_events", {})
     if isinstance(sound_events, dict):
         event_config = sound_events.get(event)
         if isinstance(event_config, dict):
             vol_str = event_config.get("volume")
-            if vol_str:
-                try:
-                    vol = int(vol_str)
-                    return max(0, min(10, vol))
-                except (ValueError, TypeError):
-                    pass
-    
-    # Global volume
-    try:
-        vol = int(data.get("sound_volume", "5"))
-    except (TypeError, ValueError):
-        vol = 5
-    return max(0, min(10, vol))
+            if vol_str not in (None, ""):
+                pv = _parse_volume_value(vol_str)
+                if pv is not None:
+                    return pv
+    gv = _parse_volume_value(data.get("sound_volume", "0.5"))
+    return gv if gv is not None else 0.5
 
 
 def migrate_sound_settings(data: dict[str, Any], sounds_dir: str = "") -> None:
@@ -340,18 +355,15 @@ def migrate_sound_settings(data: dict[str, Any], sounds_dir: str = "") -> None:
     _heal_hotkey_default(data)
 
 
-def _volume_level(data: dict[str, Any]) -> int:
-    """The Volume spinner as an int 0-10, clamped, junk reading as 5."""
-    try:
-        vol = int(data.get("sound_volume", "5"))
-    except (TypeError, ValueError):
-        vol = 5
-    return max(0, min(10, vol))
+def _volume_level(data: dict[str, Any]) -> float:
+    """The Volume spinner as 0.0-1.0, legacy 0-10 handled, junk -> 0.5."""
+    pv = _parse_volume_value(data.get("sound_volume", "0.5"))
+    return pv if pv is not None else 0.5
 
 
 def _volume_factor(data: dict[str, Any]) -> float:
     """The Volume spinner as an amplitude factor 0.0-1.0."""
-    return _volume_level(data) / 10.0
+    return _volume_level(data)
 
 
 def scale_wav_bytes(path: str, factor: float) -> bytes | None:
@@ -419,31 +431,37 @@ def scale_wav_bytes(path: str, factor: float) -> bytes | None:
     return buf.getvalue()
 
 
-def scaled_wav_path(path: str, level: int) -> str | None:
-    """Path to a cached copy of ``path`` scaled to volume ``level`` (0-10).
+def scaled_wav_path(path: str, level: float | int) -> str | None:
+    """Path to a cached copy of ``path`` scaled to volume ``level`` 0.0-1.0.
 
-    A file, not a bytes buffer, because winsound refuses SND_MEMORY together
-    with SND_ASYNC ("Cannot play asynchronously from memory") — and playing a
-    UI click SYNCHRONOUSLY would freeze the editor for the length of the
-    sound on every keystroke. Written once per sound per level into the
-    system temp dir; the level is in the filename, so changing the setting
-    picks a different file instead of racing a rewrite of the one in flight.
-
-    Returns None if anything about the copy fails, leaving the caller to play
-    the original at full volume rather than fall silent.
+    Legacy int 0-10 handled: divide by 10. A file, not a bytes buffer, because
+    winsound refuses SND_MEMORY together with SND_ASYNC. Written once per sound
+    per level into temp dir; level in filename so changing setting picks a
+    different file. Returns None if anything fails, leaving caller to play
+    original at full volume.
     """
     import tempfile
 
-    if not (0 <= level < 10):
+    try:
+        lv = float(level)
+    except (TypeError, ValueError):
+        return None
+    # legacy int scale
+    if lv > 1.0 and lv <= 10.0 and float(lv).is_integer():
+        lv = lv / 10.0
+    lv = max(0.0, min(1.0, lv))
+    if not (0.0 < lv < 1.0):
         return None
     try:
         stem = os.path.splitext(os.path.basename(path))[0]
         cache_dir = os.path.join(tempfile.gettempdir(), "fastprompter_sound")
         os.makedirs(cache_dir, exist_ok=True)
-        out = os.path.join(cache_dir, f"{stem}_v{level}.wav")
+        # quantize to 1% steps to keep cache bounded
+        q = int(round(lv * 100))
+        out = os.path.join(cache_dir, f"{stem}_v{q}.wav")
         if os.path.exists(out) and os.path.getmtime(out) >= os.path.getmtime(path):
             return out
-        data = scale_wav_bytes(path, level / 10.0)
+        data = scale_wav_bytes(path, lv)
         if data is None:
             return None
         with open(out, "wb") as fh:
@@ -553,7 +571,8 @@ class SoundManager(QObject):
         player = self._players[name]
 
         try:
-            player.setVolume(volume / 10.0)
+            # volume is already 0.0-1.0
+            player.setVolume(max(0.0, min(1.0, float(volume))))
 
             if path_exists:
                 player.setSource(QUrl.fromLocalFile(path))
@@ -561,7 +580,7 @@ class SoundManager(QObject):
         except Exception:
             logger.exception("Failed to play sound")
 
-    def play_file(self, file_name: str, level: int | None = None) -> None:
+    def play_file(self, file_name: str, level: float | int | None = None) -> None:
         """Play one file by name, ignoring every toggle.
 
         The settings panel needs this: a preview has to be audible while UI
@@ -573,7 +592,7 @@ class SoundManager(QObject):
         path = os.path.join(self._sounds_dir, file_name)
         self._emit_file(path, level)
 
-    def _emit_file(self, path: str, level: int | None) -> bool:
+    def _emit_file(self, path: str, level: float | int | None = None) -> bool:
         """Play a resolved sound-library file at an EXPLICIT volume level.
 
         Returns True on a successful playback attempt, False on a missing file
@@ -582,15 +601,23 @@ class SoundManager(QObject):
         if not path or not os.path.exists(path):
             return False
         try:
-            vol = _volume_level(self._data) if level is None else max(0, min(10, int(level)))
+            if level is None:
+                vol = _volume_level(self._data)
+            else:
+                pv = _parse_volume_value(level)
+                vol = pv if pv is not None else _volume_level(self._data)
         except (TypeError, ValueError):
             vol = _volume_level(self._data)
         if QSoundEffect is None:
             self._play_winsound(path, vol, self._scaled_cache)
             return True
         try:
-            player = self._players.setdefault("__timer__", QSoundEffect(self))
-            player.setVolume(vol / 10.0)
+            # W2-fix: give timer playback its OWN player slot. Sharing
+            # "__timer__" with settings previews meant a preview could
+            # restomp setSource/setVolume while an alarm was mid-play,
+            # cutting it off or dropping its explicit volume.
+            player = self._players.setdefault("__alarm__", QSoundEffect(self))
+            player.setVolume(max(0.0, min(1.0, float(vol))))
             player.setSource(QUrl.fromLocalFile(path))
             player.play()
             return True
@@ -624,7 +651,7 @@ class SoundManager(QObject):
             return None
         return full
 
-    def play_sound_ref(self, ref: str, level: int) -> bool:
+    def play_sound_ref(self, ref: str, level: float | int) -> bool:
         """One canonical explicit playback path for timer sounds.
 
         ``ref`` is either ``file:<rel>`` (a sound-library file, contained) or a
@@ -678,12 +705,12 @@ class SoundManager(QObject):
         self.play("button_release")
 
     @staticmethod
-    def _play_winsound(path: str, level: int = 10, cache: dict | None = None) -> None:
+    def _play_winsound(path: str, level: float | int = 1.0, cache: dict | None = None) -> None:
         """Fallback WAV playback without QtMultimedia.
 
         This is the path the SHIPPED build takes — QtMultimedia is not in the
         dist — so it has to honour the Volume setting or the setting is
-        decorative. winsound has no volume of its own, so anything below 10
+        decorative. winsound has no volume of its own, so anything below 1.0
         plays a pre-scaled copy of the file instead. Level 0 is silence, and
         is answered by playing nothing rather than by a wav full of zeroes.
         """
@@ -696,7 +723,15 @@ class SoundManager(QObject):
             # invalidates it (handled in the except below).
             if cache is None:
                 cache = {}
-            key = (path, int(level))
+            try:
+                lv = float(level)
+                if lv > 1.0 and lv <= 10.0 and float(lv).is_integer():
+                    lv = lv / 10.0
+                lv = max(0.0, min(1.0, lv))
+            except (TypeError, ValueError):
+                lv = 1.0
+            q = int(round(lv * 100))
+            key = (path, q)
             cached = cache.get(key)
             if cached is not None:
                 src_exists, scaled = cached
@@ -707,10 +742,10 @@ class SoundManager(QObject):
                 # previously resolved as missing: respect the cached verdict
                 # (a silent no-op) without re-probing the filesystem
                 return
-            if level <= 0 or not os.path.exists(path):
+            if lv <= 0.0 or not os.path.exists(path):
                 cache[key] = (False, None)
                 return
-            scaled = scaled_wav_path(path, int(level)) or path
+            scaled = scaled_wav_path(path, lv) or path
             cache[key] = (True, scaled)
             winsound.PlaySound(
                 scaled, winsound.SND_FILENAME | winsound.SND_ASYNC)
@@ -718,7 +753,11 @@ class SoundManager(QObject):
             # a real playback failure invalidates the cached path so the next
             # attempt re-resolves (e.g. the source WAV was replaced/deleted)
             try:
-                cache.pop((path, int(level)), None)
+                # q may not be bound if exception was before its assignment
+                q2 = locals().get("q")
+                if q2 is not None:
+                    cache.pop((path, q2), None)
+                cache.pop((path, int(level) if isinstance(level, (int, float)) else level), None)
             except Exception:
                 pass
             logger.exception("Failed to play sound via winsound")

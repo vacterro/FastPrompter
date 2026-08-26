@@ -3144,7 +3144,7 @@ class VaultTextEdit(QTextEdit):
             if matches("hk_export_silo", "Ctrl+Shift+S"):
                 mw.save_silo_to_file(); event.accept(); return
             if matches("hk_find", "Ctrl+F"):
-                mw.show_find(); event.accept(); return
+                mw.toggle_find(); event.accept(); return
             if matches("hk_replace", "Ctrl+H"):
                 mw.show_replace(); event.accept(); return
             if matches("hk_focus", "Ctrl+D"):

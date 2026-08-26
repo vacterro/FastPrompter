@@ -785,35 +785,30 @@ class WatcherMixin:
                              self._watcher_target, gen, token)
 
     def _watcher_begin_quiesce(self, timeout_s=1.5):
-        """P0-6: quiesce the watcher BEFORE the event loop dies.
+        """W2-001: PAUSE the watcher run BEFORE a parent transaction commits.
 
-        Two-phase, so an in-flight send is never lost or silently disarmed
-        (T-811):
+        This is REVERSIBLE. It sets ``_watcher_quiescing`` (refusing new
+        dispatch), stops the tick timer, and boundedly awaits the in-flight
+        PHYSICAL send so a prompt that actually went out is still applied
+        exactly once. Crucially it does NOT disarm the engine — the run stays
+        ARMED. The irreversible disarm + queue persist is deferred to
+        ``_watcher_commit_quiesce``, which the caller must invoke ONLY after
+        the enclosing quit/profile-switch/restore transaction has committed.
 
-        Phase 1 — PAUSE: new dispatch is refused (``_watcher_quiescing`` is
-        set) and the tick timer is stopped, but the engine stays ARMED. A send
-        result that arrives now is still the current generation and is applied
-        normally, so a prompt that actually went out becomes SENT exactly
-        once. The old code disarmed the engine first and then discarded the
-        late success, leaving the prompt PENDING and eligible for a duplicate
-        resend. The in-flight send is boundedly awaited by pumping the loop.
+        If the in-flight send does not resolve within the timeout the quiesce
+        REFUSES: the watcher runtime is rolled back to exactly its prior state
+        (timer restarted, engine still armed) so a refused quit/restore does
+        not strand it paused, and the prompt stays in flight as it was.
 
-        Phase 2 — COMMIT: only once the current send has RESOLVED (its result
-        was applied by the worker callback and ``_watcher_send_active`` was
-        cleared) do we disarm and persist the queue's terminal state.
-
-        If the send does not resolve within the timeout the quiesce REFUSES:
-        the watcher runtime is rolled back to exactly its prior state (timer
-        restarted, engine still armed) so a refused quit/restore does not
-        strand it paused, and the prompt stays in flight as it was.
-
-        Returns True when the watcher is fully quiesced.
+        Returns True when the watcher is paused (barrier resolved, still
+        armed); False when the barrier could not be cleared in time.
         """
         if getattr(self, "_watcher_quiescing", False):
             return not getattr(self, "_watcher_send_physical_active", False)
         self._watcher_quiescing = True
         was_armed = bool(getattr(self, "_watcher_engine", None)
                          and self._watcher_engine.armed)
+        self._watcher_quiesce_was_armed = was_armed
         try:
             # Phase 1: pause new dispatch + stop the tick loop, but KEEP the
             # engine armed so an in-flight result is still applied.
@@ -831,28 +826,69 @@ class WatcherMixin:
                 QApplication.processEvents()
                 time.sleep(0.01)
             if self._watcher_send_physical_active:
-                # Phase 2 refused: the in-flight physical send never resolved.
-                # Roll the watcher runtime back to its prior state and refuse
-                # the quiesce. Nothing is marked sent or lost; the prompt stays
-                # in flight exactly as it was (the engine is still ARMED).
+                # Barrier refused: roll the watcher runtime back to its prior
+                # state and refuse the quiesce. Nothing is marked sent or lost;
+                # the prompt stays in flight exactly as it was.
                 if was_armed and getattr(self, "_watcher_engine", None) \
                         and self._watcher_engine.armed:
                     self._watcher_start_timer()
+                self._watcher_quiescing = False
                 return False
             # The in-flight send has resolved (success/held/failure applied by
-            # the worker callback). Disarm now and persist the terminal state.
-            try:
-                self._watcher_engine.disarm("application is quitting")
-            except Exception:
-                logger.exception("watcher disarm failed during quiesce")
-            # W2-004: persist ONLY a run that was actually live — never
-            # serialize a dead-run pin (or an unrelated alias) over newer
-            # queue state.
-            if was_armed or self._watcher_pinned_category is not None:
-                self._watcher_persist_queues()
+            # the worker callback). The run is now PAUSED but still armed —
+            # leave _watcher_quiescing set so dispatch stays refused until the
+            # parent transaction commits (or rolls back).
             return True
-        finally:
+        except Exception:
+            # Unexpected failure mid-pause: resume the run rather than strand
+            # it paused and disarmed.
+            if was_armed and getattr(self, "_watcher_engine", None) \
+                    and self._watcher_engine.armed:
+                try:
+                    self._watcher_start_timer()
+                except Exception:
+                    pass
             self._watcher_quiescing = False
+            return False
+
+    def _watcher_commit_quiesce(self):
+        """W2-001: the enclosing transaction committed — perform the
+        irreversible disarm + queue persist that ``_watcher_begin_quiesce``
+        deliberately deferred, then clear the paused flag.
+
+        Safe to call when no quiesce is in progress (it is a no-op then)."""
+        if not getattr(self, "_watcher_quiescing", False):
+            return
+        was_armed = getattr(self, "_watcher_quiesce_was_armed", False)
+        try:
+            if getattr(self, "_watcher_engine", None) is not None:
+                self._watcher_engine.disarm("application is quitting")
+        except Exception:
+            logger.exception("watcher disarm failed during commit")
+        # W2-004: persist ONLY a run that was actually live — never serialize
+        # a dead-run pin (or an unrelated alias) over newer queue state.
+        if was_armed or getattr(self, "_watcher_pinned_category", None) \
+                is not None:
+            try:
+                self._watcher_persist_queues()
+            except Exception:
+                logger.exception("watcher queue persist failed during commit")
+        self._watcher_quiescing = False
+
+    def _watcher_rollback_quiesce(self):
+        """W2-001: the enclosing transaction refused or raised — resume the
+        exact pre-quiesce run (timer restarted, engine still armed) instead
+        of leaving the watcher silently paused. Safe to call when no quiesce
+        is in progress."""
+        if not getattr(self, "_watcher_quiescing", False):
+            return
+        if getattr(self, "_watcher_engine", None) is not None \
+                and self._watcher_engine.armed:
+            try:
+                self._watcher_start_timer()
+            except Exception:
+                pass
+        self._watcher_quiescing = False
 
     def _watcher_ensure_worker(self):
         """The persistent worker thread, created once per window.

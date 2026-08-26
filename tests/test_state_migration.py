@@ -37,7 +37,7 @@ def make_state(monkeypatch, db_path):
     # module attribute so a test save never writes real Documents snapshots.
     monkeypatch.setattr(
         "fastprompter.utils.portable_backup.run_portable_backup",
-        lambda data, profile_id=1: None)
+        lambda data, profile_id=1, **kw: None)
 
     def _make():
         return FastPrompterState(profile_id=1)
