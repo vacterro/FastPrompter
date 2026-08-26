@@ -129,6 +129,30 @@ class TestRoundTripAndIsolation:
         finally:
             s.conn.close()
 
+    def test_trash_consumed_dict_round_trips_json(self, state_from):
+        """CORE-002: durable restore-idempotency map must survive as a dict."""
+        s = state_from([("trash_consumed", json.dumps({"gone.md": True}))])
+        try:
+            assert s.data["trash_consumed"] == {"gone.md": True}
+            assert isinstance(s.data["trash_consumed"], dict)
+        finally:
+            s.conn.close()
+
+    def test_trash_consumed_legacy_str_dict_recovers(self, state_from):
+        """CORE-002: a single-quoted str(dict) row (pre-codec) must recover."""
+        s = state_from([("trash_consumed", "{'gone.md': True}")])
+        try:
+            assert s.data["trash_consumed"] == {"gone.md": True}
+        finally:
+            s.conn.close()
+
+    def test_trash_consumed_wrong_type_falls_back_to_empty_dict(self, state_from):
+        s = state_from([("trash_consumed", "[]")])
+        try:
+            assert s.data["trash_consumed"] == {}
+        finally:
+            s.conn.close()
+
     def test_cats_order_type_checked(self, state_from):
         s = state_from([("cats_order", "{}")])
         try:

@@ -64,6 +64,10 @@ _JSON_SETTINGS = (
     # (md basename -> folder name). A dict; without this it round-trips as a
     # single-quoted string and the restore-time linkage is lost.
     "trash_text_folder",
+    # CORE-002: durable trash-restore idempotency markers (md basename -> True).
+    # A dict; must round-trip as JSON or the post-commit consumed marker
+    # reloads as a single-quoted string and TrashDialog crashes on .get().
+    "trash_consumed",
     "sound_quick_bar",
     "interval_notifs",
 )
@@ -198,6 +202,9 @@ _STRUCTURED_CODECS = {
     # CORE-006: trashed-text -> folder association. A dict keyed by trashed
     # .md basename; legacy_ast for safety, default {} on any failure.
     "trash_text_folder": (dict, {}, True),
+    # CORE-002: durable trash-restore consumed markers. A dict keyed by .md
+    # basename; legacy_ast so already-written single-quoted rows recover.
+    "trash_consumed": (dict, {}, True),
     "sound_quick_bar": (list, [
         'file:NEWDAY.wav', 'file:NEWMONTH.wav', 'file:NEWWEEK.wav',
         'file:NOMAD.wav', 'file:OBELISK.wav', 'file:PARALYZE.wav',

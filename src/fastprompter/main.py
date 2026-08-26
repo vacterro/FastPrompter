@@ -4903,6 +4903,9 @@ class FastPrompter(
         key = self._sync_baseline_key(idx, path)
         self._sync_last_applied.pop(key, None)
         self._sync_eol_cache.pop(key, None)
+        # CORE-003: BOM state belongs to the binding like EOL — a reused
+        # logical key must not inherit stale BOM from an earlier owner.
+        self._sync_bom_cache.pop(key, None)
         self._sync_unsafe_bindings.discard(key)
         # CORE-003: bump the lease under the shared commit gate so the
         # transition is atomic with the worker's final mutation. Once this
@@ -5930,6 +5933,9 @@ class FastPrompter(
         mapping = self.data.setdefault("project_sync_map", {})
         # CORE-001: repointing the folder invalidates every OLD binding's
         # lease so a queued/running job cannot write into the previous root.
+        # Goes through the canonical invalidation primitive (lease bump under
+        # the commit gate + baseline/EOL/BOM cleanup), which reaches jobs
+        # ALREADY dispatched to the worker, not just queued ones.
         if old_root:
             for old_slot, old_rel in list(mapping.items()):
                 old_path = ps.resolve_relative_path(old_root, old_rel)
@@ -5939,11 +5945,13 @@ class FastPrompter(
                     _sk = int(old_slot)
                 except (TypeError, ValueError):
                     _sk = old_slot
-                key = self._sync_baseline_key(_sk, old_path)
-                self._sync_leases[key] = self._sync_leases.get(key, 0) + 1
+                self._sync_invalidate_binding(_sk, old_path)
         for old_key in list(self._push_jobs_pending):
             self._push_jobs_pending.pop(old_key, None)
-            self._sync_leases[old_key] = self._sync_leases.get(old_key, 0) + 1
+            # bump under the gate too: an in-flight job for a key whose
+            # pending entry was dropped must still be rejected
+            with self._sync_commit_gate:
+                self._sync_leases[old_key] = self._sync_leases.get(old_key, 0) + 1
         self.data.setdefault("project_sync_map_all", {})[cat] = mapping
         mapping.clear()
         for slot, rel in enumerate(files):
@@ -6053,20 +6061,21 @@ class FastPrompter(
         cfg = self._sync_config()
         if cfg:
             root = os.path.abspath(cfg["root"])
-            for rel in (self.data.get("project_sync_map") or {}).values():
+            mapping = self.data.get("project_sync_map") or {}
+            for rel in mapping.values():
                 from fastprompter.core import project_sync as ps
                 p2 = ps.resolve_relative_path(root, rel)
                 if p2 is None:
                     continue
                 for _k in [k for k in self._sync_last_applied
                            if isinstance(k, tuple) and k[2] == os.path.normcase(p2)]:
-                    self._sync_last_applied.pop(_k, None)
-                    self._sync_eol_cache.pop(_k, None)
-                # CORE-001: kill any queued/running write to this path
+                    # CORE-001: canonical invalidation bumps the lease under the
+                    # commit gate and clears baseline/EOL/BOM — this reaches
+                    # jobs ALREADY dispatched to the worker, not just queued ones.
+                    self._sync_invalidate_binding(_k[1], p2)
                 for _pk in [k for k in self._push_jobs_pending
                             if isinstance(k, tuple) and k[2] == os.path.normcase(p2)]:
                     self._push_jobs_pending.pop(_pk, None)
-                    self._sync_leases[_pk] = self._sync_leases.get(_pk, 0) + 1
         self.data["project_sync"] = {}
         self.data.setdefault("project_sync_all", {})[cat] = {}
         mapping = self.data.get("project_sync_map")
@@ -6121,18 +6130,25 @@ class FastPrompter(
                 tr("That file cannot be read as text (too large or binary).",
                    lang))
             return
-        text, eol, _had_bom = read
+        text, eol, had_bom = read
         presets = self.data.get("temp_presets") or []
         if not (0 <= idx < len(presets)):
             return
         cat = self.get_current_category() or ""
         links = self.data.setdefault("silo_links", {})
         self.data.setdefault("silo_links_all", {})[cat] = links
+        # CORE-001: invalidate existing binding for this slot before
+        # overwriting — an already-dispatched worker job for the old path
+        # must be rejected by the lease gate.
+        old_path = links.get(str(idx))
+        if old_path:
+            self._sync_invalidate_binding(idx, old_path)
         links[str(idx)] = path
         # the file is the source of truth at link time
         presets[idx] = text
         key = self._sync_baseline_key(idx, path)
         self._sync_eol_cache[key] = eol
+        self._sync_bom_cache[key] = bool(had_bom)
         self._sync_last_applied[key] = self._sync_side_digest(text)
         self.mark_dirty()
         self.refresh_temp_presets()
