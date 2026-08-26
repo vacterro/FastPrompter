@@ -69,6 +69,43 @@ from fastprompter.ui.analog_clock import BigAnalogClock
 _SOUNDS = ("tick", "click", "new", "save", "delete", "clear", "silo", "snippet")
 _TEST_DELAY_S = 5
 
+
+def _find_sound_index(combo: QComboBox, ref: str) -> int:
+    """Find item index in a sound QComboBox, matching exact or case/prefix-insensitively."""
+    if not ref:
+        return -1
+    # 1. Exact match on itemData
+    idx = combo.findData(ref)
+    if idx >= 0:
+        return idx
+    # 2. Match with/without 'file:' prefix
+    alt = ref[5:] if ref.startswith("file:") else f"file:{ref}"
+    idx = combo.findData(alt)
+    if idx >= 0:
+        return idx
+    # 3. Case-insensitive and stem matching on itemData and itemText
+    target_clean = ref.lower()
+    if target_clean.startswith("file:"):
+        target_clean = target_clean[5:]
+    target_clean_stem = target_clean[:-4] if target_clean.endswith(".wav") else target_clean
+
+    for i in range(combo.count()):
+        d = combo.itemData(i)
+        if isinstance(d, str):
+            d_clean = d.lower()
+            if d_clean.startswith("file:"):
+                d_clean = d_clean[5:]
+            if d_clean == target_clean:
+                return i
+            d_clean_stem = d_clean[:-4] if d_clean.endswith(".wav") else d_clean
+            if d_clean_stem == target_clean_stem:
+                return i
+        txt = combo.itemText(i).lower().replace("★ ", "").strip()
+        if txt == target_clean or txt == target_clean_stem:
+            return i
+    return -1
+
+
 DEFAULT_INTERVAL_RULES = [
     {
         "id": "interval_default_noon",
@@ -91,7 +128,7 @@ DEFAULT_INTERVAL_RULES = [
         "name": "Morning (07:00 - 11:00)",
         "minutes": 60,
         "enabled": True,
-        "sound": "file:newday.wav",
+        "sound": "file:NEWDAY.wav",
         "volume": 0.05,
         "show_notification": True,
         "show_in_top_bar": False,
@@ -107,7 +144,7 @@ DEFAULT_INTERVAL_RULES = [
         "name": "Day & Evening (13:00 - 21:00)",
         "minutes": 60,
         "enabled": True,
-        "sound": "file:newday.wav",
+        "sound": "file:NEWDAY.wav",
         "volume": 0.05,
         "show_notification": True,
         "show_in_top_bar": False,
@@ -343,9 +380,9 @@ class _TimerBehaviorEditor(QWidget):
     def select_sound(self, value):
         self._suppress_preview = True
         try:
-            idx = self.cb_sound.findData(value or "tick")
+            idx = _find_sound_index(self.cb_sound, value)
             if idx < 0:
-                idx = self.cb_sound.findData("tick")
+                idx = _find_sound_index(self.cb_sound, "tick")
             if idx >= 0:
                 self.cb_sound.setCurrentIndex(idx)
         finally:
@@ -396,7 +433,7 @@ class _TimerBehaviorEditor(QWidget):
         sound.setMaxVisibleItems(20)
         for disp, ref in self._sound_choices:
             sound.addItem(disp, ref)
-        idx = sound.findData(rule.get("sound") or "tick")
+        idx = _find_sound_index(sound, rule.get("sound") or "tick")
         sound.setCurrentIndex(idx if idx >= 0 else 0)
         self.pool.setCellWidget(r, 1, sound)
 
@@ -2608,9 +2645,11 @@ class TimerDialog(QDialog):
     def _interval_set_sound(self, ref):
         self._suppress_interval_preview = True
         try:
-            idx = self.interval_in_sound.findData(ref)
+            idx = _find_sound_index(self.interval_in_sound, ref)
             if idx < 0:
-                idx = self.interval_in_sound.findData("newday")
+                idx = _find_sound_index(self.interval_in_sound, "NEWDAY.wav")
+            if idx < 0:
+                idx = _find_sound_index(self.interval_in_sound, "newday")
             if idx >= 0:
                 self.interval_in_sound.setCurrentIndex(idx)
         finally:
@@ -2746,7 +2785,7 @@ class TimerDialog(QDialog):
                 "name": tr("Workday (09:00 - 18:00)", self.lang),
                 "minutes": 60,
                 "enabled": True,
-                "sound": "file:newday.wav",
+                "sound": "file:NEWDAY.wav",
                 "volume": 0.05,
                 "show_notification": True,
                 "show_in_top_bar": False,
@@ -2761,7 +2800,7 @@ class TimerDialog(QDialog):
                 "name": tr("Hourly Bell (24/7)", self.lang),
                 "minutes": 60,
                 "enabled": True,
-                "sound": "file:newday.wav",
+                "sound": "file:NEWDAY.wav",
                 "volume": 0.05,
                 "show_notification": True,
                 "show_in_top_bar": False,

@@ -356,3 +356,40 @@ def test_mini_analog_clock_click_opens_interval_tab():
     assert dlg.tabs.tabText(dlg.tabs.currentIndex()) == "Interval Notifications"
 
 
+def test_interval_sound_selection_persistence_and_matching():
+    from fastprompter.ui.timer_dialog import _find_sound_index, DEFAULT_INTERVAL_RULES
+    from fastprompter.core.sound_manager import SoundManager
+    
+    app = _FakeMain()
+    app.sound_manager = SoundManager(None, {})
+    dlg = TimerDialog(app, initial_tab=1)
+    
+    # Verify _find_sound_index matches all variations
+    assert _find_sound_index(dlg.interval_in_sound, "file:GENIE.wav") >= 0
+    assert _find_sound_index(dlg.interval_in_sound, "file:genie.wav") >= 0
+    assert _find_sound_index(dlg.interval_in_sound, "GENIE.wav") >= 0
+    assert _find_sound_index(dlg.interval_in_sound, "file:NEWDAY.wav") >= 0
+    assert _find_sound_index(dlg.interval_in_sound, "file:newday.wav") >= 0
+    assert _find_sound_index(dlg.interval_in_sound, "file:alert_owl2.wav") >= 0
+    
+    # Reset to defaults and test item switching
+    dlg._interval_reset_defaults()
+    assert dlg.interval_list.topLevelItemCount() == 4
+    
+    item0 = dlg.interval_list.topLevelItem(0)
+    dlg.interval_list.setCurrentItem(item0)
+    assert dlg.interval_in_sound.currentData() == "file:GENIE.wav"
+    
+    item1 = dlg.interval_list.topLevelItem(1)
+    dlg.interval_list.setCurrentItem(item1)
+    assert dlg.interval_in_sound.currentData() == "file:NEWDAY.wav"
+    
+    item3 = dlg.interval_list.topLevelItem(3)
+    dlg.interval_list.setCurrentItem(item3)
+    assert dlg.interval_in_sound.currentData() == "file:alert_owl2.wav"
+    
+    dlg.interval_list.setCurrentItem(item0)
+    assert dlg.interval_in_sound.currentData() == "file:GENIE.wav"
+
+
+
