@@ -1091,6 +1091,15 @@ class FastPrompter(
                 logger.warning("retirement journal reconciliation skipped",
                                exc_info=True)
             self._reconciliation_pending = False
+        # W2-002: reconcile any interrupted nested-silo file merge left by a
+        # process death between physical moves and the persisted undo record.
+        try:
+            from fastprompter.ui.snippet_ops_mixin import _reconcile_merge_journal
+            _reconcile_merge_journal(self._files_root(), self.data)
+        except Exception:
+            from fastprompter.core.logging import logger
+            logger.warning("merge journal reconciliation skipped",
+                           exc_info=True)
 
         self._current_lang = get_language(self.data)
         self.init_ui()
@@ -16236,6 +16245,14 @@ class FastPrompter(
                     # Files Folder re-root makes this record non-executable.
                     rec["_fs_root"] = os.path.abspath(self._files_root())
                     self._save_undo_state()
+                    # W2-002: the ledger is now durably represented in the
+                    # persisted undo JSON — the write-ahead journal is no
+                    # longer the only recovery authority and may be cleared.
+                    try:
+                        from fastprompter.ui.snippet_ops_mixin import _merge_journal_clear
+                        _merge_journal_clear(self._files_root())
+                    except Exception:
+                        pass
         self.mark_dirty()
         self.refresh_temp_presets()
 
@@ -16328,32 +16345,65 @@ class FastPrompter(
         os.makedirs(dst, exist_ok=True)
         from fastprompter.ui.file_container import _move_into_container, capture_resolved_root
         identity = capture_resolved_root(dst)
-        moved = 0
-        # W2-004: the merge is part of the SAME undoable transaction as the
-        # nesting itself, so every successful move is recorded as an exact
-        # (original_child_path, published_parent_path) pair — including
-        # collision-renamed destinations — and attached to the nesting undo
-        # record by the caller.
-        ledger = []
+        from fastprompter.ui.snippet_ops_mixin import (
+            _merge_journal_clear,
+            _merge_journal_write,
+        )
+        # W2-004/W2-002: the merge is part of the SAME undoable transaction as
+        # the nesting itself. W2-002: the COMPLETE source -> collision-resolved
+        # destination plan is computed BEFORE the first rename and written to a
+        # durable write-ahead journal, so a crash after move 1 of N can be
+        # deterministically reversed on restart instead of stranding child files
+        # under the parent with no durable record.
+        plan = []
         for n in names:
             try:
-                # the same safe move primitive the file panel uses: no-clobber
-                # by construction, containment-checked at mutation time — a
-                # hand-rolled _unique_dest + shutil.move had a TOCTOU where a
-                # file appearing at the destination was silently overwritten
                 dest = _unique_dest(dst, n)
                 src_file = os.path.join(src, n)
-                _move_into_container(src_file, dest, dst, identity)
-                moved += 1
-                ledger.append((os.path.abspath(src_file), os.path.abspath(dest)))
-            except OSError as e:
-                from fastprompter.core.logging import logger
-                logger.warning(f"Child file merge failed for {n}: {e}")
+                plan.append({
+                    "original": os.path.abspath(src_file),
+                    "trashed": os.path.abspath(dest),
+                    "done": False,
+                })
+            except OSError:
+                continue
+        if not plan:
+            return []
+        if not _merge_journal_write(self._files_root(), plan):
+            # fail closed: never start moving files without a durable recovery
+            # record, mirroring the retirement journal precondition
+            from fastprompter.core.logging import logger
+            logger.warning("child file merge aborted: merge journal write failed")
+            return []
+        ledger = []
+        moved = 0
         try:
-            if moved:
-                os.rmdir(src)
-        except OSError:
-            pass
+            for rec in plan:
+                src_file, dest = rec["original"], rec["trashed"]
+                try:
+                    # the same safe move primitive the file panel uses: no-clobber
+                    # by construction, containment-checked at mutation time — a
+                    # hand-rolled _unique_dest + shutil.move had a TOCTOU where a
+                    # file appearing at the destination was silently overwritten
+                    _move_into_container(src_file, dest, dst, identity)
+                    moved += 1
+                    rec["done"] = True
+                    ledger.append((os.path.abspath(src_file), os.path.abspath(dest)))
+                    _merge_journal_write(self._files_root(), plan)
+                except OSError as e:
+                    from fastprompter.core.logging import logger
+                    logger.warning(f"Child file merge failed for {src_file}: {e}")
+            try:
+                if moved:
+                    os.rmdir(src)
+            except OSError:
+                pass
+        except Exception:
+            # keep the journal: startup reconciliation reverses done moves
+            raise
+        # Journal is cleared by make_silo_child once the undo record carrying
+        # the ledger has been persisted; leaving it in place until then keeps
+        # the crash window closed (W2-002).
         return ledger
 
     def _toggle_tick_silo(self, idx):

@@ -33,6 +33,106 @@ _MAX_FOLDERS_PER_CATEGORY = 20   # 10 normal + 10 archive slots
 _FOLDER_TRASH_LOG_FLOOR = _UNDO_MAX_ACTIONS * _MAX_FOLDERS_PER_CATEGORY
 # W2-006: journal file name for crash-consistent folder retirement.
 _RETIREMENT_JOURNAL = ".retirement_journal.json"
+# W2-002: write-ahead journal for nested-silo file merges. Files move one by
+# one into the parent's folder; a crash mid-merge would otherwise leave the
+# authoritative DB at pre-nest state while physical files changed owner.
+_MERGE_JOURNAL = ".merge_journal.json"
+
+
+def _journal_path(root):
+    return os.path.join(root, "_trash", _RETIREMENT_JOURNAL)
+
+
+def _merge_journal_path(root):
+    return os.path.join(root, "_trash", _MERGE_JOURNAL)
+
+
+def _merge_journal_write(root, records):
+    """Durably rewrite the merge journal with exactly ``records`` (atomic).
+
+    Each record is ``{"original": ..., "trashed": ..., "done": bool}``. The
+    journal is written BEFORE the first rename (all planned pairs), updated
+    after each move, and cleared once the undo record carrying the ledger has
+    been persisted — startup reconciliation reverses whatever survived."""
+    import json
+    try:
+        jp = _merge_journal_path(root)
+        os.makedirs(os.path.dirname(jp), exist_ok=True)
+        tmp = jp + f".tmp{int(time.time() * 1000)}"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({"version": 1, "records": list(records)}, f)
+        os.replace(tmp, jp)
+        return True
+    except OSError as e:
+        from fastprompter.core.logging import logger
+        logger.warning("merge journal write failed: %s", e)
+        return False
+
+
+def _merge_journal_load(root):
+    import json
+    jp = _merge_journal_path(root)
+    if not os.path.isfile(jp):
+        return []
+    try:
+        with open(jp, encoding="utf-8") as f:
+            payload = json.load(f)
+    except (OSError, ValueError):
+        return []
+    records = []
+    if isinstance(payload, dict) and isinstance(payload.get("records"), list):
+        for r in payload["records"]:
+            if isinstance(r, dict) and r.get("original") and r.get("trashed"):
+                records.append(r)
+    return records
+
+
+def _merge_journal_clear(root):
+    try:
+        jp = _merge_journal_path(root)
+        if os.path.isfile(jp):
+            os.remove(jp)
+    except OSError as e:
+        from fastprompter.core.logging import logger
+        logger.warning("merge journal clear failed: %s", e)
+
+
+def _reconcile_merge_journal(root, data):
+    """W2-002: startup recovery for an interrupted nested-silo file merge.
+
+    A surviving merge journal means the merge's LOGICAL half never committed
+    durably (the nesting DB save lags mark_dirty). The authoritative restart
+    state therefore still says the child silo owns its folder, so every
+    journaled move is reversed back to its original child-side path. Already
+    reversed pairs (original exists, trashed absent) are idempotent no-ops.
+    The journal is cleared once every pair is reconciled."""
+    records = _merge_journal_load(root)
+    if not records:
+        return
+    remaining = []
+    for rec in records:
+        orig = rec.get("original")
+        trashed = rec.get("trashed")
+        if not (orig and trashed):
+            continue
+        if not os.path.lexists(trashed):
+            continue          # already back home / never landed
+        if os.path.lexists(orig):
+            # both present: cannot decide safely — keep the journal record
+            remaining.append(rec)
+            continue
+        try:
+            os.makedirs(os.path.dirname(orig), exist_ok=True)
+            os.rename(trashed, orig)
+        except OSError as e:
+            from fastprompter.core.logging import logger
+            logger.warning("merge journal rollback %s -> %s failed: %s",
+                           trashed, orig, e)
+            remaining.append(rec)
+    if remaining:
+        _merge_journal_write(root, remaining)
+    else:
+        _merge_journal_clear(root)
 
 
 def _journal_path(root):
