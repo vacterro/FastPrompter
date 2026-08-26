@@ -109,7 +109,7 @@ def test_behavior_editor_defaults_on():
     assert b.cb_show_notif.isChecked()
     assert b.cb_show_topbar.isChecked()
     assert b.cb_temp.isChecked()
-    assert b.spin_vol.value() == 5
+    assert b.spin_vol.value() == 0.5
 
 
 def test_pool_toggle_swaps_single_and_table():
@@ -263,7 +263,7 @@ def test_vol_spin_drives_timer_volume_end_to_end():
     assert choose_timer_sound(t, datetime.datetime.now()) == ("tick", 0.9)
 
     d.edit_selected()
-    assert d._behavior.spin_vol.value() == 9      # edit round-trips the level
+    assert d._behavior.spin_vol.value() == 0.9      # edit round-trips the level
     d._behavior.spin_vol.setValue(0.2)
     d.commit()
     t = d.main_win.timers[-1]
@@ -312,7 +312,7 @@ def test_pool_row_signals_survive_row_removal():
 
     # old row1 (click) is now row0; activating ITS combo must preview click
     b.pool.cellWidget(0, 1).activated.emit(0)
-    assert seen == [("click", 4)], seen
+    assert seen == [("click", 0.4)], seen
     seen.clear()
 
     # The all-day checkbox is removed, but we keep the row removal test to ensure

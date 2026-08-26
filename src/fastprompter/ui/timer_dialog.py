@@ -82,8 +82,8 @@ _TEST_DELAY_S = 5
 class _TimerBehaviorEditor(QWidget):
     """Reusable timer-behaviour editor: notify / top-bar / colour / sound."""
 
-    # (sound_ref, volume) the host should audition immediately
-    previewRequested = pyqtSignal(str, int)
+    # (sound_ref, volume) the host should audition immediately — volume 0.0-1.0
+    previewRequested = pyqtSignal(str, float)
 
     def __init__(self, main_win, lang, parent=None):
         super().__init__(parent)
