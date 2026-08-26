@@ -900,16 +900,12 @@ class FastPrompter(
         self.data = self.state.data
         # W2-006: reconcile any crash-consistent retirement journal left
         # by a process death between a folder rename and its in-memory log
-        # append. Idempotent; runs before any UI is built.
-        try:
-            from fastprompter.ui.snippet_ops_mixin import _reconcile_retirement_journal
-            _reconcile_retirement_journal(
-                self._files_root(), self.data,
-                owner_is_live=self._retirement_owner_is_live)
-        except Exception:
-            from fastprompter.core.logging import logger
-            logger.warning("retirement journal reconciliation skipped",
-                           exc_info=True)
+        # append. Idempotent; DEFERRED until after the per-category
+        # migration below so _retirement_owner_is_live sees canonicalized
+        # silo_folders_all rather than stale flat data (W2-001).
+        from fastprompter.ui.snippet_ops_mixin import _reconcile_retirement_journal
+        self._reconciliation_pending = True
+        self._journal_reconcile_fn = _reconcile_retirement_journal
         from fastprompter.core.timers import load_timers
         self.timers = load_timers(self.data.get("timers"))
         from fastprompter.core.watcher.queue import load_queues
@@ -955,8 +951,18 @@ class FastPrompter(
         except Exception:
             self.active_temp_slot = 0
         # Per-category pins/last-edited stores (aliased per tab like
-        # temp_presets_all); migrate the old flat keys into the first tab.
-        first_cat = (self.data.get("cats_order") or ["Code"])[0]
+        # temp_presets_all); migrate the old flat keys into the persisted
+        # ACTIVE tab. W2-001: the boot category must use the SAME
+        # visible-category/last_tab_idx semantics FastPrompterState.init_db
+        # uses — a hardcoded cats_order[0] guess migrates legacy flat
+        # metadata (folders/pins/children/project paths) onto the wrong
+        # project and it then vanishes when the real project is bound.
+        hidden = set(self.data.get("hidden_categories", []))
+        _visible = [c for c in (self.data.get("cats_order") or []) if c not in hidden]
+        if not _visible:
+            _visible = self.data.get("cats_order") or ["Code"]
+        first_cat = _visible[min(int(self.data.get("last_tab_idx", 0)),
+                                 len(_visible) - 1)] if _visible else "Code"
         pall = self.data.get("pinned_silos_all")
         if not isinstance(pall, dict):
             pall = {}
@@ -1070,6 +1076,21 @@ class FastPrompter(
             type_all[first_cat] = self.data["silo_types"]
         self.data["silo_type_all"] = type_all
         self.data["silo_types"] = type_all.setdefault(first_cat, {})
+
+        # W2-001: the per-category migration has now canonicalized every
+        # legacy flat owner into the _all stores, so retirement recovery can
+        # classify durable owners correctly.
+        if getattr(self, "_reconciliation_pending", False):
+            try:
+                fn = getattr(self, "_journal_reconcile_fn", None)
+                if fn is not None:
+                    fn(self._files_root(), self.data,
+                       owner_is_live=self._retirement_owner_is_live)
+            except Exception:
+                from fastprompter.core.logging import logger
+                logger.warning("retirement journal reconciliation skipped",
+                               exc_info=True)
+            self._reconciliation_pending = False
 
         self._current_lang = get_language(self.data)
         self.init_ui()
@@ -11140,6 +11161,13 @@ class FastPrompter(
                 if not (isinstance(pair, (list, tuple)) and len(pair) == 2
                         and all(isinstance(p, str) and p for p in pair)):
                     return False
+        # W2-003: composite physical records optionally bind to a canonical
+        # files-root identity. If present it must be a non-empty string;
+        # a malformed owner identity is quarantined.
+        if (state.get("_transfer") or state.get("_merge_ledger")):
+            fr = state.get("_fs_root")
+            if fr is not None and not (isinstance(fr, str) and fr):
+                return False
         # PERF-002: compact metadata records carry their own schema.
         if state.get("_compact") is not None:
             kind = state.get("_compact")
@@ -11441,6 +11469,19 @@ class FastPrompter(
         performed safely (the caller must not commit the logical half).
         Already-reversed pairs are skipped so a preflight retry after an
         interrupted run stays idempotent."""
+        # W2-003: the physical half is bound to the files-root identity it was
+        # captured against. If the Files Folder was re-rooted since, these
+        # coordinates are stale and MUST NOT mutate the abandoned old root.
+        recorded_root = state.get("_fs_root")
+        if recorded_root:
+            try:
+                cur_root = os.path.abspath(self._files_root())
+            except Exception:
+                cur_root = None
+            if cur_root is not None and os.path.normcase(recorded_root) != os.path.normcase(cur_root):
+                raise _TransactionRefused(
+                    "composite filesystem history belongs to a different "
+                    "Files Folder; refusing to mutate the old root")
         fp = state.get("_transfer_folder")
         if state.get("_transfer") and isinstance(fp, (tuple, list)) \
                 and len(fp) == 4:
@@ -11462,6 +11503,10 @@ class FastPrompter(
                     f"{from_dir} nor {to_dir} exists")
         ledger = state.get("_merge_ledger")
         if ledger:
+            # W2-002: VALIDATE the entire inverse plan before mutating
+            # anything. A collision on any later pair must refuse the WHOLE
+            # reversal with every file untouched, never a partial split.
+            pending = []
             for pair in reversed(ledger):
                 if not (isinstance(pair, (tuple, list)) and len(pair) == 2):
                     continue
@@ -11471,12 +11516,27 @@ class FastPrompter(
                 if os.path.lexists(orig):
                     raise _TransactionRefused(
                         f"merge undo collision: {orig} already exists")
-                try:
+                pending.append((orig, pub))
+            applied = []
+            try:
+                for orig, pub in pending:
                     os.makedirs(os.path.dirname(orig), exist_ok=True)
                     os.rename(pub, orig)
-                except OSError as e:
-                    raise _TransactionRefused(
-                        f"merge undo {pub} -> {orig} failed: {e}")
+                    applied.append((orig, pub))
+            except OSError as e:
+                # compensate already-applied renames back to their pre-call
+                # orientation so the reversal is all-or-nothing
+                for orig, pub in reversed(applied):
+                    try:
+                        os.rename(orig, pub)
+                    except OSError:
+                        # compensation itself failed: leave a durable trace —
+                        # the ledger stays in the persisted undo record, so a
+                        # retry can reconcile the remaining split
+                        pass
+                raise _TransactionRefused(
+                    f"merge undo {pub} -> {orig} failed and was "
+                    f"compensated: {e}")
         return True
 
     def _apply_data_state(self, state):
@@ -15915,6 +15975,10 @@ class FastPrompter(
         snap["_transfer_folder"] = (
             (folder_plan[1], folder_plan[0], folder_plan[3], folder_plan[2])
             if folder_plan else None)
+        # W2-003: bind the physical half to the canonical files-root identity
+        # captured at action time. After a Files Folder re-root this record is
+        # non-executable (preflight refuses it) instead of mutating the old root.
+        snap["_fs_root"] = os.path.abspath(self._files_root())
 
         # The only fallible step runs FIRST, before any in-memory mutation:
         # a failed physical move must leave text, mapping and files exactly
@@ -16124,6 +16188,9 @@ class FastPrompter(
                 if isinstance(rec, dict):
                     rec["_merge_ledger"] = [
                         [pair[0], pair[1]] for pair in ledger]
+                    # W2-003: bind to the canonical files root so a later
+                    # Files Folder re-root makes this record non-executable.
+                    rec["_fs_root"] = os.path.abspath(self._files_root())
                     self._save_undo_state()
         self.mark_dirty()
         self.refresh_temp_presets()
