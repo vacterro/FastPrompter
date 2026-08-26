@@ -84,7 +84,7 @@ _ALIGN_FLAGS = {
 }
 from fastprompter.core.i18n import NATIVE_NAMES as _LANG_NATIVE_NAMES
 from fastprompter.core.ipc_server import IpcServer
-from fastprompter.core.sound_manager import SoundManager
+from fastprompter.core.sound_manager import SoundManager, _parse_volume_value
 from fastprompter.core.state import _PER_CATEGORY_STATE_KEYS, FastPrompterState
 from fastprompter.core.translations import available_languages, get_language, tr
 from fastprompter.theme.themes import THEMES
@@ -917,6 +917,9 @@ class FastPrompter(
         self.productivity_timer = ProductivityTimer.from_dict(
             self.data.get("productivity_timer"))
         self._pomo_last_tick = None
+        # cadence anchor for the repeated-alarm replay (CORE-001)
+        self._pomo_alarm_replay_at = None
+        self._POMO_ALARM_REPEAT_SECONDS = 60
         self.conn = self.state.conn
         import threading
         self._undo_save_lock = threading.Lock()
@@ -1216,6 +1219,7 @@ class FastPrompter(
         # otherwise the date label stays red so a missed event is not
         # forgotten (see missed_attention in core/timers.py).
         self._missed_timer_ids: set = set()
+        self._load_missed_ids()
 
         self.place_window()
 
@@ -1280,6 +1284,32 @@ class FastPrompter(
 
         self._apply_date_alert_style()
         self._update_timer_label()
+
+    def _load_missed_ids(self):
+        """Load the persisted missed-event IDs from the active profile data."""
+        raw = self.data.get("missed_timer_ids")
+        ids = set()
+        if isinstance(raw, (list, tuple, set)):
+            for i in raw:
+                if isinstance(i, str) and i:
+                    ids.add(i)
+        # drop IDs that no longer correspond to an enabled one-shot in this
+        # profile (e.g. a deleted/disabled timer carried over from a crash)
+        from fastprompter.core.timers import REPEAT_NONE
+        timers = getattr(self, "timers", [])
+        valid = {getattr(t, "id", None) for t in timers
+                 if getattr(t, "repeat", None) == REPEAT_NONE
+                 and getattr(t, "enabled", False)}
+        ids &= valid
+        self._missed_timer_ids = ids
+
+    def _persist_missed_ids(self):
+        """Write the current missed-event ID set back into profile data."""
+        missed = getattr(self, "_missed_timer_ids", None)
+        if missed is None:
+            return
+        self.data["missed_timer_ids"] = sorted(missed)
+        self.mark_dirty("settings")
 
     def _missed_attention(self):
         """One-shot timers that passed and were not acknowledged yet."""
@@ -1358,12 +1388,14 @@ class FastPrompter(
     def _clear_missed_alert(self):
         """Acknowledge every passed event at once (right-click escape hatch)."""
         self._missed_timer_ids.clear()
+        self._persist_missed_ids()
         self._apply_date_alert_style()
 
     def _ack_missed(self, timer):
         """The toast's Dismiss button: acknowledge THIS passed event."""
         if timer is not None:
             self._missed_timer_ids.discard(timer.id)
+            self._persist_missed_ids()
         self._apply_date_alert_style()
 
     def _update_timer_label(self):
@@ -1451,6 +1483,8 @@ class FastPrompter(
 
     def temp_timer_template(self):
         """Settings used when Shift+Click creates a fresh temp timer."""
+        from fastprompter.core.timers import _heal_volume
+
         raw = self.data.get("temp_timer_settings")
         if not isinstance(raw, dict):
             raw = {}
@@ -1467,10 +1501,9 @@ class FastPrompter(
             increment = max(1, int(raw.get("increment_minutes", 15)))
         except (TypeError, ValueError):
             increment = 15
-        try:
-            volume = max(0, min(10, int(raw.get("volume", 5))))
-        except (TypeError, ValueError):
-            volume = 5
+        # canonical 0.0-1.0 float; legacy 0-10 accepted on read; never int()-truncate
+        vol = _heal_volume(raw.get("volume", 5))
+        volume = vol if vol is not None else 0.5
         name = raw.get("name")
         description = raw.get("description")
         sound = raw.get("sound")
@@ -1496,6 +1529,8 @@ class FastPrompter(
 
     def configure_temp_timer(self, settings):
         """Persist the express timer template and update its live instance."""
+        from fastprompter.core.timers import _heal_volume
+
         current = self.temp_timer_template()
         current.update(settings or {})
         try:
@@ -1503,6 +1538,10 @@ class FastPrompter(
                 1, int(current.get("increment_minutes", 15)))
         except (TypeError, ValueError):
             current["increment_minutes"] = 15
+        # volume stored canonically as 0.0-1.0 (legacy 0-10 healed on the way in)
+        if "volume" in current:
+            hv = _heal_volume(current.get("volume"))
+            current["volume"] = hv if hv is not None else 0.5
         current["name"] = str(current.get("name") or "Temp Timer")
         current["description"] = str(current.get("description") or "")
         for key, default in (("delete_after_fire", False),
@@ -1920,11 +1959,32 @@ class FastPrompter(
     # ---- timers / limit resets ---------------------------------------
     def save_timers_to_data(self):
         from fastprompter.core.timers import save_timers
-        self.data["timers"] = save_timers(self.timers)
+        new = save_timers(self.timers)
+        # prune missed-event IDs whose timer was deleted/disabled (W2-003)
+        missed = getattr(self, "_missed_timer_ids", None)
+        if missed:
+            from fastprompter.core.timers import REPEAT_NONE
+            valid = {t.id for t in self.timers
+                      if getattr(t, "repeat", None) == REPEAT_NONE
+                      and getattr(t, "enabled", False)}
+            dropped = missed - valid
+            if dropped:
+                missed -= dropped
+                self._persist_missed_ids()
+        # PERF-001: change-aware — a no-op (countdown-only) update must not
+        # mark settings dirty every tick
+        if self.data.get("timers") == new:
+            return
+        self.data["timers"] = new
         self.mark_dirty("settings")
 
     def save_productivity_timer(self):
-        self.data["productivity_timer"] = self.productivity_timer.to_dict()
+        new = self.productivity_timer.to_dict()
+        # PERF-001: change-aware — only persist + mark dirty when something
+        # actually changed (durations/sounds/volume), not on every countdown tick
+        if self.data.get("productivity_timer") == new:
+            return
+        self.data["productivity_timer"] = new
         self.mark_dirty("settings")
 
     def on_productivity_changed(self):
@@ -1938,6 +1998,9 @@ class FastPrompter(
 
         Fed real elapsed time rather than a flat second: if the app stalls or
         the machine sleeps, the countdown must still be right afterwards.
+
+        A repeating alarm (``repeat_alarm``) keeps replaying its sound on a
+        cadence after a phase ends, until it is acknowledged (CORE-001).
         """
         timer = getattr(self, "productivity_timer", None)
         if timer is None:
@@ -1946,12 +2009,51 @@ class FastPrompter(
         now = _t.monotonic()
         last, self._pomo_last_tick = self._pomo_last_tick, now
         if not timer.running:
+            # stopped/paused: a pending alarm no longer replays. Clear the
+            # cadence anchor but leave alarm_pending for the UI to surface.
+            if not (timer.alarm_pending and timer.repeat_alarm
+                    and timer.sound_enabled):
+                self._pomo_alarm_replay_at = None
             return
         if last is None:
             return                        # first tick after starting
-        for phase in timer.tick(now - last):
+        ended = timer.tick(now - last)
+        for phase in ended:
             self._notify_productivity(phase)
-        self.save_productivity_timer()
+        if ended:
+            # arm the replay cadence from the moment the phase ended
+            self._pomo_alarm_replay_at = now
+            self.save_productivity_timer()
+        if (timer.alarm_pending and timer.repeat_alarm
+                and timer.sound_enabled):
+            if self._pomo_alarm_replay_at is None:
+                self._pomo_alarm_replay_at = now
+            elif now - self._pomo_alarm_replay_at >= self._POMO_ALARM_REPEAT_SECONDS:
+                self._pomo_alarm_replay_at = now
+                self._replay_productivity_alarm()
+        else:
+            self._pomo_alarm_replay_at = None
+
+    def _replay_productivity_alarm(self):
+        """Replay only the sound for a still-pending productivity alarm."""
+        timer = getattr(self, "productivity_timer", None)
+        if timer is None or not timer.alarm_pending:
+            return
+        if not getattr(timer, "sound_enabled", True):
+            return
+        from fastprompter.core.pomodoro import PHASE_WORK
+        phase = getattr(timer, "alarm_phase", None) or timer.phase
+        sound_ref = (timer.work_sound if phase == PHASE_WORK
+                     else timer.break_sound)
+        vol = getattr(timer, "volume", 0.05)
+        try:
+            if hasattr(self, "sound_manager") and self.sound_manager:
+                self.sound_manager.play_sound_ref(sound_ref, vol)
+            else:
+                self.play_sound(sound_ref)
+        except Exception:
+            from fastprompter.core.logging import logger
+            logger.debug("productivity alarm replay failed")
 
     def _notify_productivity(self, phase):
         """Sound + popup when a work or break phase ends."""
@@ -2208,6 +2310,7 @@ class FastPrompter(
 
     def open_timer_dialog(self, initial_tab: int | str = 0):
         from fastprompter.ui.timer_dialog import TimerDialog
+        self._clear_missed_alert()
         self._increment_focus_lock()
         try:
             TimerDialog(self, initial_tab=initial_tab).exec()
@@ -2227,7 +2330,7 @@ class FastPrompter(
         "minutes": 60,
         "enabled": True,
         "sound": "newday",
-        "volume": 1,
+        "volume": 0.5,
         "show_notification": False,
         "show_in_top_bar": False,
         "align_mode": "clock",
@@ -2238,13 +2341,94 @@ class FastPrompter(
         "last_fired_minute": "",
     }
 
+    def _heal_interval_rule(self, rule):
+        """Canonicalize one interval-notif rule; drop non-dicts (W2-004).
+
+        Heals minutes, booleans, alignment, active-hour bounds, volume
+        (canonical 0.0-1.0, legacy 0-10 healed) and string fields, and yields
+        a unique non-empty id. Returns None for entries that are not dicts.
+        """
+        import uuid as _uuid
+
+        if not isinstance(rule, dict):
+            return None
+        r = dict(rule)
+        rid = r.get("id")
+        if not isinstance(rid, str) or not rid:
+            rid = "interval_" + _uuid.uuid4().hex[:8]
+        r["id"] = rid
+        try:
+            minutes = int(r.get("minutes", 60))
+        except (TypeError, ValueError):
+            minutes = 60
+        r["minutes"] = max(1, minutes)
+        for bk, dflt in (("enabled", True), ("show_notification", False),
+                          ("show_in_top_bar", False), ("all_day", True)):
+            v = r.get(bk, dflt)
+            if isinstance(v, str):
+                r[bk] = v.strip().lower() not in ("", "0", "false", "no", "off")
+            else:
+                r[bk] = bool(v)
+        am = str(r.get("align_mode", "clock"))
+        r["align_mode"] = am if am in ("clock", "elapsed") else "clock"
+        try:
+            sm = int(r.get("start_minute", 0))
+        except (TypeError, ValueError):
+            sm = 0
+        try:
+            em = int(r.get("end_minute", 1439))
+        except (TypeError, ValueError):
+            em = 1439
+        r["start_minute"] = max(0, min(1439, sm))
+        r["end_minute"] = max(0, min(1439, em))
+        from fastprompter.core.timers import _heal_volume
+        vol = _heal_volume(r.get("volume", 0.5))
+        r["volume"] = vol if vol is not None else 0.5
+        snd = r.get("sound")
+        r["sound"] = snd if isinstance(snd, str) and snd else None
+        nm = r.get("name")
+        r["name"] = nm if isinstance(nm, str) and nm else "Interval"
+        try:
+            lf = float(r.get("last_fired", 0.0))
+        except (TypeError, ValueError):
+            lf = 0.0
+        r["last_fired"] = lf
+        lfm = r.get("last_fired_minute")
+        r["last_fired_minute"] = lfm if isinstance(lfm, str) else ""
+        return r
+
     def _interval_notifs(self):
+        """Return the healed interval-notif rules.
+
+        Non-dict entries are dropped, malformed fields are healed, duplicate
+        ids are collapsed (first wins), and the result is written back so a
+        malformed stored list round-trips to canonical JSON (W2-004).
+        """
         rules = self.data.get("interval_notifs")
         if not isinstance(rules, list):
             rules = [dict(self._INTERVAL_NOTIF_DEFAULT)]
             self.data["interval_notifs"] = rules
             self.mark_dirty()
-        return rules
+            return rules
+        healed = []
+        seen_ids = set()
+        changed = False
+        for raw in rules:
+            h = self._heal_interval_rule(raw)
+            if h is None:
+                changed = True
+                continue
+            if h["id"] in seen_ids:
+                changed = True
+                continue
+            seen_ids.add(h["id"])
+            healed.append(h)
+            if h != raw:
+                changed = True
+        if changed:
+            self.data["interval_notifs"] = healed
+            self.mark_dirty()
+        return healed
 
     def _check_interval_notifs(self):
         """Fire every enabled rule whose interval has elapsed or reached
@@ -2284,15 +2468,16 @@ class FastPrompter(
 
                 would_fire = False
                 if align_mode == "clock":
-                    if minutes <= 60 and 60 % minutes == 0:
-                        if now_dt.minute % minutes == 0 and now_dt.second == 0:
-                            if rule.get("last_fired_minute") != minute_key:
-                                would_fire = True
-                    elif minutes % 60 == 0:
-                        hours = minutes // 60
-                        if now_dt.minute == 0 and now_dt.second == 0 and now_dt.hour % hours == 0:
-                            if rule.get("last_fired_minute") != minute_key:
-                                would_fire = True
+                    # Fire on the clock crossing: the current minute-of-day is a
+                    # multiple of the interval. NOT gated on second==0, so a late
+                    # or missed 1Hz sample still catches the boundary on its next
+                    # tick (once) — last_fired_minute dedups by minute, so there
+                    # are no replay storms and no same-boundary duplicates. This
+                    # also makes arbitrary clock intervals (45m, 90m, ...) valid
+                    # instead of silently never firing.
+                    if minute_of_day % minutes == 0:
+                        if rule.get("last_fired_minute") != minute_key:
+                            would_fire = True
                 else:
                     last = float(rule.get("last_fired") or 0.0)
                     if last == 0.0:
@@ -2386,6 +2571,7 @@ class FastPrompter(
                     and getattr(t, "delete_after_fire", False)):
                 self.timers = [live for live in self.timers if live.id != t.id]
                 self._missed_timer_ids.discard(t.id)
+                self._persist_missed_ids()
         if any(getattr(t, "temporary", False)
                and getattr(t, "delete_after_fire", False) for t in due):
             self.save_timers_to_data()
@@ -2416,6 +2602,7 @@ class FastPrompter(
             missed = getattr(self, "_missed_timer_ids", None)
             if missed is not None:
                 missed.add(timer.id)
+                self._persist_missed_ids()
         if not timer.show_notification:
             # visual notification intentionally off — no popup, no tray
             return
@@ -2478,6 +2665,7 @@ class FastPrompter(
             missed = getattr(self, "_missed_timer_ids", None)
             if missed is not None:
                 missed.discard(timer.id)
+                self._persist_missed_ids()
             timer.snooze(minutes)
         self.save_timers_to_data()
         self._update_date_label()
@@ -7070,7 +7258,7 @@ class FastPrompter(
         # still resolves; the visible divider line was removed per request.
         self._counter_sep = QFrame()
         self._counter_sep.setFrameShape(QFrame.Shape.NoFrame)
-        self._counter_sep.setFixedSize(3, 16)
+        self._counter_sep.setFixedSize(8, 16)
         self.header_layout.addWidget(self._counter_sep)
 
         self.lbl_line_count = QLabel("")
@@ -7224,8 +7412,10 @@ class FastPrompter(
         self.spin_volume = QSlider(Qt.Orientation.Horizontal)
         self.spin_volume.setRange(0, 100)
         try:
-            vol = float(self.data.get("sound_volume", "0.15"))
-            self.spin_volume.setValue(max(0, min(100, int(vol * 100))))
+            vol = _parse_volume_value(self.data.get("sound_volume", "0.15"))
+            if vol is None:
+                vol = 0.15
+            self.spin_volume.setValue(max(0, min(100, int(round(vol * 100)))))
         except Exception:
             self.spin_volume.setValue(15)
         self.spin_volume.setFixedWidth(100)
@@ -9095,6 +9285,7 @@ class FastPrompter(
         self.productivity_timer = ProductivityTimer.from_dict(
             data.get("productivity_timer"))
         self._pomo_last_tick = None
+        self._pomo_alarm_replay_at = None
 
         # -- persisted undo for THIS profile --------------------------------
         self._undo_kinds().clear()
@@ -9138,7 +9329,7 @@ class FastPrompter(
         # active category below. Guarded: at startup this runs BEFORE the
         # attributes are created (they are made at the end of __init__).
         if hasattr(self, "_missed_timer_ids"):
-            self._missed_timer_ids.clear()
+            self._load_missed_ids()
         if hasattr(self, "_typo_dict_cache"):
             self._typo_dict_cache = None
         if hasattr(self, "_sync_last_applied"):

@@ -418,12 +418,22 @@ class WindowMixin:
             if answer != QMessageBox.StandardButton.Yes:
                 return False
 
-        for key in ("toolbar_order", "last_geometry",
-                    "splitter_sizes_left", "splitter_sizes_right"):
-            self.data[key] = ""
-        self.data["sidebar_right"] = "False"
-        self.data["ui_scale"] = "0.5"
-        self.data["button_scale"] = "1.0"
+        # Deep-copy the shipped layout defaults instead of re-hardcoding them
+        # (CORE-004): this keeps Reset in lockstep with DEFAULT_PROFILE and
+        # never leaves the structured splitter keys as "" (which the splitter
+        # restore cannot consume).
+        import copy as _copy
+
+        from fastprompter.core.default_profile import DEFAULT_PROFILE as _DP
+        self.data["toolbar_order"] = _copy.deepcopy(_DP.get("toolbar_order", ""))
+        self.data["splitter_sizes_left"] = _copy.deepcopy(
+            _DP.get("splitter_sizes_left") or [])
+        self.data["splitter_sizes_right"] = _copy.deepcopy(
+            _DP.get("splitter_sizes_right") or [])
+        self.data["sidebar_right"] = str(_DP.get("sidebar_right", "False"))
+        self.data["ui_scale"] = _DP.get("ui_scale", 0.5)
+        self.data["button_scale"] = _DP.get("button_scale", 1.0)
+        self.data["last_geometry"] = ""
 
         self.sidebar_visible = True
         if hasattr(self, "btn_sidebar_toggle"):

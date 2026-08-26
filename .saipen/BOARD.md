@@ -1,5 +1,16 @@
 # ASP Board
 
+## DONE
+
+- [x] T-1060 (P1, acb-mtadwcni) CORE-001 productivity alarm replay/acknowledge lifecycle. Model `alarm_phase` remembered across replay; `_tick_productivity` replays sound-only on 60s cadence while `alarm_pending & repeat_alarm & sound_enabled`; `_replay_productivity_alarm` plays stored phase sound; acknowledge reachable via Start/Pause button + dedicated Silence button; turning sound off / Reset / Skip / Start / pause clears pending. tests/test_core001_productivity_alarm.py (7 pass); pomodoro+timer_dialog suite green.
+- [x] T-1061 (P1, acb-mtadwcni) CORE-002 volume slider legacy normalization. main.py volume slider reads via `_parse_volume_value`; legacy "1".."10" + canonical "0.15" map correctly; slider=vol*100 rounded; malformed->0.15; save canonical string. tests/test_core002_volume_slider.py (4 pass).
+- [x] T-1065 (P1, acb-mtadwcni) W2-001 interval clock scheduling boundary. Clock branch fires on `minute_of_day % minutes == 0` (any interval incl 45m/90m/120m/>24h), not gated on `second==0`; delayed/missed 1Hz sample still fires once; `last_fired_minute` dedup prevents storms/dupes; elapsed mode unchanged. tests/test_w2_001_interval_clock.py (6 pass).
+- [x] T-1066 (P1, acb-mtadwcni) W2-002 Temp Timer volume truncation. `temp_timer_template` + `configure_temp_timer` now normalize volume via `_heal_volume` -> 0.0-1.0 float; legacy 0-10 healed on read; no `int()` truncation; stored canonical. tests/test_w2_002_temp_timer_volume.py (6 pass).
+- [x] T-1067 (P1, acb-mtadwcni) W2-003 missed timer IDs persist. `_missed_timer_ids` now loaded from/persisted to `data["missed_timer_ids"]` on init + profile apply; reconcile in `save_timers_to_data` prunes deleted/disabled; explicit add/clear/ack/snooze/delete_after_fire persist. tests/test_w2_003_missed_ids.py (6 pass).
+- [x] T-1068 (P1, acb-mtadwcni) W2-004 interval_notifs malformed recovery. `_heal_interval_rule` + `_interval_notifs` heal/drop/collapse-dup-ids and write canonical back; TimerDialog reads via healed getter. tests/test_w2_004_interval_heal.py (6 pass).
+- [x] T-1071 (P1, acb-mtadwcni) PERF-001 productivity tick no-op persistence. `save_productivity_timer` + `save_timers_to_data` are change-aware (compare snapshot, mark_dirty only on diff); countdown-only ticks never dirty. tests/test_perf001_noop_save.py (4 pass).
+- [x] T-1072 (P1, acb-mtadwcni) PERF-002 TimerDialog single sound model. `_sound_inventory()` builds the named+file choice list ONCE per dialog and is shared by all six combos (alarm/calendar/temp/pool/interval/pomo); behavior delegates to the dialog. tests/test_perf002_sound_inventory.py (2 pass).
+
 > NOTE 25.07: a saitranslate INIT wiped this board (35KB -> 236B) plus LOG and
 > STATE at 24.07 23:50. `.saipen/` is gitignored, so there was no git fallback.
 > LOG was restored from the newest backup + splice. This board was NOT fully
@@ -10,6 +21,16 @@
 ## DOING
 
 ## TODO
+
+- [ ] T-1062 (P2, acb-mtadwcni) CORE-003 _find_sound_index namespace fidelity: file: refs match only file: itemData case-insensitive; named events only named; unprefixed *.wav = legacy file alias; no cross-namespace display-text identity | verify: combo with named "click" + file:Click.wav — "click"->named, file:Click.wav/file:click.wav->file, legacy Click.wav->file; save keeps direct-file; GENIE/NEWDAY tests green
+- [ ] T-1063 (P2, acb-mtadwcni) CORE-004 reset_ui_layout vs DEFAULT_PROFILE drift: deep-copy DEFAULT_PROFILE layout values (toolbar_order, splitter lists, sidebar_right, ui_scale, button_scale); never "" for structured splitter keys; _sync_layout_controls reflects canonical | verify: smoke regression compares to DEFAULT_PROFILE; splitter lists stay lists after save/reload; no codec heal warning; editor/snippet content untouched
+- [ ] T-1064 (P2, acb-mtadwcni) CORE-005 missing sound ref display: all timer sound selectors (alarm/calendar/pool/interval/productivity) show "<wanted> (missing)" with original itemData when unresolved; preview never plays fallback; close-without-choice keeps ref; replacement persists exactly | verify: regressions for missing file refs in alarm/pool/productivity; display itemData == persisted missing ref; preview honest; save preserves
+- [ ] T-1069 (P2, acb-mtadwcni) W2-005 interval top-bar visibility: next-occurrence calc for enabled show_in_top_bar interval rules; _update_timer_label renders eligible countdown; preserve Temp/Productivity precedence | verify: Pomodoro Focus preset shows countdown when slot free; show_in_top_bar=False hidden; after fire rolls to same next occurrence; active-hour/disabled no impossible display; profile reload restores; Timer/Temp/Productivity unchanged
+- [ ] T-1070 (P2, acb-mtadwcni) W2-006 toast snooze ownership: register missed only for persistent owned one-shot; pass snooze callback only when timer remains valid owned target (Test probe / delete_after_fire Temp -> no snooze); TimerToast renders Snooze only when on_snooze callable | verify: Test toast no Snooze + no orphan missed IDs; delete-after-fire hides Snooze or documented path; owned toasts keep Snooze; stale/profile toasts can't mutate; Dismiss/stacking green
+- [ ] T-1073 (P2, acb-mtadwcni) PERF-003 TimerDialog active-tab-only refresh: 1Hz timer refreshes only active tab; _on_tab_changed immediate catch-up; hidden tabs dirty/rebuild on activate | verify: PyQt6 spies — only active tab work per tick; switch -> one catch-up; hidden edits/fires appear on activate; scheduler unaffected
+- [ ] T-1074 (P2, acb-mtadwcni) PERF-004 hidden-window date label gate: keep date_timer + _check_timers always; gate _update_date_label on visibility; immediate catch-up on show | verify: spies 100 events — hidden: check_timers 100x, date_label 0x; alarms/productivity fire hidden; show -> one catch-up + 1Hz; scheduler cadence unchanged
+- [ ] T-1075 (P2, acb-mtadwcni) PERF-005 winsound scaled cache bounds: managed fastprompter_sound cache (byte/file/LRU budget), prune on startup/safe insert, bound _scaled_cache memory; don't delete playing WAV | verify: isolated temp — exceed budget -> bounded disk+memory; recent reused; evicted regenerates; source change invalidates; playback not broken; sound suite green
+- [ ] T-1076 (P2, acb-mtadwcni) PERF-006 folder cache bounds: _file_count_cache LRU cap; _tooltip_cache evict expired (not just miss); _folder_summary_cache evict after every insert incl empty-folder branch | verify: 10k distinct paths incl empty/expired -> bounded cardinality; hits/evicted-recompute; profile/root/category switch keeps stale-worker rejection; retained cache objects bounded
 
 ## BLOCKED
 

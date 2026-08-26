@@ -68,6 +68,9 @@ class ProductivityTimer:
         # set when a phase ends and stays set until acknowledged, so an alarm
         # can keep sounding for someone who walked away from the desk
         self.alarm_pending = False
+        # the phase whose completion is still ringing, so a repeated alarm
+        # keeps playing that phase's sound even after the next phase starts
+        self.alarm_phase = None
 
     # ---- helpers ------------------------------------------------------
     @staticmethod
@@ -98,6 +101,7 @@ class ProductivityTimer:
     def start(self):
         """Begin, or resume after a pause. Acknowledges a pending alarm."""
         self.alarm_pending = False
+        self.alarm_phase = None
         if self.state == STATE_IDLE:
             self.remaining = self.phase_length()
         self.state = STATE_RUNNING
@@ -115,6 +119,7 @@ class ProductivityTimer:
     def reset(self):
         """Back to the beginning of a work phase, stopped."""
         self.alarm_pending = False
+        self.alarm_phase = None
         self.phase = PHASE_WORK
         self.state = STATE_IDLE
         self.remaining = self.work_seconds
@@ -124,6 +129,7 @@ class ProductivityTimer:
         """Silence a ringing alarm without touching the countdown."""
         was = self.alarm_pending
         self.alarm_pending = False
+        self.alarm_phase = None
         return was
 
     def apply_durations(self, work_seconds=None, break_seconds=None):
@@ -148,6 +154,7 @@ class ProductivityTimer:
         finished_work = self.phase == PHASE_WORK
         self._enter_next_phase(count_cycle=finished_work)
         self.alarm_pending = False
+        self.alarm_phase = None
         return self.phase
 
     # ---- the clock ----------------------------------------------------
@@ -176,6 +183,7 @@ class ProductivityTimer:
             elapsed -= self.remaining
             ended.append(self.phase)
             self.alarm_pending = self.repeat_alarm or self.alarm_pending
+            self.alarm_phase = self.phase
             finished_work = self.phase == PHASE_WORK
             self._enter_next_phase(count_cycle=finished_work)
             if self.state != STATE_RUNNING:

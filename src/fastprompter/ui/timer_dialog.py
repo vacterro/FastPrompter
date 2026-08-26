@@ -70,39 +70,65 @@ _TEST_DELAY_S = 5
 
 
 def _find_sound_index(combo: QComboBox, ref: str) -> int:
-    """Find item index in a sound QComboBox, matching exact or case/prefix-insensitively."""
+    """Find item index in a sound QComboBox, namespace-faithful.
+
+    Named events and file refs live in separate namespaces and must not
+    collide on display-text identity (CORE-003):
+      * a bare name ("click") matches only a named-event item,
+      * "file:Click.wav" / "file:click.wav" match only file items,
+      * a legacy unprefixed "Click.wav" is treated as a file alias.
+    Matching is by itemData only, case-insensitively on the stem.
+    """
     if not ref:
         return -1
-    # 1. Exact match on itemData
+    ref = str(ref)
+    ref_is_file = ref.startswith("file:") or ref.lower().endswith(".wav")
+    ref_stem = ref[5:] if ref.startswith("file:") else ref
+    ref_stem = ref_stem[:-4] if ref_stem.lower().endswith(".wav") else ref_stem
+    ref_stem_l = ref_stem.lower()
+
+    # 1. Exact itemData match (already namespace-correct)
     idx = combo.findData(ref)
     if idx >= 0:
         return idx
-    # 2. Match with/without 'file:' prefix
-    alt = ref[5:] if ref.startswith("file:") else f"file:{ref}"
-    idx = combo.findData(alt)
-    if idx >= 0:
-        return idx
-    # 3. Case-insensitive and stem matching on itemData and itemText
-    target_clean = ref.lower()
-    if target_clean.startswith("file:"):
-        target_clean = target_clean[5:]
-    target_clean_stem = target_clean[:-4] if target_clean.endswith(".wav") else target_clean
 
+    # 2. Namespace-faithful stem match on itemData
     for i in range(combo.count()):
         d = combo.itemData(i)
-        if isinstance(d, str):
-            d_clean = d.lower()
-            if d_clean.startswith("file:"):
-                d_clean = d_clean[5:]
-            if d_clean == target_clean:
-                return i
-            d_clean_stem = d_clean[:-4] if d_clean.endswith(".wav") else d_clean
-            if d_clean_stem == target_clean_stem:
-                return i
-        txt = combo.itemText(i).lower().replace("★ ", "").strip()
-        if txt == target_clean or txt == target_clean_stem:
+        if not isinstance(d, str):
+            continue
+        d_is_file = d.startswith("file:") or d.lower().endswith(".wav")
+        if d_is_file != ref_is_file:
+            continue
+        d_stem = d[5:] if d.startswith("file:") else d
+        d_stem = d_stem[:-4] if d_stem.lower().endswith(".wav") else d_stem
+        if d_stem.lower() == ref_stem_l:
             return i
     return -1
+
+
+def _set_combo_sound(combo: QComboBox, ref, lang="EN") -> None:
+    """Select a stored sound ref, honestly showing a '(missing)' entry when the
+    ref is not in the library so the stored value survives save/reload (CORE-005).
+
+    The displayed item keeps the ORIGINAL ref as itemData, so closing the dialog
+    without re-picking preserves exactly what was stored, and replacement
+    persists the new ref verbatim.
+    """
+    if not ref:
+        return
+    ref = str(ref)
+    idx = _find_sound_index(combo, ref)
+    if idx >= 0:
+        combo.setCurrentIndex(idx)
+        return
+    # unresolved: carry the real ref in itemData, label it as missing
+    marker = f"<{ref}> (missing)"
+    for i in range(combo.count() - 1, -1, -1):
+        if str(combo.itemData(i)) == ref or combo.itemText(i).endswith("(missing)"):
+            combo.removeItem(i)
+    combo.addItem(marker, ref)
+    combo.setCurrentIndex(combo.count() - 1)
 
 
 DEFAULT_INTERVAL_RULES = [
@@ -354,36 +380,35 @@ class _TimerBehaviorEditor(QWidget):
 
     # -- cached sound choices ------------------------------------------------
     def _fill_sound_choices(self):
-        """Build the sound combo ONCE. Named events first, then every file.
+        """Build the sound combo from the dialog's shared inventory (PERF-002).
 
-        Reads the SoundManager's own cached inventory so Alarm and Calendar
-        editors always derive their choices from the SAME library listing.
+        The inventory is built once per dialog and shared by every sound combo,
+        so the library is scanned a single time no matter how many selections
+        exist (alarm, calendar, temp, pool rows, interval, pomo work/break).
         """
-        self.cb_sound.setMaxVisibleItems(20)
-        self._sound_choices = []
-        for name in _SOUNDS:
-            self._sound_choices.append((name, name))
-            self.cb_sound.addItem(name, name)
-        try:
-            files = self.main_win.sound_manager.get_available_sounds()
-        except Exception:
-            files = []
-        if files:
+        dlg = self.parent()
+        if hasattr(dlg, "_sound_inventory"):
+            inventory = dlg._sound_inventory()
+        else:
+            inventory = [(name, name) for name in _SOUNDS]
+            try:
+                files = self.main_win.sound_manager.get_available_sounds() or []
+            except Exception:
+                files = []
             favs = set(self.main_win.data.get("sound_favorites", [])) if self.main_win else set()
-            self.cb_sound.insertSeparator(self.cb_sound.count())
             for rel in files:
                 text = f"★ {rel}" if rel in favs else rel
-                self._sound_choices.append((text, f"file:{rel}"))
-                self.cb_sound.addItem(text, f"file:{rel}")
+                inventory.append((text, f"file:{rel}"))
+        self.cb_sound.setMaxVisibleItems(20)
+        self.cb_sound.clear()
+        self._sound_choices = list(inventory)
+        for disp, ref in self._sound_choices:
+            self.cb_sound.addItem(disp, ref)
 
     def select_sound(self, value):
         self._suppress_preview = True
         try:
-            idx = _find_sound_index(self.cb_sound, value)
-            if idx < 0:
-                idx = _find_sound_index(self.cb_sound, "tick")
-            if idx >= 0:
-                self.cb_sound.setCurrentIndex(idx)
+            _set_combo_sound(self.cb_sound, value)
         finally:
             self._suppress_preview = False
 
@@ -432,8 +457,7 @@ class _TimerBehaviorEditor(QWidget):
         sound.setMaxVisibleItems(20)
         for disp, ref in self._sound_choices:
             sound.addItem(disp, ref)
-        idx = _find_sound_index(sound, rule.get("sound") or "tick")
-        sound.setCurrentIndex(idx if idx >= 0 else 0)
+        _set_combo_sound(sound, rule.get("sound") or "tick")
         self.pool.setCellWidget(r, 1, sound)
 
         frm = QTimeEdit()
@@ -636,8 +660,10 @@ def _time_to_minute(t):
 
 class TimerDialog(QDialog):
     def __init__(self, main_win, initial_tab: int | str = 0):
-        super().__init__(main_win)
+        super().__init__(main_win if isinstance(main_win, QWidget) else None)
         self.main_win = main_win
+        if hasattr(main_win, "_clear_missed_alert"):
+            main_win._clear_missed_alert()
         self.lang = getattr(main_win, "_current_lang", "EN")
         self._editing_id = None
         self._editing_original_target = None
@@ -1286,6 +1312,14 @@ class TimerDialog(QDialog):
         self.btn_pomo_action.clicked.connect(self._pomo_toggle)
         buttons.addWidget(self.btn_pomo_action)
 
+        self.btn_pomo_silence = QPushButton(tr("Silence", self.lang))
+        self.btn_pomo_silence.setToolTip(tr(
+            "Stop the repeating alarm without touching the countdown",
+            self.lang))
+        self.btn_pomo_silence.clicked.connect(self._pomo_acknowledge)
+        self.btn_pomo_silence.setVisible(False)
+        buttons.addWidget(self.btn_pomo_silence)
+
         self.btn_pomo_skip = QPushButton(tr("Skip phase", self.lang))
         self.btn_pomo_skip.setToolTip(tr(
             "Jump straight to the other phase", self.lang))
@@ -1305,20 +1339,29 @@ class TimerDialog(QDialog):
     def _pomo(self):
         return self.main_win.productivity_timer
 
-    def _fill_pomo_sound_choices(self, combo):
-        combo.clear()
-        for name in _SOUNDS:
-            combo.addItem(name, name)
-        try:
-            files = self.main_win.sound_manager.get_available_sounds() or []
-        except Exception:
-            files = []
-        if files:
-            favs = set(self.main_win.data.get("sound_favorites", [])) if self.main_win else set()
-            combo.insertSeparator(combo.count())
+    def _sound_inventory(self):
+        """One sound-choice inventory per dialog (PERF-002): named events plus
+        every library file, favourites-starred. Built once and shared by all six
+        sound combos so we never scan the sound library more than once per open.
+        """
+        if getattr(self, "_sound_inventory_cache", None) is None:
+            items = [(name, name) for name in _SOUNDS]
+            try:
+                files = self.main_win.sound_manager.get_available_sounds() or []
+            except Exception:
+                files = []
+            favs = (set(self.main_win.data.get("sound_favorites", []))
+                    if self.main_win else set())
             for rel in files:
                 text = f"★ {rel}" if rel in favs else rel
-                combo.addItem(text, f"file:{rel}")
+                items.append((text, f"file:{rel}"))
+            self._sound_inventory_cache = items
+        return self._sound_inventory_cache
+
+    def _fill_pomo_sound_choices(self, combo):
+        combo.clear()
+        for disp, ref in self._sound_inventory():
+            combo.addItem(disp, ref)
 
     def _load_pomo_into_form(self):
         """Fill the form from the model without echoing back into it."""
@@ -1339,13 +1382,10 @@ class TimerDialog(QDialog):
         self.cb_pomo_sound_en.setChecked(getattr(t, "sound_enabled", True))
         self.spin_pomo_vol.setValue(getattr(t, "volume", 0.05))
 
-        w_idx = _find_sound_index(self.cb_pomo_work_sound, getattr(t, "work_sound", "file:QUEST.wav"))
-        if w_idx >= 0:
-            self.cb_pomo_work_sound.setCurrentIndex(w_idx)
-
-        b_idx = _find_sound_index(self.cb_pomo_break_sound, getattr(t, "break_sound", "file:NEWDAY.wav"))
-        if b_idx >= 0:
-            self.cb_pomo_break_sound.setCurrentIndex(b_idx)
+        _set_combo_sound(self.cb_pomo_work_sound,
+                         getattr(t, "work_sound", "file:QUEST.wav"))
+        _set_combo_sound(self.cb_pomo_break_sound,
+                         getattr(t, "break_sound", "file:NEWDAY.wav"))
 
         for w in widgets:
             w.blockSignals(False)
@@ -1380,7 +1420,13 @@ class TimerDialog(QDialog):
         t.volume = self.spin_pomo_vol.value()
         t.work_sound = self.cb_pomo_work_sound.currentData() or "file:QUEST.wav"
         t.break_sound = self.cb_pomo_break_sound.currentData() or "file:NEWDAY.wav"
+        # turning the sound off must silence a still-ringing alarm (CORE-001)
+        if not t.sound_enabled and t.alarm_pending:
+            t.acknowledge()
+            if getattr(self.main_win, "_pomo_alarm_replay_at", None) is not None:
+                self.main_win._pomo_alarm_replay_at = None
         self.main_win.save_productivity_timer()
+        self._refresh_pomo()
 
     def _pomo_durations_changed(self):
         self._pomo().apply_durations(
@@ -1398,7 +1444,21 @@ class TimerDialog(QDialog):
         self._refresh_pomo()
 
     def _pomo_toggle(self):
-        self._pomo().toggle()
+        t = self._pomo()
+        # a ringing alarm is silenced by the same button that would start it
+        if t.alarm_pending:
+            self._pomo_acknowledge()
+            return
+        t.toggle()
+        self.main_win.on_productivity_changed()
+        self._refresh_pomo()
+
+    def _pomo_acknowledge(self):
+        """Silence a repeating alarm (CORE-001): clear pending + stop replay."""
+        t = self._pomo()
+        t.acknowledge()
+        if getattr(self.main_win, "_pomo_alarm_replay_at", None) is not None:
+            self.main_win._pomo_alarm_replay_at = None
         self.main_win.on_productivity_changed()
         self._refresh_pomo()
 
@@ -1425,6 +1485,7 @@ class TimerDialog(QDialog):
             colour = "#e05555"
         self.lbl_pomo_clock.setStyleSheet(
             f"font-size: 26px; font-weight: bold; color: {colour};")
+        self.btn_pomo_silence.setVisible(bool(t.alarm_pending))
 
     # ------------------------------------------------------------------
     # T-1006. Calendar tab: events ARE timers (kind="calendar"), stored in
@@ -2653,18 +2714,8 @@ class TimerDialog(QDialog):
 
     def _fill_interval_sound_choices(self):
         self.interval_in_sound.clear()
-        for name in _SOUNDS:
-            self.interval_in_sound.addItem(name, name)
-        try:
-            files = self.main_win.sound_manager.get_available_sounds() or []
-        except Exception:
-            files = []
-        if files:
-            favs = set(self.main_win.data.get("sound_favorites", [])) if self.main_win else set()
-            self.interval_in_sound.insertSeparator(self.interval_in_sound.count())
-            for rel in files:
-                text = f"★ {rel}" if rel in favs else rel
-                self.interval_in_sound.addItem(text, f"file:{rel}")
+        for disp, ref in self._sound_inventory():
+            self.interval_in_sound.addItem(disp, ref)
 
     def _quick_bar_slots(self):
         saved = getattr(self.main_win, "data", {}).get("sound_quick_bar")
@@ -2751,26 +2802,21 @@ class TimerDialog(QDialog):
     def _interval_set_sound(self, ref):
         self._suppress_interval_preview = True
         try:
-            idx = _find_sound_index(self.interval_in_sound, ref)
-            if idx < 0:
-                idx = _find_sound_index(self.interval_in_sound, "NEWDAY.wav")
-            if idx < 0:
-                idx = _find_sound_index(self.interval_in_sound, "newday")
-            if idx >= 0:
-                self.interval_in_sound.setCurrentIndex(idx)
+            _set_combo_sound(self.interval_in_sound, ref)
         finally:
             self._suppress_interval_preview = False
 
     def _interval_rules(self):
+        # Heal through the main-window getter so malformed stored rules are
+        # canonicalized before the dialog ever renders them (W2-004).
+        meth = getattr(self.main_win, "_interval_notifs", None)
+        if callable(meth):
+            return meth()
         rules = getattr(self.main_win, "data", {}).get("interval_notifs")
         if not isinstance(rules, list):
-            meth = getattr(self.main_win, "_interval_notifs", None)
-            if callable(meth):
-                rules = meth()
-            else:
-                rules = []
-                if hasattr(self.main_win, "data") and isinstance(self.main_win.data, dict):
-                    self.main_win.data["interval_notifs"] = rules
+            rules = []
+            if hasattr(self.main_win, "data") and isinstance(self.main_win.data, dict):
+                self.main_win.data["interval_notifs"] = rules
         return rules
 
     def _interval_reload(self):
