@@ -199,4 +199,4 @@
 - 26.08.26 04:35 [E-973] [parent: E-972] [T-1056] DEC: hunt finding -- previewRequested signal typed (str,int) but emitted float; volume preview emitted garbage int (pointer-sized). Fixed signal to (str,float); tests test_timer_dialog_wave updated to float expectations
 - 26.08.26 04:40 [E-974] [T-none] RUN: hunt -> clean @4e6d943
 - 26.08.26 10:16 [E-975] [T-1057] RUN: acb-mat audit 12 tickets -> 11/12 implemented (CORE-001..003, W2-001..003, PERF-001..005); CORE-004 pre-fixed; W2-002 forward write-ahead journal documented as remaining; full suite 1572 passed 1 skipped
-- 26.08.26 13:54 [E-976] [parent: E-975] [T-1057] RUN: W2-002 forward merge journal landed (plan-then-journal, per-move update, startup reverse reconciliation) -> 12/12 acb-mat tickets complete; full suite 1572 passed 1 skipped
+- 26.08.26 16:27 [E-977] [parent: E-976] [T-none] RUN: ship v0.8.55 -> interval defaults 24h schedule (0.05 vol, noon GENIE, morning/day newday, night alert_owl2), sound scroll/select preview with load guard, presets menu, 1572 tests passed, compiled build/FastPrompter.exe (45.1 MB), published GitHub release v0.8.55
