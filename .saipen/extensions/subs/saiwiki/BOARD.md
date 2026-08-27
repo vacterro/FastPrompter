@@ -21,7 +21,7 @@
 - [x] W-004 Document configuration & settings
 - [x] W-005 Document UI components
 - [x] W-006 Document User Guide, Hotkeys & Workflows (_user_guide.md)
-- [x] W-007 Document SAIPEN & SubSaipen Architecture (_saipen_guide.md)
+- [x] W-033 Document SAIPEN & SubSaipen Architecture (_saipen_guide.md) (renumbered from W-007 to clear a duplicate-ID collision with the 26.08 re-cut W-007)
 - [x] W-008 Document Build, Packaging & Release Deployment (_deployment.md)
 - [x] W-009 Assemble master Home.md and _Sidebar.md for GitHub Wiki format
 - [x] W-010 Format & copy draft pages into clean GitHub Wiki structure

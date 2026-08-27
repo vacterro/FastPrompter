@@ -6,7 +6,7 @@ blocker: none
 agent: <name>
 saipen_version: 7
 schema_version: 3
-style_contract: ded-0d563e56
+style_contract: ded-4ae736e4
 saipen_home: ""
 mode: read-only
 transition_from: INIT

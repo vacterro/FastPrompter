@@ -1,0 +1,17 @@
+{
+  "board_hash": "f16bf6132fb88309",
+  "content_hash": "e61d5016eeb480d3",
+  "exit_code": 1,
+  "gate": "core",
+  "kind": "conformance_receipt",
+  "log_hash": "203938efab227bfd",
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "receipt_id": "receipt-ae7245a34b61",
+  "schema_version": 2,
+  "source_head": "2f31e6df521d04b52f1327d5ed55d654b716f65f",
+  "source_tree_fingerprint": "git-delta-v1:f9c00b1cb83feb9603dff3cce7e091366114e8e846e6b3ec053f222b18aa23a4",
+  "state_hash": "47a00a09bbd369fa",
+  "timestamp_utc": "2026-08-27T13:16:28.844192Z",
+  "validator_protocol_version": "1",
+  "verdict": "FAIL"
+}

@@ -1214,4 +1214,6 @@ TRANSLATIONS: dict[str, str] = {
     'Workday (09:00 - 18:00)': 'Tööpäev (09:00 - 18:00)',
     'Hourly Bell (24/7)': 'Tunnilöök (24/7)',
     'Pomodoro Focus (25m)': 'Pomodoro fookus (25m)',
+    'Reminder': 'Reminder',
+    'interval reminder': 'interval reminder',
 }

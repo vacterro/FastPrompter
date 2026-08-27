@@ -1,9 +1,13 @@
 # SubSaipen Protocol
 
-Isolated, read-only agents that research the main project in parallel and
-hand back structured findings -- never a second write-path into the
-project. Extension, not Core (CORE.md §1.9): nothing here is read by the
-SAIPEN home on its own behalf, and it never relaxes what Core requires.
+Isolated, read-only agents that research the main project and hand back
+structured findings -- never a second write-path into the project. A
+SubSaipen is an authority/state namespace, not a mandatory process or
+chat-session boundary: subSaipens MAY run independently or in parallel, but
+the serial crew circuit (`saipen crew`) walks every role IN THE CURRENT agent
+session unless an explicit external worker runtime is already in use.
+Extension, not Core (CORE.md §1.9): nothing here is read by the SAIPEN home
+on its own behalf, and it never relaxes what Core requires.
 
 ## 0. Root path
 
@@ -111,7 +115,7 @@ File: `<name>/kitchen/OUTBOX.md`. The only channel back to the main agent.
 ```markdown
 # OUTBOX
 
-## WIKI-001: short description
+## W-001: short description
 - **status:** ready | draft | blocked | reviewed | stale
 - **summary:** one line, what was found or produced
 - **main_project_refs:** [src/foo.py, ...]
@@ -134,7 +138,7 @@ File: `<name>/kitchen/OUTBOX.md`. The only channel back to the main agent.
 | `ready` | Done, main agent may act on it |
 | `draft` | Still in progress, main agent ignores |
 | `blocked` | Waiting on something external, reason in `details` -- **and this is also how a subSaipen says "I do not have enough information", which is the one case it will otherwise get wrong** (see below) |
-| `reviewed` | Collected already (§ 4) -- retained as history. Review count and elapsed time never turn it stale or authorize deletion |
+| `reviewed` | Core DISPOSITION terminal: the linked Core review ticket was independently closed (DONE/BLOCKED) and the package was marked reviewed by `sub dispose` -- INTAKE != REVIEW, so a package that was merely collected stays `ready` (§ 4). Retained as history. Review count and elapsed time never turn it stale or authorize deletion |
 | `stale` | Evidence proves the package no longer describes the current source/charter, was explicitly invalidated, is lifecycle-inconsistent/abandoned, or belongs to a proven unrecoverable instance (§ 6). Collect skips it rather than ticketing a ghost |
 
 `critical: true` = bug, broken behavior, data loss, security issue.
@@ -166,16 +170,18 @@ project was built on it.
 | Prefix | Owner |
 |---|---|
 | `SYS-` | Cross-cutting / protocol-level tickets |
-| `WIKI-` | saiwiki |
+| `W-` | saiwiki |
 | `HUNT-` | saihunt |
+| `TEST-` | saitest |
 | `UI-` | saiui (fixer, § 9) |
 | `PY-` | saipython (fixer, § 9) |
+| `SAIT-` | saitranslate |
 | `<NAME>-` | any other subSaipen (first 4 letters, uppercase) |
 
 Each subSaipen numbers its own tickets independently; the prefix is what
 keeps them unambiguous once folded into the main board.
 
-**Folding onto the main board**: a subSaipen ID (`WIKI-001`, `HUNT-003`, ...)
+**Folding onto the main board**: a subSaipen ID (`W-001`, `HUNT-003`, ...)
 is never written directly onto the main `BOARD.md` as a ticket ID -- CORE.md
 CORE.md § 1.2 requires the `T-###` shape there, no exceptions for extension-sourced
 tickets. Collecting a finding always creates a normal new `T-###` ticket;
@@ -247,8 +253,12 @@ arbitrary nonempty revision label.
 ## 4. Handoff
 
 **Main agent -> subSaipen**: writes tickets into `<name>/BOARD.md`'s
-`## TODO`. The subSaipen reads its own board, picks the next ticket, same
-Pick Rule as Core (CORE.md §1.6).
+`## TODO`. The public status/spawn/adopt handoff and serial crew `RUN_ROLE`
+carrier also expose the effective USERPERSON fingerprint plus only the role's
+CORE.md §1.10-allowed preference categories, preserving global/project
+provenance; absence emits no projection. The subSaipen reads its own board,
+picks the next ticket, same Pick Rule as Core (CORE.md §1.6). USERPERSON source
+files or an effective cache are never copied into the worker tree.
 
 **SubSaipen -> main agent**: finishes a ticket, and runs `saipen prepare` to package the result. `PREPARE` instructs the subSaipen to:
 1. Re-verify the findings against current HEAD (freshness).
@@ -294,21 +304,40 @@ Whenever the main agent chooses to check (during `HUNT`, at the top of `saipen c
    entry and skip it, don't ticket a ghost. This is the same freshness
    discipline `PREPARE` already applies to one ticket, just extended to a
    backlog that may have waited days for `collect` to run.
-2. For each policy-eligible `ready` entry: `critical: true` -> ticket on the main `BOARD.md` immediately; `critical: false` -> append to `_shared/inbox.md` (shape defined below) for the next planning round. The main agent MAY skip any individual entry and leave it `ready` for a later collect -- nothing requires swallowing the whole OUTBOX in one pass.
-3. **Write order matters for crash safety**: create the main ticket and
-   append the main `LOG.md` line (below) FIRST, THEN mark the OUTBOX entry
-   `reviewed` (or clear it) LAST -- same asymmetric-safety principle as
-   CORE.md §1.5's checkpoint ordering. A crash between the two leaves a
-   worst case of one duplicate ticket on retry (annoying, safe, easy to
-   spot and merge) rather than a silently lost finding, which is the
-   failure mode the reverse order would risk.
+2. For each policy-eligible current `ready` entry: collect creates ONE
+   ordinary Core review hypothesis ticket on the main `BOARD.md` -- a normal
+   `T-###` in the normal Core flow (`SCOUT -> BUILD -> VERIFY -> REVIEW ->
+   SHIP`), NOT an accepted fact. `critical`/`severity` only inform the
+   generated ticket's `[P#]` priority; they never change the intake path.
+   `critical: false` is NOT routed to `_shared/inbox.md` -- the inbox is a
+   historical backlog surface, not the collection sink. Intake is atomic: the
+   Core ticket, the main `LOG.md` collect event and the MANIFEST
+   `last_collect` identity land in ONE journaled plan with zero semantic
+   acceptance, and a durable collect receipt binds the package identity to
+   the ticket. **INTAKE != REVIEW**: intake leaves the OUTBOX entry `ready`;
+   the `reviewed` claim is a Core DISPOSITION written by `saipen sub dispose`
+   only after the linked review ticket is terminal. Between the two the role
+   derives health `REVIEW_PENDING`, never `CURRENT`. The main agent MAY skip
+   any individual entry and leave it `ready` for a later collect -- nothing
+   requires swallowing the whole OUTBOX in one pass.
+3. **Atomicity and dedup are structured, never prose.** A package_identity
+   SHA mentioned inside an arbitrary BOARD description or LOG message is NOT
+   collection evidence; the only durable witnesses are the MANIFEST
+   `last_collect` identity and the structured collect event the collector
+   itself journaled. Autonomous collected hypotheses are inserted at the END
+   of the main `## TODO` -- board order is priority, so an autonomous P2
+   finding must never preempt already-workable Core work.
    That main-`LOG.md` line is an ordinary CORE.md §1.2 log line -- its shape
    is defined there and is not restated here (an earlier copy of the
    skeleton lived in this spot and showed every optional bracket as if it
-   were mandatory). The only sub-specific parts: set `[agent: <subSaipen
-   name>]`, and write the taxonomy text as `RUN: collect <name>-### ->
-   T-###`. Naming the subSaipen's own ID in that free text IS the
-   traceability link between the two event graphs, because CORE.md § 1.2's
+   were mandatory). The LOG writer identity is the ACTUAL Core writer
+   (the collector / `saipen-cli`) -- never the evidence producer: the
+   producer is structured provenance in the ticket and the collect receipt
+   (package_identity, producer, source identity), and writer identity must
+   not be overloaded with "where the evidence originated" (Wave 2 item 5).
+   Write the taxonomy text as `RUN: collect <name>-### -> T-###`. Naming
+   the subSaipen's own ID in that free text IS the traceability link between
+   the two event graphs, because CORE.md § 1.2's
    `[parent: E-###]` cannot reach across files into the subSaipen's
    separate `LOG.md` -- the text reference does that job instead, no RFC
    change needed.

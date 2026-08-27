@@ -1,7 +1,7 @@
 ---
 phase: DONE
 task: none
-next_action: "WAIT: user brake -- T-1082+T-1083 shipped; board empty; cc to resume convergence or gg for new goal"
+next_action: "WAIT: user brake -- T-1084 audit closure complete; closure-evidence PASS"
 blocker: ""
 agent: workbuddy
 saipen_version: 7
@@ -13,9 +13,9 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 1013
+last_event: 1045
 style_contract: ded-4ae736e4
-updated: "2026-08-27T16:59:00Z"
-transition_from: DONE
+updated: "2026-08-27T18:05:00Z"
+transition_from: SHIP
 execution_intent: normal
 ---

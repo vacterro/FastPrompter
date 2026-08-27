@@ -1,0 +1,38 @@
+{
+  "op_id": "transition-b6410f6d3bde4620a2fa6880fdd042c3",
+  "operation": "transition",
+  "created_at": "2026-08-27T14:43:36Z",
+  "agent": "workbuddy",
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "semantic_payload_hash": "b8c68314eda2409a",
+  "preconditions": {
+    ".saipen/STATE.md": "24d7f27ea8f96d63",
+    ".saipen/LOG.md": "318b35ccd2be7807"
+  },
+  "read_preconditions": {
+    ".saipen/BOARD.md": "641d24026da515be",
+    ".saipen/logs": "delete-tree-sha256:33c38068968ab5b6e27e92cb607967063a8a03c3f8e00ba9c210b9703f375475"
+  },
+  "verification_policy": "core_fast",
+  "status": "COMMITTED",
+  "progress_index": 2,
+  "targets": [
+    {
+      "path": ".saipen/LOG.md",
+      "role": "log",
+      "action": "write",
+      "before_hash": "318b35ccd2be7807",
+      "after_hash": "80ab6250f9ff6a41",
+      "applied": true
+    },
+    {
+      "path": ".saipen/STATE.md",
+      "role": "state",
+      "action": "write",
+      "before_hash": "24d7f27ea8f96d63",
+      "after_hash": "b4b64abdbd6d6516",
+      "applied": true
+    }
+  ]
+}

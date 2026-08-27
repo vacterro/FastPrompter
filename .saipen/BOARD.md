@@ -26,6 +26,7 @@
 - [x] T-1081 (P3, workbuddy) HUNT: 3 unjournaled commits (c19ba43/26574f1/2f31e6d) tracked; LOG cites via E-993 | verify: LOG tail cites the commits; no dangling unjournaled commits
 - [x] T-1082 (P2, goal) Ctrl+Shift+S remembers last save format + remove Saved confirmation box | verify: compileall OK; 1657 passed; committed 9b06c64
 - [x] T-1083 (P2, goal) Tray Click Activates toggle — always bring to focus on tray double-click when on, toggle hide/show when off | verify: compileall OK; 1657 passed; committed 62975c4
+- [x] T-1084 (P0, audit-closure) Add transition-to-VERIFY boundary + PASS evidence for T-1060..T-1083 (24 tickets), commit P2 audit implementations (CORE-003..005, W2-005/006, PERF-003..006) + tests, achieve closure-evidence PASS | verify: validate.py no FAILs for closure-evidence; compileall OK; 1657 passed 1 skipped; committed 29c9a1b+batch
 
 ## DOING
 

@@ -48,6 +48,16 @@ fresh pass has nothing real left to change or a genuine blocker/safety valve
 stops it. `cc` while the crew target is active resumes the crew, not ordinary
 convergence.
 
+**A SubSaipen is an authority/state namespace, not a mandatory process or
+chat-session boundary.** Serial SC executes each role IN THE CURRENT AGENT
+session unless an explicit external worker runtime is already being used. The
+machine action names the role, its exact STATE/BOARD/LOG/OUTBOX paths, the
+write boundary and the completion condition; the current agent becomes that
+role, does the work inside the role's own `.saipen/extensions/subs/<role>/`
+(or `.saipen/saitranslate/`) namespace, and hands back so the planner
+re-evaluates. No model SDK, no daemon, no human courier, no second window
+required.
+
 ## Start the circuit
 
 ```
@@ -68,22 +78,24 @@ of them works standalone, with no crew and no other window running.
 
 ## The circuit -- fixed order, fixed-point semantics
 
-| # | Machine stage | Owns | Satisfied when |
-|---|---|---|---|
-| SC-0 | `recover-sync` | recovery, sync, contract | no pending operation; installed home is proven; source identity, strict MANIFEST, and inherited contract are current |
-| SC-1 | `instances` | durable generic roles | saihunt, saitest, saipython, saiui, and saiwiki exist with current project-local role revisions |
-| SC-2 | `saihunt` | saihunt | terminal valid board plus complete current-source OUTBOX evidence |
-| SC-3 | `saitest` | saitest | terminal valid board plus complete current-source OUTBOX evidence |
-| SC-4 | `saipython` | saipython | terminal valid board plus complete current-source OUTBOX evidence |
-| SC-5 | `saiui` | saiui | terminal valid board plus complete current-source OUTBOX evidence |
-| SC-6 | `core-collect` | Core | each core-review READY package was atomically ingested as one ordinary Core review hypothesis and marked reviewed |
-| SC-7 | `core-converge` | Core | canonical closure predicate says DONE, no active/workable present work, no unresolved blocker |
-| SC-8 | `saitranslate` | saitranslate | current pre-ship package was prepared and integrated, or the epoch-bound release receipt proves that integration |
-| SC-9 | `saiwiki` | saiwiki | current pre-ship package was prepared and integrated, or the epoch-bound release receipt proves that integration |
-| SC-10 | `final-fixed-point` | Core + sensors | Core closure still holds and every sensor is CURRENT after producer integration |
-| SC-11 | `ship` | canonical release executor | one COMMITTED, REMOTE_VERIFIED release receipt binds this crew epoch and closure commit |
-| SC-12 | `post-ship` | saitranslate + saiwiki | final EE and QQ packages remain READY/current against shipped HEAD/tree |
-| SC-13 | `finalize` | canonical crew finalizer | one final LOG/STATE mutation returns to targetless `execution_intent: normal`, `phase: DONE`; fresh `--gate crew` has zero problems |
+| # | Machine stage | Owner | Satisfied when | Condition |
+|---|---|---|---|---|
+| SC-0 | `recover-sync` | CORE | no pending operation; installed home is proven; source identity, strict MANIFEST, and inherited contract are current | CORE_RECOVERY_CURRENT |
+| SC-1 | `instances` | CORE | saihunt, saitest, saipython, saiui, and saiwiki exist with current project-local role revisions | ROSTER_CURRENT |
+| SC-2 | `saihunt` | SENSOR | terminal valid board plus complete current-source OUTBOX evidence | SENSOR_EVIDENCE_CURRENT |
+| SC-3 | `saitest` | SENSOR | terminal valid board plus complete current-source OUTBOX evidence | SENSOR_EVIDENCE_CURRENT |
+| SC-4 | `saipython` | SENSOR | terminal valid board plus complete current-source OUTBOX evidence | SENSOR_EVIDENCE_CURRENT |
+| SC-5 | `saiui` | SENSOR | terminal valid board plus complete current-source OUTBOX evidence | SENSOR_EVIDENCE_CURRENT |
+| SC-6 | `core-collect` | CORE | each core-review READY package durably ingested as one ordinary Core review hypothesis; the reviewed claim is written only after the linked Core ticket is terminal (INTAKE != REVIEW, REVIEWED TEXT IS NOT A REVIEW DISPOSITION) | SENSOR_INTAKE_DISPOSED |
+| SC-7 | `core-converge` | CORE | canonical Core convergence verdict current against one source identity (TEST, forced HUNT, CLEAN, post-clean TEST, final HUNT recorded in order); working tree fully attributed | CORE_CONVERGENCE_CURRENT |
+| SC-8 | `saitranslate` | PRODUCER | current pre-ship package was prepared and integrated, or the epoch-bound release receipt proves that integration | PRODUCER_INTEGRATION_CURRENT |
+| SC-9 | `saiwiki` | PRODUCER | current pre-ship package was prepared and integrated, or the epoch-bound release receipt proves that integration | PRODUCER_INTEGRATION_CURRENT |
+| SC-10 | `final-fixed-point` | CORE_AND_SENSORS | Core closure still holds and every sensor is CURRENT after producer integration | FINAL_FIXED_POINT_CURRENT |
+| SC-11 | `ship` | RELEASE_EXECUTOR | one COMMITTED, REMOTE_VERIFIED release receipt binds this crew epoch and closure commit | RELEASE_VERIFIED |
+| SC-12 | `post-ship` | CORE | every core-review role CURRENT against shipped HEAD (RUN_ROLE -> COLLECT_ROLE -> Core review -> disposition), and final EE/QQ remain READY/current against shipped HEAD/tree | POST_SHIP_CERTIFIED |
+| SC-13 | `finalize` | CORE_FINALIZER | one final LOG/STATE mutation returns to targetless `execution_intent: normal`, `phase: DONE`; fresh `--gate crew` has zero problems | CREW_FINALIZED |
+
+SC-13 finalization is a **local/runtime mutation, not a published one**: the terminal ship (SC-11) is the final published closure, and it cannot contain finalization evidence its own finalizer has not written yet. The finalization evidence record (`.saipen/kitchen/crew_release_evidence.json`) is local runtime evidence; a later closure stages it if one happens. The public `--gate crew` verdict is derived from **committed** STATE/LOG only, so a fresh clone of the terminal ref reproduces the local verdict without `.saipen/recovery/ops`.
 
 If the source changed at any point, worker evidence produced before the
 mutation is stale by definition -- the circuit returns to SC-2 rather than
@@ -131,27 +143,20 @@ So, concretely, at every hand-off:
   cross-factory hint. A note with no artifact under it is a claim wearing a
   hint's clothes.
 
-## Zones -- draw the boundary on the ticket (a contract, not a promise)
+## Zones -- removed from canonical serial SAICREW semantics
 
-Three cooks salting blind is chemical warfare. The fix is not "agree how much
-salt" -- it's a **zone written on the ticket**: this file-glob is yours, that
-one isn't. Because zones live inside the ticket **description** (not as new
-`|` pipe-fields -- those would need a Core/`validate.py` change), they cost
-nothing and break nothing:
-
-```markdown
-## TODO
-- [ ] T-101 [zone: src/auth/**] Fix auth flow | owner: alpha | claim_time: 2026-07-24T10:00:00Z
-- [ ] T-102 [zone: src/ui/**] Settings rework | owner: beta  | claim_time: 2026-07-24T10:00:00Z
-- [ ] T-103 [zone: tests/**] Coverage for auth+settings | needs: T-101,T-102 | owner: gamma
-```
-
-Checkable, not trust-based: `git diff --name-only` on an agent's work shows
-instantly if it left its zone. Overlapping zones aren't two zones -- they're
-one, done by one agent, or split by file. Self-signature goes in the
-description too, on completion: `[done_by: alpha] [verify: PASS]`, and
-delegation as `[delegated_from: T-101] [by: alpha]`. Full audit, zero new
-fields, zero Core touch.
+Earlier drafts taught a "zone" contract that lived in the ticket description
+(`[zone: src/auth/**]`, `[done_by: alpha]`, `[verify: PASS]`,
+`[delegated_from: T-101]`) and called it "a contract, not a promise". That was
+wrong on T-1003's own law: **free prose is never mechanical evidence**.
+`[verify: PASS]` in a description proves nothing, `done_by`/delegation in a
+description is not identity, and no code parses zone prose. Those notes are
+now NON-AUTHORITATIVE legacy/manual-launcher reminders only -- they are never
+a contract and never parsed. Concurrent/zones ownership belongs to the v8
+design backlog (T-442+, `KNOWLEDGE/crew-v8-backlog.md`) and will get
+structured semantics when v8 begins; the serial `sc` of today has exactly ONE
+main-tree writer (Core) and every worker is read-only toward the project, so
+a zone contract is unnecessary in the serial circuit anyway.
 
 ## The collect gate (Core never leaves the beams lying)
 
@@ -177,7 +182,7 @@ identity.
 | No accounting | LOG append-only, `[agent: <id>]` self-signs each line; checkpoint after every ticket LOG->BOARD->STATE (§ 1.5). |
 | Stale patch (base_head moved) | Fixer re-checks HEAD in PREPARE, re-cuts or marks `stale`; Core re-checks `base_head` before `git apply` (PROTOCOL.md § 9). |
 | Valve trips mid-run, subs pile up | Valve-sync: when Core hits the valve it `saipen sub pause`s the crew; `saipen goal` (bare) resets counters and `saipen sub resume`s them. |
-| Forgot to launch one window | Graceful degradation: `saipen sub list` WARNs on a sub gone quiet; Core just skips it at collect and works with who's alive. Never stops. |
+| Forgot to launch one window | The launcher is an OPTIONAL manual multi-window helper, never `saipen crew` semantics: the serial circuit is one agent walking the stages in order. Every required built-in role (`saihunt`/`saitest`/`saipython`/`saiui`/`saiwiki`) is mechanically ensured (spawned/adopted) by SC, and a role that is missing or invalid BLOCKS the stage with a structured reason -- the circuit never silently "works with who's alive". |
 
 ## Honest limits
 

@@ -68,3 +68,8 @@ src/fastprompter/_extract.txt
 
 # agent runtime dir (workbuddy skill host)
 .workbuddy-ai/
+
+# stray i18n extraction artifacts (HUNT T-1079)
+/placeholders.json
+/unique_keys.json
+

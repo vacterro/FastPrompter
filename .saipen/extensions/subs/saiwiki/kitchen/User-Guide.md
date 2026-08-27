@@ -266,6 +266,8 @@ Time-of-day scheduled reminders that fire automatically on a 24-hour clock. Mana
 
 **Notifications:** Each rule can show a system tray notification and/or play a sound. Volume is independent per rule (0.05 default for quiet hourly pings).
 
+**Top-Bar Countdown (W2-005):** A rule with **Show in top bar** enabled renders its next-occurrence countdown beside the clock — the same boundary the scheduler fires on, so the countdown and the actual reminder never disagree. Temp Timer and a running work/break phase outrank interval countdowns; a disabled rule, a rule outside its active hours, or one with the toggle off shows nothing. After a rule fires, the displayed countdown rolls to the same next occurrence the scheduler will use (clock rules up to a day, >24h rules at midnight).
+
 ### 30. Temp Timer
 
 A temporary countdown timer with configurable increment, color mode, and sound rules. Created from the Timer Dialog (Ctrl+Shift+T) under the **Temp** tab.

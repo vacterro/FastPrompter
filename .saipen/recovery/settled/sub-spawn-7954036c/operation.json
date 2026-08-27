@@ -1,0 +1,69 @@
+{
+  "op_id": "sub-spawn-7954036c",
+  "operation": "sub_spawn",
+  "created_at": "2026-08-27T14:44:23Z",
+  "agent": "workbuddy",
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "semantic_payload_hash": "a9a719bb214d1f9c",
+  "preconditions": {
+    ".saipen/extensions/subs/saitranslate/STATE.md": "",
+    ".saipen/extensions/subs/saitranslate/BOARD.md": "",
+    ".saipen/extensions/subs/saitranslate/LOG.md": "",
+    ".saipen/extensions/subs/saitranslate/kitchen/OUTBOX.md": "",
+    ".saipen/extensions/subs/MANIFEST.md": "9339bd54350d0903"
+  },
+  "read_preconditions": {
+    "C:/Users/vac34/.config/opencode/skills/saipen/extensions/subs": "tree-sha256:c27c2ddd169a7a68f97d9d311ad93582fc8af42f33c471f5140c197c15e804bf",
+    "C:/Users/vac34/.config/opencode/skills/saipen/extensions/subs/TEMPLATE/STATE.md": "3c9f0f2f2e6a2549",
+    "C:/Users/vac34/.config/opencode/skills/saipen/extensions/subs/TEMPLATE/BOARD.md": "2f404b252fd85214",
+    "C:/Users/vac34/.config/opencode/skills/saipen/extensions/subs/TEMPLATE/LOG.md": "c99f90eaabc29aee",
+    "C:/Users/vac34/.config/opencode/skills/saipen/extensions/subs/TEMPLATE/kitchen/OUTBOX.md": "02feec7cb8582577",
+    "C:/Users/vac34/.config/opencode/skills/saipen/extensions/subs/saitranslate.md": "7fdd78edab6d44eb"
+  },
+  "verification_policy": "sub_lifecycle",
+  "status": "COMMITTED",
+  "progress_index": 5,
+  "targets": [
+    {
+      "path": ".saipen/extensions/subs/saitranslate/STATE.md",
+      "role": "state",
+      "action": "write",
+      "before_hash": "",
+      "after_hash": "5ae6be1349bb4d10",
+      "applied": true
+    },
+    {
+      "path": ".saipen/extensions/subs/saitranslate/BOARD.md",
+      "role": "board",
+      "action": "write",
+      "before_hash": "",
+      "after_hash": "2f404b252fd85214",
+      "applied": true
+    },
+    {
+      "path": ".saipen/extensions/subs/saitranslate/LOG.md",
+      "role": "log",
+      "action": "write",
+      "before_hash": "",
+      "after_hash": "c99f90eaabc29aee",
+      "applied": true
+    },
+    {
+      "path": ".saipen/extensions/subs/saitranslate/kitchen/OUTBOX.md",
+      "role": "report",
+      "action": "write",
+      "before_hash": "",
+      "after_hash": "02feec7cb8582577",
+      "applied": true
+    },
+    {
+      "path": ".saipen/extensions/subs/MANIFEST.md",
+      "role": "manifest",
+      "action": "write",
+      "before_hash": "9339bd54350d0903",
+      "after_hash": "9dccdc3d1e330319",
+      "applied": true
+    }
+  ]
+}

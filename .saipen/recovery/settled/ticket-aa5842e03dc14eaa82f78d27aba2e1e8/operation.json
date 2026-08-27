@@ -1,0 +1,46 @@
+{
+  "op_id": "ticket-aa5842e03dc14eaa82f78d27aba2e1e8",
+  "operation": "ticket_add",
+  "created_at": "2026-08-27T14:10:27Z",
+  "agent": "workbuddy",
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "semantic_payload_hash": "8869459b4a7c609a",
+  "preconditions": {
+    ".saipen/STATE.md": "c06032217c6e3a40",
+    ".saipen/BOARD.md": "96a7503f334c31d6",
+    ".saipen/LOG.md": "65129cc3c93b661d"
+  },
+  "read_preconditions": {
+    ".saipen/logs": "delete-tree-sha256:33c38068968ab5b6e27e92cb607967063a8a03c3f8e00ba9c210b9703f375475"
+  },
+  "verification_policy": "core_fast",
+  "status": "COMMITTED",
+  "progress_index": 3,
+  "targets": [
+    {
+      "path": ".saipen/LOG.md",
+      "role": "log",
+      "action": "write",
+      "before_hash": "65129cc3c93b661d",
+      "after_hash": "f2ed68c67c96e265",
+      "applied": true
+    },
+    {
+      "path": ".saipen/BOARD.md",
+      "role": "board",
+      "action": "write",
+      "before_hash": "96a7503f334c31d6",
+      "after_hash": "b3c4cd69a2c53d5d",
+      "applied": true
+    },
+    {
+      "path": ".saipen/STATE.md",
+      "role": "state",
+      "action": "write",
+      "before_hash": "c06032217c6e3a40",
+      "after_hash": "02da6e04efa26821",
+      "applied": true
+    }
+  ]
+}
