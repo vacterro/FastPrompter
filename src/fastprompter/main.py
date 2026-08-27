@@ -290,6 +290,10 @@ _SYNC_WRITE_LOCK = threading.RLock()
 _SYNC_REQUEST_LOCK = threading.Lock()
 _SYNC_WRITE_SEQ = 0
 _SYNC_LATEST_REQUESTED = {}
+# PERF-006: folder-result caches must stay bounded over long tray-resident
+# sessions. These caps apply to the per-process dicts.
+_FILE_COUNT_CACHE_CAP = 4096
+_TOOLTIP_CACHE_CAP = 2048
 
 
 def _sync_register_snapshot(snapshot):
@@ -1241,6 +1245,14 @@ class FastPrompter(
         return "%H:%M:%S" if show_secs else "%H:%M"
 
     def _update_date_label(self):
+        # PERF-004: the date/top-bar label is pure VISUAL work. A tray-hidden
+        # process must not repaint main-window widgets once a second while
+        # invisible — the scheduler (_check_timers) stays alive on its own
+        # timer, and showEvent performs one immediate catch-up so the first
+        # visible frame is current. User-initiated settings toggles call this
+        # while the window is visible, so the gate never starves them.
+        if not self.isVisible():
+            return
         if hasattr(self, "analog_clock"):
             self.analog_clock.sync()
         show_date = self.data.get("show_date_rect", "True") == "True"
@@ -1460,6 +1472,32 @@ class FastPrompter(
             lbl.setVisible(True)
             return
 
+        # an enabled interval rule that opted into the top bar is a real
+        # upcoming reminder: render its countdown until the same boundary the
+        # scheduler will fire on (W2-005), below Temp/Productivity precedence.
+        import datetime as _idt
+        cand = self._interval_top_bar_candidate(_idt.datetime.now())
+        if cand is not None and not getattr(self, "_header_ultra", False):
+            rule, irem = cand
+            short = getattr(self, "_header_dense", False)
+            text = format_remaining(
+                irem, short=short,
+                minutes=self.data.get("timer_show_minutes", "False") == "True")
+            name = rule.get("name") or tr("Reminder",
+                                          getattr(self, "_current_lang", "EN"))
+            if not short and len(name) > 14:
+                name = name[:13] + "…"
+            if not short:
+                text = f"{name} {text}"
+            lbl.setText(text)
+            lbl.setToolTip(
+                f"{name} — {tr('interval reminder', getattr(self, '_current_lang', 'EN'))}\n"
+                + tr("Click to manage timers", getattr(self, "_current_lang", "EN")))
+            lbl.setStyleSheet(
+                f"padding: 0 4px; font-weight: bold; color: #7fae7f;")
+            lbl.setVisible(True)
+            return
+
         nxt = next_due(getattr(self, "timers", []), topbar_only=True)
         if nxt is None or getattr(self, "_header_ultra", False):
             lbl.setVisible(False)
@@ -1485,6 +1523,92 @@ class FastPrompter(
         lbl.setStyleSheet(
             f"padding: 0 4px; font-weight: bold; color: {nxt.display_color()};")
         lbl.setVisible(True)
+
+    def _interval_top_bar_remaining(self, rule, now_dt):
+        """Seconds until the next eligible occurrence of an interval rule, or
+        None when the rule must not appear in the top bar (W2-005).
+
+        Uses the same clock/elapsed boundary contract as the scheduler
+        (`_check_interval_notifs`), so the countdown and the firing can never
+        disagree about the next boundary. Clock rules with minutes > 1440 fire
+        only at midnight (minute_of_day == 0), exactly as the scheduler does.
+        """
+        import datetime as _dt
+        import time as _time
+
+        if not rule.get("enabled"):
+            return None
+        if not rule.get("show_in_top_bar"):
+            return None
+        try:
+            minutes = max(1, int(rule.get("minutes") or 60))
+        except (TypeError, ValueError):
+            return None
+        align_mode = str(rule.get("align_mode", "clock"))
+
+        if align_mode != "clock":
+            last = float(rule.get("last_fired") or 0.0)
+            if last <= 0.0:
+                return minutes * 60.0
+            return max(0.0, last + minutes * 60.0 - _time.time())
+
+        mod = now_dt.hour * 60 + now_dt.minute
+        minute_key = now_dt.strftime("%Y-%m-%d %H:%M")
+        if minutes <= 1440:
+            boundary_now = mod % minutes == 0
+        else:
+            boundary_now = mod == 0
+        if boundary_now and rule.get("last_fired_minute") != minute_key:
+            return 0.0
+        if minutes <= 1440:
+            nxt_mod = ((mod // minutes) + 1) * minutes
+            if nxt_mod >= 1440:
+                day = now_dt.date() + _dt.timedelta(days=1)
+                nxt_mod %= 1440
+            else:
+                day = now_dt.date()
+        else:
+            day = now_dt.date() + _dt.timedelta(days=1)
+            nxt_mod = 0
+        nxt = _dt.datetime.combine(day, _dt.time(nxt_mod // 60, nxt_mod % 60))
+        # active-hour gate: an occurrence outside the window is impossible, so
+        # it must not be advertised as a countdown.
+        if not rule.get("all_day", True):
+            try:
+                start_m = int(rule.get("start_minute", 0))
+                end_m = int(rule.get("end_minute", 1439))
+            except (TypeError, ValueError):
+                start_m, end_m = 0, 1439
+            if start_m <= end_m:
+                if not (start_m <= nxt_mod <= end_m):
+                    return None
+            else:
+                if not (nxt_mod >= start_m or nxt_mod <= end_m):
+                    return None
+        return max(0.0, (nxt - now_dt).total_seconds())
+
+    def _interval_top_bar_candidate(self, now_dt):
+        """First enabled show_in_top_bar interval rule with a valid next
+        occurrence (topmost in list order wins), or None."""
+        from fastprompter.core.logging import logger
+        try:
+            rules = self._interval_notifs()
+        except Exception:
+            logger.debug("interval top-bar rule read failed", exc_info=True)
+            return None
+        for rule in rules:
+            try:
+                remaining = self._interval_top_bar_remaining(rule, now_dt)
+            except Exception:
+                # HUNT: a broken rule must be skippable WITHOUT silently
+                # swallowing the failure — one debug line keeps the error
+                # visible in logs while the healthy rules still render.
+                logger.debug("interval top-bar rule skipped: %s",
+                             rule.get("id", "<no-id>"), exc_info=True)
+                continue
+            if remaining is not None:
+                return rule, remaining
+        return None
 
     def _temp_timer(self):
         """Return the one persisted express/focus timer, if any."""
@@ -2622,10 +2746,20 @@ class FastPrompter(
         fired_at = fired_at or datetime.datetime.now()
         self._play_timer_sound(timer, fired_at)
         from fastprompter.core.timers import REPEAT_NONE
+        # W2-006: a toast may only advertise actions the runtime will accept.
+        # The snooze/missed-attention contract is defined for PERSISTENT OWNED
+        # one-shot timers only. A Test probe is never in self.timers and a
+        # delete_after_fire Temp timer is retired the moment it fires, so
+        # neither may accumulate missed attention nor offer a Snooze button
+        # whose callback the ownership guard would reject.
+        owned = timer in getattr(self, "timers", [])
+        will_remain = owned and not (
+            getattr(timer, "temporary", False)
+            and getattr(timer, "delete_after_fire", False))
         # The red date alert is a state indicator, not a duplicate of the
         # popup. A calendar event still needs attention when the user chose
         # silent notifications, so register it before the popup early-return.
-        if timer.repeat == REPEAT_NONE:
+        if timer.repeat == REPEAT_NONE and will_remain:
             missed = getattr(self, "_missed_timer_ids", None)
             if missed is not None:
                 missed.add(timer.id)
@@ -2639,7 +2773,8 @@ class FastPrompter(
         # snoozed, deleted, disabled or explicitly acknowledged (Dismiss).
         # Repeating timers are never "missed" — they roll to their next
         # occurrence and the top bar shows that instead.
-        toast = show_toast(self, timer, on_snooze=self._snooze_timer,
+        toast = show_toast(self, timer,
+                           on_snooze=self._snooze_timer if will_remain else None,
                            on_dismiss=getattr(self, "_ack_missed", None))
         if toast is None:
             # popup unavailable (no screen / teardown) — fall back to the tray
@@ -3864,13 +3999,27 @@ class FastPrompter(
         if hasattr(self, "_file_count_cache") and path in self._file_count_cache:
             del self._file_count_cache[path]
 
+    @staticmethod
+    def _bounded_cache_put(cache: dict, key, value, cap: int) -> None:
+        """Insert ``key -> value`` into ``cache``, evicting the oldest entries
+        (insertion order) when the map exceeds ``cap``. PERF-006: folder-result
+        caches must stay bounded across long tray-resident sessions, not grow
+        monotonically with every folder the user visits."""
+        cache[key] = value
+        while len(cache) > cap:
+            try:
+                cache.pop(next(iter(cache)), None)
+            except StopIteration:
+                break
+
     def _on_file_count_result(self, path, count, slot_idx, is_archive, category,
                               profile_id):
         if hasattr(self, "_pending_file_counts"):
             self._pending_file_counts.discard(path)
         if not hasattr(self, "_file_count_cache"):
             self._file_count_cache = {}
-        self._file_count_cache[path] = count
+        self._bounded_cache_put(self._file_count_cache, path, count,
+                                _FILE_COUNT_CACHE_CAP)
 
         # P1-5/P1-4: the label is applied ONLY when the ownership context at
         # dispatch time still matches at result time. The cache is keyed by
@@ -4074,12 +4223,14 @@ class FastPrompter(
             self._tooltip_cache = {}
 
         if folder in self._tooltip_cache:
-            # TTL check
+            # TTL check; PERF-006: an EXPIRED entry is removed, not merely
+            # ignored, so the map does not retain dead path keys forever.
             import time
             hit_time, hit_text = self._tooltip_cache[folder]
             if time.time() - hit_time < 30.0:
                 self.btn_files.setToolTip(base_tt + hit_text)
                 return
+            del self._tooltip_cache[folder]
 
         if folder not in self._pending_tooltips:
             self._pending_tooltips.add(folder)
@@ -4138,7 +4289,10 @@ class FastPrompter(
         if not hasattr(self, "_tooltip_cache"):
             self._tooltip_cache = {}
         import time
-        self._tooltip_cache[folder] = (time.time(), res)
+        # PERF-006: cap the tooltip map; the full summary text is retained for
+        # every distinct folder visited over a long session otherwise.
+        self._bounded_cache_put(self._tooltip_cache, folder, (time.time(), res),
+                                _TOOLTIP_CACHE_CAP)
         # P1-6/P1-4: apply the tooltip ONLY when the ownership context at
         # dispatch time still matches: a slow summary from silo A must not
         # paint silo B's (or another category's, or another PROFILE's) button
@@ -7564,6 +7718,12 @@ class FastPrompter(
             self.data.get("close_on_focus_loss", "True") == "True",
             self.mark_dirty,
         )
+        self.cb_tray_activate = create_footer_cb(
+            "🔼 Tray Click Activates",
+            "When on, clicking the tray icon always brings the window to focus.\nWhen off, clicking hides it (like Alt+X).",
+            self.data.get("tray_click_activates", "True") == "True",
+            self.mark_dirty,
+        )
         self.cb_snippet_arrows = create_footer_cb(
             "↕ Snippet Arrows",
             "Show the ▲ ▶ ▼ paste buttons on snippet rows\n"
@@ -8653,7 +8813,7 @@ class FastPrompter(
                 div_row, ctrlw_btn_row, hdr_row, self.cb_hr_visual, self.cb_conceal,
             ]),
             _settings_group("Typing", [
-                self.cb_focus, self.cb_wrap, self.cb_ctrl_c,
+                self.cb_focus, self.cb_tray_activate, self.cb_wrap, self.cb_ctrl_c,
                 self.cb_lock_cursor, self.cb_double_line, blink_row,
             ]),
             _settings_group("Line appearance", [
@@ -9395,6 +9555,7 @@ class FastPrompter(
             ("cb_sidebar", "sidebar_right", "False"),
             ("cb_custom_cursors", "custom_cursors", "False"),
             ("cb_focus", "close_on_focus_loss", "True"),
+            ("cb_tray_activate", "tray_click_activates", "True"),
             ("cb_snippet_arrows", "snippet_arrows", "False"),
             ("cb_silo_ticks", "silo_ticks_enabled", "False"),
             ("cb_ctrl_c", "ctrl_c_closes", "True"),
@@ -13231,6 +13392,9 @@ class FastPrompter(
         """
         self._shown_at = time.time()
         super().showEvent(event)
+        # PERF-004: after being hidden (tray-resident), the date/top-bar label
+        # must catch up immediately so the first visible frame is current.
+        self._update_date_label()
         # The panel is measured against a WIDTH, and during construction the
         # tabs are still a few pixels wide — a wrapping row measured there
         # reports the height it would need in a sliver, which is how a fresh

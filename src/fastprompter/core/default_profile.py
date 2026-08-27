@@ -533,6 +533,7 @@ DEFAULT_PROFILE = {
     "theme": "Golden Default",
     "timer_show_minutes": "True",
     "toggle_sidebar_hotkey": "Alt+D",
+    "tray_click_activates": "True",
     "toggle_sidebar_hotkey_alt": "",
     "typo_check_enabled": "False",
     "typo_color": "#e05555",

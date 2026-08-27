@@ -1214,4 +1214,8 @@ TRANSLATIONS: dict[str, str] = {
     'Workday (09:00 - 18:00)': 'Рабочее время (09:00 - 18:00)',
     'Hourly Bell (24/7)': 'Каждый час (24/7)',
     'Pomodoro Focus (25m)': 'Помодоро (25м)',
+    'Reminder': 'Reminder',
+    'interval reminder': 'interval reminder',
+    '🔼 Tray Click Activates': '🔼 Tray Click Activates',
+    '🔼 Tray Click Activates\nWhen on, clicking the tray icon always brings the window to focus. When off, clicking hides it (like Alt+X).': '🔼 Tray Click Activates\nWhen on, clicking the tray icon always brings the window to focus. When off, clicking hides it (like Alt+X).',
 }

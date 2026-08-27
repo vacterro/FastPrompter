@@ -62,7 +62,13 @@ class TrayMixin:
     def on_tray_activated(self, reason):
         """Handle double-click on tray icon."""
         if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
-            self.toggle_visibility()
+            # tray_click_activates: when True, tray click always brings focus
+            # regardless of hide-on-clickout mode; when False, behaves like
+            # the hotkey (toggle hide/show based on close_on_focus_loss).
+            if self.data.get("tray_click_activates", "True") == "True":
+                self.show_window()
+            else:
+                self.toggle_visibility()
 
     def on_tray_toggled(self, checked):
         """Toggle tray icon visibility."""
