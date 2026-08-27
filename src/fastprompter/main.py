@@ -1114,11 +1114,23 @@ class FastPrompter(
         QTimer.singleShot(100, lambda: not sip.isdeleted(self) and self.register_all_hotkeys())
 
         self._switch_to_slot(self.active_temp_slot, initial=True)
-        self._initializing_ui, self._suspend_temp_sync = False, False
-        # ONE profile-runtime application path, shared with change_profile:
-        # data-derived state, persisted undo, sound, language, widget values,
-        # font/theme, hotkeys, watcher. No second boot implementation.
-        self._apply_profile_runtime_state()
+        # PERF: apply theme early so the window is visually ready before
+        # place_window/show.  The heavy _apply_profile_runtime_state (widget
+        # sync, hotkeys, watcher) is deferred to the next event-loop tick so
+        # the user sees the window ~1.4 s sooner.  The initializing flags
+        # stay True until the deferred apply finishes so that handlers
+        # triggered during profile state application do not fire premature
+        # side-effects (save, sync, etc.).
+        self.apply_theme()
+        self.place_window()
+        if getattr(self, 'is_locked', False):
+            self._locked_geometry = self.geometry()
+        def _deferred_profile_apply():
+            if sip.isdeleted(self):
+                return
+            self._apply_profile_runtime_state()
+            self._initializing_ui, self._suspend_temp_sync = False, False
+        QTimer.singleShot(0, _deferred_profile_apply)
         saved_blink = self.data.get("cursor_blink_ms")
         if saved_blink is not None:
             try:
@@ -1220,8 +1232,6 @@ class FastPrompter(
         # forgotten (see missed_attention in core/timers.py).
         self._missed_timer_ids: set = set()
         self._load_missed_ids()
-
-        self.place_window()
 
     def _clock_time_fmt(self, show_secs=False):
         """strftime format for hh:mm[:ss], honoring the 12h/AM-PM setting."""
