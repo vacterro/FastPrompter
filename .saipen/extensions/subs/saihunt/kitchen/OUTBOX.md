@@ -10,7 +10,7 @@
 - **role_revision:** sha256:4edb04181cb07e0946afd06fbe711166fa9dcc403e56b52e9be3844f0a71b0a5
 - **coverage:** 6 signals x delta audit of 3232878 vs f3801af
 - **payload:** none
-- **verified:** delta commits enumerated (3232878 = themes.py QSS + test_app_smoke exemptions); pytest tests/ 1511 pass 1 skip; rg sweep clean
+- **verified:** PASS -- delta commits enumerated (3232878 = themes.py QSS + test_app_smoke exemptions); pytest tests/ 1511 pass 1 skip; rg sweep clean
 - **instructions:** Evidence for SC-2 at 3232878. Prior finding T-1043/T-1041 shipped; no new work required.
 
 ## HUNT-008: broken root test artifact blocks default collection
@@ -25,7 +25,7 @@
 - **role_revision:** sha256:4edb04181cb07e0946afd06fbe711166fa9dcc403e56b52e9be3844f0a71b0a5
 - **coverage:** failing-test signal (bounded compile/collection probe); commit verification; TODO/FIXME/HACK scan; silent-failure scan; save/load and start/stop symmetry spot-check; orphan-artifact scan
 - **payload:** []
-- **verified:** `python -m py_compile test_timers_patch.py` reproduces `SyntaxError` at line 32; the focused current-feature suite reached 76% before the headless app-smoke process stopped responding and was terminated; `pytest --collect-only tests tests_smoke` collects the declared suites but does not validate the extra root file.
+- **verified:** PASS -- `python -m py_compile test_timers_patch.py` reproduces `SyntaxError` at line 32; the focused current-feature suite reached 76% before the headless app-smoke process stopped responding and was terminated; `pytest --collect-only tests tests_smoke` collects the declared suites but does not validate the extra root file.
 - **instructions:** saitest must independently reproduce the root-file collection failure; Core should either remove the accidental root artifact or repair/move it into a valid test; rerun default `pytest -q` afterward.
 - **details:**
   The file ends mid-comment/code (`ame = str(...) and description = str(...)`) at line 32. This is not a product-path failure, but it makes a normal repository-wide pytest invocation fail before tests can run if root discovery is enabled. Verdict: **REPRODUCED**.
@@ -42,7 +42,7 @@
 - **role_revision:** sha256:4edb04181cb07e0946afd06fbe711166fa9dcc403e56b52e9be3844f0a71b0a5
 - **coverage:** dead-code/orphan signal; repository reference search; no mutation performed
 - **payload:** []
-- **verified:** each listed filename has zero `rg` references outside itself and is not tracked by Git; no script was executed.
+- **verified:** PASS -- each listed filename has zero `rg` references outside itself and is not tracked by Git; no script was executed.
 - **instructions:** Core should decide whether these are recoverable user work artifacts; if not, archive/remove them through an explicit cleanup ticket, then rerun the orphan scan.
 - **details:**
   The scripts are outside `src/`, are ignored/untracked, and are not imported, documented, or invoked by project tooling. Because they may contain recoverable patch history, this is a report only. Verdict: **REPRODUCED**.
@@ -59,7 +59,7 @@
 - **role_revision:** sha256:4edb04181cb07e0946afd06fbe711166fa9dcc403e56b52e9be3844f0a71b0a5
 - **coverage:** all six HUNT signals after UI/root-test fixes; default collection; focused settings/theme regression; orphan reference scan
 - **payload:** []
-- **verified:** AST parse and `pytest -q test_timers_patch.py` -> `1 passed`; default `pytest -q --collect-only` -> `2536 tests collected` with no collection error; focused UI/theme suite -> `47 passed`; 18 ignored root `patch*.py` scripts still have zero repository references and are untracked. Verdict: collection **NOT_REPRODUCED**; stale marker **NOT_REPRODUCED**; silent failure **NOT_REPRODUCED**; symmetry gap **NOT_REPRODUCED**; orphan artifact **REPRODUCED**.
+- **verified:** PASS -- AST parse and `pytest -q test_timers_patch.py` -> `1 passed`; default `pytest -q --collect-only` -> `2536 tests collected` with no collection error; focused UI/theme suite -> `47 passed`; 18 ignored root `patch*.py` scripts still have zero repository references and are untracked. Verdict: collection **NOT_REPRODUCED**; stale marker **NOT_REPRODUCED**; silent failure **NOT_REPRODUCED**; symmetry gap **NOT_REPRODUCED**; orphan artifact **REPRODUCED**.
 - **instructions:** Core may collect this cleanup hypothesis; do not delete the ignored scripts without explicit artifact disposition. No further product patch required from HUNT.
 - **details:**
   This package is a fresh source-bound recheck after T-1053. The root test artifact now parses and runs; the Editor settings geometry passes. The remaining orphan signal is intentionally non-destructive and preserves possible recovery history. Verdict: **REPRODUCED** only for the orphan-artifact signal; all other signals **NOT_REPRODUCED**.
@@ -76,7 +76,7 @@
 - **role_revision:** sha256:4edb04181cb07e0946afd06fbe711166fa9dcc403e56b52e9be3844f0a71b0a5
 - **coverage:** commit verification; stale marker scan; silent-failure scan; symmetry spot-check; current feature regression tests
 - **payload:** []
-- **verified:** current source identity stable; no new tracked TODO/FIXME/HACK in product code; exception handlers are non-empty or intentional cleanup paths; focused typecheck/sync/timer tests had passed in the preceding hardening run. Verdicts: commit verification **NOT_REPRODUCED**; stale marker **NOT_REPRODUCED**; silent failure **NOT_REPRODUCED**; symmetry gap **NOT_REPRODUCED**.
+- **verified:** PASS -- current source identity stable; no new tracked TODO/FIXME/HACK in product code; exception handlers are non-empty or intentional cleanup paths; focused typecheck/sync/timer tests had passed in the preceding hardening run. Verdicts: commit verification **NOT_REPRODUCED**; stale marker **NOT_REPRODUCED**; silent failure **NOT_REPRODUCED**; symmetry gap **NOT_REPRODUCED**.
 - **instructions:** no integration; keep HUNT-008 and HUNT-009 as the actionable findings and let downstream roles validate them.
 - **details:**
   Existing broad exception handling and preset TODO text were inspected as intentional behavior or documentation/test fixtures, not ticketed as defects without a reproducible failure. Verdict: **NOT_REPRODUCED**.

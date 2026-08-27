@@ -10,7 +10,7 @@
 - **role_revision:** sha256:3069120b1a83291867c000dd5d7edb141d5fedf7895e5dc8f07d06624d05d9ff
 - **coverage:** delta audit; PY-001 verification re-run at new HEAD
 - **payload:** none
-- **verified:** test_no_cyrillic_in_codebase PASS at 3232878; ruff clean on changed files
+- **verified:** PASS -- test_no_cyrillic_in_codebase PASS at 3232878; ruff clean on changed files
 - **instructions:** Evidence for SC-4 at 3232878. No new patches.
 
 ## PY-003: repair malformed root timer regression test
@@ -25,7 +25,7 @@
 - **role_revision:** sha256:3069120b1a83291867c000dd5d7edb141d5fedf7895e5dc8f07d06624d05d9ff
 - **coverage:** TEST-003 reproduction; exact target cloned into `kitchen/pen/`; syntax and focused pytest verification
 - **payload:** [test_timers_patch.py]
-- **verified:** `pytest -q .saipen/extensions/subs/saipython/kitchen/pen/test_timers_patch.py` -> `1 passed`; AST parse of the pen copy passes; the patch closes the reproduced collection failure without touching product code.
+- **verified:** PASS -- `pytest -q .saipen/extensions/subs/saipython/kitchen/pen/test_timers_patch.py` -> `1 passed`; AST parse of the pen copy passes; the patch closes the reproduced collection failure without touching product code.
 - **instructions:** Core must review whether this ignored root artifact should be retained; if retained, apply the patch from repository root, then run `pytest -q --collect-only` and the full default suite. If the artifact is user scratch instead, skip this patch and handle it through the separate orphan-artifact disposition.
 - **details:**
   This is a minimal test-artifact patch, not a product behavior change. It removes the BOM, removes unused imports/fixture noise, removes the truncated line, and changes the contradictory expected count from 3 to 1 because three malformed entries are intentionally skipped by `Timer.from_dict`. The patch is cut against `base_head: 3d0d79e`.

@@ -16955,9 +16955,20 @@ class FastPrompter(
     def auto_paste(self, text):
         if not text.strip():
             return
+        if self.isVisible():
+            self._insert_into_editor(text)
+            return
         self.safe_set_clipboard(text)
         self.hide_and_save()
         QTimer.singleShot(150, lambda: not sip.isdeleted(self) and self.simulate_ctrl_v())
+
+    def _insert_into_editor(self, text):
+        cursor = self.text_area.textCursor()
+        cursor.insertText(text)
+        self.text_area.setTextCursor(cursor)
+        self.text_area.ensureCursorVisible()
+        self.text_area.setFocus()
+        self.mark_dirty()
 
     @staticmethod
     def simulate_ctrl_v():
@@ -17175,9 +17186,15 @@ class FastPrompter(
         self.play_sound("snippet")
         if not cat:
             return
-        active_snippets = [s for s in self.data["categories"].get(cat, []) if s is not None]
-        if 0 <= idx < len(active_snippets):
-            self.auto_paste(active_snippets[idx]["text"])
+        # Pie menu passes the ORIGINAL index into the raw category list
+        # (index into the unfiltered categories[cat]), never a re-filtered
+        # position. Using the raw list directly keeps the index stable even
+        # when earlier entries are None (deleted snippet placeholders).
+        raw = self.data["categories"].get(cat, [])
+        if 0 <= idx < len(raw):
+            snip = raw[idx]
+            if snip is not None:
+                self.auto_paste(snip["text"])
 
     def cycle_snap_corner(self):
         """Ctrl+Q: open the FancyZones picker on the monitor under the cursor.

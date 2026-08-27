@@ -11,7 +11,7 @@
 - **role_revision:** sha256:f2e3685b908a3b9837917f12c5414628d847c35fb72567f0306e2c8b19a8dab8
 - **coverage:** Golden Default theme re-audit vs UI.md at 3232878
 - **payload:** none
-- **verified:** theme tests 55 pass; no border-radius/non-token colors in Golden Default block
+- **verified:** PASS -- theme tests 55 pass; no border-radius/non-token colors in Golden Default block
 - **instructions:** Evidence for SC-5 at 3232878. No new UI patches.
 
 ## UI-003: split the tall Editor settings group
@@ -26,7 +26,7 @@
 - **role_revision:** sha256:f2e3685b908a3b9837917f12c5414628d847c35fb72567f0306e2c8b19a8dab8
 - **coverage:** canonical Golden Default UI.md loaded; settings task/action map; current UI implementation and layout test; exact main.py clone in `kitchen/pen/`; keyboard/label/backend-boundary review
 - **payload:** [src/fastprompter/main.py]
-- **verified:** baseline `pytest -q tests/test_themes.py tests/test_themes_headers.py tests_smoke/test_settings_layout.py -x` -> 42 passed, 1 failed at `test_no_group_towers_over_the_others[1]` with heights `[106, 95, 182, 134, 81, 50, ...]`; patched pen harness `pytest -q .saipen/extensions/subs/saiui/kitchen/pen/tests_smoke/test_settings_layout.py -x` -> `14 passed`.
+- **verified:** PASS -- baseline `pytest -q tests/test_themes.py tests/test_themes_headers.py tests_smoke/test_settings_layout.py -x` -> 42 passed, 1 failed at `test_no_group_towers_over_the_others[1]` with heights `[106, 95, 182, 134, 81, 50, ...]`; patched pen harness `pytest -q .saipen/extensions/subs/saiui/kitchen/pen/tests_smoke/test_settings_layout.py -x` -> `14 passed`.
 - **instructions:** Core should review the UI-only diff, apply it, then rerun the canonical settings layout and theme tests. No backend, persistence, timer, sync, or shortcut semantics are changed.
 - **details:**
   **User task/cost:** settings must remain scannable and compact; the tall Editor group makes unrelated controls visually tower over small groups and costs navigation time. **Evidence:** the failing geometry assertion is reproducible at `tests_smoke/test_settings_layout.py:85`; the current code groups ten Lines controls together at `src/fastprompter/main.py:7145`. **Hidden capabilities:** none; this is layout-only. **Ambiguous actions/state:** none added; labels become more specific. **Golden Default:** the patch does not add colors, rounded corners, animation, or new controls; it preserves existing token/style behavior. **Patch boundary:** only the group split in `main.py`; no backend/API changes. **Residual risk:** the full app smoke suite remains sensitive to the existing headless modal teardown behavior and must be rerun by Core.

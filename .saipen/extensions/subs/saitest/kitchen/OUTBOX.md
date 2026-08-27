@@ -11,7 +11,7 @@
 - **role_revision:** sha256:801fbfdc4be680d87b18cd21e6246d83fad5b474ebd7fe82efa83918cecf2f08
 - **coverage:** delta audit 3232878 vs f3801af; prior HUNT-006 hypotheses re-checked against new HEAD
 - **payload:** none
-- **verified:** unit suite 1511 pass 1 skip at 3232878; theme tests 55 pass; Cyrillic test 1 pass (exemption applied)
+- **verified:** PASS -- unit suite 1511 pass 1 skip at 3232878; theme tests 55 pass; Cyrillic test 1 pass (exemption applied)
 - **instructions:** Evidence for SC-3 at 3232878. No new hypotheses.
 
 ## TEST-003: reproduce current HUNT-008 and HUNT-009
@@ -26,7 +26,7 @@
 - **role_revision:** sha256:801fbfdc4be680d87b18cd21e6246d83fad5b474ebd7fe82efa83918cecf2f08
 - **coverage:** input-abuse syntax parsing; environment/default pytest discovery; dead-artifact reference checks; no main-tree mutation
 - **payload:** []
-- **verified:** Scenario A `python -c "import ast; from pathlib import Path; ast.parse(Path('test_timers_patch.py').read_text(encoding='utf-8'), filename='test_timers_patch.py')"` -> `SyntaxError: invalid non-printable character U+FEFF` at line 1. Scenario B `pytest -q --collect-only` -> `ERROR collecting test_timers_patch.py`, `SyntaxError` at line 32, `2535 tests collected, 1 error`. Scenario C checked each of 18 `patch*.py` names with repository-wide `rg` plus `git ls-files`: all `refs=0`, all `tracked=False`, no script executed. Verdicts: HUNT-008 **REPRODUCED**; HUNT-009 **REPRODUCED**.
+- **verified:** PASS -- Scenario A `python -c "import ast; from pathlib import Path; ast.parse(Path('test_timers_patch.py').read_text(encoding='utf-8'), filename='test_timers_patch.py')"` -> `SyntaxError: invalid non-printable character U+FEFF` at line 1. Scenario B `pytest -q --collect-only` -> `ERROR collecting test_timers_patch.py`, `SyntaxError` at line 32, `2535 tests collected, 1 error`. Scenario C checked each of 18 `patch*.py` names with repository-wide `rg` plus `git ls-files`: all `refs=0`, all `tracked=False`, no script executed. Verdicts: HUNT-008 **REPRODUCED**; HUNT-009 **REPRODUCED**.
 - **instructions:** Core should route HUNT-008 to the fixer/cleanup owner, repair or explicitly archive the root artifact, then rerun default pytest; separately decide whether the 18 ignored patch scripts are recoverable before any deletion.
 - **details:**
   Minimal reproduction needs only the root file and default pytest discovery; no application code path is involved. The AST probe exposes the BOM, while pytest reports the later malformed line after its source decoding. The orphan result is observational and safe: no file was changed or executed. Both scenarios end **REPRODUCED**.

@@ -1,7 +1,7 @@
 ---
 phase: DONE
 task: none
-next_action: "WAIT: user brake -- T-1084 audit closure complete; closure-evidence PASS"
+next_action: "saipen crew"
 blocker: ""
 agent: workbuddy
 saipen_version: 7
@@ -13,9 +13,10 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 1045
+last_event: 1046
 style_contract: ded-4ae736e4
-updated: "2026-08-27T18:05:00Z"
+updated: "2026-08-27T18:25:49Z"
 transition_from: SHIP
-execution_intent: normal
+execution_intent: converge
+converge_target: crew
 ---
