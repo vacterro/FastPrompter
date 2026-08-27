@@ -493,9 +493,34 @@ class SnippetOpsMixin:
             return
         self.ignore_focus_loss = True
         try:
-            path, _ = QFileDialog.getSaveFileName(
-                self, tr("Save Silo", getattr(self, "_current_lang", "EN")), "", tr("Text Files (*.txt)", getattr(self, "_current_lang", "EN")) + ";;" + tr("Markdown Files (*.md)", getattr(self, "_current_lang", "EN")) + ";;" + tr("All Files (*.*)", getattr(self, "_current_lang", "EN"))
+            fmt = self.data.get("last_save_format", "txt")
+            if fmt == "md":
+                initial_filter = tr("Markdown Files (*.md)", getattr(self, "_current_lang", "EN"))
+                filter_index = 2
+            elif fmt == "*":
+                initial_filter = tr("All Files (*.*)", getattr(self, "_current_lang", "EN"))
+                filter_index = 3
+            else:
+                initial_filter = tr("Text Files (*.txt)", getattr(self, "_current_lang", "EN"))
+                filter_index = 1
+            filters = (
+                tr("Text Files (*.txt)", getattr(self, "_current_lang", "EN"))
+                + ";;"
+                + tr("Markdown Files (*.md)", getattr(self, "_current_lang", "EN"))
+                + ";;"
+                + tr("All Files (*.*)", getattr(self, "_current_lang", "EN"))
             )
+            path, selected = QFileDialog.getSaveFileName(
+                self, tr("Save Silo", getattr(self, "_current_lang", "EN")), "", filters, initial_filter, options=0
+            )
+            if path:
+                ext = os.path.splitext(path)[1].lower()
+                if ext == ".md":
+                    self.data["last_save_format"] = "md"
+                elif ext == "" or ext == ".":
+                    self.data["last_save_format"] = "*"
+                else:
+                    self.data["last_save_format"] = "txt"
         finally:
             self.ignore_focus_loss = False
         self.activateWindow()
@@ -504,7 +529,6 @@ class SnippetOpsMixin:
             try:
                 with open(path, "w", encoding="utf-8") as f:
                     f.write(text)
-                QMessageBox.information(self, tr("Saved", getattr(self, "_current_lang", "EN")), tr("Silo successfully saved to:\n{}", getattr(self, "_current_lang", "EN")).format(path))
             except Exception as e:
                 QMessageBox.critical(self, tr("Error", getattr(self, "_current_lang", "EN")), tr("Failed to save file:\n{}", getattr(self, "_current_lang", "EN")).format(e))
 

@@ -142,6 +142,7 @@ DEFAULT_PROFILE = {
     "hover_line_opacity": 5,
     "hr_visual_line": "True",
     "language": "EN",
+    "last_save_format": "txt",
     "line_heat": "True",
     "line_heat_palette": "accent",
     "line_heat_strength": 5,
