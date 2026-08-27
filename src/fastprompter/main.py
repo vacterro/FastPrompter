@@ -4525,6 +4525,9 @@ class FastPrompter(
         # open_help_dialog plays its own tick internally; F1/hk_help would
         # double it with the wrapper's "help" event.
         "hk_help", "F1",
+        # toggle_sidebar_visibility plays "sidebar" inside; the wrapper's
+        # own event would double it on Alt+D.
+        "toggle_sidebar_hotkey",
     })
 
     def sound_event_for_hotkey(self, key):
@@ -8794,6 +8797,7 @@ class FastPrompter(
         self.btn_page_up.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
         self.btn_page_up.setMinimumWidth(10)
         self.apply_button_size(self.btn_page_up, 16)
+        self.btn_page_up.setVisible(False)
         self.btn_page_up.clicked.connect(lambda: self.change_page(-1))
         self.snippets_section_layout.addWidget(self.btn_page_up)
 
@@ -8810,6 +8814,7 @@ class FastPrompter(
         self.btn_page_down.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
         self.btn_page_down.setMinimumWidth(10)
         self.apply_button_size(self.btn_page_down, 16)
+        self.btn_page_down.setVisible(False)
         self.btn_page_down.clicked.connect(lambda: self.change_page(1))
         self.snippets_section_layout.addWidget(self.btn_page_down)
         self.left_panel_layout.addWidget(self.snippets_section, 0)
@@ -8829,6 +8834,7 @@ class FastPrompter(
 
         self.btn_arc_page_up = QPushButton("▲")
         self.apply_button_size(self.btn_arc_page_up, 16)
+        self.btn_arc_page_up.setVisible(False)
         self.btn_arc_page_up.clicked.connect(lambda: self.change_arc_page(-1))
         self.archive_section_layout.addWidget(self.btn_arc_page_up)
 
@@ -8844,6 +8850,7 @@ class FastPrompter(
 
         self.btn_arc_page_down = QPushButton("▼")
         self.apply_button_size(self.btn_arc_page_down, 16)
+        self.btn_arc_page_down.setVisible(False)
         self.btn_arc_page_down.clicked.connect(lambda: self.change_arc_page(1))
         self.archive_section_layout.addWidget(self.btn_arc_page_down)
 
