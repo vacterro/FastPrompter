@@ -2517,6 +2517,23 @@ class FastPrompter(
                     r["last_fired_minute"] = minute_key
                 dirty = True
         if dirty:
+            # W2-004 follow-up: _heal_interval_rule returns dict(rule) copies,
+            # so last_fired/last_fired_minute updates on the copies never reach
+            # the originals in self.data["interval_notifs"].  Write them back
+            # so the next tick sees the updated timestamps.
+            raw = self.data.get("interval_notifs")
+            if isinstance(raw, list):
+                for rule in rules:
+                    rid = rule.get("id")
+                    if not rid:
+                        continue
+                    for orig in raw:
+                        if isinstance(orig, dict) and orig.get("id") == rid:
+                            if "last_fired" in rule:
+                                orig["last_fired"] = rule["last_fired"]
+                            if "last_fired_minute" in rule:
+                                orig["last_fired_minute"] = rule["last_fired_minute"]
+                            break
             self.mark_dirty()
 
     def _fire_interval_notif(self, rule):
