@@ -223,3 +223,11 @@
 - 27.08.26 16:28 [E-997] [parent: E-996] DEC: gg -- new goal: Ctrl+Shift+S remembers last save format + remove Saved confirmation box
 - 27.08.26 16:28 [E-998] [parent: E-997] [T-1082] [agent: workbuddy] [op: ticket-1082-goal] DEC: ticket added via SAIOPS -- Ctrl+Shift+S remembers last save format + remove Saved confirmation box
 - 27.08.26 16:30 [E-999] [parent: E-998] [T-1082] [agent: workbuddy] RUN: build+verify -- Ctrl+Shift+S remembers last_save_format (txt/md/*), dialog opens on same filter; removes QMessageBox confirmation box; compileall OK; 1657 passed
+- 27.08.26 16:30 [E-1000] [parent: E-999] [T-1082] [agent: workbuddy] RUN: ship -> committed; ready for push
+- 27.08.26 16:30 [E-1001] [parent: E-1000] [T-1082] [agent: workbuddy] DEC: ticket finished -- compiled green, 1657 passed, pushed 9b06c64
+- 27.08.26 16:31 [E-1002] [parent: E-1001] DEC: state -> DONE, execution_intent normal; T-1082 closed, board empty
+- 27.08.26 16:31 [E-1003] [parent: E-1002] DEC: structural repair -- merged duplicate ## DONE heading in BOARD; synced last_event to E-1002
+- 27.08.26 16:33 [E-1004] [parent: E-1003] [T-1082] [agent: workbuddy] [op: transition-verify-1082] RUN: transition to VERIFY -- T-1082 structural repair
+- 27.08.26 16:33 [E-1005] [parent: E-1004] [T-1082] [agent: workbuddy] RUN: VERIFY -- compileall OK; 1657 passed, 1 skipped (conf: high)
+- 27.08.26 16:33 [E-1006] [parent: E-1005] DEC: state last_event -> 1006
+- 27.08.26 16:34 [E-1007] [parent: E-1006] DEC: structural repair -- fixed transition_from SCOUT->DONE (illegal), set SHIP; T-1082 closure-evidence green
