@@ -13,3 +13,5 @@
 - 27.08.26 20:18 [E-1101] [parent: E-1100] [T-1090] [agent: workbuddy] [op: checkpoint-769f123b94bf443f9450093462d143bd] RUN: VERIFY -- git check-ignore returns 0 for settled/ + receipt artifacts; git status clean of untracked .saipen/recovery/ -- PASS conf: high
 - 27.08.26 20:18 [E-1102] [parent: E-1101] [T-1091] [agent: workbuddy] [op: checkpoint-10b9e0a104ca42649558e3ab13b37abf] RUN: transition to VERIFY
 - 27.08.26 20:18 [E-1103] [parent: E-1102] [T-1091] [agent: workbuddy] [op: checkpoint-52112fe48c294deb98c53b886662eb98] RUN: VERIFY -- py_compile snippet_ops_mixin OK; full pytest 1657 pass 1 skip; suggested-filename + QFileDialog options fix verified -- PASS conf: high
+- 27.08.26 20:20 [E-1104] [parent: E-1103] RUN: ship v0.8.59 -> pushed fe55591 + tag v0.8.59 pushed (GCM worked); saipen ship gate passed (only pre-existing [saio] known-red T-803); boards/journals committed
+- 27.08.26 20:20 [E-1105] [parent: E-1104] DEC: ccc SHIP -> v0.8.59 shipped (fe55591 + tag v0.8.59); execution_intent cleared to normal; pending: EE/QQ fresh packages per converge J-M

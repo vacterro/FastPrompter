@@ -13,10 +13,9 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 1103
+last_event: 1105
 style_contract: ded-4ae736e4
-updated: "2026-08-27T20:18:15Z"
-transition_from: CLEAN
-execution_intent: converge
-converge_target: ship
+updated: "2026-08-27T20:30:00Z"
+transition_from: SHIP
+execution_intent: normal
 ---
