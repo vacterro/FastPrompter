@@ -223,12 +223,16 @@ class TimerToast(QWidget):
 
         row = QHBoxLayout()
         row.setSpacing(4)
-        for mins in _SNOOZE_CHOICES:
-            b = QPushButton(f"+{mins}m")
-            b.setProperty("class", "toast-btn")
-            b.setToolTip(tr("Snooze", lang))
-            b.clicked.connect(lambda _c, m=mins: self._snooze(m))
-            row.addWidget(b)
+        # W2-006: a Snooze button is only honest when the owner gave us a
+        # callback that will actually accept the object. Test probes and
+        # delete-after-fire timers get no Snooze controls at all.
+        if callable(self.on_snooze):
+            for mins in _SNOOZE_CHOICES:
+                b = QPushButton(f"+{mins}m")
+                b.setProperty("class", "toast-btn")
+                b.setToolTip(tr("Snooze", lang))
+                b.clicked.connect(lambda _c, m=mins: self._snooze(m))
+                row.addWidget(b)
         row.addStretch(1)
         btn_ok = QPushButton(tr("Dismiss", lang))
         btn_ok.setProperty("class", "toast-btn")

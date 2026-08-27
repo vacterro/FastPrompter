@@ -439,6 +439,9 @@ def scaled_wav_path(path: str, level: float | int) -> str | None:
     per level into temp dir; level in filename so changing setting picks a
     different file. Returns None if anything fails, leaving caller to play
     original at full volume.
+
+    PERF-005: the temp directory is a managed cache (byte/file budget, oldest
+    evicted, startup pruning) so long sessions cannot grow it without bound.
     """
     import tempfile
 
@@ -454,7 +457,7 @@ def scaled_wav_path(path: str, level: float | int) -> str | None:
         return None
     try:
         stem = os.path.splitext(os.path.basename(path))[0]
-        cache_dir = os.path.join(tempfile.gettempdir(), "fastprompter_sound")
+        cache_dir = _scaled_cache_dir()
         os.makedirs(cache_dir, exist_ok=True)
         # quantize to 1% steps to keep cache bounded
         q = int(round(lv * 100))
@@ -466,10 +469,84 @@ def scaled_wav_path(path: str, level: float | int) -> str | None:
             return None
         with open(out, "wb") as fh:
             fh.write(data)
+        # safe insertion: prune the on-disk budget, protecting the fresh file
+        _prune_scaled_cache_dir(protect=out)
         return out
     except OSError:
         logger.debug("volume cache write failed for %s", path, exc_info=True)
         return None
+
+
+# ---- PERF-005: bounded winsound scaled-WAV cache ---------------------------
+_SCALED_CACHE_DIR_NAME = "fastprompter_sound"
+# ~256 MiB on-disk budget; 1% levels x 414 shipped WAVs can otherwise reach
+# ~2.11 GiB. 4096 files also caps the per-level explosion independently.
+_SCALED_CACHE_MAX_BYTES = 256 * 1024 * 1024
+_SCALED_CACHE_MAX_FILES = 4096
+# winsound SND_ASYNC reads the file off disk; never delete a WAV younger than
+# this grace window (it may still be playing asynchronously).
+_SCALED_CACHE_GRACE_SECONDS = 30.0
+# in-memory (path, level) resolution cache cap per SoundManager
+_SCALED_MEM_CACHE_CAP = 2048
+
+
+def _scaled_cache_dir() -> str:
+    import tempfile
+    return os.path.join(tempfile.gettempdir(), _SCALED_CACHE_DIR_NAME)
+
+
+def _prune_scaled_cache_dir(protect: str | None = None) -> None:
+    """Keep the on-disk scaled-WAV cache within its byte/file budget (PERF-005).
+
+    Evicts oldest files first; never touches a file younger than the grace
+    window (it may be mid-playback via winsound SND_ASYNC) and never the file
+    passed as ``protect`` (the one just written). Best-effort: filesystem
+    errors are swallowed, the cache is disposable.
+    """
+    import time as _time
+
+    d = _scaled_cache_dir()
+    try:
+        entries = []
+        total = 0
+        now = _time.time()
+        for name in os.listdir(d):
+            p = os.path.join(d, name)
+            try:
+                if not os.path.isfile(p):
+                    continue
+                st = os.stat(p)
+                entries.append((st.st_mtime, st.st_size, p))
+                total += st.st_size
+            except OSError:
+                continue
+        entries.sort(key=lambda e: e[0])  # oldest first
+        for mtime, size, p in entries:
+            if (total <= _SCALED_CACHE_MAX_BYTES
+                    and len(entries) <= _SCALED_CACHE_MAX_FILES):
+                break
+            if protect is not None and os.path.normcase(p) == os.path.normcase(protect):
+                continue
+            if now - mtime < _SCALED_CACHE_GRACE_SECONDS:
+                continue
+            try:
+                os.remove(p)
+                total -= size
+            except OSError:
+                continue
+    except OSError:
+        pass
+
+
+def _bounded_cache_insert(cache: dict, key, value) -> None:
+    """Insert into the in-memory (path, level) cache, evicting the oldest
+    entry when the mapping exceeds its cap (PERF-005)."""
+    cache[key] = value
+    while len(cache) > _SCALED_MEM_CACHE_CAP:
+        try:
+            cache.pop(next(iter(cache)), None)
+        except StopIteration:
+            break
 
 
 class SoundManager(QObject):
@@ -496,6 +573,9 @@ class SoundManager(QObject):
         self._file_sig: dict[str, Any] = {}
         self._scaled_cache: dict[tuple[str, int], tuple[bool, str | None]] = {}
         self._data_id: int = id(self._data)
+        # PERF-005: prune leftover scaled-WAV temp files from previous sessions
+        # at startup, before any playback could be using them.
+        _prune_scaled_cache_dir()
 
     def invalidate_cache(self) -> None:
         """PERF-004: drop cached resolution when the sound configuration
@@ -743,10 +823,10 @@ class SoundManager(QObject):
                 # (a silent no-op) without re-probing the filesystem
                 return
             if lv <= 0.0 or not os.path.exists(path):
-                cache[key] = (False, None)
+                _bounded_cache_insert(cache, key, (False, None))
                 return
             scaled = scaled_wav_path(path, lv) or path
-            cache[key] = (True, scaled)
+            _bounded_cache_insert(cache, key, (True, scaled))
             winsound.PlaySound(
                 scaled, winsound.SND_FILENAME | winsound.SND_ASYNC)
         except Exception:

@@ -487,7 +487,11 @@ class FancyZoneOverlay(QWidget):
             if hasattr(mw, "mark_dirty"):
                 mw.mark_dirty()
         except Exception:
-            pass
+            # T-1080: a dropped layout persist must not vanish silently — the
+            # user's chosen fancy-zones layout would not survive restart with
+            # no log and no feedback. Log it; geometry apply below still runs.
+            from fastprompter.core.logging import logger
+            logger.debug("fancy-zones layout persist failed", exc_info=True)
 
         if mw.isMinimized():
             mw.showNormal()

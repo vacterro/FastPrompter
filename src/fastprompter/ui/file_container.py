@@ -412,6 +412,7 @@ def folder_summary(d, lang="EN"):
     if not names:
         text = tr("No files yet", lang)
         _folder_summary_cache[key] = (now, text)
+        _prune_folder_summary_cache(now)
         return text
     counts, sizes, total = {}, {}, 0
     for n in names:
@@ -434,12 +435,19 @@ def folder_summary(d, lang="EN"):
         lines = lines[:13] + [f"  … and {len(counts) - 12} more types"]
     text = "\n".join(lines)
     _folder_summary_cache[key] = (now, text)
-    # bounded cache: drop expired entries when it outgrows its working set
+    _prune_folder_summary_cache(now)
+    return text
+
+
+def _prune_folder_summary_cache(now=None):
+    """PERF-006: drop expired entries when the folder-summary cache outgrows
+    its working set. Runs after EVERY insert, including the empty-folder
+    branch, so no insert path can bypass the bound."""
+    now = now if now is not None else _summary_now()
     if len(_folder_summary_cache) > 64:
         for stale in [k for k, (t, _v) in _folder_summary_cache.items()
                       if now - t >= _SUMMARY_TTL]:
             _folder_summary_cache.pop(stale, None)
-    return text
 
 
 def _unique_dest(folder, name):

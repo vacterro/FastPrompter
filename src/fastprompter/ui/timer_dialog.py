@@ -952,21 +952,26 @@ class TimerDialog(QDialog):
 
     _TAB_SIZES = {
         0: (740, 460),  # Alarms
-        1: (740, 390),  # Interval Notifications
-        2: (640, 300),  # Temp Timer
-        3: (640, 480),  # Productivity
-        4: (740, 480),  # Calendar
+        1: (640, 300),  # Temp Timer
+        2: (640, 480),  # Productivity
+        3: (740, 480),  # Calendar
+        4: (740, 390),  # Interval Notifications
     }
     _TAB_MIN_SIZES = {
         0: (640, 390),
-        1: (620, 340),
-        2: (500, 220),
-        3: (560, 380),
-        4: (640, 390),
+        1: (500, 220),
+        2: (560, 380),
+        3: (640, 390),
+        4: (620, 340),
     }
 
     def _on_tab_changed(self, idx):
-        """Dynamically fit dialog dimensions to the active tab's content."""
+        """Dynamically fit dialog dimensions to the active tab's content.
+
+        PERF-003: switching tabs triggers a full catch-up refresh so the now-
+        visible tab shows current state immediately instead of waiting for the
+        next 1 Hz tick (which will only refresh the newly active tab).
+        """
         for i in range(self.tabs.count()):
             widget = self.tabs.widget(i)
             if widget is not None:
@@ -980,6 +985,7 @@ class TimerDialog(QDialog):
         self.resize(target_w, target_h)
         self.adjustSize()
         self.resize(max(target_w, min_w), max(target_h, min_h))
+        self._refresh_all()
 
     def _on_timer_current_changed(self, current, _previous=None):
         """Keep row actions in sync with the list view and load it into the editor form."""
@@ -2398,10 +2404,39 @@ class TimerDialog(QDialog):
                 tr("Enable", self.lang) if not t.enabled else tr("Disable", self.lang))
 
     def refresh(self, select_id=None):
+        """1 Hz periodic: only refresh the VISIBLE tab's work (PERF-003).
+
+        External callers (
+        `_timer_changed` with ``select_id``) trigger a full catch-up for
+        all tabs via ``_refresh_all`` instead.
+        """
+        if select_id is not None:
+            self._refresh_all(select_id)
+            return
+        tab = self.tabs.currentIndex() if hasattr(self, "tabs") else 0
+        if tab == 0:  # Alarms
+            self._refresh_alarms()
+        elif tab == 1:  # Temp Timer
+            self._refresh_temp_tab()
+        elif tab == 2:  # Productivity
+            self._refresh_pomo()
+        elif tab == 3:  # Calendar
+            self._cal_refresh_if_changed()
+        elif tab == 4:  # Interval Notifications
+            if hasattr(self, "interval_clock"):
+                self.interval_clock.sync()
+
+    def _refresh_all(self, select_id=None):
+        """Full catch-up refresh for all tabs (tab switch, mutation)."""
         if hasattr(self, "lbl_pomo_clock"):
             self._refresh_pomo()
         if hasattr(self, "interval_clock"):
             self.interval_clock.sync()
+        self._refresh_alarms(select_id)
+        self._cal_refresh_if_changed()
+        self._refresh_temp_tab()
+
+    def _refresh_alarms(self, select_id=None):
         from PyQt6.QtGui import QColor
 
         keep = self.list.currentItem()
