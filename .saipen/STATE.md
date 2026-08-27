@@ -1,7 +1,7 @@
 ---
 phase: DONE
 task: none
-next_action: "saipen crew"
+next_action: "saipen ship"
 blocker: ""
 agent: workbuddy
 saipen_version: 7
@@ -13,10 +13,10 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 1046
+last_event: 1103
 style_contract: ded-4ae736e4
-updated: "2026-08-27T18:25:49Z"
-transition_from: SHIP
+updated: "2026-08-27T20:18:15Z"
+transition_from: CLEAN
 execution_intent: converge
-converge_target: crew
+converge_target: ship
 ---

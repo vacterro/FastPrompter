@@ -1,5 +1,18 @@
 ﻿# OUTBOX
 
+## PY-004: crew SC-4 re-fix @ 40a0213 (27.08.26)
+- **status:** reviewed
+- **summary:** Re-certification after source mutation (40a0213: pie-menu Shift+F15 direct-insert fix). No new fixer targets: HUNT-012/TEST-004 found zero defect hypotheses; PY-001 (Cyrillic exemption) already landed as T-1041.
+- **critical:** false
+- **producer:** saipython
+- **source_head:** 40a021365f3641d52924ef2e3bb415aee1ee6d98
+- **source_tree_fingerprint:** git-delta-v1:c66baf69a8306f3b95dfc7badb5f72b088f8de8408e933efadc4d149721a1195
+- **role_revision:** sha256:3069120b1a83291867c000dd5d7edb141d5fedf7895e5dc8f07d06624d05d9ff
+- **coverage:** delta audit 40a0213 vs 9d0331c; PY-001 verification re-run at new HEAD
+- **payload:** []
+- **verified:** PASS -- compileall src FastPrompter.pyw OK; pytest tests/ 1657 passed 1 skipped at 40a0213; ruff clean
+- **instructions:** Evidence for SC-4 at 40a0213. No new patches required.
+
 ## PY-002: crew SC-4 re-fix @ 3232878 (23.08.26)
 - **status:** reviewed
 - **summary:** Re-certification after source mutation (f3801af→3232878). Delta = T-1043/T-1041 patches (already shipped). No new fixer targets: PY-001 (Cyrillic exemption) landed as T-1041; PY-002..005 template backlog deliberately cleared (not real tickets).

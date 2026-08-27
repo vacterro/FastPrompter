@@ -1,5 +1,20 @@
 ﻿# OUTBOX
 
+## HUNT-012: crew SC-2 sweep @ 40a0213 (27.08.26) — pie-menu insert fix
+- **status:** reviewed
+- **summary:** Current-source six-signal sweep at HEAD 40a0213 (pie-menu Shift+F15 direct-insert fix + OUTBOX grammar repairs). All six signals clean: unit suite green, zero TODO/FIXME/HACK in src, no unverified commits, no new silent-failure or symmetry candidates, no orphan files, no failing tests.
+- **main_project_refs:** [src/fastprompter/main.py]
+- **critical:** false
+- **severity:** P3
+- **producer:** saihunt
+- **source_head:** 40a021365f3641d52924ef2e3bb415aee1ee6d98
+- **source_tree_fingerprint:** git-delta-v1:c66baf69a8306f3b95dfc7badb5f72b088f8de8408e933efadc4d149721a1195
+- **role_revision:** sha256:4edb04181cb07e0946afd06fbe711166fa9dcc403e56b52e9be3844f0a71b0a5
+- **coverage:** all six HUNT signals at 40a0213: tests, commit verification, stale markers, silent failure, symmetry, orphan artifacts
+- **payload:** []
+- **verified:** PASS -- pytest tests/ 1657 passed 1 skipped; rg TODO/FIXME/HACK src clean; git tree clean (only runtime .saipen/cache state); except-pass sites pre-audited T-1030 unchanged
+- **instructions:** Evidence for SC-2 at 40a0213. No defect signals; no patch required. Core may proceed to SC-3.
+
 ## HUNT-007: crew SC-2 re-sweep @ 3232878 (23.08.26)
 - **status:** reviewed
 - **summary:** Re-sweep after source mutation (f3801af→3232878: T-1043 theme token compliance + T-1041 Cyrillic test exemption). Delta audited — theme QSS + test exemptions only, no new defect signals. All six signals still clean at the new HEAD: unit 1511 green, zero TODO/FIXME/HACK in src, no orphan files, no unverified commits, no new silent-failure or symmetry candidates beyond the already-fixed ones.
@@ -48,7 +63,8 @@
   The scripts are outside `src/`, are ignored/untracked, and are not imported, documented, or invoked by project tooling. Because they may contain recoverable patch history, this is a report only. Verdict: **REPRODUCED**.
 
 ## HUNT-011: post-patch current-source sweep
-- **status:** ready
+- **status:** stale
+- **legacy:** true
 - **summary:** Current source re-sweep confirms collection and settings UI are fixed; only the previously observed unreferenced ignored patch scripts remain as a cleanup candidate.
 - **main_project_refs:** [src/fastprompter/main.py:7145, test_timers_patch.py, patch.py, patch_board.py, patch_links.py, patch_main_reading_links.py, patch_paths_tests.py, patch_t1013.py, patch_test_links.py, patch_themes.py, patch_timer_dialog.py, patch_timer_dialog_tests.py, patch_timer_dialog_tests2.py, patch_timer_dialog_tests3.py, patch_timer_dialog_tests4.py, patch_timer_dialog_tests5.py, patch_timers_from_dict.py, patch_timers_limit.py, patch_timers_todict.py]
 - **critical:** false

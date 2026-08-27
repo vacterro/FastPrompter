@@ -1,5 +1,19 @@
 ﻿# OUTBOX
 
+## TEST-004: crew SC-3 re-reproduction @ 40a0213 (27.08.26)
+- **status:** reviewed
+- **summary:** Re-certification after source mutation (40a0213: pie-menu Shift+F15 direct-insert fix). No new hypotheses from HUNT-012 (all six signals NOT_REPRODUCED). Prior verdicts stand: instance_lock.py:143 and duration.py:137 NOT_REPRODUCED (contract-correct). Unit suite green at new HEAD.
+- **critical:** false
+- **severity:** P2
+- **producer:** saitest
+- **source_head:** 40a021365f3641d52924ef2e3bb415aee1ee6d98
+- **source_tree_fingerprint:** git-delta-v1:c66baf69a8306f3b95dfc7badb5f72b088f8de8408e933efadc4d149721a1195
+- **role_revision:** sha256:801fbfdc4be680d87b18cd21e6246d83fad5b474ebd7fe82efa83918cecf2f08
+- **coverage:** delta audit 40a0213 vs 9d0331c; full unit suite; prior hypotheses re-checked at new HEAD
+- **payload:** []
+- **verified:** PASS -- pytest tests/ 1657 passed 1 skipped at 40a0213; no new hypotheses to reproduce
+- **instructions:** Evidence for SC-3 at 40a0213. No new hypotheses; no fixer targets.
+
 ## TEST-002: crew SC-3 re-reproduction @ 3232878 (23.08.26)
 - **status:** reviewed
 - **summary:** Re-certification after source mutation (f3801af→3232878). Delta = theme QSS + Cyrillic test exemptions (T-1043/T-1041) — no new hypotheses to reproduce. Prior verdicts stand: instance_lock.py:143 and duration.py:137 NOT_REPRODUCED (contract-correct), Cyrillic test exemption gap fixed by PY-001.

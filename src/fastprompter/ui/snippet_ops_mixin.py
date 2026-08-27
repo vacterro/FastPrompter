@@ -13,6 +13,7 @@ from PyQt6.QtGui import QTextCursor, QTextDocument
 from PyQt6.QtWidgets import QApplication, QFileDialog, QInputDialog, QMessageBox
 
 from fastprompter.core.logging import logger
+from fastprompter.core.silo_export import _ILLEGAL, _title_from
 from fastprompter.core.translations import tr
 
 _is_deleted = sip.isdeleted
@@ -510,8 +511,12 @@ class SnippetOpsMixin:
                 + ";;"
                 + tr("All Files (*.*)", getattr(self, "_current_lang", "EN"))
             )
+            stem = _ILLEGAL.sub("_", _title_from(text))
+            stem = " ".join(stem.split()).strip(" ._")[:60]
+            ext = ".txt" if fmt == "txt" else ".md" if fmt == "md" else ""
+            suggested = stem + ext if stem else ""
             path, selected = QFileDialog.getSaveFileName(
-                self, tr("Save Silo", getattr(self, "_current_lang", "EN")), "", filters, initial_filter, options=0
+                self, tr("Save Silo", getattr(self, "_current_lang", "EN")), suggested, filters, initial_filter
             )
             if path:
                 ext = os.path.splitext(path)[1].lower()

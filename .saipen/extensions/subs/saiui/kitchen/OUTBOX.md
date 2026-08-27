@@ -1,5 +1,19 @@
 ﻿# OUTBOX
 
+## UI-004: crew SC-5 re-audit @ 40a0213 (27.08.26)
+- **status:** reviewed
+- **summary:** Re-certification after source mutation (40a0213: pie-menu Shift+F15 direct-insert fix). Golden Default theme remains token-compliant (UI-001 landed as T-1043); new UI change (pie-menu insert) touches no theme palette. No remaining UI.md violations in Golden Default block.
+- **critical:** false
+- **severity:** P3
+- **producer:** saiui
+- **source_head:** 40a021365f3641d52924ef2e3bb415aee1ee6d98
+- **source_tree_fingerprint:** git-delta-v1:c66baf69a8306f3b95dfc7badb5f72b088f8de8408e933efadc4d149721a1195
+- **role_revision:** sha256:f2e3685b908a3b9837917f12c5414628d847c35fb72567f0306e2c8b19a8dab8
+- **coverage:** Golden Default theme re-audit vs UI.md at 40a0213; pie-menu UI change diff review
+- **payload:** []
+- **verified:** PASS -- theme tests 55 pass; no border-radius/non-token colors in Golden Default block; pie-menu change is editor-insert only
+- **instructions:** Evidence for SC-5 at 40a0213. No new UI patches.
+
 ## UI-002: crew SC-5 re-audit @ 3232878 (23.08.26)
 - **status:** reviewed
 - **summary:** Re-certification after source mutation (f3801af→3232878). Golden Default theme now token-compliant (UI-001 landed as T-1043). Re-audit at new HEAD: no remaining UI.md violations in Golden Default block; other 8 themes untouched (own palettes, out of scope).

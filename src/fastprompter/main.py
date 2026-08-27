@@ -2464,7 +2464,7 @@ class FastPrompter(
         "minutes": 60,
         "enabled": True,
         "sound": "newday",
-        "volume": 0.5,
+        "volume": 1.0,
         "show_notification": False,
         "show_in_top_bar": False,
         "align_mode": "clock",

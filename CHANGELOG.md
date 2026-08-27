@@ -1,5 +1,42 @@
 # Changelog
 
+## v0.8.59 - 2026-08-27
+
+- **Bake current settings into defaults (T-1089):** global sound volume default raised to 1.0, search bar visible by default, interval-notification default volume raised to 1.0 in `default_profile.py`, `state.py`, `_INTERVAL_NOTIF_DEFAULT` and the dialog presets — English stays the default language, user-content keys excluded on purpose.
+- **Save-Silo suggested filename (T-1091):** Ctrl+Shift+S now proposes a name from the silo's first line (header, else first three words), with the active format's extension; illegal filename characters are sanitized.
+- **Save-Silo dialog fix (T-1091):** `QFileDialog.getSaveFileName` no longer passes an invalid `options=` integer; the offending keyword was removed so the native save dialog opens correctly.
+
+## v0.8.58 - 2026-08-27
+
+- **Productivity tab sizing:** dedicated 640x480 (min 560x380) layout, themed `QGroupBox`/`QTabWidget::pane` (no white borders), Test button simulates the full phase-completion notification (sound + tray popup).
+- **i18n collect (TRANSLATE-010):** locale JSONs included.
+
+## v0.8.57 - 2026-08-27
+
+- **Sound Settings dialog crash fix** (combo via `_combos`).
+- **Shipped defaults regenerated from live profile** — sounds and all settings except silos/timers/geometry/editor.
+- **Global volume 0–100 slider** storing 0.00–1.00 (0.15 default); `splitter_sizes` JSON list codecs; pomodoro phase-completion sound settings + timer dialog UI + i18n.
+
+## v0.8.56 - 2026-08-27
+
+- **Interval sound selection persistence:** case/prefix-insensitive matching (`_find_sound_index`), unified NEWDAY.wav.
+
+## v0.8.55 - 2026-08-27
+
+- **Interval notification defaults:** 24h schedule (0.05 vol, noon GENIE, morning/day newday, night alert_owl2), sound scroll/select preview with load guard, presets menu.
+
+## v0.8.54 - 2026-08-27
+
+- **Interval/volume/clock wave:** draggable topmost priority on collision, sound preview on select/scroll, volume 0.0–1.0 decimal, analog clock for interval picking.
+
+## v0.8.53 - 2026-08-26
+
+- **Convergence closure:** test-fix + saipen state hardened; timer single-click edit + VOL-verified landed.
+
+## v0.8.52 - 2026-08-26
+
+- **Audit fix wave (acb-mt4fdng2):** 17 CORE/W2/PERF tickets — validate_database row invariants, presets recovery gated on startup snapshot, current-schema preflight before init_db, canonical slot keys, portable_backup redispatch retry, SendResult partial state, read_text_file fail-closed, cross-root transfer identity, owner-scoped baselines, thread join, cached coverage, linear URL skip cursor, changed-path sync, typo block-grouping, bounded digest skip-cache.
+
 ## v0.8.51 - 2026-08-22
 
 - **i18n collect (T-1034):** TRANSLATE-006 injected — the 7 previously unbundled source keys (restore-aborted, restore-refused, Silo, Sync/Link this silo, typo-checker word list, Word, export-target-inside-folder) are now registered in all 33 locale modules with real translations for EN/RU/EST/DED/JA and English fallback elsewhere; ja/ded bundles restored to full key parity with their modules.
