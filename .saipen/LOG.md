@@ -231,3 +231,9 @@
 - 27.08.26 16:33 [E-1005] [parent: E-1004] [T-1082] [agent: workbuddy] RUN: VERIFY -- compileall OK; 1657 passed, 1 skipped (conf: high)
 - 27.08.26 16:33 [E-1006] [parent: E-1005] DEC: state last_event -> 1006
 - 27.08.26 16:34 [E-1007] [parent: E-1006] DEC: structural repair -- fixed transition_from SCOUT->DONE (illegal), set SHIP; T-1082 closure-evidence green
+- 27.08.26 16:51 [E-1008] [parent: E-1007] DEC: cc (continue) -- execution_intent normal, enters convergence; tree dirty: .saipen/repair+T-1082 committed; board TODO empty; BLOCKED T-800/T-803
+- 27.08.26 16:59 [E-1009] [parent: E-1003] DEC: gg -- new goal: tray click activates focus toggle setting
+- 27.08.26 16:59 [E-1010] [parent: E-1009] [T-1083] [agent: workbuddy] [op: ticket-1083-goal] DEC: ticket added via SAIOPS -- tray_click_activates toggle
+- 27.08.26 16:59 [E-1011] [parent: E-1010] [T-1083] [agent: workbuddy] RUN: build+verify -- tray_mixin on_tray_activated checks tray_click_activates; checkbox in Typing settings; compileall OK; 1657 passed
+- 27.08.26 16:59 [E-1012] [parent: E-1011] [T-1083] [agent: workbuddy] RUN: ship -> committed 62975c4 pushed
+- 27.08.26 16:59 [E-1013] [parent: E-1012] [T-1083] [agent: workbuddy] DEC: ticket finished

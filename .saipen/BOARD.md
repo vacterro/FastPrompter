@@ -25,6 +25,7 @@
 - [x] T-1080 (P3, workbuddy) HUNT: fancy_zones.py:485 silent except now logs at debug; layout persist failure visible | verify: compileall src OK; suite green
 - [x] T-1081 (P3, workbuddy) HUNT: 3 unjournaled commits (c19ba43/26574f1/2f31e6d) tracked; LOG cites via E-993 | verify: LOG tail cites the commits; no dangling unjournaled commits
 - [x] T-1082 (P2, goal) Ctrl+Shift+S remembers last save format + remove Saved confirmation box | verify: compileall OK; 1657 passed; committed 9b06c64
+- [x] T-1083 (P2, goal) Tray Click Activates toggle — always bring to focus on tray double-click when on, toggle hide/show when off | verify: compileall OK; 1657 passed; committed 62975c4
 
 ## DOING
 
