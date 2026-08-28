@@ -1,5 +1,4 @@
 ---
-converge_target: ship
 phase: DONE
 task: none
 next_action: "cc"
@@ -14,15 +13,15 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 1162
+last_event: 1166
 style_contract: ded-4ae736e4
 updated: "2026-08-27T21:00:00Z"
 transition_from: GOAL
-execution_intent: converge
+execution_intent: normal
 goal_waves: 0
 goal_tickets: 0
 ---
-converge_target: ship
+
 
 
 
