@@ -1,8 +1,8 @@
 {
   "gate": "core",
-  "receipt_dir_mtime_ns": 1787861903618875800,
-  "receipt_id": "receipt-27fefe17be6b",
-  "receipt_path": ".saipen/recovery/conformance/2026-08-27T20_18_23.375392Z_receipt-27fefe17be6b_core_FAIL.json",
-  "timestamp_utc": "2026-08-27T20:18:23.375392Z",
+  "receipt_dir_mtime_ns": 1787862675942096800,
+  "receipt_id": "receipt-414eb813327a",
+  "receipt_path": ".saipen/recovery/conformance/2026-08-27T20_31_15.743864Z_receipt-414eb813327a_core_FAIL.json",
+  "timestamp_utc": "2026-08-27T20:31:15.743864Z",
   "version": 1
 }

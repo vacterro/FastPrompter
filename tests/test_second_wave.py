@@ -497,3 +497,77 @@ def test_load_queues_canonicalizes_slot_keys():
     # every remaining key must survive the master-view int() conversion
     for k in queues:
         int(str(k).lstrip("a") or 0)
+
+# ----------------------------------------------------------------- CORE-002
+def test_unique_temp_path_distinct_and_same_directory(tmp_path):
+    from fastprompter.utils.path_safety import unique_temp_path
+    target = tmp_path / "report.txt"
+    a = unique_temp_path(str(target), "tag")
+    b = unique_temp_path(str(target), "tag")
+    assert a != b, "two calls must never return the same candidate"
+    assert os.path.dirname(a) == os.path.dirname(str(target))
+    assert not os.path.exists(a)
+    assert not os.path.exists(b)
+
+
+def test_unique_temp_path_never_collides_with_existing_sibling(tmp_path):
+    from fastprompter.utils.path_safety import unique_temp_path
+    target = tmp_path / "doc.db"
+    # a user file already sits at the OLD predictable candidate name
+    sentinel = tmp_path / "doc.db.bak-AAAA.tmp"
+    sentinel.write_bytes(b"SENTINEL")
+    cand = unique_temp_path(str(target), "bak")
+    assert cand != str(sentinel)
+    assert os.path.basename(cand).startswith("doc.db.")
+
+
+def test_backup_atomically_preserves_predictable_named_sibling(tmp_path):
+    """CORE-002: a legitimate unrelated file named like the historical
+    '.tmp' candidate must survive a successful atomic backup."""
+    import fastprompter.core.state as state_mod
+    from fastprompter.core.state import FastPrompterState, _backup_atomically, validate_database
+
+    src = tmp_path / "src.db"
+    os.makedirs(os.path.dirname(str(src)), exist_ok=True)
+    state_mod.get_db_path = lambda profile_id=1: str(src)
+    s = FastPrompterState(profile_id=1)
+    s.data["temp_presets_all"]["Code"][0] = "data"
+    s.mark_dirty()
+    s.save_data_to_db("data", force=True, sync=True)
+    s.conn.close()
+    conn = sqlite3.connect(str(src))
+
+    dest = tmp_path / "dest.db"
+    sentinel = tmp_path / "dest.db.tmp"
+    sentinel.write_bytes(b"USER_FILE_MUST_SURVIVE")
+    _backup_atomically(conn, str(dest))
+    conn.close()
+
+    # the real destination was written, the unrelated sibling untouched
+    assert validate_database(str(dest))[0] >= 0
+    assert sentinel.read_bytes() == b"USER_FILE_MUST_SURVIVE"
+
+
+def test_write_text_file_preserves_fp_sync_tmp_sibling(tmp_path):
+    from fastprompter.core.project_sync import write_text_file
+
+    target = tmp_path / "notes.txt"
+    sentinel = tmp_path / "notes.txt.fp-sync-tmp"
+    sentinel.write_bytes(b"KEEP_ME")
+    result = write_text_file(str(target), "hello")
+    assert result == "hello"
+    assert target.read_text(encoding="utf-8") == "hello"
+    assert sentinel.read_bytes() == b"KEEP_ME"
+
+
+def test_portable_write_raw_preserves_tmp_sibling(tmp_path):
+    from fastprompter.utils.portable_backup import _write_raw
+
+    target = tmp_path / "gen.txt"
+    sentinel = tmp_path / "gen.txt.tmp"
+    sentinel.write_bytes(b"KEEP_ME")
+    _write_raw(str(target), "payload")
+    assert target.read_text(encoding="utf-8") == "payload"
+    assert sentinel.read_bytes() == b"KEEP_ME"
+
+

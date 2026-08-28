@@ -257,11 +257,13 @@ class ThemeMixin:
         except Exception:
             base_size = 11
         font_name = self._font_family
-        try:
-            scale = self._ui_scale
-        except Exception:
-            scale = 1.0
-        font_size = max(8, int(round(base_size * scale)))
+        # The stored font_size IS the final rendered size the user picked in
+        # the spin box — it must NOT be multiplied by ui_scale, or a 17pt
+        # selection silently renders as 8/12pt at any scale below 100%
+        # (round(17*0.5)==8 with Python banker's rounding — the "always 8"
+        # bug). ui_scale is a separate knob for button/geometry density and
+        # is applied to those surfaces on its own.
+        font_size = max(8, int(base_size))
         font_key: tuple = (font_name, font_size)
         if font_key != getattr(self, "_font_cache_key", None):
             self._font_cache_key = font_key
@@ -271,6 +273,8 @@ class ThemeMixin:
             )
         font = self._cached_main_font
         QApplication.setFont(font)
+        from PyQt6.QtWidgets import QToolTip
+        QToolTip.setFont(font)
         # QApplication.setFont alone does not reach a widget whose look is
         # driven by its own stylesheet: those keep resolving their family
         # from the app font as it was when the style last ran. Measured with

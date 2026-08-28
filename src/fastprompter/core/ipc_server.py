@@ -29,6 +29,14 @@ SERVER_NAME = "FastPrompter_Server_V15"
 
 _ACK_TIMEOUT_MS = 1500
 
+# Set by request_show after its grace window closes: True when a live owner's
+# IPC server was CONNECTED to at least once (the owner exists and is alive,
+# just busy/slow), False when no server ever appeared (owner still starting or
+# genuinely frozen). main_entry uses this to decide whether the "not
+# responding" diagnostic is honest — a deliberate second launch that reached a
+# live owner should not scare the user with a frozen-instance box.
+_LAST_SAW_SERVER = False
+
 
 def try_connect_to_server(retries: int = 3, delay: float = 0.05) -> QLocalSocket | None:
     """Try to connect to a running FastPrompter instance.
@@ -70,7 +78,14 @@ def request_show(ack_timeout_ms=_ACK_TIMEOUT_MS, grace_ms=3000) -> bool:
     slow STARTING owner is not mistaken for a FROZEN one. No ACK within the
     grace (frozen event loop, replaced token that never catches up) returns
     False — the caller must exit, never become a second writer.
+
+    Sets the module-level ``_LAST_SAW_SERVER`` so the caller can distinguish
+    "owner alive but busy" (server reached, no ACK) from "owner genuinely
+    frozen or absent" (server never seen). A deliberate second launch that
+    reached a live server should not scare the user with a frozen-instance box.
     """
+    global _LAST_SAW_SERVER
+    _LAST_SAW_SERVER = False
     deadline = time.monotonic() + max(0, int(grace_ms)) / 1000.0
     attempt = 0
     saw_server = False
@@ -90,6 +105,7 @@ def request_show(ack_timeout_ms=_ACK_TIMEOUT_MS, grace_ms=3000) -> bool:
                 acked = sock.waitForReadyRead(max(0, int(timeout))) and \
                     b"ACK" in sock.readAll().data()
                 if acked:
+                    _LAST_SAW_SERVER = True
                     return True
                 # a live socket that does not ACK: the owner's event loop is
                 # not pumping, or a stale token is in play — retry until the
@@ -99,6 +115,7 @@ def request_show(ack_timeout_ms=_ACK_TIMEOUT_MS, grace_ms=3000) -> bool:
         if time.monotonic() >= deadline:
             break
         time.sleep(0.05)
+    _LAST_SAW_SERVER = saw_server
     # distinguish the two failure shapes in the log: the owner was never seen
     # (still starting / crashed before its server) vs was seen but never
     # acknowledged (frozen event loop or stale token)
@@ -180,23 +197,44 @@ class IpcServer:
         process that holds the socket but no longer pumps its event loop
         never sends it, and the newcomer must then exit unresponsive instead
         of taking the socket over.
+
+        The read loops until the command is COMPLETE (``|SHOW`` present): a
+        local-socket write can arrive split across ready-read callbacks, and a
+        single ``readAll()`` of a partial frame would silently swallow the
+        ``SHOW`` and answer no ACK — making a healthy owner look frozen.
         """
         sock = self._server.nextPendingConnection()
+        if sock is None:
+            return
         handled = False
-        if sock.bytesAvailable() > 0 or sock.waitForReadyRead(500):
-            data = sock.readAll().data()
-            try:
-                data_str = data.decode("utf-8")
-                if data_str.startswith("TOKEN:"):
-                    parts = data_str.split("|", 1)
-                    if len(parts) == 2:
-                        recv_token = parts[0][6:]
-                        cmd = parts[1]
-                        if recv_token == self._token and cmd.strip() == "SHOW":
-                            self._show_window()
-                            handled = True
-            except Exception:
-                logger.exception("Failed to handle IPC command")
+        buf = b""
+        deadline = time.monotonic() + 3.0
+        while time.monotonic() < deadline:
+            if sock.bytesAvailable() > 0:
+                chunk = sock.readAll().data()
+                if chunk:
+                    buf += chunk
+            elif not buf:
+                if not sock.waitForReadyRead(200):
+                    break
+                continue
+            # once we have bytes, keep pulling until the full frame is in
+            if b"|SHOW" in buf and buf.startswith(b"TOKEN:"):
+                break
+            if not sock.waitForReadyRead(200):
+                break
+        try:
+            data_str = buf.decode("utf-8")
+            if data_str.startswith("TOKEN:"):
+                parts = data_str.split("|", 1)
+                if len(parts) == 2:
+                    recv_token = parts[0][6:]
+                    cmd = parts[1]
+                    if recv_token == self._token and cmd.strip() == "SHOW":
+                        self._show_window()
+                        handled = True
+        except Exception:
+            logger.exception("Failed to handle IPC command")
         if handled:
             try:
                 sock.write(b"ACK")

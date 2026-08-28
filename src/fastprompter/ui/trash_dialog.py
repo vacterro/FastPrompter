@@ -177,6 +177,9 @@ class TrashDialog(QDialog):
 
             if not saved:
                 # ---- compensating rollback ---------------------------------
+                # CORE-005: the physical folder move-back outcome determines
+                # what logical state reconciliation is truthful.
+                physical_rolled_back = True
                 if allocated and pre_trashed:
                     cat = mw.get_current_category() if hasattr(
                         mw, "get_current_category") else ""
@@ -188,38 +191,78 @@ class TrashDialog(QDialog):
                             try:
                                 os.rename(dest, pre_trashed)
                             except OSError:
-                                pass
-                # complete logical state back to the pre-insertion boundary
-                if pre_snapshot is not None and hasattr(mw, "_apply_data_state"):
-                    try:
-                        mw._apply_data_state(pre_snapshot)
-                    except Exception:
-                        pass
-                    # the insertion pushed ONE undo entry ("Restore silo");
-                    # restore both stacks to their exact pre-operation shape
-                    # so Ctrl+Z cannot replay a transaction that never committed.
-                    stack = getattr(mw, "data_undo_stack", None)
-                    if isinstance(stack, list):
-                        del stack[len(pre_undo):]
-                    rstack = getattr(mw, "data_redo_stack", None)
-                    if isinstance(rstack, list):
-                        rstack[:] = pre_redo
-                    if hasattr(mw, "_save_undo_state"):
-                        mw._save_undo_state()
-                # restore the recovery records exactly as they were
-                data["folder_trash_log"] = pre_log
-                ttf = data.setdefault("trash_text_folder", {})
-                if pre_link_val is not None:
-                    ttf[md_basename] = pre_link_val
+                                physical_rolled_back = False
+                if physical_rolled_back:
+                    # The folder is back where it was; restore the complete
+                    # logical pre-state (silhouette, undo/redo, recovery
+                    # metadata) and tell the user the transaction was cleanly
+                    # reversed.
+                    if pre_snapshot is not None and hasattr(mw, "_apply_data_state"):
+                        try:
+                            mw._apply_data_state(pre_snapshot)
+                        except Exception:
+                            pass
+                        stack = getattr(mw, "data_undo_stack", None)
+                        if isinstance(stack, list):
+                            del stack[len(pre_undo):]
+                        rstack = getattr(mw, "data_redo_stack", None)
+                        if isinstance(rstack, list):
+                            rstack[:] = pre_redo
+                        if hasattr(mw, "_save_undo_state"):
+                            mw._save_undo_state()
+                    data["folder_trash_log"] = pre_log
+                    ttf = data.setdefault("trash_text_folder", {})
+                    if pre_link_val is not None:
+                        ttf[md_basename] = pre_link_val
+                    else:
+                        ttf.pop(md_basename, None)
+                    data["trash_consumed"] = pre_consumed
+                    mw.mark_dirty()
+                    QMessageBox.warning(
+                        self, self.tr("Restore incomplete"),
+                        self.tr("Everything was rolled back and the trash "
+                                "copy was kept so you can try again."))
                 else:
-                    ttf.pop(md_basename, None)
-                data["trash_consumed"] = pre_consumed
-                mw.mark_dirty()
-                QMessageBox.warning(
-                    self, self.tr("Restore incomplete"),
-                    self.tr("The restore could not be saved persistently. "
-                            "Everything was rolled back and the trash copy "
-                            "was kept so you can try again."))
+                    # Physical move-back FAILED: the folder remains at its
+                    # newly allocated live destination. Do NOT restore the
+                    # pre-trash metadata that would orphan it; instead record
+                    # a NEW trash association pointing at the actual live
+                    # location so the folder stays recoverable. The .md
+                    # recovery source is preserved for a retry. The silo
+                    # insertion was rolled back logically (pre_snapshot), but
+                    # the folder is kept at dest.
+                    if pre_snapshot is not None and hasattr(mw, "_apply_data_state"):
+                        try:
+                            mw._apply_data_state(pre_snapshot)
+                        except Exception:
+                            pass
+                    # Locate the folder's actual current location.
+                    live_dest = None
+                    if allocated:
+                        cat = mw.get_current_category() if hasattr(
+                            mw, "get_current_category") else ""
+                        comp = (mw._category_files_dir(cat)
+                                if hasattr(mw, "_category_files_dir") else None)
+                        if comp:
+                            live_dest = os.path.join(
+                                mw._files_root(), comp, allocated)
+                    # Re-record the folder association at its actual live
+                    # location so the folder is not orphaned.
+                    orig_path = pre_trashed or str(live_dest or "")
+                    log = data.setdefault("folder_trash_log", [])
+                    if live_dest and os.path.isdir(live_dest):
+                        new_entry = (orig_path, live_dest)
+                        log.append(new_entry)
+                        ttf = data.setdefault("trash_text_folder", {})
+                        ttf[md_basename] = orig_path
+                    data["trash_consumed"] = pre_consumed
+                    mw.mark_dirty()
+                    QMessageBox.warning(
+                        self, self.tr("Restore incomplete"),
+                        self.tr("The silo could not be restored persistently. "
+                                "The folder was left at its new location and "
+                                "marked recoverable — the trash copy (.md) "
+                                "was kept so you can retry."))
                 self._load_trash()
                 return
 

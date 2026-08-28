@@ -156,6 +156,40 @@ def is_within_captured_root(root, captured_root, candidate):
 
 
 # ---------------------------------------------------------------------------
+# Unique atomic-write candidate (CORE-002).
+#
+# Every "atomic" publisher that writes into a user-addressable directory must
+# create a UNIQUE candidate owned exclusively by that invocation, in the same
+# directory/filesystem as the final target (so ``os.replace`` stays atomic),
+# and clean up only the exact candidate it created. A predictable sibling name
+# (``.tmp``, ``.export.tmp``, ``.fp-sync-tmp``) is user data waiting to be
+# truncated/deleted, and shared scratch names amplify concurrent writers.
+# ---------------------------------------------------------------------------
+
+def unique_temp_path(target: str, tag: str = "fp") -> str:
+    """A non-existent unique sibling of ``target`` for an atomic write.
+
+    Same directory as ``target`` so the eventual ``os.replace`` is a same-
+    filesystem rename. The name embeds an unpredictable component (UUID), so
+    two concurrent invocations can never collide and a pre-existing user file
+    whose name equals some fixed scratch name is never touched. Callers must
+    only ever remove the exact path this function returned.
+    """
+    import uuid
+
+    directory = os.path.dirname(target)
+    base = os.path.basename(target)
+    for _ in range(100):
+        candidate = os.path.join(
+            directory,
+            f"{base}.{tag}-{uuid.uuid4().hex}.tmp",
+        )
+        if not os.path.exists(candidate):
+            return candidate
+    raise OSError("could not allocate a unique temporary path")
+
+
+# ---------------------------------------------------------------------------
 # Filesystem-name codec: DISPLAY name -> safe FILESYSTEM component.
 #
 # A project/category name is UI data and may be hostile on purpose (Unicode,

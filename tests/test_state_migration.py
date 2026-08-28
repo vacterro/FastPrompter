@@ -308,3 +308,82 @@ class TestFutureSchemaRejected:
             assert s.conn.execute("PRAGMA user_version").fetchone()[0] == 1
         finally:
             s.conn.close()
+
+def test_mixed_v0_identical_content_coalesces(make_state, db_path):
+        """CORE-006: mixed-v0 with identical legacy and _v2 rows at the same
+        slot coalesces (no error, both survive as one)."""
+        _legacy_fixture(db_path)
+        conn = sqlite3.connect(db_path)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS temp_presets_v2 (
+                category TEXT, slot INTEGER, content TEXT,
+                PRIMARY KEY (category, slot))
+        """)
+        conn.execute(
+            "INSERT OR IGNORE INTO temp_presets_v2 (category, slot, content) "
+            "VALUES ('Code', 0, 'legacy silo')")
+        conn.commit()
+        conn.close()
+        s = make_state()
+        try:
+            cur = s.conn.execute(
+                "SELECT slot, content FROM temp_presets_v2 "
+                "WHERE category='Code' ORDER BY slot")
+            rows = cur.fetchall()
+            assert len(rows) == 1
+            assert rows[0] == (0, "legacy silo")
+        finally:
+            s.conn.close()
+
+def test_mixed_v0_distinct_content_moves_to_free_slot(make_state, db_path):
+        """CORE-006: distinct legacy and _v2 rows at the same slot — the legacy
+        row is moved to a free slot, never dropped."""
+        _legacy_fixture(db_path)
+        conn = sqlite3.connect(db_path)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS temp_presets_v2 (
+                category TEXT, slot INTEGER, content TEXT,
+                PRIMARY KEY (category, slot))
+        """)
+        conn.execute(
+            "INSERT OR IGNORE INTO temp_presets_v2 (category, slot, content) "
+            "VALUES ('Code', 0, 'WORLD')")
+        conn.commit()
+        conn.close()
+        s = make_state()
+        try:
+            cur = s.conn.execute(
+                "SELECT slot, content FROM temp_presets_v2 "
+                "WHERE category='Code' ORDER BY slot")
+            rows = cur.fetchall()
+            assert len(rows) == 2
+            contents = {r[0]: r[1] for r in rows}
+            assert contents[0] == "WORLD"
+            assert contents[1] == "legacy silo"
+        finally:
+            s.conn.close()
+
+def test_mixed_v0_archive_identical_coalesces(make_state, db_path):
+        """CORE-006: archive mixed-v0 with identical content coalesces."""
+        _legacy_fixture(db_path)
+        conn = sqlite3.connect(db_path)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS archive_temp_presets_v2 (
+                category TEXT, slot INTEGER, content TEXT,
+                PRIMARY KEY (category, slot))
+        """)
+        conn.execute(
+            "INSERT OR IGNORE INTO archive_temp_presets_v2 "
+            "(category, slot, content) VALUES ('Code', 1, 'legacy archive')")
+        conn.commit()
+        conn.close()
+        s = make_state()
+        try:
+            cur = s.conn.execute(
+                "SELECT slot, content FROM archive_temp_presets_v2 "
+                "WHERE category='Code' ORDER BY slot")
+            rows = cur.fetchall()
+            assert len(rows) == 1
+            assert rows[0] == (1, "legacy archive")
+        finally:
+            s.conn.close()

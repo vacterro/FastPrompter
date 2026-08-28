@@ -601,7 +601,7 @@ class VaultTextEdit(QTextEdit):
             return
         painter = QPainter(self.line_number_area)
         try:
-            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
             painter.setFont(self.font())
             bg, text_color = self._gutter_colors()
             painter.fillRect(event.rect(), bg)
@@ -4013,7 +4013,7 @@ class VaultTextEdit(QTextEdit):
                                 mid_y = img_rect.top() + img_rect.height() // 2
                                 btn_rect = QRectF(img_rect.left(), mid_y - btn_h // 2, btn_w, btn_h)
                                 
-                                painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+                                painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
                                 painter.setBrush(QColor("#1e1e1e"))
                                 painter.setPen(QColor("#5a4a2a"))
                                 painter.drawRoundedRect(btn_rect, 4, 4)

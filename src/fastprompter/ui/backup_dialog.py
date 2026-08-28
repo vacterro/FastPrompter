@@ -213,7 +213,8 @@ class BackupDialog(QDialog):
                 if cat_dir not in created_dirs:
                     os.makedirs(cat_dir, exist_ok=True)
                     created_dirs.add(cat_dir)
-                tmp = dst + ".export.tmp"
+                from fastprompter.utils.path_safety import unique_temp_path
+                tmp = unique_temp_path(dst, "export")
                 try:
                     with open(tmp, 'w', encoding='utf-8') as f:
                         f.write(text)

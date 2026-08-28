@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.8.60 - 2026-08-28
+
+- **Audit ALL_3 (T-1095..T-1117):** 23 tickets implemented — CORE-001..009 (restore fail-closed, unique temp paths, backup coordinator, restore revocation, trash compensation, lossless migration, merge-journal durability, export-shutdown sync, deterministic backup test), W2-001..008 (cross-volume source ownership, nested alias import, rescan binding retention, backup retention validator, trash-log codec, bounded reads, special basename include, content_gen), PERF-001..006 (bounded discovery, durable-vs-force save, single doc extraction, coverage-aware line cache, cache cardinality, typecheck vocab regen).
+- **Font render fix:** the stored font size is now the final rendered size (no longer multiplied by ui_scale — round(17*0.5)==8 was the "always 8" bug); font_family/font_size persisted explicitly on every save.
+- **Arabic language stick fix:** static settings labels (Font/Theme/View/Language/Volume/Header Fmt) carry `_en_text` so retranslation from Arabic to any language recovers the English base.
+- **IPC duplicate-launch fix:** a second launch that reaches a live owner exits silently (loop-read full SHOW frame; diagnostic only when the server was never seen).
+- **Other session fixes:** Ctrl+Shift+S suggested filename + QFileDialog options; hotkey on visible-but-unfocused window brings to front; anti-aliasing banned everywhere (tooltips, glyphs, painter).
+
 ## v0.8.59 - 2026-08-27
 
 - **Bake current settings into defaults (T-1089):** global sound volume default raised to 1.0, search bar visible by default, interval-notification default volume raised to 1.0 in `default_profile.py`, `state.py`, `_INTERVAL_NOTIF_DEFAULT` and the dialog presets — English stays the default language, user-content keys excluded on purpose.

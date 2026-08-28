@@ -212,6 +212,21 @@ def test_stale_old_profile_worker_cannot_release_new_profile_gate(
 
     monkeypatch.setattr(os.path, "getsize", gs)
 
+    # CORE-009: block B's own startup backup behind a deterministic barrier so
+    # the test cannot race B's legitimate completion. A's worker is NOT blocked
+    # (it runs to completion normally).
+    b_entered = threading.Event()
+    b_release = threading.Event()
+    real_bak = state_mod._backup_atomically
+
+    def blocked_b_backup(src, dest, validate=True):
+        if str(dest) == db_b + ".bak":
+            b_entered.set()
+            b_release.wait(10)
+        return real_bak(src, dest, validate)
+
+    monkeypatch.setattr(state_mod, "_backup_atomically", blocked_b_backup)
+
     state = state_mod.FastPrompterState(profile_id=1)
     a_ctx = state._startup_backup_ctx
     deadline = time.monotonic() + 5
@@ -223,9 +238,18 @@ def test_stale_old_profile_worker_cannot_release_new_profile_gate(
     state.switch_profile(2, save_current=False)
     b_ctx = state._startup_backup_ctx
     assert b_ctx is not a_ctx
+    # B's worker is provably still blocked inside _backup_atomically.
+    assert b_entered.wait(5), "B's startup backup never started"
     a_ctx.ready.set()           # stale A worker "finishes"
     assert not b_ctx.ready.is_set(), \
         "a stale old-profile worker must not release the new profile's gate"
+    # Release B's barrier and wait for its physical worker to retire so the
+    # fixture cannot disappear under a live daemon (CORE-009).
+    b_release.set()
+    deadline = time.monotonic() + 5
+    while not b_ctx.ready.is_set() and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert b_ctx.ready.is_set(), "B's own backup should complete after release"
 
 
 def test_failed_profile_init_restores_old_backup_context(

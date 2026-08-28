@@ -312,6 +312,19 @@ def _sync_register_snapshot(snapshot):
     return snapshot
 
 
+def _sync_revoke_all():
+    """CORE-004: permanently revoke every pre-restore one-way-mirror snapshot.
+
+    Called the instant a DB restore commits. Clears the destination->seq
+    registry and bumps the global sequence, so ``_sync_snapshot_is_latest``
+    and the final-replace recheck both fail for any already-running pre-restore
+    writer — it can no longer publish stale RAM over the restored DB."""
+    global _SYNC_WRITE_SEQ
+    with _SYNC_REQUEST_LOCK:
+        _SYNC_WRITE_SEQ += 1
+        _SYNC_LATEST_REQUESTED.clear()
+
+
 def _sync_snapshot_is_latest(snapshot, dest):
     seq = snapshot.get("_write_seq")
     key = os.path.normcase(os.path.abspath(dest))
@@ -351,7 +364,8 @@ def _sync_mechanical_write(snapshot, lock_timeout_s=None):
                 continue
             try:
                 os.makedirs(os.path.dirname(dest), exist_ok=True)
-                tmp = dest + ".tmp"
+                from fastprompter.utils.path_safety import unique_temp_path
+                tmp = unique_temp_path(dest, "sync")
                 with open(tmp, "w", encoding="utf-8") as fh:
                     fh.write(text)
                 # A newer generation may have arrived while this temp file was
@@ -582,6 +596,14 @@ class _SyncPushWorker(QObject):
                     # the lease under the same gate, so a stale job can never
                     # begin/complete the recreate after invalidation).
                     with gate:
+                        # CORE-004: the restore-revocation barrier is rechecked
+                        # AT the mutation gate, not only at batch start — a
+                        # restore that commits while this job was reading must
+                        # stop the write that follows.
+                        if getattr(self, "_suppress", False):
+                            results.append(
+                                (key, path, text, "stale", None))
+                            continue
                         if leases.get(key, 0) != (lease or 0):
                             results.append(
                                 (key, path, text, "stale", None))
@@ -611,6 +633,11 @@ class _SyncPushWorker(QObject):
                 # bumps the lease under this same gate; if it already did, no
                 # older lease may begin the write once invalidation completes.
                 with gate:
+                    # CORE-004: restore-revocation rechecked at the final
+                    # mutation gate (see recreate branch above).
+                    if getattr(self, "_suppress", False):
+                        results.append((key, path, text, "stale", None))
+                        continue
                     if leases.get(key, 0) != (lease or 0):
                         results.append((key, path, text, "stale", None))
                         continue
@@ -1960,7 +1987,7 @@ class FastPrompter(
             self.data["silo_view_state_all"] = m
         return m
 
-    def capture_silo_state(self, slot=None, is_archive=None):
+    def capture_silo_state(self, slot=None, is_archive=None, text=None):
         """Remember where the user was in this silo, so coming back lands
         exactly where they left instead of jumping to the top or bottom."""
         # Re-stamp queue lines from their anchors while this document is still
@@ -1994,19 +2021,31 @@ class FastPrompter(
         # only meaningful against the EXACT text they were captured from.
         # restore_silo_state refuses to clamp them into a changed document
         # (T-720), so capture must record what "the same text" means.
+        # PERF-003: the caller may pass the already-materialized authoritative
+        # snapshot (from save_data_to_db), so a fresh-edit save does not
+        # re-extract the whole document here.
         try:
             doc = ta.document()
             current_rev = doc.revision()
-            if getattr(ta, "_last_fingerprint_rev", -1) == current_rev:
-                entry["text_len"] = ta._last_fingerprint_len
-                entry["text_crc"] = ta._last_fingerprint_crc
+            if text is None:
+                if getattr(ta, "_last_fingerprint_rev", -1) == current_rev:
+                    entry["text_len"] = ta._last_fingerprint_len
+                    entry["text_crc"] = ta._last_fingerprint_crc
+                else:
+                    text = doc.toPlainText()
+                    ta._last_fingerprint_len = len(text)
+                    ta._last_fingerprint_crc = zlib.crc32(
+                        text.encode("utf-8", "replace"))
+                    ta._last_fingerprint_rev = current_rev
+                    entry["text_len"] = ta._last_fingerprint_len
+                    entry["text_crc"] = ta._last_fingerprint_crc
             else:
-                text = doc.toPlainText()
+                entry["text_len"] = len(text)
+                entry["text_crc"] = zlib.crc32(
+                    text.encode("utf-8", "replace"))
                 ta._last_fingerprint_len = len(text)
-                ta._last_fingerprint_crc = zlib.crc32(text.encode("utf-8", "replace"))
+                ta._last_fingerprint_crc = entry["text_crc"]
                 ta._last_fingerprint_rev = current_rev
-                entry["text_len"] = ta._last_fingerprint_len
-                entry["text_crc"] = ta._last_fingerprint_crc
         except Exception as exc:
             from fastprompter.core.logging import logger as _log
             _log.warning("silo state fingerprint update failed: %s", exc)
@@ -2345,6 +2384,11 @@ class FastPrompter(
         # inactive silo on every 900ms Watcher tick. Cache per (slot, raw-id)
         # the exact requested line numbers, extracted by a sequential scan
         # that stops after the highest requested line.
+        # PERF-004: the cache key must describe what it actually holds — the
+        # requested-line COVERAGE, not just the raw object identity. When the
+        # requested set changes while the raw text is unchanged, missing lines
+        # are extracted now (fill coverage) instead of being misread as
+        # detached source lines.
         if not hasattr(self, "_queue_live_line_cache"):
             self._queue_live_line_cache = {}
         wanted = sorted({item.line for item in items if item.line})
@@ -2355,9 +2399,19 @@ class FastPrompter(
             entry = cache.get(str(slot))
             if entry is None or entry[0] != id(raw):
                 lines_map = self._extract_requested_lines(raw, set(wanted))
-                cache[str(slot)] = (id(raw), lines_map)
+                cache[str(slot)] = (id(raw), lines_map, set(wanted))
             else:
-                lines_map = entry[1]
+                _, cached_lines, covered = entry
+                missing = set(wanted) - covered
+                if missing:
+                    # coverage-aware: fill only the uncached lines from the
+                    # SAME unchanged raw text
+                    new_map = self._extract_requested_lines(raw, missing)
+                    new_map.update(cached_lines)
+                    lines_map = new_map
+                    cache[str(slot)] = (id(raw), new_map, covered | missing)
+                else:
+                    lines_map = cached_lines
 
         for item in items:
             if item.line and item.line in lines_map:
@@ -3873,7 +3927,14 @@ class FastPrompter(
         wanted = {os.path.abspath(os.path.join(cat_dir, name)) for name in fmap.values()}
         wanted |= {os.path.abspath(os.path.join(cat_dir, name)) for name in amap.values()}
         remaining = []
-        for original, trashed in log:
+        for record in log:
+            # W2-005: defensively skip malformed members — a corrupt row must
+            # never abort the whole recovery batch.
+            if not (isinstance(record, (tuple, list)) and len(record) >= 2
+                    and isinstance(record[0], str) and isinstance(record[1], str)
+                    and record[0] and record[1]):
+                continue
+            original, trashed = record[0], record[1]
             if original in wanted and not os.path.exists(original) and os.path.isdir(trashed):
                 try:
                     os.makedirs(os.path.dirname(original), exist_ok=True)
@@ -4747,15 +4808,11 @@ class FastPrompter(
         else:
             return f"silo:{self.active_temp_slot}"
 
-    def save_data_to_db(self, force=False):
-        # Capture the current silo's view state so the saved position,
-        # cursor, and scroll survive restart.
-        if not getattr(self, "_suspend_cache", False) and hasattr(self, "text_area"):
-            self.capture_silo_state(self.active_temp_slot,
-                                    getattr(self, "active_is_archive", False))
-            # and WHICH silo that was, for this project — the outer half of
-            # "put me back where I left off"
-            self.capture_silo_session()
+    def save_data_to_db(self, force=False, durable=False):
+        # PERF-003: acquire ONE authoritative whole-document snapshot and
+        # thread the SAME string through silo-state fingerprinting and the
+        # authoritative persistence — a fresh-edit save must not materialize
+        # the Qt document twice.
         if hasattr(self, "text_area"):
             cached = getattr(self, "_last_cached_text", None)
             current_text = self.text_area.toPlainText() if cached is None else cached
@@ -4763,6 +4820,16 @@ class FastPrompter(
         else:
             current_text = self.data.get("last_text", "")
         self._last_saved_text = current_text
+
+        # Capture the current silo's view state so the saved position,
+        # cursor, and scroll survive restart.
+        if not getattr(self, "_suspend_cache", False) and hasattr(self, "text_area"):
+            self.capture_silo_state(self.active_temp_slot,
+                                    getattr(self, "active_is_archive", False),
+                                    text=current_text)
+            # and WHICH silo that was, for this project — the outer half of
+            # "put me back where I left off"
+            self.capture_silo_session()
 
         # CORE-001: the live editor owner must be flushed synchronously before
         # EVERY authoritative save. Snippet mode copies the exact editor text
@@ -4782,9 +4849,10 @@ class FastPrompter(
             "last_tab_idx": str(self.data["last_tab_idx"]),
             "active_temp_slot": str(self.active_temp_slot),
             "last_geometry": self.data.get("last_geometry", ""),
-            "font_size": str(self.font_spin.value())
+            "font_size": str(self.data.get("font_size", 11))
             if hasattr(self, "font_spin")
             else str(self.data.get("font_size", 11)),
+            "font_family": str(self.data.get("font_family", "Verdana")),
             "preview_mode": (self.preview_combo.currentData() or self.preview_combo.currentText())
             if hasattr(self, "preview_combo")
             else self.data.get("preview_mode", "None"),
@@ -4802,7 +4870,7 @@ class FastPrompter(
         }
 
         ok = bool(self.state.save_data_to_db(current_text, ui_settings,
-                                              force=force))
+                                              force=force, durable=durable))
         # P0-2: the filesystem mirror must only be published when the
         # authoritative SQLite save SUCCEEDED. A failed commit stays dirty and
         # retryable; dispatching a mirror snapshot would let the disk copy
@@ -6453,18 +6521,37 @@ class FastPrompter(
             root = self._sync_root()
             if not root or not os.path.isdir(root):
                 return
-            files = ps.scan_folder(root, self._sync_include(),
-                                   self._sync_exclude(),
-                                   recursive=self._sync_recursive(),
-                                   max_bytes=self._sync_max_bytes())
             mapping = self.data.setdefault("project_sync_map", {})
+            # PERF-001: discovery is bounded to the ACTUAL slot demand. Only
+            # K free slots can become new bindings, so scanning/sorting the
+            # whole tree is O(N) waste; a bounded scan keeps the
+            # lexicographically smallest K eligible paths (O(N log K), O(K)
+            # memory).
+            presets = self._ensure_temp_presets()
+            free_count = max(0, len(presets) - len(mapping))
+            files = ps.scan_folder(
+                root, self._sync_include(), self._sync_exclude(),
+                recursive=self._sync_recursive(),
+                max_bytes=self._sync_max_bytes(),
+                limit=free_count if free_count > 0 else 1)
+            # W2-003: existing bindings are classified separately from new-file
+            # discovery. `files` only contains CURRENTLY syncable entries — a
+            # file that is temporarily over max_bytes, caught mid-write as
+            # binary, or hitting a transient stat/read failure is omitted, but
+            # it is NOT physically deleted. Removing the mapping for it would
+            # detach the silo and reassign it a new identity when it becomes
+            # valid again. An existing mapping is dropped only when the
+            # physical file is genuinely absent.
             for key in list(mapping.keys()):
                 rel = mapping[key]
-                if rel not in files:
-                    path = ps.resolve_relative_path(root, rel)
-                    mapping.pop(key, None)
-                    if path is None:
-                        continue
+                path = ps.resolve_relative_path(root, rel)
+                if os.path.isfile(path) if path is not None else False:
+                    # still physically present — retain the binding (it may be
+                    # temporarily unsyncable; that is handled elsewhere by
+                    # holding/suspending, never by unlink)
+                    continue
+                mapping.pop(key, None)
+                if path is not None:
                     try:
                         _sk = int(key)
                     except (TypeError, ValueError):
@@ -7615,13 +7702,17 @@ class FastPrompter(
         # FlowLayout wraps them instead (see below).
         self._appearance_items = []
         appearance_row = self._appearance_items
-        appearance_row.append(QLabel(tr("Font:", getattr(self, "_current_lang", "EN"))))
+        _lbl_font = QLabel(tr("Font:", getattr(self, "_current_lang", "EN")))
+        _lbl_font._en_text = "Font:"
+        appearance_row.append(_lbl_font)
         appearance_row.append(self.font_combo)
         appearance_row.append(self.font_spin)
         appearance_row.append(self.btn_load_font)
         appearance_row.append(self.btn_clear_fonts)
         pass  # spacing handled by the flow layout
-        appearance_row.append(QLabel(tr("Theme:", getattr(self, "_current_lang", "EN"))))
+        _lbl_theme = QLabel(tr("Theme:", getattr(self, "_current_lang", "EN")))
+        _lbl_theme._en_text = "Theme:"
+        appearance_row.append(_lbl_theme)
         appearance_row.append(self.cb_theme)
         appearance_row.append(self.btn_colors)
 
@@ -7629,11 +7720,15 @@ class FastPrompter(
         self.btn_drop_zones.setToolTip(tr("Customize Drop Zones", getattr(self, "_current_lang", "EN")))
         appearance_row.append(self.btn_drop_zones)
         pass  # spacing handled by the flow layout
-        appearance_row.append(QLabel(tr("View:", getattr(self, "_current_lang", "EN"))))
+        _lbl_view = QLabel(tr("View:", getattr(self, "_current_lang", "EN")))
+        _lbl_view._en_text = "View:"
+        appearance_row.append(_lbl_view)
         appearance_row.append(self.preview_combo)
         appearance_row.append(self.btn_button_scale)
         pass  # spacing handled by the flow layout
-        appearance_row.append(QLabel(tr("Language:", getattr(self, "_current_lang", "EN"))))
+        _lbl_lang = QLabel(tr("Language:", getattr(self, "_current_lang", "EN")))
+        _lbl_lang._en_text = "Language:"
+        appearance_row.append(_lbl_lang)
         self.cb_language = QComboBox()
         # Every language the i18n pack can serve, shown by its native name +
         # a drawn flag icon, keyed on the code (stored as itemData so the
@@ -8237,6 +8332,7 @@ class FastPrompter(
         div_row.setContentsMargins(0, 0, 0, 0)
         div_row.setSpacing(4)
         lbl_div = QLabel(tr("Line button gaps:", getattr(self, "_current_lang", "EN")))
+        lbl_div._en_text = "Line button gaps:"
         lbl_div.setToolTip(tr(
             "Blank lines the Line button and the toolbar divider put around ---.\n"
             "Ctrl+W does NOT read these - it has its own per-scenario spacing in\n"
@@ -8312,6 +8408,9 @@ class FastPrompter(
         vol_row.setContentsMargins(0, 0, 0, 0)
         vol_row.setSpacing(4)
         vol_row.addWidget(QLabel(tr("Volume:", getattr(self, "_current_lang", "EN"))))
+        _lbl_vol = QLabel(tr("Volume:", getattr(self, "_current_lang", "EN")))
+        _lbl_vol._en_text = "Volume:"
+        vol_row.addWidget(_lbl_vol)
         vol_row.addWidget(self.spin_volume)
         vol_row.addStretch(1)
 
@@ -8363,6 +8462,7 @@ class FastPrompter(
         hdr_row.setContentsMargins(0, 0, 0, 0)
         hdr_row.setSpacing(4)
         lbl_hdr = QLabel(tr("Header Fmt:", getattr(self, "_current_lang", "EN")))
+        lbl_hdr._en_text = "Header Fmt:"
         lbl_hdr.setToolTip(tr(
             "Template for the Ctrl+E header.\n"
             "{text} — the line's text\n{time} — timestamp\n"
@@ -12302,7 +12402,7 @@ class FastPrompter(
         self.build_categories()
         self.mark_dirty()
 
-    def _save_undo_state(self):
+    def _save_undo_state(self, merge_journal_root=None):
         if not hasattr(self, "_undo_timer"):
             from PyQt6.QtCore import QTimer
             self._undo_timer = QTimer(self)
@@ -12323,6 +12423,11 @@ class FastPrompter(
         self._undo_pending_jobs[undo_path] = {
             "undo": list(getattr(self, "data_undo_stack", [])),
             "redo": list(getattr(self, "data_redo_stack", [])),
+            # CORE-007: a merge journal may only be cleared once the undo
+            # snapshot that durably represents its ledger has been published.
+            # The root rides on the pending job and is actioned by the writer
+            # after a successful os.replace.
+            "merge_journal_root": merge_journal_root,
         }
         if not self._undo_timer.isActive():
             self._undo_timer.start()
@@ -12413,7 +12518,8 @@ class FastPrompter(
             # Cap the persisted snapshots to prevent bloat (H-302)
             undo_data = job["undo"][-10:]
             redo_data = job["redo"][-10:]
-            tmp_path = undo_path + ".tmp"
+            from fastprompter.utils.path_safety import unique_temp_path
+            tmp_path = unique_temp_path(undo_path, "undo")
 
             # Serialize the save and make it atomic (H-301)
             if os.path.exists(tmp_path):
@@ -12444,6 +12550,21 @@ class FastPrompter(
                     "Failed to publish undo state to %s: %s; the "
                     "previous undo file is untouched",
                     undo_path, exc)
+            else:
+                # CORE-007: the snapshot that carries the merge ledger has now
+                # been durably published (its os.replace landed). ONLY now may
+                # the write-ahead merge journal be cleared — a crash earlier
+                # left it intact so startup reconciliation could reverse any
+                # half-applied moves.
+                mj_root = (job or {}).get("merge_journal_root")
+                if mj_root:
+                    try:
+                        from fastprompter.ui.snippet_ops_mixin import _merge_journal_clear
+                        _merge_journal_clear(mj_root)
+                    except Exception:
+                        from fastprompter.core.logging import logger
+                        logger.exception(
+                            "merge journal clear after durable undo failed")
         except Exception:
             job_rec = self._undo_save_jobs.get(threading.current_thread())
             if job_rec is not None:
@@ -12981,8 +13102,13 @@ class FastPrompter(
                 from fastprompter.core.state import (
                     FatalRestoreError,
                     RestoreError,
+                    _drain_db_backup,
                     restore_database,
                 )
+                # CORE-003: quiesce the backup worker before the live DB
+                # incarnation changes — a stale worker must not publish a
+                # pre-restore snapshot into the restored DB's .bak.
+                _drain_db_backup(db_path)
                 try:
                     restore_database(path, db_path)
                 except FatalRestoreError as e:
@@ -13001,12 +13127,17 @@ class FastPrompter(
                     # user to restart on the known-good database.
                     from fastprompter.core.logging import logger as _log
                     _log.exception("restore failed fatally: %s", e)
+                    if getattr(e, "repaired", True):
+                        msg = tr("Restore failed and the live database could not be "
+                                 "left consistent. It has been repaired from the "
+                                 "automatic safety snapshot on disk — restart "
+                                 "FastPrompter to reload it.", self._current_lang)
+                    else:
+                        msg = tr("Restore failed and the live database could not be "
+                                 "repaired. Your data is not guaranteed intact — "
+                                 "restart FastPrompter.", self._current_lang)
                     QMessageBox.critical(
-                        self, tr("Error", self._current_lang),
-                        tr("Restore failed and the live database could not be "
-                           "left consistent. It has been repaired from the "
-                           "automatic safety snapshot on disk — restart "
-                           "FastPrompter to reload it.", self._current_lang))
+                        self, tr("Error", self._current_lang), msg)
                     self._restore_stale_memory = True
                     self._logical_finalized = True
                     self._watcher_commit_quiesce()
@@ -13063,6 +13194,20 @@ class FastPrompter(
                 # or drain stale Sync-Project writes over the restored state.
                 self._restore_stale_memory = True
                 self._logical_finalized = True
+                # CORE-004: the restored DB is authoritative — revoke every
+                # pre-restore external writer NOW (one-way mirror + Sync-Project
+                # push) so no already-running worker can publish stale RAM over
+                # the restored state before quit_app's own drain.
+                try:
+                    from fastprompter.main import _sync_revoke_all
+                    _sync_revoke_all()
+                except Exception:
+                    pass
+                try:
+                    if self._push_worker is not None:
+                        self._push_worker._suppress = True
+                except Exception:
+                    pass
                 # W2-001: the restore committed — resolve the paused watcher by
                 # performing the irreversible disarm now.
                 self._watcher_commit_quiesce()
@@ -13939,7 +14084,14 @@ class FastPrompter(
             return 0, 0
         root = os.path.abspath(cat_dir).rstrip("\\/") + os.sep
         remaining, restored, stuck = [], 0, 0
-        for original, trashed in log:
+        for record in log:
+            # W2-005: defensively skip malformed members — a corrupt row must
+            # never abort the whole rollback batch.
+            if not (isinstance(record, (tuple, list)) and len(record) >= 2
+                    and isinstance(record[0], str) and isinstance(record[1], str)
+                    and record[0] and record[1]):
+                continue
+            original, trashed = record[0], record[1]
             if not os.path.abspath(original).startswith(root):
                 remaining.append((original, trashed))
                 continue
@@ -16642,15 +16794,21 @@ class FastPrompter(
                     # W2-003: bind to the canonical files root so a later
                     # Files Folder re-root makes this record non-executable.
                     rec["_fs_root"] = os.path.abspath(self._files_root())
-                    self._save_undo_state()
-                    # W2-002: the ledger is now durably represented in the
-                    # persisted undo JSON — the write-ahead journal is no
-                    # longer the only recovery authority and may be cleared.
-                    try:
-                        from fastprompter.ui.snippet_ops_mixin import _merge_journal_clear
-                        _merge_journal_clear(self._files_root())
-                    except Exception:
-                        pass
+                    # CORE-007: do NOT clear the merge journal here. The undo
+                    # snapshot is only QUEUED at this point (a 1s debounce
+                    # timer + a background writer later perform the actual
+                    # durable os.replace). Clearing the write-ahead journal at
+                    # queue time would erase the only physical transaction
+                    # record if the process dies inside the debounce or the
+                    # writer fails — startup would then see child files already
+                    # moved under the parent while the DB still describes
+                    # pre-nest ownership, with no way to reverse the moves.
+                    # The journal is retained and the CLEAR is deferred into
+                    # the undo writer, which removes it only AFTER the exact
+                    # snapshot that carries this ledger has been durably
+                    # published (see _write_undo_file).
+                    self._save_undo_state(merge_journal_root=os.path.abspath(
+                        self._files_root()))
         self.mark_dirty()
         self.refresh_temp_presets()
 
@@ -17550,7 +17708,10 @@ class FastPrompter(
     def hide_and_save(self):
         # every route out of the window restores the desktop, not just Ctrl+D
         self.exit_zen_solo()
-        ok = self.save_data_to_db(force=True)
+        # PERF-002: an ordinary hide needs durability of the KNOWN dirty state,
+        # not a full re-scan of every clean domain. durable=True commits the
+        # dirty generations synchronously without the exhaustive force scan.
+        ok = self.save_data_to_db(durable=True)
         if not ok:
             # P1: a known failed autosave must NOT hide the window and silently
             # drop the user's data. Keep it visible/active and report the
@@ -17764,10 +17925,16 @@ def main_entry():
         if role == HANDED_OFF:
             return
         # UNRESPONSIVE / FAILED: a live owner exists (or ownership could not
-        # be established). Refuse to become a second writer; say why.
+        # be established). Refuse to become a second writer. Show the
+        # diagnostic only when the owner's server was NEVER seen (genuinely
+        # frozen or crashed). If the server was seen but didn't ACK, the
+        # owner is alive but busy — exit silently; the window will come to
+        # front when the event loop catches up.
         from fastprompter.core.logging import logger as _log
         _log.warning("FastPrompter startup refused: %s", reason)
-        _show_startup_diagnostic(reason)
+        from fastprompter.core.ipc_server import _LAST_SAW_SERVER
+        if not _LAST_SAW_SERVER:
+            _show_startup_diagnostic(reason)
         return
 
     # Abandoned ownership means the previous owner died mid-run: its database
@@ -17813,6 +17980,8 @@ def main_entry():
     from fastprompter.utils.fonts import no_aa, resolve_family
     global_font = no_aa(QFont(resolve_family("Verdana"), 10))
     app.setFont(global_font)
+    from PyQt6.QtWidgets import QToolTip
+    QToolTip.setFont(no_aa(QFont(resolve_family("Verdana"), 10)))
     app.setQuitOnLastWindowClosed(False)
 
     # Create and show window
@@ -17928,6 +18097,18 @@ def _shutdown_application(window, app, lock):
             ipc.close()
     except Exception:
         _log.exception("IPC shutdown failed")
+        clean = False
+    try:
+        # CORE-003: drain core-state SQLite backup workers BEFORE the live
+        # connection is closed / process ownership is released. A backup
+        # writer still running after this point could publish stale or
+        # partial recovery artifacts once SQLite is gone.
+        from fastprompter.core.state import _drain_all_db_backups
+        if not _drain_all_db_backups():
+            _log.error("core-state backup worker shutdown TIMED_OUT")
+            clean = False
+    except Exception:
+        _log.exception("core-state backup drain FAILED")
         clean = False
     try:
         conn = getattr(window, "conn", None)

@@ -132,27 +132,85 @@ def match_exclude(relpath: str, patterns: list[str]) -> bool:
 
 def is_text_file(relpath: str, include: list[str] | None = None,
                  exclude: list[str] | None = None) -> bool:
-    """Include/exclude decision for one relative path (pure)."""
+    """Include/exclude decision for one relative path (pure).
+
+    Include tokens match EITHER an extension (``.py`` -> ``x.py``) OR an exact
+    special basename (``.env``, ``.gitignore``, ``.dockerignore``,
+    ``.editorconfig``, ``.makefile``, ``.dockerfile`` — extensionless or
+    dot-prefixed config files the include inventory advertises but an
+    extension-only matcher could never reach, W2-007). A plain extensionless
+    name like ``Dockerfile``/``Makefile`` matches when the token equals the
+    basename (case-insensitive, ``.dockerfile``/``.makefile``)."""
     if match_exclude(relpath, exclude or []):
         return False
     ext = os.path.splitext(relpath)[1].lower()
     inc = include if include is not None else list(DEFAULT_INCLUDE)
     if not inc:
         return False
-    return ext in inc
+    if ext in inc:
+        return True
+    # W2-007: special basename match. Compare the final component
+    # case-insensitively against the include tokens so advertised dotfiles and
+    # extensionless build files are discoverable, not silently excluded.
+    base = os.path.basename(relpath)
+    base_l = base.lower()
+    for tok in inc:
+        tok_l = tok.strip().lower()
+        if not tok_l:
+            continue
+        if tok_l.startswith("."):
+            if base_l == tok_l or base_l == tok_l.lstrip("."):
+                return True
+        elif base_l == tok_l:
+            return True
+    return False
 
 
 def scan_folder(root: str, include: list[str] | None = None,
                 exclude: list[str] | None = None, recursive: bool = True,
-                max_bytes: int = DEFAULT_MAX_BYTES) -> list[str]:
-    """Every text file under ``root`` as a sorted list of relative paths.
+                max_bytes: int = DEFAULT_MAX_BYTES,
+                limit: int | None = None) -> list[str]:
+    """Text files under ``root`` as a sorted list of relative paths.
 
     Pure and defensive: unreadable entries are skipped, never raised on.
+
+    ``limit`` (PERF-001): bound the retained result to the lexicographically
+    smallest K eligible paths using a max-heap, so discovery costs O(N log K)
+    and O(K) memory instead of collecting and sorting ALL N (a large repo with
+    only K<=100 binding slots would otherwise allocate/sort the entire tree on
+    the GUI thread). ``limit=None`` keeps the exact legacy all-result contract.
     """
+    import heapq
+
+    class _NegStr:
+        """String wrapper that REVERSES __lt__ so heapq's min-heap behaves as
+        a max-heap on the underlying string: heap[0] is the lexicographically
+        LARGEST retained path, which is the one to evict once the bound is hit
+        (PERF-001)."""
+        __slots__ = ("s",)
+
+        def __init__(self, s):
+            self.s = s
+
+        def __lt__(self, other):
+            return self.s > other.s
+
     root = os.path.abspath(root)
     inc = include if include is not None else list(DEFAULT_INCLUDE)
     exc = exclude if exclude is not None else list(DEFAULT_EXCLUDE)
     found: list[str] = []
+    heap: list[_NegStr] = []      # PERF-001: bounded max-heap
+    keep = 0 if limit is None else max(0, int(limit))
+
+    def _add(rel):
+        if keep == 0:
+            found.append(rel)
+            return
+        if len(heap) < keep:
+            heapq.heappush(heap, _NegStr(rel))
+        elif rel < heap[0].s:
+            heapq.heapreplace(heap, _NegStr(rel))
+
     if recursive:
         for dirpath, dirnames, filenames in os.walk(root):
             # prune excluded directories in place so os.walk never descends
@@ -168,7 +226,7 @@ def scan_folder(root: str, include: list[str] | None = None,
                         continue
                 except OSError:
                     continue
-                found.append(rel)
+                _add(rel)
     else:
         try:
             names = os.listdir(root)
@@ -184,8 +242,11 @@ def scan_folder(root: str, include: list[str] | None = None,
                     continue
             except OSError:
                 continue
-            found.append(rel)
-    return sorted(found)
+            _add(rel)
+
+    if keep == 0:
+        return sorted(found)
+    return sorted(w.s for w in heap)
 
 
 def detect_eol(text: str) -> str:
@@ -211,11 +272,14 @@ def read_text_file(path: str, max_bytes: int = DEFAULT_MAX_BYTES):
     FastPrompter-originated edit instead of being silently dropped).
     """
     try:
-        size = os.path.getsize(path)
-        if size > max_bytes:
-            return None
+        # W2-006: the opened stream is the authoritative bound. `getsize` is
+        # only a cheap pre-check; the file may grow or be replaced between the
+        # stat and the read, so the read itself must enforce the limit. Read at
+        # most max_bytes + 1 and treat a present extra byte as "too large".
         with open(path, "rb") as fh:
-            data = fh.read()
+            data = fh.read(max_bytes + 1)
+        if len(data) > max_bytes:
+            return None
     except OSError:
         return None
     if looks_binary(data):
@@ -248,7 +312,8 @@ def write_text_file(path: str, text: str, eol: str = "\n",
     like an external edit. Returns None on failure."""
     if eol != "\n":
         text = text.replace("\n", eol)
-    tmp = path + ".fp-sync-tmp"
+    from fastprompter.utils.path_safety import unique_temp_path
+    tmp = unique_temp_path(path, "psync")
     try:
         with open(tmp, "wb") as fh:
             if write_bom:

@@ -210,3 +210,41 @@ def test_free_slots_skips_claimed_gaps():
     mapping = {"0": "a.md", "2": "c.md"}
     # slot 1 is claimed, so appending starts at 3
     assert ps.free_slots(mapping, 3, 2) == [3, 4]
+
+def test_read_text_file_bounded_reading(tmp_path):
+    """W2-006: read_text_file must enforce max_bytes on the actual stream,
+    not only on a pre-stat getSize."""
+    from fastprompter.core.project_sync import read_text_file
+    f = tmp_path / "x.txt"
+    f.write_bytes(b"x" * 100)
+    # exactly max allowed works
+    assert read_text_file(str(f), max_bytes=100) is not None
+    # max+1 is refused
+    assert read_text_file(str(f), max_bytes=99) is None
+    # growing file between stat-and-read: must be enforced on stream
+    f.write_bytes(b"x" * 101)
+    assert read_text_file(str(f), max_bytes=100) is None
+
+def test_special_basename_include(tmp_path):
+    """W2-007: advertised special basenames (.env, .gitignore, Dockerfile,
+    Makefile, .editorconfig) must be discoverable, not silently excluded."""
+    from fastprompter.core.project_sync import is_text_file, scan_folder
+    include = [".txt", ".env", ".gitignore", ".dockerignore",
+               ".editorconfig", ".makefile", ".dockerfile"]
+    assert is_text_file(".env", include) is True
+    assert is_text_file("nested/.gitignore", include) is True
+    assert is_text_file(".dockerignore", include) is True
+    assert is_text_file(".editorconfig", include) is True
+    assert is_text_file(".makefile", include) is True
+    assert is_text_file(".dockerfile", include) is True
+    assert is_text_file("a.txt", include) is True
+    assert is_text_file("a.py", include) is False
+    # extensionless Dockerfile / Makefile via their dotted tokens
+    assert is_text_file("Dockerfile", include) is True
+    assert is_text_file("Makefile", include) is True
+
+    (tmp_path / ".env").write_text("A=1")
+    (tmp_path / "a.txt").write_text("hi")
+    found = scan_folder(str(tmp_path), include=include)
+    assert ".env" in found
+    assert "a.txt" in found

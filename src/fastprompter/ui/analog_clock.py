@@ -224,7 +224,7 @@ class BigAnalogClock(QWidget):
 
         p = QPainter(self)
         try:
-            p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            p.setRenderHint(QPainter.RenderHint.Antialiasing, False)
             colors = self._palette()
             rect = self.rect()
             p.fillRect(rect, colors["bg"])

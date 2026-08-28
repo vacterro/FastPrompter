@@ -4,10 +4,12 @@ import os
 import re
 import sqlite3
 import threading
+import time
 
 from fastprompter.core.default_profile import DEFAULT_PROFILE
 from fastprompter.core.logging import logger
 from fastprompter.utils.paths import get_db_path
+from fastprompter.utils.path_safety import unique_temp_path
 
 # Settings whose value is a list or a dict and must therefore be written as
 # JSON. Everything else goes through str(), and a dict written that way comes
@@ -411,6 +413,19 @@ def _normalize_structured_list(key, parsed, default):
         return members
     if key in _INT_LIST_KEYS:
         return [m for m in parsed if isinstance(m, int) and m >= 0]
+    if key == "folder_trash_log":
+        # W2-005: each member is an (original, trashed) pair of path strings.
+        # Recovery consumers unpack every row, so a malformed member (bare
+        # string, one-element seq, non-string pair, overlong seq) must be
+        # dropped rather than crossing the boundary as trusted-but-malformed.
+        out = []
+        for m in parsed:
+            if not isinstance(m, (tuple, list)) or len(m) < 2:
+                continue
+            orig, trashed = m[0], m[1]
+            if isinstance(orig, str) and isinstance(trashed, str) and orig and trashed:
+                out.append([orig, trashed])
+        return out
     return parsed
 
 
@@ -627,6 +642,52 @@ def _ensure_base_tables(cur):
     cur.execute("CREATE TABLE IF NOT EXISTS archive_temp_presets_v2 (category TEXT, slot INTEGER, content TEXT, PRIMARY KEY (category, slot))")
 
 
+def _merge_legacy_into_v2(cur, legacy_table, v2_table, first_category):
+    """Fold a legacy global-silo table into its per-category ``_v2`` sibling
+    WITHOUT losing any legacy row (CORE-006).
+
+    * rows whose ``(category, slot)`` is free in ``_v2`` are inserted as-is;
+    * a legacy row colliding with an identical ``_v2`` row is skipped (content
+      already represented — coalesce);
+    * a legacy row colliding with a DIFFERENT ``_v2`` row is moved to the
+      lowest free slot in the category (deterministic, no overwrite);
+    * if the category is full (0..99 all occupied) and a distinct legacy row
+      still needs a home, raise ``MigrationError`` — the caller rolls the whole
+      transaction back, leaving the v0 database untouched.
+    """
+    rows = list(cur.execute(
+        f"SELECT slot, content FROM {legacy_table}"))
+    if not rows:
+        return
+    existing = {}
+    for cat, slot, content in cur.execute(
+            f"SELECT category, slot, content FROM {v2_table}"):
+        existing.setdefault(cat, {}).setdefault(slot, content)
+    taken = set(existing.get(first_category, {}))
+    for slot, content in rows:
+        if slot in taken:
+            if existing[first_category].get(slot) == content:
+                continue  # identical — already represented, coalesce
+            # distinct content: find the lowest free slot
+            target = next((s for s in range(100) if s not in taken), None)
+            if target is None:
+                raise MigrationError(
+                    f"migration from {legacy_table} could not place distinct "
+                    f"content in category {first_category!r}: every slot "
+                    f"0..99 is occupied and the legacy row at slot {slot} "
+                    f"differs from the existing _v2 row — refusing to drop "
+                    f"or overwrite user text")
+            cur.execute(
+                f"INSERT INTO {v2_table} (category, slot, content) "
+                f"VALUES (?, ?, ?)", (first_category, target, content))
+            taken.add(target)
+        else:
+            cur.execute(
+                f"INSERT INTO {v2_table} (category, slot, content) "
+                f"VALUES (?, ?, ?)", (first_category, slot, content))
+            taken.add(slot)
+
+
 def _migrate_v0_to_v1(conn, first_category):
     """Legacy (v0.8.x, unversioned) database -> version 1 schema.
 
@@ -639,17 +700,22 @@ def _migrate_v0_to_v1(conn, first_category):
     cur = conn.cursor()
     _ensure_base_tables(cur)
 
-    # Migration from global silos to Tab-based silos (defaulting to the first Tab)
+    # Migration from global silos to Tab-based silos (defaulting to the first Tab).
+    # CORE-006: a legacy v0 database may ALREADY carry a partially-populated
+    # `temp_presets_v2` (a validator-legal partial-migration state). A bare
+    # `INSERT OR IGNORE ... DROP temp_presets` would silently destroy any
+    # legacy row whose slot collides with an existing _v2 row. Migrate
+    # conflict-aware: identical content coalesces, distinct content moves to a
+    # deterministic free slot, and a full _v2 table raises MigrationError so
+    # the whole transaction rolls back with the v0 database untouched.
     if _has_table(cur, "temp_presets"):
-        cur.execute(
-            "INSERT OR IGNORE INTO temp_presets_v2 (category, slot, content) "
-            "SELECT ?, slot, content FROM temp_presets", (first_category,))
+        _merge_legacy_into_v2(cur, "temp_presets", "temp_presets_v2",
+                              first_category)
         cur.execute("DROP TABLE temp_presets")
 
     if _has_table(cur, "archive_temp_presets"):
-        cur.execute(
-            "INSERT OR IGNORE INTO archive_temp_presets_v2 (category, slot, content) "
-            "SELECT ?, slot, content FROM archive_temp_presets", (first_category,))
+        _merge_legacy_into_v2(cur, "archive_temp_presets",
+                              "archive_temp_presets_v2", first_category)
         cur.execute("DROP TABLE archive_temp_presets")
 
     if not _has_column(cur, "presets", "last_edited"):
@@ -744,8 +810,7 @@ def _backup_atomically(source_conn, dest_path, validate=True):
     published in a state that a restore could not trust, and the previous
     destination survives any failure up to the swap.
     """
-    tmp = dest_path + ".tmp"
-    _remove_quietly(tmp)
+    tmp = unique_temp_path(dest_path, "bak")
     try:
         dest_conn = sqlite3.connect(tmp)
         try:
@@ -770,6 +835,118 @@ def _backup_atomically(source_conn, dest_path, validate=True):
 _BACKUP_INFLIGHT = {}
 _BACKUP_PENDING = {}
 _BACKUP_LOCK = None  # lazy threading.Lock (module stays import-safe pre-threading)
+
+# CORE-003: recovery-copy publication coordinator. Both the periodic worker
+# and the startup snapshot worker publish into the same `<db>.bak` destination,
+# and a worker spawned for an OLD generation can still be running when a newer
+# generation (profile re-entry, restore, shutdown) owns that destination.
+#   * _BACKUP_GENERATION — monotonically increasing per destination; a worker
+#     captures the generation it was spawned under and refuses to publish once
+#     the current generation has moved past it.
+#   * _BACKUP_REVOKED — set when the destination's owner retires (profile
+#     switch, restore, shutdown); workers abort instead of publishing stale.
+#   * _BACKUP_DRAINING — set while a drain waits; new requests are refused.
+_BACKUP_GENERATION = {}
+_BACKUP_REVOKED = {}
+_BACKUP_DRAINING = {}
+
+
+def _backup_key(db_path):
+    """Coordinator key = canonical destination identity (the live ``<db>``
+    path whose ``.bak`` sibling is published), NOT the profile id: two logical
+    owners can reach the same file via profile re-entry. Keying by destination
+    lets an old worker be rejected against the CURRENT owner of the file."""
+    return os.path.normcase(os.path.abspath(db_path))
+
+
+def _begin_backup_generation(db_path):
+    """Bump and claim the current generation for ``db_path``'s ``.bak``.
+
+    Returns ``(key, generation)`` the caller's worker must capture and
+    revalidate before the final swap, or ``None`` when draining."""
+    import threading
+
+    global _BACKUP_LOCK
+    if _BACKUP_LOCK is None:
+        _BACKUP_LOCK = threading.Lock()
+    key = _backup_key(db_path)
+    with _BACKUP_LOCK:
+        if _BACKUP_DRAINING.get(key):
+            return None
+        gen = _BACKUP_GENERATION.get(key, 0) + 1
+        _BACKUP_GENERATION[key] = gen
+        _BACKUP_REVOKED.pop(key, None)
+        return key, gen
+
+
+def _backup_publication_authorized(key, generation):
+    """True iff a worker holding ``generation`` may still publish to ``key``.
+
+    Called IMMEDIATELY before the final ``os.replace``: the current generation
+    must be exactly the worker's and the destination must not be revoked or
+    draining."""
+    with _BACKUP_LOCK:
+        if _BACKUP_REVOKED.get(key):
+            return False
+        if _BACKUP_DRAINING.get(key):
+            return False
+        return _BACKUP_GENERATION.get(key) == generation
+
+
+def _revoke_backup_generation(db_path):
+    """Permanently revoke every in-flight publisher for ``db_path``'s ``.bak``.
+
+    Called when a logical owner RETIRES the destination (profile switch away,
+    pre-restore quiesce, shutdown)."""
+    import threading
+
+    global _BACKUP_LOCK
+    if _BACKUP_LOCK is None:
+        _BACKUP_LOCK = threading.Lock()
+    key = _backup_key(db_path)
+    with _BACKUP_LOCK:
+        _BACKUP_REVOKED[key] = True
+
+
+def _drain_db_backup(db_path, timeout=5.0):
+    """Wait for the destination's in-flight backup worker to retire.
+
+    Refuses new publishers, revokes in-flight ones, waits for the tracked
+    worker to clear. Returns True when no worker is left, False on timeout."""
+    import threading
+
+    global _BACKUP_LOCK
+    if _BACKUP_LOCK is None:
+        _BACKUP_LOCK = threading.Lock()
+    key = _backup_key(db_path)
+    with _BACKUP_LOCK:
+        _BACKUP_DRAINING[key] = True
+        _BACKUP_REVOKED[key] = True
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        with _BACKUP_LOCK:
+            if not _BACKUP_INFLIGHT.get(key):
+                _BACKUP_DRAINING.pop(key, None)
+                _BACKUP_REVOKED.pop(key, None)
+                _BACKUP_GENERATION.pop(key, None)
+                return True
+        time.sleep(0.01)
+    return False
+
+
+def _drain_all_db_backups(timeout_per_key=5.0):
+    """Drain every tracked backup destination. Used during shutdown."""
+    import threading
+
+    global _BACKUP_LOCK
+    if _BACKUP_LOCK is None:
+        return True
+    keys = list(_BACKUP_GENERATION.keys())
+    ok = True
+    for k in keys:
+        if not _drain_db_backup(k, timeout_per_key):
+            ok = False
+    return ok
 
 
 def _schedule_periodic_backup(db_path, profile_id, on_published=None):
@@ -796,6 +973,15 @@ def _schedule_periodic_backup(db_path, profile_id, on_published=None):
 
     dest = db_path + ".bak"
 
+    # CORE-003: capture the generation this worker is allowed to publish under.
+    owned = _begin_backup_generation(db_path)
+    if owned is None:
+        with _BACKUP_LOCK:
+            _BACKUP_INFLIGHT.pop(key, None)
+            _BACKUP_PENDING.pop(key, None)
+        return
+    own_key, own_gen = owned
+
     def _job():
         try:
             while True:
@@ -804,10 +990,11 @@ def _schedule_periodic_backup(db_path, profile_id, on_published=None):
                 try:
                     src = sqlite3.connect(db_path)
                     try:
-                        _backup_atomically(src, dest)
+                        if _backup_publication_authorized(own_key, own_gen):
+                            _backup_atomically(src, dest)
+                            published = True
                     finally:
                         src.close()
-                    published = True
                 except Exception:
                     logger.exception(
                         "background database backup failed (%s)", dest)
@@ -818,7 +1005,8 @@ def _schedule_periodic_backup(db_path, profile_id, on_published=None):
                         logger.exception("backup publish callback failed")
                 with _BACKUP_LOCK:
                     more = _BACKUP_PENDING.get(key, False)
-                if not more:
+                    authorized = _backup_publication_authorized(own_key, own_gen)
+                if not more or not authorized:
                     return
         finally:
             with _BACKUP_LOCK:
@@ -848,27 +1036,59 @@ class FatalRestoreError(RestoreError):
     cannot be rolled back. The caller must NOT reopen the live database (must
     not call init_db on it); the on-disk file is repaired out-of-band from the
     pre-restore safety snapshot, and the process should restart to reload it
-    (T-808)."""
+    (T-808).
+
+    ``repaired`` reports whether the out-of-band repair actually completed:
+    True only when every live/quarantined sidecar that could replay was
+    confirmed absent and the safety snapshot replaced the live main file
+    (CORE-001). A False value means the repair itself failed and the caller
+    must not present the database as repaired or resumable."""
+
+    def __init__(self, *args, repaired=False, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.repaired = bool(repaired)
+
+
+def _remove_checked(path):
+    """Remove ``path`` or raise; used where a leftover sidecar must refuse a
+    swap rather than be silently swallowed (CORE-001)."""
+    os.remove(path)
 
 
 def _restore_live_from_safety(destination, safety):
-    """Best-effort repair of the live database from the pre-restore safety
-    snapshot after a fatal rollback (T-808).
+    """Fail-closed repair of the live database from the pre-restore safety
+    snapshot after a fatal rollback (T-808, CORE-001).
 
     The snapshot is a fully-consistent, validated copy (the SQLite backup API
     checkpoints the WAL into it), so moving it over the live destination
     yields a usable database for the next launch, even though this process
-    will not reopen it. Any stranded quarantined sidecars are cleared first.
+    will not reopen it.
+
+    Returns True ONLY when the repair fully completed: every live/quarantined
+    sidecar which could replay (a leftover ``-wal``/``-shm`` or their
+    quarantine copies) was confirmed absent AND the safety snapshot was
+    atomically moved over the live main file. On ANY failure — an unremovable
+    sidecar, a failed replace, or a missing safety snapshot — the snapshot is
+    preserved and False is returned, so the caller never reports the database
+    as repaired when it is not.
     """
     try:
         if not safety or not os.path.isfile(safety):
             return False
-        # Clear any stranded live sidecars (the quarantine uses a `.` prefix:
-        # `<db>.wal.quarantine`, `<db>.shm.quarantine`).
-        _remove_quietly(destination + "-wal")
-        _remove_quietly(destination + "-shm")
-        _remove_quietly(destination + ".wal.quarantine")
-        _remove_quietly(destination + ".shm.quarantine")
+        for sidecar in (
+            destination + "-wal",
+            destination + "-shm",
+            destination + ".wal.quarantine",
+            destination + ".shm.quarantine",
+        ):
+            if os.path.exists(sidecar):
+                try:
+                    os.remove(sidecar)
+                except OSError:
+                    # A sidecar that cannot be removed would replay stale
+                    # frames into the repaired main file: refuse the repair
+                    # rather than publish a corrupt incarnation.
+                    return False
         os.replace(safety, destination)
         return True
     except OSError:
@@ -1155,14 +1375,29 @@ def restore_database(source, destination):
                 os.replace(live, q)
                 quarantined.append((live, q))
             except OSError as exc:
-                # restore any already-quarantined sidecar so the old incarnation
-                # stays usable, then refuse the publication
+                # CORE-001: the quarantine of a later sidecar failed. The
+                # already-quarantined sidecars must be rolled back so the old
+                # incarnation stays usable — and every rollback is CHECKED.
+                # If ANY rollback fails, the live incarnation is left without
+                # its WAL/SHM and is no longer guaranteed consistent: that is
+                # a FATAL state, not an ordinary refusal, because reopening it
+                # could replay stale frames or lose committed data. Enter the
+                # out-of-band repair path and report the truthful outcome.
+                rollback_failed = False
                 for live2, q2 in quarantined:
                     try:
                         os.replace(q2, live2)
                     except OSError:
-                        pass
+                        rollback_failed = True
                 _remove_quietly(temp)
+                if rollback_failed:
+                    repaired = _restore_live_from_safety(destination, safety)
+                    raise FatalRestoreError(
+                        f"could not quarantine live WAL/SHM ({exc}) and a "
+                        f"quarantined sidecar could not be rolled back; the "
+                        f"on-disk database was repaired from the safety "
+                        f"snapshot (repaired={repaired}) — restart to reload "
+                        f"a consistent database", repaired=repaired)
                 raise RestoreError(f"could not quarantine live WAL/SHM: {exc}")
 
     try:
@@ -1189,13 +1424,14 @@ def restore_database(source, destination):
             # attempt an out-of-band repair from the pre-restore safety
             # snapshot (a fully-consistent, validated copy), then refuse to
             # reopen the live database in-process. The caller must NOT call
-            # init_db on it — a restart reloads the repaired file.
-            _restore_live_from_safety(destination, safety)
+            # init_db on it — a restart reloads the repaired file. CORE-001:
+            # report whether the repair actually completed.
+            repaired = _restore_live_from_safety(destination, safety)
             raise FatalRestoreError(
                 f"the live database could not be replaced and its WAL/SHM "
                 f"could not be restored; the on-disk database was repaired "
-                f"from the safety snapshot ({safety or 'unavailable'}) where "
-                f"possible — restart to reload a consistent database")
+                f"from the safety snapshot (repaired={repaired}) — restart "
+                f"to reload a consistent database", repaired=repaired)
         raise RestoreError(f"could not replace the live database: {exc}")
 
     # success: the new main file is in place and no old WAL/SHM remains under the
@@ -1384,6 +1620,13 @@ class FastPrompterState:
                 old_conn.close()
             except Exception:
                 pass
+            # CORE-003: A's destination is retired — revoke/drain its backup
+            # workers so a stale A generation can never publish into a newer
+            # A incarnation when this profile is re-entered later.
+            try:
+                _revoke_backup_generation(old_db_path)
+            except Exception:
+                pass
             return True
         else:
             self.profile_id = new_profile_id
@@ -1444,6 +1687,11 @@ class FastPrompterState:
         ctx = _StartupBackupContext(self.db_path, self._startup_backup_gen)
         self._startup_backup_ctx = ctx
         src = self.db_path
+        # CORE-003: the startup snapshot publishes into the SAME `.bak`
+        # destination as the periodic worker, so it must claim the same
+        # generation authority and abort if a newer owner takes over.
+        owned = _begin_backup_generation(src)
+        own_key, own_gen = (owned if owned else (None, None))
 
         def run():
             try:
@@ -1451,7 +1699,12 @@ class FastPrompterState:
 
                 c = sqlite3.connect(src)
                 try:
-                    _backup_atomically(c, dest)
+                    if own_key is not None and _backup_publication_authorized(
+                            own_key, own_gen):
+                        _backup_atomically(c, dest)
+                    elif own_key is None:
+                        # destination draining: no publisher accepted
+                        ctx.failed = True
                 finally:
                     c.close()
             except Exception:
@@ -1725,7 +1978,7 @@ class FastPrompterState:
     # save_data_to_db. `_sanitize_cat_name` above stays: backup_dialog borrows
     # it for the user-driven export. Removed 31.07.26 (T-633).
 
-    def save_data_to_db(self, current_text, ui_settings=None, force=False, sync=False):
+    def save_data_to_db(self, current_text, ui_settings=None, force=False, sync=False, durable=False):
         """Persist the current state; returns True ONLY on a clean result.
 
         Contract (P0-6): True means the database holds the latest state
@@ -1734,9 +1987,19 @@ class FastPrompterState:
         still dirty — the caller must not report a clean shutdown or release
         the ownership lock. The portable Markdown backup runs only after a
         clean commit, never after a failed one.
+
+        PERF-002: ``force`` and ``durable`` are DIFFERENT axes. ``force=True``
+        demands exhaustive reconciliation of every domain (repair, import,
+        profile transition). ``durable=True`` only demands a synchronous
+        commit of the KNOWN dirty generations before returning — an ordinary
+        hide/click-out wants durability, not a full re-scan of state that did
+        not change. Both flush the current text through the same authoritative
+        path; they differ in whether clean domains are re-encoded anyway.
         """
         with self._lock:
-            ok = self._save_data_to_db_locked(current_text, ui_settings, force, sync)
+            ok = self._save_data_to_db_locked(
+                current_text, ui_settings, force, sync,
+                durable=durable)
         if ok and self.data.get("portable_backup_enabled", "True") == "True":
             from fastprompter.utils.portable_backup import run_portable_backup
             # PERF-003: the scheduler receives this profile's exported-content
@@ -1779,9 +2042,14 @@ class FastPrompterState:
         pid = self.profile_id if profile_id is None else profile_id
         self._last_backup_time_by_profile[pid] = _time.time()
 
-    def _save_data_to_db_locked(self, current_text, ui_settings=None, force=False, sync=False):
+    def _save_data_to_db_locked(self, current_text, ui_settings=None, force=False, sync=False, durable=False):
         if not self.conn: return False
 
+        # PERF-002: durable and force are separate axes. durable=True
+        # synchronously commits KNOWN dirty generations without forcing a full
+        # scan of every domain — a no-op hide/click-out must not re-encode
+        # every settings key just because force=True was historically required.
+        # force=True still demands full reconciliation (repair/import/restore).
         full_scan = self._db_dirty or force
         scan_settings = full_scan or self._dirty_settings > self._saved_settings_gen or ui_settings
         scan_snippets = full_scan or self._dirty_snippets > self._saved_snippets_gen

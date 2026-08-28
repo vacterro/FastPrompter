@@ -295,3 +295,24 @@ class TestAsyncDispatch:
         pb.last_success_by_profile.clear()
         pb.mark_backup_success()
         assert pb.last_success_by_profile.get(1, 0.0) > 0.0
+
+def test_coalescing_preserves_content_gen(monkeypatch):
+    """W2-008: a coalesced pending snapshot must carry the exact content_gen
+    so a successful redispatch advances _last_exported_gen_by_profile."""
+    import fastprompter.utils.portable_backup as pb
+    monkeypatch.setattr(
+        pb, "capture_snapshot",
+        lambda data, profile_id=1: {"data": data})
+    monkeypatch.setattr(pb, "_backup_sink", lambda snap: None)
+    pb._backup_active.add(1)
+    pb._backup_pending_data.clear()
+    pb._backup_newer_wanted.clear()
+    pb.last_success_by_profile.clear()
+    try:
+        pb.run_portable_backup({"k": "v"}, profile_id=1, content_gen=42)
+        assert pb._backup_pending_data.get(1, {}).get("_content_gen") == 42
+    finally:
+        pb._backup_active.discard(1)
+        pb._backup_pending_data.clear()
+        pb._backup_newer_wanted.clear()
+

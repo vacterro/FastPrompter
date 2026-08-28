@@ -613,6 +613,8 @@ class TestSettingsSurviveAReload:
                 else:
                     # Flat alias: a plain integer list.
                     marker = [1, 2, 3]
+            elif key == "folder_trash_log":
+                marker = [["path1", "path2"], ["path3", "path4"]]
             elif isinstance(value, dict):
                 # Dict settings (including the per-category *_all stores):
                 # CORE-003 validates each per-category member against its

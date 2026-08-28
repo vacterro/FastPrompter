@@ -83,6 +83,7 @@ _CONTAINER_PENDING_CONDITION = threading.Condition()
 # of abandoning a half-written archive or racing its os.replace.
 _EXPORT_THREADS = set()
 _EXPORT_CANCEL = set()           # active export cancel Events, cleared on exit
+_EXPORT_LOCK = threading.Lock()  # CORE-008: protects _EXPORT_THREADS + _EXPORT_CANCEL
 _EXPORT_SHUTDOWN_TIMEOUT_S = 5.0
 
 
@@ -240,23 +241,36 @@ def export_worker_shutdown_global():
 
     P1-7: the export threads are daemon but publish via ``os.replace``; a hard
     exit mid-publish would leave a half archive. Cancel them, then wait
-    bounded for the in-flight ones to finish."""
+    bounded for the in-flight ones to finish.
+
+    CORE-008: iterating the live collections directly raced worker ``finally``
+    blocks that concurrently mutate them (``RuntimeError: Set changed size
+    during iteration``), aborting the shutdown routine before it joined the
+    remaining exports. Both collections are now snapshotted under one lock and
+    cancellation/joining act on the captured live events/threads; registration
+    and removal use the same lock."""
     global _EXPORT_THREADS, _EXPORT_CANCEL
-    for ev in _EXPORT_CANCEL:
+    with _EXPORT_LOCK:
+        cancel_events = list(_EXPORT_CANCEL)
+        live_threads = list(_EXPORT_THREADS)
+    for ev in cancel_events:
         ev.set()
-    _EXPORT_CANCEL.clear()
+    with _EXPORT_LOCK:
+        _EXPORT_CANCEL.clear()
     deadline = time.monotonic() + _EXPORT_SHUTDOWN_TIMEOUT_S
-    pending = list(_EXPORT_THREADS)
-    for thread in pending:
+    for thread in live_threads:
         if thread.is_alive():
             from fastprompter.main import wait_thread_seconds
             wait_thread_seconds(thread, max(0.0, deadline - time.monotonic()),
                                 "File Container export")
-    _EXPORT_THREADS.difference_update(t for t in _EXPORT_THREADS if not t.is_alive())
-    if _EXPORT_THREADS:
+    with _EXPORT_LOCK:
+        _EXPORT_THREADS.difference_update(
+            t for t in _EXPORT_THREADS if not t.is_alive())
+        remaining = len(_EXPORT_THREADS)
+    if remaining:
         logger.error(
             "File Container export shutdown TIMED_OUT with %d export(s) pending",
-            len(_EXPORT_THREADS))
+            remaining)
         return False
     return True
 
@@ -372,9 +386,9 @@ def _dir_size(path, _cap=2000, cancel_check=None):
             break
     _dir_size_cache[key] = (now, total)
     if len(_dir_size_cache) > 256:
-        for stale in [k for k, (t, _v) in _dir_size_cache.items()
-                      if now - t >= _DIR_SIZE_TTL]:
-            _dir_size_cache.pop(stale, None)
+        # PERF-005: TTL-only pruning is not a bound (fresh-burst keys all stay
+        # inside the TTL); evict oldest entries too.
+        _purge_cache(_dir_size_cache, now, 256, _DIR_SIZE_TTL)
     return total
 
 
@@ -442,12 +456,27 @@ def folder_summary(d, lang="EN"):
 def _prune_folder_summary_cache(now=None):
     """PERF-006: drop expired entries when the folder-summary cache outgrows
     its working set. Runs after EVERY insert, including the empty-folder
-    branch, so no insert path can bypass the bound."""
+    branch, so no insert path can bypass the bound.
+
+    PERF-005: a TTL-only bound is not a bound — a fresh burst of many unique
+    keys can keep every entry alive. After removing expired entries, if the
+    cache still exceeds the cap, evict the oldest entries until within limit."""
+    from fastprompter.ui.file_container import _folder_summary_cache
+    _purge_cache(_folder_summary_cache, now, 64, _SUMMARY_TTL)
+
+
+def _purge_cache(cache, now, cap, ttl):
+    """Expire old entries then evict oldest until within cap."""
     now = now if now is not None else _summary_now()
-    if len(_folder_summary_cache) > 64:
-        for stale in [k for k, (t, _v) in _folder_summary_cache.items()
-                      if now - t >= _SUMMARY_TTL]:
-            _folder_summary_cache.pop(stale, None)
+    if len(cache) > cap:
+        for stale in [k for k, (t, _v) in cache.items()
+                      if now - t >= ttl]:
+            cache.pop(stale, None)
+    if len(cache) > cap:
+        # still over cap after TTL expiry: evict oldest entries
+        oldest = sorted(cache.keys(), key=lambda k: cache[k][0])[:len(cache) - cap]
+        for k in oldest:
+            cache.pop(k, None)
 
 
 def _unique_dest(folder, name):
@@ -485,6 +514,72 @@ def _is_alias(path):
         return os.path.realpath(os.path.abspath(path)) != os.path.abspath(path)
     except OSError:
         return False
+
+
+def _copy_tree_safe(src, dst, reject_aliases_into=None):
+    """Copy a directory tree WITHOUT descending into aliases (symlinks,
+    reparse points, junctions) that would escape the logical source or create
+    cycles (W2-002).
+
+    ``reject_aliases_into`` — an optional resolved absolute path. Any alias
+    whose resolved target is inside this path is rejected as a cycle/escape
+    (e.g. an alias pointing back into the File Container or the source
+    ancestor). Directories that are aliases get a warning log entry and are
+    skipped (not copied). Shallow symlinks to files are copied as-is (the
+    symlink itself is recreated), matching the ZIP export policy.
+
+    Returns the set of created destination paths (for cleanup on failure).
+    """
+    import logging
+
+    logger = logging.getLogger(__name__)
+    reject = None
+    if reject_aliases_into is not None:
+        reject = os.path.normcase(os.path.realpath(reject_aliases_into))
+    created = set()
+    os.makedirs(dst, exist_ok=True)
+    created.add(dst)
+    visited = {os.path.normcase(os.path.realpath(src)): dst}
+    for root, dirs, files in os.walk(src):
+        rel = os.path.relpath(root, src)
+        dst_root = os.path.join(dst, rel) if rel != "." else dst
+        os.makedirs(dst_root, exist_ok=True)
+        created.add(dst_root)
+        for d in list(dirs):
+            dp = os.path.join(root, d)
+            if os.path.islink(dp) or _is_alias(dp):
+                # Alias directory: resolve its target and reject if it forms
+                # a cycle or escapes into the container.
+                resolved = os.path.normcase(os.path.realpath(dp))
+                if reject is not None and os.path.commonpath(
+                        [reject, resolved]) == reject:
+                    logger.warning(
+                        "alias %s -> %s targets the container; skipped", dp, resolved)
+                    dirs.remove(d)
+                    continue
+                if resolved in visited:
+                    logger.warning(
+                        "alias %s -> %s forms a cycle; skipped", dp, resolved)
+                    dirs.remove(d)
+                    continue
+                visited[resolved] = os.path.join(dst_root, d)
+                continue
+        for f in files:
+            fp = os.path.join(root, f)
+            if os.path.islink(fp):
+                # Recreate symlink as symlink, not as copy of target.
+                link_dest = os.readlink(fp)
+                dst_fp = os.path.join(dst_root, f)
+                try:
+                    os.symlink(link_dest, dst_fp)
+                except (OSError, NotImplementedError):
+                    shutil.copy2(fp, dst_fp, follow_symlinks=False)
+                created.add(dst_fp)
+            else:
+                dst_fp = os.path.join(dst_root, f)
+                shutil.copy2(fp, dst_fp)
+                created.add(dst_fp)
+    return created
 
 
 def _require_container_destination(root, root_identity, candidate):
@@ -558,15 +653,25 @@ def _move_into_container(src, dest, root=None, root_identity=None,
         if os.path.lexists(dest):
             raise OSError(f"destination {dest!r} appeared; refusing to overwrite it")
 
-        tmp = f"{dest}.fptmp-{uuid.uuid4().hex[:8]}"
+        # Cross-volume move: acquire source-side ownership BEFORE the copy
+        # (W2-001). The visible pathname may be replaced during the copy, and
+        # a post-copy pathname-only removal would delete the replacement.
+        staging = f"{src}.fpstaging-{uuid.uuid4().hex[:12]}"
+        try:
+            os.rename(src, staging)
+        except OSError:
+            raise OSError(
+                f"could not acquire source-side staging for cross-volume "
+                f"move: {src}")
 
+        tmp = f"{dest}.fptmp-{uuid.uuid4().hex[:8]}"
         _require_container_destination(root, root_identity, tmp)
 
         try:
-            if os.path.isdir(src):
-                shutil.copytree(src, tmp)
+            if os.path.isdir(staging):
+                _copy_tree_safe(staging, tmp, reject_aliases_into=root)
             else:
-                shutil.copy2(src, tmp)
+                shutil.copy2(staging, tmp)
 
             if publish_guard is not None and not publish_guard():
                 raise OSError(
@@ -580,20 +685,30 @@ def _move_into_container(src, dest, root=None, root_identity=None,
                     os.remove(tmp)
             except OSError:
                 pass
+            # Copy/publication failed. Restore the staging to the original
+            # pathname when it's still free; otherwise preserve the staging
+            # under an explicit recovery name.
+            try:
+                os.rename(staging, src)
+            except OSError:
+                recovery = f"{src}.fprecovery-{uuid.uuid4().hex[:12]}"
+                try:
+                    os.rename(staging, recovery)
+                except OSError:
+                    pass
             raise
 
-    # publication succeeded: remove the source
-    try:
-        _require_container_destination(root, root_identity, dest)
-        if os.path.isdir(src):
-            shutil.rmtree(src)
-        else:
-            os.remove(src)
-    except OSError:
-        logger.warning("move published %s but could not remove the source %s",
-                       dest, src)
-        return "SOURCE_REMAINS"
-    return "MOVED"
+        # Publication succeeded: remove only the owned staging object.
+        try:
+            if os.path.isdir(staging):
+                shutil.rmtree(staging)
+            else:
+                os.remove(staging)
+        except OSError:
+            logger.warning("move published %s but could not remove staging %s",
+                           dest, staging)
+            return "SOURCE_REMAINS"
+        return "MOVED"
 
 
 def _copy_atomic(src, dest, is_dir, root=None, root_identity=None,
@@ -620,7 +735,7 @@ def _copy_atomic(src, dest, is_dir, root=None, root_identity=None,
 
     try:
         if is_dir:
-            shutil.copytree(src, tmp)
+            _copy_tree_safe(src, tmp, reject_aliases_into=root)
         else:
             shutil.copy2(src, tmp)
 
@@ -2005,7 +2120,8 @@ class FileContainerPanel(QWidget):
         progress.setMinimumDuration(300)
 
         cancel = threading.Event()
-        _EXPORT_CANCEL.add(cancel)
+        with _EXPORT_LOCK:
+            _EXPORT_CANCEL.add(cancel)
         self._export_cancel = cancel
 
         def on_cancel():
@@ -2082,13 +2198,15 @@ class FileContainerPanel(QWidget):
                 except OSError:
                     pass
             finally:
-                _EXPORT_THREADS.discard(threading.current_thread())
-                _EXPORT_CANCEL.discard(cancel)
+                with _EXPORT_LOCK:
+                    _EXPORT_THREADS.discard(threading.current_thread())
+                    _EXPORT_CANCEL.discard(cancel)
                 QMetaObject.invokeMethod(
                     progress, "cancel", Qt.ConnectionType.QueuedConnection)
 
         thread = threading.Thread(target=do_zip, daemon=True)
-        _EXPORT_THREADS.add(thread)
+        with _EXPORT_LOCK:
+            _EXPORT_THREADS.add(thread)
         thread.start()
 
     def _prompt_text(self, title, label, default_text=""):

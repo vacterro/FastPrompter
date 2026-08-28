@@ -384,7 +384,7 @@ class TestRestoreSidecarRollback:
             return real_replace(src, dst)
 
         monkeypatch.setattr(state_mod.os, "replace", fake_replace)
-        with pytest.raises(FatalRestoreError):
+        with pytest.raises(FatalRestoreError) as einfo:
             restore_database(backup, live)
         # No stranded quarantined sidecars; the on-disk live DB was repaired
         # from the safety snapshot, so it is a valid v1 carrying the ORIGINAL
@@ -393,3 +393,113 @@ class TestRestoreSidecarRollback:
         assert not os.path.exists(live + ".shm.quarantine")
         assert validate_database(live)[0] == CURRENT_SCHEMA_VERSION
         assert _rows(live) == "live data"
+        # CORE-001: the repair actually completed, so the error must say so.
+        assert einfo.value.repaired is True
+
+    # ---- CORE-001: fail-closed quarantine and truthful repair outcome ----
+
+    def test_early_quarantine_failure_with_rollback_failure_is_fatal(
+            self, tmp_path, monkeypatch):
+        """A later sidecar quarantine that fails AND whose rollback of the
+        earlier sidecar also fails must be FATAL (never an ordinary reopen),
+        and the on-disk DB must be repaired from the safety snapshot."""
+        live = str(tmp_path / "live.db")
+        _make_db(live, "live data")
+        backup = str(tmp_path / "backup.db")
+        _make_db(backup, "other")
+        # Both sidecars present so the loop quarantines WAL then hits SHM.
+        with open(live + "-wal", "wb") as f:
+            f.write(b"wal-frames")
+        with open(live + "-shm", "wb") as f:
+            f.write(b"shm-frames")
+        real_replace = state_mod.os.replace
+
+        def fake_replace(src, dst):
+            # quarantining the SHM (live -> .shm.quarantine) fails ...
+            if dst == live + ".shm.quarantine":
+                raise OSError("shm quarantine boom")
+            # ... AND rolling the WAL back (quarantine -> live-wal) also fails.
+            # The WAL quarantine (live-wal -> .wal.quarantine) itself
+            # succeeds, so the only way to make the rollback fail is to fail
+            # the reverse move (.wal.quarantine -> live-wal).
+            if dst == live + "-wal" and src.endswith(".wal.quarantine"):
+                raise OSError("rollback boom")
+            return real_replace(src, dst)
+
+        monkeypatch.setattr(state_mod.os, "replace", fake_replace)
+        with pytest.raises(FatalRestoreError) as einfo:
+            restore_database(backup, live)
+        assert einfo.value.repaired is True
+        # The on-disk live DB was rebuilt from the safety snapshot.
+        assert validate_database(live)[0] == CURRENT_SCHEMA_VERSION
+        assert _rows(live) == "live data"
+
+    def test_early_quarantine_failure_rollback_ok_is_ordinary(
+            self, tmp_path, monkeypatch):
+        """If the earlier sidecar rollback SUCCEEDS, a later quarantine
+        failure is ordinary: live stays intact and the caller reopens it."""
+        live = str(tmp_path / "live.db")
+        _make_db(live, "live data")
+        before = _bytes(live)
+        backup = str(tmp_path / "backup.db")
+        _make_db(backup, "other")
+        with open(live + "-wal", "wb") as f:
+            f.write(b"wal-frames")
+        with open(live + "-shm", "wb") as f:
+            f.write(b"shm-frames")
+        real_replace = state_mod.os.replace
+
+        def fake_replace(src, dst):
+            # only the SHM quarantine fails; WAL rollback succeeds normally
+            if dst == live + ".shm.quarantine":
+                raise OSError("shm quarantine boom")
+            return real_replace(src, dst)
+
+        monkeypatch.setattr(state_mod.os, "replace", fake_replace)
+        with pytest.raises(RestoreError):
+            restore_database(backup, live)
+        assert _bytes(live) == before
+        assert os.path.isfile(live + "-wal")
+        assert not os.path.exists(live + ".wal.quarantine")
+
+    def test_unrepaired_fatal_reports_false_and_preserves_safety(
+            self, tmp_path, monkeypatch):
+        """If the out-of-band repair itself cannot remove a stale live WAL,
+        the FatalRestoreError must report repaired=False, the safety snapshot
+        must be preserved, and the main file must NOT be published over the
+        unrepaired incarnation."""
+        live = str(tmp_path / "live.db")
+        _make_db(live, "live data")
+        backup = str(tmp_path / "backup.db")
+        _make_db(backup, "other")
+        with open(live + "-wal", "wb") as f:
+            f.write(b"wal-frames")
+        real_replace = state_mod.os.replace
+        real_remove = os.remove
+
+        def fake_replace(src, dst):
+            # main swap fails ...
+            if dst == live and src.endswith(".restoretmp"):
+                raise OSError("swap boom")
+            # ... AND sidecar rollback fails -> fatal path
+            if src.endswith(".wal.quarantine") or src.endswith(".shm.quarantine"):
+                raise OSError("rollback boom")
+            # ... AND the repair's sidecar removal is blocked, so it cannot
+            # clear the stranded quarantine before publishing the safety copy.
+            return real_replace(src, dst)
+
+        def fake_remove(path):
+            if path.endswith(".wal.quarantine") or path.endswith("-wal"):
+                raise OSError("cannot remove sidecar")
+            return real_remove(path)
+
+        monkeypatch.setattr(state_mod.os, "replace", fake_replace)
+        monkeypatch.setattr(state_mod.os, "remove", fake_remove)
+        with pytest.raises(FatalRestoreError) as einfo:
+            restore_database(backup, live)
+        assert einfo.value.repaired is False
+        # The safety snapshot survives (never consumed by a failed repair)...
+        assert os.path.isfile(live + ".prerestore.bak")
+        # ... and the stranded quarantine sidecar is still there, proving the
+        # repair refused to publish the safety copy over an unclean live file.
+        assert os.path.exists(live + ".wal.quarantine")

@@ -45,7 +45,8 @@ class WindowMixin:
                 logger.exception("Failed to enforce always-on-top")
 
     def toggle_visibility(self, force_sidebar: bool = False) -> None:
-        """Toggle window visibility: show if hidden, hide+suspend if visible."""
+        """Toggle window visibility: show if hidden, bring to front if
+        visible-but-unfocused, hide if already focused."""
         if (
             self.isHidden()
             or self.isMinimized()
@@ -57,7 +58,7 @@ class WindowMixin:
         elif force_sidebar:
             self.toggle_sidebar_visibility()
         else:
-            if hasattr(self, "cb_focus") and not _is_deleted(self.cb_focus) and self.cb_focus.isChecked():
+            if not self.isActiveWindow():
                 self.show_window(by_hotkey=True)
             else:
                 if hasattr(self, "topmost_timer") and not _is_deleted(self.topmost_timer):

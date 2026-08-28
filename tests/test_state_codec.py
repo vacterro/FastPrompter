@@ -190,3 +190,38 @@ class TestSingleCodecContract:
                    "ui_scale", "window_locked", "sidebar_right", "hide_font")
         for key in scalars:
             assert key not in state_mod._STRUCTURED_CODECS
+
+
+class TestFolderTrashLogMemberNormalization:
+    """W2-005: malformed folder_trash_log members are dropped, valid
+    (original, trashed) pairs are preserved."""
+
+    def test_mixed_members_drop_malformed(self, state_from):
+        s = state_from([("folder_trash_log", json.dumps([
+            ["a", "b"],                  # valid
+            "bare string",               # invalid
+            ["one"],                     # one-element
+            [1, 2],                      # non-string pair
+            ["c", "d", "extra"],         # overlong -> normalized to 2
+            ["e", ""],                   # empty trashed
+        ]))])
+        assert s.data["folder_trash_log"] == [["a", "b"], ["c", "d"]]
+
+    def test_valid_pairs_preserved(self, state_from):
+        s = state_from([("folder_trash_log", json.dumps(
+            [["orig1", "trash1"], ["orig2", "trash2"]]))])
+        assert s.data["folder_trash_log"] == [
+            ["orig1", "trash1"], ["orig2", "trash2"]]
+
+    def test_recovery_consumers_survive_malformed_member(self, state_from):
+        import fastprompter.main as main_mod
+        # a malformed member that slips past load (defensive consumer guard)
+        f = type("F", (), {})()
+        f.data = {"folder_trash_log": ["x"]}
+        f.mark_dirty = lambda: None
+        # _restore_trashed_folders must not raise on the malformed member
+        from fastprompter.ui.snippet_ops_mixin import _is_deleted
+        # bind minimal attrs used by the consumer's early path
+        f._category_files_dir = lambda cat: None
+        f._files_root = lambda: ""
+        main_mod.FastPrompter._restore_trashed_folders(f, "Code")

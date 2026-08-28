@@ -40,6 +40,7 @@ from fastprompter.core.sound_manager import (
     EVENT_LABELS,
 )
 from fastprompter.core.translations import tr
+from fastprompter.utils.fonts import no_aa
 
 _COL_EVENT, _COL_ON, _COL_FILE, _COL_VOL, _COL_PLAY = range(5)
 
@@ -88,7 +89,7 @@ def _event_icon(event: str, base: QColor) -> QIcon:
     pm = QPixmap(20, 20)
     pm.fill(Qt.GlobalColor.transparent)
     p = QPainter(pm)
-    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing, False)
     pen = QPen(QColor(color), 1.4)
     p.setPen(pen)
     p.setBrush(Qt.BrushStyle.NoBrush)
@@ -137,17 +138,17 @@ def _event_icon(event: str, base: QColor) -> QIcon:
     elif glyph == "key":
         circle(6, 10, 3.5); line(9, 10, 15, 10); line(13, 10, 13, 13); line(15, 10, 15, 13)
     elif glyph == "bold":
-        p.setFont(QFont("Verdana", 9, QFont.Weight.Bold))
+        p.setFont(no_aa(QFont("Verdana", 9, QFont.Weight.Bold)))
         p.drawText(QRect(2, 1, 16, 18), Qt.AlignmentFlag.AlignCenter, "B")
     elif glyph == "italic":
-        p.setFont(QFont("Verdana", 9, QFont.Weight.Normal))
+        p.setFont(no_aa(QFont("Verdana", 9, QFont.Weight.Normal)))
         p.drawText(QRect(2, 1, 16, 18), Qt.AlignmentFlag.AlignCenter, "I")
     elif glyph == "underline":
-        p.setFont(QFont("Verdana", 9, QFont.Weight.Normal))
+        p.setFont(no_aa(QFont("Verdana", 9, QFont.Weight.Normal)))
         p.drawText(QRect(2, 1, 16, 18), Qt.AlignmentFlag.AlignCenter, "U")
         line(4, 17, 16, 17)
     elif glyph == "strike":
-        p.setFont(QFont("Verdana", 9, QFont.Weight.Normal))
+        p.setFont(no_aa(QFont("Verdana", 9, QFont.Weight.Normal)))
         p.drawText(QRect(2, 1, 16, 18), Qt.AlignmentFlag.AlignCenter, "S")
         line(3, 11, 17, 11)
     elif glyph == "header":
@@ -217,7 +218,7 @@ def _event_icon(event: str, base: QColor) -> QIcon:
         line(3, 6, 17, 6); line(3, 11, 17, 11); line(3, 16, 17, 16)
         line(4, 5, 6, 7); line(6, 7, 11, 3)
     elif glyph == "esc":
-        p.setFont(QFont("Verdana", 6, QFont.Weight.Bold))
+        p.setFont(no_aa(QFont("Verdana", 6, QFont.Weight.Bold)))
         p.drawText(QRect(0, 3, 20, 14), Qt.AlignmentFlag.AlignCenter, "Esc")
     elif glyph == "floppy_up":
         p.drawRect(QRect(4, 4, 12, 12)); line(10, 6, 10, 13); line(10, 6, 7, 9); line(10, 6, 13, 9)

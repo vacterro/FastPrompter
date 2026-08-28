@@ -27,7 +27,7 @@ import shutil
 import time
 
 from fastprompter.core.logging import logger
-from fastprompter.utils.path_safety import alloc_fs_names, fs_component
+from fastprompter.utils.path_safety import alloc_fs_names, fs_component, unique_temp_path
 from fastprompter.utils.paths import get_portable_backup_dir, profile_files_root
 
 # Throttle state, one entry PER PROFILE. The old single scalar let one
@@ -161,8 +161,15 @@ def run_portable_backup(data: dict, profile_id=1, content_gen=None) -> None:
         # CORE-002: capture immutable committed snapshot immediately, not
         # live mutable dict. Deferred generation must be exactly the state
         # that belonged to the successful save that requested it.
+        # W2-008: the coalesced pending snapshot carries the EXACT content
+        # generation it represents, so a successful redispatch can advance
+        # _last_exported_gen_by_profile (a missing gen would silently re-export
+        # unchanged content forever).
         _backup_newer_wanted.add(pid)
-        _backup_pending_data[pid] = capture_snapshot(data, profile_id=pid)
+        pending = capture_snapshot(data, profile_id=pid)
+        if content_gen is not None:
+            pending["_content_gen"] = content_gen
+        _backup_pending_data[pid] = pending
         return
     _backup_active.add(pid)
 
@@ -515,6 +522,31 @@ def _has_complete_marker(directory: str) -> bool:
         return False
 
 
+def _is_valid_complete_generation(directory: str) -> bool:
+    """True when `directory` is a USABLE complete backup generation.
+
+    ONE validator shared by recovery selection and retention (W2-004): the
+    directory must exist, carry the ``_COMPLETE`` marker, hold a parseable
+    ``_meta.json`` whose ``complete`` flag is true. Retention must never treat
+    a canonical pathname as proof of a safe canonical backup — only a
+    generation that passes this exact check may authorize pruning its recovery
+    siblings.
+    """
+    try:
+        if not os.path.isdir(directory):
+            return False
+        if not _has_complete_marker(directory):
+            return False
+        meta = os.path.join(directory, "_meta.json")
+        if not os.path.isfile(meta):
+            return False
+        with open(meta, encoding="utf-8") as f:
+            j = json.load(f)
+        return isinstance(j, dict) and bool(j.get("complete"))
+    except Exception:
+        return False
+
+
 def _recover_canonical_day(backup_root: str, day_dir: str, date_str: str) -> None:
     """If canonical day_dir is missing, promote best complete sibling (W2-001)."""
     if os.path.isdir(day_dir):
@@ -593,7 +625,7 @@ def _write_raw(path: str, content: str) -> None:
     the snapshot is never labelled complete. The partial temp file is
     removed and the error surfaces to run_portable_backup's failure path.
     """
-    tmp_path = path + ".tmp"
+    tmp_path = unique_temp_path(path, "pbackup")
     try:
         with open(tmp_path, "w", encoding="utf-8") as f:
             f.write(content)
@@ -656,7 +688,19 @@ def _cleanup_old_backups(backup_dir: str, max_days: int = 7) -> None:
                              exc_info=True)
                 continue
             if suffix is None:
-                canonical_days.add(date_str)
+                # CORE-007/W2-004: a canonical day counts as a SAFE canonical
+                # only when it passes the SAME complete-generation validation
+                # a recovery candidate must pass (_COMPLETE marker + valid
+                # manifest). An incomplete/corrupt canonical pathname must
+                # NOT authorize deletion of the only known-good recovery
+                # sibling for that date.
+                if _is_valid_complete_generation(entry_path):
+                    canonical_days.add(date_str)
+                else:
+                    logger.info(
+                        "portable backup: canonical day %s is not a validated "
+                        "complete generation; recovery siblings for it are "
+                        "preserved", entry)
             parsed.append((entry, entry_path, date_str, suffix, dir_time))
 
         for entry, entry_path, date_str, suffix, dir_time in parsed:
