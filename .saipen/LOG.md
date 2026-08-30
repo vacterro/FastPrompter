@@ -75,4 +75,5 @@
 - 28.08.26 00:13 [E-1163] [parent: E-1162] DEC: goal continue -- AUDIT_ALL_3 already COMPLETE (23 tickets T-1095..T-1117 all DONE); board TODO clean (only T-800/T-803 future-gate); session fixes (font/AA/focus/Arabic) verified; intent cleared to normal
 - 28.08.26 00:23 [E-1164] [parent: E-1163] DEC: ccc converge target -> ship @e4e90c7 -- set execution_intent converge + converge_target ship
 - 28.08.26 00:34 [E-1165] [parent: E-1164] RUN: ship v0.8.60 -> pushed c5d5317 + tag v0.8.60 pushed; audit ALL_3 (23 tickets) + session fixes shipped
-- 28.08.26 00:34 [E-1166] [parent: E-1165] DEC: ccc SHIP -> v0.8.60 shipped (c5d5317 + tag); execution_intent cleared to normal; pending: EE/QQ fresh per converge J-M (T-800 pipeline gate)
+ - 28.08.26 00:34 [E-1166] [parent: E-1165] DEC: ccc SHIP -> v0.8.60 shipped (c5d5317 + tag); execution_intent cleared to normal; pending: EE/QQ fresh per converge J-M (T-800 pipeline gate)
+- 30.08.26 03:38 [E-1167] [parent: E-1166] [T-1158] RUN: startup crash fixed + shipped as v0.8.61 -- local audit commit 5646d6b had dedented undo methods out of FastPrompter (AttributeError on _load_undo_state); reset main to origin/main, shipped known-good v0.8.60 base; pushed bc8c9e8 + tag v0.8.61; EXE 45.5 MB published

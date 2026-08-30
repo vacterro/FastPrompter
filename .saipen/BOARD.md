@@ -5,6 +5,7 @@
 ## TODO
 
 ## DONE
+- [x] T-1158 [P0] startup crash: _sync_on_prune_leases dedented _sync_on_done and undo methods out of FastPrompter | verify: release v0.8.61 published (bc8c9e8 + tag + EXE 45.5 MB); fresh launch boots cleanly | owner: workbuddy | claim_time: 2026-08-30T03:38:00Z
 - [x] T-1117 (P2, acb-mtbqjyvd) PERF-006 regenerate typecheck_ui_vocab: generator ran (19393 words), parity test passes; no language-module import reintroduced | verify: 1689 pass 1 skip
 - [x] T-1116 (P2, acb-mtbqjyvd) PERF-005 cache hard cardinality: _purge_cache TTL + hard cap (evict oldest); folder-summary 64 + dir-size 256 | verify: 1689 pass 1 skip
 - [x] T-1115 (P1, acb-mtbqjyvd) PERF-004 live-line cache coverage-aware: fills uncached lines on same raw text; no false DETACHED | verify: 1689 pass 1 skip
