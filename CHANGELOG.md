@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.8.61 - 2026-08-30
+
+- **Startup crash fix (T-1158):** the previous source tree carried an unfinished audit commit whose stray helper dedented `_sync_on_done` and the undo loaders out of `FastPrompter` — every fresh launch died with `AttributeError: 'FastPrompter' object has no attribute '_load_undo_state'`. v0.8.61 drops that unstable audit work and ships the known-good v0.8.60 codebase (verified green), so new launches boot cleanly.
+
 ## v0.8.60 - 2026-08-28
 
 - **Audit ALL_3 (T-1095..T-1117):** 23 tickets implemented — CORE-001..009 (restore fail-closed, unique temp paths, backup coordinator, restore revocation, trash compensation, lossless migration, merge-journal durability, export-shutdown sync, deterministic backup test), W2-001..008 (cross-volume source ownership, nested alias import, rescan binding retention, backup retention validator, trash-log codec, bounded reads, special basename include, content_gen), PERF-001..006 (bounded discovery, durable-vs-force save, single doc extraction, coverage-aware line cache, cache cardinality, typecheck vocab regen).
