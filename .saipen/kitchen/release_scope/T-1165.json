@@ -1,0 +1,16 @@
+{
+  "op_id": "scope-9f3cf8ffd93d49619315521d5f42cb57",
+  "paths": {
+    ".cbmignore": "9563db5f67f62bcd",
+    ".gitignore": "c1ec66222386ee37",
+    "tests/test_editor_document_cache.py": "bbfd55bd11aad462",
+    "tools/validate.py": "ffe33c7da4484c0b"
+  },
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "recorded_at": "2026-08-31T02:15:01Z",
+  "schema_version": 1,
+  "source_head": "8b4296a0133103220df246b1060eafa39d7e2442",
+  "source_tree_fingerprint": "git-delta-v1:cd3971466183b2c6c02070a6be538927c648a049681d1fb0cf3bfcca251e9dc8",
+  "ticket": "T-1165"
+}

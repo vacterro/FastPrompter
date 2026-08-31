@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.64 - 2026-08-31
+
+- **HUNT housekeeping (T-1165):** track the project validator shim
+  (tools/validate.py), the editor document-cache regression test, the
+  .cbmignore indexing config, and the kitchen release-scope gitignore
+  exemption.
+
 ## 0.8.63 - 2026-08-31
 
 - **Freeze root-cause fix (T-1162, follow-up):** the periodic `.bak` backup
