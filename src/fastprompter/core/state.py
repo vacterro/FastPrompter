@@ -623,6 +623,17 @@ class DatabaseOverflowError(RuntimeError):
     """
 
 
+class StartupSafetyUnavailableError(RuntimeError):
+    """A mutating loader/durable path refused because the startup safety
+    snapshot was not PUBLISHED within the bound.
+
+    W6 (Ticket 01/03): a persistence safety barrier is successful only when
+    the required artifact was actually published. FAILED/SUPERSEDED/TIMEOUT
+    must never silently authorize mutation; the caller raises this controlled
+    error and leaves the live database untouched.
+    """
+
+
 def _has_table(cur, name):
     return cur.execute(
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
@@ -803,6 +814,18 @@ def _rollback_quietly(conn):
 # must fail/defer within this budget and keep its dirty state (T04 / W2-P1-002).
 _SQLITE_GUI_BUSY_TIMEOUT = 0.25  # seconds
 _SQLITE_GUI_BUSY_TIMEOUT_MS = int(_SQLITE_GUI_BUSY_TIMEOUT * 1000)
+# W6 (Ticket 03): loader-side recovery (presets overflow, migration repair)
+# waits for the startup safety snapshot at most this long before refusing to
+# mutate. A background I/O hang must never become an infinite startup GUI
+# hang on this path.
+_STARTUP_RECOVERY_DEADLINE = 5.0  # seconds
+# W6 (Ticket 05): error-path coordinator rollback on the GUI caller is
+# bounded to this; on timeout the physical token is removed by a dedicated
+# background cleanup task instead of blocking the caller.
+_BACKUP_ROLLBACK_TIMEOUT = 0.05  # seconds
+# W6 (Ticket 06): one global deadline for the whole shutdown drain, shared
+# across every destination (not N x per-key).
+_BACKUP_SHUTDOWN_BUDGET = 5.0  # seconds
 
 
 def _remove_sqlite_family(base):
@@ -1004,20 +1027,83 @@ def _backup_register_worker(db_path):
         _BACKUP_LOCK.release()
 
 
+def _backup_register_worker_bounded(db_path, timeout=_STARTUP_RECOVERY_DEADLINE):
+    """W6: bounded retry for startup-path registration; falls back to
+    try-lock refusal only after the deadline.  The caller (startup
+    snapshot) can tolerate a bounded wait; a momentary coordinator
+    contention must not turn into an instant SUPERSEDED."""
+    deadline = time.monotonic() + max(0.0, timeout)
+    while True:
+        res = _backup_register_worker(db_path)
+        if res[0] is not None:
+            return res
+        if time.monotonic() >= deadline:
+            return res
+        time.sleep(0.01)
+
+
 def _backup_rollback_worker(key, generation, token, profile_id=None):
+    """Roll back a reserved worker token WITHOUT blocking the GUI caller.
+
+    W6 (Ticket 05): Thread.start failure happens on a GUI-reachable path.
+    The rollback must not perform an unbounded coordinator acquisition —
+    a contended lock would make the error path block, violating the "GUI
+    never waits on coordinator" invariant exactly where it hurts most.
+    The reservation is retired under a small bounded acquire; on timeout a
+    dedicated cleanup task finishes the rollback in the background. No
+    coordinator dict is touched outside the lock.
+    """
     if key is None or generation is None or token is None:
         return
-    with _BACKUP_LOCK:
-        workers = _BACKUP_WORKERS.get(key)
-        if workers is not None:
-            workers.discard(token)
-            if not workers:
-                _BACKUP_WORKERS.pop(key, None)
-        if profile_id is not None:
-            prof_key = str(profile_id)
-            if _BACKUP_PROFILE_RUNNING.get(prof_key):
-                _BACKUP_PROFILE_RUNNING[prof_key] = False
-                _BACKUP_PROFILE_PENDING[prof_key] = False
+    if not _BACKUP_LOCK.acquire(timeout=_BACKUP_ROLLBACK_TIMEOUT):
+        # do NOT touch coordinator state without the lock — hand the whole
+        # rollback to a bounded cleanup task that converges under the lock.
+        threading.Thread(
+            target=_backup_rollback_task, args=(key, token, profile_id),
+            daemon=True, name="fp-backup-rollback").start()
+        return
+    try:
+        _backup_rollback_worker_locked(key, token, profile_id)
+    finally:
+        _BACKUP_LOCK.release()
+
+
+def _backup_rollback_worker_locked(key, token, profile_id=None):
+    """Retire ``token`` and clear the profile RUNNING/PENDING flags while
+    the caller already holds the coordinator lock."""
+    workers = _BACKUP_WORKERS.get(key)
+    if workers is not None:
+        workers.discard(token)
+        if not workers:
+            _BACKUP_WORKERS.pop(key, None)
+    if profile_id is not None:
+        prof_key = str(profile_id)
+        if _BACKUP_PROFILE_RUNNING.get(prof_key):
+            _BACKUP_PROFILE_RUNNING[prof_key] = False
+            _BACKUP_PROFILE_PENDING[prof_key] = False
+
+
+def _backup_rollback_task(key, token, profile_id):
+    """Background cleanup for a rollback that could not acquire the lock on
+    the GUI caller. Waits bounded for the coordinator, then retires the
+    reservation. Converges even under prolonged contention."""
+    deadline = time.monotonic() + max(1.0, _BACKUP_ROLLBACK_TIMEOUT * 20)
+    while time.monotonic() < deadline:
+        if _BACKUP_LOCK.acquire(timeout=_BACKUP_ROLLBACK_TIMEOUT):
+            try:
+                _backup_rollback_worker_locked(key, token, profile_id)
+                _BACKUP_DRAINING.pop(key, None)
+                return
+            finally:
+                _BACKUP_LOCK.release()
+        time.sleep(0.005)
+    # last resort: drop the ghost token under any acquisition we can get
+    if _BACKUP_LOCK.acquire(timeout=_BACKUP_ROLLBACK_TIMEOUT):
+        try:
+            _backup_rollback_worker_locked(key, token, profile_id)
+            _BACKUP_DRAINING.pop(key, None)
+        finally:
+            _BACKUP_LOCK.release()
 
 
 def _backup_retire_worker(key, token):
@@ -1183,44 +1269,89 @@ def _drain_db_backup(db_path, timeout=5.0):
         time.sleep(min(0.01, max(0.0, deadline - time.monotonic())))
 
 
-def _drain_all_db_backups(timeout_per_key=5.0):
-    """Drain every tracked backup destination. Used during shutdown.
+def _drain_all_db_backups(timeout=_BACKUP_SHUTDOWN_BUDGET):
+    """Drain every tracked backup destination under ONE global deadline.
 
-    T01/P0-1: enumerates the physical-worker registry, NOT the profile
-    coalescing state. A profile request is not proof that a physical
-    worker exists — only the destination's worker set is. Returns False
-    the moment any destination exceeds its individual bound; remaining
-    destinations are still attempted (callers can decide whether to
-    escalate) and a False at the bottom of the loop means at least one
-    drain timed out.
+    Used during shutdown. W6 (Ticket 06): the budget is a single absolute
+    wall-clock deadline shared across ALL destinations, not N x per-key —
+    a 10-destination shutdown must not take 10 x the budget. On global
+    expiry every still-live destination is publication-denied (revoked +
+    draining) so no late worker can publish while teardown proceeds.
+    Returns True only when every destination drained within the budget.
     """
-    if not _BACKUP_LOCK.acquire(timeout=max(0.0, timeout_per_key)):
+    deadline = time.monotonic() + max(0.0, timeout)
+    if not _BACKUP_LOCK.acquire(timeout=max(0.0, timeout)):
         return False
     try:
         keys = list(_BACKUP_WORKERS.keys())
     finally:
         _BACKUP_LOCK.release()
     all_ok = True
-    for k in keys:
+    remaining_keys = list(keys)
+    for k in remaining_keys:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            all_ok = False
+            break
         # reverse the key back to a real db_path: the canonical key is
         # normcase(abspath(db_path)), so for the drain we just pass it as
         # the same identifier — the helpers re-normalize identically.
-        if not _drain_db_backup(k, timeout_per_key):
+        if not _drain_db_backup(k, remaining):
             all_ok = False
+            # keep going — a per-destination timeout still denies that
+            # destination, but the global budget may cover the rest
+    # W6 (Ticket 06): regardless of how the loop exited (global budget
+    # expired or all drained), any destination still holding physical
+    # workers is publication-denied now — a late worker must never publish
+    # once shutdown proceeds.
+    _deny_all_publications(remaining_keys)
     return all_ok
 
 
-def _backup_profile_finish(profile_id, key=None, token=None):
-    """T01: clear the profile-level coalescing state after a worker exits.
+def _deny_all_publications(keys):
+    """Fail-closed: publication-denied for every still-live destination so no
+    late worker can publish once the shutdown budget is exhausted."""
+    if _BACKUP_LOCK.acquire(timeout=min(0.25, _BACKUP_ROLLBACK_TIMEOUT * 4)):
+        try:
+            for k in keys:
+                if _BACKUP_WORKERS.get(k):
+                    _BACKUP_REVOKED[k] = True
+                    _BACKUP_DRAINING[k] = True
+        finally:
+            _BACKUP_LOCK.release()
 
-    Must be called once per worker after the physical registry's token is
-    retired. If the profile is still PENDING, the caller should consider
-    spawning a drain worker — that decision lives in the worker body
-    (the next iteration of the periodic loop).
+
+def _backup_profile_finish(profile_id, key=None, token=None, generation=None):
+    """Atomic terminal handoff for the periodic worker (W6 Ticket 04).
+
+    Called at the end of every worker iteration. Under ONE coordinator
+    acquisition it decides the terminal state, closing the Wave-5 orphan
+    race where a request landing between the worker's final PENDING check
+    and its RUNNING clear was left with ``pending=True, running=False,
+    workers=0`` and no worker to consume it:
+
+      * the destination was revoked/draining (or a newer owner took over) ->
+        stop: clear RUNNING and PENDING, return False;
+      * a PENDING request exists -> clear PENDING, KEEP RUNNING, return
+        True (the caller loops and drains it);
+      * nothing pending -> clear RUNNING and PENDING, return False.
+
+    A caller must never observe RUNNING=True while PENDING is set for a
+    worker that has already decided to exit.
     """
     prof_key = str(profile_id)
     with _BACKUP_LOCK:
+        if generation is not None and not _backup_publication_authorized_locked(
+                key, generation):
+            _BACKUP_PROFILE_RUNNING[prof_key] = False
+            _BACKUP_PROFILE_PENDING[prof_key] = False
+            return False
+        if _BACKUP_PROFILE_PENDING.get(prof_key):
+            _BACKUP_PROFILE_PENDING[prof_key] = False
+            return True
         _BACKUP_PROFILE_RUNNING[prof_key] = False
+        _BACKUP_PROFILE_PENDING[prof_key] = False
+        return False
 
 
 def _schedule_periodic_backup(db_path, profile_id, on_published=None):
@@ -1248,10 +1379,7 @@ def _schedule_periodic_backup(db_path, profile_id, on_published=None):
     def _job():
         from fastprompter.core.logging import logger as _log
         try:
-            more = True
-            while more:
-                with _BACKUP_LOCK:
-                    _BACKUP_PROFILE_PENDING[str(profile_id)] = False
+            while True:
                 published = False
                 try:
                     src = sqlite3.connect(db_path)
@@ -1272,14 +1400,15 @@ def _schedule_periodic_backup(db_path, profile_id, on_published=None):
                         on_published()
                     except Exception:
                         _log.exception("backup publish callback failed")
-                with _BACKUP_LOCK:
-                    more = bool(_BACKUP_PROFILE_PENDING.get(str(profile_id)))
-                    authorized = _backup_publication_authorized_locked(
-                        own_key, own_gen)
-                if not more or not authorized:
+                # W6 (Ticket 04): atomic terminal handoff. One coordinator
+                # acquisition decides "pending request -> loop again (we keep
+                # RUNNING ownership)" vs "no pending / revoked -> clear RUNNING
+                # and PENDING". A request that coalesces between our final
+                # PENDING check and RUNNING clear can no longer be orphaned.
+                if not _backup_profile_finish(
+                        profile_id, own_key, token, generation=own_gen):
                     break
         finally:
-            _backup_profile_finish(profile_id, own_key, token)
             _backup_retire_worker(own_key, token)
 
     worker = threading.Thread(target=_job, daemon=True,
@@ -1940,12 +2069,16 @@ class FastPrompterState:
         double the backup/sync side effects for no safety gain.
 
         Atomicity (P0-1): the OLD profile must be left entirely intact
-        (connection, id, path, data, dirty flag) whenever the transition
-        cannot complete. A failed final A save REFUSES the switch and returns
-        False having changed nothing. A corrupt/loading B RESTORES A before
-        re-raising, so State is never stranded bound to a half-initialised B
-        while Main still holds A's data. Ownership of A's connection is only
-        retired after B has loaded successfully.
+        (connection, id, path, data, dirty flag, backup authority) whenever
+        the transition cannot complete. A failed final A save REFUSES the
+        switch and returns False having changed nothing. A corrupt/loading B
+        RESTORES A before re-raising, so State is never stranded bound to a
+        half-initialised B while Main still holds A's data. Ownership of A's
+        connection and A's backup generation are only retired after B has
+        loaded successfully — W6 (Ticket 02): A's backup authority is part of
+        the transaction, so a failed B transition must not leave A's startup
+        safety gate revoked/poisoned (the Wave-5 early revocation made the
+        restored A context finish SUPERSEDED).
         """
         if self.conn:
             if save_current:
@@ -1955,9 +2088,6 @@ class FastPrompterState:
             old_conn = self.conn
             old_profile_id = self.profile_id
             old_db_path = self.db_path
-            if not _revoke_backup_generation(old_db_path):
-                logger.error("profile switch refused: backup revocation unavailable")
-                return False
             old_data = self.data
             old_dirty = self._db_dirty
             # CORE-002: the startup-backup gate is per-profile; keep A's context
@@ -1973,7 +2103,9 @@ class FastPrompterState:
                 self.init_db()
             except Exception:
                 # Restore A entirely before re-raising: State must never be
-                # left bound to a B that failed to load.
+                # left bound to a B that failed to load. A's backup generation
+                # was never revoked (revocation happens only at the commit
+                # point below), so A's pending/restored safety gate stays valid.
                 if self.conn is not old_conn:
                     try:
                         self.conn.close()
@@ -1987,14 +2119,13 @@ class FastPrompterState:
                 self._startup_backup_ctx = old_ctx
                 self._startup_backup_gen = old_gen
                 raise
-            # Success: only now retire A's connection.
+            # Success: only now retire A's connection AND A's backup authority
+            # (commit point). A is the only destination whose .bak is being
+            # retired here; revoking before B was known-good was the poison.
             try:
                 old_conn.close()
             except Exception:
                 pass
-            # CORE-003: A's destination is retired — revoke/drain its backup
-            # workers so a stale A generation can never publish into a newer
-            # A incarnation when this profile is re-entered later.
             try:
                 _revoke_backup_generation(old_db_path)
             except Exception:
@@ -2026,28 +2157,51 @@ class FastPrompterState:
         except Exception:
             return False
 
-    def _await_startup_safety_snapshot(self):
-        """Block until the startup safety snapshot for THIS database generation
-        has either completed or degraded to failure.
+    def startup_safety_status(self, wait_timeout=None):
+        """W6 Ticket 01: canonical outcome-aware startup-safety query.
 
-        ``_save_data_to_db_locked`` already gates ordinary first saves on the
-        same primitive; this helper exists so loader-side startup mutations
-        (CORE-002: presets overflow recovery) share it instead of duplicating
-        the event logic. Non-blocking for healthy databases: the snapshot is
-        only awaited when an actual startup write is about to happen.
+        Returns one of the :class:`_StartupBackupContext.OUTCOME_*` values.
+        Use this from every mutating path; never infer safety from
+        ``ready.is_set()`` alone.
         """
-        ready = self._startup_backup_ready
-        if ready is not None and not ready.is_set():
-            ready.wait()
+        ctx = self._startup_backup_ctx
+        if ctx is None:
+            return _StartupBackupContext.OUTCOME_NOT_REQUIRED
+        if wait_timeout is not None and not ctx.ready.is_set():
+            if not ctx.ready.wait(max(0.0, wait_timeout)):
+                return _StartupBackupContext.OUTCOME_TIMEOUT
+        if not ctx.ready.is_set():
+            return _StartupBackupContext.OUTCOME_PENDING
+        return ctx.outcome
 
-    def _await_startup_safety_snapshot_bounded(self, timeout=5.0):
-        """Return explicit outcome for a bounded durable startup wait."""
+    def _await_startup_safety_snapshot(self, timeout=_STARTUP_RECOVERY_DEADLINE):
+        """Outcome-aware bounded wait for the startup safety snapshot.
+
+        W6 (Ticket 01/03): a persistence safety barrier is successful ONLY
+        when the required artifact was actually published. ``ready`` means
+        the worker finished — not that safety exists. This helper returns
+        the explicit context outcome and refuses to treat a completed
+        FAILED/SUPERSEDED run as safe.
+
+        Returns:
+            OUTCOME_PUBLISHED / OUTCOME_NOT_REQUIRED -> caller may mutate
+            OUTCOME_TIMEOUT -> deadline expired before completion
+            OUTCOME_FAILED / OUTCOME_SUPERSEDED -> worker finished without
+                publishing a validated artifact
+
+        The live DB is untouched on every non-PUBLISHED result; the caller
+        (loader recovery, durable save) decides the controlled failure.
+        """
         ctx = self._startup_backup_ctx
         if ctx is None:
             return _StartupBackupContext.OUTCOME_NOT_REQUIRED
         if not ctx.ready.wait(timeout=max(0.0, timeout)):
             return _StartupBackupContext.OUTCOME_TIMEOUT
         return ctx.outcome
+
+    def _await_startup_safety_snapshot_bounded(self, timeout=5.0):
+        """Return explicit outcome for a bounded durable startup wait."""
+        return self._await_startup_safety_snapshot(timeout=timeout)
 
     def _start_safety_snapshot_async(self, dest):
         """T-818 + CORE-002 + T03: produce the validated startup `.bak` snapshot
@@ -2074,7 +2228,7 @@ class FastPrompterState:
         # destination as the periodic worker, so it claims the same generation
         # authority via the physical-worker registry and aborts if a newer
         # owner takes over.
-        own_key, own_gen, token = _backup_register_worker(src)
+        own_key, own_gen, token = _backup_register_worker_bounded(src)
         dest_path = dest
         if own_key is None:
             ctx.outcome = _StartupBackupContext.OUTCOME_SUPERSEDED
@@ -2249,7 +2403,18 @@ class FastPrompterState:
                 # must not outrun the promised pre-mutation safety snapshot --
                 # otherwise the eventual .bak can hold the already-repaired
                 # state instead of the recoverable original.
-                self._await_startup_safety_snapshot()
+                # W6 (Ticket 01/03): outcome-aware gate. `ready` means the
+                # worker finished, NOT that safety was published. A bounded
+                # wait must end PUBLISHED or the recovery is refused and the
+                # DB row stays untouched.
+                _recovery_outcome = self._await_startup_safety_snapshot()
+                if _recovery_outcome not in (
+                        _StartupBackupContext.OUTCOME_PUBLISHED,
+                        _StartupBackupContext.OUTCOME_NOT_REQUIRED):
+                    raise StartupSafetyUnavailableError(
+                        f"cannot recover out-of-range preset rows: startup "
+                        f"safety snapshot outcome={_recovery_outcome}; the "
+                        f"database is left unchanged")
                 logger.warning(
                     "recovering %d out-of-range snippet row(s) into empty slots: %s",
                     len(_preset_moves),
@@ -2479,33 +2644,45 @@ class FastPrompterState:
             self._last_save_outcome = "NOOP"
             return True
 
-        # T03 / W2-P0-004: the startup safety-snapshot gate is a hard
-        # pre-mutation recovery contract. While the worker is still PENDING
-        # an ordinary autosave must DEFER (return False, keep dirty state,
-        # do not mutate SQLite) — silent progression under a still-pending
-        # snapshot is the bug the audit named, and silently deleting the
-        # recovery guarantee is the alternative it rejected.
-        # An explicit DURABLE save (profile switch / quit / restore) uses
-        # the bounded-wait helper below instead of the deferred path.
-        ready = self._startup_backup_ready
-        if ready is not None and not ready.is_set():
+        # T03 / W2-P0-004 / W6 (Ticket 01): the startup safety-snapshot gate
+        # is a hard pre-mutation recovery contract. The canonical query is
+        # outcome-aware: `ready.is_set()` means the worker finished — NOT that
+        # safety was published. A completed FAILED/SUPERSEDED/TIMEOUT run must
+        # never silently authorize mutation (the Wave-5 gate only checked the
+        # outcome while the Event was still pending, so a completed failure
+        # sailed through).
+        _status = self.startup_safety_status()
+        if _status == _StartupBackupContext.OUTCOME_NOT_REQUIRED:
+            pass  # no snapshot needed
+        elif _status == _StartupBackupContext.OUTCOME_PUBLISHED:
+            pass  # safety artifact actually published
+        elif _status == _StartupBackupContext.OUTCOME_PENDING:
             if force or durable:
-                outcome = self._await_startup_safety_snapshot_bounded()
-                if outcome != _StartupBackupContext.OUTCOME_PUBLISHED:
-                    logger.error("durable save refused: startup safety snapshot outcome=%s", outcome)
+                _status = self.startup_safety_status(
+                    wait_timeout=_STARTUP_RECOVERY_DEADLINE)
+                if _status != _StartupBackupContext.OUTCOME_PUBLISHED:
+                    logger.error(
+                        "durable save refused: startup safety snapshot outcome=%s",
+                        _status)
                     self._db_dirty = True
-                    self._last_save_outcome = outcome
+                    self._last_save_outcome = _status
                     return False
             else:
-                # T03 ordinary autosave: defer. The next autosave retries
-                # once the snapshot is ready, and the dirty state is
-                # preserved by the "did not commit" branch below.
+                # ordinary autosave: defer. The next autosave retries once
+                # the snapshot is ready; dirty state is preserved.
                 logger.info(
                     "autosave deferred: startup safety snapshot is still "
                     "running; retry on next tick")
                 self._db_dirty = True
                 self._last_save_outcome = "DEFERRED_STARTUP"
                 return False
+        else:
+            # completed FAILED/SUPERSEDED/TIMEOUT — refuse mutation.
+            logger.error(
+                "save refused: startup safety snapshot outcome=%s", _status)
+            self._db_dirty = True
+            self._last_save_outcome = _status
+            return False
 
         if ui_settings:
             self.data.update(ui_settings)

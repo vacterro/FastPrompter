@@ -9586,7 +9586,21 @@ class FastPrompter(
         # the switch is tentative; they are torn down only after State has
         # atomically moved to B.
         try:
-            self.state.switch_profile(idx + 1, save_current=False)
+            switched = self.state.switch_profile(idx + 1, save_current=False)
+            if not switched:
+                # W6 (P0-003): State refused the switch (e.g. a pre-switch
+                # save failed). Roll back the watcher quiesce and keep A
+                # fully active — no irreversible detach/rebind occurs.
+                from fastprompter.core.logging import logger as _plog
+                _plog.warning(
+                    "profile switch refused by State; old profile kept active")
+                if getattr(self, "_watcher_quiesced_for_switch", False):
+                    try:
+                        self._watcher_rollback_quiesce()
+                    except Exception:
+                        pass
+                    self._watcher_quiesced_for_switch = False
+                return
         except Exception:
             # W2-001: switch failed — resume the paused watcher so profile A
             # stays fully active (mirror of the undo/push refusal path).
