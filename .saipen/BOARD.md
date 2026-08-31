@@ -3,9 +3,12 @@
 ## DOING
 
 ## TODO
+- [ ] T-1161 [P2] launcher reliability: FastPrompter.pyw re-execs into project .venv when PyQt6 missing (double-click/autostart no longer die with ModuleNotFoundError) | verify: uv run pytest tests/ -q PASS; pythonw launch shows FastPrompter window, no crash dialog
 
 ## DONE
+- [x] T-1162 [P0] tab switching hangs program completely — on_tab_changed chain deadlock/lockup | verify: uv run pytest tests/ -q PASS; switch between 3+ projects with tab click, no freeze | owner: agents | claim_time: 2026-08-30T23:52:16Z | source_receipts: SRC-003,SRC-004
 - [x] T-1158 [P0] startup crash: _sync_on_prune_leases dedented _sync_on_done and undo methods out of FastPrompter | verify: release v0.8.61 published (bc8c9e8 + tag + EXE 45.5 MB); fresh launch boots cleanly | owner: workbuddy | claim_time: 2026-08-30T03:38:00Z
+- [x] T-1160 [P1] AUDIT_ALL_3 verify baseline: CORE-001 (portable backup wrapper), PERF-001 (_sync_on_profile_change NameError), PERF-002 (portable deepcopy) already fixed in v0.8.61; 44/44 focused tests pass | verify: live code reads capture_snapshot, pending.get("profile"), no deepcopy in run_portable_backup; pytest tests/test_portable_backup.py + tests/test_performance_tickets.py 49/49 pass | owner: workbuddy | claim_time: 2026-08-30T04:14:00Z
 - [x] T-1117 (P2, acb-mtbqjyvd) PERF-006 regenerate typecheck_ui_vocab: generator ran (19393 words), parity test passes; no language-module import reintroduced | verify: 1689 pass 1 skip
 - [x] T-1116 (P2, acb-mtbqjyvd) PERF-005 cache hard cardinality: _purge_cache TTL + hard cap (evict oldest); folder-summary 64 + dir-size 256 | verify: 1689 pass 1 skip
 - [x] T-1115 (P1, acb-mtbqjyvd) PERF-004 live-line cache coverage-aware: fills uncached lines on same raw text; no false DETACHED | verify: 1689 pass 1 skip
@@ -43,6 +46,7 @@
 
 ## BLOCKED
 
+- [ ] T-1159 [P1] Implement external audit artifact FastPrompter__00_AUDIT_ALL_3 unresolved findings in current workspace | verify: uv run pytest tests/ -q (1702 passed, 1 skipped); font smoke 5 passed; production EXE build/start/reclaim PASS; full smoke remains red on legacy shared-fixture tests | owner: opencode | claim_time: 2026-08-30T12:20:00Z | verify_attempts: 1 | blocker: full smoke red on legacy shared-fixture tests
 - [ ] T-800 (P3, i18n-doc-drift, triaged MARKHUNT E-1469) localization-doc drift cluster x6: translated docs ru/est/ja/de @3bd99c8 vs wiki +186/-57; root `GUIDE_EN.md` @4b7109c vs wiki +65/-7; 29-locale gap 95.2% (49 missing keys x 29 = 1421 strings). Fix via the saiwiki + saitranslate re-cut pipeline (kitchen sources own these), NOT an inline edit -- `docs/wiki/` and the locale trees are pipeline-owned. | verify: kitchen mirrors re-cut and collected; coverage gap tracked as standing debt | needs: sub-sync | blocker: future gate -- owned by saitranslate/saiwiki producer pipeline (CONFORMANCE 232): wiki half landed via WIKI-006 collect 3fdd621, locale half via TRANSLATE-005 collect 051f634; remaining docs ru/est/ja/de re-sync clears on next ee re-cut that includes kitchen/docs
 - [ ] T-803 (P3, log-contract, triaged MARKHUNT E-1469) crew engine journaled `[op: converge_intent-bce5cd6b]` into `.saipen/LOG.md:226`, breaking `validate.py`'s LOG_LINE skeleton (tax must be RUN/DEC/H) so E-1467 is unparsed and E-1468's `parent: E-1467` dangles. Fix: engine must write skeleton-conformant lines, OR the validator must accept `[op: ...]` op-journal lines. Lives in the saipen skill (`tools/saipen_engine`), not the project tree. | verify: `validate.py` no longer flags malformed lines; E-1467 parses | needs: skill-owner | blocker: future gate -- work owned by another repo (saipen skill install), not this tree -- clears in a dedicated skill-repo session editing tools/saipen_engine
 
