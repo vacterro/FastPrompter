@@ -1,0 +1,60 @@
+# .cbmignore - FastPrompter
+# Drop this in V:\___VAC\__K\__CODE\_PY\_FastPrompter\.cbmignore BEFORE indexing.
+#
+# WHY: the repo is 1.7 GB, but the real source is only ~175k LOC across ~300
+# files. Without this file the graph is ~95% noise:
+#
+#   .claude/      1,393 .py files (328 MB)  <- MORE python than src/ itself
+#   .venv/        1,364 .py files (344 MB)
+#   data/        25,910 .md files ( 97 MB)
+#   build/                        (638 MB)
+#
+# Measured: src/ alone indexes in 16.4s -> 2,874 nodes / 15,400 edges
+# (6,452 CALLS). That is the graph you want. Indexing the rest buys nothing.
+
+# ---- agent + tooling state ----------------------------------------------
+.claude/
+.codenomad/
+.freebuff/
+.saipen/
+.saiwork/
+.workbuddy-ai/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+__pycache__/
+
+# ---- environment ---------------------------------------------------------
+.venv/
+venv/
+site-packages/
+
+# ---- build output --------------------------------------------------------
+build/
+dist/
+*.spec
+*.pyc
+*.pyd
+*.dll
+*.obj
+*.lib
+*.exp
+
+# ---- bulk data -----------------------------------------------------------
+data/
+_res/
+*.wav
+*.mp3
+*.mp4
+*.png
+*.jpg
+*.svg
+*.ico
+*.db
+*.sqlite
+*.tmp-wal
+*.tmp-shm
+
+# ---- docs (keep src/ docstrings, skip the prose) -------------------------
+# docs/
+# CHANGELOG.md

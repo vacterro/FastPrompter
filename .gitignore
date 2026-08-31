@@ -64,11 +64,13 @@ src/fastprompter/_extract.txt
 .saipen/snapshots/
 
 # saipen scratch — per-session caches, never committed
-.saipen/kitchen/
-# EXCEPT the release-scope records: the release engine stages the reviewed
-# scope identity with the ship commit, so the directory must be trackable.
+.saipen/kitchen/*
+# EXCEPT the release-scope records and closure artifacts: the release engine
+# stages the reviewed scope identity and the ship closure digest/receipt with
+# the release commit, so those must be trackable.
 !.saipen/kitchen/release_scope/
-!.saipen/kitchen/release_scope/*
+!.saipen/kitchen/digest.md
+!.saipen/kitchen/release_receipt.json
 
 # agent runtime dir (workbuddy skill host)
 .workbuddy-ai/
