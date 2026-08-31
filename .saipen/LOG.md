@@ -243,3 +243,19 @@
 - 31.08.26 01:41 [E-1331] [parent: E-1330] [T-1163] [agent: agents] [op: scope-5c7781c0ca64446abf6df6acbc4273cf] DEC: release scope recorded -- 2 path(s) bound to 67e20fcfd213
 - 31.08.26 01:41 [E-1332] [parent: E-1331] [T-1163] [agent: agents] [op: finish-fc612d4d853f48718c6931bd51813f98] RUN: ship v0.8.63 -> content commit 482723df638c pushed
 - 31.08.26 01:41 [E-1333] [parent: E-1332] [T-1163] [agent: agents] [op: finish-fc612d4d853f48718c6931bd51813f98] DEC: ticket finished via SAIOPS -- completion (from SHIP)
+- 31.08.26 01:50 [E-1334] [parent: E-1333] [agent: agents] [op: transition-223d57c8a7184abc961cad58b4e44a17] RUN: transition to HUNT
+- 31.08.26 01:59 [E-1335] [parent: E-1334] [T-1164] [agent: agents] [op: ticket-a720f66f61cf4ee998acb547d6c26727] DEC: ticket added via SAIOPS
+- 31.08.26 02:00 [E-1336] [parent: E-1335] [T-1165] [agent: agents] [op: ticket-f669b69c6bab46ed9adcf0239ff00a28] DEC: ticket added via SAIOPS
+- 31.08.26 02:01 [E-1337] [parent: E-1336] [agent: agents] [op: transition-244fa28865fc4612a6d7b7c80cd1a5d7] RUN: transition to PLAN
+- 31.08.26 02:02 [E-1338] [parent: E-1337] [T-1165] [agent: agents] [op: claim-b96d5f551d404ffd911b25bc4ec44742] DEC: claimed via SAIOPS -- owner agents
+- 31.08.26 02:05 [E-1339] [parent: E-1338] [T-1165] [agent: agents] [op: transition-40367bf8c70340028016ae4bcacc6dd7] RUN: transition to BUILD
+- 31.08.26 02:08 [E-1340] [parent: E-1339] [T-1165] [agent: agents] [op: checkpoint-e27893aec49d483798c3a653ca0c1b44] RUN: BUILD -- track tools/validate.py (project validator shim), tests/test_editor_document_cache.py (new doc-cache regression, 2 pass), .cbmignore; remove .saipen/BOARD.md.bak-src005 + err.log + out.log; classify remaining untracked: .saipen/recovery/* = engine artifacts (gitignore per T-1090), .saipen/saitranslate/kitchen/*.py = translation scratch; audit/1.md = NEW T-1162 SECOND AUDIT input (autosave/sqlite/backup) -- preserve, not orphan
+- 31.08.26 02:12 [E-1341] [parent: E-1340] [T-1165] [agent: agents] [op: checkpoint-422c976804bc47f981c2e88f813083a3] RUN: VERIFY -- compileall PASS (src, pyw, tools/validate.py); pytest test_editor_document_cache + test_instance_lock -> 19 pass 1 skip (env mutex); orphan classification: validate.py shim + doc-cache test + .cbmignore + gitignore tracked in 8b4296a; .saipen/recovery/* + saitranslate kitchen scratch = engine/producer artifacts (not orphans); audit/1.md = NEW T-1162 SECOND AUDIT input preserved; conf: high
+- 31.08.26 02:13 [E-1342] [parent: E-1341] [T-1165] [agent: agents] [op: transition-e69284ff94064422a0f7a8f268e16b77] RUN: transition to VERIFY
+- 31.08.26 02:13 [E-1343] [parent: E-1342] [T-1165] [agent: agents] [op: checkpoint-08bf20d8e8664d6aaa345be9ac843d48] RUN: VERIFY -- compileall PASS; pytest doc-cache + instance_lock 19 pass 1 skip (env mutex); orphans tracked; conf: high
+- 31.08.26 02:13 [E-1344] [parent: E-1343] [T-1165] [agent: agents] [op: transition-871c481889f341dabfaaf7782ce37855] RUN: transition to REVIEW
+- 31.08.26 02:13 [E-1345] [parent: E-1344] [T-1165] [agent: agents] [op: checkpoint-94e9862b28194a139ba5edf6d63b255d] DEC: REVIEW pass 1 -- diff check: validate.py shim, doc-cache test, .cbmignore, .gitignore kitchen exemption; no P0/P1 findings; P3 housekeeping
+- 31.08.26 02:13 [E-1346] [parent: E-1345] [T-1165] [agent: agents] [op: transition-80f7892a244041ac8951bf09982dc440] RUN: transition to SHIP
+- 31.08.26 02:15 [E-1347] [parent: E-1346] [T-1165] [agent: agents] [op: scope-9f3cf8ffd93d49619315521d5f42cb57] DEC: release scope recorded -- 4 path(s) bound to 8b4296a01331
+- 31.08.26 02:15 [E-1348] [parent: E-1347] [T-1165] [agent: agents] [op: finish-b984b93a76cb42309b1a5136ce8dca92] RUN: ship v0.8.64 -> content commit 56dc3588838e pushed
+- 31.08.26 02:15 [E-1349] [parent: E-1348] [T-1165] [agent: agents] [op: finish-b984b93a76cb42309b1a5136ce8dca92] DEC: ticket finished via SAIOPS -- completion (from SHIP)

@@ -3,9 +3,11 @@
 ## DOING
 
 ## TODO
+- [ ] T-1164 [P2] src/ working tree carries ~129 files of uncommitted changes not in any released tag (instance_lock RECLAIMED, default_profile font_size, project_sync, typecheck_ui_vocab, formatting/scaling/snippet mixins, i18n locales, tests) — audit work that was never committed; needs classification and either commit to next release or prune | verify: git diff --stat HEAD shows ~3.8k insertions; ticket exists to classify and resolve
 - [ ] T-1161 [P2] launcher reliability: FastPrompter.pyw re-execs into project .venv when PyQt6 missing (double-click/autostart no longer die with ModuleNotFoundError) | verify: uv run pytest tests/ -q PASS; pythonw launch shows FastPrompter window, no crash dialog
 
 ## DONE
+- [x] T-1165 [P3] HUNT C6 orphan: .saipen/BOARD.md.bak-src005 leftover backup + untracked tests/test_editor_document_cache.py (new test, 2 pass, references document_cache in main.py) + .cbmignore + .saipen/kitchen scratch scripts — classify: commit test, remove stale backup | verify: git status untracked lists these; test_editor_document_cache.py passes 2/2 | owner: agents | claim_time: 2026-08-31T02:13:44Z
 - [x] T-1163 [P0] ship v0.8.63 — include state.py lock fix + test_instance_lock isolation | verify: uv run pytest tests/ -q PASS; state.py acquire(blocking=False); ship v0.8.63 pushed | owner: agents | claim_time: 2026-08-31T01:38:34Z
 - [x] T-1162 [P0] tab switching hangs program completely — on_tab_changed chain deadlock/lockup | verify: uv run pytest tests/ -q PASS; switch between 3+ projects with tab click, no freeze | owner: agents | claim_time: 2026-08-30T23:52:16Z | source_receipts: SRC-003,SRC-004
 - [x] T-1158 [P0] startup crash: _sync_on_prune_leases dedented _sync_on_done and undo methods out of FastPrompter | verify: release v0.8.61 published (bc8c9e8 + tag + EXE 45.5 MB); fresh launch boots cleanly | owner: workbuddy | claim_time: 2026-08-30T03:38:00Z
