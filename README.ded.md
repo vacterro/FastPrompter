@@ -7,5 +7,5 @@
 Ни браузера, ни облака, ни аккаунта.
 
 [Скачать портативный EXE →](https://github.com/vacterro/FastPrompter/releases)
-<img src="https://img.shields.io/github/v/tag/vacterro/FastPrompter?style=flat-square&label=source%20version" alt="version"> **v0.8.65**
+<img src="https://img.shields.io/github/v/tag/vacterro/FastPrompter?style=flat-square&label=source%20version" alt="version"> **v0.8.66**
 <a href="LICENSE"><img src="https://img.shields.io/github/license/vacterro/FastPrompter?style=flat-square&color=blue" alt="MIT"></a>

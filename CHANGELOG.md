@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.8.66 - 2026-08-31
+
+- **Persistence safety is now outcome-driven (T-1166 / T-1168, Wave 6):** a
+  startup safety snapshot counts as successful only when the validated `.bak`
+  was actually published. Previously a snapshot worker that finished with
+  `FAILED` or `SUPERSEDED` still let the next save mutate the database,
+  because the gate only inspected the outcome while the worker was *still
+  running*. Every mutating path now reads the explicit outcome
+  (`NOT_REQUIRED` / `PUBLISHED` / `PENDING` / `SUPERSEDED` / `FAILED` /
+  `TIMEOUT`) and refuses to write on anything but a real publication, keeping
+  the change dirty and retryable instead of silently committing without a
+  recovery copy.
+- **Startup recovery can no longer hang or write unprotected:** the
+  out-of-range preset repair used an unbounded wait, so a stalled backup
+  worker could freeze startup forever. It now waits against a 5 s deadline and
+  raises a controlled `StartupSafetyUnavailableError` — leaving the row
+  exactly where it was — rather than repairing the live database without a
+  published snapshot.
+- **Profile switching is transactional again:** the window ignored
+  `State.switch_profile()` returning `False` and continued the irreversible
+  detach/rebind/UI rebuild anyway, which could split state and UI ownership
+  across two profiles. A refusal now rolls the watcher pause back and keeps
+  the old profile fully active. Profile A's backup authority is also revoked
+  only at the commit point, so a failed profile-B load no longer strands A
+  with a revoked (permanently `SUPERSEDED`) safety gate.
+- **Coordinator hand-off, error path and shutdown are bounded:** a backup
+  request arriving in the gap between a worker's final pending check and its
+  ownership release could be left with nobody to run it; the terminal
+  hand-off is now one atomic decision. A failed `Thread.start()` no longer
+  blocks the GUI thread on a contended coordinator lock (bounded rollback with
+  background convergence), and shutdown drains every destination under one
+  global deadline instead of N x per-destination, denying publication to
+  anything still alive when the budget expires.
+- **Alt+F toggles the Files asset drawer (T-1167):** configurable in the
+  hotkey dialog (primary + secondary combo), documented in the shortcut
+  cheatsheet, and sound-muted so the panel's own open/close sound is not
+  doubled.
+- **Launcher reliability (T-1161):** double-click / autostart re-execs into
+  the project virtualenv when PyQt6 is missing from the interpreter Windows
+  picked, instead of dying with a `ModuleNotFoundError` crash dialog.
+
 ## 0.8.65 - 2026-08-31
 
 - **File asset drawer hotkey (T-1167):** Alt+F toggles the Files asset
