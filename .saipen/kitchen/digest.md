@@ -1,3 +1,3 @@
-﻿done: Wave-6 audit closed (7/7 repros fixed + 13 tests); T-1167 shipped v0.8.65; T-1161 launcher verified; audit/ folder deleted
-remaining: Windows soak for T-1166/T-1168 (needs real PyQt6 Windows session); T-1159/T-800/T-803 future producer gates
-awaiting: Windows soak run, then cc to close T-1166/T-1168
+﻿done: v0.8.66 shipped (64759d8 + tag + GitHub release + EXE 46.1 MB); Wave-6 persistence closure (T-1166/T-1168) + Alt+F drawer (T-1167) + launcher re-exec (T-1161); audit/ folder deleted
+remaining: T-1159 (full smoke legacy red), T-800 (i18n pipeline), T-803 (skill-repo log contract) — external/future gates
+awaiting: nothing

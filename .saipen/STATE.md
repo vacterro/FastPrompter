@@ -1,7 +1,7 @@
 ---
-phase: SHIP
-task: T-1168
-next_action: "PHASE SHIP T-1168"
+phase: DONE
+task: none
+next_action: "saipen crew"
 blocker: ""
 agent: agents
 saipen_version: 7
@@ -13,12 +13,12 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 1373
+last_event: 1376
 style_contract: ded-4ae736e4
-updated: "2026-08-31T21:56:42Z"
-transition_from: REVIEW
+updated: "2026-08-31T22:54:47Z"
+transition_from: SHIP
 execution_intent: converge
-converge_target: ship
+converge_target: crew
 ---
 
 
