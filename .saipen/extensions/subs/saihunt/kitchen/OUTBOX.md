@@ -1,19 +1,19 @@
-﻿# OUTBOX
+# OUTBOX
 
-## HUNT-013: crew SC-2 sweep @ 187f5cd (31.08.26) - v0.8.66 release
+## HUNT-013: crew SC-2 sweep @ df90eb8 (31.08.26) - v0.8.66 release
 - **status:** ready
-- **summary:** Current-source six-signal sweep at HEAD 187f5cd (v0.8.66 release: Wave-6 persistence closure T-1166/T-1168, Alt+F drawer T-1167, launcher re-exec T-1161). All six signals clean: unit suite green (1748 passed 1 skipped), zero TODO/FIXME/HACK in persistence scope, no unverified commits (all commits attributed to tickets/ships), no new silent-failure or symmetry candidates in the shipped delta, no orphan files, no failing tests.
+- **summary:** Current-source six-signal sweep at HEAD df90eb8 (v0.8.66 with Wave-6 persistence closure T-1166/T-1168, Alt+F drawer T-1167, launcher re-exec T-1161). All six signals clean: unit suite green (1748 passed 1 skipped), zero TODO/FIXME/HACK in persistence scope, no unverified commits (all commits attributed to tickets/ships), no new silent-failure or symmetry candidates in the shipped delta, no orphan files, no failing tests.
 - **main_project_refs:** [src/fastprompter/core/state.py, src/fastprompter/main.py, tests/test_wave6_coordinator.py, tests/test_launcher_reliability.py]
 - **critical:** false
 - **severity:** P3
 - **producer:** saihunt
-- **source_head:** 187f5cdab8a0e8325883ffd0cc3ef49fd3b48a9f
+- **source_head:** df90eb866ee193e562a1df378e7b5af4b1f6ea0d
 - **source_tree_fingerprint:** git-delta-v1:9539ecf0ffaca2181d8abd735f691aa9f67422bdc1f6a6ab3c86db43066a1248
 - **role_revision:** sha256:4edb04181cb07e0946afd06fbe711166fa9dcc403e56b52e9be3844f0a71b0a5
-- **coverage:** all six HUNT signals at 187f5cd: tests, commit verification, stale markers, silent failure, symmetry, orphan artifacts
+- **coverage:** all six HUNT signals at df90eb8: tests, commit verification, stale markers, silent failure, symmetry, orphan artifacts
 - **payload:** []
 - **verified:** PASS -- pytest tests/ 1748 passed 1 skipped; rg TODO/FIXME/HACK src/fastprompter/core/state.py + main.py clean; git tree carries only attributable .saipen state + user 1.md; concurrency seam repeated 50x clean; compileall PASS
-- **instructions:** Evidence for SC-2 at 187f5cd. No defect signals; no patch required. Core may proceed to SC-3.
+- **instructions:** Evidence for SC-2 at df90eb8. No defect signals; no patch required. Core may proceed to SC-3.
 
 ## HUNT-012: crew SC-2 sweep @ 40a0213 (27.08.26) — pie-menu insert fix
 - **status:** reviewed
