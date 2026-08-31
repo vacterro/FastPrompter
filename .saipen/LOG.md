@@ -230,3 +230,16 @@
 - 31.08.26 00:54 [E-1318] [parent: E-1317] [T-1162] [agent: agents] [op: scope-1206a88ea5004fc8a8b1d8ddbc96dbe9] DEC: release scope recorded -- 5 path(s) bound to 41a46a5b070a
 - 31.08.26 00:54 [E-1319] [parent: E-1318] [T-1162] [agent: agents] [op: finish-5b3476ad1c314084a8ad05293f59b137] RUN: ship v0.8.62 -> content commit cebe9dddfc0d pushed
 - 31.08.26 00:54 [E-1320] [parent: E-1319] [T-1162] [agent: agents] [op: finish-5b3476ad1c314084a8ad05293f59b137] DEC: ticket finished via SAIOPS -- completion (from SHIP)
+- 31.08.26 01:30 [E-1321] [parent: E-1320] [T-1163] [agent: agents] [op: ticket-4e952884b95a4fa18e86e96829d0ad85] DEC: ticket added via SAIOPS
+- 31.08.26 01:30 [E-1322] [parent: E-1321] [T-1163] [agent: agents] [op: claim-8fe8d704573c4125b648706df5f1e79f] DEC: claimed via SAIOPS -- owner agents
+- 31.08.26 01:30 [E-1323] [parent: E-1322] [T-1163] [agent: agents] [op: transition-0e198899a1864918baa4739d4e9d23b0] RUN: transition to BUILD
+- 31.08.26 01:33 [E-1324] [parent: E-1323] [T-1163] [agent: agents] [op: checkpoint-aa3db880f4a242658a3655555deaa33a] RUN: BUILD -- version bumped 0.8.62->0.8.63 (VERSION, pyproject, pyw, CHANGELOG head, README+ee/ded/ja+kitchen badges); state.py lock fix + test_instance_lock isolation verified in tree; uv run pytest tests/ -q -> PASS (1720 passed, 1 skipped)
+- 31.08.26 01:33 [E-1325] [parent: E-1324] [T-1163] [agent: agents] [op: transition-33f3e4cd42fa44a2bde4fe57fbafe9de] RUN: transition to VERIFY
+- 31.08.26 01:36 [E-1326] [parent: E-1325] [T-1163] [agent: agents] [op: checkpoint-f1c0787728624b508f1ab434bbf7da87] RUN: VERIFY -- compileall PASS; uv run pytest tests/ -q -> PASS (1720 passed, 1 skipped); state.py acquire(blocking=False) + test_instance_lock isolation in tree; conf: high
+- 31.08.26 01:36 [E-1327] [parent: E-1326] [T-1163] [agent: agents] [op: transition-d5579d8dc09c42ac9799d5c7363805ed] RUN: transition to REVIEW
+- 31.08.26 01:38 [E-1328] [parent: E-1327] [T-1163] [agent: agents] [op: checkpoint-c59071c3bb90438787dd61087e97e8ed] DEC: REVIEW pass 1 -- diff check: state.py _BACKUP_LOCK acquire(blocking=False) + try/finally, _begin_backup_generation None-on-busy, _schedule_periodic_backup coalesce-on-busy; test_instance_lock isolation monkeypatch; pytest 1720 pass 1 skip (skip=env real FastPrompter holds mutex, not a regression); no P0/P1 findings
+- 31.08.26 01:38 [E-1329] [parent: E-1328] [T-1163] [agent: agents] [op: transition-2013b9aca50a4230bc0896f89da08a67] RUN: transition to SHIP
+- 31.08.26 01:38 [E-1330] [parent: E-1329] [T-1163] [agent: agents] [op: scope-ff3e0d8dd59d4e46a22a5cd9b98a4369] DEC: release scope recorded -- 2 path(s) bound to 67e20fcfd213
+- 31.08.26 01:41 [E-1331] [parent: E-1330] [T-1163] [agent: agents] [op: scope-5c7781c0ca64446abf6df6acbc4273cf] DEC: release scope recorded -- 2 path(s) bound to 67e20fcfd213
+- 31.08.26 01:41 [E-1332] [parent: E-1331] [T-1163] [agent: agents] [op: finish-fc612d4d853f48718c6931bd51813f98] RUN: ship v0.8.63 -> content commit 482723df638c pushed
+- 31.08.26 01:41 [E-1333] [parent: E-1332] [T-1163] [agent: agents] [op: finish-fc612d4d853f48718c6931bd51813f98] DEC: ticket finished via SAIOPS -- completion (from SHIP)

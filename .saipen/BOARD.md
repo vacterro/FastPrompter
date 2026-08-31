@@ -6,6 +6,7 @@
 - [ ] T-1161 [P2] launcher reliability: FastPrompter.pyw re-execs into project .venv when PyQt6 missing (double-click/autostart no longer die with ModuleNotFoundError) | verify: uv run pytest tests/ -q PASS; pythonw launch shows FastPrompter window, no crash dialog
 
 ## DONE
+- [x] T-1163 [P0] ship v0.8.63 — include state.py lock fix + test_instance_lock isolation | verify: uv run pytest tests/ -q PASS; state.py acquire(blocking=False); ship v0.8.63 pushed | owner: agents | claim_time: 2026-08-31T01:38:34Z
 - [x] T-1162 [P0] tab switching hangs program completely — on_tab_changed chain deadlock/lockup | verify: uv run pytest tests/ -q PASS; switch between 3+ projects with tab click, no freeze | owner: agents | claim_time: 2026-08-30T23:52:16Z | source_receipts: SRC-003,SRC-004
 - [x] T-1158 [P0] startup crash: _sync_on_prune_leases dedented _sync_on_done and undo methods out of FastPrompter | verify: release v0.8.61 published (bc8c9e8 + tag + EXE 45.5 MB); fresh launch boots cleanly | owner: workbuddy | claim_time: 2026-08-30T03:38:00Z
 - [x] T-1160 [P1] AUDIT_ALL_3 verify baseline: CORE-001 (portable backup wrapper), PERF-001 (_sync_on_profile_change NameError), PERF-002 (portable deepcopy) already fixed in v0.8.61; 44/44 focused tests pass | verify: live code reads capture_snapshot, pending.get("profile"), no deepcopy in run_portable_backup; pytest tests/test_portable_backup.py + tests/test_performance_tickets.py 49/49 pass | owner: workbuddy | claim_time: 2026-08-30T04:14:00Z
