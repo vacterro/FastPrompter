@@ -49,6 +49,7 @@ class MarkdownHighlighter(QSyntaxHighlighter):
         # code sub-highlighting and the conceal extras. Replaces the old
         # all-or-nothing >500 skip that made headers vanish entirely.
         self._degraded = False
+        self._huge = False
         self.hr_as_line = False   # when True, --- text is hidden (painted as a visual line)
         # Obsidian-style Live Preview: the emphasis markers themselves are
         # hidden so the text reads as rendered, and reappear on the block the
@@ -129,6 +130,12 @@ class MarkdownHighlighter(QSyntaxHighlighter):
         only drops fenced-code sub-highlighting and conceal extras.
         """
         self._degraded = bool(degraded)
+
+    def set_huge(self, huge):
+        """Use only structural rules for very large documents."""
+        self._huge = bool(huge)
+        if self._huge:
+            self._degraded = True
 
     def _theme_color(self, key, fallback):
         """Read one key out of the active theme's raw_colors.
@@ -315,6 +322,34 @@ class MarkdownHighlighter(QSyntaxHighlighter):
         self._code_fence_format.setFontStyleStrategy(strat)
         for _, fmt in self._code_sub_rules:
             fmt.setFontStyleStrategy(strat)
+        essential_patterns = {
+            r'^#\s+.*', r'^##\s+.*', r'^###\s+.*',
+            r'^>\s+.*', r'^\s*[-*•+]\s+', r'^\s*\d+\.\s+',
+        }
+        self._essential_rules = [
+            (pattern, fmt) for pattern, fmt in self._highlighting_rules
+            if getattr(pattern, "pattern", None) in essential_patterns
+        ]
+        # A cheaper subset for DEGRADED (large, not huge) documents: block
+        # anchors (headers, quotes, lists, code fences) plus the inline
+        # markers readers actually rely on.  Degraded never used to shrink
+        # the rule list — it only skipped fenced-code sub-highlighting and
+        # conceal, so a >500-block document still ran every regex over every
+        # block on the GUI thread (FREEZE-002).  Everything the user sees on
+        # a regular note survives; what is dropped is the long-tail of
+        # decorative rules whose per-block cost adds up on big documents.
+        degraded_patterns = essential_patterns | {
+            r'\*\*.*?\*\*', r'__[^_\n]+__', r'~~[^~\n]+~~',
+            r'(?<!\*)\*(?!\*)[^*\n]+\*(?!\*)',
+            r'(?<![a-zA-Z0-9])_(?!_)[^_\n]+(?<!_)_(?![a-zA-Z0-9])',
+            r'`[^`\n]+`',
+            r'\[([^\]]+)\]\(([^)]+)\)',
+            r'(?<![\w(])https?://[^\s<>"\')\]]+',
+        }
+        self._degraded_rules = [
+            (pattern, fmt) for pattern, fmt in self._highlighting_rules
+            if getattr(pattern, "pattern", None) in degraded_patterns
+        ]
 
     def highlightBlock(self, text):
         if self._skip_highlighting or sip.isdeleted(self): return
@@ -357,7 +392,13 @@ class MarkdownHighlighter(QSyntaxHighlighter):
             return
         self.setCurrentBlockState(mark_bits)
 
-        for pattern, format in self._highlighting_rules:
+        if self._huge:
+            rules = self._essential_rules
+        elif self._degraded:
+            rules = self._degraded_rules
+        else:
+            rules = self._highlighting_rules
+        for pattern, format in rules:
             for match in pattern.finditer(text):
                 start, length = match.start(), match.end() - match.start()
                 if format.isAnchor():

@@ -13,6 +13,7 @@ import zlib
 from PyQt6 import sip
 from PyQt6.QtCore import (
     QEvent,
+    QEventLoop,
     QFileSystemWatcher,
     QObject,
     Qt,
@@ -252,6 +253,80 @@ def is_gui_thread():
     """Whether current callback executes on QApplication's owner thread."""
     app = QApplication.instance()
     return app is None or QThread.currentThread() is app.thread()
+
+
+# FREEZE-2026-08-30: deadlock watchdog.  A background thread watches the
+# heartbeat that a GUI-thread QTimer keeps ticking.  If the heartbeat goes
+# silent for >1500 ms, the GUI thread is presumed wedged ("Not Responding").
+# The watchdog logs the freeze length; once the GUI thread gets its next
+# turn it dumps its own Python stack so the exact blocking call is on record
+# for the next session.  Without this, a hard freeze leaves no trace.
+_GUI_LAST_ANSWER = [0.0]
+_GUI_WATCHDOG_STARTED = [False]
+
+
+def _start_gui_watchdog(window):
+    """Install a heartbeat + watchdog that detects a frozen GUI thread."""
+    if _GUI_WATCHDOG_STARTED[0]:
+        return
+    _GUI_WATCHDOG_STARTED[0] = True
+    _GUI_LAST_ANSWER[0] = time.monotonic()
+    import threading
+    gui_thread_ident = threading.get_ident()
+    try:
+        from fastprompter.core.logging import logger as _log
+    except Exception:
+        _log = None
+
+    from PyQt6.QtCore import QTimer
+
+    blocked_since = [0.0]
+    stall_captured = [False]
+
+    def _heartbeat():
+        now = time.monotonic()
+        prev = _GUI_LAST_ANSWER[0]
+        _GUI_LAST_ANSWER[0] = now
+        if blocked_since[0]:
+            stalled = now - blocked_since[0]
+            if _log is not None:
+                _log.warning("GUI recovered after %.2fs stall", stalled)
+            blocked_since[0] = 0.0
+            stall_captured[0] = False
+        elif _log is not None and (now - prev) > 1.5:
+            _log.warning(
+                "GUI heartbeat gap %.2fs (event loop stalled?)",
+                now - prev)
+
+    _heartbeat_timer = QTimer(window)
+    _heartbeat_timer.setInterval(500)
+    _heartbeat_timer.timeout.connect(_heartbeat)
+    _heartbeat_timer.start()
+    window._watchdog_heartbeat_timer = _heartbeat_timer
+
+    def _watcher():
+        while True:
+            time.sleep(0.5)
+            try:
+                gap = time.monotonic() - _GUI_LAST_ANSWER[0]
+                if gap > 1.5 and not stall_captured[0]:
+                    blocked_since[0] = _GUI_LAST_ANSWER[0]
+                    stall_captured[0] = True
+                    try:
+                        import sys
+                        import traceback
+                        frame = sys._current_frames().get(gui_thread_ident)
+                        tb = "".join(traceback.format_stack(frame, limit=30)) if frame is not None else "<no frame>"
+                        if _log is not None:
+                            _log.error("GUI STALL %.2fs\n%s", gap, tb)
+                    except Exception:
+                        pass
+            except Exception:
+                break
+
+    t = threading.Thread(target=_watcher, daemon=True,
+                          name="fastprompter-gui-watchdog")
+    t.start()
 
 
 def sync_shutdown_global():
@@ -2026,26 +2101,8 @@ class FastPrompter(
         # re-extract the whole document here.
         try:
             doc = ta.document()
-            current_rev = doc.revision()
-            if text is None:
-                if getattr(ta, "_last_fingerprint_rev", -1) == current_rev:
-                    entry["text_len"] = ta._last_fingerprint_len
-                    entry["text_crc"] = ta._last_fingerprint_crc
-                else:
-                    text = doc.toPlainText()
-                    ta._last_fingerprint_len = len(text)
-                    ta._last_fingerprint_crc = zlib.crc32(
-                        text.encode("utf-8", "replace"))
-                    ta._last_fingerprint_rev = current_rev
-                    entry["text_len"] = ta._last_fingerprint_len
-                    entry["text_crc"] = ta._last_fingerprint_crc
-            else:
-                entry["text_len"] = len(text)
-                entry["text_crc"] = zlib.crc32(
-                    text.encode("utf-8", "replace"))
-                ta._last_fingerprint_len = len(text)
-                ta._last_fingerprint_crc = entry["text_crc"]
-                ta._last_fingerprint_rev = current_rev
+            entry["text_len"], entry["text_crc"] = \
+                self._document_fingerprint(doc, text)
         except Exception as exc:
             from fastprompter.core.logging import logger as _log
             _log.warning("silo state fingerprint update failed: %s", exc)
@@ -2054,6 +2111,28 @@ class FastPrompter(
         if cat_map.get(key) != entry:
             cat_map[key] = entry
             self.mark_dirty("settings")
+
+    def _restore_folded_blocks_incrementally(self, doc, folded):
+        """Restore a huge document's folds in small event-loop chunks."""
+        ta = self.text_area
+        cursor = [doc.begin()]
+
+        def step():
+            if (sip.isdeleted(self) or sip.isdeleted(ta) or sip.isdeleted(doc)
+                    or ta.document() is not doc):
+                return
+            block = cursor[0]
+            for _ in range(200):
+                if not block.isValid():
+                    return
+                if (block.text().strip() in folded
+                        and not (max(0, block.userState()) & ta.FOLD_BIT)):
+                    ta.toggle_fold(block)
+                block = block.next()
+            cursor[0] = block
+            QTimer.singleShot(0, step)
+
+        QTimer.singleShot(0, step)
 
     def restore_silo_state(self, slot=None, is_archive=None):
         """Put the cursor, selection, scroll and margin marks back."""
@@ -2064,6 +2143,18 @@ class FastPrompter(
         entry = (self._silo_state_map().get(cat) or {}).get(key)
         if not isinstance(entry, dict):
             return False
+
+        doc = ta.document()
+        # Reject stale view state before applying marks, folds or cursor data.
+        # The fingerprint is seeded during document load/live snapshot, so the
+        # warm and freshly-created paths do not need another toPlainText copy.
+        if "text_len" in entry and "text_crc" in entry:
+            try:
+                fp = self._document_fingerprint(doc)
+                if fp != (entry["text_len"], entry["text_crc"]):
+                    return False
+            except Exception:
+                return False
 
         try:
             ta.apply_line_marks({int(k): v for k, v in (entry.get("marks") or {}).items()})
@@ -2078,34 +2169,32 @@ class FastPrompter(
         try:
             folded = entry.get("folded")
             if folded and isinstance(folded, list):
-                doc = ta.document()
+                folded = set(folded)
                 if doc and not sip.isdeleted(doc):
-                    b = doc.begin()
-                    while b.isValid():
-                        if b.text().strip() in folded and not (max(0, b.userState()) & ta.FOLD_BIT):
-                            ta.toggle_fold(b)
-                        b = b.next()
+                    char_threshold = int(getattr(
+                        self, "_LARGE_DOC_THRESHOLD", 500000))
+                    block_threshold = int(getattr(
+                        self, "_LARGE_DOC_BLOCK_THRESHOLD", 2000))
+                    if (doc.characterCount() >= char_threshold
+                            or doc.blockCount() >= block_threshold):
+                        self._restore_folded_blocks_incrementally(doc, folded)
+                    else:
+                        b = doc.begin()
+                        while b.isValid():
+                            if (b.text().strip() in folded
+                                    and not (max(0, b.userState()) & ta.FOLD_BIT)):
+                                ta.toggle_fold(b)
+                            b = b.next()
         except Exception:
             pass
 
-        doc_len = ta.document().characterCount() - 1
+        doc_len = doc.characterCount() - 1
         # T-720: the saved offsets belong to the text they were captured
         # against. If that text changed (an edit between sessions, a reload,
         # an undo that rewrote the doc), clamping the OLD offset into the NEW
         # document lands the caret mid-word. Fall back to the caller's own
         # Start/End rule instead. Entries written before this fingerprint
         # existed carry neither field and keep the old clamp behaviour.
-        if "text_len" in entry and "text_crc" in entry:
-            try:
-                text = ta.document().toPlainText()
-                if len(text) != entry["text_len"] or zlib.crc32(
-                        text.encode("utf-8", "replace")) != entry["text_crc"]:
-                    return False
-            except Exception:
-                # T-1030: an unreadable fingerprint is a mismatch, not a
-                # free pass -- falling through here would apply stale
-                # offsets against changed text, the exact bug T-720 guards.
-                return False
         try:
             anchor = max(0, min(int(entry.get("anchor", 0)), doc_len))
             pos = max(0, min(int(entry.get("pos", 0)), doc_len))
@@ -7588,7 +7677,9 @@ class FastPrompter(
         self.font_combo.currentTextChanged.connect(self.change_font_family)
 
         self.font_spin = QSpinBox()
-        self.font_spin.setRange(6, 48)
+        # Rendering has an 8pt readability floor; exposing 6/7 here made the
+        # control claim one value while the editor correctly rendered another.
+        self.font_spin.setRange(8, 48)
         try:
             self.font_spin.setValue(int(self.data.get("font_size", "11")))
         except Exception:
@@ -9270,6 +9361,16 @@ class FastPrompter(
 
         self.silo_docs = [None] * len(self.data.get("temp_presets", []))
         self.archive_docs = [None] * len(self.data.get("archive_temp_presets", []))
+        # Category-scoped document cache.  A project switch must not throw
+        # away every QTextDocument and make the next A -> B -> A navigation a
+        # cold load again.  Keep a small bounded set so this cannot become a
+        # RAM graveyard when a user has many projects.
+        self._category_document_cache = {}
+        self._document_fingerprint_cache = {}
+        self._document_cache_limit = 4
+        self._document_cache_char_limit = 4_000_000
+        self._line_count_cache = {}
+        self._LARGE_DOC_BLOCK_THRESHOLD = 2_000
 
         self.snippet_docs = {}
 
@@ -9492,9 +9593,9 @@ class FastPrompter(
         self._normalise_int_keys("silo_children_all")
         self.silo_last_edited = self.data.setdefault("silo_last_edited_all", {}).setdefault(cat, {})
 
-        # Rebuild document caches for the new profile
-        self.silo_docs = [None] * len(self.data.get("temp_presets", []))
-        self.archive_docs = [None] * len(self.data.get("archive_temp_presets", []))
+        # Runtime documents and all metadata derived from them belong to the
+        # old profile. Category/slot names are not a profile identity.
+        self._reset_profile_document_caches()
         self.snippet_docs.clear()
 
         # Rebind every profile-owned runtime object (data-derived state,
@@ -11342,6 +11443,12 @@ class FastPrompter(
         doc = ta.document()
         if doc is None or sip.isdeleted(doc):
             return
+        try:
+            threshold = int(getattr(self, "_LARGE_DOC_THRESHOLD", 500000))
+        except (AttributeError, TypeError, ValueError):
+            threshold = 500000
+        if doc.characterCount() >= threshold:
+            return
         al_map = {"center": Qt.AlignmentFlag.AlignCenter,
                   "right": Qt.AlignmentFlag.AlignRight,
                   "left": Qt.AlignmentFlag.AlignLeft}
@@ -11395,6 +11502,13 @@ class FastPrompter(
         doc = ta.document()
         if doc is None or sip.isdeleted(doc):
             return
+        try:
+            threshold = int(getattr(self, "_LARGE_DOC_THRESHOLD", 500000))
+        except (AttributeError, TypeError, ValueError):
+            threshold = 500000
+        if doc.characterCount() >= threshold:
+            return
+        centered = set(centered)
         block = doc.begin()
         while block.isValid():
             if block.text() in centered:
@@ -13011,6 +13125,7 @@ class FastPrompter(
             if 0 <= self.active_temp_slot < len(target):
                 old_text = target[self.active_temp_slot]
                 target[self.active_temp_slot] = current_text
+                self._remember_active_document_text(current_text)
                 if current_text != old_text:
                     self.mark_dirty("arc" if is_arc else "temp")
                     self.silo_last_edited[self.active_temp_slot] = int(time.time())
@@ -13020,7 +13135,10 @@ class FastPrompter(
         """Commit the current text to the active slot."""
         if getattr(self, "_initializing_ui", False):
             return
-        current_text = self.text_area.toPlainText()
+        try:
+            current_text = self._editor_text_snapshot()
+        except Exception:
+            current_text = self.text_area.toPlainText()
         self._flush_live_editor(current_text)
 
     def open_color_settings(self):
@@ -13404,6 +13522,7 @@ class FastPrompter(
         self.data["archive_visible"] = "True" if checked else "False"
         self.archive_section.setVisible(checked)
         if checked:
+            self.refresh_archive_panel()
             self._position_archive_overlay()
 
         if self.btn_toggle_archive.isChecked() != checked:
@@ -14369,9 +14488,208 @@ class FastPrompter(
             return None
         return cats[idx] if 0 <= idx < len(cats) else None
 
+    def _remember_category_documents(self, category):
+        """Save the current category's document lists in a bounded LRU."""
+        if not category:
+            return
+        cache = getattr(self, "_category_document_cache", None)
+        if cache is None:
+            cache = self._category_document_cache = {}
+        cache.pop(category, None)
+        cache[category] = (self.silo_docs, self.archive_docs)
+        self._prune_category_document_cache()
+
+    @staticmethod
+    def _document_lists_char_count(document_lists):
+        total = 0
+        for docs in document_lists:
+            for doc in docs:
+                if doc is None:
+                    continue
+                try:
+                    total += max(0, int(doc.characterCount()) - 1)
+                except (AttributeError, RuntimeError, TypeError, ValueError):
+                    continue
+        return total
+
+    def _prune_category_document_cache(self):
+        """Bound warm documents by category count and approximate characters."""
+        cache = getattr(self, "_category_document_cache", {})
+        count_limit = max(1, int(getattr(self, "_document_cache_limit", 4)))
+        char_limit = max(1, int(getattr(
+            self, "_document_cache_char_limit", 4_000_000)))
+        while len(cache) > 1:
+            total_chars = sum(
+                self._document_lists_char_count(document_lists)
+                for document_lists in cache.values()
+            )
+            if len(cache) <= count_limit and total_chars <= char_limit:
+                break
+            evicted_category = next(iter(cache))
+            evicted_docs = cache.pop(evicted_category)
+            evicted_ids = {
+                id(doc) for docs in evicted_docs for doc in docs if doc is not None
+            }
+            fp_cache = getattr(self, "_document_fingerprint_cache", {})
+            for key in list(fp_cache):
+                if key[0] in evicted_ids:
+                    fp_cache.pop(key, None)
+            line_cache = getattr(self, "_line_count_cache", {})
+            for key in list(line_cache):
+                if key[0] == evicted_category:
+                    line_cache.pop(key, None)
+            # QTextDocument destruction can itself be expensive. Queue C++
+            # retirement after navigation returns to Qt's event loop instead
+            # of freeing a multi-megabyte document on this call stack.
+            active_doc = getattr(getattr(self, "text_area", None),
+                                 "document", lambda: None)()
+            for docs in evicted_docs:
+                for doc in docs:
+                    if doc is None or doc is active_doc:
+                        continue
+                    try:
+                        doc.deleteLater()
+                    except (AttributeError, RuntimeError):
+                        pass
+
+    def _reset_profile_document_caches(self):
+        """Drop every document-derived cache at a profile ownership boundary."""
+        active_doc = getattr(getattr(self, "text_area", None),
+                             "document", lambda: None)()
+        seen = set()
+        cache = getattr(self, "_category_document_cache", {})
+        groups = list(cache.values())
+        groups.append((getattr(self, "silo_docs", []),
+                       getattr(self, "archive_docs", [])))
+        for document_lists in groups:
+            for docs in document_lists:
+                for doc in docs:
+                    if doc is None or doc is active_doc or id(doc) in seen:
+                        continue
+                    seen.add(id(doc))
+                    try:
+                        doc.deleteLater()
+                    except (AttributeError, RuntimeError):
+                        pass
+        self._category_document_cache = {}
+        self._document_fingerprint_cache = {}
+        self._line_count_cache = {}
+        self._editor_text_snaps = None
+        self._last_cached_text = None
+        self.silo_docs = [None] * len(self.data.get("temp_presets", []))
+        self.archive_docs = [None] * len(
+            self.data.get("archive_temp_presets", []))
+
+    def _restore_category_documents(self, category):
+        """Restore cached lists and align them with the live slot counts."""
+        cache = getattr(self, "_category_document_cache", {})
+        cached = cache.pop(category, None)
+        if cached is None:
+            silo_docs, archive_docs = [], []
+        else:
+            silo_docs, archive_docs = cached
+        silo_count = len(self.data.get("temp_presets", []))
+        archive_count = len(self.data.get("archive_temp_presets", []))
+        del silo_docs[silo_count:]
+        del archive_docs[archive_count:]
+        silo_docs.extend([None] * (silo_count - len(silo_docs)))
+        archive_docs.extend([None] * (archive_count - len(archive_docs)))
+        self.silo_docs = silo_docs
+        self.archive_docs = archive_docs
+        cache[category] = (silo_docs, archive_docs)
+        self._prune_category_document_cache()
+
+    @staticmethod
+    def _silo_cache_key(category, is_archive, slot):
+        return (category or "", bool(is_archive), int(slot))
+
+    def _remember_active_document_text(self, text):
+        category = self.get_current_category()
+        slot = getattr(self, "active_temp_slot", -1)
+        if category and slot >= 0:
+            doc = self.text_area.document()
+            try:
+                doc._fastprompter_loaded_text_token = text
+            except (AttributeError, RuntimeError):
+                pass
+            self._document_fingerprint(doc, text)
+            key = self._silo_cache_key(
+                category, getattr(self, "active_is_archive", False), slot)
+            self._line_count_cache[key] = (
+                text, text.count("\n") + 1 if text.strip() else 0)
+
+    def _cached_silo_line_count(self, raw, slot, is_archive=False):
+        """Return a line count cached by category, slot and text generation."""
+        cache = getattr(self, "_line_count_cache", None)
+        if cache is None:
+            cache = self._line_count_cache = {}
+        key = self._silo_cache_key(
+            self.get_current_category(), is_archive, slot)
+        cached = cache.pop(key, None)
+        if cached is not None and cached[0] is raw:
+            cache[key] = cached
+            return cached[1]
+        count = raw.count("\n") + 1 if raw.strip() else 0
+        cache[key] = (raw, count)
+        while len(cache) > 1024:
+            cache.pop(next(iter(cache)))
+        return count
+
+    def _ensure_document_text(self, doc, text):
+        """Populate one document unless that exact document owns this token."""
+        loaded_token = getattr(
+            doc, "_fastprompter_loaded_text_token", None)
+        if loaded_token is text:
+            return True
+        self._set_plain_text_clean(doc, text)
+        try:
+            doc._fastprompter_loaded_text_token = text
+        except (AttributeError, RuntimeError):
+            pass
+        # Seed from the string already in hand. Restore must never copy the
+        # freshly-loaded QTextDocument merely to calculate the same bytes.
+        self._document_fingerprint(doc, text)
+        return False
+
+    def _document_fingerprint(self, doc, text=None):
+        """Canonical fingerprint cache keyed by document identity and revision."""
+        cache = getattr(self, "_document_fingerprint_cache", None)
+        if cache is None:
+            cache = self._document_fingerprint_cache = {}
+        key = (id(doc), doc.revision())
+        cached = cache.get(key)
+        if cached is not None:
+            return cached
+        if text is None:
+            text = doc.toPlainText()
+        fingerprint = (
+            len(text), zlib.crc32(text.encode("utf-8", "replace")))
+        cache[key] = fingerprint
+        while len(cache) > 256:
+            cache.pop(next(iter(cache)))
+        return fingerprint
+
     def on_tab_changed(self, index, prev_identity=None):
         if index < 0:
             return
+        _tab_started = time.perf_counter()
+        def _tab_phase(label, started, category=None, doc=None, warm=None):
+            elapsed = time.perf_counter() - started
+            if elapsed < 0.03:
+                return
+            try:
+                from fastprompter.core.logging import logger as _log
+                _log.info(
+                    "tab phase=%s elapsed=%.3fs category=%s slot=%s "
+                    "chars=%s blocks=%s warm=%s",
+                    label, elapsed, category or self.get_current_category(),
+                    getattr(self, "active_temp_slot", -1),
+                    doc.characterCount() if doc is not None else 0,
+                    doc.blockCount() if doc is not None else 0,
+                    warm if warm is not None else "unknown")
+            except Exception:
+                pass
+        _tab_commit_started = time.perf_counter()
         # Record where the project being LEFT was, before the aliases move.
         # Not get_current_category(): the combo has already been set to the
         # new row by the time this signal fires, so that would file the
@@ -14391,38 +14709,50 @@ class FastPrompter(
             # A running watcher must never drain the NEW project's slot through
             # the stale active alias; pinning is per-project, not per-slot-key.
             self.save_prompt_queues()
+            cache_store_started = time.perf_counter()
+            self._remember_category_documents(prev_cat)
+            _tab_phase("cache_store_evict", cache_store_started, prev_cat)
         self.data["last_tab_idx"] = index
         self.commit_current_text()
-        # Flush the project we are LEAVING to its synced files while its
-        # per-category aliases are still bound to it.
-        self._push_sync_files()
-        self.cancel_editing()
+        _tab_phase("commit", _tab_commit_started)
+        self.cancel_editing(silent=True)
 
         # Switch Silos to the new Tab's hierarchy
         cat = self._cat_at(index)
         if cat is None:
+            _tab_phase("total", _tab_started)
             return
+        _switch_started = time.perf_counter()
         if "temp_presets_all" in self.data:
             # ONE authoritative alias binder: every per-category flat alias
             # (silos, pins, ticks, children, colours, gaps, folders, project
             # paths, watcher queues, types, ...) is re-bound to `cat` here.
             from fastprompter.core.state import bind_active_category
+            bind_started = time.perf_counter()
             bind_active_category(self.data, cat)
+            _tab_phase("category_bind", bind_started, cat)
             from fastprompter.core.watcher.queue import load_queues
             self.prompt_queues = load_queues(self.data["watcher_queues"])
             self.silo_last_edited = self.data.setdefault("silo_last_edited_all", {}).setdefault(
                 cat, {}
             )
 
-            # Rebuild document caches for the new silos
-            self.silo_docs = [None] * len(self.data["temp_presets"])
-            self.archive_docs = [None] * len(self.data["archive_temp_presets"])
+            # Restore this category's bounded document cache instead of
+            # destroying all warm documents on every project switch.
+            cache_warm = cat in self._category_document_cache
+            cache_restore_started = time.perf_counter()
+            self._restore_category_documents(cat)
+            _tab_phase(
+                "cache_restore_evict", cache_restore_started, cat,
+                warm=cache_warm)
 
             # Land where this project was left, not where the last one was.
             slot = self.restore_silo_session(cat)
-            self._switch_to_slot(slot, initial=True,
-                                 is_archive=getattr(self, "active_is_archive", False))
-            self.refresh_temp_presets()
+            self._switch_to_slot(
+                slot, initial=True,
+                is_archive=getattr(self, "active_is_archive", False),
+                sync_outgoing=False)
+            _tab_phase("switch", _switch_started)
 
         # The sync watcher follows the ACTIVE category: stop watching the
         # old project's folder, watch the new one's. The typo dictionary
@@ -14615,7 +14945,8 @@ class FastPrompter(
             self.left_widget.parentWidget().updateGeometry()
 
     def refresh_archive_panel(self):
-        self._trim_archive()
+        # Rendering must stay read-only.  Archive retirement is performed by
+        # explicit mutation paths; a silo switch must not touch the filesystem.
         total = len(self.data.get("archive_temp_presets", []))
         if total == 0:
             self.archive_section.setVisible(False)
@@ -14623,6 +14954,8 @@ class FastPrompter(
 
         saved_arc_visible = self.data.get("archive_visible", "False") == "True"
         self.archive_section.setVisible(saved_arc_visible)
+        if not saved_arc_visible:
+            return
 
         visible_count = 10
         max_page = max(0, math.ceil(total / max(1, visible_count)) - 1)
@@ -14661,7 +14994,8 @@ class FastPrompter(
             raw = self.data["archive_temp_presets"][slot_idx]
             text = (raw[:100] if len(raw) > 100 else raw).replace("\n", " ").strip()
             display_idx = slot_idx + 1
-            line_count = raw.count("\n") + 1 if raw.strip() else 0
+            line_count = self._cached_silo_line_count(
+                raw, slot_idx, is_archive=True)
             line_str = str(line_count) if line_count > 0 else ""
 
             fcount = self._silo_file_count(slot_idx, is_archive=True)
@@ -14880,7 +15214,8 @@ class FastPrompter(
         if order[new_pos] != self.active_temp_slot or self.editing_snippet:
             self._switch_to_slot(order[new_pos], is_archive=is_arc)
 
-    def _switch_to_slot(self, idx, initial=False, is_archive=False):
+    def _switch_to_slot(self, idx, initial=False, is_archive=False,
+                        sync_outgoing=True):
         if is_archive:
             self.arc_silo_page = idx // 10
         else:
@@ -14890,6 +15225,24 @@ class FastPrompter(
         was_archive = getattr(self, "active_is_archive", False)
         # PERF-002: the owner we are leaving (valid before any reassignment)
         outgoing_slot = getattr(self, "active_temp_slot", -1)
+        navigation_started = time.perf_counter()
+
+        def profile_phase(label, started, doc=None, warm=None):
+            elapsed = time.perf_counter() - started
+            if elapsed < 0.03:
+                return
+            try:
+                from fastprompter.core.logging import logger as _log
+                _log.info(
+                    "navigation phase=%s elapsed=%.3fs category=%s slot=%s "
+                    "chars=%s blocks=%s warm=%s",
+                    label, elapsed, self.get_current_category(), idx,
+                    doc.characterCount() if doc is not None else 0,
+                    doc.blockCount() if doc is not None else 0,
+                    warm if warm is not None else "unknown",
+                )
+            except Exception:
+                pass
 
         # remember where we were before the document underneath us changes
         if not initial and not was_editing_snippet:
@@ -14901,7 +15254,7 @@ class FastPrompter(
             if was_editing_snippet:
                 self.save_snippet(silent=True)
             elif was_archive:
-                new_txt = self.text_area.toPlainText()
+                new_txt = self._editor_text_snapshot()
                 if new_txt.strip() and 0 <= self.active_temp_slot < len(
                     self.data.get("archive_temp_presets", [])
                 ):
@@ -14912,16 +15265,18 @@ class FastPrompter(
                         new_txt,
                     )
                     self.data["archive_temp_presets"][self.active_temp_slot] = new_txt
+                    self._remember_active_document_text(new_txt)
                     # PERF-002: mark the archive domain when text changed
                     if new_txt != old_arc_txt:
                         self.mark_dirty("arc")
             else:
                 old_slot = self.active_temp_slot
-                new_text = self.text_area.toPlainText()
+                new_text = self._editor_text_snapshot()
                 if 0 <= old_slot < len(self.data["temp_presets"]):
                     old_text = self.data["temp_presets"][old_slot]
                     self._sync_silo_folder(self.get_current_category(), old_text, new_text)
                     self.data["temp_presets"][old_slot] = new_text
+                    self._remember_active_document_text(new_text)
                     if new_text != old_text:
                         self.silo_last_edited[old_slot] = int(time.time())
                         # PERF-002: the text changed, mark the silo domain
@@ -14971,6 +15326,7 @@ class FastPrompter(
             self._suspend_cache = True
             try:
                 self.text_area.blockSignals(True)
+                document_started = time.perf_counter()
 
                 if is_archive:
                     while len(self.archive_docs) <= idx:
@@ -15002,10 +15358,17 @@ class FastPrompter(
 
                     new_text = self.data["temp_presets"][idx]
 
-                if doc.toPlainText() != new_text:
-                    self._set_plain_text_clean(doc, new_text)
+                # Loaded identity belongs to THIS QTextDocument. A new doc
+                # created after LRU eviction cannot inherit a stale slot token
+                # and open blank (then overwrite authoritative text on leave).
+                warm_document = self._ensure_document_text(doc, new_text)
+                profile_phase(
+                    "document_load", document_started, doc,
+                    warm=warm_document)
 
+                attach_started = time.perf_counter()
                 self.text_area.set_active_document(doc)
+                profile_phase("attach", attach_started, doc)
                 # The "Switch silo" snapshot was stamped against the document
                 # we were LEAVING (add_data_undo_state ran before the swap).
                 # Ctrl+Z routing compares the ACTIVE document's undo steps
@@ -15028,38 +15391,55 @@ class FastPrompter(
                 # (i.e. almost always) and the setting would do nothing.
                 if self.data.get("silo_home", "False") == "True":
                     # restore marks/heat/folds, then force the top
+                    restore_started = time.perf_counter()
                     self.restore_silo_state(idx, is_archive)
+                    profile_phase("restore_state", restore_started, doc,
+                                  warm=warm_document)
                     self.text_area.moveCursor(QTextCursor.MoveOperation.Start)
-                elif not self.restore_silo_state(idx, is_archive):
-                    self.text_area.moveCursor(QTextCursor.MoveOperation.End)
+                else:
+                    restore_started = time.perf_counter()
+                    restored = self.restore_silo_state(idx, is_archive)
+                    profile_phase("restore_state", restore_started, doc,
+                                  warm=warm_document)
+                    if not restored:
+                        self.text_area.moveCursor(QTextCursor.MoveOperation.End)
             finally:
                 self.text_area.blockSignals(False)
                 self._suspend_cache = False
 
+            phase_started = time.perf_counter()
             self.refresh_temp_presets()
+            profile_phase("sidebar", phase_started, doc)
+            phase_started = time.perf_counter()
             self.refresh_archive_panel()
-            self.update_preview()
+            profile_phase("archive", phase_started, doc)
+            phase_started = time.perf_counter()
+            self.update_preview(new_text)
+            profile_phase("preview", phase_started, doc)
+            phase_started = time.perf_counter()
             self._update_line_count_label()
+            profile_phase("line_token_label", phase_started, doc)
+            phase_started = time.perf_counter()
             self._update_files_button()
             self._sync_files_dock_to_active_silo()
+            profile_phase("file_dock", phase_started, doc)
             self._update_project_buttons(is_archive)
             cur_text = new_text
+            phase_started = time.perf_counter()
             self._apply_silo_type(idx, is_archive, cur_text)
+            profile_phase("silo_type", phase_started, doc)
             # seed the live folder-sync baseline for the new silo
             from fastprompter.ui.file_container import silo_slug as _sl2
             self._active_silo_slug = _sl2(
                 cur_text[:cur_text.index("\n")] if "\n" in cur_text else cur_text)
-            # the silo we just LEFT was flushed into temp_presets above —
-            # push it to its file now (Sync-Project / per-silo links) and
-            # re-run the typo check on the silo we landed on.
-            # PERF-002: publish ONLY the outgoing owner — navigation must
-            # not reconcile every bound silo in the project.
-            self._push_sync_files(
-                slots=None if outgoing_slot < 0 else {outgoing_slot})
+            if sync_outgoing:
+                self._push_sync_files(
+                    slots=None if outgoing_slot < 0 else {outgoing_slot})
             if hasattr(self, "_typo_timer"):
                 self._typo_timer.start()
             self.text_area.setFocus()
             self.text_area.ensureCursorVisible()
+            profile_phase("total", navigation_started, doc)
             if not initial:
                 # PERF-002: navigation is settings-domain state
                 self.mark_dirty("settings")
@@ -15377,7 +15757,7 @@ class FastPrompter(
                                else unpinned.index(slot_idx) + 1
                                if slot_idx in unpinned else slot_idx + 1)
 
-            line_count = raw.count("\n") + 1 if raw.strip() else 0
+            line_count = self._cached_silo_line_count(raw, slot_idx)
             line_str = str(line_count) if line_count > 0 else ""
 
             # the rightmost 📁N button carries the file count — the text
@@ -15811,15 +16191,29 @@ class FastPrompter(
             return
         # single snapshot: the successful subset must stay recoverable
         self.add_data_undo_state("Batch delete silos")
+        # One sound and one UI rebuild for the whole operation.  The old loop
+        # rebuilt/switch-rendered the editor after EVERY silo; deleting seven
+        # selected rows held the GUI thread long enough for Windows to report
+        # "Not Responding" (the 16:02 trace wrote seven trash records before
+        # the event loop got a breath).
+        started = time.monotonic()
+        self.sound_manager.play("delete")
         failures = []
         for i in sel:
             try:
-                ok = self.trash_silo(i, is_archive=False, skip_undo=True)
+                ok = self.trash_silo(
+                    i, is_archive=False, skip_undo=True, defer_ui=True)
             except Exception:
                 ok = False
                 logger.debug("batch delete raised for silo %s", i)
             if not ok:
                 failures.append(i)
+            # Filesystem retirement is deliberately synchronous and durable,
+            # but Windows messages need servicing between complete items.  User
+            # input stays excluded, so nobody can mutate the half-finished
+            # selection while paint/window-system events keep the app alive.
+            QApplication.processEvents(
+                QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents)
         # W2-007: successful deletions at lower indices shift every surviving
         # higher silo down by one. Remap recorded failures (and the anchor) so
         # the selection still points at the same surviving silos.
@@ -15834,6 +16228,16 @@ class FastPrompter(
         # preserve the failed/unprocessed silos in the selection so they stay
         # owned and can be retried; only the successfully deleted ones leave.
         self._silo_selection = set(failures)
+        if len(failures) != len(sel):
+            presets = self.data.get("temp_presets", [])
+            if presets:
+                self.active_temp_slot = max(
+                    0, min(self.active_temp_slot, len(presets) - 1))
+                self.silo_page = self.active_temp_slot // max(
+                    1, self._visible_silos)
+                self._switch_to_slot(
+                    self.active_temp_slot, initial=True, is_archive=False)
+            self.cancel_editing()
         if failures:
             from fastprompter.core.logging import logger as _lg
             _lg.warning(
@@ -15841,6 +16245,10 @@ class FastPrompter(
                 "(assets could not be retired); selection preserved for %s",
                 len(failures), len(sel), failures)
         self.refresh_temp_presets()
+        logger.info(
+            "batch delete complete: %d/%d deleted in %.3fs (%d failed)",
+            len(sel) - len(failures), len(sel), time.monotonic() - started,
+            len(failures))
 
     @staticmethod
     def _is_descendant_of(node, root, child_of):
@@ -17651,6 +18059,7 @@ class FastPrompter(
                 if 0 <= self.active_temp_slot < len(target):
                     old_text = target[self.active_temp_slot]
                     target[self.active_temp_slot] = current_text
+                    self._remember_active_document_text(current_text)
                     if current_text != old_text:
                         self.mark_dirty("arc" if is_arc else "temp")
                         self.silo_last_edited[self.active_temp_slot] = int(time.time())
@@ -17909,6 +18318,7 @@ def main_entry():
     from fastprompter.core.instance_lock import (
         HANDED_OFF,
         PRIMARY,
+        RECLAIMED,
         InstanceLock,
         bootstrap_ownership,
     )
@@ -17920,7 +18330,7 @@ def main_entry():
     # show itself, and exit when it answers or when it stays silent.
     lock = InstanceLock()
     role, reason = bootstrap_ownership(lock, request_show)
-    if role != PRIMARY:
+    if role not in (PRIMARY, RECLAIMED):
         lock.release()
         if role == HANDED_OFF:
             return
@@ -17989,6 +18399,13 @@ def main_entry():
     window.show()
     window.raise_()
     window.activateWindow()
+
+    # FREEZE-2026-08-30: heartbeat watchdog — log any GUI-thread stall so a
+    # "Not Responding" freeze leaves a stack trace instead of silence.
+    try:
+        _start_gui_watchdog(window)
+    except Exception:
+        pass
 
     # Install hotkey filter for global hotkeys
     filter_obj = HotkeyFilter(window)

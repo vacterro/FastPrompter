@@ -10,8 +10,11 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../s
 # (which uses stdlib: html, re) — no Qt imports needed.
 # ---------------------------------------------------------------------------
 
+import ast
 import html as html_mod
+import pathlib
 import re as re_mod
+from types import SimpleNamespace
 
 
 def _fallback_markdown_to_html(text):
@@ -115,6 +118,276 @@ def _fallback_markdown_to_html(text):
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
+
+def test_project_tab_switch_does_not_push_all_bindings():
+    source = pathlib.Path(__file__).parents[1] / "src/fastprompter/main.py"
+    tree = ast.parse(source.read_text(encoding="utf-8"))
+    method = next(
+        node for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name == "on_tab_changed"
+    )
+    calls = [
+        node for node in ast.walk(method)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "_push_sync_files"
+    ]
+    assert not calls
+
+
+def _method_node(name):
+    source = pathlib.Path(__file__).parents[1] / "src/fastprompter/main.py"
+    tree = ast.parse(source.read_text(encoding="utf-8"))
+    return next(
+        node for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name == name
+    )
+
+
+def test_project_tab_switch_has_no_duplicate_silo_refresh():
+    method = _method_node("on_tab_changed")
+    refreshes = [
+        node for node in ast.walk(method)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "refresh_temp_presets"
+    ]
+    assert not refreshes
+
+
+def test_warm_switch_has_no_whole_document_equality():
+    method = _method_node("_switch_to_slot")
+    for node in ast.walk(method):
+        if not isinstance(node, ast.Compare):
+            continue
+        calls = [child for child in ast.walk(node) if isinstance(child, ast.Call)]
+        assert not any(
+            isinstance(call.func, ast.Attribute)
+            and call.func.attr == "toPlainText"
+            for call in calls
+        )
+
+
+def test_archive_render_does_not_trim_or_mutate_filesystem():
+    method = _method_node("refresh_archive_panel")
+    called = {
+        node.func.attr for node in ast.walk(method)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+    }
+    assert "_trim_archive" not in called
+    assert "_delete_file_container" not in called
+
+
+def test_line_count_cache_reuses_text_generation():
+    from fastprompter.main import FastPrompter
+
+    class CountingText(str):
+        def __new__(cls, value):
+            obj = super().__new__(cls, value)
+            obj.count_calls = 0
+            return obj
+
+        def count(self, *args, **kwargs):
+            self.count_calls += 1
+            return super().count(*args, **kwargs)
+
+    window = SimpleNamespace(
+        _line_count_cache={},
+        get_current_category=lambda: "A",
+    )
+    window._silo_cache_key = FastPrompter._silo_cache_key
+    raw = CountingText("one\ntwo")
+    assert FastPrompter._cached_silo_line_count(window, raw, 0) == 2
+    assert FastPrompter._cached_silo_line_count(window, raw, 0) == 2
+    assert raw.count_calls == 1
+    replacement = CountingText("one\ntwo")
+    assert FastPrompter._cached_silo_line_count(window, replacement, 0) == 2
+    assert replacement.count_calls == 1
+
+
+def test_category_document_cache_obeys_character_budget():
+    from fastprompter.main import FastPrompter
+
+    class FakeDocument:
+        def __init__(self, chars):
+            self.chars = chars
+
+        def characterCount(self):
+            return self.chars + 1
+
+    old_doc = FakeDocument(80)
+    new_doc = FakeDocument(80)
+    window = SimpleNamespace(
+        _category_document_cache={
+            "old": ([old_doc], []),
+            "new": ([new_doc], []),
+        },
+        _document_cache_limit=4,
+        _document_cache_char_limit=100,
+        _document_fingerprint_cache={(id(old_doc), 1): (80, 1)},
+        _line_count_cache={("old", False, 0): ("old", 1)},
+        text_area=SimpleNamespace(document=lambda: None),
+    )
+    window._document_lists_char_count = \
+        FastPrompter._document_lists_char_count
+    FastPrompter._prune_category_document_cache(window)
+    assert list(window._category_document_cache) == ["new"]
+    assert not window._document_fingerprint_cache
+    assert not window._line_count_cache
+
+
+def test_new_document_never_inherits_evicted_loaded_token(qapp):
+    from PyQt6.QtGui import QTextDocument
+
+    from fastprompter.main import FastPrompter
+
+    window = SimpleNamespace(_document_fingerprint_cache={})
+    window._set_plain_text_clean = FastPrompter._set_plain_text_clean
+    window._document_fingerprint = \
+        FastPrompter._document_fingerprint.__get__(window)
+    window._ensure_document_text = \
+        FastPrompter._ensure_document_text.__get__(window)
+
+    authoritative = "PROJECT A — must survive eviction"
+    old_doc = QTextDocument()
+    assert window._ensure_document_text(old_doc, authoritative) is False
+    assert window._ensure_document_text(old_doc, authoritative) is True
+
+    # LRU eviction destroys old_doc. A brand-new document cannot inherit its
+    # loaded proof even though the authoritative Python string is identical.
+    new_doc = QTextDocument()
+    assert window._ensure_document_text(new_doc, authoritative) is False
+    assert new_doc.toPlainText() == authoritative
+
+
+def test_profile_cache_reset_drops_all_document_derived_state():
+    from fastprompter.main import FastPrompter
+
+    class FakeDocument:
+        def __init__(self):
+            self.retired = False
+
+        def deleteLater(self):
+            self.retired = True
+
+    active = FakeDocument()
+    stale = FakeDocument()
+    window = SimpleNamespace(
+        data={"temp_presets": ["PROFILE B"], "archive_temp_presets": []},
+        text_area=SimpleNamespace(document=lambda: active),
+        silo_docs=[active],
+        archive_docs=[],
+        _category_document_cache={"Text": ([stale], [])},
+        _document_fingerprint_cache={(id(stale), 1): (1, 1)},
+        _line_count_cache={("Text", False, 0): ("PROFILE A", 1)},
+        _editor_text_snaps=(1, 1, "PROFILE A"),
+        _last_cached_text="PROFILE A",
+    )
+    FastPrompter._reset_profile_document_caches(window)
+    assert window._category_document_cache == {}
+    assert window._document_fingerprint_cache == {}
+    assert window._line_count_cache == {}
+    assert window._editor_text_snaps is None
+    assert window._last_cached_text is None
+    assert window.silo_docs == [None]
+    assert stale.retired is True
+    assert active.retired is False
+
+
+def test_commit_current_text_reuses_revision_snapshot():
+    from unittest.mock import MagicMock
+
+    from fastprompter.main import FastPrompter
+
+    window = SimpleNamespace(
+        _initializing_ui=False,
+        _editor_text_snapshot=MagicMock(return_value="cached snapshot"),
+        text_area=SimpleNamespace(toPlainText=MagicMock()),
+        _flush_live_editor=MagicMock(),
+    )
+    FastPrompter.commit_current_text(window)
+    window._editor_text_snapshot.assert_called_once_with()
+    window.text_area.toPlainText.assert_not_called()
+    window._flush_live_editor.assert_called_once_with("cached snapshot")
+
+
+def test_hidden_archive_refresh_never_scans_archive_text():
+    from unittest.mock import MagicMock
+
+    from fastprompter.main import FastPrompter
+
+    class CountingText(str):
+        def count(self, *args, **kwargs):
+            raise AssertionError("hidden archive text was scanned")
+
+    window = SimpleNamespace(
+        data={
+            "archive_temp_presets": [CountingText("large\narchive")],
+            "archive_visible": "False",
+        },
+        archive_section=SimpleNamespace(setVisible=MagicMock()),
+    )
+    FastPrompter.refresh_archive_panel(window)
+    window.archive_section.setVisible.assert_called_once_with(False)
+
+
+def test_fingerprint_cache_separates_equal_revisions_by_document():
+    from fastprompter.main import FastPrompter
+
+    class FakeDocument:
+        def __init__(self, text):
+            self.text = text
+            self.reads = 0
+
+        def revision(self):
+            return 7
+
+        def toPlainText(self):
+            self.reads += 1
+            return self.text
+
+    window = SimpleNamespace(_document_fingerprint_cache={})
+    first = FakeDocument("alpha")
+    second = FakeDocument("bravo")
+    first_fp = FastPrompter._document_fingerprint(window, first)
+    second_fp = FastPrompter._document_fingerprint(window, second)
+    assert first_fp != second_fp
+    assert FastPrompter._document_fingerprint(window, first) == first_fp
+    assert first.reads == 1
+    assert second.reads == 1
+
+
+def test_update_preview_does_not_extract_text_outside_reading_mode():
+    from unittest.mock import MagicMock
+
+    from fastprompter.ui.theme_mixin import ThemeMixin
+
+    window = ThemeMixin.__new__(ThemeMixin)
+    window.preview_combo = MagicMock()
+    window.preview_combo.currentData.return_value = "Source View"
+    window.text_area = MagicMock()
+    window.preview_area = MagicMock()
+    ThemeMixin.update_preview(window)
+    window.text_area.toPlainText.assert_not_called()
+
+
+def test_update_preview_accepts_navigation_snapshot():
+    from unittest.mock import MagicMock
+
+    from fastprompter.ui.theme_mixin import ThemeMixin
+
+    window = ThemeMixin.__new__(ThemeMixin)
+    window.preview_combo = MagicMock()
+    window.preview_combo.currentData.return_value = "Reading"
+    window.text_area = MagicMock()
+    window.preview_area = MagicMock()
+    window.simple_markdown_to_html = MagicMock(return_value="<html></html>")
+    ThemeMixin.update_preview(window, "already captured")
+    window.text_area.toPlainText.assert_not_called()
+    window.simple_markdown_to_html.assert_called_once_with("already captured")
 
 
 class TestSimpleMarkdownToHtml:

@@ -1,0 +1,49 @@
+{
+  "clauses": {
+    "SRC-003:R0001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Project-tab navigation must never call _push_sync_files with slots=None; publish only dirty outgoing owners and keep full reconcile for explicit durability or repair paths."
+    },
+    "SRC-003:R0002": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Huge documents at or above the configured character or block threshold must not receive a full rich Markdown rehighlight during navigation."
+    },
+    "SRC-003:R0003": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Project switching must preserve a bounded category-aware document cache so warm A-B-A switching does not rebuild unchanged QTextDocuments."
+    },
+    "SRC-003:R0004": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Warm document switches must use generation identity and must not materialize doc.toPlainText solely for whole-text equality comparison."
+    },
+    "SRC-003:R0005": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "A project-tab switch must refresh the visible silo list once, with line counts cached by content generation rather than rescanned from sibling text."
+    },
+    "SRC-003:R0006": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "update_preview must return before reading editor text outside Reading mode and must accept the already-available incoming text snapshot for Reading mode."
+    },
+    "SRC-003:R0007": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Document attach must not synchronously scan every block for checkbox and code metadata on huge unchanged documents; metadata must be cached or deferred incrementally."
+    },
+    "SRC-003:R0008": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "View-state fingerprints must share one cache keyed by document identity and revision, preventing same-revision cross-document reuse and repeat full-text CRC work."
+    }
+  },
+  "derived_at": "2026-08-30T13:57:23Z",
+  "derived_from": "SRC-003",
+  "interpretation_revision": 8,
+  "schema_version": 1,
+  "source_sha256": "026a4ae95aeec585794af3e808c5b99facc0ea02fc44631833f8985546b0817e"
+}

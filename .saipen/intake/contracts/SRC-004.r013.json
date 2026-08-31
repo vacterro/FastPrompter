@@ -1,0 +1,74 @@
+{
+  "clauses": {
+    "SRC-004:R0001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Project-tab navigation must never call _push_sync_files with slots=None; publish only dirty outgoing owners and keep full reconcile for explicit durability or repair paths."
+    },
+    "SRC-004:R0002": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Huge documents at or above the configured character or block threshold must not receive a full rich Markdown rehighlight during navigation."
+    },
+    "SRC-004:R0003": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Project switching must preserve a bounded category-aware document cache so warm A-B-A switching does not rebuild unchanged QTextDocuments."
+    },
+    "SRC-004:R0004": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Warm document switches must use generation identity and must not materialize doc.toPlainText solely for whole-text equality comparison."
+    },
+    "SRC-004:R0005": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "A project-tab switch must refresh the visible silo list once, with line counts cached by content generation rather than rescanned from sibling text."
+    },
+    "SRC-004:R0006": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "update_preview must return before reading editor text outside Reading mode and must accept the already-available incoming text snapshot for Reading mode."
+    },
+    "SRC-004:R0007": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Document attach must not synchronously scan every block for checkbox and code metadata on huge unchanged documents; metadata must be cached or deferred incrementally."
+    },
+    "SRC-004:R0008": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "View-state fingerprints must share one cache keyed by document identity and revision, preventing same-revision cross-document reuse and repeat full-text CRC work."
+    },
+    "SRC-004:R0009": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Initial slot attachment after category rebinding must not push the incoming slot as an outgoing Sync-Project owner."
+    },
+    "SRC-004:R0010": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Archive panel rendering and ordinary slot navigation must not execute _trim_archive or other filesystem mutation."
+    },
+    "SRC-004:R0011": {
+      "actionable": true,
+      "class": "invariant",
+      "text": "Switching category or silo must never perform work proportional to combined sibling-silo size; unchanged warm documents must avoid whole-document extraction, hashing, regex rehighlight, CRC, line recount, and filesystem reconciliation."
+    },
+    "SRC-004:R0012": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "text": "Regression tests must prove no slots=None push on project switch, exactly one temporary-preset refresh, no Source or Live preview toPlainText read, no warm whole-text equality, document-identity fingerprinting, and no full rich highlighter pass for huge documents."
+    },
+    "SRC-004:R0013": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "text": "A lightweight navigation phase profiler must report only slow phases with category, slot, character, and block context so the Windows runtime can identify remaining GUI-thread stalls."
+    }
+  },
+  "derived_at": "2026-08-30T20:49:38Z",
+  "derived_from": "SRC-004",
+  "interpretation_revision": 13,
+  "schema_version": 1,
+  "source_sha256": "51092c5f1e7e7c2d4495f85607f99ad465891649c38a48e5d1458423a53204b6"
+}

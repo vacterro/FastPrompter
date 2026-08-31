@@ -1,0 +1,17 @@
+{
+  "op_id": "scope-1206a88ea5004fc8a8b1d8ddbc96dbe9",
+  "paths": {
+    "src/fastprompter/main.py": "f3c74d8c84592ab8",
+    "src/fastprompter/ui/editor.py": "b585df93df9c087c",
+    "src/fastprompter/ui/markdown_highlighter.py": "9f1137f40c15f377",
+    "src/fastprompter/ui/theme_mixin.py": "aa4b062746c7afc5",
+    "tests/test_main.py": "260aa1a9c457937f"
+  },
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "recorded_at": "2026-08-31T00:54:45Z",
+  "schema_version": 1,
+  "source_head": "41a46a5b070a23842c5f135f2b5c6755aea6e2a1",
+  "source_tree_fingerprint": "git-delta-v1:e6931583da93bdde69578ef5ed1cb259408dc0238e2eeef1d44ad28eb563ea58",
+  "ticket": "T-1162"
+}

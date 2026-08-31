@@ -1,0 +1,14 @@
+{
+  "clauses": {
+    "SRC-003:R0001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Project-tab navigation must never call _push_sync_files with slots=None; publish only dirty outgoing owners and keep full reconcile for explicit durability or repair paths."
+    }
+  },
+  "derived_at": "2026-08-30T13:57:20Z",
+  "derived_from": "SRC-003",
+  "interpretation_revision": 1,
+  "schema_version": 1,
+  "source_sha256": "026a4ae95aeec585794af3e808c5b99facc0ea02fc44631833f8985546b0817e"
+}

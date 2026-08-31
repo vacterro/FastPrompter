@@ -340,6 +340,19 @@ class VaultTextEdit(QTextEdit):
         if first is None or last is None:
             first = 0
             last = doc.blockCount() - 1
+            # Attaching a huge document is navigation, not a license to scan
+            # every block synchronously.  Inspect only the first viewport-ish
+            # chunk; later edits reconcile their own ranges incrementally.
+            try:
+                threshold = int(getattr(self.main_win, "_LARGE_DOC_THRESHOLD", 500000))
+                block_threshold = int(getattr(
+                    self.main_win, "_LARGE_DOC_BLOCK_THRESHOLD", 2000))
+            except (AttributeError, TypeError, ValueError):
+                threshold = 500000
+                block_threshold = 2000
+            if (doc.characterCount() >= threshold
+                    or doc.blockCount() >= block_threshold):
+                last = min(last, 200)
         else:
             last = min(last, doc.blockCount() - 1)
 
@@ -366,6 +379,16 @@ class VaultTextEdit(QTextEdit):
             changed = True
         if changed:
             self.update_line_number_area_width()
+        # Store derived flags on the QTextDocument wrapper itself.  The
+        # revision makes this a per-document/per-generation cache, and the
+        # document owns its metadata without a global id() table that can leak
+        # or collide after a wrapper is destroyed.
+        try:
+            doc._fastprompter_feature_revision = doc.revision()
+            doc._fastprompter_has_checkbox = self._doc_has_checkbox
+            doc._fastprompter_has_code = self._doc_has_code
+        except (AttributeError, RuntimeError):
+            pass
 
     def _reconcile_edits(self, position, removed, added):
         """T-815: incrementally maintain derived block metadata.
@@ -468,24 +491,41 @@ class VaultTextEdit(QTextEdit):
         self.refresh_extra_selections()
         self.document().documentLayout().documentSizeChanged.connect(self.update_line_number_area_width)
         self.update_line_number_area_width()
-        font = self.font()
+        # The persisted global setting is the authority.  ``self.font()`` can
+        # still hold the font of the document we just left (or a style-polish
+        # default), which made returning to a silo sporadically render at 11pt
+        # while Settings correctly continued to show the user's chosen size.
+        configured_font = getattr(self.main_win, "configured_font", None)
+        font = configured_font() if callable(configured_font) else self.font()
         font.setStyleStrategy(QFont.StyleStrategy.NoAntialias | QFont.StyleStrategy.NoSubpixelAntialias)
+        self.setFont(font)
         self.document().setDefaultFont(font)
-        if hl and not sip.isdeleted(hl) and hl.document() != doc:
-            hl.setDocument(doc)
         # T-1008: every silo swap must resynchronise the highlighter state
         # (large-doc degradation + reveal block) for THIS document, or a big
         # document inherits the previous one's skip state and loses headers.
+        # This helper is also the only code allowed to attach the highlighter:
+        # attaching here first can make Qt rehighlight a huge document before
+        # the helper gets a chance to apply the huge-document guard.
         if hl and not sip.isdeleted(hl):
             sync = getattr(self.main_win, "_sync_live_preview_highlighter", None)
             if callable(sync):
                 sync()
         self._opener_cache = None
-        # sticky-True flags are only valid for the document they were found
-        # on — a fresh document needs a fresh scan, not the old one's state.
-        self._doc_has_checkbox = False
-        self._doc_has_code = False
-        self._refresh_checkbox_flag()
+        cached_revision = getattr(
+            doc, "_fastprompter_feature_revision", None)
+        if cached_revision == doc.revision():
+            self._doc_has_checkbox = bool(getattr(
+                doc, "_fastprompter_has_checkbox", False))
+            self._doc_has_code = bool(getattr(
+                doc, "_fastprompter_has_code", False))
+            self.update_line_number_area_width()
+        else:
+            # Sticky-True flags are only valid for the document they were
+            # found on.  A changed document gets one bounded scan; an
+            # unchanged warm document reuses the metadata above.
+            self._doc_has_checkbox = False
+            self._doc_has_code = False
+            self._refresh_checkbox_flag()
 
     def line_number_area_width(self):
         if not self._gutter_active():

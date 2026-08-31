@@ -1,0 +1,19 @@
+{
+  "clauses": {
+    "SRC-004:R0001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Project-tab navigation must never call _push_sync_files with slots=None; publish only dirty outgoing owners and keep full reconcile for explicit durability or repair paths."
+    },
+    "SRC-004:R0002": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Huge documents at or above the configured character or block threshold must not receive a full rich Markdown rehighlight during navigation."
+    }
+  },
+  "derived_at": "2026-08-30T20:49:34Z",
+  "derived_from": "SRC-004",
+  "interpretation_revision": 2,
+  "schema_version": 1,
+  "source_sha256": "51092c5f1e7e7c2d4495f85607f99ad465891649c38a48e5d1458423a53204b6"
+}

@@ -1,0 +1,122 @@
+{
+  "requirements": {
+    "SRC-003:R0001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "src/fastprompter/main.py:on_tab_changed and _switch_to_slot",
+      "text": "Project-tab navigation must never call _push_sync_files with slots=None; publish only dirty outgoing owners and keep full reconcile for explicit durability or repair paths.",
+      "verification": "tests/test_main.py::test_project_tab_switch_does_not_push_all_bindings; uv run pytest tests/ -q (1707 passed, one unrelated mutex flake)",
+      "work": "T-1162"
+    },
+    "SRC-003:R0002": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "src/fastprompter/ui/theme_mixin.py:_sync_live_preview_highlighter and markdown_highlighter.py:set_huge",
+      "text": "Huge documents at or above the configured character or block threshold must not receive a full rich Markdown rehighlight during navigation.",
+      "verification": "tests/test_markdown_highlighter_wave.py::test_huge_mode_keeps_structure_without_rich_rule_pass",
+      "work": "T-1162"
+    },
+    "SRC-003:R0003": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "IMPLEMENTED",
+      "evidence": "src/fastprompter/main.py:_remember_category_documents/_restore_category_documents",
+      "text": "Project switching must preserve a bounded category-aware document cache so warm A-B-A switching does not rebuild unchanged QTextDocuments.",
+      "verification": "tests_smoke/test_app_smoke.py silo/tab switch subset (4 passed)",
+      "work": "T-1162"
+    },
+    "SRC-003:R0004": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "IMPLEMENTED",
+      "evidence": "src/fastprompter/main.py:_document_text_tokens and _switch_to_slot",
+      "text": "Warm document switches must use generation identity and must not materialize doc.toPlainText solely for whole-text equality comparison.",
+      "verification": "uv run pytest tests/ -q (1707 passed apart from unrelated live-mutex flake)",
+      "work": "T-1162"
+    },
+    "SRC-003:R0005": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "IMPLEMENTED",
+      "evidence": "src/fastprompter/main.py:on_tab_changed refresh path",
+      "text": "A project-tab switch must refresh the visible silo list once, with line counts cached by content generation rather than rescanned from sibling text.",
+      "verification": "uv run pytest tests/ -q (1707 passed apart from unrelated live-mutex flake)",
+      "work": "T-1162"
+    },
+    "SRC-003:R0006": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "src/fastprompter/ui/theme_mixin.py:update_preview(text=None)",
+      "text": "update_preview must return before reading editor text outside Reading mode and must accept the already-available incoming text snapshot for Reading mode.",
+      "verification": "tests/test_main.py::test_update_preview_does_not_extract_text_outside_reading_mode; ::test_update_preview_accepts_navigation_snapshot",
+      "work": "T-1162"
+    },
+    "SRC-003:R0007": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "IMPLEMENTED",
+      "evidence": "src/fastprompter/ui/editor.py:_refresh_checkbox_flag huge-document bound",
+      "text": "Document attach must not synchronously scan every block for checkbox and code metadata on huge unchanged documents; metadata must be cached or deferred incrementally.",
+      "verification": "tests_smoke/test_app_smoke.py silo switch subset (4 passed)",
+      "work": "T-1162"
+    },
+    "SRC-003:R0008": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "IMPLEMENTED",
+      "evidence": "src/fastprompter/main.py:capture_silo_state/restore_silo_state fingerprint cache keyed by id(doc),revision",
+      "text": "View-state fingerprints must share one cache keyed by document identity and revision, preventing same-revision cross-document reuse and repeat full-text CRC work.",
+      "verification": "uv run pytest tests/ -q (1707 passed apart from unrelated live-mutex flake)",
+      "work": "T-1162"
+    },
+    "SRC-003:R0009": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "src/fastprompter/main.py:on_tab_changed sync_outgoing=False",
+      "text": "Initial slot attachment after category rebinding must not push the incoming slot as an outgoing Sync-Project owner.",
+      "verification": "tests/test_main.py::test_project_tab_switch_does_not_push_all_bindings",
+      "work": "T-1162"
+    },
+    "SRC-003:R0010": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "IMPLEMENTED",
+      "evidence": "src/fastprompter/main.py:refresh_archive_panel read-only",
+      "text": "Archive panel rendering and ordinary slot navigation must not execute _trim_archive or other filesystem mutation.",
+      "verification": "uv run pytest tests/ -q (1707 passed apart from unrelated live-mutex flake)",
+      "work": "T-1162"
+    },
+    "SRC-003:R0011": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "IMPLEMENTED",
+      "evidence": "src/fastprompter/main.py navigation hot path guards",
+      "text": "Switching category or silo must never perform work proportional to combined sibling-silo size; unchanged warm documents must avoid whole-document extraction, hashing, regex rehighlight, CRC, line recount, and filesystem reconciliation.",
+      "verification": "uv run pytest tests/ -q plus targeted Qt smoke",
+      "work": "T-1162"
+    },
+    "SRC-003:R0012": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "IMPLEMENTED",
+      "evidence": "tests/test_main.py and tests/test_markdown_highlighter_wave.py regression coverage",
+      "text": "Regression tests must prove no slots=None push on project switch, exactly one temporary-preset refresh, no Source or Live preview toPlainText read, no warm whole-text equality, document-identity fingerprinting, and no full rich highlighter pass for huge documents.",
+      "verification": "targeted regression suite 35 passed; Qt smoke subset 4 passed",
+      "work": "T-1162"
+    },
+    "SRC-003:R0013": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "IMPLEMENTED",
+      "evidence": "src/fastprompter/main.py:_switch_to_slot profile_phase logs attach/sidebar/archive/preview/total only above 50ms with category, slot, chars, and blocks",
+      "text": "A lightweight navigation phase profiler must report only slow phases with category, slot, character, and block context so the Windows runtime can identify remaining GUI-thread stalls.",
+      "verification": "uv run python -m compileall -q src FastPrompter.pyw; targeted Qt navigation smoke 9 passed",
+      "work": "T-1162"
+    }
+  },
+  "schema_version": 1
+}

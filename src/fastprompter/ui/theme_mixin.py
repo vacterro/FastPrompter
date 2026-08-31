@@ -68,20 +68,57 @@ class ThemeMixin:
         return self._theme_cache.get(key, fallback)
 
     def change_font_family(self, font_name):
-        """Change the application font family."""
-        if getattr(self, "_initializing_ui", False):
-            return
+        """Change the application font family through one canonical path."""
+        font_name = str(font_name or "Verdana")
         self.data["font_family"] = font_name
+        combo = getattr(self, "font_combo", None)
+        if combo is not None:
+            try:
+                if not _is_deleted(combo) and combo.currentText() != font_name:
+                    combo.blockSignals(True)
+                    try:
+                        combo.setCurrentText(font_name)
+                    finally:
+                        combo.blockSignals(False)
+            except (RuntimeError, TypeError):
+                pass
         self.apply_font()
-        self.mark_dirty()
+        self.mark_dirty("settings")
 
     def change_font_size(self, size):
-        """Change the application font size."""
-        if getattr(self, "_initializing_ui", False):
-            return
+        """Change font size and keep the persisted value/control in sync.
+
+        Programmatic callers (window presets, profile restore) used to update
+        ``data`` without updating the spin box.  The next wheel/shortcut read
+        the stale control and visually snapped the editor back to that value.
+        """
+        try:
+            size = int(float(size))
+        except (TypeError, ValueError):
+            size = 11
+        spin = getattr(self, "font_spin", None)
+        low, high = 8, 48
+        if spin is not None:
+            try:
+                if not _is_deleted(spin):
+                    low = max(low, int(spin.minimum()))
+                    high = max(low, int(spin.maximum()))
+            except (RuntimeError, TypeError, ValueError):
+                pass
+        size = max(low, min(high, size))
         self.data["font_size"] = size
+        if spin is not None:
+            try:
+                if not _is_deleted(spin) and spin.value() != size:
+                    spin.blockSignals(True)
+                    try:
+                        spin.setValue(size)
+                    finally:
+                        spin.blockSignals(False)
+            except (RuntimeError, TypeError):
+                pass
         self.apply_font()
-        self.mark_dirty()
+        self.mark_dirty("settings")
 
     def change_theme(self, theme_name):
         """Switch to a different theme."""
@@ -248,10 +285,8 @@ class ThemeMixin:
             style.unpolish(btn)
             style.polish(btn)
 
-    def apply_font(self):
-        """Apply the configured font to the UI. Defaults to Verdana."""
-        if getattr(self, "_initializing_ui", False):
-            return
+    def configured_font(self):
+        """Return the one font represented by the persisted global setting."""
         try:
             base_size = self._font_size
         except Exception:
@@ -271,7 +306,12 @@ class ThemeMixin:
             self._cached_main_font.setStyleStrategy(
                 QFont.StyleStrategy.NoAntialias | QFont.StyleStrategy.NoSubpixelAntialias
             )
-        font = self._cached_main_font
+        return QFont(self._cached_main_font)
+
+    def apply_font(self):
+        """Apply the configured font to every UI surface."""
+        font = self.configured_font()
+        font_size = font.pointSize()
         QApplication.setFont(font)
         from PyQt6.QtWidgets import QToolTip
         QToolTip.setFont(font)
@@ -422,6 +462,16 @@ class ThemeMixin:
         doc = self.text_area.document() if hasattr(self, "text_area") else None
         if doc is None or _is_deleted(doc):
             return
+        # Never run a full regex pass while navigating a huge silo.  The
+        # editor remains usable; rich highlighting can be requested later by
+        # returning below the threshold or explicitly changing preview mode.
+        huge_threshold = int(getattr(self, "_LARGE_DOC_THRESHOLD", 500000))
+        huge = doc.characterCount() >= huge_threshold
+        if hasattr(hl, "set_huge"):
+            hl.set_huge(huge)
+        if huge:
+            hl.setDocument(None)
+            return
         # never fully skip — degrade instead, so headers/links/URLs survive
         large = doc.blockCount() > 500
         if large and self.data.get("live_preview_keep_rich_on_large", "False") != "True":
@@ -493,13 +543,14 @@ class ThemeMixin:
 
         self.mark_dirty()
 
-    def update_preview(self):
+    def update_preview(self, text=None):
         """Update the preview area when in Reading mode."""
-        text = self.text_area.toPlainText()
         mode = self.preview_combo.currentData() or self.preview_combo.currentText()
-
-        if mode == "Reading":
-            self.preview_area.setHtml(self.simple_markdown_to_html(text))
+        if mode != "Reading":
+            return
+        if text is None:
+            text = self.text_area.toPlainText()
+        self.preview_area.setHtml(self.simple_markdown_to_html(text))
 
     # ---- SiloTable / SiloKanban skin ------------------------------------
     #
