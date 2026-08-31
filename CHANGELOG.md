@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.8.65 - 2026-08-31
+
+- **File asset drawer hotkey (T-1167):** Alt+F toggles the Files asset
+  drawer (default_profile `toggle_files_hotkey`, local app shortcut wired
+  to `toggle_file_container`, sound-muted so the panel's own
+  chest_open/chest_close is not doubled). The hotkey dialog now exposes the
+  binding (primary + second combo, save/reset wired) and the wiki
+  cheatsheet documents Alt+F. Unit tests for default + custom parse, sound
+  contract, settings reachability and cheatsheet parity.
+
 ## 0.8.64 - 2026-08-31
 
 - **HUNT housekeeping (T-1165):** track the project validator shim

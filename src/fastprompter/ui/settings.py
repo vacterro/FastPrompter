@@ -117,6 +117,8 @@ class HotkeySettingsDialog(QDialog):
         form_global.addRow(tr("Toggle Sidebar:", self.lang), self.le_sidebar)
         self.le_hideout = DualHotkeyWidget(self.main_win, "hide_on_clickout_hotkey", "Alt+A")
         form_global.addRow(tr("Toggle Hide on Click-Out:", self.lang), self.le_hideout)
+        self.le_files = DualHotkeyWidget(self.main_win, "toggle_files_hotkey", "Alt+F")
+        form_global.addRow(tr("Toggle Files (asset drawer):", self.lang), self.le_files)
 
         self.snippet_inputs = []
         for i in range(5):
@@ -217,6 +219,7 @@ class HotkeySettingsDialog(QDialog):
         self.le_top.reset_defaults("Alt+E")
         self.le_sidebar.reset_defaults("Alt+D")
         self.le_hideout.reset_defaults("Alt+A")
+        self.le_files.reset_defaults("Alt+F")
         for i, le in enumerate(self.snippet_inputs): le.reset_defaults(f"Ctrl+Shift+Numpad{i+1}")
         for i, le in enumerate(self.silo_inputs): le.reset_defaults(f"Alt+Shift+Numpad{i+1}")
         for key_name, default_hk, _ in getattr(self, "app_binds", []):
@@ -234,6 +237,7 @@ class HotkeySettingsDialog(QDialog):
         self.le_top.save_to_data(self.main_win)
         self.le_sidebar.save_to_data(self.main_win)
         self.le_hideout.save_to_data(self.main_win)
+        self.le_files.save_to_data(self.main_win)
         for le in self.snippet_inputs: le.save_to_data(self.main_win)
         for le in self.silo_inputs: le.save_to_data(self.main_win)
         for key_name, le in getattr(self, "app_inputs", {}).items():

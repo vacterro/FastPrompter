@@ -49,15 +49,15 @@ def test_current_schema_starts_without_synchronous_backup(tmp_path, monkeypatch)
     entered = threading.Event()
     release = threading.Event()
     ran_in = []
-    real_bak = state_mod._backup_atomically
+    real_prep = state_mod._prepare_backup_candidate
 
-    def blocked_backup(src, dest, validate=True):
+    def blocked_prep(source_conn, dest_path, validate=True):
         ran_in.append(threading.current_thread().name)
         entered.set()
         release.wait(10)
-        return real_bak(src, dest, validate)
+        return real_prep(source_conn, dest_path, validate)
 
-    monkeypatch.setattr(state_mod, "_backup_atomically", blocked_backup)
+    monkeypatch.setattr(state_mod, "_prepare_backup_candidate", blocked_prep)
 
     # Construction returns promptly => the validated backup was NOT done
     # synchronously on the startup thread. If a synchronous call had happened
@@ -88,13 +88,13 @@ def test_first_mutation_is_gated_on_background_snapshot(
     _big(monkeypatch, db)
 
     release = threading.Event()
-    real_bak = state_mod._backup_atomically
+    real_prep = state_mod._prepare_backup_candidate
 
-    def blocked_backup(src, dest, validate=True):
+    def blocked_prep(source_conn, dest_path, validate=True):
         release.wait(10)
-        return real_bak(src, dest, validate)
+        return real_prep(source_conn, dest_path, validate)
 
-    monkeypatch.setattr(state_mod, "_backup_atomically", blocked_backup)
+    monkeypatch.setattr(state_mod, "_prepare_backup_candidate", blocked_prep)
 
     state = state_mod.FastPrompterState(profile_id=1)
     done = threading.Event()
@@ -217,15 +217,15 @@ def test_stale_old_profile_worker_cannot_release_new_profile_gate(
     # (it runs to completion normally).
     b_entered = threading.Event()
     b_release = threading.Event()
-    real_bak = state_mod._backup_atomically
+    real_prep = state_mod._prepare_backup_candidate
 
-    def blocked_b_backup(src, dest, validate=True):
-        if str(dest) == db_b + ".bak":
+    def blocked_b_prep(source_conn, dest_path, validate=True):
+        if str(dest_path) == db_b + ".bak":
             b_entered.set()
             b_release.wait(10)
-        return real_bak(src, dest, validate)
+        return real_prep(source_conn, dest_path, validate)
 
-    monkeypatch.setattr(state_mod, "_backup_atomically", blocked_b_backup)
+    monkeypatch.setattr(state_mod, "_prepare_backup_candidate", blocked_b_prep)
 
     state = state_mod.FastPrompterState(profile_id=1)
     a_ctx = state._startup_backup_ctx
@@ -238,7 +238,7 @@ def test_stale_old_profile_worker_cannot_release_new_profile_gate(
     state.switch_profile(2, save_current=False)
     b_ctx = state._startup_backup_ctx
     assert b_ctx is not a_ctx
-    # B's worker is provably still blocked inside _backup_atomically.
+    # B's worker is provably still blocked inside _prepare_backup_candidate.
     assert b_entered.wait(5), "B's startup backup never started"
     a_ctx.ready.set()           # stale A worker "finishes"
     assert not b_ctx.ready.is_set(), \

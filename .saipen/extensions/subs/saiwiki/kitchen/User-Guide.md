@@ -14,9 +14,9 @@ High-speed keyboard-driven scratchpad + prompt workbench. Alt+X summons at curso
 
 ### 1. Summon (Alt+X)
 
-Global hotkey. Window appears at mouse cursor. Esc closes. All keystrokes flush to disk via auto-save timer (10s tick) + sync flush on close.
+Global hotkey. Window appears at mouse cursor. Esc closes. A second `global_hotkey_alt` (shipped as `F15`, also reachable via `Shift+F15`) summons the same window. All keystrokes flush to disk via auto-save timer (10s tick) + sync flush on close.
 
-Double-tap Alt+X toggles always-on-top. Shift+Alt+X opens pie menu (theme/scale/tools).
+**Pie menu (Shift+Alt+X):** if the window is visible, picking a snippet inserts it directly into the editor at the cursor (mark_dirty, focus preserved); otherwise it pastes through the clipboard as before. The insert targets the snippet's original category slot, so earlier deleted placeholder entries never shift the selection (T-1084).
 
 ### 2. Projects (Tabs)
 
@@ -61,7 +61,7 @@ User-defined spacer bars in silo list. Help organise silos into groups. Ctrl+dra
 
 - Shift+click — range select
 - Ctrl+click — toggle selection
-- Right-click selection — batch Save, Delete, Clear (deletes high-index-first to avoid slot shift issues)
+- Right-click selection — batch Save, Delete, Clear (deletes high-index-first to avoid slot shift issues; single sound + deferred UI rebuild prevents Not-Responding freezes on Windows)
 
 ### 7. Snippet Macros (F1-F10)
 
@@ -77,6 +77,8 @@ User-defined spacer bars in silo list. Help organise silos into groups. Ctrl+dra
 
 **Features:**
 - Live syntax highlighting — headings, bold, italic, links, code fences, checkboxes, blockquotes
+- Huge document mode (>=500k chars / >=2000 blocks): structural-only highlighting (headings, lists, blockquotes); inline markup skipped for responsiveness; folds restore incrementally to avoid freezes
+- Category-scoped document cache — switching projects reuses warm documents instead of rebuilding from scratch
 - Line gutter — numbers + fold arrows (▾)
 - Section folding — click ▾ to collapse headers
 - Code fence copy button — hover fence, click copy icon
@@ -125,6 +127,7 @@ folder per slot; the root can be moved in Settings).
 - Drop overlay (4 options): Insert Text, Insert Link, Copy to Files, Shortcut
 - Templates: IN/OUT, Assets, Drafts, Custom
 - Image preview + open with default app
+- Ctrl+Shift+S — export the active silo as .md (format filter remembered in `last_save_format`, no confirmation box, T-1082)
 - Ctrl+click 📁 — export silo text as .md
 
 ### 13. Watcher Engine (Alt+C)
@@ -264,7 +267,7 @@ Time-of-day scheduled reminders that fire automatically on a 24-hour clock. Mana
 
 **Sound Quick Bar:** 10 favorite sound slots shown as buttons below the sound picker. Click to select and preview; right-click to store the current sound into that slot.
 
-**Notifications:** Each rule can show a system tray notification and/or play a sound. Volume is independent per rule (0.05 default for quiet hourly pings).
+**Notifications:** Each rule can show a system tray notification and/or play a sound. Volume is independent per rule (default presets ship at 1.0).
 
 **Top-Bar Countdown (W2-005):** A rule with **Show in top bar** enabled renders its next-occurrence countdown beside the clock — the same boundary the scheduler fires on, so the countdown and the actual reminder never disagree. Temp Timer and a running work/break phase outrank interval countdowns; a disabled rule, a rule outside its active hours, or one with the toggle off shows nothing. After a rule fires, the displayed countdown rolls to the same next occurrence the scheduler will use (clock rules up to a day, >24h rules at midnight).
 

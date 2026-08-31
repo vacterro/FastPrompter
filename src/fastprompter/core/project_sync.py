@@ -166,10 +166,30 @@ def is_text_file(relpath: str, include: list[str] | None = None,
     return False
 
 
+def is_sync_eligible(relpath: str, include: list[str] | None = None,
+                     exclude: list[str] | None = None,
+                     recursive: bool = True) -> bool:
+    """The CONFIGURATION-only eligibility predicate (W2-001).
+
+    This decides what MAY sync: extension/basename include/exclude, and the
+    recursive flat/nested rule. It deliberately does NOT fold size,
+    readability, or current existence into the verdict — a path that is
+    configured-eligible stays eligible while momentarily unreadable,
+    oversized, or absent, so transient OS state never changes the binding.
+    """
+    if not isinstance(relpath, str) or not relpath:
+        return False
+    if not recursive and "/" in relpath.replace("\\", "/"):
+        return False
+    return is_text_file(relpath, include, exclude)
+
+
 def scan_folder(root: str, include: list[str] | None = None,
                 exclude: list[str] | None = None, recursive: bool = True,
                 max_bytes: int = DEFAULT_MAX_BYTES,
-                limit: int | None = None) -> list[str]:
+                limit: int | None = None,
+                exclude_paths: set[str] | None = None,
+                should_cancel: callable | None = None) -> list[str]:
     """Text files under ``root`` as a sorted list of relative paths.
 
     Pure and defensive: unreadable entries are skipped, never raised on.
@@ -179,8 +199,25 @@ def scan_folder(root: str, include: list[str] | None = None,
     and O(K) memory instead of collecting and sorting ALL N (a large repo with
     only K<=100 binding slots would otherwise allocate/sort the entire tree on
     the GUI thread). ``limit=None`` keeps the exact legacy all-result contract.
+
+    ``exclude_paths`` (W2-001): relative paths already mapped elsewhere are
+    skipped BEFORE size/readability work, in both recursive and flat modes;
+    separators are normalised to POSIX. ``should_cancel`` (W2-001): a
+    callable consulted before traversal and during iteration; when it returns
+    True the scan stops and returns [] — an empty result is the "cancelled"
+    signal, never a partial list.
     """
     import heapq
+
+    if should_cancel is not None and bool(should_cancel()):
+        return []
+    if exclude_paths:
+        exclude_paths = {
+            (p or "").replace("\\", "/") for p in exclude_paths
+            if isinstance(p, str) and p
+        }
+    else:
+        exclude_paths = set()
 
     class _NegStr:
         """String wrapper that REVERSES __lt__ so heapq's min-heap behaves as
@@ -213,12 +250,16 @@ def scan_folder(root: str, include: list[str] | None = None,
 
     if recursive:
         for dirpath, dirnames, filenames in os.walk(root):
+            if should_cancel is not None and bool(should_cancel()):
+                return []
             # prune excluded directories in place so os.walk never descends
             dirnames[:] = [d for d in dirnames if not match_exclude(
                 os.path.relpath(os.path.join(dirpath, d), root).replace("\\", "/"),
                 exc)]
             for name in filenames:
                 rel = os.path.relpath(os.path.join(dirpath, name), root).replace("\\", "/")
+                if rel in exclude_paths:
+                    continue
                 if not is_text_file(rel, inc, exc):
                     continue
                 try:
@@ -235,6 +276,8 @@ def scan_folder(root: str, include: list[str] | None = None,
         for name in names:
             rel = name.replace("\\", "/")
             path = os.path.join(root, name)
+            if rel in exclude_paths:
+                continue
             if not (os.path.isfile(path) and is_text_file(rel, inc, exc)):
                 continue
             try:

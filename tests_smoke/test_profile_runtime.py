@@ -217,7 +217,6 @@ class TestUndoPathCapture:
         for p in (a_undo, b_undo):
             if os.path.exists(p):
                 os.remove(p)
-
         w.state.switch_profile(1, save_current=False)
         w.data_undo_stack = [{"marker": "A"}]
         w.data_redo_stack = [{"marker": "AR"}]
@@ -254,6 +253,38 @@ class TestUndoPathCapture:
         for p in (a_undo, b_undo):
             if os.path.exists(p):
                 os.remove(p)
+
+
+class TestProfileDocumentCacheBoundary:
+    def test_same_category_and_slot_never_reuse_foreign_document(
+            self, win, iso_root):
+        w = win
+        w.change_profile(0)
+        w.data["temp_presets"][0] = "PROFILE A"
+        w.silo_docs[:] = []
+        w._switch_to_slot(0, initial=True, sync_outgoing=False)
+        profile_a_doc = w.text_area.document()
+        profile_a_id = id(profile_a_doc)
+        w._remember_category_documents(w.get_current_category())
+        assert w._category_document_cache
+
+        w.change_profile(1)
+        w.data["temp_presets"][0] = "PROFILE B"
+        w._switch_to_slot(0, initial=True, sync_outgoing=False)
+
+        assert w.text_area.toPlainText() == "PROFILE B"
+        assert w.text_area.document() is not profile_a_doc
+        assert all(
+            doc is not profile_a_doc
+            for silo_docs, archive_docs in w._category_document_cache.values()
+            for doc in (*silo_docs, *archive_docs)
+            if doc is not None
+        )
+        assert all(key[0] != profile_a_id
+                   for key in w._document_fingerprint_cache)
+        assert all(cached[0] != "PROFILE A"
+                   for cached in w._line_count_cache.values())
+        w.change_profile(0)
 
 
 class TestPersistedUndoReload:

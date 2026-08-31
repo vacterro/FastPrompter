@@ -58,8 +58,8 @@ class TestInit:
         assert d["last_text"] == ""
         assert d["last_tab_idx"] == 0
         assert d["active_temp_slot"] == 0
-        # T-696: the shipped default is 13, baked in by DEFAULT_PROFILE
-        assert d["font_size"] == 13
+        # T-696: the shipped default is 10, baked in by DEFAULT_PROFILE
+        assert d["font_size"] == 10
 
     def test_default_categories_have_100_slots(self, state):
         """Each category should have 100 None slots."""
@@ -350,6 +350,45 @@ class TestSaveToDB:
         row = cur.execute("SELECT value FROM settings WHERE key='theme'").fetchone()
         assert row is not None
         assert row[0] == "Default"
+
+    def test_hung_startup_backup_gate_never_blocks_save(self, state):
+        """T03 / W2-P0-004: an ordinary autosave while the startup safety
+        snapshot is still pending must NOT block the GUI thread and must NOT
+        silently mutate SQLite (the recovery guarantee survives). The save
+        returns False (deferred); dirty state is preserved; the next
+        autosave retries once the snapshot is ready."""
+        import time
+
+        from fastprompter.core.state import _StartupBackupContext
+
+        # Re-arm a gate that will never release (simulates a stalled worker).
+        gate = _StartupBackupContext(state.db_path, state._startup_backup_gen + 1)
+        state._startup_backup_ctx = gate
+        state._dirty_settings = state._saved_settings_gen + 1
+
+        start = time.monotonic()
+        ok = state.save_data_to_db("text", ui_settings={"font_size": "14"})
+        first_elapsed = time.monotonic() - start
+        assert ok is False, \
+            "autosave must defer while the startup snapshot is pending"
+        assert first_elapsed < 0.5, \
+            f"autosave blocked {first_elapsed:.2f}s on a pending snapshot"
+        # dirty state preserved
+        assert state._dirty_settings > state._saved_settings_gen, \
+            "deferred save must preserve dirty state"
+        # the live DB was NOT mutated: read back the old font_size
+        row = state.conn.execute(
+            "SELECT value FROM settings WHERE key='font_size'").fetchone()
+        assert row is None or row[0] != "14", \
+            "deferred save must not mutate the live database"
+
+        state._dirty_settings = state._saved_settings_gen + 1
+        start = time.monotonic()
+        ok = state.save_data_to_db("text2", ui_settings={"font_size": "15"}, durable=True)
+        second_elapsed = time.monotonic() - start
+        assert ok is False
+        assert second_elapsed < 5.5, (
+            f"durable save exceeded bounded timeout {second_elapsed:.2f}s")
 
 
 # ---------------------------------------------------------------------------
@@ -660,7 +699,7 @@ class TestDefaultProfile:
     def test_baked_values_reach_the_data_dict(self, state):
         from fastprompter.core.default_profile import DEFAULT_PROFILE
 
-        assert state.data["font_size"] == 13
+        assert state.data["font_size"] == 10
         assert state.data["ui_scale"] == DEFAULT_PROFILE["ui_scale"]
         assert state.data["language"] == "EN"
         assert state.data["theme"] == DEFAULT_PROFILE["theme"]

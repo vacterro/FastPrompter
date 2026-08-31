@@ -4773,7 +4773,40 @@ class FastPrompter(
     def _auto_save_tick(self):
         if not getattr(self.state, "has_pending_changes", getattr(self.state, "_db_dirty", False)):
             return
-        self.save_data_to_db()
+        import time as _t
+        _start = _t.monotonic()
+        st = self.state
+        dirty_before = []
+        if getattr(st, "_db_dirty", False):
+            dirty_before.append("db")
+        if getattr(st, "_dirty_settings", 0) > getattr(st, "_saved_settings_gen", 0):
+            dirty_before.append("settings")
+        if getattr(st, "_dirty_snippets", 0) > getattr(st, "_saved_snippets_gen", 0):
+            dirty_before.append("snippets")
+        if getattr(st, "_dirty_temp", 0) > getattr(st, "_saved_temp_gen", 0):
+            dirty_before.append("temp")
+        if getattr(st, "_dirty_arc", 0) > getattr(st, "_saved_arc_gen", 0):
+            dirty_before.append("archive")
+        try:
+            saved = bool(self.save_data_to_db())
+        finally:
+            _elapsed_ms = (_t.monotonic() - _start) * 1000
+            # T06: log only slow autosaves (>= 30 ms) with the dirty domains
+            # and the coordinator snapshot, so a persistence stall is
+            # diagnosable without a logging firehose on the healthy path.
+            if _elapsed_ms >= 30:
+                from fastprompter.core.logging import logger as _log
+                try:
+                    from fastprompter.core.state import backup_debug_state
+                    coord = backup_debug_state(st.db_path)
+                except Exception:
+                    coord = {"available": False, "reason": "error"}
+                result = getattr(st, "_last_save_outcome", "FAILED")
+                if "saved" in locals() and saved:
+                    result = "committed"
+                _log.warning(
+                    "autosave.total=%.1fms dirty=%s result=%s coord=%s",
+                    _elapsed_ms, ",".join(dirty_before) or "none", result, coord)
 
     def play_sound(self, name):
         self.sound_manager.play(name)
@@ -4812,6 +4845,7 @@ class FastPrompter(
         "lock_window_hotkey": "lock",
         "always_on_top_hotkey": "lock",
         "toggle_sidebar_hotkey": "sidebar",
+        "toggle_files_hotkey": "chest_open",
     }
 
     # Actions that make their own sound from INSIDE, on every route they can
@@ -4832,6 +4866,9 @@ class FastPrompter(
         # toggle_sidebar_visibility plays "sidebar" inside; the wrapper's
         # own event would double it on Alt+D.
         "toggle_sidebar_hotkey",
+        # file_container.open_for / close plays "chest_open" / "chest_close"
+        # internally; the wrapper's event would double it on Alt+F.
+        "toggle_files_hotkey",
     })
 
     def sound_event_for_hotkey(self, key):
@@ -13210,23 +13247,38 @@ class FastPrompter(
                         tr("Restore aborted — the watcher was still busy; try "
                            "again once it settles.", self._current_lang))
                     return
-                # close the live connection FIRST: SQLite keeps the file
-                # locked while a connection is open
-                if self.state.conn:
-                    self.state.conn.close()
-                    self.state.conn = None
-                self.conn = None
-                time.sleep(0.1)
                 from fastprompter.core.state import (
                     FatalRestoreError,
                     RestoreError,
                     _drain_db_backup,
                     restore_database,
                 )
-                # CORE-003: quiesce the backup worker before the live DB
-                # incarnation changes — a stale worker must not publish a
-                # pre-restore snapshot into the restored DB's .bak.
-                _drain_db_backup(db_path)
+                # CORE-003 / T02: the backup worker must be drained BEFORE the
+                # live DB incarnation changes. A timed-out drain means a stale
+                # worker can still publish a pre-restore snapshot into the
+                # restored DB's .bak after the swap. The drain helper enforces
+                # a real wall-clock deadline; on False the restore is aborted
+                # with the live DB and connection untouched.
+                from fastprompter.core.logging import logger as _log
+                if not _drain_db_backup(db_path, timeout=5.0):
+                    _log.error("Restore aborted: backup worker did not drain "
+                               "within the bound; the live database is unchanged")
+                    QMessageBox.critical(
+                        self, tr("Error", self._current_lang),
+                        tr("Restore aborted — the backup worker was still busy; "
+                           "try again once it settles.", self._current_lang))
+                    # T02: the watcher was paused by _watcher_begin_quiesce;
+                    # a refused restore must roll that pause back, never
+                    # commit the disarm (the runtime stays fully active).
+                    self._resume_watcher_runtime()
+                    return
+                # drain proven: now close the live connection (SQLite keeps
+                # the file locked while a connection is open).
+                if self.state.conn:
+                    self.state.conn.close()
+                    self.state.conn = None
+                self.conn = None
+                time.sleep(0.1)
                 try:
                     restore_database(path, db_path)
                 except FatalRestoreError as e:
@@ -13355,12 +13407,24 @@ class FastPrompter(
         the original file is untouched and the in-memory state is still
         authoritative — reloading via init_db would discard the RAM edits.
 
+        T04: the reopened connection inherits the same bounded GUI busy
+        budget as the original init_db path. Without it, a reconnected
+        runtime could again sit inside sqlite3's multi-second default
+        busy wait on the next writer contention.
+
         Returns True only when a usable connection was established; callers
         must NOT resume an editable runtime (CORE-009) on False.
         """
         import sqlite3
         try:
-            conn = sqlite3.connect(self.state.db_path, check_same_thread=False)
+            from fastprompter.core.state import (
+                _SQLITE_GUI_BUSY_TIMEOUT,
+                _SQLITE_GUI_BUSY_TIMEOUT_MS,
+            )
+            conn = sqlite3.connect(self.state.db_path,
+                                   check_same_thread=False,
+                                   timeout=_SQLITE_GUI_BUSY_TIMEOUT)
+            conn.execute(f'PRAGMA busy_timeout={_SQLITE_GUI_BUSY_TIMEOUT_MS};')
             conn.execute('PRAGMA journal_mode=WAL;')
             conn.execute('PRAGMA synchronous=NORMAL;')
             self.state.conn = conn
@@ -17611,11 +17675,13 @@ class FastPrompter(
         add_shortcut("always_on_top_hotkey", "Alt+S", self.toggle_always_on_top)
         add_shortcut("toggle_sidebar_hotkey", "Alt+D", lambda: self.toggle_visibility(force_sidebar=True))
         add_shortcut("hide_on_clickout_hotkey", "Alt+A", self.toggle_hide_on_clickout)
+        add_shortcut("toggle_files_hotkey", "Alt+F", self.toggle_file_container)
         add_shortcut("lock_window_hotkey_alt", "", self.toggle_lock)
         add_shortcut("always_on_top_hotkey_alt", "", self.toggle_always_on_top)
         add_shortcut("toggle_sidebar_hotkey_alt", "",
                      lambda: self.toggle_visibility(force_sidebar=True))
         add_shortcut("hide_on_clickout_hotkey_alt", "", self.toggle_hide_on_clickout)
+        add_shortcut("toggle_files_hotkey_alt", "", self.toggle_file_container)
 
         shortcut = QShortcut(QKeySequence("Esc"), self)
         shortcut.activated.connect(self._on_escape)

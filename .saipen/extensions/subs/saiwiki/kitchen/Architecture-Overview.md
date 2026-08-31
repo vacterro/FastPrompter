@@ -52,6 +52,8 @@ Entry point. QApplication init, single-instance IPC check (QLocalServer), DB con
 - WatcherMixin — watcher engine integration
 - WindowMixin — frameless window, snapping, borderless
 
+A heartbeat watchdog monitors GUI-thread responsiveness: a QTimer fires every 500 ms on the GUI thread while a background thread watches the timestamp; any stall >1.5 s is logged with a full Python stack trace for post-mortem diagnosis (FREEZE-2026-08-30).
+
 ### 2. IPC Single-Instance (`core/ipc_server.py`)
 
 QLocalServer on named pipe `FastPrompter_Server_V15`. Second instance sends SHOW command → existing instance brings its window forward. UUID token in `%TEMP%/fastprompter_ipc.token` for auth. No more silent no-op on crash (server.removeServer recovers stale socket names).
@@ -70,8 +72,10 @@ Two-layer: (1) Win32 `RegisterHotKey` via `core/hotkeys.py` for the global summo
 
 VaultTextEdit extends QPlainTextEdit. Features:
 - MarkdownHighlighter — live syntax (headings, bold, italic, code fences, checkboxes, links, images)
+- Huge document mode (>=500k chars / >=2000 blocks): structural-only highlighting (headings/quotes/lists); inline markup skipped for responsiveness
+- Category-scoped document cache (bounded LRU, 4 categories / 4M chars) — project switches reuse warm QTextDocuments instead of rebuilding from scratch
 - Line gutter — numbers, fold arrows (▾), code-fence copy button
-- Section fold — click collapse on header blocks
+- Section fold — click collapse on header blocks; huge-doc folds restore incrementally (200 blocks per event-loop tick)
 - Collapsible images — `![alt](url)` renders as 150px clickable pill
 - Drop overlay — 4-option drop target (insert text, insert link, copy file, shortcut)
 - Margin marks — line-level pins, ticks, queue anchors, heatmap
@@ -85,7 +89,7 @@ Up to 100 silos per project tab. Features:
 - Hierarchy — drag onto another silo to nest (max depth 2)
 - Recency heatmap — warm tint on recently edited
 - Sidebar gaps — user-defined spacers (Ctrl+drag to move)
-- Multi-select — Shift=range, Ctrl=toggle, batch ops
+- Multi-select — Shift=range, Ctrl=toggle, batch ops; batch delete plays one sound, defers UI rebuild to the end, and pumps Qt events between items to prevent Windows Not-Responding freezes
 - File containers — per-silo disk folder (`data/files/<category-slug>/<silo-title-slug>/`, unique per slot)
 - Kanban (Alt+arrows move cards) + Table builder (Tab walk cells) — T-630
 
@@ -115,7 +119,7 @@ a partial export never looks finished; (4) atomic validated DB restore
 fail-closed). All backup writes go through the unified safe primitive
 (temp sibling + atomic rename).
 
-**v0.8.43–v0.8.45 audit hardening:** the portable Markdown snapshot captures an *immutable* copy of state at request time rather than the live mutable dict, so the generation dispatched after a save is exactly the committed state that requested it — never uncommitted future edits. While a profile's backup job is active, repeated eligible saves only record that a newer state is wanted and coalesce; the newest state is exported on the next eligible run (PERF-008 / CORE-002 / CORE-003). The filesystem probe negative cache is bounded (≤500 entries) and swept on read, so repeated absent-path lookups don't churn or grow without limit (PERF-004).
+**v0.8.43–v0.8.45 audit hardening:** the portable Markdown snapshot captures an *immutable* copy of state at request time rather than the live mutable dict, so the generation dispatched after a save is exactly the committed state that requested it — never uncommitted future edits. While a profile's backup job is active, repeated eligible saves only record that a newer state is wanted and coalesce; the newest state is exported on the next eligible run (PERF-008 / CORE-002 / CORE-003). The filesystem probe negative cache is bounded (≤500 entries) and swept on read, so repeated absent-path lookups don't churn or grow without limit (PERF-004). The snapshot carries the exact content generation (`content_gen`) of the state it was captured from (W2-008).
 
 ### 11. Typecheck / Typo Checker (`core/typecheck.py`)
 
@@ -124,6 +128,8 @@ A dictionary-based, non-recursive typo checker for silo text. Single linear scan
 ### 12. Sync-Project (`core/project_sync.py`)
 
 Folder↔silo two-way sync. A Sync-Project binds a project tab to a folder; every text file that passes the include/exclude filters becomes a silo (slot 0..N-1 in file-name order; extra files become new silos up to the 100-silo cap). Two-way and live: app edits are pushed to the file (debounced, and on every DB save), external file changes are applied back into the silo unless the silo holds unsaved app-side text (the app side wins while it is being typed). Exclude patterns match the file name (fnmatch-style) or any path component (substring). Pure logic (Qt-free) — the UI wiring (QFileSystemWatcher, debounce timers) lives in `main.py`.
+
+Tab switches suppress the outgoing project's sync push (`sync_outgoing=False`) so navigating between projects no longer triggers a full Sync-Project flush of the departing project.
 
 ### 13. Per-Silo File Links
 
@@ -135,7 +141,7 @@ Timer silos whose countdown has elapsed (passed) are highlighted with a configur
 
 ### 15. Interval Notifications (`main.py` + `ui/timer_dialog.py`)
 
-24h clock-aligned or elapsed-time scheduled reminders. Rules are stored in the `interval_notifs` setting (JSON list). Each rule defines a name, interval in minutes, sound reference, volume, active hours (start/end minute of day), and firing mode (`clock` = aligned to minute-of-day, `elapsed` = interval since last fire). Only the highest-priority rule fires per tick when multiple collide. Default presets: Morning (07:00–11:00), Noon (12:00), Day & Evening (13:00–21:00), Night (22:00–06:00), all at 60-min intervals with 0.05 volume.
+24h clock-aligned or elapsed-time scheduled reminders. Rules are stored in the `interval_notifs` setting (JSON list). Each rule defines a name, interval in minutes, sound reference, volume, active hours (start/end minute of day), and firing mode (`clock` = aligned to minute-of-day, `elapsed` = interval since last fire). Only the highest-priority rule fires per tick when multiple collide. Default presets: Morning (07:00–11:00), Noon (12:00), Day & Evening (13:00–21:00), Night (22:00–06:00), all at 60-min intervals and 1.0 volume. Rule defaults live in `core/state.py`; W2-005 added the per-rule **Show in top bar** toggle with its next-occurrence countdown beside the clock.
 
 ### 16. Periodic Backup (`core/state.py`)
 

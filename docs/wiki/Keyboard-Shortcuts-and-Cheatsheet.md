@@ -15,6 +15,7 @@ Full keyboard-driven operation. Layout-independent VK dispatch — works on QWER
 | **Window** | **Alt+S** | Toggle Always-on-Top | Main |
 | **Window** | **Alt+D** | Toggle sidebar | Main |
 | **Window** | **Alt+A** | Toggle hide-on-focus-loss | Main |
+| **Window** | **Alt+F** | Toggle Files asset drawer | Main |
 | **Window** | **Alt+\`** | Open Mini Settings | Main |
 | **Watcher** | **Alt+C** | Queue current line for watcher | Main |
 | **Watcher** | **Alt+Shift+C** | Open Queue Master dialog | Main |

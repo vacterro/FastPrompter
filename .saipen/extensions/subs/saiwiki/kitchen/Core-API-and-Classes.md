@@ -52,9 +52,10 @@ QLocalServer on named pipe `FastPrompter_Server_V15`. Token-only auth via `%TEMP
 ### `InstanceLock` (`core/instance_lock.py`)
 
 Win32 named mutex (`Local\FastPrompter_Instance_...`) вЂ” single-instance
-ownership. A frozen/lost owner is detected at startup and reported with a
-diagnostic; the mutex can never be taken over by a second writer, so
-split-brain instances are impossible by design (T-788).
+ownership. A frozen/lost owner is detected at startup; the new instance
+may reclaim the lock (`RECLAIMED` role) and proceed, while the mutex is
+never taken by a true second writer, so split-brain instances are
+impossible by design (T-788).
 
 ---
 
@@ -248,16 +249,19 @@ QMainWindow. Mixin composition (declaration order):
 9. WatcherMixin вЂ” watcher engine integration
 10. WindowMixin вЂ” frameless window + snapping
 
-**Key properties:** `_font_size`, `_font_family`, `_ui_scale`, `_button_scale`, `_sidebar_right`, `_always_on_top`, `_normal_window`
+**Key properties:** `_font_size`, `_font_family`, `_ui_scale`, `_button_scale`, `_sidebar_right`, `_always_on_top`, `_normal_window`, `_category_document_cache` (bounded LRU, limit 4), `_document_fingerprint_cache` (per-doc rev→CRC)
 
 **Key methods:**
 - `init_ui()` вЂ” build window, header toolbar, splitter, editor, sidebar, status bar
 - `setup_single_instance_server()` вЂ” IPC init
 - `register_all_hotkeys()` вЂ” bind pynput + PyQt shortcuts
-- `apply_font()` / `apply_theme()` вЂ” cascade font/theme changes
+- `configured_font()` вЂ” return QFont from persisted global settings (family + size + no-AA); single source of truth for font identity
+- `apply_font()` вЂ” cascade configured font to every UI surface (QApplication, tooltips, editor)
+- `apply_theme()` вЂ” cascade theme changes
 - `place_window()` вЂ” restore saved geometry or apply default snap
 - `_switch_to_slot(slot, initial)` вЂ” load silo into editor, save cursor state
 - `capture_silo_state()` / `restore_silo_state()` вЂ” per-silo cursor/scroll/fold/heat persistence
+- `_remember_category_documents(cat)` / `_restore_category_documents(cat)` вЂ” bounded LRU cache so category switches do not throw away every QTextDocument
 
 ---
 

@@ -350,7 +350,7 @@ class TestRestoreSidecarRollback:
 
         def fake_replace(src, dst):
             # main swap (temp -> live) fails; everything else proceeds
-            if dst == live and src.endswith(".restoretmp"):
+            if dst == live and ".restore-" in os.path.basename(src):
                 raise OSError("swap boom")
             return real_replace(src, dst)
 
@@ -376,7 +376,7 @@ class TestRestoreSidecarRollback:
 
         def fake_replace(src, dst):
             # main swap fails ...
-            if dst == live and src.endswith(".restoretmp"):
+            if dst == live and ".restore-" in os.path.basename(src):
                 raise OSError("swap boom")
             # ... AND the sidecar rollback (quarantine -> live) also fails
             if src.endswith(".wal.quarantine") or src.endswith(".shm.quarantine"):
@@ -479,7 +479,7 @@ class TestRestoreSidecarRollback:
 
         def fake_replace(src, dst):
             # main swap fails ...
-            if dst == live and src.endswith(".restoretmp"):
+            if dst == live and ".restore-" in os.path.basename(src):
                 raise OSError("swap boom")
             # ... AND sidecar rollback fails -> fatal path
             if src.endswith(".wal.quarantine") or src.endswith(".shm.quarantine"):

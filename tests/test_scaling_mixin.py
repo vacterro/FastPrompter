@@ -392,7 +392,7 @@ class TestAdjustUiScale:
         assert m.data["ui_scale"] == "1.10"
         m.apply_font.assert_called_once()
         m.apply_scaled_ui.assert_called_once()
-        m.mark_dirty.assert_called_once()
+        m.mark_dirty.assert_called_once_with("settings")
 
     def test_decreases(self):
         m = ScalingMixin()

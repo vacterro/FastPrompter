@@ -492,7 +492,7 @@ class SnippetOpsMixin:
         text = self.text_area.toPlainText()
         if not text:
             return
-        self.ignore_focus_loss = True
+        self._increment_focus_lock()
         try:
             fmt = self.data.get("last_save_format", "txt")
             if fmt == "md":
@@ -527,7 +527,10 @@ class SnippetOpsMixin:
                 else:
                     self.data["last_save_format"] = "txt"
         finally:
-            self.ignore_focus_loss = False
+            from PyQt6.QtCore import QTimer
+            QTimer.singleShot(300, self._decrement_focus_lock)
+            self._bring_to_front()
+            QTimer.singleShot(320, self._bring_to_front)
         self.activateWindow()
 
         if path:
@@ -1417,7 +1420,8 @@ class SnippetOpsMixin:
         except Exception as e:
             logger.error(f"Open trash dialog failed: {e}")
 
-    def del_silo(self, idx=None, skip_undo=False, is_archive=None):
+    def del_silo(self, idx=None, skip_undo=False, is_archive=None,
+                 defer_ui=False):
         """Delete a silo at the given index, or the active one.
 
         `is_archive` names the target space EXPLICITLY when the caller knows
@@ -1426,7 +1430,8 @@ class SnippetOpsMixin:
         deleting an archive row while a normal silo is active must not delete
         the normal silo at the same index (T-754).
         """
-        self.sound_manager.play("delete")
+        if not defer_ui:
+            self.sound_manager.play("delete")
         is_arc = getattr(self, "active_is_archive", False) if is_archive is None else is_archive
         presets = self.data["archive_temp_presets"] if is_arc else self.data["temp_presets"]
         docs = self.archive_docs if is_arc else self.silo_docs
@@ -1544,13 +1549,16 @@ class SnippetOpsMixin:
                 elif self.active_temp_slot >= len(presets):
                     self.active_temp_slot = len(presets) - 1
                 self.silo_page = self.active_temp_slot // max(1, self._visible_silos)
-                self._switch_to_slot(self.active_temp_slot, initial=True, is_archive=is_arc)
+                if not defer_ui:
+                    self._switch_to_slot(
+                        self.active_temp_slot, initial=True, is_archive=is_arc)
 
             self.mark_dirty()
-            self.cancel_editing()
-            self.refresh_temp_presets()
-            if is_arc:
-                self.refresh_archive_panel()
+            if not defer_ui:
+                self.cancel_editing()
+                self.refresh_temp_presets()
+                if is_arc:
+                    self.refresh_archive_panel()
             return True
         # guard not met (only one silo left, or nothing to delete): no-op
         return False

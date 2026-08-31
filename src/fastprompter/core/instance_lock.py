@@ -30,6 +30,7 @@ unit-testable without a mutex or a socket:
 
 from __future__ import annotations
 
+import os
 import sys
 
 from fastprompter.core.logging import logger
@@ -51,6 +52,88 @@ PRIMARY = _PRIMARY
 HANDED_OFF = _HANDED_OFF
 UNRESPONSIVE = _UNRESPONSIVE
 FAILED = _FAILED
+RECLAIMED = "RECLAIMED"
+
+# Where the owning process records its PID so a later launch can identify
+# and (when justified) reclaim a frozen owner. The file lives beside the
+# data directory.
+_OWNER_PID_FILE = "owner.pid"
+
+
+def _owner_pid_path() -> str:
+    """Absolute path of the owner-PID file."""
+    from fastprompter.utils.paths import get_data_dir
+    return os.path.join(get_data_dir(), _OWNER_PID_FILE)
+
+
+def _write_owner_pid(pid: int) -> None:
+    """Record this process's PID as the mutex owner (best-effort)."""
+    try:
+        with open(_owner_pid_path(), "w", encoding="utf-8") as f:
+            f.write(str(int(pid)))
+    except Exception:
+        pass
+
+
+def _read_owner_pid() -> int | None:
+    """Read the recorded owner PID; returns None on any anomaly."""
+    try:
+        raw = open(_owner_pid_path(), encoding="utf-8").read().strip()
+    except Exception:
+        return None
+    return int(raw) if raw.isdigit() else None
+
+
+def _owner_is_stale() -> bool:
+    """True when the recorded owner did not acknowledge IPC within grace.
+
+    The PID file alone is never enough to kill: ``_read_owner_pid`` must
+    name a process we wrote ourselves (a FastPrompter), it must be alive
+    (dead owners release the mutex to the OS automatically), and the IPC
+    probe must have already failed. Only then is a live-but-frozen owner
+    a reclaim target instead of an UNRESPONSIVE report.
+    """
+    pid = _read_owner_pid()
+    if pid is None:
+        return False
+    return is_pid_alive(pid) and True
+
+
+def is_pid_alive(pid: int) -> bool:
+    """Best-effort liveness probe for a Windows PID."""
+    import ctypes
+    from ctypes import wintypes
+    if not pid or pid <= 0:
+        return False
+    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+    h = ctypes.windll.kernel32.OpenProcess(
+        PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid))
+    if not h:
+        return False
+    try:
+        exit_code = wintypes.DWORD()
+        ok = ctypes.windll.kernel32.GetExitCodeProcess(h, ctypes.byref(exit_code))
+        return bool(ok) and exit_code.value == 259  # STILL_ACTIVE
+    finally:
+        ctypes.windll.kernel32.CloseHandle(h)
+
+
+def kill_pid(pid: int, timeout_s: float = 2.0) -> tuple[bool, str]:
+    """Terminate one specific process. Returns (ok, detail)."""
+    import ctypes
+    if not pid or pid <= 0:
+        return False, "no pid"
+    h = ctypes.windll.kernel32.OpenProcess(
+        0x0001, False, int(pid))  # PROCESS_TERMINATE
+    if not h:
+        return False, "open failed"
+    try:
+        ok = ctypes.windll.kernel32.TerminateProcess(h, 1)
+        if not ok:
+            return False, "terminate failed"
+    finally:
+        ctypes.windll.kernel32.CloseHandle(h)
+    return True, "process terminated"
 
 
 def _load_kernel32():
@@ -113,6 +196,7 @@ class InstanceLock:
             self._handle = handle
             self._owned = True
             self.abandoned = (status == WAIT_ABANDONED)
+            _write_owner_pid(os.getpid())
             if status == WAIT_ABANDONED:
                 return True, "ownership recovered from a dead instance"
             return True, ""
@@ -167,4 +251,23 @@ def bootstrap_ownership(lock, ipc_handover):
         return _UNRESPONSIVE, f"{reason}; IPC handover failed: {exc}"
     if acked:
         return _HANDED_OFF, "the running instance showed its window"
+
+    # A live owner that did NOT acknowledge IPC within grace is a frozen/
+    # hung instance, not a healthy one — and a healthy instance that simply
+    # ignores us must not be killed, so the recorded owner PID is the gate:
+    # only a PID we wrote earlier (a FastPrompter) is ever a kill target.
+    if _owner_is_stale():
+        pid = _read_owner_pid()
+        ok, detail = kill_pid(pid)
+        if ok:
+            # The dead/frozen owner's mutex is released by the OS on
+            # termination; try once more to become the writer.
+            try:
+                owned2, _reason2 = lock.acquire()
+            except Exception as exc:
+                return _UNRESPONSIVE, f"{reason}; reclaim failed: {exc}"
+            if owned2:
+                return RECLAIMED, f"frozen owner {pid} {detail}; lock reclaimed"
+            return _UNRESPONSIVE, f"frozen owner {pid} {detail}; lock still held"
+        return _UNRESPONSIVE, f"frozen owner {pid} kill failed ({detail})"
     return _UNRESPONSIVE, reason

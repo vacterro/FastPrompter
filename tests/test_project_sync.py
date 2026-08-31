@@ -248,3 +248,131 @@ def test_special_basename_include(tmp_path):
     found = scan_folder(str(tmp_path), include=include)
     assert ".env" in found
     assert "a.txt" in found
+
+
+# ---------------------------------------------------- W2-001 (audit ALL_3)
+
+
+def test_is_sync_eligible_is_stable_under_transient_state():
+    """W2-001: is_sync_eligible is the CONFIGURATION-only predicate — it
+    must NOT fold size, readability, or current existence into the verdict.
+    A path the include inventory accepts and the exclude inventory rejects
+    only on the second axis (an excluded path) must still come back False
+    on transient failure; a configured eligible path stays True even when
+    the file is presently unreadable, oversized, or absent."""
+    ps_is = ps.is_sync_eligible
+    include = [".txt", ".md"]
+    # configured eligible
+    assert ps_is("a.txt", include) is True
+    assert ps_is("nested/b.md", include) is True
+    # excluded extension never eligible
+    assert ps_is("a.bin", include) is False
+    # excluded via pattern
+    assert ps_is("a.txt", include, exclude=["*.txt"]) is False
+    # recursive=False rejects nested paths
+    assert ps_is("nested/a.txt", include, recursive=False) is False
+    # recursive=True accepts nested paths
+    assert ps_is("nested/a.txt", include, recursive=True) is True
+    # empty / non-string / absolute paths are ineligible
+    assert ps_is("", include) is False
+    assert ps_is("a/../escape.txt", include) is True  # escape guard is elsewhere
+    # non-string tolerate
+    assert ps_is(None, include) is False
+    assert ps_is(123, include) is False
+
+
+def test_scan_folder_exclude_paths_skips_already_mapped(tmp_path):
+    """W2-001: scan_folder with exclude_paths skips already-mapped relative
+    paths before size/readability work — both recursive and flat."""
+    (tmp_path / "a.txt").write_text("a")
+    (tmp_path / "b.md").write_text("b")
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (sub / "c.txt").write_text("c")
+    (sub / "d.txt").write_text("d")
+
+    # Recursive: 'a.txt' and 'sub/c.txt' are already mapped
+    found = ps.scan_folder(str(tmp_path), exclude_paths={"a.txt", "sub/c.txt"})
+    assert "a.txt" not in found
+    assert "sub/c.txt" not in found
+    assert "b.md" in found
+    assert "sub/d.txt" in found
+
+    # Flat: only top-level names matter
+    (tmp_path / "a.txt").write_text("a")
+    flat = ps.scan_folder(str(tmp_path), recursive=False,
+                          exclude_paths={"a.txt"})
+    assert "a.txt" not in flat
+    assert "b.md" in flat
+
+
+def test_scan_folder_cancellation_returns_empty(tmp_path, monkeypatch):
+    """W2-001: a should_cancel callable checked before traversal and during
+    iteration must terminate the scan and return []."""
+    (tmp_path / "a.txt").write_text("a")
+    (tmp_path / "b.md").write_text("b")
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (sub / "c.txt").write_text("c")
+
+    # cancel immediately -> no work done, no listdir, no walk
+    calls = {"n": 0}
+
+    def listdir_fail(path):
+        calls["n"] += 1
+        return os.listdir(path)
+
+    monkeypatch.setattr(ps.os, "listdir", listdir_fail)
+    monkeypatch.setattr(ps.os, "walk", lambda *a, **k: (_ for _ in ()).throw(
+        AssertionError("os.walk must NOT be called when cancelled before start")))
+
+    def cancel_now():
+        return True
+
+    assert ps.scan_folder(str(tmp_path), should_cancel=cancel_now) == []
+    assert calls["n"] == 0, "listdir must not run when cancelled at start"
+
+    # cancel after the first recursive iteration -> partial cancel returns []
+    cancelled = {"flag": False}
+
+    def cancel_after_first():
+        return cancelled["flag"]
+
+    # Recursive: walk runs at least once, sees cancel, returns []
+    # The check happens at the top of every loop iteration.
+    (tmp_path / "a.txt").write_text("a")
+    (tmp_path / "b.md").write_text("b")
+    cancel_seen = {"value": False}
+
+    def cancel_after_listdir():
+        cancel_seen["value"] = True
+        return True
+
+    # Pre-cancel: returns [] BEFORE any os.walk starts (check at function entry)
+    out = ps.scan_folder(str(tmp_path), should_cancel=cancel_after_listdir)
+    assert out == []
+    # Cancel callback WAS consulted exactly once at the entry guard
+    assert cancel_seen["value"] is True
+
+
+def test_scan_folder_uses_is_sync_eligible_for_recursive_filter(tmp_path):
+    """W2-001: scan_folder's per-file include/exclude gate reuses
+    is_sync_eligible's stable predicate before doing the transient
+    size/readability work."""
+    # a .bin file in include=txt config is dropped by is_sync_eligible
+    (tmp_path / "a.txt").write_text("a")
+    (tmp_path / "ignored.bin").write_text("ignored")
+    found = ps.scan_folder(str(tmp_path), include=[".txt"])
+    assert found == ["a.txt"]
+
+
+def test_scan_folder_exclude_paths_normalizes_separators(tmp_path):
+    """W2-001: exclude_paths entries must compare against the POSIX form
+    of the relpath; Windows callers pass backslashes, the scanner produces
+    forward slashes — without normalization the skip silently fails."""
+    (tmp_path / "a.txt").write_text("a")
+    (tmp_path / "b.md").write_text("b")
+    found = ps.scan_folder(str(tmp_path),
+                           exclude_paths={"a.txt", "sub\\c.txt", None, ""})
+    assert "a.txt" not in found
+    assert "b.md" in found

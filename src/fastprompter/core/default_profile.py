@@ -117,7 +117,7 @@ DEFAULT_PROFILE = {
     "files_dock_open": "False",
     "files_dock_width": 185,
     "font_family": "Verdana",
-    "font_size": 13,
+    "font_size": 10,
     "global_hotkey": "Alt+X",
     "global_hotkey_alt": "F15",
     "header_position": "top",
@@ -205,7 +205,7 @@ DEFAULT_PROFILE = {
     "fkey_action": "projects",
     "sound_typewriter": "True",
     "sound_ui": "True",
-    "sound_volume": "1",
+    "sound_volume": "0.36",
     "sound_quick_bar": [
         "file:NEWDAY.wav",
         "file:NEWMONTH.wav",
@@ -535,6 +535,7 @@ DEFAULT_PROFILE = {
     "toggle_sidebar_hotkey": "Alt+D",
     "tray_click_activates": "True",
     "toggle_sidebar_hotkey_alt": "",
+    "toggle_files_hotkey": "Alt+F",
     "typo_check_enabled": "False",
     "typo_color": "#e05555",
     "typo_user_words": [],
@@ -545,7 +546,7 @@ DEFAULT_PROFILE = {
     "trash_vision": "False",
     "tray_visible": "True",
     "two_sided_buttons": "True",
-    "ui_scale": 0.7,
+    "ui_scale": 0.5,
     "window_locked": "False",
     "window_presets": [
         {

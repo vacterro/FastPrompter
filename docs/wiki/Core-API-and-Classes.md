@@ -60,12 +60,14 @@ split-brain instances are impossible by design (T-788).
 
 ### `SoundManager` (`core/sound_manager.py`)
 
-WAV playback for UI clicks, typewriter keys, timer alarms.
+WAV playback for UI clicks, typewriter keys, timer alarms, interval notifications.
 
 **Methods:**
-- `play(name)`, `play_file(file_name)`, `play_click()`, `play_tick()` - dispatch audio by event or literal file
+- `play(name)`, `play_file(file_name)`, `play_click()`, `play_tick()` — dispatch audio by event or literal file
+- `play_sound_ref(ref, level)` — play by event name or `file:path.wav` reference with explicit volume (0.0–1.0); used by interval notifications and timer pool sounds
 - Volume controlled by `sound_volume` setting (0-10); winsound path scaled via `scale_wav_bytes()` / `scaled_wav_path()`
 - `sound_ui` / `sound_typewriter` / per-event flags gate playback
+- Case-insensitive sound matching on selection sync (v0.8.55)
 
 ---
 
@@ -176,6 +178,12 @@ Immutable-snapshot Markdown export with coalescing (v0.8.43–v0.8.45 audit hard
 - Snippet slots are pure array indexes (0..99). A row written by a buggy saver at slot ≥100 is migrated transactionally into the first free 0..99 slot, preserving its data without aliasing a distinct snippet (v0.8.46, T-1025).
 - `DatabaseOverflowError` is raised only when the category is genuinely full (placement would require merging).
 - Silo and archive tables keep the hard fail-closed behaviour — their slots carry identity (folders, queues, colours) that a blind move would orphan.
+
+---
+
+### `typecheck_ui_vocab` (`core/typecheck_ui_vocab.py`)
+
+GENERATED module — Latin UI vocabulary extracted from all 33 i18n language packs. A `frozenset` of ~19k words used by `TypecheckEngine` to avoid false positives on app-translation strings. Regenerate with `python tools/gen_typecheck_ui_vocab.py`.
 
 ---
 

@@ -47,7 +47,7 @@ Configurable button bar. Tokens: cat tabs, search, silo controls, formatting, cl
 - Hierarchy — drag onto another silo to nest; Shift+drag swaps; collapse arrow (▾/▸)
 - Recency heatmap — warm background tint for recently edited
 - Sidebar gaps — user-defined spacer bars; Ctrl+drag to re-park
-- Multi-select — Shift=range, Ctrl=toggle; batch delete/save/clear
+- Multi-select — Shift=range, Ctrl=toggle; batch delete/save/clear (batch delete plays one sound, defers UI rebuild to end, pumps Qt events between items to prevent Not-Responding freezes)
 
 **Snippet Slots (F1-F10):** 10 macro paste buttons per project tab. Right-click to edit name/content. Ctrl+S or double-click opens Snippet Manager dialog.
 
@@ -56,6 +56,8 @@ Configurable button bar. Tokens: cat tabs, search, silo controls, formatting, cl
 **Line gutter:** Left margin — line numbers + fold arrows (▾) + margin marks + heat stripes.
 
 **Syntax highlighting:** `# Headers`, `**bold**`, `*italic*`, `~~strike~~`, `[links](url)`, `` `code` ``, ```code blocks```, `- [ ]` checkboxes, `> blockquotes`, `---` rules.
+
+**Huge document mode (≥500k chars):** structural-only highlighting — headings, blockquotes, lists, numbered lists; inline markup (bold/italic/code/links) skipped to keep the editor responsive. Initial scan limited to first 200 blocks. Centering/realignment also skipped above the threshold.
 
 **Code fences:** Monospace (Consolas default) + single-click copy button + fold to collapse.
 
@@ -90,7 +92,7 @@ Pure-text markdown table. Tab/Shift+Tab walk cells. Tab off last cell grows row.
 | `Settings (Alt+`)` | Theme picker, hotkey rebind, sound, scale, toolbar reorder, silo tabs mode, image paste style, toolbar position |
 | `Sound Settings` | Per-event sound controls — enabled/file/volume/preview; includes the T-735 hotkey events (undo/redo/select-all/settings/help/new/save + generic `hotkey` which ships ON by default). Since v0.8.26 each row carries a painted pictogram (theme-coloured; 13 glyph-shape variants added in v0.8.29 split the confusable pairs after per-event hue tinting was reverted the same release) and the table is zebra-striped with no grid — zebra tones from the theme's alternate-background-color (v0.8.30), never Qt's default white |
 | `Snippet Manager (Ctrl+S)` | Edit F1-F10 snippet names + content |
-| `Timer Dialog (Ctrl+Shift+T)` | Pomodoro + countdown timer setup (sound picks from all 412 shipped sounds, T-741); one-click quick presets — in 10m / in 1h / tonight / tomorrow (T-726); timer list is a table with Name/Time/Remaining columns (T-733); **Interval tab** for 24h schedule notifications (clock-aligned/elapsed firing, active hours, per-rule sound/volume); **Temp tab** for temporary timer with increment, color mode, random pool sound rules; **Sound Quick Bar** (10 favorite sound buttons for quick-pick and store) |
+| `Timer Dialog (Ctrl+Shift+T)` | Pomodoro + countdown timer setup (sound picks from the 411-sound library under `src/fastprompter/sound/`, T-741); one-click quick presets — in 10m / in 1h / tonight / tomorrow (T-726); timer list is a table with Name/Time/Remaining columns (T-733); **Interval tab** for 24h schedule notifications (clock-aligned/elapsed firing, active hours, per-rule sound/volume); **Temp tab** for temporary timer with increment, color mode, random pool sound rules; **Sound Quick Bar** (10 favorite sound buttons for quick-pick and store) |
 | `Queue Master (Alt+Shift+C)` | Watcher queue overview per silo |
 | `Hashtag Dialog (Alt+Shift+T)` | Cross-silo tag search |
 | `Trash Dialog` | Browse/restore soft-deleted silos |

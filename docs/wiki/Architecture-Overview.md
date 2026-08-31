@@ -115,7 +115,7 @@ a partial export never looks finished; (4) atomic validated DB restore
 fail-closed). All backup writes go through the unified safe primitive
 (temp sibling + atomic rename).
 
-**v0.8.43–v0.8.45 audit hardening:** the portable Markdown snapshot captures an *immutable* copy of state at request time rather than the live mutable dict, so the generation dispatched after a save is exactly the committed state that requested it — never uncommitted future edits. While a profile's backup job is active, repeated eligible saves only record that a newer state is wanted and coalesce; the newest state is exported on the next eligible run (PERF-008 / CORE-002 / CORE-003). The filesystem probe negative cache is bounded (≤500 entries) and swept on read, so repeated absent-path lookups don't churn or grow without limit (PERF-004).
+**v0.8.43–v0.8.45 audit hardening:** the portable Markdown snapshot captures an *immutable* copy of state at request time rather than the live mutable dict, so the generation dispatched after a save is exactly the committed state that requested it — never uncommitted future edits. While a profile's backup job is active, repeated eligible saves only record that a newer state is wanted and coalesce; the newest state is exported on the next eligible run (PERF-008 / CORE-002 / CORE-003). The filesystem probe negative cache is bounded (≤500 entries) and swept on read, so repeated absent-path lookups don't churn or grow without limit (PERF-004). The snapshot carries the exact content generation (`content_gen`) of the state it was captured from (W2-008).
 
 ### 11. Typecheck / Typo Checker (`core/typecheck.py`)
 
@@ -132,3 +132,11 @@ Each silo can have an associated two-way file link target (`silo_links` / `silo_
 ### 14. Passed-Event Alert
 
 Timer silos whose countdown has elapsed (passed) are highlighted with a configurable color (`passed_event_color`), making it visually obvious which deadlines have passed at a glance. Toggled via `passed_alert_enabled`.
+
+### 15. Interval Notifications (`main.py` + `ui/timer_dialog.py`)
+
+24h clock-aligned or elapsed-time scheduled reminders. Rules are stored in the `interval_notifs` setting (JSON list). Each rule defines a name, interval in minutes, sound reference, volume, active hours (start/end minute of day), and firing mode (`clock` = aligned to minute-of-day, `elapsed` = interval since last fire). Only the highest-priority rule fires per tick when multiple collide. Default presets: Morning (07:00–11:00), Noon (12:00), Day & Evening (13:00–21:00), Night (22:00–06:00), all at 60-min intervals and 1.0 volume. Rule defaults live in `core/state.py`; W2-005 added the per-rule **Show in top bar** toggle with its next-occurrence countdown beside the clock.
+
+### 16. Periodic Backup (`core/state.py`)
+
+Off-critical-path `.bak` refresh on a daemon thread (PERF-001). Coalesced per profile: at most one job in flight, a request arriving mid-job marks pending and the finishing job drains it. Each job opens its own short-lived source connection — the caller's live connection is never shared across threads. Publication goes through the existing atomic temp-swap + validate-before-swap path, so the previous good `.bak` survives any failure.

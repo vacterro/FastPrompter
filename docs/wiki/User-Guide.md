@@ -14,9 +14,9 @@ High-speed keyboard-driven scratchpad + prompt workbench. Alt+X summons at curso
 
 ### 1. Summon (Alt+X)
 
-Global hotkey. Window appears at mouse cursor. Esc closes. All keystrokes flush to disk via auto-save timer (10s tick) + sync flush on close.
+Global hotkey. Window appears at mouse cursor. Esc closes. A second `global_hotkey_alt` (shipped as `F15`, also reachable via `Shift+F15`) summons the same window. All keystrokes flush to disk via auto-save timer (10s tick) + sync flush on close.
 
-Double-tap Alt+X toggles always-on-top. Shift+Alt+X opens pie menu (theme/scale/tools).
+**Pie menu (Shift+Alt+X):** if the window is visible, picking a snippet inserts it directly into the editor at the cursor (mark_dirty, focus preserved); otherwise it pastes through the clipboard as before. The insert targets the snippet's original category slot, so earlier deleted placeholder entries never shift the selection (T-1084).
 
 ### 2. Projects (Tabs)
 
@@ -125,6 +125,7 @@ folder per slot; the root can be moved in Settings).
 - Drop overlay (4 options): Insert Text, Insert Link, Copy to Files, Shortcut
 - Templates: IN/OUT, Assets, Drafts, Custom
 - Image preview + open with default app
+- Ctrl+Shift+S — export the active silo as .md (format filter remembered in `last_save_format`, no confirmation box, T-1082)
 - Ctrl+click 📁 — export silo text as .md
 
 ### 13. Watcher Engine (Alt+C)
@@ -249,3 +250,27 @@ Each silo can have an associated two-way file link. The file is loaded into the 
 ### 28. Passed-Event Alert
 
 Timer silos whose countdown has elapsed (passed) are highlighted with a configurable color (`passed_event_color`), making it visually obvious which deadlines have passed at a glance. Toggled via `passed_alert_enabled` in Settings.
+
+### 29. Interval Notifications (24h Schedule)
+
+Time-of-day scheduled reminders that fire automatically on a 24-hour clock. Managed in the Timer Dialog (Ctrl+Shift+T) under the **Interval** tab.
+
+**How it works:** Each rule defines a sound, volume, interval (in minutes), and optional active hours (start/end minute of day). Rules fire when the clock reaches the aligned minute (clock mode) or after the interval elapses (elapsed mode). Only the highest-priority rule fires per tick when multiple collide.
+
+**Default presets:**
+- Morning (07:00–11:00) — every 60 min, NEWDAY.wav
+- Noon (12:00) — every 60 min, GENIE.wav
+- Day & Evening (13:00–21:00) — every 60 min, NEWDAY.wav
+- Night (22:00–06:00) — every 60 min, alert_owl2.wav
+
+**Sound Quick Bar:** 10 favorite sound slots shown as buttons below the sound picker. Click to select and preview; right-click to store the current sound into that slot.
+
+**Notifications:** Each rule can show a system tray notification and/or play a sound. Volume is independent per rule (default presets ship at 1.0).
+
+**Top-Bar Countdown (W2-005):** A rule with **Show in top bar** enabled renders its next-occurrence countdown beside the clock — the same boundary the scheduler fires on, so the countdown and the actual reminder never disagree. Temp Timer and a running work/break phase outrank interval countdowns; a disabled rule, a rule outside its active hours, or one with the toggle off shows nothing. After a rule fires, the displayed countdown rolls to the same next occurrence the scheduler will use (clock rules up to a day, >24h rules at midnight).
+
+### 30. Temp Timer
+
+A temporary countdown timer with configurable increment, color mode, and sound rules. Created from the Timer Dialog (Ctrl+Shift+T) under the **Temp** tab.
+
+**Features:** set increment in minutes, choose temperature-based or fixed color, enable/disable delete-after-fire. In **Random Pool** sound mode, multiple sounds can be assigned with time windows (e.g., different sounds for morning vs night).

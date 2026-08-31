@@ -630,24 +630,10 @@ class FormattingMixin:
 
         clean_format = QTextCharFormat()
         clean_format.setFontStyleStrategy(QFont.StyleStrategy.NoAntialias | QFont.StyleStrategy.NoSubpixelAntialias)
-        try:
-            base_size = self._font_size
-        except Exception:
-            base_size = 11
-        font_name = self._font_family
-        try:
-            scale = self._ui_scale
-        except Exception:
-            scale = 1.0
-        font_size = max(8, int(round(base_size * scale)))
-        font = QFont(font_name, font_size)
-        font.setStyleStrategy(
-            QFont.StyleStrategy(
-                int(QFont.StyleStrategy.NoAntialias.value)
-                | int(QFont.StyleStrategy.NoSubpixelAntialias.value)
-            )
-        )
-        clean_format.setFont(font)
+        # Family and point size deliberately stay UNSET here.  They belong to
+        # the document's global default font, not to every character.  Stamping
+        # the current size into the text left an invisible 8/11pt override that
+        # won over later global changes whenever the silo was revisited.
         clean_format.setFontWeight(QFont.Weight.Normal)
         clean_format.setFontItalic(False)
         clean_format.setFontUnderline(False)

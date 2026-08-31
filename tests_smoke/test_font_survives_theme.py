@@ -21,6 +21,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../s
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
+from PyQt6.QtGui import QFont, QTextFormat
 from PyQt6.QtWidgets import QApplication
 
 import fastprompter.core.state as state_mod
@@ -80,3 +81,46 @@ def test_the_font_the_user_picked_is_what_data_says(win):
     assert win.data["font_family"] == PICKED
     assert QApplication.font().family() == PICKED
     win.change_theme("Default")
+
+
+def test_clear_formatting_keeps_base_font_when_ui_is_scaled(win):
+    win.data["font_size"] = 14
+    win.data["ui_scale"] = "0.50"
+    win.apply_font()
+    win.text_area.setPlainText("sample")
+    cursor = win.text_area.textCursor()
+    cursor.select(cursor.SelectionType.Document)
+    win.text_area.setTextCursor(cursor)
+    win.clear_formatting()
+    assert win.text_area.textCursor().charFormat().font().pointSize() == 14
+    assert not win.text_area.textCursor().charFormat().hasProperty(
+        QTextFormat.Property.FontPointSize)
+
+
+def test_global_font_is_authority_when_returning_to_a_silo(win):
+    win.data["font_size"] = 19
+    # Simulate the exact stale-widget state left by an old style polish.  The
+    # document switch must read persisted settings, not copy this 11pt relic.
+    stale = QFont(win.text_area.font())
+    stale.setPointSize(11)
+    win.text_area.setFont(stale)
+    win.data["temp_presets"] = ["first", "second"]
+    win.silo_docs[:] = []
+
+    win._switch_to_slot(0, initial=True)
+    win._switch_to_slot(1)
+    win._switch_to_slot(0)
+
+    assert win.text_area.font().pointSize() == 19
+    assert win.text_area.document().defaultFont().pointSize() == 19
+
+
+def test_programmatic_font_restore_updates_the_global_spinbox(win):
+    win.font_spin.blockSignals(True)
+    win.font_spin.setValue(11)
+    win.font_spin.blockSignals(False)
+
+    win.change_font_size(18)
+
+    assert win.data["font_size"] == 18
+    assert win.font_spin.value() == 18

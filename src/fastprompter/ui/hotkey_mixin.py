@@ -31,6 +31,7 @@ class HotkeyMixin:
         h_aot = self.data.get("always_on_top_hotkey", "Alt+S")
         h_sidebar = self.data.get("toggle_sidebar_hotkey", "Alt+D")
         h_clickout = self.data.get("hide_on_clickout_hotkey", "Alt+A")
+        h_files = self.data.get("toggle_files_hotkey", "Alt+F")
 
         lang = self._current_lang
         if hasattr(self, "cb_top") and not _is_deleted(self.cb_top):
@@ -50,6 +51,7 @@ class HotkeyMixin:
             f"{tr('Always On Top', lang)}: {h_aot}\n"
             f"{tr('Toggle Sidebar', lang)}: {h_sidebar}\n"
             f"{tr('Toggle Hide-on-Clickout', lang)}: {h_clickout}\n"
+            f"{tr('Toggle Files (asset drawer)', lang)}: {h_files}\n"
             f"Ctrl+Q : {tr('Cycle Snap Corners (move across screens)', lang)}\n"
             f"Ctrl+N : {tr('New Empty Snippet', lang)}\n"
             f"Ctrl+S : {tr('Save Snippet', lang)}\n"

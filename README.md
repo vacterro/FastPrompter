@@ -11,7 +11,7 @@ snippets, project scratchpads and small file bundles. No browser, no cloud,
 no account.
 
 [Download portable EXE →](https://github.com/vacterro/FastPrompter/releases)
-<img src="https://img.shields.io/github/v/tag/vacterro/FastPrompter?style=flat-square&label=source%20version" alt="version"> **v0.8.64**
+<img src="https://img.shields.io/github/v/tag/vacterro/FastPrompter?style=flat-square&label=source%20version" alt="version"> **v0.8.65**
 <a href="LICENSE"><img src="https://img.shields.io/github/license/vacterro/FastPrompter?style=flat-square&color=blue" alt="MIT"></a>
 <img src="https://img.shields.io/badge/Windows-0078D6?style=flat-square&logoColor=white" alt="Windows">
 <img src="https://img.shields.io/badge/Portable%20EXE-%E2%89%8828%20MB-important?style=flat-square" alt="Portable">

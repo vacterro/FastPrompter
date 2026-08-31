@@ -9,6 +9,7 @@ from fastprompter.theme.themes import (
     THEMES,
     generate_custom_theme,
 )
+from fastprompter.ui.theme_mixin import ThemeMixin
 
 # ---------------------------------------------------------------------------
 # generate_custom_theme
@@ -249,3 +250,58 @@ class TestThemesDict:
     def test_vintage_classic_is_light(self):
         """Vintage Classic should have a light background (Windows 95 style)."""
         assert THEMES["Vintage Classic"]["raw_colors"]["bg_main"] == "#c0c0c0"
+
+
+class TestFontSizePersistence:
+    def test_change_font_size_marks_settings_only(self):
+        from unittest.mock import MagicMock
+
+        window = ThemeMixin()
+        window.data = {}
+        window.apply_font = MagicMock()
+        window.mark_dirty = MagicMock()
+        ThemeMixin.change_font_size(window, 17)
+        assert window.data["font_size"] == 17
+        window.mark_dirty.assert_called_once_with("settings")
+
+    def test_programmatic_change_syncs_the_global_control(self, monkeypatch):
+        from unittest.mock import MagicMock
+
+        import fastprompter.ui.theme_mixin as theme_mixin
+
+        window = ThemeMixin()
+        window.data = {}
+        window.apply_font = MagicMock()
+        window.mark_dirty = MagicMock()
+        window.font_spin = MagicMock()
+        window.font_spin.minimum.return_value = 6
+        window.font_spin.maximum.return_value = 48
+        window.font_spin.value.return_value = 11
+        monkeypatch.setattr(theme_mixin, "_is_deleted", lambda _widget: False)
+
+        ThemeMixin.change_font_size(window, 17)
+
+        assert window.data["font_size"] == 17
+        window.font_spin.setValue.assert_called_once_with(17)
+        assert window.font_spin.blockSignals.call_args_list[0].args == (True,)
+        assert window.font_spin.blockSignals.call_args_list[-1].args == (False,)
+
+    def test_rendered_floor_and_control_can_never_disagree(self, monkeypatch):
+        from unittest.mock import MagicMock
+
+        import fastprompter.ui.theme_mixin as theme_mixin
+
+        window = ThemeMixin()
+        window.data = {}
+        window.apply_font = MagicMock()
+        window.mark_dirty = MagicMock()
+        window.font_spin = MagicMock()
+        window.font_spin.minimum.return_value = 6
+        window.font_spin.maximum.return_value = 48
+        window.font_spin.value.return_value = 11
+        monkeypatch.setattr(theme_mixin, "_is_deleted", lambda _widget: False)
+
+        ThemeMixin.change_font_size(window, 6)
+
+        assert window.data["font_size"] == 8
+        window.font_spin.setValue.assert_called_once_with(8)

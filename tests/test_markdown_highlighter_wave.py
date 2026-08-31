@@ -249,3 +249,23 @@ def test_sync_one_rehighlight_even_with_conceal_on():
     win._sync_live_preview_highlighter()
     _flush()
     assert win.highlighter.count == 1
+
+
+def test_sync_huge_document_detaches_without_rehighlight():
+    win = _bind(_FakeWin(["x" * 500_000], hl_cls=_CountingHL))
+    win._LARGE_DOC_THRESHOLD = 500_000
+    win.highlighter.count = 0
+    win._sync_live_preview_highlighter()
+    _flush()
+    assert win.highlighter.document() is None
+    assert win.highlighter.count == 0
+
+
+def test_huge_mode_keeps_structure_without_rich_rule_pass():
+    doc = _doc_with(["# Heading", "x" * 500_000])
+    hl = MarkdownHighlighter(doc)
+    hl.set_huge(True)
+    hl.rehighlight()
+    _flush()
+    assert hl._huge is True
+    assert _bold_at(doc, 0)

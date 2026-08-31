@@ -126,10 +126,23 @@ def test_settings_properties_live(win):
 
 
 def test_theme_and_font_apply(win):
+    QApplication.processEvents()
     win.apply_theme()
     win.change_font_size(14)
     assert win.data["font_size"] == 14
-    assert win.text_area.font().pointSize() == max(8, int(round(14 * win._ui_scale)))
+    assert win.text_area.font().pointSize() == 14
+
+
+def test_saved_font_size_survives_silo_document_switch(win):
+    win.data["font_size"] = 17
+    win.data["font_family"] = "Verdana"
+    win.apply_font()
+    win.data["temp_presets"] = ["first", "second"]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    win._switch_to_slot(1)
+    assert win.text_area.font().pointSize() == 17
+    assert win.text_area.document().defaultFont().pointSize() == 17
 
 
 def test_silo_switching_and_line_count_label(win):
@@ -3993,6 +4006,32 @@ def test_each_project_remembers_which_silo_you_were_on(win):
     win.cat_combo.setCurrentIndex(1)
     win.on_tab_changed(1)
     assert win.active_temp_slot == 0, "project B forgot where it was"
+
+
+def test_project_switch_never_full_reconciles_or_syncs_incoming(
+        win, monkeypatch):
+    if win.cat_combo.count() < 2:
+        pytest.skip("needs two projects")
+    push_calls = []
+    switch_calls = []
+    real_switch = win._switch_to_slot
+
+    def push_spy(*args, **kwargs):
+        push_calls.append((args, kwargs))
+
+    def switch_spy(*args, **kwargs):
+        switch_calls.append((args, kwargs))
+        return real_switch(*args, **kwargs)
+
+    monkeypatch.setattr(win, "_push_sync_files", push_spy)
+    monkeypatch.setattr(win, "_switch_to_slot", switch_spy)
+    target = 1 if win.cat_combo.currentIndex() == 0 else 0
+    win.cat_combo.setCurrentIndex(target)
+    _app.processEvents()
+
+    assert not any(kwargs.get("slots") is None for _args, kwargs in push_calls)
+    assert any(kwargs.get("sync_outgoing") is False
+               for _args, kwargs in switch_calls)
 
 
 def test_a_stale_remembered_slot_is_clamped_not_trusted(win):
@@ -10093,12 +10132,20 @@ def test_batch_delete_confirmed_trashes_high_index_first(win, monkeypatch):
     for i in (0, 2, 5):
         win.toggle_silo_selection(i)
     calls = []
-    monkeypatch.setattr(win, "trash_silo",
-                        lambda i, is_archive=False, skip_undo=False: (calls.append(i) or True))
+    event_yields = []
+    monkeypatch.setattr(
+        win, "trash_silo",
+        lambda i, **kwargs: (calls.append((i, kwargs)) or True))
+    monkeypatch.setattr(
+        main_mod.QApplication, "processEvents",
+        lambda *args: event_yields.append(args))
     monkeypatch.setattr(main_mod.QMessageBox, "question",
                         lambda *a, **k: main_mod.QMessageBox.StandardButton.Yes)
     win.batch_delete_selected_silos()
-    assert calls == [5, 2, 0]          # descending so indices stay valid
+    assert [i for i, _kwargs in calls] == [5, 2, 0]  # descending keeps indices valid
+    assert all(kwargs["defer_ui"] is True for _i, kwargs in calls)
+    assert all(kwargs["skip_undo"] is True for _i, kwargs in calls)
+    assert len(event_yields) == len(calls)  # Windows gets a breath per safe item
     assert win._silo_sel() == set()    # cleared after a real delete
 
 

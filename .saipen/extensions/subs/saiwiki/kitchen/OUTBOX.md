@@ -1,14 +1,14 @@
 # OUTBOX
 
-## W-033: ee re-cut @ 2f31e6d (27.08.26) — W2-005 top-bar visibility docs
-- **status:** stale
-- **legacy:** true
-- **summary:** FORCE-FRESH re-cut against HEAD 2f31e6d. User-Guide §29 updated with W2-005 top-bar countdown documentation. Source delta since W-007 (9489083): 9 P2 audit implementations (CORE-003..005, W2-005/006, PERF-003..006) + interval heal fixes. 6 wiki pages updated: User-Guide, Configuration, Module-Structure, Core-API-and-Classes, UI-Components, Architecture-Overview reflect new features. 10 pages byte-identical.
+## W-036: qq re-cut @ 2c0ddfb (31.08.26) — post-T-1162 FREEZE hardening
+- **status:** ready
+- **legacy:** false
+- **summary:** FORCE-FRESH re-cut against HEAD 2c0ddfb with current working-tree delta (fingerprint 2be9803c). Source delta vs W-035 (fingerprint b03c9037): GUI watchdog (heartbeat timer + background thread detects GUI-thread stalls, logs freeze + stack on recovery); category document cache lifecycle (bounded LRU 4 categories / 4M chars, project switches reuse warm QTextDocuments, profile switch resets all caches, evicted docs deferred via deleteLater); tab switch sync suppression (on_tab_changed passes sync_outgoing=False, eliminating Sync-Project push on project switch); batch delete freeze fix (single sound + defer_ui=True + QApplication.processEvents between items, prevents Windows Not-Responding); RECLAIMED instance lock role (frozen/lost owner reclaimed by new instance); incremental fold restore for huge docs (200 blocks per event-loop tick); centering/alignment skip for huge docs; state fingerprint validation in restore_silo_state using cached _document_fingerprint; navigation phase profiling; _LARGE_DOC_BLOCK_THRESHOLD constant (2000); _cached_silo_line_count text-identity cache. 4 wiki pages updated: Architecture-Overview (GUI watchdog, category doc cache, incremental fold, batch delete fix, tab sync suppression), Core-API-and-Classes (RECLAIMED role on InstanceLock), UI-Components (batch delete freeze fix), User-Guide (batch delete fix, category doc cache, huge-doc fold restore). Configuration unchanged (defaults already correct from W-035). Module-Structure unchanged (23/47/5/126). 10 pages byte-identical. Zero source modified.
 - **producer:** saiwiki
-- **source_head:** 2f31e6df521d04b52f1327d5ed55d654b716f65f
-- **source_tree_fingerprint:** git-delta-v1:pending
+- **source_head:** 2c0ddfb42877920740cffd38091512a72ebb627b
+- **source_tree_fingerprint:** git-delta-v1:2be9803c9e32fe41eb073e16e388fa88c71069f5ccff8286abb6f0a1609f1e93
 - **role_revision:** sha256:54a42475a124ab0f27e83d600a284a9cc54d9668029c4828cfc48512b031df13
-- **coverage:** 16 wiki pages in kitchen; User-Guide §29 updated for W2-005 interval top-bar; zero source modified.
-- **payload:** 6 updated wiki pages (User-Guide + 5 supporting pages)
-- **instructions:** 1. Collect via saipen collect saiwiki. 2. Payload is wiki kitchen pages ready for collect. 3. Zero source files modified.
-- **verified:** PASS -- kitchen pages match source; W2-005 top-bar feature documented; all 16 pages present.
+- **coverage:** 16 wiki pages in kitchen; every maintained page re-read against current source; 4 pages updated for FREEZE hardening and T-1162 tab-switch fix; Module-Structure verified identical (23/47/5/126); 10 pages byte-identical to docs/wiki; docs/wiki mirror diverges on the 4 updated pages (collect restores it); zero source modified.
+- **payload:** 4 updated wiki pages (Architecture-Overview, Core-API-and-Classes, UI-Components, User-Guide)
+- **instructions:** 1. Collect via `saipen collect saiwiki` (payload = the 4 updated pages; Configuration and Module-Structure are identical, no collect needed). 2. Pages are kitchen copies — collect applies the payload and verifies docs/wiki mirror. 3. Zero source files modified; no wiki remote writes.
+- **verified:** PASS -- all source claims re-checked against live code (_start_gui_watchdog exists in main.py:268, _category_document_cache bounded LRU in main.py:9372, _restore_folded_blocks_incrementally in main.py:2116, _LARGE_DOC_BLOCK_THRESHOLD 2000 in main.py:9382, RECLAIMED in instance_lock.py:55 and main.py:18337, sync_outgoing parameter on _switch_to_slot in main.py:15218, defer_ui on del_silo in snippet_ops_mixin.py:1424, batch delete processEvents in main.py:16218); docs/wiki == kitchen 10/10 for untouched pages; freshness triple bound to live compute_source_identity + role charter.

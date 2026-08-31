@@ -5,8 +5,15 @@ import os
 # is the standard headless backend and exercises the same code paths.
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-import pytest
 from unittest.mock import patch
+
+import pytest
+from PyQt6.QtWidgets import QApplication
+
+
+@pytest.fixture(scope="session")
+def qapp():
+    return QApplication.instance() or QApplication([])
 
 
 @pytest.fixture(autouse=True, scope="session")
@@ -15,7 +22,7 @@ def mute_sounds():
     patches = []
     
     try:
-        import winsound
+        __import__("winsound")
         patches.append(patch("fastprompter.core.sound_manager.winsound"))
     except ImportError:
         pass

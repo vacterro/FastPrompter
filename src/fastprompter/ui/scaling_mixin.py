@@ -228,7 +228,7 @@ class ScalingMixin:
         self.data["ui_scale"] = f"{value:.2f}"
         # kept equal for backward compatibility with old data readers
         self.data["button_scale"] = str(value)
-        self.mark_dirty()
+        self.mark_dirty("settings")
         if hasattr(self, "btn_button_scale") and not _is_deleted(self.btn_button_scale):
             self.btn_button_scale.setText(f"Scale: {int(value * 100)}%")
         self.apply_scaled_ui()

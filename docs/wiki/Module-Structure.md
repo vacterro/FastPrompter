@@ -28,11 +28,13 @@ src/fastprompter/
 │   ├── project_sync.py         # Sync-Project folder↔silo two-way sync, pure logic (Qt-free)
 │   ├── silo_presets.py         # .md template loader — Fill from preset (T-715)
 │   ├── silo_export.py          # Drag a silo OUT to Explorer as a content-named .md (T-738)
+│   ├── sound/                  # 411 shipped .wav sounds (sound picker, alarms)
 │   ├── sound_manager.py        # Audio playback (clicks, typewriter, alarms)
 │   ├── state.py                # SQLite DB interface + state management
 │   ├── timers.py               # Countdown timer model, due detection
 │   ├── translations.py         # Legacy proxy → i18n package (33 locales)
 │   ├── typecheck.py            # Dictionary-based typo checker for silo text (non-recursive, script-aware)
+│   ├── typecheck_ui_vocab.py   # GENERATED: Latin UI vocabulary from all i18n packs (typecheck dictionary)
 │   ├── typecheck_words.py      # Built-in English word list for the typo checker (~10k words)
 │   │
 │   ├── i18n/                   # 33-locale resource pack (32 languages + Дед)
@@ -148,7 +150,7 @@ src/fastprompter/
 
 ## Module Count Summary
 
-- **core/**: 22 modules + i18n/ (33 locales + 5 infra files = 38) + watcher/ (10 modules)
+- **core/**: 23 modules + i18n/ (33 locales + 5 infra files = 38) + watcher/ (10 modules)
 - **ui/**: 47 modules
 - **utils/**: 5 modules
-- **Total**: 125 `.py` files under `src/fastprompter/` (includes `main.py` + `__init__.py`; + `presets/` ships as a non-code data dir)
+- **Total**: 126 `.py` files under `src/fastprompter/` (includes `main.py` + `__init__.py`; + `presets/` ships as a non-code data dir)

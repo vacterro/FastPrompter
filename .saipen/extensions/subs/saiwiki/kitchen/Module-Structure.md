@@ -28,6 +28,7 @@ src/fastprompter/
 │   ├── project_sync.py         # Sync-Project folder↔silo two-way sync, pure logic (Qt-free)
 │   ├── silo_presets.py         # .md template loader — Fill from preset (T-715)
 │   ├── silo_export.py          # Drag a silo OUT to Explorer as a content-named .md (T-738)
+│   ├── sound/                  # 411 shipped .wav sounds (sound picker, alarms)
 │   ├── sound_manager.py        # Audio playback (clicks, typewriter, alarms)
 │   ├── state.py                # SQLite DB interface + state management
 │   ├── timers.py               # Countdown timer model, due detection
