@@ -1,5 +1,5 @@
 # FastPrompter Wiki — Guides
 
-**v0.8.62**
+**v0.8.63**
 
 FastPrompter translated user guides (DE, EST, JA). Spoken style: friendly grandpa voice, practical, step by step.

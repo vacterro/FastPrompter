@@ -1,0 +1,14 @@
+{
+  "op_id": "scope-5c7781c0ca64446abf6df6acbc4273cf",
+  "paths": {
+    "src/fastprompter/core/state.py": "3257a99d7a6ff12b",
+    "tests/test_instance_lock.py": "291e513449c1527e"
+  },
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "recorded_at": "2026-08-31T01:41:04Z",
+  "schema_version": 1,
+  "source_head": "67e20fcfd2136e736dbcc687c48b280139a402ed",
+  "source_tree_fingerprint": "git-delta-v1:a823dcf59187733316f6d2f46e18fd99e40313fc218d9e77153c355abc8808ce",
+  "ticket": "T-1163"
+}

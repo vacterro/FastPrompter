@@ -20,9 +20,12 @@ import pytest
 from fastprompter.core.instance_lock import (
     HANDED_OFF,
     PRIMARY,
+    RECLAIMED,
     UNRESPONSIVE,
     WAIT_OBJECT_0,
     InstanceLock,
+    _read_owner_pid,
+    _write_owner_pid,
     bootstrap_ownership,
 )
 
@@ -56,7 +59,11 @@ class TestBootstrapOwnership:
         role, _ = bootstrap_ownership(FakeLock(owned=False), lambda: True)
         assert role == HANDED_OFF
 
-    def test_second_instance_refused_when_owner_silent(self):
+    def test_second_instance_refused_when_owner_silent(self, monkeypatch):
+        """A silent owner is unresponsive, not a kill target. Isolated from
+        any real ``owner.pid`` left in the data dir by a prior app run."""
+        monkeypatch.setattr(
+            "fastprompter.core.instance_lock._owner_is_stale", lambda: False)
         role, reason = bootstrap_ownership(
             FakeLock(owned=False, reason="another FastPrompter instance owns the database"),
             lambda: False)
@@ -82,6 +89,88 @@ class TestBootstrapOwnership:
         role, _ = bootstrap_ownership(
             FakeLock(owned=False, raise_on_acquire=True), lambda: True)
         assert role != PRIMARY
+
+    def test_frozen_owner_live_pid_is_reclaimed(self, monkeypatch):
+        """A live owner whose event loop is hung (no IPC ACK within grace)
+        is identified by the recorded owner PID, terminated, and the mutex
+        re-acquired. The PID file is the gate: only a PID we wrote earlier
+        (a FastPrompter) is killed."""
+        _write_owner_pid(999999)
+        # 1) recorded owner is ALIVE (typical frozen-but-alive case) -> RECLAIMED
+        monkeypatch.setattr(
+            "fastprompter.core.instance_lock.is_pid_alive", lambda pid: True)
+        monkeypatch.setattr(
+            "fastprompter.core.instance_lock._owner_is_stale", lambda: True)
+        monkeypatch.setattr(
+            "fastprompter.core.instance_lock.kill_pid",
+            lambda pid, timeout_s=2.0: (True, "process terminated"))
+        # 1st acquire: False (someone else holds it). 2nd: True (reclaimed).
+        original_acquire = FakeLock.acquire
+        calls = {"n": 0}
+
+        def fake_acquire(self, timeout_ms=0):
+            calls["n"] += 1
+            return calls["n"] >= 2, ""
+
+        try:
+            FakeLock.acquire = fake_acquire
+            role, reason = bootstrap_ownership(
+                FakeLock(owned=False), lambda: False)
+        finally:
+            FakeLock.acquire = original_acquire
+        assert role == RECLAIMED
+        assert "999999" in reason
+        assert "frozen" in reason
+
+    def test_dead_owner_pid_stays_unresponsive(self, monkeypatch):
+        """A dead owner releases its mutex automatically; the OS path is
+        faster than our kill. Stays UNRESPONSIVE here so a dead-but-still-
+        held lock is a real signal of a wedged OS, not a kill target."""
+        _write_owner_pid(999999)
+        monkeypatch.setattr(
+            "fastprompter.core.instance_lock.is_pid_alive", lambda pid: False)
+        role, _ = bootstrap_ownership(FakeLock(owned=False), lambda: False)
+        assert role == UNRESPONSIVE
+
+    def test_no_owner_pid_file_stays_unresponsive(self, monkeypatch):
+        """A missing PID file must not be auto-reclaimed — killing a
+        process we cannot identify is the wrong side of the line."""
+        monkeypatch.setattr(
+            "fastprompter.core.instance_lock._read_owner_pid", lambda: None)
+        role, _ = bootstrap_ownership(FakeLock(owned=False), lambda: False)
+        assert role == UNRESPONSIVE
+
+    def test_owner_pid_file_round_trips(self, tmp_path, monkeypatch):
+        """The PID file is the cross-process recovery signal: the owner
+        writes it on startup, the next launch reads it. Garbage in the
+        file must NOT be read as a numeric PID."""
+        f = tmp_path / "owner.pid"
+        monkeypatch.setattr(
+            "fastprompter.core.instance_lock._OWNER_PID_FILE", str(f))
+        _write_owner_pid(12345)
+        assert _read_owner_pid() == 12345
+        f.write_text("not a number")
+        assert _read_owner_pid() is None
+        f.write_text("")
+        assert _read_owner_pid() is None
+        try:
+            f.unlink()
+        except OSError:
+            pass
+        assert _read_owner_pid() is None
+
+    def test_live_owner_pid_is_reclaimable(self, tmp_path, monkeypatch):
+        """A recorded live owner is eligible for frozen-process recovery."""
+        f = tmp_path / "owner.pid"
+        monkeypatch.setattr(
+            "fastprompter.core.instance_lock._OWNER_PID_FILE", str(f))
+        _write_owner_pid(12345)
+        monkeypatch.setattr(
+            "fastprompter.core.instance_lock.is_pid_alive", lambda pid: pid == 12345)
+        assert _read_owner_pid() == 12345
+        from fastprompter.core.instance_lock import _owner_is_stale
+        assert _owner_is_stale() is True
+
 
 
 def _hold_mutex_script(name):

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.8.63 - 2026-08-31
+
+- **Freeze root-cause fix (T-1162, follow-up):** the periodic `.bak` backup
+  scheduling ran on the GUI autosave path and blocked on the backup
+  coordinator lock (`_BACKUP_LOCK`), stalling the window mid-typing on heavy
+  profiles. The lock is now acquired non-blocking (`acquire(blocking=False)`)
+  with coalescing, so a busy backup worker can never hold the GUI thread.
+  `test_instance_lock` ownership isolation also fixed.
+
 ## 0.8.62 - 2026-08-30
 
 - **Audit ALL_3 residual delta (T-1159):** frozen-instance ownership reclaim — a live but hung owner (no IPC ACK within grace) is identified via its recorded owner-PID file and reclaimed (`RECLAIMED`); a missing/foreign/dead PID is never a kill target (`UNRESPONSIVE`). Sync-Project gains the configuration-only `is_sync_eligible` predicate, `exclude_paths` skip-before-work and `should_cancel` early-termination in `scan_folder`. Settings-domain dirty routing now marks `"settings"` for font-size / font-family / scale changes so a Ctrl +/- or font change persists without a full-database re-scan. Shipped defaults baked: `font_size` 10, `ui_scale` 0.5, `sound_volume` 0.36. Typecheck UI vocabulary regenerated to match the expanded translation packs.

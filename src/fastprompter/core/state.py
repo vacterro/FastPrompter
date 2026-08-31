@@ -834,7 +834,7 @@ def _backup_atomically(source_conn, dest_path, validate=True):
 # so a profile switch or concurrent save cannot corrupt the copy.
 _BACKUP_INFLIGHT = {}
 _BACKUP_PENDING = {}
-_BACKUP_LOCK = None  # lazy threading.Lock (module stays import-safe pre-threading)
+_BACKUP_LOCK = None
 
 # CORE-003: recovery-copy publication coordinator. Both the periodic worker
 # and the startup snapshot worker publish into the same `<db>.bak` destination,
@@ -870,13 +870,18 @@ def _begin_backup_generation(db_path):
     if _BACKUP_LOCK is None:
         _BACKUP_LOCK = threading.Lock()
     key = _backup_key(db_path)
-    with _BACKUP_LOCK:
+    acquired = _BACKUP_LOCK.acquire(blocking=False)
+    if not acquired:
+        return None
+    try:
         if _BACKUP_DRAINING.get(key):
             return None
         gen = _BACKUP_GENERATION.get(key, 0) + 1
         _BACKUP_GENERATION[key] = gen
         _BACKUP_REVOKED.pop(key, None)
         return key, gen
+    finally:
+        _BACKUP_LOCK.release()
 
 
 def _backup_publication_authorized(key, generation):
@@ -960,16 +965,36 @@ def _schedule_periodic_backup(db_path, profile_id, on_published=None):
     the previous good ``.bak`` survives any failure. ``on_published`` fires
     ONLY after a successful swap — the throttle may advance on success alone."""
     import threading
+    import time as _t
 
     global _BACKUP_LOCK
     if _BACKUP_LOCK is None:
         _BACKUP_LOCK = threading.Lock()
     key = str(profile_id)
-    with _BACKUP_LOCK:
+    _acq_start = _t.monotonic()
+    acquired = _BACKUP_LOCK.acquire(blocking=False)
+    if not acquired:
+        _BACKUP_PENDING[key] = True
+        try:
+            from fastprompter.core.logging import logger as _blog
+            _blog.debug("backup lock busy -> coalesced profile=%s wait=%.1fms", key, (_t.monotonic() - _acq_start) * 1000)
+        except Exception:
+            pass
+        return
+    try:
         if _BACKUP_INFLIGHT.get(key):
             _BACKUP_PENDING[key] = True
             return
         _BACKUP_INFLIGHT[key] = True
+    finally:
+        _BACKUP_LOCK.release()
+    _wait_ms = (_t.monotonic() - _acq_start) * 1000
+    if _wait_ms > 50:
+        try:
+            from fastprompter.core.logging import logger as _blog2
+            _blog2.warning("backup lock wait %.1fms profile=%s", _wait_ms, key)
+        except Exception:
+            pass
 
     dest = db_path + ".bak"
 
@@ -1526,6 +1551,7 @@ class FastPrompterState:
         # mutating save waits on the current context's Event.
         self._startup_backup_ctx = None
         self._startup_backup_gen = 0
+        self._startup_backup_gate_waived = False
         self.init_db()
 
     @property
@@ -1686,6 +1712,7 @@ class FastPrompterState:
         self._startup_backup_gen += 1
         ctx = _StartupBackupContext(self.db_path, self._startup_backup_gen)
         self._startup_backup_ctx = ctx
+        self._startup_backup_gate_waived = False
         src = self.db_path
         # CORE-003: the startup snapshot publishes into the SAME `.bak`
         # destination as the periodic worker, so it must claim the same
@@ -2063,12 +2090,13 @@ class FastPrompterState:
         if not (scan_settings or scan_snippets or scan_temp or scan_arc):
             return True
 
-        # T-818: the first mutation of a current-schema DB must not outrun the
-        # background startup safety snapshot. The snapshot job does not hold
-        # ``_lock``, so waiting here for it to finish cannot deadlock.
         ready = self._startup_backup_ready
-        if ready is not None and not ready.is_set():
-            ready.wait()
+        if (ready is not None and not ready.is_set()
+                and not self._startup_backup_gate_waived):
+            self._startup_backup_gate_waived = True
+            logger.warning(
+                "startup safety snapshot is still running; "
+                "proceeding with authoritative save without blocking GUI")
 
         if ui_settings:
             self.data.update(ui_settings)
