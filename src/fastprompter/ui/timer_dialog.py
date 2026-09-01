@@ -859,11 +859,6 @@ class TimerDialog(QDialog):
         self.btn_limit = QPushButton(tr("Catch limit", self.lang))
         self.btn_limit.clicked.connect(self.add_limit_window)
         limit_btns.addWidget(self.btn_limit, 1)
-
-        self.btn_scan = QPushButton(tr("Scan agents", self.lang))
-        self.btn_scan.setToolTip(tr("Scan agents for usage and rate limits", self.lang))
-        self.btn_scan.clicked.connect(self.scan_agent_limits)
-        limit_btns.addWidget(self.btn_scan, 1)
         timing_lay.addLayout(limit_btns)
 
         self.lbl_limit_hint = QLabel("")
@@ -1970,123 +1965,6 @@ class TimerDialog(QDialog):
         self.lbl_limit_hint.setText(describe(timer))
         return timer
 
-    def scan_agent_limits(self):
-        """Sweep the configured agents and turn what they say into timers.
-
-        One timer per limited agent, named after it. An agent that already
-        has a limit timer is UPDATED rather than duplicated - scanning twice
-        must not leave two countdowns for the same reset.
-        """
-        from fastprompter.core.limits import assume_window
-        from fastprompter.core.watcher.limit_scan import limited, scan_all
-
-        try:
-            adapters, _limits, _errors = self.main_win.watcher_adapters()
-        except Exception as exc:
-            self.lbl_limit_hint.setText(
-                tr("Could not read the agent config: {}", self.lang).format(exc))
-            return []
-
-        err = self._behavior.validate()
-        if err is not None:
-            self._behavior.select_bad_row()
-            self.lbl_limit_hint.setText(err)
-            return []
-        self.btn_scan.setEnabled(False)
-        self.btn_scan.setText(tr("Scanning…", self.lang))
-        QApplication.processEvents()
-        try:
-            results = scan_all(adapters)
-        except Exception as exc:
-            self.lbl_limit_hint.setText(str(exc)[:120])
-            return []
-        finally:
-            self.btn_scan.setEnabled(True)
-            self.btn_scan.setText(tr("Scan agents", self.lang))
-
-        hit = limited(results)
-        made = []
-        for res in hit:
-            assumed = res.state.resets_at is None
-            target = res.state.resets_at or assume_window(
-                hours=self.spin_limit_hours.value())
-            name = tr("{} limit", self.lang).format(res.name) \
-                if "{}" in tr("{} limit", self.lang) else f"{res.name} limit"
-
-            limit_key = res.name
-            existing = next(
-                (t for t in self.main_win.timers
-                 if t.kind == KIND_ALARM and (
-                     t.auto_limit_key == limit_key or
-                     (t.auto_limit_key is None and t.name == name)
-                 )), None)
-            
-            if existing is not None:
-                # Adopt/refresh the matched timer unconditionally — both the
-                # exact-reset path (resets_at known) and the assumed-window
-                # path (resets_at is None). Skipping the update on the assumed
-                # path left a legacy keyless timer stale, keyless and
-                # duplicable after a language switch: it matched only by name,
-                # which is localized and changes with the UI language, so a
-                # re-scan could not find it and created a second countdown.
-                # CORE-011: refresh the SCHEDULING state too, not just the
-                # identity/target. A legacy or previously-fired one-shot adopted
-                # as a new auto-limit must become an active rolling interval
-                # timer on the CURRENT configured window: clear fired, install
-                # interval recurrence and the refreshed interval_minutes. Only
-                # the user's intended notification/sound prefs are preserved.
-                existing.target = target
-                existing.enabled = True
-                existing.auto_limit_key = limit_key
-                existing.name = name
-                existing.fired = False
-                existing.repeat = REPEAT_INTERVAL
-                existing.interval_minutes = self._interval_minutes()
-                if getattr(existing, "repeat_anchor", None) is not None \
-                        and existing.repeat != REPEAT_MONTHLY \
-                        and existing.repeat != REPEAT_YEARLY:
-                    existing.repeat_anchor = None
-                made.append(existing)
-                continue
-            timer = limit_window(
-                name,
-                hours=self.spin_limit_hours.value(),
-                anchor=target - datetime.timedelta(
-                    hours=self.spin_limit_hours.value()),
-                description=(tr("assumed window", self.lang) if assumed
-                             else res.state.matched[:60]),
-                **self._behavior.timer_kwargs(),
-            )
-            timer.auto_limit_key = limit_key
-            self.main_win.timers.append(timer)
-            made.append(timer)
-
-        if made:
-            self._timer_changed(alarm=True, calendar=False)
-
-        self.lbl_limit_hint.setText(self._scan_summary(results, made))
-        return made
-
-    def _scan_summary(self, results, made):
-        """One line the user can act on: who is capped, who could not answer."""
-        if not results:
-            return tr("No agents configured for the debugger.", self.lang)
-        capped = [r for r in results if r.reachable and r.state.reached]
-        clear = [r for r in results if r.reachable and not r.state.reached]
-        unreachable = [r for r in results if not r.reachable]
-        bits = []
-        if capped:
-            bits.append(tr("limited: {}", self.lang).format(
-                ", ".join(r.name for r in capped))
-                if "{}" in tr("limited: {}", self.lang)
-                else "limited: " + ", ".join(r.name for r in capped))
-        if clear:
-            bits.append(f"clear: {len(clear)}")
-        if unreachable:
-            bits.append(f"no answer: {len(unreachable)}")
-        if made:
-            bits.append(f"{len(made)} timer(s) set")
-        return " · ".join(bits) or tr("Nothing to report.", self.lang)
 
     def test_now(self):
         """Fire a throwaway copy in 5s — sound and popup, nothing saved.

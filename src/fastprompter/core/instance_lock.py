@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 
 from fastprompter.core.logging import logger
 
@@ -119,21 +120,47 @@ def is_pid_alive(pid: int) -> bool:
 
 
 def kill_pid(pid: int, timeout_s: float = 2.0) -> tuple[bool, str]:
-    """Terminate one specific process. Returns (ok, detail)."""
+    """Terminate one specific process. Returns (ok, detail).
+
+    Tries ``TerminateProcess`` first (cheap, in-process). If that fails or
+    the process refuses to die (DPC/IRQL hang, killed system thread, etc.)
+    falls back to ``taskkill /F /T`` which uses NtTerminateProcess directly
+    and is the only reliable way to kill a stuck Win32 process from user
+    mode. ``/T`` walks the child tree so a frozen launcher does not leave
+    a live worker behind that immediately re-grabs the mutex.
+    """
     import ctypes
+    import subprocess
     if not pid or pid <= 0:
         return False, "no pid"
     h = ctypes.windll.kernel32.OpenProcess(
         0x0001, False, int(pid))  # PROCESS_TERMINATE
-    if not h:
-        return False, "open failed"
+    if h:
+        try:
+            if ctypes.windll.kernel32.TerminateProcess(h, 1):
+                return True, "process terminated"
+        except Exception:
+            pass
+        finally:
+            ctypes.windll.kernel32.CloseHandle(h)
+    # TerminateProcess failed or the process handle could not be opened
+    # (access denied, etc.). Try the kernel-level fallback: taskkill with /F
+    # force and /T to reap any child processes that might re-create the
+    # writer.
     try:
-        ok = ctypes.windll.kernel32.TerminateProcess(h, 1)
-        if not ok:
-            return False, "terminate failed"
-    finally:
-        ctypes.windll.kernel32.CloseHandle(h)
-    return True, "process terminated"
+        completed = subprocess.run(
+            ["taskkill", "/F", "/T", "/PID", str(int(pid))],
+            capture_output=True, text=True, timeout=timeout_s)
+        if completed.returncode == 0:
+            return True, "process terminated (taskkill)"
+        if completed.returncode == 128:
+            # "no such process" — already gone; the OS has released the mutex
+            return True, "process already gone"
+        return False, f"terminate failed; taskkill {completed.returncode}"
+    except subprocess.TimeoutExpired:
+        return False, "terminate failed; taskkill timeout"
+    except Exception as exc:
+        return False, f"terminate failed; taskkill {exc}"
 
 
 def _load_kernel32():
@@ -260,14 +287,20 @@ def bootstrap_ownership(lock, ipc_handover):
         pid = _read_owner_pid()
         ok, detail = kill_pid(pid)
         if ok:
-            # The dead/frozen owner's mutex is released by the OS on
-            # termination; try once more to become the writer.
-            try:
-                owned2, _reason2 = lock.acquire()
-            except Exception as exc:
-                return _UNRESPONSIVE, f"{reason}; reclaim failed: {exc}"
-            if owned2:
-                return RECLAIMED, f"frozen owner {pid} {detail}; lock reclaimed"
+            # TerminateProcess returns before the kernel finishes closing
+            # the owner's mutex handles — the OS releases the abandoned
+            # mutex asynchronously (the owning thread must unwind, the
+            # handle table must be cleaned). A single immediate acquire
+            # often races; poll with a 3-second deadline instead.
+            deadline = time.monotonic() + 3.0
+            while time.monotonic() < deadline:
+                try:
+                    owned2, _reason2 = lock.acquire()
+                except Exception as exc:
+                    return _UNRESPONSIVE, f"{reason}; reclaim failed: {exc}"
+                if owned2:
+                    return RECLAIMED, f"frozen owner {pid} {detail}; lock reclaimed"
+                time.sleep(0.15)
             return _UNRESPONSIVE, f"frozen owner {pid} {detail}; lock still held"
         return _UNRESPONSIVE, f"frozen owner {pid} kill failed ({detail})"
     return _UNRESPONSIVE, reason

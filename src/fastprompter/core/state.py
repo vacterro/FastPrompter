@@ -2354,6 +2354,11 @@ class FastPrompterState:
                 elif key == 'hide_font': continue
                 else: self.data[key] = raw
 
+            # Migration: old codex_gauges -> provider-neutral limit_gauges.
+            # Preserve the user's existing choice; new key wins if both set.
+            if "limit_gauges" not in self.data and "codex_gauges" in self.data:
+                self.data["limit_gauges"] = self.data["codex_gauges"]
+
             for cat in self.data['cats_order']:
                  if cat not in self.data['categories']: self.data['categories'][cat] = [None]*100
 

@@ -1357,6 +1357,9 @@ class FastPrompter(
             return
         if hasattr(self, "analog_clock"):
             self.analog_clock.sync()
+        if hasattr(self, "limit_gauges"):
+            self.limit_gauges.sync()
+        self._update_limit_status()
         show_date = self.data.get("show_date_rect", "True") == "True"
         if not show_date:
             self.lbl_date.setVisible(False)
@@ -1408,6 +1411,40 @@ class FastPrompter(
 
         self._apply_date_alert_style()
         self._update_timer_label()
+
+    def _update_limit_status(self):
+        """Status text shown in Clock settings — account count or error.
+
+        Update source: service callback (any sweep completes) and the per-
+        second date timer (one line of text, near-free).
+        """
+        lbl = getattr(self, "lbl_limit_status", None)
+        if lbl is None:
+            return
+        svc = getattr(self, "limit_service", None)
+        if svc is None:
+            lbl.setVisible(False)
+            return
+        snap = svc.state_copy
+        accounts = snap.accounts
+        n = len(accounts)
+        snapshots = snap.snapshots
+        ok = sum(1 for s in snapshots.values()
+                 if getattr(s, "status", None) == "OK")
+        err = sum(1 for s in snapshots.values()
+                  if getattr(s, "status", None) in ("ERROR", "AUTH_REQUIRED"))
+        if snap.status == "DISCOVERING":
+            lbl.setText("scanning accounts…")
+        elif n == 0:
+            lbl.setText("no accounts found (~/.codex, ~/.codex-*, ~/.claude)")
+        elif not snapshots:
+            lbl.setText(f"discovered {n} account(s) — probing…")
+        elif err:
+            lbl.setText(f"{ok}/{n} OK · {err} error(s) · "
+                        "open gauges for details")
+        else:
+            lbl.setText(f"{ok}/{n} accounts OK")
+        lbl.setVisible(True)
 
     def _load_missed_ids(self):
         """Load the persisted missed-event IDs from the active profile data."""
@@ -7634,6 +7671,25 @@ class FastPrompter(
         self.lbl_timer.setVisible(False)
         self.header_layout.addWidget(self.lbl_timer)
 
+        # AI usage gauges: one 3px bar-pair (5h | weekly) per provider account,
+        # filled bottom-up by remaining percent. Provider-neutral; driven by
+        # UsageLimitService. Hidden unless master enabled.
+        from fastprompter.core.usage_limits.service import UsageLimitService
+        from fastprompter.ui.limit_gauges import LimitGauges
+        self.limit_service = UsageLimitService()
+        self.limit_gauges = LimitGauges(self, self.limit_service)
+        self.limit_gauges.setToolTip(tr(
+            "AI usage limits (5h + weekly remaining)\nClick to refresh",
+            getattr(self, "_current_lang", "EN")))
+        self.header_layout.addWidget(self.limit_gauges)
+
+        # Status label for the Clock settings group — shows account count or
+        # error so the user knows whether the gauges found anything.
+        self.lbl_limit_status = QLabel("")
+        self.lbl_limit_status.setStyleSheet("padding: 0 4px; color: #9C9371; font-size: 10px;")
+        self.lbl_limit_status.setVisible(False)
+        self.limit_service.add_callback(lambda: self._update_limit_status())
+
         self.btn_pin_top = QPushButton("📌")
         self.btn_pin_top.setCheckable(True)
         self.btn_pin_top.setChecked(self.data.get("always_on_top", "True") == "True")
@@ -8417,6 +8473,19 @@ class FastPrompter(
                 or self._update_date_label()
             ),
         )
+        self.cb_limit_gauges = create_footer_cb(
+            "📊 AI Limit Gauges",
+            "Show AI usage-limit bars (5h + weekly remaining) next to the\n"
+            "timer. Auto-detects every Codex account and Claude installation.\n"
+            "Click the bars to refresh; hover for details.",
+            self.data.get("limit_gauges",
+                          self.data.get("codex_gauges", "False")) == "True",
+            lambda checked: (
+                self.data.update({"limit_gauges": "True" if checked else "False"})
+                or self.mark_dirty()
+                or self._update_date_label()
+            ),
+        )
         self.cb_sound = create_footer_cb(
             "🔊 UI Sounds",
             "Play click sounds for buttons and actions.\n"
@@ -9078,6 +9147,7 @@ class FastPrompter(
             _settings_group("Clock", [
                 self.cb_analog_clock, self.cb_date_rect, self.cb_date_seconds,
                 self.cb_date_ampm, self.cb_timer_minutes,
+                self.cb_limit_gauges, self.lbl_limit_status,
             ]),
             _settings_group("Date", [
                 self.cb_date_daypart, self.cb_date_emoji,
@@ -9843,6 +9913,7 @@ class FastPrompter(
             ("cb_date_emoji", "date_emoji", "True"),
             ("cb_date_text_month", "date_text_month", "False"),
             ("cb_date_ampm", "date_ampm", "False"),
+            ("cb_limit_gauges", "limit_gauges", "False"),
             ("cb_sound", "sound_ui", "True"),
             ("cb_typewriter", "sound_typewriter", "False"),
             ("cb_trash_vision", "trash_vision", "False"),
@@ -10298,7 +10369,7 @@ class FastPrompter(
                         "cb_wrap", "cb_line_numbers", "cb_line_marks", "cb_zebra", "cb_hide_shortkeys",
                         "cb_double_line", "cb_bold_titles", "cb_silo_pinned_gap",
                         "cb_date_rect", "cb_date_seconds", "cb_analog_clock",
-                        "cb_date_daypart", "cb_date_emoji", "cb_date_text_month", "cb_date_ampm", "cb_sound",
+                        "cb_date_daypart", "cb_date_emoji", "cb_date_text_month", "cb_date_ampm", "cb_limit_gauges", "cb_sound",
                         "cb_typewriter", "cb_trash_vision", "cb_silo_color_box",
                         "cb_typo_check", "cb_passed_alert", "cb_sync_recursive",
                         "cb_sync_live"):
@@ -18394,15 +18465,81 @@ def setup_exception_hook():
     return None
 
 
+def _find_fastprompter_pids() -> list[int]:
+    """Return PIDs of python/pythonw processes whose command line mentions
+    FastPrompter (excluding the current process)."""
+    import subprocess
+    my_pid = os.getpid()
+    try:
+        ps_cmd = (
+            "Get-CimInstance Win32_Process "
+            "-Filter \"Name like '%python%' or Name like '%pyw%'\" "
+            "| Where-Object {{ "
+            "  $_.ProcessId -ne {my} -and "
+            "  $_.CommandLine -match 'FastPrompter' "
+            "}} | Select-Object -ExpandProperty ProcessId"
+        ).format(my=my_pid)
+        r = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", ps_cmd],
+            capture_output=True, text=True, timeout=15)
+        return [int(line.strip()) for line in r.stdout.splitlines()
+                if line.strip().isdigit()]
+    except Exception:
+        return []
+
+
+def _force_kill_frozen_owner() -> bool:
+    """Hard-kill any live FastPrompter owner whose IPC is silent.
+
+    Two strategies:
+      1. owner.pid file → taskkill /F /T (fast path)
+      2. WMI process-table sweep → taskkill each candidate
+
+    Returns True only when at least one match was actually terminated
+    (returncode 0). ``taskkill`` exit code 128 (process-not-found) does
+    NOT count — the recorded PID is stale; the real mutex holder lives
+    elsewhere and strategy 2 must find it.
+    """
+    import subprocess
+
+    def taskkill(pid: int) -> bool:
+        try:
+            r = subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(pid)],
+                capture_output=True, timeout=10)
+            # 0 = terminated; 128 = already gone (stale PID)
+            return r.returncode == 0
+        except Exception:
+            return False
+
+    # Strategy 1 — PID file
+    try:
+        from fastprompter.core.instance_lock import _read_owner_pid
+        pid = _read_owner_pid()
+        if pid and pid != os.getpid() and taskkill(pid):
+            return True
+    except Exception:
+        pass
+
+    # Strategy 2 — process-table sweep
+    for pid in _find_fastprompter_pids():
+        if pid != os.getpid() and taskkill(pid):
+            return True
+
+    return False
+
+
 def main_entry():
     from fastprompter.core.instance_lock import (
         HANDED_OFF,
         PRIMARY,
         RECLAIMED,
+        UNRESPONSIVE,
         InstanceLock,
         bootstrap_ownership,
     )
     from fastprompter.core.ipc_server import request_show
+    from fastprompter.core.logging import logger as _log
 
     # Writer ownership is the process's, not the socket's. If a live instance
     # already owns the database mutex we must NOT open a second writer no
@@ -18414,18 +18551,32 @@ def main_entry():
         lock.release()
         if role == HANDED_OFF:
             return
-        # UNRESPONSIVE / FAILED: a live owner exists (or ownership could not
-        # be established). Refuse to become a second writer. Show the
-        # diagnostic only when the owner's server was NEVER seen (genuinely
-        # frozen or crashed). If the server was seen but didn't ACK, the
-        # owner is alive but busy — exit silently; the window will come to
-        # front when the event loop catches up.
-        from fastprompter.core.logging import logger as _log
         _log.warning("FastPrompter startup refused: %s", reason)
         from fastprompter.core.ipc_server import _LAST_SAW_SERVER
-        if not _LAST_SAW_SERVER:
+        if _LAST_SAW_SERVER:
+            return  # owner alive but busy — exit silently; window comes to front
+        # Owner was never seen via IPC — genuinely frozen or crashed. Try to
+        # force-kill it via PID file or process-table sweep, then retry.
+        # The retry loop handles two realities: (a) a stale owner.pid may
+        # point to a dead process — kill claims 0 hits, WMI sweep finds the
+        # real holder on the next attempt; (b) after kill the OS needs a
+        # moment to release the abandoned mutex, so a fresh bootstrap may
+        # still see a live owner briefly.
+        if role == UNRESPONSIVE:
+            import time
+            for attempt in range(3):
+                if not _force_kill_frozen_owner():
+                    break
+                _log.info("killed frozen owner (attempt %s); retrying", attempt + 1)
+                time.sleep(0.3)
+                lock = InstanceLock()
+                role, reason = bootstrap_ownership(lock, request_show)
+                if role in (PRIMARY, RECLAIMED):
+                    break
+                lock.release()
+        if role not in (PRIMARY, RECLAIMED):
             _show_startup_diagnostic(reason)
-        return
+            return
 
     # Abandoned ownership means the previous owner died mid-run: its database
     # write may have been interrupted. Run a lightweight read-only consistency
