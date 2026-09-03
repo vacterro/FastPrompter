@@ -1,0 +1,54 @@
+{
+  "attempt_ids": [],
+  "created_at": "2026-09-03T17:47:36Z",
+  "external_effects": [],
+  "files": [
+    {
+      "blob": "blobs/3124d69ec3168b615e6704c2684bae7175d3c9e33575b3c39c571917a4640af2",
+      "path": "docs/wiki/Core-API-and-Classes.md",
+      "sha256": "3124d69ec3168b615e6704c2684bae7175d3c9e33575b3c39c571917a4640af2",
+      "state": "file"
+    },
+    {
+      "blob": "blobs/fbb41a0c2e1405e7a886120c7795a5ebf3c18a564355de86247d4e325664c2e6",
+      "path": "src/fastprompter/core/i18n/en.py",
+      "sha256": "fbb41a0c2e1405e7a886120c7795a5ebf3c18a564355de86247d4e325664c2e6",
+      "state": "file"
+    },
+    {
+      "blob": "blobs/8cf49df2340e63500452b5bd3ed93ffa53a582a20b5794d1b05b7283e1406dae",
+      "path": "src/fastprompter/core/watcher/limit_scan.py",
+      "sha256": "8cf49df2340e63500452b5bd3ed93ffa53a582a20b5794d1b05b7283e1406dae",
+      "state": "file"
+    },
+    {
+      "blob": "blobs/e87fa60b8ef52d8e0fd461a12eb4c485d27d450a37630e64fe3b307d9f960320",
+      "path": "src/fastprompter/ui/timer_dialog.py",
+      "sha256": "e87fa60b8ef52d8e0fd461a12eb4c485d27d450a37630e64fe3b307d9f960320",
+      "state": "file"
+    },
+    {
+      "blob": "blobs/c0c396304f785aa4be1a9ee04378d13c4782a3fdcf12177d935207f1ce90cf8c",
+      "path": "tests/test_limit_scan.py",
+      "sha256": "c0c396304f785aa4be1a9ee04378d13c4782a3fdcf12177d935207f1ce90cf8c",
+      "state": "file"
+    },
+    {
+      "blob": "blobs/2197c7410ecff78a0aff520e974de2bca6cbf82fc36a8e6475c9123974de326e",
+      "path": "tests_smoke/test_app_smoke.py",
+      "sha256": "2197c7410ecff78a0aff520e974de2bca6cbf82fc36a8e6475c9123974de326e",
+      "state": "file"
+    }
+  ],
+  "id": "CP-001",
+  "integrity_hash": "383dd926bb8b96c17ec26934dda0ae3540dbfe7d79e85b5f97d40388e32365b2",
+  "kind": "pre-cut:CUT-1B775EB2312F",
+  "label": "2026-09-03 Thu  Pre-cut TimerDialog scan agents limits",
+  "parent": null,
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "published": false,
+  "schema_version": 2,
+  "sequence": 1,
+  "source_revision": "6b210907e3849b5f2f6c7ca704fd1359dbb4e4be",
+  "work_ids": []
+}

@@ -1,0 +1,496 @@
+"""Tests for fastprompter.core.watcher.adapter.
+
+The config is the extension point — a new agent is a block of TOML, not a
+patch. So the thing under test is mostly resilience: a typo in one entry must
+cost that entry and nothing else.
+"""
+
+import os
+import sys
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
+
+from fastprompter.core.watcher.adapter import (  # noqa: E402
+    DEFAULT_LIMITS,
+    Adapter,
+    describe,
+    load_adapters,
+    parse_adapters,
+    usable_adapters,
+)
+from fastprompter.core.watcher.probes import IDLE, Probe, _OptionalProbe  # noqa: E402
+
+
+def _shipped_example():
+    """The example config, as an installed copy would see it.
+
+    Deliberately NOT skipped when absent. It started life under .saipen,
+    which is gitignored, so these tests silently skipped in every clean
+    checkout - guarding the shipped defaults exactly nowhere. Missing is now
+    a failure, because missing is the bug.
+    """
+    path = os.path.join(os.path.dirname(__file__), "..", "src", "fastprompter",
+                        "core", "watcher", "adapters.example.toml")
+    assert os.path.isfile(path), (
+        "the example config must ship beside the code, not in an ignored dir")
+    return path
+
+
+GOOD = """
+[[agent]]
+name = "claude-code"
+settle_ms = 2500
+submit = "enter"
+skill_format = "/{skill} {text}"
+
+  [[agent.probe]]
+  kind = "file"
+  glob = "~/.claude/projects/{project}/*.jsonl"
+  quiet_ms = 2000
+
+[[agent]]
+name = "freebuff"
+
+  [[agent.probe]]
+  kind = "sqlite"
+  path = "{project}/.freebuff/state.db"
+
+[limits]
+min_gap_ms = 6000
+"""
+
+
+class Always(Probe):
+    """A probe that is readable and never changes, so it settles to idle."""
+
+    kind = "always"
+
+    def _read(self):
+        return "unchanging"
+
+
+# ----------------------------------------------------------------- parsing
+
+def test_a_good_config_yields_its_agents():
+    adapters, limits, errors = parse_adapters(GOOD, project="proj")
+    assert [a.name for a in adapters] == ["claude-code", "freebuff"]
+    assert errors == []
+    assert limits["min_gap_ms"] == 6000
+
+
+def test_untouched_limits_keep_their_defaults():
+    _adapters, limits, _errors = parse_adapters(GOOD)
+    assert limits["max_sends"] == DEFAULT_LIMITS["max_sends"]
+    assert limits["dry_run_new"] is True
+
+
+def test_the_defaults_do_not_interrupt_the_user():
+    """The limits are the drain-while-away contract: no prompt before the
+    first send, no focus stealing. The keys that implemented neither are
+    gone (T-757) — config may only carry what a consumer executes."""
+    assert "confirm_first" not in DEFAULT_LIMITS
+    assert "allow_focus_steal" not in DEFAULT_LIMITS
+    assert "restore_clipboard_ms" not in DEFAULT_LIMITS
+    assert DEFAULT_LIMITS["min_gap_ms"] >= 0
+    assert DEFAULT_LIMITS["max_sends"] >= 1
+
+
+def test_the_project_placeholder_is_filled_in():
+    adapters, _limits, _errors = parse_adapters(GOOD, project="myproj")
+    assert "myproj" in adapters[0].probes[0].pattern
+    assert "{project}" not in adapters[1].probes[0].path
+
+
+def test_an_empty_config_is_not_an_error():
+    adapters, limits, errors = parse_adapters("")
+    assert adapters == [] and errors == []
+    assert limits == DEFAULT_LIMITS
+
+
+# ------------------------------------------------------- error containment
+
+def test_a_broken_entry_does_not_cost_the_others():
+    """The point of config-driven agents is that a typo in one is survivable."""
+    adapters, _limits, errors = parse_adapters("""
+[[agent]]
+name = ""
+
+[[agent]]
+name = "survivor"
+  [[agent.probe]]
+  kind = "file"
+  glob = "x"
+""")
+    assert [a.name for a in adapters] == ["survivor"]
+    assert len(errors) == 1 and "name" in errors[0]
+
+
+def test_unparsable_toml_reports_instead_of_raising():
+    adapters, limits, errors = parse_adapters("[[agent]\nname = ")
+    assert adapters == []
+    assert limits == DEFAULT_LIMITS
+    assert errors and "parse" in errors[0]
+
+
+def test_a_bad_probe_disables_only_its_own_agent():
+    adapters, _limits, errors = parse_adapters("""
+[[agent]]
+name = "half-broken"
+  [[agent.probe]]
+  kind = "nonsense"
+""")
+    ok, reason = adapters[0].supported()
+    assert ok is False
+    assert "known probe kind" in reason
+    assert errors == [], "an unknown probe kind is the adapter's problem, not the file's"
+
+
+def test_a_bad_blocker_pattern_disables_the_adapter_not_the_app():
+    adapter = Adapter("x", probes=[Always()], blocker_pattern="(unclosed")
+    ok, reason = adapter.supported()
+    assert ok is False and "blocker_pattern" in reason
+
+
+def test_an_unknown_limit_is_reported_and_ignored():
+    _adapters, limits, errors = parse_adapters("[limits]\nmin_gap_ms = 1\nfoo = 2")
+    assert limits["min_gap_ms"] == 1
+    assert "foo" not in limits
+    assert errors and "foo" in errors[0]
+
+
+def test_limits_are_clamped_at_the_parse_boundary():
+    """A config typo must not disarm the engine's guards (T-757)."""
+    _a, limits, _e = parse_adapters("[limits]\nmin_gap_ms = -10\nmax_sends = 0")
+    assert limits["min_gap_ms"] == 0
+    assert limits["max_sends"] == 1
+    _a, limits, errors = parse_adapters("[limits]\nmin_gap_ms = 'soon'")
+    assert limits["min_gap_ms"] == 4000
+    assert errors, "a non-numeric limit must be reported"
+
+
+def test_blocker_supported_only_for_cdp_transport():
+    """The blocker matches the target's VISIBLE text; only a transport that
+    can read it may claim the safety (T-757)."""
+    from fastprompter.core.watcher.adapter import Adapter as A
+    assert A("cdp", blocker_pattern="allow", transport="cdp").blocker_supported() is True
+    assert A("post", blocker_pattern="allow", transport="post").blocker_supported() is False
+
+
+def test_a_blocker_on_a_transport_that_cannot_read_text_is_reported():
+    adapters, _l, _e = parse_adapters("""
+[[agent]]
+name = "cli"
+transport = "post"
+blocker_pattern = "(?i)allow"
+  [[agent.probe]]
+  kind = "file"
+  glob = "/tmp/x"
+""")
+    assert adapters[0].problems, "an unexecutable blocker must be flagged"
+    assert "INACTIVE" in adapters[0].problems[0]
+
+
+def test_a_nonsense_settle_falls_back_instead_of_crashing():
+    assert Adapter("x", settle_ms="soon").settle_ms == 2500
+    assert Adapter("x", settle_ms=-5).settle_ms == 0
+
+
+# --------------------------------------------------------------- readiness
+
+def test_an_adapter_with_no_probes_is_not_usable():
+    """It knows nothing about the agent, and knowing nothing must never be
+    what lets a prompt out."""
+    ok, reason = Adapter("blind").supported()
+    assert ok is False
+    assert "no probes" in reason
+
+
+def test_a_missing_dependency_is_named_not_hidden():
+    adapter = Adapter("needs-psutil",
+                      probes=[_OptionalProbe("process", "psutil")])
+    ok, reason = adapter.supported()
+    assert ok is False
+    assert "psutil" in reason
+
+
+def test_asking_whether_it_is_ready_does_not_disturb_the_quiet_window():
+    """The trap this replaced: readiness answered by poll(0.0) stamped
+    _changed_at in the past, so the next real poll read as idle at once and
+    would have fired a prompt into a working agent."""
+    probe = Always(quiet_ms=5000)
+    adapter = Adapter("x", probes=[probe])
+
+    adapter.supported()
+    adapter.supported()
+
+    assert probe._changed_at is None, "readiness must not stamp the clock"
+    # first real poll: the token is new, so it is busy and starts settling
+    assert probe.poll(1000.0)[0] != IDLE
+    assert probe.poll(1002.0)[0] != IDLE, "still inside the 5s window"
+    assert probe.poll(1006.0)[0] == IDLE
+
+
+def test_a_probe_that_raises_on_readiness_is_treated_as_unusable():
+    class Rude(Probe):
+        kind = "rude"
+
+        def supported(self):
+            raise RuntimeError("boom")
+
+        def _read(self):
+            return "x"
+
+    ok, reason = Adapter("x", probes=[Rude()]).supported()
+    assert ok is False and "boom" in reason
+
+
+def test_usable_filters_out_the_disabled_and_the_broken():
+    ready = Adapter("ready", probes=[Always()])
+    off = Adapter("off", probes=[Always()], enabled=False)
+    broken = Adapter("broken")
+    assert [a.name for a in usable_adapters([ready, off, broken])] == ["ready"]
+
+
+def test_describe_explains_every_refusal():
+    """'My agent is not in the list' must be answerable without opening the
+    config."""
+    rows = describe([
+        Adapter("ready", probes=[Always()]),
+        Adapter("off", probes=[Always()], enabled=False),
+        Adapter("blind"),
+    ])
+    assert rows[0] == ("ready", True, "ready")
+    assert rows[1][1] is False and "disabled" in rows[1][2]
+    assert rows[2][1] is False and "no probes" in rows[2][2]
+
+
+# ---------------------------------------------------------------- blocking
+
+def test_a_permission_prompt_blocks_the_send():
+    """A prompt waiting for the user is silent, so the probes call it idle.
+    This is the override that stops a queued line landing on one."""
+    adapter = Adapter("x", blocker_pattern=r"(?i)do you want to proceed")
+    assert adapter.blocked("Do you want to proceed? (y/n)") is True
+    assert adapter.blocked("all done") is False
+
+
+def test_no_pattern_blocks_nothing():
+    assert Adapter("x").blocked("Do you want to proceed?") is False
+    assert Adapter("x", blocker_pattern="never").blocked("") is False
+
+
+# ----------------------------------------------------------------- skills
+
+def test_an_agent_without_a_skill_format_says_so():
+    """Absent means the agent has no skills — an item carrying one is
+    skipped rather than sent silently stripped of it."""
+    adapters, _limits, _errors = parse_adapters(
+        '[[agent]]\nname = "plain"\n')
+    assert adapters[0].skill_format is None
+
+
+def test_the_skill_format_is_per_agent():
+    adapters, _limits, _errors = parse_adapters(GOOD)
+    assert adapters[0].skill_format == "/{skill} {text}"
+
+
+# ------------------------------------------------------------------ CORE-011
+def _adapter_with_skill_format(fmt):
+    # skill_format must sit on the agent table, BEFORE the [[agent.probe]]
+    # sub-table, so parsing keeps it off the probe. A supported file probe lets
+    # readiness hinge only on the skill_format validation under test.
+    text = (
+        '[[agent]]\nname = "x"\n'
+        f'skill_format = "{fmt}"\n'
+        '  [[agent.probe]]\n  kind = "file"\n  glob = "{project}/x/*.jsonl"\n')
+    return parse_adapters(text, project="proj")
+
+
+def test_valid_skill_format_is_armable():
+    adapters, _limits, errors = _adapter_with_skill_format("/{skill} {text}")
+    assert errors == []
+    ok, reason = adapters[0].supported()
+    assert ok, reason
+    assert adapters[0].problems == []
+    # and it composes normally
+    from fastprompter.core.watcher.queue import QueueItem
+    item = QueueItem("hello", skill="/saipen")
+    assert adapters[0].skill_format is not None
+    assert item.compose(adapters[0].skill_format) == "/saipen hello"
+
+
+def test_unknown_field_in_skill_format_is_rejected():
+    adapters, _limits, errors = _adapter_with_skill_format("/{skill} {oops}")
+    assert errors == []
+    # surfaced as a per-entry problem; not armable as ready
+    assert any("skill_format" in p for p in adapters[0].problems)
+    ok, reason = adapters[0].supported()
+    assert ok is False
+    assert "oops" in reason or "skill_format" in reason
+
+
+def test_malformed_braces_in_skill_format_is_rejected():
+    adapters, _limits, errors = _adapter_with_skill_format("/{skill} {text")
+    assert errors == []
+    assert any("skill_format" in p for p in adapters[0].problems)
+    ok, reason = adapters[0].supported()
+    assert ok is False
+
+
+def test_absent_skill_format_still_means_no_skills():
+    adapters, _limits, errors = _adapter_with_skill_format("")
+    assert errors == []
+    assert adapters[0].skill_format is None
+    ok, _reason = adapters[0].supported()
+    assert ok
+    from fastprompter.core.watcher.queue import QueueItem
+    item = QueueItem("hi", skill="/saipen")
+    assert item.compose(adapters[0].skill_format) is None
+
+
+def test_malformed_adapter_does_not_block_a_valid_one():
+    text = (
+        '[[agent]]\nname = "bad"\n'
+        'skill_format = "/{skill} {oops}"\n'
+        '  [[agent.probe]]\n  kind = "file"\n  glob = "{project}/x/*.jsonl"\n'
+        '[[agent]]\nname = "good"\n'
+        'skill_format = "/{skill} {text}"\n'
+        '  [[agent.probe]]\n  kind = "file"\n  glob = "{project}/x/*.jsonl"\n')
+    adapters, _limits, errors = parse_adapters(text, project="proj")
+    assert errors == []
+    names = [a.name for a in adapters]
+    assert names == ["bad", "good"]
+    ok, _reason = adapters[1].supported()
+    assert ok, "the valid adapter must still load and arm"
+    assert not adapters[0].supported()[0]
+
+
+# ------------------------------------------------------------------ files
+
+def test_loading_falls_back_to_the_shipped_example(tmp_path):
+    example = tmp_path / "adapters.example.toml"
+    example.write_text(GOOD, encoding="utf-8")
+    adapters, _limits, errors = load_adapters(
+        path=str(tmp_path / "absent.toml"), fallback=str(example))
+    assert [a.name for a in adapters] == ["claude-code", "freebuff"]
+    assert errors == []
+
+
+def test_the_users_file_wins_over_the_example(tmp_path):
+    (tmp_path / "mine.toml").write_text(
+        '[[agent]]\nname = "mine"\n', encoding="utf-8")
+    (tmp_path / "example.toml").write_text(GOOD, encoding="utf-8")
+    adapters, _limits, _errors = load_adapters(
+        path=str(tmp_path / "mine.toml"),
+        fallback=str(tmp_path / "example.toml"))
+    assert [a.name for a in adapters] == ["mine"]
+
+
+def test_no_config_at_all_is_reported_not_crashed():
+    adapters, limits, errors = load_adapters(path=None, fallback=None)
+    assert adapters == []
+    assert limits == DEFAULT_LIMITS
+    assert errors == ["no adapters.toml found"]
+
+
+def test_the_shipped_example_actually_parses():
+    """It is the file every user copies. A broken one teaches broken syntax."""
+    example = _shipped_example()
+    with open(example, encoding="utf-8") as fh:
+        adapters, _limits, errors = parse_adapters(fh.read(), project="proj")
+    assert errors == [], f"the shipped example does not parse cleanly: {errors}"
+    assert adapters, "the example should describe at least one agent"
+
+
+def test_the_shipped_example_does_not_interrupt_the_user():
+    """Config that ships with interrupting keys would undo the silent default
+    for everyone who copies it. Dead keys must not appear at all (T-757)."""
+    example = _shipped_example()
+    with open(example, encoding="utf-8") as fh:
+        text = fh.read()
+    _adapters, limits, _errors = parse_adapters(text)
+    assert "confirm_first" not in limits
+    assert "allow_focus_steal" not in limits
+    assert "confirm_first" not in text
+    assert "restore_clipboard_ms" not in text
+
+
+# --------------------------------------------------------------- transport
+
+def test_the_default_transport_is_posting():
+    assert Adapter("x").transport == "post"
+
+
+def test_a_cdp_adapter_needs_a_port_or_it_says_so():
+    """Better to refuse at load than to arm against nothing."""
+    ok, reason = Adapter("x", probes=[Always()], transport="cdp").supported()
+    assert ok is False and "cdp_port" in reason
+
+
+def test_a_cdp_adapter_with_a_port_is_usable():
+    ok, _reason = Adapter("x", probes=[Always()], transport="cdp",
+                          cdp_port=9222).supported()
+    assert ok is True
+
+
+def test_the_port_file_beats_a_pinned_port(tmp_path):
+    """Chromium assigns a fresh port each launch; the file holds the live
+    one, so a stale pinned port must never win over it."""
+    portfile = tmp_path / "DevToolsActivePort"
+    portfile.write_text("51999\n/devtools/browser/abc\n", encoding="utf-8")
+    adapter = Adapter("x", transport="cdp", cdp_port=9222,
+                      cdp_port_file=str(portfile))
+    assert adapter.live_cdp_port() == 51999
+
+
+def test_a_missing_port_file_falls_back_to_the_pinned_port():
+    adapter = Adapter("x", transport="cdp", cdp_port=9222,
+                      cdp_port_file="/nowhere/DevToolsActivePort")
+    assert adapter.live_cdp_port() == 9222
+
+
+def test_the_shipped_antigravity_entry_uses_the_proven_transport():
+    """Posting was measured to do nothing to a Chromium window."""
+    with open(_shipped_example(), encoding="utf-8") as fh:
+        adapters, _limits, _errors = parse_adapters(fh.read())
+    ag = next(a for a in adapters if a.name == "antigravity")
+    assert ag.transport == "cdp"
+    assert ag.cdp_port_file, "the port must be discovered, not pinned"
+
+
+# -------------------------------------------------- native boolean parsing
+
+def test_a_native_disabled_flag_stays_disabled():
+    """A real TOML false must be honoured, never coerced to True."""
+    adapters, _limits, errors = parse_adapters(
+        '[[agent]]\nname = "off"\nenabled = false\n')
+    assert [a.name for a in adapters] == ["off"]
+    assert adapters[0].enabled is False
+    assert errors == []
+
+
+def test_a_quoted_enabled_flag_is_rejected_not_enabled():
+    """bool("false") is True in Python, so a quoted "false" would silently
+    ARM a disabled adapter. Require a native boolean and surface the typo."""
+    adapters, _limits, errors = parse_adapters(
+        '[[agent]]\nname = "trap"\nenabled = "false"\n')
+    assert [a.name for a in adapters] == []
+    assert errors, "a non-boolean enabled must be reported"
+    assert "enabled must be a boolean" in errors[0]
+
+
+def test_a_native_dry_run_false_is_honoured():
+    _a, limits, errors = parse_adapters("[limits]\ndry_run_new = false")
+    assert limits["dry_run_new"] is False
+    assert errors == []
+
+
+def test_a_quoted_dry_run_false_keeps_the_safe_default():
+    """A malformed (string) value must not flip dry-run OFF. Keep the safe
+    default (True) and report the typo."""
+    _a, limits, errors = parse_adapters('[limits]\ndry_run_new = "false"')
+    assert limits["dry_run_new"] is True
+    assert errors, "a non-boolean dry_run_new must be reported"
+    assert "dry_run_new must be a boolean" in errors[0]
+
+

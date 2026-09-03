@@ -1,0 +1,198 @@
+{
+  "attempt_ids": [],
+  "created_at": "2026-09-03T17:48:04Z",
+  "external_effects": [],
+  "files": [
+    {
+      "blob": "blobs/05be401e6352578e9807d2bfc130905d5c94c4015ed167eec654ba95a3e8dec6",
+      "path": "src/fastprompter/core/default_profile.py",
+      "sha256": "05be401e6352578e9807d2bfc130905d5c94c4015ed167eec654ba95a3e8dec6",
+      "state": "file"
+    },
+    {
+      "blob": "blobs/2873a993644dcf393e151c328fe267bb1237392d236bc8e4ea17bcc9debe083f",
+      "path": "src/fastprompter/core/hotkey_filter.py",
+      "sha256": "2873a993644dcf393e151c328fe267bb1237392d236bc8e4ea17bcc9debe083f",
+      "state": "file"
+    },
+    {
+      "blob": "blobs/a5be7c9ba3fd8eb36adb6310c4d0a7911deadd11da4b5ef85d553d0f5cd857da",
+      "path": "src/fastprompter/core/sound_manager.py",
+      "sha256": "a5be7c9ba3fd8eb36adb6310c4d0a7911deadd11da4b5ef85d553d0f5cd857da",
+      "state": "file"
+    },
+    {
+      "blob": "blobs/231eba642e2fa06c621f1c97849d0de39010f702e6d35caffdb5aab1ad814740",
+      "path": "src/fastprompter/core/state.py",
+      "sha256": "231eba642e2fa06c621f1c97849d0de39010f702e6d35caffdb5aab1ad814740",
+      "state": "file"
+    },
+    {
+      "blob": "blobs/cc294bc5a9fa7b18f00cd811c4234e613e1fd611febb9e21b9461cc8bbe6bb47",
+      "path": "src/fastprompter/core/watcher/__init__.py",
+      "sha256": "cc294bc5a9fa7b18f00cd811c4234e613e1fd611febb9e21b9461cc8bbe6bb47",
+      "state": "file"
+    },
+    {
+      "blob": "blobs/2bd12115535fb833b518500e112e6bacc4a791c6ee6c63dbc6fdb89b5fb8b851",
+      "path": "src/fastprompter/core/watcher/adapter.py",
+      "sha256": "2bd12115535fb833b518500e112e6bacc4a791c6ee6c63dbc6fdb89b5fb8b851",
+      "state": "file"
+    },
+    {
+      "blob": "blobs/967679cb4b10dc8c5054eb0794bcf5964ce44470cdc40355ac46efb5736bf815",
+      "path": "src/fastprompter/core/watcher/adapters.example.toml",
+      "sha256": "967679cb4b10dc8c5054eb0794bcf5964ce44470cdc40355ac46efb5736bf815",
+      "state": "file"
+    },
+    {
+      "blob": "blobs/7c1340365dce32d49001d637f94aebd05a46ce556974d523e611dc724e1107d1",
+      "path": "src/fastprompter/core/watcher/cdp.py",
+      "sha256": "7c1340365dce32d49001d637f94aebd05a46ce556974d523e611dc724e1107d1",
+      "state": "file"
+    },
+    {
+      "blob": "blobs/fd0e4f444348d93639f29e0122ce60af33d841605c467fe4668f2c433af4f3cd",
+      "path": "src/fastprompter/core/watcher/engine.py",
+      "sha256": "fd0e4f444348d93639f29e0122ce60af33d841605c467fe4668f2c433af4f3cd",
+      "state": "file"
+    },
+    {
+      "blob": "blobs/8cf49df2340e63500452b5bd3ed93ffa53a582a20b5794d1b05b7283e1406dae",
+      "path": "src/fastprompter/core/watcher/limit_scan.py",
+      "sha256": "8cf49df2340e63500452b5bd3ed93ffa53a582a20b5794d1b05b7283e1406dae",
+      "state": "file"
+    },
+    {
+      "blob": "blobs/6465297baae0c8e398c1b477854b77de11bb11b6dfd050f4ebf7ae8d2e916867",
+      "path": "src/fastprompter/core/watcher/probes.py",
+      "sha256": "6465297baae0c8e398c1b477854b77de11bb11b6dfd050f4ebf7ae8d2e916867",
+      "state": "file"
+    },
+    {
+      "blob": "blobs/f5ec67e5dd58d1a35d9a17b326ad594bee8bd71dba7f69f9b45980d5c2d5a040",
+      "path": "src/fastprompter/core/watcher/queue.py",
+      "sha256": "f5ec67e5dd58d1a35d9a17b326ad594bee8bd71dba7f69f9b45980d5c2d5a040",
+      "state": "file"
+    },
+    {
+      "blob": "blobs/b30b7f5dbcc197ae3158b303936997fc2c7ad620ab4d2f7691b42c6d9d499567",
+      "path": "src/fastprompter/core/watcher/sender.py",
+      "sha256": "b30b7f5dbcc197ae3158b303936997fc2c7ad620ab4d2f7691b42c6d9d499567",
+      "state": "file"
+    },
+    {
+      "blob": "blobs/788f229b1e0e95d863127273eb68328e3f6b86fabf7fc32e6520db752b5985f5",
+      "path": "src/fastprompter/core/watcher/skills.py",
+      "sha256": "788f229b1e0e95d863127273eb68328e3f6b86fabf7fc32e6520db752b5985f5",
+      "state": "file"
+    },
+    {
+      "blob": "blobs/1415b1139237d54f16e677e47d452e5686e1c6c36db53d8e0eb65fa642a927ab",
+      "path": "src/fastprompter/core/watcher/win32.py",
+      "sha256": "1415b1139237d54f16e677e47d452e5686e1c6c36db53d8e0eb65fa642a927ab",
+      "state": "file"
+    },
+    {
+      "blob": "blobs/17e66acaab68885334430b2fdeb3c2c95759ac5c3518ccf4ac0879547d573040",
+      "path": "src/fastprompter/main.py",
+      "sha256": "17e66acaab68885334430b2fdeb3c2c95759ac5c3518ccf4ac0879547d573040",
+      "state": "file"
+    },
+    {
+      "blob": "blobs/a8df081cab419fedc8292e9258c6c9c0654fd7ef53f57b3451079a68461d1732",
+      "path": "src/fastprompter/ui/help_dialog.py",
+      "sha256": "a8df081cab419fedc8292e9258c6c9c0654fd7ef53f57b3451079a68461d1732",
+      "state": "file"
+    },
+    {
+      "blob": "blobs/878f95187f9d0c388314bcfb07f27444bc33ced7e8b6f9442c6c29a475612f75",
+      "path": "src/fastprompter/ui/hotkey_mixin.py",
+      "sha256": "878f95187f9d0c388314bcfb07f27444bc33ced7e8b6f9442c6c29a475612f75",
+      "state": "file"
+    },
+    {
+      "blob": "blobs/4778a934f47007416ac82e1b36ee9291192993937c8c87a3fdfeee8007a92052",
+      "path": "src/fastprompter/ui/watcher_dialog.py",
+      "sha256": "4778a934f47007416ac82e1b36ee9291192993937c8c87a3fdfeee8007a92052",
+      "state": "file"
+    },
+    {
+      "blob": "blobs/5105c079f5d58cb1398913962384ae181efef8be5e899b9bdf7b45f9191c7193",
+      "path": "src/fastprompter/ui/watcher_mixin.py",
+      "sha256": "5105c079f5d58cb1398913962384ae181efef8be5e899b9bdf7b45f9191c7193",
+      "state": "file"
+    },
+    {
+      "blob": "blobs/5fec273ee9614b56d8f89e273d4ef09d5142611c132998bfe69a5b4705ab4ffb",
+      "path": "tests/test_watcher_adapter.py",
+      "sha256": "5fec273ee9614b56d8f89e273d4ef09d5142611c132998bfe69a5b4705ab4ffb",
+      "state": "file"
+    },
+    {
+      "blob": "blobs/7ce4c5e6b54205b6d7b4438b3300e14c25c34dfa5c877af4844367c1e73c155d",
+      "path": "tests/test_watcher_cdp.py",
+      "sha256": "7ce4c5e6b54205b6d7b4438b3300e14c25c34dfa5c877af4844367c1e73c155d",
+      "state": "file"
+    },
+    {
+      "blob": "blobs/d4b9d71638b4852a1cc1c5b4f3c0d8a24eb88f082c7e3a2369d3c0366cc1734c",
+      "path": "tests/test_watcher_engine.py",
+      "sha256": "d4b9d71638b4852a1cc1c5b4f3c0d8a24eb88f082c7e3a2369d3c0366cc1734c",
+      "state": "file"
+    },
+    {
+      "blob": "blobs/97c0f7ced301eb80064980c1d0a3ce5c9865e127544ee1044d068807889420b7",
+      "path": "tests/test_watcher_probes.py",
+      "sha256": "97c0f7ced301eb80064980c1d0a3ce5c9865e127544ee1044d068807889420b7",
+      "state": "file"
+    },
+    {
+      "blob": "blobs/e325b05837437cf52bd302686beb4201f5cd42137c9f41998d708da1715d5542",
+      "path": "tests/test_watcher_queue.py",
+      "sha256": "e325b05837437cf52bd302686beb4201f5cd42137c9f41998d708da1715d5542",
+      "state": "file"
+    },
+    {
+      "blob": "blobs/68cd3e4af73a45be8203446829d54b8ffbc3b9b464f9016bafa2d77a9c22fc29",
+      "path": "tests/test_watcher_sender.py",
+      "sha256": "68cd3e4af73a45be8203446829d54b8ffbc3b9b464f9016bafa2d77a9c22fc29",
+      "state": "file"
+    },
+    {
+      "blob": "blobs/41133e6ed66a8dba63ab79a6ab597c4690656956c6b4a6bf1d0684ed097908e2",
+      "path": "tests/test_watcher_skills.py",
+      "sha256": "41133e6ed66a8dba63ab79a6ab597c4690656956c6b4a6bf1d0684ed097908e2",
+      "state": "file"
+    },
+    {
+      "blob": "blobs/03d9002dc42f78a01d886192c765667465e7a5a8e7a385ec6c93ffb4310aa66c",
+      "path": "tests/test_watcher_win32.py",
+      "sha256": "03d9002dc42f78a01d886192c765667465e7a5a8e7a385ec6c93ffb4310aa66c",
+      "state": "file"
+    },
+    {
+      "blob": "blobs/7b70b30ee61a5d3fa7e51e49cf3ac4bcdbed6ce99e3fa010cc8d1e98d761fac5",
+      "path": "tests_smoke/test_watcher_async.py",
+      "sha256": "7b70b30ee61a5d3fa7e51e49cf3ac4bcdbed6ce99e3fa010cc8d1e98d761fac5",
+      "state": "file"
+    },
+    {
+      "blob": "blobs/4fbf794596d1b94bfa77dd245b7b79c4b2e128ff9b1000e6be52d811ff28f3a4",
+      "path": "tests_smoke/test_watcher_quiesce_unit.py",
+      "sha256": "4fbf794596d1b94bfa77dd245b7b79c4b2e128ff9b1000e6be52d811ff28f3a4",
+      "state": "file"
+    }
+  ],
+  "id": "CP-002",
+  "integrity_hash": "227d5aa0459875ecdc4f868c8caab6bb953fda560fd99ec54a127ea52a94f79b",
+  "kind": "pre-cut:CUT-981D3AD11C42",
+  "label": "2026-09-03 Thu  Pre-cut FastPrompter AI typing Watcher",
+  "parent": "CP-001",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "published": false,
+  "schema_version": 2,
+  "sequence": 2,
+  "source_revision": "6b210907e3849b5f2f6c7ca704fd1359dbb4e4be",
+  "work_ids": []
+}

@@ -1,17 +1,18 @@
-﻿# OUTBOX
+# OUTBOX
 
-## PY-004: crew SC-4 re-fix @ 40a0213 (27.08.26)
+## PY-005: crew SC-4 sweep @ 52bbb5f (31.08.26) - crew epoch
 - **status:** reviewed
-- **summary:** Re-certification after source mutation (40a0213: pie-menu Shift+F15 direct-insert fix). No new fixer targets: HUNT-012/TEST-004 found zero defect hypotheses; PY-001 (Cyrillic exemption) already landed as T-1041.
+- **summary:** Tail-fixer certification at HEAD 52bbb5f (crew epoch). No new fixer targets: HUNT-013/TEST-005 found zero defect hypotheses; prior PY-001 (Cyrillic exemption) already landed as T-1041. Wave-6 coordinator fixes (T-1166/T-1168) already shipped in v0.8.66.
 - **critical:** false
+- **severity:** P3
 - **producer:** saipython
-- **source_head:** 40a021365f3641d52924ef2e3bb415aee1ee6d98
-- **source_tree_fingerprint:** git-delta-v1:c66baf69a8306f3b95dfc7badb5f72b088f8de8408e933efadc4d149721a1195
+- **source_head:** 52bbb5fb26b13d90c57e20971a6844a4121a73ce
+- **source_tree_fingerprint:** git-delta-v1:9539ecf0ffaca2181d8abd735f691aa9f67422bdc1f6a6ab3c86db43066a1248
 - **role_revision:** sha256:3069120b1a83291867c000dd5d7edb141d5fedf7895e5dc8f07d06624d05d9ff
-- **coverage:** delta audit 40a0213 vs 9d0331c; PY-001 verification re-run at new HEAD
+- **coverage:** delta audit 52bbb5f vs 64759d8; full unit suite; compileall; ruff touched-scope
 - **payload:** []
-- **verified:** PASS -- compileall src FastPrompter.pyw OK; pytest tests/ 1657 passed 1 skipped at 40a0213; ruff clean
-- **instructions:** Evidence for SC-4 at 40a0213. No new patches required.
+- **verified:** PASS -- uv run pytest tests/ -q -> 1748 passed 1 skipped; python -m compileall src FastPrompter.pyw OK; ruff touched-scope clean
+- **instructions:** Evidence for SC-4 at 52bbb5f. No new patches required.
 
 ## PY-002: crew SC-4 re-fix @ 3232878 (23.08.26)
 - **status:** reviewed

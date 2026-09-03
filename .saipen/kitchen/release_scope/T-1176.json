@@ -1,0 +1,14 @@
+{
+  "op_id": "scope-d3bbc8b615e64577b2811145a6da2acc",
+  "paths": {
+    "tests/test_fastprompter_night_upgrade.py": "7244ee10ce5a1c0b",
+    "tests/test_limit_account_order.py": "8d3f82b288c5a0fa"
+  },
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "recorded_at": "2026-09-02T17:36:30Z",
+  "schema_version": 1,
+  "source_head": "6b210907e3849b5f2f6c7ca704fd1359dbb4e4be",
+  "source_tree_fingerprint": "git-delta-v1:16888264d4462a3d897f601855d70d6d296a65ba8286c7e3b87564facdc146a7",
+  "ticket": "T-1176"
+}
