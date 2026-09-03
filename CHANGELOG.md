@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.8.67 - 2026-09-02
+
+- **AI Limit Gauges (T-1174, T-1181):** provider-neutral usage-limit subsystem
+  for OpenAI/Codex and Anthropic/Claude. Compact header gauges (bars or dots)
+  fill bottom-up with remaining quota; hover shows per-account/window details
+  with countdown to soonest reset; single-click opens the dedicated AI Limit
+  Settings dialog; double-click triggers an immediate refresh.
+- **Claude Multi-Source Limits:** reads exact percentages from Claude Desktop's
+  usage sampler (`%APPDATA%/Claude/plan-usage-history.json`, sampled every ~5m),
+  the Claude Code status-line bridge (`~/.claude/fastprompter-rate-limits.json`),
+  and API refusals journaled in Claude Code transcripts (`quotaLimits`), so
+  limits are always readable without guessing even when Claude Code is not
+  actively rendering a status line.
+- **Weekly-0 Gating & No-Spam Alerts:** when a longer window (weekly) is 0%,
+  shorter windows (5h) are clamped to 0% and suppressed from firing duplicate
+  alerts. Quota alerts re-arm only on genuine recovery (>1% remaining rise),
+  never on idle `resets_at` timestamp drift. Notifications use in-app toasts
+  that are always visible regardless of system tray state.
+- **Limits Overview Tab:** full-width horizontal bars per account/window in
+  AI Limit Settings. User-configurable fill direction ("Remaining left" drains
+  like fuel; "Used up" grows like progress), with color (gold/olive/red) and
+  text labels matching the chosen direction. Windows whose reset time has passed
+  refill immediately without waiting for the next 3-minute poll.
+- **Notification Settings Template Copy:** "Copy alert settings from" combo +
+  "Apply to all" button in Notifications tab to copy all thresholds, toggles,
+  sounds, and volumes from one window to all others in one click.
+- **Persistent Ctrl+Click Focus Selection:** silo multi-selection persists
+  across silo switches, project/tab navigation, and app restarts (stored in
+  `silo_selected_all` per category, remapped on reorder/insert/delete/undo).
+  Context menu includes "Unselect" on selected silos and "Unselect All".
+- **WheelGuard (T-1181):** unfocused value widgets (combo boxes, spin boxes,
+  sliders) ignore mouse wheel events unless clicked into, preventing accidental
+  value/sound changes when scrolling through dialog panels.
+- **Limit Countdown Visibility:** countdown label visibility is owned solely by
+  `_update_limit_timer_label` with ultra-narrow width support, eliminating the
+  bug where the countdown stayed hidden until a window resize.
+
 ## 0.8.66 - 2026-08-31
 
 - **Persistence safety is now outcome-driven (T-1166 / T-1168, Wave 6):** a

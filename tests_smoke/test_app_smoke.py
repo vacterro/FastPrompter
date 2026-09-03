@@ -64,6 +64,12 @@ def _teardown_window(w):
     # T-1039: retire the lazily-started Sync-Project push worker thread so a
     # window that used it does not leak a live QThread into process teardown.
     try:
+        limit_service = getattr(w, "limit_service", None)
+        if limit_service is not None:
+            limit_service.shutdown()
+    except Exception:
+        pass
+    try:
         push_shutdown = getattr(w, "_push_shutdown", None)
         if push_shutdown is not None:
             push_shutdown(timeout_s=2.0)
@@ -7586,2082 +7592,6 @@ def test_header_tint_has_a_single_owner():
     assert "header_tint" in inspect.getsource(theme_mixin.ThemeMixin.apply_theme)
     assert "bg_main" in inspect.getsource(analog_clock._theme_palette)
 
-def test_alt_c_queues_the_current_line(win):
-    """Alt+C is FastPrompter's own queue command: the line goes in, the
-    caret moves on, and the line is marked."""
-    from PyQt6.QtCore import Qt
-    from PyQt6.QtTest import QTest
-
-    from fastprompter.ui.markdown_highlighter import QUEUED_BIT
-
-    ed = win.text_area
-    kept = dict(win.prompt_queues)
-    try:
-        win.prompt_queues.clear()
-        ed.setPlainText("first prompt\nsecond prompt\n\nthird prompt")
-        c = ed.textCursor()
-        c.setPosition(0)
-        ed.setTextCursor(c)
-
-        QTest.keyClick(ed, Qt.Key.Key_C, Qt.KeyboardModifier.AltModifier)
-        QTest.keyClick(ed, Qt.Key.Key_C, Qt.KeyboardModifier.AltModifier)
-
-        queue = win.prompt_queues[win._queue_slot_key()]
-        assert [i.text for i in queue] == ["first prompt", "second prompt"]
-
-        # the caret advanced, and the marks landed on the right blocks
-        assert ed.textCursor().blockNumber() == 2
-        for n, expected in ((0, True), (1, True), (3, False)):
-            state = max(0, ed.document().findBlockByNumber(n).userState())
-            assert bool(state & QUEUED_BIT) is expected, f"line {n + 1}"
-
-        # an empty line is not a prompt
-        QTest.keyClick(ed, Qt.Key.Key_C, Qt.KeyboardModifier.AltModifier)
-        assert len(queue) == 2
-    finally:
-        win.prompt_queues.clear()
-        win.prompt_queues.update(kept)
-        ed.clear()
-
-
-def test_a_queued_item_follows_its_line(win):
-    """The anchor is the block, not the line number: inserting above must
-    not point the queue at different text, and editing the line changes
-    what would be sent."""
-    from PyQt6.QtGui import QTextCursor
-
-    ed = win.text_area
-    kept = dict(win.prompt_queues)
-    try:
-        win.prompt_queues.clear()
-        ed.setPlainText("alpha\nbravo\ncharlie")
-        c = ed.textCursor()
-        c.setPosition(ed.document().findBlockByNumber(1).position())
-        ed.setTextCursor(c)
-        item = win.queue_current_line()
-        assert item is not None and item.text == "bravo"
-
-        # insert two lines above it
-        top = ed.textCursor()
-        top.setPosition(0)
-        ed.setTextCursor(top)
-        top.insertText("new one\nnew two\n")
-
-        block = ed.block_for_queue_item(item.id)
-        assert block is not None
-        assert block.text() == "bravo", "the anchor followed the wrong line"
-        assert block.blockNumber() == 3, "and it really did move"
-
-        # editing the line edits what will be sent
-        edit = QTextCursor(block)
-        edit.movePosition(QTextCursor.MoveOperation.EndOfBlock)
-        edit.insertText(" EDITED")
-        assert ed.block_for_queue_item(item.id).text() == "bravo EDITED"
-    finally:
-        win.prompt_queues.clear()
-        win.prompt_queues.update(kept)
-        ed.clear()
-
-
-def test_deleting_the_line_detaches_and_leaves_no_stale_tick(win):
-    """Qt merges blocks on delete and the survivor can inherit the state
-    bits without the anchor - which would paint a tick beside a line that
-    was never sent."""
-    from PyQt6.QtGui import QTextCursor
-
-    from fastprompter.ui.markdown_highlighter import QUEUED_BIT, SENT_BIT
-
-    ed = win.text_area
-    kept = dict(win.prompt_queues)
-    try:
-        win.prompt_queues.clear()
-        ed.setPlainText("alpha\nbravo\ncharlie")
-        c = ed.textCursor()
-        c.setPosition(ed.document().findBlockByNumber(1).position())
-        ed.setTextCursor(c)
-        item = win.queue_current_line()
-
-        assert ed.mark_queue_sent(item.id) is True
-        block = ed.block_for_queue_item(item.id)
-        state = max(0, block.userState())
-        assert state & SENT_BIT and not state & QUEUED_BIT
-
-        cut = QTextCursor(block)
-        cut.select(QTextCursor.SelectionType.BlockUnderCursor)
-        cut.removeSelectedText()
-
-        assert ed.block_for_queue_item(item.id) is None, "anchor must be gone"
-        ed.prune_queue_marks()
-        for n in range(ed.document().blockCount()):
-            state = max(0, ed.document().findBlockByNumber(n).userState())
-            assert not state & (QUEUED_BIT | SENT_BIT), f"stale tick on line {n + 1}"
-        assert ed.collect_queue_marks() == {}
-    finally:
-        win.prompt_queues.clear()
-        win.prompt_queues.update(kept)
-        ed.clear()
-
-
-def test_queue_marks_and_edit_heat_share_the_block_without_clobbering(win):
-    """A block has one userData slot. Heat was there first; the queue anchor
-    joined it, and neither may erase the other."""
-    import time
-
-    from fastprompter.ui.editor import block_data, stamp_heat
-
-    ed = win.text_area
-    kept = dict(win.prompt_queues)
-    try:
-        win.prompt_queues.clear()
-        ed.setPlainText("only line")
-        c = ed.textCursor()
-        c.setPosition(0)
-        ed.setTextCursor(c)
-        item = win.queue_current_line()
-
-        block = ed.document().findBlockByNumber(0)
-        stamp_heat(block, time.time())
-        assert block_data(block).queue_id == item.id, "heat erased the anchor"
-
-        ed.set_queue_anchor(block, item.id)
-        assert block_data(block).ts is not None, "the anchor erased the heat"
-    finally:
-        win.prompt_queues.clear()
-        win.prompt_queues.update(kept)
-        ed.clear()
-
-
-def test_the_queue_bits_survive_a_rehighlight(win):
-    """_KEEP_MASK is what survives a rehighlight pass. A bit missing from it
-    is wiped at random, which looks like the queue losing its own state."""
-    from fastprompter.ui.markdown_highlighter import (
-        _KEEP_MASK,
-        QUEUED_BIT,
-        SENT_BIT,
-    )
-
-    assert _KEEP_MASK & QUEUED_BIT, "QUEUED_BIT would be wiped"
-    assert _KEEP_MASK & SENT_BIT, "SENT_BIT would be wiped"
-
-    ed = win.text_area
-    kept = dict(win.prompt_queues)
-    try:
-        win.prompt_queues.clear()
-        ed.setPlainText("a prompt line")
-        c = ed.textCursor()
-        c.setPosition(0)
-        ed.setTextCursor(c)
-        item = win.queue_current_line()
-
-        if getattr(win, "highlighter", None) is not None:
-            win.highlighter.rehighlight()
-        state = max(0, ed.document().findBlockByNumber(0).userState())
-        assert state & QUEUED_BIT, "the bit did not survive the highlighter"
-        assert ed.block_for_queue_item(item.id) is not None
-    finally:
-        win.prompt_queues.clear()
-        win.prompt_queues.update(kept)
-        ed.clear()
-
-
-def test_queues_are_per_silo_and_persist(win):
-    ed = win.text_area
-    kept = dict(win.prompt_queues)
-    kept_presets = list(win.data["temp_presets"])
-    try:
-        win.prompt_queues.clear()
-        win.data["temp_presets"][:] = ["silo one", "silo two"]
-        win.silo_docs[:] = []
-        win._switch_to_slot(0, initial=True)
-        ed.setPlainText("from the first silo")
-        c = ed.textCursor()
-        c.setPosition(0)
-        ed.setTextCursor(c)
-        win.queue_current_line()
-
-        win._switch_to_slot(1, initial=True)
-        ed.setPlainText("from the second silo")
-        c = ed.textCursor()
-        c.setPosition(0)
-        ed.setTextCursor(c)
-        win.queue_current_line()
-
-        assert sorted(win.prompt_queues) == ["0", "1"]
-        assert [i.text for i in win.prompt_queues["0"]] == ["from the first silo"]
-        assert [i.text for i in win.prompt_queues["1"]] == ["from the second silo"]
-
-        # and it round-trips through the saved data
-        from fastprompter.core.watcher.queue import load_queues
-        back = load_queues(win.data["watcher_queues"])
-        assert sorted(back) == ["0", "1"]
-    finally:
-        win.prompt_queues.clear()
-        win.prompt_queues.update(kept)
-        win.data["temp_presets"][:] = kept_presets
-        win.silo_docs[:] = []
-        win._switch_to_slot(0, initial=True)
-        ed.clear()
-
-def _queue_three(win, header="# Project notes"):
-    """Three queued lines under a titled note. Returns the dialog."""
-    from fastprompter.ui.queue_panel import QueueDialog
-
-    ed = win.text_area
-    ed.setPlainText(f"{header}\nfirst prompt\nsecond prompt\nthird prompt")
-    for n in (1, 2, 3):
-        c = ed.textCursor()
-        c.setPosition(ed.document().findBlockByNumber(n).position())
-        ed.setTextCursor(c)
-        win.queue_current_line()
-    return QueueDialog(win)
-
-
-def test_queue_panel_lists_the_silo_queue(win):
-    kept = dict(win.prompt_queues)
-    try:
-        win.prompt_queues.clear()
-        dlg = _queue_three(win)
-        assert dlg.list.count() == 3
-        assert "first prompt" in dlg.list.item(0).text()
-        # the header names the silo by its FIRST LINE, not a flattened blob
-        assert dlg.lbl_head.text().startswith("Project notes")
-        assert "3/3" in dlg.lbl_head.text()
-        dlg.close()
-    finally:
-        win.prompt_queues.clear()
-        win.prompt_queues.update(kept)
-        win.text_area.clear()
-
-
-def test_send_next_reorders_and_never_sends(win):
-    """The only thing this dialog may do is change the order."""
-    kept = dict(win.prompt_queues)
-    try:
-        win.prompt_queues.clear()
-        dlg = _queue_three(win)
-        dlg.list.setCurrentRow(2)
-        before = dlg._selected().state
-
-        dlg.to_front_selected()
-        assert [i.text for i in dlg._queue()] == [
-            "third prompt", "first prompt", "second prompt"]
-        assert dlg._queue().items[0].state == before, "jumping must not send"
-        dlg.close()
-    finally:
-        win.prompt_queues.clear()
-        win.prompt_queues.update(kept)
-        win.text_area.clear()
-
-
-def test_rows_follow_edits_made_in_the_note(win):
-    """Items are references: editing the line changes what would be sent,
-    and the row has to say so."""
-    from PyQt6.QtGui import QTextCursor
-
-    kept = dict(win.prompt_queues)
-    try:
-        win.prompt_queues.clear()
-        dlg = _queue_three(win)
-        item = dlg._queue().items[1]
-
-        block = win.text_area.block_for_queue_item(item.id)
-        edit = QTextCursor(block)
-        edit.movePosition(QTextCursor.MoveOperation.EndOfBlock)
-        edit.insertText(" EDITED")
-
-        dlg.refresh()
-        assert "second prompt EDITED" in dlg.list.item(1).text()
-        assert item.text == "second prompt EDITED"
-        dlg.close()
-    finally:
-        win.prompt_queues.clear()
-        win.prompt_queues.update(kept)
-        win.text_area.clear()
-
-
-def test_detached_item_revives_when_source_returns(win):
-    """T-756: the runtime watcher inspects DETACHED items too and revives
-    one whose source line came back — no queue dialog needed."""
-    from fastprompter.core.watcher.queue import DETACHED, PENDING
-
-    kept = dict(win.prompt_queues)
-    try:
-        win.prompt_queues.clear()
-        win.text_area.setPlainText("a\nqueued line\nb")
-        ed = win.text_area
-        c = ed.textCursor()
-        c.setPosition(ed.document().findBlockByNumber(1).position())
-        ed.setTextCursor(c)
-        win.queue_current_line()
-        item = win.prompt_queues[win._queue_slot_key()].items[0]
-        assert item.state == PENDING
-
-        item.mark_detached("source went away")
-        assert item.state == DETACHED
-
-        # the block still carries the anchor and the line exists again -> revive
-        win._watcher_refresh_texts(
-            win._queue_slot_key(), win.prompt_queues[win._queue_slot_key()])
-        assert item.state == PENDING, "a restored source must revive the item"
-        assert not item.reason
-    finally:
-        win.prompt_queues.clear()
-        win.prompt_queues.update(kept)
-        win.text_area.clear()
-
-
-def test_inactive_reference_item_is_detached_not_live(win):
-    """T-756: a source-referenced item whose line cannot be resolved must be
-    reported detached, so stale text is never sent as if it were live. A
-    snapshot item (line 0) owns its text and stays live."""
-    from fastprompter.core.watcher.queue import QueueItem
-
-    win.data["temp_presets"][:] = ["only one line"]
-
-    stale = QueueItem("stale snapshot", line=5)
-    _, detached = win.queue_item_live_text("0", stale)
-    assert detached is True, "a referenced line past the end is detached"
-
-    owned = QueueItem("owned text", line=0)
-    text, detached = win.queue_item_live_text("0", owned)
-    assert detached is False and text == "owned text"
-
-
-def test_move_between_queues_keeps_its_text(win):
-    """T-756: moving an item to another silo makes it a text SNAPSHOT — the
-    destination runtime must never bind it to the destination's same line."""
-    from fastprompter.ui.queue_panel import QueueDialog
-
-    kept = dict(win.prompt_queues)
-    try:
-        win.prompt_queues.clear()
-        win.data["temp_presets"][:] = [
-            "silo A\nlineA1\nlineA2\nlineA3\nlineA4",
-            "silo B\nB1\nB2\nB3\nB4",
-        ]
-        win.silo_docs[:] = []
-        win._switch_to_slot(0, initial=True)
-        ed = win.text_area
-        c = ed.textCursor()
-        c.setPosition(ed.document().findBlockByNumber(4).position())   # "lineA4"
-        ed.setTextCursor(c)
-        win.queue_current_line()
-
-        dlg = QueueDialog(win)
-        dlg.tabs.setCurrentIndex(dlg.tabs.count() - 1)   # the "All silos" master tab
-        dlg.refresh_master()
-        dlg.master_list.setCurrentRow(0)
-        dlg.cb_target.setCurrentIndex(1)                 # silo B
-        dlg.move_selected_to_target()
-
-        item = win.prompt_queues["1"].items[0]
-        assert item.line == 0, "a cross-silo move is a snapshot, not a reference"
-        text, detached = win.queue_item_live_text("1", item)
-        assert text == "lineA4", f"the item must keep its own text, got {text!r}"
-        assert detached is False
-        dlg.close()
-    finally:
-        win.prompt_queues.clear()
-        win.prompt_queues.update(kept)
-        win.text_area.clear()
-
-
-def test_queue_line_number_follows_edits_above(win):
-    """T-756: item.line is re-stamped from the anchor when the queue is
-    committed, so an inactive silo later fires at the RIGHT line."""
-    kept = dict(win.prompt_queues)
-    try:
-        win.prompt_queues.clear()
-        win.data["temp_presets"][:] = [
-            "# h\n1\n2\n3\n4\n5\n6\n7\n8\n9",
-            "other silo",
-        ]
-        win.silo_docs[:] = []
-        win._switch_to_slot(0, initial=True)
-        ed = win.text_area
-        c = ed.textCursor()
-        c.setPosition(ed.document().findBlockByNumber(5).position())   # "5"
-        ed.setTextCursor(c)
-        win.queue_current_line()
-        item = win.prompt_queues["0"].items[0]
-        assert item.line == 6
-
-        # insert three lines above the anchored block
-        c = ed.textCursor()
-        c.setPosition(ed.document().findBlockByNumber(0).position())
-        ed.setTextCursor(c)
-        ed.insertPlainText("X\nY\nZ\n")
-        assert item.line == 6, "stale until the sync runs"
-
-        # committing the queue re-stamps the line from the anchor
-        win.save_prompt_queues()
-        assert item.line == 9, f"expected line 9 after 3 lines inserted, got {item.line}"
-    finally:
-        win.prompt_queues.clear()
-        win.prompt_queues.update(kept)
-        win.text_area.clear()
-
-
-def test_deleting_the_line_detaches_but_keeps_the_text(win):
-    from PyQt6.QtGui import QTextCursor
-
-    from fastprompter.core.watcher.queue import DETACHED
-
-    kept = dict(win.prompt_queues)
-    try:
-        win.prompt_queues.clear()
-        dlg = _queue_three(win)
-        item = dlg._queue().items[1]
-
-        block = win.text_area.block_for_queue_item(item.id)
-        cut = QTextCursor(block)
-        cut.select(QTextCursor.SelectionType.BlockUnderCursor)
-        cut.removeSelectedText()
-
-        dlg.refresh()
-        assert item.state == DETACHED
-        assert item.text == "second prompt", "the last known text must survive"
-        assert item.reason
-        dlg.close()
-    finally:
-        win.prompt_queues.clear()
-        win.prompt_queues.update(kept)
-        win.text_area.clear()
-
-
-def test_removing_an_item_clears_its_line_mark(win):
-    """Otherwise the note keeps a mark pointing at a queue entry that is
-    gone, and the gutter lies."""
-    from fastprompter.ui.markdown_highlighter import QUEUED_BIT
-
-    kept = dict(win.prompt_queues)
-    try:
-        win.prompt_queues.clear()
-        dlg = _queue_three(win)
-        item = dlg._queue().items[0]
-        block = win.text_area.block_for_queue_item(item.id)
-        assert max(0, block.userState()) & QUEUED_BIT
-
-        dlg.list.setCurrentRow(0)
-        dlg.remove_selected()
-
-        assert win.text_area.block_for_queue_item(item.id) is None
-        assert len(dlg._queue()) == 2
-        for n in range(win.text_area.document().blockCount()):
-            state = max(0, win.text_area.document().findBlockByNumber(n).userState())
-            if state & QUEUED_BIT:
-                blk = win.text_area.document().findBlockByNumber(n)
-                assert blk.text().strip() != "first prompt"
-        dlg.close()
-    finally:
-        win.prompt_queues.clear()
-        win.prompt_queues.update(kept)
-        win.text_area.clear()
-
-
-def test_clear_finished_leaves_the_waiting_ones(win):
-    kept = dict(win.prompt_queues)
-    try:
-        win.prompt_queues.clear()
-        dlg = _queue_three(win)
-        queue = dlg._queue()
-        queue.items[0].mark_sent()
-        queue.items[1].mark_failed("nope")
-
-        dlg.clear_finished()
-        assert [i.text for i in dlg._queue()] == ["third prompt"]
-        dlg.close()
-    finally:
-        win.prompt_queues.clear()
-        win.prompt_queues.update(kept)
-        win.text_area.clear()
-
-
-def test_a_drag_reorder_is_written_back_to_the_queue(win):
-    """The list order IS the sending order, so a drop that only moved rows
-    on screen would be a lie."""
-    kept = dict(win.prompt_queues)
-    try:
-        win.prompt_queues.clear()
-        dlg = _queue_three(win)
-
-        # simulate what a drop leaves behind: rows in a new order
-        row = dlg.list.takeItem(2)
-        dlg.list.insertItem(0, row)
-        dlg._apply_row_order()
-
-        assert [i.text for i in dlg._queue()] == [
-            "third prompt", "first prompt", "second prompt"]
-        dlg.close()
-    finally:
-        win.prompt_queues.clear()
-        win.prompt_queues.update(kept)
-        win.text_area.clear()
-
-def _two_silos_with_queues(win):
-    """Alpha (slot 0) gets two prompts, Beta (slot 1) one. Beta stays open."""
-    from fastprompter.ui.queue_panel import QueueDialog
-
-    ed = win.text_area
-    win.data["temp_presets"][:] = [
-        "# Alpha project\nfirst from alpha\nsecond from alpha",
-        "# Beta notes\nonly from beta",
-        "",
-    ]
-    win.silo_docs[:] = []
-    for slot in (0, 1):
-        win._switch_to_slot(slot, initial=True)
-        doc = ed.document()
-        for n in range(1, doc.blockCount()):
-            if doc.findBlockByNumber(n).text().strip():
-                c = ed.textCursor()
-                c.setPosition(doc.findBlockByNumber(n).position())
-                ed.setTextCursor(c)
-                win.queue_current_line()
-    return QueueDialog(win)
-
-
-def test_master_view_shows_every_silo_and_names_the_source(win):
-    kept = dict(win.prompt_queues)
-    kept_presets = list(win.data["temp_presets"])
-    try:
-        win.prompt_queues.clear()
-        dlg = _two_silos_with_queues(win)
-
-        assert [dlg.tabs.tabText(i) for i in range(dlg.tabs.count())] == [
-            "This silo", "All silos"]
-        assert dlg.master_list.count() == 3
-
-        rows = [dlg.master_list.item(i).text() for i in range(3)]
-        # the label is the silo's FIRST LINE with the leading # stripped
-        assert "[Alpha project]" in rows[0]
-        assert "[Beta notes]" in rows[2]
-        assert "3" in dlg.lbl_master.text() and "2" in dlg.lbl_master.text()
-        dlg.close()
-    finally:
-        win.prompt_queues.clear()
-        win.prompt_queues.update(kept)
-        win.data["temp_presets"][:] = kept_presets
-        win.silo_docs[:] = []
-        win._switch_to_slot(0, initial=True)
-        win.text_area.clear()
-
-
-def test_master_view_reads_a_closed_silo_from_its_stored_text(win):
-    """silo_docs are lazy, so most silos have no document. Their text has to
-    come from temp_presets - which is safe because a closed silo cannot be
-    edited: editing it opens it."""
-    kept = dict(win.prompt_queues)
-    kept_presets = list(win.data["temp_presets"])
-    try:
-        win.prompt_queues.clear()
-        dlg = _two_silos_with_queues(win)
-
-        assert win._queue_slot_key() == "1", "Beta is the open one"
-        alpha_rows = [dlg.master_list.item(i).text()
-                      for i in range(dlg.master_list.count())
-                      if "[Alpha project]" in dlg.master_list.item(i).text()]
-        assert len(alpha_rows) == 2
-        assert any("first from alpha" in r for r in alpha_rows), \
-            "the closed silo showed a placeholder instead of its text"
-        dlg.close()
-    finally:
-        win.prompt_queues.clear()
-        win.prompt_queues.update(kept)
-        win.data["temp_presets"][:] = kept_presets
-        win.silo_docs[:] = []
-        win._switch_to_slot(0, initial=True)
-        win.text_area.clear()
-
-
-def test_master_view_moves_an_item_between_silos(win):
-    kept = dict(win.prompt_queues)
-    kept_presets = list(win.data["temp_presets"])
-    try:
-        win.prompt_queues.clear()
-        dlg = _two_silos_with_queues(win)
-
-        dlg.master_list.setCurrentRow(0)
-        slot, item = dlg._master_selected()
-        assert slot == "0"
-
-        target = next(dlg.cb_target.itemData(i)
-                      for i in range(dlg.cb_target.count())
-                      if dlg.cb_target.itemData(i) != slot)
-        dlg.cb_target.setCurrentIndex(
-            [dlg.cb_target.itemData(i) for i in range(dlg.cb_target.count())].index(target))
-        dlg.move_selected_to_target()
-
-        assert item.text in [i.text for i in win.prompt_queues[target]]
-        assert item.text not in [i.text for i in win.prompt_queues["0"]]
-        dlg.close()
-    finally:
-        win.prompt_queues.clear()
-        win.prompt_queues.update(kept)
-        win.data["temp_presets"][:] = kept_presets
-        win.silo_docs[:] = []
-        win._switch_to_slot(0, initial=True)
-        win.text_area.clear()
-
-
-def test_queues_are_separate_per_category(win):
-    """Every other slot-keyed map is stored per category and rebound on a tab
-    change; a queue that skipped that would follow the user across tabs."""
-    if win.cat_combo.count() < 2:
-        import pytest
-        pytest.skip("needs at least two categories")
-
-    kept = dict(win.prompt_queues)
-    kept_index = win.cat_combo.currentIndex()
-    ed = win.text_area
-    try:
-        win.cat_combo.setCurrentIndex(0)
-        win.on_tab_changed(0)
-        win.prompt_queues.clear()
-        ed.setPlainText("prompt in the first category")
-        c = ed.textCursor()
-        c.setPosition(0)
-        ed.setTextCursor(c)
-        win.queue_current_line()
-        first_cat = win.get_current_category()
-
-        win.cat_combo.setCurrentIndex(1)
-        win.on_tab_changed(1)
-        assert not win.prompt_queues, "another category's queue leaked in"
-
-        win.cat_combo.setCurrentIndex(0)
-        win.on_tab_changed(0)
-        assert [i.text for i in win.prompt_queues.get("0", [])] == [
-            "prompt in the first category"]
-        assert first_cat in win.data.get("watcher_queues_all", {})
-    finally:
-        win.cat_combo.setCurrentIndex(kept_index)
-        win.on_tab_changed(kept_index)
-        win.prompt_queues.clear()
-        win.prompt_queues.update(kept)
-        ed.clear()
-
-
-def test_opening_the_dialog_does_not_die_on_the_first_tab_signal(win):
-    """currentChanged fires while the first tab is being added. Connecting it
-    before the widgets exist raised inside a Qt slot, which takes the process
-    down with no traceback - it must be connected last."""
-    from fastprompter.ui.queue_panel import QueueDialog
-
-    kept = dict(win.prompt_queues)
-    try:
-        win.prompt_queues.clear()
-        dlg = QueueDialog(win)          # empty queue: the harder case
-        assert dlg.tabs.count() == 2
-        dlg.tabs.setCurrentIndex(1)     # and switching must be safe too
-        dlg.tabs.setCurrentIndex(0)
-        dlg.close()
-    finally:
-        win.prompt_queues.clear()
-        win.prompt_queues.update(kept)
-
-def _chips(dlg):
-    out = []
-    for i in range(dlg.chip_box.count()):
-        w = dlg.chip_box.itemAt(i).widget()
-        if w is not None:
-            out.append((w.text(), w.isChecked()))
-    return out
-
-
-def test_the_skill_chip_stamps_the_next_queued_prompt(win):
-    """The skill is stored beside the text and composed at send time, so the
-    row preview is what would actually go out."""
-    from fastprompter.ui.queue_panel import QueueDialog
-
-    ed = win.text_area
-    kept = dict(win.prompt_queues)
-    kept_skill = win.data.get("watcher_skill", "")
-    try:
-        win.prompt_queues.clear()
-        dlg = QueueDialog(win)
-
-        # "none" is a real choice and comes first
-        assert _chips(dlg)[0][0] == "none"
-        assert dlg.current_skill() == ""
-
-        dlg.set_current_skill("saipen")
-        assert dlg.current_skill() == "saipen"
-        assert ("/saipen", True) in _chips(dlg)
-
-        ed.setPlainText("continue please")
-        c = ed.textCursor()
-        c.setPosition(0)
-        ed.setTextCursor(c)
-        item = win.queue_current_line()
-
-        assert item.skill == "saipen"
-        assert item.compose() == "/saipen continue please"
-        # a target that cannot invoke skills gets None, not a stripped prompt
-        assert item.compose(skill_format=None) is None
-
-        dlg.refresh()
-        assert "/saipen continue please" in dlg.list.item(0).text()
-        dlg.close()
-    finally:
-        win.prompt_queues.clear()
-        win.prompt_queues.update(kept)
-        win.data["watcher_skill"] = kept_skill
-        ed.clear()
-
-
-def test_a_hand_added_chip_survives_a_rescan_and_can_be_hidden(win):
-    """Discovery only sees what is installed locally, so curation is the
-    feature, not the fallback."""
-    from fastprompter.core.watcher import skills as sk
-    from fastprompter.ui.queue_panel import QueueDialog
-
-    kept_extra = list(win.data.get("watcher_skills_extra") or [])
-    kept_hidden = list(win.data.get("watcher_skills_hidden") or [])
-    kept_skill = win.data.get("watcher_skill", "")
-    try:
-        win.data["watcher_skills_extra"] = []
-        win.data["watcher_skills_hidden"] = []
-        dlg = QueueDialog(win)
-
-        palette = sk.load_palette(win.data)
-        palette.append(sk.Skill("cavecrew", source="manual"))
-        sk.save_palette(win.data, palette)
-        dlg.refresh_chips()
-        assert "/cavecrew" in [c[0] for c in _chips(dlg)]
-
-        # only the hand-added one is stored; the discovered ones are rescanned
-        stored = [e["name"] for e in win.data["watcher_skills_extra"]]
-        assert stored == ["cavecrew"]
-
-        dlg.set_current_skill("cavecrew")
-        dlg.hide_current_skill()
-        assert "/cavecrew" not in [c[0] for c in _chips(dlg)]
-        assert "cavecrew" in win.data["watcher_skills_hidden"]
-        # and it does not come straight back from `extra` on the next load
-        assert "cavecrew" not in [
-            e["name"] for e in win.data.get("watcher_skills_extra") or []]
-        assert dlg.current_skill() == ""
-        dlg.close()
-    finally:
-        win.data["watcher_skills_extra"] = kept_extra
-        win.data["watcher_skills_hidden"] = kept_hidden
-        win.data["watcher_skill"] = kept_skill
-
-
-# ============================ W-07: arming the watcher =====================
-#
-# Nothing here arms against a real window with live sending. The target is a
-# fake handle and the sender stays dry, so no test can put a keystroke into a
-# running application.
-
-
-class _FakeWin32:
-    """A desktop of one window, standing in for the ctypes layer."""
-
-    def __init__(self, hwnd=4242, title="Agent", cls="ConsoleWindowClass"):
-        self.hwnd, self.title, self.cls = hwnd, title, cls
-        self.alive = True
-
-    def info(self, hwnd):
-        if hwnd != self.hwnd or not self.alive:
-            return None
-        return {"title": self.title, "cls": self.cls, "pid": 999}
-
-
-def _fake_adapter(name="test-agent", quiet_ms=0, settle_ms=0):
-    from fastprompter.core.watcher.adapter import Adapter
-    from fastprompter.core.watcher.probes import Probe
-
-    class Steady(Probe):
-        kind = "steady"
-
-        def _read(self):
-            return "unchanging"
-
-    return Adapter(name, probes=[Steady(quiet_ms=quiet_ms)],
-                   settle_ms=settle_ms)
-
-
-def _arm_on_fake(win, monkeypatch, live=False, adapter=None):
-    """Arm against a fake window. Returns (ok, reason, fake)."""
-    from fastprompter.core.watcher import win32 as win32_mod
-
-    fake = _FakeWin32()
-    monkeypatch.setattr(win32_mod, "window_info",
-                        lambda hwnd, api=None: fake.info(hwnd))
-    monkeypatch.setattr(win32_mod, "probe_for",
-                        lambda api=None: (lambda h: fake.info(h)))
-    ok, reason = win.watcher_arm(fake.hwnd, adapter or _fake_adapter(), live=live)
-    return ok, reason, fake
-
-
-def test_the_watcher_mixin_is_on_the_window(win):
-    from fastprompter.ui.watcher_mixin import WatcherMixin
-    assert isinstance(win, WatcherMixin)
-    assert win.watcher_engine().state == "disarmed"
-
-
-def test_arming_a_window_that_is_gone_is_refused(win, monkeypatch):
-    from fastprompter.core.watcher import win32 as win32_mod
-
-    monkeypatch.setattr(win32_mod, "window_info", lambda hwnd, api=None: None)
-    ok, reason = win.watcher_arm(1234, _fake_adapter())
-    assert ok is False and "gone" in reason
-    assert win.watcher_engine().armed is False
-
-
-def test_arming_without_a_usable_agent_is_refused(win, monkeypatch):
-    from fastprompter.core.watcher.adapter import Adapter
-
-    ok, reason, _fake = _arm_on_fake(win, monkeypatch, adapter=Adapter("blind"))
-    assert ok is False and "no probes" in reason
-
-
-def test_arming_pins_the_queue_and_starts_the_timer(win, monkeypatch):
-    ok, reason, _fake = _arm_on_fake(win, monkeypatch)
-    assert ok is True and "dry run" in reason
-
-    engine = win.watcher_engine()
-    assert engine.armed is True
-    assert engine.queue_key == win._queue_slot_key()
-    assert win._watcher_timer is not None and win._watcher_timer.isActive()
-
-    win.watcher_disarm("test done")
-    assert win._watcher_timer.isActive() is False
-
-
-def test_a_dry_run_never_marks_anything_live(win, monkeypatch):
-    """The default must record rather than send, even armed."""
-    _arm_on_fake(win, monkeypatch, live=False)
-    assert win._watcher_sender.dry is True
-    win.watcher_disarm("test done")
-
-
-def test_going_live_picks_the_silent_sender_never_the_loud_one(win, monkeypatch):
-    """The UI has no route to the focus-stealing path at all."""
-    from fastprompter.core.watcher import win32 as win32_mod
-    from fastprompter.core.watcher.sender import ClipboardSender, PostMessageSender
-
-    monkeypatch.setattr(win32_mod, "available", lambda: True)
-    _arm_on_fake(win, monkeypatch, live=True)
-
-    assert isinstance(win._watcher_sender, PostMessageSender)
-    assert not isinstance(win._watcher_sender, ClipboardSender)
-    assert win._watcher_sender.silent is True
-    win.watcher_disarm("test done")
-
-
-def test_panic_stops_a_run_and_drops_what_was_in_flight(win, monkeypatch):
-    _arm_on_fake(win, monkeypatch)
-    win.watcher_engine().state = "sending"
-    win.watcher_engine().pending = object()
-
-    assert win.watcher_panic() is True
-    assert win.watcher_engine().armed is False
-    assert win.watcher_engine().pending is None
-    assert win._watcher_timer.isActive() is False
-
-
-def test_panic_with_nothing_armed_says_so(win):
-    """The hotkey filter only swallows the key when this returns True, so a
-    stray press stays usable in whatever app the user is in."""
-    win.watcher_disarm("idle")
-    assert win.watcher_panic() is False
-
-
-def test_a_tick_that_explodes_disarms_instead_of_killing_the_app(win, monkeypatch):
-    """An exception in a Qt slot takes the process down with no traceback.
-    A watcher whose own loop is broken must stop, not keep firing."""
-    _arm_on_fake(win, monkeypatch)
-
-    def boom():
-        raise RuntimeError("the tick is broken")
-
-    monkeypatch.setattr(win, "_watcher_tick_inner", boom)
-    win._watcher_tick()              # must not raise
-
-    assert win.watcher_engine().armed is False
-    assert "error" in win.watcher_engine().reason
-    assert win._watcher_timer.isActive() is False
-
-
-def test_the_target_vanishing_mid_run_disarms(win, monkeypatch):
-    _ok, _reason, fake = _arm_on_fake(win, monkeypatch)
-    fake.alive = False
-    win._watcher_tick()
-    assert win.watcher_engine().armed is False
-    assert "gone" in win.watcher_engine().reason
-
-
-def test_a_freshly_armed_watcher_does_not_fire_into_what_is_on_screen(
-        win, monkeypatch):
-    """A probe's first reading is a baseline, not the agent working."""
-    _arm_on_fake(win, monkeypatch)
-    for _ in range(4):
-        win._watcher_tick()
-
-    assert win.watcher_engine().sent_count == 0
-    assert win.watcher_engine()._seen_busy is False
-    win.watcher_disarm("test done")
-
-
-def test_armed_state_is_never_written_to_the_database(win, monkeypatch):
-    """It belongs to a live session with a live window; restoring it would
-    point a watcher at a handle that now belongs to someone else's app."""
-    _arm_on_fake(win, monkeypatch)
-    win.save_prompt_queues()
-
-    keys = [k for k in win.data if "watcher" in k]
-    assert "watcher_armed" not in keys
-    assert not any("target" in k or "hwnd" in k for k in keys)
-    win.watcher_disarm("test done")
-
-
-def test_the_watcher_dialog_opens_and_lists_its_agents(win):
-    from fastprompter.ui.watcher_dialog import WatcherDialog
-
-    dlg = WatcherDialog(win)
-    try:
-        assert dlg.cmb_agent.count() >= 1, "the shipped example describes agents"
-        assert dlg.btn_arm.text()
-    finally:
-        dlg.close()
-
-
-def test_cdp_arm_needs_no_window(win, monkeypatch):
-    """T-757: a cdp adapter arms without a Win32 window selected; the hwnd
-    gate applies to window transports only."""
-    from fastprompter.core.watcher.adapter import Adapter
-    from fastprompter.ui.watcher_dialog import WatcherDialog
-
-    kept = dict(win.prompt_queues)
-    try:
-        win.prompt_queues.clear()
-        win.text_area.setPlainText("line to queue")
-        win.queue_current_line()
-
-        dlg = WatcherDialog(win)
-        cdp = Adapter("cdp-agent", probes=(), enabled=True, transport="cdp",
-                      cdp_port=9333, blocker_pattern="")
-        dlg.cmb_agent.addItem("cdp-agent", cdp)
-        dlg.cmb_agent.setCurrentIndex(dlg.cmb_agent.count() - 1)
-        dlg.lst_windows.clear()          # nothing selected
-
-        calls = []
-        monkeypatch.setattr(
-            win, "watcher_arm",
-            lambda hwnd, adapter, live=False: calls.append(hwnd) or (True, "ok"))
-        dlg.toggle_arm()
-        assert calls and calls[0] is None, (
-            "cdp must reach watcher_arm with hwnd=None, got the window gate")
-        dlg.close()
-    finally:
-        win.prompt_queues.clear()
-        win.prompt_queues.update(kept)
-        win.text_area.clear()
-
-
-def test_closing_the_dialog_leaves_a_run_going(win, monkeypatch):
-    """A run outlives the window that started it - that is what a watcher is."""
-    from fastprompter.ui.watcher_dialog import WatcherDialog
-
-    _arm_on_fake(win, monkeypatch)
-    dlg = WatcherDialog(win)
-    dlg.close()
-
-    assert win.watcher_engine().armed is True, "closing must not disarm"
-    assert dlg.refresh not in win._watcher_listeners, "but it must unsubscribe"
-    win.watcher_disarm("test done")
-
-
-def test_a_dead_dialog_cannot_take_a_run_down_with_it(win, monkeypatch):
-    """The listener list outlives dialogs; a broken one is dropped, not raised."""
-    _arm_on_fake(win, monkeypatch)
-
-    def broken():
-        raise RuntimeError("wrapped C/C++ object has been deleted")
-
-    win.watcher_listen(broken)
-    win._watcher_notify()
-
-    assert broken not in win._watcher_listeners
-    assert win.watcher_engine().armed is True
-    win.watcher_disarm("test done")
-
-
-def test_the_dialog_locks_the_target_while_armed(win, monkeypatch):
-    """Both are pinned at arming; a movable picker would show a target the
-    run is not actually using."""
-    from fastprompter.ui.watcher_dialog import WatcherDialog
-
-    _arm_on_fake(win, monkeypatch)
-    dlg = WatcherDialog(win)
-    try:
-        assert dlg.lst_windows.isEnabled() is False
-        assert dlg.cmb_agent.isEnabled() is False
-        assert dlg.chk_live.isEnabled() is False
-        assert dlg.btn_panic.isEnabled() is True
-    finally:
-        dlg.close()
-        win.watcher_disarm("test done")
-
-
-def test_arming_from_the_dialog_needs_something_queued(win):
-    """Arming an empty queue would sit watching forever with nothing to say."""
-    # PyQt6, like the rest of the app. Importing the PySide6 classes here
-    # handed a PySide6.QListWidgetItem to a PyQt6 addItem() and the call had
-    # no matching overload. It never showed up because the suite hung earlier
-    # in the file and this test was simply never reached.
-    from PyQt6.QtCore import Qt
-    from PyQt6.QtWidgets import QListWidgetItem
-
-    from fastprompter.core.watcher.queue import queue_for
-    from fastprompter.ui.watcher_dialog import WatcherDialog
-
-    queue = queue_for(win.prompt_queues, win._queue_slot_key())
-    # The ITEMS, not to_list() — that returns dicts, and putting those back
-    # left raw dicts in a live queue for every later test in the file, which
-    # is how test_the_dialog_offers_watching_and_says_it_sends_nothing died
-    # on "'dict' object has no attribute 'state'" in a full-suite run only.
-    saved = list(queue.items)
-    queue.items.clear()
-
-    dlg = WatcherDialog(win)
-    try:
-        # Guarantee a valid hwnd so toggle_arm() proceeds past the "pick a window" check
-        item = QListWidgetItem("Dummy Window")
-        item.setData(Qt.ItemDataRole.UserRole, 12345)
-        dlg.lst_windows.addItem(item)
-        dlg.lst_windows.setCurrentRow(0)
-        dlg.toggle_arm()
-        assert win.watcher_engine().armed is False
-        assert "Alt+C" in dlg.lbl_state.text()
-    finally:
-        dlg.close()
-        queue.items.extend(saved)
-
-
-def test_the_panic_hotkey_is_registered_globally():
-    """It must work from whatever window the user is in when they decide it
-    is going wrong, not only from FastPrompter."""
-    import inspect
-
-    from fastprompter.core.hotkey_filter import HotkeyFilter
-    from fastprompter.ui.hotkey_mixin import HotkeyMixin
-
-    assert "watcher_panic_hotkey" in inspect.getsource(
-        HotkeyMixin.register_all_hotkeys)
-    assert "watcher_panic" in inspect.getsource(
-        HotkeyFilter.nativeEventFilter)
-
-
-# ---------------------------- observe mode ---------------------------------
-#
-# The safety property is structural, not a flag: observe mode builds no
-# target and no sender, so there is nothing in it that COULD send. That is
-# what makes it safe to point at an agent mid-turn to learn its signal.
-
-
-def test_watching_builds_no_target_and_no_live_sender(win):
-    ok, reason = win.watcher_observe(_fake_adapter())
-    try:
-        assert ok is True and "watching" in reason
-        assert win.watcher_observing is True
-        assert win._watcher_target is None, "no target means nothing to send to"
-        assert win._watcher_sender.dry is True
-        assert win.watcher_engine().armed is False, "watching is not arming"
-    finally:
-        win.watcher_stop_observing()
-    assert win.watcher_observing is False
-
-
-def test_watching_never_sends_however_long_it_runs(win):
-    win.watcher_observe(_fake_adapter())
-    try:
-        for _ in range(8):
-            win._observe_tick()
-        assert win.watcher_engine().sent_count == 0
-        assert win.watcher_log().to_list() == []
-    finally:
-        win.watcher_stop_observing()
-
-
-def test_watching_an_agent_it_cannot_read_is_refused(win):
-    from fastprompter.core.watcher.adapter import Adapter
-
-    ok, reason = win.watcher_observe(Adapter("blind"))
-    assert ok is False and "no probes" in reason
-    assert win.watcher_observing is False
-
-
-def test_the_trace_records_transitions_not_every_poll(win):
-    """Twice a second, a row per poll would bury the two moments that matter
-    under hundreds of identical lines."""
-    win.watcher_observe(_fake_adapter())
-    try:
-        for _ in range(10):
-            win._observe_tick()
-        trace = win.watcher_trace()
-        assert 1 <= len(trace) <= 3, f"expected transitions only, got {len(trace)}"
-        states = [row["state"] for row in trace]
-        assert states == list(dict.fromkeys(states)), "no repeated states"
-    finally:
-        win.watcher_stop_observing()
-
-
-def test_the_trace_marks_where_a_prompt_would_have_gone(win):
-    """The point of watching: see the moment without living through it."""
-    win.watcher_observe(_fake_adapter())
-    try:
-        for _ in range(6):
-            win._observe_tick()
-        marked = [row for row in win.watcher_trace() if row["would_send"]]
-        assert marked, "the busy -> idle transition must be called out"
-        assert marked[0]["state"] == "idle"
-    finally:
-        win.watcher_stop_observing()
-
-
-def test_a_broken_observation_stops_instead_of_killing_the_app(win, monkeypatch):
-    """Same rule as the send tick: an exception in a Qt slot takes the
-    process down with no traceback."""
-    win.watcher_observe(_fake_adapter())
-
-    def boom():
-        raise RuntimeError("the observer is broken")
-
-    monkeypatch.setattr(win, "_observe_tick_inner", boom)
-    win._observe_tick()              # must not raise
-    assert win.watcher_observing is False
-
-
-def test_watching_is_refused_while_a_run_is_armed(win, monkeypatch):
-    """Both loops would poll the SAME probe objects at different rates, each
-    stamping the other's quiet window."""
-    _arm_on_fake(win, monkeypatch)
-    try:
-        ok, reason = win.watcher_observe(_fake_adapter())
-        assert ok is False and "disarm first" in reason
-        assert win.watcher_observing is False
-    finally:
-        win.watcher_disarm("test done")
-
-
-def test_disarming_lets_go_of_the_target(win, monkeypatch):
-    """A target outliving its run is how "it sent to the wrong window" starts."""
-    _arm_on_fake(win, monkeypatch)
-    assert win._watcher_target is not None
-    win.watcher_disarm("test done")
-    assert win._watcher_target is None
-    assert win._watcher_sender.dry is True
-
-
-def test_the_dialog_offers_watching_and_says_it_sends_nothing(win):
-    from fastprompter.ui.watcher_dialog import WatcherDialog
-
-    dlg = WatcherDialog(win)
-    try:
-        assert "nothing" in dlg.btn_watch.text().lower()
-        assert dlg.btn_watch.isEnabled() is True
-    finally:
-        dlg.close()
-
-
-def test_a_cdp_agent_arms_without_a_window_handle(win, monkeypatch):
-    """A cdp adapter is bound to a debuggable PAGE, not a window.
-
-    Demanding a handle for it made arming fail with "that window is gone"
-    against a perfectly healthy agent: the branch that builds a CdpTarget
-    existed, but the window check above it did not know about it. Only a
-    live run found that - every piece was tested, the seam was not.
-    """
-    from fastprompter.core.watcher import win32 as win32_mod
-    from fastprompter.core.watcher.adapter import Adapter
-    from fastprompter.core.watcher.probes import Probe
-
-    class Steady(Probe):
-        kind = "steady"
-
-        def _read(self):
-            return "unchanging"
-
-    page = {"id": "P1", "type": "page", "title": "CHAT",
-            "webSocketDebuggerUrl": "ws://127.0.0.1:1/devtools/page/P1"}
-    monkeypatch.setattr("fastprompter.core.watcher.cdp.discover",
-                        lambda port, **kw: [page])
-    # no window layer at all: it must not be consulted for a cdp adapter
-    monkeypatch.setattr(win32_mod, "window_info",
-                        lambda hwnd, api=None: None)
-
-    adapter = Adapter("cdp-agent", probes=[Steady()], transport="cdp",
-                      cdp_port=9333, settle_ms=0)
-    ok, reason = win.watcher_arm(0, adapter, live=False)
-    try:
-        assert ok is True, reason
-        assert win._watcher_target.target_id == "P1"
-    finally:
-        win.watcher_disarm("test done")
-
-
-# ------------------------------ W-2b: queue marks in the gutter ------------
-
-def _queue_first_line(win, text="a line worth queueing"):
-    from fastprompter.core.watcher.queue import queue_for
-
-    queue_for(win.prompt_queues, win._queue_slot_key()).items.clear()
-    win.text_area.setPlainText(text)
-    cur = win.text_area.textCursor()
-    cur.movePosition(cur.MoveOperation.Start)
-    win.text_area.setTextCursor(cur)
-    item = win.queue_current_line()
-    return item, win.text_area.document().findBlockByNumber(0)
-
-
-def test_a_line_can_be_user_marked_and_queued_without_either_clobbering(win):
-    """Different bit ranges, one userState. A queue mark that used the low
-    byte would overwrite whatever the user had ticked there."""
-    from fastprompter.ui.markdown_highlighter import QUEUED_BIT, SENT_BIT
-
-    _item, block = _queue_first_line(win)
-    block.setUserState(max(0, block.userState()) | 1)      # user tick
-
-    state = max(0, block.userState())
-    assert state & 0xFF == 1, "the user's mark survived"
-    assert state & QUEUED_BIT, "and so did the queue bit"
-    assert not state & SENT_BIT
-
-
-def test_marking_it_sent_keeps_the_user_mark(win):
-    from fastprompter.ui.markdown_highlighter import QUEUED_BIT, SENT_BIT
-
-    item, block = _queue_first_line(win)
-    block.setUserState(max(0, block.userState()) | 3)      # user rhombus
-    win.text_area.mark_queue_sent(item.id)
-
-    state = max(0, block.userState())
-    assert state & 0xFF == 3, "user mark untouched"
-    assert state & SENT_BIT and not state & QUEUED_BIT, "queued -> sent"
-
-
-def test_saving_the_user_marks_does_not_carry_the_queue_bits(win):
-    """collect_line_marks is the USER's marks. The queue has its own pair,
-    and mixing them would restore a tick on a line nobody ticked."""
-    _item, block = _queue_first_line(win)
-    block.setUserState(max(0, block.userState()) | 2)
-
-    marks = win.text_area.collect_line_marks()
-    assert marks.get(0) == 2, "only the low byte"
-    assert all(v <= 0xFF for v in marks.values())
-
-
-def test_restoring_user_marks_leaves_the_queue_bits_alone(win):
-    from fastprompter.ui.markdown_highlighter import QUEUED_BIT
-
-    _item, block = _queue_first_line(win)
-    win.text_area.apply_line_marks({0: 4})
-
-    state = max(0, block.userState())
-    assert state & 0xFF == 4
-    assert state & QUEUED_BIT, "applying user marks must not wipe the queue"
-
-
-def test_the_queue_stripe_is_drawn_even_with_user_marks_switched_off(win):
-    """line_marks governs the USER's margin marks. Hiding queue state with
-    it would make a silo full of queued lines look like an empty one."""
-    import inspect
-
-    src = inspect.getsource(type(win.text_area).line_number_area_paint_event)
-    body = src[src.index("queue_state ="):]
-    assert "marks_enabled" not in body, "the stripe must not be gated on it"
-    assert "SENT_BIT" in body and "QUEUED_BIT" in body
-
-
-def test_the_gutter_survives_a_repaint_with_a_queued_line(win):
-    """The paint path runs for real - a bad QColor or rect raises here."""
-    from PyQt6.QtCore import QRect
-    from PyQt6.QtGui import QPaintEvent
-
-    _item, _block = _queue_first_line(win)
-    area = win.text_area.line_number_area
-    win.text_area.line_number_area_paint_event(
-        QPaintEvent(QRect(0, 0, area.width(), area.height())))
-
-
-def test_the_queue_stripe_actually_reaches_the_pixels(win):
-    """Counts painted pixels, not code paths.
-
-    The structural tests above only prove the branch exists and the paint
-    call does not raise - the same class of evidence as an API returning
-    success while nothing arrives. This renders the gutter and counts the
-    stripe colours.
-
-    Sizes only the gutter widget, never the main window: the shared fixture
-    is the one T-295 warns about, and resizing it is what the header-density
-    tests were flaky about.
-    """
-    from fastprompter.core.watcher.queue import queue_for
-
-    ta = win.text_area
-    area = ta.line_number_area
-    PENDING, SENT = (0x6a, 0xa9, 0xff), (0x46, 0xb9, 0x8a)
-
-    def counts():
-        area.repaint()
-        img = area.grab().toImage()
-        blue = green = 0
-        for x in range(img.width()):
-            for y in range(img.height()):
-                c = img.pixelColor(x, y)
-                rgb = (c.red(), c.green(), c.blue())
-                if rgb == PENDING:
-                    blue += 1
-                elif rgb == SENT:
-                    green += 1
-        return blue, green
-
-    saved_geo = area.geometry()
-    saved_numbers = win.data.get("show_line_numbers", "False")
-    saved_text = ta.toPlainText()
-    queue = queue_for(win.prompt_queues, win._queue_slot_key())
-    saved_items = queue.to_list()
-    try:
-        win.data["show_line_numbers"] = "True"
-        area.resize(24, 120)
-        queue.items.clear()
-        ta.setPlainText("one\ntwo")
-        cur = ta.textCursor()
-        cur.movePosition(cur.MoveOperation.Start)
-        ta.setTextCursor(cur)
-
-        assert counts() == (0, 0), "nothing queued, nothing striped"
-
-        item = win.queue_current_line()
-        blue, green = counts()
-        assert blue > 0 and green == 0, "queued paints the pending stripe"
-
-        ta.mark_queue_sent(item.id)
-        blue, green = counts()
-        assert green > 0 and blue == 0, "sent replaces it, never doubles up"
-    finally:
-        win.data["show_line_numbers"] = saved_numbers
-        area.setGeometry(saved_geo)
-        ta.setPlainText(saved_text)
-        from fastprompter.core.watcher.queue import QueueItem
-        queue.items.clear()
-        queue.items.extend(QueueItem.from_dict(raw) for raw in saved_items)
-
-
-# ---------------------------- W-6b: row actions ----------------------------
-
-
-def _panel_with(win, texts):
-    """A queue dialog holding exactly these prompts, queued the real way."""
-    from fastprompter.core.watcher.queue import queue_for
-    from fastprompter.ui.queue_panel import QueueDialog
-
-    queue = queue_for(win.prompt_queues, win._queue_slot_key())
-    queue.items.clear()
-    win.text_area.setPlainText("\n".join(texts))
-    for i in range(len(texts)):
-        cur = win.text_area.textCursor()
-        cur.movePosition(cur.MoveOperation.Start)
-        for _ in range(i):
-            cur.movePosition(cur.MoveOperation.Down)
-        win.text_area.setTextCursor(cur)
-        win.queue_current_line()
-    dlg = QueueDialog(win)
-    return dlg, queue
-
-
-def _row_id(dlg, index):
-    from PyQt6.QtCore import Qt as _Qt
-    return dlg.list.item(index).data(_Qt.ItemDataRole.UserRole)
-
-
-LONG = "a prompt long enough that a single row cannot show all of it " * 3
-
-
-def test_a_long_prompt_collapses_to_one_line_with_a_chevron(win):
-    dlg, _q = _panel_with(win, [LONG])
-    try:
-        row = dlg.list.item(0).text()
-        assert row.startswith(">"), "collapsed rows advertise the fold"
-        assert row.endswith("...")
-        assert len(row) < len(LONG), "the row is not the whole prompt"
-    finally:
-        dlg.close()
-
-
-def test_a_short_prompt_gets_no_chevron(win):
-    """A row already showing everything must not advertise a fold."""
-    dlg, _q = _panel_with(win, ["short one"])
-    try:
-        row = dlg.list.item(0).text()
-        assert not row.startswith(">") and not row.startswith("v")
-        assert "short one" in row
-    finally:
-        dlg.close()
-
-
-def test_expanding_shows_the_whole_prompt(win):
-    dlg, _q = _panel_with(win, [LONG])
-    try:
-        item_id = _row_id(dlg, 0)
-        dlg.toggle_expanded(item_id)
-        row = dlg.list.item(0).text()
-        assert row.startswith("v"), "the chevron flips"
-        assert LONG.strip() in row
-        assert not row.endswith("...")
-
-        dlg.toggle_expanded(item_id)
-        assert dlg.list.item(0).text().startswith(">"), "and folds back"
-    finally:
-        dlg.close()
-
-
-def test_expansion_is_per_row(win):
-    dlg, _q = _panel_with(win, [LONG, LONG + " second"])
-    try:
-        first = _row_id(dlg, 0)
-        dlg.toggle_expanded(first)
-        assert dlg.list.item(0).text().startswith("v")
-        assert dlg.list.item(1).text().startswith(">"), "the other stays shut"
-    finally:
-        dlg.close()
-
-
-def test_a_removed_row_does_not_keep_its_expansion(win):
-    """Ids would otherwise pile up forever and re-expand a recycled one."""
-    dlg, queue = _panel_with(win, [LONG])
-    try:
-        item_id = _row_id(dlg, 0)
-        dlg.toggle_expanded(item_id)
-        assert item_id in dlg._expanded
-
-        queue.items.clear()
-        dlg.refresh()
-        assert dlg._expanded == set()
-    finally:
-        dlg.close()
-
-
-def test_the_chevron_zone_is_narrow_enough_to_leave_selection_alone(win):
-    """A whole-row click zone would swallow ordinary selection clicks."""
-    from fastprompter.ui.queue_panel import CHEVRON_PX
-
-    dlg, _q = _panel_with(win, [LONG])
-    try:
-        assert CHEVRON_PX <= 24
-        assert CHEVRON_PX < dlg.list.width() / 4
-    finally:
-        dlg.close()
-
-
-# ------------------------------ close when done ----------------------------
-
-def test_close_when_done_is_off_by_default(win):
-    dlg, _q = _panel_with(win, ["something"])
-    try:
-        assert dlg.chk_close_done.isChecked() is False
-    finally:
-        dlg.close()
-
-
-def test_an_already_empty_queue_does_not_trigger_the_close(win):
-    """Otherwise the box could never be ticked: opening on an empty queue
-    would close the panel the moment it is checked."""
-    dlg, queue = _panel_with(win, ["something"])
-    try:
-        queue.items.clear()
-        dlg._saw_work = False
-        dlg.chk_close_done.setChecked(True)
-        dlg.refresh()
-        assert dlg.isVisible() or not dlg.result(), "it stayed open"
-    finally:
-        dlg.close()
-
-
-def test_draining_the_queue_disarms_the_run_and_closes_the_panel(win, monkeypatch):
-    dlg, queue = _panel_with(win, ["something"])
-    try:
-        _arm_on_fake(win, monkeypatch)
-        assert win.watcher_engine().armed is True
-
-        dlg.chk_close_done.setChecked(True)
-        dlg.refresh()                 # still pending -> nothing happens
-        assert win.watcher_engine().armed is True
-
-        queue.items.clear()
-        dlg.refresh()                 # drained -> disarm + close
-        assert win.watcher_engine().armed is False
-        assert "done" in win.watcher_engine().reason
-    finally:
-        win.watcher_disarm("test done")
-        dlg.close()
-
-
-def test_closing_the_panel_never_closes_the_app(win):
-    """A queue finishing is not a reason to quit the thing being written in."""
-    import inspect
-
-    from fastprompter.ui.queue_panel import QueueDialog
-
-    src = inspect.getsource(QueueDialog._maybe_close_when_done)
-    assert "self.accept()" in src
-    assert "close()" not in src.replace("_maybe_close_when_done", "")
-    for banned in ("main_win.close", "QApplication.quit", "sys.exit",
-                   "quit_application"):
-        assert banned not in src
-
-
-def _press(dlg, x, y):
-    """Send a real press at (x, y) in the list viewport."""
-    from PyQt6.QtCore import QPointF
-    from PyQt6.QtCore import Qt as _Qt
-    from PyQt6.QtGui import QMouseEvent
-    from PyQt6.QtWidgets import QApplication
-
-    ev = QMouseEvent(QMouseEvent.Type.MouseButtonPress,
-                     QPointF(x, y), QPointF(x, y),
-                     _Qt.MouseButton.LeftButton, _Qt.MouseButton.LeftButton,
-                     _Qt.KeyboardModifier.NoModifier)
-    QApplication.sendEvent(dlg.list.viewport(), ev)
-    return ev
-
-
-def test_a_click_in_the_chevron_zone_expands_the_row(win):
-    """Exercises the event filter, not just toggle_expanded.
-
-    Calling the toggle directly proves the toggle works and says nothing
-    about whether a click ever reaches it - the same gap that let a posted
-    keystroke report success while arriving nowhere.
-    """
-    dlg, _q = _panel_with(win, [LONG])
-    dlg.list.resize(400, 120)
-    try:
-        item_id = _row_id(dlg, 0)
-        rect = dlg.list.visualItemRect(dlg.list.item(0))
-        y = rect.center().y()
-
-        assert item_id not in dlg._expanded
-        _press(dlg, 4, y)
-        assert item_id in dlg._expanded, "a click on the chevron opened it"
-
-        _press(dlg, 4, y)
-        assert item_id not in dlg._expanded, "and closed it again"
-    finally:
-        dlg.close()
-
-
-def test_a_click_past_the_chevron_zone_is_left_to_the_list(win):
-    """The list must not stop behaving like a list just because rows fold."""
-    from fastprompter.ui.queue_panel import CHEVRON_PX
-
-    dlg, _q = _panel_with(win, [LONG])
-    dlg.list.resize(400, 120)
-    try:
-        item_id = _row_id(dlg, 0)
-        rect = dlg.list.visualItemRect(dlg.list.item(0))
-        ev = _press(dlg, CHEVRON_PX + 40, rect.center().y())
-
-        assert item_id not in dlg._expanded, "no fold from a body click"
-        assert not ev.isAccepted() or True, "the press was not swallowed"
-    finally:
-        dlg.close()
-
-
-# ----------------------- T-562: FlowLayout with hidden items ---------------
-
-
-def _flow_row(count=4, width=500):
-    from PyQt6.QtWidgets import QPushButton
-
-    from fastprompter.ui.flow_layout import flow_widget
-
-    buttons = [QPushButton(f"button {i}") for i in range(count)]
-    for b in buttons:
-        b.setFixedSize(100, 24)
-    row = flow_widget(buttons)
-    row.resize(width, 100)
-    row.show()
-    QApplication.processEvents()
-    return row, buttons
-
-
-def _relayout(row, width=500):
-    row._flow.invalidate()
-    row.resize(width, 100)
-    QApplication.processEvents()
-
-
-def test_a_hidden_widget_costs_a_flow_row_nothing(win):
-    """Qt gives a hidden QWidgetItem a zero sizeHint, so it leaves no hole -
-    but the layout still added its spacing, so every hidden widget shifted
-    the row along by h_space. Two of them pushed the first visible button
-    from x=0 to x=16."""
-    row, buttons = _flow_row()
-    try:
-        buttons[0].hide()
-        buttons[1].hide()
-        _relayout(row)
-
-        xs = [b.geometry().x() for b in buttons[2:]]
-        assert xs[0] == 0, f"the row must still start at the left, got {xs[0]}"
-        assert xs[1] - xs[0] == 108, "and keep its ordinary 100+8 step"
-    finally:
-        row.close()
-
-
-def test_hiding_one_in_the_middle_closes_the_gap_exactly(win):
-    row, buttons = _flow_row()
-    try:
-        before = [b.geometry().x() for b in buttons]
-        buttons[1].hide()
-        _relayout(row)
-        after = [b.geometry().x() for b in buttons]
-
-        assert before == [0, 108, 216, 324]
-        assert after[2] == 108 and after[3] == 216, f"got {after}"
-    finally:
-        row.close()
-
-
-def test_a_row_of_only_hidden_widgets_has_no_height(win):
-    """The empty-line path: `lines` is empty, which used to be tested as
-    `not self._items` - true only when nothing was ever added."""
-    row, buttons = _flow_row(count=3)
-    try:
-        for b in buttons:
-            b.hide()
-        _relayout(row)
-        assert row.totalHeightForWidth(300) == 0
-    finally:
-        row.close()
-
-
-def test_an_empty_flow_still_measures(win):
-    from fastprompter.ui.flow_layout import flow_widget
-
-    assert flow_widget([]).totalHeightForWidth(300) == 0
-
-
-# ---------------------- T-200: checkbox hit testing ------------------------
-
-
-def _checkbox_doc(win):
-    from PyQt6.QtGui import QTextCursor
-
-    win.text_area.setPlainText("[ ] first\n[x] second\n[ ] third")
-    win.text_area._doc_has_checkbox = True
-    QApplication.processEvents()
-    doc = win.text_area.document()
-    points = []
-    for i in range(doc.blockCount()):
-        r = win.text_area.cursorRect(QTextCursor(doc.findBlockByNumber(i)))
-        points.append((i, r))
-    return doc, points
-
-
-def test_every_checkbox_answers_a_click(win):
-    from PyQt6.QtCore import QPoint
-
-    doc, points = _checkbox_doc(win)
-    for i, r in points:
-        hit = win.text_area._checkbox_at_pos(QPoint(int(r.x()) + 4,
-                                                     int(r.top()) + 4))
-        assert hit is not None and hit.blockNumber() == i, f"block {i}"
-
-
-def test_one_bad_block_does_not_kill_the_checkbox_scan(win, monkeypatch):
-    """The guard used to wrap the whole walk, so a single block that upset
-    the layout maths aborted the scan and every checkbox below it became
-    unclickable. Measured before the fix: the third of three stopped
-    responding."""
-    from PyQt6.QtCore import QPoint
-
-    doc, points = _checkbox_doc(win)
-    ta = win.text_area
-    original = ta.cursorRect
-    calls = {"n": 0}
-
-    def flaky(cursor):
-        calls["n"] += 1
-        if calls["n"] == 3:
-            raise RuntimeError("synthetic layout failure on one block")
-        return original(cursor)
-
-    target = points[2][1]
-    monkeypatch.setattr(ta, "cursorRect", flaky)
-    hit = ta._checkbox_at_pos(QPoint(int(target.x()) + 4,
-                                     int(target.top()) + 4))
-    assert hit is not None, "a later checkbox must still answer"
-
-
-def test_a_click_away_from_any_checkbox_finds_nothing(win):
-    from PyQt6.QtCore import QPoint
-
-    _doc, points = _checkbox_doc(win)
-    r = points[0][1]
-    assert win.text_area._checkbox_at_pos(
-        QPoint(int(r.x()) + 400, int(r.top()) + 4)) is None
-
-
-def test_a_degenerate_box_width_still_takes_a_click(fresh_win, monkeypatch):
-    """A wrapped line can put the closing bracket on the next visual row,
-    which makes the width negative - QRect.contains() is then false for
-    every point and the checkbox silently stops responding.
-
-    T-295: needs its own window. It monkeypatches `cursorRect` on the shared
-    editor and measures geometry, so whatever the previous test left in the
-    document decided whether it passed — green alone, red in a full run.
-    """
-    from PyQt6.QtCore import QPoint
-
-    win = fresh_win
-
-    _doc, points = _checkbox_doc(win)
-    ta = win.text_area
-    original = ta.cursorRect
-    seen = {"n": 0}
-
-    def collapsed(cursor):
-        # every second call is the "end of the box" probe; put it left of
-        # the start so the computed width goes negative
-        rect = original(cursor)
-        seen["n"] += 1
-        if seen["n"] % 2 == 0:
-            rect.moveLeft(rect.left() - 40)
-        return rect
-
-    monkeypatch.setattr(ta, "cursorRect", collapsed)
-    r = points[0][1]
-    hit = ta._checkbox_at_pos(QPoint(int(r.x()) + 2, int(r.top()) + 2))
-    assert hit is not None, "a negative width must fall back, not go dead"
-
-
-# -------------------- T-201: edit blocks stay balanced ---------------------
-
-
-def test_an_edit_block_closes_even_when_the_body_raises(win):
-    """An unbalanced beginEditBlock corrupts the document's edit-block
-    counter and freezes rendering. edit_block is a context manager, so the
-    end runs from a finally - this pins that, since a plain begin/end pair
-    would silently regress it."""
-    import pytest as _pytest
-
-    from fastprompter.ui.edit_guard import edit_block
-
-    ta = win.text_area
-    ta.setPlainText("one\ntwo")
-    before = ta.toPlainText()
-    cursor = ta.textCursor()
-
-    with _pytest.raises(RuntimeError):
-        with edit_block(cursor, ta):
-            cursor.insertText("wrecked")
-            raise RuntimeError("boom mid-edit")
-
-    # if the block were still open, this insert would be swallowed into it
-    # and undo would not restore the document in one step
-    ta.undo()
-    assert ta.toPlainText() == before, "the edit undid as a single step"
-
-
-def test_ctrl_click_bullet_toggle_undoes_as_one_step(win):
-    """The path T-201 named. It runs inside edit_block now, so the whole
-    conversion is one undo entry rather than a half-open block."""
-    from PyQt6.QtCore import QPointF
-    from PyQt6.QtCore import Qt as _Qt
-    from PyQt6.QtGui import QMouseEvent, QTextCursor
-    from PyQt6.QtWidgets import QApplication as _App
-
-    ta = win.text_area
-    ta.setPlainText("\u2022 a bullet line")
-    _App.processEvents()
-    before = ta.toPlainText()
-
-    rect = ta.cursorRect(QTextCursor(ta.document().firstBlock()))
-    pos = QPointF(rect.x() + 30, rect.center().y())
-    ev = QMouseEvent(QMouseEvent.Type.MouseButtonPress, pos,
-                     ta.viewport().mapToGlobal(pos.toPoint()).toPointF(),
-                     _Qt.MouseButton.LeftButton, _Qt.MouseButton.LeftButton,
-                     _Qt.KeyboardModifier.ControlModifier)
-    _App.sendEvent(ta.viewport(), ev)
-    _App.processEvents()
-
-    after = ta.toPlainText()
-    if after == before:
-        import pytest
-        pytest.skip("the click did not land on the bullet line")
-
-    assert after.startswith("- "), f"bullet became dash, got {after!r}"
-    ta.undo()
-    assert ta.toPlainText() == before, "one Ctrl+Z restores the bullet"
-
-
-def test_the_editors_mouse_press_opens_no_raw_edit_block(win):
-    """T-201's original complaint. Any begin/end pair added back by hand
-    here is a regression - the guard belongs in edit_block."""
-    import inspect
-    import re as _re
-
-    src = inspect.getsource(type(win.text_area).mousePressEvent)
-    assert "beginEditBlock" not in src
-    assert _re.search(r"with edit_block\(", src), "it uses the guard"
-
-
-# ------------- T-202: shortcuts follow the physical key, not the layout ----
-
-SCAN = {"B": 0x30, "I": 0x17, "S": 0x1F, "E": 0x12}
-
-
-def _press_shortcut(win, reported_key, scan, text=""):
-    """Send Ctrl+<key> and report which command it dispatched to."""
-    from PyQt6.QtCore import Qt as _Qt
-    from PyQt6.QtGui import QKeyEvent
-
-    fired = []
-    ta = win.text_area
-    saved = (win.apply_bold_smart, win.apply_format, win.apply_header_timestamp)
-    win.apply_bold_smart = lambda *a, **k: fired.append("bold")
-    win.apply_format = lambda kind, *a, **k: fired.append(f"format:{kind}")
-    win.apply_header_timestamp = lambda *a, **k: fired.append("header")
-    try:
-        ta.keyPressEvent(QKeyEvent(
-            QKeyEvent.Type.KeyPress, reported_key,
-            _Qt.KeyboardModifier.ControlModifier, scan, 0, 0, text))
-    finally:
-        (win.apply_bold_smart, win.apply_format,
-         win.apply_header_timestamp) = saved
-    return fired
-
-
-def test_ctrl_b_bolds_on_a_russian_layout_too(win):
-    """QKeyEvent.key() follows the ACTIVE layout: on a Russian keyboard the
-    physical B reports Key_I, so Ctrl+B fired italic. Not a miss - the wrong
-    command, silently. The scan code is the physical position and does not
-    move with the layout."""
-    from PyQt6.QtCore import Qt as _Qt
-
-    us = _press_shortcut(win, _Qt.Key.Key_B, SCAN["B"], "b")
-    ru = _press_shortcut(win, _Qt.Key.Key_I, SCAN["B"], "\u0438")
-
-    assert us == ["bold"], f"US layout: {us}"
-    assert ru == ["bold"], f"RU layout dispatched {ru}, expected bold"
-
-
-def test_the_italic_key_still_means_italic(win):
-    """The fix must not simply redirect everything to the first branch."""
-    from PyQt6.QtCore import Qt as _Qt
-
-    assert _press_shortcut(win, _Qt.Key.Key_I, SCAN["I"], "i") == ["format:italic"]
-
-
-def test_an_unmapped_scan_code_falls_back_to_what_qt_reported(win):
-    """Only the letter and digit rows are mapped; everything else must keep
-    working off event.key() rather than going dead."""
-    from PyQt6.QtCore import Qt as _Qt
-
-    fired = _press_shortcut(win, _Qt.Key.Key_E, 0xFFFF, "e")
-    assert fired == ["header"], f"got {fired}"
-
-
-def test_the_scan_map_is_windows_only(win):
-    """X11 keycodes are offset by 8, so the same numbers would mis-map a
-    physical key on Linux. Better empty than wrong."""
-    import sys as _sys
-
-    from fastprompter.ui.editor import _SCAN_TO_KEY
-
-    if _sys.platform == "win32":
-        assert _SCAN_TO_KEY[0x30] is not None
-        assert len(_SCAN_TO_KEY) == 36, "26 letters + 10 digits"
-    else:
-        assert _SCAN_TO_KEY == {}
-
-
-# ---- watcher_queues persistence: the Alt+C TypeError crash ----------------
-
-
-def test_alt_c_survives_a_string_typed_watcher_queues_all(win):
-    """Live crash: data['watcher_queues_all'] came back from the DB as a
-    STRING (it was absent from the json save list, so it was written as
-    str(dict) and reloaded as text), and save_prompt_queues did
-    setdefault(...)[cat] = raw -> TypeError: 'str' object does not support
-    item assignment. One Alt+C took the whole app down."""
-    win.data["watcher_queues_all"] = "{'Code': {}}"   # the corrupted shape
-    # must not raise
-    win.save_prompt_queues()
-    assert isinstance(win.data["watcher_queues_all"], dict), (
-        "the corrupted string must be healed into a dict, not left to crash")
-
-
-def test_a_queue_survives_a_real_db_round_trip(tmp_path):
-    """The actual regression: queue in, close DB, reopen, queue still there
-    and a dict - not a str(dict) that reloads as text."""
-    import json
-
-    import fastprompter.core.state as state_mod
-    from fastprompter.core.watcher.queue import QueueItem, queue_for, save_queues
-
-    dbfile = str(tmp_path / "roundtrip.db")
-    state_mod_get = state_mod.get_db_path
-    try:
-        state_mod.get_db_path = lambda profile_id=1: dbfile
-
-        st = state_mod.FastPrompterState(profile_id=1)
-        queues = {}
-        queue_for(queues, "0").append(QueueItem("remember this", line=1))
-        st.data["watcher_queues_all"] = {"Code": save_queues(queues)}
-        st.data["watcher_queues"] = save_queues(queues)
-        st.save_data_to_db("", force=True)
-        st.conn.close()
-
-        st2 = state_mod.FastPrompterState(profile_id=1)
-        wq = st2.data.get("watcher_queues_all")
-        assert isinstance(wq, dict), f"reloaded as {type(wq).__name__}, not dict"
-        assert "Code" in wq
-        # and it is real json, not a python repr
-        json.dumps(wq)
-        st2.conn.close()
-    finally:
-        state_mod.get_db_path = state_mod_get
-
-
-def test_an_old_str_dict_value_is_recovered_not_dropped(tmp_path):
-    """Users already have the single-quoted str(dict) in their DB. It must
-    reload as the dict it represents, via ast, rather than falling to {}."""
-    import sqlite3
-
-    import fastprompter.core.state as state_mod
-
-    dbfile = str(tmp_path / "legacy.db")
-    getter = state_mod.get_db_path
-    try:
-        state_mod.get_db_path = lambda profile_id=1: dbfile
-        st = state_mod.FastPrompterState(profile_id=1)
-        st.conn.close()
-        # write the legacy corruption directly
-        conn = sqlite3.connect(dbfile)
-        conn.execute(
-            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
-            ("watcher_queues_all", "{'Code': {'0': []}}"))
-        conn.commit()
-        conn.close()
-
-        st2 = state_mod.FastPrompterState(profile_id=1)
-        wq = st2.data["watcher_queues_all"]
-        assert isinstance(wq, dict) and "Code" in wq, f"got {wq!r}"
-        st2.conn.close()
-    finally:
-        state_mod.get_db_path = getter
-
-
-# ---- T-582: Ctrl+W divider ends on a dash bullet --------------------------
-
-
-def test_ctrl_w_s1_end_of_text_divider_and_bullet(win):
-    """S1: Ctrl+W at end of text — divider + bullet below, cursor on bullet."""
-    # both are user settings now, and the shipped profile turns the S1
-    # divider OFF — pin what this scenario is about instead of inheriting it
-    win.data["ctrlw_s1_divider"] = "True"
-    win.data["ctrlw_s1_bullet"] = "True"
-    win.data["temp_presets"] = ["head"]
-    win.silo_docs[:] = []
-    win._switch_to_slot(0, initial=True)
-    cur = win.text_area.textCursor()
-    cur.movePosition(cur.MoveOperation.End)
-    win.text_area.setTextCursor(cur)
-
-    win.insert_add_line()
-    text = win.text_area.toPlainText()
-
-    assert "---" in text, f"divider missing: {text!r}"
-    assert "•" in text, f"bullet missing: {text!r}"
-    assert text.startswith("head"), "original text should stay at top"
-    c = win.text_area.textCursor()
-    assert not c.hasSelection()
-
-
-def test_ctrl_w_s4_mid_text_splits_block(win):
-    """S4: Ctrl+W mid-text — splits block, rest of line goes after bullet."""
-    win.data["ctrlw_s4_divider"] = "True"
-    win.data["ctrlw_s4_bullet"] = "True"
-    ta = win.text_area
-    ta.setPlainText("one two three")
-    cur = ta.textCursor()
-    cur.setPosition(4)          # mid-word
-    ta.setTextCursor(cur)
-
-    win.insert_add_line()
-    text = ta.toPlainText()
-
-    assert "---" in text, f"divider missing: {text!r}"
-    assert "•" in text, f"bullet missing: {text!r}"
-    assert text.startswith("one"), "text before cursor stays at top"
-    assert "two three" in text, "rest of line split after bullet"
-
-
-def test_ctrl_w_goes_through_insert_add_line(win):
-    """insert_divider_line is a thin alias, so the Ctrl+W entry point gets
-    the bullet too - the two must not diverge."""
-    import inspect
-    src = inspect.getsource(type(win).insert_divider_line)
-    assert "insert_add_line" in src
-
-
-# ---- T-581: a findable entry to the master queue view ---------------------
-
-
-def test_the_dialog_can_open_straight_on_the_master_tab(win):
-    from fastprompter.ui.queue_panel import QueueDialog
-
-    d = QueueDialog(win, start_tab=1)
-    try:
-        assert d.tabs.tabText(d.tabs.currentIndex()) == "All silos"
-    finally:
-        d.close()
-    d0 = QueueDialog(win, start_tab=0)
-    try:
-        assert d0.tabs.tabText(d0.tabs.currentIndex()) == "This silo"
-    finally:
-        d0.close()
-
-
-def test_open_queue_master_routes_to_the_all_silos_tab(win, monkeypatch):
-    seen = {}
-    from fastprompter.ui import queue_panel
-
-    class FakeDialog:
-        def __init__(self, main_win, start_tab=0):
-            seen["start_tab"] = start_tab
-        def exec(self):
-            return 0
-
-    monkeypatch.setattr(queue_panel, "QueueDialog", FakeDialog)
-    win.open_queue_master()
-    assert seen["start_tab"] == 1, "master must land on tab 1"
-
-
-def test_master_queue_view_has_a_visible_entry(win):
-    """The whole complaint: Alt+C queues but the master view was unfindable.
-    Now there is a shortcut AND a right-click menu entry. (A toolbar button
-    was tried but the header budget at 960px is full - see T-568/header
-    density.)"""
-    import inspect
-
-    from fastprompter import main as main_mod
-
-    whole = inspect.getsource(main_mod)
-    assert "hk_queue_master" in whole and "Alt+Shift+C" in whole
-    assert "open_queue_master" in whole
-
-    # the right-click menu offers the all-silos entry by name
-    from fastprompter.ui import editor as editor_mod
-    assert "all silos" in inspect.getsource(editor_mod).lower()
-
-
 # ---- fonts: software non-AA everywhere + the _m1 alias --------------------
 
 
@@ -9733,94 +7663,6 @@ def _timer_dialog(win):
     return TimerDialog(win)
 
 
-def test_the_timer_dialog_offers_a_limit_scan(win):
-    dlg = _timer_dialog(win)
-    try:
-        assert hasattr(dlg, "btn_scan")
-        assert dlg.btn_scan.toolTip(), "the button explains what it reads"
-    finally:
-        dlg.close()
-
-
-def test_scanning_with_no_agents_reachable_says_so_and_makes_nothing(win, monkeypatch):
-    """Every agent offline must not silently look like 'no limits'."""
-    from fastprompter.core.watcher import limit_scan
-
-    dlg = _timer_dialog(win)
-    before = len(win.timers)
-    try:
-        monkeypatch.setattr(limit_scan, "scan_all", lambda *a, **k: [])
-        made = dlg.scan_agent_limits()
-        assert made == []
-        assert len(win.timers) == before, "no timer invented"
-        assert dlg.lbl_limit_hint.text(), "it reports something"
-    finally:
-        dlg.close()
-
-
-def test_a_limited_agent_becomes_a_timer(win, monkeypatch):
-    import datetime
-
-    from fastprompter.core.limits import LimitState
-    from fastprompter.core.watcher import limit_scan
-    from fastprompter.core.watcher.limit_scan import AgentLimit
-
-    resets = datetime.datetime.now() + datetime.timedelta(hours=2)
-    fake = AgentLimit("freebuff", LimitState(True, resets, "limit reached"))
-
-    dlg = _timer_dialog(win)
-    saved = list(win.timers)
-    try:
-        monkeypatch.setattr(limit_scan, "scan_all", lambda *a, **k: [fake])
-        made = dlg.scan_agent_limits()
-        assert len(made) == 1
-        assert "freebuff" in made[0].name
-        assert any("freebuff" in t.name for t in win.timers)
-    finally:
-        win.timers[:] = saved
-        dlg.close()
-
-
-def test_scanning_twice_updates_instead_of_duplicating(win, monkeypatch):
-    """Two countdowns for one reset is worse than none."""
-    import datetime
-
-    from fastprompter.core.limits import LimitState
-    from fastprompter.core.watcher import limit_scan
-    from fastprompter.core.watcher.limit_scan import AgentLimit
-
-    resets = datetime.datetime.now() + datetime.timedelta(hours=3)
-    fake = AgentLimit("codenomad", LimitState(True, resets, "limit reached"))
-
-    dlg = _timer_dialog(win)
-    saved = list(win.timers)
-    try:
-        monkeypatch.setattr(limit_scan, "scan_all", lambda *a, **k: [fake])
-        dlg.scan_agent_limits()
-        dlg.scan_agent_limits()
-        named = [t for t in win.timers if "codenomad" in t.name]
-        assert len(named) == 1, f"got {len(named)} timers for one agent"
-    finally:
-        win.timers[:] = saved
-        dlg.close()
-
-
-def test_an_agent_that_named_no_time_is_labelled_assumed(win, monkeypatch):
-    """The guess must be visible, not buried in a countdown that looks read."""
-    from fastprompter.core.limits import LimitState
-    from fastprompter.core.watcher import limit_scan
-    from fastprompter.core.watcher.limit_scan import AgentLimit
-
-    fake = AgentLimit("agent", LimitState(True, None, "daily limit reached"))
-    dlg = _timer_dialog(win)
-    saved = list(win.timers)
-    try:
-        monkeypatch.setattr(limit_scan, "scan_all", lambda *a, **k: [fake])
-        made = dlg.scan_agent_limits()
-        assert made and "assumed" in made[0].description.lower()
-    finally:
-        win.timers[:] = saved
-        dlg.close()
 
 
 # ---- startup must not hide itself, and a corpse must not block a launch ---
@@ -10158,6 +8000,77 @@ def test_batch_save_exports_each_selected(win, monkeypatch):
     win.batch_save_selected_silos()
     assert sorted(saved) == [1, 3]
     win.clear_silo_selection()
+
+
+def _silo_btn(win, idx):
+    """A silo button bound to ``idx``, built directly.
+
+    Not looked up in ``win.silo_buttons``: whether a given slot is rendered
+    depends on paging, pinning and collapsed parents, and the gesture
+    handlers only need the widget plus its ``global_idx``.
+    """
+    from fastprompter.ui.snippet_panel import DraggableSiloButton
+    b = DraggableSiloButton(win)
+    b.global_idx = idx
+    return b
+
+
+def _mouse(kind, mods):
+    from PyQt6.QtCore import QPoint, Qt
+    from PyQt6.QtGui import QMouseEvent
+    return QMouseEvent(
+        kind, QPoint(5, 5).toPointF(),
+        Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton, mods)
+
+
+def test_ctrl_click_selection_latches_and_survives_a_silo_switch(fresh_win):
+    """The selection is a focus mark: a plain click elsewhere keeps it."""
+    from PyQt6.QtCore import QEvent, Qt
+
+    win = fresh_win
+    ctrl = Qt.KeyboardModifier.ControlModifier
+    none = Qt.KeyboardModifier.NoModifier
+    b0 = _silo_btn(win, 0)
+    b0.mousePressEvent(_mouse(QEvent.Type.MouseButtonPress, ctrl))
+    b0.mouseReleaseEvent(_mouse(QEvent.Type.MouseButtonRelease, ctrl))
+    assert win._silo_sel() == {0}
+
+    # plain click on ANOTHER silo switches but must not release the latch
+    b1 = _silo_btn(win, 1)
+    b1.mousePressEvent(_mouse(QEvent.Type.MouseButtonPress, none))
+    b1.mouseReleaseEvent(_mouse(QEvent.Type.MouseButtonRelease, none))
+    assert win.active_temp_slot == 1
+    assert win._silo_sel() == {0}
+
+    # the same Ctrl+click releases just that one
+    b0.mousePressEvent(_mouse(QEvent.Type.MouseButtonPress, ctrl))
+    b0.mouseReleaseEvent(_mouse(QEvent.Type.MouseButtonRelease, ctrl))
+    assert win._silo_sel() == set()
+
+
+def test_ctrl_triple_click_clears_every_selection(fresh_win):
+    from PyQt6.QtCore import QEvent, Qt
+
+    win = fresh_win
+    win.toggle_silo_selection(0)
+    win.toggle_silo_selection(2)
+    assert win._silo_sel() == {0, 2}
+    b1 = _silo_btn(win, 1)
+    ctrl = Qt.KeyboardModifier.ControlModifier
+    # press -> double-click (Qt's 2nd press) -> press: the third one clears
+    b1.mousePressEvent(_mouse(QEvent.Type.MouseButtonPress, ctrl))
+    b1.mouseDoubleClickEvent(_mouse(QEvent.Type.MouseButtonDblClick, ctrl))
+    b1.mousePressEvent(_mouse(QEvent.Type.MouseButtonPress, ctrl))
+    assert win._silo_sel() == set()
+
+
+def test_switching_project_releases_the_selection(fresh_win):
+    """Indices are per-category, so they cannot travel to another project."""
+    win = fresh_win
+    win.toggle_silo_selection(0)
+    assert win._silo_sel() == {0}
+    win.on_tab_changed(win.cat_combo.currentIndex())
+    assert win._silo_sel() == set()
 
 
 # ---------------------------------------------------------------------------
@@ -12071,6 +9984,258 @@ def test_numbox_is_in_the_header_layout(fresh_win):
     assert w.header_layout.indexOf(w.cat_combo) >= 0
 
 
+def test_limit_gauges_stays_in_header_layout_at_every_density(fresh_win):
+    """The reorder rebuild must not orphan the enabled limit widget.
+
+    LimitGauges is created before apply_toolbar_order(), which detaches every
+    header child and re-adds only registered tokens.  Keeping the token in the
+    inventory also lets old saved orders self-heal beside the timer.
+    """
+    from fastprompter.ui.toolbar_reorder import DEFAULT_TOOLBAR_ORDER
+
+    w = fresh_win
+    w.data["limit_gauges"] = "True"
+    assert "limit_gauges" in DEFAULT_TOOLBAR_ORDER
+    for width in (1600, 960, 640):
+        w.resize(width, 500)
+        w.apply_toolbar_order()
+        w._apply_header_density()
+        w.limit_gauges.sync()
+        QApplication.processEvents()
+        assert w.header_layout.indexOf(w.limit_gauges) >= 0
+        assert w.limit_gauges.parent() is w.header_widget
+        assert not w.limit_gauges.isHidden()
+        assert w.limit_gauges.width() > 0
+
+
+def test_limit_account_checkboxes_hide_by_stable_key(fresh_win):
+    """Account visibility is opt-out and survives reorder/name changes."""
+    from PyQt6.QtWidgets import QCheckBox
+
+    from fastprompter.core.usage_limits.model import AccountRef
+    from fastprompter.ui.limit_settings_dialog import LimitSettingsDialog
+
+    w = fresh_win
+    accounts = [
+        AccountRef("codex", "stable-one", "Codex 1", "test", "X:/one"),
+        AccountRef("codex", "stable-two", "Codex 2", "test", "X:/two"),
+    ]
+    with w.limit_service._lock:
+        w.limit_service._state.accounts = accounts
+        w.limit_service._state.snapshots = {}
+    w.data["limit_gauges_hidden_accounts"] = []
+    dialog = LimitSettingsDialog(w)
+    selector = dialog.account_selector
+    selector.sync(force=True)
+    boxes = selector.findChildren(QCheckBox)
+    assert len(boxes) == 2
+    boxes[0].setChecked(False)
+    QApplication.processEvents()
+    assert w.data["limit_gauges_hidden_accounts"] == [accounts[0].key]
+    assert [a.key for a in w.limit_gauges._visible_accounts()] == [accounts[1].key]
+    bars_width = w.limit_gauges.width()
+    dialog.cmb_style.setCurrentIndex(dialog.cmb_style.findData("dots"))
+    w.limit_gauges.repaint()
+    QApplication.processEvents()
+    assert w.data["limit_gauges_style"] == "dots"
+    assert w.limit_gauges.width() > bars_width
+    selector._set_name(accounts[1].key, "Work")
+    selector._set_badge(accounts[1].key, "W")
+    assert w.data["limit_gauges_account_names"][accounts[1].key] == "Work"
+    assert w.data["limit_gauges_account_labels"][accounts[1].key] == "W"
+    dialog.close()
+
+
+def test_limit_gauges_sheds_labels_before_accounts(fresh_win):
+    """A narrow header keeps quota marks and never emits a lone '+'."""
+    from fastprompter.core.usage_limits.model import AccountRef
+
+    w = fresh_win
+    accounts = [
+        AccountRef("codex", f"stable-{i}", f"Codex {i}", "test", f"X:/{i}")
+        for i in range(1, 5)
+    ]
+    with w.limit_service._lock:
+        w.limit_service._state.accounts = accounts
+        w.limit_service._state.snapshots = {}
+    w.data["limit_gauges_hidden_accounts"] = []
+    w.data["limit_gauges_style"] = "bars"
+
+    labeled = w.limit_gauges._cluster_width(True)
+    plain = w.limit_gauges._cluster_width(False)
+    # Four plain clusters fit, but four labeled clusters do not: all four
+    # gauges remain and initials disappear.
+    labels, per_cluster, n_fit = w.limit_gauges._fit_layout(
+        plain * 4, len(accounts))
+    assert labels is False
+    assert per_cluster == plain
+    assert n_fit == 4
+    assert plain < labeled
+
+    # If only two can fit after reserving a marker, it explicitly means +2.
+    labels, _per_cluster, n_fit = w.limit_gauges._fit_layout(
+        plain * 2 + 16, len(accounts))
+    assert labels is False
+    assert n_fit == 2
+    assert len(accounts) - n_fit == 2
+
+    w._header_ultra = True
+    w.limit_gauges.refresh_view()
+    expected = (w.limit_gauges.PAD * 2
+                + plain * len(accounts))
+    assert w.limit_gauges.width() == expected
+
+
+def test_limit_settings_are_dedicated_and_alert_once(fresh_win, monkeypatch):
+    from PyQt6.QtWidgets import QGroupBox
+
+    from fastprompter.core.usage_limits.model import (
+        FIVE_HOUR,
+        OK,
+        WEEKLY,
+        AccountRef,
+        UsageSnapshot,
+        UsageWindow,
+    )
+    from fastprompter.core.usage_limits.notifications import notification_key
+    from fastprompter.ui.limit_settings_dialog import LimitSettingsDialog
+
+    w = fresh_win
+    assert hasattr(w, "btn_limit_settings")
+    assert not hasattr(w, "limit_accounts_selector")
+    account = AccountRef(
+        "codex", "stable-work", "Codex 1", "test", "X:/work")
+    snapshot = UsageSnapshot(
+        account, OK,
+        [UsageWindow(FIVE_HOUR, 300, True, 90, 10, 1800000000),
+         UsageWindow(WEEKLY, 10080, True, 50, 50, 1800100000)],
+    )
+    with w.limit_service._lock:
+        w.limit_service._state.accounts = [account]
+        w.limit_service._state.snapshots = {account.key: snapshot}
+    assert w.limit_gauges._status_marker([account]) == ""
+    assert w.limit_gauges._status_width([account]) == 0
+    dialog = LimitSettingsDialog(w)
+    groups = dialog.alert_scroll.widget().findChildren(QGroupBox)
+    assert len(groups) == 2
+
+    key = notification_key(account.key, FIVE_HOUR)
+    dialog._set_rule(key, "enabled", True)
+    dialog._set_rule(key, "threshold", 20.0)
+    dialog._set_rule(key, "sound", "notify")
+    dialog._set_rule(key, "volume", 0.31)
+    w.data["limit_gauges"] = "False"
+    w.limit_gauges.sync()
+    assert w.limit_gauges._timer.isActive()
+    assert w.limit_gauges.isHidden()
+    sounds, popups = [], []
+    monkeypatch.setattr(
+        w.sound_manager, "play_sound_ref",
+        lambda ref, volume: sounds.append((ref, volume)) or True)
+    monkeypatch.setattr(
+        w, "_show_limit_popup",
+        lambda title, message: popups.append((title, message)))
+    w.data["limit_notification_state"] = {}
+    w._check_limit_notifications()
+    w._check_limit_notifications()
+    assert sounds == [("notify", 0.31)]
+    assert len(popups) == 1
+    assert "Codex 1" in popups[0][0]
+
+    dialog._set_rule(key, "reset_enabled", True)
+    dialog._set_rule(key, "reset_sound", "success")
+    dialog._set_rule(key, "reset_volume", 0.42)
+    reset_snapshot = UsageSnapshot(
+        account, OK,
+        [UsageWindow(FIVE_HOUR, 300, True, 0, 100, 1800200000),
+         UsageWindow(WEEKLY, 10080, True, 50, 50, 1800100000)],
+    )
+    with w.limit_service._lock:
+        w.limit_service._state.snapshots = {account.key: reset_snapshot}
+    w._check_limit_notifications()
+    w._check_limit_notifications()
+    assert sounds[-1] == ("success", 0.42)
+    assert len(popups) == 2
+    assert popups[-1][0].startswith("AI limit reset:")
+    assert "time to work" in popups[-1][1]
+    dialog.close()
+
+
+def test_weekly_zero_silences_the_five_hour_alert_and_plays_once(fresh_win,
+                                                                 monkeypatch):
+    """Weekly 0% governs: a reported-100% 5h window must not alert at all.
+
+    Reproduces the reported bug — the 5h rule fired on every 3-minute sweep
+    because the server reported 100% for a window nothing could be spent in.
+    """
+    from fastprompter.core.usage_limits.model import (
+        FIVE_HOUR,
+        OK,
+        WEEKLY,
+        AccountRef,
+        UsageSnapshot,
+        UsageWindow,
+    )
+    from fastprompter.core.usage_limits.notifications import notification_key
+
+    w = fresh_win
+    account = AccountRef("codex", "gated", "Codex 1", "test", "X:/gated")
+    snapshot = UsageSnapshot(
+        account, OK,
+        [UsageWindow(FIVE_HOUR, 300, True, 0, 100, 1800000000),
+         UsageWindow(WEEKLY, 10080, True, 100, 0, 1800100000)],
+    )
+    with w.limit_service._lock:
+        w.limit_service._state.accounts = [account]
+        w.limit_service._state.snapshots = {account.key: snapshot}
+    five = notification_key(account.key, FIVE_HOUR)
+    weekly = notification_key(account.key, WEEKLY)
+    w.data["limit_notifications"] = {
+        five: {"enabled": "True", "threshold": 20.0, "sound": "notify",
+               "volume": 0.5, "sound_enabled": "True",
+               "show_notification": "True"},
+        weekly: {"enabled": "True", "threshold": 20.0, "sound": "notify",
+                 "volume": 0.5, "sound_enabled": "True",
+                 "show_notification": "True"},
+    }
+    w.data["limit_notification_state"] = {}
+    sounds, popups = [], []
+    monkeypatch.setattr(
+        w.sound_manager, "play_sound_ref",
+        lambda ref, volume: sounds.append((ref, volume)) or True)
+    monkeypatch.setattr(
+        w, "_show_limit_popup",
+        lambda title, message: popups.append((title, message)))
+    # five sweeps, as the 3-minute auto-refresh would do
+    for _ in range(5):
+        w._check_limit_notifications()
+    assert len(sounds) == 1, "one sound for the whole episode, not one per sweep"
+    assert len(popups) == 1
+    assert "7 days" in popups[0][0]      # the governing window, not the 5h one
+    # and the header gauge paints the 5h bar as empty, not as 100% free
+    from fastprompter.ui.limit_gauges import _cluster_windows, _fmt_win
+    bars = _cluster_windows(snapshot)
+    five_bar = next(b for b in bars if b is not None and b.key == FIVE_HOUR)
+    assert five_bar.remaining_percent == 0.0
+    assert "blocked by weekly" in _fmt_win(five_bar)
+
+
+def test_a_limit_popup_uses_the_in_app_toast(fresh_win):
+    """The tray balloon was invisible on this machine — use the app's toast."""
+    from fastprompter.ui.timer_toast import TimerToast
+
+    w = fresh_win
+    before = len(TimerToast._live_toasts())
+    w._show_limit_popup("AI limit: Codex 1 — weekly", "0.0% remaining")
+    QApplication.processEvents()
+    live = TimerToast._live_toasts()
+    assert len(live) == before + 1
+    toast = live[-1]
+    assert "Codex 1" in toast.timer_obj.name
+    toast.close()
+    QApplication.processEvents()
+
+
 def test_every_ordered_token_resolves_to_a_widget(fresh_win):
     """Any header widget that is not a token is invisible after the first
     rebuild — so the order list is the real inventory."""
@@ -12103,11 +10268,12 @@ def test_new_tokens_heal_next_to_their_neighbour(fresh_win):
     try:
         from fastprompter.ui.toolbar_reorder import DEFAULT_TOOLBAR_ORDER
         old = [t for t in DEFAULT_TOOLBAR_ORDER
-               if t not in ("cat_numbox", "lbl_token_count")]
+               if t not in ("cat_numbox", "lbl_token_count", "limit_gauges")]
         w.data["toolbar_order"] = ",".join(old)
         healed = w._toolbar_order_list()
         assert healed.index("cat_numbox") == healed.index("cat_combo") + 1
         assert healed.index("lbl_token_count") == healed.index("lbl_line_count") + 1
+        assert healed.index("limit_gauges") == healed.index("lbl_timer") + 1
     finally:
         w.data["toolbar_order"] = saved
 
@@ -13786,12 +11952,13 @@ def test_the_wrapper_plays_then_runs(win):
     real = win.play_sound
     win.play_sound = lambda name: asked.append(name)
     try:
-        # NOT hk_undo: that one sounds itself from inside undo_action and is
-        # handed back unwrapped on purpose (HOTKEY_SOUND_SELF), or Ctrl+Z
-        # would play twice. Use a key the wrapper really owns.
-        wrapped = win._with_hotkey_sound("hk_settings", lambda: ran.append(1))
+        # NOT hk_undo / hk_settings: those sound themselves from inside the
+        # action (undo_action, toggle_mini_settings) and are handed back
+        # unwrapped on purpose (HOTKEY_SOUND_SELF), or the key would play
+        # twice. Use a key the wrapper really owns.
+        wrapped = win._with_hotkey_sound("hk_bold", lambda: ran.append(1))
         wrapped()
-        assert asked == ["settings"] and ran == [1]
+        assert asked == ["bold"] and ran == [1]
         # a slot that raises must not lose its sound, and vice versa
         win.play_sound = lambda name: (_ for _ in ()).throw(RuntimeError("no audio"))
         wrapped2 = win._with_hotkey_sound("hk_find", lambda: ran.append(2))
@@ -13799,6 +11966,64 @@ def test_the_wrapper_plays_then_runs(win):
         assert ran == [1, 2], "a failing sound must not swallow the action"
     finally:
         win.play_sound = real
+
+
+def test_the_settings_toggle_sounds_from_inside_the_action(win):
+    """The ⚙ buttons call toggle_mini_settings directly, not through a shortcut.
+
+    A sound wired only onto ``hk_settings`` left both header buttons mute while
+    Alt+` spoke. The event belongs to the action; the shortcut must then NOT
+    add its own, or Alt+` plays twice.
+    """
+    assert "hk_settings" in win.HOTKEY_SOUND_SELF
+    slot = win._with_hotkey_sound("hk_settings", win.toggle_mini_settings)
+    # A bound method is rebuilt on every attribute access, so compare the
+    # underlying function rather than object identity.
+    assert getattr(slot, "__func__", slot) is win.toggle_mini_settings.__func__, (
+        "the wrapper would double the sound")
+
+    asked = []
+    real = win.play_sound
+    win.play_sound = lambda name: asked.append(name)
+    try:
+        win.toggle_mini_settings()
+        assert asked == ["settings"], f"toggle made {asked} instead of settings"
+        win.toggle_mini_settings()
+        assert asked == ["settings", "settings"], "it must sound both ways"
+    finally:
+        win.play_sound = real
+
+
+def test_a_failing_settings_sound_still_opens_the_panel(win):
+    """Audio is never allowed to cost the user the panel itself."""
+    real = win.play_sound
+    win.play_sound = lambda name: (_ for _ in ()).throw(RuntimeError("no audio"))
+    try:
+        # isHidden() is the widget's OWN flag, so it witnesses setVisible even
+        # though this fixture never shows the window (isVisible() is False for
+        # every child of an unshown parent, whatever the flag says).
+        win.mini_settings_frame.setVisible(False)
+        assert win.mini_settings_frame.isHidden()
+        win.toggle_mini_settings()
+        assert not win.mini_settings_frame.isHidden(), (
+            "a raising sound swallowed the toggle")
+    finally:
+        win.play_sound = real
+
+
+def test_both_gear_buttons_reach_the_sounding_action(win):
+    """Either ⚙ (left header, right header) must make the same sound."""
+    for name in ("btn_settings_toggle", "btn_settings_toggle_right"):
+        button = getattr(win, name, None)
+        assert button is not None, f"{name} is missing"
+        asked = []
+        real = win.play_sound
+        win.play_sound = lambda sound: asked.append(sound)
+        try:
+            button.click()
+            assert asked == ["settings"], f"{name} made {asked}"
+        finally:
+            win.play_sound = real
 
 
 def test_the_generic_hotkey_event_ships_enabled_now(win):

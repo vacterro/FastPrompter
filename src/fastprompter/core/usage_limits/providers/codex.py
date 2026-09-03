@@ -17,7 +17,6 @@ probe itself runs off-thread via :meth:`probe`.
 from __future__ import annotations
 
 import os
-import time
 from pathlib import Path
 
 from fastprompter.core.usage_limits.model import (
@@ -36,7 +35,9 @@ from fastprompter.core.usage_limits.providers._codex_probe import (  # noqa: F40
 )
 from fastprompter.core.usage_limits.providers import UsageProvider
 
-DURATION_LABELS = {300: FIVE_HOUR, 10080: WEEKLY}
+# Duration -> window key lives in _codex_probe.DURATION_LABELS (single source
+# of truth). Kept out of this module on purpose: a second copy would drift
+# and start dropping plan-specific windows again.
 
 
 def _home_dir() -> Path:
@@ -134,16 +135,41 @@ class CodexProvider(UsageProvider):
                 error_summary=str(result.get("error") or "probe failed")[:120],
             )
 
-        windows = [
-            _as_window(FIVE_HOUR, result.get("five_hour")),
-            _as_window(WEEKLY, result.get("weekly")),
-        ]
+        # Window set comes from the probe verbatim — a Free plan reports one
+        # 30-day window, Plus reports 5h + weekly. Never hardcode the pair.
+        windows = _windows_from(result)
+        if not windows:
+            windows = [UsageWindow.unavailable(FIVE_HOUR),
+                       UsageWindow.unavailable(WEEKLY)]
         return UsageSnapshot(
             account=account, status=OK, windows=windows,
             plan_type=result.get("plan_type"),
             fetched_at=result.get("fetched_at"),
             provider_metadata={"source": "codex app-server account/rateLimits/read"},
         )
+
+
+# Keys in a probe payload that are NOT quota windows.
+_NON_WINDOW_KEYS = frozenset({"ok", "error", "plan_type", "fetched_at"})
+
+
+def _windows_from(result: dict) -> list:
+    """Every window the probe reported, shortest duration first.
+
+    Windows this plan does not have (``available=False``) are dropped as soon
+    as at least one real window exists — otherwise a Free plan, which reports
+    only a 30-day window, would render two dead bars next to it. When nothing
+    is available the unavailable ones survive so the UI still has something
+    honest (dim) to draw.
+    """
+    out = []
+    for key, bucket in (result or {}).items():
+        if key in _NON_WINDOW_KEYS or not isinstance(bucket, dict):
+            continue
+        out.append(_as_window(key, bucket))
+    out.sort(key=lambda w: (w.duration_minutes is None, w.duration_minutes or 0))
+    available = [w for w in out if w.available]
+    return available or out
 
 
 def _as_window(key: str, bucket) -> UsageWindow:

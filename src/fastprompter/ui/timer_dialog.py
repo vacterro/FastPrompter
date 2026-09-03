@@ -947,17 +947,17 @@ class TimerDialog(QDialog):
 
     _TAB_SIZES = {
         0: (740, 460),  # Alarms
-        1: (640, 300),  # Temp Timer
-        2: (640, 480),  # Productivity
-        3: (740, 480),  # Calendar
-        4: (740, 390),  # Interval Notifications
+        1: (1160, 400),  # Interval Notifications
+        2: (640, 480),  # Temp Timer
+        3: (740, 480),  # Productivity
+        4: (740, 430),  # Calendar
     }
     _TAB_MIN_SIZES = {
         0: (640, 390),
-        1: (500, 220),
-        2: (560, 380),
-        3: (640, 390),
-        4: (620, 340),
+        1: (1160, 360),
+        2: (500, 220),
+        3: (560, 380),
+        4: (640, 390),
     }
 
     def _on_tab_changed(self, idx):

@@ -71,7 +71,8 @@ class TimerToast(QWidget):
 
     _open: list[TimerToast] = []
 
-    def __init__(self, main_win, timer, on_snooze=None, on_dismiss=None):
+    def __init__(self, main_win, timer, on_snooze=None, on_dismiss=None,
+                 header=None, status=None):
         super().__init__(None)
         self.main_win = main_win
         self.timer_obj = timer
@@ -175,7 +176,7 @@ class TimerToast(QWidget):
         h_lay.setContentsMargins(6, 2, 4, 2)
         h_lay.setSpacing(4)
 
-        hdr_title = QLabel(tr("Timer Notification", lang))
+        hdr_title = QLabel(header or tr("Timer Notification", lang))
         hdr_title.setObjectName("HeaderTitle")
         h_lay.addWidget(hdr_title, 1)
 
@@ -216,7 +217,7 @@ class TimerToast(QWidget):
             desc.setMaximumWidth(320)
             mb_lay.addWidget(desc)
 
-        when = QLabel(tr("Time's up", lang))
+        when = QLabel(status or tr("Time's up", lang))
         when.setObjectName("InfoLbl")
         when.setStyleSheet(f"color: {p['accent']};")
         mb_lay.addWidget(when)
@@ -375,11 +376,13 @@ class TimerToast(QWidget):
         super().closeEvent(event)
 
 
-def show_toast(main_win, timer, on_snooze=None, on_dismiss=None):
+def show_toast(main_win, timer, on_snooze=None, on_dismiss=None,
+               header=None, status=None):
     """Create and show a toast; returns it (or None if the UI can't)."""
     try:
         toast = TimerToast(main_win, timer, on_snooze=on_snooze,
-                           on_dismiss=on_dismiss)
+                           on_dismiss=on_dismiss,
+                           header=header, status=status)
         toast.show()
         toast.raise_()
         return toast

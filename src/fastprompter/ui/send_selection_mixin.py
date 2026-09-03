@@ -19,7 +19,6 @@ the undo step, the dirty flag and the panel refresh cannot be forgotten in
 one path and remembered in another.
 """
 
-from PyQt6.QtGui import QTextDocument
 from PyQt6.QtWidgets import QInputDialog
 
 from fastprompter.core.logging import logger

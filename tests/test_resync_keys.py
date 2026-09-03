@@ -13,11 +13,17 @@ import re
 
 _MAIN = os.path.join(os.path.dirname(__file__), "..", "src",
                      "fastprompter", "main.py")
+_SETTINGS = os.path.join(os.path.dirname(__file__), "..", "src",
+                         "fastprompter", "ui", "settings_builder.py")
 
 
 def _read():
     with open(_MAIN, encoding="utf-8") as f:
-        return f.read()
+        src = f.read()
+    if os.path.exists(_SETTINGS):
+        with open(_SETTINGS, encoding="utf-8") as f:
+            src += "\n" + f.read()
+    return src
 
 
 def _registry(src):

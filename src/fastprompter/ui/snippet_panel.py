@@ -2,7 +2,6 @@ from PyQt6.QtCore import QEvent, QMimeData, QObject, Qt, QTimer, QUrl
 from PyQt6.QtGui import QDrag, QFontMetrics
 from PyQt6.QtWidgets import (
     QApplication,
-    QFrame,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -825,7 +824,14 @@ class DraggableSiloButton(QWidget):
         theme_name = self.main_win.data.get("theme", "Default")
         ticked_list = self.main_win.data.get("silo_ticked", [])
         is_ticked = isinstance(ticked_list, list) and global_idx in ticked_list
-        sel = getattr(self.main_win, "_silo_selection", None)
+        sel = None
+        if not self.is_archive:
+            # Ask the owner rather than reading the cached attribute: the set
+            # is lazily (re)loaded from the per-category persisted list, so a
+            # freshly bound project must repaint from ITS list, not from
+            # whatever set the previous project left on the attribute.
+            getter = getattr(self.main_win, "_silo_sel", None)
+            sel = getter() if callable(getter) else None
         is_selected = bool(sel) and global_idx in sel and not self.is_archive
         # in the cache key because it decides whether the tick's COLUMN is
         # held open: flipping the setting has to repaint the row, and a state
@@ -983,6 +989,46 @@ class DraggableSiloButton(QWidget):
     def show_menu(self, pos):
         self.main_win.show_temp_menu(self.global_idx, self.mapToGlobal(pos), is_archive=self.is_archive)
 
+    def _ctrl_click_bump(self, pos):
+        """Count consecutive Ctrl+left clicks on this row within the system
+        double-click interval. Returns the running count (3 = triple-click)."""
+        import time as _t
+        now = _t.monotonic()
+        last = getattr(self, "_ctrl_click_ts", None)
+        last_pos = getattr(self, "_ctrl_click_pos", None)
+        interval = QApplication.doubleClickInterval() / 1000.0
+        if (last is not None and now - last <= interval
+                and last_pos is not None
+                and (last_pos - pos).manhattanLength() < 10):
+            count = getattr(self, "_ctrl_click_count", 0) + 1
+        else:
+            count = 1
+        self._ctrl_click_ts = now
+        self._ctrl_click_pos = pos
+        self._ctrl_click_count = count
+        return count
+
+    def mouseDoubleClickEvent(self, e):
+        """The middle press of a Ctrl+triple-click arrives here.
+
+        Qt turns the second press of a rapid sequence into a double-click, so
+        this press has to be counted here or the third one would read as
+        "two". A fast second Ctrl+click still toggles (it is a second click,
+        not a special gesture); the THIRD one clears the whole selection.
+        """
+        if (e.button() == Qt.MouseButton.LeftButton
+                and e.modifiers() & Qt.KeyboardModifier.ControlModifier
+                and not e.modifiers() & Qt.KeyboardModifier.ShiftModifier
+                and not self.is_archive):
+            if self._ctrl_click_bump(e.pos()) >= 3:
+                self.main_win.clear_silo_selection()
+            else:
+                self.main_win.toggle_silo_selection(self.global_idx)
+            self._press_action_consumed = True
+            e.accept()
+            return
+        super().mouseDoubleClickEvent(e)
+
     def mousePressEvent(self, e):
         self._press_action_consumed = False
         if e.button() == Qt.MouseButton.LeftButton:
@@ -994,6 +1040,17 @@ class DraggableSiloButton(QWidget):
                     and not self.is_archive):
                 if hasattr(self.main_win, "_toggle_tick_silo"):
                     self.main_win._toggle_tick_silo(self.global_idx)
+                self._press_action_consumed = True
+                e.accept()
+                return
+            # Ctrl+triple-click on a silo clears the whole multi-selection.
+            # Third press of a triple lands here (the second arrives as a
+            # double-click), so the running count is 3 exactly on that press.
+            if (mods & Qt.KeyboardModifier.ControlModifier
+                    and not mods & Qt.KeyboardModifier.ShiftModifier
+                    and not self.is_archive
+                    and self._ctrl_click_bump(e.pos()) >= 3):
+                self.main_win.clear_silo_selection()
                 self._press_action_consumed = True
                 e.accept()
                 return
@@ -1093,8 +1150,17 @@ class DraggableSiloButton(QWidget):
             mods = e.modifiers()
             shift = bool(mods & Qt.KeyboardModifier.ShiftModifier)
             ctrl = bool(mods & Qt.KeyboardModifier.ControlModifier)
+            # If the press already consumed this gesture (Ctrl+Shift tick,
+            # Alt collapse, Ctrl double/triple click), release must not
+            # re-interpret it — that fired the toggle a second time and undid
+            # what the gesture just did.
+            if getattr(self, "_press_action_consumed", False):
+                self._press_action_consumed = False
+                super().mouseReleaseEvent(e)
+                e.accept()
+                return
             # Multi-select (silos only): Shift = contiguous range, Ctrl =
-            # toggle one. Ctrl+Shift stays the done-tick, so require exactly
+            # latch one. Ctrl+Shift stays the done-tick, so require exactly
             # one of the two modifiers here.
             if not self.is_archive and shift != ctrl:
                 if shift:
@@ -1104,16 +1170,8 @@ class DraggableSiloButton(QWidget):
                 super().mouseReleaseEvent(e)
                 e.accept()
                 return
-            # If the press already consumed this gesture (Ctrl+Shift tick or
-            # Alt collapse), release must not re-interpret it as a plain click.
-            if getattr(self, "_press_action_consumed", False):
-                self._press_action_consumed = False
-                super().mouseReleaseEvent(e)
-                e.accept()
-                return
-            # Plain click drops any selection and switches to the silo.
+            # Plain click switches to the silo but keeps any multi-selection.
             if not self.is_archive:
-                self.main_win.clear_silo_selection()
                 self.main_win._switch_to_slot(self.global_idx)
             else:
                 self.main_win._switch_to_arc_slot(self.global_idx)

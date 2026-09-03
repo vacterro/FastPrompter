@@ -75,9 +75,8 @@ class WindowMixin:
         self._user_summoned = True
         if (
             by_hotkey
-            and hasattr(self, "cb_lock_cursor")
-            and not _is_deleted(self.cb_lock_cursor)
-            and self.cb_lock_cursor.isChecked()
+            and ((hasattr(self, "cb_lock_cursor") and not _is_deleted(self.cb_lock_cursor) and self.cb_lock_cursor.isChecked())
+                 or (not hasattr(self, "cb_lock_cursor") and self.data.get("lock_to_cursor", "False") == "True"))
         ):
             self.place_window()
         if self.isMinimized():
@@ -131,7 +130,12 @@ class WindowMixin:
         fh = self.frameGeometry().height()
 
         # 2. Then, determine and set the position
-        if self.cb_lock_cursor.isChecked():
+        lock_to_cursor = (
+            self.cb_lock_cursor.isChecked()
+            if hasattr(self, "cb_lock_cursor") and not _is_deleted(self.cb_lock_cursor)
+            else (self.data.get("lock_to_cursor", "False") == "True")
+        )
+        if lock_to_cursor:
             cp = QCursor.pos()
             screen = QApplication.screenAt(cp) or QApplication.primaryScreen()
             screen_geom = screen.availableGeometry() if screen else QRect(0, 0, 1920, 1080)
@@ -208,9 +212,8 @@ class WindowMixin:
         x, y, w, h = fgeo.x(), fgeo.y(), geo.width(), geo.height()
 
         if (
-            hasattr(self, "cb_lock_cursor")
-            and not _is_deleted(self.cb_lock_cursor)
-            and self.cb_lock_cursor.isChecked()
+            (hasattr(self, "cb_lock_cursor") and not _is_deleted(self.cb_lock_cursor) and self.cb_lock_cursor.isChecked())
+            or (not hasattr(self, "cb_lock_cursor") and self.data.get("lock_to_cursor", "False") == "True")
         ):
             old_geo = self.data.get("last_geometry", "")
             if old_geo:
@@ -570,8 +573,26 @@ class WindowMixin:
             self._saved_sidebar_size = 130
 
     def toggle_mini_settings(self) -> None:
-        """Toggle the mini settings footer frame."""
+        """Toggle the mini settings footer frame.
+
+        The sound belongs to the ACTION, not to the key: the ⚙ header buttons
+        connect straight to this method, so a sound attached only to the
+        ``hk_settings`` shortcut left both buttons silent while Alt+` spoke.
+        ``HOTKEY_SOUND_SELF`` carries the matching half — the shortcut must not
+        add its own event on top of this one.
+        """
+        try:
+            self.play_sound("settings")
+        except Exception:
+            logger.debug("settings toggle sound failed", exc_info=True)
+        # Easter egg: rotate settings gear icons by 45 degrees on every invocation
+        for btn_name in ("btn_settings_toggle", "btn_settings_toggle_right"):
+            btn = getattr(self, btn_name, None)
+            if btn is not None and hasattr(btn, "rotate_step"):
+                btn.rotate_step(45)
         was_visible = self.mini_settings_frame.isVisible()
+        if not was_visible and hasattr(self, "_ensure_settings_built"):
+            self._ensure_settings_built()
         self.mini_settings_frame.setVisible(not was_visible)
         if not was_visible and hasattr(self, "_fit_settings_tabs"):
             self._fit_settings_tabs()

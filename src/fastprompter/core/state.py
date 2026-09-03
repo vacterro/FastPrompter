@@ -26,6 +26,7 @@ _JSON_SETTINGS = (
     "silo_last_edited", "silo_last_edited_all",
     "pinned_silos", "pinned_silos_all",
     "silo_ticked", "silo_ticked_all",
+    "silo_selected", "silo_selected_all",
     "silo_children", "silo_children_all",
     "silo_collapsed", "silo_collapsed_all",
     "silo_colors", "silo_colors_all",
@@ -73,6 +74,14 @@ _JSON_SETTINGS = (
     "trash_consumed",
     "sound_quick_bar",
     "interval_notifs",
+    "limit_gauges_hidden_accounts",
+    "limit_gauges_account_labels", "limit_gauges_account_names",
+    "limit_gauges_account_order",
+    "limit_notifications", "limit_notification_state",
+    # Per-role AI-limit colour overrides (ui/limit_colors.py). A dict, so it
+    # must round-trip as JSON or every override reloads as one str() blob and
+    # the palette silently falls back to the theme.
+    "limit_colors",
     # Splitter geometries are lists in the shipped profile (and the live DB
     # stores them as JSON arrays), so they must round-trip as JSON, not str().
     "splitter_sizes", "splitter_sizes_left", "splitter_sizes_right",
@@ -90,6 +99,7 @@ _SETTINGS_SKIP = ("categories", "temp_presets_all", "archive_temp_presets_all",
 _PER_CATEGORY_STATE_KEYS = (
     "temp_presets_all", "archive_temp_presets_all",
     "pinned_silos_all", "silo_ticked_all", "silo_children_all",
+    "silo_selected_all",
     "silo_collapsed_all", "silo_colors_all", "silo_folders_all",
     "archive_silo_folders_all", "silo_last_edited_all",
     "silo_project_paths_all", "archive_project_paths_all",
@@ -108,6 +118,7 @@ _PER_CATEGORY_ALIASES = (
     ("archive_temp_presets", "archive_temp_presets_all"),
     ("pinned_silos", "pinned_silos_all"),
     ("silo_ticked", "silo_ticked_all"),
+    ("silo_selected", "silo_selected_all"),
     ("silo_children", "silo_children_all"),
     ("silo_collapsed", "silo_collapsed_all"),
     ("silo_colors", "silo_colors_all"),
@@ -130,6 +141,7 @@ _ALIAS_EMPTY = {
     "archive_temp_presets": [],
     "pinned_silos": [],
     "silo_ticked": [],
+    "silo_selected": [],
     "silo_collapsed": [],
     "silo_gaps": [],
     "silo_gap_names": {},
@@ -160,6 +172,8 @@ _STRUCTURED_CODECS = {
     "pinned_silos_all": (dict, {}, False),
     "silo_ticked": (list, [], False),
     "silo_ticked_all": (dict, {}, False),
+    "silo_selected": (list, [], False),
+    "silo_selected_all": (dict, {}, False),
     "silo_children": (dict, {}, False),
     "silo_children_all": (dict, {}, False),
     "silo_collapsed": (list, [], False),
@@ -208,6 +222,13 @@ _STRUCTURED_CODECS = {
     # CORE-006: trashed-text -> folder association. A dict keyed by trashed
     # .md basename; legacy_ast for safety, default {} on any failure.
     "trash_text_folder": (dict, {}, True),
+    "limit_gauges_hidden_accounts": (list, [], False),
+    "limit_gauges_account_labels": (dict, {}, False),
+    "limit_gauges_account_names": (dict, {}, False),
+    "limit_gauges_account_order": (list, [], False),
+    "limit_notifications": (dict, {}, False),
+    "limit_notification_state": (dict, {}, False),
+    "limit_colors": (dict, {}, False),
     # Splitter geometries ship as lists (and live DBs store them as JSON
     # arrays), so they need canonical list codecs, not str() writes.
     "splitter_sizes": (list, [178, 1257], True),
@@ -294,7 +315,8 @@ _STRING_LIST_KEYS = ("cats_order", "hidden_categories")
 # (main._SILO_INDEX_STATE "int_list") expects. A dict/string member here would
 # make ``set(gaps)`` in prune_silo_gaps raise, so drop anything that is not a
 # valid non-negative int.
-_INT_LIST_KEYS = ("silo_gaps", "pinned_silos", "silo_ticked", "silo_collapsed")
+_INT_LIST_KEYS = ("silo_gaps", "pinned_silos", "silo_ticked", "silo_collapsed",
+                  "silo_selected")
 
 # Natural per-category VALUE type of every dict-valued *_all store. A
 # syntactically valid outer dict is not enough: each category member must
@@ -306,6 +328,7 @@ _PER_CATEGORY_VALUE_TYPES = {
     "archive_temp_presets_all": (list, "str"),
     "pinned_silos_all": (list, "int"),
     "silo_ticked_all": (list, "int"),
+    "silo_selected_all": (list, "int"),
     "silo_collapsed_all": (list, "int"),
     "silo_gaps_all": (list, "int"),
     "silo_children_all": (dict, None),
@@ -402,7 +425,8 @@ def _normalize_structured_list(key, parsed, default):
     * ``cats_order`` / ``hidden_categories``: keep string members; an empty
       ``cats_order`` falls back to a deep copy of its canonical default so a
       fully corrupt order never becomes empty/lost.
-    * ``silo_gaps`` / ``pinned_silos`` / ``silo_ticked`` / ``silo_collapsed``:
+    * ``silo_gaps`` / ``pinned_silos`` / ``silo_ticked`` / ``silo_collapsed``
+      / ``silo_selected``:
       keep only valid non-negative integer slot indices.
     * anything else: returned untouched (heterogeneous lists such as
       ``window_presets`` / ``watcher_skills_extra`` keep their members).
@@ -2044,7 +2068,7 @@ class FastPrompterState:
             "last_text": "", "last_tab_idx": 0, "last_geometry": "", "active_temp_slot": 0,
             "font_size": 11, "preview_mode": "None", "paste_mode": "Plain", "tray_visible": "True", "global_hotkey": "Alt+X",
             "pie_menu_hotkey": "Shift+Alt+X", "lock_window_hotkey": "Alt+E", "always_on_top_hotkey": "Alt+S",
-            "close_on_focus_loss": "True", "ctrl_c_closes": "True", "hk_italic": "Ctrl+I", "hk_underline": "Ctrl+U", "theme": "Default", "ui_scale": "0.5", "button_scale": "1.0", "window_locked": "False", "silo_last_edited": {}, "pinned_silos": [], "silo_last_edited_all": {}, "pinned_silos_all": {}, "silo_ticked": [], "silo_ticked_all": {}, "silo_children": {}, "silo_children_all": {}, "silo_collapsed": [], "silo_collapsed_all": {}, "silo_gaps": [], "silo_gaps_all": {}, "silo_gap_names": {}, "silo_gap_names_all": {}, "hidden_categories": [], "silo_colors": {}, "silo_colors_all": {}, "silo_folders": {}, "silo_folders_all": {}, "archive_silo_folders": {}, "archive_silo_folders_all": {}, "silo_project_paths": {}, "silo_project_paths_all": {}, "silo_type_all": {}, "silo_session_all": {}, "archive_project_paths": {}, "archive_project_paths_all": {}, "folder_trash_log": [],
+            "close_on_focus_loss": "True", "ctrl_c_closes": "True", "hk_italic": "Ctrl+I", "hk_underline": "Ctrl+U", "theme": "Default", "ui_scale": "0.5", "button_scale": "1.0", "window_locked": "False", "silo_last_edited": {}, "pinned_silos": [], "silo_last_edited_all": {}, "pinned_silos_all": {}, "silo_ticked": [], "silo_ticked_all": {}, "silo_selected": [], "silo_selected_all": {}, "silo_children": {}, "silo_children_all": {}, "silo_collapsed": [], "silo_collapsed_all": {}, "silo_gaps": [], "silo_gaps_all": {}, "silo_gap_names": {}, "silo_gap_names_all": {}, "hidden_categories": [], "silo_colors": {}, "silo_colors_all": {}, "silo_folders": {}, "silo_folders_all": {}, "archive_silo_folders": {}, "archive_silo_folders_all": {}, "silo_project_paths": {}, "silo_project_paths_all": {}, "silo_type_all": {}, "silo_session_all": {}, "archive_project_paths": {}, "archive_project_paths_all": {}, "folder_trash_log": [],
             "sidebar_right": "False", "sound_ui": "False", "sound_typewriter": "False", "sound_volume": "5", "portable_backup_enabled": "True", "language": "EN",
             "customize_toolbar": "False", "toolbar_order": "", "code_auto_gutter": "False",
             # {logical category: physical filesystem component} — stable
@@ -2885,4 +2909,3 @@ class FastPrompterState:
 
         self._last_save_outcome = "COMMITTED"
         return True
-

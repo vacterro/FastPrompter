@@ -31,7 +31,7 @@ DEFAULT_TOOLBAR_ORDER = [
     "btn_align_left", "btn_align_center", "btn_align_right", "btn_overflow",
     "btn_clear_fmt", "btn_add_line", "btn_bullet_toggle", "btn_copy", "btn_clear",
     "<stretch>",
-    "analog_clock", "lbl_date", "lbl_timer",
+    "analog_clock", "lbl_date", "lbl_timer", "limit_gauges", "lbl_limit_timer",
     "<sep>", "lbl_line_count", "lbl_token_count",
     "btn_settings_toggle_right", "btn_help",
 ]

@@ -280,8 +280,19 @@ class VaultTextEdit(QTextEdit):
         self._doc_has_checkbox = False
         self._doc_has_code = False
         self._code_sel_dirty = True  # code-panel selections need a (re)build
+        self._code_selections_cache = []  # last code-panel build, reused until dirty
         self._opener_cache = None  # set of opener block numbers, invalidated on text change
         self._pending_link = None  # (QUrl, QPoint) recorded on press in Live Preview
+        # Persistent Ctrl+click word selections: list of QTextCursor objects.
+        # Toggle with Ctrl+click; clear all with Ctrl+triple-click on any
+        # word. Cursors track their own document and stay valid across edits
+        # and silo switches (each silo keeps its own pins).
+        self._pinned_cursors = []
+        # consecutive Ctrl+left clicks within the double-click interval (for
+        # triple-click detection — Qt never delivers a "triple click" event).
+        self._ctrl_click_ts = None
+        self._ctrl_click_pos = None
+        self._ctrl_click_count = 0
         # T-815: instead of invalidating the whole opener cache on EVERY
         # keystroke (which forces a full rescan on the next fence query),
         # reconcile edits incrementally and only drop the cache when a fence
@@ -1806,15 +1817,37 @@ class VaultTextEdit(QTextEdit):
 
         Anywhere else this is the normal word-select, so the gesture costs
         nothing: a pill is not text you would double-click to select.
+        The second press of a Ctrl+triple-click arrives here, so the press
+        counter is bumped here too (the third press lands in mousePressEvent).
         """
         if (not sip.isdeleted(self)
                 and event.button() == Qt.MouseButton.LeftButton):
+            if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+                self._ctrl_click_bump(event.pos())
             hit = self.image_pill_at(event.pos())
             if hit is not None:
                 self.rename_image_at(*hit)
                 event.accept()
                 return
         super().mouseDoubleClickEvent(event)
+
+    def mouseTripleClickEvent(self, event):
+        """Ctrl+triple-click on a word clears all pinned selections."""
+        if (not sip.isdeleted(self)
+                and event.button() == Qt.MouseButton.LeftButton
+                and event.modifiers() & Qt.KeyboardModifier.ControlModifier
+                and getattr(self, "_pinned_cursors", None)):
+            self._clear_pinned_selections()
+            event.accept()
+            return
+        # QTextEdit has no mouseTripleClickEvent — Qt reports the third press
+        # as an ordinary press. The method is kept because the suite drives it
+        # directly, so the super() call has to tolerate its absence.
+        parent = getattr(super(), "mouseTripleClickEvent", None)
+        if callable(parent):
+            parent(event)
+        else:
+            event.accept()
 
     def mousePressEvent(self, event):
         if sip.isdeleted(self):
@@ -1918,6 +1951,22 @@ class VaultTextEdit(QTextEdit):
             return
         # exact match, so Ctrl+Shift doesn't also fire the bullet toggle
         if event.button() == Qt.MouseButton.LeftButton and event.modifiers() == Qt.KeyboardModifier.ControlModifier:
+            # Plain Ctrl+click on a word pins it as a persistent selection
+            # (toggle off with the same gesture). Bullet/list lines keep the
+            # old Ctrl+click behaviour — toggling the bullet — so the two do
+            # not fight over the same click.
+            # Ctrl+triple-click on any word clears all pinned selections.
+            blk = self.cursorForPosition(event.pos()).block()
+            is_list_line = blk.isValid() and bool(
+                re.match(r'^\s*(?:[-*•]|\d+[.)])\s+', blk.text()))
+            if not is_list_line:
+                count = self._ctrl_click_bump(event.pos())
+                if count >= 3:
+                    self._clear_pinned_selections()
+                else:
+                    self._toggle_pinned_selection(event.pos())
+                event.accept()
+                return
             super().mousePressEvent(event)
             cursor = self.textCursor()
             with edit_block(cursor, self):
@@ -2415,15 +2464,6 @@ class VaultTextEdit(QTextEdit):
         # reason they right-clicked - and it is disabled when nothing is
         # selected rather than hidden, so its existence is discoverable
         self.main_win.build_send_selection_menu(menu)
-        menu.addSeparator()
-        queue = self.main_win.prompt_queues.get(self.main_win._queue_slot_key())
-        menu.addAction(tr("Queue This Line	Alt+C", lang),
-                       self.main_win.queue_current_line)
-        menu.addAction(
-            tr("Prompt Queue (All Silos)	Alt+Shift+C", lang)
-            + (f"  ({len(queue)})" if queue else ""),
-            self.main_win.open_queue_master)
-        menu.addAction(tr("Watcher…", lang), self.main_win.open_watcher_dialog)
         menu.addSeparator()
         menu.addAction(tr("Expand All Folds", lang), self.unfold_all)
         # rare toolbar actions live here too (hidden from narrow headers)
@@ -3361,12 +3401,6 @@ class VaultTextEdit(QTextEdit):
                         event.accept()
                         return
 
-        # Alt+C is FastPrompter's own queue command, not a pass-through
-        if (event.key() == Qt.Key.Key_C
-                and mods == Qt.KeyboardModifier.AltModifier):
-            self.main_win.queue_current_line()
-            event.accept()
-            return
 
         if event.key() == Qt.Key.Key_Backspace and (mods & Qt.KeyboardModifier.AltModifier):
             try:
@@ -3815,6 +3849,100 @@ class VaultTextEdit(QTextEdit):
                     painter.fillRect(full, hover_colour)
             block = block.next()
 
+    def _live_pinned(self):
+        """Prune pins whose document is gone, then return the survivors.
+
+        A QTextCursor is a value type, so it is never "deleted" — when its
+        document dies it simply goes null and reports -1 positions. Left in
+        the list those would render nothing forever and grow without bound.
+        """
+        pins = getattr(self, "_pinned_cursors", None)
+        if pins is None:
+            pins = self._pinned_cursors = []
+        alive = [c for c in pins if not c.isNull() and c.document() is not None]
+        if len(alive) != len(pins):
+            pins[:] = alive
+        return pins
+
+    def _pinned_extra_selections(self, doc):
+        """ExtraSelections for the persistent Ctrl+click word highlights."""
+        sels = []
+        accent = QColor(self._theme_accent("#D9B340"))
+        accent.setAlpha(110)
+        for c in self._live_pinned():
+            if c.document() is not doc:
+                continue        # another silo's pin — not painted here
+            start, end = c.selectionStart(), c.selectionEnd()
+            if start >= end:
+                continue
+            cur = QTextCursor(doc)
+            cur.setPosition(start)
+            cur.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
+            sel = QTextEdit.ExtraSelection()
+            sel.format.setBackground(accent)
+            sel.cursor = cur
+            sels.append(sel)
+        return sels
+
+    @property
+    def _pinned_selections(self):
+        """(start, end) of every live pin — a read-only view."""
+        return [(c.selectionStart(), c.selectionEnd())
+                for c in self._live_pinned()]
+
+    def _toggle_pinned_selection(self, pos):
+        """Pin/unpin the word under a Ctrl+click.
+
+        Unpinning matches by OVERLAP, not by exact range: the pin is a live
+        cursor that moves with edits, so the word's offsets are no longer the
+        ones it was created with and an equality test would never release it.
+        """
+        cur = self.cursorForPosition(pos)
+        if cur is None or cur.isNull():
+            return
+        if not cur.hasSelection():
+            cur.select(QTextCursor.SelectionType.WordUnderCursor)
+        if not cur.hasSelection():
+            return
+        start, end = cur.selectionStart(), cur.selectionEnd()
+        pins = self._live_pinned()
+        for c in list(pins):
+            if c.document() is not cur.document():
+                continue
+            if start < c.selectionEnd() and c.selectionStart() < end:
+                pins.remove(c)
+                self.refresh_extra_selections()
+                return
+        pins.append(QTextCursor(cur))
+        self.refresh_extra_selections()
+
+    def _clear_pinned_selections(self):
+        """Release every pin (Ctrl+triple-click)."""
+        if not getattr(self, "_pinned_cursors", None):
+            return
+        self._pinned_cursors.clear()
+        self.refresh_extra_selections()
+
+    def _ctrl_click_bump(self, pos):
+        """Count consecutive Ctrl+left clicks within the double-click
+        interval and near the same position. Returns the running count;
+        3 means a triple-click, which clears every pin."""
+        import time as _t
+        now = _t.monotonic()
+        last_ts = getattr(self, "_ctrl_click_ts", None)
+        last_pos = getattr(self, "_ctrl_click_pos", None)
+        if (last_ts is not None
+                and (now - last_ts) * 1000 <= QApplication.doubleClickInterval()
+                and last_pos is not None
+                and (last_pos - QPointF(pos)).manhattanLength() < 20):
+            count = getattr(self, "_ctrl_click_count", 0) + 1
+        else:
+            count = 1
+        self._ctrl_click_ts = now
+        self._ctrl_click_pos = QPointF(pos)
+        self._ctrl_click_count = count
+        return count
+
     def refresh_extra_selections(self):
         """Ask for the background tints (code panels, heat, hover) to be rebuilt.
 
@@ -3839,20 +3967,20 @@ class VaultTextEdit(QTextEdit):
         doc = self.document()
         if doc is None or sip.isdeleted(doc) or doc.blockCount() > 2000:
             return
-        # T-815: the code-panel scan walks every block. It only needs to run
-        # when code-region membership actually changed (a fence edit or a
-        # document (re)attach) — `_reconcile_edits` and `set_active_document`
-        # set the dirty flag for exactly those moments. An ordinary keystroke
-        # leaves the flag clear, so a 2000-line plain document never rescan.
-        if not getattr(self, "_code_sel_dirty", True):
-            return
         try:
-            # ONLY code-block panels go through extra selections. Hover and
-            # heat are painted directly (see _paint_line_tints): a selection
-            # cursor per tinted line makes Qt fault on setExtraSelections,
-            # and a bare caret only ever tints one visual row of a wrapped
-            # block, which is the bug this whole path had.
-            self.setExtraSelections(self._code_block_selections(doc))
+            # T-815: the code-panel scan walks every block. It only needs to
+            # run when code-region membership actually changed (a fence edit
+            # or a document (re)attach) — `_reconcile_edits` and
+            # `set_active_document` set the dirty flag for exactly those
+            # moments. An ordinary keystroke leaves the flag clear, so a
+            # 2000-line plain document never rescan. Pinned Ctrl+click
+            # highlights are cheap and always rebuilt; code panels reuse the
+            # last build until the dirty flag is set again.
+            if getattr(self, "_code_sel_dirty", True):
+                self._code_selections_cache = self._code_block_selections(doc)
+            selections = self._pinned_extra_selections(doc)
+            selections.extend(getattr(self, "_code_selections_cache", ()))
+            self.setExtraSelections(selections)
         except Exception:
             logger.debug("failed to refresh extra selections")
         finally:

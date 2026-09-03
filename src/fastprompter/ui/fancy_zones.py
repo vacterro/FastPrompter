@@ -271,9 +271,15 @@ def apply_ui_state(main_win, preset) -> None:
                 toggle()
 
     # The valued keys apply only when the preset actually carries them — a
-    # preset saved before these existed must not force any of them.
+    # preset saved before these existed must not force any of them — AND only
+    # when the window is not already in that state. Re-applying an identical
+    # theme rebuilds the whole application stylesheet and rehighlights the
+    # whole document; measured on a 400-block silo that is 3.5s of frozen UI,
+    # every single time a Presets zone was picked. The toggles above have
+    # always compared against the current state first; these did not, which is
+    # the entire cost.
     want_theme = state["theme"]
-    if want_theme:
+    if want_theme and want_theme != main_win.data.get("theme", "Default"):
         change = getattr(main_win, "change_theme", None)
         if callable(change):
             change(want_theme)
@@ -284,7 +290,7 @@ def apply_ui_state(main_win, preset) -> None:
             size = int(float(want_font))
         except (TypeError, ValueError):
             size = None
-        if size is not None:
+        if size is not None and not _font_already(main_win, size):
             change = getattr(main_win, "change_font_size", None)
             if callable(change):
                 change(size)
@@ -295,16 +301,54 @@ def apply_ui_state(main_win, preset) -> None:
             scale = float(want_scale)
         except (TypeError, ValueError):
             scale = None
-        if scale is not None:
+        if scale is not None and not _scale_already(main_win, scale):
             setter = getattr(main_win, "_set_unified_scale", None)
             if callable(setter):
                 setter(scale)
 
     want_toolbar = state["toolbar_position"]
-    if want_toolbar in ("top", "bottom"):
+    if (want_toolbar in ("top", "bottom")
+            and want_toolbar != main_win.data.get("toolbar_position", "top")):
         apply = getattr(main_win, "apply_toolbar_position", None)
         if callable(apply):
             apply(bottom=(want_toolbar == "bottom"))
+
+
+def _font_already(main_win, size: int) -> bool:
+    """Is the window already at this font size, control included?
+
+    ``change_font_size`` exists partly to re-sync a spin box that drifted from
+    ``data``, so "data already says 14" is not enough to skip it: the control
+    has to agree too, or a stale spin would stay stale forever.
+    """
+    try:
+        current = int(float(main_win.data.get("font_size", 11)))
+    except (TypeError, ValueError):
+        return False
+    if current != size:
+        return False
+    spin = getattr(main_win, "font_spin", None)
+    if spin is None:
+        return True
+    try:
+        return int(spin.value()) == size
+    except (RuntimeError, TypeError, ValueError):
+        return False
+
+
+def _scale_already(main_win, scale: float) -> bool:
+    """Is the window already at this UI scale?
+
+    Compared after the same clamp/round the setter applies, so a preset holding
+    an out-of-range 3.0 does not re-run the whole scale pass forever against a
+    stored 1.75.
+    """
+    target = max(0.5, min(1.75, round(float(scale), 2)))
+    try:
+        current = round(float(main_win.data.get("ui_scale", "1.0")), 2)
+    except (TypeError, ValueError):
+        return False
+    return abs(current - target) < 0.005
 
 
 class FancyZoneOverlay(QWidget):

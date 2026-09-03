@@ -9,7 +9,7 @@ import datetime
 import math
 
 from PyQt6.QtCore import QPoint, Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QPainter, QPen, QFont, QPolygon
+from PyQt6.QtGui import QColor, QPainter, QPen, QFont
 from PyQt6.QtWidgets import QSizePolicy, QWidget
 
 from fastprompter.theme.themes import theme_raw_colors
@@ -220,7 +220,7 @@ class BigAnalogClock(QWidget):
 
     def paintEvent(self, _event):
         from PyQt6.QtCore import QPointF, QRectF
-        from PyQt6.QtGui import QBrush, QFont, QPen
+        from PyQt6.QtGui import QBrush, QPen
 
         p = QPainter(self)
         try:

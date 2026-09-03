@@ -16,6 +16,7 @@ from PyQt6.QtCore import (
     QEventLoop,
     QFileSystemWatcher,
     QObject,
+    QSize,
     Qt,
     QThread,
     QTimer,
@@ -27,6 +28,7 @@ from PyQt6.QtGui import (
     QDesktopServices,
     QFont,
     QKeySequence,
+    QPainter,
     QShortcut,
     QTextBlockFormat,
     QTextCharFormat,
@@ -111,7 +113,6 @@ from fastprompter.ui.snippet_panel import (
 )
 from fastprompter.ui.theme_mixin import ThemeMixin
 from fastprompter.ui.tray_mixin import TrayMixin
-from fastprompter.ui.watcher_mixin import WatcherMixin
 from fastprompter.ui.window_mixin import WindowMixin
 from fastprompter.utils.paths import get_data_dir
 from fastprompter.utils.textfit import clip_safe_width
@@ -161,10 +162,56 @@ class _SettingsGroupBox(QWidget):
         return self._chrome_h + self._inner.totalHeightForWidth(max(1, width - pad))
 
 
+class _SettingsPage(QWidget):
+    """Tab page that never inflates the tab widget's minimum.
+
+    QTabWidget's minimumSizeHint is the tab bar plus the TALLEST page, so a
+    page that reports the height its flow needs at the flow's minimum width
+    (all groups stacked) forces the whole panel tall enough to show that
+    worst case on every tab. The visible page is sized on demand by
+    ``_fit_settings_tabs`` instead, so the page's job is only to not stand
+    in the way: report no minimum and let the fitter decide the height.
+    """
+    def minimumSizeHint(self):
+        return QSize(0, 0)
+
+
+class _SettingsGearButton(QPushButton):
+    """Settings ⚙ button that rotates 45 degrees on every toggle."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._angle = 0
+
+    def text(self) -> str:
+        return "⚙"
+
+    def rotate_step(self, delta: int = 45) -> None:
+        self._angle = (self._angle + delta) % 360
+        self.update()
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        p = QPainter(self)
+        try:
+            p.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+            w = self.width()
+            h = self.height()
+            if self.isDown():
+                p.translate(1, 1)
+            p.translate(w / 2.0, h / 2.0)
+            p.rotate(self._angle)
+            p.translate(-w / 2.0, -h / 2.0)
+            p.setFont(self.font())
+            p.setPen(self.palette().buttonText().color())
+            p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "⚙")
+        finally:
+            p.end()
+
+
+
 def _snapshot_text_size(st):
     """Chars of silo text a data snapshot holds, for the undo/redo size cap."""
-    if "_text_size" in st:
-        return st["_text_size"]
     size = 0
     for key in ("temp_presets", "archive_temp_presets"):
         d = st.get(key)
@@ -911,7 +958,6 @@ class FastPrompter(
     SnippetOpsMixin,
     ThemeMixin,
     TrayMixin,
-    WatcherMixin,
     WindowMixin,
 ):
     # Live settings accessors used by the UI mixins.
@@ -967,6 +1013,9 @@ class FastPrompter(
 
     def __init__(self):
         super().__init__()
+        import time
+        self._t_startup_start = time.perf_counter()
+        self._startup_timings = {}
         self.setMouseTracking(True)
         # QApplication.instance().installEventFilter(self)
         self.ignore_focus_loss, self.registered_hotkeys, self._db_dirty = False, [], False
@@ -999,12 +1048,15 @@ class FastPrompter(
         self._snippet_widget_cache = {}  # {(cat, idx): widget} for O(1) lookup
 
         self.setup_single_instance_server()
+        _t_state_0 = time.perf_counter()
         self.state = FastPrompterState()
+        self._startup_timings["1_FastPrompterState_load"] = (time.perf_counter() - _t_state_0) * 1000.0
         # PERF-001: the GUI build dispatches the throttled .bak refresh to the
         # background worker — a full-database copy+validation must never run
         # on the save critical path (it held State._lock and hitched the UI).
         self.state.background_backups = True
         self.data = self.state.data
+        self._t_pre_0 = time.perf_counter()
         # W2-006: reconcile any crash-consistent retirement journal left
         # by a process death between a folder rename and its in-memory log
         # append. Idempotent; DEFERRED until after the per-category
@@ -1015,8 +1067,7 @@ class FastPrompter(
         self._journal_reconcile_fn = _reconcile_retirement_journal
         from fastprompter.core.timers import load_timers
         self.timers = load_timers(self.data.get("timers"))
-        from fastprompter.core.watcher.queue import load_queues
-        self.prompt_queues = load_queues(self.data.get("watcher_queues"))
+        self.prompt_queues = {}
         # on_tab_changed rebinds this to the active category as soon as the
         # UI is up; this is only the pre-UI starting point
         from fastprompter.core.pomodoro import ProductivityTimer
@@ -1049,6 +1100,23 @@ class FastPrompter(
         # heals overrides that point at a file the library no longer has.
         from fastprompter.core.sound_manager import migrate_sound_settings
         migrate_sound_settings(self.data, self.sound_manager._sounds_dir)
+
+        # Subtle wheel feedback in long panels. Filter is a no-op while UI
+        # sounds are off (the sound manager respects sound_ui on its own).
+        from fastprompter.ui.scroll_sound import ScrollSoundFilter
+        self._scroll_sound_filter = ScrollSoundFilter(self.sound_manager, main_win=self)
+        QApplication.instance().installEventFilter(self._scroll_sound_filter)
+
+        # An unfocused combo/spin under the pointer must not consume the wheel:
+        # scrolling the Interval Notifications tab used to step its sound combo
+        # (firing the live preview — the "random sounds" report), its interval
+        # and its volume, all without a click. Installed BEFORE the scroll-sound
+        # filter can matter: filters are notified newest-first, so this one gets
+        # the event, redirects it to the scroll area, and the scroll tick still
+        # plays because that filter never blocks anything.
+        from fastprompter.ui.wheel_guard import WheelGuard
+        self._wheel_guard = WheelGuard()
+        QApplication.instance().installEventFilter(self._wheel_guard)
 
         # Ensure cs_style key exists
         if "cs_style" not in self.data:
@@ -1100,6 +1168,18 @@ class FastPrompter(
             tall[first_cat] = list(self.data["silo_ticked"])
         self.data["silo_ticked_all"] = tall
         self.data["silo_ticked"] = tall.setdefault(first_cat, [])
+        # Ctrl+click multi-selection, same shape and same aliasing rule as the
+        # ticks above. Without this bind the flat key is a FREE list at startup,
+        # so every latch written before the first project switch lands nowhere
+        # and the next bind_active_category replaces it with an empty one.
+        sall = self.data.get("silo_selected_all")
+        if not isinstance(sall, dict):
+            sall = {}
+        if (not sall and isinstance(self.data.get("silo_selected"), list)
+                and self.data["silo_selected"]):
+            sall[first_cat] = list(self.data["silo_selected"])
+        self.data["silo_selected_all"] = sall
+        self.data["silo_selected"] = sall.setdefault(first_cat, [])
         # Per-slot unique file-folder names {slot: name} per category
         fdall = self.data.get("silo_folders_all")
         if not isinstance(fdall, dict):
@@ -1211,8 +1291,13 @@ class FastPrompter(
             logger.warning("merge journal reconciliation skipped",
                            exc_info=True)
 
+        import time
+        self._startup_timings["2_pre_init_migrations"] = (time.perf_counter() - self._t_pre_0) * 1000.0
+
         self._current_lang = get_language(self.data)
+        _t_ui_0 = time.perf_counter()
         self.init_ui()
+        self._startup_timings["3_init_ui_total"] = (time.perf_counter() - _t_ui_0) * 1000.0
         self.init_tray()
         self.setup_global_shortcuts()
         self._apply_tooltips()
@@ -1227,15 +1312,24 @@ class FastPrompter(
         # stay True until the deferred apply finishes so that handlers
         # triggered during profile state application do not fire premature
         # side-effects (save, sync, etc.).
+        _t_thm_0 = time.perf_counter()
         self.apply_theme()
+        self._startup_timings["8_apply_theme"] = (time.perf_counter() - _t_thm_0) * 1000.0
         self.place_window()
         if getattr(self, 'is_locked', False):
             self._locked_geometry = self.geometry()
         def _deferred_profile_apply():
             if sip.isdeleted(self):
                 return
-            self._apply_profile_runtime_state()
-            self._initializing_ui, self._suspend_temp_sync = False, False
+            try:
+                _t_def_0 = time.perf_counter()
+                self._apply_profile_runtime_state()
+                self._startup_timings["10_deferred_profile_runtime"] = (time.perf_counter() - _t_def_0) * 1000.0
+                self._startup_timings["9_first_visible_frame"] = (time.perf_counter() - self._t_startup_start) * 1000.0
+                self._initializing_ui, self._suspend_temp_sync = False, False
+            except Exception:
+                from fastprompter.core.logging import logger
+                logger.exception("deferred profile apply failed")
         QTimer.singleShot(0, _deferred_profile_apply)
         saved_blink = self.data.get("cursor_blink_ms")
         if saved_blink is not None:
@@ -1359,7 +1453,10 @@ class FastPrompter(
             self.analog_clock.sync()
         if hasattr(self, "limit_gauges"):
             self.limit_gauges.sync()
-        self._update_limit_status()
+        if hasattr(self, "_update_limit_timer_label"):
+            self._update_limit_timer_label()
+        if hasattr(self, "_update_limit_status"):
+            self._update_limit_status()
         show_date = self.data.get("show_date_rect", "True") == "True"
         if not show_date:
             self.lbl_date.setVisible(False)
@@ -1412,6 +1509,20 @@ class FastPrompter(
         self._apply_date_alert_style()
         self._update_timer_label()
 
+    def _apply_limit_hint_style(self, label, padding="0 4px"):
+        """Small caption colour for AI-limit text — one settable role.
+
+        Every grey explanatory line in the limit UI (header status, dialog
+        captions) reads its colour from ``limit_colors["hint"]``, so retinting
+        them is one setting instead of four hardcoded hex values.
+        """
+        if label is None:
+            return
+        from fastprompter.ui.limit_colors import resolve_hex
+        pad = f"padding: {padding}; " if padding else ""
+        label.setStyleSheet(
+            f"{pad}color: {resolve_hex(self, 'hint')}; font-size: 10px;")
+
     def _update_limit_status(self):
         """Status text shown in Clock settings — account count or error.
 
@@ -1426,25 +1537,250 @@ class FastPrompter(
             lbl.setVisible(False)
             return
         snap = svc.state_copy
-        accounts = snap.accounts
+        from fastprompter.ui.limit_account_selector import hidden_account_keys
+        hidden = hidden_account_keys(self.data)
+        accounts = [a for a in snap.accounts if a.key not in hidden]
         n = len(accounts)
-        snapshots = snap.snapshots
+        visible_keys = {a.key for a in accounts}
+        snapshots = {key: value for key, value in snap.snapshots.items()
+                     if key in visible_keys}
         ok = sum(1 for s in snapshots.values()
                  if getattr(s, "status", None) == "OK")
+        stale = sum(1 for s in snapshots.values()
+                    if getattr(s, "status", None) == "STALE")
         err = sum(1 for s in snapshots.values()
                   if getattr(s, "status", None) in ("ERROR", "AUTH_REQUIRED"))
+        # A provider designed to stay silent until it has a fact (Antigravity
+        # only learns quota from a refusal) is idle, not broken — counting it
+        # as "unavailable" would advertise a defect with nothing to fix.
+        from fastprompter.core.usage_limits.model import EXPECTED_QUIET_CODES
+        quiet = sum(1 for s in snapshots.values()
+                    if getattr(s, "status", None) == "UNAVAILABLE"
+                    and getattr(s, "error_code", "") in EXPECTED_QUIET_CODES)
+        unavailable = sum(1 for s in snapshots.values()
+                          if getattr(s, "status", None) == "UNAVAILABLE") - quiet
         if snap.status == "DISCOVERING":
             lbl.setText("scanning accounts…")
+        elif snap.accounts and n == 0:
+            lbl.setText(f"0/{len(snap.accounts)} shown — choose accounts below")
         elif n == 0:
-            lbl.setText("no accounts found (~/.codex, ~/.codex-*, ~/.claude)")
+            lbl.setText("no accounts found (~/.codex, ~/.codex-*, ~/.claude, "
+                        "~/.gemini/antigravity)")
         elif not snapshots:
             lbl.setText(f"discovered {n} account(s) — probing…")
-        elif err:
-            lbl.setText(f"{ok}/{n} OK · {err} error(s) · "
-                        "open gauges for details")
+        elif err or unavailable:
+            details = []
+            if err:
+                details.append(f"{err} error(s)")
+            if unavailable:
+                details.append(f"{unavailable} unavailable")
+            if stale:
+                details.append(f"{stale} stale")
+            lbl.setText(f"{ok + stale}/{n} readable · {' · '.join(details)} · "
+                        "hover gauges for details")
+        elif stale:
+            lbl.setText(f"{ok + stale}/{n} readable · {stale} stale")
+        elif quiet:
+            lbl.setText(f"{ok}/{n} accounts OK · {quiet} idle "
+                        "(reports only when the provider refuses work)")
         else:
             lbl.setText(f"{ok}/{n} accounts OK")
         lbl.setVisible(True)
+        selector = getattr(self, "limit_accounts_selector", None)
+        if selector is not None:
+            selector.sync()
+
+    def _update_limit_timer_label(self):
+        """Minutes until the soonest quota reset, shown beside the gauges.
+
+        This method is the SOLE owner of the label's visibility. It used to
+        only ever hide it — the show came from ``_apply_header_density``'s
+        tier loop, which runs on resize, so the countdown was invisible until
+        the user happened to nudge the window and looked like a missing
+        feature. Two owners for one widget is exactly the surprise the UI
+        contract forbids, so the tier lists no longer mention this label and
+        the ultra-width rule is applied here instead.
+        """
+        lbl = getattr(self, "lbl_limit_timer", None)
+        if lbl is None or sip.isdeleted(lbl):
+            return
+        svc = getattr(self, "limit_service", None)
+        gauges = getattr(self, "limit_gauges", None)
+        if (svc is None or gauges is None
+                or self.data.get("limit_gauges", "False") != "True"):
+            lbl.setVisible(False)
+            return
+        # Ultra-narrow headers keep only the essentials (see _ULTRA_HIDDEN).
+        if getattr(self, "_header_ultra", False):
+            lbl.setVisible(False)
+            return
+        snap = svc.state_copy
+        from fastprompter.core.usage_limits.model import soonest_reset
+        from fastprompter.ui.limit_account_selector import hidden_account_keys
+        from fastprompter.ui.limit_colors import reset_color
+        hidden = hidden_account_keys(self.data)
+        provider, soonest = soonest_reset(snap.snapshots, hidden)
+        if soonest is None:
+            lbl.setVisible(False)
+            return
+        import datetime
+        now = datetime.datetime.now().timestamp()
+        remaining = soonest - now
+        if remaining <= 0:
+            text = "now"
+        else:
+            from fastprompter.core.duration import format_remaining
+            text = format_remaining(
+                remaining, short=bool(getattr(self, "_header_dense", False)),
+                minutes=True)
+        lbl.setText(f"↻ {text}")
+        color = reset_color(self, provider)
+        if color:
+            lbl.setStyleSheet(
+                f"padding: 0 4px; font-weight: bold; color: {color};")
+            desc = getattr(lbl, "_en_tooltip", "") or "Soonest AI limit reset"
+            vendor = provider.title()
+            desc = f"{vendor}: {desc}"
+        else:
+            lbl.setStyleSheet("padding: 0 4px; font-weight: bold;")
+            desc = getattr(lbl, "_en_tooltip", "") or "Soonest AI limit reset"
+        lbl.setToolTip(tr(desc, self._current_lang))
+        # The reason this exists: text without a show left the countdown
+        # invisible until an unrelated resize repainted the header.
+        lbl.setVisible(True)
+
+    def _update_claude_bridge_controls(self):
+        label = getattr(self, "lbl_claude_bridge", None)
+        button = getattr(self, "btn_claude_bridge", None)
+        if label is None or button is None:
+            return
+        try:
+            from fastprompter.core.usage_limits.claude_statusline import bridge_status
+            status = bridge_status()
+        except Exception as exc:
+            label.setText(f"Claude Code: configuration error — {exc}")
+            button.setText("Connect Claude Code")
+            return
+        if status["connected"] and status["has_cache"]:
+            label.setText("Claude Code: connected · structured limits received")
+            button.setText("Disconnect Claude Code")
+        elif status["connected"]:
+            label.setText("Claude Code: connected · waiting for first API response")
+            button.setText("Disconnect Claude Code")
+        else:
+            label.setText("Claude Code: not connected")
+            button.setText("Connect Claude Code")
+
+    def _toggle_claude_limit_bridge(self):
+        """Explicitly connect/disconnect the passive Claude status-line feed."""
+        from fastprompter.core.usage_limits.claude_statusline import (
+            bridge_status,
+            install_bridge,
+            uninstall_bridge,
+        )
+        try:
+            if bridge_status()["connected"]:
+                uninstall_bridge()
+            else:
+                install_bridge()
+        except Exception as exc:
+            QMessageBox.warning(
+                self, "Claude Code limits",
+                "Could not update Claude Code statusLine safely:\n\n"
+                f"{exc}")
+            self._update_claude_bridge_controls()
+            return
+        self._update_claude_bridge_controls()
+        svc = getattr(self, "limit_service", None)
+        if svc is not None:
+            svc.reconfigure(self.data)
+
+    def open_limit_settings_dialog(self):
+        from fastprompter.ui.limit_settings_dialog import LimitSettingsDialog
+
+        dialog = LimitSettingsDialog(self)
+        dialog.exec()
+        self.limit_gauges.refresh_view()
+        self._update_limit_status()
+
+    def _show_limit_popup(self, title, message):
+        """Tray notification used by real quota alerts and dialog previews."""
+        from types import SimpleNamespace
+        try:
+            from fastprompter.ui.timer_toast import show_toast
+            _toast_obj = SimpleNamespace(
+                name=str(title),
+                description=str(message),
+            )
+            toast = show_toast(self, _toast_obj,
+                               header="FastPrompter", status="AI limit alert")
+            if toast is not None:
+                return
+        except Exception:
+            pass
+        try:
+            from PyQt6.QtWidgets import QSystemTrayIcon
+            tray = getattr(self, "tray_icon", None)
+            if tray is not None and QSystemTrayIcon.isSystemTrayAvailable():
+                tray.showMessage(
+                    str(title), str(message),
+                    QSystemTrayIcon.MessageIcon.Warning, 8000)
+                return
+        except Exception:
+            pass
+        try:
+            self.statusBar().showMessage(f"{title}: {message}", 8000)
+        except Exception:
+            pass
+
+    def _check_limit_notifications(self):
+        """Evaluate fresh authoritative snapshots and fire each rule once."""
+        from fastprompter.core.usage_limits.notifications import (
+            evaluate_limit_notifications,
+        )
+        from fastprompter.ui.limit_account_selector import account_display_name
+
+        svc = getattr(self, "limit_service", None)
+        if svc is None:
+            return
+        snap = svc.state_copy
+        alerts, new_state = evaluate_limit_notifications(
+            snap.accounts, snap.snapshots,
+            self.data.get("limit_notifications", {}),
+            self.data.get("limit_notification_state", {}),
+        )
+        if new_state != self.data.get("limit_notification_state", {}):
+            self.data["limit_notification_state"] = new_state
+            self.mark_dirty("settings")
+        played_sounds = set()
+        for alert in alerts:
+            rule = alert.rule
+            prefix = "reset_" if alert.kind == "reset" else ""
+            if rule.get(f"{prefix}sound_enabled") == "True":
+                sound_ref = rule.get(f"{prefix}sound", "notify")
+                volume = rule.get(f"{prefix}volume", 0.5)
+                sound_key = (sound_ref, volume)
+                if sound_key not in played_sounds:
+                    played_sounds.add(sound_key)
+                    try:
+                        self.sound_manager.play_sound_ref(
+                            sound_ref, volume)
+                    except Exception:
+                        pass
+            if rule.get(f"{prefix}show_notification") == "True":
+                from fastprompter.ui.limit_settings_dialog import _window_name
+                name = account_display_name(alert.account, self.data)
+                remaining = float(alert.window.remaining_percent)
+                if alert.kind == "reset":
+                    self._show_limit_popup(
+                        f"AI limit reset: {name} — {_window_name(alert.window)}",
+                        f"{remaining:.1f}% available again · time to work")
+                else:
+                    threshold = float(rule.get("threshold", 20.0))
+                    self._show_limit_popup(
+                        f"AI limit: {name} — {_window_name(alert.window)}",
+                        f"{remaining:.1f}% remaining · "
+                        f"alert threshold {threshold:.1f}%")
 
     def _load_missed_ids(self):
         """Load the persisted missed-event IDs from the active profile data."""
@@ -1981,6 +2317,11 @@ class FastPrompter(
             self._counter_sep.setVisible(not ultra)
         if ultra_flipped:
             self._update_date_label()
+            # The limit countdown owns its own visibility, but the ultra rule
+            # lives in that owner — so a tier flip has to ask it to re-decide.
+            update_limit_timer = getattr(self, "_update_limit_timer_label", None)
+            if callable(update_limit_timer):
+                update_limit_timer()
 
         # widths recompute every pass while dense — the font can change
         # after the flag flips (scale/theme), stale metrics overshoot
@@ -2082,6 +2423,11 @@ class FastPrompter(
                      "btn_line_nums", "btn_help", "btn_trash", "btn_toggle_search",
                      "btn_arc_snip", "btn_toggle_archive", "btn_toggle_snippets", "btn_project_folder",
                      "btn_project_run", "btn_files")
+    # NOT in the tier lists: lbl_limit_timer. The tier loop's setVisible was a
+    # SECOND owner of that label, and it only runs on a resize/theme pass, so
+    # a countdown that became known between resizes stayed hidden until the
+    # user nudged the window. _update_limit_timer_label owns it alone and
+    # applies the ultra rule itself.
 
     # ---- per-silo view state (cursor, selection, scroll, margin marks) ----
     def _silo_state_key(self, slot=None, is_archive=None):
@@ -2389,76 +2735,18 @@ class FastPrompter(
         rebound on a tab change; a queue that skipped that would follow the
         user across categories and show another tab's backlog.
         """
-        # Re-stamp the active silo's item lines from their anchors BEFORE the
-        # numbers go stale in the store (T-756).
-        self._sync_active_queue_lines()
-        from fastprompter.core.watcher.queue import save_queues
-        raw = save_queues(self.prompt_queues)
-        self.data["watcher_queues"] = raw
-        cat = self.get_current_category() or ""
-        # Must be a dict to index into. An older build wrote this key as
-        # str(dict) (it was missing from state.py's json save list), so a DB
-        # from then reloads it as a STRING and one Alt+C died here with
-        # "'str' object does not support item assignment". Heal it in place
-        # rather than trusting the load path alone.
-        bucket = self.data.get("watcher_queues_all")
-        if not isinstance(bucket, dict):
-            bucket = {}
-            self.data["watcher_queues_all"] = bucket
-        bucket[cat] = raw
-        # PERF-002: queue data is in the settings JSON domain
-        self.mark_dirty("settings")
+        pass
 
     def _queue_slot_key(self):
-        """Which silo's queue Alt+C fills. Archive silos keep their own."""
         slot = getattr(self, "active_temp_slot", 0)
         prefix = "a" if getattr(self, "active_is_archive", False) else ""
         return f"{prefix}{slot}"
 
     def _sync_active_queue_lines(self):
-        """Resolve every anchored queue item's LIVE line and text before the
-        document is left or persisted (T-756).
-
-        An item is anchored to its BLOCK, so editing above it does not break
-        the reference — but ``item.line`` is a 1-based snapshot that goes
-        stale the moment lines shift. An inactive silo resolves by line
-        number, so a stale line sends the WRONG text after a switch. The
-        block is the truth; re-stamp line + text from it while we still can.
-        """
-        try:
-            queue = self.prompt_queues.get(self._queue_slot_key())
-            if not queue:
-                return
-            blocks = self.text_area.blocks_for_queue_items([item.id for item in queue])
-            for item in queue:
-                block = blocks.get(item.id)
-                if block is not None:
-                    item.line = block.blockNumber() + 1
-                    item.text = block.text().strip()
-        except Exception:
-            from fastprompter.core.logging import logger
-            logger.debug("queue line sync failed", exc_info=True)
+        pass
 
     def queue_current_line(self):
-        """Alt+C: put the line under the caret into this silo's queue.
-
-        The item is anchored to the BLOCK, not to a line number, so editing
-        the note above it does not point the queue at the wrong text.
-        """
-        from fastprompter.core.watcher.queue import QueueItem, queue_for
-
-        text, block = self.text_area.queue_current_line()
-        if not text:
-            return None
-
-        item = QueueItem(text,
-                         skill=self.data.get("watcher_skill", ""),
-                         line=block.blockNumber() + 1)
-        queue_for(self.prompt_queues, self._queue_slot_key()).append(item)
-        self.text_area.set_queue_anchor(block, item.id)
-        self.save_prompt_queues()
-        self.play_click_sound()
-        return item
+        return None
 
     def silo_queue_label(self, slot):
         """A silo's name for the master view: its first non-empty line.
@@ -2580,22 +2868,10 @@ class FastPrompter(
         return self.queue_items_live_text(slot, [item])[item]
 
     def open_queue_dialog(self, master=False):
-        """Open the prompt-queue panel.
-
-        `master=True` lands on the "All silos" tab — the cross-silo view
-        reachable from inside the dialog.
-        """
-        from fastprompter.ui.queue_panel import QueueDialog
-        self._increment_focus_lock()
-        try:
-            QueueDialog(self, start_tab=1 if master else 0).exec()
-        finally:
-            QTimer.singleShot(300, self._decrement_focus_lock)
-        self.save_prompt_queues()
+        pass
 
     def open_queue_master(self):
-        """Alt+Shift+C: open the prompt queue on the All Silos tab."""
-        self.open_queue_dialog(master=True)
+        pass
 
     # ---- hashtags -----------------------------------------------------
     def open_hashtag_dialog(self, tag=None):
@@ -3121,7 +3397,35 @@ class FastPrompter(
             except (AttributeError, TypeError):
                 needed = page.sizeHint().height()
             bar = tabs.tabBar().sizeHint().height() if tabs.tabBar() else 24
-            tabs.setMaximumHeight(max(60, needed + bar + 10))
+            fitted = max(60, needed + bar + 10)
+            tabs.setMaximumHeight(fitted)
+            # The panel must never be compressed below its content, or the
+            # last row (Typos on the Editor tab) is cut off.  The frame's
+            # vertical policy is Maximum, so the main layout can shrink it
+            # below content — pin the frame's own minimumHeight to the full
+            # height its layout needs.  Only once the frame has a real
+            # width: during the initial build it is ~100px and a measured
+            # minimum there is a single tall column.
+            if frame is not None and not sip.isdeleted(frame) and frame.width() > 200:
+                flay = frame.layout()
+                if flay is not None:
+                    app_h = 0
+                    app_item = flay.itemAt(0)
+                    app_w = app_item.widget() if app_item is not None else None
+                    if app_w is not None and hasattr(app_w, "totalHeightForWidth"):
+                        try:
+                            app_h = app_w.totalHeightForWidth(app_w.width())
+                        except Exception:
+                            app_h = app_w.height()
+                    hline_h = 0
+                    hl_item = flay.itemAt(1)
+                    hl_w = hl_item.widget() if hl_item is not None else None
+                    if hl_w is not None:
+                        hline_h = max(2, hl_w.sizeHint().height())
+                    m = flay.contentsMargins()
+                    pad = m.top() + m.bottom() + flay.spacing() * 2
+                    needed_frame = int(app_h + hline_h + fitted + pad)
+                    frame.setMinimumHeight(needed_frame)
         tabs.updateGeometry()
 
         # The footer's own wrapping row has to be re-measured too. It is a
@@ -3368,9 +3672,15 @@ class FastPrompter(
 
     def toggle_hide_on_clickout(self):
         """Alt+A: flip the Hide on Click-Out behavior from anywhere."""
-        if hasattr(self, "cb_focus"):
+        if getattr(self, "cb_focus", None) is not None:
             self.cb_focus.setChecked(not self.cb_focus.isChecked())
             self.play_tick_sound(self.cb_focus.isChecked())
+        else:
+            cur = self.data.get("close_on_focus_loss", "True") == "True"
+            new_val = not cur
+            self.data["close_on_focus_loss"] = "True" if new_val else "False"
+            self.mark_dirty()
+            self.play_tick_sound(new_val)
 
     def _increment_focus_lock(self):
         """Counted ignore_focus_loss: overlapping dialogs each take a lock;
@@ -3400,8 +3710,9 @@ class FastPrompter(
 
     def _pin_top_toggled(self, checked):
         """Header 📌 mirrors the Always-on-Top setting checkbox."""
-        if hasattr(self, "cb_top") and self.cb_top.isChecked() != checked:
-            self.cb_top.setChecked(checked)  # cb_top's handler does the work
+        cb_top = getattr(self, "cb_top", None)
+        if cb_top is not None and cb_top.isChecked() != checked:
+            cb_top.setChecked(checked)  # cb_top's handler does the work
         else:
             self.toggle_aot(checked)
 
@@ -4903,6 +5214,10 @@ class FastPrompter(
         # toggle_sidebar_visibility plays "sidebar" inside; the wrapper's
         # own event would double it on Alt+D.
         "toggle_sidebar_hotkey",
+        # toggle_mini_settings plays "settings" inside — it has to, because the
+        # two ⚙ header buttons call it directly and a sound wired only here
+        # left them mute. The wrapper's event would double it on Alt+`.
+        "hk_settings",
         # file_container.open_for / close plays "chest_open" / "chest_close"
         # internally; the wrapper's event would double it on Alt+F.
         "toggle_files_hotkey",
@@ -4956,7 +5271,25 @@ class FastPrompter(
                 1, (self.silos_widget.height() + spacing) // (estimate + spacing)
             )
         else:
-            self._visible_silos = 10
+            self._visible_silos = getattr(self, "_visible_silos", 10)
+
+    def _ensure_silo_buttons(self, count):
+        count = max(1, min(50, count))
+        while len(self.silo_buttons) < count:
+            btn = DraggableSiloButton(self)
+            btn.setMinimumHeight(14)
+            btn.hide()
+            self.silos_widget.layout.addWidget(btn)
+            self.silo_buttons.append(btn)
+
+    def _ensure_archive_buttons(self, count):
+        count = max(1, min(50, count))
+        while len(self.archive_buttons) < count:
+            btn = DraggableSiloButton(self, is_archive=True)
+            btn.setMinimumHeight(14)
+            btn.hide()
+            self.archive_widget.layout.addWidget(btn)
+            self.archive_buttons.append(btn)
 
     def setup_single_instance_server(self):
         self.ipc = IpcServer(self.show_window)
@@ -5021,13 +5354,13 @@ class FastPrompter(
             else self.data.get("preview_mode", "None"),
             "paste_mode": self.data.get("paste_mode", "Plain"),
             "tray_visible": str(self.cb_tray.isChecked())
-            if hasattr(self, "cb_tray")
+            if getattr(self, "cb_tray", None) is not None
             else self.data.get("tray_visible", "True"),
             "close_on_focus_loss": str(self.cb_focus.isChecked())
-            if hasattr(self, "cb_focus")
+            if getattr(self, "cb_focus", None) is not None
             else self.data.get("close_on_focus_loss", "True"),
             "ctrl_c_closes": str(self.cb_ctrl_c.isChecked())
-            if hasattr(self, "cb_ctrl_c")
+            if getattr(self, "cb_ctrl_c", None) is not None
             else self.data.get("ctrl_c_closes", "True"),
             "silo_last_edited": getattr(self, "silo_last_edited", {}),
         }
@@ -6691,12 +7024,12 @@ class FastPrompter(
             # lexicographically smallest K eligible paths (O(N log K), O(K)
             # memory).
             presets = self._ensure_temp_presets()
-            free_count = max(0, len(presets) - len(mapping))
+            free_count = max(0, 100 - len(mapping))
             files = ps.scan_folder(
                 root, self._sync_include(), self._sync_exclude(),
                 recursive=self._sync_recursive(),
                 max_bytes=self._sync_max_bytes(),
-                limit=free_count if free_count > 0 else 1)
+                limit=free_count if free_count > 0 else 100)
             # W2-003: existing bindings are classified separately from new-file
             # discovery. `files` only contains CURRENTLY syncable entries — a
             # file that is temporarily over max_bytes, caught mid-write as
@@ -7297,7 +7630,16 @@ class FastPrompter(
         # Never falsify physical ownership. A timed-out worker remains inflight
         # until its real done signal arrives (or global shutdown stops it).
         return True
+
+    def _ensure_settings_built(self):
+        if getattr(self, "_settings_built", False):
+            return
+        self._settings_built = True
+        from fastprompter.ui.settings_builder import build_settings_tabs
+        build_settings_tabs(self)
     def init_ui(self):
+        import time
+        _t_hdr_0 = time.perf_counter()
         flags = Qt.WindowType.Window
         if self.data.get("normal_window", "False") != "True":
             flags |= Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool
@@ -7362,7 +7704,9 @@ class FastPrompter(
         self._cat_numbox_layout.setContentsMargins(0, 0, 0, 0)
         self._cat_numbox_layout.setSpacing(1)
         self._cat_num_buttons: list[QPushButton] = []
-        self._rebuild_cat_numbox()
+        numbox_on = self.data.get("numbox_tabs", "False") == "True"
+        if numbox_on:
+            self._rebuild_cat_numbox()
 
         # The number row FOLLOWS the combo instead of being rebuilt by hand at
         # every call site. Four places changed the project list without
@@ -7376,7 +7720,6 @@ class FastPrompter(
         model.rowsRemoved.connect(self._schedule_numbox_rebuild)
         model.dataChanged.connect(self._schedule_numbox_rebuild)
 
-        numbox_on = self.data.get("numbox_tabs", "False") == "True"
         self.cat_combo.setVisible(not numbox_on)
         self.cat_numbox.setVisible(numbox_on)
 
@@ -7524,13 +7867,13 @@ class FastPrompter(
 
 
 
-        self.btn_settings_toggle = QPushButton("⚙")
+        self.btn_settings_toggle = _SettingsGearButton()
         self.apply_button_size(self.btn_settings_toggle, 24, 24)
         self.btn_settings_toggle.setToolTip(tr(
             "Settings\nConfigure hotkeys, theme, fonts, and UI scaling.", getattr(self, "_current_lang", "EN")))
         self.btn_settings_toggle.clicked.connect(self.toggle_mini_settings)
 
-        self.btn_settings_toggle_right = QPushButton("⚙")
+        self.btn_settings_toggle_right = _SettingsGearButton()
         self.apply_button_size(self.btn_settings_toggle_right, 24, 24)
         self.btn_settings_toggle_right.setToolTip(self.btn_settings_toggle.toolTip())
         self.btn_settings_toggle_right.clicked.connect(self.toggle_mini_settings)
@@ -7671,24 +8014,42 @@ class FastPrompter(
         self.lbl_timer.setVisible(False)
         self.header_layout.addWidget(self.lbl_timer)
 
-        # AI usage gauges: one 3px bar-pair (5h | weekly) per provider account,
-        # filled bottom-up by remaining percent. Provider-neutral; driven by
-        # UsageLimitService. Hidden unless master enabled.
+        # AI usage gauges: one bar per quota window (5h, weekly, or whatever
+        # the plan reports) per provider account, filled bottom-up by
+        # remaining percent. Provider-neutral; driven by UsageLimitService.
+        # Hidden unless master enabled.
         from fastprompter.core.usage_limits.service import UsageLimitService
         from fastprompter.ui.limit_gauges import LimitGauges
-        self.limit_service = UsageLimitService()
+        self.limit_service = UsageLimitService(self.data)
         self.limit_gauges = LimitGauges(self, self.limit_service)
         self.limit_gauges.setToolTip(tr(
-            "AI usage limits (5h + weekly remaining)\nClick to refresh",
+            "AI usage limits (remaining quota per window)\nClick to refresh",
             getattr(self, "_current_lang", "EN")))
         self.header_layout.addWidget(self.limit_gauges)
+
+        # Minutes until the soonest quota reset, right beside the gauges.
+        # Hidden until gauges are enabled and a reset time is known.
+        self.lbl_limit_timer = QLabel("")
+        self.lbl_limit_timer.setStyleSheet("padding: 0 4px; font-weight: bold;")
+        self.lbl_limit_timer.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.lbl_limit_timer.mousePressEvent = lambda _e: (
+            hasattr(self, "open_limit_settings_dialog") and self.open_limit_settings_dialog())
+        self.lbl_limit_timer._en_tooltip = "Soonest AI limit reset"
+        self.lbl_limit_timer.setToolTip(tr(
+            self.lbl_limit_timer._en_tooltip, self._current_lang))
+        self.lbl_limit_timer.setVisible(False)
+        self.header_layout.addWidget(self.lbl_limit_timer)
 
         # Status label for the Clock settings group — shows account count or
         # error so the user knows whether the gauges found anything.
         self.lbl_limit_status = QLabel("")
-        self.lbl_limit_status.setStyleSheet("padding: 0 4px; color: #9C9371; font-size: 10px;")
+        self._apply_limit_hint_style(self.lbl_limit_status)
         self.lbl_limit_status.setVisible(False)
-        self.limit_service.add_callback(lambda: self._update_limit_status())
+        self.limit_gauges._result_ready.connect(self._update_limit_status)
+        self.limit_gauges._result_ready.connect(
+            self._check_limit_notifications)
+        self.limit_gauges._result_ready.connect(
+            self._update_limit_timer_label)
 
         self.btn_pin_top = QPushButton("📌")
         self.btn_pin_top.setCheckable(True)
@@ -7839,6 +8200,8 @@ class FastPrompter(
         self.btn_backup.setToolTip(tr("Backup the database", getattr(self, "_current_lang", "EN")))
         self.btn_restore = make_action_checkbox("Rstr", self.restore_db)
         self.btn_restore.setToolTip(tr("Restore the database from a backup", getattr(self, "_current_lang", "EN")))
+        self.btn_exit = make_action_checkbox("Exit", self.quit_app)
+        self.btn_exit.setToolTip(tr("Exit FastPrompter (Ctrl+Alt+Shift+Q)\nSave all data and quit application.", getattr(self, "_current_lang", "EN")))
 
         try:
             current_scale_pct = int(float(self.data.get("ui_scale", "0.5")) * 100)
@@ -7941,1249 +8304,19 @@ class FastPrompter(
         appearance_row.append(self.btn_hotkeys)
         appearance_row.append(self.btn_backup)
         appearance_row.append(self.btn_restore)
-
-        def create_footer_cb(text, tooltip, checked, callback):
-            cb = QCheckBox(text)
-            cb.setToolTip(tooltip)
-            cb.setChecked(checked)
-            if callback:
-                cb.toggled.connect(self.play_tick_sound)
-                cb.toggled.connect(callback)
-            cb._en_text = text
-            cb._en_tooltip = tooltip
-            return cb
-
-        self.cb_top = create_footer_cb(
-            "📌 Always on Top",
-            "Keep the window above all others",
-            self.data.get("always_on_top", "True") == "True",
-            self.toggle_aot,
-        )
-        self.cb_lock_window = create_footer_cb(
-            "🔒 Lock Window",
-            "Freeze the window's position and size",
-            self.data.get("window_locked", "False") == "True",
-            self.set_lock_state,
-        )
-        self.cb_normal_window = create_footer_cb(
-            "🪟 Normal Window",
-            "Use a standard OS window frame and taskbar entry",
-            self.data.get("normal_window", "False") == "True",
-            self.apply_window_flags,
-        )
-        self.cb_tray = create_footer_cb(
-            "📉 Tray Icon",
-            "Keep an icon in the system tray",
-            self.data.get("tray_visible", "True") == "True",
-            self.on_tray_toggled,
-        )
-        self.cb_sidebar = create_footer_cb(
-            "▶ Sidebar Right",
-            "Move the snippet/silo sidebar to the right side",
-            self.data.get("sidebar_right", "False") == "True",
-            self.toggle_sidebar_position,
-        )
-        self.cb_custom_cursors = create_footer_cb(
-            "\u2196 My Cursors",
-            "Use the cursor set the program has copied.\n"
-            "First time on, it copies your current Windows set.\n"
-            "Animated cursors keep their default shape - Qt cannot read them.",
-            self.data.get("custom_cursors", "False") == "True",
-            self.toggle_custom_cursors,
-        )
-        self.cb_focus = create_footer_cb(
-            "👁 Hide on Click-Out",
-            "Hide the window when you click outside of it\nGlobal toggle: Alt+A",
-            self.data.get("close_on_focus_loss", "True") == "True",
-            self.mark_dirty,
-        )
-        self.cb_tray_activate = create_footer_cb(
-            "🔼 Tray Click Activates",
-            "When on, clicking the tray icon always brings the window to focus.\nWhen off, clicking hides it (like Alt+X).",
-            self.data.get("tray_click_activates", "True") == "True",
-            self.mark_dirty,
-        )
-        self.cb_snippet_arrows = create_footer_cb(
-            "↕ Snippet Arrows",
-            "Show the ▲ ▶ ▼ paste buttons on snippet rows\n"
-            "(insert at top / at cursor / at bottom)",
-            self.data.get("snippet_arrows", "False") == "True",
-            lambda checked: (
-                self.data.update({"snippet_arrows": "True" if checked else "False"})
-                or self.mark_dirty()
-                or self.refresh_snippets_panel()
-            ),
-        )
-        self.cb_silo_ticks = create_footer_cb(
-            "✅ Silo Ticks",
-            "Show the ✅ done-mark button when hovering a silo.\n"
-            "Off by default — Ctrl+Shift+click a silo toggles its tick either way.",
-            self.data.get("silo_ticks_enabled", "False") == "True",
-            lambda checked: (
-                self.data.update({"silo_ticks_enabled": "True" if checked else "False"})
-                or self.mark_dirty()
-                or self.refresh_temp_presets()
-            ),
-        )
-        self.cb_ctrl_c = create_footer_cb(
-            "📋 Ctrl+C Hides",
-            "Copying with Ctrl+C also hides the window\n(copy & get back to work in one stroke)",
-            self.data.get("ctrl_c_closes", "True") == "True",
-            self.mark_dirty,
-        )
-        self.cb_lock_cursor = create_footer_cb(
-            "🖱 Open at Cursor",
-            "The hotkey opens the window at your mouse cursor",
-            self.data.get("lock_to_cursor", "False") == "True",
-            self.on_lock_cursor_toggled,
-        )
-        self.cb_customize_toolbar = create_footer_cb(
-            "🧩 Customize Toolbar",
-            "Drag the top-bar buttons to reorder them. Dashed boxes are\n"
-            "flexible gaps — drop a button on either side to move it between\n"
-            "the left / centre / right zones. Use the ↺ button (or right-click\n"
-            "this text) to reset to the default order.",
-            self.data.get("customize_toolbar", "False") == "True",
-            self.on_customize_toolbar_toggled,
-        )
-        self.cb_numbox_tabs = create_footer_cb(
-            "# Number Tabs",
-            "Show numbered boxes instead of the project dropdown",
-            self.data.get("numbox_tabs", "False") == "True",
-            self._toggle_numbox_mode,
-        )
-        # Number-box geometry. With the project cap at 100 these are what keep
-        # the row from running off the header, so they live beside the toggle.
-        self.spin_numbox_per_row = QSpinBox()
-        self.spin_numbox_per_row.setRange(1, 100)
-        self.spin_numbox_per_row.setToolTip(tr(
-            "How many number boxes per row before they wrap", self._current_lang))
-        self.spin_numbox_per_row.setValue(self.numbox_per_row())
-        self.spin_numbox_per_row.valueChanged.connect(
-            lambda v: self._on_numbox_geometry_changed("numbox_per_row", v))
-        self.spin_numbox_size = QSpinBox()
-        self.spin_numbox_size.setRange(14, 40)
-        self.spin_numbox_size.setSuffix(" px")
-        self.spin_numbox_size.setToolTip(tr(
-            "Size of one number box", self._current_lang))
-        self.spin_numbox_size.setValue(self.numbox_button_size())
-        self.spin_numbox_size.valueChanged.connect(
-            lambda v: self._on_numbox_geometry_changed("numbox_btn_size", v))
-        numbox_row = QHBoxLayout()
-        numbox_row.setContentsMargins(0, 0, 0, 0)
-        numbox_row.setSpacing(4)
-        numbox_row.addWidget(QLabel(tr("Per row:", self._current_lang)))
-        numbox_row.addWidget(self.spin_numbox_per_row)
-        numbox_row.addWidget(QLabel(tr("Size:", self._current_lang)))
-        numbox_row.addWidget(self.spin_numbox_size)
-        numbox_row.addStretch(1)
-
-        self.cb_window_presets = create_footer_cb(
-            "🗔 Ctrl+Q Presets",
-            "Add a 'Presets' page to the Ctrl+Q picker holding your own\n"
-            "saved window positions (S saves, Del removes, 1-0 applies)",
-            self.data.get("window_presets_enabled", "True") == "True",
-            lambda checked: (
-                self.data.update(
-                    {"window_presets_enabled": "True" if checked else "False"})
-                or self.mark_dirty()
-            ),
-        )
-        self.cb_files_dock = create_footer_cb(
-            "🗂 Files Sidebar",
-            "Keep the silo file panel docked as a collapsible sidebar on the\n"
-            "side opposite the silo list, instead of a separate window.\n"
-            "The 📁 button then opens and closes it.",
-            self.data.get("file_panel_docked", "False") == "True",
-            self._on_files_dock_toggled,
-        )
-        self.cb_toolbar_bottom = create_footer_cb(
-            "⬇ Toolbar at Bottom",
-            "Put the toolbar under the editor instead of above it.\n"
-            "Same buttons, same order — only the side changes.",
-            self.data.get("toolbar_position", "top") == "bottom",
-            self.apply_toolbar_position,
-        )
-        self.cb_fast_zones = create_footer_cb(
-            "⚡ Fast Ctrl+Q",
-            "Skip the zone picker: every Ctrl+Q jumps straight to the next\n"
-            "zone of the page chosen below and cycles through them",
-            self.data.get("fancyzones_fast", "False") == "True",
-            lambda checked: (
-                self.data.update(
-                    {"fancyzones_fast": "True" if checked else "False"})
-                or self.mark_dirty()
-            ),
-        )
-        self.cb_fast_zone_page = QComboBox()
-        self.cb_fast_zone_page.setToolTip(tr(
-            "Which page Fast mode cycles through", self._current_lang))
-        self._reload_fast_zone_pages()
-        self.cb_fast_zone_page.currentIndexChanged.connect(
-            self._on_fast_zone_page_changed)
-        fast_row = QHBoxLayout()
-        fast_row.setContentsMargins(0, 0, 0, 0)
-        fast_row.setSpacing(4)
-        fast_row.addWidget(QLabel(tr("Fast page:", self._current_lang)))
-        fast_row.addWidget(self.cb_fast_zone_page)
-        fast_row.addStretch(1)
-
-        self.btn_manage_presets = QPushButton(tr("Manage presets", self._current_lang))
-        self.btn_manage_presets.setToolTip(tr(
-            "Reorder, rename, re-capture or delete your Ctrl+Q window presets",
-            self._current_lang))
-        self.btn_manage_presets.clicked.connect(self.open_window_presets)
-        self.cb_customize_toolbar.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.cb_customize_toolbar.customContextMenuRequested.connect(
-            lambda _p: self.reset_toolbar_order())
-        self.cb_silo_home = create_footer_cb(
-            "🏠 Silos at Start",
-            "Place the cursor at the top of a silo when opening it",
-            self.data.get("silo_home", "False") == "True",
-            self.on_silo_home_toggled,
-        )
-        self.cb_portable_backup = create_footer_cb(
-            "💾 Auto Backup (.md)",
-            "Mirror silos & snippets as Markdown files to Documents\\.fastprompter\\",
-            self.data.get("portable_backup_enabled", "True") == "True",
-            lambda checked: (
-                self.data.update({"portable_backup_enabled": "True" if checked else "False"})
-                or self.mark_dirty()
-            ),
-        )
-        self.cb_wrap = create_footer_cb(
-            "↩ Word Wrap",
-            "Wrap long lines instead of scrolling horizontally",
-            self.data.get("word_wrap", "True") == "True",
-            self.on_wrap_toggled,
-        )
-        self.cb_line_heat = create_footer_cb(
-            "🌡 Line Heat",
-            "Tint lines you edited recently, cooling as they age.\n"
-            "Shows at a glance where you have just been working.",
-            self.data.get("line_heat", "False") == "True",
-            lambda checked: (
-                self.data.update({"line_heat": "True" if checked else "False"})
-                or self.mark_dirty()
-                or self.text_area.viewport().update()
-            ),
-        )
-        self.cb_hover_line = create_footer_cb(
-            "🖱 Hover Line",
-            "Faintly brighten the line under the mouse cursor",
-            self.data.get("hover_line", "True") == "True",
-            lambda checked: (
-                self.data.update({"hover_line": "True" if checked else "False"})
-                or self.mark_dirty()
-                or self.text_area.viewport().update()
-            ),
-        )
-        self.cb_code_monospace = create_footer_cb(
-            "⌨ Monospace Code",
-            "Render `code` and ``` blocks in Consolas.\n"
-            "Off: use the editor's own font instead.",
-            self.data.get("code_monospace", "True") == "True",
-            lambda checked: (
-                self.data.update({"code_monospace": "True" if checked else "False"})
-                or self.mark_dirty()
-                or self._apply_code_font()
-            ),
-        )
-        self.cb_line_numbers = create_footer_cb(
-            "🔢 Line Numbers",
-            "Show a line-number gutter\n(click it to place colored margin marks)",
-            self.data.get("show_line_numbers", "False") == "True",
-            self.set_line_numbers,  # routes through the single source of truth
-        )
-        self.cb_code_gutter = create_footer_cb(
-            "🔢 Auto # on Code",
-            "Auto-show line numbers inside ``` code blocks even when the gutter\n"
-            "is off. Off by default so the Line Numbers toggle stays a clean on/off.",
-            self.data.get("code_auto_gutter", "False") == "True",
-            lambda checked: (
-                self.data.update({"code_auto_gutter": "True" if checked else "False"})
-                or self.mark_dirty()
-                or self.text_area.update_line_number_area_width()
-                or self.text_area.line_number_area.update()
-            ),
-        )
-        # keep the header pin button in sync with the always-on-top checkbox
-        self.cb_top.toggled.connect(
-            lambda c: hasattr(self, "btn_pin_top") and self.btn_pin_top.setChecked(c))
-
-        self.cb_line_marks = create_footer_cb(
-            "🔴 Line Marks",
-            "Enable click-to-mark in line numbers (Red dot, Yellow Rhombus, Blue square)",
-            self.data.get("line_marks", "False") == "True",
-            lambda checked: self.data.update({"line_marks": "True" if checked else "False"})
-                            or self.mark_dirty()
-                            or (self.text_area.line_number_area.update() if hasattr(self, "text_area") and hasattr(self.text_area, "line_number_area") else None)
-        )
-
-        self.cb_token_count = create_footer_cb(
-            "\ud83d\udd22 Token Counter",
-            "Show an estimated input-token count beside the line count",
-            self.data.get("show_token_count", "False") == "True",
-            lambda checked: (
-                self.data.update(
-                    {"show_token_count": "True" if checked else "False"})
-                or self._update_token_count_label()
-                or self.mark_dirty()
-            ),
-        )
-        self.cb_token_mode = QComboBox()
-        self.cb_token_mode.addItem(tr("chars", self._current_lang), "chars")
-        self.cb_token_mode.addItem(tr("words", self._current_lang), "words")
-        mode = self.data.get("token_mode", "chars")
-        self.cb_token_mode.setCurrentIndex(1 if mode == "words" else 0)
-        self.cb_token_mode.setToolTip(tr(
-            "How the estimate is weighted: characters per token,\n"
-            "or tokens per word", self._current_lang))
-        self.cb_token_mode.currentIndexChanged.connect(self._on_token_mode_changed)
-        from PyQt6.QtWidgets import QDoubleSpinBox
-        self.spin_token_weight = QDoubleSpinBox()
-        self.spin_token_weight.setRange(0.1, 20.0)
-        self.spin_token_weight.setSingleStep(0.1)
-        self.spin_token_weight.setDecimals(2)
-        self.spin_token_weight.setToolTip(tr(
-            "Chars per token (chars mode) or tokens per word (words mode).\n"
-            "Defaults: 4.0 and 1.33", self._current_lang))
-        try:
-            self.spin_token_weight.setValue(float(self.data.get("token_weight", 4.0)))
-        except (TypeError, ValueError):
-            self.spin_token_weight.setValue(4.0)
-        self.spin_token_weight.valueChanged.connect(self._on_token_weight_changed)
-        token_row = QHBoxLayout()
-        token_row.setContentsMargins(0, 0, 0, 0)
-        token_row.setSpacing(4)
-        token_row.addWidget(QLabel(tr("Tokens by:", self._current_lang)))
-        token_row.addWidget(self.cb_token_mode)
-        token_row.addWidget(self.spin_token_weight)
-        token_row.addStretch(1)
-
-        # "\u2192 Ctrl+E Center" used to live here. It was the two-state face of
-        # an alignment that is now chosen per line - title, rule and bullet
-        # each on their own - in the Ctrl+E\u2026 dialog, and a checkbox has
-        # nowhere to put right or justified. Two controls for one setting,
-        # one of which could only ever tell half the truth. The ctrl_e_center
-        # KEY is still read (see core/header.read_settings) so a profile
-        # saved with it keeps its centring.
-        self.cb_zebra = create_footer_cb(
-            "🦓 Zebra Stripes",
-            "Lightly shade every other line for readability",
-            self.data.get("zebra_lines", "False") == "True",
-            lambda checked: (
-                self.data.update({"zebra_lines": "True" if checked else "False"})
-                or self.text_area.viewport().update()
-                or self.mark_dirty()
-            ),
-        )
-        self.cb_hide_shortkeys = create_footer_cb(
-            "⌨ Hide Key Hints",
-            "Hide the F1-F10 shortcut labels on snippet buttons",
-            self.data.get("hide_shortkeys", "False") == "True",
-            self.on_hide_shortkeys_toggled,
-        )
-        # Text alignment combo
-        self.lbl_align = QLabel(tr("Align:", self._current_lang))
-        self.cb_align_combo = QComboBox()
-        self.cb_align_combo.addItem(tr("Left", self._current_lang), "left")
-        self.cb_align_combo.addItem(tr("Center", self._current_lang), "center")
-        self.cb_align_combo.addItem(tr("Right", self._current_lang), "right")
-        saved_align = self.data.get("text_align", "left")
-        idx = self.cb_align_combo.findData(saved_align)
-        if idx >= 0:
-            self.cb_align_combo.setCurrentIndex(idx)
-        self.cb_align_combo.currentIndexChanged.connect(self._on_align_changed)
-
-        # How a pasted image lands. "Pill" is the collapsed golden chip you
-        # can click to open; the other two are for people who want the raw
-        # markdown or just the path.
-        self.lbl_img_paste = QLabel(tr("Pasted image:", self._current_lang))
-        self.cb_img_paste = QComboBox()
-        self.cb_img_paste.addItem(tr("Pill (clickable)", self._current_lang), "pill")
-        self.cb_img_paste.addItem(tr("Markdown link", self._current_lang), "link")
-        self.cb_img_paste.addItem(tr("Plain path", self._current_lang), "path")
-        self.cb_img_paste.setToolTip(tr(
-            "Pill: ![](...) — collapses to a clickable chip\n"
-            "Markdown link: [name](...) — plain link text\n"
-            "Plain path: the file path on its own", self._current_lang))
-        _idx = self.cb_img_paste.findData(self.data.get("image_paste_style", "pill"))
-        if _idx >= 0:
-            self.cb_img_paste.setCurrentIndex(_idx)
-        self.cb_img_paste.currentIndexChanged.connect(
-            lambda i: (self.data.update(
-                {"image_paste_style": self.cb_img_paste.itemData(i) or "pill"})
-                or self.mark_dirty()))
-
-        # Silos down the side, or across the top as tabs.
-        self.lbl_silo_mode = QLabel(tr("Silos:", self._current_lang))
-        self.cb_silo_mode = QComboBox()
-        self.cb_silo_mode.addItem(tr("Sidebar", self._current_lang), "sidebar")
-        self.cb_silo_mode.addItem(tr("Horizontal tabs", self._current_lang), "tabs")
-        self.cb_silo_mode.setToolTip(tr(
-            "Sidebar: the usual column down the left\n"
-            "Horizontal tabs: a strip above the editor — child silos have no\n"
-            "room on a bar, so they move into the parent's right-click menu",
-            self._current_lang))
-        _idx = self.cb_silo_mode.findData(self.data.get("silo_tabs_mode", "sidebar"))
-        if _idx >= 0:
-            self.cb_silo_mode.setCurrentIndex(_idx)
-        self.cb_silo_mode.currentIndexChanged.connect(
-            lambda i: self.apply_silo_tabs_mode(
-                (self.cb_silo_mode.itemData(i) or "sidebar") == "tabs"))
-
-        self.cb_double_line = create_footer_cb(
-            "⇕ Double-Space Lists",
-            "With Auto-Bullet on, Enter after a list item adds a blank\n"
-            "line before the next bullet — spaced, easy-to-read lists",
-            self.data.get("bullet_double_line", "False") == "True",
-            lambda checked: (
-                self.data.update({"bullet_double_line": "True" if checked else "False"})
-                or self.mark_dirty()
-            ),
-        )
-        self.cb_bold_titles = create_footer_cb(
-            "𝗕 Bold # Titles",
-            "Bold the sidebar title of silos and snippets whose\n"
-            "content starts with a '#' markdown header",
-            self.data.get("bold_hash_titles", "True") == "True",
-            lambda checked: (
-                self.data.update({"bold_hash_titles": "True" if checked else "False"})
-                or self.mark_dirty()
-                or self.refresh_temp_presets()
-                or self.refresh_snippets_panel()
-                or self.refresh_archive_panel()
-            ),
-        )
-        self.cb_silo_pinned_gap = create_footer_cb(
-            "➖ Pinned Gap",
-            "Show a visual separator between pinned and unpinned silos",
-            self.data.get("silo_pinned_gap", "True") == "True",
-            lambda checked: (
-                self.data.update({"silo_pinned_gap": "True" if checked else "False"})
-                or self.mark_dirty()
-                or self.refresh_temp_presets()
-                or self.refresh_snippets_panel()
-            ),
-        )
-        self.cb_conceal = create_footer_cb(
-            "👁 Hide Markup (Live)",
-            "Obsidian-style Live Preview: hide **, *, __, ~~ and ` markers so\n"
-            "the text reads as rendered. The line the caret is on still shows\n"
-            "its markers, so it stays editable.",
-            self.data.get("live_preview_conceal", "False") == "True",
-            lambda checked: (
-                self.data.update({"live_preview_conceal": "True" if checked else "False"})
-                or self.mark_dirty()
-                or self._apply_conceal_mode()
-            ),
-        )
-        self.cb_hr_visual = create_footer_cb(
-            "➖ Render HR Lines",
-            "Render ---/***/___ dividers as crisp visual lines instead of raw text",
-            self.data.get("hr_visual_line", "True") == "True",
-            lambda checked: (
-                self.data.update({"hr_visual_line": "True" if checked else "False"})
-                or self.mark_dirty()
-                or (getattr(self, "highlighter", None) and self.highlighter.update_hr_as_line(checked))
-                or (hasattr(self, "text_area") and hasattr(self.text_area, "viewport") and self.text_area.viewport().update())
-            ),
-        )
-        self.cb_date_rect = create_footer_cb(
-            "📅 Show Date Widget",
-            "Show a floating date and time rectangle in the top-right\n"
-            "corner of the text editor",
-            self.data.get("show_date_rect", "True") == "True",
-            lambda checked: (
-                self.data.update({"show_date_rect": "True" if checked else "False"})
-                or self.mark_dirty()
-            ),
-        )
-        self.cb_timer_minutes = create_footer_cb(
-            "⏳ Timer Minutes",
-            "Always show minutes in the top-right timer countdown\n"
-            "(otherwise a long timer reads just '4d' or '2h')",
-            self.data.get("timer_show_minutes", "False") == "True",
-            lambda checked: (
-                self.data.update(
-                    {"timer_show_minutes": "True" if checked else "False"})
-                or self._update_timer_label()
-                or self.mark_dirty()
-            ),
-        )
-        self.cb_date_seconds = create_footer_cb(
-            "⏱ Date Seconds",
-            "Show seconds in the date widget (hh:mm:ss instead of hh:mm)",
-            self.data.get("date_seconds", "True") == "True",
-            lambda checked: (
-                self.data.update({"date_seconds": "True" if checked else "False"})
-                or self.mark_dirty()
-            ),
-        )
-        self.cb_analog_clock = create_footer_cb(
-            "🕒 Analog Clock",
-            "Show a mini analog clock (hour + minute hands)\nnext to the date widget",
-            self.data.get("analog_clock", "False") == "True",
-            lambda checked: (
-                self.data.update({"analog_clock": "True" if checked else "False"})
-                or self.mark_dirty()
-                or self._update_date_label()
-            ),
-        )
-        self.cb_date_daypart = create_footer_cb(
-            "🌞 Day Word",
-            "Show the time-of-day word (Morning / Day / Evening / Night)\n"
-            "after the clock in the date widget",
-            self.data.get("date_daypart", "True") == "True",
-            lambda checked: (
-                self.data.update({"date_daypart": "True" if checked else "False"})
-                or self.mark_dirty()
-                or self._update_date_label()
-            ),
-        )
-        self.cb_date_emoji = create_footer_cb(
-            "🎭 Emoji Day State",
-            "Show an emoji (🌅/☀️/🌇/🌙) instead of the time-of-day word",
-            self.data.get("date_emoji", "False") == "True",
-            lambda checked: (
-                self.data.update({"date_emoji": "True" if checked else "False"})
-                or self.mark_dirty()
-                or self._update_date_label()
-            ),
-        )
-        self.cb_date_text_month = create_footer_cb(
-            "🔤 Text Month",
-            "Show month as text instead of numbers (17 Jul instead of 17.07)",
-            self.data.get("date_text_month", "False") == "True",
-            lambda checked: (
-                self.data.update({"date_text_month": "True" if checked else "False"})
-                or self.mark_dirty()
-                or self._update_date_label()
-            ),
-        )
-        self.cb_date_ampm = create_footer_cb(
-            "🕐 12-Hour Clock",
-            "Show time as 09:05 PM instead of 21:05 — applies to the date\n"
-            "widget, Ctrl+E headers and the end-of-line timestamp",
-            self.data.get("date_ampm", "False") == "True",
-            lambda checked: (
-                self.data.update({"date_ampm": "True" if checked else "False"})
-                or self.mark_dirty()
-                or self._update_date_label()
-            ),
-        )
-        self.cb_limit_gauges = create_footer_cb(
-            "📊 AI Limit Gauges",
-            "Show AI usage-limit bars (5h + weekly remaining) next to the\n"
-            "timer. Auto-detects every Codex account and Claude installation.\n"
-            "Click the bars to refresh; hover for details.",
-            self.data.get("limit_gauges",
-                          self.data.get("codex_gauges", "False")) == "True",
-            lambda checked: (
-                self.data.update({"limit_gauges": "True" if checked else "False"})
-                or self.mark_dirty()
-                or self._update_date_label()
-            ),
-        )
-        self.cb_sound = create_footer_cb(
-            "🔊 UI Sounds",
-            "Play click sounds for buttons and actions.\n"
-            "You can place your own .wav files in the 'sound' folder to override:\n"
-            "• newbutton1.wav (New button)\n"
-            "• savebutton1.wav (Save button)\n"
-            "• button1.wav (Click/Silo)\n"
-            "• button2.wav (Snippet)\n"
-            "• tickbox1.wav (Checkbox)\n"
-            "• delete1.wav (Delete)\n"
-            "• clear1.wav (Clear)",
-            self.data.get("sound_ui", "False") == "True",
-            self.on_sound_toggled,
-        )
-        self.cb_typewriter = create_footer_cb(
-            "⌨ Typewriter",
-            "Play a typewriter tick for every typed character.\n"
-            "Place 'type1.wav' in the 'sound' folder to use your own typing sound.",
-            self.data.get("sound_typewriter", "False") == "True",
-            self.on_typewriter_toggled,
-        )
-        self.cb_trash_vision = create_footer_cb(
-            "🗑 Trash Vision",
-            "Show the Trash category for deleted snippets",
-            self.data.get("trash_vision", "False") == "True",
-            self.toggle_trash_vision,
-        )
-        self.cb_silo_color_box = create_footer_cb(
-            "🎨 Silo Color Box",
-            "Show the little clickable color box on '#' silos\n"
-            "(click to cycle colors, right-click for the full picker)",
-            self.data.get("silo_color_box", "True") == "True",
-            lambda checked: (
-                self.data.update({"silo_color_box": "True" if checked else "False"})
-                or self.mark_dirty()
-                or self.refresh_temp_presets()
-            ),
-        )
-
-        div_row = QHBoxLayout()
-        div_row.setContentsMargins(0, 0, 0, 0)
-        div_row.setSpacing(4)
-        lbl_div = QLabel(tr("Line button gaps:", getattr(self, "_current_lang", "EN")))
-        lbl_div._en_text = "Line button gaps:"
-        lbl_div.setToolTip(tr(
-            "Blank lines the Line button and the toolbar divider put around ---.\n"
-            "Ctrl+W does NOT read these - it has its own per-scenario spacing in\n"
-            "the Ctrl+W... dialog, which is why changing these here did nothing.",
-            getattr(self, "_current_lang", "EN")))
-        div_row.addWidget(lbl_div)
-        self.spin_div_before = QSpinBox()
-        self.spin_div_before.setRange(0, 6)
-        self.spin_div_before.setToolTip(tr("Lines before ---", getattr(self, "_current_lang", "EN")))
-        try:
-            self.spin_div_before.setValue(int(self.data.get("divider_lines_before", 2)))
-        except (TypeError, ValueError):
-            self.spin_div_before.setValue(2)
-        self.spin_div_before.valueChanged.connect(
-            lambda v: (self.data.update({"divider_lines_before": str(v)}), self.mark_dirty())
-        )
-        div_row.addWidget(self.spin_div_before)
-        self.spin_div_after = QSpinBox()
-        self.spin_div_after.setRange(1, 6)
-        self.spin_div_after.setToolTip(tr("Lines after --- (before the fresh bullet)", getattr(self, "_current_lang", "EN")))
-        try:
-            self.spin_div_after.setValue(int(self.data.get("divider_lines_after", 3)))
-        except (TypeError, ValueError):
-            self.spin_div_after.setValue(3)
-        self.spin_div_after.valueChanged.connect(
-            lambda v: (self.data.update({"divider_lines_after": str(v)}), self.mark_dirty())
-        )
-        div_row.addWidget(self.spin_div_after)
-        div_row.addStretch(1)
-
-        # ── Smart Ctrl+W — open full dialog ──
-        ctrlw_btn_row = QHBoxLayout()
-        ctrlw_btn_row.setContentsMargins(0, 0, 0, 0)
-        ctrlw_btn_row.setSpacing(4)
-        self.btn_ctrlw_settings = QPushButton(tr("Ctrl+W…", getattr(self, "_current_lang", "EN")))
-        self.btn_ctrlw_settings.setToolTip(tr(
-            "Configure Smart Ctrl+W behavior per context scenario:\n"
-            "• Divider insertion and bullet\n"
-            "• Blank-line spacing (global or per scenario)\n"
-            "• Action when pressing on an existing divider",
-            getattr(self, "_current_lang", "EN")))
-        self.btn_ctrlw_settings.clicked.connect(self.open_ctrlw_settings)
-        ctrlw_btn_row.addWidget(self.btn_ctrlw_settings)
-        self.btn_altw_settings = QPushButton(tr("Alt+W…", getattr(self, "_current_lang", "EN")))
-        self.btn_altw_settings.setToolTip(tr(
-            "Alt+W is Ctrl+W turned around: the new point goes ABOVE the\n"
-            "line you are on and the existing text moves down.\n"
-            "Same settings, kept separately so the two directions can be\n"
-            "tuned apart.",
-            getattr(self, "_current_lang", "EN")))
-        self.btn_altw_settings.clicked.connect(self.open_altw_settings)
-        ctrlw_btn_row.addWidget(self.btn_altw_settings)
-        ctrlw_btn_row.addStretch(1)
-
-        files_row = QHBoxLayout()
-        files_row.setContentsMargins(0, 0, 0, 0)
-        files_row.setSpacing(4)
-        self.btn_files_root = QPushButton(tr("Files Folder…", getattr(self, "_current_lang", "EN")))
-        self.btn_files_root.setToolTip(tr(
-            "Choose where silo file containers are stored.\n"
-            "Default: data/files next to the app.",
-            getattr(self, "_current_lang", "EN")))
-        self.btn_files_root.clicked.connect(self.pick_files_root)
-        files_row.addWidget(self.btn_files_root)
-        btn_files_root_reset = QPushButton("↺")
-        btn_files_root_reset.setToolTip(tr("Reset silo files location to the default data/files", getattr(self, "_current_lang", "EN")))
-        btn_files_root_reset.setFixedWidth(24)
-        btn_files_root_reset.clicked.connect(self.reset_files_root)
-        files_row.addWidget(btn_files_root_reset)
-        files_row.addStretch(1)
-
-        vol_row = QHBoxLayout()
-        vol_row.setContentsMargins(0, 0, 0, 0)
-        vol_row.setSpacing(4)
-        vol_row.addWidget(QLabel(tr("Volume:", getattr(self, "_current_lang", "EN"))))
-        _lbl_vol = QLabel(tr("Volume:", getattr(self, "_current_lang", "EN")))
-        _lbl_vol._en_text = "Volume:"
-        vol_row.addWidget(_lbl_vol)
-        vol_row.addWidget(self.spin_volume)
-        vol_row.addStretch(1)
-
-        # Sound settings button
-        self.btn_sound_settings = QPushButton(tr("Sound Settings...", getattr(self, "_current_lang", "EN")))
-        self.btn_sound_settings.clicked.connect(self.open_sound_settings_dialog)
-        self.btn_sound_settings._en_text = "Sound Settings..."
-        _sound_btn_tip = ("Every sound the app makes: pick the file, the volume "
-                          "and whether it plays at all, per event")
-        self.btn_sound_settings.setToolTip(
-            tr(_sound_btn_tip, getattr(self, "_current_lang", "EN")))
-        self.btn_sound_settings._en_tooltip = _sound_btn_tip
-
-        # CS 1.6 UI style checkbox
-        self.cb_cs_style = create_footer_cb(
-            "CS 1.6 UI Style",
-            "Use Counter-Strike 1.6 style sounds for silo interactions:\n"
-            "• Hover: buttonrollover.wav\n"
-            "• Click: buttonclick.wav\n"
-            "• Release: buttonclickrelease.wav",
-            self.data.get("cs_style", "False") == "True",
-            self.on_cs_style_toggled,
-        )
-        self.cb_cs_style._en_text = "CS 1.6 UI Style"
-        self.cb_cs_style._en_tooltip = "Use Counter-Strike 1.6 style sounds for silo interactions:\n• Hover: buttonrollover.wav\n• Click: buttonclick.wav\n• Release: buttonclickrelease.wav"
-
-        self.spin_cursor_blink = QSpinBox()
-        self.spin_cursor_blink.setRange(0, 2000)
-        self.spin_cursor_blink.setSingleStep(50)
-        self.spin_cursor_blink.setSuffix(" ms")
-        self.spin_cursor_blink.setSpecialValueText(tr("No blink", self._current_lang))
-        self.spin_cursor_blink.setToolTip(tr(
-            "Cursor blink cycle (ms). 0 = solid, no blink.\n"
-            "Default: 530 on Windows.", self._current_lang))
-        try:
-            self.spin_cursor_blink.setValue(int(self.data.get("cursor_blink_ms",
-                                           QApplication.cursorFlashTime())))
-        except (TypeError, ValueError):
-            self.spin_cursor_blink.setValue(530)
-        self.spin_cursor_blink.valueChanged.connect(self._on_cursor_blink_changed)
-        blink_row = QHBoxLayout()
-        blink_row.setContentsMargins(0, 0, 0, 0)
-        blink_row.setSpacing(4)
-        blink_row.addWidget(QLabel(tr("Cursor blink:", self._current_lang)))
-        blink_row.addWidget(self.spin_cursor_blink)
-        blink_row.addStretch(1)
-
-        hdr_row = QHBoxLayout()
-        hdr_row.setContentsMargins(0, 0, 0, 0)
-        hdr_row.setSpacing(4)
-        lbl_hdr = QLabel(tr("Header Fmt:", getattr(self, "_current_lang", "EN")))
-        lbl_hdr._en_text = "Header Fmt:"
-        lbl_hdr.setToolTip(tr(
-            "Template for the Ctrl+E header.\n"
-            "{text} — the line's text\n{time} — timestamp\n"
-            "{state} — Morning / Day / Evening / Night\n"
-            "Markdown markers (** __ etc.) are yours to add or drop.",
-            getattr(self, "_current_lang", "EN")))
-        hdr_row.addWidget(lbl_hdr)
-        self.le_hdr_fmt = QLineEdit()
-        self.le_hdr_fmt.setPlaceholderText("{text} ({time})")
-        self.le_hdr_fmt.setText(self.data.get("ctrl_e_format", "{text} ({time})"))
-        self.le_hdr_fmt.textChanged.connect(
-            lambda v: (self.data.update({"ctrl_e_format": v}), self.mark_dirty())
-        )
-        hdr_row.addWidget(self.le_hdr_fmt)
-        btn_hdr_edit = QPushButton(tr("Edit…", getattr(self, "_current_lang", "EN")))
-        btn_hdr_edit.setToolTip(tr("Open the header format editor (placeholders, presets, live preview)", getattr(self, "_current_lang", "EN")))
-        btn_hdr_edit.setFixedWidth(44)
-        btn_hdr_edit.clicked.connect(self.open_header_format_editor)
-        hdr_row.addWidget(btn_hdr_edit)
-
-
-        def _settings_group(title, items, min_width=0):
-            """A titled box of related controls, wrapping inside itself.
-
-            The tabs used to be one flat flow of every control they owned, so
-            "Always on Top" sat beside "Silo Color Box" and the cursor buttons,
-            and a row that did not divide evenly left a stripe of dead panel on
-            the right. Grouping gives the eye somewhere to land and lets the
-            groups themselves flow into the space instead of the gaps.
-            """
-            box = _SettingsGroupBox()
-            box.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-            box.setObjectName("SettingsGroup")
-            # Theme-neutral on purpose: a translucent wash reads as a panel
-            # on every one of the shipped skins, where a fixed colour would
-            # have to be re-picked for each and would go wrong on the next.
-            box.setStyleSheet(
-                "#SettingsGroup { background: rgba(255,255,255,0.035);"
-                " border: 1px solid rgba(255,255,255,0.07); }")
-            col = QVBoxLayout(box)
-            col.setContentsMargins(5, 2, 5, 3)
-            col.setSpacing(1)
-            header = QLabel(tr(title, self._current_lang))
-            header._en_text = title
-            header.setStyleSheet(
-                "font-weight: bold; color: #9a8b5f; padding: 0;")
-            col.addWidget(header)
-            inner = flow_widget(items, h_spacing=10, v_spacing=3)
-            if min_width:
-                inner.setMinimumWidth(min_width)
-            col.addWidget(inner)
-            # so a widened group re-flows its contents into fewer rows
-            # instead of keeping the tall narrow shape it had at hint width
-            box._inner = inner
-            box._chrome_h = header.sizeHint().height() + 3 + 2 + 4
-            box.setSizePolicy(QSizePolicy.Policy.Preferred,
-                              QSizePolicy.Policy.Maximum)
-            box._weight = len(items)
-            return box
-
-        # --- UI gaps: silo spacing + splitter handle width ---
-        gap_row = QHBoxLayout()
-        gap_row.setContentsMargins(0, 0, 0, 0)
-        gap_row.setSpacing(4)
-        lbl_gap = QLabel(tr("UI Gaps:", self._current_lang))
-        lbl_gap.setStyleSheet("color: #808080;")
-        gap_row.addWidget(lbl_gap)
-
-        self.spin_silo_gap = QSpinBox()
-        self.spin_silo_gap.setRange(0, 50)
-        self.spin_silo_gap.setToolTip(tr("Silo Gap Height", self._current_lang))
-        try:
-            self.spin_silo_gap.setValue(int(self.data.get("silo_gap_height", 8)))
-        except (TypeError, ValueError):
-            self.spin_silo_gap.setValue(8)
-
-        def _update_gap(v):
-            self.data.update({"silo_gap_height": str(v)})
-            if hasattr(self, "silo_gap_widget"):
-                self.silo_gap_widget.setFixedHeight(v)
-            if hasattr(self, "sections_gap_widget"):
-                self.sections_gap_widget.setFixedHeight(v)
-            self.mark_dirty()
-            # user-defined gaps (T-590) share this height, so repaint them too
-            if self.data.get("silo_gaps"):
-                self.refresh_temp_presets()
-
-        self.spin_silo_gap.valueChanged.connect(_update_gap)
-        gap_row.addWidget(self.spin_silo_gap)
-
-        self.spin_drag_width = QSpinBox()
-        self.spin_drag_width.setRange(1, 50)
-        self.spin_drag_width.setToolTip(tr("Splitter Handle Width", self._current_lang))
-        try:
-            self.spin_drag_width.setValue(int(self.data.get("splitter_width", 1)))
-        except (TypeError, ValueError):
-            self.spin_drag_width.setValue(1)
-
-        def _update_drag(v):
-            self.data.update({"splitter_width": str(v)})
-            if hasattr(self, "splitter"):
-                self.splitter.setHandleWidth(v)
-            self.mark_dirty()
-
-        self.spin_drag_width.valueChanged.connect(_update_drag)
-        gap_row.addWidget(self.spin_drag_width)
-        gap_row.addStretch(1)
-
-        # --- T-591: mirror silo text onto disk ---
-        sync_row = QHBoxLayout()
-        sync_row.setSpacing(4)
-        lbl_sync = QLabel(tr("Sync to disk:", self._current_lang))
-        lbl_sync.setStyleSheet("color: #808080;")
-        sync_row.addWidget(lbl_sync)
-
-        self.combo_sync_mode = QComboBox()
-        self.combo_sync_mode.addItems(["Off", "Silo", "Hierarchy"])
-        self.combo_sync_mode.setToolTip(tr(
-            "Off: no mirror.\n"
-            "Silo: keep a copy of the current silo on disk.\n"
-            "Hierarchy: mirror every silo, children in subfolders.\n"
-            "One-way (app to disk) — files are never read back or deleted.",
-            self._current_lang))
-        mode_now = self.data.get("sync_mode", "Off")
-        if mode_now not in ("Off", "Silo", "Hierarchy"):
-            mode_now = "Off"
-        self.combo_sync_mode.setCurrentText(mode_now)
-        self.combo_sync_mode.currentTextChanged.connect(
-            lambda m: (self.data.update({"sync_mode": m}), self.mark_dirty(),
-                       self.sync_to_disk(force=True)))
-        sync_row.addWidget(self.combo_sync_mode)
-
-        self.btn_sync_path = QPushButton(tr("Folder…", self._current_lang))
-        self.btn_sync_path.setToolTip(self.data.get("sync_path", "") or tr("No folder chosen", self._current_lang))
-
-        def _pick_sync_path():
-            self.ignore_focus_loss = True
-            try:
-                d = QFileDialog.getExistingDirectory(
-                    self, tr("Choose sync folder", self._current_lang),
-                    self.data.get("sync_path", "") or "")
-            finally:
-                self.ignore_focus_loss = False
-            if d:
-                self.data.update({"sync_path": d})
-                self.btn_sync_path.setToolTip(d)
-                self.mark_dirty()
-                self.sync_to_disk(force=True)
-
-        self.btn_projects_mgr = QPushButton(tr("Projects…", self._current_lang))
-        self.btn_projects_mgr.setToolTip(tr(
-            "Choose which projects appear in the tab list", self._current_lang))
-        self.btn_projects_mgr.clicked.connect(self.open_projects_manager)
-        sync_row.addWidget(self.btn_projects_mgr)
-        self.btn_sync_path.clicked.connect(_pick_sync_path)
-        sync_row.addWidget(self.btn_sync_path)
-        sync_row.addStretch(1)
-
-        # --- hover line + line heat tuning ---
-        lbl_heat = QLabel(tr("Line tint:", self._current_lang))
-        lbl_heat.setStyleSheet("color: #808080;")
-
-        def _pct_spin(key, default, tip, suffix="%"):
-            spin = QSpinBox()
-            spin.setRange(1, 60)
-            spin.setSuffix(suffix)
-            spin.setToolTip(tr(tip, self._current_lang))
-            try:
-                spin.setValue(int(self.data.get(key, default)))
-            except (TypeError, ValueError):
-                spin.setValue(default)
-
-            def _upd(v):
-                self.data.update({key: str(v)})
-                self.mark_dirty()
-                self.text_area.viewport().update()
-
-            spin.valueChanged.connect(_upd)
-            return spin
-
-        self.spin_hover_opacity = _pct_spin(
-            "hover_line_opacity", 10, "Hover line opacity")
-        self.spin_heat_strength = _pct_spin(
-            "line_heat_strength", 18, "Line heat strength")
-
-        self.spin_heat_minutes = QSpinBox()
-        self.spin_heat_minutes.setRange(1, 43200)
-        self.spin_heat_minutes.setSuffix(tr(" min", self._current_lang))
-        self.spin_heat_minutes.setToolTip(tr(
-            "How long a line stays tinted after you edit it", self._current_lang))
-        try:
-            self.spin_heat_minutes.setValue(int(self.data.get("line_heat_minutes", 1440)))
-        except (TypeError, ValueError):
-            self.spin_heat_minutes.setValue(1440)
-
-        def _upd_minutes(v):
-            self.data.update({"line_heat_minutes": str(v)})
-            self.mark_dirty()
-            self.text_area.viewport().update()
-
-        self.spin_heat_minutes.valueChanged.connect(_upd_minutes)
-
-        self.cb_heat_palette = QComboBox()
-        self.cb_heat_palette.setToolTip(tr(
-            "Colour spectrum for edited lines.\nAuto follows the theme accent.",
-            self._current_lang))
-        for label, val in (("Warm", "warm"), ("Cool", "cool"), ("Auto", "accent")):
-            self.cb_heat_palette.addItem(tr(label, self._current_lang), val)
-        cur_pal = self.data.get("line_heat_palette", "warm")
-        pal_idx = self.cb_heat_palette.findData(cur_pal)
-        if pal_idx >= 0:
-            self.cb_heat_palette.setCurrentIndex(pal_idx)
-
-        def _upd_pal(i):
-            self.data.update({"line_heat_palette": self.cb_heat_palette.itemData(i)})
-            self.mark_dirty()
-            self.text_area.viewport().update()
-
-        self.cb_heat_palette.currentIndexChanged.connect(_upd_pal)
-
-        self.btn_hover_colour = QPushButton(tr("Hover colour", self._current_lang))
-        self.btn_hover_colour.setToolTip(tr(
-            "Pick the hover highlight colour.\n"
-            "Right-click to go back to following the theme.",
-            self._current_lang))
-        self.btn_hover_colour.clicked.connect(self.pick_hover_colour)
-        self.btn_hover_colour.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.btn_hover_colour.customContextMenuRequested.connect(
-            lambda _p: self.reset_hover_colour())
-
-        # --- typecheck (typo checker): dictionary underlines, default OFF ---
-        self.cb_typo_check = create_footer_cb(
-            "✏ Typo check (dictionary)",
-            "Underline words the built-in dictionary does not know, with "
-            "right-click suggestions and an 'add to dictionary' entry.\n"
-            "Off by default. Smart skips: code fences, URLs, identifiers, "
-            "acronyms; non-Latin scripts are only judged once the "
-            "dictionary covers them.",
-            self.data.get("typo_check_enabled", "False") == "True",
-            lambda checked: (self.data.update(
-                {"typo_check_enabled": "True" if checked else "False"})
-                or self.mark_dirty()
-                or self._typo_check_tick()),
-        )
-        self.btn_typo_colour = QPushButton(tr("Underline colour", self._current_lang))
-        self.btn_typo_colour.setToolTip(tr(
-            "Pick the colour of the typo underlines", self._current_lang))
-        self.btn_typo_colour.clicked.connect(self.pick_typo_colour)
-        self.btn_typo_colour._en_text = "Underline colour"
-        self.btn_typo_colour._en_tooltip = "Pick the colour of the typo underlines"
-        self.btn_typo_clear = QPushButton(tr("Clear my words", self._current_lang))
-        self.btn_typo_clear.setToolTip(tr(
-            "Forget every word you added to the dictionary", self._current_lang))
-        self.btn_typo_clear.clicked.connect(self.clear_typo_words)
-        self.btn_typo_clear._en_text = "Clear my words"
-        self.btn_typo_clear._en_tooltip = "Forget every word you added to the dictionary"
-
-        # --- passed events: the date counter turns red when a set event's
-        # time has passed and was not acknowledged (colour is user-pickable)
-        self.cb_passed_alert = create_footer_cb(
-            "⚠ Passed-event alert",
-            "Colour the date/time counter when a calendar event's time has "
-            "passed and was not acknowledged — so a missed event is not "
-            "forgotten. Right-click the date label to clear it.",
-            self.data.get("passed_alert_enabled", "True") == "True",
-            lambda checked: (self.data.update(
-                {"passed_alert_enabled": "True" if checked else "False"})
-                or self.mark_dirty()
-                or self._apply_date_alert_style()),
-        )
-        self.btn_passed_colour = QPushButton(
-            tr("Alert colour", self._current_lang))
-        self.btn_passed_colour.setToolTip(tr(
-            "Colour of the date counter when an event has passed\n"
-            "(right-click to reset to the default red)", self._current_lang))
-        self.btn_passed_colour.clicked.connect(self.pick_passed_colour)
-        self.btn_passed_colour.setContextMenuPolicy(
-            Qt.ContextMenuPolicy.CustomContextMenu)
-        self.btn_passed_colour.customContextMenuRequested.connect(
-            lambda _p: self.reset_passed_colour())
-        self.btn_passed_colour._en_text = "Alert colour"
-        self.btn_passed_colour._en_tooltip = (
-            "Colour of the date counter when an event has passed\n"
-            "(right-click to reset to the default red)")
-
-        # --- Sync-Project settings: include/exclude + live behaviour -------
-        self.cb_sync_recursive = create_footer_cb(
-            "📁 Include subfolders",
-            "Watch the whole folder tree (on) or only the top folder (off)",
-            self.data.get("sync_recursive", "True") == "True",
-            self._save_sync_recursive,
-        )
-        self.cb_sync_live = create_footer_cb(
-            "👁 Watch live",
-            "Apply external file changes in real time. Off: the folder is "
-            "only read when you convert or re-scan the project.",
-            self.data.get("sync_live_watch", "True") == "True",
-            lambda checked: (self.data.update(
-                {"sync_live_watch": "True" if checked else "False"})
-                or self.mark_dirty()
-                or self._start_project_watcher()),
-        )
-        self.spin_sync_max_kb = QSpinBox()
-        self.spin_sync_max_kb.setRange(8, 10240)
-        self.spin_sync_max_kb.setSuffix(" KB")
-        self.spin_sync_max_kb.setToolTip(tr(
-            "Files larger than this are not synced", self._current_lang))
-        try:
-            self.spin_sync_max_kb.setValue(int(self.data.get("sync_max_kb", "512")))
-        except (TypeError, ValueError):
-            self.spin_sync_max_kb.setValue(512)
-
-        def _upd_sync_max(v):
-            self.data.update({"sync_max_kb": str(v)})
-            if self._sync_config():
-                self._rescan_project_sync()
-            self.mark_dirty()
-
-        self.spin_sync_max_kb.valueChanged.connect(_upd_sync_max)
-        lbl_sync_max = QLabel(tr("Max file size:", self._current_lang))
-        lbl_sync_max._en_text = "Max file size:"
-
-        self.ed_sync_include = QLineEdit(self.data.get("sync_include", ""))
-        self.ed_sync_include.setPlaceholderText(".txt .md .py .js …")
-        self.ed_sync_include.setToolTip(tr(
-            "File extensions treated as text, separated by spaces or commas",
-            self._current_lang))
-        self.ed_sync_include.setMaximumWidth(360)
-        self.ed_sync_include.editingFinished.connect(self._save_sync_include)
-        self.ed_sync_include._en_tooltip = (
-            "File extensions treated as text, separated by spaces or commas")
-        lbl_sync_inc = QLabel(tr("Include extensions:", self._current_lang))
-        lbl_sync_inc._en_text = "Include extensions:"
-
-        self.ed_sync_exclude = QLineEdit(self.data.get("sync_exclude", ""))
-        self.ed_sync_exclude.setPlaceholderText("node_modules, .git, *.min.js …")
-        self.ed_sync_exclude.setToolTip(tr(
-            "Names or patterns never synced: directories by name, files via "
-            "wildcards (e.g. *.min.js)", self._current_lang))
-        self.ed_sync_exclude.setMaximumWidth(360)
-        self.ed_sync_exclude.editingFinished.connect(self._save_sync_exclude)
-        self.ed_sync_exclude._en_tooltip = (
-            "Names or patterns never synced: directories by name, files via "
-            "wildcards (e.g. *.min.js)")
-        lbl_sync_exc = QLabel(tr("Exclude names/patterns:", self._current_lang))
-        lbl_sync_exc._en_text = "Exclude names/patterns:"
-
-
-        # Tabs instead of three side-by-side columns. Three columns need the
-        # full panel width to be readable at all; one tab at a time stays
-        # legible in a narrow window, and FlowLayout reflows each tab down to
-        # a single column rather than clipping the right-hand side.
-        from fastprompter.ui.flow_layout import flow_widget
-
-        def _tab(items):
-            """One settings tab: its groups, wrapping and filling the width.
-
-            A plain flow left the right-hand third of the panel empty on
-            every tab (measured: the Clock tab used 449px of 956) because a
-            flow packs to content width and stops. Fixed columns fixed that
-            but demanded 1037px of window - the panel has to survive a narrow
-            window too. So the groups wrap like anything else, and the
-            leftover width of each row is handed TO the groups on it.
-            """
-            host = QWidget()
-            host.setSizePolicy(QSizePolicy.Policy.Preferred,
-                               QSizePolicy.Policy.Maximum)
-            outer = QVBoxLayout(host)
-            outer.setContentsMargins(4, 4, 4, 4)
-            outer.setSpacing(3)
-            outer.addWidget(flow_widget(items, h_spacing=6, v_spacing=4,
-                                        stretch_items=True))
-            return host
+        appearance_row.append(self.btn_exit)
 
         self.settings_tabs = QTabWidget()
         self.settings_tabs.setDocumentMode(True)
-        # Never taller than the tab actually needs. QTabWidget expands
-        # vertically by default, so in a QVBoxLayout it happily swallowed
-        # hundreds of pixels of empty panel below a single row of checkboxes.
         self.settings_tabs.setSizePolicy(QSizePolicy.Policy.Preferred,
                                          QSizePolicy.Policy.Maximum)
-        # (attribute, english title) — kept for retranslation
         self._settings_tab_titles = ("Window", "Editor", "Clock", "Data")
-
-        # Toolbar order had its own reset; splitter widths, sidebar side and
-        # window size had none, so a window dragged somewhere unusable could
-        # only be fixed by deleting the database.
-        self.btn_copy_cursors = QPushButton(tr("Copy my set", self._current_lang))
-        self.btn_copy_cursors.setToolTip(tr(
-            "Copy your current Windows cursors INTO the program.\n"
-            "The program then keeps using them even if you change\n"
-            "the system scheme later. Press again to re-copy.",
-            self._current_lang))
-        self.btn_copy_cursors.clicked.connect(lambda: self.capture_cursor_set())
-
-        self.btn_install_cursors = QPushButton(tr("Set in system", self._current_lang))
-        self.btn_install_cursors.setToolTip(tr(
-            "Install the program's copied set as the Windows default\n"
-            "(asks first). Right-click: open the full cursor set online.",
-            self._current_lang))
-        self.btn_install_cursors.clicked.connect(self.install_cursors_to_system)
-
-        def _cursor_btn_mouse(event):
-            if event.button() == Qt.MouseButton.RightButton:
-                from fastprompter.ui.cursor_theme import DEVIANTART_URL
-                QDesktopServices.openUrl(QUrl(DEVIANTART_URL))
-                event.accept()
-                return
-            QPushButton.mousePressEvent(self.btn_install_cursors, event)
-
-        self.btn_install_cursors.mousePressEvent = _cursor_btn_mouse
-
-        self.btn_reset_layout = QPushButton(tr("Reset UI Layout", self._current_lang))
-        self.btn_reset_layout.setToolTip(tr(
-            "Put the toolbar, sidebar and window size back to defaults.\n"
-            "Text, snippets and silos are not touched.", self._current_lang))
-        self.btn_reset_layout.clicked.connect(self.reset_ui_layout)
-
-        # Grouped by what the control DOES, not by the order it happened to
-        # be written in. Before this, Window held window behaviour, silo
-        # colours, the toolbar switch and the cursor buttons in one
-        # undifferentiated row.
-        self.settings_tabs.addTab(_tab([
-            _settings_group("Window behaviour", [
-                self.cb_top, self.cb_lock_window, self.cb_normal_window,
-                self.cb_tray,
-            ]),
-            _settings_group("Layout", [
-                self.cb_sidebar, self.cb_customize_toolbar,
-                self.cb_numbox_tabs, numbox_row, self.cb_files_dock,
-                self.cb_toolbar_bottom, self.btn_reset_layout,
-            ]),
-            _settings_group("Window presets", [
-                self.cb_window_presets, self.btn_manage_presets,
-                self.cb_fast_zones, fast_row,
-            ]),
-            _settings_group("Silo look", [
-                self.cb_silo_color_box, self.cb_trash_vision,
-            ]),
-            _settings_group("Mouse cursors", [
-                self.cb_custom_cursors, self.btn_copy_cursors,
-                self.btn_install_cursors,
-            ]),
-        ]), tr("Window", self._current_lang))
-
-        self.settings_tabs.addTab(_tab([
-            _settings_group("Dividers & headers", [
-                div_row, ctrlw_btn_row, hdr_row, self.cb_hr_visual, self.cb_conceal,
-            ]),
-            _settings_group("Typing", [
-                self.cb_focus, self.cb_tray_activate, self.cb_wrap, self.cb_ctrl_c,
-                self.cb_lock_cursor, self.cb_double_line, blink_row,
-            ]),
-            _settings_group("Line appearance", [
-                self.cb_line_numbers, self.cb_line_marks, self.cb_zebra,
-                self.cb_bold_titles, self.lbl_align, self.cb_align_combo,
-            ]),
-            _settings_group("Line metadata", [
-                self.lbl_img_paste, self.cb_img_paste,
-                self.cb_token_count, token_row,
-            ]),
-            # split in two: eight controls in one group stretched to 186px
-            # tall beside 49px neighbours, which is the ragged look the panel
-            # was reported for
-            _settings_group("Line heat", [
-                self.cb_line_heat, lbl_heat, self.spin_heat_strength,
-                self.spin_heat_minutes, self.cb_heat_palette,
-            ]),
-            _settings_group("Hover line", [
-                self.cb_hover_line, self.spin_hover_opacity,
-                self.btn_hover_colour,
-            ]),
-            _settings_group("Code blocks", [
-                self.cb_code_gutter, self.cb_code_monospace,
-            ]),
-            _settings_group("Typos", [
-                self.cb_typo_check, self.btn_typo_colour,
-                self.btn_typo_clear,
-            ]),
-        ]), tr("Editor", self._current_lang))
-
-        # Clock/date settings used to be buried in "Window" — seven of them,
-        # which is what made that group unreadable.
-        self.settings_tabs.addTab(_tab([
-            _settings_group("Clock", [
-                self.cb_analog_clock, self.cb_date_rect, self.cb_date_seconds,
-                self.cb_date_ampm, self.cb_timer_minutes,
-                self.cb_limit_gauges, self.lbl_limit_status,
-            ]),
-            _settings_group("Date", [
-                self.cb_date_daypart, self.cb_date_emoji,
-                self.cb_date_text_month,
-            ]),
-            _settings_group("Passed events", [
-                self.cb_passed_alert, self.btn_passed_colour,
-            ]),
-        ]), tr("Clock", self._current_lang))
-
-        self.settings_tabs.addTab(_tab([
-            _settings_group("Silo list", [
-                self.cb_silo_home, self.cb_silo_pinned_gap, self.cb_silo_ticks,
-                self.cb_snippet_arrows, self.cb_hide_shortkeys, gap_row,
-                self.lbl_silo_mode, self.cb_silo_mode,
-            ]),
-            _settings_group("Sound", [
-                self.cb_sound, self.cb_typewriter, vol_row,
-                self.cb_cs_style, self.btn_sound_settings,
-            ]),
-            _settings_group("Files & backup", [
-                self.cb_portable_backup, files_row, sync_row,
-            ]),
-            _settings_group("Sync-Project", [
-                self.cb_sync_live, self.cb_sync_recursive,
-                lbl_sync_max, self.spin_sync_max_kb,
-                lbl_sync_inc, self.ed_sync_include,
-                lbl_sync_exc, self.ed_sync_exclude,
-            ]),
-        ]), tr("Data", self._current_lang))
-
-        # A QTabWidget reserves room for its TALLEST page on every tab, so a
-        # one-row tab still showed a screenful of nothing. Let only the
-        # visible page claim space and re-fit on each switch.
+        self._tab_placeholders = []
+        for _t in self._settings_tab_titles:
+            _p = _SettingsPage()
+            self._tab_placeholders.append(_p)
+            self.settings_tabs.addTab(_p, tr(_t, self._current_lang))
         self.settings_tabs.currentChanged.connect(self._fit_settings_tabs)
-        self._fit_settings_tabs(self.settings_tabs.currentIndex())
 
         hline = QFrame()
         hline.setFrameShape(QFrame.Shape.HLine)
@@ -9192,18 +8325,33 @@ class FastPrompter(
         v_layout = QVBoxLayout(self.mini_settings_frame)
         v_layout.setContentsMargins(4, 2, 4, 3)
         v_layout.setSpacing(3)
+        from fastprompter.ui.flow_layout import flow_widget
         v_layout.addWidget(flow_widget(appearance_row, h_spacing=4))
         v_layout.addWidget(hline)
         v_layout.addWidget(self.settings_tabs)
 
+        self._settings_built = False
+        orig_set_visible = self.mini_settings_frame.setVisible
+        def _settings_frame_set_visible(visible):
+            if visible and not getattr(self, "_settings_built", False):
+                self._ensure_settings_built()
+            orig_set_visible(visible)
+        self.mini_settings_frame.setVisible = _settings_frame_set_visible
+
         # Hidden by default — the gear button reveals it
-        self.mini_settings_frame.setVisible(self.data.get("hide_extra", "True") != "True")
+        if self.data.get("hide_extra", "True") != "True":
+            self._ensure_settings_built()
+            self.mini_settings_frame.setVisible(True)
+        else:
+            self.mini_settings_frame.setVisible(False)
 
         # Hug the content: spare vertical space belongs to the editor below,
         # not to a settings panel showing one row of checkboxes.
         self.mini_settings_frame.setSizePolicy(QSizePolicy.Policy.Preferred,
                                                QSizePolicy.Policy.Maximum)
         self.main_layout.addWidget(self.mini_settings_frame)
+        self._startup_timings["4_header_settings"] = (time.perf_counter() - _t_hdr_0) * 1000.0
+        _t_sb_0 = time.perf_counter()
         # self.main_layout.addWidget(self.left_panel)
         self.splitter = QSplitter(Qt.Orientation.Horizontal)
         self.splitter.setChildrenCollapsible(True)
@@ -9298,12 +8446,15 @@ class FastPrompter(
 
         self.archive_widget = SiloDropWidget(self, is_archive=True)
         self.archive_buttons = []
-        for _ in range(50):
-            btn = DraggableSiloButton(self, is_archive=True)
-            btn.setMinimumHeight(14)
-            btn.hide()
-            self.archive_widget.layout.addWidget(btn)
-            self.archive_buttons.append(btn)
+        saved_arc_visible = self.data.get("archive_visible", "False") == "True"
+        if saved_arc_visible:
+            initial_arc = max(1, min(50, getattr(self, "_visible_silos", 10)))
+            for _ in range(initial_arc):
+                btn = DraggableSiloButton(self, is_archive=True)
+                btn.setMinimumHeight(14)
+                btn.hide()
+                self.archive_widget.layout.addWidget(btn)
+                self.archive_buttons.append(btn)
         self.archive_section_layout.addWidget(self.archive_widget)
 
         self.btn_arc_page_down = QPushButton("▼")
@@ -9312,7 +8463,6 @@ class FastPrompter(
         self.btn_arc_page_down.clicked.connect(lambda: self.change_arc_page(1))
         self.archive_section_layout.addWidget(self.btn_arc_page_down)
 
-        saved_arc_visible = self.data.get("archive_visible", "False") == "True"
         self.btn_toggle_archive.setChecked(saved_arc_visible)
         self.archive_section.setVisible(saved_arc_visible)
         self.btn_toggle_archive.toggled.connect(self.on_archive_toggle)
@@ -9331,8 +8481,8 @@ class FastPrompter(
 
         self.silos_widget = SiloDropWidget(self)
         self.silo_buttons = []
-        # Create enough silo buttons - _update_visible_silo_count will adjust
-        for _ in range(50):
+        initial_silos = max(1, min(50, getattr(self, "_visible_silos", 10)))
+        for _ in range(initial_silos):
             btn = DraggableSiloButton(self)
             btn.setMinimumHeight(14)
             btn.hide()
@@ -9431,6 +8581,8 @@ class FastPrompter(
 
         self.center_layout.addWidget(self.search_frame)
 
+        self._startup_timings["5_sidebar"] = (time.perf_counter() - _t_sb_0) * 1000.0
+        _t_ed_0 = time.perf_counter()
         self.text_area = VaultTextEdit(self)
 
         self.text_area.installEventFilter(self)
@@ -9499,20 +8651,19 @@ class FastPrompter(
 
         self.silo_view.addWidget(self.text_area_wrapper) # page 0
 
-        from fastprompter.ui.kanban_widget import KanbanBoardWidget
-        from fastprompter.ui.table_widget import TableGridWidget
-        self.kanban_widget = KanbanBoardWidget(self)
-        self.kanban_widget.changed.connect(lambda markdown: self._on_visual_widget_changed(markdown))
-        self.kanban_widget.undoRequested.connect(self.text_area.undo)
-        self.silo_view.addWidget(self.kanban_widget) # page 1
+        self._startup_timings["6_editor_highlighter_construction"] = (time.perf_counter() - _t_ed_0) * 1000.0
+        _t_kt_0 = time.perf_counter()
+        self.kanban_widget = None
+        self.table_widget = None
+        self._kanban_placeholder = QWidget()
+        self._table_placeholder = QWidget()
+        self.silo_view.addWidget(self._kanban_placeholder) # page 1
+        self.silo_view.addWidget(self._table_placeholder)  # page 2
+        self._startup_timings["7_kanban_table_construction"] = (time.perf_counter() - _t_kt_0) * 1000.0
 
-        self.table_widget = TableGridWidget(self)
-        self.table_widget.changed.connect(lambda markdown: self._on_visual_widget_changed(markdown))
-        self.table_widget.undoRequested.connect(self.text_area.undo)
         # the page has to be re-picked when the TEXT stops matching the type,
         # not only when the silo is switched
         self.text_area.textChanged.connect(self._schedule_silo_type_recheck)
-        self.silo_view.addWidget(self.table_widget) # page 2
 
         self.center_layout.addWidget(self.silo_view, 1)
 
@@ -9548,8 +8699,8 @@ class FastPrompter(
             QTimer.singleShot(0, lambda: not sip.isdeleted(self)
                               and self.open_file_container())
         self.change_preview_mode(self.preview_combo.currentIndex())
-        self.on_tray_toggled(self.cb_tray.isChecked())
-        self.set_lock_state(self.cb_lock_window.isChecked())
+        self.on_tray_toggled(self.data.get("tray_visible", "True") == "True")
+        self.set_lock_state(self.data.get("window_locked", "False") == "True")
         self.apply_scaled_ui()
         self.apply_font()
 
@@ -9795,9 +8946,8 @@ class FastPrompter(
         # -- data-derived runtime objects ----------------------------------
         from fastprompter.core.pomodoro import ProductivityTimer
         from fastprompter.core.timers import load_timers
-        from fastprompter.core.watcher.queue import load_queues
         self.timers = load_timers(data.get("timers"))
-        self.prompt_queues = load_queues(data.get("watcher_queues"))
+        self.prompt_queues = {}
         self.productivity_timer = ProductivityTimer.from_dict(
             data.get("productivity_timer"))
         self._pomo_last_tick = None
@@ -9834,9 +8984,8 @@ class FastPrompter(
         # SEND engine, it does NOT stop an in-progress Observe. Switching
         # profiles must stop BOTH so a Profile-A adapter/probes/timer cannot
         # survive into Profile B (W-09/P1). No auto-restart in the new profile.
-        if hasattr(self, "watcher_stop_observing"):
-            self.watcher_stop_observing()
-        self.watcher_disarm("profile switch")
+        if hasattr(self, "watcher_disarm"):
+            self.watcher_disarm("profile switch")
 
         # -- profile-scoped runtime state -------------------------------------
         # The missed-event alert, the typecheck dictionary cache and the
@@ -9924,19 +9073,20 @@ class FastPrompter(
             ("cb_sync_recursive", "sync_recursive", "True"),
             ("cb_sync_live", "sync_live_watch", "True"),
         )
-        for attr, key, default in _CHECKS:
-            w = getattr(self, attr, None)
-            if w is None or sip.isdeleted(w):
-                continue
-            if key == "toolbar_position":
-                value = data.get(key, default) == "bottom"
-            else:
-                value = data.get(key, default) == "True"
-            w.blockSignals(True)
-            try:
-                w.setChecked(value)
-            finally:
-                w.blockSignals(False)
+        if getattr(self, "_settings_built", False):
+            for attr, key, default in _CHECKS:
+                w = getattr(self, attr, None)
+                if w is None or sip.isdeleted(w):
+                    continue
+                if key == "toolbar_position":
+                    value = data.get(key, default) == "bottom"
+                else:
+                    value = data.get(key, default) == "True"
+                w.blockSignals(True)
+                try:
+                    w.setChecked(value)
+                finally:
+                    w.blockSignals(False)
 
         # Combos/spins whose value save_data_to_db() reads or applies live.
         if hasattr(self, "font_spin") and not sip.isdeleted(self.font_spin):
@@ -9974,33 +9124,20 @@ class FastPrompter(
         # Live runtime effects, applied from the NEW values. Handlers are
         # idempotent (they re-write the same data value) — exactly what a
         # user toggle would do, but programmatic.
-        if hasattr(self, "cb_tray") and not sip.isdeleted(self.cb_tray):
-            self.on_tray_toggled(data.get("tray_visible", "True") == "True")
-        if hasattr(self, "cb_top") and not sip.isdeleted(self.cb_top):
-            self.toggle_aot(data.get("always_on_top", "True") == "True")
-        if hasattr(self, "cb_lock_window") and not sip.isdeleted(self.cb_lock_window):
-            self.set_lock_state(data.get("window_locked", "False") == "True")
-        if hasattr(self, "cb_normal_window") and not sip.isdeleted(self.cb_normal_window):
-            self.apply_window_flags()
-        if hasattr(self, "cb_sidebar") and not sip.isdeleted(self.cb_sidebar):
-            self.toggle_sidebar_position(data.get("sidebar_right", "False") == "True")
-        if hasattr(self, "cb_wrap") and not sip.isdeleted(self.cb_wrap):
-            self.on_wrap_toggled(data.get("word_wrap", "True") == "True")
-        if hasattr(self, "cb_line_numbers") and not sip.isdeleted(self.cb_line_numbers):
-            self.set_line_numbers(data.get("show_line_numbers", "False") == "True")
-        if hasattr(self, "cb_numbox_tabs") and not sip.isdeleted(self.cb_numbox_tabs):
-            self._toggle_numbox_mode(data.get("numbox_tabs", "False") == "True")
-        if hasattr(self, "cb_toolbar_bottom") and not sip.isdeleted(self.cb_toolbar_bottom):
-            self.apply_toolbar_position(data.get("toolbar_position", "top") == "bottom")
-        if hasattr(self, "cb_files_dock") and not sip.isdeleted(self.cb_files_dock):
-            self._on_files_dock_toggled(data.get("file_panel_docked", "False") == "True")
-        if hasattr(self, "cb_lock_cursor") and not sip.isdeleted(self.cb_lock_cursor):
-            self.on_lock_cursor_toggled(data.get("lock_to_cursor", "False") == "True")
-        if hasattr(self, "cb_silo_home") and not sip.isdeleted(self.cb_silo_home):
-            self.on_silo_home_toggled(data.get("silo_home", "False") == "True")
-        if hasattr(self, "cb_customize_toolbar") and not sip.isdeleted(self.cb_customize_toolbar):
-            self.on_customize_toolbar_toggled(
-                data.get("customize_toolbar", "False") == "True")
+        self.on_tray_toggled(data.get("tray_visible", "True") == "True")
+        self.toggle_aot(data.get("always_on_top", "True") == "True")
+        self.set_lock_state(data.get("window_locked", "False") == "True")
+        self.apply_window_flags()
+        self.toggle_sidebar_position(data.get("sidebar_right", "False") == "True")
+        self.on_wrap_toggled(data.get("word_wrap", "True") == "True")
+        self.set_line_numbers(data.get("show_line_numbers", "False") == "True")
+        self._toggle_numbox_mode(data.get("numbox_tabs", "False") == "True")
+        self.apply_toolbar_position(data.get("toolbar_position", "top") == "bottom")
+        self._on_files_dock_toggled(data.get("file_panel_docked", "False") == "True")
+        self.on_lock_cursor_toggled(data.get("lock_to_cursor", "False") == "True")
+        self.on_silo_home_toggled(data.get("silo_home", "False") == "True")
+        self.on_customize_toolbar_toggled(
+            data.get("customize_toolbar", "False") == "True")
         # Custom cursors: apply SILENTLY (the toggle handler can pop a modal
         # capture dialog — not allowed during a programmatic switch).
         if hasattr(self, "apply_custom_cursors"):
@@ -10383,7 +9520,7 @@ class FastPrompter(
                     cb.setToolTip(tr(en_tip, lang))
 
         # Translate action buttons
-        for ac_name in ("btn_hotkeys", "btn_colors", "btn_backup", "btn_restore",
+        for ac_name in ("btn_hotkeys", "btn_colors", "btn_backup", "btn_restore", "btn_exit",
                         "btn_typo_colour", "btn_typo_clear", "btn_passed_colour"):
             ac = getattr(self, ac_name, None)
             if ac is not None and not sip.isdeleted(ac):
@@ -10612,6 +9749,10 @@ class FastPrompter(
         ("silo_last_edited", "int_dict"),
         ("pinned_silos", "int_list"),
         ("silo_ticked", "int_list"),
+        # Ctrl+click multi-selection: a latched FOCUS set that persists, so it
+        # must follow its silos through reorder/insert/delete exactly like the
+        # pins and ticks beside it.
+        ("silo_selected", "int_list"),
         ("silo_collapsed", "int_list"),
         ("silo_children", "parent_map"),
         ("silo_colors", "str_dict", "numeric"),
@@ -10914,6 +10055,10 @@ class FastPrompter(
             if isinstance(attr, dict) and isinstance(stored, dict) and attr is not stored:
                 stored.clear()
                 stored.update(attr)
+            # The live selection SET is what the UI reads; the remapped list is
+            # what persists. Reload the set from it so a reorder moves the
+            # highlight with its silos instead of leaving it on a stranger.
+            self._silo_selection_source = None
 
         self._remap_silo_view_state(remap, is_archive=is_archive)
 
@@ -11088,10 +10233,16 @@ class FastPrompter(
         self.setGeometry(target)
 
     def apply_window_flags(self, _=None):
-        self.data["always_on_top"] = "True" if self.cb_top.isChecked() else "False"
-        self.data["normal_window"] = "True" if self.cb_normal_window.isChecked() else "False"
+        if getattr(self, "cb_top", None) is not None:
+            self.data["always_on_top"] = "True" if self.cb_top.isChecked() else "False"
+        if getattr(self, "cb_normal_window", None) is not None:
+            self.data["normal_window"] = "True" if self.cb_normal_window.isChecked() else "False"
         flags = Qt.WindowType.Window
-        normal = self.cb_normal_window.isChecked()
+        normal = (
+            self.cb_normal_window.isChecked()
+            if getattr(self, "cb_normal_window", None) is not None
+            else (self.data.get("normal_window", "False") == "True")
+        )
         if not normal:
             flags |= Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool
         # Skip HWND recreation if flags haven't actually changed
@@ -11799,6 +10950,10 @@ class FastPrompter(
             "editing_snippet": getattr(self, "editing_snippet", None),
             "pinned_silos": list(pinned) if isinstance(pinned, list) else [],
             "silo_ticked": list(self.data.get("silo_ticked", [])),
+            # The latched Ctrl+click selection is persisted slot-index state
+            # like the ticks, so a delete/undo must restore the same silos as
+            # selected instead of leaving the highlight one slot off.
+            "silo_selected": list(self.data.get("silo_selected", [])),
             "silo_children": _copy2(self.data.get("silo_children", {})),
             "silo_collapsed": list(self.data.get("silo_collapsed", [])),
             "silo_folders": dict(self.data.get("silo_folders", {})),
@@ -12391,6 +11546,17 @@ class FastPrompter(
             tlist = self.data.setdefault("silo_ticked_all", {}).setdefault(snap_cat, [])
             tlist[:] = list(state.get("silo_ticked", []))
             self.data["silo_ticked"] = tlist
+            # `is not None`: a snapshot written before this store existed has
+            # no such key, and clearing on a missing key would silently drop
+            # the user's current selection during an unrelated undo.
+            saved_selected = state.get("silo_selected")
+            if saved_selected is not None:
+                slist = self.data.setdefault(
+                    "silo_selected_all", {}).setdefault(snap_cat, [])
+                slist[:] = [i for i in saved_selected
+                            if isinstance(i, int) and i >= 0]
+                self.data["silo_selected"] = slist
+                self._silo_selection_source = None
             cmap = self.data.setdefault("silo_children_all", {}).setdefault(snap_cat, {})
             cmap.clear()
             cmap.update(copy.deepcopy(state.get("silo_children", {})))
@@ -13090,6 +12256,9 @@ class FastPrompter(
         """
         if sip.isdeleted(self) or getattr(self, "_numbox_rebuild_pending", False):
             return
+        if self.data.get("numbox_tabs", "False") != "True":
+            self._cat_numbox_dirty = True
+            return
         self._numbox_rebuild_pending = True
 
         def run():
@@ -13206,7 +12375,10 @@ class FastPrompter(
         # stored as a string like every other settings value — the DB layer
         # round-trips strings, and the readers above int() them back
         self.data[key] = str(int(value))
-        self._rebuild_cat_numbox()
+        if self.data.get("numbox_tabs", "False") == "True":
+            self._rebuild_cat_numbox()
+        else:
+            self._cat_numbox_dirty = True
         self.mark_dirty()
 
     def _toggle_numbox_mode(self, checked):
@@ -13214,6 +12386,7 @@ class FastPrompter(
         self.cat_combo.setVisible(not checked)
         self.cat_numbox.setVisible(checked)
         if checked:
+            self._cat_numbox_dirty = False
             self._rebuild_cat_numbox()
         self.mark_dirty()
 
@@ -13395,7 +12568,8 @@ class FastPrompter(
                         self, tr("Error", self._current_lang), msg)
                     self._restore_stale_memory = True
                     self._logical_finalized = True
-                    self._watcher_commit_quiesce()
+                    if hasattr(self, "_watcher_commit_quiesce"):
+                        self._watcher_commit_quiesce()
                     self.quit_app()
                     return
                 except RestoreError as e:
@@ -13423,7 +12597,8 @@ class FastPrompter(
                                self._current_lang))
                         self._restore_stale_memory = True
                         self._logical_finalized = True
-                        self._watcher_commit_quiesce()
+                        if hasattr(self, "_watcher_commit_quiesce"):
+                            self._watcher_commit_quiesce()
                         self.quit_app()
                         return
                     self._resume_watcher_runtime()
@@ -13463,9 +12638,8 @@ class FastPrompter(
                         self._push_worker._suppress = True
                 except Exception:
                     pass
-                # W2-001: the restore committed — resolve the paused watcher by
-                # performing the irreversible disarm now.
-                self._watcher_commit_quiesce()
+                if hasattr(self, "_watcher_commit_quiesce"):
+                    self._watcher_commit_quiesce()
                 self.quit_app()
         except Exception as e:
             QMessageBox.critical(self, tr("Error", self._current_lang), tr("Failed to restore backup:\n{}", self._current_lang).format(e))
@@ -13535,11 +12709,11 @@ class FastPrompter(
         Outside a quiesce it keeps the historical behaviour of restarting an
         armed engine's tick timer."""
         try:
-            if getattr(self, "_watcher_quiescing", False):
+            if getattr(self, "_watcher_quiescing", False) and hasattr(self, "_watcher_rollback_quiesce"):
                 self._watcher_rollback_quiesce()
                 return
             engine = getattr(self, "_watcher_engine", None)
-            if engine is not None and getattr(engine, "armed", False):
+            if engine is not None and getattr(engine, "armed", False) and hasattr(self, "_watcher_start_timer"):
                 self._watcher_start_timer()
         except Exception:
             from fastprompter.core.logging import logger as _log
@@ -14880,8 +14054,7 @@ class FastPrompter(
             bind_started = time.perf_counter()
             bind_active_category(self.data, cat)
             _tab_phase("category_bind", bind_started, cat)
-            from fastprompter.core.watcher.queue import load_queues
-            self.prompt_queues = load_queues(self.data["watcher_queues"])
+            self.prompt_queues = {}
             self.silo_last_edited = self.data.setdefault("silo_last_edited_all", {}).setdefault(
                 cat, {}
             )
@@ -14917,6 +14090,12 @@ class FastPrompter(
 
         self._update_cat_numbox_active()
         self.refresh_snippets_panel()
+        # The latched selection is per-category and persisted, so it is not
+        # cleared here — it is RE-READ from the alias the category bind just
+        # rebound. Dropping the cached set is what makes each project show its
+        # own latched silos instead of the previous project's indices.
+        self._silo_selection_source = None
+        self._silo_sel()
         # PERF-002: project switch is settings-domain navigation
         self.mark_dirty("settings")
         self.text_area.setFocus()
@@ -15134,6 +14313,7 @@ class FastPrompter(
         font_family = self._font_family
 
         start_idx = self.arc_silo_page * visible_count
+        self._ensure_archive_buttons(visible_count)
 
         for i, btn in enumerate(self.archive_buttons):
             slot_idx = start_idx + i
@@ -15668,6 +14848,40 @@ class FastPrompter(
         self.mark_dirty()
         return True
 
+    def _get_or_create_kanban_widget(self):
+        if getattr(self, "kanban_widget", None) is None:
+            from fastprompter.ui.kanban_widget import KanbanBoardWidget
+            kw = KanbanBoardWidget(self)
+            kw.changed.connect(lambda markdown: self._on_visual_widget_changed(markdown))
+            kw.undoRequested.connect(self.text_area.undo)
+            self.kanban_widget = kw
+            if hasattr(self, "_apply_kanban_theme"):
+                self._apply_kanban_theme(None)
+            idx = self.silo_view.indexOf(getattr(self, "_kanban_placeholder", None))
+            if idx >= 0:
+                self.silo_view.removeWidget(self._kanban_placeholder)
+                self.silo_view.insertWidget(idx, self.kanban_widget)
+            elif self.silo_view.indexOf(self.kanban_widget) < 0:
+                self.silo_view.insertWidget(1, self.kanban_widget)
+        return self.kanban_widget
+
+    def _get_or_create_table_widget(self):
+        if getattr(self, "table_widget", None) is None:
+            from fastprompter.ui.table_widget import TableGridWidget
+            tw = TableGridWidget(self)
+            tw.changed.connect(lambda markdown: self._on_visual_widget_changed(markdown))
+            tw.undoRequested.connect(self.text_area.undo)
+            self.table_widget = tw
+            if hasattr(self, "_apply_table_theme"):
+                self._apply_table_theme(None)
+            idx = self.silo_view.indexOf(getattr(self, "_table_placeholder", None))
+            if idx >= 0:
+                self.silo_view.removeWidget(self._table_placeholder)
+                self.silo_view.insertWidget(idx, self.table_widget)
+            elif self.silo_view.indexOf(self.table_widget) < 0:
+                self.silo_view.insertWidget(2, self.table_widget)
+        return self.table_widget
+
     def _apply_silo_type(self, idx, is_archive, text=None):
         if is_archive:
             self.silo_view.setCurrentIndex(0)
@@ -15690,12 +14904,14 @@ class FastPrompter(
                 stype = "text"
 
         if stype == "kanban":
+            kw = self._get_or_create_kanban_widget()
             self.silo_view.setCurrentIndex(1)
-            self.kanban_widget.load_markdown(text)
+            kw.load_markdown(text)
             self._rendered_visual_text = text
         elif stype == "table":
+            tw = self._get_or_create_table_widget()
             self.silo_view.setCurrentIndex(2)
-            self.table_widget.load_markdown(text)
+            tw.load_markdown(text)
             self._rendered_visual_text = text
         else:
             self.silo_view.setCurrentIndex(0)
@@ -15879,6 +15095,7 @@ class FastPrompter(
 
         first_unpinned_ui_index = -1
         show_gap = self.data.get("silo_pinned_gap", "True") == "True"
+        self._ensure_silo_buttons(self._visible_silos)
 
         for i, btn in enumerate(self.silo_buttons):
             disp_pos = start_idx + i
@@ -15999,7 +15216,6 @@ class FastPrompter(
                 if gap_name:
                     h = max(24, gap_h)
                     gw.setFixedHeight(h)
-                    from PyQt6.QtGui import QFont
                     font = gw.font()
                     font.setBold(True)
                     font.setPointSize(max(8, int(self.data.get("font_size", 11)) - 1))
@@ -16282,16 +15498,60 @@ class FastPrompter(
 
     # -- T-589: multi-select silos + batch ops --------------------------------
     def _silo_sel(self):
-        """The set of currently multi-selected silo global indices (lazy)."""
-        if not isinstance(getattr(self, "_silo_selection", None), set):
-            self._silo_selection = set()
+        """The set of currently latched silo global indices.
+
+        Backed by ``data["silo_selected"]`` — a per-category list that is
+        persisted like pins and ticks, so a latched selection survives a
+        project switch, a profile reload and a restart. The set here is a live
+        view; ``_persist_silo_selection`` writes it back.
+        """
+        raw = self.data.get("silo_selected")
+        if not isinstance(raw, list):
+            raw = []
+            self.data["silo_selected"] = raw
+        current = getattr(self, "_silo_selection", None)
+        loaded = getattr(self, "_silo_selection_source", None)
+        if not isinstance(current, set) or loaded is not raw:
+            self._silo_selection = {i for i in raw
+                                    if isinstance(i, int) and i >= 0}
+            self._silo_selection_source = raw
         return self._silo_selection
 
+    def _persist_silo_selection(self):
+        """Write the latched set back into the per-category store.
+
+        The list object is an alias into ``silo_selected_all[category]``, so it
+        is mutated in place — rebinding it would orphan the category's data
+        exactly like the temp_presets aliasing trap.
+        """
+        raw = self.data.get("silo_selected")
+        if not isinstance(raw, list):
+            raw = []
+            self.data["silo_selected"] = raw
+        raw[:] = sorted(self._silo_sel())
+        self._silo_selection_source = raw
+        self.mark_dirty("settings")
+
     def toggle_silo_selection(self, idx):
-        """Ctrl+click: add/remove one silo from the selection."""
+        """Ctrl+click: latch/unlatch one silo in the selection.
+
+        The selection is a FOCUS set, not a transient hover: it survives
+        switching silos, projects and restarts, and is released only by the
+        same Ctrl+click, Ctrl+triple-click, the context menu, or a batch op.
+        """
         sel = self._silo_sel()
         sel.discard(idx) if idx in sel else sel.add(idx)
         self._silo_sel_anchor = idx
+        self._persist_silo_selection()
+        self.refresh_temp_presets()
+
+    def unselect_silo(self, idx):
+        """Context menu: release exactly this silo, keep the rest latched."""
+        sel = self._silo_sel()
+        if idx not in sel:
+            return
+        sel.discard(idx)
+        self._persist_silo_selection()
         self.refresh_temp_presets()
 
     def range_select_silos(self, idx):
@@ -16301,12 +15561,14 @@ class FastPrompter(
         lo, hi = sorted((anchor, idx))
         n = len(self.data.get("temp_presets", []))
         sel.update(i for i in range(lo, hi + 1) if 0 <= i < n)
+        self._persist_silo_selection()
         self.refresh_temp_presets()
 
     def clear_silo_selection(self):
-        """Plain click elsewhere drops the multi-selection."""
+        """Release every latched silo (Ctrl+triple-click / menu / batch op)."""
         if getattr(self, "_silo_selection", None):
             self._silo_selection = set()
+            self._persist_silo_selection()
             self.refresh_temp_presets()
 
     def batch_save_selected_silos(self):
@@ -16377,6 +15639,7 @@ class FastPrompter(
         # preserve the failed/unprocessed silos in the selection so they stay
         # owned and can be retried; only the successfully deleted ones leave.
         self._silo_selection = set(failures)
+        self._persist_silo_selection()
         if len(failures) != len(sel):
             presets = self.data.get("temp_presets", [])
             if presets:
@@ -16589,7 +15852,7 @@ class FastPrompter(
         menu.setFont(QApplication.font())
 
         # -- batch actions (only when a multi-selection is active) -----------
-        sel = getattr(self, "_silo_selection", None)
+        sel = self._silo_sel() if not is_archive else None
         if not is_archive and sel:
             n = len(sel)
             le = getattr(self, "_current_lang", "EN")
@@ -16597,7 +15860,14 @@ class FastPrompter(
                            lambda: self.batch_save_selected_silos())
             menu.addAction(tr("🗑 Delete selected", le) + f" ({n})",
                            lambda: self.batch_delete_selected_silos())
-            menu.addAction(tr("✖ Clear selection", le),
+            # Unselect acts on the silo the menu was opened ON; Unselect All
+            # releases the whole latched set. Two separate controls, because
+            # one control that means two things depending on the set size is
+            # exactly the surprise the UI contract forbids.
+            if idx in sel:
+                menu.addAction(tr("✖ Unselect", le),
+                               lambda i=idx: self.unselect_silo(i))
+            menu.addAction(tr("✖ Unselect All", le) + f" ({n})",
                            lambda: self.clear_silo_selection())
             menu.addSeparator()
 
@@ -16958,9 +16228,23 @@ class FastPrompter(
                 if isinstance(dt, list) and dst_idx not in dt:
                     dt.append(dst_idx)
 
+        # latched selection: same membership shape as the tick above, so a
+        # transferred silo arrives selected in its new project instead of
+        # leaving the highlight behind on whatever slot took its index.
+        sstore = self.data.get("silo_selected_all")
+        if isinstance(sstore, dict):
+            ss = sstore.get(src_cat)
+            ds = sstore.setdefault(dst_cat, [])
+            if isinstance(ss, list) and src_idx in ss:
+                ss.remove(src_idx)
+                if isinstance(ds, list) and dst_idx not in ds:
+                    ds.append(dst_idx)
+                self._silo_selection_source = None
+
     _TRANSFER_STORE_KEYS = (
         "temp_presets_all", "archive_temp_presets_all",
         "pinned_silos_all", "silo_ticked_all", "silo_children_all",
+        "silo_selected_all",
         "silo_collapsed_all", "silo_colors_all", "silo_gaps_all",
         "silo_gap_names_all", "silo_folders_all", "archive_silo_folders_all",
         "silo_project_paths_all", "archive_project_paths_all",
@@ -17060,6 +16344,9 @@ class FastPrompter(
                 return False
             ticked = self.data.get("silo_ticked_all", {}).get(target_cat, [])
             if isinstance(ticked, list) and slot_idx in ticked:
+                return False
+            selected = self.data.get("silo_selected_all", {}).get(target_cat, [])
+            if isinstance(selected, list) and slot_idx in selected:
                 return False
             links = self.data.get("silo_links_all", {}).get(target_cat, {})
             if isinstance(links, dict) and str(slot_idx) in links:
@@ -17459,7 +16746,6 @@ class FastPrompter(
         from fastprompter.ui.file_container import _move_into_container, capture_resolved_root
         identity = capture_resolved_root(dst)
         from fastprompter.ui.snippet_ops_mixin import (
-            _merge_journal_clear,
             _merge_journal_write,
         )
         # W2-004/W2-002: the merge is part of the SAME undoable transaction as
@@ -17790,9 +17076,6 @@ class FastPrompter(
         # Ctrl+Shift+T / Alt+Shift+T. Bind them so the docs tell the truth.
         add_shortcut("hk_timers", "Ctrl+Shift+T", self.open_timer_dialog)
         add_shortcut("hk_hashtags", "Alt+Shift+T", self.open_hashtag_dialog)
-        # Alt+C queues the current line; Alt+Shift+C opens the this-silo queue.
-        add_shortcut("hk_queue_master", "Alt+Shift+C", self.open_queue_master,
-                     Qt.ShortcutContext.ApplicationShortcut)
 
         def add_fixed(seq_str, slot, context=Qt.ShortcutContext.WindowShortcut):
             slot = self._with_hotkey_sound(seq_str, slot)
@@ -18095,9 +17378,11 @@ class FastPrompter(
         if text == getattr(self, "_rendered_visual_text", None):
             return
         if idx == 1:
-            self.kanban_widget.load_markdown(text)
+            kw = self._get_or_create_kanban_widget()
+            kw.load_markdown(text)
         else:
-            self.table_widget.load_markdown(text)
+            tw = self._get_or_create_table_widget()
+            tw.load_markdown(text)
         self._rendered_visual_text = text
 
     def _editor_text_snapshot(self):
@@ -18368,15 +17653,12 @@ class FastPrompter(
             return False
         ok = bool(self.save_data_to_db(force=True))
         if ok:
-            # W2-001: the final save committed — resolve the paused watcher by
-            # performing the irreversible disarm now.
-            self._watcher_commit_quiesce()
+            if hasattr(self, "_watcher_commit_quiesce"):
+                self._watcher_commit_quiesce()
             self._logical_finalized = True
         else:
-            # W2-001: the final save failed and the quit is refused; resume the
-            # paused watcher (it is still armed) so the window stays fully
-            # active rather than silently stranded paused/disarmed.
-            self._watcher_rollback_quiesce()
+            if hasattr(self, "_watcher_rollback_quiesce"):
+                self._watcher_rollback_quiesce()
         return ok
 
 
@@ -18694,6 +17976,17 @@ def _shutdown_application(window, app, lock):
         window.close()
     except Exception:
         _log.exception("application window close failed")
+
+    # Limit probes finish on a Python worker pool.  Retire their callbacks
+    # before QWidget destruction so a late app-server response cannot touch
+    # the closed window.
+    try:
+        limit_service = getattr(window, "limit_service", None)
+        if limit_service is not None:
+            limit_service.shutdown()
+    except Exception:
+        _log.exception("AI usage-limit worker shutdown FAILED")
+        clean = False
 
     # Retire the window's own workers here and ONLY here, after the final
     # save: the Sync flush captures the newest committed snapshot, and the

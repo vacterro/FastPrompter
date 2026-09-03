@@ -122,38 +122,6 @@ def test_portable_export_keeps_orphan_categories_distinct(tmp_path, monkeypatch)
     assert "hello from foo space" in "\n".join(contents)
 
 
-# ----------------------------------------------------------------- T-1023
-def test_queue_heals_malformed_fields_and_unique_ids():
-    from fastprompter.core.watcher.queue import load_queues
-
-    raw = {
-        1: [
-            {"text": "a", "skill": 123, "id": "dup"},   # skill int -> "123"
-            {"text": "b", "id": "dup"},                   # duplicate id -> new
-            {"text": "c", "id": 5},                       # numeric id -> new
-            {"text": "d", "state": "bogus"},               # bad state -> pending
-        ],
-        "1": [{"text": "e"}],                              # alias key merges
-        "x": [
-            {"text": "f", "id": ""},                       # empty id -> new
-            {"not": "text"},                               # dropped (no text)
-        ],
-    }
-    queues = load_queues(raw)
-
-    assert "1" in queues
-    items = queues["1"]
-    texts = {i.text for i in items}
-    assert texts == {"a", "b", "c", "d", "e"}, texts
-    ids = [i.id for i in items]
-    assert len(set(ids)) == len(ids), "all ids must be unique"
-    a = next(i for i in items if i.text == "a")
-    assert a.skill == "123"
-    d = next(i for i in items if i.text == "d")
-    assert d.state == "pending"
-
-    assert "x" not in queues, "CORE-004: malformed slot keys must be dropped"
-    assert all(k in ("0", "1", "2", "3", "4", "5", "6", "7", "8", "9") or k.startswith("a") for k in queues)
 
 
 # ----------------------------------------------------------------- T-1024
@@ -235,33 +203,6 @@ def test_fancy_zone_ui_state_and_geometry_healing():
     assert legacy and abs(legacy[0]["x"] - 0.1) < 1e-9
 
 
-# ----------------------------------------------------------------- T-1022
-def test_watcher_disarm_clears_active_send():
-    from fastprompter.ui.watcher_mixin import WatcherMixin
-
-    class M(WatcherMixin):
-        def __init__(self):
-            self.prompt_queues = {}
-            self.save_prompt_queues = lambda: None
-
-    m = M()
-    m._watcher_init()
-    # simulate an in-flight send
-    m._watcher_send_active = True
-    m._watcher_send_gen = 5
-
-    # a late callback from gen 5 must NOT clear a newer dispatch's flag
-    m._watcher_send_gen = 6
-    # (the guard in _watcher_on_send_result returns early when gen != current)
-
-    m.watcher_disarm()
-    # after disarm the stale in-flight send is retired
-    assert m._watcher_send_active is False
-    assert m._watcher_send_gen == 7
-
-    # an immediate quiesce must not wait on the discarded send
-    m._watcher_quiescing = False
-    assert m._watcher_begin_quiesce(timeout_s=0.01) is True
 
 
 # ----------------------------------------------------------------- T-800
@@ -470,33 +411,6 @@ def test_malformed_cats_order_and_hidden_recover_from_db(tmp_path, monkeypatch):
 import time  # noqa: E402  (used by portable_backup call above)
 
 
-# ----------------------------------------------------------------- CORE-004
-def test_load_queues_canonicalizes_slot_keys():
-    """CORE-004: load_queues accepts only canonical 0..99 / a0..a99 keys and
-    merges numeric aliases, so runtime consumers never see a key whose int()
-    conversion would fail."""
-    from fastprompter.core.watcher.queue import load_queues
-
-    raw = {
-        "x": [{"text": "bad"}],      # non-numeric -> dropped
-        -1: [{"text": "neg"}],       # negative -> dropped
-        100: [{"text": "big"}],      # out of range -> dropped
-        "a100": [{"text": "biga"}],  # archive out of range -> dropped
-        1: [{"text": "one"}],        # int alias
-        "1": [{"text": "one-str"}],  # string alias merges
-        "a1": [{"text": "arch"}],    # valid archive stays distinct
-        0: [{"text": "zero"}],       # valid normal
-    }
-    queues = load_queues(raw)
-
-    assert set(queues) == {"0", "1", "a1"}, set(queues)
-    assert {i.text for i in queues["1"].items} == {"one", "one-str"}
-    assert [i.text for i in queues["a1"].items] == ["arch"]
-    assert [i.text for i in queues["0"].items] == ["zero"]
-
-    # every remaining key must survive the master-view int() conversion
-    for k in queues:
-        int(str(k).lstrip("a") or 0)
 
 # ----------------------------------------------------------------- CORE-002
 def test_unique_temp_path_distinct_and_same_directory(tmp_path):

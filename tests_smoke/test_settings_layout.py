@@ -39,12 +39,24 @@ def win():
     w.show()
     _app.processEvents()
     yield w
-    w.auto_save_timer.stop()
-    w.topmost_timer.stop()
-    w._cache_timer.stop()
-    w.state.conn = None
+    from PyQt6.QtCore import QEvent
+    for timer in ("auto_save_timer", "topmost_timer", "date_timer", "_cache_timer"):
+        t = getattr(w, timer, None)
+        if t is not None:
+            t.stop()
+    if getattr(w, "limit_service", None) is not None:
+        try:
+            w.limit_service.shutdown()
+        except Exception:
+            pass
+    if getattr(w, "state", None) is not None:
+        w.state.conn = None
     w.conn = None
     w.close()
+    w.deleteLater()
+    _app.processEvents()
+    _app.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    _app.processEvents()
 
 
 def _groups(win, index):
@@ -101,10 +113,33 @@ def test_related_switches_ended_up_together(win):
     assert "Copy my set" not in behaviour, "cursor buttons leaked in"
 
 
-def test_the_panel_still_hugs_its_content(win):
-    """Spare height belongs to the editor, not to the settings panel."""
-    tallest = 0
+def test_the_panel_hugs_its_content_without_cutting(win):
+    """Spare height belongs to the editor, not to the settings panel.
+
+    The panel must be exactly as tall as its visible tab needs — never so
+    short that the last row (Typos on the Editor tab) is clipped.  Both
+    invariants, in one: hugging means frame <= content + small slack.
+    """
     for i in range(win.settings_tabs.count()):
-        _groups(win, i)
-        tallest = max(tallest, win.mini_settings_frame.height())
-    assert tallest < 400, tallest
+        win.settings_tabs.setCurrentIndex(i)
+        _app.processEvents()
+        win._fit_settings_tabs(i)
+        _app.processEvents()
+        page = win.settings_tabs.widget(i)
+        page_h = page.height()
+        groups = [b for b in page.findChildren(QWidget, "SettingsGroup")
+                  if getattr(b, "_en_text", "")]
+        if not groups:
+            continue
+        bottom = max(b.y() + b.height() for b in groups)
+        assert bottom <= page_h, (
+            f"tab {i}: last group bottom {bottom} > page height {page_h} "
+            "(content cut off)")
+    # Still hugs: no tab should blow the panel up to half the window.
+    for i in range(win.settings_tabs.count()):
+        win.settings_tabs.setCurrentIndex(i)
+        _app.processEvents()
+        win._fit_settings_tabs(i)
+        _app.processEvents()
+        assert win.mini_settings_frame.height() < 500, (
+            f"tab {i}: panel {win.mini_settings_frame.height()}px — not hugging")

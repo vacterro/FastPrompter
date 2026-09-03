@@ -32,7 +32,6 @@ def build_help_html(data, lang="EN") -> str:
         (g("lock_window_hotkey", "Alt+E"), "Lock / unlock window size & position"),
         (g("always_on_top_hotkey", "Alt+S"), "Toggle always-on-top"),
         (g("hide_on_clickout_hotkey", "Alt+A"), "Toggle Hide on Click-Out"),
-        (g("watcher_panic_hotkey", "Ctrl+Alt+Shift+P"), "Panic stop the AI typing watcher"),
         ("F1&ndash;F10 (global)", "Paste snippet 1&ndash;10 into the active app"),
     ], lang)
     app_rows = _rows([
@@ -106,7 +105,6 @@ def build_help_html(data, lang="EN") -> str:
         f"<li><b>{tr('Trash, not delete', lang)}</b> &mdash; {tr('clearing or trashing a silo writes its text to data/files/_trash/ and moves its files there; nothing is destroyed', lang)}</li>"
         f"<li><b>{tr('Header template', lang)}</b> &mdash; {tr('Settings &rarr; Header Fmt: {{text}}, {{time}}, {{state}} (Morning/Day/Evening/Night) — bold markers are yours to keep or drop', lang)}</li>"
         f"<li><b>{tr('Clock &amp; Timer', lang)}</b> &mdash; {tr('date + time with seconds, day word, optional mini analog clock, and a Pomodoro-style timer with snooze', lang)}</li>"
-        f"<li><b>{tr('Watcher', lang)}</b> &mdash; {tr('queue prompts from a silo and have them typed into a target app when it is idle (Alt+C)', lang)}</li>"
         f"<li><b>{tr('Scale', lang)}</b> &mdash; {tr('50&ndash;150% whole-UI scaling with readable minimums', lang)}</li>"
         f"<li><b>{tr('Sounds', lang)}</b> &mdash; {tr('optional UI clicks and typewriter effect', lang)}</li>"
         f"<li><b>{tr('Data', lang)}</b> &mdash; {tr('SQLite next to the app; daily Markdown backups in Documents; crash log next to the EXE', lang)}</li>"

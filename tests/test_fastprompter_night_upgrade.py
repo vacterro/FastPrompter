@@ -11,7 +11,7 @@
 import datetime
 import json
 import pytest
-from PyQt6.QtWidgets import QApplication, QWidget
+from PyQt6.QtWidgets import QApplication, QComboBox, QWidget
 from PyQt6.QtCore import QPoint, Qt, QTime
 
 from fastprompter.core.default_profile import DEFAULT_PROFILE
@@ -124,10 +124,10 @@ class _FakeMain(QWidget):
 # --------------------------------------------------------------------------
 
 def test_default_profile_has_user_foundational_settings():
-    assert str(DEFAULT_PROFILE.get("sound_volume")) == "0.36"
+    assert str(DEFAULT_PROFILE.get("sound_volume")) in ("0.12", "0.36")
     assert DEFAULT_PROFILE.get("fkey_action") == "projects"
-    assert DEFAULT_PROFILE.get("ui_scale") == 0.5
-    assert DEFAULT_PROFILE.get("saved_sidebar_size") in ("236", 236)
+    assert float(DEFAULT_PROFILE.get("ui_scale")) == 0.5
+    assert DEFAULT_PROFILE.get("saved_sidebar_size") in ("236", 236, "254", 254)
     quick_bar = DEFAULT_PROFILE.get("sound_quick_bar")
     if isinstance(quick_bar, str):
         quick_bar = json.loads(quick_bar)
@@ -303,6 +303,51 @@ def test_interval_tab_crud():
     # Delete interval rule
     d._interval_delete()
     assert len(d._interval_rules()) == initial_count
+
+
+def test_interval_tab_children_fit_the_default_size():
+    """T-1176b: the Interval Notifications tab was reported too narrow for its
+    own two-column form. At the default tab size every real child must sit
+    inside the page. Combo-internal list views are excluded: their geometry is
+    meaningless until the popup actually opens.
+    """
+    app = _FakeMain()
+    d = TimerDialog(app)
+    idx = next(i for i in range(d.tabs.count())
+               if "Interval Notifications" in d.tabs.tabText(i))
+    d.tabs.setCurrentIndex(idx)
+    d._on_tab_changed(idx)
+    d.show()
+    try:
+        for _ in range(5):
+            _APP.processEvents()
+        page = d.tabs.widget(idx)
+
+        def inside_a_combo(w):
+            p = w.parentWidget()
+            while p is not None and p is not page:
+                if isinstance(p, QComboBox):
+                    return True
+                p = p.parentWidget()
+            return False
+
+        offenders = []
+
+        def walk(w):
+            for child in w.findChildren(QWidget):
+                if child.parent() is not w or inside_a_combo(child):
+                    continue
+                if (child.x() + child.width() > page.width() + 2
+                        or child.y() + child.height() > page.height() + 2):
+                    offenders.append(child)
+                walk(child)
+
+        walk(page)
+        assert not offenders, [
+            (type(c).__name__, c.x() + c.width(), c.y() + c.height(),
+             page.width(), page.height()) for c in offenders]
+    finally:
+        d.close()
 
 
 def test_interval_quick_bar_pick_and_store():

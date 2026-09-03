@@ -99,7 +99,7 @@ class HotkeySettingsDialog(QDialog):
         self.setMinimumWidth(400)
 
         layout = QVBoxLayout(self)
-        from PyQt6.QtWidgets import QScrollArea, QTabWidget
+        from PyQt6.QtWidgets import QTabWidget
         self.tabs = QTabWidget()
 
         tab_global = QWidget()

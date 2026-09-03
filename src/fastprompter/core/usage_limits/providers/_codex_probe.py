@@ -17,10 +17,19 @@ import time
 # Tunables
 READ_STEP_S = 0.02
 CHILD_KILL_GRACE_S = 2.0
-RESPONSE_WINDOW_S = 12.0
+# Per-call ceiling for one JSON-RPC round trip. Measured on a live account
+# (8 sequential probes): initialize ~0.13s, account/rateLimits/read median
+# 0.87s but with 3.6s outliers, and a first probe after the machine had been
+# idle took 14s all by itself. 12s was tight enough to turn that first slow
+# answer into "timed out waiting for account/rateLimits/read" and then a full
+# ERROR snapshot, which shows up as a phantom dead account in the header.
+RESPONSE_WINDOW_S = 25.0
 
-# Windows
-DURATION_LABELS = {300: "five_hour", 10080: "weekly"}
+# Windows. Codex varies the window set by plan: Plus reports 300 (5h) plus
+# 10080 (weekly); Free reports a single 43200 (30-day) primary. Durations
+# outside this map are NOT dropped — they get a generic ``window_<n>m`` key,
+# so a real quota is never silently discarded as "unavailable".
+DURATION_LABELS = {300: "five_hour", 10080: "weekly", 43200: "monthly"}
 
 
 class JsonRpcError(Exception):
@@ -147,19 +156,37 @@ def _handshake_and_read_rates(session: AppServerSession) -> dict:
     return rl.get("result") or {}
 
 
+def _blank_bucket() -> dict:
+    return {"available": False, "remaining_percent": None,
+            "resets_at": None, "used_percent": None,
+            "window_duration_mins": None}
+
+
+def _duration_label(dur) -> str:
+    """Known duration -> stable key; unknown -> generic ``window_<n>m``.
+
+    An unrecognised duration is still a real quota the server told us about,
+    so it must survive parsing instead of vanishing as "unavailable".
+    """
+    try:
+        n = int(dur)
+    except (TypeError, ValueError):
+        return ""
+    if n <= 0:
+        return ""
+    return DURATION_LABELS.get(n) or f"window_{n}m"
+
+
 def parse_windows(rate_limits: dict) -> dict:
-    """Map windows by duration; missing buckets stay unavailable."""
-    out = {
-        "five_hour": {"available": False, "remaining_percent": None,
-                      "resets_at": None, "used_percent": None,
-                      "window_duration_mins": None},
-        "weekly": {"available": False, "remaining_percent": None,
-                   "resets_at": None, "used_percent": None,
-                   "window_duration_mins": None},
-        "plan_type": None,
-    }
+    """Map windows by duration; missing buckets stay unavailable.
+
+    Returns a flat ``{window_key: bucket}`` dict plus ``plan_type``. Callers
+    iterate the dict and skip ``plan_type`` — that way a plan reporting an
+    unexpected window count (Free: one 30-day window) is preserved verbatim
+    instead of being filtered down to a hardcoded pair.
+    """
+    out = {"five_hour": _blank_bucket(), "weekly": _blank_bucket()}
     snap = rate_limits.get("rateLimits") or {}
-    out["plan_type"] = snap.get("planType")
 
     candidates: list[tuple[int | None, dict]] = []
     primary, secondary = snap.get("primary"), snap.get("secondary")
@@ -178,10 +205,10 @@ def parse_windows(rate_limits: dict) -> dict:
                     candidates.append((w.get("windowDurationMins"), w))
 
     for dur, w in candidates:
-        label = DURATION_LABELS.get(dur) if dur is not None else None
-        if label is None or label not in out:
+        label = _duration_label(dur)
+        if not label:
             continue
-        if out[label]["available"]:
+        if out.get(label, {}).get("available"):
             continue   # first match wins
         used = w.get("usedPercent")
         rem = None
@@ -194,6 +221,7 @@ def parse_windows(rate_limits: dict) -> dict:
             "used_percent": used if isinstance(used, (int, float)) else None,
             "window_duration_mins": dur,
         }
+    out["plan_type"] = snap.get("planType")
     return out
 
 
@@ -255,13 +283,16 @@ def probe_codex_home(codex_home: str, deadline: float | None = None,
             raise JsonRpcError(f"rateLimits error: {rl['error']}")
         result = rl.get("result") or {}
         parsed = parse_windows(result)
-        return {
-            "ok": True,
-            "five_hour": parsed["five_hour"],
-            "weekly": parsed["weekly"],
-            "plan_type": parsed.get("plan_type"),
-            "fetched_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-        }
+        # Every detected window ships through verbatim — the provider decides
+        # how many to render, the probe must not pre-filter the set.
+        payload = {"ok": True}
+        for key, bucket in parsed.items():
+            if key == "plan_type":
+                continue
+            payload[key] = bucket
+        payload["plan_type"] = parsed.get("plan_type")
+        payload["fetched_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+        return payload
     except JsonRpcError as exc:
         return {"ok": False, "error": str(exc)[:160],
                 "five_hour": {"available": False}, "weekly": {"available": False}}

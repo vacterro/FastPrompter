@@ -222,6 +222,8 @@ class ThemeMixin:
                 icon = create_tray_icon(theme["tray_color"])
             self.tray_icon.setIcon(icon)
             self.setWindowIcon(icon)
+        if hasattr(self, "restyle_tray_menu"):
+            self.restyle_tray_menu()
 
         try:
             highlighter = getattr(self, "highlighter", None)
@@ -586,7 +588,7 @@ class ThemeMixin:
                 f"border-bottom-color: {b};")
 
     def _apply_kanban_theme(self, theme):
-        if not hasattr(self, "kanban_widget"):
+        if getattr(self, "kanban_widget", None) is None:
             return
         from fastprompter.theme.themes import blend_hex
         t = self._skin_tokens()
@@ -619,7 +621,7 @@ class ThemeMixin:
         )
 
     def _apply_table_theme(self, theme):
-        if not hasattr(self, "table_widget"):
+        if getattr(self, "table_widget", None) is None:
             return
         t = self._skin_tokens()
         self.table_widget.setStyleSheet(

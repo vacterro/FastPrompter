@@ -47,7 +47,6 @@ src/fastprompter/
 │       ├── adapter.py          # Abstract probe adapter interface
 │       ├── cdp.py              # Chrome DevTools Protocol driver
 │       ├── engine.py           # Watcher execution loop + state machine
-│       ├── limit_scan.py       # Cross-agent limit scanner
 │       ├── probes.py           # Multi-probe state combinators
 │       ├── queue.py            # Queue model (QueueItem, SendIntent, pinning)
 │       ├── sender.py           # Output dispatch (CDP / Win32 key injection)

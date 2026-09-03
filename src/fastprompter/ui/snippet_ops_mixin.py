@@ -497,13 +497,10 @@ class SnippetOpsMixin:
             fmt = self.data.get("last_save_format", "txt")
             if fmt == "md":
                 initial_filter = tr("Markdown Files (*.md)", getattr(self, "_current_lang", "EN"))
-                filter_index = 2
             elif fmt == "*":
                 initial_filter = tr("All Files (*.*)", getattr(self, "_current_lang", "EN"))
-                filter_index = 3
             else:
                 initial_filter = tr("Text Files (*.txt)", getattr(self, "_current_lang", "EN"))
-                filter_index = 1
             filters = (
                 tr("Text Files (*.txt)", getattr(self, "_current_lang", "EN"))
                 + ";;"

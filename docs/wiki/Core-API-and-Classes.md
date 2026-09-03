@@ -1,4 +1,4 @@
-﻿# FastPrompter Core API & Class Reference
+# FastPrompter Core API & Class Reference
 
 ## Core Classes (`src/fastprompter/core/`)
 
@@ -160,7 +160,6 @@ Ctrl+E header insertion. Configurable: rule line, gap, bullet, alignment, timest
 | `sender.py` | CDP + Win32 keystroke injection with read-back verification |
 | `skills.py` | Prompt skill wrappers вЂ” prefix/template transforms |
 | `adapter.py` | Abstract probe adapter interface |
-| `limit_scan.py` | Cross-agent limit scanner + auto-timer creation |
 
 ---
 

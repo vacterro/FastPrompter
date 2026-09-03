@@ -119,7 +119,6 @@ Custom mouse cursor sets. Retro computing feel.
 | `cdp.py` | Custom CDP commands for Electron apps |
 | `win32.py` | Win32 window probe customisation |
 | `skills.py` | Add custom prompt skill templates |
-| `limit_scan.py` | Custom cross-agent limit scanner |
 | `sender.py` | Custom text injection strategies |
 
 ## 6. Silo Sync to Disk (T-591)

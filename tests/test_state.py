@@ -631,7 +631,11 @@ class TestSettingsSurviveAReload:
         the same file. Anything that comes back as a str, or empty, is a
         setting the user would silently lose on restart.
         """
-        from fastprompter.core.state import _JSON_SETTINGS, _SETTINGS_SKIP
+        from fastprompter.core.state import (
+            _INT_LIST_KEYS,
+            _JSON_SETTINGS,
+            _SETTINGS_SKIP,
+        )
 
         state = FastPrompterState(profile_id=999)
         state.conn.close()
@@ -644,7 +648,10 @@ class TestSettingsSurviveAReload:
             if key in _SETTINGS_SKIP or not isinstance(value, (dict, list)):
                 continue
             _base = key[:-4] if key.endswith("_all") else key
-            if _base in ("silo_gaps", "pinned_silos", "silo_ticked", "silo_collapsed"):
+            # Derived from the module's own registry, never a second hand-kept
+            # list: a new int-list setting must not need this test edited to
+            # be covered (that is how a key gets missed).
+            if _base in _INT_LIST_KEYS:
                 if key.endswith("_all"):
                     # Per-category *_all store: top-level must be a dict, and
                     # each category value is a list of ints (CORE-003 keeps it).

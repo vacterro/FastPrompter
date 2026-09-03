@@ -90,7 +90,8 @@ _DEFAULT_SOUND_MAP: dict[str, str] = {
     # Timer / profile / watcher.
     "timer_start": "tick_on.wav",
     "profile": "panel_open.wav",
-    "watcher": "notify.wav",
+    # Scroll wheel feedback in long panels — subtle by design.
+    "scroll": "click_hint.wav",
 }
 
 # Events that ship switched OFF. `hotkey` used to be here on my judgement
@@ -168,7 +169,6 @@ EVENT_LABELS: dict[str, str] = {
     "reset": "Reset to defaults",
     "timer_start": "Timer started",
     "profile": "Profile switch",
-    "watcher": "Watcher start/stop",
     "type": "Typewriter",
     "backspace": "Typewriter: backspace",
     "click": "Click",
@@ -181,6 +181,7 @@ EVENT_LABELS: dict[str, str] = {
     "error": "Error",
     "success": "Success",
     "timer": "Timer alarm",
+    "scroll": "Scroll tick",
 }
 
 
@@ -443,7 +444,6 @@ def scaled_wav_path(path: str, level: float | int) -> str | None:
     PERF-005: the temp directory is a managed cache (byte/file budget, oldest
     evicted, startup pruning) so long sessions cannot grow it without bound.
     """
-    import tempfile
 
     try:
         lv = float(level)

@@ -13,6 +13,21 @@ from PyQt6.QtCore import QPoint, QRect, QSize, Qt
 from PyQt6.QtWidgets import QLayout, QSizePolicy, QWidget
 
 
+class _AtomicLayoutWidget(QWidget):
+    """Wrapper for a row layout that must remain internally reachable.
+
+    A bare QWidget with a child QHBoxLayout can advertise a zero-ish minimum
+    through QWidgetItem even though its label/editor/button row needs much
+    more.  The outer flow then squeezes the settings group below that row and
+    clips its right-hand controls.  A row is atomic to FlowLayout (its own
+    children cannot reflow), so its minimum must be its layout's full hint.
+    """
+
+    def minimumSizeHint(self):
+        layout = self.layout()
+        return layout.sizeHint() if layout is not None else super().minimumSizeHint()
+
+
 class FlowLayout(QLayout):
     def __init__(self, parent=None, margin=0, h_spacing=8, v_spacing=2,
                  stretch_items=False):
@@ -165,8 +180,10 @@ class FlowWidget(QWidget):
                                  stretch_items=stretch_items)
         for item in items:
             if isinstance(item, QLayout):
-                sub = QWidget()
+                sub = _AtomicLayoutWidget()
                 sub.setLayout(item)
+                sub.setSizePolicy(QSizePolicy.Policy.Minimum,
+                                  QSizePolicy.Policy.Fixed)
                 self._flow.addWidget(sub)
             else:
                 self._flow.addWidget(item)

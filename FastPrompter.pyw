@@ -5,7 +5,7 @@
 # nuitka-project: --windows-console-mode=disable
 # nuitka-project: --windows-icon-from-ico=_res/fastprompter.ico
 # nuitka-project: --product-name=FastPrompter
-# nuitka-project: --product-version=0.8.66
+# nuitka-project: --product-version=0.8.67
 # nuitka-project: --file-description=FastPrompter portable snippet manager
 # nuitka-project: --python-flag=no_docstrings
 # nuitka-project: --python-flag=no_asserts
@@ -55,6 +55,11 @@ def _ensure_venv_python():
 
 if __name__ == "__main__":
     try:
+        # Claude Code invokes this lightweight mode from its status-line hook.
+        # It must run before PyQt/instance locking and must never open a window.
+        if "--claude-statusline-bridge" in sys.argv:
+            from fastprompter.core.usage_limits.claude_statusline import bridge_main
+            sys.exit(bridge_main())
         _ensure_venv_python()
         # Import inside the guard so a broken bundle/env also produces
         # a visible error dialog + crash.log instead of dying silently.

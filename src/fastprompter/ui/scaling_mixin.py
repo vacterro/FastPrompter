@@ -52,6 +52,7 @@ _BTN_BASE_HEIGHTS = {
     "btn_hotkeys": 20,
     "btn_backup": 20,
     "btn_restore": 20,
+    "btn_exit": 20,
     "btn_sidebar_toggle": 24,
     "btn_bold": 24,
     "btn_italic": 24,

@@ -7,8 +7,7 @@ from PyQt6.QtCore import QObject, QThread, pyqtSignal
 from PyQt6.QtWidgets import QApplication
 
 from fastprompter import main as m
-from fastprompter.ui import file_container, watcher_mixin
-from fastprompter.ui.watcher_mixin import WatcherMixin
+from fastprompter.ui import file_container
 
 _app = QApplication.instance() or QApplication([])
 
@@ -203,38 +202,6 @@ def test_container_shutdown_drains_two_queued_commands(monkeypatch):
     assert open(dest_b, encoding="utf-8").read() == "B"
 
 
-class _Watcher(WatcherMixin):
-    def __init__(self):
-        self._watcher_worker_thread = None
-        self._watcher_worker = None
-
-
-def test_watcher_worker_shutdown_stops_thread():
-    watcher = _Watcher()
-    thread, worker = _thread_with_worker()
-    watcher._watcher_worker_thread = thread
-    watcher._watcher_worker = worker
-
-    assert watcher._watcher_shutdown() is True
-    assert thread.isRunning() is False
-
-
-def test_watcher_worker_shutdown_timeout_keeps_owner(monkeypatch):
-    watcher = _Watcher()
-    release = threading.Event()
-    thread, worker = _start_blocked(release)
-    watcher._watcher_worker_thread = thread
-    watcher._watcher_worker = worker
-    monkeypatch.setattr(watcher_mixin, "_WATCHER_SHUTDOWN_TIMEOUT_S", 0.05)
-
-    assert watcher._watcher_shutdown() is False
-    assert thread.isRunning() is True
-    assert watcher._watcher_worker_thread is thread
-    assert watcher._watcher_worker is worker
-
-    release.set()
-    assert m.wait_thread_seconds(thread, 2.0, "test cleanup") is True
-    assert watcher._watcher_shutdown() is True
 
 
 @pytest.mark.parametrize("seconds", [-1, -0.5, 0])
