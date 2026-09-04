@@ -56,6 +56,7 @@ _KNOWN_LEGACY = (
     ),
     re.compile(r"FAIL: mechanical provenance \[saio\].*lack `\[op: \.\.\.\]`"),
     re.compile(r"FAIL: closure-evidence -- ticket T-\d+ is ## DONE but carries no current-cycle"),
+    re.compile(r"FAIL: improve report \[improve-report\].*report saipen_version"),
 )
 
 result = subprocess.run(

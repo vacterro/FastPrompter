@@ -5,6 +5,18 @@ only — never provider payloads. Renders one 2–3 px bar-pair (5h | weekly) pe
 account, filled bottom-up by REMAINING percentage. Unavailable renders a dim
 outline, stale renders dashed/amber, live renders gold/olive/red by threshold.
 
+Three styles, cycled with Ctrl+Click (``limit_gauges_style``):
+
+* ``bars``  — one thin vertical bar per window, side by side;
+* ``dots``  — the same windows as pie-filled dots;
+* ``stack`` — one HORIZONTAL bar per window, stacked bottom-up in a single
+  column (max ``MAX_BARS`` tall), so an account costs one bar of width whatever
+  its window count: 2 + 2 + 1 windows pack as three narrow columns. A lone
+  window keeps the shared bottom row instead of being centred.
+
+A live fill also picks up a muted share of its vendor's colour — the same hue
+the reset countdown uses — unless ``limit_gauges_vendor_tint`` is off.
+
 The widget is deliberately hard to miss when enabled: it always paints a
 beveled box and the quota clusters. Healthy account counts are not repeated;
 only ``!`` (unavailable/error) or ``~`` (stale) consumes status space.
@@ -19,7 +31,7 @@ from __future__ import annotations
 import html
 
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QPainter, QPen
+from PyQt6.QtGui import QColor, QPainter, QPen
 from PyQt6.QtWidgets import QSizePolicy, QWidget
 
 from fastprompter.core.usage_limits.model import (
@@ -40,7 +52,7 @@ from fastprompter.ui.limit_account_selector import (
     ordered_accounts,
     short_account_label,
 )
-from fastprompter.ui.limit_colors import limit_palette
+from fastprompter.ui.limit_colors import limit_palette, reset_color
 
 _KNOWN_WINDOW_MIN = {FIVE_HOUR: 300, WEEKLY: 10080, MONTHLY: 43200}
 
@@ -51,6 +63,9 @@ _MIN_BARS = 2
 # two. Four keeps the widest real cluster complete instead of silently
 # dropping a limit the user is actually spending.
 _MAX_BARS = 4
+
+# The three header styles, in Ctrl+Click cycle order.
+_STYLES = ("bars", "dots", "stack")
 
 
 class LimitGauges(QWidget):
@@ -63,8 +78,14 @@ class LimitGauges(QWidget):
 
     BAR_W = 3
     DOT_D = 8
+    # "stack" style: every window of one account is a HORIZONTAL bar, stacked
+    # bottom-up in one column, so a four-window account costs the same width as
+    # a one-window account. A single bar is not centred — it sits on the bottom
+    # row, so the baseline is shared across accounts (the "L" foot).
+    STACK_BAR_W = 14
+    STACK_GAP = 1
     GAP_PAIR = 1
-    GAP_ACC = 2
+    GAP_ACC = 4
     PAD = 2
     MAX_WIDGET_W = 220
     STATUS_W = 8
@@ -75,6 +96,9 @@ class LimitGauges(QWidget):
     # accounts visually consistent with their neighbours.
     MIN_BARS = _MIN_BARS
     MAX_BARS = _MAX_BARS
+    # How much of the vendor's own colour a live fill picks up (0..1). Low on
+    # purpose: an accent, not a repaint — see _vendor_tinted.
+    VENDOR_TINT = 0.34
 
     def __init__(self, main_win, service: UsageLimitService):
         parent = main_win if isinstance(main_win, QWidget) else None
@@ -150,14 +174,16 @@ class LimitGauges(QWidget):
         if event.button() == Qt.MouseButton.LeftButton:
             event.accept()
             if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
-                curr = self._style()
-                new_style = "dots" if curr == "bars" else "bars"
+                styles = _STYLES
+                new_style = styles[(styles.index(self._style()) + 1)
+                                   % len(styles)]
                 self.main_win.data["limit_gauges_style"] = new_style
                 if hasattr(self.main_win, "mark_dirty"):
                     self.main_win.mark_dirty("settings")
                 if hasattr(self.main_win, "play_sound"):
                     try:
-                        self.main_win.play_sound("tick" if new_style == "dots" else "untick")
+                        self.main_win.play_sound(
+                            "untick" if new_style == "bars" else "tick")
                     except Exception:
                         pass
                 self.refresh_view()
@@ -171,6 +197,84 @@ class LimitGauges(QWidget):
         if event.button() == Qt.MouseButton.LeftButton:
             event.accept()
             self._service.refresh()
+
+    def contextMenuEvent(self, event):
+        from PyQt6.QtWidgets import QMenu
+        menu = QMenu(self)
+
+        snap = self._service.state_copy
+        banked_accounts = []
+        for a in self._visible_accounts():
+            s = snap.snapshots.get(a.key)
+            if s and getattr(s, "banked_resets", 0):
+                banked_accounts.append((a, s))
+
+        for a, s in banked_accounts:
+            cnt = s.banked_resets
+            res_word = "reset" if cnt == 1 else "resets"
+            act = menu.addAction(f"★ Activate {a.display_name} Reset ({cnt} {res_word})...")
+            act.triggered.connect(lambda checked=False, acc=a, shot=s: self._prompt_activate_reset(acc, shot))
+
+        if banked_accounts:
+            menu.addSeparator()
+
+        act_refresh = menu.addAction("Refresh Limits Now")
+        act_refresh.triggered.connect(self._service.refresh)
+
+        menu.addSeparator()
+
+        if hasattr(self.main_win, "open_limit_settings_dialog"):
+            act_settings = menu.addAction("AI Limit Settings...")
+            act_settings.triggered.connect(self.main_win.open_limit_settings_dialog)
+
+        menu.exec(event.globalPos())
+
+    def _prompt_activate_reset(self, account, shot):
+        from PyQt6.QtGui import QCursor
+        from PyQt6.QtWidgets import QMessageBox
+        banked = getattr(shot, "banked_resets", 0) or 0
+        res_word = "reset" if banked == 1 else "resets"
+        ans = QMessageBox.question(
+            self,
+            "Activate Rate Limit Reset",
+            f"Activate rate limit reset for {account.display_name}?\n\n"
+            f"Available: {banked} banked {res_word}.\n\n"
+            "This will consume 1 reset credit to immediately refill your quota.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if ans != QMessageBox.StandardButton.Yes:
+            return
+
+        self.setCursor(QCursor(Qt.CursorShape.WaitCursor))
+        try:
+            if hasattr(self._service, "consume_account_reset"):
+                res = self._service.consume_account_reset(account.key)
+            else:
+                res = {"ok": False, "error": "Service does not support reset consumption"}
+            if res.get("ok"):
+                QMessageBox.information(
+                    self,
+                    "Reset Activated",
+                    f"Rate limit reset activated successfully for {account.display_name}!\n"
+                    f"Outcome: {res.get('outcome', 'success')}\n\n"
+                    "Quota has been refreshed.",
+                )
+            else:
+                err = res.get("error") or res.get("outcome") or "Unknown error"
+                QMessageBox.warning(
+                    self,
+                    "Reset Failed",
+                    f"Failed to activate reset for {account.display_name}:\n{err}",
+                )
+        except Exception as exc:
+            QMessageBox.warning(
+                self,
+                "Reset Error",
+                f"Exception while activating reset:\n{exc}",
+            )
+        finally:
+            self.unsetCursor()
 
     # -- data --------------------------------------------------------------
     def _on_data(self):
@@ -238,7 +342,17 @@ class LimitGauges(QWidget):
 
     def _style(self) -> str:
         value = str(self.main_win.data.get("limit_gauges_style", "bars"))
-        return value if value in ("bars", "dots") else "bars"
+        return value if value in _STYLES else "bars"
+
+    def _vendor_tint(self) -> bool:
+        """Tint a live fill towards its vendor's own colour.
+
+        The reset countdown already identifies the vendor by colour; the bars
+        pick up the same hue, but only a MUTED share of it, so the quota signal
+        (gold healthy / olive low / red critical) still reads first.
+        """
+        return str(self.main_win.data.get(
+            "limit_gauges_vendor_tint", "True")) == "True"
 
     def _fill_mode(self) -> str:
         """``remaining`` = drains like fuel, ``used`` = grows like progress."""
@@ -253,7 +367,40 @@ class LimitGauges(QWidget):
         return fraction if self._fill_mode() == "remaining" else 1.0 - fraction
 
     def _unit_width(self) -> int:
-        return self.DOT_D if self._style() == "dots" else self.BAR_W
+        if self._style() == "dots":
+            return self.DOT_D
+        if self._style() == "stack":
+            return self.STACK_BAR_W
+        return self.BAR_W
+
+    def _marks_width(self, account=None) -> int:
+        """Pixels this account's marks occupy, inner gaps included.
+
+        ``bars``/``dots`` lay the windows out side by side, so the width grows
+        with the window count. ``stack`` lays them out on top of each other, so
+        one column is one bar wide no matter how many windows an account has —
+        the whole point of the style.
+        """
+        if self._style() == "stack":
+            return self.STACK_BAR_W
+        bars = self._bars_for(account)
+        return bars * (self._unit_width() + self.GAP_PAIR) - self.GAP_PAIR
+
+    def _stack_metrics(self, area_h: int):
+        """``(row_h, gap)`` for a stacked column inside ``area_h`` pixels.
+
+        Derived from MAX_BARS, never from the account's own window count, so
+        every account's rows land on the same grid and a one-window account
+        keeps its single bar on the shared bottom row instead of stretching it.
+        Guaranteed to fit: ``MAX_BARS * row_h + (MAX_BARS - 1) * gap <= area_h``.
+        """
+        rows = max(1, self.MAX_BARS)
+        gap = self.STACK_GAP
+        row_h = (area_h - (rows - 1) * gap) // rows
+        if row_h < 2:            # too short for gaps — spend every pixel on ink
+            gap = 0
+            row_h = area_h // rows
+        return max(1, row_h), gap
 
     def _account_label_width(self, account=None) -> int:
         if account is None:
@@ -270,10 +417,8 @@ class LimitGauges(QWidget):
         ``account=None`` still budgets the widest cluster, which is what the
         overflow arithmetic needs when it reasons about anonymous slots.
         """
-        bars = self._bars_for(account)
         return ((self._account_label_width(account) if with_label else 0)
-                + bars * (self._unit_width() + self.GAP_PAIR)
-                - self.GAP_PAIR + self.GAP_ACC)
+                + self._marks_width(account) + self.GAP_ACC)
 
     def _prefer_account_labels(self) -> bool:
         """Ultra-narrow headers spend pixels on gauges, not account initials."""
@@ -370,7 +515,7 @@ class LimitGauges(QWidget):
         bad_col = pal["bad"].name()
         stale_col = pal["stale"].name()
         dim_col = pal["dim"].name()
-        track_col = pal["track"].name() if "track" in pal else "#3a3426"
+        track_col = "#383122" if pal.get("track", None) is None or pal["track"].name() in ("#1a1810", "#000000", "#1a1a1a") else pal["track"].name()
 
         def _color_for(rem, status):
             if status == STALE:
@@ -385,14 +530,14 @@ class LimitGauges(QWidget):
 
         def _render_bar(rem, color_hex, blocks=10):
             if rem is None or not isinstance(rem, (int, float)):
-                return f"<span style='color:{dim_col}; font-family:Consolas, monospace;'>{'░' * blocks}</span>"
+                return f"<span style='color:{track_col}; font-family:Consolas, monospace; font-size:11px;'>{'█' * blocks}</span>"
             clamped = max(0.0, min(100.0, float(rem)))
             filled = int(round((clamped / 100.0) * blocks))
             empty = blocks - filled
             f_str = "█" * filled
-            e_str = "░" * empty
-            return (f"<span style='color:{color_hex}; font-family:Consolas, monospace; font-size:12px;'><b>{f_str}</b></span>"
-                    f"<span style='color:{track_col}; font-family:Consolas, monospace; font-size:12px;'>{e_str}</span>")
+            e_str = "█" * empty
+            return (f"<span style='color:{color_hex}; font-family:Consolas, monospace; font-size:11px;'>{f_str}</span>"
+                    f"<span style='color:{track_col}; font-family:Consolas, monospace; font-size:11px;'>{e_str}</span>")
 
         def _reset_snippet(b):
             if b.gated_by:
@@ -433,26 +578,31 @@ class LimitGauges(QWidget):
             parts.append("</body></html>")
             return "".join(parts)
 
+        parts.append(
+            "<table cellspacing='0' cellpadding='1' "
+            "style='margin-left:2px; border-collapse:collapse;'>"
+        )
+
         for a in accounts:
             s = snap.snapshots.get(a.key)
             header = html.escape(account_display_name(a, self.main_win.data))
             if not s:
-                parts.append(f"<div style='margin-top:4px;'><b>{header}</b>: <span style='color:#888888;'>not probed yet</span></div>")
+                parts.append(
+                    f"<tr><td colspan='4' style='padding-top:6px; padding-bottom:3px;'>"
+                    f"<b>{header}</b>: <span style='color:#888888;'>not probed yet</span></td></tr>"
+                )
                 continue
 
             plan = f" <span style='color:#8f856c; font-size:10px;'>({html.escape(s.plan_type)})</span>" if s.plan_type else ""
             stale = f" <span style='color:{stale_col}; font-size:10px;'>[stale]</span>" if s.status == STALE else ""
+            banked = ""
+            if getattr(s, "banked_resets", None):
+                res_word = "reset" if s.banked_resets == 1 else "resets"
+                banked = f" <span style='color:#4FB6A8; font-size:10px; font-weight:bold;'>[{s.banked_resets} banked {res_word}]</span>"
 
-            # The name is the table's first row, not a separate div: the
-            # cell padding is the whole gap between the name and the bars, and
-            # a div's margin (which Qt's rich-text engine partially ignores)
-            # once put the bold 12px name ~1px above the 12px bars, reading as
-            # "lying under" them.
             parts.append(
-                "<table cellspacing='0' cellpadding='1' "
-                f"style='margin-left:4px; margin-top:5px;'><tr>"
-                f"<td colspan='4' style='padding-bottom:6px;'>"
-                f"<b>{header}</b>{plan}{stale}</td></tr>")
+                f"<tr><td colspan='4' style='padding-top:7px; padding-bottom:3px; border-bottom:1px solid #4a3e28;'><b>{header}</b>{plan}{stale}{banked}</td></tr>"
+            )
 
             if s.status in (OK, STALE):
                 windows = _cluster_windows(s)
@@ -461,8 +611,13 @@ class LimitGauges(QWidget):
                     if b is None or not b.available:
                         continue
                     readable = True
-                    pool = f"{html.escape(b.group_label)} " if b.group_label else ""
+                    pool = html.escape(b.group_label) if b.group_label else ""
                     w_lbl = html.escape(_win_label(b))
+                    if pool:
+                        clean_pool = pool.replace(" and ", " & ").replace(" models", "").replace(" Models", "")
+                        lbl_text = f"{clean_pool} {w_lbl}:"
+                    else:
+                        lbl_text = f"{w_lbl}:"
                     rem = b.remaining_percent
                     col = _color_for(rem, s.status)
                     bar_html = _render_bar(rem, col)
@@ -471,19 +626,25 @@ class LimitGauges(QWidget):
 
                     parts.append(
                         f"<tr>"
-                        f"<td style='color:#d8ccaa; padding-right:6px; white-space:nowrap;'>{pool}{w_lbl}:</td>"
-                        f"<td style='padding-right:6px; white-space:nowrap;'>{bar_html}</td>"
-                        f"<td style='color:{col}; font-weight:bold; text-align:right; min-width:32px; padding-right:6px; white-space:nowrap;'>{pct_str}</td>"
+                        f"<td style='color:#d8ccaa; padding-left:4px; padding-right:12px; white-space:nowrap;'>{lbl_text}</td>"
+                        f"<td width='88' style='padding-right:8px; white-space:nowrap; vertical-align:middle;'>{bar_html}</td>"
+                        f"<td width='38' align='right' style='color:{col}; font-weight:bold; padding-right:10px; white-space:nowrap; font-family:Consolas, monospace;'>{pct_str}</td>"
                         f"<td style='white-space:nowrap;'>{reset_str}</td>"
                         f"</tr>"
                     )
-                parts.append("</table>")
-                if not readable:
-                    parts.append("<div style='color:#777777; font-style:italic; margin-left:6px;'>no readable quota window</div>")
+                if getattr(s, "banked_resets", None):
+                    res_word = "reset" if s.banked_resets == 1 else "resets"
+                    parts.append(
+                        f"<tr><td colspan='4' style='color:#4FB6A8; padding-left:4px; font-size:10px; padding-top:2px; padding-bottom:3px;'>"
+                        f"★ {s.banked_resets} usage limit {res_word} available — run <code>/usage</code> in CLI to redeem</td></tr>"
+                    )
+                if not readable and not getattr(s, "banked_resets", None):
+                    parts.append("<tr><td colspan='4' style='color:#777777; font-style:italic; padding-left:6px;'>no readable quota window</td></tr>")
             else:
-                parts.append("</table>")
                 err = html.escape(s.error_summary or 'unavailable')
-                parts.append(f"<div style='color:{bad_col}; margin-left:6px;'>{s.status.lower()} — {err}</div>")
+                parts.append(f"<tr><td colspan='4' style='color:{bad_col}; padding-left:6px;'>{s.status.lower()} — {err}</td></tr>")
+
+        parts.append("</table>")
 
         if hidden:
             h_names = html.escape(", ".join(account_display_name(a, self.main_win.data) for a in hidden))
@@ -494,7 +655,7 @@ class LimitGauges(QWidget):
         if count_fit < len(accounts):
             parts.append(f"<div style='font-size:10px; color:#8a8067; margin-top:2px;'>+{len(accounts) - count_fit} more selected accounts than fit in the header</div>")
 
-        parts.append("<div style='font-size:10px; color:#77705d; margin-top:5px; border-top:1px dotted #3e382b; padding-top:2px;'>Click: Settings • Ctrl+Click: Bars / Dots</div>")
+        parts.append("<div style='font-size:10px; color:#77705d; margin-top:5px; border-top:1px dotted #3e382b; padding-top:2px;'>Click: Settings • Ctrl+Click: Bars / Dots / Stacked</div>")
         parts.append("</body></html>")
         return "".join(parts)
 
@@ -539,21 +700,16 @@ class LimitGauges(QWidget):
                                    Qt.AlignmentFlag.AlignVCenter,
                                    account_label)
                         x += label_width
+                if self._style() == "stack":
+                    self._draw_stack(p, x, 2, bar_h, s, pal, a)
+                    x += self._marks_width(a) + self.GAP_ACC
+                    continue
                 for b in _cluster_windows(s):
-                    rem = None
-                    mode = "dim"
-                    if s is not None and b is not None:
-                        if s.status == STALE:
-                            mode = "stale"
-                            if b.available:
-                                rem = b.remaining_percent
-                        elif s.status == OK and b.available:
-                            mode = "live"
-                            rem = b.remaining_percent
+                    rem, mode = _mark_state(s, b)
                     if self._style() == "dots":
-                        self._draw_dot(p, x, 2, bar_h, rem, pal, mode)
+                        self._draw_dot(p, x, 2, bar_h, rem, pal, mode, a)
                     else:
-                        self._draw_bar(p, x, 2, bar_h, rem, pal, mode)
+                        self._draw_bar(p, x, 2, bar_h, rem, pal, mode, a)
                     x += self._unit_width() + self.GAP_PAIR
                 x += self.GAP_ACC - self.GAP_PAIR
             if overflow:
@@ -564,7 +720,7 @@ class LimitGauges(QWidget):
         finally:
             p.end()
 
-    def _draw_bar(self, p, x, y, h, rem, pal, mode):
+    def _draw_bar(self, p, x, y, h, rem, pal, mode, account=None):
         edge = pal["edge"] if mode == "live" else pal["dim"]
         p.setPen(QPen(edge, 1))
         p.drawRect(x, y, self.BAR_W - 1, h - 1)
@@ -574,14 +730,57 @@ class LimitGauges(QWidget):
             fill_h = int(round((h - 2) * self._fill_fraction(rem)))
             if fill_h > 0:
                 color = (pal["stale"] if mode == "stale"
-                         else self._bar_color(rem, pal))
+                         else self._bar_color(rem, pal, account))
                 p.fillRect(x + 1, y + h - 1 - fill_h,
                            self.BAR_W - 2, fill_h, color)
         if mode == "stale":
             p.setPen(QPen(pal["stale"], 1))
             p.drawLine(x, y + h - 3, x + self.BAR_W - 1, y + 1)
 
-    def _draw_dot(self, p, x, y, h, rem, pal, mode):
+    def _draw_stack(self, p, x, y, h, snap, pal, account=None):
+        """One account as a column of horizontal bars, filled left to right.
+
+        Bottom-anchored on the shared MAX_BARS grid: with a single window the
+        bar sits on the bottom row rather than floating in the middle, so a
+        1-bar account and a 4-bar account share a baseline and the row reads as
+        the foot of an L. Row 0 (the provider's first window, normally 5h) is
+        the bottom one and later windows stack upwards.
+        """
+        row_h, gap = self._stack_metrics(h)
+        w = self.STACK_BAR_W
+        rows = _cluster_windows(snap)[:self.MAX_BARS]
+        if any(b is not None for b in rows):
+            # The MIN_BARS padding exists to keep side-by-side clusters the same
+            # WIDTH; a stacked column is one bar wide either way, so a
+            # single-window account draws exactly one bar on the bottom row.
+            rows = [b for b in rows if b is not None]
+        for i, b in enumerate(rows):
+            rem, mode = _mark_state(snap, b)
+            row_y = y + h - (i + 1) * row_h - i * gap
+            if row_y < y:
+                break
+            self._draw_hbar(p, x, row_y, w, row_h, rem, pal, mode, account)
+
+    def _draw_hbar(self, p, x, y, w, h, rem, pal, mode, account=None):
+        edge = pal["edge"] if mode == "live" else pal["dim"]
+        p.setPen(QPen(edge, 1))
+        p.drawRect(x, y, w - 1, h - 1)
+        if mode not in ("live", "stale") or not isinstance(rem, (int, float)):
+            return
+        color = (pal["stale"] if mode == "stale"
+                 else self._bar_color(rem, pal, account))
+        fraction = self._fill_fraction(rem)
+        if h >= 3:
+            fill_w = int(round((w - 2) * fraction))
+            if fill_w > 0:
+                p.fillRect(x + 1, y + 1, fill_w, h - 2, color)
+        else:
+            # Too thin for an inset: ink the row itself, outline and all.
+            fill_w = int(round(w * fraction))
+            if fill_w > 0:
+                p.fillRect(x, y, fill_w, h, color)
+
+    def _draw_dot(self, p, x, y, h, rem, pal, mode, account=None):
         d = min(self.DOT_D, max(4, h))
         cy = y + max(0, (h - d) // 2)
         edge = pal["edge"] if mode == "live" else pal["dim"]
@@ -591,21 +790,60 @@ class LimitGauges(QWidget):
         if isinstance(rem, (int, float)) and mode in ("live", "stale"):
             fill = self._fill_fraction(rem)
             color = pal["stale"] if mode == "stale" \
-                else self._bar_color(rem, pal)
+                else self._bar_color(rem, pal, account)
             p.setPen(Qt.PenStyle.NoPen)
             p.setBrush(color)
             p.drawPie(x + 1, cy + 1, d - 3, d - 3,
                       90 * 16, int(round(fill * 360 * 16)))
             p.setBrush(Qt.BrushStyle.NoBrush)
 
-    def _bar_color(self, rem, pal):
+    def _bar_color(self, rem, pal, account=None):
         if not isinstance(rem, (int, float)):
             return pal["dim"]
         if rem < 20:
-            return pal["bad"]
-        if rem < 50:
-            return pal["warn"]
-        return pal["good"]
+            base = pal["bad"]
+        elif rem < 50:
+            base = pal["warn"]
+        else:
+            base = pal["good"]
+        return self._vendor_tinted(base, account)
+
+    def _vendor_tinted(self, color, account):
+        """``color`` nudged towards the account's vendor hue, or unchanged.
+
+        A MUTED share only (``VENDOR_TINT``): the quota level must still be the
+        first thing the bar says, so Claude's terracotta and Codex's blue are an
+        accent on top of gold/olive/red, never a replacement for them.
+        """
+        provider = getattr(account, "provider_id", "") or ""
+        if not provider or not self._vendor_tint():
+            return color
+        vendor_hex = reset_color(self.main_win, provider)
+        if not vendor_hex:
+            return color
+        vendor = QColor(vendor_hex)
+        if not vendor.isValid():
+            return color
+        share = self.VENDOR_TINT
+        return QColor(
+            int(round(color.red() * (1 - share) + vendor.red() * share)),
+            int(round(color.green() * (1 - share) + vendor.green() * share)),
+            int(round(color.blue() * (1 - share) + vendor.blue() * share)))
+
+
+def _mark_state(snap, window):
+    """``(remaining_percent, mode)`` for ONE mark.
+
+    One definition for every style: the vertical bars, the dots and the stacked
+    rows all have to agree on when a window is live, stale or a dim placeholder.
+    """
+    if snap is None or window is None:
+        return None, "dim"
+    if snap.status == STALE:
+        return (window.remaining_percent if window.available else None), "stale"
+    if snap.status == OK and window.available:
+        return window.remaining_percent, "live"
+    return None, "dim"
 
 
 def _cluster_windows(snap) -> list:

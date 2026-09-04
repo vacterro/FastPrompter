@@ -177,7 +177,6 @@ class HotkeySettingsDialog(QDialog):
 
         tab_drop = QWidget()
         form_drop = QFormLayout(tab_drop)
-        from PyQt6.QtWidgets import QComboBox
         self.drop_combos = {}
         drop_options = [
             ("text", tr("📝 Drop as Text", self.lang)),

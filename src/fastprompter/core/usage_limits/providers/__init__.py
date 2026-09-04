@@ -9,6 +9,7 @@ for the honest-unsupported fallback.
 from __future__ import annotations
 
 import abc
+
 from fastprompter.core.usage_limits.model import AccountRef, UsageSnapshot
 
 

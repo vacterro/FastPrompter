@@ -143,3 +143,64 @@ def test_the_panel_hugs_its_content_without_cutting(win):
         _app.processEvents()
         assert win.mini_settings_frame.height() < 500, (
             f"tab {i}: panel {win.mini_settings_frame.height()}px — not hugging")
+
+
+def test_headers_are_compact_fixed_height(win):
+    """Headers must be strictly compact (<=18px), never ballooning into empty blocks."""
+    from PyQt6.QtGui import QPixmap
+    for i in range(win.settings_tabs.count()):
+        win.settings_tabs.setCurrentIndex(i)
+        _app.processEvents()
+        win._fit_settings_tabs(i)
+        _app.processEvents()
+        for box in _groups(win, i):
+            labels = box.findChildren(QLabel)
+            if labels:
+                header = labels[0]
+                assert header.height() <= 18, (
+                    f"group {_title(box)} header too tall: {header.height()}px")
+
+
+def test_top_settings_bar_fits_single_row(win):
+    """At wide window width (1150px), top appearance bar fits on a single row (<= 28px)."""
+    win.resize(1150, 540)
+    _app.processEvents()
+    flay = win.mini_settings_frame.layout()
+    app_w = flay.itemAt(0).widget()
+    h = app_w.totalHeightForWidth(app_w.width())
+    assert h <= 28, f"Top appearance bar wrapped unexpectedly at 1150px: height={h}px"
+
+
+def test_top_settings_bar_wraps_balanced_on_compact_window(win):
+    """At compact window width (857px), top appearance bar wraps into two spacious rows (<= 52px)."""
+    win.resize(857, 540)
+    _app.processEvents()
+    flay = win.mini_settings_frame.layout()
+    app_w = flay.itemAt(0).widget()
+    h = app_w.totalHeightForWidth(app_w.width())
+    assert h <= 52, f"Top appearance bar exceeded 2 rows at 857px: height={h}px"
+
+
+def test_tab_switch_preserves_compact_appearance_bar(win):
+    """Switching between settings tabs must never stretch the appearance bar or leave dead vertical gaps."""
+    win.resize(960, 540)
+    win.mini_settings_frame.setVisible(True)
+    _app.processEvents()
+    flay = win.mini_settings_frame.layout()
+    app_w = flay.itemAt(0).widget()
+    expected_h = app_w.totalHeightForWidth(app_w.width())
+
+    for idx in range(win.settings_tabs.count()):
+        win.settings_tabs.setCurrentIndex(idx)
+        _app.processEvents()
+        win._fit_settings_tabs(idx)
+        _app.processEvents()
+
+        # Appearance bar must match exact needed height (no dead gap expansion)
+        assert app_w.height() == expected_h, (
+            f"Tab {idx} expanded appearance bar to {app_w.height()}px (expected {expected_h}px)"
+        )
+        # Frame maximum height must equal minimum height (no runaway stretching)
+        assert win.mini_settings_frame.maximumHeight() == win.mini_settings_frame.minimumHeight(), (
+            f"Tab {idx} failed to constrain frame maximum height"
+        )

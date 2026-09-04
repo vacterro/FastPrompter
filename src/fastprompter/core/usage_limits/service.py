@@ -29,6 +29,7 @@ from fastprompter.core.usage_limits.providers import UsageProvider
 from fastprompter.core.usage_limits.providers.antigravity import AntigravityProvider
 from fastprompter.core.usage_limits.providers.claude import ClaudeProvider
 from fastprompter.core.usage_limits.providers.codex import CodexProvider
+from fastprompter.core.usage_limits.providers.zcode import ZCodeProvider
 
 POOL_SIZE = 3
 DEFAULT_REFRESH_SEC = 180
@@ -45,7 +46,7 @@ REDISCOVER_EVERY_S = 300
 
 # Human label per provider, used to build display names ("Codex 1", "Claude").
 _PROVIDER_LABEL = {"codex": "Codex", "claude": "Claude",
-                   "antigravity": "Antigravity"}
+                   "antigravity": "Antigravity", "zcode": "ZCode"}
 
 # Discovery order: the account the user actually runs by default first, then
 # env/configured overrides, then auto-detected siblings. Ordinals are
@@ -115,6 +116,8 @@ class UsageLimitService:
         self._data: dict = data if data is not None else {}
         self._refresh_callbacks: list[callable] = []
         self._closed = False
+        self._sweep_threads_count = 0
+        self._sweep_pending = False
         self._providers: dict[str, UsageProvider] = self._build_providers()
         self._executor = ThreadPoolExecutor(max_workers=POOL_SIZE)
         self._discover()
@@ -128,6 +131,13 @@ class UsageLimitService:
             "claude": ClaudeProvider(),
             "antigravity": AntigravityProvider(
                 data_dir=str(self._data.get("limit_antigravity_dir", "") or "")
+            ),
+            # ZCode is the only provider that reads its quota over the network,
+            # so it is constructed opted-OUT and discovers nothing until the
+            # user enables it (see providers/zcode.py).
+            "zcode": ZCodeProvider(
+                enabled=str(self._data.get("limit_zcode_enabled", "False")) == "True",
+                config_path=str(self._data.get("limit_zcode_config", "") or ""),
             ),
         }
 
@@ -151,6 +161,10 @@ class UsageLimitService:
         if data is not None:
             self._data = data
         with self._lock:
+            # W2-003: increment generation and invalidate in-flight sweeps
+            # immediately under lock before slow discovery runs.
+            self._state.generation += 1
+            self._state.request_id += 1
             self._providers = self._build_providers()
             self._state.snapshots = {}
         self._discover()
@@ -240,10 +254,10 @@ class UsageLimitService:
     def refresh(self) -> None:
         """Trigger an async probe sweep fanning out across the thread pool.
 
-        CORE-001 / PERF-001: each refresh gets an independently monotonic
-        ``request_id``. Probes fan out to at most ``POOL_SIZE=3`` workers
-        without nested pool exhaustion. Results commit only when BOTH the
-        configuration generation and the request identity are current.
+        CORE-001 / PERF-001 / PERF-003: each refresh gets an independently monotonic
+        ``request_id``. At most 2 coordinator threads may run concurrently (one
+        in-flight superseded and one newest); rapid repeated triggers coalesce
+        into a single pending follow-up sweep rather than spawning thread storms.
         """
         accounts = self.accounts
         if not accounts:
@@ -251,16 +265,49 @@ class UsageLimitService:
         with self._lock:
             if self._closed:
                 return
-            gen = self._state.generation
             req_id = self._state.request_id + 1
             self._state.request_id = req_id
+            gen = self._state.generation
             self._state.status = "PROBING"
-        # Run sweep orchestration in a dedicated daemon thread so it does not
-        # consume one of the POOL_SIZE worker slots needed for probes.
+            if self._sweep_threads_count >= 2:
+                self._sweep_pending = True
+                return
+            self._sweep_threads_count += 1
         t = threading.Thread(
-            target=self._sweep, args=(accounts, gen, req_id),
+            target=self._sweep_coordinator, args=(accounts, gen, req_id),
             daemon=True, name="fastprompter-limit-sweep")
         t.start()
+
+    def _sweep_coordinator(self, accounts: list[AccountRef], gen: int, req_id: int) -> None:
+        try:
+            self._sweep(accounts, gen, req_id)
+        finally:
+            follow_up = False
+            next_accounts = None
+            next_gen = 0
+            next_req_id = 0
+            with self._lock:
+                self._sweep_threads_count = max(0, self._sweep_threads_count - 1)
+                if self._sweep_pending and not self._closed:
+                    self._sweep_pending = False
+                    self._sweep_threads_count += 1
+                    follow_up = True
+                    next_gen = self._state.generation
+                    next_req_id = self._state.request_id
+                    self._state.status = "PROBING"
+            if follow_up:
+                next_accounts = self.accounts
+                if next_accounts:
+                    t = threading.Thread(
+                        target=self._sweep_coordinator,
+                        args=(next_accounts, next_gen, next_req_id),
+                        daemon=True, name="fastprompter-limit-sweep")
+                    t.start()
+                else:
+                    with self._lock:
+                        self._sweep_threads_count = max(0, self._sweep_threads_count - 1)
+                        if self._state.status == "PROBING":
+                            self._state.status = "IDLE"
 
     def _probe_account(self, account: AccountRef, deadline: float,
                        gen: int, req_id: int) -> UsageSnapshot | None:
@@ -293,11 +340,21 @@ class UsageLimitService:
                     self._state.status = "IDLE"
             return
 
-        # PERF-001: fan-out across the worker pool up to POOL_SIZE concurrency
-        futures = [
-            self._executor.submit(self._probe_account, a, deadline, gen, req_id)
-            for a in active
-        ]
+        # PERF-001: fan-out across the worker pool up to POOL_SIZE concurrency.
+        # A shutdown can land between the coordinator's closed-check and this
+        # submit — the pool is retired without the lock, by contract — and the
+        # executor then raises into a daemon thread nobody is watching. There is
+        # no result to salvage at that point, so the sweep simply stops: an
+        # aborted probe on a closing app is the intended outcome, not an error.
+        futures = []
+        try:
+            for account in active:
+                futures.append(self._executor.submit(
+                    self._probe_account, account, deadline, gen, req_id))
+        except RuntimeError:
+            for future in futures:
+                future.cancel()
+            return
         results: list[UsageSnapshot] = []
         errors = 0
         for f in futures:
@@ -329,6 +386,8 @@ class UsageLimitService:
                         plan_type=prev.plan_type,
                         fetched_at=prev.fetched_at,
                         stale_since=now,
+                        banked_resets=prev.banked_resets,
+                        provider_metadata=dict(prev.provider_metadata),
                     )
                 else:
                     self._state.snapshots[key] = s
@@ -371,3 +430,29 @@ class UsageLimitService:
                 cb()
             except Exception:
                 pass
+
+    def consume_account_reset(self, account_key: str, credit_id: str | None = None) -> dict:
+        """Attempt to consume a banked rate limit reset for an account.
+
+        Finds the matching account, dispatches to provider.consume_reset,
+        and triggers a refresh on success.
+        """
+        with self._lock:
+            account = next((a for a in self._state.accounts if a.key == account_key), None)
+            if account is None:
+                account = next((a for a in self._state.accounts
+                               if a.stable_id == account_key or a.provider_id == account_key), None)
+        if account is None:
+            return {"ok": False, "error": f"Account not found: {account_key}"}
+
+        provider = self._providers.get(account.provider_id)
+        if provider is None:
+            return {"ok": False, "error": f"No provider registered for {account.provider_id}"}
+        if not hasattr(provider, "consume_reset"):
+            return {"ok": False, "error": f"Provider {account.provider_id} does not support reset consumption"}
+
+        res = provider.consume_reset(account, credit_id=credit_id)
+        if res.get("ok"):
+            self.refresh()
+        return res
+

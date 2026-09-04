@@ -26,29 +26,38 @@ import ctypes
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
 
+_REQUIRED_STARTUP_MODULES = ("PyQt6", "markdown")
+
+
 def _ensure_venv_python():
-    """Re-exec under the project venv interpreter when PyQt6 is missing.
+    """Re-exec under the project venv interpreter when startup dependencies are missing.
 
     Windows opens .pyw files with whatever interpreter is associated with
     them (usually the system Python, which has no project dependencies).
     The real environment lives in the uv-managed .venv next to this file,
     so relaunch there instead of dying with ModuleNotFoundError.
     """
+    venv_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".venv"))
     # Already running under the venv -> let the real error surface.
-    venv_scripts = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".venv", "Scripts")
-    if sys.executable.lower().startswith(venv_scripts.lower()):
+    if os.path.normcase(sys.executable).startswith(os.path.normcase(venv_dir) + os.sep):
         return
-    try:
-        import PyQt6  # noqa: F401 -- availability probe
+
+    missing = []
+    for mod in _REQUIRED_STARTUP_MODULES:
+        try:
+            __import__(mod)
+        except ImportError:
+            missing.append(mod)
+
+    if not missing:
         return
-    except ImportError:
-        pass
+
     exe = "pythonw.exe" if sys.stdout is None else "python.exe"
-    venv_py = os.path.join(venv_scripts, exe)
+    venv_py = os.path.join(venv_dir, "Scripts", exe)
     if os.path.exists(venv_py):
         os.execv(venv_py, [venv_py] + sys.argv)
     raise RuntimeError(
-        "PyQt6 is not installed for the current interpreter "
+        f"Required startup module(s) {', '.join(missing)} not installed for current interpreter "
         f"({sys.executable}).\nExpected venv interpreter not found at:\n{venv_py}"
     )
 

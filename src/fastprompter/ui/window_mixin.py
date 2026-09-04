@@ -243,11 +243,19 @@ class WindowMixin:
 
     def toggle_lock(self) -> None:
         """Toggle lock state via the lock checkbox."""
-        self.cb_lock_window.setChecked(not self.cb_lock_window.isChecked())
+        cb = getattr(self, "cb_lock_window", None)
+        if cb is not None and not _is_deleted(cb):
+            cb.setChecked(not cb.isChecked())
+        else:
+            self.set_lock_state(self.data.get("window_locked", "False") != "True")
 
     def toggle_always_on_top(self) -> None:
         """Toggle always-on-top via the AOT checkbox."""
-        self.cb_top.setChecked(not self.cb_top.isChecked())
+        cb = getattr(self, "cb_top", None)
+        if cb is not None and not _is_deleted(cb):
+            cb.setChecked(not cb.isChecked())
+        else:
+            self.toggle_aot(self.data.get("always_on_top", "True") != "True")
 
     # --- Sidebar / layout management ---
 
@@ -585,11 +593,6 @@ class WindowMixin:
             self.play_sound("settings")
         except Exception:
             logger.debug("settings toggle sound failed", exc_info=True)
-        # Easter egg: rotate settings gear icons by 45 degrees on every invocation
-        for btn_name in ("btn_settings_toggle", "btn_settings_toggle_right"):
-            btn = getattr(self, btn_name, None)
-            if btn is not None and hasattr(btn, "rotate_step"):
-                btn.rotate_step(45)
         was_visible = self.mini_settings_frame.isVisible()
         if not was_visible and hasattr(self, "_ensure_settings_built"):
             self._ensure_settings_built()

@@ -548,21 +548,23 @@ def _copy_tree_safe(src, dst, reject_aliases_into=None):
         for d in list(dirs):
             dp = os.path.join(root, d)
             if os.path.islink(dp) or _is_alias(dp):
-                # Alias directory: resolve its target and reject if it forms
-                # a cycle or escapes into the container.
-                resolved = os.path.normcase(os.path.realpath(dp))
-                if reject is not None and os.path.commonpath(
-                        [reject, resolved]) == reject:
-                    logger.warning(
-                        "alias %s -> %s targets the container; skipped", dp, resolved)
-                    dirs.remove(d)
-                    continue
-                if resolved in visited:
-                    logger.warning(
-                        "alias %s -> %s forms a cycle; skipped", dp, resolved)
-                    dirs.remove(d)
-                    continue
-                visited[resolved] = os.path.join(dst_root, d)
+                # W2-002: Directory aliases (symlinks, junctions, reparse points)
+                # are never traversed during container safe-copy. Remove from dirs
+                # so os.walk does not descend into external or cyclic trees.
+                dirs.remove(d)
+                try:
+                    resolved = os.path.normcase(os.path.realpath(dp))
+                    if reject is not None:
+                        try:
+                            if os.path.commonpath([reject, resolved]) == reject:
+                                logger.warning(
+                                    "alias %s -> %s targets the container; skipped", dp, resolved)
+                                continue
+                        except ValueError:
+                            pass
+                    logger.warning("directory alias %s -> %s skipped", dp, resolved)
+                except Exception:
+                    logger.warning("directory alias %s skipped", dp)
                 continue
         for f in files:
             fp = os.path.join(root, f)

@@ -198,10 +198,10 @@ class TestFailedMigration:
 
 class TestMalformedLegacySettings:
     def test_bad_json_setting_falls_back_without_crash(self, make_state, db_path):
+        _legacy_fixture(db_path)
         conn = sqlite3.connect(db_path)
-        conn.execute("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT)")
-        conn.execute("INSERT INTO settings (key, value) VALUES ('pinned_silos_all', '{not json')")
-        conn.execute("INSERT INTO settings (key, value) VALUES ('cats_order', '[\"Code\"]')")
+        conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('pinned_silos_all', '{not json')")
+        conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('cats_order', '[\"Code\"]')")
         conn.commit()
         conn.close()
         s = make_state()

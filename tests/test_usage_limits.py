@@ -87,6 +87,61 @@ class TestParseWindows:
         assert out["five_hour"]["available"] is False
         assert out["five_hour"]["remaining_percent"] is None
 
+    def test_parse_windows_with_banked_resets(self):
+        rl = {
+            "rateLimits": {
+                "primary": {"windowDurationMins": 300, "usedPercent": 50},
+            },
+            "rateLimitResetCredits": {
+                "availableCount": 2,
+                "credits": [
+                    {
+                        "id": "Credit_1",
+                        "resetType": "codexRateLimits",
+                        "status": "available",
+                        "grantedAt": 1788483108,
+                        "expiresAt": 1791075108,
+                        "title": "Full reset",
+                        "description": "Free rate limit reset",
+                    },
+                    {
+                        "id": "Credit_2",
+                        "resetType": "codexRateLimits",
+                        "status": "available",
+                        "grantedAt": 1788483108,
+                        "expiresAt": 1791075108,
+                        "title": "Full reset",
+                        "description": "Free rate limit reset",
+                    },
+                ],
+            },
+        }
+        out = parse_windows(rl)
+        assert out["banked_resets"] == 2
+        assert len(out["reset_credits"]) == 2
+        assert out["reset_credits"][0]["id"] == "Credit_1"
+        assert out["reset_credits"][0]["status"] == "available"
+
+    def test_parse_windows_counts_available_credits_if_available_count_missing(self):
+        rl = {
+            "rateLimits": {},
+            "rateLimitResetCredits": {
+                "credits": [
+                    {"id": "c1", "status": "available"},
+                    {"id": "c2", "status": "used"},
+                    {"id": "c3", "status": "available"},
+                ],
+            },
+        }
+        out = parse_windows(rl)
+        assert out["banked_resets"] == 2
+        assert len(out["reset_credits"]) == 3
+
+    def test_parse_windows_no_reset_credits(self):
+        out = parse_windows({"rateLimits": {}})
+        assert out["banked_resets"] is None
+        assert out["reset_credits"] == []
+
 
 class TestCodexDiscovery:
     def test_no_home_dir(self, monkeypatch):
@@ -417,6 +472,128 @@ class TestPlanSpecificWindows:
                           "window_duration_mins": 300},
         })
         assert [w.duration_minutes for w in windows] == [300, 10080]
+
+
+class TestCodexBankedResets:
+    def test_codex_probe_attaches_banked_resets_and_metadata(self, monkeypatch):
+        account = AR(provider_id="codex", stable_id="test_id",
+                     display_name="Codex Test", source_kind="test",
+                     source_path="C:/dummy/path")
+        p = CodexProvider()
+        fake_result = {
+            "ok": True,
+            "five_hour": {"available": True, "remaining_percent": 80,
+                          "window_duration_mins": 300},
+            "plan_type": "pro",
+            "banked_resets": 3,
+            "reset_credits": [{"id": "c1", "status": "available"}],
+        }
+        import fastprompter.core.usage_limits.providers._codex_probe as probe_mod
+        monkeypatch.setattr(probe_mod, "probe_codex_home", lambda path, deadline: fake_result)
+
+        snapshot = p.probe(account, deadline=time.time() + 5.0)
+        assert snapshot.status == OK
+        assert snapshot.banked_resets == 3
+        assert snapshot.provider_metadata.get("banked_resets") == 3
+        assert len(snapshot.provider_metadata.get("reset_credits", [])) == 1
+
+    def test_service_stale_preserves_banked_resets(self):
+        acc = AR(provider_id="codex", stable_id="c_banked",
+                 display_name="Codex Banked", source_kind="test")
+        snap = UsageSnapshot(
+            account=acc, status=OK, windows=[],
+            banked_resets=2,
+            provider_metadata={"banked_resets": 2},
+        )
+        s = UsageLimitService()
+        with s._lock:
+            s._state.snapshots[acc.key] = snap
+
+        # Simulate service stale copy
+        stale_snap = UsageSnapshot(
+            account=snap.account,
+            status=STALE,
+            windows=list(snap.windows),
+            fetched_at=snap.fetched_at,
+            stale_since=time.time(),
+            plan_type=snap.plan_type,
+            error_code="refresh_failed",
+            error_summary="temporary failure",
+            banked_resets=snap.banked_resets,
+            provider_metadata=dict(snap.provider_metadata) if snap.provider_metadata else None,
+        )
+        assert stale_snap.banked_resets == 2
+        assert stale_snap.provider_metadata["banked_resets"] == 2
+
+    def test_consume_codex_reset_missing_dir(self):
+        from fastprompter.core.usage_limits.providers._codex_probe import consume_codex_reset
+        res = consume_codex_reset("C:/nonexistent_dir_12345")
+        assert res["ok"] is False
+        assert "CODEX_HOME missing" in res["error"]
+
+    def test_consume_codex_reset_success(self, tmp_path, monkeypatch):
+        from fastprompter.core.usage_limits.providers._codex_probe import consume_codex_reset
+        codex_home = tmp_path / ".codex"
+        codex_home.mkdir()
+
+        class FakeSession:
+            def __init__(self):
+                self.calls = []
+
+            def call(self, method, params=None, timeout=None):
+                self.calls.append((method, params))
+                if method == "initialize":
+                    return {"result": {}}
+                if method == "account/rateLimitResetCredit/consume":
+                    return {"result": {"outcome": "success"}}
+                return {"result": {}}
+
+            def notify(self, method, params=None):
+                self.calls.append((method, params))
+
+            def close(self):
+                pass
+
+        fake_session = FakeSession()
+        import fastprompter.core.usage_limits.providers._codex_probe as probe_mod
+        monkeypatch.setattr(probe_mod, "_start_app_server", lambda *a, **kw: fake_session)
+
+        res = consume_codex_reset(str(codex_home), credit_id="cred_123")
+        assert res["ok"] is True
+        assert res["outcome"] == "success"
+        consume_call = next(c for c in fake_session.calls if c[0] == "account/rateLimitResetCredit/consume")
+        assert consume_call[1]["creditId"] == "cred_123"
+        assert "idempotencyKey" in consume_call[1]
+
+    def test_codex_provider_and_service_consume_reset(self, tmp_path, monkeypatch):
+        codex_home = tmp_path / ".codex"
+        codex_home.mkdir()
+
+        p = CodexProvider()
+        account = AR(provider_id="codex", stable_id="test_acc",
+                     display_name="Codex Test", source_kind="test",
+                     source_path=str(codex_home))
+
+        import fastprompter.core.usage_limits.providers._codex_probe as probe_mod
+        monkeypatch.setattr(probe_mod, "consume_codex_reset",
+                            lambda path, credit_id=None: {"ok": True, "outcome": "success"})
+
+        res = p.consume_reset(account)
+        assert res["ok"] is True
+        assert res["outcome"] == "success"
+
+        # Test service dispatch
+        s = UsageLimitService()
+        s._providers["codex"] = p
+        with s._lock:
+            s._state.accounts = [account]
+
+        refreshed = []
+        monkeypatch.setattr(s, "refresh", lambda: refreshed.append(True))
+        s_res = s.consume_account_reset(account.key)
+        assert s_res["ok"] is True
+        assert len(refreshed) == 1
+
 
 
 class TestClaudeSingleAccount:
@@ -1115,6 +1292,31 @@ class TestElapsedResetsRefillImmediately:
         alerts, _state = evaluate_limit_notifications(
             [account], {account.key: elapsed}, rules, state)
         assert alerts == []      # once, not on every sweep
+
+    def test_initial_poll_suppresses_reset_alert_between_sessions(self):
+        from fastprompter.core.usage_limits.notifications import (
+            evaluate_limit_notifications,
+            notification_key,
+        )
+        account = AR(provider_id="claude", stable_id="c1",
+                     display_name="C", source_kind="test")
+        key = notification_key(account.key, FIVE_HOUR)
+        rules = {key: {"enabled": "True", "threshold": 20, "reset_enabled": "True"}}
+
+        # Simulate prior session saved state with 10% remaining
+        old_state = {key: {"remaining": 10.0}}
+
+        # Fresh snapshot on launch shows 100% (quota reset occurred between sessions)
+        fresh_snap = UsageSnapshot(
+            account=account, status=OK, fetched_at=time.time(),
+            windows=[UsageWindow(FIVE_HOUR, 300, True, 100, 100, None)])
+
+        # Initial poll on startup must NOT fire reset alert
+        alerts, state = evaluate_limit_notifications(
+            [account], {account.key: fresh_snap}, rules, old_state, is_initial_poll=True)
+        assert alerts == []
+        assert state[key]["remaining"] == 100.0
+        assert state[key]["reset_alerted"] is True
 
 
 class TestVendorResetColors:

@@ -661,6 +661,13 @@ class TestSettingsSurviveAReload:
                     marker = [1, 2, 3]
             elif key == "folder_trash_log":
                 marker = [["path1", "path2"], ["path3", "path4"]]
+            elif _base == "project_sync_map":
+                # W2-004: the Sync-Project map is the one dict store whose
+                # KEYS are validated too — a slot index 0..99 mapped to a safe
+                # project-relative path. A "probe" key is quarantined by
+                # design, so the probe has to speak that contract.
+                pair = {"0": "notes/probe.txt", "99": "probe.md"}
+                marker = {"probe": pair} if key.endswith("_all") else pair
             elif isinstance(value, dict):
                 # Dict settings (including the per-category *_all stores):
                 # CORE-003 validates each per-category member against its
@@ -815,7 +822,6 @@ class TestDefaultProfile:
 
         sample = {
             "silo_colors_all": {"Code": {"0": "#fff"}},
-            "watcher_queues_all": {"Code": {"a0": [{"id": "x", "text": "t", "line": 3}]}},
             "silo_view_state_all": {"Code": {"s0": {"pos": 1, "scroll": 0}}},
             "silo_gaps_all": {"Code": [1, 2]},
             "archive_silo_folders_all": {"Code": {"0": "folder"}},

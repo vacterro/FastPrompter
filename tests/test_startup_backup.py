@@ -142,6 +142,68 @@ def test_migration_takes_one_synchronous_backup_before_schema_write(
         "exactly one validated backup before the migration"
 
 
+def test_failed_premigration_backup_aborts_startup_and_prevents_migration(
+        tmp_path, monkeypatch):
+    """CORE-002: when pre-migration safety backup fails, migration MUST NOT proceed."""
+    import pytest
+    db = tmp_path / "old.db"
+    _make_db(str(db), user_version=0, rows={"tray_visible": "True"})
+    monkeypatch.setattr(state_mod, "get_db_path",
+                        lambda profile_id=1: str(db))
+
+    def failing_backup(src, dest, validate=True):
+        raise OSError("disk full simulated during safety backup")
+
+    monkeypatch.setattr(state_mod, "_backup_atomically", failing_backup)
+    mig_called = []
+
+    def guarded_migrate(conn, first):
+        mig_called.append(True)
+
+    monkeypatch.setattr(state_mod, "_migrate_schema", guarded_migrate)
+
+    with pytest.raises(OSError, match="disk full"):
+        state_mod.FastPrompterState(profile_id=1)
+
+    assert not mig_called, "migration must never run when safety backup fails"
+    # assert DB user_version is still 0 (unchanged)
+    import sqlite3
+    c = sqlite3.connect(str(db))
+    try:
+        ver = c.execute("PRAGMA user_version;").fetchone()[0]
+        assert ver == 0
+    finally:
+        c.close()
+
+
+def test_small_legacy_db_still_takes_premigration_backup(
+        tmp_path, monkeypatch):
+    """CORE-002: a legacy DB smaller than 24KB still requires synchronous backup."""
+    db = tmp_path / "tiny_old.db"
+    _make_db(str(db), user_version=0, rows={"tray_visible": "True"})
+    real_getsize = os.path.getsize
+    monkeypatch.setattr(os.path, "getsize", lambda p: 12000 if p == str(db) else real_getsize(p))
+    monkeypatch.setattr(state_mod, "get_db_path",
+                        lambda profile_id=1: str(db))
+
+    order = []
+
+    def recording_backup(src, dest, validate=True):
+        order.append("backup")
+
+    monkeypatch.setattr(state_mod, "_backup_atomically", recording_backup)
+    real_mig = state_mod._migrate_schema
+
+    def guarded_migrate(conn, first):
+        order.append("migrate")
+        return real_mig(conn, first)
+
+    monkeypatch.setattr(state_mod, "_migrate_schema", guarded_migrate)
+
+    state_mod.FastPrompterState(profile_id=1)
+    assert order == ["backup", "migrate"]
+
+
 # ----------------------------------------------------------- CORE-002: per-profile
 def _make_large_current_db(tmp_path, name):
     """A current-schema DB that exceeds the snapshot-size threshold."""

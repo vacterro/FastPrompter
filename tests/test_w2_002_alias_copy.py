@@ -60,3 +60,18 @@ def test_copy_tree_safe_rejects_alias_into_source_ancestor(tmp_path):
     _copy_tree_safe(str(src), str(dst), reject_aliases_into=fp)
     assert not (dst / "sub" / "back").exists()
     assert (dst / "sub").exists()
+
+
+def test_copy_tree_safe_skips_external_directory_alias(tmp_path):
+    from fastprompter.ui.file_container import _copy_tree_safe
+    src = tmp_path / "src"
+    src.mkdir()
+    external = tmp_path / "external"
+    external.mkdir()
+    (external / "secret.txt").write_text("do not copy")
+
+    os.symlink(str(external), str(src / "ext_link"))
+    dst = tmp_path / "dst"
+    _copy_tree_safe(str(src), str(dst))
+    assert not (dst / "ext_link").exists()
+    assert not (dst / "ext_link" / "secret.txt").exists()

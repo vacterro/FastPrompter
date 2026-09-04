@@ -381,7 +381,14 @@ def free_slots(mapping: dict, total: int, count: int) -> list[int]:
     but to keep the mapping stable across rescans, new files simply take the
     lowest unclaimed slot at or after ``total``.
     """
-    claimed = {int(k) for k in mapping}
+    claimed = set()
+    for k in mapping:
+        try:
+            val = int(k)
+            if 0 <= val < 100:
+                claimed.add(val)
+        except (ValueError, TypeError):
+            continue
     slots: list[int] = []
     slot = total
     while len(slots) < count:

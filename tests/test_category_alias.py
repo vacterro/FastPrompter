@@ -44,7 +44,6 @@ def _data_with_sentinels():
         "archive_silo_folders_all": {"A": {"1": "a-arc"}, "B": {"2": "b-arc"}},
         "silo_project_paths_all": {"A": {"1": "a-path"}, "B": {"2": "b-path"}},
         "archive_project_paths_all": {"A": {"1": "a-apath"}, "B": {"2": "b-apath"}},
-        "watcher_queues_all": {"A": {"1": []}, "B": {"2": []}},
         "silo_types_all": {"A": {"1": "kanban"}, "B": {"2": "table"}},
     }
     # silo_type_all is the real store name (the flat alias is silo_types)
@@ -95,11 +94,11 @@ class TestBindActiveCategory:
 
     def test_corrupt_all_store_is_replaced(self):
         data = _data_with_sentinels()
-        data["watcher_queues_all"] = "{not a dict}"   # str(dict) from an old DB
+        data["silo_colors_all"] = "{not a dict}"   # str(dict) from an old DB
         data["pinned_silos_all"] = [1, 2]             # valid JSON, wrong type
         bind_active_category(data, "A")
-        assert isinstance(data["watcher_queues_all"], dict)
-        assert data["watcher_queues"] is data["watcher_queues_all"]["A"]
+        assert isinstance(data["silo_colors_all"], dict)
+        assert data["silo_colors"] is data["silo_colors_all"]["A"]
         assert isinstance(data["pinned_silos_all"], dict)
         assert data["pinned_silos"] == []
 

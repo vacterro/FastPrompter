@@ -172,7 +172,7 @@ class FlowWidget(QWidget):
                  stretch_items=False):
         super().__init__()
         policy = QSizePolicy(QSizePolicy.Policy.Preferred,
-                             QSizePolicy.Policy.Minimum)
+                             QSizePolicy.Policy.Maximum)
         policy.setHeightForWidth(True)
         self.setSizePolicy(policy)
         self._flow = FlowLayout(self, margin=margin,

@@ -1947,9 +1947,6 @@ class SnippetOpsMixin:
         paths = self.data.get("silo_project_paths", {})
         if isinstance(paths, dict) and old_k in paths:
             self.data.setdefault("archive_project_paths", {})["0"] = paths.pop(old_k)
-        queues = self.data.get("watcher_queues", {})
-        if isinstance(queues, dict) and old_k in queues:
-            queues["a0"] = queues.pop(old_k)
 
         # the normal slot stays, emptied
         presets[idx] = ""

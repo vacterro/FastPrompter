@@ -104,6 +104,7 @@ class UsageSnapshot:
     error_code: str = ""
     error_summary: str = ""   # sanitized, no secrets
     provider_metadata: dict = dataclasses.field(default_factory=dict)
+    banked_resets: int | None = None
 
     def window(self, key: str) -> UsageWindow | None:
         for w in self.windows:
@@ -288,6 +289,7 @@ PROVIDER_RESET_COLORS = {
     "claude": "#D97757",       # terracotta orange
     "codex": "#6AA9FF",        # blue
     "antigravity": "#B58CE8",  # violet
+    "zcode": "#4FB6A8",        # teal
 }
 
 

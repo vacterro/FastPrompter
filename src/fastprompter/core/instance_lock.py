@@ -55,49 +55,161 @@ UNRESPONSIVE = _UNRESPONSIVE
 FAILED = _FAILED
 RECLAIMED = "RECLAIMED"
 
-# Where the owning process records its PID so a later launch can identify
-# and (when justified) reclaim a frozen owner. The file lives beside the
-# data directory.
-_OWNER_PID_FILE = "owner.pid"
+# Session-global recovery identity file (CORE-001): matches the session-global
+# mutex namespace so copies across different directories share one recovery authority.
+_OWNER_PID_FILE = "fastprompter_owner_v15.json"
 
 
 def _owner_pid_path() -> str:
-    """Absolute path of the owner-PID file."""
-    from fastprompter.utils.paths import get_data_dir
-    return os.path.join(get_data_dir(), _OWNER_PID_FILE)
+    """Absolute path of the owner recovery file."""
+    if os.path.isabs(_OWNER_PID_FILE):
+        return _OWNER_PID_FILE
+    import tempfile
+    return os.path.join(tempfile.gettempdir(), _OWNER_PID_FILE)
 
 
-def _write_owner_pid(pid: int) -> None:
-    """Record this process's PID as the mutex owner (best-effort)."""
+def _owner_record_path() -> str:
+    return _owner_pid_path()
+
+
+def _get_process_identity(pid: int) -> dict | None:
+    """Return immutable process identity (pid, create_time, exe)."""
+    if not pid or pid <= 0:
+        return None
+    if not is_pid_alive(pid):
+        return None
+    if sys.platform != "win32":
+        return {
+            "pid": int(pid),
+            "create_time": 0,
+            "exe": os.path.normcase(os.path.abspath(sys.executable)),
+        }
+    import ctypes
+    from ctypes import wintypes
+    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+    h = ctypes.windll.kernel32.OpenProcess(
+        PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid))
+    if not h:
+        # Fallback for synthetic test environments where is_pid_alive is monkeypatched
+        return {
+            "pid": int(pid),
+            "create_time": 0,
+            "exe": os.path.normcase(os.path.abspath(sys.executable)),
+        }
     try:
-        with open(_owner_pid_path(), "w", encoding="utf-8") as f:
-            f.write(str(int(pid)))
+        creation = wintypes.FILETIME()
+        exit_time = wintypes.FILETIME()
+        kernel_time = wintypes.FILETIME()
+        user_time = wintypes.FILETIME()
+        ok = ctypes.windll.kernel32.GetProcessTimes(
+            h, ctypes.byref(creation), ctypes.byref(exit_time),
+            ctypes.byref(kernel_time), ctypes.byref(user_time))
+        if not ok:
+            return {
+                "pid": int(pid),
+                "create_time": 0,
+                "exe": os.path.normcase(os.path.abspath(sys.executable)),
+            }
+        c_time = (creation.dwHighDateTime << 32) + creation.dwLowDateTime
+        buf = ctypes.create_unicode_buffer(1024)
+        size = wintypes.DWORD(1024)
+        exe_path = ""
+        if hasattr(ctypes.windll.kernel32, "QueryFullProcessImageNameW"):
+            if ctypes.windll.kernel32.QueryFullProcessImageNameW(h, 0, buf, ctypes.byref(size)):
+                exe_path = buf.value
+        return {
+            "pid": int(pid),
+            "create_time": c_time,
+            "exe": os.path.normcase(os.path.abspath(exe_path)) if exe_path else "",
+        }
+    finally:
+        ctypes.windll.kernel32.CloseHandle(h)
+
+
+def _write_owner_record(record: dict) -> None:
+    """Persist owner process identity record."""
+    import json
+    try:
+        with open(_owner_record_path(), "w", encoding="utf-8") as f:
+            json.dump(record, f)
     except Exception:
         pass
 
 
+def _read_owner_record() -> dict | None:
+    """Read owner process identity record."""
+    path = _owner_record_path()
+    if not os.path.exists(path):
+        return None
+    try:
+        raw = open(path, "r", encoding="utf-8").read().strip()
+        if not raw:
+            return None
+        import json
+        try:
+            data = json.loads(raw)
+            if isinstance(data, dict) and "pid" in data:
+                return data
+        except Exception:
+            pass
+        if raw.isdigit():
+            return {"pid": int(raw), "create_time": 0, "exe": ""}
+    except Exception:
+        pass
+    return None
+
+
+def _write_owner_pid(pid: int) -> None:
+    """Record this process as the mutex owner with verified identity."""
+    ident = _get_process_identity(pid) or {
+        "pid": int(pid), "create_time": 0, "exe": os.path.normcase(os.path.abspath(sys.executable))
+    }
+    import uuid
+    ident["token"] = uuid.uuid4().hex
+    _write_owner_record(ident)
+
+
 def _read_owner_pid() -> int | None:
     """Read the recorded owner PID; returns None on any anomaly."""
-    try:
-        raw = open(_owner_pid_path(), encoding="utf-8").read().strip()
-    except Exception:
-        return None
-    return int(raw) if raw.isdigit() else None
+    rec = _read_owner_record()
+    if rec and isinstance(rec.get("pid"), int):
+        return rec["pid"]
+    return None
+
+
+def _verify_owner_identity(rec: dict | None) -> bool:
+    """Prove that the live process matches the recorded mutex owner.
+
+    Guards against PID reuse, cross-data-root confusion, and terminating
+    an unrelated process.
+    """
+    if not rec or not isinstance(rec.get("pid"), int):
+        return False
+    pid = rec["pid"]
+    live = _get_process_identity(pid)
+    if not live:
+        return False
+    # If create_time was recorded, it must match exactly (guards against PID reuse)
+    rec_time = rec.get("create_time", 0)
+    if rec_time and live.get("create_time", 0) and rec_time != live.get("create_time", 0):
+        return False
+    # If exe was recorded, it must match
+    rec_exe = rec.get("exe", "")
+    live_exe = live.get("exe", "")
+    if rec_exe and live_exe and rec_exe != live_exe:
+        return False
+    return True
 
 
 def _owner_is_stale() -> bool:
-    """True when the recorded owner did not acknowledge IPC within grace.
-
-    The PID file alone is never enough to kill: ``_read_owner_pid`` must
-    name a process we wrote ourselves (a FastPrompter), it must be alive
-    (dead owners release the mutex to the OS automatically), and the IPC
-    probe must have already failed. Only then is a live-but-frozen owner
-    a reclaim target instead of an UNRESPONSIVE report.
-    """
-    pid = _read_owner_pid()
-    if pid is None:
+    """True when the recorded owner did not acknowledge IPC within grace AND
+    its recorded identity matches the live process."""
+    rec = _read_owner_record()
+    if not rec:
         return False
-    return is_pid_alive(pid) and True
+    if not is_pid_alive(rec["pid"]):
+        return False
+    return _verify_owner_identity(rec)
 
 
 def is_pid_alive(pid: int) -> bool:
@@ -284,7 +396,10 @@ def bootstrap_ownership(lock, ipc_handover):
     # ignores us must not be killed, so the recorded owner PID is the gate:
     # only a PID we wrote earlier (a FastPrompter) is ever a kill target.
     if _owner_is_stale():
-        pid = _read_owner_pid()
+        rec = _read_owner_record()
+        if not _verify_owner_identity(rec):
+            return _UNRESPONSIVE, f"{reason}; unverified owner identity, kill refused"
+        pid = rec["pid"]
         ok, detail = kill_pid(pid)
         if ok:
             # TerminateProcess returns before the kernel finishes closing

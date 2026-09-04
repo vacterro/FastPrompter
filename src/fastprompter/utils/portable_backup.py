@@ -713,7 +713,14 @@ def _cleanup_old_backups(backup_dir: str, max_days: int = 7) -> None:
             if not old:
                 continue
             if suffix == "partial":
-                # incomplete transient build dir: bound disk growth
+                # W2-001: check if it is a complete recovery generation left behind
+                # by a publish failure. If valid and canonical day is missing, preserve it.
+                if _is_valid_complete_generation(entry_path) and date_str not in canonical_days:
+                    logger.info(
+                        "portable backup: kept old complete .partial generation %s "
+                        "(canonical day %s missing)", entry, date_str)
+                    continue
+                # incomplete transient build dir or canonical already exists: bound disk growth
                 shutil.rmtree(entry_path, ignore_errors=True)
                 continue
             # failed/rollback/recovered: a complete recovery generation. Prune

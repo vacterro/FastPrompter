@@ -9,8 +9,6 @@ Non-Qt deterministic core:
 
 import os
 
-import pytest
-
 import fastprompter.utils.portable_backup as pb
 
 
@@ -65,8 +63,8 @@ def test_snapshot_text_size_counts_snippet_text():
 def test_switch_undo_is_compact_not_full_snapshot():
     """add_data_undo_state("Switch silo") must produce a compact _switch record
     carrying NO categories/temp_presets (i.e. no deep copy of the universe)."""
+
     from fastprompter.main import FastPrompter
-    import types
 
     # A minimal host that satisfies add_data_undo_state's needs
     class Host:
@@ -84,7 +82,6 @@ def test_switch_undo_is_compact_not_full_snapshot():
             "silo_colors": {},
             "silo_project_paths": {},
             "silo_types": {},
-            "watcher_queues": {},
             "archive_silo_folders": {},
             "archive_project_paths": {},
             "silo_view_state_all": {},

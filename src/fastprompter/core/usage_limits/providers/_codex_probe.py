@@ -222,6 +222,35 @@ def parse_windows(rate_limits: dict) -> dict:
             "window_duration_mins": dur,
         }
     out["plan_type"] = snap.get("planType")
+    reset_credits = rate_limits.get("rateLimitResetCredits")
+    if isinstance(reset_credits, dict):
+        cnt = reset_credits.get("availableCount")
+        credits_raw = reset_credits.get("credits")
+        credits_list = []
+        if isinstance(credits_raw, list):
+            for c in credits_raw:
+                if not isinstance(c, dict):
+                    continue
+                credits_list.append({
+                    "id": str(c.get("id") or ""),
+                    "status": str(c.get("status") or ""),
+                    "title": str(c.get("title") or ""),
+                    "description": str(c.get("description") or ""),
+                    "reset_type": str(c.get("resetType") or ""),
+                    "granted_at": c.get("grantedAt"),
+                    "expires_at": c.get("expiresAt"),
+                })
+        if cnt is None and credits_list:
+            cnt = sum(1 for c in credits_list if c.get("status") == "available")
+        try:
+            out["banked_resets"] = int(cnt) if cnt is not None else None
+        except (TypeError, ValueError):
+            out["banked_resets"] = None
+        if credits_list:
+            out["reset_credits"] = credits_list
+    else:
+        out["banked_resets"] = None
+        out["reset_credits"] = []
     return out
 
 
@@ -287,10 +316,12 @@ def probe_codex_home(codex_home: str, deadline: float | None = None,
         # how many to render, the probe must not pre-filter the set.
         payload = {"ok": True}
         for key, bucket in parsed.items():
-            if key == "plan_type":
+            if key in ("plan_type", "banked_resets", "reset_credits"):
                 continue
             payload[key] = bucket
         payload["plan_type"] = parsed.get("plan_type")
+        payload["banked_resets"] = parsed.get("banked_resets")
+        payload["reset_credits"] = parsed.get("reset_credits", [])
         payload["fetched_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
         return payload
     except JsonRpcError as exc:
@@ -302,3 +333,64 @@ def probe_codex_home(codex_home: str, deadline: float | None = None,
     finally:
         if session is not None:
             session.close()
+
+
+def consume_codex_reset(codex_home: str, credit_id: str | None = None,
+                        deadline: float | None = None,
+                        codex_cmd: str | None = None) -> dict:
+    """Consume one banked rate limit reset credit via Codex app-server.
+
+    Sends account/rateLimitResetCredit/consume with an idempotencyKey and optional creditId.
+    Returns {"ok": True, "outcome": outcome} on success, or {"ok": False, "error": msg}.
+    """
+    if deadline is None:
+        deadline = time.monotonic() + 15.0
+    codex_home = str(codex_home)
+    if not os.path.isdir(codex_home):
+        return {"ok": False, "error": f"CODEX_HOME missing: {codex_home}"}
+
+    import uuid
+    idempotency_key = str(uuid.uuid4())
+    params: dict[str, str] = {"idempotencyKey": idempotency_key}
+    if credit_id:
+        params["creditId"] = str(credit_id)
+
+    session = None
+    try:
+        if time.monotonic() >= deadline:
+            return {"ok": False, "error": "deadline exceeded before starting"}
+        session = _start_app_server(codex_home, f"{codex_home}:consume", codex_cmd=codex_cmd)
+        remaining = deadline - time.monotonic()
+        init = session.call(
+            "initialize",
+            {
+                "clientInfo": {"name": "fastprompter", "version": "1.0.0"},
+                "capabilities": None,
+            },
+            timeout=min(RESPONSE_WINDOW_S, max(0.1, remaining)),
+        )
+        if "error" in init:
+            raise JsonRpcError(f"initialize error: {init['error']}")
+        session.notify("initialized")
+        remaining = deadline - time.monotonic()
+        res = session.call(
+            "account/rateLimitResetCredit/consume",
+            params,
+            timeout=min(RESPONSE_WINDOW_S, max(0.1, remaining)),
+        )
+        if "error" in res:
+            err_msg = res["error"].get("message") if isinstance(res["error"], dict) else str(res["error"])
+            return {"ok": False, "error": f"consume error: {err_msg}"}
+        result = res.get("result") or {}
+        outcome = result.get("outcome") or "success"
+        if outcome in ("noCredit", "alreadyRedeemed", "nothingToReset", "unauthorized"):
+            return {"ok": False, "error": f"outcome: {outcome}", "outcome": outcome}
+        return {"ok": True, "outcome": outcome}
+    except JsonRpcError as exc:
+        return {"ok": False, "error": str(exc)[:160]}
+    except Exception as exc:
+        return {"ok": False, "error": f"{type(exc).__name__}: {str(exc)[:160]}"}
+    finally:
+        if session is not None:
+            session.close()
+

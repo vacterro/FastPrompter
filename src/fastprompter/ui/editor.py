@@ -3310,7 +3310,12 @@ class VaultTextEdit(QTextEdit):
                     cursor.select(QTextCursor.SelectionType.Document)
                 self.setTextCursor(cursor)
             super().keyPressEvent(event)
-            if self.main_win.cb_ctrl_c.isChecked():
+            cb_ctrl_c = getattr(self.main_win, "cb_ctrl_c", None)
+            ctrl_c_hides = (
+                cb_ctrl_c.isChecked() if cb_ctrl_c is not None
+                else self.main_win.data.get("ctrl_c_closes", "True") == "True"
+            )
+            if ctrl_c_hides:
                 QTimer.singleShot(10, lambda: not sip.isdeleted(self) and not sip.isdeleted(
                     self.main_win) and self.main_win.hide_and_save())
             return

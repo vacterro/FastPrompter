@@ -8,6 +8,14 @@ the code or the claim is wrong — find out which.
 - `uv run pytest tests/ -q`         → unit suite (Qt-free, ~950 tests)
 - `uv run pytest tests_smoke/ -q`   → integration suite (real PyQt6 offscreen,
   ~740 tests). Canonical order is UNIT first.
+- **Hang prevention (P0)**: pytest is configured with `pytest-timeout` (`timeout = 60`,
+  `timeout_method = "thread"` in `pyproject.toml`). Never run an unbounded suite without
+  timeout — subprocesses (`test_lazy_settings_guards.py`), named mutexes (`test_instance_lock.py`),
+  or hanging Qt loops could otherwise block indefinitely.
+- **Process contention rule**: Never run parallel test suites or subshell scripts concurrently.
+  Single-instance writer locks (`InstanceLock`, named Windows mutexes) and SQLite will contend,
+  causing spurious failures or stalls. If tests freeze, sweep orphan processes via
+  `Get-Process python` and terminate stale holders before restarting.
 - One known pre-existing failure: `test_sound_manager.py::TestVolumeOnTheWinsoundPath`
   — a winsound module-order leak (T-730 class, proven not-mine by stash).
 - The `win` smoke fixture is **module-scoped** — tests share one window and

@@ -46,9 +46,7 @@ _JSON_SETTINGS = (
     # the per-category dict behind silo_type_all, saved_sound_mappings is what
     # the CS-style toggle restores from, watcher_skills_extra is a list of
     # dicts (a list survives str() only while its ELEMENTS do — dicts do not),
-    # and custom_font_ids is a list of ints that survived on luck alone.
-    "silo_types", "watcher_skills_extra", "custom_font_ids",
-    "watcher_queues", "watcher_queues_all",
+    "silo_types", "custom_font_ids",
     "folder_trash_log", "hidden_categories", "window_presets",
     # {logical category: physical filesystem component} — a dict, so it MUST
     # be here or a str() write would reload it as a single-quoted string and
@@ -91,6 +89,15 @@ _JSON_SETTINGS = (
 _SETTINGS_SKIP = ("categories", "temp_presets_all", "archive_temp_presets_all",
                   "temp_presets", "archive_temp_presets")
 
+# CORE-003: settings keys of REMOVED subsystems. The loader ignores them and
+# init_db deletes any row that still carries one, so a pre-CUT profile cannot
+# keep feeding retired state (silo slot identity included) back into the app.
+# Nothing may re-add a key here to the live data dict — the encoder would then
+# write it straight back.
+_RETIRED_SETTINGS = frozenset((
+    "watcher_skills_extra", "watcher_queues", "watcher_queues_all",
+))
+
 # Every per-CATEGORY store. rename_category / del_category (main.py) move or
 # delete the whole set in lockstep; a store left off this list keeps its data
 # under the OLD project name after a rename, or leaves an orphan behind after
@@ -103,7 +110,7 @@ _PER_CATEGORY_STATE_KEYS = (
     "silo_collapsed_all", "silo_colors_all", "silo_folders_all",
     "archive_silo_folders_all", "silo_last_edited_all",
     "silo_project_paths_all", "archive_project_paths_all",
-    "watcher_queues_all", "silo_gaps_all", "silo_gap_names_all",
+    "silo_gaps_all", "silo_gap_names_all",
     "silo_type_all", "silo_session_all", "silo_view_state_all",
     "project_sync_all", "project_sync_map_all", "silo_links_all",
 )
@@ -128,7 +135,6 @@ _PER_CATEGORY_ALIASES = (
     ("archive_silo_folders", "archive_silo_folders_all"),
     ("silo_project_paths", "silo_project_paths_all"),
     ("archive_project_paths", "archive_project_paths_all"),
-    ("watcher_queues", "watcher_queues_all"),
     ("silo_types", "silo_type_all"),
     ("project_sync", "project_sync_all"),
     ("project_sync_map", "project_sync_map_all"),
@@ -199,10 +205,7 @@ _STRUCTURED_CODECS = {
     "sound_events": (dict, {}, False),
     "saved_sound_mappings": (dict, {}, True),
     "silo_types": (dict, {}, True),
-    "watcher_skills_extra": (list, [], True),
     "custom_font_ids": (list, [], True),
-    "watcher_queues": (dict, {}, True),
-    "watcher_queues_all": (dict, {}, True),
     "folder_trash_log": (list, [], False),
     "hidden_categories": (list, [], False),
     "window_presets": (list, [], False),
@@ -338,7 +341,6 @@ _PER_CATEGORY_VALUE_TYPES = {
     "archive_silo_folders_all": (dict, None),
     "silo_project_paths_all": (dict, None),
     "archive_project_paths_all": (dict, None),
-    "watcher_queues_all": (dict, None),
     "silo_type_all": (dict, None),
     "silo_session_all": (dict, None),
     "silo_view_state_all": (dict, None),
@@ -356,6 +358,15 @@ def _normalize_member_list(value, member_type):
     if member_type == "int":
         return [m for m in value if isinstance(m, int) and m >= 0]
     return value
+
+
+def _is_valid_slot_key(key) -> bool:
+    """Validate that key represents a valid slot index 0..99 (W2-004)."""
+    if isinstance(key, int):
+        return 0 <= key < 100
+    if isinstance(key, str) and key.isdigit():
+        return 0 <= int(key) < 100
+    return False
 
 
 def _is_safe_sync_rel(value) -> bool:
@@ -403,15 +414,14 @@ def _normalize_per_category_store(key, parsed, default):
         if value_type is list:
             value = _normalize_member_list(value, member_type)
         elif key in ("project_sync_map", "project_sync_map_all"):
-            # CORE-002: mapping values become write targets. Quarantine
-            # entries that are not plain safe relative paths instead of
-            # letting traversal/absolute/drive data normalize into a
-            # usable outside path.
-            safe = {k: v for k, v in value.items()
-                    if _is_safe_sync_rel(v)}
+            # CORE-002 / W2-004: mapping values become write targets and keys
+            # become slot numbers. Quarantine entries that are not valid slot
+            # indices or safe relative paths.
+            safe = {str(int(k)): v for k, v in value.items()
+                    if _is_valid_slot_key(k) and _is_safe_sync_rel(v)}
             if len(safe) != len(value):
                 logger.warning(
-                    "per-category store %r carries %d unsafe path "
+                    "per-category store %r carries %d invalid slot/path "
                     "mapping(s) for category %r; quarantining them",
                     key, len(value) - len(safe), cat)
                 value = safe
@@ -497,8 +507,12 @@ def _decode_structured_setting(key, raw, expected, default, legacy_ast):
 
 def _normalize_decoded(key, parsed, default):
     """Member + nested per-category normalization for a decoded setting."""
-    return _normalize_per_category_store(
+    res = _normalize_per_category_store(
         key, _normalize_structured_list(key, parsed, default), default)
+    if key == "project_sync_map" and isinstance(res, dict):
+        res = {str(int(k)): v for k, v in res.items()
+               if _is_valid_slot_key(k) and _is_safe_sync_rel(v)}
+    return res
 
 
 def bind_active_category(data, category):
@@ -937,6 +951,11 @@ def _prepare_backup_candidate(source_conn, dest_path, validate=True):
     path; on ANY failure the whole candidate family (main + ``-wal`` +
     ``-shm``) is removed and the exception propagates — the previous
     destination survives any failure up to the swap.
+
+    ``validate`` may also be a CALLABLE ``validator(path)``: a pre-migration
+    snapshot of a LEGACY database is not required to satisfy the post-migration
+    restore contract (see ``_assert_snapshot_readable``), only to be a faithful
+    readable copy of what is about to be rewritten.
     """
     tmp = unique_temp_path(dest_path, "bak")
     try:
@@ -946,7 +965,9 @@ def _prepare_backup_candidate(source_conn, dest_path, validate=True):
                 source_conn.backup(dest_conn)
         finally:
             dest_conn.close()
-        if validate:
+        if callable(validate):
+            validate(tmp)
+        elif validate:
             validate_database(tmp)
         return tmp
     except Exception:
@@ -1755,6 +1776,51 @@ def _open_read_only(path):
     return sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=2.0)
 
 
+def _assert_snapshot_readable(path, max_user_version=CURRENT_SCHEMA_VERSION):
+    """Prove a PRE-MIGRATION snapshot is a faithful readable copy.
+
+    CORE-002 makes the pre-migration safety copy mandatory: if it cannot be
+    published, the destructive migration must not run. That makes the check
+    applied to the candidate a gate on STARTUP, so it must assert exactly what
+    a recovery copy of a legacy file owes and nothing more — it opens, it
+    passes integrity, and it is not from a future build.
+
+    It deliberately does NOT run ``_assert_schema_requirements`` /
+    ``_assert_loader_rows`` the way :func:`validate_database` does. Those are
+    the contract for a database we would RESTORE FROM and then load; the
+    snapshot's whole job is to preserve the pre-migration file as it is,
+    including the legacy shape the migration is about to fix (a v0 without
+    ``presets``, which ``_ensure_base_tables`` creates) and rows the loader
+    fails closed on (out-of-range slots — refusing the snapshot there would
+    destroy the only copy of exactly the data the user must recover).
+    """
+    if not isinstance(path, str) or not os.path.isfile(path):
+        raise RestoreError("the pre-migration snapshot does not exist")
+    try:
+        conn = _open_read_only(path)
+    except sqlite3.Error as exc:
+        raise RestoreError(f"cannot open the snapshot as SQLite: {exc}")
+    try:
+        conn.execute("PRAGMA query_only=ON")
+        try:
+            row = conn.execute("PRAGMA integrity_check").fetchone()
+        except sqlite3.DatabaseError as exc:
+            raise RestoreError(f"snapshot integrity check failed: {exc}")
+        if not row or (row[0] != "ok"):
+            raise RestoreError(f"snapshot integrity check failed: {row}")
+        try:
+            version = conn.execute("PRAGMA user_version").fetchone()[0]
+        except sqlite3.DatabaseError as exc:
+            raise RestoreError(f"cannot read the snapshot schema version: {exc}")
+        if version > max_user_version:
+            raise RestoreError(
+                f"snapshot schema v{version} is newer than this app supports "
+                f"(v{max_user_version})")
+        return int(version)
+    finally:
+        conn.close()
+
+
 def validate_database(path, max_user_version=CURRENT_SCHEMA_VERSION):
     """Open a candidate database read-only and prove it is restorable.
 
@@ -2163,6 +2229,18 @@ class FastPrompterState:
             self.init_db()
             return True
 
+    def _get_db_version(self, path):
+        """Read-only probe: return the PRAGMA user_version or None if unreadable."""
+        try:
+            conn = _open_read_only(path)
+            try:
+                row = conn.execute("PRAGMA user_version").fetchone()
+                return row[0] if row else None
+            finally:
+                conn.close()
+        except Exception:
+            return None
+
     def _is_current_schema(self, path):
         """Read-only probe: is ``path`` already CURRENT_SCHEMA_VERSION with the
         mandatory tables? Returns False on any read error (treat an unknown
@@ -2314,29 +2392,34 @@ class FastPrompterState:
             # re-scan.
             _scavenge_stale_temp_sidecars_once(os.path.dirname(self.db_path))
             backup_dest = self.db_path + ".bak"
-            # T-818: a pre-connect safety copy is only mandatory BEFORE a
+            # T-818 / CORE-002: a pre-connect safety copy is mandatory BEFORE a
             # migration writes to a file whose schema we are about to change.
             # For an already-current-schema DB we move that validated snapshot
-            # off the startup thread (see _start_safety_snapshot_async) without
-            # weakening migration safety or recoverability.
-            if os.path.exists(self.db_path) and os.path.getsize(self.db_path) > 24576:
-                if self._is_current_schema(self.db_path):
-                    self._start_safety_snapshot_async(backup_dest)
-                else:
+            # off the startup thread (see _start_safety_snapshot_async) when
+            # size > 24576 without weakening migration safety or recoverability.
+            # For a legacy non-current schema DB, the synchronous safety backup
+            # is MANDATORY regardless of file size; if it fails, startup refuses
+            # and destructive migration is NEVER executed.
+            if os.path.exists(self.db_path):
+                v = self._get_db_version(self.db_path)
+                if v is not None and v > CURRENT_SCHEMA_VERSION:
+                    # Future schema: do not touch or back up; _migrate_schema
+                    # will raise UnsupportedSchemaVersion as required.
+                    pass
+                elif self._is_current_schema(self.db_path):
+                    if os.path.getsize(self.db_path) > 24576:
+                        self._start_safety_snapshot_async(backup_dest)
+                elif v is not None and 0 <= v < CURRENT_SCHEMA_VERSION:
+                    src = sqlite3.connect(self.db_path)
                     try:
-                        src = sqlite3.connect(self.db_path)
-                        try:
-                            _backup_atomically(src, backup_dest)
-                        finally:
-                            src.close()
-                    except Exception:
-                        # the live DB is still valid; only the optional
-                        # pre-connect safety copy failed — log it to the file
-                        # (a windowed build has no console) and continue per
-                        # the degraded-recovery policy, never abort startup
-                        # over a backup we can retry
-                        logger.exception("startup database backup failed; the "
-                                         "live database is unaffected")
+                        # validated as a faithful readable COPY, not as a
+                        # post-migration restore candidate: the legacy shape
+                        # (and any fail-closed row) is precisely what must be
+                        # preserved here — see _assert_snapshot_readable.
+                        _backup_atomically(src, backup_dest,
+                                           validate=_assert_snapshot_readable)
+                    finally:
+                        src.close()
 
             self.conn = sqlite3.connect(self.db_path,
                                         check_same_thread=False,
@@ -2361,6 +2444,7 @@ class FastPrompterState:
 
             cur = self.conn.cursor()
 
+            _retired_rows = []
             for row in cur.execute('SELECT key, value FROM settings'):
                 key, raw = row[0], row[1]
                 if key in _STRUCTURED_CODECS:
@@ -2375,8 +2459,31 @@ class FastPrompterState:
                     except (ValueError, TypeError): self.data[key] = 0
                 elif key in ('ui_scale', 'window_locked', 'sidebar_right'):
                     self.data[key] = raw
-                elif key == 'hide_font': continue
+                elif key == 'hide_font':
+                    continue
+                elif key in _RETIRED_SETTINGS:
+                    _retired_rows.append(key)
+                    continue
                 else: self.data[key] = raw
+
+            # CORE-003: retire removed Watcher subsystem settings. Only when a
+            # row actually exists: an unconditional DELETE turns every load
+            # (including a profile switch beside a live connection) into a
+            # write, and a write here can lose the busy race and abort the
+            # whole load. Best-effort by design — the loader already ignores
+            # these keys and the encoder never writes them back, so a failed
+            # delete costs nothing but a retry on the next start.
+            if _retired_rows:
+                placeholders = ",".join("?" * len(_retired_rows))
+                try:
+                    with self.conn:
+                        cur.execute(
+                            f"DELETE FROM settings WHERE key IN ({placeholders})",
+                            _retired_rows)
+                except sqlite3.Error:
+                    logger.warning("could not retire settings %s; they stay "
+                                   "ignored on load and will be retried",
+                                   sorted(set(_retired_rows)))
 
             # Migration: old codex_gauges -> provider-neutral limit_gauges.
             # Preserve the user's existing choice; new key wins if both set.

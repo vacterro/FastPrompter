@@ -957,7 +957,8 @@ def test_all_settings_roundtrip_through_db(win):
     }
     saved_prior = {k: win.data.get(k) for k in sentinels}
     win.data.update(sentinels)
-    # widget-driven keys go through their widgets
+    # widget-driven keys go through their widgets (settings are built lazily)
+    win._ensure_settings_built()
     win.font_spin.setValue(17)
     win.cb_tray.setChecked(False)
     win.mark_dirty()
@@ -5441,6 +5442,7 @@ def test_settings_panel_is_tabbed_and_fits_a_small_window(win):
     # must bring that inside the 640x480 the UI spec requires.
     from PyQt6.QtWidgets import QCheckBox
 
+    win._ensure_settings_built()   # tabs are populated on first reveal
     tabs = win.settings_tabs
     assert [tabs.tabText(i) for i in range(tabs.count())] == [
         "Window", "Editor", "Clock", "Data"]
@@ -6963,7 +6965,10 @@ def test_ctrl_click_opens_links_and_ctrl_right_click_reveals_the_folder(win):
     real_open = QDesktopServices.openUrl
     # Popen, not run: reveal must not wait on explorer from the GUI thread
     real_popen = editor_mod.subprocess.Popen
+    from PyQt6.QtWidgets import QMessageBox
+    real_warning = QMessageBox.warning
     try:
+        QMessageBox.warning = staticmethod(lambda *a, **k: QMessageBox.StandardButton.Yes)
         ed.clear()
         c = ed.textCursor()
         c.insertHtml(f'<a href="{QUrl.fromLocalFile(target).toString()}">file</a>')
@@ -7001,6 +7006,7 @@ def test_ctrl_click_opens_links_and_ctrl_right_click_reveals_the_folder(win):
         click(0, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
         assert not opened and not revealed
     finally:
+        QMessageBox.warning = real_warning
         QDesktopServices.openUrl = real_open
         editor_mod.subprocess.Popen = real_popen
         ed._suppress_context_menu = False
@@ -9271,6 +9277,45 @@ def test_numbox_active_highlight(win):
         assert not win._cat_num_buttons[1].isChecked()
 
 
+def test_numbox_reclick_keeps_exactly_one_pressed(win):
+    """Re-clicking the ACTIVE project must not leave its box released.
+
+    The number boxes are checkable QPushButtons, so a click toggles the button
+    itself. Clicking the project that is already current changes no combo
+    index, so `on_tab_changed` never fires and nothing put the check back —
+    the row then showed either zero or several "pressed" projects.
+    """
+    win._rebuild_cat_numbox()
+    if len(win._cat_num_buttons) < 2:
+        pytest.skip("need >=2 projects")
+    try:
+        win._cat_numbox_clicked(1)
+        QApplication.processEvents()
+        # exactly what the second physical click does before the handler runs
+        win._cat_num_buttons[1].setChecked(False)
+        win._cat_numbox_clicked(1)
+        checked = [i for i, b in enumerate(win._cat_num_buttons) if b.isChecked()]
+        assert checked == [1], checked
+    finally:
+        win._cat_numbox_clicked(0)
+        QApplication.processEvents()
+
+
+def test_numbox_context_menu_anchors_on_its_own_button(win, monkeypatch):
+    """The right-click handler resolves its anchor out of `_cat_num_buttons`,
+    so an unpublished row silently swallowed every Projects context menu."""
+    from PyQt6.QtCore import QPoint
+    win._rebuild_cat_numbox()
+    assert win._cat_num_buttons, "the number row must publish its buttons"
+    seen = {}
+    monkeypatch.setattr(
+        win, "show_cat_context_menu",
+        lambda pos, anchor=None: seen.update(pos=pos, anchor=anchor))
+    win._cat_numbox_context(0, QPoint(3, 4))
+    assert seen.get("anchor") is win._cat_num_buttons[0]
+    assert seen.get("pos") == QPoint(3, 4)
+
+
 def test_numbox_toggle_mode(win):
     win._toggle_numbox_mode(True)
     assert win.cat_combo.isHidden()
@@ -9696,6 +9741,7 @@ def test_numbox_geometry_settings_clamp_and_persist(fresh_win):
 
 
 def test_numbox_settings_controls_exist(win):
+    win._ensure_settings_built()   # settings widgets are built on first reveal
     assert hasattr(win, "spin_numbox_per_row")
     assert hasattr(win, "spin_numbox_size")
 
@@ -10081,8 +10127,11 @@ def test_limit_gauges_sheds_labels_before_accounts(fresh_win):
 
     w._header_ultra = True
     w.limit_gauges.refresh_view()
+    # The LAST cluster's GAP_ACC separates it from a next cluster; there is
+    # none, so the widget does not reserve it (see _clusters_width) — reserving
+    # it showed up as a dead strip before the reset countdown.
     expected = (w.limit_gauges.PAD * 2
-                + plain * len(accounts))
+                + plain * len(accounts) - w.limit_gauges.GAP_ACC)
     assert w.limit_gauges.width() == expected
 
 
@@ -10248,6 +10297,7 @@ def test_every_ordered_token_resolves_to_a_widget(fresh_win):
 
 def test_numbox_toggle_shows_the_boxes(fresh_win):
     w = fresh_win
+    w._ensure_settings_built()   # settings widgets are built on first reveal
     w.cb_numbox_tabs.setChecked(True)
     QApplication.processEvents()
     assert not w.cat_numbox.isHidden()
@@ -11029,9 +11079,10 @@ def test_sound_settings_dialog_opens_and_edits(win):
         try:
             assert dlg.table.rowCount() == len(EVENT_LABELS)
 
-            # every row starts on a real file
-            for event, row in dlg._rows.items():
-                combo = dlg.table.cellWidget(row, 2)
+            # every row starts on a real file. The file cell is a container
+            # (combo + favourite star), so the combo comes from _combos.
+            for event in dlg._rows:
+                combo = dlg._combos[event]
                 assert combo.count() > 1, event
                 assert "missing" not in combo.currentText(), event
 

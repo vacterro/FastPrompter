@@ -1,4 +1,4 @@
-﻿"""Tests for the single-instance writer-ownership model.
+"""Tests for the single-instance writer-ownership model.
 
 Two layers:
 
@@ -234,7 +234,12 @@ def test_real_mutex_freed_after_owner_dies():
         proc.wait()
     # OS released the mutex with the process - the next owner may acquire it
     lock = InstanceLock(name)
-    owned, reason = lock.acquire()
+    owned = False
+    for _ in range(50):
+        owned, reason = lock.acquire(timeout_ms=50)
+        if owned:
+            break
+        time.sleep(0.02)
     assert owned, reason
     lock.release()
 

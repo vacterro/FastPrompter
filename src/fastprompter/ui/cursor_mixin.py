@@ -7,7 +7,8 @@ and the cursor logic lives where the other UI concerns already do.
 from __future__ import annotations
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QMessageBox
+from PyQt6.QtGui import QCursor
+from PyQt6.QtWidgets import QApplication, QMessageBox
 
 from fastprompter.core.translations import tr
 
@@ -58,7 +59,48 @@ class CursorMixin:
         except Exception:
             from fastprompter.core.logging import logger
             logger.exception("could not apply cursors")
+        # The static override draws the ARROW of whichever set is active, so a
+        # set change has to refresh it or the old image stays on screen.
+        self.apply_static_cursor()
         return on
+
+    # -- one static pointer image ------------------------------------------
+    def static_cursor_enabled(self) -> bool:
+        return self.data.get("static_cursor", "False") == "True"
+
+    def apply_static_cursor(self):
+        """Freeze the pointer image app-wide, or release it. Idempotent.
+
+        An application OVERRIDE cursor, not a per-widget one: the shape changes
+        the setting is about (I-beam over text, pointing hand over a link or a
+        button, resize arrows on a splitter) are set by dozens of widgets and by
+        Qt itself, and an override outranks all of them at once instead of
+        needing every call site to ask permission first.
+        """
+        on = self.static_cursor_enabled()
+        app = QApplication.instance()
+        if app is None:
+            return on
+        applied = bool(getattr(self, "_static_cursor_applied", False))
+        if on:
+            arrow = self.themed_cursor(Qt.CursorShape.ArrowCursor)
+            cursor = arrow if isinstance(arrow, QCursor) else QCursor(arrow)
+            # changeOverrideCursor replaces OUR push; setOverrideCursor again
+            # would stack a second one that no single restore could undo.
+            if applied:
+                app.changeOverrideCursor(cursor)
+            else:
+                app.setOverrideCursor(cursor)
+                self._static_cursor_applied = True
+        elif applied:
+            app.restoreOverrideCursor()
+            self._static_cursor_applied = False
+        return on
+
+    def toggle_static_cursor(self, checked):
+        self.data["static_cursor"] = "True" if checked else "False"
+        self.mark_dirty()
+        self.apply_static_cursor()
 
     def toggle_custom_cursors(self, checked):
         # Turning it on with nothing copied yet would be a no-op, so grab

@@ -17,23 +17,24 @@ probe itself runs off-thread via :meth:`probe`.
 from __future__ import annotations
 
 import os
+import time
 from pathlib import Path
 
 from fastprompter.core.usage_limits.model import (
-    AccountRef,
+    ERROR,
     FIVE_HOUR,
     OK,
-    ERROR,
     WEEKLY,
+    AccountRef,
     UsageSnapshot,
     UsageWindow,
     canonical_path,
     stable_id_for,
 )
+from fastprompter.core.usage_limits.providers import UsageProvider
 from fastprompter.core.usage_limits.providers._codex_probe import (  # noqa: F401
     parse_windows,
 )
-from fastprompter.core.usage_limits.providers import UsageProvider
 
 # Duration -> window key lives in _codex_probe.DURATION_LABELS (single source
 # of truth). Kept out of this module on purpose: a second copy would drift
@@ -141,16 +142,32 @@ class CodexProvider(UsageProvider):
         if not windows:
             windows = [UsageWindow.unavailable(FIVE_HOUR),
                        UsageWindow.unavailable(WEEKLY)]
+        banked = result.get("banked_resets")
+        meta = {"source": "codex app-server account/rateLimits/read"}
+        if banked is not None:
+            meta["banked_resets"] = banked
+        if result.get("reset_credits"):
+            meta["reset_credits"] = result["reset_credits"]
         return UsageSnapshot(
             account=account, status=OK, windows=windows,
             plan_type=result.get("plan_type"),
             fetched_at=result.get("fetched_at"),
-            provider_metadata={"source": "codex app-server account/rateLimits/read"},
+            provider_metadata=meta,
+            banked_resets=banked,
         )
+
+    def consume_reset(self, account: AccountRef, credit_id: str | None = None) -> dict:
+        from fastprompter.core.usage_limits.providers._codex_probe import (
+            consume_codex_reset,
+        )
+
+        return consume_codex_reset(account.source_path, credit_id=credit_id)
+
 
 
 # Keys in a probe payload that are NOT quota windows.
-_NON_WINDOW_KEYS = frozenset({"ok", "error", "plan_type", "fetched_at"})
+_NON_WINDOW_KEYS = frozenset({"ok", "error", "plan_type", "fetched_at",
+                             "banked_resets", "reset_credits"})
 
 
 def _windows_from(result: dict) -> list:
@@ -199,3 +216,68 @@ def _epoch(iso):
         return t.timestamp()
     except Exception:
         return None
+
+
+def source_status(extra_homes: list[str] | None = None, *,
+                  now: float | None = None) -> dict:
+    """What each Codex source can currently prove — for the settings UI.
+
+    Reports whether the CLI is on PATH/fallback, what homes exist, and
+    whether an authenticated session (auth.json) was found.
+    """
+    now = time.time() if now is None else now
+    try:
+        root = _home_dir()
+    except Exception:
+        root = None
+    from fastprompter.core.usage_limits.cli_tools import resolve_binary
+    cli_path = resolve_binary("codex")
+    cli_installed = bool(cli_path)
+
+    homes: list[dict] = []
+    seen: set[str] = set()
+
+    def check_home(p_str: str, kind: str) -> None:
+        if not p_str:
+            return
+        can = canonical_path(p_str)
+        if not can or can in seen:
+            return
+        if not os.path.isdir(can):
+            return
+        seen.add(can)
+        auth_file = os.path.join(can, "auth.json")
+        has_auth = os.path.isfile(auth_file)
+        homes.append({
+            "path": can,
+            "kind": kind,
+            "has_auth": has_auth,
+            "auth_path": auth_file if has_auth else "",
+        })
+
+    if root:
+        check_home(str(root / ".codex"), "auto_default")
+        try:
+            for s in sorted(root.glob(".codex-*")):
+                if s.is_dir():
+                    check_home(str(s), "auto_sibling")
+        except Exception:
+            pass
+
+    env_home = os.environ.get("CODEX_HOME")
+    if env_home:
+        check_home(env_home, "env")
+
+    for p in (extra_homes or ()):
+        check_home(p, "configured")
+
+    auth_found = any(h["has_auth"] for h in homes)
+    return {
+        "cli_installed": cli_installed,
+        "cli_path": cli_path,
+        "homes": homes,
+        "auth_found": auth_found,
+        "logged_in": auth_found,
+        "default_home_exists": bool(root and os.path.isdir(str(root / ".codex"))),
+    }
+

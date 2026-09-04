@@ -25,10 +25,8 @@ from PyQt6.QtCore import (
 )
 from PyQt6.QtGui import (
     QColor,
-    QDesktopServices,
     QFont,
     QKeySequence,
-    QPainter,
     QShortcut,
     QTextBlockFormat,
     QTextCharFormat,
@@ -39,7 +37,6 @@ from PyQt6.QtGui import (
 from PyQt6.QtWidgets import (
     QApplication,
     QBoxLayout,
-    QCheckBox,
     QComboBox,
     QFileDialog,
     QFrame,
@@ -175,38 +172,15 @@ class _SettingsPage(QWidget):
     def minimumSizeHint(self):
         return QSize(0, 0)
 
+    def sizeHint(self):
+        return QSize(0, 0)
+
 
 class _SettingsGearButton(QPushButton):
-    """Settings ⚙ button that rotates 45 degrees on every toggle."""
+    """Settings ⚙ button."""
 
     def __init__(self, parent=None):
-        super().__init__(parent)
-        self._angle = 0
-
-    def text(self) -> str:
-        return "⚙"
-
-    def rotate_step(self, delta: int = 45) -> None:
-        self._angle = (self._angle + delta) % 360
-        self.update()
-
-    def paintEvent(self, event):
-        super().paintEvent(event)
-        p = QPainter(self)
-        try:
-            p.setRenderHint(QPainter.RenderHint.Antialiasing, False)
-            w = self.width()
-            h = self.height()
-            if self.isDown():
-                p.translate(1, 1)
-            p.translate(w / 2.0, h / 2.0)
-            p.rotate(self._angle)
-            p.translate(-w / 2.0, -h / 2.0)
-            p.setFont(self.font())
-            p.setPen(self.palette().buttonText().color())
-            p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "⚙")
-        finally:
-            p.end()
+        super().__init__("⚙", parent)
 
 
 
@@ -1585,7 +1559,14 @@ class FastPrompter(
                         "(reports only when the provider refuses work)")
         else:
             lbl.setText(f"{ok}/{n} accounts OK")
-        lbl.setVisible(True)
+        # This label lives in the LAZY settings panel ("Passed events" group in
+        # settings_builder), so until that panel is built nothing owns it — and
+        # setVisible(True) on a parentless widget does not mean "show this
+        # caption", it means "open a window". That is what it did: a thin strip
+        # reading "4/4 accounts OK" floating beside the app, re-shown every
+        # second by the date timer. Showing it only means anything once
+        # something has adopted it.
+        lbl.setVisible(lbl.parentWidget() is not None)
         selector = getattr(self, "limit_accounts_selector", None)
         if selector is not None:
             selector.sync()
@@ -1743,11 +1724,14 @@ class FastPrompter(
         svc = getattr(self, "limit_service", None)
         if svc is None:
             return
+        is_initial = not getattr(self, "_limit_notifications_initialized", False)
+        self._limit_notifications_initialized = True
         snap = svc.state_copy
         alerts, new_state = evaluate_limit_notifications(
             snap.accounts, snap.snapshots,
             self.data.get("limit_notifications", {}),
             self.data.get("limit_notification_state", {}),
+            is_initial_poll=is_initial,
         )
         if new_state != self.data.get("limit_notification_state", {}):
             self.data["limit_notification_state"] = new_state
@@ -2313,6 +2297,17 @@ class FastPrompter(
             wdg = getattr(self, name, None)
             if wdg is not None and not sip.isdeleted(wdg):
                 wdg.setVisible(name not in hidden_now)
+        # Two buttons in those lists have a SECOND owner: the project pair is
+        # only meaningful when the active silo actually has a folder/exe, and
+        # _update_project_buttons is what knows that. The tier loop above can
+        # only answer "does this width have room", so on every resize/theme
+        # pass it showed both buttons for silos that have neither. Re-ask the
+        # semantic owner right after, so width narrows the set and never widens
+        # it past what exists.
+        if not hidden_now.intersection(("btn_project_folder", "btn_project_run")):
+            update_projects = getattr(self, "_update_project_buttons", None)
+            if callable(update_projects):
+                update_projects()
         if hasattr(self, "_counter_sep"):
             self._counter_sep.setVisible(not ultra)
         if ultra_flipped:
@@ -2428,6 +2423,12 @@ class FastPrompter(
     # a countdown that became known between resizes stayed hidden until the
     # user nudged the window. _update_limit_timer_label owns it alone and
     # applies the ultra rule itself.
+    #
+    # btn_project_folder / btn_project_run ARE in the ultra list, but width is
+    # only half their answer: they exist for silos that carry a folder or an
+    # executable. Both owners therefore agree on one rule — the semantic owner
+    # (_update_project_buttons) applies the ultra flag itself, and the tier
+    # loop re-asks it instead of overruling it.
 
     # ---- per-silo view state (cursor, selection, scroll, margin marks) ----
     def _silo_state_key(self, slot=None, is_archive=None):
@@ -3392,12 +3393,17 @@ class FastPrompter(
                 widths.append(frame.width() - 8)
             widths.append(self.width() - 16)
             avail = max(120, max(widths) - 12)
-            try:
-                needed = inner.totalHeightForWidth(avail)
-            except (AttributeError, TypeError):
+            measurer = (getattr(page, "totalHeightForWidth", None)
+                        or getattr(inner, "totalHeightForWidth", None))
+            if measurer is not None:
+                try:
+                    needed = measurer(avail)
+                except Exception:
+                    needed = page.sizeHint().height()
+            else:
                 needed = page.sizeHint().height()
             bar = tabs.tabBar().sizeHint().height() if tabs.tabBar() else 24
-            fitted = max(60, needed + bar + 10)
+            fitted = max(60, needed + bar + 14)
             tabs.setMaximumHeight(fitted)
             # The panel must never be compressed below its content, or the
             # last row (Typos on the Editor tab) is cut off.  The frame's
@@ -3414,9 +3420,12 @@ class FastPrompter(
                     app_w = app_item.widget() if app_item is not None else None
                     if app_w is not None and hasattr(app_w, "totalHeightForWidth"):
                         try:
-                            app_h = app_w.totalHeightForWidth(app_w.width())
+                            avail_w = app_w.width() if app_w.width() > 100 else avail
+                            app_h = app_w.totalHeightForWidth(avail_w)
                         except Exception:
                             app_h = app_w.height()
+                    if app_w is not None and app_h > 0:
+                        app_w.setFixedHeight(app_h)
                     hline_h = 0
                     hl_item = flay.itemAt(1)
                     hl_w = hl_item.widget() if hl_item is not None else None
@@ -3426,6 +3435,7 @@ class FastPrompter(
                     pad = m.top() + m.bottom() + flay.spacing() * 2
                     needed_frame = int(app_h + hline_h + fitted + pad)
                     frame.setMinimumHeight(needed_frame)
+                    frame.setMaximumHeight(needed_frame)
         tabs.updateGeometry()
 
         # The footer's own wrapping row has to be re-measured too. It is a
@@ -4687,11 +4697,15 @@ class FastPrompter(
 
         has_folder = bool(paths.get("folder"))
         has_exe = bool(paths.get("executable"))
+        # The header density tiers also hide this pair on narrow windows, so
+        # "has a folder" alone is not enough to show it — a wide-tier decision
+        # here would undo the ultra tier's own hiding on the next silo switch.
+        ultra = getattr(self, "_header_ultra", False)
 
         if hasattr(self, "btn_project_folder"):
-            self.btn_project_folder.setVisible(has_folder)
+            self.btn_project_folder.setVisible(has_folder and not ultra)
         if hasattr(self, "btn_project_run"):
-            self.btn_project_run.setVisible(has_exe)
+            self.btn_project_run.setVisible(has_exe and not ultra)
 
     def _update_files_button(self):
         """Refresh the header 📁 button: live file count + breakdown tooltip."""
@@ -7637,6 +7651,7 @@ class FastPrompter(
         self._settings_built = True
         from fastprompter.ui.settings_builder import build_settings_tabs
         build_settings_tabs(self)
+
     def init_ui(self):
         import time
         _t_hdr_0 = time.perf_counter()
@@ -8186,21 +8201,24 @@ class FastPrompter(
 
         # Removed broken preset_combo — it didn't work
 
-        def make_action_checkbox(text, callback):
+        def make_action_checkbox(text, callback, fixed_w=None):
             btn = QPushButton(text)
             btn.clicked.connect(lambda: (self.play_tick_sound(), callback()))
             btn._en_text = text
+            if fixed_w is not None:
+                btn.is_squishable = True
+                btn.setFixedWidth(fixed_w)
             return btn
 
-        self.btn_hotkeys = make_action_checkbox("Keys", self.open_hotkey_settings)
+        self.btn_hotkeys = make_action_checkbox("Keys", self.open_hotkey_settings, fixed_w=32)
         self.btn_hotkeys.setToolTip(tr("Configure Global Hotkeys (Settings Cog)", getattr(self, "_current_lang", "EN")))
-        self.btn_colors = make_action_checkbox("RGB", self.open_color_settings)
+        self.btn_colors = make_action_checkbox("RGB", self.open_color_settings, fixed_w=30)
         self.btn_colors.setToolTip(tr("Custom Theme Colors (Color Palette)", getattr(self, "_current_lang", "EN")))
-        self.btn_backup = make_action_checkbox("BkUp", self.backup_db)
+        self.btn_backup = make_action_checkbox("BkUp", self.backup_db, fixed_w=32)
         self.btn_backup.setToolTip(tr("Backup the database", getattr(self, "_current_lang", "EN")))
-        self.btn_restore = make_action_checkbox("Rstr", self.restore_db)
+        self.btn_restore = make_action_checkbox("Rstr", self.restore_db, fixed_w=32)
         self.btn_restore.setToolTip(tr("Restore the database from a backup", getattr(self, "_current_lang", "EN")))
-        self.btn_exit = make_action_checkbox("Exit", self.quit_app)
+        self.btn_exit = make_action_checkbox("Exit", self.quit_app, fixed_w=32)
         self.btn_exit.setToolTip(tr("Exit FastPrompter (Ctrl+Alt+Shift+Q)\nSave all data and quit application.", getattr(self, "_current_lang", "EN")))
 
         try:
@@ -8208,7 +8226,7 @@ class FastPrompter(
         except Exception:
             current_scale_pct = 100
         self.btn_button_scale = make_action_checkbox(
-            f"Scale: {current_scale_pct}%", self.cycle_button_scale
+            f"{current_scale_pct}%", self.cycle_button_scale, fixed_w=44
         )
         self.btn_button_scale.setToolTip(tr(
             "Scale the whole program: 50 / 75 / 100 / 125 / 150%\n"
@@ -8216,15 +8234,22 @@ class FastPrompter(
         )
 
         # Load custom font button
-        self.btn_load_font = QPushButton(tr("+ Font", getattr(self, "_current_lang", "EN")))
-        self.btn_load_font.setFixedWidth(52)
+        self.btn_load_font = QPushButton("+")
+        self.btn_load_font.is_squishable = True
+        self.btn_load_font.setFixedWidth(20)
         self.btn_load_font.setToolTip(tr("Load a custom .ttf/.otf font file", getattr(self, "_current_lang", "EN")))
         self.btn_load_font.clicked.connect(self.load_custom_font)
 
-        self.btn_clear_fonts = QPushButton(tr("× Fonts", getattr(self, "_current_lang", "EN")))
-        self.btn_clear_fonts.setFixedWidth(54)
+        self.btn_clear_fonts = QPushButton("↺")
+        self.btn_clear_fonts.is_squishable = True
+        self.btn_clear_fonts.setFixedWidth(20)
         self.btn_clear_fonts.setToolTip(tr("Clear all custom fonts from combo (reset to defaults)", getattr(self, "_current_lang", "EN")))
         self.btn_clear_fonts.clicked.connect(self.clear_custom_fonts)
+
+        self.font_combo.setMaximumWidth(105)
+        self.font_spin.setFixedWidth(42)
+        self.cb_theme.setMaximumWidth(125)
+        self.preview_combo.setMaximumWidth(100)
 
         # Volume slider
         self.spin_volume = QSlider(Qt.Orientation.Horizontal)
@@ -8243,45 +8268,14 @@ class FastPrompter(
         )
 
         # --- Settings panel: hidden by default, toggled by the gear button. ---
-        # Top row: appearance & actions. Below: toggles grouped by purpose.
-        # Gathered as a flat list, not a fixed QHBoxLayout: 17 controls in
-        # one rigid row is what forced the whole panel to ~1800px wide.
-        # FlowLayout wraps them instead (see below).
-        self._appearance_items = []
-        appearance_row = self._appearance_items
-        _lbl_font = QLabel(tr("Font:", getattr(self, "_current_lang", "EN")))
-        _lbl_font._en_text = "Font:"
-        appearance_row.append(_lbl_font)
-        appearance_row.append(self.font_combo)
-        appearance_row.append(self.font_spin)
-        appearance_row.append(self.btn_load_font)
-        appearance_row.append(self.btn_clear_fonts)
-        pass  # spacing handled by the flow layout
-        _lbl_theme = QLabel(tr("Theme:", getattr(self, "_current_lang", "EN")))
-        _lbl_theme._en_text = "Theme:"
-        appearance_row.append(_lbl_theme)
-        appearance_row.append(self.cb_theme)
-        appearance_row.append(self.btn_colors)
-
-        self.btn_drop_zones = make_action_checkbox("Drop Zones", self.open_drop_zones_settings)
+        # Top bar: appearance & global actions organized in 4 compact clusters.
+        # Fits on a single row on wide screens, wraps into balanced spacious rows on compact screens.
+        self.btn_drop_zones = make_action_checkbox("Zones", self.open_drop_zones_settings, fixed_w=48)
         self.btn_drop_zones.setToolTip(tr("Customize Drop Zones", getattr(self, "_current_lang", "EN")))
-        appearance_row.append(self.btn_drop_zones)
-        pass  # spacing handled by the flow layout
-        _lbl_view = QLabel(tr("View:", getattr(self, "_current_lang", "EN")))
-        _lbl_view._en_text = "View:"
-        appearance_row.append(_lbl_view)
-        appearance_row.append(self.preview_combo)
-        appearance_row.append(self.btn_button_scale)
-        pass  # spacing handled by the flow layout
-        _lbl_lang = QLabel(tr("Language:", getattr(self, "_current_lang", "EN")))
-        _lbl_lang._en_text = "Language:"
-        appearance_row.append(_lbl_lang)
-        self.cb_language = QComboBox()
-        # Every language the i18n pack can serve, shown by its native name +
-        # a drawn flag icon, keyed on the code (stored as itemData so the
-        # display text is free to be localized without breaking the lookup).
-        from PyQt6.QtCore import QSize
 
+        self.cb_language = QComboBox()
+        self.cb_language.setMaximumWidth(105)
+        from PyQt6.QtCore import QSize
         from fastprompter.ui.flags import flag_icon
         self.cb_language.setIconSize(QSize(18, 12))
         for code in available_languages():
@@ -8299,12 +8293,69 @@ class FastPrompter(
         self.cb_language.currentIndexChanged.connect(
             lambda i: self._on_language_changed(self.cb_language.itemData(i) or "EN")
         )
-        appearance_row.append(self.cb_language)
-        pass  # stretch handled by the flow layout
-        appearance_row.append(self.btn_hotkeys)
-        appearance_row.append(self.btn_backup)
-        appearance_row.append(self.btn_restore)
-        appearance_row.append(self.btn_exit)
+
+        for btn, min_w in ((self.btn_colors, 38), (self.btn_drop_zones, 48), (self.btn_hotkeys, 42),
+                           (self.btn_backup, 44), (self.btn_restore, 42), (self.btn_exit, 40)):
+            btn.setMinimumWidth(min_w)
+            btn.setStyleSheet("padding: 2px 5px;")
+
+        class _ClusterWidget(QWidget):
+            def sizeHint(self):
+                w = 0
+                lay = self.layout()
+                if lay is not None:
+                    for i in range(lay.count()):
+                        item = lay.itemAt(i)
+                        wid = item.widget() if item is not None else None
+                        if wid is not None:
+                            if isinstance(wid, QLabel):
+                                cw = wid.fontMetrics().horizontalAdvance(wid.text()) + 4
+                            else:
+                                cw = min(wid.sizeHint().width(), wid.maximumWidth())
+                            w += cw
+                    if lay.count() > 1:
+                        w += (lay.count() - 1) * lay.spacing()
+                    margins = lay.contentsMargins()
+                    w += margins.left() + margins.right()
+                return QSize(w, super().sizeHint().height())
+
+        def _make_cluster(items):
+            box = _ClusterWidget()
+            lay = QHBoxLayout(box)
+            lay.setContentsMargins(0, 0, 0, 0)
+            lay.setSpacing(2)
+            for it in items:
+                lay.addWidget(it)
+            return box
+
+        _lbl_font = QLabel(tr("Font:", getattr(self, "_current_lang", "EN")))
+        _lbl_font._en_text = "Font:"
+        _lbl_font.setFixedWidth(_lbl_font.fontMetrics().horizontalAdvance(_lbl_font.text()) + 4)
+        cluster_font = _make_cluster([
+            _lbl_font, self.font_combo, self.font_spin,
+            self.btn_load_font, self.btn_clear_fonts
+        ])
+
+        _lbl_theme = QLabel(tr("Theme:", getattr(self, "_current_lang", "EN")))
+        _lbl_theme._en_text = "Theme:"
+        _lbl_theme.setFixedWidth(_lbl_theme.fontMetrics().horizontalAdvance(_lbl_theme.text()) + 4)
+        cluster_theme = _make_cluster([
+            _lbl_theme, self.cb_theme, self.btn_colors, self.btn_drop_zones
+        ])
+
+        _lbl_view = QLabel(tr("View:", getattr(self, "_current_lang", "EN")))
+        _lbl_view._en_text = "View:"
+        _lbl_view.setFixedWidth(_lbl_view.fontMetrics().horizontalAdvance(_lbl_view.text()) + 4)
+        cluster_view = _make_cluster([
+            _lbl_view, self.preview_combo, self.btn_button_scale
+        ])
+
+        cluster_system = _make_cluster([
+            self.cb_language, self.btn_hotkeys, self.btn_backup,
+            self.btn_restore, self.btn_exit
+        ])
+
+        self._appearance_items = [cluster_font, cluster_theme, cluster_view, cluster_system]
 
         self.settings_tabs = QTabWidget()
         self.settings_tabs.setDocumentMode(True)
@@ -8326,7 +8377,7 @@ class FastPrompter(
         v_layout.setContentsMargins(4, 2, 4, 3)
         v_layout.setSpacing(3)
         from fastprompter.ui.flow_layout import flow_widget
-        v_layout.addWidget(flow_widget(appearance_row, h_spacing=4))
+        v_layout.addWidget(flow_widget(self._appearance_items, h_spacing=3, v_spacing=2))
         v_layout.addWidget(hline)
         v_layout.addWidget(self.settings_tabs)
 
@@ -9025,6 +9076,7 @@ class FastPrompter(
             ("cb_tray", "tray_visible", "True"),
             ("cb_sidebar", "sidebar_right", "False"),
             ("cb_custom_cursors", "custom_cursors", "False"),
+            ("cb_static_cursor", "static_cursor", "False"),
             ("cb_focus", "close_on_focus_loss", "True"),
             ("cb_tray_activate", "tray_click_activates", "True"),
             ("cb_snippet_arrows", "snippet_arrows", "False"),
@@ -9141,7 +9193,7 @@ class FastPrompter(
         # Custom cursors: apply SILENTLY (the toggle handler can pop a modal
         # capture dialog — not allowed during a programmatic switch).
         if hasattr(self, "apply_custom_cursors"):
-            self.apply_custom_cursors()
+            self.apply_custom_cursors()   # re-applies the static override too
         # Preview mode effect, from the re-stamped combo (itemData is the
         # single source of truth).
         if hasattr(self, "preview_combo") and not sip.isdeleted(self.preview_combo):
@@ -9503,6 +9555,7 @@ class FastPrompter(
         for cb_name in ("cb_top", "cb_lock_window", "cb_normal_window", "cb_tray",
                         "cb_sidebar", "cb_focus", "cb_snippet_arrows", "cb_silo_ticks",
                         "cb_ctrl_c", "cb_lock_cursor", "cb_silo_home", "cb_portable_backup",
+                        "cb_custom_cursors", "cb_static_cursor",
                         "cb_wrap", "cb_line_numbers", "cb_line_marks", "cb_zebra", "cb_hide_shortkeys",
                         "cb_double_line", "cb_bold_titles", "cb_silo_pinned_gap",
                         "cb_date_rect", "cb_date_seconds", "cb_analog_clock",
@@ -9528,13 +9581,13 @@ class FastPrompter(
                 if en_text:
                     ac.setText(tr(en_text, lang))
 
-        # Translate button_scale text (has dynamic percentage)
+        # Translate button_scale text (compact percentage)
         if hasattr(self, "btn_button_scale") and not sip.isdeleted(self.btn_button_scale):
             try:
                 pct = int(float(self.data.get("ui_scale", "0.5")) * 100)
             except Exception:
                 pct = 100
-            self.btn_button_scale.setText(f"{tr('Scale', lang)}: {pct}%")
+            self.btn_button_scale.setText(f"{pct}%")
 
         # Translate static labels
         static_labels = [
@@ -9582,6 +9635,10 @@ class FastPrompter(
 
         # Translate _day_part used in _update_date_label
         self._update_date_label()
+        lbl_timer = getattr(self, "lbl_limit_timer", None)
+        if lbl_timer is not None and not sip.isdeleted(lbl_timer):
+            desc = getattr(lbl_timer, "_en_tooltip", "") or "Soonest AI limit reset"
+            lbl_timer.setToolTip(tr(desc, lang))
 
         # Translate sidebar tooltips
         for attr_name, en_val, tip_attr in (
@@ -9742,10 +9799,6 @@ class FastPrompter(
     # own "aN" — so it is registered in BOTH tables with its own namespace and
     # a remap never touches the other space's keys (T-754).
     _SILO_INDEX_STATE = (
-        # {slot: [item, ...]} on purpose - the same shape as silo_colors, so
-        # reordering or deleting silos remaps the queues through the existing
-        # str_dict handling instead of needing code of its own.
-        ("watcher_queues", "str_dict", "numeric"),
         ("silo_last_edited", "int_dict"),
         ("pinned_silos", "int_list"),
         ("silo_ticked", "int_list"),
@@ -9778,12 +9831,9 @@ class FastPrompter(
     # The archive is its own index space with its own slot-keyed stores.
     # Reordering archived silos used to move only the TEXT, leaving these
     # behind — an archived silo would inherit another one's files folder.
-    # watcher_queues here carries the "aN" half of the dual namespace, so an
-    # archive reorder/delete/insert follows the queue along with the text.
     _ARCHIVE_INDEX_STATE = (
         ("archive_silo_folders", "str_dict", "numeric"),
         ("archive_project_paths", "str_dict", "numeric"),
-        ("watcher_queues", "str_dict", "a"),
     )
 
     # Every per-CATEGORY store (defined in core.state so it is testable
@@ -10605,8 +10655,6 @@ class FastPrompter(
             self.data.get("archive_project_paths" if target_is_archive else "silo_project_paths", {}),
             t_key,
         )
-        _swap_between(self.data.get("watcher_queues", {}), s_qkey,
-                      self.data.get("watcher_queues", {}), t_qkey)
 
         # Per-category view state: "sN" normal / "aN" archive, same dict.
         store = self.data.get("silo_view_state_all")
@@ -10966,7 +11014,6 @@ class FastPrompter(
             "silo_colors": dict(self.data.get("silo_colors", {})),
             "silo_project_paths": _copy2(self.data.get("silo_project_paths", {})),
             "silo_types": dict(self.data.get("silo_types", {})),
-            "watcher_queues": _copy2(self.data.get("watcher_queues", {})),
             # per-silo file link + Sync-Project slot map: identity-owned, so
             # a delete/undo must restore them exactly like colours/types
             "silo_links": dict(self.data.get("silo_links", {})),
@@ -11602,7 +11649,6 @@ class FastPrompter(
             for key, store in (("silo_colors", "silo_colors_all"),
                                ("silo_project_paths", "silo_project_paths_all"),
                                ("silo_types", "silo_type_all"),
-                               ("watcher_queues", "watcher_queues_all"),
                                ("archive_silo_folders", "archive_silo_folders_all"),
                                ("archive_project_paths", "archive_project_paths_all"),
                                ("silo_links", "silo_links_all"),
@@ -12245,6 +12291,12 @@ class FastPrompter(
                 lambda pos, n=idx: self._cat_numbox_context(n, pos))
             layout.addWidget(btn, i // per_row, i % per_row)
             self._cat_num_buttons.append(btn)
+        cols = min(len(cats), per_row) if cats else 1
+        spacing = layout.spacing()
+        total_w = cols * size + max(0, cols - 1) * spacing
+        rows = (len(cats) + per_row - 1) // per_row if cats else 1
+        total_h = rows * size + max(0, rows - 1) * spacing
+        self.cat_numbox.setFixedSize(total_w, total_h)
         self._update_cat_numbox_active()
 
     def _schedule_numbox_rebuild(self, *_args):
@@ -12286,6 +12338,11 @@ class FastPrompter(
     def _cat_numbox_clicked(self, idx):
         if 0 <= idx < self.cat_combo.count():
             self.cat_combo.setCurrentIndex(idx)
+        # A checkable QPushButton toggles ITSELF on click. Re-clicking the
+        # already-active project changes no combo index, so on_tab_changed
+        # never fires and the button would be left visually released; sync the
+        # whole row here so exactly one box is ever pressed.
+        self._update_cat_numbox_active()
 
     def _cat_numbox_context(self, idx, pos):
         if 0 <= idx < self.cat_combo.count():
@@ -12990,6 +13047,8 @@ class FastPrompter(
         # the event loop has laid the window out.
         if getattr(self, "mini_settings_frame", None) is not None:
             QTimer.singleShot(0, self._fit_settings_tabs)
+        if hasattr(self, "_apply_header_density"):
+            QTimer.singleShot(0, self._apply_header_density)
 
     def changeEvent(self, event):
         # Zen solo swept the user's desktop clean on our behalf; the moment
@@ -16194,19 +16253,6 @@ class FastPrompter(
             if isinstance(sle, dict) and isinstance(dle, dict) and src_idx in sle:
                 dle[dst_idx] = sle.pop(src_idx)
 
-        # watcher queue: canonical watcher_queues_all store (W2-003)
-        queues_all = self.data.get("watcher_queues_all")
-        if isinstance(queues_all, dict):
-            qsrc_store = queues_all.get(src_cat)
-            qdst_store = queues_all.setdefault(dst_cat, {})
-            qsrc = ("a" + skey) if is_archive_src else skey
-            if isinstance(qsrc_store, dict) and isinstance(qdst_store, dict) and qsrc in qsrc_store:
-                qdst_store[dkey] = qsrc_store.pop(qsrc)
-            # also update the active alias if it still points here
-            active_q = self.data.get("watcher_queues")
-            if isinstance(active_q, dict) and qsrc in active_q:
-                active_q[dkey] = active_q.pop(qsrc)
-
         # saved silo view/cursor state: per-category "sN"/"aN" keys
         vstore = self.data.get("silo_view_state_all")
         if isinstance(vstore, dict):
@@ -16248,7 +16294,7 @@ class FastPrompter(
         "silo_collapsed_all", "silo_colors_all", "silo_gaps_all",
         "silo_gap_names_all", "silo_folders_all", "archive_silo_folders_all",
         "silo_project_paths_all", "archive_project_paths_all",
-        "watcher_queues_all", "silo_type_all", "silo_last_edited_all",
+        "silo_type_all", "silo_last_edited_all",
         "silo_view_state_all",
         "silo_links_all", "project_sync_map_all", "project_sync_all",
     )
@@ -16335,9 +16381,6 @@ class FastPrompter(
                 return False
             last_edited = self.data.get("silo_last_edited_all", {}).get(target_cat, {})
             if isinstance(last_edited, dict) and slot_idx in last_edited:
-                return False
-            queues = self.data.get("watcher_queues_all", {}).get(target_cat, {})
-            if isinstance(queues, dict) and str(slot_idx) in queues:
                 return False
             view = self.data.get("silo_view_state_all", {}).get(target_cat, {})
             if isinstance(view, dict) and ("s" + str(slot_idx)) in view:
@@ -17747,76 +17790,11 @@ def setup_exception_hook():
     return None
 
 
-def _find_fastprompter_pids() -> list[int]:
-    """Return PIDs of python/pythonw processes whose command line mentions
-    FastPrompter (excluding the current process)."""
-    import subprocess
-    my_pid = os.getpid()
-    try:
-        ps_cmd = (
-            "Get-CimInstance Win32_Process "
-            "-Filter \"Name like '%python%' or Name like '%pyw%'\" "
-            "| Where-Object {{ "
-            "  $_.ProcessId -ne {my} -and "
-            "  $_.CommandLine -match 'FastPrompter' "
-            "}} | Select-Object -ExpandProperty ProcessId"
-        ).format(my=my_pid)
-        r = subprocess.run(
-            ["powershell", "-NoProfile", "-Command", ps_cmd],
-            capture_output=True, text=True, timeout=15)
-        return [int(line.strip()) for line in r.stdout.splitlines()
-                if line.strip().isdigit()]
-    except Exception:
-        return []
-
-
-def _force_kill_frozen_owner() -> bool:
-    """Hard-kill any live FastPrompter owner whose IPC is silent.
-
-    Two strategies:
-      1. owner.pid file → taskkill /F /T (fast path)
-      2. WMI process-table sweep → taskkill each candidate
-
-    Returns True only when at least one match was actually terminated
-    (returncode 0). ``taskkill`` exit code 128 (process-not-found) does
-    NOT count — the recorded PID is stale; the real mutex holder lives
-    elsewhere and strategy 2 must find it.
-    """
-    import subprocess
-
-    def taskkill(pid: int) -> bool:
-        try:
-            r = subprocess.run(
-                ["taskkill", "/F", "/T", "/PID", str(pid)],
-                capture_output=True, timeout=10)
-            # 0 = terminated; 128 = already gone (stale PID)
-            return r.returncode == 0
-        except Exception:
-            return False
-
-    # Strategy 1 — PID file
-    try:
-        from fastprompter.core.instance_lock import _read_owner_pid
-        pid = _read_owner_pid()
-        if pid and pid != os.getpid() and taskkill(pid):
-            return True
-    except Exception:
-        pass
-
-    # Strategy 2 — process-table sweep
-    for pid in _find_fastprompter_pids():
-        if pid != os.getpid() and taskkill(pid):
-            return True
-
-    return False
-
-
 def main_entry():
     from fastprompter.core.instance_lock import (
         HANDED_OFF,
         PRIMARY,
         RECLAIMED,
-        UNRESPONSIVE,
         InstanceLock,
         bootstrap_ownership,
     )
@@ -17837,28 +17815,8 @@ def main_entry():
         from fastprompter.core.ipc_server import _LAST_SAW_SERVER
         if _LAST_SAW_SERVER:
             return  # owner alive but busy — exit silently; window comes to front
-        # Owner was never seen via IPC — genuinely frozen or crashed. Try to
-        # force-kill it via PID file or process-table sweep, then retry.
-        # The retry loop handles two realities: (a) a stale owner.pid may
-        # point to a dead process — kill claims 0 hits, WMI sweep finds the
-        # real holder on the next attempt; (b) after kill the OS needs a
-        # moment to release the abandoned mutex, so a fresh bootstrap may
-        # still see a live owner briefly.
-        if role == UNRESPONSIVE:
-            import time
-            for attempt in range(3):
-                if not _force_kill_frozen_owner():
-                    break
-                _log.info("killed frozen owner (attempt %s); retrying", attempt + 1)
-                time.sleep(0.3)
-                lock = InstanceLock()
-                role, reason = bootstrap_ownership(lock, request_show)
-                if role in (PRIMARY, RECLAIMED):
-                    break
-                lock.release()
-        if role not in (PRIMARY, RECLAIMED):
-            _show_startup_diagnostic(reason)
-            return
+        _show_startup_diagnostic(reason)
+        return
 
     # Abandoned ownership means the previous owner died mid-run: its database
     # write may have been interrupted. Run a lightweight read-only consistency

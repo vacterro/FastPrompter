@@ -92,3 +92,40 @@ def test_launcher_calls_execv_when_pyqt6_missing_and_venv_exists(
     assert len(calls) == 1, f"expected one os.execv call, got {calls}"
     assert "python.exe" in calls[0][0]
     assert ".venv" in calls[0][0]
+
+
+def test_launcher_calls_execv_when_pyqt6_present_but_markdown_missing(
+        monkeypatch, tmp_path):
+    """When PyQt6 is available but markdown is missing, the launcher must
+    still re-exec into .venv."""
+    import pytest
+    real_import = builtins.__import__
+
+    def _guarded(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "markdown":
+            raise ImportError("markdown missing")
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", _guarded)
+    mod = _load_pyw()
+    fake_root = str(tmp_path / "project")
+    venv_py = os.path.join(fake_root, ".venv", "Scripts", "python.exe")
+    monkeypatch.setattr(mod, "__file__",
+                        os.path.join(fake_root, "FastPrompter.pyw"))
+    monkeypatch.setattr(sys, "executable",
+                        os.path.join(str(tmp_path), "system", "python.exe"))
+    real_exists = os.path.exists
+    calls = []
+
+    def _fake_execv(p, a):
+        calls.append((p, a))
+        raise SystemExit(0)
+
+    monkeypatch.setattr(os, "execv", _fake_execv)
+    monkeypatch.setattr(os.path, "exists",
+                        lambda p: True if p == venv_py else real_exists(p))
+    with pytest.raises(SystemExit) as exc_info:
+        mod._ensure_venv_python()
+    assert exc_info.value.code == 0
+    assert len(calls) == 1
+    assert ".venv" in calls[0][0]
