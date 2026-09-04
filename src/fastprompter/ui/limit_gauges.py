@@ -112,6 +112,7 @@ class LimitGauges(QWidget):
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setToolTip("AI usage: click to open settings")
         self._last_prefer_labels = None
+        self._initial_auto_scheduled = False
         self._result_ready.connect(self._on_data)
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._auto)
@@ -147,7 +148,8 @@ class LimitGauges(QWidget):
             self._timer.setInterval(interval)
         if not self._timer.isActive():
             self._timer.start()
-        if not self._service.state_copy.snapshots:
+        if not self._initial_auto_scheduled:
+            self._initial_auto_scheduled = True
             self._service.schedule_auto(interval // 1000)
 
     def _refresh_interval(self) -> int:

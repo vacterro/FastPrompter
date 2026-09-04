@@ -262,9 +262,22 @@ class ClaudeProvider(UsageProvider):
 
     def probe(self, account: AccountRef, deadline: float) -> UsageSnapshot:
         now = time.time()
-        cli = self._cli_reading(deadline, now)
         bridge = self._bridge_reading(account)
         desktop = {} if self._structured_source else self._desktop_reading(account)
+
+        # Fast path: if the statusline bridge or desktop sampler already holds
+        # a fresh reading (< 5 min), skip spawning the 7-second CLI process.
+        need_cli = True
+        if bridge.get("windows"):
+            captured = bridge.get("captured_at")
+            if captured and (now - captured) < 300:
+                need_cli = False
+        elif desktop.get("windows") and desktop.get("fresh"):
+            captured = desktop.get("captured_at")
+            if captured and (now - captured) < 300:
+                need_cli = False
+
+        cli = self._cli_reading(deadline, now) if need_cli else {}
         # An explicit refusal in Claude Code's own transcript beats any
         # percentage: the window is spent until it resets. This is the only
         # directory-walking read here, so it is also the only one that can

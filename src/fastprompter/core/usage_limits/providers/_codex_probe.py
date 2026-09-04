@@ -8,11 +8,17 @@ can never block the pipe.
 
 from __future__ import annotations
 
+import functools
 import json
 import os
 import subprocess
 import threading
 import time
+
+from fastprompter.core.usage_limits.cli_tools import (
+    silent_creationflags,
+    silent_startupinfo,
+)
 
 # Tunables
 READ_STEP_S = 0.02
@@ -112,6 +118,7 @@ class AppServerSession:
                 pass
 
 
+@functools.lru_cache(maxsize=1)
 def _resolve_codex_cmd() -> str:
     if os.name != "nt":
         return "codex"
@@ -131,13 +138,14 @@ def _start_app_server(codex_home: str, label: str,
     env["CODEX_HOME"] = codex_home
     for k in ("OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN"):
         env.pop(k, None)
-    creationflags = 0x08000000 if os.name == "nt" else 0  # CREATE_NO_WINDOW
+    creationflags = silent_creationflags()
     cmd = codex_cmd or _resolve_codex_cmd()
     proc = subprocess.Popen(
         [cmd, "app-server", "--stdio"],
         stdin=subprocess.PIPE, stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL, env=env,
-        creationflags=creationflags, bufsize=-1, text=False,
+        creationflags=creationflags, startupinfo=silent_startupinfo(),
+        bufsize=-1, text=False,
     )
     return AppServerSession(proc, label)
 

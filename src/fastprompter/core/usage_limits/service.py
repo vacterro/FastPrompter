@@ -251,7 +251,7 @@ class UsageLimitService:
             )
 
     # -- probe sweep -------------------------------------------------------
-    def refresh(self) -> None:
+    def refresh(self, rediscover: bool = False) -> None:
         """Trigger an async probe sweep fanning out across the thread pool.
 
         CORE-001 / PERF-001 / PERF-003: each refresh gets an independently monotonic
@@ -260,7 +260,7 @@ class UsageLimitService:
         into a single pending follow-up sweep rather than spawning thread storms.
         """
         accounts = self.accounts
-        if not accounts:
+        if not accounts and not rediscover:
             return
         with self._lock:
             if self._closed:
@@ -274,12 +274,16 @@ class UsageLimitService:
                 return
             self._sweep_threads_count += 1
         t = threading.Thread(
-            target=self._sweep_coordinator, args=(accounts, gen, req_id),
+            target=self._sweep_coordinator, args=(accounts, gen, req_id, rediscover),
             daemon=True, name="fastprompter-limit-sweep")
         t.start()
 
-    def _sweep_coordinator(self, accounts: list[AccountRef], gen: int, req_id: int) -> None:
+    def _sweep_coordinator(self, accounts: list[AccountRef], gen: int, req_id: int,
+                           rediscover: bool = False) -> None:
         try:
+            if rediscover:
+                self._rediscover_if_due()
+                accounts = self.accounts
             self._sweep(accounts, gen, req_id)
         finally:
             follow_up = False
@@ -300,7 +304,7 @@ class UsageLimitService:
                 if next_accounts:
                     t = threading.Thread(
                         target=self._sweep_coordinator,
-                        args=(next_accounts, next_gen, next_req_id),
+                        args=(next_accounts, next_gen, next_req_id, False),
                         daemon=True, name="fastprompter-limit-sweep")
                     t.start()
                 else:
@@ -401,12 +405,11 @@ class UsageLimitService:
 
     # -- auto-refresh scheduler --------------------------------------------
     def schedule_auto(self, interval_s: int | None = None) -> None:
-        """Called from a QTimer on the main thread; starts a sweep when
+        """Called from a QTimer on the main thread; starts an async sweep when
         not backoff-limited (or if interval elapsed since last sweep).
 
-        Rediscovery rides along here rather than on its own timer: it is the
-        one place that already knows a sweep is due, and discovery must finish
-        before the sweep so a newly installed CLI is probed in the same pass.
+        Rediscovery rides along inside the background sweep coordinator so
+        the main thread does zero filesystem scanning during auto-refresh.
         """
         with self._lock:
             state = self._state
@@ -417,8 +420,7 @@ class UsageLimitService:
                 return
             if state.last_sweep and (now - state.last_sweep) < (interval_s or DEFAULT_REFRESH_SEC) * 0.8:
                 return
-        self._rediscover_if_due()
-        self.refresh()
+        self.refresh(rediscover=True)
 
     def _fire(self) -> None:
         with self._lock:

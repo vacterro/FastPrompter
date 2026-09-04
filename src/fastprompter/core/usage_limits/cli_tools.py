@@ -29,6 +29,27 @@ from pathlib import Path
 
 # CREATE_NO_WINDOW: a 3-minute quota sweep must not flash a console window.
 _NO_WINDOW = 0x08000000 if os.name == "nt" else 0
+# BELOW_NORMAL_PRIORITY_CLASS: probe child processes must never starve the GUI thread.
+_BELOW_NORMAL_PRIORITY_CLASS = 0x00004000 if os.name == "nt" else 0
+# STARTF_FORCEOFFFEEDBACK: prevent Windows from showing the spinning hourglass cursor.
+_STARTF_FORCEOFFFEEDBACK = 0x00000040 if os.name == "nt" else 0
+_STARTF_USESHOWWINDOW = 0x00000001 if os.name == "nt" else 0
+_SW_HIDE = 0
+
+
+def silent_startupinfo() -> subprocess.STARTUPINFO | None:
+    """STARTUPINFO suppressing console windows and the Windows spinning feedback cursor."""
+    if os.name != "nt":
+        return None
+    si = subprocess.STARTUPINFO()
+    si.dwFlags |= _STARTF_USESHOWWINDOW | _STARTF_FORCEOFFFEEDBACK
+    si.wShowWindow = _SW_HIDE
+    return si
+
+
+def silent_creationflags() -> int:
+    """Creation flags: no console window, below-normal priority so UI never hitches."""
+    return _NO_WINDOW | _BELOW_NORMAL_PRIORITY_CLASS
 
 
 @dataclasses.dataclass(frozen=True)
@@ -118,7 +139,8 @@ def run_cli(argv: list[str], deadline: float, *,
         result = subprocess.run(
             argv, capture_output=True, text=True, encoding="utf-8",
             errors="replace", timeout=min(remaining, 30.0), cwd=cwd,
-            env=env, creationflags=_NO_WINDOW, check=False,
+            env=env, creationflags=silent_creationflags(),
+            startupinfo=silent_startupinfo(), check=False,
         )
     except subprocess.TimeoutExpired:
         return {"ok": False, "stdout": "", "error": "timeout"}
