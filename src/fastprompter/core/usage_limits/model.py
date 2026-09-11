@@ -60,7 +60,24 @@ def stable_id_for(provider_id: str, source_path: str) -> str:
     base = canonical_path(source_path) or provider_id
     if os.name == "nt":
         base = base.lower()
-    return hashlib.sha1(f"{provider_id}:{base}".encode()).hexdigest()[:16]
+    return hashlib.sha1(f"{provider_id}:{base}".encode(), usedforsecurity=False).hexdigest()[:16]
+
+
+def stable_id_for_value(provider_id: str, value: str) -> str:
+    """Deterministic stable id from an OPAQUE vendor identity value.
+
+    ``stable_id_for`` runs its input through :func:`canonical_path`, which is
+    right for a config file and wrong for an account id: ``abspath()`` makes
+    the answer depend on the current working directory and drive letter, so
+    the same vendor account produced different ids from different launch
+    directories (T-1243).  A vendor account id is a value, not a path, so it
+    is hashed verbatim with an unambiguous separator.
+    """
+    identity = (value or "").strip()
+    if not identity:
+        return ""
+    payload = f"{provider_id}\0{identity}".encode()
+    return hashlib.sha256(payload).hexdigest()[:16]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -84,6 +101,16 @@ class UsageWindow:
     group: str = ""
     # Human label of that pool, for tooltips/overview ("Gemini models").
     group_label: str = ""
+    reset_pending: bool = False  # reset elapsed; awaiting provider confirmation
+    # AMOUNT quotas (Freebuff Freebucks): a window whose truth is "42 of 100
+    # FB left", not a percent of an abstract budget. Percent fields stay
+    # exact so every existing percent consumer keeps working; the amount
+    # fields carry the vendor's own numbers beside them and ``unit`` names
+    # the currency. None everywhere else — percent-only windows are untouched.
+    used_amount: float | None = None
+    remaining_amount: float | None = None
+    limit_amount: float | None = None
+    unit: str = ""
 
     @classmethod
     def unavailable(cls, key: str) -> UsageWindow:
@@ -227,23 +254,10 @@ def gate_windows(windows) -> list:
 
 
 def apply_elapsed_resets(windows, now: float) -> list:
-    """Show a window as refilled the moment its OWN reset time passes.
+    """Invalidate percentages after reset until the provider confirms new usage.
 
-    The provider told us exactly when the window resets. Once that timestamp
-    is in the past the window is full — there is no other outcome — yet the
-    gauge kept the pre-reset number until the next 3-minute sweep confirmed
-    what the clock already proved. That is a stale reading the app had the
-    facts to avoid.
-
-    Only the window whose own ``resets_at_epoch`` elapsed is refilled, and the
-    now-meaningless timestamp is dropped so nothing renders "resets in -4m".
-    The result is marked ``assumed_full`` so the UI can say the refill is
-    derived from the reset clock rather than freshly probed; the next sweep
-    replaces it with the provider's own number either way.
-
-    Runs BEFORE ``gate_windows`` (see ``resolved_windows``): gating overwrites
-    the gated window's percentages, so a refill applied afterwards could not
-    restore the number the gate had already destroyed.
+    A clock proves that an old quota period ended, not how much the user has
+    spent since. Keep an explicit pending state rather than inventing 100%.
     """
     out = list(windows)
     for i, w in enumerate(out):
@@ -254,29 +268,19 @@ def apply_elapsed_resets(windows, now: float) -> list:
             continue
         out[i] = dataclasses.replace(
             w,
-            remaining_percent=100.0,
-            used_percent=0.0,
+            remaining_percent=None,
+            used_percent=None,
+            available=False,
             resets_at_epoch=None,
             gated_by=None,
-            assumed_full=True,
+            assumed_full=False,
+            reset_pending=True,
         )
     return out
 
 
 def resolved_windows(windows, now: float | None = None) -> list:
-    """The windows as every consumer must read them: reset-aware, then gated.
-
-    ONE entry point (gauge, overview bars, tooltips, reset countdown,
-    notifications) so a window can never be refilled in one view and gated in
-    another. Two passes, and the order is load-bearing:
-
-    1. ``apply_elapsed_resets`` — a window whose own reset time already passed
-       is full; no probe needed to know that.
-    2. ``gate_windows`` — a longer window that is STILL spent zeroes the
-       shorter ones. Running this second means a weekly reset lifts its gate
-       in the same pass, and the 5h window keeps its own real number instead
-       of the zero the gate had written over it.
-    """
+    """Expire old readings, then gate short windows by confirmed longer limits."""
     if now is None:
         import time as _time
         now = _time.time()
@@ -290,6 +294,7 @@ PROVIDER_RESET_COLORS = {
     "codex": "#6AA9FF",        # blue
     "antigravity": "#B58CE8",  # violet
     "zcode": "#4FB6A8",        # teal
+    "freebuff": "#50ecb3",     # Freebuff's own brand accent (from its UI assets)
 }
 
 
@@ -298,21 +303,35 @@ def provider_reset_color(provider_id: str) -> str | None:
     return PROVIDER_RESET_COLORS.get(provider_id)
 
 
-def soonest_reset(snapshots, hidden_keys=frozenset()):
-    """(provider_id, epoch) of the soonest usable quota reset, or (None, None).
+@dataclasses.dataclass(frozen=True)
+class ResetCandidate:
+    """One upcoming quota reset, with everything a renderer needs to name it.
 
-    EVERY window of every visible account competes — 5h and weekly alike, all
-    vendors together — because the question is "when does anything refill", and
-    a Claude 5h window landing in 3h is the answer even while a Codex weekly is
-    3 days out. Two things are skipped: a window with no reset time (nothing to
-    compare) and a gated window, whose longer sibling owns the real wait
-    (``_update_limit_timer_label`` mirrors this).
-
-    ``snapshots`` is the ``{provider:stable_id: UsageSnapshot}`` map from the
-    service state copy.
+    The soonest-reset topbar label and its hover queue MUST both derive from
+    ``reset_candidates`` so the "↻ 42m" winner and the list it opens can never
+    disagree about who resets next (they used to be two hand-rolled selection
+    algorithms, and the hover list drifted).
     """
-    soonest_provider = None
-    soonest_epoch = None
+
+    account_key: str          # "provider:stable_id" map key
+    provider_id: str
+    account: AccountRef
+    window: UsageWindow
+    resets_at_epoch: float
+
+
+def reset_candidates(snapshots, hidden_keys=frozenset()) -> list[ResetCandidate]:
+    """EVERY upcoming usable quota reset, soonest first.
+
+    The single canonical source for the topbar soonest-reset countdown and
+    its hover queue. Walks all snapshots through ``resolved_windows`` and
+    keeps a window when it is available, not gated by a longer sibling, and
+    carries a valid positive ``resets_at_epoch``. Manually hidden accounts
+    are excluded; the AUTOMATIC display filters (hide 0%-usage, hide
+    unusable-5h) are deliberately NOT applied here — an exhausted account is
+    exactly the one whose reset the user is waiting for.
+    """
+    candidates: list[ResetCandidate] = []
     for key, snap in list(snapshots.items()):
         if key in hidden_keys:
             continue
@@ -324,7 +343,167 @@ def soonest_reset(snapshots, hidden_keys=frozenset()):
                 continue
             epoch = getattr(window, "resets_at_epoch", None)
             if isinstance(epoch, (int, float)) and epoch > 0:
-                if soonest_epoch is None or epoch < soonest_epoch:
-                    soonest_epoch = epoch
-                    soonest_provider = provider
-    return soonest_provider, soonest_epoch
+                candidates.append(ResetCandidate(
+                    account_key=key, provider_id=provider,
+                    account=snap.account, window=window,
+                    resets_at_epoch=float(epoch)))
+    candidates.sort(key=lambda c: c.resets_at_epoch)
+    return candidates
+
+
+def soonest_reset(snapshots, hidden_keys=frozenset()):
+    """(provider_id, epoch) of the soonest usable quota reset, or (None, None).
+
+    Derived from ``reset_candidates`` — the SAME list the hover queue
+    renders — so the topbar winner and the queue can never drift apart.
+    """
+    candidates = reset_candidates(snapshots, hidden_keys)
+    if not candidates:
+        return None, None
+    first = candidates[0]
+    return first.provider_id, first.resets_at_epoch
+
+
+def window_usable(window) -> bool:
+    """True when this window currently permits work: it is available, not
+    gated by a spent longer window, and still has quota left.
+
+    Reads the window as RESOLVED (see ``resolved_windows``): an elapsed reset
+    has already refilled it, and a 5h window blocked by an exhausted weekly
+    sibling reports 0 here even when the server claimed 100.
+    """
+    if not isinstance(window, UsageWindow) or not getattr(window, "available", False):
+        return False
+    if getattr(window, "gated_by", None):
+        return False
+    rem = getattr(window, "remaining_percent", None)
+    return isinstance(rem, (int, float)) and rem > _ZERO_REMAINING
+
+
+def spare_balance(snapshot) -> float:
+    """Spendable balance that survives the metered windows (T-1243).
+
+    Freebuff's wallet is spent AFTER the daily pool and never resets, so an
+    account whose daily Freebucks are gone can still do work.  Judging such
+    an account only by its metered window makes the "hide unusable / hide
+    0%" filters hide a genuinely usable account.
+    """
+    meta = getattr(snapshot, "provider_metadata", None) or {}
+    value = meta.get("wallet_balance")
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return 0.0
+    return max(0.0, float(value))
+
+
+def account_usable_now(snapshot, now: float | None = None) -> bool:
+    """True when the account can do work RIGHT NOW — the rule behind "show
+    only 5h-available accounts".
+
+    The 5h window is the short-term gate for Claude / Codex / Antigravity
+    pools: a 0% 5h window means the provider refuses work even while the
+    weekly pool sits full, so such an account is not usable now regardless of
+    its weekly reserve. A plan that reports NO 5h window (Codex Free's single
+    30-day pool, Antigravity's refusal journal with its one ``quota`` window)
+    is judged by whatever window it does report — the same "does anything
+    have quota left" question.
+    """
+    if snapshot is None or getattr(snapshot, "status", None) not in (OK, STALE):
+        return False
+    if spare_balance(snapshot) > 0.0:
+        return True                 # a non-expiring wallet is still work
+    windows = [w for w in resolved_windows(
+        getattr(snapshot, "windows", ()) or (), now=now)
+        if isinstance(w, UsageWindow)]
+    if not windows:
+        return False
+    groups = {w.group for w in windows}
+    return any(_pool_usable([w for w in windows if w.group == group])
+               for group in groups)
+
+
+def _pool_usable(windows) -> bool:
+    if any(w.reset_pending or not w.available for w in windows):
+        return False
+    five = [w for w in windows if base_key(w.key) == FIVE_HOUR]
+    return any(window_usable(w) for w in (five or windows))
+
+
+def display_windows(windows, now: float | None = None) -> list:
+    """Windows worth DRAWING: every window of a quota pool in which ALL
+    windows are dead is dropped — that pool cannot do work right now.
+
+    Quota pools are independent (Antigravity bills Gemini models and
+    Claude/GPT models against separate pools), so one pool being spent says
+    nothing about the other: a dead Gemini pool is hidden while the Claude
+    pool's windows stay. A pool with a usable short window keeps every window,
+    because the exhausted sibling is exactly what explains the pool's state.
+    Windows that belong to no pool (``group == ""`` — Codex, Claude) are
+    untouched; the account-level filter (``account_usable_now``) already
+    decides those.
+    """
+    resolved = [w for w in resolved_windows(windows, now)
+                if isinstance(w, UsageWindow)]
+    if not resolved:
+        return []
+    groups: dict[str, list] = {}
+    for w in resolved:
+        groups.setdefault(w.group, []).append(w)
+    out = []
+    for group, ws in groups.items():
+        if group and not _pool_usable(ws):
+            continue
+        out.extend(ws)
+    return out
+
+
+def account_has_usage(snapshot, now: float | None = None) -> bool:
+    """Return True if the snapshot reports usable capacity for hide-zero filtering.
+
+    A positive spendable wallet (:func:`spare_balance`) is independently
+    sufficient usable capacity — it never resets, so it survives both a spent
+    metered pool AND the elapsed-reset/reset_pending boundary where every
+    resolved window reports ``available=False`` (T-1254). It is therefore
+    evaluated BEFORE the resolved metered windows, keeping this predicate
+    consistent with :func:`account_usable_now` about wallet independence.
+
+    Returns False if:
+    - snapshot is missing or not in OK/STALE status (invalid statuses fail
+      closed — wallet metadata never bypasses ERROR / UNAVAILABLE /
+      AUTH_REQUIRED);
+    - there is no wallet and no available quota windows exist;
+    - there is no wallet and all windows have 0% usage (used <= 0 or
+      remaining >= 100, untouched);
+    - there is no wallet and all windows have 0% remaining (remaining <= 0
+      or used >= 100, 0% left / exhausted).
+    """
+    if snapshot is None or getattr(snapshot, "status", None) not in (OK, STALE):
+        return False
+    # 1. status validated.  2. wallet first: a positive spendable balance is
+    # capacity on its own, even when every window is reset_pending/unavailable
+    # while waiting for the provider's post-reset refresh.
+    if spare_balance(snapshot) > 0.0:
+        return True
+    # 3. ordinary metered-window evaluation.
+    windows = [w for w in resolved_windows(getattr(snapshot, "windows", ()) or (), now=now)
+               if isinstance(w, UsageWindow) and getattr(w, "available", False)]
+    if not windows:
+        return False
+
+    has_any_used = False
+    has_any_remaining = False
+
+    for w in windows:
+        used = getattr(w, "used_percent", None)
+        rem = getattr(w, "remaining_percent", None)
+        if used is None and rem is not None:
+            used = 100.0 - float(rem)
+        if rem is None and used is not None:
+            rem = 100.0 - float(used)
+
+        if isinstance(used, (int, float)) and used > 0.0:
+            if not getattr(w, "assumed_full", False):
+                has_any_used = True
+        if isinstance(rem, (int, float)) and rem > 0.0:
+            has_any_remaining = True
+
+    return has_any_used and has_any_remaining
