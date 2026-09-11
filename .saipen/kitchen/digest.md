@@ -1,3 +1,5 @@
-﻿done: v0.8.66 shipped (64759d8 + tag + GitHub release + EXE 46.1 MB); Wave-6 persistence closure (T-1166/T-1168) + Alt+F drawer (T-1167) + launcher re-exec (T-1161); audit/ folder deleted
-remaining: T-1159 (full smoke legacy red), T-800 (i18n pipeline), T-803 (skill-repo log contract) — external/future gates
-awaiting: nothing
+# Ship digest
+
+done: TRANSLATE-011 collected and integrated (112 keys x33 locales), T-1254 wallet-visibility repair verified, commit afc569b pushed to origin/audit-all-3-impl
+remaining: 1154 uncommitted non-saipen files from other tickets (T-1204..T-1253) need tree reconciliation before a full tagged release; T-1241 audit triage; closure-evidence backlog on old DONE tickets; i18n src drift (ru.py 36 en-orphans, tray-click key) needs upstream decision
+awaiting: operator decision on full release (version bump + tag) once tree is reconciled
