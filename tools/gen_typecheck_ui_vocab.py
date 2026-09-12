@@ -7,6 +7,10 @@ inputs, so the vocabulary is generated ahead of time instead.
 
 Run from the repo root:  python tools/gen_typecheck_ui_vocab.py
 
+With --check the script compares the checked-in module against a fresh
+generation and exits non-zero on drift WITHOUT rewriting anything
+(CI / pre-release guard).
+
 The output module holds a single frozenset literal of every Latin-script
 word extracted from all shipped language packs under the SAME extraction
 rules the runtime fallback uses ([A-Za-z]{2,} over translation values,
@@ -83,8 +87,31 @@ def render(words: set[str]) -> str:
 
 
 def main() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Regenerate the typecheck UI vocabulary from the i18n packs.")
+    parser.add_argument(
+        "--check", action="store_true",
+        help="exit non-zero if OUT differs from a fresh generation, without rewriting it")
+    args = parser.parse_args()
+
     words = extract_words()
-    OUT.write_text(render(words), encoding="utf-8")
+    fresh = render(words)
+    if args.check:
+        import sys
+
+        current = OUT.read_text(encoding="utf-8") if OUT.exists() else ""
+        if current != fresh:
+            print(
+                f"{OUT.relative_to(ROOT)} is stale ({len(words)} words expected); "
+                "run: python tools/gen_typecheck_ui_vocab.py",
+                file=sys.stderr,
+            )
+            raise SystemExit(1)
+        print(f"{OUT.relative_to(ROOT)} is up to date ({len(words)} words)")
+        return
+    OUT.write_text(fresh, encoding="utf-8")
     print(f"wrote {len(words)} words -> {OUT.relative_to(ROOT)}")
 
 
