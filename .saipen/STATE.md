@@ -1,9 +1,9 @@
 ---
 phase: DONE
-task: none
-next_action: "WAIT: user brake -- T-1254 DONE (E-1882 repair + E-1884 collect/ship afc569b pushed); full tagged release parked until 1154-file tree reconciliation"
+task: "T-1255"
+next_action: "RE-TRIAGE stale T-1239/T-1240/T-1241 against current source before starting next ticket"
 blocker: "none"
-agent: claude
+agent: gemini
 saipen_version: 7
 saipen_home: "C:/Users/vac34/.agents/skills/saipen"
 mode: full
@@ -13,11 +13,12 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 1884
+last_event: 1888
 style_contract: ded-4ae736e4
-updated: "2026-09-11T23:59:00Z"
-transition_from: BUILD
+updated: "2026-09-12T03:22:00Z"
+transition_from: VERIFY
 execution_intent: goal
 goal_waves: 1
 goal_tickets: 2
 ---
+
