@@ -13,9 +13,9 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 2254
+last_event: 2255
 style_contract: ded-4ae736e4
-updated: "2026-09-19T13:06:30Z"
+updated: "2026-09-19T13:20:30Z"
 transition_from: SHIP
 execution_intent: converge
 converge_target: crew
