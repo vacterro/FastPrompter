@@ -97,6 +97,24 @@ class CursorMixin:
             self._static_cursor_applied = False
         return on
 
+    def apply_static_cursor_shape(self, shape) -> bool:
+        """Temporarily show an allowed shape while Static Cursor is active.
+
+        Window resize handles are the deliberate exception: hiding their
+        directional cursor makes a frameless window look non-resizable.  The
+        existing application override is replaced in place, never stacked.
+        """
+        if (not self.static_cursor_enabled()
+                or not getattr(self, "_static_cursor_applied", False)):
+            return False
+        app = QApplication.instance()
+        if app is None:
+            return False
+        themed = self.themed_cursor(shape)
+        cursor = themed if isinstance(themed, QCursor) else QCursor(themed)
+        app.changeOverrideCursor(cursor)
+        return True
+
     def toggle_static_cursor(self, checked):
         self.data["static_cursor"] = "True" if checked else "False"
         self.mark_dirty()

@@ -8,13 +8,9 @@ Verifies:
 """
 
 import ast
-import os
-import sys
-import pytest
 
 from tools.set_default_from_current import (
     DENYLIST,
-    RESET_KEYS,
     extract_defaults_from_data,
     format_default_profile_py,
     update_default_profile_from_state,

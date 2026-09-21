@@ -38,10 +38,11 @@ Independent markdown canvas slots. 100 per project. Auto-numbered 00-99.
 **Per-silo actions (hover):**
 - 📌 **Pin** — locks silo to top of list (sorted above unpinned)
 - ✅ **Tick** — marks done (visual indicator)
-- 🎨 **Color box** — per-silo color highlight (toggle in Settings)
+- 🎨 **Color box** — per-silo color highlight: click swatch to cycle colors, right-click for palette, or **Ctrl+Middle click** anywhere on the silo row to toggle a random color
 - 📁 **File container** — open asset drawer for this silo
 - 📁 **Folder link** — links silo to external project folder/executable
-- **Middle click** — send to trash
+- **Middle click** — move silo to Trash (Shift+Middle click clears silo text)
+- **Ctrl+Middle click** — toggle random silo color (click again to remove; does not trash or clear silo)
 
 **Hierarchy:** Drag silo onto another to nest as child. Max depth 2 (1 → 1.1 → 1.1.1). Shift+drag swaps. Collapse arrow (▾/▸) on parent hides children.
 
@@ -92,7 +93,7 @@ User-defined spacer bars in silo list. Help organise silos into groups. Ctrl+dra
 - Alt+W — insert divider upward + bullet above
 - Ctrl+Shift+Q — blockquote toggle
 - Ctrl+Click on bullet — toggle `-` / `•`
-- Ctrl+MiddleButton — delete line under cursor (smart reflow: ordered lists renumber)
+- Ctrl+MiddleButton (in editor text) — toggle random colored line mark (first click adds box, second click removes it; never deletes text)
 - Alt+Z — toggle line numbers
 - Alt+Backspace — word delete
 - **Ctrl+Z / Ctrl+Y** — smart undo/redo spanning text edits AND silo moves in one ordered timeline
@@ -209,7 +210,7 @@ When header < 700px: hidden buttons collected in » popup. Every action still re
 
 **Ctrl+Shift+drag** — move the line under the pointer (or the whole selected block) to the drop indicator. Rich formatting survives the trip — bold, checkboxes and image pills travel as a document fragment, not plain text.
 
-**Alt+MiddleButton** — bullet-ize every selected line. **MiddleButton** — cycle the clicked line's state: plain → checked+struck → unchecked. **Ctrl+MiddleButton** — delete the whole line with smart list reflow.
+**Alt+MiddleButton** — bullet-ize every selected line. **MiddleButton** — cycle the clicked line's state: plain → checked+struck → unchecked. **Ctrl+MiddleButton (in editor text)** — toggle random colored line mark on the clicked line (first click adds random colored box, second click removes it; text is never touched).
 
 **Double-click an image pill** — rename the file on disk and the markdown link together, one undo step.
 

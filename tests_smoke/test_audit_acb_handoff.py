@@ -9,6 +9,7 @@ import os
 import sys
 import tempfile
 import threading
+import time
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -18,9 +19,6 @@ from PyQt6.QtWidgets import QApplication
 
 import fastprompter.core.project_sync as ps
 import fastprompter.main as main_mod
-from fastprompter.main import FastPrompter
-
-import fastprompter.core.state as state_mod
 
 _app = QApplication.instance() or QApplication([])
 _tmpdir = tempfile.mkdtemp(prefix="fastprompter_audit_acb_")
@@ -29,36 +27,10 @@ CUR = "Text"
 
 
 @pytest.fixture(scope="module")
-def win():
-    state_mod.get_db_path = lambda *a, **k: os.path.join(_tmpdir, "a.db")
-    state_mod.run_portable_backup = lambda data, profile_id=1, **_kw: None
-    FastPrompter.setup_single_instance_server = lambda self: None
-    FastPrompter.register_all_hotkeys = lambda self: None
-    FastPrompter.unregister_all_hotkeys = lambda self: None
-    w = FastPrompter()
-    w.resize(960, 540)
-    w.show()
-    _app.processEvents()
+def win(smoke_win):
+    w = smoke_win.create(show=True, size=(960, 540))
     yield w
-    try:
-        getattr(w, "_watcher_shutdown", lambda: True)()
-    except Exception:
-        pass
-    try:
-        getattr(w, "_push_shutdown", lambda timeout_s=2.0: True)(timeout_s=2.0)
-    except Exception:
-        pass
-    try:
-        getattr(w, "_watcher_arm_shutdown", lambda timeout_s=2.0: True)()
-    except Exception:
-        pass
-    try:
-        getattr(w, "typo_worker_shutdown", lambda timeout_s=2.0: True)()
-    except Exception:
-        pass
-    w.auto_save_timer.stop()
-    w.topmost_timer.stop()
-    w.close()
+    smoke_win.retire(w)
 
 
 @pytest.fixture()
@@ -388,6 +360,41 @@ class TestPerf001:
                        {k: dict(v) for k, v in allstore.items()
                         if isinstance(v, dict)})
 
+    def test_watcher_pull_reads_off_gui_thread(self, sync_clean, tmp_path,
+                                               monkeypatch):
+        w = sync_clean
+        root = self._mk_project(w, tmp_path)
+        w.text_area.setPlainText("hello")
+        bound = root / "bound.txt"
+        bound.write_text("worker result\n", encoding="utf-8")
+        entered = threading.Event()
+        release = threading.Event()
+        read_threads = []
+        real_read = ps.read_text_file
+
+        def blocking_read(path, max_bytes=None):
+            read_threads.append(threading.get_ident())
+            entered.set()
+            release.wait(5.0)
+            return real_read(path, max_bytes)
+
+        monkeypatch.setattr(ps, "read_text_file", blocking_read)
+        w._sync_changed_files.add(os.path.normcase(str(bound)))
+        started = time.monotonic()
+        w._request_external_sync()
+        elapsed = time.monotonic() - started
+        assert elapsed < 0.2
+        assert entered.wait(1.0)
+        assert threading.get_ident() not in read_threads
+
+        release.set()
+        deadline = time.monotonic() + 2.0
+        while w._sync_pull_inflight and time.monotonic() < deadline:
+            _app.processEvents()
+            threading.Event().wait(0.01)
+        _app.processEvents()
+        assert w.data["temp_presets"][0] == "worker result\n"
+
 
 # ======================================================================
 # PERF-003: fresh equal binding establishes a baseline WITHOUT a write
@@ -451,7 +458,7 @@ class TestCore003004:
             self, sync_clean, tmp_path, monkeypatch):
         w = sync_clean
         f = tmp_path / "linked.md"
-        f.write_bytes("first\r\ntext\r\n".encode("utf-8"))
+        f.write_bytes(b"first\r\ntext\r\n")
         _set_silos(w, ["placeholder"])
         monkeypatch.setattr(
             "fastprompter.main.QFileDialog.getOpenFileName",
@@ -464,7 +471,7 @@ class TestCore003004:
         assert w._silo_clean(0, str(f)) is True
         assert w._sync_eol_cache[key] == "\r\n"
         # external edit arrives with NO intervening app push -> imported
-        f.write_bytes("second\r\nversion\r\n".encode("utf-8"))
+        f.write_bytes(b"second\r\nversion\r\n")
         w._sync_changed_files.add(os.path.normcase(str(f)))
         w._apply_external_sync()
         assert w.data["temp_presets"][0] == "second\nversion\n"
@@ -473,7 +480,7 @@ class TestCore003004:
         w.data["temp_presets"][0] = "third\nround\n"
         w._push_sync_files(slots={0})
         w._push_wait_idle(timeout_s=10)
-        assert f.read_bytes() == "third\r\nround\r\n".encode("utf-8")
+        assert f.read_bytes() == b"third\r\nround\r\n"
 
     def test_discovery_and_rescan_routes_seed_eol(self, sync_clean, tmp_path):
         w = sync_clean
@@ -684,6 +691,7 @@ class TestW2001W2005:
 
 
 from PyQt6.QtWidgets import QMessageBox as _QMB
+
 QMessageBox_Yes = _QMB.StandardButton.Yes
 
 

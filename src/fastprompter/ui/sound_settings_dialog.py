@@ -8,7 +8,7 @@ which is the same map the player reads.
 
 from typing import Any
 
-from PyQt6.QtCore import QPoint, QRect, Qt
+from PyQt6.QtCore import QPoint, QRect, Qt, pyqtSignal
 from PyQt6.QtGui import (
     QColor,
     QFont,
@@ -17,9 +17,10 @@ from PyQt6.QtGui import (
     QPainterPath,
     QPen,
     QPixmap,
+    QStandardItem,
+    QStandardItemModel,
 )
 from PyQt6.QtWidgets import (
-    QCheckBox,
     QComboBox,
     QDialog,
     QHBoxLayout,
@@ -31,24 +32,89 @@ from PyQt6.QtWidgets import (
     QSlider,
     QTableWidget,
     QTableWidgetItem,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
 
+from fastprompter.core import audio_level, sound_library
 from fastprompter.core.sound_manager import (
     _DEFAULT_SOUND_MAP,
     EVENT_LABELS,
+    GAIN_DB_MAX,
+    GAIN_DB_MIN,
+    effective_event_volume,
+    get_event_gain_db,
+    global_volume,
 )
 from fastprompter.core.translations import tr
+from fastprompter.theme.themes import theme_raw_colors
 from fastprompter.utils.fonts import no_aa
 
-_COL_EVENT, _COL_ON, _COL_FILE, _COL_VOL, _COL_PLAY = range(5)
+# PERF: every extra CELL WIDGET costs a full style+layout pass on a 58-row
+# table (measured: setCellWidget dominates the build).  Auto therefore shares
+# the Gain cell instead of owning a seventh column.
+_COL_EVENT, _COL_ON, _COL_FILE, _COL_MODE, _COL_GAIN, _COL_PLAY = range(6)
+_COL_AUTO = _COL_GAIN
+
+#: Slider steps are whole dB: the control spans -24..+12 dB where 0 dB is
+#: exactly the global volume (T-1242 spec 10-11).
+_GAIN_MIN = int(GAIN_DB_MIN)
+_GAIN_MAX = int(GAIN_DB_MAX)
+
+
+def format_gain_db(value: float) -> str:
+    """'-6 dB' / '0 dB' / '+3 dB' -- the compact numeric label."""
+    rounded = round(float(value), 1)
+    if abs(rounded - round(rounded)) < 0.05:
+        text = f"{int(round(rounded))}"
+    else:
+        text = f"{rounded:.1f}"
+    if rounded > 0:
+        text = "+" + text
+    return f"{text} dB"
+
+class _GainSlider(QSlider):
+    """A dB slider that snaps back to 0 dB (= global volume) on double-click."""
+
+    reset_requested = pyqtSignal()
+
+    def mouseDoubleClickEvent(self, event):  # noqa: N802 (Qt naming)
+        self.reset_requested.emit()
+        event.accept()
+
+
+class _LazyEventDict(dict):
+    """Dictionary that triggers full row building if an unbuilt event is accessed."""
+
+    def __init__(self, dialog, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._dialog = dialog
+
+    def __getitem__(self, key):
+        if key not in self:
+            self._dialog._ensure_all_events_built()
+        return super().__getitem__(key)
+
+    def get(self, key, default=None):
+        if key not in self:
+            self._dialog._ensure_all_events_built()
+        return super().get(key, default)
+
+
+#: C3.1 -- the per-event playback override stored in sound_events[e]["mode"].
+_EVENT_MODE_CHOICES = (
+    ("inherit", "Inherit"),
+    ("mix", "Overlay"),
+    ("queue", "Stack"),
+    ("replace", "Replace"),
+)
 
 # A small painted pictogram per event, so the table is scannable without
 # reading every label. Drawn, not emoji: no font dependency, and it matches
 # the painted-language-flags approach used elsewhere in the app.
 _EVENT_GLYPHS: dict[str, str] = {
-    "new": "plus", "save": "save", "silo": "swap", "snippet": "doc",
+    "new": "plus", "save": "save", "silo": "swap", "project": "swap", "snippet": "doc",
     "tick": "check", "untick": "box", "delete": "cross", "clear": "cross",
     "undo": "undo", "redo": "redo", "select_all": "check_list",
     "settings": "gear", "help": "question", "hotkey": "key",
@@ -62,7 +128,8 @@ _EVENT_GLYPHS: dict[str, str] = {
     "escape": "esc", "search": "magnifier", "backup": "floppy_up",
     "restore": "restore", "reset": "reset", "timer_start": "clock",
     "profile": "user", "watcher": "eye", "type": "keyboard",
-    "backspace": "key_b", "click": "cursor", "hover": "cursor_hover",
+    "backspace": "key_b", "delete_forward": "key", "delete_selection": "cross",
+    "click": "cursor", "hover": "cursor_hover",
     "button_click": "cursor_click", "button_release": "cursor_up",
     "chest_open": "folder_open", "chest_close": "folder", "notify": "bell",
     "error": "exclaim", "success": "check_circle", "timer": "alarm",
@@ -70,6 +137,83 @@ _EVENT_GLYPHS: dict[str, str] = {
 
 # Unknown glyph -> the bell, so a new event still gets a picture.
 _GLYPH_FALLBACK = "bell"
+
+
+def _luminance(color: QColor) -> float:
+    """Rec.609 relative luminance, 0.0 (black) .. 1.0 (white)."""
+    return (0.299 * color.red() + 0.587 * color.green()
+            + 0.114 * color.blue()) / 255.0
+
+
+def _contrast_ratio(a: QColor, b: QColor) -> float:
+    """WCAG-style contrast ratio between two colours (>= 1.0)."""
+    la = _luminance(a)
+    lb = _luminance(b)
+    lighter, darker = max(la, lb), min(la, lb)
+    return (lighter + 0.05) / (darker + 0.05)
+
+
+_THEME_ICON_FALLBACK = QColor("#d0d0d0")
+
+
+def _table_background_color(dialog: QWidget) -> QColor:
+    """The ACTUAL painted background of the events table, best effort.
+
+    Prefer the ACTIVE THEME's own background tokens; a widget QPalette is
+    exactly as unreliable under QSS as palette Text was for the foreground
+    (both are desynced whenever a stylesheet is active).
+    """
+    raw = theme_raw_colors(getattr(dialog, "main_win", None), {})
+    for key in ("bg_text", "bg_main"):  # bg_text = table/editor surface
+        value = raw.get(key)
+        if not value:
+            continue
+        try:
+            color = QColor(str(value))
+        except (TypeError, ValueError):
+            continue
+        if color.isValid():
+            return color
+    try:
+        color = dialog.table.palette().color(
+            dialog.table.palette().ColorRole.Base)
+        if color.isValid():
+            return color
+    except Exception:
+        pass
+    return QColor("#000000")
+
+
+def _theme_icon_color(main_win, dialog: QWidget) -> QColor:
+    """Icon foreground from the ACTIVE theme tokens (T-1242, spec 20/21).
+
+    Order: theme text_main, then btn_text, then a visible neutral -- each
+    accepted only if it contrasts with the table background.  Never a
+    per-event rainbow: glyph shape distinguishes events, colour stays
+    theme-consistent.
+    """
+    fallback = {"text_main": "#d4b87a", "btn_text": "#d0d0d0"}
+    raw = theme_raw_colors(main_win, fallback)
+    background = _table_background_color(dialog)
+    for key in ("text_main", "btn_text"):
+        value = raw.get(key)
+        if not value:
+            continue
+        try:
+            color = QColor(str(value))
+        except (TypeError, ValueError):
+            continue
+        if color.isValid() and _contrast_ratio(color, background) >= 3.0:
+            return color
+    # All theme tokens failed the contrast guard: pick whichever neutral
+    # (light or dark) actually contrasts with the background.
+    neutral = QColor("#d0d0d0") if _luminance(background) < 0.5 \
+        else QColor("#202020")
+    if _contrast_ratio(neutral, background) >= 3.0:
+        return neutral
+    return _THEME_ICON_FALLBACK if _contrast_ratio(
+        _THEME_ICON_FALLBACK, background) >= _contrast_ratio(
+        QColor("#202020"), background) else QColor("#202020")
 
 
 def _event_color(event: str, base: QColor) -> QColor:
@@ -260,20 +404,134 @@ def _event_icon(event: str, base: QColor) -> QIcon:
 
 
 class SoundSettingsDialog(QDialog):
+    # Last live dialog instance, for the theme-change repaint hook in
+    # theme_mixin.apply_theme. Kept as a plain reference only while the
+    # dialog exists (cleared on close), never across dialog lifetimes.
+    _LAST_INSTANCE = None  # type: ClassVar[Optional[SoundSettingsDialog]]
+
+    _HUB_PAGE_ATTRS = {
+        1: "presets_page",
+        2: "playback_page",
+        3: "voice_page",
+        4: "ambience_page",
+    }
+
+    @property
+    def presets_page(self):
+        if getattr(self, "_presets_page_instance", None) is not None:
+            return self._presets_page_instance
+        return self._ensure_hub_page(1)
+
+    @presets_page.setter
+    def presets_page(self, val):
+        self._presets_page_instance = val
+
+    @property
+    def playback_page(self):
+        if getattr(self, "_playback_page_instance", None) is not None:
+            return self._playback_page_instance
+        return self._ensure_hub_page(2)
+
+    @playback_page.setter
+    def playback_page(self, val):
+        self._playback_page_instance = val
+
+    @property
+    def voice_page(self):
+        if getattr(self, "_voice_page_instance", None) is not None:
+            return self._voice_page_instance
+        return self._ensure_hub_page(3)
+
+    @voice_page.setter
+    def voice_page(self, val):
+        self._voice_page_instance = val
+
+    @property
+    def ambience_page(self):
+        if getattr(self, "_ambience_page_instance", None) is not None:
+            return self._ambience_page_instance
+        return self._ensure_hub_page(4)
+
+    @ambience_page.setter
+    def ambience_page(self, val):
+        self._ambience_page_instance = val
+
+    def _ensure_hub_page(self, index: int):
+        attr = self._HUB_PAGE_ATTRS.get(index)
+        if not attr:
+            return None
+        inst_attr = f"_{attr}_instance"
+        existing = getattr(self, inst_attr, None)
+        if existing is not None:
+            return existing
+
+        host = self.main_win
+        page = None
+        if index == 1:
+            from fastprompter.ui.audio_hub_pages import PresetsPage
+            page = PresetsPage(self, self.lang)
+        elif index == 2:
+            from fastprompter.ui.audio_hub_pages import PlaybackPage
+            page = PlaybackPage(self, self.lang)
+        elif index == 3:
+            from fastprompter.ui.audio_hub_pages import VoicePage
+            page = VoicePage(self, self.lang, getattr(host, "voice_controller", None))
+        elif index == 4:
+            from fastprompter.ui.audio_hub_pages import AmbiencePage
+            page = AmbiencePage(self, self.lang, getattr(host, "ambience_controller", None))
+
+        setattr(self, inst_attr, page)
+        if hasattr(self, "pages") and self.pages.count() > index:
+            placeholder = self.pages.widget(index)
+            if placeholder is not page:
+                title = self.pages.tabText(index)
+                curr = self.pages.currentIndex()
+                self.pages.removeTab(index)
+                self.pages.insertTab(index, page, title)
+                if curr == index:
+                    self.pages.setCurrentIndex(index)
+        return page
+
     def __init__(self, parent, data: dict[str, Any], sound_manager):
         super().__init__(parent)
         self.main_win = parent
         self._data = data
         self._sound_manager = sound_manager
         self._available = sound_manager.get_available_sounds()
+        # PERF: every event row used to fill its OWN combo with the whole
+        # library.  With ~60 events that is tens of thousands of widget items
+        # and seconds of startup.  ONE shared item model is built here and
+        # handed to every combo; each combo still keeps its own currentIndex.
+        self._sound_model = QStandardItemModel(self)
+        self._model_rows: dict[str, int] = {}
         self.lang = getattr(parent, "_current_lang", "EN")
         # Set while widgets are being filled from settings. Every handler
         # returns early on it, which is what keeps _load_settings() from
         # writing back the values it just read — and lets Reset reuse the
         # same loader instead of a second, drifting copy of it.
         self._loading = False
+        self._built_events_count = 0
+        self._all_events = list(EVENT_LABELS)
+        self._presets_page_instance = None
+        self._playback_page_instance = None
+        self._voice_page_instance = None
+        self._ambience_page_instance = None
+        #: event -> the "show its math" block appended to the Gain tooltip
+        #: after Auto Level ran (T-1242 spec 15).
+        self._auto_detail: dict[str, str] = {}
+        self._gains = _LazyEventDict(self)
+        self._gain_labels = _LazyEventDict(self)
+        self._auto_buttons = _LazyEventDict(self)
+        self._combos = _LazyEventDict(self)
+        self._fav_btns = _LazyEventDict(self)
+        self._modes = _LazyEventDict(self)
+        self._rows = _LazyEventDict(self)
+        self._icon_items: dict[Any, Any] = {}
+        # Register for the theme-change repaint hook; cleared on close below.
+        type(self)._LAST_INSTANCE = self
 
         self.setWindowTitle(tr("Sound Settings", self.lang))
+        self.setWindowModality(Qt.WindowModality.WindowModal)
         self.resize(720, 520)
         # Wear the app's theme. Without this the dialog is a stock-white Qt
         # window inside a dark golden app — the scrollbar and the table's
@@ -282,41 +540,118 @@ class SoundSettingsDialog(QDialog):
             self.setStyleSheet(parent.styleSheet())
         except Exception:
             pass
-        self._build()
-        self._load_settings()
+        self._rebuild_sound_model()
+        # PERF: the application installs APPLICATION-WIDE event filters (UI
+        # click sound, wheel guard, scroll sound, layout shortcuts).  They
+        # fire for every event of every widget, so creating ~350 cell widgets
+        # ran them ~47k times.  Nothing here is a user interaction, so they
+        # are suspended for the build and restored in a finally.
+        self.setUpdatesEnabled(False)
+        suspended = self._suspend_app_event_filters()
+        try:
+            self._build()
+            self._load_settings()
+        finally:
+            self._restore_app_event_filters(suspended)
+            self.setUpdatesEnabled(True)
 
     # ---- construction -------------------------------------------------
+
+    _APP_FILTER_ATTRS = ("_scroll_sound_filter", "_wheel_guard",
+                         "_button_sound_filter")
+
+    def _suspend_app_event_filters(self):
+        """Take the app-wide filters off while widgets are being created."""
+        from PyQt6.QtWidgets import QApplication
+
+        app = QApplication.instance()
+        if app is None:
+            return []
+        suspended = []
+        for attr in self._APP_FILTER_ATTRS:
+            handler = getattr(self.main_win, attr, None)
+            if handler is None:
+                continue
+            try:
+                app.removeEventFilter(handler)
+                suspended.append(handler)
+            except (RuntimeError, TypeError):
+                pass
+        return suspended
+
+    def _restore_app_event_filters(self, suspended):
+        from PyQt6.QtWidgets import QApplication
+
+        app = QApplication.instance()
+        if app is None:
+            return
+        for handler in suspended:
+            try:
+                app.installEventFilter(handler)
+            except (RuntimeError, TypeError):
+                pass
+
     def _build(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(6)
 
-        info = QLabel(tr(
-            "Picking a sound plays it. Volume 0 = the global volume.",
-            self.lang))
+        # T-1242 spec 9/35: the old copy ("Volume 0 = the global volume")
+        # read as "the global volume IS zero".  Show the ACTUAL master value
+        # and keep it live while the dialog is open.
+        info = QLabel()
         info.setWordWrap(True)
         layout.addWidget(info)
+        self._global_label = info
+        self._last_master = None
+        self._refresh_global_label()
+        from PyQt6.QtCore import QTimer
+
+        self._master_poll = QTimer(self)
+        self._master_poll.setInterval(400)
+        self._master_poll.timeout.connect(self._refresh_global_label)
+        self._master_poll.start()
+
+        # T-1238-C3: the dialog IS the Audio Hub now.  The proven event table
+        # keeps its own page; the other pages are built beside it, never in a
+        # second independent settings window.
+        self.pages = QTabWidget()
+        self._page_titles = ("Events", "Presets", "Playback", "Voice",
+                             "Ambience")
+        events_page = QWidget()
+        layout.addWidget(self.pages, 1)
+
+        events_layout = QVBoxLayout(events_page)
+        events_layout.setContentsMargins(0, 0, 0, 0)
+        events_layout.setSpacing(6)
+        layout = events_layout  # the table below fills the Events page
 
         self.filter_box = QLineEdit()
         self.filter_box.setPlaceholderText(tr("Filter events…", self.lang))
         self.filter_box.textChanged.connect(self._apply_filter)
         layout.addWidget(self.filter_box)
 
-        # Icon colour follows the theme's text colour (gold on the dark
-        # golden theme), so the pictograms stay visible on any theme.
-        try:
-            icon_color = self.palette().color(
-                self.palette().ColorRole.Text)
-        except Exception:
-            icon_color = QColor("#d0b060")
+        # T-1242: the pictogram colour comes from the ACTIVE THEME's raw
+        # tokens, never from the widget QPalette -- a QSS-heavy theme does
+        # not keep QPalette.Text in sync, which left icons nearly black on
+        # the dark Golden theme.  Contrast is checked against the actual
+        # table background with a tiered fallback (text_main -> btn_text ->
+        # visible neutral) so the icons are readable on every theme.
+        icon_color = _theme_icon_color(getattr(self, "main_win", None), self)
+        self._icon_color = icon_color
 
         self.table = QTableWidget()
-        self.table.setColumnCount(5)
+        self.table.setColumnCount(6)
         self.table.setHorizontalHeaderLabels([
             tr("Event", self.lang), tr("On", self.lang), tr("Sound", self.lang),
-            tr("Volume", self.lang), "▶",
+            tr("Mode", self.lang), tr("Gain", self.lang), "▶",
         ])
+        # T-1242 (spec 19): compact 28px rows -- every control stays
+        # vertically unclipped at Qt's default font metrics.  Set ONCE as the
+        # default section size: a per-row setRowHeight re-runs the table's
+        # geometry pass on every call.
         self.table.verticalHeader().setVisible(False)
+        self.table.verticalHeader().setDefaultSectionSize(28)
         self.table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
         self.table.setAlternatingRowColors(True)
         self.table.setShowGrid(False)
@@ -326,100 +661,355 @@ class SoundSettingsDialog(QDialog):
         # left AlternateBase at Qt's default WHITE (v0.8.29 regression:
         # "white on near-white").
 
-        events = list(EVENT_LABELS)
+        events = self._all_events
         self.table.setRowCount(len(events))
-        self._rows = {}
-        for row, event in enumerate(events):
-            item = QTableWidgetItem(tr(EVENT_LABELS[event], self.lang))
-            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            item.setToolTip(event)
-            item.setIcon(_event_icon(event, icon_color))
-            self.table.setItem(row, _COL_EVENT, item)
+        self.table.setUpdatesEnabled(False)
+        self.table.setSortingEnabled(False)
 
-            on = QCheckBox()
-            on.toggled.connect(lambda checked, e=event: self._set_enabled(e, checked))
-            self.table.setCellWidget(row, _COL_ON, on)
+        # Build initial batch of rows immediately (10 rows is enough to fill viewport)
+        self._build_events_chunk(0, 10)
 
-            file_widget = QWidget()
-            file_layout = QHBoxLayout(file_widget)
-            file_layout.setContentsMargins(0, 0, 0, 0)
-            file_layout.setSpacing(4)
-            
-            combo = QComboBox()
-            combo.setMaxVisibleItems(20)
-            self._populate_combo(combo)
-            combo.currentIndexChanged.connect(
-                lambda _idx, e=event, c=combo: self._set_file(e, c))
-                
-            fav_btn = QPushButton("☆")
-            fav_btn.setCheckable(True)
-            fav_btn.setFixedSize(24, 24)
-            fav_btn.setToolTip(tr("Favorite this sound", self.lang))
-            fav_btn.toggled.connect(lambda checked, c=combo: self._toggle_favorite(checked, c))
-            def _update_btn(idx, c=combo, btn=fav_btn):
-                is_fav = c.currentData() in self._data.get("sound_favorites", [])
-                btn.blockSignals(True)
-                btn.setChecked(is_fav)
-                btn.setText("★" if is_fav else "☆")
-                btn.blockSignals(False)
-            combo.currentIndexChanged.connect(_update_btn)
-            
-            file_layout.addWidget(combo, 1)
-            file_layout.addWidget(fav_btn, 0)
-            self.table.setCellWidget(row, _COL_FILE, file_widget)
-            
-            if not hasattr(self, "_combos"):
-                self._combos = {}
-                self._fav_btns = {}
-            self._combos[event] = combo
-            self._fav_btns[event] = fav_btn
-
-            vol = QSlider(Qt.Orientation.Horizontal)
-            vol.setRange(0, 10)
-            # TicksBelow — PyQt6 uses the C++ enumerator names verbatim, and
-            # the wrong one is an AttributeError that only fires when this
-            # dialog is opened.
-            vol.setTickPosition(QSlider.TickPosition.TicksBelow)
-            vol.setTickInterval(1)
-            vol.setFixedWidth(150)
-            vol.setToolTip(tr("0 = use the global volume", self.lang))
-            vol.valueChanged.connect(lambda v, e=event: self._set_volume(e, v))
-            self.table.setCellWidget(row, _COL_VOL, vol)
-
-            play = QPushButton("▶")
-            play.setFixedWidth(28)
-            play.setToolTip(tr("Play this sound", self.lang))
-            play.clicked.connect(lambda _c, e=event: self._preview(e))
-            self.table.setCellWidget(row, _COL_PLAY, play)
-
-            self.table.setRowHeight(row, 34)
-            self._rows[event] = row
-
+        self.table.setUpdatesEnabled(True)
+        self.table.itemChanged.connect(self._on_item_changed)
+        self.table.cellClicked.connect(self._on_cell_clicked)
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(_COL_EVENT, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(_COL_ON, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(_COL_FILE, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(_COL_VOL, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(_COL_MODE,
+                                    QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(_COL_GAIN,
+                                    QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(_COL_PLAY, QHeaderView.ResizeMode.ResizeToContents)
         layout.addWidget(self.table, 1)
+        self.pages.addTab(events_page, tr("Events", self.lang))
+        self._build_hub_pages()
 
+        # Schedule remaining rows via singleShot timer
+        from PyQt6.QtCore import QTimer
+        QTimer.singleShot(0, self._build_remaining_events)
+
+        layout = self.layout()
         buttons = QHBoxLayout()
+        stop_all = QPushButton(tr("■ STOP ALL SOUND", self.lang))
+        stop_all.setToolTip(tr(
+            "Silence every channel, queue, sequence and ambience layer now.\n"
+            "Does not change the master mute; new sounds stay allowed.",
+            self.lang))
+        stop_all.clicked.connect(self._on_stop_all_sound)
+        buttons.addWidget(stop_all)
         reset = QPushButton(tr("Reset to defaults", self.lang))
         reset.clicked.connect(self._reset)
         buttons.addWidget(reset)
+        diagnostics = QPushButton(tr("Copy sound diagnostics", self.lang))
+        diagnostics.clicked.connect(self._copy_sound_diagnostics)
+        buttons.addWidget(diagnostics)
+        auto_all = QPushButton(tr("Auto level enabled sounds", self.lang))
+        auto_all.setToolTip(tr(
+            "Measure every enabled sound and store matching negative gains",
+            self.lang))
+        auto_all.clicked.connect(self._on_auto_level_all)
+        buttons.addWidget(auto_all)
+        self._auto_all_button = auto_all
+        # A failed preview gets a compact status line, never a modal.
+        self._status_label = QLabel("")
+        self._status_label.setWordWrap(False)
+        buttons.addWidget(self._status_label, 1)
         buttons.addStretch()
         close = QPushButton(tr("Close", self.lang))
         close.clicked.connect(self.accept)
         buttons.addWidget(close)
         layout.addLayout(buttons)
 
+    def _build_single_row(self, row: int, event: str) -> None:
+        auto_tip = tr("Measure this sound and store a matching negative gain",
+                      self.lang)
+        auto_text = tr("Auto", self.lang)
+        play_tip = tr("Play this sound", self.lang)
+        fav_tip = tr("Favorite this sound", self.lang)
+
+        item = QTableWidgetItem(tr(EVENT_LABELS[event], self.lang))
+        item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+        item.setToolTip(event)
+        item.setIcon(_event_icon(event, self._icon_color))
+        self.table.setItem(row, _COL_EVENT, item)
+        self._icon_items[(row, _COL_EVENT)] = (event, item)
+
+        on = QTableWidgetItem()
+        on.setFlags(Qt.ItemFlag.ItemIsEnabled
+                    | Qt.ItemFlag.ItemIsUserCheckable)
+        on.setCheckState(Qt.CheckState.Unchecked)
+        on.setData(Qt.ItemDataRole.UserRole, event)
+        self.table.setItem(row, _COL_ON, on)
+
+        file_widget = QWidget()
+        file_layout = QHBoxLayout(file_widget)
+        file_layout.setContentsMargins(0, 0, 0, 0)
+        file_layout.setSpacing(4)
+        
+        combo = QComboBox()
+        combo.setMaxVisibleItems(20)
+        self._populate_combo(combo)
+        combo.currentIndexChanged.connect(
+            lambda _idx, e=event, c=combo: self._set_file(e, c))
+            
+        fav_btn = QPushButton("☆")
+        fav_btn.setCheckable(True)
+        fav_btn.setFixedSize(24, 24)
+        fav_btn.setToolTip(fav_tip)
+        fav_btn.toggled.connect(lambda checked, c=combo: self._toggle_favorite(checked, c))
+        def _update_btn(idx, c=combo, btn=fav_btn):
+            is_fav = c.currentData() in self._data.get("sound_favorites", [])
+            btn.blockSignals(True)
+            btn.setChecked(is_fav)
+            btn.setText("★" if is_fav else "☆")
+            btn.blockSignals(False)
+        combo.currentIndexChanged.connect(_update_btn)
+        
+        file_layout.addWidget(combo, 1)
+        file_layout.addWidget(fav_btn, 0)
+        self.table.setCellWidget(row, _COL_FILE, file_widget)
+        
+        self._combos[event] = combo
+        self._fav_btns[event] = fav_btn
+
+        mode = QComboBox()
+        for value, text in _EVENT_MODE_CHOICES:
+            mode.addItem(tr(text, self.lang), value)
+        mode._en_items = [t for _v, t in _EVENT_MODE_CHOICES]
+        mode.currentIndexChanged.connect(
+            lambda _i, e=event, c=mode: self._set_mode(e, c))
+        self.table.setCellWidget(row, _COL_MODE, mode)
+        self._modes[event] = mode
+
+        gain_cell = QWidget()
+        gain_layout = QHBoxLayout(gain_cell)
+        gain_layout.setContentsMargins(0, 0, 0, 0)
+        gain_layout.setSpacing(4)
+        gain = _GainSlider(Qt.Orientation.Horizontal)
+        gain.setRange(_GAIN_MIN, _GAIN_MAX)
+        gain.setTickPosition(QSlider.TickPosition.TicksBelow)
+        gain.setTickInterval(6)
+        gain.setFixedWidth(104)
+        gain.reset_requested.connect(
+            lambda e=event: self._reset_gain(e))
+        gain.valueChanged.connect(
+            lambda v, e=event: self._set_gain(e, float(v)))
+        gain_label = QLabel(format_gain_db(0.0))
+        gain_label.setMinimumWidth(46)
+        gain_layout.addWidget(gain)
+        gain_layout.addWidget(gain_label)
+        self._gains[event] = gain
+        self._gain_labels[event] = gain_label
+
+        auto = QPushButton(auto_text)
+        auto.setFixedWidth(40)
+        auto.setToolTip(auto_tip)
+        auto.clicked.connect(lambda _c, e=event: self._auto_level(e))
+        gain_layout.addWidget(auto)
+        self._auto_buttons[event] = auto
+        self.table.setCellWidget(row, _COL_GAIN, gain_cell)
+
+        play = QTableWidgetItem("▶")
+        play.setFlags(Qt.ItemFlag.ItemIsEnabled)
+        play.setToolTip(play_tip)
+        play.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.table.setItem(row, _COL_PLAY, play)
+
+        self._rows[event] = row
+        self._load_row_settings(event, row)
+
+    def _build_events_chunk(self, start: int, count: int) -> None:
+        end = min(len(self._all_events), start + count)
+        was_loading = self._loading
+        self._loading = True
+        self.table.blockSignals(True)
+        try:
+            for row in range(start, end):
+                self._build_single_row(row, self._all_events[row])
+        finally:
+            self.table.blockSignals(False)
+            self._loading = was_loading
+        self._built_events_count = end
+
+    def _build_remaining_events(self) -> None:
+        if self._built_events_count >= len(self._all_events):
+            return
+        chunk_size = 15
+        self.table.setUpdatesEnabled(False)
+        try:
+            self._build_events_chunk(self._built_events_count, chunk_size)
+        finally:
+            self.table.setUpdatesEnabled(True)
+        if self._built_events_count < len(self._all_events):
+            from PyQt6.QtCore import QTimer
+            QTimer.singleShot(0, self._build_remaining_events)
+
+    def _ensure_all_events_built(self) -> None:
+        if self._built_events_count < len(self._all_events):
+            self.table.setUpdatesEnabled(False)
+            try:
+                self._build_events_chunk(
+                    self._built_events_count,
+                    len(self._all_events) - self._built_events_count)
+            finally:
+                self.table.setUpdatesEnabled(True)
+
+    def _on_stop_all_sound(self) -> None:
+        """T-1244 A2: the ONE canonical STOP ALL handler for the dialog.
+
+        Delegates to SoundManager.stop_all_sound() (the same authority the
+        Playback and Problip actions use); never flips master mute and
+        never disables future audio.
+        """
+        self._sound_manager.stop_all_sound()
+        controller = getattr(self.main_win, "ambience_controller", None)
+        if controller is not None:
+            controller.stop_runtime_only()
+        self._set_status(tr("All sounds stopped", self.lang))
+
+    def repaint_event_icons(self):
+        """Re-render the painted pictograms for the ACTIVE theme (spec 21).
+
+        Called after a theme change: the old pixmaps carry the previous
+        theme's colour, so they are regenerated without rebuilding any
+        other dialog state.
+        """
+        try:
+            color = _theme_icon_color(getattr(self, "main_win", None), self)
+        except Exception:
+            return
+        self._icon_color = color
+        for (row, _column), (event, item) in getattr(self, "_icon_items",
+                                                     {}).items():
+            try:
+                item.setIcon(_event_icon(event, color))
+            except RuntimeError:
+                continue  # dialog torn down mid-repaint
+
+    def _build_hub_pages(self):
+        """Presets / Playback / Voice / Ambience lazy placeholders."""
+        self.pages.addTab(QWidget(), tr("Presets", self.lang))
+        self.pages.addTab(QWidget(), tr("Playback", self.lang))
+        self.pages.addTab(QWidget(), tr("Voice", self.lang))
+        self.pages.addTab(QWidget(), tr("Ambience", self.lang))
+        self.pages.currentChanged.connect(self._on_tab_changed)
+
+    def _on_tab_changed(self, index: int):
+        if index > 0:
+            self._ensure_hub_page(index)
+
+    # ---- cross-page refresh -------------------------------------------
+
+    def done(self, result):  # noqa: D102 - QDialog override
+        """Clear the theme-repaint hook registration before widgets die."""
+        try:
+            if type(self)._LAST_INSTANCE is self:
+                type(self)._LAST_INSTANCE = None
+        except RuntimeError:
+            pass
+        super().done(result)
+
+    def reload_after_preset(self):
+        """A preset was applied: re-read mappings and the global mode."""
+        self._load_settings()
+        page = getattr(self, "playback_page", None)
+        if page is not None:
+            page.reload()
+        self._touch()
+
+    def reload_sound_library(self):
+        """The managed library changed: rebuild the shared picker model."""
+        self._ensure_all_events_built()
+        self._sound_manager.invalidate_cache()
+        self._available = self._sound_manager.get_available_sounds()
+        self._available += sound_library.list_managed_sounds()
+        was_loading = self._loading
+        self._loading = True
+        try:
+            selections = {event: combo.currentData()
+                          for event, combo in self._combos.items()}
+            self._rebuild_sound_model()
+            for event, combo in self._combos.items():
+                index = combo.findData(selections.get(event))
+                if index >= 0:
+                    combo.setCurrentIndex(index)
+        finally:
+            self._loading = was_loading
+        self._load_settings()
+
+    def events_using_ref(self, ref: str) -> list[str]:
+        """Which event mappings still point at this managed-library file."""
+        using = []
+        for event, config in (self._data.get("sound_events") or {}).items():
+            if isinstance(config, dict) and config.get("file") == ref:
+                using.append(event)
+        return sorted(using)
+
     # ---- settings <-> widgets -----------------------------------------
-    def _populate_combo(self, combo: QComboBox):
-        favs = self._data.get("sound_favorites", [])
-        combo.clear()
+    def _copy_sound_diagnostics(self):
+        """Everything needed to answer "I heard nothing" from one paste.
+
+        T-1242 spec 34: the per-request entries already carry the effective
+        global volume, the event gain, the effective amplitude, the source
+        and rendered WAV formats and the transport's own failure reason; the
+        header adds the backend and the master value they are relative to.
+        No user text is included.
+        """
+        import json
+
+        from PyQt6.QtWidgets import QApplication
+
+        manager = self._sound_manager
+        payload = {
+            "global_volume": round(global_volume(self._data), 4),
+            "backend": (manager.backend_status()
+                        if hasattr(manager, "backend_status") else {}),
+            "requests": manager.diagnostic_log(),
+        }
+        trace = getattr(manager, "transport_diagnostic_log", None)
+        if callable(trace):
+            payload["transport_trace"] = trace()
+        QApplication.clipboard().setText(
+            json.dumps(payload, indent=2, ensure_ascii=False, default=str))
+
+    def _rebuild_sound_model(self):
+        """Build the ONE model every file combo shares."""
+        favs = set(self._data.get("sound_favorites", []))
+        self._sound_model.clear()
+        self._model_rows = {}
         for name in self._available:
-            text = f"★ {name}" if name in favs else name
-            combo.addItem(text, name)
+            item = QStandardItem(f"★ {name}" if name in favs else name)
+            item.setData(name, Qt.ItemDataRole.UserRole)
+            self._model_rows[name] = self._sound_model.rowCount()
+            self._sound_model.appendRow(item)
+
+    def _ensure_model_entry(self, name: str, label: str | None = None) -> int:
+        """Index of ``name`` in the shared model, appending it when absent.
+
+        A mapping pointing at a file that is no longer in the library stays
+        visible (marked) instead of silently showing something else.
+        """
+        row = self._model_rows.get(name)
+        if row is not None:
+            return row
+        item = QStandardItem(label or name)
+        item.setData(name, Qt.ItemDataRole.UserRole)
+        row = self._sound_model.rowCount()
+        self._model_rows[name] = row
+        self._sound_model.appendRow(item)
+        return row
+
+    def _populate_combo(self, combo: QComboBox):
+        # PERF: the default AdjustToContents size policy makes every combo
+        # compute its sizeHint by measuring ALL 500+ library entries, and Qt
+        # asks for that hint on insertion, on polish and on every relayout.
+        # With ~58 combos that single default cost ~1 s of the dialog's build
+        # (measured: 3.5 ms per setCellWidget here vs 0.1 ms on a bare table).
+        combo.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        combo.setMinimumContentsLength(18)
+        combo.setModel(self._sound_model)
 
     def _toggle_favorite(self, is_fav, combo):
         filename = combo.currentData()
@@ -444,10 +1034,12 @@ class SoundSettingsDialog(QDialog):
             self._available = self._sound_manager.get_available_sounds()
             was_loading = self._loading
             self._loading = True
+            # One model rebuild, not one per row.
+            selections = {event: c.currentData()
+                          for event, c in getattr(self, "_combos", {}).items()}
+            self._rebuild_sound_model()
             for event, c in getattr(self, "_combos", {}).items():
-                old_val = c.currentData()
-                self._populate_combo(c)
-                idx = c.findData(old_val)
+                idx = c.findData(selections.get(event))
                 if idx >= 0:
                     c.setCurrentIndex(idx)
             self._loading = was_loading
@@ -466,35 +1058,71 @@ class SoundSettingsDialog(QDialog):
             events[event] = cfg
         return cfg
 
+    def _load_row_settings(self, event: str, row: int):
+        cfg = self._config(event)
+        item_on = self.table.item(row, _COL_ON)
+        if item_on is not None:
+            item_on.setCheckState(
+                Qt.CheckState.Checked
+                if cfg.get("enabled", "True") == "True"
+                else Qt.CheckState.Unchecked)
+
+        combo = self._combos.get(event)
+        if combo is not None:
+            wanted = cfg.get("file") or _DEFAULT_SOUND_MAP.get(event, "")
+            idx = combo.findData(wanted)
+            if idx < 0 and wanted:
+                playable = True
+                try:
+                    playable = self._sound_manager.ref_resolves(wanted)
+                except Exception:
+                    playable = False
+                label = (wanted if playable
+                         else f"{wanted} ({tr('missing', self.lang)})")
+                idx = self._ensure_model_entry(wanted, label)
+            combo.setCurrentIndex(max(0, idx))
+
+        mode_combo = self._modes.get(event)
+        if mode_combo is not None:
+            wanted_mode = str(cfg.get("mode") or "inherit").lower()
+            mode_index = mode_combo.findData(wanted_mode)
+            mode_combo.setCurrentIndex(max(0, mode_index))
+
+        gain_db = get_event_gain_db(event, self._data)
+        slider = self._gains.get(event)
+        if slider is not None:
+            slider.setValue(int(round(gain_db)))
+        self._refresh_gain_row(event, gain_db)
+
     def _load_settings(self):
         self._loading = True
         try:
-            for event, row in self._rows.items():
-                cfg = self._config(event)
-                self.table.cellWidget(row, _COL_ON).setChecked(
-                    cfg.get("enabled", "True") == "True")
-
-                combo = self._combos[event]
-                wanted = cfg.get("file") or _DEFAULT_SOUND_MAP.get(event, "")
-                idx = combo.findData(wanted)
-                if idx < 0 and wanted:
-                    # a file that is no longer in the folder: keep it visible
-                    # rather than silently showing something else
-                    combo.addItem(f"{wanted} ({tr('missing', self.lang)})", wanted)
-                    idx = combo.count() - 1
-                combo.setCurrentIndex(max(0, idx))
-
-                try:
-                    vol = int(cfg.get("volume") or 0)
-                except (TypeError, ValueError):
-                    vol = 0
-                self.table.cellWidget(row, _COL_VOL).setValue(max(0, min(10, vol)))
+            for event, row in list(self._rows.items()):
+                self._load_row_settings(event, row)
         finally:
             self._loading = False
 
     def _touch(self):
         if hasattr(self.main_win, "mark_dirty"):
             self.main_win.mark_dirty()
+
+    def _on_item_changed(self, item):
+        """The On column is a checkable item now, not a QCheckBox widget."""
+        if self._loading or item.column() != _COL_ON:
+            return
+        event = item.data(Qt.ItemDataRole.UserRole)
+        if not event:
+            return
+        self._set_enabled(
+            event, item.checkState() == Qt.CheckState.Checked)
+
+    def _on_cell_clicked(self, row, column):
+        if column != _COL_PLAY:
+            return
+        for event, mapped in self._rows.items():
+            if mapped == row:
+                self._preview(event)
+                return
 
     def _set_enabled(self, event, checked):
         if self._loading:
@@ -510,13 +1138,176 @@ class SoundSettingsDialog(QDialog):
             return
         self._config(event)["file"] = name
         self._touch()
+        # T-1242 spec 5: warm the NEW sound so this preview (and the real
+        # event) does not start on a cold, still-decoding source.
+        warm = getattr(self._sound_manager, "preload_hot_set", None)
+        if callable(warm):
+            path = self._event_source_path(event)
+            if path:
+                try:
+                    warm([path])
+                except Exception:
+                    pass
         self._preview(event)          # picking a sound plays it
 
-    def _set_volume(self, event, value):
+    def _set_mode(self, event, combo):
         if self._loading:
             return
-        self._config(event)["volume"] = "" if value == 0 else str(value)
+        self._config(event)["mode"] = str(combo.currentData() or "inherit")
         self._touch()
+        # The runtime reads sound_events on every play, so the new mode is
+        # live immediately; nothing here rebuilds the dialog.
+        self._sound_manager.invalidate_cache()
+
+    # -- relative gain (T-1242 spec 10-17) ---------------------------------
+
+    def _refresh_global_label(self):
+        """Show the ACTUAL master volume; re-render when the user changes it."""
+        label = getattr(self, "_global_label", None)
+        if label is None:
+            return
+        master = global_volume(self._data)
+        if master == self._last_master:
+            return
+        self._last_master = master
+        label.setText(tr("Picking a sound plays it.", self.lang) + "  "
+                      + tr("Global volume: {pct}% - 0 dB = same as global",
+                           self.lang).replace(
+                               "{pct}", str(int(round(master * 100)))))
+        for event in list(getattr(self, "_gains", {})):
+            self._refresh_gain_row(event)
+
+    def _refresh_gain_row(self, event, gain_db=None):
+        """Update one row's numeric label and its truthful tooltip."""
+        if gain_db is None:
+            gain_db = get_event_gain_db(event, self._data)
+        label = self._gain_labels.get(event)
+        if label is not None:
+            label.setText(format_gain_db(gain_db))
+        master = global_volume(self._data)
+        effective = effective_event_volume(event, self._data)
+        lines = [
+            tr("Global: {pct}%", self.lang).replace(
+                "{pct}", str(int(round(master * 100)))),
+            tr("Gain: {gain}", self.lang).replace(
+                "{gain}", format_gain_db(gain_db)),
+            tr("Effective amplitude: ~{pct}%", self.lang).replace(
+                "{pct}", f"{effective * 100:.1f}"),
+        ]
+        detail = self._auto_detail.get(event)
+        if detail:
+            lines.append(detail)
+        tooltip = "\n".join(lines)
+        for widget in (self._gains.get(event), label):
+            if widget is not None:
+                widget.setToolTip(tooltip)
+
+    def _set_gain(self, event, value):
+        if self._loading:
+            return
+        gain = max(GAIN_DB_MIN, min(GAIN_DB_MAX, float(value)))
+        self._config(event)["gain_db"] = f"{gain:.1f}"
+        # The legacy absolute field would otherwise keep overriding the new
+        # relative one both on an older build and in get_event_gain_db's
+        # backward-compatible fallback.
+        self._config(event)["volume"] = ""
+        self._refresh_gain_row(event, gain)
+        self._touch()
+        self._sound_manager.invalidate_cache()
+
+    def _reset_gain(self, event):
+        """Double-click / Reset: back to 0 dB = exactly the global volume."""
+        slider = self._gains.get(event)
+        self._auto_detail.pop(event, None)
+        if slider is None or slider.value() == 0:
+            self._set_gain(event, 0.0)
+        else:
+            slider.setValue(0)          # valueChanged writes 0 dB
+
+    def _event_source_path(self, event):
+        """The absolute WAV this row currently points at (or '')."""
+        import os as _os
+
+        cfg = self._config(event)
+        name = cfg.get("file") or _DEFAULT_SOUND_MAP.get(event, "")
+        if not name:
+            return ""
+        resolver = getattr(self._sound_manager, "resolve_ref_path", None)
+        if callable(resolver):
+            try:
+                resolved = resolver(name)
+                if resolved and _os.path.isfile(resolved):
+                    return resolved
+            except Exception:
+                pass
+        sounds_dir = getattr(self._sound_manager, "sounds_dir", "")
+        candidate = _os.path.join(sounds_dir, name) if sounds_dir else name
+        return candidate if _os.path.isfile(candidate) else ""
+
+    def _auto_level(self, event):
+        """Deterministic attenuation-only Auto Level for one event.
+
+        It never rewrites the WAV: it stores a VISIBLE negative Gain the
+        user can inspect and change.
+        """
+        path = self._event_source_path(event)
+        payload = audio_level.analyze(path) if path else None
+        if payload is None:
+            self._auto_detail.pop(event, None)
+            self._refresh_gain_row(event)
+            self._set_status(tr("Auto unavailable for this file", self.lang))
+            return None
+        gain = float(payload["recommended_gain_db"])
+        master = global_volume(self._data)
+        self._auto_detail[event] = "\n".join([
+            tr("Measured active RMS: {v} dBFS", self.lang).replace(
+                "{v}", f"{payload['active_rms_dbfs']:.1f}"),
+            tr("Peak: {v} dBFS", self.lang).replace(
+                "{v}", f"{payload['peak_dbfs']:.1f}"),
+            tr("Auto gain: {v}", self.lang).replace(
+                "{v}", format_gain_db(gain)),
+            tr("Global master: {pct}%", self.lang).replace(
+                "{pct}", str(int(round(master * 100)))),
+        ])
+        slider = self._gains.get(event)
+        if slider is not None:
+            slider.blockSignals(True)
+            slider.setValue(int(round(gain)))
+            slider.blockSignals(False)
+        if not self._loading:
+            self._config(event)["gain_db"] = f"{gain:.1f}"
+            self._config(event)["volume"] = ""
+            self._touch()
+            self._sound_manager.invalidate_cache()
+        self._refresh_gain_row(event, gain)
+        self._set_status(tr("Auto gain: {v}", self.lang).replace(
+            "{v}", format_gain_db(gain)))
+        return gain
+
+    def _auto_level_all(self):
+        """Auto-level every ENABLED event; returns how many rows changed."""
+        self._ensure_all_events_built()
+        changed = 0
+        for event in list(self._rows):
+            cfg = self._config(event)
+            if str(cfg.get("enabled", "True")).lower() != "true":
+                continue
+            before = get_event_gain_db(event, self._data)
+            self._auto_level(event)
+            if get_event_gain_db(event, self._data) != before:
+                changed += 1
+        return changed
+
+    def _on_auto_level_all(self):
+        changed = self._auto_level_all()
+        self._set_status(tr("Auto level: {n} changed", self.lang).replace(
+            "{n}", str(changed)))
+
+    def _set_status(self, text):
+        """Compact status line -- a failed preview never needs a modal."""
+        label = getattr(self, "_status_label", None)
+        if label is not None:
+            label.setText(text)
 
     def _preview(self, event):
         """Play what this row is set to, whatever the global toggles say.
@@ -529,11 +1320,13 @@ class SoundSettingsDialog(QDialog):
         name = cfg.get("file") or _DEFAULT_SOUND_MAP.get(event, "")
         if not name:
             return
-        try:
-            vol = int(cfg.get("volume") or 0)
-        except (TypeError, ValueError):
-            vol = 0
-        self._sound_manager.play_file(name, vol or None)
+        # T-1242 spec 17: NO special preview loudness path -- exactly the
+        # global master and this row's gain, like the real event.
+        level = effective_event_volume(event, self._data)
+        result = self._sound_manager.play_file(name, level)
+        if result is False:
+            self._set_status(tr("Could not play {name}", self.lang).replace(
+                "{name}", str(name)))
 
     def _reset(self):
         if QMessageBox.question(
@@ -542,16 +1335,50 @@ class SoundSettingsDialog(QDialog):
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         ) != QMessageBox.StandardButton.Yes:
             return
+        self._ensure_all_events_built()
         self._data["sound_events"] = {
-            event: {"file": default, "enabled": "True", "volume": ""}
+            event: {"file": default, "enabled": "True", "volume": "",
+                    "gain_db": "0.0"}
             for event, default in _DEFAULT_SOUND_MAP.items()
         }
         self._load_settings()
         self._touch()
 
     def _apply_filter(self, text):
+        self._ensure_all_events_built()
         needle = (text or "").strip().lower()
         for event, row in self._rows.items():
             label = self.table.item(row, _COL_EVENT).text().lower()
             self.table.setRowHidden(
                 row, bool(needle) and needle not in label and needle not in event)
+
+    # ---- one canonical lifecycle (T-1242 spec A2) ----------------------
+
+    @classmethod
+    def open_canonical(cls, main_win, data, sound_manager):
+        """Open THE SoundSettingsDialog: reuse, raise, or rebuild.
+
+        The dialog is window-modal, so there can be at most one live instance;
+        the class reference is refreshed on every construction and cleared in
+        ``done()``.  A previous dialog that was destroyed without going
+        through ``done()`` (deletion from the outside) leaves the stale
+        reference behind, so the sip.isdeleted probe is the real liveness
+        check.  Repeated "Open Audio Hub..." clicks therefore produce ONE
+        visible canonical dialog -- never zero, never a stack of them.
+        """
+        from PyQt6 import sip
+
+        live = cls._LAST_INSTANCE
+        if live is not None:
+            try:
+                if not sip.isdeleted(live):
+                    live.show()
+                    live.raise_()
+                    live.activateWindow()
+                    return live
+            except RuntimeError:
+                pass
+            cls._LAST_INSTANCE = None
+        dialog = cls(main_win, data, sound_manager)
+        dialog.show()
+        return dialog

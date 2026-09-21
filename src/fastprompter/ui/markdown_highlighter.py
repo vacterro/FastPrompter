@@ -232,11 +232,11 @@ class MarkdownHighlighter(QSyntaxHighlighter):
         code_format.setForeground(QColor("#e06c75"))
         self._highlighting_rules.append((re.compile(r'`[^`]+`'), code_format))
 
-        # Blockquote: > text
+        # Blockquote: > text — also bare '>' quote-continuation rows
         quote_format = QTextCharFormat()
         quote_format.setForeground(QColor(quote_color))
         quote_format.setFontItalic(True)
-        self._highlighting_rules.append((re.compile(r'^>\s+.*'), quote_format))
+        self._highlighting_rules.append((re.compile(r'^>(\s+.*)?$'), quote_format))
 
         # Links: [text](url) — clickable via anchor href
         link_format = QTextCharFormat()
@@ -324,7 +324,7 @@ class MarkdownHighlighter(QSyntaxHighlighter):
             fmt.setFontStyleStrategy(strat)
         essential_patterns = {
             r'^#\s+.*', r'^##\s+.*', r'^###\s+.*',
-            r'^>\s+.*', r'^\s*[-*•+]\s+', r'^\s*\d+\.\s+',
+            r'^>(\s+.*)?$', r'^\s*[-*•+]\s+', r'^\s*\d+\.\s+',
         }
         self._essential_rules = [
             (pattern, fmt) for pattern, fmt in self._highlighting_rules
@@ -345,6 +345,7 @@ class MarkdownHighlighter(QSyntaxHighlighter):
             r'`[^`\n]+`',
             r'\[([^\]]+)\]\(([^)]+)\)',
             r'(?<![\w(])https?://[^\s<>"\')\]]+',
+            r'^\s*\[\s\]\s', r'^\s*\[[xX]\]\s',
         }
         self._degraded_rules = [
             (pattern, fmt) for pattern, fmt in self._highlighting_rules

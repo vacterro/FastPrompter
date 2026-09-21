@@ -12,28 +12,53 @@ Verifies:
 import os
 import sys
 import tempfile
+import weakref
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PyQt6.QtWidgets import QApplication
+from _qt_retire import retire
+from PyQt6 import sip
+from PyQt6.QtCore import QEvent
+from PyQt6.QtWidgets import QApplication, QWidget
 
 import fastprompter.core.state as state_mod
 from fastprompter.main import FastPrompter
+from fastprompter.ui.qt_lifetime import weak_qt_callback
 
 _app = QApplication.instance() or QApplication([])
 _tmpdir = tempfile.mkdtemp(prefix="fastprompter_startup_")
 
 
+def test_deferred_qt_callback_does_not_retain_or_touch_dead_owner():
+    called = []
+    owner = QWidget()
+    callback = weak_qt_callback(owner, lambda target: called.append(target))
+    owner_ref = weakref.ref(owner)
+
+    del owner
+    assert owner_ref() is None
+    callback()
+    assert called == []
+
+    owner = QWidget()
+    callback = weak_qt_callback(owner, lambda target: called.append(target))
+    owner.deleteLater()
+    QApplication.sendPostedEvents(owner, QEvent.Type.DeferredDelete)
+    assert sip.isdeleted(owner)
+    callback()
+    assert called == []
+
+
 @pytest.fixture(scope="module")
 def clean_window():
-    for widget in list(QApplication.allWidgets()):
-        try:
-            widget.deleteLater()
-        except Exception:
-            pass
-    _app.processEvents()
+    _absent = object()
+    originals = {name: getattr(FastPrompter, name, _absent) for name in (
+        "setup_single_instance_server", "register_all_hotkeys",
+        "unregister_all_hotkeys", "_init_limit_service")}
+    original_db_path = state_mod.get_db_path
+    original_backup = getattr(state_mod, "run_portable_backup", _absent)
 
     state_mod.get_db_path = lambda profile_id=1: os.path.join(_tmpdir, f"lazy_{profile_id}.db")
     state_mod.run_portable_backup = lambda data, profile_id=1: None
@@ -49,7 +74,13 @@ def clean_window():
 
     yield w
 
-    # Clean teardown
+    # T-1288: destroy this module's OWN window now.
+    # ``deleteLater()`` + ``processEvents()`` left the DeferredDelete pending;
+    # a later test's event pump then destroyed the tree while this module's Qt
+    # state was still live (minimal red placement: this module at prefix 170
+    # flips tests/test_timer_fire.py native-abnormal). The canonical
+    # receiver-specific retirement (_qt_retire.retire) delivers the event NOW;
+    # a process-wide drain would destroy objects other test files still own.
     w.auto_save_timer.stop()
     w.topmost_timer.stop()
     w.date_timer.stop()
@@ -63,8 +94,25 @@ def clean_window():
         w.state.conn = None
     w.conn = None
     w.close()
-    w.deleteLater()
+    retire(w)
     _app.processEvents()
+
+    for name, value in originals.items():
+        if value is _absent:
+            try:
+                delattr(FastPrompter, name)
+            except AttributeError:
+                pass
+        else:
+            setattr(FastPrompter, name, value)
+    state_mod.get_db_path = original_db_path
+    if original_backup is _absent:
+        try:
+            del state_mod.run_portable_backup
+        except AttributeError:
+            pass
+    else:
+        state_mod.run_portable_backup = original_backup
 
 
 def test_startup_timings_coverage(clean_window):

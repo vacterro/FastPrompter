@@ -216,48 +216,24 @@ def test_timers_saved_before_intervals_existed_still_load():
     assert back.interval_minutes == timers.DEFAULT_INTERVAL_MINUTES
 
 
-# ------------------------------------------------------------ limit window
-
-def test_limit_window_counts_from_the_anchor():
-    now = datetime.datetime(2026, 7, 21, 12, 0, 0)
-    anchor = datetime.datetime(2026, 7, 21, 11, 30, 0)
-    t = timers.limit_window("Claude", hours=5, anchor=anchor, now=now)
-    assert t.target == anchor + datetime.timedelta(hours=5)
-    assert t.repeat == timers.REPEAT_INTERVAL
-    assert t.interval_minutes == 300
-
-
-def test_limit_window_anchored_in_the_past_rolls_to_the_next_one():
-    """'my window opened at 06:00' said at 14:00 must point at the next
-    reset, not at one that already passed."""
-    now = datetime.datetime(2026, 7, 21, 14, 0, 0)
-    anchor = datetime.datetime(2026, 7, 21, 6, 0, 0)
-    t = timers.limit_window("Claude", hours=5, anchor=anchor, now=now)
-    assert t.target > now
-    assert t.target == datetime.datetime(2026, 7, 21, 16, 0, 0)
-
-
-def test_limit_window_defaults_to_starting_now():
-    now = datetime.datetime(2026, 7, 21, 12, 0, 0)
-    t = timers.limit_window("x", hours=5, now=now)
-    assert t.target == now + datetime.timedelta(hours=5)
-
+# ------------------------------------------------------- describe() wording
 
 def test_describe_spells_out_the_window_in_words():
     now = datetime.datetime(2026, 7, 21, 12, 0, 0)
-    t = timers.limit_window("Claude limit", hours=5,
-                            anchor=datetime.datetime(2026, 7, 21, 11, 0),
-                            now=now)
+    t = timers.Timer(name="Claude limit",
+                     target=datetime.datetime(2026, 7, 21, 16, 0),
+                     repeat=timers.REPEAT_INTERVAL, interval_minutes=300)
     text = timers.describe(t, now)
     assert "Claude limit" in text
     assert "16:00" in text, "the actual reset time must be visible"
     assert "in 4h" in text
-    assert "every 5h" in text, "a rolling window must say that it rolls"
+    assert "every 5h" in text, "a rolling interval must say that it rolls"
 
 
 def test_describe_marks_a_paused_timer():
     now = datetime.datetime(2026, 7, 21, 12, 0, 0)
-    t = timers.limit_window("x", hours=5, now=now)
+    t = timers.Timer(name="x", target=now + datetime.timedelta(hours=5),
+                     repeat=timers.REPEAT_INTERVAL, interval_minutes=300)
     t.enabled = False
     assert "paused" in timers.describe(t, now)
 
@@ -927,7 +903,7 @@ class TestProfileRoundtripEveryField:
             assert back.repeat_anchor == anchor
 
 def test_t1013_from_dict_corrupt_entries_skipped():
-    from fastprompter.core.timers import Timer, load_timers
+    from fastprompter.core.timers import load_timers
     
     t_healthy = {
         "target": "2026-08-19T10:00:00",
@@ -957,8 +933,9 @@ def test_t1013_from_dict_corrupt_entries_skipped():
     assert timers[0].name == "Healthy"
 
 def test_t1013_all_day_boolean_healing():
-    from fastprompter.core.timers import load_timers, save_timers, eligible_sound_rules
     import datetime
+
+    from fastprompter.core.timers import eligible_sound_rules, load_timers, save_timers
     
     t = {
         "target": "2026-08-19T10:00:00",

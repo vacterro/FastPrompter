@@ -6,7 +6,6 @@ BEFORE the copy and removes only the owned staging object.
 """
 
 import os
-import shutil
 import sys
 
 import pytest
@@ -90,7 +89,7 @@ def test_publish_failure_restores_source(tmp_path, monkeypatch):
     src.write_text("PAYLOAD")
     dest = tmp_path / "d.txt"
     fc = _force_cross_volume(monkeypatch)
-    real_publish = fc._publish_new_file
+    _real_publish = fc._publish_new_file
 
     def broken_publish(tmp, d, root, root_identity):
         raise OSError("publication boom")

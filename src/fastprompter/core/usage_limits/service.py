@@ -16,7 +16,8 @@ from __future__ import annotations
 import dataclasses
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
+from concurrent.futures import wait as futures_wait
 from dataclasses import dataclass, field
 
 from fastprompter.core.usage_limits.model import (
@@ -26,15 +27,24 @@ from fastprompter.core.usage_limits.model import (
     UsageSnapshot,
 )
 from fastprompter.core.usage_limits.providers import UsageProvider
+from fastprompter.core.usage_limits.providers._codex_probe import (
+    terminate_probe_processes,
+)
 from fastprompter.core.usage_limits.providers.antigravity import AntigravityProvider
 from fastprompter.core.usage_limits.providers.claude import ClaudeProvider
 from fastprompter.core.usage_limits.providers.codex import CodexProvider
+from fastprompter.core.usage_limits.providers.freebuff import FreebuffProvider
 from fastprompter.core.usage_limits.providers.zcode import ZCodeProvider
 
 POOL_SIZE = 3
 DEFAULT_REFRESH_SEC = 180
 BACKOFF_BASE_S = 30
 BACKOFF_CAP_S = 600
+
+# Ceiling for one shutdown call. A probe worker only has to notice that its
+# child is gone and unwind, which is fast; the bound exists so a wedged
+# worker can never hold the process hostage on the way out.
+SHUTDOWN_WAIT_S = 3.0
 
 # How often discovery re-runs on its own. Accounts were discovered once at
 # construction, so a CLI or account the user added while FastPrompter was
@@ -46,12 +56,20 @@ REDISCOVER_EVERY_S = 300
 
 # Human label per provider, used to build display names ("Codex 1", "Claude").
 _PROVIDER_LABEL = {"codex": "Codex", "claude": "Claude",
-                   "antigravity": "Antigravity", "zcode": "ZCode"}
+                   "antigravity": "Antigravity", "zcode": "ZCode",
+                   "freebuff": "Freebuff"}
 
 # Discovery order: the account the user actually runs by default first, then
 # env/configured overrides, then auto-detected siblings. Ordinals are
 # presentation only — identity stays the path hash from model.stable_id_for.
-_KIND_ORDER = {"auto_default": 0, "env": 1, "configured": 2, "auto_sibling": 3}
+#
+# ``config_dir`` / ``config_file`` / ``desktop_only`` are Claude's names for the
+# SAME idea as ``auto_default`` — the installation already on this machine — so
+# they share ordinal 0. Leaving them unmapped sorted the default account behind
+# its own siblings and labelled it "Claude 2".
+_KIND_ORDER = {"auto_default": 0, "config_dir": 0, "config_file": 0,
+               "desktop_only": 0, "env": 1, "configured": 2,
+               "auto_sibling": 3}
 
 
 def parse_home_list(raw) -> list[str]:
@@ -110,17 +128,27 @@ class ServiceState:
 class UsageLimitService:
     """Thread-safe service; does not import Qt."""
 
-    def __init__(self, data: dict | None = None):
+    def __init__(self, data: dict | None = None, *, discover: bool = True):
         self._lock = threading.Lock()
         self._state = ServiceState()
         self._data: dict = data if data is not None else {}
         self._refresh_callbacks: list[callable] = []
         self._closed = False
+        # Set before anything else during shutdown so a coordinator already
+        # past the ``_closed`` check still refuses to submit new probes.
+        self._stopping = threading.Event()
+        self._active_futures: set[Future] = set()
         self._sweep_threads_count = 0
         self._sweep_pending = False
+        self._sweep_pending_rediscover = False
         self._providers: dict[str, UsageProvider] = self._build_providers()
         self._executor = ThreadPoolExecutor(max_workers=POOL_SIZE)
-        self._discover()
+        # Library callers historically receive an immediately discovered
+        # roster. The Qt shell opts out and starts ``refresh(rediscover=True)``
+        # only after its queued callback bridge exists, so filesystem discovery
+        # can never stall the GUI thread on a slow/offline account home.
+        if discover:
+            self._discover()
 
     def _build_providers(self) -> dict[str, UsageProvider]:
         """Providers rebuilt from the live profile so config changes apply."""
@@ -128,7 +156,9 @@ class UsageLimitService:
             "codex": CodexProvider(
                 extra_homes=parse_home_list(self._data.get("limit_codex_homes", ""))
             ),
-            "claude": ClaudeProvider(),
+            "claude": ClaudeProvider(
+                extra_paths=parse_home_list(self._data.get("limit_claude_homes", ""))
+            ),
             "antigravity": AntigravityProvider(
                 data_dir=str(self._data.get("limit_antigravity_dir", "") or "")
             ),
@@ -138,6 +168,12 @@ class UsageLimitService:
             "zcode": ZCodeProvider(
                 enabled=str(self._data.get("limit_zcode_enabled", "False")) == "True",
                 config_path=str(self._data.get("limit_zcode_config", "") or ""),
+            ),
+            # Freebuff is the second networked provider, and it stays opt-in
+            # for the same reason (see providers/freebuff.py).
+            "freebuff": FreebuffProvider(
+                enabled=str(self._data.get("limit_freebuff_enabled", "False")) == "True",
+                state_path=str(self._data.get("limit_freebuff_state", "") or ""),
             ),
         }
 
@@ -155,7 +191,7 @@ class UsageLimitService:
     def reconfigure(self, data: dict | None = None) -> None:
         """Re-read provider config, rediscover accounts, resweep.
 
-        Called when the user edits the extra Codex homes list. Old snapshots
+        Called when the user edits an extra homes list. Old snapshots
         are dropped because the accounts themselves may have changed.
         """
         if data is not None:
@@ -171,42 +207,130 @@ class UsageLimitService:
         self._fire()
         self.refresh()
 
-    def shutdown(self) -> None:
-        """Release the worker pool. Idempotent, non-blocking."""
+    def reconfigure_async(self, data: dict | None = None) -> None:
+        """Reconfigure without running account discovery on the caller.
+
+        UI code uses this route. Provider objects and invalidation state are
+        replaced synchronously under the lock; filesystem discovery and the
+        ensuing probes run on the bounded sweep coordinator.
+        """
+        if data is not None:
+            self._data = data
         with self._lock:
             if self._closed:
                 return
+            self._state.generation += 1
+            self._state.request_id += 1
+            self._providers = self._build_providers()
+            self._state.accounts = []
+            self._state.snapshots = {}
+            self._state.last_discovery = 0.0
+            self._state.status = "DISCOVERING"
+        self._fire()
+        self.refresh(rediscover=True)
+
+    def shutdown(self, timeout: float = SHUTDOWN_WAIT_S) -> bool:
+        """Stop all probing within a bounded time. Idempotent, thread-safe.
+
+        The order is the whole point:
+
+        1. mark stopping, so no further probe is ever submitted and any
+           result arriving late is discarded instead of published;
+        2. cancel the futures that have not started yet;
+        3. terminate the in-flight ``codex`` children — a running probe is
+           parked in a response poll and its worker cannot unwind while its
+           child lives, so this is what actually frees the pool;
+        4. wait for the remaining workers, but only for ``timeout``;
+        5. retire the executor.
+
+        Returns True when everything unwound inside the bound. False means a
+        worker was still running when the wait expired; the caller may log it
+        but must not block further — the pool threads are then abandoned
+        deliberately rather than allowed to hold up process exit.
+
+        Safe to call from ``_shutdown_application``, ``aboutToQuit``, the
+        window's ``destroyed`` signal and test teardown, in any order and any
+        number of times.
+
+        Step 3 is process-wide: it stops every registered probe child, not
+        only the ones this instance spawned. The app owns one service, and a
+        stray child from a discarded instance is exactly what must not
+        survive, so the broader reach is the intent.
+        """
+        self._stopping.set()
+        with self._lock:
             self._closed = True
             self._state.generation += 1
+            self._state.request_id += 1
             self._refresh_callbacks.clear()
+            self._sweep_pending = False
+            self._sweep_pending_rediscover = False
+            pending = list(self._active_futures)
+
+        # ``cancel()`` returns False only for a probe that is already running or
+        # finished, which is exactly the set worth waiting on. Futures cancelled
+        # here must NOT be waited on: cancelling leaves them in state CANCELLED,
+        # and ``futures.wait`` counts only CANCELLED_AND_NOTIFIED as done -- a
+        # transition that never happens once ``cancel_futures`` drops the work
+        # item from the queue. Passing them to the wait burns the whole timeout
+        # on futures that are already finished.
+        still_running = [f for f in pending if not f.cancel()]
         try:
             self._executor.shutdown(wait=False, cancel_futures=True)
         except Exception:
             pass
 
-    # -- discovery ---------------------------------------------------------
-    def _discover(self) -> None:
+        terminate_probe_processes()
+
+        unfinished: set[Future] = set()
+        if still_running:
+            _done, unfinished = futures_wait(
+                still_running, timeout=max(0.0, timeout))
+        if not unfinished:
+            # Everything is already finished, so this cannot block.
+            try:
+                self._executor.shutdown(wait=True)
+            except Exception:
+                pass
+
         with self._lock:
-            gen = self._state.generation + 1
+            self._active_futures.difference_update(pending)
+            self._state.status = "IDLE"
+        return not unfinished
+
+    # -- discovery ---------------------------------------------------------
+    def _discover(self, *, request_id: int | None = None) -> bool:
+        with self._lock:
+            if self._closed:
+                return False
+            base_gen = self._state.generation
+            providers = tuple(self._providers.items())
             self._state.status = "DISCOVERING"
         all_accounts: list[AccountRef] = []
-        for pid, provider in self._providers.items():
+        for _pid, provider in providers:
             try:
                 all_accounts.extend(provider.discover_accounts())
             except Exception:
                 pass
         all_accounts = apply_display_names(all_accounts)
         with self._lock:
-            self._state.generation = gen
+            # A newer configuration/request owns the service now. Never let
+            # slow discovery from an old home list replace its roster.
+            if (self._closed or self._state.generation != base_gen
+                    or (request_id is not None
+                        and self._state.request_id != request_id)):
+                return False
+            self._state.generation = base_gen + 1
             self._state.accounts = all_accounts
             self._state.last_discovery = time.monotonic()
             self._state.status = "IDLE"
+        return True
 
     def discover(self) -> None:
         self._discover()
         self._fire()
 
-    def _rediscover_if_due(self) -> None:
+    def _rediscover_if_due(self, *, request_id: int | None = None) -> bool:
         """Re-scan for accounts periodically, keeping known snapshots.
 
         Unlike ``reconfigure`` this does NOT drop snapshots: the provider set is
@@ -217,14 +341,16 @@ class UsageLimitService:
         """
         with self._lock:
             if self._closed:
-                return
+                return False
             last = self._state.last_discovery
             if last and (time.monotonic() - last) < REDISCOVER_EVERY_S:
-                return
+                return False
         before = {a.key for a in self.accounts}
-        self._discover()
+        if not self._discover(request_id=request_id):
+            return False
         if {a.key for a in self.accounts} != before:
             self._fire()
+        return True
 
     # -- accounts (snapshot) -----------------------------------------------
     @property
@@ -271,6 +397,7 @@ class UsageLimitService:
             self._state.status = "PROBING"
             if self._sweep_threads_count >= 2:
                 self._sweep_pending = True
+                self._sweep_pending_rediscover |= bool(rediscover)
                 return
             self._sweep_threads_count += 1
         t = threading.Thread(
@@ -282,18 +409,27 @@ class UsageLimitService:
                            rediscover: bool = False) -> None:
         try:
             if rediscover:
-                self._rediscover_if_due()
+                self._rediscover_if_due(request_id=req_id)
                 accounts = self.accounts
+                with self._lock:
+                    if self._closed or req_id != self._state.request_id:
+                        return
+                    # Discovery advances the configuration generation. This
+                    # coordinator owns the following sweep, so use the new one.
+                    gen = self._state.generation
             self._sweep(accounts, gen, req_id)
         finally:
             follow_up = False
             next_accounts = None
             next_gen = 0
             next_req_id = 0
+            next_rediscover = False
             with self._lock:
                 self._sweep_threads_count = max(0, self._sweep_threads_count - 1)
                 if self._sweep_pending and not self._closed:
                     self._sweep_pending = False
+                    next_rediscover = self._sweep_pending_rediscover
+                    self._sweep_pending_rediscover = False
                     self._sweep_threads_count += 1
                     follow_up = True
                     next_gen = self._state.generation
@@ -301,10 +437,11 @@ class UsageLimitService:
                     self._state.status = "PROBING"
             if follow_up:
                 next_accounts = self.accounts
-                if next_accounts:
+                if next_accounts or next_rediscover:
                     t = threading.Thread(
                         target=self._sweep_coordinator,
-                        args=(next_accounts, next_gen, next_req_id, False),
+                        args=(next_accounts, next_gen, next_req_id,
+                              next_rediscover),
                         daemon=True, name="fastprompter-limit-sweep")
                     t.start()
                 else:
@@ -316,6 +453,8 @@ class UsageLimitService:
     def _probe_account(self, account: AccountRef, deadline: float,
                        gen: int, req_id: int) -> UsageSnapshot | None:
         """Probe one account in the thread pool. Aborts early on closure."""
+        if self._stopping.is_set():
+            return None
         with self._lock:
             if self._closed or gen < self._state.generation or req_id != self._state.request_id:
                 return None
@@ -350,26 +489,45 @@ class UsageLimitService:
         # executor then raises into a daemon thread nobody is watching. There is
         # no result to salvage at that point, so the sweep simply stops: an
         # aborted probe on a closing app is the intended outcome, not an error.
-        futures = []
+        futures: list[Future] = []
         try:
             for account in active:
-                futures.append(self._executor.submit(
-                    self._probe_account, account, deadline, gen, req_id))
+                if self._stopping.is_set():
+                    raise RuntimeError("usage-limit service is stopping")
+                future = self._executor.submit(
+                    self._probe_account, account, deadline, gen, req_id)
+                futures.append(future)
+                with self._lock:
+                    self._active_futures.add(future)
         except RuntimeError:
             for future in futures:
                 future.cancel()
+            with self._lock:
+                self._active_futures.difference_update(futures)
             return
         results: list[UsageSnapshot] = []
         errors = 0
-        for f in futures:
-            try:
-                s = f.result()
+        try:
+            for f in futures:
+                try:
+                    s = f.result()
+                except CancelledError:
+                    # Shutdown reached this probe before it ran. Note that
+                    # CancelledError derives from BaseException, so it must be
+                    # named explicitly: letting it escape would kill the
+                    # coordinator thread and leave an unraisable exception
+                    # behind for whoever collects garbage next.
+                    continue
+                except Exception:
+                    errors += 1
+                    continue
                 if s is not None:
                     results.append(s)
                     if s.status in ("ERROR", "AUTH_REQUIRED"):
                         errors += 1
-            except Exception:
-                errors += 1
+        finally:
+            with self._lock:
+                self._active_futures.difference_update(futures)
 
         with self._lock:
             # CORE-001: only the latest monotonic request under the current
@@ -457,4 +615,3 @@ class UsageLimitService:
         if res.get("ok"):
             self.refresh()
         return res
-

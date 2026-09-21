@@ -9,6 +9,7 @@ hotkey registration, and portable backup so it never touches real user
 data or a running FastPrompter instance.
 """
 
+import math
 import os
 import sys
 import tempfile
@@ -17,6 +18,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../s
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
+from _smoke_support import teardown_smoke_window
 from PyQt6 import sip
 from PyQt6.QtWidgets import QApplication
 
@@ -29,80 +31,15 @@ _tmpdir = tempfile.mkdtemp(prefix="fastprompter_smoke_")
 
 
 @pytest.fixture(scope="module")
-def win():
-    # Isolate from real data / running instances
-    state_mod.get_db_path = lambda profile_id=1: os.path.join(_tmpdir, f"smoke_{profile_id}.db")
-    state_mod.run_portable_backup = lambda data, profile_id=1: None
-    FastPrompter.setup_single_instance_server = lambda self: None
-    FastPrompter.register_all_hotkeys = lambda self: None
-    FastPrompter.unregister_all_hotkeys = lambda self: None
-
-    w = FastPrompter()
+def win(smoke_win):
+    w = smoke_win.create()
     yield w
-    _teardown_window(w)
+    smoke_win.retire(w)
 
 
 def _teardown_window(w):
-    """Tear a FastPrompter down so it is actually GONE.
-
-    T-295: QApplication.processEvents() does NOT deliver DeferredDelete, so
-    deleteLater() alone never lands and the whole widget tree leaks — measured
-    at +1397 widgets and +11 top-levels per window, with construction cost
-    climbing 1.2s -> 15.0s over six windows. Worse, a gc.collect() over that
-    pile of half-dead PyQt wrappers segfaults the process (SIGSEGV at the
-    third window). sendPostedEvents(None, DeferredDelete) is the missing
-    flush: with it, widgets stay flat at 1 and gc.collect() is safe.
-    """
-    from PyQt6.QtCore import QEvent
-    for timer in ("auto_save_timer", "topmost_timer", "_cache_timer"):
-        t = getattr(w, timer, None)
-        if t is not None and not sip.isdeleted(t):
-            t.stop()
-    if getattr(w, "state", None) is not None:
-        w.state.conn = None      # skip final DB write on close
-    w.conn = None
-    # T-1039: retire the lazily-started Sync-Project push worker thread so a
-    # window that used it does not leak a live QThread into process teardown.
-    try:
-        limit_service = getattr(w, "limit_service", None)
-        if limit_service is not None:
-            limit_service.shutdown()
-    except Exception:
-        pass
-    try:
-        push_shutdown = getattr(w, "_push_shutdown", None)
-        if push_shutdown is not None:
-            push_shutdown(timeout_s=2.0)
-    except Exception:
-        pass
-    if hasattr(w, "tray_icon") and w.tray_icon and not sip.isdeleted(w.tray_icon):
-        w.tray_icon.hide()
-        w.tray_icon.setVisible(False)
-        w.tray_icon.setParent(None)
-        w.tray_icon.deleteLater()
-    w.close()                    # close BEFORE scheduling the delete
-    w.deleteLater()
-    QApplication.processEvents()
-    QApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
-    QApplication.processEvents()
-
-
-@pytest.fixture(scope="function")
-def fresh_win():
-    """A window nobody else has touched, for order-sensitive tests.
-
-    The module-scoped `win` is shared by 500+ tests, so state leaks between
-    them (T-295). Use this when a test needs a pristine window; it costs a
-    full construction (~1.9s) so do not reach for it by default.
-    """
-    state_mod.get_db_path = lambda profile_id=1: os.path.join(_tmpdir, f"fresh_{profile_id}.db")
-    state_mod.run_portable_backup = lambda data, profile_id=1: None
-    FastPrompter.setup_single_instance_server = lambda self: None
-    FastPrompter.register_all_hotkeys = lambda self: None
-    FastPrompter.unregister_all_hotkeys = lambda self: None
-    w = FastPrompter()
-    yield w
-    _teardown_window(w)
+    """Retire a window this module created outside the shared fixture."""
+    teardown_smoke_window(w)
 
 
 def test_window_constructs_with_all_mixins(win):
@@ -178,27 +115,40 @@ def test_navigate_silo_keyboard(win):
     assert win.active_temp_slot == 1
 
 
-def test_pinned_silos_sort_first(win):
+def test_pin_compacts_into_the_leading_zone(win):
     win.data["temp_presets"] = ["a", "b", "c", ""]
     win.data["pinned_silos"] = []
     win.silo_docs[:] = []
     win._switch_to_slot(0, initial=True)
     win._toggle_pin_silo(2)
-    assert 2 in win.data["pinned_silos"]
+    assert win.data["pinned_silos"] == [0]
+    assert win.data["temp_presets"][0] == "c", "pin moves the silo into the pinned zone"
     win.refresh_temp_presets()
-    assert win.silo_buttons[0].global_idx == 2  # pinned silo displays first
-    win._toggle_pin_silo(2)
-    assert 2 not in win.data["pinned_silos"]
+    assert win.silo_buttons[0].global_idx == 0  # pinned zone head
+    win._toggle_pin_silo(0)
+    assert win.data["pinned_silos"] == []
+    assert win.data["temp_presets"][0] == "c", "unpin keeps it at the zone boundary"
 
 
-def test_empty_silo_cap_at_five(win):
+def test_new_silo_creation_ceiling_and_no_blank_reuse(win):
     win.data["temp_presets"] = ["a", "b"]
+    win.data["new_silo_paste_clipboard"] = "False"
     win.silo_docs[:] = []
     win._switch_to_slot(0, initial=True)
     for _ in range(10):
         win.select_empty_silo()
-    empties = sum(1 for p in win.data["temp_presets"] if not p.strip())
-    assert empties <= 5
+    presets = win.data["temp_presets"]
+    assert len(presets) == 12, "explicit NEW creates one fresh silo per call"
+    assert [p for p in presets if p] == ["a", "b"], "existing silos are never evicted"
+    assert presets.count("") == 10, "explicit NEW never reuses an existing blank"
+
+    cap = win.MAX_SILOS_PER_CATEGORY
+    win.data["temp_presets"][:] = [f"s{i}" for i in range(cap)]
+    win.active_temp_slot = 0
+    win.text_area.setPlainText("s0")
+    win.select_empty_silo()
+    assert len(win.data["temp_presets"]) == cap, "creation stops at the capacity ceiling"
+    assert win.data["temp_presets"][0] == "s0", "a refused NEW never evicts a silo"
 
 
 def test_clear_on_empty_silo_deletes_slot(win):
@@ -902,9 +852,11 @@ def test_pin_toggle_and_move_to_bottom_are_undoable(win):
     win.silo_docs[:] = []
     win._switch_to_slot(0, initial=True)
     win._toggle_pin_silo(2)
-    assert win.data["pinned_silos"] == [2]
+    assert win.data["pinned_silos"] == [0]
+    assert win.data["temp_presets"] == ["three", "one", "two"]
     win._smart_undo()
     assert win.data["pinned_silos"] == []
+    assert win.data["temp_presets"] == ["one", "two", "three"]
     win._move_silo_to_bottom(0)
     assert win.data["temp_presets"] == ["two", "three", "one"]
     win._smart_undo()
@@ -1677,16 +1629,21 @@ def test_code_block_copy_button(win):
     assert ta._fence_is_opener(closer) is False
     rect = ta._code_copy_rect(opener)
     center = rect.center()
-    for etype in (QEvent.Type.MouseButtonPress, QEvent.Type.MouseButtonRelease):
-        ev = QMouseEvent(etype,
-                         center.toPointF() if hasattr(center, "toPointF") else center,
-                         Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton,
-                         Qt.KeyboardModifier.NoModifier)
-        if etype == QEvent.Type.MouseButtonPress:
-            ta.mousePressEvent(ev)
-        else:
-            ta.mouseReleaseEvent(ev)
-    assert _QApp.clipboard().text() == "print(1)\nprint(2)"
+    _clipboard = _QApp.clipboard()
+    _prior_clipboard = _clipboard.text()
+    try:
+        for etype in (QEvent.Type.MouseButtonPress, QEvent.Type.MouseButtonRelease):
+            ev = QMouseEvent(etype,
+                             center.toPointF() if hasattr(center, "toPointF") else center,
+                             Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton,
+                             Qt.KeyboardModifier.NoModifier)
+            if etype == QEvent.Type.MouseButtonPress:
+                ta.mousePressEvent(ev)
+            else:
+                ta.mouseReleaseEvent(ev)
+        assert _clipboard.text() == "print(1)\nprint(2)"
+    finally:
+        _clipboard.setText(_prior_clipboard)
 
 
 def test_file_container_slug_and_dirs(win):
@@ -1785,10 +1742,16 @@ def test_header_fits_quarter_fullhd_with_full_clock(fresh_win):
     win.data["date_text_month"] = "True"
     win.data["analog_clock"] = "True"
     _kept_min = _force_width(win, 960, 540)
+    win.show()
+    QApplication.processEvents()
+    _force_width(win, 960, 540)
     win._header_dense = None
     win._apply_header_density()
     win._update_date_label()
-    assert win._header_dense is True
+    assert win._header_dense is True, (
+        win.width(), win._topbar_effective_width(),
+        win._topbar_active_range,
+        win._topbar_visibility_config()["breakpoints"])
     # full clock string survived (seconds present, day word present)
     import re as _re
     assert _re.search(r"\d{2}:\d{2}:\d{2} · (Morning|Day|Evening|Night)",
@@ -1813,8 +1776,14 @@ def test_header_ultra_mode_fits_portrait_sliver(fresh_win):
     # and this test tripped instead. Same class, same remedy — a
     # density measurement cannot share a window with 500 other tests.
     win = fresh_win
-    # 9:16-friendly: below 700px only the essentials remain and the
-    # header still fits; clock shrinks to DD.MM - hh:mm
+    from fastprompter.core.topbar_visibility import default_topbar_visibility
+    config = default_topbar_visibility()
+    for token in ("btn_bold", "btn_copy", "btn_clear", "btn_home",
+                  "btn_pin_top", "btn_line_nums", "btn_help"):
+        config["items"][token]["ultra"] = "hide"
+    win.data["topbar_visibility"] = config
+    # 9:16-friendly: Ultra policy plus its explicit compact-detail choice
+    # keep the header valid; the clock becomes DD.MM - hh:mm.
     import re as _re
     win.data["show_date_rect"] = "True"
     win.data["date_seconds"] = "True"
@@ -1822,6 +1791,9 @@ def test_header_ultra_mode_fits_portrait_sliver(fresh_win):
     win.data["customize_toolbar"] = "False"
     if hasattr(win, "update_toolbar_layout"):
         win.update_toolbar_layout()
+    win.resize(500, 900)
+    win.show()
+    QApplication.processEvents()
     win.resize(500, 900)
     win._header_dense = None
     win._header_ultra = None
@@ -2371,6 +2343,7 @@ def test_file_container_views_links_clipboard(win):
     from fastprompter.ui.file_container import FileContainerPanel
 
     root = os.path.join(_tmpdir, "files_root_views")
+    win.data["file_panel_view"] = "Details"
     panel = FileContainerPanel(win)
     from fastprompter.ui.file_container import silo_files_dir as _sfd
     panel.open_for(_sfd(root, "Main", "# Views Silo"))
@@ -2404,14 +2377,19 @@ def test_file_container_views_links_clipboard(win):
     # QInputDialog.getText to FileContainerPanel._prompt_text, which builds a
     # dialog and exec()s it — so patching the static left a real modal open
     # offscreen and the whole suite hung here forever (H-410 all over again).
-    _QApp.clipboard().setText("clipboard payload")
-    with patch.object(FileContainerPanel, "_prompt_text",
-                      return_value=("clip-test", True)):
-        panel.save_clipboard_as_file()
-    clips = [n for n in os.listdir(panel.folder) if n.startswith("clip-") and n.endswith(".txt")]
-    assert len(clips) == 1
-    with open(os.path.join(panel.folder, clips[0]), encoding="utf-8") as f:
-        assert f.read() == "clipboard payload"
+    _clipboard = _QApp.clipboard()
+    _prior_clipboard = _clipboard.text()
+    try:
+        _clipboard.setText("clipboard payload")
+        with patch.object(FileContainerPanel, "_prompt_text",
+                          return_value=("clip-test", True)):
+            panel.save_clipboard_as_file()
+        clips = [n for n in os.listdir(panel.folder) if n.startswith("clip-") and n.endswith(".txt")]
+        assert len(clips) == 1
+        with open(os.path.join(panel.folder, clips[0]), encoding="utf-8") as f:
+            assert f.read() == "clipboard payload"
+    finally:
+        _clipboard.setText(_prior_clipboard)
 
     # tooltip summary knows counts and sizes
     from fastprompter.ui.file_container import folder_summary
@@ -2566,14 +2544,9 @@ def test_alt_click_collapses_a_parent_silo(win):
     win.data["silo_collapsed"] = []
 
 
-def test_silo_drop_zone_follows_the_pointer(win):
-    """T-702. Releasing over the TOP of a silo must mean "put it above".
-
-    The bands used to be 28% edge / 44% centre, so most of a row said
-    "nest this inside me" — dropping near the top usually nested instead of
-    moving, which is why silo dragging felt like it ignored the pointer.
-    """
-    from PyQt6.QtCore import QPoint
+def test_silo_drop_zone_follows_the_pointer(win, monkeypatch):
+    """Every plain-drop pixel maps to the visible before/after midpoint."""
+    from PyQt6.QtCore import QPoint, Qt
     from PyQt6.QtWidgets import QApplication
 
     win.cat_combo.setCurrentIndex(0)
@@ -2594,13 +2567,93 @@ def test_silo_drop_zone_follows_the_pointer(win):
     assert drop._drop_target_at(QPoint(5, g.top() + 1)) == ("move", 1)
     assert drop._drop_target_at(QPoint(5, g.bottom() - 1)) == ("move", 2)
 
-    # a third of the way down is still "above", not "into"
+    # a third of the way down is before; centre and below are after
     assert drop._drop_target_at(
         QPoint(5, g.top() + g.height() // 3)) == ("move", 1)
+    assert drop._drop_target_at(QPoint(5, g.center().y())) == ("move", 2)
 
-    # the centre remains the deliberate nest/swap aim
-    mode, target = drop._drop_target_at(QPoint(5, g.center().y()))
-    assert mode == "swap" and target is btns[1]
+    # Non-positional verbs require visible, inspectable modifiers.
+    centre = QPoint(g.center().x(), g.center().y())
+    assert drop._drop_operation_at(
+        centre, Qt.KeyboardModifier.ControlModifier) == ("nest", btns[1])
+    assert drop._drop_operation_at(
+        centre, Qt.KeyboardModifier.ShiftModifier) == ("swap", btns[1])
+
+    # Actual plain centre drop follows the insertion result; it never calls
+    # the nesting verb implicitly.
+    from fastprompter.ui.snippet_panel import (
+        FP_INTERNAL_DRAG_MIME,
+        _encode_internal_drag,
+    )
+
+    class Mime:
+        def __init__(self, source):
+            self.source = source
+
+        def hasFormat(self, fmt):
+            return fmt == FP_INTERNAL_DRAG_MIME
+
+        def data(self, _fmt):
+            return _encode_internal_drag("silo", "", self.source)
+
+    class Event:
+        def __init__(self, source, position):
+            self.source = source
+            self._position = position
+            self.accepted = False
+
+        def mimeData(self):
+            return Mime(self.source)
+
+        def position(self):
+            from PyQt6.QtCore import QPointF
+            return QPointF(self._position)
+
+        def acceptProposedAction(self):
+            self.accepted = True
+
+    moved = []
+    nested = []
+    monkeypatch.setattr(
+        QApplication, "keyboardModifiers",
+        staticmethod(lambda: Qt.KeyboardModifier.NoModifier))
+    monkeypatch.setattr(
+        win, "move_temp_to_index",
+        lambda source, target, is_archive=False:
+            moved.append((source, target, is_archive)))
+    monkeypatch.setattr(
+        win, "make_silo_child",
+        lambda child, parent: nested.append((child, parent)))
+    # Exercise every source against every visible insertion boundary. Removing
+    # a source before inserting it shifts later boundaries by one; this matrix
+    # catches that easy off-by-one in both directions and at both ends.
+    boundaries = [
+        QPoint(g0.center().x(), g0.top() + 1)
+        for g0 in (button.geometry() for button in btns)
+    ]
+    boundaries.append(QPoint(
+        btns[-1].geometry().center().x(),
+        btns[-1].geometry().bottom() - 1))
+    for source in range(3):
+        for gap, position in enumerate(boundaries):
+            moved.clear()
+            event = Event(source, position)
+            drop.dropEvent(event)
+            expected = gap - 1 if source < gap else gap
+            expected = max(0, min(2, expected))
+            assert moved == [(source, expected, False)], (source, gap)
+            assert event.accepted is True
+
+    assert nested == []
+
+
+def test_silo_drag_help_names_explicit_nest_and_swap_gestures():
+    from fastprompter.ui.help_dialog import build_help_html
+
+    help_html = build_help_html({}, "EN")
+    assert "Ctrl+drop a silo onto another" in help_html
+    assert "Shift+drop a silo onto another" in help_html
+    assert "Drop a silo ONTO another" not in help_html
 
 
 def test_toolbar_drag_keeps_buttons_the_window_is_too_narrow_to_show(win):
@@ -2961,13 +3014,13 @@ def test_pinned_silo_shows_unpin_button_no_prefix(win):
     win._switch_to_slot(0, initial=True)
     win._toggle_pin_silo(1)
     win.refresh_temp_presets()
-    b = [x for x in win.silo_buttons if getattr(x, "global_idx", -1) == 1][0]
+    b = [x for x in win.silo_buttons if getattr(x, "global_idx", -1) == 0][0]
     # pin button stays visible (no hover) as the unpin control
     assert not b._btn_pin.isHidden()
     assert "npin" in b._btn_pin.toolTip()  # "Unpin"
     # label no longer duplicates the pin with a 📌 text prefix
     assert not b.full_name.startswith("\U0001F4CC")
-    win._toggle_pin_silo(1)
+    win._toggle_pin_silo(0)
 
 
 def test_ctrl_shift_click_toggles_tick_when_disabled(win):
@@ -3529,11 +3582,29 @@ def test_no_cyrillic_in_codebase():
             # dictionary — the cyrillic script must be exercised with them.
             if norm.endswith("tests/test_typecheck.py"):
                 continue
+            # silo_slug deliberately KEEPS Cyrillic letters, so its oracle
+            # equivalence cases must contain a real Cyrillic title - input
+            # data, not prose.
+            if norm.endswith("tests/test_silo_slug.py"):
+                continue
             # release tooling writes Russian release notes / RU release text —
             # the same ded-voice class as sync_saitranslate.py above.
             if norm.endswith("tools/release.py") or norm.endswith(
                     "tools/probe_release.py") or norm.endswith(
                     "tools/sync_saitranslate_fast.py"):
+                continue
+            # Unicode text-integrity and i18n suites: real Cyrillic is their
+            # test INPUT (round-trips, paste fidelity, RU label rendering),
+            # the same class as the dictionaries and duration tables above.
+            if norm.endswith((
+                    "tests/test_editor_paste_t1269.py",
+                    "tests/test_editor_paste_live_t1269.py",
+                    "tests/test_editor_paste_shortcut_t1269.py",
+                    "tests/test_formatting_unicode_t1269.py",
+                    "tests/test_clipboard_interop_t1269.py",
+                    "tests/test_language_roundtrip.py",
+                    "tests/test_master_mute_i18n_t1244.py",
+                    "tests/test_reset_queue_card_t1279.py")):
                 continue
             with open(f, encoding="utf-8") as fh:
                 for i, line in enumerate(fh, 1):
@@ -4207,9 +4278,10 @@ def test_line_blocking_drag_swaps_whole_lines(win):
 
 
 def test_collapsible_quote_wrap_and_fold(win):
-    # Collapsible quote: wrap lines as '> ', and a 2+ line quote becomes a
-    # fold anchor that collapses down to its own first line (footnote-style),
-    # reusing the existing header/code-fence fold machinery.
+    # Collapsible quote: wrapping a multi-block selection now produces ONE
+    # contiguous quote run (blanks become bare '>' continuations) that is
+    # ALREADY collapsed down to its first line right after the command —
+    # no manual fold click needed. toggle_fold expands it again.
 
     win.cat_combo.setCurrentIndex(0)
     win.on_tab_changed(0)
@@ -4232,13 +4304,20 @@ def test_collapsible_quote_wrap_and_fold(win):
     assert ta._is_fold_anchor(first) is True
     assert ta._is_quote_start(doc.findBlockByNumber(1)) is False  # mid-quote
 
+    # auto-collapse happened inside the command: one visible anchor,
+    # the rest of the group hidden
+    assert doc.findBlockByNumber(0).isVisible() is True
+    assert doc.findBlockByNumber(1).isVisible() is False
+    assert doc.findBlockByNumber(2).isVisible() is False
+
     ta.toggle_fold(first)
     assert doc.findBlockByNumber(0).isVisible() is True   # first line stays
-    assert doc.findBlockByNumber(1).isVisible() is False  # rest collapses
-    ta.toggle_fold(first)
     assert doc.findBlockByNumber(1).isVisible() is True
+    assert doc.findBlockByNumber(2).isVisible() is True
+    ta.toggle_fold(first)
+    assert doc.findBlockByNumber(1).isVisible() is False
 
-    # unwrap round-trips back to the original text
+    # unwrap round-trips back to the original text (auto-expanded first)
     cur = ta.textCursor()
     cur.setPosition(0)
     cur.setPosition(len(ta.toPlainText()), cur.MoveMode.KeepAnchor)
@@ -4268,11 +4347,10 @@ def test_quote_button_and_hotkey_wired(win):
     assert any(sc.key() == want for sc in win._app_shortcuts), "Ctrl+Shift+Q not registered"
 
 
-def test_header_priority_fit_never_hides_clock_or_date(win):
-    # The fixed 700/1280px density thresholds assume particular font metrics;
-    # on a different DPI/font scale the header can still overflow past the
-    # window edge in ultra tier. The priority-fit guard must shrink
-    # lower-priority widgets instead — clock and date always survive.
+def test_topbar_fit_is_policy_driven_even_at_extreme_scale(win):
+    # AUTO status items are preserved while space exists, but at a physically
+    # impossible width the coordinator may displace them.  Required access
+    # stays reachable and every result still fits.
     def _repack(w, h):
         # a locked window silently reverts resize(), so the density tier
         # would read a stale width and never engage
@@ -4302,14 +4380,20 @@ def test_header_priority_fit_never_hides_clock_or_date(win):
             f"header overflows: wants {win.header_widget.sizeHint().width()}px, "
             f"has {win.header_widget.width()}px")
 
-        # Extreme scale on a sliver of a window — still must fit, and the
-        # clock and date must still never be what gets sacrificed.
+        # Extreme scale on a sliver of a window: physics wins predictably.
+        first = None
         win.data["ui_scale"] = "1.5"
         win.data["font_size"] = "16"
         win.apply_theme()
         _repack(300, 900)
-        assert not win.lbl_date.isHidden()
-        assert not win.analog_clock.isHidden()
+        first = (win._topbar_visible_tokens, win._topbar_overflow_tokens)
+        _repack(900, 900)
+        _repack(300, 900)
+        assert (win._topbar_visible_tokens,
+                win._topbar_overflow_tokens) == first
+        assert not win.btn_settings_toggle.isHidden()
+        if win._topbar_overflow_tokens:
+            assert not win.btn_overflow.isHidden()
         assert win.header_widget.sizeHint().width() <= win.header_widget.width(), (
             f"header overflows at 1.5x: wants {win.header_widget.sizeHint().width()}px, "
             f"has {win.header_widget.width()}px")
@@ -4317,7 +4401,7 @@ def test_header_priority_fit_never_hides_clock_or_date(win):
         win.data["ui_scale"] = "1.0"
         win.data["font_size"] = "11"
         win.apply_theme()
-        win.resize(1400, 700)
+        win.resize(2200, 700)
         win._header_dense = None
         win._header_ultra = None
         win._apply_header_density()
@@ -4460,27 +4544,36 @@ def test_fancyzones_has_no_orphaned_grid_settings(win):
 
 
 def test_overflow_menu_exposes_buttons_hidden_by_narrow_header(win):
-    # At the width from the user's screenshot the density tiers drop most of
-    # the header. Those buttons must stay reachable through the "»" menu
-    # instead of simply vanishing for anyone who doesn't know the hotkey.
+    # AUTO controls displaced by the one policy resolver remain reachable;
+    # an explicit HIDE never leaks into overflow.
+    from fastprompter.core.topbar_visibility import default_topbar_visibility
+
     win.is_locked = False
     win._locked_geometry = None
     try:
+        config = default_topbar_visibility()
+        config["items"]["btn_bold"]["narrow"] = "auto"
+        config["items"]["btn_bold"]["priority"] = 0
+        config["items"]["btn_italic"]["narrow"] = "hide"
+        win.data["topbar_visibility"] = config
         win.apply_scaled_ui()
         win._header_dense = None
         win._header_ultra = None
         _kept_min = _force_width(win, 636, 800)   # the reported resolution
+        win.show()
+        QApplication.processEvents()
+        _force_width(win, 636, 800)
         win._apply_header_density()
 
-        assert win._header_ultra is True, (
-            f"ultra never engaged: win.width()={win.width()} "
+        assert win._topbar_active_range == "narrow", (
+            f"narrow range never engaged: win.width()={win.width()} "
             f"minW={win.minimumWidth()} hidden={win.isHidden()} "
             f"locked={getattr(win, 'is_locked', None)}")
         hidden = win._overflow_hidden_buttons()
-        assert hidden, "ultra hid nothing — the tier stopped working"
+        assert hidden, "fit displaced no AUTO control"
         names = {n for n, _ in hidden}
-        for expected in ("btn_bold", "btn_italic", "btn_trash", "btn_files"):
-            assert expected in names, f"{expected} unreachable at 636px"
+        assert "btn_bold" in names
+        assert "btn_italic" not in names
         assert not win.btn_overflow.isHidden(), "» must appear when things are hidden"
 
         # the menu actually fires the real button: Bold via the menu must
@@ -4495,24 +4588,33 @@ def test_overflow_menu_exposes_buttons_hidden_by_narrow_header(win):
         dict(hidden)["btn_bold"].click()
         assert "**hello**" in win.text_area.toPlainText()
 
-        # widen again: nothing hidden -> the » button gets out of the way
+        # widen again: nothing displaced -> the » button gets out of the way
         win._header_dense = None
         win._header_ultra = None
-        win.resize(1400, 800)
+        win.resize(2200, 800)
+        QApplication.processEvents()
         win._apply_header_density()
-        assert win._overflow_hidden_buttons() == []
+        assert win._overflow_hidden_buttons() == [], (
+            win.width(), win.header_widget.width(),
+            win.header_widget.sizeHint().width(), win._topbar_active_range,
+            win._topbar_overflow_tokens)
         assert win.btn_overflow.isHidden()
     finally:
+        win.hide()
         _restore_minimum(win, _kept_min)
         win._header_dense = None
         win._header_ultra = None
-        win.resize(1400, 700)
+        win.resize(2200, 700)
         win._apply_header_density()
 
 
 def test_code_font_follows_monospace_toggle(win):
     # "MONOSPACE -> VERDANA (or user preferred font)": code spans forced
-    # Consolas regardless of the editor font.
+    # Consolas regardless of the editor font. The rendered family is the
+    # installed "<name>_m1" crisp build when the user has one, so the test
+    # compares against the same resolver production uses.
+    from fastprompter.utils.fonts import resolve_family
+
     hl = win.highlighter
     try:
         win.data["code_monospace"] = "True"
@@ -4522,19 +4624,19 @@ def test_code_font_follows_monospace_toggle(win):
         win.data["font_family"] = "Verdana"
         win.data["code_monospace"] = "False"
         win._apply_code_font()
-        assert hl.code_font_family == "Verdana"
+        assert hl.code_font_family == resolve_family("Verdana")
 
         # the inline-code rule really carries that family, and drops the
         # fixed-pitch flag so a proportional font isn't forced to fake it
         fmt = next(f for pat, f in hl._highlighting_rules
                    if pat.pattern == r'`[^`]+`')
-        assert fmt.fontFamily() == "Verdana"
+        assert fmt.fontFamily() == resolve_family("Verdana")
         assert fmt.fontFixedPitch() is False
 
         # changing the editor font carries through while monospace is off
         win.data["font_family"] = "Tahoma"
         win.apply_font()
-        assert hl.code_font_family == "Tahoma"
+        assert hl.code_font_family == resolve_family("Tahoma")
     finally:
         win.data["code_monospace"] = "True"
         win.data["font_family"] = "Verdana"
@@ -4616,19 +4718,27 @@ def test_line_marks_cycle_both_ways_and_persist_per_silo(fresh_win):
             button, button, Qt.KeyboardModifier.NoModifier))
         return max(0, ta.document().findBlockByNumber(block_num).userState()) & 0xFF
 
+    # The gutter cycles through the curated mark palette (editor.MARK_PALETTE),
+    # OFF included; wrap values are palette-derived, not hand-pinned.
+    from fastprompter.ui.editor import MARK_PALETTE
+    top = len(MARK_PALETTE)
     assert click_gutter(0, Qt.MouseButton.LeftButton) == 1     # forward
     assert click_gutter(0, Qt.MouseButton.LeftButton) == 2
     assert click_gutter(0, Qt.MouseButton.RightButton) == 1    # backward
     assert click_gutter(0, Qt.MouseButton.RightButton) == 0
-    assert click_gutter(0, Qt.MouseButton.RightButton) == 4    # wraps around
+    assert click_gutter(0, Qt.MouseButton.RightButton) == top  # wraps around
 
     # marks are stored per silo and come back after switching away
-    saved = ta.collect_line_marks()
-    assert saved.get(0) == 4
+    # (PERF-005 folded the per-domain collectors into one pass; marks are
+    # the first element of the view-metadata triple)
+    def marks():
+        return ta.collect_view_metadata()[0]
+
+    assert marks().get(0) == top
     win._switch_to_slot(1)
-    assert ta.collect_line_marks().get(0) is None   # other silo is clean
+    assert marks().get(0) is None   # other silo is clean
     win._switch_to_slot(0)
-    assert ta.collect_line_marks().get(0) == 4      # restored
+    assert marks().get(0) == top    # restored
 
     win.data["line_marks"] = "False"
 
@@ -4636,30 +4746,69 @@ def test_line_marks_cycle_both_ways_and_persist_per_silo(fresh_win):
 def test_selection_state_is_remembered_per_silo(win):
     win.cat_combo.setCurrentIndex(0)
     win.on_tab_changed(0)
-    win.data["temp_presets"][:] = ["first silo text", "second silo text"]
-    win.silo_docs[:] = []
-    win._switch_to_slot(0, initial=True)
-    ta = win.text_area
+    # "Silos at Start" deliberately OVERRIDES the remembered cursor and opens
+    # at the top, and it ships ON. Per-silo cursor memory is the other half of
+    # that switch, so it has to be exercised with the switch off.
+    previous_home = win.data.get("silo_home")
+    win.data["silo_home"] = "False"
+    try:
+        win.data["temp_presets"][:] = ["first silo text", "second silo text"]
+        win.silo_docs[:] = []
+        win._switch_to_slot(0, initial=True)
+        ta = win.text_area
 
-    cur = ta.textCursor()
-    cur.setPosition(0)
-    cur.setPosition(5, cur.MoveMode.KeepAnchor)   # select "first"
-    ta.setTextCursor(cur)
+        cur = ta.textCursor()
+        cur.setPosition(0)
+        cur.setPosition(5, cur.MoveMode.KeepAnchor)   # select "first"
+        ta.setTextCursor(cur)
 
-    win._switch_to_slot(1)
-    cur2 = ta.textCursor()
-    cur2.setPosition(7)                            # caret only, no selection
-    ta.setTextCursor(cur2)
+        win._switch_to_slot(1)
+        cur2 = ta.textCursor()
+        cur2.setPosition(7)                            # caret only, no selection
+        ta.setTextCursor(cur2)
 
-    win._switch_to_slot(0)
-    back = ta.textCursor()
-    assert back.hasSelection()
-    assert back.selectedText() == "first"
+        win._switch_to_slot(0)
+        back = ta.textCursor()
+        assert back.hasSelection()
+        assert back.selectedText() == "first"
 
-    win._switch_to_slot(1)
-    back2 = ta.textCursor()
-    assert not back2.hasSelection()
-    assert back2.position() == 7
+        win._switch_to_slot(1)
+        back2 = ta.textCursor()
+        assert not back2.hasSelection()
+        assert back2.position() == 7
+    finally:
+        if previous_home is None:
+            win.data.pop("silo_home", None)
+        else:
+            win.data["silo_home"] = previous_home
+
+
+def test_silos_at_start_beats_the_remembered_cursor(win):
+    """The setting's whole point: opening a silo lands at the top."""
+    win.cat_combo.setCurrentIndex(0)
+    win.on_tab_changed(0)
+    previous_home = win.data.get("silo_home")
+    win.data["silo_home"] = "True"
+    try:
+        win.data["temp_presets"][:] = ["first silo text", "second silo text"]
+        win.silo_docs[:] = []
+        win._switch_to_slot(0, initial=True)
+        ta = win.text_area
+        cur = ta.textCursor()
+        cur.setPosition(0)
+        cur.setPosition(5, cur.MoveMode.KeepAnchor)
+        ta.setTextCursor(cur)
+
+        win._switch_to_slot(1)
+        win._switch_to_slot(0)
+        back = ta.textCursor()
+        assert not back.hasSelection()
+        assert back.position() == 0
+    finally:
+        if previous_home is None:
+            win.data.pop("silo_home", None)
+        else:
+            win.data["silo_home"] = previous_home
 
 
 def test_snippets_toggle_survives_refreshes(win):
@@ -4727,8 +4876,7 @@ def test_unquoting_a_collapsed_quote_does_not_lose_lines(win):
     ta.setTextCursor(cur)
     win.toggle_quote_conversion()
     assert ta.toPlainText() == "> alpha\n> beta\n> gamma"
-
-    ta.toggle_fold(doc.findBlockByNumber(0))
+    # the command itself now collapses the group
     assert [doc.findBlockByNumber(i).isVisible() for i in range(3)] == [True, False, False]
 
     cur = ta.textCursor()
@@ -4758,6 +4906,250 @@ def test_rescue_orphan_folds_restores_stranded_lines(win):
     cur.insertText("plain")
     assert ta.rescue_orphan_folds() is True
     assert all(doc.findBlockByNumber(i).isVisible() for i in range(3))
+
+
+def test_smart_quote_screenshot_regression(win):
+    """T-1226 primary regression: the user's real 5-paragraph screenshot case.
+
+    Five long paragraphs separated by blank rows -> ONE quote group, ONE fold
+    anchor, collapsed immediately, outside paragraph untouched."""
+    content = (
+        "• Role SAIPAL — forensic observer long paragraph\n"
+        "\n"
+        "• \u0414\u0430, \u044d\u0442\u043e \u0438\u0441\u0441\u043b\u0435\u0434\u043e\u0432\u0430\u0442\u0435\u043b\u044c \u0434\u043e\u043b\u0433\u0438\u0439 \u0430\u0431\u0437\u0430\u0446\n"
+        "\n"
+        "• \u041f\u043e\u044d\u0442\u043e\u043c\u0443 \u0441\u0435\u0439\u0447\u0430\u0441 \u043d\u0443\u0436\u0435\u043d \u0434\u043b\u0438\u043d\u043d\u044b\u0439 \u0430\u0431\u0437\u0430\u0446\n"
+        "\n"
+        "\u0422\u043e\u0435\u0441\u0442\u044c SAIPEN CORE PROTOCOL \u043e\u0431\u044b\u0447\u043d\u044b\u0439 \u0430\u0431\u0437\u0430\u0446\n"
+        "\n"
+        "• \u041f\u043e \u0438\u0434\u0435\u0435 \u0434\u043b\u044f SAIPAL \u0434\u043b\u0438\u043d\u043d\u044b\u0439 \u0430\u0431\u0437\u0430\u0446"
+    )
+    win.data["temp_presets"][:] = [content + "\nafter outside selection"]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    ta = win.text_area
+    doc = ta.document()
+
+    # select the whole chunk (all 9 blocks) but NOT the trailing paragraph
+    _select(ta, 0, ta.toPlainText().index("after outside selection"))
+    win.toggle_quote_conversion()
+
+    texts = [doc.findBlockByNumber(i).text() for i in range(doc.blockCount())]
+    # A: all meaningful content preserved, marker in front, indent intact
+    assert texts == [
+        ("> " + t) if t.strip() else ">" for t in content.split("\n")
+    ] + ["after outside selection"]
+    # B: every internal separator joined the quote run
+    assert all(ta._is_quote_line(texts[i]) for i in range(9))
+    assert texts[1] == ">"
+    # C: exactly ONE quote start / fold anchor in the converted area
+    starts = [i for i in range(9) if ta._is_quote_start(doc.findBlockByNumber(i))]
+    assert starts == [0]
+    # D/E: only the first block is visible, the rest of the group is hidden
+    vis = [doc.findBlockByNumber(i).isVisible() for i in range(10)]
+    assert vis[0] is True
+    assert not any(vis[1:9])
+    # F: the block right after the selection stays visible
+    assert vis[9] is True
+    # G: the fold range ends exactly at the selected boundary
+    rng = ta._fold_range(doc.findBlockByNumber(0))
+    assert rng[0].blockNumber() == 1 and rng[1].blockNumber() == 8
+    # H: one click expands every paragraph back
+    ta.toggle_fold(doc.findBlockByNumber(0))
+    assert all(doc.findBlockByNumber(i).isVisible() for i in range(9))
+    assert doc.findBlockByNumber(9).isVisible() is True
+    # I: unquoting returns the EXACT original text
+    cur = ta.textCursor()
+    cur.setPosition(0)
+    cur.setPosition(len(content) + 1, cur.MoveMode.KeepAnchor)
+    ta.setTextCursor(cur)
+    win.toggle_quote_conversion()
+    assert ta.toPlainText() == content + "\nafter outside selection"
+
+
+def test_smart_quote_outer_blank_boundaries(win):
+    # Leading/trailing blank rows of the selection stay OUTSIDE the quote
+    # group, so the visible collapsed preview is the first meaningful line.
+    doc_text = "intro\n\npara A\n\npara B\n\noutro"
+    win.data["temp_presets"][:] = [doc_text]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    ta = win.text_area
+    doc = ta.document()
+
+    # select from the blank before A through the blank after B
+    _select(ta, ta.toPlainText().index("\npara A"),
+            ta.toPlainText().index("\n\noutro"))
+    win.toggle_quote_conversion()
+
+    texts = [doc.findBlockByNumber(i).text() for i in range(doc.blockCount())]
+    assert texts == ["intro", "", "> para A", ">", "> para B", "", "outro"]
+    assert ta._is_quote_start(doc.findBlockByNumber(2)) is True
+    assert [doc.findBlockByNumber(i).isVisible() for i in range(7)] == [
+        True, True, True, False, False, True, True]
+    # unquote round-trips exactly
+    cur = ta.textCursor()
+    cur.setPosition(doc.findBlockByNumber(2).position())
+    ta.setTextCursor(cur)
+    win.toggle_quote_conversion()   # no selection inside the run -> whole run
+    assert ta.toPlainText() == doc_text
+    assert all(doc.findBlockByNumber(i).isVisible() for i in range(7))
+
+
+def test_smart_quote_indentation_round_trip(win):
+    # Tabs, spaces, nested bullets and blank separators must survive
+    # quote -> unquote byte-for-byte.
+    original = "top\n    nested item\n\ttabbed line\n  spaced line\n\ntail"
+    win.data["temp_presets"][:] = [original]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    ta = win.text_area
+    doc = ta.document()
+
+    _select(ta, 0, len(original))
+    win.toggle_quote_conversion()
+    assert ta.toPlainText() == (
+        "> top\n>     nested item\n> \ttabbed line\n>   spaced line\n>\n> tail"
+    )
+    assert ta._is_quote_start(doc.findBlockByNumber(0)) is True
+
+    cur = ta.textCursor()
+    cur.setPosition(0)
+    ta.setTextCursor(cur)
+    win.toggle_quote_conversion()
+    assert ta.toPlainText() == original
+
+
+def test_smart_quote_never_swallows_following_paragraph(win):
+    # Section 18 boundary: the fold range must stop exactly at the selection
+    # boundary; plain text below the group can never be quoted or hidden.
+    doc_text = "before\n\nselected A\n\nselected B\n\nafter outside selection"
+    win.data["temp_presets"][:] = [doc_text]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    ta = win.text_area
+    doc = ta.document()
+
+    _select(ta, ta.toPlainText().index("selected A"),
+            ta.toPlainText().index("after outside selection"))
+    win.toggle_quote_conversion()
+
+    texts = [doc.findBlockByNumber(i).text() for i in range(doc.blockCount())]
+    assert texts == ["before", "", "> selected A", ">", "> selected B",
+                     "", "after outside selection"]
+    assert not ta._is_quote_line(texts[6])
+    rng = ta._fold_range(doc.findBlockByNumber(2))
+    assert rng[0].blockNumber() == 3 and rng[1].blockNumber() == 4
+    assert doc.findBlockByNumber(6).isVisible() is True
+
+
+def test_smart_quote_no_selection_unquotes_whole_run(win):
+    # No selection inside an expanded quote group -> the WHOLE group unquotes,
+    # never just the anchor line. Same from the collapsed anchor: it expands
+    # safely first and no line stays hidden.
+    for collapsed in (False, True):
+        win.data["temp_presets"][:] = ["head\n> a\n> b\n> c\ntail"]
+        win.silo_docs[:] = []
+        win._switch_to_slot(0, initial=True)
+        ta = win.text_area
+        doc = ta.document()
+        if collapsed:
+            ta.toggle_fold(doc.findBlockByNumber(1))
+            assert not doc.findBlockByNumber(2).isVisible()
+        cur = ta.textCursor()
+        cur.setPosition(doc.findBlockByNumber(2).position() + 1)
+        ta.setTextCursor(cur)
+        win.toggle_quote_conversion()
+        assert ta.toPlainText() == "head\na\nb\nc\ntail"
+        assert all(doc.findBlockByNumber(i).isVisible() for i in range(5))
+
+    # a plain line without selection keeps the single-line behavior
+    win.data["temp_presets"][:] = ["one\ntwo"]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    ta = win.text_area
+    doc = ta.document()
+    cur = ta.textCursor()
+    cur.setPosition(doc.findBlockByNumber(1).position())
+    ta.setTextCursor(cur)
+    win.toggle_quote_conversion()
+    assert ta.toPlainText() == "one\n> two"
+    assert doc.findBlockByNumber(1).isVisible() is True
+
+
+def test_smart_quote_undo_redo_never_strands_hidden_lines(win):
+    # One Ctrl+Shift+Q == one undo step; undo restores the original text
+    # with everything visible; redo never leaves orphan hidden lines.
+    original = "alpha\n\nbeta\n\ngamma"
+    ta = _fresh_doc(win, original)
+    doc = ta.document()
+    _select(ta, 0, len(original))
+    win.toggle_quote_conversion()
+    assert ta.toPlainText() == "> alpha\n>\n> beta\n>\n> gamma"
+    assert doc.findBlockByNumber(0).isVisible() is True
+    assert doc.findBlockByNumber(1).isVisible() is False
+
+    ta.undo()
+    assert ta.toPlainText() == original
+    assert all(doc.findBlockByNumber(i).isVisible()
+               for i in range(doc.blockCount())), "undo stranded hidden blocks"
+
+    ta.redo()
+    assert ta.toPlainText() == "> alpha\n>\n> beta\n>\n> gamma"
+    assert all(doc.findBlockByNumber(i).isVisible()
+               for i in range(doc.blockCount())), "redo stranded hidden lines"
+
+    ta.undo()
+    assert ta.toPlainText() == original
+    assert all(doc.findBlockByNumber(i).isVisible()
+               for i in range(doc.blockCount()))
+
+
+def test_smart_quote_group_survives_silo_switch(win):
+    # Existing per-SILO view state must restore the collapsed whole group.
+    doc_text = "intro\n\nparagraph A\n\nparagraph B"
+    win.data["temp_presets"][:] = [doc_text, "scratch silo"]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    ta = win.text_area
+    doc = ta.document()
+
+    _select(ta, ta.toPlainText().index("paragraph A"), len(ta.toPlainText()))
+    win.toggle_quote_conversion()
+    texts = [doc.findBlockByNumber(i).text() for i in range(doc.blockCount())]
+    assert texts == ["intro", "", "> paragraph A", ">", "> paragraph B"]
+    assert [doc.findBlockByNumber(i).isVisible() for i in range(5)] == [
+        True, True, True, False, False]
+
+    win._switch_to_slot(1)
+    win._switch_to_slot(0)
+    doc = ta.document()
+    assert [doc.findBlockByNumber(i).text() for i in range(5)] == texts
+    assert [doc.findBlockByNumber(i).isVisible() for i in range(5)] == [
+        True, True, True, False, False], "silo switch lost the collapse"
+
+
+def test_smart_quote_independent_quote_runs_stay_separate(win):
+    # Two pre-existing quote blocks separated by an ordinary blank stay two
+    # independent runs — only '>' continuation rows connect groups.
+    win.data["temp_presets"][:] = ["> one\n\n> two"]
+    win.silo_docs[:] = []
+    win._switch_to_slot(0, initial=True)
+    ta = win.text_area
+    doc = ta.document()
+
+    starts = [i for i in range(doc.blockCount())
+              if ta._is_quote_start(doc.findBlockByNumber(i))]
+    assert starts == [0, 2]
+    assert ta._fold_range(doc.findBlockByNumber(0)) is None
+    assert ta._fold_range(doc.findBlockByNumber(2)) is None
+
+    # unquoting only the second block never touches the first
+    cur = ta.textCursor()
+    cur.setPosition(doc.findBlockByNumber(2).position())
+    ta.setTextCursor(cur)
+    win.toggle_quote_conversion()
+    assert ta.toPlainText() == "> one\n\ntwo"
 
 
 def test_hover_line_wash_follows_the_cursor(win):
@@ -5162,6 +5554,11 @@ def test_timer_end_to_end(win):
         assert len(load_timers(win.data["timers"])) == 2
 
         # nearest timer is shown, named and coloured hot (3 min away)
+        # PERF-004 gates the top-bar repaint on visibility: a tray-hidden
+        # process must not repaint once a second. The top bar is what this
+        # asserts, so the window has to be up.
+        win.show()
+        _app.processEvents()
         win.apply_scaled_ui()
         win._header_dense = None
         win._header_ultra = None
@@ -5214,7 +5611,7 @@ def test_timer_end_to_end(win):
         win._apply_header_density()
 
 
-def test_timer_label_hides_in_ultra_and_with_no_timers(win):
+def test_timer_label_hides_with_no_timers(win):
     saved = list(win.timers)
     try:
         win.timers.clear()
@@ -5226,6 +5623,7 @@ def test_timer_label_hides_in_ultra_and_with_no_timers(win):
 
 def test_temp_timer_shift_style_addition_and_delete_policy(win):
     import datetime
+
     from PyQt6.QtCore import QEvent, QPoint, Qt
     from PyQt6.QtGui import QMouseEvent
 
@@ -5445,7 +5843,7 @@ def test_settings_panel_is_tabbed_and_fits_a_small_window(win):
     win._ensure_settings_built()   # tabs are populated on first reveal
     tabs = win.settings_tabs
     assert [tabs.tabText(i) for i in range(tabs.count())] == [
-        "Window", "Editor", "Clock", "Data"]
+        "Window", "Editor", "Clock", "Data", "Problip"]
 
     need = win.mini_settings_frame.sizeHint().width()
     assert need <= 560, f"settings panel still needs {need}px of width"
@@ -5757,10 +6155,10 @@ def test_reordering_archived_silos_carries_their_state(win):
     assert win.data["archive_temp_presets"] == ["ARC-B", "ARC-C", "ARC-A"]
 
     idx = win.data["archive_temp_presets"].index("ARC-A")
-    # The folder NAME is re-derived from the silo title (1 silo = 1 folder),
-    # so assert it belongs to ARC-A rather than to whoever took slot 0.
+    # the folder mapping follows ARC-A by identity: it owned "fa" before the
+    # move and must still own it after (remap, never re-derivation)
     folder = win.data["archive_silo_folders"].get(str(idx), "")
-    assert "arc-a" in folder.lower(), (
+    assert folder == "fa", (
         f"archived silo inherited another one's folder: {folder!r}")
     # project paths are NOT regenerated, so they prove the remap outright
     assert win.data["archive_project_paths"].get(str(idx)) == {"folder": "pa0"}, (
@@ -5780,7 +6178,6 @@ def test_selection_to_new_archive_remaps_archive_state(win):
     win.archive_docs[:] = []
     win._switch_to_slot(0, initial=True)
     win.data["archive_project_paths"] = {"0": {"folder": "p0"}, "1": {"folder": "p1"}}
-    win.data["watcher_queues"] = {"a0": [{"text": "q0"}], "a1": [{"text": "q1"}]}
     win.text_area.setPlainText("NEW ENTRY")
     win.text_area.selectAll()
 
@@ -5789,8 +6186,6 @@ def test_selection_to_new_archive_remaps_archive_state(win):
     assert win.data["archive_temp_presets"][0] == "NEW ENTRY"
     # project paths are not re-derived — they prove the insert-at-0 remap
     assert win.data["archive_project_paths"] == {"1": {"folder": "p0"}, "2": {"folder": "p1"}}
-    assert win.data["watcher_queues"]["a1"][0]["text"] == "q0"
-    assert win.data["watcher_queues"]["a2"][0]["text"] == "q1"
 
 
 def test_deleting_an_archive_silo_while_normal_is_active(win):
@@ -5846,22 +6241,16 @@ def test_archive_delete_remaps_folders_paths_and_queues(win):
     win._switch_to_slot(0, initial=True, is_archive=True)
     win.data["archive_silo_folders"] = {"0": "fa", "1": "fb", "2": "fc"}
     win.data["archive_project_paths"] = {str(i): {"folder": f"p{i}"} for i in range(3)}
-    win.data["watcher_queues"] = {
-        "0": [{"text": "normal q"}],
-        "a0": [{"text": "q0"}], "a1": [{"text": "q1"}], "a2": [{"text": "q2"}],
-    }
 
     win.del_silo(1, is_archive=True)
 
     assert win.data["archive_temp_presets"] == ["A0", "A2"]
     # project paths are NOT re-derived — they prove the remap outright
     assert win.data["archive_project_paths"] == {"0": {"folder": "p0"}, "1": {"folder": "p2"}}
-    assert win.data["watcher_queues"]["a0"][0]["text"] == "q0"
-    assert win.data["watcher_queues"]["a1"][0]["text"] == "q2", (
-        "the deleted archive silo's queue must not linger")
-    assert "a2" not in win.data["watcher_queues"]
-    assert win.data["watcher_queues"]["0"][0]["text"] == "normal q", (
-        "a normal queue must be untouched by an archive delete")
+    assert win.data["archive_silo_folders"]["1"] == "fc", (
+        "A2's folder must follow A2 down to slot 1")
+    assert "a0" in win.data["archive_silo_folders"]["0"].lower(), (
+        "the active silo's folder is re-derived from its title")
 
 
 def test_archive_snippet_insert_remaps_folders_and_queues(win):
@@ -5874,8 +6263,6 @@ def test_archive_snippet_insert_remaps_folders_and_queues(win):
     cat = win.get_current_category()
     win.data["categories"][cat] = [{"name": "snip", "text": "SNIP", "last_edited": 1}]
     win.data["archive_project_paths"] = {"0": {"folder": "p0"}, "1": {"folder": "p1"}}
-    win.data["watcher_queues"] = {"a0": [{"text": "q0"}], "a1": [{"text": "q1"}],
-                                  "0": [{"text": "n0"}]}
     win._switch_to_slot(0, initial=True)
     win.text_area.setPlainText("SNIP")
 
@@ -5884,10 +6271,6 @@ def test_archive_snippet_insert_remaps_folders_and_queues(win):
     assert win.data["archive_temp_presets"][0] == "SNIP"
     # project paths are not re-derived — they prove the insert-at-0 remap
     assert win.data["archive_project_paths"] == {"1": {"folder": "p0"}, "2": {"folder": "p1"}}
-    assert win.data["watcher_queues"]["a1"][0]["text"] == "q0"
-    assert win.data["watcher_queues"]["a2"][0]["text"] == "q1"
-    assert win.data["watcher_queues"]["0"][0]["text"] == "n0", (
-        "the normal queue must not be shifted by an archive insert")
 
 
 def test_archive_swap_remaps_folders_paths_and_queues(win):
@@ -5899,8 +6282,6 @@ def test_archive_swap_remaps_folders_paths_and_queues(win):
     win._switch_to_slot(0, initial=True, is_archive=True)
     win.data["archive_silo_folders"] = {"0": "fa", "1": "fb", "2": "fc"}
     win.data["archive_project_paths"] = {str(i): {"folder": f"p{i}"} for i in range(3)}
-    win.data["watcher_queues"] = {"a0": [{"text": "q0"}], "a1": [{"text": "q1"}],
-                                  "a2": [{"text": "q2"}]}
 
     win.swap_temp_slots(0, 2, is_archive=True)
 
@@ -5908,9 +6289,7 @@ def test_archive_swap_remaps_folders_paths_and_queues(win):
     # project paths are not re-derived — they prove the swap remap outright
     assert win.data["archive_project_paths"]["0"] == {"folder": "p2"}
     assert win.data["archive_project_paths"]["2"] == {"folder": "p0"}
-    assert win.data["watcher_queues"]["a0"][0]["text"] == "q2"
-    assert win.data["watcher_queues"]["a2"][0]["text"] == "q0"
-    assert win.data["watcher_queues"]["a1"][0]["text"] == "q1"
+    assert win.data["archive_silo_folders"] == {"0": "fc", "1": "fb", "2": "fa"}
 
 
 def test_archiving_a_silo_moves_folder_path_and_queue(win):
@@ -5922,7 +6301,7 @@ def test_archiving_a_silo_moves_folder_path_and_queue(win):
     win._switch_to_slot(0, initial=True)
     win.data["silo_folders"] = {"1": "fmove"}
     win.data["silo_project_paths"] = {"1": {"folder": "pmove"}}
-    win.data["watcher_queues"] = {"1": [{"text": "qmove"}], "a0": [{"text": "existing"}]}
+    win.data["archive_silo_folders"] = {"0": "existing"}
 
     win._archive_silo(1)
 
@@ -5930,10 +6309,10 @@ def test_archiving_a_silo_moves_folder_path_and_queue(win):
     assert win.data["temp_presets"][1] == "", "the normal slot stays, emptied"
     # project paths are not re-derived — they prove the transfer
     assert win.data["archive_project_paths"]["0"] == {"folder": "pmove"}
-    assert win.data["watcher_queues"]["a0"][0]["text"] == "qmove", (
-        "the queue must follow the text into the archive")
-    assert win.data["watcher_queues"]["a1"][0]["text"] == "existing"
-    assert "1" not in win.data["watcher_queues"]
+    assert win.data["archive_silo_folders"]["0"] == "fmove", (
+        "the folder must follow the text into the archive")
+    assert win.data["archive_silo_folders"]["1"] == "existing"
+    assert "1" not in win.data["silo_project_paths"]
 
 
 def test_cross_space_swap_moves_identity_state(win):
@@ -5948,7 +6327,6 @@ def test_cross_space_swap_moves_identity_state(win):
     win.data["archive_silo_folders"] = {"0": "fa0"}
     win.data["silo_project_paths"] = {"1": {"folder": "pn1"}}
     win.data["archive_project_paths"] = {"0": {"folder": "pa0"}}
-    win.data["watcher_queues"] = {"1": [{"text": "qn1"}], "a0": [{"text": "qa0"}]}
     cat = win.get_current_category()
     store = win.data.setdefault("silo_view_state_all", {}).setdefault(cat, {})
     store["s1"] = {"pos": 111}
@@ -5961,30 +6339,29 @@ def test_cross_space_swap_moves_identity_state(win):
     # project paths are not re-derived — they prove the cross-space transfer
     assert win.data["silo_project_paths"].get("1") == {"folder": "pa0"}
     assert win.data["archive_project_paths"].get("0") == {"folder": "pn1"}
-    assert win.data["watcher_queues"]["1"][0]["text"] == "qa0"
-    assert win.data["watcher_queues"]["a0"][0]["text"] == "qn1"
     assert store.get("s1", {}).get("pos") == 222, "view state follows the text"
     assert store.get("a0", {}).get("pos") == 111
 
 
-def test_normal_reorder_leaves_archive_queues_alone(win):
-    """watcher_queues is dual-namespaced: a normal reorder must remap only
-    numeric keys and never the archive's aN keys."""
+def test_normal_reorder_leaves_archive_state_alone(win):
+    """A normal reorder remaps only the normal space's slot stores; the
+    archive's own maps stay exactly where they were."""
     win.data["temp_presets"][:] = ["N0", "N1", "N2"]
     win.data["archive_temp_presets"][:] = ["A0"]
     win.silo_docs[:] = []
     win.archive_docs[:] = []
     win._switch_to_slot(0, initial=True)
-    win.data["watcher_queues"] = {"0": [{"text": "n0"}], "2": [{"text": "n2"}],
-                                  "a0": [{"text": "arch"}]}
+    win.data["silo_project_paths"] = {"0": "n0", "2": "n2"}
+    win.data["archive_silo_folders"] = {"0": "arch"}
 
     win.move_temp_to_index(2, 0)
 
     assert win.data["temp_presets"] == ["N2", "N0", "N1"]
-    assert win.data["watcher_queues"]["0"][0]["text"] == "n2"
-    assert win.data["watcher_queues"]["1"][0]["text"] == "n0"
-    assert win.data["watcher_queues"]["a0"][0]["text"] == "arch", (
-        "a normal reorder must never touch an archive queue")
+    assert win.data["silo_project_paths"] == {"0": "n2", "1": "n0"}
+    assert win.data["archive_silo_folders"] == {"0": "arch"}, (
+        "a normal reorder must never touch archive state")
+    win.data["silo_project_paths"] = {}
+    win.data["archive_silo_folders"] = {}
 
 
 def test_archive_delete_undo_restores_text_and_metadata(win):
@@ -6041,7 +6418,7 @@ def test_insert_silo_at_shifts_state_and_undoes(win):
     win.silo_docs[:] = []
     win._switch_to_slot(0, initial=True)
     win.data["silo_colors"] = {"0": "#111", "1": "#222"}
-    win.data["watcher_queues"] = {"0": [{"text": "qa"}], "1": [{"text": "qb"}]}
+    win.data["silo_project_paths"] = {"0": "pa", "1": "pb"}
 
     win.insert_silo_at("RESTORED", 0)
 
@@ -6050,8 +6427,8 @@ def test_insert_silo_at_shifts_state_and_undoes(win):
         "docs must stay aligned with presets")
     assert win.data["silo_colors"] == {"1": "#111", "2": "#222"}, (
         "A's colour must follow A to slot 1")
-    assert win.data["watcher_queues"]["1"][0]["text"] == "qa"
-    assert win.data["watcher_queues"]["2"][0]["text"] == "qb"
+    assert win.data["silo_project_paths"] == {"1": "pa", "2": "pb"}, (
+        "A's project path must follow A to slot 1")
 
     _press_ctrl_z(win)
     assert win.data["temp_presets"] == ["A", "B"], "undo restores the pre-insert list"
@@ -6131,6 +6508,7 @@ def test_new_child_silo_nests_under_its_parent(win):
     win.data["temp_presets"][:] = ["Parent", "Other"]
     win.silo_docs[:] = []
     win.data["silo_children"] = {}
+    win.data["new_silo_paste_clipboard"] = "False"
     win._switch_to_slot(0, initial=True)
 
     win.new_child_silo(0)
@@ -6140,6 +6518,27 @@ def test_new_child_silo_nests_under_its_parent(win):
     key = next(k for k in kids if str(k) == "0")
     assert 1 in kids[key], f"child not nested under its parent: {dict(kids)}"
     assert win.active_temp_slot == 1, "should land on the new child"
+
+
+def test_ctrl_alt_click_new_creates_child_of_current_silo(fresh_win):
+    from PyQt6.QtCore import QEvent, QPointF, Qt
+    from PyQt6.QtGui import QMouseEvent
+
+    win = fresh_win
+    win.data["temp_presets"][:] = ["Parent", "Other"]
+    win.silo_docs[:] = []
+    win.data["silo_children"] = {}
+    win.data["new_silo_paste_clipboard"] = "False"
+    win._switch_to_slot(0, initial=True)
+
+    event = QMouseEvent(
+        QEvent.Type.MouseButtonRelease, QPointF(2, 2),
+        Qt.MouseButton.LeftButton, Qt.MouseButton.NoButton,
+        Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.AltModifier)
+    assert win.eventFilter(win.btn_new, event) is True
+    assert win.data["temp_presets"][:3] == ["Parent", "", "Other"]
+    assert win.data["silo_children"] == {0: [1]}
+    assert win.active_temp_slot == 1
 
 
 def test_files_folder_is_not_created_just_by_looking(win, tmp_path):
@@ -6267,18 +6666,26 @@ def test_pinned_drop_survives_every_degenerate_case(win):
         win.data["pinned_silos"] = list(start)
         win.handle_pinned_drop(**kwargs)     # must never raise
 
-    # and the legitimate reorders still do the right thing
+    # and the legitimate reorders still do the right thing: the pinned list IS
+    # the leading raw block, so every commit renumbers it from 0
+    win.data["temp_presets"][:] = [f"S{i}" for i in range(12)]
+    win.silo_docs[:] = []
     win.data["pinned_silos"] = [10, 3, 7]
     assert win.handle_pinned_drop(source_idx=7, boundary_idx=10) is True
-    assert win.data["pinned_silos"] == [7, 10, 3]
+    assert win.data["pinned_silos"] == [0, 1, 2]
+    assert win.data["temp_presets"][:3] == ["S7", "S10", "S3"]
 
+    win.data["temp_presets"][:] = [f"S{i}" for i in range(12)]
     win.data["pinned_silos"] = [10, 3, 7]
     assert win.handle_pinned_drop(source_idx=5, boundary_idx=3) is True
-    assert win.data["pinned_silos"] == [10, 5, 3, 7]
+    assert win.data["pinned_silos"] == [0, 1, 2, 3]
+    assert win.data["temp_presets"][:4] == ["S10", "S5", "S3", "S7"]
 
+    win.data["temp_presets"][:] = [f"S{i}" for i in range(12)]
     win.data["pinned_silos"] = [10, 3, 7]
     assert win.handle_pinned_drop(source_idx=3, swap_idx=7) is True
-    assert win.data["pinned_silos"] == [10, 7, 3]
+    assert win.data["pinned_silos"] == [0, 1, 2]
+    assert win.data["temp_presets"][:3] == ["S10", "S7", "S3"]
 
 
 def test_thread_and_qt_failures_reach_the_crash_log(tmp_path, monkeypatch):
@@ -6486,7 +6893,8 @@ def test_line_heat_survives_a_reload(win):
         stamp = time.time() - 60
         ta.document().findBlockByNumber(1).setUserData(_LineHeat(stamp))
 
-        saved = ta.collect_line_heat()
+        ta._invalidate_view_metadata()
+        saved = ta.collect_view_metadata()[1]
         assert saved.get(1) is not None, "heat was not collected for saving"
 
         win.capture_silo_state()
@@ -6498,7 +6906,8 @@ def test_line_heat_survives_a_reload(win):
         win.silo_docs[:] = []
         win._switch_to_slot(0, initial=True)
 
-        restored = win.text_area.collect_line_heat()
+        win.text_area._invalidate_view_metadata()
+        restored = win.text_area.collect_view_metadata()[1]
         assert restored.get(1) is not None, "heat did not survive the reload"
         assert abs(restored[1] - stamp) < 2
     finally:
@@ -6633,9 +7042,11 @@ def test_reset_ui_layout_restores_every_layout_choice(win):
     be fixed by deleting the database."""
     before_text = win.text_area.toPlainText()
     silos_before = list(win.data["temp_presets"])
+    win._ensure_settings_built()
 
     # scramble every layout choice
     win.data["toolbar_order"] = "btn_help,btn_save"
+    win.data["topbar_visibility"] = {"version": 999}
     win.data["last_geometry"] = "10,10,4000,4000"
     win.data["splitter_sizes_left"] = [999, 1]
     win.data["splitter_sizes_right"] = [1, 999]
@@ -6647,29 +7058,32 @@ def test_reset_ui_layout_restores_every_layout_choice(win):
     assert win.reset_ui_layout(confirm=False) is True
 
     assert win.data["toolbar_order"] == ""
+    from fastprompter.core.topbar_visibility import default_topbar_visibility
+    assert win.data["topbar_visibility"] == default_topbar_visibility()
     # resizing re-records the geometry immediately, so it is not empty for
     # long — what matters is that the scrambled size is gone
     assert win.data["last_geometry"] != "10,10,4000,4000"
-    assert win.data["splitter_sizes_left"] == ""
-    assert win.data["splitter_sizes_right"] == ""
-    assert win.data["sidebar_right"] == "False"
-    assert win.data["ui_scale"] == "0.5"
-    assert win.data["button_scale"] == "1.0"
+    from fastprompter.core.default_profile import DEFAULT_PROFILE
+    assert win.data["splitter_sizes_left"] == DEFAULT_PROFILE["splitter_sizes_left"]
+    assert win.data["splitter_sizes_right"] == DEFAULT_PROFILE["splitter_sizes_right"]
+    assert win.data["sidebar_right"] == str(DEFAULT_PROFILE["sidebar_right"])
+    assert win.data["ui_scale"] == DEFAULT_PROFILE["ui_scale"]
+    assert win.data["button_scale"] == DEFAULT_PROFILE["button_scale"]
 
-    # the sidebar is back on the left, so the hamburger is back at the left edge
+    # The hamburger returns to the edge selected by the shipped profile.
     lay = win.header_layout
-    assert lay.itemAt(0).widget() is win.btn_sidebar_toggle
+    assert lay.itemAt(lay.count() - 1).widget() is win.btn_sidebar_toggle
 
     # the Settings controls must agree with the data they display, or the
     # next click on them toggles from the state the user can no longer see
-    assert win.cb_sidebar.isChecked() is False
+    assert win.cb_sidebar.isChecked() is True
     assert "50%" in win.btn_button_scale.text()
 
     # and the checkbox still works afterwards, from the correct state
-    win.cb_sidebar.setChecked(True)
-    assert win.data["sidebar_right"] == "True"
-    assert lay.itemAt(lay.count() - 1).widget() is win.btn_sidebar_toggle
     win.cb_sidebar.setChecked(False)
+    assert win.data["sidebar_right"] == "False"
+    assert lay.itemAt(0).widget() is win.btn_sidebar_toggle
+    win.cb_sidebar.setChecked(True)
 
     # a layout reset must not touch content
     assert win.text_area.toPlainText() == before_text
@@ -6745,56 +7159,6 @@ def test_auto_bullet_converts_while_typing(win):
     finally:
         ed.clear()
         win.set_auto_bullet(before == "True")
-
-def test_limit_window_catcher_builds_a_rolling_timer(win):
-    """The 5-hour agent quota is a rolling window anchored at the moment it
-    opened, which the generic "when" box cannot express."""
-    import datetime
-
-    from fastprompter.core import timers as T
-    from fastprompter.ui.timer_dialog import TimerDialog
-
-    kept = list(win.timers)
-    try:
-        win.timers.clear()
-        dlg = TimerDialog(win)
-        now = datetime.datetime.now()
-
-        # blank start = the window opens now
-        dlg.in_name.setText("Claude limit")
-        dlg.spin_limit_hours.setValue(5.0)
-        dlg.in_limit_start.setText("")
-        t = dlg.add_limit_window()
-        assert t.repeat == T.REPEAT_INTERVAL
-        assert t.interval_minutes == 300
-        assert 4.9 < t.remaining() / 3600 < 5.01
-
-        # an explicit start two hours ago leaves three hours on the clock
-        dlg.in_name.setText("Anchored")
-        dlg.in_limit_start.setText(
-            (now - datetime.timedelta(hours=2)).strftime("%H:%M"))
-        t2 = dlg.add_limit_window()
-        assert 2.9 < t2.remaining() / 3600 < 3.05
-
-        # the words say what it is, including that it rolls
-        text = T.describe(t2)
-        assert "every 5h" in text and t2.target.strftime("%H:%M") in text
-
-        # garbage adds nothing and says so
-        before = len(win.timers)
-        dlg.in_limit_start.setText("banana")
-        dlg.add_limit_window()
-        assert len(win.timers) == before
-        assert dlg.lbl_limit_hint.text()
-
-        # and it survives being saved and read back
-        back = T.load_timers(T.save_timers(win.timers))
-        assert [x.interval_minutes for x in back] == [300, 300]
-        assert all(x.repeat == T.REPEAT_INTERVAL for x in back)
-        dlg.close()
-    finally:
-        win.timers[:] = kept
-        win.save_timers_to_data()
 
 def test_margin_selects_whole_lines_like_word(win):
     """Clicking the line-number margin takes the whole line and dragging
@@ -7227,6 +7591,7 @@ def test_custom_cursors_toggle(win):
     user's own Windows scheme."""
     from PyQt6.QtCore import Qt
 
+    win._ensure_settings_built()   # Settings are lazy-built; this drives the real checkbox
     kept = win.data.get("custom_cursors", "False")
     try:
         # drive it through the checkbox: the shipped default has this ON, so
@@ -7279,6 +7644,7 @@ def test_custom_cursors_survive_a_restart(win):
 
         fresh = FastPrompter()   # simulates a full app restart, same DB
         try:
+            fresh._ensure_settings_built()   # lazily built Settings checkbox
             assert fresh.data.get("custom_cursors") == "True"
             assert fresh.cb_custom_cursors.isChecked()
             # the point of the bug: nothing is touched after construction
@@ -7695,6 +8061,7 @@ def test_startup_deactivation_does_not_hide_the_window(win, monkeypatch):
     the fix: visible at t+4s, gone by t+6s."""
     win._ever_activated = False
     win._shown_at = 0.0
+    win.data["close_on_focus_loss"] = "True"
     win.show()
     if getattr(win, "cb_focus", None):
         win.cb_focus.setChecked(True)
@@ -7712,6 +8079,7 @@ def test_a_focus_flicker_right_after_showing_is_forgiven(win, monkeypatch):
     win._shown_at = time.time()         # ...but it only just appeared
     win._user_summoned = False          # ...and nobody asked for it: launch
     win._activated_at = 0.0
+    win.data["close_on_focus_loss"] = "True"
     win.show()
     if getattr(win, "cb_focus", None):
         win.cb_focus.setChecked(True)
@@ -7724,21 +8092,33 @@ def test_a_real_click_away_still_hides(win, monkeypatch):
     """The grace period must not weaken the setting the user asked for."""
     import time
 
+    # a real desktop can queue a deactivation from an earlier test; drain it
+    # under the guard before the precondition is sampled
+    win.ignore_focus_loss = True
     win.show()
     QApplication.processEvents()
+    win.ignore_focus_loss = False
     assert not win.isHidden(), "precondition: it starts visible"
     win._ever_activated = True
     win._shown_at = time.time() - 10.0   # long past the grace period
     win._user_summoned = False
     win._activated_at = time.time() - 10.0   # ...and the activation settled
+    win.data["close_on_focus_loss"] = "True"
     if getattr(win, "cb_focus", None):
         win.cb_focus.setChecked(True)
     win.is_locked = False
     win.ignore_focus_loss = False
     win._help_dialog = None
 
-    _deactivate(win, monkeypatch)
-    assert win.isHidden(), "clicking away should still hide it"
+    # this test owns the grace/setting contract; foreground ownership (T-732)
+    # is another test's subject and can legitimately veto the hide
+    real_foreground_ours = win._foreground_is_our_own_window
+    win._foreground_is_our_own_window = lambda: False
+    try:
+        _deactivate(win, monkeypatch)
+        assert win.isHidden(), "clicking away should still hide it"
+    finally:
+        win._foreground_is_our_own_window = real_foreground_ours
 
 
 def test_a_summoned_window_hides_on_the_very_next_click_away(win, monkeypatch):
@@ -7757,16 +8137,21 @@ def test_a_summoned_window_hides_on_the_very_next_click_away(win, monkeypatch):
     assert win._user_summoned is True, "show_window must mark the summon"
     win._ever_activated = True
     win._activated_at = time.time() - 10.0   # active long enough to be real
+    win.data["close_on_focus_loss"] = "True"
     if getattr(win, "cb_focus", None):
         win.cb_focus.setChecked(True)
     win.is_locked = False
     win.ignore_focus_loss = False
-
-    _deactivate(win, monkeypatch)
-    assert win.isHidden(), (
-        "a summoned window must hide on the next click away, not two "
-        "seconds later"
-    )
+    real_foreground_ours = win._foreground_is_our_own_window
+    win._foreground_is_our_own_window = lambda: False
+    try:
+        _deactivate(win, monkeypatch)
+        assert win.isHidden(), (
+            "a summoned window must hide on the next click away, not two "
+            "seconds later"
+        )
+    finally:
+        win._foreground_is_our_own_window = real_foreground_ours
 
 
 def test_an_activation_that_never_settled_is_not_a_click_away(win, monkeypatch):
@@ -7778,6 +8163,7 @@ def test_an_activation_that_never_settled_is_not_a_click_away(win, monkeypatch):
     win.show_window()
     win._ever_activated = True
     win._activated_at = time.time()      # it took the foreground this instant
+    win.data["close_on_focus_loss"] = "True"
     if getattr(win, "cb_focus", None):
         win.cb_focus.setChecked(True)
     win.is_locked = False
@@ -7802,6 +8188,7 @@ def test_focus_moving_to_our_own_window_does_not_hide(win, monkeypatch):
     win._ever_activated = True
     win._user_summoned = True
     win._activated_at = time.time() - 10.0
+    win.data["close_on_focus_loss"] = "True"
     if getattr(win, "cb_focus", None):
         win.cb_focus.setChecked(True)
     win.is_locked = False
@@ -8021,12 +8408,13 @@ def _silo_btn(win, idx):
     return b
 
 
-def _mouse(kind, mods):
+def _mouse(kind, mods, button=None):
     from PyQt6.QtCore import QPoint, Qt
     from PyQt6.QtGui import QMouseEvent
+    button = button or Qt.MouseButton.LeftButton
     return QMouseEvent(
         kind, QPoint(5, 5).toPointF(),
-        Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton, mods)
+        button, button, mods)
 
 
 def test_ctrl_click_selection_latches_and_survives_a_silo_switch(fresh_win):
@@ -8070,12 +8458,79 @@ def test_ctrl_triple_click_clears_every_selection(fresh_win):
     assert win._silo_sel() == set()
 
 
+def test_middle_double_click_runs_same_silo_action(fresh_win, monkeypatch):
+    from PyQt6.QtCore import QEvent, Qt
+
+    win = fresh_win
+    button = _silo_btn(win, 1)
+    calls = []
+    monkeypatch.setattr(
+        win,
+        "trash_silo",
+        lambda idx, is_archive=False: calls.append((idx, is_archive)),
+    )
+    middle = Qt.MouseButton.MiddleButton
+    none = Qt.KeyboardModifier.NoModifier
+    button.mousePressEvent(_mouse(QEvent.Type.MouseButtonPress, none, middle))
+    button.mouseDoubleClickEvent(_mouse(QEvent.Type.MouseButtonDblClick, none, middle))
+    button.mousePressEvent(_mouse(QEvent.Type.MouseButtonPress, none, middle))
+    assert calls == [(1, False), (1, False), (1, False)]
+
+
+def test_shift_middle_double_click_clears_silo_each_press(fresh_win, monkeypatch):
+    # T-1224: Shift+MButton is the same press-routed gesture; the routed
+    # double-click must reach clear_silo() exactly once per physical press.
+    from PyQt6.QtCore import QEvent, Qt
+
+    win = fresh_win
+    button = _silo_btn(win, 1)
+    calls = []
+    monkeypatch.setattr(
+        win,
+        "clear_silo",
+        lambda idx, is_archive=False: calls.append((idx, is_archive)),
+    )
+    middle = Qt.MouseButton.MiddleButton
+    shift = Qt.KeyboardModifier.ShiftModifier
+    button.mousePressEvent(_mouse(QEvent.Type.MouseButtonPress, shift, middle))
+    button.mouseDoubleClickEvent(_mouse(QEvent.Type.MouseButtonDblClick, shift, middle))
+    button.mousePressEvent(_mouse(QEvent.Type.MouseButtonPress, shift, middle))
+    assert calls == [(1, False), (1, False), (1, False)]
+
+
+def test_new_button_middle_release_fires_once_per_physical_release(fresh_win, monkeypatch):
+    # T-1224: the NEW button is release-routed, so it must NOT be sent through
+    # a synthetic press handler. A rapid double-click yields two releases
+    # around one unhandled dblclick event -> exactly two actions.
+    from PyQt6.QtCore import QEvent, Qt
+
+    win = fresh_win
+    calls = []
+    monkeypatch.setattr(win, "show_new_silo_presets", lambda pos: calls.append(pos))
+    middle = Qt.MouseButton.MiddleButton
+    none = Qt.KeyboardModifier.NoModifier
+    assert win.eventFilter(
+        win.btn_new, _mouse(QEvent.Type.MouseButtonRelease, none, middle)) is True
+    assert win.eventFilter(
+        win.btn_new, _mouse(QEvent.Type.MouseButtonDblClick, none, middle)) is False
+    assert win.eventFilter(
+        win.btn_new, _mouse(QEvent.Type.MouseButtonRelease, none, middle)) is True
+    assert len(calls) == 2
+
+
 def test_switching_project_releases_the_selection(fresh_win):
     """Indices are per-category, so they cannot travel to another project."""
     win = fresh_win
+    if win.cat_combo.count() < 2:
+        import pytest as _pytest
+
+        _pytest.skip("needs at least two projects")
+    win.cat_combo.setCurrentIndex(0)
+    win.on_tab_changed(0)
     win.toggle_silo_selection(0)
     assert win._silo_sel() == {0}
-    win.on_tab_changed(win.cat_combo.currentIndex())
+    win.cat_combo.setCurrentIndex(1)
+    win.on_tab_changed(1)
     assert win._silo_sel() == set()
 
 
@@ -8378,14 +8833,256 @@ def test_gaps_survive_a_real_db_round_trip(tmp_path):
         st = sm.FastPrompterState()
         st.data["silo_gaps_all"] = {"Code": [1, 4], "Text": [2]}
         st.data["silo_gaps"] = st.data["silo_gaps_all"]["Code"]
+        st.data["silo_gap_names_all"] = {"Code": {"4": "SAIPEN"}}
+        st.data["silo_gap_names"] = st.data["silo_gap_names_all"]["Code"]
+        st.data["portable_backup_enabled"] = "False"
         st.save_data_to_db("body", force=True)
         st.conn.close()
 
         st2 = sm.FastPrompterState()
         assert st2.data["silo_gaps_all"] == {"Code": [1, 4], "Text": [2]}
+        # T-1222: the JSON settings value alone was never the whole UI
+        # persistence contract — the structural extent the gap anchors
+        # imply and the gap-name mapping must survive the same round trip,
+        # or a restart still collapses the project around the anchors.
+        assert len(st2.data["temp_presets_all"]["Code"]) >= 5
+        assert st2.data["silo_gap_names_all"]["Code"] == {"4": "SAIPEN"}
         st2.conn.close()
     finally:
         sm.get_db_path = orig
+
+
+def test_empty_silo_structure_survives_two_restarts_and_a_refresh(tmp_path, monkeypatch):
+    """T-1222: the exact user repro at UI level.
+
+    20 empty silos with six named group gaps survive a real save / destroy /
+    reload — TWICE — and the generic render pass (refresh_temp_presets) must
+    reconstruct everything without pruning a single anchor."""
+    import fastprompter.core.state as sm
+
+    db = tmp_path / "silo_structure.db"
+    monkeypatch.setattr(sm, "get_db_path", lambda profile_id=1: str(db))
+    monkeypatch.setattr(
+        "fastprompter.utils.portable_backup.run_portable_backup",
+        lambda data, profile_id=1, **_kw: None)
+
+    gaps = [1, 5, 8, 11, 14, 17]
+    names = {"1": "SAIPEN", "5": "FastPrompter", "8": "SAITULS",
+             "11": "AUDAPACK", "14": "LIMISAW", "17": "SAIPAL"}
+
+    def _build_window():
+        monkeypatch.setattr(FastPrompter, "setup_single_instance_server", lambda self: None)
+        monkeypatch.setattr(FastPrompter, "register_all_hotkeys", lambda self: None)
+        monkeypatch.setattr(FastPrompter, "unregister_all_hotkeys", lambda self: None)
+        return FastPrompter()
+
+    def _assert_structure(w):
+        assert len(w.data["temp_presets"]) == 20
+        assert w.data["temp_presets"] == [""] * 20
+        # the alias is bound to the SAME list object as the per-category
+        # store — assert the store too so a rebinding bug cannot hide behind
+        # a stale alias that merely happens to hold 20 entries
+        assert len(w.data["temp_presets_all"]["Code"]) == 20
+        assert list(w.data["silo_gaps"]) == gaps
+        cat = w.get_current_category()
+        assert w.data["silo_gap_names_all"][cat] == names
+        # the render pass must not destroy what it renders
+        names_before = dict(w.data["silo_gap_names_all"][cat])
+        w.refresh_temp_presets()
+        assert len(w.data["temp_presets"]) == 20
+        assert list(w.data["silo_gaps"]) == gaps, "refresh pruned gap anchors"
+        assert w.data["silo_gap_names_all"][cat] == names_before, (
+            "refresh mutated gap-name metadata")
+        display_order = w._hierarchy_cache[0]
+        assert len(display_order) == 20
+        assert max(display_order) == 19
+
+        # -- UI reachability: the sidebar must actually be able to REACH all
+        # 20 silos — not merely hold them in a dictionary. Pagination, the
+        # final page, opening the last slot and the per-page gap bars are
+        # part of the user-visible contract.
+        visible = max(1, w._visible_silos)
+        expected_max_page = math.ceil(len(display_order) / visible) - 1
+        assert not w.btn_silo_up.isHidden() or expected_max_page == 0
+        seen_anchors = set()
+        for page in range(expected_max_page + 1):
+            w.silo_page = page
+            w.refresh_temp_presets()
+            assert w.silo_page == page
+            visible_bars = [gw for gw in w._user_gap_widgets
+                            if not gw.isHidden()]
+            seen_anchors.update(gw.slot_idx for gw in visible_bars)
+            for gw in visible_bars:
+                label = names.get(str(gw.slot_idx), "")
+                assert gw.text() == label
+        assert seen_anchors == set(gaps), (
+            f"gap bars did not render under every anchor: {sorted(seen_anchors)}")
+
+        # navigation to the final page: the down button must go no further
+        w.silo_page = expected_max_page
+        w.refresh_temp_presets()
+        assert not w.btn_silo_down.isEnabled()
+        # slot 19 (the last silo) is rendered on that page and can be opened
+        last_btn = next(b for b in w.silo_buttons if b.global_idx == 19)
+        assert not last_btn.isHidden()
+        w._switch_to_slot(19)
+        assert w.active_temp_slot == 19
+        assert w.data["temp_presets"][19] == ""
+
+        # leave the window on its home page/render state
+        w.silo_page = 0
+        w.refresh_temp_presets()
+
+    w1 = _build_window()
+    try:
+        assert w1.get_current_category() == "Code"
+        w1.data["temp_presets"][:] = [""] * 20
+        w1.data["silo_gaps_all"]["Code"] = list(gaps)
+        w1.data["silo_gap_names_all"]["Code"] = dict(names)
+        w1.data["silo_gaps"] = w1.data["silo_gaps_all"]["Code"]
+        w1.data["silo_gap_names"] = w1.data["silo_gap_names_all"]["Code"]
+        w1.data["portable_backup_enabled"] = "False"
+        assert w1.state.save_data_to_db("", force=True) is True
+        w1.state.conn.commit()
+    finally:
+        _teardown_window(w1)
+
+    w2 = _build_window()
+    try:
+        _assert_structure(w2)
+        # explicit user deletion persists; nothing here deleted anything, so
+        # the second restart must land on the identical structure
+        assert w2.state.save_data_to_db("", force=True) is True
+        w2.state.conn.commit()
+    finally:
+        _teardown_window(w2)
+
+    w3 = _build_window()
+    try:
+        _assert_structure(w3)
+    finally:
+        _teardown_window(w3)
+
+
+def test_explicit_silo_deletion_still_shrinks_and_prunes_across_restart(tmp_path, monkeypatch):
+    """T-1222 companion: real deletion (the canonical remap path) must still
+    shrink the list, drop the gap owned by the deleted silo, and persist the
+    shrink — the DB must not keep resurrecting deleted silos."""
+    import fastprompter.core.state as sm
+
+    db = tmp_path / "silo_deletion.db"
+    monkeypatch.setattr(sm, "get_db_path", lambda profile_id=1: str(db))
+    monkeypatch.setattr(
+        "fastprompter.utils.portable_backup.run_portable_backup",
+        lambda data, profile_id=1, **_kw: None)
+
+    def _build_window():
+        monkeypatch.setattr(FastPrompter, "setup_single_instance_server", lambda self: None)
+        monkeypatch.setattr(FastPrompter, "register_all_hotkeys", lambda self: None)
+        monkeypatch.setattr(FastPrompter, "unregister_all_hotkeys", lambda self: None)
+        return FastPrompter()
+
+    w1 = _build_window()
+    try:
+        w1.data["temp_presets"][:] = ["a", "b", "c", "d", "e", "f", "", "", "", ""]
+        # gap 7 sits ABOVE the deletion point: the canonical path must remap
+        # it down with its silo (and carry its name), not leave it parked
+        # under a stranger, while a gap owned by a deleted silo leaves with
+        # that silo (T-704 + drop_silo_state).
+        w1.data["silo_gaps_all"]["Code"] = [1, 4, 7]
+        w1.data["silo_gap_names_all"]["Code"] = {
+            "1": "SAIPEN", "4": "LIMISAW", "7": "SAIPAL"}
+        w1.data["silo_gaps"] = w1.data["silo_gaps_all"]["Code"]
+        w1.data["silo_gap_names"] = w1.data["silo_gap_names_all"]["Code"]
+        w1.data["portable_backup_enabled"] = "False"
+        assert w1.state.save_data_to_db("", force=True) is True
+    finally:
+        _teardown_window(w1)
+
+    w2 = _build_window()
+    try:
+        assert len(w2.data["temp_presets"]) == 10
+        # delete silo 5 (below gap 7 -> 7 remaps to 6) and silo 4 (owns the
+        # LIMISAW gap -> gap and name leave with it; 6 remaps to 5) — the
+        # same canonical UI/model deletion path the app uses
+        assert w2.del_silo(5, skip_undo=True) is True
+        assert w2.data["silo_gaps"] == [1, 4, 6]
+        assert w2.data["silo_gap_names"] == {
+            "1": "SAIPEN", "4": "LIMISAW", "6": "SAIPAL"}
+        assert w2.del_silo(4, skip_undo=True) is True
+        assert len(w2.data["temp_presets"]) == 8
+        assert w2.data["silo_gaps"] == [1, 5]
+        assert w2.data["silo_gap_names"] == {"1": "SAIPEN", "5": "SAIPAL"}
+        assert w2.state.save_data_to_db("", force=True) is True
+        w2.state.conn.commit()
+    finally:
+        _teardown_window(w2)
+
+    w3 = _build_window()
+    try:
+        assert len(w3.data["temp_presets"]) == 8
+        assert list(w3.data["silo_gaps"]) == [1, 5]
+        assert w3.data["silo_gap_names"] == {"1": "SAIPEN", "5": "SAIPAL"}
+        # the deleted structure must not resurrect: exactly 8 rows remain
+        rows = w3.state.conn.execute(
+            "SELECT slot FROM temp_presets_v2 WHERE category='Code' "
+            "ORDER BY slot ASC").fetchall()
+        assert [r[0] for r in rows] == list(range(8))
+    finally:
+        _teardown_window(w3)
+
+
+def test_refresh_temp_presets_never_prunes_out_of_range_gap_anchors(
+        tmp_path, monkeypatch):
+    """T-1222: RENDER != MUTATION.
+
+    The destructive bug lived IN refresh: prune_silo_gaps ran on every render
+    and deleted every anchor beyond the list length. A deliberately
+    suspicious state — anchors 11/17 pointing past a 10-silo list — must
+    render without painting the out-of-range anchors, and must NOT delete
+    them. Only canonical deletion (drop_silo_state via del_silo) may remove
+    an anchor; refresh owns nothing."""
+    import fastprompter.core.state as sm
+
+    db = tmp_path / "refresh_no_prune.db"
+    monkeypatch.setattr(sm, "get_db_path", lambda profile_id=1: str(db))
+    monkeypatch.setattr(
+        "fastprompter.utils.portable_backup.run_portable_backup",
+        lambda data, profile_id=1, **_kw: None)
+    monkeypatch.setattr(FastPrompter, "setup_single_instance_server", lambda self: None)
+    monkeypatch.setattr(FastPrompter, "register_all_hotkeys", lambda self: None)
+    monkeypatch.setattr(FastPrompter, "unregister_all_hotkeys", lambda self: None)
+
+    w = FastPrompter()
+    try:
+        w.data["temp_presets"][:] = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"]
+        gaps = [1, 5, 11, 17]
+        names = {"1": "SAIPEN", "5": "FastPrompter",
+                 "11": "AUDAPACK", "17": "SAIPAL"}
+        w.data["silo_gaps_all"]["Code"] = list(gaps)
+        w.data["silo_gap_names_all"]["Code"] = dict(names)
+        w.data["silo_gaps"] = w.data["silo_gaps_all"]["Code"]
+        w.data["silo_gap_names"] = w.data["silo_gap_names_all"]["Code"]
+
+        gaps_before = list(w.data["silo_gaps"])
+        names_before = dict(w.data["silo_gap_names_all"]["Code"])
+        slots_before = list(w.data["temp_presets"])
+
+        w.refresh_temp_presets()
+        w.refresh_temp_presets()          # idempotent: a second render too
+
+        assert w.data["silo_gaps"] == gaps_before, "refresh pruned gap anchors"
+        assert (w.data["silo_gap_names_all"]["Code"] == names_before), (
+            "refresh pruned gap-name metadata")
+        assert w.data["temp_presets"] == slots_before
+        # in-range anchors paint; out-of-range anchors are simply NOT painted
+        visible = {gw.slot_idx for gw in w._user_gap_widgets
+                   if not gw.isHidden()}
+        assert visible == {1, 5}
+        assert {gw.text() for gw in w._user_gap_widgets
+                if not gw.isHidden()} == {"SAIPEN", "FastPrompter"}
+    finally:
+        _teardown_window(w)
 
 
 def test_legacy_python_repr_gaps_are_recovered(tmp_path):
@@ -8430,6 +9127,7 @@ def _two_projects(win):
 def test_transfer_lands_in_destination_silos_not_snippets(win):
     src, dst = _two_projects(win)
     win.data["temp_presets"][0] = "# SAIPENVIEW payload"
+    win.text_area.setPlainText("# SAIPENVIEW payload")
     snips_before = [s for s in win.data["categories"][dst] if s]
     assert win.transfer_silo_to_project(0, dst) is True
     dest_silos = win.data["temp_presets_all"][dst]
@@ -8442,6 +9140,7 @@ def test_transfer_lands_in_destination_silos_not_snippets(win):
 def test_transfer_carries_the_colour_box(win):
     src, dst = _two_projects(win)
     win.data["temp_presets"][0] = "# coloured silo"
+    win.text_area.setPlainText("# coloured silo")
     win.data["silo_colors"]["0"] = "#ff4444"
     assert win.transfer_silo_to_project(0, dst) is True
     dest_silos = win.data["temp_presets_all"][dst]
@@ -8452,6 +9151,7 @@ def test_transfer_carries_the_colour_box(win):
 
 def test_transfer_refuses_empty_and_same_project(win):
     src, dst = _two_projects(win)
+    win.data["temp_presets"].extend([""] * max(0, 2 - len(win.data["temp_presets"])))
     win.data["temp_presets"][1] = ""
     assert win.transfer_silo_to_project(1, dst) is False   # empty silo
     win.data["temp_presets"][1] = "# something"
@@ -8465,6 +9165,7 @@ def test_transfer_appends_when_destination_has_no_blank_row(win):
     dest = win.data.setdefault("temp_presets_all", {}).setdefault(dst, [])
     dest[:] = ["# full a", "# full b"]
     win.data["temp_presets"][0] = "# overflow"
+    win.text_area.setPlainText("# overflow")
     assert win.transfer_silo_to_project(0, dst) is True
     assert dest[-1] == "# overflow"                        # grew, did not drop it
 
@@ -8639,6 +9340,7 @@ def test_right_click_new_appends_at_the_bottom(win):
         p[i] = f"# filled {i}"
     # creation flushes the editor into the active slot first, so keep them in
     # sync or that row is blanked and mistaken for a top insert
+    win.data["new_silo_paste_clipboard"] = "False"
     win.active_temp_slot = 0
     win.text_area.document().setPlainText(p[0])
     before = len(p)
@@ -8679,14 +9381,14 @@ def test_children_map_normalises_string_keys(win):
     win.data["silo_children"] = {}
 
 
-def test_insert_at_top_shifts_watcher_queues(win):
+def test_insert_at_top_shifts_slot_keyed_maps(win):
     p = win.data["temp_presets"]
     for i in range(len(p)):
         p[i] = f"# silo {i}"
-    win.data["watcher_queues"] = {"0": ["job-a"]}
+    win.data["silo_project_paths"] = {"0": "job-a"}
     win.select_empty_silo()
-    assert win.data["watcher_queues"].get("1") == ["job-a"]   # followed its silo
-    win.data["watcher_queues"] = {}
+    assert win.data["silo_project_paths"].get("1") == "job-a"   # followed its silo
+    win.data["silo_project_paths"] = {}
 
 
 def test_slot_list_keeps_the_per_category_alias(win):
@@ -8711,14 +9413,14 @@ def test_insert_at_top_shifts_every_slot_keyed_store(win):
     win.data["silo_ticked"] = [0]
     win.data["pinned_silos"] = [1]
     win.data["silo_colors"] = {"0": "#abcdef"}
-    win.data["watcher_queues"] = {"0": ["q"]}
+    win.data["silo_project_paths"] = {"0": "path-0"}
     win.data["silo_children"] = {2: [3]}
     win.data["silo_gaps"] = [0]
     win.select_empty_silo()
     assert win.data["silo_ticked"] == [1]
     assert win.data["pinned_silos"] == [2]
     assert win.data["silo_colors"].get("1") == "#abcdef"
-    assert win.data["watcher_queues"].get("1") == ["q"]
+    assert win.data["silo_project_paths"].get("1") == "path-0"
     assert win.data["silo_children"] == {3: [4]}
     # T-704 (user's call): a gap belongs to the silo it was placed under, so
     # it shifts with everything else. It used to be left out of the remap,
@@ -8726,7 +9428,7 @@ def test_insert_at_top_shifts_every_slot_keyed_store(win):
     # slots around it and parked it under a stranger.
     assert win.data["silo_gaps"] == [1]
     win.data["silo_children"], win.data["silo_gaps"] = {}, []
-    win.data["watcher_queues"], win.data["silo_colors"] = {}, {}
+    win.data["silo_project_paths"], win.data["silo_colors"] = {}, {}
     win.data["silo_ticked"], win.data["pinned_silos"] = [], []
 
 
@@ -9310,10 +10012,66 @@ def test_numbox_context_menu_anchors_on_its_own_button(win, monkeypatch):
     seen = {}
     monkeypatch.setattr(
         win, "show_cat_context_menu",
-        lambda pos, anchor=None: seen.update(pos=pos, anchor=anchor))
+        lambda pos, anchor=None, project_idx=None: seen.update(
+            pos=pos, anchor=anchor, project_idx=project_idx))
     win._cat_numbox_context(0, QPoint(3, 4))
     assert seen.get("anchor") is win._cat_num_buttons[0]
     assert seen.get("pos") == QPoint(3, 4)
+    assert seen.get("project_idx") == 0
+
+
+def test_numbox_right_click_does_not_open_the_target_project(win, monkeypatch):
+    """Only choosing a context action may navigate to its target project."""
+    from PyQt6.QtCore import QPoint
+    win._rebuild_cat_numbox()
+    if len(win._cat_num_buttons) < 2:
+        pytest.skip("need >=2 projects")
+    win.cat_combo.setCurrentIndex(0)
+    seen = {}
+    monkeypatch.setattr(
+        win, "show_cat_context_menu",
+        lambda pos, anchor=None, project_idx=None: seen.update(
+            project_idx=project_idx))
+
+    win._cat_numbox_context(1, QPoint(2, 2))
+
+    assert win.cat_combo.currentIndex() == 0
+    assert seen == {"project_idx": 1}
+
+
+def test_combo_popup_right_click_does_not_open_the_target_project(
+        win, monkeypatch):
+    from PyQt6.QtCore import QPoint
+    if win.cat_combo.count() < 2:
+        pytest.skip("need >=2 projects")
+    win.cat_combo.setCurrentIndex(0)
+    view = win.cat_combo.view()
+    view.setCurrentIndex(win.cat_combo.model().index(1, 0))
+    rect = view.visualRect(win.cat_combo.model().index(1, 0))
+    seen = {}
+    monkeypatch.setattr(
+        win, "show_cat_context_menu",
+        lambda pos, anchor=None, project_idx=None, global_pos=None: seen.update(
+            project_idx=project_idx, global_pos=global_pos))
+
+    win._cat_combo_popup_context(QPoint(rect.center()))
+
+    assert win.cat_combo.currentIndex() == 0
+    assert seen["project_idx"] == 1
+    assert seen["global_pos"] is not None
+
+
+def test_project_context_action_activates_target_lazily(win):
+    if win.cat_combo.count() < 2:
+        pytest.skip("need >=2 projects")
+    win.cat_combo.setCurrentIndex(0)
+    seen = []
+
+    win._run_project_context_action(
+        1, lambda: seen.append(win.cat_combo.currentIndex()))
+
+    assert seen == [1]
+    assert win.cat_combo.currentIndex() == 1
 
 
 def test_numbox_toggle_mode(win):
@@ -9727,6 +10485,9 @@ def test_numbox_wraps_into_rows_at_the_cap(fresh_win):
 
 def test_numbox_geometry_settings_clamp_and_persist(fresh_win):
     w = fresh_win
+    w.resize(2200, 700)
+    w.show()
+    QApplication.processEvents()
     w._on_numbox_geometry_changed("numbox_per_row", 7)
     assert w.data["numbox_per_row"] == "7"
     assert w.numbox_per_row() == 7
@@ -9751,12 +10512,19 @@ def test_numbox_settings_controls_exist(win):
 def test_token_label_exists_and_follows_its_setting(fresh_win):
     w = fresh_win
     assert hasattr(w, "lbl_token_count")
+    # the label is a responsive topbar item: on a genuinely wide bar the
+    # setting is the only gate, so resize before asking what is visible
+    w.resize(1600, 700)
+    w.show()
+    QApplication.processEvents()
     w.data["show_token_count"] = "False"
     w._update_token_count_label()
+    w._apply_topbar_visibility()
     assert not w.lbl_token_count.isVisibleTo(w.header_widget)
     w.data["show_token_count"] = "True"
     w.text_area.setPlainText("one two three four five")
     w._update_token_count_label()
+    w._apply_topbar_visibility()
     assert w.lbl_token_count.isVisibleTo(w.header_widget)
     assert w.lbl_token_count.text().startswith("~")
     assert w.lbl_token_count.text().endswith("T")
@@ -9802,6 +10570,7 @@ def test_token_mode_click_cycles(fresh_win):
 
 def test_timer_minutes_setting_reaches_the_label(fresh_win):
     w = fresh_win
+    w._ensure_settings_built()   # Settings are lazy-built for startup speed
     assert hasattr(w, "cb_timer_minutes")
     w.data["timer_show_minutes"] = "True"
     w._update_timer_label()        # must not raise with or without timers
@@ -9849,6 +10618,7 @@ def test_fast_mode_survives_a_junk_index(fresh_win):
 
 def test_fast_page_picker_lists_the_real_pages(fresh_win):
     w = fresh_win
+    w._ensure_settings_built()   # Settings are lazy-built for startup speed
     assert hasattr(w, "cb_fast_zone_page")
     from fastprompter.ui.fancy_zones import layouts_for
     names = [n for n, _z in layouts_for(w.data)]
@@ -10070,6 +10840,7 @@ def test_limit_account_checkboxes_hide_by_stable_key(fresh_win):
         w.limit_service._state.accounts = accounts
         w.limit_service._state.snapshots = {}
     w.data["limit_gauges_hidden_accounts"] = []
+    w.data["limit_gauges_hide_unusable_5h"] = "False"
     dialog = LimitSettingsDialog(w)
     selector = dialog.account_selector
     selector.sync(force=True)
@@ -10105,6 +10876,7 @@ def test_limit_gauges_sheds_labels_before_accounts(fresh_win):
         w.limit_service._state.accounts = accounts
         w.limit_service._state.snapshots = {}
     w.data["limit_gauges_hidden_accounts"] = []
+    w.data["limit_gauges_hide_unusable_5h"] = "False"
     w.data["limit_gauges_style"] = "bars"
 
     labeled = w.limit_gauges._cluster_width(True)
@@ -10150,6 +10922,7 @@ def test_limit_settings_are_dedicated_and_alert_once(fresh_win, monkeypatch):
     from fastprompter.ui.limit_settings_dialog import LimitSettingsDialog
 
     w = fresh_win
+    w._ensure_settings_built()
     assert hasattr(w, "btn_limit_settings")
     assert not hasattr(w, "limit_accounts_selector")
     account = AccountRef(
@@ -10159,9 +10932,12 @@ def test_limit_settings_are_dedicated_and_alert_once(fresh_win, monkeypatch):
         [UsageWindow(FIVE_HOUR, 300, True, 90, 10, 1800000000),
          UsageWindow(WEEKLY, 10080, True, 50, 50, 1800100000)],
     )
+    import time
     with w.limit_service._lock:
         w.limit_service._state.accounts = [account]
         w.limit_service._state.snapshots = {account.key: snapshot}
+        w.limit_service._state.last_sweep = time.monotonic()
+        w.limit_service._state.last_discovery = time.monotonic()
     assert w.limit_gauges._status_marker([account]) == ""
     assert w.limit_gauges._status_width([account]) == 0
     dialog = LimitSettingsDialog(w)
@@ -10415,6 +11191,11 @@ def test_vision_button_cycles_the_view_mode(fresh_win):
     from fastprompter.ui.toolbar_reorder import DEFAULT_TOOLBAR_ORDER
     assert "btn_vision" in DEFAULT_TOOLBAR_ORDER
     modes = [w.preview_combo.itemData(i) for i in range(w.preview_combo.count())]
+    # drain any deferred profile/language apply before pinning the start, or
+    # the first cycle races a queued reset to the saved mode
+    QApplication.processEvents()
+    w.preview_combo.setCurrentIndex(0)
+    QApplication.processEvents()
     start = w.preview_combo.currentIndex()
     seen = []
     for _ in range(len(modes) + 1):
@@ -10709,6 +11490,14 @@ def _clipped_buttons(win):
     return bad
 
 
+# 9 themes x 3 scales = 27 full `app.setStyleSheet` passes, each one
+# re-polishing every widget in the application. That is genuinely expensive,
+# and on a machine that is also running something else it walked straight
+# through the suite's 300s per-test budget - at which point pytest-timeout
+# raises in the main thread and the ENTIRE smoke session dies with no summary,
+# taking the results of the other 500 tests with it. A slow test is allowed to
+# be slow; it is not allowed to be the reason nobody can read the gate.
+@pytest.mark.timeout(1800)
 def test_no_button_label_is_clipped_on_any_theme_or_scale(fresh_win):
     """The cropped-icon bug survived from the alpha because every new theme,
     button and scale was a fresh chance to reintroduce it. This is the guard:
@@ -10810,6 +11599,7 @@ def test_normal_window_toggle_does_not_walk_the_window(fresh_win):
     the FRAME, so losing it pulls the window up. Measured +4/+23 one way and
     -4 the other, a step per toggle."""
     w = fresh_win
+    w._ensure_settings_built()   # Settings are lazy-built for startup speed
     w.resize(700, 260)
     w.move(120, 120)
     QApplication.processEvents()
@@ -11086,20 +11876,25 @@ def test_sound_settings_dialog_opens_and_edits(win):
                 assert combo.count() > 1, event
                 assert "missing" not in combo.currentText(), event
 
-            # flipping a row writes through to the map the player reads
+            # flipping a row writes through to the map the player reads.
+            # Enable is the checkable ITEM in column 1; relative volume is a
+            # dB gain slider (0 dB = exactly the global volume).
+            from PyQt6.QtCore import Qt
             row = dlg._rows["click"]
-            dlg.table.cellWidget(row, 1).setChecked(False)
+            dlg.table.item(row, 1).setCheckState(Qt.CheckState.Unchecked)
             assert win.data["sound_events"]["click"]["enabled"] == "False"
-            dlg.table.cellWidget(row, 3).setValue(7)
-            assert win.data["sound_events"]["click"]["volume"] == "7"
-            dlg.table.cellWidget(row, 3).setValue(0)
+            gain = dlg._gains["click"]
+            gain.setValue(7)
+            assert win.data["sound_events"]["click"]["gain_db"] == "7.0"
             assert win.data["sound_events"]["click"]["volume"] == ""
+            gain.setValue(0)
+            assert win.data["sound_events"]["click"]["gain_db"] == "0.0"
 
             # loading must not write back — and must not stack a second
             # connection onto every widget, which is what made one click
             # fire the handler twice after a reset
             dlg._load_settings()
-            dlg.table.cellWidget(row, 1).setChecked(True)
+            dlg.table.item(row, 1).setCheckState(Qt.CheckState.Checked)
             assert win.data["sound_events"]["click"]["enabled"] == "True"
 
             # the filter hides rows by label AND by event id
@@ -11391,21 +12186,31 @@ def test_switching_mode_keeps_every_silo_button(win):
 def test_drop_maths_follows_the_axis(win):
     """T-702's rule, one implementation, both orientations: the pointer in a
     button's leading band inserts before it, trailing band after it."""
-    from PyQt6.QtCore import QPoint
+    from PyQt6.QtCore import QPoint, Qt
 
     w = win.silos_widget
     saved = win.data.get("silo_tabs_mode", "sidebar")
     try:
         win.apply_silo_tabs_mode(True)
+        QApplication.processEvents()
         btns = w._visible_buttons()
         if len(btns) < 2:
             import pytest as _pytest
             _pytest.skip("needs at least two visible silos")
         g = btns[0].geometry()
+        if g.width() <= 1:  # offscreen Qt can leave the hidden tab strip at 0px
+            for i, button in enumerate(btns):
+                button.setGeometry(i * 102, 0, 100, 21)
+            btns = w._visible_buttons()
+            g = btns[0].geometry()
         assert w._drop_target_at(QPoint(g.left() + 1, g.center().y())) == ("move", 0)
         assert w._drop_target_at(QPoint(g.right() - 1, g.center().y())) == ("move", 1)
-        mode, target = w._drop_target_at(QPoint(g.center().x(), g.center().y()))
-        assert mode == "swap" and target is btns[0]
+        midpoint = QPoint(g.left() + g.width() // 2, g.center().y())
+        assert w._drop_target_at(midpoint) == ("move", 1)
+        assert w._drop_operation_at(
+            midpoint, Qt.KeyboardModifier.ShiftModifier) == ("swap", btns[0])
+        assert w._drop_operation_at(
+            midpoint, Qt.KeyboardModifier.ControlModifier) == ("nest", btns[0])
     finally:
         win.apply_silo_tabs_mode(saved == "tabs")
 
@@ -11478,21 +12283,22 @@ def test_silo_preset_invalid_index_is_no_undo_step(win):
     assert len(win.data_undo_stack) == before + 1, "valid index = one undo step"
 
 
-def test_insert_silo_at_return_contract(win):
+def test_insert_silo_at_return_contract(fresh_win):
     """P0: insert_silo_at returns the slot on success and None when the
     workspace is full, so callers can tell a real restore from a no-op."""
-    win.data["temp_presets"] = ["keep", "target"]
+    win = fresh_win
+    win.data["temp_presets"][:] = ["keep", "target"]
     win.silo_docs[:] = [None, None]
     win._switch_to_slot(0, initial=True)
     assert win.insert_silo_at("fresh", pos=1) == 1
     assert win.data["temp_presets"][1] == "fresh"
 
     n = win.MAX_SILOS_PER_CATEGORY
-    win.data["temp_presets"] = ["x"] * n
+    win.data["temp_presets"][:] = ["x"] * n
     win.silo_docs[:] = [None] * n
     assert win.insert_silo_at("extra") is None, "full workspace refuses"
     win.data["temp_presets"][5] = ""
-    assert win.insert_silo_at("restored") == 5
+    assert win.insert_silo_at("restored") == 5, "a pristine blank is reused"
     assert win.data["temp_presets"][5] == "restored"
 
 
@@ -11579,13 +12385,20 @@ def test_paste_image_fc_refresh_does_not_hide(win):
 
 def test_fc_refresh_guard_in_code():
     """The guard pattern must exist in the source — this is a structural
-    check that catches regressions if someone removes the try/finally."""
+    check that catches regressions if someone removes the try/finally.
+
+    The paste path was split (T-1269C): insertFromMimeData delegates, and the
+    image-save branch of _insert_from_mime_data is what refreshes the file
+    container — that is where the focus-loss guard has to live."""
     import inspect
 
     from fastprompter.ui.editor import VaultTextEdit
-    source = inspect.getsource(VaultTextEdit.insertFromMimeData)
+    source = inspect.getsource(VaultTextEdit._insert_from_mime_data)
     assert "ignore_focus_loss" in source, (
-        "insertFromMimeData must guard fc.refresh() with ignore_focus_loss"
+        "the paste image path must guard fc.refresh() with ignore_focus_loss"
+    )
+    assert "fc.refresh()" in source, (
+        "the structural anchor moved — re-point this check at the real refresh"
     )
 
 
@@ -11911,9 +12724,14 @@ def test_a_toast_never_lands_off_screen(win):
             if t is not None:
                 made.append(t)
         assert made, "no toast could be shown"
-        area = QApplication.primaryScreen().availableGeometry()
+        # a toast belongs to the screen its own window is on (multi-monitor),
+        # so the owner-approved placement contract is judged per-screen, not
+        # against the primary screen the window may legitimately not be on
         for t in made:
             g = t.geometry()
+            screen = QApplication.screenAt(g.center()) or QApplication.primaryScreen()
+            assert screen is not None, f"toast at {g.topLeft()} has no screen"
+            area = screen.availableGeometry()
             assert area.contains(g.topLeft()), f"toast at {g.topLeft()} is off-screen"
             assert g.top() >= area.top(), f"toast pushed above the screen: {g}"
     finally:
@@ -12155,9 +12973,11 @@ def test_timer_sound_picker_offers_the_whole_library(win):
         assert data[0] == "tick"
         dlg._select_sound("file:" + shipped[0])
         assert cb.currentData() == "file:" + shipped[0]
-        # a file that is no longer shipped falls back instead of going blank
+        # a file that is no longer shipped keeps the STORED ref verbatim and
+        # is labelled missing — a silent fallback would rewrite the user value
         dlg._select_sound("file:gone_forever.wav")
-        assert cb.currentData() == "tick"
+        assert cb.currentData() == "file:gone_forever.wav"
+        assert "(missing)" in cb.currentText()
     finally:
         dlg.deleteLater()
 

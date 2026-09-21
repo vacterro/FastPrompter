@@ -11,6 +11,7 @@ import markdown
 from PyQt6.QtGui import QFont, QTextBlockFormat, QTextCharFormat, QTextCursor
 
 from fastprompter.core.ctrlw import build_template
+from fastprompter.ui.qt_text_coords import qt_units
 
 # Pre-compiled regex patterns for markdown processing
 _RE_DASH_LINE = re.compile(r"^\s*-{3,}\s*$")
@@ -59,9 +60,38 @@ class FormattingMixin:
                 return False
         return True
 
+    @staticmethod
+    def _doc_slice(doc, start, end):
+        """Read [start, end) of ``doc`` in QT UTF-16 positions.
+
+        T-1269: the ONLY way this mixin reads document text. Indexing
+        ``toPlainText()`` with QTextCursor positions mixes UTF-16 document
+        offsets with Python code-point indexes, and the two diverge at the
+        first non-BMP character -- the old code sliced the wrong substring
+        and spliced it back over the right range, so characters vanished,
+        duplicated or were replaced by their neighbours.
+        """
+        last = doc.characterCount() - 1
+        start = max(0, min(start, last))
+        end = max(0, min(end, last))
+        if end <= start:
+            return ""
+        cur = QTextCursor(doc)
+        cur.setPosition(start)
+        cur.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
+        # selectedText() exposes block boundaries as U+2029; the markdown
+        # logic (and the caller's insertText) speaks newlines.
+        return cur.selectedText().replace(chr(0x2029), chr(10))
+
     def apply_format(self, fmt_type):
         """Toggle markdown markers around the selection (word at cursor if
-        nothing is selected). The highlighter renders the marked spans."""
+        nothing is selected). The highlighter renders the marked spans.
+
+        T-1269: every position here is a QT UTF-16 document offset, and every
+        piece of text is read through ``_doc_slice``. Lengths that are added
+        to a position go through ``qt_units`` for the same reason. The markers
+        themselves are ASCII, so ``len(marker)`` is already a Qt length.
+        """
         marker = self._MD_MARKERS.get(fmt_type)
         if marker is None:
             return
@@ -71,28 +101,31 @@ class FormattingMixin:
             cursor.select(QTextCursor.SelectionType.WordUnderCursor)
             if not cursor.hasSelection():
                 return
-        doc_text = ta.toPlainText()
+        doc = ta.document()
         start, end = cursor.selectionStart(), cursor.selectionEnd()
-        sel = doc_text[start:end]
+        sel = self._doc_slice(doc, start, end)
         # keep markers tight against the text, not surrounding whitespace
-        start += len(sel) - len(sel.lstrip())
-        end -= len(sel) - len(sel.rstrip())
+        stripped = sel.lstrip()
+        start += qt_units(sel[:len(sel) - len(stripped)])
+        end -= qt_units(sel[len(sel.rstrip()):])
         if start >= end:
             return
-        sel = doc_text[start:end]
+        sel = self._doc_slice(doc, start, end)
         m = len(marker)
 
         wrapped_inside = self._md_wrapped(sel, marker)
         wrapped_outside = False
         if not wrapped_inside:
             wrapped_outside = (
-                doc_text[max(0, start - m):start] == marker
-                and doc_text[end:end + m] == marker
+                self._doc_slice(doc, start - m, start) == marker
+                and self._doc_slice(doc, end, end + m) == marker
             )
             if wrapped_outside and marker == "*":
-                if doc_text[max(0, start - 2):start] == "**" and doc_text[max(0, start - 3):start] != "***":
+                if (self._doc_slice(doc, start - 2, start) == "**"
+                        and self._doc_slice(doc, start - 3, start) != "***"):
                     wrapped_outside = False
-                elif doc_text[end:end + 2] == "**" and doc_text[end:end + 3] != "***":
+                elif (self._doc_slice(doc, end, end + 2) == "**"
+                        and self._doc_slice(doc, end, end + 3) != "***"):
                     wrapped_outside = False
 
         cursor.beginEditBlock()
@@ -105,17 +138,19 @@ class FormattingMixin:
             cursor.setPosition(start - m)
             cursor.setPosition(end + m, QTextCursor.MoveMode.KeepAnchor)
             cursor.insertText(sel)
-            new_start, new_end = start - m, start - m + len(sel)
+            new_start = start - m
+            new_end = new_start + qt_units(sel)
         else:
             cursor.setPosition(start)
             cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
             cursor.insertText(f"{marker}{sel}{marker}")
-            new_start, new_end = start + m, start + m + len(sel)
+            new_start = start + m
+            new_end = new_start + qt_units(sel)
 
         cursor.setPosition(new_start)
         cursor.setPosition(new_end, QTextCursor.MoveMode.KeepAnchor)
         ta.setTextCursor(cursor)
-        
+
         cursor.endEditBlock()
         ta._undo_boundary_pending = True
 
@@ -136,48 +171,120 @@ class FormattingMixin:
         self.apply_format("bold")
 
     def toggle_quote_conversion(self):
-        """Wrap/unwrap the selected lines (or the current line) as a '> '
-        quote block. A quote of 2+ lines becomes foldable — see editor.py
-        _is_quote_start/_fold_range — collapsing down to its first line."""
+        """Ctrl+Shift+Q: whole-block quote wrap with immediate collapse.
+
+        A multi-block selection is normalized to whole QTextBlocks (outer
+        blank separators stay outside, inner blanks become bare '>' quote
+        continuations) so the entire chunk becomes ONE collapsible quote
+        run (see editor.py _is_quote_start/_fold_range) that folds down to
+        its first line immediately. Leading indentation is preserved after
+        the marker, so quote->unquote restores the original plaintext.
+
+        Unquote removes the markers from the whole target range — with no
+        selection inside a multi-block quote run, the WHOLE run is the
+        target, never just the visible anchor line.
+        """
         ta = self.text_area
         cursor = ta.textCursor()
+        doc = ta.document()
 
         # Expand anything collapsed in the affected range FIRST. Unquoting a
         # collapsed quote removes its fold anchor, and the hidden lines would
         # stay hidden with nothing left to re-expand them — the text looks
         # destroyed even though it's all still there.
         try:
-            doc = ta.document()
             if cursor.hasSelection():
-                first = doc.findBlock(cursor.selectionStart()).blockNumber()
-                last = doc.findBlock(cursor.selectionEnd()).blockNumber()
+                scan_first = doc.findBlock(cursor.selectionStart()).blockNumber()
+                scan_last = doc.findBlock(cursor.selectionEnd()).blockNumber()
             else:
-                first = last = cursor.block().blockNumber()
-            for n in range(max(0, first - 1), last + 1):
+                scan_first = scan_last = cursor.block().blockNumber()
+            for n in range(max(0, scan_first - 1), scan_last + 1):
                 ta.expand_fold_at(doc.findBlockByNumber(n))
         except Exception:
             pass
 
+        if cursor.hasSelection():
+            first_n = doc.findBlock(cursor.selectionStart()).blockNumber()
+            last_n = doc.findBlock(cursor.selectionEnd()).blockNumber()
+            # A selection ending exactly at the start of a block does not
+            # include that block (same boundary rule as Tab indentation).
+            if (last_n > first_n
+                    and cursor.selectionEnd()
+                    == doc.findBlockByNumber(last_n).position()):
+                last_n -= 1
+            # Outer blank separators stay outside the quote group; inner
+            # ones join it as continuations.
+            while (first_n < last_n
+                   and not doc.findBlockByNumber(first_n).text().strip()):
+                first_n += 1
+            while (last_n > first_n
+                   and not doc.findBlockByNumber(last_n).text().strip()):
+                last_n -= 1
+            if not doc.findBlockByNumber(first_n).text().strip():
+                first_n = -1  # nothing but blanks selected
+        else:
+            block = cursor.block()
+            first_n = last_n = block.blockNumber()
+            if ta._is_quote_line(block.text()):
+                # No selection inside a quote run: the WHOLE run is the
+                # target, so a group can never be left half-unquoted with
+                # an orphaned tail behind its unquoted anchor.
+                b = block.previous()
+                while b.isValid() and ta._is_quote_line(b.text()):
+                    b = b.previous()
+                first_n = (b.blockNumber() + 1 if b.isValid() else 0)
+                b = block.next()
+                while b.isValid() and ta._is_quote_line(b.text()):
+                    b = b.next()
+                last_n = (b.blockNumber() - 1 if b.isValid()
+                          else doc.blockCount() - 1)
+        if first_n < 0:
+            ta.rescue_orphan_folds()
+            ta.setFocus()
+            self.mark_dirty()
+            return
+
+        lines = [doc.findBlockByNumber(n).text()
+                 for n in range(first_n, last_n + 1)]
+        non_empty = [ln for ln in lines if ln.strip()]
+        is_quoted = bool(non_empty) and all(
+            ln.lstrip().startswith(">") for ln in non_empty)
+        if is_quoted:
+            new_lines = [re.sub(r"^(\s*)>\s?", r"\1", ln) for ln in lines]
+        else:
+            # One contiguous quote run: the marker goes in front, the line
+            # keeps its exact leading whitespace, blanks become bare '>'.
+            new_lines = [">" if not ln.strip() else "> " + ln
+                         for ln in lines]
+
+        insert_pos = -1
         cursor.beginEditBlock()
         try:
-            if cursor.hasSelection():
-                text = cursor.selectedText().replace(" ", "\n")
-            else:
-                cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
-                cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock,
-                                    QTextCursor.MoveMode.KeepAnchor)
-                text = cursor.selectedText()
-
-            lines = text.split("\n") or [""]
-            non_empty = [ln for ln in lines if ln.strip()]
-            if non_empty and all(ln.lstrip().startswith(">") for ln in non_empty):
-                new_lines = [re.sub(r"^(\s*)>\s?", r"\1", ln) for ln in lines]
-            else:
-                new_lines = [ln if not ln.strip() else f"> {ln.lstrip()}" for ln in lines]
+            cursor.setPosition(doc.findBlockByNumber(first_n).position())
+            last_blk = doc.findBlockByNumber(last_n)
+            cursor.setPosition(last_blk.position() + last_blk.length() - 1,
+                               QTextCursor.MoveMode.KeepAnchor)
+            insert_pos = cursor.position()
             cursor.insertText("\n".join(new_lines))
         finally:
             cursor.endEditBlock()
             ta._undo_boundary_pending = True
+
+        if not is_quoted and insert_pos >= 0:
+            # Auto-collapse: the new group folds down to its first line
+            # immediately — the command means "store this chunk compactly",
+            # not "then go hunt for the fold button".
+            try:
+                anchor = doc.findBlock(insert_pos)
+                while (anchor.isValid() and anchor.blockNumber() > 0
+                       and ta._is_quote_line(anchor.previous().text())):
+                    anchor = anchor.previous()
+                if ta._is_quote_start(anchor):
+                    rng = ta._fold_range(anchor)
+                    if rng is not None:
+                        ta.toggle_fold(anchor)
+            except Exception:
+                pass
         # belt and braces: nothing may be left hidden without an anchor
         try:
             ta.rescue_orphan_folds()

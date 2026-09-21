@@ -1,9 +1,11 @@
 ﻿def test_t1015_toast_sentinel_palette():
+    import datetime
+
+    from PyQt6.QtWidgets import QApplication
+
     import fastprompter.ui.timer_toast
     from fastprompter.core.timers import Timer
-    from PyQt6.QtWidgets import QApplication
-    import datetime
-    qapp = QApplication.instance() or QApplication([])
+    _qapp = QApplication.instance() or QApplication([])
 
     class MockMainWin:
         def __init__(self):

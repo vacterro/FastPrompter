@@ -21,21 +21,39 @@ def _data(text):
     }
 
 
+def _view(mark):
+    """The committed view the real commit registers for one exported state.
+
+    ``temp_rows`` carries the SILO text (``(cat, index, content)``);
+    ``preset_rows`` carries snippet rows.
+    """
+    return {"cats_order": ("A",),
+            "preset_rows": frozenset(),
+            "temp_rows": frozenset({("A", 0, mark)}),
+            "arc_rows": frozenset()}
+
+
 def _silo_path(backup_dir):
     day = time.strftime("%Y-%m-%d")
     return os.path.join(backup_dir, day, "silos", "a", "silo_001.md")
 
 
 def _wait_for_idle(timeout=5.0):
+    """Drain BOTH layers: the main sink queue AND the portable layer's
+    coalescing intent (PERF-005: a superseding save lives there until the
+    active generation completes and the deferred snapshot is materialised)."""
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         _app.processEvents()
-        if not m._BACKUP_INFLIGHT and not m._BACKUP_PENDING:
+        if (not m._BACKUP_INFLIGHT and not m._BACKUP_PENDING
+                and not pb._backup_active and not pb._backup_newer_wanted):
+            _app.processEvents()
             return
         time.sleep(0.01)
     pytest.fail(
         "portable backup did not become idle: "
-        f"inflight={m._BACKUP_INFLIGHT}, pending={m._BACKUP_PENDING!r}"
+        f"inflight={m._BACKUP_INFLIGHT}, pending={m._BACKUP_PENDING!r}, "
+        f"active={pb._backup_active!r}, newer={pb._backup_newer_wanted!r}"
     )
 
 
@@ -49,7 +67,16 @@ def production_backup(tmp_path, monkeypatch):
     m._BACKUP_GEN = 0
     m._BACKUP_LAST_SUCCESS_GEN = 0
     m._BACKUP_LAST_FAILED_GEN = 0
+    m._BACKUP_NEWEST_GEN = {}
     pb.last_success_by_profile.clear()
+    # PERF-005 coalescing state is process-global: every test owns a clean one
+    pb._backup_active.clear()
+    pb._backup_newer_wanted.clear()
+    pb._backup_pending_data.clear()
+    pb._backup_pending_gen.clear()
+    pb._committed_view_by_profile.clear()
+    pb._last_exported_gen_by_profile.clear()
+    pb._last_exported_day_by_profile.clear()
     pb.set_backup_sink(None)
     m._BACKUP_SINK_INSTALLED = False
     m._install_portable_backup_sink()
@@ -120,12 +147,19 @@ def test_real_completion_drains_newest_coalesced_backup(
 
     monkeypatch.setattr(pb, "_do_export", blocking_export)
 
-    pb.run_portable_backup(_data("generation A"))
+    pb.note_committed_view(1, 1, **_view("generation A"))
+    pb.run_portable_backup(_data("generation A"), profile_id=1, content_gen=1)
     assert started.wait(2.0), "generation A never reached production worker"
-    pb.run_portable_backup(_data("generation B"))
-    pb.run_portable_backup(_data("generation C"))
+    pb.note_committed_view(1, 2, **_view("generation B"))
+    pb.run_portable_backup(_data("generation B"), profile_id=1, content_gen=2)
+    pb.note_committed_view(1, 3, **_view("generation C"))
+    pb.run_portable_backup(_data("generation C"), profile_id=1, content_gen=3)
 
-    assert m._BACKUP_PENDING[1]["temp_presets_all"]["A"] == ["generation C"]
+    # PERF-005: a superseding save records only the newest generation intent;
+    # the deferred snapshot is materialised from the committed view at
+    # completion time, never captured from live data
+    assert pb._backup_pending_gen.get(1) == 3
+    assert pb._backup_newer_wanted == {1}
     release.set()
     _wait_for_idle()
 
@@ -158,9 +192,11 @@ def test_failed_newest_generation_is_immediately_retryable(
     monkeypatch.setattr(pb, "_do_export", export_with_newest_failure)
     monkeypatch.setattr(pb, "_BACKUP_THROTTLE", 120)
 
-    pb.run_portable_backup(_data("generation A"))
+    pb.note_committed_view(1, 1, **_view("generation A"))
+    pb.run_portable_backup(_data("generation A"), profile_id=1, content_gen=1)
     assert started.wait(2.0), "generation A never reached production worker"
-    pb.run_portable_backup(_data("generation B"))
+    pb.note_committed_view(1, 2, **_view("generation B"))
+    pb.run_portable_backup(_data("generation B"), profile_id=1, content_gen=2)
     release.set()
     _wait_for_idle()
 
@@ -168,7 +204,8 @@ def test_failed_newest_generation_is_immediately_retryable(
     assert m._BACKUP_LAST_FAILED_GEN == 2
     assert pb.last_success_by_profile.get(1, 0.0) == 0.0
 
-    pb.run_portable_backup(_data("generation C"))
+    pb.note_committed_view(1, 3, **_view("generation C"))
+    pb.run_portable_backup(_data("generation C"), profile_id=1, content_gen=3)
     _wait_for_idle()
     assert exported == ["generation A", "generation B", "generation C"]
     assert "generation C" in open(
@@ -189,7 +226,8 @@ def test_clean_busy_shutdown_allows_worker_recreation(
         return real_export(snapshot, profile_id=profile_id)
 
     monkeypatch.setattr(pb, "_do_export", slow_export)
-    pb.run_portable_backup(_data("before shutdown"))
+    pb.note_committed_view(1, 1, **_view("before shutdown"))
+    pb.run_portable_backup(_data("before shutdown"), profile_id=1, content_gen=1)
     assert started.wait(2.0), "backup never became physically busy"
     old_worker = m._BACKUP_WORKER
 
@@ -200,7 +238,8 @@ def test_clean_busy_shutdown_allows_worker_recreation(
     assert m._BACKUP_INFLIGHT == {}
 
     pb.last_success_by_profile.clear()
-    pb.run_portable_backup(_data("after recreation"))
+    pb.note_committed_view(1, 2, **_view("after recreation"))
+    pb.run_portable_backup(_data("after recreation"), profile_id=1, content_gen=2)
     _wait_for_idle()
     assert m._BACKUP_WORKER is not old_worker
     assert "after recreation" in open(

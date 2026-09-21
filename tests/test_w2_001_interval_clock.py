@@ -4,10 +4,10 @@ even when the 1Hz tick is delayed past second==0 (boundary crossing, not the
 second==0 sample).
 """
 
+import datetime as _dt_mod
 import os
 import sys
 import time as _time_mod
-import datetime as _dt_mod
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 

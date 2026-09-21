@@ -96,6 +96,10 @@ ROLES: tuple[LimitColor, ...] = (
     LimitColor("reset_zcode", "ZCode reset timer",
                "Header countdown colour when ZCode refills next",
                PROVIDER_RESET_COLORS["zcode"]),
+    LimitColor("reset_freebuff", "Freebuff reset timer",
+               "Header countdown colour when Freebuff's daily Freebucks "
+               "refill next",
+               PROVIDER_RESET_COLORS["freebuff"]),
 )
 
 ROLES_BY_KEY = {role.key: role for role in ROLES}

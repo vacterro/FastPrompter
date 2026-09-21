@@ -6,7 +6,6 @@ empty-folder branch.
 
 import os
 import sys
-import time as _time
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
@@ -15,7 +14,6 @@ from fastprompter.ui import file_container as fc  # noqa: E402
 
 
 def test_file_count_cache_bounded():
-    host = main_mod.FastPrompter
     c = {}
     for i in range(main_mod._FILE_COUNT_CACHE_CAP + 500):
         main_mod.FastPrompter._bounded_cache_put(
@@ -29,7 +27,6 @@ def test_file_count_cache_bounded():
 
 
 def test_tooltip_cache_bounded():
-    host = main_mod.FastPrompter
     c = {}
     for i in range(main_mod._TOOLTIP_CACHE_CAP + 200):
         main_mod.FastPrompter._bounded_cache_put(
@@ -45,7 +42,6 @@ def test_folder_summary_evicts_after_empty_insert():
     fc._folder_summary_cache.clear()
     import tempfile
     base = tempfile.mkdtemp()
-    keys = []
     for i in range(80):
         d = os.path.join(base, f"empty_{i}")
         os.makedirs(d, exist_ok=True)

@@ -17,32 +17,15 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import pytest
 from PyQt6.QtWidgets import QApplication
 
-import fastprompter.core.state as state_mod
-from fastprompter.main import FastPrompter
-
 _app = QApplication.instance() or QApplication([])
 _tmpdir = tempfile.mkdtemp(prefix="fastprompter_quit_")
 
 
 @pytest.fixture(scope="module")
-def win():
-    state_mod.get_db_path = lambda profile_id=1: os.path.join(_tmpdir, "q.db")
-    state_mod.run_portable_backup = lambda data, profile_id=1: None
-    FastPrompter.setup_single_instance_server = lambda self: None
-    FastPrompter.register_all_hotkeys = lambda self: None
-    FastPrompter.unregister_all_hotkeys = lambda self: None
-    w = FastPrompter()
-    w.resize(960, 540)
-    w.show()
-    _app.processEvents()
+def win(smoke_win):
+    w = smoke_win.create(show=True, size=(960, 540))
     yield w
-    try:
-        w._watcher_shutdown()
-    except Exception:
-        pass
-    w.auto_save_timer.stop()
-    w.topmost_timer.stop()
-    w.close()
+    smoke_win.retire(w)
 
 
 def test_quit_refuses_when_final_save_fails(win, monkeypatch):
@@ -51,6 +34,8 @@ def test_quit_refuses_when_final_save_fails(win, monkeypatch):
                         lambda force=False: order.append("save") or False)
     monkeypatch.setattr(QApplication, "quit",
                         lambda: order.append("quit"))
+    monkeypatch.setattr(win.sound_manager, "play_to_completion",
+                        lambda name: order.append(f"sound:{name}"))
     win._logical_finalized = False
     win.quit_app()
     assert order == ["save"]
@@ -63,10 +48,30 @@ def test_quit_finalizes_then_quits_when_save_ok(win, monkeypatch):
                         lambda force=False: order.append("save") or True)
     monkeypatch.setattr(QApplication, "quit",
                         lambda: order.append("quit"))
+    monkeypatch.setattr(win.sound_manager, "play_to_completion",
+                        lambda name: order.append(f"sound:{name}"))
     win._logical_finalized = False
     win.quit_app()
-    assert order == ["save", "quit"]
+    assert order == ["save", "sound:quit", "quit"]
     assert getattr(win, "_logical_finalized", False) is True
+
+
+def test_quit_sound_nested_loop_rejects_reentrant_quit(win, monkeypatch):
+    order = []
+    monkeypatch.setattr(win, "save_data_to_db", lambda force=False: True)
+    monkeypatch.setattr(QApplication, "quit",
+                        lambda: order.append("quit"))
+
+    def sound(name):
+        order.append(f"sound:{name}")
+        win.quit_app()
+
+    monkeypatch.setattr(win.sound_manager, "play_to_completion", sound)
+    win._logical_finalized = False
+
+    win.quit_app()
+
+    assert order == ["sound:quit", "quit"]
 
 
 

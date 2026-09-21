@@ -1,8 +1,9 @@
-﻿import os
-import sys
+﻿import argparse
 import json
-import argparse
+import os
+import sys
 from pathlib import Path
+
 
 def main():
     parser = argparse.ArgumentParser(description="Sync saitranslate locales.")

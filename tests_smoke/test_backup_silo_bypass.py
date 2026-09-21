@@ -6,8 +6,8 @@ The old implementation built its folder by hand:
     path = os.path.join(folder, name)
     open(path, "w")
 
-which (a) used the RAW category name вЂ” ``..\\outside`` escapes the files
-root entirely вЂ” (b) accepted ANY user filename, so ``..\\evil.txt`` or
+which (a) used the RAW category name — ``..\\outside`` escapes the files
+root entirely — (b) accepted ANY user filename, so ``..\\evil.txt`` or
 ``C:\\evil.txt`` escaped the folder, and (c) silently overwrote an existing
 destination with a plain ``open(..., "w")``.
 
@@ -28,28 +28,15 @@ import tempfile
 import pytest
 from PyQt6.QtWidgets import QApplication, QDialog, QLineEdit, QMessageBox
 
-import fastprompter.core.state as state_mod
-from fastprompter.main import FastPrompter
-
 _app = QApplication.instance() or QApplication([])
 _tmpdir = tempfile.mkdtemp(prefix="fastprompter_backup_bypass_")
 
 
 @pytest.fixture(scope="module")
-def win():
-    state_mod.get_db_path = lambda profile_id=1: os.path.join(_tmpdir, f"bb_{profile_id}.db")
-    state_mod.run_portable_backup = lambda data, profile_id=1: None
-    FastPrompter.setup_single_instance_server = lambda self: None
-    FastPrompter.register_all_hotkeys = lambda self: None
-    FastPrompter.unregister_all_hotkeys = lambda self: None
-    w = FastPrompter()
-    w.resize(960, 540)
-    w.show()
-    _app.processEvents()
+def win(smoke_win):
+    w = smoke_win.create(show=True, size=(960, 540))
     yield w
-    w.auto_save_timer.stop()
-    w.topmost_timer.stop()
-    w.close()
+    smoke_win.retire(w)
 
 
 @pytest.fixture()
@@ -173,7 +160,7 @@ def test_batch_save_goes_through_the_same_safe_path(hostile_win, tmp_path, monke
 
 def test_hostile_category_name_still_resolves_inside_the_root(hostile_win):
     """The canonical helper must map the hostile category to a SAFE component
-    inside the files root вЂ” never use the raw name as a path segment."""
+    inside the files root — never use the raw name as a path segment."""
     win, root = hostile_win
     comp = win._category_files_dir("..\\outside")
     assert os.path.sep not in comp and "\\" not in comp and "/" not in comp

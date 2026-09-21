@@ -9,7 +9,21 @@ names, watcher not re-armed) fail here instead of at the user's desk.
 import datetime
 import os
 
+import pytest
+from PyQt6.QtWidgets import QApplication
+
 from fastprompter.core.timers import Timer
+
+
+@pytest.fixture(scope="module")
+def win(smoke_win):
+    """A window that has finished its deferred startup before any test seeds
+    sync state: the first event-loop turn applies the deferred profile runtime
+    and clears the initializing guards the push path respects."""
+    w = smoke_win.create()
+    QApplication.processEvents()
+    yield w
+    smoke_win.retire(w)
 
 
 def _set_silo(win, text):

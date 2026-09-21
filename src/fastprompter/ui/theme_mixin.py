@@ -23,6 +23,7 @@ from fastprompter.theme.themes import (
     header_view_qss,
     scrollbar_qss,
 )
+from fastprompter.ui.qt_lifetime import weak_qt_callback
 from fastprompter.utils.paths import get_resource_path
 
 _is_deleted = sip.isdeleted
@@ -165,6 +166,9 @@ class ThemeMixin:
             # cropped" was. Property selector, so it beats the plain
             # QPushButton rule in every theme without editing all of them.
             "QPushButton[fp_icon_button=\"true\"] { padding: 0px; }\n"
+            "QCheckBox::indicator { border-radius: 0px; }\n"
+            "QPushButton[fp_numbox=\"true\"] { padding: 0px; }\n"
+            "QPushButton[fp_numbox=\"true\"]:pressed, QPushButton[fp_numbox=\"true\"]:checked { padding: 1px 0px 0px 1px; }\n"
         )
         raw = theme.get("raw_colors") or {}
         extra_qss = no_focus_rect_qss
@@ -175,7 +179,14 @@ class ThemeMixin:
         # Not behind a setting: an unstyled header is a white bar across a
         # dark dialog, which is a defect rather than a preference.
         extra_qss += header_view_qss(raw)
-        QApplication.instance().setStyleSheet(theme["stylesheet"] + extra_qss)
+        app = QApplication.instance()
+        app_qss = theme["stylesheet"] + extra_qss
+        # setStyleSheet repolishes every widget in the process, including Qt
+        # objects waiting for DeferredDelete. Reapplying byte-identical QSS
+        # during rapid close/reopen is wasted work and can enter native style
+        # code with a half-torn-down widget tree.
+        if app.styleSheet() != app_qss:
+            app.setStyleSheet(app_qss)
 
         # Header/toolbar bar gets its own per-theme tint instead of blending
         # flat into the window. NOTE: a plain QWidget needs
@@ -197,7 +208,8 @@ class ThemeMixin:
         if hasattr(self, "_apply_header_density"):
             from PyQt6.QtCore import QTimer
             self._header_dense = None  # force a full re-pack
-            QTimer.singleShot(0, self._apply_header_density)
+            QTimer.singleShot(0, weak_qt_callback(
+                self, type(self)._apply_header_density))
         # through scale_button_qss: the fixed px font/padding in these
         # strings is what crushed the labels at small UI scales
         self.btn_new.setStyleSheet(self.scale_button_qss(theme["btn_new"]))
@@ -249,6 +261,19 @@ class ThemeMixin:
             self.repolish_icon_buttons()
         except Exception:
             logger.debug("apply_theme: icon-button repolish failed", exc_info=True)
+
+        # Painted event pictograms carry the OLD theme's colour in cached
+        # pixmaps. If a Sound Settings dialog is open across the theme switch,
+        # regenerate just its icons — no other dialog state is rebuilt (spec 21).
+        # getattr guards: the dialog may not exist yet, may already be closed,
+        # or its widgets may be mid-teardown.
+        try:
+            from fastprompter.ui import sound_settings_dialog as _ssd
+            _dlg = getattr(_ssd, "_LAST_INSTANCE", None)
+            if _dlg is not None and not _ssd._is_deleted(_dlg):
+                _dlg.repaint_event_icons()
+        except Exception:
+            logger.debug("apply_theme: event-icon repaint failed", exc_info=True)
 
         self._begin_batch_update()
         try:
@@ -531,7 +556,19 @@ class ThemeMixin:
             self._sync_live_preview_highlighter()
 
         elif mode == "Reading":
+            # T-1269C append: Reading is a PRESENTATION mode. ``preview_area``
+            # (the only surface on screen here) is read-only, so no editing can
+            # reach the user -- but ``text_area`` used to stay WRITABLE while
+            # hidden. Every paste route into it then succeeded invisibly:
+            # ``keyPressEvent`` played the paste cue, ``insertFromMimeData``
+            # wrote "INTRUDER" into a document nobody was looking at, and the
+            # operator saw "the paste sound, and no text" -- intermittently,
+            # because it depends on which view was active. Marking the hidden
+            # editor read-only states the truth instead of forcing an insertion
+            # into a surface that is not presented, and it makes the refusal
+            # honest: no cue, nothing written, and a recorded reason.
             self.text_area.setVisible(False)
+            self.text_area.setReadOnly(True)
             self.preview_area.setVisible(True)
             if not self._preview_connected:
                 if not hasattr(self, "_preview_timer"):

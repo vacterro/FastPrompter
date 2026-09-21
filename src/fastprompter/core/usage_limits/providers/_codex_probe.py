@@ -19,10 +19,14 @@ from fastprompter.core.usage_limits.cli_tools import (
     silent_creationflags,
     silent_startupinfo,
 )
+from fastprompter.core.usage_limits.model import qualified_key
 
 # Tunables
 READ_STEP_S = 0.02
 CHILD_KILL_GRACE_S = 2.0
+# Grace granted to a child that shutdown asked to stop. Short on purpose: the
+# app is already leaving and the pipes are about to be closed underneath it.
+CANCEL_GRACE_S = 0.5
 # Per-call ceiling for one JSON-RPC round trip. Measured on a live account
 # (8 sequential probes): initialize ~0.13s, account/rateLimits/read median
 # 0.87s but with 3.6s outliers, and a first probe after the machine had been
@@ -42,6 +46,130 @@ class JsonRpcError(Exception):
     pass
 
 
+# -- live child registry ---------------------------------------------------
+# A probe owns a real ``codex app-server`` child plus the reader thread that
+# drains its stdout. Shutdown has to reach both: cancelling a future only
+# stops probes that never started, while a running one sits in ``call()``
+# polling for a response and its worker thread cannot unwind until the child
+# is gone. Every live child is therefore registered the moment it is spawned
+# so ``terminate_probe_processes`` can close the whole set from outside.
+_procs_lock = threading.Lock()
+_probe_procs: dict[subprocess.Popen, threading.Thread | None] = {}
+
+
+def register_probe_process(proc: subprocess.Popen) -> None:
+    """Record a freshly spawned probe child. Called before any I/O on it."""
+    with _procs_lock:
+        _probe_procs.setdefault(proc, None)
+
+
+def attach_probe_reader(proc: subprocess.Popen,
+                        reader: threading.Thread) -> None:
+    """Bind the stdout reader thread to its child, registering if needed.
+
+    Registration is unconditional: a session owns its child no matter who
+    spawned it, so no caller can forget to register and leak a live process.
+    """
+    with _procs_lock:
+        _probe_procs[proc] = reader
+
+
+def unregister_probe_process(proc: subprocess.Popen) -> None:
+    """Drop a child that finished normally. Safe to call more than once."""
+    with _procs_lock:
+        _probe_procs.pop(proc, None)
+
+
+def live_probe_processes() -> list[subprocess.Popen]:
+    """Snapshot of currently registered probe children."""
+    with _procs_lock:
+        return list(_probe_procs)
+
+
+def _close_pipes(proc: subprocess.Popen) -> None:
+    for stream in (proc.stdin, proc.stdout, proc.stderr):
+        if stream is None:
+            continue
+        try:
+            stream.close()
+        except Exception:
+            pass
+
+
+def _stop_process(proc: subprocess.Popen, grace_s: float) -> bool:
+    """terminate -> grace -> kill -> reap -> close pipes.
+
+    W2-006 (audit/10): returns the POST-condition, not the pre-state. ``True``
+    only when ``proc.poll()`` proves the child is no longer running after the
+    terminate/kill/reap attempts. A stubborn child whose kill/wait all fail
+    returns ``False`` and MUST stay registered so a later bounded pass can
+    retry it (previously the pre-attempt ``was_alive`` was returned, so a
+    provably live process was reported stopped and erased from the registry).
+    """
+    was_alive = proc.poll() is None
+    if was_alive:
+        try:
+            proc.terminate()
+        except Exception:
+            pass
+        try:
+            proc.wait(timeout=grace_s)
+        except Exception:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+            try:
+                proc.wait(timeout=grace_s)
+            except Exception:
+                pass
+    else:
+        try:
+            proc.wait(timeout=0)
+        except Exception:
+            pass
+    _close_pipes(proc)
+    # Confirmed exit is the source of truth; the child must be genuinely gone.
+    return proc.poll() is not None
+
+
+def terminate_probe_processes(grace_s: float = CANCEL_GRACE_S,
+                              passes: int = 3) -> int:
+    """Stop every registered probe child and join its reader thread.
+
+    Repeated passes cover the narrow race where a coordinator was already
+    inside ``Popen`` when cancellation began: the caller has already refused
+    new work, so the set drains within a couple of rounds. Bounded by
+    construction — never blocks longer than ``passes * 2 * grace_s`` per
+    child. Returns how many children were still running.
+
+    W2-006: a child is unregistered ONLY once confirmed dead (or its reader
+    has retired). An unresolved child stays registered for the next pass, so
+    it cannot be silently lost while still alive.
+    """
+    stopped = 0
+    for _ in range(max(1, passes)):
+        with _procs_lock:
+            batch = list(_probe_procs.items())
+        if not batch:
+            break
+        for proc, reader in batch:
+            confirmed_dead = _stop_process(proc, grace_s)
+            if confirmed_dead:
+                stopped += 1
+            # Closing the child's stdout ends ``readline``, so the reader
+            # returns on its own; the join only confirms it.
+            reader_alive = reader is not None and reader.is_alive()
+            if reader_alive:
+                reader.join(timeout=grace_s)
+                reader_alive = reader.is_alive()
+            if confirmed_dead and not reader_alive:
+                with _procs_lock:
+                    _probe_procs.pop(proc, None)
+            # else: keep it registered; a later pass retries it.
+    return stopped
+
+
 class AppServerSession:
     """Minimal JSON-RPC 2.0 client over stdio for ``codex app-server``."""
 
@@ -53,6 +181,7 @@ class AppServerSession:
         self._responses: dict[int, dict] = {}
         self._reader = threading.Thread(target=self._read_loop, daemon=True)
         self._reader.start()
+        attach_probe_reader(proc, self._reader)
 
     def _read_loop(self) -> None:
         if self.proc.stdout is None:
@@ -112,10 +241,18 @@ class AppServerSession:
         try:
             self.proc.wait(timeout=CHILD_KILL_GRACE_S)
         except Exception:
-            try:
-                self.proc.kill()
-            except Exception:
-                pass
+            _stop_process(self.proc, CHILD_KILL_GRACE_S)
+        else:
+            _close_pipes(self.proc)
+        reader_alive = self._reader.is_alive()
+        if reader_alive:
+            self._reader.join(timeout=CHILD_KILL_GRACE_S)
+            reader_alive = self._reader.is_alive()
+        # W2-006 (audit/10): unregister only on CONFIRMED retirement -- a child
+        # still alive or a reader still active must stay registered so a later
+        # bounded pass can retry it.
+        if self.proc.poll() is not None and not reader_alive:
+            unregister_probe_process(self.proc)
 
 
 @functools.lru_cache(maxsize=1)
@@ -147,7 +284,15 @@ def _start_app_server(codex_home: str, label: str,
         creationflags=creationflags, startupinfo=silent_startupinfo(),
         bufsize=-1, text=False,
     )
-    return AppServerSession(proc, label)
+    # Registered before the session exists: if the wrapper itself raises, the
+    # child is still reachable for termination instead of leaking.
+    register_probe_process(proc)
+    try:
+        return AppServerSession(proc, label)
+    except BaseException:
+        _stop_process(proc, CANCEL_GRACE_S)
+        unregister_probe_process(proc)
+        raise
 
 
 def _handshake_and_read_rates(session: AppServerSession) -> dict:
@@ -164,10 +309,65 @@ def _handshake_and_read_rates(session: AppServerSession) -> dict:
     return rl.get("result") or {}
 
 
+KNOWN_POOL_LABELS = {
+    "codex": "Codex",
+    "luna": "Luna",
+    "reserve": "Reserve",
+}
+
+
+def _humanize(raw) -> str:
+    """Vendor identifier -> readable label, deterministically.
+
+    ``gpt-reserve`` -> ``GPT Reserve``, ``base_model_inference`` ->
+    ``Base Model Inference``. Words the vendor already capitalised are kept
+    verbatim so a real product name is never title-cased into nonsense.
+    """
+    import re as _re
+    text = str(raw or "").strip()
+    if not text:
+        return ""
+    words = [w for w in _re.split(r"[_\-.\s]+", text) if w]
+    return " ".join(_capitalize_word(w) for w in words)
+
+
+# Words that are proper acronyms, not names to capitalise: title-casing them
+# produced "Gpt Reserve" and "Api Quota".
+_ACRONYMS = frozenset({"gpt", "ai", "llm", "api", "ui", "db", "cpu", "gpu"})
+
+
+def _capitalize_word(word: str) -> str:
+    if word.lower() in _ACRONYMS:
+        return word.upper()
+    if any(c.isupper() for c in word):
+        return word
+    return word.capitalize()
+
+
+def _pool_label(limit_id: str, limit_name) -> str:
+    """Sanitized human label for one quota pool.
+
+    The vendor's own ``limitName`` wins when present; ``KNOWN_POOL_LABELS`` is
+    only a display fallback for the canonical pool names and is never evidence
+    of what a pool actually serves (the model slug is).
+    """
+    named = _humanize(limit_name)
+    if named:
+        return named
+    return KNOWN_POOL_LABELS.get(str(limit_id).lower()) or _humanize(limit_id)
+
+
 def _blank_bucket() -> dict:
-    return {"available": False, "remaining_percent": None,
-            "resets_at": None, "used_percent": None,
-            "window_duration_mins": None}
+    return {
+        "available": False,
+        "remaining_percent": None,
+        "resets_at": None,
+        "used_percent": None,
+        "window_duration_mins": None,
+        "group": "",
+        "group_label": "",
+        "model_slug": "",
+    }
 
 
 def _duration_label(dur) -> str:
@@ -186,50 +386,94 @@ def _duration_label(dur) -> str:
 
 
 def parse_windows(rate_limits: dict) -> dict:
-    """Map windows by duration; missing buckets stay unavailable.
+    """Map windows by duration and pool; missing buckets stay unavailable.
 
-    Returns a flat ``{window_key: bucket}`` dict plus ``plan_type``. Callers
-    iterate the dict and skip ``plan_type`` — that way a plan reporting an
-    unexpected window count (Free: one 30-day window) is preserved verbatim
-    instead of being filtered down to a hardcoded pair.
+    Returns a flat ``{window_key: bucket}`` dict plus ``plan_type``.
+    Supports multi-pool quotas via ``rateLimitsByLimitId`` (e.g. Codex,
+    Luna, Reserve) while preserving the default top-level ``rateLimits``
+    when by_id is absent or unpopulated.
     """
-    out = {"five_hour": _blank_bucket(), "weekly": _blank_bucket()}
+    out = {}
     snap = rate_limits.get("rateLimits") or {}
-
-    candidates: list[tuple[int | None, dict]] = []
-    primary, secondary = snap.get("primary"), snap.get("secondary")
-    if isinstance(primary, dict):
-        candidates.append((primary.get("windowDurationMins"), primary))
-    if isinstance(secondary, dict):
-        candidates.append((secondary.get("windowDurationMins"), secondary))
     by_id = rate_limits.get("rateLimitsByLimitId")
-    if isinstance(by_id, dict):
-        for sub in by_id.values():
+    has_by_id = isinstance(by_id, dict) and bool(by_id)
+    codex_in_by_id = has_by_id and any(str(k).lower() == "codex" for k in by_id)
+
+    # Top-level rateLimits is parsed when by_id is absent or when by_id does not contain codex
+    if not has_by_id or not codex_in_by_id:
+        if not has_by_id:
+            out["five_hour"] = _blank_bucket()
+            out["weekly"] = _blank_bucket()
+        candidates: list[tuple[int | None, dict]] = []
+        primary, secondary = snap.get("primary"), snap.get("secondary")
+        if isinstance(primary, dict):
+            candidates.append((primary.get("windowDurationMins"), primary))
+        if isinstance(secondary, dict):
+            candidates.append((secondary.get("windowDurationMins"), secondary))
+        for dur, w in candidates:
+            label = _duration_label(dur)
+            if not label:
+                continue
+            if out.get(label, {}).get("available"):
+                continue   # first match wins
+            used = w.get("usedPercent")
+            rem = None
+            if isinstance(used, (int, float)):
+                rem = max(0.0, min(100.0, 100.0 - float(used)))
+            out[label] = {
+                "available": True,
+                "remaining_percent": rem,
+                "resets_at": _iso_from_epoch(w.get("resetsAt")),
+                "used_percent": float(used) if isinstance(used, (int, float)) else None,
+                "window_duration_mins": dur,
+                "group": "",
+                "group_label": "",
+                "model_slug": "",
+            }
+
+    if has_by_id:
+        for limit_id, sub in by_id.items():
             if not isinstance(sub, dict):
                 continue
-            for key in ("primary", "secondary"):
-                w = sub.get(key)
-                if isinstance(w, dict):
-                    candidates.append((w.get("windowDurationMins"), w))
+            group = str(limit_id)
+            group_label = _pool_label(group, sub.get("limitName"))
+            slug = str(sub.get("normalModelSlug") or "")
+            for wkey in ("primary", "secondary"):
+                w = sub.get(wkey)
+                if not isinstance(w, dict):
+                    continue
+                dur = w.get("windowDurationMins")
+                base_label = _duration_label(dur)
+                if not base_label:
+                    continue
+                qkey = qualified_key(base_label, group)
+                if out.get(qkey, {}).get("available"):
+                    continue   # first match wins within pool
+                used = w.get("usedPercent")
+                rem = None
+                if isinstance(used, (int, float)):
+                    rem = max(0.0, min(100.0, 100.0 - float(used)))
+                out[qkey] = {
+                    "available": True,
+                    "remaining_percent": rem,
+                    "resets_at": _iso_from_epoch(w.get("resetsAt")),
+                    "used_percent": float(used) if isinstance(used, (int, float)) else None,
+                    "window_duration_mins": dur,
+                    "group": group,
+                    "group_label": group_label,
+                    "model_slug": slug,
+                }
 
-    for dur, w in candidates:
-        label = _duration_label(dur)
-        if not label:
-            continue
-        if out.get(label, {}).get("available"):
-            continue   # first match wins
-        used = w.get("usedPercent")
-        rem = None
-        if isinstance(used, (int, float)):
-            rem = max(0, min(100, 100 - used))
-        out[label] = {
-            "available": True,
-            "remaining_percent": rem,
-            "resets_at": _iso_from_epoch(w.get("resetsAt")),
-            "used_percent": used if isinstance(used, (int, float)) else None,
-            "window_duration_mins": dur,
-        }
-    out["plan_type"] = snap.get("planType")
+    if not out:
+        out = {"five_hour": _blank_bucket(), "weekly": _blank_bucket()}
+
+    plan_type = snap.get("planType")
+    if not plan_type and has_by_id:
+        for sub in by_id.values():
+            if isinstance(sub, dict) and sub.get("planType"):
+                plan_type = sub.get("planType")
+                break
+    out["plan_type"] = plan_type
     reset_credits = rate_limits.get("rateLimitResetCredits")
     if isinstance(reset_credits, dict):
         cnt = reset_credits.get("availableCount")

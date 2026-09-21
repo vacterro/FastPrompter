@@ -4,6 +4,8 @@ import os
 import time
 import unittest
 
+from _qt_retire import retire
+
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6.QtWidgets import QApplication, QWidget
@@ -110,8 +112,8 @@ class TestCopyAlertSettings(unittest.TestCase):
 
     def tearDown(self):
         self.dialog.close()
-        self.dialog.deleteLater()
-        self.win.deleteLater()
+        retire(self.dialog)
+        retire(self.win)
         _APP.processEvents()
 
     def _key(self, account, window_key):
@@ -210,8 +212,8 @@ class TestCopyControlsWithoutTargets(unittest.TestCase):
             dialog._copy_rule_to_all()
         finally:
             dialog.close()
-            dialog.deleteLater()
-            win.deleteLater()
+            retire(dialog)
+            retire(win)
             _APP.processEvents()
 
     def test_no_accounts_leaves_the_controls_dead_but_alive(self):
@@ -224,6 +226,6 @@ class TestCopyControlsWithoutTargets(unittest.TestCase):
             dialog._copy_rule_to_all()
         finally:
             dialog.close()
-            dialog.deleteLater()
-            win.deleteLater()
+            retire(dialog)
+            retire(win)
             _APP.processEvents()

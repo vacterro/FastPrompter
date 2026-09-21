@@ -30,6 +30,7 @@ so instead of guessing.
 
 from __future__ import annotations
 
+import dataclasses
 import datetime
 import json
 import os
@@ -58,6 +59,9 @@ from fastprompter.core.usage_limits.providers._claude_desktop import (
 )
 from fastprompter.core.usage_limits.providers._claude_desktop import (
     latest_usage as desktop_latest_usage,
+)
+from fastprompter.core.usage_limits.providers._claude_desktop import (
+    normalize_organization_id,
 )
 from fastprompter.core.usage_limits.providers._claude_transcripts import (
     active_quota_blocks,
@@ -110,6 +114,56 @@ def _discover_config_dirs() -> list[tuple[str, str]]:
     return out
 
 
+# Markers that tell a real ``CLAUDE_CONFIG_DIR`` from a stray ``.claude-backup``
+# folder. Claude Code writes all of these into whatever home it is pointed at;
+# a directory carrying none of them has never been an account.
+_HOME_MARKERS = (".credentials.json", ".claude.json", "settings.json",
+                 "projects")
+
+
+def _looks_like_claude_home(path: Path) -> bool:
+    """Does this directory carry Claude Code's own fingerprints?"""
+    try:
+        return any((path / marker).exists() for marker in _HOME_MARKERS)
+    except OSError:
+        return False
+
+
+def sibling_config_dirs() -> list[str]:
+    """``~/.claude-<name>`` homes — one per extra logged-in account.
+
+    This is the Codex convention applied to Claude: a second account is a
+    second ``CLAUDE_CONFIG_DIR``, because the CLI keeps credentials, settings
+    and transcripts together under one root. ``~/.claude`` itself is excluded —
+    it is the default account, found by :func:`_discover_config_dirs`.
+    """
+    try:
+        root = _home_dir()
+    except RuntimeError:
+        return []
+    try:
+        candidates = sorted(p for p in root.glob(".claude-*") if p.is_dir())
+    except OSError:
+        return []
+    return [str(p) for p in candidates if _looks_like_claude_home(p)]
+
+
+def _account_organization_id(account: AccountRef) -> str | None:
+    """Read one account home's non-secret Claude organization identity."""
+    try:
+        home = Path(account.source_path)
+        config_path = (home.parent / ".claude.json"
+                       if account.metadata.get("is_default")
+                       else home / ".claude.json")
+        payload = json.loads(config_path.read_text(encoding="utf-8"))
+        oauth = payload.get("oauthAccount") if isinstance(payload, dict) else None
+        organization = (oauth.get("organizationUuid")
+                        if isinstance(oauth, dict) else None)
+        return normalize_organization_id(organization)
+    except (OSError, UnicodeError, ValueError, TypeError):
+        return None
+
+
 class ClaudeProvider(UsageProvider):
     """Claude provider. Exact percentages only from a client-written file;
     otherwise honest ``UNAVAILABLE``."""
@@ -132,9 +186,50 @@ class ClaudeProvider(UsageProvider):
         self._cli_binary = cli_binary or ""
 
     def discover_accounts(self) -> list[AccountRef]:
+        """The default account, plus one per extra ``CLAUDE_CONFIG_DIR``.
+
+        The default home and the extra ones are NOT symmetrical, and the
+        difference is why this is not a plain loop:
+
+        * ``~/.claude`` and ``~/.claude.json`` are two faces of ONE
+          installation, collapsed into a single account (returning both used to
+          render a phantom second cluster);
+         * Claude Desktop's usage sampler is a single process reading a single
+           signed-in account; its sample organization id is matched to the
+           account home's own organization identity;
+        * every non-default account carries ``config_dir``, which the CLI probe
+          exports as ``CLAUDE_CONFIG_DIR`` so ``/usage`` answers for THAT
+          account instead of the ambient one.
+        """
         found = _discover_config_dirs()
         accounts: list[AccountRef] = []
         seen: set[str] = set()
+
+        def add(path: str, kind: str, *, default: bool = False,
+                others: list[str] | None = None) -> None:
+            key = canonical_path(path)
+            if not key or key in seen:
+                return
+            seen.add(key)
+            metadata = {
+                "other_paths": list(others or ()),
+                "cache_path": str(cache_path_for_dir(key)),
+                # Empty for the default account: it is read with the ambient
+                # environment, exactly as before this became multi-account.
+                "config_dir": "" if default else key,
+                "is_default": default,
+            }
+            if default:
+                metadata["desktop_history"] = (self._desktop_history
+                                               or desktop_history_path())
+            accounts.append(AccountRef(
+                provider_id=self.provider_id,
+                stable_id=stable_id_for(self.provider_id, key),
+                display_name="Claude",
+                source_kind=kind,
+                source_path=key,
+                metadata=metadata,
+            ))
 
         # One installation = one account. The most authoritative path becomes
         # the account's identity; the rest ride along as metadata so the
@@ -147,40 +242,56 @@ class ClaudeProvider(UsageProvider):
             primary_path = Path(primary)
             identity = (primary_path if primary_path.is_dir()
                         else primary_path.parent / ".claude")
-            key = canonical_path(str(identity))
             others = [canonical_path(p) for p, _k in found[1:]]
-            seen.add(key)
+            add(str(identity), kind, default=True, others=others)
             seen.update(others)
-            accounts.append(AccountRef(
-                provider_id=self.provider_id,
-                stable_id=stable_id_for(self.provider_id, key),
-                display_name="Claude",
-                source_kind=kind,
-                source_path=key,
-                metadata={"other_paths": others,
-                          "cache_path": str(cache_path_for_dir(key)),
-                          "desktop_history": self._desktop_history
-                                             or desktop_history_path()},
-            ))
-        for p in self._extra_paths:
-            if p and p not in seen:
-                seen.add(p)
-                accounts.append(AccountRef(
-                    provider_id=self.provider_id,
-                    stable_id=stable_id_for(self.provider_id, p),
-                    display_name="Claude",
-                    source_kind="configured",
-                    source_path=p,
-                ))
+        # Explicit homes the user typed in settings win over auto-detection,
+        # so a relocated account keeps the ordinal it was given.
+        for path in self._extra_paths:
+            add(path, "configured")
+        for path in sibling_config_dirs():
+            add(path, "auto_sibling")
+        # _desktop_reading needs to distinguish the unambiguous legacy
+        # single-account case from a multi-account roster. Keep that context
+        # provider-local; no global account registry and no service query.
+        account_count = len(accounts)
+        accounts = [dataclasses.replace(
+            account,
+            metadata={**account.metadata,
+                      "claude_account_count": account_count},
+        ) for account in accounts]
         return accounts
 
     # -- source 0: Claude Code CLI (best: percentages AND reset times) -----
-    def _cli_reading(self, deadline: float, now: float) -> dict:
-        """``{window: {...}}`` from ``claude -p "/usage"``, or ``{}``."""
+    @staticmethod
+    def _config_dir_for(account: AccountRef) -> str:
+        """``CLAUDE_CONFIG_DIR`` for this account's CLI probe.
+
+        Discovery always sets an explicit ``config_dir`` (empty for the
+        default account, which is deliberately read with the ambient
+        environment). An account built OUTSIDE discovery — a test fixture, or
+        a portable install — carries no such key, and falling back to "" there
+        made the CLI answer for whatever account the machine happens to be
+        signed into, so a caller asking about one home silently received
+        another home's percentages. Such an account is asked about its OWN
+        home, which is what every other source in this provider already reads
+        (:meth:`_bridge_reading` uses ``source_path``).
+        """
+        metadata = getattr(account, "metadata", None) or {}
+        if "config_dir" in metadata:
+            return str(metadata.get("config_dir") or "")
+        return str(getattr(account, "source_path", "") or "")
+
+    def _cli_reading(self, deadline: float, now: float,
+                     config_dir: str = "") -> dict:
+        """``{window: {...}}`` from ``claude -p "/usage"``, or ``{}``.
+
+        ``config_dir`` names the account to ask; empty is the default one.
+        """
         if not self._use_cli:
             return {}
         reading = _claude_cli.read_usage(deadline, binary=self._cli_binary,
-                                         now=now)
+                                         now=now, config_dir=config_dir)
         if "error" in reading:
             return {}
         return {
@@ -252,6 +363,19 @@ class ClaudeProvider(UsageProvider):
                                      fresh_window_s=DESKTOP_STALE_AFTER_SEC)
         if not usage:
             return {}
+        sample_org = normalize_organization_id(usage.get("org"))
+        account_org = _account_organization_id(account)
+        try:
+            account_count = int(account.metadata.get("claude_account_count", 1))
+        except (TypeError, ValueError):
+            account_count = 1
+        if sample_org is None:
+            # Legacy Desktop history has no owner. It is safe only when this
+            # provider has exactly one discovered Claude account.
+            if account_count != 1:
+                return {}
+        elif account_org != sample_org:
+            return {}
         return {
             "windows": {key: {"used": used, "resets_at": None}
                         for key, used in usage["windows"].items()},
@@ -277,17 +401,27 @@ class ClaudeProvider(UsageProvider):
             if captured and (now - captured) < 300:
                 need_cli = False
 
-        cli = self._cli_reading(deadline, now) if need_cli else {}
         # An explicit refusal in Claude Code's own transcript beats any
         # percentage: the window is spent until it resets. This is the only
         # directory-walking read here, so it is also the only one that can
         # meaningfully overrun a deadline — skip it rather than blow the sweep.
+        #
+        # Read BEFORE the CLI probe, not after. ``_cli_reading`` may spend the
+        # WHOLE deadline waiting on ``claude -p "/usage"``; running it first
+        # left this guard permanently false, so the provider's own refusal
+        # verdict was discarded and a refused window was reported as "connect
+        # Claude Code" — unavailable instead of spent. Refusals are also the
+        # only source of a window with no percentage at all, so they must never
+        # depend on another source's leftovers.
         blocks = {}
         if not self._structured_source and time.monotonic() < deadline:
             try:
                 blocks = active_quota_blocks(account.source_path, now=now)
             except Exception:
                 blocks = {}
+
+        cli = (self._cli_reading(deadline, now, self._config_dir_for(account))
+               if need_cli else {})
 
         readings = [r for r in (cli, bridge, desktop) if r.get("windows")]
         if not readings and not blocks:
@@ -442,6 +576,104 @@ def source_status(directory: str | os.PathLike | None = None, *,
             pass
     return out
 
+
+def homes_status(extra_paths: list[str] | None = None) -> list[dict]:
+    """Every Claude home FastPrompter would turn into an account.
+
+    One dict per home: ``path``, ``kind``, ``is_default``, ``has_credentials``
+    and ``bridge_connected``. Purely descriptive — the settings dialog uses it
+    to explain a second account that is present but silent, and it must never
+    be the thing that decides identity (:meth:`ClaudeProvider.discover_accounts`
+    does that).
+    """
+    provider = ClaudeProvider(extra_paths=list(extra_paths or ()))
+    out: list[dict] = []
+    for account in provider.discover_accounts():
+        path = account.source_path
+        try:
+            connected = bool(bridge_status(path).get("connected"))
+        except Exception:
+            connected = False
+        out.append({
+            "path": path,
+            "kind": account.source_kind,
+            "is_default": bool(account.metadata.get("is_default")),
+            "has_credentials": os.path.isfile(
+                os.path.join(path, ".credentials.json")),
+            "bridge_connected": connected,
+        })
+    return out
+
+
+def account_data_state(snapshot) -> str:
+    """``fresh`` / ``stale`` / ``unavailable`` for ONE account's quota data.
+
+    Derived from the service snapshot the gauges already draw, so the
+    settings row and the header can never disagree about whether an account
+    currently has numbers. A missing snapshot is "unavailable", not zero --
+    this provider does not invent quota values.
+    """
+    if snapshot is None:
+        return "unavailable"
+    status = getattr(snapshot, "status", "")
+    if status == OK:
+        return "fresh"
+    if status == STALE:
+        return "stale"
+    return "unavailable"
+
+
+def accounts_report(accounts, snapshots=None) -> list[dict]:
+    """One descriptive row per DISCOVERED Claude account (T-1266 C6).
+
+    ``accounts`` is the service roster (already numbered "Claude 1" /
+    "Claude 2"); non-Claude accounts are ignored. ``snapshots`` is the
+    service's ``account.key -> UsageSnapshot`` map, so the reported data
+    state is the SAME fact the gauges render.
+
+    Purely descriptive and secret-free: the credential file is reported as
+    present or absent, never read.
+    """
+    shots = dict(snapshots or {})
+    out: list[dict] = []
+    for account in accounts or ():
+        if getattr(account, "provider_id", "") != "claude":
+            continue
+        path = account.source_path
+        try:
+            bridge = bridge_status(path) if path else {}
+        except Exception:
+            bridge = {}
+        try:
+            has_credentials = bool(path) and os.path.isfile(
+                os.path.join(path, ".credentials.json"))
+        except OSError:
+            has_credentials = False
+        out.append({
+            "key": account.key,
+            "name": account.display_name,
+            "path": path,
+            "kind": account.source_kind,
+            "is_default": bool(account.metadata.get("is_default")),
+            "config_dir": account.metadata.get("config_dir", ""),
+            "has_credentials": has_credentials,
+            "bridge_connected": bool(bridge.get("connected")),
+            "bridge_has_cache": bool(bridge.get("has_cache")),
+            "data_state": account_data_state(shots.get(account.key)),
+        })
+    return out
+
+
+def detected_summary(count: int) -> str:
+    """"1 Claude account detected" / "2 Claude accounts detected".
+
+    Shown even when the count is one: "how many accounts does this thing
+    think I have" is the question the detection UX exists to answer, and
+    hiding the answer at one is what made a missing second account
+    undiagnosable.
+    """
+    plural = "" if count == 1 else "s"
+    return f"{count} Claude account{plural} detected"
 
 def _parse_reset(value) -> float | None:
     if isinstance(value, bool):

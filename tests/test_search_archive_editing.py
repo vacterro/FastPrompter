@@ -19,8 +19,16 @@ from fastprompter.core.state import FastPrompterState
 
 
 @pytest.fixture
-def state(tmp_path):
-    """Isolated FastPrompterState with a temp DB."""
+def state(tmp_path, monkeypatch):
+    """Isolated FastPrompterState with a temp DB.
+
+    get_db_path must be patched BEFORE construction: building the state on
+    the real profile path (then rebinding db_path afterwards) made the
+    constructor open `data/local_data_v15_p998.db` and publish its startup
+    safety snapshot into the real data/ directory (T-1222 section 9)."""
+    monkeypatch.setattr(
+        "fastprompter.core.state.get_db_path",
+        lambda profile_id=1: str(tmp_path / f"search_{profile_id}.db"))
     s = FastPrompterState(profile_id=998)
     if s.conn:
         s.conn.close()
@@ -444,18 +452,17 @@ class TestIntegration:
         if state2.conn:
             state2.conn.close()
 
-    def test_archive_empty_strings_not_in_snapshot(self, state):
-        """Empty strings are filtered out on DB load, but whitespace-only strings are
-        saved to snapshot (truthy) and filtered on reload by .strip()."""
+    def test_archive_empty_strings_are_persisted_rows(self, state):
+        """T-1222: row presence IS silo existence. Empty strings are archived
+        silos now, so they persist as rows (whitespace was always truthy and
+        saved); the reloaded archive keeps the full extent."""
         state.data["archive_temp_presets_all"]["Code"] = ["real", "", "  "]
         state.mark_dirty()
         state.save_data_to_db("text", force=True)
 
-        # Empty string "" is falsy, so it should NOT be in snapshot
-        # Whitespace "  " is truthy, so it IS in the snapshot (filtered on reload)
         assert ("Code", 0, "real") in state._last_saved_arc
-        assert ("Code", 1, "") not in state._last_saved_arc  # empty string skipped
-        assert ("Code", 2, "  ") in state._last_saved_arc  # whitespace IS truthy
+        assert ("Code", 1, "") in state._last_saved_arc
+        assert ("Code", 2, "  ") in state._last_saved_arc
 
     def test_multi_tab_archive_independence(self, state, tmp_path):
         """Switching tabs should maintain independent archives per tab."""

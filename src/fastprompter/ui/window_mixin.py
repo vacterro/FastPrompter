@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import QApplication
 
 from fastprompter.core.logging import logger
 from fastprompter.core.translations import tr
+from fastprompter.ui.qt_lifetime import weak_qt_callback
 
 _is_deleted = sip.isdeleted
 
@@ -99,7 +100,8 @@ class WindowMixin:
             # once activation has settled. Guarded because a deferred call
             # into a destroyed widget is an access violation, not an
             # exception (same class as H-406).
-            QTimer.singleShot(0, self._focus_text_silo)
+            QTimer.singleShot(0, weak_qt_callback(
+                self, type(self)._focus_text_silo))
 
     def _focus_text_silo(self) -> None:
         """Put the caret in the editor. Safe to call from a deferred slot."""
@@ -438,6 +440,8 @@ class WindowMixin:
 
         from fastprompter.core.default_profile import DEFAULT_PROFILE as _DP
         self.data["toolbar_order"] = _copy.deepcopy(_DP.get("toolbar_order", ""))
+        self.data["topbar_visibility"] = _copy.deepcopy(
+            _DP.get("topbar_visibility", {}))
         self.data["splitter_sizes_left"] = _copy.deepcopy(
             _DP.get("splitter_sizes_left") or [])
         self.data["splitter_sizes_right"] = _copy.deepcopy(
@@ -452,6 +456,8 @@ class WindowMixin:
             self.btn_sidebar_toggle.setChecked(True)
         if hasattr(self, "apply_toolbar_order"):
             self.apply_toolbar_order()
+        if hasattr(self, "_apply_topbar_visibility"):
+            self._apply_topbar_visibility()
         self.apply_sidebar_position()
         self._sync_layout_controls()
         if hasattr(self, "apply_scaled_ui"):
@@ -599,7 +605,8 @@ class WindowMixin:
         self.mini_settings_frame.setVisible(not was_visible)
         if not was_visible and hasattr(self, "_fit_settings_tabs"):
             self._fit_settings_tabs()
-            QTimer.singleShot(0, self._fit_settings_tabs)
+            QTimer.singleShot(0, weak_qt_callback(
+                self, type(self)._fit_settings_tabs))
         self.data["hide_extra"] = "True" if was_visible else "False"
         self.mark_dirty()
 

@@ -17,7 +17,6 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import pytest
 from PyQt6.QtWidgets import QApplication, QMessageBox
 
-import fastprompter.core.state as state_mod
 from fastprompter.main import FastPrompter
 
 _app = QApplication.instance() or QApplication([])
@@ -25,23 +24,10 @@ _tmpdir = tempfile.mkdtemp(prefix="fastprompter_audit_")
 
 
 @pytest.fixture(scope="module")
-def win():
-    state_mod.get_db_path = lambda profile_id=1: os.path.join(_tmpdir, f"a_{profile_id}.db")
-    state_mod.run_portable_backup = lambda data, profile_id=1: None
-    FastPrompter.setup_single_instance_server = lambda self: None
-    FastPrompter.register_all_hotkeys = lambda self: None
-    FastPrompter.unregister_all_hotkeys = lambda self: None
-    w = FastPrompter()
-    w.resize(960, 540)
-    w.show()
-    _app.processEvents()
+def win(smoke_win):
+    w = smoke_win.create(show=True, size=(960, 540))
     yield w
-    getattr(w, "_watcher_shutdown", lambda: None)()
-    w.auto_save_timer.stop()
-    w.topmost_timer.stop()
-    w.close()
-
-
+    smoke_win.retire(w)
 
 
 # ============================ P0-4: portable backup profile ==============
@@ -361,7 +347,6 @@ def test_undo_failure_in_earlier_batch_is_not_masked(win, monkeypatch):
     flag reset — per-job results, not one window-wide flag."""
     import json
     import threading
-    import time
 
     calls = {"n": 0}
     ev = threading.Event()

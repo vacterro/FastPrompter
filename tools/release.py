@@ -1,26 +1,48 @@
-"""Create or update the GitHub release for the current version.
+"""Publish the GitHub release for the current version — exact-commit, draft-first.
 
 Usage:
     python tools/release.py [notes.md]
 
-Reads the version from pyproject.toml, creates (or updates) the release
-tagged v<version> on GitHub, and uploads build/FastPrompter.exe as the
-downloadable asset (replacing any previous one). Uses the GitHub token
-stored by git's credential helper вЂ” the same one `git push` uses.
+Preconditions (all refused with a message, never warned past):
 
-Run tools/build.py first, or use release.cmd which does both.
+- version parity across VERSION / pyproject.toml / FastPrompter.pyw / uv.lock;
+- HEAD == origin/main after an explicit fetch (public releases come from main);
+- local tag (when present) and REMOTE tag (when present) both point at HEAD;
+- working tree clean (full porcelain, untracked included);
+- a valid release receipt binding VERSION, HEAD, the EXE SHA256 and the EXE
+  ProductVersion (tools/release_provenance.py writes it after build + probe).
+
+Publication is draft-first: the release is created as a draft at the exact
+HEAD SHA, assets (FastPrompter.exe + FastPrompter.exe.sha256) are uploaded and
+verified remotely, and only then is the draft published. A published release is
+immutable: re-running for an already-published tag aborts; a changed binary
+requires a new VERSION. An existing DRAFT may be completed.
+
+Run tools/build.py, tools/probe_release.py and tools/release_provenance.py
+first, or use release.cmd which runs the full preflight.
 """
 
 import json
 import os
-import re
 import subprocess
 import sys
 import urllib.error
 import urllib.request
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import release_provenance as rp
+
 REPO = "vacterro/FastPrompter"
 ASSET = "FastPrompter.exe"
+ASSET_SHA = ASSET + ".sha256"
+
+
+def read_version() -> str:
+    return rp.read_version()
+
+
+def check_version_parity(version: str) -> None:
+    rp.check_version_parity(version)
 
 
 def get_token() -> str:
@@ -54,92 +76,83 @@ def api(path, tok, data=None, method=None, ctype="application/json", host="api.g
         raise SystemExit(f"GitHub API {e.code} on {path}: {e.read().decode()[:300]}")
 
 
-def read_version() -> str:
-    root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    # canonical VERSION is the single source of truth (sync_release_version.py)
-    vfile = os.path.join(root, "VERSION")
-    try:
-        v = open(vfile, encoding="utf-8").read().strip()
-        if re.fullmatch(r"\d+\.\d+\.\d+", v):
-            return v
-    except FileNotFoundError:
-        pass
-    # fallback for legacy callers
-    text = open(os.path.join(root, "pyproject.toml"), encoding="utf-8").read()
-    m = re.search(r'^version\s*=\s*"([^"]+)"', text, re.M)
-    if not m:
-        raise SystemExit("version not found in pyproject.toml")
-    return m.group(1)
+def fetch_origin() -> None:
+    rp.git("fetch", "--tags", "origin")
+    rp.git("fetch", "origin", "main")
 
 
-def check_version_parity(version: str) -> None:
-    root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    # pyproject
-    pyproject_text = open(os.path.join(root, "pyproject.toml"), encoding="utf-8").read()
-    m = re.search(r'^version\s*=\s*"([^"]+)"', pyproject_text, re.M)
-    pyproject_ver = m.group(1) if m else None
-    # pyw
-    pyw_text = open(os.path.join(root, "FastPrompter.pyw"), encoding="utf-8").read()
-    m2 = re.search(r"--product-version=(\S+)", pyw_text)
-    pyw_ver = m2.group(1) if m2 else None
-    # uv.lock
-    lock_text = open(os.path.join(root, "uv.lock"), encoding="utf-8").read()
-    m3 = re.search(r'name = "fastprompter"\s+version = "([^"]+)"', lock_text)
-    lock_ver = m3.group(1) if m3 else None
-    mism = []
-    if pyproject_ver != version:
-        mism.append(f"pyproject.toml {pyproject_ver} != VERSION {version}")
-    if pyw_ver != version:
-        mism.append(f"FastPrompter.pyw {pyw_ver} != VERSION {version}")
-    if lock_ver != version:
-        mism.append(f"uv.lock {lock_ver} != VERSION {version}")
-    if mism:
-        raise SystemExit("version parity failed: " + "; ".join(mism) + " -- run python tools/sync_release_version.py")
-
-
-def check_tag_provenance(version):
-    # Get current HEAD
-    p = subprocess.run(['git', 'rev-parse', 'HEAD'], capture_output=True, text=True)
-    if p.returncode != 0:
-        return
-    head_commit = p.stdout.strip()
-    
-    # Check if tag exists
-    tag = f"v{version}"
-    p = subprocess.run(['git', 'rev-parse', f'{tag}^{{commit}}'], capture_output=True, text=True)
-    if p.returncode != 0:
-        p = subprocess.run(['git', 'rev-parse', tag], capture_output=True, text=True)
-        if p.returncode != 0:
-            return # tag does not exist
-            
-    tag_commit = p.stdout.strip()
-    
-    if head_commit != tag_commit:
-        raise SystemExit(f"version already tagged at different commit; bump VERSION and run sync_release_version.py")
-
-def main():
-    root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    os.chdir(root)
-    version = read_version()
-    check_version_parity(version)
-    check_tag_provenance(version)
-    exe = os.path.join("build", ASSET)
-    if not os.path.exists(exe):
-        raise SystemExit("build/FastPrompter.exe missing — run tools/build.py first")
-    tag = f"v{version}"
-    if len(sys.argv) > 1 and os.path.exists(sys.argv[1]):
-        notes = open(sys.argv[1], encoding="utf-8").read()
-    else:
-        notes = (
-            f"FastPrompter {tag} вЂ” portable single-file EXE for Windows.\n\n"
-            "Download `FastPrompter.exe`, run it, press `Alt+X`. "
-            "No install, no Python, no admin rights; your data lives in a "
-            "`data/` folder next to the EXE.\n\n"
-            "See the commit history for what changed."
+def check_release_branch() -> None:
+    head = rp.git_head()
+    origin_main = rp.git("rev-parse", "origin/main")
+    if head != origin_main:
+        raise SystemExit(
+            f"release HEAD {head[:12]} != origin/main {origin_main[:12]}; "
+            "public releases are cut from main after the release commit lands"
         )
 
-    tok = get_token()
+
+def check_clean_tree() -> None:
+    if not rp.git_is_clean():
+        raise SystemExit(
+            "working tree is dirty (git status --porcelain is not empty); "
+            "reconcile and commit before releasing"
+        )
+
+
+def check_tag_provenance(version: str) -> None:
+    """Local AND remote tags, when present, must point at HEAD."""
+    head = rp.git_head()
+    tag = f"v{version}"
+    local = rp.git("rev-parse", f"{tag}^{{commit}}", check=False)
+    if local and local != head:
+        raise SystemExit(
+            "version already tagged at different commit; bump VERSION and run "
+            "python tools/sync_release_version.py"
+        )
+    remote = rp.git_remote_tag_commit(tag)
+    if remote is not None and remote != head:
+        raise SystemExit(
+            f"remote tag {tag} already points at {remote[:12]}, not HEAD {head[:12]}; "
+            "do not overwrite history — bump VERSION for a changed release"
+        )
+
+
+def check_receipt(version: str, exe: str) -> None:
+    receipt_path = rp.RECEIPT_PATH
+    if not receipt_path.is_file():
+        raise SystemExit(
+            f"release receipt missing: {receipt_path} — run tools/release_provenance.py "
+            "receipt after a clean-clone build and packaged probe"
+        )
+    try:
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise SystemExit(f"release receipt unreadable: {exc}")
+    failures = rp.validate_receipt(receipt, rp.Path(exe), version, rp.git_head())
+    if failures:
+        raise SystemExit("release receipt does not bind this release: " + "; ".join(failures))
+
+
+def read_notes(version: str) -> str:
+    if len(sys.argv) > 1 and os.path.exists(sys.argv[1]):
+        return open(sys.argv[1], encoding="utf-8").read()
+    tag = f"v{version}"
+    return (
+        f"FastPrompter {tag} — portable single-file EXE for Windows.\n\n"
+        "Download `FastPrompter.exe`, run it, press `Alt+X`. "
+        "No install, no Python, no admin rights; your data lives in a "
+        "`data/` folder next to the EXE.\n\n"
+        "See the commit history for what changed."
+    )
+
+
+def ensure_draft(tok, tag: str, head: str, notes: str):
     rel = api(f"/repos/{REPO}/releases/tags/{tag}", tok)
+    if rel is not None and not rel.get("draft"):
+        raise SystemExit(
+            f"release {tag} is already published and immutable; "
+            "a changed binary requires a new VERSION"
+        )
     if rel is None:
         rel = api(
             f"/repos/{REPO}/releases",
@@ -147,15 +160,16 @@ def main():
             data=json.dumps(
                 {
                     "tag_name": tag,
-                    "target_commitish": "main",
+                    "target_commitish": head,
                     "name": f"FastPrompter {tag}",
                     "body": notes,
+                    "draft": True,
                 }
             ).encode(),
         )
-        if not rel or 'id' not in rel:
-            raise SystemExit(f"Failed to create release: {rel}")
-        print(f"Created release {rel.get('html_url', '')}")
+        if not rel or "id" not in rel:
+            raise SystemExit(f"Failed to create draft release: {rel}")
+        print(f"Created draft release {tag} at {head[:12]}")
     else:
         api(
             f"/repos/{REPO}/releases/{rel['id']}",
@@ -163,27 +177,104 @@ def main():
             data=json.dumps({"body": notes}).encode(),
             method="PATCH",
         )
-        print(f"Updated release {rel['html_url']}")
+        print(f"Completing existing draft release {rel.get('html_url', tag)}")
+    return rel
 
+
+def upload_asset(tok, rel, name: str, blob: bytes, ctype: str):
     for asset in rel.get("assets", []):
-        if asset["name"] == ASSET:
+        if asset["name"] == name:
             api(f"/repos/{REPO}/releases/assets/{asset['id']}", tok, method="DELETE")
-            print("Removed previous asset")
-
-    with open(exe, "rb") as f:
-        blob = f.read()
+            print(f"Removed previous {name} from the draft")
     up = api(
-        f"/repos/{REPO}/releases/{rel['id']}/assets?name={ASSET}",
+        f"/repos/{REPO}/releases/{rel['id']}/assets?name={name}",
         tok,
         data=blob,
-        ctype="application/octet-stream",
+        ctype=ctype,
         host="uploads.github.com",
     )
-    print(f"Uploaded {ASSET} ({len(blob) / 1048576:.1f} MB)")
-    print(f"Download: {up['browser_download_url']}")
+    if not up:
+        raise SystemExit(f"Failed to upload {name}")
+    return up
+
+
+def verify_draft(tok, tag: str, head: str, exe_hash: str, exe_size: int):
+    fresh = api(f"/repos/{REPO}/releases/tags/{tag}", tok)
+    if fresh is None:
+        raise SystemExit("draft release vanished during verification")
+    target = (fresh.get("target_commitish") or "").strip()
+    if target != head:
+        raise SystemExit(f"draft target_commitish {target!r} != release commit {head!r}")
+    if fresh.get("name") != f"FastPrompter {tag}":
+        raise SystemExit(f"draft name {fresh.get('name')!r} mismatch")
+    assets = {asset["name"]: asset for asset in fresh.get("assets", [])}
+    if ASSET not in assets:
+        raise SystemExit(f"draft is missing asset {ASSET}")
+    asset = assets[ASSET]
+    if asset.get("size") != exe_size:
+        raise SystemExit(f"uploaded {ASSET} size {asset.get('size')} != local {exe_size}")
+    digest = asset.get("digest") or ""
+    if digest and digest != f"sha256:{exe_hash}":
+        raise SystemExit(f"uploaded {ASSET} digest {digest} != local sha256:{exe_hash}")
+    if ASSET_SHA not in assets:
+        raise SystemExit(f"draft is missing asset {ASSET_SHA}")
+    print(f"Draft verified remotely: commit {head[:12]}, {ASSET} {exe_size} bytes")
+
+
+def publish(tok, rel):
+    return api(
+        f"/repos/{REPO}/releases/{rel['id']}",
+        tok,
+        data=json.dumps({"draft": False}).encode(),
+        method="PATCH",
+    )
+
+
+def verify_published_tag(tok, tag: str, head: str) -> None:
+    ref = api(f"/repos/{REPO}/git/ref/tags/{tag}", tok)
+    if ref is None:
+        raise SystemExit(f"tag {tag} not found on GitHub after publish")
+    obj = ref.get("object", {})
+    sha = obj.get("sha", "")
+    if obj.get("type") == "tag":
+        tag_obj = api(f"/repos/{REPO}/git/tags/{sha}", tok)
+        sha = (tag_obj or {}).get("object", {}).get("sha", "")
+    if sha != head:
+        raise SystemExit(f"remote tag {tag} -> {sha[:12]} != release commit {head[:12]}")
+    print(f"Remote tag {tag} verified at {head[:12]}")
+
+
+def main() -> None:
+    root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    os.chdir(root)
+    version = read_version()
+    check_version_parity(version)
+    fetch_origin()
+    check_release_branch()
+    check_tag_provenance(version)
+    check_clean_tree()
+    exe = os.path.join("build", ASSET)
+    if not os.path.exists(exe):
+        raise SystemExit("build/FastPrompter.exe missing — run tools/build.py first")
+    check_receipt(version, exe)
+
+    tag = f"v{version}"
+    head = rp.git_head()
+    notes = read_notes(version)
+    blob = open(exe, "rb").read()
+    exe_hash = rp.sha256_file(rp.Path(exe))
+    sha_blob = f"{exe_hash}  {ASSET}\n".encode()
+
+    tok = get_token()
+    rel = ensure_draft(tok, tag, head, notes)
+    uploaded = upload_asset(tok, rel, ASSET, blob, "application/octet-stream")
+    upload_asset(tok, rel, ASSET_SHA, sha_blob, "text/plain")
+    verify_draft(tok, tag, head, exe_hash, len(blob))
+    published = publish(tok, rel)
+    verify_published_tag(tok, tag, head)
+    print(f"Published {published.get('html_url', tag)}")
+    print(f"Download: {uploaded.get('browser_download_url', '')}")
 
 
 if __name__ == "__main__":
     main()
-
-

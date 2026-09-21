@@ -62,7 +62,11 @@ def _setting_map(data: dict, key: str) -> dict[str, str]:
 def default_account_label(account) -> str:
     """Detected compact label used until the user explicitly overrides it."""
     if account.provider_id == "claude":
-        return "CL"
+        # Same rule as Codex below: the ordinal only appears once a second
+        # account exists, so a single-account machine keeps the badge it has
+        # always had and two accounts never share one indistinguishable "CL".
+        suffix = account.display_name.removeprefix("Claude").strip()
+        return f"CL{suffix}" if suffix else "CL"
     if account.provider_id == "antigravity":
         return "AG"
     if account.provider_id == "zcode":

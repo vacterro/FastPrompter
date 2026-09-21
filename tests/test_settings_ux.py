@@ -206,8 +206,8 @@ class TestSettingsGearEasterEgg(unittest.TestCase):
         cls._app = QApplication.instance() or QApplication([])
 
     def test_gear_button_toggles_settings_without_rotation(self):
-        from fastprompter.main import FastPrompter, _SettingsGearButton
         import fastprompter.core.state as state_mod
+        from fastprompter.main import FastPrompter, _SettingsGearButton
         state_mod.get_db_path = lambda p=1: ":memory:"
         state_mod.run_portable_backup = lambda d, p=1: None
         FastPrompter.setup_single_instance_server = lambda s: None
@@ -233,8 +233,35 @@ class TestSettingsExitButton(unittest.TestCase):
         cls._app = QApplication.instance() or QApplication([])
 
     def test_settings_exit_buttons_trigger_quit(self):
-        from fastprompter.main import FastPrompter
         import fastprompter.core.state as state_mod
+        from fastprompter.main import FastPrompter
+        # T-1300: these are PROCESS-GLOBAL class attributes. Assigning them
+        # directly (as this test used to) leaked the stubs into every later
+        # test in the same process — the release gate runs tests/ then
+        # tests_smoke/ in ONE process, so a stubbed `quit_app` silently made
+        # the smoke quit-contract suite fail. Capture and restore them.
+        _patched = (
+            (state_mod, "get_db_path"),
+            (state_mod, "run_portable_backup"),
+            (FastPrompter, "setup_single_instance_server"),
+            (FastPrompter, "register_all_hotkeys"),
+            (FastPrompter, "unregister_all_hotkeys"),
+            (FastPrompter, "_init_limit_service"),
+            (FastPrompter, "quit_app"),
+        )
+        _missing = object()
+        for holder, name in _patched:
+            original = getattr(holder, name, _missing)
+
+            def _restore(h=holder, n=name, v=original):
+                if v is _missing:
+                    if hasattr(h, n):
+                        delattr(h, n)
+                else:
+                    setattr(h, n, v)
+
+            self.addCleanup(_restore)
+
         state_mod.get_db_path = lambda p=1: ":memory:"
         state_mod.run_portable_backup = lambda d, p=1: None
         FastPrompter.setup_single_instance_server = lambda s: None

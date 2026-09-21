@@ -78,6 +78,42 @@ def _cycle_token(window: UsageWindow) -> str:
     return "no-reset"
 
 
+# A genuine Weekly reset restores the allowance to approximately full
+# capacity (observed real-world behavior: effectively ~100% in nearly every
+# reset). ``recovered`` — any upward jump > 1.0 — proves only that capacity
+# INCREASED, never that a quota boundary was crossed: a 20% -> 60% climb can
+# be a server-side correction, a banked/spent recompute, or a fresh sample
+# from a different source. So a recovery episode is a CONFIRMED reset only
+# when the allowance lands near full; smaller climbs stay silent. Partial
+# evidence is deliberately preferred over a confident announcement of a
+# reset that did not happen.
+CONFIRMED_REFILL_FRACTION = 0.9
+
+
+def _classify_recovery(prior_remaining, window: UsageWindow) -> str:
+    """Semantic class of a quota recovery episode.
+
+    ``recovered`` (the caller's upward jump) is a REPLENISHMENT signal; this
+    function decides whether it deserves to be called a RESET. Classes:
+
+    * "reset"      — near-full refill; a genuine allowance boundary was
+                     almost certainly crossed. The only class that notifies.
+    * "partial"    — capacity increased but the window is nowhere near
+                     full: correction/refill/recompute, not a reset.
+    * "reconciliation" — data came from a source refresh with no percentage
+                     evidence (window unavailable/unknown); never notifies.
+
+    A hard "must be exactly 100%" rule is deliberately avoided: a reset is
+    often first observed after some capacity was already consumed.
+    """
+    remaining = getattr(window, "remaining_percent", None)
+    if not isinstance(remaining, (int, float)):
+        return "reconciliation"
+    if remaining >= 100.0 * CONFIRMED_REFILL_FRACTION:
+        return "reset"
+    return "partial"
+
+
 def _recovered(prior_remaining, remaining) -> bool:
     """True when quota genuinely recovered — the ONLY real reset signal.
 
@@ -123,7 +159,7 @@ def evaluate_limit_notifications(accounts, snapshots, rules, state,
         snap = snapshots.get(account.key)
         if snap is None or snap.status != OK:
             continue
-        for window in resolved_windows(snap.windows):
+        for window in resolved_windows(snap.windows, now=now):
             if not isinstance(window, UsageWindow) or not window.available:
                 continue
             if not isinstance(window.remaining_percent, (int, float)):
@@ -153,26 +189,40 @@ def evaluate_limit_notifications(accounts, snapshots, rules, state,
                 prior.pop("low_alerted", None)
 
             # CORE-002: reset alert fires ONCE per recovery episode.
-            # Latch `reset_alerted` on the first recovery jump, and re-arm
-            # only when quota DROPS back down (>1% decrease).
+            # Latch `reset_alerted` on the confirmed recovery, and re-arm
+            # only when quota falls back OUT of confirmed-reset territory
+            # (a 1%-jitter dip near full must not re-arm the announcement;
+            # genuine consumption crosses the confirmed boundary).
+            confirmed_full = 100.0 * CONFIRMED_REFILL_FRACTION
             dropped = (isinstance(prior_remaining, (int, float))
-                       and prior_remaining - remaining > 1.0)
+                       and prior_remaining >= confirmed_full
+                       and remaining < confirmed_full)
             if dropped:
                 prior.pop("reset_alerted", None)
 
             if recovered and reset_enabled and not prior.get("reset_alerted"):
-                # Suppress false reset alerts between sessions/launches:
-                # If this is the initial poll of a session, or if the reset occurred
-                # in the distant past (>300s ago), do not fire a spurious alert.
-                stale_reset = False
-                reset_epoch = getattr(window, "resets_at_epoch", None)
-                if isinstance(reset_epoch, (int, float)) and reset_epoch > 0:
-                    if now - reset_epoch > 300:
-                        stale_reset = True
-                if not is_initial_poll and not stale_reset:
-                    alerts.append(LimitAlert(
-                        "reset", key, account, window, rule))
-                prior["reset_alerted"] = True
+                # A recovery episode is a SEMANTIC event, not merely an
+                # upward movement: only a CONFIRMED reset (near-full refill,
+                # see _classify_recovery) may notify. A 20% -> 60% climb
+                # stays silent — partial refill/correction is exactly the
+                # false-positive this guard exists for. A partial episode
+                # stays UNLATCHED so a later near-full confirmation within
+                # the same climb can still notify (exactly once — the latch
+                # arms on confirmation, not on the first step).
+                if _classify_recovery(prior_remaining, window) == "reset":
+                    # Suppress false reset alerts between sessions/launches:
+                    # If this is the initial poll of a session, or if the reset
+                    # occurred in the distant past (>300s ago), do not fire a
+                    # spurious alert.
+                    stale_reset = False
+                    reset_epoch = getattr(window, "resets_at_epoch", None)
+                    if isinstance(reset_epoch, (int, float)) and reset_epoch > 0:
+                        if now - reset_epoch > 300:
+                            stale_reset = True
+                    if not is_initial_poll and not stale_reset:
+                        alerts.append(LimitAlert(
+                            "reset", key, account, window, rule))
+                    prior["reset_alerted"] = True
 
             prior["remaining"] = remaining
             if low_enabled and remaining <= threshold:

@@ -20,6 +20,8 @@ from PyQt6.QtCore import QRect, QRectF, Qt
 from PyQt6.QtGui import QColor, QCursor, QFont, QPainter, QPen
 from PyQt6.QtWidgets import QApplication, QWidget
 
+from fastprompter.ui.qt_lifetime import weak_qt_callback
+
 BUILTIN_LAYOUTS: list[tuple[str, list[tuple[float, float, float, float]]]] = [
     ("Quarters", [
         (0.0, 0.0, 0.5, 0.5),
@@ -504,7 +506,8 @@ class FancyZoneOverlay(QWidget):
             self._focus_locked = False
             if hasattr(mw, "_decrement_focus_lock"):
                 from PyQt6.QtCore import QTimer
-                QTimer.singleShot(300, mw._decrement_focus_lock)
+                QTimer.singleShot(300, weak_qt_callback(
+                    mw, type(mw)._decrement_focus_lock))
 
     def closeEvent(self, event):
         self._lock_focus(False)
@@ -603,8 +606,8 @@ class FancyZoneOverlay(QWidget):
         # out-of-range value that later places the window off-screen).
         fx = _heal_fraction((g.x() - a.x()) / a.width())
         fy = _heal_fraction((g.y() - a.y()) / a.height())
-        fw = _heal_size_fraction((g.width() / a.width()))
-        fh = _heal_size_fraction((g.height() / a.height()))
+        fw = _heal_size_fraction(g.width() / a.width())
+        fh = _heal_size_fraction(g.height() / a.height())
         presets = _load_presets(data)
         if len(presets) >= _MAX_PRESETS:
             return

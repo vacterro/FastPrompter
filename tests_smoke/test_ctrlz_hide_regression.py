@@ -20,31 +20,28 @@ from PyQt6.QtCore import QEvent, Qt
 from PyQt6.QtGui import QKeyEvent
 from PyQt6.QtWidgets import QApplication
 
-import fastprompter.core.state as state_mod
-from fastprompter.main import FastPrompter
-
 _app = QApplication.instance() or QApplication([])
 _tmpdir = tempfile.mkdtemp(prefix="fastprompter_ctrlz_")
 
-# NOTE: real shortcuts ARE registered (no noop override)
+# NOTE: hotkey registration is disabled by the shared smoke environment
+# (SmokeEnv), so real global shortcuts never fire during this module.
+
+
+def _win_setup(w, _factory):
+    w.data["close_on_focus_loss"] = "True"
+
+
+def _win_post_show(w, _factory):
+    w._ever_activated = True
+    w._shown_at = 0.0  # past the 2s grace period
 
 
 @pytest.fixture(scope="module")
-def win():
-    state_mod.get_db_path = lambda profile_id=1: os.path.join(_tmpdir, f"z_{profile_id}.db")
-    state_mod.run_portable_backup = lambda data, profile_id=1: None
-    FastPrompter.setup_single_instance_server = lambda self: None
-    w = FastPrompter()
-    w.data["close_on_focus_loss"] = "True"
-    w.resize(960, 540)
-    w.show()
-    w._ever_activated = True
-    w._shown_at = 0.0  # past the 2s grace period
-    _app.processEvents()
+def win(smoke_win):
+    w = smoke_win.create(show=True, size=(960, 540), setup=_win_setup,
+                         post_show=_win_post_show)
     yield w
-    w.auto_save_timer.stop()
-    w.topmost_timer.stop()
-    w.close()
+    smoke_win.retire(w)
 
 
 def _real_ctrl_z(win):
@@ -182,8 +179,25 @@ class TestCtrlZWindowHide:
         """The lock the undo path holds is what actually stops the hide: a
         WindowDeactivate arriving while `_increment_focus_lock` is held must
         NOT reach hide_and_save, and one arriving after the release must."""
+        # an earlier test's deferred deactivation may have hidden the shared
+        # window on this real desktop; re-show and drain under the guard
+        win.ignore_focus_loss = True
+        win.show()
+        _app.processEvents()
+        win.ignore_focus_loss = False
         win._shown_at = 0.0  # past the 2s grace period
+        # T-1300: the offscreen QPA auto-activates a shown window, which stamps
+        # _activated_at with "now" and leaves the 0.25s summon-settle window
+        # open; the native plugin does not activate on show. This test owns the
+        # LOCK contract, not the settle timing, so clear it for both platforms.
+        win._activated_at = 0.0
         win.isActiveWindow = lambda: False  # pretend the window lost focus
+        # this test owns the LOCK contract; foreground ownership (T-732, the
+        # undocked-panel protection) is another test's subject and, under the
+        # real desktop platform, a leftover panel of ours can own the
+        # foreground and legitimately veto the hide
+        real_foreground_ours = win._foreground_is_our_own_window
+        win._foreground_is_our_own_window = lambda: False
 
         hidden = []
         real_hide = win.hide_and_save
@@ -209,3 +223,4 @@ class TestCtrlZWindowHide:
             )
         finally:
             win.hide_and_save = real_hide
+            win._foreground_is_our_own_window = real_foreground_ours

@@ -8,6 +8,7 @@ would keep reporting "not installed" until a restart.
 
 from __future__ import annotations
 
+import threading
 import time
 
 from fastprompter.core.usage_limits.model import AccountRef as AR
@@ -37,6 +38,18 @@ class _Provider:
         pass
 
 
+class _BlockingProvider(_Provider):
+    def __init__(self, accounts, entered, release):
+        super().__init__(accounts)
+        self.entered = entered
+        self.release = release
+
+    def discover_accounts(self):
+        self.entered.set()
+        self.release.wait(5.0)
+        return super().discover_accounts()
+
+
 def _account(stable_id):
     return AR(provider_id="codex", stable_id=stable_id,
               display_name=stable_id, source_kind="test")
@@ -51,6 +64,27 @@ def _service_with(provider):
 
 
 class TestPeriodicRediscovery:
+    def test_ui_start_discovery_never_blocks_caller(self):
+        entered = threading.Event()
+        release = threading.Event()
+        provider = _BlockingProvider([_account("a")], entered, release)
+        service = UsageLimitService(discover=False)
+        service._providers = {"codex": provider}
+        try:
+            started = time.monotonic()
+            service.refresh(rediscover=True)
+            assert time.monotonic() - started < 0.2
+            assert entered.wait(1.0)
+            assert service.accounts == []
+            release.set()
+            deadline = time.monotonic() + 2.0
+            while time.monotonic() < deadline and not service.accounts:
+                time.sleep(0.01)
+            assert [a.stable_id for a in service.accounts] == ["a"]
+        finally:
+            release.set()
+            service.shutdown()
+
     def test_a_new_account_appears_without_a_restart(self):
         provider = _Provider([_account("a")])
         service = _service_with(provider)

@@ -4,9 +4,9 @@ boundary the scheduler fires on, while preserving Temp/Productivity precedence
 and hiding rules that must not appear.
 """
 
+import datetime as _dt_mod
 import os
 import sys
-import datetime as _dt_mod
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 

@@ -21,8 +21,6 @@ import pytest
 from PyQt6.QtCore import QThread
 from PyQt6.QtWidgets import QApplication
 
-import fastprompter.core.state as state_mod
-from fastprompter.main import FastPrompter
 from fastprompter.ui.file_container import FileContainerPanel
 
 _app = QApplication.instance() or QApplication([])
@@ -30,20 +28,10 @@ _tmpdir = tempfile.mkdtemp(prefix="fastprompter_containment_")
 
 
 @pytest.fixture(scope="module")
-def win():
-    state_mod.get_db_path = lambda profile_id=1: os.path.join(_tmpdir, f"c_{profile_id}.db")
-    state_mod.run_portable_backup = lambda data, profile_id=1: None
-    FastPrompter.setup_single_instance_server = lambda self: None
-    FastPrompter.register_all_hotkeys = lambda self: None
-    FastPrompter.unregister_all_hotkeys = lambda self: None
-    w = FastPrompter()
-    w.resize(960, 540)
-    w.show()
-    _app.processEvents()
+def win(smoke_win):
+    w = smoke_win.create(show=True, size=(960, 540))
     yield w
-    w.auto_save_timer.stop()
-    w.topmost_timer.stop()
-    w.close()
+    smoke_win.retire(w)
 
 
 @pytest.fixture()
@@ -120,20 +108,39 @@ def test_clipboard_save_cannot_leave_root(panel, tmp_path):
     root, p = panel
     outside = _outside_dir(tmp_path)
     before = _snapshot(outside)
-    QApplication.clipboard().setText("clip payload")
-    p.save_clipboard_as_file(filename="..\\..\\evil")
-    assert _snapshot(outside) == before
-    p.save_clipboard_as_file(filename="C:\\evil")
-    assert _snapshot(outside) == before
-    assert os.listdir(root) == []
+    _clipboard = QApplication.clipboard()
+    _prior_clipboard = _clipboard.text()
+    try:
+        _clipboard.setText("clip payload")
+        p.save_clipboard_as_file(filename="..\\..\\evil")
+        assert _snapshot(outside) == before
+        p.save_clipboard_as_file(filename="C:\\evil")
+        assert _snapshot(outside) == before
+        assert os.listdir(root) == []
+    finally:
+        _clipboard.setText(_prior_clipboard)
 
 
 def test_clipboard_save_valid_stays_inside(panel):
     root, p = panel
-    QApplication.clipboard().setText("clip payload")
-    p.save_clipboard_as_file(filename="note")
-    assert os.path.isfile(os.path.join(root, "note.txt"))
-    _write(os.path.join(root, "note.txt"), "clip payload")
+    # the smoke suite runs on the real desktop platform here, so the OS
+    # clipboard is shared with whatever clipboard manager the operator runs:
+    # claim it in a bounded retry, and SKIP (never fail) if it stays taken
+    clipboard = QApplication.clipboard()
+    prior = clipboard.text()
+    for _ in range(40):
+        clipboard.setText("clip payload")
+        if clipboard.text() == "clip payload":
+            break
+        time.sleep(0.05)
+    else:
+        pytest.skip("system clipboard is held by another process")
+    try:
+        p.save_clipboard_as_file(filename="note")
+        assert os.path.isfile(os.path.join(root, "note.txt"))
+        _write(os.path.join(root, "note.txt"), "clip payload")
+    finally:
+        clipboard.setText(prior)
 
 
 def test_new_folder_rejects_traversal(panel, tmp_path):
@@ -235,8 +242,8 @@ def test_move_returns_source_remains_when_source_removal_fails(
     real_remove = os.remove
 
     def flaky_remove(path):
-        if path == src:
-            raise OSError("source locked")
+        if os.path.basename(path).startswith("move_src.txt.fpstaging-"):
+            raise OSError("staging locked")
         return real_remove(path)
 
     monkeypatch.setattr(os, "remove", flaky_remove)
@@ -245,7 +252,12 @@ def test_move_returns_source_remains_when_source_removal_fails(
     assert status == "SOURCE_REMAINS"
     assert os.path.isfile(dest), "the destination is published"
     assert open(dest, encoding="utf-8").read() == "payload"
-    assert os.path.isfile(src), "the source stayed behind"
+    # W2-001: the source was renamed to its OWN staging pathname before the
+    # copy, so the stuck object is the staging — never the old plain path
+    staging = [n for n in os.listdir(_tmpdir)
+               if n.startswith("move_src.txt.fpstaging-")]
+    assert staging, "the owned source staging stayed behind"
+    assert not os.path.exists(src)
 
 
 def test_move_returns_moved_when_source_is_gone(panel, monkeypatch):
@@ -291,8 +303,8 @@ def test_sync_move_partial_is_classified_not_failed(
     real_remove = os.remove
 
     def flaky_remove(path):
-        if path == src:
-            raise OSError("source locked")
+        if os.path.basename(path).startswith("classify_src.txt.fpstaging-"):
+            raise OSError("staging locked")
         return real_remove(path)
 
     monkeypatch.setattr(os, "remove", flaky_remove)
@@ -302,7 +314,9 @@ def test_sync_move_partial_is_classified_not_failed(
     p.import_paths([src], do_move=True)
 
     assert os.path.isfile(dest), "the destination is published"
-    assert os.path.isfile(src), "the source stayed behind"
+    staging = [n for n in os.listdir(_tmpdir)
+               if n.startswith("classify_src.txt.fpstaging-")]
+    assert staging, "the owned source staging stayed behind"
     assert ref, "the panel refreshed: the command was classified as done"
     assert "could not be removed" in caplog.text
 
@@ -576,10 +590,10 @@ class TestAsyncContainerOps:
         calls = {"n": 0}
         real_copy = fc._copy_atomic
 
-        def slow_copy(s, d, is_dir, root=None, root_identity=None):
+        def slow_copy(s, d, is_dir, *args, **kwargs):
             calls["n"] += 1
             _t.sleep(0.5)
-            return real_copy(s, d, is_dir, root, root_identity)
+            return real_copy(s, d, is_dir, *args, **kwargs)
 
         monkeypatch.setattr(fc, "_copy_atomic", slow_copy)
         t0 = _t.monotonic()
@@ -617,18 +631,14 @@ class TestAsyncContainerOps:
         events = []
         real_copy = fc._copy_atomic
 
-        def command_copy(
-            src, dest, is_dir, intended_root=None, root_identity=None
-        ):
+        def command_copy(src, dest, is_dir, *args, **kwargs):
             events.append(("start", os.path.basename(src)))
             if src == src_a:
                 started.set()
                 assert release.wait(5.0), "test did not release command A"
                 events.append(("fail", os.path.basename(src)))
                 raise RuntimeError("command A exploded")
-            result = real_copy(
-                src, dest, is_dir, intended_root, root_identity
-            )
+            result = real_copy(src, dest, is_dir, *args, **kwargs)
             events.append(("done", os.path.basename(src)))
             return result
 

@@ -305,10 +305,10 @@ class TestBoundedProbePool:
             assert not paths_mod._PROBE_INFLIGHT, "probe slots never released"
         # a fresh probe now answers again: capacity recovered
         assert paths_mod.exists_within(os.path.dirname(__file__), timeout=2.0) is True
-import pytest
 import os
 import subprocess
 from pathlib import Path
+
 
 def test_t1017_translation_sync_path_isolation(tmp_path):
     # Simulate pointing to a temporary clone worktree but trying to write to a hardcoded host path

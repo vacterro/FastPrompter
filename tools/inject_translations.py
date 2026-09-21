@@ -1,9 +1,10 @@
-﻿import json
+﻿import argparse
+import json
 import os
 import re
 import sys
-import argparse
 from pathlib import Path
+
 
 def main():
     parser = argparse.ArgumentParser(description="Inject translations into source.")

@@ -38,7 +38,10 @@ Full keyboard-driven operation. Layout-independent VK dispatch — works on QWER
 | **Formatting** | **Alt+Backspace** | Delete previous word | Editor |
 | **Formatting** | **Ctrl+Z** | Smart Undo (per silo) | Editor |
 | **Formatting** | **Ctrl+Y** / **Ctrl+Shift+Z** | Smart Redo (mirror of undo) | Editor |
-| **Formatting** | **Ctrl+MiddleButton** | Delete line under cursor (smart list reflow) | Editor |
+| **Editor** | **Ctrl+MiddleButton** | Toggle random colored line mark (click again to remove; never deletes text) | Editor |
+| **Silos** | **Ctrl+MiddleButton** | Toggle random silo color box (click again to remove) | Silos |
+| **Silos** | **MiddleButton** | Move silo to Trash | Silos |
+| **Silos** | **Shift+MiddleButton** | Clear silo text | Silos |
 | **Formatting** | **Alt+MiddleButton** | Bullet-ize every selected line (`• ` prefix) | Editor |
 | **Formatting** | **MiddleButton** | Cycle line state: plain → checked+struck → unchecked | Editor |
 | **Formatting** | **Ctrl+Click on bullet** | Toggle `-` / `•` | Editor |
@@ -79,12 +82,12 @@ All formatting shortcuts toggle inline markers: **Ctrl+B** → `**bold**`, Ctrl+
 
 **Ctrl+E** — format current line as header. Configurable: rule type, bullet, timestamp stamp, alignment. Open Settings → Dividers & headers to customize.
 
-**Ctrl+MiddleButton** — delete whole line with smart reflow: ordered lists renumber, bullet lists close gap. **Alt+MiddleButton** — turn every selected line into a bullet. **MiddleButton** — cycle the clicked line: plain → checked+struck → unchecked.
+**Ctrl+MiddleButton (in editor text)** — toggle a random colored line mark on the clicked line: first click adds a random colored box, second click removes it (text is never touched; to re-roll the color, remove and apply again). Left/right click in the gutter's mark zone cycles the mark colors (OFF included). **Alt+MiddleButton** — turn every selected line into a bullet. **MiddleButton** — cycle the clicked line: plain → checked+struck → unchecked.
 
 **Ctrl+Shift+drag** — grab the line under the pointer (or the whole selection) and move it to the drop indicator; bold, checkboxes and image pills survive the trip.
 
 ### Silo Navigation
-**Ctrl+1** through **Ctrl+0** jump to silos 1-10. **Alt+↑↓** walk sequentially. **Ctrl+N** appends empty silo at bottom.
+**Ctrl+1** through **Ctrl+0** jump to silos 1-10. **Alt+↑↓** walk sequentially. **Ctrl+N** appends empty silo at bottom. **Ctrl+MiddleButton on silo row** — toggle random silo color box (first click assigns random palette color, second click removes it). **MiddleButton on silo** — move silo to Trash. **Shift+MiddleButton on silo** — clear silo text.
 
 ### Snippet Macros
 **F1-F10** paste pre-configured text templates. Bind content via Snippet Manager (**Ctrl+S**) or right-click on F-button.

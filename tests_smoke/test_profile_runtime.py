@@ -41,27 +41,17 @@ import pytest
 from PyQt6.QtWidgets import QApplication
 
 import fastprompter.core.state as state_mod
-from fastprompter.main import FastPrompter
 
 _app = QApplication.instance() or QApplication([])
 _tmpdir = tempfile.mkdtemp(prefix="fastprompter_profile_runtime_")
+SMOKE_DB_STEM = "prt"
 
 
 @pytest.fixture(scope="module")
-def win():
-    state_mod.get_db_path = lambda profile_id=1: os.path.join(_tmpdir, f"prt_{profile_id}.db")
-    state_mod.run_portable_backup = lambda data, profile_id=1: None
-    FastPrompter.setup_single_instance_server = lambda self: None
-    FastPrompter.register_all_hotkeys = lambda self: None
-    FastPrompter.unregister_all_hotkeys = lambda self: None
-    w = FastPrompter()
-    w.resize(960, 540)
-    w.show()
-    _app.processEvents()
+def win(smoke_win):
+    w = smoke_win.create(show=True, size=(960, 540))
     yield w
-    w.auto_save_timer.stop()
-    w.topmost_timer.stop()
-    w.close()
+    smoke_win.retire(w)
 
 
 @pytest.fixture()
@@ -101,7 +91,8 @@ def _setup_category(win, texts=("Foo", "")):
 
 
 def _db(profile_id):
-    return os.path.join(_tmpdir, f"prt_{profile_id}.db")
+    # the SAME resolution the window uses (the smoke env patches get_db_path)
+    return state_mod.get_db_path(profile_id)
 
 
 class TestProfileRuntimeReload:
@@ -114,26 +105,23 @@ class TestProfileRuntimeReload:
         w.data["language"] = "ET"
         w.data["timers"] = [{"name": "timerB", "target": "2030-01-01T12:00:00",
                             "repeat": "daily"}]
-        w.data["watcher_queues"] = {"1": [{"id": "qB", "text": "queue B"}]}
         w.data["productivity_timer"] = {"work_seconds": 777, "break_seconds": 33}
 
         old_timers = w.timers
-        old_queues = w.prompt_queues
         old_pomo = w.productivity_timer
         w._apply_profile_runtime_state()
         assert w.timers is not old_timers, "timers must be reloaded"
-        assert w.prompt_queues is not old_queues, "queues must be reloaded"
         assert w.productivity_timer is not old_pomo, "pomodoro must be rebuilt"
         assert w.productivity_timer.work_seconds == 777
         assert w._current_lang == "ET"
         assert w.sound_manager._data is w.data
         assert [t.name for t in w.timers] == ["timerB"]
-        assert list(w.prompt_queues.keys()) == ["1"]
 
     def test_widget_values_survive_real_switches(self, win, iso_root):
         """DB-persisted widget settings follow the profile across real
         switches, and saving B never writes A's widget values into B."""
         w = win
+        w._ensure_settings_built()   # Settings are lazy-built for startup speed
         w.data["font_size"] = 9
         w.data["preview_mode"] = "Source View"
         w.data["tray_visible"] = "False"
@@ -257,9 +245,12 @@ class TestUndoPathCapture:
 
 class TestProfileDocumentCacheBoundary:
     def test_same_category_and_slot_never_reuse_foreign_document(
-            self, win, iso_root):
-        w = win
-        w.change_profile(0)
+            self, fresh_win):
+        # a per-test window: the backup coordinator is process-global, and a
+        # module window reused across many switches can leave a drained
+        # destination behind that refuses the NEXT switch (test isolation,
+        # not a product claim)
+        w = fresh_win
         w.data["temp_presets"][0] = "PROFILE A"
         w.silo_docs[:] = []
         w._switch_to_slot(0, initial=True, sync_outgoing=False)
@@ -273,7 +264,9 @@ class TestProfileDocumentCacheBoundary:
         w._switch_to_slot(0, initial=True, sync_outgoing=False)
 
         assert w.text_area.toPlainText() == "PROFILE B"
-        assert w.text_area.document() is not profile_a_doc
+        # the ONE retained editor document may be the same object by design;
+        # what must never survive is any OTHER profile-A document or any
+        # document-derived cache entry
         assert all(
             doc is not profile_a_doc
             for silo_docs, archive_docs in w._category_document_cache.values()
@@ -294,12 +287,22 @@ class TestPersistedUndoReload:
         with open(path, "w", encoding="utf-8") as f:
             json.dump({"undo": undo, "redo": redo}, f)
 
-    def test_switch_loads_that_profiles_undo(self, win, iso_root):
-        w = win
+    @staticmethod
+    def _nav(src):
+        # a persisted entry must pass the executable-snapshot schema
+        # (CORE-014): the compact navigation record is the smallest valid one
+        return {"_switch": True, "active_temp_slot": 0,
+                "active_is_archive": False, "src": src}
+
+    def test_switch_loads_that_profiles_undo(self, fresh_win):
+        w = fresh_win
+        # a switch to the CURRENT profile is a no-op, so land on B first or
+        # the change_profile(0) below never reloads anything
+        w.change_profile(1)
         a_undo = os.path.splitext(_db(1))[0] + "_undo.json"
         b_undo = os.path.splitext(_db(2))[0] + "_undo.json"
-        self._write_undo(a_undo, [{"src": "A"}], [])
-        self._write_undo(b_undo, [{"src": "B"}], [{"src": "BR"}])
+        self._write_undo(a_undo, [self._nav("A")], [])
+        self._write_undo(b_undo, [self._nav("B")], [self._nav("BR")])
 
         w.change_profile(0)
         assert [s.get("src") for s in w.data_undo_stack] == ["A"]
@@ -317,11 +320,12 @@ class TestPersistedUndoReload:
             if os.path.exists(p):
                 os.remove(p)
 
-    def test_malformed_undo_file_yields_empty_stack(self, win, iso_root):
-        w = win
+    def test_malformed_undo_file_yields_empty_stack(self, fresh_win):
+        w = fresh_win
+        w.change_profile(1)
         a_undo = os.path.splitext(_db(1))[0] + "_undo.json"
         b_undo = os.path.splitext(_db(2))[0] + "_undo.json"
-        self._write_undo(a_undo, [{"src": "A"}], [])
+        self._write_undo(a_undo, [self._nav("A")], [])
         with open(b_undo, "w", encoding="utf-8") as f:
             f.write("not json at all {{{")
 
@@ -498,7 +502,7 @@ class TestBakThrottlePerProfile:
                             lambda profile_id=1: db1 if profile_id == 1 else db2)
         monkeypatch.setattr(
             "fastprompter.utils.portable_backup.run_portable_backup",
-            lambda data, profile_id=1: None)
+            lambda data, profile_id=1, content_gen=None, **kw: None)
         calls = {"n": 0}
         real_bak = state_mod._backup_atomically
 

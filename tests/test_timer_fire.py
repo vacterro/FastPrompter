@@ -10,6 +10,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import datetime  # noqa: E402
 
+import pytest  # noqa: E402
 from PyQt6.QtWidgets import QApplication, QWidget  # noqa: E402
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
@@ -106,8 +107,81 @@ def _patch_toast(monkeypatch, truthy=True):
     return seen
 
 
-def test_notify_on_plays_sound_and_shows_toast(monkeypatch):
+def _retire(fake, foreign=None):
+    """Give back everything this fake owns: jobs, widget, queued deletions.
+
+    T-1260: ``_FakeFire`` is a real QWidget parenting real QTimers, and every
+    test built one and walked away. The widgets stayed alive on the module's
+    QApplication with their jobs still armed, so a later test could be running
+    inside somebody else's leftover event-loop traffic -- which is how the fire
+    test passed alone and failed in a full run.
+    """
+    from PyQt6 import sip
+    from PyQt6.QtCore import QEvent, QTimer
+
+    owned_timers = list(fake.findChildren(QTimer))
+    try:
+        fake._cancel_timer_test_jobs()
+    except Exception:
+        pass
+    assert fake._timer_test_jobs == {}, "test job registry not retired"
+    fake.close()
+    fake.deleteLater()
+    # Receiver-scoped: only this fake's DeferredDelete is delivered. A
+    # process-wide drain can destroy unrelated Qt wrappers held by another
+    # test and turn a harmless cleanup into a native crash.
+    QApplication.sendPostedEvents(fake, QEvent.Type.DeferredDelete)
+    QApplication.processEvents()
+    assert sip.isdeleted(fake), "fake QWidget survived scoped retirement"
+    assert all(sip.isdeleted(timer) for timer in owned_timers), \
+        "fake-owned QTimer survived scoped retirement"
+    if foreign is not None:
+        assert not sip.isdeleted(foreign), "retirement deleted foreign QObject"
+
+
+@pytest.fixture()
+def fire():
+    """A bound ``_FakeFire`` that starts clean and is retired afterwards."""
     fake = _bind(_FakeFire())
+    assert fake._timer_test_jobs == {}
+    try:
+        yield fake
+    finally:
+        _retire(fake)
+
+
+def _wait_until(predicate, timeout_ms=5000):
+    """Spin the REAL Qt event loop until ``predicate()`` or the watchdog fires.
+
+    Condition-driven, not speed-assumed: it returns the moment the job is
+    observed, and the watchdog bounds the failure case instead of trading
+    correctness for a longer sleep.
+
+    Deliberately ``QTest.qWait`` and NOT a nested ``QEventLoop.exec()``.
+    ``exec()`` is a full event loop: it delivers DeferredDelete to every
+    receiver in the process, so this wait would retire Qt objects other test
+    files still own -- the same hazard as
+    ``sendPostedEvents(None, DeferredDelete)``, only spelled differently. In
+    the full run that took the interpreter down from inside this function
+    ("Fatal Python error: Aborted", 75%). ``qWait`` pumps ``processEvents``,
+    which does NOT deliver DeferredDelete, so the timer under test still fires
+    through the real scheduler and nobody else's objects are touched.
+    """
+    import time as _clock
+
+    from PyQt6.QtTest import QTest
+
+    deadline = _clock.monotonic() + timeout_ms / 1000.0
+    while True:
+        if predicate():
+            return True
+        if _clock.monotonic() >= deadline:
+            return predicate()
+        QTest.qWait(5)
+
+
+def test_notify_on_plays_sound_and_shows_toast(monkeypatch, fire):
+    fake = fire
     seen = _patch_toast(monkeypatch, truthy=True)
     t = Timer("a", datetime.datetime.now(), sound="tick", volume=0.7)
     fake._notify_timer(t, fired_at=datetime.datetime.now())
@@ -115,8 +189,8 @@ def test_notify_on_plays_sound_and_shows_toast(monkeypatch):
     assert fake._sound_calls == [("tick", 0.7)]
 
 
-def test_notify_off_no_toast_no_tray_but_sound(monkeypatch):
-    fake = _bind(_FakeFire())
+def test_notify_off_no_toast_no_tray_but_sound(monkeypatch, fire):
+    fake = fire
     seen = _patch_toast(monkeypatch, truthy=True)
     t = Timer("a", datetime.datetime.now(), sound="tick", volume=0.7,
               show_notification=False)
@@ -126,8 +200,8 @@ def test_notify_off_no_toast_no_tray_but_sound(monkeypatch):
     assert fake._sound_calls == [("tick", 0.7)]  # sound still plays
 
 
-def test_global_sound_settings_not_mutated(monkeypatch):
-    fake = _bind(_FakeFire())
+def test_global_sound_settings_not_mutated(monkeypatch, fire):
+    fake = fire
     _patch_toast(monkeypatch, truthy=True)
     before = dict(fake.data)
     t = Timer("a", datetime.datetime.now(), sound="notify", volume=0.9)
@@ -135,8 +209,8 @@ def test_global_sound_settings_not_mutated(monkeypatch):
     assert fake.data == before             # sound_ui/volume untouched
 
 
-def test_pool_silent_still_notifies(monkeypatch):
-    fake = _bind(_FakeFire())
+def test_pool_silent_still_notifies(monkeypatch, fire):
+    fake = fire
     seen = _patch_toast(monkeypatch, truthy=True)
     t = Timer("a", datetime.datetime.now(), sound_mode=SOUND_MODE_POOL,
               sound_rules=[{"sound": "tick", "enabled": True, "all_day": False,
@@ -147,8 +221,8 @@ def test_pool_silent_still_notifies(monkeypatch):
     assert fake._sound_calls == []          # no sound chosen
 
 
-def test_check_timers_fires_alarm_and_calendar(monkeypatch):
-    fake = _bind(_FakeFire())
+def test_check_timers_fires_alarm_and_calendar(monkeypatch, fire):
+    fake = fire
     _patch_toast(monkeypatch, truthy=True)
     now = datetime.datetime(2026, 7, 21, 12, 0, 0)
     fake.timers = [
@@ -176,8 +250,8 @@ def test_hidden_from_topbar_still_fires(monkeypatch):
     assert next_due([hidden], now, topbar_only=True) is None
 
 
-def test_missing_sound_ref_scheduler_survives(monkeypatch):
-    fake = _bind(_FakeFire())
+def test_missing_sound_ref_scheduler_survives(monkeypatch, fire):
+    fake = fire
     seen = _patch_toast(monkeypatch, truthy=True)
     t = Timer("gone", datetime.datetime.now(), sound="file:no_such.wav",
               volume=0.5)
@@ -186,8 +260,8 @@ def test_missing_sound_ref_scheduler_survives(monkeypatch):
     assert fake._sound_calls == [("file:no_such.wav", 0.5)]
 
 
-def test_test_notification_deep_copies_behavior():
-    fake = _bind(_FakeFire())
+def test_test_notification_deep_copies_behavior(fire):
+    fake = fire
     t = Timer("orig", datetime.datetime.now(), sound="notify", volume=0.3,
               sound_mode=SOUND_MODE_POOL,
               sound_rules=[{"sound": "tick", "enabled": True, "all_day": True,
@@ -203,8 +277,8 @@ def test_test_notification_deep_copies_behavior():
 
 # ---- second wave: snooze ownership/clones, test-job lifecycle, isolation ---
 
-def test_snooze_repeating_creates_one_shot_clone_and_keeps_series():
-    fake = _bind(_FakeFire())
+def test_snooze_repeating_creates_one_shot_clone_and_keeps_series(fire):
+    fake = fire
     now = datetime.datetime(2026, 7, 21, 12, 0, 0)
     t = Timer("daily", now - datetime.timedelta(seconds=1),
               repeat=REPEAT_DAILY, sound_mode=SOUND_MODE_POOL,
@@ -223,8 +297,8 @@ def test_snooze_repeating_creates_one_shot_clone_and_keeps_series():
     assert fake.saved == 1
 
 
-def test_snooze_one_shot_rearms_legacy():
-    fake = _bind(_FakeFire())
+def test_snooze_one_shot_rearms_legacy(fire):
+    fake = fire
     now = datetime.datetime(2026, 7, 21, 12, 0, 0)
     t = Timer("once", now - datetime.timedelta(seconds=1))
     t.fired = True
@@ -235,8 +309,8 @@ def test_snooze_one_shot_rearms_legacy():
     assert t.fired is False
 
 
-def test_snooze_refuses_timer_not_owned_by_current_profile():
-    fake = _bind(_FakeFire())
+def test_snooze_refuses_timer_not_owned_by_current_profile(fire):
+    fake = fire
     now = datetime.datetime(2026, 7, 21, 12, 0, 0)
     stale = Timer("old-profile", now - datetime.timedelta(seconds=1))
     stale.fired = True
@@ -249,8 +323,8 @@ def test_snooze_refuses_timer_not_owned_by_current_profile():
     assert stale.fired is True               # not re-armed either
 
 
-def test_check_timers_isolates_one_bad_timer():
-    fake = _bind(_FakeFire())
+def test_check_timers_isolates_one_bad_timer(fire):
+    fake = fire
     now = datetime.datetime(2026, 7, 21, 12, 0, 0)
     bad = Timer("bad", now - datetime.timedelta(seconds=1))
     good = Timer("good", now - datetime.timedelta(seconds=1))
@@ -267,8 +341,8 @@ def test_check_timers_isolates_one_bad_timer():
     assert fired == [good]
 
 
-def test_check_timers_still_saves_when_a_timer_raises():
-    fake = _bind(_FakeFire())
+def test_check_timers_still_saves_when_a_timer_raises(fire):
+    fake = fire
     now = datetime.datetime(2026, 7, 21, 12, 0, 0)
     fake.timers = [Timer("bad", now - datetime.timedelta(seconds=1))]
     fake._notify_timer = lambda t, fired_at=None: (_ for _ in ()).throw(
@@ -277,26 +351,92 @@ def test_check_timers_still_saves_when_a_timer_raises():
     assert fake.saved == 1                   # the due-batch save still ran
 
 
-def test_test_notification_job_is_registered_and_fires():
-    fake = _bind(_FakeFire())
+def test_test_notification_job_is_registered_and_fires(fire):
+    """The REAL QTimer path, waited on by CONDITION rather than by clock.
+
+    T-1260: the old shape waited a flat 150 ms, which is generous on an idle
+    machine and a coin flip when the whole suite shares this event loop. The
+    wait now quits the instant ``_notify_timer`` is observed, with a watchdog
+    bounding the failure; a short bounded window afterwards still gives a
+    DUPLICATE fire room to land, so "exactly once" keeps its meaning.
+    """
+    from PyQt6.QtTest import QTest
+
     t = Timer("probe", datetime.datetime.now(), sound="notify", volume=0.3,
               show_notification=False)
     seen = []
-    fake._notify_timer = lambda timer, fired_at=None: seen.append(timer)
-    fake.test_timer_notification(t, delay_seconds=0.05)
-    assert len(fake._timer_test_jobs) == 1
-    QApplication.processEvents()
-    from PyQt6.QtTest import QTest
-    QTest.qWait(150)
+    fire._notify_timer = lambda timer, fired_at=None: seen.append(timer)
+    fire.test_timer_notification(t, delay_seconds=0.05)
+    assert len(fire._timer_test_jobs) == 1
+
+    assert _wait_until(lambda: bool(seen)), "test job never fired"
+    QTest.qWait(150)                         # let a duplicate land if it exists
+
     assert len(seen) == 1                    # fired exactly once
     assert seen[0].name == "probe"
     assert seen[0].volume == 0.3
     assert seen[0].show_notification is False
-    assert fake._timer_test_jobs == {}       # and retired from the registry
+    assert fire._timer_test_jobs == {}       # and retired from the registry
 
 
-def test_test_notification_jobs_cancelled_on_shutdown():
+def test_the_job_still_fires_exactly_once_behind_queued_traffic(fire):
+    """T-1260 contaminator regression: a busy event loop changes nothing.
+
+    Unrelated queued callbacks in front of the job used to be exactly the
+    condition the flat wait could not survive. The scheduling integration is
+    still the real QTimer -- ``_fire_timer_test_job`` is never called directly,
+    or this would stop testing the thing that broke.
+    """
+    from PyQt6.QtCore import QTimer
+    from PyQt6.QtTest import QTest
+
+    noise = []
+    for i in range(200):
+        QTimer.singleShot(0, lambda i=i: noise.append(i))
+
+    t = Timer("probe", datetime.datetime.now(), sound="notify", volume=0.3,
+              show_notification=False)
+    seen = []
+    fire._notify_timer = lambda timer, fired_at=None: seen.append(timer)
+    fire.test_timer_notification(t, delay_seconds=0.05)
+
+    assert _wait_until(lambda: bool(seen)), "test job never fired"
+    QTest.qWait(150)
+
+    assert len(seen) == 1
+    assert fire._timer_test_jobs == {}
+    assert len(noise) == 200                 # the noise really did run
+
+
+def test_a_retired_fake_leaves_no_jobs_behind():
+    """Leak sentinel: retiring a fake empties its registry, every time."""
     fake = _bind(_FakeFire())
+    t = Timer("probe", datetime.datetime.now(), sound="notify", volume=0.3)
+    for _ in range(3):
+        fake.test_timer_notification(t, delay_seconds=5)
+    assert len(fake._timer_test_jobs) == 3
+    _retire(fake)
+    assert fake._timer_test_jobs == {}
+
+
+def test_scoped_retirement_leaves_foreign_pending_qobject_alive():
+    """The fake cleanup must not drain another QObject's DeferredDelete."""
+    from PyQt6 import sip
+    from PyQt6.QtCore import QEvent
+
+    fake = _bind(_FakeFire())
+    foreign = QWidget()
+    foreign.deleteLater()
+    try:
+        _retire(fake, foreign)
+        assert not sip.isdeleted(foreign)
+    finally:
+        QApplication.sendPostedEvents(foreign, QEvent.Type.DeferredDelete)
+        assert sip.isdeleted(foreign)
+
+
+def test_test_notification_jobs_cancelled_on_shutdown(fire):
+    fake = fire
     t = Timer("probe", datetime.datetime.now(), sound="notify", volume=0.3)
     seen = []
     fake._notify_timer = lambda timer, fired_at=None: seen.append(timer)
@@ -310,8 +450,8 @@ def test_test_notification_jobs_cancelled_on_shutdown():
     assert seen == []                        # nothing fired after the cancel
 
 
-def test_test_notification_stale_profile_never_fires():
-    fake = _bind(_FakeFire())
+def test_test_notification_stale_profile_never_fires(fire):
+    fake = fire
     t = Timer("probe", datetime.datetime.now(), sound="notify", volume=0.3)
     seen = []
     fake._notify_timer = lambda timer, fired_at=None: seen.append(timer)
@@ -323,8 +463,8 @@ def test_test_notification_stale_profile_never_fires():
     assert fake._timer_test_jobs == {}
 
 
-def test_test_notification_hundred_jobs_cancel_clean():
-    fake = _bind(_FakeFire())
+def test_test_notification_hundred_jobs_cancel_clean(fire):
+    fake = fire
     t = Timer("probe", datetime.datetime.now(), sound="notify", volume=0.3)
     for _ in range(100):
         fake.test_timer_notification(t, delay_seconds=0.05)

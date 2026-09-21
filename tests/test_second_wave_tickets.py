@@ -113,6 +113,7 @@ def test_incomplete_partial_is_cleanable(backup_dir):
 # ----------------------------------------------------------------- W2-002 (updated to CORE-001 fail-closed)
 def test_state_saver_never_writes_snippet_slot_100(tmp_path):
     import sqlite3
+
     from fastprompter.core import state as state_mod
 
     path = str(tmp_path / "db.db")
@@ -153,6 +154,7 @@ def _mk_state_db(path):
 
 def test_loader_migrates_overflow_snippet_to_empty_slot(tmp_path):
     import sqlite3
+
     from fastprompter.core import state as state_mod
 
     path = str(tmp_path / "db.db")

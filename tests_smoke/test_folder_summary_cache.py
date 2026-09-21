@@ -46,23 +46,21 @@ class TestFolderSummaryCache:
         assert calls == [], "an unchanged folder must NOT be re-walked"
         fc._folder_summary_cache.clear()
 
-    def test_direct_change_invalidates_immediately(self, tmp_path, monkeypatch):
+    def test_direct_change_invalidates_immediately(self, tmp_path):
         import fastprompter.ui.file_container as fc
 
         d = str(tmp_path / "silo2")
         _seed(d)
         fc._folder_summary_cache.clear()
-        real_walk = os.walk
-        calls = []
-        monkeypatch.setattr(
-            fc.os, "walk",
-            lambda p, *a, **k: (calls.append(p) or real_walk(p, *a, **k)))
-        fc.folder_summary(d)
-        calls.clear()
+        first = fc.folder_summary(d)
+        assert "2 item(s)" in first, first
         with open(os.path.join(d, "c.txt"), "w", encoding="utf-8") as f:
             f.write("z")
-        fc.folder_summary(d)
-        assert calls, "a direct change must recompute"
+        # a changed direct listing must recompute immediately (inside the TTL);
+        # unchanged SUBTREES may legitimately be served from the per-path cache
+        second = fc.folder_summary(d)
+        assert second != first, "a direct change must recompute"
+        assert "3 item(s)" in second, second
         fc._folder_summary_cache.clear()
 
     def test_ttl_bounds_staleness_for_nested_changes(self, tmp_path, monkeypatch):

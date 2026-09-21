@@ -13,9 +13,10 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QWidget
 
 from fastprompter.ui.cursor_mixin import CursorMixin
+from fastprompter.ui.resizers import EdgeResizer
 
 
 class _Win(CursorMixin):
@@ -32,6 +33,11 @@ class _Win(CursorMixin):
 @pytest.fixture
 def app():
     application = QApplication.instance() or QApplication([])
+    # A window built by an earlier test in this process may still hold the
+    # override it pushed at startup; these tests measure OUR pushes, so start
+    # from a clean stack instead of asserting against someone else's.
+    while application.overrideCursor() is not None:
+        application.restoreOverrideCursor()
     yield application
     # never leak an override into the next test
     while application.overrideCursor() is not None:
@@ -82,3 +88,30 @@ def test_releasing_when_never_applied_is_a_no_op(app):
         assert app.overrideCursor().shape() == Qt.CursorShape.WaitCursor
     finally:
         app.restoreOverrideCursor()
+
+
+def test_resize_shape_temporarily_replaces_static_arrow(app):
+    win = _Win(static_cursor="True")
+    win.apply_static_cursor()
+
+    assert win.apply_static_cursor_shape(Qt.CursorShape.SizeHorCursor) is True
+    assert app.overrideCursor().shape() == Qt.CursorShape.SizeHorCursor
+
+    win.apply_static_cursor()
+    assert app.overrideCursor().shape() == Qt.CursorShape.ArrowCursor
+
+
+def test_window_edge_resizer_exposes_and_restores_resize_shape(app):
+    class _Window(CursorMixin, QWidget):
+        def __init__(self):
+            super().__init__()
+            self.data = {"static_cursor": "True"}
+
+    win = _Window()
+    win.apply_static_cursor()
+    handle = EdgeResizer(win, "bottomright")
+
+    handle.enterEvent(None)
+    assert app.overrideCursor().shape() == Qt.CursorShape.SizeFDiagCursor
+    handle.leaveEvent(None)
+    assert app.overrideCursor().shape() == Qt.CursorShape.ArrowCursor

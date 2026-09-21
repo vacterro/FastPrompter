@@ -114,10 +114,16 @@ class TestInit:
         # No archive initially
         assert len(state._last_saved_arc) == 0
 
-    def test_profile_id_default(self):
-        """Default profile_id should be 1."""
+    def test_profile_id_default(self, tmp_path, monkeypatch):
+        """Default profile_id should be 1. get_db_path is patched BEFORE
+        construction so the probe never opens (and never snapshots) the real
+        data/ directory (T-1222 section 9)."""
+        monkeypatch.setattr(
+            "fastprompter.core.state.get_db_path",
+            lambda profile_id=1: str(tmp_path / f"default_{profile_id}.db"))
         s = FastPrompterState()
         assert s.profile_id == 1
+        s.conn.close()
 
 
 # ---------------------------------------------------------------------------
@@ -600,7 +606,7 @@ class TestSettingsSurviveAReload:
             if fresh.conn:
                 fresh.conn.close()
 
-    def test_every_structured_setting_is_json_encoded(self):
+    def test_every_structured_setting_is_json_encoded(self, tmp_path, monkeypatch):
         """Guard the tuple itself: no dict or list default may be missing.
 
         This is the check that would have caught silo_type_all before a user
@@ -611,6 +617,10 @@ class TestSettingsSurviveAReload:
         """
         from fastprompter.core.state import _JSON_SETTINGS, _SETTINGS_SKIP
 
+        # patched BEFORE construction so the probe never snapshots data/
+        monkeypatch.setattr(
+            "fastprompter.core.state.get_db_path",
+            lambda profile_id=1: str(tmp_path / f"json_{profile_id}.db"))
         probe = FastPrompterState(profile_id=999)
         try:
             missing = [
@@ -623,7 +633,8 @@ class TestSettingsSurviveAReload:
             if probe.conn:
                 probe.conn.close()
 
-    def test_a_settings_round_trip_keeps_every_structured_value(self):
+    def test_a_settings_round_trip_keeps_every_structured_value(
+            self, tmp_path, monkeypatch):
         """Save then reload must hand back the same objects, not their reprs.
 
         The point of the ticket: "100% save state". Every dict/list setting is
@@ -637,6 +648,10 @@ class TestSettingsSurviveAReload:
             _SETTINGS_SKIP,
         )
 
+        # patched BEFORE construction so the probe never snapshots data/
+        monkeypatch.setattr(
+            "fastprompter.core.state.get_db_path",
+            lambda profile_id=1: str(tmp_path / f"roundtrip_{profile_id}.db"))
         state = FastPrompterState(profile_id=999)
         state.conn.close()
         import tempfile
@@ -844,3 +859,360 @@ class TestDefaultProfile:
         assert not missing, f"unregistered *_all stores: {sorted(missing)}"
         assert all(k.endswith("_all") for k in registered), (
             "the registry must only carry per-category *_all keys")
+
+
+# ---------------------------------------------------------------------------
+# T-1222 (P0): empty silo existence is user structure.
+#
+# An empty silo is not an absent silo. Row presence in temp_presets_v2 /
+# archive_temp_presets_v2 IS silo existence, so a project with 20 silos whose
+# contents are all empty must reload as 20 silos — and the named gap anchors
+# between them must survive a REAL SQLite close/reopen. The old saver dropped
+# every content == "" row, so the loader rebuilt the default 10 and
+# prune_silo_gaps then destroyed every gap anchor beyond slot 9.
+# ---------------------------------------------------------------------------
+
+
+class TestEmptySiloStructuralPersistence:
+    GAPS = [1, 5, 8, 11, 14, 17]
+    GAP_NAMES = {
+        "1": "SAIPEN", "5": "FastPrompter", "8": "SAITULS",
+        "11": "AUDAPACK", "14": "LIMISAW", "17": "SAIPAL",
+    }
+
+    def _reopen(self, state):
+        state.conn.close()
+        state.conn = None
+        return FastPrompterState(profile_id=999)
+
+    def _make_project(self, state, slots=None):
+        """The exact user repro: 20 silos, named group gaps below them."""
+        state.data["temp_presets_all"]["Code"] = list(
+            slots if slots is not None else [""] * 20)
+        state.data["silo_gaps_all"]["Code"] = list(self.GAPS)
+        state.data["silo_gap_names_all"]["Code"] = dict(self.GAP_NAMES)
+        state.data["silo_gaps"] = state.data["silo_gaps_all"]["Code"]
+        state.data["silo_gap_names"] = state.data["silo_gap_names_all"]["Code"]
+
+    def _sql_slots(self, st, table="temp_presets_v2", category="Code"):
+        rows = st.conn.execute(
+            f"SELECT slot, content FROM {table} WHERE category=? "
+            "ORDER BY slot ASC", (category,)).fetchall()  # nosec B608 - table/category names are test constants
+        return rows
+
+    def test_twenty_empty_silos_survive_a_real_db_round_trip(self, state):
+        self._make_project(state)
+        assert state.save_data_to_db("", force=True) is True
+        state.conn.commit()
+        st2 = self._reopen(state)
+        try:
+            code = st2.data["temp_presets_all"]["Code"]
+            assert len(code) == 20
+            assert code == [""] * 20
+            assert st2.data["silo_gaps_all"]["Code"] == self.GAPS
+            assert st2.data["silo_gap_names_all"]["Code"] == self.GAP_NAMES
+        finally:
+            st2.conn.close()
+
+    def test_sql_rows_carry_every_slot_including_the_empty_ones(self, state):
+        """SQL-level proof: the fix is persistence, not an in-memory illusion."""
+        self._make_project(state)
+        assert state.save_data_to_db("", force=True) is True
+        rows = self._sql_slots(state)
+        assert [(s, c) for s, c in rows] == [(i, "") for i in range(20)]
+
+        # Real deletion (shrink to 10) removes the trailing rows for good.
+        state.data["temp_presets_all"]["Code"] = [""] * 10
+        state.data["silo_gaps_all"]["Code"] = [1, 5]
+        state.data["silo_gap_names_all"]["Code"] = {"1": "SAIPEN", "5": "FastPrompter"}
+        assert state.save_data_to_db("", force=True) is True
+        rows = self._sql_slots(state)
+        assert [s for s, _c in rows] == list(range(10))
+
+    def test_two_restarts_keep_the_full_structure(self, state):
+        self._make_project(state)
+        assert state.save_data_to_db("", force=True) is True
+        st2 = self._reopen(state)
+        try:
+            assert len(st2.data["temp_presets_all"]["Code"]) == 20
+            assert st2.data["silo_gaps_all"]["Code"] == self.GAPS
+            assert st2.save_data_to_db("", force=True) is True
+            st2.conn.commit()
+        finally:
+            st2.conn.close()
+        st3 = FastPrompterState(profile_id=999)
+        try:
+            code = st3.data["temp_presets_all"]["Code"]
+            assert len(code) == 20
+            assert code == [""] * 20
+            assert st3.data["silo_gaps_all"]["Code"] == self.GAPS
+            assert st3.data["silo_gap_names_all"]["Code"] == self.GAP_NAMES
+        finally:
+            st3.conn.close()
+
+    @pytest.mark.parametrize("slots,note", [
+        (["x"] + [""] * 19, "text only in slot 0"),
+        ([""] * 19 + ["x"], "text only in slot 19"),
+        (["# head"] + [""] * 10 + ["tail"] + [""] * 8, "mixed content"),
+    ])
+    def test_mixed_content_keeps_the_full_extent(self, state, slots, note):
+        self._make_project(state, slots=slots)
+        assert state.save_data_to_db("", force=True) is True
+        st2 = self._reopen(state)
+        try:
+            code = st2.data["temp_presets_all"]["Code"]
+            assert code == slots, note
+            assert len(code) == 20
+            assert st2.data["silo_gaps_all"]["Code"] == self.GAPS
+        finally:
+            st2.conn.close()
+
+    def test_text_then_empty_again_still_exists_after_restart(self, state):
+        self._make_project(state)
+        assert state.save_data_to_db("", force=True) is True
+        state.data["temp_presets_all"]["Code"][15] = "temporary"
+        assert state.save_data_to_db("") is True
+        state.data["temp_presets_all"]["Code"][15] = ""
+        assert state.save_data_to_db("") is True
+        st2 = self._reopen(state)
+        try:
+            code = st2.data["temp_presets_all"]["Code"]
+            assert len(code) == 20
+            assert code[15] == ""
+        finally:
+            st2.conn.close()
+
+    def test_intentional_deletion_removes_rows_and_gaps_stay_dead(self, state):
+        self._make_project(state)
+        assert state.save_data_to_db("", force=True) is True
+        # the user deletes silos 11..20 and the gaps anchored there
+        state.data["temp_presets_all"]["Code"] = [""] * 10
+        state.data["silo_gaps_all"]["Code"] = [1, 5]
+        state.data["silo_gap_names_all"]["Code"] = {"1": "SAIPEN", "5": "FastPrompter"}
+        assert state.save_data_to_db("", force=True) is True
+        st2 = self._reopen(state)
+        try:
+            assert len(st2.data["temp_presets_all"]["Code"]) == 10
+            assert st2.data["silo_gaps_all"]["Code"] == [1, 5]
+            # removed gap metadata must NOT resurrect
+            assert "11" not in st2.data["silo_gap_names_all"]["Code"]
+            assert [s for s, _c in self._sql_slots(st2)] == list(range(10))
+        finally:
+            st2.conn.close()
+
+    def test_category_extents_stay_isolated(self, state):
+        state.data["temp_presets_all"]["Code"] = [""] * 20
+        state.data["silo_gaps_all"]["Code"] = list(self.GAPS)
+        state.data["silo_gap_names_all"]["Code"] = dict(self.GAP_NAMES)
+        state.data["temp_presets_all"]["Text"] = [""] * 10
+        assert state.save_data_to_db("", force=True) is True
+        st2 = self._reopen(state)
+        try:
+            assert len(st2.data["temp_presets_all"]["Code"]) == 20
+            assert len(st2.data["temp_presets_all"]["Text"]) == 10
+        finally:
+            st2.conn.close()
+
+    def test_hundred_empty_silos_survive_and_never_create_slot_100(self, state):
+        state.data["temp_presets_all"]["Code"] = [""] * 100
+        state.data["silo_gaps_all"]["Code"] = [99]
+        state.data["silo_gap_names_all"]["Code"] = {"99": "SAIPAL"}
+        assert state.save_data_to_db("", force=True) is True
+        st2 = self._reopen(state)
+        try:
+            code = st2.data["temp_presets_all"]["Code"]
+            assert len(code) == 100
+            assert code == [""] * 100
+            rows = self._sql_slots(st2)
+            assert max(s for s, _c in rows) == 99
+        finally:
+            st2.conn.close()
+
+    def test_archive_empty_silos_persist_with_the_same_contract(self, state):
+        state.data["archive_temp_presets_all"]["Code"] = [""] * 12
+        assert state.save_data_to_db("", force=True) is True
+        st2 = self._reopen(state)
+        try:
+            arc = st2.data["archive_temp_presets_all"]["Code"]
+            assert arc == [""] * 12
+        finally:
+            st2.conn.close()
+
+    def test_shrunk_below_ten_stays_shrunk_after_restart(self, state):
+        """Row presence must survive below the legacy floor too: an 8-silo
+        project reloads as 8, not as 8 + 2 phantom defaults."""
+        self._make_project(state, slots=list("abcdefgh"))
+        assert state.save_data_to_db("", force=True) is True
+        # canonical deletion drops the gaps owned by the deleted silos
+        state.data["temp_presets_all"]["Code"] = list("abcdefgh")
+        state.data["silo_gaps_all"]["Code"] = [1]
+        state.data["silo_gap_names_all"]["Code"] = {"1": "SAIPEN"}
+        assert state.save_data_to_db("", force=True) is True
+        st2 = self._reopen(state)
+        try:
+            assert st2.data["temp_presets_all"]["Code"] == list("abcdefgh")
+        finally:
+            st2.conn.close()
+
+
+class TestOldDbStructuralRecovery:
+    """T-1222: old DBs written by the empty-row-dropping saver carry the
+    structural truth only in slot-owned metadata. The loader must extend
+    (never shrink) each category to cover its highest owned slot, and the
+    first save must write the recovered rows so the DB is permanently
+    repaired."""
+
+    GAPS = [1, 5, 8, 11, 14, 17]
+    GAP_NAMES = {
+        "1": "SAIPEN", "5": "FastPrompter", "8": "SAITULS",
+        "11": "AUDAPACK", "14": "LIMISAW", "17": "SAIPAL",
+    }
+
+    def _reopen(self, state):
+        state.conn.close()
+        state.conn = None
+        return FastPrompterState(profile_id=999)
+
+    def _write_old_buggy_db(self, state):
+        """A DB in the shape the OLD saver actually left behind.
+
+        The old saver filtered rows with ``if content``, so 20 empty silos
+        wrote ZERO temp_presets_v2 rows for the category, and it predates the
+        silo_row_presence marker entirely. Constructing that shape with the
+        NEW saver would silently write rows 0..9 with content='' plus the
+        marker — a valid modern DB, not an old-bug DB. So: initialize a valid
+        DB, persist the structural gap metadata, then DELETE the category's
+        temp rows AND the marker directly, exactly the damage the old build
+        caused."""
+        state.data["temp_presets_all"]["Code"] = [""] * 10
+        state.data["silo_gaps_all"]["Code"] = list(self.GAPS)
+        state.data["silo_gap_names_all"]["Code"] = dict(self.GAP_NAMES)
+        assert state.save_data_to_db("", force=True) is True
+        state.conn.execute(
+            "DELETE FROM temp_presets_v2 WHERE category='Code'")
+        state.conn.execute(
+            "DELETE FROM settings WHERE key='silo_row_presence'")
+        state.conn.commit()
+        # SQL-level proof the fixture models the old bug BEFORE any recovery:
+        # the old saver would have written zero rows for an all-empty project.
+        count = state.conn.execute(
+            "SELECT COUNT(*) FROM temp_presets_v2 WHERE category='Code'"
+        ).fetchone()[0]
+        assert count == 0
+
+    def test_extent_recovers_from_gap_metadata_and_repairs_the_db(self, state):
+        self._write_old_buggy_db(state)
+        st2 = self._reopen(state)
+        try:
+            code = st2.data["temp_presets_all"]["Code"]
+            # highest gap anchor 17 -> exactly 18 silos (slots 0..17): the
+            # MINIMUM PROVABLE extent. The old saver destroyed the rows for
+            # any trailing pure-empty silos beyond the highest anchor, so
+            # slots 18/19 CANNOT be reconstructed and must NEVER be guessed
+            # (no "a screenshot showed 20" fabrication). A NEW/FIXED DB that
+            # really has 20 empty silos writes rows 0..19 and reloads as
+            # exactly 20 forever — that contract is pinned in
+            # TestEmptySiloStructuralPersistence.
+            assert len(code) == 18
+            assert all(s == "" for s in code[10:])
+            assert st2.data["silo_gaps_all"]["Code"] == self.GAPS
+            assert st2.data["silo_gap_names_all"]["Code"] == self.GAP_NAMES
+            # the first save writes the recovered rows explicitly: the DB is
+            # permanently repaired, recovery no longer carries the structure
+            assert st2.save_data_to_db("", force=True) is True
+            rows = st2.conn.execute(
+                "SELECT slot, content FROM temp_presets_v2 WHERE category='Code' "
+                "ORDER BY slot ASC").fetchall()
+            assert [(r[0], r[1]) for r in rows] == [(i, "") for i in range(18)]
+        finally:
+            st2.conn.close()
+
+    def test_repaired_db_survives_the_next_restart_without_recovery(self, state):
+        self._write_old_buggy_db(state)
+        st2 = self._reopen(state)
+        try:
+            assert st2.save_data_to_db("", force=True) is True
+            st2.conn.commit()
+            # test-local proof the DB is PERMANENTLY repaired before the third
+            # restart: explicit rows 0..17 with empty content exist and the
+            # exact-extent marker is present, so the third load succeeds from
+            # the rows themselves, not from structural recovery again.
+            rows = st2.conn.execute(
+                "SELECT slot, content FROM temp_presets_v2 WHERE category='Code' "
+                "ORDER BY slot ASC").fetchall()
+            assert [(r[0], r[1]) for r in rows] == [(i, "") for i in range(18)]
+            marker = st2.conn.execute(
+                "SELECT value FROM settings WHERE key='silo_row_presence'"
+            ).fetchone()
+            assert marker is not None and marker[0] == "1"
+        finally:
+            st2.conn.close()
+        st3 = FastPrompterState(profile_id=999)
+        try:
+            code = st3.data["temp_presets_all"]["Code"]
+            assert len(code) == 18
+            assert code == [""] * 18
+            assert st3.data["silo_gaps_all"]["Code"] == self.GAPS
+            assert st3.data["silo_gap_names_all"]["Code"] == self.GAP_NAMES
+        finally:
+            st3.conn.close()
+
+    def test_recovery_never_shrinks_and_never_exceeds_100(self, state):
+        state.data["temp_presets_all"]["Code"] = [""] * 20
+        # malformed anchors must fail closed: ignored, never guessed
+        state.data["silo_gaps_all"]["Code"] = ["x", 999, -3, True, 19]
+        assert state.save_data_to_db("", force=True) is True
+        st2 = self._reopen(state)
+        try:
+            assert len(st2.data["temp_presets_all"]["Code"]) == 20
+            # a valid anchor may extend, only up to the hard 100 cap
+            st2.data["temp_presets_all"]["Code"] = [""] * 10
+            st2.data["silo_gaps_all"]["Code"] = [99]
+            st2.data["silo_gap_names_all"]["Code"] = {"99": "SAIPAL"}
+            assert st2.save_data_to_db("", force=True) is True
+        finally:
+            st2.conn.close()
+        st3 = FastPrompterState(profile_id=999)
+        try:
+            assert len(st3.data["temp_presets_all"]["Code"]) == 100
+        finally:
+            st3.conn.close()
+
+    def test_archive_extent_recovers_from_archive_metadata(self, state):
+        state.data["silo_view_state_all"] = {}
+        state.data["archive_temp_presets_all"]["Code"] = []
+        state.data["archive_silo_folders_all"]["Code"] = {"12": "folder"}
+        assert state.save_data_to_db("", force=True) is True
+        st2 = self._reopen(state)
+        try:
+            arc = st2.data["archive_temp_presets_all"]["Code"]
+            assert len(arc) == 13
+            assert all(s == "" for s in arc)
+        finally:
+            st2.conn.close()
+
+    def test_missing_metadata_leaves_the_default_ten_untouched(self, state):
+        assert state.save_data_to_db("", force=True) is True
+        st2 = self._reopen(state)
+        try:
+            for cat in st2.data["cats_order"]:
+                assert len(st2.data["temp_presets_all"][cat]) == 10
+        finally:
+            st2.conn.close()
+
+    def test_legacy_db_without_the_marker_keeps_the_ten_floor(self, state):
+        """A DB whose rows say nothing about empty slots (pre-T-1222 saver)
+        keeps the default-ten floor: rows 0..1 pad back up to 10, exactly the
+        behaviour every legacy profile was built on."""
+        state.data["temp_presets_all"]["Code"] = ["a", "b"]
+        assert state.save_data_to_db("", force=True) is True
+        state.conn.execute("DELETE FROM settings WHERE key='silo_row_presence'")
+        state.conn.commit()
+        st2 = self._reopen(state)
+        try:
+            code = st2.data["temp_presets_all"]["Code"]
+            assert len(code) == 10
+            assert code[:2] == ["a", "b"]
+            assert all(s == "" for s in code[2:])
+        finally:
+            st2.conn.close()

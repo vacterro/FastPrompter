@@ -7,7 +7,6 @@ a successful move must NOT clear the journal until it is durably reconciled.
 import os
 import types
 
-import fastprompter.ui.file_container as fc
 from fastprompter.ui import snippet_ops_mixin as som
 from fastprompter.ui.snippet_ops_mixin import (
     SnippetOpsMixin,

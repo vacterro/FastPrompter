@@ -17,6 +17,7 @@ class _Fake:
     def __init__(self):
         self.data = {
             "toolbar_order": ["x", "y"],
+            "topbar_visibility": {"version": 999},
             "splitter_sizes_left": [1, 2, 3],
             "splitter_sizes_right": [4, 5, 6],
             "sidebar_right": "False",
@@ -72,6 +73,7 @@ def test_reset_copies_default_profile_values():
     assert f.data["last_geometry"] == ""
     # editor/snippet content untouched (not present, but no corruption)
     assert "toolbar_order" in f.data
+    assert f.data["topbar_visibility"] == DEFAULT_PROFILE["topbar_visibility"]
 
 
 def test_reset_splitter_never_empty_string():

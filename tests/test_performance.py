@@ -11,11 +11,17 @@ from fastprompter.core.state import FastPrompterState
 
 
 @pytest.fixture
-def db_state(tmp_path):
+def db_state(tmp_path, monkeypatch):
     """Fixture that provides an isolated DB state for testing."""
     os.environ["FASTPROMPTER_TEST_DB"] = str(tmp_path / "test_db.sqlite")
 
-    # We monkeypatch get_db_path indirectly by just setting the state path after init
+    # T-1222 section 9: get_db_path must be patched BEFORE construction —
+    # building the state on the real profile path (then rebinding db_path
+    # afterwards) made the constructor open data/local_data_v15_p999.db and
+    # publish its startup safety snapshot into the real data/ directory.
+    monkeypatch.setattr(
+        "fastprompter.core.state.get_db_path",
+        lambda profile_id=1: str(tmp_path / f"perf_{profile_id}.db"))
     state = FastPrompterState(profile_id=999)
     # Re-route db
     if state.conn:

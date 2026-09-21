@@ -149,6 +149,9 @@ def test_backup_capture_coalesced_while_active(tmp_path, monkeypatch):
     pb.last_success_by_profile.clear()
     pb._backup_active.clear()
     pb._backup_newer_wanted.clear()
+    pb._backup_pending_data.clear()
+    pb._backup_pending_gen.clear()
+    pb._committed_view_by_profile.clear()
 
     calls = {"n": 0}
     real_capture = pb.capture_snapshot
@@ -172,21 +175,31 @@ def test_backup_capture_coalesced_while_active(tmp_path, monkeypatch):
         assert 1 in pb._backup_active
         assert len(received) == 1
 
-        # PERF-008 as amended by CORE-002: while a request is active the
-        # worker owns the export, so repeated eligible saves must NOT reach
-        # the sink again -- but each one DOES refresh the pending snapshot
-        # (an immutable committed copy), because deferred generation must be
-        # exactly the state of the save that requested it.
-        for _ in range(20):
-            pb.run_portable_backup({}, profile_id=1)
+        # PERF-008 as amended by CORE-002 and PERF-005: while a request is
+        # active the worker owns the export, so repeated eligible saves must
+        # NOT reach the sink again -- and they must NOT deep-copy the project
+        # either: the newest committed generation is recorded as an intention
+        # and materialised exactly once, from its committed view, when the
+        # active worker completes.
+        for gen in range(1, 21):
+            pb.note_committed_view(
+                1, gen, cats_order=("Alpha",),
+                preset_rows=frozenset({("Alpha", 0, "", f"gen{gen}", 0)}))
+            pb.run_portable_backup({"gen": gen}, profile_id=1,
+                                   content_gen=gen)
         assert len(received) == 1, "coalescing must prevent repeated dispatches"
-        assert calls["n"] == 21, "each eligible save refreshes its own snapshot"
+        assert calls["n"] == 1, "superseding saves record intent only"
         assert 1 in pb._backup_newer_wanted
+        assert pb._backup_pending_gen.get(1) == 20
 
         # worker finished: retire the active marker and deliver the NEWEST
         # pending snapshot immediately (CORE-003)
         pb.backup_finished(profile_id=1)
         assert len(received) == 2, "newest pending snapshot dispatched on finish"
+        assert calls["n"] == 2, "exactly ONE deferred capture for the newest"
+        assert received[1]["_content_gen"] == 20
+        assert received[1]["categories"]["Alpha"][0]["text"] == "gen20", (
+            "the deferred snapshot carries its own committed generation")
         # the newest dispatch is itself in flight -> marker re-armed until
         # the worker reports that one done too
         assert 1 in pb._backup_active
@@ -209,6 +222,8 @@ def test_deferred_redispatch_failure_keeps_newest_retryable(tmp_path, monkeypatc
     pb._backup_active.clear()
     pb._backup_newer_wanted.clear()
     pb._backup_pending_data.clear()
+    pb._backup_pending_gen.clear()
+    pb._committed_view_by_profile.clear()
 
     calls = {"n": 0, "boom_on": 2}
     real_capture = pb.capture_snapshot
@@ -236,13 +251,22 @@ def test_deferred_redispatch_failure_keeps_newest_retryable(tmp_path, monkeypatc
         assert len(received) == 1
         assert 1 in pb._backup_active
 
-        # a newer save coalesces while active (worker 1 still running)
-        pb.run_portable_backup({"tag": "v2"}, profile_id=1)
+        # a newer save coalesces while active (worker 1 still running):
+        # PERF-005 records only its intention -- no deep copy yet, and no
+        # live data reference either; the committed view owns the content
+        pb.note_committed_view(
+            1, 2, cats_order=("Alpha",),
+            preset_rows=frozenset({("Alpha", 0, "", "v2", 0)}))
+        pb.run_portable_backup({"tag": "v2"}, profile_id=1, content_gen=2)
         assert 1 in pb._backup_newer_wanted
-        assert calls["n"] == 2
+        assert calls["n"] == 1, "no snapshot may be taken while active"
+        assert pb._backup_pending_gen.get(1) == 2
+        assert not hasattr(pb, "_backup_pending_source"), (
+            "a live data reference is not generation ownership")
 
-        # worker 1 finishes -> deferred redispatch of newest -> sink RAISES
+        # worker 1 finishes -> deferred capture + redispatch -> sink RAISES
         pb.backup_finished(profile_id=1)
+        assert calls["n"] == 2, "the deferred capture happens exactly once"
 
         # CORE-005: retry state must survive the failed redispatch
         assert 1 not in pb._backup_active

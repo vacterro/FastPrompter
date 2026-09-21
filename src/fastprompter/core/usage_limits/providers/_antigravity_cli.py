@@ -37,11 +37,97 @@ Nothing is estimated: no bucket, no window.
 from __future__ import annotations
 
 import datetime
+import hashlib
 import json
+import math
+import os
 import re
 import time
 
 from fastprompter.core.usage_limits.cli_tools import resolve_binary, run_cli
+
+# A refresh token can remain in Windows Credential Manager after the server has
+# revoked it.  Presence alone therefore is not proof of authentication.  Once
+# the CLI reports its OAuth prompt, suppress that exact credential blob until
+# an explicit login replaces it.  Keeping only a digest avoids retaining token
+# material in process memory beyond the credential read itself.
+_rejected_auth_signature: str | None = None
+
+
+def _credential_signature() -> str | None:
+    """Digest of a usable Antigravity credential, or ``None``.
+
+    The digest changes when an explicit login refreshes/replaces the token, so
+    a previously rejected credential becomes eligible automatically without a
+    FastPrompter restart.
+    """
+    if os.name != "nt":
+        return None
+    try:
+        import ctypes
+        from ctypes import wintypes
+        advapi32 = ctypes.windll.advapi32
+
+        class _CREDENTIAL(ctypes.Structure):
+            _fields_ = [
+                ("Flags", wintypes.DWORD),
+                ("Type", wintypes.DWORD),
+                ("TargetName", wintypes.LPWSTR),
+                ("Comment", wintypes.LPWSTR),
+                ("LastWritten", wintypes.FILETIME),
+                ("CredentialBlobSize", wintypes.DWORD),
+                ("CredentialBlob", ctypes.POINTER(ctypes.c_byte)),
+                ("Persist", wintypes.DWORD),
+                ("AttributeCount", wintypes.DWORD),
+                ("Attributes", ctypes.c_void_p),
+                ("TargetAlias", wintypes.LPWSTR),
+                ("UserName", wintypes.LPWSTR),
+            ]
+
+        pcred = ctypes.POINTER(_CREDENTIAL)()
+        if not advapi32.CredReadW(
+                "gemini:antigravity", 1, 0, ctypes.byref(pcred)) or not pcred:
+            return None
+        try:
+            cred = pcred.contents
+            if not cred.CredentialBlob or cred.CredentialBlobSize <= 0:
+                return None
+            raw = ctypes.string_at(cred.CredentialBlob, cred.CredentialBlobSize)
+            data = json.loads(raw.decode("utf-8", errors="replace"))
+            token_info = data.get("token") or {}
+            if not (token_info.get("access_token") or
+                    token_info.get("refresh_token")):
+                return None
+            return hashlib.sha256(raw).hexdigest()
+        finally:
+            advapi32.CredFree(pcred)
+    except Exception:
+        return None
+
+
+def is_authenticated() -> bool:
+    """Whether Antigravity CLI has stored credentials.
+
+    On Windows, agy stores Google OAuth tokens in Windows Credential Manager under
+    the target ``gemini:antigravity``. When that target is absent or has no tokens,
+    invoking ``agy -p "/usage"`` triggers an interactive browser OAuth flow via
+    rundll32. Probing must NEVER run when unauthenticated to avoid surprise browser
+    popups.
+    """
+    signature = _credential_signature()
+    return bool(signature and signature != _rejected_auth_signature)
+
+
+def _mark_auth_rejected() -> None:
+    """Suppress the credential that just produced an OAuth login prompt."""
+    global _rejected_auth_signature
+    _rejected_auth_signature = _credential_signature()
+
+
+def clear_rejected_auth() -> None:
+    """Allow an explicit login attempt to validate the current credential."""
+    global _rejected_auth_signature
+    _rejected_auth_signature = None
 
 # Antigravity's window names -> provider-neutral keys (model.py).
 _WINDOWS = {"5h": "five_hour", "five_hour": "five_hour",
@@ -76,7 +162,7 @@ def _remaining(value) -> float | None:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
     value = float(value)
-    if value != value:            # NaN
+    if not math.isfinite(value) or not 0.0 <= value <= 1.0:
         return None
     return max(0.0, min(100.0, value * 100.0))
 
@@ -94,7 +180,10 @@ def parse_usage_payload(payload) -> list[dict]:
     """
     if not isinstance(payload, dict):
         return []
-    data = (payload.get("command") or {}).get("data")
+    command = payload.get("command")
+    if not isinstance(command, dict):
+        return []
+    data = command.get("data")
     groups = data.get("groups") if isinstance(data, dict) else None
     if not isinstance(groups, list):
         return []
@@ -105,13 +194,16 @@ def parse_usage_payload(payload) -> list[dict]:
         label = str(group.get("name") or f"group {index + 1}").strip()
         group_id = re.sub(r"[^a-z0-9]+", "_", label.lower()).strip("_") \
             or f"group{index + 1}"
-        for bucket in group.get("buckets") or ():
+        buckets = group.get("buckets")
+        if not isinstance(buckets, list):
+            continue
+        for bucket in buckets:
             if not isinstance(bucket, dict):
                 continue
             key = _WINDOWS.get(str(bucket.get("window") or "").strip().lower())
             if key is None:
                 continue
-            disabled = bool(bucket.get("disabled"))
+            disabled = bucket.get("disabled") is True
             remaining = _remaining(bucket.get("remaining_fraction"))
             if remaining is None and not disabled:
                 continue
@@ -138,9 +230,40 @@ def read_usage(deadline: float, *, binary: str = "",
     if not executable:
         return {"error": ("cli_not_installed",
                           "Antigravity CLI (agy) not found on PATH")}
+    if not is_authenticated():
+        return {"error": ("cli_not_logged_in",
+                          "Antigravity CLI is not logged in; login required")}
+    # Preserve LOCAL keyring authentication.  Pretending to be an SSH session
+    # prevents the browser, but it also makes agy ignore a valid Windows
+    # Credential Manager session and demand a fresh remote OAuth code forever.
+    # ``BROWSER`` blocks only the launcher fallback if a saved token expires
+    # between our credential check and the CLI call.
+    env = dict(os.environ)
+    env.pop("SSH_CONNECTION", None)
+    env.pop("SSH_TTY", None)
+    env.pop("AGY_CLI_INTERACTIVE_HEADLESS", None)
+    system_root = env.get("SystemRoot") or env.get("WINDIR") or r"C:\Windows"
+    env["BROWSER"] = os.path.join(system_root, "System32", "where.exe")
+    env["AGY_CLI_DISABLE_AUTO_UPDATE"] = "true"
     result = run_cli(
-        [executable, "-p", "/usage", "--output-format", "json"], deadline)
+        [executable, "-p", "/usage", "--output-format", "json"], deadline,
+        env=env, block_child_processes=True)
     if not result["ok"]:
+        failure = f"{result.get('stdout', '')}\n{result.get('error', '')}".lower()
+        if any(marker in failure for marker in (
+                "authentication required",
+                "waiting for authentication",
+                "paste the authorization code",
+                "not logged in",
+                "please log in",
+                # The Job Object refused agy's rundll32/browser spawn: agy only
+                # opens a browser when its saved OAuth session is expired, so
+                # this is the same needs-login state, reached silently.
+                "unable to create process")):
+            _mark_auth_rejected()
+            return {"error": (
+                "cli_not_logged_in",
+                "Antigravity sign-in expired; explicit login required")}
         return {"error": ("cli_failed", f"agy /usage: {result['error']}")}
     try:
         payload = json.loads(result["stdout"])

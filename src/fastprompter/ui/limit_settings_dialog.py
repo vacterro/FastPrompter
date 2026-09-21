@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QCheckBox,
@@ -20,6 +20,8 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSpinBox,
+    QTableWidget,
+    QTableWidgetItem,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -34,6 +36,8 @@ from fastprompter.core.usage_limits.model import (
     FIVE_HOUR,
     MONTHLY,
     WEEKLY,
+    account_has_usage,
+    account_usable_now,
     base_key,
 )
 from fastprompter.core.usage_limits.notifications import (
@@ -43,6 +47,7 @@ from fastprompter.core.usage_limits.notifications import (
 from fastprompter.ui.limit_account_selector import (
     LimitAccountSelector,
     account_display_name,
+    hidden_account_keys,
 )
 from fastprompter.ui.limit_colors import (
     ROLES,
@@ -55,6 +60,35 @@ from fastprompter.ui.limit_colors import (
     overrides as color_overrides,
 )
 from fastprompter.ui.limit_overview import LimitOverview
+
+
+def _request_limit_sound(manager, kind, key, ref, volume, *, preview=False):
+    """One attributable AI-limit request through the existing sound owner."""
+    from fastprompter.core.logging import logger
+    from fastprompter.core.sound_manager import get_sound_file_for_event
+
+    resolved_ref = ref[len("file:"):] if str(ref).startswith("file:") else None
+    sounds_dir = getattr(manager, "_sounds_dir", None)
+    if resolved_ref is None and sounds_dir:
+        try:
+            resolved_ref = get_sound_file_for_event(ref, manager._data, sounds_dir)
+        except Exception:
+            resolved_ref = None
+    outcome = "ERROR"
+    try:
+        result = (manager.preview_sound_ref(ref, volume) if preview
+                  else manager.play_sound_ref(ref, volume))
+        outcome = "REQUEST_ACCEPTED" if result else "NOT_STARTED"
+        return result
+    finally:
+        # One line per alert/Test request, never per UI refresh. The existing
+        # SoundManager diagnostic ring carries the transport outcome when a
+        # request reached it; this line also covers missing refs and errors.
+        logger.info(
+            "ai_limit_audio domain=%s rule_key=%s stored_ref=%r "
+            "resolved_ref=%r volume=%r playback_outcome=%s",
+            kind, key, ref, resolved_ref, volume, outcome,
+        )
 
 
 def _window_name(window) -> str:
@@ -103,6 +137,7 @@ class LimitSettingsDialog(QDialog):
         self.setWindowFlags(
             self.windowFlags() | Qt.WindowType.WindowMinMaxButtonsHint
         )
+        self.setWindowModality(Qt.WindowModality.WindowModal)
         self.setSizeGripEnabled(True)
         self.setMinimumSize(560, 360)
 
@@ -147,6 +182,13 @@ class LimitSettingsDialog(QDialog):
         self._hint_style(self.lbl_overview_status)
         bottom_bar.addWidget(self.lbl_overview_status)
 
+        self.lbl_hidden_banked = QLabel("")
+        self.lbl_hidden_banked.setStyleSheet(
+            "color: #4FB6A8; font-size: 10px; font-weight: bold;")
+        self.lbl_hidden_banked.setWordWrap(True)
+        self.lbl_hidden_banked.hide()
+        bottom_bar.addWidget(self.lbl_hidden_banked)
+
         bottom_bar.addStretch(1)
 
         self.btn_close = QPushButton("Close")
@@ -160,6 +202,11 @@ class LimitSettingsDialog(QDialog):
         # A manual/automatic sweep can discover a plan-specific window (for
         # example Codex Free monthly). Rebuild alert rows on the GUI thread.
         main_win.limit_gauges._result_ready.connect(self._limits_updated)
+        # Periodic sync timer to keep reset countdowns, status, and overview live
+        self._sync_timer = QTimer(self)
+        self._sync_timer.setInterval(1000)
+        self._sync_timer.timeout.connect(self._tick_sync)
+        self._sync_timer.start()
         # Combos are populated above; arm live preview only once that is done,
         # so a rebuild's programmatic setCurrentIndex never plays a sound.
         self._suppress_preview = False
@@ -169,7 +216,7 @@ class LimitSettingsDialog(QDialog):
         if self._suppress_preview:
             return
         try:
-            self.main_win.sound_manager.play_sound_ref(ref, volume)
+            self.main_win.sound_manager.preview_sound_ref(ref, volume)
         except Exception:
             pass
 
@@ -181,16 +228,26 @@ class LimitSettingsDialog(QDialog):
         except Exception:
             return 1.0
 
+    def _tick_sync(self):
+        overview = getattr(self, "overview", None)
+        if overview is not None and overview.isVisible():
+            overview.update()
+        self._refresh_overview_status()
+
     def _limits_updated(self):
         self.account_selector.sync()
         self._rebuild_alert_rows()
         self._refresh_claude_status()
         self._refresh_antigravity_status()
         self._refresh_zcode_status()
+        self._refresh_freebuff_status()
         overview = getattr(self, "overview", None)
         if overview is not None:
             overview.refresh()
         self._refresh_overview_status()
+        if hasattr(self, "btn_refresh"):
+            self.btn_refresh.setEnabled(True)
+            self.btn_refresh.setText("Refresh limits now")
 
     def _save_geometry(self):
         try:
@@ -201,10 +258,22 @@ class LimitSettingsDialog(QDialog):
             pass
 
     def done(self, r):
+        if hasattr(self, "_sync_timer"):
+            self._sync_timer.stop()
+        try:
+            self.main_win.limit_gauges._result_ready.disconnect(self._limits_updated)
+        except Exception:
+            pass
         self._save_geometry()
         super().done(r)
 
     def closeEvent(self, event):
+        if hasattr(self, "_sync_timer"):
+            self._sync_timer.stop()
+        try:
+            self.main_win.limit_gauges._result_ready.disconnect(self._limits_updated)
+        except Exception:
+            pass
         self._save_geometry()
         super().closeEvent(event)
 
@@ -232,7 +301,8 @@ class LimitSettingsDialog(QDialog):
         lay.setContentsMargins(2, 2, 2, 2)
         lay.setSpacing(2)
 
-        fill_row = QHBoxLayout()
+        from fastprompter.ui.flow_layout import FlowLayout
+        fill_row = FlowLayout(h_spacing=8, v_spacing=4)
         fill_row.setContentsMargins(0, 0, 0, 0)
         fill_row.setSpacing(6)
         fill_row.addWidget(QLabel("Bars show"))
@@ -250,11 +320,30 @@ class LimitSettingsDialog(QDialog):
             "Applies to these bars, their captions, and the header gauge.")
         self.cmb_fill.currentIndexChanged.connect(self._set_fill_mode)
         fill_row.addWidget(self.cmb_fill)
-        fill_row.addSpacing(8)
+        self.cb_overview_hide_zero = QCheckBox("Hide 0% usage accounts")
+        self.cb_overview_hide_zero.setChecked(
+            self.data.get("limit_gauges_hide_zero_usage", "False") == "True")
+        self.cb_overview_hide_zero.setToolTip(
+            "Completely hide accounts that have 0% usage across both 5h and weekly windows.\n"
+            "They will appear only when they actually have usage (> 0%).")
+        self.cb_overview_hide_zero.toggled.connect(self._set_hide_zero_usage)
+        fill_row.addWidget(self.cb_overview_hide_zero)
+        self.cb_overview_hide_unusable = QCheckBox(
+            "Only available 5h windows")
+        self.cb_overview_hide_unusable.setChecked(
+            self.data.get("limit_gauges_hide_unusable_5h", "False") == "True")
+        self.cb_overview_hide_unusable.setToolTip(
+            "Hide accounts whose 5-hour window is exhausted, even when the "
+            "weekly pool still has quota — they cannot do work right now.\n"
+            "For Antigravity: a quota pool whose windows are all spent is "
+            "hidden; only pools that still have quota are shown.")
+        self.cb_overview_hide_unusable.toggled.connect(
+            self._set_hide_unusable_5h)
+        fill_row.addWidget(self.cb_overview_hide_unusable)
         intro = QLabel(
             "Gold healthy, olive < 50%, red < 20%. Numbers reported by providers.")
         self._hint_style(intro)
-        fill_row.addWidget(intro, 1)
+        fill_row.addWidget(intro)
         lay.addLayout(fill_row)
 
         self.overview_scroll = QScrollArea()
@@ -386,6 +475,39 @@ class LimitSettingsDialog(QDialog):
             parts.append(snap.status.lower())
         label.setText(" · ".join(parts))
 
+        # Surface hidden accounts that have banked resets available
+        hb_label = getattr(self, "lbl_hidden_banked", None)
+        if hb_label is not None:
+            hidden_keys = hidden_account_keys(self.data)
+            hide_zero = str(self.data.get(
+                "limit_gauges_hide_zero_usage", "False")) == "True"
+            hide_unusable = str(self.data.get(
+                "limit_gauges_hide_unusable_5h", "False")) == "True"
+            hidden_banked: list[str] = []
+            for a in snap.accounts:
+                is_hidden = a.key in hidden_keys
+                if not is_hidden and hide_zero:
+                    is_hidden = not account_has_usage(
+                        snap.snapshots.get(a.key))
+                if not is_hidden and hide_unusable:
+                    is_hidden = not account_usable_now(
+                        snap.snapshots.get(a.key))
+                if not is_hidden:
+                    continue
+                s = snap.snapshots.get(a.key)
+                br = getattr(s, "banked_resets", 0) or 0
+                if br > 0:
+                    name = account_display_name(a, self.data)
+                    res_w = "reset" if br == 1 else "resets"
+                    hidden_banked.append(f"{name} ({br} banked {res_w})")
+            if hidden_banked:
+                hb_label.setText(
+                    "⚠ Hidden: " + ", ".join(hidden_banked)
+                    + " — unhide or activate")
+                hb_label.show()
+            else:
+                hb_label.hide()
+
     # -- gauges/accounts -------------------------------------------------
     def _build_gauges_tab(self):
         page = QWidget()
@@ -443,6 +565,34 @@ class LimitSettingsDialog(QDialog):
         row2.addWidget(self.cb_labels)
         row2.addStretch(1)
         options_v.addLayout(row2)
+
+        row3 = QHBoxLayout()
+        self.cb_hide_zero = QCheckBox(
+            "Hide accounts with 0% usage (5h & weekly)")
+        self.cb_hide_zero.setChecked(
+            self.data.get("limit_gauges_hide_zero_usage", "False") == "True")
+        self.cb_hide_zero.setToolTip(
+            "Completely hide accounts that have 0% usage across both 5h and weekly windows.\n"
+            "They will appear only when they actually have usage (> 0%).")
+        self.cb_hide_zero.toggled.connect(self._set_hide_zero_usage)
+        row3.addWidget(self.cb_hide_zero)
+        row3.addStretch(1)
+        options_v.addLayout(row3)
+
+        row3b = QHBoxLayout()
+        self.cb_hide_unusable = QCheckBox(
+            "Only available 5h windows")
+        self.cb_hide_unusable.setChecked(
+            self.data.get("limit_gauges_hide_unusable_5h", "False") == "True")
+        self.cb_hide_unusable.setToolTip(
+            "Hide accounts whose 5-hour window is exhausted, even when the "
+            "weekly pool still has quota — they cannot do work right now.\n"
+            "For Antigravity: a quota pool whose windows are all spent is "
+            "hidden; only pools that still have quota are shown.")
+        self.cb_hide_unusable.toggled.connect(self._set_hide_unusable_5h)
+        row3b.addWidget(self.cb_hide_unusable)
+        row3b.addStretch(1)
+        options_v.addLayout(row3b)
         lay.addLayout(options_v)
 
         help_label = QLabel(
@@ -485,18 +635,165 @@ class LimitSettingsDialog(QDialog):
         self.main_win.limit_gauges.refresh_view()
         self._commit()
 
+    def _set_hide_zero_usage(self, checked):
+        val = "True" if checked else "False"
+        self.data["limit_gauges_hide_zero_usage"] = val
+        if hasattr(self, "cb_hide_zero") and self.cb_hide_zero.isChecked() != bool(checked):
+            self.cb_hide_zero.blockSignals(True)
+            self.cb_hide_zero.setChecked(bool(checked))
+            self.cb_hide_zero.blockSignals(False)
+        if hasattr(self, "cb_overview_hide_zero") and self.cb_overview_hide_zero.isChecked() != bool(checked):
+            self.cb_overview_hide_zero.blockSignals(True)
+            self.cb_overview_hide_zero.setChecked(bool(checked))
+            self.cb_overview_hide_zero.blockSignals(False)
+        overview = getattr(self, "overview", None)
+        if overview is not None:
+            overview.refresh()
+        self.main_win.limit_gauges.refresh_view()
+        if hasattr(self, "account_selector"):
+            self.account_selector.sync()
+        if hasattr(self.main_win, "_update_limit_timer_label"):
+            self.main_win._update_limit_timer_label()
+        self._refresh_overview_status()
+        self._commit()
+
+    def _set_hide_unusable_5h(self, checked):
+        """Show only accounts whose 5h window is currently available.
+
+        One toggle for both surfaces (overview bars and header gauge), the
+        same way the 0%-usage rule is shared. Also drops the windows of an
+        Antigravity quota pool in which every window is spent — those cannot
+        do work right now either.
+        """
+        val = "True" if checked else "False"
+        self.data["limit_gauges_hide_unusable_5h"] = val
+        if hasattr(self, "cb_hide_unusable") and self.cb_hide_unusable.isChecked() != bool(checked):
+            self.cb_hide_unusable.blockSignals(True)
+            self.cb_hide_unusable.setChecked(bool(checked))
+            self.cb_hide_unusable.blockSignals(False)
+        if hasattr(self, "cb_overview_hide_unusable") and self.cb_overview_hide_unusable.isChecked() != bool(checked):
+            self.cb_overview_hide_unusable.blockSignals(True)
+            self.cb_overview_hide_unusable.setChecked(bool(checked))
+            self.cb_overview_hide_unusable.blockSignals(False)
+        overview = getattr(self, "overview", None)
+        if overview is not None:
+            overview.refresh()
+        self.main_win.limit_gauges.refresh_view()
+        if hasattr(self, "account_selector"):
+            self.account_selector.sync()
+        if hasattr(self.main_win, "_update_limit_timer_label"):
+            self.main_win._update_limit_timer_label()
+        self._refresh_overview_status()
+        self._commit()
+
     # -- notifications ---------------------------------------------------
     def _build_alerts_tab(self):
         self.alert_page = QWidget()
         page_lay = QVBoxLayout(self.alert_page)
         page_lay.setContentsMargins(2, 2, 2, 2)
-        page_lay.setSpacing(2)
+        page_lay.setSpacing(3)
         intro = QLabel(
             "Per account/window: threshold, popup, sound and volume. An "
             "alert fires once per reset window and re-arms when quota "
             "rises above its threshold.")
         intro.setWordWrap(True)
         page_lay.addWidget(intro)
+
+        # --- Notification Appearance & Behavior Box ---
+        notif_box = QGroupBox("Notification appearance")
+        notif_box_lay = QGridLayout(notif_box)
+        notif_box_lay.setContentsMargins(6, 4, 6, 4)
+        notif_box_lay.setHorizontalSpacing(8)
+        notif_box_lay.setVerticalSpacing(4)
+
+        # Duration
+        notif_box_lay.addWidget(QLabel("Duration:"), 0, 0)
+        self.cmb_notif_duration = QComboBox()
+        self.cmb_notif_duration.addItem("5 seconds", 5)
+        self.cmb_notif_duration.addItem("8 seconds", 8)
+        self.cmb_notif_duration.addItem("10 seconds", 10)
+        self.cmb_notif_duration.addItem("15 seconds", 15)
+        self.cmb_notif_duration.addItem("30 seconds", 30)
+        self.cmb_notif_duration.addItem("60 seconds", 60)
+        self.cmb_notif_duration.addItem("Until dismissed", 0)
+        cur_dur = int(self.data.get("limit_notif_duration_sec", 10))
+        dur_idx = self.cmb_notif_duration.findData(cur_dur)
+        if dur_idx >= 0:
+            self.cmb_notif_duration.setCurrentIndex(dur_idx)
+        else:
+            self.cmb_notif_duration.addItem(f"{cur_dur} seconds", cur_dur)
+            self.cmb_notif_duration.setCurrentIndex(self.cmb_notif_duration.count() - 1)
+        self.cmb_notif_duration.currentIndexChanged.connect(self._set_notif_duration)
+        notif_box_lay.addWidget(self.cmb_notif_duration, 0, 1)
+
+        # Symbol / Emoji
+        notif_box_lay.addWidget(QLabel("Symbol:"), 0, 2)
+        self.cmb_notif_symbol = QComboBox()
+        self.cmb_notif_symbol.setEditable(True)
+        symbol_presets = [
+            ("⚡ Lightning", "⚡"),
+            ("⚠️ Warning", "⚠️"),
+            ("🔔 Bell", "🔔"),
+            ("🤖 AI", "🤖"),
+            ("⏳ Hourglass", "⏳"),
+            ("🚨 Siren", "🚨"),
+            ("★ Star", "★"),
+            ("↻ Reset", "↻"),
+            ("(none)", ""),
+        ]
+        cur_sym = str(self.data.get("limit_notif_symbol", "⚡"))
+        found_sym = False
+        for lbl, sym in symbol_presets:
+            self.cmb_notif_symbol.addItem(lbl, sym)
+            if sym == cur_sym:
+                self.cmb_notif_symbol.setCurrentIndex(self.cmb_notif_symbol.count() - 1)
+                found_sym = True
+        if not found_sym:
+            self.cmb_notif_symbol.setEditText(cur_sym)
+        self.cmb_notif_symbol.currentTextChanged.connect(self._set_notif_symbol)
+        notif_box_lay.addWidget(self.cmb_notif_symbol, 0, 3)
+
+        # Color / Accent
+        notif_box_lay.addWidget(QLabel("Color:"), 1, 0)
+        color_h = QHBoxLayout()
+        color_h.setSpacing(4)
+        self.cmb_notif_color = QComboBox()
+        color_presets = [
+            ("Theme accent", ""),
+            ("Golden Yellow", "#D9B340"),
+            ("Amber Warning", "#E69500"),
+            ("Crimson Red", "#C0392B"),
+            ("Emerald Green", "#27AE60"),
+            ("Sky Blue", "#2980B9"),
+            ("Purple Violet", "#8E44AD"),
+        ]
+        cur_col = str(self.data.get("limit_notif_color", ""))
+        found_col = False
+        for lbl, col in color_presets:
+            self.cmb_notif_color.addItem(lbl, col)
+            if col == cur_col:
+                self.cmb_notif_color.setCurrentIndex(self.cmb_notif_color.count() - 1)
+                found_col = True
+        if not found_col and cur_col:
+            self.cmb_notif_color.addItem(f"Custom ({cur_col})", cur_col)
+            self.cmb_notif_color.setCurrentIndex(self.cmb_notif_color.count() - 1)
+        self.cmb_notif_color.currentIndexChanged.connect(self._set_notif_color)
+        color_h.addWidget(self.cmb_notif_color, 1)
+
+        self.btn_pick_notif_color = QPushButton("Pick…")
+        self.btn_pick_notif_color.setFixedWidth(52)
+        self.btn_pick_notif_color.setToolTip("Pick custom notification accent color")
+        self.btn_pick_notif_color.clicked.connect(self._pick_custom_notif_color)
+        color_h.addWidget(self.btn_pick_notif_color)
+        notif_box_lay.addLayout(color_h, 1, 1)
+
+        # Test popup button
+        self.btn_test_notif = QPushButton("Test popup")
+        self.btn_test_notif.setToolTip("Show sample notification with current appearance settings")
+        self.btn_test_notif.clicked.connect(self._test_notification_appearance)
+        notif_box_lay.addWidget(self.btn_test_notif, 1, 2, 1, 2)
+
+        page_lay.addWidget(notif_box)
 
         # Copy one configured section onto the rest. Configuring five windows
         # by hand is the same eight fields five times, and the sections almost
@@ -525,6 +822,70 @@ class LimitSettingsDialog(QDialog):
         page_lay.addWidget(self.alert_scroll)
         self.tabs.addTab(self.alert_page, "Notifications")
         self._rebuild_alert_rows()
+
+    def _get_current_notif_duration(self) -> int:
+        data = self.cmb_notif_duration.currentData()
+        return int(data) if data is not None else 10
+
+    def _get_current_notif_symbol(self) -> str:
+        text = self.cmb_notif_symbol.currentText().strip()
+        idx = self.cmb_notif_symbol.currentIndex()
+        if idx >= 0 and self.cmb_notif_symbol.itemText(idx) == text:
+            data = self.cmb_notif_symbol.itemData(idx)
+            if data is not None:
+                return str(data)
+        data_idx = self.cmb_notif_symbol.findData(text)
+        if data_idx >= 0:
+            return str(self.cmb_notif_symbol.itemData(data_idx))
+        if " " in text:
+            parts = text.split(" ")
+            if len(parts[0]) <= 3:
+                return parts[0]
+        return text
+
+    def _get_current_notif_color(self) -> str:
+        return str(self.cmb_notif_color.currentData() or "")
+
+    def _set_notif_duration(self, _idx):
+        dur = self._get_current_notif_duration()
+        self.data["limit_notif_duration_sec"] = dur
+        self._commit()
+
+    def _set_notif_symbol(self, _text):
+        sym = self._get_current_notif_symbol()
+        self.data["limit_notif_symbol"] = sym
+        self._commit()
+
+    def _set_notif_color(self, _idx):
+        col = self._get_current_notif_color()
+        self.data["limit_notif_color"] = col
+        self._commit()
+
+    def _pick_custom_notif_color(self):
+        from PyQt6.QtWidgets import QColorDialog
+        cur = self.data.get("limit_notif_color", "") or "#D9B340"
+        col = QColorDialog.getColor(QColor(cur), self, "Select Notification Accent Color")
+        if col.isValid():
+            hex_val = col.name()
+            self.data["limit_notif_color"] = hex_val
+            idx = self.cmb_notif_color.findData(hex_val)
+            if idx < 0:
+                self.cmb_notif_color.addItem(f"Custom ({hex_val})", hex_val)
+                idx = self.cmb_notif_color.count() - 1
+            self.cmb_notif_color.setCurrentIndex(idx)
+            self._commit()
+
+    def _test_notification_appearance(self):
+        sym = self._get_current_notif_symbol()
+        dur = self._get_current_notif_duration()
+        col = self._get_current_notif_color()
+        self.main_win._show_limit_popup(
+            "AI limit test",
+            "Sample notification: duration, color, and symbol preview.",
+            duration_sec=dur,
+            color=col,
+            symbol=sym,
+        )
 
     def _account_windows(self, account):
         snap = self.service.state_copy.snapshots.get(account.key)
@@ -601,11 +962,10 @@ class LimitSettingsDialog(QDialog):
         """Make every other section identical to the chosen one.
 
         Copies the WHOLE rule (both halves, every toggle and volume), because
-        "exactly" is the request: a partial copy would leave the user hunting
-        for the one field that did not come along. The suppression state is
-        reset for each target so the copied threshold gets one honest chance
-        to fire against the current quota instead of being muted by the
-        target's own history.
+        "exactly" is the request. The suppression state is reset for each target
+        so the copied threshold gets one honest chance to fire against the
+        current quota. Any resulting alerts are safely coalesced by
+        _check_limit_notifications to prevent sound/toast flooding.
         """
         combo = getattr(self, "cmb_copy_from", None)
         if combo is None:
@@ -813,8 +1173,10 @@ class LimitSettingsDialog(QDialog):
         rule = normalized_rule(self._rules().get(key))
         prefix = "reset_" if kind == "reset" else ""
         if rule[f"{prefix}sound_enabled"] == "True":
-            self.main_win.sound_manager.play_sound_ref(
-                rule[f"{prefix}sound"], rule[f"{prefix}volume"])
+            _request_limit_sound(
+                self.main_win.sound_manager, kind, key,
+                rule[f"{prefix}sound"], rule[f"{prefix}volume"], preview=True,
+            )
         if rule[f"{prefix}show_notification"] == "True":
             message = ("Limit reset — quota is available again. Time to work."
                        if kind == "reset"
@@ -954,6 +1316,7 @@ class LimitSettingsDialog(QDialog):
         """Recolour this window's own caption labels."""
         for name in ("lbl_overview_status", "lbl_copy_hint",
                      "lbl_codex_sources", "lbl_claude_sources",
+                     "lbl_claude_accounts",
                      "lbl_antigravity_sources", "lbl_zcode_sources",
                      "lbl_troubleshoot_status", "lbl_onboarding_status",
                      "lbl_color_hint"):
@@ -1084,6 +1447,18 @@ class LimitSettingsDialog(QDialog):
         self.extra_homes.editingFinished.connect(self._set_extra_homes)
         form.addRow("Extra Codex homes", self.extra_homes)
 
+        self.claude_homes = QLineEdit(
+            str(self.data.get("limit_claude_homes", "") or ""))
+        self.claude_homes.setPlaceholderText(
+            "empty = ~/.claude plus any ~/.claude-* home")
+        self.claude_homes.setToolTip(
+            "One CLAUDE_CONFIG_DIR per extra Claude account. Homes named "
+            "~/.claude-<name> are found on their own; list a path here only "
+            "when the account lives somewhere else. Each becomes its own "
+            "gauge, read with its own credentials.")
+        self.claude_homes.editingFinished.connect(self._set_claude_homes)
+        form.addRow("Extra Claude homes", self.claude_homes)
+
         self.antigravity_dir = QLineEdit(
             str(self.data.get("limit_antigravity_dir", "") or ""))
         self.antigravity_dir.setPlaceholderText(
@@ -1162,16 +1537,43 @@ class LimitSettingsDialog(QDialog):
         self.lbl_claude.setWordWrap(True)
         claude_row.addWidget(self.lbl_claude, 1)
         lay.addLayout(claude_row)
+        # T-1267: with two or more Claude accounts the single aggregate row
+        # is REPLACED by one bridge row per account, each carrying its own
+        # Connect/Disconnect/Reconnect action bound to that account's exact
+        # home. Empty and hidden until a refresh finds a multi-account
+        # roster; the single-account case keeps the historical row above.
+        self.claude_bridge_rows_box = QWidget()
+        self.claude_bridge_rows_lay = QVBoxLayout(self.claude_bridge_rows_box)
+        self.claude_bridge_rows_lay.setContentsMargins(0, 0, 0, 0)
+        self.claude_bridge_rows_lay.setSpacing(2)
+        self._claude_bridge_rows: dict[str, dict] = {}
+        self.claude_bridge_rows_box.hide()
+        lay.addWidget(self.claude_bridge_rows_box)
         explanation = QLabel(
             "Claude limits come from four read-only sources: the Claude Code "
             "CLI's own /usage answer (exact percentages AND reset times, the "
             "best of them), its status line, Claude Desktop's usage sampler "
-            "(keeps the gauges alive when Claude Code is not running), and the "
-            "refusals Claude Code journals when the API blocks a window. "
+            "(keeps the gauges alive when Claude Code is not running), and "
+            "the refusals Claude Code journals when the API blocks a window. "
             "Nothing is estimated, and the existing status-line configuration "
-            "is preserved and restored on disconnect.")
+            "is preserved and restored on disconnect. A second account is a "
+            "second CLAUDE_CONFIG_DIR: ~/.claude-<name> homes are detected "
+            "automatically, others go in 'Extra Claude homes' above. Each "
+            "account row below connects or disconnects THAT account's own "
+            "home only; the single row shown for one account acts on the "
+            "default ~/.claude home.")
         explanation.setWordWrap(True)
         lay.addWidget(explanation)
+        # T-1266 C6: the detection answer comes FIRST and is always shown --
+        # including at one account. "How many Claude accounts does
+        # FastPrompter think I have, and where did each come from?" used to be
+        # answerable only by counting gauges, and the per-home diagnostic
+        # lines appeared only once a second home existed, so a second account
+        # that failed to be detected explained itself with silence.
+        self.lbl_claude_accounts = QLabel()
+        self.lbl_claude_accounts.setWordWrap(True)
+        self._hint_style(self.lbl_claude_accounts)
+        lay.addWidget(self.lbl_claude_accounts)
         self.lbl_claude_sources = QLabel()
         self.lbl_claude_sources.setWordWrap(True)
         self._hint_style(self.lbl_claude_sources)
@@ -1200,6 +1602,7 @@ class LimitSettingsDialog(QDialog):
         lay.addWidget(self.lbl_antigravity_sources)
 
         self._build_zcode_group(lay)
+        self._build_freebuff_group(lay)
         lay.addStretch(1)
         self.sources_page = page
         self.tabs.addTab(page, "Sources")
@@ -1256,13 +1659,13 @@ class LimitSettingsDialog(QDialog):
     def _set_zcode_config(self):
         self.data["limit_zcode_config"] = self.zcode_config.text().strip()
         self._commit()
-        self.service.reconfigure(self.data)
+        self.service.reconfigure_async(self.data)
         self._refresh_zcode_status()
 
     def _toggle_zcode(self, checked):
         self.data["limit_zcode_enabled"] = "True" if checked else "False"
         self._commit()
-        self.service.reconfigure(self.data)
+        self.service.reconfigure_async(self.data)
         self.account_selector.sync(force=True)
         self._refresh_zcode_status()
 
@@ -1308,10 +1711,160 @@ class LimitSettingsDialog(QDialog):
             lines.append("Currently off — nothing is requested.")
         label.setText("\n".join(lines))
 
+    def _build_freebuff_group(self, parent_lay):
+        """Opt-in switch and exactly what enabling it will do.
+
+        Freebuff is the second limit source that leaves this machine: its
+        desktop app keeps quota in memory only, so the only truthful read is
+        the same session endpoint the app itself polls — a read-only GET that
+        admits no session and spends no Freebucks. The token comes from
+        Freebuff's own state file, never from FastPrompter.
+        """
+        self.cb_freebuff = QCheckBox("Read Freebuff (Freebucks) limits")
+        self.cb_freebuff.setChecked(
+            str(self.data.get("limit_freebuff_enabled", "False")) == "True")
+        self.cb_freebuff.setToolTip(
+            "One read-only HTTPS GET per sweep to www.codebuff.com"
+            "/api/v1/freebuff/session — the same call Freebuff Desktop itself "
+            "makes to refresh its header. It creates no session and spends no "
+            "Freebucks.")
+        self.cb_freebuff.toggled.connect(self._toggle_freebuff)
+        parent_lay.addWidget(self.cb_freebuff)
+
+        note = QLabel(
+            "Freebuff Desktop shows its Freebucks balance in memory only, so "
+            "FastPrompter asks the same session endpoint the app itself polls "
+            "— a read-only GET (no session is created, nothing is spent). The "
+            "sign-in token is read from Freebuff's own state file for one "
+            "Authorization header — never logged, never stored, never shown. "
+            "Only the vendor's own host is accepted, over verified HTTPS. "
+            "Reported: the daily Freebucks pool, the wallet balance, and "
+            "per-model prices in the tooltip.")
+        note.setWordWrap(True)
+        parent_lay.addWidget(note)
+
+        self.lbl_freebuff_sources = QLabel()
+        self.lbl_freebuff_sources.setWordWrap(True)
+        self._hint_style(self.lbl_freebuff_sources)
+        parent_lay.addWidget(self.lbl_freebuff_sources)
+
+        self.btn_freebuff_quick_enable = QPushButton("Enable detected Freebuff account")
+        self.btn_freebuff_quick_enable.setToolTip(
+            "Turn on Freebuff limit monitoring for the signed-in account")
+        self.btn_freebuff_quick_enable.clicked.connect(
+            lambda: self.cb_freebuff.setChecked(True))
+        self.btn_freebuff_quick_enable.hide()
+        parent_lay.addWidget(self.btn_freebuff_quick_enable)
+
+        # T-1243 spec 27: the FULL model-price table lives here, compact and
+        # sorted by price then model -- the hover panel only shows a bounded
+        # subset and points at this view.
+        self.lbl_freebuff_prices_title = QLabel("Freebuff model prices")
+        self._hint_style(self.lbl_freebuff_prices_title)
+        self.lbl_freebuff_prices_title.hide()
+        parent_lay.addWidget(self.lbl_freebuff_prices_title)
+        self.tbl_freebuff_prices = QTableWidget(0, 2)
+        self.tbl_freebuff_prices.setHorizontalHeaderLabels(["Model", "FB/hour"])
+        self.tbl_freebuff_prices.verticalHeader().setVisible(False)
+        self.tbl_freebuff_prices.setEditTriggers(
+            QTableWidget.EditTrigger.NoEditTriggers)
+        self.tbl_freebuff_prices.setSelectionMode(
+            QTableWidget.SelectionMode.NoSelection)
+        self.tbl_freebuff_prices.setShowGrid(False)
+        self.tbl_freebuff_prices.setAlternatingRowColors(True)
+        self.tbl_freebuff_prices.setMaximumHeight(190)
+        self.tbl_freebuff_prices.hide()
+        parent_lay.addWidget(self.tbl_freebuff_prices)
+
+    def _toggle_freebuff(self, checked):
+        self.data["limit_freebuff_enabled"] = "True" if checked else "False"
+        self._commit()
+        self.service.reconfigure_async(self.data)
+        self.account_selector.sync(force=True)
+        self._refresh_freebuff_status()
+
+    def _refresh_freebuff_status(self):
+        """One line: is Freebuff signed in, and what would enabling read."""
+        label = getattr(self, "lbl_freebuff_sources", None)
+        if label is None:
+            return
+        try:
+            from fastprompter.core.usage_limits.providers.freebuff import (
+                source_status,
+            )
+            state = source_status(
+                str(self.data.get("limit_freebuff_state", "") or "") or None,
+                enabled=str(self.data.get("limit_freebuff_enabled", "False")) == "True")
+        except Exception as exc:
+            label.setText(f"Freebuff sources unavailable: {exc}")
+            return
+        btn_quick = getattr(self, "btn_freebuff_quick_enable", None)
+        signed_in = bool(state.get("signed_in"))
+        if btn_quick is not None:
+            if signed_in and not state.get("enabled"):
+                btn_quick.show()
+            else:
+                btn_quick.hide()
+        account = state.get("account") or {}
+        who = account.get("name") or account.get("email") or "signed in"
+        if not state.get("state_found"):
+            label.setText("Freebuff: Desktop state not found at "
+                          f"{state.get('state_path') or '?'}")
+            return
+        if not signed_in:
+            label.setText("Freebuff: not signed in — sign in inside Freebuff "
+                          "Desktop first")
+            return
+        lines = [f"Freebuff: signed in as {who} · read-only GET "
+                 f"{state.get('endpoint', '')}"]
+        if not state.get("enabled"):
+            lines.append("Currently off — nothing is requested.")
+        label.setText("\n".join(lines))
+        self._refresh_freebuff_prices()
+
+    def _freebuff_prices(self) -> dict:
+        """The newest model-price map from the service snapshot ({} if none)."""
+        try:
+            snapshot = self.service.state_copy
+        except Exception:
+            return {}
+        for account in getattr(snapshot, "accounts", ()) or ():
+            if getattr(account, "provider_id", "") != "freebuff":
+                continue
+            shot = (getattr(snapshot, "snapshots", {}) or {}).get(account.key)
+            meta = getattr(shot, "provider_metadata", None) or {}
+            prices = meta.get("model_prices")
+            if isinstance(prices, dict) and prices:
+                return prices
+        return {}
+
+    def _refresh_freebuff_prices(self):
+        """Fill the compact Model / FB-hour table; hide it when unknown."""
+        table = getattr(self, "tbl_freebuff_prices", None)
+        title = getattr(self, "lbl_freebuff_prices_title", None)
+        if table is None:
+            return
+        from fastprompter.core.usage_limits.freebuff_format import (
+            full_price_rows,
+        )
+
+        rows = full_price_rows(self._freebuff_prices())
+        table.setRowCount(len(rows))
+        for index, (name, price) in enumerate(rows):
+            table.setItem(index, 0, QTableWidgetItem(name))
+            item = QTableWidgetItem(price)
+            item.setTextAlignment(Qt.AlignmentFlag.AlignRight
+                                  | Qt.AlignmentFlag.AlignVCenter)
+            table.setItem(index, 1, item)
+        table.resizeColumnsToContents()
+        table.setVisible(bool(rows))
+        if title is not None:
+            title.setVisible(bool(rows))
+
     def _set_antigravity_dir(self):
         self.data["limit_antigravity_dir"] = self.antigravity_dir.text().strip()
         self._commit()
-        self.service.reconfigure(self.data)
+        self.service.reconfigure_async(self.data)
 
     def _refresh_antigravity_status(self):
         label = getattr(self, "lbl_antigravity_sources", None)
@@ -1331,8 +1884,12 @@ class LimitSettingsDialog(QDialog):
             return
         lines = []
         if state.get("cli_installed"):
-            lines.append(f"CLI: {state['cli_path']} · exact percentages per "
-                         "quota pool")
+            if state.get("cli_authenticated", True):
+                lines.append(f"CLI: {state['cli_path']} · exact percentages per "
+                             "quota pool")
+            else:
+                lines.append(f"CLI: {state['cli_path']} · not logged in (click "
+                             "'Log in to Antigravity…' below to authenticate)")
         else:
             lines.append("CLI: not installed — install it above; without it "
                          "only Antigravity's own refusals are readable")
@@ -1358,7 +1915,14 @@ class LimitSettingsDialog(QDialog):
     def _set_extra_homes(self):
         self.data["limit_codex_homes"] = self.extra_homes.text().strip()
         self._commit()
-        self.service.reconfigure(self.data)
+        self.service.reconfigure_async(self.data)
+
+    def _set_claude_homes(self):
+        self.data["limit_claude_homes"] = self.claude_homes.text().strip()
+        self._commit()
+        self.service.reconfigure_async(self.data)
+        self._refresh_claude_accounts()
+        self._refresh_claude_sources()
 
     def _refresh_codex_status(self):
         label = getattr(self, "lbl_codex_sources", None)
@@ -1392,6 +1956,9 @@ class LimitSettingsDialog(QDialog):
         label.setText("\n".join(lines))
 
     def _refresh_now(self):
+        if hasattr(self, "btn_refresh"):
+            self.btn_refresh.setEnabled(False)
+            self.btn_refresh.setText("Refreshing...")
         self.service.discover()
         self.service.refresh()
         self.account_selector.sync(force=True)
@@ -1404,11 +1971,146 @@ class LimitSettingsDialog(QDialog):
         self._refresh_claude_status()
         self._refresh_antigravity_status()
         self._refresh_zcode_status()
+        self._refresh_freebuff_status()
+        if hasattr(self.main_win, "limit_gauges"):
+            self.main_win.limit_gauges.refresh_view()
+        if hasattr(self.main_win, "_update_limit_timer_label"):
+            self.main_win._update_limit_timer_label()
+
+    def _claude_accounts(self) -> list:
+        """The service's discovered Claude accounts (empty when unknown)."""
+        try:
+            state = self.service.state_copy
+            return [a for a in state.accounts
+                    if getattr(a, "provider_id", "") == "claude"]
+        except Exception:
+            return []
+
+    @staticmethod
+    def claude_bridge_row_state(home) -> tuple[str, str]:
+        """(status text, button label) for ONE Claude home. Qt-free.
+
+        Raises nothing: an unreadable home reports a configuration error for
+        ITSELF and never for its siblings.
+        """
+        from fastprompter.core.usage_limits.claude_statusline import bridge_status
+        try:
+            status = bridge_status(home)
+        except Exception as exc:
+            return f"Configuration error: {exc}", "Connect Claude Code"
+        if status.get("stale"):
+            # The command records absolute interpreter/launcher paths, so a
+            # moved checkout or a switch to the frozen build leaves Claude
+            # Code running a path that no longer exists — silently.
+            return ("Connected to an OLD FastPrompter path · press "
+                    "Reconnect to repair"), "Reconnect Claude Code"
+        if status["connected"] and status["has_cache"]:
+            return "Connected · structured limits received", "Disconnect Claude Code"
+        if status["connected"]:
+            return "Connected · waiting for first Claude API response", "Disconnect Claude Code"
+        return "Not connected", "Connect Claude Code"
+
+    def _sync_claude_bridge_rows(self, accounts) -> None:
+        """Rebuild per-account bridge rows only when the roster changes.
+
+        Each row's button is bound to the account's EXACT home at creation
+        and never rebound in place (T-1267): a home that disappears takes
+        its row and its binding with it, a new home gets a fresh row, and a
+        plain status refresh can never silently re-target an action at a
+        different account.
+        """
+        box = getattr(self, "claude_bridge_rows_box", None)
+        if box is None:
+            return
+        homes = {account.source_path: account for account in accounts}
+        for home in list(self._claude_bridge_rows):
+            if home not in homes:
+                row = self._claude_bridge_rows.pop(home)
+                row["widget"].setParent(None)
+                row["widget"].deleteLater()
+        for home, account in homes.items():
+            row = self._claude_bridge_rows.get(home)
+            if row is None:
+                widget = QWidget()
+                row_lay = QHBoxLayout(widget)
+                row_lay.setContentsMargins(0, 0, 0, 0)
+                label = QLabel()
+                label.setWordWrap(True)
+                button = QPushButton()
+                button.clicked.connect(
+                    lambda _checked=False, bound=home:
+                        self._toggle_claude_for_home(bound))
+                row_lay.addWidget(label, 1)
+                row_lay.addWidget(button)
+                self.claude_bridge_rows_lay.addWidget(widget)
+                row = {"widget": widget, "label": label, "button": button}
+                self._claude_bridge_rows[home] = row
+            text, button_text = self.claude_bridge_row_state(home)
+            row["label"].setText(f"{account.display_name} · {home}\n{text}")
+            row["button"].setText(button_text)
+        box.setVisible(bool(self._claude_bridge_rows))
+
+    def _toggle_claude_for_home(self, home) -> None:
+        """Connect, disconnect, or repair ONE Claude home's status-line bridge.
+
+        The action carries the EXACT account home that initiated it (T-1267):
+        no default-home fallback, and no other home's settings, sidecar
+        backup or rate-limit cache is touched. A STALE bridge needs a
+        reinstall, not a disconnect: disconnecting would hand the user back
+        their old status line and leave the feed off, when what they asked
+        for is the feed working again.
+        """
+        from fastprompter.core.usage_limits.claude_statusline import (
+            bridge_status,
+            install_bridge,
+            uninstall_bridge,
+        )
+        try:
+            status = bridge_status(home)
+            if status.get("stale"):
+                install_bridge(home)
+            elif status.get("connected"):
+                uninstall_bridge(home)
+            else:
+                install_bridge(home)
+        except Exception as exc:
+            QMessageBox.warning(
+                self, "Claude Code limits",
+                "Could not update the Claude statusLine for\n"
+                f"{home}:\n\n{exc}")
+        self._refresh_claude_status()
+        service = getattr(self, "service", None)
+        reconfigure = getattr(service, "reconfigure_async", None)
+        if reconfigure is not None:
+            reconfigure(self.data)
 
     def _refresh_claude_status(self):
+        accounts = self._claude_accounts()
+        button = getattr(self, "btn_claude", None)
+        label = getattr(self, "lbl_claude", None)
+        if len(accounts) > 1:
+            # T-1267: a multi-account roster gets one control row per
+            # account; the aggregate row would act on the default
+            # ~/.claude home no matter which account the user meant.
+            if button is not None:
+                button.hide()
+            if label is not None:
+                label.hide()
+            self._sync_claude_bridge_rows(accounts)
+            self._refresh_claude_accounts()
+            self._refresh_claude_sources()
+            return
+        if button is not None:
+            button.show()
+        if label is not None:
+            label.show()
+        self._sync_claude_bridge_rows([])
+        default_home = None
+        if accounts:
+            default_home = accounts[0].source_path
         try:
             from fastprompter.core.usage_limits.claude_statusline import bridge_status
-            status = bridge_status()
+            status = bridge_status(default_home)
             if status.get("stale"):
                 # The command records absolute interpreter/launcher paths, so a
                 # moved checkout or a switch to the frozen build leaves Claude
@@ -1421,17 +2123,76 @@ class LimitSettingsDialog(QDialog):
                 text = "Connected · waiting for first Claude API response"
             else:
                 text = "Not connected"
-            if status.get("stale"):
-                self.btn_claude.setText("Reconnect Claude Code")
-            else:
-                self.btn_claude.setText(
-                    "Disconnect Claude Code" if status["connected"]
-                    else "Connect Claude Code")
-            self.lbl_claude.setText(text)
+            if button is not None:
+                if status.get("stale"):
+                    button.setText("Reconnect Claude Code")
+                else:
+                    button.setText(
+                        "Disconnect Claude Code" if status["connected"]
+                        else "Connect Claude Code")
+            if label is not None:
+                label.setText(text)
         except Exception as exc:
-            self.btn_claude.setText("Connect Claude Code")
-            self.lbl_claude.setText(f"Configuration error: {exc}")
+            if button is not None:
+                button.setText("Connect Claude Code")
+            if label is not None:
+                label.setText(f"Configuration error: {exc}")
+        self._refresh_claude_accounts()
         self._refresh_claude_sources()
+
+    def claude_accounts_lines(self) -> list[str]:
+        """The detection summary, as plain lines. One row per account.
+
+        Deliberately Qt-free so the CONTENT can be asserted directly: the
+        count sentence, then name / badge / home / credentials / status line /
+        current quota-data state for every discovered Claude account. The data
+        state is read from the service snapshots the gauges draw, so this row
+        and the header can never disagree, and nothing here is invented when a
+        source is silent.
+        """
+        from fastprompter.core.usage_limits.providers.claude import (
+            accounts_report,
+            detected_summary,
+        )
+        from fastprompter.ui.limit_account_selector import short_account_label
+        try:
+            state = self.service.state_copy
+            accounts = [a for a in state.accounts
+                        if getattr(a, "provider_id", "") == "claude"]
+            rows = accounts_report(accounts, state.snapshots)
+        except Exception as exc:
+            return [f"Claude accounts unavailable: {exc}"]
+        badges = {}
+        for account in accounts:
+            try:
+                badges[account.key] = short_account_label(account, self.data)
+            except Exception:
+                badges[account.key] = ""
+        lines = [detected_summary(len(rows))]
+        for row in rows:
+            badge = badges.get(row["key"], "")
+            origin = "default home" if row["is_default"] else row["kind"]
+            creds = "yes" if row["has_credentials"] else "no"
+            if not row["bridge_connected"]:
+                bridge = "no"
+            elif row["bridge_has_cache"]:
+                bridge = "yes (cache present)"
+            else:
+                bridge = "yes (no cache yet)"
+            badge_text = f" [{badge}]" if badge else ""
+            name = row["name"]
+            path = row["path"]
+            lines.append(f"  {name}{badge_text} · {origin} · {path}")
+            lines.append(
+                f"      credentials: {creds} · status line: {bridge}"
+                f" · quota data: {row['data_state']}")
+        return lines
+
+    def _refresh_claude_accounts(self):
+        label = getattr(self, "lbl_claude_accounts", None)
+        if label is None:
+            return
+        label.setText("\n".join(self.claude_accounts_lines()))
 
     def _refresh_claude_sources(self):
         """One line per Claude source, so a silent gauge is explainable."""
@@ -1440,6 +2201,7 @@ class LimitSettingsDialog(QDialog):
             return
         try:
             from fastprompter.core.usage_limits.providers.claude import (
+                homes_status,
                 source_status,
             )
             state = source_status()
@@ -1447,6 +2209,20 @@ class LimitSettingsDialog(QDialog):
             label.setText(f"Claude sources unavailable: {exc}")
             return
         lines = []
+        try:
+            from fastprompter.core.usage_limits.service import parse_home_list
+            homes = homes_status(parse_home_list(
+                self.data.get("limit_claude_homes", "")))
+        except Exception:
+            homes = []
+        if len(homes) > 1:
+            # Only worth the two extra lines once a second account exists; on a
+            # single-account machine this block stays invisible.
+            for home in homes:
+                role = "default" if home["is_default"] else home["kind"]
+                bridge = ("status line connected" if home["bridge_connected"]
+                          else "status line not connected \u00b7 read via CLI")
+                lines.append(f"Home ({role}): {home['path']} \u00b7 {bridge}")
         if state.get("cli_installed"):
             lines.append(f"CLI: {state['cli_path']} · exact percentages and "
                          "reset times")
@@ -1454,11 +2230,11 @@ class LimitSettingsDialog(QDialog):
             lines.append("CLI: not installed — install it above for exact "
                          "percentages and reset times")
         if state["bridge_connected"]:
-            lines.append("Status line: connected · "
+            lines.append("Status line (default home): connected · "
                          + ("cache present" if state["bridge_has_cache"]
                             else "no cache yet (Claude Code must render it)"))
         else:
-            lines.append("Status line: not connected")
+            lines.append("Status line (default home): not connected")
         windows = state["desktop_windows"]
         if windows:
             age = state["desktop_age_s"] or 0
@@ -1482,32 +2258,22 @@ class LimitSettingsDialog(QDialog):
         label.setText("\n".join(lines))
 
     def _toggle_claude(self):
-        """Connect, disconnect, or repair the status-line bridge.
+        """The single-account row: act on the DEFAULT account's own home.
 
-        A STALE bridge needs a reinstall, not a disconnect: disconnecting would
-        hand the user back their old status line and leave the feed off, when
-        what they asked for is the feed working again.
+        Historical default-account behaviour (T-1267), now carrying the
+        discovered default home explicitly instead of relying on the
+        ambient ~/.claude; with no discovered account the bridge layer's
+        own default resolution applies, exactly as before.
         """
-        try:
-            from fastprompter.core.usage_limits.claude_statusline import (
-                bridge_status,
-                install_bridge,
-            )
-            if bridge_status().get("stale"):
-                install_bridge()
-                self._refresh_claude_status()
-                service = getattr(self, "service", None)
-                if service is not None:
-                    service.reconfigure(self.data)
-                return
-        except Exception as exc:
-            QMessageBox.warning(
-                self, "Claude Code limits",
-                f"Could not repair the Claude status line:\n\n{exc}")
-            self._refresh_claude_status()
-            return
-        self.main_win._toggle_claude_limit_bridge()
-        self._refresh_claude_status()
+        accounts = self._claude_accounts()
+        home = None
+        for account in accounts:
+            if (getattr(account, "metadata", None) or {}).get("is_default"):
+                home = account.source_path
+                break
+        if home is None and accounts:
+            home = accounts[0].source_path
+        self._toggle_claude_for_home(home)
 
     def _run_auto_troubleshoot(self):
         """Perform automated safe repairs and scan all providers."""
@@ -1529,6 +2295,7 @@ class LimitSettingsDialog(QDialog):
         self._refresh_claude_status()
         self._refresh_antigravity_status()
         self._refresh_zcode_status()
+        self._refresh_freebuff_status()
         if hasattr(self.main_win, "limit_gauges"):
             self.main_win.limit_gauges.sync()
             self.main_win.limit_gauges.refresh_view()
@@ -1596,6 +2363,13 @@ class LimitSettingsDialog(QDialog):
                 btn = QPushButton("Install Antigravity CLI")
                 btn.clicked.connect(lambda: [dialog.accept(), self._install_cli("antigravity")])
                 act_box.addWidget(btn)
+            elif agy_diag.get("status_code") == "needs_login":
+                # The CLI is present but has no stored session, so probing is
+                # refused on purpose (no surprise browser). Offer the explicit
+                # login here — auto-pressing it would be the popup we avoid.
+                btn = QPushButton("Log in to Antigravity…")
+                btn.clicked.connect(lambda: [dialog.accept(), self._launch_login("antigravity")])
+                act_box.addWidget(btn)
 
             lay.addLayout(act_box)
 
@@ -1610,13 +2384,35 @@ class LimitSettingsDialog(QDialog):
     def _launch_login(self, vendor: str):
         try:
             from fastprompter.core.usage_limits.troubleshooter import launch_vendor_login
-            launch_vendor_login(vendor)
-            QMessageBox.information(
-                self, f"Log in to {vendor.title()}",
-                f"A console window opened for {vendor.title()} login.\n\n"
-                "Complete the login in that window, then return here and click "
-                "'Refresh accounts and limits now'."
-            )
+            if vendor == "antigravity":
+                msg = (
+                    "FastPrompter is about to open a console named "
+                    "'FastPrompter - Antigravity sign-in'. A Google sign-in page may "
+                    "then open in your browser.\n\n"
+                    "1. Sign in with your Google account in the browser.\n"
+                    "2. Copy the authorization code shown there.\n"
+                    "3. Paste that code into the named console window and press Enter.\n\n"
+                    "Do not paste the code into the Antigravity editor or the "
+                    "FastPrompter text area. A code from an earlier sign-in cannot be "
+                    "reused.\n\n"
+                    "Dismiss this message to start sign-in. When it finishes, return here "
+                    "and click 'Refresh limits now'."
+                )
+                # Explain the otherwise alarming browser/code flow BEFORE it
+                # starts.  The visible console repeats the destination while
+                # the browser is open, so the instruction cannot disappear at
+                # the exact moment it is needed.
+                QMessageBox.information(
+                    self, "Antigravity sign-in instructions", msg)
+                launch_vendor_login(vendor)
+            else:
+                launch_vendor_login(vendor)
+                msg = (
+                    f"A console window opened for {vendor.title()} login.\n\n"
+                    "Complete the login in that window, then return here and click "
+                    "'Refresh accounts and limits now'."
+                )
+                QMessageBox.information(
+                    self, f"Log in to {vendor.title()}", msg)
         except Exception as exc:
             QMessageBox.warning(self, f"Log in to {vendor.title()}", f"Could not launch login:\n\n{exc}")
-

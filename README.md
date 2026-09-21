@@ -11,10 +11,9 @@ snippets, project scratchpads and small file bundles. No browser, no cloud,
 no account.
 
 [Download portable EXE →](https://github.com/vacterro/FastPrompter/releases)
-<img src="https://img.shields.io/github/v/tag/vacterro/FastPrompter?style=flat-square&label=source%20version" alt="version"> **v0.8.67**
+<img src="https://img.shields.io/github/v/tag/vacterro/FastPrompter?style=flat-square&label=source%20version" alt="version"> **v0.8.68**
 <a href="LICENSE"><img src="https://img.shields.io/github/license/vacterro/FastPrompter?style=flat-square&color=blue" alt="MIT"></a>
 <img src="https://img.shields.io/badge/Windows-0078D6?style=flat-square&logoColor=white" alt="Windows">
-<img src="https://img.shields.io/badge/Portable%20EXE-%E2%89%8828%20MB-important?style=flat-square" alt="Portable">
 
 Guides: [English](GUIDE_EN.md) · [Русский](GUIDE_RU.md) · [Deutsch](GUIDE_DE.md) · [Eesti](GUIDE_EST.md) · [日本語](GUIDE_JA.md)
 
@@ -72,7 +71,8 @@ uv sync
 uv run python FastPrompter.pyw     # or: pip install -r requirements.txt; python FastPrompter.pyw
 ```
 
-**Build your own portable EXE** (≈28 MB, unused Qt modules stripped):
+**Build your own portable EXE** (unused Qt modules stripped; exact size
+depends on the pinned toolchain recorded in the build report):
 
 ```powershell
 uv run python tools/build.py
@@ -285,19 +285,20 @@ and the code disagree, the code wins.
 
 ## Versioning & releases
 
-The version lives in `pyproject.toml`; every release is tagged `v<version>`.
-Portable EXE builds are published to the
-[Releases page](https://github.com/vacterro/FastPrompter/releases) via
-`tools/release.py`. The last published EXE can lag the latest source tag —
-check the release date before downloading.
+The canonical version lives in `VERSION` and is synced to `pyproject.toml`,
+`FastPrompter.pyw` and `uv.lock` by `tools/sync_release_version.py`; every
+release is tagged `v<version>` at the exact tested source commit. Portable EXE
+builds are published to the
+[Releases page](https://github.com/vacterro/FastPrompter/releases) through the
+draft-first `release.cmd` pipeline. The last published EXE can lag the latest
+source tag — check the release date before downloading.
 
 ## Known limits
 
 - **Autosave window** — text is written on a 10-second timer plus lifecycle
   events; a forced process kill can lose up to ~10 seconds of typing.
-- **Power loss** — SQLite runs with `synchronous=NORMAL`; a sudden power cut
-  can cost the most recent transaction. The WAL journal bounds the damage,
-  and the daily Markdown snapshots are the archive.
+- **Power loss** — SQLite runs with `synchronous=FULL` (durable commits); the
+  WAL journal and the daily Markdown snapshots provide the recovery path.
 - **`.bak` is a single generation** — a rollback point, not an archive.
 - **Snapshots keep 7 days** — older day folders are pruned.
 - **Watcher** — detection is best-effort (file/sqlite/window/process probes);

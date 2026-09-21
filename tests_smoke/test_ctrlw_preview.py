@@ -21,29 +21,17 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import pytest
 from PyQt6.QtWidgets import QApplication
 
-import fastprompter.core.state as state_mod
 from fastprompter.core.ctrlw import CURSOR, SAMPLE, SCENES, build_template, simulate
-from fastprompter.main import FastPrompter
 
 _app = QApplication.instance() or QApplication([])
 _tmpdir = tempfile.mkdtemp(prefix="fastprompter_ctrlw_")
 
 
 @pytest.fixture(scope="module")
-def win():
-    state_mod.get_db_path = lambda profile_id=1: os.path.join(_tmpdir, f"cw_{profile_id}.db")
-    state_mod.run_portable_backup = lambda data, profile_id=1: None
-    FastPrompter.setup_single_instance_server = lambda self: None
-    FastPrompter.register_all_hotkeys = lambda self: None
-    FastPrompter.unregister_all_hotkeys = lambda self: None
-    w = FastPrompter()
+def win(smoke_win):
+    w = smoke_win.create()
     yield w
-    w.auto_save_timer.stop()
-    w.topmost_timer.stop()
-    w._cache_timer.stop()
-    w.state.conn = None
-    w.conn = None
-    w.close()
+    smoke_win.retire(w)
 
 
 def _run_scenario(w, sid, use_div, use_bul, before, after, bullet):

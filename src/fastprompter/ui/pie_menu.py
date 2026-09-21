@@ -1,10 +1,10 @@
-from PyQt6 import sip
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QCursor
 from PyQt6.QtWidgets import QHBoxLayout, QPushButton, QVBoxLayout, QWidget
 
 from fastprompter.core.config import extract_bg, extract_color
 from fastprompter.theme.themes import THEMES
+from fastprompter.ui.qt_lifetime import weak_qt_callback
 
 
 class QuickListWidget(QWidget):
@@ -82,8 +82,10 @@ class QuickListWidget(QWidget):
             btn.setStyleSheet(f"QPushButton {{ background-color: {bg}; color: {fg}; border: 1px solid {border}; border-radius: 2px; font-size: {snip_font}px; font-weight: bold; text-align: left; padding-left: 6px; }} QPushButton:hover {{ background-color: {hover_bg}; color: {hover_fg}; border: 1px solid {fg}; }}")
             btn.clicked.connect(lambda checked, c=self.current_cat, idx=i: self.on_click(c, idx))
             self.snip_layout.addWidget(btn)
-        QTimer.singleShot(10, lambda: not sip.isdeleted(self) and self.adjustSize())
-        QTimer.singleShot(15, lambda: not sip.isdeleted(self) and self.center_on_cursor())
+        QTimer.singleShot(10, weak_qt_callback(
+            self, lambda menu: menu.adjustSize()))
+        QTimer.singleShot(15, weak_qt_callback(
+            self, lambda menu: menu.center_on_cursor()))
 
     def center_on_cursor(self):
         cursor_pos = QCursor.pos()
@@ -96,7 +98,9 @@ class QuickListWidget(QWidget):
     def on_click(self, cat, idx):
         self.close()
         main_win = self.main_win
-        QTimer.singleShot(50, lambda: not sip.isdeleted(main_win) and main_win.fire_global_snippet_from_cat(cat, idx))
+        QTimer.singleShot(50, weak_qt_callback(
+            main_win,
+            lambda window: window.fire_global_snippet_from_cat(cat, idx)))
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Escape:

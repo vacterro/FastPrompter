@@ -20,30 +20,21 @@ import pytest
 from PyQt6.QtGui import QTextCursor
 from PyQt6.QtWidgets import QApplication
 
-import fastprompter.core.state as state_mod
-from fastprompter.main import FastPrompter
 from fastprompter.ui.send_selection_mixin import silo_label
 
 _app = QApplication.instance() or QApplication([])
 _tmpdir = tempfile.mkdtemp(prefix="fastprompter_send_")
 
 
+def _win_setup(w, factory):
+    w._files_root = lambda: str(factory.env.root / "files")
+
+
 @pytest.fixture(scope="module")
-def win():
-    state_mod.get_db_path = lambda profile_id=1: os.path.join(_tmpdir, f"s_{profile_id}.db")
-    state_mod.run_portable_backup = lambda data, profile_id=1: None
-    FastPrompter.setup_single_instance_server = lambda self: None
-    FastPrompter.register_all_hotkeys = lambda self: None
-    FastPrompter.unregister_all_hotkeys = lambda self: None
-    w = FastPrompter()
-    w._files_root = lambda: os.path.join(_tmpdir, "files")
+def win(smoke_win):
+    w = smoke_win.create(setup=_win_setup)
     yield w
-    w.auto_save_timer.stop()
-    w.topmost_timer.stop()
-    w._cache_timer.stop()
-    w.state.conn = None
-    w.conn = None
-    w.close()
+    smoke_win.retire(w)
 
 
 def _fresh(win, text="alpha\nbeta\ngamma"):
@@ -118,6 +109,8 @@ def test_selection_to_a_new_silo_leaves_the_source_alone(win):
 
 def test_selection_to_a_new_child_silo_nests_it(win):
     _fresh(win)
+    # the child receives the SELECTION; an ambient clipboard must not seed it
+    win.data["new_silo_paste_clipboard"] = "False"
     _select(win, "gamma")
     assert win.selection_to_new_child_silo() is True
     new_idx = win.active_temp_slot

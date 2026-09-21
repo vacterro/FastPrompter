@@ -42,6 +42,7 @@ import time
 from pathlib import Path
 
 from fastprompter.core.usage_limits.model import (
+    AUTH_REQUIRED,
     OK,
     UNAVAILABLE,
     AccountRef,
@@ -141,6 +142,9 @@ class AntigravityProvider(UsageProvider):
         """Every pool the CLI reported, or None when it could not answer."""
         reading = _antigravity_cli.read_usage(deadline, binary=self._cli_binary)
         if "error" in reading:
+            code, summary = reading["error"]
+            if code == "cli_not_logged_in":
+                return _auth_required(account, summary)
             return None
         windows = [
             UsageWindow(
@@ -230,6 +234,18 @@ def _unavailable(account: AccountRef, code: str, summary: str) -> UsageSnapshot:
     )
 
 
+def _auth_required(account: AccountRef, summary: str) -> UsageSnapshot:
+    return UsageSnapshot(
+        account=account,
+        status=AUTH_REQUIRED,
+        windows=[UsageWindow.unavailable(QUOTA)],
+        error_code="cli_not_logged_in",
+        error_summary=summary,
+        provider_metadata={"capability": "antigravity-cli",
+                           "strategy": "agy-usage"},
+    )
+
+
 def candidate_data_dirs() -> list[str]:
     """Candidate directories where Antigravity data might reside."""
     home = os.environ.get("HOME") or os.environ.get("USERPROFILE")
@@ -252,11 +268,14 @@ def source_status(directory: str | os.PathLike | None = None, *,
     out = {"data_dir": root, "installed": bool(root) and os.path.isdir(root),
            "candidate_dirs": [],
            "cli_installed": False, "cli_path": "",
+           "cli_authenticated": False,
            "blocked_until": None, "observed_at": None}
     try:
         from fastprompter.core.usage_limits.cli_tools import resolve_binary
         out["cli_path"] = resolve_binary("antigravity")
         out["cli_installed"] = bool(out["cli_path"])
+        if out["cli_installed"]:
+            out["cli_authenticated"] = _antigravity_cli.is_authenticated()
     except Exception:
         pass
     if not out["installed"]:
@@ -271,4 +290,3 @@ def source_status(directory: str | os.PathLike | None = None, *,
         if refusal["resets_at"] > now:
             out["blocked_until"] = refusal["resets_at"]
     return out
-

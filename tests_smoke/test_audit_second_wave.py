@@ -17,9 +17,6 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import pytest
 from PyQt6.QtWidgets import QApplication
 
-import fastprompter.core.state as state_mod
-from fastprompter.main import FastPrompter
-
 _app = QApplication.instance() or QApplication([])
 _tmpdir = tempfile.mkdtemp(prefix="fastprompter_audit2_")
 
@@ -27,32 +24,10 @@ CUR = "Code"
 
 
 @pytest.fixture(scope="module")
-def win():
-    saved_get_db_path = state_mod.get_db_path
-    state_mod.get_db_path = lambda *a, **k: os.path.join(_tmpdir, "a.db")
-    state_mod.run_portable_backup = lambda data, profile_id=1: None
-    FastPrompter.setup_single_instance_server = lambda self: None
-    FastPrompter.register_all_hotkeys = lambda self: None
-    FastPrompter.unregister_all_hotkeys = lambda self: None
-    w = FastPrompter()
-    w.resize(960, 540)
-    w.show()
-    _app.processEvents()
+def win(smoke_win):
+    w = smoke_win.create(show=True, size=(960, 540))
     yield w
-    try:
-        w._watcher_shutdown()
-    except Exception:
-        pass
-    try:
-        push_shutdown = getattr(w, "_push_shutdown", None)
-        if push_shutdown is not None:
-            push_shutdown(timeout_s=2.0)
-    except Exception:
-        pass
-    w.auto_save_timer.stop()
-    w.topmost_timer.stop()
-    w.close()
-    state_mod.get_db_path = saved_get_db_path
+    smoke_win.retire(w)
 
 
 def _set_silos(win, texts):
@@ -60,6 +35,9 @@ def _set_silos(win, texts):
     win.data["temp_presets"][:] = list(texts)
     win.silo_docs[:] = [QTextDocument() for _ in texts]
     win.active_temp_slot = 0
+    win.active_is_archive = False
+    win.editing_snippet = None
+    win.text_area.setPlainText(texts[0] if texts else "")
 
 
 def _set_archive(win, texts):
@@ -68,6 +46,8 @@ def _set_archive(win, texts):
     win.archive_docs[:] = [QTextDocument() for _ in texts]
     win.active_is_archive = True
     win.active_temp_slot = 0
+    win.editing_snippet = None
+    win.text_area.setPlainText(texts[0] if texts else "")
 
 
 def test_normal_capacity_99_100_101(win):
@@ -110,7 +90,6 @@ def test_drop_silo_state_order_independent(win):
     win.data["silo_project_paths"] = {"0": "A", "1": "B"}
     win.data["silo_types"] = {"0": "A", "1": "B"}
     win.silo_last_edited.clear(); win.silo_last_edited.update({0: 1, 1: 2})
-    win.data["watcher_queues"] = {"0": ["a"], "1": ["b"]}
     win.data["pinned_silos"][:] = []
     win.data["silo_ticked"][:] = []
     win.data["silo_collapsed"][:] = []
@@ -126,7 +105,6 @@ def test_drop_silo_state_order_independent(win):
     assert win.data["silo_project_paths"]["0"] == "B"
     assert win.data["silo_types"]["0"] == "B"
     assert win.silo_last_edited[0] == 2
-    assert win.data["watcher_queues"]["0"] == ["b"]
     assert win.data["silo_view_state_all"][CUR]["s0"] == 2
     assert "1" not in win.data["silo_colors"]
 
@@ -149,7 +127,6 @@ def test_transfer_moves_full_identity(win, tmp_path, monkeypatch):
     win.data["silo_types"] = {"0": "kanban"}
     win.data["silo_colors"] = {"0": "C"}
     win.silo_last_edited.clear(); win.silo_last_edited.update({0: 123})
-    win.data["watcher_queues"] = {"0": ["q"]}
     win.data.setdefault("silo_folders_all", {})[CUR] = {"0": "F"}
     win.data.setdefault("silo_project_paths_all", {})[CUR] = {"0": "P"}
     # W2-003: use canonical store names, never the nonexistent silo_types_all
@@ -157,7 +134,6 @@ def test_transfer_moves_full_identity(win, tmp_path, monkeypatch):
     win.data.setdefault("silo_colors_all", {})[CUR] = {"0": "C"}
     win.data.setdefault("silo_last_edited_all", {})[CUR] = {0: 123}
     win.data.setdefault("silo_view_state_all", {})[CUR] = {"s0": {"cursor": 5}}
-    win.data.setdefault("watcher_queues_all", {})[CUR] = {"0": ["q"]}
     # CORE-004: the mapped source folder must exist on disk or transfer refuses
     comp = win._category_files_dir(CUR)
     src_dir = os.path.join(win._files_root(), comp, "F")
@@ -174,7 +150,6 @@ def test_transfer_moves_full_identity(win, tmp_path, monkeypatch):
     assert win.data["silo_type_all"]["B"].get("1") == "kanban"
     assert win.data["silo_colors_all"]["B"].get("1") == "C"
     assert win.data["silo_last_edited_all"]["B"].get(1) == 123
-    assert win.data["watcher_queues_all"]["B"].get("1") == ["q"]
     assert win.data["silo_view_state_all"]["B"].get("s1", {}).get("cursor") == 5
 
     # source owns none
@@ -184,9 +159,53 @@ def test_transfer_moves_full_identity(win, tmp_path, monkeypatch):
     assert "0" not in win.data["silo_type_all"][CUR]
     assert "0" not in win.data["silo_colors_all"][CUR]
     assert 0 not in win.data["silo_last_edited_all"][CUR]
-    assert "0" not in win.data["watcher_queues_all"][CUR]
     assert win.data["temp_presets"][0] == ""
 
+
+
+def test_transfer_stale_folder_mapping_is_dropped_not_refusing(win, tmp_path, monkeypatch):
+    """A mapped folder that no longer exists on disk must not block the move.
+
+    CORE-004's fail-closed preflight used to refuse the WHOLE transfer when
+    the mapped source folder was missing, so one stale mapping (deleted
+    externally, re-root, ...) froze every silo with a folder mapping. The
+    stale mapping is dropped and the text+identity move proceeds without a
+    physical folder move.
+    """
+    files_root = str(tmp_path / "files")
+    os.makedirs(files_root, exist_ok=True)
+    monkeypatch.setattr(win, "_files_root", lambda: files_root)
+    if "B" not in win.data["categories"]:
+        win.data["categories"]["B"] = [None] * 100
+        win.data["cats_order"].append("B")
+    # Isolate from the module-scoped `win`: the earlier
+    # test_transfer_moves_full_identity already transferred a silo into B, so
+    # B's per-category stores carry a leftover mapping from a DIFFERENT move.
+    for store in ("temp_presets_all", "silo_folders_all", "silo_colors_all",
+                  "silo_project_paths_all", "silo_type_all",
+                  "silo_last_edited_all", "silo_view_state_all",
+                  "silo_ticked_all", "silo_selected_all", "pinned_silos_all"):
+        if isinstance(win.data.get(store), dict):
+            win.data[store].pop("B", None)
+    win.data["temp_presets_all"]["B"] = ["OCC", ""]  # blank is at slot 1
+    _set_silos(win, ["SRC", "", ""])
+    win.active_is_archive = False
+    # folder "F" is mapped but NEVER created on disk
+    win.data.setdefault("silo_folders_all", {})[CUR] = {"0": "F"}
+    win.data.setdefault("silo_colors_all", {})[CUR] = {"0": "C"}
+
+    ok = win.transfer_silo_to_project(0, "B")
+    assert ok is True
+
+    # text + identity still moved
+    assert win.data["temp_presets_all"]["B"][1] == "SRC"
+    assert win.data["silo_colors_all"]["B"].get("1") == "C"
+    # the stale mapping is gone from the source
+    assert "0" not in win.data["silo_folders_all"][CUR]
+    # the destination gains no folder mapping and no physical folder
+    assert not (win.data.get("silo_folders_all", {}).get("B") or {}).get("1")
+    comp_dst = win._category_files_dir("B")
+    assert not os.path.isdir(os.path.join(files_root, comp_dst, "F"))
 
 def test_cross_category_refuses_full_without_source_pop(win):
     _set_silos(win, [f"s{i}" for i in range(100)])  # full normal space
@@ -231,7 +250,7 @@ def test_transfer_sync_map_resolves_absolute_file_identity(win, tmp_path, monkey
     win.data.setdefault("project_sync_all", {})["B"] = {"root": rootB}
     win.data.setdefault("project_sync_map_all", {})[CUR] = {"0": "same.txt"}
     # the physical source file must exist (transfer preflight resolves it)
-    src_dir = os.path.join(files_root, win._category_files_dir(CUR), "F") \
+    _src_dir = os.path.join(files_root, win._category_files_dir(CUR), "F") \
         if os.path.isdir(os.path.join(files_root, win._category_files_dir(CUR))) \
         else os.path.join(files_root)
     os.makedirs(os.path.join(files_root), exist_ok=True)

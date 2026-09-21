@@ -9,7 +9,7 @@ import datetime
 import math
 
 from PyQt6.QtCore import QPoint, Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QPainter, QPen, QFont
+from PyQt6.QtGui import QColor, QFont, QPainter, QPen
 from PyQt6.QtWidgets import QSizePolicy, QWidget
 
 from fastprompter.theme.themes import theme_raw_colors
@@ -73,9 +73,11 @@ class MiniAnalogClock(QWidget):
 
     def sync(self):
         """Called every second by the window's date timer."""
-        visible = (self.main_win.data.get("analog_clock", "False") == "True"
-                   and not getattr(self.main_win, "_header_ultra", False))
-        if self.isVisible() != visible:
+        visible = self.main_win.data.get("analog_clock", "False") == "True"
+        publish = getattr(self.main_win, "_set_topbar_semantic", None)
+        if callable(publish):
+            publish("analog_clock", visible, refresh=False)
+        elif self.isHidden() == visible:
             self.setVisible(visible)
         if not visible:
             return
@@ -143,8 +145,52 @@ class BigAnalogClock(QWidget):
         self._show_seconds = True
         self._interactive = True
         self._dragging = False
+        # T-1265 C1: the dial answers "what time is it?" first. The clock
+        # source is injectable so a test can assert the rendered time instead
+        # of racing the wall clock; production leaves it at datetime.now.
+        self._now_provider = None
 
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, False)
+
+    def set_now_provider(self, provider) -> None:
+        """Override where the face reads the current time from (tests)."""
+        self._now_provider = provider
+        self.update()
+
+    def now(self) -> datetime.datetime:
+        provider = self._now_provider
+        if provider is None:
+            return datetime.datetime.now()
+        return provider()
+
+    def current_time_text(self, now: datetime.datetime | None = None) -> str:
+        """Exactly what the dial prints in its centre: ``HH:mm:ss``.
+
+        Exposed so the presentation can be asserted without reading pixels,
+        and so the digital face and the hands can never disagree about which
+        instant they are showing.
+
+        T-1265 B1: pass ``now`` to FORMAT A GIVEN INSTANT. ``paintEvent``
+        samples :meth:`now` exactly once per frame and hands that sample in,
+        so the hands and the digital readout can never straddle a second
+        boundary (hands on second N, text on second N+1). Called with no
+        argument it keeps its old meaning -- sample now, format it -- for
+        callers that just want the current string.
+        """
+        if now is None:
+            now = self.now()
+        if self._show_seconds:
+            return f"{now.hour:02d}:{now.minute:02d}:{now.second:02d}"
+        return f"{now.hour:02d}:{now.minute:02d}"
+
+    def interval_text(self) -> str:
+        """The secondary interval caption (still available, no longer king)."""
+        if self._interval_minutes % 60 == 0:
+            hours = self._interval_minutes // 60
+            if getattr(self, "_align_mode", "clock") == "clock":
+                return f"{hours}h (:00)" if hours > 1 else "1h (:00)"
+            return f"every {hours}h"
+        return f"every {self._interval_minutes}m"
 
     def set_interval(self, minutes: int, align_mode: str = "clock"):
         """Set the interval duration in minutes."""
@@ -242,18 +288,13 @@ class BigAnalogClock(QWidget):
             p.setPen(QPen(colors["border_light"], 1.5))
             p.drawEllipse(c, radius - 2, radius - 2)
 
-            # Draw interval sector / chime markers
-            now = datetime.datetime.now()
-            if 0 < self._interval_minutes <= 60:
-                step = self._interval_minutes
-                p.setPen(Qt.PenStyle.NoPen)
-                p.setBrush(QBrush(colors["sector"]))
-                span_angle = int(-step * 6 * 16)
-                p.drawPie(
-                    QRectF(c.x() - radius + 5, c.y() - radius + 5, (radius - 5) * 2, (radius - 5) * 2),
-                    90 * 16,
-                    span_angle,
-                )
+            # T-1265 C1: the interval PIE is gone. Filling a quarter/half of
+            # the face made the widget read as a schedule pie chart, not as a
+            # clock, and it competed with the hands for the same pixels. The
+            # interval is still shown -- as a small secondary caption below
+            # the time -- and every interval control (spinbox, alignment,
+            # quick buttons, active hours, rule list) is unchanged.
+            now = self.now()
 
             # Draw hour and minute tick marks
             for i in range(60):
@@ -288,22 +329,24 @@ class BigAnalogClock(QWidget):
                 ty = c.y() - nr * math.cos(rad)
                 p.drawText(QRectF(tx - 14, ty - 8, 28, 16), Qt.AlignmentFlag.AlignCenter, label)
 
-            # Draw Interval label in dial center
+            # PRIMARY: the current local time, digital, in the dial centre.
+            time_font = QFont(font)
+            time_font.setPointSize(max(8, radius // 6))
+            time_font.setBold(True)
+            p.setFont(time_font)
+            p.setPen(colors["text"])
+            p.drawText(QRectF(c.x() - 60, c.y() - radius // 2 - 9, 120, 20),
+                       Qt.AlignmentFlag.AlignCenter, self.current_time_text(now))
+
+            # SECONDARY: the interval, small and dim, below the centre. It is
+            # feedback, not the headline -- the controls remain authoritative.
             sub_font = QFont(font)
-            sub_font.setPointSize(max(6, radius // 12))
+            sub_font.setPointSize(max(6, radius // 13))
             sub_font.setBold(False)
             p.setFont(sub_font)
             p.setPen(colors["dim"])
-
-            if self._interval_minutes % 60 == 0:
-                hours = self._interval_minutes // 60
-                if getattr(self, "_align_mode", "clock") == "clock":
-                    interval_str = f"🔔 {hours}h (:00)" if hours > 1 else "🔔 1h (:00)"
-                else:
-                    interval_str = f"every {hours}h"
-            else:
-                interval_str = f"every {self._interval_minutes}m"
-            p.drawText(QRectF(c.x() - 50, c.y() + 18, 100, 14), Qt.AlignmentFlag.AlignCenter, interval_str)
+            p.drawText(QRectF(c.x() - 50, c.y() + radius // 2 - 2, 100, 14),
+                       Qt.AlignmentFlag.AlignCenter, self.interval_text())
 
             # Draw Hands
             # Hour hand

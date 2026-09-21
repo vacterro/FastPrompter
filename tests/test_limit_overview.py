@@ -4,6 +4,8 @@ import os
 import time
 import unittest
 
+from _qt_retire import retire
+
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6.QtWidgets import QApplication, QWidget
@@ -92,8 +94,7 @@ class TestLimitOverview(unittest.TestCase):
         assert kinds == ["account", "window", "window", "account", "window"]
         windows = [p.key for kind, p, _s in view._rows if kind == "window"]
         assert windows == [FIVE_HOUR, WEEKLY, FIVE_HOUR]
-        view.deleteLater()
-
+        retire(view)
     def test_height_is_exact_so_the_panel_never_reflows(self):
         codex = _account()
         snapshots = {codex.key: UsageSnapshot(codex, OK, [
@@ -104,8 +105,7 @@ class TestLimitOverview(unittest.TestCase):
         expected = (view.PAD * 2 + view.HEADER_H + view.ROW_H * 2)
         assert view.height() == expected
         assert view.minimumHeight() == view.maximumHeight()  # setFixedHeight
-        view.deleteLater()
-
+        retire(view)
     def test_banked_resets_row_and_header_rendered(self):
         codex = _account("codex", "c_banked", "Codex Banked")
         snapshot = UsageSnapshot(
@@ -120,8 +120,7 @@ class TestLimitOverview(unittest.TestCase):
         assert "★ 2 usage limit resets available" in banked_row
         expected = (view.PAD * 2 + view.HEADER_H + view.ROW_H * 2)  # 1 window + 1 banked row
         assert view.height() == expected
-        view.deleteLater()
-
+        retire(view)
     def test_banked_resets_singular_word(self):
         codex = _account("codex", "c_banked_one", "Codex One")
         snapshot = UsageSnapshot(
@@ -132,8 +131,7 @@ class TestLimitOverview(unittest.TestCase):
         view = self._overview(_Service([codex], {codex.key: snapshot}))
         banked_row = next(payload for kind, payload, _s in view._rows if kind == "banked_resets")
         assert "★ 1 usage limit reset available" in banked_row
-        view.deleteLater()
-
+        retire(view)
     def test_banked_resets_creates_activate_button(self):
         codex = _account("codex", "c_btn", "Codex Button")
         snapshot = UsageSnapshot(
@@ -147,9 +145,7 @@ class TestLimitOverview(unittest.TestCase):
         assert btn.text() == "Activate reset"
         assert not btn.isHidden()
         assert btn.width() == 96
-        view.deleteLater()
-
-
+        retire(view)
     def test_a_gated_window_says_what_blocks_it(self):
         """Weekly 0% makes a reported-100% 5h window read as blocked."""
         codex = _account()
@@ -164,8 +160,7 @@ class TestLimitOverview(unittest.TestCase):
         assert five.gated_by == WEEKLY
         text = view._value_text(five, five.remaining_percent)
         assert "blocked by weekly" in text
-        view.deleteLater()
-
+        retire(view)
     def test_an_unreadable_account_states_its_error_instead_of_a_bar(self):
         codex = _account()
         snapshots = {codex.key: UsageSnapshot(
@@ -176,21 +171,18 @@ class TestLimitOverview(unittest.TestCase):
         assert kinds == ["account", "note"]
         note = view._rows[1][1]
         assert "timeout" in note
-        view.deleteLater()
-
+        retire(view)
     def test_an_unprobed_account_says_so(self):
         codex = _account()
         view = self._overview(_Service([codex], {}))
         assert [k for k, _p, _s in view._rows] == ["account", "note"]
         assert "not probed" in view._rows[1][1]
-        view.deleteLater()
-
+        retire(view)
     def test_no_accounts_is_one_honest_note(self):
         view = self._overview(_Service([], {}))
         assert [k for k, _p, _s in view._rows] == ["note"]
         assert "No AI accounts detected" in view._rows[0][1]
-        view.deleteLater()
-
+        retire(view)
     def test_hidden_accounts_are_not_drawn(self):
         codex = _account("codex", "c1", "Codex 1")
         other = _account("codex", "c2", "Codex 2")
@@ -206,8 +198,7 @@ class TestLimitOverview(unittest.TestCase):
         view = LimitOverview(win, service)
         accounts = [p.key for kind, p, _s in view._rows if kind == "account"]
         assert accounts == [codex.key]
-        view.deleteLater()
-
+        retire(view)
     def test_a_reset_time_is_rendered_as_a_countdown(self):
         from fastprompter.ui.limit_overview import _reset_text
         now = time.time()
@@ -225,16 +216,14 @@ class TestLimitOverview(unittest.TestCase):
         view = self._overview(_Service([codex], snapshots))
         windows = [p.key for kind, p, _s in view._rows if kind == "window"]
         assert windows == [MONTHLY]
-        view.deleteLater()
-
+        retire(view)
     def test_a_stale_snapshot_still_draws_its_numbers(self):
         codex = _account()
         snapshots = {codex.key: UsageSnapshot(codex, STALE, [
             UsageWindow(FIVE_HOUR, 300, True, 40, 60, None)])}
         view = self._overview(_Service([codex], snapshots))
         assert [k for k, _p, _s in view._rows] == ["account", "window"]
-        view.deleteLater()
-
+        retire(view)
     def test_painting_a_full_model_does_not_raise(self):
         """The paint path is the product here — exercise it for real."""
         codex = _account("codex", "c1", "Codex 1")
@@ -259,9 +248,7 @@ class TestLimitOverview(unittest.TestCase):
         assert not image.isNull()
         assert image.width() == 640
         assert "5h" in view._build_tooltip()
-        view.deleteLater()
-
-
+        retire(view)
 class TestLimitFillDirection(unittest.TestCase):
     """The user picks whether a bar holds what is left or what is spent."""
 
@@ -282,13 +269,11 @@ class TestLimitFillDirection(unittest.TestCase):
     def test_remaining_is_the_default(self):
         view = self._view()
         assert view._fill_mode() == "remaining"
-        view.deleteLater()
-
+        retire(view)
     def test_an_unknown_value_falls_back_to_remaining(self):
         view = self._view("sideways")
         assert view._fill_mode() == "remaining"
-        view.deleteLater()
-
+        retire(view)
     def test_the_two_modes_ink_opposite_widths(self):
         """25% used: fuel mode paints 75% of the track, progress mode 25%."""
         from PyQt6.QtGui import QColor
@@ -303,7 +288,7 @@ class TestLimitFillDirection(unittest.TestCase):
             painted = sum(
                 1 for x in range(view.PAD + view.LABEL_W, 400)
                 if image.pixel(x, row_y) not in (track, background))
-            view.deleteLater()
+            retire(view)
             return painted
 
         fuel = inked_columns("remaining")
@@ -330,8 +315,7 @@ class TestLimitFillDirection(unittest.TestCase):
             # a window with no percentage inks nothing in either mode
             assert gauges._fill_fraction(None) == 0.0
         finally:
-            gauges.deleteLater()
-
+            retire(gauges)
     def test_the_colour_still_follows_what_is_left(self):
         """A red bar means "almost gone" in both directions."""
         view = self._view("used")
@@ -339,8 +323,7 @@ class TestLimitFillDirection(unittest.TestCase):
         assert view._fill_color(5, pal).name() == pal["bad"].name()
         assert view._fill_color(35, pal).name() == pal["warn"].name()
         assert view._fill_color(95, pal).name() == pal["good"].name()
-        view.deleteLater()
-
+        retire(view)
     def test_the_caption_wording_follows_the_fill_direction(self):
         """A bar and its caption must describe the SAME end of the window."""
         from fastprompter.core.usage_limits.model import UsageWindow
@@ -352,9 +335,8 @@ class TestLimitFillDirection(unittest.TestCase):
             assert fuel._value_text(window, 24) == "24% left"
             assert progress._value_text(window, 24) == "76% used"
         finally:
-            fuel.deleteLater()
-            progress.deleteLater()
-
+            retire(fuel)
+            retire(progress)
     def test_a_gated_window_words_its_zero_both_ways(self):
         from fastprompter.core.usage_limits.model import UsageWindow
 
@@ -368,9 +350,8 @@ class TestLimitFillDirection(unittest.TestCase):
             assert progress._value_text(window, 0) == \
                 "100% used · blocked by weekly"
         finally:
-            fuel.deleteLater()
-            progress.deleteLater()
-
+            retire(fuel)
+            retire(progress)
     def test_an_unknown_percentage_stays_unknown_in_both_modes(self):
         from fastprompter.core.usage_limits.model import UsageWindow
 
@@ -380,9 +361,7 @@ class TestLimitFillDirection(unittest.TestCase):
             try:
                 assert view._value_text(window, None) == "--"
             finally:
-                view.deleteLater()
-
-
+                retire(view)
 class TestLimitSettingsOverviewTab(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -438,8 +417,7 @@ class TestLimitSettingsOverviewTab(unittest.TestCase):
             assert dialog.btn_activate_reset.isHidden()
         finally:
             dialog.close()
-            dialog.deleteLater()
-
+            retire(dialog)
     def test_activate_reset_button_shows_when_banked_available(self):
         from fastprompter.ui.limit_settings_dialog import LimitSettingsDialog
 
@@ -474,8 +452,7 @@ class TestLimitSettingsOverviewTab(unittest.TestCase):
             assert "2 banked resets" in dialog.btn_activate_reset.text()
         finally:
             dialog.close()
-            dialog.deleteLater()
-
+            retire(dialog)
     def test_limit_settings_dialog_resizability_and_geometry_persistence(self):
         from PyQt6.QtCore import Qt
 
@@ -516,8 +493,7 @@ class TestLimitSettingsOverviewTab(unittest.TestCase):
             saved_geom = win.data["limit_settings_geometry"]
             assert len(saved_geom) > 0
         finally:
-            dialog.deleteLater()
-
+            retire(dialog)
         # 2. Subsequent dialog restores saved geometry
         dialog2 = LimitSettingsDialog(win)
         try:
@@ -525,8 +501,7 @@ class TestLimitSettingsOverviewTab(unittest.TestCase):
             assert dialog2.height() == 650
         finally:
             dialog2.close()
-            dialog2.deleteLater()
-
+            retire(dialog2)
     def test_limit_settings_dialog_tabs_have_no_scrollbars_by_default(self):
         from fastprompter.ui.limit_settings_dialog import LimitSettingsDialog
 
@@ -565,6 +540,4 @@ class TestLimitSettingsOverviewTab(unittest.TestCase):
             assert vbar.maximum() == 0 or not vbar.isVisible()
         finally:
             dialog.close()
-            dialog.deleteLater()
-
-
+            retire(dialog)

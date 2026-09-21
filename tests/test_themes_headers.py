@@ -70,16 +70,23 @@ def test_zebra_rows_are_never_white():
 def test_the_calendar_popup_carries_its_own_copy():
     """A widget-level sheet REPLACES inherited rules, so the popup needs it."""
     import inspect
-    from fastprompter.ui.timer_dialog import TimerDialog
-    from fastprompter.main import FastPrompter
-    from PyQt6.QtWidgets import QApplication
-    qapp = QApplication.instance() or QApplication([])
 
+    from PyQt6.QtWidgets import QApplication
+
+    from fastprompter.main import FastPrompter
+    from fastprompter.ui.timer_dialog import TimerDialog
+    _qapp = QApplication.instance() or QApplication([])
+
+    from _qt_retire import retire
     app = FastPrompter()
     dialog = TimerDialog(app)
-    
-    src = inspect.getsource(TimerDialog._style_calendar_popup)
-    assert "self._calendar_sheet()" in src, "_style_calendar_popup must apply _calendar_sheet"
-    
-    sheet = dialog._calendar_sheet()
-    assert "QCalendarWidget QHeaderView::section" in sheet
+    try:
+        src = inspect.getsource(TimerDialog._style_calendar_popup)
+        assert "self._calendar_sheet()" in src, "_style_calendar_popup must apply _calendar_sheet"
+
+        sheet = dialog._calendar_sheet()
+        assert "QCalendarWidget QHeaderView::section" in sheet
+    finally:
+        # T-1286: receiver-scoped retirement; a leaked window stayed pending
+        # until a later test's event pump, stalling tests/test_timer_fire.py.
+        retire(dialog, app)

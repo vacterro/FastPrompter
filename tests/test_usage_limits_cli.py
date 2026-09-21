@@ -48,7 +48,7 @@ class TestResolveBinary:
         binary.write_text("", encoding="utf-8")
         monkeypatch.setattr(cli_tools.shutil, "which",
                             lambda name: str(binary))
-        assert cli_tools.resolve_binary("antigravity") == str(binary)
+        assert cli_tools.resolve_binary("claude") == str(binary)
 
     def test_the_installers_own_directory_is_the_fallback(self, tmp_path,
                                                           monkeypatch):
@@ -117,6 +117,16 @@ class TestRunCli:
         assert result["error"] == "timeout"
         assert elapsed < 10, f"waited {elapsed:.1f}s past a 1s deadline"
 
+    def test_timeout_preserves_auth_prompt_already_printed(self, tmp_path):
+        argv = self._script(
+            tmp_path,
+            "import time\n"
+            "print('Authentication required', flush=True)\n"
+            "time.sleep(30)\n")
+        result = cli_tools.run_cli(argv, time.monotonic() + 1.0)
+        assert result["ok"] is False
+        assert "Authentication required" in result["stdout"]
+
     def test_a_missing_executable_is_reported_not_raised(self, tmp_path):
         result = cli_tools.run_cli(
             [str(tmp_path / "nope.exe")], time.monotonic() + 5)
@@ -127,8 +137,35 @@ class TestRunCli:
         """An argument must never be reinterpreted by a shell."""
         argv = self._script(tmp_path, "import sys; print(sys.argv[1])")
         result = cli_tools.run_cli(argv + ["a & b | c"], time.monotonic() + 20)
-        assert result["ok"] is True
+        assert result["ok"] is True, result
         assert result["stdout"].strip() == "a & b | c"
+
+    def test_windows_browser_guard_kernel_blocks_child_process(self, tmp_path):
+        if os.name != "nt":
+            import pytest
+            pytest.skip("Windows Job Object contract")
+        # Guard a REAL interpreter, never the venv launcher: a venv python.exe
+        # can itself be a redirector that re-execs the base python, and the
+        # ActiveProcessLimit=1 Job Object correctly blocks that child too, so
+        # the guarded process never gets to run the stub.  The base
+        # interpreter runs the stub directly and only its own child spawn is
+        # refused by the kernel policy.
+        interpreter = getattr(sys, "_base_executable", "") or sys.executable
+        stub = tmp_path / "stub.py"
+        stub.write_text(
+            "import subprocess, sys\n"
+            "try:\n"
+            "    subprocess.run([sys.executable, '-c', 'print(123)'], check=True)\n"
+            "except OSError:\n"
+            "    print('child blocked')\n"
+            "    raise SystemExit(0)\n"
+            "raise SystemExit('child unexpectedly ran')\n",
+            encoding="utf-8")
+        result = cli_tools.run_cli(
+            [interpreter, str(stub)], time.monotonic() + 20,
+            block_child_processes=True)
+        assert result["ok"] is True, result
+        assert result["stdout"].strip() == "child blocked"
 
 
 class TestClaudeUsageParser:
@@ -278,6 +315,14 @@ class TestClaudeCliReader:
 
 
 class TestAntigravityCliReader:
+    @__import__("pytest").fixture(autouse=True)
+    def saved_auth(self, monkeypatch, request):
+        if request.node.name in {
+                "test_is_authenticated_mocked",
+                "test_rejected_credential_stays_blocked_until_blob_changes"}:
+            return
+        monkeypatch.setattr(_antigravity_cli, "is_authenticated", lambda: True)
+
     def test_a_failed_status_is_refused(self, monkeypatch):
         monkeypatch.setattr(_antigravity_cli, "resolve_binary",
                             lambda key: "agy")
@@ -302,6 +347,56 @@ class TestAntigravityCliReader:
         assert _antigravity_cli.read_usage(
             time.monotonic() + 5)["error"][0] == "cli_bad_output"
 
+    def test_unauthenticated_cli_is_not_run(self, monkeypatch):
+        called = []
+        monkeypatch.setattr(_antigravity_cli, "resolve_binary", lambda key: "agy")
+        monkeypatch.setattr(_antigravity_cli, "is_authenticated", lambda: False)
+        monkeypatch.setattr(_antigravity_cli, "run_cli", lambda *a, **k: called.append(True))
+        res = _antigravity_cli.read_usage(time.monotonic() + 5)
+        assert res["error"][0] == "cli_not_logged_in"
+        assert not called, "run_cli must NOT be called when unauthenticated to prevent browser popups"
+
+    def test_expired_saved_auth_is_recognised_from_hidden_oauth_prompt(
+            self, monkeypatch):
+        rejected = []
+        monkeypatch.setattr(_antigravity_cli, "resolve_binary",
+                            lambda key: "agy")
+        monkeypatch.setattr(_antigravity_cli, "_mark_auth_rejected",
+                            lambda: rejected.append(True))
+        monkeypatch.setattr(
+            _antigravity_cli, "run_cli",
+            lambda *a, **k: {
+                "ok": False,
+                "stdout": "Authentication required.\n"
+                          "Paste the authorization code here and press Enter:",
+                "error": "timeout",
+            })
+        result = _antigravity_cli.read_usage(time.monotonic() + 5)
+        assert result["error"][0] == "cli_not_logged_in"
+        assert rejected == [True]
+
+    def test_rejected_credential_stays_blocked_until_blob_changes(
+            self, monkeypatch):
+        monkeypatch.setattr(_antigravity_cli, "_credential_signature",
+                            lambda: "old-token")
+        monkeypatch.setattr(_antigravity_cli, "_rejected_auth_signature",
+                            "old-token")
+        assert _antigravity_cli.is_authenticated() is False
+        monkeypatch.setattr(_antigravity_cli, "_credential_signature",
+                            lambda: "new-token")
+        assert _antigravity_cli.is_authenticated() is True
+
+    def test_is_authenticated_mocked(self, monkeypatch):
+        monkeypatch.setattr(_antigravity_cli.os, "name", "nt")
+        class MockAdvApi:
+            def CredReadW(self, target, type_, flags, byref_cred):
+                return 0
+            def CredFree(self, p):
+                pass
+        monkeypatch.setattr("ctypes.windll.advapi32", MockAdvApi(), raising=False)
+        # When CredReadW fails, is_authenticated returns False
+        assert _antigravity_cli.is_authenticated() is False
+
 
 class TestQuotaReadsAreFree:
     """Reading the quota must never consume it — the whole feature depends on it."""
@@ -309,9 +404,11 @@ class TestQuotaReadsAreFree:
     def test_claude_is_asked_in_print_mode_with_no_prompt_of_our_own(
             self, monkeypatch):
         seen = {}
+        monkeypatch.setattr(_antigravity_cli, "is_authenticated", lambda: True)
 
         def _capture(argv, deadline, **kw):
             seen["argv"] = argv
+            seen.update(kw)
             return {"ok": False, "stdout": "", "error": "captured"}
 
         monkeypatch.setattr(_claude_cli, "resolve_binary", lambda key: "claude")
@@ -327,15 +424,21 @@ class TestQuotaReadsAreFree:
 
     def test_antigravity_is_asked_for_structured_output(self, monkeypatch):
         seen = {}
+        monkeypatch.setattr(_antigravity_cli, "is_authenticated", lambda: True)
 
         def _capture(argv, deadline, **kw):
             seen["argv"] = argv
+            seen.update(kw)
             return {"ok": False, "stdout": "", "error": "captured"}
 
         monkeypatch.setattr(_antigravity_cli, "resolve_binary", lambda key: "agy")
         monkeypatch.setattr(_antigravity_cli, "run_cli", _capture)
         _antigravity_cli.read_usage(time.monotonic() + 5)
         assert seen["argv"][1:] == ["-p", "/usage", "--output-format", "json"]
+        assert seen["env"]["BROWSER"].lower().endswith("\\where.exe")
+        assert "SSH_CONNECTION" not in seen["env"]
+        assert "AGY_CLI_INTERACTIVE_HEADLESS" not in seen["env"]
+        assert seen["block_child_processes"] is True
 
 
 class TestInstallLaunching:

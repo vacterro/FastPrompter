@@ -18,45 +18,20 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import pytest
 from PyQt6.QtWidgets import QApplication, QLabel, QWidget
 
-import fastprompter.core.state as state_mod
-from fastprompter.main import FastPrompter
-
 _app = QApplication.instance() or QApplication([])
 _tmpdir = tempfile.mkdtemp(prefix="fastprompter_layout_")
 
 
-@pytest.fixture(scope="module")
-def win():
-    state_mod.get_db_path = lambda profile_id=1: os.path.join(_tmpdir, f"l_{profile_id}.db")
-    state_mod.run_portable_backup = lambda data, profile_id=1: None
-    FastPrompter.setup_single_instance_server = lambda self: None
-    FastPrompter.register_all_hotkeys = lambda self: None
-    FastPrompter.unregister_all_hotkeys = lambda self: None
-    w = FastPrompter()
+def _win_setup(w, _factory):
     w.data["hide_extra"] = "False"
     w.mini_settings_frame.setVisible(True)
-    w.resize(960, 540)
-    w.show()
-    _app.processEvents()
+
+
+@pytest.fixture(scope="module")
+def win(smoke_win):
+    w = smoke_win.create(show=True, size=(960, 540), setup=_win_setup)
     yield w
-    from PyQt6.QtCore import QEvent
-    for timer in ("auto_save_timer", "topmost_timer", "date_timer", "_cache_timer"):
-        t = getattr(w, timer, None)
-        if t is not None:
-            t.stop()
-    if getattr(w, "limit_service", None) is not None:
-        try:
-            w.limit_service.shutdown()
-        except Exception:
-            pass
-    if getattr(w, "state", None) is not None:
-        w.state.conn = None
-    w.conn = None
-    w.close()
-    w.deleteLater()
-    _app.processEvents()
-    _app.sendPostedEvents(None, QEvent.Type.DeferredDelete)
-    _app.processEvents()
+    smoke_win.retire(w)
 
 
 def _groups(win, index):
@@ -147,7 +122,6 @@ def test_the_panel_hugs_its_content_without_cutting(win):
 
 def test_headers_are_compact_fixed_height(win):
     """Headers must be strictly compact (<=18px), never ballooning into empty blocks."""
-    from PyQt6.QtGui import QPixmap
     for i in range(win.settings_tabs.count()):
         win.settings_tabs.setCurrentIndex(i)
         _app.processEvents()

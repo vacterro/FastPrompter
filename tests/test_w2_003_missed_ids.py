@@ -11,7 +11,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
 import fastprompter.main as main_mod  # noqa: E402
-from fastprompter.core.timers import Timer, REPEAT_NONE  # noqa: E402
+from fastprompter.core.timers import Timer  # noqa: E402
 
 
 class _Sound:

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from PyQt6 import sip
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import QEvent, Qt, QTimer
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QApplication,
@@ -72,7 +72,8 @@ class TimerToast(QWidget):
     _open: list[TimerToast] = []
 
     def __init__(self, main_win, timer, on_snooze=None, on_dismiss=None,
-                 header=None, status=None):
+                 header=None, status=None, duration_ms=None,
+                 accent_color=None, symbol=None):
         super().__init__(None)
         self.main_win = main_win
         self.timer_obj = timer
@@ -87,9 +88,15 @@ class TimerToast(QWidget):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        self.setWindowModality(Qt.WindowModality.NonModal)
 
         p = _get_toast_palette(main_win)
-        accent = timer.display_color() if hasattr(timer, "display_color") else p["title"]
+        if accent_color:
+            accent = accent_color
+        elif hasattr(timer, "display_color"):
+            accent = timer.display_color() or p["title"]
+        else:
+            accent = p["title"]
 
         self.setObjectName("TimerToast")
         self.setStyleSheet(f"""
@@ -170,13 +177,14 @@ class TimerToast(QWidget):
         root.setSpacing(0)
 
         # --- Win95 Vintage Header Bar ---
-        header = QWidget()
-        header.setObjectName("HeaderBar")
-        h_lay = QHBoxLayout(header)
+        header_widget = QWidget()
+        header_widget.setObjectName("HeaderBar")
+        h_lay = QHBoxLayout(header_widget)
         h_lay.setContentsMargins(6, 2, 4, 2)
         h_lay.setSpacing(4)
 
-        hdr_title = QLabel(header or tr("Timer Notification", lang))
+        header_text = header or tr("Timer Notification", lang)
+        hdr_title = QLabel(header_text)
         hdr_title.setObjectName("HeaderTitle")
         h_lay.addWidget(hdr_title, 1)
 
@@ -187,7 +195,7 @@ class TimerToast(QWidget):
         btn_close_x.clicked.connect(self.close)
         h_lay.addWidget(btn_close_x)
 
-        root.addWidget(header)
+        root.addWidget(header_widget)
 
         # --- Body Area ---
         body = QWidget()
@@ -206,11 +214,20 @@ class TimerToast(QWidget):
         mb_lay.setContentsMargins(10, 8, 10, 8)
         mb_lay.setSpacing(4)
 
-        title = QLabel(timer.name)
+        raw_name = getattr(timer, "name", "") or ""
+        sym = symbol if symbol is not None else getattr(timer, "symbol", "")
+        sym = (sym or "").strip()
+        if sym and not raw_name.startswith(sym):
+            display_title = f"{sym} {raw_name}"
+        else:
+            display_title = raw_name
+        title = QLabel(display_title)
         title.setObjectName("TitleLbl")
+        if accent_color:
+            title.setStyleSheet(f"color: {accent_color};")
         mb_lay.addWidget(title)
 
-        if timer.description:
+        if getattr(timer, "description", None):
             desc = QLabel(timer.description)
             desc.setObjectName("DescLbl")
             desc.setWordWrap(True)
@@ -219,7 +236,7 @@ class TimerToast(QWidget):
 
         when = QLabel(status or tr("Time's up", lang))
         when.setObjectName("InfoLbl")
-        when.setStyleSheet(f"color: {p['accent']};")
+        when.setStyleSheet(f"color: {accent if accent_color else p['accent']};")
         mb_lay.addWidget(when)
 
         row = QHBoxLayout()
@@ -260,9 +277,40 @@ class TimerToast(QWidget):
         self._auto = QTimer(self)
         self._auto.setSingleShot(True)
         self._auto.timeout.connect(self.close)
-        self._auto.start(_AUTO_CLOSE_MS)
+        if duration_ms is None:
+            close_ms = getattr(timer, "duration_ms", _AUTO_CLOSE_MS)
+        else:
+            close_ms = duration_ms
+        if isinstance(close_ms, (int, float)) and close_ms > 0:
+            self._auto.start(int(close_ms))
 
         TimerToast._open.append(self)
+        self._ensure_unblocked()
+
+    def _ensure_unblocked(self):
+        """Ensure toast is clickable and not disabled by modal dialogs."""
+        try:
+            modal = QApplication.activeModalWidget()
+            if modal is not None:
+                wh = self.windowHandle()
+                mwh = modal.windowHandle()
+                if wh is not None and mwh is not None and wh.transientParent() != mwh:
+                    wh.setTransientParent(mwh)
+            import ctypes
+            ctypes.windll.user32.EnableWindow(int(self.winId()), True)
+        except Exception:
+            pass
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._ensure_unblocked()
+
+    def event(self, event):
+        if event.type() in (QEvent.Type.WindowBlocked, QEvent.Type.WindowActivate, QEvent.Type.Show):
+            self._ensure_unblocked()
+            if event.type() == QEvent.Type.WindowBlocked:
+                return True
+        return super().event(event)
 
     # ------------------------------------------------------------------
     def mousePressEvent(self, event):
@@ -377,17 +425,55 @@ class TimerToast(QWidget):
 
 
 def show_toast(main_win, timer, on_snooze=None, on_dismiss=None,
-               header=None, status=None):
-    """Create and show a toast; returns it (or None if the UI can't)."""
+               header=None, status=None, duration_ms=None,
+               accent_color=None, symbol=None, *, appearance_audio=False):
+    """Show a toast; only a caller without a domain sound owner may opt in."""
     try:
         toast = TimerToast(main_win, timer, on_snooze=on_snooze,
                            on_dismiss=on_dismiss,
-                           header=header, status=status)
+                           header=header, status=status,
+                           duration_ms=duration_ms,
+                           accent_color=accent_color,
+                           symbol=symbol)
         toast.show()
+        # T-1256: visual presentation is silent by default. Domain-owned
+        # notification policy (including explicit silence) outranks a generic
+        # appearance cue, regardless of whether playback actually started.
+        if appearance_audio:
+            try:
+                from fastprompter.ui.appearance_sounds import emit_notification_show
+                emit_notification_show(main_win)
+            except Exception:
+                pass
         toast.raise_()
+        toast._ensure_unblocked()
         return toast
     except Exception:
         from fastprompter.core.logging import logger
         logger.debug("timer toast failed to show")
         return None
+
+
+def show_simple_toast(main_win, title, message, *, header=None, status=None,
+                      duration_ms=None, accent_color=None, symbol=None,
+                      appearance_audio=False):
+    """Show a generic in-app toast with no timer object (T-1228).
+
+    This is the SILENT visual half of an app-owned notification. It
+    deliberately never touches the OS notification API, so presenting a
+    notification can never inject a Windows/system sound; all audible sound
+    stays owned by SoundManager. Returns the toast, or None when no UI can be
+    shown (the caller must then fall back to a silent in-app surface, never a
+    notification API whose silence cannot be guaranteed).
+    """
+    from types import SimpleNamespace
+    obj = SimpleNamespace(
+        name=str(title),
+        description=str(message or ""),
+        display_color=(lambda: accent_color) if accent_color else (lambda: None),
+    )
+    return show_toast(main_win, obj, header=header, status=status,
+                      duration_ms=duration_ms,
+                      accent_color=accent_color, symbol=symbol,
+                      appearance_audio=appearance_audio)
 

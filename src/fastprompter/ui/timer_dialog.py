@@ -57,8 +57,6 @@ from fastprompter.core.timers import (
     SOUND_MODE_POOL,
     SOUND_MODE_SINGLE,
     Timer,
-    describe,
-    limit_window,
     occurrences_in_month,
     occurs_on_date,
 )
@@ -666,9 +664,11 @@ class TimerDialog(QDialog):
             main_win._clear_missed_alert()
         self.lang = getattr(main_win, "_current_lang", "EN")
         self._editing_id = None
+        self._editing_object_id = None
         self._editing_original_target = None
         self._editing_original_anchor = None
         self.setWindowTitle(tr("Timers", self.lang))
+        self.setWindowModality(Qt.WindowModality.WindowModal)
         self.resize(780, 520)
         self.setMinimumSize(560, 360)
         try:
@@ -684,6 +684,7 @@ class TimerDialog(QDialog):
         outer.addWidget(self.tabs)
 
         alarms_page = QWidget()
+        alarms_page._timer_refresh = self._refresh_alarms
         root = QVBoxLayout(alarms_page)
         root.setContentsMargins(4, 4, 4, 4)
         root.setSpacing(4)
@@ -729,7 +730,7 @@ class TimerDialog(QDialog):
         self.btn_subtract.clicked.connect(self.subtract_selected)
         actions.addWidget(self.btn_subtract)
 
-        self.btn_remove = QPushButton(tr("Remove", self.lang))
+        self.btn_remove = QPushButton(tr("Delete", self.lang))
         self.btn_remove.setToolTip(tr("Delete the selected timer", self.lang))
         self.btn_remove.clicked.connect(self.remove_selected)
         actions.addWidget(self.btn_remove)
@@ -809,6 +810,8 @@ class TimerDialog(QDialog):
         self.cb_repeat = QComboBox()
         self.cb_repeat.setToolTip(tr("How often it repeats", self.lang))
         for r in REPEAT_CHOICES:
+            if r == REPEAT_INTERVAL:
+                continue  # Custom intervals have their own dedicated tab.
             self.cb_repeat.addItem(tr(r.capitalize(), self.lang), r)
         when_row.addWidget(self.cb_repeat, 2)
         timing_lay.addLayout(when_row)
@@ -833,41 +836,7 @@ class TimerDialog(QDialog):
         picker_row.addWidget(self.btn_use_picker, 1)
         timing_lay.addLayout(picker_row)
 
-        # Limit Quota Row (Inputs)
-        limit_row = QHBoxLayout()
-        limit_row.setSpacing(4)
-        self.lbl_limit = QLabel(tr("Limit window:", self.lang))
-        limit_row.addWidget(self.lbl_limit)
-
-        self.spin_limit_hours = QDoubleSpinBox()
-        self.spin_limit_hours.setRange(0.25, 72.0)
-        self.spin_limit_hours.setSingleStep(0.5)
-        self.spin_limit_hours.setDecimals(2)
-        self.spin_limit_hours.setValue(5.0)
-        self.spin_limit_hours.setSuffix(tr(" h", self.lang))
-        limit_row.addWidget(self.spin_limit_hours)
-
-        self.in_limit_start = QLineEdit()
-        self.in_limit_start.setPlaceholderText(tr("started (blank = now)", self.lang))
-        self.in_limit_start.returnPressed.connect(self.add_limit_window)
-        limit_row.addWidget(self.in_limit_start, 1)
-        timing_lay.addLayout(limit_row)
-
-        # Limit Buttons Row
-        limit_btns = QHBoxLayout()
-        limit_btns.setSpacing(4)
-        self.btn_limit = QPushButton(tr("Catch limit", self.lang))
-        self.btn_limit.clicked.connect(self.add_limit_window)
-        limit_btns.addWidget(self.btn_limit, 1)
-        timing_lay.addLayout(limit_btns)
-
-        self.lbl_limit_hint = QLabel("")
-        self.lbl_limit_hint.setWordWrap(True)
-        timing_lay.addWidget(self.lbl_limit_hint)
         timing_lay.addStretch(1)
-        self.in_limit_start.textChanged.connect(self._preview_limit)
-        self.spin_limit_hours.valueChanged.connect(
-            lambda _v: self._preview_limit(self.in_limit_start.text()))
 
         form_split.addWidget(group_timing, 1)
 
@@ -1129,6 +1098,7 @@ class TimerDialog(QDialog):
 
         lay.addLayout(mid_lay)
 
+        page._timer_refresh = self._refresh_temp_tab
         self.tabs.addTab(page, tr("Temp Timer", self.lang))
         self._refresh_temp_tab()
 
@@ -1334,6 +1304,7 @@ class TimerDialog(QDialog):
         lay.addLayout(buttons)
         lay.addStretch(1)
 
+        page._timer_refresh = self._refresh_pomo
         self.tabs.addTab(page, tr("Productivity", self.lang))
         self._load_pomo_into_form()
 
@@ -1617,6 +1588,7 @@ class TimerDialog(QDialog):
         mid_lay.addLayout(right_col, 1)
         v.addLayout(mid_lay)
 
+        page._timer_refresh = self._cal_refresh_if_changed
         self.tabs.addTab(page, tr("Calendar", self.lang))
         self._cal_formatted = set()      # dates currently marked (to clear lazily)
         self._cal_editing_id = None
@@ -1673,6 +1645,8 @@ class TimerDialog(QDialog):
     def _cal_refresh_list(self):
         keep = self.cal_list.currentItem()
         keep_id = keep.data(0, Qt.ItemDataRole.UserRole) if keep else None
+        keep_object_id = (keep.data(0, int(Qt.ItemDataRole.UserRole) + 1)
+                          if keep else None)
         self.cal_list.blockSignals(True)
         self.cal_list.clear()
         sel = self._cal_selected_date()
@@ -1690,13 +1664,14 @@ class TimerDialog(QDialog):
                 status,
             ])
             item.setData(0, Qt.ItemDataRole.UserRole, t.id)
+            item.setData(0, int(Qt.ItemDataRole.UserRole) + 1, id(t))
             if not t.enabled:
                 from PyQt6.QtGui import QColor
                 muted = QColor("#8a8371")
                 for col in range(item.columnCount()):
                     item.setForeground(col, muted)
             self.cal_list.addTopLevelItem(item)
-            if t.id == keep_id:
+            if id(t) == keep_object_id or (keep_object_id is None and t.id == keep_id):
                 self.cal_list.setCurrentItem(item)
         if keep_id is None and self.cal_list.topLevelItemCount():
             self.cal_list.setCurrentItem(self.cal_list.topLevelItem(0))
@@ -1755,6 +1730,7 @@ class TimerDialog(QDialog):
 
     def _cal_new(self):
         self._cal_editing_id = None
+        self._cal_editing_object_id = None
         self.cal_name.clear()
         self.cal_desc.clear()
         self.cal_time.setTime(QDateTime.currentDateTime().time())
@@ -1768,6 +1744,12 @@ class TimerDialog(QDialog):
         item = self.cal_list.currentItem()
         if item is None:
             return None
+        object_id = item.data(0, int(Qt.ItemDataRole.UserRole) + 1)
+        if object_id is not None:
+            found = next((t for t in self._cal_visible_timers()
+                          if id(t) == object_id), None)
+            if found is not None:
+                return found
         tid = item.data(0, Qt.ItemDataRole.UserRole)
         return next((t for t in self._cal_visible_timers() if t.id == tid), None)
 
@@ -1776,6 +1758,7 @@ class TimerDialog(QDialog):
         if t is None:
             return
         self._cal_editing_id = t.id
+        self._cal_editing_object_id = id(t)
         # Bind the editor to the SERIES base date, not the occurrence row the
         # user happened to be viewing: editing a 31-Jan monthly series from
         # its 28-Feb occurrence must not re-anchor the series to 28 Feb.
@@ -1826,7 +1809,9 @@ class TimerDialog(QDialog):
             kw["_normalize_past"] = False
         if self._cal_editing_id:
             existing = next((t for t in self.main_win.timers
-                            if t.id == self._cal_editing_id), None)
+                            if (id(t) == self._cal_editing_object_id
+                                or (self._cal_editing_object_id is None
+                                    and t.id == self._cal_editing_id))), None)
             if existing is not None:
                 existing.name = self.cal_name.text().strip() or tr("Event", self.lang)
                 existing.description = self.cal_desc.text().strip()
@@ -1879,9 +1864,9 @@ class TimerDialog(QDialog):
         t = self._cal_selected()
         if t is None:
             return
-        if self._cal_editing_id == t.id:
+        if self._cal_editing_object_id == id(t):
             self._cal_new()
-        self.main_win.timers = [x for x in self.main_win.timers if x.id != t.id]
+        self.main_win.timers = [x for x in self.main_win.timers if x is not t]
         self._timer_changed(alarm=False, calendar=True)
 
     # ------------------------------------------------------------------
@@ -1920,51 +1905,9 @@ class TimerDialog(QDialog):
         return t
 
     def _interval_minutes(self):
-        return max(1, int(round(self.spin_limit_hours.value() * 60)))
-
-    def _limit_anchor(self):
-        """Resolve the 'started at' box. Returns (anchor, ok)."""
-        text = self.in_limit_start.text().strip()
-        if not text:
-            return datetime.datetime.now(), True
-        anchor = resolve_target(text, prefer_past=True)
-        return anchor, anchor is not None
-
-    def _preview_limit(self, _text=None):
-        """Spell out the next reset before the user commits to it."""
-        anchor, ok = self._limit_anchor()
-        if not ok:
-            self.lbl_limit_hint.setText(tr("Not a time I understand", self.lang))
-            return
-        preview = limit_window(
-            self.in_name.text().strip() or tr("Limit", self.lang),
-            hours=self.spin_limit_hours.value(), anchor=anchor)
-        self.lbl_limit_hint.setText(describe(preview))
-
-    def add_limit_window(self):
-        err = self._behavior.validate()
-        if err is not None:
-            self._behavior.select_bad_row()
-            self.lbl_limit_hint.setText(err)
-            return
-        anchor, ok = self._limit_anchor()
-        if not ok:
-            self.lbl_limit_hint.setText(tr("Not a time I understand", self.lang))
-            self.in_limit_start.setFocus()
-            return
-        timer = limit_window(
-            self.in_name.text().strip() or tr("Limit", self.lang),
-            hours=self.spin_limit_hours.value(),
-            anchor=anchor,
-            description=self.in_desc.text().strip(),
-            **self._behavior.timer_kwargs(),
-        )
-        self.main_win.timers.append(timer)
-        self.clear_form()
-        self._timer_changed(alarm=True, calendar=False)
-        self.lbl_limit_hint.setText(describe(timer))
-        return timer
-
+        # Preserve imported/legacy interval alarms when editing their name
+        # or start date. New custom intervals belong to the Intervals tab.
+        return getattr(self, "_editing_interval_minutes", 300)
 
     def test_now(self):
         """Fire a throwaway copy in 5s — sound and popup, nothing saved.
@@ -1994,7 +1937,7 @@ class TimerDialog(QDialog):
         if volume is None:
             return
         try:
-            self.main_win.sound_manager.play_sound_ref(ref, volume)
+            self.main_win.sound_manager.preview_sound_ref(ref, volume)
         except Exception:
             pass
 
@@ -2128,7 +2071,10 @@ class TimerDialog(QDialog):
 
         if self._editing_id:
             existing = next((t for t in self.main_win.timers
-                             if t.kind == KIND_ALARM and t.id == self._editing_id), None)
+                             if (t.kind == KIND_ALARM
+                                 and (id(t) == self._editing_object_id
+                                      or (self._editing_object_id is None
+                                          and t.id == self._editing_id)))), None)
             if existing is not None:
                 form = self._form_timer(target)
                 # A monthly/yearly timer whose SCHEDULING DATE did not change
@@ -2195,7 +2141,12 @@ class TimerDialog(QDialog):
             upd()
 
     def clear_form(self):
+        self._editing_interval_minutes = 300
+        interval_index = self.cb_repeat.findData(REPEAT_INTERVAL)
+        if interval_index >= 0:
+            self.cb_repeat.removeItem(interval_index)
         self._editing_id = None
+        self._editing_object_id = None
         self._editing_original_target = None
         self._editing_original_anchor = None
         self.in_name.clear()
@@ -2210,6 +2161,12 @@ class TimerDialog(QDialog):
         item = self.list.currentItem()
         if item is None:
             return None
+        object_id = item.data(0, int(Qt.ItemDataRole.UserRole) + 1)
+        if object_id is not None:
+            found = next((t for t in self.main_win.timers
+                          if t.kind == KIND_ALARM and id(t) == object_id), None)
+            if found is not None:
+                return found
         tid = item.data(0, Qt.ItemDataRole.UserRole)
         return next((t for t in self.main_win.timers
                      if t.kind == KIND_ALARM and t.id == tid), None)
@@ -2219,12 +2176,15 @@ class TimerDialog(QDialog):
         if t is None:
             return
         self._editing_id = t.id
+        self._editing_object_id = id(t)
         self._editing_original_target = t.target
         self._editing_original_anchor = t.repeat_anchor
         self.in_name.setText(t.name)
         self.in_desc.setText(t.description)
         if t.repeat == REPEAT_INTERVAL and getattr(t, "interval_minutes", 0):
-            self.spin_limit_hours.setValue(t.interval_minutes / 60.0)
+            self._editing_interval_minutes = max(1, t.interval_minutes)
+            if self.cb_repeat.findData(REPEAT_INTERVAL) < 0:
+                self.cb_repeat.addItem(tr("Interval", self.lang), REPEAT_INTERVAL)
             start_time = t.target - datetime.timedelta(minutes=t.interval_minutes)
             self.in_when.setText(start_time.strftime("%Y-%m-%d %H:%M"))
         else:
@@ -2267,9 +2227,9 @@ class TimerDialog(QDialog):
         t = self._selected()
         if t is None:
             return
-        if self._editing_id == t.id:
+        if self._editing_object_id == id(t):
             self.clear_form()
-        self.main_win.timers = [x for x in self.main_win.timers if x.id != t.id]
+        self.main_win.timers = [x for x in self.main_win.timers if x is not t]
         self._timer_changed(alarm=True, calendar=False)
 
     def _update_buttons(self):
@@ -2291,18 +2251,14 @@ class TimerDialog(QDialog):
         if select_id is not None:
             self._refresh_all(select_id)
             return
-        tab = self.tabs.currentIndex() if hasattr(self, "tabs") else 0
-        if tab == 0:  # Alarms
-            self._refresh_alarms()
-        elif tab == 1:  # Temp Timer
-            self._refresh_temp_tab()
-        elif tab == 2:  # Productivity
-            self._refresh_pomo()
-        elif tab == 3:  # Calendar
-            self._cal_refresh_if_changed()
-        elif tab == 4:  # Interval Notifications
-            if hasattr(self, "interval_clock"):
-                self.interval_clock.sync()
+        page = self.tabs.currentWidget() if hasattr(self, "tabs") else None
+        callback = getattr(page, "_timer_refresh", None)
+        if callable(callback):
+            callback()
+
+    def _refresh_interval_tab(self):
+        if hasattr(self, "interval_clock"):
+            self.interval_clock.sync()
 
     def _refresh_all(self, select_id=None):
         """Full catch-up refresh for all tabs (tab switch, mutation)."""
@@ -2319,23 +2275,27 @@ class TimerDialog(QDialog):
 
         keep = self.list.currentItem()
         keep_id = select_id or (keep.data(0, Qt.ItemDataRole.UserRole) if keep else None)
+        keep_object_id = (keep.data(0, int(Qt.ItemDataRole.UserRole) + 1)
+                          if keep and select_id is None else None)
 
         now = datetime.datetime.now()
         alarm_timers = [t for t in self.main_win.timers
                         if t.kind == KIND_ALARM
                         and not getattr(t, "temporary", False)]
         sorted_timers = sorted(alarm_timers, key=lambda x: x.target)
-        sorted_ids = [t.id for t in sorted_timers]
+        sorted_keys = [id(t) for t in sorted_timers]
 
         existing_items = {}
         for i in range(self.list.topLevelItemCount()):
             it = self.list.topLevelItem(i)
-            existing_items[it.data(0, Qt.ItemDataRole.UserRole)] = it
+            existing_items[it.data(
+                0, int(Qt.ItemDataRole.UserRole) + 1)] = it
 
-        existing_ids = [self.list.topLevelItem(i).data(0, Qt.ItemDataRole.UserRole)
-                        for i in range(self.list.topLevelItemCount())]
+        existing_keys = [self.list.topLevelItem(i).data(
+            0, int(Qt.ItemDataRole.UserRole) + 1)
+            for i in range(self.list.topLevelItemCount())]
 
-        if existing_ids != sorted_ids:
+        if existing_keys != sorted_keys:
             self.list.blockSignals(True)
             self.list.clear()
             for t in sorted_timers:
@@ -2350,6 +2310,7 @@ class TimerDialog(QDialog):
                 repeat = "" if t.repeat == "once" else f" ({t.repeat})"
                 item = QTreeWidgetItem([f"{t.name}{repeat}", when, tail])
                 item.setData(0, Qt.ItemDataRole.UserRole, t.id)
+                item.setData(0, int(Qt.ItemDataRole.UserRole) + 1, id(t))
                 tip = [t.name]
                 if t.description:
                     tip.append(t.description)
@@ -2372,12 +2333,13 @@ class TimerDialog(QDialog):
                     item.setForeground(1, color)
                     item.setForeground(2, color)
                 self.list.addTopLevelItem(item)
-                if t.id == keep_id:
+                if (id(t) == keep_object_id
+                        or (keep_object_id is None and t.id == keep_id)):
                     self.list.setCurrentItem(item)
             self.list.blockSignals(False)
         else:
             for t in sorted_timers:
-                item = existing_items.get(t.id)
+                item = existing_items.get(id(t))
                 if not item:
                     continue
                 rem = t.remaining(now)
@@ -2397,8 +2359,11 @@ class TimerDialog(QDialog):
                     item.setForeground(0, color)
                     item.setForeground(1, color)
                     item.setForeground(2, color)
-            if select_id and select_id in existing_items:
-                self.list.setCurrentItem(existing_items[select_id])
+            if select_id:
+                selected = next((existing_items.get(id(t)) for t in sorted_timers
+                                 if t.id == select_id), None)
+                if selected is not None:
+                    self.list.setCurrentItem(selected)
 
         self._update_buttons()
         self._cal_refresh_if_changed()
@@ -2622,6 +2587,7 @@ class TimerDialog(QDialog):
         btns.addWidget(btn_close)
         lay.addLayout(btns)
 
+        page._timer_refresh = self._refresh_interval_tab
         self.tabs.addTab(page, tr("Interval Notifications", self.lang))
         self._interval_reload()
 
@@ -2708,7 +2674,7 @@ class TimerDialog(QDialog):
         ref = self.interval_in_sound.currentData() or "newday"
         vol = self.interval_in_volume.value()
         try:
-            self.main_win.sound_manager.play_sound_ref(ref, vol)
+            self.main_win.sound_manager.preview_sound_ref(ref, vol)
         except Exception:
             pass
 
@@ -2736,6 +2702,7 @@ class TimerDialog(QDialog):
         self._suppress_interval_preview = True
         try:
             cur = getattr(self, "_interval_cur", None)
+            cur_object_id = getattr(self, "_interval_cur_object_id", None)
             self.interval_list.clear()
             rules = self._interval_rules()
             for rule in rules:
@@ -2748,13 +2715,16 @@ class TimerDialog(QDialog):
                     interval_str = f"{mins} m"
                 item = QTreeWidgetItem([state, name, interval_str])
                 item.setData(0, Qt.ItemDataRole.UserRole, rule.get("id"))
+                item.setData(0, int(Qt.ItemDataRole.UserRole) + 1, id(rule))
                 if rule.get("enabled"):
                     from PyQt6.QtGui import QColor
                     gold = QColor(217, 179, 64)
                     item.setForeground(0, gold)
                     item.setForeground(1, gold)
                 self.interval_list.addTopLevelItem(item)
-                if cur is not None and rule.get("id") == cur:
+                if (id(rule) == cur_object_id
+                        or (cur_object_id is None and cur is not None
+                            and rule.get("id") == cur)):
                     self.interval_list.setCurrentItem(item)
             if cur is None and self.interval_list.topLevelItemCount():
                 self.interval_list.setCurrentItem(self.interval_list.topLevelItem(0))
@@ -2764,16 +2734,18 @@ class TimerDialog(QDialog):
     def _interval_reorder(self, *args):
         """Draggable priority: topmost wins on collision. Persist UI order to data."""
         try:
-            new_ids = []
+            new_object_ids = []
             for i in range(self.interval_list.topLevelItemCount()):
                 it = self.interval_list.topLevelItem(i)
                 if it is not None:
-                    new_ids.append(it.data(0, Qt.ItemDataRole.UserRole))
+                    new_object_ids.append(it.data(
+                        0, int(Qt.ItemDataRole.UserRole) + 1))
             rules = self._interval_rules()
-            id_to_rule = {r.get("id"): r for r in rules if isinstance(r, dict)}
-            reordered = [id_to_rule[rid] for rid in new_ids if rid in id_to_rule]
+            object_to_rule = {id(r): r for r in rules if isinstance(r, dict)}
+            reordered = [object_to_rule[obj_id] for obj_id in new_object_ids
+                         if obj_id in object_to_rule]
             # keep any not in UI (defensive)
-            remaining = [r for r in rules if r.get("id") not in new_ids]
+            remaining = [r for r in rules if id(r) not in new_object_ids]
             reordered.extend(remaining)
             if len(reordered) == len(rules):
                 rules[:] = reordered
@@ -2787,9 +2759,11 @@ class TimerDialog(QDialog):
         self._suppress_interval_preview = True
         try:
             rid = item.data(0, Qt.ItemDataRole.UserRole)
+            object_id = item.data(0, int(Qt.ItemDataRole.UserRole) + 1)
             for rule in self._interval_rules():
-                if rule.get("id") == rid:
+                if id(rule) == object_id or (object_id is None and rule.get("id") == rid):
                     self._interval_cur = rid
+                    self._interval_cur_object_id = id(rule)
                     self.interval_in_name.setText(str(rule.get("name") or ""))
                     mins = int(rule.get("minutes") or 60)
                     self.interval_in_minutes.setValue(mins)
@@ -2822,6 +2796,7 @@ class TimerDialog(QDialog):
         import copy
         self.main_win.data["interval_notifs"] = copy.deepcopy(DEFAULT_INTERVAL_RULES)
         self._interval_cur = None
+        self._interval_cur_object_id = None
         self.main_win.mark_dirty()
         self._interval_reload()
 
@@ -2907,6 +2882,7 @@ class TimerDialog(QDialog):
             }]
 
         self._interval_cur = None
+        self._interval_cur_object_id = None
         self.main_win.mark_dirty()
         self._interval_reload()
 
@@ -2930,17 +2906,19 @@ class TimerDialog(QDialog):
         }
         self._interval_rules().append(rule)
         self._interval_cur = rule["id"]
+        self._interval_cur_object_id = id(rule)
         self.main_win.mark_dirty()
         self._interval_reload()
 
     def _interval_save(self):
         rid = getattr(self, "_interval_cur", None)
+        object_id = getattr(self, "_interval_cur_object_id", None)
         if rid is None:
             items = self.interval_list.selectedItems()
             if items:
                 rid = items[0].data(0, Qt.ItemDataRole.UserRole)
         for rule in self._interval_rules():
-            if rule.get("id") == rid:
+            if id(rule) == object_id or (object_id is None and rule.get("id") == rid):
                 rule["name"] = self.interval_in_name.text().strip() or tr("Reminder", self.lang)
                 rule["minutes"] = self.interval_in_minutes.value()
                 rule["enabled"] = self.interval_in_enabled.isChecked()
@@ -2958,11 +2936,15 @@ class TimerDialog(QDialog):
 
     def _interval_delete(self):
         rid = getattr(self, "_interval_cur", None)
-        if rid is None:
+        object_id = getattr(self, "_interval_cur_object_id", None)
+        if rid is None and object_id is None:
             return
         rules = self._interval_rules()
         self.main_win.data["interval_notifs"] = [
-            r for r in rules if r.get("id") != rid]
+            r for r in rules
+            if not (id(r) == object_id
+                    or (object_id is None and r.get("id") == rid))]
         self._interval_cur = None
+        self._interval_cur_object_id = None
         self.main_win.mark_dirty()
         self._interval_reload()

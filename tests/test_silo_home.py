@@ -12,9 +12,9 @@ import os
 import subprocess
 import sys
 
-
 _SCRIPT = r"""
 import os
+import sys
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtGui import QTextCursor
@@ -45,8 +45,15 @@ if bottom == 0:
 
 if problems:
     print("FAIL " + " ".join(problems))
-    raise SystemExit(1)
+    sys.stdout.flush()
+    os._exit(1)
 print("OK top=%d end=%d" % (top, bottom))
+# Qt teardown of a full FastPrompter can die in the offscreen platform
+# (the reason this contract runs in a child process at all): leave with the
+# real status instead of letting the interpreter tear the object graph down.
+sys.stdout.flush()
+sys.stderr.flush()
+os._exit(0)
 """
 
 

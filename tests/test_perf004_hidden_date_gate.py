@@ -13,9 +13,9 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
-import fastprompter.main as main_mod  # noqa: E402
-
 from PyQt6.QtWidgets import QApplication  # noqa: E402
+
+import fastprompter.main as main_mod  # noqa: E402
 
 _APP = QApplication.instance() or QApplication([])
 
@@ -72,10 +72,20 @@ class _Host:
         self._current_lang = "EN"
         self._missed_timer_ids = set()
         self.timers = []
-        self.visual = {"label": 0}
+        self.visual = {"label": 0, "topbar_applied": 0}
 
     def isVisible(self):
         return self._visible_state
+
+    # The label publishes its availability through the responsive top-bar
+    # policy instead of calling setVisible itself, so the host has to answer
+    # that contract. Detail mode is the policy's own concern; "full" is the
+    # unconstrained answer, which is what a wide window returns.
+    def _topbar_detail_mode(self, token):
+        return "full"
+
+    def _apply_topbar_visibility(self):
+        self.visual["topbar_applied"] += 1
 
     def _clock_time_fmt(self, show_secs=False):
         return "%H:%M:%S" if show_secs else "%H:%M"
@@ -95,6 +105,9 @@ class _Host:
 
 def _bind(host):
     host._update_date_label = main_mod.FastPrompter._update_date_label.__get__(host)
+    # Real policy publisher, not a stub: it is the method under contract here.
+    # It no-ops on refresh because the fake host has no header_widget.
+    host._set_topbar_semantic = main_mod.FastPrompter._set_topbar_semantic.__get__(host)
     return host
 
 
@@ -104,6 +117,9 @@ def test_hidden_does_no_visual_work():
     assert h.visual["label"] == 0, "hidden window must not repaint labels"
     assert h.lbl_date.text() == "", "hidden window must not format/set date text"
     assert getattr(h.analog_clock, "calls", 0) == 0, "hidden: no clock sync"
+    assert h.visual["topbar_applied"] == 0, "hidden: no top-bar relayout"
+    assert getattr(h, "_topbar_semantic", {}) == {}, \
+        "hidden window must not publish availability either"
 
 
 def test_visible_does_full_visual_work():
@@ -111,6 +127,21 @@ def test_visible_does_full_visual_work():
     h._update_date_label()
     assert h.visual["label"] >= 2, "visible: alert style + timer label run"
     assert h.lbl_date.text() != "", "visible: date text formatted"
+    assert h._topbar_semantic["lbl_date"] is True, \
+        "visible: the label publishes itself as available"
+    assert h.visual["topbar_applied"] == 1, \
+        "visible: exactly one top-bar policy pass per tick"
+
+
+def test_date_rect_off_retracts_availability_instead_of_hiding():
+    """show_date_rect=False must withdraw the item from the policy, not call
+    setVisible behind its back — otherwise the next policy pass reinstates it."""
+    h = _bind(_Host(visible=True))
+    h.data["show_date_rect"] = "False"
+    h._update_date_label()
+    assert h._topbar_semantic["lbl_date"] is False
+    assert h.lbl_date.text() == "", "no date formatting when the rect is off"
+    assert h.visual["label"] == 0
 
 
 def test_scheduler_not_gated():

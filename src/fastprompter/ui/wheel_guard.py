@@ -46,6 +46,10 @@ class WheelGuard(QObject):
             return False
         if obj.hasFocus():
             return False        # deliberate: the user clicked in first
+        if obj.property("fp_wheel_owner"):
+            # A WheelPager owns this widget's wheel gesture on purpose (the
+            # project combo pages tabs). Deliberate, so not pointer luck.
+            return False
         scroller = self._scrollable_ancestor(obj)
         if scroller is not None:
             # Hand the gesture to the panel the user is actually scrolling.

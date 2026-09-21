@@ -33,6 +33,51 @@ import importlib
 import sys
 
 
+def _rebind_parent_attribute(key, module):
+    """Point the parent package's attribute at `module` (or drop it).
+
+    T-1260. ``importlib.import_module("a.b.c")`` does TWO things: it writes
+    ``sys.modules["a.b.c"]`` and it sets ``c`` as an attribute on package
+    ``a.b``. This helper used to undo only the first, and the two lookups are
+    not interchangeable:
+
+    * ``from a.b.c import name`` resolves through ``sys.modules`` -> the REAL
+      module that was put back;
+    * ``import a.b.c as m`` resolves through ``getattr(a.b, "c")`` -> the
+      STUB-BUILT module that was left behind.
+
+    So one test file could hold two different objects for one import path and
+    never notice. ``tests/test_perf005_scaled_cache.py`` does exactly that:
+    it monkeypatches ``sm_mod._scaled_cache_dir`` on the stale attribute copy
+    while the imported ``_prune_scaled_cache_dir`` reads the live module's
+    globals, so the prune scanned the REAL machine cache directory instead of
+    the test's ``tmp_path`` and the "old file must be pruned" assertion failed
+    — but only in a run where an earlier file (e.g.
+    ``test_master_mute_facade_t1244.py``) had already re-imported
+    ``fastprompter.core.sound_manager`` under PyQt6 mocks.
+
+    Restoring the attribute alongside ``sys.modules`` is the exact inverse of
+    what the import machinery did. Nothing global is cleared.
+    """
+    parent_name, _, child = key.rpartition(".")
+    if not parent_name:
+        return
+    parent = sys.modules.get(parent_name)
+    if parent is None:
+        return
+    if module is None:
+        if getattr(parent, child, None) is not None:
+            try:
+                delattr(parent, child)
+            except AttributeError:
+                pass
+        return
+    try:
+        setattr(parent, child, module)
+    except AttributeError:
+        pass
+
+
 def _restore(before, stub_keys):
     """Undo `stub_keys` and evict any fastprompter module built against them."""
     for key in stub_keys:
@@ -46,10 +91,12 @@ def _restore(before, stub_keys):
             continue
         if key not in before:
             del sys.modules[key]
+            _rebind_parent_attribute(key, None)
         elif sys.modules[key] is not before[key]:
             # A real copy existed and was replaced by a stub-built one; the
             # real object goes back, or the poison outlives this file.
             sys.modules[key] = before[key]
+            _rebind_parent_attribute(key, before[key])
 
 
 def snapshot():

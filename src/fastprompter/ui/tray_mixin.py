@@ -53,6 +53,13 @@ class TrayMixin:
         )
 
         tray_menu.addSeparator()
+        self._build_problip_tray_menu(tray_menu, lang)
+        self._tray_stop_all_action = tray_menu.addAction(
+            tr("Stop All Sound", lang))
+        self._tray_stop_all_action._en_text = "Stop All Sound"
+        self._tray_stop_all_action.triggered.connect(self._on_tray_stop_all)
+
+        tray_menu.addSeparator()
         self._tray_quit_action = tray_menu.addAction(tr("Quit", lang))
         self._tray_quit_action.triggered.connect(self.quit_app)
 
@@ -63,6 +70,104 @@ class TrayMixin:
         self.tray_icon.setContextMenu(tray_menu)
         self.tray_icon.activated.connect(self.on_tray_activated)
         self.restyle_tray_menu()
+
+    # --- Problip / audio submenu (T-1238-C4) --------------------------------
+
+    def _build_problip_tray_menu(self, tray_menu, lang):
+        """One Problip submenu delegating to the canonical controller.
+
+        The tray owns no state and duplicates no logic: it reads the
+        controller on ``aboutToShow`` and calls the same methods the settings
+        page calls.
+        """
+        submenu = tray_menu.addMenu(tr("Problip", lang))
+        submenu._en_text = "Problip"
+        self._tray_problip_menu = submenu
+
+        self._tray_problip_status = submenu.addAction("")
+        self._tray_problip_status.setEnabled(False)
+        submenu.addSeparator()
+
+        def _add(en_text, handler):
+            action = submenu.addAction(tr(en_text, lang))
+            action._en_text = en_text
+            action.triggered.connect(handler)
+            return action
+
+        self._tray_problip_start = _add("Start", self._on_tray_problip_start)
+        self._tray_problip_stop = _add("Stop", self._on_tray_problip_stop)
+        self._tray_problip_test = _add("Test", self._on_tray_problip_test)
+        submenu.addSeparator()
+        self._tray_problip_settings = _add("Open Problip Settings",
+                                           self._on_tray_problip_settings)
+
+    def _problip_controller(self):
+        return getattr(self, "problip_controller", None)
+
+    def _on_tray_problip_start(self):
+        controller = self._problip_controller()
+        if controller is not None:
+            controller.start()
+
+    def _on_tray_problip_stop(self):
+        controller = self._problip_controller()
+        if controller is not None:
+            controller.stop()
+
+    def _on_tray_problip_test(self):
+        controller = self._problip_controller()
+        if controller is not None:
+            controller.test()
+
+    def _on_tray_problip_settings(self):
+        """Show the window, open Settings, select the Problip page (C4.2)."""
+        from fastprompter.main import settings_tab_index
+
+        try:
+            self.show_window()
+        except Exception:
+            pass
+        try:
+            frame = getattr(self, "mini_settings_frame", None)
+            if frame is not None and not frame.isVisible():
+                frame.setVisible(True)
+            elif hasattr(self, "_ensure_settings_built"):
+                self._ensure_settings_built()
+            tabs = getattr(self, "settings_tabs", None)
+            index = settings_tab_index("Problip")
+            if tabs is not None and 0 <= index < tabs.count():
+                tabs.setCurrentIndex(index)
+        except Exception:
+            pass
+
+    def _on_tray_stop_all(self):
+        manager = getattr(self, "sound_manager", None)
+        if manager is not None:
+            manager.stop_all_sound()
+
+    def _sync_problip_tray_menu(self):
+        """Refresh the submenu from the controller each time it opens."""
+        controller = self._problip_controller()
+        status = getattr(self, "_tray_problip_status", None)
+        start = getattr(self, "_tray_problip_start", None)
+        stop = getattr(self, "_tray_problip_stop", None)
+        test = getattr(self, "_tray_problip_test", None)
+        menu = getattr(self, "_tray_problip_menu", None)
+        if menu is None or _is_deleted(menu):
+            return
+        lang = getattr(self, "_current_lang", "EN")
+        if controller is None:
+            menu.setEnabled(False)
+            return
+        menu.setEnabled(True)
+        running = controller.is_running()
+        state_text = str(controller.state)
+        if status is not None and not _is_deleted(status):
+            status.setText(f"{tr('Status', lang)}: {tr(state_text, lang)}")
+        for action, enabled in ((start, not running), (stop, running),
+                                (test, True)):
+            if action is not None and not _is_deleted(action):
+                action.setEnabled(enabled)
 
     def _tray_check_action(self, menu, en_text, handler):
         """A checkable tray action whose label is translated and remembered."""
@@ -111,6 +216,7 @@ class TrayMixin:
 
     def _sync_tray_menu_checks(self):
         """Set the checkmarks right each time the menu opens."""
+        self._sync_problip_tray_menu()
         aot, focus, tray = self._tray_state()
         for action, value in (
             (getattr(self, "_tray_aot_action", None), aot),
@@ -161,10 +267,21 @@ class TrayMixin:
         lang = getattr(self, "_current_lang", "EN")
         if hasattr(self, "_tray_show_action") and not _is_deleted(self._tray_show_action):
             self._tray_show_action.setText(tr("Show/Hide", lang))
-        for attr in ("_tray_aot_action", "_tray_focus_action", "_tray_icon_action"):
+        for attr in ("_tray_aot_action", "_tray_focus_action",
+                     "_tray_icon_action", "_tray_stop_all_action",
+                     "_tray_problip_menu", "_tray_problip_start",
+                     "_tray_problip_stop", "_tray_problip_test",
+                     "_tray_problip_settings"):
             action = getattr(self, attr, None)
-            if action is not None and not _is_deleted(action):
-                action.setText(tr(action._en_text, lang))
+            if (action is None or _is_deleted(action)
+                    or not getattr(action, "_en_text", None)):
+                continue
+            text = tr(action._en_text, lang)
+            # A submenu is a QMenu (setTitle); everything else is a QAction.
+            if hasattr(action, "setTitle"):
+                action.setTitle(text)
+            else:
+                action.setText(text)
         if hasattr(self, "_tray_quit_action") and not _is_deleted(self._tray_quit_action):
             self._tray_quit_action.setText(tr("Quit", lang))
         if hasattr(self, "tray_icon") and not _is_deleted(self.tray_icon):

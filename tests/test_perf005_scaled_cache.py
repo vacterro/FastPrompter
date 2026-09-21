@@ -4,19 +4,17 @@ protects in-flight playback.
 """
 
 import os
-import time as _time
 import sys
+import time as _time
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
 import fastprompter.core.sound_manager as sm_mod
-
 from fastprompter.core.sound_manager import (
+    _SCALED_CACHE_GRACE_SECONDS,
+    _SCALED_MEM_CACHE_CAP,
     _bounded_cache_insert,
     _prune_scaled_cache_dir,
-    _scaled_cache_dir,
-    _SCALED_MEM_CACHE_CAP,
-    _SCALED_CACHE_GRACE_SECONDS,
 )
 
 
@@ -38,7 +36,7 @@ def test_bounded_cache_keeps_recent():
     for i in range(100):
         _bounded_cache_insert(c, (f"k{i}", i), (True, f"/s{i}.wav"))
     assert len(c) == 100
-    assert (f"k0", 0) in c
+    assert ("k0", 0) in c
     # insert many more
     for i in range(100, _SCALED_MEM_CACHE_CAP + 50):
         _bounded_cache_insert(c, (f"k{i}", i), (True, f"/s{i}.wav"))

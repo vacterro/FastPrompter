@@ -28,7 +28,9 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from fastprompter.core.usage_limits.model import (  # noqa: E402
+    FIVE_HOUR,
     OK,
+    WEEKLY,
     UsageSnapshot,
     UsageWindow,
     qualified_key,
@@ -61,6 +63,7 @@ class _State:
 class _Service:
     def __init__(self, state):
         self._state = state
+        self.auto_calls = []
 
     @property
     def state_copy(self):
@@ -70,7 +73,7 @@ class _Service:
         pass
 
     def schedule_auto(self, *a):
-        pass
+        self.auto_calls.append(a)
 
     def refresh(self):
         pass
@@ -88,6 +91,26 @@ class _Win(QWidget):
 def _account(provider, sid):
     return AR(provider_id=provider, stable_id=sid, display_name=sid,
               source_kind="test")
+
+
+def test_hover_displays_card_on_enter_without_wakeup_delay(qapp):
+    """T-1242: hover opens the application-owned card, not a native tooltip."""
+    from PyQt6.QtCore import QEvent
+    win = _Win()
+    service = _Service(_State([], {}))
+    gauge = LimitGauges(win, service)
+    try:
+        qapp.sendEvent(gauge, QEvent(QEvent.Type.Enter))
+        card = gauge._hover_card
+        assert card is not None
+        assert card.isVisible()
+        assert card._label.text() == gauge._build_tooltip()
+        # The native tooltip must never compete with the card.
+        assert gauge.toolTip() == ""
+        assert service.auto_calls
+    finally:
+        gauge.hide_hover_card(immediate=True)
+        win.deleteLater()
 
 
 def _snapshot(account, windows):
@@ -468,6 +491,11 @@ class TestLimitGaugeRichTooltip:
         # Windows & percentages
         assert "80%" in tt
         assert "15%" in tt
+        import re
+        assert not re.search(r">(?:80|15)%\s+\d+m</td>", tt)
+        assert "80% ·" not in tt
+        assert "15% ·" not in tt
+        assert "resets in " in tt
         assert "5h:" in tt
         assert "weekly:" in tt
 
@@ -498,6 +526,52 @@ class TestLimitGaugeRichTooltip:
         # Single unified table across all accounts guarantees perfect column alignment
         assert multi_tt.count("<table") == 1
         assert multi_tt.count("</table>") == 1
+
+    def test_tooltip_hover_rebuilds_elapsed_reset_without_sync_probe(
+            self, qapp):
+        from PyQt6.QtCore import QEvent, QPoint
+        from PyQt6.QtGui import QHelpEvent
+
+        account = _account("codex", "hover")
+        now = time.time()
+        live = _snapshot(account, [
+            UsageWindow("five_hour", 300, True, 100, 0, now + 120),
+        ])
+        gauges = _build(qapp, [account], {account.key: live})
+        assert "0% ·" not in gauges._build_tooltip()
+        assert "resets in 2m" in gauges._build_tooltip()
+
+        elapsed = UsageSnapshot(
+            account=account, status=OK, fetched_at=now,
+            windows=[UsageWindow(
+                "five_hour", 300, True, 100, 0, now - 1)])
+        gauges._service._state.snapshots[account.key] = elapsed
+        event = QHelpEvent(
+            QEvent.Type.ToolTip, QPoint(1, 1), gauges.mapToGlobal(QPoint(1, 1)))
+
+        QApplication.sendEvent(gauges, event)
+
+        rendered = gauges._hover_card._label.text()
+        assert "Reset time passed" in rendered
+        assert "100%" not in rendered
+        assert "0% ·" not in rendered
+        assert "0m" not in rendered
+        assert gauges._service.auto_calls == [(180,)]
+        gauges.hide_hover_card(immediate=True)
+
+    def test_tooltip_never_calls_a_future_reset_zero_minutes(self, qapp):
+        account = _account("codex", "under-minute")
+        now = time.time()
+        snapshots = {account.key: UsageSnapshot(
+            account=account, status=OK, fetched_at=now - 125,
+            windows=[UsageWindow(
+                "five_hour", 300, True, 100, 0, now + 30)])}
+        tt = _build(qapp, [account], snapshots)._build_tooltip()
+
+        assert "0% ·" not in tt
+        assert "resets in &lt;1m" in tt
+        assert "resets in 0m" not in tt
+        assert "updated 2m ago" in tt
 
 
 class TestTooltipNameClearsTheBars:
@@ -594,4 +668,398 @@ class TestCodexBankedResetsTooltip:
         assert any("Activate c_banked Reset" in text for text in actions_seen)
         assert any("Refresh Limits Now" in text for text in actions_seen)
 
+    def test_tooltip_titles_colored_with_vendor_colors(self, qapp):
+        acc_claude = _account("claude", "Claude Pro")
+        acc_codex = _account("codex", "Codex Plus")
+        snap_claude = UsageSnapshot(account=acc_claude, status=OK, fetched_at=time.time(), windows=[])
+        snap_codex = UsageSnapshot(account=acc_codex, status=OK, fetched_at=time.time(), windows=[])
 
+        gauges = _build(qapp, [acc_claude, acc_codex], {
+            acc_claude.key: snap_claude,
+            acc_codex.key: snap_codex,
+        })
+        gauges.main_win.data["limit_colors"] = {"reset_claude": "#112233"}
+        tt = gauges._build_tooltip()
+        assert "<b style='color:#112233;'>Claude Pro</b>" in tt
+        assert "<b style='color:#6AA9FF;'>Codex Plus</b>" in tt
+
+
+class TestAllAccountsFilteredPlaceholder:
+    """hide 5h/0% removed every account: no hole in the header.
+
+    When every account is filtered out the gauge collapses to its actual
+    painted ink: a dim neutral filtered indicator owns only its glyph width
+    (plus padding), never a reserved empty cluster footprint. The tooltip says
+    "filtered" rather than "no accounts selected".
+    """
+
+    def _filtered_gauge(self, qapp, **data):
+        accounts = [_account("codex", "c1"), _account("claude", "cl")]
+        # both exhausted (0% left everywhere) -> hidden by the hide-0% filter
+        snapshots = {a.key: _codex(a) for a in accounts}
+        return _build(qapp, accounts, snapshots,
+                      limit_gauges_hide_zero_usage="True", **data)
+
+    def test_filtered_width_is_ink_plus_padding(self, qapp):
+        gauges = self._filtered_gauge(qapp)
+        assert gauges._visible_accounts() == []
+        assert gauges._has_any_accounts() is True
+        assert gauges.width() == gauges.PAD * 2 + gauges._status_width([]) + gauges.fontMetrics().horizontalAdvance("0")
+        assert gauges.width() <= gauges.PAD * 2 + gauges._status_width([]) + 14
+
+    def test_filter_toggle_resizes_immediately(self, qapp):
+        gauges = self._filtered_gauge(qapp)
+        compact = gauges.width()
+        gauges.main_win.data["limit_gauges_hide_zero_usage"] = "False"
+
+        gauges._on_data()
+
+        assert gauges.width() > compact
+        gauges.main_win.data["limit_gauges_hide_zero_usage"] = "True"
+        gauges._on_data()
+        assert gauges.width() == compact
+
+    def test_tooltip_says_filtered_not_no_accounts(self, qapp):
+        gauges = self._filtered_gauge(qapp)
+        tt = gauges._build_tooltip()
+        assert "hide 5h/0% filter" in tt
+        assert "no accounts selected" not in tt
+
+    def test_empty_service_still_reads_no_accounts_selected(self, qapp):
+        """A genuinely empty roster keeps the original 'no accounts' text."""
+        win = _Win()
+        gauges = LimitGauges(win, _Service(_State([], {})))
+        gauges._on_data()
+        assert gauges._has_any_accounts() is False
+        assert "no accounts selected" in gauges._build_tooltip()
+
+    def test_paints_dim_marks_without_crashing(self, qapp):
+        from PyQt6.QtGui import QImage
+        gauges = self._filtered_gauge(qapp, limit_gauges_style="bars")
+        gauges.resize(gauges.width(), 22)
+        image = QImage(gauges.width(), 22, QImage.Format.Format_ARGB32)
+        image.fill(0)
+        gauges.render(image)
+        pal = gauges._palette()
+        bg = pal["bg"].rgb()
+        inked = any(image.pixel(x, y) != bg
+                    for y in range(gauges.height())
+                    for x in range(gauges.width()))
+        assert inked, "the filtered gauge must paint dim ink, not a blank hole"
+
+    def test_placeholder_renders_in_stack_and_dots_styles(self, qapp):
+        from PyQt6.QtGui import QImage
+        for style in ("stack", "dots"):
+            gauges = self._filtered_gauge(qapp, limit_gauges_style=style)
+            gauges.resize(gauges.width(), 22)
+            image = QImage(gauges.width(), 22, QImage.Format.Format_ARGB32)
+            image.fill(0)
+            gauges.render(image)   # must not crash on any style
+
+
+class TestRealTopbarGap:
+    """SYNTHETIC component-layout test (audit 5): the dead strip was reserved
+    INSIDE the gauge's own fixed width, so with the header's zero spacing the
+    reset countdown sat far right of any painted ink. This reproduces the
+    topbar ARRANGEMENT with a bare QWidget + zero-spacing QHBoxLayout and
+    asserts the neighbour gap is only layout. It does NOT exercise the real
+    FastPrompter header, its visibility coordinator or its semantic state —
+    that is TestRealFastPrompterHeader's job. Kept because it pins the pure
+    layout contract cheaply."""
+
+    def _topbar(self, qapp, hide):
+        from PyQt6.QtWidgets import QHBoxLayout, QLabel
+        accounts = [_account("codex", "c1"), _account("claude", "cl")]
+        snapshots = {a.key: _codex(a) for a in accounts}
+        gauges = _build(qapp, accounts, snapshots,
+                        limit_gauges_hide_zero_usage="True" if hide else "False")
+        bar = QLabel("reset 2h")
+        host = QWidget()
+        layout = QHBoxLayout(host)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(gauges)
+        layout.addWidget(bar)
+        host.resize(600, 24)
+        host.show()
+        qapp.processEvents()
+        return gauges, bar, host
+
+    def test_all_filtered_neighbour_gap_is_layout_only(self, qapp):
+        gauges, bar, host = self._topbar(qapp, hide=True)
+        try:
+            gap = bar.geometry().left() - gauges.geometry().right()
+            assert -1 <= gap <= 1, f"{gap}px dead strip before the reset label"
+            assert gauges.width() <= gauges.PAD * 2 + gauges._status_width([]) + 14
+            assert bar.isVisible()
+        finally:
+            host.deleteLater()
+
+    def test_filter_toggle_expands_and_collapses_without_restart(self, qapp):
+        gauges, bar, host = self._topbar(qapp, hide=True)
+        try:
+            compact = gauges.width()
+            gauges.main_win.data["limit_gauges_hide_zero_usage"] = "False"
+
+            gauges._on_data()
+            qapp.processEvents()
+            wide = gauges.width()
+            assert wide > compact
+            gap_wide = bar.geometry().left() - gauges.geometry().right()
+            assert -1 <= gap_wide <= 1
+            gauges.main_win.data["limit_gauges_hide_zero_usage"] = "True"
+            gauges._on_data()
+            qapp.processEvents()
+            expected_compact = (gauges.PAD * 2 + gauges._status_width([])
+                                + gauges.fontMetrics().horizontalAdvance("0"))
+            assert gauges.width() == expected_compact
+
+        finally:
+
+            host.deleteLater()
+
+    def test_resize_does_not_resurrect_the_dead_gap(self, qapp):
+        gauges, bar, host = self._topbar(qapp, hide=True)
+        try:
+            for width in (600, 420, 300, 600):
+                host.resize(width, 24)
+                qapp.processEvents()
+                gap = bar.geometry().left() - gauges.geometry().right()
+                assert -1 <= gap <= 1, f"{gap}px gap resurrected at width {width}"
+        finally:
+            host.deleteLater()
+
+
+class TestRealFastPrompterHeader:
+    """T-1220 on the REAL FastPrompter header, not a synthetic stand-in.
+
+    A bare-QWidget reproduction (TestRealTopbarGap) cannot see the topbar
+    visibility coordinator, semantic availability or the real header reflow.
+    Here a real FastPrompter window runs the real update path —
+    ``limit_gauges._on_data()``, ``_update_limit_timer_label()`` and the real
+    ``_apply_topbar_visibility()`` — and the geometry must prove itself:
+    all-filtered renders the compact dim indicator, the reset countdown sits
+    directly beside it with no dead strip, and toggling the filter expands and
+    collapses the header immediately, without a resize or restart.
+
+    Fixture pattern mirrors tests/test_usage_limits_hide_zero.py (DB path
+    redirected to tmp_path BEFORE construction, hotkeys/single-instance/
+    background probing no-ops).
+    """
+
+    @pytest.fixture
+    def real_win(self, qapp, monkeypatch, tmp_path):
+        from _qt_retire import retire
+
+        import fastprompter.core.state as state_mod
+        from fastprompter.core.usage_limits.service import UsageLimitService
+        from fastprompter.main import FastPrompter
+
+        monkeypatch.setattr(
+            state_mod, "get_db_path",
+            lambda profile_id=1: str(tmp_path / f"t1220_{profile_id}.db"))
+        for name in ("setup_single_instance_server", "register_all_hotkeys",
+                     "unregister_all_hotkeys"):
+            monkeypatch.setattr(FastPrompter, name, lambda self: None)
+        monkeypatch.setattr(UsageLimitService, "schedule_auto",
+                            lambda *a, **kw: None)
+
+        win = FastPrompter()
+        win.data["limit_gauges"] = "True"
+        win.data["limit_gauges_hide_zero_usage"] = "False"
+        win.data["limit_gauges_hide_unusable_5h"] = "False"
+        win.resize(1400, 800)
+        win.show()
+        qapp.processEvents()
+        yield win
+
+        if hasattr(win, "limit_service") and win.limit_service is not None:
+            try:
+                win.limit_service.shutdown()
+            except Exception:
+                pass
+        from PyQt6.QtCore import QTimer
+        win._wait_for_undo_saves()
+        for timer in win.findChildren(QTimer):
+            timer.stop()
+        win._logical_finalized = True
+        win.tray_icon.hide()
+        win.close()
+        # T-1286: canonical receiver-scoped retirement replaces a
+        # process-wide sendPostedEvents(None, DeferredDelete) drain, which
+        # destroyed Qt objects other test files still owned.
+        retire(win)
+
+    # -- helpers -----------------------------------------------------------
+    def _inject(self, win, mode):
+        """Two real accounts whose quota bars disappear under one filter,
+        while a future reset timestamp survives (the countdown the user is
+        waiting for must not vanish with the bars)."""
+        now = time.time()
+        c1 = AR("codex", "t1220_c1", "Codex C1", "test")
+        c2 = AR("claude", "t1220_cl", "Claude CL", "test")
+        if mode == "zero":
+            # 0% remaining everywhere -> hidden by hide 0%
+            windows = [
+                UsageWindow(FIVE_HOUR, 300, True, 100.0, 0.0, now + 1800),
+                UsageWindow(WEEKLY, 10080, True, 100.0, 0.0,
+                            now + 4 * 86400)]
+        else:
+            # 5h exhausted, weekly full -> hidden by hide unusable 5h
+            windows = [
+                UsageWindow(FIVE_HOUR, 300, True, 100.0, 0.0, now + 1800),
+                UsageWindow(WEEKLY, 10080, True, 0.0, 100.0,
+                            now + 4 * 86400)]
+        snaps = {a.key: UsageSnapshot(a, OK, list(windows))
+                 for a in (c1, c2)}
+        with win.limit_service._lock:
+            win.limit_service._state.accounts = [c1, c2]
+            win.limit_service._state.snapshots = snaps
+
+    def _enable_filter(self, win, mode):
+        win.data["limit_gauges_hide_zero_usage"] = (
+            "True" if mode == "zero" else "False")
+        win.data["limit_gauges_hide_unusable_5h"] = (
+            "True" if mode == "unusable" else "False")
+
+    def _settle(self, qapp, win):
+        """The real update path: data -> width, reset label, coordinator."""
+        win.limit_gauges._on_data()
+        win._update_limit_timer_label()
+        win._apply_topbar_visibility()
+        for _ in range(3):
+            qapp.processEvents()
+
+    def _gap(self, win):
+        """Exclusive-ish dead strip between the gauge and the reset label.
+
+        QRect.right() is inclusive, so flush neighbours read -1..0.
+        """
+        return (win.lbl_limit_timer.geometry().left()
+                - win.limit_gauges.geometry().right())
+
+    # -- acceptance --------------------------------------------------------
+    @pytest.mark.parametrize("mode", ["zero", "unusable"])
+    def test_all_filtered_keeps_reset_adjacent_on_the_real_header(
+            self, qapp, real_win, mode):
+        win = real_win
+        self._inject(win, mode)
+        win.limit_gauges.sync()
+        self._enable_filter(win, mode)
+        self._settle(qapp, win)
+
+        assert win.limit_gauges.isVisible()
+        assert win.limit_gauges._visible_accounts() == []
+        assert win.limit_gauges._has_any_accounts() is True
+        compact = win.limit_gauges.width()
+        # INDEPENDENT expectation: the ink of the dim "0" measured from the
+        # widget's own font, not a product helper — reserving any invisible
+        # width here is exactly the dead strip T-1220 exists to kill. All
+        # fixture snapshots are OK, so no "!" status marker is expected.
+        expected = (win.limit_gauges.PAD * 2
+                    + win.limit_gauges.fontMetrics().horizontalAdvance("0"))
+        assert compact == expected, (
+            "the all-filtered gauge must own only its painted ink width "
+            f"({compact}px != {expected}px)")
+        gap = self._gap(win)
+        assert -1 <= gap <= 1, (
+            f"{gap}px dead strip between the compact gauge and the reset "
+            "countdown on the real header")
+        assert win.lbl_limit_timer.isVisible()
+
+    def test_filter_toggle_moves_the_real_header_immediately(
+            self, qapp, real_win):
+        win = real_win
+        self._inject(win, "zero")
+        self._enable_filter(win, "zero")
+        win.limit_gauges.sync()
+        self._settle(qapp, win)
+        compact = win.limit_gauges.width()
+        assert win.lbl_limit_timer.isVisible()
+        assert -1 <= self._gap(win) <= 1
+
+        # filter OFF: real path expands the gauge and the label closes up
+        win.data["limit_gauges_hide_zero_usage"] = "False"
+        self._settle(qapp, win)
+        wide = win.limit_gauges.width()
+        assert wide > compact
+        assert -1 <= self._gap(win) <= 1
+        assert win.lbl_limit_timer.isVisible()
+        assert win.lbl_limit_timer.geometry().left() >= wide - 1
+
+        # filter ON again: exactly compact again, no resize, no restart
+        win.data["limit_gauges_hide_zero_usage"] = "True"
+        self._settle(qapp, win)
+        assert win.limit_gauges.width() == compact
+        assert -1 <= self._gap(win) <= 1
+        assert win.lbl_limit_timer.isVisible()
+
+    @pytest.mark.parametrize("width", [1400, 1100, 900])
+    def test_compact_state_survives_normal_widths(self, qapp, real_win,
+                                                  width):
+        win = real_win
+        self._inject(win, "zero")
+        self._enable_filter(win, "zero")
+        win.limit_gauges.sync()
+        win.resize(width, 800)
+        self._settle(qapp, win)
+
+        assert win.limit_gauges._visible_accounts() == []
+        assert win.limit_gauges.width() <= (
+            win.limit_gauges.PAD * 2
+            + win.limit_gauges.STATUS_W + 14)
+        assert win.lbl_limit_timer.isVisible()
+        assert -1 <= self._gap(win) <= 1, (
+            f"dead strip at width {width}")
+
+    def test_resize_path_is_deterministic_at_the_same_width(
+            self, qapp, real_win):
+        win = real_win
+        self._inject(win, "zero")
+        self._enable_filter(win, "zero")
+        win.limit_gauges.sync()
+
+        def probe():
+            self._settle(qapp, win)
+            return (win.limit_gauges.width(),
+                    win.lbl_limit_timer.geometry().left(),
+                    win.lbl_limit_timer.isVisible())
+
+        # sequence A: 1400 -> 900 -> 1100
+        win.resize(1400, 800)
+        probe()
+        win.resize(900, 800)
+        probe()
+        win.resize(1100, 800)
+        a_final = probe()
+        # sequence B: 900 -> 1400 -> 1100
+        win.resize(900, 800)
+        probe()
+        win.resize(1400, 800)
+        probe()
+        win.resize(1100, 800)
+        b_final = probe()
+
+        assert a_final[0] == b_final[0], (
+            f"gauge width depends on the resize path: A={a_final} B={b_final}")
+        assert abs(a_final[1] - b_final[1]) <= 1, (
+            f"reset label position depends on the resize path: "
+            f"A={a_final} B={b_final}")
+        assert a_final[2] and b_final[2]
+
+    def test_genuinely_empty_service_stays_distinct_on_the_real_header(
+            self, qapp, real_win):
+        win = real_win
+        with win.limit_service._lock:
+            win.limit_service._state.accounts = []
+            win.limit_service._state.snapshots = {}
+        win.limit_gauges.sync()
+        self._settle(qapp, win)
+
+        assert win.limit_gauges._has_any_accounts() is False
+        # A genuinely empty gauge is the bare status-bearing sliver, NOT the
+        # all-filtered placeholder width.
+        assert win.limit_gauges.width() == win.limit_gauges.PAD * 2 + 14
+        assert "no accounts selected" in win.limit_gauges._build_tooltip()
+        # No reset known -> no fabricated countdown either.
+        assert not win.lbl_limit_timer.isVisible()

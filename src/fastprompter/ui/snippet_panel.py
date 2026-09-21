@@ -1,5 +1,5 @@
 from PyQt6.QtCore import QEvent, QMimeData, QObject, Qt, QTimer, QUrl
-from PyQt6.QtGui import QDrag, QFontMetrics
+from PyQt6.QtGui import QCursor, QDrag, QFontMetrics
 from PyQt6.QtWidgets import (
     QApplication,
     QHBoxLayout,
@@ -76,6 +76,11 @@ class WheelPager(QObject):
         super().__init__(widget)
         self._cb = callback
         self._ctrl_cb = ctrl_callback
+        # WheelGuard blocks the wheel on unfocused value widgets (a combo must
+        # not step itself while the pointer scrolls past it). A widget with a
+        # pager has an explicit, deliberate wheel meaning instead, so it is
+        # marked as its own wheel owner and the guard leaves it alone.
+        widget.setProperty("fp_wheel_owner", True)
         widget.installEventFilter(self)
 
     def eventFilter(self, obj, event):
@@ -504,6 +509,16 @@ class DraggableSiloButton(QWidget):
     _SWATCH_HINT = "background: transparent; border: 1px dashed #777; border-radius: 2px;"
     _SWATCH_BLANK = "background: transparent; border: none;"
 
+    # T-1270: the reveal delay guards the DESTRUCTIVE hover affordance
+    # (archive) only. The done/tick control and the non-destructive hover
+    # state are immediate -- the operator must never have to hunt for a
+    # checkbox, and the tick column is already reserved on every row that can
+    # show one, so revealing it moves nothing.
+    _HOVER_ACTION_DELAY_MS = 80
+    # None = decide from the Qt platform (see _stationary_pointer_probe_enabled);
+    # a test may pin it either way to exercise the stationary-cursor rule.
+    _STATIONARY_POINTER_PROBE = None
+
     def __init__(self, main_win, parent=None, is_archive=False):
         super().__init__(parent)
         from PyQt6.QtWidgets import QSizePolicy
@@ -521,6 +536,7 @@ class DraggableSiloButton(QWidget):
         self._dragging = False
         self._hover_timer = None
         self._hover_showing = False
+        self._hover_delay_elapsed = False
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self.show_menu)
 
@@ -679,6 +695,51 @@ class DraggableSiloButton(QWidget):
         
         menu.exec(self._btn_color_box.mapToGlobal(pos))
 
+    def _toggle_random_silo_color(self):
+        """Toggle random silo color from palette (first click sets, second clears)."""
+        if not hasattr(self.main_win, "data") or self.is_archive or self.global_idx < 0:
+            return
+        if self.main_win.data.get("silo_color_box", "True") != "True":
+            self.main_win.data["silo_color_box"] = "True"
+            cb = getattr(self.main_win, "cb_silo_color_box", None)
+            if cb is not None:
+                try:
+                    cb.setChecked(True)
+                except Exception:
+                    pass
+            settings_win = getattr(self.main_win, "settings_window", None)
+            if settings_win is not None:
+                cb2 = getattr(settings_win, "cb_silo_color_box", None)
+                if cb2 is not None:
+                    try:
+                        cb2.setChecked(True)
+                    except Exception:
+                        pass
+
+        palette = self.main_win.data.get(
+            "silo_color_palette",
+            ["#ff4444", "#ffaa00", "#ffff00", "#00ff00", "#00ffff",
+             "#0000ff", "#ff00ff", "#ffffff", "#000000", "#808080"],
+        )
+        valid_palette = [c for c in palette if c]
+        if not valid_palette:
+            valid_palette = ["#ff4444", "#ffaa00", "#ffff00", "#00ff00",
+                             "#00ffff", "#0000ff", "#ff00ff", "#ffffff",
+                             "#000000", "#808080"]
+
+        colors_dict = self.main_win.data.setdefault("silo_colors", {})
+        current = colors_dict.get(str(self.global_idx), "")
+
+        if current:
+            colors_dict[str(self.global_idx)] = ""
+        else:
+            import random
+            colors_dict[str(self.global_idx)] = random.choice(valid_palette)
+
+        self.main_win.mark_dirty()
+        if hasattr(self.main_win, "refresh_temp_presets"):
+            self.main_win.refresh_temp_presets()
+
     def _on_pin_clicked(self):
         """Toggle pin state for this silo."""
         if hasattr(self.main_win, '_toggle_pin_silo'):
@@ -757,15 +818,24 @@ class DraggableSiloButton(QWidget):
         self._btn_tick.show()
 
     def enterEvent(self, event):
-        """Show action buttons on hover with a tiny delay for smooth feel."""
+        """Reveal this row's hover affordances.
+
+        T-1270: the IMMEDIATE affordances -- including the done/tick control --
+        are applied on entry with NO delay. Ticking a silo is not destructive,
+        and the tick column is already reserved on every row that can show one,
+        so revealing it moves nothing. Only the archive button keeps the short
+        reveal delay, which is what the 80 ms was ever for.
+        """
         if self.is_archive:
             super().enterEvent(event)
             return
         self._hover_showing = True
+        self._hover_delay_elapsed = False
+        self._apply_hover_affordances(destructive=False)
         if self._hover_timer is None:
             self._hover_timer = QTimer(self)
             self._hover_timer.setSingleShot(True)
-            self._hover_timer.setInterval(80)
+            self._hover_timer.setInterval(self._HOVER_ACTION_DELAY_MS)
             self._hover_timer.timeout.connect(self._update_hover_buttons)
         self._hover_timer.start()
         # Play hover sound if CS style is enabled
@@ -775,20 +845,12 @@ class DraggableSiloButton(QWidget):
         super().enterEvent(event)
 
     def leaveEvent(self, event):
-        """Hide action buttons when mouse leaves."""
+        """The pointer is gone: drop back to the rest presentation."""
         self._hover_showing = False
+        self._hover_delay_elapsed = False
         if self._hover_timer:
             self._hover_timer.stop()
-        if getattr(self, "_swatch_empty", False):
-            self._btn_color_box.setStyleSheet(self._SWATCH_BLANK)
-        # pinned silos keep 📌 visible (it's the unpin control)
-        self._btn_pin.setVisible(getattr(self, "_is_pinned", False) and not self.is_archive)
-        self._btn_archive.hide()
-        # with files the 📁N doubles as the counter — it never hides
-        self._btn_files.setVisible(getattr(self, "_fcount", 0) > 0 and not self.is_archive)
-        # ticked silos always show the mark; setting only gates the hover btn
-        self._apply_tick_state(self._is_ticked())
-        self._lbl_count.show()
+        self._apply_rest_state()
         super().leaveEvent(event)
 
     def setText(self, text):
@@ -796,21 +858,104 @@ class DraggableSiloButton(QWidget):
         self._update_text()
 
     def _update_hover_buttons(self):
-        """Show/hide action buttons based on hover state."""
-        if self._hover_showing and not self.is_archive and self.global_idx >= 0:
-            if getattr(self, "_swatch_empty", False):
-                self._btn_color_box.setStyleSheet(self._SWATCH_HINT)
-            self._btn_pin.show()
-            self._btn_archive.show()
-            self._btn_files.show()  # empty silos get the plain 📁 on hover
-            if self.main_win.data.get("silo_ticks_enabled", "False") == "True":
-                self._apply_tick_state(True)
-            self._lbl_count.hide()
-            self._btn_files.setToolTip(tr("Files: drop/drag/preview assets for this silo\n(Shift+Click: Project Config)", getattr(self.main_win, "_current_lang", "EN")))
+        """Timer slot: reveal the DELAYED (destructive) hover affordance."""
+        self._hover_delay_elapsed = True
+        if self.global_idx >= 0 and self._pointer_is_over_row():
+            self._apply_hover_affordances(destructive=True)
         else:
-            self._btn_pin.hide()
-            self._btn_archive.hide()
-            self._btn_files.hide()
+            self._apply_rest_state()
+
+    # --- T-1270 hover contract -------------------------------------------
+    def _stationary_pointer_probe_enabled(self):
+        """May the pointer POSITION decide hover on this Qt platform?
+
+        Qt synthesizes Enter/Leave only while the mouse MOVES, so a row that
+        appears -- or whose state changes -- under a stationary cursor never
+        receives a fresh enterEvent. On Windows that is exactly the operator's
+        symptom ("the tick only shows up after I move the mouse away and
+        back"), so the real cursor position is consulted there. Headless
+        platforms are excluded on purpose: offscreen/minimal report a cursor
+        position with no meaning, and deriving hover from it produced false
+        hover states. The decision is a per-class attribute so a regression can
+        pin either side instead of depending on the running platform.
+        """
+        flag = type(self)._STATIONARY_POINTER_PROBE
+        if flag is None:
+            try:
+                name = QApplication.platformName() or ""
+            except Exception:
+                name = ""
+            flag = name not in ("offscreen", "minimal", "minimalegl")
+        return bool(flag)
+
+    def _pointer_is_over_row(self):
+        """Whether the pointer is over THIS row, right now."""
+        if self.is_archive:
+            return False
+        if self._hover_showing:
+            return True
+        try:
+            if self.underMouse():
+                return True
+        except Exception:
+            pass
+        if not self._stationary_pointer_probe_enabled():
+            return False
+        try:
+            if not self.isVisible():
+                return False
+            window = self.window()
+            if window is None or not window.isVisible():
+                return False
+            return self.rect().contains(self.mapFromGlobal(QCursor.pos()))
+        except Exception:
+            return False
+
+    def _apply_hover_affordances(self, destructive=False):
+        """Show the hover controls for a row the pointer is over."""
+        if getattr(self, "_swatch_empty", False):
+            self._btn_color_box.setStyleSheet(self._SWATCH_HINT)
+        self._btn_pin.show()
+        # empty silos get the plain files button on hover
+        self._btn_files.show()
+        if self._tick_column_reserved():
+            # The tick column is reserved on every row that can show one, so
+            # revealing the done/tick control changes no row geometry.
+            self._apply_tick_state(True)
+        self._lbl_count.hide()
+        self._btn_files.setToolTip(tr("Files: drop/drag/preview assets for this silo\n(Shift+Click: Project Config)", getattr(self.main_win, "_current_lang", "EN")))
+        if destructive:
+            self._btn_archive.show()
+
+    def _apply_rest_state(self):
+        """Everything this row shows when the pointer is NOT over it."""
+        if getattr(self, "_swatch_empty", False):
+            self._btn_color_box.setStyleSheet(self._SWATCH_BLANK)
+        # pinned silos keep the pin visible (it is the unpin control)
+        self._btn_pin.setVisible(getattr(self, "_is_pinned", False) and not self.is_archive)
+        self._btn_archive.hide()
+        # with files the count doubles as the counter -- it never hides
+        self._btn_files.setVisible(getattr(self, "_fcount", 0) > 0 and not self.is_archive)
+        # a ticked silo ALWAYS shows its mark ( Ctrl+Shift+click can set one
+        # while the feature is off); the setting only gates the hover control
+        self._apply_tick_state(self._is_ticked())
+        self._lbl_count.show()
+
+    def _sync_hover_presentation(self):
+        """Make the visible affordances agree with the pointer RIGHT NOW.
+
+        T-1270 contract: after EVERY refresh -- data rebind, reorder, setting
+        toggle, selection/pin/tick change, child-hierarchy rebuild -- a row the
+        pointer is currently over must show its current hover affordances
+        without a leave/re-enter ritual, and ``underMouse()`` may never
+        disagree with the visible hover state. Idempotent by construction, so
+        callers may invoke it more often than strictly needed.
+        """
+        if self.global_idx >= 0 and self._pointer_is_over_row():
+            self._apply_hover_affordances(
+                destructive=bool(self._hover_delay_elapsed))
+            return
+        self._apply_rest_state()
 
     def sizeHint(self):
         from PyQt6.QtCore import QSize
@@ -843,6 +988,7 @@ class DraggableSiloButton(QWidget):
         current_state = (text_label, global_idx, bg_color, font_family, scale, theme_name, line_count_str, is_pushed, title_bold, is_ticked, is_child, fcount, has_children, is_collapsed, has_hash, color_hex, is_pinned, is_selected, tick_reserved)
         if getattr(self, '_last_state', None) == current_state:
             self.show()
+            self._sync_hover_presentation()
             return
         self._last_state = current_state
 
@@ -892,12 +1038,13 @@ class DraggableSiloButton(QWidget):
         # permanently it read as a stray rectangle on every titled row that
         # had not been given a colour — which is most of them.
         self._swatch_empty = bool(has_hash and not color_hex)
-        if has_hash:
-            if color_hex:
-                self._btn_color_box.setStyleSheet(f"background: {color_hex}; border: 1px solid #777; border-radius: 2px;")
-            else:
-                self._btn_color_box.setStyleSheet(
-                    self._SWATCH_HINT if self._hover_showing else self._SWATCH_BLANK)
+        if color_hex:
+            self._btn_color_box.setStyleSheet(f"background: {color_hex}; border: 1px solid #777; border-radius: 2px;")
+            self._btn_color_box.setEnabled(True)
+            self._btn_color_box.setCursor(Qt.CursorShape.PointingHandCursor)
+        elif has_hash:
+            self._btn_color_box.setStyleSheet(
+                self._SWATCH_HINT if self._hover_showing else self._SWATCH_BLANK)
             self._btn_color_box.setEnabled(True)
             self._btn_color_box.setCursor(Qt.CursorShape.PointingHandCursor)
         else:
@@ -963,6 +1110,12 @@ class DraggableSiloButton(QWidget):
         self._lbl_text.setStyleSheet(f"background: transparent; color: {tick_color}; padding: 0 2px; border: none;")
         self._lbl_count.setStyleSheet(f"background: transparent; color: {text_color}; padding: 0 2px; border: none;")
         self.show()
+        # T-1270: the row's state may have changed (tick, pin, selection, tick
+        # column reservation, children) while it was ALREADY under a stationary
+        # cursor, and changing row state does not synthesize a new enterEvent.
+        # Reconciling here is the fix for "the tick only appears if I move the
+        # mouse away and back over the silo".
+        self._sync_hover_presentation()
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
@@ -1016,6 +1169,9 @@ class DraggableSiloButton(QWidget):
         "two". A fast second Ctrl+click still toggles (it is a second click,
         not a special gesture); the THIRD one clears the whole selection.
         """
+        if e.button() == Qt.MouseButton.MiddleButton:
+            self.mousePressEvent(e)
+            return
         if (e.button() == Qt.MouseButton.LeftButton
                 and e.modifiers() & Qt.KeyboardModifier.ControlModifier
                 and not e.modifiers() & Qt.KeyboardModifier.ShiftModifier
@@ -1078,14 +1234,34 @@ class DraggableSiloButton(QWidget):
             return
         elif e.button() == Qt.MouseButton.MiddleButton:
             super().mousePressEvent(e)
-            # middle-click retires the silo into the trash (text + files
-            # both land in data/files/_trash — recoverable, not a wipe).
+            mods = e.modifiers()
+            has_ctrl = bool(mods & Qt.KeyboardModifier.ControlModifier)
+            has_shift = bool(mods & Qt.KeyboardModifier.ShiftModifier)
+
+            # Ctrl+Shift+MiddleButton: safe no-op (no destructive action)
+            if has_ctrl and has_shift:
+                self._press_action_consumed = True
+                e.accept()
+                return
+
+            # Ctrl+MiddleButton: toggle random silo color box (archive safe no-op)
+            if has_ctrl:
+                if not self.is_archive:
+                    self._toggle_random_silo_color()
+                self._press_action_consumed = True
+                e.accept()
+                return
+
             # Shift+middle-click only CLEARS the silo (empties its text) and
             # leaves the slot and its files completely untouched.
-            if e.modifiers() & Qt.KeyboardModifier.ShiftModifier:
+            if has_shift:
                 self.main_win.clear_silo(self.global_idx, is_archive=self.is_archive)
-            else:
-                self.main_win.trash_silo(self.global_idx, is_archive=self.is_archive)
+                e.accept()
+                return
+
+            # plain middle-click retires the silo into the trash (text + files
+            # both land in data/files/_trash — recoverable, not a wipe).
+            self.main_win.trash_silo(self.global_idx, is_archive=self.is_archive)
             e.accept()
             return
         super().mousePressEvent(e)
@@ -1190,8 +1366,11 @@ class SiloGapBar(QLabel):
     Ctrl+LeftButton to re-park it under a different row (T-593).
 
     Ctrl is required so a stray click on a thin 8px strip cannot move the
-    layout by accident. The bar owns no silo: it is a position, so dragging
-    it rewrites its anchor slot and nothing about the silos themselves."""
+    layout by accident. A gap BELONGS TO the silo it was placed under: its
+    anchor is a slot index registered in ``_SILO_INDEX_STATE``, so a reorder
+    or a delete remaps it together with its silo and the divider never
+    migrates to an unrelated row (T-704). Dragging rewrites that anchor and
+    nothing about the silos themselves."""
 
     GRAB_PX = 3
 
@@ -1373,23 +1552,20 @@ class SiloDropWidget(QWidget):
             if (w and w.isVisibleTo(self) and hasattr(w, "global_idx")
                     and type(w).__name__ == "DraggableSiloButton"):
                 out.append(w)
+        # Geometry is the user's truth. During axis/layout transitions Qt may
+        # temporarily retain a widget insertion order different from the
+        # painted order; classify gaps in visual order so the preview line and
+        # final destination never jump to another row.
+        out.sort(key=lambda w: (w.geometry().left() if self.horizontal
+                                else w.geometry().top()))
         return out
-
-    # How much of a row counts as "drop it INTO this silo" (nest / swap).
-    # It used to be the middle 44%, with only 28% at each edge meaning
-    # "put it above / below" — so releasing over the top of a row usually
-    # nested the silo instead of moving it there, which is the single
-    # biggest reason silo dragging felt unpredictable. The move bands are
-    # now the majority of the row and the nest band is a deliberate aim at
-    # its centre.
-    _NEST_BAND = 0.20
 
     def _drop_target_at(self, pos):
         """Classify a drop position.
 
-        Returns ("swap", button) when pos is over the centre band of a silo,
-        or ("move", gap_index) when pos is anywhere in its top or bottom
-        band (gap_index counts insertion boundaries among visible buttons).
+        Plain dragging always means placement: the leading half inserts before
+        a row and the trailing half inserts after it. No invisible centre band
+        changes the verb to nesting, so the insertion line is the exact result.
         """
         btns = self._visible_buttons()
         # One rule, both axes: in tab mode "above/below" is "left/right" and
@@ -1400,18 +1576,37 @@ class SiloDropWidget(QWidget):
         for i, btn in enumerate(btns):
             near, far, extent = self._axis(btn.geometry())
             if coord <= far:
-                nest = max(2, int(extent * self._NEST_BAND))
-                edge = (extent - nest) / 2.0
-                if coord < near + edge:
-                    return "move", i
-                if coord > far - edge:
-                    return "move", i + 1
-                return "swap", btn
+                midpoint = near + (extent // 2)
+                return "move", i if coord < midpoint else i + 1
         return "move", len(btns)
 
+    def _button_at(self, pos):
+        """Visible silo physically under ``pos`` (for explicit modifiers)."""
+        coord = pos.x() if self.horizontal else pos.y()
+        for btn in self._visible_buttons():
+            near, far, _extent = self._axis(btn.geometry())
+            if near <= coord <= far:
+                return btn
+        return None
+
+    def _drop_operation_at(self, pos, modifiers):
+        """Resolve explicit verbs; unmodified input is always positional."""
+        direct = self._button_at(pos)
+        if direct is not None and modifiers & Qt.KeyboardModifier.ShiftModifier:
+            return "swap", direct
+        if (direct is not None and not self.is_archive
+                and modifiers & Qt.KeyboardModifier.ControlModifier):
+            return "nest", direct
+        return self._drop_target_at(pos)
+
     def dragMoveEvent(self, e):
-        mode, target = self._drop_target_at(e.position().toPoint())
-        if mode == "swap":
+        payload = _decode_internal_drag(e.mimeData())
+        mode, target = self._drop_operation_at(
+            e.position().toPoint(), QApplication.keyboardModifiers())
+        if (mode == "nest" and payload is not None
+                and (payload[0] == "arcsilo") != self.is_archive):
+            mode, target = self._drop_target_at(e.position().toPoint())
+        if mode in ("swap", "nest"):
             new_state = ("swap", target.geometry())
         else:
             new_state = ("move", target)
@@ -1473,23 +1668,25 @@ class SiloDropWidget(QWidget):
         source_idx = payload[2]
         pos = e.position().toPoint()
 
-        mode, target = self._drop_target_at(pos)
+        modifiers = QApplication.keyboardModifiers()
+        mode, target = self._drop_operation_at(pos, modifiers)
+        if mode == "nest" and source_is_archive != self.is_archive:
+            mode, target = self._drop_target_at(pos)
         btns = self._visible_buttons()
 
-        shift_held = bool(QApplication.keyboardModifiers()
-                          & Qt.KeyboardModifier.ShiftModifier)
-        if mode == "swap":
+        if mode in ("swap", "nest"):
             target_global_idx = target.global_idx
             if source_is_archive == self.is_archive:
-                # Plain drop ON a silo nests it as a child;
-                # Shift+drop keeps the old swap behavior
-                if (not self.is_archive and not shift_held
+                # Nesting and swapping are explicit gestures. Plain drop is
+                # handled below as a midpoint-based insertion.
+                if (mode == "nest" and not self.is_archive
                         and source_idx != target_global_idx
                         and hasattr(self.main_win, "make_silo_child")):
                     self.main_win.make_silo_child(source_idx, target_global_idx)
                     e.acceptProposedAction()
                     return
-                if not self.is_archive and hasattr(self.main_win, "handle_pinned_drop"):
+                if (mode == "swap" and not self.is_archive
+                        and hasattr(self.main_win, "handle_pinned_drop")):
                     if self.main_win.handle_pinned_drop(source_idx, swap_idx=target_global_idx):
                         e.acceptProposedAction()
                         return

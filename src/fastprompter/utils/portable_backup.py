@@ -10,9 +10,11 @@ Completion semantics (Phase 6, second pass):
 * a snapshot is COMPLETE only if every mandatory export succeeded — the
   ``_COMPLETE`` marker is written LAST, after silos, archive, snippets and
   the manifest.
-* the export is built in a ``<date>.partial`` temp directory and published
-  atomically only on success; a failed export leaves the previous known-good
-  day directory untouched.
+* the export is built in a FRESH per-generation scratch directory
+  (``<date>.partial-<generation>``) and published atomically only on success;
+  a failed export leaves the previous known-good day directory untouched. The
+  legacy fixed ``<date>.partial`` name is still recognised for recovery, but
+  is never reused as a construction root (W2-002).
 * ``last_success_by_profile[profile_id]`` advances only after a successful
   snapshot of that profile, so a failed export stays eligible for an
   immediate retry. Throttle/coalescing are PER PROFILE: profile A's save
@@ -24,6 +26,7 @@ Completion semantics (Phase 6, second pass):
 import json
 import os
 import shutil
+import threading
 import time
 
 from fastprompter.core.logging import logger
@@ -47,6 +50,21 @@ _backup_newer_wanted: set = set()
 # profile instead of a boolean or live data reference, so the latest
 # committed generation can be dispatched once the current job completes.
 _backup_pending_data: dict = {}
+# PERF-005 (corrective, T-1286): while a job is active, a superseding save
+# records only its INTENTION -- the committed exported-content generation --
+# instead of deep-copying the whole project per save.  A mutable LIVE data
+# reference is NOT generation ownership: the deferred snapshot is
+# materialised by backup_finished() from the COMMITTED VIEW the caller
+# registered for that exact generation, never from whatever the live dict
+# happens to contain when the previous worker finishes.
+_backup_pending_gen: dict = {}
+# PERF-005: the newest committed exported view per profile, registered by the
+# owner of committed truth at each successful DB commit from structures the
+# commit already built (zero extra copying).  ``gen`` is the exported-content
+# generation the view represents; the row sets are immutable by contract and
+# are replaced, never mutated, so a new commit can never rewrite an older
+# generation's content.
+_committed_view_by_profile: dict = {}
 
 # PERF-003 (audit acb-mt9141yi): per-profile record of what was already
 # exported, keyed by the caller's exported-content generation and calendar
@@ -76,6 +94,8 @@ def set_backup_sink(sink):
         _backup_active.clear()
         _backup_newer_wanted.clear()
         _backup_pending_data.clear()
+        _backup_pending_gen.clear()
+        _committed_view_by_profile.clear()
 
 
 def capture_snapshot(data, profile_id=1):
@@ -106,6 +126,85 @@ def capture_snapshot(data, profile_id=1):
     }
 
 
+def note_committed_view(profile_id=1, content_gen=None, *, cats_order=(),
+                        preset_rows=(), temp_rows=(), arc_rows=()):
+    """Retain the newest COMMITTED exported view for a profile (PERF-005).
+
+    Called by the owner of committed truth (``FastPrompterState``) after a
+    successful commit, with the row sets that commit already built -- so the
+    retention itself costs no copying. The materialiser rebuilds a plain
+    exported shape from these rows exactly once, when the active worker
+    finishes; ``content_gen`` names the exported-content generation the view
+    represents, and the two are stored together so identity and content are
+    inseparable.
+
+    Contract: the caller hands over structures it will not mutate afterwards.
+    Each commit builds NEW sets and replaces this entry wholesale, so an older
+    generation's view can never be rewritten by a later commit.
+    """
+    pid = int(profile_id or 1)
+    _committed_view_by_profile[pid] = {
+        "gen": None if content_gen is None else int(content_gen),
+        "cats_order": tuple(cats_order or ()),
+        "preset_rows": preset_rows,
+        "temp_rows": temp_rows,
+        "arc_rows": arc_rows,
+    }
+
+
+def _rows_to_slots(rows):
+    """``{(cat, index, content)}`` -> ``{cat: [content, ...]}`` index-ordered.
+
+    Row presence IS silo existence (T-1222): every committed row, including an
+    empty one, is part of the exported extent.
+    """
+    slots: dict = {}
+    for cat, index, content in rows:
+        bucket = slots.setdefault(cat, [])
+        while len(bucket) <= index:
+            bucket.append("")
+        bucket[index] = content or ""
+    return slots
+
+
+def _project_committed_view(view: dict) -> dict:
+    """Rebuild the exported data shape from a committed view.
+
+    The result is a fresh plain structure whose leaves come only from the
+    committed rows; it is what the ONE deferred materialisation captures.
+    Flat aliases stay empty because the per-category store is authoritative
+    here (``_per_project`` prefers it), and the active-category alias is
+    runtime state that is not part of the committed generation.
+    """
+    categories: dict = {}
+    for cat, index, name, text, last_edited in view.get("preset_rows", ()):
+        bucket = categories.setdefault(cat, [])
+        while len(bucket) <= index:
+            bucket.append(None)
+        bucket[index] = {"name": name, "text": text,
+                         "last_edited": last_edited}
+    return {
+        "cats_order": list(view.get("cats_order", ())),
+        "categories": categories,
+        "temp_presets_all": _rows_to_slots(view.get("temp_rows", ())),
+        "archive_temp_presets_all": _rows_to_slots(view.get("arc_rows", ())),
+        "temp_presets": [],
+        "archive_temp_presets": [],
+    }
+
+
+def _materialize_committed(pid: int, gen):
+    """The ONE deferred materialisation: committed truth -> immutable
+    snapshot, labelled with the exact generation the committed view carries.
+    """
+    pending_snapshot = capture_snapshot(
+        _project_committed_view(_committed_view_by_profile[pid]),
+        profile_id=pid)
+    if gen is not None:
+        pending_snapshot["_content_gen"] = gen
+    return pending_snapshot
+
+
 def mark_backup_success(now=None, profile_id=1):
     """The async worker reports a completed snapshot; the throttle advances
     only on success (matching the synchronous path). Per profile: a success
@@ -120,6 +219,21 @@ def clear_throttle(profile_id=1):
     last_success_by_profile.pop(int(profile_id or 1), None)
 
 
+def abandon_inflight(profile_id=1) -> None:
+    """A shutdown dropped this profile's in-flight snapshot (worker retired
+    before its completion could arrive). Retire the coalescing markers too:
+    the active/newer intents are only resolved by ``backup_finished``, so a
+    surviving marker would silently refuse every future request for the
+    profile — a permanent backup outage after one mid-session shutdown.
+    Dropping the intent loses nothing: the next eligible save captures the
+    then-current committed state."""
+    pid = int(profile_id or 1)
+    _backup_active.discard(pid)
+    _backup_newer_wanted.discard(pid)
+    _backup_pending_data.pop(pid, None)
+    _backup_pending_gen.pop(pid, None)
+
+
 def run_portable_backup(data: dict, profile_id=1, content_gen=None) -> None:
     """Export all data as structured .md files. Throttled per profile.
 
@@ -127,13 +241,16 @@ def run_portable_backup(data: dict, profile_id=1, content_gen=None) -> None:
     ``profile_id``) is dispatched to the worker, which owns throttle
     advancement on success; otherwise the synchronous path below runs.
 
-    PERF-008 (as amended by CORE-002): while a request for this profile is
-    already active, repeated eligible saves never dispatch to the sink again
-    -- but each one DOES refresh the pending snapshot with an immutable
-    committed copy of its own state, because deferred generation must be
-    exactly the state that belonged to the successful save that requested it.
-    ``backup_finished`` retires the active marker and dispatches the newest
-    pending snapshot immediately.
+    PERF-008 (as amended by CORE-002 and PERF-005): while a request for this
+    profile is already active, repeated eligible saves never dispatch to the
+    sink again -- and they no longer materialise a snapshot each either.  Only
+    the newest committed content generation is recorded as an intention;
+    ``backup_finished`` retires the active marker and takes exactly ONE
+    immutable snapshot from the COMMITTED VIEW registered for that generation
+    (``note_committed_view``), so a deferred generation is exactly the state
+    of the save that requested it while a 20-save burst costs one capture plus
+    one deferred materialisation -- never twenty-one. Live mutable ``data`` is
+    never retained as ownership for a deferred generation.
 
     PERF-003: when the caller supplies ``content_gen`` (the profile's
     exported-content generation), a save whose generation was already
@@ -158,18 +275,20 @@ def run_portable_backup(data: dict, profile_id=1, content_gen=None) -> None:
         return
 
     if pid in _backup_active:
-        # CORE-002: capture immutable committed snapshot immediately, not
-        # live mutable dict. Deferred generation must be exactly the state
-        # that belonged to the successful save that requested it.
-        # W2-008: the coalesced pending snapshot carries the EXACT content
-        # generation it represents, so a successful redispatch can advance
-        # _last_exported_gen_by_profile (a missing gen would silently re-export
-        # unchanged content forever).
+        # PERF-005: coalesce BEFORE materialisation.  The previous shape
+        # deep-copied the whole project on EVERY superseding eligible save
+        # (audit measured 21 capture_snapshot() calls for 21 generations)
+        # even though only the newest pending generation survives.  Only the
+        # newest committed generation is recorded as an intention; its
+        # CONTENT is sourced later from the committed view registered for
+        # that exact generation.  W2-008: the pending intention carries the
+        # EXACT content generation it represents, so a successful redispatch
+        # can advance _last_exported_gen_by_profile.
         _backup_newer_wanted.add(pid)
-        pending = capture_snapshot(data, profile_id=pid)
         if content_gen is not None:
-            pending["_content_gen"] = content_gen
-        _backup_pending_data[pid] = pending
+            _backup_pending_gen[pid] = content_gen
+        else:
+            _backup_pending_gen.pop(pid, None)
         return
     _backup_active.add(pid)
 
@@ -181,6 +300,7 @@ def run_portable_backup(data: dict, profile_id=1, content_gen=None) -> None:
     # A fresh snapshot of the CURRENT state supersedes any stale coalesced
     # pending state left by a CORE-005 redispatch failure.
     _backup_pending_data.pop(pid, None)
+    _backup_pending_gen.pop(pid, None)
     _backup_newer_wanted.discard(pid)
     if _backup_sink is not None:
         try:
@@ -233,7 +353,15 @@ def backup_finished(profile_id=1):
     """Called by the async worker on completion of a snapshot. Retires the
     active marker for the profile and, when a newer state was requested
     while it ran, clears the throttle and dispatches the newest pending
-    snapshot immediately (CORE-003) without waiting for another save."""
+    snapshot immediately (CORE-003) without waiting for another save.
+
+    PERF-005: the deferred snapshot is materialised HERE, exactly once, from
+    the committed view registered for the pending generation.  A generation
+    whose committed view is absent is NEVER fabricated from live memory: the
+    throttle is cleared so the next eligible save dispatches a fresh capture
+    at a moment when live data IS the committed state.  A CORE-005 failed
+    redispatch keeps the already-materialised immutable snapshot pending, so
+    the newest state stays retryable without a second capture."""
     pid = int(profile_id or 1)
     has_newer = pid in _backup_newer_wanted
     _backup_active.discard(pid)
@@ -241,6 +369,11 @@ def backup_finished(profile_id=1):
         _backup_newer_wanted.discard(pid)
         last_success_by_profile.pop(pid, None)
         pending_snapshot = _backup_pending_data.pop(pid, None)
+        if pending_snapshot is None:
+            gen = _backup_pending_gen.pop(pid, None)
+            view = _committed_view_by_profile.get(pid)
+            if view is not None and (gen is None or view["gen"] == gen):
+                pending_snapshot = _materialize_committed(pid, gen)
         if pending_snapshot is not None and _backup_sink is not None:
             _backup_active.add(pid)
             try:
@@ -258,6 +391,7 @@ def backup_finished(profile_id=1):
         # sync path: throttle already cleared, next save will capture newest
     else:
         _backup_pending_data.pop(pid, None)
+        _backup_pending_gen.pop(pid, None)
         _finish_newer_wanted(pid)
 
 
@@ -296,6 +430,54 @@ def _profile_backup_dir(backup_dir: str, profile_id) -> str:
     return profile_files_root(backup_dir, profile_id)
 
 
+def _discard_incomplete_scratch(path: str) -> None:
+    """Best-effort removal of an INCOMPLETE scratch tree (W2-002).
+
+    Deliberately NOT ``rmtree(ignore_errors=True)``: a survivor is reported
+    instead of being silently pretended away. Correctness no longer depends on
+    the removal succeeding — every generation is built in a brand-new scratch
+    root — but a leaked tree must stay visible in the log.
+    """
+    try:
+        shutil.rmtree(path)
+    except FileNotFoundError:
+        return
+    except OSError as exc:
+        logger.warning(
+            "portable backup: incomplete scratch tree %s could not be "
+            "removed (%s); it is never reused for a new generation", path, exc)
+
+
+def _alloc_scratch_root(day_dir: str) -> str:
+    """Create and return a NEW, provably empty scratch root for ONE generation.
+
+    W2-002: construction must begin from storage that is empty BY
+    CONSTRUCTION, never from a path whose emptiness depends on a best-effort
+    recursive delete. ``rmtree`` can fail on Windows (locked/read-only files,
+    antivirus, sharing violations); reusing such a tree with
+    ``makedirs(..., exist_ok=True)`` merged artifacts of a failed generation
+    into the current one and then stamped the result ``_COMPLETE``.
+
+    ``os.makedirs`` without ``exist_ok`` fails when the name already exists, so
+    an existing directory is never adopted — a colliding suffix is skipped.
+    """
+    for _ in range(_SCRATCH_ATTEMPTS):
+        candidate = f"{day_dir}.partial-{_gen_suffix()}"
+        try:
+            os.makedirs(candidate)
+        except FileExistsError:
+            continue
+        if os.listdir(candidate):
+            # Unreachable for a directory we just created; kept as a cheap
+            # invariant so a reused/contaminated root can never be built in.
+            _discard_incomplete_scratch(candidate)
+            continue
+        return candidate
+    raise RuntimeError(
+        "portable backup: could not allocate a fresh scratch directory for "
+        f"{day_dir}")
+
+
 def _do_export(data: dict, profile_id=1) -> None:
     backup_dir = get_portable_backup_dir()
     # Per-day subdirectory, built as an exact snapshot in a temp sibling and
@@ -308,24 +490,35 @@ def _do_export(data: dict, profile_id=1) -> None:
     # complete sibling before starting a fresh build
     if not os.path.isdir(day_dir):
         _recover_canonical_day(backup_dir, day_dir, date_str)
-    tmp_dir = day_dir + ".partial"
-    # W2-009: if a prior build at this .partial path holds a COMPLETE
+    # W2-009: if the LEGACY fixed ``<day>.partial`` path holds a COMPLETE
     # generation (left behind by a double-failure publish, intentionally
     # preserved for manual recovery), do NOT destroy it. Rename it to a
     # unique recovered sibling first so the next export can run safely
     # without deleting the last known-good candidate.
-    if os.path.isdir(tmp_dir) and _has_complete_marker(tmp_dir):
+    legacy_tmp = day_dir + ".partial"
+    if os.path.isdir(legacy_tmp) and _has_complete_marker(legacy_tmp):
         recovered = f"{day_dir}.recovered-{_gen_suffix()}"
         try:
-            os.rename(tmp_dir, recovered)
+            os.rename(legacy_tmp, recovered)
         except OSError:
             # cannot even preserve it: do NOT then rmtree it away
             logger.error(
                 "portable backup: COMPLETE recovery generation at %s could "
                 "not be preserved; aborting new export rather than destroy it",
-                tmp_dir)
+                legacy_tmp)
             raise
-    shutil.rmtree(tmp_dir, ignore_errors=True)
+    # W2-002: an INCOMPLETE legacy scratch tree is no longer the construction
+    # root, so a survivor can never be merged into a new generation. Remove it
+    # best-effort (and loudly if it survives) rather than silently trusting
+    # ``rmtree(ignore_errors=True)`` to have emptied a path we then rebuilt in.
+    if os.path.isdir(legacy_tmp):
+        _discard_incomplete_scratch(legacy_tmp)
+
+    # W2-002: build in a FRESH per-generation root — empty by construction, so
+    # stale files from a failed generation can never be published inside a tree
+    # carrying a new ``_COMPLETE`` marker. If this cannot be created, nothing
+    # has been written yet and the canonical day dir is left untouched.
+    tmp_dir = _alloc_scratch_root(day_dir)
 
     cats = data.get("cats_order", []) or []
     # One collision-free filesystem component per logical project name,
@@ -343,7 +536,8 @@ def _do_export(data: dict, profile_id=1) -> None:
     categories = data.get("categories", {})
 
     try:
-        os.makedirs(tmp_dir, exist_ok=True)
+        # ``tmp_dir`` was created fresh and empty by ``_alloc_scratch_root``
+        # (W2-002): only this generation's own artifacts ever land beneath it.
 
         # 1. Silos — EVERY project, not just the open one.
         silos_dir = os.path.join(tmp_dir, "silos")
@@ -402,7 +596,9 @@ def _do_export(data: dict, profile_id=1) -> None:
         _write_raw(os.path.join(tmp_dir, _COMPLETE_MARKER),
                    f"complete {time.strftime('%Y-%m-%dT%H:%M:%S')}\n")
     except Exception:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
+        # W2-002: best-effort, but never silent — and never a path a later
+        # export could adopt, because each generation gets its own scratch root.
+        _discard_incomplete_scratch(tmp_dir)
         raise
 
     # Publish with rollback: the old day_dir is the last known-good snapshot
@@ -458,10 +654,10 @@ def _publish_snapshot(tmp_dir, day_dir):
             # The previous generation could not be put back. The failed NEW
             # generation must NEVER be destroyed here: it is a complete,
             # recoverable snapshot. It is preserved under a UNIQUE
-            # ``.failed-<suffix>`` name — never the ``.partial`` temp path,
-            # which is the SAME path the new generation was just built at
-            # (rmtree on it would delete the new generation itself, and a
-            # second failure would then have nothing left to rename).
+            # ``.failed-<suffix>`` name — never the scratch path, which is
+            # where the new generation was just built (rmtree on it would
+            # delete the new generation itself, and a second failure would
+            # then have nothing left to rename).
             failed = f"{day_dir}.failed-{_gen_suffix()}"
             try:
                 os.rename(tmp_dir, failed)
@@ -469,9 +665,9 @@ def _publish_snapshot(tmp_dir, day_dir):
                 # Last resort: the rename failed AND the restore failed. The
                 # COMPLETE generation under tmp_dir must still survive — it
                 # is the only new snapshot that exists. Leaving it in place
-                # costs nothing (the next export removes the .partial dir
-                # before rebuilding) and deleting it would destroy the only
-                # complete recovery copy. Log both recovery paths loudly so
+                # costs nothing (each generation gets its OWN fresh scratch
+                # root, so a survivor is never reused) and deleting it would
+                # destroy the only complete recovery copy. Log both recovery paths loudly so
                 # a human can rescue them (P1-7).
                 logger.error(
                     "portable backup publish: could not restore the old "
@@ -482,8 +678,8 @@ def _publish_snapshot(tmp_dir, day_dir):
                     rollback, failed, exc, tmp_dir, rollback)
         else:
             # The previous generation was restored to day_dir, but the NEW
-            # one failed to publish. It is a COMPLETE snapshot (the .partial
-            # path held a finished build) — deleting it would destroy the
+            # one failed to publish. It is a COMPLETE snapshot (the scratch
+            # root held a finished build) — deleting it would destroy the
             # user's newest state on a transient volume error. Preserve it
             # under a unique ``.failed-<suffix>`` name (P1-6).
             failed = f"{day_dir}.failed-{_gen_suffix()}"
@@ -547,8 +743,76 @@ def _is_valid_complete_generation(directory: str) -> bool:
         return False
 
 
+_GEN_LOCK = threading.Lock()
+_GEN_LAST_NS = 0
+
+
+def _new_generation_identity() -> tuple:
+    """``(generation_ns, generation_id)`` for a manifest being written.
+
+    W2-003: ``generation_ns`` is the orderable, finer-than-second identity
+    recovery sorts by; ``generation_id`` is a collision-resistant label so two
+    generations can still be told apart when a clock cannot (a manifest is
+    copied, the clock is corrected backwards).
+
+    The stamp is STRICTLY increasing in-process: Windows' clock resolution can
+    hand two consecutive ``time.time_ns()`` calls the identical value (measured
+    on the W2-003 regression), which would leave recovery ordering those two
+    generations by the random id. A monotonic bump keeps the persisted
+    chronology total without pretending a precision the platform lacks.
+    """
+    global _GEN_LAST_NS
+    with _GEN_LOCK:
+        ns = time.time_ns()
+        if ns <= _GEN_LAST_NS:
+            ns = _GEN_LAST_NS + 1
+        _GEN_LAST_NS = ns
+    return ns, _gen_suffix() + _gen_suffix()
+
+
+def _generation_time_ns(meta: dict):
+    """Absolute generation time in UTC nanoseconds, or None when unknown.
+
+    W2-003: a manifest's ``exported_at`` has ONE-SECOND resolution, so two
+    complete generations created within the same second are indistinguishable
+    to it — and the random UUID suffix carries no chronology at all. Every
+    generation therefore persists ``generation_ns`` (``time.time_ns()``) plus
+    a collision-resistant ``generation_id``, and recovery orders primarily by
+    that field. A legacy manifest without it falls back to the second-
+    resolution stamp, converted to the same nanosecond unit so a genuinely
+    newer legacy generation still wins; an unparsable/absent stamp is unknown
+    (``None``) rather than silently treated as oldest.
+    """
+    ns = meta.get("generation_ns")
+    if isinstance(ns, bool):
+        ns = None
+    if isinstance(ns, int):
+        return ns
+    if isinstance(ns, str) and ns.strip().isdigit():
+        return int(ns.strip())
+    stamp = meta.get("exported_at")
+    if isinstance(stamp, str) and stamp:
+        try:
+            return int(time.mktime(
+                time.strptime(stamp, "%Y-%m-%dT%H:%M:%S"))) * 1_000_000_000
+        except (ValueError, OverflowError, OSError):
+            return None
+    return None
+
+
 def _recover_canonical_day(backup_root: str, day_dir: str, date_str: str) -> None:
-    """If canonical day_dir is missing, promote best complete sibling (W2-001)."""
+    """If canonical day_dir is missing, promote the best complete sibling.
+
+    W2-003: promotion must be REPEATABLE. Selection is a total order over an
+    absolute generation time (``generation_ns``, or the legacy second-
+    resolution ``exported_at`` in the same unit) — never ``os.listdir()``
+    order. Fail-closed: when the newest generation time is shared, or any
+    candidate's time is unknown, nothing is promoted and every candidate is
+    left on disk for manual recovery. Refusing here cannot lose data: a
+    backup export that found no canonical day simply builds a fresh
+    generation, and retention preserves the siblings until a validated
+    canonical exists for the date.
+    """
     if os.path.isdir(day_dir):
         return
     try:
@@ -556,12 +820,12 @@ def _recover_canonical_day(backup_root: str, day_dir: str, date_str: str) -> Non
     except OSError:
         return
     candidates = []
-    prefix = date_str + "."
+    unknown = []
     for e in entries:
-        if not e.startswith(prefix):
-            continue
-        # only recognized sibling types
-        if not (e.startswith(date_str + ".rollback-") or e.startswith(date_str + ".failed-") or e.startswith(date_str + ".recovered-") or e == date_str + ".partial"):
+        # W2-002: ONE grammar, so a complete generation left in either the
+        # legacy ``.partial`` or a per-generation ``.partial-<gen>`` scratch
+        # root is still recoverable — an unrelated directory is not.
+        if _backup_sibling_kind(e, date_str) is None:
             continue
         cand = os.path.join(backup_root, e)
         if not os.path.isdir(cand) or not _has_complete_marker(cand):
@@ -575,15 +839,41 @@ def _recover_canonical_day(backup_root: str, day_dir: str, date_str: str) -> Non
                 j = json.load(f)
             if not isinstance(j, dict) or not j.get("complete"):
                 continue
-            exported = j.get("exported_at", "")
+            ns = _generation_time_ns(j)
         except Exception:
             continue
-        candidates.append((exported, cand))
+        if ns is None:
+            unknown.append(cand)
+        else:
+            candidates.append((ns, cand))
     if not candidates:
+        if unknown:
+            logger.error(
+                "portable backup: %d complete generation(s) for %s carry no "
+                "orderable generation identity; refusing automatic promotion "
+                "(preserved for manual recovery): %s",
+                len(unknown), date_str, unknown)
         return
-    # pick latest exported_at
-    candidates.sort(key=lambda x: x[0], reverse=True)
-    best = candidates[0][1]
+    if unknown:
+        # A candidate whose time is unknown could be the newest one; choosing
+        # any of the known ones could therefore discard newer state.
+        logger.error(
+            "portable backup: refusing automatic promotion for %s: %d "
+            "generation(s) have no orderable generation identity: %s",
+            date_str, len(unknown), unknown)
+        return
+    best_ns = max(ns for ns, _cand in candidates)
+    newest = [cand for ns, cand in candidates if ns == best_ns]
+    if len(newest) > 1:
+        # An exact identity tie: enumerating the filesystem must never decide
+        # which generation state survives.
+        logger.error(
+            "portable backup: refusing automatic promotion for %s: %d "
+            "complete generations share the newest identity %s; recover "
+            "manually from %s",
+            date_str, len(newest), best_ns, sorted(newest))
+        return
+    best = newest[0]
     try:
         os.rename(best, day_dir)
         logger.info("portable backup: recovered canonical day from %s", best)
@@ -593,8 +883,14 @@ def _recover_canonical_day(backup_root: str, day_dir: str, date_str: str) -> Non
 
 def _write_manifest(tmp_dir, data, cats, categories):
     meta_path = os.path.join(tmp_dir, "_meta.json")
+    # W2-003: ``exported_at`` stays for humans; recovery orders by the
+    # orderable generation identity persisted alongside it. Both are computed
+    # ONCE here so the manifest is internally consistent.
+    generation_ns, generation_id = _new_generation_identity()
     _write_raw(meta_path, json.dumps({
         "exported_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "generation_ns": generation_ns,
+        "generation_id": generation_id,
         "complete": True,
         # counted over every project, like the export itself
         "silo_count": sum(
@@ -646,6 +942,37 @@ def _write_raw(path: str, content: str) -> None:
 _RECOVERY_SUFFIXES = ("failed", "rollback", "recovered")
 
 
+# W2-002: how many fresh scratch names to try before giving up. Every attempt
+# CREATES a new directory, so a collision is only ever a stale name.
+_SCRATCH_ATTEMPTS = 8
+
+
+def _backup_sibling_kind(entry: str, date_str: str):
+    """Kind of a recognised ``date_str`` day sibling, or None when unrelated.
+
+    ONE grammar shared by canonical recovery and retention (W2-002/W2-006):
+
+    * ``""``        — the canonical day itself;
+    * ``"partial"`` — transient scratch, either the legacy fixed
+      ``<day>.partial`` or the per-generation ``<day>.partial-<generation>``;
+    * one of ``_RECOVERY_SUFFIXES`` — a complete recoverable generation left
+      by ``_publish_snapshot``'s rollback-safe multi-rename.
+
+    Anything else is outside the grammar and must be left alone.
+    """
+    if entry == date_str:
+        return ""
+    if not entry.startswith(date_str + "."):
+        return None
+    suffix = entry[len(date_str) + 1:]
+    if suffix == "partial" or suffix.startswith("partial-"):
+        return "partial"
+    for kind in _RECOVERY_SUFFIXES:
+        if suffix.startswith(kind + "-"):
+            return kind
+    return None
+
+
 def _cleanup_old_backups(backup_dir: str, max_days: int = 7) -> None:
     """Remove day directories older than max_days.
 
@@ -653,7 +980,8 @@ def _cleanup_old_backups(backup_dir: str, max_days: int = 7) -> None:
     canonical ``YYYY-MM-DD`` day dir follows normal retention. The first-class
     complete generations ``YYYY-MM-DD.failed-<s>``, ``.rollback-<s>`` and
     ``.recovered-<s>`` are pruned only when a safe canonical generation for the
-    same date exists (or, for ``.partial`` temps, always when old) — an old
+    same date exists (or, for scratch temps — legacy ``.partial`` or
+    per-generation ``.partial-<gen>`` — always when old) — an old
     suffix that is the ONLY valid backup is preserved, never blindly deleted.
     Unrelated digit-prefixed directories outside this grammar are left alone.
     """
@@ -661,8 +989,9 @@ def _cleanup_old_backups(backup_dir: str, max_days: int = 7) -> None:
         now = time.time()
         entries = os.listdir(backup_dir)
         # Parse every candidate once. A date dir may be the canonical day, a
-        # recognised recovery generation, a transient ``.partial`` build dir,
-        # or unrelated — only the first three are touched here.
+        # recognised recovery generation, a transient scratch build dir
+        # (legacy ``.partial`` or per-generation ``.partial-<gen>``), or
+        # unrelated — only the first three are touched here.
         parsed = []          # (entry, entry_path, date_str, suffix_or_None)
         canonical_days = set()
         for entry in entries:
@@ -672,14 +1001,12 @@ def _cleanup_old_backups(backup_dir: str, max_days: int = 7) -> None:
             date_str = entry
             suffix = None
             if "." in entry:
-                cand, _, suf = entry.partition(".")
-                if suf.startswith(_RECOVERY_SUFFIXES):
-                    date_str, suffix = cand, suf
-                elif suf == "partial":
-                    date_str, suffix = cand, "partial"
-                else:
+                cand, _, _suf = entry.partition(".")
+                kind = _backup_sibling_kind(entry, cand)
+                if kind is None:
                     # unrelated digit-prefixed dir outside the grammar
                     continue
+                date_str, suffix = cand, kind or None
             try:
                 dir_time = time.mktime(time.strptime(date_str, "%Y-%m-%d"))
             except (ValueError, OSError):
@@ -713,12 +1040,14 @@ def _cleanup_old_backups(backup_dir: str, max_days: int = 7) -> None:
             if not old:
                 continue
             if suffix == "partial":
-                # W2-001: check if it is a complete recovery generation left behind
-                # by a publish failure. If valid and canonical day is missing, preserve it.
+                # W2-001/W2-002: a scratch tree may be a complete recovery
+                # generation left behind by a publish failure (legacy fixed
+                # ``.partial`` or per-generation ``.partial-<gen>``). If valid
+                # and the canonical day is missing, preserve it.
                 if _is_valid_complete_generation(entry_path) and date_str not in canonical_days:
                     logger.info(
-                        "portable backup: kept old complete .partial generation %s "
-                        "(canonical day %s missing)", entry, date_str)
+                        "portable backup: kept old complete scratch generation "
+                        "%s (canonical day %s missing)", entry, date_str)
                     continue
                 # incomplete transient build dir or canonical already exists: bound disk growth
                 shutil.rmtree(entry_path, ignore_errors=True)

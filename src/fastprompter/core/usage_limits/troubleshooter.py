@@ -37,6 +37,9 @@ from fastprompter.core.usage_limits.providers import (
     codex as codex_prov,
 )
 from fastprompter.core.usage_limits.providers import (
+    freebuff as freebuff_prov,
+)
+from fastprompter.core.usage_limits.providers import (
     zcode as zcode_prov,
 )
 
@@ -47,6 +50,7 @@ VENDOR_TITLES = {
     "claude": "Claude Code (Anthropic)",
     "antigravity": "Antigravity (Google)",
     "zcode": "ZCode (GLM Coding Plan)",
+    "freebuff": "Freebuff (Freebucks)",
 }
 
 
@@ -63,6 +67,8 @@ def diagnose_vendor(vendor: str, data: dict | None = None) -> dict[str, Any]:
         return _diagnose_antigravity(title, data)
     elif vendor == "zcode":
         return _diagnose_zcode(title, data)
+    elif vendor == "freebuff":
+        return _diagnose_freebuff(title, data)
     else:
         return {
             "vendor": vendor,
@@ -136,6 +142,18 @@ def _diagnose_claude(title: str, data: dict) -> dict[str, Any]:
     except Exception as exc:
         status = {"cli_installed": False, "bridge_connected": False, "error": str(exc)}
 
+    # Multi-account: each CLAUDE_CONFIG_DIR is its own login. Reported as
+    # detail rather than as a verdict — a second home that is not connected to
+    # the status line is still read fine through the CLI, so it is not a fault.
+    extra = [h.strip() for h in
+             str(data.get("limit_claude_homes", "") or "").split(",")
+             if h.strip()]
+    try:
+        homes = claude_prov.homes_status(extra)
+    except Exception:
+        homes = []
+    status["homes"] = homes
+
     try:
         from fastprompter.core.usage_limits.claude_statusline import bridge_status
         b_stat = bridge_status()
@@ -163,9 +181,13 @@ def _diagnose_claude(title: str, data: dict) -> dict[str, Any]:
     elif b_connected and b_cache:
         status_code = "ready"
         summary = "Ready · status-line active"
+        if len(homes) > 1:
+            summary += f" · {len(homes)} accounts"
     elif cli_ok and (status.get("desktop_windows") or b_connected):
         status_code = "ready"
         summary = "Ready · CLI & sampler active"
+        if len(homes) > 1:
+            summary += f" · {len(homes)} accounts"
     elif cli_ok:
         status_code = "needs_connect"
         summary = "CLI installed · bridge disconnected"
@@ -206,6 +228,7 @@ def _diagnose_antigravity(title: str, data: dict) -> dict[str, Any]:
 
     app_installed = status.get("installed", False)
     cli_installed = status.get("cli_installed", False)
+    cli_authenticated = status.get("cli_authenticated", False)
     candidates = status.get("candidate_dirs", [])
 
     issues = []
@@ -229,17 +252,28 @@ def _diagnose_antigravity(title: str, data: dict) -> dict[str, Any]:
         issues.append("Antigravity CLI (agy) is not installed. Without it, only 429 rate limit refusals are readable, not exact percentages.")
         recommendations.append("Install Antigravity CLI (agy) for exact quota percentages.")
         manual_actions.append({"action": "install", "label": "Install Antigravity CLI (agy)", "key": "antigravity"})
+    elif not cli_authenticated:
+        status_code = "needs_login"
+        summary = "CLI installed · not logged in"
+        issues.append(
+            "Antigravity CLI (agy) is installed, but no active login session was found. "
+            "To prevent unexpected browser popups, FastPrompter will not probe it until authenticated."
+        )
+        recommendations.append(
+            "Click 'Log in to Antigravity…' to open the console and sign in with your Google account."
+        )
+        manual_actions.append({"action": "login", "label": "Log in to Antigravity…", "key": "antigravity"})
     else:
         status_code = "ready"
         summary = "Ready · CLI installed"
 
-    ready = app_installed
+    ready = app_installed and (not cli_installed or cli_authenticated)
 
     return {
         "vendor": "antigravity",
         "title": title,
         "installed": app_installed or cli_installed,
-        "authenticated": app_installed,
+        "authenticated": (app_installed and not cli_installed) or cli_authenticated,
         "ready": ready,
         "status_code": status_code,
         "summary": summary,
@@ -307,6 +341,60 @@ def _diagnose_zcode(title: str, data: dict) -> dict[str, Any]:
         "issues": issues,
         "recommendations": recommendations,
         "auto_heals_available": auto_heals,
+        "manual_actions": manual_actions,
+        "details": status,
+    }
+
+
+def _diagnose_freebuff(title: str, data: dict) -> dict[str, Any]:
+    state_path = str(data.get("limit_freebuff_state", "") or "").strip()
+    enabled = str(data.get("limit_freebuff_enabled", "False")) == "True"
+    try:
+        status = freebuff_prov.source_status(state_path or None, enabled=enabled)
+    except Exception as exc:
+        status = {"state_found": False, "signed_in": False, "error": str(exc)}
+
+    state_found = status.get("state_found", False)
+    signed_in = status.get("signed_in", False)
+    issues = []
+    recommendations = []
+    manual_actions = []
+
+    if not state_found:
+        status_code = "no_state"
+        summary = "Freebuff Desktop state not found"
+        issues.append("Freebuff Desktop's own state file was not found; "
+                      "install and sign in to Freebuff Desktop first.")
+    elif signed_in and not enabled:
+        status_code = "disabled_with_account"
+        summary = "Freebuff account detected · disabled"
+        issues.append("A signed-in Freebuff account was detected, but reading "
+                      "Freebuff limits is disabled.")
+        recommendations.append("Enable Freebuff limits to begin monitoring "
+                               "the daily Freebucks pool.")
+        manual_actions.append({"action": "enable_freebuff",
+                               "label": "Enable detected Freebuff account",
+                               "key": "freebuff"})
+    elif not signed_in:
+        status_code = "not_signed_in"
+        summary = "Freebuff Desktop present · not signed in"
+        issues.append("Freebuff Desktop is installed but not signed in.")
+        recommendations.append("Sign in inside Freebuff Desktop.")
+    else:
+        status_code = "ready"
+        summary = "Ready · signed-in account"
+
+    return {
+        "vendor": "freebuff",
+        "title": title,
+        "installed": state_found,
+        "authenticated": signed_in,
+        "ready": state_found and signed_in and enabled,
+        "status_code": status_code,
+        "summary": summary,
+        "issues": issues,
+        "recommendations": recommendations,
+        "auto_heals_available": [],
         "manual_actions": manual_actions,
         "details": status,
     }
@@ -409,6 +497,11 @@ def auto_heal_all(data: dict, service: Any = None) -> dict[str, Any]:
 def launch_vendor_login(vendor: str) -> None:
     """Launch interactive console login for the given vendor."""
     cli_tools.launch_login(vendor)
+    if vendor == "antigravity":
+        # Clear only after the console was actually started.  A launch failure
+        # must not make background refresh retry the rejected token.
+        from fastprompter.core.usage_limits.providers import _antigravity_cli
+        _antigravity_cli.clear_rejected_auth()
 
 
 def launch_vendor_install(vendor: str) -> None:

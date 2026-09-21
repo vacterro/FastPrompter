@@ -31,6 +31,10 @@ from fastprompter.core.usage_limits.model import (
     OK,
     STALE,
     UsageWindow,
+    account_has_usage,
+    account_usable_now,
+    display_windows,
+    reserve_advice,
     resolved_windows,
 )
 from fastprompter.ui.limit_account_selector import (
@@ -38,7 +42,7 @@ from fastprompter.ui.limit_account_selector import (
     hidden_account_keys,
     ordered_accounts,
 )
-from fastprompter.ui.limit_colors import limit_palette
+from fastprompter.ui.limit_colors import limit_palette, reset_color
 from fastprompter.ui.limit_gauges import _win_label
 from fastprompter.utils.fonts import no_aa
 
@@ -70,10 +74,27 @@ class LimitOverview(QWidget):
         self.refresh()
 
     # -- data ------------------------------------------------------------
+    def _hide_unusable(self) -> bool:
+        """The "show only accounts usable right now" toggle (5h available)."""
+        return str(self.main_win.data.get(
+            "limit_gauges_hide_unusable_5h", "False")) == "True"
+
     def _accounts(self):
         hidden = hidden_account_keys(self.main_win.data)
-        shown = [a for a in self._service.state_copy.accounts
-                 if a.key not in hidden]
+        hide_zero = str(self.main_win.data.get(
+            "limit_gauges_hide_zero_usage", "False")) == "True"
+        hide_unusable = self._hide_unusable()
+        snap = self._service.state_copy
+        shown = []
+        for a in snap.accounts:
+            if a.key in hidden:
+                continue
+            if hide_zero and not account_has_usage(snap.snapshots.get(a.key)):
+                continue
+            if hide_unusable and not account_usable_now(
+                    snap.snapshots.get(a.key)):
+                continue
+            shown.append(a)
         return ordered_accounts(shown, self.main_win.data)
 
     def refresh(self):
@@ -101,21 +122,35 @@ class LimitOverview(QWidget):
                              f"{shot.status.lower()} — "
                              f"{shot.error_summary or 'no data'}", None))
                 continue
-            windows = [w for w in resolved_windows(shot.windows)
-                       if isinstance(w, UsageWindow)]
+            if self._hide_unusable():
+                windows = display_windows(shot.windows)
+            else:
+                windows = [w for w in resolved_windows(shot.windows)
+                           if isinstance(w, UsageWindow)]
             live = [w for w in windows if w.available]
+            if any(w.reset_pending for w in windows):
+                rows.append(("note", "Reset time passed; refresh to check current limits", None))
             if not live:
                 rows.append(("note", "no readable quota window", None))
             else:
-                # A pool heading is drawn once per independent quota group, so two
-                # "7 days" rows from different pools cannot be mistaken for one
-                # limit reported twice.
-                pool = None
+                # A pool heading is drawn exactly ONCE per independent quota
+                # group, so two "7 days" rows from different pools cannot be
+                # mistaken for one limit reported twice. Tracked as a set, not
+                # as "changed since the previous row": a snapshot that reaches
+                # the widget without the provider's pool-contiguous ordering
+                # must still not repeat a heading.
+                emitted: set[str] = set()
                 for window in live:
-                    if window.group_label and window.group_label != pool:
-                        pool = window.group_label
-                        rows.append(("pool", pool, shot))
+                    if window.group_label and window.group not in emitted:
+                        emitted.add(window.group)
+                        rows.append(("pool", window.group_label, shot))
                     rows.append(("window", window, shot))
+                # A proven named-model reserve that outlives the ordinary
+                # capacity is exactly the account the user should reach for,
+                # so it is stated as a recommendation instead of leaving the
+                # user to infer it from a second 0%/100% bar pair.
+                for advice in reserve_advice(shot):
+                    rows.append(("advice", advice, shot))
             if getattr(shot, "banked_resets", None):
                 b_count = shot.banked_resets
                 res_suffix = "s" if b_count != 1 else ""
@@ -123,7 +158,12 @@ class LimitOverview(QWidget):
                              f"★ {b_count} usage limit reset{res_suffix} available (/usage to redeem)",
                              shot))
         if not rows:
-            rows.append(("note", "No AI accounts detected", None))
+            hiding = (str(self.main_win.data.get(
+                "limit_gauges_hide_zero_usage", "False")) == "True"
+                or self._hide_unusable())
+            msg = ("All AI accounts hidden (0% usage or no usable 5h window)"
+                   if hiding else "No AI accounts detected")
+            rows.append(("note", msg, None))
         self._rows = rows
         self.setFixedHeight(self._content_height())
 
@@ -274,6 +314,9 @@ class LimitOverview(QWidget):
                 elif kind == "note":
                     self._paint_note(painter, pal, y, width, payload)
                     y += self.ROW_H
+                elif kind == "advice":
+                    self._paint_advice(painter, pal, y, width, payload)
+                    y += self.ROW_H
                 elif kind == "banked_resets":
                     self._paint_banked(painter, pal, y, width, payload)
                     y += self.ROW_H
@@ -306,7 +349,9 @@ class LimitOverview(QWidget):
         if banked:
             res_suffix = "s" if banked != 1 else ""
             title = f"{title} [{banked} banked reset{res_suffix}]"
-        painter.setPen(QPen(pal["good"], 1))
+        v_color = reset_color(self.main_win, getattr(account, "provider_id", ""))
+        pen_col = QColor(v_color) if v_color else pal["good"]
+        painter.setPen(QPen(pen_col, 1))
         painter.drawText(
             QRect(self.PAD, y, width - self.PAD * 2, self.HEADER_H),
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, title)
@@ -321,6 +366,16 @@ class LimitOverview(QWidget):
         painter.setPen(QPen(pal["light"], 1))
         bottom = y + self.HEADER_H - 1
         painter.drawLine(self.PAD, bottom, width - self.PAD, bottom)
+
+    def _paint_advice(self, painter, pal, y, width, text):
+        """One proven reserve that still permits work, stated as a hint."""
+        painter.setFont(self._font(10, bold=True))
+        painter.setPen(QPen(pal["good"], 1))
+        painter.drawText(
+            QRect(self.PAD + self.LABEL_W, y, width - self.PAD * 2 - self.LABEL_W,
+                  self.ROW_H),
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+            f"→ {text}")
 
     def _paint_note(self, painter, pal, y, width, text):
         painter.setFont(self._font(10))
@@ -401,12 +456,21 @@ class LimitOverview(QWidget):
         inks what is SPENT, so the same window reads ``76% used``. A bar and a
         caption that disagree about which end they describe is the one thing
         this panel must never do.
+
+        AMOUNT windows (Freebuff Freebucks) read in their own currency: the
+        vendor's exact numbers, never a naked percentage of an abstract budget.
         """
         drains = self._fill_mode() == "remaining"
         if window.gated_by:
             spent = "0% left" if drains else "100% used"
             return f"{spent} · blocked by {_win_label(window.gated_by)}"
-        if not isinstance(remaining, (int, float)):
+        unit = getattr(window, "unit", "") or ""
+        rem_amount = getattr(window, "remaining_amount", None)
+        limit_amount = getattr(window, "limit_amount", None)
+        if unit and isinstance(rem_amount, (int, float)) \
+                and isinstance(limit_amount, (int, float)):
+            value = f"{int(round(rem_amount))}/{int(round(limit_amount))} {unit}"
+        elif not isinstance(remaining, (int, float)):
             value = "--"
         elif drains:
             value = f"{int(round(remaining))}% left"

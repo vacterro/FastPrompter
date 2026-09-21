@@ -34,7 +34,7 @@ class TestCliToolsLogin(unittest.TestCase):
     def test_login_subcommands_defined(self):
         self.assertEqual(cli_tools.LOGIN_SUBCOMMANDS.get("codex"), "login")
         self.assertEqual(cli_tools.LOGIN_SUBCOMMANDS.get("claude"), "login")
-        self.assertEqual(cli_tools.LOGIN_SUBCOMMANDS.get("antigravity"), "auth login")
+        self.assertEqual(cli_tools.LOGIN_SUBCOMMANDS.get("antigravity"), "")
 
     def test_launch_login_missing_binary_raises(self):
         with patch.object(cli_tools, "resolve_binary", return_value=""):
@@ -52,14 +52,27 @@ class TestCliToolsLogin(unittest.TestCase):
                     self.assertTrue(any("C:\\bin\\codex.exe" in a for a in args))
                     self.assertTrue(any("login" in a for a in args))
 
+    def test_launch_login_antigravity_spawns_console(self):
+        with patch.object(cli_tools, "resolve_binary", return_value=r"C:\bin\agy.exe"):
+            with patch.object(cli_tools.os, "name", "nt"):
+                with patch("subprocess.Popen") as mock_popen:
+                    cli_tools.launch_login("antigravity")
+                    self.assertTrue(mock_popen.called)
+                    args = mock_popen.call_args[0][0]
+                    self.assertIn("-NoExit", args)
+                    cmd_str = " ".join(args)
+                    self.assertIn("Antigravity CLI Login", cmd_str)
+                    self.assertIn("C:\\bin\\agy.exe", cmd_str)
+
 
 class TestCodexSourceStatus(unittest.TestCase):
     def test_codex_source_status_no_auth(self, tmp_path=None):
-        with patch.object(codex_prov, "_home_dir", return_value=None):
-            with patch("fastprompter.core.usage_limits.cli_tools.resolve_binary", return_value=""):
-                status = codex_prov.source_status()
-                self.assertFalse(status["auth_found"])
-                self.assertFalse(status["cli_installed"])
+        with patch.dict(os.environ, {"CODEX_HOME": ""}):
+            with patch.object(codex_prov, "_home_dir", return_value=None):
+                with patch("fastprompter.core.usage_limits.cli_tools.resolve_binary", return_value=""):
+                    status = codex_prov.source_status()
+                    self.assertFalse(status["auth_found"])
+                    self.assertFalse(status["cli_installed"])
 
     def test_codex_source_status_with_auth(self, tmp_path=None):
         import tempfile
@@ -70,13 +83,14 @@ class TestCodexSourceStatus(unittest.TestCase):
             codex_dir.mkdir()
             (codex_dir / "auth.json").write_text('{"token": "test"}', encoding="utf-8")
 
-            with patch.object(codex_prov, "_home_dir", return_value=home):
-                with patch("fastprompter.core.usage_limits.cli_tools.resolve_binary", return_value="/bin/codex"):
-                    status = codex_prov.source_status()
-                    self.assertTrue(status["auth_found"])
-                    self.assertTrue(status["logged_in"])
-                    self.assertTrue(status["cli_installed"])
-                    self.assertEqual(len(status["homes"]), 1)
+            with patch.dict(os.environ, {"CODEX_HOME": ""}):
+                with patch.object(codex_prov, "_home_dir", return_value=home):
+                    with patch("fastprompter.core.usage_limits.cli_tools.resolve_binary", return_value="/bin/codex"):
+                        status = codex_prov.source_status()
+                        self.assertTrue(status["auth_found"])
+                        self.assertTrue(status["logged_in"])
+                        self.assertTrue(status["cli_installed"])
+                        self.assertEqual(len(status["homes"]), 1)
 
 
 class TestCandidatePaths(unittest.TestCase):
@@ -136,6 +150,20 @@ class TestTroubleshooterDiagnosis(unittest.TestCase):
             diag = troubleshooter.diagnose_vendor("zcode", {"limit_zcode_enabled": "False"})
             self.assertEqual(diag["status_code"], "disabled_with_plans")
             self.assertIn("enable_zcode", diag["auto_heals_available"])
+
+    def test_diagnose_antigravity_needs_login(self):
+        with patch.object(agy_prov, "source_status", return_value={
+            "installed": True,
+            "cli_installed": True,
+            "cli_authenticated": False,
+            "data_dir": "C:/fake",
+            "candidate_dirs": [],
+        }):
+            diag = troubleshooter.diagnose_vendor("antigravity")
+            self.assertEqual(diag["status_code"], "needs_login")
+            self.assertFalse(diag["ready"])
+            self.assertEqual(len(diag["manual_actions"]), 1)
+            self.assertEqual(diag["manual_actions"][0]["action"], "login")
 
     def test_diagnose_all(self):
         res = troubleshooter.diagnose_all()
@@ -270,4 +298,3 @@ class TestLimitSettingsDialogTroubleshootingUI(unittest.TestCase):
             dlg._run_auto_troubleshoot()
             self.assertTrue(mock_heal.called)
             self.assertIn("Auto-heal: 1 fix(es)", dlg.lbl_troubleshoot_status.text())
-

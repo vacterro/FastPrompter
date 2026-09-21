@@ -29,24 +29,53 @@ class EdgeResizer(QWidget):
         self.target_rect = None
 
         if edge in ("left", "right"):
-            self.setCursor(Qt.CursorShape.SizeHorCursor)
+            self._resize_cursor = Qt.CursorShape.SizeHorCursor
         elif edge in ("top", "bottom"):
-            self.setCursor(Qt.CursorShape.SizeVerCursor)
+            self._resize_cursor = Qt.CursorShape.SizeVerCursor
         elif edge in ("topleft", "bottomright"):
-            self.setCursor(Qt.CursorShape.SizeFDiagCursor)
+            self._resize_cursor = Qt.CursorShape.SizeFDiagCursor
         elif edge in ("topright", "bottomleft"):
-            self.setCursor(Qt.CursorShape.SizeBDiagCursor)
+            self._resize_cursor = Qt.CursorShape.SizeBDiagCursor
+        else:
+            self._resize_cursor = Qt.CursorShape.ArrowCursor
+        self.setCursor(self._resize_cursor)
+
+    def _show_static_resize_cursor(self) -> None:
+        if _is_deleted(self.target):
+            return
+        apply_shape = getattr(self.target, "apply_static_cursor_shape", None)
+        if callable(apply_shape):
+            apply_shape(self._resize_cursor)
+
+    def _restore_static_cursor(self) -> None:
+        if _is_deleted(self.target):
+            return
+        apply_static = getattr(self.target, "apply_static_cursor", None)
+        if callable(apply_static):
+            apply_static()
+
+    def enterEvent(self, event) -> None:
+        self._show_static_resize_cursor()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event) -> None:
+        if not self.pressed:
+            self._restore_static_cursor()
+        super().leaveEvent(event)
 
     def mousePressEvent(self, event) -> None:
         if _is_deleted(self.target):
             return
         if event.button() == Qt.MouseButton.LeftButton:
+            self._show_static_resize_cursor()
             self.pressed = True
             self.mouse_start = event.globalPosition().toPoint()
             self.target_rect = self.target.geometry()
 
     def mouseReleaseEvent(self, event) -> None:
         self.pressed = False
+        if not self.rect().contains(event.position().toPoint()):
+            self._restore_static_cursor()
 
     def mouseMoveEvent(self, event) -> None:
         if not self.pressed or _is_deleted(self.target):

@@ -272,7 +272,8 @@ def _forward_original(raw: bytes, directory: Path) -> int:
         command = original.get("command") if isinstance(original, dict) else None
         if not command or BRIDGE_ARG in str(command):
             return 0
-        result = subprocess.run(str(command), input=raw, shell=True,
+        # Preserve the user's explicitly installed shell statusline command.
+        result = subprocess.run(str(command), input=raw, shell=True,  # nosec B602 - local user-authored hook, not provider output
                                 stdout=subprocess.PIPE,
                                 stderr=subprocess.DEVNULL, timeout=5,
                                 check=False)

@@ -597,27 +597,46 @@ class TestCodexBankedResets:
 
 
 class TestClaudeSingleAccount:
-    """One Claude installation must never become two accounts."""
+    """One Claude installation must never become two accounts.
 
-    def test_one_install_yields_one_account(self):
+    These measure the COLLAPSE RULE, so they run against a HOME this test
+    owns. They used to read the developer's real profile and assert a global
+    count of at most one -- which stopped meaning anything the moment a
+    machine legitimately grew a second Claude home (T-1266): the workstation
+    failed the suite for having exactly the configuration the product now
+    supports.
+    """
+
+    @staticmethod
+    def _one_install(tmp_path, monkeypatch):
+        """``~/.claude`` + ``~/.claude.json``: two faces, ONE installation."""
+        claude_dir = tmp_path / ".claude"
+        claude_dir.mkdir()
+        (claude_dir / "settings.json").write_text("{}", encoding="utf-8")
+        (tmp_path / ".claude.json").write_text("{}", encoding="utf-8")
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        monkeypatch.setenv("HOME", str(tmp_path))
+        return tmp_path
+
+    def test_one_install_yields_one_account(self, tmp_path, monkeypatch):
         from fastprompter.core.usage_limits.providers.claude import ClaudeProvider
+        self._one_install(tmp_path, monkeypatch)
         accounts = ClaudeProvider().discover_accounts()
-        assert len(accounts) <= 1
-        if accounts:
-            assert accounts[0].provider_id == "claude"
-            assert accounts[0].display_name == "Claude"
+        assert len(accounts) == 1
+        assert accounts[0].provider_id == "claude"
+        assert accounts[0].display_name == "Claude"
 
-    def test_secondary_paths_are_metadata_not_accounts(self):
+    def test_secondary_paths_are_metadata_not_accounts(self, tmp_path,
+                                                       monkeypatch):
         from fastprompter.core.usage_limits.providers.claude import (
+            ClaudeProvider,
             _discover_config_dirs,
         )
+        self._one_install(tmp_path, monkeypatch)
         found = _discover_config_dirs()
-        if len(found) > 1:
-            from fastprompter.core.usage_limits.providers.claude import (
-                ClaudeProvider,
-            )
-            acc = ClaudeProvider().discover_accounts()[0]
-            assert len(acc.metadata.get("other_paths", [])) == len(found) - 1
+        assert len(found) > 1
+        acc = ClaudeProvider().discover_accounts()[0]
+        assert len(acc.metadata.get("other_paths", [])) == len(found) - 1
 
 
 class TestClaudeStatuslineBridge:
@@ -745,11 +764,14 @@ class TestClaudeDesktopSampler:
         )
         now = 1_800_000_000.0
         path = self._history(tmp_path, [
-            {"t": (now - 3600) * 1000, "u": {"fh": 10, "sd": 5}},
-            {"t": (now - 300) * 1000, "u": {"fh": 61, "sd": 16}},
+            {"t": (now - 3600) * 1000, "org": "org-old",
+             "u": {"fh": 10, "sd": 5}},
+            {"t": (now - 300) * 1000, "org": " ORG-B ",
+             "u": {"fh": 61, "sd": 16}},
         ])
         usage = latest_usage(path=path, now=now)
         assert usage["windows"] == {FIVE_HOUR: 61.0, WEEKLY: 16.0}
+        assert usage["org"] == "org-b"
         assert usage["fresh"] is True
         assert 290 < usage["age_s"] < 310
 
@@ -1121,7 +1143,15 @@ class TestLimitNotifications:
         assert fired == 1   # once, not once per sweep
 
     def test_gradual_recovery_emits_exactly_one_reset_alert(self):
-        """CORE-002: 5 -> 10 -> 15 -> 20 -> 25% must not alert on every step."""
+        """CORE-002: 5 -> 10 -> 15 -> 20 -> 25% must not alert on every step.
+
+        Amended by the weekly-reset audit: only a CONFIRMED near-full refill
+        is a reset, and 25% is not near full — so the episode stays silent
+        (the reset_alerted latch still arms on the first climb, see the
+        60%-episode policy tests). The exactly-once contract that matters for
+        a genuine reset lives in test_reset_alert_needs_an_observed_cycle...
+        and the 100%-recovery case below.
+        """
         from fastprompter.core.usage_limits.notifications import (
             evaluate_limit_notifications,
             notification_key,
@@ -1138,7 +1168,27 @@ class TestLimitNotifications:
             alerts, state = evaluate_limit_notifications(
                 [account], {account.key: snap}, rules, state)
             resets += sum(1 for a in alerts if a.kind == "reset")
-        assert resets == 1, "exactly one reset alert for the whole recovery episode"
+        assert resets == 0, "a partial refill is not a reset announcement"
+
+    def test_gradual_recovery_to_full_emits_exactly_one_reset_alert(self):
+        """A climbing episode that reaches CONFIRMED (near full) notifies once."""
+        from fastprompter.core.usage_limits.notifications import (
+            evaluate_limit_notifications,
+            notification_key,
+        )
+        base = time.time() + 3600
+        account, _snap = self._fixture(remaining=5, reset=base)
+        key = notification_key(account.key, FIVE_HOUR)
+        rules = {key: {"enabled": "True", "threshold": 20,
+                       "reset_enabled": "True"}}
+        state = {}
+        resets = 0
+        for pct, step in ((5, 0), (40, 180), (95, 360), (100, 540), (100, 720)):
+            _acc, snap = self._fixture(remaining=pct, reset=base + step)
+            alerts, state = evaluate_limit_notifications(
+                [account], {account.key: snap}, rules, state)
+            resets += sum(1 for a in alerts if a.kind == "reset")
+        assert resets == 1, "exactly one reset alert for the whole episode"
 
     def test_gated_short_window_neither_alerts_nor_shows_quota(self):
         """Weekly 0% makes a reported-100% 5h window unusable, so it is 0."""
@@ -1186,22 +1236,17 @@ class TestLimitNotifications:
         assert gate_windows(windows) == windows
 
 
-class TestElapsedResetsRefillImmediately:
-    """A window whose own reset time passed is full — do not wait for a sweep.
+class TestElapsedResetsAwaitConfirmation:
+    """An elapsed reset requires fresh provider data before claiming capacity."""
 
-    The provider already told us when the window resets. Once that instant is
-    behind us the outcome is not in doubt, yet the gauge used to keep showing
-    the pre-reset number until the next 3-minute probe confirmed the obvious.
-    """
-
-    def test_a_passed_reset_reads_as_full(self):
+    def test_a_passed_reset_becomes_unknown(self):
         from fastprompter.core.usage_limits.model import apply_elapsed_resets
         now = 1_800_000_000.0
         windows = [UsageWindow(FIVE_HOUR, 300, True, 100, 0, now - 1)]
         out = apply_elapsed_resets(windows, now)
-        assert out[0].remaining_percent == 100.0
-        assert out[0].used_percent == 0.0
-        assert out[0].assumed_full is True
+        assert out[0].remaining_percent is None
+        assert out[0].used_percent is None
+        assert out[0].reset_pending is True
         # the elapsed timestamp is dropped: nothing may render "resets in -1s"
         assert out[0].resets_at_epoch is None
 
@@ -1233,8 +1278,8 @@ class TestElapsedResetsRefillImmediately:
         out = resolved_windows(windows, now)
         five = next(w for w in out if w.key == FIVE_HOUR)
         weekly = next(w for w in out if w.key == WEEKLY)
-        assert weekly.remaining_percent == 100.0
-        assert weekly.assumed_full is True
+        assert weekly.remaining_percent is None
+        assert weekly.reset_pending is True
         assert five.gated_by is None          # gate lifted, not inherited
         assert five.remaining_percent == 60   # its own number survives
 
@@ -1246,8 +1291,8 @@ class TestElapsedResetsRefillImmediately:
                    UsageWindow(WEEKLY, 10080, True, 100, 0, now + 86400)]
         out = resolved_windows(windows, now)
         five = next(w for w in out if w.key == FIVE_HOUR)
-        assert five.gated_by == WEEKLY
-        assert five.remaining_percent == 0.0
+        assert not five.available
+        assert five.remaining_percent is None
 
     def test_resolved_windows_is_reset_then_gate(self):
         """Order matters: refill first, then gate on what is still spent."""
@@ -1263,7 +1308,7 @@ class TestElapsedResetsRefillImmediately:
             gate_windows(apply_elapsed_resets(windows, now))
 
     def test_the_notifier_sees_the_refill_as_a_recovery(self):
-        """A reset the clock proved must fire the reset alert, once."""
+        """An elapsed clock alone must never play a recovery sound."""
         from fastprompter.core.usage_limits.notifications import (
             evaluate_limit_notifications,
             notification_key,
@@ -1288,7 +1333,7 @@ class TestElapsedResetsRefillImmediately:
                                  time.time() - 2)])
         alerts, state = evaluate_limit_notifications(
             [account], {account.key: elapsed}, rules, state)
-        assert [a.kind for a in alerts] == ["reset"]
+        assert alerts == []  # a clock is not proof of recovered quota
         alerts, _state = evaluate_limit_notifications(
             [account], {account.key: elapsed}, rules, state)
         assert alerts == []      # once, not on every sweep

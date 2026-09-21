@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import os
 import time
+from pathlib import Path
 
 from fastprompter.core.usage_limits.model import (
     OK,
@@ -164,25 +165,11 @@ class TestBrainRefusalParsing:
 
 
 class TestAntigravityCliPayload:
-    """The live payload shape, captured from agy 1.1.25."""
+    """Sanitized live Windows payload captured from agy 1.1.25."""
 
-    _PAYLOAD = {
-        "status": "SUCCESS",
-        "command": {"name": "usage", "data": {"groups": [
-            {"name": "Gemini Models", "buckets": [
-                {"id": "gemini-weekly", "window": "weekly",
-                 "remaining_fraction": 0.6814926862716675,
-                 "reset_time": "2026-09-08T20:06:36Z"},
-                {"id": "gemini-5h", "window": "5h",
-                 "remaining_fraction": 0.09602990001440048,
-                 "reset_time": "2026-09-03T12:41:31Z"}]},
-            {"name": "Claude and GPT models", "buckets": [
-                {"id": "3p-weekly", "window": "weekly",
-                 "remaining_fraction": 0,
-                 "reset_time": "2026-09-04T16:16:03Z"},
-                {"id": "3p-5h", "window": "5h", "disabled": True,
-                 "remaining_fraction": 1}]}]}},
-    }
+    _PAYLOAD = json.loads((
+        Path(__file__).parent / "fixtures" / "antigravity_usage_1_1_25.json"
+    ).read_text(encoding="utf-8"))
 
     def test_every_pool_and_window_survives(self):
         rows = _antigravity_cli.parse_usage_payload(self._PAYLOAD)
@@ -215,6 +202,31 @@ class TestAntigravityCliPayload:
         rows = _antigravity_cli.parse_usage_payload(self._PAYLOAD)
         gemini_5h = next(r for r in rows if r["key"] == "five_hour")
         assert abs(gemini_5h["remaining"] - 9.602990) < 0.001
+
+    def test_live_fixture_maps_to_provider_model_without_fabrication(
+            self, tmp_path, monkeypatch):
+        """The parser's numbers are the model's numbers, within UI rounding."""
+        (tmp_path / "brain").mkdir()
+        rows = _antigravity_cli.parse_usage_payload(self._PAYLOAD)
+        monkeypatch.setattr(
+            _antigravity_cli, "read_usage",
+            lambda *a, **k: {
+                "windows": rows,
+                "captured_at": 1788426000.0,
+                "source": "antigravity-cli-usage",
+            })
+        snap = AntigravityProvider(data_dir=str(tmp_path)).probe(
+            _account(tmp_path), time.monotonic() + 5)
+        gemini_5h = next(
+            w for w in snap.windows
+            if w.group == "gemini_models" and base_key(w.key) == "five_hour")
+        assert round(gemini_5h.remaining_percent) == 10
+        assert abs(gemini_5h.remaining_percent - 9.602990) < 0.001
+        disabled = next(
+            w for w in snap.windows
+            if w.group == "claude_and_gpt_models"
+            and base_key(w.key) == "five_hour")
+        assert disabled.remaining_percent == 0.0
 
     def test_iso_reset_becomes_an_epoch(self):
         import datetime
@@ -363,6 +375,19 @@ class TestAntigravityCliSnapshot:
         assert snap.window(QUOTA).remaining_percent == 0.0
         assert snap.provider_metadata["capability"] == "antigravity-refusals"
 
+    def test_expired_cli_auth_is_an_actionable_state_not_journal_noise(
+            self, tmp_path, monkeypatch):
+        (tmp_path / "brain").mkdir()
+        self._stub(monkeypatch, {"error": (
+            "cli_not_logged_in",
+            "Antigravity sign-in expired; explicit login required")})
+        snap = AntigravityProvider(data_dir=str(tmp_path)).probe(
+            _account(tmp_path), time.monotonic() + 5)
+        assert snap.status == "AUTH_REQUIRED"
+        assert snap.error_code == "cli_not_logged_in"
+        assert "login required" in snap.error_summary
+        assert all(not window.available for window in snap.windows)
+
 
 class TestAntigravityJournalFallback:
     def test_discovery_needs_a_real_directory(self, tmp_path):
@@ -422,8 +447,8 @@ class TestAntigravityJournalFallback:
             _account(tmp_path), time.monotonic() + 5)
         assert snap.status == OK
         window = resolved_windows(snap.windows, now)[0]
-        assert window.remaining_percent == 100.0
-        assert window.assumed_full is True
+        assert window.remaining_percent is None
+        assert window.reset_pending is True
 
     def test_an_expired_deadline_never_touches_the_disk(self, tmp_path):
         snap = _journal_provider(tmp_path).probe(

@@ -6,9 +6,9 @@ TimerToast must render no Snooze buttons when on_snooze is not callable.
 Owned persistent one-shots keep both.
 """
 
+import datetime
 import os
 import sys
-import datetime
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -116,8 +116,9 @@ def test_owned_one_shot_keeps_snooze_and_missed():
 
 
 def test_toast_renders_no_snooze_buttons_without_callback():
-    from fastprompter.ui.timer_toast import TimerToast, _SNOOZE_CHOICES
     from PyQt6.QtWidgets import QApplication, QPushButton
+
+    from fastprompter.ui.timer_toast import _SNOOZE_CHOICES, TimerToast
     _APP = QApplication.instance() or QApplication([])
 
     class Win:

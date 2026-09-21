@@ -25,7 +25,6 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import pytest
 from PyQt6.QtWidgets import QApplication
 
-import fastprompter.core.state as state_mod
 from fastprompter.main import FastPrompter
 
 _app = QApplication.instance() or QApplication([])
@@ -33,22 +32,10 @@ _tmpdir = tempfile.mkdtemp(prefix="fastprompter_orphan_")
 
 
 @pytest.fixture
-def win():
-    state_mod.get_db_path = lambda profile_id=1: os.path.join(_tmpdir, f"o_{profile_id}.db")
-    state_mod.run_portable_backup = lambda data, profile_id=1, **kw: None
-    FastPrompter.setup_single_instance_server = lambda self: None
-    FastPrompter.register_all_hotkeys = lambda self: None
-    FastPrompter.unregister_all_hotkeys = lambda self: None
-
-    w = FastPrompter()
-    w.resize(1400, 700)
-    w.show()
-    _app.processEvents()
+def win(smoke_win):
+    w = smoke_win.create(show=True, size=(1400, 700))
     yield w
-    svc = getattr(w, "limit_service", None)
-    if svc is not None:
-        svc.shutdown()
-    w.close()
+    smoke_win.retire(w)
 
 
 def _strays():
@@ -115,16 +102,31 @@ def test_ultra_tier_still_hides_configured_project_buttons(win):
     win._apply_header_density()
     assert win.btn_project_folder.isVisibleTo(header)
 
+    # the user's responsive policy is the authority: an explicit 'hide' at
+    # the small ranges cannot be overruled by the semantic owner re-asserting
+    # availability (the defect this test exists for)
+    from fastprompter.core.topbar_visibility import (
+        default_topbar_visibility,
+        normalize_topbar_visibility,
+    )
+    default_cfg = default_topbar_visibility()
+    cfg = normalize_topbar_visibility(default_cfg)
+    for token in ("btn_project_folder", "btn_project_run"):
+        for rid in ("narrow", "ultra"):
+            cfg["items"][token][rid] = "hide"
+    win.data["topbar_visibility"] = cfg
+
     win.resize(600, 700)
     win._header_dense = None
     win._header_ultra = None
     win._apply_header_density()
     assert not win.btn_project_folder.isVisibleTo(header)
 
-    # A silo switch inside the ultra tier must not bring them back.
+    # A silo switch inside the small range must not bring them back.
     win._update_project_buttons()
     assert not win.btn_project_folder.isVisibleTo(header)
 
+    win.data["topbar_visibility"] = default_cfg
     win.resize(1400, 700)
     win._header_dense = None
     win._header_ultra = None

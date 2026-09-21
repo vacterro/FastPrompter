@@ -13,6 +13,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import datetime  # noqa: E402
 
+import pytest  # noqa: E402
 from PyQt6.QtCore import (  # noqa: E402
     QDate,
     Qt,  # noqa: E402
@@ -86,6 +87,10 @@ class _FakeMain(QWidget):
 
     def save_timers_to_data(self):
         self.saved += 1
+        self.data["timers"] = [timer.to_dict() for timer in self.timers]
+
+    def mark_dirty(self, *_args):
+        self.dirty = True
 
     def _update_timer_label(self):
         self.label_updates += 1
@@ -185,7 +190,12 @@ def test_temp_tab_keeps_description_and_has_real_test_button():
 
 def test_calendar_add_edit_delete_event():
     d = _dlg()
-    sel = QDate(2026, 9, 15)
+    # A controlled FUTURE date: an enabled repeating event in the past is
+    # rolled forward by production _cal_commit, so a hardcoded calendar day
+    # (2026-09-15) silently rots into a different expectation as real time
+    # passes. Derive from today instead.
+    sel_date = datetime.date.today() + datetime.timedelta(days=40)
+    sel = QDate(sel_date.year, sel_date.month, sel_date.day)
     d.cal.setSelectedDate(sel)
     d.cal_name.setText("Standup")
     d.cal_time.setTime(QTime(9, 30))
@@ -195,8 +205,9 @@ def test_calendar_add_edit_delete_event():
     assert len(cal) == 1
     assert cal[0].name == "Standup"
     assert cal[0].repeat == REPEAT_MONTHLY
-    assert cal[0].repeat_anchor == "2026-09-15"
-    assert cal[0].target == datetime.datetime(2026, 9, 15, 9, 30, 0)
+    assert cal[0].repeat_anchor == sel_date.isoformat()
+    assert cal[0].target == datetime.datetime(
+        sel_date.year, sel_date.month, sel_date.day, 9, 30, 0)
     eid = cal[0].id
     d._cal_editing_id = eid
     d.cal_name.setText("Standup v2")
@@ -385,7 +396,10 @@ def test_alarm_list_isolated_from_calendar_events():
     d.in_name.setText("Alarm A")
     d.in_when.setText("06:00")
     d.commit()
-    d.cal.setSelectedDate(QDate(2026, 9, 15))
+    # Future date so production past-normalization never rewrites the event;
+    # a hardcoded day rots as real calendar time advances.
+    sel_date = datetime.date.today() + datetime.timedelta(days=40)
+    d.cal.setSelectedDate(QDate(sel_date.year, sel_date.month, sel_date.day))
     d.cal_name.setText("Cal B")
     d.cal_time.setTime(QTime(9, 0))
     d._cal_commit()
@@ -639,7 +653,8 @@ def test_interval_alarm_name_only_edit_preserves_period_and_reset():
     d.refresh()
     _select_alarm(d, alarm.id)
     d.edit_selected()
-    assert d.spin_limit_hours.value() == 1.5       # period synced into the spin
+    assert not hasattr(d, "spin_interval_hours")
+    assert d._interval_minutes() == 90
     assert d.in_when.text() == start.strftime("%Y-%m-%d %H:%M")
     d.in_name.setText("Rolling v2")
     d.commit()
@@ -833,7 +848,15 @@ def test_mutations_update_timer_label_immediately():
     assert d.main_win.label_updates > before      # alarm edit
 
 
+@pytest.mark.timeout(600)
 def test_dialog_open_close_hundred_times_no_residue():
+    # T-1288: this stress test builds 100 full TimerDialogs. Standalone it
+    # costs ~7 s, but in the shared full-suite QApplication the accumulated
+    # session widgets make every construction slower; the declared 180 s
+    # default was measured firing after iterations 98-99, aborting the whole
+    # harness with a faulthandler dump instead of a summary. The test's
+    # contract (100 opens/closes, zero residue) is unchanged; only its time
+    # budget is explicit.
     import gc
     import weakref
 
@@ -858,3 +881,95 @@ def test_dialog_open_close_hundred_times_no_residue():
     assert fake.saved == saved_before
     assert fake.label_updates == labels_before
 
+
+def test_periodic_refresh_is_bound_to_page_identity():
+    """Inserting/reordering tabs cannot silently redirect the 1 Hz updater."""
+    d = _dlg()
+    seen = []
+    for index in range(d.tabs.count()):
+        page = d.tabs.widget(index)
+        page._timer_refresh = lambda p=page: seen.append(p)
+        d.tabs.setCurrentWidget(page)
+        seen.clear()  # discard _on_tab_changed's full catch-up side effects
+        d.refresh()
+        assert seen == [page]
+
+
+def test_alarm_delete_button_persists_exact_selected_object():
+    d = _dlg()
+    target = datetime.datetime.now() + datetime.timedelta(hours=2)
+    first = Timer("First", target)
+    second = Timer("Second", target + datetime.timedelta(hours=1))
+    second.id = first.id  # corrupt legacy state must not turn one click into two deletes
+    d.main_win.timers[:] = [first, second]
+    d.refresh()
+    d.list.setCurrentItem(d.list.topLevelItem(1))
+    d.edit_selected()
+    d.btn_remove.click()
+
+    assert d.main_win.timers == [first]
+    assert [row["name"] for row in d.main_win.data["timers"]] == ["First"]
+    assert d.list.topLevelItemCount() == 1
+    assert d._editing_id is None
+    assert not d.btn_remove.isEnabled()
+    assert d.main_win.label_updates >= 1
+
+    reopened_main = _FakeMain()
+    reopened_main.timers = load_timers(d.main_win.data["timers"])
+    reopened = TimerDialog(reopened_main)
+    assert [timer.name for timer in reopened_main.timers] == ["First"]
+    assert reopened.list.topLevelItemCount() == 1
+
+
+def test_delete_without_selection_is_safe():
+    d = _dlg()
+    d.list.clearSelection()
+    d.list.setCurrentItem(None)
+    d.btn_remove.click()
+    d.cal_list.setCurrentItem(None)
+    d.cal_btn_delete.click()
+    d._interval_cur = None
+    d._interval_cur_object_id = None
+    d.interval_list.setCurrentItem(None)
+    d.interval_btn_delete.click()
+    assert d.main_win.timers == []
+
+
+def test_calendar_and_interval_delete_persist_and_refresh():
+    d = _dlg()
+    future = datetime.date.today() + datetime.timedelta(days=10)
+    event = Timer("Event", datetime.datetime.combine(future, datetime.time(9)),
+                  kind=KIND_CALENDAR)
+    d.main_win.timers.append(event)
+    d.cal.setSelectedDate(QDate(future.year, future.month, future.day))
+    d._cal_refresh_list()
+    d.cal_list.setCurrentItem(d.cal_list.topLevelItem(0))
+    d.cal_btn_delete.click()
+    assert event not in d.main_win.timers
+    assert d.main_win.data["timers"] == []
+    assert d.cal_list.topLevelItemCount() == 0
+
+    rules = [
+        {"id": "dup", "name": "One", "minutes": 10, "enabled": True},
+        {"id": "dup", "name": "Two", "minutes": 20, "enabled": True},
+    ]
+    d.main_win.data["interval_notifs"] = rules
+    d._interval_cur = None
+    d._interval_cur_object_id = None
+    d._interval_reload()
+    d.interval_list.setCurrentItem(d.interval_list.topLevelItem(1))
+    d._interval_load(d.interval_list.currentItem())
+    d.interval_btn_delete.click()
+    assert d.main_win.data["interval_notifs"] == [rules[0]]
+    assert d.interval_list.topLevelItemCount() == 1
+
+    # Recreating the dialog from persisted data must not resurrect either
+    # destructive action's target.
+    reopened_main = _FakeMain()
+    reopened_main.timers = load_timers(d.main_win.data["timers"])
+    reopened_main.data["interval_notifs"] = list(
+        d.main_win.data["interval_notifs"])
+    reopened = TimerDialog(reopened_main)
+    assert reopened.cal_list.topLevelItemCount() == 0
+    assert reopened.interval_list.topLevelItemCount() == 1
+    assert reopened.interval_list.topLevelItem(0).text(1) == "One"

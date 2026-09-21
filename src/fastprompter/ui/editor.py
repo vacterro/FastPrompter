@@ -1,4 +1,5 @@
 import os
+import random
 import re
 import subprocess
 import sys
@@ -11,7 +12,6 @@ from PyQt6.QtGui import (
     QDesktopServices,
     QFont,
     QPainter,
-    QPainterPath,
     QPen,
     QPixmap,
     QTextBlockUserData,
@@ -24,6 +24,7 @@ from fastprompter.core.logging import logger
 from fastprompter.core.translations import tr
 from fastprompter.ui.edit_guard import edit_block
 from fastprompter.ui.markdown_highlighter import QUEUED_BIT, SENT_BIT
+from fastprompter.ui.qt_lifetime import weak_qt_callback
 from fastprompter.utils.paths import exists_within
 
 # Matches every stamp shape Ctrl+E ever wrote: "17.07 - 04:19",
@@ -54,6 +55,138 @@ def _read_text_file(path):
         return f.read()
 
 
+def describe_clipboard_mime(mime):
+    """Bounded metadata about one clipboard payload — never its CONTENT.
+
+    T-1269C append. NEW seeds a silo through
+    ``SnippetOpsMixin._clipboard_text_for_new_silo`` (``clipboard.text()``),
+    while Ctrl+V goes through ``insertFromMimeData``, which selects its branch
+    from the FORMATS present. A clipboard carrying text PLUS an image or URL
+    payload can therefore seed a new silo and still paste nothing, so the
+    moment of failure needs this shape recorded: which representations exist,
+    how long the text is, and how many URLs are local — lengths, flags and
+    counts only, never the text itself.
+    """
+    info = {
+        "has_text": False,
+        "text_length": 0,
+        "text_stripped_length": 0,
+        "has_urls": False,
+        "url_count": 0,
+        "local_url_count": 0,
+        "any_url_is_local": False,
+        "has_image": False,
+        "formats": [],
+    }
+    if mime is None:
+        return info
+    try:
+        info["has_text"] = bool(mime.hasText())
+        if info["has_text"]:
+            text = mime.text() or ""
+            info["text_length"] = len(text)
+            info["text_stripped_length"] = len(text.strip())
+    except Exception:
+        pass
+    try:
+        info["has_urls"] = bool(mime.hasUrls())
+        if info["has_urls"]:
+            urls = mime.urls() or []
+            info["url_count"] = len(urls)
+            info["local_url_count"] = sum(1 for u in urls if u.isLocalFile())
+            info["any_url_is_local"] = bool(info["local_url_count"])
+    except Exception:
+        pass
+    try:
+        info["has_image"] = bool(mime.hasImage())
+    except Exception:
+        pass
+    try:
+        # Bounded: some providers expose dozens of platform formats.
+        info["formats"] = [str(f) for f in (mime.formats() or [])][:12]
+    except Exception:
+        pass
+    return info
+
+
+def _mime_urls(mime):
+    """Return a safe URL snapshot for malformed/custom MIME providers."""
+    try:
+        return list(mime.urls() or [])
+    except Exception:
+        return []
+
+
+def _mime_text(mime):
+    """Return MIME text without allowing a broken provider to abort paste."""
+    try:
+        return mime.text() or ""
+    except Exception:
+        return ""
+
+
+def _paste_record(branch, mime_info, before, after, fallback):
+    """One paste attempt, as the evidence the acceptance asks for.
+
+    Carries the branch that ran, whether the KEY path reached the editor and
+    called ``self.paste()``, whether ``insertFromMimeData`` ran at all, and
+    the document revision on both sides of the attempt — so "sound played and
+    nothing appeared" is decided by the document, not by the cue.
+    """
+    record = dict(after)
+    record.update({
+        "branch": branch,
+        "document_changed": (before.get("document_revision")
+                             != after.get("document_revision")),
+        "document_revision_before": before.get("document_revision"),
+        "document_revision_after": after.get("document_revision"),
+        "text_fallback_used": bool(fallback),
+        "mime": mime_info,
+    })
+    for key in (
+        "document_id", "silo_document_id", "cursor_position",
+        "has_selection", "editor_visible", "editor_enabled",
+        "editor_read_only", "focus_widget", "focus_widget_id",
+        "preview_mode", "silo_view_page",
+        "document_owned_by_active_silo",
+    ):
+        record[f"{key}_before"] = before.get(key)
+    return record
+
+
+def classify_paste_failure(record):
+    """Name which of the three observed failure classes a record belongs to.
+
+    T-1269 append A1 asks the diagnostics to DISTINGUISH the classes, not to
+    guess at them:
+
+    * ``key_routing``             the Ctrl+V key never reached this editor's
+                                  paste route -- no ``paste()`` call to blame,
+                                  so the failure is outside the app (another
+                                  window, a shortcut owner, an external tool);
+    * ``clipboard_ownership_race`` the key arrived, but the OS clipboard
+                                  GENERATION moved while the paste ran, so the
+                                  payload consumed may be an older item the
+                                  operator never copied last;
+    * ``fastprompter_paste_route`` the key arrived, the route ran, and the
+                                  document still did not change;
+    * ``None``                    no failure evidence: the document changed, or
+                                  a branch deliberately consumed the payload.
+
+    Every answer comes from the record itself, so the working attempt and the
+    failing one stay comparable field for field.
+    """
+    if not record.get("key_path_reached"):
+        return "key_routing"
+    if record.get("clipboard_changed_during_paste"):
+        return "clipboard_ownership_race"
+    if record.get("document_changed") or record.get("branch_settled"):
+        return None
+    if not record.get("paste_called"):
+        return "key_routing"
+    return "fastprompter_paste_route"
+
+
 def _draw_horizontal_rule(painter, hr_color, y_pos, width):
     """Draw a horizontal rule line at the given y position."""
     margin = 4
@@ -63,10 +196,69 @@ def _draw_horizontal_rule(painter, hr_color, y_pos, width):
     painter.drawLine(margin, y_pos + 2, width - margin, y_pos + 2)
 
 
+def _task_checkbox_rect(marker_rect):
+    marker = marker_rect.toRect() if isinstance(marker_rect, QRectF) else QRect(marker_rect)
+    size = max(9, min(14, round(marker.height() * 0.72)))
+    size = min(size, marker.width(), marker.height())
+    return QRect(
+        marker.x() + (marker.width() - size) // 2,
+        marker.y() + (marker.height() - size) // 2,
+        size,
+        size,
+    )
+
+
+def _paint_task_checkbox(painter, rect, checked):
+    painter.save()
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+    painter.fillRect(rect, QColor("#4a9a4a" if checked else "#222222"))
+    painter.setPen(QPen(QColor("#202020"), 1))
+    painter.drawLine(rect.topLeft(), rect.topRight())
+    painter.drawLine(rect.topLeft(), rect.bottomLeft())
+    painter.setPen(QPen(QColor("#75c475" if checked else "#666666"), 1))
+    painter.drawLine(rect.bottomLeft(), rect.bottomRight())
+    painter.drawLine(rect.topRight(), rect.bottomRight())
+    if checked:
+        inset = max(2, rect.width() // 5)
+        check_left = rect.left() + inset + 1
+        mid_x = rect.left() + max(4, rect.width() * 2 // 5 + 1)
+        mid_y = rect.top() + rect.height() * 2 // 3
+        check_pen = QPen(QColor("#ffffff"), 2 if rect.width() >= 12 else 1)
+        check_pen.setCapStyle(Qt.PenCapStyle.SquareCap)
+        check_pen.setJoinStyle(Qt.PenJoinStyle.MiterJoin)
+        painter.setPen(check_pen)
+        painter.drawLine(check_left, rect.center().y(), mid_x, mid_y)
+        painter.drawLine(mid_x, mid_y, rect.right() - inset, rect.top() + inset)
+    painter.restore()
+
+
 # How much of the gutter belongs to the mark widget. Left of this a click
 # cycles the line mark; right of it the margin behaves like Word's, where
-# the cursor mirrors and a click takes the whole line.
-MARK_ZONE_PX = 16
+# the cursor mirrors and a click takes the whole line. Widenended 16 -> 24
+# so the mark column is an easy target rather than a pixel hunt (the painted
+# square is allowed to be smaller than the hit zone).
+MARK_ZONE_PX = 24
+
+# The curated mark palette. IDs are persistent (they ride in userState and in
+# saved view metadata), so old saved marks keep loading; the SHAPES were
+# retired -- every mark now paints as the same object, a plain filled square
+# box, and only the colour carries the distinction. Colours are fixed
+# high-contrast hexes hand-checked against both light and dark gutter
+# backgrounds (Win95 crisp fill, no alpha, no antialiasing), not generated
+# from the theme.
+MARK_PALETTE = {
+    1: ("#3DA43D", "green"),    # strong leaf green, clear on light and dark
+    2: ("#D9483B", "red"),      # solid brick red
+    3: ("#E0A400", "yellow"),   # amber/yellow, dark enough to read on white
+    4: ("#3D6FD9", "blue"),     # medium blue
+    5: ("#A26FD9", "purple"),   # violet
+}
+
+# Marks with the mixed shapes/dots of the old presentation map onto the
+# same-ID colour square: 1 was already a green box, 2 (red dot) and 3
+# (yellow rhombus) keep their colour, 4 (blue square) keeps its colour, and
+# 5 is the new slot. No saved id changes meaning.
+_RANDOM_MARK_IDS = tuple(MARK_PALETTE)
 
 _MARGIN_CURSOR = None
 
@@ -251,6 +443,15 @@ def stamp_heat(block, ts):
     return data
 
 
+# T-1269C append: chords the EDITOR owns because Qt's own editing machinery
+# binds them (Select All / Copy / Paste / Cut). A profile may map one of these
+# to a FastPrompter command; `keyPressEvent` runs the configurable hotkeys
+# BEFORE the editing four, so a user mapping silently stole the key and the
+# symptom was "Ctrl+V does nothing" with no sound and nothing logged. The
+# editing keys win deterministically and the conflict is reported once.
+_RESERVED_EDITING_SEQUENCES = ("Ctrl+A", "Ctrl+C", "Ctrl+V", "Ctrl+X")
+
+
 class VaultTextEdit(QTextEdit):
     def __init__(self, main_win):
         super().__init__()
@@ -259,6 +460,13 @@ class VaultTextEdit(QTextEdit):
         self.document().setUndoRedoEnabled(True)
         self._right_drag_start = None
         self._dragged = False
+        # T-1269C: explicit state for one synchronous Ctrl+V attempt. These
+        # flags keep route evidence separate from sound playback and from
+        # insertFromMimeData calls caused by drag/drop.
+        self._paste_key_path = False
+        self._paste_paste_called = False
+        self._paste_insert_reached = False
+        self._paste_diagnostics_active = False
 
         self.line_number_area = LineNumberArea(self)
         self.document().documentLayout().documentSizeChanged.connect(self.update_line_number_area_width)
@@ -298,7 +506,8 @@ class VaultTextEdit(QTextEdit):
         # reconcile edits incrementally and only drop the cache when a fence
         # line is actually touched.
         self.document().contentsChange.connect(self._reconcile_edits)
-        QTimer.singleShot(0, self._refresh_checkbox_flag)
+        QTimer.singleShot(0, weak_qt_callback(
+            self, type(self)._refresh_checkbox_flag))
 
         # Debounced state capture: scroll-only browsing (no typing) also
         # persists the view position, cursor, and marks. Fires 2 s after
@@ -647,9 +856,10 @@ class VaultTextEdit(QTextEdit):
         doc = self.document()
         if not doc or sip.isdeleted(doc):
             return
-        block_count = doc.blockCount()
-        if block_count > 2000:
-            return
+        # Deliberately NO blockCount() bail here: the gutter rows are found by
+        # _first_visible_block()/cursorRect over the visible region only, so
+        # cost is O(visible), and the old `> 2000 -> return` left large
+        # documents with numbers but no marks and no queue stripes.
         painter = QPainter(self.line_number_area)
         try:
             painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
@@ -691,41 +901,26 @@ class VaultTextEdit(QTextEdit):
 
                 if marks_enabled and (mark > 0 or is_hovered):
                     h = row_height
-                    cx = 8
+                    cx = 9
                     cy = top + h // 2
-                    size = min(h - 4, 10)
-                    
-                    if mark == 1 or (mark == 0 and is_hovered):
-                        # Checked Box
-                        box_color = QColor("#44AA44") if mark == 1 else QColor(68, 170, 68, 120)
-                        painter.setPen(QPen(box_color, 1))
-                        if mark == 1:
-                            # fill from the gutter's own background, so a
-                            # ticked box never lands as a white hole in a
-                            # dark theme (or vice versa)
-                            painter.setBrush(bg)
-                        else:
-                            painter.setBrush(Qt.BrushStyle.NoBrush)
+                    # A real box: ~12-14px where the row allows, clamped for
+                    # small/collapsed rows. Every mark paints as the SAME
+                    # object -- a filled square -- and the colour carries the
+                    # distinction, never the shape.
+                    size = max(6, min(h - 4, 14))
+
+                    if is_hovered and not mark:
+                        # empty-slot affordance: crisp 1px outline of the box
+                        # that would appear, no fill
+                        painter.setPen(QPen(text_color, 1))
+                        painter.setBrush(Qt.BrushStyle.NoBrush)
                         painter.drawRect(cx - size//2, cy - size//2, size, size)
-                        if mark == 1:
-                            painter.setPen(QPen(QColor("#44AA44"), 2))
-                            painter.drawLine(cx - size//2 + 2, cy, cx - 1, cy + size//2 - 2)
-                            painter.drawLine(cx - 1, cy + size//2 - 2, cx + size//2 - 1, cy - size//2 + 1)
-                    elif mark == 2:
-                        # Red Dot
-                        painter.setPen(Qt.PenStyle.NoPen)
-                        painter.setBrush(QColor("#FF4444"))
-                        painter.drawEllipse(cx - size//2, cy - size//2, size, size)
-                    elif mark == 3:
-                        # Yellow Rhombus
-                        painter.setPen(Qt.PenStyle.NoPen)
-                        painter.setBrush(QColor("#FFDD44"))
-                        poly = [QPoint(cx, cy - size//2), QPoint(cx + size//2, cy), QPoint(cx, cy + size//2), QPoint(cx - size//2, cy)]
-                        painter.drawPolygon(poly)
-                    elif mark == 4:
-                        # Blue Square
-                        painter.setPen(Qt.PenStyle.NoPen)
-                        painter.setBrush(QColor("#4488FF"))
+                    else:
+                        color, _name = MARK_PALETTE.get(mark, MARK_PALETTE[1])
+                        painter.setPen(QPen(QColor("#000000"), 1))
+                        painter.setBrush(QColor(color))
+                        # filled square + crisp dark border, no antialiasing
+                        # (Win95 box; drawRect insets by the pen width)
                         painter.drawRect(cx - size//2, cy - size//2, size, size)
 
                 # Queue state, drawn as a stripe down the gutter's right edge
@@ -820,27 +1015,25 @@ class VaultTextEdit(QTextEdit):
     def line_number_area_mouse_press_event(self, event):
         if self.main_win.data.get("line_marks", "False") != "True":
             return
-        doc = self.document()
-        if doc.blockCount() > 2000:
+        # PERF: resolve ONLY the block under the pointer via _block_at_y
+        # (O(visible region)). The old implementation bailed on documents
+        # above 2000 blocks and then walked from doc.begin() -- a full-
+        # document prefix scan -- so big documents had a dead gutter. There
+        # is no size bail any more: marks work in any document and cost
+        # nothing extra on click.
+        step = 1 if event.button() == Qt.MouseButton.LeftButton else -1
+        block = self._block_at_y(event.pos().y())
+        if block is None or not block.isValid():
             return
-        # right-click walks the cycle backwards, so overshooting by one
-        # doesn't mean clicking four more times to get back
-        step = -1 if event.button() == Qt.MouseButton.RightButton else 1
-        block = doc.begin()
-        while block.isValid():
-            cursor = QTextCursor(block)
-            rect = self.cursorRect(cursor)
-            block_height = doc.documentLayout().blockBoundingRect(block).height()
-            if rect.top() <= event.pos().y() <= rect.top() + block_height:
-                state = max(0, block.userState())
-                mark = state & 0xFF
-                new_mark = (mark + step) % 5
-                block.setUserState((state & ~0xFF) | new_mark)
-                self.line_number_area.update()
-                self._invalidate_view_metadata()
-                self.main_win.save_line_marks()
-                break
-            block = block.next()
+        state = max(0, block.userState())
+        mark = state & 0xFF
+        # cycle through the curated palette, OFF included: left forward,
+        # right backward (so overshooting doesn't mean clicking around)
+        new_mark = (mark + step) % (len(MARK_PALETTE) + 1)
+        block.setUserState((state & ~0xFF) | new_mark)
+        self.line_number_area.update()
+        self._invalidate_view_metadata()
+        self.main_win.save_line_marks()
 
     # ---- margin marks: persistence ------------------------------------
     def _invalidate_view_metadata(self):
@@ -1044,7 +1237,13 @@ class VaultTextEdit(QTextEdit):
         return text, block
 
     def set_queue_anchor(self, block, item_id):
-        """Tie a queued item to the block it came from."""
+        """Tie a queued item to the block it came from.
+
+        Memory-only by contract: the persistence API (collect_queue_marks /
+        apply_queue_marks) was retired with the T-1183 watcher subsystem, and
+        no production route writes anchors into a save file. Anchors live as
+        long as the document does.
+        """
         data = block_data(block, create=True)
         if data is not None:
             data.queue_id = item_id or ""
@@ -1169,47 +1368,6 @@ class VaultTextEdit(QTextEdit):
         if pruned:
             self.line_number_area.update()
         return pruned
-
-    def collect_queue_marks(self):
-        """{block number: (bits, item id)} for saving. Block user data is
-        memory-only; a reload rebuilds the document and every anchor is gone
-        unless it was written down."""
-        self.prune_queue_marks()
-        out = {}
-        doc = self.document()
-        block = doc.begin()
-        while block.isValid():
-            state = max(0, block.userState()) & (QUEUED_BIT | SENT_BIT)
-            item_id = getattr(block.userData(), "queue_id", "")
-            if state and item_id:
-                out[block.blockNumber()] = (state, item_id)
-            block = block.next()
-        return out
-
-    def apply_queue_marks(self, marks):
-        """Restore anchors saved by collect_queue_marks()."""
-        if not isinstance(marks, dict):
-            return 0
-        doc = self.document()
-        restored = 0
-        for number, payload in marks.items():
-            try:
-                block = doc.findBlockByNumber(int(number))
-            except (TypeError, ValueError):
-                continue
-            if not block.isValid():
-                continue
-            try:
-                state, item_id = payload
-            except (TypeError, ValueError):
-                continue
-            block.setUserState(max(0, block.userState())
-                               | (int(state) & (QUEUED_BIT | SENT_BIT)))
-            self.set_queue_anchor(block, item_id)
-            restored += 1
-        if restored:
-            self.line_number_area.update()
-        return restored
 
     # ---- folding (code fences + markdown headers) -------------------------
 
@@ -1412,6 +1570,28 @@ class VaultTextEdit(QTextEdit):
                 self.line_number_area.update()
         return changed
 
+    def undo(self):
+        """Undo one step, then make sure no block is stranded invisible.
+
+        The auto-collapse of a freshly quoted group hides blocks through
+        visibility flags, which are not part of the document undo data: a
+        plain Ctrl+Z could otherwise restore the text while the previously
+        hidden blocks stay invisible with no anchor left to click.
+        """
+        super().undo()
+        try:
+            self.rescue_orphan_folds()
+        except Exception:
+            pass
+
+    def redo(self):
+        """Redo one step with the same no-stranded-hidden-blocks net."""
+        super().redo()
+        try:
+            self.rescue_orphan_folds()
+        except Exception:
+            pass
+
     def unfold_all(self):
         """Safety hatch: show every block and clear all fold bits."""
         doc = self.document()
@@ -1477,12 +1657,102 @@ class VaultTextEdit(QTextEdit):
             block = block.next()
         return None
 
+    @staticmethod
+    def _image_url_for(target):
+        """``![](...)`` target or rendered path -> QUrl, or None if unusable."""
+        raw = str(target or "").strip()
+        if not raw:
+            return None
+        if raw.startswith("http"):
+            return QUrl(raw)
+        return QUrl.fromLocalFile(raw.replace("file:///", ""))
+
+    def _markdown_image_for(self, path):
+        """(block, match) whose image link resolves to ``path``, or None.
+
+        A RENDERED image knows only where its bytes came from. Renaming needs
+        the markdown link too, or the file would move and the document would
+        keep pointing at the old name. Rather than keep a second geometry
+        table in sync with the renderer, the link is recovered from the text.
+        """
+        wanted = os.path.normcase(os.path.abspath(
+            str(path or "").replace("file:///", "")))
+        if not wanted:
+            return None
+        doc = self.document()
+        if doc.blockCount() > 2000:
+            return None
+        block = doc.firstBlock()
+        while block.isValid():
+            for match in MD_IMAGE_RE.finditer(block.text()):
+                target = match.group(1)
+                url = self._image_url_for(target)
+                if url is None or not url.isLocalFile():
+                    continue
+                candidate = os.path.normcase(os.path.abspath(
+                    url.toLocalFile()))
+                if candidate == wanted:
+                    return block, match
+            block = block.next()
+        return None
+
+    def image_hit_at(self, pos):
+        """THE image hit test: ``(block, match, url)`` under ``pos``, or None.
+
+        One resolver for both worlds, on purpose. Source mode paints collapsed
+        pills (``image_pill_at``); Live Preview and Reading mode paint the
+        real raster and record its rect in ``_rendered_images``. Those used to
+        be two independent click paths with two different gestures, which is
+        how "click to view" ended up meaning Ctrl+click in one mode and
+        double-click-to-rename in another.
+
+        ``block``/``match`` are None when the visual could not be tied back to
+        a markdown link. Such a hit can still be OPENED; it must never be
+        renamed, because there would be no link to move with the file.
+        """
+        hit = self.image_pill_at(pos)
+        if hit is not None:
+            block, match = hit
+            url = self._image_url_for(match.group(1))
+            return None if url is None else (block, match, url)
+        for rect, path in (getattr(self, "_rendered_images", None) or ()):
+            try:
+                if not rect.contains(pos):
+                    continue
+            except (TypeError, AttributeError):
+                continue
+            url = self._image_url_for(path)
+            if url is None:
+                return None
+            found = self._markdown_image_for(path) if url.isLocalFile() else None
+            if found is not None:
+                return found[0], found[1], url
+            return None, None, url
+        return None
+
+    @staticmethod
+    def _image_hit_is_renameable(block, match, url):
+        """Only a LOCAL file with a link behind it may be renamed.
+
+        An http image is somebody else's file; a rendered visual with no
+        recoverable link would leave the document pointing at a name that no
+        longer exists.
+        """
+        return (block is not None and match is not None
+                and url is not None and url.isLocalFile())
+
     def rename_image_at(self, block, match):
         """Rename the file a pill points at, and the link with it.
 
-        Double-clicking the pill is the only obvious place to do this: the
-        file was written as `paste-20260730_140826.png`, which says when it
-        arrived and nothing about what it is.
+        The gesture is Ctrl+LEFT-CLICK (T-1265 C3). It used to be
+        double-click, which collided with the one thing a user actually wants
+        from an image - looking at it - and meant a plain double-click could
+        pop a rename dialog nobody asked for. Plain click now opens the
+        viewer; Ctrl+click renames.
+
+        Renaming is worth a gesture at all because the file was written as
+        `paste-20260730_140826.png`, which says when it arrived and nothing
+        about what it is.
         """
         import os as _os
 
@@ -1505,7 +1775,8 @@ class VaultTextEdit(QTextEdit):
                 text=stem)
         finally:
             if hasattr(mw, "_decrement_focus_lock"):
-                QTimer.singleShot(300, mw._decrement_focus_lock)
+                QTimer.singleShot(300, weak_qt_callback(
+                    mw, type(mw)._decrement_focus_lock))
         new_stem = (new_stem or "").strip()
         if not ok or not new_stem or new_stem == stem:
             return False
@@ -1812,6 +2083,50 @@ class VaultTextEdit(QTextEdit):
             n += 1
             block = block.next()
 
+    def _set_line_mark(self, block):
+        """Strict toggle of the colored line mark on ``block``.
+
+        Unmarked -> a random palette colour; marked -> OFF. The second click
+        NEVER re-rolls the colour (remove, then apply again for a new one).
+        Marks ride in the low userState byte, so queue/fold bits survive;
+        text is never touched. The caller decides whether to accept the
+        mouse event.
+        """
+        if block is None or not block.isValid():
+            return
+        state = max(0, block.userState())
+        mark = state & 0xFF
+        if mark:
+            new_mark = 0                       # marked -> remove, strict
+        else:
+            new_mark = random.choice(_RANDOM_MARK_IDS)
+        block.setUserState((state & ~0xFF) | new_mark)
+        self.line_number_area.update()
+        self._invalidate_view_metadata()
+        self.main_win.save_line_marks()
+
+    def _ensure_line_marks_visible(self):
+        """Turn line-mark visibility ON if it is currently off.
+
+        An explicit mark request must never create an INVISIBLE mark: the
+        toggle goes through the settings checkbox's own callback (blocked
+        signal, we set the state and drive the callback directly) so the
+        settings UI, gutter geometry and the persisted value all agree.
+        Returns True when the setting was flipped here.
+        """
+        if self.main_win.data.get("line_marks", "False") == "True":
+            return False
+        self.main_win.data["line_marks"] = "True"
+        cb = getattr(self.main_win, "cb_line_marks", None)
+        if cb is not None:
+            from PyQt6.QtCore import QSignalBlocker
+            with QSignalBlocker(cb):
+                cb.setChecked(True)          # UI mirrors without re-firing
+            cb.toggled.emit(True)            # run the builder's own callback
+        self.update_line_number_area_width()
+        self.line_number_area.update()
+        return True
+
     def mouseDoubleClickEvent(self, event):
         """Double-click an image pill to rename the file it points at.
 
@@ -1820,16 +2135,57 @@ class VaultTextEdit(QTextEdit):
         The second press of a Ctrl+triple-click arrives here, so the press
         counter is bumped here too (the third press lands in mousePressEvent).
         """
+        if event.button() == Qt.MouseButton.MiddleButton:
+            self.mousePressEvent(event)
+            return
         if (not sip.isdeleted(self)
                 and event.button() == Qt.MouseButton.LeftButton):
             if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
                 self._ctrl_click_bump(event.pos())
-            hit = self.image_pill_at(event.pos())
-            if hit is not None:
-                self.rename_image_at(*hit)
+            if self.image_hit_at(event.pos()) is not None:
+                # T-1265 C3: SWALLOWED, not acted on. The first press of this
+                # sequence already opened the viewer (or renamed, on Ctrl), so
+                # doing anything here would open a second viewer or a second
+                # rename dialog. Double-click is no longer a rename gesture.
                 event.accept()
                 return
         super().mouseDoubleClickEvent(event)
+
+    def _handle_image_click(self, event, block, match, url):
+        """Plain click -> view. Ctrl+click -> rename. Ctrl+Shift -> folder.
+
+        Returns True when the click was consumed. Anything else (Shift alone,
+        Alt, an unhandled combination) falls through to the normal handling
+        rather than being silently eaten.
+        """
+        mods = event.modifiers()
+        ctrl = bool(mods & Qt.KeyboardModifier.ControlModifier)
+        shift = bool(mods & Qt.KeyboardModifier.ShiftModifier)
+        alt = bool(mods & Qt.KeyboardModifier.AltModifier)
+        if alt or (shift and not ctrl):
+            return False
+
+        # Live Preview records a link under the press and opens it on RELEASE.
+        # Leaving that armed would open the same image a second time.
+        self._pending_link = None
+
+        if ctrl and shift:
+            if url.isLocalFile():
+                self.open_containing_folder(url)
+                self._suppress_context_menu = True
+                return True
+            return False
+        if ctrl:
+            if not self._image_hit_is_renameable(block, match, url):
+                # An http image, or a visual with no recoverable link: there is
+                # nothing local to rename, and inventing a target would be
+                # worse than doing nothing.
+                return True
+            self.rename_image_at(block, match)
+            return True
+        VaultTextEdit.authorize_and_open_url(
+            url, self, getattr(self.main_win, "_current_lang", "EN"))
+        return True
 
     def mouseTripleClickEvent(self, event):
         """Ctrl+triple-click on a word clears all pinned selections."""
@@ -1881,6 +2237,21 @@ class VaultTextEdit(QTextEdit):
                     self._toggle_single_line(cb_block)
                     event.accept()
                     return
+
+                # T-1265 C3: an image is a VISUAL CONTROL, like the fold arrow
+                # and the copy button above it, so it answers an ordinary
+                # click. Ctrl+click renames it. This is deliberately an
+                # exception to the Source-mode "links need Ctrl" rule: that
+                # rule protects arbitrary hrefs, and it still does -- opening
+                # goes through authorize_and_open_url, the ONE router, which
+                # decodes rasters internally and still demands confirmation
+                # before any local file reaches the shell.
+                image_hit = self.image_hit_at(event.pos())
+                if image_hit is not None:
+                    handled = self._handle_image_click(event, *image_hit)
+                    if handled:
+                        event.accept()
+                        return
             
             mods = event.modifiers()
             
@@ -1888,7 +2259,7 @@ class VaultTextEdit(QTextEdit):
             if mods & Qt.KeyboardModifier.ControlModifier:
                 img_path = None
                 for rect, path in getattr(self, "_rendered_images", []):
-                    if rect.contains(QPointF(event.pos())):
+                    if rect.contains(event.pos()):
                         img_path = path
                         break
                 
@@ -1935,6 +2306,7 @@ class VaultTextEdit(QTextEdit):
                            | Qt.KeyboardModifier.ShiftModifier)
         if (event.button() == Qt.MouseButton.LeftButton
                 and (event.modifiers() & _line_drag_mods) == _line_drag_mods):
+            self._cancel_line_drag()
             cursor = self.textCursor()
             click_pos = self.cursorForPosition(event.pos()).position()
             if cursor.hasSelection() and cursor.selectionStart() <= click_pos <= cursor.selectionEnd():
@@ -2013,13 +2385,17 @@ class VaultTextEdit(QTextEdit):
                 return
 
             block = self.cursorForPosition(event.pos()).block()
-            if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
-                # Ctrl+Middle-click deletes the whole line under the cursor,
-                # renumbering an ordered list around the gap so it stays
-                # sequential.
-                if block.isValid():
-                    self._delete_line_smart(block)
-                    self.main_win.mark_dirty()
+            if event.modifiers() == (Qt.KeyboardModifier.ControlModifier
+                                     | Qt.KeyboardModifier.ShiftModifier):
+                return                       # Ctrl+Shift+MB: unbound, no text change
+            if event.modifiers() == Qt.KeyboardModifier.ControlModifier:
+                # Ctrl+Middle toggles the colored line mark on the line under
+                # the pointer -- anywhere on the line, the gutter box does not
+                # have to be hit. It MUST NOT delete text (the old
+                # _delete_line_smart binding is retired; one gesture, one
+                # owner).
+                self._ensure_line_marks_visible()
+                self._set_line_mark(block)
                 event.accept()
                 return
             # Plain middle-click a line cycles it: plain -> checked+struck ->
@@ -2102,10 +2478,7 @@ class VaultTextEdit(QTextEdit):
             hover = getattr(self, "_line_drag_hover_block", None)
             
             start_num, end_num = line_drag_source
-            self._line_drag_source_block = None
-            self._line_drag_active = False
-            self._line_drag_hover_block = None
-            self.viewport().update()
+            self._cancel_line_drag()
             
             if was_active and hover is not None and not (start_num <= hover <= end_num):
                 self._move_lines(start_num, end_num, hover)
@@ -2197,6 +2570,52 @@ class VaultTextEdit(QTextEdit):
             logger.debug("hashtag lookup failed", exc_info=True)
             return None
 
+    def _cancel_line_drag(self):
+        timer = getattr(self, "_line_drag_autoscroll_timer", None)
+        if timer is not None:
+            timer.stop()
+        self._line_drag_source_block = None
+        self._line_drag_active = False
+        self._line_drag_hover_block = None
+        self._line_drag_scroll_direction = 0
+        self.viewport().update()
+
+    def _update_line_drag_autoscroll(self, pos):
+        self._line_drag_last_pos = QPoint(pos)
+        height = self.viewport().height()
+        edge = min(36, max(12, height // 4))
+        distance = edge - pos.y() if pos.y() < edge else pos.y() - (height - edge)
+        direction = -1 if pos.y() < edge else (1 if pos.y() > height - edge else 0)
+        self._line_drag_scroll_direction = direction
+        self._line_drag_scroll_speed = max(1, min(6, 1 + max(0, distance) // 8))
+        timer = getattr(self, "_line_drag_autoscroll_timer", None)
+        if timer is None:
+            timer = self._line_drag_autoscroll_timer = QTimer(self)
+            timer.setInterval(40)
+            timer.timeout.connect(self._line_drag_autoscroll_tick)
+        if direction:
+            if not timer.isActive():
+                timer.start()
+        else:
+            timer.stop()
+
+    def _line_drag_autoscroll_tick(self):
+        if (not getattr(self, "_line_drag_active", False)
+                or getattr(self, "_line_drag_source_block", None) is None
+                or not (QApplication.mouseButtons() & Qt.MouseButton.LeftButton)):
+            self._cancel_line_drag()
+            return
+        bar = self.verticalScrollBar()
+        bar.setValue(bar.value() + self._line_drag_scroll_direction
+                     * self._line_drag_scroll_speed * max(1, bar.singleStep()))
+        pos = self._line_drag_last_pos
+        rect = self.viewport().rect()
+        probe = QPoint(max(0, min(pos.x(), rect.right())),
+                       max(0, min(pos.y(), rect.bottom())))
+        block = self.cursorForPosition(probe).block()
+        self._line_drag_hover_block = block.blockNumber() if block.isValid() else None
+        self.viewport().update()
+
     def anchor_url_at(self, pos):
         """The link under this viewport point, or None."""
         try:
@@ -2225,14 +2644,16 @@ class VaultTextEdit(QTextEdit):
 
     @staticmethod
     def authorize_and_open_url(url, parent, lang="EN"):
-        """Pass web links straight through; confirm EVERY local file launch.
+        """Central target router: internal raster decoding or guarded shell open."""
+        from fastprompter.ui.image_viewer import IMAGE_SUFFIXES, open_image_viewer
 
-        A local file opened through ``QDesktopServices.openUrl`` is executed by
-        the OS per the user's file-type associations, so regardless of suffix
-        it can run code. We therefore prompt before opening any local file.
-        Web links (http/https/ftp/mailto) never execute local code and pass
-        through untouched. Folder-reveal is a separate, non-launching path
-        (``open_containing_folder``) and is unaffected by this gate."""
+        raw = url.toString() if isinstance(url, QUrl) else str(url)
+        if re.match(r"^[A-Za-z]:[/\\]", raw):
+            url = QUrl.fromLocalFile(raw)
+        elif not isinstance(url, QUrl):
+            url = QUrl(raw)
+        if VaultTextEdit._safe_link_url(url) is None:
+            return False
         if not url.isLocalFile():
             return QDesktopServices.openUrl(url)
 
@@ -2240,7 +2661,11 @@ class VaultTextEdit(QTextEdit):
 
         from fastprompter.core.i18n import tr
 
-        path = url.toLocalFile()
+        path = os.path.realpath(os.path.abspath(url.toLocalFile()))
+        if os.path.isdir(path):
+            return VaultTextEdit.open_containing_folder(parent, QUrl.fromLocalFile(path))
+        if os.path.splitext(url.toLocalFile())[1].lower() in IMAGE_SUFFIXES:
+            return open_image_viewer(path, parent, lang)
         msg = tr("This link points to a file on your computer:\n\n{}\n\n"
                  "Opening it may run a program. Are you sure you want to open it?",
                  lang).format(path)
@@ -2257,6 +2682,8 @@ class VaultTextEdit(QTextEdit):
         """Return ``url`` if its scheme is one we will actually open, else None."""
         if url is None or not isinstance(url, QUrl) or not url.isValid():
             return None
+        if re.match(r"^[A-Za-z]:[/\\]", url.toString()):
+            url = QUrl.fromLocalFile(url.toString())
         scheme = (url.scheme() or "").lower()
         if scheme not in VaultTextEdit._SAFE_LINK_SCHEMES:
             return None
@@ -2390,6 +2817,7 @@ class VaultTextEdit(QTextEdit):
                 if delta.manhattanLength() >= QApplication.startDragDistance():
                     self._line_drag_active = True
             if self._line_drag_active:
+                self._update_line_drag_autoscroll(event.pos())
                 block = self.cursorForPosition(event.pos()).block()
                 new_hover = block.blockNumber() if block.isValid() else None
                 if new_hover != getattr(self, "_line_drag_hover_block", None):
@@ -2397,6 +2825,9 @@ class VaultTextEdit(QTextEdit):
                     self.viewport().update()
                 event.accept()
                 return
+        if (getattr(self, "_line_drag_source_block", None) is not None
+                and not (event.buttons() & Qt.MouseButton.LeftButton)):
+            self._cancel_line_drag()
         try:
             if not event.buttons():
                 p = event.pos()
@@ -2997,6 +3428,8 @@ class VaultTextEdit(QTextEdit):
         link, no chip, and nothing to click, which is the regression.
         `link` keeps that plain link, `path` inserts the bare path.
         """
+        url = QUrl(url).toString(QUrl.ComponentFormattingOption.FullyEncoded)
+        url = url.replace("(", "%28").replace(")", "%29")
         try:
             style = self.main_win.data.get("image_paste_style", "pill")
         except Exception:
@@ -3007,80 +3440,619 @@ class VaultTextEdit(QTextEdit):
             return f"[{name}]({url})"
         return f"![]({url})"
 
+    # ------------------------------------------------------------------
+    # T-1269C append — the Ctrl+V LIVE route, made answerable
+    # ------------------------------------------------------------------
+    #
+    # The operator's report is "the paste sound plays and no text appears",
+    # intermittently, on the real window. ``keyPressEvent`` emits the cue
+    # BEFORE the paste runs, so the sound proves only that the key path was
+    # reached — never that the document changed. Two questions must be
+    # answerable from evidence instead of from a green unit test:
+    #
+    #   1. was the key path reached, and did ``self.paste()`` run?
+    #      -> ``_paste_from_keyboard`` / ``_paste_key_path``
+    #   2. which insertFromMimeData branch ran, and did it change anything?
+    #      -> ``_insert_from_mime_data`` returns a branch LABEL and
+    #         ``_finish_paste`` compares the document revision around it
+    #
+    # A rich branch that yields NOTHING while the same clipboard also carries
+    # usable plain text now falls back to the text representation. That is the
+    # MIME differential the operator hit from the other side: NEW reads
+    # ``clipboard.text()`` (``SnippetOpsMixin._clipboard_text_for_new_silo``)
+    # and seeds a silo, while Ctrl+V picks its branch from the FORMATS present
+    # and could return with neither a document change nor a file/link action.
+    #
+    # NOTHING here records clipboard CONTENT — lengths, flags, counts, object
+    # identities only. The ring is bounded per editor, and a record is written
+    # only by a paste attempt, so ordinary typing cannot grow it.
+    _PASTE_DIAG_LIMIT = 20
+
+    def paste_diagnostics(self):
+        """The bounded Ctrl+V record ring, oldest first. No clipboard text."""
+        return list(getattr(self, "_paste_diag", ()))
+
+    def _paste_contract(self, record):
+        """Add the three route questions every record must answer.
+
+        The acceptance asks, for any attempted paste: was ``keyPressEvent``
+        reached, was ``self.paste()`` called, and was ``insertFromMimeData``
+        reached at all? A successful record answers yes to all three by
+        construction -- stating it here keeps every record the same shape, so
+        the failing one and the working one can be compared field for field.
+        """
+        record["key_path_reached"] = bool(getattr(self, "_paste_key_path", False))
+        record["paste_called"] = bool(
+            getattr(self, "_paste_paste_called", False))
+        record["insert_reached"] = bool(
+            getattr(self, "_paste_insert_reached", False))
+        return record
+
+    def _paste_state(self):
+        """Metadata about the paste TARGET — not one byte of clipboard text.
+
+        This is the "prove it at failure time" set: editor and document
+        identity, the document the ACTIVE silo owns, caret/selection, the
+        focus widget, the view page, and the writable/visible/enabled state
+        of the editor. Recorded before and after every paste attempt.
+        """
+        mw = self.main_win
+        slot = getattr(mw, "active_temp_slot", None)
+        state = {
+            "editor_id": id(self),
+            "document_id": None,
+            "document_revision": None,
+            "silo_document_id": None,
+            "active_category": None,
+            "active_slot": slot,
+            "active_is_archive": bool(getattr(mw, "active_is_archive", False)),
+            "cursor_position": None,
+            "has_selection": None,
+            "editor_visible": None,
+            "editor_enabled": None,
+            "editor_read_only": None,
+            "focus_widget": None,
+            "focus_widget_id": None,
+            "preview_mode": None,
+            "silo_view_page": None,
+            "document_owned_by_active_silo": None,
+            "event_key": None,
+            "event_modifiers": None,
+            "native_scan_code": None,
+        }
+        event_meta = getattr(self, "_paste_event_meta", None) or {}
+        state.update({key: event_meta.get(key) for key in (
+            "event_key", "event_modifiers", "native_scan_code")})
+        try:
+            state["active_category"] = mw.get_current_category()
+        except Exception:
+            pass
+        try:
+            state["document_id"] = id(self.document())
+            state["document_revision"] = self.document().revision()
+        except Exception:
+            pass
+        docs = getattr(
+            mw,
+            "archive_docs" if bool(getattr(mw, "active_is_archive", False))
+            else "silo_docs",
+            None,
+        )
+        if (isinstance(docs, (list, tuple)) and isinstance(slot, int)
+                and 0 <= slot < len(docs)):
+            owner_doc = docs[slot]
+            state["silo_document_id"] = id(owner_doc)
+            state["document_owned_by_active_silo"] = (
+                owner_doc is self.document())
+        try:
+            cursor = self.textCursor()
+            state["cursor_position"] = cursor.position()
+            state["has_selection"] = bool(cursor.hasSelection())
+            state["editor_visible"] = bool(self.isVisible())
+            state["editor_enabled"] = bool(self.isEnabled())
+            state["editor_read_only"] = bool(self.isReadOnly())
+        except Exception:
+            pass
+        focus = QApplication.focusWidget()
+        state["focus_widget"] = type(focus).__name__ if focus is not None else None
+        state["focus_widget_id"] = id(focus) if focus is not None else None
+        try:
+            state["preview_mode"] = self._preview_mode()
+        except Exception:
+            pass
+        try:
+            state["silo_view_page"] = mw.silo_view.currentIndex()
+        except Exception:
+            pass
+        return state
+
+    def _clipboard_generation_probe(self, label=""):
+        """One bounded OS + Qt clipboard generation sample -- never content.
+
+        T-1269 A2: the Windows clipboard sequence number (the OS's own
+        generation counter), the process that owns the clipboard, and the
+        Qt-side notification count are gathered together, because a paste
+        failure can sit on EITHER side of that boundary. Nothing here reads,
+        copies, stores or logs clipboard text: the record carries lengths,
+        flags, counters and a process name only. Every lookup is optional -- an
+        unavailable API or a protected owner leaves a None/UNKNOWN entry
+        instead of breaking the paste it is observing.
+        """
+        from fastprompter.core.win_clipboard import clipboard_generation
+        try:
+            probe = clipboard_generation(label)
+        except Exception:
+            probe = {"label": label, "monotonic": None, "sequence": None,
+                     "owner": {}}
+        try:
+            from fastprompter.ui.clipboard_watch import (
+                clipboard_watch_snapshot,
+            )
+            probe["qclipboard"] = clipboard_watch_snapshot()
+        except Exception:
+            probe["qclipboard"] = {}
+        return probe
+
+    def _apply_paste_clipboard_contract(self, record):
+        """Attach the clipboard GENERATION evidence to one paste record.
+
+        T-1269 A3: the three samples of one attempt -- key entry, immediately
+        before the MIME payload is read, immediately after the paste returns --
+        are compared here. If the OS generation moved between them, then an
+        external clipboard owner replaced the payload WHILE the paste ran, and
+        the record says so (``clipboard_changed_during_paste`` plus
+        ``failure_class: clipboard_ownership_race``) instead of quietly
+        presenting an older payload as the operator's newest copy.
+        """
+        from fastprompter.core.win_clipboard import (
+            UNKNOWN,
+            clipboard_race_evidence,
+        )
+        key_entry = (record.get("clipboard_key_entry")
+                     or getattr(self, "_paste_clip_key_entry", None))
+        mime_read = (record.get("clipboard_at_mime_read")
+                     or getattr(self, "_paste_clip_mime_read", None))
+        after = (record.get("clipboard_after_paste")
+                 or getattr(self, "_paste_clip_after_paste", None))
+        record["clipboard_key_entry"] = key_entry
+        record["clipboard_at_mime_read"] = mime_read
+        record["clipboard_after_paste"] = after
+        try:
+            evidence = clipboard_race_evidence((
+                ("key_entry", key_entry),
+                ("mime_read", mime_read),
+                ("after_paste", after),
+            ))
+        except Exception:
+            evidence = {"evidence": "unknown", "changed": False,
+                        "sequences": {}, "owner_processes": [], "owner": {}}
+        record["clipboard_race"] = evidence
+        record["clipboard_changed_during_paste"] = bool(evidence["changed"])
+        owner = evidence.get("owner") or {}
+        if not owner:
+            # An unresolved owner is still a SHAPED owner: the acceptance says
+            # an unresolvable lookup must read UNKNOWN, and a consumer that has
+            # to guess whether a key is missing or a lookup failed cannot tell
+            # "no owner" from "this record is older than the field" (measured:
+            # a paste on a machine whose clipboard had no live owner produced a
+            # record with NO clipboard_owner key at all).
+            owner = {"status": "unknown", "hwnd": None, "pid": None,
+                     "process": UNKNOWN, "is_self": None}
+        record["clipboard_owner"] = owner
+        record["clipboard_owner_process"] = owner.get("process")
+        record["failure_class"] = classify_paste_failure(record)
+        return record
+
+    def _close_paste_record(self):
+        """Re-score the newest record now that the whole attempt has ended.
+
+        The record is written while ``self.paste()`` runs -- that is, BEFORE
+        the post-paste clipboard sample exists. Closing it here is what lets
+        the third sample prove (or disprove) a race that began mid-paste.
+        """
+        record = getattr(self, "_paste_last_record", None)
+        if isinstance(record, dict):
+            self._apply_paste_clipboard_contract(record)
+
+    def _log_clipboard_race(self, record):
+        """One attributable warning when the OS clipboard moved mid-paste.
+
+        Emitted at most once per record, and never containing clipboard text:
+        generation numbers and the owning process name are the whole payload,
+        so the operator can name the competing owner (ClipDiary, a clipboard+
+        script, the OS clipboard history) instead of being told "try again".
+        """
+        if not record.get("clipboard_changed_during_paste"):
+            return
+        if record.get("clipboard_race_logged"):
+            return
+        record["clipboard_race_logged"] = True
+        race = record.get("clipboard_race") or {}
+        logger.warning(
+            "Ctrl+V: the Windows clipboard generation changed DURING this "
+            "paste (sequences=%s, owner processes=%s). The payload this paste "
+            "consumed may not be the item that was copied last; the owner "
+            "processes above identify the competing writer. record=%s",
+            race.get("sequences"), race.get("owner_processes"), record)
+
+    def paste_key_router_evidence(self):
+        """Class-1 (key routing) evidence for the intermittent report.
+
+        A Ctrl+V that never reaches FastPrompter writes no record, so "nothing
+        was inserted" and "the key never arrived" would be indistinguishable
+        from the ring alone. This heartbeat separates them: the counter moves
+        only when a real Ctrl+V key event reaches this editor.
+        """
+        records = list(getattr(self, "_paste_diag", ()) or ())
+        return {
+            "key_events_seen": int(getattr(self, "_paste_key_events_seen", 0)),
+            "last_key_monotonic": getattr(
+                self, "_paste_last_key_monotonic", None),
+            "record_count": len(records),
+            "records_without_key_path": sum(
+                1 for r in records if not r.get("key_path_reached")),
+            "failure_classes": [r.get("failure_class") for r in records],
+        }
+
+    def _record_paste_diag(self, record):
+        """Append to the bounded ring and hand the record back."""
+        ring = getattr(self, "_paste_diag", None)
+        if ring is None:
+            ring = self._paste_diag = []
+        # T-1269 A2/A3: every paste record leaves through this one door, so the
+        # clipboard-generation contract and the failure classification are
+        # applied uniformly -- the refusal, the no-callback and the ordinary
+        # records all end up the same shape.
+        record = self._apply_paste_clipboard_contract(record)
+        ring.append(record)
+        limit = self._PASTE_DIAG_LIMIT
+        if len(ring) > limit:
+            del ring[:-limit]
+        self._paste_last_record = record
+        self._log_clipboard_race(record)
+        return record
+
+    def _paste_block_reason(self):
+        """Why the Ctrl+V cue AND the paste must be declined, or None.
+
+        Read-only is the one state a real key event still reaches: Qt delivers
+        the key, this handler runs, and an unconditional ``self.paste()`` is
+        swallowed by ``insertFromMimeData``'s read-only guard — so the cue
+        that ``keyPressEvent`` already played was a lie. Suppressing the cue
+        exactly when the paste is refused is the fix; forcing the insertion
+        would be the bug.
+
+        A hidden or disabled widget never receives the key in the first place,
+        so those two states are RECORDED by ``_paste_state`` (the contract
+        requires proving them at failure time) but do not block the handler:
+        programmatic and QTest routes to a not-yet-shown editor must keep
+        working, and "no cue" there is already guaranteed by Qt.
+        """
+        try:
+            if self.isReadOnly():
+                return "read_only"
+            if not self.isEnabled():
+                return "disabled"
+        except RuntimeError:      # underlying C++ object already gone
+            return "deleted"
+        return None
+
+    def _paste_from_keyboard(self, event=None):
+        """Ctrl+V's single entry point — the live key route, instrumented.
+
+        Keeping the refusal here (and not inside ``insertFromMimeData``) is
+        what lets the diagnostics separate the two failure classes the
+        operator's report cannot distinguish on its own:
+
+        * "key path reached, then the MIME/paste step produced nothing" — an
+          in-app defect, which the records below name exactly;
+        * "key path never reached" — which would point outside the app
+          (another window, a shortcut owner, an external tool) and is
+          recorded as ``paste_called: False``.
+        """
+        if event is not None:
+            try:
+                self._paste_event_meta = {
+                    "event_key": int(event.key()),
+                    "event_modifiers": int(event.modifiers().value),
+                    "native_scan_code": int(event.nativeScanCode()),
+                }
+            except Exception:
+                self._paste_event_meta = {}
+        # T-1269 A1: the key-path heartbeat. A Ctrl+V that never reaches
+        # FastPrompter writes NO record at all, so "nothing was inserted" and
+        # "the app never saw the key" would look identical in the ring. These
+        # counters move only when a real Ctrl+V key event arrives here, which
+        # is what makes class 1 (key routing) decidable from evidence.
+        self._paste_key_events_seen = (
+            getattr(self, "_paste_key_events_seen", 0) + 1)
+        # T-1269 A3: the OS clipboard GENERATION at the key entry. Two more
+        # samples follow -- immediately before the MIME payload is read, and
+        # immediately after the paste returns. A generation that moves between
+        # them means an external clipboard owner (ClipDiary, a clipboard+
+        # script, the OS clipboard history) rewrote the payload mid-paste.
+        self._paste_last_record = None
+        self._paste_clip_key_entry = self._clipboard_generation_probe(
+            "key_entry")
+        self._paste_clip_mime_read = None
+        self._paste_clip_after_paste = None
+        self._paste_last_key_monotonic = (
+            self._paste_clip_key_entry or {}).get("monotonic")
+        # The key DID reach this route, refusal or not: that is the class-1 /
+        # class-2 boundary, and every record has to state it.
+        self._paste_key_path = True
+        self._paste_paste_called = False
+        self._paste_insert_reached = False
+        reason = self._paste_block_reason()
+        if reason is not None:
+            before = self._paste_state()
+            mime_info = describe_clipboard_mime(
+                QApplication.clipboard().mimeData())
+            after = self._paste_state()
+            record = self._paste_contract(_paste_record(
+                "refused:" + reason, mime_info, before, after, False))
+            self._record_paste_diag(record)
+            logger.debug(
+                "Ctrl+V declined in the editor (%s); no paste cue played and "
+                "nothing was inserted: %s", reason, record)
+            self._paste_event_meta = None
+            self._paste_key_path = False
+            return
+        self._paste_paste_called = True
+        self._paste_insert_reached = False
+        self._paste_diagnostics_active = True
+        before = self._paste_state()
+        paste_error = False
+        try:
+            self.paste()
+        except Exception:
+            paste_error = True
+            logger.exception("Ctrl+V paste call failed")
+        finally:
+            # A3: the third generation sample -- taken once the paste returned.
+            self._paste_clip_after_paste = self._clipboard_generation_probe(
+                "after_paste")
+            # The attempt is over, so the record written while `paste()` ran
+            # can be judged with all three clipboard samples in hand.
+            self._close_paste_record()
+            self._paste_diagnostics_active = False
+        if not self._paste_insert_reached:
+            after = self._paste_state()
+            record = self._paste_contract(_paste_record(
+                "paste_error" if paste_error else "paste_no_insert_callback",
+                describe_clipboard_mime(QApplication.clipboard().mimeData()),
+                before, after, False))
+            self._record_paste_diag(record)
+            logger.warning(
+                "Ctrl+V reached the editor but insertFromMimeData was not "
+                "reached: record=%s", record)
+        self._paste_key_path = False
+        self._paste_event_meta = None
+
     def insertFromMimeData(self, source):
-        if source.hasUrls():
+        self._paste_insert_reached = True
+        if self._paste_diagnostics_active:
+            # A3: the second generation sample -- immediately before the MIME
+            # payload is read by the branch below.
+            self._paste_clip_mime_read = self._clipboard_generation_probe(
+                "mime_read")
+        if self.isReadOnly():
+            if not self._paste_diagnostics_active:
+                return
+            before = self._paste_state()
+            after = self._paste_state()
+            record = self._paste_contract(_paste_record(
+                "refused:read_only", describe_clipboard_mime(source),
+                before, after, False))
+            self._record_paste_diag(record)
+            return
+
+        before = self._paste_state()
+        mime_info = describe_clipboard_mime(source)
+        branch = self._insert_from_mime_data(source)
+        self._finish_paste(branch, source, mime_info, before)
+
+    def _finish_paste(self, branch, source, mime_info, before):
+        """The paste RESULT contract, checked against the document itself.
+
+        For a writable editor holding a text-capable clipboard, a paste that
+        reached a branch and changed NOTHING is a real failure — unless the
+        branch deliberately did something else (attached a file, recorded a
+        link, read a file whose content is empty). Those cases are settled
+        branches; everything else falls back to the plain text the same
+        clipboard already carries, so no branch can silently do nothing while
+        usable text is available.
+        """
+        settled = bool(getattr(self, "_paste_settled", False))
+        changed = (before.get("document_revision") is not None
+                   and before.get("document_revision")
+                   != self._document_revision())
+        text = (_mime_text(source) if source is not None
+                and mime_info.get("has_text") else "")
+        if not changed and text and not settled:
+            self.insertPlainText(text)
+            branch += "+text_fallback"
+            after = self._paste_state()
+            if self._paste_diagnostics_active:
+                record = _paste_record(branch, mime_info, before, after,
+                                       fallback=True)
+                record["branch_settled"] = settled
+                record = self._paste_contract(record)
+                self._record_paste_diag(record)
+                logger.warning(
+                    "Ctrl+V: MIME branch produced no document change; the "
+                    "plain-text representation was inserted instead. "
+                    "clipboard=%s record=%s", mime_info, record)
+            return
+        after = self._paste_state()
+        if not self._paste_diagnostics_active:
+            return
+        record = _paste_record(branch, mime_info, before, after,
+                               fallback=False)
+        record["branch_settled"] = settled
+        record = self._paste_contract(record)
+        self._record_paste_diag(record)
+        if (not changed and not settled
+                and mime_info.get("text_stripped_length")):
+            logger.warning(
+                "Ctrl+V produced NO document change and no file/link action "
+                "although the clipboard carries usable text. clipboard=%s "
+                "record=%s", mime_info, record)
+
+    def _document_revision(self):
+        try:
+            return self.document().revision()
+        except Exception:
+            return None
+
+    def _insert_from_mime_data(self, source):
+        """The MIME-aware insert, returning the BRANCH it took.
+
+        Behaviour is unchanged; the label is what turns "nothing appeared"
+        into a named cause, and `self._paste_settled` records whether the
+        branch deliberately consumed the paste even with no text inserted
+        (file attached, dialog answered, empty file read).
+        """
+        self._paste_settled = False
+        try:
+            has_urls = bool(source.hasUrls())
+        except Exception:
+            has_urls = False
+        try:
+            has_image = bool(source.hasImage())
+        except Exception:
+            has_image = False
+        urls = _mime_urls(source) if has_urls else []
+        if has_urls and (not has_image or any(u.isLocalFile() for u in urls)):
             # Paste of copied files (Ctrl+V from Explorer) — no drag overlay.
             # A text-based file lands as its CONTENT, no dialog (T-752): the
             # user asked the silo to read files, so a copied .md/.py/.txt
             # pastes what it holds. Binary files keep the file/link choice.
-            for url in source.urls():
+            labels = []
+            for url in urls:
                 if url.isLocalFile():
                     path = url.toLocalFile()
                     ext = os.path.splitext(path)[1].lower()
-                    if ext in TEXT_EXTENSIONS or not ext:
+                    if ext in self.IMAGE_EXTENSIONS:
+                        labels.append("urls_image")
+                        self._paste_settled = True
+                        self.insertPlainText(self.image_paste_markup(
+                            os.path.basename(path), url.toString(QUrl.ComponentFormattingOption.FullyEncoded)) + "\n")
+                    elif ext in TEXT_EXTENSIONS or not ext:
                         try:
                             text_to_insert = _read_text_file(path)
-                            QTimer.singleShot(0, lambda t=text_to_insert: self.insertPlainText(t))
+                            labels.append("urls_file_text")
+                            if text_to_insert:
+                                self._paste_settled = True
+                                self.insertPlainText(text_to_insert)
+                            else:
+                                labels.append("urls_file_empty")
                         except Exception:
-                            import traceback
-                            traceback.print_exc()
+                            # The read itself failed: NOT settled, so usable
+                            # text on the same clipboard still reaches the
+                            # caret instead of the paste vanishing
+                            # (T-1269C append).
+                            labels.append("urls_file_unreadable")
+                            logger.debug(
+                                "Ctrl+V local text-file URL read failed "
+                                "(URL count=%s)", len(urls), exc_info=True)
                     else:
                         choice = self._ask_binary_drop_choice(os.path.basename(path))
                         if choice == "file":
+                            labels.append("urls_binary_file")
+                            self._paste_settled = True
                             self.main_win.add_files_to_active_silo([path])
                         elif choice == "files_link":
+                            labels.append("urls_binary_link")
+                            self._paste_settled = True
                             self.main_win.add_links_to_active_silo([path])
                         elif choice == "editor_link":
+                            labels.append("urls_editor_link")
+                            self._paste_settled = True
                             name = os.path.basename(path)
                             clean_path = path.replace("\\", "/")
                             text_to_insert = f"[{name}](file:///{clean_path})"
-                            QTimer.singleShot(0, lambda t=text_to_insert: self.insertPlainText(t))
-            return
-        if source.hasImage():
+                            self.insertPlainText(text_to_insert)
+                        else:
+                            # Dismissed / unusable answer: deliberately NOT
+                            # settled, so plain text (when present) is used.
+                            labels.append("urls_binary_cancelled")
+                else:
+                    labels.append("urls_remote")
+                    url_text = url.toString()
+                    if url_text:
+                        self._paste_settled = True
+                        self.insertPlainText(url_text + "\n")
+                    else:
+                        labels.append("urls_remote_unusable")
+            if not labels:
+                # hasUrls() with an EMPTY list: the old code returned here with
+                # nothing done at all.
+                return "urls_empty"
+            return "|".join(labels)
+        if has_image:
             # Paste image from clipboard (FastCapture, screenshot, etc.)
             # Save to the silo's file folder and insert a markdown image ref
-            image = source.imageData()
-            if image is not None and not image.isNull():
-                import datetime
+            try:
+                image = source.imageData()
+                image_invalid = image is None or image.isNull()
+            except Exception:
+                image = None
+                image_invalid = True
+            if image_invalid:
+                # A payload that CLAIMS an image but decodes to nothing is the
+                # silent-no-op shape this wave is about: returned unsettled, so
+                # text on the same clipboard is used instead of the paste
+                # disappearing (T-1269C append).
+                return "image_no_payload"
+            import datetime
 
-                from fastprompter.ui.file_container import _unique_dest
-                try:
-                    folder = self.main_win._silo_folder_dir(
-                        getattr(self.main_win, "active_temp_slot", 0),
-                        getattr(self.main_win, "active_is_archive", False))
-                    os.makedirs(folder, exist_ok=True)
-                    stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-                    name = _unique_dest(folder, f"paste-{stamp}.png")
-                    if image.save(name, "PNG"):
-                        cursor = self.textCursor()
-                        block = cursor.block()
-                        prefix = "" if (cursor.positionInBlock() == 0 and not block.text().strip()) else "\n"
-                        markup = self.image_paste_markup(
-                            os.path.basename(name), QUrl.fromLocalFile(name).toString())
-                        text_to_insert = f"{prefix}{markup}\n"
-                        QTimer.singleShot(0, lambda t=text_to_insert: self.insertPlainText(t))
-                        # Refresh file container if open.
-                        # Guard with ignore_focus_loss: the file container
-                        # is a Qt.Tool window when undocked, and touching
-                        # it can fire WindowDeactivate on the main window,
-                        # which hides it via changeEvent (T-732).
-                        try:
-                            fc = getattr(self.main_win, "_file_container", None)
-                            if fc is not None:
-                                prev = getattr(self.main_win, "ignore_focus_loss", False)
-                                self.main_win.ignore_focus_loss = True
-                                try:
-                                    fc.refresh()
-                                finally:
-                                    self.main_win.ignore_focus_loss = prev
-                        except Exception:
-                            pass
-                except Exception:
-                    from fastprompter.core.logging import logger
-                    logger.exception("paste image failed")
-            return
-        if source.hasText():
-            text = source.text().strip().strip('\"')
+            from fastprompter.ui.file_container import _unique_dest
+            try:
+                folder = self.main_win._silo_folder_dir(
+                    getattr(self.main_win, "active_temp_slot", 0),
+                    getattr(self.main_win, "active_is_archive", False))
+                os.makedirs(folder, exist_ok=True)
+                stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                name = _unique_dest(folder, f"paste-{stamp}.png")
+                if image.save(name, "PNG"):
+                    cursor = self.textCursor()
+                    block = cursor.block()
+                    prefix = "" if (cursor.positionInBlock() == 0 and not block.text().strip()) else "\n"
+                    markup = self.image_paste_markup(
+                        os.path.basename(name), QUrl.fromLocalFile(name).toString())
+                    text_to_insert = f"{prefix}{markup}\n"
+                    self.insertPlainText(text_to_insert)
+                    # Refresh file container if open.
+                    # Guard with ignore_focus_loss: the file container
+                    # is a Qt.Tool window when undocked, and touching
+                    # it can fire WindowDeactivate on the main window,
+                    # which hides it via changeEvent (T-732).
+                    try:
+                        fc = getattr(self.main_win, "_file_container", None)
+                        if fc is not None:
+                            prev = getattr(self.main_win, "ignore_focus_loss", False)
+                            self.main_win.ignore_focus_loss = True
+                            try:
+                                fc.refresh()
+                            finally:
+                                self.main_win.ignore_focus_loss = prev
+                    except Exception:
+                        pass
+                    self._paste_settled = True
+                    return "image_saved"
+                # The save itself failed: no file, no insertion -> unsettled,
+                # so plain text still lands (T-1269C append).
+                return "image_save_failed"
+            except Exception:
+                logger.exception("paste image failed")
+                return "image_error"
+        try:
+            has_text = bool(source.hasText())
+        except Exception:
+            has_text = False
+        if has_text:
+            text = _mime_text(source).strip().strip('\"')
             # Selected text + a URL on the clipboard -> wrap the selection as
             # a markdown link instead of replacing it with the raw URL
             cursor = self.textCursor()
@@ -3089,8 +4061,9 @@ class VaultTextEdit(QTextEdit):
                 if url.isValid() and url.scheme() in ("http", "https", "ftp", "file"):
                     selected = cursor.selectedText().replace(" ", "\n")
                     text_to_insert = f"[{selected}]({text})"
-                    QTimer.singleShot(0, lambda t=text_to_insert: self.textCursor().insertText(t))
-                    return
+                    self.textCursor().insertText(text_to_insert)
+                    self._paste_settled = True
+                    return "text_selection_url"
             # Plain text file path — insert as markdown link, or READ the file
             # when it is a text file (T-752). The link branch below stays for
             # binary/image files; a text file path pastes its content.
@@ -3098,31 +4071,46 @@ class VaultTextEdit(QTextEdit):
             # every short paste, and an unreachable UNC path froze the window for
             # a measured 93 seconds. See fastprompter.utils.paths.
             if text and len(text) < 260 and "\n" not in text:
+                if QUrl(text).isLocalFile():
+                    text = QUrl(text).toLocalFile()
                 normalized = os.path.normpath(text)
                 if exists_within(normalized):
                     name = os.path.basename(normalized)
-                    clean_path = normalized.replace(os.sep, '/')
-                    url = f"file:///{clean_path}"
+                    url = QUrl.fromLocalFile(normalized).toString(
+                        QUrl.ComponentFormattingOption.FullyEncoded)
                     if os.path.splitext(name)[1].lower() in self.IMAGE_EXTENSIONS:
                         # An image path pasted as a plain link is the whole
                         # T-724 regression: it rendered as raw `[name](...)`
                         # text and could not be clicked.
                         text_to_insert = self.image_paste_markup(name, url)
-                        QTimer.singleShot(0, lambda t=text_to_insert: self.insertPlainText(t))
+                        self.insertPlainText(text_to_insert)
+                        self._paste_settled = True
+                        return "text_path_image"
                     elif os.path.splitext(name)[1].lower() in TEXT_EXTENSIONS \
                             or not os.path.splitext(name)[1]:
                         try:
                             text_to_insert = _read_text_file(normalized)
-                            QTimer.singleShot(0, lambda t=text_to_insert: self.insertPlainText(t))
+                            self.insertPlainText(text_to_insert)
+                            self._paste_settled = True
+                            return "text_path_content"
                         except Exception:
-                            import traceback
-                            traceback.print_exc()
+                            # An unreadable path is NOT settled: the raw text on
+                            # the clipboard still lands instead of the paste
+                            # doing nothing at all (T-1269C append).
+                            logger.debug(
+                                "Ctrl+V plain text file path read failed",
+                                exc_info=True)
+                            return "text_path_read_error"
                     else:
                         text_to_insert = f"[{name}]({url})"
-                        QTimer.singleShot(0, lambda t=text_to_insert: self.insertPlainText(t))
-                    return
-            text_to_insert = source.text()
-            QTimer.singleShot(0, lambda t=text_to_insert: self.insertPlainText(t))
+                        self.insertPlainText(text_to_insert)
+                        self._paste_settled = True
+                        return "text_path_link"
+            text_to_insert = _mime_text(source)
+            self.insertPlainText(text_to_insert)
+            self._paste_settled = True
+            return "text_plain"
+        return "empty_mime"
 
     def wheelEvent(self, event):
         if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
@@ -3150,6 +4138,10 @@ class VaultTextEdit(QTextEdit):
     }
 
     def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Escape and getattr(self, "_line_drag_source_block", None) is not None:
+            self._cancel_line_drag()
+            event.accept()
+            return
         mods = event.modifiers()
 
         if mods == Qt.KeyboardModifier.ControlModifier and event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
@@ -3204,7 +4196,16 @@ class VaultTextEdit(QTextEdit):
             seq_str = QKeySequence(key_val | mods.value).toString()
 
             def matches(name, default):
-                return seq_str and seq_str == QKeySequence(mw.data.get(name, default)).toString()
+                configured = mw.data.get(name, default)
+                canonical = QKeySequence(configured).toString() if configured else ""
+                if canonical in _RESERVED_EDITING_SEQUENCES:
+                    # Reserved for the editor's own editing keys (see
+                    # _RESERVED_EDITING_SEQUENCES): the configured command does
+                    # not get to steal Ctrl+V, and the collision is reported
+                    # instead of leaving two silent owners of one chord.
+                    self._note_reserved_hotkey_conflict(name, canonical)
+                    return False
+                return bool(seq_str) and seq_str == canonical
 
             if matches("hk_header", "Ctrl+E"):
                 mw.apply_header_timestamp(); event.accept(); return
@@ -3249,13 +4250,42 @@ class VaultTextEdit(QTextEdit):
         # T-735 wrapper could not reach them and Ctrl+A was silent while every
         # registered hotkey had a sound. Play and fall through — the event is
         # NOT accepted here, Qt still does the editing.
+        #
+        # T-1269C: `key_val` here, not `event.key()`. The configurable
+        # hotkeys were normalized to the PHYSICAL key by T-735, but the
+        # standard editing four were left on the raw layout-dependent key,
+        # so on a Russian layout Ctrl+A/C/V/X were silently dead: no sound,
+        # no editing, nothing logged. Sound and action must agree on ONE key
+        # identity, or "the paste sound played" stops being evidence about
+        # the paste.
+        std_key = key_val
         if mods == Qt.KeyboardModifier.ControlModifier:
-            event_name = self._BUILTIN_KEY_SOUNDS.get(event.key())
-            if event_name:
+            event_name = self._BUILTIN_KEY_SOUNDS.get(std_key)
+            # T-1269C append: the cue must not outlive the ability to paste.
+            # `_paste_block_reason()` is the SAME predicate `_paste_from_keyboard`
+            # consults, so "paste sound played, nothing inserted" can never
+            # again be produced by a read-only/hidden/disabled editor: the cue
+            # is suppressed exactly when the paste would be refused, and the
+            # refusal is recorded with its reason instead.
+            if event_name and not (std_key == Qt.Key.Key_V
+                                   and self._paste_block_reason()):
                 try:
                     mw.play_sound(event_name)
                 except Exception:
                     pass
+            # Qt matches its own Cut/SelectAll shortcuts on the raw key too,
+            # so under a non-Latin layout they never fire. Only that case is
+            # intercepted — on a Latin layout the event still falls through
+            # to Qt exactly as before.
+            if std_key != event.key():
+                if std_key == Qt.Key.Key_A:
+                    self.selectAll()
+                    event.accept()
+                    return
+                if std_key == Qt.Key.Key_X and not self.isReadOnly():
+                    self.cut()
+                    event.accept()
+                    return
 
         if mods == Qt.KeyboardModifier.ControlModifier and event.key() in (Qt.Key.Key_Z, Qt.Key.Key_Y):
             if event.key() == Qt.Key.Key_Z:
@@ -3301,50 +4331,39 @@ class VaultTextEdit(QTextEdit):
             event.accept()
             return
 
-        if event.key() == Qt.Key.Key_C and mods == Qt.KeyboardModifier.ControlModifier:
-            cursor = self.textCursor()
-            if not cursor.hasSelection():
-                if cursor.atBlockEnd() and cursor.block().length() > 1:
-                    cursor.select(QTextCursor.SelectionType.BlockUnderCursor)
+        # T-1269C: std_key, so the copy contract holds on every layout.
+        if std_key == Qt.Key.Key_C and mods == Qt.KeyboardModifier.ControlModifier:
+            # Copy-All is the toolbar contract ("Copy all text (Ctrl+C)"), so
+            # with no selection copy the WHOLE document straight to the
+            # clipboard. Selecting the document first (the old route) left the
+            # editor fully highlighted, and the next keystroke wiped the prompt.
+            if self.textCursor().hasSelection():
+                if std_key == event.key():
+                    super().keyPressEvent(event)
                 else:
-                    cursor.select(QTextCursor.SelectionType.Document)
-                self.setTextCursor(cursor)
-            super().keyPressEvent(event)
+                    # Non-Latin layout: Qt's own Copy shortcut matches the raw
+                    # key and would never fire, so the selection is copied
+                    # directly. Same action, reached by the physical key.
+                    self.copy()
+            else:
+                QApplication.clipboard().setText(self.toPlainText())
             cb_ctrl_c = getattr(self.main_win, "cb_ctrl_c", None)
             ctrl_c_hides = (
                 cb_ctrl_c.isChecked() if cb_ctrl_c is not None
                 else self.main_win.data.get("ctrl_c_closes", "True") == "True"
             )
             if ctrl_c_hides:
-                QTimer.singleShot(10, lambda: not sip.isdeleted(self) and not sip.isdeleted(
-                    self.main_win) and self.main_win.hide_and_save())
+                QTimer.singleShot(10, weak_qt_callback(
+                    self.main_win, lambda window: window.hide_and_save()))
             return
 
-        if event.key() == Qt.Key.Key_V and mods == Qt.KeyboardModifier.ControlModifier:
-            clipboard = QApplication.clipboard()
-            if clipboard.mimeData().hasUrls():
-                urls = [u for u in clipboard.mimeData().urls() if u.isLocalFile()]
-                if urls:
-                    links = []
-                    for u in urls:
-                        path = u.toLocalFile()
-                        name = os.path.basename(path)
-                        # Ensure forward slashes for Markdown links
-                        links.append(f"[{name}](file:///{path.replace(os.sep, '/')})")
-                    self.textCursor().insertText("\n".join(links))
-                    event.accept()
-                    return
-            # Plain text file path in clipboard — insert as markdown link
-            if clipboard.mimeData().hasText():
-                text = clipboard.text().strip().strip('\"')
-                if text and len(text) < 260 and "\n" not in text:
-                    normalized = os.path.normpath(text)
-                    if os.path.exists(normalized):
-                        name = os.path.basename(normalized)
-                        clean_path = normalized.replace(os.sep, '/')
-                        self.textCursor().insertText(f"[{name}](file:///{clean_path})")
-                        event.accept()
-                        return
+        # T-1269C: std_key. `self.paste()` is the MIME-aware route
+        # (insertFromMimeData), so image, file/URL and selection+URL pastes
+        # keep their behaviour — this only decides WHICH key reaches it.
+        if std_key == Qt.Key.Key_V and mods == Qt.KeyboardModifier.ControlModifier:
+            self._paste_from_keyboard(event)
+            event.accept()
+            return
 
         if event.key() in (Qt.Key.Key_Tab, Qt.Key.Key_Backtab) and mods in (Qt.KeyboardModifier.NoModifier, Qt.KeyboardModifier.ShiftModifier):
             # Inside a SiloTable, Tab walks the cells. Checked before the
@@ -3492,6 +4511,11 @@ class VaultTextEdit(QTextEdit):
                     event.accept()
                     return
 
+        pre_key = event.key()
+        pre_cursor = self.textCursor()
+        pre_had_selection = pre_cursor.hasSelection()
+        pre_revision = self.document().revision()
+
         try:
             # Swallow native Ctrl+B/I/U so user rebinding works fully
             if mods == Qt.KeyboardModifier.ControlModifier and event.key() in (Qt.Key.Key_B, Qt.Key.Key_I, Qt.Key.Key_U):
@@ -3518,8 +4542,11 @@ class VaultTextEdit(QTextEdit):
             event.accept()
             return
 
-        # Typewriter sound: fires for actual typed symbols (gated by the
-        # sound_typewriter toggle inside SoundManager).
+        # Typewriter / delete sounds (T-709, T-1242 append D1-D8).  The
+        # selection was captured in pre_* BEFORE super() ran, so a Delete over a
+        # selection is still classified as delete_selection (D3).  A keystroke
+        # that edits nothing (caret at doc start/end, read-only) leaves the
+        # document revision unchanged, so no sound is emitted (D4).
         txt = event.text()
         if txt and txt.isprintable() and not (
             mods & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.AltModifier)
@@ -3528,12 +4555,20 @@ class VaultTextEdit(QTextEdit):
                 self.main_win.play_sound("type")
             except Exception:
                 pass
-        # Backspace sound (T-709)
-        elif event.key() in (Qt.Key.Key_Backspace, Qt.Key.Key_Delete):
-            try:
-                self.main_win.play_sound("backspace")
-            except Exception:
-                pass
+        elif pre_key in (Qt.Key.Key_Backspace, Qt.Key.Key_Delete):
+            # Family semantics (D5/D6): Backspace stays its own event even over
+            # a selection; Delete splits into forward vs selected-text.
+            if pre_key == Qt.Key.Key_Backspace:
+                event_name = "backspace"
+            elif pre_had_selection:
+                event_name = "delete_selection"
+            else:
+                event_name = "delete_forward"
+            if self.document().revision() != pre_revision:
+                try:
+                    self.main_win.play_sound(event_name)
+                except Exception:
+                    pass
 
     @staticmethod
     def _whole_block_cursor(block):
@@ -3963,7 +4998,8 @@ class VaultTextEdit(QTextEdit):
         if getattr(self, "_sel_refresh_pending", False):
             return
         self._sel_refresh_pending = True
-        QTimer.singleShot(0, self._apply_extra_selections)
+        QTimer.singleShot(0, weak_qt_callback(
+            self, type(self)._apply_extra_selections))
 
     def _apply_extra_selections(self):
         self._sel_refresh_pending = False
@@ -4211,8 +5247,8 @@ class VaultTextEdit(QTextEdit):
                                 
                                 self._rendered_images.append((btn_rect, img_path))
 
-                        # Checkbox rendering (skip for large docs, >2000 blocks)
-                        if self._doc_has_checkbox and not is_large:
+                        # Checkbox rendering
+                        if self._doc_has_checkbox:
                             indent = len(text) - len(stripped)
                             if stripped.startswith("[ ] "):
                                 checked = False
@@ -4235,24 +5271,13 @@ class VaultTextEdit(QTextEdit):
                             bg_w = int(r_end.x() - r_start.x())
                             bg_h = int(r_start.height())
 
-                            painter.fillRect(QRectF(bg_left, bg_top, bg_w, bg_h), bg_color)
-                            cb_size = int(r_start.height() * 0.75)
-                            cy = bg_top + (bg_h - cb_size) / 2
-                            cx = bg_left + (bg_w - cb_size) / 2
-                            cb_rect = QRectF(cx, cy, cb_size, cb_size)
-                            path = QPainterPath()
-                            path.addRoundedRect(cb_rect, 2, 2)
-                            if checked:
-                                painter.fillPath(path, QColor("#5cb85c"))
-                                painter.strokePath(path, QColor("#4a9a4a"))
-                                painter.setPen(QColor("white"))
-                                check_font = self.font()
-                                check_font.setPixelSize(max(8, int(cb_size * 0.65)))
-                                painter.setFont(check_font)
-                                painter.drawText(cb_rect, Qt.AlignmentFlag.AlignCenter, "\u2714")
-                            else:
-                                painter.fillPath(path, QColor("#333333"))
-                                painter.strokePath(path, QColor("#666666"))
+                            marker_rect = QRect(bg_left, bg_top, bg_w, bg_h)
+                            painter.fillRect(marker_rect, bg_color)
+                            _paint_task_checkbox(
+                                painter,
+                                _task_checkbox_rect(marker_rect),
+                                checked,
+                            )
                     block = block.next()
 
             self._paint_typo_underlines(painter, doc, y_off)

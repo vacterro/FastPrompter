@@ -16,6 +16,18 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import i18n_utils
 
+# FastPrompter locale code -> the code an external translation service wants.
+# Kept at module level on purpose: the caller that consumed it was removed, and
+# the mapping is the non-obvious part (est->et, fra->fr, he->iw, spa->es,
+# ukr->uk, zh->zh-CN, and ded riding on ru). Deleting it would throw that away
+# and the next person would have to rediscover it.
+LANG_MAP = {
+    "ar": "ar", "da": "da", "de": "de", "en": "en", "est": "et", "fi": "fi",
+    "fra": "fr", "he": "iw", "it": "it", "ja": "ja", "ko": "ko", "nl": "nl",
+    "no": "no", "pl": "pl", "pt": "pt", "ru": "ru", "spa": "es", "sv": "sv",
+    "th": "th", "ukr": "uk", "vi": "vi", "zh": "zh-CN", "ded": "ru",
+}
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Fast SAITranslate sync.")
@@ -79,13 +91,6 @@ def main():
 
     print(f"Total keys to maintain: {len(collected_keys)}")
 
-    LANG_MAP = {
-        "ar": "ar", "da": "da", "de": "de", "en": "en", "est": "et", "fi": "fi",
-        "fra": "fr", "he": "iw", "it": "it", "ja": "ja", "ko": "ko", "nl": "nl",
-        "no": "no", "pl": "pl", "pt": "pt", "ru": "ru", "spa": "es", "sv": "sv",
-        "th": "th", "ukr": "uk", "vi": "vi", "zh": "zh-CN", "ded": "ru"
-    }
-
     if not os.path.isdir(locales_dir):
         print(f"Locales directory missing at {locales_dir}", file=sys.stderr)
         sys.exit(1)
@@ -107,7 +112,6 @@ def main():
             continue
 
         print(f"[{lang}] Processing {len(missing)} missing keys...")
-        target_code = LANG_MAP.get(lang, "en")
 
         added = 0
         for key in missing:

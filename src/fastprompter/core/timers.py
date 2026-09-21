@@ -470,26 +470,6 @@ class Timer:
         return True
 
 
-def limit_window(name, hours=5, anchor=None, now=None, **kw):
-    """A rolling usage window: it opened at `anchor` and rolls every `hours`.
-
-    Written for "my 5-hour agent limit started at 09:20": the first target is
-    anchor + 5h, and it keeps rolling from there, so after a laptop has been
-    shut for two days the timer still names the NEXT reset rather than a
-    string of missed ones.
-    """
-    now = now or datetime.datetime.now()
-    anchor = anchor or now
-    minutes = max(1, int(round(float(hours) * 60)))
-    target = anchor + datetime.timedelta(minutes=minutes)
-    timer = Timer(name=name, target=target, repeat=REPEAT_INTERVAL,
-                  interval_minutes=minutes, **kw)
-    # anchored in the past (the window opened this morning) -> roll forward
-    if timer.target <= now:
-        timer.advance(now)
-    return timer
-
-
 def snooze_clone(timer, minutes=10, now=None):
     """A one-shot reminder for THIS occurrence of a fired repeating timer.
 

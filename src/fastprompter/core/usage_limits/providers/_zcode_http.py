@@ -270,15 +270,24 @@ def parse_limits(data) -> list[dict]:
     return out
 
 
+class _NoQuotaRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise ValueError("quota redirects are not accepted")
+
+
 def _request(url: str, api_key: str, timeout: float) -> dict:
     """One authenticated GET. Returns the decoded envelope or raises."""
+    endpoint = urlsplit(url)
+    if endpoint.scheme != "https" or endpoint.hostname not in _ALLOWED_HOSTS:
+        raise ValueError("unrecognized quota endpoint")
     request = urllib.request.Request(url, method="GET")
     # The vendor sends the raw key in this header, not a Bearer token.
     request.add_header("Authorization", api_key)
     request.add_header("Accept", "application/json")
     context = ssl.create_default_context()
-    with urllib.request.urlopen(request, timeout=timeout,
-                                context=context) as response:
+    opener = urllib.request.build_opener(
+        urllib.request.HTTPSHandler(context=context), _NoQuotaRedirect())
+    with opener.open(request, timeout=timeout) as response:  # nosec B310 - HTTPS allowlist above, redirects refused
         raw = response.read(_MAX_BODY_BYTES + 1)
     if len(raw) > _MAX_BODY_BYTES:
         raise ValueError("quota response too large")

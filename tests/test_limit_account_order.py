@@ -7,6 +7,7 @@ the user opened the settings dialog.
 """
 
 import os
+
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from types import SimpleNamespace
@@ -56,8 +57,8 @@ def test_order_reader_dedupes_and_tolerates_junk():
 
 
 def test_default_profile_and_codec_register_the_key():
-    from fastprompter.core.default_profile import DEFAULT_PROFILE
     from fastprompter.core import state as state_mod
+    from fastprompter.core.default_profile import DEFAULT_PROFILE
 
     assert DEFAULT_PROFILE["limit_gauges_account_order"] == []
     assert "limit_gauges_account_order" in state_mod._JSON_SETTINGS
@@ -71,8 +72,8 @@ def test_selector_move_button_reorders_draw_order():
 
     from PyQt6.QtWidgets import QApplication, QWidget
 
-    from fastprompter.core.state import _decode_structured_setting
     from fastprompter.core import state as state_mod
+    from fastprompter.core.state import _decode_structured_setting
     from fastprompter.ui.limit_account_selector import LimitAccountSelector
 
     _APP = QApplication.instance() or QApplication([])

@@ -240,6 +240,49 @@ THEMES = {
     #     "btn_bg": "#2b2b2b", "btn_pressed": "#141414", "btn_text": "#c0c0c0",
     #     "accent": "#ff00aa"
     # }),
+    # -- Wintage palettes ported from the ProBlipAndroid reference ------
+    # Source: ProBlipAndroid app/src/main/java/com/vacster/problip/ui/theme/
+    # Palettes.kt (exact ARGB values, not guessed).  Wintage token mapping:
+    # Bg->bg_main, Compare->bg_text + btn_pressed (the sunken field and the
+    # pressed state, exactly how ProblipScreen.kt uses it), Surface->btn_bg,
+    # Bevel->border_light, BDark->border_dark, TextMain->text_main,
+    # TextDim->btn_text, Gold->accent.  No existing palette is modified.
+    'Dark Golden (Win95)': generate_custom_theme({
+        "bg_main": "#342012", "bg_text": "#24170C", "text_main": "#E2CA95",
+        "border_light": "#826941", "border_dark": "#1C1208",
+        "btn_bg": "#4A341B", "btn_pressed": "#24170C", "btn_text": "#C5AB6E",
+        "accent": "#D3B57A"
+    }),
+    'Claude Code': generate_custom_theme({
+        "bg_main": "#29241D", "bg_text": "#1C1914", "text_main": "#E0B997",
+        "border_light": "#75644F", "border_dark": "#15130F",
+        "btn_bg": "#3B362A", "btn_pressed": "#1C1914", "btn_text": "#C39870",
+        "accent": "#D1A27C"
+    }),
+    'Antigravity': generate_custom_theme({
+        "bg_main": "#1B1F2C", "bg_text": "#12151E", "text_main": "#95DEE2",
+        "border_light": "#4B6678", "border_dark": "#0D0F17",
+        "btn_bg": "#272B3E", "btn_pressed": "#12151E", "btn_text": "#6EBFC5",
+        "accent": "#7AD0D3"
+    }),
+    'K-Lite (MPC-HC)': generate_custom_theme({
+        "bg_main": "#212325", "bg_text": "#171819", "text_main": "#B8BABF",
+        "border_light": "#5E6165", "border_dark": "#111213",
+        "btn_bg": "#303235", "btn_pressed": "#171819", "btn_text": "#95989E",
+        "accent": "#A2A5AB"
+    }),
+    'FreeBuff': generate_custom_theme({
+        "bg_main": "#1B232B", "bg_text": "#13181D", "text_main": "#A0E295",
+        "border_light": "#506B5F", "border_dark": "#0E1116",
+        "btn_bg": "#28303D", "btn_pressed": "#13181D", "btn_text": "#7AC56E",
+        "accent": "#89D37A"
+    }),
+    'CodeNomad': generate_custom_theme({
+        "bg_main": "#1C242A", "bg_text": "#13181D", "text_main": "#B099DE",
+        "border_light": "#575776", "border_dark": "#0E1216",
+        "btn_bg": "#29313C", "btn_pressed": "#13181D", "btn_text": "#9C84C8",
+        "accent": "#9D86D1"
+    }),
     "Default": generate_custom_theme({
         "bg_main": "#1a1a1a", "bg_text": "#2c2c2c", "text_main": "#c0c0c0",
         "border_light": "#4d4d4d", "border_dark": "#0a0a0a",

@@ -8,7 +8,6 @@ attribution and PERF-003 portable-backup content generation.
 
 import json
 import os
-import sqlite3
 import types
 
 import pytest
@@ -16,12 +15,10 @@ import pytest
 from fastprompter.ui import snippet_ops_mixin as som
 from fastprompter.ui.snippet_ops_mixin import (
     SnippetOpsMixin,
-    _journal_path,
     _journal_load_records,
-    _write_retirement_journal,
+    _journal_path,
     resolve_trash_link,
 )
-
 
 # ----------------------------------------------------------------------
 # helpers
@@ -155,7 +152,8 @@ class TestJournal:
             "silo_folders_all": {"Cat": {"0": "live-silo"}},
         }
         self._retire(tmp_path, data, "live-silo")
-        live_owner = lambda original: True   # DB still owns the folder
+        def live_owner(original):
+            return True  # DB still owns the folder
         som._reconcile_retirement_journal(str(tmp_path), data, live_owner)
         # physical folder returned home; journal retired; no log entry
         assert (tmp_path / "live-silo" / "f.txt").is_file()

@@ -41,6 +41,7 @@ class _FakeWin:
         self.tray_icon = _Tray()
         self.productivity_timer = ProductivityTimer(**kw)
         self._sound_calls = []
+        self._toast_calls = []
         self.saved = 0
         self._pomo_last_tick = None
         self._pomo_alarm_replay_at = None
@@ -54,6 +55,12 @@ class _FakeWin:
         sm = _SM()
         sm.calls = self._sound_calls
         self.sound_manager = sm
+
+    def _show_in_app_toast(self, title, message, **kw):
+        # T-1228: the productivity visual is an in-app toast, never a tray
+        # notification; spy on it here.
+        self._toast_calls.append((title, message, kw))
+        return object()
 
     def save_productivity_timer(self):
         self.saved += 1
@@ -88,7 +95,8 @@ def test_phase_end_once_notifies(monkeypatch):
     _advance(monkeypatch, clock, 2.0)  # work phase elapses
     fake._tick_productivity()
     assert len(fake._sound_calls) == 1
-    assert len(fake.tray_icon.messages) == 1
+    assert len(fake._toast_calls) == 1
+    assert fake.tray_icon.messages == []  # T-1228: no OS notification
 
 
 def test_replay_cadence_sound_only(monkeypatch):
@@ -98,11 +106,11 @@ def test_replay_cadence_sound_only(monkeypatch):
     fake._tick_productivity()
     _advance(monkeypatch, clock, 2.0)
     fake._tick_productivity()          # phase end -> 1 notify
-    tray_after_end = len(fake.tray_icon.messages)
+    toast_after_end = len(fake._toast_calls)
     _advance(monkeypatch, clock, 1.0)  # one repeat interval
     fake._tick_productivity()          # replay (sound only)
     assert len(fake._sound_calls) == 2
-    assert len(fake.tray_icon.messages) == tray_after_end  # no new popup
+    assert len(fake._toast_calls) == toast_after_end  # no new popup
 
 
 def test_acknowledge_stops_replay(monkeypatch):

@@ -19,6 +19,7 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import os
+import re
 
 
 @dataclasses.dataclass(frozen=True)
@@ -101,6 +102,11 @@ class UsageWindow:
     group: str = ""
     # Human label of that pool, for tooltips/overview ("Gemini models").
     group_label: str = ""
+    # Upstream model identity the pool serves, verbatim from the vendor
+    # (Codex ``normalModelSlug``, e.g. ``gpt-5.6-luna``). This is EVIDENCE:
+    # it is what lets :func:`account_usable_for` decide whether a pool is a
+    # named model's reserve without guessing from a label like "Reserve".
+    model_slug: str = ""
     reset_pending: bool = False  # reset elapsed; awaiting provider confirmation
     # AMOUNT quotas (Freebuff Freebucks): a window whose truth is "42 of 100
     # FB left", not a percent of an abstract budget. Percent fields stay
@@ -426,6 +432,159 @@ def _pool_usable(windows) -> bool:
         return False
     five = [w for w in windows if base_key(w.key) == FIVE_HOUR]
     return any(window_usable(w) for w in (five or windows))
+
+
+# -- model-specific availability -------------------------------------------
+# One account can hold a NAMED-MODEL reserve beside its ordinary capacity:
+# Codex reports ``rateLimitsByLimitId`` entries such as ``base_model_inference``
+# (``limitName`` "gpt-reserve", ``normalModelSlug`` "gpt-5.6-luna"). Whether a
+# user can actually work on a model is therefore a PER-MODEL question, and
+# ``account_usable_now`` only answers the general one. Answering the general
+# question with "yes" merely because SOME model-scoped reserve has quota would
+# claim every model works — the exact lie this API exists to prevent.
+
+def _model_token(window: UsageWindow) -> str:
+    """The vendor model identity of a pool, lowercased, or "" when unknown."""
+    return str(getattr(window, "model_slug", "") or "").strip().lower()
+
+
+# A pool whose OWN reported name says it is a reserve is treated as
+# model-scoped even before a model slug proves which model it serves. That is
+# deliberately the CONSERVATIVE direction: a hinted-but-unproven pool is never
+# allowed to answer a named-family question (so nothing is fabricated), and it
+# stops being counted as general capacity for family purposes while leaving
+# the family-agnostic predicates untouched.
+_RESERVE_HINT = re.compile(r"reserve", re.IGNORECASE)
+
+
+def _has_reserve_hint(window) -> bool:
+    for field in ("group_label", "group"):
+        if _RESERVE_HINT.search(str(getattr(window, field, "") or "")):
+            return True
+    return False
+
+
+def pool_is_model_scoped(window) -> bool:
+    """True when this pool serves a SPECIFIC model, not general capacity."""
+    return bool(_model_token(window)) or _has_reserve_hint(window)
+
+
+def pool_serves_family(window, family: str) -> bool:
+    """True when the vendor PROVED this pool serves ``family``.
+
+    Evidence is the upstream model slug (or, failing that, the pool id). A
+    pool with no model identity is never claimed for a named family: unknown
+    stays unknown instead of being classified by a guessed label.
+    """
+    token = str(family or "").strip().lower()
+    if not token:
+        return False
+    slug = _model_token(window)
+    if slug and token in slug:
+        return True
+    return token in str(getattr(window, "group", "") or "").lower()
+
+
+def model_family_label(window) -> str:
+    """Human name of the family a model-scoped pool serves ("Luna").
+
+    Derived deterministically from the vendor slug's last token, so no
+    hard-coded vendor vocabulary is required to name a future reserve.
+    """
+    slug = _model_token(window)
+    if not slug:
+        return ""
+    tail = slug.replace("_", "-").replace(".", "-").split("-")
+    tail = [p for p in tail if p and not p.isdigit()]
+    return tail[-1].capitalize() if tail else ""
+
+
+def _resolved_by_group(snapshot, now: float | None = None) -> dict:
+    windows = [w for w in resolved_windows(
+        getattr(snapshot, "windows", ()) or (), now=now)
+        if isinstance(w, UsageWindow)]
+    groups: dict[str, list] = {}
+    for w in windows:
+        groups.setdefault(w.group, []).append(w)
+    return groups
+
+
+def _any_group_usable(groups: dict, windows) -> bool:
+    return any(_pool_usable(groups[w.group]) for w in windows)
+
+
+def account_usable_for(snapshot, model_family: str | None = None,
+                       now: float | None = None) -> bool:
+    """True when this account can do work on ``model_family`` right now.
+
+    ``model_family=None`` is the general question and delegates to
+    :func:`account_usable_now`. For a named family the rules are:
+
+    * ordinary (non model-scoped) capacity with quota left -> usable: every
+      compatible model works, including this one;
+    * ordinary capacity exhausted but a pool PROVEN (by upstream slug/id) to
+      serve the family still has quota -> usable through that reserve;
+    * ordinary capacity exhausted and only an UNPROVEN reserve has quota ->
+      **not** usable. An unknown pool is never claimed for a named model;
+    * a proven family pool at 0% -> not usable through the reserve.
+
+    A family-scoped reserve never lifts any OTHER model: the answer is scoped
+    to the family that was asked about.
+    """
+    if model_family is None or not str(model_family).strip():
+        return account_usable_now(snapshot, now=now)
+    if snapshot is None or getattr(snapshot, "status", None) not in (OK, STALE):
+        return False
+    if spare_balance(snapshot) > 0.0:
+        return True
+    groups = _resolved_by_group(snapshot, now)
+    if not groups:
+        return False
+    all_windows = [w for ws in groups.values() for w in ws]
+    if _any_group_usable(groups, [w for w in all_windows
+                                  if not pool_is_model_scoped(w)]):
+        return True
+    return _any_group_usable(groups, [w for w in all_windows
+                                      if pool_serves_family(w, model_family)])
+
+
+def pool_labels(windows) -> list[str]:
+    """Distinct non-empty pool labels, in provider order."""
+    out: list[str] = []
+    for w in windows:
+        label = str(getattr(w, "group_label", "") or "")
+        if label and label not in out:
+            out.append(label)
+    return out
+
+
+def reserve_advice(snapshot, now: float | None = None) -> list[str]:
+    """Compact recommendations for reserves that outlive ordinary capacity.
+
+    Returns entries such as ``"Luna available via reserve"`` — ONLY for a
+    pool whose upstream identity proves which model it serves AND which still
+    has quota while ordinary capacity is exhausted. This states what the
+    provider reported; it never claims FastPrompter controls debit order.
+    """
+    if snapshot is None or getattr(snapshot, "status", None) not in (OK, STALE):
+        return []
+    groups = _resolved_by_group(snapshot, now)
+    if not groups:
+        return []
+    all_windows = [w for ws in groups.values() for w in ws]
+    if _any_group_usable(groups, [w for w in all_windows
+                                  if not pool_is_model_scoped(w)]):
+        return []
+    out: list[str] = []
+    for ws in groups.values():
+        scoped = [w for w in ws if pool_is_model_scoped(w)]
+        if not scoped or not _pool_usable(ws):
+            continue
+        label = next((model_family_label(w) for w in scoped
+                      if model_family_label(w)), "")
+        if label:
+            out.append(f"{label} available via reserve")
+    return sorted(set(out))
 
 
 def display_windows(windows, now: float | None = None) -> list:

@@ -1,5 +1,48 @@
 # Changelog
 
+## 0.8.68 - 2026-09-19
+
+- **Editor Unicode & clipboard reliability:** formatting commands (bold,
+  italic, underline, strike) now edit only the Markdown markers and keep the
+  original text code-point exact, including emoji, ZWJ sequences and Cyrillic;
+  paste and copy paths record generation evidence and never truncate
+  multi-character clipboard payloads.
+- **SILO pin, order and named-gap determinism:** pin state, display order and
+  named gaps survive reorder, remap, paging and restart with one deterministic
+  model; empty-silo and gap persistence can no longer lose or misplace an
+  anchor, and the square checkbox visuals match the golden theme.
+- **Audio Hub startup performance:** rows load progressively and tabs are lazy,
+  cutting time-to-first-paint on large sound libraries while keeping every
+  event row intact.
+- **Ambience workspace and transport:** the integrated table + inspector
+  layout supports multi-selection, mixed states and atomic bulk edits, and the
+  transport is truthful — Pause/Resume is reachable and reversible.
+- **AI Limits multi-account improvements:** each discovered Claude account owns
+  its own gauges, limit overview and settings row; Desktop samples are
+  attributed by exact normalized organization identity and fail closed when the
+  owner is unknown.
+- **GPT/Luna reserve support:** multi-pool `rateLimitsByLimitId` responses
+  render as distinct pools with independent gating and stable group labels.
+- **Reset queue table:** the soonest-reset hover shows the complete
+  chronological reset queue, one structured row per account/pool/window, in a
+  responsive layout that no longer clips narrow columns.
+- **Claude status-line bridge per account:** Settings lists one bridge row per
+  discovered home, every action targets that account's exact path, and one
+  account's connect/disconnect never touches another's files.
+- **Sound and default-profile bake correction:** shipped defaults now reflect
+  the operator-approved profile (language EN, sidebar open, typewriter on,
+  volume 0.09, approved sound map) with zero machine-local state, and all
+  packaged sound references resolve.
+- **Persistence and reliability hardening:** durable-before-delete silo
+  transactions, fail-closed saves on unreadable editors, atomic publication of
+  recovery artifacts, `synchronous=FULL` commits, shutdown ownership that
+  refuses to report a false clean exit, and app-level event filters now die
+  with their window instead of leaking stale authority.
+- **Release provenance:** releases are cut from the exact tested commit with a
+  machine-checked receipt (source fingerprint + EXE hash + ProductVersion),
+  published draft-first, and an already-published release is never silently
+  replaced.
+
 ## 0.8.67 - 2026-09-02
 
 - **AI Limit Gauges (T-1174, T-1181):** provider-neutral usage-limit subsystem

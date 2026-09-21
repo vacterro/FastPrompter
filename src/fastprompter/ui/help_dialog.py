@@ -35,7 +35,7 @@ def build_help_html(data, lang="EN") -> str:
         ("F1&ndash;F10 (global)", "Paste snippet 1&ndash;10 into the active app"),
     ], lang)
     app_rows = _rows([
-        ("Ctrl+N", "New empty silo at the top (max 5 blanks)"),
+        ("Ctrl+N", "New empty silo at the top"),
         ("Alt+Up / Alt+Down", "Previous / next silo"),
         ("Ctrl+1&ndash;Ctrl+0", "Jump to silo 1&ndash;10"),
         ("F1&ndash;F10 / Ctrl+Shift+1&ndash;9", "Paste snippet 1&ndash;10 into the editor"),
@@ -78,7 +78,7 @@ def build_help_html(data, lang="EN") -> str:
          "Del delete &middot; F2 rename &middot; Enter open &middot; "
          "Ctrl+Shift+C copy path &middot; Ctrl+N new folder &middot; Ctrl+V clipboard&rarr;file"),
         ("Right-click a silo", "Transfer to project, replace from, move to bottom&hellip;"),
-        ("Drop a silo ONTO another",
+        ("Ctrl+drop a silo onto another",
          "Nest it as a child (1 level; its files can merge into the parent)"),
         ("Shift+drop a silo onto another", "Swap their places"),
         ("Drag a silo between others",
@@ -110,6 +110,36 @@ def build_help_html(data, lang="EN") -> str:
         f"<li><b>{tr('Data', lang)}</b> &mdash; {tr('SQLite next to the app; daily Markdown backups in Documents; crash log next to the EXE', lang)}</li>"
         "</ul>"
     )
+    # T-1238-D.2 -- Problip and the Audio Hub in plain words.  Product help
+    # only: nothing about Android billing, premium tiers or store listings.
+    audio = (
+        "<ul style='margin:2px 0 2px 14px;'>"
+        f"<li><b>{tr('Problip', lang)}</b> &mdash; "
+        f"{tr('a short cue at your chosen interval so a long writing session keeps its rhythm. Settings has its own Problip tab: Start, Stop and Test.', lang)}</li>"
+        f"<li><b>{tr('Interval', lang)}</b> &mdash; "
+        f"{tr('Random 4-7 s, a fixed 5/10/15/20/30 s, Pulse (alternating short and long waits) or Manual with your own FROM and TO.', lang)}</li>"
+        f"<li><b>{tr('Sound pool', lang)}</b> &mdash; "
+        f"{tr('six bundled sounds; tick as many as you like and each cue picks one at random. The last ticked sound cannot be unticked, and an unavailable file is marked instead of silently swapped.', lang)}</li>"
+        f"<li><b>{tr('Statistics', lang)}</b> &mdash; "
+        f"{tr('today, this week, this month and the running total. Only a cue that really played is counted. Reaching 100,000 is permanent.', lang)}</li>"
+        f"<li><b>{tr('Playback modes', lang)}</b> &mdash; "
+        f"{tr('Overlay lets different sounds play together, Stack plays them one after another in order, Replace lets the newest sound stop the current one. Each event can override the global choice, and a scheduled Problip cue can also Skip while busy so it never talks over an alarm.', lang)}</li>"
+        f"<li><b>{tr('Presets', lang)}</b> &mdash; "
+        f"{tr('whole sound sets you can apply, save, rename, export and import. Imported files are copied into your own managed library, so the original folder is never needed again.', lang)}</li>"
+        f"<li><b>{tr('Voice countdown', lang)}</b> &mdash; "
+        f"{tr('announces 1 hour, 30, 15, 10 and 5 minutes before the nearest timer or the nearest known AI-limit reset. It never announces a moment that has already passed and never repeats one after a restart.', lang)}</li>"
+        f"<li><b>{tr('GoldSrc / AMX import', lang)}</b> &mdash; "
+        f"{tr('point it at ONE folder you already own; recognised VOX, FVOX, G-Man and AMX clips are copied into your managed library. Nothing is downloaded and nothing is bundled with the app.', lang)}</li>"
+        f"<li><b>{tr('Ambience', lang)}</b> &mdash; "
+        f"{tr('long-running background layers with their own volume and fades, triggered always, inside a time window, on a weekday, or by the weather.', lang)}</li>"
+        f"<li><b>{tr('Weather', lang)}</b> &mdash; "
+        f"{tr('off until you switch it on and type a place with its latitude and longitude. Nothing else is sent, nothing is located automatically, and a failed lookup simply leaves the condition unknown.', lang)}</li>"
+        f"<li><b>{tr('STOP ALL SOUND', lang)}</b> &mdash; "
+        f"{tr('one click silences everything at once: clicks, alarms, voice phrases, Problip, previews, ambience and every queue. New sounds still work afterwards.', lang)}</li>"
+        f"<li><b>{tr('When sounds collide', lang)}</b> &mdash; "
+        f"{tr('rapid repeats of the same sound are folded together instead of piling up, ambience is never cut short by an ordinary Replace, and only STOP ALL SOUND or Stop ambience silences a background layer.', lang)}</li>"
+        "</ul>"
+    )
     return (
         f"<h2 style='margin:2px 0;'>{tr('FastPrompter Help', lang)}</h2>"
         f"<h3 style='margin:10px 0 2px 0;'>{tr('Global hotkeys', lang)} <small>"
@@ -122,6 +152,8 @@ def build_help_html(data, lang="EN") -> str:
         f"<table>{mouse_rows}</table>"
         f"<h3 style='margin:10px 0 2px 0;'>{tr('What everything does', lang)}</h3>"
         f"{features}"
+        f"<h3 style='margin:10px 0 2px 0;'>{tr('Problip and the Audio Hub', lang)}</h3>"
+        f"{audio}"
     )
 
 

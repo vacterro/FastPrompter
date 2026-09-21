@@ -2,6 +2,9 @@
 
 import os
 import sys
+from unittest.mock import MagicMock
+
+from PyQt6.QtWidgets import QApplication
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
@@ -169,7 +172,12 @@ class TestGenerateCustomTheme:
 
 class TestThemesDict:
     def test_has_all_expected_themes(self):
-        """THEMES should contain all 9 built-in themes."""
+        """THEMES should contain every built-in theme.
+
+        T-1238-D.1 added the six Wintage palettes ported value-for-value
+        from the ProBlipAndroid reference; their exact colours are pinned in
+        tests/test_theme_catalog.py.
+        """
         expected = {
             "Default",
             "Golden Vintage",
@@ -180,6 +188,13 @@ class TestThemesDict:
             "Dracula",
             "Nord",
             "Solarized Dark",
+            # -- ported Wintage palettes (T-1238-D.1) --
+            "Dark Golden (Win95)",
+            "Claude Code",
+            "Antigravity",
+            "K-Lite (MPC-HC)",
+            "FreeBuff",
+            "CodeNomad",
         }
         assert set(THEMES.keys()) == expected
 
@@ -253,6 +268,33 @@ class TestThemesDict:
 
 
 class TestFontSizePersistence:
+    def test_apply_theme_enforces_square_checkbox_indicators(self, qapp, monkeypatch):
+        window = ThemeMixin()
+        window.data = {"theme": "Golden Default", "thin_scrollbars": "False"}
+        window._refresh_theme_cache = lambda: setattr(
+            window, "_theme_cache", THEMES["Golden Default"])
+        window.apply_font = MagicMock()
+        window.scale_button_qss = lambda qss: qss
+        window.btn_new = MagicMock()
+        window.btn_save = MagicMock()
+        window.btn_help = MagicMock()
+        window.mini_settings_frame = MagicMock()
+        window.repolish_icon_buttons = MagicMock()
+        window._begin_batch_update = MagicMock()
+        window.refresh_snippets_panel = MagicMock()
+        window.refresh_temp_presets = MagicMock()
+        window._end_batch_update = MagicMock()
+        window.enforce_button_fit = MagicMock()
+        window._apply_kanban_theme = MagicMock()
+        window._apply_table_theme = MagicMock()
+        monkeypatch.setattr(QApplication.instance(), "setStyleSheet", MagicMock())
+        monkeypatch.setattr(QApplication.instance(), "styleSheet", lambda: "")
+
+        ThemeMixin.apply_theme(window)
+
+        qss = QApplication.instance().setStyleSheet.call_args.args[0]
+        assert "QCheckBox::indicator { border-radius: 0px; }" in qss
+
     def test_change_font_size_marks_settings_only(self):
         from unittest.mock import MagicMock
 

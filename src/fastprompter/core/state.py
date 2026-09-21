@@ -79,7 +79,7 @@ _JSON_SETTINGS = (
     # Per-role AI-limit colour overrides (ui/limit_colors.py). A dict, so it
     # must round-trip as JSON or every override reloads as one str() blob and
     # the palette silently falls back to the theme.
-    "limit_colors",
+    "limit_colors", "topbar_visibility",
     # Splitter geometries are lists in the shipped profile (and the live DB
     # stores them as JSON arrays), so they must round-trip as JSON, not str().
     "splitter_sizes", "splitter_sizes_left", "splitter_sizes_right",
@@ -152,6 +152,102 @@ _ALIAS_EMPTY = {
     "silo_gaps": [],
     "silo_gap_names": {},
 }
+
+# T-1222: slot-owned per-category stores that can PROVE a silo exists even
+# when its SQLite row is missing (every DB written before empty rows became
+# persisted state carries only non-empty temp rows). Grouped by index space;
+# the entry shapes mirror the _SILO_INDEX_STATE registry in main.py:
+#   list stores  -> [idx, ...]
+#   dict stores  -> {"idx": value}          (str/int slot keys)
+#   children map -> {"idx": [kid, ...]}     (both sides are slots)
+# The highest owned index + 1 is the minimum structural extent for the
+# category. Used ONLY to extend a too-short list on load — never to shrink.
+_NORMAL_EXTENT_KEYS = (
+    "silo_gaps_all", "silo_gap_names_all",
+    "pinned_silos_all", "silo_ticked_all", "silo_selected_all",
+    "silo_collapsed_all", "silo_children_all", "silo_last_edited_all",
+    "silo_colors_all", "silo_folders_all", "silo_project_paths_all",
+    "silo_type_all", "silo_links_all", "project_sync_map_all",
+)
+# T-1222: silo_session_all is deliberately NOT an extent source. Its "slot"
+# records where the user LAST WAS, and it is not a member of the
+# _SILO_INDEX_STATE deletion/remap registry, so it can stay stale after
+# trailing silos are intentionally deleted — treating it as structural
+# evidence would resurrect deleted silos. Only slot-OWNED stores whose
+# lifecycle is coupled to real silo existence may extend an extent.
+_ARCHIVE_EXTENT_KEYS = ("archive_silo_folders_all", "archive_project_paths_all")
+
+
+def _required_structural_extents(data, is_archive=False):
+    """{category: minimum silo count} proven by persisted slot-owned
+    metadata (T-1222).
+
+    Fail closed on malformed values: only a valid integer index 0..99 may
+    extend an extent. Absence of metadata never shrinks anything, and two
+    distinct slots are never merged — the result is a lower bound only."""
+    extents = {}
+
+    def _bump(cat, idx):
+        # bool is an int subclass; a True anchor is corruption, not slot 1
+        if isinstance(idx, bool) or not isinstance(idx, int):
+            return
+        if 0 <= idx < 100:
+            extents[cat] = max(extents.get(cat, 0), idx + 1)
+
+    keys = _ARCHIVE_EXTENT_KEYS if is_archive else _NORMAL_EXTENT_KEYS
+    for key in keys:
+        store = data.get(key)
+        if not isinstance(store, dict):
+            continue
+        for cat, entries in store.items():
+            if isinstance(entries, list):
+                for idx in entries:
+                    _bump(cat, idx)
+            elif isinstance(entries, dict):
+                for k, v in entries.items():
+                    try:
+                        _bump(cat, int(k))
+                    except (TypeError, ValueError):
+                        continue
+                    if isinstance(v, (list, tuple)):
+                        for kid in v:
+                            _bump(cat, kid)
+    # silo_view_state_all keys both index spaces: "s<idx>" / "a<idx>"
+    view = data.get("silo_view_state_all")
+    if isinstance(view, dict):
+        prefix = "a" if is_archive else "s"
+        for cat, entries in view.items():
+            if not isinstance(entries, dict):
+                continue
+            for k in entries:
+                if (isinstance(k, str) and k.startswith(prefix)
+                        and k[len(prefix):].isdigit()):
+                    _bump(cat, int(k[len(prefix):]))
+    return extents
+
+
+def _recover_structural_extents(data):
+    """Extend each category's silo lists to the extent its slot-owned
+    metadata proves (T-1222). Never shrinks, never merges, capped at 100.
+
+    Returns (temp_repaired, arc_repaired): True when a list grew. The caller
+    must then mark the domain dirty so the next save writes the recovered
+    empty rows explicitly — permanently repairing the DB."""
+    repaired = []
+    for is_archive, key in ((False, "temp_presets_all"),
+                            (True, "archive_temp_presets_all")):
+        fixed = False
+        store = data.get(key)
+        if not isinstance(store, dict):
+            repaired.append(False)
+            continue
+        for cat, need in _required_structural_extents(data, is_archive).items():
+            slots = store.get(cat)
+            if isinstance(slots, list) and len(slots) < need:
+                slots.extend([""] * (need - len(slots)))
+                fixed = True
+        repaired.append(fixed)
+    return tuple(repaired)
 
 # ONE decode codec contract per structured persisted key (P1-15):
 # ``{key: (expected_top_level_type, correct_default, legacy_ast)}``.
@@ -232,6 +328,7 @@ _STRUCTURED_CODECS = {
     "limit_notifications": (dict, {}, False),
     "limit_notification_state": (dict, {}, False),
     "limit_colors": (dict, {}, False),
+    "topbar_visibility": (dict, {}, False),
     # Splitter geometries ship as lists (and live DBs store them as JSON
     # arrays), so they need canonical list codecs, not str() writes.
     "splitter_sizes": (list, [178, 1257], True),
@@ -685,11 +782,40 @@ def _has_column(cur, table, column):
     return False
 
 
+def _ensure_t1227_tables(cur):
+    """Create ONLY the additive T-1227 anchors (identity + history).
+
+    Kept separate from the core schema on purpose: the save transaction may
+    self-heal these additive tables on a foreign/minimal DB, but it must
+    NEVER silently recreate a dropped CORE table — a missing core table is a
+    real failure that has to propagate (fail-closed save)."""
+    cur.execute(
+        "CREATE TABLE IF NOT EXISTS silo_identity_v1 ("
+        "category TEXT, is_archive INTEGER, slot INTEGER, silo_id TEXT, "
+        "PRIMARY KEY (category, is_archive, slot))")
+    cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS silo_identity_v1_id "
+                "ON silo_identity_v1 (silo_id)")
+    cur.execute(
+        "CREATE TABLE IF NOT EXISTS silo_text_history_v1 ("
+        "seq INTEGER PRIMARY KEY AUTOINCREMENT, silo_id TEXT, "
+        "before_content TEXT, after_content TEXT, before_hash TEXT, "
+        "after_hash TEXT, timestamp REAL, reason TEXT)")
+    cur.execute("CREATE INDEX IF NOT EXISTS silo_text_history_v1_silo "
+                "ON silo_text_history_v1 (silo_id, seq)")
+
+
 def _ensure_base_tables(cur):
     cur.execute("CREATE TABLE IF NOT EXISTS presets (category TEXT, slot INTEGER, name TEXT, content TEXT, PRIMARY KEY (category, slot))")
     cur.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")
     cur.execute("CREATE TABLE IF NOT EXISTS temp_presets_v2 (category TEXT, slot INTEGER, content TEXT, PRIMARY KEY (category, slot))")
     cur.execute("CREATE TABLE IF NOT EXISTS archive_temp_presets_v2 (category TEXT, slot INTEGER, content TEXT, PRIMARY KEY (category, slot))")
+    # T-1227: additive, version-free identity + history anchors. Both are
+    # created with IF NOT EXISTS on every connection, so a v1 database from
+    # an older build gains them on first open WITHOUT a schema-version bump
+    # (a bump would refuse every future build's DBs to older restores). The
+    # silo rows themselves stay in temp_presets_v2 — identity and history
+    # are companions, never a replacement.
+    _ensure_t1227_tables(cur)
 
 
 def _merge_legacy_into_v2(cur, legacy_table, v2_table, first_category):
@@ -705,13 +831,17 @@ def _merge_legacy_into_v2(cur, legacy_table, v2_table, first_category):
       still needs a home, raise ``MigrationError`` — the caller rolls the whole
       transaction back, leaving the v0 database untouched.
     """
+    if (legacy_table, v2_table) not in (
+            ("temp_presets", "temp_presets_v2"),
+            ("archive_temp_presets", "archive_temp_presets_v2")):
+        raise ValueError("unknown legacy migration table pair")
     rows = list(cur.execute(
-        f"SELECT slot, content FROM {legacy_table}"))
+        f"SELECT slot, content FROM {legacy_table}"))  # nosec B608 - closed table allowlist above
     if not rows:
         return
     existing = {}
     for cat, slot, content in cur.execute(
-            f"SELECT category, slot, content FROM {v2_table}"):
+            f"SELECT category, slot, content FROM {v2_table}"):  # nosec B608 - closed table allowlist
         existing.setdefault(cat, {}).setdefault(slot, content)
     taken = set(existing.get(first_category, {}))
     for slot, content in rows:
@@ -728,12 +858,12 @@ def _merge_legacy_into_v2(cur, legacy_table, v2_table, first_category):
                     f"differs from the existing _v2 row — refusing to drop "
                     f"or overwrite user text")
             cur.execute(
-                f"INSERT INTO {v2_table} (category, slot, content) "
+                f"INSERT INTO {v2_table} (category, slot, content) "  # nosec B608 - closed table allowlist
                 f"VALUES (?, ?, ?)", (first_category, target, content))
             taken.add(target)
         else:
             cur.execute(
-                f"INSERT INTO {v2_table} (category, slot, content) "
+                f"INSERT INTO {v2_table} (category, slot, content) "  # nosec B608 - closed table allowlist
                 f"VALUES (?, ?, ?)", (first_category, slot, content))
             taken.add(slot)
 
@@ -852,6 +982,43 @@ def _rollback_quietly(conn):
 # must fail/defer within this budget and keep its dirty state (T04 / W2-P1-002).
 _SQLITE_GUI_BUSY_TIMEOUT = 0.25  # seconds
 _SQLITE_GUI_BUSY_TIMEOUT_MS = int(_SQLITE_GUI_BUSY_TIMEOUT * 1000)
+
+# T-1232. The durability setting is a promise to the user, so it lives in one
+# named constant instead of being retyped at every connect site.
+#
+# WAL + `synchronous=NORMAL` — what this used to be — does not fsync the
+# write-ahead log at commit. A committed silo edit then survives the app
+# crashing (the bytes are in the OS page cache) but NOT a power cut, a kernel
+# panic, or a volume that disappears. That is a real trade, and for most apps
+# the right one, but T-1227 built an entire crash-safety story on top of it —
+# durable undo-before publication, same-transaction recovery predecessors,
+# structural commits that must be on disk before the operation reports
+# success — and every one of those sentences was true of the wrong failure
+# mode. Worse, a crash test that kills the process would pass under NORMAL
+# while proving nothing about the case the user actually hit.
+#
+# Measured on this project's own database (20 KB silo body + a settings row,
+# 40 commits): median 0.12ms at NORMAL against 0.47ms at FULL, p95 0.22ms
+# against 1.03ms. A third of a millisecond, on a path that already spends
+# tens of milliseconds in Python, in exchange for the guarantee actually
+# being the one the code claims. Not a hard call.
+_SQLITE_SYNCHRONOUS = "FULL"
+
+
+def connect_app_db(db_path):
+    """Open the app database with the canonical pragmas.
+
+    Every connection to the live database goes through here. Two sites used
+    to carry their own copy of this block (the loader and the post-restore
+    reopen), which is exactly the shape that lets one of them quietly drift
+    off the durability contract the other advertises.
+    """
+    conn = sqlite3.connect(db_path, check_same_thread=False,
+                           timeout=_SQLITE_GUI_BUSY_TIMEOUT)
+    conn.execute(f'PRAGMA busy_timeout={_SQLITE_GUI_BUSY_TIMEOUT_MS};')
+    conn.execute('PRAGMA journal_mode=WAL;')
+    conn.execute(f'PRAGMA synchronous={_SQLITE_SYNCHRONOUS};')
+    return conn
 # W6 (Ticket 03): loader-side recovery (presets overflow, migration repair)
 # waits for the startup safety snapshot at most this long before refusing to
 # mutate. A background I/O hang must never become an infinite startup GUI
@@ -1743,7 +1910,7 @@ def _assert_loader_rows(conn, exc=RestoreError):
         try:
             overflow = [
                 f"{cat}@{slot}" for cat, slot in conn.execute(
-                    "SELECT category, slot FROM " + table
+                    "SELECT category, slot FROM " + table  # nosec B608 - literal tuple immediately above
                     + " WHERE slot < 0 OR slot >= 100")
             ]
         except sqlite3.Error as e:
@@ -2421,12 +2588,7 @@ class FastPrompterState:
                     finally:
                         src.close()
 
-            self.conn = sqlite3.connect(self.db_path,
-                                        check_same_thread=False,
-                                        timeout=_SQLITE_GUI_BUSY_TIMEOUT)
-            self.conn.execute(f'PRAGMA busy_timeout={_SQLITE_GUI_BUSY_TIMEOUT_MS};')
-            self.conn.execute('PRAGMA journal_mode=WAL;')
-            self.conn.execute('PRAGMA synchronous=NORMAL;')
+            self.conn = connect_app_db(self.db_path)
 
             # Versioned, transactional schema migrations. A failure here
             # raises (and rolls back), so a broken migration can never be
@@ -2443,6 +2605,12 @@ class FastPrompterState:
             _assert_loader_rows(self.conn, exc=DatabaseOverflowError)
 
             cur = self.conn.cursor()
+
+            # T-1222: the row-presence marker is scoped to THE database being
+            # read. init_db() may run twice on one State (tests rebind
+            # db_path), and a stale marker from the previous database would
+            # strip the legacy floor off a database that never earned it.
+            self.data.pop("silo_row_presence", None)
 
             _retired_rows = []
             for row in cur.execute('SELECT key, value FROM settings'):
@@ -2478,7 +2646,7 @@ class FastPrompterState:
                 try:
                     with self.conn:
                         cur.execute(
-                            f"DELETE FROM settings WHERE key IN ({placeholders})",
+                            f"DELETE FROM settings WHERE key IN ({placeholders})",  # nosec B608 - only '?' placeholders; values bound separately
                             _retired_rows)
                 except sqlite3.Error:
                     logger.warning("could not retire settings %s; they stay "
@@ -2574,11 +2742,20 @@ class FastPrompterState:
                     continue
                 self.data["categories"][cat][slot] = {"name": name, "text": content, "last_edited": last_edited or 0}
 
-            temps = {cat: [""]*10 for cat in self.data["cats_order"]}
+            # T-1222: the default ten are a floor for LEGACY databases only.
+            # A database the row-presence saver has written carries the exact
+            # extent in its rows (a shrunk project holds exactly its slots),
+            # so seeding ten would resurrect phantom silos after a real
+            # deletion. Without the marker the row set says nothing about
+            # empty slots (the old saver dropped them), so the floor stays.
+            exact_extent = self.data.get("silo_row_presence") == "1"
+            temps = {cat: ([] if exact_extent else [""]*10)
+                     for cat in self.data["cats_order"]}
             overflow = []
+            db_temp_rows = set()
             for row in cur.execute('SELECT category, slot, content FROM temp_presets_v2 ORDER BY slot ASC'):
                 cat, slot, content = row
-                if cat not in temps: temps[cat] = [""]*10
+                if cat not in temps: temps[cat] = [] if exact_extent else [""]*10
                 if not isinstance(slot, int): continue
                 # A slot outside 0..99 is legacy corruption. Clamping a
                 # negative slot onto slot 0 (or slot 99 onto a distinct silo)
@@ -2588,6 +2765,7 @@ class FastPrompterState:
                 if slot < 0 or slot >= 100:
                     overflow.append((cat, slot))
                     continue
+                db_temp_rows.add((cat, slot, content or ""))
                 while len(temps[cat]) <= slot:
                     temps[cat].append("")
                 temps[cat][slot] = content
@@ -2600,6 +2778,7 @@ class FastPrompterState:
 
             arc_temps = {cat: [] for cat in self.data["cats_order"]}
             arc_overflow = []
+            db_arc_rows = set()
             for row in cur.execute('SELECT category, slot, content FROM archive_temp_presets_v2 ORDER BY slot ASC'):
                 cat, slot, content = row
                 if cat not in arc_temps: arc_temps[cat] = []
@@ -2607,6 +2786,7 @@ class FastPrompterState:
                 if slot < 0 or slot >= 100:
                     arc_overflow.append((cat, slot))
                     continue
+                db_arc_rows.add((cat, slot, content or ""))
                 while len(arc_temps[cat]) <= slot:
                     arc_temps[cat].append("")
                 arc_temps[cat][slot] = content
@@ -2623,7 +2803,9 @@ class FastPrompterState:
             if not visible:
                 visible = self.data.get("cats_order", [])
             active_cat = visible[min(self.data.get("last_tab_idx", 0), len(visible)-1)] if visible else "Code"
-            if active_cat not in self.data["temp_presets_all"]: self.data["temp_presets_all"][active_cat] = [""]*10
+            if active_cat not in self.data["temp_presets_all"]:
+                self.data["temp_presets_all"][active_cat] = (
+                    [] if exact_extent else [""]*10)
             if active_cat not in self.data["archive_temp_presets_all"]: self.data["archive_temp_presets_all"][active_cat] = []
             self.data["temp_presets"] = self.data["temp_presets_all"][active_cat]
             self.data["archive_temp_presets"] = self.data["archive_temp_presets_all"][active_cat]
@@ -2631,7 +2813,35 @@ class FastPrompterState:
             if "active_temp_slot" not in self.data: self.data["active_temp_slot"] = 0
 
             self._db_dirty = False
-            self._snapshot_state()
+            # the saved-markers reflect EXACTLY the rows the database held
+            self._snapshot_state(temp_rows=db_temp_rows, arc_rows=db_arc_rows)
+
+            # T-1222: conservative structural-extent recovery. A DB written
+            # by the empty-row-dropping saver carries only non-empty temp
+            # rows, so the default-10 loader above would reconstruct a
+            # shrunken list and the gap anchors beyond it would then be
+            # pruned as "fallen off the end". Slot-owned metadata proves the
+            # real extent: extend (never shrink) each category to cover its
+            # highest owned slot. The extension runs AFTER the saved-snapshot
+            # on purpose — the recovered rows are not in the DB yet, and
+            # keeping them out of _last_saved_temp/_last_saved_arc makes the
+            # next save in that domain write them explicitly, permanently
+            # repairing the database instead of leaning on recovery forever.
+            temp_repaired, arc_repaired = _recover_structural_extents(self.data)
+            if temp_repaired:
+                self._dirty_temp = getattr(self, "_dirty_temp", 0) + 1
+            if arc_repaired:
+                self._dirty_arc = getattr(self, "_dirty_arc", 0) + 1
+
+            # T-1227: backfill + validate the stable silo identity anchor.
+            # Every persisted normal/archive row (INCLUDING empty rows —
+            # T-1222: row presence is existence) must own exactly one
+            # immutable silo_id. An old DB simply lacks them: migrate safely,
+            # one ID per existing silo, no text rewritten. An ID that would
+            # collide (impossible duplicate silo_id) is regenerated — content
+            # is more important than identity metadata, and nothing is
+            # deleted here.
+            self._load_silo_identities()
         except MigrationError:
             # A failed migration must never be swallowed: refusing to start
             # loudly is what protects the half-migrated database.
@@ -2645,10 +2855,415 @@ class FastPrompterState:
                              "database that could not be read")
             raise
 
-    def _snapshot_state(self):
+    # ------------------------------------------------------------------
+    # T-1227 — stable silo identity anchor + committed-text history
+    # ------------------------------------------------------------------
+
+    def _new_silo_id(self):
+        """A fresh immutable silo id. Never derived from text, title, folder
+        or slot — a duplicate-content silo must get a DIFFERENT id."""
+        import uuid
+        return uuid.uuid4().hex
+
+    def _load_silo_identities(self):
+        """Load/validate/migrate the silo_identity_v1 anchor at startup.
+
+        * every persisted (category, space, slot) row gets one silo_id;
+        * empty rows get ids too (T-1222: empty IS an existing silo);
+        * an id owned by TWO active slots is a hard integrity violation —
+          the duplicate is regenerated (never deleted, content wins);
+        * identity rows without a silo row (deleted silos) are dropped;
+        * a successful migration marks the identity domain dirty so the
+          first save persists the backfill in the SAME transaction family.
+        """
+        import sqlite3 as _sq
+
+        try:
+            rows = list(self.conn.execute(
+                "SELECT category, is_archive, slot, silo_id "
+                "FROM silo_identity_v1"))
+        except _sq.Error:
+            rows = []
+        existing = {}
+        for cat, is_arc, slot, sid in rows:
+            if isinstance(cat, str) and isinstance(slot, int) \
+                    and isinstance(sid, str) and sid:
+                existing[(cat, 1 if is_arc else 0, slot)] = sid
+        seen_ids = {}
+        for key, sid in list(existing.items()):
+            if sid in seen_ids:
+                # impossible duplicate: regenerate, keep every row
+                logger.error(
+                    "silo_identity_v1 duplicate silo_id %s at %r and %r; "
+                    "regenerating the newer one (content preserved)",
+                    sid, seen_ids[sid], key)
+                existing[key] = sid = self._new_silo_id()
+            seen_ids[sid] = key
+
+        live_slots = {}
+        for is_arc, all_key in ((0, "temp_presets_all"),
+                                (1, "archive_temp_presets_all")):
+            for cat, slots in (self.data.get(all_key) or {}).items():
+                for i in range(len(slots)):
+                    if 0 <= i < 100:
+                        live_slots[(cat, is_arc, i)] = True
+        changed = False
+        target = {}
+        for key in live_slots:
+            sid = existing.get(key)
+            if sid is None:
+                sid = self._new_silo_id()
+                changed = True
+            target[key] = sid
+        if len(target) != len(existing):
+            changed = True
+        if changed:
+            try:
+                with self.conn:
+                    self.conn.execute("DELETE FROM silo_identity_v1")
+                    self.conn.executemany(
+                        "INSERT OR REPLACE INTO silo_identity_v1 "
+                        "(category, is_archive, slot, silo_id) "
+                        "VALUES (?,?,?,?)",
+                        [(cat, is_arc, slot, sid)
+                         for (cat, is_arc, slot), sid in target.items()])
+            except _sq.Error:
+                logger.exception(
+                    "silo identity backfill failed; identities rebuild on "
+                    "the next successful save")
+        # expose to the app: (category, is_archive, slot) -> silo_id
+        self.silo_identities = target
+        self._silo_id_dirty = changed
+        return target
+
+    def silo_id_for(self, category, is_archive, slot):
+        """The stable id owning (category, space, slot), or None.
+
+        Falls back to a deterministic PENDING id when the anchor has not
+        been loaded yet, so callers can compare identities without None
+        collisions. A PENDING id is never persisted as such."""
+        ids = getattr(self, "silo_identities", None)
+        if ids is None:
+            return f"pending::{category!r}:{int(bool(is_archive))}:{int(slot)}"
+        return ids.get((category, int(bool(is_archive)), int(slot)))
+
+    def remap_silo_identities(self, category, is_archive, remap, drop=()):
+        """Move identity anchors WITH their silos across a reorder, insert or
+        delete (T-1227). ``remap(slot) -> new_slot`` for surviving slots;
+        ``drop`` lists slots that were removed. Only the given
+        (category, space) namespace is touched. Marks the identity domain
+        dirty so the next save commits the new mapping atomically."""
+        ids = getattr(self, "silo_identities", None)
+        if ids is None:
+            return
+        is_arc = 1 if is_archive else 0
+        drop = {int(s) for s in drop}
+        moved = {}
+        for (cat, arc, slot), sid in ids.items():
+            if cat != category or arc != is_arc:
+                moved[(cat, arc, slot)] = sid
+                continue
+            if slot in drop:
+                continue
+            try:
+                new_slot = int(remap(slot))
+            except Exception:
+                new_slot = slot
+            moved[(cat, arc, new_slot)] = sid
+        if moved != ids:
+            ids.clear()
+            ids.update(moved)
+            self._silo_id_dirty = True
+
+    def swap_silo_identities(self, category, key_a, key_b):
+        """Swap two identity anchors across spaces (T-1227 cross-space swap).
+
+        ``key`` is ``(is_archive, slot)``. Used by ``swap_cross_temp_slots``,
+        which exchanges content BETWEEN the normal and archive lists rather
+        than shifting a single list."""
+        ids = getattr(self, "silo_identities", None)
+        if ids is None:
+            return
+        (arc_a, slot_a), (arc_b, slot_b) = key_a, key_b
+        ka = (category, 1 if arc_a else 0, int(slot_a))
+        kb = (category, 1 if arc_b else 0, int(slot_b))
+        if ka == kb:
+            return
+        sa = ids.get(ka)
+        sb = ids.get(kb)
+        if sa is None and sb is None:
+            return
+        if sb is not None:
+            ids[ka] = sb
+        else:
+            ids.pop(ka, None)
+        if sa is not None:
+            ids[kb] = sa
+        else:
+            ids.pop(kb, None)
+        self._silo_id_dirty = True
+
+    def move_silo_identity(self, src_cat, src_archive, src_slot,
+                           dst_cat, dst_archive, dst_slot):
+        """Move one identity anchor across categories/spaces (T-1227).
+
+        Used by the cross-category silo transfer: the silo_id and its whole
+        text-history chain follow the silo to its new (category, space, slot).
+        The source key is dropped so the destination does not inherit a
+        second anchor, and the domain is marked dirty for the next save txn."""
+        ids = getattr(self, "silo_identities", None)
+        if ids is None:
+            return
+        ska = (src_cat, 1 if src_archive else 0, int(src_slot))
+        dka = (dst_cat, 1 if dst_archive else 0, int(dst_slot))
+        if ska == dka:
+            return
+        sid = ids.pop(ska, None)
+        if sid is None:
+            return
+        ids[dka] = sid
+        self._silo_id_dirty = True
+
+    def _sync_silo_identities_locked(self, cur):
+        """Reconcile the identity table with the live slot extents INSIDE a
+        save transaction. Called with the caller's cursor so identity
+        commits atomically with the silo rows it describes (T-1227)."""
+        ids = getattr(self, "silo_identities", None)
+        if ids is None:
+            return
+        live = {}
+        for is_arc, all_key in ((0, "temp_presets_all"),
+                                (1, "archive_temp_presets_all")):
+            for cat, slots in (self.data.get(all_key) or {}).items():
+                for i in range(len(slots)):
+                    live[(cat, is_arc, i)] = True
+        # rows that vanished (deleted silos) leave the active identity map
+        for key in list(ids):
+            if key not in live:
+                del ids[key]
+        for key in live:
+            if key not in ids:
+                ids[key] = self._new_silo_id()
+        if self._silo_id_dirty or ids != getattr(self, "_silo_ids_saved", None):
+            cur.execute("DELETE FROM silo_identity_v1")
+            cur.executemany(
+                "INSERT OR REPLACE INTO silo_identity_v1 "
+                "(category, is_archive, slot, silo_id) VALUES (?,?,?,?)",
+                [(cat, is_arc, slot, sid)
+                 for (cat, is_arc, slot), sid in ids.items()])
+            self._silo_ids_saved = dict(ids)
+            self._silo_id_dirty = False
+
+    def record_silo_text_history(self, silo_id, before, after, reason):
+        """Queue one committed-text transition into the next save txn.
+
+        T-1227 §28: an overwrite that destroys the only copy of OLD must be
+        impossible — the recovery transition and the new authoritative row
+        commit in the SAME transaction. The queued pairs are drained by
+        _save_data_to_db_locked inside its `with self.conn` block."""
+        if not silo_id or before == after:
+            return
+        q = getattr(self, "_pending_silo_history", None)
+        if q is None:
+            q = self._pending_silo_history = []
+        # T-1227: a failed save restores the consumed queue and the caller
+        # re-derives the same diff on retry — coalesce the identical
+        # transition instead of recording it twice.
+        for row in q:
+            if row[0] == silo_id and row[1] == (before or "") \
+                    and row[2] == (after or ""):
+                return
+        import hashlib as _h
+        def _digest(t):
+            return _h.sha256((t or "").encode("utf-8",
+                                             "surrogatepass")).hexdigest()
+        q.append((silo_id, before or "", after or "",
+                  _digest(before), _digest(after), reason))
+
+    SILO_HISTORY_PER_SILO_CAP = 50
+    SILO_HISTORY_TOTAL_CAP = 5_000
+
+    def truncate_silo_text_history_after(self, silo_id, seq):
+        """Queue removal of a DISCARDED redo branch (T-1227 §15).
+
+        Standard editor semantics: after an undo to B the user commits D, so
+        the old C branch must no longer be Ctrl+Y-reachable. Rows with
+        ``seq > threshold`` for this silo are abandoned; they are deleted
+        inside the same save transaction that commits D, BEFORE D is
+        inserted (so D's own new seq survives). The threshold is the seq of
+        the transition the cursor currently sits on (0 = drop all)."""
+        if not silo_id:
+            return
+        q = getattr(self, "_pending_silo_history_truncate", None)
+        if q is None:
+            q = self._pending_silo_history_truncate = []
+        q.append((silo_id, int(seq or 0)))
+
+    def _drain_silo_history_locked(self, cur):
+        """Persist queued text transitions + bound the history size."""
+        import sqlite3 as _sq
+        import time as _time
+        # T-1227 §15: drop abandoned redo branches FIRST, so the new commit's
+        # row (inserted below) is not caught by its own truncation.
+        trunc = getattr(self, "_pending_silo_history_truncate", None)
+        if trunc:
+            for sid, threshold in trunc:
+                cur.execute(
+                    "DELETE FROM silo_text_history_v1 "
+                    "WHERE silo_id=? AND seq>?", (sid, threshold))
+            self._pending_silo_history_truncate = []
+        q = getattr(self, "_pending_silo_history", None)
+        if q:
+            cur.executemany(
+                "INSERT INTO silo_text_history_v1 "
+                "(silo_id, before_content, after_content, before_hash, "
+                "after_hash, timestamp, reason) VALUES (?,?,?,?,?,?,?)",
+                [(sid, b, a, bh, ah, _time.time(), reason)
+                 for (sid, b, a, bh, ah, reason) in q])
+            self._pending_silo_history = []
+        # bound: per-silo cap + global cap. Pruning runs ONLY after the new
+        # authoritative commit (this IS the post-commit point of the txn).
+        try:
+            counts = list(cur.execute(
+                "SELECT silo_id, COUNT(*), MIN(seq) FROM silo_text_history_v1 "
+                "GROUP BY silo_id"))
+            prune_seqs = []
+            for sid, n, min_seq in counts:
+                if n > self.SILO_HISTORY_PER_SILO_CAP:
+                    rows = list(cur.execute(
+                        "SELECT seq FROM silo_text_history_v1 WHERE silo_id=? "
+                        "ORDER BY seq DESC LIMIT -1 OFFSET ?",
+                        (sid, self.SILO_HISTORY_PER_SILO_CAP)))
+                    prune_seqs.extend(r[0] for r in rows)
+            total = sum(c for _s, c, _m in counts)
+            if total > self.SILO_HISTORY_TOTAL_CAP:
+                keep = self.SILO_HISTORY_TOTAL_CAP
+                rows = list(cur.execute(
+                    "SELECT seq FROM silo_text_history_v1 "
+                    "ORDER BY seq DESC LIMIT -1 OFFSET ?", (keep,)))
+                prune_seqs.extend(r[0] for r in rows)
+            if prune_seqs:
+                cur.executemany(
+                    "DELETE FROM silo_text_history_v1 WHERE seq=?",
+                    [(s,) for s in prune_seqs])
+        except _sq.Error:
+            # pruning is secondary: never fail the authoritative save over it
+            logger.exception("silo text history pruning failed (kept)")
+
+    def silo_text_history_for(self, silo_id):
+        """The committed-text transition timeline of one silo, oldest first.
+        Each entry: (seq, before, after, timestamp, reason)."""
+        import sqlite3 as _sq
+        try:
+            return [tuple(r) for r in self.conn.execute(
+                "SELECT seq, before_content, after_content, timestamp, "
+                "reason FROM silo_text_history_v1 WHERE silo_id=? "
+                "ORDER BY seq ASC", (silo_id,))]
+        except _sq.Error:
+            return []
+
+    def validate_silo_lineage(self, dirty_slots=()):
+        """Cross-check identity against text lineage. Reports, never repairs.
+
+        The identity anchor is keyed by POSITION -- `(category, is_archive,
+        slot)` -- so it is stable only for as long as every structural route
+        remembers to call `remap_silo_identities`. That is exactly the kind of
+        discipline this whole wave exists to stop relying on, and
+        `_load_silo_identities` cannot catch a lapse: two ids cleanly SWAPPED
+        produce no duplicate, no orphan, and no change in the row count, so
+        every presence and uniqueness check passes while the mapping is
+        wrong. The next save then persists the wrong mapping as authoritative,
+        and persistent Ctrl+Z starts restoring one silo's history into
+        another -- the recovery mechanism turning into a corruption mechanism.
+
+        The check that does not depend on the remap: a silo's newest committed
+        `after_hash` must be the hash of the text now sitting in the slot that
+        its id maps to. One SHA256 per silo that has any history.
+
+        Returns a list of mismatch dicts (empty when consistent). Slots named
+        in `dirty_slots` -- edited since their last commit -- are expected to
+        differ and are skipped.
+
+        Deliberately NOT self-healing. There is no way to tell, from the
+        outside, whether the identity moved or the text did, and guessing
+        would risk relabelling the user's data. The caller's job is to fail
+        closed on whatever this reports.
+        """
+        import hashlib
+        import sqlite3 as _sq
+
+        ids = getattr(self, "silo_identities", None)
+        if not ids:
+            return []
+        try:
+            rows = self.conn.execute(
+                "SELECT h.silo_id, h.after_hash FROM silo_text_history_v1 h "
+                "JOIN (SELECT silo_id, MAX(seq) AS seq "
+                "      FROM silo_text_history_v1 GROUP BY silo_id) newest "
+                "  ON h.silo_id = newest.silo_id AND h.seq = newest.seq")
+            newest = {sid: after for sid, after in rows if after}
+        except _sq.Error:
+            return []
+        if not newest:
+            return []
+
+        slot_of = {sid: key for key, sid in ids.items()}
+        skip = {(c, int(bool(a)), int(s)) for c, a, s in dirty_slots}
+        problems = []
+        for sid, expected in newest.items():
+            key = slot_of.get(sid)
+            if key is None:
+                # The silo was deleted; its history is retained on purpose.
+                continue
+            if key in skip:
+                continue
+            category, is_arc, slot = key
+            store = ("archive_temp_presets_all" if is_arc
+                     else "temp_presets_all")
+            slots = (self.data.get(store) or {}).get(category)
+            if slots is None or not (0 <= slot < len(slots)):
+                continue
+            text = slots[slot] or ""
+            got = hashlib.sha256(
+                text.encode("utf-8", "surrogatepass")).hexdigest()
+            if got != expected:
+                problems.append({
+                    "silo_id": sid,
+                    "category": category,
+                    "is_archive": bool(is_arc),
+                    "slot": slot,
+                    "expected_after_hash": expected,
+                    "actual_hash": got,
+                    "actual_length": len(text),
+                })
+        return problems
+
+    def latest_silo_history_seq(self):
+        """The newest persisted history sequence, for action-order
+        unification after restart (T-1227 §16)."""
+        import sqlite3 as _sq
+        try:
+            row = self.conn.execute(
+                "SELECT MAX(seq) FROM silo_text_history_v1").fetchone()
+            return int(row[0] or 0)
+        except _sq.Error:
+            return 0
+
+    def _snapshot_state(self, temp_rows=None, arc_rows=None):
         self._last_saved_presets = {(cat, i, item["name"], item["text"], item.get("last_edited", 0)) for cat, slots in self.data["categories"].items() for i, item in enumerate(slots) if item}
-        self._last_saved_temp = {(cat, i, content) for cat, slots in self.data["temp_presets_all"].items() for i, content in enumerate(slots) if content}
-        self._last_saved_arc = {(cat, i, content) for cat, slots in self.data["archive_temp_presets_all"].items() for i, content in enumerate(slots) if content}
+        # T-1222: row presence IS silo existence — every EXISTING slot is
+        # represented, including content == "". The saved-markers must match
+        # the DATABASE, though, not the in-memory lists: a fresh DB holds no
+        # rows at all, and claiming the default ten as already saved would
+        # make the first save skip exactly those rows. The loader therefore
+        # passes the row sets it actually read; the in-memory derivation is
+        # the fallback for callers that have no DB read to hand over.
+        if temp_rows is None:
+            temp_rows = {(cat, i, content or "") for cat, slots in self.data["temp_presets_all"].items() for i, content in enumerate(slots) if 0 <= i < 100}
+        if arc_rows is None:
+            arc_rows = {(cat, i, content or "") for cat, slots in self.data["archive_temp_presets_all"].items() for i, content in enumerate(slots) if 0 <= i < 100}
+        self._last_saved_temp = temp_rows
+        self._last_saved_arc = arc_rows
         self._last_saved_settings = _encode_settings(self.data)
 
     def mark_dirty(self, domain=None):
@@ -2714,6 +3329,20 @@ class FastPrompterState:
             ok = self._save_data_to_db_locked(
                 current_text, ui_settings, force, sync,
                 durable=durable)
+        if ok:
+            # PERF-005 (corrective): a committed generation's deferred backup
+            # content must be sourced from committed truth, never from the
+            # live mutable data dict. The commit already built these row sets,
+            # so retaining them costs no copy; they are replaced (never
+            # mutated) by the next commit, and the generation label rides with
+            # them.
+            from fastprompter.utils.portable_backup import note_committed_view
+            note_committed_view(
+                self.profile_id, self._exported_content_gen,
+                cats_order=tuple(self.data.get("cats_order") or ()),
+                preset_rows=self._last_saved_presets,
+                temp_rows=self._last_saved_temp,
+                arc_rows=self._last_saved_arc)
         if ok and self.data.get("portable_backup_enabled", "True") == "True":
             from fastprompter.utils.portable_backup import run_portable_backup
             # PERF-003: the scheduler receives this profile's exported-content
@@ -2880,14 +3509,23 @@ class FastPrompterState:
         temp_to_delete = set()
         if scan_temp:
             # CORE-001: enforce 0..99 invariant BEFORE building the txn.
-            # Any non-empty slot outside that range is save-side corruption.
+            # Any slot outside that range is save-side corruption. Since
+            # T-1222 an EMPTY slot is persisted state too, so the check no
+            # longer lets content == "" rows slip past it.
             for cat, slots in self.data["temp_presets_all"].items():
                 for i, content in enumerate(slots):
-                    if content and (i < 0 or i >= 100):
+                    if i < 0 or i >= 100:
                         logger.error("temp_presets_all[%r][%d] outside 0..99; refusing save", cat, i)
                         self._db_dirty = True
                         return False
-            current_temp = {(cat, i, content) for cat, slots in self.data["temp_presets_all"].items() for i, content in enumerate(slots) if content and 0 <= i < 100}
+            # T-1222: row presence IS silo existence. Every existing slot is
+            # persisted, including content == "" — an empty silo is user
+            # structure, not absence. (The old `if content` filter dropped
+            # empty rows, so a 20-silo project reloaded as the default 10
+            # and the gap anchors beyond slot 9 were then pruned away.)
+            # Deltas keep the same distinction: non-empty <-> empty is an
+            # UPDATE of the row; a list shrink (real deletion) is a DELETE.
+            current_temp = {(cat, i, content or "") for cat, slots in self.data["temp_presets_all"].items() for i, content in enumerate(slots) if 0 <= i < 100}
             old_temp_keys = {(tup[0], tup[1]) for tup in self._last_saved_temp}
             new_temp_keys = {(tup[0], tup[1]) for tup in current_temp}
             temp_to_delete = old_temp_keys - new_temp_keys
@@ -2898,11 +3536,13 @@ class FastPrompterState:
         if scan_arc:
             for cat, slots in self.data["archive_temp_presets_all"].items():
                 for i, content in enumerate(slots):
-                    if content and (i < 0 or i >= 100):
+                    if i < 0 or i >= 100:
                         logger.error("archive_temp_presets_all[%r][%d] outside 0..99; refusing save", cat, i)
                         self._db_dirty = True
                         return False
-            current_arc = {(cat, i, content) for cat, slots in self.data["archive_temp_presets_all"].items() for i, content in enumerate(slots) if content and 0 <= i < 100}
+            # T-1222: the archive keeps the same row-presence contract as the
+            # normal silos — an archived empty silo still exists.
+            current_arc = {(cat, i, content or "") for cat, slots in self.data["archive_temp_presets_all"].items() for i, content in enumerate(slots) if 0 <= i < 100}
             old_arc_keys = {(tup[0], tup[1]) for tup in self._last_saved_arc}
             new_arc_keys = {(tup[0], tup[1]) for tup in current_arc}
             arc_to_delete = old_arc_keys - new_arc_keys
@@ -2910,6 +3550,17 @@ class FastPrompterState:
 
         changed = bool(settings_to_save or to_insert_presets or to_delete_presets
                        or to_update_temp or temp_to_delete or arc_to_update or arc_to_delete)
+        # T-1227: queued history transitions and an unsaved identity
+        # backfill force the transaction even when the silo/settings deltas
+        # are empty — the recovery predecessor must not wait for the next
+        # "real" change.
+        identity_pending = (
+            getattr(self, "_silo_id_dirty", False)
+            or getattr(self, "silo_identities", None) is not None
+            and getattr(self, "silo_identities", {}) != getattr(self, "_silo_ids_saved", None))
+        history_pending = bool(getattr(self, "_pending_silo_history", None))
+        if not changed and (identity_pending or history_pending):
+            changed = True
         # PERF-004: expose WHICH settings keys this save committed so the
         # one-way mirror can decide dirty routing without re-deriving it.
         self.last_save_settings_keys = [k for k, _v in settings_to_save]
@@ -2946,15 +3597,38 @@ class FastPrompterState:
         # previous snapshots and the dirty state are preserved unchanged, so
         # a retry recomputes every failed change and the previously committed
         # database stays valid (P0-2).
+        # T-1227: the drain consumes the pending history/truncation queues
+        # inside the transaction; snapshot them so a rolled-back save can
+        # restore the exact recovery work instead of losing it.
+        _hist_pending_before = list(
+            getattr(self, "_pending_silo_history", None) or [])
+        _trunc_pending_before = list(
+            getattr(self, "_pending_silo_history_truncate", None) or [])
         try:
             with self.conn:
                 cur = self.conn.cursor()
+                # T-1227: a foreign/minimal DB may predate the additive
+                # anchors; the save transaction self-heals ONLY these additive
+                # tables. A dropped CORE table must still fail the save.
+                _ensure_t1227_tables(cur)
+                # T-1227: identity + history ride the SAME transaction as the
+                # silo rows they describe. A committed content change without
+                # its recovery predecessor must be impossible (§28).
+                self._sync_silo_identities_locked(cur)
+                self._drain_silo_history_locked(cur)
                 if settings_to_save:
                     cur.executemany('INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)', settings_to_save)
                 if to_delete_presets:
                     cur.executemany('DELETE FROM presets WHERE category=? AND slot=?', list(to_delete_presets))
                 if to_insert_presets:
                     cur.executemany('INSERT OR REPLACE INTO presets (category, slot, name, content, last_edited) VALUES (?,?,?,?,?)', list(to_insert_presets))
+                if temp_to_delete or to_update_temp:
+                    # T-1222: this database now speaks the row-presence
+                    # contract — rows are the exact silo extent. Committed in
+                    # the SAME transaction as the rows it describes, so the
+                    # marker can never claim semantics the rows don't carry.
+                    cur.execute('INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)',
+                                ("silo_row_presence", "1"))
                 if temp_to_delete:
                     cur.executemany('DELETE FROM temp_presets_v2 WHERE category=? AND slot=?', list(temp_to_delete))
                 if to_update_temp:
@@ -2978,6 +3652,11 @@ class FastPrompterState:
             if scan_temp:
                 self._last_saved_temp = current_temp
                 self._saved_temp_gen = self._dirty_temp
+                if to_update_temp or temp_to_delete:
+                    # post-commit only: a rolled-back transaction must not
+                    # leave the in-memory marker claiming semantics the DB
+                    # does not carry
+                    self.data["silo_row_presence"] = "1"
             if scan_arc:
                 self._last_saved_arc = current_arc
                 self._saved_arc_gen = self._dirty_arc
@@ -3012,6 +3691,14 @@ class FastPrompterState:
                              "and will be retried")
             self._db_dirty = True
             self._last_save_outcome = "FAILED"
+            # T-1227: the transaction rolled back, so the in-memory "already
+            # saved" identity marker and the consumed recovery queues must be
+            # restored/forced — otherwise a retry would skip the identity
+            # rewrite and lose the transitions the drain had taken.
+            self._pending_silo_history = _hist_pending_before
+            self._pending_silo_history_truncate = _trunc_pending_before
+            self._silo_ids_saved = None
+            self._silo_id_dirty = True
             return False
 
         self._last_save_outcome = "COMMITTED"

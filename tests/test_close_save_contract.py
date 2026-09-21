@@ -16,7 +16,6 @@ import os
 import subprocess
 import sys
 
-
 _SCRIPT = r"""
 import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")

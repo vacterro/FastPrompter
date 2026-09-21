@@ -220,7 +220,6 @@ class TestFolderTrashLogMemberNormalization:
         f.data = {"folder_trash_log": ["x"]}
         f.mark_dirty = lambda: None
         # _restore_trashed_folders must not raise on the malformed member
-        from fastprompter.ui.snippet_ops_mixin import _is_deleted
         # bind minimal attrs used by the consumer's early path
         f._category_files_dir = lambda cat: None
         f._files_root = lambda: ""

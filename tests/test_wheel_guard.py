@@ -81,7 +81,12 @@ class TestWheelGuard(unittest.TestCase):
     def tearDown(self):
         _APP.removeEventFilter(self.guard)
         self.dialog.close()
-        self.dialog.deleteLater()
+        # T-1286: receiver-scoped retirement delivers the DeferredDelete now;
+        # a bare deleteLater() + processEvents() left the dialog pending
+        # (processEvents does not deliver DeferredDelete), and the backlog
+        # stalled tests/test_timer_fire.py's watchdog.
+        from _qt_retire import retire
+        retire(self.dialog)
         _APP.processEvents()
 
     def _send(self, widget, notches=-1):
@@ -168,6 +173,31 @@ class TestWheelGuard(unittest.TestCase):
             plain.close()
             plain.deleteLater()
             _APP.processEvents()
+
+
+    def test_a_wheel_owner_combo_still_receives_the_gesture(self):
+        """A WheelPager gives the widget a deliberate wheel meaning.
+
+        The project combo pages tabs on wheel, so the guard must not swallow
+        the event on the way — otherwise "mouse wheel switches tabs" dies
+        silently even though the combo never edits itself.
+        """
+        from fastprompter.ui.snippet_panel import WheelPager
+
+        paged = []
+        pager_combo = QComboBox()
+        pager_combo.addItems(["p1", "p2", "p3"])
+        self.area.widget().layout().insertWidget(0, pager_combo)
+        WheelPager(pager_combo, paged.append)
+        _APP.processEvents()
+        assert not pager_combo.hasFocus()
+        bar = self.area.verticalScrollBar()
+        before = bar.value()
+        index = pager_combo.currentIndex()
+        self._send(pager_combo)
+        assert paged == [1]
+        assert pager_combo.currentIndex() == index
+        assert bar.value() == before
 
 
 class TestScrollSoundStillWorks(unittest.TestCase):

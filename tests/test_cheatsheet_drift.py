@@ -43,6 +43,7 @@ _ALLOWED_MISSING = {
     "Ctrl+MiddleButton",
     "Alt+MiddleButton",
     "MiddleButton",
+    "Shift+MiddleButton",
     "Ctrl+Click on bullet",
     "Ctrl+Shift+drag",
     "Tab",

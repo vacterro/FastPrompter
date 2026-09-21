@@ -180,13 +180,43 @@ def _windows_from(result: dict) -> list:
     honest (dim) to draw.
     """
     out = []
+    group_order: dict[str, int] = {}
     for key, bucket in (result or {}).items():
         if key in _NON_WINDOW_KEYS or not isinstance(bucket, dict):
             continue
-        out.append(_as_window(key, bucket))
-    out.sort(key=lambda w: (w.duration_minutes is None, w.duration_minutes or 0))
+        window = _as_window(key, bucket)
+        if window.group not in group_order:
+            group_order[window.group] = len(group_order)
+        out.append(window)
+    # Grouped by POOL first, then shortest window inside it. An account can
+    # hold several pools (Codex + a named reserve) whose windows have the same
+    # duration, and sorting by duration alone interleaved them, so a pool's
+    # heading was drawn, then the other pool's, then the first pool's again.
+    #
+    # An account's ORDINARY pool leads, then the others in the probe's own
+    # order: a reserve is an alternative to the default quota, not the main
+    # subject, and it keeps the ordinary "Codex 5h / weekly" pair at the top
+    # regardless of which pool the server happened to list first. A
+    # single-pool account has group "" everywhere, which leaves the historical
+    # "shortest first" order byte-identical.
+    out.sort(key=lambda w: (not _is_ordinary_group(w.group),
+                            group_order.get(w.group, 0),
+                            w.duration_minutes is None,
+                            w.duration_minutes or 0))
     available = [w for w in out if w.available]
     return available or out
+
+
+def _is_ordinary_group(group: str) -> bool:
+    """The account's default pool, versus a model-scoped reserve.
+
+    Only the canonical default pool ids are recognised. Anything else is
+    treated as a reserve for ORDERING purposes only — an unclassified pool
+    sorts after the default rather than being claimed as ordinary capacity
+    (classification itself never happens here; ``UsageWindow.model_slug``
+    carries that evidence).
+    """
+    return str(group or "").strip().lower() in ("", "codex")
 
 
 def _as_window(key: str, bucket) -> UsageWindow:
@@ -202,6 +232,14 @@ def _as_window(key: str, bucket) -> UsageWindow:
         remaining_percent=rem if isinstance(rem, (int, float)) else None,
         resets_at_epoch=_epoch(bucket.get("resets_at")),
         source="app-server",
+        # The pool identity MUST survive this boundary: every pool-aware
+        # consumer (gate_windows / _pool_usable / display_windows /
+        # account_usable_now / reset_candidates) groups by ``group``, so
+        # dropping it here silently re-merges independent Codex pools into
+        # one logical pool -- the exact defect this ticket repairs.
+        group=str(bucket.get("group") or ""),
+        group_label=str(bucket.get("group_label") or ""),
+        model_slug=str(bucket.get("model_slug") or ""),
     )
 
 

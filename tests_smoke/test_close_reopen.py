@@ -26,41 +26,19 @@ import tempfile
 import time
 
 import pytest
-from PyQt6 import sip
-from PyQt6.QtCore import QEvent
 from PyQt6.QtWidgets import QApplication
 
-import fastprompter.core.state as state_mod
 from fastprompter import main as m
-from fastprompter.main import FastPrompter
 
 _app = QApplication.instance() or QApplication([])
 _tmpdir = tempfile.mkdtemp(prefix="fastprompter_close_reopen_")
 
 
 @pytest.fixture
-def win():
-    state_mod.get_db_path = lambda profile_id=1: os.path.join(_tmpdir, f"cr_{profile_id}.db")
-    state_mod.run_portable_backup = lambda data, profile_id=1: None
-    FastPrompter.setup_single_instance_server = lambda self: None
-    FastPrompter.register_all_hotkeys = lambda self: None
-    FastPrompter.unregister_all_hotkeys = lambda self: None
-    w = FastPrompter()
-    w.resize(960, 540)
-    w.show()
-    _app.processEvents()
+def win(smoke_win):
+    w = smoke_win.create(show=True, size=(960, 540))
     yield w
-    for timer in ("auto_save_timer", "topmost_timer", "_cache_timer", "_undo_timer"):
-        t = getattr(w, timer, None)
-        if t is not None and not sip.isdeleted(t):
-            t.stop()
-    w.state.conn = None
-    w.conn = None
-    w.close()
-    w.deleteLater()
-    QApplication.processEvents()
-    QApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
-    QApplication.processEvents()
+    smoke_win.retire(w)
 
 
 def _sync_mirror_files(win, tmp_path, marker):
@@ -94,9 +72,9 @@ def test_resident_close_keeps_workers_alive_and_reopen_still_saves(
         win, monkeypatch, tmp_path):
     retired = []
     monkeypatch.setattr(win, "_watcher_shutdown",
-                        lambda: retired.append("watcher") or True)
+                        lambda: retired.append("watcher") or True, raising=False)
     monkeypatch.setattr(win, "_sync_shutdown",
-                        lambda: retired.append("sync") or None)
+                        lambda: retired.append("sync") or None, raising=False)
 
 # resident close: the window hides, the process keeps running
     win.close()

@@ -73,8 +73,16 @@ def _sample_epoch(value):
     return value if 1e9 < value < 1e11 else None
 
 
+def normalize_organization_id(value) -> str | None:
+    """Return a comparable Claude organization id without exposing secrets."""
+    if not isinstance(value, str):
+        return None
+    value = value.strip()
+    return value.casefold() or None
+
+
 def _load(path: str) -> dict:
-    """Newest sample as ``{"sampled_at": epoch, "windows": {key: used_pct}}``.
+    """Newest sample with its own org as ``{"sampled_at": ..., "org": ...}``.
 
     Returns an empty dict when the file is missing, oversized, malformed, or
     carries no readable percentage. Never raises.
@@ -91,13 +99,14 @@ def _load(path: str) -> dict:
     try:
         with open(path, encoding="utf-8") as handle:
             payload = json.load(handle)
-    except (OSError, ValueError):
+    except (OSError, UnicodeError, ValueError):
         payload = None
     result: dict = {}
     samples = payload.get("samples") if isinstance(payload, dict) else None
     if isinstance(samples, list):
         best_at = None
         best: dict = {}
+        best_org = None
         # Newest-first: the tail is chronological in practice, but a max scan
         # costs nothing here and does not trust the file's ordering.
         for sample in reversed(samples[-512:]):
@@ -119,8 +128,10 @@ def _load(path: str) -> dict:
                 continue
             if best_at is None or sampled_at > best_at:
                 best_at, best = sampled_at, windows
+                best_org = normalize_organization_id(sample.get("org"))
         if best_at is not None:
             result = {"sampled_at": best_at, "windows": best,
+                      "org": best_org,
                       "source": "claude-desktop-usage-history"}
     if len(_cache) > 16:
         _cache.clear()
@@ -146,6 +157,7 @@ def latest_usage(appdata: str | os.PathLike | None = None, *,
     age = max(0.0, now - data["sampled_at"])
     return {
         "sampled_at": data["sampled_at"],
+        "org": data.get("org"),
         "age_s": age,
         "fresh": age <= fresh_window_s,
         "windows": dict(data["windows"]),

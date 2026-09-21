@@ -19,6 +19,7 @@ the undo step, the dirty flag and the panel refresh cannot be forgotten in
 one path and remembered in another.
 """
 
+from PyQt6.QtGui import QTextDocument
 from PyQt6.QtWidgets import QInputDialog
 
 from fastprompter.core.logging import logger
@@ -145,7 +146,6 @@ class SendSelectionMixin:
                 # reuse blank slot for archive path: place at that slot
                 self.add_data_undo_state("Selection to new archive entry")
                 archive[slot] = text
-                from PyQt6.QtGui import QTextDocument
                 doc = QTextDocument()
                 doc.setDefaultFont(self.text_area.font())
                 self._set_plain_text_clean(doc, text)

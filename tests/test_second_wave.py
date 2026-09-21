@@ -175,7 +175,7 @@ def test_structured_list_member_normalization():
 
 # ----------------------------------------------------------------- T-1025
 def test_fancy_zone_ui_state_and_geometry_healing():
-    from fastprompter.ui.fancy_zones import _ui_state_of, _load_presets
+    from fastprompter.ui.fancy_zones import _load_presets, _ui_state_of
 
     # a persisted string "False" must stay False, never become True
     st = _ui_state_of({"zen": "False", "theme": "Dark"})
@@ -301,7 +301,7 @@ def test_silogapbar_i18n_keys_registered_and_translated():
     every one must be registered (present in the canonical EN inventory and in
     each shipped locale) and the audited locales must carry a real translation,
     not fall through to the untranslated English source."""
-    from fastprompter.core.i18n import tr, ensure_initialized
+    from fastprompter.core.i18n import ensure_initialized, tr
 
     gap_keys = [
         "Ctrl+drag to move this gap. Double-click to rename.",
@@ -408,7 +408,6 @@ def test_malformed_cats_order_and_hidden_recover_from_db(tmp_path, monkeypatch):
     assert reloaded.data["hidden_categories"] == ["X"]
 
 
-import time  # noqa: E402  (used by portable_backup call above)
 
 
 

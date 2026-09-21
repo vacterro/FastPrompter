@@ -1028,7 +1028,9 @@ class SnippetOpsMixin:
             if reply != QMessageBox.StandardButton.Yes:
                 return
 
-            self.sound_manager.play("delete")
+            # T-1261: no cue here -- del_silo owns the success cue and may
+            # refuse the delete outright. Playing it here produced a double
+            # cue on success and a false success cue on refusal.
             self.del_silo()
             return
 
@@ -1427,8 +1429,12 @@ class SnippetOpsMixin:
         deleting an archive row while a normal silo is active must not delete
         the normal silo at the same index (T-754).
         """
-        if not defer_ui:
-            self.sound_manager.play("delete")
+        # T-1261: the "delete" cue is SUCCESS feedback, not intent feedback.
+        # It used to fire here, before index validation, before the durable
+        # undo publication, before trash staging and before physical
+        # retirement -- so a REFUSED delete still sounded exactly like a
+        # completed one. The cue now fires once, at the single point where
+        # the deletion is committed (see the success block below).
         is_arc = getattr(self, "active_is_archive", False) if is_archive is None else is_archive
         presets = self.data["archive_temp_presets"] if is_arc else self.data["temp_presets"]
         docs = self.archive_docs if is_arc else self.silo_docs
@@ -1443,9 +1449,30 @@ class SnippetOpsMixin:
             # state the user saw before pressing delete. _live_text_into
             # folds the live editor text into the snapshot, so the order here
             # does not need a separate flush step.
+            #
+            # T-1261 / T-1227 §17: the snapshot must also be ON DISK before a
+            # single destructive step runs. Delete was the one destructive silo
+            # op still pushing a non-durable snapshot, so a crash (or a failed
+            # undo flush) between here and the trash write could lose the silo
+            # with no way back. ``durable=True`` publishes synchronously and
+            # returns None when that publication fails; the delete is then
+            # REFUSED before any staging, retirement, map mutation, slot
+            # removal or UI change.
             pushed_undo = None
             if not skip_undo:
-                pushed_undo = self.add_data_undo_state("Delete silo")
+                stack = getattr(self, "data_undo_stack", None)
+                top_before = stack[-1] if stack else None
+                published = self.add_data_undo_state("Delete silo",
+                                                     durable=True)
+                if published is None:
+                    return False
+                # A DEDUPED publish returns the snapshot that was already on
+                # top: it is the correct before-state, but this call did not
+                # push it, so the abort paths below must not pop it back off
+                # somebody else's history. Only a genuinely new snapshot is
+                # recorded as ours to roll back.
+                if published is not top_before:
+                    pushed_undo = published
 
             # Flush the live editor text only when deleting from the space the
             # editor is actually showing; a non-active-space delete must not
@@ -1551,7 +1578,10 @@ class SnippetOpsMixin:
                         self.active_temp_slot, initial=True, is_archive=is_arc)
 
             self.mark_dirty()
+            # COMMITTED. Exactly one success cue for exactly one deletion.
+            # defer_ui callers (batch delete) own their own single cue.
             if not defer_ui:
+                self.sound_manager.play("delete")
                 self.cancel_editing()
                 self.refresh_temp_presets()
                 if is_arc:
@@ -1562,6 +1592,11 @@ class SnippetOpsMixin:
 
     def select_empty_silo(self, insertion="top"):
         """Insert a new empty silo.
+
+        Explicit NEW is CREATION, never navigation: one call creates exactly
+        one fresh SILO identity, regardless of how many existing silos are
+        empty. Content equality is irrelevant — two empty silos are two
+        distinct valid objects.
 
         ``insertion`` is the EXPLICIT intent and must be passed by every
         keyboard route (the canonical NEW = "top"). When omitted/None the
@@ -1606,9 +1641,9 @@ class SnippetOpsMixin:
             else:
                 insertion = "top"
         else:
-            # A keyboard route names the insertion point explicitly; the cap
-            # check below must still know whether this is an explicit
-            # above/below request (which bypasses the empty-silo cap).
+            # A keyboard route names the insertion point explicitly; the
+            # relative-insertion child handling below still needs to know
+            # whether this is an explicit above/below request.
             shift = insertion == "above"
             ctrl = insertion == "below"
         if insertion == "above":
@@ -1624,24 +1659,14 @@ class SnippetOpsMixin:
         orig_sel = self.active_temp_slot
         orig_parent = self.silo_parent_of(orig_sel) if hasattr(self, "silo_parent_of") else None
 
-        # Cap empty silos at 5: jump to the first existing empty one instead
-        # of letting the user spam unlimited blanks. This is navigation, not a
-        # data action, so it must not push an undo entry.
-        if not (shift or ctrl) and sum(1 for p in presets if not p.strip()) >= 5:
-            for i, p in enumerate(presets):
-                if not p.strip():
-                    self.silo_page = i // max(1, self._visible_silos)
-                    self._switch_to_slot(i, initial=True, is_archive=is_arc)
-                    self.refresh_temp_presets()
-                    return
-            return
-
-        # canonical capacity boundary: never evict another silo implicitly. If
-        # the space is full of content, refuse BEFORE any mutation (lose nothing).
+        # Canonical capacity boundary: explicit NEW never reuses existing blanks.
+        # The only creation ceiling is MAX_SILOS_PER_CATEGORY. At capacity,
+        # NEW refuses explicitly and safely — no navigation, no substitution.
         if self._silo_at_capacity(is_arc):
             return
 
-        self.add_data_undo_state("New silo")
+        if not self._durable_undo_or_refuse("New silo"):
+            return
         presets.insert(pos, "")
 
         doc = QTextDocument()
@@ -1700,6 +1725,83 @@ class SnippetOpsMixin:
         self._switch_to_slot(pos, initial=True, is_archive=is_arc)
         self.mark_dirty()
         self.refresh_temp_presets()
+        self._apply_new_silo_defaults(pos, is_archive=is_arc)
+
+    def _apply_new_silo_defaults(self, slot, is_archive=False,
+                                 allow_clipboard=True):
+        """Post-creation defaults for one explicitly created silo slot.
+
+        Runs ONLY after a successful creation (a refused NEW never reaches
+        this), and after the canonical slot-index remap, so ``slot`` is the
+        new silo's final index. Two independent toggles act here:
+
+        * ``new_silo_paste_clipboard`` - put the current text clipboard into
+          the new silo (blank explicit NEW only; never preset NEW, whose
+          template content is explicit and must not be overwritten).
+        * ``silo_random_color_on_new`` - one random palette color for the
+          new slot, only while the Silo Color Box option itself is enabled.
+        """
+        if is_archive or slot < 0:
+            return
+        data = getattr(self, "data", None)
+        if not isinstance(data, dict):
+            return
+        presets = data.get("temp_presets")
+        if not isinstance(presets, list) or not (0 <= slot < len(presets)):
+            return
+        doc_ok = (0 <= slot < len(self.silo_docs)
+                  and self.silo_docs[slot] is not None)
+
+        # -- optional clipboard seed -------------------------------------
+        suppress = bool(getattr(self, "_suppress_new_silo_clipboard", False))
+        if allow_clipboard and not suppress and (presets[slot] or "") == "":
+            if data.get("new_silo_paste_clipboard", "False") == "True":
+                text = self._clipboard_text_for_new_silo()
+                if text:
+                    presets[slot] = text
+                    if doc_ok:
+                        self._set_plain_text_clean(self.silo_docs[slot], text)
+                    if slot == self.active_temp_slot and not getattr(
+                            self, "active_is_archive", False):
+                        self._set_plain_text_clean(self.text_area, text)
+                    self.mark_dirty()
+
+        # -- optional random color ---------------------------------------
+        if data.get("silo_random_color_on_new", "False") != "True":
+            return
+        if data.get("silo_color_box", "True") != "True":
+            # The automation must not silently re-enable the color boxes.
+            return
+        palette = data.get("silo_color_palette") or []
+        valid = [str(c).strip() for c in palette if str(c or "").strip()]
+        if not valid:
+            # Same canonical fallback the silo color widget uses.
+            valid = ["#ff4444", "#ffaa00", "#ffff00", "#00ff00",
+                     "#00ffff", "#0000ff", "#ff00ff", "#ffffff",
+                     "#000000", "#808080"]
+        import random
+        colors = data.setdefault("silo_colors", {})
+        if not isinstance(colors, dict):
+            colors = data["silo_colors"] = {}
+        colors[str(slot)] = random.choice(valid)
+        self.mark_dirty()
+        if hasattr(self, "refresh_temp_presets"):
+            self.refresh_temp_presets()
+
+    def _clipboard_text_for_new_silo(self):
+        """Current text clipboard contents, or "" if unavailable.
+
+        Read-only: never mutates the clipboard, ignores HTML/image/file
+        payloads, and returns "" rather than pasting into another app.
+        """
+        try:
+            from PyQt6.QtGui import QGuiApplication
+            clip = QGuiApplication.clipboard()
+            if clip is None:
+                return ""
+            return clip.text() or ""
+        except Exception:
+            return ""
 
     def insert_silo_at(self, text, pos=0, is_archive=False):
         """Insert a silo holding ``text`` at ``pos`` — the canonical insertion
@@ -1728,7 +1830,8 @@ class SnippetOpsMixin:
             return  # full of content or no pristine blank: refuse, lose nothing
         if blank is not None and len(presets) >= self.MAX_SILOS_PER_CATEGORY:
             # reuse the blank rather than grow past the 100-slot contract
-            self.add_data_undo_state("Restore silo")
+            if not self._durable_undo_or_refuse("Restore silo"):
+                return
             presets[blank] = text
             from PyQt6.QtGui import QTextDocument
             while len(docs) <= blank:
@@ -1742,6 +1845,9 @@ class SnippetOpsMixin:
                 docs[blank] = d
             else:
                 docs[blank].setPlainText(text)
+            # T-1227: the doc now owns the reused blank slot — re-stamp.
+            self._rebind_silo_document_owners()
+            self._stamp_active_document_owner()
             self.mark_dirty()
             self._switch_to_slot(blank, initial=True, is_archive=is_archive)
             self.refresh_temp_presets()
@@ -1749,7 +1855,8 @@ class SnippetOpsMixin:
                 self.refresh_archive_panel()
             return blank
         pos = max(0, min(pos, len(presets)))
-        self.add_data_undo_state("Restore silo")
+        if not self._durable_undo_or_refuse("Restore silo"):
+            return
         presets.insert(pos, text)
         from PyQt6.QtGui import QTextDocument
         doc = QTextDocument()
@@ -1765,6 +1872,9 @@ class SnippetOpsMixin:
             docs.append(d)
         if hasattr(self, "open_silo_slot"):
             self.open_silo_slot(pos, is_archive=is_archive)
+        # T-1227: insertion shifted slot indices — re-stamp owners.
+        self._rebind_silo_document_owners()
+        self._stamp_active_document_owner()
         self.mark_dirty()
         self._switch_to_slot(pos, initial=True, is_archive=is_archive)
         self.refresh_temp_presets()
@@ -1775,7 +1885,7 @@ class SnippetOpsMixin:
         return pos
 
     def append_empty_silo(self, pos=None):
-        """Insert a new empty silo at the end or first empty slot."""
+        """Insert a new empty silo at the end, never reusing an existing one."""
         is_arc = bool(getattr(self, "active_is_archive", False))
         self.sound_manager.play("new")
         if getattr(self, "editing_snippet", None):
@@ -1796,20 +1906,13 @@ class SnippetOpsMixin:
         )
         docs = self.archive_docs if is_arc else self.silo_docs
 
-        # Navigate to an existing empty slot first: that is navigation, not a
-        # data action, so it must not push an undo entry and the editor must
-        # stay in the SAME index space (archive stays archive).
-        for i, content_val in enumerate(presets):
-            if not content_val.strip():
-                self.silo_page = i // max(1, self._visible_silos)
-                self._switch_to_slot(i, initial=True, is_archive=is_arc)
-                return
-
-        # Only a real insertion is a data action, and only if capacity allows.
+        # Explicit bottom NEW always creates a fresh silo; it never navigates to
+        # or reuses an existing blank. The only ceiling is MAX_SILOS_PER_CATEGORY.
         # A full space is refused before any mutation (lose nothing).
         if self._silo_at_capacity(is_arc):
             return
-        self.add_data_undo_state("New silo (end)")
+        if not self._durable_undo_or_refuse("New silo (end)"):
+            return
 
         i = len(presets)
         presets.append("")
@@ -1822,8 +1925,7 @@ class SnippetOpsMixin:
         self._switch_to_slot(i, initial=True, is_archive=is_arc)
         self.mark_dirty()
         self.refresh_temp_presets()
-        if is_arc:
-            self.refresh_archive_panel()
+        self._apply_new_silo_defaults(i, is_archive=is_arc)
 
     def archive_active_item(self):
         """Archive the current snippet or silo."""

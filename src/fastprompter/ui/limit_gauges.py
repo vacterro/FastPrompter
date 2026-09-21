@@ -29,11 +29,32 @@ marker. Every account stays inspectable in the tooltip.
 from __future__ import annotations
 
 import html
+import math
+import time
 
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor, QPainter, QPen
+from PyQt6.QtCore import QEvent, Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QColor, QCursor, QPainter, QPen
 from PyQt6.QtWidgets import QSizePolicy, QWidget
 
+
+def sip_deleted(widget) -> bool:
+    """True when Qt has already destroyed the C++ side of ``widget``."""
+    try:
+        import sip
+    except ImportError:
+        try:
+            from PyQt6 import sip
+        except ImportError:
+            return False
+    try:
+        return bool(sip.isdeleted(widget))
+    except (TypeError, RuntimeError):
+        return False
+
+from fastprompter.core.usage_limits.freebuff_format import (
+    format_price,
+    price_buckets,
+)
 from fastprompter.core.usage_limits.model import (
     EXPECTED_QUIET_CODES,
     FIVE_HOUR,
@@ -42,7 +63,11 @@ from fastprompter.core.usage_limits.model import (
     STALE,
     WEEKLY,
     UsageWindow,
+    account_has_usage,
+    account_usable_now,
     base_key,
+    display_windows,
+    reserve_advice,
     resolved_windows,
 )
 from fastprompter.core.usage_limits.service import UsageLimitService
@@ -53,6 +78,7 @@ from fastprompter.ui.limit_account_selector import (
     short_account_label,
 )
 from fastprompter.ui.limit_colors import limit_palette, reset_color
+from fastprompter.ui.qt_lifetime import weak_qt_callback
 
 _KNOWN_WINDOW_MIN = {FIVE_HOUR: 300, WEEKLY: 10080, MONTHLY: 43200}
 
@@ -116,7 +142,8 @@ class LimitGauges(QWidget):
         self._result_ready.connect(self._on_data)
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._auto)
-        service.add_callback(self._result_ready.emit)
+        service.add_callback(
+            weak_qt_callback(self, lambda w: w._result_ready.emit()))
 
     # -- visibility --------------------------------------------------------
     @property
@@ -128,12 +155,11 @@ class LimitGauges(QWidget):
     def sync(self):
         """Called by the 1-second header timer — visibility + timer only."""
         visible = self._visible
-        # isVisible() also becomes False when an ancestor is temporarily
-        # hidden, so it cannot tell whether this widget itself carries the
-        # explicit hidden flag. isHidden() can, and keeps notification-only
-        # mode from accidentally leaving the header gauge enabled.
         if self.isHidden() == visible:
             self.setVisible(visible)
+        publish = getattr(self.main_win, "_set_topbar_semantic", None)
+        if callable(publish):
+            publish("limit_gauges", visible, refresh=False)
         active = visible or self._notifications_active()
         if not active:
             if self._timer.isActive():
@@ -172,8 +198,81 @@ class LimitGauges(QWidget):
                              or rule.get("reset_enabled") in (True, "True"))
                         for rule in rules.values()))
 
+    # -- hover card (T-1242 spec 18-20) ------------------------------------
+
+    def hover_card(self):
+        """The one application-owned hover panel (created on first hover).
+
+        A native QToolTip cannot be entered by the pointer, so moving from
+        this 12px gauge towards the panel fired ``Leave`` and hid it before
+        it could be read.  The panel is a real widget now, and it closes on
+        a grace timer that either surface can cancel.
+        """
+        card = getattr(self, "_hover_card", None)
+        if card is not None and not sip_deleted(card):
+            return card
+        from fastprompter.ui.limit_hover_card import LimitHoverCard
+
+        card = LimitHoverCard(self)
+        self._hover_card = card
+        return card
+
+    def _show_hover_card(self):
+        # The panel contains a live reset countdown.  Keeping the HTML
+        # produced by the last probe made an old "0m" survive every later
+        # hover, even after resolved_windows() knew the reset had passed.
+        # Rebuild locally first; schedule_auto is asynchronous and
+        # internally rate-limited, so hover never performs a synchronous
+        # provider request (spec 21).
+        self._service.schedule_auto(self._refresh_interval() // 1000)
+        html_text = self._build_tooltip()
+        self.setToolTip("")          # the native tooltip must never compete
+        try:
+            self.hover_card().show_card(html_text)
+        except Exception:
+            # A hover panel is never worth taking the top bar down for.
+            self.setToolTip(html_text)
+
+    def hide_hover_card(self, immediate: bool = False):
+        card = getattr(self, "_hover_card", None)
+        if card is None or sip_deleted(card):
+            return
+        if immediate:
+            card.hide_now()
+        else:
+            card.schedule_hide()
+
+    def refresh_hover_card(self):
+        """Re-render an OPEN card from the newest snapshot; no-op otherwise.
+
+        T-1242 spec 18/21: a content/countdown refresh must NOT reposition
+        the card and must NOT call the ordinary ``reposition()`` -- the
+        session geometry was pinned when the card was shown.  Only a real
+        window move re-anchors (handled inside the card's own event filter).
+        """
+        card = getattr(self, "_hover_card", None)
+        if card is None or sip_deleted(card) or not card.isVisible():
+            return
+        card.set_html(self._build_tooltip())
+        # No reposition(): horizontal geometry is frozen for the session;
+        # the card keeps itself on screen only via its own height contract.
+
+    def event(self, event):
+        if event.type() in (QEvent.Type.Enter, QEvent.Type.ToolTip):
+            self._show_hover_card()
+            if event.type() == QEvent.Type.ToolTip:
+                event.accept()
+                return True
+        elif event.type() == QEvent.Type.Leave:
+            # Grace interval: travelling towards the card must not close it.
+            self.hide_hover_card()
+        elif event.type() in (QEvent.Type.Hide, QEvent.Type.Close):
+            self.hide_hover_card(immediate=True)
+        return super().event(event)
+
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
+            self.hide_hover_card(immediate=True)
             event.accept()
             if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
                 styles = _STYLES
@@ -232,7 +331,6 @@ class LimitGauges(QWidget):
         menu.exec(event.globalPos())
 
     def _prompt_activate_reset(self, account, shot):
-        from PyQt6.QtGui import QCursor
         from PyQt6.QtWidgets import QMessageBox
         banked = getattr(shot, "banked_resets", 0) or 0
         res_word = "reset" if banked == 1 else "resets"
@@ -280,18 +378,39 @@ class LimitGauges(QWidget):
 
     # -- data --------------------------------------------------------------
     def _on_data(self):
-        self.setToolTip(self._build_tooltip())
+        self.setToolTip("")
+        # Width first: refresh_hover_card() anchors the card to this
+        # widget's geometry, so it must read the geometry this snapshot
+        # produces, not the previous one's.
         self._update_width()
+        self.refresh_hover_card()
         self.update()
 
     def refresh_view(self):
         """Apply account visibility settings immediately, without probing."""
         self._on_data()
 
+    def _hide_unusable(self) -> bool:
+        """The "show only accounts usable right now" toggle (5h available)."""
+        return str(self.main_win.data.get(
+            "limit_gauges_hide_unusable_5h", "False")) == "True"
+
     def _visible_accounts(self):
         hidden = hidden_account_keys(self.main_win.data)
-        shown = [a for a in self._service.state_copy.accounts
-                 if a.key not in hidden]
+        hide_zero = str(self.main_win.data.get(
+            "limit_gauges_hide_zero_usage", "False")) == "True"
+        hide_unusable = self._hide_unusable()
+        snap = self._service.state_copy
+        shown = []
+        for a in snap.accounts:
+            if a.key in hidden:
+                continue
+            if hide_zero and not account_has_usage(snap.snapshots.get(a.key)):
+                continue
+            if hide_unusable and not account_usable_now(
+                    snap.snapshots.get(a.key)):
+                continue
+            shown.append(a)
         return ordered_accounts(shown, self.main_win.data)
 
     def _status_marker(self, accounts=None, snap=None) -> str:
@@ -331,7 +450,8 @@ class LimitGauges(QWidget):
         if account is None:
             return self._max_bars()
         snap = self._service.state_copy
-        drawn = len(_cluster_windows(snap.snapshots.get(account.key)))
+        drawn = len(_cluster_windows(snap.snapshots.get(account.key),
+                                     self._hide_unusable()))
         return max(self.MIN_BARS, min(drawn, self.MAX_BARS))
 
     def _max_bars(self) -> int:
@@ -339,7 +459,8 @@ class LimitGauges(QWidget):
         snap = self._service.state_copy
         widest = self.MIN_BARS
         for a in self._visible_accounts():
-            widest = max(widest, len(_cluster_windows(snap.snapshots.get(a.key))))
+            widest = max(widest, len(_cluster_windows(
+                snap.snapshots.get(a.key), self._hide_unusable())))
         return min(widest, self.MAX_BARS)
 
     def _style(self) -> str:
@@ -496,21 +617,71 @@ class LimitGauges(QWidget):
         """
         self._last_prefer_labels = self._prefer_account_labels()
         accounts = self._visible_accounts()
-        w = (self.PAD * 2 + self._status_width(accounts)
-             + self._clusters_width(accounts, self._last_prefer_labels))
+        if not accounts and self._has_any_accounts():
+            # Only the painted neutral indicator owns width when filtered.
+            clusters = self._placeholder_width()
+        else:
+            clusters = self._clusters_width(accounts, self._last_prefer_labels)
+        w = (self.PAD * 2 + self._status_width(accounts) + clusters)
         w = min(w, self.MAX_WIDGET_W)
-        target = max(self.PAD * 2 + 14, w)
+        target = w if not accounts and self._has_any_accounts() else max(self.PAD * 2 + 14, w)
         if self.width() != target:
             self.setFixedWidth(target)
-        parent = self.parentWidget()
-        if parent is not None:
-            layout = parent.layout()
-            if layout is not None:
-                layout.invalidate()
+            self.updateGeometry()
+            parent = self.parentWidget()
+            if parent is not None:
+                layout = parent.layout()
+                if layout is not None:
+                    layout.invalidate()
+
+    def _has_any_accounts(self) -> bool:
+        """True when the service knows about accounts at all (filter or not).
+
+        Distinguishes "every account hidden by the 5h/0% filter" from "no
+        accounts configured": the first keeps a placeholder, the second is a
+        genuinely empty gauge.
+        """
+        return bool(getattr(self._service.state_copy, "accounts", None))
+
+    def _placeholder_width(self) -> int:
+        """Actual ink advance; no invisible account or cluster gutter."""
+        return self.fontMetrics().horizontalAdvance("0")
+
+    def _paint_all_filtered(self, p, x, y, h, pal):
+        """Accounts exist but every one was hidden (hide 5h/0% / unusable).
+
+        The user asked for no GAP when no quota is usable right now: instead
+        of a blank hole between the timers, paint a dim all-empty cluster so
+        the gauge reads as present-but-empty. Every mark stays dim.
+        """
+        snap = self._service.state_copy
+        if not getattr(snap, "accounts", None):
+            return
+        p.setFont(self.font())
+        p.setPen(QPen(pal["dim"], 1))
+        p.drawText(x, y, self._placeholder_width(), h, Qt.AlignmentFlag.AlignVCenter, "0")
 
     # -- tooltip -----------------------------------------------------------
+    #: Nothing rendered into the hover card may exceed these lengths.  A
+    #: provider error is vendor text of unbounded length -- one raw
+    #: "rateLimits error: {...GET https://...}" line stretched the panel
+    #: past the screen edge and clipped every reset column.
+    ERROR_CHARS = 72
+    NAME_CHARS = 26
+    LABEL_CHARS = 30
+    LIST_CHARS = 96
+
+    @staticmethod
+    def _elide(text: str, limit: int) -> str:
+        """Bound one string; the full value stays in the settings dialog."""
+        value = str(text or "")
+        if len(value) <= limit:
+            return value
+        return value[: max(1, limit - 1)].rstrip() + "…"
+
     def _build_tooltip(self) -> str:
         snap = self._service.state_copy
+        tooltip_now = time.time()
         pal = self._palette()
         good_col = pal["good"].name()
         warn_col = pal["warn"].name()
@@ -548,14 +719,15 @@ class LimitGauges(QWidget):
                 import datetime
                 try:
                     t = datetime.datetime.fromtimestamp(b.resets_at_epoch)
-                    now = datetime.datetime.now().astimezone()
-                    delta = t.astimezone() - now
-                    if delta.total_seconds() < 0:
+                    remaining = b.resets_at_epoch - tooltip_now
+                    if remaining <= 0:
                         r_text = "resets now"
-                    elif delta.total_seconds() < 3600:
-                        r_text = f"resets in {int(delta.total_seconds() // 60)}m"
-                    elif delta.total_seconds() < 86400:
-                        r_text = f"resets in {int(delta.total_seconds() // 3600)}h"
+                    elif remaining < 60:
+                        r_text = "resets in &lt;1m"
+                    elif remaining < 3600:
+                        r_text = f"resets in {math.ceil(remaining / 60)}m"
+                    elif remaining < 86400:
+                        r_text = f"resets in {int(remaining // 3600)}h"
                     else:
                         r_text = f"resets {t.strftime('%a %H:%M')}"
                     return f"<span style='color:#9e9479;'>— {r_text}</span>"
@@ -563,20 +735,43 @@ class LimitGauges(QWidget):
                     pass
             return ""
 
+        def _snapshot_age(s):
+            fetched = getattr(s, "fetched_at", None)
+            if not isinstance(fetched, (int, float)) or fetched <= 0:
+                return ""
+            age = max(0, tooltip_now - fetched)
+            if age < 60:
+                return "updated now"
+            if age < 3600:
+                return f"updated {int(age // 60)}m ago"
+            if age < 86400:
+                return f"updated {int(age // 3600)}h ago"
+            return f"updated {int(age // 86400)}d ago"
+
         accounts = self._visible_accounts()
         hidden = [a for a in snap.accounts if a not in accounts]
 
         parts = [
             "<html><body style='font-family:Verdana, Segoe UI, sans-serif; font-size:11px; color:#c0c0c0;'>",
-            "<div style='font-weight:bold; font-size:12px; color:#ffd700; border-bottom:1px solid #5a4f32; padding-bottom:3px; margin-bottom:5px;'>",
+            "<div style='font-weight:bold; font-size:12px; color:#ffd700; border-bottom:1px solid #5a4f32; padding-bottom:2px; margin-bottom:3px;'>",
             "AI Usage Limits <span style='font-weight:normal; font-size:10px; color:#9a8b5f;'>(remaining)</span>",
             "</div>"
         ]
 
         if not accounts:
-            parts.append("<div style='color:#888888; font-style:italic;'>no accounts selected</div>")
-            if hidden:
-                parts.append(f"<div style='color:#666666; font-size:10px;'>hidden in settings: {len(hidden)}</div>")
+            if self._has_any_accounts():
+                filter_active = (self._hide_unusable() or str(self.main_win.data.get(
+                    "limit_gauges_hide_zero_usage", "False")) == "True")
+                if filter_active:
+                    parts.append("<div style='color:#888888; font-style:italic;'>no accounts usable right now (hide 5h/0% filter)</div>")
+                else:
+                    parts.append("<div style='color:#888888; font-style:italic;'>all accounts hidden in settings</div>")
+                manually_hidden = [a for a in snap.accounts
+                                   if a.key in hidden_account_keys(self.main_win.data)]
+                if manually_hidden:
+                    parts.append(f"<div style='color:#666666; font-size:10px;'>hidden in settings: {len(manually_hidden)}</div>")
+            else:
+                parts.append("<div style='color:#888888; font-style:italic;'>no accounts selected</div>")
             parts.append("</body></html>")
             return "".join(parts)
 
@@ -587,33 +782,46 @@ class LimitGauges(QWidget):
 
         for a in accounts:
             s = snap.snapshots.get(a.key)
-            header = html.escape(account_display_name(a, self.main_win.data))
+            header = html.escape(self._elide(
+                account_display_name(a, self.main_win.data), self.NAME_CHARS))
+            v_color = reset_color(self.main_win, getattr(a, "provider_id", ""))
+            title_style = f" style='color:{v_color};'" if v_color else ""
             if not s:
                 parts.append(
-                    f"<tr><td colspan='4' style='padding-top:6px; padding-bottom:3px;'>"
-                    f"<b>{header}</b>: <span style='color:#888888;'>not probed yet</span></td></tr>"
+                    f"<tr><td colspan='4' style='padding-top:4px; padding-bottom:2px;'>"
+                    f"<b{title_style}>{header}</b>: <span style='color:#888888;'>not probed yet</span></td></tr>"
                 )
                 continue
 
-            plan = f" <span style='color:#8f856c; font-size:10px;'>({html.escape(s.plan_type)})</span>" if s.plan_type else ""
+            plan = (f" <span style='color:#8f856c; font-size:10px;'>"
+                    f"({html.escape(self._elide(s.plan_type, 18))})</span>"
+                    if s.plan_type else "")
             stale = f" <span style='color:{stale_col}; font-size:10px;'>[stale]</span>" if s.status == STALE else ""
+            age = _snapshot_age(s)
+            freshness = (f" <span style='color:#77705d; font-size:9px;'>"
+                         f"[{age}]</span>" if age else "")
             banked = ""
             if getattr(s, "banked_resets", None):
                 res_word = "reset" if s.banked_resets == 1 else "resets"
                 banked = f" <span style='color:#4FB6A8; font-size:10px; font-weight:bold;'>[{s.banked_resets} banked {res_word}]</span>"
 
             parts.append(
-                f"<tr><td colspan='4' style='padding-top:7px; padding-bottom:3px; border-bottom:1px solid #4a3e28;'><b>{header}</b>{plan}{stale}{banked}</td></tr>"
+                f"<tr><td colspan='4' style='padding-top:5px; padding-bottom:2px; border-bottom:1px solid #4a3e28;'><b{title_style}>{header}</b>{plan}{stale}{freshness}{banked}</td></tr>"
             )
 
             if s.status in (OK, STALE):
-                windows = _cluster_windows(s)
+                windows = _cluster_windows(s, self._hide_unusable())
                 readable = False
                 for b in windows:
+                    if b is not None and b.reset_pending:
+                        parts.append("<tr><td colspan='4'>Reset time passed; refresh to check current limits</td></tr>")
+                        readable = True
                     if b is None or not b.available:
                         continue
                     readable = True
-                    pool = html.escape(b.group_label) if b.group_label else ""
+                    pool = (html.escape(self._elide(b.group_label,
+                                                    self.LABEL_CHARS))
+                            if b.group_label else "")
                     w_lbl = html.escape(_win_label(b))
                     if pool:
                         clean_pool = pool.replace(" and ", " & ").replace(" models", "").replace(" Models", "")
@@ -623,33 +831,84 @@ class LimitGauges(QWidget):
                     rem = b.remaining_percent
                     col = _color_for(rem, s.status)
                     bar_html = _render_bar(rem, col)
-                    pct_str = f"{int(round(rem))}%" if isinstance(rem, (int, float)) else "--"
+                    unit = getattr(b, "unit", "") or ""
+                    rem_amount = getattr(b, "remaining_amount", None)
+                    limit_amount = getattr(b, "limit_amount", None)
+                    if unit and isinstance(rem_amount, (int, float)) \
+                            and isinstance(limit_amount, (int, float)):
+                        # AMOUNT window: the vendor's exact numbers, never a
+                        # naked percent of an abstract budget.
+                        pct_str = (f"{int(round(rem_amount))}/"
+                                   f"{int(round(limit_amount))} {unit}")
+                    else:
+                        pct_str = (f"{int(round(rem))}%"
+                                   if isinstance(rem, (int, float)) else "--")
                     reset_str = _reset_snippet(b)
 
                     parts.append(
                         f"<tr>"
-                        f"<td style='color:#d8ccaa; padding-left:4px; padding-right:12px; white-space:nowrap;'>{lbl_text}</td>"
-                        f"<td width='88' style='padding-right:8px; white-space:nowrap; vertical-align:middle;'>{bar_html}</td>"
-                        f"<td width='38' align='right' style='color:{col}; font-weight:bold; padding-right:10px; white-space:nowrap; font-family:Consolas, monospace;'>{pct_str}</td>"
-                        f"<td style='white-space:nowrap;'>{reset_str}</td>"
+                        f"<td style='color:#d8ccaa; padding-left:2px; padding-right:6px; white-space:nowrap;'>{lbl_text}</td>"
+                        f"<td style='padding-right:4px; white-space:nowrap; vertical-align:middle;'>{bar_html}</td>"
+                        f"<td style='color:{col}; font-weight:bold; padding-right:6px; white-space:nowrap;'>{pct_str}</td>"
+                        f"<td width='99%' style='white-space:nowrap;'>{reset_str}</td>"
                         f"</tr>"
                     )
                 if getattr(s, "banked_resets", None):
                     res_word = "reset" if s.banked_resets == 1 else "resets"
                     parts.append(
                         f"<tr><td colspan='4' style='color:#4FB6A8; padding-left:4px; font-size:10px; padding-top:2px; padding-bottom:3px;'>"
-                        f"★ {s.banked_resets} usage limit {res_word} available — run <code>/usage</code> in CLI to redeem</td></tr>"
+                        f"★ {s.banked_resets} usage limit {res_word} available<br>"
+                        f"run <code>/usage</code> in CLI to redeem</td></tr>"
                     )
+                meta = getattr(s, "provider_metadata", None) or {}
+                wallet = meta.get("wallet_balance")
+                if isinstance(wallet, (int, float)) and wallet > 0:
+                    # Wallet is a BALANCE badge: no meter, no reset — it never
+                    # expires, so a progress bar would be a lie.
+                    bonus = meta.get("wallet_monthly_bonus")
+                    hint = (f" (adds {int(bonus)}/month)"
+                            if isinstance(bonus, (int, float)) and bonus > 0 else "")
+                    parts.append(
+                        f"<tr><td colspan='4' style='color:#d8ccaa; padding-left:4px; font-size:10px; padding-top:2px;'>"
+                        f"Wallet: <b>{int(wallet)} FB</b> · never expires{hint}</td></tr>"
+                    )
+                prices = meta.get("model_prices") or {}
+                if isinstance(prices, dict) and prices:
+                    # T-1243: the model catalogue does NOT belong in a hover
+                    # panel -- dozens of names made the card enormous and
+                    # mostly empty.  One line here; the full Model/FB-hour
+                    # table lives in AI Limit Settings.
+                    buckets = price_buckets(prices)
+                    span = ""
+                    if buckets:
+                        low = format_price(buckets[0][0])
+                        high = format_price(buckets[-1][0])
+                        span = f" · {low}-{high} FB/h" if low != high else \
+                            f" · {low} FB/h"
+                    parts.append(
+                        f"<tr><td colspan='4' style='color:#77705d; "
+                        f"font-size:10px; padding-left:4px;'>"
+                        f"{len(prices)} model prices{span} — see AI Limit "
+                        f"Settings</td></tr>")
                 if not readable and not getattr(s, "banked_resets", None):
                     parts.append("<tr><td colspan='4' style='color:#777777; font-style:italic; padding-left:6px;'>no readable quota window</td></tr>")
+                for advice in reserve_advice(s):
+                    parts.append(
+                        f"<tr><td colspan='4' style='color:#4FB6A8; font-size:10px; "
+                        f"padding-left:6px; padding-bottom:2px;'>→ {html.escape(advice)}</td></tr>")
             else:
-                err = html.escape(s.error_summary or 'unavailable')
-                parts.append(f"<tr><td colspan='4' style='color:{bad_col}; padding-left:6px;'>{s.status.lower()} — {err}</td></tr>")
+                err = html.escape(self._elide(
+                    s.error_summary or "unavailable", self.ERROR_CHARS))
+                parts.append(
+                    f"<tr><td colspan='4' style='color:{bad_col}; "
+                    f"padding-left:6px;'>{s.status.lower()} — {err}</td></tr>")
 
         parts.append("</table>")
 
         if hidden:
-            h_names = html.escape(", ".join(account_display_name(a, self.main_win.data) for a in hidden))
+            h_names = html.escape(self._elide(
+                ", ".join(account_display_name(a, self.main_win.data)
+                          for a in hidden), self.LIST_CHARS))
             parts.append(f"<div style='margin-top:6px; font-size:10px; color:#666666; border-top:1px dotted #3e382b; padding-top:3px;'>Hidden: {h_names}</div>")
 
         content_w = max(0, self.width() - self.PAD * 2 - self._status_width(accounts, snap))
@@ -686,6 +945,8 @@ class LimitGauges(QWidget):
                            Qt.AlignmentFlag.AlignVCenter, marker)
                 x += self.STATUS_W
             if not accounts:
+                if self._has_any_accounts():
+                    self._paint_all_filtered(p, x, 2, bar_h, pal)
                 return
             avail_w = max(0, w - x - self.PAD)
             show_labels, _per_cluster, n_fit = self._fit_layout(
@@ -697,7 +958,9 @@ class LimitGauges(QWidget):
                     account_label = short_account_label(a, self.main_win.data)
                     label_width = self._account_label_width(a)
                     if label_width:
-                        p.setPen(QPen(pal["dim"], 1))
+                        v_col = reset_color(self.main_win, getattr(a, "provider_id", ""))
+                        pen_col = QColor(v_col) if v_col else pal["dim"]
+                        p.setPen(QPen(pen_col, 1))
                         p.drawText(x, 2, label_width - 1, bar_h,
                                    Qt.AlignmentFlag.AlignVCenter,
                                    account_label)
@@ -706,7 +969,7 @@ class LimitGauges(QWidget):
                     self._draw_stack(p, x, 2, bar_h, s, pal, a)
                     x += self._marks_width(a) + self.GAP_ACC
                     continue
-                for b in _cluster_windows(s):
+                for b in _cluster_windows(s, self._hide_unusable()):
                     rem, mode = _mark_state(s, b)
                     if self._style() == "dots":
                         self._draw_dot(p, x, 2, bar_h, rem, pal, mode, a)
@@ -750,7 +1013,7 @@ class LimitGauges(QWidget):
         """
         row_h, gap = self._stack_metrics(h)
         w = self.STACK_BAR_W
-        rows = _cluster_windows(snap)[:self.MAX_BARS]
+        rows = _cluster_windows(snap, self._hide_unusable())[:self.MAX_BARS]
         if any(b is not None for b in rows):
             # The MIN_BARS padding exists to keep side-by-side clusters the same
             # WIDTH; a stacked column is one bar wide either way, so a
@@ -848,7 +1111,7 @@ def _mark_state(snap, window):
     return None, "dim"
 
 
-def _cluster_windows(snap) -> list:
+def _cluster_windows(snap, filter_dead_pools: bool = False) -> list:
     """Bars to draw for one account — one per window the provider reported.
 
     An unprobed account yields ``MIN_BARS`` dim placeholders so its cluster
@@ -860,6 +1123,11 @@ def _cluster_windows(snap) -> list:
     passing through the service (a test, a stale cached object) must still
     show a 5h bar as empty while the weekly window is exhausted, and full
     once its own reset time has passed.
+
+    ``filter_dead_pools`` drops the windows of quota pools in which EVERY
+    window is spent ("hide 0/0" — the Antigravity pool rule), so a dead
+    Gemini pool's two 0% bars disappear while a live Claude/GPT pool keeps
+    its own.
     """
     if snap is None:
         return [None] * _MIN_BARS
@@ -867,7 +1135,11 @@ def _cluster_windows(snap) -> list:
                if isinstance(w, UsageWindow)]
     if not windows:
         return [None] * _MIN_BARS
-    windows = resolved_windows(windows)[:_MAX_BARS]
+    if filter_dead_pools:
+        windows = display_windows(windows)   # resolves internally
+    else:
+        windows = resolved_windows(windows)
+    windows = windows[:_MAX_BARS]
     while len(windows) < _MIN_BARS:
         windows.append(None)
     return windows
@@ -893,6 +1165,10 @@ def _win_label(b) -> str:
     if key == "quota":
         # Antigravity quotes only the remaining delay, never a window length.
         return "quota"
+    if key == "daily_amount":
+        # Freebuff Freebucks: an amount pool with a daily refill, not an
+        # hours-long percent window — the label must not read "5h" or "1d".
+        return "daily FB"
     if mins:
         if mins < 60:
             return f"{int(mins)}m"

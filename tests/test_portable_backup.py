@@ -297,22 +297,38 @@ class TestAsyncDispatch:
         assert pb.last_success_by_profile.get(1, 0.0) > 0.0
 
 def test_coalescing_preserves_content_gen(monkeypatch):
-    """W2-008: a coalesced pending snapshot must carry the exact content_gen
-    so a successful redispatch advances _last_exported_gen_by_profile."""
+    """W2-008 as amended by PERF-005/T-1286: a coalesced save records the exact
+    content_gen it represents (without deep-copying), and the deferred
+    snapshot dispatched at completion carries it, materialised from the
+    committed view registered for that generation -- never from live data."""
     import fastprompter.utils.portable_backup as pb
     monkeypatch.setattr(
         pb, "capture_snapshot",
         lambda data, profile_id=1: {"data": data})
-    monkeypatch.setattr(pb, "_backup_sink", lambda snap: None)
+    received = []
+    monkeypatch.setattr(pb, "_backup_sink", received.append)
     pb._backup_active.add(1)
     pb._backup_pending_data.clear()
+    pb._backup_pending_gen.clear()
+    pb._committed_view_by_profile.clear()
     pb._backup_newer_wanted.clear()
     pb.last_success_by_profile.clear()
     try:
+        pb.note_committed_view(
+            1, 42, cats_order=("Alpha",),
+            preset_rows=frozenset({("Alpha", 0, "", "committed", 0)}))
         pb.run_portable_backup({"k": "v"}, profile_id=1, content_gen=42)
-        assert pb._backup_pending_data.get(1, {}).get("_content_gen") == 42
+        assert pb._backup_pending_gen.get(1) == 42
+        assert not hasattr(pb, "_backup_pending_source"), (
+            "a live data reference is not generation ownership")
+        pb.backup_finished(profile_id=1)
+        assert received and received[0]["_content_gen"] == 42
+        assert received[0]["data"]["categories"]["Alpha"][0]["text"] == \
+            "committed"
     finally:
         pb._backup_active.discard(1)
         pb._backup_pending_data.clear()
+        pb._backup_pending_gen.clear()
+        pb._committed_view_by_profile.clear()
         pb._backup_newer_wanted.clear()
 

@@ -14,7 +14,6 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QDoubleSpinBox,
     QFileDialog,
-    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -25,9 +24,48 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
+from fastprompter.core.logging import logger
 from fastprompter.core.translations import tr
-from fastprompter.main import _SettingsGroupBox, _SettingsPage
-from fastprompter.ui.flow_layout import flow_widget
+from fastprompter.main import (
+    SETTINGS_TAB_TITLES,
+    _SettingsGroupBox,
+    _SettingsPage,
+)
+from fastprompter.ui.flow_layout import FlowLayout, flow_widget
+
+
+def _tr_label(text, lang):
+    """A QLabel that remembers its English source so it can be retranslated.
+
+    Without `_en_text` the retranslate pass has to guess the base from the
+    label's *current* text, which is a one-way trip: once the label reads
+    Arabic there is no way back to English.
+    """
+    lbl = QLabel(tr(text, lang))
+    lbl._en_text = text
+    return lbl
+
+
+def confirm_bake_plan(plan, parent, lang) -> bool:
+    """Show the bounded bake preview; True only on explicit Apply (T-1298).
+
+    A refused plan (non-packaged sound reference) disables Apply: there is no
+    silent-substitution path and no write from the preview itself.
+    """
+    from tools.set_default_from_current import format_bake_preview
+
+    box = QMessageBox(parent)
+    box.setWindowTitle(tr("Set Defaults from Current", lang))
+    box.setText(tr("Bake the current profile into repository DEFAULT_PROFILE?",
+                   lang))
+    box.setDetailedText(format_bake_preview(plan))
+    apply_btn = box.addButton(tr("Apply", lang),
+                              QMessageBox.ButtonRole.AcceptRole)
+    box.addButton(tr("Cancel", lang), QMessageBox.ButtonRole.RejectRole)
+    if not plan.ok:
+        apply_btn.setEnabled(False)
+    box.exec()
+    return box.clickedButton() is apply_btn
 
 
 def build_settings_tabs(self):
@@ -143,6 +181,13 @@ def build_settings_tabs(self):
         self.data.get("customize_toolbar", "False") == "True",
         self.on_customize_toolbar_toggled,
     )
+    self.btn_topbar_visibility = QPushButton(
+        tr("Top bar button visibility", self._current_lang))
+    self.btn_topbar_visibility.setToolTip(tr(
+        "Choose which top-bar items appear in each editable width range.",
+        self._current_lang))
+    self.btn_topbar_visibility.clicked.connect(
+        self.open_topbar_visibility_dialog)
     self.cb_numbox_tabs = create_footer_cb(
         "# Number Tabs",
         "Show numbered boxes instead of the project dropdown",
@@ -169,9 +214,9 @@ def build_settings_tabs(self):
     numbox_row = QHBoxLayout()
     numbox_row.setContentsMargins(0, 0, 0, 0)
     numbox_row.setSpacing(4)
-    numbox_row.addWidget(QLabel(tr("Per row:", self._current_lang)))
+    numbox_row.addWidget(_tr_label("Per row:", self._current_lang))
     numbox_row.addWidget(self.spin_numbox_per_row)
-    numbox_row.addWidget(QLabel(tr("Size:", self._current_lang)))
+    numbox_row.addWidget(_tr_label("Size:", self._current_lang))
     numbox_row.addWidget(self.spin_numbox_size)
     numbox_row.addStretch(1)
 
@@ -221,7 +266,7 @@ def build_settings_tabs(self):
     fast_row = QHBoxLayout()
     fast_row.setContentsMargins(0, 0, 0, 0)
     fast_row.setSpacing(4)
-    fast_row.addWidget(QLabel(tr("Fast page:", self._current_lang)))
+    fast_row.addWidget(_tr_label("Fast page:", self._current_lang))
     fast_row.addWidget(self.cb_fast_zone_page)
     fast_row.addStretch(1)
 
@@ -352,7 +397,7 @@ def build_settings_tabs(self):
     token_row = QHBoxLayout()
     token_row.setContentsMargins(0, 0, 0, 0)
     token_row.setSpacing(4)
-    token_row.addWidget(QLabel(tr("Tokens by:", self._current_lang)))
+    token_row.addWidget(_tr_label("Tokens by:", self._current_lang))
     token_row.addWidget(self.cb_token_mode)
     token_row.addWidget(self.spin_token_weight)
     token_row.addStretch(1)
@@ -381,7 +426,7 @@ def build_settings_tabs(self):
         self.on_hide_shortkeys_toggled,
     )
     # Text alignment combo
-    self.lbl_align = QLabel(tr("Align:", self._current_lang))
+    self.lbl_align = _tr_label("Align:", self._current_lang)
     self.cb_align_combo = QComboBox()
     self.cb_align_combo.addItem(tr("Left", self._current_lang), "left")
     self.cb_align_combo.addItem(tr("Center", self._current_lang), "center")
@@ -395,7 +440,7 @@ def build_settings_tabs(self):
     # How a pasted image lands. "Pill" is the collapsed golden chip you
     # can click to open; the other two are for people who want the raw
     # markdown or just the path.
-    self.lbl_img_paste = QLabel(tr("Pasted image:", self._current_lang))
+    self.lbl_img_paste = _tr_label("Pasted image:", self._current_lang)
     self.cb_img_paste = QComboBox()
     self.cb_img_paste.addItem(tr("Pill (clickable)", self._current_lang), "pill")
     self.cb_img_paste.addItem(tr("Markdown link", self._current_lang), "link")
@@ -413,7 +458,7 @@ def build_settings_tabs(self):
             or self.mark_dirty()))
 
     # Silos down the side, or across the top as tabs.
-    self.lbl_silo_mode = QLabel(tr("Silos:", self._current_lang))
+    self.lbl_silo_mode = _tr_label("Silos:", self._current_lang)
     self.cb_silo_mode = QComboBox()
     self.cb_silo_mode.addItem(tr("Sidebar", self._current_lang), "sidebar")
     self.cb_silo_mode.addItem(tr("Horizontal tabs", self._current_lang), "tabs")
@@ -610,6 +655,32 @@ def build_settings_tabs(self):
         self.data.get("sound_typewriter", "False") == "True",
         self.on_typewriter_toggled,
     )
+    # T-1244 master mute. Checkbox state is only an ECHO of
+    # audio_global_muted: the hotkey writes the setting and calls
+    # _sync_audio_mute_state(), which blocks the checkbox signal — both
+    # entry points must land in on_audio_mute_toggled exactly once.
+    # Checked == MUTED, and the adjacent state label says which — one
+    # semantic everywhere, never "ON" meaning both mute and audio.
+    self.cb_audio_mute = create_footer_cb(
+        # T-1244 A3: canonical English source, NOT a pre-translated value.
+        # create_footer_cb stamps `text` into `_en_text`, and the settings
+        # retranslation pass re-derives the display text from that base —
+        # storing a localized string there would make the label a one-way
+        # trip once a real translation for this key exists.
+        "🔇 Master Mute",
+        "Global master mute for ALL sounds.\n"
+        "Hotkey (default Ctrl+M) flips it from anywhere;\n"
+        "this checkbox shows the current state.\n"
+        "While muted only the mute/unmute confirmation cue is audible.",
+        self.data.get("audio_global_muted", "False") == "True",
+        self.on_audio_mute_toggled,
+    )
+    self.audio_mute_state_label = QLabel(
+        tr("MUTED" if self.data.get("audio_global_muted", "False") == "True"
+           else "SOUND ON", self._current_lang))
+    self.audio_mute_state_label.setToolTip(tr(
+        "Current master-mute state (toggled by hotkey or the checkbox)",
+        self._current_lang))
     self.cb_trash_vision = create_footer_cb(
         "🗑 Trash Vision",
         "Show the Trash category for deleted snippets",
@@ -627,11 +698,36 @@ def build_settings_tabs(self):
             or self.refresh_temp_presets()
         ),
     )
+    self.cb_new_silo_paste_clipboard = create_footer_cb(
+        "📋 Paste clipboard into new silo",
+        "When NEW creates a silo, immediately copy the current TEXT\n"
+        "clipboard contents into that newly created silo.\n"
+        "Template (middle-click) NEW keeps its chosen template text\n"
+        "and is never overwritten by the clipboard.",
+        self.data.get("new_silo_paste_clipboard", "False") == "True",
+        lambda checked: (
+            self.data.update({
+                "new_silo_paste_clipboard": "True" if checked else "False"})
+            or self.mark_dirty()
+        ),
+    )
+    self.cb_silo_random_color_on_new = create_footer_cb(
+        "🎲 Random silo color on NEW",
+        "When Silo Color Box is enabled, automatically give every newly\n"
+        "created silo a random palette color. Does nothing while the\n"
+        "Silo Color Box option is off.",
+        self.data.get("silo_random_color_on_new", "False") == "True",
+        lambda checked: (
+            self.data.update({
+                "silo_random_color_on_new": "True" if checked else "False"})
+            or self.mark_dirty()
+        ),
+    )
 
     div_row = QHBoxLayout()
     div_row.setContentsMargins(0, 0, 0, 0)
     div_row.setSpacing(4)
-    lbl_div = QLabel(tr("Line button gaps:", getattr(self, "_current_lang", "EN")))
+    lbl_div = _tr_label("Line button gaps:", getattr(self, "_current_lang", "EN"))
     lbl_div._en_text = "Line button gaps:"
     lbl_div.setToolTip(tr(
         "Blank lines the Line button and the toolbar divider put around ---.\n"
@@ -714,33 +810,63 @@ def build_settings_tabs(self):
         getattr(self, "_current_lang", "EN")))
 
     def _on_set_defaults_clicked():
-        from tools.set_default_from_current import update_default_profile_from_state
-        reply = QMessageBox.question(
-            self,
-            tr("Set Defaults from Current", getattr(self, "_current_lang", "EN")),
-            tr("Update repository DEFAULT_PROFILE with current settings?\n\n"
-               "All personal text, silos, and private paths will be excluded.",
-               getattr(self, "_current_lang", "EN")),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
+        from tools.set_default_from_current import (
+            apply_bake_plan,
+            build_bake_plan,
+            is_frozen_build,
+            snapshot_defaults_from_window,
         )
-        if reply == QMessageBox.StandardButton.Yes:
-            try:
-                res = update_default_profile_from_state(self.data)
-                QMessageBox.information(
-                    self,
-                    tr("Defaults Updated", getattr(self, "_current_lang", "EN")),
-                    f"Successfully stamped {res.get('keys_count', 0)} settings into DEFAULT_PROFILE!\n\n"
-                    f"File: {res.get('target_file')}",
-                )
-            except Exception as e:
-                QMessageBox.critical(
-                    self,
-                    tr("Update Failed", getattr(self, "_current_lang", "EN")),
-                    str(e),
-                )
+        lang = getattr(self, "_current_lang", "EN")
+        if is_frozen_build():
+            # SRC-029 §15: a onefile EXE must never pretend it can mutate
+            # repository defaults.
+            QMessageBox.information(
+                self,
+                tr("Set Defaults from Current", lang),
+                tr("Set Defaults from Current edits repository source and is "
+                   "available in\nsource development builds only. The "
+                   "packaged build cannot change\nrepository defaults.", lang),
+            )
+            return
+        try:
+            plan = build_bake_plan(snapshot_defaults_from_window(self))
+        except Exception as e:
+            QMessageBox.critical(
+                self, tr("Update Failed", lang), str(e))
+            return
+        # SRC-029 §12/§6: live snapshot first, bounded diff shown BEFORE any
+        # write, explicit Apply required; a cancelled preview never writes.
+        if not confirm_bake_plan(plan, self, lang):
+            return
+        try:
+            res = apply_bake_plan(plan)
+            QMessageBox.information(
+                self,
+                tr("Defaults Updated", lang),
+                tr("Baked %d settings into DEFAULT_PROFILE.\n\n"
+                   "Roundtrip verified: %s", lang)
+                % (res.get("keys_count", 0), res.get("roundtrip_equal")),
+            )
+        except Exception as e:
+            QMessageBox.critical(
+                self, tr("Update Failed", lang), str(e))
 
     self.btn_set_defaults.clicked.connect(_on_set_defaults_clicked)
+    try:
+        from tools.set_default_from_current import is_frozen_build
+        _frozen = is_frozen_build()
+    except Exception:
+        # tools/ may not be packaged into the onefile build: detect the frozen
+        # runtime without it, so the dev button still cannot pretend.
+        import sys as _sys
+        _frozen = bool(getattr(_sys, "frozen", False)
+                       or hasattr(_sys, "nuitka_version")
+                       or "__compiled__" in globals())
+    if _frozen:
+        self.btn_set_defaults.setEnabled(False)
+        self.btn_set_defaults.setToolTip(
+            tr("Source development build only",
+               getattr(self, "_current_lang", "EN")))
     dev_row.addWidget(self.btn_set_defaults)
 
     self.btn_exit_app = QPushButton(tr("Exit FastPrompter", getattr(self, "_current_lang", "EN")))
@@ -755,7 +881,7 @@ def build_settings_tabs(self):
     vol_row = QHBoxLayout()
     vol_row.setContentsMargins(0, 0, 0, 0)
     vol_row.setSpacing(4)
-    _lbl_vol = QLabel(tr("Volume:", getattr(self, "_current_lang", "EN")))
+    _lbl_vol = _tr_label("Volume:", getattr(self, "_current_lang", "EN"))
     _lbl_vol._en_text = "Volume:"
     vol_row.addWidget(_lbl_vol)
     vol_row.addWidget(self.spin_volume)
@@ -801,14 +927,14 @@ def build_settings_tabs(self):
     blink_row = QHBoxLayout()
     blink_row.setContentsMargins(0, 0, 0, 0)
     blink_row.setSpacing(4)
-    blink_row.addWidget(QLabel(tr("Cursor blink:", self._current_lang)))
+    blink_row.addWidget(_tr_label("Cursor blink:", self._current_lang))
     blink_row.addWidget(self.spin_cursor_blink)
     blink_row.addStretch(1)
 
     hdr_row = QHBoxLayout()
     hdr_row.setContentsMargins(0, 0, 0, 0)
     hdr_row.setSpacing(4)
-    lbl_hdr = QLabel(tr("Header Fmt:", getattr(self, "_current_lang", "EN")))
+    lbl_hdr = _tr_label("Header Fmt:", getattr(self, "_current_lang", "EN"))
     lbl_hdr._en_text = "Header Fmt:"
     lbl_hdr.setToolTip(tr(
         "Template for the Ctrl+E header.\n"
@@ -834,9 +960,8 @@ def build_settings_tabs(self):
     def _settings_group(title, items, min_width=0):
         """A compact titled box of related controls.
 
-        Headers are fixed height (16px) with a subtle bottom rule so they never
-        balloon into empty blocks. Content is top-aligned with a trailing stretch
-        so controls stay tight and never get pushed below the bottom edge.
+        Each group keeps its own content height, including when a neighbouring
+        group needs more rows. Controls wrap inside the available width.
         """
         box = _SettingsGroupBox()
         box.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
@@ -851,7 +976,7 @@ def build_settings_tabs(self):
         col.setSpacing(2)
         col.setAlignment(Qt.AlignmentFlag.AlignTop)
 
-        header = QLabel(tr(title, self._current_lang))
+        header = _tr_label(title, self._current_lang)
         header._en_text = title
         header.setFixedHeight(16)
         header.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
@@ -865,12 +990,12 @@ def build_settings_tabs(self):
         if min_width:
             inner.setMinimumWidth(min_width)
         col.addWidget(inner)
-        col.addStretch(1)
 
         box._inner = inner
-        box._chrome_h = 24
-        box.setSizePolicy(QSizePolicy.Policy.Preferred,
-                          QSizePolicy.Policy.MinimumExpanding)
+        box._chrome_h = header.height() + col.spacing() + 5
+        policy = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
+        policy.setHeightForWidth(True)
+        box.setSizePolicy(policy)
         box._weight = len(items)
         return box
 
@@ -878,7 +1003,7 @@ def build_settings_tabs(self):
     gap_row = QHBoxLayout()
     gap_row.setContentsMargins(0, 0, 0, 0)
     gap_row.setSpacing(4)
-    lbl_gap = QLabel(tr("UI Gaps:", self._current_lang))
+    lbl_gap = _tr_label("UI Gaps:", self._current_lang)
     lbl_gap.setStyleSheet("color: #808080;")
     gap_row.addWidget(lbl_gap)
 
@@ -925,7 +1050,7 @@ def build_settings_tabs(self):
     # --- T-591: mirror silo text onto disk ---
     sync_row = QHBoxLayout()
     sync_row.setSpacing(4)
-    lbl_sync = QLabel(tr("Sync to disk:", self._current_lang))
+    lbl_sync = _tr_label("Sync to disk:", self._current_lang)
     lbl_sync.setStyleSheet("color: #808080;")
     sync_row.addWidget(lbl_sync)
 
@@ -973,7 +1098,7 @@ def build_settings_tabs(self):
     sync_row.addStretch(1)
 
     # --- hover line + line heat tuning ---
-    lbl_heat = QLabel(tr("Line tint:", self._current_lang))
+    lbl_heat = _tr_label("Line tint:", self._current_lang)
     lbl_heat.setStyleSheet("color: #808080;")
 
     def _pct_spin(key, default, tip, suffix="%"):
@@ -1133,7 +1258,7 @@ def build_settings_tabs(self):
         self.mark_dirty()
 
     self.spin_sync_max_kb.valueChanged.connect(_upd_sync_max)
-    lbl_sync_max = QLabel(tr("Max file size:", self._current_lang))
+    lbl_sync_max = _tr_label("Max file size:", self._current_lang)
     lbl_sync_max._en_text = "Max file size:"
 
     self.ed_sync_include = QLineEdit(self.data.get("sync_include", ""))
@@ -1145,7 +1270,7 @@ def build_settings_tabs(self):
     self.ed_sync_include.editingFinished.connect(self._save_sync_include)
     self.ed_sync_include._en_tooltip = (
         "File extensions treated as text, separated by spaces or commas")
-    lbl_sync_inc = QLabel(tr("Include extensions:", self._current_lang))
+    lbl_sync_inc = _tr_label("Include extensions:", self._current_lang)
     lbl_sync_inc._en_text = "Include extensions:"
 
     self.ed_sync_exclude = QLineEdit(self.data.get("sync_exclude", ""))
@@ -1158,7 +1283,7 @@ def build_settings_tabs(self):
     self.ed_sync_exclude._en_tooltip = (
         "Names or patterns never synced: directories by name, files via "
         "wildcards (e.g. *.min.js)")
-    lbl_sync_exc = QLabel(tr("Exclude names/patterns:", self._current_lang))
+    lbl_sync_exc = _tr_label("Exclude names/patterns:", self._current_lang)
     lbl_sync_exc._en_text = "Exclude names/patterns:"
 
 
@@ -1167,57 +1292,18 @@ def build_settings_tabs(self):
     # legible in a narrow window, and FlowLayout reflows each tab down to
     # a single column rather than clipping the right-hand side.
 
-    def _tab(items, columns=None):
-        """A zero-waste settings tab: groups stretch into balanced columns filling 100% width."""
+    def _tab(items):
+        """Wrap content-sized groups; measure and arrange with the same layout."""
         host = _SettingsPage()
         host.setSizePolicy(QSizePolicy.Policy.Preferred,
                            QSizePolicy.Policy.Maximum)
-        grid = QGridLayout(host)
-        grid.setContentsMargins(2, 2, 2, 2)
-        grid.setHorizontalSpacing(4)
-        grid.setVerticalSpacing(4)
-
-        n = len(items)
-        cols = columns if columns is not None else (n if n <= 5 else 4)
-
-        for idx, item in enumerate(items):
-            r = idx // cols
-            c = idx % cols
-            grid.addWidget(item, r, c)
-            item.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-
-        for c in range(cols):
-            grid.setColumnStretch(c, 1)
-
-        def totalHeightForWidth(w):
-            if not items:
-                return 0
-            margins = grid.contentsMargins()
-            pad_w = margins.left() + margins.right()
-            h_space = grid.horizontalSpacing()
-            v_space = grid.verticalSpacing()
-            col_w = max(1, (w - pad_w - (cols - 1) * h_space) // cols)
-
-            num_rows = (len(items) + cols - 1) // cols
-            total_h = margins.top() + margins.bottom()
-            for r in range(num_rows):
-                row_items = items[r * cols : (r + 1) * cols]
-                row_h = 0
-                for it in row_items:
-                    if hasattr(it, "heightForWidth") and it.hasHeightForWidth():
-                        h = it.heightForWidth(col_w)
-                    elif hasattr(it, "sizeHint"):
-                        h = it.sizeHint().height()
-                    else:
-                        h = 40
-                    row_h = max(row_h, h)
-                total_h += row_h
-            if num_rows > 1:
-                total_h += (num_rows - 1) * v_space
-            return total_h
-
-        host.totalHeightForWidth = totalHeightForWidth
-        grid.totalHeightForWidth = totalHeightForWidth
+        # T-1246: independent columns, not rows -- a row is as tall as its
+        # tallest card, which left blank stripes under every short group.
+        flow = FlowLayout(host, margin=2, h_spacing=4, v_spacing=4,
+                          stretch_items=True, columns=True)
+        for item in items:
+            flow.addWidget(item)
+        host.totalHeightForWidth = flow.heightForWidth
         return host
 
     # self.settings_tabs is already created on self
@@ -1228,7 +1314,7 @@ def build_settings_tabs(self):
     self.settings_tabs.setSizePolicy(QSizePolicy.Policy.Preferred,
                                      QSizePolicy.Policy.Maximum)
     # (attribute, english title) — kept for retranslation
-    self._settings_tab_titles = ("Window", "Editor", "Clock", "Data")
+    self._settings_tab_titles = SETTINGS_TAB_TITLES
 
     # Toolbar order had its own reset; splitter widths, sidebar side and
     # window size had none, so a window dragged somewhere unusable could
@@ -1289,16 +1375,19 @@ def build_settings_tabs(self):
     while self.settings_tabs.count():
         self.settings_tabs.removeTab(0)
 
-    # --- TAB 0: WINDOW (5 balanced columns across 1 row, 100% width) ---
+    # --- TAB 0: WINDOW ---
     self.settings_tabs.addTab(_tab([
         _settings_group("Window behaviour", [
             self.cb_top, self.cb_lock_window, self.cb_normal_window,
             self.cb_tray,
         ]),
         _settings_group("Layout", [
-            self.cb_sidebar, self.cb_customize_toolbar,
-            self.cb_numbox_tabs, numbox_row, self.cb_files_dock,
+            self.cb_sidebar, self.cb_files_dock,
             self.cb_toolbar_bottom, self.btn_reset_layout,
+        ]),
+        _settings_group("Toolbar", [
+            self.cb_customize_toolbar, self.btn_topbar_visibility,
+            self.cb_numbox_tabs, numbox_row,
         ]),
         _settings_group("Window presets", [
             self.cb_window_presets, self.btn_manage_presets,
@@ -1306,14 +1395,16 @@ def build_settings_tabs(self):
         ]),
         _settings_group("Silo look", [
             self.cb_silo_color_box, self.cb_trash_vision,
+            self.cb_new_silo_paste_clipboard,
+            self.cb_silo_random_color_on_new,
         ]),
         _settings_group("Mouse cursors", [
             self.cb_custom_cursors, self.cb_static_cursor,
             self.btn_copy_cursors, self.btn_install_cursors,
         ]),
-    ], columns=5), tr("Window", self._current_lang))
+    ]), tr("Window", self._current_lang))
 
-    # --- TAB 1: EDITOR (4 balanced columns x 2 rows, 100% width) ---
+    # --- TAB 1: EDITOR ---
     self.settings_tabs.addTab(_tab([
         _settings_group("Dividers & headers", [
             div_row, ctrlw_btn_row, hdr_row, self.cb_hr_visual, self.cb_conceal,
@@ -1345,9 +1436,9 @@ def build_settings_tabs(self):
             self.cb_typo_check, self.btn_typo_colour,
             self.btn_typo_clear,
         ]),
-    ], columns=4), tr("Editor", self._current_lang))
+    ]), tr("Editor", self._current_lang))
 
-    # --- TAB 2: CLOCK (3 balanced columns across 1 row, 100% width) ---
+    # --- TAB 2: CLOCK ---
     self.settings_tabs.addTab(_tab([
         _settings_group("Clock", [
             self.cb_analog_clock, self.cb_date_rect, self.cb_date_seconds,
@@ -1361,9 +1452,9 @@ def build_settings_tabs(self):
             self.cb_timer_minutes, self.cb_limit_gauges, self.lbl_limit_status,
             self.btn_limit_settings,
         ]),
-    ], columns=3), tr("Clock", self._current_lang))
+    ]), tr("Clock", self._current_lang))
 
-    # --- TAB 3: DATA (4 balanced columns across 1 row, 100% width) ---
+    # --- TAB 3: DATA ---
     self.settings_tabs.addTab(_tab([
         _settings_group("Silo list", [
             self.cb_silo_home, self.cb_silo_pinned_gap, self.cb_silo_ticks,
@@ -1381,7 +1472,32 @@ def build_settings_tabs(self):
             self.cb_sync_live, self.cb_sync_recursive,
             sync_max_row, sync_inc_row, sync_exc_row,
         ]),
-    ], columns=4), tr("Data", self._current_lang))
+    ]), tr("Data", self._current_lang))
+
+    # --- TAB 4: PROBLIP ---
+    # The page BINDS to the application-owned controller; it never owns it,
+    # so rebuilding the settings panel cannot restart Problip (C2.2).
+    problip_groups = []
+    controller = getattr(self, "problip_controller", None)
+    if controller is not None:
+        try:
+            from fastprompter.ui.problip_settings import ProblipSettingsPage
+
+            page = ProblipSettingsPage(self, controller, self._current_lang)
+            self.problip_page = page
+            problip_groups = [_settings_group(title, widgets)
+                              for title, widgets in page.groups()]
+        except Exception:
+            logger.debug("Problip settings page unavailable", exc_info=True)
+            self.problip_page = None
+    else:
+        self.problip_page = None
+    if not problip_groups:
+        problip_groups = [_settings_group("Problip", [
+            _tr_label("Problip is unavailable in this session.",
+                      self._current_lang)])]
+    self.settings_tabs.addTab(_tab(problip_groups),
+                              tr("Problip", self._current_lang))
 
     self.settings_tabs.setCurrentIndex(cur_idx if cur_idx >= 0 else 0)
     self.settings_tabs.blockSignals(False)

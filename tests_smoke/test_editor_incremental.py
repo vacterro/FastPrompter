@@ -51,7 +51,7 @@ def test_ordinary_typing_does_not_rebuild_code_selections():
     ed._code_block_selections = lambda doc: (
         calls.__setitem__("n", calls["n"] + 1) or orig(doc))
 
-    ed.setPlainText("\n".join("line %d" % i for i in range(2000)))
+    ed.setPlainText("\n".join(f"line {i}" for i in range(2000)))
     app.processEvents()  # the single attach build runs here
 
     for _ in range(100):

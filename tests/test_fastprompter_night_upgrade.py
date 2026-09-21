@@ -10,17 +10,16 @@
 
 import datetime
 import json
-import pytest
+
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QApplication, QComboBox, QWidget
-from PyQt6.QtCore import QPoint, Qt, QTime
 
 from fastprompter.core.default_profile import DEFAULT_PROFILE
-from fastprompter.core.state import _STRUCTURED_CODECS, _JSON_SETTINGS
-from fastprompter.core.sound_manager import SoundManager, _DEFAULT_SOUND_MAP
+from fastprompter.core.sound_manager import _DEFAULT_SOUND_MAP, SoundManager
+from fastprompter.core.state import _JSON_SETTINGS, _STRUCTURED_CODECS
+from fastprompter.core.timers import KIND_ALARM, Timer
 from fastprompter.ui.analog_clock import BigAnalogClock
-from fastprompter.ui.timer_dialog import TimerDialog, _TimerBehaviorEditor
-from fastprompter.core.timers import Timer, KIND_ALARM, save_timers, load_timers
-
+from fastprompter.ui.timer_dialog import TimerDialog
 
 _APP = QApplication.instance() or QApplication([])
 
@@ -124,10 +123,22 @@ class _FakeMain(QWidget):
 # --------------------------------------------------------------------------
 
 def test_default_profile_has_user_foundational_settings():
-    assert str(DEFAULT_PROFILE.get("sound_volume")) in ("0.12", "0.36")
+    # The shipped sound_volume is whatever the user's own "Set Defaults from
+    # Current" bake last wrote, so pinning exact levels (0.12 -> 0.36 -> 0.09
+    # so far) just turns every legitimate re-bake into a red test. What
+    # matters is that a usable audible level survived the bake rather than 0
+    # or a stray.
+    volume = float(DEFAULT_PROFILE.get("sound_volume"))
+    assert 0.0 < volume <= 1.0, f"implausible baked sound_volume {volume}"
     assert DEFAULT_PROFILE.get("fkey_action") == "projects"
     assert float(DEFAULT_PROFILE.get("ui_scale")) == 0.5
-    assert DEFAULT_PROFILE.get("saved_sidebar_size") in ("236", 236, "254", 254)
+    # The shipped profile carries whatever sidebar width the user's own
+    # settings had when "Set Defaults from Current" last baked it, so pinning
+    # the exact number just turns every legitimate re-bake into a red test
+    # (236 -> 246 -> 254 -> 255 so far). What actually matters is that the
+    # value survived the bake as a usable width rather than 0 or a stray.
+    sidebar = int(DEFAULT_PROFILE.get("saved_sidebar_size"))
+    assert 120 <= sidebar <= 800, f"implausible baked sidebar width {sidebar}"
     quick_bar = DEFAULT_PROFILE.get("sound_quick_bar")
     if isinstance(quick_bar, str):
         quick_bar = json.loads(quick_bar)
@@ -176,7 +187,7 @@ def test_big_analog_clock_signals_interval():
 
 
 def test_big_analog_clock_renders_cleanly():
-    from PyQt6.QtGui import QPixmap, QPainter
+    from PyQt6.QtGui import QPixmap
     app = _FakeMain()
     clock = BigAnalogClock(app, None, size=150)
     clock.resize(150, 150)
@@ -370,6 +381,7 @@ def test_interval_quick_bar_pick_and_store():
 def test_mini_analog_clock_click_opens_interval_tab():
     from PyQt6.QtCore import QPointF
     from PyQt6.QtGui import QMouseEvent
+
     from fastprompter.ui.analog_clock import MiniAnalogClock
 
     opened = []
@@ -402,8 +414,8 @@ def test_mini_analog_clock_click_opens_interval_tab():
 
 
 def test_interval_sound_selection_persistence_and_matching():
-    from fastprompter.ui.timer_dialog import _find_sound_index, DEFAULT_INTERVAL_RULES
     from fastprompter.core.sound_manager import SoundManager
+    from fastprompter.ui.timer_dialog import _find_sound_index
     
     app = _FakeMain()
     app.sound_manager = SoundManager(None, {})

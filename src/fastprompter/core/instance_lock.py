@@ -26,13 +26,25 @@ unit-testable without a mutex or a socket:
     lock held by another -> try authenticated IPC handover
         handover ACKed   -> HANDED_OFF (this process exits normally)
         no ACK           -> UNRESPONSIVE (do NOT become a second writer)
+
+LIVE-PRIMARY OWNERSHIP SAFETY (W2-001, P0):
+
+The writer mutex is authoritative. A missing IPC ACK is only a
+responsiveness signal — it is never proof that the current live mutex
+owner may be destroyed. A process that owns the mutex remains
+authoritative until it explicitly releases it or actually dies and
+Windows transfers abandoned ownership through WAIT_ABANDONED.
+Therefore NO startup path kills a process or polls for forced mutex
+reclamation: a no-ACK second launch reports UNRESPONSIVE and exits
+without ever opening the database as a writer. ``kill_pid`` is retained
+solely as an explicit-recovery primitive for a future user-confirmed
+recovery UI; normal startup can never reach it.
 """
 
 from __future__ import annotations
 
 import os
 import sys
-import time
 
 from fastprompter.core.logging import logger
 
@@ -53,7 +65,6 @@ PRIMARY = _PRIMARY
 HANDED_OFF = _HANDED_OFF
 UNRESPONSIVE = _UNRESPONSIVE
 FAILED = _FAILED
-RECLAIMED = "RECLAIMED"
 
 # Session-global recovery identity file (CORE-001): matches the session-global
 # mutex namespace so copies across different directories share one recovery authority.
@@ -142,7 +153,7 @@ def _read_owner_record() -> dict | None:
     if not os.path.exists(path):
         return None
     try:
-        raw = open(path, "r", encoding="utf-8").read().strip()
+        raw = open(path, encoding="utf-8").read().strip()
         if not raw:
             return None
         import json
@@ -199,17 +210,6 @@ def _verify_owner_identity(rec: dict | None) -> bool:
     if rec_exe and live_exe and rec_exe != live_exe:
         return False
     return True
-
-
-def _owner_is_stale() -> bool:
-    """True when the recorded owner did not acknowledge IPC within grace AND
-    its recorded identity matches the live process."""
-    rec = _read_owner_record()
-    if not rec:
-        return False
-    if not is_pid_alive(rec["pid"]):
-        return False
-    return _verify_owner_identity(rec)
 
 
 def is_pid_alive(pid: int) -> bool:
@@ -391,31 +391,11 @@ def bootstrap_ownership(lock, ipc_handover):
     if acked:
         return _HANDED_OFF, "the running instance showed its window"
 
-    # A live owner that did NOT acknowledge IPC within grace is a frozen/
-    # hung instance, not a healthy one — and a healthy instance that simply
-    # ignores us must not be killed, so the recorded owner PID is the gate:
-    # only a PID we wrote earlier (a FastPrompter) is ever a kill target.
-    if _owner_is_stale():
-        rec = _read_owner_record()
-        if not _verify_owner_identity(rec):
-            return _UNRESPONSIVE, f"{reason}; unverified owner identity, kill refused"
-        pid = rec["pid"]
-        ok, detail = kill_pid(pid)
-        if ok:
-            # TerminateProcess returns before the kernel finishes closing
-            # the owner's mutex handles — the OS releases the abandoned
-            # mutex asynchronously (the owning thread must unwind, the
-            # handle table must be cleaned). A single immediate acquire
-            # often races; poll with a 3-second deadline instead.
-            deadline = time.monotonic() + 3.0
-            while time.monotonic() < deadline:
-                try:
-                    owned2, _reason2 = lock.acquire()
-                except Exception as exc:
-                    return _UNRESPONSIVE, f"{reason}; reclaim failed: {exc}"
-                if owned2:
-                    return RECLAIMED, f"frozen owner {pid} {detail}; lock reclaimed"
-                time.sleep(0.15)
-            return _UNRESPONSIVE, f"frozen owner {pid} {detail}; lock still held"
-        return _UNRESPONSIVE, f"frozen owner {pid} kill failed ({detail})"
+    # No ACK within the grace is only a responsiveness signal, never proof
+    # of ownership transfer (W2-001). The mutex is authoritative: a live
+    # owner — whether it ACKed, stayed silent, or its recorded identity
+    # matches ours — keeps ownership until it releases the mutex or dies.
+    # This process must exit without opening the database as a writer; no
+    # recorded PID, timeout, heartbeat or identity check may convert this
+    # branch into a kill or a forced mutex reclaim.
     return _UNRESPONSIVE, reason

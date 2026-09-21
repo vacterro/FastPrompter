@@ -1,8 +1,9 @@
-﻿import json
+﻿import argparse
+import json
 import os
 import sys
-import argparse
 from pathlib import Path
+
 
 def main():
     parser = argparse.ArgumentParser(description="Validate translations.")
@@ -174,7 +175,9 @@ def main():
                 flag = meta.get("flag", "???")
                 cov = ldata.get("coverage_pct", 0.0)
                 print(f"  {flag} {code:<4}: {len(ldata.get('translations', {}))} keys | {cov}% coverage")
-            except:
+            except (OSError, ValueError, KeyError):
+                # a locale file that will not parse is reported by the
+                # coverage pass above; do not let it abort the summary
                 pass
 
     print("\\n--- Translated Docs Summary ---")

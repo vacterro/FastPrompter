@@ -1,6 +1,7 @@
+import copy
+
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QKeySequence
-import copy
 from PyQt6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -153,6 +154,9 @@ class HotkeySettingsDialog(QDialog):
             ("hk_undo", "Ctrl+Z", tr("Undo", self.lang)),
             ("hk_divider", "Ctrl+W", tr("Insert Divider Line", self.lang)),
             ("hk_snap", "Ctrl+Q", tr("Cycle Snap Corners", self.lang)),
+            # T-1244: the master mute hotkey is an ordinary, remappable
+            # in-app shortcut like the rest — same HotkeyWidget/save path.
+            ("hk_audio_mute", "Ctrl+M", tr("Master Mute", self.lang)),
             ("hk_quit", "Ctrl+Alt+Shift+Q", tr("Quit Application", self.lang))
         ]
         self.app_inputs = {}

@@ -4,11 +4,11 @@ collapse duplicate ids, and round-trip to canonical JSON. _check_interval_notifs
 must not loop on a bad list.
 """
 
+import datetime as _dt_mod
+import json as _json
 import os
 import sys
 import time as _time_mod
-import datetime as _dt_mod
-import json as _json
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 

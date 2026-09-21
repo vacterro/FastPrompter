@@ -393,7 +393,10 @@ class TestSynchronousSave:
         s = make_state()
         _write_silo(s, "alpha")
         rows = _silo_rows(s.db_path)
-        assert rows == [("Code", 0, "alpha")]
+        # T-1222: row presence IS silo existence — the ten default slots are
+        # persisted too, slot 0 carrying the written text
+        assert ("Code", 0, "alpha") in rows
+        assert sorted(r[1] for r in rows if r[0] == "Code") == list(range(10))
         s.conn.close()
 
     def test_no_background_executor_is_created(self, make_state):
@@ -406,6 +409,8 @@ class TestSynchronousSave:
         s = make_state()
         _write_silo(s, "alpha")
         assert s._last_saved_temp == {
-            ("Code", 0, "alpha")}, "markers must reflect the committed row"
+            (cat, i, "alpha" if (cat, i) == ("Code", 0) else "")
+            for cat in ("Code", "Text", "Misc") for i in range(10)
+        }, "markers must reflect the committed rows"
         assert s._db_dirty is False
         s.conn.close()

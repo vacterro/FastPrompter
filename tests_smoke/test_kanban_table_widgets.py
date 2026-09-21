@@ -1,19 +1,13 @@
 """Integration tests for kanban_widget and table_widget visual widgets."""
 from __future__ import annotations
 
-from PyQt6.QtCore import QEvent, Qt
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QApplication
 
 _app = QApplication.instance() or QApplication([])
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
-
-def _flush():
-    _app.processEvents()
-    _app.sendPostedEvents(None, QEvent.Type.DeferredDelete)
-    _app.processEvents()
-
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Kanban widget
@@ -697,6 +691,9 @@ class TestNumboxFollowsTheProjects:
         FastPrompter.register_all_hotkeys = lambda self: None
         FastPrompter.unregister_all_hotkeys = lambda self: None
         w = FastPrompter()
+        # Settings are lazy-built for startup performance; this class verifies
+        # the real Settings checkbox, so materialize the panel first.
+        w._ensure_settings_built()
         w.cb_numbox_tabs.setChecked(True)
         _app.processEvents()
         return w
@@ -799,6 +796,20 @@ class TestSiloTypeFollowsTheContent:
         w._apply_silo_type(0, False)
         _app.processEvents()
 
+    def _pump_until_view(self, w, index, timeout=2.0):
+        """The content recheck is a coalesced 300 ms single-shot (PERF-003):
+        pump the event loop until it fires instead of sampling once."""
+        import time
+
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            _app.processEvents()
+            if w.silo_view.currentIndex() == index:
+                return
+            time.sleep(0.02)
+        assert w.silo_view.currentIndex() == index, (
+            f"view did not follow the content (wanted {index})")
+
     def test_transform_then_switch_away_and_back(self, tmp_path, monkeypatch):
         w = self._win(tmp_path, monkeypatch)
         try:
@@ -821,8 +832,7 @@ class TestSiloTypeFollowsTheContent:
             cur.select(cur.SelectionType.Document)
             w.text_area.setTextCursor(cur)
             w.text_area.insertPlainText("just prose now\nnothing structured")
-            _app.processEvents()
-            assert w.silo_view.currentIndex() == 0, "board widget left over prose"
+            self._pump_until_view(w, 0)
             assert "just prose now" in w.text_area.toPlainText()
         finally:
             w.close()
@@ -835,11 +845,9 @@ class TestSiloTypeFollowsTheContent:
             cur.select(cur.SelectionType.Document)
             w.text_area.setTextCursor(cur)
             w.text_area.insertPlainText("prose")
-            _app.processEvents()
-            assert w.silo_view.currentIndex() == 0
+            self._pump_until_view(w, 0)
             w.text_area.insertPlainText("\n\n## To Do\n- [ ] back")
-            _app.processEvents()
-            assert w.silo_view.currentIndex() == 1
+            self._pump_until_view(w, 1)
         finally:
             w.close()
 

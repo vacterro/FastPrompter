@@ -52,6 +52,7 @@ from PyQt6.QtWidgets import (
 
 from fastprompter.core.logging import logger
 from fastprompter.core.translations import tr
+from fastprompter.ui.qt_lifetime import weak_qt_callback
 from fastprompter.utils.path_safety import (
     capture_resolved_root,
     is_within_captured_root,
@@ -539,7 +540,6 @@ def _copy_tree_safe(src, dst, reject_aliases_into=None):
     created = set()
     os.makedirs(dst, exist_ok=True)
     created.add(dst)
-    visited = {os.path.normcase(os.path.realpath(src)): dst}
     for root, dirs, files in os.walk(src):
         rel = os.path.relpath(root, src)
         dst_root = os.path.join(dst, rel) if rel != "." else dst
@@ -1197,7 +1197,8 @@ class FileContainerPanel(QWidget):
             self._refresh_list()
         finally:
             if lock:
-                QTimer.singleShot(300, mw._decrement_focus_lock)
+                QTimer.singleShot(300, weak_qt_callback(
+                    mw, type(mw)._decrement_focus_lock))
 
     def _refresh_list(self):
         if not hasattr(self, "folder") or not self.folder:
@@ -1273,7 +1274,8 @@ class FileContainerPanel(QWidget):
                     label = name
                     if self.s:
                         try:
-                            cancel_cb = lambda: _is_cancelled()
+                            def cancel_cb():
+                                return _is_cancelled()
                             s = _dir_size(path, cancel_check=cancel_cb) if os.path.isdir(path) else os.path.getsize(path)
                             if _is_cancelled():
                                 break

@@ -130,18 +130,26 @@ def _project_slug(directory: str) -> str:
     return re.sub(r"[^A-Za-z0-9]", "-", os.path.abspath(directory))
 
 
-def _drop_transcript(session_id: str, directory: str) -> None:
+def _drop_transcript(session_id: str, directory: str,
+                     config_dir: str = "") -> None:
     """Delete the transcript this probe just created.
 
     A quota read is not a conversation. Left alone, a 3-minute sweep would file
     a new 5 KB transcript every sweep forever — and those same transcripts are
     what the refusal scanner reads, so the junk would also slow that down.
+
+    ``config_dir`` is the account's own ``CLAUDE_CONFIG_DIR``; the CLI files the
+    transcript under THAT root, so a second account's probe litter is only
+    reachable through it. Empty means the default ``~/.claude``.
     """
-    home = os.environ.get("HOME") or os.environ.get("USERPROFILE")
-    if not home:
-        return
-    path = (Path(home) / ".claude" / "projects" / _project_slug(directory)
-            / f"{session_id}.jsonl")
+    if config_dir:
+        root = Path(config_dir)
+    else:
+        home = os.environ.get("HOME") or os.environ.get("USERPROFILE")
+        if not home:
+            return
+        root = Path(home) / ".claude"
+    path = root / "projects" / _project_slug(directory) / f"{session_id}.jsonl"
     try:
         path.unlink()
     except OSError:
@@ -149,11 +157,17 @@ def _drop_transcript(session_id: str, directory: str) -> None:
 
 
 def read_usage(deadline: float, *, binary: str = "",
-               now: float | None = None) -> dict:
+               now: float | None = None, config_dir: str = "") -> dict:
     """Run ``claude -p "/usage"`` and return the parsed windows.
 
     Returns ``{"windows": {...}, "captured_at": epoch, "source": str}`` or
     ``{"error": (code, summary)}``. Never raises.
+
+    ``config_dir`` selects WHICH logged-in account answers. The CLI resolves its
+    whole identity — credentials, settings, transcripts — from
+    ``CLAUDE_CONFIG_DIR``, so a second account is read by pointing the child at
+    its own home rather than by any switching command. Empty keeps the ambient
+    environment, which is the default ``~/.claude`` account.
     """
     executable = binary or resolve_binary("claude")
     if not executable:
@@ -161,11 +175,17 @@ def read_usage(deadline: float, *, binary: str = "",
                           "Claude Code CLI not found on PATH")}
     session_id = str(uuid.uuid4())
     directory = _probe_dir()
+    env = None
+    if config_dir:
+        # Copied, never mutated in place: the parent process is FastPrompter
+        # itself and other probes read os.environ concurrently.
+        env = dict(os.environ)
+        env["CLAUDE_CONFIG_DIR"] = config_dir
     result = run_cli(
         [executable, "-p", "/usage", "--output-format", "json",
          "--session-id", session_id],
-        deadline, cwd=directory)
-    _drop_transcript(session_id, directory)
+        deadline, cwd=directory, env=env)
+    _drop_transcript(session_id, directory, config_dir)
     if not result["ok"]:
         return {"error": ("cli_failed", f"claude /usage: {result['error']}")}
     try:

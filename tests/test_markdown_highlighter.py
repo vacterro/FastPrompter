@@ -261,6 +261,12 @@ class TestInit:
             f"Expected 20 rules, got {len(h._highlighting_rules)}"
         )
 
+    def test_degraded_rules_hide_checkbox_markers(self):
+        h = make_highlighter()
+        patterns = {pattern.pattern for pattern, _fmt in h._degraded_rules}
+        assert r'^\s*\[\s\]\s' in patterns
+        assert r'^\s*\[[xX]\]\s' in patterns
+
     def test_each_rule_is_pattern_format_tuple(self):
         h = make_highlighter()
         for rule in h._highlighting_rules:
