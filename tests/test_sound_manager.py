@@ -158,10 +158,20 @@ class TestSoundDiscovery:
     def test_discover_returns_sorted_list(self):
         sm = SoundManager(_MockQObject(), {})
         sounds = sm.get_available_sounds()
-        # get_available_sounds orders favorites, then defaults, then the rest
-        # alphabetically; with no favorites/defaults present that is a plain
-        # alphabetical sort of the discovered set.
-        assert sounds == sorted(sounds)
+        # get_available_sounds ALWAYS fronts the built-in default trio
+        # (newday/newweek/newmonth, matched against whatever casing the
+        # checkout carries), then the rest alphabetically; with empty settings
+        # there are no favorites. Clone-location independent: pass in any
+        # clean worktree regardless of on-disk letter case.
+        assert all(s.lower().endswith(".wav") for s in sounds)
+        defaults = ["newday.wav", "newweek.wav", "newmonth.wav"]
+        by_lower = {s.lower(): s for s in sounds}
+        front = [by_lower[d] for d in defaults if d in by_lower]
+        assert sounds[: len(front)] == front, (
+            f"default trio must lead the list (got {sounds[:len(front)]!r}, want {front!r})"
+        )
+        rest = sounds[len(front) :]
+        assert rest == sorted(rest), "remainder must be alphabetical (byte order)"
 
 
 class TestEventMapping:

@@ -29,14 +29,15 @@ class TestGetBaseDir:
         assert os.path.isabs(result)
 
     def test_contains_project_name(self):
-        """The base directory should contain 'FastPrompter' or the project."""
+        """The base directory resolves to the project root it was run from.
+
+        Clone-location independent: a clean worktree may be checked out under
+        ANY directory name (e.g. a CI clone or a git worktree), so the proof
+        is the project-root MARKER FILES, never the spelling of the path.
+        """
         result = get_base_dir()
-        # When running from source, it resolves to project root
-        assert (
-            "FastPrompter" in result
-            or "fastprompter" in result.lower()
-            or "_FastPrompter" in result
-        )
+        assert os.path.isfile(os.path.join(result, "pyproject.toml"))
+        assert os.path.isdir(os.path.join(result, "src", "fastprompter"))
 
     def test_traverses_up_from_utils(self):
         """When running from source, it should go up from utils/ to project root."""

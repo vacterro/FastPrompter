@@ -1861,15 +1861,21 @@ class SoundManager(QObject):
         """Get list of available sound files, sorting favorites and defaults to top."""
         favs = set(self._data.get("sound_favorites", []))
         defaults = ["newday.wav", "newweek.wav", "newmonth.wav"]
-        
+        # The default trio must lead regardless of the letter case a checkout
+        # carries on disk (Windows case-insensitive checkouts can hold either
+        # casing depending on checkout order; T-1012 case-renamed the tracked
+        # files while stored/picked refs kept legacy casing).
+        defaults_l = {d.lower() for d in defaults}
+
         def sort_key(name):
             is_fav = name in favs
-            try:
-                def_idx = defaults.index(name)
-            except ValueError:
-                def_idx = 999
+            def_idx = (
+                defaults.index(name.lower())
+                if name.lower() in defaults_l
+                else 999
+            )
             return (not is_fav, def_idx, name)
-            
+
         return sorted(self._available_sounds, key=sort_key)
 
     def play(self, name: str, *, source=None, policy=None, dedupe_key=None) -> None:

@@ -111,13 +111,19 @@ def _set_combo_sound(combo: QComboBox, ref, lang="EN") -> None:
 
     The displayed item keeps the ORIGINAL ref as itemData, so closing the dialog
     without re-picking preserves exactly what was stored, and replacement
-    persists the new ref verbatim.
+    persists the new ref verbatim (T-1251: a stored sound reference keeps its
+    EXACT token). When the ref resolves only through the stem-insensitive
+    match -- e.g. "file:NEWDAY.wav" against a checkout holding "newday.wav" --
+    the matched item's userData is REWRITTEN to the original token, so a
+    save-back can never silently re-case a stored reference.
     """
     if not ref:
         return
     ref = str(ref)
     idx = _find_sound_index(combo, ref)
     if idx >= 0:
+        if str(combo.itemData(idx)) != ref:
+            combo.setItemData(idx, ref)
         combo.setCurrentIndex(idx)
         return
     # unresolved: carry the real ref in itemData, label it as missing
