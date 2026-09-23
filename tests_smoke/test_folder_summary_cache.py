@@ -53,17 +53,23 @@ class TestFolderSummaryCache:
         d = str(tmp_path / "silo2")
         _seed(d)
         fc._folder_summary_cache.clear()
+        # Deterministic generation gap on ANY volume: backdate the directory
+        # mtime BEFORE the first call so the generation cached by that call
+        # is provably older than the mtime the direct add below produces.
+        # The previous guard only handled exact-second-rounded mtimes; on
+        # volumes with coarse ticks the add could land in the SAME tick as
+        # the first stat and the cache correctly (but test-failingly) hit.
+        old = time.time() - 5.0
+        os.utime(d, (old, old))
         first = fc.folder_summary(d)
         assert "2 item(s)" in first, first
         generation = fc._dir_generation(d)
         assert generation is not None
-        # The workspace volume may expose directory mtimes at one-second
-        # resolution. Move beyond that timestamp quantum before the direct
-        # add, so the real filesystem reports a distinct generation.
-        if generation % 1_000_000_000 == 0:
-            time.sleep(2.05)
         with open(os.path.join(d, "c.txt"), "w", encoding="utf-8") as f:
             f.write("z")
+        assert fc._dir_generation(d) != generation, (
+            "backdated generation must differ from the post-add mtime"
+        )
         # a changed direct listing must recompute immediately (inside the TTL);
         # unchanged SUBTREES may legitimately be served from the per-path cache
         second = fc.folder_summary(d)
