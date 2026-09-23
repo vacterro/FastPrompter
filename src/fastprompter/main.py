@@ -15033,6 +15033,7 @@ class FastPrompter(
         # belongs exclusively to _shutdown_application, which runs the same
         # close as part of the single canonical quiesce path.
         super().closeEvent(event)
+        QApplication.quit()
 
     def resizeEvent(self, event):
         if getattr(self, "is_locked", False) and getattr(self, "_locked_geometry", None):

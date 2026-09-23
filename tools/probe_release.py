@@ -64,16 +64,59 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _descendant_pids(root_pid: int) -> set[int]:
+    kernel32 = ctypes.windll.kernel32
+    TH32CS_SNAPPROCESS = 0x00000002
+
+    class PROCESSENTRY32(ctypes.Structure):
+        _fields_ = [
+            ("dwSize", wintypes.DWORD),
+            ("cntUsage", wintypes.DWORD),
+            ("th32ProcessID", wintypes.DWORD),
+            ("th32DefaultHeapID", ctypes.c_void_p),
+            ("th32ModuleID", wintypes.DWORD),
+            ("cntThreads", wintypes.DWORD),
+            ("th32ParentProcessID", wintypes.DWORD),
+            ("pcPriClassBase", ctypes.c_long),
+            ("dwFlags", wintypes.DWORD),
+            ("szExeFile", ctypes.c_char * 260),
+        ]
+
+    h_snap = kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
+    if h_snap == -1:
+        return {root_pid}
+    pe = PROCESSENTRY32()
+    pe.dwSize = ctypes.sizeof(PROCESSENTRY32)
+    tree: dict[int, list[int]] = {}
+    if kernel32.Process32First(h_snap, ctypes.byref(pe)):
+        while True:
+            tree.setdefault(pe.th32ParentProcessID, []).append(pe.th32ProcessID)
+            if not kernel32.Process32Next(h_snap, ctypes.byref(pe)):
+                break
+    kernel32.CloseHandle(h_snap)
+
+    pids = {root_pid}
+    queue = [root_pid]
+    while queue:
+        curr = queue.pop(0)
+        for child in tree.get(curr, []):
+            if child not in pids:
+                pids.add(child)
+                queue.append(child)
+    return pids
+
+
 def _process_windows(pid: int) -> list[int]:
-    """Visible top-level windows owned by pid (titled ones preferred)."""
+    """Visible top-level windows owned by pid or descendant processes."""
     user32 = ctypes.windll.user32
     handles: list[int] = []
+    pids = _descendant_pids(pid)
 
     @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
     def enum_proc(hwnd, _lparam):
         owner = wintypes.DWORD()
         user32.GetWindowThreadProcessId(hwnd, ctypes.byref(owner))
-        if owner.value == pid and user32.IsWindowVisible(hwnd):
+        if owner.value in pids and user32.IsWindowVisible(hwnd):
             handles.append(hwnd)
         return True
 
@@ -140,11 +183,22 @@ class Probe:
 
     def graceful_close(self, proc: subprocess.Popen, timeout: float = 40.0) -> bool:
         """WM_CLOSE the app's own window; True when the process exits by itself."""
-        windows = _process_windows(proc.pid)
-        titled = [hwnd for hwnd in windows if _window_title(hwnd)]
-        for hwnd in titled or windows:
-            ctypes.windll.user32.PostMessageW(hwnd, WM_CLOSE, 0, 0)
         deadline = time.monotonic() + timeout
+        posted = False
+        while time.monotonic() < deadline:
+            windows = _process_windows(proc.pid)
+            titled = [hwnd for hwnd in windows if "FastPrompter" in _window_title(hwnd)]
+            targets = titled or [hwnd for hwnd in windows if _window_title(hwnd)] or windows
+            if targets:
+                for hwnd in targets:
+                    ctypes.windll.user32.PostMessageW(hwnd, WM_CLOSE, 0, 0)
+                posted = True
+                break
+            time.sleep(0.5)
+
+        if not posted:
+            return False
+
         while time.monotonic() < deadline:
             if proc.poll() is not None:
                 return True
