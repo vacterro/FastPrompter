@@ -1,0 +1,14 @@
+{
+  "clauses": {
+    "SRC-007:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Antigravity sign-in must explain the code destination, avoid opening the project, and never open a browser during background probing"
+    }
+  },
+  "derived_at": "2026-09-05T15:30:07Z",
+  "derived_from": "SRC-007",
+  "interpretation_revision": 1,
+  "schema_version": 1,
+  "source_sha256": "bc91acccdf03eef6bc26627116568b2f50cc8da787cb13b1c052dede470cba6b"
+}

@@ -204,6 +204,9 @@ def _gate(problems, sid="sid-1", raises=False):
     stub.active_temp_slot = 0
     stub.showing_archive = False
     stub.get_current_category = lambda: "Code"
+    # CORE-003: the gate builds its dirty exemption through the window's
+    # canonical owner helper now; the stand-in binds the real one.
+    stub._active_silo_coords = lambda: FastPrompter._active_silo_coords(stub)
     return FastPrompter._silo_lineage_is_trustworthy(stub, sid), stub.state
 
 

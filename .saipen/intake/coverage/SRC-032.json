@@ -1,0 +1,14 @@
+{
+  "requirements": {
+    "SRC-032:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "T-1300 closed with verification evidence in LOG: verify -> PASS [target: T-1300] conf: high -- uv run pytest tests_smoke/ -q 1067 passed exit 0; uv run pytest tests/ tests_smoke/ -q 4826 passed 6 skipped 0 failed exit 0; uv run python -m compileall -q src FastPrompter.pyw exit 0; uv run ruff check src/ tests/ tests_smoke/ exit 0; uv run bandit -q -r src/fastprompter -ll exit 0; normal pytest summary; zero native crash",
+      "text": "T-1264 smoke harness recovery + T-1206 smoke contract refresh + CI-equivalent gate; execute SAIHANDOFF V:\\_TEMP_\\fastprompter_drag\\FastPrompter_20260919_2200.md",
+      "verification": "the Work this request created reached its own verification gate; see the T-1300 VERIFY cycle in .saipen/LOG.md",
+      "work": "T-1300"
+    }
+  },
+  "schema_version": 1
+}

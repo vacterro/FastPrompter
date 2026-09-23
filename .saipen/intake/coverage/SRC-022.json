@@ -1,0 +1,14 @@
+{
+  "requirements": {
+    "SRC-022:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "T-1285 closed with verification evidence in LOG: verify -> PASS [target: T-1285] conf: high -- full uv run pytest tests/ -q exit 0 (3701 passed 6 skipped); audit inbox clean=true next=null; compileall + ruff clean.",
+      "text": "goal audit all",
+      "verification": "the Work this request created reached its own verification gate; see the T-1285 VERIFY cycle in .saipen/LOG.md",
+      "work": "T-1285"
+    }
+  },
+  "schema_version": 1
+}

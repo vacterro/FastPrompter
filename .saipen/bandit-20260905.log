@@ -1,0 +1,117 @@
+Run started:2026-09-05 15:25:03.573182+00:00
+
+Test results:
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: src/fastprompter\core\state.py:710:8
+709	    rows = list(cur.execute(
+710	        f"SELECT slot, content FROM {legacy_table}"))
+711	    if not rows:
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: src/fastprompter\core\state.py:715:12
+714	    for cat, slot, content in cur.execute(
+715	            f"SELECT category, slot, content FROM {v2_table}"):
+716	        existing.setdefault(cat, {}).setdefault(slot, content)
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: src/fastprompter\core\state.py:732:16
+731	            cur.execute(
+732	                f"INSERT INTO {v2_table} (category, slot, content) "
+733	                f"VALUES (?, ?, ?)", (first_category, target, content))
+734	            taken.add(target)
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: src/fastprompter\core\state.py:737:16
+736	            cur.execute(
+737	                f"INSERT INTO {v2_table} (category, slot, content) "
+738	                f"VALUES (?, ?, ?)", (first_category, slot, content))
+739	            taken.add(slot)
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: src/fastprompter\core\state.py:1747:20
+1746	                f"{cat}@{slot}" for cat, slot in conn.execute(
+1747	                    "SELECT category, slot FROM " + table
+1748	                    + " WHERE slot < 0 OR slot >= 100")
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: src/fastprompter\core\state.py:2482:28
+2481	                        cur.execute(
+2482	                            f"DELETE FROM settings WHERE key IN ({placeholders})",
+2483	                            _retired_rows)
+
+--------------------------------------------------
+>> Issue: [B602:subprocess_popen_with_shell_equals_true] subprocess call with shell=True identified, security issue.
+   Severity: High   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b602_subprocess_popen_with_shell_equals_true.html
+   Location: src/fastprompter\core\usage_limits\claude_statusline.py:275:17
+274	            return 0
+275	        result = subprocess.run(str(command), input=raw, shell=True,
+276	                                stdout=subprocess.PIPE,
+277	                                stderr=subprocess.DEVNULL, timeout=5,
+278	                                check=False)
+279	        if result.stdout:
+
+--------------------------------------------------
+>> Issue: [B324:hashlib] Use of weak SHA1 hash for security. Consider usedforsecurity=False
+   Severity: High   Confidence: High
+   CWE: CWE-327 (https://cwe.mitre.org/data/definitions/327.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b324_hashlib.html
+   Location: src/fastprompter\core\usage_limits\model.py:63:11
+62	        base = base.lower()
+63	    return hashlib.sha1(f"{provider_id}:{base}".encode()).hexdigest()[:16]
+64	
+
+--------------------------------------------------
+>> Issue: [B310:blacklist] Audit url open for permitted schemes. Allowing use of file:/ or custom schemes is often unexpected.
+   Severity: Medium   Confidence: High
+   CWE: CWE-22 (https://cwe.mitre.org/data/definitions/22.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b310-urllib-urlopen
+   Location: src/fastprompter\core\usage_limits\providers\_zcode_http.py:280:9
+279	    context = ssl.create_default_context()
+280	    with urllib.request.urlopen(request, timeout=timeout,
+281	                                context=context) as response:
+282	        raw = response.read(_MAX_BODY_BYTES + 1)
+
+--------------------------------------------------
+
+Code scanned:
+	Total lines of code: 114419
+	Total lines skipped (#nosec): 0
+	Total potential issues skipped due to specifically being disabled (e.g., #nosec BXXX): 0
+
+Run metrics:
+	Total issues (by severity):
+		Undefined: 0
+		Low: 172
+		Medium: 7
+		High: 2
+	Total issues (by confidence):
+		Undefined: 0
+		Low: 0
+		Medium: 16
+		High: 165
+Files skipped (0):

@@ -1,0 +1,47 @@
+{
+  "agent": "buffy",
+  "created_at": "2026-09-21T02:02:21Z",
+  "evidence_class": "executed",
+  "findings_digest": "5fb45b86f5677fd1383cb498ea2ea10bba2e238bdc02571b679590c39c17023e",
+  "gate": "core",
+  "integrity_digest": "a78560c1ad2f878a",
+  "journal_op_id": "reverify.c794b19e56d0",
+  "original_closure": {
+    "last_ticket_event": "E-2269"
+  },
+  "own_problem_keys": [
+    "fe8b8e9a8eada700"
+  ],
+  "problem_count": 9,
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "receipt_id": "RV-000091",
+  "ruleset_fingerprint": "82e5e183ae8f0fd909be3fa3627f00489cacaab813d942186c832db02a05a1c1",
+  "ruleset_version": 1,
+  "schema_version": 1,
+  "source_head": "2be089df290a961212290c0302cab055b8537cf1",
+  "source_tree_fingerprint": "git-delta-v1:d74ef2311dcaf144625ffaed3a65852afe78b04282eaa8520b2d660fd224b042",
+  "verdict": "PASS_WITH_CARRIED_DEBT",
+  "verification": [
+    {
+      "command": "uv run pytest tests/test_fastprompter_night_upgrade.py -q",
+      "duration_ms": 985,
+      "executed": true,
+      "exit_code": 0,
+      "output_bytes": 157,
+      "output_digest": "cfafe511fbd5b0a5",
+      "result": "PASS"
+    }
+  ],
+  "verification_contract": {
+    "commands": [
+      "uv run pytest tests/test_fastprompter_night_upgrade.py -q"
+    ],
+    "findings_digest": "5fb45b86f5677fd1383cb498ea2ea10bba2e238bdc02571b679590c39c17023e",
+    "gate": "core"
+  },
+  "verification_contract_digest": "a1e8526f8d3df7ba",
+  "verifier": "buffy",
+  "warning_count": 65,
+  "work": "T-1262"
+}

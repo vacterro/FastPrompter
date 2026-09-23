@@ -1,0 +1,153 @@
+CMD: uv run pytest tests/test_ambience_engine.py tests/test_ambience_playback_path.py tests/test_ambience_rule_reconcile.py tests/test_ambience_runtime.py tests/test_ambience_weather_ownership.py tests/test_ambience_workspace_ux.py tests/test_appearance_sounds_t1245.py tests/test_audio_backend_contract.py tests/test_audio_cache_race.py tests/test_audio_engine_settings.py tests/test_audio_hub_integration.py tests/test_audio_hub_latency.py tests/test_audio_hub_playback.py tests/test_audio_packaging.py tests/test_audio_pcm_transport.py tests/test_audio_render.py tests/test_audio_render_defaults.py tests/test_audio_settings.py tests/test_audio_silo_isolation.py tests/test_audio_source_invalidation.py tests/test_audio_temporal_fidelity.py tests/test_audit_core_tickets.py tests/test_audit_overflow.py tests/test_button_sound.py tests/test_cat_numbox_shrink.py tests/test_category_alias.py tests/test_cheatsheet_drift.py tests/test_checkbox_painting.py tests/test_clickable_links.py tests/test_clipboard_interop_t1269.py tests/test_close_save_contract.py tests/test_codex_multi_pool_t1274.py tests/test_codex_multi_pool_ui_t1274.py tests/test_color_reset.py tests/test_config.py tests/test_core001_productivity_alarm.py tests/test_core001_trash.py tests/test_core002_retirement_journal.py tests/test_core002_volume_slider.py tests/test_core003_find_sound_index.py tests/test_core004_reset_layout.py tests/test_core005_missing_sound_ref.py tests/test_cursor_theme.py tests/test_db_durability.py tests/test_debug.py tests/test_duration.py tests/test_editor_delete_sounds.py tests/test_editor_document_cache.py tests/test_editor_paste_live_t1269.py tests/test_editor_paste_shortcut_t1269.py tests/test_editor_paste_t1269.py tests/test_editor_pinned_selection.py tests/test_editor_snapshot_sentinel.py tests/test_editor_timer_isolation.py tests/test_fancy_zones_ui_state.py tests/test_fastprompter_night_upgrade.py tests/test_files_hotkey.py tests/test_flow_layout_columns.py tests/test_fonts.py tests/test_formatting_mixin.py tests/test_formatting_unicode_t1269.py tests/test_freebuff_compact_prices.py tests/test_freebuff_wallet_visibility.py tests/test_hashtags.py tests/test_hotkey_filter.py tests/test_hotkey_migration.py tests/test_hotkeys.py tests/test_i18n_key_inventory.py tests/test_instance_lock.py tests/test_ipc_grace.py tests/test_ipc_server.py tests/test_language_roundtrip.py tests/test_launcher_reliability.py tests/test_lazy_settings_guards.py tests/test_limit_account_order.py tests/test_limit_alert_copy.py tests/test_limit_hover_card.py tests/test_limit_hover_card_bounds.py tests/test_limit_hover_card_geometry.py tests/test_limit_overview.py tests/test_limits.py tests/test_line_drag_autoscroll.py tests/test_line_mark_toggle.py tests/test_locked_window_geometry.py tests/test_logging.py tests/test_main.py tests/test_markdown_highlighter.py tests/test_markdown_highlighter_wave.py tests/test_master_mute_concurrency_t1244.py tests/test_master_mute_facade_t1244.py tests/test_master_mute_i18n_t1244.py tests/test_master_mute_profile_t1244.py tests/test_master_mute_t1244.py tests/test_missed_attention.py tests/test_mt9141_audit.py tests/test_new_empty_silos.py tests/test_new_silo_defaults.py tests/test_notification_audio_ownership_t1256.py tests/test_owner_mismatch_artifact.py tests/test_path_safety.py tests/test_paths.py tests/test_perf001_diagnostic_cache.py tests/test_perf001_noop_save.py tests/test_perf002_chunked_resample.py tests/test_perf002_sound_inventory.py tests/test_perf003_active_tab_refresh.py tests/test_perf003_startup_prewarm_order.py tests/test_perf004_effect_pool_bounds.py tests/test_perf004_hidden_date_gate.py tests/test_perf005_backup_coalescing.py tests/test_perf005_scaled_cache.py tests/test_perf006_folder_cache_bounds.py tests/test_performance.py tests/test_performance_tickets.py tests/test_pie_menu.py tests/test_pomodoro.py tests/test_portable_backup.py tests/test_portable_backup_publish.py tests/test_problip_audio_fidelity.py tests/test_problip_controller.py tests/test_problip_core.py tests/test_problip_custom_sounds.py tests/test_problip_hub_integration.py tests/test_problip_repeated_real_audio.py tests/test_problip_settings.py tests/test_problip_stats.py tests/test_problip_store.py tests/test_problip_transport_source_identity.py tests/test_profile_switch_atomic.py tests/test_project_sync.py tests/test_qt_stub_module_identity.py tests/test_release_safety.py tests/test_release_version.py tests/test_reset_queue_card_t1279.py tests/test_reset_queue_hover.py tests/test_restore.py tests/test_resync_keys.py tests/test_save_contract.py tests/test_scaling_mixin.py tests/test_search_archive_editing.py tests/test_search_mixin.py tests/test_second_wave.py tests/test_second_wave_core003.py tests/test_second_wave_tickets.py tests/test_set_default_from_current.py tests/test_settings_tab_sound.py tests/test_settings_ux.py tests/test_shutdown_ownership.py tests/test_silo_color_gesture.py tests/test_silo_export.py tests/test_silo_home.py tests/test_silo_kanban.py tests/test_silo_lineage.py tests/test_silo_pin_order_t1270c.py tests/test_silo_presets.py tests/test_silo_selection_persist.py tests/test_silo_slug.py tests/test_silo_table.py tests/test_silo_tick_hover_t1270.py tests/test_sound_auto_level.py tests/test_sound_event_icons.py tests/test_sound_manager.py tests/test_sound_manager_hub_facade.py tests/test_sound_presets.py tests/test_sound_real_preview_contract.py tests/test_sound_ref_integrity.py tests/test_sound_relative_gain.py tests/test_sound_settings_stop_all_t1244.py tests/test_sound_vault.py tests/test_startup_backup.py tests/test_startup_lazy_ui.py tests/test_timer_fire.py -q -p no:cacheprovider
+
+........................................................................ [  2%]
+........................................................................ [  5%]
+........................................................................ [  8%]
+........................................................................ [ 11%]
+........................................................................ [ 14%]
+..............................................................s......... [ 17%]
+........................................................................ [ 20%]
+........................................................................ [ 23%]
+...............................................................s........ [ 26%]
+................................................................F....... [ 29%]
+........................................................................ [ 31%]
+........................................................................ [ 34%]
+........................................................................ [ 37%]
+........................................................................ [ 40%]
+...........................................s............................ [ 43%]
+........................................................................ [ 46%]
+........................................................................ [ 49%]
+........................................................................ [ 52%]
+........................................................................ [ 55%]
+........................................................................ [ 58%]
+........................................................................ [ 60%]
+........................................................................ [ 63%]
+........................................................................ [ 66%]
+........................................................................ [ 69%]
+.......................................................s................ [ 72%]
+........................................................................ [ 75%]
+........................................................................ [ 78%]
+........................................................................ [ 81%]
+........................................................................ [ 84%]
+........................................................................ [ 87%]
+........................................................................ [ 89%]
+........................................................................ [ 92%]
+........................................................................ [ 95%]
+........................................................................ [ 98%]
+...........................Fatal Python error: Aborted
+
+Thread 0x00004c70 (most recent call first):
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 331 in wait
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 629 in wait
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1399 in run
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x00001ed4 (most recent call first):
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 327 in wait
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\main.py", line 13378 in _undo_writer_loop
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 982 in run
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x00001e60 (most recent call first):
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 327 in wait
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\main.py", line 13378 in _undo_writer_loop
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 982 in run
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x00003940 (most recent call first):
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 327 in wait
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\main.py", line 13378 in _undo_writer_loop
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 982 in run
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x00004848 (most recent call first):
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 327 in wait
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\main.py", line 13378 in _undo_writer_loop
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 982 in run
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x00002648 (most recent call first):
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 327 in wait
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\main.py", line 13378 in _undo_writer_loop
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 982 in run
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x0000695c (most recent call first):
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\concurrent\futures\thread.py", line 81 in _worker
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 982 in run
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x0000337c (most recent call first):
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\concurrent\futures\thread.py", line 81 in _worker
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 982 in run
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x00006374 (most recent call first):
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\concurrent\futures\thread.py", line 81 in _worker
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 982 in run
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x00003570 (most recent call first):
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\concurrent\futures\thread.py", line 81 in _worker
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 982 in run
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x00007084 (most recent call first):
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\concurrent\futures\thread.py", line 81 in _worker
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 982 in run
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x00004404 (most recent call first):
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\concurrent\futures\thread.py", line 81 in _worker
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 982 in run
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
+
+Current thread 0x00005af8 (most recent call first):
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\tests\test_timer_fire.py", line 180 in _wait_until
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\tests\test_timer_fire.py", line 372 in test_test_notification_job_is_registered_and_fires
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\_pytest\python.py", line 167 in pytest_pyfunc_call
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\pluggy\_callers.py", line 121 in _multicall
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\pluggy\_manager.py", line 120 in _hookexec
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\pluggy\_hooks.py", line 512 in __call__
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\_pytest\python.py", line 1707 in runtest
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\_pytest\runner.py", line 184 in pytest_runtest_call
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\pluggy\_callers.py", line 121 in _multicall
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\pluggy\_manager.py", line 120 in _hookexec
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\pluggy\_hooks.py", line 512 in __call__
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\_pytest\runner.py", line 250 in <lambda>
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\_pytest\runner.py", line 361 in from_call
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\_pytest\runner.py", line 249 in call_and_report
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\_pytest\runner.py", line 139 in runtestprotocol
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\_pytest\runner.py", line 118 in pytest_runtest_protocol
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\pluggy\_callers.py", line 121 in _multicall
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\pluggy\_manager.py", line 120 in _hookexec
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\pluggy\_hooks.py", line 512 in __call__
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\_pytest\main.py", line 408 in pytest_runtestloop
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\pluggy\_callers.py", line 121 in _multicall
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\pluggy\_manager.py", line 120 in _hookexec
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\pluggy\_hooks.py", line 512 in __call__
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\_pytest\main.py", line 384 in _main
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\_pytest\main.py", line 330 in wrap_session
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\_pytest\main.py", line 377 in pytest_cmdline_main
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\pluggy\_callers.py", line 121 in _multicall
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\pluggy\_manager.py", line 120 in _hookexec
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\pluggy\_hooks.py", line 512 in __call__
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\_pytest\config\__init__.py", line 229 in _main
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\_pytest\config\__init__.py", line 253 in _console_main
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Scripts\pytest.exe\__main__.py", line 10 in <module>
+  File "<frozen runpy>", line 88 in _run_code
+  File "<frozen runpy>", line 198 in _run_module_as_main
+
+Extension modules: PyQt6.QtCore, PyQt6.QtGui, PyQt6.QtWidgets, PyQt6.QtNetwork, PyQt6.QtMultimedia, PyQt6.QtTest, numpy._core._multiarray_umath, numpy.linalg._umath_linalg (total: 8)

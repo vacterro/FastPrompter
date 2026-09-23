@@ -1,0 +1,14 @@
+{
+  "requirements": {
+    "SRC-040:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "T-1306 closed with verification evidence in LOG: review -> PASS [target: T-1306] conf: high -- re-read: SRC-041 coverage 9/9 terminal, receipt closed, audit consumed, needs: T-1307 satisfied (T-1307 DONE E-2562); umbrella satisfied without duplicating the nine fixes; verdict SHIP",
+      "text": "\"Execute SAIHANDOFF: close all audit/12 findings (3 P0, 4 P1, 2 P2) before FastPrompter 0.8.68 public release\" --file \"V:\\_TEMP_\\fastprompter_drag\\FastPrompter_20260922_0248.md\" 2>&1 | Out-String",
+      "verification": "the Work this request created reached its own verification gate; see the T-1306 VERIFY cycle in .saipen/LOG.md",
+      "work": "T-1306"
+    }
+  },
+  "schema_version": 1
+}

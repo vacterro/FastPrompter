@@ -1,0 +1,14 @@
+{
+  "clauses": {
+    "SRC-017:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "\"Register T-1270 corrective ticket for unfinished pin/order/named-gap determinism acceptance\" --json 2>&1 | Out-String"
+    }
+  },
+  "derived_at": "2026-09-17T21:03:06Z",
+  "derived_from": "SRC-017",
+  "interpretation_revision": 1,
+  "schema_version": 1,
+  "source_sha256": "edc3e25621eb23393a5cd56c85c6fae30679bc776376742a7a3c81089c497dd7"
+}

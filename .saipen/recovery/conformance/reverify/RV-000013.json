@@ -1,0 +1,51 @@
+{
+  "agent": "buffy",
+  "created_at": "2026-09-21T01:09:50Z",
+  "evidence_class": "executed",
+  "findings_digest": "89bda51ab7b6b1958f9c10a4e04586b9de5102d4f14848947fab1e81790b3152",
+  "gate": "core",
+  "integrity_digest": "fe5404c2d0a9a55c",
+  "journal_op_id": "reverify.8554ac23371b",
+  "original_closure": {
+    "claim_time": "2026-09-08T06:45:00Z",
+    "last_ticket_event": "E-1804",
+    "owner": "opencode",
+    "source_receipts": "FASTPROMPTER \u2014 SMART_20260908_0645"
+  },
+  "own_problem_keys": [
+    "0054ab5da89660a0",
+    "9d281f259f5ac590"
+  ],
+  "problem_count": 52,
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "receipt_id": "RV-000013",
+  "ruleset_fingerprint": "82e5e183ae8f0fd909be3fa3627f00489cacaab813d942186c832db02a05a1c1",
+  "ruleset_version": 1,
+  "schema_version": 1,
+  "source_head": "2be089df290a961212290c0302cab055b8537cf1",
+  "source_tree_fingerprint": "git-delta-v1:d74ef2311dcaf144625ffaed3a65852afe78b04282eaa8520b2d660fd224b042",
+  "verdict": "FAIL",
+  "verification": [
+    {
+      "command": "uv run pytest tests/test_second_wave.py -q:PASS",
+      "duration_ms": 272,
+      "executed": true,
+      "exit_code": 4,
+      "output_bytes": 227,
+      "output_digest": "0a25a2fd1b19e47a",
+      "result": "FAIL"
+    }
+  ],
+  "verification_contract": {
+    "commands": [
+      "uv run pytest tests/test_second_wave.py -q:PASS"
+    ],
+    "findings_digest": "89bda51ab7b6b1958f9c10a4e04586b9de5102d4f14848947fab1e81790b3152",
+    "gate": "core"
+  },
+  "verification_contract_digest": "8e8559cca2715d0b",
+  "verifier": "buffy",
+  "warning_count": 65,
+  "work": "T-1226"
+}

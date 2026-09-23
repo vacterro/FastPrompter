@@ -1,0 +1,14 @@
+{
+  "requirements": {
+    "SRC-016:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "T-1271 closed with verification evidence in LOG: verify -> PASS [target: T-1271] conf: high -- validate_saitranslate.py STATUS: VALIDATION PASSED, zero [ERROR], Missing from en.json 0; all 33 locales carry the identical canonical set (1479); en.py==en.json and ru.py==ru.json proven equal; i18n suites 27 passed; compileall clean.",
+      "text": "Translation canonical-key reconciliation (saitranslate ee TRANSLATE-017 finding): .saipen/saitranslate/locales/ru.json carries 36 keys that exist in no canonical EN pack and in no runtime en.py master (AI limit gauges, AI reset countdown, Analog clock, Hide 0% usage accounts, Theme accent, Test popup, Counter separator, Navigation, Token estimate, Timer countdown, Notification appearance, Line counter, Digital date and time, Formatting, Access, Reset toolbar order, Settings (right), Pick, Until dismissed, no accounts with active usage, All AI accounts hidden (0% usage), Medium, Narrow, Wide, Ultra, Color:, Duration:, Symbol:, Amber Warning, Crimson Red, Emerald Green, Golden Yellow, Purple Violet, Sky Blue, plus one long hide-zero tooltip), so they ship in no language until the EN master publishes them; ALSO the 32 runtime i18n modules still carry two unused concatenated tray-tooltip key variants that the locale packs no longer have (live call site uses the short key, settings_builder.py:115)",
+      "verification": "the Work this request created reached its own verification gate; see the T-1271 VERIFY cycle in .saipen/LOG.md",
+      "work": "T-1271"
+    }
+  },
+  "schema_version": 1
+}

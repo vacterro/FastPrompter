@@ -1,0 +1,14 @@
+{
+  "clauses": {
+    "SRC-032:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "T-1264 smoke harness recovery + T-1206 smoke contract refresh + CI-equivalent gate; execute SAIHANDOFF V:\\_TEMP_\\fastprompter_drag\\FastPrompter_20260919_2200.md"
+    }
+  },
+  "derived_at": "2026-09-20T20:51:10Z",
+  "derived_from": "SRC-032",
+  "interpretation_revision": 1,
+  "schema_version": 1,
+  "source_sha256": "f882b0ac72999c5ea666cbbd884f0ca34fbb6da289f970e96da07dddae7a4f15"
+}

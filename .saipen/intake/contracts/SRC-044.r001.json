@@ -1,0 +1,14 @@
+{
+  "clauses": {
+    "SRC-044:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Reconcile post-E2498 source drift, close T-1201/T-1307/T-1306, finish external image workflow and SILO file chest, reconcile T-1309, then resume 0.8.68 release per FastPrompter_20260923_0302.md"
+    }
+  },
+  "derived_at": "2026-09-23T17:05:49Z",
+  "derived_from": "SRC-044",
+  "interpretation_revision": 1,
+  "schema_version": 1,
+  "source_sha256": "b24210517fa96d9241ab28170d53ea64fba85ee2da85d6b424424abeb70915b9"
+}

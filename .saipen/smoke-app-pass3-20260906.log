@@ -1,0 +1,51 @@
+..............................................................F
+================================== FAILURES ===================================
+_________________ test_header_ultra_mode_fits_portrait_sliver _________________
+
+fresh_win = <fastprompter.main.FastPrompter object at 0x0000019B237D5360>
+
+    def test_header_ultra_mode_fits_portrait_sliver(fresh_win):
+        # T-295, second round: moving its sibling off the shared `win`
+        # changed what that window looked like by the time this one ran,
+        # and this test tripped instead. Same class, same remedy � a
+        # density measurement cannot share a window with 500 other tests.
+        win = fresh_win
+        # 9:16-friendly: Ultra policy plus its explicit compact-detail choice
+        # keep the header valid; the clock becomes DD.MM - hh:mm.
+        import re as _re
+        win.data["show_date_rect"] = "True"
+        win.data["date_seconds"] = "True"
+        win.data["date_daypart"] = "True"
+        win.data["customize_toolbar"] = "False"
+        if hasattr(win, "update_toolbar_layout"):
+            win.update_toolbar_layout()
+        win.resize(500, 900)
+        win.show()
+        QApplication.processEvents()
+        win.resize(500, 900)
+        win._header_dense = None
+        win._header_ultra = None
+        win._apply_header_density()
+        win._update_date_label()
+        assert win._header_ultra is True
+        assert _re.fullmatch(r"\d{2}.*?\d{2}:\d{2}", win.lbl_date.text())
+        for name in ("btn_bold", "btn_copy", "btn_clear", "btn_home",
+                     "btn_pin_top", "btn_line_nums", "btn_help"):
+>           assert getattr(win, name).isHidden(), name
+E           AssertionError: btn_pin_top
+E           assert False
+E            +  where False = <built-in method isHidden of QPushButton object at 0x0000019B237FBA30>()
+E            +    where <built-in method isHidden of QPushButton object at 0x0000019B237FBA30> = <PyQt6.QtWidgets.QPushButton object at 0x0000019B237FBA30>.isHidden
+E            +      where <PyQt6.QtWidgets.QPushButton object at 0x0000019B237FBA30> = getattr(<fastprompter.main.FastPrompter object at 0x0000019B237D5360>, 'btn_pin_top')
+
+tests_smoke\test_app_smoke.py:1843: AssertionError
+---------------------------- Captured stderr call -----------------------------
+This plugin does not support raise()
+-------------------------- Captured stderr teardown ---------------------------
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+=========================== short test summary info ===========================
+FAILED tests_smoke/test_app_smoke.py::test_header_ultra_mode_fits_portrait_sliver
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed, 62 passed in 91.83s (0:01:31)

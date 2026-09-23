@@ -1,0 +1,24 @@
+{
+  "event_id": "E-2532",
+  "externalization_event": {
+    "operation_id": "ticket-0bb9686002b943719d70a0352063697c",
+    "reason": "new LOG event exceeds the live cap; canonical detail externalization"
+  },
+  "lossless": true,
+  "metadata_path": ".saipen/recovery/log-detail/E-2532-ea00bf2f4f3c4fed70e235c7.json",
+  "operation": "log_event_externalization",
+  "original_event_bytes": 1215,
+  "original_event_path": ".saipen/recovery/log-detail/E-2532-ea00bf2f4f3c4fed70e235c7.LOG.md",
+  "original_event_sha256": "ea00bf2f4f3c4fed70e235c742a11134d48e71621c293fd0842ac5c44f63b3b2",
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "schema_version": 1,
+  "source": ".saipen/LOG.md",
+  "status": "COMMITTED",
+  "structural_event": {
+    "active": true,
+    "dependency_ticket": null,
+    "kind": "ticket_block"
+  },
+  "ticket_id": "T-1310"
+}

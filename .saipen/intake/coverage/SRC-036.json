@@ -1,0 +1,14 @@
+{
+  "requirements": {
+    "SRC-036:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "T-1302 closed with verification evidence in LOG: verify -> PASS [target: T-1302] conf: high -- uv run pytest tests/test_line_mark_toggle.py tests/test_editor_paste_t1269.py -q: 33 passed in 0.30s",
+      "text": "'saipen work reverify T-1226' 2>&1 | Select-Object -First 60",
+      "verification": "the Work this request created reached its own verification gate; see the T-1302 VERIFY cycle in .saipen/LOG.md",
+      "work": "T-1302"
+    }
+  },
+  "schema_version": 1
+}

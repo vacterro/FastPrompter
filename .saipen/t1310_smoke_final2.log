@@ -1,0 +1,83 @@
+........................................................................ [  6%]
+........................................................................ [ 13%]
+........................................................................ [ 20%]
+...................................................+++++++++++++++++++++++++++++++++++ Timeout +++++++++++++++++++++++++++++++++++
+~~~~~~~~~~~~~~~~~~ Stack of fastprompter-undo-write (29400) ~~~~~~~~~~~~~~~~~~~
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002, in _bootstrap
+    self._bootstrap_inner()
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045, in _bootstrap_inner
+    self.run()
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 982, in run
+    self._target(*self._args, **self._kwargs)
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\main.py", line 13586, in _undo_writer_loop
+    cv.wait()
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 327, in wait
+    waiter.acquire()
+~~~~~~~~~~~~~~~~~~~~~~~~~ Stack of MainThread (47336) ~~~~~~~~~~~~~~~~~~~~~~~~~
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Scripts\pytest.exe\__main__.py", line 10, in <module>
+    sys.exit(_console_main())
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\_pytest\config\__init__.py", line 253, in _console_main
+    code = _main(prog=_get_prog_name(sys.argv))
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\_pytest\config\__init__.py", line 229, in _main
+    ret: ExitCode | int = config.hook.pytest_cmdline_main(config=config)
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\pluggy\_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\pluggy\_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\pluggy\_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\_pytest\main.py", line 377, in pytest_cmdline_main
+    return wrap_session(config, _main)
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\_pytest\main.py", line 330, in wrap_session
+    session.exitstatus = doit(config, session) or 0
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\_pytest\main.py", line 384, in _main
+    config.hook.pytest_runtestloop(session=session)
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\pluggy\_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\pluggy\_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\pluggy\_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\_pytest\main.py", line 408, in pytest_runtestloop
+    item.config.hook.pytest_runtest_protocol(item=item, nextitem=nextitem)
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\pluggy\_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\pluggy\_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\pluggy\_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\_pytest\runner.py", line 118, in pytest_runtest_protocol
+    runtestprotocol(item, nextitem=nextitem)
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\_pytest\runner.py", line 139, in runtestprotocol
+    reports.append(call_and_report(item, "call", log))
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\_pytest\runner.py", line 249, in call_and_report
+    call = CallInfo.from_call(
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\_pytest\runner.py", line 361, in from_call
+    result: TResult | None = func()
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\_pytest\runner.py", line 250, in <lambda>
+    lambda: runtest_hook(item=item, **kwds),
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\pluggy\_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\pluggy\_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\pluggy\_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\_pytest\runner.py", line 184, in pytest_runtest_call
+    item.runtest()
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\_pytest\python.py", line 1707, in runtest
+    self.ihook.pytest_pyfunc_call(pyfuncitem=self)
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\pluggy\_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\pluggy\_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\pluggy\_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\_pytest\python.py", line 167, in pytest_pyfunc_call
+    result = testfunction(**testargs)
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\tests_smoke\test_app_smoke.py", line 7937, in test_analog_clock_blends_with_its_neighbours_on_every_theme
+    win.apply_theme()
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\ui\theme_mixin.py", line 189, in apply_theme
+    app.setStyleSheet(app_qss)
++++++++++++++++++++++++++++++++++++ Timeout +++++++++++++++++++++++++++++++++++

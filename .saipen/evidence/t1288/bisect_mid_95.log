@@ -1,0 +1,37 @@
+CMD: uv run pytest tests/test_ambience_engine.py tests/test_ambience_playback_path.py tests/test_ambience_rule_reconcile.py tests/test_ambience_runtime.py tests/test_ambience_weather_ownership.py tests/test_ambience_workspace_ux.py tests/test_appearance_sounds_t1245.py tests/test_audio_backend_contract.py tests/test_audio_cache_race.py tests/test_audio_engine_settings.py tests/test_audio_hub_integration.py tests/test_audio_hub_latency.py tests/test_audio_hub_playback.py tests/test_audio_packaging.py tests/test_audio_pcm_transport.py tests/test_audio_render.py tests/test_audio_render_defaults.py tests/test_audio_settings.py tests/test_audio_silo_isolation.py tests/test_audio_source_invalidation.py tests/test_audio_temporal_fidelity.py tests/test_audit_core_tickets.py tests/test_audit_overflow.py tests/test_button_sound.py tests/test_cat_numbox_shrink.py tests/test_category_alias.py tests/test_cheatsheet_drift.py tests/test_checkbox_painting.py tests/test_clickable_links.py tests/test_clipboard_interop_t1269.py tests/test_close_save_contract.py tests/test_codex_multi_pool_t1274.py tests/test_codex_multi_pool_ui_t1274.py tests/test_color_reset.py tests/test_config.py tests/test_core001_productivity_alarm.py tests/test_core001_trash.py tests/test_core002_retirement_journal.py tests/test_core002_volume_slider.py tests/test_core003_find_sound_index.py tests/test_core004_reset_layout.py tests/test_core005_missing_sound_ref.py tests/test_cursor_theme.py tests/test_db_durability.py tests/test_debug.py tests/test_duration.py tests/test_editor_delete_sounds.py tests/test_editor_document_cache.py tests/test_editor_paste_live_t1269.py tests/test_editor_paste_shortcut_t1269.py tests/test_editor_paste_t1269.py tests/test_editor_pinned_selection.py tests/test_editor_snapshot_sentinel.py tests/test_editor_timer_isolation.py tests/test_fancy_zones_ui_state.py tests/test_fastprompter_night_upgrade.py tests/test_files_hotkey.py tests/test_flow_layout_columns.py tests/test_fonts.py tests/test_formatting_mixin.py tests/test_formatting_unicode_t1269.py tests/test_freebuff_compact_prices.py tests/test_freebuff_wallet_visibility.py tests/test_hashtags.py tests/test_hotkey_filter.py tests/test_hotkey_migration.py tests/test_hotkeys.py tests/test_i18n_key_inventory.py tests/test_instance_lock.py tests/test_ipc_grace.py tests/test_ipc_server.py tests/test_language_roundtrip.py tests/test_launcher_reliability.py tests/test_lazy_settings_guards.py tests/test_limit_account_order.py tests/test_limit_alert_copy.py tests/test_limit_hover_card.py tests/test_limit_hover_card_bounds.py tests/test_limit_hover_card_geometry.py tests/test_limit_overview.py tests/test_limits.py tests/test_line_drag_autoscroll.py tests/test_line_mark_toggle.py tests/test_locked_window_geometry.py tests/test_logging.py tests/test_main.py tests/test_markdown_highlighter.py tests/test_markdown_highlighter_wave.py tests/test_master_mute_concurrency_t1244.py tests/test_master_mute_facade_t1244.py tests/test_master_mute_i18n_t1244.py tests/test_master_mute_profile_t1244.py tests/test_master_mute_t1244.py tests/test_missed_attention.py tests/test_mt9141_audit.py tests/test_timer_fire.py -q -p no:cacheprovider
+
+........................................................................ [  4%]
+........................................................................ [  9%]
+........................................................................ [ 14%]
+........................................................................ [ 19%]
+........................................................................ [ 24%]
+..............................................................s......... [ 29%]
+........................................................................ [ 34%]
+........................................................................ [ 39%]
+...............................................................s........ [ 44%]
+................................................................F....... [ 49%]
+........................................................................ [ 54%]
+........................................................................ [ 59%]
+........................................................................ [ 64%]
+........................................................................ [ 69%]
+...........................................s............................ [ 74%]
+........................................................................ [ 79%]
+........................................................................ [ 84%]
+........................................................................ [ 89%]
+........................................................................ [ 94%]
+........................................................................ [ 99%]
+.                                                                        [100%]
+================================== FAILURES ===================================
+_____________ test_default_profile_has_user_foundational_settings _____________
+
+    def test_default_profile_has_user_foundational_settings():
+>       assert str(DEFAULT_PROFILE.get("sound_volume")) in ("0.12", "0.36")
+E       AssertionError: assert '0.09' in ('0.12', '0.36')
+E        +  where '0.09' = str('0.09')
+E        +    where '0.09' = <built-in method get of dict object at 0x0000025B59C78C00>('sound_volume')
+E        +      where <built-in method get of dict object at 0x0000025B59C78C00> = {'altw_blanks_after': '1', 'altw_blanks_before': '0', 'altw_bullet_char': '•', 'altw_s1_after': '2', ...}.get
+
+tests\test_fastprompter_night_upgrade.py:126: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/test_fastprompter_night_upgrade.py::test_default_profile_has_user_foundational_settings
+1 failed, 1437 passed, 3 skipped in 125.46s (0:02:05)

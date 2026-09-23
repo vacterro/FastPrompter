@@ -1,0 +1,698 @@
+{
+  "requirements": {
+    "SRC-045:R001": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "Do not ask for ordinary \"continue?\" confirmation between milestones.",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R002": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "Do not reset, clean, stash, bulk-revert, or reconstruct the tree from HEAD.",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R003": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "Do not use git add . or git add -A as a reconciliation shortcut.",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R004": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "Do not delete, replace, or normalize user/operator changes merely because they are unjournaled.",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R005": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "Do not publish a public release from a dirty or provenance-ambiguous tree.",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R006": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "Do not reimplement already-proven fixes merely because historical tickets remain open at SHIP.",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R007": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "Do not silently weaken tests to obtain green output.",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R008": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "Do not treat an old RC acceptance as valid after product-runtime source changes.",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R009": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "The checkpoint must name the active ticket, phase, current dependency chain, source receipts, modified files, completed gates, residual failures, and one exact next action.",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R010": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "T-1257 is already DONE and must not be reopened without fresh contradictory evidence",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R011": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "every key MUST belong to COPY_KEYS, NEUTRAL_KEYS, EXCLUDED_KEYS, or DROP_KEYS",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R012": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "classify as an intentional shippable preference",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R013": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "preserve only supported values 64 / 128",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R014": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "malformed values must sanitize to the canonical default rather than poison the baked profile",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R015": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "treat as machine-local data; a public shipped default must never embed an operator-specific executable path",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R016": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "neutralize to an empty path or equivalent canonical machine-neutral value",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R017": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "define an explicit release-safe contract",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R018": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "never ship a broken custom state whose executable path was neutralized",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R019": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "acceptable policy is either a machine-neutral default (system) or a sanitizer that preserves internal/system but converts custom to system for the shipped profile",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R020": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "runtime persistence on the operator machine must still preserve the users actual custom selection/path; only the repository default bake is neutralized",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R021": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "synthetic live data containing all three keys must produce a valid bake plan",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R022": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "the baked result must preserve a legal chest size",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R023": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "the baked result must contain no machine-local viewer executable path",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R024": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "the baked viewer mode must be internally consistent with the neutralized path",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R025": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "runtime settings DB roundtrip must preserve the operators selected mode/path and chest size",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R026": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "Set Defaults from Current must remain green after the user actually changes these controls",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R027": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "the existing fail-closed guarantee for genuinely unknown settings must remain intact",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R028": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "Do not weaken assert_policy_covers().",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R029": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "Do NOT automatically restore or replace it.",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R030": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "one machine-truth checkpoint names live HEAD, branch, active ticket/phase, source receipts, and exact drift since E-2506",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R031": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "no user/operator changes are lost",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R032": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "no duplicate ticket is created for already-owned scope.",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R033": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "Do not dismiss it by name alone.",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R034": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "The existing contract must remain:",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R035": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "Do not reuse an older smoke total after modifying tests_smoke/test_app_smoke.py.",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R036": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "both suites finish normally with a final summary",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R037": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "zero native abort/access-violation/QThread-destroyed process termination",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R038": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "every failure/warning is either fixed or assigned to an existing non-overlapping ticket with evidence and does not violate the current T-1310 acceptance contract",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R039": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "no test is changed solely to accept broken product behaviour.",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R040": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "Do not leave T-1310 in VERIFY merely because downstream tickets still exist.",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R041": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "T-1201 DONE",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R042": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "no stale active dependency",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R043": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "source receipt/coverage reconciled as required.",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R044": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "MILESTONE F UNBLOCK, VERIFY, AND CLOSE T-1307 / SRC-041 / audit/12",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R045": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "Do not rebuild them from scratch.",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R046": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "requirement text/short name",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R047": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "implementation files",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R048": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "regression tests",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R049": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "focused result",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R050": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "broad result",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R051": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "terminal disposition",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R052": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "evidence reference.",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R053": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "Avoid pointless duplicate ten-minute runs when no relevant files changed, but do not cite stale evidence from an older tree.",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R054": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "T-1307 DONE",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R055": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "all nine clauses terminal with evidence",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R056": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "no audit/12 actionable item remains floating outside ownership.",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R057": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "T-1306 DONE",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R058": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "T-1299 dependency on T-1306 is legally cleared.",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R059": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "external-image and SILO-chest scope must be demonstrated, not assumed",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R060": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "do not close it merely because SRC-043 is short and generic",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R061": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "T-1308 terminal",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R062": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "T-1309 terminal or reduced to a precisely owned genuine blocker",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R063": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "no duplicate work created from already-completed backlog items.",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R064": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "Do not mass-delete the 833-untracked archive-era population.",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R065": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "do not reimplement the SILO persistence model merely to create a small isolated diff.",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R066": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "All commands must exit 0.",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R067": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "Do not publish internal SAIPEN ticket history as user-facing release notes.",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R068": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "If no newer acceptance exists, prepare the candidate and return exactly the manual smoke matrix the operator must perform.",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R069": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "Do not report RELEASED before the remote asset is actually bound to the exact tested source identity.",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R070": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "do not call the run \"failed tests\" and continue casually",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R071": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "Do not add unrelated product features.",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R072": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "Do not mass-translate locales.",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R073": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "Do not redesign the whole File Container beyond the requested chest/viewer corridor.",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R074": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "Do not replace the existing sound architecture.",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R075": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "Do not replace the SILO persistence architecture.",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R076": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "Do not perform broad cleanup of SAIPEN evidence or untracked files merely for aesthetics.",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-045:R077": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-046 to SRC-044 (SUPERSEDE)",
+      "text": "Do not silently change VERSION away from 0.8.68 unless an explicit current release/version policy requires it and that decision is journaled.",
+      "verification": null,
+      "work": "T-1310"
+    }
+  },
+  "schema_version": 1
+}

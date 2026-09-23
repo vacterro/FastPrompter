@@ -143,6 +143,9 @@ def test_replacing_sync_root_itself_rejects_publication(win, tmp_path):
     os.makedirs(outside)
     snapshot = win._capture_sync_snapshot(force=True)
     assert snapshot is not None
+    # W2-001: issuance precedes execution; register the captured snapshot so
+    # the mechanical writer may run it.
+    m._sync_register_snapshot(snapshot)
 
     shutil.rmtree(root)
     os.symlink(outside, root, target_is_directory=True)

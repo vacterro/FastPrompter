@@ -1,0 +1,19 @@
+{
+  "clauses": {
+    "SRC-048:R001": {
+      "actionable": false,
+      "class": "context",
+      "text": "They were blocking T-1310's own-scope closure solely because coverage is receipt-wide, creating the circular dependency the operator resolved in SRC-047 Decision A: T-1310 must close on its own verified product scope."
+    },
+    "SRC-048:R002": {
+      "actionable": true,
+      "class": "invariant",
+      "text": "The 22 superseded SRC-046 clauses carry re-homed coverage ownership under their actual descendant tickets per SRC-047 Decision A, and the obligations remain mandatory under the descendants own Work contracts."
+    }
+  },
+  "derived_at": "2026-09-23T20:54:16Z",
+  "derived_from": "SRC-048",
+  "interpretation_revision": 2,
+  "schema_version": 1,
+  "source_sha256": "d02656677b555119d354d53a3dacb1905007b738f146dd682bcd99d78c14cf92"
+}

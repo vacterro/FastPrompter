@@ -1,0 +1,31 @@
+{
+  "agent": "buffy",
+  "authority": "lineage-baeb688e509941f5903f854b37b6c05b",
+  "authority_kind": "PROTOCOL_HOME_LINEAGE",
+  "classification": "LEGACY_UNBOUND_REFERENCE",
+  "created_at": "2026-09-21T05:54:48Z",
+  "engine_generation": {
+    "engine_digest": "sha256:14dcc9c20ec863e909a18f974a09ed4607316b4a471fa295c5638dde131b7439",
+    "files": 89,
+    "kind": "saipen-engine",
+    "version": "8.0.1"
+  },
+  "event_id": "E-2437",
+  "evidence": [
+    "original-token-sha256:b7527f0501818950",
+    "classification:no-exact-canonical-src-provable"
+  ],
+  "field": "source_receipts",
+  "integrity_digest": "sha256:10ceca648616022e3bd761b209ec7e2917c6bd3591868303f0fde8d16ccf05d6",
+  "journal_op_id": "metadata-repair-a6a27664eb1b46fcbc49bb47c2d33f4c",
+  "original_board_record": "- [x] T-1226 [P1] Smart whole-block Ctrl+Shift+Q folding | verify: selected multi-paragraph chunk becomes ONE quote group (internal blanks become `>` continuations, indentation preserved), auto-collapses immediately to one fold anchor, whole-run unquote + round-trip exact, outside paragraph never swallowed, undo/redo never strands hidden lines, existing silo fold persistence works; 17 exact-ID quote/fold/fuzz tests passed + ruff + compileall + 135 unit tests passed; full smoke 19F/481P = legacy archive/transfer/gap classes (13 same-IDs fail on stashed tree baseline too, rest order-flaky standalone-pass) | owner: opencode | claim_time: 2026-09-08T06:45:00Z | source_receipts: FASTPROMPTER \u2014 SMART_20260908_0645",
+  "original_board_record_sha256": "sha256:61b61e3a8840c9f2f89ffe1b92ff439f7acf31a14f88b4fb5e990c56b42cafd5",
+  "original_value": "FASTPROMPTER \u2014 SMART_20260908_0645",
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "removed": true,
+  "repair_id": "MR-000001",
+  "repaired_value": null,
+  "schema_version": 1,
+  "work": "T-1226"
+}

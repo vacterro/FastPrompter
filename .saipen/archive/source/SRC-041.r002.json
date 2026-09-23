@@ -1,0 +1,19 @@
+{
+  "clauses": {
+    "SRC-041:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "SILO text-history ownership is identity-based: a structural reorder, insert, delete, swap or transfer with unchanged logical SILO text creates zero text-history transitions; previous committed text derives from committed slot rows plus committed identity mapping diffed against the current identity-to-text map; committed baselines advance only after successful publication."
+    },
+    "SRC-041:R002": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Persistent undo and redo acknowledge durable publication: the apply step returns explicit success or failure, the recovery cursor advances only after a successful forced authoritative save, and on save failure or exception the pre-step value is restored, the cursor stays unchanged, no reverse history is manufactured, and unrelated dirty domains are preserved."
+    }
+  },
+  "derived_at": "2026-09-22T00:13:25Z",
+  "derived_from": "SRC-041",
+  "interpretation_revision": 2,
+  "schema_version": 1,
+  "source_sha256": "52f1510045cff4a66c0a09a538c66e4eda9dc8c03b4bf2ae962ba8931a8d80bd"
+}

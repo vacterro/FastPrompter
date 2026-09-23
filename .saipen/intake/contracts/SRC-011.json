@@ -1,0 +1,44 @@
+{
+  "clauses": {
+    "SRC-011:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "STAGE A: smoke sessions never write the repository or user data tree - the smoke harness owns a module-private temp root and DB identity (tests_smoke conftest SmokeEnv boundary)"
+    },
+    "SRC-011:R002": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "STAGE B: stale and order-dependent smoke tests repaired against current contracts and green in the combined smoke suite"
+    },
+    "SRC-011:R003": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "STAGE C: T-1201 native Qt lifetime - the formerly crashing combined tests process reaches a normal final summary with exit 0 and no Windows access violation, with root cause classified as harness teardown ownership and the production shutdown drain present"
+    },
+    "SRC-011:R004": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "STAGE D: the automated release gate is genuinely clean - compileall, ruff, bandit, tests/ and tests_smoke/ all exit 0 in their recorded runs"
+    },
+    "SRC-011:R005": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "STAGE E: a local acceptance EXE was built from the then-current source with an isolated packaged probe, without being declared a public release"
+    },
+    "SRC-011:R006": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "STAGE F: the remaining human-only blockers are checkpointed on their owning tickets and the wave stops before publication"
+    },
+    "SRC-011:R007": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "This receipt wave performs no GitHub release publish, no push, no tag, and no VERSION bump of its own"
+    }
+  },
+  "derived_at": "2026-09-23T21:19:00Z",
+  "derived_from": "SRC-011",
+  "interpretation_revision": 7,
+  "schema_version": 1,
+  "source_sha256": "10dea6238a7485ae6e4e12f9cd569f5478c77d32008d9456dbf794da3bc7bab8"
+}

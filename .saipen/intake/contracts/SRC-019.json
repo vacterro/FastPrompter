@@ -1,0 +1,14 @@
+{
+  "clauses": {
+    "SRC-019:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Close T-1277 T-1278 T-1279 corrective tickets with their executed evidence"
+    }
+  },
+  "derived_at": "2026-09-17T21:03:48Z",
+  "derived_from": "SRC-019",
+  "interpretation_revision": 1,
+  "schema_version": 1,
+  "source_sha256": "4225cd2e17a2a1fe95584ee9471ae3f51a26b40a8fc8e754c10951baca5a1088"
+}

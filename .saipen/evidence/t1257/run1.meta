@@ -1,0 +1,7 @@
+command: python -m pytest tests/
+cwd: V:\___VAC\__K\__CODE\_PY\_FastPrompter
+start_utc: 2026-09-13T20:59:12.6217009Z
+end_utc: 2026-09-13T21:31:00.7950136Z
+exit_code: 3
+stdout_bytes: 14498
+stderr_bytes: 10931

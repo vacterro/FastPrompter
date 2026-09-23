@@ -1,0 +1,19 @@
+{
+  "clauses": {
+    "SRC-042:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "close T-1201 Qt lifetime blocker"
+    },
+    "SRC-042:R002": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "finish T-1307 and T-1306 audit-12 closure"
+    }
+  },
+  "derived_at": "2026-09-23T21:29:24Z",
+  "derived_from": "SRC-042",
+  "interpretation_revision": 2,
+  "schema_version": 1,
+  "source_sha256": "f8033aa24e711af9eb23447090dec59be5960949343631e4b632b336f519b6a5"
+}

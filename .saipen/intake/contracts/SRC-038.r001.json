@@ -1,0 +1,14 @@
+{
+  "clauses": {
+    "SRC-038:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "saipen continue"
+    }
+  },
+  "derived_at": "2026-09-21T21:36:52Z",
+  "derived_from": "SRC-038",
+  "interpretation_revision": 1,
+  "schema_version": 1,
+  "source_sha256": "9c415e324889e8b64fb1ea379a7ac3240955c477c135bb18f8d2e9ede7562546"
+}

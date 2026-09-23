@@ -1,0 +1,14 @@
+{
+  "requirements": {
+    "SRC-037:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "T-1303 closed with verification evidence in LOG: verify -> PASS [target: T-1303] conf: high -- qq_verify_040.py 0 failures over 15 pages at d82fe425; saitranslate VALIDATION PASSED 0 structural errors, 31 honest warnings; 23 i18n+typecheck tests PASS",
+      "text": "qq + ee",
+      "verification": "the Work this request created reached its own verification gate; see the T-1303 VERIFY cycle in .saipen/LOG.md",
+      "work": "T-1303"
+    }
+  },
+  "schema_version": 1
+}

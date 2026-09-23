@@ -42,22 +42,22 @@ Configurable button bar. Tokens: cat tabs, search, silo controls, formatting, cl
 **Silo List:** Up to 100 per project tab. Features:
 - Pin (📌) — anchor to top, sorted above unpinned
 - Tick (✅) — cross-silo done marker
-- Color box (🎨) — per-silo color tint (toggle in Settings)
+- Color box (🎨) — per-silo color tint: click swatch to cycle, right-click for the palette, or **Ctrl+Middle click** anywhere on the silo row to toggle a random color (T-1248)
+- **Middle click** — move silo to Trash; **Shift+Middle click** — clear silo text
 - File container icon (📁) — opens file drawer
 - Hierarchy — drag onto another silo to nest; Shift+drag swaps; collapse arrow (▾/▸)
 - Recency heatmap — warm background tint for recently edited
 - Sidebar gaps — user-defined spacer bars; Ctrl+drag to re-park
-- Multi-select — Shift=range, Ctrl=toggle; batch delete/save/clear (batch delete plays one sound, defers UI rebuild to end, pumps Qt events between items to prevent Not-Responding freezes)
+- Multi-select — Shift=range, Ctrl=toggle; batch delete/save/clear
+- Hover affordances (T-1270) — entering a row reveals the done/tick control, pin, files button and colour hint IMMEDIATELY; only the destructive archive button waits out the 80 ms reveal delay. A row the pointer is already over is re-dressed after every refresh (data rebind, reorder, ticks setting toggle, selection/pin/tick change, child rebuild) with no leave/re-enter ritual, and `underMouse()` always agrees with what is drawn. The tick column is reserved on every row that can show one, so revealing the tick moves no geometry and the title x-position never shifts. Headless Qt platforms report a meaningless cursor position, so the stationary-pointer probe is off there (`_STATIONARY_POINTER_PROBE`) and real Enter/Leave events drive the same state.
 
 **Snippet Slots (F1-F10):** 10 macro paste buttons per project tab. Right-click to edit name/content. Ctrl+S or double-click opens Snippet Manager dialog.
 
 ### 3. Markdown Editor (`ui/editor.py` — VaultTextEdit)
 
-**Line gutter:** Left margin — line numbers + fold arrows (▾) + margin marks + heat stripes.
+**Line gutter:** Left margin — line numbers + fold arrows (▾) + colored line marks + heat stripes. Marks paint as fixed 12–14 px squares in the curated `MARK_PALETTE` (1 green, 2 red, 3 yellow, 4 blue, 5 purple — fixed hexes, crisp edges, no antialiasing, hover outline on empty slots; T-1248). **Ctrl+MiddleButton in the editor text** toggles a random palette color on the clicked line — never deletes text; clicking the gutter's 24 px mark zone cycles the palette with OFF included (left forward, right backward). Mark clicks stay above 2000-line documents, and rapid Ctrl+Middle routing shares T-1224's one-event-one-action rule.
 
 **Syntax highlighting:** `# Headers`, `**bold**`, `*italic*`, `~~strike~~`, `[links](url)`, `` `code` ``, ```code blocks```, `- [ ]` checkboxes, `> blockquotes`, `---` rules.
-
-**Huge document mode (≥500k chars):** structural-only highlighting — headings, blockquotes, lists, numbered lists; inline markup (bold/italic/code/links) skipped to keep the editor responsive. Initial scan limited to first 200 blocks. Centering/realignment also skipped above the threshold.
 
 **Code fences:** Monospace (Consolas default) + single-click copy button + fold to collapse.
 
@@ -91,9 +91,11 @@ Pure-text markdown table. Tab/Shift+Tab walk cells. Tab off last cell grows row.
 |---|---|
 | `Settings (Alt+`)` | Theme picker, hotkey rebind, sound, scale, toolbar reorder, silo tabs mode, image paste style, toolbar position |
 | `Sound Settings` | Per-event sound controls — enabled/file/volume/preview; includes the T-735 hotkey events (undo/redo/select-all/settings/help/new/save + generic `hotkey` which ships ON by default). Since v0.8.26 each row carries a painted pictogram (theme-coloured; 13 glyph-shape variants added in v0.8.29 split the confusable pairs after per-event hue tinting was reverted the same release) and the table is zebra-striped with no grid — zebra tones from the theme's alternate-background-color (v0.8.30), never Qt's default white |
+| `Sound Hub (Settings → Sound, tray)` | One managed library over six buses (UI/ALERT/VOICE/PROBLIP/AMBIENCE/PREVIEW) and three per-source modes (Overlay/Stack/Replace); pages: **Presets** (factory + portable import/export), **Playback** (per-event enabled/file/volume/`gain_db`/mode), **Voice** (VOX/FVOX/G-Man packs), **Ambience** (start/pause/resume/stop). **Master mute** (hotkey Ctrl+M, tray checkbox, Sound panel toggle) is ONE hub state, so muting anywhere shows everywhere; the tray's **STOP ALL SOUND** is the panic button instead — it drops every channel, queue, sequence and ambience layer now and leaves the master state alone (T-1244/T-1238-G) |
+| `Reset Queue card (top-bar countdown hover)` | The `ui/limit_hover_card.py` panel renders its content through `ui/reset_queue_card.py`: a real rich-text table with fixed `# | Account | Pool | Window | Left` columns, stable column starts, `Left` right-aligned and always present, and long pool names eliding before `Left` can be pushed out (T-1279) |
 | `Snippet Manager (Ctrl+S)` | Edit F1-F10 snippet names + content |
 | `Timer Dialog (Ctrl+Shift+T)` | Pomodoro + countdown timer setup (sound picks from the 411-sound library under `src/fastprompter/sound/`, T-741); one-click quick presets — in 10m / in 1h / tonight / tomorrow (T-726); timer list is a table with Name/Time/Remaining columns (T-733); **Interval tab** for 24h schedule notifications (clock-aligned/elapsed firing, active hours, per-rule sound/volume); **Temp tab** for temporary timer with increment, color mode, random pool sound rules; **Sound Quick Bar** (10 favorite sound buttons for quick-pick and store) |
-| `Queue Master (Alt+Shift+C)` | Watcher queue overview per silo |
+| `Queue Master (Alt+Shift+C)` | ~~Retired~~ — watcher queue dialog removed (T-1183); `open_queue_master` is a no-op stub, and Alt+C/Alt+Shift+C are unbound |
 | `Hashtag Dialog (Alt+Shift+T)` | Cross-silo tag search |
 | `Trash Dialog` | Browse/restore soft-deleted silos |
 | `Typo Check Dialog` | Right-click project tab → "Check Typos in this project…"; scans every silo with the dictionary, groups unknown words per silo, add-to-dictionary from the report |

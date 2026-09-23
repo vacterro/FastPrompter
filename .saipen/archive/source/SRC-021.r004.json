@@ -1,0 +1,29 @@
+{
+  "clauses": {
+    "SRC-021:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "CORE-001: live ambience runtime reconciles with the authoritative persisted rule set; deleting or disabling an audible rule retires its layer; editing a live rule applies source/volume/repeat immediately and idempotently."
+    },
+    "SRC-021:R002": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "CORE-002: weather fetch runs outside the engine lock and its worker cannot escape controller shutdown (generation/lifetime ownership)."
+    },
+    "SRC-021:R003": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "CORE-003: canonical ambience/i18n translation keys have zero structural validator errors."
+    },
+    "SRC-021:R004": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "W2-001: a stale async sync observation is never mutation authority; a recreated binding cannot be detached by a late result."
+    }
+  },
+  "derived_at": "2026-09-19T05:04:06Z",
+  "derived_from": "SRC-021",
+  "interpretation_revision": 4,
+  "schema_version": 1,
+  "source_sha256": "94893155b393adc10794c61f584a98c448f4bbb8c9153420aad6ab2960749087"
+}

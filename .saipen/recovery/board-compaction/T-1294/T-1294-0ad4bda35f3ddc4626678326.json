@@ -1,0 +1,20 @@
+{
+  "externalization_event": {
+    "event_id": "E-2275",
+    "operation_id": "board-compact-f205af49421f4486b80ad5a437ac60a7",
+    "reason": "explicit canonical legacy BOARD compaction"
+  },
+  "lossless": true,
+  "metadata_path": ".saipen/recovery/board-compaction/T-1294/T-1294-0ad4bda35f3ddc4626678326.json",
+  "operation": "board_legacy_compaction",
+  "original_record_bytes": 1900,
+  "original_record_path": ".saipen/recovery/board-compaction/T-1294/T-1294-0ad4bda35f3ddc4626678326.BOARD.md",
+  "original_record_sha256": "0ad4bda35f3ddc4626678326cbf2a65f6e918785521a2bbd1674165178826f8a",
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "schema_version": 1,
+  "source": ".saipen/BOARD.md",
+  "status": "COMMITTED",
+  "supersedes_detail_ref": "",
+  "ticket_id": "T-1294"
+}

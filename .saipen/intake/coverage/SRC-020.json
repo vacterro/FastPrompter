@@ -1,0 +1,14 @@
+{
+  "requirements": {
+    "SRC-020:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "T-1281 closed with verification evidence in LOG: review -> PASS [target: T-1281] conf: high -- nothing beyond the completed T-1276 corrective wave.",
+      "text": "Close T-1277 T-1278 T-1279 corrective tickets",
+      "verification": "the Work this request created reached its own verification gate; see the T-1281 VERIFY cycle in .saipen/LOG.md",
+      "work": "T-1281"
+    }
+  },
+  "schema_version": 1
+}

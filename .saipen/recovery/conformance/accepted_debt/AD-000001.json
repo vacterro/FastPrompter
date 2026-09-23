@@ -1,0 +1,61 @@
+{
+  "accepted_missing_events": [
+    "E-964",
+    "E-981",
+    "E-1007",
+    "E-1114",
+    "E-1117",
+    "E-1124"
+  ],
+  "agent": "buffy",
+  "authority": "SRC-047",
+  "check_id": "log_provenance_marker",
+  "check_version": 1,
+  "created_at": "2026-09-23T20:09:20Z",
+  "evidence": [
+    {
+      "event": "E-964",
+      "file": ".saipen/logs/LOG-004.md",
+      "line_number": 190,
+      "line_sha256": "024ef9c95b1e0485d4ac6b0ba47d8b50d86dff033cd5101ec384376a4ad42ec8"
+    },
+    {
+      "event": "E-981",
+      "file": ".saipen/logs/LOG-004.md",
+      "line_number": 207,
+      "line_sha256": "0e7c6500e3e44b30d15a0b132533c5e1eeb4ae1351f4c3e15d7cfbca564934d6"
+    },
+    {
+      "event": "E-1007",
+      "file": ".saipen/logs/LOG-004.md",
+      "line_number": 233,
+      "line_sha256": "0e430c7a394a8bb61d94e94e12424a6bbbdc0d90eae9c64d1a664259ea74e4fd"
+    },
+    {
+      "event": "E-1114",
+      "file": ".saipen/LOG.md",
+      "line_number": 26,
+      "line_sha256": "2d0e911cc434bb1e49a5aa0adb7fb63a65621dc4748d1debf8b4a0ab647827e6"
+    },
+    {
+      "event": "E-1117",
+      "file": ".saipen/LOG.md",
+      "line_number": 29,
+      "line_sha256": "e7b00025e6da7078040d2675a466b242849b010c9d7f1ec2ad5f36a1be3fbba4"
+    },
+    {
+      "event": "E-1124",
+      "file": ".saipen/LOG.md",
+      "line_number": 36,
+      "line_sha256": "b3b9a5c7b9c128db5f382fe21fb45df28de2635fa8ee607c34450f374dd8ba79"
+    }
+  ],
+  "integrity_digest": "97850a4166e4021449de1e6b87a107af55295bfc2879298a9f3d7d72d307c8e5",
+  "journal_op_id": "accepted_debt.register-fdaa10f22f0d",
+  "kind": "accepted_legacy_debt",
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "reason": "operator Decision B per SRC-047: sealed manual historical structural entries pre-mechanization; retroactive op marker would forge provenance (E-965/E-967, T-1162 accepted-debt policy); canonical receipt layer regression made accepted debt blocking",
+  "record_id": "AD-000001",
+  "schema_version": 1
+}

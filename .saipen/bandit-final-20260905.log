@@ -1,0 +1,39 @@
+[manager]	WARNING	Test in comment: closed is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: table is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: allowlist is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: above is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: closed is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: table is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: allowlist is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: closed is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: table is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: allowlist is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: closed is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: table is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: allowlist is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: literal is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: tuple is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: immediately is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: above is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: only is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: placeholders is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: values is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: bound is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: separately is not a test name or id, ignoring
+[tester]	WARNING	nosec encountered (B608), but no failed test on file src/fastprompter\core\state.py:736
+[tester]	WARNING	nosec encountered (B608), but no failed test on file src/fastprompter\core\state.py:741
+[tester]	WARNING	nosec encountered (B608), but no failed test on file src/fastprompter\core\state.py:1752
+[tester]	WARNING	nosec encountered (B608), but no failed test on file src/fastprompter\core\state.py:2486
+[manager]	WARNING	Test in comment: local is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: user is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: authored is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: hook is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: not is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: provider is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: output is not a test name or id, ignoring
+[tester]	WARNING	nosec encountered (B602), but no failed test on file src/fastprompter\core\usage_limits\claude_statusline.py:276
+[manager]	WARNING	Test in comment: HTTPS is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: allowlist is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: above is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: redirects is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: refused is not a test name or id, ignoring

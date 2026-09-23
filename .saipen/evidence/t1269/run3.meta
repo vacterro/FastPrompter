@@ -1,0 +1,7 @@
+command: PYTHONIOENCODING=utf-8 uv run python tools/probe_clipboard_interop.py --contention 300
+cwd: V:\\___VAC\\__K\\__CODE\\_PY\\_FastPrompter
+start_utc: 2026-09-17T14:20:06.060592+00:00
+end_utc: 2026-09-17T14:20:06.231268+00:00
+exit_code: 0
+stdout_bytes: 1558
+stderr_bytes: 0

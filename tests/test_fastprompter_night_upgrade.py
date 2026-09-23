@@ -154,6 +154,17 @@ def test_state_codecs_register_interval_notifs_and_quick_bar():
     assert "sound_quick_bar" in _JSON_SETTINGS
     assert "interval_notifs" in _STRUCTURED_CODECS
     assert "sound_quick_bar" in _STRUCTURED_CODECS
+    profile_rules = DEFAULT_PROFILE["interval_notifs"]
+    state_rules = _STRUCTURED_CODECS["interval_notifs"][1]
+    assert len(profile_rules) == len(state_rules) == 1
+    for rule in (profile_rules[0], state_rules[0]):
+        assert rule["minutes"] == 60
+        assert rule["enabled"] is True
+        assert rule["sound"] == "file:NEWDAY.wav"
+        assert rule["volume"] == 1.0
+        assert rule["show_notification"] is False
+        assert rule["show_in_top_bar"] is False
+        assert rule["all_day"] is True
 
 
 def test_sound_manager_defaults_aligned():
@@ -429,24 +440,19 @@ def test_interval_sound_selection_persistence_and_matching():
     assert _find_sound_index(dlg.interval_in_sound, "file:newday.wav") >= 0
     assert _find_sound_index(dlg.interval_in_sound, "file:alert_owl2.wav") >= 0
     
-    # Reset to defaults and test item switching
+    # Reset to the one default hourly reminder. The daypart chime remains a
+    # selectable preset, but it is no longer the new-user default.
     dlg._interval_reset_defaults()
-    assert dlg.interval_list.topLevelItemCount() == 4
-    
+    assert dlg.interval_list.topLevelItemCount() == 1
+
     item0 = dlg.interval_list.topLevelItem(0)
     dlg.interval_list.setCurrentItem(item0)
-    assert dlg.interval_in_sound.currentData() == "file:GENIE.wav"
-    
-    item1 = dlg.interval_list.topLevelItem(1)
-    dlg.interval_list.setCurrentItem(item1)
     assert dlg.interval_in_sound.currentData() == "file:NEWDAY.wav"
-    
-    item3 = dlg.interval_list.topLevelItem(3)
-    dlg.interval_list.setCurrentItem(item3)
-    assert dlg.interval_in_sound.currentData() == "file:alert_owl2.wav"
-    
-    dlg.interval_list.setCurrentItem(item0)
-    assert dlg.interval_in_sound.currentData() == "file:GENIE.wav"
-
-
+    rule = app.data["interval_notifs"][0]
+    assert rule["enabled"] is True
+    assert rule["minutes"] == 60
+    assert rule["volume"] == 1.0
+    assert rule["show_notification"] is False
+    assert rule["show_in_top_bar"] is False
+    assert rule["all_day"] is True
 

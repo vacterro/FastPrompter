@@ -1,0 +1,49 @@
+{
+  "clauses": {
+    "SRC-046:R001": {
+      "actionable": true,
+      "class": "invariant",
+      "text": "Do not ask for ordinary \"continue?\" confirmation between milestones."
+    },
+    "SRC-046:R002": {
+      "actionable": true,
+      "class": "invariant",
+      "text": "Do not reset, clean, stash, bulk-revert, or reconstruct the tree from HEAD."
+    },
+    "SRC-046:R003": {
+      "actionable": true,
+      "class": "invariant",
+      "text": "Do not use git add . or git add -A as a reconciliation shortcut."
+    },
+    "SRC-046:R004": {
+      "actionable": true,
+      "class": "invariant",
+      "text": "Do not delete, replace, or normalize user/operator changes merely because they are unjournaled."
+    },
+    "SRC-046:R005": {
+      "actionable": true,
+      "class": "invariant",
+      "text": "Do not publish a public release from a dirty or provenance-ambiguous tree."
+    },
+    "SRC-046:R006": {
+      "actionable": true,
+      "class": "invariant",
+      "text": "Do not reimplement already-proven fixes merely because historical tickets remain open at SHIP."
+    },
+    "SRC-046:R007": {
+      "actionable": true,
+      "class": "invariant",
+      "text": "Do not silently weaken tests to obtain green output."
+    },
+    "SRC-046:R008": {
+      "actionable": true,
+      "class": "invariant",
+      "text": "Do not treat an old RC acceptance as valid after product-runtime source changes."
+    }
+  },
+  "derived_at": "2026-09-23T12:23:59Z",
+  "derived_from": "SRC-046",
+  "interpretation_revision": 8,
+  "schema_version": 1,
+  "source_sha256": "d0d62ae33704ab4b1b15e8af9713dcc34d27448991541373e444f503b7304c99"
+}

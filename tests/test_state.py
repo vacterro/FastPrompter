@@ -606,6 +606,23 @@ class TestSettingsSurviveAReload:
             if fresh.conn:
                 fresh.conn.close()
 
+    def test_viewer_and_chest_preferences_survive_a_restart(self, state):
+        expected = {
+            "image_viewer_mode": "custom",
+            "image_viewer_path": r"C:\Users\operator\Viewer\viewer.exe",
+            "silo_chest_slots": "128",
+        }
+        state.data.update(expected)
+        state.mark_dirty()
+        state.save_data_to_db("text", force=True)
+
+        fresh = self._reload(state)
+        try:
+            assert {key: fresh.data.get(key) for key in expected} == expected
+        finally:
+            if fresh.conn:
+                fresh.conn.close()
+
     def test_every_structured_setting_is_json_encoded(self, tmp_path, monkeypatch):
         """Guard the tuple itself: no dict or list default may be missing.
 

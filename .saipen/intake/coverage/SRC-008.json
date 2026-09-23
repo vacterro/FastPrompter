@@ -1,0 +1,14 @@
+{
+  "requirements": {
+    "SRC-008:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "UNKNOWN",
+      "evidence": null,
+      "text": "Instant metric tooltips; full text Ctrl+C without selection; preserve reset timer under 5h filter; remove Every 5.00 control",
+      "verification": null,
+      "work": "T-1207"
+    }
+  },
+  "schema_version": 1
+}

@@ -1,0 +1,166 @@
+{
+  "accepted_missing_events": [
+    "E-964",
+    "E-981",
+    "E-1007",
+    "E-1114",
+    "E-1117",
+    "E-1124",
+    "E-1215",
+    "E-1367",
+    "E-1806",
+    "E-1810",
+    "E-1813",
+    "E-1868",
+    "E-1875",
+    "E-1933",
+    "E-2233",
+    "E-2237",
+    "E-2242",
+    "E-2247",
+    "E-2249",
+    "E-2256",
+    "E-2263"
+  ],
+  "agent": "buffy",
+  "authority": "SRC-047",
+  "check_id": "log_provenance_marker",
+  "check_version": 1,
+  "created_at": "2026-09-23T20:18:25Z",
+  "evidence": [
+    {
+      "event": "E-964",
+      "file": ".saipen/logs/LOG-004.md",
+      "line_number": 190,
+      "line_sha256": "024ef9c95b1e0485d4ac6b0ba47d8b50d86dff033cd5101ec384376a4ad42ec8"
+    },
+    {
+      "event": "E-981",
+      "file": ".saipen/logs/LOG-004.md",
+      "line_number": 207,
+      "line_sha256": "0e7c6500e3e44b30d15a0b132533c5e1eeb4ae1351f4c3e15d7cfbca564934d6"
+    },
+    {
+      "event": "E-1007",
+      "file": ".saipen/logs/LOG-004.md",
+      "line_number": 233,
+      "line_sha256": "0e430c7a394a8bb61d94e94e12424a6bbbdc0d90eae9c64d1a664259ea74e4fd"
+    },
+    {
+      "event": "E-1114",
+      "file": ".saipen/LOG.md",
+      "line_number": 26,
+      "line_sha256": "2d0e911cc434bb1e49a5aa0adb7fb63a65621dc4748d1debf8b4a0ab647827e6"
+    },
+    {
+      "event": "E-1117",
+      "file": ".saipen/LOG.md",
+      "line_number": 29,
+      "line_sha256": "e7b00025e6da7078040d2675a466b242849b010c9d7f1ec2ad5f36a1be3fbba4"
+    },
+    {
+      "event": "E-1124",
+      "file": ".saipen/LOG.md",
+      "line_number": 36,
+      "line_sha256": "b3b9a5c7b9c128db5f382fe21fb45df28de2635fa8ee607c34450f374dd8ba79"
+    },
+    {
+      "event": "E-1215",
+      "file": ".saipen/LOG.md",
+      "line_number": 127,
+      "line_sha256": "554d4968fcd2b19a4cfb9ba82313dbaac082699924ff8d9105259b617fae23c5"
+    },
+    {
+      "event": "E-1367",
+      "file": ".saipen/LOG.md",
+      "line_number": 279,
+      "line_sha256": "3dbfdec9706db857d1a86867d42b4973f4a3217c2b3253fd57e757b9b7f66567"
+    },
+    {
+      "event": "E-1806",
+      "file": ".saipen/LOG.md",
+      "line_number": 721,
+      "line_sha256": "8f41ba415684f18b8fb4d62d2e236c5960c1374baf67294384f5a345728dbb43"
+    },
+    {
+      "event": "E-1810",
+      "file": ".saipen/LOG.md",
+      "line_number": 727,
+      "line_sha256": "13902239b9e756673868e6632b1a754f60d586b48207c12c05e7033668b0fb94"
+    },
+    {
+      "event": "E-1813",
+      "file": ".saipen/LOG.md",
+      "line_number": 730,
+      "line_sha256": "1b30bae5146c7ceede988736df6b30c483f9555a9a6f7c24e3e9533941764ca9"
+    },
+    {
+      "event": "E-1868",
+      "file": ".saipen/LOG.md",
+      "line_number": 785,
+      "line_sha256": "2beee28a2692d530470778799bf723f98d000d9b2f7e58f2afb4e12f9283da61"
+    },
+    {
+      "event": "E-1875",
+      "file": ".saipen/LOG.md",
+      "line_number": 792,
+      "line_sha256": "bd81925cdaa4881b961800c136b19e4024116304ed0e95a894d475f4742ed9ca"
+    },
+    {
+      "event": "E-1933",
+      "file": ".saipen/LOG.md",
+      "line_number": 847,
+      "line_sha256": "1d8d206c33e63f776d8c4909ac4613b510013e47976b481806ebc68f39672fb5"
+    },
+    {
+      "event": "E-2233",
+      "file": ".saipen/LOG.md",
+      "line_number": 1147,
+      "line_sha256": "f52e1b4755c407ac8a4370587765750d2698145af6bd988b14a9dce9c413a804"
+    },
+    {
+      "event": "E-2237",
+      "file": ".saipen/LOG.md",
+      "line_number": 1151,
+      "line_sha256": "d80fd87686d3fedb2c66f8723e26392bfca872f17bfbe110efe7fe0ae59b056b"
+    },
+    {
+      "event": "E-2242",
+      "file": ".saipen/LOG.md",
+      "line_number": 1156,
+      "line_sha256": "f3f0dcf8e92974d976efe1753ef013edfdab7cf51fe46562e88e53e5cafe1d10"
+    },
+    {
+      "event": "E-2247",
+      "file": ".saipen/LOG.md",
+      "line_number": 1161,
+      "line_sha256": "c155d7f908e3e781f6ee2d18b9d8fd522c17407680f4dc4484051cb75365ae6c"
+    },
+    {
+      "event": "E-2249",
+      "file": ".saipen/LOG.md",
+      "line_number": 1163,
+      "line_sha256": "17ce65422586f07a0726fa9092d0ed7efd10d39c329432fe8b3fe2092850499a"
+    },
+    {
+      "event": "E-2256",
+      "file": ".saipen/LOG.md",
+      "line_number": 1170,
+      "line_sha256": "97087c877ac66e7e223326f57236b9bceec94de426b7d5d35f9083ec06ed6bca"
+    },
+    {
+      "event": "E-2263",
+      "file": ".saipen/LOG.md",
+      "line_number": 1177,
+      "line_sha256": "3f89f1bdf955597e746c6ae69cfbe794ee76c756df4e49faaaba4124858e51f5"
+    }
+  ],
+  "integrity_digest": "9b63b08abe96bbde827507ffaae4dbb8b4bd8a2c7e90cd31feaeaac28f13a042",
+  "journal_op_id": "accepted_debt.register-b01b41ec5ad6",
+  "kind": "accepted_legacy_debt",
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "reason": "operator Decision B per SRC-047: the exact full missing-set of the single sealed aggregate saio finding (T-1162 accepted-debt policy listed the displayed six only because the validator shows first 6; remainder = 9 sealed manual structural entries plus 6 marker-substring prose matches, all append-only immutable; retroactive op markers would forge provenance per E-965/E-967); AD-000001 (six-event subset) superseded by this complete set",
+  "record_id": "AD-000002",
+  "schema_version": 1
+}

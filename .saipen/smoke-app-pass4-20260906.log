@@ -1,0 +1,84 @@
+........................................................................ [ 14%]
+.................................................F
+================================== FAILURES ===================================
+________________________ test_no_cyrillic_in_codebase _________________________
+
+    def test_no_cyrillic_in_codebase():
+        import glob
+        import re
+    
+        # Cyrillic + Cyrillic Supplement blocks, written as escapes so this
+        # file doesn't flag itself.
+        cyr = re.compile("[\\u0400-\\u04FF\\u0500-\\u052F]")
+        root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        offenders = []
+        for pattern in ("src/**/*.py", "tests/**/*.py", "tests_smoke/*.py", "tools/*.py"):
+            for f in glob.glob(os.path.join(root, pattern), recursive=True):
+                if "__pycache__" in f:
+                    continue
+                # translation dictionaries hold the RU strings � Cyrillic is
+                # their job (package has been named translations/ and i18n/)
+                norm = f.replace("\\", "/")
+                if "/translations/" in norm or "/i18n/" in norm or norm.endswith("translations.py"):
+                    continue
+                # sync_saitranslate.py is the i18n pipeline's ded-voice generator:
+                # it injects a Russian "grandpa-voice" interjection prefix (codepoints
+                # U+042D U+0445) into the ded locale � same class of input data as
+                # the dictionaries above. Written as escapes so this file stays
+                # self-clean.
+                if norm.endswith("tools/sync_saitranslate.py"):
+                    continue
+                # duration.py holds the Russian unit words the parser must accept
+                # (users type durations in either language) � that is input data,
+                # not stray prose, and its tests must exercise them.
+                if norm.endswith("core/duration.py") or norm.endswith("tests/test_duration.py"):
+                    continue
+                # same case: tags are matched with \\w, so a Russian tag has to be
+                # exercised with a real Russian tag. Input data, not prose.
+                if norm.endswith("tests/test_hashtags.py"):
+                    continue
+                # the container/clipboard safety suites exercise REAL Unicode
+                # filenames and clipboard text on Windows - that is their test
+                # data, not stray prose, and ASCII-only would not test it.
+                if norm.endswith("tests/test_path_safety.py"):
+                    continue
+                if norm.endswith("tests_smoke/test_file_container_containment.py"):
+                    continue
+                if norm.endswith("tests/test_portable_backup.py"):
+                    continue
+                if norm.endswith("tests_smoke/test_sync_containment.py"):
+                    continue
+                # same class: backup_silo_to_files accepts REAL Unicode filenames
+                # and must be exercised with one � input data, not prose.
+                if norm.endswith("tests_smoke/test_backup_silo_bypass.py"):
+                    continue
+                # test_project_sync.py exercises a cp1251-encoded legacy file
+                # (Russian bytes written via .encode("cp1251")) � input data.
+                if norm.endswith("tests/test_project_sync.py"):
+                    continue
+                # test_typecheck.py feeds real Russian words into the script-count
+                # dictionary � the cyrillic script must be exercised with them.
+                if norm.endswith("tests/test_typecheck.py"):
+                    continue
+                # release tooling writes Russian release notes / RU release text �
+                # the same ded-voice class as sync_saitranslate.py above.
+                if norm.endswith("tools/release.py") or norm.endswith(
+                        "tools/probe_release.py") or norm.endswith(
+                        "tools/sync_saitranslate_fast.py"):
+                    continue
+                with open(f, encoding="utf-8") as fh:
+                    for i, line in enumerate(fh, 1):
+                        if cyr.search(line):
+                            offenders.append(f"{f}:{i}")
+>       assert not offenders, f"Cyrillic characters found: {offenders}"
+E       AssertionError: Cyrillic characters found: ['V:\\___VAC\\__K\\__CODE\\_PY\\_FastPrompter\\tests\\test_silo_slug.py:35']
+E       assert not ['V:\\___VAC\\__K\\__CODE\\_PY\\_FastPrompter\\tests\\test_silo_slug.py:35']
+
+tests_smoke\test_app_smoke.py:3633: AssertionError
+-------------------------- Captured stderr teardown ---------------------------
+This plugin does not support raise()
+This plugin does not support raise()
+=========================== short test summary info ===========================
+FAILED tests_smoke/test_app_smoke.py::test_no_cyrillic_in_codebase - Assertio...
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed, 121 passed in 39.72s

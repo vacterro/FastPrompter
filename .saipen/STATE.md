@@ -1,7 +1,7 @@
 ---
-phase: DONE
-task: none
-next_action: "saipen crew"
+phase: SCOUT
+task: T-1299
+next_action: "PHASE SCOUT T-1299"
 blocker: "none"
 agent: buffy
 saipen_version: 7
@@ -13,12 +13,13 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 2268
+last_event: 2601
 style_contract: ded-4ae736e4
-updated: "2026-09-19T14:06:30Z"
-transition_from: SHIP
-execution_intent: converge
-converge_target: crew
+updated: "2026-09-23T21:42:45Z"
+transition_from: DONE
+execution_intent: goal
+goal_waves: 0
+goal_tickets: 5
 ---
 T-1269 BUILD wave 15.09.26 (E-1937):
 

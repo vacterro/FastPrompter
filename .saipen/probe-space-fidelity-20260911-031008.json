@@ -1,0 +1,124 @@
+{
+  "source": {
+    "path": "V:\\___VAC\\__K\\__CODE\\_PY\\_FastPrompter\\src\\fastprompter\\sound\\problip\\blip_space.wav",
+    "sha256": "6d2e35cac2c03acf4607bfc51027f918e4019d6fa985e311ba374109b453da9d",
+    "channels": 2,
+    "rate": 44100,
+    "sample_width": 2,
+    "frames": 22050,
+    "duration_ms": 500.0
+  },
+  "transport": "QtSoundTransport",
+  "pcm_sink_active": true,
+  "tests": {
+    "1_reference": {
+      "verdict": "auto"
+    },
+    "2_single": {
+      "rows": [
+        {
+          "token": "req1",
+          "T1_minus_T0_ms": 5.54,
+          "T2_minus_T1_ms": 564.4,
+          "end": "drained",
+          "logical_eq_physical": true,
+          "rendered": false,
+          "format": "44100Hz/2ch/s16"
+        }
+      ],
+      "problems": [],
+      "verdict": "auto"
+    },
+    "3_repeated": {
+      "rows": [
+        {
+          "token": "req2",
+          "T1_minus_T0_ms": 4.02,
+          "T2_minus_T1_ms": 567.3,
+          "end": "drained",
+          "logical_eq_physical": true,
+          "rendered": false,
+          "format": "44100Hz/2ch/s16"
+        },
+        {
+          "token": "req3",
+          "T1_minus_T0_ms": 6.23,
+          "T2_minus_T1_ms": 571.7,
+          "end": "drained",
+          "logical_eq_physical": true,
+          "rendered": false,
+          "format": "44100Hz/2ch/s16"
+        },
+        {
+          "token": "req4",
+          "T1_minus_T0_ms": 5.33,
+          "T2_minus_T1_ms": 574.8,
+          "end": "drained",
+          "logical_eq_physical": true,
+          "rendered": false,
+          "format": "44100Hz/2ch/s16"
+        },
+        {
+          "token": "req5",
+          "T1_minus_T0_ms": 3.96,
+          "T2_minus_T1_ms": 568.2,
+          "end": "drained",
+          "logical_eq_physical": true,
+          "rendered": false,
+          "format": "44100Hz/2ch/s16"
+        }
+      ],
+      "problems": [],
+      "verdict": "auto"
+    },
+    "4_overlap": {
+      "rows": [
+        {
+          "token": "req6",
+          "T1_minus_T0_ms": 6.26,
+          "T2_minus_T1_ms": 569.5,
+          "end": "drained",
+          "logical_eq_physical": true,
+          "rendered": false,
+          "format": "44100Hz/2ch/s16"
+        },
+        {
+          "token": "req7",
+          "T1_minus_T0_ms": 4.65,
+          "T2_minus_T1_ms": 567.1,
+          "end": "drained",
+          "logical_eq_physical": true,
+          "rendered": false,
+          "format": "44100Hz/2ch/s16"
+        }
+      ],
+      "problems": [],
+      "verdict": "auto"
+    },
+    "5_stop": {
+      "rows": [
+        {
+          "token": "req8",
+          "T1_minus_T0_ms": 4.98,
+          "T2_minus_T1_ms": 158.0,
+          "end": "stop_all",
+          "logical_eq_physical": true,
+          "rendered": false,
+          "format": "44100Hz/2ch/s16"
+        },
+        {
+          "token": "req9",
+          "T1_minus_T0_ms": 5.17,
+          "T2_minus_T1_ms": 154.1,
+          "end": "stop_all",
+          "logical_eq_physical": true,
+          "rendered": false,
+          "format": "44100Hz/2ch/s16"
+        }
+      ],
+      "problems": [],
+      "active_after": [],
+      "verdict": "auto"
+    }
+  }
+}

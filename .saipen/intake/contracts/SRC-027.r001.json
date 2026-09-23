@@ -1,0 +1,14 @@
+{
+  "clauses": {
+    "SRC-027:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Close audit/11 layer T-1282 after SRC-021 closure"
+    }
+  },
+  "derived_at": "2026-09-19T06:27:08Z",
+  "derived_from": "SRC-027",
+  "interpretation_revision": 1,
+  "schema_version": 1,
+  "source_sha256": "85cbf870aa7ba82670f70966f7b70cb92778d14bbd34e7bb125fc1e5f5a24b2e"
+}

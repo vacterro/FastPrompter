@@ -1,0 +1,59 @@
+{
+  "clauses": {
+    "SRC-013:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "CORE-001: namespaced user: refs survive migrate_sound_settings/get_sound_file_for_event/play_file without default substitution (canonical sound_library.resolve_sound_ref)."
+    },
+    "SRC-013:R002": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "CORE-002: forced-no-numpy resampling matches the documented timing/amplitude contract and invalidates the stale render cache version."
+    },
+    "SRC-013:R003": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "CORE-003: Problip custom-sound checkbox selection persists on change (_persist_pool connected) and removal is transactional with a never-dangling playable pool."
+    },
+    "SRC-013:R004": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "CORE-004: every managed-file deletion surface uses one complete cross-store dependency enumerator (Problip pool, sound events, presets, ambience rules)."
+    },
+    "SRC-013:R005": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "W2-001: automatic startup never terminates a live mutex owner for a missing IPC ACK."
+    },
+    "SRC-013:R006": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "W2-002: every vetoable exit completes watcher quiesce and a durable final save before Qt event-loop termination."
+    },
+    "SRC-013:R007": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "W2-003: audio teardown failures cannot bypass canonical final persistence (guarded, clean=False, continue)."
+    },
+    "SRC-013:R008": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "W2-004: failed/tampered preset-pack imports leave both the managed library and the preset store byte-identical (preflight, staging, manifest digest check, rollback)."
+    },
+    "SRC-013:R009": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "W2-005: weather network I/O occurs outside the engine lock and stale/late workers become inert at reconfigure/shutdown."
+    },
+    "SRC-013:R010": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "W2-006: Codex child retirement is based on verified post-termination death, not attempted termination (stubborn children stay registered)."
+    }
+  },
+  "derived_at": "2026-09-19T05:49:04Z",
+  "derived_from": "SRC-013",
+  "interpretation_revision": 10,
+  "schema_version": 1,
+  "source_sha256": "b15638b5a09e2e8818cd4ea3b1cb28a770d7fa962e0cbf9048b282d74644c3f7"
+}

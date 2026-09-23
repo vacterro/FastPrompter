@@ -1,0 +1,364 @@
+{
+  "clauses": {
+    "SRC-045:R001": {
+      "actionable": true,
+      "class": "invariant",
+      "text": "Do not ask for ordinary \"continue?\" confirmation between milestones."
+    },
+    "SRC-045:R002": {
+      "actionable": true,
+      "class": "invariant",
+      "text": "Do not reset, clean, stash, bulk-revert, or reconstruct the tree from HEAD."
+    },
+    "SRC-045:R003": {
+      "actionable": true,
+      "class": "invariant",
+      "text": "Do not use git add . or git add -A as a reconciliation shortcut."
+    },
+    "SRC-045:R004": {
+      "actionable": true,
+      "class": "invariant",
+      "text": "Do not delete, replace, or normalize user/operator changes merely because they are unjournaled."
+    },
+    "SRC-045:R005": {
+      "actionable": true,
+      "class": "invariant",
+      "text": "Do not publish a public release from a dirty or provenance-ambiguous tree."
+    },
+    "SRC-045:R006": {
+      "actionable": true,
+      "class": "invariant",
+      "text": "Do not reimplement already-proven fixes merely because historical tickets remain open at SHIP."
+    },
+    "SRC-045:R007": {
+      "actionable": true,
+      "class": "invariant",
+      "text": "Do not silently weaken tests to obtain green output."
+    },
+    "SRC-045:R008": {
+      "actionable": true,
+      "class": "invariant",
+      "text": "Do not treat an old RC acceptance as valid after product-runtime source changes."
+    },
+    "SRC-045:R009": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "The checkpoint must name the active ticket, phase, current dependency chain, source receipts, modified files, completed gates, residual failures, and one exact next action."
+    },
+    "SRC-045:R010": {
+      "actionable": true,
+      "class": "invariant",
+      "text": "T-1257 is already DONE and must not be reopened without fresh contradictory evidence"
+    },
+    "SRC-045:R011": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "every key MUST belong to COPY_KEYS, NEUTRAL_KEYS, EXCLUDED_KEYS, or DROP_KEYS"
+    },
+    "SRC-045:R012": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "text": "classify as an intentional shippable preference"
+    },
+    "SRC-045:R013": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "text": "preserve only supported values 64 / 128"
+    },
+    "SRC-045:R014": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "text": "malformed values must sanitize to the canonical default rather than poison the baked profile"
+    },
+    "SRC-045:R015": {
+      "actionable": true,
+      "class": "invariant",
+      "text": "treat as machine-local data; a public shipped default must never embed an operator-specific executable path"
+    },
+    "SRC-045:R016": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "text": "neutralize to an empty path or equivalent canonical machine-neutral value"
+    },
+    "SRC-045:R017": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "text": "define an explicit release-safe contract"
+    },
+    "SRC-045:R018": {
+      "actionable": true,
+      "class": "invariant",
+      "text": "never ship a broken custom state whose executable path was neutralized"
+    },
+    "SRC-045:R019": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "text": "acceptable policy is either a machine-neutral default (system) or a sanitizer that preserves internal/system but converts custom to system for the shipped profile"
+    },
+    "SRC-045:R020": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "text": "runtime persistence on the operator machine must still preserve the users actual custom selection/path; only the repository default bake is neutralized"
+    },
+    "SRC-045:R021": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "text": "synthetic live data containing all three keys must produce a valid bake plan"
+    },
+    "SRC-045:R022": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "text": "the baked result must preserve a legal chest size"
+    },
+    "SRC-045:R023": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "text": "the baked result must contain no machine-local viewer executable path"
+    },
+    "SRC-045:R024": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "text": "the baked viewer mode must be internally consistent with the neutralized path"
+    },
+    "SRC-045:R025": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "text": "runtime settings DB roundtrip must preserve the operators selected mode/path and chest size"
+    },
+    "SRC-045:R026": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "text": "Set Defaults from Current must remain green after the user actually changes these controls"
+    },
+    "SRC-045:R027": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "text": "the existing fail-closed guarantee for genuinely unknown settings must remain intact"
+    },
+    "SRC-045:R028": {
+      "actionable": true,
+      "class": "invariant",
+      "text": "Do not weaken assert_policy_covers()."
+    },
+    "SRC-045:R029": {
+      "actionable": true,
+      "class": "invariant",
+      "text": "Do NOT automatically restore or replace it."
+    },
+    "SRC-045:R030": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "text": "one machine-truth checkpoint names live HEAD, branch, active ticket/phase, source receipts, and exact drift since E-2506"
+    },
+    "SRC-045:R031": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "text": "no user/operator changes are lost"
+    },
+    "SRC-045:R032": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "text": "no duplicate ticket is created for already-owned scope."
+    },
+    "SRC-045:R033": {
+      "actionable": true,
+      "class": "invariant",
+      "text": "Do not dismiss it by name alone."
+    },
+    "SRC-045:R034": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "The existing contract must remain:"
+    },
+    "SRC-045:R035": {
+      "actionable": true,
+      "class": "invariant",
+      "text": "Do not reuse an older smoke total after modifying tests_smoke/test_app_smoke.py."
+    },
+    "SRC-045:R036": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "text": "both suites finish normally with a final summary"
+    },
+    "SRC-045:R037": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "text": "zero native abort/access-violation/QThread-destroyed process termination"
+    },
+    "SRC-045:R038": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "text": "every failure/warning is either fixed or assigned to an existing non-overlapping ticket with evidence and does not violate the current T-1310 acceptance contract"
+    },
+    "SRC-045:R039": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "text": "no test is changed solely to accept broken product behaviour."
+    },
+    "SRC-045:R040": {
+      "actionable": true,
+      "class": "invariant",
+      "text": "Do not leave T-1310 in VERIFY merely because downstream tickets still exist."
+    },
+    "SRC-045:R041": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "text": "T-1201 DONE"
+    },
+    "SRC-045:R042": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "text": "no stale active dependency"
+    },
+    "SRC-045:R043": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "text": "source receipt/coverage reconciled as required."
+    },
+    "SRC-045:R044": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "text": "MILESTONE F UNBLOCK, VERIFY, AND CLOSE T-1307 / SRC-041 / audit/12"
+    },
+    "SRC-045:R045": {
+      "actionable": true,
+      "class": "invariant",
+      "text": "Do not rebuild them from scratch."
+    },
+    "SRC-045:R046": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "text": "requirement text/short name"
+    },
+    "SRC-045:R047": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "text": "implementation files"
+    },
+    "SRC-045:R048": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "text": "regression tests"
+    },
+    "SRC-045:R049": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "text": "focused result"
+    },
+    "SRC-045:R050": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "text": "broad result"
+    },
+    "SRC-045:R051": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "text": "terminal disposition"
+    },
+    "SRC-045:R052": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "text": "evidence reference."
+    },
+    "SRC-045:R053": {
+      "actionable": true,
+      "class": "invariant",
+      "text": "Avoid pointless duplicate ten-minute runs when no relevant files changed, but do not cite stale evidence from an older tree."
+    },
+    "SRC-045:R054": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "text": "T-1307 DONE"
+    },
+    "SRC-045:R055": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "text": "all nine clauses terminal with evidence"
+    },
+    "SRC-045:R056": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "text": "no audit/12 actionable item remains floating outside ownership."
+    },
+    "SRC-045:R057": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "text": "T-1306 DONE"
+    },
+    "SRC-045:R058": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "text": "T-1299 dependency on T-1306 is legally cleared."
+    },
+    "SRC-045:R059": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "external-image and SILO-chest scope must be demonstrated, not assumed"
+    },
+    "SRC-045:R060": {
+      "actionable": true,
+      "class": "invariant",
+      "text": "do not close it merely because SRC-043 is short and generic"
+    },
+    "SRC-045:R061": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "text": "T-1308 terminal"
+    },
+    "SRC-045:R062": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "text": "T-1309 terminal or reduced to a precisely owned genuine blocker"
+    },
+    "SRC-045:R063": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "text": "no duplicate work created from already-completed backlog items."
+    },
+    "SRC-045:R064": {
+      "actionable": true,
+      "class": "invariant",
+      "text": "Do not mass-delete the 833-untracked archive-era population."
+    },
+    "SRC-045:R065": {
+      "actionable": true,
+      "class": "invariant",
+      "text": "do not reimplement the SILO persistence model merely to create a small isolated diff."
+    },
+    "SRC-045:R066": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "All commands must exit 0."
+    },
+    "SRC-045:R067": {
+      "actionable": true,
+      "class": "invariant",
+      "text": "Do not publish internal SAIPEN ticket history as user-facing release notes."
+    },
+    "SRC-045:R068": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "text": "If no newer acceptance exists, prepare the candidate and return exactly the manual smoke matrix the operator must perform."
+    },
+    "SRC-045:R069": {
+      "actionable": true,
+      "class": "invariant",
+      "text": "Do not report RELEASED before the remote asset is actually bound to the exact tested source identity."
+    },
+    "SRC-045:R070": {
+      "actionable": true,
+      "class": "invariant",
+      "text": "do not call the run \"failed tests\" and continue casually"
+    },
+    "SRC-045:R071": {
+      "actionable": true,
+      "class": "invariant",
+      "text": "Do not add unrelated product features."
+    }
+  },
+  "derived_at": "2026-09-23T12:23:51Z",
+  "derived_from": "SRC-045",
+  "interpretation_revision": 71,
+  "schema_version": 1,
+  "source_sha256": "8db79c50953379c451ed3c7c6cbe801ff026ba377aefa5436bff027c9c91d8a7"
+}

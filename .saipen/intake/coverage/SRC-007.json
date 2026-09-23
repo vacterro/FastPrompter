@@ -1,0 +1,50 @@
+{
+  "requirements": {
+    "SRC-007:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "UNKNOWN",
+      "evidence": null,
+      "text": "Antigravity sign-in must explain the code destination, avoid opening the project, and never open a browser during background probing",
+      "verification": null,
+      "work": "T-1207"
+    },
+    "SRC-007:R002": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "UNKNOWN",
+      "evidence": null,
+      "text": "Show authoritative quotas and filter accounts and independent pools by current 5-hour availability",
+      "verification": null,
+      "work": "T-1207"
+    },
+    "SRC-007:R003": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "UNKNOWN",
+      "evidence": null,
+      "text": "Paste screenshots and image file URLs as readable clickable attachments without delayed caret insertion",
+      "verification": null,
+      "work": "T-1207"
+    },
+    "SRC-007:R004": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "UNKNOWN",
+      "evidence": null,
+      "text": "Prevent clipped and replayed sound tails and delayed unrelated UI sounds",
+      "verification": null,
+      "work": "T-1207"
+    },
+    "SRC-007:R005": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "UNKNOWN",
+      "evidence": null,
+      "text": "Complete a regression sweep, push changes, build EXE and publish release after passing verification",
+      "verification": null,
+      "work": "T-1207"
+    }
+  },
+  "schema_version": 1
+}

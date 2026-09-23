@@ -1,0 +1,17 @@
+== FastPrompter clipboard interop probe (T-1269 A4) ==
+platform            : win32
+python              : 3.11.9
+native sequence API : available
+clipboard owner     : owner            t=6005.953 seq=4527 owner=UNKNOWN pid=None self=None status=no_owner
+clipboard processes :
+    pid=4364     pythonw.exe            script host (UNIDENTIFIED)
+    pid=8620     clipdiary-portable.exe identified
+    pid=9340     pythonw.exe            script host (UNIDENTIFIED)
+    pid=11024    pythonw.exe            script host (UNIDENTIFIED)
+    pid=6896     pythonw.exe            script host (UNIDENTIFIED)
+    pid=3236     pythonw.exe            script host (UNIDENTIFIED)
+    pid=22296    python.exe             script host (UNIDENTIFIED)
+    pid=21384    python.exe             script host (UNIDENTIFIED)
+    pid=14884    python.exe             script host (UNIDENTIFIED)
+    pid=20356    python.exe             script host (UNIDENTIFIED)
+NOTE: a custom clipboard+ script shares pythonw.exe, so its name cannot be resolved; the OWNER reading during a live conflict is the only authoritative attribution.

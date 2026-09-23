@@ -1,0 +1,14 @@
+{
+  "clauses": {
+    "SRC-040:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "\"Execute SAIHANDOFF: close all audit/12 findings (3 P0, 4 P1, 2 P2) before FastPrompter 0.8.68 public release\" --file \"V:\\_TEMP_\\fastprompter_drag\\FastPrompter_20260922_0248.md\" 2>&1 | Out-String"
+    }
+  },
+  "derived_at": "2026-09-23T21:26:15Z",
+  "derived_from": "SRC-040",
+  "interpretation_revision": 1,
+  "schema_version": 1,
+  "source_sha256": "69bce33b3080f02ea46e04741d7469c796ff89680c7a0936ec1a7f89aff5915e"
+}

@@ -1,0 +1,86 @@
+{
+  "requirements": {
+    "SRC-041:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "E-2556",
+      "text": "SILO text-history ownership is identity-based: a structural reorder, insert, delete, swap or transfer with unchanged logical SILO text creates zero text-history transitions; previous committed text derives from committed slot rows plus committed identity mapping diffed against the current identity-to-text map; committed baselines advance only after successful publication.",
+      "verification": "silo text-history identity tests green: uv run pytest tests/test_silo_history_identity_t1307.py + full t1307 set -> 65 passed in 10.35s; broad tests/ 3844 passed 6 skipped (E-2515); smoke 1067 (E-2524); matrix E-2556",
+      "work": "T-1307"
+    },
+    "SRC-041:R002": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "E-2556",
+      "text": "Persistent undo and redo acknowledge durable publication: the apply step returns explicit success or failure, the recovery cursor advances only after a successful forced authoritative save, and on save failure or exception the pre-step value is restored, the cursor stays unchanged, no reverse history is manufactured, and unrelated dirty domains are preserved.",
+      "verification": "persistent undo durable-publication tests green: test_persistent_undo_durability_t1307 in 65-passed focused run (E-2556); broad E-2515 + smoke E-2524",
+      "work": "T-1307"
+    },
+    "SRC-041:R003": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "E-2556",
+      "text": "Archive lineage dirty ownership derives from the canonical active SILO owner used by active silo identity resolution, never a nonexistent showing_archive attribute; legitimate unsaved archive edits produce no false lineage refusal while genuine identity or text mismatch still fails closed.",
+      "verification": "archive lineage dirty-owner tests green: test_lineage_dirty_owner_t1307 in 65-passed focused run (E-2556); broad E-2515 + smoke E-2524",
+      "work": "T-1307"
+    },
+    "SRC-041:R004": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "E-2556",
+      "text": "Restore establishes a monotonic external-writer boundary: snapshot issuance is separated from physical execution so an issued snapshot is never re-registered, every issued snapshot carries a publication epoch required to equal the current epoch at the final replace gate, revocation is monotonic and idempotent, and the Sync-Project writer barrier is established under the canonical mutation gate before destructive restore publication without lock inversion.",
+      "verification": "restore writer revocation tests green: test_restore_writer_revocation_t1307 in 65-passed focused run (E-2556); broad E-2515 + smoke E-2524",
+      "work": "T-1307"
+    },
+    "SRC-041:R005": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "E-2556",
+      "text": "Sync-Project folder rebinding is one logical transaction bounded by authoritative save: prospective configuration is built first, the old runtime is exactly restored on save False or exception (config, mapping, presets, caches, editor, dirty ownership, watcher), no new watcher starts and no success message appears before save success, and no push may target the new root after a refused save.",
+      "verification": "sync rebind transaction tests green: test_sync_rebind_transaction_t1307 in 65-passed focused run (E-2556); broad E-2515 + smoke E-2524",
+      "work": "T-1307"
+    },
+    "SRC-041:R006": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "E-2556",
+      "text": "Restore quarantine is invocation-owned: unique same-directory quarantine paths per invocation, exact owned live-sidecar and quarantine pairs tracked, only those exact paths moved, restored or cleaned, pre-existing files with a quarantine suffix never deleted, fatal repair receives explicit owned paths, and fail-closed handling of genuine live wal and shm sidecars preserved.",
+      "verification": "restore quarantine ownership tests green: test_restore_quarantine_t1307 in 65-passed focused run (E-2556); broad E-2515 + smoke E-2524",
+      "work": "T-1307"
+    },
+    "SRC-041:R007": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "E-2556",
+      "text": "Oversized WAV rejection is cheap: a RIFF header metadata preflight decides compression, width, channels, rate and frame count before source digest and before payload decode; oversized different-rate and over-budget equal-rate sources return None before digest and decode; a defensive maximum frame boundary inside the read path prevents future bypass; eligible render cache identity is unchanged.",
+      "verification": "audio RIFF preflight tests green: test_audio_render_preflight_t1307 in 65-passed focused run (E-2556); broad E-2515 + smoke E-2524",
+      "work": "T-1307"
+    },
+    "SRC-041:R008": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "E-2556",
+      "text": "Undo and redo stack trimming reuses cached finalized snapshot sizes: one canonical accessor returns a valid stored size or computes and stores it once for legacy entries, one initial stack total plus constant-time subtraction per eviction replaces repeated full scans, and the 50-entry and 20,000,000-character caps and counted text domains stay unchanged.",
+      "verification": "snapshot trim cache tests green: test_snapshot_trim_t1307 in 65-passed focused run (E-2556); broad E-2515 + smoke E-2524",
+      "work": "T-1307"
+    },
+    "SRC-041:R009": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "E-2556",
+      "text": "File Container caches key by canonical directory identity with a fixed-size generation signature plus the existing short TTL; a valid warm hit does not enumerate or sort a large direct listing; a changed generation replaces the same path entry instead of retaining historical full-name tuples; the 64 and 256 entry caps, the 2000-file traversal cap, cancellation and summary correctness are preserved.",
+      "verification": "folder cache identity tests green: test_folder_cache_identity_t1307 in 65-passed focused run (E-2556); broad E-2515 + smoke E-2524",
+      "work": "T-1307"
+    }
+  },
+  "schema_version": 1
+}

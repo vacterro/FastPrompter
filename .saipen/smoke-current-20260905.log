@@ -1,0 +1,65 @@
+..................................................F
+================================== FAILURES ===================================
+_______ test_undo_after_silo_switch_then_typing_undoes_the_typing_first _______
+
+win = <fastprompter.main.FastPrompter object at 0x000001EC02171090>
+
+    def test_undo_after_silo_switch_then_typing_undoes_the_typing_first(win):
+        """T-734: switch silos, type there, Ctrl+Z � the typing is the newest
+        action and must be undone first. The "Switch silo" snapshot used to be
+        stamped against the document we were LEAVING, so Ctrl+Z routing saw a
+        doc mismatch and fired a DATA undo that restored the pre-switch snapshot
+        and wiped the text typed since ("half the text is gone")."""
+        win.data["temp_presets"] = ["aaa", "bbb"]
+        win.data["pinned_silos"] = []
+        win.silo_docs[:] = []
+        win.data_undo_stack = []
+        win.data_redo_stack = []
+        win._undo_kinds().clear()
+        win._switch_to_slot(0, initial=True)
+        _type_block(win, " one")          # text edit in silo A
+        win._switch_to_slot(1)            # data action: switch to silo B
+        _type_block(win, " two")          # text edit in silo B
+        assert win.text_area.toPlainText() == "bbb two"
+    
+        _press_ctrl_z(win)                # newest is the typing in B
+        assert win.text_area.toPlainText() == "bbb", (
+            f"undo of typing in B wrong: {win.text_area.toPlainText()!r}")
+    
+        _press_ctrl_z(win)                # next: undo the silo switch itself
+        assert win.text_area.toPlainText() == "aaa one", (
+            f"undo of switch wrong: {win.text_area.toPlainText()!r}")
+    
+        win._smart_redo()                 # back to B
+>       assert win.text_area.toPlainText() == "bbb"
+E       AssertionError: assert 'aaa one' == 'bbb'
+E         
+E         - bbb
+E         + aaa one
+
+tests_smoke\test_app_smoke.py:797: AssertionError
+-------------------------- Captured stderr teardown ---------------------------
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+=========================== short test summary info ===========================
+FAILED tests_smoke/test_app_smoke.py::test_undo_after_silo_switch_then_typing_undoes_the_typing_first
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed, 50 passed in 5.25s

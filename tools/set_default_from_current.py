@@ -129,7 +129,7 @@ COPY_KEYS: frozenset[str] = frozenset((
     "silo_0_hotkey", "silo_0_hotkey_alt", "silo_1_hotkey", "silo_1_hotkey_alt",
     "silo_2_hotkey", "silo_2_hotkey_alt", "silo_3_hotkey", "silo_3_hotkey_alt",
     "silo_4_hotkey", "silo_4_hotkey_alt",
-    "silo_color_box", "silo_gap_height", "silo_home", "silo_pinned_gap",
+    "silo_chest_slots", "silo_color_box", "silo_gap_height", "silo_home", "silo_pinned_gap",
     "silo_random_color_on_new", "silo_tabs_mode", "silo_ticks_enabled",
     "snippet_0_hotkey", "snippet_0_hotkey_alt",
     "snippet_1_hotkey", "snippet_1_hotkey_alt",
@@ -161,6 +161,10 @@ COPY_KEYS: frozenset[str] = frozenset((
 NEUTRAL_KEYS: dict[str, object] = {
     "hide_extra": "True",
     "search_visible": "False",
+    # A custom executable is machine-local. Ship system association mode with
+    # an empty path so the baked pair can never describe a broken custom mode.
+    "image_viewer_mode": "system",
+    "image_viewer_path": "",
     "limit_antigravity_dir": "",
     "limit_codex_homes": "",
     # Extra Claude accounts are machine-local CLAUDE_CONFIG_DIR paths.
@@ -508,6 +512,28 @@ def _sanitize_productivity_timer(value, base_value):
     return out
 
 
+def _sanitize_silo_chest_slots(value, base_value):
+    """Preserve only supported chest capacities; junk uses the canonical 64."""
+    allowed = {"64", "128"}
+    if isinstance(value, bool):
+        normalized = None
+    elif isinstance(value, int):
+        normalized = str(value) if str(value) in allowed else None
+    elif isinstance(value, str) and value in allowed:
+        normalized = value
+    else:
+        normalized = None
+
+    if normalized is not None:
+        return normalized
+    if isinstance(base_value, str) and base_value in allowed:
+        return base_value
+    if isinstance(base_value, int) and not isinstance(base_value, bool) \
+            and str(base_value) in allowed:
+        return str(base_value)
+    return "64"
+
+
 # key -> sanitizer(live_value, base_value). Applied to a value taken from the
 # live profile, so a session value can never ship in a shape the shipped
 # defaults are not allowed to carry.
@@ -517,6 +543,7 @@ SANITIZERS = {
     "interval_notifs": _sanitize_interval_notifs,
     "temp_timer_settings": _sanitize_temp_timer,
     "productivity_timer": _sanitize_productivity_timer,
+    "silo_chest_slots": _sanitize_silo_chest_slots,
 }
 
 

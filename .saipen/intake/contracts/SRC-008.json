@@ -1,0 +1,14 @@
+{
+  "clauses": {
+    "SRC-008:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Instant metric tooltips; full text Ctrl+C without selection; preserve reset timer under 5h filter; remove Every 5.00 control"
+    }
+  },
+  "derived_at": "2026-09-05T20:52:00Z",
+  "derived_from": "SRC-008",
+  "interpretation_revision": 1,
+  "schema_version": 1,
+  "source_sha256": "50d6762c06a6c6e655efd3d03c2479c793fe5a303e923fb5c7cfc3ea0c58cde7"
+}

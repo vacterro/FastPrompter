@@ -1,0 +1,79 @@
+{
+  "clauses": {
+    "SRC-033:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Preserve the T-1264 smoke harness repair (tests_smoke/_smoke_support.py SmokeEnv, SmokeWindowFactory, teardown_smoke_window, receiver-specific tests/_qt_retire.retire, per-module and per-fresh DB roots, scoped pytest.MonkeyPatch, undo-writer drain, owned-thread invariant) and do not reintroduce QApplication.sendPostedEvents(None, DeferredDelete) anywhere in tests_smoke."
+    },
+    "SRC-033:R002": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Make the session-wide smoke sound substitution ownership explicit: capture the exact original SoundManager._play_winsound and QSoundEffect before replacement, restore both in the session fixture finally, and add a tiny ownership regression (originals before the fixture, silent replacements inside it, originals restored after the finalizer) without altering production sound code."
+    },
+    "SRC-033:R003": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Classify every tests_smoke failure with exactly one class (A stale contract, B harness state contamination, C headless/offscreen presentation assumption, D real product regression); never use 'pre-existing' as a disposition; every failure ends as a refreshed test, corrected harness, explicitly desktop-only acceptance, or real product fix."
+    },
+    "SRC-033:R004": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Refresh the app_smoke stale contracts: empty-silo cap asserted against the current category-capacity semantics (not literal five) without regressing product capacity; pin/unpin asserted on logical SILO identity and the current T-1277 order contract; named gaps asserted on the current ownership model; lazy Settings materialized explicitly via _ensure_settings_built() rather than making Settings eager."
+    },
+    "SRC-033:R005": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Resolve the order-dependent clipboard residual by identifying ownership and installing explicit fixture ownership (owner saves prior MIME state or installs deterministic content and restores/clears only its own boundary), never a global QApplication.clipboard() clear after every test and never a Ctrl+V production change without a real product repro."
+    },
+    "SRC-033:R006": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Triage the sync_features and transfer/archive failures against the current dedicated contracts (async freshness, exact profile ownership, BOM/EOL preservation, conflict handling, archive identity, move/copy semantics, failed-final-destination behaviour, shutdown serialization), using current unit tests as the semantic oracle."
+    },
+    "SRC-033:R007": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Triage the profile_runtime cluster conservatively: profile A state never leaks into B; runtime account/home paths stay profile-local where specified; switching retains no stale documents/limits/sounds; restart restores the selected profile contract; clean profile starts from DEFAULT_PROFILE; no personal machine state injected from shipped defaults."
+    },
+    "SRC-033:R008": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Triage the file_container cluster against current contracts: path containment, canonical path normalization, project binding, missing/deleted file handling, sync ownership, and no traversal outside the project root; containment is never weakened to satisfy smoke."
+    },
+    "SRC-033:R009": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Triage the portable_backup_wiring cluster against the committed-view contracts: exact committed-generation ownership, no live mutable-data aliasing, coalescing before the expensive snapshot, profile isolation, failed redispatch preserves the newest committed state, and settings-only saves create no exported-content backup generation."
+    },
+    "SRC-033:R010": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Triage the kanban / content-follows failures on logical SILO identity through reorder/pin/unpin/project operations, preferring identity assertions over raw index assertions and never changing production ordering to satisfy old slot numbers."
+    },
+    "SRC-033:R011": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Give every singleton smoke failure a named disposition in a table with TEST, CLASS, OLD EXPECTATION, CURRENT CONTRACT, CHANGE and EVIDENCE; no 'miscellaneous N fixed'."
+    },
+    "SRC-033:R012": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Record the source runtime identity check: classify the src/fastprompter/main.py release-probe --release-probe-write seam as a release-probe runtime seam, state the current source fingerprint, and record the requirement that the final clean-clone EXE requires a renewed bounded manual smoke."
+    },
+    "SRC-033:R013": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "After triage run smoke only: uv run pytest tests_smoke/ -q -> normal process, 0 failed, 0 native crash."
+    },
+    "SRC-033:R014": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Run the combined process: uv run pytest tests/ tests_smoke/ -q -> exit 0, zero FAILED, normal final pytest summary, zero access violation, zero 0xC0000409, zero Fatal Python error."
+    }
+  },
+  "derived_at": "2026-09-20T20:54:18Z",
+  "derived_from": "SRC-033",
+  "interpretation_revision": 14,
+  "schema_version": 1,
+  "source_sha256": "822f2ba2068b26ce46f9a5123a5411afb538d2db94113163ba8e6ec06d174bc3"
+}

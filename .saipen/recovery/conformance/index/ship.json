@@ -1,8 +1,1 @@
-{
-  "gate": "ship",
-  "receipt_dir_mtime_ns": 1788370811869644600,
-  "receipt_id": "receipt-bda7a1c6999c",
-  "receipt_path": ".saipen/recovery/conformance/2026-09-02T17_40_11.631154Z_receipt-bda7a1c6999c_ship_FAIL.json",
-  "timestamp_utc": "2026-09-02T17:40:11.631154Z",
-  "version": 1
-}
+{"content_sha256":"c2a12e2b3952aa3e3689219f1cbd2859f8bd4a39920756789a42afe69a5fc2f8","gate":"ship","generation_id":"active-gen","generation_root":"87e6fdcf2b75573b1574e92ec127881fc519128243c93568d16f72773a4423b2","receipt_id":"receipt-5eaa1d1ebdc1","receipt_path":".saipen/recovery/conformance/2026-09-11T23_23_54.287331Z_receipt-5eaa1d1ebdc1_ship_FAIL.json","root":"a40b9c3055870baf365077c9304e155d9a7f7e20613ee4cdd39b7f0fecb00cd3","schema_version":2,"timestamp_utc":"2026-09-11T23:23:54.287331Z"}

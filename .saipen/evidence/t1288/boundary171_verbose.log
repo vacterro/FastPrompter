@@ -1,0 +1,352 @@
+CMD: uv run pytest tests/test_ambience_engine.py tests/test_ambience_playback_path.py tests/test_ambience_rule_reconcile.py tests/test_ambience_runtime.py tests/test_ambience_weather_ownership.py tests/test_ambience_workspace_ux.py tests/test_appearance_sounds_t1245.py tests/test_audio_backend_contract.py tests/test_audio_cache_race.py tests/test_audio_engine_settings.py tests/test_audio_hub_integration.py tests/test_audio_hub_latency.py tests/test_audio_hub_playback.py tests/test_audio_packaging.py tests/test_audio_pcm_transport.py tests/test_audio_render.py tests/test_audio_render_defaults.py tests/test_audio_settings.py tests/test_audio_silo_isolation.py tests/test_audio_source_invalidation.py tests/test_audio_temporal_fidelity.py tests/test_audit_core_tickets.py tests/test_audit_overflow.py tests/test_button_sound.py tests/test_cat_numbox_shrink.py tests/test_category_alias.py tests/test_cheatsheet_drift.py tests/test_checkbox_painting.py tests/test_clickable_links.py tests/test_clipboard_interop_t1269.py tests/test_close_save_contract.py tests/test_codex_multi_pool_t1274.py tests/test_codex_multi_pool_ui_t1274.py tests/test_color_reset.py tests/test_config.py tests/test_core001_productivity_alarm.py tests/test_core001_trash.py tests/test_core002_retirement_journal.py tests/test_core002_volume_slider.py tests/test_core003_find_sound_index.py tests/test_core004_reset_layout.py tests/test_core005_missing_sound_ref.py tests/test_cursor_theme.py tests/test_db_durability.py tests/test_debug.py tests/test_duration.py tests/test_editor_delete_sounds.py tests/test_editor_document_cache.py tests/test_editor_paste_live_t1269.py tests/test_editor_paste_shortcut_t1269.py tests/test_editor_paste_t1269.py tests/test_editor_pinned_selection.py tests/test_editor_snapshot_sentinel.py tests/test_editor_timer_isolation.py tests/test_fancy_zones_ui_state.py tests/test_fastprompter_night_upgrade.py tests/test_files_hotkey.py tests/test_flow_layout_columns.py tests/test_fonts.py tests/test_formatting_mixin.py tests/test_formatting_unicode_t1269.py tests/test_freebuff_compact_prices.py tests/test_freebuff_wallet_visibility.py tests/test_hashtags.py tests/test_hotkey_filter.py tests/test_hotkey_migration.py tests/test_hotkeys.py tests/test_i18n_key_inventory.py tests/test_instance_lock.py tests/test_ipc_grace.py tests/test_ipc_server.py tests/test_language_roundtrip.py tests/test_launcher_reliability.py tests/test_lazy_settings_guards.py tests/test_limit_account_order.py tests/test_limit_alert_copy.py tests/test_limit_hover_card.py tests/test_limit_hover_card_bounds.py tests/test_limit_hover_card_geometry.py tests/test_limit_overview.py tests/test_limits.py tests/test_line_drag_autoscroll.py tests/test_line_mark_toggle.py tests/test_locked_window_geometry.py tests/test_logging.py tests/test_main.py tests/test_markdown_highlighter.py tests/test_markdown_highlighter_wave.py tests/test_master_mute_concurrency_t1244.py tests/test_master_mute_facade_t1244.py tests/test_master_mute_i18n_t1244.py tests/test_master_mute_profile_t1244.py tests/test_master_mute_t1244.py tests/test_missed_attention.py tests/test_mt9141_audit.py tests/test_new_empty_silos.py tests/test_new_silo_defaults.py tests/test_notification_audio_ownership_t1256.py tests/test_owner_mismatch_artifact.py tests/test_path_safety.py tests/test_paths.py tests/test_perf001_diagnostic_cache.py tests/test_perf001_noop_save.py tests/test_perf002_chunked_resample.py tests/test_perf002_sound_inventory.py tests/test_perf003_active_tab_refresh.py tests/test_perf003_startup_prewarm_order.py tests/test_perf004_effect_pool_bounds.py tests/test_perf004_hidden_date_gate.py tests/test_perf005_backup_coalescing.py tests/test_perf005_scaled_cache.py tests/test_perf006_folder_cache_bounds.py tests/test_performance.py tests/test_performance_tickets.py tests/test_pie_menu.py tests/test_pomodoro.py tests/test_portable_backup.py tests/test_portable_backup_publish.py tests/test_problip_audio_fidelity.py tests/test_problip_controller.py tests/test_problip_core.py tests/test_problip_custom_sounds.py tests/test_problip_hub_integration.py tests/test_problip_repeated_real_audio.py tests/test_problip_settings.py tests/test_problip_stats.py tests/test_problip_store.py tests/test_problip_transport_source_identity.py tests/test_profile_switch_atomic.py tests/test_project_sync.py tests/test_qt_stub_module_identity.py tests/test_release_safety.py tests/test_release_version.py tests/test_reset_queue_card_t1279.py tests/test_reset_queue_hover.py tests/test_restore.py tests/test_resync_keys.py tests/test_save_contract.py tests/test_scaling_mixin.py tests/test_search_archive_editing.py tests/test_search_mixin.py tests/test_second_wave.py tests/test_second_wave_core003.py tests/test_second_wave_tickets.py tests/test_set_default_from_current.py tests/test_settings_tab_sound.py tests/test_settings_ux.py tests/test_shutdown_ownership.py tests/test_silo_color_gesture.py tests/test_silo_export.py tests/test_silo_home.py tests/test_silo_kanban.py tests/test_silo_lineage.py tests/test_silo_pin_order_t1270c.py tests/test_silo_presets.py tests/test_silo_selection_persist.py tests/test_silo_slug.py tests/test_silo_table.py tests/test_silo_tick_hover_t1270.py tests/test_sound_auto_level.py tests/test_sound_event_icons.py tests/test_sound_manager.py tests/test_sound_manager_hub_facade.py tests/test_sound_presets.py tests/test_sound_real_preview_contract.py tests/test_sound_ref_integrity.py tests/test_sound_relative_gain.py tests/test_sound_settings_stop_all_t1244.py tests/test_sound_vault.py tests/test_startup_backup.py tests/test_startup_lazy_ui.py tests/test_timer_fire.py -q -s -p no:cacheprovider
+
+.....................................................................................................................................................................................................................................................................................................................................................23:24:07 [ERROR] fastprompter: database load failed; refusing to run on a database that could not be read
+Traceback (most recent call last):
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\state.py", line 2605, in init_db
+    _assert_loader_rows(self.conn, exc=DatabaseOverflowError)
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\state.py", line 1919, in _assert_loader_rows
+    raise exc(
+fastprompter.core.state.DatabaseOverflowError: temp_presets_v2 carries slot index >= 100 or <0 (legacy corruption); refusing to alias rows. Offending rows: Code@100
+..23:24:07 [ERROR] fastprompter: database load failed; refusing to run on a database that could not be read
+Traceback (most recent call last):
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\state.py", line 2605, in init_db
+    _assert_loader_rows(self.conn, exc=DatabaseOverflowError)
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\state.py", line 1919, in _assert_loader_rows
+    raise exc(
+fastprompter.core.state.DatabaseOverflowError: archive_temp_presets_v2 carries slot index >= 100 or <0 (legacy corruption); refusing to alias rows. Offending rows: Code@100
+.23:24:07 [ERROR] fastprompter: database load failed; refusing to run on a database that could not be read
+Traceback (most recent call last):
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\state.py", line 2605, in init_db
+    _assert_loader_rows(self.conn, exc=DatabaseOverflowError)
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\state.py", line 1919, in _assert_loader_rows
+    raise exc(
+fastprompter.core.state.DatabaseOverflowError: temp_presets_v2 carries slot index >= 100 or <0 (legacy corruption); refusing to alias rows. Offending rows: Code@-1
+.23:24:07 [ERROR] fastprompter: database load failed; refusing to run on a database that could not be read
+Traceback (most recent call last):
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\state.py", line 2605, in init_db
+    _assert_loader_rows(self.conn, exc=DatabaseOverflowError)
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\state.py", line 1919, in _assert_loader_rows
+    raise exc(
+fastprompter.core.state.DatabaseOverflowError: archive_temp_presets_v2 carries slot index >= 100 or <0 (legacy corruption); refusing to alias rows. Offending rows: Code@-1
+...............23:24:09 [WARNING] fastprompter: per-category store 'silo_ticked_all' carries a dict value for category 'A'; binding the natural empty value instead
+23:24:09 [WARNING] fastprompter: per-category store 'silo_selected_all' carries a dict value for category 'A'; binding the natural empty value instead
+23:24:09 [WARNING] fastprompter: per-category store 'silo_collapsed_all' carries a dict value for category 'A'; binding the natural empty value instead
+23:24:09 [WARNING] fastprompter: per-category store 'silo_gaps_all' carries a dict value for category 'A'; binding the natural empty value instead
+23:24:09 [WARNING] fastprompter: per-category store 'silo_ticked_all' carries a dict value for category 'B'; dropping the member
+23:24:09 [WARNING] fastprompter: per-category store 'silo_selected_all' carries a dict value for category 'B'; dropping the member
+23:24:09 [WARNING] fastprompter: per-category store 'silo_collapsed_all' carries a dict value for category 'B'; dropping the member
+23:24:09 [WARNING] fastprompter: per-category store 'silo_gaps_all' carries a dict value for category 'B'; dropping the member
+..............................................................s................23:24:11 [WARNING] fastprompter: Ctrl+V: the Windows clipboard generation changed DURING this paste (sequences={'key_entry': 41, 'mime_read': 42, 'after_paste': None}, owner processes=['ClipDiary.exe']). The payload this paste consumed may not be the item that was copied last; the owner processes above identify the competing writer. record={'editor_id': 2788005949024, 'document_id': 2788006028928, 'document_revision': 64, 'silo_document_id': 2788006028928, 'active_category': 'Code', 'active_slot': 0, 'active_is_archive': False, 'cursor_position': 18, 'has_selection': False, 'editor_visible': True, 'editor_enabled': True, 'editor_read_only': False, 'focus_widget': 'VaultTextEdit', 'focus_widget_id': 2788005949024, 'preview_mode': 'Live Preview', 'silo_view_page': 0, 'document_owned_by_active_silo': True, 'event_key': 86, 'event_modifiers': 67108864, 'native_scan_code': 0, 'branch': 'text_plain', 'document_changed': True, 'document_revision_before': 63, 'document_revision_after': 64, 'text_fallback_used': False, 'mime': {'has_text': True, 'text_length': 18, 'text_stripped_length': 18, 'has_urls': False, 'url_count': 0, 'local_url_count': 0, 'any_url_is_local': False, 'has_image': False, 'formats': ['text/plain']}, 'document_id_before': 2788006028928, 'silo_document_id_before': 2788006028928, 'cursor_position_before': 0, 'has_selection_before': False, 'editor_visible_before': True, 'editor_enabled_before': True, 'editor_read_only_before': False, 'focus_widget_before': 'VaultTextEdit', 'focus_widget_id_before': 2788005949024, 'preview_mode_before': 'Live Preview', 'silo_view_page_before': 0, 'document_owned_by_active_silo_before': True, 'branch_settled': True, 'key_path_reached': True, 'paste_called': True, 'insert_reached': True, 'clipboard_key_entry': {'label': 'key_entry', 'monotonic': 1.0, 'sequence': 41, 'owner': {'status': 'ok', 'process': 'ClipDiary.exe', 'pid': 4242, 'is_self': False}, 'qclipboard': {'attached': True, 'generation': 5}}, 'clipboard_at_mime_read': {'label': 'mime_read', 'monotonic': 1.0, 'sequence': 42, 'owner': {'status': 'ok', 'process': 'ClipDiary.exe', 'pid': 4242, 'is_self': False}, 'qclipboard': {'attached': True, 'generation': 5}}, 'clipboard_after_paste': None, 'clipboard_race': {'evidence': 'changed', 'changed': True, 'sequences': {'key_entry': 41, 'mime_read': 42, 'after_paste': None}, 'owner_processes': ['ClipDiary.exe'], 'owner': {'status': 'ok', 'process': 'ClipDiary.exe', 'pid': 4242, 'is_self': False}}, 'clipboard_changed_during_paste': True, 'clipboard_owner': {'status': 'ok', 'process': 'ClipDiary.exe', 'pid': 4242, 'is_self': False}, 'clipboard_owner_process': 'ClipDiary.exe', 'failure_class': 'clipboard_ownership_race', 'clipboard_race_logged': True}
+................................................................23:24:16 [WARNING] fastprompter: Trash write failed: disk full
+..............................................unsafe returned: None
+safe returned: PyQt6.QtCore.QUrl('https://example.com')
+...................................................................23:24:20 [WARNING] fastprompter: Ctrl+V reached the editor but insertFromMimeData was not reached: record={'editor_id': 2788016039408, 'document_id': 2788016088272, 'document_revision': 43, 'silo_document_id': 2788016088272, 'active_category': 'Code', 'active_slot': 0, 'active_is_archive': False, 'cursor_position': 9, 'has_selection': False, 'editor_visible': True, 'editor_enabled': True, 'editor_read_only': False, 'focus_widget': None, 'focus_widget_id': None, 'preview_mode': 'Source View', 'silo_view_page': 0, 'document_owned_by_active_silo': True, 'event_key': 86, 'event_modifiers': 67108864, 'native_scan_code': 0, 'branch': 'paste_no_insert_callback', 'document_changed': False, 'document_revision_before': 43, 'document_revision_after': 43, 'text_fallback_used': False, 'mime': {'has_text': True, 'text_length': 7, 'text_stripped_length': 7, 'has_urls': False, 'url_count': 0, 'local_url_count': 0, 'any_url_is_local': False, 'has_image': False, 'formats': ['text/plain']}, 'document_id_before': 2788016088272, 'silo_document_id_before': 2788016088272, 'cursor_position_before': 9, 'has_selection_before': False, 'editor_visible_before': True, 'editor_enabled_before': True, 'editor_read_only_before': False, 'focus_widget_before': None, 'focus_widget_id_before': None, 'preview_mode_before': 'Source View', 'silo_view_page_before': 0, 'document_owned_by_active_silo_before': True, 'key_path_reached': True, 'paste_called': True, 'insert_reached': False, 'clipboard_key_entry': {'label': 'key_entry', 'monotonic': 114268.765, 'sequence': 7186, 'owner': {'status': 'no_owner', 'hwnd': None, 'pid': None, 'process': 'UNKNOWN', 'is_self': None}, 'qclipboard': {'attached': True, 'clipboard_id': 2788005538992, 'changed_count': 84, 'data_changed_count': 84, 'generation': 168, 'last_change_monotonic': 114268.765}}, 'clipboard_at_mime_read': None, 'clipboard_after_paste': {'label': 'after_paste', 'monotonic': 114268.765, 'sequence': 7186, 'owner': {'status': 'no_owner', 'hwnd': None, 'pid': None, 'process': 'UNKNOWN', 'is_self': None}, 'qclipboard': {'attached': True, 'clipboard_id': 2788005538992, 'changed_count': 84, 'data_changed_count': 84, 'generation': 168, 'last_change_monotonic': 114268.765}}, 'clipboard_race': {'evidence': 'same', 'changed': False, 'sequences': {'key_entry': 7186, 'mime_read': None, 'after_paste': 7186}, 'owner_processes': [], 'owner': {}}, 'clipboard_changed_during_paste': False, 'clipboard_owner': {'status': 'unknown', 'hwnd': None, 'pid': None, 'process': 'UNKNOWN', 'is_self': None}, 'clipboard_owner_process': 'UNKNOWN', 'failure_class': 'fastprompter_paste_route'}
+.......23:24:20 [WARNING] fastprompter: Ctrl+V: MIME branch produced no document change; the plain-text representation was inserted instead. clipboard={'has_text': True, 'text_length': 11, 'text_stripped_length': 11, 'has_urls': True, 'url_count': 0, 'local_url_count': 0, 'any_url_is_local': False, 'has_image': False, 'formats': ['text/plain']} record={'editor_id': 2788016039408, 'document_id': 2788016088272, 'document_revision': 101, 'silo_document_id': 2788016088272, 'active_category': 'Code', 'active_slot': 0, 'active_is_archive': False, 'cursor_position': 11, 'has_selection': False, 'editor_visible': True, 'editor_enabled': True, 'editor_read_only': False, 'focus_widget': None, 'focus_widget_id': None, 'preview_mode': 'Source View', 'silo_view_page': 0, 'document_owned_by_active_silo': True, 'event_key': None, 'event_modifiers': None, 'native_scan_code': None, 'branch': 'urls_empty+text_fallback', 'document_changed': True, 'document_revision_before': 100, 'document_revision_after': 101, 'text_fallback_used': True, 'mime': {'has_text': True, 'text_length': 11, 'text_stripped_length': 11, 'has_urls': True, 'url_count': 0, 'local_url_count': 0, 'any_url_is_local': False, 'has_image': False, 'formats': ['text/plain']}, 'document_id_before': 2788016088272, 'silo_document_id_before': 2788016088272, 'cursor_position_before': 0, 'has_selection_before': False, 'editor_visible_before': True, 'editor_enabled_before': True, 'editor_read_only_before': False, 'focus_widget_before': None, 'focus_widget_id_before': None, 'preview_mode_before': 'Source View', 'silo_view_page_before': 0, 'document_owned_by_active_silo_before': True, 'branch_settled': False, 'key_path_reached': True, 'paste_called': False, 'insert_reached': True, 'clipboard_key_entry': {'label': 'key_entry', 'monotonic': 114269.453, 'sequence': 7186, 'owner': {'status': 'no_owner', 'hwnd': None, 'pid': None, 'process': 'UNKNOWN', 'is_self': None}, 'qclipboard': {'attached': True, 'clipboard_id': 2788005538992, 'changed_count': 95, 'data_changed_count': 95, 'generation': 190, 'last_change_monotonic': 114269.437}}, 'clipboard_at_mime_read': {'label': 'mime_read', 'monotonic': 114269.546, 'sequence': 7186, 'owner': {'status': 'no_owner', 'hwnd': None, 'pid': None, 'process': 'UNKNOWN', 'is_self': None}, 'qclipboard': {'attached': True, 'clipboard_id': 2788005538992, 'changed_count': 96, 'data_changed_count': 96, 'generation': 192, 'last_change_monotonic': 114269.468}}, 'clipboard_after_paste': {'label': 'after_paste', 'monotonic': 114269.468, 'sequence': 7186, 'owner': {'status': 'no_owner', 'hwnd': None, 'pid': None, 'process': 'UNKNOWN', 'is_self': None}, 'qclipboard': {'attached': True, 'clipboard_id': 2788005538992, 'changed_count': 95, 'data_changed_count': 95, 'generation': 190, 'last_change_monotonic': 114269.437}}, 'clipboard_race': {'evidence': 'same', 'changed': False, 'sequences': {'key_entry': 7186, 'mime_read': 7186, 'after_paste': 7186}, 'owner_processes': [], 'owner': {}}, 'clipboard_changed_during_paste': False, 'clipboard_owner': {'status': 'unknown', 'hwnd': None, 'pid': None, 'process': 'UNKNOWN', 'is_self': None}, 'clipboard_owner_process': 'UNKNOWN', 'failure_class': None}
+..23:24:21 [WARNING] fastprompter: Ctrl+V: MIME branch produced no document change; the plain-text representation was inserted instead. clipboard={'has_text': True, 'text_length': 11, 'text_stripped_length': 11, 'has_urls': False, 'url_count': 0, 'local_url_count': 0, 'any_url_is_local': False, 'has_image': True, 'formats': ['text/plain']} record={'editor_id': 2788016039408, 'document_id': 2788016088272, 'document_revision': 107, 'silo_document_id': 2788016088272, 'active_category': 'Code', 'active_slot': 0, 'active_is_archive': False, 'cursor_position': 11, 'has_selection': False, 'editor_visible': True, 'editor_enabled': True, 'editor_read_only': False, 'focus_widget': None, 'focus_widget_id': None, 'preview_mode': 'Source View', 'silo_view_page': 0, 'document_owned_by_active_silo': True, 'event_key': None, 'event_modifiers': None, 'native_scan_code': None, 'branch': 'image_no_payload+text_fallback', 'document_changed': True, 'document_revision_before': 106, 'document_revision_after': 107, 'text_fallback_used': True, 'mime': {'has_text': True, 'text_length': 11, 'text_stripped_length': 11, 'has_urls': False, 'url_count': 0, 'local_url_count': 0, 'any_url_is_local': False, 'has_image': True, 'formats': ['text/plain']}, 'document_id_before': 2788016088272, 'silo_document_id_before': 2788016088272, 'cursor_position_before': 0, 'has_selection_before': False, 'editor_visible_before': True, 'editor_enabled_before': True, 'editor_read_only_before': False, 'focus_widget_before': None, 'focus_widget_id_before': None, 'preview_mode_before': 'Source View', 'silo_view_page_before': 0, 'document_owned_by_active_silo_before': True, 'branch_settled': False, 'key_path_reached': True, 'paste_called': False, 'insert_reached': True, 'clipboard_key_entry': {'label': 'key_entry', 'monotonic': 114269.453, 'sequence': 7186, 'owner': {'status': 'no_owner', 'hwnd': None, 'pid': None, 'process': 'UNKNOWN', 'is_self': None}, 'qclipboard': {'attached': True, 'clipboard_id': 2788005538992, 'changed_count': 95, 'data_changed_count': 95, 'generation': 190, 'last_change_monotonic': 114269.437}}, 'clipboard_at_mime_read': {'label': 'mime_read', 'monotonic': 114269.718, 'sequence': 7186, 'owner': {'status': 'no_owner', 'hwnd': None, 'pid': None, 'process': 'UNKNOWN', 'is_self': None}, 'qclipboard': {'attached': True, 'clipboard_id': 2788005538992, 'changed_count': 98, 'data_changed_count': 98, 'generation': 196, 'last_change_monotonic': 114269.64}}, 'clipboard_after_paste': {'label': 'after_paste', 'monotonic': 114269.468, 'sequence': 7186, 'owner': {'status': 'no_owner', 'hwnd': None, 'pid': None, 'process': 'UNKNOWN', 'is_self': None}, 'qclipboard': {'attached': True, 'clipboard_id': 2788005538992, 'changed_count': 95, 'data_changed_count': 95, 'generation': 190, 'last_change_monotonic': 114269.437}}, 'clipboard_race': {'evidence': 'same', 'changed': False, 'sequences': {'key_entry': 7186, 'mime_read': 7186, 'after_paste': 7186}, 'owner_processes': [], 'owner': {}}, 'clipboard_changed_during_paste': False, 'clipboard_owner': {'status': 'unknown', 'hwnd': None, 'pid': None, 'process': 'UNKNOWN', 'is_self': None}, 'clipboard_owner_process': 'UNKNOWN', 'failure_class': None}
+.23:24:21 [WARNING] fastprompter: Ctrl+V: MIME branch produced no document change; the plain-text representation was inserted instead. clipboard={'has_text': True, 'text_length': 11, 'text_stripped_length': 11, 'has_urls': True, 'url_count': 1, 'local_url_count': 1, 'any_url_is_local': True, 'has_image': False, 'formats': ['text/plain', 'text/uri-list']} record={'editor_id': 2788016039408, 'document_id': 2788016088272, 'document_revision': 110, 'silo_document_id': 2788016088272, 'active_category': 'Code', 'active_slot': 0, 'active_is_archive': False, 'cursor_position': 11, 'has_selection': False, 'editor_visible': True, 'editor_enabled': True, 'editor_read_only': False, 'focus_widget': None, 'focus_widget_id': None, 'preview_mode': 'Source View', 'silo_view_page': 0, 'document_owned_by_active_silo': True, 'event_key': None, 'event_modifiers': None, 'native_scan_code': None, 'branch': 'urls_file_unreadable+text_fallback', 'document_changed': True, 'document_revision_before': 109, 'document_revision_after': 110, 'text_fallback_used': True, 'mime': {'has_text': True, 'text_length': 11, 'text_stripped_length': 11, 'has_urls': True, 'url_count': 1, 'local_url_count': 1, 'any_url_is_local': True, 'has_image': False, 'formats': ['text/plain', 'text/uri-list']}, 'document_id_before': 2788016088272, 'silo_document_id_before': 2788016088272, 'cursor_position_before': 0, 'has_selection_before': False, 'editor_visible_before': True, 'editor_enabled_before': True, 'editor_read_only_before': False, 'focus_widget_before': None, 'focus_widget_id_before': None, 'preview_mode_before': 'Source View', 'silo_view_page_before': 0, 'document_owned_by_active_silo_before': True, 'branch_settled': False, 'key_path_reached': True, 'paste_called': False, 'insert_reached': True, 'clipboard_key_entry': {'label': 'key_entry', 'monotonic': 114269.453, 'sequence': 7186, 'owner': {'status': 'no_owner', 'hwnd': None, 'pid': None, 'process': 'UNKNOWN', 'is_self': None}, 'qclipboard': {'attached': True, 'clipboard_id': 2788005538992, 'changed_count': 95, 'data_changed_count': 95, 'generation': 190, 'last_change_monotonic': 114269.437}}, 'clipboard_at_mime_read': {'label': 'mime_read', 'monotonic': 114269.796, 'sequence': 7186, 'owner': {'status': 'no_owner', 'hwnd': None, 'pid': None, 'process': 'UNKNOWN', 'is_self': None}, 'qclipboard': {'attached': True, 'clipboard_id': 2788005538992, 'changed_count': 99, 'data_changed_count': 99, 'generation': 198, 'last_change_monotonic': 114269.734}}, 'clipboard_after_paste': {'label': 'after_paste', 'monotonic': 114269.468, 'sequence': 7186, 'owner': {'status': 'no_owner', 'hwnd': None, 'pid': None, 'process': 'UNKNOWN', 'is_self': None}, 'qclipboard': {'attached': True, 'clipboard_id': 2788005538992, 'changed_count': 95, 'data_changed_count': 95, 'generation': 190, 'last_change_monotonic': 114269.437}}, 'clipboard_race': {'evidence': 'same', 'changed': False, 'sequences': {'key_entry': 7186, 'mime_read': 7186, 'after_paste': 7186}, 'owner_processes': [], 'owner': {}}, 'clipboard_changed_during_paste': False, 'clipboard_owner': {'status': 'unknown', 'hwnd': None, 'pid': None, 'process': 'UNKNOWN', 'is_self': None}, 'clipboard_owner_process': 'UNKNOWN', 'failure_class': None}
+.23:24:21 [WARNING] fastprompter: Ctrl+V: MIME branch produced no document change; the plain-text representation was inserted instead. clipboard={'has_text': True, 'text_length': 11, 'text_stripped_length': 11, 'has_urls': True, 'url_count': 1, 'local_url_count': 1, 'any_url_is_local': True, 'has_image': False, 'formats': ['text/plain', 'text/uri-list']} record={'editor_id': 2788016039408, 'document_id': 2788016088272, 'document_revision': 113, 'silo_document_id': 2788016088272, 'active_category': 'Code', 'active_slot': 0, 'active_is_archive': False, 'cursor_position': 11, 'has_selection': False, 'editor_visible': True, 'editor_enabled': True, 'editor_read_only': False, 'focus_widget': None, 'focus_widget_id': None, 'preview_mode': 'Source View', 'silo_view_page': 0, 'document_owned_by_active_silo': True, 'event_key': None, 'event_modifiers': None, 'native_scan_code': None, 'branch': 'urls_file_text|urls_file_empty+text_fallback', 'document_changed': True, 'document_revision_before': 112, 'document_revision_after': 113, 'text_fallback_used': True, 'mime': {'has_text': True, 'text_length': 11, 'text_stripped_length': 11, 'has_urls': True, 'url_count': 1, 'local_url_count': 1, 'any_url_is_local': True, 'has_image': False, 'formats': ['text/plain', 'text/uri-list']}, 'document_id_before': 2788016088272, 'silo_document_id_before': 2788016088272, 'cursor_position_before': 0, 'has_selection_before': False, 'editor_visible_before': True, 'editor_enabled_before': True, 'editor_read_only_before': False, 'focus_widget_before': None, 'focus_widget_id_before': None, 'preview_mode_before': 'Source View', 'silo_view_page_before': 0, 'document_owned_by_active_silo_before': True, 'branch_settled': False, 'key_path_reached': True, 'paste_called': False, 'insert_reached': True, 'clipboard_key_entry': {'label': 'key_entry', 'monotonic': 114269.453, 'sequence': 7186, 'owner': {'status': 'no_owner', 'hwnd': None, 'pid': None, 'process': 'UNKNOWN', 'is_self': None}, 'qclipboard': {'attached': True, 'clipboard_id': 2788005538992, 'changed_count': 95, 'data_changed_count': 95, 'generation': 190, 'last_change_monotonic': 114269.437}}, 'clipboard_at_mime_read': {'label': 'mime_read', 'monotonic': 114269.875, 'sequence': 7186, 'owner': {'status': 'no_owner', 'hwnd': None, 'pid': None, 'process': 'UNKNOWN', 'is_self': None}, 'qclipboard': {'attached': True, 'clipboard_id': 2788005538992, 'changed_count': 100, 'data_changed_count': 100, 'generation': 200, 'last_change_monotonic': 114269.812}}, 'clipboard_after_paste': {'label': 'after_paste', 'monotonic': 114269.468, 'sequence': 7186, 'owner': {'status': 'no_owner', 'hwnd': None, 'pid': None, 'process': 'UNKNOWN', 'is_self': None}, 'qclipboard': {'attached': True, 'clipboard_id': 2788005538992, 'changed_count': 95, 'data_changed_count': 95, 'generation': 190, 'last_change_monotonic': 114269.437}}, 'clipboard_race': {'evidence': 'same', 'changed': False, 'sequences': {'key_entry': 7186, 'mime_read': 7186, 'after_paste': 7186}, 'owner_processes': [], 'owner': {}}, 'clipboard_changed_during_paste': False, 'clipboard_owner': {'status': 'unknown', 'hwnd': None, 'pid': None, 'process': 'UNKNOWN', 'is_self': None}, 'clipboard_owner_process': 'UNKNOWN', 'failure_class': None}
+.23:24:21 [WARNING] fastprompter: Ctrl+V: MIME branch produced no document change; the plain-text representation was inserted instead. clipboard={'has_text': True, 'text_length': 11, 'text_stripped_length': 11, 'has_urls': True, 'url_count': 0, 'local_url_count': 0, 'any_url_is_local': False, 'has_image': False, 'formats': ['text/plain', 'text/html', 'text/uri-list']} record={'editor_id': 2788016039408, 'document_id': 2788016088272, 'document_revision': 116, 'silo_document_id': 2788016088272, 'active_category': 'Code', 'active_slot': 0, 'active_is_archive': False, 'cursor_position': 11, 'has_selection': False, 'editor_visible': True, 'editor_enabled': True, 'editor_read_only': False, 'focus_widget': None, 'focus_widget_id': None, 'preview_mode': 'Source View', 'silo_view_page': 0, 'document_owned_by_active_silo': True, 'event_key': None, 'event_modifiers': None, 'native_scan_code': None, 'branch': 'urls_empty+text_fallback', 'document_changed': True, 'document_revision_before': 115, 'document_revision_after': 116, 'text_fallback_used': True, 'mime': {'has_text': True, 'text_length': 11, 'text_stripped_length': 11, 'has_urls': True, 'url_count': 0, 'local_url_count': 0, 'any_url_is_local': False, 'has_image': False, 'formats': ['text/plain', 'text/html', 'text/uri-list']}, 'document_id_before': 2788016088272, 'silo_document_id_before': 2788016088272, 'cursor_position_before': 0, 'has_selection_before': False, 'editor_visible_before': True, 'editor_enabled_before': True, 'editor_read_only_before': False, 'focus_widget_before': None, 'focus_widget_id_before': None, 'preview_mode_before': 'Source View', 'silo_view_page_before': 0, 'document_owned_by_active_silo_before': True, 'branch_settled': False, 'key_path_reached': True, 'paste_called': False, 'insert_reached': True, 'clipboard_key_entry': {'label': 'key_entry', 'monotonic': 114269.453, 'sequence': 7186, 'owner': {'status': 'no_owner', 'hwnd': None, 'pid': None, 'process': 'UNKNOWN', 'is_self': None}, 'qclipboard': {'attached': True, 'clipboard_id': 2788005538992, 'changed_count': 95, 'data_changed_count': 95, 'generation': 190, 'last_change_monotonic': 114269.437}}, 'clipboard_at_mime_read': {'label': 'mime_read', 'monotonic': 114269.968, 'sequence': 7186, 'owner': {'status': 'no_owner', 'hwnd': None, 'pid': None, 'process': 'UNKNOWN', 'is_self': None}, 'qclipboard': {'attached': True, 'clipboard_id': 2788005538992, 'changed_count': 101, 'data_changed_count': 101, 'generation': 202, 'last_change_monotonic': 114269.906}}, 'clipboard_after_paste': {'label': 'after_paste', 'monotonic': 114269.468, 'sequence': 7186, 'owner': {'status': 'no_owner', 'hwnd': None, 'pid': None, 'process': 'UNKNOWN', 'is_self': None}, 'qclipboard': {'attached': True, 'clipboard_id': 2788005538992, 'changed_count': 95, 'data_changed_count': 95, 'generation': 190, 'last_change_monotonic': 114269.437}}, 'clipboard_race': {'evidence': 'same', 'changed': False, 'sequences': {'key_entry': 7186, 'mime_read': 7186, 'after_paste': 7186}, 'owner_processes': [], 'owner': {}}, 'clipboard_changed_during_paste': False, 'clipboard_owner': {'status': 'unknown', 'hwnd': None, 'pid': None, 'process': 'UNKNOWN', 'is_self': None}, 'clipboard_owner_process': 'UNKNOWN', 'failure_class': None}
+........23:24:23 [WARNING] fastprompter: Hotkey 'hk_find' is configured as Ctrl+V, which the editor owns for 'paste'; leaving Ctrl+V with the editor so editing keeps working instead of two commands sharing one keypress.
+..23:24:23 [WARNING] fastprompter: Hotkey 'hk_find' is configured as Ctrl+Z, which the editor owns for 'undo'; leaving Ctrl+Z with the editor so editing keeps working instead of two commands sharing one keypress.
+.s........................................................................F..................................................................................................................................................................................................................................................................................................................................................s.23:24:52 [WARNING] fastprompter: IPC handover: no server appeared within the startup grace; the owner is starting very slowly or is not serving IPC
+.23:24:53 [WARNING] fastprompter: IPC handover: the owner's socket was seen but never ACKed within the startup grace; treating it as unresponsive
+..23:24:53 [WARNING] fastprompter: IPC handover: the owner's socket was seen but never ACKed within the startup grace; treating it as unresponsive
+..............23:24:53 [WARNING] fastprompter: IPC: could not own FastPrompter_Server_V15 (address in use); running without single-instance handover
+.........23:25:08 [ERROR] fastprompter: Failed to handle IPC command
+Traceback (most recent call last):
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\ipc_server.py", line 227, in _handle_command
+    data_str = buf.decode("utf-8")
+               ^^^^^^^^^^^^^^^^^^^
+UnicodeDecodeError: 'utf-8' codec can't decode byte 0xff in position 0: invalid start byte
+................................................................................................................................................................................23:25:36 [WARNING] fastprompter: Test warning message
+23:25:36 [ERROR] fastprompter: Test error message
+.23:25:36 [WARNING] fastprompter: test_stderr_message_12345
+.23:25:36 [CRITICAL] fastprompter: Unhandled exception:
+Traceback (most recent call last):
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\tests\test_logging.py", line 146, in test_does_not_crash
+    1 / 0
+    ~~^~~
+ZeroDivisionError: division by zero
+
+.23:25:36 [CRITICAL] fastprompter: Unhandled exception:
+Traceback (most recent call last):
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\tests\test_logging.py", line 163, in test_logs_critical_level
+    raise ValueError("test_exception")
+ValueError: test_exception
+
+.23:25:36 [CRITICAL] fastprompter: Unhandled exception:
+Traceback (most recent call last):
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\tests\test_logging.py", line 183, in test_writes_to_crash_file
+    raise RuntimeError("crash_test_456")
+RuntimeError: crash_test_456
+
+.23:25:36 [CRITICAL] fastprompter: Unhandled exception:
+Traceback (most recent call last):
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\tests\test_logging.py", line 197, in test_handles_systemexit
+    raise SystemExit(0)
+SystemExit: 0
+
+.23:25:36 [CRITICAL] fastprompter: Unhandled exception:
+Traceback (most recent call last):
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\tests\test_logging.py", line 206, in test_handles_keyboardinterrupt
+    raise KeyboardInterrupt()
+KeyboardInterrupt
+
+...........................................................................................................................................................................................................23:29:15 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Code' slot=0 space=normal stamp=['Code', True, 0] len=0 sha=e3b0c44298fc artifact=V:\_TEMP_\fastprompter-tests-28724-tme83zjn\pytest-of-vac34\pytest-0\test_archive_new_gets_no_defau0\recovery\silo_owner_mismatch_20260918_232915_e3b0c44298fc.json; text NOT written, state left dirty
+23:29:15 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Code' slot=0 space=normal stamp=['Code', True, 0] len=0 sha=e3b0c44298fc artifact=V:\_TEMP_\fastprompter-tests-28724-tme83zjn\pytest-of-vac34\pytest-0\test_archive_new_gets_no_defau0\recovery\silo_owner_mismatch_20260918_232915_e3b0c44298fc.json; text NOT written, state left dirty
+.23:29:26 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Code' slot=0 space=normal stamp=['Code', True, 0] len=0 sha=e3b0c44298fc artifact=V:\_TEMP_\fastprompter-tests-28724-tme83zjn\pytest-of-vac34\pytest-0\test_archive_new_gets_no_defau0\recovery\silo_owner_mismatch_20260918_232915_e3b0c44298fc.json; text NOT written, state left dirty
+........23:29:42 [CRITICAL] fastprompter: T-1227 owner-mismatch artifact cap reached (20 in V:\_TEMP_\fastprompter-tests-28724-tme83zjn\pytest-of-vac34\pytest-0\test_the_cap_keeps_the_earlies0); keeping the earliest evidence and NOT writing more. The flush is still refused, so no silo is being overwritten.
+................................................................................................................................................................23:29:52 [ERROR] fastprompter: portable backup dispatch failed for newest
+Traceback (most recent call last):
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\utils\portable_backup.py", line 277, in backup_finished
+    _backup_sink(pending_snapshot)
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\tests\test_perf005_backup_coalescing.py", line 131, in flaky_sink
+    raise RuntimeError("sink gone")
+RuntimeError: sink gone
+..........
+[Performance] Full Insert: 0.01231s
+[Performance] No-Op Delta: 0.00117s
+[Performance] Single Edit Delta: 0.00166s
+.....23:29:53 [ERROR] fastprompter: portable backup dispatch failed for newest
+Traceback (most recent call last):
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\utils\portable_backup.py", line 277, in backup_finished
+    _backup_sink(pending_snapshot)
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\tests\test_performance_tickets.py", line 239, in flaky_sink
+    raise RuntimeError("sink gone")
+RuntimeError: sink gone
+...................................................23:29:55 [ERROR] fastprompter: portable backup FAILED; the previous good snapshot is kept and the next save may retry
+Traceback (most recent call last):
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\utils\portable_backup.py", line 213, in run_portable_backup
+    _do_export(snapshot, profile_id=pid)
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\utils\portable_backup.py", line 449, in _do_export
+    _write_md(os.path.join(out_dir, fname), text,
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\utils\portable_backup.py", line 812, in _write_md
+    _write_raw(path, content)
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\tests\test_portable_backup.py", line 136, in _boom
+    raise OSError("first try fails")
+OSError: first try fails
+...23:29:55 [WARNING] fastprompter: portable backup publish: the previous generation was restored but the new snapshot could not be published; the complete new generation is preserved at V:\_TEMP_\fastprompter-tests-28724-tme83zjn\pytest-of-vac34\pytest-0\test_new_publish_failure_resto0\portable\2026-09-18.failed-0bc6b6bd
+.........23:29:56 [ERROR] fastprompter: portable backup publish: could not restore the old generation (V:\_TEMP_\fastprompter-tests-28724-tme83zjn\pytest-of-vac34\pytest-0\test_publish_double_failure_pr0\backup\2026-01-01.rollback-aee61de8) and could not preserve the new one at V:\_TEMP_\fastprompter-tests-28724-tme83zjn\pytest-of-vac34\pytest-0\test_publish_double_failure_pr0\backup\2026-01-01.failed-214ae3eb ([Errno 13] Permission denied: 'V:\\_TEMP_\\fastprompter-tests-28724-tme83zjn\\pytest-of-vac34\\pytest-0\\test_publish_double_failure_pr0\\backup\\2026-01-01.failed-214ae3eb'). Leaving the COMPLETE new generation at V:\_TEMP_\fastprompter-tests-28724-tme83zjn\pytest-of-vac34\pytest-0\test_publish_double_failure_pr0\backup\2026-01-01.partial for manual recovery; the old generation is recoverable from V:\_TEMP_\fastprompter-tests-28724-tme83zjn\pytest-of-vac34\pytest-0\test_publish_double_failure_pr0\backup\2026-01-01.rollback-aee61de8.
+..23:29:56 [WARNING] fastprompter: portable backup publish: the previous generation was restored but the new snapshot could not be published; the complete new generation is preserved at V:\_TEMP_\fastprompter-tests-28724-tme83zjn\pytest-of-vac34\pytest-0\test_publish_restore_success_p0\backup\2026-01-01.failed-6d19d5a4
+......................................................................s.....................................................23:30:03 [ERROR] fastprompter: database save failed; the change stays dirty and will be retried
+Traceback (most recent call last):
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\state.py", line 3594, in _save_data_to_db_locked
+    with self.conn:
+sqlite3.ProgrammingError: Cannot operate on a closed database.
+.23:30:03 [ERROR] fastprompter: database load failed; refusing to run on a database that could not be read
+Traceback (most recent call last):
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\state.py", line 2591, in init_db
+    self.conn = connect_app_db(self.db_path)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\state.py", line 1016, in connect_app_db
+    conn = sqlite3.connect(db_path, check_same_thread=False,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+sqlite3.OperationalError: unable to open database file
+........................................................................................................23:30:20 [ERROR] fastprompter: database save failed; the change stays dirty and will be retried
+Traceback (most recent call last):
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\state.py", line 3606, in _save_data_to_db_locked
+    cur.executemany('INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)', settings_to_save)
+sqlite3.OperationalError: no such table: settings
+.................................................................................................23:30:25 [ERROR] fastprompter: silo identity backfill failed; identities rebuild on the next successful save
+Traceback (most recent call last):
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\state.py", line 2923, in _load_silo_identities
+    self.conn.execute("DELETE FROM silo_identity_v1")
+sqlite3.OperationalError: no such table: silo_identity_v1
+23:30:25 [ERROR] fastprompter: silo identity backfill failed; identities rebuild on the next successful save
+Traceback (most recent call last):
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\state.py", line 2923, in _load_silo_identities
+    self.conn.execute("DELETE FROM silo_identity_v1")
+sqlite3.OperationalError: no such table: silo_identity_v1
+............23:30:26 [ERROR] fastprompter: portable backup publish: the previous generation was restored but the new one could not be preserved at V:\_TEMP_\fastprompter-tests-28724-tme83zjn\pytest-of-vac34\pytest-0\test_complete_partial_is_prese0\portable\2026-09-18.failed-9b9ae3cc (simulated double failure); leaving it at V:\_TEMP_\fastprompter-tests-28724-tme83zjn\pytest-of-vac34\pytest-0\test_complete_partial_is_prese0\portable\2026-09-18.partial for manual recovery
+..23:30:26 [ERROR] fastprompter: categories['Code'][100] outside 0..99; refusing save
+.23:30:26 [WARNING] fastprompter: recovering 1 out-of-range snippet row(s) into empty slots: Code@0
+.23:30:26 [ERROR] fastprompter: database load failed; refusing to run on a database that could not be read
+Traceback (most recent call last):
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\state.py", line 2605, in init_db
+    _assert_loader_rows(self.conn, exc=DatabaseOverflowError)
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\state.py", line 1898, in _assert_loader_rows
+    raise exc(
+fastprompter.core.state.DatabaseOverflowError: presets carries slot index >= 100 or <0 and the category is full (0..99) — placement would require merging two distinct snippets, so the database cannot load. Offending rows: Code@100
+.....................23:30:34 [ERROR] fastprompter: background file workers still running at shutdown; global Qt thread pool did not drain within the bounded wait -- writer mutex remains owned until process death
+23:30:34 [CRITICAL] fastprompter: writer mutex retained: mutating teardown did not stop cleanly
+..23:30:34 [CRITICAL] fastprompter: writer mutex retained: mutating teardown did not stop cleanly
+.23:30:34 [ERROR] fastprompter: background file workers still running at shutdown; global Qt thread pool did not drain within the bounded wait -- writer mutex remains owned until process death
+23:30:34 [CRITICAL] fastprompter: writer mutex retained: mutating teardown did not stop cleanly
+.23:30:34 [ERROR] fastprompter: core-state backup worker shutdown TIMED_OUT
+23:30:34 [CRITICAL] fastprompter: writer mutex retained: mutating teardown did not stop cleanly
+..23:30:34 [ERROR] fastprompter: ambience_controller shutdown did not retire its worker
+23:30:34 [CRITICAL] fastprompter: writer mutex retained: mutating teardown did not stop cleanly
+.............................................23:30:38 [CRITICAL] fastprompter: T-1236 SILO_LINEAGE_MISMATCH: silo_id=sid-1 maps to category='Code' space=normal slot=3 whose text hashes bbbbbbbbbbbb, but its newest committed transition ended at aaaaaaaaaaaa. Persistent undo/redo REFUSED for this silo; a structural route very likely moved the text without moving the identity anchor.
+..23:30:38 [ERROR] fastprompter: silo lineage validation raised; refusing persistent recovery for safety
+Traceback (most recent call last):
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\main.py", line 12591, in _silo_lineage_is_trustworthy
+    problems = st.validate_silo_lineage(dirty_slots=dirty)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\tests\test_silo_lineage.py", line 200, in validate_silo_lineage
+    raise RuntimeError("database went away mid-check")
+RuntimeError: database went away mid-check
+.....................................................................................................................................................................................................................................23:31:37 [WARNING] fastprompter.core.audio_render: device-rate render aborted for V:\_TEMP_\fastprompter-tests-28724-tme83zjn\pytest-of-vac34\pytest-0\test_an_unexpected_internal_er0\boom.wav
+Traceback (most recent call last):
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\audio_render.py", line 565, in device_ready_wav
+    digest = _source_digest(path)
+             ^^^^^^^^^^^^^^^^^^^^
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\tests\test_sound_real_preview_contract.py", line 93, in _explode
+    raise RuntimeError("simulated internal defect")
+RuntimeError: simulated internal defect
+.........................................................................................23:32:05 [ERROR] fastprompter: silo identity backfill failed; identities rebuild on the next successful save
+Traceback (most recent call last):
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\state.py", line 2923, in _load_silo_identities
+    self.conn.execute("DELETE FROM silo_identity_v1")
+sqlite3.OperationalError: no such table: silo_identity_v1
+.23:32:05 [ERROR] fastprompter: silo identity backfill failed; identities rebuild on the next successful save
+Traceback (most recent call last):
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\state.py", line 2923, in _load_silo_identities
+    self.conn.execute("DELETE FROM silo_identity_v1")
+sqlite3.OperationalError: no such table: silo_identity_v1
+..23:32:06 [ERROR] fastprompter: database load failed; refusing to run on a database that could not be read
+Traceback (most recent call last):
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\state.py", line 2586, in init_db
+    _backup_atomically(src, backup_dest,
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\tests\test_startup_backup.py", line 155, in failing_backup
+    raise OSError("disk full simulated during safety backup")
+OSError: disk full simulated during safety backup
+..23:32:06 [ERROR] fastprompter: silo identity backfill failed; identities rebuild on the next successful save
+Traceback (most recent call last):
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\state.py", line 2923, in _load_silo_identities
+    self.conn.execute("DELETE FROM silo_identity_v1")
+sqlite3.OperationalError: no such table: silo_identity_v1
+23:32:06 [ERROR] fastprompter: silo identity backfill failed; identities rebuild on the next successful save
+Traceback (most recent call last):
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\state.py", line 2923, in _load_silo_identities
+    self.conn.execute("DELETE FROM silo_identity_v1")
+sqlite3.OperationalError: no such table: silo_identity_v1
+.23:32:06 [ERROR] fastprompter: silo identity backfill failed; identities rebuild on the next successful save
+Traceback (most recent call last):
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\state.py", line 2923, in _load_silo_identities
+    self.conn.execute("DELETE FROM silo_identity_v1")
+sqlite3.OperationalError: no such table: silo_identity_v1
+23:32:06 [ERROR] fastprompter: silo identity backfill failed; identities rebuild on the next successful save
+Traceback (most recent call last):
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\state.py", line 2923, in _load_silo_identities
+    self.conn.execute("DELETE FROM silo_identity_v1")
+sqlite3.OperationalError: no such table: silo_identity_v1
+.23:32:06 [ERROR] fastprompter: silo identity backfill failed; identities rebuild on the next successful save
+Traceback (most recent call last):
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\core\state.py", line 2923, in _load_silo_identities
+    self.conn.execute("DELETE FROM silo_identity_v1")
+sqlite3.OperationalError: no such table: silo_identity_v1
+.....................Windows fatal exception: access violation
+
+Thread 0x0000202c (most recent call first):
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 331 in wait
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 629 in wait
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1399 in run
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x00002a44 (most recent call first):
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 327 in wait
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\main.py", line 13378 in _undo_writer_loop
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 982 in run
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x000077c8 (most recent call first):
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 327 in wait
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\main.py", line 13378 in _undo_writer_loop
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 982 in run
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x00000b44 (most recent call first):
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 327 in wait
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\main.py", line 13378 in _undo_writer_loop
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 982 in run
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x000031bc (most recent call first):
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 327 in wait
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\main.py", line 13378 in _undo_writer_loop
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 982 in run
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x00005f04 (most recent call first):
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 327 in wait
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\main.py", line 13378 in _undo_writer_loop
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 982 in run
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x0000561c (most recent call first):
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\concurrent\futures\thread.py", line 81 in _worker
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 982 in run
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x00001918 (most recent call first):
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\concurrent\futures\thread.py", line 81 in _worker
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 982 in run
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x000071b4 (most recent call first):
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\concurrent\futures\thread.py", line 81 in _worker
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 982 in run
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x0000468c (most recent call first):
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\concurrent\futures\thread.py", line 81 in _worker
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 982 in run
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x00003a14 (most recent call first):
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\concurrent\futures\thread.py", line 81 in _worker
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 982 in run
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x000061f4 (most recent call first):
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\concurrent\futures\thread.py", line 81 in _worker
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 982 in run
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
+
+Current thread 0x00007388 (most recent call first):
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\tests\test_timer_fire.py", line 180 in _wait_until
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\tests\test_timer_fire.py", line 372 in test_test_notification_job_is_registered_and_fires
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\_pytest\python.py", line 167 in pytest_pyfunc_call
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\pluggy\_callers.py", line 121 in _multicall
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\pluggy\_manager.py", line 120 in _hookexec
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\pluggy\_hooks.py", line 512 in __call__
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\_pytest\python.py", line 1707 in runtest
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\_pytest\runner.py", line 184 in pytest_runtest_call
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\pluggy\_callers.py", line 121 in _multicall
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\pluggy\_manager.py", line 120 in _hookexec
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\pluggy\_hooks.py", line 512 in __call__
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\_pytest\runner.py", line 250 in <lambda>
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\_pytest\runner.py", line 361 in from_call
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\_pytest\runner.py", line 249 in call_and_report
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\_pytest\runner.py", line 139 in runtestprotocol
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\_pytest\runner.py", line 118 in pytest_runtest_protocol
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\pluggy\_callers.py", line 121 in _multicall
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\pluggy\_manager.py", line 120 in _hookexec
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\pluggy\_hooks.py", line 512 in __call__
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\_pytest\main.py", line 408 in pytest_runtestloop
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\pluggy\_callers.py", line 121 in _multicall
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\pluggy\_manager.py", line 120 in _hookexec
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\pluggy\_hooks.py", line 512 in __call__
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\_pytest\main.py", line 384 in _main
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\_pytest\main.py", line 330 in wrap_session
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\_pytest\main.py", line 377 in pytest_cmdline_main
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\pluggy\_callers.py", line 121 in _multicall
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\pluggy\_manager.py", line 120 in _hookexec
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\pluggy\_hooks.py", line 512 in __call__
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\_pytest\config\__init__.py", line 229 in _main
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\_pytest\config\__init__.py", line 253 in _console_main
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Scripts\pytest.exe\__main__.py", line 10 in <module>
+  File "<frozen runpy>", line 88 in _run_code
+  File "<frozen runpy>", line 198 in _run_module_as_main

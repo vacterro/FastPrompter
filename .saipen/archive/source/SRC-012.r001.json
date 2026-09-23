@@ -1,0 +1,14 @@
+{
+  "clauses": {
+    "SRC-012:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "CORE-001: editor snapshot failure (None sentinel) is non-destructive across cache, commit, navigation and Sync; legitimate empty text remains valid."
+    }
+  },
+  "derived_at": "2026-09-19T05:25:17Z",
+  "derived_from": "SRC-012",
+  "interpretation_revision": 1,
+  "schema_version": 1,
+  "source_sha256": "69ac7e059d4a32159f46f9c5092c85f5b19545468b2296962f4a662b1e5baa2e"
+}

@@ -1,0 +1,14 @@
+{
+  "clauses": {
+    "SRC-010:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Sound immediacy: every sound starts in the moment of its action, never queued behind another sound; rapid bursts overlap or replace instantly instead of FIFO replaying seconds later. Supersedes the prior sequential-stacking contract."
+    }
+  },
+  "derived_at": "2026-09-20T21:11:57Z",
+  "derived_from": "SRC-010",
+  "interpretation_revision": 1,
+  "schema_version": 1,
+  "source_sha256": "0e09c8acdddb740c09333a069d080a74ed5b8bb01881284a787323c7badd7874"
+}

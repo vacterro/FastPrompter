@@ -1,0 +1,95 @@
+{
+  "requirements": {
+    "SRC-013:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "src/fastprompter/core/sound_manager.py:414-441 get_sound_file_for_event returns the EXACT stored token via sound_library.resolve_sound_ref (no os.path.join); migrate_sound_settings at :599-630 resolves canonically; play_file :2015 uses resolve_sound_ref. Focused wave test_sound_manager/test_sound_ref_integrity 236 passed 1 skipped, full harness exit 0 x3 (3686 passed 6 skipped)",
+      "text": "CORE-001: namespaced user: refs survive migrate_sound_settings/get_sound_file_for_event/play_file without default substitution (canonical sound_library.resolve_sound_ref).",
+      "verification": "full uv run pytest tests/ -q exit 0 (3686 passed 6 skipped) 2026-09-19",
+      "work": "T-1284"
+    },
+    "SRC-013:R002": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "RENDER_VERSION=4 (audio_render.py:84); pure-Python branch now reads x[start-k] matching the numpy convention (audio_render.py:226-235); forced-pure test monkeypatches _numpy_if_safe to None (tests/test_audio_render.py:335) and test_render_version_is_bumped_after_the_algorithm_change pins >=2; full harness exit 0",
+      "text": "CORE-002: forced-no-numpy resampling matches the documented timing/amplitude contract and invalidates the stale render cache version.",
+      "verification": "full uv run pytest tests/ -q exit 0 (3686 passed 6 skipped) 2026-09-19",
+      "work": "T-1284"
+    },
+    "SRC-013:R003": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "CORE-003 gap closed: ProblipCustomDialog._build now connects self.list.itemChanged -> _on_item_changed -> _persist_pool (problip_custom_sounds.py); reload() sets _loading so programmatic fill never rewrites. _remove() is transactional: delete file FIRST, only on confirmed success rewrite pool; sole-selection removal restores canonical DEFAULT_SOUND_ID; a failed delete shows a warning and mutates nothing. RED CONTROL proven: removing the itemChanged connect fails 2 of 5 new tests (tests/test_problip_custom_sounds_t1284.py); restored -> 5 passed",
+      "text": "CORE-003: Problip custom-sound checkbox selection persists on change (_persist_pool connected) and removal is transactional with a never-dangling playable pool.",
+      "verification": "focused tests green + full uv run pytest tests/ -q",
+      "work": "T-1284"
+    },
+    "SRC-013:R004": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "CORE-004 gap closed: NEW fastprompter/core/sound_dependencies.py owns the ONE read-only enumerator (Problip pool + active-profile events + saved PresetStore presets + saved AmbienceStore rules) returning TYPED consumers and an explicit impact_unknown set. Both deletion surfaces now call it: problip_custom_sounds._references_to and audio_hub_pages._remove_imported (was current-profile events only). tests/test_sound_dependencies_t1284.py 4 passed (events+pool, empty, unreadable-store=unknown-not-empty, presets+ambience enumerated)",
+      "text": "CORE-004: every managed-file deletion surface uses one complete cross-store dependency enumerator (Problip pool, sound events, presets, ambience rules).",
+      "verification": "focused tests green + full uv run pytest tests/ -q",
+      "work": "T-1284"
+    },
+    "SRC-013:R005": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "instance_lock.py:28/38-39/390/401 UNRESPONSIVE on no-ACK; kill_pid retained but unreachable from normal startup; test_instance_lock.py W2-001 A-D prove UNRESPONSIVE + kill_pid never called; RECLAIMED removed as a startup-producible role; 236 passed 1 skipped",
+      "text": "W2-001: automatic startup never terminates a live mutex owner for a missing IPC ACK.",
+      "verification": "full uv run pytest tests/ -q exit 0 (3686 passed 6 skipped) 2026-09-19",
+      "work": "T-1284"
+    },
+    "SRC-013:R006": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "main.py:20283-20290 main_entry reads the shutdown result into the process exit code; :20247 _pre_quit_logical_finalize gate before quit; :20011 QApplication.quit only after clean; :20279 aboutToQuit best-effort; full harness exit 0",
+      "text": "W2-002: every vetoable exit completes watcher quiesce and a durable final save before Qt event-loop termination.",
+      "verification": "full uv run pytest tests/ -q exit 0 (3686 passed 6 skipped) 2026-09-19",
+      "work": "T-1284"
+    },
+    "SRC-013:R007": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "main.py:20328-20331 sound.shutdown() now wrapped, exception logged, continues to logical finalize/persistence; sound.stop_all_sound also guarded at :20324-20327; focused + full harness green",
+      "text": "W2-003: audio teardown failures cannot bypass canonical final persistence (guarded, clean=False, continue).",
+      "verification": "full uv run pytest tests/ -q exit 0 (3686 passed 6 skipped) 2026-09-19",
+      "work": "T-1284"
+    },
+    "SRC-013:R008": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "W2-004 gap closed: open_preset_pack now rejects non-.wav members and verifies the pack's own asset_manifest SHA-256 digests (_verify_pack_manifest: exact coverage + per-file digest match). import_preset_payload preflights and stages under a unique temp dir, publishes collision-FREE (existing managed asset never overwritten), and rolls back newly published files on store.upsert failure. RED CONTROL proven: reverting to the incremental publish-before-validate shape fails 3 of 4 new tests (tests/test_sound_presets.py); restored -> 24 passed",
+      "text": "W2-004: failed/tampered preset-pack imports leave both the managed library and the preset store byte-identical (preflight, staging, manifest digest check, rollback).",
+      "verification": "focused tests green + full uv run pytest tests/ -q",
+      "work": "T-1284"
+    },
+    "SRC-013:R009": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "ambience_engine.py:354-387 refresh_weather snapshots provider+generation under _lock, fetches WITHOUT the lock, commits only if generation unchanged; configure_weather :341-352 bumps _weather_generation; controller _closed guards + weather thread joined at :262-270; tests/test_ambience_weather_ownership + test_ambience_runtime green",
+      "text": "W2-005: weather network I/O occurs outside the engine lock and stale/late workers become inert at reconfigure/shutdown.",
+      "verification": "full uv run pytest tests/ -q exit 0 (3686 passed 6 skipped) 2026-09-19",
+      "work": "T-1284"
+    },
+    "SRC-013:R010": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "W2-006 gap closed: _stop_process returns the POST-condition (proc.poll() is not None) not the pre-attempt was_alive; terminate_probe_processes unregisters a child ONLY once confirmed dead AND its reader retired, otherwise keeps it registered for a later bounded pass; AppServerSession.close applies the same confirmed-retirement rule. RED CONTROL proven: restoring return was_alive fails 2 new tests (tests/test_usage_limits_shutdown.py stubborn-child cases); restored -> 10 passed",
+      "text": "W2-006: Codex child retirement is based on verified post-termination death, not attempted termination (stubborn children stay registered).",
+      "verification": "focused tests green + full uv run pytest tests/ -q",
+      "work": "T-1284"
+    }
+  },
+  "schema_version": 1
+}

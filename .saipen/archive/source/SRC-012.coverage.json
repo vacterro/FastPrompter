@@ -1,0 +1,95 @@
+{
+  "requirements": {
+    "SRC-012:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "audit/9 R001 implemented+verified in current tree; focused regression wave tests/test_editor_snapshot_sentinel.py + test_shutdown_ownership.py + test_instance_lock.py + test_ipc_server.py + test_sound_manager.py + test_audio_pcm_transport.py + test_audio_packaging.py + test_performance_tickets.py + test_editor_timer_isolation.py + test_usage_limits_shutdown.py: 236 passed 1 skipped rc=0; full uv run pytest tests/ -q x3 exit 0 (3682 passed 6 skipped)",
+      "text": "CORE-001: editor snapshot failure (None sentinel) is non-destructive across cache, commit, navigation and Sync; legitimate empty text remains valid.",
+      "verification": "full repository harness exit 0 x3 on 2026-09-19",
+      "work": "T-1283"
+    },
+    "SRC-012:R002": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "audit/9 R002 implemented+verified in current tree; focused regression wave tests/test_editor_snapshot_sentinel.py + test_shutdown_ownership.py + test_instance_lock.py + test_ipc_server.py + test_sound_manager.py + test_audio_pcm_transport.py + test_audio_packaging.py + test_performance_tickets.py + test_editor_timer_isolation.py + test_usage_limits_shutdown.py: 236 passed 1 skipped rc=0; full uv run pytest tests/ -q x3 exit 0 (3682 passed 6 skipped)",
+      "text": "CORE-002: a timed-out global QThreadPool drain can never retire state or release the ownership mutex; shutdown is fail-closed.",
+      "verification": "full repository harness exit 0 x3 on 2026-09-19",
+      "work": "T-1283"
+    },
+    "SRC-012:R003": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "audit/9 CORE-003 gap closed: added SiloRow (DraggableSiloButton) rapid-MButton regressions to tests/test_t1224_middle_button.py (plain + Shift + archive + left-control cases). RED CONTROL proven (VERIFY-ORACLE-01): adding super().mouseDoubleClickEvent(e) to the MiddleButton branch makes 3 of the new tests FAIL with duplicate ('trash',4,True) dispatch -> the tests detect the exact 'falls through to superclass' double-action hazard audit/9 names; restored -> 9 passed. Full uv run pytest tests/ -q x3 exit 0 (3682 passed 6 skipped)",
+      "text": "CORE-003: editor and SiloRow rapid MiddleButton press/double-click/press behavior is permanently pinned by regression tests.",
+      "verification": "tests/test_t1224_middle_button.py 9 passed rc=0; full harness exit 0 x3 2026-09-19",
+      "work": "T-1283"
+    },
+    "SRC-012:R004": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "audit/9 R004 implemented+verified in current tree; focused regression wave tests/test_editor_snapshot_sentinel.py + test_shutdown_ownership.py + test_instance_lock.py + test_ipc_server.py + test_sound_manager.py + test_audio_pcm_transport.py + test_audio_packaging.py + test_performance_tickets.py + test_editor_timer_isolation.py + test_usage_limits_shutdown.py: 236 passed 1 skipped rc=0; full uv run pytest tests/ -q x3 exit 0 (3682 passed 6 skipped)",
+      "text": "W2-001: automatic startup can never kill a live mutex owner merely for missing IPC ACK; no-ACK yields UNRESPONSIVE and the newcomer exits.",
+      "verification": "full repository harness exit 0 x3 on 2026-09-19",
+      "work": "T-1283"
+    },
+    "SRC-012:R005": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "audit/9 R005 implemented+verified in current tree; focused regression wave tests/test_editor_snapshot_sentinel.py + test_shutdown_ownership.py + test_instance_lock.py + test_ipc_server.py + test_sound_manager.py + test_audio_pcm_transport.py + test_audio_packaging.py + test_performance_tickets.py + test_editor_timer_isolation.py + test_usage_limits_shutdown.py: 236 passed 1 skipped rc=0; full uv run pytest tests/ -q x3 exit 0 (3682 passed 6 skipped)",
+      "text": "W2-002: sound teardown failures are exception-contained and cannot bypass canonical final persistence; unclean sound shutdown retains the mutex.",
+      "verification": "full repository harness exit 0 x3 on 2026-09-19",
+      "work": "T-1283"
+    },
+    "SRC-012:R006": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "audit/9 R006 implemented+verified in current tree; focused regression wave tests/test_editor_snapshot_sentinel.py + test_shutdown_ownership.py + test_instance_lock.py + test_ipc_server.py + test_sound_manager.py + test_audio_pcm_transport.py + test_audio_packaging.py + test_performance_tickets.py + test_editor_timer_isolation.py + test_usage_limits_shutdown.py: 236 passed 1 skipped rc=0; full uv run pytest tests/ -q x3 exit 0 (3682 passed 6 skipped)",
+      "text": "W2-003: Codex child cleanup only unregisters confirmed-dead processes; service shutdown cannot report clean with a surviving registered child/reader.",
+      "verification": "full repository harness exit 0 x3 on 2026-09-19",
+      "work": "T-1283"
+    },
+    "SRC-012:R007": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "audit/9 R007 implemented+verified in current tree; focused regression wave tests/test_editor_snapshot_sentinel.py + test_shutdown_ownership.py + test_instance_lock.py + test_ipc_server.py + test_sound_manager.py + test_audio_pcm_transport.py + test_audio_packaging.py + test_performance_tickets.py + test_editor_timer_isolation.py + test_usage_limits_shutdown.py: 236 passed 1 skipped rc=0; full uv run pytest tests/ -q x3 exit 0 (3682 passed 6 skipped)",
+      "text": "PERF-001: packaged long-sound replacement has no caller-side 500ms polling/sleep; latest-wins/no-replay semantics retained.",
+      "verification": "full repository harness exit 0 x3 on 2026-09-19",
+      "work": "T-1283"
+    },
+    "SRC-012:R008": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "audit/9 R008 implemented+verified in current tree; focused regression wave tests/test_editor_snapshot_sentinel.py + test_shutdown_ownership.py + test_instance_lock.py + test_ipc_server.py + test_sound_manager.py + test_audio_pcm_transport.py + test_audio_packaging.py + test_performance_tickets.py + test_editor_timer_isolation.py + test_usage_limits_shutdown.py: 236 passed 1 skipped rc=0; full uv run pytest tests/ -q x3 exit 0 (3682 passed 6 skipped)",
+      "text": "PERF-002: QSoundEffect players and the 15ms poll timer have bounded physical lifetimes (no monotonic QObject residue or idle wakeups).",
+      "verification": "full repository harness exit 0 x3 on 2026-09-19",
+      "work": "T-1283"
+    },
+    "SRC-012:R009": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "audit/9 R009 implemented+verified in current tree; focused regression wave tests/test_editor_snapshot_sentinel.py + test_shutdown_ownership.py + test_instance_lock.py + test_ipc_server.py + test_sound_manager.py + test_audio_pcm_transport.py + test_audio_packaging.py + test_performance_tickets.py + test_editor_timer_isolation.py + test_usage_limits_shutdown.py: 236 passed 1 skipped rc=0; full uv run pytest tests/ -q x3 exit 0 (3682 passed 6 skipped)",
+      "text": "PERF-003: every _DEFAULT_SOUND_MAP default resolves to a shipped asset; the clean-checkout asset-existence test passes.",
+      "verification": "full repository harness exit 0 x3 on 2026-09-19",
+      "work": "T-1283"
+    },
+    "SRC-012:R010": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "audit/9 R010 implemented+verified in current tree; focused regression wave tests/test_editor_snapshot_sentinel.py + test_shutdown_ownership.py + test_instance_lock.py + test_ipc_server.py + test_sound_manager.py + test_audio_pcm_transport.py + test_audio_packaging.py + test_performance_tickets.py + test_editor_timer_isolation.py + test_usage_limits_shutdown.py: 236 passed 1 skipped rc=0; full uv run pytest tests/ -q x3 exit 0 (3682 passed 6 skipped)",
+      "text": "PERF-004: settled editor caching performs no duplicate whole-string line count on the GUI thread.",
+      "verification": "full repository harness exit 0 x3 on 2026-09-19",
+      "work": "T-1283"
+    }
+  },
+  "schema_version": 1
+}

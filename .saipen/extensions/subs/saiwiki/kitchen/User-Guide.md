@@ -38,10 +38,11 @@ Independent markdown canvas slots. 100 per project. Auto-numbered 00-99.
 **Per-silo actions (hover):**
 - 📌 **Pin** — locks silo to top of list (sorted above unpinned)
 - ✅ **Tick** — marks done (visual indicator)
-- 🎨 **Color box** — per-silo color highlight (toggle in Settings)
+- 🎨 **Color box** — per-silo color highlight: click swatch to cycle colors, right-click for palette, or **Ctrl+Middle click** anywhere on the silo row to toggle a random color
 - 📁 **File container** — open asset drawer for this silo
 - 📁 **Folder link** — links silo to external project folder/executable
-- **Middle click** — send to trash
+- **Middle click** — move silo to Trash (Shift+Middle click clears silo text)
+- **Ctrl+Middle click** — toggle random silo color (click again to remove; does not trash or clear silo)
 
 **Hierarchy:** Drag silo onto another to nest as child. Max depth 2 (1 → 1.1 → 1.1.1). Shift+drag swaps. Collapse arrow (▾/▸) on parent hides children.
 
@@ -94,7 +95,7 @@ User-defined spacer bars in silo list. Help organise silos into groups. Ctrl+dra
 - Alt+W — insert divider upward + bullet above
 - Ctrl+Shift+Q — blockquote toggle
 - Ctrl+Click on bullet — toggle `-` / `•`
-- Ctrl+MiddleButton — delete line under cursor (smart reflow: ordered lists renumber)
+- Ctrl+MiddleButton (in editor text) — toggle random colored line mark (first click adds box, second click removes it; never deletes text)
 - Alt+Z — toggle line numbers
 - Alt+Backspace — word delete
 - **Ctrl+Z / Ctrl+Y** — smart undo/redo spanning text edits AND silo moves in one ordered timeline
@@ -130,17 +131,20 @@ folder per slot; the root can be moved in Settings).
 - Ctrl+Shift+S — export the active silo as .md (format filter remembered in `last_save_format`, no confirmation box, T-1082)
 - Ctrl+click 📁 — export silo text as .md
 
-### 13. Watcher Engine (Alt+C)
+### 13. Watcher Engine — retired in T-1183
 
-Prompt drainage + auto-send to target app.
+The watcher subsystem (queue the current line, auto-send it to a target app,
+rate limits, skill/prompt wrappers) **was removed from the product in T-1183**.
+Nothing in the shipped app implements it:
 
-- Alt+C — queue current line under caret (block-anchored)
-- Alt+Shift+C — Queue Master dialog (inspect/reorder/clear queues)
-- Arming: target app (CDP for Electron, Win32 for native), skill/prompt wrapper
-- Rate limits: settle=2.5s, min gap=4s, max 25 sends per session
-- Skills: `/review`, `/refactor`, custom prompt templates
-
-See [Watcher Engine Architecture](Watcher-Engine-Architecture) for full details.
+- **Alt+C and Alt+Shift+C are unbound** — the queue actions resolve to no-ops,
+  so both keys are free for other bindings;
+- the Queue Master dialog is gone; the legacy action remains only as a stub;
+- the watcher `[limits]` settings block (`min_gap_ms`, `max_sends`,
+  `dry_run_new`, `blocker_pattern`) and its `adapters.toml` no longer exist, and
+  leftover `watcher_*` settings rows are deleted on start;
+- prompt drainage is done with ordinary features: silos, F1-F10 snippets, the
+  file container, and Send-selection to another silo.
 
 ### 14. Hashtag System
 
@@ -211,13 +215,19 @@ When header < 700px: hidden buttons collected in » popup. Every action still re
 
 **Ctrl+Shift+drag** — move the line under the pointer (or the whole selected block) to the drop indicator. Rich formatting survives the trip — bold, checkboxes and image pills travel as a document fragment, not plain text.
 
-**Alt+MiddleButton** — bullet-ize every selected line. **MiddleButton** — cycle the clicked line's state: plain → checked+struck → unchecked. **Ctrl+MiddleButton** — delete the whole line with smart list reflow.
+**Alt+MiddleButton** — bullet-ize every selected line. **MiddleButton** — cycle the clicked line's state: plain → checked+struck → unchecked. **Ctrl+MiddleButton (in editor text)** — toggle random colored line mark on the clicked line (first click adds random colored box, second click removes it; text is never touched).
 
 **Double-click an image pill** — rename the file on disk and the markdown link together, one undo step.
 
 ### 23. Sound & Hotkey Sounds (T-706, T-707, T-735)
 
 Settings → **Sound** toggles the master switch, UI clicks and typewriter sounds. The **Sound Settings** dialog lists every sound event — including the **hotkey events** added in T-735: undo, redo, select-all, settings, help, new, save, and a generic `hotkey` fallback that every shortcut without a named event of its own resolves to. Each event can be enabled, re-mapped to any `.wav` from the shipped library, and have its volume previewed. Undo/redo are a two-pitch pair, so the direction is audible without looking (and a single Ctrl+Z plays exactly one sound on any route). The generic `hotkey` event ships **switched ON** by default (T-742) — all possible hotkeys make a sound, including native Qt ones like Ctrl+A/C/V/X. Existing custom mappings survive an upgrade. Since v0.8.26 every event row carries a small painted pictogram (drawn, not emoji) and the table reads as a zebra-striped, gridless table so the list is scannable at a glance. The pictograms stay in the active theme's colour family: a v0.8.28 experiment that gave every event its own rainbow hue was reverted in v0.8.29 (it read as a broken theme), and distinction now comes from the glyph shape instead — 13 new pictograms split the confusable pairs (untick↔success, select-all↔copy, escape↔keyboard, hover↔click↔release cursor variants, …). Since v0.8.30 the zebra rows are never white: the theme table sheet sets an alternate-background-color blended from the table background toward the theme's text colour — dark themes get a subtly lighter dark row, pale themes (Vintage Classic) a subtly darker one.
+
+**Master mute (hotkey Ctrl+M, T-1244).** One switch that rules every channel: the tray icon's **Master Mute** checkbox, the hotkey, and the Sound panel toggle all call the same hub state, so muting from anywhere is reflected everywhere. Mute is *not* the same thing as STOP ALL: it flips the master state (unmute restores exactly what was muted before) and every later sound stays allowed while remaining silent.
+
+**STOP ALL SOUND (tray, T-1238-G).** Silences every channel, queue, sequence and ambience layer right now — a panic button, not a preference: it does **not** change the master mute state, and new sounds stay allowed. Each channel's own playing/queued work is dropped, so the next cue starts clean.
+
+**Appearance sounds (T-1245).** Separate from hotkey sounds, these fire when a user-visible surface *appears*: the app window itself, the Settings panel, the Sound Hub, the Problip pages, ordinary dialogs and panels, notifications, and the AI-limit hover card each report one semantic appearance event. The contract is deliberately narrow — construction, re-layout, repaint, language change, re-delivery of the same show signal and internal refreshes never fire one, and a surface that owns a specific event (the Sound Hub) is excluded from the generic dialog event so one appearance can never play two sounds.
 
 **Hide on Click-Out** (checkbox in Settings → Window, hotkey **Alt+A**, setting `close_on_focus_loss`) hides the window when it loses focus, the classic always-visible-on-top behaviour. Restored in v0.8.32 after a v0.8.24 removal: a 2s launch grace means the window does not disappear while the app is still starting, and clicking into the app's own undocked panels (file container, pie menu, zone overlay, Help, dialogs, combo popups) does not count as click-out.
 
@@ -274,5 +284,81 @@ Time-of-day scheduled reminders that fire automatically on a 24-hour clock. Mana
 ### 30. Temp Timer
 
 A temporary countdown timer with configurable increment, color mode, and sound rules. Created from the Timer Dialog (Ctrl+Shift+T) under the **Temp** tab.
+
+### 31. Sound Hub, Ambience & Voice
+
+The **Sound Hub** is the managed library view over one audio authority with six
+buses (UI / ALERT / VOICE / PROBLIP / AMBIENCE / PREVIEW). Each source plays in
+one of three modes — **Overlay** (default), **Stack**, or **Replace** — and every
+bus is bounded, so a burst of cues can never pile up an unbounded queue. Its
+pages are **Presets** (factory + portable import/export), **Playback** (per-event
+enabled/file/volume/`gain_db`/mode), **Voice** (VOX / FVOX / G-Man packs) and
+**Ambience** (start, pause, resume, stop). Every transient cue is pre-rendered to
+the output device's own rate and levelled by the loudness analysis behind Auto
+Level, so a cue sounds the same on any device.
+
+- **Ambience** layers sound under your work: schedule rules (time-of-day, day of
+  week) and weather rules driven by a key-free provider that stays **off until you
+  opt in** — no account, no API key. Layers fade in and out on their own, and the
+  Ambience tab's explicit **Start / Pause / Resume / Stop** controls are the only
+  transport you need; STOP ALL from the tray silences ambience immediately.
+- **Voice** announces countdowns. It observes the deadlines the app already
+  knows — running timers and resolved AI-limit reset windows — recomputes the one
+  nearest target and speaks thresholds before they pass; it never polls a
+  provider and never announces the same threshold twice, even after a restart.
+
+### 32. AI Limits (Gauges, Reset Queue & Accounts)
+
+FastPrompter can track your AI usage/limit windows per account, provider-neutral:
+Claude, Codex, zcode, Antigravity and Freebuff each ship a probe, and every
+account of every provider is listed separately.
+
+- **Top-bar gauges** show the used share per window, tinted by vendor, with the
+  reset countdown beside them; a window whose usage reads zero can be hidden
+  (`limit_gauges_hide_zero_usage`).
+- **Hover the countdown** for the reset queue: one row per account/window with
+  fixed columns (`# | Account | Pool | Window | Left`), soonest first, so the
+  time you actually care about — how long until this one refills — is aligned
+  and never pushed out by a long pool name.
+- **Several accounts of one provider are kept apart**, not merged: the limit
+  settings state plainly how many Claude accounts were detected ("2 Claude
+  accounts detected" — shown even when the answer is one, so a missing second
+  account is diagnosable), and each Claude
+  account gets its own labelled row (the account, its plan, whether its
+  credential file is present, its state) and its own gauge, so an exhausted
+  account never hides a fresh one. The account rows are descriptive and
+  secret-free — a credential file is reported as present or absent, never read.
+- **Notifications** on limit events (reset detected, threshold crossed) use
+  `limit_notif_color`, `limit_notif_duration_sec` and `limit_notif_symbol`.
+
+### 33. Backup & Restore Layers
+
+Beyond the daily Markdown mirror and the portable ZIP in §24, the backup
+pipeline is generation-based: a new export is built in a **fresh** scratch
+folder, validated, marked complete, and only then published as the day's
+canonical backup. A half-written or blocked generation can never be mixed into
+an archive or mistaken for a good one, and recovery always picks the newest
+provably complete generation — never a folder the operating system merely
+listed last.
+
+### 34. Typing & Paste Reliability (T-1269)
+
+Two long-standing annoyances are handled explicitly now instead of being left to
+chance:
+
+- **Clipboard shortcuts work on every keyboard layout.** Ctrl+A/C/V/X are
+  matched on the physical key, so Cyrillic, Greek, Hebrew and CJK layouts behave
+  exactly like a US layout — and the editor keeps ownership of its own reserved
+  commands (mark toggles, folding, hide-markup) instead of losing them to a
+  layout-specific binding.
+- **A paste into a read-only silo is refused, never silently dropped.** Reading
+  mode / a locked editor records the refusal together with the MIME the
+  clipboard actually offered, so "nothing happened" always has an explanation
+  instead of a mystery. When several MIME flavours are on the clipboard the app
+  falls back to the one it can actually use rather than giving up.
+- **Clipboard events are counted, never copied.** The app counts the OS
+  clipboard generation counter and Qt's `changed`/`dataChanged` notifications
+  and records them beside the paste attempt. Those records hold counters and
+  process names — **never the clipboard's text**.
 
 **Features:** set increment in minutes, choose temperature-based or fixed color, enable/disable delete-after-fire. In **Random Pool** sound mode, multiple sounds can be assigned with time windows (e.g., different sounds for morning vs night).

@@ -1,0 +1,39 @@
+{
+  "clauses": {
+    "SRC-041:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "SILO text-history ownership is identity-based: a structural reorder, insert, delete, swap or transfer with unchanged logical SILO text creates zero text-history transitions; previous committed text derives from committed slot rows plus committed identity mapping diffed against the current identity-to-text map; committed baselines advance only after successful publication."
+    },
+    "SRC-041:R002": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Persistent undo and redo acknowledge durable publication: the apply step returns explicit success or failure, the recovery cursor advances only after a successful forced authoritative save, and on save failure or exception the pre-step value is restored, the cursor stays unchanged, no reverse history is manufactured, and unrelated dirty domains are preserved."
+    },
+    "SRC-041:R003": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Archive lineage dirty ownership derives from the canonical active SILO owner used by active silo identity resolution, never a nonexistent showing_archive attribute; legitimate unsaved archive edits produce no false lineage refusal while genuine identity or text mismatch still fails closed."
+    },
+    "SRC-041:R004": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Restore establishes a monotonic external-writer boundary: snapshot issuance is separated from physical execution so an issued snapshot is never re-registered, every issued snapshot carries a publication epoch required to equal the current epoch at the final replace gate, revocation is monotonic and idempotent, and the Sync-Project writer barrier is established under the canonical mutation gate before destructive restore publication without lock inversion."
+    },
+    "SRC-041:R005": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Sync-Project folder rebinding is one logical transaction bounded by authoritative save: prospective configuration is built first, the old runtime is exactly restored on save False or exception (config, mapping, presets, caches, editor, dirty ownership, watcher), no new watcher starts and no success message appears before save success, and no push may target the new root after a refused save."
+    },
+    "SRC-041:R006": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Restore quarantine is invocation-owned: unique same-directory quarantine paths per invocation, exact owned live-sidecar and quarantine pairs tracked, only those exact paths moved, restored or cleaned, pre-existing files with a quarantine suffix never deleted, fatal repair receives explicit owned paths, and fail-closed handling of genuine live wal and shm sidecars preserved."
+    }
+  },
+  "derived_at": "2026-09-22T00:13:58Z",
+  "derived_from": "SRC-041",
+  "interpretation_revision": 6,
+  "schema_version": 1,
+  "source_sha256": "52f1510045cff4a66c0a09a538c66e4eda9dc8c03b4bf2ae962ba8931a8d80bd"
+}

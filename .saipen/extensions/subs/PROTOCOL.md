@@ -181,6 +181,21 @@ project was built on it.
 Each subSaipen numbers its own tickets independently; the prefix is what
 keeps them unambiguous once folded into the main board.
 
+**A subSaipen ID also never appears in a Core LOG event's ticket slot.**
+`tools/saipen_engine/log.py`'s `LOG_RE` requires a `T-` prefix there, so
+`[WIKI-002]`, `[W-002]` and `[HUNT-003]` do not match the ticket group at all:
+the line parses as if it had no ticket, or stops being a legal event line, and
+every later `checkpoint`/`ticket`/`transition`/`crew` call reads a history it
+cannot reconstruct. The prefix is where the parser stops. The narrower
+`T-<digits>` shape is enforced one layer up, by `tools/validate.py`, and as a
+WARN -- so a malformed ID is caught late and softly, which is exactly why the
+slot rule has to be stated here rather than left to the gate.
+
+The prose of a Core LOG event MAY cite a sub ticket as evidence; the slot may
+not hold one. The board restriction below and this LOG-slot restriction are two
+shapes of one rule: outside the sub's own home, the only valid shape is
+`T-###`.
+
 **Folding onto the main board**: a subSaipen ID (`W-001`, `HUNT-003`, ...)
 is never written directly onto the main `BOARD.md` as a ticket ID -- CORE.md
 CORE.md § 1.2 requires the `T-###` shape there, no exceptions for extension-sourced

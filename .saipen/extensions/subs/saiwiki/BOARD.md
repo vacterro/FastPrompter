@@ -3,8 +3,10 @@
 ## DOING
 
 ## TODO
+- [ ] W-039 qq re-cut @ 05df824 (17.09.26) NOT READY (3/15 pages re-cut): Module-Structure counts corrected to the measured 37 core / 67 ui / 5 utils / 174 total + rows for core.win_clipboard, ui.clipboard_watch, ui.qt_text_coords; Core-API gained the Windows clipboard generation + text coordinate contract sections; UI-Components gained the T-1270 silo hover contract. Mechanical checks over all 15 pages: 0 dangling file references; coverage audit shows only 7 of the 32 recent ticket ids appear (Master Mute 0/15, accounts_report 0/15, Unicode 0/15) -> next run re-reads the remaining 12 pages and writes the missing T-1244/T-1245, T-1265, T-1266/T-1268, T-1269 coverage before status: ready. W-038 invalidated stale. Zero files touched outside the saiwiki folder.
 
 ## DONE
+- [x] W-038 qq re-cut @ 1df5d75 (11.09.26, fingerprint 3685138a): T-1248 line-mark/silo-middle UX (absorbed dirty docs/wiki T-1248 wording into kitchen Keyboard/User-Guide; UI-Components gutter mark paragraph), T-1242 audio fidelity (QAudioSink-per-cue transport, audio_render, audio_level, hover card) into Core-API/Architecture, T-1249 reset classifier, T-1247 instance-lock no-kill, freebuff provider T-1243 (usage_limits 19→22), themes 9→15. Counts re-verified 36/38/22/64/5 (total 170); 8 pages re-cut, 7 byte-identical. OUTBOX W-038 ready; W-037 invalidated stale (fingerprint differs). Zero source modified.
 - [x] W-036 qq re-cut @ 2c0ddfb (31.08.26): FREEZE hardening + T-1162 tab-switch fix. 4 pages updated (Architecture, Core-API, UI-Components, User-Guide). OUTBOX W-036 ready. Zero source modified.
 - [x] W-034 v0.8.61 + AUDIT_ALL_3 docs re-cut (qq 30.08): 6 wiki pages updated in kitchen vs HEAD 2c0ddfb. OUTBOX W-034 ready. Zero source modified.
 - [x] W-035 qq re-cut @ 2c0ddfb (30.08.26, fingerprint 849ed95f): 6 wiki pages updated for post-audit session-fix + doc-cache drift (Configuration defaults, UI-Components huge-doc mode, Core-API configured_font + category cache, Architecture large-doc, User-Guide huge-doc); 10 identical; zero source modified.

@@ -226,6 +226,29 @@ def _snapshot_text_size(st):
     return size
 
 
+def _snapshot_cached_text_size(st):
+    """Return a finalized snapshot's cached text size, measuring legacy data once."""
+    size = st.get("_text_size")
+    if isinstance(size, int) and not isinstance(size, bool) and size >= 0:
+        return size
+    return _snapshot_text_size(st)
+
+
+def _trim_snapshot_stack(stack, max_entries=50, max_chars=20_000_000):
+    """Enforce undo/redo caps with one size total and constant-time eviction."""
+    max_entries = max(1, max_entries)
+    while len(stack) > max_entries:
+        stack.pop(0)
+
+    if len(stack) <= 1:
+        return
+
+    total_chars = sum(_snapshot_cached_text_size(snapshot) for snapshot in stack)
+    while len(stack) > 1 and total_chars > max_chars:
+        oldest = stack.pop(0)
+        total_chars -= _snapshot_cached_text_size(oldest)
+
+
 def _copy_category_slots(slots):
     """Deep-copy ONE category's slot list for undo/redo snapshots.
 
@@ -403,6 +426,7 @@ import threading
 _SYNC_WRITE_LOCK = threading.RLock()
 _SYNC_REQUEST_LOCK = threading.Lock()
 _SYNC_WRITE_SEQ = 0
+_SYNC_EPOCH = 0
 _SYNC_LATEST_REQUESTED = {}
 # PERF-006: folder-result caches must stay bounded over long tray-resident
 # sessions. These caps apply to the per-process dicts.
@@ -414,9 +438,15 @@ def _sync_register_snapshot(snapshot):
     """Give a snapshot physical publication ownership for its destinations."""
     global _SYNC_WRITE_SEQ
     with _SYNC_REQUEST_LOCK:
+        issued_epoch = snapshot.get("_write_epoch")
         if snapshot.get("_write_seq") is None:
+            snapshot["_write_epoch"] = _SYNC_EPOCH
             _SYNC_WRITE_SEQ += 1
             snapshot["_write_seq"] = _SYNC_WRITE_SEQ
+        elif issued_epoch != _SYNC_EPOCH:
+            # Revocation is permanent for this captured intent. Re-registering
+            # it after restore must not mint fresh ownership from stale RAM.
+            return None
         seq = snapshot["_write_seq"]
         for dest in snapshot.get("files", ()):
             key = os.path.normcase(os.path.abspath(dest))
@@ -433,8 +463,9 @@ def _sync_revoke_all():
     registry and bumps the global sequence, so ``_sync_snapshot_is_latest``
     and the final-replace recheck both fail for any already-running pre-restore
     writer — it can no longer publish stale RAM over the restored DB."""
-    global _SYNC_WRITE_SEQ
+    global _SYNC_WRITE_SEQ, _SYNC_EPOCH
     with _SYNC_REQUEST_LOCK:
+        _SYNC_EPOCH += 1
         _SYNC_WRITE_SEQ += 1
         _SYNC_LATEST_REQUESTED.clear()
 
@@ -443,13 +474,16 @@ def _sync_snapshot_is_latest(snapshot, dest):
     seq = snapshot.get("_write_seq")
     key = os.path.normcase(os.path.abspath(dest))
     with _SYNC_REQUEST_LOCK:
-        return seq is not None and _SYNC_LATEST_REQUESTED.get(key) == seq
+        return (snapshot.get("_write_epoch") == _SYNC_EPOCH
+                and seq is not None
+                and _SYNC_LATEST_REQUESTED.get(key) == seq)
 
 
 def _sync_mechanical_write(snapshot, lock_timeout_s=None):
     """Mechanically writes a sync snapshot, protected by a process-level lock.
     Returns (written: list, errors: list)."""
-    _sync_register_snapshot(snapshot)
+    if _sync_register_snapshot(snapshot) is None:
+        return [], []
     written = []
     errors = []
     # Revalidate EVERY destination against the captured root AT MUTATION
@@ -6113,26 +6147,53 @@ class FastPrompter(
 
     def _queue_silo_text_history(self):
         """Diff every silo store against the last-committed snapshot and
-        queue OLD->NEW transitions into the state layer (T-1227 §11)."""
+        queue OLD->NEW transitions into the state layer (T-1227 §11).
+
+        CORE-001: ownership is IDENTITY-based, never coordinate-based. The
+        previous side pairs the COMMITTED slot rows with the COMMITTED
+        identity mapping; the current side pairs the live rows with the live
+        mapping; only a per-silo_id text difference becomes a transition. A
+        structural reorder/insert/delete/swap/transfer that leaves a silo's
+        text unchanged therefore queues ZERO transitions, instead of
+        manufacturing cross-SILO before/after rows from the previous occupant
+        of a new coordinate."""
         st = getattr(self, "state", None)
         if st is None or getattr(st, "conn", None) is None:
             return
-        saved_temp = getattr(st, "_last_saved_temp", set()) or set()
-        saved_arc = getattr(st, "_last_saved_arc", set()) or set()
+        committed_ids = st.committed_silo_identities()
+        if not committed_ids:
+            return
         suppress = getattr(self, "_persistent_history_suppress_sid", None)
         cursors = getattr(self, "_persistent_history_cursor", None)
         for is_arc, all_key, saved in (
-                (False, "temp_presets_all", saved_temp),
-                (True, "archive_temp_presets_all", saved_arc)):
-            saved_by_key = {(cat, i): content for cat, i, content in saved}
+                (False, "temp_presets_all",
+                 getattr(st, "_last_saved_temp", set()) or set()),
+                (True, "archive_temp_presets_all",
+                 getattr(st, "_last_saved_arc", set()) or set())):
+            # previous committed text OWNED BY IDENTITY: the committed row's
+            # text paired with the identity that owned that coordinate when
+            # the row was committed.
+            previous = {}
+            for cat, i, content in saved:
+                sid_prev = committed_ids.get((cat, 1 if is_arc else 0, int(i)))
+                if sid_prev:
+                    previous.setdefault(sid_prev, content or "")
+            if not previous:
+                continue
             for cat, slots in (self.data.get(all_key) or {}).items():
                 for i, content in enumerate(slots[:100]):
                     content = content or ""
-                    old = saved_by_key.get((cat, i))
-                    if old is None or old == content:
-                        continue
                     sid = st.silo_id_for(cat, is_arc, i)
                     if not sid:
+                        continue
+                    old = previous.get(sid)
+                    if old is None or old == content:
+                        # No committed predecessor for this identity (a newly
+                        # created silo), or the identity's own text is
+                        # unchanged: nothing to record. A deleted identity
+                        # simply has no current row and never reaches here, so
+                        # its history is retained without touching anybody
+                        # else's timeline.
                         continue
                     if suppress is not None and sid == suppress:
                         # T-1227 §14: a persistent recovery replay — the
@@ -6712,6 +6773,35 @@ class FastPrompter(
         with self._sync_commit_gate:
             self._sync_leases[key] = self._sync_leases.get(key, 0) + 1
         self._push_jobs_pending.pop(key, None)
+
+    def _establish_sync_writer_barrier(self):
+        """Quiesce and revoke every captured Sync-Project push intent.
+
+        The worker and barrier share the final mutation gate. Returning from
+        this method therefore means an already-entered physical write has
+        finished, while every queued or in-flight old lease is stale.
+        """
+        gate = self._sync_commit_gate
+        with gate:
+            worker = getattr(self, "_push_worker", None)
+            if worker is not None:
+                worker._suppress = True
+            pending = getattr(self, "_push_jobs_pending", {})
+            leases = getattr(self, "_sync_leases", {})
+            keys = set(leases) | set(pending)
+            for key in keys:
+                leases[key] = leases.get(key, 0) + 1
+            pending.clear()
+            timer = getattr(self, "_sync_push_timer", None)
+            if timer is not None:
+                timer.stop()
+
+    def _resume_sync_push_after_restore_refusal(self):
+        """Resume future captures after a refused restore; old leases stay stale."""
+        with self._sync_commit_gate:
+            worker = getattr(self, "_push_worker", None)
+            if worker is not None:
+                worker._suppress = False
 
     def _sync_flag_unsafe_binding(self, key, path):
         """CORE-001: a fresh-binding read found the destination exists but is
@@ -7982,6 +8072,22 @@ class FastPrompter(
             "exclude": self._sync_exclude(),
             "enabled": True,
         }
+        # Keep the whole logical binding available for rollback until the
+        # authoritative SQLite save accepts the new root and mappings.
+        old_binding = {
+            "project_sync": copy.deepcopy(self.data.get("project_sync")),
+            "project_sync_all": copy.deepcopy(
+                self.data.get("project_sync_all", {})),
+            "project_sync_map": copy.deepcopy(
+                self.data.get("project_sync_map", {})),
+            "project_sync_map_all": copy.deepcopy(
+                self.data.get("project_sync_map_all", {})),
+            "presets": list(self._ensure_temp_presets()),
+            "eol": dict(self._sync_eol_cache),
+            "bom": dict(self._sync_bom_cache),
+            "applied": dict(self._sync_last_applied),
+            "unsafe": set(self._sync_unsafe_bindings),
+        }
         self.data["project_sync"] = cfg
         self.data.setdefault("project_sync_all", {})[cat] = cfg
         presets = self._ensure_temp_presets()
@@ -8028,7 +8134,48 @@ class FastPrompter(
             self._sync_bom_cache[key] = had_bom
             self._sync_last_applied[key] = self._sync_side_digest(text)
         self.mark_dirty()
-        self.save_data_to_db(force=True)
+        try:
+            committed = self.save_data_to_db(force=True)
+        except Exception:
+            committed = False
+        if not committed:
+            if old_binding["project_sync"] is None:
+                self.data.pop("project_sync", None)
+            else:
+                self.data["project_sync"] = old_binding["project_sync"]
+            restored_configs = old_binding["project_sync_all"]
+            if old_binding["project_sync"] is not None:
+                restored_configs[cat] = old_binding["project_sync"]
+            self.data["project_sync_all"] = restored_configs
+            restored_maps = old_binding["project_sync_map_all"]
+            restored_maps[cat] = old_binding["project_sync_map"]
+            self.data["project_sync_map_all"] = restored_maps
+            self.data["project_sync_map"] = old_binding["project_sync_map"]
+            presets[:] = old_binding["presets"]
+            for cache_name, old_values in (
+                    ("_sync_eol_cache", old_binding["eol"]),
+                    ("_sync_bom_cache", old_binding["bom"]),
+                    ("_sync_last_applied", old_binding["applied"])):
+                cache = getattr(self, cache_name)
+                cache.clear()
+                cache.update(old_values)
+            self._sync_unsafe_bindings.clear()
+            self._sync_unsafe_bindings.update(old_binding["unsafe"])
+            self._push_jobs_pending.clear()
+            from fastprompter.core.logging import logger as _log
+            _log.error("Sync-Project folder rebind was not committed; "
+                       "restored the previous in-memory binding")
+            QMessageBox.critical(
+                self, tr("Sync-Project", lang),
+                tr("Sync-Project folder change was NOT saved — the previous "
+                   "folder binding stays in force. Nothing was changed.",
+                   lang))
+            try:
+                self._push_sync_files()
+            except Exception:
+                _log.exception("could not recapture pushes for the restored "
+                               "Sync-Project binding")
+            return
         self._start_project_watcher()
         self._update_project_tooltip()
         self.refresh_temp_presets()
@@ -12630,7 +12777,7 @@ class FastPrompter(
             slot = int(getattr(self, "active_temp_slot", -1))
             if slot >= 0:
                 dirty = ((self.get_current_category(),
-                          bool(getattr(self, "showing_archive", False)),
+                          bool(getattr(self, "active_is_archive", False)),
                           slot),)
         except (TypeError, ValueError, AttributeError):
             dirty = ()
@@ -12692,7 +12839,8 @@ class FastPrompter(
         target = self._persistent_history_state_at(hist, new_pos)
         if target == cur:
             return False
-        self._apply_persistent_text(sid, target)
+        if not self._apply_persistent_text(sid, target):
+            return False
         cursors[sid] = new_pos
         return True
 
@@ -12704,7 +12852,15 @@ class FastPrompter(
         the authoritative content still commits atomically."""
         ta = getattr(self, "text_area", None)
         if ta is None:
-            return
+            return False
+        is_arc = bool(getattr(self, "active_is_archive", False))
+        key = "archive_temp_presets" if is_arc else "temp_presets"
+        slots = self.data.get(key) or []
+        slot = int(self.active_temp_slot)
+        if not 0 <= slot < len(slots):
+            return False
+        old_text = ta.toPlainText()
+        old_slot_text = slots[slot]
         self._persistent_history_suppress_sid = sid
         try:
             was_suspend = getattr(self, "_suspend_temp_sync", False)
@@ -12713,14 +12869,24 @@ class FastPrompter(
                 ta.setPlainText(text)
             finally:
                 self._suspend_temp_sync = was_suspend
-            is_arc = bool(getattr(self, "active_is_archive", False))
-            key = "archive_temp_presets" if is_arc else "temp_presets"
-            slots = self.data.get(key) or []
-            slot = int(self.active_temp_slot)
-            if 0 <= slot < len(slots):
-                slots[slot] = text
+            slots[slot] = text
             self.mark_dirty("arc" if is_arc else "temp")
-            self.save_data_to_db(force=True)
+            if not self.save_data_to_db(force=True):
+                raise RuntimeError("persistent text publication was refused")
+            return True
+        except Exception:
+            slots[slot] = old_slot_text
+            was_suspend = getattr(self, "_suspend_temp_sync", False)
+            self._suspend_temp_sync = True
+            try:
+                ta.setPlainText(old_text)
+            finally:
+                self._suspend_temp_sync = was_suspend
+            from fastprompter.core.logging import logger
+            logger.warning("persistent text recovery was not committed; "
+                           "the prior live value remains authoritative",
+                           exc_info=True)
+            return False
         finally:
             self._persistent_history_suppress_sid = None
 
@@ -12811,12 +12977,7 @@ class FastPrompter(
                         if isinstance(pair, (tuple, list)) and len(pair) == 2]
             self.data_redo_stack.append(redo_state)
 
-            MAX_CHARS = 20_000_000
-            while len(self.data_redo_stack) > 50:
-                self.data_redo_stack.pop(0)
-
-            while len(self.data_redo_stack) > 1 and sum(_snapshot_text_size(s) for s in self.data_redo_stack) > MAX_CHARS:
-                self.data_redo_stack.pop(0)
+            _trim_snapshot_stack(self.data_redo_stack)
             self.play_sound("undo")
             # NOT a fresh bump: latching the data stack "fresh" here is what
             # made every following Ctrl+Z overwrite newer text (see
@@ -13757,13 +13918,7 @@ class FastPrompter(
         are pushed through this same helper so every stack gets exactly ONE
         logical entry and identical cap/redo semantics.
         """
-        # Enforce caps (50 items max, ~20MB max)
-        MAX_CHARS = 20_000_000
-        while len(self.data_undo_stack) > 50:
-            self.data_undo_stack.pop(0)
-
-        while len(self.data_undo_stack) > 1 and sum(_snapshot_text_size(s) for s in self.data_undo_stack) > MAX_CHARS:
-            self.data_undo_stack.pop(0)
+        _trim_snapshot_stack(self.data_undo_stack)
         self.data_redo_stack.clear()
         # A new action invalidates the recorded undo order too, or Ctrl+Y would
         # try to replay steps that no longer have anything behind them.
@@ -14486,6 +14641,10 @@ class FastPrompter(
                     # commit the disarm (the runtime stays fully active).
                     self._resume_watcher_runtime()
                     return
+                # Establish a two-way writer boundary before the live DB is
+                # closed. A final worker mutation completes before this
+                # returns; every captured lease becomes stale.
+                self._establish_sync_writer_barrier()
                 # drain proven: now close the live connection (SQLite keeps
                 # the file locked while a connection is open).
                 if self.state.conn:
@@ -14557,6 +14716,7 @@ class FastPrompter(
                             self._watcher_commit_quiesce()
                         self.quit_app()
                         return
+                    self._resume_sync_push_after_restore_refusal()
                     self._resume_watcher_runtime()
                     QMessageBox.critical(
                         self, tr("Error", self._current_lang),
@@ -14612,6 +14772,7 @@ class FastPrompter(
                 self._logical_finalized = True
                 self.quit_app()
                 return
+            self._resume_sync_push_after_restore_refusal()
             self._resume_watcher_runtime()
         finally:
             self.ignore_focus_loss = False

@@ -410,3 +410,38 @@ class TestSecurityIsUnchanged:
             QDesktopServices, "openUrl",
             lambda *a: pytest.fail("a fake raster reached the shell"))
         _click(editor, centre)
+
+
+def test_inline_image_context_menu_copies_pixels_and_canonical_path(
+        pasted, monkeypatch, app):
+    from PyQt6.QtGui import QContextMenuEvent
+    from PyQt6.QtWidgets import QMenu
+
+    editor, image, centre = pasted
+    editor.main_win.build_send_selection_menu = lambda _menu: None
+    editor.main_win.clear_formatting = lambda: None
+    editor.main_win.insert_divider_line = lambda: None
+    menus = []
+    monkeypatch.setattr(
+        QMenu, "exec", lambda menu, *_args, **_kw: menus.append(menu))
+    point = QPoint(centre)
+    event = QContextMenuEvent(
+        QContextMenuEvent.Reason.Mouse, point, editor.mapToGlobal(point))
+
+    editor.contextMenuEvent(event)
+
+    assert len(menus) == 1
+    actions = {action.text().split("\t", 1)[0]: action
+               for action in menus[0].actions()}
+    assert "Copy Image" in actions
+    assert "Copy Image Path" in actions
+
+    actions["Copy Image"].trigger()
+    mime = app.clipboard().mimeData()
+    assert mime.hasImage()
+    assert [url.toLocalFile() for url in mime.urls()] == [
+        os.path.realpath(str(image)).replace("\\", "/")]
+
+    actions["Copy Image Path"].trigger()
+    assert app.clipboard().text() == os.path.normpath(
+        os.path.realpath(str(image)))

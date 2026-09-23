@@ -1,0 +1,49 @@
+{
+  "clauses": {
+    "SRC-012:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "CORE-001: editor snapshot failure (None sentinel) is non-destructive across cache, commit, navigation and Sync; legitimate empty text remains valid."
+    },
+    "SRC-012:R002": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "CORE-002: a timed-out global QThreadPool drain can never retire state or release the ownership mutex; shutdown is fail-closed."
+    },
+    "SRC-012:R003": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "CORE-003: editor and SiloRow rapid MiddleButton press/double-click/press behavior is permanently pinned by regression tests."
+    },
+    "SRC-012:R004": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "W2-001: automatic startup can never kill a live mutex owner merely for missing IPC ACK; no-ACK yields UNRESPONSIVE and the newcomer exits."
+    },
+    "SRC-012:R005": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "W2-002: sound teardown failures are exception-contained and cannot bypass canonical final persistence; unclean sound shutdown retains the mutex."
+    },
+    "SRC-012:R006": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "W2-003: Codex child cleanup only unregisters confirmed-dead processes; service shutdown cannot report clean with a surviving registered child/reader."
+    },
+    "SRC-012:R007": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "PERF-001: packaged long-sound replacement has no caller-side 500ms polling/sleep; latest-wins/no-replay semantics retained."
+    },
+    "SRC-012:R008": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "PERF-002: QSoundEffect players and the 15ms poll timer have bounded physical lifetimes (no monotonic QObject residue or idle wakeups)."
+    }
+  },
+  "derived_at": "2026-09-19T05:25:20Z",
+  "derived_from": "SRC-012",
+  "interpretation_revision": 8,
+  "schema_version": 1,
+  "source_sha256": "69ac7e059d4a32159f46f9c5092c85f5b19545468b2296962f4a662b1e5baa2e"
+}

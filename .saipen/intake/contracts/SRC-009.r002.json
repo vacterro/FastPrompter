@@ -1,0 +1,19 @@
+{
+  "clauses": {
+    "SRC-009:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "T-1217: sections 1/6/7/8 transfer live text, canonical allocation, ownership, transaction and every route regression"
+    },
+    "SRC-009:R002": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "T-1218: sections 2/6/7/8 internal image viewer, central routing, protected shell launches, Windows paths"
+    }
+  },
+  "derived_at": "2026-09-06T16:28:33Z",
+  "derived_from": "SRC-009",
+  "interpretation_revision": 2,
+  "schema_version": 1,
+  "source_sha256": "ce0f841efcd2f57b15297493ff026d820add1105dd0cd2dae70c52d8f07fa317"
+}

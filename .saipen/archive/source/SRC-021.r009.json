@@ -1,0 +1,54 @@
+{
+  "clauses": {
+    "SRC-021:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "CORE-001: live ambience runtime reconciles with the authoritative persisted rule set; deleting or disabling an audible rule retires its layer; editing a live rule applies source/volume/repeat immediately and idempotently."
+    },
+    "SRC-021:R002": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "CORE-002: weather fetch runs outside the engine lock and its worker cannot escape controller shutdown (generation/lifetime ownership)."
+    },
+    "SRC-021:R003": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "CORE-003: canonical ambience/i18n translation keys have zero structural validator errors."
+    },
+    "SRC-021:R004": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "W2-001: a stale async sync observation is never mutation authority; a recreated binding cannot be detached by a late result."
+    },
+    "SRC-021:R005": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "W2-002: portable-backup builds every COMPLETE generation from a provably clean per-generation scratch root that fails closed."
+    },
+    "SRC-021:R006": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "W2-003: canonical backup recovery selection is deterministic/orderable, independent of filesystem enumeration order, including same-second ties."
+    },
+    "SRC-021:R007": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "PERF-001: stable-source sound diagnostics are O(1) after warm-up (metadata/hash cache) with a bounded FIFO of 512."
+    },
+    "SRC-021:R008": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "PERF-002: long valid WAVs render with bounded block resampling (65536) and the 30s/120s policy plus raw fallback, no full-duration stall."
+    },
+    "SRC-021:R009": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "PERF-003: the render policy is applied before prewarm; one hot-set owner exists; NumPy is not resolved for renderer prewarm when rendering is OFF."
+    }
+  },
+  "derived_at": "2026-09-19T05:04:08Z",
+  "derived_from": "SRC-021",
+  "interpretation_revision": 9,
+  "schema_version": 1,
+  "source_sha256": "94893155b393adc10794c61f584a98c448f4bbb8c9153420aad6ab2960749087"
+}

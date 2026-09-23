@@ -1,0 +1,34 @@
+{
+  "clauses": {
+    "SRC-007:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Antigravity sign-in must explain the code destination, avoid opening the project, and never open a browser during background probing"
+    },
+    "SRC-007:R002": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Show authoritative quotas and filter accounts and independent pools by current 5-hour availability"
+    },
+    "SRC-007:R003": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Paste screenshots and image file URLs as readable clickable attachments without delayed caret insertion"
+    },
+    "SRC-007:R004": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Prevent clipped and replayed sound tails and delayed unrelated UI sounds"
+    },
+    "SRC-007:R005": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Complete a regression sweep, push changes, build EXE and publish release after passing verification"
+    }
+  },
+  "derived_at": "2026-09-05T15:30:08Z",
+  "derived_from": "SRC-007",
+  "interpretation_revision": 5,
+  "schema_version": 1,
+  "source_sha256": "bc91acccdf03eef6bc26627116568b2f50cc8da787cb13b1c052dede470cba6b"
+}

@@ -23,6 +23,7 @@ import zipfile
 
 from PyQt6.QtCore import (
     Q_ARG,
+    QEvent,
     QFileSystemWatcher,
     QMetaObject,
     QMimeData,
@@ -53,6 +54,20 @@ from PyQt6.QtWidgets import (
 from fastprompter.core.logging import logger
 from fastprompter.core.translations import tr
 from fastprompter.ui.qt_lifetime import weak_qt_callback
+from fastprompter.ui.silo_chest import (
+    BADGE_ROLE,
+    CHEST_SLOT_CHOICES,
+    ICON,
+    SLOT,
+    ChestItemCard,
+    ChestSlotDelegate,
+    build_item_card,
+    chest_slots,
+    folder_badge,
+    is_placeholder,
+    make_placeholder,
+    slot_total,
+)
 from fastprompter.utils.path_safety import (
     capture_resolved_root,
     is_within_captured_root,
@@ -344,31 +359,55 @@ def _fmt_size(n):
     return f"{n / 1024 / 1024 / 1024:.2f} GB"
 
 
-# PERF-005: per-directory recursive-size cache for Details listings. A root
-# with N large child directories would otherwise re-walk every unchanged
-# subtree on each coalesced listing generation. Keyed by canonical path plus
-# a signature of the DIRECT listing (children mutate a subtree without
-# changing the parent's direct listing, so the short TTL covers nested
-# changes, matching the folder_summary contract). LRU-bounded.
+# PERF-005/PERF-003: per-directory recursive-size cache for Details listings.
+# A root with N large child directories would otherwise re-walk every unchanged
+# subtree on each coalesced listing generation. ONE logical entry per canonical
+# directory identity, carrying a FIXED-SIZE generation signal (the directory's
+# stat mtime) plus the existing short TTL: a 100,000-name folder must never
+# retain (nor sort) 100,000 strings just to prove a warm hit, and a changed
+# generation REPLACES the path's entry instead of accumulating historical
+# full-name keys. Nested changes without a direct-listing mtime change stay
+# bounded by the TTL, matching the folder_summary contract. LRU-bounded.
 _DIR_SIZE_TTL = 2.0
 _dir_size_cache = {}
+
+
+def _dir_generation(path):
+    """Fixed-size directory generation signal, or None when unstat-able.
+
+    ``st_mtime_ns`` changes on every direct add/remove/rename, which is the
+    exact effective-consistency contract the old full-name signature had
+    (same-name content changes were ALWAYS left to the TTL)."""
+    try:
+        return os.stat(path).st_mtime_ns
+    except OSError:
+        return None
+
+
+def _invalidate_dir_cache(path):
+    """Drop the cached entry for ONE directory after an APPLICATION-OWNED
+    mutation (PERF-003): the next read re-stats and re-walks immediately,
+    without waiting for the TTL or relying on filesystem metadata semantics."""
+    canon = os.path.normcase(os.path.abspath(path))
+    _dir_size_cache.pop(canon, None)
+    for key in [k for k in _folder_summary_cache if k[0] == canon]:
+        _folder_summary_cache.pop(key, None)
 
 
 def _dir_size(path, _cap=2000, cancel_check=None):
     """Recursive size, capped at _cap files so a giant dropped folder
     can't stall silo switching (tooltip precision isn't worth a freeze).
 
-    PERF-005: cached per canonical path + direct-listing signature; an
-    unchanged subtree is not re-walked on every Details refresh."""
-    try:
-        names = sorted(os.listdir(path))
-    except OSError:
-        names = []
+    PERF-005/PERF-003: cached per canonical path + fixed-size generation
+    signal; an unchanged subtree is not re-walked on every Details refresh,
+    and a warm hit never enumerates or sorts the directory."""
+    canon = os.path.normcase(os.path.abspath(path))
+    generation = _dir_generation(path)
     now = _summary_now()
-    key = (os.path.normcase(os.path.abspath(path)), tuple(names))
-    hit = _dir_size_cache.get(key)
-    if hit is not None and now - hit[0] < _DIR_SIZE_TTL:
-        return hit[1]
+    hit = _dir_size_cache.get(canon)
+    if (hit is not None and now - hit[0] < _DIR_SIZE_TTL
+            and hit[1] == generation):
+        return hit[2]
     total, seen = 0, 0
     for base, _dirs, files in os.walk(path):
         if cancel_check is not None and cancel_check():
@@ -385,7 +424,7 @@ def _dir_size(path, _cap=2000, cancel_check=None):
                 break
         if seen >= _cap:
             break
-    _dir_size_cache[key] = (now, total)
+    _dir_size_cache[canon] = (now, generation, total)
     if len(_dir_size_cache) > 256:
         # PERF-005: TTL-only pruning is not a bound (fresh-burst keys all stay
         # inside the TTL); evict oldest entries too.
@@ -413,20 +452,24 @@ def folder_summary(d, lang="EN"):
 
     Cached (P2-24): the expensive recursive walk only runs when the folder's
     own listing changed or the short TTL expired — never on every refresh.
-    """
+    PERF-003: keyed by canonical directory identity + lang with a FIXED-SIZE
+    generation signal, so a warm hit never enumerates or sorts a huge direct
+    listing to rebuild the cache key."""
+    canon = os.path.normcase(os.path.abspath(d))
+    generation = _dir_generation(d)
+    now = _summary_now()
+    key = (canon, lang)
+    hit = _folder_summary_cache.get(key)
+    if (hit is not None and now - hit[0] < _SUMMARY_TTL
+            and hit[1] == generation):
+        return hit[2]
     try:
         names = os.listdir(d)
     except OSError:
         names = []
-    key = (os.path.normcase(os.path.abspath(d)),
-           tuple(sorted(names)), lang)
-    now = _summary_now()
-    hit = _folder_summary_cache.get(key)
-    if hit is not None and now - hit[0] < _SUMMARY_TTL:
-        return hit[1]
     if not names:
         text = tr("No files yet", lang)
-        _folder_summary_cache[key] = (now, text)
+        _folder_summary_cache[key] = (now, generation, text)
         _prune_folder_summary_cache(now)
         return text
     counts, sizes, total = {}, {}, 0
@@ -449,7 +492,7 @@ def folder_summary(d, lang="EN"):
     if len(lines) > 13:
         lines = lines[:13] + [f"  … and {len(counts) - 12} more types"]
     text = "\n".join(lines)
-    _folder_summary_cache[key] = (now, text)
+    _folder_summary_cache[key] = (now, generation, text)
     _prune_folder_summary_cache(now)
     return text
 
@@ -467,11 +510,14 @@ def _prune_folder_summary_cache(now=None):
 
 
 def _purge_cache(cache, now, cap, ttl):
-    """Expire old entries then evict oldest until within cap."""
+    """Expire old entries then evict oldest until within cap.
+
+    Value-shape agnostic: every entry's timestamp is its first element
+    (``(t, generation, result)`` for both folder caches)."""
     now = now if now is not None else _summary_now()
     if len(cache) > cap:
-        for stale in [k for k, (t, _v) in cache.items()
-                      if now - t >= ttl]:
+        for stale in [k for k, entry in cache.items()
+                      if now - entry[0] >= ttl]:
             cache.pop(stale, None)
     if len(cache) > cap:
         # still over cap after TTL expiry: evict oldest entries
@@ -615,6 +661,9 @@ def _publish_new_file(tmp, dest, root=None, root_identity=None):
         raise OSError(
             f"destination {dest!r} appeared; refusing to overwrite it")
     os.rename(tmp, dest)
+    # PERF-003: an application-owned create invalidates the destination
+    # directory's cached summary/size immediately.
+    _invalidate_dir_cache(os.path.dirname(dest))
 
 
 def _move_into_container(src, dest, root=None, root_identity=None,
@@ -648,6 +697,9 @@ def _move_into_container(src, dest, root=None, root_identity=None,
     try:
         _require_container_destination(root, root_identity, dest)
         os.rename(src, dest)      # same-volume: atomic, no-clobber
+        # PERF-003: explicit invalidation of both affected directories.
+        _invalidate_dir_cache(os.path.dirname(dest))
+        _invalidate_dir_cache(os.path.dirname(src) or ".")
         return "MOVED"
     except OSError:
         # a destination appeared between the check and the rename, or the
@@ -753,6 +805,8 @@ def _copy_atomic(src, dest, is_dir, root=None, root_identity=None,
             raise OSError(
                 f"publication aborted: the owner of {dest!r} no longer exists")
         os.rename(tmp, dest)
+        # PERF-003: application-owned publication invalidates the target dir.
+        _invalidate_dir_cache(os.path.dirname(dest))
     except Exception:
         shutil.rmtree(tmp, ignore_errors=True)
         try:
@@ -828,6 +882,27 @@ class _FileList(QListWidget):
         self.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
         self.setDragEnabled(True)
         self.setAcceptDrops(False)  # drops land on the panel, not the list
+        # the item card follows the cursor, so the list must see plain moves
+        self.setMouseTracking(True)
+        self._default_delegate = self.itemDelegate()
+        self._chest_delegate = ChestSlotDelegate(self)
+
+    def mouseMoveEvent(self, event):
+        super().mouseMoveEvent(event)
+        if event.buttons() != Qt.MouseButton.NoButton:
+            self._panel.hide_item_card()
+            return
+        pos = event.position().toPoint()
+        self._panel._hover_item(self.itemAt(pos), event.globalPosition().toPoint())
+
+    def viewportEvent(self, event):
+        t = event.type()
+        if t == QEvent.Type.ToolTip:
+            return True            # the item card replaces native tooltips
+        if t in (QEvent.Type.Leave, QEvent.Type.MouseButtonPress,
+                 QEvent.Type.MouseButtonDblClick, QEvent.Type.Wheel):
+            self._panel.hide_item_card()
+        return super().viewportEvent(event)
 
     def keyPressEvent(self, event):
         p = self._panel
@@ -845,6 +920,8 @@ class _FileList(QListWidget):
                 p._open_item(self.currentItem())
         elif ctrl and shift and key == Qt.Key.Key_C:
             p.copy_selected_paths()
+        elif ctrl and key == Qt.Key.Key_C:
+            p.copy_selected()
         elif ctrl and key == Qt.Key.Key_N:
             p.new_folder()
         elif ctrl and key == Qt.Key.Key_V:
@@ -855,6 +932,7 @@ class _FileList(QListWidget):
         event.accept()
 
     def startDrag(self, actions):
+        self._panel.hide_item_card()
         paths = self._panel.selected_paths()
         if not paths:
             return
@@ -898,6 +976,8 @@ class FileContainerPanel(QWidget):
         self._thumb_mtimes = {}  # path -> mtime captured at last listing
         self._item_by_path = {}  # path -> QListWidgetItem (O(1) completion)
         self._thumb_gen = 0      # thumbnail generation; bumped per listing
+        self._item_cards = {}    # path -> (mtime, html, preview) for hover
+        self._file_count = 0
         self.setAcceptDrops(True)
         self.setMinimumSize(300, 220)
         self.resize(420, 320)
@@ -924,7 +1004,7 @@ class FileContainerPanel(QWidget):
         self.btn_clip.setToolTip(tr("Clip→File\nSave the clipboard text into this folder as a .txt file", self.lang))
         self.btn_clip.clicked.connect(self.save_clipboard_as_file)
         self.btn_view = QPushButton("👁️")
-        self.btn_view.setToolTip(tr("View\nCycle view: Icons → List → Details (like Explorer)", self.lang))
+        self.btn_view.setToolTip(tr("View\nCycle view: Chest → Icons → List → Details", self.lang))
         self.btn_view.clicked.connect(self._cycle_view)
 
         bar.addWidget(self.btn_import)
@@ -989,7 +1069,7 @@ class FileContainerPanel(QWidget):
         self.btn_open_folder.setToolTip(tr("Open Folder\nOpen this silo's folder in Explorer", self.lang))
         self.btn_export.setToolTip(tr("Export All...\nCopy every file here to a folder you pick", self.lang))
         self.btn_clip.setToolTip(tr("Clip→File\nSave the clipboard text into this folder as a .txt file", self.lang))
-        self.btn_view.setToolTip(tr("View\nCycle view: Icons → List → Details (like Explorer)", self.lang))
+        self.btn_view.setToolTip(tr("View\nCycle view: Chest → Icons → List → Details", self.lang))
         self.le_tpl.setPlaceholderText(tr("Folder template (e.g. src, docs, assets)", self.lang))
         self.btn_build_tpl.setText(tr("Build Template", self.lang))
         self.btn_build_tpl.setToolTip(tr("Create these folders in the current silo", self.lang))
@@ -999,11 +1079,23 @@ class FileContainerPanel(QWidget):
 
     # ---- view modes (Explorer-like) ---------------------------------------
 
-    _VIEW_MODES = ("Icons", "List", "Details")
+    _VIEW_MODES = ("Chest", "Icons", "List", "Details")
 
     def _view_mode(self):
-        mode = self.main_win.data.get("file_panel_view", "Details")
-        return mode if mode in self._VIEW_MODES else "Details"
+        mode = self.main_win.data.get("file_panel_view", "Chest")
+        return mode if mode in self._VIEW_MODES else "Chest"
+
+    def _chest_capacity(self):
+        return chest_slots(getattr(self.main_win, "data", {}))
+
+    def set_chest_slots(self, n):
+        if n not in CHEST_SLOT_CHOICES:
+            return
+        self.main_win.data["silo_chest_slots"] = str(n)
+        if hasattr(self.main_win, "mark_dirty"):
+            self.main_win.mark_dirty()
+        self._sync_chest_placeholders()
+        self._update_count_label()
 
     def _cycle_view(self):
         modes = self._VIEW_MODES
@@ -1017,18 +1109,40 @@ class FileContainerPanel(QWidget):
     def _apply_view_mode(self):
         mode = self._view_mode()
         self.btn_view.setText("👁️")
-        self.btn_view.setToolTip(tr("View ({})\nCycle view: Icons → List → Details (like Explorer)", self.lang).format(mode))
+        self.btn_view.setToolTip(tr("View ({})\nCycle view: Chest → Icons → List → Details", self.lang).format(mode))
         lw = self.file_list
-        if mode == "Icons":
+        chest = mode == "Chest"
+        lw.setItemDelegate(lw._chest_delegate if chest else lw._default_delegate)
+        if chest:
             lw.setViewMode(QListWidget.ViewMode.IconMode)
+            lw.setMovement(QListWidget.Movement.Static)
+            lw.setUniformItemSizes(True)
+            lw.setSpacing(0)
+            lw.setIconSize(QSize(ICON, ICON))
+            lw.setGridSize(QSize(SLOT, SLOT))
+            lw.setWordWrap(False)
+            lw.setVerticalScrollMode(QListWidget.ScrollMode.ScrollPerPixel)
+            lw.setStyleSheet("QListWidget { background: #C6C6C6; border: 2px solid;"
+                             " border-color: #FFFFFF #555555 #555555 #FFFFFF;"
+                             " padding: 4px; }")
+        elif mode == "Icons":
+            lw.setStyleSheet("")
+            lw.setUniformItemSizes(False)
+            lw.setViewMode(QListWidget.ViewMode.IconMode)
+            lw.setMovement(QListWidget.Movement.Free)
             lw.setIconSize(QSize(48, 48))
             lw.setGridSize(QSize(84, 76))
             lw.setWordWrap(True)
         else:
+            lw.setStyleSheet("")
+            lw.setUniformItemSizes(False)
             lw.setViewMode(QListWidget.ViewMode.ListMode)
+            lw.setMovement(QListWidget.Movement.Static)
             lw.setIconSize(QSize(16, 16))
             lw.setGridSize(QSize())
             lw.setWordWrap(False)
+        self._sync_chest_placeholders()
+        self._update_count_label()
 
     # ---- lifecycle -------------------------------------------------------
 
@@ -1354,6 +1468,11 @@ class FileContainerPanel(QWidget):
         if gen != getattr(self, "_container_gen", 0):
             return
 
+        # empty chest slots are appended after the files; take them out so
+        # the diff below only ever sees real entries
+        self._clear_chest_placeholders()
+        self._item_cards.clear()
+
         if not hasattr(self, "_thumb_lru"):
             from collections import OrderedDict
             class LRUCache:
@@ -1420,7 +1539,6 @@ class FileContainerPanel(QWidget):
             else:
                 item = QListWidgetItem(icon, label)
                 item.setData(Qt.ItemDataRole.UserRole, path)
-                item.setToolTip(path)
                 self.file_list.insertItem(idx, item)
                 current_items[path] = item
             _icon_state[path] = icon_key
@@ -1441,7 +1559,13 @@ class FileContainerPanel(QWidget):
         self._item_by_path = current_items
         self._thumb_mtimes = thumb_mtimes
 
-        self.lbl_count.setText(tr("{} file(s)", getattr(self, "lang", "EN")).format(count))
+        self._file_count = count
+        if self._view_mode() == "Chest":
+            for path, it in current_items.items():
+                if os.path.isdir(path):
+                    it.setData(BADGE_ROLE, folder_badge(path))
+        self._sync_chest_placeholders()
+        self._update_count_label()
         self._update_preview()
         mw = getattr(self, "main_win", None)
         if hasattr(mw, "_update_files_button"):
@@ -1457,7 +1581,8 @@ class FileContainerPanel(QWidget):
 
     def selected_paths(self):
         from PyQt6.QtCore import Qt
-        return [i.data(Qt.ItemDataRole.UserRole) for i in self.file_list.selectedItems()]
+        return [i.data(Qt.ItemDataRole.UserRole) for i in self.file_list.selectedItems()
+                if i.data(Qt.ItemDataRole.UserRole)]
 
     def _queue_thumbnail_fetch(self):
         if not hasattr(self, "_thumb_timer"):
@@ -2043,7 +2168,15 @@ class FileContainerPanel(QWidget):
     # ---- file verbs ------------------------------------------------------
 
     def _open_item(self, item):
+        if item is None or is_placeholder(item):
+            return
         path = item.data(Qt.ItemDataRole.UserRole)
+        if path and os.path.isfile(path):
+            # images go to the viewer chosen in Settings (verified first)
+            from fastprompter.ui.image_viewer import IMAGE_SUFFIXES, open_image_viewer
+            if os.path.splitext(path)[1].lower() in IMAGE_SUFFIXES:
+                open_image_viewer(path, self, self.lang)
+                return
         if path and os.path.exists(path):
             try:
                 os.startfile(path)  # noqa: S606 — user-initiated open
@@ -2258,6 +2391,7 @@ class FileContainerPanel(QWidget):
             _require_container_destination(
                 self.folder, self._folder_root_identity, dest)
             os.rename(path, dest)
+            _invalidate_dir_cache(self.folder)
         except OSError as e:
             logger.error(f"File container rename failed: {e}")
         self.refresh()
@@ -2305,6 +2439,7 @@ class FileContainerPanel(QWidget):
                     os.remove(p)
             except OSError as e:
                 logger.error(f"File container delete failed for {p}: {e}")
+        _invalidate_dir_cache(self.folder)
         self.refresh()
 
     def copy_selected_paths(self):
@@ -2340,6 +2475,7 @@ class FileContainerPanel(QWidget):
                 self.folder, self._folder_root_identity, dest
             )
             os.makedirs(dest, exist_ok=False)
+            _invalidate_dir_cache(self.folder)
         except OSError as e:
             logger.error(f"File container new folder failed: {e}")
         self.refresh()
@@ -2386,11 +2522,20 @@ class FileContainerPanel(QWidget):
             self.refresh()
 
     def _show_menu(self, pos):
+        self.hide_item_card()
         item = self.file_list.itemAt(pos)
+        if is_placeholder(item):
+            item = None
         menu = QMenu(self)
         if item:
             path = item.data(Qt.ItemDataRole.UserRole)
+            is_image = os.path.splitext(path)[1].lower() in _IMAGE_EXTS
             menu.addAction(tr("Open\tEnter", self.lang), lambda: self._open_item(item))
+            if is_image:
+                menu.addAction(tr("Copy Image\tCtrl+C", self.lang),
+                               lambda: self._copy_image(path))
+            else:
+                menu.addAction(tr("Copy\tCtrl+C", self.lang), self.copy_selected)
             menu.addAction(tr("Show in Explorer", self.lang), lambda: self._reveal(path))
             menu.addAction(tr("Copy Path\tCtrl+Shift+C", self.lang), lambda: self._copy_path(path))
             menu.addAction(tr("Rename…\tF2", self.lang), lambda: self._rename(path))
@@ -2405,11 +2550,112 @@ class FileContainerPanel(QWidget):
             menu.addAction(tr("Add Link to Files…", self.lang), self._pick_link)
             menu.addAction(tr("Clipboard → File\tCtrl+V", self.lang), self.save_clipboard_as_file)
             menu.addAction(tr("Open Folder", self.lang), self._open_folder)
+            if self._view_mode() == "Chest":
+                menu.addSeparator()
+                sub = menu.addMenu(tr("Chest Size", self.lang))
+                cap = self._chest_capacity()
+                for n in CHEST_SLOT_CHOICES:
+                    act = sub.addAction(tr("{} slots", self.lang).format(n),
+                                        lambda n=n: self.set_chest_slots(n))
+                    act.setCheckable(True)
+                    act.setChecked(n == cap)
         menu.exec(self.file_list.mapToGlobal(pos))
 
     def _copy_path(self, path):
         from PyQt6.QtWidgets import QApplication
         QApplication.clipboard().setText(path)
+
+    def _copy_image(self, path):
+        from fastprompter.ui.image_viewer import copy_image_to_clipboard
+        if not copy_image_to_clipboard(path):
+            self.copy_selected()
+
+    def copy_selected(self):
+        """Ctrl+C: one image -> the picture itself; anything else -> the
+        files, Explorer-style (paste into a folder, a chat, or as paths)."""
+        paths = self.selected_paths()
+        if not paths:
+            return
+        from fastprompter.ui.image_viewer import (
+            copy_files_to_clipboard,
+            copy_image_to_clipboard,
+        )
+        if (len(paths) == 1
+                and os.path.splitext(paths[0])[1].lower() in _IMAGE_EXTS
+                and copy_image_to_clipboard(paths[0])):
+            return
+        copy_files_to_clipboard(paths)
+
+    # ---- chest slots + item card ------------------------------------------
+
+    def _clear_chest_placeholders(self):
+        lw = self.file_list
+        for i in range(lw.count() - 1, -1, -1):
+            if is_placeholder(lw.item(i)):
+                lw.takeItem(i)
+
+    def _sync_chest_placeholders(self):
+        """Pad the grid with empty slots up to the chest size (Chest view)."""
+        self._clear_chest_placeholders()
+        if self._view_mode() != "Chest":
+            return
+        lw = self.file_list
+        files = lw.count()
+        columns = max(1, (lw.viewport().width() - 8) // SLOT)
+        for _ in range(slot_total(files, self._chest_capacity(), columns) - files):
+            lw.addItem(make_placeholder())
+
+    def _update_count_label(self):
+        count = getattr(self, "_file_count", 0)
+        if self._view_mode() == "Chest":
+            cap = self._chest_capacity()
+            self.lbl_count.setText(f"{count}/{cap}")
+            self.lbl_count.setStyleSheet("color: #FF5555;" if count > cap else "")
+        else:
+            self.lbl_count.setStyleSheet("")
+            self.lbl_count.setText(tr("{} file(s)", getattr(self, "lang", "EN")).format(count))
+
+    def _item_card(self):
+        card = getattr(self, "_card", None)
+        if card is None:
+            card = self._card = ChestItemCard(self)
+        return card
+
+    def hide_item_card(self):
+        card = getattr(self, "_card", None)
+        if card is not None and card.isVisible():
+            card.hide()
+
+    def _hover_item(self, item, global_pos):
+        """Minecraft item card: built once per hovered entry, follows the cursor."""
+        if item is None or is_placeholder(item):
+            self.hide_item_card()
+            return
+        path = item.data(Qt.ItemDataRole.UserRole)
+        if not path:
+            self.hide_item_card()
+            return
+        card = self._item_card()
+        if card.path != path or not card.isVisible():
+            try:
+                mtime = os.stat(path).st_mtime
+            except OSError:
+                mtime = None
+            hit = self._item_cards.get(path)
+            if hit is None or hit[0] != mtime:
+                html_text, pix = build_item_card(path, tr, self.lang, folder_summary)
+                hit = (mtime, html_text, pix)
+                self._item_cards[path] = hit
+                if len(self._item_cards) > 64:
+                    self._item_cards.pop(next(iter(self._item_cards)))
+            card.set_content(path, hit[1], hit[2])
+        card.follow(global_pos)
+        if not card.isVisible():
+            card.show()
+
+    def hideEvent(self, event):
+        self.hide_item_card()
+        super().hideEvent(event)
 
     # ---- preview ---------------------------------------------------------
 

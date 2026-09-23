@@ -1,0 +1,14 @@
+{
+  "clauses": {
+    "SRC-018:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Do T-1270 corrective work and register remaining corrective tickets"
+    }
+  },
+  "derived_at": "2026-09-17T21:02:15Z",
+  "derived_from": "SRC-018",
+  "interpretation_revision": 1,
+  "schema_version": 1,
+  "source_sha256": "2b68d07aeef27cce827e55aadc24ef2b85f74e517d16730edd5adeba8f593d4b"
+}

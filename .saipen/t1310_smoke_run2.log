@@ -1,0 +1,132 @@
+........................................................................ [  6%]
+........................................................................ [ 13%]
+........................................................................ [ 20%]
+........................................................................ [ 26%]
+........................................................................ [ 33%]
+........................................................................ [ 40%]
+.........FF............................................................. [ 47%]
+........................................................................ [ 53%]
+........................................................................ [ 60%]
+..............................F......................................... [ 67%]
+........................................................................ [ 74%]
+........................................................................ [ 80%]
+........................................................................ [ 87%]
+........................................................................ [ 94%]
+...........................................................              [100%]
+================================== FAILURES ===================================
+______________ test_limit_account_checkboxes_hide_by_stable_key _______________
+
+fresh_win = <fastprompter.main.FastPrompter object at 0x0000016888D12950>
+
+    def test_limit_account_checkboxes_hide_by_stable_key(fresh_win):
+        """Account visibility is opt-out and survives reorder/name changes."""
+        from PyQt6.QtWidgets import QCheckBox
+    
+        from fastprompter.core.usage_limits.model import AccountRef
+        from fastprompter.ui.limit_settings_dialog import LimitSettingsDialog
+    
+        w = fresh_win
+        accounts = [
+            AccountRef("codex", "stable-one", "Codex 1", "test", "X:/one"),
+            AccountRef("codex", "stable-two", "Codex 2", "test", "X:/two"),
+        ]
+        with w.limit_service._lock:
+            w.limit_service._state.accounts = accounts
+            w.limit_service._state.snapshots = {}
+        w.data["limit_gauges_hidden_accounts"] = []
+        w.data["limit_gauges_hide_unusable_5h"] = "False"
+        dialog = LimitSettingsDialog(w)
+        selector = dialog.account_selector
+        selector.sync(force=True)
+        boxes = selector.findChildren(QCheckBox)
+        assert len(boxes) == 2
+        boxes[0].setChecked(False)
+        QApplication.processEvents()
+        assert w.data["limit_gauges_hidden_accounts"] == [accounts[0].key]
+>       assert [a.key for a in w.limit_gauges._visible_accounts()] == [accounts[1].key]
+E       AssertionError: assert [] == ['codex:stable-two']
+E         
+E         Right contains one more item: 'codex:stable-two'
+E         Use -v to get more diff
+
+tests_smoke\test_app_smoke.py:10854: AssertionError
+_______________ test_limit_gauges_sheds_labels_before_accounts ________________
+
+fresh_win = <fastprompter.main.FastPrompter object at 0x0000016888D44E50>
+
+    def test_limit_gauges_sheds_labels_before_accounts(fresh_win):
+        """A narrow header keeps quota marks and never emits a lone '+'."""
+        from fastprompter.core.usage_limits.model import AccountRef
+    
+        w = fresh_win
+        accounts = [
+            AccountRef("codex", f"stable-{i}", f"Codex {i}", "test", f"X:/{i}")
+            for i in range(1, 5)
+        ]
+        with w.limit_service._lock:
+            w.limit_service._state.accounts = accounts
+            w.limit_service._state.snapshots = {}
+        w.data["limit_gauges_hidden_accounts"] = []
+        w.data["limit_gauges_hide_unusable_5h"] = "False"
+        w.data["limit_gauges_style"] = "bars"
+    
+        labeled = w.limit_gauges._cluster_width(True)
+        plain = w.limit_gauges._cluster_width(False)
+        # Four plain clusters fit, but four labeled clusters do not: all four
+        # gauges remain and initials disappear.
+        labels, per_cluster, n_fit = w.limit_gauges._fit_layout(
+            plain * 4, len(accounts))
+        assert labels is False
+        assert per_cluster == plain
+        assert n_fit == 4
+        assert plain < labeled
+    
+        # If only two can fit after reserving a marker, it explicitly means +2.
+        labels, _per_cluster, n_fit = w.limit_gauges._fit_layout(
+            plain * 2 + 16, len(accounts))
+        assert labels is False
+        assert n_fit == 2
+        assert len(accounts) - n_fit == 2
+    
+        w._header_ultra = True
+        w.limit_gauges.refresh_view()
+        # The LAST cluster's GAP_ACC separates it from a next cluster; there is
+        # none, so the widget does not reserve it (see _clusters_width) � reserving
+        # it showed up as a dead strip before the reset countdown.
+        expected = (w.limit_gauges.PAD * 2
+                    + plain * len(accounts) - w.limit_gauges.GAP_ACC)
+>       assert w.limit_gauges.width() == expected
+E       assert 15 == 44
+E        +  where 15 = <built-in method width of LimitGauges object at 0x0000016888D477F0>()
+E        +    where <built-in method width of LimitGauges object at 0x0000016888D477F0> = <fastprompter.ui.limit_gauges.LimitGauges object at 0x0000016888D477F0>.width
+E        +      where <fastprompter.ui.limit_gauges.LimitGauges object at 0x0000016888D477F0> = <fastprompter.main.FastPrompter object at 0x0000016888D44E50>.limit_gauges
+
+tests_smoke\test_app_smoke.py:10909: AssertionError
+______ TestFolderSummaryCache.test_direct_change_invalidates_immediately ______
+
+self = <test_folder_summary_cache.TestFolderSummaryCache object at 0x00000168CE93AE10>
+tmp_path = WindowsPath('V:/_TEMP_/fastprompter-tests-5744-pjglsbhq/pytest-of-vac34/pytest-0/test_direct_change_invalidates0')
+
+    def test_direct_change_invalidates_immediately(self, tmp_path):
+        import fastprompter.ui.file_container as fc
+    
+        d = str(tmp_path / "silo2")
+        _seed(d)
+        fc._folder_summary_cache.clear()
+        first = fc.folder_summary(d)
+        assert "2 item(s)" in first, first
+        with open(os.path.join(d, "c.txt"), "w", encoding="utf-8") as f:
+            f.write("z")
+        # a changed direct listing must recompute immediately (inside the TTL);
+        # unchanged SUBTREES may legitimately be served from the per-path cache
+        second = fc.folder_summary(d)
+>       assert second != first, "a direct change must recompute"
+E       AssertionError: a direct change must recompute
+E       assert '2 item(s) \xb7 300 B\\n  folder \xd71 \xb7 200 B\\n  .txt \xd71 \xb7 100 B' != '2 item(s) \xb7 300 B\\n  folder \xd71 \xb7 200 B\\n  .txt \xd71 \xb7 100 B'
+
+tests_smoke\test_folder_summary_cache.py:62: AssertionError
+=========================== short test summary info ===========================
+FAILED tests_smoke/test_app_smoke.py::test_limit_account_checkboxes_hide_by_stable_key
+FAILED tests_smoke/test_app_smoke.py::test_limit_gauges_sheds_labels_before_accounts
+FAILED tests_smoke/test_folder_summary_cache.py::TestFolderSummaryCache::test_direct_change_invalidates_immediately
+3 failed, 1064 passed in 1031.69s (0:17:11)

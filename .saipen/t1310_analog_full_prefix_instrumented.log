@@ -1,0 +1,260 @@
+PROBE font='Sans Serif' pt=9 px=-1 widgets=0 quitOnLast=True style='fusion'
+PROBE qss_len=0 qss_head=''
+PROBE sysmod-real True
+PROBE main-QApplication-real True
+PROBE editor-QApplication-real True
+PROBE main-module V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\main.py
+QFontDatabase: Cannot find font directory V:/___VAC/__K/__CODE/_PY/_FastPrompter/.venv/Lib/site-packages/PyQt6/Qt6/lib/fonts.
+Note that Qt no longer ships fonts. Deploy some (from https://dejavu-fonts.github.io/ for example) or switch to fontconfig.
+qt.multimedia.ffmpeg: Using Qt multimedia with FFmpeg version 7.1.3 LGPL version 2.1 or later
+17:27:39 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Code' slot=0 space=normal stamp=['Code', False, 0] len=5 sha=a7937b64b8ca artifact=V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery\silo_owner_mismatch_20260923_172739_a7937b64b8ca.json; text NOT written, state left dirty
+17:27:40 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Code' slot=0 space=normal stamp=['Code', False, 0] len=13 sha=058053d87c81 artifact=V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery\silo_owner_mismatch_20260923_172740_058053d87c81.json; text NOT written, state left dirty
+17:27:40 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Code' slot=0 space=normal stamp=['Code', False, 0] len=1 sha=ca978112ca1b artifact=V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery\silo_owner_mismatch_20260923_172740_ca978112ca1b.json; text NOT written, state left dirty
+17:27:40 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Code' slot=1 space=normal stamp=['Code', False, 1] len=1 sha=3e23e8160039 artifact=V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery\silo_owner_mismatch_20260923_172740_3e23e8160039.json; text NOT written, state left dirty
+17:27:40 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Code' slot=2 space=normal stamp=['Code', False, 2] len=1 sha=2e7d2c03a950 artifact=V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery\silo_owner_mismatch_20260923_172740_2e7d2c03a950.json; text NOT written, state left dirty
+17:27:41 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Code' slot=0 space=normal stamp=['Code', False, 0] len=24 sha=da6f2b03cb8c artifact=V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery\silo_owner_mismatch_20260923_172741_da6f2b03cb8c.json; text NOT written, state left dirty
+17:27:41 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Code' slot=0 space=normal stamp=['Code', False, 0] len=24 sha=da6f2b03cb8c artifact=V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery\silo_owner_mismatch_20260923_172741_da6f2b03cb8c.json; text NOT written, state left dirty
+This plugin does not support propagateSizeHints()
+17:27:41 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Code' slot=0 space=normal stamp=['Code', False, 0] len=24 sha=da6f2b03cb8c artifact=V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery\silo_owner_mismatch_20260923_172741_da6f2b03cb8c.json; text NOT written, state left dirty
+17:27:41 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Code' slot=0 space=normal stamp=['Code', False, 0] len=24 sha=da6f2b03cb8c artifact=V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery\silo_owner_mismatch_20260923_172741_da6f2b03cb8c.json; text NOT written, state left dirty
+17:27:41 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Code' slot=0 space=normal stamp=['Code', False, 0] len=24 sha=da6f2b03cb8c artifact=V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery\silo_owner_mismatch_20260923_172741_da6f2b03cb8c.json; text NOT written, state left dirty
+This plugin does not support raise()
+This plugin does not support raise()
+17:27:42 [WARNING] fastprompter: view jumped to the top from 7548
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\pluggy\_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\pluggy\_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\_pytest\runner.py", line 184, in pytest_runtest_call
+    item.runtest()
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\_pytest\python.py", line 1707, in runtest
+    self.ihook.pytest_pyfunc_call(pyfuncitem=self)
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\pluggy\_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\pluggy\_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\pluggy\_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv\Lib\site-packages\_pytest\python.py", line 167, in pytest_pyfunc_call
+    result = testfunction(**testargs)
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\tests_smoke\test_app_smoke.py", line 661, in test_formatting_hotkeys_keep_the_viewport_where_it_was
+    run()
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\ui\formatting_mixin.py", line 440, in insert_add_line
+    self._insert_add_line_locked()
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\ui\formatting_mixin.py", line 537, in _insert_add_line_locked
+    self.text_area.setTextCursor(final)
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\ui\editor.py", line 2767, in _watch_scroll_reset
+    previous, "".join(traceback.format_stack(limit=12)))
+
+17:27:43 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Code' slot=0 space=normal stamp=['Code', False, 0] len=7 sha=81b4d1fc61d5 artifact=V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery\silo_owner_mismatch_20260923_172743_81b4d1fc61d5.json; text NOT written, state left dirty
+17:27:43 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Code' slot=0 space=normal stamp=['Code', False, 0] len=3 sha=9834876dcfb0 artifact=V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery\silo_owner_mismatch_20260923_172743_9834876dcfb0.json; text NOT written, state left dirty
+17:27:43 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Text' slot=1 space=normal stamp=['Code', False, 1] len=5 sha=d9298a10d1b0 artifact=V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery\silo_owner_mismatch_20260923_172743_d9298a10d1b0.json; text NOT written, state left dirty
+17:27:43 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Text' slot=0 space=normal stamp=['Code', False, 0] len=12 sha=ec85499e87a7 artifact=V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery\silo_owner_mismatch_20260923_172743_ec85499e87a7.json; text NOT written, state left dirty
+17:27:43 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Code' slot=0 space=normal stamp=['Text', False, 0] len=0 sha=e3b0c44298fc artifact=V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery\silo_owner_mismatch_20260923_172743_e3b0c44298fc.json; text NOT written, state left dirty
+This plugin does not support propagateSizeHints()
+17:27:44 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Text' slot=0 space=normal stamp=['Code', False, 0] len=51 sha=7dbc5cfbffb9 artifact=V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery\silo_owner_mismatch_20260923_172744_7dbc5cfbffb9.json; text NOT written, state left dirty
+17:27:44 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Code' slot=0 space=normal stamp=['Text', False, 0] len=0 sha=e3b0c44298fc artifact=V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery\silo_owner_mismatch_20260923_172743_e3b0c44298fc.json; text NOT written, state left dirty
+17:27:44 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Text' slot=1 space=normal stamp=['Code', False, 1] len=0 sha=e3b0c44298fc artifact=V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery\silo_owner_mismatch_20260923_172743_e3b0c44298fc.json; text NOT written, state left dirty
+17:27:45 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Misc' slot=0 space=normal stamp=['Text', False, 0] len=9 sha=f0f8b34057aa artifact=V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery\silo_owner_mismatch_20260923_172745_f0f8b34057aa.json; text NOT written, state left dirty
+17:27:45 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Code' slot=0 space=normal stamp=['Misc', False, 0] len=0 sha=e3b0c44298fc artifact=V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery\silo_owner_mismatch_20260923_172743_e3b0c44298fc.json; text NOT written, state left dirty
+17:27:45 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Text' slot=5 space=normal stamp=['Code', False, 5] len=30 sha=5960e8ae2d36 artifact=V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery\silo_owner_mismatch_20260923_172745_5960e8ae2d36.json; text NOT written, state left dirty
+17:27:46 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Misc' slot=0 space=normal stamp=['Code', False, 0] len=0 sha=e3b0c44298fc artifact=V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery\silo_owner_mismatch_20260923_172743_e3b0c44298fc.json; text NOT written, state left dirty
+17:27:46 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Text' slot=1 space=normal stamp=['Misc', False, 1] len=7 sha=43d9f2e45d19 artifact=V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery\silo_owner_mismatch_20260923_172746_43d9f2e45d19.json; text NOT written, state left dirty
+17:27:46 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Code' slot=2 space=normal stamp=['Text', False, 2] len=34 sha=4a3c8596ad23 artifact=V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery\silo_owner_mismatch_20260923_172746_4a3c8596ad23.json; text NOT written, state left dirty
+17:27:46 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Text' slot=0 space=normal stamp=['Code', False, 0] len=0 sha=e3b0c44298fc artifact=V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery\silo_owner_mismatch_20260923_172743_e3b0c44298fc.json; text NOT written, state left dirty
+17:27:47 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Misc' slot=3 space=normal stamp=['Code', False, 3] len=0 sha=e3b0c44298fc artifact=V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery\silo_owner_mismatch_20260923_172743_e3b0c44298fc.json; text NOT written, state left dirty
+17:27:47 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Code' slot=0 space=normal stamp=['Misc', False, 0] len=0 sha=e3b0c44298fc artifact=V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery\silo_owner_mismatch_20260923_172743_e3b0c44298fc.json; text NOT written, state left dirty
+17:27:47 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Misc' slot=1 space=normal stamp=['Code', False, 1] len=7 sha=43d9f2e45d19 artifact=V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery\silo_owner_mismatch_20260923_172746_43d9f2e45d19.json; text NOT written, state left dirty
+17:27:48 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Text' slot=1 space=normal stamp=['Misc', False, 1] len=7 sha=43d9f2e45d19 artifact=V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery\silo_owner_mismatch_20260923_172746_43d9f2e45d19.json; text NOT written, state left dirty
+17:27:48 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Code' slot=0 space=normal stamp=['Misc', False, 0] len=1 sha=2d711642b726 artifact=V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery\silo_owner_mismatch_20260923_172748_2d711642b726.json; text NOT written, state left dirty
+17:27:48 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Text' slot=0 space=normal stamp=['Code', False, 0] len=0 sha=e3b0c44298fc artifact=V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery\silo_owner_mismatch_20260923_172743_e3b0c44298fc.json; text NOT written, state left dirty
+17:27:48 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Misc' slot=5 space=normal stamp=['Text', False, 5] len=34 sha=4a3c8596ad23 artifact=V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery\silo_owner_mismatch_20260923_172746_4a3c8596ad23.json; text NOT written, state left dirty
+17:27:49 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Code' slot=0 space=normal stamp=['Misc', False, 0] len=0 sha=e3b0c44298fc artifact=V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery\silo_owner_mismatch_20260923_172743_e3b0c44298fc.json; text NOT written, state left dirty
+17:27:50 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Misc' slot=0 space=normal stamp=None len=15 sha=f2873cc26fc7 artifact=V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery\silo_owner_mismatch_20260923_172750_f2873cc26fc7.json; text NOT written, state left dirty
+17:27:50 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Misc' slot=2 space=normal stamp=None len=0 sha=e3b0c44298fc artifact=V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery\silo_owner_mismatch_20260923_172743_e3b0c44298fc.json; text NOT written, state left dirty
+17:27:50 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Misc' slot=1 space=normal stamp=None len=0 sha=e3b0c44298fc artifact=V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery\silo_owner_mismatch_20260923_172743_e3b0c44298fc.json; text NOT written, state left dirty
+17:27:50 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Misc' slot=3 space=normal stamp=['Code', False, 3] len=6 sha=bbf1b7b16951 artifact=V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery\silo_owner_mismatch_20260923_172750_bbf1b7b16951.json; text NOT written, state left dirty
+17:27:50 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Misc' slot=3 space=normal stamp=None len=31 sha=567433d37786 artifact=V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery\silo_owner_mismatch_20260923_172750_567433d37786.json; text NOT written, state left dirty
+17:27:50 [CRITICAL] fastprompter: T-1227 owner-mismatch artifact cap reached (20 in V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery); keeping the earliest evidence and NOT writing more. The flush is still refused, so no silo is being overwritten.
+17:27:50 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Code' slot=3 space=normal stamp=None len=32 sha=b0c6971c40e1 artifact=UNAVAILABLE; text NOT written, state left dirty
+17:27:50 [CRITICAL] fastprompter: T-1227 owner-mismatch artifact cap reached (20 in V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery); keeping the earliest evidence and NOT writing more. The flush is still refused, so no silo is being overwritten.
+17:27:50 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Text' slot=0 space=archive stamp=None len=48 sha=f6f2169dbc6d artifact=UNAVAILABLE; text NOT written, state left dirty
+17:27:50 [CRITICAL] fastprompter: T-1227 owner-mismatch artifact cap reached (20 in V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery); keeping the earliest evidence and NOT writing more. The flush is still refused, so no silo is being overwritten.
+17:27:50 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Misc' slot=5 space=normal stamp=None len=48 sha=f6f2169dbc6d artifact=UNAVAILABLE; text NOT written, state left dirty
+17:27:51 [CRITICAL] fastprompter: T-1227 owner-mismatch artifact cap reached (20 in V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery); keeping the earliest evidence and NOT writing more. The flush is still refused, so no silo is being overwritten.
+17:27:51 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Code' slot=1 space=normal stamp=['Misc', False, 1] len=6 sha=4932042ec59b artifact=UNAVAILABLE; text NOT written, state left dirty
+17:27:51 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Code' slot=3 space=normal stamp=None len=0 sha=e3b0c44298fc artifact=V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery\silo_owner_mismatch_20260923_172743_e3b0c44298fc.json; text NOT written, state left dirty
+17:27:51 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Text' slot=3 space=normal stamp=None len=0 sha=e3b0c44298fc artifact=V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery\silo_owner_mismatch_20260923_172743_e3b0c44298fc.json; text NOT written, state left dirty
+17:27:51 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Text' slot=2 space=normal stamp=['Code', False, 2] len=0 sha=e3b0c44298fc artifact=V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery\silo_owner_mismatch_20260923_172743_e3b0c44298fc.json; text NOT written, state left dirty
+17:27:51 [CRITICAL] fastprompter: T-1227 owner-mismatch artifact cap reached (20 in V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery); keeping the earliest evidence and NOT writing more. The flush is still refused, so no silo is being overwritten.
+17:27:51 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Misc' slot=5 space=normal stamp=['Text', False, 5] len=7 sha=b545fb6c9170 artifact=UNAVAILABLE; text NOT written, state left dirty
+17:27:51 [CRITICAL] fastprompter: T-1227 owner-mismatch artifact cap reached (20 in V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery); keeping the earliest evidence and NOT writing more. The flush is still refused, so no silo is being overwritten.
+17:27:51 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Code' slot=5 space=normal stamp=['Text', False, 5] len=7 sha=b545fb6c9170 artifact=UNAVAILABLE; text NOT written, state left dirty
+17:27:51 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='NEW' slot=2 space=normal stamp=['Code', False, 2] len=0 sha=e3b0c44298fc artifact=V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery\silo_owner_mismatch_20260923_172743_e3b0c44298fc.json; text NOT written, state left dirty
+17:27:51 [WARNING] fastprompter: per-category store 'silo_selected_all' carries a dict value for category 'NEW'; binding the natural empty value instead
+17:27:51 [CRITICAL] fastprompter: T-1227 owner-mismatch artifact cap reached (20 in V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery); keeping the earliest evidence and NOT writing more. The flush is still refused, so no silo is being overwritten.
+17:27:51 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Text' slot=1 space=normal stamp=['NEW', False, 1] len=3 sha=dcdb704109a4 artifact=UNAVAILABLE; text NOT written, state left dirty
+17:27:51 [CRITICAL] fastprompter: T-1227 owner-mismatch artifact cap reached (20 in V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery); keeping the earliest evidence and NOT writing more. The flush is still refused, so no silo is being overwritten.
+17:27:51 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Text' slot=5 space=normal stamp=['Text', False, 5] len=7 sha=b545fb6c9170 artifact=UNAVAILABLE; text NOT written, state left dirty
+17:27:51 [CRITICAL] fastprompter: T-1227 owner-mismatch artifact cap reached (20 in V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery); keeping the earliest evidence and NOT writing more. The flush is still refused, so no silo is being overwritten.
+17:27:51 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Misc' slot=5 space=normal stamp=['Text', False, 5] len=7 sha=b545fb6c9170 artifact=UNAVAILABLE; text NOT written, state left dirty
+17:27:51 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='NEW' slot=1 space=normal stamp=['Misc', False, 1] len=0 sha=e3b0c44298fc artifact=V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery\silo_owner_mismatch_20260923_172743_e3b0c44298fc.json; text NOT written, state left dirty
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support raise()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support raise()
+This plugin does not support propagateSizeHints()
+This plugin does not support raise()
+This plugin does not support propagateSizeHints()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support raise()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support raise()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support propagateSizeHints()
+This plugin does not support raise()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+17:28:15 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Misc' slot=0 space=normal stamp=['NEW', False, 0] len=0 sha=e3b0c44298fc artifact=V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery\silo_owner_mismatch_20260923_172743_e3b0c44298fc.json; text NOT written, state left dirty
+17:28:15 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='NEW' slot=1 space=normal stamp=['Misc', False, 1] len=0 sha=e3b0c44298fc artifact=V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery\silo_owner_mismatch_20260923_172743_e3b0c44298fc.json; text NOT written, state left dirty
+17:28:15 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Misc' slot=0 space=normal stamp=['NEW', False, 0] len=0 sha=e3b0c44298fc artifact=V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery\silo_owner_mismatch_20260923_172743_e3b0c44298fc.json; text NOT written, state left dirty
+17:28:15 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='NEW' slot=0 space=normal stamp=['Misc', False, 1] len=0 sha=e3b0c44298fc artifact=V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery\silo_owner_mismatch_20260923_172743_e3b0c44298fc.json; text NOT written, state left dirty
+This plugin does not support raise()
+17:28:19 [CRITICAL] fastprompter: T-1227 owner-mismatch artifact cap reached (20 in V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery); keeping the earliest evidence and NOT writing more. The flush is still refused, so no silo is being overwritten.
+17:28:19 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='NEW' slot=0 space=normal stamp=['NEW', False, 0] len=15 sha=fd24421a59f5 artifact=UNAVAILABLE; text NOT written, state left dirty
+17:28:19 [CRITICAL] fastprompter: T-1227 owner-mismatch artifact cap reached (20 in V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery); keeping the earliest evidence and NOT writing more. The flush is still refused, so no silo is being overwritten.
+17:28:19 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='NEW' slot=0 space=normal stamp=['NEW', False, 0] len=18 sha=081361377fb0 artifact=UNAVAILABLE; text NOT written, state left dirty
+17:28:19 [CRITICAL] fastprompter: T-1227 owner-mismatch artifact cap reached (20 in V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery); keeping the earliest evidence and NOT writing more. The flush is still refused, so no silo is being overwritten.
+17:28:19 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='NEW' slot=0 space=normal stamp=['NEW', False, 0] len=18 sha=081361377fb0 artifact=UNAVAILABLE; text NOT written, state left dirty
+17:28:20 [CRITICAL] fastprompter: T-1227 owner-mismatch artifact cap reached (20 in V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery); keeping the earliest evidence and NOT writing more. The flush is still refused, so no silo is being overwritten.
+17:28:20 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='NEW' slot=0 space=normal stamp=['NEW', False, 0] len=6 sha=212242e26de3 artifact=UNAVAILABLE; text NOT written, state left dirty
+17:28:20 [CRITICAL] fastprompter: T-1227 owner-mismatch artifact cap reached (20 in V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery); keeping the earliest evidence and NOT writing more. The flush is still refused, so no silo is being overwritten.
+17:28:20 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='NEW' slot=1 space=normal stamp=['NEW', False, 1] len=6 sha=4932042ec59b artifact=UNAVAILABLE; text NOT written, state left dirty
+17:28:20 [CRITICAL] fastprompter: T-1227 owner-mismatch artifact cap reached (20 in V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery); keeping the earliest evidence and NOT writing more. The flush is still refused, so no silo is being overwritten.
+17:28:20 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='NEW' slot=2 space=normal stamp=['NEW', False, 2] len=6 sha=7bfb27373475 artifact=UNAVAILABLE; text NOT written, state left dirty
+17:28:20 [CRITICAL] fastprompter: T-1227 owner-mismatch artifact cap reached (20 in V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery); keeping the earliest evidence and NOT writing more. The flush is still refused, so no silo is being overwritten.
+17:28:20 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Misc' slot=1 space=normal stamp=['NEW', False, 1] len=10 sha=bbfb79e82216 artifact=UNAVAILABLE; text NOT written, state left dirty
+17:28:20 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='NEW' slot=0 space=normal stamp=['Misc', False, 0] len=0 sha=e3b0c44298fc artifact=V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery\silo_owner_mismatch_20260923_172743_e3b0c44298fc.json; text NOT written, state left dirty
+This plugin does not support raise()
+17:29:13 [CRITICAL] fastprompter: T-1227 owner-mismatch artifact cap reached (20 in V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery); keeping the earliest evidence and NOT writing more. The flush is still refused, so no silo is being overwritten.
+17:29:13 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Misc' slot=2 space=normal stamp=['NEW', False, 2] len=7 sha=b9dd960c1753 artifact=UNAVAILABLE; text NOT written, state left dirty
+17:29:13 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='NEW' slot=0 space=normal stamp=['Misc', False, 0] len=0 sha=e3b0c44298fc artifact=V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery\silo_owner_mismatch_20260923_172743_e3b0c44298fc.json; text NOT written, state left dirty
+17:29:14 [CRITICAL] fastprompter: T-1227 owner-mismatch artifact cap reached (20 in V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery); keeping the earliest evidence and NOT writing more. The flush is still refused, so no silo is being overwritten.
+17:29:14 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='Misc' slot=2 space=normal stamp=['NEW', False, 2] len=7 sha=b9dd960c1753 artifact=UNAVAILABLE; text NOT written, state left dirty
+17:29:14 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='NEW' slot=0 space=normal stamp=['Misc', False, 0] len=0 sha=e3b0c44298fc artifact=V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery\silo_owner_mismatch_20260923_172743_e3b0c44298fc.json; text NOT written, state left dirty
+17:29:14 [WARNING] fastprompter: per-category store 'project_sync_map_all' carries 1 invalid slot/path mapping(s) for category 'NEW'; quarantining them
+This plugin does not support propagateSizeHints()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support propagateSizeHints()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+17:29:28 [CRITICAL] fastprompter: T-1227 owner-mismatch artifact cap reached (20 in V:\_TEMP_\fastprompter-tests-35996-irh60rxc\fastprompter_smoke_ocven35o\recovery); keeping the earliest evidence and NOT writing more. The flush is still refused, so no silo is being overwritten.
+17:29:28 [CRITICAL] fastprompter: T-1227 SILO_OWNER_MISMATCH: refused to flush live editor into category='NEW' slot=6 space=normal stamp=['NEW', False, 6] len=2 sha=f87980c88a93 artifact=UNAVAILABLE; text NOT written, state left dirty
+17:29:29 [WARNING] fastprompter: per-category store 'project_sync_map_all' carries 1 invalid slot/path mapping(s) for category 'NEW'; quarantining them
+This plugin does not support propagateSizeHints()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+...........................................................................................................................................................................................................................................................................theme-loop Dark Golden (Win95) widgets=4511
+theme-loop-end Dark Golden (Win95) elapsed=8.090s
+theme-loop Claude Code widgets=4513
+theme-loop-end Claude Code elapsed=8.080s
+theme-loop Antigravity widgets=4515
+theme-loop-end Antigravity elapsed=7.147s
+theme-loop K-Lite (MPC-HC) widgets=4517
+theme-loop-end K-Lite (MPC-HC) elapsed=7.978s
+theme-loop FreeBuff widgets=4519
+theme-loop-end FreeBuff elapsed=8.466s
+theme-loop CodeNomad widgets=4521
+theme-loop-end CodeNomad elapsed=8.131s
+theme-loop Default widgets=4523
+theme-loop-end Default elapsed=8.201s
+theme-loop Golden Vintage widgets=4525
+theme-loop-end Golden Vintage elapsed=9.585s
+theme-loop Golden Default widgets=4527
+theme-loop-end Golden Default elapsed=9.254s
+theme-loop Vintage Dark widgets=3701
+theme-loop-end Vintage Dark elapsed=5.071s
+theme-loop Vintage Classic widgets=3703
+theme-loop-end Vintage Classic elapsed=5.408s
+theme-loop Dark 2 (OLED) widgets=3705
+theme-loop-end Dark 2 (OLED) elapsed=5.861s
+theme-loop Dracula widgets=3707
+theme-loop-end Dracula elapsed=5.410s
+theme-loop Nord widgets=3709
+theme-loop-end Nord elapsed=6.391s
+theme-loop Solarized Dark widgets=3711
+theme-loop-end Solarized Dark elapsed=6.381s
+.
+268 passed in 231.55s (0:03:51)

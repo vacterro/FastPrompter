@@ -404,6 +404,8 @@ def test_image_viewer_lifetime(app, tmp_path, qapp=None):
 
     from fastprompter.ui import image_viewer
     from fastprompter.ui.image_viewer import ImageViewer, open_image_viewer
+    image_viewer._OPEN_VIEWERS.clear()
+    image_viewer.bind_preferences(None)
     png = _write_png(tmp_path / "life.png")
     try:
         assert open_image_viewer(str(png), None, "EN") is True
@@ -412,7 +414,9 @@ def test_image_viewer_lifetime(app, tmp_path, qapp=None):
         viewer = next(iter(image_viewer._OPEN_VIEWERS))
         assert isinstance(viewer, ImageViewer)
         viewer.close()
+        QApplication.processEvents()
         QApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        QApplication.processEvents()
         assert viewer not in image_viewer._OPEN_VIEWERS, (
             "a closed viewer must be deregistered, not retained")
         assert open_image_viewer(str(png), None, "EN") is True
@@ -423,4 +427,6 @@ def test_image_viewer_lifetime(app, tmp_path, qapp=None):
                 stale.close()
             except Exception:
                 pass
+        QApplication.processEvents()
         QApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        QApplication.processEvents()

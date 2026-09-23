@@ -131,12 +131,32 @@ def _set_combo_sound(combo: QComboBox, ref, lang="EN") -> None:
 
 DEFAULT_INTERVAL_RULES = [
     {
+        "id": "interval_default_1",
+        "name": "Hourly Reminder",
+        "minutes": 60,
+        "enabled": True,
+        "sound": "file:NEWDAY.wav",
+        "volume": 1.0,
+        "show_notification": False,
+        "show_in_top_bar": False,
+        "align_mode": "clock",
+        "all_day": True,
+        "start_minute": 0,
+        "end_minute": 1439,
+        "last_fired": 0.0,
+        "last_fired_minute": "",
+    },
+]
+
+
+DAYPART_CHIME_RULES = [
+    {
         "id": "interval_default_noon",
         "name": "Noon (12:00)",
         "minutes": 60,
         "enabled": True,
         "sound": "file:GENIE.wav",
-        "volume": 1.0,
+        "volume": 0.05,
         "show_notification": True,
         "show_in_top_bar": False,
         "align_mode": "clock",
@@ -152,7 +172,7 @@ DEFAULT_INTERVAL_RULES = [
         "minutes": 60,
         "enabled": True,
         "sound": "file:NEWDAY.wav",
-        "volume": 1.0,
+        "volume": 0.05,
         "show_notification": True,
         "show_in_top_bar": False,
         "align_mode": "clock",
@@ -168,7 +188,7 @@ DEFAULT_INTERVAL_RULES = [
         "minutes": 60,
         "enabled": True,
         "sound": "file:NEWDAY.wav",
-        "volume": 1.0,
+        "volume": 0.05,
         "show_notification": True,
         "show_in_top_bar": False,
         "align_mode": "clock",
@@ -184,7 +204,7 @@ DEFAULT_INTERVAL_RULES = [
         "minutes": 60,
         "enabled": True,
         "sound": "file:alert_owl2.wav",
-        "volume": 1.0,
+        "volume": 0.05,
         "show_notification": True,
         "show_in_top_bar": False,
         "align_mode": "clock",
@@ -2431,7 +2451,7 @@ class TimerDialog(QDialog):
         list_btns.addWidget(self.interval_btn_delete)
 
         self.interval_btn_defaults = QPushButton(tr("Defaults", self.lang))
-        self.interval_btn_defaults.setToolTip(tr("Reset to default 24h chime schedule (0.05 volume)", self.lang))
+        self.interval_btn_defaults.setToolTip(tr("Reset to hourly NewDay reminder (volume 1.00, no popup)", self.lang))
         self.interval_btn_defaults.clicked.connect(self._interval_reset_defaults)
         list_btns.addWidget(self.interval_btn_defaults)
 
@@ -2807,7 +2827,7 @@ class TimerDialog(QDialog):
         from PyQt6.QtWidgets import QMenu
         menu = QMenu(self)
         
-        a_default = menu.addAction(tr("Default 24h Chime (Genie / NewDay / Owl @ 0.05)", self.lang))
+        a_chime = menu.addAction(tr("24h Chime (Genie / NewDay / Owl @ 0.05)", self.lang))
         a_workday = menu.addAction(tr("Workday Hours (09:00 - 18:00 @ 0.05)", self.lang))
         a_hourly = menu.addAction(tr("Hourly Bell (24/7 @ 0.05)", self.lang))
         a_pomo = menu.addAction(tr("Pomodoro Focus (Every 25m @ 0.05)", self.lang))
@@ -2818,8 +2838,8 @@ class TimerDialog(QDialog):
         if not act:
             return
 
-        if act == a_default:
-            self.main_win.data["interval_notifs"] = copy.deepcopy(DEFAULT_INTERVAL_RULES)
+        if act == a_chime:
+            self.main_win.data["interval_notifs"] = copy.deepcopy(DAYPART_CHIME_RULES)
         elif act == a_workday:
             self.main_win.data["interval_notifs"] = [{
                 "id": "interval_workday",

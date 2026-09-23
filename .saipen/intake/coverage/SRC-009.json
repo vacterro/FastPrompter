@@ -1,0 +1,50 @@
+{
+  "requirements": {
+    "SRC-009:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "UNKNOWN",
+      "evidence": null,
+      "text": "T-1217: sections 1/6/7/8 transfer live text, canonical allocation, ownership, transaction and every route regression",
+      "verification": null,
+      "work": "T-1207"
+    },
+    "SRC-009:R002": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "UNKNOWN",
+      "evidence": null,
+      "text": "T-1218: sections 2/6/7/8 internal image viewer, central routing, protected shell launches, Windows paths",
+      "verification": null,
+      "work": "T-1207"
+    },
+    "SRC-009:R003": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "UNKNOWN",
+      "evidence": null,
+      "text": "T-1219: sections 3/6/7/8 whole-line drag autoscroll, lifetime, selection and no premature mutations",
+      "verification": null,
+      "work": "T-1207"
+    },
+    "SRC-009:R004": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "UNKNOWN",
+      "evidence": null,
+      "text": "T-1216: sections 4/6/7/8 deliberate sounds stack, single request ownership, unified scheduler, provenance, live Windows soak",
+      "verification": null,
+      "work": "T-1207"
+    },
+    "SRC-009:R005": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "UNKNOWN",
+      "evidence": null,
+      "text": "T-1220: sections 5/6/7/8 compact filtered gauge geometry, immediate resize and reset ownership",
+      "verification": null,
+      "work": "T-1207"
+    }
+  },
+  "schema_version": 1
+}

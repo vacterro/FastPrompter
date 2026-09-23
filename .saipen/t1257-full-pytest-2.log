@@ -1,0 +1,142 @@
+........................................................................ [  2%]
+........................................................................ [  4%]
+........................................................................ [  6%]
+........................................................................ [  9%]
+........................................................................ [ 11%]
+........................................................................ [ 13%]
+........................................................................ [ 15%]
+.............................F.......................................... [ 18%]
+........................................................................ [ 20%]
+........................................................................ [ 22%]
+........................................................................ [ 25%]
+.........................s.............................................. [ 27%]
+........................................................................ [ 29%]
+........................................................................ [ 31%]
+........................................................................ [ 34%]
+........................................................................ [ 36%]
+................................F....................................... [ 38%]
+........................................................................ [ 41%]
+............................................................F........... [ 43%]
+........................................................................ [ 45%]
+..............................................................s......... [ 47%]
+........................................................................ [ 50%]
+........................................................................ [ 52%]
+........................................................................ [ 54%]
+.................................................F...................... [ 56%]
+........................................................................ [ 59%]
+........................................................................ [ 61%]
+........................................................................ [ 63%]
+........................................................................ [ 66%]
+........................................................................ [ 68%]
+........................................................................ [ 70%]
+..........................F..s............F............................. [ 72%]
+........................................................................ [ 75%]
+............................Fatal Python error: Aborted
+
+Thread 0x00006374 (most recent call first):
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 331 in wait
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 629 in wait
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1399 in run
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x0000625c (most recent call first):
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 327 in wait
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\main.py", line 13126 in _undo_writer_loop
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 982 in run
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x00003a98 (most recent call first):
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 327 in wait
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\main.py", line 13126 in _undo_writer_loop
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 982 in run
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x00006794 (most recent call first):
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 327 in wait
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\main.py", line 13126 in _undo_writer_loop
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 982 in run
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x00002998 (most recent call first):
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 327 in wait
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\main.py", line 13126 in _undo_writer_loop
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 982 in run
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x00006478 (most recent call first):
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\concurrent\futures\thread.py", line 81 in _worker
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 982 in run
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x00005e24 (most recent call first):
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\concurrent\futures\thread.py", line 81 in _worker
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 982 in run
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x000061c8 (most recent call first):
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\concurrent\futures\thread.py", line 81 in _worker
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 982 in run
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x00003a18 (most recent call first):
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\concurrent\futures\thread.py", line 81 in _worker
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 982 in run
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x00006128 (most recent call first):
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\concurrent\futures\thread.py", line 81 in _worker
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 982 in run
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x000065ac (most recent call first):
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\concurrent\futures\thread.py", line 81 in _worker
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 982 in run
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
+
+Current thread 0x00002104 (most recent call first):
+  File "V:\___VAC\__K\__CODE\_PY\_FastPrompter\tests\test_timer_fire.py", line 296 in test_test_notification_job_is_registered_and_fires
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\site-packages\_pytest\python.py", line 157 in pytest_pyfunc_call
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\site-packages\pluggy\_callers.py", line 121 in _multicall
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\site-packages\pluggy\_manager.py", line 120 in _hookexec
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\site-packages\pluggy\_hooks.py", line 512 in __call__
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\site-packages\_pytest\python.py", line 1671 in runtest
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\site-packages\_pytest\runner.py", line 178 in pytest_runtest_call
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\site-packages\pluggy\_callers.py", line 121 in _multicall
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\site-packages\pluggy\_manager.py", line 120 in _hookexec
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\site-packages\pluggy\_hooks.py", line 512 in __call__
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\site-packages\_pytest\runner.py", line 246 in <lambda>
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\site-packages\_pytest\runner.py", line 344 in from_call
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\site-packages\_pytest\runner.py", line 245 in call_and_report
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\site-packages\_pytest\runner.py", line 136 in runtestprotocol
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\site-packages\_pytest\runner.py", line 117 in pytest_runtest_protocol
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\site-packages\pluggy\_callers.py", line 121 in _multicall
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\site-packages\pluggy\_manager.py", line 120 in _hookexec
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\site-packages\pluggy\_hooks.py", line 512 in __call__
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\site-packages\_pytest\main.py", line 367 in pytest_runtestloop
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\site-packages\pluggy\_callers.py", line 121 in _multicall
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\site-packages\pluggy\_manager.py", line 120 in _hookexec
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\site-packages\pluggy\_hooks.py", line 512 in __call__
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\site-packages\_pytest\main.py", line 343 in _main
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\site-packages\_pytest\main.py", line 289 in wrap_session
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\site-packages\_pytest\main.py", line 336 in pytest_cmdline_main
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\site-packages\pluggy\_callers.py", line 121 in _multicall
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\site-packages\pluggy\_manager.py", line 120 in _hookexec
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\site-packages\pluggy\_hooks.py", line 512 in __call__
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\site-packages\_pytest\config\__init__.py", line 175 in main
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\site-packages\_pytest\config\__init__.py", line 201 in console_main
+  File "C:\Users\vac34\AppData\Local\Programs\Python\Python311\Lib\site-packages\pytest\__main__.py", line 9 in <module>
+  File "<frozen runpy>", line 88 in _run_code
+  File "<frozen runpy>", line 198 in _run_module_as_main
+
+Extension modules: _brotli, zstandard.backend_c, _cffi_backend, backports.zstd._zstd, charset_normalizer.md, psutil._psutil_windows, xxhash._xxhash, PyQt6.QtCore, PyQt6.QtGui, PyQt6.QtWidgets, PyQt6.QtTest, PyQt6.QtNetwork, PyQt6.QtMultimedia, numpy.core._multiarray_umath, numpy.core._multiarray_tests, numpy.linalg._umath_linalg, numpy.fft._pocketfft_internal, numpy.random._common, numpy.random.bit_generator, numpy.random._bounded_integers, numpy.random._mt19937, numpy.random.mtrand, numpy.random._philox, numpy.random._pcg64, numpy.random._sfc64, numpy.random._generator (total: 26)

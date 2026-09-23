@@ -120,7 +120,10 @@ saipen sub collect
 **`sc` / `saipen crew` is the serial full-platoon convergence circuit** -- the
 whole built-in crew (sensors saihunt/saitest/saipython/saiui, producers
 saitranslate/saiwiki, Core the sole main-tree writer) walked in a FIXED order
-by one agent until another fresh pass has nothing real left to change:
+by one agent until another fresh pass has nothing real left to change. Each
+role declares one applicability probe; a role with nothing to apply to is
+satisfied by a receipt naming the deciding fact rather than by an empty
+package, and anything undecidable resolves to running the role:
 
 ```
 saipen crew --dry-run --json   # read-only: derive the circuit, show every

@@ -2348,8 +2348,10 @@ def test_file_container_views_links_clipboard(win):
     from fastprompter.ui.file_container import silo_files_dir as _sfd
     panel.open_for(_sfd(root, "Main", "# Views Silo"))
 
-    # view cycle: Details -> Icons -> List -> Details, persisted in data
+    # view cycle: Details -> Chest -> Icons -> List -> Details, persisted
     assert panel._view_mode() == "Details"
+    panel._cycle_view()
+    assert win.data["file_panel_view"] == "Chest"
     panel._cycle_view()
     assert win.data["file_panel_view"] == "Icons"
     panel._cycle_view()
@@ -7932,7 +7934,11 @@ def test_analog_clock_blends_with_its_neighbours_on_every_theme(win):
         offenders = []
         for name in THEMES:
             win.data["theme"] = name
-            win.apply_theme()
+            # Full application-wide restyling for every palette is already
+            # covered by test_every_theme_applies_cleanly. This assertion is
+            # about the clock's theme-derived colors, so refresh only that
+            # cache before reading the clock palette.
+            win._refresh_theme_cache()
             win.analog_clock.update()
 
             # The colour the clock will fill its whole rect with. Asserted
@@ -10841,6 +10847,9 @@ def test_limit_account_checkboxes_hide_by_stable_key(fresh_win):
         w.limit_service._state.snapshots = {}
     w.data["limit_gauges_hidden_accounts"] = []
     w.data["limit_gauges_hide_unusable_5h"] = "False"
+    # No usage snapshots exist here; test account selection independent of
+    # the shipped hide-zero default.
+    w.data["limit_gauges_hide_zero_usage"] = "False"
     dialog = LimitSettingsDialog(w)
     selector = dialog.account_selector
     selector.sync(force=True)
@@ -10877,6 +10886,8 @@ def test_limit_gauges_sheds_labels_before_accounts(fresh_win):
         w.limit_service._state.snapshots = {}
     w.data["limit_gauges_hidden_accounts"] = []
     w.data["limit_gauges_hide_unusable_5h"] = "False"
+    # This exercises width/layout, not the opt-in zero-usage filter.
+    w.data["limit_gauges_hide_zero_usage"] = "False"
     w.data["limit_gauges_style"] = "bars"
 
     labeled = w.limit_gauges._cluster_width(True)

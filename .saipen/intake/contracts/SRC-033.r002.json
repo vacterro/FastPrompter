@@ -1,0 +1,19 @@
+{
+  "clauses": {
+    "SRC-033:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Preserve the T-1264 smoke harness repair (tests_smoke/_smoke_support.py SmokeEnv, SmokeWindowFactory, teardown_smoke_window, receiver-specific tests/_qt_retire.retire, per-module and per-fresh DB roots, scoped pytest.MonkeyPatch, undo-writer drain, owned-thread invariant) and do not reintroduce QApplication.sendPostedEvents(None, DeferredDelete) anywhere in tests_smoke."
+    },
+    "SRC-033:R002": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Make the session-wide smoke sound substitution ownership explicit: capture the exact original SoundManager._play_winsound and QSoundEffect before replacement, restore both in the session fixture finally, and add a tiny ownership regression (originals before the fixture, silent replacements inside it, originals restored after the finalizer) without altering production sound code."
+    }
+  },
+  "derived_at": "2026-09-20T20:54:13Z",
+  "derived_from": "SRC-033",
+  "interpretation_revision": 2,
+  "schema_version": 1,
+  "source_sha256": "822f2ba2068b26ce46f9a5123a5411afb538d2db94113163ba8e6ec06d174bc3"
+}

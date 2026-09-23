@@ -1,0 +1,57 @@
+{
+  "layers": {
+    "audit/10.md": {
+      "binding": "exact",
+      "captured_at": "2026-09-10T01:40:45Z",
+      "closed_at": "2026-09-19T06:26:32Z",
+      "file_sha256": "b15638b5a09e2e8818cd4ea3b1cb28a770d7fa962e0cbf9048b282d74644c3f7",
+      "generation": 1,
+      "layer": 10,
+      "linked_work": "T-1284",
+      "receipt_id": "SRC-013",
+      "receipt_sha256": "b15638b5a09e2e8818cd4ea3b1cb28a770d7fa962e0cbf9048b282d74644c3f7",
+      "size_bytes": 75750,
+      "state": "DELETED"
+    },
+    "audit/11.md": {
+      "binding": "exact",
+      "captured_at": "2026-09-18T11:04:06Z",
+      "closed_at": "2026-09-19T05:22:05Z",
+      "file_sha256": "94893155b393adc10794c61f584a98c448f4bbb8c9153420aad6ab2960749087",
+      "generation": 1,
+      "layer": 11,
+      "linked_work": "T-1282",
+      "receipt_id": "SRC-021",
+      "receipt_sha256": "94893155b393adc10794c61f584a98c448f4bbb8c9153420aad6ab2960749087",
+      "size_bytes": 59059,
+      "state": "DELETED"
+    },
+    "audit/12.md": {
+      "binding": "exact",
+      "captured_at": "2026-09-22T00:04:48Z",
+      "closed_at": "2026-09-23T21:23:59Z",
+      "file_sha256": "52f1510045cff4a66c0a09a538c66e4eda9dc8c03b4bf2ae962ba8931a8d80bd",
+      "generation": 1,
+      "layer": 12,
+      "linked_work": "T-1307",
+      "receipt_id": "SRC-041",
+      "receipt_sha256": "52f1510045cff4a66c0a09a538c66e4eda9dc8c03b4bf2ae962ba8931a8d80bd",
+      "size_bytes": 52855,
+      "state": "DELETED"
+    },
+    "audit/9.md": {
+      "binding": "exact",
+      "captured_at": "2026-09-10T01:40:45Z",
+      "closed_at": "2026-09-19T05:46:28Z",
+      "file_sha256": "69ac7e059d4a32159f46f9c5092c85f5b19545468b2296962f4a662b1e5baa2e",
+      "generation": 1,
+      "layer": 9,
+      "linked_work": "T-1283",
+      "receipt_id": "SRC-012",
+      "receipt_sha256": "69ac7e059d4a32159f46f9c5092c85f5b19545468b2296962f4a662b1e5baa2e",
+      "size_bytes": 54093,
+      "state": "DELETED"
+    }
+  },
+  "schema_version": 1
+}

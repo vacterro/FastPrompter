@@ -378,8 +378,13 @@ def _polyphase_kernel(up: int, taps: int, cutoff: float) -> list[list[float]]:
 # ---- WAV IO ---------------------------------------------------------------
 
 
-def _read_wav(path: str):
-    """(channels as float lists, framerate) or None when not safely rewritable."""
+def _read_wav(path: str, max_frames: int | None = None):
+    """(channels as float lists, framerate) or None when not safely rewritable.
+
+    PERF-001: ``max_frames`` is a DEFENSIVE resource boundary enforced from
+    the header BEFORE ``readframes`` — a caller that bypasses the metadata
+    preflight still cannot make this function expand an unbounded payload
+    into Python sample objects."""
     if sys.byteorder != "little":
         return None
     try:
@@ -393,6 +398,8 @@ def _read_wav(path: str):
                 return None
             nframes = wf.getnframes()
             if nframes <= 0:
+                return None
+            if max_frames is not None and nframes > int(max_frames):
                 return None
             frames = wf.readframes(nframes)
     except (OSError, wave.Error, EOFError):
@@ -478,6 +485,59 @@ def _source_rate(path: str) -> int | None:
 # ---- public entry point ---------------------------------------------------
 
 
+def _wav_metadata(path: str):
+    """Cheap RIFF/WAV header preflight: ``(width, channels, rate, nframes)``.
+
+    PERF-001: reads ONLY the header window — no payload, no digest — so the
+    duration/frame budget can be decided before the source is hashed or
+    decoded. Returns None when the file is not a plain PCM WAV this renderer
+    could read (the caller then plays the source raw, exactly as before).
+    The format checks mirror ``_read_wav``; the payload length comes from the
+    ``data`` chunk size, never from the file size on disk.
+    """
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(4096)
+    except OSError:
+        return None
+    if len(head) < 44 or head[:4] != b"RIFF" or head[8:12] != b"WAVE":
+        return None
+    i = 12
+    fmt = None
+    data_size = None
+    while i + 8 <= len(head):
+        cid = head[i:i + 4]
+        size = struct.unpack("<I", head[i + 4:i + 8])[0]
+        body = i + 8
+        if cid == b"fmt ":
+            if body + 16 > len(head):
+                return None
+            audio_format, nch, rate, _byte_rate, _block, bits = \
+                struct.unpack("<HHIIHH", head[body:body + 16])
+            # WAVE_FORMAT_PCM only; extensible/float/compressed sources take
+            # the raw-play path (the renderer is an optimisation).
+            if audio_format != 1 or bits % 8:
+                return None
+            fmt = (nch, rate, bits // 8)
+        elif cid == b"data":
+            data_size = size
+        i = body + size + (size % 2)
+        if fmt is not None and data_size is not None:
+            break
+    if fmt is None or data_size is None:
+        return None
+    nch, rate, width = fmt
+    if width not in (1, 2, 4) or nch < 1 or rate <= 0:
+        return None
+    frame_bytes = nch * width
+    if frame_bytes <= 0:
+        return None
+    nframes = data_size // frame_bytes
+    if nframes <= 0:
+        return None
+    return width, nch, rate, nframes
+
+
 def _source_digest(path: str) -> str | None:
     """Short SHA256 over the file content -- the authoritative cache identity.
 
@@ -549,6 +609,12 @@ def device_ready_wav(path: str, rate: int | None = None) -> str | None:
     Cache identity is the source CONTENT digest + target rate + render
     version, never the basename: two same-named files from different
     libraries can never collide (T-1242).
+
+    PERF-001: every eligibility decision (format, frame count, duration
+    policy, pure-Python budget, edge-pad eligibility) comes from the WAV
+    HEADER before the source is digested or decoded. An oversized source is
+    rejected at header cost; the content digest is computed only for sources
+    that will actually be rendered, so cache identity is unchanged.
     """
     if not path or not _render_enabled:
         return None
@@ -557,11 +623,38 @@ def device_ready_wav(path: str, rate: int | None = None) -> str | None:
         return None
     target = int(target)
     try:
-        src_rate = _source_rate(path)
-        if src_rate is None:
+        meta = _wav_metadata(path)
+        if meta is None:
             return None
+        _width, _nch, src_rate, frames_in = meta
         if src_rate == target and not _edge_pad_enabled:
+            # Nothing to resample and no padding requested: raw file is
+            # already device-valid.
             return None
+        on_worker = threading.current_thread() is not threading.main_thread()
+        max_seconds = (RENDER_MAX_SECONDS_WORKER if on_worker
+                       else RENDER_MAX_SECONDS)
+        max_frames = None
+        if src_rate != target:
+            if frames_in > max(1, int(src_rate * max_seconds)):
+                logger.debug(
+                    "device-rate render skipped: %s is longer than the %.0fs "
+                    "render policy", path, max_seconds)
+                return None
+            max_frames = max(1, int(src_rate * max_seconds))
+            if _numpy_if_safe() is None:
+                # A worker holding the GIL for seconds is worse than an
+                # unrendered file: the UI freezes and the user blames the app.
+                limit = (_PURE_PYTHON_WORKER_MAX_FRAMES if on_worker
+                         else _PURE_PYTHON_MAX_FRAMES)
+                if frames_in > limit:
+                    return None
+                max_frames = min(max_frames, limit)
+        else:
+            # Equal-rate source: from metadata alone, decide whether the
+            # edge-padding render is even wanted (a long bed gets none).
+            if not _wants_edge_pad(frames_in, src_rate):
+                return None
         digest = _source_digest(path)
         if not digest:
             return None
@@ -588,7 +681,8 @@ def device_ready_wav(path: str, rate: int | None = None) -> str | None:
                 return None
             return out if os.path.exists(out) else None
         try:
-            return _render_device_wav(path, out, cache_dir, target)
+            return _render_device_wav(path, out, cache_dir, target,
+                                      max_frames=max_frames)
         finally:
             _flight_release(key, flight)
     except (OSError, wave.Error, ValueError, MemoryError):
@@ -603,11 +697,16 @@ def device_ready_wav(path: str, rate: int | None = None) -> str | None:
         return None
 
 
-def _render_device_wav(path: str, out: str, cache_dir: str, target: int):
-    """The one renderer for a cache key. Caller holds the flight."""
+def _render_device_wav(path: str, out: str, cache_dir: str, target: int,
+                       max_frames: int | None = None):
+    """The one renderer for a cache key. Caller holds the flight.
+
+    ``max_frames`` is threaded from the caller's header preflight into the
+    reader as a defensive boundary: the renderer's own policy checks below
+    remain as a second layer."""
     try:
         os.makedirs(cache_dir, exist_ok=True)
-        read = _read_wav(path)
+        read = _read_wav(path, max_frames=max_frames)
         if read is None:
             return None
         channels, src_rate = read

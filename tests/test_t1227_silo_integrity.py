@@ -65,13 +65,18 @@ def win(tmp_path_factory):
         service = getattr(w, "limit_service", None)
         if service is not None:
             service.shutdown()
+        w._in_physical_teardown = True
+        push_clean = w._push_shutdown()
         if getattr(w, "state", None) is not None:
             w.state.conn = None
         w.close()
+        from _qt_retire import retire
+        retire(w)
         for name, value in originals.items():
             setattr(FastPrompter, name, value)
         state_mod.get_db_path = original_db_path
         backup_mod.run_portable_backup = original_backup
+        assert push_clean
 
 
 def _reset(win, texts=("alpha", "bravo", "charlie", "delta")):
@@ -592,7 +597,12 @@ class TestCrashRestart:
             service = getattr(w2, "limit_service", None)
             if service is not None:
                 service.shutdown()
+            w2._in_physical_teardown = True
+            push_clean = w2._push_shutdown()
             if getattr(w2, "state", None) is not None:
                 w2.state.conn = None
             w2.close()
+            from _qt_retire import retire
+            retire(w2)
+            assert push_clean
 

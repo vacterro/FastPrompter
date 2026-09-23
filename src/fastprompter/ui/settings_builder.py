@@ -6,6 +6,8 @@ avoiding startup overhead and stylesheet re-polishing on unshown widgets.
 
 from __future__ import annotations
 
+import os
+
 from PyQt6.QtCore import Qt, QUrl
 from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import (
@@ -798,6 +800,64 @@ def build_settings_tabs(self):
     btn_files_root_reset.setFixedWidth(24)
     btn_files_root_reset.clicked.connect(self.reset_files_root)
     files_row.addWidget(btn_files_root_reset)
+
+    def _viewer_caption():
+        lang = getattr(self, "_current_lang", "EN")
+        mode = self.data.get("image_viewer_mode", "system")
+        exe = self.data.get("image_viewer_path", "")
+        if mode == "custom" and exe:
+            return os.path.basename(exe)
+        if mode == "internal":
+            return tr("Built-in", lang)
+        return tr("System default", lang)
+
+    self.btn_image_viewer = QPushButton(
+        f"🖼 {_viewer_caption()}")
+    self.btn_image_viewer.setToolTip(tr(
+        "Image Viewer\n"
+        "Which program opens images from links and silo files:\n"
+        "the Windows default, a program you pick, or the built-in preview.",
+        getattr(self, "_current_lang", "EN")))
+
+    def _pick_image_viewer():
+        from PyQt6.QtWidgets import QFileDialog, QMenu
+        lang = getattr(self, "_current_lang", "EN")
+        menu = QMenu(self.btn_image_viewer)
+        mode = self.data.get("image_viewer_mode", "system")
+
+        def _set(new_mode, exe=None):
+            self.data["image_viewer_mode"] = new_mode
+            if exe is not None:
+                self.data["image_viewer_path"] = exe
+            self.mark_dirty()
+            self.btn_image_viewer.setText(f"🖼 {_viewer_caption()}")
+
+        def _choose():
+            if hasattr(self, "_increment_focus_lock"):
+                self._increment_focus_lock()
+            try:
+                exe, _ = QFileDialog.getOpenFileName(
+                    self, tr("Choose image viewer", lang),
+                    self.data.get("image_viewer_path", "") or "C:/Program Files",
+                    "Programs (*.exe)")
+            finally:
+                if hasattr(self, "_decrement_focus_lock"):
+                    self._decrement_focus_lock()
+            if exe:
+                _set("custom", os.path.normpath(exe))
+
+        for key, label, fn in (
+                ("system", tr("System default app", lang), lambda: _set("system")),
+                ("custom", tr("Choose program…", lang), _choose),
+                ("internal", tr("Built-in preview", lang), lambda: _set("internal"))):
+            act = menu.addAction(label, fn)
+            act.setCheckable(True)
+            act.setChecked(key == mode)
+        menu.exec(self.btn_image_viewer.mapToGlobal(
+            self.btn_image_viewer.rect().bottomLeft()))
+
+    self.btn_image_viewer.clicked.connect(_pick_image_viewer)
+    files_row.addWidget(self.btn_image_viewer)
     files_row.addStretch(1)
 
     dev_row = QHBoxLayout()

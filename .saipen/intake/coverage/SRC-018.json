@@ -1,0 +1,14 @@
+{
+  "requirements": {
+    "SRC-018:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "T-1276 closed with verification evidence in LOG: review -> PASS [target: T-1276] conf: high -- the corrective work repairs real contract defects, not tests: pin/unpin now moves raw order (the teleport is structurally impossible), gap ownership wording matches persistence, transport states are exhaustive so Start cannot operate while paused, Add-templates requires an explicit choice, and the reset queue is a real column table on the existing card",
+      "text": "Do T-1270 corrective work and register remaining corrective tickets",
+      "verification": "the Work this request created reached its own verification gate; see the T-1276 VERIFY cycle in .saipen/LOG.md",
+      "work": "T-1276"
+    }
+  },
+  "schema_version": 1
+}

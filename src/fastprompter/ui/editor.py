@@ -2880,6 +2880,29 @@ class VaultTextEdit(QTextEdit):
         menu = self.createStandardContextMenu()
         menu.addSeparator()
 
+        # An image under the pointer: view it / grab it without opening
+        # anything. Placed first - it is what the right-click was aimed at.
+        hit = self.image_hit_at(event.pos())
+        if hit is not None and hit[2].isLocalFile():
+            from fastprompter.ui.image_viewer import (
+                copy_image_path,
+                copy_image_to_clipboard,
+            )
+            img_url = hit[2]
+            img_path = os.path.realpath(os.path.abspath(img_url.toLocalFile()))
+            img_lang = getattr(self.main_win, '_current_lang', 'EN')
+            menu.addAction(
+                tr("Open Image in Viewer", img_lang),
+                lambda _c=False, u=img_url: VaultTextEdit.authorize_and_open_url(
+                    u, self, img_lang))
+            menu.addAction(
+                tr("Copy Image", img_lang),
+                lambda _c=False, p=img_path: copy_image_to_clipboard(p))
+            menu.addAction(
+                tr("Copy Image Path", img_lang),
+                lambda _c=False, p=img_path: copy_image_path(p))
+            menu.addSeparator()
+
         # Handle "Open Folder" for local file links
         url = self.anchor_url_at(event.pos())
         if url is not None and url.isLocalFile():

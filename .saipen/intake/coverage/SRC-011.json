@@ -1,0 +1,68 @@
+{
+  "requirements": {
+    "SRC-011:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "E-2524",
+      "text": "STAGE A: smoke sessions never write the repository or user data tree - the smoke harness owns a module-private temp root and DB identity (tests_smoke conftest SmokeEnv boundary)",
+      "verification": "tests_smoke/conftest.py module autouse SmokeEnv temp-root+DB identity boundary present; uv run pytest tests_smoke/ -q -> 1067 passed exit 0 with no new repository data trash artifacts from that run (E-2524); data/ is gitignored local runtime residue - cleanup is the operator decision per receipt section 5, not performed",
+      "work": "T-1201"
+    },
+    "SRC-011:R002": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "E-2264",
+      "text": "STAGE B: stale and order-dependent smoke tests repaired against current contracts and green in the combined smoke suite",
+      "verification": "order-interaction residuals ticketed and closed as T-1296 (E-2257/E-2264); smoke harness recovery T-1300 DONE; combined smoke 1067 passed exit 0 (E-2524)",
+      "work": "T-1201"
+    },
+    "SRC-011:R003": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "E-2494",
+      "text": "STAGE C: T-1201 native Qt lifetime - the formerly crashing combined tests process reaches a normal final summary with exit 0 and no Windows access violation, with root cause classified as harness teardown ownership and the production shutdown drain present",
+      "verification": "uv run pytest tests/test_timer_dialog_wave.py tests/ -q -> 3824 passed 6 skipped exit 0 (E-2494/E-2495); later same-tree full run 3844 passed 6 skipped exit 0 (E-2515); review classified module fixtures closing resident windows without retiring fastprompter-sync-push (E-2497); production _push_shutdown main.py:7313 + physical-teardown drain main.py:20640-20683 verified present (E-2552); fresh focused 457 passed 1 skipped (E-2552)",
+      "work": "T-1201"
+    },
+    "SRC-011:R004": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "E-2321",
+      "text": "STAGE D: the automated release gate is genuinely clean - compileall, ruff, bandit, tests/ and tests_smoke/ all exit 0 in their recorded runs",
+      "verification": "repository-declared harness combined 4826 passed 0 failed (E-2311/E-2321); tests/ 3844 passed 6 skipped exit 0 (E-2515); tests_smoke/ 1067 passed exit 0 (E-2524); compileall+ruff+git diff --check exit 0 fresh this session (E-2544)",
+      "work": "T-1201"
+    },
+    "SRC-011:R005": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "E-2267",
+      "text": "STAGE E: a local acceptance EXE was built from the then-current source with an isolated packaged probe, without being declared a public release",
+      "verification": "0.8.68 RC EXE rebuilt + tools/probe_release.py ALL PASS - alive/IPC handoff/portable root+db/schema current/clean exit releases mutex/relaunch reacquires (E-2267/E-2284); build recorded as unaccepted manual candidate, not a GitHub release",
+      "work": "T-1201"
+    },
+    "SRC-011:R006": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "E-2284",
+      "text": "STAGE F: the remaining human-only blockers are checkpointed on their owning tickets and the wave stops before publication",
+      "verification": "publish blocked by standing operator policy SRC-029 section 18 recorded at E-2284; visual/audio operator gates parked on T-1206/T-1216/T-1207; T-1209 remains parked TODO unclaimed",
+      "work": "T-1201"
+    },
+    "SRC-011:R007": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "E-2284",
+      "text": "This receipt wave performs no GitHub release publish, no push, no tag, and no VERSION bump of its own",
+      "verification": "no tag/push/release publish exists for this wave: T-1209 blocked by SRC-029 section 18 policy (E-2284); VERSION parity work ran only under later separately-authorized tickets (T-1297), never by this receipt",
+      "work": "T-1201"
+    }
+  },
+  "schema_version": 1
+}

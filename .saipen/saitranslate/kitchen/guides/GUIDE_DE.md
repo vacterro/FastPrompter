@@ -60,8 +60,9 @@ ganze Installation in einem Rutsch.
 - Rechtsklick auf die Projekt-Dropdown — Tabs hinzufügen, umbenennen oder löschen.
 
 Die komplette Feature-Liste, Screenshots und eine Erklärung jedes Knopfs
-stehen in [README.md](README.md#инструкция--instruction) — ein ganzes
-Kapitel in Opas Stimme, auf Englisch und Russisch.
+stehen in [README.md](README.md) und im
+[Wiki](https://github.com/vacterro/FastPrompter/wiki/User-Guide). Die
+Opas-Stimme-Erklärung ist dieses Guide selbst.
 
 ## Fazit
 

@@ -21,10 +21,10 @@ Config lives in `settings` table key-value pairs. No INI file. All hot-reload on
 | Key | Type | Default | Description |
 |---|---|---|---|
 | **Theme & Display** | | | |
-| `theme` | string | `Golden Default` | Theme: Default, Golden Vintage, Golden Default, Vintage Dark, Vintage Classic, Dark 2 (OLED), Dracula, Nord, Solarized Dark, Custom |
+| `theme` | string | `Golden Default` | 15 built-in themes: 9 classic (Default, Golden Vintage, Golden Default, Vintage Dark, Vintage Classic, Dark 2 (OLED), Dracula, Nord, Solarized Dark) + 6 Wintage palettes ported from the ProBlipAndroid reference (Dark Golden (Win95), Claude Code, Antigravity, K-Lite (MPC-HC), FreeBuff, CodeNomad), or Custom |
 | `font_family` | string | `Verdana` | Editor font (auto-resolves to `_m1` bitmap variant if installed) |
-| `font_size` | int | 10 | Editor font size in points (baked profile default; spin range 8–48) |
-| `ui_scale` | float | 0.5 | UI scaling (0.5 to 1.5; baked profile ships 0.5) |
+| `font_size` | int | 18 | Editor font size in points |
+| `ui_scale` | float | 0.5 | UI scaling (0.5 to 1.5) |
 | `button_scale` | float | 0.5 | Silo + toolbar button size multiplier |
 | `custom_cursors` | bool | True | Retro cursor theme overlay |
 | `code_monospace` | bool | False | Monospace font in code blocks (False = editor font) |
@@ -51,7 +51,7 @@ Config lives in `settings` table key-value pairs. No INI file. All hot-reload on
 | `show_date_rect` | bool | True | Show date in header |
 | `cursor_blink_ms` | int | 1000 | Cursor blink speed ms (0 = no blink, T-606) |
 | `timer_show_minutes` | bool | True | Keep minute field in timer display (T-613) |
-| `ui_scale` | float | 0.5 | UI scaling (0.5 to 1.5; baked profile ships 0.5) |
+| `ui_scale` | float | 0.5 | UI scaling (0.5 to 1.5) |
 | `button_scale` | float | 0.5 | Silo + toolbar button size multiplier |
 | `custom_cursors` | bool | True | Retro cursor theme overlay |
 | `numbox_per_row` | int | 10 | Number boxes per row in grid (T-612) |
@@ -119,14 +119,26 @@ Config lives in `settings` table key-value pairs. No INI file. All hot-reload on
 | `silo_view_state_all` | JSON dict | `{}` | Per-silo cursor/scroll/fold state |
 | `category_file_dirs` | JSON dict | `{}` | Logical category → physical folder mapping |
 | **Sound** | | | |
-| `sound_enabled` | bool | True | Master sound toggle |
 | `sound_ui` | bool | True | UI click sound effects |
-| `sound_typewriter` | bool | False | Typewriter key sounds |
-| `sound_volume` | int (0-10) | 0.36 | Master sound volume (baked profile ships 0.36; interval rule defaults also 1.0) |
+| `sound_typewriter` | bool | True | Typewriter key sounds |
+| `sound_volume` | float 0.0–1.0 | 0.09 | Master sound volume (baked profile; legacy 0–10 ints still parsed, scaled ÷10) |
+| `sound_events` | JSON dict | 69 events | Per-event `enabled`/`file`/`volume`/`gain_db`/`mode` overrides; self-healed on every start against the shipped library |
+| `audio_global_playback_mode` | string | `overlay` | AudioHub global mode: `overlay` / `stack` / `replace` (T-1238-G) |
+| `snippets_hidden` | bool | True | Snippet panel starts hidden |
+| **AI limits (Freebuff + notifications)** | | | |
+| `limit_freebuff_enabled` | bool | True | Freebuff provider poll toggle (T-1243) |
+| `limit_freebuff_state` | JSON | (empty) | Freebuff provider session state cache |
+| `limit_gauges_hide_zero_usage` | bool | False | Hide gauges whose usage reads zero |
+| `limit_notif_color` | string | (empty) | Limit-notification toast accent color override |
+| `limit_notif_duration_sec` | int | 8 | Limit-notification toast display seconds |
+| `limit_notif_symbol` | string | `↻` | Limit-notification symbol |
+| `click` default mapping | — | `tick_on.wav` | The generic `click` event maps to `tick_on.wav` in the baked profile (was `button1.wav`); silo/save/delete also re-pinned to `tick_on.wav` |
+| **Auto Level / device-rate rendering (T-1242)** | | | |
+| `audio_render` + Auto Level | — | on | Every transient cue is pre-rendered to the output device's own rate with a band-limited polyphase resampler (`core/audio_render.py`, `RENDER_VERSION` invalidates the cache); per-event `gain_db` and the loudness analysis in `core/audio_level.py` level loud effects toward the UI reference |
 
 Restored in v0.8.32 (removed in v0.8.24, back with the launch grace and own-window click-out guards): `close_on_focus_loss` / "Hide on Click-Out" is read again — hides the window on focus loss unless the launch grace (2s) or the app's own undocked windows still hold it. `tray_click_activates`: when True (default) a double-click on the tray icon always brings the window to focus; when False it toggles hide/show like the hotkey.
 
-**Watcher `[limits]` (applied at arm since v0.8.25, in `adapters.toml`):** `min_gap_ms`, `max_sends`, `dry_run_new`. `blocker_pattern` only works on the CDP transport (it needs the target's visible text); a blocker on any other transport is flagged inactive.
+Retired in T-1183: the watcher `[limits]` block (`min_gap_ms`, `max_sends`, `dry_run_new`, `blocker_pattern`) and its `adapters.toml` no longer exist; the loader deletes leftover `watcher_*` settings rows on start.
 
 | `toolbar_order` | string | (empty) | Custom toolbar button order tokens |
 | `window_presets` | JSON | [] | User-saved window geometry presets |

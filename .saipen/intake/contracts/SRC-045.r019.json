@@ -1,0 +1,104 @@
+{
+  "clauses": {
+    "SRC-045:R001": {
+      "actionable": true,
+      "class": "invariant",
+      "text": "Do not ask for ordinary \"continue?\" confirmation between milestones."
+    },
+    "SRC-045:R002": {
+      "actionable": true,
+      "class": "invariant",
+      "text": "Do not reset, clean, stash, bulk-revert, or reconstruct the tree from HEAD."
+    },
+    "SRC-045:R003": {
+      "actionable": true,
+      "class": "invariant",
+      "text": "Do not use git add . or git add -A as a reconciliation shortcut."
+    },
+    "SRC-045:R004": {
+      "actionable": true,
+      "class": "invariant",
+      "text": "Do not delete, replace, or normalize user/operator changes merely because they are unjournaled."
+    },
+    "SRC-045:R005": {
+      "actionable": true,
+      "class": "invariant",
+      "text": "Do not publish a public release from a dirty or provenance-ambiguous tree."
+    },
+    "SRC-045:R006": {
+      "actionable": true,
+      "class": "invariant",
+      "text": "Do not reimplement already-proven fixes merely because historical tickets remain open at SHIP."
+    },
+    "SRC-045:R007": {
+      "actionable": true,
+      "class": "invariant",
+      "text": "Do not silently weaken tests to obtain green output."
+    },
+    "SRC-045:R008": {
+      "actionable": true,
+      "class": "invariant",
+      "text": "Do not treat an old RC acceptance as valid after product-runtime source changes."
+    },
+    "SRC-045:R009": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "The checkpoint must name the active ticket, phase, current dependency chain, source receipts, modified files, completed gates, residual failures, and one exact next action."
+    },
+    "SRC-045:R010": {
+      "actionable": true,
+      "class": "invariant",
+      "text": "T-1257 is already DONE and must not be reopened without fresh contradictory evidence"
+    },
+    "SRC-045:R011": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "every key MUST belong to COPY_KEYS, NEUTRAL_KEYS, EXCLUDED_KEYS, or DROP_KEYS"
+    },
+    "SRC-045:R012": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "text": "classify as an intentional shippable preference"
+    },
+    "SRC-045:R013": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "text": "preserve only supported values 64 / 128"
+    },
+    "SRC-045:R014": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "text": "malformed values must sanitize to the canonical default rather than poison the baked profile"
+    },
+    "SRC-045:R015": {
+      "actionable": true,
+      "class": "invariant",
+      "text": "treat as machine-local data; a public shipped default must never embed an operator-specific executable path"
+    },
+    "SRC-045:R016": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "text": "neutralize to an empty path or equivalent canonical machine-neutral value"
+    },
+    "SRC-045:R017": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "text": "define an explicit release-safe contract"
+    },
+    "SRC-045:R018": {
+      "actionable": true,
+      "class": "invariant",
+      "text": "never ship a broken custom state whose executable path was neutralized"
+    },
+    "SRC-045:R019": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "text": "acceptable policy is either a machine-neutral default (system) or a sanitizer that preserves internal/system but converts custom to system for the shipped profile"
+    }
+  },
+  "derived_at": "2026-09-23T12:23:26Z",
+  "derived_from": "SRC-045",
+  "interpretation_revision": 19,
+  "schema_version": 1,
+  "source_sha256": "8db79c50953379c451ed3c7c6cbe801ff026ba377aefa5436bff027c9c91d8a7"
+}

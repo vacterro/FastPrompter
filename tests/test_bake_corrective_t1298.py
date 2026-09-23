@@ -341,6 +341,37 @@ def test_m_fresh_profile_roundtrip_equals_sanitized_snapshot(tmp_path):
     assert reloaded["interval_notifs"][0]["last_fired"] == 0.0
 
 
+def test_viewer_and_chest_preferences_bake_to_release_safe_values(
+        tmp_path, monkeypatch):
+    source = _live_custom_profile()
+    source.update({
+        "image_viewer_mode": "custom",
+        "image_viewer_path": r"C:\Users\operator\Viewer\viewer.exe",
+        "silo_chest_slots": "128",
+    })
+    target = tmp_path / "default_profile.py"
+    target.write_text('"""test target"""\n\nDEFAULT_PROFILE = {}\n',
+                      encoding="utf-8")
+    monkeypatch.setattr(bake, "_TARGET_FILE", str(target))
+
+    result = bake.update_default_profile_from_state(source)
+
+    assert result["roundtrip_equal"] is True
+    assert result["profile"]["silo_chest_slots"] == "128"
+    assert result["profile"]["image_viewer_path"] == ""
+    assert result["profile"]["image_viewer_mode"] == "system"
+
+
+@pytest.mark.parametrize("value", ["junk", "65", "064", None, True])
+def test_malformed_chest_capacity_bakes_to_canonical_default(value):
+    source = _live_custom_profile()
+    source["silo_chest_slots"] = value
+
+    plan = bake.build_bake_plan(source, check_assets=False)
+
+    assert plan.profile["silo_chest_slots"] == "64"
+
+
 def test_n_frozen_build_cannot_mutate_repository_defaults(tmp_path, monkeypatch):
     plan = _plan()
     target = tmp_path / "default_profile.py"

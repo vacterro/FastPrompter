@@ -1,0 +1,195 @@
+{
+ "compatibility": {
+  "note": "A consumer reading contract_version greater than it implements MUST report the snapshot as protocol-unknown rather than reinterpreting this document.",
+  "unknown_contract_version": "refuse"
+ },
+ "contract_version": 3,
+ "evidence": {
+  "authority_note": "authoritative_state=true asserts this artifact satisfies THIS contract -- every declared durable path present and every transient class excluded -- not merely that the mandatory files happened to exist.",
+  "conditional": [
+   {
+    "kind": "dir",
+    "max_files": 4000,
+    "path": "logs",
+    "recursive": true
+   },
+   {
+    "kind": "dir",
+    "max_files": 8000,
+    "path": "intake",
+    "recursive": true
+   },
+   {
+    "kind": "dir",
+    "max_files": 8000,
+    "path": "archive/source",
+    "recursive": true
+   },
+   {
+    "kind": "dir",
+    "max_files": 4000,
+    "path": "KNOWLEDGE",
+    "recursive": true
+   },
+   {
+    "kind": "dir",
+    "max_files": 500,
+    "path": "audit",
+    "recursive": false
+   },
+   {
+    "kind": "dir",
+    "max_files": 4000,
+    "path": "evidence",
+    "recursive": true
+   },
+   {
+    "kind": "dir",
+    "max_files": 8000,
+    "path": "recovery/board-compaction",
+    "recursive": true
+   },
+   {
+    "kind": "dir",
+    "max_files": 8000,
+    "path": "recovery/log-detail",
+    "recursive": true
+   }
+  ],
+  "mandatory": [
+   {
+    "kind": "file",
+    "path": "STATE.md"
+   },
+   {
+    "kind": "file",
+    "path": "BOARD.md"
+   },
+   {
+    "kind": "file",
+    "path": "LOG.md"
+   },
+   {
+    "kind": "file",
+    "path": "IDENTITY.md"
+   }
+  ],
+  "nested_instance_files": [
+   "STATE.md",
+   "BOARD.md",
+   "LOG.md",
+   "IDENTITY.md"
+  ],
+  "non_exportable": [
+   "locks/",
+   "recovery/",
+   "quarantine/",
+   "LOCAL_STATE.json"
+  ],
+  "non_exportable_filenames": [
+   "LOCAL_STATE.json",
+   "producer_epoch.json",
+   "crew_epoch.json",
+   ".in-flight"
+  ],
+  "non_exportable_segments": [
+   ".prepare-staging",
+   ".collect-staging",
+   ".staging",
+   ".in-flight",
+   ".translation-cache",
+   ".cache",
+   "__pycache__",
+   ".saipen"
+  ],
+  "non_exportable_suffixes": [
+   ".tmp",
+   ".lock",
+   ".partial"
+  ],
+  "optional": [
+   {
+    "kind": "dir",
+    "max_files": 4000,
+    "path": "extensions",
+    "recursive": true
+   },
+   {
+    "kind": "dir",
+    "max_files": 500,
+    "path": "kitchen",
+    "recursive": true
+   },
+   {
+    "kind": "dir",
+    "max_files": 500,
+    "path": "saitranslate",
+    "recursive": true
+   }
+  ],
+  "precedence": [
+   "transient_segment_or_filename",
+   "nested_instance_state",
+   "declared_durable_path",
+   "non_exportable_prefix",
+   "directory_rule"
+  ]
+ },
+ "generated_at": "2026-09-23T21:36:43Z",
+ "generator": "saipen-audit-manifest/3",
+ "kind": "saipen_audit_manifest",
+ "memory_root": ".saipen",
+ "protocol_version": "8.0.1",
+ "references": {
+  "carriers": [
+   {
+    "kind": "file",
+    "path": "STATE.md"
+   },
+   {
+    "kind": "file",
+    "path": "BOARD.md"
+   },
+   {
+    "kind": "file",
+    "path": "LOG.md"
+   },
+   {
+    "kind": "dir",
+    "max_files": 4000,
+    "path": "logs",
+    "recursive": true,
+    "suffix": ".md"
+   },
+   {
+    "kind": "dir",
+    "max_files": 8000,
+    "path": "intake/coverage",
+    "recursive": false,
+    "suffix": ".json"
+   },
+   {
+    "kind": "dir",
+    "max_files": 8000,
+    "path": "archive/source",
+    "recursive": false,
+    "suffix": ".coverage.json"
+   }
+  ],
+  "max_carrier_bytes": 8388608,
+  "max_references": 20000,
+  "max_total_bytes": 67108864,
+  "surfaces": [
+   "evidence",
+   "recovery/log-detail",
+   "recovery/board-compaction"
+  ]
+ },
+ "required": [
+  "STATE.md",
+  "BOARD.md",
+  "LOG.md",
+  "IDENTITY.md"
+ ],
+ "schema_version": 1
+}

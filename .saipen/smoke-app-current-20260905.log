@@ -1,0 +1,58 @@
+........................................F
+================================== FAILURES ===================================
+_______________ test_pin_toggle_and_move_to_bottom_are_undoable _______________
+
+win = <fastprompter.main.FastPrompter object at 0x0000023BB28B7B50>
+
+    def test_pin_toggle_and_move_to_bottom_are_undoable(win):
+        win.cat_combo.setCurrentIndex(0)
+        win.on_tab_changed(0)
+        win.data["temp_presets"][:] = ["one", "two", "three"]
+        win.data["pinned_silos"] = []
+        win.silo_docs[:] = []
+        win._switch_to_slot(0, initial=True)
+        win._toggle_pin_silo(2)
+        assert win.data["pinned_silos"] == [2]
+        win._smart_undo()
+        assert win.data["pinned_silos"] == []
+        win._move_silo_to_bottom(0)
+>       assert win.data["temp_presets"] == ["two", "three", "one"]
+E       AssertionError: assert ['y', 'x'] == ['two', 'three', 'one']
+E         
+E         At index 0 diff: 'y' != 'two'
+E         Right contains one more item: 'one'
+E         Use -v to get more diff
+
+tests_smoke\test_app_smoke.py:909: AssertionError
+-------------------------- Captured stderr teardown ---------------------------
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+=========================== short test summary info ===========================
+FAILED tests_smoke/test_app_smoke.py::test_pin_toggle_and_move_to_bottom_are_undoable
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed, 40 passed in 9.42s

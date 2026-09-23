@@ -403,6 +403,7 @@ class TestWorkerReparseContainment:
     not redirect the write outside the root."""
 
     def test_junction_swapped_after_capture_is_rejected(self):
+        import fastprompter.main as m
         from fastprompter.main import _SyncWorker
         from fastprompter.utils.path_safety import capture_resolved_root
 
@@ -419,8 +420,12 @@ class TestWorkerReparseContainment:
         # the junction appears AFTER the snapshot was conceptually captured
         os.symlink(outside, cat, target_is_directory=True)
 
-        worker._run({"root": root, "root_identity": capture_resolved_root(root),
-                     "files": {dest: "# t\nbody"}}, 1)
+        # W2-001: issuance is separate from execution; a snapshot must be
+        # issued (capture/dispatch) before a mechanical writer may run it.
+        snapshot = {"root": root, "root_identity": capture_resolved_root(root),
+                    "files": {dest: "# t\nbody"}}
+        m._sync_register_snapshot(snapshot)
+        worker._run(snapshot, 1)
 
         assert results, "the worker must report the outcome"
         written, errors = results[0]
@@ -431,6 +436,7 @@ class TestWorkerReparseContainment:
         assert not os.path.exists(dest)
 
     def test_ordinary_nested_destination_writes(self):
+        import fastprompter.main as m
         from fastprompter.main import _SyncWorker
         from fastprompter.utils.path_safety import capture_resolved_root
 
@@ -441,8 +447,10 @@ class TestWorkerReparseContainment:
 
         root = tempfile.mkdtemp()
         dest = os.path.join(root, "cat", "01_t.md")
-        worker._run({"root": root, "root_identity": capture_resolved_root(root),
-                     "files": {dest: "# t\nbody"}}, 1)
+        snapshot = {"root": root, "root_identity": capture_resolved_root(root),
+                    "files": {dest: "# t\nbody"}}
+        m._sync_register_snapshot(snapshot)
+        worker._run(snapshot, 1)
 
         written, errors = results[0]
         assert errors == []

@@ -1,0 +1,23 @@
+{
+  "requirements": {
+    "SRC-048:R001": {
+      "actionable": false,
+      "class": "context",
+      "disposition": "UNKNOWN",
+      "evidence": null,
+      "text": "They were blocking T-1310's own-scope closure solely because coverage is receipt-wide, creating the circular dependency the operator resolved in SRC-047 Decision A: T-1310 must close on its own verified product scope.",
+      "verification": null,
+      "work": "T-1310"
+    },
+    "SRC-048:R002": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "VERIFIED",
+      "evidence": "E-2540",
+      "text": "The 22 superseded SRC-046 clauses carry re-homed coverage ownership under their actual descendant tickets per SRC-047 Decision A, and the obligations remain mandatory under the descendants own Work contracts.",
+      "verification": "apply-append SRC-048 superseded exactly the 22 clause ids (E-2540); canonical source disp --work re-homed ownership T-1201:3 T-1307:12 T-1306:2 T-1308:1 T-1309:1 T-1299:2 T-1209:1; SRC-046 now 55 VERIFIED + 22 SUPERSEDED all terminal",
+      "work": "T-1310"
+    }
+  },
+  "schema_version": 1
+}

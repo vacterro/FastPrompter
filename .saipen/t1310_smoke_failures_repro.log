@@ -1,0 +1,103 @@
+FF.                                                                      [100%]
+================================== FAILURES ===================================
+______________ test_limit_account_checkboxes_hide_by_stable_key _______________
+
+fresh_win = <fastprompter.main.FastPrompter object at 0x000001B4C72D49D0>
+
+    def test_limit_account_checkboxes_hide_by_stable_key(fresh_win):
+        """Account visibility is opt-out and survives reorder/name changes."""
+        from PyQt6.QtWidgets import QCheckBox
+    
+        from fastprompter.core.usage_limits.model import AccountRef
+        from fastprompter.ui.limit_settings_dialog import LimitSettingsDialog
+    
+        w = fresh_win
+        accounts = [
+            AccountRef("codex", "stable-one", "Codex 1", "test", "X:/one"),
+            AccountRef("codex", "stable-two", "Codex 2", "test", "X:/two"),
+        ]
+        with w.limit_service._lock:
+            w.limit_service._state.accounts = accounts
+            w.limit_service._state.snapshots = {}
+        w.data["limit_gauges_hidden_accounts"] = []
+        w.data["limit_gauges_hide_unusable_5h"] = "False"
+        dialog = LimitSettingsDialog(w)
+        selector = dialog.account_selector
+        selector.sync(force=True)
+        boxes = selector.findChildren(QCheckBox)
+        assert len(boxes) == 2
+        boxes[0].setChecked(False)
+        QApplication.processEvents()
+        assert w.data["limit_gauges_hidden_accounts"] == [accounts[0].key]
+>       assert [a.key for a in w.limit_gauges._visible_accounts()] == [accounts[1].key]
+E       AssertionError: assert [] == ['codex:stable-two']
+E         
+E         Right contains one more item: 'codex:stable-two'
+E         Use -v to get more diff
+
+tests_smoke\test_app_smoke.py:10854: AssertionError
+---------------------------- Captured stderr setup ----------------------------
+QFontDatabase: Cannot find font directory V:/___VAC/__K/__CODE/_PY/_FastPrompter/.venv/Lib/site-packages/PyQt6/Qt6/lib/fonts.
+Note that Qt no longer ships fonts. Deploy some (from https://dejavu-fonts.github.io/ for example) or switch to fontconfig.
+qt.multimedia.ffmpeg: Using Qt multimedia with FFmpeg version 7.1.3 LGPL version 2.1 or later
+----------------------------- Captured log setup ------------------------------
+DEBUG    fastprompter:sound_manager.py:379 Discovered 530 sound files in V:\___VAC\__K\__CODE\_PY\_FastPrompter\src\fastprompter\sound
+_______________ test_limit_gauges_sheds_labels_before_accounts ________________
+
+fresh_win = <fastprompter.main.FastPrompter object at 0x000001B4E69F8310>
+
+    def test_limit_gauges_sheds_labels_before_accounts(fresh_win):
+        """A narrow header keeps quota marks and never emits a lone '+'."""
+        from fastprompter.core.usage_limits.model import AccountRef
+    
+        w = fresh_win
+        accounts = [
+            AccountRef("codex", f"stable-{i}", f"Codex {i}", "test", f"X:/{i}")
+            for i in range(1, 5)
+        ]
+        with w.limit_service._lock:
+            w.limit_service._state.accounts = accounts
+            w.limit_service._state.snapshots = {}
+        w.data["limit_gauges_hidden_accounts"] = []
+        w.data["limit_gauges_hide_unusable_5h"] = "False"
+        w.data["limit_gauges_style"] = "bars"
+    
+        labeled = w.limit_gauges._cluster_width(True)
+        plain = w.limit_gauges._cluster_width(False)
+        # Four plain clusters fit, but four labeled clusters do not: all four
+        # gauges remain and initials disappear.
+        labels, per_cluster, n_fit = w.limit_gauges._fit_layout(
+            plain * 4, len(accounts))
+        assert labels is False
+        assert per_cluster == plain
+        assert n_fit == 4
+        assert plain < labeled
+    
+        # If only two can fit after reserving a marker, it explicitly means +2.
+        labels, _per_cluster, n_fit = w.limit_gauges._fit_layout(
+            plain * 2 + 16, len(accounts))
+        assert labels is False
+        assert n_fit == 2
+        assert len(accounts) - n_fit == 2
+    
+        w._header_ultra = True
+        w.limit_gauges.refresh_view()
+        # The LAST cluster's GAP_ACC separates it from a next cluster; there is
+        # none, so the widget does not reserve it (see _clusters_width) � reserving
+        # it showed up as a dead strip before the reset countdown.
+        expected = (w.limit_gauges.PAD * 2
+                    + plain * len(accounts) - w.limit_gauges.GAP_ACC)
+>       assert w.limit_gauges.width() == expected
+E       assert 15 == 44
+E        +  where 15 = <built-in method width of LimitGauges object at 0x000001B4E69FB520>()
+E        +    where <built-in method width of LimitGauges object at 0x000001B4E69FB520> = <fastprompter.ui.limit_gauges.LimitGauges object at 0x000001B4E69FB520>.width
+E        +      where <fastprompter.ui.limit_gauges.LimitGauges object at 0x000001B4E69FB520> = <fastprompter.main.FastPrompter object at 0x000001B4E69F8310>.limit_gauges
+
+tests_smoke\test_app_smoke.py:10909: AssertionError
+----------------------------- Captured log setup ------------------------------
+INFO     fastprompter:main.py:16784 navigation phase=attach elapsed=0.048s category=Code slot=0 chars=1 blocks=1 warm=unknown
+INFO     fastprompter:main.py:16784 navigation phase=total elapsed=0.091s category=Code slot=0 chars=1 blocks=1 warm=unknown
+=========================== short test summary info ===========================
+FAILED tests_smoke/test_app_smoke.py::test_limit_account_checkboxes_hide_by_stable_key
+FAILED tests_smoke/test_app_smoke.py::test_limit_gauges_sheds_labels_before_accounts
+2 failed, 1 passed in 3.46s

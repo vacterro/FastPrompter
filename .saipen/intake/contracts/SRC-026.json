@@ -1,0 +1,14 @@
+{
+  "clauses": {
+    "SRC-026:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Close audit/11 layer: T-1282 terminal after SRC-021 11/11 clauses VERIFIED; then continue audit all to T-1283 (audit/9.md, SRC-012)."
+    }
+  },
+  "derived_at": "2026-09-19T05:23:08Z",
+  "derived_from": "SRC-026",
+  "interpretation_revision": 1,
+  "schema_version": 1,
+  "source_sha256": "ada4c4c75e9800cde5470f87b5f3b468a6e791ead47ab664d0057ba9f0a5af76"
+}

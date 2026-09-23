@@ -1,40 +1,10 @@
-# Plugin, Skill & Extension Development Guide
+# Plugin & Extension Development Guide
 
 > **Freshness policy:** the README and `src/` are canonical; this page
 > describes the v0.8.x codebase it was written against. Where a page and the
 > code disagree, the code wins.
 
-## 1. Watcher Skills (`core/watcher/skills.py`)
-
-Skills are the token prepended to a queued prompt before it is sent. They are
-discovered from the skill folders the target agent already reads, then
-curated by hand in Settings → Watcher.
-
-### Discovery
-
-```
-~/.claude/skills/*/SKILL.md
-{project}/.claude/skills/*/SKILL.md
-```
-
-Each `SKILL.md`'s frontmatter carries `name` and `description`
-(`core/watcher/skills.py:parse_frontmatter`). Hand-added chips and dismissed
-ones survive a rescan; a rescan only ever adds entries.
-
-### Composition at send time
-
-A queued item stores its skill *beside* the prompt; the final text is
-composed only when the item is about to be sent, using the target adapter's
-`skill_format` (default `/ {skill} {text}`). Changing the skill is never a
-retype. A target with no `skill_format` has no skills: an item already
-carrying one is skipped with a reason rather than sent stripped.
-
-### Applying
-
-Set the default skill in Settings → Watcher, or override per item in the
-Queue Master dialog (`Alt+Shift+C`).
-
-## 2. SAIPEN SubAgents
+## 1. SAIPEN SubAgents
 
 > This section documents the SAIPEN protocol project's subagent feature, not
 > a FastPrompter feature — FastPrompter's `.saipen/` viewer was removed in
@@ -111,17 +81,15 @@ Custom mouse cursor sets. Retro computing feel.
 
 **Toggle:** Settings → Cursors → Enable custom cursors. On first enable, auto-captures current Windows set.
 
-## 5. Watcher Engine Extensibility
-
-| Module | Extension Point |
-|---|---|
-| `adapter.py` | Implement ProbeAdapter for custom target detection |
-| `cdp.py` | Custom CDP commands for Electron apps |
-| `win32.py` | Win32 window probe customisation |
-| `skills.py` | Add custom prompt skill templates |
-| `limit_scan.py` | Custom cross-agent limit scanner |
-| `sender.py` | Custom text injection strategies |
-
 ## 6. Silo Sync to Disk (T-591)
 
 One-way silo → filesystem export. Settings → Sync mode: Off / Silo (flat) / Hierarchy (nested). Writes `<root>/<category>/<NN_slug>.md` on save. Never reads back, never deletes. Skips unchanged text.
+
+## 7. Sound Preset Packs (T-1238-F)
+
+Sound setups are portable: `core/sound_presets.py` ships factory presets and
+imports/exports `.fpsoundpreset` (settings only) and `.fpsoundpack` (settings
++ referenced `.wav` assets, with asset-safety checks). Preset state lives in
+`audio.db`; the global playback mode is the `audio_global_playback_mode`
+setting. Imports resolve references through `core/sound_library.py`
+(`builtin:` shipped library, `user:` managed library under `<data>/sound_library/`).

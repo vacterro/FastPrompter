@@ -1,4 +1,4 @@
-﻿# FastPrompter Core API & Class Reference
+# FastPrompter Core API & Class Reference
 
 ## Core Classes (`src/fastprompter/core/`)
 
@@ -52,23 +52,33 @@ QLocalServer on named pipe `FastPrompter_Server_V15`. Token-only auth via `%TEMP
 ### `InstanceLock` (`core/instance_lock.py`)
 
 Win32 named mutex (`Local\FastPrompter_Instance_...`) вЂ” single-instance
-ownership. A frozen/lost owner is detected at startup; the new instance
-may reclaim the lock (`RECLAIMED` role) and proceed, while the mutex is
-never taken by a true second writer, so split-brain instances are
-impossible by design (T-788).
+ownership. A frozen/lost owner is detected at startup and reported with a
+diagnostic; the mutex can never be taken over by a second writer, so
+split-brain instances are impossible by design (T-788).
 
 ---
 
 ### `SoundManager` (`core/sound_manager.py`)
 
-WAV playback for UI clicks, typewriter keys, timer alarms, interval notifications.
+Audio facade over the AudioHub (T-1238-G): named-event playback for UI clicks,
+typewriter keys, hotkey events, alarms and interval notifications.
 
-**Methods:**
-- `play(name)`, `play_file(file_name)`, `play_click()`, `play_tick()` — dispatch audio by event or literal file
-- `play_sound_ref(ref, level)` — play by event name or `file:path.wav` reference with explicit volume (0.0–1.0); used by interval notifications and timer pool sounds
-- Volume controlled by `sound_volume` setting (0-10); winsound path scaled via `scale_wav_bytes()` / `scaled_wav_path()`
-- `sound_ui` / `sound_typewriter` / per-event flags gate playback
+**Audio hub integration:**
+- `audio_hub()` — the single audio authority (six buses, Overlay/Stack/Replace/Queue modes)
+- `set_playback_mode(mode)` / `reload_playback_mode()` — global playback mode; persisted as `audio_global_playback_mode` (default Overlay)
+- `event_mode(event)` — per-event playback override (`inherit`/`mix`/`queue`/`replace`/`skip_busy`)
+- `hub_routing_active()` / `backend_status()` — truthful hub/backend report for the Playback settings page
+- `stop_all_sound()` — **STOP ALL SOUND**: stops every transient channel, clears every queue, cancels voice sequences and ambience layers; settings untouched
+
+**Event engine:**
+- `play(name, source, policy, dedupe_key)`, `play_to_completion(name)`, `play_file(file_name)`, `play_click()`, `play_tick()`, `play_hover()`, `play_project()` — dispatch audio by named event or literal file
+- `play_sound_ref(ref, level)` — play by event name or `builtin:`/`user:`/`file:path.wav` reference (resolved via `core/sound_library.py`); used by interval notifications and timer pool sounds
+- `get_available_sounds()` / `get_vault_sounds()` — merged shipped + managed library listings
+- Volume: `sound_volume` accepts legacy 0–10 ints (scaled to 0.0–1.0) and modern float levels; per-event overrides via the `sound_events` dict; winsound path scaled via `scale_wav_bytes()` / `scaled_wav_path()`
+- `sound_ui` / `sound_typewriter` global toggles + per-event flags gate playback (`type`/`backspace` follow the typewriter switch, everything else the UI one)
 - Case-insensitive sound matching on selection sync (v0.8.55)
+
+**Transport fidelity (T-1242):** transient cues play through `core/audio_hub.py`'s fresh-QAudioSink-per-cue transport fed the source's exact PCM frames with a 100 ms in-buffer post-roll (loopback-measured root cause of the chopped/frozen-fragment defect: pooled QSoundEffect drops the last ~42.5 ms of every cue and leaks it into the next), bypassing the pooled `QSoundEffect` channels; `core/audio_render.py` pre-renders each WAV once to the output device's own rate (band-limited polyphase resampler, `RENDER_VERSION`-keyed cache) and `core/audio_level.py` feeds Auto Level per-event `gain_db`.
 
 ---
 
@@ -149,19 +159,74 @@ Ctrl+E header insertion. Configurable: rule line, gap, bullet, alignment, timest
 
 ---
 
-### `Watcher Engine Modules` (`core/watcher/`)
+### `Usage-Limit Service` (`core/usage_limits/`)
+
+Provider-neutral AI-quota probing, expanded from the retired watcher's limit
+probing (T-1190): bounded executor, sweep generations, multi-level
+troubleshooting with self-healing, banked resets, silent undisruptive refresh
+(cursor-feedback suppression, below-normal priority, background rediscovery,
+bridge fast-path).
 
 | Module | Role |
 |---|---|
-| `engine.py` | Finite state machine: DISARMED в†’ ARMED в†’ WATCHING в†’ SENDING |
-| `cdp.py` | Chrome CDP attach + evaluate + read-back verification (Electron apps) |
-| `win32.py` | Win32 window probe вЂ” foreground, caret, focus detection |
-| `probes.py` | Multi-probe state combinators + combined matrix |
-| `queue.py` | QueueItem, SendIntent, pinning, per-queue key, persistence |
-| `sender.py` | CDP + Win32 keystroke injection with read-back verification |
-| `skills.py` | Prompt skill wrappers вЂ” prefix/template transforms |
-| `adapter.py` | Abstract probe adapter interface |
-| `limit_scan.py` | Cross-agent limit scanner + auto-timer creation |
+| `service.py` | Sweep orchestration, generations, caching |
+| `model.py` | Quota state model |
+| `providers/` | 14 provider files: claude (CLI, desktop, transcripts), codex (probe), antigravity (brain + CLI), zcode (HTTP), freebuff (HTTP; T-1243) |
+| `providers/claude.py` | Multi-account Claude: `accounts_report(accounts, snapshots=None)` returns one descriptive, secret-free row per DISCOVERED Claude account (`key`, `name`, `path`, `kind`, `is_default`, `config_dir`, `has_credentials`, `bridge_connected`, `bridge_has_cache`, `data_state`) — non-Claude accounts are ignored, the credential file is reported present/absent but never read, and `data_state` is the SAME snapshot the gauges render. `detected_summary(count)` renders "N Claude account(s) detected" even for one, so a missing second account stays diagnosable (T-1266/T-1268) |
+| `freebuff_format.py` | Freebuff quota payload decoding |
+| `troubleshooter.py` | Multi-level diagnosis + self-healing (T-1190) |
+| `notifications.py` | Quota notifications; T-1249 reset classifier (`_classify_recovery`) — a reset is near-full refill evidence (>=90% remaining), never a bare upward value jump |
+| `cli_tools.py` | CLI tool discovery |
+| `claude_statusline.py` | Claude status-line parsing |
+
+---
+
+### Windows Clipboard Generation (`core/win_clipboard.py` + `ui/clipboard_watch.py`, T-1269)
+
+Diagnostics for the intermittent "Ctrl+V inserted nothing / an older value" report.
+Three failure CLASSES are separated by evidence, never by blame:
+
+| Class | Meaning | Evidence |
+|---|---|---|
+| 1 key routing | Ctrl+V never reached FastPrompter | `VaultTextEdit.paste_key_router_evidence()` — `key_events_seen` moves only on a real key event |
+| 2 paste route | key arrived, payload present, nothing inserted / wrong target | `paste_diagnostics()` ring: `key_path_reached`, `paste_called`, `insert_reached`, branch, document revision before/after, `failure_class` |
+| 3 ownership race | the OS clipboard generation moved DURING the paste | three samples per attempt compared by `clipboard_race_evidence`, plus `clipboard_changed_during_paste` |
+
+`core/win_clipboard.py` calls the native APIs through ctypes (no pywin32):
+
+- `clipboard_sequence_number()` — `GetClipboardSequenceNumber()`, the OS generation
+  counter Windows bumps on every clipboard ownership change (returns `None`, not a
+  fabricated 0, when there is no clipboard);
+- `clipboard_owner()` — `GetClipboardOwner()` + `GetWindowThreadProcessId()` + the
+  process image name, so a conflict is attributable to a process. An unresolvable
+  lookup reports `process: UNKNOWN`;
+- `clipboard_generation(label)` — one bounded sample (label, monotonic, sequence, owner);
+- `clipboard_race_evidence(samples)` — `same` / `changed` / `unknown`: a race must be
+  PROVEN by a moved generation, never inferred from timing, and an unreadable pair is
+  `unknown` rather than a claimed race.
+
+`ui/clipboard_watch.py` counts QClipboard `changed`/`dataChanged` notifications
+(`clipboard_watch_snapshot()`) so the Qt side of the same boundary rides in the same
+record; the two counters may disagree, and the record shows it. Every editor paste
+attempt records the three samples (`key_entry`, `mime_read`, `after_paste`) through
+`_apply_paste_clipboard_contract`; a proven move logs ONE attribution warning naming
+the competing owner processes. **No clipboard text is ever read into a record** —
+counters, lengths and process names only. The operator-run probe
+`tools/probe_clipboard_interop.py` exposes the same measurements outside the app
+(`--race-check`, `--contention`, `--self-copy`, `--matrix`).
+
+---
+
+### Text Coordinate Contract (`ui/qt_text_coords.py`, T-1269)
+
+Qt positions are UTF-16 code units; Python indexes are code points. They diverge the
+moment a non-BMP character (emoji, ZWJ sequence) is present, and a mixed calculation
+silently edits the wrong characters. The module is the ONE conversion boundary:
+`qt_units()`, `py_to_qt()`, `qt_to_py()`, `convert_spans_py_to_qt()`. Formatting
+spans use `qt_units()`; the typo checker keeps producing Python code-point spans and
+the COMPLETE span list is converted exactly once at the GUI boundary against the
+accepted snapshot (`main.py`), after which `editor._typo_spans` stores Qt UTF-16
+offsets and every consumer (paint, spelling menu, replacement) shares one system.
 
 ---
 
@@ -238,30 +303,27 @@ Whole-project typecheck report dialog. Right-click project tab → "Check Typos 
 ### `FastPrompter` (`main.py`)
 
 QMainWindow. Mixin composition (declaration order):
-1. FormattingMixin вЂ” markdown formatting shortcuts
-2. HotkeyMixin вЂ” hotkey binding interface
-3. ScalingMixin вЂ” DPI/font scaling
-4. SearchMixin вЂ” search bar over silos
-5. SendSelectionMixin вЂ” send text via watcher
-6. SnippetOpsMixin вЂ” silo ops (trash, duplicate, reorder)
-7. ThemeMixin вЂ” app stylesheet, vintage presets
-8. TrayMixin вЂ” system tray icon + menu
-9. WatcherMixin вЂ” watcher engine integration
-10. WindowMixin вЂ” frameless window + snapping
+1. CursorMixin — editor cursor helpers
+2. FormattingMixin — markdown formatting shortcuts
+3. HotkeyMixin — hotkey binding interface
+4. ScalingMixin — DPI/font scaling
+5. SearchMixin — search bar over silos
+6. SendSelectionMixin — copy the selection to a new/child silo, or into the archive
+7. SnippetOpsMixin — silo ops (trash, duplicate, reorder)
+8. ThemeMixin — app stylesheet, vintage presets
+9. TrayMixin — system tray icon + menu
+10. WindowMixin — frameless window + snapping
 
-**Key properties:** `_font_size`, `_font_family`, `_ui_scale`, `_button_scale`, `_sidebar_right`, `_always_on_top`, `_normal_window`, `_category_document_cache` (bounded LRU, limit 4), `_document_fingerprint_cache` (per-doc rev→CRC)
+**Key properties:** `_font_size`, `_font_family`, `_ui_scale`, `_button_scale`, `_sidebar_right`, `_always_on_top`, `_normal_window`
 
 **Key methods:**
-- `init_ui()` вЂ” build window, header toolbar, splitter, editor, sidebar, status bar
-- `setup_single_instance_server()` вЂ” IPC init
-- `register_all_hotkeys()` вЂ” bind pynput + PyQt shortcuts
-- `configured_font()` вЂ” return QFont from persisted global settings (family + size + no-AA); single source of truth for font identity
-- `apply_font()` вЂ” cascade configured font to every UI surface (QApplication, tooltips, editor)
-- `apply_theme()` вЂ” cascade theme changes
-- `place_window()` вЂ” restore saved geometry or apply default snap
-- `_switch_to_slot(slot, initial)` вЂ” load silo into editor, save cursor state
-- `capture_silo_state()` / `restore_silo_state()` вЂ” per-silo cursor/scroll/fold/heat persistence
-- `_remember_category_documents(cat)` / `_restore_category_documents(cat)` вЂ” bounded LRU cache so category switches do not throw away every QTextDocument
+- `init_ui()` — build window, header toolbar, splitter, editor, sidebar, status bar
+- `setup_single_instance_server()` — IPC init
+- `register_all_hotkeys()` — bind global Win32 hotkeys + PyQt shortcuts
+- `apply_font()` / `apply_theme()` — cascade font/theme changes
+- `place_window()` — restore saved geometry or apply default snap
+- `_switch_to_slot(slot, initial)` — load silo into editor, save cursor state
+- `capture_silo_state()` / `restore_silo_state()` — per-silo cursor/scroll/fold/heat persistence
 
 ---
 
@@ -272,9 +334,8 @@ Extended QPlainTextEdit. Markdown editing canvas.
 **Features:**
 - MarkdownHighlighter вЂ” live syntax coloring
 - LineNumberArea вЂ” gutter: line numbers + fold arrows (в–ѕ) + margin marks
-- `fold_header(block_num)` / `unfold_header(block_num)` вЂ” section collapse
-- `queue_current_line()` вЂ” anchor watcher item to block
-- `set_queue_anchor(block, id)` вЂ” queue line anchoring
+- `toggle_fold(anchor)` / `expand_fold_at(block)` / `unfold_all()` — section collapse
+- `queue_current_line()` — anchored prompt-queue capture (subsystem retired in T-1183; body returns `None`)
 - `collect_view_metadata()` — consolidated marks, heat, and folds capture
 - `block_for_queue_item(id)` / `blocks_for_queue_items(ids)` вЂ” find block by queue anchor
 - `document_word_count()` вЂ” O(1) cached word count

@@ -6,7 +6,7 @@
 - [Architecture Overview](Architecture-Overview)
 - [Module Structure](Module-Structure)
 - [Core API & Classes](Core-API-and-Classes)
-- [Watcher Engine](Watcher-Engine-Architecture)
+- [Usage-Limit Service](Core-API-and-Classes)
 
 ### Interface & Configuration
 - [Configuration](Configuration)

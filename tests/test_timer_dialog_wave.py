@@ -848,30 +848,29 @@ def test_mutations_update_timer_label_immediately():
     assert d.main_win.label_updates > before      # alarm edit
 
 
-@pytest.mark.timeout(600)
-def test_dialog_open_close_hundred_times_no_residue():
-    # T-1288: this stress test builds 100 full TimerDialogs. Standalone it
-    # costs ~7 s, but in the shared full-suite QApplication the accumulated
-    # session widgets make every construction slower; the declared 180 s
-    # default was measured firing after iterations 98-99, aborting the whole
-    # harness with a faulthandler dump instead of a summary. The test's
-    # contract (100 opens/closes, zero residue) is unchanged; only its time
-    # budget is explicit.
+def _exercise_dialog_open_close_hundred_times():
+    """Exercise native dialog lifetime in one clean QApplication process."""
     import gc
     import weakref
+
+    from _qt_retire import retire
 
     fake = _FakeMain()
     timers_before = len(fake.timers)
     saved_before = fake.saved
     labels_before = fake.label_updates
     refs = []
-    for _ in range(100):
+    for index in range(100):
         d = _dlg()
         d.show()
         d.close()
-        d.deleteLater()
+        # deleteLater() only posts an event. processEvents() does not deliver
+        # DeferredDelete without a running Qt event loop, so 100 native dialog
+        # trees used to accumulate before the test's final assertion.
+        retire(d.main_win)
         refs.append(weakref.ref(d))
-        QApplication.processEvents()
+        if index % 10 == 9:
+            QApplication.processEvents()
     del d
     QApplication.processEvents()
     gc.collect()
@@ -880,6 +879,33 @@ def test_dialog_open_close_hundred_times_no_residue():
     assert len(fake.timers) == timers_before      # no model mutation
     assert fake.saved == saved_before
     assert fake.label_updates == labels_before
+    retire(fake)
+
+
+@pytest.mark.timeout(90)
+def test_dialog_open_close_hundred_times_no_residue():
+    # A hundred native dialogs must be tested in a fresh process. Shared-app
+    # tests legitimately leave other Qt windows alive until their own teardown;
+    # mixing those with this stress loop made processEvents dispatch unrelated
+    # callbacks and could abort pytest before its normal summary.
+    import subprocess
+
+    tests_dir = os.path.dirname(__file__)
+    src_dir = os.path.abspath(os.path.join(tests_dir, "..", "src"))
+    env = dict(os.environ)
+    env["QT_QPA_PLATFORM"] = "offscreen"
+    env["PYTHONPATH"] = os.pathsep.join(
+        p for p in (tests_dir, src_dir, env.get("PYTHONPATH", "")) if p)
+    result = subprocess.run(
+        [sys.executable, "-c",
+         "from test_timer_dialog_wave import "
+         "_exercise_dialog_open_close_hundred_times as exercise; exercise()"],
+        cwd=os.path.dirname(tests_dir), env=env,
+        capture_output=True, text=True, timeout=80,
+    )
+    assert result.returncode == 0, (
+        f"dialog lifetime subprocess exited {result.returncode}: "
+        f"{result.stdout[-800:]} {result.stderr[-800:]}")
 
 
 def test_periodic_refresh_is_bound_to_page_identity():

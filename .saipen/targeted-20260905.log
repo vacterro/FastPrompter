@@ -1,0 +1,54 @@
+F........................................F.............................. [ 49%]
+.....................F....FF.......................................F.... [ 98%]
+..                                                                       [100%]
+================================== FAILURES ===================================
+______________________ TestResolveBinary.test_path_wins _______________________
+tests\test_usage_limits_cli.py:51: in test_path_wins
+    assert cli_tools.resolve_binary("antigravity") == str(binary)
+E   AssertionError: assert 'C:\\Users\\v...\bin\\agy.exe' == 'V:\\_TEMP_\\...ins0\\agy.exe'
+E     
+E     - V:\_TEMP_\fastprompter-tests-14308-8xrtfcu4\pytest-of-vac34\pytest-0\test_path_wins0\agy.exe
+E     + C:\Users\vac34\AppData\Local\agy\bin\agy.exe
+____________________ test_display_windows_drops_dead_pools ____________________
+tests\test_usage_limits_hide_zero.py:355: in test_display_windows_drops_dead_pools
+    assert len(display_windows(s2.windows)) == 4
+E   AssertionError: assert 2 == 4
+E    +  where 2 = len([UsageWindow(key='five_hour@claude_gpt', duration_minutes=300, available=True, used_percent=40.0, remaining_percent=60...e='', gated_by=None, assumed_full=False, group='claude_gpt', group_label='Claude and GPT models', reset_pending=False)])
+E    +    where [UsageWindow(key='five_hour@claude_gpt', duration_minutes=300, available=True, used_percent=40.0, remaining_percent=60...e='', gated_by=None, assumed_full=False, group='claude_gpt', group_label='Claude and GPT models', reset_pending=False)] = display_windows([UsageWindow(key='five_hour@gemini_models', duration_minutes=300, available=True, used_percent=100.0, remaining_percen...e='', gated_by=None, assumed_full=False, group='claude_gpt', group_label='Claude and GPT models', reset_pending=False)])
+E    +      where [UsageWindow(key='five_hour@gemini_models', duration_minutes=300, available=True, used_percent=100.0, remaining_percen...e='', gated_by=None, assumed_full=False, group='claude_gpt', group_label='Claude and GPT models', reset_pending=False)] = UsageSnapshot(account=AccountRef(provider_id='antigravity', stable_id='stable_antigravity', display_name='Antigravity'...ype=None, fetched_at=None, stale_since=None, error_code='', error_summary='', provider_metadata={}, banked_resets=None).windows
+_ TestVolumeOnTheWinsoundPath.test_play_uses_the_scaled_copy_and_stays_async __
+tests\test_sound_manager.py:409: in test_play_uses_the_scaled_copy_and_stays_async
+    assert flags == fake.SND_FILENAME | fake.SND_ASYNC
+E   AssertionError: assert <MagicMock name='mock.SND_NODEFAULT.__ror__().__or__()' id='2498062008592'> == (131072 | 1)
+E    +  where 131072 = <MagicMock id='2498061937296'>.SND_FILENAME
+E    +  and   1 = <MagicMock id='2498061937296'>.SND_ASYNC
+_____________ TestSameEventCoalesce.test_skip_when_still_playing ______________
+tests\test_sound_manager.py:511: in test_skip_when_still_playing
+    assert calls == [("vol", 0.5)]
+E   AssertionError: assert [] == [('vol', 0.5)]
+E     
+E     Right contains one more item: ('vol', 0.5)
+E     Use -v to get more diff
+_________________ TestSameEventCoalesce.test_plays_when_idle __________________
+tests\test_sound_manager.py:531: in test_plays_when_idle
+    assert [c[0] for c in calls] == ["src", "play"]
+E   AssertionError: assert [] == ['src', 'play']
+E     
+E     Right contains 2 more items, first extra item: 'src'
+E     Use -v to get more diff
+_ TestLimitGaugeRichTooltip.test_tooltip_hover_rebuilds_elapsed_reset_without_sync_probe _
+tests\test_usage_limits_gauge_layout.py:532: in test_tooltip_hover_rebuilds_elapsed_reset_without_sync_probe
+    assert "100%" in gauges.toolTip()
+E   assert '100%' in "<html><body style='font-family:Verdana, Segoe UI, sans-serif; font-size:11px; color:#c0c0c0;'><div style='font-weight...rder-top:1px dotted #3e382b; padding-top:2px;'>Click: Settings � Ctrl+Click: Bars / Dots / Stacked</div></body></html>"
+E    +  where "<html><body style='font-family:Verdana, Segoe UI, sans-serif; font-size:11px; color:#c0c0c0;'><div style='font-weight...rder-top:1px dotted #3e382b; padding-top:2px;'>Click: Settings � Ctrl+Click: Bars / Dots / Stacked</div></body></html>" = <built-in method toolTip of LimitGauges object at 0x000002459C020940>()
+E    +    where <built-in method toolTip of LimitGauges object at 0x000002459C020940> = <fastprompter.ui.limit_gauges.LimitGauges object at 0x000002459C020940>.toolTip
+---------------------------- Captured stderr call -----------------------------
+This plugin does not support raise()
+=========================== short test summary info ===========================
+FAILED tests/test_usage_limits_cli.py::TestResolveBinary::test_path_wins - As...
+FAILED tests/test_usage_limits_hide_zero.py::test_display_windows_drops_dead_pools
+FAILED tests/test_sound_manager.py::TestVolumeOnTheWinsoundPath::test_play_uses_the_scaled_copy_and_stays_async
+FAILED tests/test_sound_manager.py::TestSameEventCoalesce::test_skip_when_still_playing
+FAILED tests/test_sound_manager.py::TestSameEventCoalesce::test_plays_when_idle
+FAILED tests/test_usage_limits_gauge_layout.py::TestLimitGaugeRichTooltip::test_tooltip_hover_rebuilds_elapsed_reset_without_sync_probe
+6 failed, 140 passed in 14.76s

@@ -1,0 +1,51 @@
+{
+  "agent": "buffy",
+  "created_at": "2026-09-21T02:49:47Z",
+  "evidence_class": "executed",
+  "findings_digest": "fdfdf62c91dc55b617697cd577d335c16ecc4853430c5510cc541be062cb4d34",
+  "gate": "core",
+  "integrity_digest": "bb7d456cfab9479b",
+  "journal_op_id": "reverify.152be96d170d",
+  "original_closure": {
+    "claim_time": "2026-09-08T06:45:00Z",
+    "last_ticket_event": "E-1804",
+    "owner": "opencode",
+    "source_receipts": "FASTPROMPTER \u2014 SMART_20260908_0645"
+  },
+  "own_problem_keys": [
+    "0054ab5da89660a0",
+    "9d281f259f5ac590"
+  ],
+  "problem_count": 6,
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "receipt_id": "RV-000094",
+  "ruleset_fingerprint": "82e5e183ae8f0fd909be3fa3627f00489cacaab813d942186c832db02a05a1c1",
+  "ruleset_version": 1,
+  "schema_version": 1,
+  "source_head": "2be089df290a961212290c0302cab055b8537cf1",
+  "source_tree_fingerprint": "git-delta-v1:d74ef2311dcaf144625ffaed3a65852afe78b04282eaa8520b2d660fd224b042",
+  "verdict": "FAIL",
+  "verification": [
+    {
+      "command": "uv run pytest tests/test_line_mark_toggle.py tests/test_editor_paste_t1269.py -q",
+      "duration_ms": 779,
+      "executed": true,
+      "exit_code": 0,
+      "output_bytes": 99,
+      "output_digest": "3390296d3994c166",
+      "result": "PASS"
+    }
+  ],
+  "verification_contract": {
+    "commands": [
+      "uv run pytest tests/test_line_mark_toggle.py tests/test_editor_paste_t1269.py -q"
+    ],
+    "findings_digest": "fdfdf62c91dc55b617697cd577d335c16ecc4853430c5510cc541be062cb4d34",
+    "gate": "core"
+  },
+  "verification_contract_digest": "145bedb376b78a14",
+  "verifier": "buffy",
+  "warning_count": 65,
+  "work": "T-1226"
+}

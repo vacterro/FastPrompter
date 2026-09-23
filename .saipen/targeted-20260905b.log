@@ -1,0 +1,46 @@
+........................................................................ [ 28%]
+........F...FF.F...............................F........................ [ 56%]
+..........F............................................................. [ 84%]
+........................................                                 [100%]
+================================== FAILURES ===================================
+____ TestElapsedResetsRefillImmediately.test_a_passed_reset_reads_as_full _____
+tests\test_usage_limits.py:1202: in test_a_passed_reset_reads_as_full
+    assert out[0].remaining_percent == 100.0
+E   AssertionError: assert None == 100.0
+E    +  where None = UsageWindow(key='five_hour', duration_minutes=300, available=False, used_percent=None, remaining_percent=None, resets_at_epoch=None, source='', gated_by=None, assumed_full=False, group='', group_label='', reset_pending=True).remaining_percent
+_ TestElapsedResetsRefillImmediately.test_a_weekly_reset_lifts_the_gate_it_was_holding _
+tests\test_usage_limits.py:1236: in test_a_weekly_reset_lifts_the_gate_it_was_holding
+    assert weekly.remaining_percent == 100.0
+E   AssertionError: assert None == 100.0
+E    +  where None = UsageWindow(key='weekly', duration_minutes=10080, available=False, used_percent=None, remaining_percent=None, resets_at_epoch=None, source='', gated_by=None, assumed_full=False, group='', group_label='', reset_pending=True).remaining_percent
+_ TestElapsedResetsRefillImmediately.test_a_live_weekly_still_gates_a_reset_short_window _
+tests\test_usage_limits.py:1249: in test_a_live_weekly_still_gates_a_reset_short_window
+    assert five.gated_by == WEEKLY
+E   AssertionError: assert None == 'weekly'
+E    +  where None = UsageWindow(key='five_hour', duration_minutes=300, available=False, used_percent=None, remaining_percent=None, resets_at_epoch=None, source='', gated_by=None, assumed_full=False, group='', group_label='', reset_pending=True).gated_by
+_ TestElapsedResetsRefillImmediately.test_the_notifier_sees_the_refill_as_a_recovery _
+tests\test_usage_limits.py:1291: in test_the_notifier_sees_the_refill_as_a_recovery
+    assert [a.kind for a in alerts] == ["reset"]
+E   AssertionError: assert [] == ['reset']
+E     
+E     Right contains one more item: 'reset'
+E     Use -v to get more diff
+_ TestAntigravityJournalFallback.test_a_just_elapsed_block_is_still_reported_so_the_reset_can_fire _
+tests\test_usage_limits_antigravity.py:425: in test_a_just_elapsed_block_is_still_reported_so_the_reset_can_fire
+    assert window.remaining_percent == 100.0
+E   AssertionError: assert None == 100.0
+E    +  where None = UsageWindow(key='quota', duration_minutes=None, available=False, used_percent=None, remaining_percent=None, resets_at_...e, source='antigravity-brain-message', gated_by=None, assumed_full=False, group='', group_label='', reset_pending=True).remaining_percent
+____________ TestAntigravityCliReader.test_is_authenticated_mocked ____________
+tests\test_usage_limits_cli.py:327: in test_is_authenticated_mocked
+    assert _antigravity_cli.is_authenticated() is False
+E   assert True is False
+E    +  where True = <function TestAntigravityCliReader.saved_auth.<locals>.<lambda> at 0x000001DD60E136A0>()
+E    +    where <function TestAntigravityCliReader.saved_auth.<locals>.<lambda> at 0x000001DD60E136A0> = _antigravity_cli.is_authenticated
+=========================== short test summary info ===========================
+FAILED tests/test_usage_limits.py::TestElapsedResetsRefillImmediately::test_a_passed_reset_reads_as_full
+FAILED tests/test_usage_limits.py::TestElapsedResetsRefillImmediately::test_a_weekly_reset_lifts_the_gate_it_was_holding
+FAILED tests/test_usage_limits.py::TestElapsedResetsRefillImmediately::test_a_live_weekly_still_gates_a_reset_short_window
+FAILED tests/test_usage_limits.py::TestElapsedResetsRefillImmediately::test_the_notifier_sees_the_refill_as_a_recovery
+FAILED tests/test_usage_limits_antigravity.py::TestAntigravityJournalFallback::test_a_just_elapsed_block_is_still_reported_so_the_reset_can_fire
+FAILED tests/test_usage_limits_cli.py::TestAntigravityCliReader::test_is_authenticated_mocked
+6 failed, 250 passed in 5.47s

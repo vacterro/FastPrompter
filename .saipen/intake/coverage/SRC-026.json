@@ -1,0 +1,14 @@
+{
+  "requirements": {
+    "SRC-026:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "T-1291 closed with verification evidence in LOG: verify -> PASS [target: T-1291] conf: high -- umbrella deliverable proven by its children: T-1286 DONE (full uv run pytest tests/ -q exit 0 x3, 3682 passed 6 skipped), T-1282 DONE (SRC-021 11/11 terminal, source CLOSED, audit/11.md consumed E-2164)",
+      "text": "Close audit/11 layer: T-1282 terminal after SRC-021 11/11 clauses VERIFIED; then continue audit all to T-1283 (audit/9.md, SRC-012).",
+      "verification": "the Work this request created reached its own verification gate; see the T-1291 VERIFY cycle in .saipen/LOG.md",
+      "work": "T-1291"
+    }
+  },
+  "schema_version": 1
+}

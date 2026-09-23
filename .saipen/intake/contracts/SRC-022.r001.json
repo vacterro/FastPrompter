@@ -1,0 +1,14 @@
+{
+  "clauses": {
+    "SRC-022:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "goal audit all"
+    }
+  },
+  "derived_at": "2026-09-19T06:27:45Z",
+  "derived_from": "SRC-022",
+  "interpretation_revision": 1,
+  "schema_version": 1,
+  "source_sha256": "52b9f1d505509786f16217ebbf7c82e5ae23300b5e91a02abc6f3c78a7405881"
+}

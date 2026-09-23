@@ -10,6 +10,7 @@ changes. The live count badge (_silo_file_count) never caches.
 
 import os
 import sys
+import time
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -54,6 +55,13 @@ class TestFolderSummaryCache:
         fc._folder_summary_cache.clear()
         first = fc.folder_summary(d)
         assert "2 item(s)" in first, first
+        generation = fc._dir_generation(d)
+        assert generation is not None
+        # The workspace volume may expose directory mtimes at one-second
+        # resolution. Move beyond that timestamp quantum before the direct
+        # add, so the real filesystem reports a distinct generation.
+        if generation % 1_000_000_000 == 0:
+            time.sleep(2.05)
         with open(os.path.join(d, "c.txt"), "w", encoding="utf-8") as f:
             f.write("z")
         # a changed direct listing must recompute immediately (inside the TTL);

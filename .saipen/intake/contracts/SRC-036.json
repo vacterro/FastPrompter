@@ -1,0 +1,14 @@
+{
+  "clauses": {
+    "SRC-036:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "'saipen work reverify T-1226' 2>&1 | Select-Object -First 60"
+    }
+  },
+  "derived_at": "2026-09-21T03:03:18Z",
+  "derived_from": "SRC-036",
+  "interpretation_revision": 1,
+  "schema_version": 1,
+  "source_sha256": "e3fb8e4303459d26ddee4603f1e7c7e46ba6b3bdba3396c3db2dd8a91a5cb7c8"
+}

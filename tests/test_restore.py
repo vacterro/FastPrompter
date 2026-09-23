@@ -327,6 +327,29 @@ def _rows(path):
         conn.close()
 
 
+def _quarantine_scratch(live):
+    """Invocation-owned quarantine scratch next to ``live`` (W2-003).
+
+    Names are unique per invocation (``<live>-wal.quarantine-<uuid>.tmp``);
+    the suffix alone is NOT a deletable contract, so tests assert on the
+    exact scratch set rather than on a predictable fixed name."""
+    directory = os.path.dirname(live) or "."
+    prefix = os.path.basename(live)
+    try:
+        entries = os.listdir(directory)
+    except OSError:
+        return []
+    return sorted(n for n in entries
+                  if n.startswith(prefix) and ".quarantine-" in n)
+
+
+def _is_quarantine_scratch(path, live, sidecar):
+    """True when ``path`` is a quarantine scratch this restore would create
+    for ``live``'s ``sidecar`` ('-wal' or '-shm')."""
+    return os.path.basename(path).startswith(
+        os.path.basename(live) + sidecar + ".quarantine-")
+
+
 class TestRestoreSidecarRollback:
     """T-808: the WAL/SHM quarantine + main swap must be transactional. An
     ordinary swap failure restores every sidecar exactly (the live DB is
@@ -360,7 +383,7 @@ class TestRestoreSidecarRollback:
         # live main untouched; WAL restored exactly; nothing stranded
         assert _bytes(live) == before
         assert os.path.isfile(live + "-wal")
-        assert not os.path.exists(live + ".wal.quarantine")
+        assert _quarantine_scratch(live) == []
         # the live DB is still a valid v1 with its original content
         assert validate_database(live)[0] == CURRENT_SCHEMA_VERSION
         assert _rows(live) == "live data"
@@ -379,7 +402,7 @@ class TestRestoreSidecarRollback:
             if dst == live and ".restore-" in os.path.basename(src):
                 raise OSError("swap boom")
             # ... AND the sidecar rollback (quarantine -> live) also fails
-            if src.endswith(".wal.quarantine") or src.endswith(".shm.quarantine"):
+            if ".quarantine-" in os.path.basename(src):
                 raise OSError("rollback boom")
             return real_replace(src, dst)
 
@@ -389,8 +412,7 @@ class TestRestoreSidecarRollback:
         # No stranded quarantined sidecars; the on-disk live DB was repaired
         # from the safety snapshot, so it is a valid v1 carrying the ORIGINAL
         # data — and the process must never reopen it (the caller's contract).
-        assert not os.path.exists(live + ".wal.quarantine")
-        assert not os.path.exists(live + ".shm.quarantine")
+        assert _quarantine_scratch(live) == []
         assert validate_database(live)[0] == CURRENT_SCHEMA_VERSION
         assert _rows(live) == "live data"
         # CORE-001: the repair actually completed, so the error must say so.
@@ -415,14 +437,13 @@ class TestRestoreSidecarRollback:
         real_replace = state_mod.os.replace
 
         def fake_replace(src, dst):
-            # quarantining the SHM (live -> .shm.quarantine) fails ...
-            if dst == live + ".shm.quarantine":
+            # quarantining the SHM (live -> shm quarantine scratch) fails ...
+            if _is_quarantine_scratch(dst, live, "-shm"):
                 raise OSError("shm quarantine boom")
             # ... AND rolling the WAL back (quarantine -> live-wal) also fails.
-            # The WAL quarantine (live-wal -> .wal.quarantine) itself
-            # succeeds, so the only way to make the rollback fail is to fail
-            # the reverse move (.wal.quarantine -> live-wal).
-            if dst == live + "-wal" and src.endswith(".wal.quarantine"):
+            # The WAL quarantine (live-wal -> scratch) itself succeeds, so the
+            # only way to make the rollback fail is to fail the reverse move.
+            if dst == live + "-wal" and ".quarantine-" in os.path.basename(src):
                 raise OSError("rollback boom")
             return real_replace(src, dst)
 
@@ -451,7 +472,7 @@ class TestRestoreSidecarRollback:
 
         def fake_replace(src, dst):
             # only the SHM quarantine fails; WAL rollback succeeds normally
-            if dst == live + ".shm.quarantine":
+            if _is_quarantine_scratch(dst, live, "-shm"):
                 raise OSError("shm quarantine boom")
             return real_replace(src, dst)
 
@@ -460,7 +481,7 @@ class TestRestoreSidecarRollback:
             restore_database(backup, live)
         assert _bytes(live) == before
         assert os.path.isfile(live + "-wal")
-        assert not os.path.exists(live + ".wal.quarantine")
+        assert _quarantine_scratch(live) == []
 
     def test_unrepaired_fatal_reports_false_and_preserves_safety(
             self, tmp_path, monkeypatch):
@@ -482,14 +503,13 @@ class TestRestoreSidecarRollback:
             if dst == live and ".restore-" in os.path.basename(src):
                 raise OSError("swap boom")
             # ... AND sidecar rollback fails -> fatal path
-            if src.endswith(".wal.quarantine") or src.endswith(".shm.quarantine"):
+            if ".quarantine-" in os.path.basename(src):
                 raise OSError("rollback boom")
-            # ... AND the repair's sidecar removal is blocked, so it cannot
-            # clear the stranded quarantine before publishing the safety copy.
             return real_replace(src, dst)
 
         def fake_remove(path):
-            if path.endswith(".wal.quarantine") or path.endswith("-wal"):
+            if ".quarantine-" in os.path.basename(path) \
+                    or path.endswith("-wal"):
                 raise OSError("cannot remove sidecar")
             return real_remove(path)
 
@@ -500,6 +520,7 @@ class TestRestoreSidecarRollback:
         assert einfo.value.repaired is False
         # The safety snapshot survives (never consumed by a failed repair)...
         assert os.path.isfile(live + ".prerestore.bak")
-        # ... and the stranded quarantine sidecar is still there, proving the
+        # ... and the stranded owned quarantine is still there, proving the
         # repair refused to publish the safety copy over an unclean live file.
-        assert os.path.exists(live + ".wal.quarantine")
+        stranded = _quarantine_scratch(live)
+        assert stranded, "the owned quarantine scratch must remain"

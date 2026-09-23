@@ -1,0 +1,1 @@
+QT_QPA_PLATFORM=windows uv run pytest tests/test_formatting_unicode_t1269.py tests/test_editor_paste_t1269.py tests/test_editor_paste_shortcut_t1269.py tests/test_editor_paste_live_t1269.py tests/test_clipboard_interop_t1269.py -q

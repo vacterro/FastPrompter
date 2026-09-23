@@ -1,0 +1,41 @@
+{
+  "requirements": {
+    "SRC-043:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "E-2588",
+      "text": "verify completed 19.09 backlog items across the nine domains with terminal evidence per domain",
+      "verification": "nine-domain residual matrix recorded E-2588: SILO, audio/appearance, ambience, AI+multi-account limits, timers/intervals, Settings UX, hotkeys, safe bake, MARKHUNT AA - every domain classified implemented+proven with ticket/event citations",
+      "work": "T-1309"
+    },
+    "SRC-043:R002": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "E-2588",
+      "text": "implement any remaining backlog behaviors that are not already terminal",
+      "verification": "residual classification E-2588: zero genuine residual implementations and zero duplicates required; operator-only gates remain owned by T-1216/T-1228/T-1238/T-1259/T-1206; T-1227 SHIP rides the T-1299 tree reconciliation per SRC-047 section 9",
+      "work": "T-1309"
+    },
+    "SRC-043:R003": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "E-2250",
+      "text": "bake safe current defaults",
+      "verification": "clean EN bake reconstruction E-2250 (machine-local values out, 7 ex-red tests green); zcode opt-in restored T-1231; volume plausibility E-2143; corrective bake T-1298; fresh bake probe E-2526: custom+exe128 -> mode system path empty chest128, junk chest ->64, unknown key -> BakePolicyError",
+      "work": "T-1309"
+    },
+    "SRC-043:R004": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "E-2487",
+      "text": "run markhunt AA over the bake surface",
+      "verification": "markhunt 0 findings 5/5 vectors at HEAD 930e45b (E-2487); HEAD unchanged and product files untouched this session so the finding stands current; fresh re-scan deferred to post-close convergence because MARKHUNT is a non-ticket phase",
+      "work": "T-1309"
+    }
+  },
+  "schema_version": 1
+}

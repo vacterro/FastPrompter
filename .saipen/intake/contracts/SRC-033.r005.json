@@ -1,0 +1,34 @@
+{
+  "clauses": {
+    "SRC-033:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Preserve the T-1264 smoke harness repair (tests_smoke/_smoke_support.py SmokeEnv, SmokeWindowFactory, teardown_smoke_window, receiver-specific tests/_qt_retire.retire, per-module and per-fresh DB roots, scoped pytest.MonkeyPatch, undo-writer drain, owned-thread invariant) and do not reintroduce QApplication.sendPostedEvents(None, DeferredDelete) anywhere in tests_smoke."
+    },
+    "SRC-033:R002": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Make the session-wide smoke sound substitution ownership explicit: capture the exact original SoundManager._play_winsound and QSoundEffect before replacement, restore both in the session fixture finally, and add a tiny ownership regression (originals before the fixture, silent replacements inside it, originals restored after the finalizer) without altering production sound code."
+    },
+    "SRC-033:R003": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Classify every tests_smoke failure with exactly one class (A stale contract, B harness state contamination, C headless/offscreen presentation assumption, D real product regression); never use 'pre-existing' as a disposition; every failure ends as a refreshed test, corrected harness, explicitly desktop-only acceptance, or real product fix."
+    },
+    "SRC-033:R004": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Refresh the app_smoke stale contracts: empty-silo cap asserted against the current category-capacity semantics (not literal five) without regressing product capacity; pin/unpin asserted on logical SILO identity and the current T-1277 order contract; named gaps asserted on the current ownership model; lazy Settings materialized explicitly via _ensure_settings_built() rather than making Settings eager."
+    },
+    "SRC-033:R005": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Resolve the order-dependent clipboard residual by identifying ownership and installing explicit fixture ownership (owner saves prior MIME state or installs deterministic content and restores/clears only its own boundary), never a global QApplication.clipboard() clear after every test and never a Ctrl+V production change without a real product repro."
+    }
+  },
+  "derived_at": "2026-09-20T20:54:15Z",
+  "derived_from": "SRC-033",
+  "interpretation_revision": 5,
+  "schema_version": 1,
+  "source_sha256": "822f2ba2068b26ce46f9a5123a5411afb538d2db94113163ba8e6ec06d174bc3"
+}

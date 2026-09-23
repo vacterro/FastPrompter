@@ -1,0 +1,19 @@
+{
+  "clauses": {
+    "SRC-013:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "CORE-001: namespaced user: refs survive migrate_sound_settings/get_sound_file_for_event/play_file without default substitution (canonical sound_library.resolve_sound_ref)."
+    },
+    "SRC-013:R002": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "CORE-002: forced-no-numpy resampling matches the documented timing/amplitude contract and invalidates the stale render cache version."
+    }
+  },
+  "derived_at": "2026-09-19T05:49:00Z",
+  "derived_from": "SRC-013",
+  "interpretation_revision": 2,
+  "schema_version": 1,
+  "source_sha256": "b15638b5a09e2e8818cd4ea3b1cb28a770d7fa962e0cbf9048b282d74644c3f7"
+}

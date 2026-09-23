@@ -1,0 +1,47 @@
+src\fastprompter\core\i18n\ar.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\bg.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\cs.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\da.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\de.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\ded.py:1190:5: F601 Dictionary key literal `'Defaults'` repeated
+src\fastprompter\core\i18n\el.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\en.py:1190:5: F601 Dictionary key literal `'Defaults'` repeated
+src\fastprompter\core\i18n\est.py:1190:5: F601 Dictionary key literal `'Defaults'` repeated
+src\fastprompter\core\i18n\est.py:1236:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\fi.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\fra.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\he.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\hi.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\hr.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\hu.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\id.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\it.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\ja.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\ko.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\nl.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\no.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\pl.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\pt.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\ro.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\ru.py:1190:5: F601 Dictionary key literal `'Defaults'` repeated
+src\fastprompter\core\i18n\sk.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\spa.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\sv.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\th.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\tur.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\ukr.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\vi.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\zh.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+tests\test_instance_lock.py:242:9: F821 Undefined name `time`
+tests\test_mt9141_audit.py:155:9: E731 Do not assign a `lambda` expression, use a `def`
+tests\test_perf006_folder_cache_bounds.py:17:5: F841 Local variable `host` is assigned to but never used
+tests\test_perf006_folder_cache_bounds.py:31:5: F841 Local variable `host` is assigned to but never used
+tests\test_perf006_folder_cache_bounds.py:47:5: F841 Local variable `keys` is assigned to but never used
+tests\test_themes_headers.py:78:5: F841 Local variable `qapp` is assigned to but never used
+tests\test_timer_toast_t1015.py:8:5: F841 Local variable `qapp` is assigned to but never used
+tests\test_w2_001_cross_volume.py:92:5: F841 Local variable `real_publish` is assigned to but never used
+tests_smoke\conftest.py:28:9: F821 Undefined name `SoundManager`
+tests_smoke\test_audit_second_wave.py:234:5: F841 Local variable `src_dir` is assigned to but never used
+tests_smoke\test_editor_incremental.py:54:31: UP031 Use format specifiers instead of percent format
+Found 120 errors (75 fixed, 45 remaining).
+No fixes available (40 hidden fixes can be enabled with the `--unsafe-fixes` option).

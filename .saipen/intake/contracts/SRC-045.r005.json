@@ -1,0 +1,34 @@
+{
+  "clauses": {
+    "SRC-045:R001": {
+      "actionable": true,
+      "class": "invariant",
+      "text": "Do not ask for ordinary \"continue?\" confirmation between milestones."
+    },
+    "SRC-045:R002": {
+      "actionable": true,
+      "class": "invariant",
+      "text": "Do not reset, clean, stash, bulk-revert, or reconstruct the tree from HEAD."
+    },
+    "SRC-045:R003": {
+      "actionable": true,
+      "class": "invariant",
+      "text": "Do not use git add . or git add -A as a reconciliation shortcut."
+    },
+    "SRC-045:R004": {
+      "actionable": true,
+      "class": "invariant",
+      "text": "Do not delete, replace, or normalize user/operator changes merely because they are unjournaled."
+    },
+    "SRC-045:R005": {
+      "actionable": true,
+      "class": "invariant",
+      "text": "Do not publish a public release from a dirty or provenance-ambiguous tree."
+    }
+  },
+  "derived_at": "2026-09-23T12:23:20Z",
+  "derived_from": "SRC-045",
+  "interpretation_revision": 5,
+  "schema_version": 1,
+  "source_sha256": "8db79c50953379c451ed3c7c6cbe801ff026ba377aefa5436bff027c9c91d8a7"
+}

@@ -1,0 +1,19 @@
+{
+  "clauses": {
+    "SRC-046:R001": {
+      "actionable": true,
+      "class": "invariant",
+      "text": "Do not ask for ordinary \"continue?\" confirmation between milestones."
+    },
+    "SRC-046:R002": {
+      "actionable": true,
+      "class": "invariant",
+      "text": "Do not reset, clean, stash, bulk-revert, or reconstruct the tree from HEAD."
+    }
+  },
+  "derived_at": "2026-09-23T12:23:57Z",
+  "derived_from": "SRC-046",
+  "interpretation_revision": 2,
+  "schema_version": 1,
+  "source_sha256": "d0d62ae33704ab4b1b15e8af9713dcc34d27448991541373e444f503b7304c99"
+}

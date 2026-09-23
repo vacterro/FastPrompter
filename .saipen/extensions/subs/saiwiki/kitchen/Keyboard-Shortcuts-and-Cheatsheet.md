@@ -15,9 +15,9 @@ Full keyboard-driven operation. Layout-independent VK dispatch — works on QWER
 | **Window** | **Alt+S** | Toggle Always-on-Top | Main |
 | **Window** | **Alt+D** | Toggle sidebar | Main |
 | **Window** | **Alt+A** | Toggle hide-on-focus-loss | Main |
+| **Window** | **Alt+F** | Toggle Files asset drawer | Main |
 | **Window** | **Alt+\`** | Open Mini Settings | Main |
-| **Watcher** | **Alt+C** | Queue current line for watcher | Main |
-| **Watcher** | **Alt+Shift+C** | Open Queue Master dialog | Main |
+| **Retired** | ~~Alt+C~~ / ~~Alt+Shift+C~~ | Watcher queue (removed T-1183; unbound, `open_queue_master` is a no-op stub) | — |
 | **Navigation** | **Ctrl+1**…**Ctrl+0** | Jump to Silo 1–10 | App |
 | **Navigation** | **Alt+↑** / **Alt+↓** | Walk silos | App |
 | **Navigation** | **Ctrl+N** | New empty silo | App |
@@ -37,7 +37,10 @@ Full keyboard-driven operation. Layout-independent VK dispatch — works on QWER
 | **Formatting** | **Alt+Backspace** | Delete previous word | Editor |
 | **Formatting** | **Ctrl+Z** | Smart Undo (per silo) | Editor |
 | **Formatting** | **Ctrl+Y** / **Ctrl+Shift+Z** | Smart Redo (mirror of undo) | Editor |
-| **Formatting** | **Ctrl+MiddleButton** | Delete line under cursor (smart list reflow) | Editor |
+| **Editor** | **Ctrl+MiddleButton** | Toggle random colored line mark (click again to remove; never deletes text) | Editor |
+| **Silos** | **Ctrl+MiddleButton** | Toggle random silo color box (click again to remove) | Silos |
+| **Silos** | **MiddleButton** | Move silo to Trash | Silos |
+| **Silos** | **Shift+MiddleButton** | Clear silo text | Silos |
 | **Formatting** | **Alt+MiddleButton** | Bullet-ize every selected line (`• ` prefix) | Editor |
 | **Formatting** | **MiddleButton** | Cycle line state: plain → checked+struck → unchecked | Editor |
 | **Formatting** | **Ctrl+Click on bullet** | Toggle `-` / `•` | Editor |
@@ -66,8 +69,8 @@ Full keyboard-driven operation. Layout-independent VK dispatch — works on QWER
 ### Window Management
 **Ctrl+D** — 3-stage: Zen (minimal editor only) → Solo (minimise all other windows) → back to normal. **Ctrl+Q** — cycle through 7 snap zones, FancyZone picker, and user presets. **Alt+E/S/D/A** — lock geometry, pin-on-top, show sidebar, toggle focus-loss hide.
 
-### Watcher Queue
-**Alt+C** — queue current line under caret. Block-anchored, survives edits above it. **Alt+Shift+C** — Queue Master: inspect/reorder/clear queues across all silos.
+### Watcher Queue — retired in T-1183
+**Alt+C** and **Alt+Shift+C** are **unbound**: the watcher subsystem and its Queue Master dialog were removed from the product, the legacy action is a no-op stub, and both keys are free for other bindings. Old `watcher_*` settings rows are deleted on start.
 
 ### Markdown Formatting
 All formatting shortcuts toggle inline markers: **Ctrl+B** → `**bold**`, Ctrl+I → `*italic*`, Ctrl+U → `<u>underline</u>`, Ctrl+T → `~~strike~~`, Ctrl+Shift+Q → `> quote`.
@@ -78,12 +81,12 @@ All formatting shortcuts toggle inline markers: **Ctrl+B** → `**bold**`, Ctrl+
 
 **Ctrl+E** — format current line as header. Configurable: rule type, bullet, timestamp stamp, alignment. Open Settings → Dividers & headers to customize.
 
-**Ctrl+MiddleButton** — delete whole line with smart reflow: ordered lists renumber, bullet lists close gap. **Alt+MiddleButton** — turn every selected line into a bullet. **MiddleButton** — cycle the clicked line: plain → checked+struck → unchecked.
+**Ctrl+MiddleButton (in editor text)** — toggle a random colored line mark on the clicked line: first click adds a random colored box, second click removes it (text is never touched; to re-roll the color, remove and apply again). Left/right click in the gutter's mark zone cycles the mark colors (OFF included). **Alt+MiddleButton** — turn every selected line into a bullet. **MiddleButton** — cycle the clicked line: plain → checked+struck → unchecked.
 
 **Ctrl+Shift+drag** — grab the line under the pointer (or the whole selection) and move it to the drop indicator; bold, checkboxes and image pills survive the trip.
 
 ### Silo Navigation
-**Ctrl+1** through **Ctrl+0** jump to silos 1-10. **Alt+↑↓** walk sequentially. **Ctrl+N** appends empty silo at bottom.
+**Ctrl+1** through **Ctrl+0** jump to silos 1-10. **Alt+↑↓** walk sequentially. **Ctrl+N** appends empty silo at bottom. **Ctrl+MiddleButton on silo row** — toggle random silo color box (first click assigns random palette color, second click removes it). **MiddleButton on silo** — move silo to Trash. **Shift+MiddleButton on silo** — clear silo text.
 
 ### Snippet Macros
 **F1-F10** paste pre-configured text templates. Bind content via Snippet Manager (**Ctrl+S**) or right-click on F-button.

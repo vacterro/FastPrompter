@@ -1,0 +1,14 @@
+{
+  "requirements": {
+    "SRC-044:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "T-1310 closed with verification evidence in LOG: VERIFY PASS conf: high. Product src/ byte-identical since E-2515 tests/ 3844 passed/6 skipped and E-2524 tests_smoke/ 1067 passed (this session touched only test files: ruff W292/F401/I001/F841 autofix, re-verified 44+16 passed, assertions intact). Binding E-2515 (source) + E-2524 (smoke) as broad evidence per SRC-046 R053. Focused: bake 31, T-1307 44, viewer/chest/state 150, ambience 41 (thread-w",
+      "text": "Reconcile post-E2498 source drift, close T-1201/T-1307/T-1306, finish external image workflow and SILO file chest, reconcile T-1309, then resume 0.8.68 release per FastPrompter_20260923_0302.md",
+      "verification": "the Work this request created reached its own verification gate; see the T-1310 VERIFY cycle in .saipen/LOG.md",
+      "work": "T-1310"
+    }
+  },
+  "schema_version": 1
+}

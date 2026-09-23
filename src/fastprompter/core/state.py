@@ -343,64 +343,10 @@ _STRUCTURED_CODECS = {
         'file:PICKUP01.wav', 'file:PICKUP03.wav', 'file:QUEST.wav',
         'file:ROGUE.wav'
     ], True),
-    "interval_notifs": (list, [
-        {
-            'id': 'interval_default_noon',
-            'name': 'Noon (12:00)',
-            'minutes': 60,
-            'enabled': True,
-            'sound': 'file:GENIE.wav',
-            'volume': 1.0,
-            'show_notification': True,
-            'show_in_top_bar': False,
-            'align_mode': 'clock',
-            'all_day': False,
-            'start_minute': 720,
-            'end_minute': 779,
-        },
-        {
-            'id': 'interval_default_morning',
-            'name': 'Morning (07:00 - 11:00)',
-            'minutes': 60,
-            'enabled': True,
-            'sound': 'file:NEWDAY.wav',
-            'volume': 1.0,
-            'show_notification': True,
-            'show_in_top_bar': False,
-            'align_mode': 'clock',
-            'all_day': False,
-            'start_minute': 420,
-            'end_minute': 719,
-        },
-        {
-            'id': 'interval_default_day',
-            'name': 'Day & Evening (13:00 - 21:00)',
-            'minutes': 60,
-            'enabled': True,
-            'sound': 'file:NEWDAY.wav',
-            'volume': 1.0,
-            'show_notification': True,
-            'show_in_top_bar': False,
-            'align_mode': 'clock',
-            'all_day': False,
-            'start_minute': 780,
-            'end_minute': 1319,
-        },
-        {
-            'id': 'interval_default_night',
-            'name': 'Night (22:00 - 06:00)',
-            'minutes': 60,
-            'enabled': True,
-            'sound': 'file:alert_owl2.wav',
-            'volume': 1.0,
-            'show_notification': True,
-            'show_in_top_bar': False,
-            'align_mode': 'clock',
-            'all_day': False,
-            'start_minute': 1320,
-            'end_minute': 419,
-        },
-    ], True),
+    # Use the baked rule list for malformed/missing structured settings too;
+    # a stale parallel four-rule codec used to disagree with fresh installs.
+    "interval_notifs": (list, copy.deepcopy(
+        DEFAULT_PROFILE.get("interval_notifs", [])), True),
 }
 
 
@@ -1748,7 +1694,7 @@ def _remove_checked(path):
     os.remove(path)
 
 
-def _restore_live_from_safety(destination, safety):
+def _restore_live_from_safety(destination, safety, owned_quarantines=()):
     """Fail-closed repair of the live database from the pre-restore safety
     snapshot after a fatal rollback (T-808, CORE-001).
 
@@ -1768,12 +1714,8 @@ def _restore_live_from_safety(destination, safety):
     try:
         if not safety or not os.path.isfile(safety):
             return False
-        for sidecar in (
-            destination + "-wal",
-            destination + "-shm",
-            destination + ".wal.quarantine",
-            destination + ".shm.quarantine",
-        ):
+        for sidecar in (destination + "-wal", destination + "-shm",
+                        *owned_quarantines):
             if os.path.exists(sidecar):
                 try:
                     os.remove(sidecar)
@@ -2103,10 +2045,8 @@ def restore_database(source, destination):
     # WAL replayed source changes back into the restored DB).
     wal_path = destination + "-wal"
     shm_path = destination + "-shm"
-    wal_q = destination + ".wal.quarantine"
-    shm_q = destination + ".shm.quarantine"
-    _remove_quietly(wal_q)
-    _remove_quietly(shm_q)
+    wal_q = unique_temp_path(wal_path, "quarantine")
+    shm_q = unique_temp_path(shm_path, "quarantine")
     quarantined = []
     for live, q in ((wal_path, wal_q), (shm_path, shm_q)):
         if os.path.exists(live):
@@ -2130,7 +2070,9 @@ def restore_database(source, destination):
                         rollback_failed = True
                 _remove_sqlite_family(temp)
                 if rollback_failed:
-                    repaired = _restore_live_from_safety(destination, safety)
+                    repaired = _restore_live_from_safety(
+                        destination, safety,
+                        owned_quarantines=tuple(q for _, q in quarantined))
                     raise FatalRestoreError(
                         f"could not quarantine live WAL/SHM ({exc}) and a "
                         f"quarantined sidecar could not be rolled back; the "
@@ -2165,7 +2107,9 @@ def restore_database(source, destination):
             # reopen the live database in-process. The caller must NOT call
             # init_db on it — a restart reloads the repaired file. CORE-001:
             # report whether the repair actually completed.
-            repaired = _restore_live_from_safety(destination, safety)
+            repaired = _restore_live_from_safety(
+                destination, safety,
+                owned_quarantines=tuple(q for _, q in quarantined))
             raise FatalRestoreError(
                 f"the live database could not be replaced and its WAL/SHM "
                 f"could not be restored; the on-disk database was repaired "
@@ -2946,6 +2890,36 @@ class FastPrompterState:
         if ids is None:
             return f"pending::{category!r}:{int(bool(is_archive))}:{int(slot)}"
         return ids.get((category, int(bool(is_archive)), int(slot)))
+
+    def committed_silo_identities(self):
+        """The identity mapping that pairs with the committed slot rows.
+
+        CORE-001: text-history ownership diffs identities, so the previous
+        side needs the identity map AS COMMITTED -- never the live map a
+        structural operation may already have remapped. The post-commit
+        marker is authoritative once this session has committed; before that
+        (startup of a fresh session, or after a rolled-back save) the
+        persisted anchor table IS the last commit. Returns a dict, or None
+        when neither source is readable: the caller then queues nothing
+        rather than pairing two different ownership epochs."""
+        import sqlite3 as _sq
+        saved = getattr(self, "_silo_ids_saved", None)
+        if saved is not None:
+            return dict(saved)
+        if self.conn is None:
+            return None
+        try:
+            rows = self.conn.execute(
+                "SELECT category, is_archive, slot, silo_id "
+                "FROM silo_identity_v1")
+        except _sq.Error:
+            return None
+        out = {}
+        for cat, is_arc, slot, sid in rows:
+            if isinstance(cat, str) and isinstance(slot, int) \
+                    and isinstance(sid, str) and sid:
+                out[(cat, 1 if is_arc else 0, int(slot))] = sid
+        return out
 
     def remap_silo_identities(self, category, is_archive, remap, drop=()):
         """Move identity anchors WITH their silos across a reorder, insert or

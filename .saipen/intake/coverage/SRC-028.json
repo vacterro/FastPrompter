@@ -1,0 +1,14 @@
+{
+  "requirements": {
+    "SRC-028:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "T-1293 closed with verification evidence in LOG: verify -> PASS [target: T-1293] conf: high -- deliverable proven by child T-1283 DONE: tests/test_t1224_middle_button.py 9 passed, full uv run pytest tests/ -q exit 0 (3686 passed 6 skipped), SRC-012 CLOSED, audit/9.md consumed E-2189.",
+      "text": "Execute external audit inbox layer audit/9.md (SRC-012, T-1283): reconfirm every actionable clause terminal with evidence, drive linked Work to DONE, close the source, consume audit/9.md through the journaled audit-inbox cleanup.",
+      "verification": "the Work this request created reached its own verification gate; see the T-1293 VERIFY cycle in .saipen/LOG.md",
+      "work": "T-1293"
+    }
+  },
+  "schema_version": 1
+}

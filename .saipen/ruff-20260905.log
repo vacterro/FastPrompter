@@ -1,0 +1,121 @@
+src\fastprompter\core\i18n\ar.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\bg.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\cs.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\da.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\de.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\ded.py:1190:5: F601 Dictionary key literal `'Defaults'` repeated
+src\fastprompter\core\i18n\el.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\en.py:1190:5: F601 Dictionary key literal `'Defaults'` repeated
+src\fastprompter\core\i18n\est.py:1190:5: F601 Dictionary key literal `'Defaults'` repeated
+src\fastprompter\core\i18n\est.py:1236:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\fi.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\fra.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\he.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\hi.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\hr.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\hu.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\id.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\it.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\ja.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\ko.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\nl.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\no.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\pl.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\pt.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\ro.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\ru.py:1190:5: F601 Dictionary key literal `'Defaults'` repeated
+src\fastprompter\core\i18n\sk.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\spa.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\sv.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\th.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\tur.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\ukr.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\vi.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\i18n\zh.py:1235:5: F601 Dictionary key literal `'🔼 Tray Click Activates'` repeated (`'🔼 Tray Click Activates'` hashes to the same value as `"🔼 Tray Click Activates"`)
+src\fastprompter\core\instance_lock.py:145:26: UP015 [*] Unnecessary mode argument
+src\fastprompter\ui\settings.py:1:1: I001 [*] Import block is un-sorted or un-formatted
+tests\test_clickable_links.py:139:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_close_save_contract.py:15:1: I001 [*] Import block is un-sorted or un-formatted
+tests\test_color_reset.py:13:1: I001 [*] Import block is un-sorted or un-formatted
+tests\test_core002_retirement_journal.py:10:42: F401 [*] `fastprompter.ui.file_container` imported but unused
+tests\test_fastprompter_night_upgrade.py:11:1: I001 [*] Import block is un-sorted or un-formatted
+tests\test_fastprompter_night_upgrade.py:13:8: F401 [*] `pytest` imported but unused
+tests\test_fastprompter_night_upgrade.py:15:26: F401 [*] `PyQt6.QtCore.QPoint` imported but unused
+tests\test_fastprompter_night_upgrade.py:15:38: F401 [*] `PyQt6.QtCore.QTime` imported but unused
+tests\test_fastprompter_night_upgrade.py:21:55: F401 [*] `fastprompter.ui.timer_dialog._TimerBehaviorEditor` imported but unused
+tests\test_fastprompter_night_upgrade.py:22:57: F401 [*] `fastprompter.core.timers.save_timers` imported but unused
+tests\test_fastprompter_night_upgrade.py:22:70: F401 [*] `fastprompter.core.timers.load_timers` imported but unused
+tests\test_fastprompter_night_upgrade.py:179:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_fastprompter_night_upgrade.py:179:38: F401 [*] `PyQt6.QtGui.QPainter` imported but unused
+tests\test_fastprompter_night_upgrade.py:371:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_fastprompter_night_upgrade.py:405:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_fastprompter_night_upgrade.py:405:65: F401 [*] `fastprompter.ui.timer_dialog.DEFAULT_INTERVAL_RULES` imported but unused
+tests\test_instance_lock.py:242:9: F821 Undefined name `time`
+tests\test_limit_account_order.py:9:1: I001 [*] Import block is un-sorted or un-formatted
+tests\test_limit_account_order.py:59:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_limit_account_order.py:70:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_mt9141_audit.py:9:1: I001 [*] Import block is un-sorted or un-formatted
+tests\test_mt9141_audit.py:11:8: F401 [*] `sqlite3` imported but unused
+tests\test_mt9141_audit.py:21:5: F401 [*] `fastprompter.ui.snippet_ops_mixin._write_retirement_journal` imported but unused
+tests\test_mt9141_audit.py:158:9: E731 Do not assign a `lambda` expression, use a `def`
+tests\test_paths.py:308:1: I001 [*] Import block is un-sorted or un-formatted
+tests\test_paths.py:308:8: F401 [*] `pytest` imported but unused
+tests\test_perf004_hidden_date_gate.py:16:1: I001 [*] Import block is un-sorted or un-formatted
+tests\test_perf005_scaled_cache.py:6:1: I001 [*] Import block is un-sorted or un-formatted
+tests\test_perf005_scaled_cache.py:12:1: I001 [*] Import block is un-sorted or un-formatted
+tests\test_perf005_scaled_cache.py:17:5: F401 [*] `fastprompter.core.sound_manager._scaled_cache_dir` imported but unused
+tests\test_perf005_scaled_cache.py:41:13: F541 [*] f-string without any placeholders
+tests\test_perf005_scaled_cache.py:83:34: W292 [*] No newline at end of file
+tests\test_perf006_folder_cache_bounds.py:9:16: F401 [*] `time` imported but unused
+tests\test_perf006_folder_cache_bounds.py:18:5: F841 Local variable `host` is assigned to but never used
+tests\test_perf006_folder_cache_bounds.py:32:5: F841 Local variable `host` is assigned to but never used
+tests\test_perf006_folder_cache_bounds.py:48:5: F841 Local variable `keys` is assigned to but never used
+tests\test_release_version.py:59:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_release_version.py:59:12: F401 [*] `fastprompter` imported but unused
+tests\test_second_wave.py:178:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_second_wave.py:304:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_second_wave.py:411:1: I001 [*] Import block is un-sorted or un-formatted
+tests\test_second_wave.py:411:8: F811 [*] Redefinition of unused `time` from line 14: `time` redefined here
+tests\test_second_wave_tickets.py:115:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_second_wave_tickets.py:155:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_set_default_from_current.py:10:1: I001 [*] Import block is un-sorted or un-formatted
+tests\test_set_default_from_current.py:11:8: F401 [*] `os` imported but unused
+tests\test_set_default_from_current.py:12:8: F401 [*] `sys` imported but unused
+tests\test_set_default_from_current.py:13:8: F401 [*] `pytest` imported but unused
+tests\test_set_default_from_current.py:17:5: F401 [*] `tools.set_default_from_current.RESET_KEYS` imported but unused
+tests\test_settings_ux.py:209:9: I001 [*] Import block is un-sorted or un-formatted
+tests\test_settings_ux.py:236:9: I001 [*] Import block is un-sorted or un-formatted
+tests\test_silo_home.py:11:1: I001 [*] Import block is un-sorted or un-formatted
+tests\test_state_codec.py:223:55: F401 [*] `fastprompter.ui.snippet_ops_mixin._is_deleted` imported but unused
+tests\test_themes_headers.py:72:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_themes_headers.py:76:5: F841 Local variable `qapp` is assigned to but never used
+tests\test_themes_headers.py:85:59: W292 [*] No newline at end of file
+tests\test_timer_toast_t1015.py:2:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_timer_toast_t1015.py:6:5: F841 Local variable `qapp` is assigned to but never used
+tests\test_timers.py:906:42: F401 [*] `fastprompter.core.timers.Timer` imported but unused
+tests\test_timers.py:936:5: I001 [*] Import block is un-sorted or un-formatted
+tests\test_user_regressions_20260905.py:2:1: I001 [*] Import block is un-sorted or un-formatted
+tests\test_w2_001_cross_volume.py:9:8: F401 [*] `shutil` imported but unused
+tests\test_w2_001_cross_volume.py:93:5: F841 Local variable `real_publish` is assigned to but never used
+tests\test_w2_001_cross_volume.py:102:56: W292 [*] No newline at end of file
+tests\test_w2_001_interval_clock.py:7:1: I001 [*] Import block is un-sorted or un-formatted
+tests\test_w2_002_alias_copy.py:9:8: F401 [*] `pytest` imported but unused
+tests\test_w2_002_alias_copy.py:77:58: W292 [*] No newline at end of file
+tests\test_w2_003_missed_ids.py:13:1: I001 [*] Import block is un-sorted or un-formatted
+tests\test_w2_003_missed_ids.py:14:45: F401 [*] `fastprompter.core.timers.REPEAT_NONE` imported but unused
+tests\test_w2_003_rescan_binding.py:9:8: F401 [*] `pytest` imported but unused
+tests\test_w2_004_interval_heal.py:7:1: I001 [*] Import block is un-sorted or un-formatted
+tests\test_w2_004_retention.py:9:8: F401 [*] `pytest` imported but unused
+tests\test_w2_004_retention.py:72:70: W292 [*] No newline at end of file
+tests\test_w2_005_interval_top_bar.py:7:1: I001 [*] Import block is un-sorted or un-formatted
+tests\test_w2_006_toast_ownership.py:9:1: I001 [*] Import block is un-sorted or un-formatted
+tests\test_w2_006_toast_ownership.py:119:5: I001 [*] Import block is un-sorted or un-formatted
+tests_smoke\conftest.py:27:69: F401 [*] `fastprompter.core.sound_manager.SoundManager` imported but unused
+tests_smoke\conftest.py:29:9: F821 Undefined name `SoundManager`
+tests_smoke\test_audit_regressions.py:12:8: F401 [*] `time` imported but unused
+tests_smoke\test_audit_regressions.py:364:12: F811 [*] Redefinition of unused `time` from line 12: `time` redefined here
+tests_smoke\test_audit_second_wave.py:234:5: F841 Local variable `src_dir` is assigned to but never used
+tests_smoke\test_editor_incremental.py:54:31: UP031 Use format specifiers instead of percent format
+tests_smoke\test_settings_layout.py:150:29: F401 [*] `PyQt6.QtGui.QPixmap` imported but unused
+Found 119 errors.
+[*] 74 fixable with the `--fix` option (40 hidden fixes can be enabled with the `--unsafe-fixes` option).

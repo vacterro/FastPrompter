@@ -25,9 +25,44 @@ arbitrary `sai*` worker.
 | **saihunt** | sensor | finds bugs (HUNT signals -> findings in its OUTBOX) |
 | **saitest** | sensor | independently reproduces hypotheses (REPRODUCED / NOT_REPRODUCED / BLOCKED) |
 | **saipython** | sensor | tail fixer: clones targets into its pen, verifies, hands ready patches through OUTBOX |
-| **saiui** | sensor | UI designer: audits against `saipen/UI.md`, redesigns in its pen, hands patches through OUTBOX |
+| **saiui** | sensor | UI designer: audits against `saipen/UI.md`, redesigns in its pen, hands patches through OUTBOX. Applicability `visual-surface` -- skipped with a receipt in a project with no visual implementation file |
 | **saitranslate** | producer | canonical specialized translation runtime (`.saipen/saitranslate/`, one role, one lifecycle, one OUTBOX) |
 | **saiwiki** | producer | documentation factory (`.saipen/extensions/subs/saiwiki/`) |
+
+## Applicability -- a stage nobody needs is not a stage
+
+**A built-in role runs when the project has something for it to work on, and is
+skipped with a receipt when it does not.** The roster used to be static:
+`ensure_instance` was a bool, so a mandatory UI stage ran against a surface that
+does not exist and the honest report of that fact -- "there is nothing to scan"
+-- became a Core review ticket every cycle. The cost was never the empty
+package. A scanner that honestly finds nothing has done its job. The cost is
+that **absence of a surface and correctness of a surface reported identically**,
+so a reader of the crew record could not tell "UI was audited and is fine" from
+"there is no UI".
+
+Each role declares one probe name from a closed set
+(`tools/saipen_engine/applicability.py`). `always` is the default and means the
+role declares no condition. `visual-surface` answers from the project's own
+tracked files -- the same scan saiui's charter performs by hand -- and is the
+only condition any built-in declares today.
+
+Two rules make it safe to skip anything at all:
+
+- **Undecidable is APPLICABLE.** No facts, an unreadable tree, or a probe name
+  the registry does not know all resolve to APPLICABLE. A capability that runs
+  when it need not have costs a pass; one silently skipped costs the coverage it
+  existed to provide, and nothing reports the difference. The model fails toward
+  doing the work.
+- **A verdict always names the deciding fact.** `NOT_APPLICABLE` with no reason
+  is indistinguishable from a stage nobody ran. The receipt is what the stage is
+  satisfied BY, so it is written into the plan and survives a predecessor block
+  -- an operator reading a blocked circuit still sees why that stage is quiet.
+
+A NOT_APPLICABLE role costs no model run, no package, no Core review ticket, no
+spawned instance, and is excluded from the collect set, the pre-ship evidence
+set, the final fixed point and post-ship certification. It is not "skipped and
+hoped for"; it is answered.
 
 Sensors are the core-review platoon; producers are the handoff factories.
 Core remains the sole main-tree writer -- every worker is `read-only` toward
@@ -81,11 +116,11 @@ of them works standalone, with no crew and no other window running.
 | # | Machine stage | Owner | Satisfied when | Condition |
 |---|---|---|---|---|
 | SC-0 | `recover-sync` | CORE | no pending operation; installed home is proven; source identity, strict MANIFEST, and inherited contract are current | CORE_RECOVERY_CURRENT |
-| SC-1 | `instances` | CORE | saihunt, saitest, saipython, saiui, and saiwiki exist with current project-local role revisions | ROSTER_CURRENT |
+| SC-1 | `instances` | CORE | every APPLICABLE durable built-in exists with a current project-local role revision; a role whose applicability probe answers NOT_APPLICABLE is not spawned, adopted or registered | ROSTER_CURRENT |
 | SC-2 | `saihunt` | SENSOR | terminal valid board plus complete current-source OUTBOX evidence | SENSOR_EVIDENCE_CURRENT |
 | SC-3 | `saitest` | SENSOR | terminal valid board plus complete current-source OUTBOX evidence | SENSOR_EVIDENCE_CURRENT |
 | SC-4 | `saipython` | SENSOR | terminal valid board plus complete current-source OUTBOX evidence | SENSOR_EVIDENCE_CURRENT |
-| SC-5 | `saiui` | SENSOR | terminal valid board plus complete current-source OUTBOX evidence | SENSOR_EVIDENCE_CURRENT |
+| SC-5 | `saiui` | SENSOR | terminal valid board plus complete current-source OUTBOX evidence, OR a NOT_APPLICABLE receipt naming the deciding fact | SENSOR_EVIDENCE_CURRENT |
 | SC-6 | `core-collect` | CORE | each core-review READY package durably ingested as one ordinary Core review hypothesis; the reviewed claim is written only after the linked Core ticket is terminal (INTAKE != REVIEW, REVIEWED TEXT IS NOT A REVIEW DISPOSITION) | SENSOR_INTAKE_DISPOSED |
 | SC-7 | `core-converge` | CORE | canonical Core convergence verdict current against one source identity (TEST, forced HUNT, CLEAN, post-clean TEST, final HUNT recorded in order); working tree fully attributed | CORE_CONVERGENCE_CURRENT |
 | SC-8 | `saitranslate` | PRODUCER | current pre-ship package was prepared and integrated, or the epoch-bound release receipt proves that integration | PRODUCER_INTEGRATION_CURRENT |

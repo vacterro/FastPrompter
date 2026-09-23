@@ -1,0 +1,1 @@
+uv run pytest tests/test_t1227_silo_integrity.py tests/test_line_mark_toggle.py tests/test_checkbox_painting.py tests/test_clickable_links.py tests/test_line_drag_autoscroll.py tests/test_editor_pinned_selection.py tests/test_user_regressions_20260905.py tests/test_main.py tests/test_formatting_mixin.py tests/test_markdown_highlighter.py -q

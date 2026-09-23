@@ -14,22 +14,21 @@ Portable scratchpad + snippet workspace. Python 3.11+, PyQt6. SQLite WAL persist
 +------------------------------------------------------------------+
 |                        FastPrompter UI (PyQt6)                   |
 |  +------------------+  +--------------------+  +---------------+  |
-|  | SnippetPanel     |  | VaultTextEdit      |  | QueuePanel    |  |
-|  | (F1-F10 Silos)   |  | (Markdown + Mixins)|  | (Watcher Q)   |  |
+|  | SnippetPanel     |  | VaultTextEdit      |  | FileContainer |  |
+|  | (F1-F10 Silos)   |  | (Markdown + Mixins)|  | (Files Drawer)|  |
 |  +------------------+  +--------------------+  +---------------+  |
 +----------------------------+-------------------------------------+
                              | events / state sync
                              v
 +------------------------------------------------------------------+
-|                    FastPrompterState (core)                       |
-|  SQLite WAL DB — silos, snippets, settings, themes, queues       |
+|                    FastPrompterState (core)                       ||SQLite WAL DB — silos, snippets, settings, themes            |
 |  In-memory cache + undo stack + per-silo state (cursor/scroll)   |
 +------------------------------------------------------------------+
       |         |          |          |            |
       v         v          v          v            v
 +--------+ +---------+ +--------+ +---------+ +-----------+
-|Hotkeys | | IPC     | | Sound  | | Watcher | | File      |
-|(Win32  | |(QLocal) | |Manager | |Engine   | | Container |
+|Hotkeys | | IPC     | | Audio  | | Sync    | | File      |
+|(Win32  | |(QLocal) | |Hub     | | Project | | Container |
 | Register| +---------+ +--------+ +---------+ +-----------+
 |HotKey) |
 +--------+
@@ -41,18 +40,16 @@ Portable scratchpad + snippet workspace. Python 3.11+, PyQt6. SQLite WAL persist
 
 Entry point. QApplication init, single-instance IPC check (QLocalServer), DB connect, global exception hooks, UI window build, system tray, hotkey registration. All mixins compose onto FastPrompter (QMainWindow):
 
+- CursorMixin — editor cursor helpers (keep-visible, hover feedback)
 - FormattingMixin — markdown shortcuts (bold, italic, list, code)
 - HotkeyMixin — shortcut binding interface
 - ScalingMixin — DPI/font scaling
 - SearchMixin — multi-word AND search
-- SendSelectionMixin — send text via watcher
+- SendSelectionMixin — copy the selection to a new/child silo, append to a silo, or file it into the archive
 - SnippetOpsMixin — silo ops (trash, duplicate, reorder, clear)
 - ThemeMixin — app stylesheet, 9 built-in themes + custom
 - TrayMixin — systray icon + menu
-- WatcherMixin — watcher engine integration
 - WindowMixin — frameless window, snapping, borderless
-
-A heartbeat watchdog monitors GUI-thread responsiveness: a QTimer fires every 500 ms on the GUI thread while a background thread watches the timestamp; any stall >1.5 s is logged with a full Python stack trace for post-mortem diagnosis (FREEZE-2026-08-30).
 
 ### 2. IPC Single-Instance (`core/ipc_server.py`)
 
@@ -72,10 +69,8 @@ Two-layer: (1) Win32 `RegisterHotKey` via `core/hotkeys.py` for the global summo
 
 VaultTextEdit extends QPlainTextEdit. Features:
 - MarkdownHighlighter — live syntax (headings, bold, italic, code fences, checkboxes, links, images)
-- Huge document mode (>=500k chars / >=2000 blocks): structural-only highlighting (headings/quotes/lists); inline markup skipped for responsiveness
-- Category-scoped document cache (bounded LRU, 4 categories / 4M chars) — project switches reuse warm QTextDocuments instead of rebuilding from scratch
 - Line gutter — numbers, fold arrows (▾), code-fence copy button
-- Section fold — click collapse on header blocks; huge-doc folds restore incrementally (200 blocks per event-loop tick)
+- Section fold — click collapse on header blocks
 - Collapsible images — `![alt](url)` renders as 150px clickable pill
 - Drop overlay — 4-option drop target (insert text, insert link, copy file, shortcut)
 - Margin marks — line-level pins, ticks, queue anchors, heatmap
@@ -89,15 +84,13 @@ Up to 100 silos per project tab. Features:
 - Hierarchy — drag onto another silo to nest (max depth 2)
 - Recency heatmap — warm tint on recently edited
 - Sidebar gaps — user-defined spacers (Ctrl+drag to move)
-- Multi-select — Shift=range, Ctrl=toggle, batch ops; batch delete plays one sound, defers UI rebuild to the end, and pumps Qt events between items to prevent Windows Not-Responding freezes
+- Multi-select — Shift=range, Ctrl=toggle, batch ops
 - File containers — per-silo disk folder (`data/files/<category-slug>/<silo-title-slug>/`, unique per slot)
 - Kanban (Alt+arrows move cards) + Table builder (Tab walk cells) — T-630
 
-### 7. Watcher Engine (`core/watcher/`)
+### 7. Audio Hub (`core/audio_hub.py` + `core/sound_manager.py`)
 
-Prompt drainage + target automation. Finite state machine: DISARMED → ARMED → WATCHING → SENDING. Chrome CDP (Electron apps) + Win32 window probes. Queue pinning per target. Rate limits: settle_ms=2500, min_gap_ms=4000, max_sends=25, max_failures=3.
-
-**v0.8.43 audit hardening (T-1019):** the queue an armed run drains is now pinned to its owning `(category, slot)`, so a project/silo switch mid-session can no longer feed a different silo's backlog. Physical sends are tracked per dispatch, so a stale (slow) completion can't clear the quiesce barrier early. Glob/stat/SQLite probe sampling runs on a dedicated worker thread (`_WatcherProbeWorker`), keeping tens-of-milliseconds file and database I/O out of the GUI timer callback while preserving conservative BUSY semantics.
+One audio authority with six priority buses (UI / ALERT / VOICE / PROBLIP / AMBIENCE / PREVIEW) and four playback modes per source: Overlay (default), Stack, Replace and Queue, with `skip_busy` for polite entry. Every play is an `AudioRequest` resolved by the bus policy engine into a bounded transport channel (16 transient voices, 32-per-bus FIFO queues; `QtSoundTransport` plays transient cues through one fresh QAudioSink per cue fed the source's exact PCM frames — loopback-measured T-1242 fidelity repair, pooled QSoundEffect drops the last ~42.5 ms of every cue and leaks it into the next; `NullTransport` for tests). `SoundManager` stays the facade the app talks to: a named-event policy engine (69 events: clicks, typewriter keys, hotkey events, alarms, appearance transitions, timer/interval/productivity/notification cues) with per-event enable/volume/gain/mode overrides, self-healing settings migration, and **STOP ALL SOUND** — the emergency-silence command that stops every transient channel, clears every queue and cancels voice sequences. Cues are pre-rendered to the device's own rate by `core/audio_render.py` with Auto Level gain from `core/audio_level.py`. Sound references resolve through `core/sound_library.py` (`builtin:` shipped library, `user:` managed library); preset packs travel as portable `.fpsoundpreset`/`.fpsoundpack` via `core/sound_presets.py`.
 
 ### 8. Window Management (`ui/window_mixin.py`, `ui/zen_desktop.py`)
 
@@ -128,8 +121,6 @@ A dictionary-based, non-recursive typo checker for silo text. Single linear scan
 ### 12. Sync-Project (`core/project_sync.py`)
 
 Folder↔silo two-way sync. A Sync-Project binds a project tab to a folder; every text file that passes the include/exclude filters becomes a silo (slot 0..N-1 in file-name order; extra files become new silos up to the 100-silo cap). Two-way and live: app edits are pushed to the file (debounced, and on every DB save), external file changes are applied back into the silo unless the silo holds unsaved app-side text (the app side wins while it is being typed). Exclude patterns match the file name (fnmatch-style) or any path component (substring). Pure logic (Qt-free) — the UI wiring (QFileSystemWatcher, debounce timers) lives in `main.py`.
-
-Tab switches suppress the outgoing project's sync push (`sync_outgoing=False`) so navigating between projects no longer triggers a full Sync-Project flush of the departing project.
 
 ### 13. Per-Silo File Links
 

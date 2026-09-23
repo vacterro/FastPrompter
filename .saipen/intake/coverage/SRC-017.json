@@ -1,0 +1,14 @@
+{
+  "requirements": {
+    "SRC-017:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "T-1275 closed with verification evidence in LOG: review -> PASS [target: T-1275] conf: high -- no independent scope remains; superseded by the completed T-1276 corrective wave.",
+      "text": "\"Register T-1270 corrective ticket for unfinished pin/order/named-gap determinism acceptance\" --json 2>&1 | Out-String",
+      "verification": "the Work this request created reached its own verification gate; see the T-1275 VERIFY cycle in .saipen/LOG.md",
+      "work": "T-1275"
+    }
+  },
+  "schema_version": 1
+}

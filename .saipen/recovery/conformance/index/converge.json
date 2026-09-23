@@ -1,8 +1,1 @@
-{
-  "gate": "converge",
-  "receipt_dir_mtime_ns": 1788520885707153900,
-  "receipt_id": "receipt-22fea15b798d",
-  "receipt_path": ".saipen/recovery/conformance/2026-09-04T11_21_25.393951Z_receipt-22fea15b798d_converge_FAIL.json",
-  "timestamp_utc": "2026-09-04T11:21:25.393951Z",
-  "version": 1
-}
+{"content_sha256":"cfca0e265657adb6ddb034ed7ace64b470c98ef3a7bafbd0e80b6c00d983bfba","gate":"converge","generation_id":"active-gen","generation_root":"87e6fdcf2b75573b1574e92ec127881fc519128243c93568d16f72773a4423b2","receipt_id":"receipt-22fea15b798d","receipt_path":".saipen/recovery/conformance/2026-09-04T11_21_25.393951Z_receipt-22fea15b798d_converge_FAIL.json","root":"fa76c7a174ed988d6e05d9fd173907787a6dd41b6dc7b595c914d6bebdf8849f","schema_version":2,"timestamp_utc":"2026-09-04T11:21:25.393951Z"}

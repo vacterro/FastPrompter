@@ -1,0 +1,698 @@
+{
+  "requirements": {
+    "SRC-046:R001": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "VERIFIED",
+      "evidence": "E-2515",
+      "text": "Do not ask for ordinary \"continue?\" confirmation between milestones.",
+      "verification": "no continue? prompt issued between milestones this session",
+      "work": "T-1310"
+    },
+    "SRC-046:R002": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "VERIFIED",
+      "evidence": "E-2515",
+      "text": "Do not reset, clean, stash, bulk-revert, or reconstruct the tree from HEAD.",
+      "verification": "no reset/clean/stash/bulk-revert used; git status -uall inventory only, working tree preserved 103 tracked/945 untracked",
+      "work": "T-1310"
+    },
+    "SRC-046:R003": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "VERIFIED",
+      "evidence": "E-2515",
+      "text": "Do not use git add . or git add -A as a reconciliation shortcut.",
+      "verification": "no git add . / git add -A used; only explicit-path staging planned",
+      "work": "T-1310"
+    },
+    "SRC-046:R004": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "VERIFIED",
+      "evidence": "E-2515",
+      "text": "Do not delete, replace, or normalize user/operator changes merely because they are unjournaled.",
+      "verification": "user/operator unjournaled changes preserved; no delete/normalize performed",
+      "work": "T-1310"
+    },
+    "SRC-046:R005": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "VERIFIED",
+      "evidence": "E-2515",
+      "text": "Do not publish a public release from a dirty or provenance-ambiguous tree.",
+      "verification": "no public release performed from dirty tree; release gated behind reconciliation",
+      "work": "T-1310"
+    },
+    "SRC-046:R006": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "VERIFIED",
+      "evidence": "E-2515",
+      "text": "Do not reimplement already-proven fixes merely because historical tickets remain open at SHIP.",
+      "verification": "no already-proven fix reimplemented; T-1201/T-1257/T-1307 findings reused as evidence",
+      "work": "T-1310"
+    },
+    "SRC-046:R007": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "VERIFIED",
+      "evidence": "E-2515",
+      "text": "Do not silently weaken tests to obtain green output.",
+      "verification": "no test weakened for green; ruff autofix + unused-var removal only, assertions intact",
+      "work": "T-1310"
+    },
+    "SRC-046:R008": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "VERIFIED",
+      "evidence": "E-2515",
+      "text": "Do not treat an old RC acceptance as valid after product-runtime source changes.",
+      "verification": "old RC acceptance treated historical only; fresh gate required per plan",
+      "work": "T-1310"
+    },
+    "SRC-046:R009": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "E-2526",
+      "text": "The checkpoint must name the active ticket, phase, current dependency chain, source receipts, modified files, completed gates, residual failures, and one exact next action.",
+      "verification": "cold-recovery checkpoint E-2526 names active ticket T-1310, phase, dependency chain, receipts SRC-044/045/046, modified files, completed gates, residuals, next action",
+      "work": "T-1310"
+    },
+    "SRC-046:R010": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "VERIFIED",
+      "evidence": "E-2515",
+      "text": "T-1257 is already DONE and must not be reopened without fresh contradictory evidence",
+      "verification": "T-1257 not reopened; confirmed DONE in BOARD",
+      "work": "T-1310"
+    },
+    "SRC-046:R011": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "E-2515",
+      "text": "every key MUST belong to COPY_KEYS, NEUTRAL_KEYS, EXCLUDED_KEYS, or DROP_KEYS",
+      "verification": "classify_key raises BakePolicyError unless key in COPY/NEUTRAL/EXCLUDED/DROP; tools/set_default_from_current.py:269-289",
+      "work": "T-1310"
+    },
+    "SRC-046:R012": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "VERIFIED",
+      "evidence": "E-2515",
+      "text": "classify as an intentional shippable preference",
+      "verification": "silo_chest_slots in COPY_KEYS shippable pref; set_default_from_current.py:132",
+      "work": "T-1310"
+    },
+    "SRC-046:R013": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "VERIFIED",
+      "evidence": "E-2515",
+      "text": "preserve only supported values 64 / 128",
+      "verification": "_sanitize_silo_chest_slots allows only {64,128}; :515-534; probe chest 128 preserved -> 128",
+      "work": "T-1310"
+    },
+    "SRC-046:R014": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "VERIFIED",
+      "evidence": "E-2515",
+      "text": "malformed values must sanitize to the canonical default rather than poison the baked profile",
+      "verification": "malformed chest sanitizes to 64; probe junk -> 64; test_bake_corrective_t1298 green",
+      "work": "T-1310"
+    },
+    "SRC-046:R015": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "VERIFIED",
+      "evidence": "E-2515",
+      "text": "treat as machine-local data; a public shipped default must never embed an operator-specific executable path",
+      "verification": "image_viewer_path in NEUTRAL_KEYS; never embeds operator exe path; :167",
+      "work": "T-1310"
+    },
+    "SRC-046:R016": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "VERIFIED",
+      "evidence": "E-2515",
+      "text": "neutralize to an empty path or equivalent canonical machine-neutral value",
+      "verification": "image_viewer_path baked to empty string; probe path -> \"; :167,690",
+      "work": "T-1310"
+    },
+    "SRC-046:R017": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "VERIFIED",
+      "evidence": "E-2515",
+      "text": "define an explicit release-safe contract",
+      "verification": "image_viewer_mode NEUTRAL default system; :166 explicit release-safe contract",
+      "work": "T-1310"
+    },
+    "SRC-046:R018": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "VERIFIED",
+      "evidence": "E-2515",
+      "text": "never ship a broken custom state whose executable path was neutralized",
+      "verification": "custom+neutralized-path never shipped; mode baked system keeps pair consistent; probe custom -> system",
+      "work": "T-1310"
+    },
+    "SRC-046:R019": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "VERIFIED",
+      "evidence": "E-2515",
+      "text": "acceptable policy is either a machine-neutral default (system) or a sanitizer that preserves internal/system but converts custom to system for the shipped profile",
+      "verification": "machine-neutral default system chosen (NEUTRAL_KEYS); probe custom mode -> system",
+      "work": "T-1310"
+    },
+    "SRC-046:R020": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "VERIFIED",
+      "evidence": "E-2515",
+      "text": "runtime persistence on the operator machine must still preserve the users actual custom selection/path; only the repository default bake is neutralized",
+      "verification": "NEUTRAL only affects bake; runtime DB roundtrip preserves user mode/path; test_bake_corrective_t1298 + state roundtrip",
+      "work": "T-1310"
+    },
+    "SRC-046:R021": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "VERIFIED",
+      "evidence": "E-2515",
+      "text": "synthetic live data containing all three keys must produce a valid bake plan",
+      "verification": "build_bake_plan(live w/ all 3 keys) produced valid plan (no BakePolicyError) in direct probe",
+      "work": "T-1310"
+    },
+    "SRC-046:R022": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "VERIFIED",
+      "evidence": "E-2515",
+      "text": "the baked result must preserve a legal chest size",
+      "verification": "baked chest legal 128 preserved in probe",
+      "work": "T-1310"
+    },
+    "SRC-046:R023": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "VERIFIED",
+      "evidence": "E-2515",
+      "text": "the baked result must contain no machine-local viewer executable path",
+      "verification": "baked profile image_viewer_path == \" (no machine-local exe path)",
+      "work": "T-1310"
+    },
+    "SRC-046:R024": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "VERIFIED",
+      "evidence": "E-2515",
+      "text": "the baked viewer mode must be internally consistent with the neutralized path",
+      "verification": "baked mode system consistent with empty path",
+      "work": "T-1310"
+    },
+    "SRC-046:R025": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "VERIFIED",
+      "evidence": "E-2515",
+      "text": "runtime settings DB roundtrip must preserve the operators selected mode/path and chest size",
+      "verification": "runtime settings roundtrip preserves operator mode/path/chest; test_bake_corrective_t1298.py",
+      "work": "T-1310"
+    },
+    "SRC-046:R026": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "VERIFIED",
+      "evidence": "E-2515",
+      "text": "Set Defaults from Current must remain green after the user actually changes these controls",
+      "verification": "Set Defaults from Current green after changing controls; test_set_default_from_current.py 31 passed",
+      "work": "T-1310"
+    },
+    "SRC-046:R027": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "VERIFIED",
+      "evidence": "E-2515",
+      "text": "the existing fail-closed guarantee for genuinely unknown settings must remain intact",
+      "verification": "unknown key still fails closed; probe totally_unknown_key -> BakePolicyError",
+      "work": "T-1310"
+    },
+    "SRC-046:R028": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "VERIFIED",
+      "evidence": "E-2515",
+      "text": "Do not weaken assert_policy_covers().",
+      "verification": "assert_policy_covers() unchanged (git diff clean on tools/set_default_from_current.py policy)",
+      "work": "T-1310"
+    },
+    "SRC-046:R029": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "VERIFIED",
+      "evidence": "E-2515",
+      "text": "Do NOT automatically restore or replace it.",
+      "verification": "hover.wav not auto-restored/replaced",
+      "work": "T-1310"
+    },
+    "SRC-046:R030": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "VERIFIED",
+      "evidence": "E-2515",
+      "text": "one machine-truth checkpoint names live HEAD, branch, active ticket/phase, source receipts, and exact drift since E-2506",
+      "verification": "machine-truth: HEAD 930e45ba, branch audit-all-3-impl, T-1310 BUILD, receipts SRC-044/045/046; drift since E-2506 = viewer/chest/timer/state changes, all under T-1310 corridor",
+      "work": "T-1310"
+    },
+    "SRC-046:R031": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "VERIFIED",
+      "evidence": "E-2515",
+      "text": "no user/operator changes are lost",
+      "verification": "no user/operator changes lost; tree preserved, only ruff-clean edits to owned test files",
+      "work": "T-1310"
+    },
+    "SRC-046:R032": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "VERIFIED",
+      "evidence": "E-2515",
+      "text": "no duplicate ticket is created for already-owned scope.",
+      "verification": "no duplicate ticket created; reused T-1310 seat and existing parked tickets",
+      "work": "T-1310"
+    },
+    "SRC-046:R033": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "VERIFIED",
+      "evidence": "E-2515",
+      "text": "Do not dismiss it by name alone.",
+      "verification": "Ambience warning reproduced/inspected, not dismissed by name",
+      "work": "T-1310"
+    },
+    "SRC-046:R034": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "E-2515",
+      "text": "The existing contract must remain:",
+      "verification": "ambience contract intact: token moved before teardown (:245), bounded join WEATHER_SHUTDOWN_JOIN_S (:266), post-shutdown emit refused via lifecycle token (:329), one in-flight guard (:313), failed retirement returns False into shutdown accounting (:257); tests 41 passed with PytestUnhandledThreadExceptionWarning as error",
+      "work": "T-1310"
+    },
+    "SRC-046:R035": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "VERIFIED",
+      "evidence": "E-2515",
+      "text": "Do not reuse an older smoke total after modifying tests_smoke/test_app_smoke.py.",
+      "verification": "fresh full smoke 1067 at E-2524 after test_app_smoke.py edit; no stale total reused",
+      "work": "T-1310"
+    },
+    "SRC-046:R036": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "VERIFIED",
+      "evidence": "E-2515",
+      "text": "both suites finish normally with a final summary",
+      "verification": "both suites finished with normal final summary: tests/ 3844 passed E-2515, tests_smoke/ 1067 passed E-2524",
+      "work": "T-1310"
+    },
+    "SRC-046:R037": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "VERIFIED",
+      "evidence": "E-2515",
+      "text": "zero native abort/access-violation/QThread-destroyed process termination",
+      "verification": "zero native abort/access-violation/QThread-destroyed in both runs (E-2515, E-2524)",
+      "work": "T-1310"
+    },
+    "SRC-046:R038": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "VERIFIED",
+      "evidence": "E-2515",
+      "text": "every failure/warning is either fixed or assigned to an existing non-overlapping ticket with evidence and does not violate the current T-1310 acceptance contract",
+      "verification": "no unexplained failure; ruff issues fixed this session; ambience daemon warning classified benign per R034",
+      "work": "T-1310"
+    },
+    "SRC-046:R039": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "VERIFIED",
+      "evidence": "E-2515",
+      "text": "no test is changed solely to accept broken product behaviour.",
+      "verification": "no test changed to accept broken behaviour; smoke analog-clock test refactored to per-theme cache refresh, separate tests retain real stylesheet propagation (E-2522/E-2523)",
+      "work": "T-1310"
+    },
+    "SRC-046:R040": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "VERIFIED",
+      "evidence": "E-2515",
+      "text": "Do not leave T-1310 in VERIFY merely because downstream tickets still exist.",
+      "verification": "T-1310 not left in VERIFY for downstream reasons; closing on own scope satisfaction",
+      "work": "T-1310"
+    },
+    "SRC-046:R041": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-048 to SRC-044 (CLARIFICATION); ownership re-homed to T-1201 per SRC-047 Decision A",
+      "text": "T-1201 DONE",
+      "verification": "T-1201 parked at SHIP behind T-1310; cannot reach DONE until T-1310 terminal-ships via crew convergence",
+      "work": "T-1201"
+    },
+    "SRC-046:R042": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-048 to SRC-044 (CLARIFICATION); ownership re-homed to T-1201 per SRC-047 Decision A",
+      "text": "no stale active dependency",
+      "verification": "stale-dependency clearance depends on T-1310 close, blocked by crew-not-ready",
+      "work": "T-1201"
+    },
+    "SRC-046:R043": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-048 to SRC-044 (CLARIFICATION); ownership re-homed to T-1201 per SRC-047 Decision A",
+      "text": "source receipt/coverage reconciled as required.",
+      "verification": "T-1201 receipt/coverage reconcile pending its SHIP resume",
+      "work": "T-1201"
+    },
+    "SRC-046:R044": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-048 to SRC-044 (CLARIFICATION); ownership re-homed to T-1307 per SRC-047 Decision A",
+      "text": "MILESTONE F UNBLOCK, VERIFY, AND CLOSE T-1307 / SRC-041 / audit/12",
+      "verification": "T-1307/SRC-041/audit-12 closure parked behind T-1201",
+      "work": "T-1307"
+    },
+    "SRC-046:R045": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-048 to SRC-044 (CLARIFICATION); ownership re-homed to T-1307 per SRC-047 Decision A",
+      "text": "Do not rebuild them from scratch.",
+      "verification": "nine audit/12 findings implemented (E archive: focused 65, neighbours 567); not rebuilt; closure blocked on T-1201",
+      "work": "T-1307"
+    },
+    "SRC-046:R046": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-048 to SRC-044 (CLARIFICATION); ownership re-homed to T-1307 per SRC-047 Decision A",
+      "text": "requirement text/short name",
+      "verification": "SRC-041 clause matrix pending T-1307 VERIFY resume",
+      "work": "T-1307"
+    },
+    "SRC-046:R047": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-048 to SRC-044 (CLARIFICATION); ownership re-homed to T-1307 per SRC-047 Decision A",
+      "text": "implementation files",
+      "verification": "implementation files known but SRC-041 disp pending resume",
+      "work": "T-1307"
+    },
+    "SRC-046:R048": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-048 to SRC-044 (CLARIFICATION); ownership re-homed to T-1307 per SRC-047 Decision A",
+      "text": "regression tests",
+      "verification": "regression tests exist (test_*_t1307.py 44 passed this session); disp pending resume",
+      "work": "T-1307"
+    },
+    "SRC-046:R049": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-048 to SRC-044 (CLARIFICATION); ownership re-homed to T-1307 per SRC-047 Decision A",
+      "text": "focused result",
+      "verification": "focused T-1307 result 44 passed captured; terminal disp pending resume",
+      "work": "T-1307"
+    },
+    "SRC-046:R050": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-048 to SRC-044 (CLARIFICATION); ownership re-homed to T-1307 per SRC-047 Decision A",
+      "text": "broad result",
+      "verification": "broad result reuse pending T-1307 resume",
+      "work": "T-1307"
+    },
+    "SRC-046:R051": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-048 to SRC-044 (CLARIFICATION); ownership re-homed to T-1307 per SRC-047 Decision A",
+      "text": "terminal disposition",
+      "verification": "terminal disposition pending T-1307 resume",
+      "work": "T-1307"
+    },
+    "SRC-046:R052": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-048 to SRC-044 (CLARIFICATION); ownership re-homed to T-1307 per SRC-047 Decision A",
+      "text": "evidence reference.",
+      "verification": "evidence reference pending T-1307 resume",
+      "work": "T-1307"
+    },
+    "SRC-046:R053": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "VERIFIED",
+      "evidence": "E-2515",
+      "text": "Avoid pointless duplicate ten-minute runs when no relevant files changed, but do not cite stale evidence from an older tree.",
+      "verification": "reused E-2515 tests/ 3844 and E-2524 smoke 1067 as broad evidence for the byte-identical product tree; only static+focused reruns this session; no stale older-tree evidence cited",
+      "work": "T-1310"
+    },
+    "SRC-046:R054": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-048 to SRC-044 (CLARIFICATION); ownership re-homed to T-1307 per SRC-047 Decision A",
+      "text": "T-1307 DONE",
+      "verification": "T-1307 DONE blocked on T-1201 full-project gate",
+      "work": "T-1307"
+    },
+    "SRC-046:R055": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-048 to SRC-044 (CLARIFICATION); ownership re-homed to T-1307 per SRC-047 Decision A",
+      "text": "all nine clauses terminal with evidence",
+      "verification": "nine clauses terminal pending T-1307 resume",
+      "work": "T-1307"
+    },
+    "SRC-046:R056": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-048 to SRC-044 (CLARIFICATION); ownership re-homed to T-1307 per SRC-047 Decision A",
+      "text": "no audit/12 actionable item remains floating outside ownership.",
+      "verification": "audit/12 ownership closure pending T-1307 resume",
+      "work": "T-1307"
+    },
+    "SRC-046:R057": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-048 to SRC-044 (CLARIFICATION); ownership re-homed to T-1306 per SRC-047 Decision A",
+      "text": "T-1306 DONE",
+      "verification": "T-1306 DONE blocked behind T-1307",
+      "work": "T-1306"
+    },
+    "SRC-046:R058": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-048 to SRC-044 (CLARIFICATION); ownership re-homed to T-1306 per SRC-047 Decision A",
+      "text": "T-1299 dependency on T-1306 is legally cleared.",
+      "verification": "T-1299 dependency clearance blocked behind T-1306",
+      "work": "T-1306"
+    },
+    "SRC-046:R059": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "E-2515",
+      "text": "external-image and SILO-chest scope must be demonstrated, not assumed",
+      "verification": "external-image + SILO-chest demonstrated by focused tests: test_silo_chest_viewer.py + test_t1265_image_click.py + test_clickable_links.py 150 passed",
+      "work": "T-1310"
+    },
+    "SRC-046:R060": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "VERIFIED",
+      "evidence": "E-2515",
+      "text": "do not close it merely because SRC-043 is short and generic",
+      "verification": "T-1309 not closed merely for being short; left parked as TODO for explicit residual matrix",
+      "work": "T-1310"
+    },
+    "SRC-046:R061": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-048 to SRC-044 (CLARIFICATION); ownership re-homed to T-1308 per SRC-047 Decision A",
+      "text": "T-1308 terminal",
+      "verification": "T-1308 terminal reconciliation blocked behind dependency corridor close",
+      "work": "T-1308"
+    },
+    "SRC-046:R062": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-048 to SRC-044 (CLARIFICATION); ownership re-homed to T-1309 per SRC-047 Decision A",
+      "text": "T-1309 terminal or reduced to a precisely owned genuine blocker",
+      "verification": "T-1309 terminal reconciliation blocked; requires 19.09 backlog residual matrix after corridor",
+      "work": "T-1309"
+    },
+    "SRC-046:R063": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "VERIFIED",
+      "evidence": "E-2515",
+      "text": "no duplicate work created from already-completed backlog items.",
+      "verification": "no duplicate work created from completed backlog items this session",
+      "work": "T-1310"
+    },
+    "SRC-046:R064": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "VERIFIED",
+      "evidence": "E-2515",
+      "text": "Do not mass-delete the 833-untracked archive-era population.",
+      "verification": "833-untracked archive population not mass-deleted; no cleanup performed",
+      "work": "T-1310"
+    },
+    "SRC-046:R065": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "VERIFIED",
+      "evidence": "E-2515",
+      "text": "do not reimplement the SILO persistence model merely to create a small isolated diff.",
+      "verification": "SILO persistence model not reimplemented",
+      "work": "T-1310"
+    },
+    "SRC-046:R066": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-048 to SRC-044 (CLARIFICATION); ownership re-homed to T-1299 per SRC-047 Decision A",
+      "text": "All commands must exit 0.",
+      "verification": "clean-clone CI-equivalent exit-0 gate not run; release milestone not reached",
+      "work": "T-1299"
+    },
+    "SRC-046:R067": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-048 to SRC-044 (CLARIFICATION); ownership re-homed to T-1209 per SRC-047 Decision A",
+      "text": "Do not publish internal SAIPEN ticket history as user-facing release notes.",
+      "verification": "release-notes authoring not reached; blocked behind release milestone",
+      "work": "T-1209"
+    },
+    "SRC-046:R068": {
+      "actionable": true,
+      "class": "acceptance-criterion",
+      "disposition": "SUPERSEDED",
+      "evidence": "superseded by append SRC-048 to SRC-044 (CLARIFICATION); ownership re-homed to T-1299 per SRC-047 Decision A",
+      "text": "If no newer acceptance exists, prepare the candidate and return exactly the manual smoke matrix the operator must perform.",
+      "verification": "manual smoke matrix delivery pending candidate build at release milestone",
+      "work": "T-1299"
+    },
+    "SRC-046:R069": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "VERIFIED",
+      "evidence": "E-2515",
+      "text": "Do not report RELEASED before the remote asset is actually bound to the exact tested source identity.",
+      "verification": "not reported RELEASED; no publication performed",
+      "work": "T-1310"
+    },
+    "SRC-046:R070": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "VERIFIED",
+      "evidence": "E-2515",
+      "text": "do not call the run \"failed tests\" and continue casually",
+      "verification": "full-suite aborts handled as native/order issues not casual fails: E-2518..E-2523 isolated the smoke timeout to per-test restyle cost, not a product abort; repaired on fixture-ownership evidence",
+      "work": "T-1310"
+    },
+    "SRC-046:R071": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "VERIFIED",
+      "evidence": "E-2515",
+      "text": "Do not add unrelated product features.",
+      "verification": "no unrelated product features added this session",
+      "work": "T-1310"
+    },
+    "SRC-046:R072": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "VERIFIED",
+      "evidence": "E-2515",
+      "text": "Do not mass-translate locales.",
+      "verification": "no locale mass-translation; i18n en.py/ru.py touched only for viewer/chest strings",
+      "work": "T-1310"
+    },
+    "SRC-046:R073": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "VERIFIED",
+      "evidence": "E-2515",
+      "text": "Do not redesign the whole File Container beyond the requested chest/viewer corridor.",
+      "verification": "File Container not redesigned beyond chest/viewer corridor",
+      "work": "T-1310"
+    },
+    "SRC-046:R074": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "VERIFIED",
+      "evidence": "E-2515",
+      "text": "Do not replace the existing sound architecture.",
+      "verification": "sound architecture not replaced",
+      "work": "T-1310"
+    },
+    "SRC-046:R075": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "VERIFIED",
+      "evidence": "E-2515",
+      "text": "Do not replace the SILO persistence architecture.",
+      "verification": "SILO persistence architecture not replaced",
+      "work": "T-1310"
+    },
+    "SRC-046:R076": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "VERIFIED",
+      "evidence": "E-2515",
+      "text": "Do not perform broad cleanup of SAIPEN evidence or untracked files merely for aesthetics.",
+      "verification": "no broad cleanup of SAIPEN evidence / untracked files performed",
+      "work": "T-1310"
+    },
+    "SRC-046:R077": {
+      "actionable": true,
+      "class": "invariant",
+      "disposition": "VERIFIED",
+      "evidence": "E-2515",
+      "text": "Do not silently change VERSION away from 0.8.68 unless an explicit current release/version policy requires it and that decision is journaled.",
+      "verification": "VERSION unchanged at 0.8.68",
+      "work": "T-1310"
+    }
+  },
+  "schema_version": 1
+}

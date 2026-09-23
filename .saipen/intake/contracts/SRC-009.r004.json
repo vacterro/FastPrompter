@@ -1,0 +1,29 @@
+{
+  "clauses": {
+    "SRC-009:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "T-1217: sections 1/6/7/8 transfer live text, canonical allocation, ownership, transaction and every route regression"
+    },
+    "SRC-009:R002": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "T-1218: sections 2/6/7/8 internal image viewer, central routing, protected shell launches, Windows paths"
+    },
+    "SRC-009:R003": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "T-1219: sections 3/6/7/8 whole-line drag autoscroll, lifetime, selection and no premature mutations"
+    },
+    "SRC-009:R004": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "T-1216: sections 4/6/7/8 deliberate sounds stack, single request ownership, unified scheduler, provenance, live Windows soak"
+    }
+  },
+  "derived_at": "2026-09-06T16:28:34Z",
+  "derived_from": "SRC-009",
+  "interpretation_revision": 4,
+  "schema_version": 1,
+  "source_sha256": "ce0f841efcd2f57b15297493ff026d820add1105dd0cd2dae70c52d8f07fa317"
+}

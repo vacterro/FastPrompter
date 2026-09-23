@@ -1,0 +1,50 @@
+{
+  "requirements": {
+    "SRC-042:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "E-2554",
+      "text": "close T-1201 Qt lifetime blocker",
+      "verification": "T-1201 DONE (E-2554): combined tests exit 0 evidence E-2494/E-2495 + E-2515 3844 passed; production QThread drain verified main.py:7313/20640-20683 (E-2552)",
+      "work": "T-1308"
+    },
+    "SRC-042:R002": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "E-2574",
+      "text": "finish T-1307 and T-1306 audit-12 closure",
+      "verification": "T-1307 DONE (E-2562) with nine-row matrix E-2556 focused 65 passed 10.35s; T-1306 DONE (E-2574) umbrella equivalence; SRC-041 CLOSED archived; audit/12.md consumed journaled (E-2563)",
+      "work": "T-1308"
+    },
+    "SRC-042:R003": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "E-2531",
+      "text": "implement inline-image external viewer and clipboard workflow",
+      "verification": "own-scope REVIEW E-2530/E-2531: central open_image_viewer with verified header check, suffix realpath guard, safe external launch, destroyed() viewer retirement, Copy Image image-MIME+file-URL, Copy Path text-only; fresh focused viewer/image gate in 457 passed wave (E-2544)",
+      "work": "T-1308"
+    },
+    "SRC-042:R004": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "E-2531",
+      "text": "implement slot-based Silo Container chest UI",
+      "verification": "own-scope REVIEW E-2530/E-2531: placeholder guards on open/copy routes, canonical 64/128 capacity, bounded placeholder sync, leaving Chest clears placeholders; fresh focused chest gate in 457 passed wave (E-2544)",
+      "work": "T-1308"
+    },
+    "SRC-042:R005": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "E-2575",
+      "text": "re-enter T-1299 release convergence as the immediate successor after this reconciliation",
+      "verification": "T-1299 resumed in place at BUILD (E-2575); SRC-047 section 9 sequencing recorded (E-2576) parks it until T-1308/T-1309 close, then the corridor executes its tree reconciliation next",
+      "work": "T-1308"
+    }
+  },
+  "schema_version": 1
+}

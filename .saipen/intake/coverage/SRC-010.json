@@ -1,0 +1,14 @@
+{
+  "requirements": {
+    "SRC-010:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "E-1678",
+      "text": "Sound immediacy: every sound starts in the moment of its action, never queued behind another sound; rapid bursts overlap or replace instantly instead of FIFO replaying seconds later. Supersedes the prior sequential-stacking contract.",
+      "verification": "tests/test_sound_manager.py 80 passed + 214 caller tests + real-device acceptance 2x ALL PASS (T-1221 DONE evidence)",
+      "work": "T-1221"
+    }
+  },
+  "schema_version": 1
+}

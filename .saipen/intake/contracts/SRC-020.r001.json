@@ -1,0 +1,14 @@
+{
+  "clauses": {
+    "SRC-020:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Close T-1277 T-1278 T-1279 corrective tickets"
+    }
+  },
+  "derived_at": "2026-09-17T21:04:13Z",
+  "derived_from": "SRC-020",
+  "interpretation_revision": 1,
+  "schema_version": 1,
+  "source_sha256": "6efcca688381abdac5fc01cbe9e09f8bf72527da43a3da8ef772cf03ff5d847b"
+}

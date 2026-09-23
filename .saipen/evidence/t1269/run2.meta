@@ -1,0 +1,7 @@
+command: PYTHONIOENCODING=utf-8 uv run python tools/probe_clipboard_interop.py --race-check 8
+cwd: V:\\___VAC\\__K\\__CODE\\_PY\\_FastPrompter
+start_utc: 2026-09-17T14:19:57.483665+00:00
+end_utc: 2026-09-17T14:20:06.019772+00:00
+exit_code: 0
+stdout_bytes: 1608
+stderr_bytes: 0
