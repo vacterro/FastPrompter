@@ -27,6 +27,7 @@ from PyQt6.QtWidgets import (
 )
 
 from fastprompter.core.logging import logger
+from fastprompter.core.profile_flags import profile_flag
 from fastprompter.core.translations import tr
 from fastprompter.main import (
     SETTINGS_TAB_TITLES,
@@ -46,6 +47,22 @@ def _tr_label(text, lang):
     lbl = QLabel(tr(text, lang))
     lbl._en_text = text
     return lbl
+
+
+def _tr_button(text, lang):
+    """A QPushButton that remembers its English source (`_tr_label`'s
+    contract). A button translated only at build time kept the language it
+    was built in, so a live switch left e.g. Estonian buttons in a Russian
+    panel; `_apply_settings_language` retranslates anything stamped."""
+    btn = QPushButton(tr(text, lang))
+    btn._en_text = text
+    return btn
+
+
+def _set_tr_tooltip(widget, tooltip, lang):
+    """setToolTip(tr(...)) that also stamps `_en_tooltip` for retranslation."""
+    widget.setToolTip(tr(tooltip, lang))
+    widget._en_tooltip = tooltip
 
 
 def confirm_bake_plan(plan, parent, lang) -> bool:
@@ -183,11 +200,10 @@ def build_settings_tabs(self):
         self.data.get("customize_toolbar", "False") == "True",
         self.on_customize_toolbar_toggled,
     )
-    self.btn_topbar_visibility = QPushButton(
-        tr("Top bar button visibility", self._current_lang))
-    self.btn_topbar_visibility.setToolTip(tr(
+    self.btn_topbar_visibility = _tr_button("Top bar button visibility", self._current_lang)
+    _set_tr_tooltip(self.btn_topbar_visibility,
         "Choose which top-bar items appear in each editable width range.",
-        self._current_lang))
+        self._current_lang)
     self.btn_topbar_visibility.clicked.connect(
         self.open_topbar_visibility_dialog)
     self.cb_numbox_tabs = create_footer_cb(
@@ -272,10 +288,10 @@ def build_settings_tabs(self):
     fast_row.addWidget(self.cb_fast_zone_page)
     fast_row.addStretch(1)
 
-    self.btn_manage_presets = QPushButton(tr("Manage presets", self._current_lang))
-    self.btn_manage_presets.setToolTip(tr(
+    self.btn_manage_presets = _tr_button("Manage presets", self._current_lang)
+    _set_tr_tooltip(self.btn_manage_presets,
         "Reorder, rename, re-capture or delete your Ctrl+Q window presets",
-        self._current_lang))
+        self._current_lang)
     self.btn_manage_presets.clicked.connect(self.open_window_presets)
     self.cb_customize_toolbar.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
     self.cb_customize_toolbar.customContextMenuRequested.connect(
@@ -578,7 +594,7 @@ def build_settings_tabs(self):
         "🌞 Day Word",
         "Show the time-of-day word (Morning / Day / Evening / Night)\n"
         "after the clock in the date widget",
-        self.data.get("date_daypart", "True") == "True",
+        profile_flag(self.data, "date_daypart"),
         lambda checked: (
             self.data.update({"date_daypart": "True" if checked else "False"})
             or self.mark_dirty()
@@ -588,7 +604,7 @@ def build_settings_tabs(self):
     self.cb_date_emoji = create_footer_cb(
         "🎭 Emoji Day State",
         "Show an emoji (🌅/☀️/🌇/🌙) instead of the time-of-day word",
-        self.data.get("date_emoji", "False") == "True",
+        profile_flag(self.data, "date_emoji"),
         lambda checked: (
             self.data.update({"date_emoji": "True" if checked else "False"})
             or self.mark_dirty()
@@ -629,11 +645,11 @@ def build_settings_tabs(self):
             or self._update_date_label()
         ),
     )
-    self.btn_limit_settings = QPushButton(tr(
-        "Limit settings…", self._current_lang))
-    self.btn_limit_settings.setToolTip(tr(
+    self.btn_limit_settings = _tr_button(
+        "Limit settings…", self._current_lang)
+    _set_tr_tooltip(self.btn_limit_settings,
         "Accounts, labels, providers and per-limit notifications",
-        self._current_lang))
+        self._current_lang)
     self.btn_limit_settings.clicked.connect(
         self.open_limit_settings_dialog)
     self.cb_sound = create_footer_cb(
@@ -765,22 +781,22 @@ def build_settings_tabs(self):
     ctrlw_btn_row = QHBoxLayout()
     ctrlw_btn_row.setContentsMargins(0, 0, 0, 0)
     ctrlw_btn_row.setSpacing(4)
-    self.btn_ctrlw_settings = QPushButton(tr("Ctrl+W…", getattr(self, "_current_lang", "EN")))
-    self.btn_ctrlw_settings.setToolTip(tr(
+    self.btn_ctrlw_settings = _tr_button("Ctrl+W…", getattr(self, "_current_lang", "EN"))
+    _set_tr_tooltip(self.btn_ctrlw_settings,
         "Configure Smart Ctrl+W behavior per context scenario:\n"
         "• Divider insertion and bullet\n"
         "• Blank-line spacing (global or per scenario)\n"
         "• Action when pressing on an existing divider",
-        getattr(self, "_current_lang", "EN")))
+        getattr(self, "_current_lang", "EN"))
     self.btn_ctrlw_settings.clicked.connect(self.open_ctrlw_settings)
     ctrlw_btn_row.addWidget(self.btn_ctrlw_settings)
-    self.btn_altw_settings = QPushButton(tr("Alt+W…", getattr(self, "_current_lang", "EN")))
-    self.btn_altw_settings.setToolTip(tr(
+    self.btn_altw_settings = _tr_button("Alt+W…", getattr(self, "_current_lang", "EN"))
+    _set_tr_tooltip(self.btn_altw_settings,
         "Alt+W is Ctrl+W turned around: the new point goes ABOVE the\n"
         "line you are on and the existing text moves down.\n"
         "Same settings, kept separately so the two directions can be\n"
         "tuned apart.",
-        getattr(self, "_current_lang", "EN")))
+        getattr(self, "_current_lang", "EN"))
     self.btn_altw_settings.clicked.connect(self.open_altw_settings)
     ctrlw_btn_row.addWidget(self.btn_altw_settings)
     ctrlw_btn_row.addStretch(1)
@@ -811,13 +827,15 @@ def build_settings_tabs(self):
             return tr("Built-in", lang)
         return tr("System default", lang)
 
+    self._image_viewer_caption = _viewer_caption
     self.btn_image_viewer = QPushButton(
         f"🖼 {_viewer_caption()}")
-    self.btn_image_viewer.setToolTip(tr(
+    _set_tr_tooltip(
+        self.btn_image_viewer,
         "Image Viewer\n"
         "Which program opens images from links and silo files:\n"
         "the Windows default, a program you pick, or the built-in preview.",
-        getattr(self, "_current_lang", "EN")))
+        getattr(self, "_current_lang", "EN"))
 
     def _pick_image_viewer():
         from PyQt6.QtWidgets import QFileDialog, QMenu
@@ -863,7 +881,7 @@ def build_settings_tabs(self):
     dev_row = QHBoxLayout()
     dev_row.setContentsMargins(0, 0, 0, 0)
     dev_row.setSpacing(4)
-    self.btn_set_defaults = QPushButton(tr("Set Defaults from Current", getattr(self, "_current_lang", "EN")))
+    self.btn_set_defaults = _tr_button("Set Defaults from Current", getattr(self, "_current_lang", "EN"))
     self.btn_set_defaults.setToolTip(tr(
         "Developer tool: stamp current UI settings, themes, sounds and presets\n"
         "as repo base DEFAULT_PROFILE (excludes personal notes, text and silos).",
@@ -1010,8 +1028,8 @@ def build_settings_tabs(self):
         lambda v: (self.data.update({"ctrl_e_format": v}), self.mark_dirty())
     )
     hdr_row.addWidget(self.le_hdr_fmt)
-    btn_hdr_edit = QPushButton(tr("Edit…", getattr(self, "_current_lang", "EN")))
-    btn_hdr_edit.setToolTip(tr("Open the header format editor (placeholders, presets, live preview)", getattr(self, "_current_lang", "EN")))
+    btn_hdr_edit = _tr_button("Edit…", getattr(self, "_current_lang", "EN"))
+    _set_tr_tooltip(btn_hdr_edit, "Open the header format editor (placeholders, presets, live preview)", getattr(self, "_current_lang", "EN"))
     btn_hdr_edit.setFixedWidth(44)
     btn_hdr_edit.clicked.connect(self.open_header_format_editor)
     hdr_row.addWidget(btn_hdr_edit)
@@ -1131,7 +1149,7 @@ def build_settings_tabs(self):
                    self.sync_to_disk(force=True)))
     sync_row.addWidget(self.combo_sync_mode)
 
-    self.btn_sync_path = QPushButton(tr("Folder…", self._current_lang))
+    self.btn_sync_path = _tr_button("Folder…", self._current_lang)
     self.btn_sync_path.setToolTip(self.data.get("sync_path", "") or tr("No folder chosen", self._current_lang))
 
     def _pick_sync_path():
@@ -1148,9 +1166,9 @@ def build_settings_tabs(self):
             self.mark_dirty()
             self.sync_to_disk(force=True)
 
-    self.btn_projects_mgr = QPushButton(tr("Projects…", self._current_lang))
-    self.btn_projects_mgr.setToolTip(tr(
-        "Choose which projects appear in the tab list", self._current_lang))
+    self.btn_projects_mgr = _tr_button("Projects…", self._current_lang)
+    _set_tr_tooltip(self.btn_projects_mgr,
+        "Choose which projects appear in the tab list", self._current_lang)
     self.btn_projects_mgr.clicked.connect(self.open_projects_manager)
     sync_row.addWidget(self.btn_projects_mgr)
     self.btn_sync_path.clicked.connect(_pick_sync_path)
@@ -1219,11 +1237,11 @@ def build_settings_tabs(self):
 
     self.cb_heat_palette.currentIndexChanged.connect(_upd_pal)
 
-    self.btn_hover_colour = QPushButton(tr("Hover colour", self._current_lang))
-    self.btn_hover_colour.setToolTip(tr(
+    self.btn_hover_colour = _tr_button("Hover colour", self._current_lang)
+    _set_tr_tooltip(self.btn_hover_colour,
         "Pick the hover highlight colour.\n"
         "Right-click to go back to following the theme.",
-        self._current_lang))
+        self._current_lang)
     self.btn_hover_colour.clicked.connect(self.pick_hover_colour)
     self.btn_hover_colour.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
     self.btn_hover_colour.customContextMenuRequested.connect(
@@ -1379,19 +1397,19 @@ def build_settings_tabs(self):
     # Toolbar order had its own reset; splitter widths, sidebar side and
     # window size had none, so a window dragged somewhere unusable could
     # only be fixed by deleting the database.
-    self.btn_copy_cursors = QPushButton(tr("Copy my set", self._current_lang))
-    self.btn_copy_cursors.setToolTip(tr(
+    self.btn_copy_cursors = _tr_button("Copy my set", self._current_lang)
+    _set_tr_tooltip(self.btn_copy_cursors,
         "Copy your current Windows cursors INTO the program.\n"
         "The program then keeps using them even if you change\n"
         "the system scheme later. Press again to re-copy.",
-        self._current_lang))
+        self._current_lang)
     self.btn_copy_cursors.clicked.connect(lambda: self.capture_cursor_set())
 
-    self.btn_install_cursors = QPushButton(tr("Set in system", self._current_lang))
-    self.btn_install_cursors.setToolTip(tr(
+    self.btn_install_cursors = _tr_button("Set in system", self._current_lang)
+    _set_tr_tooltip(self.btn_install_cursors,
         "Install the program's copied set as the Windows default\n"
         "(asks first). Right-click: open the full cursor set online.",
-        self._current_lang))
+        self._current_lang)
     self.btn_install_cursors.clicked.connect(self.install_cursors_to_system)
 
     def _cursor_btn_mouse(event):
@@ -1404,10 +1422,10 @@ def build_settings_tabs(self):
 
     self.btn_install_cursors.mousePressEvent = _cursor_btn_mouse
 
-    self.btn_reset_layout = QPushButton(tr("Reset UI Layout", self._current_lang))
-    self.btn_reset_layout.setToolTip(tr(
+    self.btn_reset_layout = _tr_button("Reset UI Layout", self._current_lang)
+    _set_tr_tooltip(self.btn_reset_layout,
         "Put the toolbar, sidebar and window size back to defaults.\n"
-        "Text, snippets and silos are not touched.", self._current_lang))
+        "Text, snippets and silos are not touched.", self._current_lang)
     self.btn_reset_layout.clicked.connect(self.reset_ui_layout)
 
     # Compact Sync-Project input rows so they don't bloat the Data tab vertically

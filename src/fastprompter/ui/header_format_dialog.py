@@ -37,6 +37,7 @@ from PyQt6.QtWidgets import (
 
 from fastprompter.core import header as header_core
 from fastprompter.core.ctrlw import render_preview
+from fastprompter.core.profile_flags import profile_flag
 from fastprompter.core.translations import tr
 from fastprompter.ui.flow_layout import FlowLayout
 
@@ -435,7 +436,7 @@ class HeaderFormatDialog(QDialog):
         ts = now.strftime(f"{m_fmt} - {t_fmt}")
         if "{state}" in self.edit.text():
             time_str = ts
-        elif d.get("date_daypart", "True") == "True":
+        elif profile_flag(d, "date_daypart"):
             time_str = f"{state} {ts}"
         else:
             time_str = ts

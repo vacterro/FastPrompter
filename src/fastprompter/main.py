@@ -87,6 +87,7 @@ _ALIGN_FLAGS = {
 }
 from fastprompter.core.i18n import NATIVE_NAMES as _LANG_NATIVE_NAMES
 from fastprompter.core.ipc_server import IpcServer
+from fastprompter.core.profile_flags import profile_default, profile_flag
 from fastprompter.core.sound_manager import SoundManager, _parse_volume_value
 from fastprompter.core.state import _PER_CATEGORY_STATE_KEYS, FastPrompterState
 from fastprompter.core.translations import available_languages, get_language, tr
@@ -1754,7 +1755,7 @@ class FastPrompter(
         # quarter-FullHD snap — dense mode wins the pixels from buttons and
         # paddings, never by silently dropping what the user enabled.
         show_secs = self.data.get("date_seconds", "True") == "True"
-        show_word = self.data.get("date_daypart", "True") == "True"
+        show_word = profile_flag(self.data, "date_daypart")
         text_month = self.data.get("date_text_month", "False") == "True"
         ampm = self.data.get("date_ampm", "False") == "True"
         if self._topbar_detail_mode("lbl_date") == "compact":
@@ -1768,7 +1769,7 @@ class FastPrompter(
         else:
             ref_str = ("00 MMM - 00:00" if text_month else "00.00 - 00:00") + ampm_ref
         if show_word:
-            use_emoji = self.data.get("date_emoji", "False") == "True"
+            use_emoji = profile_flag(self.data, "date_emoji")
             if use_emoji:
                 emoji = {"Morning": "🌅", "Day": "☀️", "Evening": "🌇", "Night": "🌙"}.get(self._day_part(now.hour), "")
                 dt_str += f" {emoji}"
@@ -10372,8 +10373,8 @@ class FastPrompter(
             ("cb_timer_minutes", "timer_show_minutes", "False"),
             ("cb_date_seconds", "date_seconds", "False"),
             ("cb_analog_clock", "analog_clock", "False"),
-            ("cb_date_daypart", "date_daypart", "False"),
-            ("cb_date_emoji", "date_emoji", "True"),
+            ("cb_date_daypart", "date_daypart", profile_default("date_daypart")),
+            ("cb_date_emoji", "date_emoji", profile_default("date_emoji")),
             ("cb_date_text_month", "date_text_month", "False"),
             ("cb_date_ampm", "date_ampm", "False"),
             ("cb_limit_gauges", "limit_gauges", "False"),
@@ -10690,7 +10691,7 @@ class FastPrompter(
         if "{state}" in template:
             time_str = ts
         else:
-            time_str = f"{daypart} {ts}" if self.data.get("date_daypart", "True") == "True" else ts
+            time_str = f"{daypart} {ts}" if profile_flag(self.data, "date_daypart") else ts
 
         # Strip any existing header hashes or list bullets so they don't get trapped
         clean_sel = re.sub(r'^(?:#+\s*|[-*•●+]\s+)+', '', sel).strip()
@@ -10937,7 +10938,8 @@ class FastPrompter(
 
         # Translate files_row buttons
         if hasattr(self, "btn_files_root") and not sip.isdeleted(self.btn_files_root):
-            self.btn_files_root.setText(tr("Files Folder...", lang))
+            # the same key the builder used ("…", not "...")
+            self.btn_files_root.setText(tr("Files Folder…", lang))
             self.btn_files_root.setToolTip(
                 tr("Choose where silo file containers are stored.\nDefault: data/files next to the app.", lang))
 
@@ -10947,6 +10949,14 @@ class FastPrompter(
             self._retranslate_preview_combo(lang)
             self.preview_combo.setToolTip(
                 tr("Source View: Plain text editor\nLive Preview: Editor with live markdown highlights (default)\nReading: Read-only rendered markdown view", lang))
+
+        # The image-viewer caption is composed ("🖼 " + mode word), so it has
+        # no static `_en_text`; the builder leaves its composer behind.
+        viewer_caption = getattr(self, "_image_viewer_caption", None)
+        btn_viewer = getattr(self, "btn_image_viewer", None)
+        if (viewer_caption and btn_viewer is not None
+                and not sip.isdeleted(btn_viewer)):
+            btn_viewer.setText(f"🖼 {viewer_caption()}")
 
         # Translate _day_part used in _update_date_label
         self._update_date_label()
@@ -13370,6 +13380,10 @@ class FastPrompter(
         self.refresh_archive_panel()
 
     def toggle_trash_vision(self, checked):
+        # Identity BEFORE the order mutation: rebuild_cat_combo re-selects the
+        # project by name, so a settings toggle never throws the user back to
+        # row 0 the way build_categories() (profile boot) does.
+        keep = self.get_current_category()
         self.data["trash_vision"] = "True" if checked else "False"
         if checked:
             if "Trash" not in self.data["categories"]:
@@ -13380,7 +13394,7 @@ class FastPrompter(
             if "Trash" in self.data["cats_order"]:
                 self.data["cats_order"].remove("Trash")
         self.mark_dirty()
-        self.refresh_categories()
+        self.rebuild_cat_combo(keep=keep)
 
     def on_sound_toggled(self, checked):
         """Handle UI sound toggle."""
@@ -19885,7 +19899,7 @@ class FastPrompter(
         m_fmt = "%d %b" if text_month else "%d.%m"
         ts = now.strftime(f"{m_fmt} - {self._clock_time_fmt()}")
 
-        now_str = f"{daypart} {ts}" if self.data.get("date_daypart", "True") == "True" else ts
+        now_str = f"{daypart} {ts}" if profile_flag(self.data, "date_daypart") else ts
         doc = self.text_area.document()
         cur = self.text_area.textCursor()
         keep = cur.position()

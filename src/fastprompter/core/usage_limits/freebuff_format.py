@@ -96,3 +96,45 @@ def full_price_rows(prices) -> list[tuple[str, str]]:
         label = format_price(price)
         rows.extend((name, label) for name in names)
     return rows
+
+
+def _proven_amount(value):
+    """A finite, non-negative number, or None — ``0`` is a proven zero."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if value != value or value in (float("inf"), float("-inf")) or value < 0:
+        return None
+    return float(value)
+
+
+def spendable_total(snapshot):
+    """Freebucks spendable right now (daily remaining + wallet), or None.
+
+    The vendor's own ``balance`` (``provider_metadata["total_balance"]``) is
+    the truth.  Only when it is absent may the total be rebuilt, and only from
+    two trustworthy AMOUNTS: the one daily FB window's remaining amount plus
+    the wallet balance -- never from percentages.  Status gating (OK/STALE
+    only) is the caller's job; this reads the data it is handed.
+    """
+    meta = getattr(snapshot, "provider_metadata", None) or {}
+    if meta.get("mode") != "freebucks":
+        return None
+    total = _proven_amount(meta.get("total_balance"))
+    if total is not None:
+        return total
+    wallet = _proven_amount(meta.get("wallet_balance"))
+    if wallet is None:
+        return None
+    daily = [w for w in (getattr(snapshot, "windows", None) or [])
+             if getattr(w, "unit", "") == "FB" and w.available]
+    if len(daily) != 1:
+        return None
+    remaining = _proven_amount(daily[0].remaining_amount)
+    if remaining is None:
+        return None
+    return remaining + wallet
+
+
+def format_amount(value: float) -> str:
+    """``25`` / ``12.5`` / ``7.33`` -- no long floating-point tails."""
+    return format_price(round(float(value), 2))

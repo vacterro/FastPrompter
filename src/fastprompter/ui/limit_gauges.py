@@ -52,8 +52,10 @@ def sip_deleted(widget) -> bool:
         return False
 
 from fastprompter.core.usage_limits.freebuff_format import (
+    format_amount,
     format_price,
     price_buckets,
+    spendable_total,
 )
 from fastprompter.core.usage_limits.model import (
     EXPECTED_QUIET_CODES,
@@ -805,8 +807,22 @@ class LimitGauges(QWidget):
                 res_word = "reset" if s.banked_resets == 1 else "resets"
                 banked = f" <span style='color:#4FB6A8; font-size:10px; font-weight:bold;'>[{s.banked_resets} banked {res_word}]</span>"
 
+            # Freebuff total spendable (daily + wallet) as one amount pill, the
+            # vendor's own quick-glance number; the detail rows below explain
+            # it. Only an OK/STALE snapshot may show it — an error or auth
+            # failure proves nothing, and a stale total wears the stale tint.
+            fb_badge = ""
+            fb_total = (spendable_total(s) if s.status in (OK, STALE)
+                        else None)
+            if fb_total is not None:
+                pill_fg, pill_bg = (("#1a1810", stale_col) if s.status == STALE
+                                    else ("#1a1810", "#e0b43c"))
+                fb_badge = (f" <span style='background-color:{pill_bg}; "
+                            f"color:{pill_fg}; font-size:10px; "
+                            f"font-weight:bold;'>&nbsp;{format_amount(fb_total)}"
+                            f"&nbsp;</span>")
             parts.append(
-                f"<tr><td colspan='4' style='padding-top:5px; padding-bottom:2px; border-bottom:1px solid #4a3e28;'><b{title_style}>{header}</b>{plan}{stale}{freshness}{banked}</td></tr>"
+                f"<tr><td colspan='4' style='padding-top:5px; padding-bottom:2px; border-bottom:1px solid #4a3e28;'><b{title_style}>{header}</b>{plan}{fb_badge}{stale}{freshness}{banked}</td></tr>"
             )
 
             if s.status in (OK, STALE):
