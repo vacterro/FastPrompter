@@ -732,6 +732,7 @@ class TestClaudeStatuslineBridge:
         directory = tmp_path / ".claude"
         directory.mkdir()
         env = os.environ.copy()
+        env.pop("CLAUDE_CONFIG_DIR", None)
         env["HOME"] = str(tmp_path)
         env["USERPROFILE"] = str(tmp_path)
         launcher = Path(__file__).resolve().parents[1] / "FastPrompter.pyw"

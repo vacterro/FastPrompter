@@ -128,6 +128,7 @@ class TestProbeIsolation:
 
     def test_the_default_account_keeps_the_ambient_environment(
             self, fake_home, tmp_path, monkeypatch):
+        monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
         seen = self._capture(monkeypatch, tmp_path)
         provider = ClaudeProvider()
         default = provider.discover_accounts()[0]
@@ -192,3 +193,35 @@ class TestCliConfigDir:
         _claude_cli._drop_transcript("sid", directory,
                                      str(tmp_path / "home"))
         assert not transcript.exists()
+
+
+class TestForeignAmbientEnvironment:
+    """The default account may only be read through ITS OWN home.
+
+    "Read with the ambient environment" is correct while that environment
+    points at this account. When FastPrompter itself is launched with a
+    foreign ``CLAUDE_CONFIG_DIR``, the default account's probe would
+    otherwise answer with the OTHER account's percentages — two gauges
+    showing one account instead of two.
+    """
+
+    def _default_account(self, fake_home):
+        return ClaudeProvider(use_cli=False).discover_accounts()[0]
+
+    def test_a_foreign_ambient_home_is_never_asked_for_the_default(
+            self, fake_home, tmp_path, monkeypatch):
+        seen = TestProbeIsolation()._capture(monkeypatch, tmp_path)
+        monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "elsewhere"))
+        default = self._default_account(fake_home)
+        provider = ClaudeProvider()
+        provider.probe(default, deadline=time.monotonic() + 30)
+        assert seen["config_dir"] == default.source_path
+
+    def test_an_ambient_home_equal_to_the_account_stays_ambient(
+            self, fake_home, tmp_path, monkeypatch):
+        seen = TestProbeIsolation()._capture(monkeypatch, tmp_path)
+        default = self._default_account(fake_home)
+        monkeypatch.setenv("CLAUDE_CONFIG_DIR", default.source_path)
+        provider = ClaudeProvider()
+        provider.probe(default, deadline=time.monotonic() + 30)
+        assert seen["config_dir"] == ""

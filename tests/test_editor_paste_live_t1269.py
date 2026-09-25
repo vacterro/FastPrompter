@@ -110,6 +110,12 @@ def win(tmp_path_factory):
             service.shutdown()
         if getattr(w, "state", None) is not None:
             w.state.conn = None
+        # QTest.keyClick with a modifier can leave that modifier latched in the
+        # shared QApplication. A later programmatic QItemView selection then
+        # behaves differently on Windows/offscreen, producing order-dependent
+        # failures in unrelated Qt tests. Release it before the next module.
+        QTest.keyRelease(w, Qt.Key.Key_Control, Qt.KeyboardModifier.NoModifier)
+        _APP.processEvents()
         w.close()
         for name, value in originals.items():
             setattr(FastPrompter, name, value)

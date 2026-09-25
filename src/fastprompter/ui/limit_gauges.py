@@ -219,6 +219,10 @@ class LimitGauges(QWidget):
         self._hover_card = card
         return card
 
+    def _shift_held(self) -> bool:
+        from PyQt6.QtWidgets import QApplication
+        return bool(QApplication.keyboardModifiers() & Qt.KeyboardModifier.ShiftModifier)
+
     def _show_hover_card(self):
         # The panel contains a live reset countdown.  Keeping the HTML
         # produced by the last probe made an old "0m" survive every later
@@ -227,7 +231,8 @@ class LimitGauges(QWidget):
         # internally rate-limited, so hover never performs a synchronous
         # provider request (spec 21).
         self._service.schedule_auto(self._refresh_interval() // 1000)
-        html_text = self._build_tooltip()
+        ignore_filters = self._shift_held()
+        html_text = self._build_tooltip(ignore_filters=ignore_filters)
         self.setToolTip("")          # the native tooltip must never compete
         try:
             self.hover_card().show_card(html_text)
@@ -255,7 +260,9 @@ class LimitGauges(QWidget):
         card = getattr(self, "_hover_card", None)
         if card is None or sip_deleted(card) or not card.isVisible():
             return
-        card.set_html(self._build_tooltip())
+        ignore_filters = self._shift_held()
+        card.set_html(self._build_tooltip(ignore_filters=ignore_filters),
+                      ignore_filters=ignore_filters)
         # No reposition(): horizontal geometry is frozen for the session;
         # the card keeps itself on screen only via its own height contract.
 
@@ -681,7 +688,9 @@ class LimitGauges(QWidget):
             return value
         return value[: max(1, limit - 1)].rstrip() + "…"
 
-    def _build_tooltip(self) -> str:
+    def _build_tooltip(self, ignore_filters: bool | None = None) -> str:
+        if ignore_filters is None:
+            ignore_filters = self._shift_held()
         snap = self._service.state_copy
         tooltip_now = time.time()
         pal = self._palette()
@@ -750,13 +759,18 @@ class LimitGauges(QWidget):
                 return f"updated {int(age // 3600)}h ago"
             return f"updated {int(age // 86400)}d ago"
 
-        accounts = self._visible_accounts()
-        hidden = [a for a in snap.accounts if a not in accounts]
+        if ignore_filters:
+            accounts = ordered_accounts(list(snap.accounts), self.main_win.data)
+            hidden = []
+        else:
+            accounts = self._visible_accounts()
+            hidden = [a for a in snap.accounts if a not in accounts]
 
+        shift_tag = " <span style='font-weight:normal; font-size:10px; color:#4FB6A8;'>(all accounts — Shift held)</span>" if ignore_filters else " <span style='font-weight:normal; font-size:10px; color:#9a8b5f;'>(remaining)</span>"
         parts = [
             "<html><body style='font-family:Verdana, Segoe UI, sans-serif; font-size:11px; color:#c0c0c0;'>",
             "<div style='font-weight:bold; font-size:12px; color:#ffd700; border-bottom:1px solid #5a4f32; padding-bottom:2px; margin-bottom:3px;'>",
-            "AI Usage Limits <span style='font-weight:normal; font-size:10px; color:#9a8b5f;'>(remaining)</span>",
+            f"AI Usage Limits{shift_tag}",
             "</div>"
         ]
 
@@ -826,7 +840,7 @@ class LimitGauges(QWidget):
             )
 
             if s.status in (OK, STALE):
-                windows = _cluster_windows(s, self._hide_unusable())
+                windows = _cluster_windows(s, False if ignore_filters else self._hide_unusable())
                 readable = False
                 for b in windows:
                     if b is not None and b.reset_pending:

@@ -28,6 +28,7 @@ from PyQt6.QtCore import (
     QMetaObject,
     QMimeData,
     QObject,
+    QPoint,
     QSize,
     Qt,
     QThread,
@@ -37,6 +38,7 @@ from PyQt6.QtCore import (
 )
 from PyQt6.QtGui import QDrag, QIcon, QPixmap
 from PyQt6.QtWidgets import (
+    QApplication,
     QFileDialog,
     QFileIconProvider,
     QHBoxLayout,
@@ -62,6 +64,7 @@ from fastprompter.ui.silo_chest import (
     ChestItemCard,
     ChestSlotDelegate,
     build_item_card,
+    chest_palette,
     chest_slots,
     folder_badge,
     is_placeholder,
@@ -931,10 +934,32 @@ class _FileList(QListWidget):
             return
         event.accept()
 
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if self._panel._view_mode() == "Chest":
+            self._panel._sync_chest_placeholders()
+
     def startDrag(self, actions):
         self._panel.hide_item_card()
-        paths = self._panel.selected_paths()
+        quick_move = (self._panel._view_mode() == "Chest"
+                      and bool(QApplication.keyboardModifiers()
+                               & Qt.KeyboardModifier.ShiftModifier))
+        current = self.currentItem()
+        current_path = (current.data(Qt.ItemDataRole.UserRole)
+                        if current is not None else None)
+        if quick_move:
+            if not current_path or is_placeholder(current):
+                return
+            paths = [current_path]
+        else:
+            paths = self._panel.selected_paths()
         if not paths:
+            return
+        if quick_move:
+            first_empty = self.item(self._panel._chest_real_count())
+            if first_empty is None or not is_placeholder(first_empty):
+                return
+            self._panel.chest_internal_drop(paths, first_empty)
             return
         mime = QMimeData()
         mime.setUrls([QUrl.fromLocalFile(p) for p in paths])
@@ -942,8 +967,62 @@ class _FileList(QListWidget):
         drag.setMimeData(mime)
         icon = self.currentItem().icon() if self.currentItem() else QIcon()
         if not icon.isNull():
-            drag.setPixmap(icon.pixmap(48, 48))
+            drag_px = ICON if self._panel._view_mode() == "Chest" else 48
+            pix = icon.pixmap(drag_px, drag_px)
+            drag.setPixmap(pix)
+            if hasattr(drag, "setHotSpot"):
+                drag.setHotSpot(QPoint(drag_px // 2, drag_px // 2))
         drag.exec(Qt.DropAction.CopyAction | Qt.DropAction.MoveAction)
+
+    # ---- Minecraft-style internal chest drag (swap / move / stack) --------
+    # The drag payload stays plain file URLs; an INTERNAL drag is recognised
+    # by event.source() is self, so drags from another silo's chest and
+    # external Explorer drags still fall through (ignored) to the panel's
+    # import/move handling.
+
+    def _chest_internal_drag(self, event):
+        return (self._panel._view_mode() == "Chest"
+                and event.source() is self
+                and event.mimeData().hasUrls())
+
+    def dragEnterEvent(self, event):
+        if self._chest_internal_drag(event):
+            event.setDropAction(Qt.DropAction.MoveAction)
+            event.accept()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event):
+        if self._chest_internal_drag(event):
+            event.setDropAction(Qt.DropAction.MoveAction)
+            event.accept()
+            item = self.itemAt(event.position().toPoint())
+            old = getattr(self, "_drag_hover_item", None)
+            if item is not old:
+                self._drag_hover_item = item
+                self.viewport().update()
+        else:
+            event.ignore()
+
+    def dragLeaveEvent(self, event):
+        if getattr(self, "_drag_hover_item", None) is not None:
+            self._drag_hover_item = None
+            self.viewport().update()
+        super().dragLeaveEvent(event)
+
+    def dropEvent(self, event):
+        if getattr(self, "_drag_hover_item", None) is not None:
+            self._drag_hover_item = None
+            self.viewport().update()
+        if self._chest_internal_drag(event):
+            event.setDropAction(Qt.DropAction.MoveAction)
+            event.accept()
+            self._panel.chest_internal_drop(
+                [os.path.normpath(u.toLocalFile()) for u in event.mimeData().urls()
+                 if u.isLocalFile()],
+                self.itemAt(event.position().toPoint()))
+        else:
+            event.ignore()
 
 
 
@@ -1086,16 +1165,30 @@ class FileContainerPanel(QWidget):
         return mode if mode in self._VIEW_MODES else "Chest"
 
     def _chest_capacity(self):
-        return chest_slots(getattr(self.main_win, "data", {}))
+        setting = chest_slots(getattr(self.main_win, "data", {}))
+        if setting == "dynamic":
+            lw = getattr(self, "file_list", None)
+            vp = lw.viewport() if lw is not None else None
+            if vp is not None and vp.width() > SLOT and vp.height() > SLOT:
+                cols = max(1, (vp.width() - 8) // SLOT)
+                rows = max(1, (vp.height() - 8) // SLOT)
+                return max(cols * rows, 1)
+            return 128
+        return setting
 
     def set_chest_slots(self, n):
-        if n not in CHEST_SLOT_CHOICES:
+        if n not in CHEST_SLOT_CHOICES and str(n) not in ("dynamic", "64", "128"):
             return
         self.main_win.data["silo_chest_slots"] = str(n)
         if hasattr(self.main_win, "mark_dirty"):
             self.main_win.mark_dirty()
         self._sync_chest_placeholders()
         self._update_count_label()
+
+    def apply_theme(self):
+        if self._view_mode() == "Chest":
+            self._apply_view_mode()
+            self.file_list.viewport().update()
 
     def _cycle_view(self):
         modes = self._VIEW_MODES
@@ -1116,17 +1209,23 @@ class FileContainerPanel(QWidget):
         if chest:
             lw.setViewMode(QListWidget.ViewMode.IconMode)
             lw.setMovement(QListWidget.Movement.Static)
+            lw.setAcceptDrops(True)  # internal chest drag lands on the list
             lw.setUniformItemSizes(True)
             lw.setSpacing(0)
             lw.setIconSize(QSize(ICON, ICON))
             lw.setGridSize(QSize(SLOT, SLOT))
             lw.setWordWrap(False)
             lw.setVerticalScrollMode(QListWidget.ScrollMode.ScrollPerPixel)
-            lw.setStyleSheet("QListWidget { background: #C6C6C6; border: 2px solid;"
-                             " border-color: #FFFFFF #555555 #555555 #FFFFFF;"
+            pal = chest_palette(getattr(self, "main_win", None))
+            bg_hex = pal["panel_bg"].name()
+            border_dark = pal["slot_dark"].name()
+            border_light = pal["slot_light"].name()
+            lw.setStyleSheet(f"QListWidget {{ background: {bg_hex}; border: 2px solid;"
+                             f" border-color: {border_light} {border_dark} {border_dark} {border_light};"
                              " padding: 4px; }")
         elif mode == "Icons":
             lw.setStyleSheet("")
+            lw.setAcceptDrops(False)
             lw.setUniformItemSizes(False)
             lw.setViewMode(QListWidget.ViewMode.IconMode)
             lw.setMovement(QListWidget.Movement.Free)
@@ -1135,6 +1234,7 @@ class FileContainerPanel(QWidget):
             lw.setWordWrap(True)
         else:
             lw.setStyleSheet("")
+            lw.setAcceptDrops(False)
             lw.setUniformItemSizes(False)
             lw.setViewMode(QListWidget.ViewMode.ListMode)
             lw.setMovement(QListWidget.Movement.Static)
@@ -1490,6 +1590,15 @@ class FileContainerPanel(QWidget):
                         self.cache.popitem(last=False)
             self._thumb_lru = LRUCache(200)
 
+        # persisted slot order: dragged-to positions survive the watcher's
+        # filesystem refresh; names the folder no longer has drop out, and
+        # new files follow after the positioned ones (stable listdir order)
+        saved = self._chest_saved_order()
+        if saved:
+            rank = {name: i for i, name in enumerate(saved)}
+            items = sorted(
+                items, key=lambda e: rank.get(os.path.basename(e[0]), len(rank)))
+
         current_items = {}
         for i in range(self.file_list.count()):
             item = self.file_list.item(i)
@@ -1796,14 +1905,15 @@ class FileContainerPanel(QWidget):
                 accent = cache["raw_colors"].get("accent", accent)
         except Exception:
             pass
-        self.file_list.setStyleSheet(
-            f"border: 2px solid {accent};" if hot else "")
-        old = self.lbl_hint.text()
         if hot:
-            self._hint_text = old
+            self._plain_stylesheet = self.file_list.styleSheet()
+            self.file_list.setStyleSheet(f"border: 2px solid {accent};")
+            self._hint_text = self.lbl_hint.text()
             self.lbl_hint.setText(tr("Drop to file into this silo", self.lang))
-        elif getattr(self, "_hint_text", None):
-            self.lbl_hint.setText(self._hint_text)
+        else:
+            self.file_list.setStyleSheet(getattr(self, "_plain_stylesheet", ""))
+            if getattr(self, "_hint_text", None):
+                self.lbl_hint.setText(self._hint_text)
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
@@ -2553,12 +2663,15 @@ class FileContainerPanel(QWidget):
             if self._view_mode() == "Chest":
                 menu.addSeparator()
                 sub = menu.addMenu(tr("Chest Size", self.lang))
-                cap = self._chest_capacity()
-                for n in CHEST_SLOT_CHOICES:
-                    act = sub.addAction(tr("{} slots", self.lang).format(n),
-                                        lambda n=n: self.set_chest_slots(n))
+                setting = chest_slots(getattr(self.main_win, "data", {}))
+                for opt in CHEST_SLOT_CHOICES:
+                    if opt == "dynamic":
+                        label = tr("Dynamic (fit window)", self.lang)
+                    else:
+                        label = tr("{} slots", self.lang).format(opt)
+                    act = sub.addAction(label, lambda opt=opt: self.set_chest_slots(opt))
                     act.setCheckable(True)
-                    act.setChecked(n == cap)
+                    act.setChecked(opt == setting)
         menu.exec(self.file_list.mapToGlobal(pos))
 
     def _copy_path(self, path):
@@ -2588,6 +2701,138 @@ class FileContainerPanel(QWidget):
 
     # ---- chest slots + item card ------------------------------------------
 
+    # ---- Minecraft chest slot semantics: swap / move / stack ---------------
+
+    _CHEST_ORDER_KEY = "silo_chest_order"
+
+    def _chest_real_count(self):
+        lw = self.file_list
+        i = lw.count()
+        while i > 0 and is_placeholder(lw.item(i - 1)):
+            i -= 1
+        return i
+
+    def _chest_folder_key(self):
+        return os.path.normcase(os.path.abspath(self.folder or ""))
+
+    def _chest_saved_order(self):
+        data = getattr(self.main_win, "data", None)
+        if not isinstance(data, dict) or not self.folder:
+            return []
+        entry = (data.get(self._CHEST_ORDER_KEY) or {}).get(
+            self._chest_folder_key())
+        if not isinstance(entry, list):
+            return []
+        return [n for n in entry if isinstance(n, str)]
+
+    def _chest_save_order(self):
+        data = getattr(self.main_win, "data", None)
+        if not isinstance(data, dict) or not self.folder:
+            return
+        mapping = data.get(self._CHEST_ORDER_KEY)
+        if not isinstance(mapping, dict):
+            mapping = {}
+            data[self._CHEST_ORDER_KEY] = mapping
+        # ponytail: keys for deleted silo folders linger in the profile until
+        # the profile is pruned; tiny strings, bounded by silo count.
+        names = []
+        for r in range(self._chest_real_count()):
+            it = self.file_list.item(r)
+            if it:
+                p = it.data(Qt.ItemDataRole.UserRole)
+                if p:
+                    names.append(os.path.basename(p))
+        mapping[self._chest_folder_key()] = names
+        if hasattr(self.main_win, "mark_dirty"):
+            self.main_win.mark_dirty()
+
+    def chest_internal_drop(self, src_paths, target_item):
+        """A drop inside this chest's own grid.
+
+        File onto a folder slot = stack (move the file inside, the folder
+        badge is the stack count). Drop onto an occupied slot = swap with a
+        single dragged file, insert-before with a multi selection. Drop onto
+        an empty slot (or past the end) = move there. Any position change is
+        persisted as the folder's slot order.
+        """
+        if not self.session_alive():
+            return
+        lw = self.file_list
+        by_path = getattr(self, "_item_by_path", {})
+        norm_map = {os.path.normcase(os.path.abspath(k)): v for k, v in by_path.items()}
+        src_items = [norm_map[os.path.normcase(os.path.abspath(p))]
+                     for p in src_paths if os.path.normcase(os.path.abspath(p)) in norm_map]
+        if not src_items:
+            return
+        tgt_path = (target_item.data(Qt.ItemDataRole.UserRole)
+                    if target_item is not None else None)
+
+        # stack: files/folders dropped onto a folder slot go inside it
+        if (tgt_path and os.path.isdir(tgt_path)):
+            drop_paths = [it.data(Qt.ItemDataRole.UserRole) for it in src_items
+                          if it.data(Qt.ItemDataRole.UserRole)]
+            if drop_paths and all(os.path.abspath(p) != os.path.abspath(tgt_path) for p in drop_paths):
+                self._chest_stack_into(tgt_path, drop_paths)
+                sm = getattr(self.main_win, "sound_manager", None)
+                if sm is not None:
+                    sm.play("click")
+                return
+
+        # dropped onto itself / its own selection: a Minecraft no-op
+        if target_item is not None and target_item in src_items:
+            return
+
+        occupied = (target_item is not None and not is_placeholder(target_item))
+        if occupied and len(src_items) == 1 and src_items[0] is not target_item:
+            # classic Minecraft slot swap
+            a, b = lw.row(src_items[0]), lw.row(target_item)
+            lo, hi = (a, b) if a < b else (b, a)
+            it_hi = lw.takeItem(hi)
+            it_lo = lw.takeItem(lo)
+            lw.insertItem(lo, it_hi)
+            lw.insertItem(hi, it_lo)
+        else:
+            real = self._chest_real_count() - len(src_items)
+            for it in src_items:
+                lw.takeItem(lw.row(it))
+            row = (lw.row(target_item) if target_item is not None
+                   else lw.count())
+            row = max(0, min(row, real))
+            for offset, it in enumerate(src_items):
+                lw.insertItem(row + offset, it)
+        self._chest_save_order()
+        sm = getattr(self.main_win, "sound_manager", None)
+        if sm is not None:
+            sm.play("click")
+
+    def _chest_stack_into(self, tgt_dir, src_paths):
+        """Move dropped files inside the folder slot they were stacked onto."""
+        planned = set()
+
+        def reserve(name):
+            cand = os.path.join(tgt_dir, name)
+            if not os.path.exists(cand) and name not in planned:
+                planned.add(name)
+                return cand
+            stem, ext = os.path.splitext(name)
+            n = 2
+            while True:
+                cand = f"{stem} ({n}){ext}"
+                if (not os.path.exists(os.path.join(tgt_dir, cand))
+                        and cand not in planned):
+                    planned.add(cand)
+                    return os.path.join(tgt_dir, cand)
+                n += 1
+
+        ops = []
+        for src in src_paths:
+            src_abs = os.path.abspath(src)
+            if os.path.dirname(src_abs) == os.path.abspath(tgt_dir):
+                continue
+            ops.append(("move", src_abs, reserve(os.path.basename(src)), False))
+        if ops:
+            self._run_container_ops(ops, publish_guard=self._make_publish_guard())
+
     def _clear_chest_placeholders(self):
         lw = self.file_list
         for i in range(lw.count() - 1, -1, -1):
@@ -2604,6 +2849,7 @@ class FileContainerPanel(QWidget):
         columns = max(1, (lw.viewport().width() - 8) // SLOT)
         for _ in range(slot_total(files, self._chest_capacity(), columns) - files):
             lw.addItem(make_placeholder())
+        self._update_count_label()
 
     def _update_count_label(self):
         count = getattr(self, "_file_count", 0)

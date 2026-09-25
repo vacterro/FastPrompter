@@ -62,11 +62,16 @@ def _flight_claim(key: str) -> tuple[bool, threading.Event | None]:
             return False, event
         event = threading.Event()
         if len(_RENDER_FLIGHTS) >= _RENDER_FLIGHTS_MAX:
-            # drop finished flights first; only then oldest unfinished
+            # Drop finished flights first.  Never evict an unfinished owner:
+            # doing so would let two writers publish the same cache key.
             for done in [k for k, e in _RENDER_FLIGHTS.items() if e.is_set()]:
                 _RENDER_FLIGHTS.pop(done, None)
         if len(_RENDER_FLIGHTS) >= _RENDER_FLIGHTS_MAX:
-            _RENDER_FLIGHTS.pop(next(iter(_RENDER_FLIGHTS)), None)
+            # Registry saturated with active owners: fail closed without
+            # returning an event belonging to another key.
+            refusal = threading.Event()
+            refusal.set()
+            return False, refusal
         _RENDER_FLIGHTS[key] = event
         return True, event
 
@@ -323,7 +328,8 @@ def device_sample_rate() -> int | None:
         # Without a verified probe the caller plays the source file as-is.
         logger.debug("device sample rate unknown; playing sources unrendered")
         rate = None
-    _device_rate_cache = rate
+    if rate is not None:
+        _device_rate_cache = rate
     return rate
 
 

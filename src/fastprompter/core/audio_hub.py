@@ -29,6 +29,7 @@ import os
 import struct
 import threading
 import time
+import wave
 from collections import OrderedDict
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
@@ -138,7 +139,12 @@ class StopReason(StrEnum):
     UNSUPPORTED_FORMAT = "UNSUPPORTED_FORMAT"
     SOURCE_ERROR = "SOURCE_ERROR"
     SOURCE_LOADING = "SOURCE_LOADING"
+    SOURCE_NOT_PLAYING = "SOURCE_NOT_PLAYING"
     EFFECT_PLAY_EXCEPTION = "EFFECT_PLAY_EXCEPTION"
+    SINK_START_FAILURE = "SINK_START_FAILURE"
+    OUTPUT_UNAVAILABLE = "OUTPUT_UNAVAILABLE"
+    BACKEND_EXCEPTION = "BACKEND_EXCEPTION"
+    LEGACY_FALLBACK_ACTIVE = "LEGACY_FALLBACK_ACTIVE"
     POOL_EXHAUSTED = "POOL_EXHAUSTED"
     RENDER_FAILED = "RENDER_FAILED"
     TRANSPORT_UNAVAILABLE = "TRANSPORT_UNAVAILABLE"
@@ -403,6 +409,9 @@ PCM_POSTROLL_MS = 100
 #: A voice that never reports Idle (device vanished, driver hang) is retired
 #: this long after its expected end so no phantom channel stays "active".
 PCM_WATCHDOG_GRACE_MS = 1500
+#: QSoundEffect starts asynchronously; a false ``isPlaying`` immediately after
+#: play() can mean startup is pending, not that the cue died.
+EFFECT_STARTUP_GRACE_MS = 1500
 #: Hard ceiling on simultaneously alive sinks, above the hub's own voice cap.
 MAX_PCM_VOICES = 32
 #: Bigger sources are not transient cues; they keep the QSoundEffect path.
@@ -448,6 +457,18 @@ def _file_signature(path: str) -> tuple[int, int] | None:
     except OSError:
         return None
     return (int(st.st_mtime_ns), int(st.st_size))
+
+
+def _wav_duration_ms(path: str) -> int | None:
+    try:
+        with wave.open(path, "rb") as source:
+            rate = source.getframerate()
+            frames = source.getnframes()
+            if rate > 0 and frames > 0:
+                return max(1, round(frames * 1000 / rate))
+    except (OSError, EOFError, wave.Error):
+        pass
+    return None
 
 
 def read_pcm_wav(path: str) -> PcmSource | None:
@@ -552,9 +573,14 @@ class _QtPcmSinkFactory:
 
     def open(self, pcm: PcmSource, postroll_ms: int):
         """Return ``(sink, buffer)`` ready to start; raise SinkRefused."""
-        device = self._QMediaDevices.defaultAudioOutput()
-        if device is None or device.isNull():
-            raise SinkRefused(StopReason.TRANSPORT_UNAVAILABLE, "no output")
+        try:
+            device = self._QMediaDevices.defaultAudioOutput()
+            null_device = device is None or device.isNull()
+        except Exception as exc:
+            raise SinkRefused(StopReason.OUTPUT_UNAVAILABLE,
+                              type(exc).__name__) from exc
+        if null_device:
+            raise SinkRefused(StopReason.OUTPUT_UNAVAILABLE, "no output")
         fmt = self._QAudioFormat()
         fmt.setSampleRate(pcm.rate)
         fmt.setChannelCount(pcm.channels)
@@ -669,7 +695,8 @@ class QtSoundTransport:
     PLAYBACK_TRACE_CAPACITY = 128
 
     def __init__(self, qsoundeffect_cls=None, url_factory=None,
-                 pcm_sink_factory: Any = "auto") -> None:
+                 pcm_sink_factory: Any = "auto",
+                 effect_watchdog_factory=None) -> None:
         real_binding = qsoundeffect_cls is None
         if qsoundeffect_cls is None:
             from PyQt6.QtMultimedia import QSoundEffect
@@ -706,6 +733,8 @@ class QtSoundTransport:
                     logger.debug("QAudioSink unavailable; QSoundEffect only",
                                  exc_info=True)
         self._sinks = pcm_sink_factory
+        self._real_binding = bool(real_binding)
+        self._effect_watchdog_factory = effect_watchdog_factory
         self._voices: dict[str, _PcmVoice] = {}
         self._pcm_cache: dict[str, PcmSource] = {}
         self._pcm_cache_bytes = 0
@@ -715,10 +744,16 @@ class QtSoundTransport:
         # PERF-004: recency order of pool keys (LRU eviction under MAX_POOLS).
         self._pool_order: OrderedDict = OrderedDict()
         self._resolved: dict[str, tuple[str, bool]] = {}
+        self._resolved_signatures: dict[str, tuple[int, int] | None] = {}
         self._policy_generation = 0
         self._playback_log: list[dict[str, Any]] = []
         self._retirements: list[dict[str, Any]] = []
         self._channels: dict[str, Any] = {}        # handle -> effect
+        self._channel_tokens: dict[str, str] = {}
+        self._channel_paths: dict[str, str] = {}
+        self._effect_started: dict[str, bool] = {}
+        self._effect_start_deadline: dict[str, float] = {}
+        self._effect_watchdogs: dict[str, Any] = {}
         self._owner: dict[int, str] = {}           # id(effect) -> handle
         self._completions: dict[str, Callable[[], None]] = {}
         # PERF-004: id(effect) -> (effect, connection). Holding the effect
@@ -729,7 +764,14 @@ class QtSoundTransport:
         self._failures = _FailureRegistry()
         self._last_acquire_reason = StopReason.NONE
         self._seq = itertools.count(1)
+        self._generation = 0
         self._closed = False
+        self._recovery_callback: Callable[[str], None] | None = None
+        self._device_signal = None
+        self._device_signal_slot = None
+        self._device_signal_owner = None
+        if self._real_binding:
+            self._connect_device_signal()
 
     @property
     def pcm_sink_active(self) -> bool:
@@ -741,6 +783,75 @@ class QtSoundTransport:
     def take_failure(self, token: str):
         """Pop the recorded detail for one refused request (or None)."""
         return self._failures.take(token)
+
+    def set_recovery_callback(
+        self, callback: Callable[[str], None] | None,
+    ) -> None:
+        """Register the owning Hub for transport-initiated invalidation."""
+        with self._lock:
+            self._recovery_callback = callback
+
+    # -- device topology / runtime recovery ----------------------------------
+
+    def _connect_device_signal(self) -> None:
+        try:
+            from PyQt6.QtMultimedia import QMediaDevices
+
+            devices = QMediaDevices()
+            signal = devices.audioOutputsChanged
+            slot = self._on_audio_outputs_changed
+            signal.connect(slot)
+            self._device_signal = signal
+            self._device_signal_slot = slot
+            self._device_signal_owner = devices
+        except Exception:
+            logger.debug("audio output topology signal unavailable",
+                         exc_info=True)
+
+    def _on_audio_outputs_changed(self) -> None:
+        """Invalidate device-bound state after Qt reports topology change."""
+        with self._lock:
+            if self._closed:
+                return
+            callback = self._recovery_callback
+        audio_render.reset_device_sample_rate()
+        self._log({"event": "audio_outputs_changed"})
+        if callback is not None:
+            callback("audio_outputs_changed")
+        else:
+            self.invalidate_sources(reason="audio_outputs_changed")
+
+    def _request_recovery(self, reason: str) -> None:
+        with self._lock:
+            callback = self._recovery_callback
+        if callback is not None:
+            callback(reason)
+        else:
+            self.invalidate_sources(reason=reason)
+
+    def recover(self, reason: str = "transport_recovery") -> None:
+        """Retire stale runtime state without closing future playback."""
+        with self._lock:
+            if self._closed:
+                return
+            callback = self._recovery_callback
+        if callback is not None:
+            callback(reason)
+            return
+        audio_render.reset_device_sample_rate()
+        self.invalidate_sources(reason=reason)
+
+    def _disconnect_device_signal(self) -> None:
+        signal = self._device_signal
+        slot = self._device_signal_slot
+        if signal is not None and slot is not None:
+            try:
+                signal.disconnect(slot)
+            except Exception:
+                pass
+        self._device_signal = None
+        self._device_signal_slot = None
+        self._device_signal_owner = None
 
     # -- source identity (T-1242 spec 3/4/5) ---------------------------------
 
@@ -759,10 +870,18 @@ class QtSoundTransport:
         render failure degrades to the original file -- playing raw beats
         refusing -- and the fallback is logged, never silent.
         """
+        signature = _file_signature(path)
         with self._lock:
+            generation = self._generation
             cached = self._resolved.get(path)
-        if cached is not None:
-            return cached
+            cached_signature = self._resolved_signatures.get(path)
+        if cached is not None and cached_signature == signature:
+            if not audio_render.render_enabled() or cached[1]:
+                return cached
+        if cached is not None and cached_signature != signature:
+            # Same path, new bytes: retire pooled effects before reusing the
+            # logical key.  Otherwise a long-lived QSE can keep old samples.
+            self._request_recovery("source_changed")
         try:
             physical = audio_render.device_ready_wav(path)
         except Exception:
@@ -789,10 +908,14 @@ class QtSoundTransport:
             physical = path
         resolved = (physical, rendered)
         with self._lock:
+            if generation != self._generation:
+                return path, False
             # bounded: one entry per distinct logical source
             if len(self._resolved) >= 256:
                 self._resolved.clear()
+                self._resolved_signatures.clear()
             self._resolved[path] = resolved
+            self._resolved_signatures[path] = signature
         return resolved
 
     def _log(self, entry: dict[str, Any]) -> None:
@@ -819,7 +942,7 @@ class QtSoundTransport:
         with self._lock:
             return [dict(entry) for entry in self._retirements]
 
-    def invalidate_sources(self) -> None:
+    def invalidate_sources(self, reason: str = "invalidate_sources") -> None:
         """Retire every pooled QSoundEffect and every live PCM voice (spec 5).
 
         Called when the render policy, edge padding, output-device rate or a
@@ -828,32 +951,55 @@ class QtSoundTransport:
         under the NEW policy generation.  No retired effect or voice keeps any
         authority to make a sound.
         """
+        audio_render.reset_device_sample_rate()
         voices = self._take_all_voices()
         with self._lock:
             effects: list[Any] = list(self._channels.values())
             self._channels.clear()
+            self._channel_tokens.clear()
+            self._channel_paths.clear()
+            self._effect_started.clear()
+            self._effect_start_deadline.clear()
             self._owner.clear()
             self._completions.clear()
+            watchdogs = list(self._effect_watchdogs.values())
+            self._effect_watchdogs.clear()
+            seen: set[int] = set()
+            unique_effects: list[Any] = []
+            for effect in effects:
+                if id(effect) not in seen:
+                    seen.add(id(effect))
+                    unique_effects.append(effect)
             for members in self._pools.values():
-                effects.extend(entry.effect for entry in members)
-            retired = len(effects) + len(voices)
+                for entry in members:
+                    if id(entry.effect) not in seen:
+                        seen.add(id(entry.effect))
+                        unique_effects.append(entry.effect)
+            retired = len(unique_effects) + len(voices)
             self._pools.clear()
             self._pool_order.clear()
             bound = list(self._bound.values())
             self._bound.clear()
             self._resolved.clear()
+            self._resolved_signatures.clear()
             self._pcm_cache.clear()
             self._pcm_cache_bytes = 0
             old_generation = self._policy_generation
             self._policy_generation += 1
+            self._generation += 1
+        for watchdog in watchdogs:
+            try:
+                watchdog.stop()
+            except Exception:
+                pass
         for effect, handler in bound:
             try:
                 effect.playingChanged.disconnect(handler)
             except Exception:
                 pass
         for voice in voices:
-            self._silence_voice(voice, "invalidated")
-        for effect in effects:
+            self._silence_voice(voice, reason)
+        for effect in unique_effects:
             try:
                 effect.stop()
             except Exception:
@@ -867,7 +1013,7 @@ class QtSoundTransport:
         with self._lock:
             self._retirements.append({
                 "monotonic": time.monotonic(),
-                "reason": "invalidate_sources",
+                "reason": reason,
                 "from_generation": old_generation,
                 "to_generation": old_generation + 1,
                 "effects": retired,
@@ -875,8 +1021,8 @@ class QtSoundTransport:
             if len(self._retirements) > self.PLAYBACK_TRACE_CAPACITY:
                 del self._retirements[:len(self._retirements)
                                        - self.PLAYBACK_TRACE_CAPACITY]
-        logger.debug("audio transport retired %d sources (gen %d)",
-                     retired, old_generation + 1)
+        logger.debug("audio transport retired %d sources (%s, gen %d)",
+                     retired, reason, old_generation + 1)
 
     def close(self) -> None:
         """Transport shutdown: silence everything and refuse all future play.
@@ -885,8 +1031,11 @@ class QtSoundTransport:
         sound -- there is nothing left that holds playback authority.
         """
         with self._lock:
+            if self._closed:
+                return
             self._closed = True
-        self.invalidate_sources()
+        self._disconnect_device_signal()
+        self.invalidate_sources(reason="shutdown")
 
     def _status_name(self, effect) -> str:
         """Our stable name for the effect's source status ("" = unknown)."""
@@ -931,6 +1080,146 @@ class QtSoundTransport:
         detail.update(extra)
         self._failures.file(token, detail)
 
+    # -- QSoundEffect recovery ------------------------------------------------
+
+    def _effect_failure_reason(self, effect) -> StopReason | None:
+        status = self._status_name(effect)
+        if status == "Error" or self._error_string(effect):
+            return StopReason.SOURCE_ERROR
+        try:
+            if not effect.isPlaying():
+                return StopReason.SOURCE_NOT_PLAYING
+        except Exception:
+            return StopReason.SOURCE_ERROR
+        return None
+
+    def _cancel_effect_watchdog(self, handle: str) -> None:
+        timer = self._effect_watchdogs.pop(handle, None)
+        if timer is not None:
+            try:
+                timer.stop()
+            except Exception:
+                pass
+
+    def _remove_effect_from_pool(self, effect: Any) -> None:
+        with self._lock:
+            for key, members in list(self._pools.items()):
+                kept = [entry for entry in members if entry.effect is not effect]
+                if len(kept) != len(members):
+                    if kept:
+                        self._pools[key] = kept
+                    else:
+                        self._pools.pop(key, None)
+                        self._pool_order.pop(key, None)
+
+    def _retire_effect(self, handle: str, reason: str,
+                       stop_reason: StopReason) -> None:
+        """Drop one failed effect, its pool slot, signal, and timer."""
+        with self._lock:
+            effect = self._channels.pop(handle, None)
+            callback = self._completions.pop(handle, None)
+            token = self._channel_tokens.pop(handle, "")
+            path = self._channel_paths.pop(handle, "")
+            if effect is not None:
+                self._owner.pop(id(effect), None)
+                self._unbind(effect)
+            self._remove_effect_from_pool(effect)
+            self._effect_started.pop(handle, None)
+            self._effect_start_deadline.pop(handle, None)
+            watchdog = self._effect_watchdogs.pop(handle, None)
+        if watchdog is not None:
+            try:
+                watchdog.stop()
+            except Exception:
+                pass
+        if effect is not None:
+            try:
+                effect.stop()
+            except Exception:
+                pass
+            delete_later = getattr(effect, "deleteLater", None)
+            if callable(delete_later):
+                try:
+                    delete_later()
+                except Exception:
+                    pass
+        self._log({"event": "effect_stop", "handle": handle,
+                   "token": token, "reason": reason})
+        if token:
+            self._fail(token, path, stop_reason, effect=effect)
+        if callback is not None:
+            try:
+                callback()
+            except Exception:
+                logger.debug("transport completion callback failed",
+                             exc_info=True)
+
+    def _recover_stale_effects(self) -> None:
+        now = time.monotonic()
+        with self._lock:
+            candidates = list(self._channels.items())
+        for handle, effect in candidates:
+            reason = self._effect_failure_reason(effect)
+            if reason is StopReason.SOURCE_NOT_PLAYING:
+                with self._lock:
+                    startup_pending = (
+                        not self._effect_started.get(handle, False)
+                        and now < self._effect_start_deadline.get(handle, 0.0)
+                    )
+                if startup_pending:
+                    continue
+            if reason is not None:
+                self._retire_effect(handle, "stale_or_error", reason)
+
+    def _schedule_effect_watchdog(self, handle: str, path: str,
+                                  loop: bool) -> None:
+        if loop:
+            return
+        duration = _wav_duration_ms(path)
+        if duration is None:
+            return
+        delay = max(1000, duration + PCM_WATCHDOG_GRACE_MS)
+        def callback(h=handle):
+            self._effect_watchdog(h)
+
+        timer = None
+        if self._effect_watchdog_factory is not None:
+            try:
+                timer = self._effect_watchdog_factory(delay, callback)
+            except Exception:
+                timer = None
+        elif self._real_binding:
+            try:
+                from PyQt6.QtCore import QTimer
+
+                effect = self._channels.get(handle)
+                if effect is not None:
+                    timer = QTimer(effect)
+                    timer.setSingleShot(True)
+                    timer.timeout.connect(callback)
+            except Exception:
+                timer = None
+        if timer is None:
+            return
+        with self._lock:
+            if handle in self._channels:
+                self._effect_watchdogs[handle] = timer
+                try:
+                    timer.start()
+                except Exception:
+                    self._effect_watchdogs.pop(handle, None)
+            else:
+                try:
+                    timer.stop()
+                except Exception:
+                    pass
+
+    def _effect_watchdog(self, handle: str) -> None:
+        with self._lock:
+            if handle not in self._channels:
+                return
+        self._retire_effect(handle, "watchdog", StopReason.SOURCE_NOT_PLAYING)
+
     # -- Transport contract --------------------------------------------------
 
     def preload(self, paths) -> None:
@@ -941,24 +1230,36 @@ class QtSoundTransport:
         path.  Must be called from the GUI thread.
         """
         for path in paths or ():
+            with self._lock:
+                if self._closed:
+                    return
+                generation = self._generation
             if not path or not os.path.isfile(path):
                 continue
             try:
                 if self._sinks is not None:
                     physical, _rendered = self._resolve_physical(path)
+                    with self._lock:
+                        if self._closed or generation != self._generation:
+                            return
                     self._pcm_for(physical)
                 else:
                     with self._lock:
+                        if self._closed or generation != self._generation:
+                            return
                         self._acquire(path, token="preload")
             except Exception:
                 continue
 
     def play(self, path, *, volume=1.0, loop=False, on_complete=None, token=""):
         t_request = time.perf_counter()
-        if self._closed:
-            self._fail(token, path, StopReason.TRANSPORT_UNAVAILABLE,
-                       closed=True)
-            return ""
+        with self._lock:
+            if self._closed:
+                self._fail(token, path, StopReason.TRANSPORT_UNAVAILABLE,
+                           closed=True)
+                return ""
+            generation = self._generation
+        self._recover_stale_effects()
         if not path or not os.path.isfile(path):
             self._fail(token, path, StopReason.FILE_MISSING)
             return ""
@@ -967,7 +1268,8 @@ class QtSoundTransport:
             pcm = self._pcm_for(physical)
             if pcm is not None:
                 handle = self._play_pcm(path, physical, rendered, pcm, volume,
-                                        on_complete, token, t_request)
+                                        on_complete, token, t_request,
+                                        generation)
                 if handle is not None:
                     return handle            # started NOW, or truthfully ""
             # Not carriable as exact PCM (codec, size, device refused the
@@ -975,7 +1277,8 @@ class QtSoundTransport:
             self._log({"event": "pcm_fallback", "logical": path,
                        "physical": physical, "rendered": rendered,
                        "token": token})
-        return self._play_effect(path, volume, loop, on_complete, token)
+        return self._play_effect(path, volume, loop, on_complete, token,
+                                 generation)
 
     # -- PCM sink path ---------------------------------------------------------
 
@@ -1008,9 +1311,13 @@ class QtSoundTransport:
         return pcm
 
     def _play_pcm(self, logical, physical, rendered, pcm: PcmSource, volume,
-                  on_complete, token, t_request) -> str | None:
+                  on_complete, token, t_request, generation: int) -> str | None:
         """Start ONE fresh sink now.  ``None`` = use the fallback path."""
         with self._lock:
+            if self._closed or generation != self._generation:
+                self._fail(token, logical, StopReason.TRANSPORT_UNAVAILABLE,
+                           closed=self._closed)
+                return ""
             if len(self._voices) >= MAX_PCM_VOICES:
                 self._fail(token, logical, StopReason.POOL_EXHAUSTED,
                            backend="pcm_sink")
@@ -1022,7 +1329,8 @@ class QtSoundTransport:
             if refused.reason is StopReason.UNSUPPORTED_FORMAT:
                 return None
             self._fail(token, logical, refused.reason, backend="pcm_sink",
-                       error=refused.detail)
+                       error=refused.detail,
+                       failure_stage="output_selection")
             return ""
         except Exception as exc:
             self._fail(token, logical, StopReason.EFFECT_PLAY_EXCEPTION,
@@ -1032,32 +1340,84 @@ class QtSoundTransport:
         # device that fails inside start() must not complete a channel the
         # hub never saw.
         voice = _PcmVoice(handle, token, logical, physical, rendered, sink,
-                          buffer, None, t_request)
+                          buffer, on_complete, t_request)
         with self._lock:
-            self._voices[handle] = voice
+            stale = self._closed or generation != self._generation
+            if not stale:
+                self._voices[handle] = voice
+        if stale:
+            try:
+                sink.reset()
+                sink.stop()
+            except Exception:
+                pass
+            try:
+                self._sinks.retire(sink)
+            except Exception:
+                pass
+            self._fail(token, logical, StopReason.TRANSPORT_UNAVAILABLE,
+                       closed=self._closed)
+            return ""
+        sync_events: list[tuple[str, str | None]] = []
         try:
             sink.setVolume(max(0.0, min(1.0, float(volume))))
-            sink.stateChanged.connect(
-                lambda state, h=handle: self._on_sink_state(h, state))
-            sink.start(buffer)
+            def _state_changed(state, h=handle):
+                name = self._sinks.state_name(state) if self._sinks else str(state)
+                marker = self._on_sink_state(h, state)
+                sync_events.append((name, marker))
+            # The generation check and the physical start must be one critical
+            # section.  close()/invalidate_sources() can retire the voice while
+            # setVolume() is in Qt; a post-check start would resurrect a sink
+            # that is already owned by nobody.
+            with self._lock:
+                stale = (self._closed or generation != self._generation
+                         or handle not in self._voices)
+                if not stale:
+                    sink.stateChanged.connect(_state_changed)
+                    sink.start(buffer)
+            if stale:
+                self._drop_voice(handle)
+                self._fail(token, logical, StopReason.TRANSPORT_UNAVAILABLE,
+                           closed=self._closed)
+                return ""
             voice.t_start = time.perf_counter()
+            with self._lock:
+                completed_early = handle not in self._voices
+            if completed_early:
+                event = sync_events[-1] if sync_events else ("", None)
+                name, marker = event
+                if name == "Idle" and marker is None:
+                    return ""
+                error = marker or self._sinks.error_name(sink)
+                state = name or self._sinks.state_name(sink.state())
+                self._fail(token, logical, StopReason.SOURCE_ERROR,
+                           backend="pcm_sink", error=error, state=state,
+                           failure_stage="sink_start")
+                return ""
             error = self._sinks.error_name(sink)
             state = self._sinks.state_name(sink.state())
         except Exception as exc:
             self._drop_voice(handle)
             self._fail(token, logical, StopReason.EFFECT_PLAY_EXCEPTION,
-                       exc=exc, backend="pcm_sink")
+                       exc=exc, backend="pcm_sink", failure_stage="sink_start")
             return ""
         if error != "NoError" or "Stopped" in state:
             # The device refused to start: NOT a played channel.
             self._drop_voice(handle)
             self._fail(token, logical, StopReason.SOURCE_ERROR,
-                       backend="pcm_sink", error=error, state=state)
+                       backend="pcm_sink", error=error, state=state,
+                       failure_stage="sink_start")
             return ""
         with self._lock:
+            stale = self._closed or generation != self._generation
             if handle not in self._voices:     # stopped re-entrantly
                 return ""
-            voice.on_complete = on_complete
+            if stale:
+                self._drop_voice(handle)
+        if stale:
+            self._fail(token, logical, StopReason.TRANSPORT_UNAVAILABLE,
+                       closed=self._closed)
+            return ""
         try:
             voice.watchdog = self._sinks.watchdog(
                 sink, pcm.duration_ms + PCM_POSTROLL_MS + PCM_WATCHDOG_GRACE_MS,
@@ -1082,19 +1442,22 @@ class QtSoundTransport:
         })
         return handle
 
-    def _on_sink_state(self, handle: str, state) -> None:
+    def _on_sink_state(self, handle: str, state) -> str | None:
         name = self._sinks.state_name(state) if self._sinks else str(state)
         if "Idle" in name:
             # The exact frames AND the post-roll were handed to the mixer;
             # the only thing a stop can discard now is post-roll silence.
             self._finish_voice(handle, "drained")
-        elif "Stopped" in name:
+            return None
+        if "Stopped" in name:
             with self._lock:
                 voice = self._voices.get(handle)
-            if voice is None:
-                return          # our own stop(): a stale signal, ignore
+                if voice is None:
+                    return None     # our own stop(): a stale signal, ignore
             error = self._sinks.error_name(voice.sink) if self._sinks else ""
             self._finish_voice(handle, f"stopped:{error}")
+            return error
+        return None
 
     def _finish_voice(self, handle: str, reason: str) -> None:
         """Natural end (or dead device): retire the sink, then complete."""
@@ -1164,8 +1527,13 @@ class QtSoundTransport:
 
     # -- QSoundEffect path (loops + fallback) ------------------------------------
 
-    def _play_effect(self, path, volume, loop, on_complete, token) -> str:
+    def _play_effect(self, path, volume, loop, on_complete, token,
+                     generation: int) -> str:
         with self._lock:
+            if self._closed or generation != self._generation:
+                self._fail(token, path, StopReason.TRANSPORT_UNAVAILABLE,
+                           closed=self._closed)
+                return ""
             effect, entry = self._acquire(path, token=token)
             if effect is None:
                 # pool exhausted, or the source could not be attached at all
@@ -1186,6 +1554,17 @@ class QtSoundTransport:
             }
             self._log(trace)
             if status == "Error":
+                self._remove_effect_from_pool(effect)
+                try:
+                    effect.stop()
+                except Exception:
+                    pass
+                delete_later = getattr(effect, "deleteLater", None)
+                if callable(delete_later):
+                    try:
+                        delete_later()
+                    except Exception:
+                        pass
                 self._fail(token, path, StopReason.SOURCE_ERROR, effect)
                 return ""
             if status == "Loading":
@@ -1198,15 +1577,36 @@ class QtSoundTransport:
                 effect.setVolume(max(0.0, min(1.0, float(volume))))
                 effect.setLoopCount(self._infinite if loop else 1)
                 self._channels[handle] = effect
+                self._channel_tokens[handle] = token
+                self._channel_paths[handle] = path
+                self._effect_started[handle] = False
+                self._effect_start_deadline[handle] = (
+                    time.monotonic() + EFFECT_STARTUP_GRACE_MS / 1000.0)
                 self._owner[id(effect)] = handle
                 if on_complete is not None:
                     self._completions[handle] = on_complete
-                self._bind(effect)
+                self._bind(effect, handle)
                 effect.play()
+                stale = self._closed or generation != self._generation
+                if stale:
+                    self._retire_effect(handle, "closed_during_start",
+                                        StopReason.TRANSPORT_UNAVAILABLE)
+                    self._fail(token, path, StopReason.TRANSPORT_UNAVAILABLE,
+                               closed=self._closed)
+                    return ""
+                with self._lock:
+                    still_live = self._channels.get(handle) is effect
+                if not still_live:
+                    # A backend may emit Error/stopped synchronously from
+                    # play(); the callback can retire the transport handle
+                    # before play() returns. Never hand the hub that dead ID.
+                    return ""
                 trace["handle"] = handle
+                self._schedule_effect_watchdog(handle, path, loop)
                 return handle
             except Exception as exc:
-                self._forget(handle)
+                self._retire_effect(handle, "play_exception",
+                                    StopReason.EFFECT_PLAY_EXCEPTION)
                 self._fail(token, path, StopReason.EFFECT_PLAY_EXCEPTION,
                            effect, exc)
                 return ""
@@ -1234,14 +1634,25 @@ class QtSoundTransport:
         with self._lock:
             effects = list(self._channels.values())
             self._channels.clear()
+            self._channel_tokens.clear()
+            self._channel_paths.clear()
+            self._effect_started.clear()
+            self._effect_start_deadline.clear()
             self._owner.clear()
             self._completions.clear()
+            watchdogs = list(self._effect_watchdogs.values())
+            self._effect_watchdogs.clear()
             # Emergency silence, NOT invalidation: the pools stay (each
             # effect still owns its own physical source) and only play is
             # stopped.  No transport state holds a deferred start, so nothing
             # can become audible after this returns.
             for members in self._pools.values():
                 effects.extend(entry.effect for entry in members)
+        for watchdog in watchdogs:
+            try:
+                watchdog.stop()
+            except Exception:
+                pass
         for effect in effects:
             try:
                 effect.stop()
@@ -1271,6 +1682,11 @@ class QtSoundTransport:
         """Drop every trace of one effect channel; returns its effect."""
         effect = self._channels.pop(handle, None)
         self._completions.pop(handle, None)
+        self._channel_tokens.pop(handle, None)
+        self._channel_paths.pop(handle, None)
+        self._effect_started.pop(handle, None)
+        self._effect_start_deadline.pop(handle, None)
+        self._cancel_effect_watchdog(handle)
         if effect is not None and self._owner.get(id(effect)) == handle:
             self._owner.pop(id(effect), None)
         return effect
@@ -1426,14 +1842,18 @@ class QtSoundTransport:
         self._last_acquire_reason = StopReason.POOL_EXHAUSTED
         return None, None  # C0.2: refuse rather than restart a busy effect
 
-    def _bind(self, effect) -> None:
+    def _bind(self, effect, handle: str) -> None:
         with self._lock:
-            entry = self._bound.get(id(effect))
-            if entry is not None and entry[0] is effect:
-                return
+            previous = self._bound.get(id(effect))
+            if previous is not None and previous[0] is effect:
+                try:
+                    effect.playingChanged.disconnect(previous[1])
+                except Exception:
+                    pass
+                self._bound.pop(id(effect), None)
 
         def _changed(*_args) -> None:
-            self._on_playing_changed(effect)
+            self._on_playing_changed(effect, handle)
 
         try:
             effect.playingChanged.connect(_changed)
@@ -1442,7 +1862,8 @@ class QtSoundTransport:
         with self._lock:
             # PERF-004: retaining the effect reference keeps id() from being
             # reused while the connection is live; retaining the handler lets
-            # retirement disconnect it.
+            # retirement disconnect it. The captured handle rejects a queued
+            # signal from the previous use of a pooled effect.
             self._bound[id(effect)] = (effect, _changed)
 
     def _unbind(self, effect) -> None:
@@ -1456,23 +1877,56 @@ class QtSoundTransport:
         except Exception:
             pass
 
-    def _on_playing_changed(self, effect) -> None:
-        try:
-            if effect.isPlaying():
-                return
-        except Exception:
-            return
+    def _on_playing_changed(self, effect, expected_handle: str | None = None) -> None:
         with self._lock:
             handle = self._owner.get(id(effect))
+            if expected_handle is not None and handle != expected_handle:
+                return
             if handle is None:
                 return  # explicitly stopped already: a stale signal, ignore
             if self._channels.get(handle) is not effect:
                 # PERF-004: a retired effect whose id() was reused must never
                 # complete the newer handle that now owns that id.
                 return
+        failure = self._effect_failure_reason(effect)
+        if failure is StopReason.SOURCE_NOT_PLAYING:
+            with self._lock:
+                startup_pending = (
+                    not self._effect_started.get(handle, False)
+                    and time.monotonic() < self._effect_start_deadline.get(handle, 0.0)
+                )
+            if startup_pending:
+                return
+        elif failure is not None:
+            self._retire_effect(handle, "device_error", failure)
+            return
+        try:
+            if effect.isPlaying():
+                with self._lock:
+                    if self._channels.get(handle) is effect:
+                        self._effect_started[handle] = True
+                return
+        except Exception:
+            self._retire_effect(handle, "device_error", StopReason.SOURCE_ERROR)
+            return
+        with self._lock:
+            if self._channels.get(handle) is not effect:
+                return
             callback = self._completions.pop(handle, None)
             self._channels.pop(handle, None)
+            self._channel_tokens.pop(handle, None)
+            self._channel_paths.pop(handle, None)
+            self._effect_started.pop(handle, None)
+            self._effect_start_deadline.pop(handle, None)
             self._owner.pop(id(effect), None)
+            watchdog = self._effect_watchdogs.pop(handle, None)
+        if watchdog is not None:
+            try:
+                watchdog.stop()
+            except Exception:
+                pass
+        self._log({"event": "effect_finish", "handle": handle,
+                   "reason": "stopped"})
         if callback is not None:
             callback()
 
@@ -1550,6 +2004,7 @@ class _ActiveChannel:
     bus: Bus
     request_id: str
     event: str
+    path: str
     priority: int
     sequence_id: str = ""
     sequence_generation: int = 0
@@ -1612,6 +2067,11 @@ class AudioHub:
         # fails closed -- no caller can bypass master mute by addressing the
         # hub directly (Problip, Voice, Ambience, previews all enter here).
         self._muted = False
+        self._closed = False
+        self._recovering = False
+        self._stop_all_depth = 0
+        self._legacy_fallback_active = False
+        self._bind_transport(self._transport)
 
     def request_count(self) -> int:
         """Monotonic count of playback requests handled by this hub."""
@@ -1641,6 +2101,11 @@ class AudioHub:
         with self._lock:
             return self._muted
 
+    def set_legacy_fallback_active(self, active: bool) -> None:
+        """Gate direct Hub callers while the legacy transport owns playback."""
+        with self._lock:
+            self._legacy_fallback_active = bool(active)
+
     def set_global_mode(self, mode: PlaybackMode | str) -> None:
         with self._lock:
             resolved = PlaybackMode.coerce(mode, PlaybackMode.MIX)
@@ -1659,8 +2124,92 @@ class AudioHub:
     def set_transport(self, transport: Transport) -> None:
         """Swap the backend (packaging/degradation probe, tests)."""
         with self._lock:
+            if self._closed:
+                close = getattr(transport, "close", None)
+                if callable(close):
+                    try:
+                        close()
+                    except Exception:
+                        logger.debug("new transport close failed", exc_info=True)
+                return
+            old = self._transport
             self.stop_all()
+            if old is transport:
+                return
+            self._unbind_transport(old)
             self._transport = transport
+            self._bind_transport(transport)
+        close = getattr(old, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:
+                logger.debug("old transport close failed", exc_info=True)
+
+    def recover(self, reason: str = "transport_recovery") -> None:
+        """Recover backend while keeping Hub ownership truthful."""
+        with self._lock:
+            if self._closed or self._recovering:
+                return
+            transport = self._transport
+            self._recovering = True
+        try:
+            self.stop_all()
+            recover = getattr(transport, "recover", None)
+            if callable(recover):
+                recover(reason)
+            # Qt recovery routes through its owner callback.  The guard above
+            # intentionally suppresses that reentrant callback, so retire the
+            # physical generation here as the single authority.
+            self._invalidate_transport(transport)
+        finally:
+            with self._lock:
+                self._recovering = False
+
+    def _on_transport_recovery(
+        self, source: Transport, reason: str = "transport_recovery",
+    ) -> None:
+        """Clear Hub state before the owning transport retires channels."""
+        with self._lock:
+            if (self._closed or self._recovering
+                    or source is not self._transport):
+                return
+            self._recovering = True
+            transport = self._transport
+        try:
+            self.stop_all()
+            self._invalidate_transport(transport)
+        finally:
+            with self._lock:
+                self._recovering = False
+
+    def _bind_transport(self, transport: Transport) -> None:
+        setter = getattr(transport, "set_recovery_callback", None)
+        if callable(setter):
+            try:
+                setter(lambda reason, owner=self, source=transport:
+                       owner._on_transport_recovery(source, reason))
+            except Exception:
+                logger.debug("transport recovery callback wiring failed",
+                             exc_info=True)
+
+    def _unbind_transport(self, transport: Transport) -> None:
+        setter = getattr(transport, "set_recovery_callback", None)
+        if callable(setter):
+            try:
+                setter(None)
+            except Exception:
+                logger.debug("transport recovery callback cleanup failed",
+                             exc_info=True)
+
+    def _invalidate_transport(self, transport: Transport) -> None:
+        invalidate = getattr(transport, "invalidate_sources", None)
+        if callable(invalidate):
+            try:
+                invalidate()
+            except Exception:
+                logger.debug("transport source invalidation failed",
+                             exc_info=True)
 
     def invalidate_sources(self) -> None:
         """Retire every pooled transport source (T-1242 spec 5).
@@ -1670,13 +2219,11 @@ class AudioHub:
         pool entries; otherwise the UI can say RAW while the transport keeps
         playing RENDERED.  Transports without the concept ignore it.
         """
-        invalidate = getattr(self._transport, "invalidate_sources", None)
-        if callable(invalidate):
-            try:
-                invalidate()
-            except Exception:
-                logger.debug("transport source invalidation failed",
-                             exc_info=True)
+        with self._lock:
+            if self._closed:
+                return
+            transport = self._transport
+        self._on_transport_recovery(transport, "invalidate_sources")
 
     def transport_policy_generation(self) -> int:
         """The transport's render-policy generation (T-1242 spec 13).
@@ -1793,6 +2340,21 @@ class AudioHub:
             self._request_counter += 1
             request_id = f"req{next(self._requests)}"
             bus = Bus(bus) if isinstance(bus, str) else bus
+            if self._closed:
+                self._record(request_id, event, bus, PlaybackMode.MIX, path,
+                             Outcome.STOPPED,
+                             reason=StopReason.TRANSPORT_UNAVAILABLE.value)
+                return PlayResult(Outcome.STOPPED, request_id)
+            if self._recovering or self._legacy_fallback_active or self._stop_all_depth:
+                if self._legacy_fallback_active:
+                    reason = StopReason.LEGACY_FALLBACK_ACTIVE.value
+                elif self._recovering:
+                    reason = "transport_recovering"
+                else:
+                    reason = "stop_all_in_progress"
+                self._record(request_id, event, bus, PlaybackMode.MIX, path,
+                             Outcome.STOPPED, reason=reason)
+                return PlayResult(Outcome.STOPPED, request_id)
             resolved, scope = self._resolve_mode(mode)
             # The AUTHORITATIVE mute gate.  Checked under _lock together with
             # queue/channel admission, so the mute cannot become active
@@ -1846,6 +2408,21 @@ class AudioHub:
             self._request_counter += 1
         request_id = f"amb{next(self._requests)}"
         with self._lock:
+            if self._closed:
+                self._record(request_id, event, bus, PlaybackMode.MIX, path,
+                             Outcome.STOPPED,
+                             reason=StopReason.TRANSPORT_UNAVAILABLE.value)
+                return PlayResult(Outcome.STOPPED, request_id)
+            if self._recovering or self._legacy_fallback_active or self._stop_all_depth:
+                if self._legacy_fallback_active:
+                    reason = StopReason.LEGACY_FALLBACK_ACTIVE.value
+                elif self._recovering:
+                    reason = "transport_recovering"
+                else:
+                    reason = "stop_all_in_progress"
+                self._record(request_id, event, bus, PlaybackMode.MIX, path,
+                             Outcome.STOPPED, reason=reason)
+                return PlayResult(Outcome.STOPPED, request_id)
             if self._muted:
                 # T-1244: ambience cannot start (or restart on an evaluate
                 # tick) while master mute is ON.  The logical rule stays
@@ -1945,59 +2522,111 @@ class AudioHub:
                        sequence: AudioSequence | None = None,
                        allow_while_muted=False) -> PlayResult:
         # The completion callback only knows the handle after play() returns;
-        # a mutable cell bridges the gap and self-removes the channel.
+        # a mutable cell bridges the gap and self-removes the channel.  Some
+        # backends can report failure synchronously from play(), before the
+        # handle is returned, so remember that completion instead of losing it.
         cell: dict[str, Callable[[], None]] = {}
-        epoch = self._stop_all_epoch
+        completed = False
+        with self._lock:
+            transport = self._transport
+            epoch = self._stop_all_epoch
 
         def _on_complete() -> None:
-            if epoch != self._stop_all_epoch:
-                return  # STOP ALL happened: nothing stale may resume
-            done = cell.get("done")
+            nonlocal completed
+            with self._lock:
+                if (self._closed or epoch != self._stop_all_epoch
+                        or self._transport is not transport):
+                    return  # STOP ALL, shutdown, or replacement happened
+                completed = True
+                done = cell.get("done")
             if done is not None:
                 done()
 
-        handle = self._transport.play(
-            path, volume=volume, loop=loop, token=request_id,
-            on_complete=_on_complete)
+        try:
+            handle = transport.play(
+                path, volume=volume, loop=loop, token=request_id,
+                on_complete=_on_complete)
+        except Exception as exc:
+            self.stop_all()
+            recover = getattr(transport, "recover", None)
+            if callable(recover):
+                try:
+                    recover("backend_exception")
+                except Exception:
+                    logger.debug("transport recovery failed", exc_info=True)
+            self._record(request_id, event, bus, mode, path, Outcome.STOPPED,
+                         reason=StopReason.BACKEND_EXCEPTION.value,
+                         exception=type(exc).__name__)
+            return PlayResult(Outcome.STOPPED, request_id)
         if not handle:
             # T-1242 spec 3: a refused physical start is never an unexplained
             # STOPPED -- the transport's own reason travels with the record.
             self._record(request_id, event, bus, mode, path, Outcome.STOPPED,
                          **self._failure_detail(request_id, path))
             return PlayResult(Outcome.STOPPED, request_id)
-        # T-1244 A1: the mute gate is atomic with admission under _lock, but
-        # the physical start itself can still overlap a mute that engages
-        # reentrantly (a transport that calls set_muted() from inside its own
-        # play(), or any future async backend).  A channel must NEVER register
-        # after the master mute became active: stop it and report truthfully.
-        if self._muted and not allow_while_muted:
-            try:
-                self._transport.stop(handle)
-            except Exception:
-                pass
-            self._record(request_id, event, bus, mode, path, Outcome.STOPPED,
-                         reason="muted_mid_admission")
-            return PlayResult(Outcome.STOPPED, request_id)
 
         def _done(handle=handle) -> None:
             self._channel_finished(handle)
 
-        cell["done"] = _done
-        self._channels[handle] = _ActiveChannel(
-            handle, bus, request_id, event,
-            priority if priority is not None else _default_priority(bus),
-            sequence_id=sequence.request_id if sequence is not None else "",
-            sequence_generation=sequence.generation if sequence is not None else 0,
-            long_lived=long_lived)
-        if sequence is not None:
-            sequence.channel = handle
-            sequence.started = True
-        others = len(self._channels) > 1
-        if replace:
-            outcome = Outcome.REPLACED
-        else:
-            outcome = Outcome.MIXED if others else Outcome.PLAYED
+        with self._lock:
+            stale = (self._closed or self._recovering
+                     or self._legacy_fallback_active or self._stop_all_depth
+                     or epoch != self._stop_all_epoch
+                     or self._transport is not transport)
+            muted = self._muted and not allow_while_muted
+            completed_now = completed
+            failure = None
+            if completed_now and not stale and not muted:
+                take_failure = getattr(transport, "take_failure", None)
+                if callable(take_failure):
+                    try:
+                        failure = take_failure(request_id)
+                    except Exception:
+                        failure = None
+            if isinstance(failure, dict):
+                failure.pop("source", None)
+            if not stale and not muted and not isinstance(failure, dict):
+                cell["done"] = _done
+                self._channels[handle] = _ActiveChannel(
+                    handle, bus, request_id, event, path,
+                    priority if priority is not None else _default_priority(bus),
+                    sequence_id=sequence.request_id if sequence is not None else "",
+                    sequence_generation=sequence.generation if sequence is not None else 0,
+                    long_lived=long_lived)
+                if sequence is not None:
+                    sequence.channel = handle
+                    sequence.started = True
+                others = len(self._channels) > 1
+        if isinstance(failure, dict):
+            try:
+                transport.stop(handle)
+            except Exception:
+                pass
+            self._record(request_id, event, bus, mode, path, Outcome.STOPPED,
+                         **failure)
+            if sequence is not None:
+                sequence.cancelled = True
+                sequence.generation += 1
+                sequence.channel = ""
+                with self._lock:
+                    self._sequences.pop(sequence.request_id, None)
+            return PlayResult(Outcome.STOPPED, request_id)
+        if stale or muted:
+            try:
+                transport.stop(handle)
+            except Exception:
+                pass
+            reason = "muted_mid_admission" if muted else "stale_mid_admission"
+            self._record(request_id, event, bus, mode, path, Outcome.STOPPED,
+                         reason=reason)
+            return PlayResult(Outcome.STOPPED, request_id)
+        outcome = Outcome.REPLACED if replace else (
+            Outcome.MIXED if others else Outcome.PLAYED)
         self._record(request_id, event, bus, mode, path, outcome)
+        if completed_now:
+            # A transport may complete successfully from play(), before it
+            # returns the handle. Register first, then consume that callback.
+            self._channel_finished(handle)
         return PlayResult(outcome, request_id, handle)
 
     # -- the one transient queue ---------------------------------------------------
@@ -2087,6 +2716,18 @@ class AudioHub:
             channel = self._channels.pop(handle, None)
             if channel is None:
                 return  # already stopped explicitly: a stale completion
+            take_failure = getattr(self._transport, "take_failure", None)
+            failure = None
+            if callable(take_failure):
+                try:
+                    failure = take_failure(channel.request_id)
+                except Exception:
+                    failure = None
+            if isinstance(failure, dict):
+                failure.pop("source", None)
+                self._record(channel.request_id, channel.event, channel.bus,
+                             PlaybackMode.MIX, channel.path, Outcome.STOPPED,
+                             **failure)
             if channel.sequence_id:
                 seq = self._sequences.get(channel.sequence_id)
                 if (seq is not None and not seq.cancelled
@@ -2137,6 +2778,21 @@ class AudioHub:
         seq = AudioSequence(fragments=list(fragments), mode=resolved,
                             volume=volume, request_id=request_id, bus=bus)
         with self._lock:
+            if self._closed:
+                self._record(request_id, event, bus, resolved,
+                             seq.fragments[0] if seq.fragments else "",
+                             Outcome.STOPPED,
+                             reason=StopReason.TRANSPORT_UNAVAILABLE.value)
+                seq.cancelled = True
+                return seq
+            if self._recovering or self._legacy_fallback_active or self._stop_all_depth:
+                reason = (StopReason.LEGACY_FALLBACK_ACTIVE.value
+                          if self._legacy_fallback_active else "transport_recovering")
+                self._record(request_id, event, bus, resolved,
+                             seq.fragments[0] if seq.fragments else "",
+                             Outcome.STOPPED, reason=reason)
+                seq.cancelled = True
+                return seq
             if not seq.fragments:
                 return seq
             if self._muted:
@@ -2221,6 +2877,7 @@ class AudioHub:
         """Emergency silence. Nothing stale may resume."""
         with self._lock:
             self._stop_all_epoch += 1
+            self._stop_all_depth += 1
             self._channels.clear()
             self._queue.clear()
             for seq in self._sequences.values():
@@ -2229,7 +2886,11 @@ class AudioHub:
                 seq.channel = ""
             self._sequences.clear()
             self._last_coalesce.clear()
-        self._transport.stop_all()
+        try:
+            self._transport.stop_all()
+        finally:
+            with self._lock:
+                self._stop_all_depth -= 1
 
     def close(self) -> None:
         """Shutdown: STOP ALL, then retire the transport for good.
@@ -2237,8 +2898,13 @@ class AudioHub:
         After close() no queued job, sequence, late completion or transport
         signal can make a sound; the transport refuses every later play.
         """
+        with self._lock:
+            if self._closed:
+                return
+            self._closed = True
+            transport = self._transport
         self.stop_all()
-        close = getattr(self._transport, "close", None)
+        close = getattr(transport, "close", None)
         if callable(close):
             try:
                 close()
@@ -2276,7 +2942,11 @@ class AudioHub:
 
     def preload(self, paths: Iterable[str]) -> None:
         """Ask the transport to warm the given sources (never plays them)."""
-        warm = getattr(self._transport, "preload", None)
+        with self._lock:
+            if self._closed:
+                return
+            transport = self._transport
+        warm = getattr(transport, "preload", None)
         if not callable(warm):
             return
         try:

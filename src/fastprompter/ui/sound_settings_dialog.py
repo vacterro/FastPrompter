@@ -6,6 +6,7 @@ Nothing about WHICH sound plays is hardcoded here. The event list comes from
 which is the same map the player reads.
 """
 
+import time
 from typing import Any
 
 from PyQt6.QtCore import QPoint, QRect, Qt, pyqtSignal
@@ -457,6 +458,7 @@ class SoundSettingsDialog(QDialog):
         self._ambience_page_instance = val
 
     def _ensure_hub_page(self, index: int):
+        start = time.perf_counter()
         attr = self._HUB_PAGE_ATTRS.get(index)
         if not attr:
             return None
@@ -490,14 +492,26 @@ class SoundSettingsDialog(QDialog):
                 self.pages.insertTab(index, page, title)
                 if curr == index:
                     self.pages.setCurrentIndex(index)
+        self._timings[f"page_{index}"] = (
+            (time.perf_counter() - start) * 1000.0)
         return page
+
+    def _timed_stage(self, name: str, callback):
+        start = time.perf_counter()
+        try:
+            return callback()
+        finally:
+            self._timings[name] = (time.perf_counter() - start) * 1000.0
 
     def __init__(self, parent, data: dict[str, Any], sound_manager):
         super().__init__(parent)
         self.main_win = parent
+        self._open_t0 = time.perf_counter()
+        self._timings: dict[str, float] = {}
         self._data = data
         self._sound_manager = sound_manager
-        self._available = sound_manager.get_available_sounds()
+        self._available = self._timed_stage(
+            "get_available_sounds", sound_manager.get_available_sounds)
         # PERF: every event row used to fill its OWN combo with the whole
         # library.  With ~60 events that is tens of thousands of widget items
         # and seconds of startup.  ONE shared item model is built here and
@@ -540,7 +554,7 @@ class SoundSettingsDialog(QDialog):
             self.setStyleSheet(parent.styleSheet())
         except Exception:
             pass
-        self._rebuild_sound_model()
+        self._timed_stage("rebuild_sound_model", self._rebuild_sound_model)
         # PERF: the application installs APPLICATION-WIDE event filters (UI
         # click sound, wheel guard, scroll sound, layout shortcuts).  They
         # fire for every event of every widget, so creating ~350 cell widgets
@@ -549,11 +563,13 @@ class SoundSettingsDialog(QDialog):
         self.setUpdatesEnabled(False)
         suspended = self._suspend_app_event_filters()
         try:
-            self._build()
-            self._load_settings()
+            self._timed_stage("build", self._build)
+            self._timed_stage("load_settings", self._load_settings)
         finally:
             self._restore_app_event_filters(suspended)
             self.setUpdatesEnabled(True)
+        self._timings["constructor_total"] = (
+            (time.perf_counter() - self._open_t0) * 1000.0)
 
     # ---- construction -------------------------------------------------
 
@@ -831,6 +847,16 @@ class SoundSettingsDialog(QDialog):
             self.table.blockSignals(False)
             self._loading = was_loading
         self._built_events_count = end
+        if end <= 10:
+            self._events_build_started()
+        elif end >= len(self._all_events):
+            self._timings["events_all"] = (
+                (time.perf_counter() - self._open_t0) * 1000.0)
+
+    def _events_build_started(self) -> None:
+        if "events_initial_10" not in self._timings:
+            self._timings["events_initial_10"] = (
+                (time.perf_counter() - self._open_t0) * 1000.0)
 
     def _build_remaining_events(self) -> None:
         if self._built_events_count >= len(self._all_events):
@@ -844,6 +870,9 @@ class SoundSettingsDialog(QDialog):
         if self._built_events_count < len(self._all_events):
             from PyQt6.QtCore import QTimer
             QTimer.singleShot(0, self._build_remaining_events)
+        else:
+            self._timings["remaining_events"] = (
+                (time.perf_counter() - self._open_t0) * 1000.0)
 
     def _ensure_all_events_built(self) -> None:
         if self._built_events_count < len(self._all_events):
@@ -900,6 +929,12 @@ class SoundSettingsDialog(QDialog):
             self._ensure_hub_page(index)
 
     # ---- cross-page refresh -------------------------------------------
+
+    def showEvent(self, event):  # noqa: N802 - Qt naming
+        super().showEvent(event)
+        if "first_show" not in self._timings:
+            self._timings["first_show"] = (
+                (time.perf_counter() - self._open_t0) * 1000.0)
 
     def done(self, result):  # noqa: D102 - QDialog override
         """Clear the theme-repaint hook registration before widgets die."""

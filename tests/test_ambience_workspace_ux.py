@@ -318,7 +318,7 @@ class TestAmbienceTransportAndPersistence:
         # 2. Pause
         page.btn_pause.click()
         assert controller.state() == "paused"
-        assert "PAUSED" in page.lbl_state.text()
+        assert "PAUSED · 1 held" in page.lbl_state.text()
         assert "Resume" in page.btn_pause.text()
         # PAUSED: Start is NOT a second start path; Resume is the only one.
         assert not page.btn_start.isEnabled()

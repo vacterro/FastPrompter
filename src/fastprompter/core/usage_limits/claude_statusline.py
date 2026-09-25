@@ -41,6 +41,21 @@ def cache_path_for_dir(directory: str | os.PathLike) -> Path:
     return Path(directory) / CACHE_NAME
 
 
+def invoking_claude_dir() -> Path:
+    """The config dir of the Claude Code session running this status line.
+
+    Claude Code exports ``CLAUDE_CONFIG_DIR`` for a second account home and
+    the status-line child inherits it. Resolving the home this way keeps each
+    account's payload in ITS OWN cache and its own sidecar backup: without it
+    every session wrote into the default ``~/.claude`` cache, so one account's
+    gauges could show another account's numbers.
+    """
+    configured = str(os.environ.get("CLAUDE_CONFIG_DIR") or "").strip()
+    if configured:
+        return Path(configured)
+    return claude_dir()
+
+
 def _atomic_json_write(path: Path, value: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp",
@@ -287,6 +302,7 @@ def _forward_original(raw: bytes, directory: Path) -> int:
 
 def bridge_main() -> int:
     """Status-line subprocess entry point. Always fail quiet for Claude UI."""
+    directory = invoking_claude_dir()
     try:
         raw = sys.stdin.buffer.read(MAX_STDIN_BYTES + 1)
     except Exception:
@@ -294,11 +310,11 @@ def bridge_main() -> int:
     try:
         if len(raw) <= MAX_STDIN_BYTES:
             payload = json.loads(raw.decode("utf-8"))
-            capture_payload(payload)
+            capture_payload(payload, directory)
     except Exception:
         pass
     try:
-        _forward_original(raw[:MAX_STDIN_BYTES], claude_dir())
+        _forward_original(raw[:MAX_STDIN_BYTES], directory)
     except Exception:
         pass
     # A status-line helper must never trigger FastPrompter's fatal-dialog path

@@ -88,7 +88,7 @@ _ROOT_SCRATCH_NAMES = {
 }
 
 _SCRATCH_PREFIXES = ("fix_", "patch", "sweep_", "smoke_", "lm", "run")
-_SCRATCH_SUFFIXES = (".txt", ".log", ".rar", ".7z", ".zip")
+_SCRATCH_SUFFIXES = (".txt", ".log", ".rar", ".7z", ".zip", ".diff")
 
 _RUNTIME_ROOT_NAMES = {"local_data_v15.db"}
 _RUNTIME_SUFFIXES = (".db", ".token", ".bak")

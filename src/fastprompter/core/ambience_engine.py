@@ -225,6 +225,7 @@ class AmbienceEngine:
         self._prev_trigger_state: dict[str, bool] = {}
         self._paused = False
         self._stopped = False
+        self._held_layer_count = 0
         self._weather = _WeatherState()
         self._weather_enabled = False
         self._weather_provider: WeatherProvider | None = None
@@ -391,21 +392,36 @@ class AmbienceEngine:
             now_value = self._clock() if now is None else now
             return self._weather.usable(now_value)
 
+    def weather_state(self, now: float | None = None) -> str:
+        with self._lock:
+            if not self._weather_enabled or self._weather_provider is None:
+                return "disabled"
+            now_value = self._clock() if now is None else now
+            if self._weather.condition is None:
+                return "unavailable"
+            if (self._weather.fetched_monotonic is None
+                    or now_value - self._weather.fetched_monotonic > WEATHER_STALE_S):
+                return "stale"
+            return "available"
+
     # -- pause/stop ------------------------------------------------------------
 
     def pause(self) -> None:
         with self._lock:
             self._paused = True
+            self._held_layer_count = len(self._layers)
             self._stop_all_layers()
 
     def resume(self) -> None:
         """Resume evaluates current conditions fresh; no catch-up events."""
         with self._lock:
             self._paused = False
+            self._held_layer_count = 0
 
     def stop_ambience(self) -> None:
         with self._lock:
             self._stopped = True
+            self._held_layer_count = 0
             self._stop_all_layers()
 
     def start_ambience(self) -> None:
@@ -629,6 +645,7 @@ class AmbienceEngine:
         with self._lock:
             return {
                 "active_layers": sorted(self._layers),
+                "held_layers": self._held_layer_count if self._paused else 0,
                 "paused": self._paused,
                 "stopped": self._stopped,
                 "weather_fetches": self._weather_fetches,

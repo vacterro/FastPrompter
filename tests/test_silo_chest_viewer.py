@@ -41,10 +41,12 @@ def _settle(app, panel, cycles=60):
 
 def test_slot_math():
     from fastprompter.ui.silo_chest import chest_slots, slot_total
-    assert chest_slots({}) == 64
+    assert chest_slots({}) == "dynamic"
     assert chest_slots({"silo_chest_slots": "128"}) == 128
-    assert chest_slots({"silo_chest_slots": "junk"}) == 64
-    assert chest_slots({"silo_chest_slots": "65"}) == 64
+    assert chest_slots({"silo_chest_slots": "dynamic"}) == "dynamic"
+    assert chest_slots({"silo_chest_slots": "junk"}) == "dynamic"
+    assert chest_slots({"silo_chest_slots": "65"}) == "dynamic"
+    assert chest_slots({"silo_chest_slots": "64"}) == 64
     assert slot_total(3, 64) == 64
     assert slot_total(70, 64, columns=8) == 72
 
@@ -299,4 +301,61 @@ def test_container_opens_images_via_router(app, tmp_path, monkeypatch):
         assert opened == [path]
     finally:
         panel.close()
+
+
+def test_dynamic_chest_slots(app, tmp_path):
+    from fastprompter.ui.file_container import FileContainerPanel
+    from fastprompter.ui.silo_chest import SLOT
+    _png(tmp_path / "1.png")
+    main = _Main(file_panel_view="Chest", silo_chest_slots="dynamic")
+    panel = FileContainerPanel(main)
+    try:
+        panel.open_for(str(tmp_path), "t")
+        _settle(app, panel)
+        # dynamically computes from panel viewport
+        init_cap = panel._chest_capacity()
+        assert init_cap > 0
+        assert panel.lbl_count.text() == f"1/{init_cap}"
+
+        # when resized with a measurable viewport
+        panel.resize(360, 400)
+        panel.file_list.resize(360, 400)
+        panel.file_list.viewport().resize(350, 390)
+        panel._sync_chest_placeholders()
+        cols = max(1, (350 - 8) // SLOT)
+        rows = max(1, (390 - 8) // SLOT)
+        expected_cap = max(cols * rows, 1)
+        assert panel._chest_capacity() == expected_cap
+        assert panel.file_list.count() == expected_cap
+        assert panel.lbl_count.text() == f"1/{expected_cap}"
+    finally:
+        panel.close()
         panel.deleteLater()
+
+
+def test_themed_chest_palette(app):
+    from fastprompter.ui.silo_chest import PANEL_BG, SLOT_BG, chest_palette
+    # classic fallback when no main_win
+    pal_classic = chest_palette(None)
+    assert pal_classic["panel_bg"] == PANEL_BG
+    assert pal_classic["slot_bg"] == SLOT_BG
+
+    # themed when main_win has _theme_cache
+    main = _Main(theme="Golden Default")
+    main._theme_cache = {
+        "raw_colors": {
+            "bg_main": "#232018",
+            "bg_text": "#1a1810",
+            "border_dark": "#100e08",
+            "border_light": "#5a5040",
+            "accent": "#f0d060",
+            "text_main": "#d4c89a",
+        }
+    }
+    pal = chest_palette(main)
+    assert pal["panel_bg"].name() == "#232018"
+    assert pal["slot_bg"].name() == "#1a1810"
+    assert pal["slot_dark"].name() == "#100e08"
+    assert pal["slot_light"].name() == "#5a5040"
+    assert pal["select_frame"].name() == "#f0d060"
+    assert pal["badge_fg"].name() == "#d4c89a"

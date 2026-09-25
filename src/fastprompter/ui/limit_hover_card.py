@@ -126,13 +126,20 @@ class LimitHoverCard(QFrame):
         # this frameless Tool window deactivates the owner on Windows, so
         # reacting to it made the card close itself the instant it appeared.
         if event.type() in (QEvent.Type.Hide, QEvent.Type.Close):
-            self.hide_now()
+            if obj is not self and (self._anchor is not None and obj is self._anchor.window()):
+                self.hide_now()
+        elif event.type() in (QEvent.Type.KeyPress, QEvent.Type.KeyRelease) and self.isVisible():
+            if event.key() == Qt.Key.Key_Shift:
+                if hasattr(self._anchor, "refresh_hover_card"):
+                    self._anchor.refresh_hover_card()
+            elif event.key() == Qt.Key.Key_Escape and event.type() == QEvent.Type.KeyPress:
+                self.hide_now()
         elif event.type() == QEvent.Type.Move and self.isVisible():
             # Re-anchor ONLY on a real window move.  A per-second re-render
             # re-fits the gauge's own geometry, which fires Move on the
             # gauge widget too -- chasing that re-introduced the exact
             # one-pixel-per-tick jump this card exists to prevent.
-            if self._window_moved_since_session():
+            if obj is not self and self._window_moved_since_session():
                 self.reposition()
         return False
 
@@ -152,8 +159,11 @@ class LimitHoverCard(QFrame):
 
     # -- content -----------------------------------------------------------
 
-    def set_html(self, html: str) -> None:
+    def set_html(self, html: str, ignore_filters: bool = False) -> None:
         """Render a fresh snapshot; safe while the card is open."""
+        if getattr(self, "_last_ignore_filters", None) != ignore_filters:
+            self._width_floor = 0
+            self._last_ignore_filters = ignore_filters
         self._label.setText(html or "")
         self._label.adjustSize()
         self._resize_to_content()
@@ -293,6 +303,13 @@ class LimitHoverCard(QFrame):
                 self._session_anchor_global = None
             self.show()
             self.raise_()
+            app = QApplication.instance()
+            if app is not None and not getattr(self, "_app_filter_installed", False):
+                try:
+                    app.installEventFilter(self)
+                    self._app_filter_installed = True
+                except Exception:
+                    pass
             # T-1245: card hidden/nonexistent -> visible. The refresh path
             # (set_html / reposition while already visible) never reaches
             # this branch: it is guarded by the isVisible() probe above, so
@@ -320,8 +337,25 @@ class LimitHoverCard(QFrame):
         self._session_x = None
         self._session_y = None
         self._session_anchor_global = None
+        app = QApplication.instance()
+        if app is not None and getattr(self, "_app_filter_installed", False):
+            try:
+                app.removeEventFilter(self)
+                self._app_filter_installed = False
+            except Exception:
+                pass
         if self.isVisible():
             self.hide()
+
+    def hideEvent(self, event):  # noqa: N802 (Qt naming)
+        app = QApplication.instance()
+        if app is not None and getattr(self, "_app_filter_installed", False):
+            try:
+                app.removeEventFilter(self)
+                self._app_filter_installed = False
+            except Exception:
+                pass
+        super().hideEvent(event)
 
     def _pointer_inside(self) -> bool:
         """True while the cursor is over the card OR its anchor gauge."""

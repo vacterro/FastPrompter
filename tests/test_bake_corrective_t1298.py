@@ -369,7 +369,7 @@ def test_malformed_chest_capacity_bakes_to_canonical_default(value):
 
     plan = bake.build_bake_plan(source, check_assets=False)
 
-    assert plan.profile["silo_chest_slots"] == "64"
+    assert plan.profile["silo_chest_slots"] == "dynamic"
 
 
 def test_n_frozen_build_cannot_mutate_repository_defaults(tmp_path, monkeypatch):

@@ -28,8 +28,8 @@ from fastprompter.core import sound_library
 from fastprompter.core.audio_hub import (
     DROPPED_OUTCOMES,
     AudioHub,
-    Bus,
     NullTransport,
+    Outcome,
     QtSoundTransport,
 )
 from fastprompter.core.audio_render import device_ready_wav
@@ -1013,7 +1013,11 @@ def _scaled_claim(key: str) -> tuple[bool, threading.Event | None]:
             for done in [k for k, e in _SCALED_FLIGHTS.items() if e.is_set()]:
                 _SCALED_FLIGHTS.pop(done, None)
         if len(_SCALED_FLIGHTS) >= _SCALED_FLIGHTS_MAX:
-            _SCALED_FLIGHTS.pop(next(iter(_SCALED_FLIGHTS)), None)
+            # Registry saturated with active owners: fail closed without
+            # returning an event belonging to another key.
+            refusal = threading.Event()
+            refusal.set()
+            return False, refusal
         _SCALED_FLIGHTS[key] = event
         return True, event
 
@@ -1115,6 +1119,7 @@ def _bounded_cache_insert(cache: dict, key, value) -> None:
 # Bounded FIFO depth for stacking a rapid hotkey burst; when full the
 # OLDEST queued blip is dropped so the newest intent survives.
 _SOUND_QUEUE_MAX = 64
+_WINSOUND_DEVICE_LOCK = threading.RLock()
 
 
 def _silence_winsound(trace=None):
@@ -1134,7 +1139,8 @@ def _silence_winsound(trace=None):
                 trace("STOP_DEVICE", None, "explicit silence")
             except Exception:
                 pass
-        winsound.PlaySound(None, 0)
+        with _WINSOUND_DEVICE_LOCK:
+            winsound.PlaySound(None, 0)
     except (ImportError, RuntimeError):
         pass
 
@@ -1162,6 +1168,7 @@ class _SerialWavWorker:
         self._cond = threading.Condition()
         self._next_job = None
         self._epoch = 0
+        self._dispatching = False
         # Token of the job taken but not yet finished (playing or about to
         # play). Plain attribute: GIL-atomic reads, benign staleness — the
         # caller's confirm loop re-reads it (T-1221 §4).
@@ -1185,7 +1192,7 @@ class _SerialWavWorker:
     replace = submit
 
     def drop_pending(self):
-        """Discard a not-yet-started job so obsolete intent never plays."""
+        """Discard intent and wait until any device dispatch has finished."""
         with self._cond:
             self._next_job = None
             # Wake the duration wait of a superseded current sound: its
@@ -1193,6 +1200,8 @@ class _SerialWavWorker:
             # instead of sleeping out a sound that no longer owns the
             # channel (T-1221).
             self._epoch += 1
+            while self._dispatching:
+                self._cond.wait()
             self._cond.notify_all()
 
     def pending(self):
@@ -1241,7 +1250,19 @@ class _SerialWavWorker:
             # holding the device lock, so shorts and interrupts stay
             # immediate (T-1221).
             try:
-                result = self.play(path, volume, cache, False)
+                with self._cond:
+                    if (self._epoch != taken_epoch or self._next_job is not None
+                            or self.closed.is_set()):
+                        self.holding = None
+                        continue
+                    self._dispatching = True
+                try:
+                    with _WINSOUND_DEVICE_LOCK:
+                        result = self.play(path, volume, cache, False)
+                finally:
+                    with self._cond:
+                        self._dispatching = False
+                        self._cond.notify_all()
                 ok = result is not False
             except Exception:
                 logger.exception("WAV worker playback failed")
@@ -1318,7 +1339,8 @@ def _winsound_play(scaled: str, sync: bool) -> None:
     flags = winsound.SND_FILENAME | getattr(winsound, "SND_NODEFAULT", 2)
     if not sync:
         flags |= winsound.SND_ASYNC
-    winsound.PlaySound(scaled, flags)
+    with _WINSOUND_DEVICE_LOCK:
+        winsound.PlaySound(scaled, flags)
 
 
 class SoundManager(QObject):
@@ -1394,6 +1416,7 @@ class SoundManager(QObject):
         # to mix, so the proven T-1221/T-1228 single-transport policy engine
         # stays in charge instead of pretending Overlay/Stack/Replace work.
         self._hub_routing_enabled = True
+        self._hub_degraded = False
         # PERF-003 (SRC-021): the persisted render/edge-pad policy is applied
         # BEFORE anything schedules renderer prewarm.  The old order called
         # prewarm_device_cache() first, which synchronously resolved NumPy on
@@ -1460,13 +1483,39 @@ class SoundManager(QObject):
     def backend_status(self) -> dict:
         """Truthful backend report for the Playback settings page."""
         diagnostics = self._hub.diagnostics()
-        diagnostics["routing"] = "hub" if self.hub_routing_active() else "legacy"
+        diagnostics["routing"] = (
+            "legacy" if getattr(self, "_hub_degraded", False)
+            else ("hub" if self.hub_routing_active() else "legacy")
+        )
         diagnostics["backend"] = type(self._hub.transport).__name__
+        diagnostics["degraded"] = bool(getattr(self, "_hub_degraded", False))
         return diagnostics
 
     def audio_hub(self) -> AudioHub:
         """The single audio authority (buses, sequences, ambience entry)."""
         return self._hub
+
+    def _legacy_silence_now(self) -> None:
+        """Synchronously retire the legacy winsound owner and mailbox."""
+        try:
+            if self._current is not None:
+                self._record(self._current, "CANCELLED")
+                self._current = None
+            self._poll_timer.stop()
+            while self._pending:
+                self._record(self._pending.popleft(), "CANCELLED")
+        except Exception:
+            pass
+        for player in (self._players.get("__ui__"),
+                       getattr(self, "_short_player", None)):
+            if player is not None and hasattr(player, "stop"):
+                try:
+                    player.stop()
+                except RuntimeError:
+                    pass
+        if self._worker is not None:
+            self._worker.drop_pending()
+        _silence_winsound(self._trace_transport)
 
     # -- T-1244 master mute ---------------------------------------------------
 
@@ -1489,29 +1538,7 @@ class SoundManager(QObject):
         # Degraded/legacy transport path: hub_routing may be inactive (no
         # mixing backend), so the request engine below is authoritative and
         # needs its own immediate silence. Mirrors stop_all_sound() exactly.
-        try:
-            if self._current is not None:
-                self._record(self._current, "CANCELLED")
-                self._current = None
-            self._poll_timer.stop()
-            while self._pending:
-                self._record(self._pending.popleft(), "CANCELLED")
-        except Exception:
-            pass
-        player = self._players.get("__ui__")
-        if player is not None and hasattr(player, "stop"):
-            try:
-                player.stop()
-            except RuntimeError:
-                pass
-        short = getattr(self, "_short_player", None)
-        if short is not None and hasattr(short, "stop"):
-            try:
-                short.stop()
-            except RuntimeError:
-                pass
-        if self._worker is not None:
-            self._worker.drop_pending()
+        self._legacy_silence_now()
         self._trace_transport("MASTER_MUTE", None, "on" if muted else "off")
 
     def transport_policy_generation(self) -> int:
@@ -1561,27 +1588,7 @@ class SoundManager(QObject):
         self._hub.stop_all()
         self._fire_stop_all_listeners()
         # The legacy policy engine's single transport must also fall silent.
-        try:
-            if self._current is not None:
-                self._record(self._current, "CANCELLED")
-                self._current = None
-            self._poll_timer.stop()
-            while self._pending:
-                self._record(self._pending.popleft(), "CANCELLED")
-        except Exception:
-            pass
-        player = self._players.get("__ui__")
-        if player is not None and hasattr(player, "stop"):
-            try:
-                player.stop()
-            except RuntimeError:
-                pass
-        short = getattr(self, "_short_player", None)
-        if short is not None and hasattr(short, "stop"):
-            try:
-                short.stop()
-            except RuntimeError:
-                pass
+        self._legacy_silence_now()
         self._trace_transport("STOP_ALL", None, "stop_all_sound")
 
     # -- hot-set preloading (T-1242 spec 5) ---------------------------------
@@ -2178,14 +2185,9 @@ class SoundManager(QObject):
             file_name, builtin_root=self._sounds_dir) if file_name else None)
         if not path:
             return False
-        if self.hub_routing_active():
-            result = self._hub.play_result(
-                path, event=event, bus=Bus.UI, mode="mix",
-                allow_while_muted=True)
-            return result.outcome not in DROPPED_OUTCOMES
         return bool(self._request(
             event, path, get_event_volume(event, self._data), "PREVIEW",
-            force_legacy=True, allow_while_muted=True))
+            allow_while_muted=True))
 
     def play_appearance(self, event: str) -> bool:
         """Play ONE semantic appearance cue for a user-visible surface (T-1245).
@@ -2228,9 +2230,9 @@ class SoundManager(QObject):
             return False
         volume = get_event_volume(event, self._data)
         if self.hub_routing_active():
-            result = self._hub.play_result(
-                path, event=event, bus=Bus.UI, mode="mix")
-            return result.outcome not in DROPPED_OUTCOMES
+            return self._request(
+                event, path, volume, "STACK_SHORT",
+                force_legacy=bool(self._hub_degraded))
         return bool(self._request(event, path, volume, "STACK_SHORT"))
 
     def _request(self, event, path, volume, policy, source=None, *,
@@ -2284,13 +2286,30 @@ class SoundManager(QObject):
         # audio authority, carrying its bus and the effective playback mode.
         # Without one, the proven single-transport policy engine stays.
         if self.hub_routing_active() and not force_legacy:
-            return self._start_request_hub(request)
+            return self._start_request_hub(
+                request, allow_while_muted=allow_while_muted)
+        if force_legacy:
+            request["fallback_owner"] = True
+            self._hub.set_legacy_fallback_active(True)
         # Nothing ever queues: a new request starts in the moment of its
         # action, replacing whatever owns the transport (T-1221).
-        return self._start_request(request)
+        return self._start_request(request, force_winsound=force_legacy)
 
-    def _start_request_hub(self, request) -> bool:
+    def _start_request_hub(
+        self, request, allow_while_muted: bool = False,
+    ) -> bool:
         """Emit one already-policed request through the AudioHub."""
+        if getattr(self, "_hub_degraded", False) and self._current is not None:
+            # A legacy long cue still owns the single-transport path.  Keep
+            # one owner until it finishes; the next idle request probes rich
+            # playback again.
+            request["fallback"] = "legacy_active"
+            self._hub.set_legacy_fallback_active(True)
+            return self._start_request(request, force_winsound=True)
+        if getattr(self, "_hub_degraded", False):
+            self._hub_degraded = False
+            self._hub.set_legacy_fallback_active(False)
+
         event = request["event"]
         bus = bus_for_event(event)
         mode = self.event_mode(event)
@@ -2299,7 +2318,8 @@ class SoundManager(QObject):
         result = self._hub.play_result(
             request["path"], event=event, bus=bus,
             mode=None if mode == "inherit" else mode,
-            volume=request["volume"])
+            volume=request["volume"],
+            allow_while_muted=allow_while_muted)
         outcome = result.outcome
         request["bus"] = bus
         request["mode"] = mode
@@ -2310,12 +2330,37 @@ class SoundManager(QObject):
             # diagnostic so "I heard nothing" is answerable from one paste.
             for entry in reversed(self._hub.provenance()):
                 if entry.get("request_id") == result.request_id:
-                    for field in ("reason", "status", "error", "file_exists"):
+                    for field in ("reason", "status", "error", "file_exists",
+                                  "failure_stage"):
                         if field in entry:
                             request[f"transport_{field}"] = entry[field]
                     break
         self._record(request, outcome.value)
         self._trace_transport("HUB_PLAY", request, f"{bus}/{mode}")
+        if outcome is Outcome.STOPPED:
+            reason = request.get("transport_reason", "")
+            if reason in {
+                "OUTPUT_UNAVAILABLE", "SOURCE_ERROR", "SOURCE_NOT_PLAYING",
+                "SINK_START_FAILURE", "EFFECT_PLAY_EXCEPTION",
+                "BACKEND_EXCEPTION", "POOL_EXHAUSTED",
+                "TRANSPORT_UNAVAILABLE",
+            }:
+                self._hub_degraded = True
+                self._hub.set_legacy_fallback_active(True)
+                recover = getattr(self._hub, "recover", None)
+                if callable(recover):
+                    try:
+                        recover("rich_backend_failure")
+                    except Exception:
+                        logger.debug("rich audio recovery failed", exc_info=True)
+                request["fallback"] = "legacy"
+                request["fallback_from"] = type(self._hub.transport).__name__
+                request["fallback_transport"] = "legacy"
+                self._trace_transport("DEGRADE", request, reason)
+                return self._start_request(request, force_winsound=True)
+        if outcome not in DROPPED_OUTCOMES:
+            self._hub_degraded = False
+            self._hub.set_legacy_fallback_active(False)
         return outcome not in DROPPED_OUTCOMES
 
     def _preempt_current_transport(self, discard_pending=False, silence=False):
@@ -2354,7 +2399,7 @@ class SoundManager(QObject):
             if silence:
                 _silence_winsound(self._trace_transport)
 
-    def _start_request(self, request):
+    def _start_request(self, request, force_winsound=False):
         long = request["policy"] == "EXCLUSIVE_LONG"
         # T-1221 §4: the outgoing owner is cancelled BEFORE the new request
         # becomes current, so the CANCELLED provenance can never mark the
@@ -2369,7 +2414,7 @@ class SoundManager(QObject):
         self._qt_seen_playing = False
         self._starting = True
         try:
-            if QSoundEffect is None:
+            if force_winsound or QSoundEffect is None:
                 if long:
                     if self._worker is None:
                         self._worker = _SerialWavWorker(
@@ -2407,7 +2452,20 @@ class SoundManager(QObject):
                                          sync=False) is not False
                 self._record(request, "PLAYED" if ok else "FAILED")
                 self._finished.append((request["id"], ok))
-                self._current = None
+                degraded_owner = (
+                    request.get("fallback") in {"legacy", "legacy_active"}
+                    or request.get("fallback_owner") is True
+                )
+                if ok and degraded_owner:
+                    # The async device call returns before the WAV ends.  Keep
+                    # the degraded legacy owner until its real duration so a
+                    # rich retry cannot overlap the same physical owner.
+                    duration_ms = _wav_duration_ms(request["path"])
+                    request["fallback_until"] = time.monotonic() + (
+                        duration_ms / 1000.0 if duration_ms else 0.12)
+                    self._poll_timer.start()
+                else:
+                    self._current = None
                 return ok
             if long:
                 # T-1221 §5 REPLACE: one long notification at a time. The
@@ -2486,7 +2544,21 @@ class SoundManager(QObject):
                 except queue.Empty:
                     break
                 self._complete_request(token, success)
-        elif self._current is not None:
+            if self._current is None:
+                return
+            # A short degraded fallback can coexist with an already-created
+            # long worker.  The worker branch must not hide its duration owner.
+            if self._current.get("fallback_until") is None:
+                return
+        if self._current is not None:
+            fallback_until = self._current.get("fallback_until")
+            if fallback_until is not None:
+                if time.monotonic() < fallback_until:
+                    return
+                self._complete_request(self._current["id"])
+                return
+            if self._worker is not None:
+                return
             player = self._players.get("__ui__")
             status = getattr(player, "status", None)
             if callable(status) and status() == QSoundEffect.Status.Error:

@@ -9,8 +9,9 @@ or drives the one AudioHub.
 from __future__ import annotations
 
 import os
+import time
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QObject, QRunnable, Qt, QThreadPool, pyqtSignal
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -603,13 +604,34 @@ class PlaybackPage(QWidget):
         self.dialog._sound_manager.stop_all_sound()
         controller = getattr(self.dialog.main_win, "ambience_controller", None)
         if controller is not None:
-            controller.stop()
+            controller.stop_runtime_only()
         self.reload()
 
 
 # ---------------------------------------------------------------------------
 # C3.6 / C3.8 -- Voice
 # ---------------------------------------------------------------------------
+
+
+class _PackStatusSignals(QObject):
+    finished = pyqtSignal(int, object)
+
+
+class _PackStatusTask(QRunnable):
+    def __init__(self, generation: int, signals: _PackStatusSignals):
+        super().__init__()
+        self.generation = generation
+        self.signals = signals
+
+    def run(self):
+        started = time.perf_counter()
+        try:
+            status = pack_status()
+        except Exception as exc:
+            status = {"error": str(exc)}
+        status = dict(status)
+        status["_scan_ms"] = (time.perf_counter() - started) * 1000.0
+        self.signals.finished.emit(self.generation, status)
 
 
 class VoicePage(QWidget):
@@ -624,6 +646,10 @@ class VoicePage(QWidget):
         self.lang = lang
         self.controller = controller
         self._loading = False
+        self._status_generation = 0
+        self._status_busy = False
+        self._status_signals = _PackStatusSignals(self)
+        self._status_signals.finished.connect(self._on_pack_status_ready)
         self._build()
         self.reload()
 
@@ -710,9 +736,25 @@ class VoicePage(QWidget):
         self.refresh_status()
 
     def refresh_status(self) -> None:
-        # ONE scan for every pack: pack_status() walks whole fragment folders
-        # (VOX alone is 600+ files), so calling it per row cost seconds.
-        status = pack_status()
+        generation = self._status_generation = self._status_generation + 1
+        self.lbl_status.setText(tr("Scanning voice packs...", self.lang))
+        self._status_busy = True
+        QThreadPool.globalInstance().start(
+            _PackStatusTask(generation, self._status_signals))
+
+    def _on_pack_status_ready(self, generation: int, status) -> None:
+        if generation != self._status_generation:
+            return
+        self._status_busy = False
+        if isinstance(status, dict) and "_scan_ms" in status:
+            self._timings = getattr(self.dialog, "_timings", {})
+            self._timings["voice_pack_scan"] = status["_scan_ms"]
+        if isinstance(status, dict) and status.get("error"):
+            self.lbl_status.setText(tr("Voice pack scan failed", self.lang))
+            return
+        self._render_status(status)
+
+    def _render_status(self, status) -> None:
         lines = []
         for kind, label in self.PACK_LABELS:
             info = status.get(kind, {})
@@ -723,6 +765,10 @@ class VoicePage(QWidget):
             lines.append(f"{label}: {ready} — {info.get('fragment_count', 0)} "
                          f"{tr('clips', self.lang)} ({source})")
         self.lbl_status.setText("\n".join(lines))
+
+    def closeEvent(self, event):  # noqa: N802 - Qt naming
+        self._status_generation += 1
+        super().closeEvent(event)
 
     def _persist(self, **changes) -> None:
         if self._loading or self.controller is None:
@@ -1118,7 +1164,7 @@ class AmbiencePage(QWidget):
         self.lbl_weather = QLabel("")
         self.lbl_weather.setWordWrap(True)
 
-        weather_box = _group(
+        self.weather_box = _group(
             "Weather", self.lang,
             _row(self.cb_weather_enabled, None),
             _row(_label("Place:", self.lang), self.ed_place,
@@ -1126,6 +1172,13 @@ class AmbiencePage(QWidget):
                  _label("Lon:", self.lang), self.sp_lon,
                  self.btn_weather_save, self.btn_weather_refresh, None),
             self.lbl_weather)
+        weather_box = self.weather_box
+        weather_box.setCheckable(True)
+        weather_box.setChecked(False)
+        weather_box.setToolTip(tr("Show weather configuration", self.lang))
+        weather_box.toggled.connect(self._set_weather_details_visible)
+        self._weather_details = weather_box.children()[-1]
+        self._set_weather_details_visible(False)
         main_layout.addWidget(weather_box)
 
     # -- data -----------------------------------------------------------------
@@ -1738,7 +1791,8 @@ class AmbiencePage(QWidget):
         elif state == "running":
             self.lbl_state.setText(f"{tr('RUNNING', self.lang)} · {active_count} {tr('active', self.lang)}")
         elif state == "paused":
-            self.lbl_state.setText(f"{tr('PAUSED', self.lang)} · {active_count} {tr('held', self.lang)}")
+            held_count = int(diagnostics.get("held_layers", 0))
+            self.lbl_state.setText(f"{tr('PAUSED', self.lang)} · {held_count} {tr('held', self.lang)}")
         else:
             self.lbl_state.setText(tr(state.upper(), self.lang))
 
@@ -1802,9 +1856,26 @@ class AmbiencePage(QWidget):
         finally:
             self._loading = False
         condition = self.controller.current_weather()
+        config = self.controller.weather_config()
+        location_ready = (config.get("latitude") is not None
+                          and config.get("longitude") is not None)
+        if not config.get("enabled"):
+            status = tr("disabled", self.lang)
+        elif not location_ready:
+            status = tr("unavailable", self.lang)
+        elif self.controller.weather_state() == "stale":
+            status = tr("stale", self.lang)
+        elif not condition:
+            status = tr("unavailable", self.lang)
+        else:
+            status = tr("available", self.lang)
         self.lbl_weather.setText(
+            f"{tr('Weather input', self.lang)}: {status}   "
             f"{tr('Current condition', self.lang)}: "
             f"{tr(condition, self.lang) if condition else tr('unknown', self.lang)}")
+
+    def _set_weather_details_visible(self, visible: bool) -> None:
+        self._weather_details.setVisible(bool(visible))
 
     def _save_weather(self) -> None:
         if self._loading or self.controller is None:

@@ -37,8 +37,8 @@ from PyQt6.QtWidgets import (
 
 SLOT = 36            # Minecraft 18px slot at GUI scale 2
 ICON = 32            # 16px item sprite at GUI scale 2
-CHEST_SLOT_CHOICES = (64, 128)
-DEFAULT_CHEST_SLOTS = 64
+CHEST_SLOT_CHOICES = ("dynamic", 64, 128)
+DEFAULT_CHEST_SLOTS = "dynamic"
 
 PLACEHOLDER_ROLE = Qt.ItemDataRole.UserRole + 7
 BADGE_ROLE = Qt.ItemDataRole.UserRole + 8
@@ -52,6 +52,57 @@ HOVER_WASH = QColor(255, 255, 255, 128)
 SELECT_FRAME = QColor("#FFFFA0")
 BADGE_FG = QColor("#FFFFFF")
 BADGE_SHADOW = QColor("#3F3F3F")
+
+
+def chest_palette(main_win=None):
+    """Derive chest palette from active theme, falling back to classic Minecraft."""
+    if main_win is None:
+        return {
+            "panel_bg": PANEL_BG,
+            "slot_bg": SLOT_BG,
+            "slot_dark": SLOT_DARK,
+            "slot_light": SLOT_LIGHT,
+            "hover_wash": HOVER_WASH,
+            "select_frame": SELECT_FRAME,
+            "badge_fg": BADGE_FG,
+            "badge_shadow": BADGE_SHADOW,
+        }
+    try:
+        from fastprompter.theme.themes import theme_raw_colors
+        raw = theme_raw_colors(main_win, fallback=None)
+    except Exception:
+        raw = None
+    if not raw or not isinstance(raw, dict):
+        return {
+            "panel_bg": PANEL_BG,
+            "slot_bg": SLOT_BG,
+            "slot_dark": SLOT_DARK,
+            "slot_light": SLOT_LIGHT,
+            "hover_wash": HOVER_WASH,
+            "select_frame": SELECT_FRAME,
+            "badge_fg": BADGE_FG,
+            "badge_shadow": BADGE_SHADOW,
+        }
+    panel_bg = QColor(raw.get("bg_main", "#C6C6C6"))
+    slot_bg = QColor(raw.get("bg_text", "#8B8B8B"))
+    slot_dark = QColor(raw.get("border_dark", "#373737"))
+    slot_light = QColor(raw.get("border_light", "#FFFFFF"))
+    accent = QColor(raw.get("accent", "#FFFFA0"))
+    text_main = QColor(raw.get("text_main", "#FFFFFF"))
+
+    hover = QColor(accent.red(), accent.green(), accent.blue(), 60) if accent.isValid() else HOVER_WASH
+
+    return {
+        "panel_bg": panel_bg,
+        "slot_bg": slot_bg,
+        "slot_dark": slot_dark,
+        "slot_light": slot_light,
+        "hover_wash": hover,
+        "select_frame": accent if accent.isValid() else SELECT_FRAME,
+        "badge_fg": text_main if text_main.isValid() else BADGE_FG,
+        "badge_shadow": slot_dark if slot_dark.isValid() else BADGE_SHADOW,
+    }
+
 
 # Item-name "rarity" colours, as Minecraft tints item names
 RARITY_COMMON = "#FFFFFF"
@@ -88,13 +139,15 @@ def pixel_font(px=11, bold=True):
 
 
 def chest_slots(data):
-    """Configured slot count (64 / 128), tolerant of junk in the profile."""
+    """Configured slot count ('dynamic', 64, 128), tolerant of junk in the profile."""
+    raw = (data or {}).get("silo_chest_slots", DEFAULT_CHEST_SLOTS)
+    if isinstance(raw, str) and raw.strip().lower() in ("dynamic", "auto"):
+        return "dynamic"
     try:
-        value = int(str((data or {}).get("silo_chest_slots",
-                                         DEFAULT_CHEST_SLOTS)))
+        value = int(str(raw))
     except (TypeError, ValueError):
         return DEFAULT_CHEST_SLOTS
-    return value if value in CHEST_SLOT_CHOICES else DEFAULT_CHEST_SLOTS
+    return value if value in (64, 128) else DEFAULT_CHEST_SLOTS
 
 
 def slot_total(file_count, capacity, columns=8):
@@ -103,22 +156,28 @@ def slot_total(file_count, capacity, columns=8):
     Files are never refused because the chest is "full" -- the grid just
     grows by full rows so the overflow still sits in proper slots.
     """
+    if isinstance(capacity, str):
+        capacity = 128
     if file_count <= capacity:
         return capacity
     columns = max(1, columns)
     return ((file_count + columns - 1) // columns) * columns
 
 
-def paint_slot(p: QPainter, r: QRect):
+def paint_slot(p: QPainter, r: QRect, pal: dict | None = None):
     """One recessed inventory slot: dark top-left, white bottom-right."""
-    p.fillRect(r, SLOT_BG)
-    p.fillRect(QRect(r.left(), r.top(), r.width(), 2), SLOT_DARK)
-    p.fillRect(QRect(r.left(), r.top(), 2, r.height()), SLOT_DARK)
-    p.fillRect(QRect(r.left(), r.bottom() - 1, r.width(), 2), SLOT_LIGHT)
-    p.fillRect(QRect(r.right() - 1, r.top(), 2, r.height()), SLOT_LIGHT)
+    slot_bg = pal["slot_bg"] if pal else SLOT_BG
+    slot_dark = pal["slot_dark"] if pal else SLOT_DARK
+    slot_light = pal["slot_light"] if pal else SLOT_LIGHT
+
+    p.fillRect(r, slot_bg)
+    p.fillRect(QRect(r.left(), r.top(), r.width(), 2), slot_dark)
+    p.fillRect(QRect(r.left(), r.top(), 2, r.height()), slot_dark)
+    p.fillRect(QRect(r.left(), r.bottom() - 1, r.width(), 2), slot_light)
+    p.fillRect(QRect(r.right() - 1, r.top(), 2, r.height()), slot_light)
     # the two corners where light meets dark are the slot colour in MC
-    p.fillRect(QRect(r.right() - 1, r.top(), 2, 2), SLOT_BG)
-    p.fillRect(QRect(r.left(), r.bottom() - 1, 2, 2), SLOT_BG)
+    p.fillRect(QRect(r.right() - 1, r.top(), 2, 2), slot_bg)
+    p.fillRect(QRect(r.left(), r.bottom() - 1, 2, 2), slot_bg)
 
 
 class ChestSlotDelegate(QStyledItemDelegate):
@@ -128,11 +187,15 @@ class ChestSlotDelegate(QStyledItemDelegate):
         return QSize(SLOT, SLOT)
 
     def paint(self, p, option, index):
+        win = getattr(self.parent(), "main_win", None)
+        if win is None and hasattr(self.parent(), "_panel"):
+            win = getattr(self.parent()._panel, "main_win", None)
+        pal = chest_palette(win)
         cell = option.rect
         r = QRect(0, 0, SLOT, SLOT)
         r.moveCenter(cell.center())
         p.save()
-        paint_slot(p, r)
+        paint_slot(p, r, pal)
         inner = r.adjusted(2, 2, -2, -2)
         if not index.data(PLACEHOLDER_ROLE):
             icon = index.data(Qt.ItemDataRole.DecorationRole)
@@ -149,16 +212,21 @@ class ChestSlotDelegate(QStyledItemDelegate):
                 p.setFont(pixel_font(11))
                 text_rect = inner.adjusted(0, 0, 0, 1)
                 align = Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignBottom
-                p.setPen(BADGE_SHADOW)
+                p.setPen(pal["badge_shadow"])
                 p.drawText(text_rect.translated(1, 1), align, str(badge))
-                p.setPen(BADGE_FG)
+                p.setPen(pal["badge_fg"])
                 p.drawText(text_rect, align, str(badge))
             if option.state & QStyle.StateFlag.State_Selected:
-                p.setPen(SELECT_FRAME)
+                p.setPen(pal["select_frame"])
                 p.drawRect(inner.adjusted(0, 0, -1, -1))
                 p.drawRect(inner.adjusted(1, 1, -2, -2))
-            if option.state & QStyle.StateFlag.State_MouseOver:
-                p.fillRect(inner, HOVER_WASH)
+        is_drag_hover = False
+        lw = self.parent()
+        if hasattr(lw, "_drag_hover_item") and lw._drag_hover_item is not None:
+            if hasattr(lw, "itemFromIndex"):
+                is_drag_hover = (lw.itemFromIndex(index) is lw._drag_hover_item)
+        if (option.state & QStyle.StateFlag.State_MouseOver) or is_drag_hover:
+            p.fillRect(inner, pal["hover_wash"])
         p.restore()
 
 

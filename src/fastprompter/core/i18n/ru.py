@@ -1510,6 +1510,7 @@ TRANSLATIONS = {
     "Copy Image\tCtrl+C": "Копировать картинку\tCtrl+C",
     "Copy\tCtrl+C": "Копировать\tCtrl+C",
     "Chest Size": "Размер сундука",
+    "Dynamic (fit window)": "Динамически (по размеру окна)",
     "{} slots": "{} слотов",
     "View ({})\nCycle view: Chest → Icons → List → Details": "Вид ({})\nСмена вида: Сундук → Значки → Список → Таблица",
     "View\nCycle view: Chest → Icons → List → Details": "Вид\nСмена вида: Сундук → Значки → Список → Таблица",

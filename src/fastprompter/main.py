@@ -5299,6 +5299,7 @@ class FastPrompter(
         """
         from fastprompter.ui.sound_settings_dialog import SoundSettingsDialog
 
+        t0 = time.perf_counter()
         # The modal takes the foreground, which is a deactivation as far as
         # the main window is concerned — without the lock, Hide on Click-Out
         # hid everything behind the dialog and closing it left the user
@@ -5328,6 +5329,13 @@ class FastPrompter(
             )
             setattr(dialog, SPECIFIC_APPEARANCE_ATTR, "audio_hub_show")
             emit_audio_hub_show(self)
+            try:
+                self.last_audio_hub_open_timings = dict(
+                    getattr(dialog, "_timings", {}))
+            except RuntimeError:
+                pass
+            self.last_audio_hub_open_timings["click_to_exec"] = (
+                (time.perf_counter() - t0) * 1000.0)
             dialog.exec()
         finally:
             QTimer.singleShot(300, weak_qt_callback(

@@ -525,11 +525,11 @@ def _wait_panel_list(panel, expected, timeout=4.0):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         QApplication.processEvents()
-        got = panel.file_list.count()
+        got = panel._chest_real_count() if hasattr(panel, "_chest_real_count") and panel._view_mode() == "Chest" else panel.file_list.count()
         if got == expected:
             return got
         time.sleep(0.05)
-    return panel.file_list.count()
+    return panel._chest_real_count() if hasattr(panel, "_chest_real_count") and panel._view_mode() == "Chest" else panel.file_list.count()
 
 
 @pytest.fixture

@@ -328,9 +328,21 @@ class AmbienceController(QObject):
             return
         if self._closed or token != self._lifecycle:
             return  # retired while the request was in flight; stay silent
+        try:
+            from PyQt6 import sip
+            if sip.isdeleted(self):
+                return
+        except Exception:
+            pass
         # Qt signals are thread-safe to emit; the slot runs on the receiver's
         # thread, so the UI never touches the network result off-thread.
-        self.weatherChanged.emit(condition or "")
+        try:
+            self.weatherChanged.emit(condition or "")
+        except RuntimeError:
+            pass
 
     def current_weather(self) -> str:
         return self._engine.weather_condition() or ""
+
+    def weather_state(self) -> str:
+        return self._engine.weather_state()

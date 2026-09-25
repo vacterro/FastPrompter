@@ -61,6 +61,10 @@ def test_dialog_fast_initialization_and_chunked_rows(sound_setup):
     try:
         # Hard ceiling: construction must be well under 1000 ms (typically ~200-300 ms)
         assert elapsed_ms < 1000.0, f"Construction too slow: {elapsed_ms:.1f} ms"
+        assert dialog._timings["constructor_total"] < 1000.0
+        assert dialog._timings["get_available_sounds"] >= 0.0
+        assert dialog._timings["build"] >= 0.0
+        assert dialog._timings["load_settings"] >= 0.0
 
         # Initially, only 10 rows built
         assert dialog._built_events_count == 10
@@ -98,6 +102,42 @@ def test_lazy_tab_instantiation(sound_setup):
         from fastprompter.ui.audio_hub_pages import PlaybackPage
         dialog.pages.setCurrentIndex(2)  # Playback tab
         assert isinstance(dialog.playback_page, PlaybackPage)
+        assert dialog._voice_page_instance is None
+        assert dialog._ambience_page_instance is None
+
+        dialog.pages.setCurrentIndex(3)  # Voice page builds without inline scan
+        from fastprompter.ui.audio_hub_pages import VoicePage
+        assert isinstance(dialog.voice_page, VoicePage)
+        assert dialog.voice_page._status_busy is True
+        assert "Scanning" in dialog.voice_page.lbl_status.text()
+    finally:
+        dialog.deleteLater()
+
+
+def test_voice_scan_rejects_stale_result_after_close(sound_setup, monkeypatch):
+    host, data, manager = sound_setup
+    dialog = SoundSettingsDialog(host, data, manager)
+    page = dialog.voice_page
+    try:
+        page.close()
+        before = page.lbl_status.text()
+        page._on_pack_status_ready(page._status_generation - 1, {})
+        assert page.lbl_status.text() == before
+    finally:
+        dialog.deleteLater()
+
+
+def test_voice_scan_completes_on_gui_thread(sound_setup):
+    host, data, manager = sound_setup
+    dialog = SoundSettingsDialog(host, data, manager)
+    try:
+        page = dialog.voice_page
+        for _ in range(500):
+            QApplication.processEvents()
+            if not page._status_busy:
+                break
+        assert page._status_busy is False
+        assert page.lbl_status.text() != "Scanning voice packs..."
     finally:
         dialog.deleteLater()
 

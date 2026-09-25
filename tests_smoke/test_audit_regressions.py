@@ -66,16 +66,21 @@ def test_file_panel_discards_stale_refresh_results(win):
     items = [(probe, "x.txt", None, 0, False)]
 
     panel._on_refresh_list_result("owner-A", folder, 5, items, 1)
-    assert panel.file_list.count() == 1
+    real_count = panel._chest_real_count() if panel._view_mode() == "Chest" else panel.file_list.count()
+    assert real_count == 1
     assert panel.file_list.item(0).text() == "x.txt"
 
     # Stale owner, stale generation, or a different folder must not repaint.
     panel._on_refresh_list_result("owner-OLD", folder, 5, items, 9)
     panel._on_refresh_list_result("owner-A", folder, 4, items, 9)
     panel._on_refresh_list_result("owner-A", folder + "-elsewhere", 5, items, 9)
-    assert panel.file_list.count() == 1
+    real_count = panel._chest_real_count() if panel._view_mode() == "Chest" else panel.file_list.count()
+    assert real_count == 1
     assert panel.file_list.item(0).text() == "x.txt"
-    assert panel.lbl_count.text() == "1 file(s)"
+    if panel._view_mode() == "Chest":
+        assert panel.lbl_count.text().startswith("1/")
+    else:
+        assert panel.lbl_count.text() == "1 file(s)"
 
 
 # ============================ P0-6: del_silo abort =======================

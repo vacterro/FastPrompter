@@ -293,6 +293,11 @@ def win(tmp_path_factory):
         if getattr(w, "state", None) is not None:
             w.state.conn = None
         w.close()
+        # QTest can leave Ctrl latched on the shared QApplication. Programmatic
+        # item selection in later modules then behaves differently, producing
+        # unrelated order-dependent failures.
+        QTest.keyRelease(w, Qt.Key.Key_Control, Qt.KeyboardModifier.NoModifier)
+        _APP.processEvents()
         # Deterministic Qt disposal. pytest's unraisable-exception plugin runs
         # ``gc_collect_harder`` at unconfigure (_pytest/unraisableexception.py
         # :172), and collecting a QWidget tree whose C++ object is already gone

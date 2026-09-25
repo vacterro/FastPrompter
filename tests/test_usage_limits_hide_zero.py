@@ -590,3 +590,47 @@ def test_hidden_accounts_with_banked_resets_are_announced(win):
         dialog.close()
 
 
+def test_limit_gauges_shift_hover_ignores_all_filters(win, monkeypatch):
+    """When Shift is held during hover on LimitGauges, all accounts are shown ignoring filters."""
+    acc_hidden = AccountRef("codex", "codex_off", "Codex Off", "auto_default")
+    acc_zero = AccountRef("gemini", "gemini_zero", "Gemini Zero", "auto_default")
+    acc_active = AccountRef("claude", "claude_on", "Claude On", "auto_default")
+
+    snap_hidden = _make_snapshot("codex", five_h_used=80.0, weekly_used=10.0)
+    snap_zero = _make_snapshot("gemini", five_h_used=0.0, weekly_used=0.0)
+    snap_active = _make_snapshot("claude", five_h_used=50.0, weekly_used=5.0)
+
+    with win.limit_service._lock:
+        win.limit_service._state.accounts = [acc_hidden, acc_zero, acc_active]
+        win.limit_service._state.snapshots = {
+            acc_hidden.key: snap_hidden,
+            acc_zero.key: snap_zero,
+            acc_active.key: snap_active,
+        }
+    win.data["limit_gauges_hide_zero_usage"] = "True"
+    win.data["limit_gauges_hidden_accounts"] = [acc_hidden.key]
+
+    # Without Shift: hidden and zero are filtered out of active table
+    html_normal = win.limit_gauges._build_tooltip(ignore_filters=False)
+    assert f">{acc_active.display_name}</b>" in html_normal
+    assert f">{acc_hidden.display_name}</b>" not in html_normal
+    assert f">{acc_zero.display_name}</b>" not in html_normal
+    assert "Hidden:" in html_normal
+    assert "(all accounts — Shift held)" not in html_normal
+
+    # With Shift: ignore_filters=True shows ALL accounts in active table
+    html_shift = win.limit_gauges._build_tooltip(ignore_filters=True)
+    assert f">{acc_active.display_name}</b>" in html_shift
+    assert f">{acc_hidden.display_name}</b>" in html_shift
+    assert f">{acc_zero.display_name}</b>" in html_shift
+    assert "Hidden:" not in html_shift
+    assert "(all accounts — Shift held)" in html_shift
+
+    # Also test via monkeypatched keyboardModifiers
+    from PyQt6.QtCore import Qt
+    monkeypatch.setattr(QApplication, "keyboardModifiers",
+                        lambda: Qt.KeyboardModifier.ShiftModifier)
+    assert win.limit_gauges._shift_held() is True
+    html_auto_shift = win.limit_gauges._build_tooltip()
+    assert f">{acc_hidden.display_name}</b>" in html_auto_shift
+    assert f">{acc_zero.display_name}</b>" in html_auto_shift

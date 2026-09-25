@@ -17,8 +17,10 @@ survives a restart through its own home on disk.
 
 from __future__ import annotations
 
+import io
 import json
 import os
+import sys
 
 import pytest
 
@@ -483,3 +485,99 @@ class TestMainWindowToggleCarriesDirectory:
             FastPrompter, str(other))
         assert bridge_status(str(other))["connected"] is False
         assert "statusLine" not in _settings(str(other))
+
+
+# ---------------------------------------------------------------------------
+# the status-line subprocess writes to the HOME that ran it
+# ---------------------------------------------------------------------------
+
+
+class _FakeStdin:
+    def __init__(self, data: bytes):
+        self.buffer = io.BytesIO(data)
+
+
+def _marker_command(path) -> str:
+    """A shell command that proves IT ran by leaving a file behind."""
+    return (f'"{sys.executable}" -c "import pathlib; '
+            f'pathlib.Path({str(path)!r}).write_text(chr(120))"')
+
+
+def _payload() -> bytes:
+    return json.dumps({"rate_limits": {
+        "five_hour": {"used_percentage": 42.0, "resets_at": 4102444800.0},
+    }}).encode("utf-8")
+
+
+class TestBridgeMainWritesToTheInvokingHome:
+    """Regression: every session used to write into the DEFAULT home cache,
+    so with two accounts connected one account's gauges showed the other
+    account's numbers (identical rows in the overview and reset queue)."""
+
+    def test_payload_lands_in_the_config_dir_that_ran_the_statusline(
+            self, fake_home, monkeypatch):
+        from fastprompter.core.usage_limits.claude_statusline import (
+            CACHE_NAME,
+            bridge_main,
+        )
+        sibling = _home(fake_home, ".claude-work")
+        monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(sibling))
+        monkeypatch.setattr(sys, "stdin", _FakeStdin(_payload()))
+
+        assert bridge_main() == 0
+
+        written = json.loads(
+            (sibling / CACHE_NAME).read_text(encoding="utf-8"))
+        assert written["rate_limits"]["five_hour"]["used_percentage"] == 42.0
+        # the default home must never receive another account's payload
+        assert not (fake_home / ".claude" / CACHE_NAME).exists()
+
+    def test_delegation_runs_the_invoking_homes_original_statusline(
+            self, fake_home, monkeypatch, tmp_path):
+        from fastprompter.core.usage_limits.claude_statusline import (
+            BRIDGE_CONFIG_NAME,
+            BRIDGE_MARKER,
+            bridge_main,
+        )
+        sibling = _home(fake_home, ".claude-work")
+        default = fake_home / ".claude"
+        here_marker = tmp_path / "forwarded-here.txt"
+        default_marker = tmp_path / "forwarded-default.txt"
+
+        def sidecar(marker):
+            return json.dumps({
+                "schema_version": 1,
+                "marker": BRIDGE_MARKER,
+                "had_status_line": True,
+                "original_status_line": {
+                    "type": "command",
+                    "command": _marker_command(marker),
+                },
+            })
+
+        (sibling / BRIDGE_CONFIG_NAME).write_text(
+            sidecar(here_marker), encoding="utf-8")
+        (default / BRIDGE_CONFIG_NAME).write_text(
+            sidecar(default_marker), encoding="utf-8")
+        monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(sibling))
+        monkeypatch.setattr(sys, "stdin", _FakeStdin(_payload()))
+
+        assert bridge_main() == 0
+
+        assert here_marker.exists(), (
+            "the invoking home's original status line must be forwarded")
+        assert not default_marker.exists(), (
+            "the default home must not run another account's sidecar")
+
+    def test_without_a_config_dir_env_the_default_home_is_used(
+            self, fake_home, monkeypatch):
+        from fastprompter.core.usage_limits.claude_statusline import (
+            claude_dir,
+            invoking_claude_dir,
+        )
+        monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+        assert invoking_claude_dir() == claude_dir()
+
+        other = fake_home / ".claude-work"
+        monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(other))
+        assert invoking_claude_dir() == other

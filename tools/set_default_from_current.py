@@ -513,25 +513,25 @@ def _sanitize_productivity_timer(value, base_value):
 
 
 def _sanitize_silo_chest_slots(value, base_value):
-    """Preserve only supported chest capacities; junk uses the canonical 64."""
-    allowed = {"64", "128"}
+    """Preserve only supported chest capacities; junk uses the canonical default."""
+    allowed = {"dynamic", "64", "128"}
     if isinstance(value, bool):
         normalized = None
     elif isinstance(value, int):
         normalized = str(value) if str(value) in allowed else None
-    elif isinstance(value, str) and value in allowed:
-        normalized = value
+    elif isinstance(value, str) and value.strip().lower() in allowed:
+        normalized = value.strip().lower()
     else:
         normalized = None
 
     if normalized is not None:
         return normalized
-    if isinstance(base_value, str) and base_value in allowed:
-        return base_value
+    if isinstance(base_value, str) and base_value.strip().lower() in allowed:
+        return base_value.strip().lower()
     if isinstance(base_value, int) and not isinstance(base_value, bool) \
             and str(base_value) in allowed:
         return str(base_value)
-    return "64"
+    return "dynamic"
 
 
 # key -> sanitizer(live_value, base_value). Applied to a value taken from the

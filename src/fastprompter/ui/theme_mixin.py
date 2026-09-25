@@ -244,6 +244,13 @@ class ThemeMixin:
         except RuntimeError:
             pass
 
+        try:
+            fc = getattr(self, "_file_container", None)
+            if fc is not None and not _is_deleted(fc) and hasattr(fc, "apply_theme"):
+                fc.apply_theme()
+        except Exception:
+            pass
+
         # Re-apply the font LAST. Setting an application stylesheet makes Qt
         # re-polish every widget, and a widget whose font was set explicitly
         # comes back on the class default - measured: with "Courier New"

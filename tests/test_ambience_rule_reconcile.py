@@ -233,3 +233,39 @@ class TestControllerRoute:
         finally:
             controller.shutdown()
             app.processEvents()
+
+    def test_pause_edit_resume_uses_the_new_saved_values(self, tmp_path):
+        pytest.importorskip("PyQt6.QtWidgets")
+        from PyQt6.QtCore import QObject
+        from PyQt6.QtWidgets import QApplication
+
+        from fastprompter.ui.ambience_controller import AmbienceController
+
+        app = QApplication.instance() or QApplication([])
+        parent = QObject()
+        hub = RecordingHub()
+        store = AmbienceStore(db_path=str(tmp_path / "ambience.sqlite"))
+        rule = _rule()
+        store.save_rules([rule])
+        engine = AmbienceEngine(hub, max_layers=4)
+        controller = AmbienceController(parent, None, store=store,
+                                        engine=engine)
+        try:
+            controller.start(persist=False)
+            assert [path for _event, path, _volume in hub.entries] == ["A.wav"]
+            controller.pause()
+            assert controller.state() == "paused"
+            assert engine.diagnostics["held_layers"] == 1
+
+            rule.sound_ref = "B.wav"
+            controller.save_rule(rule)
+            assert hub.live == {}
+            assert controller.state() == "paused"
+
+            controller.resume()
+            assert controller.state() == "running"
+            assert [path for _event, path, _volume in hub.entries] == ["A.wav", "B.wav"]
+            assert list(hub.live.values())[0]["path"] == "B.wav"
+        finally:
+            controller.shutdown()
+            app.processEvents()

@@ -275,11 +275,27 @@ class ClaudeProvider(UsageProvider):
         signed into, so a caller asking about one home silently received
         another home's percentages. Such an account is asked about its OWN
         home, which is what every other source in this provider already reads
-        (:meth:`_bridge_reading` uses ``source_path``).
+        (:meth:`_bridge_reading` uses ``source_path`).
+
+        The empty (default-account) value gets the same treatment when the
+        AMBIENT environment names a different home: "read with the ambient
+        environment" is only correct while that environment points at this
+        account. A FastPrompter process launched with a foreign
+        ``CLAUDE_CONFIG_DIR`` would otherwise report the other account's
+        percentages under the default account's name — two gauges showing
+        one account.
         """
         metadata = getattr(account, "metadata", None) or {}
         if "config_dir" in metadata:
-            return str(metadata.get("config_dir") or "")
+            config_dir = str(metadata.get("config_dir") or "")
+            if config_dir:
+                return config_dir
+            source = str(getattr(account, "source_path", "") or "")
+            ambient = str(os.environ.get("CLAUDE_CONFIG_DIR") or "").strip()
+            if (source and ambient
+                    and canonical_path(ambient) != canonical_path(source)):
+                return source
+            return ""
         return str(getattr(account, "source_path", "") or "")
 
     def _cli_reading(self, deadline: float, now: float,
