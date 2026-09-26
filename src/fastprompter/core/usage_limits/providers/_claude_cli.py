@@ -14,11 +14,12 @@ The text it prints (verbatim, 2.1.259)::
     Current session: 65% used · resets Sep 3, 4:49pm (Europe/Tallinn)
     Current week (all models): 64% used · resets Sep 8, 4:59pm (Europe/Tallinn)
 
-The timestamp is rendered in LOCAL time (the CLI calls ``toLocaleString`` with
-no timeZone and appends the zone's name for the reader), so it is parsed as
-naive local time — no tzdata dependency, which the bundled build does not ship.
-The year is present only when it differs from the current one, exactly the rule
-the CLI applies, so an absent year means "this year".
+The timestamp names its IANA zone. ``zoneinfo`` interprets that vendor rule so
+an SSH host, travel, or a differently configured workstation cannot shift the
+instant. Older output without a zone keeps the machine-local fallback. The year
+is present only when it differs from the current one; an omitted calendar date
+already earlier than today therefore belongs to next year, while a same-day
+elapsed minute stays elapsed instead of jumping forward a year.
 
 Nothing is inferred: a line that does not parse is dropped rather than guessed
 at, and a missing ``/usage`` answer leaves the caller with no window at all.
@@ -34,6 +35,7 @@ import tempfile
 import time
 import uuid
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastprompter.core.usage_limits.cli_tools import resolve_binary, run_cli
 
@@ -64,8 +66,9 @@ _TITLES = {
 _SCOPED_WEEKLY_RE = re.compile(r"^current week \((?P<scope>.+)\)$")
 
 
-def parse_reset(text: str, now: float | None = None) -> float | None:
-    """``"Sep 3, 4:49pm"`` -> epoch seconds, or None when unparseable."""
+def parse_reset(text: str, now: float | None = None,
+                 tz_name: str | None = None) -> float | None:
+    """CLI wall time plus its named zone -> epoch seconds."""
     match = _WHEN_RE.match((text or "").strip())
     if match is None:
         return None
@@ -75,14 +78,28 @@ def parse_reset(text: str, now: float | None = None) -> float | None:
     hour = int(match.group("hour")) % 12
     if match.group("ampm").lower() == "pm":
         hour += 12
-    reference = datetime.datetime.fromtimestamp(
-        time.time() if now is None else now)
-    year = int(match.group("year") or reference.year)
+    day = int(match.group("day"))
+    reference_epoch = time.time() if now is None else now
+    zone = None
+    if tz_name:
+        try:
+            zone = ZoneInfo(tz_name)
+        except (ZoneInfoNotFoundError, ValueError):
+            return None
+    reference = datetime.datetime.fromtimestamp(reference_epoch, tz=zone)
+    explicit_year = match.group("year")
+    year = int(explicit_year or reference.year)
     try:
-        moment = datetime.datetime(year, month, int(match.group("day")), hour,
-                                   int(match.group("minute") or 0))
+        moment = datetime.datetime(year, month, day, hour,
+                                   int(match.group("minute") or 0), tzinfo=zone)
     except ValueError:
         return None
+    if (explicit_year is None
+            and (month, day) < (reference.month, reference.day)):
+        try:
+            moment = moment.replace(year=moment.year + 1)
+        except ValueError:
+            moment = moment.replace(year=moment.year + 1, day=28)
     return moment.timestamp()
 
 
@@ -104,7 +121,9 @@ def parse_usage_text(text: str, now: float | None = None) -> dict:
         used = max(0.0, min(100.0, float(match.group("pct"))))
         windows[key] = {
             "used": used,
-            "resets_at": parse_reset(match.group("when") or "", now=now),
+            "resets_at": parse_reset(
+                match.group("when") or "", now=now,
+                tz_name=match.group("tz")),
         }
     return windows
 

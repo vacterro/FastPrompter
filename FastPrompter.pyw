@@ -35,6 +35,10 @@ import os
 import traceback
 import ctypes
 
+# Launchers may export TZ=UTC even when Windows itself is on local time.
+# datetime consults TZ on first use, so remove the override before app imports.
+os.environ.pop("TZ", None)
+
 # Add src to Python path so it can find fastprompter
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 

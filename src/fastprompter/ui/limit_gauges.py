@@ -852,7 +852,7 @@ class LimitGauges(QWidget):
                     pool = (html.escape(self._elide(b.group_label,
                                                     self.LABEL_CHARS))
                             if b.group_label else "")
-                    w_lbl = html.escape(_win_label(b))
+                    w_lbl = html.escape(_win_label(b, a.provider_id))
                     if pool:
                         clean_pool = pool.replace(" and ", " & ").replace(" models", "").replace(" Models", "")
                         lbl_text = f"{clean_pool} {w_lbl}:"
@@ -1175,7 +1175,7 @@ def _cluster_windows(snap, filter_dead_pools: bool = False) -> list:
     return windows
 
 
-def _win_label(b) -> str:
+def _win_label(b, provider_id: str = "") -> str:
     """Human window name from the window key or its duration."""
     if isinstance(b, str):
         key = base_key(b)
@@ -1185,7 +1185,9 @@ def _win_label(b) -> str:
                                                 (int, float)) else None
         key = base_key(getattr(b, "key", "") or "")
     if key == FIVE_HOUR or mins == 300:
-        return "5h"
+        # Claude's own /usage answer calls this bucket "Current session".
+        # Its reset timestamp is authoritative and may be beyond five hours.
+        return "Session" if provider_id == "claude" else "5h"
     if key == WEEKLY or mins == 10080:
         return "weekly"
     if key == MONTHLY or mins == 43200:

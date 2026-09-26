@@ -703,7 +703,7 @@ def _parse_reset(value) -> float | None:
         return value if 1e9 < value < 1e11 else None
     if isinstance(value, str):
         try:
-            parsed = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+            parsed = datetime.datetime.fromisoformat(value)
             return parsed.timestamp()
         except (ValueError, OverflowError):
             return None

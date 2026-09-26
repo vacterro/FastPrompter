@@ -73,7 +73,7 @@ def _iso_epoch(value):
         return None
     try:
         import datetime
-        text = value.strip().replace("Z", "+00:00")
+        text = value.strip()
         # Antigravity writes 9 fractional digits; fromisoformat takes 6.
         text = re.sub(r"(\.\d{6})\d+", r"\1", text)
         parsed = datetime.datetime.fromisoformat(text)

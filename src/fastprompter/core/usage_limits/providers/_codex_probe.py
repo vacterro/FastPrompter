@@ -515,7 +515,7 @@ def _iso_from_epoch(val) -> str | None:
         return None
     import datetime as _dt
     try:
-        return _dt.datetime.fromtimestamp(f).strftime("%Y-%m-%dT%H:%M:%S")
+        return _dt.datetime.fromtimestamp(f, _dt.UTC).isoformat()
     except Exception:
         return None
 
@@ -574,7 +574,7 @@ def probe_codex_home(codex_home: str, deadline: float | None = None,
         payload["plan_type"] = parsed.get("plan_type")
         payload["banked_resets"] = parsed.get("banked_resets")
         payload["reset_credits"] = parsed.get("reset_credits", [])
-        payload["fetched_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+        payload["fetched_at"] = time.time()
         return payload
     except JsonRpcError as exc:
         return {"ok": False, "error": str(exc)[:160],

@@ -38,10 +38,14 @@ from fastprompter.core.usage_limits.notifications import (
     evaluate_limit_notifications,
     notification_key,
 )
-from fastprompter.core.usage_limits.providers._codex_probe import parse_windows
+from fastprompter.core.usage_limits.providers._codex_probe import (
+    _iso_from_epoch,
+    parse_windows,
+)
 from fastprompter.core.usage_limits.providers.codex import (
     CodexProvider,
     _as_window,
+    _epoch,
     _windows_from,
 )
 
@@ -232,6 +236,17 @@ class TestHistoricalPayloadsUnchanged:
         assert out["monthly"]["available"] is True
         assert out["monthly"]["remaining_percent"] == 0
         assert out["plan_type"] == "free"
+
+
+class TestResetEpochContract:
+    def test_reset_epoch_roundtrip_stays_utc_across_dst(self):
+        target = 1_767_607_200  # 2026-01-05T10:00:00Z, Tallinn winter UTC+2
+        assert _iso_from_epoch(target) == "2026-01-05T10:00:00+00:00"
+        parsed = parse_windows({"rateLimits": {"primary": {
+            "windowDurationMins": 10080, "usedPercent": 71,
+            "resetsAt": target,
+        }}})
+        assert _epoch(parsed["weekly"]["resets_at"]) == target
 
 
 # -- probe payload -> UsageWindow ------------------------------------------

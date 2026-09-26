@@ -63,8 +63,12 @@ def transcript_root(claude_dir: str | os.PathLike) -> str:
 
 
 def _epoch(value):
-    """Seconds since the epoch, or None. Accepts ms (Claude has used both)."""
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
+    """Seconds since the epoch from Claude's numeric or ISO reset shapes."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, str):
+        return _iso_epoch(value)
+    if not isinstance(value, (int, float)):
         return None
     value = float(value)
     if value != value or value <= 0:
@@ -147,7 +151,7 @@ def _iso_epoch(value):
         return None
     try:
         import datetime
-        text = value.strip().replace("Z", "+00:00")
+        text = value.strip()
         parsed = datetime.datetime.fromisoformat(text)
         if parsed.tzinfo is None:
             parsed = parsed.replace(tzinfo=datetime.UTC)

@@ -158,6 +158,12 @@ class TestOrderingAndPools:
         assert pools.count("GPT Reserve") == 1
         assert "GPT Reserve" in html
 
+    def test_claude_current_session_keeps_its_vendor_name(self):
+        rows, html = _render()
+        claude = next(row for row in rows if row["account"] == "Claude")
+        assert claude["window"] == "Session"
+        assert ">Session</td>" in html
+
     def test_empty_queue_renders_the_header_only(self):
         assert "<table" not in render_table([], header="Next resets")
 

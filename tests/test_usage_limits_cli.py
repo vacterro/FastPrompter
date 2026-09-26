@@ -177,17 +177,28 @@ class TestClaudeUsageParser:
         assert windows["five_hour"]["resets_at"] is not None
         assert windows["weekly"]["resets_at"] > windows["five_hour"]["resets_at"]
 
-    def test_the_reset_is_parsed_as_local_time(self):
-        """The CLI renders local time and names the zone for the reader.
-
-        Parsing it as UTC would shift every countdown by the offset, and the
-        bundled build ships no tzdata to interpret the zone name with.
-        """
+    def test_reset_without_a_zone_keeps_local_time_fallback(self):
         epoch = _claude_cli.parse_reset("Sep 3, 4:49pm",
                                         now=datetime.datetime(
                                             2026, 9, 3, 12, 0).timestamp())
         local = datetime.datetime.fromtimestamp(epoch)
         assert (local.month, local.day, local.hour, local.minute) == (9, 3, 16, 49)
+
+    def test_named_timezone_defines_the_instant(self):
+        now = datetime.datetime(2026, 9, 25, 12, tzinfo=datetime.UTC).timestamp()
+        epoch = _claude_cli.parse_reset(
+            "Sep 25, 2026, 4:49pm", now=now, tz_name="Asia/Dhaka")
+        expected = datetime.datetime(
+            2026, 9, 25, 10, 49, tzinfo=datetime.UTC).timestamp()
+        assert epoch == expected
+        windows = _claude_cli.parse_usage_text(
+            "Current session: 100% used · resets Sep 25, 2026, 4:49pm (Asia/Dhaka)",
+            now=now)
+        assert windows["five_hour"]["resets_at"] == expected
+
+    def test_unknown_named_timezone_fails_closed(self):
+        assert _claude_cli.parse_reset(
+            "Sep 25, 2026, 4:49pm", tz_name="Mars/Olympus_Mons") is None
 
     def test_a_bare_hour_has_no_minutes(self):
         epoch = _claude_cli.parse_reset("Sep 8, 5pm")
@@ -196,6 +207,20 @@ class TestClaudeUsageParser:
     def test_an_explicit_year_is_honoured(self):
         epoch = _claude_cli.parse_reset("Jan 2, 2028, 9am")
         assert datetime.datetime.fromtimestamp(epoch).year == 2028
+
+    def test_an_omitted_past_year_rolls_forward(self):
+        now = datetime.datetime(2026, 9, 25, 12, tzinfo=datetime.UTC).timestamp()
+        epoch = _claude_cli.parse_reset(
+            "Sep 3, 4:49pm", now=now, tz_name="Europe/Tallinn")
+        got = datetime.datetime.fromtimestamp(epoch, datetime.UTC)
+        assert (got.year, got.month, got.day, got.hour, got.minute) == (
+            2027, 9, 3, 13, 49)
+
+    def test_a_same_day_elapsed_minute_stays_elapsed(self):
+        now = datetime.datetime(2026, 9, 25, 17, tzinfo=datetime.UTC).timestamp()
+        epoch = _claude_cli.parse_reset(
+            "Sep 25, 4:49pm", now=now, tz_name="Europe/Tallinn")
+        assert datetime.datetime.fromtimestamp(epoch, datetime.UTC).year == 2026
 
     def test_a_per_model_weekly_keeps_its_own_identity(self):
         """"Current week (Sonnet)" is a separate limit, not the weekly again."""

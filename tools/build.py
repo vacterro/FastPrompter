@@ -104,7 +104,8 @@ def build_with_nuitka(upx_mode: str, pin: str, allow_any: bool) -> int:
           f"PyQt6 {_version('PyQt6') or 'unknown'}, UPX {upx_policy}")
     print("Starting Nuitka build for FastPrompter...")
 
-    cmd = [sys.executable, "-m", "nuitka", "FastPrompter.pyw"]
+    cmd = [sys.executable, "-m", "nuitka",
+           "--include-package-data=tzdata", "FastPrompter.pyw"]
     if upx_policy == "on":
         cmd.append("--plugin-enable=upx")
         cmd.append(f"--upx-binary={shutil.which('upx')}")

@@ -411,7 +411,7 @@ class LimitOverview(QWidget):
         painter.drawText(
             QRect(self.PAD, y, self.LABEL_W - 4, self.ROW_H),
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
-            _win_label(window))
+            _win_label(window, shot.account.provider_id))
         metrics = QFontMetrics(self._font(10))
         value = self._value_text(window, remaining)
         value_w = min(self.VALUE_W, metrics.horizontalAdvance(value) + 8)
@@ -494,7 +494,8 @@ class LimitOverview(QWidget):
                 lines.append(f"  {payload}")
             elif kind == "window":
                 source = payload.source or "unknown source"
-                lines.append(f"  {_win_label(payload)}: {source}")
+                lines.append(
+                    f"  {_win_label(payload, shot.account.provider_id)}: {source}")
             else:
                 lines.append(f"  {payload}")
         return "\n".join(lines) or "No AI accounts detected"

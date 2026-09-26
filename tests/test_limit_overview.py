@@ -247,7 +247,9 @@ class TestLimitOverview(unittest.TestCase):
         image = view.grab().toImage()
         assert not image.isNull()
         assert image.width() == 640
-        assert "5h" in view._build_tooltip()
+        tooltip = view._build_tooltip()
+        assert "5h" in tooltip
+        assert "Session" in tooltip
         retire(view)
 class TestLimitFillDirection(unittest.TestCase):
     """The user picks whether a bar holds what is left or what is spent."""

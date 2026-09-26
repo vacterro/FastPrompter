@@ -104,7 +104,7 @@ def _finite_percentage(value):
 def _reset_value(value):
     if isinstance(value, bool):
         return None
-    if isinstance(value, (int, float)) and 0 < float(value) < 10**12:
+    if isinstance(value, (int, float)) and 0 < float(value) < 10**13:
         return float(value)
     if isinstance(value, str):
         # Keep an ISO timestamp as text; the provider parses it without

@@ -98,7 +98,7 @@ def elide(text: str, limit: int) -> str:
     return text[: max(0, limit - 1)].rstrip() + "…"
 
 
-def window_label(window) -> str:
+def window_label(window, provider_id: str = "") -> str:
     """Compact window name ("5h", "Weekly", "30d", ...), pool-independent.
 
     The KEY wins when it names a known window: a provider may report a
@@ -114,7 +114,9 @@ def window_label(window) -> str:
     )
     key = base_key(getattr(window, "key", "") or "")
     if key == FIVE_HOUR:
-        return "5h"
+        # Claude calls its five-hour-keyed bucket "Current session"; the
+        # authoritative reset can be more than five hours away.
+        return "Session" if provider_id == "claude" else "5h"
     if key == WEEKLY:
         return "Weekly"
     if key == MONTHLY:
@@ -146,7 +148,7 @@ def reset_rows(candidates, now: float, name_for, pool_colors=None) -> list[dict]
             "n": index,
             "account": account,
             "pool": pool,
-            "window": window_label(window),
+            "window": window_label(window, cand.provider_id),
             "left": remaining,
             "provider_id": cand.provider_id,
             "color": (pool_colors or {}).get(cand.provider_id, ""),

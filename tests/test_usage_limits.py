@@ -10,6 +10,7 @@ Covers:
 
 from __future__ import annotations
 
+import datetime
 import json
 import os
 import subprocess
@@ -474,6 +475,36 @@ class TestPlanSpecificWindows:
         assert [w.duration_minutes for w in windows] == [300, 10080]
 
 
+class TestCodexProbeTimeContract:
+    def test_fetched_at_is_a_numeric_epoch(self, tmp_path, monkeypatch):
+        import fastprompter.core.usage_limits.providers._codex_probe as probe_mod
+        home = tmp_path / ".codex"
+        home.mkdir()
+
+        class FakeSession:
+            def call(self, method, params=None, timeout=None):
+                if method == "initialize":
+                    return {"result": {}}
+                if method == "account/rateLimits/read":
+                    return {"result": {"rateLimits": {}}}
+                return {"result": {}}
+
+            def notify(self, method):
+                return None
+
+            def close(self):
+                return None
+
+        monkeypatch.setattr(
+            probe_mod, "_start_app_server",
+            lambda *args, **kwargs: FakeSession())
+        monkeypatch.setattr(probe_mod.time, "time", lambda: 1_234.5)
+        result = probe_mod.probe_codex_home(
+            str(home), deadline=time.monotonic() + 5)
+        assert result["ok"] is True
+        assert result["fetched_at"] == 1_234.5
+
+
 class TestCodexBankedResets:
     def test_codex_probe_attaches_banked_resets_and_metadata(self, monkeypatch):
         account = AR(provider_id="codex", stable_id="test_id",
@@ -666,6 +697,16 @@ class TestClaudeStatuslineBridge:
         }
         assert "session_id" not in str(out)
         assert "transcript" not in str(out)
+
+    def test_millisecond_reset_epoch_survives_sanitization(self):
+        from fastprompter.core.usage_limits.claude_statusline import (
+            sanitize_statusline_payload,
+        )
+        reset_ms = 1_788_498_595_214
+        out = sanitize_statusline_payload({"rate_limits": {
+            "five_hour": {"used_percentage": 12.5, "resets_at": reset_ms},
+        }}, captured_at=1_700_000_000)
+        assert out["rate_limits"]["five_hour"]["resets_at"] == float(reset_ms)
 
     def test_install_disconnect_restores_existing_statusline(self, tmp_path):
         import json
@@ -895,6 +936,22 @@ class TestClaudeTranscriptRefusals:
         blocks = active_quota_blocks(directory, now=now)
         assert set(blocks) == {FIVE_HOUR}
         assert blocks[FIVE_HOUR]["resets_at"] == now + 1800
+
+    def test_an_iso_string_refusal_keeps_its_reset(self, tmp_path):
+        from fastprompter.core.usage_limits.providers._claude_transcripts import (
+            active_quota_blocks,
+        )
+        now = 1_800_000_000.0
+        reset = "2030-01-01T00:00:00Z"
+        directory = tmp_path / ".claude"
+        self._transcript(directory, [
+            {"type": "assistant", "timestamp": "2026-09-25T12:00:00Z",
+             "quotaLimits": {"status": "rejected", "resetsAt": reset,
+                             "rateLimitType": "five_hour"}},
+        ], mtime=now - 60)
+        blocks = active_quota_blocks(directory, now=now)
+        assert blocks[FIVE_HOUR]["resets_at"] == datetime.datetime.fromisoformat(
+            reset).timestamp()
 
     def test_a_transcript_older_than_a_week_is_ignored(self, tmp_path):
         """A month-old refusal describes a window that reset long ago."""

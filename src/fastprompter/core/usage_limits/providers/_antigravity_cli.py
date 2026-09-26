@@ -147,7 +147,7 @@ def _epoch(value) -> float | None:
         return value if 1e9 < value < 1e11 else None
     if not isinstance(value, str) or not value.strip():
         return None
-    text = value.strip().replace("Z", "+00:00")
+    text = value.strip()
     text = re.sub(r"(\.\d{6})\d+", r"\1", text)
     try:
         parsed = datetime.datetime.fromisoformat(text)

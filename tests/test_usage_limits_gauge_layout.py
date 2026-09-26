@@ -474,7 +474,7 @@ class TestLimitGaugeRichTooltip:
         now = time.time()
         snapshots = {
             c1.key: _snapshot(c1, [
-                UsageWindow("five_hour", 300, True, 20, 80, now + 3600),
+                UsageWindow("five_hour", 300, True, 100, 0, now + 7 * 3600 + 51 * 60),
                 UsageWindow("weekly", 10080, True, 85, 15, now + 86400),
             ])
         }
@@ -489,14 +489,15 @@ class TestLimitGaugeRichTooltip:
         # Color coding
         assert "color:" in tt
         # Windows & percentages
-        assert "80%" in tt
+        assert "0%" in tt
         assert "15%" in tt
         import re
-        assert not re.search(r">(?:80|15)%\s+\d+m</td>", tt)
-        assert "80% ·" not in tt
+        assert not re.search(r">(?:0|15)%\s+\d+m</td>", tt)
+        assert "0% ·" not in tt
         assert "15% ·" not in tt
-        assert "resets in " in tt
-        assert "5h:" in tt
+        assert "resets in 7h" in tt
+        assert "Session:" in tt
+        assert "5h:" not in tt
         assert "weekly:" in tt
 
         # Multi-account realistic tooltip

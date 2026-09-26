@@ -250,7 +250,7 @@ def _epoch(iso):
         import datetime as _dt
         t = _dt.datetime.fromisoformat(str(iso))
         if t.tzinfo is None:
-            t = t.replace(tzinfo=_dt.datetime.now().astimezone().tzinfo)
+            t = t.replace(tzinfo=_dt.UTC)
         return t.timestamp()
     except Exception:
         return None

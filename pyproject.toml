@@ -7,6 +7,7 @@ dependencies = [
     "PyQt6>=6.8.0",
     "markdown>=3.10.3",
     "pynput>=1.7.6",
+    "tzdata>=2026.4",
 ]
 
 [project.optional-dependencies]
