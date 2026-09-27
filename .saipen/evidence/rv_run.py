@@ -43,7 +43,9 @@ for t in TICKETS:
     results.append((t, kind, code, round(time.time() - start, 1)))
     print("%s %-24s %-18s %6.1fs" % results[-1], flush=True)
 
-with io.open(".saipen/evidence/rv_exec_log.txt", "w", encoding="utf-8") as fh:
+# Written OUTSIDE the repository on purpose: every tracked byte written after
+# a reverify receipt moves the tree and invalidates it.
+with io.open("C:/Users/vac34/AppData/Local/Temp/rv_exec_log.txt", "w", encoding="utf-8") as fh:
     for row in results:
         fh.write("%s %s %s %ss\n" % row)
 print("DONE", len(results), "failures:",
