@@ -1,4 +1,14 @@
 {
-  "requirements": {},
+  "requirements": {
+    "SRC-062:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "T-1331 closed with verification evidence in LOG: verify -> PASS [target: T-1331] conf: high -- python -m pytest tests/ -q on main@38c45b8: 3936 passed 16 skipped in 604.80s, 0 failed; ruff check src/fastprompter/ tests/: All checks passed; instrument control: with the two geometry hunks reverted the same suite goes red at tests/test_t1330_image_and_sound.py::test_image_copy_button_sits_beside_the_pill and ::test_drawn_pill_is_the_clickable_pill,",
+      "text": "Fix button overlap in UI; move and commit all work to main branch and continue there",
+      "verification": "the Work this request created reached its own verification gate; see the T-1331 VERIFY cycle in .saipen/LOG.md",
+      "work": "T-1331"
+    }
+  },
   "schema_version": 1
 }

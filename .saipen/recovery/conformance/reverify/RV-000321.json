@@ -1,0 +1,46 @@
+{
+  "agent": "buffy",
+  "created_at": "2026-09-27T17:33:26Z",
+  "evidence_class": "attested",
+  "findings_digest": "77aa889f7289657aad07b6d3084933e9639a0cf78084b95ad316ca72e0a1aed2",
+  "gate": "core",
+  "integrity_digest": "2afb70b253e31feb",
+  "journal_op_id": "reverify.e71ab911512a",
+  "original_closure": {
+    "claim_time": "2026-09-13T22:41:12Z",
+    "last_ticket_event": "E-1987",
+    "owner": "buffy"
+  },
+  "own_problem_keys": [
+    "c7a633919445da07"
+  ],
+  "problem_count": 47,
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "receipt_id": "RV-000321",
+  "ruleset_fingerprint": "82e5e183ae8f0fd909be3fa3627f00489cacaab813d942186c832db02a05a1c1",
+  "ruleset_version": 1,
+  "schema_version": 1,
+  "source_head": "38c45b8fc205bc8ecc8d95b4d79bc1b67ac07d43",
+  "source_tree_fingerprint": "git-delta-v1:587558308fadaac4aa2498ad1c5e2db72687bc4f355cae59c3a161e37a1d1909",
+  "verdict": "PASS_WITH_CARRIED_DEBT",
+  "verification": [
+    {
+      "command": "python -m pytest tests/ -q",
+      "executed": false,
+      "kind": "attested",
+      "result": "PASS"
+    }
+  ],
+  "verification_contract": {
+    "commands": [
+      "python -m pytest tests/ -q"
+    ],
+    "findings_digest": "77aa889f7289657aad07b6d3084933e9639a0cf78084b95ad316ca72e0a1aed2",
+    "gate": "core"
+  },
+  "verification_contract_digest": "03b4b643ffeb7b64",
+  "verifier": "buffy",
+  "warning_count": 70,
+  "work": "T-1261"
+}

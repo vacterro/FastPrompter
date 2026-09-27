@@ -1,0 +1,47 @@
+T-1203 static-gate WORK_REVERIFIED 5.5s
+T-1205 static-gate WORK_REVERIFIED 5.7s
+T-1208 static-gate WORK_REVERIFIED 5.9s
+T-1210 static-gate WORK_REVERIFIED 5.9s
+T-1211 static-gate WORK_REVERIFIED 6.5s
+T-1212 static-gate WORK_REVERIFIED 6.5s
+T-1213 static-gate WORK_REVERIFIED 6.8s
+T-1214 static-gate WORK_REVERIFIED 7.0s
+T-1215 static-gate WORK_REVERIFIED 7.2s
+T-1221 behavioural(3 files) REVERIFY_REUSED 8.8s
+T-1222 behavioural(20 files) WORK_REVERIFIED 70.3s
+T-1225 behavioural(1 files) WORK_REVERIFIED 8.7s
+T-1226 static-gate WORK_REVERIFIED 8.0s
+T-1229 behavioural(3 files) WORK_REVERIFIED 22.0s
+T-1230 behavioural(1 files) WORK_REVERIFIED 9.6s
+T-1231 behavioural(1 files) WORK_REVERIFIED 9.7s
+T-1232 behavioural(1 files) WORK_REVERIFIED 9.7s
+T-1233 behavioural(1 files) WORK_REVERIFIED 12.0s
+T-1234 behavioural(1 files) WORK_REVERIFIED 10.5s
+T-1235 behavioural(1 files) WORK_REVERIFIED 17.5s
+T-1236 behavioural(1 files) WORK_REVERIFIED 10.9s
+T-1240 behavioural(1 files) WORK_REVERIFIED 10.8s
+T-1242 behavioural(6 files) WORK_REVERIFIED 12.9s
+T-1243 behavioural(1 files) WORK_REVERIFIED 15.6s
+T-1244 behavioural(1 files) WORK_REVERIFIED 10.6s
+T-1245 static-gate WORK_REVERIFIED 9.3s
+T-1247 behavioural(1 files) WORK_REVERIFIED 10.7s
+T-1248 behavioural(1 files) WORK_REVERIFIED 10.8s
+T-1249 behavioural(1 files) WORK_REVERIFIED 10.9s
+T-1250 behavioural(1 files) WORK_REVERIFIED 12.6s
+T-1251 static-gate WORK_REVERIFIED 10.1s
+T-1252 behavioural(1 files) WORK_REVERIFIED 11.2s
+T-1253 behavioural(6 files) WORK_REVERIFIED 40.9s
+T-1254 behavioural(1 files) WORK_REVERIFIED 19.4s
+T-1255 static-gate WORK_REVERIFIED 15.2s
+T-1256 behavioural(1 files) WORK_REVERIFIED 16.4s
+T-1260 behavioural(6 files) WORK_REVERIFIED 24.7s
+T-1261 behavioural(1 files) WORK_REVERIFIED 19.2s
+T-1265 static-gate WORK_REVERIFIED 16.5s
+T-1266 behavioural(1 files) WORK_REVERIFIED 18.7s
+T-1267 behavioural(1 files) WORK_REVERIFIED 20.4s
+T-1268 static-gate WORK_REVERIFIED 18.0s
+T-1294 behavioural(1 files) WORK_REVERIFIED 18.5s
+T-1295 static-gate WORK_REVERIFIED 17.4s
+T-1296 behavioural(2 files) WORK_REVERIFIED 27.7s
+T-1297 static-gate WORK_REVERIFIED 18.6s
+T-1221 behavioural(3 files) REVERIFY_REUSED 20.9s
