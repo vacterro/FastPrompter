@@ -13,13 +13,13 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 3171
+last_event: 3198
 style_contract: ded-4ae736e4
-updated: "2026-09-27T18:44:51Z"
-transition_from: DONE
+updated: "2026-09-27T19:04:29Z"
+transition_from: SHIP
 execution_intent: goal
 goal_waves: 0
-goal_tickets: 1
+goal_tickets: 4
 ---
 T-1269 BUILD wave 15.09.26 (E-1937):
 
