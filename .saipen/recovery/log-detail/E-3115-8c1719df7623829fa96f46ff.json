@@ -1,0 +1,19 @@
+{
+  "event_id": "E-3115",
+  "externalization_event": {
+    "operation_id": "checkpoint-ab0e9f1a692d490a99bbd17a59f57d92",
+    "reason": "new LOG event exceeds the live cap; canonical detail externalization"
+  },
+  "lossless": true,
+  "metadata_path": ".saipen/recovery/log-detail/E-3115-8c1719df7623829fa96f46ff.json",
+  "operation": "log_event_externalization",
+  "original_event_bytes": 1648,
+  "original_event_path": ".saipen/recovery/log-detail/E-3115-8c1719df7623829fa96f46ff.LOG.md",
+  "original_event_sha256": "8c1719df7623829fa96f46ff751de72342329af30621812bcba32d282e802a9c",
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "schema_version": 1,
+  "source": ".saipen/LOG.md",
+  "status": "COMMITTED",
+  "ticket_id": "T-1302"
+}

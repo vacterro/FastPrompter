@@ -1,0 +1,14 @@
+{
+  "requirements": {
+    "SRC-061:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "T-1330 closed with verification evidence in LOG: PASS conf: high -- python -m pytest tests/test_t1330_image_and_sound.py: 16 passed; python -m pytest tests/ -q: 3935 passed 16 skipped; python -m ruff check src/fastprompter/: All checks passed. Instrument control: with the four product files stashed and nothing else changed, that same suite went red at 12 of 16; restoring the implementation returned it to 16 of 16 green, so the gate discriminates",
+      "text": "clipboard image paste inline, copy-to-clipboard button, open-in-external-viewer toggle, sound dropout on long uptime",
+      "verification": "the Work this request created reached its own verification gate; see the T-1330 VERIFY cycle in .saipen/LOG.md",
+      "work": "T-1330"
+    }
+  },
+  "schema_version": 1
+}

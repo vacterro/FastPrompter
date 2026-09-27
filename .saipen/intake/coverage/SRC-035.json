@@ -1,4 +1,14 @@
 {
-  "requirements": {},
+  "requirements": {
+    "SRC-035:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "T-1323 closed with verification evidence in LOG: verify -> PASS [target: T-1323] conf: high -- crew dry-run confirms SC-0 SATISFIED; core harness clean",
+      "text": "saipen crew",
+      "verification": "the Work this request created reached its own verification gate; see the T-1323 VERIFY cycle in .saipen/LOG.md",
+      "work": "T-1323"
+    }
+  },
   "schema_version": 1
 }

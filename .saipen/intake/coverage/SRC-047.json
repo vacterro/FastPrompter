@@ -1,4 +1,14 @@
 {
-  "requirements": {},
+  "requirements": {
+    "SRC-047:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "E-3087",
+      "text": "Resolve the protocol deadlock, close the dependency chain, and converge the FastPrompter 0.8.68 public release: the umbrella delegates active execution to a corridor running tree reconciliation, then the candidate build, then the operator acceptance gate, and finally the publication segment, with this Work resuming only at the final publication segment once the delegated corridor has completed.",
+      "verification": "gh release view v0.8.68 --json isDraft,isPrerelease,tagName,targetCommitish -> PASS",
+      "work": "T-1311"
+    }
+  },
   "schema_version": 1
 }

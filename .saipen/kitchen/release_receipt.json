@@ -1,14 +1,108 @@
 {
   "schema_version": 1,
   "operation": "release_receipt",
-  "op_id": "release-586813d7f32f4cb7918801d2dd9e0d74",
-  "version": "0.8.64",
-  "tag": "v0.8.64",
-  "ticket_id": "T-1165",
-  "source_head": "8b4296a0133103220df246b1060eafa39d7e2442",
-  "source_tree_fingerprint": "git-delta-v1:cd3971466183b2c6c02070a6be538927c648a049681d1fb0cf3bfcca251e9dc8",
-  "mode": "full",
-  "crew_epoch": "",
-  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
-  "recorded_at": "2026-08-31T02:15:20Z"
+  "version": "0.8.68",
+  "tag": "v0.8.68",
+  "release_commit": "1d7765b677fe3275cf2cf5914eb73f6b17becbcc",
+  "branch": "audit-all-3-impl",
+  "source_tree_fingerprint": "release-source-v1:149df4f1566606a14ed6ade483ddef651c6835638a99215bd4ac3f8496cd1118",
+  "default_profile_sha256": "42ae26699f9d59626b525aa3a274c5015caccd23bea4bff3028d71ee86d364d8",
+  "exe_sha256": "ca7077310f0dbf2b87aac41206a990f396e2e62dc6da5f505cc4a6ad2d705e91",
+  "exe_size": 63616000,
+  "product_version": "0.8.68.0",
+  "build_toolchain": {
+    "python": "3.12.13",
+    "nuitka": "4.2.1",
+    "nuitka_pin": "4.2.1",
+    "nuitka_pin_enforced": true,
+    "pyqt6": "6.11.0",
+    "upx_policy": "off",
+    "upx_version": "",
+    "platform": "Windows-10-10.0.19045-SP0"
+  },
+  "verification": {
+    "full_suite": "clean clone 1d7765b: tests/+tests_smoke/ 4980 passed, 10 skipped in 1219.50s (0:20:19); compileall/ruff/bandit exit 0",
+    "build": "BUILD_EXIT 0"
+  },
+  "probe": {
+    "ok": true,
+    "exe": "V:\\___VAC\\__K\\__CODE\\_PY\\_FastPrompter\\.release-fp-08268\\build\\FastPrompter.exe",
+    "exe_sha256": "ca7077310f0dbf2b87aac41206a990f396e2e62dc6da5f505cc4a6ad2d705e91",
+    "marker": "FP-RELEASE-PROBE-b8b8a9d1c46145b9",
+    "temp_dir": "V:\\_TEMP_\\fastprompter-probe-mmvkjpvh",
+    "checks": [
+      {
+        "name": "mutex free before start",
+        "status": "PASS",
+        "detail": ""
+      },
+      {
+        "name": "starts and stays alive",
+        "status": "PASS",
+        "detail": ""
+      },
+      {
+        "name": "app owns the writer mutex",
+        "status": "PASS",
+        "detail": ""
+      },
+      {
+        "name": "second instance hands off and exits",
+        "status": "PASS",
+        "detail": "exit code 0"
+      },
+      {
+        "name": "portable data root + database created",
+        "status": "PASS",
+        "detail": "V:\\_TEMP_\\fastprompter-probe-mmvkjpvh\\data\\local_data_v15.db"
+      },
+      {
+        "name": "database opens at the current schema",
+        "status": "PASS",
+        "detail": "v1 != v1"
+      },
+      {
+        "name": "graceful shutdown releases the process",
+        "status": "PASS",
+        "detail": ""
+      },
+      {
+        "name": "mutex released after graceful close",
+        "status": "PASS",
+        "detail": ""
+      },
+      {
+        "name": "marker persisted through graceful close",
+        "status": "PASS",
+        "detail": "stored marker 'FP-RELEASE-PROBE-b8b8a9d1c46145b9'"
+      },
+      {
+        "name": "relaunch acquires the mutex",
+        "status": "PASS",
+        "detail": ""
+      },
+      {
+        "name": "second graceful shutdown",
+        "status": "PASS",
+        "detail": ""
+      },
+      {
+        "name": "mutex released after relaunch close",
+        "status": "PASS",
+        "detail": ""
+      },
+      {
+        "name": "persisted marker survives restart",
+        "status": "PASS",
+        "detail": ""
+      }
+    ],
+    "recorded_at": "2026-09-27T01:07:01Z"
+  },
+  "operator_manual_acceptance": {
+    "status": "ACCEPTED",
+    "reference": "Operator GUI/audio smoke PASS recorded 2026-09-25 (SAIPEN E-2928) lifted the SRC-029 s18 freeze; SAIHANDOFF 2026-09-26 authorized autonomous public release closure of v0.8.68 from the exact clean-clone candidate 1d7765b677fe3275cf2cf5914eb73f6b17becbcc.",
+    "recorded_at": "2026-09-27T01:07:13Z"
+  },
+  "recorded_at": "2026-09-27T01:07:13Z"
 }

@@ -1,4 +1,14 @@
 {
-  "requirements": {},
+  "requirements": {
+    "SRC-025:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "E-3127",
+      "text": "Continue the T-1288 harness-stability chain to convergence: neutralise the T-1289 CLI transport artifact so it cannot outrank real work, complete T-1288 itself, resume T-1286 and repair PERF-005 committed-generation ownership, close SRC-021, and continue the AUDIT ALL goal, all worked from the current dirty tree exactly as received without reset, clean, stash, revert of unrelated work, regeneration of unrelated files, or any commit or push.",
+      "verification": "grep -oE \"- \\[x\\] T-1286\" .saipen/BOARD.md -> PASS",
+      "work": "T-1290"
+    }
+  },
   "schema_version": 1
 }

@@ -141,3 +141,21 @@ in the LOG.
 A second agent (antigravity) has repeatedly worked this repo in parallel.
 Before shipping, verify `main` HEAD compiles and re-run both suites — do not
 trust a green claim.
+
+## Quota reset time contract
+Provider reset timestamps become numeric instants before crossing into
+`UsageWindow`. Never serialize an instant as local wall time and reattach the
+machine's current offset: DST makes that round-trip wrong. Offset-bearing ISO
+input keeps its offset; naive probe output is defined as UTC. Claude CLI's named
+IANA zone is authoritative and is resolved through stdlib `zoneinfo`; its
+`tzdata` payload is a runtime dependency and must be included in Nuitka output.
+A date without a year rolls to next year only when its calendar date is earlier
+than today in that named zone; a same-day elapsed minute remains elapsed. UI
+renderers convert the final epoch to the operator's local timezone.
+
+## Desktop local-time boundary
+`FastPrompter.pyw` removes an inherited `TZ` override before importing any app
+module or calling a clock. Desktop launchers may set `TZ=UTC` while Windows is
+UTC+3; Python caches that override on first use, so later `datetime.now()`
+calls would render every topbar, timer, and schedule in UTC. The supported
+launcher owns this boundary before venv re-exec and status-line bridge imports.

@@ -20,8 +20,10 @@ from PyQt6.QtGui import QDesktopServices, QFont, QImageReader, QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
     QDialog,
+    QHBoxLayout,
     QLabel,
     QMessageBox,
+    QPushButton,
     QScrollArea,
     QVBoxLayout,
 )
@@ -60,10 +62,11 @@ def viewer_preference():
 
 
 class ImageViewer(QDialog):
-    def __init__(self, path, image, parent=None):
+    def __init__(self, path, image, parent=None, lang="EN"):
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.setWindowTitle(os.path.basename(path))
+        self._path = os.path.normpath(str(path))
         font = QFont("Verdana")
         font.setPixelSize(12)
         font.setStyleStrategy(QFont.StyleStrategy.NoAntialias)
@@ -78,10 +81,35 @@ class ImageViewer(QDialog):
         self._scroll.setWidget(self._label)
         caption = QLabel(os.path.basename(path))
         caption.setToolTip(path)
+        # Ctrl+C in the viewer must put the PICTURE on the clipboard, not the
+        # path: the whole point of opening a picture is to be able to send it
+        # somewhere, and re-finding it in the silo for the same gesture is
+        # busywork. The button states the same shortcut it also honours.
+        self._copy_button = QPushButton(tr("Copy", lang))
+        self._copy_button.setToolTip(
+            tr("Copy this image to the clipboard\tCtrl+C", lang))
+        self._copy_button.clicked.connect(self.copy_to_clipboard)
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.addWidget(caption)
+        row.addStretch(1)
+        row.addWidget(self._copy_button)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.addWidget(self._scroll)
-        layout.addWidget(caption)
+        layout.addLayout(row)
+
+    def copy_to_clipboard(self):
+        """Put this image (pixels + file URL) on the clipboard."""
+        return copy_image_to_clipboard(self._path)
+
+    def keyPressEvent(self, event):
+        if (event.key() == Qt.Key.Key_C
+                and event.modifiers() & Qt.KeyboardModifier.ControlModifier):
+            self.copy_to_clipboard()
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -149,7 +177,7 @@ def open_image_viewer(path, parent=None, lang="EN"):
             parent, tr("Image preview", lang),
             tr("Image could not be previewed\n{}", lang).format(path))
         return False
-    viewer = ImageViewer(path, image, parent)
+    viewer = ImageViewer(path, image, parent, lang)
     viewer.show()
     _OPEN_VIEWERS.add(viewer)
     def _on_destroyed(obj):  # noqa: no-weak-refs

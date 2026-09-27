@@ -219,6 +219,7 @@ TRANSLATIONS = {
     "Copy (Ctrl+C)": "Copy (Ctrl+C)",
     "Copy + Clear current silo": "Copy + Clear current silo",
     "Copy Path\tCtrl+Shift+C": "Copy Path\tCtrl+Shift+C",
+    "Copy this image to the clipboard\tCtrl+C": "Copy this image to the clipboard\tCtrl+C",
     "Copy Path\\tCtrl+Shift+C": "Copy Path\\tCtrl+Shift+C",
     "Copy Wide to Medium": "Copy Wide to Medium",
     "Copy a cursor set into the program first.": "Copy a cursor set into the program first.",

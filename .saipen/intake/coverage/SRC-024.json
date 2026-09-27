@@ -1,4 +1,14 @@
 {
-  "requirements": {},
+  "requirements": {
+    "SRC-024:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "T-1290 closed with verification evidence in LOG: verify -> PASS [target: T-1290] conf: high -- the umbrella deliverable is the convergence of its reserved continuation chain, and every named element is terminal with evidence rather than merely ticked. T-1288 DONE. T-1286 DONE carrying both the PERF-005 committed-generation repair and the AUDIT ALL continuation, with E-2145 recording uv run pytest tests/ -q three consecutive times exit 0 at 3682 ",
+      "text": "T-1288 harness stability continue: neutralize T-1289 transport artifact; continue T-1288; then resume T-1286 PERF-005 committed-generation repair; close SRC-021; continue AUDIT ALL",
+      "verification": "the Work this request created reached its own verification gate; see the T-1290 VERIFY cycle in .saipen/LOG.md",
+      "work": "T-1290"
+    }
+  },
   "schema_version": 1
 }

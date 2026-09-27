@@ -1,13 +1,14 @@
 <!-- SAIPEN KNOWLEDGE INDEX v1; generated projection; not authority -->
-source-digest: sha256:f5b47add877ea56de752d2703a7684cd146bafb0b0898ca228b9ab999d57c815
-cards: 0
+source-digest: sha256:ec1689eb1e43c64e61f50bf79def61b060d317364e7037d0095f8e691653129c
+cards: 2
 legacy: 1
 
 # Knowledge index
 
 Active cards are retrieval candidates. Superseded cards remain forensic history.
 
-(no structured cards)
+- cards/desktop-local-time-launcher-boundary.md | convention | scope: launcher, time | trigger: starting FastPrompter from an external desktop launcher | active
+- cards/quota-reset-time-contract.md | convention | scope: usage-limits, time | trigger: parsing or rendering provider quota reset timestamps | active
 
 Legacy KNOWLEDGE documents (path and title only; no structured metadata):
 

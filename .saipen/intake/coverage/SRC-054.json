@@ -1,0 +1,14 @@
+{
+  "requirements": {
+    "SRC-054:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "T-1318 closed with verification evidence in LOG: verify -> PASS [target: T-1318] conf: high -- uv run pytest tests/test_silo_chest_reorder_t1313.py tests/test_silo_chest_viewer.py tests_smoke/test_file_container_containment.py -q (60 passed); ruff/diff/compileall PASS",
+      "text": "Full-chest test currently exercises null-current guard only. Set panel.file_list.setCurrentItem(panel.file_list.item(0)) and optionally select it before startDrag so the valid-current full-chest no-op path is tested.",
+      "verification": "the Work this request created reached its own verification gate; see the T-1318 VERIFY cycle in .saipen/LOG.md",
+      "work": "T-1318"
+    }
+  },
+  "schema_version": 1
+}

@@ -72,9 +72,15 @@ if getattr(win, "_settings_built", False):
     problems.append("settings-built-by-hotkeys")
 
 if problems:
-    print("FAIL " + " ".join(problems))
-    raise SystemExit(1)
-print("OK")
+    print("FAIL " + " ".join(problems), flush=True)
+    os._exit(1)
+print("OK", flush=True)
+# Exit deterministically. The assertions above are the contract; leaving the
+# script to fall off its end runs CPython finalization over a live offscreen
+# QApplication, and on a headless runner that teardown aborts with
+# 0xC0000005 AFTER the verdict was computed -- so the test reported a crash for
+# a child that had already passed. Same shape as test_close_save_contract.py.
+os._exit(0)
 """
 
 

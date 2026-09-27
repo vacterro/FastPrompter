@@ -1,0 +1,14 @@
+{
+  "clauses": {
+    "SRC-055:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "SCOUT and repair long-session audio survivability without breaking the existing audio cohort: trace ordinary sound end-to-end before recovery changes, isolate transport ownership, and prove long-session recovery deterministically"
+    }
+  },
+  "derived_at": "2026-09-24T13:16:05Z",
+  "derived_from": "SRC-055",
+  "interpretation_revision": 1,
+  "schema_version": 1,
+  "source_sha256": "dfc9f49785aa971c74fd81a024d35ed4c502640fbf84e27ed3de689336a25e69"
+}

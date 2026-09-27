@@ -1,4 +1,14 @@
 {
-  "requirements": {},
+  "requirements": {
+    "SRC-014:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "T-1321 closed with verification evidence in LOG: verify -> PASS [target: T-1321] conf: high -- independent re-run of the T-1269 wave oracle on current tree: tests/test_formatting_unicode_t1269.py + tests/test_editor_paste_t1269.py + tests/test_clipboard_interop_t1269.py 94 passed 1 skipped; SRC-014 scope fully satisfied by the already-shipped T-1269 cohort C-001, no delta this ticket",
+      "text": "continue FastPrompter implementation wave: T-1269 editor Unicode/input integrity",
+      "verification": "the Work this request created reached its own verification gate; see the T-1321 VERIFY cycle in .saipen/LOG.md",
+      "work": "T-1321"
+    }
+  },
   "schema_version": 1
 }

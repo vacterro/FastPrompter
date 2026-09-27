@@ -1,4 +1,14 @@
 {
-  "requirements": {},
+  "requirements": {
+    "SRC-031:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "E-2980",
+      "text": "Deliver the FastPrompter 0.8.68 public release wave end to end: freeze the operator-accepted RC source identity as a machine-readable manifest, inventory and reconcile the entire dirty/untracked tree with zero UNKNOWN paths, commit a clean source commit representing the accepted RC without reimplementing the already-solved T-1201/T-1227/T-1257 fixes, harden tools/release.py so a release is pinned to the exact tested commit SHA rather than the moving branch main, verifies remote tag provenance and aborts rather than overwriting history, refuses to silently mutate an already-published non-draft release, publishes draft-first, and binds a release receipt to both source and EXE; then publish the release publicly with the tag on the exact release commit and the executable plus checksum attached.",
+      "verification": "gh release view v0.8.68 --json isDraft,isPrerelease,targetCommitish,assets -> PASS",
+      "work": "T-1299"
+    }
+  },
   "schema_version": 1
 }

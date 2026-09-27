@@ -1,0 +1,14 @@
+{
+  "clauses": {
+    "SRC-054:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Full-chest test currently exercises null-current guard only. Set panel.file_list.setCurrentItem(panel.file_list.item(0)) and optionally select it before startDrag so the valid-current full-chest no-op path is tested."
+    }
+  },
+  "derived_at": "2026-09-24T05:51:35Z",
+  "derived_from": "SRC-054",
+  "interpretation_revision": 1,
+  "schema_version": 1,
+  "source_sha256": "8e01c83f8f06270736bda2f29b6d84c7fb2d0071a061caa29a12adcc3898c660"
+}

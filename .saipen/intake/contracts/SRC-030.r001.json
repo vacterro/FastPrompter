@@ -1,0 +1,14 @@
+{
+  "clauses": {
+    "SRC-030:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "FastPrompter 0.8.68 public release wave: record operator acceptance, freeze accepted RC manifest, reconcile tree/T-1241 and T-1201/T-1227/T-1257, harden release tooling provenance, clean-clone CI gate, build+probe, draft-first publish. Handoff: V:\\_TEMP_\\fastprompter_drag\\FastPrompter_20260919_2102.md"
+    }
+  },
+  "derived_at": "2026-09-25T04:57:34Z",
+  "derived_from": "SRC-030",
+  "interpretation_revision": 1,
+  "schema_version": 1,
+  "source_sha256": "065f8cd0e46f7155ca3b6e3b90db3a53daaf8c96bda4bc06da9fc98e5d98ed77"
+}

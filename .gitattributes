@@ -1,2 +1,9 @@
 *.py text eol=lf
 *.md text eol=lf
+
+# SAIPEN byte-bound evidence (digest-verified; never convert line endings) -- T-1508.
+.saipen/intake/** -text
+.saipen/archive/source/** -text
+.saipen/archive/retired/** -text
+.saipen/recovery/log-detail/** -text
+.saipen/recovery/board-compaction/** -text

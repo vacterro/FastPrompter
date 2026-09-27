@@ -1379,6 +1379,11 @@ class SoundManager(QObject):
         self._request_seq = 0
         self._finished = deque(maxlen=256)
         self._closed = False
+        # Transport-lifetime flags. They used to be created on the first
+        # _start_request, so a poll tick that arrived before any request had
+        # run read an attribute that did not exist yet.
+        self._starting = False
+        self._qt_seen_playing = False
         self._worker = None
         self._poll_timer = QTimer(self)
         self._poll_timer.setInterval(15)
@@ -2471,6 +2476,9 @@ class SoundManager(QObject):
                 # T-1221 §5 REPLACE: one long notification at a time. The
                 # previous long player was stopped by the preemption above,
                 # so distinct alarms never chorus and none ever queues.
+                # T-1330: the replaced player is retired, not just stopped --
+                # a parented QSoundEffect outlives the Python reference.
+                self._retire_player(self._players.get("__ui__"))
                 player = self._players["__ui__"] = QSoundEffect(self)
                 signal = getattr(player, "playingChanged", None)
                 if signal is not None:
@@ -2488,12 +2496,21 @@ class SoundManager(QObject):
                 # A per-request player lets concurrent requests overlap, and
                 # the previous short player is stopped so the same burst does
                 # not leave an older tail running under the newest sound.
+                #
+                # T-1330: the previous player must also be DELETED, not merely
+                # dereferenced. ``QSoundEffect(self)`` is parented to this
+                # manager, so dropping the Python reference leaves the C++
+                # object alive for the life of the process: one leaked
+                # multimedia object per keystroke, and the session ends with
+                # tens of thousands of them holding audio backends. That is
+                # the "sounds stop after the app has been open a long time"
+                # report. Keeping the reference here also makes the
+                # stop-previous code above it reachable at all — it read
+                # ``_short_player`` after every request had already nulled it,
+                # so the replace never happened either.
                 prev = self._short_player
-                if prev is not None and hasattr(prev, "stop"):
-                    try:
-                        prev.stop()
-                    except RuntimeError:
-                        pass  # already destroyed by Qt parent teardown
+                if prev is not None:
+                    self._retire_player(prev)
                 player = self._short_player = QSoundEffect(self)
                 player.setVolume(max(0.0, min(1.0, float(request["volume"]))))
                 player.setSource(QUrl.fromLocalFile(
@@ -2505,9 +2522,13 @@ class SoundManager(QObject):
                 # occupies no channel the next action must wait for.
                 self._record(request, "PLAYED")
                 self._finished.append((request["id"], True))
-                self._short_player = None
                 self._current = None
-                self._poll_timer.start()
+                # Nothing is left to poll for: the request is complete and
+                # no transport owns a channel. Leaving the 15 ms timer armed
+                # meant 66 GUI-thread wakeups a second for the rest of the
+                # session, and the only thing it ever re-entered was a body
+                # that returns immediately when ``_current`` is None.
+                self._poll_timer.stop()
                 return True
             playing = getattr(player, "isPlaying", None)
             self._qt_seen_playing = bool(playing()) if callable(playing) else False
@@ -2521,6 +2542,34 @@ class SoundManager(QObject):
             return False
         finally:
             self._starting = False
+
+    def _retire_player(self, player):
+        """Stop a QSoundEffect and hand it to Qt for deferred deletion.
+
+        Every player here is created as ``QSoundEffect(self)``, so Qt's
+        parent-child ownership keeps the C++ object alive until the manager
+        itself dies. Dropping the last Python reference therefore leaks a
+        multimedia object per sound, and a session that plays the typewriter
+        cue on every keystroke ends up holding tens of thousands of them --
+        which is what eventually stops audio on a long-running app.
+        ``deleteLater()`` is the Qt-sanctioned way out: it never deletes from
+        inside a signal handler, and it disconnects this object's signals on
+        the way so a late ``playingChanged`` cannot reach a retired request.
+        """
+        if player is None:
+            return
+        # A stand-in effect need not implement every method, and a real one
+        # that Qt already tore down raises on any call. Neither may take the
+        # transport down with it: retirement is best effort by definition.
+        for name in ("stop", "deleteLater"):
+            call = getattr(player, name, None)
+            if not callable(call):
+                continue
+            try:
+                call()
+            except Exception:
+                logger.debug("retiring a sound player failed at %s", name,
+                             exc_info=True)
 
     def _qt_playing_changed(self):
         if self._current is None or self._starting:
@@ -2537,6 +2586,14 @@ class SoundManager(QObject):
     def _poll_transport(self):
         if id(self._data) != self._data_id:
             self.invalidate_cache()
+        # T-1330: disarm when nothing owns the transport. Every request path
+        # that finished synchronously left the 15 ms timer armed with
+        # ``_current`` already None, so the body below returned immediately
+        # forever -- 66 GUI-thread wakeups a second, plus an
+        # ``invalidate_cache()`` sweep, for the whole life of the process.
+        # Nothing restarts it except a request that actually starts.
+        if self._current is None:
+            self._poll_timer.stop()
         if self._worker is not None:
             while True:
                 try:

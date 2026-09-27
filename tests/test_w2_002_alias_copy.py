@@ -6,11 +6,41 @@ source ancestry.
 import os
 import sys
 
+import pytest
+
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 SRC = os.path.join(ROOT, "src")
 sys.path.insert(0, SRC)
 
 
+def _symlinks_available() -> bool:
+    """Can this account create the directory symlinks these tests are built on?
+
+    Creating a symlink on Windows needs SeCreateSymbolicLink, held by
+    Administrators and by Developer Mode. Without it `os.symlink` raises
+    WinError 1314 before the product code under test is ever reached, so the
+    failure is the environment, not `_copy_tree_safe`. Probed once here so the
+    tests skip explicitly instead of reporting a false product regression.
+    """
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as probe:
+        try:
+            os.symlink(probe, os.path.join(probe, "link"),
+                       target_is_directory=True)
+        except (OSError, NotImplementedError, AttributeError):
+            return False
+    return True
+
+
+requires_symlinks = pytest.mark.skipif(
+    not _symlinks_available(),
+    reason="account cannot create symlinks (Windows WinError 1314); "
+           "the alias-rejection contract is unexercisable here",
+)
+
+
+@requires_symlinks
 def test_copy_tree_safe_rejects_alias_into_container(tmp_path):
     from fastprompter.ui.file_container import _copy_tree_safe
     src = tmp_path / "external"
@@ -30,6 +60,7 @@ def test_copy_tree_safe_rejects_alias_into_container(tmp_path):
     assert (dst / "keep.txt").read_text() == "ok"
 
 
+@requires_symlinks
 def test_copy_tree_safe_rejects_cycle(tmp_path):
     from fastprompter.ui.file_container import _copy_tree_safe
     a = tmp_path / "a"
@@ -45,6 +76,7 @@ def test_copy_tree_safe_rejects_cycle(tmp_path):
     assert not (dst / "b" / "cycle").exists()
 
 
+@requires_symlinks
 def test_copy_tree_safe_rejects_alias_into_source_ancestor(tmp_path):
     from fastprompter.ui.file_container import _copy_tree_safe
     src = tmp_path / "src"
@@ -60,6 +92,7 @@ def test_copy_tree_safe_rejects_alias_into_source_ancestor(tmp_path):
     assert (dst / "sub").exists()
 
 
+@requires_symlinks
 def test_copy_tree_safe_skips_external_directory_alias(tmp_path):
     from fastprompter.ui.file_container import _copy_tree_safe
     src = tmp_path / "src"

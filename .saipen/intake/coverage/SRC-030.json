@@ -1,4 +1,14 @@
 {
-  "requirements": {},
+  "requirements": {
+    "SRC-030:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "T-1299 closed with verification evidence in LOG: verify -> PASS conf: high -- reconciled candidate fdf9a8f: 224 unit passed 1 skipped, 541 smoke passed, tree inventory 0 unknown, validate exit 0",
+      "text": "FastPrompter 0.8.68 public release wave: record operator acceptance, freeze accepted RC manifest, reconcile tree/T-1241 and T-1201/T-1227/T-1257, harden release tooling provenance, clean-clone CI gate, build+probe, draft-first publish. Handoff: V:\\_TEMP_\\fastprompter_drag\\FastPrompter_20260919_2102.md",
+      "verification": "the Work this request created reached its own verification gate; see the T-1299 VERIFY cycle in .saipen/LOG.md",
+      "work": "T-1299"
+    }
+  },
   "schema_version": 1
 }

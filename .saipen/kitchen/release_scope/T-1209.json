@@ -1,0 +1,33 @@
+{
+  "op_id": "scope-14f674ff0c6945f8b6bb63c24f988f39",
+  "paths": {
+    "FastPrompter.pyw": "156a862f487d32d15ea59ee2d3bef016ba15e3231f44090fef2ea705f5620726",
+    "pyproject.toml": "73ae7f0e4033a3457397e614f25c47f35c7baf919d22592f43199651d3cf3e95",
+    "src/fastprompter/core/usage_limits/claude_statusline.py": "febe0f702230bf2092f75ccde7d1eb496f0a8c94615f76cca2543818a9112ad7",
+    "src/fastprompter/core/usage_limits/providers/_antigravity_brain.py": "58031ded3e1fea4831d8a2da06daf284813e03d9a1b102ba854a055e501dd972",
+    "src/fastprompter/core/usage_limits/providers/_antigravity_cli.py": "a5217aa71f34e82d0b11aed92414dabdd67ab6ee99efed149abc5b2ef97aea11",
+    "src/fastprompter/core/usage_limits/providers/_claude_cli.py": "bc4a39fb9653cca9209c9ec49c58bbc702f08d7758a6869d277f563116df3078",
+    "src/fastprompter/core/usage_limits/providers/_claude_transcripts.py": "5ab4696e365b65ad4593cfa614bf5162c3a981350d05907c8c27b9aafb374e6f",
+    "src/fastprompter/core/usage_limits/providers/_codex_probe.py": "8d01d1253697bb5e5e845e41e7a22a6dd4b8f40244ed3e6e41f21bc4dcf9ad58",
+    "src/fastprompter/core/usage_limits/providers/claude.py": "865e06a18cd8ae16565a90df1b395274bdbb2bcb0dd6d779516229de9190ac3c",
+    "src/fastprompter/core/usage_limits/providers/codex.py": "f5f3dd9a7ca90f332f37cefe92bd9f8cd7427a247713abcd540ae5726fbd76eb",
+    "src/fastprompter/ui/limit_gauges.py": "0e445fa388708ad8eb51a6cc9530660dbfbaafa1472e9ad7460b9a7304db2abf",
+    "src/fastprompter/ui/limit_overview.py": "ce17748e05e958b6a7ee99f07d19470b8429a78cdc7ca361cc1f01281b9b6ae4",
+    "src/fastprompter/ui/reset_queue_card.py": "3385a35067b8a44ca64144320518081d8f2471a242fee2cce631ad4b541b21fa",
+    "tests/test_codex_multi_pool_t1274.py": "18d49e4bb80933c7eb0798c2a7cf84698ea9071a9527875e7308f825adb8ca82",
+    "tests/test_limit_overview.py": "00aacf239212e148a9e50460b9fb59be7f233c1b4457f9052c52533668f99dc4",
+    "tests/test_reset_queue_card_t1279.py": "6420802b63f1dfba81c79ef9f7289c2873c9c9819ca07a3a9156c3fdd3a2dc94",
+    "tests/test_usage_limits.py": "31cd8a368bb7f3e4ec33fa20b17dbc7dcaf6194d244412782d3a3ce6acd48853",
+    "tests/test_usage_limits_cli.py": "bb12b8f78de13f67ec24bf2e884e521dcf3f9f2ac9b58d1f3496ac9f4efcc929",
+    "tests/test_usage_limits_gauge_layout.py": "384ec1a3cbac60bc77a54d4e112cf9da830b3196777712b29faad32b1415a39d",
+    "tools/build.py": "685c133b6fa995d269981d6aa00d345b0d5ff6e59ac9c50e19a094116c76af9d",
+    "uv.lock": "12fe556f10272d85fea9ea4e6f644b00d73b87786355092e975b637832eab1aa"
+  },
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "recorded_at": "2026-09-25T13:46:18Z",
+  "schema_version": 2,
+  "source_head": "fdf9a8f9df1cb91d1beee3661c7c94588ff1d2eb",
+  "source_tree_fingerprint": "git-delta-v1:b936df41e0a669f46616dbb6004e6e699874a38389b5463327a5d7b1b06d19ee",
+  "ticket": "T-1209"
+}

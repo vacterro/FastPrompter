@@ -1,4 +1,14 @@
 {
-  "requirements": {},
+  "requirements": {
+    "SRC-023:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "T-1289 closed with verification evidence in LOG: verify -> PASS [target: T-1289] conf: high -- the verification here is a provenance check, not a test run, because there is no code this ticket owns to test. Two things are established. First, the phantom is genuine and was caught at the time: the ticket title and the SRC-023 Request field are the identical string \"Resume T-1286 evidence checkpoint\" --json 2>&1 | Select-Object -First 60, a shell c",
+      "text": "\"Resume T-1286 evidence checkpoint\" --json 2>&1 | Select-Object -First 60",
+      "verification": "the Work this request created reached its own verification gate; see the T-1289 VERIFY cycle in .saipen/LOG.md",
+      "work": "T-1289"
+    }
+  },
   "schema_version": 1
 }

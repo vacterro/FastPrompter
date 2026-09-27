@@ -2,6 +2,12 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+# Release staging clones: a `git clone` of this repo used to assemble a release
+# candidate. The nested clone carries its own .git, so `git ls-files --others
+# --directory` reports it as a directory entry, and the SAIPEN source identity
+# refuses a path carrying a trailing separator. Ignored here so the debris
+# never reaches the release engine; the directory itself is left on disk.
+.release-fp-*/
 *.db
 local_data_v15.db
 crash.log

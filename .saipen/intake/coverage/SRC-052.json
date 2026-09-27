@@ -1,0 +1,14 @@
+{
+  "requirements": {
+    "SRC-052:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "T-1316 closed with verification evidence in LOG: verify -> PASS [target: T-1316] conf: high -- uv run pytest tests/test_silo_chest_reorder_t1313.py tests/test_silo_chest_viewer.py -q (20 passed); uv run ruff check src/fastprompter/ui/file_container.py tests/test_silo_chest_reorder_t1313.py PASS; git diff --check PASS",
+      "text": "Shift drag \u0434\u0430\u0432\u0430\u0439 \u0442\u043e\u0433\u0434\u0430.",
+      "verification": "the Work this request created reached its own verification gate; see the T-1316 VERIFY cycle in .saipen/LOG.md",
+      "work": "T-1316"
+    }
+  },
+  "schema_version": 1
+}

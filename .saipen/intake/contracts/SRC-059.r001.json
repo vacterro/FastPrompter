@@ -1,0 +1,14 @@
+{
+  "clauses": {
+    "SRC-059:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "\u0418\u0441\u043f\u0440\u0430\u0432\u0438\u0442\u044c \u043e\u0442\u043e\u0431\u0440\u0430\u0436\u0435\u043d\u0438\u0435 \u0432\u0440\u0435\u043c\u0435\u043d\u0438 \u0432 FastPrompter topbar: \u0438\u043d\u0442\u0435\u0440\u0444\u0435\u0439\u0441 \u043f\u043e\u043a\u0430\u0437\u044b\u0432\u0430\u0435\u0442 \u0432\u0440\u0435\u043c\u044f \u043d\u0430 3 \u0447\u0430\u0441\u0430 \u0440\u0430\u043d\u044c\u0448\u0435"
+    }
+  },
+  "derived_at": "2026-09-25T11:00:20Z",
+  "derived_from": "SRC-059",
+  "interpretation_revision": 1,
+  "schema_version": 1,
+  "source_sha256": "831a3648eed05a105ae64648cb4b7b7bdf08845ea61c13170bbce02e21085052"
+}

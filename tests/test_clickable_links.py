@@ -252,7 +252,13 @@ def test_local_raster_routes_internally(app, monkeypatch, target):
     monkeypatch.setattr(QDesktopServices, "openUrl", lambda *a: pytest.fail("image shell launch"))
     assert VaultTextEdit.authorize_and_open_url(QUrl(target), None)
     local = QUrl(target).toLocalFile() if target.startswith("file:") else target
-    assert calls == [os.path.realpath(os.path.abspath(local))]
+    # Compare case-insensitively: Windows paths are case-insensitive, and these
+    # targets name drives that do not exist on every machine. `realpath` only
+    # canonicalises a drive letter to its real case when that drive is mounted,
+    # so an exact-string compare made this test pass on a machine with a `V:`
+    # drive and fail everywhere else.
+    assert [os.path.normcase(p) for p in calls] == [
+        os.path.normcase(os.path.realpath(os.path.abspath(local)))]
 
 
 def test_broken_image_never_falls_back_to_shell(app, tmp_path, monkeypatch):

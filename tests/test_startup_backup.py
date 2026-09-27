@@ -71,12 +71,14 @@ def test_current_schema_starts_without_synchronous_backup(tmp_path, monkeypatch)
         "current-schema startup must launch a background safety snapshot"
 
     release.set()
-    deadline = time.monotonic() + 5
-    while not os.path.exists(str(db) + ".bak") and time.monotonic() < deadline:
-        time.sleep(0.01)
+    # Wait on the GATE, not on the .bak file. The worker publishes the .bak
+    # first and only sets the ready event after retiring its worker
+    # registration, so polling the file is a strictly earlier observation and
+    # raced the event under CI load.
+    assert state._startup_backup_ready.wait(10), \
+        "background snapshot must complete and open the gate"
     assert os.path.exists(str(db) + ".bak"), \
         "background snapshot must still produce the .bak"
-    assert state._startup_backup_ready.is_set()
 
 
 def test_first_mutation_is_gated_on_background_snapshot(

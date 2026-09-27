@@ -1,0 +1,14 @@
+{
+  "clauses": {
+    "SRC-053:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Read-only review of current diff limited to src/fastprompter/ui/file_container.py and tests/test_silo_chest_reorder_t1313.py; assess Shift-drag quick-move requirement, regressions, and test adequacy; do not edit"
+    }
+  },
+  "derived_at": "2026-09-24T05:47:45Z",
+  "derived_from": "SRC-053",
+  "interpretation_revision": 1,
+  "schema_version": 1,
+  "source_sha256": "a71e3da6a43c1135eb9ba628612c69ed8435d1eaa7ea06058c51befb29a22a47"
+}

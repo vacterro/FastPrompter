@@ -1,0 +1,143 @@
+diff --git a/src/fastprompter/core/i18n/ded.py b/src/fastprompter/core/i18n/ded.py
+index 3d06607..de6b844 100644
+--- a/src/fastprompter/core/i18n/ded.py
++++ b/src/fastprompter/core/i18n/ded.py
+@@ -1453,6 +1453,9 @@ TRANSLATIONS = {
+     "Golden Yellow": "Золотистый",
+     "Hide 0% usage accounts": "Скрывать аккаунты с 0% использования",
+     "Hide accounts with 0% usage (5h & weekly)": "Скрывать аккаунты с 0% использования (5h и 7d)",
++    "Hide spent accounts": "Скрывать исчерпанные аккаунты",
++    "Hide spent accounts (5h & weekly)": "Скрывать исчерпанные аккаунты (5h и 7d)",
++    "Hide accounts with no quota left. Fresh accounts with 100% remaining stay visible.": "Скрывать аккаунты без остатка лимита. Новые аккаунты со 100% остатка остаются видимыми.",
+     "Line counter": "Счётчик строк",
+     "Medium": "Средний",
+     "Narrow": "Узкий",
+diff --git a/src/fastprompter/core/i18n/est.py b/src/fastprompter/core/i18n/est.py
+index 7ff8568..36e1a2d 100644
+--- a/src/fastprompter/core/i18n/est.py
++++ b/src/fastprompter/core/i18n/est.py
+@@ -1453,6 +1453,9 @@ TRANSLATIONS = {
+     "Golden Yellow": "Golden Yellow",
+     "Hide 0% usage accounts": "Hide 0% usage accounts",
+     "Hide accounts with 0% usage (5h & weekly)": "Hide accounts with 0% usage (5h & weekly)",
++    "Hide spent accounts": "Peida ammendunud kontod",
++    "Hide spent accounts (5h & weekly)": "Peida ammendunud kontod (5 h ja nädal)",
++    "Hide accounts with no quota left. Fresh accounts with 100% remaining stay visible.": "Peida kontod, mille limiit on otsas. Värsked 100% jäägiga kontod jäävad nähtavaks.",
+     "Line counter": "Line counter",
+     "Medium": "Medium",
+     "Narrow": "Narrow",
+diff --git a/src/fastprompter/core/i18n/ru.py b/src/fastprompter/core/i18n/ru.py
+index 84eee46..635ca35 100644
+--- a/src/fastprompter/core/i18n/ru.py
++++ b/src/fastprompter/core/i18n/ru.py
+@@ -508,6 +508,9 @@ TRANSLATIONS = {
+     "Hide 0% usage accounts": "Скрывать аккаунты с 0% использования",
+     "Hide Window & Auto-save": "Скрыть окно и автосохранить",
+     "Hide accounts with 0% usage (5h & weekly)": "Скрывать аккаунты с 0% использования (5h и 7d)",
++    "Hide spent accounts": "Скрывать исчерпанные аккаунты",
++    "Hide spent accounts (5h & weekly)": "Скрывать исчерпанные аккаунты (5h и 7d)",
++    "Hide accounts with no quota left. Fresh accounts with 100% remaining stay visible.": "Скрывать аккаунты без остатка лимита. Новые аккаунты со 100% остатка остаются видимыми.",
+     "Hide optional in active range": "Скрыть опциональные в активном диапазоне",
+     "Hide the F1-F10 shortcut labels on snippet buttons": "Скрыть подписи F1-F10 на кнопках сниппетов",
+     "Hide the selected skill from the palette": "Скрыть выбранный навык из палитры",
+diff --git a/src/fastprompter/core/usage_limits/model.py b/src/fastprompter/core/usage_limits/model.py
+index 1fc0455..2506835 100644
+--- a/src/fastprompter/core/usage_limits/model.py
++++ b/src/fastprompter/core/usage_limits/model.py
+@@ -616,7 +616,7 @@ def display_windows(windows, now: float | None = None) -> list:
+ 
+ 
+ def account_has_usage(snapshot, now: float | None = None) -> bool:
+-    """Return True if the snapshot reports usable capacity for hide-zero filtering.
++    """Return True if the snapshot reports quota left for the account filter.
+ 
+     A positive spendable wallet (:func:`spare_balance`) is independently
+     sufficient usable capacity — it never resets, so it survives both a spent
+@@ -630,10 +630,11 @@ def account_has_usage(snapshot, now: float | None = None) -> bool:
+       closed — wallet metadata never bypasses ERROR / UNAVAILABLE /
+       AUTH_REQUIRED);
+     - there is no wallet and no available quota windows exist;
+-    - there is no wallet and all windows have 0% usage (used <= 0 or
+-      remaining >= 100, untouched);
+     - there is no wallet and all windows have 0% remaining (remaining <= 0
+       or used >= 100, 0% left / exhausted).
++
++    A fresh 100%-remaining account is available and must stay visible. Usage
++    spent in an unrelated model reserve is not a visibility requirement.
+     """
+     if snapshot is None or getattr(snapshot, "status", None) not in (OK, STALE):
+         return False
+@@ -648,21 +649,11 @@ def account_has_usage(snapshot, now: float | None = None) -> bool:
+     if not windows:
+         return False
+ 
+-    has_any_used = False
+-    has_any_remaining = False
+-
+     for w in windows:
+-        used = getattr(w, "used_percent", None)
+         rem = getattr(w, "remaining_percent", None)
+-        if used is None and rem is not None:
+-            used = 100.0 - float(rem)
+-        if rem is None and used is not None:
+-            rem = 100.0 - float(used)
+-
+-        if isinstance(used, (int, float)) and used > 0.0:
+-            if not getattr(w, "assumed_full", False):
+-                has_any_used = True
++        if rem is None:
++            used = getattr(w, "used_percent", None)
++            rem = 100.0 - float(used) if isinstance(used, (int, float)) else None
+         if isinstance(rem, (int, float)) and rem > 0.0:
+-            has_any_remaining = True
+-
+-    return has_any_used and has_any_remaining
++            return True
++    return False
+diff --git a/src/fastprompter/ui/limit_overview.py b/src/fastprompter/ui/limit_overview.py
+index 4ee8cc6..1a41413 100644
+--- a/src/fastprompter/ui/limit_overview.py
++++ b/src/fastprompter/ui/limit_overview.py
+@@ -161,7 +161,7 @@ class LimitOverview(QWidget):
+             hiding = (str(self.main_win.data.get(
+                 "limit_gauges_hide_zero_usage", "False")) == "True"
+                 or self._hide_unusable())
+-            msg = ("All AI accounts hidden (0% usage or no usable 5h window)"
++            msg = ("All AI accounts hidden (no quota or no usable 5h window)"
+                    if hiding else "No AI accounts detected")
+             rows.append(("note", msg, None))
+         self._rows = rows
+diff --git a/src/fastprompter/ui/limit_settings_dialog.py b/src/fastprompter/ui/limit_settings_dialog.py
+index dad9ff2..0910f35 100644
+--- a/src/fastprompter/ui/limit_settings_dialog.py
++++ b/src/fastprompter/ui/limit_settings_dialog.py
+@@ -320,12 +320,11 @@ class LimitSettingsDialog(QDialog):
+             "Applies to these bars, their captions, and the header gauge.")
+         self.cmb_fill.currentIndexChanged.connect(self._set_fill_mode)
+         fill_row.addWidget(self.cmb_fill)
+-        self.cb_overview_hide_zero = QCheckBox("Hide 0% usage accounts")
++        self.cb_overview_hide_zero = QCheckBox("Hide spent accounts")
+         self.cb_overview_hide_zero.setChecked(
+             self.data.get("limit_gauges_hide_zero_usage", "False") == "True")
+         self.cb_overview_hide_zero.setToolTip(
+-            "Completely hide accounts that have 0% usage across both 5h and weekly windows.\n"
+-            "They will appear only when they actually have usage (> 0%).")
++            "Hide accounts with no quota left. Fresh accounts with 100% remaining stay visible.")
+         self.cb_overview_hide_zero.toggled.connect(self._set_hide_zero_usage)
+         fill_row.addWidget(self.cb_overview_hide_zero)
+         self.cb_overview_hide_unusable = QCheckBox(
+@@ -568,12 +567,11 @@ class LimitSettingsDialog(QDialog):
+ 
+         row3 = QHBoxLayout()
+         self.cb_hide_zero = QCheckBox(
+-            "Hide accounts with 0% usage (5h & weekly)")
++            "Hide spent accounts (5h & weekly)")
+         self.cb_hide_zero.setChecked(
+             self.data.get("limit_gauges_hide_zero_usage", "False") == "True")
+         self.cb_hide_zero.setToolTip(
+-            "Completely hide accounts that have 0% usage across both 5h and weekly windows.\n"
+-            "They will appear only when they actually have usage (> 0%).")
++            "Hide accounts with no quota left. Fresh accounts with 100% remaining stay visible.")
+         self.cb_hide_zero.toggled.connect(self._set_hide_zero_usage)
+         row3.addWidget(self.cb_hide_zero)
+         row3.addStretch(1)

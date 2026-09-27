@@ -2,12 +2,38 @@ import os
 import threading
 import time
 
+import pytest
 from PyQt6.QtWidgets import QApplication
 
 from fastprompter import main as m
 from tests_smoke.test_sync_async import _setup
 
 pytest_plugins = ["tests_smoke.test_sync_async"]
+
+
+def _symlinks_available() -> bool:
+    """Can this account create the directory symlink the swap test needs?
+
+    Windows grants SeCreateSymbolicLink only to Administrators and Developer
+    Mode; without it `os.symlink` raises WinError 1314 and the root-swap the
+    test stages never happens, so the assertion would be measuring nothing.
+    """
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as probe:
+        try:
+            os.symlink(probe, os.path.join(probe, "link"),
+                       target_is_directory=True)
+        except (OSError, NotImplementedError, AttributeError):
+            return False
+    return True
+
+
+requires_symlinks = pytest.mark.skipif(
+    not _symlinks_available(),
+    reason="account cannot create symlinks (Windows WinError 1314); "
+           "the root-swap scenario cannot be staged here",
+)
 
 _app = QApplication.instance() or QApplication([])
 
@@ -134,6 +160,7 @@ def test_failed_final_destination_is_not_cached(win, monkeypatch, tmp_path):
     assert destination not in win._sync_written
 
 
+@requires_symlinks
 def test_replacing_sync_root_itself_rejects_publication(win, tmp_path):
     import shutil
 

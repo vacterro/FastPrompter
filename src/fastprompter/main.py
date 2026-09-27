@@ -1271,6 +1271,20 @@ class FastPrompter(
         self._undo_save_quit = False
         self._load_undo_state()
         self.sound_manager = SoundManager(self, self.data)
+        # T-1330: the image-viewer router reads image_viewer_mode off this
+        # window's data. Nothing ever bound it, so viewer_preference() always
+        # answered ("internal", "") and the Settings toggle was decoration —
+        # images opened in the built-in preview whatever the profile said.
+        # The weakref keeps no ownership cycle; None (tests) still means
+        # internal, so nothing hands a file to the OS without an owner.
+        try:
+            from fastprompter.ui import image_viewer as _image_viewer
+
+            _image_viewer.bind_preferences(self)
+        except Exception:
+            from fastprompter.core.logging import logger as _logger
+
+            _logger.debug("image viewer preference bind failed", exc_info=True)
         # T-1238-C1: ONE Problip runtime for the whole application lifetime.
         # It is created here, right after the audio authority exists, and it
         # is never recreated by a profile switch, a Settings open or a preset.

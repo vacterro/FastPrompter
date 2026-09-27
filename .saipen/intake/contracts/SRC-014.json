@@ -1,8 +1,14 @@
 {
-  "clauses": {},
-  "derived_at": null,
+  "clauses": {
+    "SRC-014:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "continue FastPrompter implementation wave: T-1269 editor Unicode/input integrity"
+    }
+  },
+  "derived_at": "2026-09-24T15:34:18Z",
   "derived_from": "SRC-014",
-  "interpretation_revision": 0,
+  "interpretation_revision": 1,
   "schema_version": 1,
   "source_sha256": "3cf13521ab848fc01b491e56b13a4be018906906cd29508c4dd6dec5c23edfb3"
 }

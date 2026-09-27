@@ -1,0 +1,14 @@
+{
+  "clauses": {
+    "SRC-061:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "clipboard image paste inline, copy-to-clipboard button, open-in-external-viewer toggle, sound dropout on long uptime"
+    }
+  },
+  "derived_at": "2026-09-27T12:00:37Z",
+  "derived_from": "SRC-061",
+  "interpretation_revision": 1,
+  "schema_version": 1,
+  "source_sha256": "4a1aca5b8620308a95dffc8fe1361cae7683f2229ad30c9171ce73d73485106b"
+}

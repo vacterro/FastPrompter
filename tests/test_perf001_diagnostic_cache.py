@@ -57,6 +57,19 @@ def _clean_cache():
     sound_manager._diag_cache_clear()
 
 
+@pytest.fixture(autouse=True)
+def _pinned_device_rate(monkeypatch):
+    """Pin the mix rate so the cache is measured, not the host's audio hardware.
+
+    `_rendered_path_for` resolves a render identity only when the device rate
+    is known, and returns early when it is not. A machine with no output
+    device (a headless CI runner) therefore performs no resolve and no digest
+    at all, and every count below read zero. The behaviour under test is the
+    caching, so the rate is pinned rather than probed.
+    """
+    monkeypatch.setattr(audio_render, "device_sample_rate", lambda: 48000)
+
+
 @pytest.fixture
 def counters(monkeypatch):
     """Count the expensive work: WAV parses, render-identity resolutions and

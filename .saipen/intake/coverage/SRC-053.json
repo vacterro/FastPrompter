@@ -1,0 +1,14 @@
+{
+  "requirements": {
+    "SRC-053:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "T-1317 closed with verification evidence in LOG: verify -> PASS [target: T-1317] conf: high -- uv run pytest tests/test_silo_chest_reorder_t1313.py tests/test_silo_chest_viewer.py tests_smoke/test_file_container_containment.py -q (59 passed); ruff/diff/compileall PASS",
+      "text": "Read-only review of current diff limited to src/fastprompter/ui/file_container.py and tests/test_silo_chest_reorder_t1313.py; assess Shift-drag quick-move requirement, regressions, and test adequacy; do not edit",
+      "verification": "the Work this request created reached its own verification gate; see the T-1317 VERIFY cycle in .saipen/LOG.md",
+      "work": "T-1317"
+    }
+  },
+  "schema_version": 1
+}

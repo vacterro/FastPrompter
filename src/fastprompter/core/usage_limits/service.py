@@ -492,12 +492,21 @@ class UsageLimitService:
         futures: list[Future] = []
         try:
             for account in active:
-                if self._stopping.is_set():
-                    raise RuntimeError("usage-limit service is stopping")
-                future = self._executor.submit(
-                    self._probe_account, account, deadline, gen, req_id)
-                futures.append(future)
+                # Submit and register under ONE lock acquisition. `submit()`
+                # hands the work to a pool thread immediately, so registering
+                # afterwards left a window in which the probe was already
+                # running but absent from `_active_futures`; a shutdown
+                # snapshot taken in that window missed it, reported
+                # "everything unwound" while the probe was still parked, and
+                # let the worker outlive the bound. Shutdown sets
+                # `_stopping` before it takes the lock, so it now sees either
+                # this abort or the fully registered future -- never neither.
                 with self._lock:
+                    if self._stopping.is_set():
+                        raise RuntimeError("usage-limit service is stopping")
+                    future = self._executor.submit(
+                        self._probe_account, account, deadline, gen, req_id)
+                    futures.append(future)
                     self._active_futures.add(future)
         except RuntimeError:
             for future in futures:

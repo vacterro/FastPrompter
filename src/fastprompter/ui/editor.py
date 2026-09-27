@@ -1638,6 +1638,50 @@ class VaultTextEdit(QTextEdit):
         top = r_start.top() + (r_start.height() - height) // 2
         return QRect(r_start.left(), top, max(40, width), height)
 
+    @staticmethod
+    def _image_copy_rect(pill):
+        """Rect of the copy button, 6 px to the right of the image pill.
+
+        It used to sit INSIDE the pill's right edge, drawn on top of the
+        filename label -- two controls occupying the same pixels. It now
+        clears the pill entirely, the same 6 px offset ``_code_copy_rect``
+        uses, so neither button can overlap the thing it annotates.
+        """
+        size = max(14, pill.height() - 2)
+        return QRect(pill.right() + 6,
+                     pill.top() + (pill.height() - size) // 2, size, size)
+
+    def _image_copy_at(self, pos):
+        """(path, rect) for the image-copy button under `pos`, else None.
+
+        Walks the pills the same way ``image_pill_at`` does, but answers for
+        the BUTTON, and the button is checked first on every press: a click
+        that lands on it must copy, never open the viewer.
+        """
+        doc = self.document()
+        if doc.blockCount() > 2000:
+            return None
+        block = self._first_visible_block()
+        vp_h = self.viewport().height()
+        while block is not None and block.isValid():
+            if not block.isVisible():
+                block = block.next()
+                continue
+            if self.cursorRect(QTextCursor(block)).top() > vp_h:
+                break
+            for match in MD_IMAGE_RE.finditer(block.text()):
+                pill = self._image_pill_rect(block, match)
+                button = self._image_copy_rect(pill)
+                if button.contains(pos):
+                    url = self._image_url_for(match.group(1))
+                    if url is None or not url.isLocalFile():
+                        return None     # an http image has no local file
+                    path = os.path.realpath(os.path.abspath(
+                        url.toLocalFile()))
+                    return path, button
+            block = block.next()
+        return None
+
     def image_pill_at(self, pos):
         """(block, match) for the image pill under `pos`, or None."""
         doc = self.document()
@@ -1849,6 +1893,22 @@ class VaultTextEdit(QTextEdit):
         except Exception:
             pass
 
+    def copy_image_at(self, path):
+        """Put the image at ``path`` on the clipboard as pixels + a file URL.
+
+        The same payload the file container's Ctrl+C produces, so a picture
+        pasted out of the editor and one pasted out of the silo file list are
+        indistinguishable on the receiving side.
+        """
+        from fastprompter.ui.image_viewer import copy_image_to_clipboard
+        if not copy_image_to_clipboard(path):
+            return False
+        try:
+            self.main_win.play_tick_sound()
+        except Exception:
+            pass
+        return True
+
     def _interactive_target_at(self, pos):
         """W2-006/PERF-006: ONE visible-block walk answering every hover
         target. Returns True when ``pos`` hits a checkbox, timestamp glyph,
@@ -1890,6 +1950,10 @@ class VaultTextEdit(QTextEdit):
                         and self._fence_is_opener(block)
                         and self._code_copy_rect(block).contains(pos)):
                     return True
+                for m_img in MD_IMAGE_RE.finditer(block.text()):
+                    if self._image_copy_rect(
+                            self._image_pill_rect(block, m_img)).contains(pos):
+                        return True
             block = block.next()
         return False
 
@@ -2213,6 +2277,15 @@ class VaultTextEdit(QTextEdit):
             # release, so a drag/selection that starts on a link still works).
             self._record_pending_link(event)
             if event.button() == Qt.MouseButton.LeftButton:
+                # The image-copy button sits 6 px right of the pill, so it
+                # must be asked BEFORE the pill: a press on it copies and
+                # must never open the viewer.
+                image_copy = self._image_copy_at(event.pos())
+                if image_copy is not None:
+                    self._image_copy_pressed = image_copy[0]
+                    self.viewport().update()
+                    event.accept()
+                    return
                 fold_block = self._fold_block_at(event.pos())
                 if fold_block is not None:
                     self._fold_pressed_block = fold_block.blockNumber()
@@ -2300,6 +2373,7 @@ class VaultTextEdit(QTextEdit):
         except Exception:
             self._fold_pressed_block = None
             self._copy_pressed_block = None
+            self._image_copy_pressed = None
             self._ts_pressed_block = None
             logger.exception("mouse press handling failed at %s", event.pos())
         _line_drag_mods = (Qt.KeyboardModifier.ControlModifier
@@ -2493,6 +2567,19 @@ class VaultTextEdit(QTextEdit):
                 self.toggle_fold(block)
             event.accept()
             return
+        pressed_img = getattr(self, "_image_copy_pressed", None)
+        if pressed_img is not None:
+            self._image_copy_pressed = None
+            self.viewport().update()
+            if event.button() == Qt.MouseButton.LeftButton:
+                hit = self._image_copy_at(event.pos())
+                if hit is not None and hit[0] == pressed_img:
+                    self.copy_image_at(pressed_img)
+                    event.accept()
+                    return
+            else:
+                event.accept()
+                return
         pressed_copy = getattr(self, "_copy_pressed_block", None)
         if pressed_copy is not None and event.button() == Qt.MouseButton.LeftButton:
             self._copy_pressed_block = None
@@ -3463,6 +3550,24 @@ class VaultTextEdit(QTextEdit):
             return f"[{name}]({url})"
         return f"![]({url})"
 
+    def _paste_image_inline(self, markup):
+        """Insert pasted image markup at the caret, with no forced new line.
+
+        Both image paste branches used to append ``"\\n"`` (and, mid-line,
+        prefix one as well), so every pasted screenshot shoved the caret onto
+        a fresh line whether the user wanted that or not — the single most
+        common complaint about pasting a picture. A caret sitting in the
+        middle of a word gets a separating space instead of a line break, so
+        the markup never glues itself onto the neighbouring text.
+        """
+        cursor = self.textCursor()
+        block = cursor.block()
+        pos = cursor.positionInBlock()
+        before = block.text()[:pos]
+        prefix = "" if (pos == 0 and not before.strip()) or (
+            not before or before[-1].isspace()) else " "
+        self.insertPlainText(f"{prefix}{markup}")
+
     # ------------------------------------------------------------------
     # T-1269C append — the Ctrl+V LIVE route, made answerable
     # ------------------------------------------------------------------
@@ -3959,8 +4064,10 @@ class VaultTextEdit(QTextEdit):
                     if ext in self.IMAGE_EXTENSIONS:
                         labels.append("urls_image")
                         self._paste_settled = True
-                        self.insertPlainText(self.image_paste_markup(
-                            os.path.basename(path), url.toString(QUrl.ComponentFormattingOption.FullyEncoded)) + "\n")
+                        # T-1330: no forced line break. The image lands where
+                        # the caret is; the user decides what follows it.
+                        self._paste_image_inline(self.image_paste_markup(
+                            os.path.basename(path), url.toString(QUrl.ComponentFormattingOption.FullyEncoded)))
                     elif ext in TEXT_EXTENSIONS or not ext:
                         try:
                             text_to_insert = _read_text_file(path)
@@ -4039,13 +4146,9 @@ class VaultTextEdit(QTextEdit):
                 stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
                 name = _unique_dest(folder, f"paste-{stamp}.png")
                 if image.save(name, "PNG"):
-                    cursor = self.textCursor()
-                    block = cursor.block()
-                    prefix = "" if (cursor.positionInBlock() == 0 and not block.text().strip()) else "\n"
                     markup = self.image_paste_markup(
                         os.path.basename(name), QUrl.fromLocalFile(name).toString())
-                    text_to_insert = f"{prefix}{markup}\n"
-                    self.insertPlainText(text_to_insert)
+                    self._paste_image_inline(markup)
                     # Refresh file container if open.
                     # Guard with ignore_focus_loss: the file container
                     # is a Qt.Tool window when undocked, and touching
@@ -5216,34 +5319,17 @@ class VaultTextEdit(QTextEdit):
                         # Render collapsed markdown image stubs
                         if not is_large:
                             for m_img in MD_IMAGE_RE.finditer(text):
-                                start_idx = m_img.start()
                                 img_path = m_img.group(1)
-                                
-                                block_layout = block.layout()
-                                line = block_layout.lineForTextPosition(start_idx)
-                                if line.isValid():
-                                    x_ret = line.cursorToX(start_idx)
-                                    x = x_ret[0] if isinstance(x_ret, tuple) else x_ret
-                                    img_rect = QRectF(x, line.y(), 0, line.height()).translated(br.topLeft())
-                                else:
-                                    img_rect = r
-                                # Draw the pill
-                                btn_h = max(18, img_rect.height())
-                                
-                                # Find the width of the collapsed text
-                                end_cursor = QTextCursor(block)
-                                end_cursor.setPosition(block.position() + m_img.end())
-                                end_rect = self.cursorRect(end_cursor)
-                                
-                                # If they wrap across lines, fallback to 150. Otherwise, use exact width.
-                                if end_rect.y() == img_rect.y():
-                                    btn_w = max(150, abs(end_rect.left() - img_rect.left()))
-                                else:
-                                    btn_w = 150
-                                
-                                # Make sure it doesn't draw at exactly y=0 if the line is tall, center it
-                                mid_y = img_rect.top() + img_rect.height() // 2
-                                btn_rect = QRectF(img_rect.left(), mid_y - btn_h // 2, btn_w, btn_h)
+
+                                # ONE geometry for paint AND hit test. Painting
+                                # forced a 150 px minimum width that
+                                # ``_image_pill_rect`` never applied, so the
+                                # drawn pill ran over whatever followed the
+                                # markup on that line while the clickable pill
+                                # stayed narrow -- pointer and pixels disagreed
+                                # about where the button was. Asking the hit
+                                # test for its own rect is the whole fix.
+                                btn_rect = QRectF(self._image_pill_rect(block, m_img))
                                 
                                 painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
                                 painter.setBrush(QColor("#1e1e1e"))
@@ -5269,6 +5355,47 @@ class VaultTextEdit(QTextEdit):
                                 painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
                                 
                                 self._rendered_images.append((btn_rect, img_path))
+
+                                # Copy-to-clipboard button, right of the pill.
+                                # Drawn from the SAME geometry the hit test
+                                # uses, so what the pointer can click is
+                                # exactly what is on screen.
+                                copy_rect = QRectF(self._image_copy_rect(
+                                    btn_rect.toRect()))
+                                pressed_img = (
+                                    getattr(self, "_image_copy_pressed", None)
+                                    and os.path.normcase(
+                                        os.path.realpath(os.path.abspath(
+                                            str(img_path).replace(
+                                                "file:///", ""))))
+                                    == os.path.normcase(
+                                        os.path.realpath(os.path.abspath(
+                                            str(self._image_copy_pressed)))))
+                                painter.setRenderHint(
+                                    QPainter.RenderHint.Antialiasing, False)
+                                painter.fillRect(copy_rect, QColor("#1e1e1e"))
+                                light = QColor("#3a3a3a")
+                                dark = QColor("#0a0a0a")
+                                painter.setPen(dark if pressed_img else light)
+                                painter.drawLine(copy_rect.topLeft(),
+                                                copy_rect.topRight())
+                                painter.drawLine(copy_rect.topLeft(),
+                                                copy_rect.bottomLeft())
+                                painter.setPen(light if pressed_img else dark)
+                                painter.drawLine(copy_rect.bottomLeft(),
+                                                copy_rect.bottomRight())
+                                painter.drawLine(copy_rect.topRight(),
+                                                copy_rect.bottomRight())
+                                painter.setPen(QColor("#D9B340"))
+                                gcf = self.font()
+                                gcf.setPointSizeF(
+                                    max(8.0, gcf.pointSizeF() * 0.95))
+                                painter.setFont(gcf)
+                                tcf = (copy_rect.adjusted(2, 2, 2, 2)
+                                       if pressed_img else copy_rect)
+                                painter.drawText(tcf, Qt.AlignmentFlag.AlignCenter,
+                                                "\u2398")
+                                painter.setFont(self.font())
 
                         # Checkbox rendering
                         if self._doc_has_checkbox:

@@ -132,6 +132,16 @@ of them works standalone, with no crew and no other window running.
 
 SC-13 finalization is a **local/runtime mutation, not a published one**: the terminal ship (SC-11) is the final published closure, and it cannot contain finalization evidence its own finalizer has not written yet. The finalization evidence record (`.saipen/kitchen/crew_release_evidence.json`) is local runtime evidence; a later closure stages it if one happens. The public `--gate crew` verdict is derived from **committed** STATE/LOG only, so a fresh clone of the terminal ref reproduces the local verdict without `.saipen/recovery/ops`.
 
+A sensor stage (SC-2..SC-5) also needs proof that the role ran in **this**
+crew epoch: current OUTBOX evidence from before the epoch stays valid history
+but certifies nothing new. Once the role's package is in its OUTBOX, record the
+run with `saipen crew record-run <ROLE>` (optionally `--package <PACKAGE-ID>`,
+repeatable). The command reads the active epoch, the live source identity and
+the role revision itself, binds only packages that are ready or reviewed and
+carry that source triple and revision, and writes the `crew_run` receipt
+through the journal. A receipt whose LOG line the journal did not write -- a
+hand-made `operation.json` -- does not count.
+
 If the source changed at any point, worker evidence produced before the
 mutation is stale by definition -- the circuit returns to SC-2 rather than
 trusting timestamps. Every stage re-evaluates mechanical truth from

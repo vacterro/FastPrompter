@@ -1,3 +1,3 @@
-done: stopped via SAIOPS checkpoint
-remaining: T-1310
-awaiting: nothing
+done: T-1319 long-session audio survivability recovery -- fallback owner armed before recovery, degraded winsound keeps owner through WAV duration, PCM start+generation share one lock, worker dispatch/STOP-ALL serialized, async QSE startup grace; oracle 21 + sound_manager 104 passed, full unit 3912/6 skip, smoke 1067; regression pair E-2778 FAIL / E-2779 PASS admissible.
+remaining: T-1299 release wave (accepted RC freeze + tree reconciliation of the shared dirty cohort T-1201/T-1227/T-1257/T-1241), then T-1209 public publish -- both operator-gated.
+awaiting: operator acceptance soak + release publication decision (SRC-029 §18 no-publish policy still in force).
