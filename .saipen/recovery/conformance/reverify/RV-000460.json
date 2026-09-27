@@ -1,0 +1,49 @@
+{
+  "agent": "buffy",
+  "created_at": "2026-09-27T20:11:46Z",
+  "evidence_class": "executed",
+  "findings_digest": "57e4d8f5d9e9fbb7f6f571be912a4d3c73ff81ed28fde9bd302628c40c8507dc",
+  "gate": "core",
+  "integrity_digest": "c22cdba508a80169",
+  "journal_op_id": "reverify.b9c8ea9927a2",
+  "original_closure": {
+    "claim_time": "2026-09-11T13:42:00Z",
+    "last_ticket_event": "E-1995",
+    "owner": "buffy"
+  },
+  "own_problem_keys": [
+    "413e44f5fa9bc309"
+  ],
+  "problem_count": 16,
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "receipt_id": "RV-000460",
+  "ruleset_fingerprint": "82e5e183ae8f0fd909be3fa3627f00489cacaab813d942186c832db02a05a1c1",
+  "ruleset_version": 1,
+  "schema_version": 1,
+  "source_head": "10ae52af2c99c6cb8891c8919515bb19bd075cbc",
+  "source_tree_fingerprint": "git-delta-v1:587558308fadaac4aa2498ad1c5e2db72687bc4f355cae59c3a161e37a1d1909",
+  "verdict": "PASS_WITH_CARRIED_DEBT",
+  "verification": [
+    {
+      "command": "python -m pytest tests/conftest.py tests/test_freebuff_wallet_visibility.py tests/test_new_silo_defaults.py tests/test_reset_queue_hover.py tests/test_suite_exit_contract.py tests/test_usage_limits_hide_zero.py -q",
+      "duration_ms": 37991,
+      "executed": true,
+      "exit_code": 0,
+      "output_bytes": 191,
+      "output_digest": "77ec02a7b5eff24e",
+      "result": "PASS"
+    }
+  ],
+  "verification_contract": {
+    "commands": [
+      "python -m pytest tests/conftest.py tests/test_freebuff_wallet_visibility.py tests/test_new_silo_defaults.py tests/test_reset_queue_hover.py tests/test_suite_exit_contract.py tests/test_usage_limits_hide_zero.py -q"
+    ],
+    "findings_digest": "57e4d8f5d9e9fbb7f6f571be912a4d3c73ff81ed28fde9bd302628c40c8507dc",
+    "gate": "core"
+  },
+  "verification_contract_digest": "28cdef8721f8b01b",
+  "verifier": "buffy",
+  "warning_count": 70,
+  "work": "T-1253"
+}

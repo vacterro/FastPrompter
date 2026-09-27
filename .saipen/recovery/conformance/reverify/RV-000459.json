@@ -1,0 +1,49 @@
+{
+  "agent": "buffy",
+  "created_at": "2026-09-27T20:10:47Z",
+  "evidence_class": "executed",
+  "findings_digest": "4821020769475f7345757f74282de16e8085d049590c578fcbfd9997a53b980c",
+  "gate": "core",
+  "integrity_digest": "0eab2fde403edb2e",
+  "journal_op_id": "reverify.a94e708d28f6",
+  "original_closure": {
+    "claim_time": "2026-09-11T13:42:00Z",
+    "last_ticket_event": "E-1880",
+    "owner": "buffy"
+  },
+  "own_problem_keys": [
+    "bda33d38a6c03a63"
+  ],
+  "problem_count": 17,
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "receipt_id": "RV-000459",
+  "ruleset_fingerprint": "82e5e183ae8f0fd909be3fa3627f00489cacaab813d942186c832db02a05a1c1",
+  "ruleset_version": 1,
+  "schema_version": 1,
+  "source_head": "10ae52af2c99c6cb8891c8919515bb19bd075cbc",
+  "source_tree_fingerprint": "git-delta-v1:587558308fadaac4aa2498ad1c5e2db72687bc4f355cae59c3a161e37a1d1909",
+  "verdict": "PASS_WITH_CARRIED_DEBT",
+  "verification": [
+    {
+      "command": "python -m pytest tests/test_shutdown_ownership.py -q",
+      "duration_ms": 2220,
+      "executed": true,
+      "exit_code": 0,
+      "output_bytes": 98,
+      "output_digest": "5e57a2b2595d85d0",
+      "result": "PASS"
+    }
+  ],
+  "verification_contract": {
+    "commands": [
+      "python -m pytest tests/test_shutdown_ownership.py -q"
+    ],
+    "findings_digest": "4821020769475f7345757f74282de16e8085d049590c578fcbfd9997a53b980c",
+    "gate": "core"
+  },
+  "verification_contract_digest": "8c3b914d68a09809",
+  "verifier": "buffy",
+  "warning_count": 70,
+  "work": "T-1252"
+}
