@@ -137,6 +137,18 @@ class MarkdownHighlighter(QSyntaxHighlighter):
         if self._huge:
             self._degraded = True
 
+    def conceals_images(self):
+        """T-1337: does the ACTIVE rule set hide ``![](target)`` markup?
+
+        The editor may only paint an image pill while the raw markup under it
+        is being concealed; otherwise the pill and the raw file:/// path
+        coexist (the operator-visible hybrid). Full and degraded modes both
+        carry the two image-collapse rules; ``huge`` mode drops to the
+        essential structural rules only and therefore conceals nothing, so a
+        detached/huge document must render honest raw markdown instead.
+        """
+        return not self._huge
+
     def _theme_color(self, key, fallback):
         """Read one key out of the active theme's raw_colors.
 
@@ -346,6 +358,13 @@ class MarkdownHighlighter(QSyntaxHighlighter):
             r'\[([^\]]+)\]\(([^)]+)\)',
             r'(?<![\w(])https?://[^\s<>"\')\]]+',
             r'^\s*\[\s\]\s', r'^\s*\[[xX]\]\s',
+            # T-1337: image concealment is STRUCTURAL, not decorative. The
+            # editor paints an image pill over the ![](target) markup, so the
+            # raw target MUST stay hidden in degraded mode too -- otherwise a
+            # 501..2000-block Live Preview shows the raw file:/// path beside
+            # the pill (the operator-visible hybrid corruption).
+            r'!(?=\[.*?\]\(.*?\))',
+            r'(?<=!)\[.*?\]\((.*?)\)',
         }
         self._degraded_rules = [
             (pattern, fmt) for pattern, fmt in self._highlighting_rules

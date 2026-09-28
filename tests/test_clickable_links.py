@@ -56,6 +56,23 @@ class _FakeMainForPreview:
         self.preview_combo = _FakeCombo()
         self.settings = None
 
+def test_markdown_link_copy_button_copies_url(app, monkeypatch):
+    # T-1337: the link Copy control is hover-only. Reveal it by hovering the
+    # link, then click the control that is actually on screen.
+    editor = _editor_for_mode("Live Preview")
+    editor.setPlainText("[Example](https://example.com/path)")
+    block = editor.document().firstBlock()
+    match = next(iter(__import__("fastprompter.ui.editor",
+                                 fromlist=["MD_LINK_RE"]).MD_LINK_RE.finditer(
+        block.text())))
+    glyph = editor._link_glyph_rect(block, match)
+    editor._update_inline_hover(glyph.center())
+    button = editor._hover_inline_copy_rect
+    assert button is not None
+    _mouse_click(editor, button.center())
+    assert QApplication.clipboard().text() == "https://example.com/path"
+
+
 def test_source_links(app, mock_open_url, mock_open_folder, monkeypatch):
     main_win = _FakeMainForPreview()
     main_win.preview_combo.currentData = lambda: "Source"

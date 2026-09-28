@@ -36,6 +36,7 @@ TS_STAMP_LINE_RE = re.compile(
     r"(?:\d{2}\.\d{2}|\d{1,2} [A-Za-z]{3}) - \d{2}:\d{2}(?::\d{2})?(?: [AP]M)?"
 )
 MD_IMAGE_RE = re.compile(r'!\[.*?\]\((.*?)\)')
+MD_LINK_RE = re.compile(r'(?<!!)\[([^\]]+)\]\(([^)]+)\)')
 
 # File types the editor can meaningfully load as plain text
 TEXT_EXTENSIONS = {
@@ -477,6 +478,10 @@ class VaultTextEdit(QTextEdit):
         # be re-derived on scroll as well as on mouse move
         self.verticalScrollBar().valueChanged.connect(
             lambda _v: self.rehover_from_pointer())
+        # T-1337: stale inline-Copy geometry must be recomputed on scroll, or
+        # the control floats over whatever line scrolled under the pointer.
+        self.verticalScrollBar().valueChanged.connect(
+            lambda _v: self._rehover_inline_from_pointer())
         self.document().contentsChange.connect(self._stamp_edited_blocks)
         self.textChanged.connect(self.refresh_extra_selections)
         self.textChanged.connect(self.line_number_area.update)
@@ -491,6 +496,16 @@ class VaultTextEdit(QTextEdit):
         self._code_selections_cache = []  # last code-panel build, reused until dirty
         self._opener_cache = None  # set of opener block numbers, invalidated on text change
         self._pending_link = None  # (QUrl, QPoint) recorded on press in Live Preview
+        self._link_copy_pressed = None
+        # T-1337: ONE reusable hover-only inline Copy affordance. Derived
+        # from the pointer, never persisted, never grows with document size.
+        # kind is None | "link" | "image"; the rects are in viewport coords.
+        self._hover_inline_kind = None
+        self._hover_inline_block = -1
+        self._hover_inline_target = None      # URL (link) or local path (image)
+        self._hover_inline_target_rect = None  # link glyph / image pill rect
+        self._hover_inline_copy_rect = None    # the Copy control's own rect
+
         # Persistent Ctrl+click word selections: list of QTextCursor objects.
         # Toggle with Ctrl+click; clear all with Ctrl+triple-click on any
         # word. Cursors track their own document and stay valid across edits
@@ -1619,6 +1634,70 @@ class VaultTextEdit(QTextEdit):
         size = max(14, r.height() - 2)
         return QRect(r.right() + 6, r.top() + (r.height() - size) // 2, size, size)
 
+    def _link_copy_at(self, pos):
+        """(url, rect) for the VISIBLE link Copy control under ``pos``, else
+        None.
+
+        T-1337: Copy is hover-only, so an invisible control is never
+        clickable. This answers only for the one control the pointer currently
+        owns. Click handlers refresh the hover from the press position first,
+        so a direct press onto the control still resolves it.
+        """
+        if (self._hover_inline_kind == "link"
+                and self._hover_inline_copy_rect is not None
+                and self._hover_inline_copy_rect.contains(pos)):
+            return self._hover_inline_target, self._hover_inline_copy_rect
+        return None
+
+    def _link_glyph_rect(self, block, match):
+        """Viewport rect of one ``[label](url)`` token on its visual line."""
+        start = QTextCursor(block)
+        start.setPosition(block.position() + match.start())
+        end = QTextCursor(block)
+        end.setPosition(block.position() + match.end())
+        r_start, r_end = self.cursorRect(start), self.cursorRect(end)
+        if r_end.top() != r_start.top():
+            # wraps: own only the first visual row, out to the viewport edge
+            return QRect(r_start.left(), r_start.top(),
+                         max(20, self.viewport().width() - r_start.left()),
+                         r_start.height())
+        return QRect(r_start.left(), r_start.top(),
+                     max(4, r_end.left() - r_start.left()), r_start.height())
+
+
+
+
+    def _image_pills_enabled(self):
+        """T-1337: THE single decision for whether collapsed image pills may
+        paint / hit-test. A pill may paint UNLESS the raw ``![](target)``
+        markup is provably visible on screen -- that is the hybrid corruption
+        this ticket removes (a pill sitting over a legible file:/// path).
+
+        Provably-visible cases, where pills are refused:
+          * Source View -- raw markdown is shown literally, by contract;
+          * an active highlighter attached to THIS document that is NOT
+            concealing the markup (a huge document runs essential-only rules);
+          * an active highlighter detached from this document (huge-doc path
+            in theme_mixin sets its document to None) -- honest raw markdown.
+
+        Otherwise (Live Preview with a concealing highlighter, or no
+        highlighter wired at all) pills paint as before. One gate, consumed by
+        paintEvent, the hit tests and the hover resolver, so the three can
+        never disagree.
+        """
+        if self._preview_mode() == "Source View":
+            return False
+        hl = getattr(self.main_win, "highlighter", None) \
+            if hasattr(self, "main_win") else None
+        if hl is not None and not sip.isdeleted(hl):
+            doc = hl.document()
+            if doc is not self.document():
+                return False       # detached (huge) or bound to another silo
+            conceals = getattr(hl, "conceals_images", None)
+            if callable(conceals):
+                return bool(conceals())
+        return True
+
     def _image_pill_rect(self, block, match):
         """Screen rect of the collapsed image pill for one ![](...) match.
 
@@ -1639,65 +1718,70 @@ class VaultTextEdit(QTextEdit):
         return QRect(r_start.left(), top, max(40, width), height)
 
     def _image_copy_rect(self, block, pill):
-        """Rect of the copy button, clear of the pill AND any trailing text.
+        """Rect of the Copy control for an image pill, on the pill's own visual
+        row, clear of the pill AND any trailing prose.
 
-        It used to sit a fixed 6 px right of the pill, which overlapped the
-        filename first, then (once moved out of the pill) whatever prose
-        followed the ``![](...)`` markup on the same line -- a pasted image
-        with text after it had its Copy glyph painted on top of that text.
-        The button now anchors past the RIGHTMOST content on the line (the
-        same ``EndOfBlock`` anchor ``_code_copy_rect`` uses), so it clears the
-        real end of the line, never the middle of a word.
-
-        ponytail: anchored to the block's end-of-line, so on a wrapped block
-        whose image is on an earlier visual line the button rides the last
-        visual row's right edge; upgrade to a per-visual-line anchor if
-        wrapped image lines with trailing text become common.
+        T-1337: resolve the visual LINE the pill sits on (QTextLine geometry)
+        and anchor past the content on THAT row, not the block's EndOfBlock —
+        so a wrapped block whose image is on an earlier visual line no longer
+        rides the last row's right edge. When there is no horizontal room on
+        the row the control is clamped just inside the viewport's right edge
+        (a transient hover overlay), never consuming document width.
         """
-        end = QTextCursor(block)
-        end.movePosition(QTextCursor.MoveOperation.EndOfBlock)
-        line_right = self.cursorRect(end).right()
-        anchor = max(pill.right(), line_right)
         size = max(14, pill.height() - 2)
-        return QRect(anchor + 6,
-                     pill.top() + (pill.height() - size) // 2, size, size)
+        top = pill.top() + (pill.height() - size) // 2
+        row_right = self._visual_line_right(block, pill)
+        anchor = max(pill.right(), row_right)
+        vp_w = self.viewport().width()
+        left = anchor + 6
+        if left + size > vp_w - 2:
+            left = max(pill.right() + 6, vp_w - 2 - size)
+        return QRect(left, top, size, size)
+
+    def _visual_line_right(self, block, pill):
+        """Right edge of the visual line the ``pill`` sits on (viewport
+        coords), from QTextLayout geometry so wrapped rows stay independent."""
+        try:
+            layout = block.layout()
+            br = self.document().documentLayout().blockBoundingRect(block)
+            y_off = -self.verticalScrollBar().value()
+            centre_y = pill.center().y()
+            best = pill.right()
+            for i in range(layout.lineCount()):
+                line = layout.lineAt(i)
+                rect = line.naturalTextRect().translated(
+                    br.topLeft()).translated(0, y_off)
+                if rect.top() <= centre_y <= rect.bottom():
+                    return int(rect.right())
+                best = int(rect.right())
+            return best
+        except Exception:
+            end = QTextCursor(block)
+            end.movePosition(QTextCursor.MoveOperation.EndOfBlock)
+            return self.cursorRect(end).right()
 
     def _image_copy_at(self, pos):
-        """(path, rect) for the image-copy button under `pos`, else None.
+        """(path, rect) for the VISIBLE image Copy control under ``pos``, else
+        None.
 
-        Walks the pills the same way ``image_pill_at`` does, but answers for
-        the BUTTON, and the button is checked first on every press: a click
-        that lands on it must copy, never open the viewer.
+        T-1337: hover-only. Answers only for the single control the pointer
+        currently owns, so an idle document has no clickable copy squares.
         """
-        doc = self.document()
-        if doc.blockCount() > 2000:
-            return None
-        block = self._first_visible_block()
-        vp_h = self.viewport().height()
-        while block is not None and block.isValid():
-            if not block.isVisible():
-                block = block.next()
-                continue
-            if self.cursorRect(QTextCursor(block)).top() > vp_h:
-                break
-            for match in MD_IMAGE_RE.finditer(block.text()):
-                pill = self._image_pill_rect(block, match)
-                button = self._image_copy_rect(block, pill)
-                if button.contains(pos):
-                    url = self._image_url_for(match.group(1))
-                    if url is None or not url.isLocalFile():
-                        return None     # an http image has no local file
-                    path = os.path.realpath(os.path.abspath(
-                        url.toLocalFile()))
-                    return path, button
-            block = block.next()
+        if (self._hover_inline_kind == "image"
+                and self._hover_inline_copy_rect is not None
+                and self._hover_inline_copy_rect.contains(pos)):
+            return self._hover_inline_target, self._hover_inline_copy_rect
         return None
 
+
     def image_pill_at(self, pos):
-        """(block, match) for the image pill under `pos`, or None."""
-        doc = self.document()
-        if doc.blockCount() > 2000:
-            return None            # the pills are not painted on huge docs
+        """(block, match) for the image pill under `pos`, or None.
+
+        Only answers when pills are actually painted (``_image_pills_enabled``);
+        otherwise the raw markdown is on screen and there is no pill to hit.
+        """
+        if not self._image_pills_enabled():
+            return None
         block = self._first_visible_block()
         vp_h = self.viewport().height()
         while block is not None and block.isValid():
@@ -1904,6 +1988,15 @@ class VaultTextEdit(QTextEdit):
         except Exception:
             pass
 
+    def copy_link_at(self, url):
+        """Copy a markdown link's URL to the clipboard (its ``(...)`` target)."""
+        QApplication.clipboard().setText(str(url))
+        try:
+            self.main_win.play_tick_sound()
+        except Exception:
+            pass
+        return True
+
     def copy_image_at(self, path):
         """Put the image at ``path`` on the clipboard as pixels + a file URL.
 
@@ -1920,16 +2013,127 @@ class VaultTextEdit(QTextEdit):
             pass
         return True
 
+    # ---- T-1337: one reusable hover-only inline Copy affordance --------
+
+    def _clear_inline_hover(self):
+        if self._hover_inline_kind is None:
+            return
+        self._hover_inline_kind = None
+        self._hover_inline_block = -1
+        self._hover_inline_target = None
+        self._hover_inline_target_rect = None
+        self._hover_inline_copy_rect = None
+        self.viewport().update()
+
+    def _inline_hover_zone_contains(self, pos):
+        """Is ``pos`` inside the CURRENT hover ownership zone?
+
+        The zone is the target glyph/pill + the Copy control + the bridge
+        between them (their bounding union), so moving target -> Copy across
+        the small gap never drops the hover (no flicker). Only leaving the
+        combined zone clears it.
+        """
+        if self._hover_inline_kind is None:
+            return False
+        tr = self._hover_inline_target_rect
+        cr = self._hover_inline_copy_rect
+        if tr is None or cr is None:
+            return False
+        return tr.united(cr).contains(pos)
+
+    def _copy_rect_beside(self, target_rect):
+        """A compact Copy control rect next to ``target_rect``, on the free
+        side, clamped inside the viewport and never over the target glyph."""
+        size = max(14, target_rect.height() - 2)
+        top = target_rect.top() + (target_rect.height() - size) // 2
+        vp_w = self.viewport().width()
+        right_left = target_rect.right() + 6
+        if right_left + size <= vp_w - 2:
+            return QRect(right_left, top, size, size)
+        # no room on the right: place on the left of the target instead
+        left_left = target_rect.left() - 6 - size
+        if left_left >= 2:
+            return QRect(left_left, top, size, size)
+        # neither side fits: clamp inside the right edge (transient overlay)
+        return QRect(max(2, vp_w - 2 - size), top, size, size)
+
+    def _update_inline_hover(self, pos):
+        """Resolve the inline Copy target under ``pos`` and (re)arm the one
+        reusable hover control. O(tokens in the hovered block).
+
+        Priority: if the pointer is still inside the live hover zone, keep the
+        current target (this is the target<->Copy bridge that prevents
+        flicker). Otherwise parse only the block under the pointer for a link
+        or an image token and arm Copy for it; if none, clear.
+
+        Links carry a Copy control in every view (they are copyable wherever
+        they render). Image pills exist only where they are painted, so their
+        Copy is gated on the shared ``_image_pills_enabled`` decision.
+        """
+        if self._inline_hover_zone_contains(pos):
+            return
+        try:
+            block = self.cursorForPosition(pos).block()
+        except Exception:
+            self._clear_inline_hover()
+            return
+        if not block.isValid():
+            self._clear_inline_hover()
+            return
+        text = block.text()
+
+        # Image pill first: it visually replaces its markup, so a pointer over
+        # it means the image, not the (concealed) link-shaped markup inside.
+        if self._image_pills_enabled():
+            for m in MD_IMAGE_RE.finditer(text):
+                pill = self._image_pill_rect(block, m)
+                copy = self._image_copy_rect(block, pill)
+                if pill.contains(pos) or copy.contains(pos):
+                    url = self._image_url_for(m.group(1))
+                    if url is not None and url.isLocalFile():
+                        path = os.path.realpath(os.path.abspath(
+                            url.toLocalFile()))
+                        self._set_inline_hover("image", block, path,
+                                               pill, copy)
+                        return
+
+        for m in MD_LINK_RE.finditer(text):
+            glyph = self._link_glyph_rect(block, m)
+            copy = self._copy_rect_beside(glyph)
+            if glyph.contains(pos) or copy.contains(pos):
+                self._set_inline_hover("link", block, m.group(2), glyph, copy)
+                return
+
+        self._clear_inline_hover()
+
+    def _set_inline_hover(self, kind, block, target, target_rect, copy_rect):
+        changed = (self._hover_inline_kind != kind
+                   or self._hover_inline_target != target
+                   or self._hover_inline_copy_rect != copy_rect)
+        self._hover_inline_kind = kind
+        self._hover_inline_block = block.blockNumber()
+        self._hover_inline_target = target
+        self._hover_inline_target_rect = target_rect
+        self._hover_inline_copy_rect = copy_rect
+        if changed:
+            self.viewport().update()
+
     def _interactive_target_at(self, pos):
         """W2-006/PERF-006: ONE visible-block walk answering every hover
         target. Returns True when ``pos`` hits a checkbox, timestamp glyph,
-        fold anchor or code-copy button.
+        fold anchor, code-copy button, or the current inline hover Copy
+        control.
 
         The four features used to run four independent visible-region walks
         per qualifying pointer movement; the geometry question is the same,
         so it is answered once here. Click handlers keep their specific
         helpers (clicks are not high-frequency).
         """
+        # T-1337: the inline Copy control is derived from hover state, not by
+        # scanning every visible image on each mouse move -- one rect check.
+        if (self._hover_inline_copy_rect is not None
+                and self._hover_inline_copy_rect.contains(pos)):
+            return True
         doc = self.document()
         if not doc or sip.isdeleted(doc):
             return False
@@ -1961,11 +2165,6 @@ class VaultTextEdit(QTextEdit):
                         and self._fence_is_opener(block)
                         and self._code_copy_rect(block).contains(pos)):
                     return True
-                for m_img in MD_IMAGE_RE.finditer(block.text()):
-                    if self._image_copy_rect(
-                            block,
-                            self._image_pill_rect(block, m_img)).contains(pos):
-                        return True
             block = block.next()
         return False
 
@@ -2296,9 +2495,18 @@ class VaultTextEdit(QTextEdit):
             # release, so a drag/selection that starts on a link still works).
             self._record_pending_link(event)
             if event.button() == Qt.MouseButton.LeftButton:
-                # The image-copy button sits 6 px right of the pill, so it
-                # must be asked BEFORE the pill: a press on it copies and
-                # must never open the viewer.
+                # T-1337: resolve the hover Copy control from the PRESS point
+                # first, so a direct click on it (no prior move) still hits.
+                self._update_inline_hover(event.pos())
+                link_copy = self._link_copy_at(event.pos())
+                if link_copy is not None:
+                    self._pending_link = None
+                    self._link_copy_pressed = link_copy[0]
+                    self.viewport().update()
+                    event.accept()
+                    return
+                # The image Copy control is hover-only; ask it BEFORE the pill
+                # so a press on it copies and never opens the viewer.
                 image_copy = self._image_copy_at(event.pos())
                 if image_copy is not None:
                     self._image_copy_pressed = image_copy[0]
@@ -2393,6 +2601,7 @@ class VaultTextEdit(QTextEdit):
             self._fold_pressed_block = None
             self._copy_pressed_block = None
             self._image_copy_pressed = None
+            self._link_copy_pressed = None
             self._ts_pressed_block = None
             logger.exception("mouse press handling failed at %s", event.pos())
         _line_drag_mods = (Qt.KeyboardModifier.ControlModifier
@@ -2588,6 +2797,16 @@ class VaultTextEdit(QTextEdit):
                 self.toggle_fold(block)
             event.accept()
             return
+        pressed_link = getattr(self, "_link_copy_pressed", None)
+        if pressed_link is not None:
+            self._link_copy_pressed = None
+            self.viewport().update()
+            if event.button() == Qt.MouseButton.LeftButton:
+                hit = self._link_copy_at(event.pos())
+                if hit is not None and hit[0] == pressed_link:
+                    self.copy_link_at(pressed_link)
+            event.accept()
+            return
         pressed_img = getattr(self, "_image_copy_pressed", None)
         if pressed_img is not None:
             self._image_copy_pressed = None
@@ -2666,6 +2885,7 @@ class VaultTextEdit(QTextEdit):
         if getattr(self, "_hover_block", None) is not None:
             self._hover_block = None
             self.viewport().update()
+        self._clear_inline_hover()   # T-1337: no orphan Copy control
         super().leaveEvent(event)
 
     def hashtag_at(self, pos):
@@ -2915,6 +3135,22 @@ class VaultTextEdit(QTextEdit):
         self.viewport().update()
         return True
 
+    def _rehover_inline_from_pointer(self):
+        """T-1337: recompute the inline Copy control after a scroll/layout
+        change, using the current pointer position (the mouse did not move but
+        the text did). Clears it if the pointer is off the viewport."""
+        if sip.isdeleted(self):
+            return
+        point = self.viewport().mapFromGlobal(QCursor.pos())
+        if not self.viewport().rect().contains(point):
+            self._clear_inline_hover()
+            return
+        # force a fresh resolve rather than trusting the cached zone, since
+        # the geometry the zone was built from has just moved
+        self._hover_inline_target_rect = None
+        self._hover_inline_copy_rect = None
+        self._update_inline_hover(point)
+
     def mouseMoveEvent(self, event):
         if sip.isdeleted(self):
             return
@@ -2941,6 +3177,9 @@ class VaultTextEdit(QTextEdit):
                 p = event.pos()
                 if (p - self._last_hover_pos).manhattanLength() > 3:
                     self._last_hover_pos = p
+                    # T-1337: (re)arm the one reusable inline Copy affordance
+                    # for the token under the pointer (O(tokens in block)).
+                    self._update_inline_hover(p)
                     if self.main_win.data.get("hover_line", "True") == "True":
                         blk = self.cursorForPosition(p).block()
                         new_hover = blk.blockNumber() if blk.isValid() else None
@@ -5190,6 +5429,9 @@ class VaultTextEdit(QTextEdit):
             doc_layout = doc.documentLayout()
             y_off = -self.verticalScrollBar().value()
             self._rendered_images = []
+            # T-1337: shared per-frame decision -- pills paint only while the
+            # highlighter conceals the raw image markup (Live Preview, attached).
+            pills_ok = self._image_pills_enabled()
             block = self._first_visible_block()
             if block:
                 while block.isValid():
@@ -5247,6 +5489,11 @@ class VaultTextEdit(QTextEdit):
                             tgc = gc.adjusted(2, 2, 2, 2) if pressed_c else gc
                             painter.drawText(tgc, Qt.AlignmentFlag.AlignCenter, "\u2398")
                             painter.setFont(self.font())
+
+                        # T-1337: the permanent per-link Copy squares are gone.
+                        # A single hover-only Copy control is painted once,
+                        # after the block loop, from the pointer-derived hover
+                        # state (see the inline-hover block below).
 
                         # Fold toggle box on headers and code fences:
                         # ▾ expanded, ▸ collapsed (hides the section)
@@ -5319,8 +5566,13 @@ class VaultTextEdit(QTextEdit):
                                 hr_drawn.add(mid_y)
                                 _draw_horizontal_rule(painter, hr_color, mid_y, vp_rect.width())
 
-                        # Render collapsed markdown image stubs
-                        if not is_large:
+                        # Render collapsed markdown image stubs. T-1337: gate
+                        # on the SHARED capability decision -- paint a pill
+                        # ONLY while the highlighter is concealing the raw
+                        # markup, so a pill can never sit over a visible
+                        # file:/// path. The permanent per-image Copy square is
+                        # gone; Copy is the one hover-only control below.
+                        if pills_ok:
                             for m_img in MD_IMAGE_RE.finditer(text):
                                 img_path = m_img.group(1)
 
@@ -5333,17 +5585,17 @@ class VaultTextEdit(QTextEdit):
                                 # about where the button was. Asking the hit
                                 # test for its own rect is the whole fix.
                                 btn_rect = QRectF(self._image_pill_rect(block, m_img))
-                                
+
                                 painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
                                 painter.setBrush(QColor("#1e1e1e"))
                                 painter.setPen(QColor("#5a4a2a"))
                                 painter.drawRoundedRect(btn_rect, 4, 4)
-                                
+
                                 # Draw icon and text
                                 painter.setPen(QColor("#D9B340"))
                                 btn_text_rect = btn_rect.adjusted(4, 0, -4, 0)
                                 painter.setFont(self.font())
-                                
+
                                 # Get the basename or fallback
                                 display_name = os.path.basename(img_path)
                                 if not display_name:
@@ -5351,54 +5603,13 @@ class VaultTextEdit(QTextEdit):
                                 # if file:/// protocol, decode it for display
                                 if display_name.startswith("file:///"):
                                     display_name = display_name[8:]
-                                
+
                                 fm = painter.fontMetrics()
                                 elided = fm.elidedText("🖼️ " + display_name, Qt.TextElideMode.ElideRight, int(btn_text_rect.width()))
                                 painter.drawText(btn_text_rect, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, elided)
                                 painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
-                                
-                                self._rendered_images.append((btn_rect, img_path))
 
-                                # Copy-to-clipboard button, right of the pill.
-                                # Drawn from the SAME geometry the hit test
-                                # uses, so what the pointer can click is
-                                # exactly what is on screen.
-                                copy_rect = QRectF(self._image_copy_rect(
-                                    block, btn_rect.toRect()))
-                                pressed_img = (
-                                    getattr(self, "_image_copy_pressed", None)
-                                    and os.path.normcase(
-                                        os.path.realpath(os.path.abspath(
-                                            str(img_path).replace(
-                                                "file:///", ""))))
-                                    == os.path.normcase(
-                                        os.path.realpath(os.path.abspath(
-                                            str(self._image_copy_pressed)))))
-                                painter.setRenderHint(
-                                    QPainter.RenderHint.Antialiasing, False)
-                                painter.fillRect(copy_rect, QColor("#1e1e1e"))
-                                light = QColor("#3a3a3a")
-                                dark = QColor("#0a0a0a")
-                                painter.setPen(dark if pressed_img else light)
-                                painter.drawLine(copy_rect.topLeft(),
-                                                copy_rect.topRight())
-                                painter.drawLine(copy_rect.topLeft(),
-                                                copy_rect.bottomLeft())
-                                painter.setPen(light if pressed_img else dark)
-                                painter.drawLine(copy_rect.bottomLeft(),
-                                                copy_rect.bottomRight())
-                                painter.drawLine(copy_rect.topRight(),
-                                                copy_rect.bottomRight())
-                                painter.setPen(QColor("#D9B340"))
-                                gcf = self.font()
-                                gcf.setPointSizeF(
-                                    max(8.0, gcf.pointSizeF() * 0.95))
-                                painter.setFont(gcf)
-                                tcf = (copy_rect.adjusted(2, 2, 2, 2)
-                                       if pressed_img else copy_rect)
-                                painter.drawText(tcf, Qt.AlignmentFlag.AlignCenter,
-                                                "\u2398")
-                                painter.setFont(self.font())
+                                self._rendered_images.append((btn_rect, img_path))
 
                         # Checkbox rendering
                         if self._doc_has_checkbox:
@@ -5433,6 +5644,8 @@ class VaultTextEdit(QTextEdit):
                             )
                     block = block.next()
 
+            self._paint_inline_hover_copy(painter)
+
             self._paint_typo_underlines(painter, doc, y_off)
 
             self._paint_line_tints(painter, doc, doc_layout, y_off, vp_rect)
@@ -5458,6 +5671,42 @@ class VaultTextEdit(QTextEdit):
 
         finally:
             painter.end()
+
+    def _paint_inline_hover_copy(self, painter):
+        """T-1337: paint the ONE hover-only inline Copy control, if armed.
+
+        A single 3D box glyph (⎘) drawn from ``_hover_inline_copy_rect``, which
+        the pointer resolver placed beside the hovered link/image and clear of
+        its glyphs. Nothing is painted at idle, so normal reading has no
+        permanent Copy squares.
+        """
+        cr = self._hover_inline_copy_rect
+        if self._hover_inline_kind is None or cr is None:
+            return
+        rect = QRectF(cr)
+        pressed = (self._hover_inline_kind == "link"
+                   and getattr(self, "_link_copy_pressed", None)
+                   == self._hover_inline_target) or (
+                   self._hover_inline_kind == "image"
+                   and getattr(self, "_image_copy_pressed", None)
+                   == self._hover_inline_target)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+        painter.fillRect(rect, QColor("#1e1e1e"))
+        light = QColor("#3a3a3a")
+        dark = QColor("#0a0a0a")
+        painter.setPen(dark if pressed else light)
+        painter.drawLine(rect.topLeft(), rect.topRight())
+        painter.drawLine(rect.topLeft(), rect.bottomLeft())
+        painter.setPen(light if pressed else dark)
+        painter.drawLine(rect.bottomLeft(), rect.bottomRight())
+        painter.drawLine(rect.topRight(), rect.bottomRight())
+        painter.setPen(QColor("#D9B340"))
+        f = self.font()
+        f.setPointSizeF(max(8.0, f.pointSizeF() * 0.95))
+        painter.setFont(f)
+        trect = rect.adjusted(2, 2, 2, 2) if pressed else rect
+        painter.drawText(trect, Qt.AlignmentFlag.AlignCenter, "\u2398")
+        painter.setFont(self.font())
 
     def _paint_typo_underlines(self, painter, doc, y_off):
         """Wavy underlines under flagged words (painted directly).

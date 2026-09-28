@@ -168,7 +168,8 @@ def _png(tmp_path, name="pic.png", color="green"):
 
 
 def test_image_copy_button_sits_beside_the_pill(tmp_path):
-    """The button must not share a single pixel with the pill it annotates."""
+    """The Copy control must not share a single pixel with the pill it
+    annotates. T-1337: it is hover-only, so arm the hover on the pill first."""
     ed = _editor(tmp_path)
     try:
         path = _png(tmp_path)
@@ -180,7 +181,9 @@ def test_image_copy_button_sits_beside_the_pill(tmp_path):
         match = MD_IMAGE_RE.search(block.text())
         assert match is not None
         pill = ed._image_pill_rect(block, match)
-        button = ed._image_copy_rect(block, pill)
+        ed._update_inline_hover(pill.center())   # reveal the hover control
+        button = ed._hover_inline_copy_rect
+        assert button is not None
         assert not pill.intersects(button)
         assert button.left() > pill.right()
         hit = ed._image_copy_at(button.center())
