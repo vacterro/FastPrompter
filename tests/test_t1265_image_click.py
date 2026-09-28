@@ -41,6 +41,7 @@ from PyQt6.QtGui import QDesktopServices, QMouseEvent
 from PyQt6.QtWidgets import QApplication, QInputDialog
 
 from fastprompter.ui.editor import MD_IMAGE_RE, VaultTextEdit
+from fastprompter.ui.markdown_highlighter import MarkdownHighlighter
 
 _LEFT = Qt.MouseButton.LeftButton
 _RIGHT = Qt.MouseButton.RightButton
@@ -119,11 +120,19 @@ class _FakeMain:
 _EDITORS = []
 
 
-def _editor(text="", mode="Source"):
+def _editor(text="", mode="Live Preview"):
     editor = VaultTextEdit(_FakeMain(mode))
     _EDITORS.append(editor)
     editor.setPlainText(text)
     editor.resize(600, 300)
+    # T-1338: collapsed image pills exist only in Live Preview with a
+    # concealing highlighter attached (strict _image_pills_enabled). Wire one
+    # so pill hit-testing reflects production, not a lax no-highlighter default.
+    if mode == "Live Preview":
+        hl = MarkdownHighlighter(editor.document())
+        hl.set_degraded(False)
+        editor.main_win.highlighter = hl
+        hl.rehighlight()
     editor.show()
     return editor
 
@@ -359,7 +368,7 @@ class TestFolderRevealSurvives:
 class TestSecurityIsUnchanged:
     def test_ordinary_source_links_keep_their_ctrl_gesture(self, app,
                                                            monkeypatch):
-        editor = _editor("plain text")
+        editor = _editor("plain text", mode="Source")
         opened = []
         monkeypatch.setattr(QDesktopServices, "openUrl",
                             lambda url: opened.append(url.toString()) or True)

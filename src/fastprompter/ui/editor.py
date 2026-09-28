@@ -1650,53 +1650,112 @@ class VaultTextEdit(QTextEdit):
         return None
 
     def _link_glyph_rect(self, block, match):
-        """Viewport rect of one ``[label](url)`` token on its visual line."""
+        """Viewport rect of one ``[label](url)`` token, on the visual row its
+        START sits on.
+
+        A wrapped token owns only its first visual row (out to that row's
+        natural text right), never the whole remaining width -- declaring the
+        rest of the row clickable would make unrelated text part of the target
+        (T-1338 §6).
+        """
         start = QTextCursor(block)
         start.setPosition(block.position() + match.start())
         end = QTextCursor(block)
         end.setPosition(block.position() + match.end())
         r_start, r_end = self.cursorRect(start), self.cursorRect(end)
         if r_end.top() != r_start.top():
-            # wraps: own only the first visual row, out to the viewport edge
+            row_right = self._visual_row_right(block, r_start)
             return QRect(r_start.left(), r_start.top(),
-                         max(20, self.viewport().width() - r_start.left()),
-                         r_start.height())
+                         max(4, row_right - r_start.left()), r_start.height())
         return QRect(r_start.left(), r_start.top(),
                      max(4, r_end.left() - r_start.left()), r_start.height())
+
+    def _inline_copy_rect(self, block, target_rect):
+        """T-1338: THE one placement authority for the hover Copy control,
+        shared by links and images so the two geometries cannot diverge.
+
+        Knows the target rect, the natural text right edge of the visual row
+        the target sits on, and the viewport width. Preferred slot is past
+        ``max(target.right, row_content_right) + gap`` -- to the right of ALL
+        content on that row, so Copy never sits on trailing prose. If that
+        overflows the viewport it falls to the LEFT of the target, and if
+        neither side fits it becomes a transient overlay clamped to the right
+        edge. Every returned rect satisfies 2 <= left and
+        right <= viewport.width() - 2.
+        """
+        gap = 6
+        size = max(14, target_rect.height() - 2)
+        top = target_rect.top() + (target_rect.height() - size) // 2
+        vp_w = self.viewport().width()
+        row_right = self._visual_row_right(block, target_rect)
+        anchor = max(target_rect.right(), row_right) + gap
+        if anchor + size <= vp_w - 2:
+            left = anchor
+        else:
+            left = target_rect.left() - gap - size   # free side: left
+            if left < 2:
+                left = vp_w - 2 - size                # transient edge overlay
+        # hard viewport invariant, whatever the branch decided
+        left = max(2, min(left, vp_w - 2 - size))
+        return QRect(left, top, size, size)
+
+    def _visual_row_right(self, block, rect):
+        """Natural text right edge (viewport coords) of the visual line that
+        contains ``rect``'s vertical centre, from QTextLayout geometry so
+        wrapped rows stay independent."""
+        try:
+            layout = block.layout()
+            br = self.document().documentLayout().blockBoundingRect(block)
+            y_off = -self.verticalScrollBar().value()
+            centre_y = rect.center().y()
+            best = rect.right()
+            for i in range(layout.lineCount()):
+                line = layout.lineAt(i)
+                lr = line.naturalTextRect().translated(
+                    br.topLeft()).translated(0, y_off)
+                if lr.top() <= centre_y <= lr.bottom():
+                    return int(lr.right())
+                best = int(lr.right())
+            return best
+        except Exception:
+            end = QTextCursor(block)
+            end.movePosition(QTextCursor.MoveOperation.EndOfBlock)
+            return self.cursorRect(end).right()
+
 
 
 
 
     def _image_pills_enabled(self):
-        """T-1337: THE single decision for whether collapsed image pills may
-        paint / hit-test. A pill may paint UNLESS the raw ``![](target)``
-        markup is provably visible on screen -- that is the hybrid corruption
-        this ticket removes (a pill sitting over a legible file:/// path).
+        """T-1338: THE single, STRICT decision for whether collapsed image
+        pills may paint / hit-test. A pill exists only when the raw
+        ``![](target)`` markup is provably being concealed by the active
+        highlighter -- otherwise the raw file:/// path is on screen and a pill
+        over it is the hybrid corruption T-1337 removed.
 
-        Provably-visible cases, where pills are refused:
-          * Source View -- raw markdown is shown literally, by contract;
-          * an active highlighter attached to THIS document that is NOT
-            concealing the markup (a huge document runs essential-only rules);
-          * an active highlighter detached from this document (huge-doc path
-            in theme_mixin sets its document to None) -- honest raw markdown.
+        Enabled requires ALL of:
+          * current view is Live Preview;
+          * a highlighter object exists and is not deleted;
+          * it is attached to THIS document;
+          * ``highlighter.conceals_images()`` is True.
 
-        Otherwise (Live Preview with a concealing highlighter, or no
-        highlighter wired at all) pills paint as before. One gate, consumed by
-        paintEvent, the hit tests and the hover resolver, so the three can
-        never disagree.
+        Every other state -- Source View, no highlighter (a transient
+        lifecycle gap), a highlighter detached to another document or set to
+        None for a huge document, or one running essential-only rules --
+        disables pills and shows honest raw markdown. T-1337 defaulted True
+        when no highlighter was wired, which let the hybrid bug reappear during
+        highlighter-none windows; that default is gone.
         """
-        if self._preview_mode() == "Source View":
+        if self._preview_mode() != "Live Preview":
             return False
         hl = getattr(self.main_win, "highlighter", None) \
             if hasattr(self, "main_win") else None
-        if hl is not None and not sip.isdeleted(hl):
-            doc = hl.document()
-            if doc is not self.document():
-                return False       # detached (huge) or bound to another silo
-            conceals = getattr(hl, "conceals_images", None)
-            if callable(conceals):
-                return bool(conceals())
-        return True
+        if hl is None or sip.isdeleted(hl):
+            return False
+        if hl.document() is not self.document():
+            return False
+        conceals = getattr(hl, "conceals_images", None)
+        return bool(conceals()) if callable(conceals) else False
 
     def _image_pill_rect(self, block, match):
         """Screen rect of the collapsed image pill for one ![](...) match.
@@ -1718,47 +1777,10 @@ class VaultTextEdit(QTextEdit):
         return QRect(r_start.left(), top, max(40, width), height)
 
     def _image_copy_rect(self, block, pill):
-        """Rect of the Copy control for an image pill, on the pill's own visual
-        row, clear of the pill AND any trailing prose.
-
-        T-1337: resolve the visual LINE the pill sits on (QTextLine geometry)
-        and anchor past the content on THAT row, not the block's EndOfBlock —
-        so a wrapped block whose image is on an earlier visual line no longer
-        rides the last row's right edge. When there is no horizontal room on
-        the row the control is clamped just inside the viewport's right edge
-        (a transient hover overlay), never consuming document width.
-        """
-        size = max(14, pill.height() - 2)
-        top = pill.top() + (pill.height() - size) // 2
-        row_right = self._visual_line_right(block, pill)
-        anchor = max(pill.right(), row_right)
-        vp_w = self.viewport().width()
-        left = anchor + 6
-        if left + size > vp_w - 2:
-            left = max(pill.right() + 6, vp_w - 2 - size)
-        return QRect(left, top, size, size)
-
-    def _visual_line_right(self, block, pill):
-        """Right edge of the visual line the ``pill`` sits on (viewport
-        coords), from QTextLayout geometry so wrapped rows stay independent."""
-        try:
-            layout = block.layout()
-            br = self.document().documentLayout().blockBoundingRect(block)
-            y_off = -self.verticalScrollBar().value()
-            centre_y = pill.center().y()
-            best = pill.right()
-            for i in range(layout.lineCount()):
-                line = layout.lineAt(i)
-                rect = line.naturalTextRect().translated(
-                    br.topLeft()).translated(0, y_off)
-                if rect.top() <= centre_y <= rect.bottom():
-                    return int(rect.right())
-                best = int(rect.right())
-            return best
-        except Exception:
-            end = QTextCursor(block)
-            end.movePosition(QTextCursor.MoveOperation.EndOfBlock)
-            return self.cursorRect(end).right()
+        """Rect of the Copy control for an image pill. T-1338: delegates to the
+        one shared visual-line-aware placement authority, so image and link
+        Copy geometry (and the viewport clamp) can never diverge again."""
+        return self._inline_copy_rect(block, pill)
 
     def _image_copy_at(self, pos):
         """(path, rect) for the VISIBLE image Copy control under ``pos``, else
@@ -1838,12 +1860,15 @@ class VaultTextEdit(QTextEdit):
     def image_hit_at(self, pos):
         """THE image hit test: ``(block, match, url)`` under ``pos``, or None.
 
-        One resolver for both worlds, on purpose. Source mode paints collapsed
-        pills (``image_pill_at``); Live Preview and Reading mode paint the
-        real raster and record its rect in ``_rendered_images``. Those used to
-        be two independent click paths with two different gestures, which is
-        how "click to view" ended up meaning Ctrl+click in one mode and
-        double-click-to-rename in another.
+        One resolver for both worlds, on purpose. Live Preview collapses the
+        markup to a pill (``image_pill_at``, gated on ``_image_pills_enabled``);
+        Live Preview and Reading mode also paint the real raster and record its
+        rect in ``_rendered_images``. Source View paints NO pill -- the raw
+        ``![](...)`` markdown is shown literally there (T-1337 contract) -- so
+        in Source View this resolves only through a rendered raster, never a
+        pill. These used to be two independent click paths with two different
+        gestures, which is how "click to view" ended up meaning Ctrl+click in
+        one mode and double-click-to-rename in another.
 
         ``block``/``match`` are None when the visual could not be tied back to
         a markdown link. Such a hit can still be OPENED; it must never be
@@ -2041,70 +2066,58 @@ class VaultTextEdit(QTextEdit):
             return False
         return tr.united(cr).contains(pos)
 
-    def _copy_rect_beside(self, target_rect):
-        """A compact Copy control rect next to ``target_rect``, on the free
-        side, clamped inside the viewport and never over the target glyph."""
-        size = max(14, target_rect.height() - 2)
-        top = target_rect.top() + (target_rect.height() - size) // 2
-        vp_w = self.viewport().width()
-        right_left = target_rect.right() + 6
-        if right_left + size <= vp_w - 2:
-            return QRect(right_left, top, size, size)
-        # no room on the right: place on the left of the target instead
-        left_left = target_rect.left() - 6 - size
-        if left_left >= 2:
-            return QRect(left_left, top, size, size)
-        # neither side fits: clamp inside the right edge (transient overlay)
-        return QRect(max(2, vp_w - 2 - size), top, size, size)
-
     def _update_inline_hover(self, pos):
         """Resolve the inline Copy target under ``pos`` and (re)arm the one
         reusable hover control. O(tokens in the hovered block).
 
-        Priority: if the pointer is still inside the live hover zone, keep the
-        current target (this is the target<->Copy bridge that prevents
-        flicker). Otherwise parse only the block under the pointer for a link
-        or an image token and arm Copy for it; if none, clear.
+        Order matters (T-1338 §7/§8):
+          1. a concrete token (image pill, then link glyph) directly under the
+             pointer WINS -- so hovering token B never stays stuck on token
+             A's far-right Copy bridge, and geometry is recomputed fresh every
+             move (a resize/scroll/font change cannot leave a stale rect);
+          2. otherwise, if the pointer is still inside the CURRENT control's
+             own rect or the small bridge to it, keep it alive (no flicker);
+          3. otherwise clear.
 
-        Links carry a Copy control in every view (they are copyable wherever
-        they render). Image pills exist only where they are painted, so their
-        Copy is gated on the shared ``_image_pills_enabled`` decision.
+        Links resolve in every view (copyable wherever they render); image
+        pills only where they are painted (``_image_pills_enabled``).
         """
+        token = self._inline_token_at(pos)
+        if token is not None:
+            self._set_inline_hover(*token)
+            return
         if self._inline_hover_zone_contains(pos):
             return
+        self._clear_inline_hover()
+
+    def _inline_token_at(self, pos):
+        """(kind, target, target_rect, copy_rect) for the image pill or link
+        glyph directly under ``pos``, else None. Pills are checked first: a
+        pill visually replaces its markup, so a pointer on it means the image,
+        not the concealed link-shaped markup inside."""
         try:
             block = self.cursorForPosition(pos).block()
         except Exception:
-            self._clear_inline_hover()
-            return
+            return None
         if not block.isValid():
-            self._clear_inline_hover()
-            return
+            return None
         text = block.text()
-
-        # Image pill first: it visually replaces its markup, so a pointer over
-        # it means the image, not the (concealed) link-shaped markup inside.
         if self._image_pills_enabled():
             for m in MD_IMAGE_RE.finditer(text):
                 pill = self._image_pill_rect(block, m)
-                copy = self._image_copy_rect(block, pill)
-                if pill.contains(pos) or copy.contains(pos):
+                if pill.contains(pos):
                     url = self._image_url_for(m.group(1))
                     if url is not None and url.isLocalFile():
                         path = os.path.realpath(os.path.abspath(
                             url.toLocalFile()))
-                        self._set_inline_hover("image", block, path,
-                                               pill, copy)
-                        return
-
+                        return ("image", block, path, pill,
+                                self._inline_copy_rect(block, pill))
         for m in MD_LINK_RE.finditer(text):
             glyph = self._link_glyph_rect(block, m)
-            copy = self._copy_rect_beside(glyph)
-            if glyph.contains(pos) or copy.contains(pos):
-                self._set_inline_hover("link", block, m.group(2), glyph, copy)
-                return
-
-        self._clear_inline_hover()
+            if glyph.contains(pos):
+                return ("link", block, m.group(2), glyph,
+                        self._inline_copy_rect(block, glyph))
+        return None
 
     def _set_inline_hover(self, kind, block, target, target_rect, copy_rect):
         changed = (self._hover_inline_kind != kind

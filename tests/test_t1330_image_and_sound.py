@@ -56,6 +56,10 @@ class _Owner:
                      "ctrl_c_closes": "False", "image_paste_style": "pill"}
         self._current_lang = "EN"
         self._tmp = tmp_path
+        from PyQt6.QtWidgets import QComboBox
+        self.preview_combo = QComboBox()
+        self.preview_combo.addItem("Live Preview", "Live Preview")
+        self.preview_combo.setCurrentIndex(0)
 
     # the clipboard-image branch saves into the silo's folder
     def _silo_folder_dir(self, *_args):
@@ -68,6 +72,13 @@ class _Owner:
 def _editor(tmp_path):
     ed = VaultTextEdit(_Owner(tmp_path))
     ed.resize(900, 600)
+    # T-1338: image pills are strictly gated on a concealing highlighter in
+    # Live Preview -- wire one so the pill-geometry tests reflect production.
+    from fastprompter.ui.markdown_highlighter import MarkdownHighlighter
+    hl = MarkdownHighlighter(ed.document())
+    hl.set_degraded(False)
+    ed.main_win.highlighter = hl
+    hl.rehighlight()
     ed.show()
     return ed
 
