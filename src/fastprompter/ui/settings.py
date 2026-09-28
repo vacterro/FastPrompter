@@ -140,24 +140,17 @@ class HotkeySettingsDialog(QDialog):
 
         tab_app = QWidget()
         form_app = QFormLayout(tab_app)
+        # The full in-app hotkey set comes from ONE source (ui.hotkey_spec), so
+        # the Shortcut settings can never again hide keys the app binds -- five
+        # configurable hk_* (quote, line numbers, mini settings, timers,
+        # hashtags) used to be bound in main.py yet absent from this dialog, so
+        # the user could not see or rebind them. app_binds keeps its old shape
+        # (key_name, default, translated label) so the rest of the dialog and
+        # tests/test_hotkey_migration.py read it unchanged.
+        from fastprompter.ui.hotkey_spec import IN_APP_HOTKEYS
         self.app_binds = [
-            ("hk_new_snippet", "Ctrl+N", tr("New Empty Snippet", self.lang)),
-            ("hk_save_snippet", "Ctrl+S", tr("Save Snippet", self.lang)),
-            ("hk_export_silo", "Ctrl+Shift+S", tr("Export Silo to file", self.lang)),
-            ("hk_find", "Ctrl+F", tr("Find Text", self.lang)),
-            ("hk_replace", "Ctrl+H", tr("Replace Text", self.lang)),
-            ("hk_focus", "Ctrl+D", tr("Toggle Focus Mode", self.lang)),
-            ("hk_header", "Ctrl+E", tr("Header+Bold+Underline+Timestamp", self.lang)),
-            ("hk_bold", "Ctrl+B", tr("Bold / Unbold Line", self.lang)),
-            ("hk_italic", "Ctrl+I", tr("Italic", self.lang)),
-            ("hk_underline", "Ctrl+U", tr("Underline", self.lang)),
-            ("hk_undo", "Ctrl+Z", tr("Undo", self.lang)),
-            ("hk_divider", "Ctrl+W", tr("Insert Divider Line", self.lang)),
-            ("hk_snap", "Ctrl+Q", tr("Cycle Snap Corners", self.lang)),
-            # T-1244: the master mute hotkey is an ordinary, remappable
-            # in-app shortcut like the rest — same HotkeyWidget/save path.
-            ("hk_audio_mute", "Ctrl+M", tr("Master Mute", self.lang)),
-            ("hk_quit", "Ctrl+Alt+Shift+Q", tr("Quit Application", self.lang))
+            (hk.key_name, hk.default, tr(hk.label, self.lang))
+            for hk in IN_APP_HOTKEYS
         ]
         self.app_inputs = {}
         for key_name, default_hk, label in self.app_binds:

@@ -1638,17 +1638,28 @@ class VaultTextEdit(QTextEdit):
         top = r_start.top() + (r_start.height() - height) // 2
         return QRect(r_start.left(), top, max(40, width), height)
 
-    @staticmethod
-    def _image_copy_rect(pill):
-        """Rect of the copy button, 6 px to the right of the image pill.
+    def _image_copy_rect(self, block, pill):
+        """Rect of the copy button, clear of the pill AND any trailing text.
 
-        It used to sit INSIDE the pill's right edge, drawn on top of the
-        filename label -- two controls occupying the same pixels. It now
-        clears the pill entirely, the same 6 px offset ``_code_copy_rect``
-        uses, so neither button can overlap the thing it annotates.
+        It used to sit a fixed 6 px right of the pill, which overlapped the
+        filename first, then (once moved out of the pill) whatever prose
+        followed the ``![](...)`` markup on the same line -- a pasted image
+        with text after it had its Copy glyph painted on top of that text.
+        The button now anchors past the RIGHTMOST content on the line (the
+        same ``EndOfBlock`` anchor ``_code_copy_rect`` uses), so it clears the
+        real end of the line, never the middle of a word.
+
+        ponytail: anchored to the block's end-of-line, so on a wrapped block
+        whose image is on an earlier visual line the button rides the last
+        visual row's right edge; upgrade to a per-visual-line anchor if
+        wrapped image lines with trailing text become common.
         """
+        end = QTextCursor(block)
+        end.movePosition(QTextCursor.MoveOperation.EndOfBlock)
+        line_right = self.cursorRect(end).right()
+        anchor = max(pill.right(), line_right)
         size = max(14, pill.height() - 2)
-        return QRect(pill.right() + 6,
+        return QRect(anchor + 6,
                      pill.top() + (pill.height() - size) // 2, size, size)
 
     def _image_copy_at(self, pos):
@@ -1671,7 +1682,7 @@ class VaultTextEdit(QTextEdit):
                 break
             for match in MD_IMAGE_RE.finditer(block.text()):
                 pill = self._image_pill_rect(block, match)
-                button = self._image_copy_rect(pill)
+                button = self._image_copy_rect(block, pill)
                 if button.contains(pos):
                     url = self._image_url_for(match.group(1))
                     if url is None or not url.isLocalFile():
@@ -1952,6 +1963,7 @@ class VaultTextEdit(QTextEdit):
                     return True
                 for m_img in MD_IMAGE_RE.finditer(block.text()):
                     if self._image_copy_rect(
+                            block,
                             self._image_pill_rect(block, m_img)).contains(pos):
                         return True
             block = block.next()
@@ -2200,6 +2212,13 @@ class VaultTextEdit(QTextEdit):
         counter is bumped here too (the third press lands in mousePressEvent).
         """
         if event.button() == Qt.MouseButton.MiddleButton:
+            # Ctrl+Middle deletes a line; the second press of a fast double
+            # middle-click must not delete a SECOND line. Swallow it -- one
+            # gesture, one line. Other middle-click gestures still route to the
+            # press handler as before.
+            if event.modifiers() == Qt.KeyboardModifier.ControlModifier:
+                event.accept()
+                return
             self.mousePressEvent(event)
             return
         if (not sip.isdeleted(self)
@@ -2463,13 +2482,15 @@ class VaultTextEdit(QTextEdit):
                                      | Qt.KeyboardModifier.ShiftModifier):
                 return                       # Ctrl+Shift+MB: unbound, no text change
             if event.modifiers() == Qt.KeyboardModifier.ControlModifier:
-                # Ctrl+Middle toggles the colored line mark on the line under
-                # the pointer -- anywhere on the line, the gutter box does not
-                # have to be hit. It MUST NOT delete text (the old
-                # _delete_line_smart binding is retired; one gesture, one
-                # owner).
-                self._ensure_line_marks_visible()
-                self._set_line_mark(block)
+                # Ctrl+Middle deletes the whole line under the pointer -- from
+                # anywhere on the line, no need to hit the gutter. The colored
+                # line mark is still reachable by clicking the gutter box (see
+                # line_number_area_mouse_press_event). A double middle-click is
+                # guarded in mouseDoubleClickEvent so one gesture removes one
+                # line, never two.
+                if block.isValid():
+                    self._delete_line_smart(block)
+                    self.main_win.mark_dirty()
                 event.accept()
                 return
             # Plain middle-click a line cycles it: plain -> checked+struck ->
@@ -4333,33 +4354,15 @@ class VaultTextEdit(QTextEdit):
                     return False
                 return bool(seq_str) and seq_str == canonical
 
-            if matches("hk_header", "Ctrl+E"):
-                mw.apply_header_timestamp(); event.accept(); return
-            if matches("hk_bold", "Ctrl+B"):
-                mw.apply_bold_smart(); event.accept(); return
-            if matches("hk_italic", "Ctrl+I"):
-                mw.apply_format("italic"); event.accept(); return
-            if matches("hk_underline", "Ctrl+U"):
-                mw.apply_format("underline"); event.accept(); return
-            if matches("hk_undo", "Ctrl+Z"):
-                if hasattr(mw, "_smart_undo"): mw._smart_undo()
-                event.accept(); return
-            if matches("hk_new_snippet", "Ctrl+N"):
-                mw.select_empty_silo(insertion="top"); event.accept(); return
-            if matches("hk_save_snippet", "Ctrl+S"):
-                mw.save_snippet(); event.accept(); return
-            if matches("hk_export_silo", "Ctrl+Shift+S"):
-                mw.save_silo_to_file(); event.accept(); return
-            if matches("hk_find", "Ctrl+F"):
-                mw.toggle_find(); event.accept(); return
-            if matches("hk_replace", "Ctrl+H"):
-                mw.show_replace(); event.accept(); return
-            if matches("hk_focus", "Ctrl+D"):
-                mw.cycle_focus_mode(); event.accept(); return
-            if matches("hk_divider", "Ctrl+W"):
-                mw.insert_divider_line(); event.accept(); return
-            if matches("hk_snap", "Ctrl+Q"):
-                mw.cycle_snap_corner(); event.accept(); return
+            # One dispatch table from ui.hotkey_spec, so the editor, the
+            # Shortcut settings and the help sheet cannot drift apart. A new
+            # editor hotkey is added THERE, not by hand-editing this ladder.
+            from fastprompter.ui.hotkey_spec import EDITOR_HOTKEYS
+            for hk in EDITOR_HOTKEYS:
+                if matches(hk.key_name, hk.default):
+                    hk.action(mw)
+                    event.accept()
+                    return
 
         if mods == Qt.KeyboardModifier.ControlModifier and event.key() == Qt.Key.Key_T:
             # Strikethrough is non-configurable (not in hotkey settings)
@@ -5361,7 +5364,7 @@ class VaultTextEdit(QTextEdit):
                                 # uses, so what the pointer can click is
                                 # exactly what is on screen.
                                 copy_rect = QRectF(self._image_copy_rect(
-                                    btn_rect.toRect()))
+                                    block, btn_rect.toRect()))
                                 pressed_img = (
                                     getattr(self, "_image_copy_pressed", None)
                                     and os.path.normcase(

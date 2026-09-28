@@ -38,7 +38,7 @@ Full keyboard-driven operation. Layout-independent VK dispatch — works on QWER
 | **Formatting** | **Alt+Backspace** | Delete previous word | Editor |
 | **Formatting** | **Ctrl+Z** | Smart Undo (per silo) | Editor |
 | **Formatting** | **Ctrl+Y** / **Ctrl+Shift+Z** | Smart Redo (mirror of undo) | Editor |
-| **Editor** | **Ctrl+MiddleButton** | Toggle random colored line mark (click again to remove; never deletes text) | Editor |
+| **Editor** | **Ctrl+MiddleButton** | Delete the whole clicked line | Editor |
 | **Silos** | **Ctrl+MiddleButton** | Toggle random silo color box (click again to remove) | Silos |
 | **Silos** | **MiddleButton** | Move silo to Trash | Silos |
 | **Silos** | **Shift+MiddleButton** | Clear silo text | Silos |
@@ -82,7 +82,7 @@ All formatting shortcuts toggle inline markers: **Ctrl+B** → `**bold**`, Ctrl+
 
 **Ctrl+E** — format current line as header. Configurable: rule type, bullet, timestamp stamp, alignment. Open Settings → Dividers & headers to customize.
 
-**Ctrl+MiddleButton (in editor text)** — toggle a random colored line mark on the clicked line: first click adds a random colored box, second click removes it (text is never touched; to re-roll the color, remove and apply again). Left/right click in the gutter's mark zone cycles the mark colors (OFF included). **Alt+MiddleButton** — turn every selected line into a bullet. **MiddleButton** — cycle the clicked line: plain → checked+struck → unchecked.
+**Ctrl+MiddleButton (in editor text)** — delete the whole line under the pointer, from anywhere on the line. Colored line marks now live on the gutter: left/right click in the gutter's mark zone cycles the mark colors (OFF included). **Alt+MiddleButton** — turn every selected line into a bullet. **MiddleButton** — cycle the clicked line: plain → checked+struck → unchecked.
 
 **Ctrl+Shift+drag** — grab the line under the pointer (or the whole selection) and move it to the drop indicator; bold, checkboxes and image pills survive the trip.
 

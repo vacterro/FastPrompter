@@ -64,6 +64,7 @@ def build_help_html(data, lang="EN") -> str:
         ("Wheel over the tab bar", "Switch project"),
         ("Ctrl+Wheel in the editor", "Zoom the editor font"),
         ("Middle-click a silo", "Move it to the trash (text + files land in data/files/_trash)"),
+        ("Ctrl+Middle-click a line in the editor", "Delete that whole line"),
         ("Hover a silo",
          "&#9989; tick, &#128193; files, &#128204; pin and &#128229; archive buttons appear"),
         ("Click &#9989; on a silo", "Mark it done — the tick stays until clicked again"),
@@ -160,6 +161,7 @@ def build_help_html(data, lang="EN") -> str:
 class HelpDialog(QDialog):
     def __init__(self, main_win):
         super().__init__(main_win)
+        self._main_win = main_win
         self._lang = getattr(main_win, '_current_lang', 'EN')
         self.setWindowTitle(tr("FastPrompter — Help", self._lang))
         self.setModal(False)
@@ -177,9 +179,23 @@ class HelpDialog(QDialog):
         support_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         support_btn.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://buymeacoffee.com/vacuum34")))
         btn_layout.addWidget(support_btn, alignment=Qt.AlignmentFlag.AlignLeft)
-        
+
+        # A door straight from Help into the Shortcut settings: the help sheet
+        # lists every hotkey, so the place to rebind them belongs one click away
+        # instead of hunting the settings cog.
+        shortcut_btn = QPushButton(tr("Shortcut settings", self._lang), self)
+        shortcut_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        shortcut_btn.clicked.connect(self._open_shortcut_settings)
+        btn_layout.addWidget(shortcut_btn, alignment=Qt.AlignmentFlag.AlignLeft)
+        btn_layout.addStretch()
+
         btn = QPushButton(tr("Close", self._lang), self)
         btn.clicked.connect(self.close)
         btn_layout.addWidget(btn, alignment=Qt.AlignmentFlag.AlignRight)
         
         layout.addLayout(btn_layout)
+
+    def _open_shortcut_settings(self):
+        opener = getattr(self._main_win, "open_hotkey_settings", None)
+        if callable(opener):
+            opener()

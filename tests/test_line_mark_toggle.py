@@ -1,17 +1,16 @@
-"""Colored line marks UX: Ctrl+MiddleButton toggle + clickable gutter.
+"""Colored line marks live on the gutter; Ctrl+MiddleButton deletes a line.
 
 Covers the user slice contract:
-A/B  toggle add/remove, text byte-for-byte unchanged
-C    deterministic palette choice via patched random
-D    Ctrl+MiddleButton never deletes text (no _delete_line_smart)
-E    rapid press/dblclick/press = add/remove/add, no lost events
+A/B  gutter left/right click adds/removes marks, text byte-for-byte unchanged
+C    deterministic palette choice is the gutter cycle order (1..N..OFF)
+D    Ctrl+MiddleButton DELETES the whole line under the pointer
+E    a fast double Ctrl+MiddleButton removes ONE line, never two
 F/G  plain middle + alt middle behaviors unchanged
-H    marks work in a 3000-line document (no >2000 dead zone)
+H    Ctrl+Middle delete + gutter marks both work in a 3000-line document
 I    gutter left/right click cycles through the palette incl. OFF
 J    marks survive collect_view_metadata -> apply_line_marks
-K    QUEUED_BIT/SENT_BIT survive mark changes
-L    unrelated userState bits survive mark mutation
-M    line_marks disabled -> explicit toggle enables visibility + creates mark
+K    QUEUED_BIT/SENT_BIT survive a gutter mark change
+L    unrelated userState bits survive a gutter mark mutation
 N    T-1257: every MARK_PALETTE id survives the REAL gutter paint path and
      lands in the gutter as its exact palette colour
 O    T-1257: an empty hovered slot still paints as an outline (NoBrush)
@@ -109,74 +108,63 @@ def _fire(ed, kind, pos, button, mods):
 # ---- A / C / D -----------------------------------------------------------
 
 
-def test_a_ctrl_middle_marks_unmarked_line(qapp):
+def _gutter_click(ed, num, button=_LEFT):
+    """Click the gutter mark zone on block `num` (marks live on the gutter)."""
+    y = ed.cursorRect(QTextCursor(
+        ed.document().findBlockByNumber(num))).center().y()
+    ev = QMouseEvent(_PRESS, QPointF(MARK_ZONE_PX // 2, y),
+                     button, button, _NONE)
+    ed.line_number_area_mouse_press_event(ev)
+
+
+def test_a_gutter_click_marks_unmarked_line(qapp):
     ed = _editor("hello world")
     text_before = ed.toPlainText()
-    _fire(ed, _PRESS, _pos(ed, 0), _MIDDLE, _CTRL)
+    _gutter_click(ed, 0)
     mark = _mark_of(ed, 0)
     assert mark != 0
     assert mark in MARK_PALETTE            # belongs to the curated palette
     assert ed.toPlainText() == text_before  # byte-for-byte unchanged
 
 
-def test_c_patched_random_assigns_expected_palette_mark(qapp):
+def test_c_gutter_cycle_assigns_expected_palette_mark(qapp):
     ed = _editor("deterministic")
-    import fastprompter.ui.editor as mod
-    orig = mod.random.choice
-    mod.random.choice = lambda seq: 3      # patch the chooser
-    try:
-        _fire(ed, _PRESS, _pos(ed, 0), _MIDDLE, _CTRL)
-    finally:
-        mod.random.choice = orig
-    assert _mark_of(ed, 0) == 3
-    assert MARK_PALETTE[3][1] == "yellow"  # and 3 is a real palette colour
+    _gutter_click(ed, 0)                   # OFF -> first palette colour
+    assert _mark_of(ed, 0) == 1
+    assert MARK_PALETTE[1][1] == "green"   # and 1 is a real palette colour
 
 
-def test_d_ctrl_middle_never_deletes_text(qapp):
+def test_d_ctrl_middle_deletes_the_line(qapp):
     ed = _editor("alpha\nbeta\ngamma")
-    calls = []
-    ed._delete_line_smart = lambda block: calls.append(block)
-    for num in (0, 1, 2):
-        _fire(ed, _PRESS, _pos(ed, num), _MIDDLE, _CTRL)
-    assert calls == []                      # destructive path never reached
-    assert ed.toPlainText() == "alpha\nbeta\ngamma"
-    assert _mark_of(ed, 0) and _mark_of(ed, 1) and _mark_of(ed, 2)
+    # Ctrl+Middle on the middle line removes it entirely, text and all.
+    _fire(ed, _PRESS, _pos(ed, 1), _MIDDLE, _CTRL)
+    assert ed.toPlainText() == "alpha\ngamma"
+    # first and last lines too
+    _fire(ed, _PRESS, _pos(ed, 0), _MIDDLE, _CTRL)
+    assert ed.toPlainText() == "gamma"
 
 
-# ---- B: strict second click ----------------------------------------------
+# ---- B: gutter right-click removes -----------------------------------------
 
 
-def test_b_second_ctrl_middle_removes_mark(qapp):
+def test_b_gutter_right_click_removes_mark(qapp):
     ed = _editor("toggle me")
-    _fire(ed, _PRESS, _pos(ed, 0), _MIDDLE, _CTRL)
-    first = _mark_of(ed, 0)
-    assert first != 0
-    _fire(ed, _PRESS, _pos(ed, 0), _MIDDLE, _CTRL)
-    assert _mark_of(ed, 0) == 0             # removed, NOT re-rolled
-    assert ed.toPlainText() == "toggle me"
-    # remove -> apply again may choose a fresh colour
-    import fastprompter.ui.editor as mod
-    orig = mod.random.choice
-    mod.random.choice = lambda seq: (_RANDOM_MARK_IDS[-1])
-    try:
-        _fire(ed, _PRESS, _pos(ed, 0), _MIDDLE, _CTRL)
-    finally:
-        mod.random.choice = orig
-    assert _mark_of(ed, 0) == _RANDOM_MARK_IDS[-1]
-
-
-# ---- E: rapid routing -----------------------------------------------------
-
-
-def test_e_rapid_press_dblclick_press_toggles_three_times(qapp):
-    ed = _editor("rapid")
-    pos = _pos(ed, 0)
-    _fire(ed, _PRESS, pos, _MIDDLE, _CTRL)
-    assert _mark_of(ed, 0) != 0
-    _fire(ed, _DBL, pos, _MIDDLE, _CTRL)     # dblclick routes to press
+    _gutter_click(ed, 0, _LEFT)            # OFF -> 1
+    assert _mark_of(ed, 0) == 1
+    _gutter_click(ed, 0, _RIGHT)           # 1 -> OFF
     assert _mark_of(ed, 0) == 0
-    _fire(ed, _PRESS, pos, _MIDDLE, _CTRL)
-    assert _mark_of(ed, 0) != 0              # fresh mark, no lost event
+    assert ed.toPlainText() == "toggle me"
+
+
+# ---- E: double Ctrl+Middle removes ONE line --------------------------------
+
+
+def test_e_double_ctrl_middle_removes_one_line(qapp):
+    ed = _editor("alpha\nbeta\ngamma")
+    pos = _pos(ed, 1)
+    _fire(ed, _PRESS, pos, _MIDDLE, _CTRL)   # deletes "beta"
+    _fire(ed, _DBL, pos, _MIDDLE, _CTRL)     # the dblclick half must NOT delete again
+    assert ed.toPlainText() == "alpha\ngamma"
 
 
 # ---- F / G: untouched gestures -------------------------------------------
@@ -207,12 +195,12 @@ def test_h_marks_work_above_2000_lines(qapp):
                      _LEFT, _LEFT, _NONE)
     ed.line_number_area_mouse_press_event(ev)
     assert _mark_of(ed, 2) == 1              # OFF -> first palette colour
-    # and Ctrl+Middle deep in the document, after scrolling it into view
+    # and Ctrl+Middle delete deep in the document, after scrolling it in
     cur = _scroll_to_block(ed, 2500)
     pos = ed.cursorRect(cur).center()
     assert ed.viewport().rect().contains(pos)
     _fire(ed, _PRESS, pos, _MIDDLE, _CTRL)
-    assert _mark_of(ed, 2500) != 0
+    assert ed.document().blockCount() == 2999  # the line was removed
 
 
 # ---- I: gutter cycling ----------------------------------------------------
@@ -262,11 +250,11 @@ def test_k_queue_bits_survive_mark_toggle(qapp):
     ed = _editor("queued line")
     block = ed.document().firstBlock()
     block.setUserState(QUEUED_BIT | SENT_BIT)
-    _fire(ed, _PRESS, _pos(ed, 0), _MIDDLE, _CTRL)
+    _gutter_click(ed, 0)                       # OFF -> a palette colour
     state = max(0, block.userState())
     assert state & QUEUED_BIT and state & SENT_BIT
     assert state & 0xFF != 0                  # and the mark landed
-    _fire(ed, _PRESS, _pos(ed, 0), _MIDDLE, _CTRL)
+    _gutter_click(ed, 0, _RIGHT)               # back to OFF
     state = max(0, block.userState())
     assert state & QUEUED_BIT and state & SENT_BIT
     assert state & 0xFF == 0
@@ -279,13 +267,13 @@ def test_l_unrelated_userstate_bits_survive(qapp):
     ed = _editor("folded header")
     block = ed.document().firstBlock()
     block.setUserState(fold_bit | other_bit)
-    _fire(ed, _PRESS, _pos(ed, 0), _MIDDLE, _CTRL)
+    _gutter_click(ed, 0)
     state = max(0, block.userState())
     assert state & fold_bit
     assert state & other_bit
     assert state & 0xFF != 0
     # clearing the mark leaves the other bits intact too
-    _fire(ed, _PRESS, _pos(ed, 0), _MIDDLE, _CTRL)
+    _gutter_click(ed, 0, _RIGHT)
     state = max(0, block.userState())
     assert state & fold_bit and state & other_bit
     assert state & 0xFF == 0
@@ -294,14 +282,15 @@ def test_l_unrelated_userstate_bits_survive(qapp):
 # ---- M: disabled setting -----------------------------------------------------
 
 
-def test_m_ctrl_middle_enables_hidden_line_marks(qapp):
-    ed = _editor("invisible mark risk", line_marks="False")
+# ---- M: delete is independent of the line-marks setting ---------------------
+
+
+def test_m_ctrl_middle_deletes_regardless_of_line_marks_setting(qapp):
+    ed = _editor("alpha\nbeta", line_marks="False")
     assert ed.main_win.data.get("line_marks") == "False"
     _fire(ed, _PRESS, _pos(ed, 0), _MIDDLE, _CTRL)
-    assert ed.main_win.data.get("line_marks") == "True"   # visibility enabled
-    assert _mark_of(ed, 0) != 0                            # and mark created
-    # gutter geometry follows the widened zone
-    assert ed.line_number_area_width() >= MARK_ZONE_PX + 14
+    # deleting a line never depends on whether the gutter marks are shown
+    assert ed.toPlainText() == "beta"
 
 
 # ---- N / O / P / Q: T-1257 real gutter paint --------------------------------

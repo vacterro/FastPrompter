@@ -180,7 +180,7 @@ def test_image_copy_button_sits_beside_the_pill(tmp_path):
         match = MD_IMAGE_RE.search(block.text())
         assert match is not None
         pill = ed._image_pill_rect(block, match)
-        button = ed._image_copy_rect(pill)
+        button = ed._image_copy_rect(block, pill)
         assert not pill.intersects(button)
         assert button.left() > pill.right()
         hit = ed._image_copy_at(button.center())
