@@ -1650,54 +1650,189 @@ class VaultTextEdit(QTextEdit):
         return None
 
     def _link_glyph_rect(self, block, match):
-        """Viewport rect of one ``[label](url)`` token, on the visual row its
-        START sits on.
+        """Viewport rect of one ``[label](url)`` token on the visual row its
+        START sits on. Kept for callers that want the first fragment; the
+        full per-row set is ``_link_glyph_rects`` (T-1339)."""
+        frags = self._link_glyph_rects(block, match)
+        return frags[0] if frags else QRect()
 
-        A wrapped token owns only its first visual row (out to that row's
-        natural text right), never the whole remaining width -- declaring the
-        rest of the row clickable would make unrelated text part of the target
-        (T-1338 §6).
+    def _link_glyph_rects(self, block, match):
+        """T-1339: one precise viewport rect per visual QTextLine fragment the
+        token occupies, so every visible row of a WRAPPED link is hoverable.
+
+        Each rect is the horizontal segment of ``match.start()..match.end()``
+        that falls on that visual line -- never the whole remaining row width,
+        so trailing/other-token prose on the token's final row is not made
+        part of the target (T-1338 §6 preserved). One-row tokens return a
+        single rect.
         """
+        rects = []
+        try:
+            layout = block.layout()
+            br = self.document().documentLayout().blockBoundingRect(block)
+            y_off = -self.verticalScrollBar().value()
+            base = block.position()
+            m_start, m_end = match.start(), match.end()
+            for i in range(layout.lineCount()):
+                line = layout.lineAt(i)
+                ls = line.textStart()
+                le = ls + line.textLength()
+                seg_start = max(m_start, ls)
+                seg_end = min(m_end, le)
+                if seg_start >= seg_end:
+                    continue
+                cs = QTextCursor(block)
+                cs.setPosition(base + seg_start)
+                ce = QTextCursor(block)
+                ce.setPosition(base + seg_end)
+                r0, r1 = self.cursorRect(cs), self.cursorRect(ce)
+                left = r0.left()
+                # end cursor may fall on the next row when seg_end is the wrap
+                # point; clamp width to this row's natural right in that case
+                if r1.top() == r0.top():
+                    right = r1.left()
+                else:
+                    lr = line.naturalTextRect().translated(
+                        br.topLeft()).translated(0, y_off)
+                    right = int(lr.right())
+                rects.append(QRect(left, r0.top(),
+                                   max(4, right - left), r0.height()))
+        except Exception:
+            pass
+        if rects:
+            return rects
+        # fallback: single rect from cursor geometry
         start = QTextCursor(block)
         start.setPosition(block.position() + match.start())
         end = QTextCursor(block)
         end.setPosition(block.position() + match.end())
         r_start, r_end = self.cursorRect(start), self.cursorRect(end)
-        if r_end.top() != r_start.top():
-            row_right = self._visual_row_right(block, r_start)
-            return QRect(r_start.left(), r_start.top(),
-                         max(4, row_right - r_start.left()), r_start.height())
-        return QRect(r_start.left(), r_start.top(),
-                     max(4, r_end.left() - r_start.left()), r_start.height())
+        width = (r_end.left() - r_start.left()
+                 if r_end.top() == r_start.top()
+                 else self._visual_row_right(block, r_start) - r_start.left())
+        return [QRect(r_start.left(), r_start.top(),
+                      max(4, width), r_start.height())]
+
 
     def _inline_copy_rect(self, block, target_rect):
-        """T-1338: THE one placement authority for the hover Copy control,
-        shared by links and images so the two geometries cannot diverge.
+        """T-1339: THE one occupancy-aware placement authority for the hover
+        Copy control, shared by links and images.
 
-        Knows the target rect, the natural text right edge of the visual row
-        the target sits on, and the viewport width. Preferred slot is past
-        ``max(target.right, row_content_right) + gap`` -- to the right of ALL
-        content on that row, so Copy never sits on trailing prose. If that
-        overflows the viewport it falls to the LEFT of the target, and if
-        neither side fits it becomes a transient overlay clamped to the right
-        edge. Every returned rect satisfies 2 <= left and
-        right <= viewport.width() - 2.
+        A slot is acceptable only when it does not intersect visible text.
+        Priority:
+
+          1. immediately RIGHT of the target on its row, if text-free;
+          2. immediately LEFT of the target on its row, if text-free;
+          3. the trailing free space AFTER a visual row's text, choosing the
+             row nearest the target row (its own row first) -- so a wrapped
+             label with prose on its row still gets a slot on a neighbouring
+             row's empty tail rather than on top of prose;
+          4. non-text transient fallback: just below the block's last visual
+             row, where there is no text at all, clamped to the viewport.
+
+        Every returned rect satisfies 2 <= left and right <= width - 2.
         """
         gap = 6
         size = max(14, target_rect.height() - 2)
         top = target_rect.top() + (target_rect.height() - size) // 2
         vp_w = self.viewport().width()
-        row_right = self._visual_row_right(block, target_rect)
-        anchor = max(target_rect.right(), row_right) + gap
-        if anchor + size <= vp_w - 2:
-            left = anchor
-        else:
-            left = target_rect.left() - gap - size   # free side: left
-            if left < 2:
-                left = vp_w - 2 - size                # transient edge overlay
-        # hard viewport invariant, whatever the branch decided
-        left = max(2, min(left, vp_w - 2 - size))
+        occupied = self._row_text_extents(block, target_rect, target_rect)
+
+        def _free_on_row(x, y):
+            r = QRect(x, y, size, size)
+            if r.left() < 2 or r.right() > vp_w - 2:
+                return None
+            if any(r.intersects(o) for o in occupied):
+                return None
+            return r
+
+        # 1. immediate right of target
+        r = _free_on_row(target_rect.right() + gap, top)
+        if r is not None:
+            return r
+        # 2. immediate left of target
+        r = _free_on_row(target_rect.left() - gap - size, top)
+        if r is not None:
+            return r
+        # 3. trailing free space on the nearest visual row
+        rows = self._block_visual_rows(block)
+        if rows:
+            ty = target_rect.center().y()
+            for _dist, row in sorted(
+                    ((abs(rw["cy"] - ty), rw) for rw in rows),
+                    key=lambda t: t[0]):
+                x = row["right"] + gap
+                rtop = row["top"] + (row["height"] - size) // 2
+                if x >= 2 and x + size <= vp_w - 2:
+                    cand = QRect(x, rtop, size, size)
+                    if not any(cand.intersects(o) for o in occupied):
+                        return cand
+            # 4. below the block's last row (guaranteed text-free)
+            last = rows[-1]
+            below_top = last["top"] + last["height"] + 2
+            left = max(2, min(target_rect.left(), vp_w - 2 - size))
+            return QRect(left, below_top, size, size)
+        # no layout available: clamp beside the target
+        left = max(2, min(target_rect.right() + gap, vp_w - 2 - size))
         return QRect(left, top, size, size)
+
+    def _block_visual_rows(self, block):
+        """[{top, height, cy, right}] for each visual line of ``block`` in
+        viewport coords. Bounded to one block's layout (no document walk)."""
+        rows = []
+        try:
+            layout = block.layout()
+            br = self.document().documentLayout().blockBoundingRect(block)
+            y_off = -self.verticalScrollBar().value()
+            for i in range(layout.lineCount()):
+                lr = layout.lineAt(i).naturalTextRect().translated(
+                    br.topLeft()).translated(0, y_off)
+                rows.append({"top": int(lr.top()),
+                             "height": int(lr.height()),
+                             "cy": int(lr.center().y()),
+                             "right": int(lr.right())})
+        except Exception:
+            pass
+        return rows
+
+
+    def _row_text_extents(self, block, row_rect, exclude_rect):
+        """Viewport rects of the visible TEXT on the visual row containing
+        ``row_rect``, excluding the span covered by ``exclude_rect`` (the
+        target itself). Used to prove a Copy slot is text-free.
+
+        Bounded to one block's layout line; no document walk (T-1339 §11).
+        """
+        extents = []
+        try:
+            layout = block.layout()
+            br = self.document().documentLayout().blockBoundingRect(block)
+            y_off = -self.verticalScrollBar().value()
+            centre_y = row_rect.center().y()
+            for i in range(layout.lineCount()):
+                line = layout.lineAt(i)
+                lr = line.naturalTextRect().translated(
+                    br.topLeft()).translated(0, y_off)
+                if not (lr.top() <= centre_y <= lr.bottom()):
+                    continue
+                # the row's text runs from its left to its natural right; the
+                # target occupies exclude_rect within it. Represent the text
+                # as the two segments flanking the target.
+                row_left = int(lr.left())
+                row_right = int(lr.right())
+                if exclude_rect.left() - row_left > 2:
+                    extents.append(QRect(row_left, row_rect.top(),
+                                         exclude_rect.left() - row_left,
+                                         row_rect.height()))
+                if row_right - exclude_rect.right() > 2:
+                    extents.append(QRect(exclude_rect.right(), row_rect.top(),
+                                         row_right - exclude_rect.right(),
+                                         row_rect.height()))
+                break
+        except Exception:
+            pass
+        return extents
+
 
     def _visual_row_right(self, block, rect):
         """Natural text right edge (viewport coords) of the visual line that
@@ -2053,10 +2188,14 @@ class VaultTextEdit(QTextEdit):
     def _inline_hover_zone_contains(self, pos):
         """Is ``pos`` inside the CURRENT hover ownership zone?
 
-        The zone is the target glyph/pill + the Copy control + the bridge
-        between them (their bounding union), so moving target -> Copy across
-        the small gap never drops the hover (no flicker). Only leaving the
-        combined zone clears it.
+        T-1339: NARROW bridge, not the bounding union. Ownership is the target
+        rect and the Copy rect, each padded by a small connector margin -- just
+        enough to cross the gap to an ADJACENT Copy without flicker. The old
+        ``target.united(copy)`` made every glyph between a far-placed Copy and
+        its target part of link hover ownership (and, when Copy was dropped
+        below the row, the whole row); here the span between two non-adjacent
+        rects is a dead zone owned by neither, so unrelated prose is never
+        swallowed.
         """
         if self._hover_inline_kind is None:
             return False
@@ -2064,7 +2203,9 @@ class VaultTextEdit(QTextEdit):
         cr = self._hover_inline_copy_rect
         if tr is None or cr is None:
             return False
-        return tr.united(cr).contains(pos)
+        pad = 8
+        return (tr.adjusted(-pad, -pad, pad, pad).contains(pos)
+                or cr.adjusted(-pad, -pad, pad, pad).contains(pos))
 
     def _update_inline_hover(self, pos):
         """Resolve the inline Copy target under ``pos`` and (re)arm the one
@@ -2113,10 +2254,12 @@ class VaultTextEdit(QTextEdit):
                         return ("image", block, path, pill,
                                 self._inline_copy_rect(block, pill))
         for m in MD_LINK_RE.finditer(text):
-            glyph = self._link_glyph_rect(block, m)
-            if glyph.contains(pos):
-                return ("link", block, m.group(2), glyph,
-                        self._inline_copy_rect(block, glyph))
+            for frag in self._link_glyph_rects(block, m):
+                if frag.contains(pos):
+                    # anchor Copy to the ACTUAL visual fragment hovered, so a
+                    # wrapped link's row-2 hover puts Copy on row 2 (T-1339).
+                    return ("link", block, m.group(2), frag,
+                            self._inline_copy_rect(block, frag))
         return None
 
     def _set_inline_hover(self, kind, block, target, target_rect, copy_rect):
