@@ -10,6 +10,7 @@ appears everywhere at once.
 Source-level where it can be (no live window), behavioural where it must be.
 """
 
+import json
 import os
 import re
 
@@ -82,3 +83,66 @@ def test_every_editor_action_targets_a_real_main_window_method():
     assert EDITOR_HOTKEYS
     for hk in EDITOR_HOTKEYS:
         assert callable(hk.action), hk.key_name
+
+
+def test_every_spec_label_is_in_the_canonical_pack():
+    """T-1345: a label the spec owns must never go untranslated.
+
+    The labels reach tr() as ``tr(hk.label, ...)``, so tools/i18n_utils.py
+    counts them as dynamic and the validator's static-key sweep cannot see
+    them -- the T-800 promotion workflow loses every label at the moment the
+    list became an object. That blindness is not fixable by making the labels
+    literal again (that is the second copy this module exists to delete), so
+    the guarantee is pinned here instead: the check the scanner cannot make is
+    made explicitly, next to the thing it is about.
+
+    A new HotkeySpec with a label and no pack entry fails HERE rather than
+    silently falling back to English for every non-EN user.
+    """
+    pack = os.path.join(os.path.dirname(__file__), "..", ".saipen",
+                        "saitranslate", "locales", "en.json")
+    with open(pack, encoding="utf-8") as fh:
+        canonical = json.load(fh)["translations"]
+    missing = [hk.label for hk in IN_APP_HOTKEYS if hk.label not in canonical]
+    assert not missing, f"hotkey labels missing from en.json: {missing}"
+
+
+def test_help_sheet_shows_the_configured_sequences_not_the_shipped_ones():
+    """T-1346: the help sheet was a third hand-written copy of the list.
+
+    It hardcoded Ctrl+N / Ctrl+F / Ctrl+Z ... and so went stale the moment a
+    key was rebound, and it omitted the five keys T-1335 made rebindable --
+    the same 'bound but invisible' defect the ticket set out to kill, one
+    surface over. The sheet now reads each sequence out of ``data`` and
+    carries a row for every key the app binds.
+    """
+    from fastprompter.ui.help_dialog import build_help_html
+
+    rebound = {
+        "hk_new_snippet": "Alt+Shift+N",   # was Ctrl+N
+        "hk_find": "Alt+Shift+F",          # was Ctrl+F
+        "hk_undo": "Alt+Shift+Z",          # was Ctrl+Z
+    }
+    html = build_help_html(dict(rebound))
+    for key, seq in rebound.items():
+        assert seq in html, f"help sheet does not show the rebound {key}"
+    # The shipped defaults for those keys must be gone from the KEY column,
+    # not merely supplemented. Matched as <b>KEY</b> so the Files-panel row
+    # ("... · Ctrl+N new folder · ...") -- which is the Qt file dialog's own
+    # chord, not an app hotkey -- is not mistaken for a stale app binding.
+    for shipped in ("Ctrl+N", "Ctrl+F", "Ctrl+Z"):
+        assert f"<b>{shipped}</b>" not in html, \
+            f"help sheet still hardcodes {shipped} as an app hotkey"
+    # the five keys that used to be missing from the sheet entirely
+    for key, default in (("hk_quote", "Ctrl+Shift+Q"), ("hk_line_nums", "Alt+Z"),
+                         ("hk_settings", "Alt+`"), ("hk_timers", "Ctrl+Shift+T"),
+                         ("hk_hashtags", "Alt+Shift+T")):
+        assert default in html, f"help sheet omits {key}"
+
+
+def test_help_sheet_falls_back_to_the_shipped_default_when_unset():
+    from fastprompter.ui.help_dialog import build_help_html
+
+    html = build_help_html({})
+    for hk in IN_APP_HOTKEYS:
+        assert hk.default in html, f"help sheet omits the default for {hk.key_name}"

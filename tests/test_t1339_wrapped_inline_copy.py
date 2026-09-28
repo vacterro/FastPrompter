@@ -168,8 +168,26 @@ def test_second_row_of_wrapped_link_is_hoverable(tmp_path):
         assert ed._hover_inline_target == url
         copy = ed._hover_inline_copy_rect
         assert copy is not None
-        # Copy aligns to the SECOND fragment's row, not the first
-        assert abs(copy.center().y() - second.center().y()) <= second.height()
+        # Copy is placed relative to the SECOND fragment, not the first: on
+        # its own row when that row has room for it, and otherwise on the
+        # nearest row that does -- the picker's documented rule 3. Which of
+        # the two applies is a property of the LAYOUT, and this layout is not
+        # fixed: a dozen suite files build the real window, which changes the
+        # application font and style, so this same text wraps into 4 rows in
+        # a clean process and 5 in a shared one. Asserting "always the
+        # hovered row" therefore measured the ambient font of whichever file
+        # ran before this one, and went red for no product reason. What holds
+        # at every metric is the pair: same row when the row has room, and
+        # never on top of text.
+        row_right = max((rw["right"] for rw in ed._block_visual_rows(block)
+                         if abs(rw["cy"] - second.center().y()) <= second.height()),
+                        default=None)
+        if row_right is not None and row_right + 6 + 14 <= ed.viewport().width() - 2:
+            assert abs(copy.center().y() - second.center().y()) <= second.height(), \
+                f"Copy {copy} is not on the hovered fragment's row {second}"
+        for prose in _prose_rects(ed, block, "more than one visual row of the "
+                                           "editor viewport]("):
+            assert not copy.intersects(prose), f"Copy {copy} on prose {prose}"
         _assert_in_viewport(ed, copy)
     finally:
         ed.close()

@@ -29,6 +29,16 @@ def _make_window():
     FastPrompter.unregister_all_hotkeys = lambda self: None
     FastPrompter._init_limit_service = lambda self: None
 
+    # T-1343: the real window's own setup calls QApplication.setFont and
+    # setStyleSheet, and closing the window undoes neither -- so every test
+    # after this one inherited a 10pt font and a 3487-character global
+    # stylesheet instead of the 8.25pt default. Measured: a later editor at
+    # a 300px viewport then wrapped its text differently and
+    # tests/test_t1339_wrapped_inline_copy.py put its inline Copy on the
+    # wrong visual row, red only when both files shared a process. Snapshot
+    # BEFORE the window is built -- that is the state to put back.
+    before_font, before_sheet = _app.font(), _app.styleSheet()
+
     w = FastPrompter()
     w.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
     w.data["cats_order"] = ["A", "B", "C", "D"]
@@ -36,6 +46,7 @@ def _make_window():
     w.data["hidden_categories"] = []
     w.rebuild_cat_combo(keep="A")
     _app.processEvents()
+    w._test_app_typography = (before_font, before_sheet)
     return w
 
 
@@ -50,6 +61,31 @@ def _teardown(w):
     w.close()
     _app.processEvents()
     QApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    # T-1343: put back what the window's own setup changed on the SHARED
+    # QApplication. Without this the process keeps the 10pt font and the
+    # global stylesheet for every test that follows, in this file and in
+    # every other one.
+    font, sheet = getattr(w, "_test_app_typography", (None, None))
+    if font is not None and _app.font() != font:
+        _app.setFont(font)
+    if sheet is not None and _app.styleSheet() != sheet:
+        _app.setStyleSheet(sheet)
+
+
+def test_the_window_leaves_no_typography_behind():
+    """T-1343 oracle: the leak this file caused, asserted where it happens.
+
+    Read the application state after _make_window + _teardown rather than
+    trusting a later, differently-laid-out test to notice it: by the time a
+    downstream geometry test fails the cause is one file away and invisible.
+    """
+    font, sheet = _app.font(), _app.styleSheet()
+    w = _make_window()
+    _teardown(w)
+    assert _app.font() == font, f"leaked font {_app.font().family()} " \
+                                 f"{_app.font().pointSizeF()}"
+    assert _app.styleSheet() == sheet, \
+        f"leaked {len(_app.styleSheet())} chars of global stylesheet"
 
 
 def test_move_right_swaps_visible_neighbours():

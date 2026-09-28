@@ -1,14 +1,22 @@
 # ASP Board
 
 ## DOING
+- [/] T-1348 [P1] classify the five T-1335 hotkey keys in the bake policy (supersedes T-1341, whose verify clause was created degenerate) | needs: T-1341 | verify: pytest tests/test_bake_corrective_t1298.py tests/test_set_default_from_current.py tests/test_usage_limits_freebuff.py -> 75 passed, 0 failed | owner: buffy | claim_time: 2026-09-28T22:56:28Z
 
 
 ## TODO
+- [ ] T-1347 [P2] two load-sensitive flakes make full tests/ runs non-deterministic: test_suite_exit_contract nested 0xC0000005 and test_perf001 wall-clock budget | regression: required | verify: three consecutive full tests/ runs each end with zero failures, or each flake is pinned with a stated reason for being timing-dependent
 
 
 
 
 ## DONE
+- [x] T-1341 [P1] T-1341 classify the five T-1335 hotkey keys in the bake policy | verify: x | owner: buffy | claim_time: 2026-09-28T22:55:17Z | closure_mode: own_patch
+- [x] T-1342 [P1] promote the three T-1335/T-1336 tr() keys into the canonical en.json pack | regression: required | verify: python tools/validate_saitranslate.py exits 0 with STATUS VALIDATION PASSED and zero source tr() keys MISSING from en.json | owner: buffy | claim_time: 2026-09-28T21:39:13Z | closure_mode: own_patch
+- [x] T-1343 [P1] restore the QApplication font and stylesheet that test_project_reorder_t1336 leaks | regression: required | verify: pytest tests/test_project_reorder_t1336.py tests/test_t1339_wrapped_inline_copy.py in one process is green, and a font/stylesheet probe around _make_window+_teardown shows no change | owner: buffy | claim_time: 2026-09-28T21:37:40Z | closure_mode: own_patch
+- [x] T-1344 [P1] update the two tests T-1335 invalidated: the Ctrl+Middle line-mark contract and the hk_audio_mute source grep | verify: pytest tests/test_t1224_middle_button.py tests/test_master_mute_facade_t1244.py is fully green | owner: buffy | claim_time: 2026-09-28T21:31:53Z | closure_mode: own_patch
+- [x] T-1345 [P2] make the twenty hotkey_spec labels visible to the tr() key collector, and translate the five that are missing | verify: tools/i18n_utils.collect_tr_keys('src') reports every IN_APP_HOTKEYS label as a static key, and tools/validate_saitranslate.py passes | owner: buffy | claim_time: 2026-09-28T21:31:03Z | closure_mode: own_patch
+- [x] T-1346 [P3] stop the help sheet being a third hand-written hotkey list: read the configured sequences from data as global_rows already does | verify: help_dialog.build_help_html shows the user's configured sequences for the keys it lists and no longer hardcodes a sequence the user has rebound | owner: buffy | claim_time: 2026-09-28T21:30:00Z | closure_mode: own_patch
 - [x] T-1340 [P1] Add a Copy button to links, like the existing pasted-image Copy button | verify: the requested change is present and demonstrated against the user own description of it | user_explicit: true | source_receipts: SRC-065 | owner: buffy | claim_time: 2026-09-28T18:58:01Z | closure_mode: own_patch
 - [x] T-1339 [P1] T-1339: inline Copy multi-row + zero-text-overlap finalization -- per-visual-line link fragments (hoverable each row), occupancy-aware Copy placement (right/... | verify: the requested change is present and demonstrated against the user own description of it | user_explicit: true | source_receipts: SRC-068 | owner: buffy | claim_time: 2026-09-28T18:16:50Z | closure_mode: own_patch
 - [x] T-1338 [P1] SAIHANDOFF: inline hover Copy geometry finalization -- one visual-line-aware placement helper (link+image), viewport clamp invariant, wrapped-row/two-token/s... | verify: the requested change is present and demonstrated against the user own description of it | user_explicit: true | source_receipts: SRC-067 | owner: buffy | claim_time: 2026-09-28T16:11:13Z | closure_mode: own_patch

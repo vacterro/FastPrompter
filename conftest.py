@@ -173,6 +173,38 @@ def pytest_sessionstart(session):
 _REAL_PLAY_WINSOUND = None
 
 
+@pytest.fixture(autouse=True)
+def _restore_app_typography():
+    """T-1343: one test's window must not decide the next test's geometry.
+
+    Building the real window mutates the SHARED QApplication: the app's own
+    setup calls ``setFont`` and ``setStyleSheet``, and closing the window
+    undoes neither. Measured on tests/test_project_reorder_t1336.py, the
+    default font went from 8.25pt to 10.0pt and a 3487-character global
+    stylesheet was left installed for the rest of the process. A later test
+    that then laid a 300px-wide editor out inherited the wrong metrics, and
+    tests/test_t1339_wrapped_inline_copy.py's inline Copy control resolved to
+    the first visual row instead of the second -- red only when both files
+    share a process, green alone.
+
+    Restored around EVERY test rather than patched into the one leaking file,
+    because the leak is a property of building a window, not of that test.
+    A test that asserts the font it set still sees it: the restore runs
+    after the test body.
+    """
+    from PyQt6.QtWidgets import QApplication
+    app = QApplication.instance()
+    if app is None:
+        yield
+        return
+    font, sheet = app.font(), app.styleSheet()
+    yield
+    if app.font() != font:
+        app.setFont(font)
+    if app.styleSheet() != sheet:
+        app.setStyleSheet(sheet)
+
+
 @pytest.fixture(autouse=True, scope="session")
 def _silence_external_open():
     """T-1300: no automated run may launch a browser, Explorer or an app.

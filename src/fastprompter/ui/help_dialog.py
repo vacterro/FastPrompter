@@ -34,29 +34,48 @@ def build_help_html(data, lang="EN") -> str:
         (g("hide_on_clickout_hotkey", "Alt+A"), "Toggle Hide on Click-Out"),
         ("F1&ndash;F10 (global)", "Paste snippet 1&ndash;10 into the active app"),
     ], lang)
+    def hk(key, default):
+        """The sequence the user actually has, for a configurable hk_* key.
+
+        The sheet used to hardcode Ctrl+N / Ctrl+F / Ctrl+Z ... and so stayed
+        wrong the moment a key was rebound in the Shortcut settings, and it
+        omitted the keys T-1335 made rebindable. global_rows above already
+        read their sequences out of data; these do the same. The defaults are
+        the shipped ones from ui.hotkey_spec, not a private copy.
+        """
+        return g(key, default) or default
+
     app_rows = _rows([
-        ("Ctrl+N", "New empty silo at the top"),
+        (hk("hk_new_snippet", "Ctrl+N"), "New empty silo at the top"),
         ("Alt+Up / Alt+Down", "Previous / next silo"),
         ("Ctrl+1&ndash;Ctrl+0", "Jump to silo 1&ndash;10"),
         ("F1&ndash;F10 / Ctrl+Shift+1&ndash;9", "Paste snippet 1&ndash;10 into the editor"),
-        ("Ctrl+S", "Save text as snippet / update the edited snippet"),
-        ("Ctrl+W", "Insert a spaced --- divider (toolbar Line command)"),
+        (hk("hk_save_snippet", "Ctrl+S"), "Save text as snippet / update the edited snippet"),
+        (hk("hk_divider", "Ctrl+W"), "Insert a spaced --- divider (toolbar Line command)"),
         ("Alt+W", "Insert a spaced --- divider and start a fresh &bull; bullet (old behavior)"),
-        ("Ctrl+E", "Header the line: # + bold + underline + timestamp, "
+        (hk("hk_header", "Ctrl+E"), "Header the line: # + bold + underline + timestamp, "
                    "then jump 2 lines down onto a fresh &bull; bullet"),
         ("Ctrl+Return", "Toggle [ ] checkboxes on the line / selection"),
-        ("Ctrl+B / Ctrl+I / Ctrl+U", "Bold / Italic / Underline"),
+        (f"{hk('hk_bold', 'Ctrl+B')} / {hk('hk_italic', 'Ctrl+I')} / "
+         f"{hk('hk_underline', 'Ctrl+U')}", "Bold / Italic / Underline"),
         ("Ctrl+T", "Strikethrough text"),
         ("Alt+Backspace", "Delete the previous word or selected text"),
-        ("Ctrl+F / Ctrl+H", "Find / Find &amp; Replace"),
-        ("Ctrl+Z / Ctrl+Shift+Z", "Undo / redo — text <i>and</i> silo actions "
+        (f"{hk('hk_find', 'Ctrl+F')} / {hk('hk_replace', 'Ctrl+H')}",
+         "Find / Find &amp; Replace"),
+        (f"{hk('hk_undo', 'Ctrl+Z')} / Ctrl+Shift+Z", "Undo / redo — text <i>and</i> silo actions "
                                   "(clear, delete, move, pin, archive, tabs)"),
-        ("Ctrl+Q", "Snap the window through screen corners"),
-        ("Ctrl+D", "Zen / focus mode (hide all chrome)"),
-        ("Ctrl+Shift+S", "Export the current silo to a .txt/.md file"),
+        (hk("hk_snap", "Ctrl+Q"), "Snap the window through screen corners"),
+        (hk("hk_focus", "Ctrl+D"), "Zen / focus mode (hide all chrome)"),
+        (hk("hk_export_silo", "Ctrl+Shift+S"), "Export the current silo to a .txt/.md file"),
         ("Ctrl+Plus / Ctrl+Minus", "Fine-tune the UI scale"),
+        (hk("hk_timers", "Ctrl+Shift+T"), "Open Timers"),
+        (hk("hk_hashtags", "Alt+Shift+T"), "Open Hashtags"),
+        (hk("hk_audio_mute", "Ctrl+M"), "Master Mute"),
+        (hk("hk_quote", "Ctrl+Shift+Q"), "Toggle Quote Conversion"),
+        (hk("hk_line_nums", "Alt+Z"), "Toggle Line Numbers"),
+        (hk("hk_settings", "Alt+`"), "Toggle Mini Settings"),
         ("Esc", "Close search bar; press again to hide &amp; save"),
-        ("Ctrl+Alt+Shift+Q", "Quit completely"),
+        (hk("hk_quit", "Ctrl+Alt+Shift+Q"), "Quit completely"),
     ], lang)
     mouse_rows = _rows([
         ("Wheel over silos / snippets / archive", "Flip pages"),

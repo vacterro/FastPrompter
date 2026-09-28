@@ -79,20 +79,20 @@ def test_editor_middle_dblclick_is_exactly_one_action(qapp):
     assert ed.toPlainText() == "[ ] solo"
 
 
-def test_editor_ctrl_middle_rapid_marks_without_deleting(qapp):
-    # W2 line-mark slice: Ctrl+Middle now toggles the colored line mark and
-    # MUST NOT delete text -- the rapid sequence still loses no event, it
-    # just flips the mark each time (add -> remove -> add).
+def test_editor_ctrl_middle_rapid_deletes_exactly_one_line(qapp):
+    # T-1335 redefined Ctrl+Middle in the editor: it deletes the whole line
+    # under the pointer (the colored line mark moved to the gutter box). The
+    # W2 invariant that still matters is the one this test was written for --
+    # one gesture, one line. A fast double middle click sends Press, Release,
+    # DblClick, Release, and the DblClick is swallowed, so the rapid sequence
+    # cannot delete a SECOND line.
     ed = _editor("alpha\nbeta\ngamma")
     _fire(ed, QEvent.Type.MouseButtonPress, _pos(ed, 0), _MIDDLE, _CTRL)
-    assert ed.toPlainText() == "alpha\nbeta\ngamma"
-    assert ed.document().findBlockByNumber(0).userState() & 0xFF
+    assert ed.toPlainText() == "beta\ngamma"
     _fire(ed, QEvent.Type.MouseButtonDblClick, _pos(ed, 0), _MIDDLE, _CTRL)
-    assert ed.toPlainText() == "alpha\nbeta\ngamma"
-    assert not ed.document().findBlockByNumber(0).userState() & 0xFF
+    assert ed.toPlainText() == "beta\ngamma"
     _fire(ed, QEvent.Type.MouseButtonPress, _pos(ed, 0), _MIDDLE, _CTRL)
-    assert ed.toPlainText() == "alpha\nbeta\ngamma"
-    assert ed.document().findBlockByNumber(0).userState() & 0xFF
+    assert ed.toPlainText() == "gamma"
 
 
 def test_editor_alt_middle_dblclick_bulletizes(qapp):

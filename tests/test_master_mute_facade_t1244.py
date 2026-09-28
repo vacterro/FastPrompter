@@ -307,11 +307,22 @@ class TestDirectHubUsers:
 
 class TestSettingsSurfaces:
     def test_hk_audio_mute_is_an_in_app_bind(self):
-        path = os.path.join(os.path.dirname(__file__), "../src/fastprompter/ui/settings.py")
+        # T-1244 made the master mute an ordinary, remappable in-app shortcut
+        # like the rest -- same HotkeyWidget/save path as Ctrl+F, not a
+        # hardcoded global. T-1335 moved that list into ui.hotkey_spec, so the
+        # contract is now read from there; the second half keeps the part that
+        # was the actual bug -- the dialog builds its rows FROM the spec, so
+        # the key cannot go back to being bound-but-unlisted.
+        from fastprompter.ui.hotkey_spec import IN_APP_HOTKEYS
+
+        binds = {hk.key_name: hk.default for hk in IN_APP_HOTKEYS}
+        assert binds.get("hk_audio_mute") == "Ctrl+M"
+
+        path = os.path.join(os.path.dirname(__file__),
+                            "../src/fastprompter/ui/settings.py")
         with open(path, encoding="utf-8") as f:
             src = f.read()
-        assert "hk_audio_mute" in src
-        assert '"Ctrl+M"' in src
+        assert "from fastprompter.ui.hotkey_spec import IN_APP_HOTKEYS" in src
 
     def test_mute_cues_are_remappable_event_rows(self):
         from fastprompter.core.sound_manager import EVENT_LABELS
