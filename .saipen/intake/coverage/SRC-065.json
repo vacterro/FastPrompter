@@ -1,4 +1,14 @@
 {
-  "requirements": {},
+  "requirements": {
+    "SRC-065:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "Feature present since T-1337 (hover-only link Copy copies URL); T-1340 inherited_verified. test_clickable_links 51 + test_t1337 12 green",
+      "text": "Add a Copy button to links, like the existing pasted-image Copy button",
+      "verification": "see T-1340 VERIFY cycle in .saipen/LOG.md",
+      "work": "T-1340"
+    }
+  },
   "schema_version": 1
 }

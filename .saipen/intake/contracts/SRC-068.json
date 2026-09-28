@@ -1,0 +1,14 @@
+{
+  "clauses": {
+    "SRC-068:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "T-1339: inline Copy multi-row + zero-text-overlap finalization -- per-visual-line link fragments (hoverable each row), occupancy-aware Copy placement (right/left/after-content/non-text fallback proving text-free slots), narrow hover bridge (no giant union), wrapped-image regression"
+    }
+  },
+  "derived_at": "2026-09-28T18:16:55Z",
+  "derived_from": "SRC-068",
+  "interpretation_revision": 1,
+  "schema_version": 1,
+  "source_sha256": "0df333a5eb5d1c0a8d9092b0ae466aa22f61e3177b139ec39ed7920b9ebe675a"
+}

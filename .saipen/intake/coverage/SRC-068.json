@@ -1,0 +1,14 @@
+{
+  "requirements": {
+    "SRC-068:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "T-1339 closed with verification evidence in LOG: test_t1339_wrapped_inline_copy 5 + t1338 11 + t1337 12 + listed suites; ruff+compileall clean",
+      "text": "T-1339: inline Copy multi-row + zero-text-overlap finalization -- per-visual-line link fragments (hoverable each row), occupancy-aware Copy placement (right/left/after-content/non-text fallback proving text-free slots), narrow hover bridge (no giant union), wrapped-image regression",
+      "verification": "see the T-1339 VERIFY cycle in .saipen/LOG.md",
+      "work": "T-1339"
+    }
+  },
+  "schema_version": 1
+}
