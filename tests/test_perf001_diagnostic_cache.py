@@ -125,12 +125,26 @@ def test_large_source_does_not_scale_request_latency(tmp_path, counters):
     assert os.path.getsize(small) < 10_000
     manager = _manager()
 
-    def cached_seconds(path, iterations=2000):
+    def cached_seconds(path, iterations=2000, samples=5):
+        """Fastest of ``samples`` runs, not the first one.
+
+        T-1347: one 2000-iteration sample is ~0.13s of wall clock, and the
+        suite's other work can land inside it. Measured red in a full run at
+        big=0.2890s vs small=0.1293s -- 3.6% over a 2x ceiling the code never
+        approached, and green 3/3 in isolation. The scheduler was being
+        measured, not the request path. The MINIMUM of N samples is the
+        standard micro-benchmark estimator and it does not move the ceiling
+        below: a real return of whole-file work to the request path costs
+        600x, which no amount of sampling noise can hide under 2x."""
         manager._record({"event": "type", "path": path}, "PLAYED")   # warm up
-        started = time.perf_counter()
-        for _ in range(iterations):
-            manager._record({"event": "type", "path": path}, "PLAYED")
-        return time.perf_counter() - started
+        best = None
+        for _ in range(samples):
+            started = time.perf_counter()
+            for _ in range(iterations):
+                manager._record({"event": "type", "path": path}, "PLAYED")
+            elapsed = time.perf_counter() - started
+            best = elapsed if best is None else min(best, elapsed)
+        return best
 
     big_seconds = cached_seconds(big)
     small_seconds = cached_seconds(small)
