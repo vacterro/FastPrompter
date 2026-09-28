@@ -1,0 +1,49 @@
+{
+  "agent": "buffy",
+  "created_at": "2026-09-28T00:17:04Z",
+  "evidence_class": "executed",
+  "findings_digest": "a127a54074915d5965d1ca73e215a56f74693f7080795753b50ee9af912b93a9",
+  "gate": "core",
+  "integrity_digest": "b8bb5a5643aec044",
+  "journal_op_id": "reverify.c61a29843f8c",
+  "original_closure": {
+    "claim_time": "2026-09-09T02:20:00Z",
+    "last_ticket_event": "E-1838",
+    "owner": "claude"
+  },
+  "own_problem_keys": [
+    "3bde860fe43a2e46"
+  ],
+  "problem_count": 31,
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "receipt_id": "RV-000643",
+  "ruleset_fingerprint": "82e5e183ae8f0fd909be3fa3627f00489cacaab813d942186c832db02a05a1c1",
+  "ruleset_version": 1,
+  "schema_version": 1,
+  "source_head": "3311777feeef706a605fb70bb0a18d5a431d56a1",
+  "source_tree_fingerprint": "git-delta-v1:5da1882ecfaf462da42794a92910c38c49431fe17c3231c875f8a4558eb8e343",
+  "verdict": "PASS_WITH_CARRIED_DEBT",
+  "verification": [
+    {
+      "command": "python -m pytest tests/test_db_durability.py -q",
+      "duration_ms": 1995,
+      "executed": true,
+      "exit_code": 0,
+      "output_bytes": 98,
+      "output_digest": "2258da9311f6395f",
+      "result": "PASS"
+    }
+  ],
+  "verification_contract": {
+    "commands": [
+      "python -m pytest tests/test_db_durability.py -q"
+    ],
+    "findings_digest": "a127a54074915d5965d1ca73e215a56f74693f7080795753b50ee9af912b93a9",
+    "gate": "core"
+  },
+  "verification_contract_digest": "c8a2282a2a6e0b9c",
+  "verifier": "buffy",
+  "warning_count": 70,
+  "work": "T-1232"
+}

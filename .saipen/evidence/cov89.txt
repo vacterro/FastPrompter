@@ -1,0 +1,6 @@
+SRC-008 SRC-008:R001 | Instant metric tooltips; full text Ctrl+C without selection; preserve reset timer under 5h filter; remove Every 5.00 control
+SRC-009 SRC-009:R001 | T-1217: sections 1/6/7/8 transfer live text, canonical allocation, ownership, transaction and every route regression
+SRC-009 SRC-009:R002 | T-1218: sections 2/6/7/8 internal image viewer, central routing, protected shell launches, Windows paths
+SRC-009 SRC-009:R003 | T-1219: sections 3/6/7/8 whole-line drag autoscroll, lifetime, selection and no premature mutations
+SRC-009 SRC-009:R004 | T-1216: sections 4/6/7/8 deliberate sounds stack, single request ownership, unified scheduler, provenance, live Windows soak
+SRC-009 SRC-009:R005 | T-1220: sections 5/6/7/8 compact filtered gauge geometry, immediate resize and reset ownership

@@ -1,0 +1,49 @@
+{
+  "agent": "buffy",
+  "created_at": "2026-09-28T00:28:29Z",
+  "evidence_class": "executed",
+  "findings_digest": "210f328f685a67d8c132ab7dea9bbef830d16d9ec9c6efd6072d10049fe5e625",
+  "gate": "core",
+  "integrity_digest": "8d122fa8047fcb4e",
+  "journal_op_id": "reverify.d3e9012122d5",
+  "original_closure": {
+    "claim_time": "2026-09-13T00:00:00Z",
+    "last_ticket_event": "E-1990",
+    "owner": "buffy"
+  },
+  "own_problem_keys": [
+    "cd25c7fb5e95df2b"
+  ],
+  "problem_count": 13,
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "receipt_id": "RV-000662",
+  "ruleset_fingerprint": "82e5e183ae8f0fd909be3fa3627f00489cacaab813d942186c832db02a05a1c1",
+  "ruleset_version": 1,
+  "schema_version": 1,
+  "source_head": "3311777feeef706a605fb70bb0a18d5a431d56a1",
+  "source_tree_fingerprint": "git-delta-v1:5da1882ecfaf462da42794a92910c38c49431fe17c3231c875f8a4558eb8e343",
+  "verdict": "PASS_WITH_CARRIED_DEBT",
+  "verification": [
+    {
+      "command": "python -m pytest tests/test_notification_audio_ownership_t1256.py tests/test_t1216_sound_isolation.py -q",
+      "duration_ms": 1182,
+      "executed": true,
+      "exit_code": 0,
+      "output_bytes": 99,
+      "output_digest": "fd7437788317a653",
+      "result": "PASS"
+    }
+  ],
+  "verification_contract": {
+    "commands": [
+      "python -m pytest tests/test_notification_audio_ownership_t1256.py tests/test_t1216_sound_isolation.py -q"
+    ],
+    "findings_digest": "210f328f685a67d8c132ab7dea9bbef830d16d9ec9c6efd6072d10049fe5e625",
+    "gate": "core"
+  },
+  "verification_contract_digest": "dd74dce2e1d16686",
+  "verifier": "buffy",
+  "warning_count": 70,
+  "work": "T-1256"
+}

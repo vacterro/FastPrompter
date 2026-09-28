@@ -1,0 +1,49 @@
+{
+  "agent": "buffy",
+  "created_at": "2026-09-28T00:27:23Z",
+  "evidence_class": "executed",
+  "findings_digest": "5dac419472e468ed1f39617c9de5777d31ec36d0865aa1e354c78036c89203f8",
+  "gate": "core",
+  "integrity_digest": "a6c2834826f62dac",
+  "journal_op_id": "reverify.7320b5d08be2",
+  "original_closure": {
+    "claim_time": "2026-09-11T21:40:00Z",
+    "last_ticket_event": "E-1994",
+    "owner": "buffy"
+  },
+  "own_problem_keys": [
+    "bd8090f672325457"
+  ],
+  "problem_count": 15,
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "receipt_id": "RV-000660",
+  "ruleset_fingerprint": "82e5e183ae8f0fd909be3fa3627f00489cacaab813d942186c832db02a05a1c1",
+  "ruleset_version": 1,
+  "schema_version": 1,
+  "source_head": "3311777feeef706a605fb70bb0a18d5a431d56a1",
+  "source_tree_fingerprint": "git-delta-v1:5da1882ecfaf462da42794a92910c38c49431fe17c3231c875f8a4558eb8e343",
+  "verdict": "PASS_WITH_CARRIED_DEBT",
+  "verification": [
+    {
+      "command": "python -m pytest tests/test_freebuff_wallet_visibility.py -q",
+      "duration_ms": 4822,
+      "executed": true,
+      "exit_code": 0,
+      "output_bytes": 99,
+      "output_digest": "4dc296eaf407a1c4",
+      "result": "PASS"
+    }
+  ],
+  "verification_contract": {
+    "commands": [
+      "python -m pytest tests/test_freebuff_wallet_visibility.py -q"
+    ],
+    "findings_digest": "5dac419472e468ed1f39617c9de5777d31ec36d0865aa1e354c78036c89203f8",
+    "gate": "core"
+  },
+  "verification_contract_digest": "0a1fe101211e2214",
+  "verifier": "buffy",
+  "warning_count": 70,
+  "work": "T-1254"
+}

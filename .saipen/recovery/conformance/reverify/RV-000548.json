@@ -1,0 +1,49 @@
+{
+  "agent": "buffy",
+  "created_at": "2026-09-27T22:05:27Z",
+  "evidence_class": "executed",
+  "findings_digest": "c4801cf56b70da345f5051b817c1e2e3b219b280fb4fa2f627727d30c8ee942a",
+  "gate": "core",
+  "integrity_digest": "7c0d69a57c02b432",
+  "journal_op_id": "reverify.028771369d18",
+  "original_closure": {
+    "claim_time": "2026-09-12T04:02:01Z",
+    "last_ticket_event": "E-1993",
+    "owner": "zcode"
+  },
+  "own_problem_keys": [
+    "bf386182dcc9dbb4"
+  ],
+  "problem_count": 26,
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "receipt_id": "RV-000548",
+  "ruleset_fingerprint": "82e5e183ae8f0fd909be3fa3627f00489cacaab813d942186c832db02a05a1c1",
+  "ruleset_version": 1,
+  "schema_version": 1,
+  "source_head": "1ba1a90a707ab972908489a8fdc85c931b4c39e0",
+  "source_tree_fingerprint": "git-delta-v1:587558308fadaac4aa2498ad1c5e2db72687bc4f355cae59c3a161e37a1d1909",
+  "verdict": "FAIL",
+  "verification": [
+    {
+      "command": "python -m pytest tests/conftest.py -q",
+      "duration_ms": 870,
+      "executed": true,
+      "exit_code": 5,
+      "output_bytes": 23,
+      "output_digest": "02cb16206a208861",
+      "result": "FAIL"
+    }
+  ],
+  "verification_contract": {
+    "commands": [
+      "python -m pytest tests/conftest.py -q"
+    ],
+    "findings_digest": "c4801cf56b70da345f5051b817c1e2e3b219b280fb4fa2f627727d30c8ee942a",
+    "gate": "core"
+  },
+  "verification_contract_digest": "5989b0b1c5c624c5",
+  "verifier": "buffy",
+  "warning_count": 70,
+  "work": "T-1240"
+}

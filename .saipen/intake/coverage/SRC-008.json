@@ -3,10 +3,10 @@
     "SRC-008:R001": {
       "actionable": true,
       "class": "requirement",
-      "disposition": "UNKNOWN",
-      "evidence": null,
+      "disposition": "VERIFIED",
+      "evidence": "tests/test_usage_limits_tooltip_compact.py, tests/test_usage_limits_gauge_layout.py",
       "text": "Instant metric tooltips; full text Ctrl+C without selection; preserve reset timer under 5h filter; remove Every 5.00 control",
-      "verification": null,
+      "verification": "python -m pytest tests/test_usage_limits_tooltip_compact.py tests/test_usage_limits_gauge_layout.py tests/test_clipboard_interop_t1269.py: green in the 130-passed run (1 skipped)",
       "work": "T-1207"
     }
   },

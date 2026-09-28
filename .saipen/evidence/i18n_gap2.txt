@@ -1,0 +1,3 @@
+canonical keys: 1560
+locales: 36 | with a gap: 36 | missing strings: 8061
+worst 6: [('_compat', 1560), ('_container', 1560), ('_context', 1560), ('_engine', 1560), ('ar', 59), ('bg', 59)]

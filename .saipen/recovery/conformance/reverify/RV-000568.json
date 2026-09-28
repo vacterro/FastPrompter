@@ -1,0 +1,48 @@
+{
+  "agent": "buffy",
+  "created_at": "2026-09-27T22:13:39Z",
+  "evidence_class": "executed",
+  "findings_digest": "687dbb9c52228d87b9ff136e92cc2138b8ae790900c3e8d9f12030fb7f2c9793",
+  "gate": "core",
+  "integrity_digest": "c86300f9af847b63",
+  "journal_op_id": "reverify.14bee4509769",
+  "original_closure": {
+    "last_ticket_event": "E-1986",
+    "owner": "buffy"
+  },
+  "own_problem_keys": [
+    "9e751aeb49c5306f"
+  ],
+  "problem_count": 7,
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "receipt_id": "RV-000568",
+  "ruleset_fingerprint": "82e5e183ae8f0fd909be3fa3627f00489cacaab813d942186c832db02a05a1c1",
+  "ruleset_version": 1,
+  "schema_version": 1,
+  "source_head": "1ba1a90a707ab972908489a8fdc85c931b4c39e0",
+  "source_tree_fingerprint": "git-delta-v1:587558308fadaac4aa2498ad1c5e2db72687bc4f355cae59c3a161e37a1d1909",
+  "verdict": "PASS_WITH_CARRIED_DEBT",
+  "verification": [
+    {
+      "command": "python -m ruff check src/fastprompter/ tests/",
+      "duration_ms": 69,
+      "executed": true,
+      "exit_code": 0,
+      "output_bytes": 19,
+      "output_digest": "82b3e6a6c090a576",
+      "result": "PASS"
+    }
+  ],
+  "verification_contract": {
+    "commands": [
+      "python -m ruff check src/fastprompter/ tests/"
+    ],
+    "findings_digest": "687dbb9c52228d87b9ff136e92cc2138b8ae790900c3e8d9f12030fb7f2c9793",
+    "gate": "core"
+  },
+  "verification_contract_digest": "09dbf71e4c6d2dc4",
+  "verifier": "buffy",
+  "warning_count": 70,
+  "work": "T-1268"
+}

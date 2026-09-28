@@ -1,0 +1,48 @@
+{
+  "agent": "buffy",
+  "created_at": "2026-09-27T21:13:50Z",
+  "evidence_class": "executed",
+  "findings_digest": "0cdb0347e04db74815bc2a11f880ab9e57391162082d40f9404af0cd55d20181",
+  "gate": "core",
+  "integrity_digest": "8811b6821d8618d4",
+  "journal_op_id": "reverify.5fe7ac209146",
+  "original_closure": {
+    "last_ticket_event": "E-1984",
+    "owner": "buffy"
+  },
+  "own_problem_keys": [
+    "099bfb3b5508ba09"
+  ],
+  "problem_count": 12,
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "receipt_id": "RV-000513",
+  "ruleset_fingerprint": "82e5e183ae8f0fd909be3fa3627f00489cacaab813d942186c832db02a05a1c1",
+  "ruleset_version": 1,
+  "schema_version": 1,
+  "source_head": "893dc587935fd3e833939fb5c33d7bc1b0cd7011",
+  "source_tree_fingerprint": "git-delta-v1:587558308fadaac4aa2498ad1c5e2db72687bc4f355cae59c3a161e37a1d1909",
+  "verdict": "PASS_WITH_CARRIED_DEBT",
+  "verification": [
+    {
+      "command": "python -m pytest tests/_timer_isolation.py tests/conftest.py tests/test_clipboard_interop_t1269.py tests/test_editor_snapshot_sentinel.py tests/test_editor_timer_isolation.py tests/test_timer_fire.py -q",
+      "duration_ms": 8590,
+      "executed": true,
+      "exit_code": 0,
+      "output_bytes": 190,
+      "output_digest": "2377e88661369240",
+      "result": "PASS"
+    }
+  ],
+  "verification_contract": {
+    "commands": [
+      "python -m pytest tests/_timer_isolation.py tests/conftest.py tests/test_clipboard_interop_t1269.py tests/test_editor_snapshot_sentinel.py tests/test_editor_timer_isolation.py tests/test_timer_fire.py -q"
+    ],
+    "findings_digest": "0cdb0347e04db74815bc2a11f880ab9e57391162082d40f9404af0cd55d20181",
+    "gate": "core"
+  },
+  "verification_contract_digest": "14a021f1287896e8",
+  "verifier": "buffy",
+  "warning_count": 70,
+  "work": "T-1260"
+}

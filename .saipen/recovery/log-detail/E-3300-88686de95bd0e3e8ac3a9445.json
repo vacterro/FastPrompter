@@ -1,0 +1,19 @@
+{
+  "event_id": "E-3300",
+  "externalization_event": {
+    "operation_id": "ticket-1316ab9ab8a54626ae1867d275b25fe2",
+    "reason": "new LOG event exceeds the live cap; canonical detail externalization"
+  },
+  "lossless": true,
+  "metadata_path": ".saipen/recovery/log-detail/E-3300-88686de95bd0e3e8ac3a9445.json",
+  "operation": "log_event_externalization",
+  "original_event_bytes": 1139,
+  "original_event_path": ".saipen/recovery/log-detail/E-3300-88686de95bd0e3e8ac3a9445.LOG.md",
+  "original_event_sha256": "88686de95bd0e3e8ac3a94452f5a165048ea845dbb866c3fac27640ca972e4b8",
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "schema_version": 1,
+  "source": ".saipen/LOG.md",
+  "status": "COMMITTED",
+  "ticket_id": "T-800"
+}

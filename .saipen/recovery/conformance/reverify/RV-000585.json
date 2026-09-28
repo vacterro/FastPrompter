@@ -1,0 +1,50 @@
+{
+  "agent": "buffy",
+  "created_at": "2026-09-27T23:00:59Z",
+  "evidence_class": "executed",
+  "findings_digest": "1d8a6170e4cd9f8a9532a433a17c1b789baa0926ba56b5e1cf8d2abc8829eef4",
+  "gate": "core",
+  "integrity_digest": "e526582fec0570ea",
+  "journal_op_id": "reverify.6efafaf13f8c",
+  "original_closure": {
+    "claim_time": "2026-09-07T03:05:00Z",
+    "last_ticket_event": "E-1678",
+    "owner": "opencode",
+    "source_receipts": "SRC-010"
+  },
+  "own_problem_keys": [
+    "80184a0cad762463"
+  ],
+  "problem_count": 37,
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "receipt_id": "RV-000585",
+  "ruleset_fingerprint": "82e5e183ae8f0fd909be3fa3627f00489cacaab813d942186c832db02a05a1c1",
+  "ruleset_version": 1,
+  "schema_version": 1,
+  "source_head": "b099d289f472860111ff13dcd7070e8f87ade7bc",
+  "source_tree_fingerprint": "git-delta-v1:5da1882ecfaf462da42794a92910c38c49431fe17c3231c875f8a4558eb8e343",
+  "verdict": "PASS_WITH_CARRIED_DEBT",
+  "verification": [
+    {
+      "command": "python -m pytest tests/test_audio_backend_contract.py tests/test_audio_hub_integration.py tests/test_sound_manager.py -q",
+      "duration_ms": 3437,
+      "executed": true,
+      "exit_code": 0,
+      "output_bytes": 180,
+      "output_digest": "40b8915b7800001a",
+      "result": "PASS"
+    }
+  ],
+  "verification_contract": {
+    "commands": [
+      "python -m pytest tests/test_audio_backend_contract.py tests/test_audio_hub_integration.py tests/test_sound_manager.py -q"
+    ],
+    "findings_digest": "1d8a6170e4cd9f8a9532a433a17c1b789baa0926ba56b5e1cf8d2abc8829eef4",
+    "gate": "core"
+  },
+  "verification_contract_digest": "2774a0616b69f3c3",
+  "verifier": "buffy",
+  "warning_count": 70,
+  "work": "T-1221"
+}

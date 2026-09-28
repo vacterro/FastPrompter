@@ -1,0 +1,49 @@
+{
+  "agent": "buffy",
+  "created_at": "2026-09-27T23:02:22Z",
+  "evidence_class": "executed",
+  "findings_digest": "92e46cef764447ec6482885b0dda7ce585bdc145f1670b580c02be087d255da4",
+  "gate": "core",
+  "integrity_digest": "349706400784bc89",
+  "journal_op_id": "reverify.fd4fe03b62a1",
+  "original_closure": {
+    "claim_time": "2026-09-07T02:22:51Z",
+    "last_ticket_event": "E-1697",
+    "owner": "opencode"
+  },
+  "own_problem_keys": [
+    "cba9d9030193b7f1"
+  ],
+  "problem_count": 36,
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "receipt_id": "RV-000586",
+  "ruleset_fingerprint": "82e5e183ae8f0fd909be3fa3627f00489cacaab813d942186c832db02a05a1c1",
+  "ruleset_version": 1,
+  "schema_version": 1,
+  "source_head": "b099d289f472860111ff13dcd7070e8f87ade7bc",
+  "source_tree_fingerprint": "git-delta-v1:5da1882ecfaf462da42794a92910c38c49431fe17c3231c875f8a4558eb8e343",
+  "verdict": "PASS_WITH_CARRIED_DEBT",
+  "verification": [
+    {
+      "command": "python -m pytest tests/test_audit_overflow.py tests/test_performance.py tests/test_restore.py tests/test_search_archive_editing.py tests/test_second_wave.py tests/test_second_wave_core003.py tests/test_second_wave_tickets.py tests/test_silo_selection_persist.py tests/test_startup_backup.py tests/test_state.py tests/test_state_codec.py tests/test_state_failures.py tests/test_state_migration.py tests/test_timer_dialog_wave.py tests/test_timers.py tests/test_topbar_visibility.py tests/test_topbar_visibility_dialog.py tests/test_transfer_roundtrip.py tests/test_usage_limits_gauge_layout.py tests/test_usage_limits_hide_zero.py -q",
+      "duration_ms": 60614,
+      "executed": true,
+      "exit_code": 0,
+      "output_bytes": 581,
+      "output_digest": "36d1be358cb48ccc",
+      "result": "PASS"
+    }
+  ],
+  "verification_contract": {
+    "commands": [
+      "python -m pytest tests/test_audit_overflow.py tests/test_performance.py tests/test_restore.py tests/test_search_archive_editing.py tests/test_second_wave.py tests/test_second_wave_core003.py tests/test_second_wave_tickets.py tests/test_silo_selection_persist.py tests/test_startup_backup.py tests/test_state.py tests/test_state_codec.py tests/test_state_failures.py tests/test_state_migration.py tests/test_timer_dialog_wave.py tests/test_timers.py tests/test_topbar_visibility.py tests/test_topbar_visibility_dialog.py tests/test_transfer_roundtrip.py tests/test_usage_limits_gauge_layout.py tests/test_usage_limits_hide_zero.py -q"
+    ],
+    "findings_digest": "92e46cef764447ec6482885b0dda7ce585bdc145f1670b580c02be087d255da4",
+    "gate": "core"
+  },
+  "verification_contract_digest": "beff763f2b1ae52b",
+  "verifier": "buffy",
+  "warning_count": 70,
+  "work": "T-1222"
+}

@@ -1,0 +1,50 @@
+{
+  "agent": "buffy",
+  "created_at": "2026-09-28T00:31:25Z",
+  "evidence_class": "executed",
+  "findings_digest": "02a9e82fb571d35471f2d304b6cb5ec9ca38a196cfd2ca5370d7f9761778ce47",
+  "gate": "core",
+  "integrity_digest": "3133fd8778d4f1ec",
+  "journal_op_id": "reverify.5a09611a7435",
+  "original_closure": {
+    "claim_time": "2026-09-19T11:54:00Z",
+    "closure_mode": "own_patch",
+    "last_ticket_event": "E-2274",
+    "owner": "buffy"
+  },
+  "own_problem_keys": [
+    "c0ad23eac2c1480a"
+  ],
+  "problem_count": 8,
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "receipt_id": "RV-000667",
+  "ruleset_fingerprint": "82e5e183ae8f0fd909be3fa3627f00489cacaab813d942186c832db02a05a1c1",
+  "ruleset_version": 1,
+  "schema_version": 1,
+  "source_head": "3311777feeef706a605fb70bb0a18d5a431d56a1",
+  "source_tree_fingerprint": "git-delta-v1:5da1882ecfaf462da42794a92910c38c49431fe17c3231c875f8a4558eb8e343",
+  "verdict": "PASS_WITH_CARRIED_DEBT",
+  "verification": [
+    {
+      "command": "python -m pytest tests/test_t1267_claude_bridge_per_account.py -q",
+      "duration_ms": 2064,
+      "executed": true,
+      "exit_code": 0,
+      "output_bytes": 99,
+      "output_digest": "88b2f2c72fac2a52",
+      "result": "PASS"
+    }
+  ],
+  "verification_contract": {
+    "commands": [
+      "python -m pytest tests/test_t1267_claude_bridge_per_account.py -q"
+    ],
+    "findings_digest": "02a9e82fb571d35471f2d304b6cb5ec9ca38a196cfd2ca5370d7f9761778ce47",
+    "gate": "core"
+  },
+  "verification_contract_digest": "a7531d909972c1af",
+  "verifier": "buffy",
+  "warning_count": 70,
+  "work": "T-1267"
+}

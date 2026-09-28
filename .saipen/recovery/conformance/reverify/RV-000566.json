@@ -1,0 +1,48 @@
+{
+  "agent": "buffy",
+  "created_at": "2026-09-27T22:12:48Z",
+  "evidence_class": "executed",
+  "findings_digest": "61ac123f9999a19c47fd8652f30975d03152d35341a038199ba9baa17261e337",
+  "gate": "core",
+  "integrity_digest": "070e40e046a982c9",
+  "journal_op_id": "reverify.be47f8c9b346",
+  "original_closure": {
+    "last_ticket_event": "E-1989",
+    "owner": "buffy"
+  },
+  "own_problem_keys": [
+    "5951d1a547317486"
+  ],
+  "problem_count": 9,
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "receipt_id": "RV-000566",
+  "ruleset_fingerprint": "82e5e183ae8f0fd909be3fa3627f00489cacaab813d942186c832db02a05a1c1",
+  "ruleset_version": 1,
+  "schema_version": 1,
+  "source_head": "1ba1a90a707ab972908489a8fdc85c931b4c39e0",
+  "source_tree_fingerprint": "git-delta-v1:587558308fadaac4aa2498ad1c5e2db72687bc4f355cae59c3a161e37a1d1909",
+  "verdict": "PASS_WITH_CARRIED_DEBT",
+  "verification": [
+    {
+      "command": "python -m pytest tests/test_t1266_dual_claude.py -q",
+      "duration_ms": 1233,
+      "executed": true,
+      "exit_code": 0,
+      "output_bytes": 99,
+      "output_digest": "8963f7b336288a4b",
+      "result": "PASS"
+    }
+  ],
+  "verification_contract": {
+    "commands": [
+      "python -m pytest tests/test_t1266_dual_claude.py -q"
+    ],
+    "findings_digest": "61ac123f9999a19c47fd8652f30975d03152d35341a038199ba9baa17261e337",
+    "gate": "core"
+  },
+  "verification_contract_digest": "96f1a327956bc669",
+  "verifier": "buffy",
+  "warning_count": 70,
+  "work": "T-1266"
+}

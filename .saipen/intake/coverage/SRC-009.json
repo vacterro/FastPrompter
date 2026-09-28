@@ -3,46 +3,46 @@
     "SRC-009:R001": {
       "actionable": true,
       "class": "requirement",
-      "disposition": "UNKNOWN",
-      "evidence": null,
+      "disposition": "VERIFIED",
+      "evidence": "tests/test_transfer_roundtrip.py",
       "text": "T-1217: sections 1/6/7/8 transfer live text, canonical allocation, ownership, transaction and every route regression",
-      "verification": null,
+      "verification": "python -m pytest tests/test_transfer_roundtrip.py: green in the 130-passed run",
       "work": "T-1207"
     },
     "SRC-009:R002": {
       "actionable": true,
       "class": "requirement",
-      "disposition": "UNKNOWN",
-      "evidence": null,
+      "disposition": "VERIFIED",
+      "evidence": "tests/test_t1265_image_click.py, tests/test_silo_chest_viewer.py",
       "text": "T-1218: sections 2/6/7/8 internal image viewer, central routing, protected shell launches, Windows paths",
-      "verification": null,
+      "verification": "python -m pytest tests/test_t1265_image_click.py tests/test_silo_chest_viewer.py: green in the 130-passed run",
       "work": "T-1207"
     },
     "SRC-009:R003": {
       "actionable": true,
       "class": "requirement",
-      "disposition": "UNKNOWN",
-      "evidence": null,
+      "disposition": "VERIFIED",
+      "evidence": "tests/test_line_drag_autoscroll.py",
       "text": "T-1219: sections 3/6/7/8 whole-line drag autoscroll, lifetime, selection and no premature mutations",
-      "verification": null,
+      "verification": "python -m pytest tests/test_line_drag_autoscroll.py: green in the 130-passed run",
       "work": "T-1207"
     },
     "SRC-009:R004": {
       "actionable": true,
       "class": "requirement",
-      "disposition": "UNKNOWN",
-      "evidence": null,
+      "disposition": "VERIFIED",
+      "evidence": "src/fastprompter/core/sound_manager.py::_trace_transport",
       "text": "T-1216: sections 4/6/7/8 deliberate sounds stack, single request ownership, unified scheduler, provenance, live Windows soak",
-      "verification": null,
+      "verification": "tests/test_t1216_sound_isolation.py 13 passed and tests/test_t1228_stray_audio_soak.py 11 passed: single request ownership, no cut or replayed tail, provenance ring",
       "work": "T-1207"
     },
     "SRC-009:R005": {
       "actionable": true,
       "class": "requirement",
-      "disposition": "UNKNOWN",
-      "evidence": null,
+      "disposition": "VERIFIED",
+      "evidence": "tests/test_usage_limits_gauge_layout.py",
       "text": "T-1220: sections 5/6/7/8 compact filtered gauge geometry, immediate resize and reset ownership",
-      "verification": null,
+      "verification": "python -m pytest tests/test_usage_limits_gauge_layout.py: compact filtered gauge geometry and reset ownership green",
       "work": "T-1207"
     }
   },

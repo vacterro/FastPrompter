@@ -1,0 +1,3 @@
+verification: {'full_suite': 'clean clone 1d7765b: tests/+tests_smoke/ 4980 passed, 10 skipped in 1219.50s (0:20:19); compileall/ruff/bandit exit 0', 'build': 'BUILD_EXIT 0'}
+probe ok: True checks: 13
+exe_sha256: ca7077310f0dbf2b product_version: 0.8.68.0

@@ -1,0 +1,20 @@
+{
+  "externalization_event": {
+    "event_id": "E-3300",
+    "operation_id": "ticket-1316ab9ab8a54626ae1867d275b25fe2",
+    "reason": "existing/proposed oversized BOARD record requires canonical ticket block update"
+  },
+  "lossless": true,
+  "metadata_path": ".saipen/recovery/board-compaction/T-800/T-800-5dd9de5d0c8e1d16a1438a7d.json",
+  "operation": "board_legacy_compaction",
+  "original_record_bytes": 1542,
+  "original_record_path": ".saipen/recovery/board-compaction/T-800/T-800-5dd9de5d0c8e1d16a1438a7d.BOARD.md",
+  "original_record_sha256": "5dd9de5d0c8e1d16a1438a7dc349dfa7c13ed287f6d2b86016f2a56f595e1994",
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "schema_version": 1,
+  "source": ".saipen/BOARD.md",
+  "status": "COMMITTED",
+  "supersedes_detail_ref": "",
+  "ticket_id": "T-800"
+}

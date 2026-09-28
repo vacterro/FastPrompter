@@ -1,0 +1,49 @@
+{
+  "agent": "buffy",
+  "created_at": "2026-09-27T23:08:30Z",
+  "evidence_class": "executed",
+  "findings_digest": "2956a733d034d22935b0672fea3f9c9ba74eaa314530ebaef9b70c00428bdc8b",
+  "gate": "core",
+  "integrity_digest": "dc791c378b384beb",
+  "journal_op_id": "reverify.17d6fbac24a0",
+  "original_closure": {
+    "claim_time": "2026-09-11T04:21:00Z",
+    "last_ticket_event": "E-1874",
+    "owner": "claude-opus-5"
+  },
+  "own_problem_keys": [
+    "d7fa9943e34303f7"
+  ],
+  "problem_count": 26,
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "receipt_id": "RV-000599",
+  "ruleset_fingerprint": "82e5e183ae8f0fd909be3fa3627f00489cacaab813d942186c832db02a05a1c1",
+  "ruleset_version": 1,
+  "schema_version": 1,
+  "source_head": "b099d289f472860111ff13dcd7070e8f87ade7bc",
+  "source_tree_fingerprint": "git-delta-v1:5da1882ecfaf462da42794a92910c38c49431fe17c3231c875f8a4558eb8e343",
+  "verdict": "PASS_WITH_CARRIED_DEBT",
+  "verification": [
+    {
+      "command": "python -m pytest tests/test_audio_engine_settings.py tests/test_audio_pcm_transport.py tests/test_editor_delete_sounds.py tests/test_instance_lock.py tests/test_usage_limits_freebuff.py tests/test_weekly_reset_false_positive.py -q",
+      "duration_ms": 2573,
+      "executed": true,
+      "exit_code": 0,
+      "output_bytes": 191,
+      "output_digest": "f81915f20d157fc6",
+      "result": "PASS"
+    }
+  ],
+  "verification_contract": {
+    "commands": [
+      "python -m pytest tests/test_audio_engine_settings.py tests/test_audio_pcm_transport.py tests/test_editor_delete_sounds.py tests/test_instance_lock.py tests/test_usage_limits_freebuff.py tests/test_weekly_reset_false_positive.py -q"
+    ],
+    "findings_digest": "2956a733d034d22935b0672fea3f9c9ba74eaa314530ebaef9b70c00428bdc8b",
+    "gate": "core"
+  },
+  "verification_contract_digest": "854a666e5a2955ea",
+  "verifier": "buffy",
+  "warning_count": 70,
+  "work": "T-1242"
+}
