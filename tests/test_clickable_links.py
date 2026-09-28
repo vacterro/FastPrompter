@@ -55,6 +55,15 @@ class _FakeMainForPreview:
             def currentText(self): return "Live Preview"
         self.preview_combo = _FakeCombo()
         self.settings = None
+        # the editor schedules a deferred _refresh_checkbox_flag timer that
+        # reads main_win.data when the event loop is next pumped (which a later
+        # test in the same session does); without it the callback raises
+        # AttributeError and reds an unrelated test.
+        self.data = {"show_line_numbers": "False", "code_auto_gutter": "False",
+                     "line_marks": "False"}
+        self.highlighter = None
+        self._LARGE_DOC_THRESHOLD = 500_000
+        self._current_lang = "EN"
 
 def test_markdown_link_copy_button_copies_url(app, monkeypatch):
     # T-1337: the link Copy control is hover-only. Reveal it by hovering the
