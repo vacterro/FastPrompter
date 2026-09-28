@@ -13,13 +13,40 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 3310
+last_event: 3342
 style_contract: ded-4ae736e4
-updated: "2026-09-28T00:06:17Z"
+updated: "2026-09-28T14:55:50Z"
 transition_from: SHIP
 execution_intent: goal
 goal_waves: 0
-goal_tickets: 15
+goal_tickets: 1
+---
+T-1336 DONE 28.09.26 (E-3328):
+
+- Bug (settings focus loss): the mini-settings surface is an embedded QFrame
+  toggled by setVisible, NOT a top-level window; it took no focus lock, so the
+  lazy build + re-fit transient on open handed the foreground away for a frame
+  and the main window's own changeEvent hide-on-click-out
+  (main.py:15170-15236) read it as a click-away -> window fell to z-order back
+  or hid. Fix in ui/window_mixin.py toggle_mini_settings: take a counted
+  _increment_focus_lock() for a 300ms window on open, and _bring_to_front()
+  after the fit so it re-asserts foreground. No permanent disable of click-out.
+- Feature (project reorder): _move_project(idx, step) added (main.py ~15337) --
+  swaps VISIBLE neighbours by ABSOLUTE cats_order index so a hidden project
+  wedged between them is undisturbed (T-599 divergence), keeps the moved
+  project selected via rebuild_cat_combo(keep=cat). Right-click project menu
+  (show_cat_context_menu) gains ◀/▶ Move Project Left/Right, greyed at the ends,
+  works identically in dropdown and number-box mode (idx = right-clicked row).
+- Feature (box-mode drag): ui/project_numbox_reorder.py -- QDrag filter on the
+  cat_numbox container (drop target) + each number button (drag source,
+  re-installed every _rebuild_cat_numbox since buttons are recreated). Drop
+  maps position -> target visible index and walks _move_project. Left-click
+  still selects (drag only past startDragDistance). install_* wired at combo
+  build (main.py ~8929).
+- i18n: 2 EN keys added (en.py). GATES: test_project_reorder_t1336.py 4 passed;
+  i18n_key_inventory+language_roundtrip+resync_keys+cat_numbox_shrink 25 passed;
+  ruff clean; compileall OK on all touched files.
+
 ---
 T-1269 BUILD wave 15.09.26 (E-1937):
 
