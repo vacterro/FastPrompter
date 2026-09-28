@@ -17,8 +17,8 @@ no account.
 
 Guides: [English](GUIDE_EN.md) · [Русский](GUIDE_RU.md) · [Deutsch](GUIDE_DE.md) · [Eesti](GUIDE_EST.md) · [日本語](GUIDE_JA.md)
 
-<img alt="FastPrompter main workspace" src="docs/images/141228_main.png">
-<br><em>The main workspace: hierarchical scratchpads on the left, a full Markdown editor on the right, project tabs on top.</em>
+<img alt="FastPrompter main workspace" src="docs/images/fastprompter-main.png">
+<br><em>FastPrompter in active use — project tabs, hierarchical scratchpads, Markdown editor and side tools in one local workspace.</em>
 
 </div>
 
@@ -222,21 +222,27 @@ Mechanisms, not marketing:
 
 <div align="center">
 
-<img alt="Main workspace" src="docs/images/141228_main.png">
-<br><em>Main workspace — project tabs, silo sidebar and the Markdown editor.</em><br><br>
-
-<img alt="Drop zones" src="docs/images/2026-07-19_054734.png">
-<br><em>Drop zones — dragging a file onto the editor lets you embed it, link it, or copy it into the silo's folder.</em><br><br>
-
-<img alt="Settings panel" src="docs/images/2026-07-19_054643.png">
-<br><em>Settings — toggle everything from line numbers to the analog clock.</em><br><br>
-
-<img alt="Global hotkeys" src="docs/images/2026-07-19_054903.png">
-<br><em>Global hotkeys — rebind any action to fit your workflow and avoid clashes with other software.</em><br><br>
+<img alt="FastPrompter feature highlights" src="docs/images/fastprompter-highlights.webp">
+<br><em>Workspace views, editor utilities, language controls and sound settings.</em>
 
 </div>
 
-More images live in the [Wiki gallery](https://github.com/vacterro/FastPrompter/wiki).
+<details>
+<summary><strong>More screenshots</strong> — settings, timers, themes, file tools and customization</summary>
+<br>
+
+<div align="center">
+
+<img alt="FastPrompter more screenshots 1" src="docs/images/fastprompter-more-1.webp"><br><br>
+<img alt="FastPrompter more screenshots 2" src="docs/images/fastprompter-more-2.webp"><br><br>
+<img alt="FastPrompter more screenshots 3" src="docs/images/fastprompter-more-3.webp"><br><br>
+<img alt="FastPrompter more screenshots 4" src="docs/images/fastprompter-more-4.webp">
+
+</div>
+
+</details>
+
+More images and deeper documentation live in the [Wiki](https://github.com/vacterro/FastPrompter/wiki).
 
 ## Development
 
