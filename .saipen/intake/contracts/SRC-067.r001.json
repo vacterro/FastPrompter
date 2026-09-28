@@ -1,0 +1,14 @@
+{
+  "clauses": {
+    "SRC-067:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "SAIHANDOFF: inline hover Copy geometry finalization -- one visual-line-aware placement helper (link+image), viewport clamp invariant, wrapped-row/two-token/scroll/resize/font regressions, strict image-pill eligibility, stale comment cleanup"
+    }
+  },
+  "derived_at": "2026-09-28T16:11:16Z",
+  "derived_from": "SRC-067",
+  "interpretation_revision": 1,
+  "schema_version": 1,
+  "source_sha256": "60c6f0e7ea0f61e69fefcf10447bc876b060ab484aa1e2de32b59716c7210b16"
+}

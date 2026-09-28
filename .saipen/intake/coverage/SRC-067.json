@@ -1,0 +1,14 @@
+{
+  "requirements": {
+    "SRC-067:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "T-1338 closed with verification evidence in LOG: test_t1338_hover_geometry 11 + test_t1337 12 + listed suites; ruff+compileall clean",
+      "text": "SAIHANDOFF: inline hover Copy geometry finalization -- one visual-line-aware placement helper (link+image), viewport clamp invariant, wrapped-row/two-token/scroll/resize/font regressions, strict image-pill eligibility, stale comment cleanup",
+      "verification": "see the T-1338 VERIFY cycle in .saipen/LOG.md",
+      "work": "T-1338"
+    }
+  },
+  "schema_version": 1
+}
